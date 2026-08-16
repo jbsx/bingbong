@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import youtubeHome from '../browser/fixtures/youtube-home.json'
-import { buildPageSnapshot, formatPageSnapshot, parseCollectedPage, type CollectedPage } from '../browser/snapshot'
+import {
+  buildPageSnapshot,
+  findSnapshotRef,
+  formatPageSnapshot,
+  parseCollectedPage,
+  type CollectedPage,
+  type SnapshotRef,
+} from '../browser/snapshot'
 import type { BrowserController, BrowserState } from '../ports/browser'
 import { createCommandPipeline, type CommandPipeline } from './createCommandPipeline'
 import { createBrowserTools } from './browserTools'
@@ -23,6 +30,12 @@ class FixtureBrowserController implements BrowserController {
   readonly scrolls: ('up' | 'down')[] = []
   wentBack = 0
   screenshotBytes = new Uint8Array([1, 2, 3])
+  private readonly snapshot = buildPageSnapshot(parseCollectedPage(youtubeHome))
+  private readonly overrides = new Map<number, SnapshotRef>()
+
+  setRefFacts(ref: SnapshotRef): void {
+    this.overrides.set(ref.ref, ref)
+  }
 
   async navigate(url: string): Promise<void> {
     this.navigations.push(url)
@@ -54,6 +67,10 @@ class FixtureBrowserController implements BrowserController {
 
   state(): BrowserState {
     return { url: youtubeFixture.url, title: youtubeFixture.title }
+  }
+
+  async describeRef(ref: number): Promise<SnapshotRef | undefined> {
+    return this.overrides.get(ref) ?? findSnapshotRef(this.snapshot, ref)
   }
 }
 
@@ -182,5 +199,105 @@ describe('browser tools through the pipeline', () => {
       "navigate: 'url' must be a non-empty string",
     ])
     expect(browser.clicks).toEqual([])
+    expect(events.some((e) => e.type === 'confirmation_requested')).toBe(false)
+  })
+
+  describe('risk gate', () => {
+    function refWith(ref: number, overrides: Partial<SnapshotRef>): SnapshotRef {
+      return {
+        ref,
+        kind: 'input',
+        label: '',
+        inputType: null,
+        rect: { x: 0, y: 0, width: 10, height: 10 },
+        href: null,
+        downloadsFile: false,
+        submitsForm: false,
+        credentialField: false,
+        paymentField: false,
+        inForm: false,
+        formHasCredential: false,
+        formHasPayment: false,
+        ...overrides,
+      }
+    }
+
+    it('hard-denies typing into a credential field; nothing is typed', async () => {
+      const browser = new FixtureBrowserController()
+      browser.setRefFacts(refWith(3, { inputType: 'password', credentialField: true, inForm: true, formHasCredential: true }))
+      const { pipeline } = pipelineWith(browser, [
+        { kind: 'tool_calls', calls: [{ id: 'c1', name: 'type', args: { ref: 3, text: 'hunter2' } }] },
+        { kind: 'answer', speak: 'I cannot type passwords.', display: 'Detail.' },
+      ])
+
+      const events = await collect(pipeline, 'log me in')
+
+      expect(browser.typed).toEqual([])
+      expect(events.some((e) => e.type === 'confirmation_requested')).toBe(false)
+      expect(events.find((e) => e.type === 'tool_result')).toMatchObject({
+        ok: false,
+        error: 'credential fields are never filled by the agent — the user can type it themselves',
+      })
+    })
+
+    it('hard-denies clicking the submit control of a payment form', async () => {
+      const browser = new FixtureBrowserController()
+      browser.setRefFacts(refWith(4, { kind: 'button', label: 'Pay now', submitsForm: true, inForm: true, formHasPayment: true }))
+      const { pipeline } = pipelineWith(browser, [
+        { kind: 'tool_calls', calls: [{ id: 'c1', name: 'click', args: { ref: 4 } }] },
+        { kind: 'answer', speak: 'I cannot pay.', display: 'Detail.' },
+      ])
+
+      const events = await collect(pipeline, 'pay for it')
+
+      expect(browser.clicks).toEqual([])
+      expect(events.find((e) => e.type === 'tool_result')).toMatchObject({
+        ok: false,
+        error: 'payments are never submitted by the agent',
+      })
+    })
+
+    it('asks before submitting a form and clicks once approved', async () => {
+      const browser = new FixtureBrowserController()
+      browser.setRefFacts(refWith(7, { kind: 'button', label: 'Send', submitsForm: true, inForm: true }))
+      const { pipeline } = pipelineWith(browser, [
+        { kind: 'tool_calls', calls: [{ id: 'c1', name: 'click', args: { ref: 7 } }] },
+        { kind: 'answer', speak: 'Sent.', display: 'Detail.' },
+      ])
+
+      const events: PipelineEvent[] = []
+      for await (const event of pipeline.execute('send the form')) {
+        events.push(event)
+        if (event.type === 'confirmation_requested') pipeline.resolveConfirmation(event.confirmationId, true)
+      }
+
+      expect(events).toContainEqual({
+        type: 'confirmation_requested',
+        confirmationId: 'confirm-1',
+        callId: 'c1',
+        toolName: 'click',
+        prompt: 'Submit the form via "Send"?',
+        at: 0,
+      })
+      expect(browser.clicks).toEqual([7])
+    })
+
+    it('reports denial when a form submission is refused', async () => {
+      const browser = new FixtureBrowserController()
+      browser.setRefFacts(refWith(8, { kind: 'link', label: 'Download probe', href: 'http://x.test/dl/probe.bin', downloadsFile: true }))
+      const { pipeline } = pipelineWith(browser, [
+        { kind: 'tool_calls', calls: [{ id: 'c1', name: 'click', args: { ref: 8 } }] },
+        { kind: 'answer', speak: 'Skipped.', display: 'Detail.' },
+      ])
+
+      const events: PipelineEvent[] = []
+      for await (const event of pipeline.execute('download it')) {
+        events.push(event)
+        if (event.type === 'confirmation_requested') pipeline.resolveConfirmation(event.confirmationId, false)
+      }
+
+      expect(browser.clicks).toEqual([])
+      expect(events.find((e) => e.type === 'tool_result')).toMatchObject({ ok: false, error: 'denied by user' })
+    })
   })
 })

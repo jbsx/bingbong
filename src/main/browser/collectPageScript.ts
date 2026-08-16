@@ -65,18 +65,60 @@ export const COLLECT_PAGE_SCRIPT = `(() => {
     if (el.title) parts.push(el.title)
     return parts.join(' ').replace(/\\s+/g, ' ').trim().slice(0, 300)
   }
+  // Risk facts the gate classifies from. All DOM heuristics (autocomplete
+  // tokens, name/id matching, form association) live here; core only reads
+  // the folded flags.
+  const CREDENTIAL_AUTOCOMPLETE = ['username', 'current-password', 'new-password']
+  const PAYMENT_NAME_RE = /card|ccnum|cvc|cvv|expir/i
+  const isCredentialField = (el) => {
+    if (el.tagName === 'INPUT' && el.type === 'password') return true
+    const ac = (el.getAttribute('autocomplete') || '').toLowerCase()
+    return CREDENTIAL_AUTOCOMPLETE.includes(ac)
+  }
+  const isPaymentField = (el) => {
+    const ac = (el.getAttribute('autocomplete') || '').toLowerCase()
+    if (ac.startsWith('cc-')) return true
+    return PAYMENT_NAME_RE.test(((el.name || '') + ' ' + (el.id || '')).trim())
+  }
+  const formOf = (el) => el.form || el.closest('form')
+  const submitsFormOf = (el, form) => {
+    if (!form) return false
+    if (el.tagName === 'INPUT') return el.type === 'submit' || el.type === 'image'
+    if (el.tagName === 'BUTTON') return !el.type || el.type === 'submit'
+    return false
+  }
+  const formFlagsOf = (form) => {
+    if (!form) return { inForm: false, formHasCredential: false, formHasPayment: false }
+    let credential = false
+    let payment = false
+    for (const field of form.querySelectorAll('input,select,textarea')) {
+      if (isCredentialField(field)) credential = true
+      if (isPaymentField(field)) payment = true
+    }
+    return { inForm: true, formHasCredential: credential, formHasPayment: payment }
+  }
   const elements = []
   for (const el of document.querySelectorAll(SELECTOR)) {
     if (elements.length >= 400) break
     if (el.tagName === 'INPUT' && el.type === 'hidden') continue
     if (!isVisible(el)) continue
     const rect = el.getBoundingClientRect()
+    const form = formOf(el)
+    const formFlags = formFlagsOf(form)
     elements.push({
       tag: el.tagName.toLowerCase(),
       role: el.getAttribute('role'),
       inputType: el.tagName === 'INPUT' ? el.type : null,
       label: labelOf(el),
-      rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height }
+      rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
+      href: el.getAttribute('href'),
+      downloadsFile: el.hasAttribute('download'),
+      submitsForm: submitsFormOf(el, form),
+      credentialField: isCredentialField(el),
+      paymentField: isPaymentField(el),
+      inForm: formFlags.inForm,
+      formHasCredential: formFlags.formHasCredential,
+      formHasPayment: formFlags.formHasPayment
     })
   }
   return {

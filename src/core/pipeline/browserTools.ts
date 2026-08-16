@@ -1,6 +1,7 @@
-import type { Tool } from './tool'
+import type { RiskVerdict, Tool } from './tool'
 import type { ToolCall } from '../ports/llm'
 import type { BrowserController } from '../ports/browser'
+import { assessBrowserAction } from './riskGate'
 
 function stringArg(call: ToolCall, name: string, tool: string): string {
   const value = call.args[name]
@@ -27,8 +28,23 @@ function directionArg(call: ToolCall): 'up' | 'down' {
   return value
 }
 
-// Orchestrator-facing browser verbs. Risk gating (requiresConfirmation for
-// form submits, payments, logins) is layered on in T5.
+// Gate assessment for ref-targeting calls. Argument errors are left to
+// execute (which reports them as recoverable tool results) — the gate only
+// classifies well-formed calls.
+async function assessRefAction(browser: BrowserController, call: ToolCall, tool: string): Promise<RiskVerdict> {
+  let ref: number
+  try {
+    ref = refArg(call, tool)
+  } catch {
+    return { kind: 'allow' }
+  }
+  return assessBrowserAction(call, await browser.describeRef(ref))
+}
+
+// Orchestrator-facing browser verbs. click/type are risk-gated: the gate
+// classifies the target's snapshot facts (core/pipeline/riskGate.ts) and the
+// pipeline enforces the verdict — confirm for form submits/downloads, hard
+// deny for credential fills and payment submits.
 export function createBrowserTools(browser: BrowserController): Tool[] {
   return [
     {
@@ -52,6 +68,7 @@ export function createBrowserTools(browser: BrowserController): Tool[] {
       parameters: {
         ref: { type: 'integer', description: 'Element ref number from the snapshot, e.g. 7 for the element shown as [7]' },
       },
+      assessRisk: (call) => assessRefAction(browser, call, 'click'),
       execute: (call) => browser.click(refArg(call, 'click')),
     },
     {
@@ -62,6 +79,7 @@ export function createBrowserTools(browser: BrowserController): Tool[] {
         ref: { type: 'integer', description: 'Element ref number to type into' },
         text: { type: 'string', description: 'Text to type' },
       },
+      assessRisk: (call) => assessRefAction(browser, call, 'type'),
       execute: (call) => browser.type(refArg(call, 'type'), stringArg(call, 'text', 'type')),
     },
     {

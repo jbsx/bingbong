@@ -12,13 +12,27 @@ export interface ToolParameterSpec {
   enum?: string[]
 }
 
+/**
+ * Risk-gate verdict for a single tool call, decided in code (never by the
+ * model): 'allow' runs immediately, 'confirm' blocks on a user confirmation
+ * showing the prompt, 'deny' never runs — the reason goes back to the model
+ * as the tool result so it can explain the refusal.
+ */
+export type RiskVerdict =
+  | { kind: 'allow' }
+  | { kind: 'confirm'; prompt: string }
+  | { kind: 'deny'; reason: string }
+
 export interface Tool {
   name: string
   /** What the tool does, shown to the model in the tool catalog. */
   description?: string
   /** Declared parameters; all of them are required when calling. */
   parameters?: Record<string, ToolParameterSpec>
-  requiresConfirmation?: boolean
-  confirmationPrompt?: (call: ToolCall) => string
+  /**
+   * Classify the risk of this specific call. Absent means always allow.
+   * A throwing assessment is treated as 'confirm' (fail closed).
+   */
+  assessRisk?(call: ToolCall): RiskVerdict | Promise<RiskVerdict>
   execute(call: ToolCall, ctx: ToolContext): Promise<unknown>
 }

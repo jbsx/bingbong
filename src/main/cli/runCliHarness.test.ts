@@ -1,7 +1,7 @@
 import { PassThrough } from 'node:stream'
 import { describe, expect, it } from 'vitest'
 import youtubeHome from '../../core/browser/fixtures/youtube-home.json'
-import { buildPageSnapshot, formatPageSnapshot, type CollectedPage } from '../../core/browser/snapshot'
+import { buildPageSnapshot, findSnapshotRef, formatPageSnapshot, type CollectedPage, type SnapshotRef } from '../../core/browser/snapshot'
 import type { BrowserController, BrowserState } from '../../core/ports/browser'
 import { runCliHarness, type CliHarnessDeps } from './runCliHarness'
 
@@ -47,6 +47,10 @@ class FakeController implements BrowserController {
 
   state(): BrowserState {
     return { url: this.url, title: 'YouTube' }
+  }
+
+  async describeRef(ref: number): Promise<SnapshotRef | undefined> {
+    return findSnapshotRef(buildPageSnapshot(youtubeFixture), ref)
   }
 }
 

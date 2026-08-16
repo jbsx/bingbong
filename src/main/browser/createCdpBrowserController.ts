@@ -206,6 +206,15 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
     }
   }
 
+  async function describeRef(ref: number): Promise<SnapshotRef | undefined> {
+    try {
+      const { target } = await resolveRef(ref)
+      return target
+    } catch {
+      return undefined
+    }
+  }
+
   function state(): BrowserState {
     return { url: page.url(), title: page.title() }
   }
@@ -219,5 +228,6 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
     screenshot,
     back,
     state,
+    describeRef,
   }
 }

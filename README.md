@@ -12,6 +12,11 @@ CLI harness complete. T4 adds the **text-driven assistant**: a model router
 a command text box on the dashboard — type a command, watch the browser act,
 get a spoken one-liner plus full detail in the transcript.
 
+T5 adds the **risk gate**: every click/type is classified from snapshot facts
+(collected in-page, policy in code). Form submissions and downloads pause on a
+spoken + on-screen confirmation (auto-deny after 60 s); credential fills and
+payment submissions are hard-denied in code — no confirmation, no override.
+
 ## Configuring models
 
 Model routing is env-only — no model ids are hardcoded. Per role

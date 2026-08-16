@@ -109,6 +109,32 @@ describe('createCdpBrowserController readPage', () => {
   })
 })
 
+describe('createCdpBrowserController describeRef', () => {
+  it('returns the snapshot facts for a ref, collecting on demand', async () => {
+    const { controller } = makeController()
+
+    const target = await controller.describeRef(3)
+
+    expect(target).toMatchObject({ ref: 3, kind: 'input', inputType: 'search', label: 'Search' })
+  })
+
+  it('returns undefined when the ref does not resolve', async () => {
+    const { controller } = makeController()
+
+    expect(await controller.describeRef(999)).toBeUndefined()
+  })
+
+  it('reuses an existing snapshot instead of re-collecting', async () => {
+    const { cdp, controller } = makeController()
+    await controller.readPage()
+    const evaluatesBefore = cdp.calls.filter((call) => call.method === 'Runtime.evaluate').length
+
+    await controller.describeRef(7)
+
+    expect(cdp.calls.filter((call) => call.method === 'Runtime.evaluate')).toHaveLength(evaluatesBefore)
+  })
+})
+
 describe('createCdpBrowserController click', () => {
   it('dispatches paced mouse move/press/release at the ref center', async () => {
     const { cdp, controller } = makeController()

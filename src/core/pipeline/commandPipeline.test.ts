@@ -136,12 +136,13 @@ describe('command pipeline', () => {
     expect(events.at(-1)).toMatchObject({ type: 'done' })
   })
 
-  describe('confirmation gate', () => {
+  describe('risk gate', () => {
     const riskyTool = {
       name: 'submit_form',
-      requiresConfirmation: true,
-      confirmationPrompt: (call: { args: Record<string, unknown> }) =>
-        `Submit the form to ${String(call.args.url)}?`,
+      assessRisk: (call: { args: Record<string, unknown> }) => ({
+        kind: 'confirm' as const,
+        prompt: `Submit the form to ${String(call.args.url)}?`,
+      }),
       async execute() {
         return 'submitted'
       },
@@ -160,15 +161,26 @@ describe('command pipeline', () => {
         { kind: 'tool_calls', calls: [{ id: 'c1', name: 'submit_form', args: { url: 'x.test' } }] },
         { kind: 'answer', speak: 'Submitted.', display: 'Detail.' },
       ])
+      const tts = new RecordingTts()
       const pipeline = createCommandPipeline({
         llm,
-        tts: new RecordingTts(),
+        tts,
         clock: new FakeClock(),
         tools: [riskyTool],
       })
 
       const events = await collect(pipeline, 'submit it', confirmWhenAsked(true))
 
+      expect(events).toContainEqual({
+        type: 'confirmation_requested',
+        confirmationId: 'confirm-1',
+        callId: 'c1',
+        toolName: 'submit_form',
+        prompt: 'Submit the form to x.test?',
+        at: 0,
+      })
+      expect(events).toContainEqual({ type: 'speak', text: 'Submit the form to x.test?', at: 0 })
+      expect(tts.spoken).toContain('Submit the form to x.test?')
       expect(events).toContainEqual({ type: 'confirmation_resolved', confirmationId: 'confirm-1', approved: true, reason: 'user', at: 0 })
       expect(events).toContainEqual({ type: 'tool_result', callId: 'c1', name: 'submit_form', ok: true, result: 'submitted', at: 0 })
       expect(events.at(-1)).toMatchObject({ type: 'done' })
@@ -213,6 +225,65 @@ describe('command pipeline', () => {
       })
       expect(events).toContainEqual({ type: 'tool_result', callId: 'c1', name: 'submit_form', ok: false, error: 'denied by timeout', at: 60_000 })
       expect(events.at(-1)).toMatchObject({ type: 'done' })
+    })
+
+    it('never executes a denied call, not even after approval would arrive', async () => {
+      let executions = 0
+      const paymentTool = {
+        name: 'pay',
+        assessRisk: () => ({ kind: 'deny' as const, reason: 'payments are never submitted by the agent' }),
+        async execute() {
+          executions += 1
+          return 'paid'
+        },
+      }
+      const llm = new ScriptedLlm([
+        { kind: 'tool_calls', calls: [{ id: 'c1', name: 'pay', args: {} }] },
+        { kind: 'answer', speak: 'I cannot do that.', display: 'Detail.' },
+      ])
+      const pipeline = createCommandPipeline({ llm, tts: new RecordingTts(), clock: new FakeClock(), tools: [paymentTool] })
+
+      const events = await collect(pipeline, 'pay for it')
+
+      expect(executions).toBe(0)
+      expect(events.some((e) => e.type === 'confirmation_requested')).toBe(false)
+      expect(events).toContainEqual({
+        type: 'tool_result',
+        callId: 'c1',
+        name: 'pay',
+        ok: false,
+        error: 'payments are never submitted by the agent',
+        at: 0,
+      })
+    })
+
+    it('fails closed to a confirmation when the assessment itself throws', async () => {
+      const flakyTool = {
+        name: 'flaky',
+        assessRisk: () => {
+          throw new Error('page changed under assessment')
+        },
+        async execute() {
+          return 'ran'
+        },
+      }
+      const llm = new ScriptedLlm([
+        { kind: 'tool_calls', calls: [{ id: 'c1', name: 'flaky', args: {} }] },
+        { kind: 'answer', speak: 'Ran.', display: 'Detail.' },
+      ])
+      const pipeline = createCommandPipeline({ llm, tts: new RecordingTts(), clock: new FakeClock(), tools: [flakyTool] })
+
+      const events = await collect(pipeline, 'run it', confirmWhenAsked(true))
+
+      expect(events).toContainEqual({
+        type: 'confirmation_requested',
+        confirmationId: 'confirm-1',
+        callId: 'c1',
+        toolName: 'flaky',
+        prompt: 'Run flaky?',
+        at: 0,
+      })
+      expect(events).toContainEqual({ type: 'tool_result', callId: 'c1', name: 'flaky', ok: true, result: 'ran', at: 0 })
     })
   })
 

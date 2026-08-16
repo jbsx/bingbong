@@ -1,5 +1,5 @@
 import type { PipelineEvent } from './events'
-import type { Tool, ToolContext } from './tool'
+import type { RiskVerdict, Tool, ToolContext } from './tool'
 import type { Clock } from '../ports/clock'
 import type { LlmClient, ToolCall, ToolResult, ToolResultOutcome } from '../ports/llm'
 import type { TtsSpeaker } from '../ports/tts'
@@ -62,7 +62,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
         rounds += 1
         for (const call of turn.calls) {
           yield { type: 'tool_call', callId: call.id, name: call.name, args: call.args, at: clock.now() }
-          const outcome = yield* runConfirmedTool(call)
+          const outcome = yield* runGatedTool(call)
           toolResults.push({ call, outcome })
           yield {
             type: 'tool_result',
@@ -88,22 +88,30 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
     yield { type: 'done', at: clock.now() }
   }
 
-  async function* runConfirmedTool(call: ToolCall): AsyncGenerator<PipelineEvent, ToolResultOutcome> {
+  async function* runGatedTool(call: ToolCall): AsyncGenerator<PipelineEvent, ToolResultOutcome> {
     const tool = toolsByName.get(call.name)
     if (!tool) return { ok: false, error: `unknown tool: '${call.name}'` }
 
-    if (tool.requiresConfirmation) {
+    // Hard policy lives here, in code: a denied call never reaches execute,
+    // even if the user would have approved it.
+    const verdict = await assessCall(tool, call)
+    if (verdict.kind === 'deny') {
+      return { ok: false, error: verdict.reason }
+    }
+    if (verdict.kind === 'confirm') {
       const confirmationId = `confirm-${++confirmationCounter}`
-      const prompt = tool.confirmationPrompt?.(call) ?? `Run ${call.name}?`
       const decision = waitForConfirmation(confirmationId)
       yield {
         type: 'confirmation_requested',
         confirmationId,
         callId: call.id,
         toolName: call.name,
-        prompt,
+        prompt: verdict.prompt,
         at: clock.now(),
       }
+      // The prompt is both shown (dialog) and spoken; voice yes/no lands in T9.
+      yield { type: 'speak', text: verdict.prompt, at: clock.now() }
+      await tts.speak(verdict.prompt)
       const resolved = await decision
       yield {
         type: 'confirmation_resolved',
@@ -122,6 +130,16 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
       return { ok: true, result }
     } catch (err) {
       return { ok: false, error: toErrorMessage(err) }
+    }
+  }
+
+  async function assessCall(tool: Tool, call: ToolCall): Promise<RiskVerdict> {
+    if (!tool.assessRisk) return { kind: 'allow' }
+    try {
+      return await tool.assessRisk(call)
+    } catch {
+      // Fail closed: when risk can't be assessed, ask the user.
+      return { kind: 'confirm', prompt: `Run ${call.name}?` }
     }
   }
 

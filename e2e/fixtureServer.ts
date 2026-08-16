@@ -33,6 +33,33 @@ function interactivePage(): string {
 </html>`
 }
 
+// Risk-gate fixture, in deterministic DOM order (refs are assigned in DOM
+// order): [1] user [2] password [3] Sign in [4] card [5] Pay now [6] name
+// [7] Send [8] Download probe. Submissions only record into the title.
+function riskyPage(): string {
+  return `<!doctype html>
+<html>
+<head><title>risky fixture</title></head>
+<body style="background:#222;color:#fff;margin:0">
+  <h1>risky fixture page</h1>
+  <form onsubmit="document.title='submitted:login';return false">
+    <input id="user" autocomplete="username" placeholder="Username" style="font-size:20px">
+    <input id="pass" type="password" autocomplete="current-password" placeholder="Password" style="font-size:20px">
+    <button style="font-size:20px">Sign in</button>
+  </form>
+  <form onsubmit="document.title='submitted:payment';return false">
+    <input id="card" autocomplete="cc-number" placeholder="Card number" style="font-size:20px">
+    <button style="font-size:20px">Pay now</button>
+  </form>
+  <form onsubmit="document.title='submitted:contact';return false">
+    <input id="name" placeholder="Your name" style="font-size:20px">
+    <button style="font-size:20px">Send</button>
+  </form>
+  <a href="/dl" download style="font-size:20px">Download probe</a>
+</body>
+</html>`
+}
+
 export async function startFixtureServer(): Promise<FixtureServer> {
   const httpServer: Server = createServer((req, res) => {
     if (req.url === '/dl') {
@@ -50,6 +77,10 @@ export async function startFixtureServer(): Promise<FixtureServer> {
     }
     if (req.url === '/interactive') {
       res.end(interactivePage())
+      return
+    }
+    if (req.url === '/risky') {
+      res.end(riskyPage())
       return
     }
     res.end(page('<input id=t style="font-size:40px;width:100%;height:120px">'))

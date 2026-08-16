@@ -11,6 +11,15 @@ export interface CollectedElement {
   inputType: string | null
   label: string
   rect: CollectedRect
+  /** Risk facts, computed in-page (DOM-specific); absent in older payloads. */
+  href?: string | null
+  downloadsFile?: boolean
+  submitsForm?: boolean
+  credentialField?: boolean
+  paymentField?: boolean
+  inForm?: boolean
+  formHasCredential?: boolean
+  formHasPayment?: boolean
 }
 
 export interface CollectedViewport {
@@ -32,12 +41,23 @@ export interface CollectedPage {
 
 export type RefKind = 'link' | 'button' | 'input' | 'media'
 
+// Facts the risk gate (core/pipeline/riskGate.ts) classifies from. All DOM
+// heuristics (autocomplete tokens, name/id matching, form association) are
+// folded into these flags by the in-page collector.
 export interface SnapshotRef {
   ref: number
   kind: RefKind
   label: string
   inputType: string | null
   rect: CollectedRect
+  href: string | null
+  downloadsFile: boolean
+  submitsForm: boolean
+  credentialField: boolean
+  paymentField: boolean
+  inForm: boolean
+  formHasCredential: boolean
+  formHasPayment: boolean
 }
 
 export interface PageSnapshot {
@@ -69,6 +89,14 @@ function refKindOf(element: CollectedElement): RefKind {
 
 function isFiniteNumber(value: unknown): value is number {
   return typeof value === 'number' && Number.isFinite(value)
+}
+
+function optionalString(value: unknown): string | null {
+  return typeof value === 'string' && value !== '' ? value : null
+}
+
+function optionalBoolean(value: unknown): boolean {
+  return value === true
 }
 
 export function parseCollectedPage(raw: unknown): CollectedPage {
@@ -104,6 +132,14 @@ export function parseCollectedPage(raw: unknown): CollectedPage {
       inputType: el.inputType as string | null,
       label: el.label,
       rect: rect as CollectedRect,
+      href: optionalString(el.href),
+      downloadsFile: optionalBoolean(el.downloadsFile),
+      submitsForm: optionalBoolean(el.submitsForm),
+      credentialField: optionalBoolean(el.credentialField),
+      paymentField: optionalBoolean(el.paymentField),
+      inForm: optionalBoolean(el.inForm),
+      formHasCredential: optionalBoolean(el.formHasCredential),
+      formHasPayment: optionalBoolean(el.formHasPayment),
     }
   })
 
@@ -141,6 +177,14 @@ export function buildPageSnapshot(page: CollectedPage, options?: { maxRefs?: num
       label: truncateLabel(element.label),
       inputType: element.inputType,
       rect: element.rect,
+      href: element.href ?? null,
+      downloadsFile: element.downloadsFile ?? false,
+      submitsForm: element.submitsForm ?? false,
+      credentialField: element.credentialField ?? false,
+      paymentField: element.paymentField ?? false,
+      inForm: element.inForm ?? false,
+      formHasCredential: element.formHasCredential ?? false,
+      formHasPayment: element.formHasPayment ?? false,
     })),
     totalVisible: visible.length,
     truncated: visible.length > taken.length,

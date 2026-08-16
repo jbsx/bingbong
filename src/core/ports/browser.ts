@@ -1,3 +1,5 @@
+import type { SnapshotRef } from '../browser/snapshot'
+
 export interface BrowserState {
   url: string | null
   title: string | null
@@ -12,4 +14,6 @@ export interface BrowserController {
   screenshot(): Promise<Uint8Array>
   back(): Promise<void>
   state(): BrowserState
+  /** Facts about a snapshot ref for risk assessment; undefined when the ref no longer resolves. */
+  describeRef(ref: number): Promise<SnapshotRef | undefined>
 }

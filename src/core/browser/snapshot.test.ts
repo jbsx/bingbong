@@ -42,11 +42,43 @@ describe('parseCollectedPage', () => {
     const missing = page({ elements: [{ ...element(), rect: undefined as unknown as CollectedElement['rect'] }] })
     expect(() => parseCollectedPage(missing)).toThrow(/collected page payload malformed/)
   })
+
+  it('defaults risk facts to safe values when the payload omits them', () => {
+    const parsed = parseCollectedPage(page({ elements: [element()] }))
+
+    expect(parsed.elements[0]).toMatchObject({
+      href: null,
+      downloadsFile: false,
+      submitsForm: false,
+      credentialField: false,
+      paymentField: false,
+      inForm: false,
+      formHasCredential: false,
+      formHasPayment: false,
+    })
+  })
+
+  it('keeps risk facts supplied by the collector', () => {
+    const parsed = parseCollectedPage(
+      page({
+        elements: [
+          element({
+            tag: 'input',
+            inputType: 'password',
+            credentialField: true,
+            inForm: true,
+            formHasCredential: true,
+          }),
+        ],
+      }),
+    )
+
+    expect(parsed.elements[0]).toMatchObject({ credentialField: true, inForm: true, formHasCredential: true })
+  })
 })
 
 describe('buildPageSnapshot', () => {
-  it('numbers visible interactive elements 1..N in DOM order', () => {
-    const snapshot = buildPageSnapshot(youtubeFixture)
+  it('numbers visible interactive elements 1..N in DOM order', () => {    const snapshot = buildPageSnapshot(youtubeFixture)
 
     expect(snapshot.refs.map((r) => r.ref)).toEqual([...Array(20).keys()].map((n) => n + 1))
     expect(snapshot.totalVisible).toBe(20)
@@ -104,6 +136,25 @@ describe('buildPageSnapshot', () => {
     expect(snapshot.refs).toHaveLength(5)
     expect(snapshot.totalVisible).toBe(21)
     expect(snapshot.truncated).toBe(true)
+  })
+
+  it('carries risk facts from the element onto its ref, defaulting when absent', () => {
+    const snapshot = buildPageSnapshot(
+      page({
+        elements: [
+          element({
+            tag: 'a',
+            label: 'Download probe',
+            href: 'http://x.test/dl',
+            downloadsFile: true,
+          }),
+          element({ label: 'Plain button' }),
+        ],
+      }),
+    )
+
+    expect(snapshot.refs[0]).toMatchObject({ href: 'http://x.test/dl', downloadsFile: true })
+    expect(snapshot.refs[1]).toMatchObject({ href: null, downloadsFile: false, submitsForm: false, credentialField: false })
   })
 })
 

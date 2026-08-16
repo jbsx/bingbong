@@ -26,3 +26,15 @@ export function commandBoxScript(text: string): string {
     return 'submitted'
   })()`
 }
+
+// Clicks the first action button (Approve) of the confirmation dialog, if shown.
+export function approveConfirmationScript(): string {
+  return `(() => {
+    const card = document.querySelector('.confirmation-card')
+    if (!card) return 'no-confirmation'
+    const approve = card.querySelector('.confirmation-actions button')
+    if (!approve) return 'no-approve-button'
+    approve.click()
+    return 'approved'
+  })()`
+}
