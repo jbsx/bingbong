@@ -2,6 +2,7 @@ import { app, BrowserWindow } from 'electron'
 import { join } from 'node:path'
 import { createBrowserPane } from './browser/createBrowserPane'
 import { attachBrowserPaneToWindow, registerBrowserIpc } from './browser/attachBrowserPane'
+import { resolvePreloadPath } from './preloadPath'
 
 function createWindow(): BrowserWindow {
   const win = new BrowserWindow({
@@ -9,7 +10,7 @@ function createWindow(): BrowserWindow {
     height: 800,
     title: 'Bing Bong',
     webPreferences: {
-      preload: join(__dirname, '../preload/index.js'),
+      preload: resolvePreloadPath(join(__dirname, '../preload')),
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: false,
