@@ -22,6 +22,16 @@ export interface Harness {
   clickPaneAt(x: number, y: number): Promise<void>
   typeIntoPane(text: string): Promise<void>
   clickDashboardElement(selector: string): Promise<void>
+  /** Write one line to the app's CLI harness stdin (requires `pipeStdio`). */
+  cliWrite(line: string): void
+  /** Resolve with the first CLI harness stdout line matching. */
+  waitForCliOutput(match: RegExp, options?: { since?: number }): Promise<string>
+  /** Marker for `waitForCliOutput`'s `since` — only sees lines printed after this. */
+  cliMark(): number
+  /** Everything the CLI harness has printed so far. */
+  cliOutput(): string
+  /** Give the pane target OS/webContents focus so synthetic input lands. */
+  focusPane(): Promise<void>
   quit(): Promise<void>
 }
 
@@ -52,7 +62,9 @@ async function evaluate<T>(cdp: CdpClient, sessionId: string, expression: string
   return response.result?.value as T
 }
 
-export async function startHarness(options?: { fixture?: FixtureServer; userDataDir?: string }): Promise<Harness> {
+export async function startHarness(
+  options?: { fixture?: FixtureServer; userDataDir?: string; launchArgs?: string[]; pipeStdio?: boolean },
+): Promise<Harness> {
   const ownsFixture = !options?.fixture
   const ownsUserDataDir = !options?.userDataDir
   const fixture = options?.fixture ?? (await startFixtureServer())
@@ -63,6 +75,8 @@ export async function startHarness(options?: { fixture?: FixtureServer; userData
     cwd: repoRoot,
     debugPort: await pickFreeDebugPort(),
     userDataDir,
+    args: options?.launchArgs,
+    pipeStdio: options?.pipeStdio,
   })
   const teardown = async () => {
     try {
@@ -218,6 +232,20 @@ async function buildHarness(app: LaunchedApp, fixture: FixtureServer, teardown: 
       await activateFor('dashboard')
       await dispatchClick(sid, center.x, center.y)
     },
+
+    cliWrite(line) {
+      if (!app.stdin) throw new Error('app was not launched with pipeStdio')
+      app.stdin.write(`${line}\n`)
+    },
+
+    waitForCliOutput: (match: RegExp, options?: { since?: number }) =>
+      app.waitForStdoutLine(match, options?.since ?? 0),
+
+    cliMark: () => app.stdoutLineCount(),
+
+    cliOutput: () => app.stdoutText(),
+
+    focusPane: () => activateFor('pane'),
 
     quit: teardown,
   }

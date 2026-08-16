@@ -1,12 +1,45 @@
 import { app, BrowserWindow } from 'electron'
-import { join } from 'node:path'
+import { mkdir, writeFile } from 'node:fs/promises'
+import { dirname, join } from 'node:path'
+import type { BrowserPane } from './browser/createBrowserPane'
 import { createBrowserPane } from './browser/createBrowserPane'
 import { attachBrowserPaneToWindow, registerBrowserIpc } from './browser/attachBrowserPane'
+import { createPaneBrowserController } from './browser/createPaneBrowserController'
+import { runCliHarness } from './cli/runCliHarness'
 import { resolvePreloadPath } from './preloadPath'
 
 // e2e harness seam: isolate the profile (cookies, cache, singleton lock) per run.
 if (process.env.BINGBONG_USER_DATA_DIR) {
   app.setPath('userData', process.env.BINGBONG_USER_DATA_DIR)
+}
+
+// Terminal harness for browser control before voice exists (issue #4): a REPL
+// over the same CDP controller the orchestrator will use, so browser actions
+// are provable without the dashboard's UI.
+const CLI_HARNESS_FLAG = '--browser-cli'
+const runningCliHarness = process.argv.includes(CLI_HARNESS_FLAG) || process.env.BINGBONG_CLI === '1'
+
+let cliHarnessStarted = false
+
+function startCliHarness(pane: BrowserPane): void {
+  if (cliHarnessStarted) return
+  cliHarnessStarted = true
+
+  const screenshotDir = join(app.getPath('downloads'), 'bingbong_downloads')
+  void runCliHarness({
+    controller: createPaneBrowserController(pane),
+    input: process.stdin,
+    output: process.stdout,
+    exit: () => app.quit(),
+    screenshotDir: () => screenshotDir,
+    saveScreenshot: async (path, bytes) => {
+      await mkdir(dirname(path), { recursive: true })
+      await writeFile(path, bytes)
+    },
+  }).catch((err: unknown) => {
+    process.stderr.write(`browser cli harness failed: ${err instanceof Error ? err.message : String(err)}\n`)
+    app.quit()
+  })
 }
 
 function createWindow(): BrowserWindow {
@@ -24,7 +57,9 @@ function createWindow(): BrowserWindow {
 
   // A pane per window; the persistent `persist:browse` session partition is what
   // keeps logins alive across windows and restarts.
-  attachBrowserPaneToWindow(createBrowserPane(), win)
+  const pane = createBrowserPane()
+  attachBrowserPaneToWindow(pane, win)
+  if (runningCliHarness) startCliHarness(pane)
 
   if (process.env.ELECTRON_RENDERER_URL) {
     void win.loadURL(process.env.ELECTRON_RENDERER_URL)

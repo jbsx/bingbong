@@ -1,0 +1,186 @@
+export interface CollectedRect {
+  x: number
+  y: number
+  width: number
+  height: number
+}
+
+export interface CollectedElement {
+  tag: string
+  role: string | null
+  inputType: string | null
+  label: string
+  rect: CollectedRect
+}
+
+export interface CollectedViewport {
+  width: number
+  height: number
+  scrollY: number
+  scrollHeight: number
+}
+
+// Raw output of the in-page collector script: everything DOM-specific
+// (labeling, rects, visibility) is done in the page; everything policy-ish
+// (kind resolution, numbering, caps, formatting) happens here, fixture-tested.
+export interface CollectedPage {
+  url: string
+  title: string
+  viewport: CollectedViewport
+  elements: CollectedElement[]
+}
+
+export type RefKind = 'link' | 'button' | 'input' | 'media'
+
+export interface SnapshotRef {
+  ref: number
+  kind: RefKind
+  label: string
+  inputType: string | null
+  rect: CollectedRect
+}
+
+export interface PageSnapshot {
+  url: string
+  title: string
+  viewport: CollectedViewport
+  refs: SnapshotRef[]
+  totalVisible: number
+  truncated: boolean
+}
+
+export const MAX_SNAPSHOT_REFS = 75
+export const MAX_LABEL_LENGTH = 80
+
+const BUTTON_INPUT_TYPES = new Set(['submit', 'button', 'reset', 'image'])
+
+export function refKindOf(element: CollectedElement): RefKind {
+  if (element.tag === 'video' || element.tag === 'audio') return 'media'
+  if (element.tag === 'a' || element.tag === 'area' || element.role === 'link') return 'link'
+  if (
+    element.tag === 'button' ||
+    element.role === 'button' ||
+    (element.tag === 'input' && element.inputType !== null && BUTTON_INPUT_TYPES.has(element.inputType))
+  ) {
+    return 'button'
+  }
+  return 'input'
+}
+
+function isFiniteNumber(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value)
+}
+
+export function parseCollectedPage(raw: unknown): CollectedPage {
+  const malformed = () => new Error('collected page payload malformed')
+
+  if (typeof raw !== 'object' || raw === null) throw malformed()
+  const candidate = raw as Record<string, unknown>
+  if (typeof candidate.url !== 'string' || typeof candidate.title !== 'string') throw malformed()
+
+  const viewport = candidate.viewport
+  if (
+    typeof viewport !== 'object' ||
+    viewport === null ||
+    !['width', 'height', 'scrollY', 'scrollHeight'].every((key) => isFiniteNumber((viewport as Record<string, unknown>)[key]))
+  ) {
+    throw malformed()
+  }
+
+  if (!Array.isArray(candidate.elements)) throw malformed()
+  const elements: CollectedElement[] = candidate.elements.map((entry) => {
+    if (typeof entry !== 'object' || entry === null) throw malformed()
+    const el = entry as Record<string, unknown>
+    if (typeof el.tag !== 'string' || typeof el.label !== 'string') throw malformed()
+    if (el.role !== null && typeof el.role !== 'string') throw malformed()
+    if (el.inputType !== null && typeof el.inputType !== 'string') throw malformed()
+    const rect = el.rect
+    if (typeof rect !== 'object' || rect === null || !['x', 'y', 'width', 'height'].every((key) => isFiniteNumber((rect as Record<string, unknown>)[key]))) {
+      throw malformed()
+    }
+    return {
+      tag: el.tag,
+      role: el.role as string | null,
+      inputType: el.inputType as string | null,
+      label: el.label,
+      rect: rect as CollectedRect,
+    }
+  })
+
+  return {
+    url: candidate.url,
+    title: candidate.title,
+    viewport: viewport as CollectedViewport,
+    elements,
+  }
+}
+
+function intersectsViewport(element: CollectedElement, viewport: CollectedViewport): boolean {
+  if (element.rect.width < 1 || element.rect.height < 1) return false
+  const { x, y, width, height } = element.rect
+  return y + height > 0 && x + width > 0 && y < viewport.height && x < viewport.width
+}
+
+function truncateLabel(label: string): string {
+  if (label.length <= MAX_LABEL_LENGTH) return label
+  return `${label.slice(0, MAX_LABEL_LENGTH - 1)}…`
+}
+
+export function buildPageSnapshot(page: CollectedPage, options?: { maxRefs?: number }): PageSnapshot {
+  const maxRefs = options?.maxRefs ?? MAX_SNAPSHOT_REFS
+  const visible = page.elements.filter((element) => intersectsViewport(element, page.viewport))
+  const taken = visible.slice(0, maxRefs)
+
+  return {
+    url: page.url,
+    title: page.title,
+    viewport: page.viewport,
+    refs: taken.map((element, index) => ({
+      ref: index + 1,
+      kind: refKindOf(element),
+      label: truncateLabel(element.label),
+      inputType: element.inputType,
+      rect: element.rect,
+    })),
+    totalVisible: visible.length,
+    truncated: visible.length > taken.length,
+  }
+}
+
+export function formatPageSnapshot(snapshot: PageSnapshot): string {
+  const lines = [
+    `# ${snapshot.title} — ${snapshot.url}`,
+    `viewport ${snapshot.viewport.width}x${snapshot.viewport.height} scroll ${snapshot.viewport.scrollY}/${snapshot.viewport.scrollHeight}`,
+  ]
+  for (const ref of snapshot.refs) {
+    const subtype = ref.kind === 'input' && ref.inputType ? `[${ref.inputType}]` : ''
+    const label = ref.label ? ` "${ref.label}"` : ''
+    lines.push(`[${ref.ref}] ${ref.kind}${subtype}${label}`)
+  }
+  if (snapshot.truncated) {
+    lines.push(`(+${snapshot.totalVisible - snapshot.refs.length} more not listed)`)
+  }
+  return lines.join('\n')
+}
+
+export function findSnapshotRef(snapshot: PageSnapshot, ref: number): SnapshotRef | undefined {
+  return snapshot.refs.find((candidate) => candidate.ref === ref)
+}
+
+// Click coordinates: the element center, clamped into the part of the element
+// that is actually inside the viewport (CDP drops clicks outside it).
+export function clickPoint(
+  ref: SnapshotRef,
+  viewport: CollectedViewport,
+): { x: number; y: number } {
+  const clamp = (value: number, low: number, high: number) => Math.min(Math.max(value, low), high)
+  const { rect } = ref
+  const visibleLeft = Math.max(rect.x, 0)
+  const visibleRight = Math.min(rect.x + rect.width, viewport.width)
+  const visibleTop = Math.max(rect.y, 0)
+  const visibleBottom = Math.min(rect.y + rect.height, viewport.height)
+  return {
+    x: Math.round(clamp(rect.x + rect.width / 2, visibleLeft, Math.max(visibleLeft, visibleRight - 1))),
+    y: Math.round(clamp(rect.y + rect.height / 2, visibleTop, Math.max(visibleTop, visibleBottom - 1))),
+  }
+}

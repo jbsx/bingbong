@@ -1,10 +1,19 @@
 import { spawn } from 'node:child_process'
+import type { Writable } from 'node:stream'
 import { createServer } from 'node:net'
 import { connectCdp, type CdpClient } from './cdpClient'
 import { sleep, waitFor } from './waitFor'
 
 export interface LaunchedApp {
   cdp: CdpClient
+  /** Writable stdin — only when launched with `pipeStdio`. */
+  readonly stdin: Writable | null
+  /** Resolves with the first stdout line matching (only with `pipeStdio`). */
+  waitForStdoutLine(match: RegExp, since: number): Promise<string>
+  /** Number of stdout lines captured so far — use as `since` to await only new output. */
+  stdoutLineCount(): number
+  /** Everything printed to stdout so far (only with `pipeStdio`). */
+  stdoutText(): string
   quit(): Promise<void>
 }
 
@@ -14,6 +23,10 @@ export interface LaunchOptions {
   cwd: string
   debugPort: number
   userDataDir: string
+  /** Extra CLI args forwarded to the app (e.g. ['--browser-cli']). */
+  args?: string[]
+  /** Pipe stdin/stdout so callers can drive/reap a CLI harness. */
+  pipeStdio?: boolean
 }
 
 const STDERR_LIMIT = 10_000
@@ -35,16 +48,37 @@ export async function pickFreeDebugPort(): Promise<number> {
   throw new Error('no free debug port found after 10 attempts')
 }
 
-export async function launchApp({ electronBinary, entry, cwd, debugPort, userDataDir }: LaunchOptions): Promise<LaunchedApp> {
-  const proc = spawn(electronBinary, [entry, `--remote-debugging-port=${debugPort}`], {
+export async function launchApp({
+  electronBinary,
+  entry,
+  cwd,
+  debugPort,
+  userDataDir,
+  args = [],
+  pipeStdio = false,
+}: LaunchOptions): Promise<LaunchedApp> {
+  const proc = spawn(electronBinary, [entry, ...args, `--remote-debugging-port=${debugPort}`], {
     cwd,
-    stdio: ['ignore', 'ignore', 'pipe'],
+    stdio: pipeStdio ? ['pipe', 'pipe', 'pipe'] : ['ignore', 'ignore', 'pipe'],
     env: { ...process.env, BINGBONG_USER_DATA_DIR: userDataDir },
   })
   const exited = new Promise<void>((resolve) => proc.once('exit', () => resolve()))
   let stderr = ''
   proc.stderr?.on('data', (chunk: Buffer) => {
     stderr = (stderr + chunk.toString()).slice(-STDERR_LIMIT)
+    if (process.env.BINGBONG_E2E_VERBOSE) process.stderr.write(`[app] ${chunk}`)
+  })
+  const stdoutLines: string[] = []
+  let stdoutBuffer = ''
+  proc.stdout?.on('data', (chunk: Buffer) => {
+    if (process.env.BINGBONG_E2E_VERBOSE) process.stderr.write(`[worker ${Date.now()}] stdout chunk: ${JSON.stringify(chunk.toString().slice(0, 80))}\n`)
+    stdoutBuffer += chunk.toString()
+    let newlineAt = stdoutBuffer.indexOf('\n')
+    while (newlineAt !== -1) {
+      stdoutLines.push(stdoutBuffer.slice(0, newlineAt))
+      stdoutBuffer = stdoutBuffer.slice(newlineAt + 1)
+      newlineAt = stdoutBuffer.indexOf('\n')
+    }
   })
 
   try {
@@ -59,6 +93,20 @@ export async function launchApp({ electronBinary, entry, cwd, debugPort, userDat
 
     return {
       cdp,
+      stdin: proc.stdin,
+      waitForStdoutLine: (match: RegExp, since = 0) =>
+        // Result lines follow the 'bingbong> ' prompt on the same stdout line;
+        // match against the line with the prompt prefix stripped.
+        waitFor(
+          async () =>
+            stdoutLines
+              .slice(since)
+              .find((line) => match.test(line.replace(/^bingbong> /, '')))
+              ?.replace(/^bingbong> /, ''),
+          { timeoutMs: 20000, intervalMs: 100 },
+        ),
+      stdoutLineCount: () => stdoutLines.length,
+      stdoutText: () => stdoutLines.join('\n'),
       async quit() {
         // Browser.close often never replies — the browser process exits first.
         cdp.send('Browser.close').catch(() => {})

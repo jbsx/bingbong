@@ -1,0 +1,29 @@
+{
+  "url": "https://www.youtube.com/",
+  "title": "YouTube",
+  "viewport": { "width": 1280, "height": 800, "scrollY": 0, "scrollHeight": 4521 },
+  "elements": [
+    { "tag": "button", "role": null, "inputType": null, "label": "Guide", "rect": { "x": 16, "y": 12, "width": 40, "height": 40 } },
+    { "tag": "a", "role": null, "inputType": null, "label": "YouTube Home", "rect": { "x": 72, "y": 18, "width": 90, "height": 40 } },
+    { "tag": "input", "role": null, "inputType": "search", "label": "Search", "rect": { "x": 384, "y": 12, "width": 540, "height": 40 } },
+    { "tag": "button", "role": null, "inputType": null, "label": "Search", "rect": { "x": 928, "y": 12, "width": 64, "height": 40 } },
+    { "tag": "button", "role": null, "inputType": null, "label": "Search with your voice", "rect": { "x": 996, "y": 14, "width": 24, "height": 36 } },
+    { "tag": "button", "role": null, "inputType": null, "label": "Create", "rect": { "x": 1064, "y": 12, "width": 40, "height": 40 } },
+    { "tag": "a", "role": null, "inputType": null, "label": "Sign in", "rect": { "x": 1180, "y": 12, "width": 80, "height": 36 } },
+    { "tag": "a", "role": null, "inputType": null, "label": "Home", "rect": { "x": 0, "y": 96, "width": 204, "height": 44 } },
+    { "tag": "a", "role": null, "inputType": null, "label": "Trending", "rect": { "x": 0, "y": 140, "width": 204, "height": 44 } },
+    { "tag": "a", "role": null, "inputType": null, "label": "Music", "rect": { "x": 0, "y": 184, "width": 204, "height": 44 } },
+    { "tag": "a", "role": null, "inputType": null, "label": "Gaming", "rect": { "x": 0, "y": 228, "width": 204, "height": 44 } },
+    { "tag": "a", "role": null, "inputType": null, "label": "News", "rect": { "x": 0, "y": 272, "width": 204, "height": 44 } },
+    { "tag": "div", "role": "button", "inputType": null, "label": "Show all", "rect": { "x": 170, "y": 316, "width": 24, "height": 24 } },
+    { "tag": "video", "role": null, "inputType": null, "label": "Featured preview player", "rect": { "x": 240, "y": 170, "width": 320, "height": 180 } },
+    { "tag": "a", "role": null, "inputType": null, "label": "Why I switched to Linux in 2026", "rect": { "x": 240, "y": 370, "width": 360, "height": 94 } },
+    { "tag": "a", "role": null, "inputType": null, "label": "MKBHD", "rect": { "x": 240, "y": 470, "width": 120, "height": 24 } },
+    { "tag": "button", "role": null, "inputType": null, "label": "Save to Watch later", "rect": { "x": 600, "y": 370, "width": 24, "height": 24 } },
+    { "tag": "a", "role": null, "inputType": null, "label": "The best mechanical keyboards of 2026", "rect": { "x": 240, "y": 560, "width": 360, "height": 94 } },
+    { "tag": "a", "role": null, "inputType": null, "label": "Linus Tech Tips", "rect": { "x": 240, "y": 660, "width": 140, "height": 24 } },
+    { "tag": "a", "role": null, "inputType": null, "label": "This keyboard should not exist", "rect": { "x": 660, "y": 560, "width": 360, "height": 94 } },
+    { "tag": "a", "role": null, "inputType": null, "label": "Footer link", "rect": { "x": 0, "y": 880, "width": 100, "height": 20 } },
+    { "tag": "button", "role": null, "inputType": null, "label": "Invisible menu", "rect": { "x": 0, "y": 0, "width": 0, "height": 0 } }
+  ]
+}
