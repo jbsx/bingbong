@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import { createCommandPipeline } from './createCommandPipeline'
+import { createCommandPipeline, type CommandPipeline } from './createCommandPipeline'
 import { FakeClock, RecordingTts, ScriptedLlm } from '../testing/doubles'
 import type { PipelineEvent } from './events'
 
 async function collect(
-  pipeline: ReturnType<typeof createCommandPipeline>,
+  pipeline: CommandPipeline,
   command: string,
-  onEvent?: (event: PipelineEvent, pipeline: ReturnType<typeof createCommandPipeline>) => void,
+  onEvent?: (event: PipelineEvent, pipeline: CommandPipeline) => void,
 ): Promise<PipelineEvent[]> {
   const events: PipelineEvent[] = []
   for await (const event of pipeline.execute(command)) {
@@ -15,8 +15,6 @@ async function collect(
   }
   return events
 }
-
-const collectWith = collect
 
 describe('command pipeline', () => {
   it('speaks and displays a plain answer, then finishes', async () => {
@@ -52,12 +50,10 @@ describe('command pipeline', () => {
   })
 
   it('executes requested tools, feeds results back to the LLM, then answers', async () => {
-    const seen: string[] = []
     const clock = new FakeClock(0)
     const echo = {
       name: 'echo',
       async execute(call: { args: Record<string, unknown> }) {
-        seen.push(`echo:${String(call.args.text)}`)
         return `echo:${String(call.args.text)}`
       },
     }
@@ -91,7 +87,6 @@ describe('command pipeline', () => {
       at: 0,
     })
     expect(events).toContainEqual({ type: 'tool_result', callId: 'c1', name: 'echo', ok: true, result: 'echo:hi', at: 0 })
-    expect(seen).toEqual(['echo:hi'])
     expect(llm.requests[1]?.toolResults).toEqual([
       {
         call: { id: 'c1', name: 'echo', args: { text: 'hi' } },
@@ -143,14 +138,13 @@ describe('command pipeline', () => {
       requiresConfirmation: true,
       confirmationPrompt: (call: { args: Record<string, unknown> }) =>
         `Submit the form to ${String(call.args.url)}?`,
-      executions: [] as string[],
       async execute() {
         return 'submitted'
       },
     }
 
     function confirmWhenAsked(approved: boolean) {
-      return (event: PipelineEvent, pipeline: ReturnType<typeof createCommandPipeline>) => {
+      return (event: PipelineEvent, pipeline: CommandPipeline) => {
         if (event.type === 'confirmation_requested') {
           pipeline.resolveConfirmation(event.confirmationId, approved)
         }
@@ -169,7 +163,7 @@ describe('command pipeline', () => {
         tools: [riskyTool],
       })
 
-      const events = await collectWith(pipeline, 'submit it', confirmWhenAsked(true))
+      const events = await collect(pipeline, 'submit it', confirmWhenAsked(true))
 
       expect(events).toContainEqual({ type: 'confirmation_resolved', confirmationId: 'confirm-1', approved: true, reason: 'user', at: 0 })
       expect(events).toContainEqual({ type: 'tool_result', callId: 'c1', name: 'submit_form', ok: true, result: 'submitted', at: 0 })
@@ -188,7 +182,7 @@ describe('command pipeline', () => {
         tools: [riskyTool],
       })
 
-      const events = await collectWith(pipeline, 'submit it', confirmWhenAsked(false))
+      const events = await collect(pipeline, 'submit it', confirmWhenAsked(false))
 
       expect(events).toContainEqual({ type: 'confirmation_resolved', confirmationId: 'confirm-1', approved: false, reason: 'user', at: 0 })
       expect(events).toContainEqual({ type: 'tool_result', callId: 'c1', name: 'submit_form', ok: false, error: 'denied by user', at: 0 })

@@ -18,6 +18,10 @@ interface ConfirmationDecision {
   reason: 'user' | 'timeout'
 }
 
+function toErrorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err)
+}
+
 export interface CommandPipeline {
   execute(command: string): AsyncIterable<PipelineEvent>
   resolveConfirmation(confirmationId: string, approved: boolean): void
@@ -76,7 +80,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
         yield { type: 'status', status: 'thinking', at: clock.now() }
       }
     } catch (err) {
-      yield { type: 'error', message: err instanceof Error ? err.message : String(err), at: clock.now() }
+      yield { type: 'error', message: toErrorMessage(err), at: clock.now() }
     }
     yield { type: 'done', at: clock.now() }
   }
@@ -114,7 +118,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
       const result = await tool.execute(call, toolContext)
       return { ok: true, result }
     } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) }
+      return { ok: false, error: toErrorMessage(err) }
     }
   }
 
