@@ -50,11 +50,11 @@ export interface PageSnapshot {
 }
 
 export const MAX_SNAPSHOT_REFS = 75
-export const MAX_LABEL_LENGTH = 80
+const MAX_LABEL_LENGTH = 80
 
 const BUTTON_INPUT_TYPES = new Set(['submit', 'button', 'reset', 'image'])
 
-export function refKindOf(element: CollectedElement): RefKind {
+function refKindOf(element: CollectedElement): RefKind {
   if (element.tag === 'video' || element.tag === 'audio') return 'media'
   if (element.tag === 'a' || element.tag === 'area' || element.role === 'link') return 'link'
   if (

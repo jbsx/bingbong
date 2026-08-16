@@ -3,11 +3,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { startHarness, type Harness } from './harness'
+import { cli, refLine, refOf } from './cliSupport'
 import { waitFor } from './waitFor'
-
-function refLine(kind: string, label: string): RegExp {
-  return new RegExp(`^\\[(\\d+)\\] ${kind}${label ? ` "${label}"` : ''}$`)
-}
 
 async function panePoll(
   harness: Harness,
@@ -21,13 +18,6 @@ async function panePoll(
     },
     { timeoutMs: 10000, intervalMs: 100 },
   )
-}
-
-/** Runs one CLI command and resolves with the first new matching output line. */
-async function cli(harness: Harness, line: string, match: RegExp): Promise<string> {
-  const since = harness.cliMark()
-  harness.cliWrite(line)
-  return harness.waitForCliOutput(match, { since })
 }
 
 describe('cli browser harness e2e', () => {
@@ -64,7 +54,7 @@ describe('cli browser harness e2e', () => {
 
   it('click acts on the live page by ref', async () => {
     const line = await cli(harness, 'read', refLine('button', 'Say hello'))
-    const ref = Number(/^\[(\d+)\]/.exec(line)?.[1])
+    const ref = refOf(line)
 
     await cli(harness, `click ${ref}`, new RegExp(`^clicked ref ${ref}$`))
     await panePoll(harness, 'document.title', (value) => value === 'clicked:btn-hello')
@@ -72,7 +62,7 @@ describe('cli browser harness e2e', () => {
 
   it('type focuses the ref and types human-paced text', async () => {
     const line = await cli(harness, 'read', refLine('input\\[text\\]', 'Type here'))
-    const ref = Number(/^\[(\d+)\]/.exec(line)?.[1])
+    const ref = refOf(line)
 
     await cli(harness, `type ${ref} hello bingbong`, new RegExp(`^typed 14 chars into ref ${ref}$`))
     await panePoll(harness, `document.getElementById('q').value`, (value) => value === 'hello bingbong')
@@ -124,7 +114,7 @@ describe('cli browser harness e2e', () => {
     }
 
     const link = await cli(harness, 'read', refLine('link', 'Second page'))
-    const ref = Number(/^\[(\d+)\]/.exec(link)?.[1])
+    const ref = refOf(link)
 
     harness.cliWrite(`click ${ref}`)
     await harness.waitForPaneUrl(harness.fixture.url('/second'))

@@ -118,6 +118,8 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
       await cdp.send('Input.dispatchMouseEvent', { type: 'mouseWheel', x, y, deltaX: 0, deltaY })
       await sleep(pacing.scrollTickMs)
     }
+    // Viewport-relative rects shift with the scroll; refs must be re-read.
+    lastSnapshot = undefined
   }
 
   async function navigate(input: string): Promise<void> {
@@ -178,6 +180,8 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
       buttons: 0,
       clickCount: 1,
     })
+    // A click can navigate (link) or mutate the page; never trust old refs.
+    lastSnapshot = undefined
   }
 
   async function type(ref: number, text: string): Promise<void> {

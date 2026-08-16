@@ -1,9 +1,16 @@
 import { createInterface } from 'node:readline'
+import { mkdir, writeFile } from 'node:fs/promises'
+import { dirname, join } from 'node:path'
 import type { Readable, Writable } from 'node:stream'
-import { join } from 'node:path'
 import type { BrowserController } from '../../core/ports/browser'
 import { parseCliCommand } from './parseCliCommand'
 import type { CliCommand } from './parseCliCommand'
+
+/** Writes a captured screenshot to disk, creating parent directories. */
+export async function saveScreenshotFile(path: string, bytes: Uint8Array): Promise<void> {
+  await mkdir(dirname(path), { recursive: true })
+  await writeFile(path, bytes)
+}
 
 export interface CliHarnessDeps {
   controller: BrowserController

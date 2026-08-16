@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import youtubeHome from '../browser/fixtures/youtube-home.json'
-import { buildPageSnapshot, formatPageSnapshot, type CollectedPage } from '../browser/snapshot'
+import { buildPageSnapshot, formatPageSnapshot, parseCollectedPage, type CollectedPage } from '../browser/snapshot'
 import type { BrowserController, BrowserState } from '../ports/browser'
 import { createCommandPipeline, type CommandPipeline } from './createCommandPipeline'
 import { createBrowserTools } from './browserTools'
@@ -9,6 +9,12 @@ import type { PipelineEvent } from './events'
 import type { AssistantTurn } from '../ports/llm'
 
 const youtubeFixture = youtubeHome as unknown as CollectedPage
+
+// The pipeline seam should see what a real controller produces: raw collected
+// DOM payload in, numbered-ref text out — parsing exercised for real.
+function formatYoutubeSnapshot(): string {
+  return formatPageSnapshot(buildPageSnapshot(parseCollectedPage(youtubeHome)))
+}
 
 class FixtureBrowserController implements BrowserController {
   readonly navigations: string[] = []
@@ -23,7 +29,7 @@ class FixtureBrowserController implements BrowserController {
   }
 
   async readPage(): Promise<string> {
-    return formatPageSnapshot(buildPageSnapshot(youtubeFixture))
+    return formatYoutubeSnapshot()
   }
 
   async click(ref: number): Promise<void> {
@@ -83,7 +89,7 @@ describe('browser tools through the pipeline', () => {
       callId: 'c1',
       name: 'read_page',
       ok: true,
-      result: formatPageSnapshot(buildPageSnapshot(youtubeFixture)),
+      result: formatYoutubeSnapshot(),
       at: 0,
     })
   })

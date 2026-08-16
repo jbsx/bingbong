@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { startHarness, type Harness } from './harness'
+import { cli, refOf } from './cliSupport'
 import { waitFor } from './waitFor'
 
 // Validation gate from the spec: "CDP snapshot + click reliability on YouTube
@@ -10,16 +11,6 @@ import { waitFor } from './waitFor'
 //   BINGBONG_YOUTUBE_E2E=1 pnpm test:e2e
 const YOUTUBE_HOME = 'https://www.youtube.com/'
 const YOUTUBE_RESULTS = 'https://www.youtube.com/results?search_query=mechanical+keyboard'
-
-async function cli(harness: Harness, line: string, match: RegExp): Promise<string> {
-  const since = harness.cliMark()
-  harness.cliWrite(line)
-  return harness.waitForCliOutput(match, { since })
-}
-
-function refOf(line: string): number {
-  return Number(/^\[(\d+)\]/.exec(line)?.[1])
-}
 
 async function readRefLines(harness: Harness): Promise<string[]> {
   const since = harness.cliMark()

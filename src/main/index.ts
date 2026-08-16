@@ -1,11 +1,10 @@
 import { app, BrowserWindow } from 'electron'
-import { mkdir, writeFile } from 'node:fs/promises'
-import { dirname, join } from 'node:path'
+import { join } from 'node:path'
 import type { BrowserPane } from './browser/createBrowserPane'
 import { createBrowserPane } from './browser/createBrowserPane'
 import { attachBrowserPaneToWindow, registerBrowserIpc } from './browser/attachBrowserPane'
 import { createPaneBrowserController } from './browser/createPaneBrowserController'
-import { runCliHarness } from './cli/runCliHarness'
+import { runCliHarness, saveScreenshotFile } from './cli/runCliHarness'
 import { resolvePreloadPath } from './preloadPath'
 
 // e2e harness seam: isolate the profile (cookies, cache, singleton lock) per run.
@@ -25,17 +24,14 @@ function startCliHarness(pane: BrowserPane): void {
   if (cliHarnessStarted) return
   cliHarnessStarted = true
 
-  const screenshotDir = join(app.getPath('downloads'), 'bingbong_downloads')
+  const screenshotDir = () => join(app.getPath('downloads'), 'bingbong_downloads')
   void runCliHarness({
     controller: createPaneBrowserController(pane),
     input: process.stdin,
     output: process.stdout,
     exit: () => app.quit(),
-    screenshotDir: () => screenshotDir,
-    saveScreenshot: async (path, bytes) => {
-      await mkdir(dirname(path), { recursive: true })
-      await writeFile(path, bytes)
-    },
+    screenshotDir,
+    saveScreenshot: saveScreenshotFile,
   }).catch((err: unknown) => {
     process.stderr.write(`browser cli harness failed: ${err instanceof Error ? err.message : String(err)}\n`)
     app.quit()

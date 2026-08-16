@@ -56,7 +56,14 @@ class FakePage implements CdpPageDriver {
 function makeController(options?: { cdp?: FakeCdp; page?: FakePage }) {
   const cdp = options?.cdp ?? new FakeCdp()
   const page = options?.page ?? new FakePage()
-  const controller = createCdpBrowserController({ cdp, page, collectScript: '/* COLLECT */' })
+  const controller = createCdpBrowserController({
+    cdp,
+    page,
+    collectScript: '/* COLLECT */',
+    // Real pacing is policy for the live page; tests only care about the
+    // sequence of CDP messages, so don't pay the human-paced sleeps.
+    pacing: { settleMs: 0, moveMs: 0, clickMs: 0, keystrokeMs: 0, scrollTickMs: 0 },
+  })
   return { cdp, page, controller }
 }
 
@@ -220,6 +227,31 @@ describe('createCdpBrowserController type', () => {
     const { controller } = makeController()
 
     await expect(controller.type(999, 'nope')).rejects.toThrow(/ref 999 not found/)
+  })
+})
+
+describe('createCdpBrowserController ref staleness', () => {
+  it('invalidates refs after acting, so the next action re-reads the page', async () => {
+    const { cdp, controller } = makeController()
+    const evaluates = () => cdp.calls.filter((call) => call.method === 'Runtime.evaluate').length
+
+    await controller.readPage()
+    expect(evaluates()).toBe(1)
+
+    // First action after a read uses the cached refs...
+    await controller.click(1)
+    expect(evaluates()).toBe(1)
+
+    // ...but acting invalidates them: a click may navigate, and scrolling
+    // shifts every viewport-relative rect.
+    await controller.scroll('down')
+    expect(evaluates()).toBe(2)
+    await controller.click(2)
+    expect(evaluates()).toBe(3)
+    await controller.type(3, 'query\n')
+    expect(evaluates()).toBe(4)
+    await controller.click(4)
+    expect(evaluates()).toBe(5)
   })
 })
 
