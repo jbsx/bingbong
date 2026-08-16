@@ -1,10 +1,12 @@
 import { app, BrowserWindow } from 'electron'
 import { join } from 'node:path'
-import type { BrowserPane } from './browser/createBrowserPane'
+import type { BrowserController } from '../core/ports/browser'
 import { createBrowserPane } from './browser/createBrowserPane'
 import { attachBrowserPaneToWindow, registerBrowserIpc } from './browser/attachBrowserPane'
 import { createPaneBrowserController } from './browser/createPaneBrowserController'
 import { runCliHarness, saveScreenshotFile } from './cli/runCliHarness'
+import { attachAssistantToWindow, registerAssistantIpc } from './agent/attachAssistant'
+import { createAssistantPipeline } from './agent/createAssistantPipeline'
 import { resolvePreloadPath } from './preloadPath'
 
 // e2e harness seam: isolate the profile (cookies, cache, singleton lock) per run.
@@ -20,13 +22,13 @@ const runningCliHarness = process.argv.includes(CLI_HARNESS_FLAG) || process.env
 
 let cliHarnessStarted = false
 
-function startCliHarness(pane: BrowserPane): void {
+function startCliHarness(controller: BrowserController): void {
   if (cliHarnessStarted) return
   cliHarnessStarted = true
 
   const screenshotDir = () => join(app.getPath('downloads'), 'bingbong_downloads')
   void runCliHarness({
-    controller: createPaneBrowserController(pane),
+    controller,
     input: process.stdin,
     output: process.stdout,
     exit: () => app.quit(),
@@ -52,10 +54,14 @@ function createWindow(): BrowserWindow {
   })
 
   // A pane per window; the persistent `persist:browse` session partition is what
-  // keeps logins alive across windows and restarts.
+  // keeps logins alive across windows and restarts. One CDP controller is
+  // shared by everything that drives the pane (CLI harness, assistant) —
+  // webContents.debugger allows a single attachment.
   const pane = createBrowserPane()
   attachBrowserPaneToWindow(pane, win)
-  if (runningCliHarness) startCliHarness(pane)
+  const controller = createPaneBrowserController(pane)
+  if (runningCliHarness) startCliHarness(controller)
+  attachAssistantToWindow(createAssistantPipeline({ controller, env: process.env }), win)
 
   if (process.env.ELECTRON_RENDERER_URL) {
     void win.loadURL(process.env.ELECTRON_RENDERER_URL)
@@ -68,6 +74,7 @@ function createWindow(): BrowserWindow {
 
 app.whenReady().then(() => {
   registerBrowserIpc()
+  registerAssistantIpc()
   createWindow()
 
   app.on('activate', () => {

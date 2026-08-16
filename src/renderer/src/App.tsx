@@ -1,10 +1,14 @@
 import { BrowserPane } from './BrowserPane'
+import { AssistantPanel, StatusOrb } from './AssistantPanel'
+import { useAssistant } from './useAssistant'
 
 export function App() {
+  const assistant = useAssistant()
+
   return (
     <div className="dashboard">
       <header className="dashboard-header">
-        <div className="status-orb status-orb--idle" aria-label="assistant idle" />
+        <StatusOrb status={assistant.status} />
         <h1>Bing Bong</h1>
       </header>
 
@@ -12,8 +16,8 @@ export function App() {
         <BrowserPane />
       </main>
 
-      <footer className="dashboard-footer transcript-placeholder" aria-label="transcript">
-        <p>Transcript — voice pipeline arrives in T9/T10.</p>
+      <footer className="dashboard-footer">
+        <AssistantPanel assistant={assistant} />
       </footer>
     </div>
   )

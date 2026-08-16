@@ -117,3 +117,19 @@ export class FakeSearch implements SearchProvider {
     return this.results
   }
 }
+
+// Production stand-ins used below the seam until real adapters land:
+
+/** TTS output is a later ticket (Piper, T8); speak events still flow to the dashboard. */
+export const silentTts: TtsSpeaker = {
+  async speak() {},
+}
+
+/** An LLM that always fails — keeps the app usable when config is missing or invalid. */
+export class UnavailableLlm implements LlmClient {
+  constructor(private readonly reason: string) {}
+
+  async complete(): Promise<AssistantTurn> {
+    throw new Error(this.reason)
+  }
+}

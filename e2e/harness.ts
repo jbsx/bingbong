@@ -63,7 +63,13 @@ async function evaluate<T>(cdp: CdpClient, sessionId: string, expression: string
 }
 
 export async function startHarness(
-  options?: { fixture?: FixtureServer; userDataDir?: string; launchArgs?: string[]; pipeStdio?: boolean },
+  options?: {
+    fixture?: FixtureServer
+    userDataDir?: string
+    launchArgs?: string[]
+    pipeStdio?: boolean
+    env?: Record<string, string | undefined>
+  },
 ): Promise<Harness> {
   const ownsFixture = !options?.fixture
   const ownsUserDataDir = !options?.userDataDir
@@ -77,6 +83,7 @@ export async function startHarness(
     userDataDir,
     args: options?.launchArgs,
     pipeStdio: options?.pipeStdio,
+    env: options?.env,
   })
   const teardown = async () => {
     try {

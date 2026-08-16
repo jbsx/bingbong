@@ -53,6 +53,33 @@ body {
   flex: none;
 }
 
+.status-orb--thinking {
+  background: var(--accent);
+  animation: orb-pulse 1.2s ease-in-out infinite;
+}
+
+.status-orb--acting {
+  background: #ffb054;
+  animation: orb-pulse 0.7s ease-in-out infinite;
+}
+
+.status-orb--speaking {
+  background: #5fd38a;
+  animation: orb-pulse 0.7s ease-in-out infinite;
+}
+
+@keyframes orb-pulse {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.55;
+    transform: scale(0.82);
+  }
+}
+
 .dashboard-main {
   min-height: 0;
 }
@@ -152,6 +179,125 @@ body {
   font-size: 0.9rem;
 }
 
-.dashboard-footer p {
+.assistant-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 0;
+  max-height: 34vh;
+}
+
+.command-form {
+  flex: none;
+}
+
+.command-input {
+  width: 100%;
+  height: 34px;
+  padding: 0 14px;
+  border: 1px solid var(--edge);
+  border-radius: 17px;
+  background: var(--panel);
+  color: var(--text);
+  font-size: 0.95rem;
+}
+
+.command-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.command-input:disabled {
+  opacity: 0.55;
+}
+
+.confirmation-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex: none;
+  padding: 8px 12px;
+  border: 1px solid #ffb054;
+  border-radius: 10px;
+  background: rgba(255, 176, 84, 0.08);
+}
+
+.confirmation-prompt {
+  color: var(--text);
+}
+
+.confirmation-actions {
+  display: flex;
+  gap: 8px;
+  flex: none;
+}
+
+.confirmation-actions button {
+  height: 28px;
+  padding: 0 12px;
+  border: 1px solid var(--edge);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text);
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.confirmation-actions button:hover {
+  background: var(--edge);
+}
+
+.transcript {
+  min-height: 40px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.transcript-empty {
   margin: 0;
+  color: var(--muted);
+  font-style: italic;
+}
+
+.transcript-entry {
+  margin: 0;
+  line-height: 1.35;
+}
+
+.transcript-speaker {
+  font-weight: 600;
+  margin-right: 4px;
+}
+
+.transcript-entry--command {
+  color: var(--text);
+}
+
+.transcript-entry--command .transcript-speaker {
+  color: var(--accent);
+}
+
+.transcript-entry--tool {
+  color: var(--muted);
+  font-family: ui-monospace, monospace;
+  font-size: 0.8rem;
+}
+
+.transcript-entry--speak {
+  color: var(--text);
+}
+
+.transcript-entry--speak .transcript-speaker {
+  color: #5fd38a;
+}
+
+.transcript-entry--display {
+  color: var(--muted);
+}
+
+.transcript-entry--error {
+  color: #ff7a7a;
 }

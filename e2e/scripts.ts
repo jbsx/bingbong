@@ -11,3 +11,18 @@ export function urlBarNavigationScript(url: string): string {
     return 'submitted'
   })()`
 }
+
+export function commandBoxScript(text: string): string {
+  return `(async () => {
+    const input = document.querySelector('.command-input')
+    if (!input) return 'no-command-input'
+    if (input.disabled) return 'command-input-disabled'
+    input.focus()
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set
+    setter.call(input, ${JSON.stringify(text)})
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+    await new Promise((r) => setTimeout(r, 200))
+    document.querySelector('.command-form').requestSubmit()
+    return 'submitted'
+  })()`
+}

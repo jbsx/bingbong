@@ -25,11 +25,26 @@ export interface LaunchOptions {
   userDataDir: string
   /** Extra CLI args forwarded to the app (e.g. ['--browser-cli']). */
   args?: string[]
+  /** Extra environment for the app (e.g. BINGBONG_LLM_SCRIPT); undefined unsets. */
+  env?: Record<string, string | undefined>
   /** Pipe stdin/stdout so callers can drive/reap a CLI harness. */
   pipeStdio?: boolean
 }
 
 const STDERR_LIMIT = 10_000
+
+/** Merge overrides into a base env; `undefined` values unset the key. */
+export function buildEnv(
+  base: Record<string, string | undefined>,
+  overrides: Record<string, string | undefined>,
+): Record<string, string> {
+  const merged: Record<string, string | undefined> = { ...base, ...overrides }
+  const env: Record<string, string> = {}
+  for (const [key, val] of Object.entries(merged)) {
+    if (val !== undefined) env[key] = val
+  }
+  return env
+}
 
 function isFreePort(port: number): Promise<boolean> {
   return new Promise((resolve) => {
@@ -55,12 +70,13 @@ export async function launchApp({
   debugPort,
   userDataDir,
   args = [],
+  env,
   pipeStdio = false,
 }: LaunchOptions): Promise<LaunchedApp> {
   const proc = spawn(electronBinary, [entry, ...args, `--remote-debugging-port=${debugPort}`], {
     cwd,
     stdio: pipeStdio ? ['pipe', 'pipe', 'pipe'] : ['ignore', 'ignore', 'pipe'],
-    env: { ...process.env, BINGBONG_USER_DATA_DIR: userDataDir },
+    env: buildEnv(process.env, { BINGBONG_USER_DATA_DIR: userDataDir, ...env }),
   })
   const exited = new Promise<void>((resolve) => proc.once('exit', () => resolve()))
   let stderr = ''

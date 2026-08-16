@@ -36,17 +36,21 @@ describe('command pipeline', () => {
     expect(tts.spoken).toEqual(['Done.'])
   })
 
-  it('emits an error event when the LLM fails, without speaking', async () => {
+  it('emits an error event and speaks a one-liner when the LLM fails', async () => {
     const llm = new ScriptedLlm([])
     const tts = new RecordingTts()
     const pipeline = createCommandPipeline({ llm, tts, clock: new FakeClock(), tools: [] })
 
     const events = await collect(pipeline, 'hello')
 
-    expect(events.map((e) => e.type)).toEqual(['command', 'status', 'error', 'done'])
+    expect(events.map((e) => e.type)).toEqual(['command', 'status', 'error', 'status', 'speak', 'done'])
     const error = events.find((e) => e.type === 'error')
     expect(error).toMatchObject({ type: 'error', message: 'ScriptedLlm ran out of scripted turns' })
-    expect(tts.spoken).toEqual([])
+    expect(events.find((e) => e.type === 'speak')).toMatchObject({
+      type: 'speak',
+      text: 'Something went wrong: ScriptedLlm ran out of scripted turns',
+    })
+    expect(tts.spoken).toEqual(['Something went wrong: ScriptedLlm ran out of scripted turns'])
   })
 
   it('executes requested tools, feeds results back to the LLM, then answers', async () => {
@@ -239,6 +243,10 @@ describe('command pipeline', () => {
     expect(executions).toBe(2)
     expect(events.filter((e) => e.type === 'tool_result')).toHaveLength(2)
     expect(events.find((e) => e.type === 'error')).toMatchObject({ type: 'error', message: 'tool round limit (2) reached' })
+    expect(events.find((e) => e.type === 'speak')).toMatchObject({
+      type: 'speak',
+      text: 'Something went wrong: tool round limit (2) reached',
+    })
     expect(events.at(-1)).toMatchObject({ type: 'done' })
   })
 })

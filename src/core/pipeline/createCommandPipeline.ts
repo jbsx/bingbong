@@ -3,6 +3,7 @@ import type { Tool, ToolContext } from './tool'
 import type { Clock } from '../ports/clock'
 import type { LlmClient, ToolCall, ToolResult, ToolResultOutcome } from '../ports/llm'
 import type { TtsSpeaker } from '../ports/tts'
+import { spokenErrorLine } from '../agent/answerContract'
 
 export interface CommandPipelineDeps {
   llm: LlmClient
@@ -46,12 +47,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
 
       for (;;) {
         if (rounds >= maxToolRounds) {
-          yield {
-            type: 'error',
-            message: `tool round limit (${maxToolRounds}) reached`,
-            at: clock.now(),
-          }
-          break
+          throw new Error(`tool round limit (${maxToolRounds}) reached`)
         }
         const turn = await llm.complete({ command, toolResults })
         if (turn.kind === 'answer') {
@@ -80,7 +76,14 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
         yield { type: 'status', status: 'thinking', at: clock.now() }
       }
     } catch (err) {
-      yield { type: 'error', message: toErrorMessage(err), at: clock.now() }
+      // Errors are spoken as one-liners; the full detail reaches the
+      // dashboard via the error event.
+      const message = toErrorMessage(err)
+      const spoken = spokenErrorLine(message)
+      yield { type: 'error', message, at: clock.now() }
+      yield { type: 'status', status: 'speaking', at: clock.now() }
+      yield { type: 'speak', text: spoken, at: clock.now() }
+      await tts.speak(spoken)
     }
     yield { type: 'done', at: clock.now() }
   }
