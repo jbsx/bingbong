@@ -1,13 +1,6 @@
 node_modules/
 dist/
 out/
-models/
-*.onnx
-*.bin
-.env
-.env.*
-!.env.example
-*.log
-.sqlite
-*.sqlite3
+*.local
 .DS_Store
+*.tsbuildinfo
