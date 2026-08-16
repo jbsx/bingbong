@@ -1,3 +1,5 @@
+import { BrowserPane } from './BrowserPane'
+
 export function App() {
   return (
     <div className="dashboard">
@@ -7,10 +9,7 @@ export function App() {
       </header>
 
       <main className="dashboard-main">
-        <section className="browser-pane-placeholder" aria-label="browser pane">
-          <p className="placeholder-title">Browser pane</p>
-          <p className="placeholder-note">The embedded Chromium arrives in T2.</p>
-        </section>
+        <BrowserPane />
       </main>
 
       <footer className="dashboard-footer transcript-placeholder" aria-label="transcript">
