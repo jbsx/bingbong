@@ -1,5 +1,6 @@
 import { app, session, WebContentsView } from 'electron'
 import type { BrowserPaneState, PaneRect } from '../../core/browser/paneState'
+import { idleBrowserPaneState } from '../../core/browser/paneState'
 import { toPaneBounds } from '../../core/browser/paneGeometry'
 import { normalizeUrlInput } from '../../core/browser/urlInput'
 import { browserUserAgent } from '../../core/browser/userAgent'
@@ -28,7 +29,7 @@ export function createBrowserPane(): BrowserPane {
   )
 
   // Manual-browsing downloads keep Electron's default OS save dialog; agent-side
-  // routing to ~/Downloads/bingbong_downloads arrives in T7.
+  // routing to ~/Downloads/bingbong_downloads arrives in T6.
 
   const view = new WebContentsView({
     webPreferences: {
@@ -44,13 +45,14 @@ export function createBrowserPane(): BrowserPane {
   // Popups (e.g. OAuth sign-in) open as real windows sharing the same session.
   wc.setWindowOpenHandler(() => ({ action: 'allow' }))
 
+  // Flush cookies/DOM storage on graceful quit so logins survive restarts.
+  app.once('before-quit', () => partitionSession.flushStorageData())
+
   const listeners = new Set<(state: BrowserPaneState) => void>()
-  let state: BrowserPaneState = {
-    url: wc.getURL(),
-    title: '',
-    canGoBack: false,
-    canGoForward: false,
-    loading: false,
+  let state: BrowserPaneState = { ...idleBrowserPaneState(), url: wc.getURL() }
+
+  function whenLive(fn: () => void): void {
+    if (!wc.isDestroyed()) fn()
   }
 
   function update(patch: Partial<BrowserPaneState>): void {
@@ -83,15 +85,17 @@ export function createBrowserPane(): BrowserPane {
       return true
     },
     goBack() {
-      if (!wc.isDestroyed() && wc.navigationHistory.canGoBack()) wc.navigationHistory.goBack()
+      whenLive(() => {
+        if (wc.navigationHistory.canGoBack()) wc.navigationHistory.goBack()
+      })
     },
     goForward() {
-      if (!wc.isDestroyed() && wc.navigationHistory.canGoForward()) wc.navigationHistory.goForward()
+      whenLive(() => {
+        if (wc.navigationHistory.canGoForward()) wc.navigationHistory.goForward()
+      })
     },
     setPaneRect(rect) {
-      if (wc.isDestroyed()) return
-      const bounds = toPaneBounds(rect)
-      view.setBounds(bounds)
+      whenLive(() => view.setBounds(toPaneBounds(rect)))
     },
     state: () => state,
     onState(listener) {

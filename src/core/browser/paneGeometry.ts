@@ -1,18 +1,11 @@
-import type { PaneRect } from './paneState'
+import { HIDDEN_PANE_RECT, type PaneRect } from './paneState'
 
-export interface PaneBounds {
-  x: number
-  y: number
-  width: number
-  height: number
-}
-
-const HIDDEN_BOUNDS: PaneBounds = { x: 0, y: 0, width: 0, height: 0 }
+export type PaneBounds = PaneRect
 
 export function toPaneBounds(rect: PaneRect): PaneBounds {
   const width = Math.round(rect.width)
   const height = Math.round(rect.height)
-  if (width <= 0 || height <= 0) return HIDDEN_BOUNDS
+  if (width <= 0 || height <= 0) return HIDDEN_PANE_RECT
   return {
     x: Math.max(0, Math.round(rect.x)),
     y: Math.max(0, Math.round(rect.y)),

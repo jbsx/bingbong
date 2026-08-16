@@ -1,15 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
-import type { BrowserPaneState, PaneRect } from '../../core/browser/paneState'
-
-const IDLE_STATE: BrowserPaneState = {
-  url: '',
-  title: '',
-  canGoBack: false,
-  canGoForward: false,
-  loading: false,
-}
-
-const HIDDEN_RECT: PaneRect = { x: 0, y: 0, width: 0, height: 0 }
+import {
+  HIDDEN_PANE_RECT,
+  idleBrowserPaneState,
+  type BrowserPaneState,
+  type PaneRect,
+} from '../../core/browser/paneState'
 
 function paneRectFrom(rect: DOMRect): PaneRect {
   return { x: rect.x, y: rect.y, width: rect.width, height: rect.height }
@@ -18,7 +13,7 @@ function paneRectFrom(rect: DOMRect): PaneRect {
 export function BrowserPane() {
   const viewportRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
-  const [state, setState] = useState<BrowserPaneState>(IDLE_STATE)
+  const [state, setState] = useState<BrowserPaneState>(idleBrowserPaneState)
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState('')
 
@@ -40,7 +35,7 @@ export function BrowserPane() {
     observer.observe(viewport)
     return () => {
       observer.disconnect()
-      window.bingbong.browser.reportPaneRect(HIDDEN_RECT)
+      window.bingbong.browser.reportPaneRect(HIDDEN_PANE_RECT)
     }
   }, [])
 
