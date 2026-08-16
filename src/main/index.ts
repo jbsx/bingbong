@@ -4,6 +4,11 @@ import { createBrowserPane } from './browser/createBrowserPane'
 import { attachBrowserPaneToWindow, registerBrowserIpc } from './browser/attachBrowserPane'
 import { resolvePreloadPath } from './preloadPath'
 
+// e2e harness seam: isolate the profile (cookies, cache, singleton lock) per run.
+if (process.env.BINGBONG_USER_DATA_DIR) {
+  app.setPath('userData', process.env.BINGBONG_USER_DATA_DIR)
+}
+
 function createWindow(): BrowserWindow {
   const win = new BrowserWindow({
     width: 1280,
