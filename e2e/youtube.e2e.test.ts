@@ -152,20 +152,28 @@ describe.skipIf(!process.env.BINGBONG_YOUTUBE_E2E)('youtube validation gate (net
 
     // Try candidates in order until one navigates — layout varies between
     // sessions, so the markers alone can't guarantee a first-try video link.
+    // If a whole batch fails (ads/overlays ate the clicks), re-read after a
+    // further scroll and try a fresh batch — the gate must not be a coin flip.
     let landed: string | undefined
-    for (const candidate of candidates.slice(0, 5)) {
-      const ref = refOf(candidate)
-      await cli(harness, `click ${ref}`, new RegExp(`^clicked ref ${ref}$`))
-      landed = await waitFor(
-        async () => {
-          const url = await harness.paneUrl()
-          // Shorts results land on /shorts/<id> rather than /watch.
-          return url && (url.includes('/watch') || url.includes('/shorts/')) ? url : undefined
-        },
-        { timeoutMs: 8000, intervalMs: 250 },
-      ).catch(() => undefined)
-      if (landed) break
-      await closeStrayPopups(harness)
+    for (let batch = 0; batch < 3 && !landed; batch++) {
+      if (batch > 0) {
+        await cli(harness, 'scroll down', /^scrolled down$/)
+        candidates = selectVideoLinks(await readRefLines(harness))
+      }
+      for (const candidate of candidates.slice(0, 5)) {
+        const ref = refOf(candidate)
+        await cli(harness, `click ${ref}`, new RegExp(`^clicked ref ${ref}$`))
+        landed = await waitFor(
+          async () => {
+            const url = await harness.paneUrl()
+            // Shorts results land on /shorts/<id> rather than /watch.
+            return url && (url.includes('/watch') || url.includes('/shorts/')) ? url : undefined
+          },
+          { timeoutMs: 8000, intervalMs: 250 },
+        ).catch(() => undefined)
+        if (landed) break
+        await closeStrayPopups(harness)
+      }
     }
 
     expect(landed).toBeDefined()
