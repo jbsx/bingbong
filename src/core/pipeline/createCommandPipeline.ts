@@ -107,6 +107,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
         callId: call.id,
         toolName: call.name,
         prompt: verdict.prompt,
+        expiresAt: clock.now() + confirmTimeoutMs,
         at: clock.now(),
       }
       // The prompt is both shown (dialog) and spoken; voice yes/no lands in T9.

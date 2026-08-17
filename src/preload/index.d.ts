@@ -1,8 +1,10 @@
 import type { BrowserPaneState, PaneRect } from '../core/browser/paneState'
 import type { PipelineEvent } from '../core/pipeline/events'
+import type { AppSettings } from '../core/settings/settings'
 
 export type { BrowserPaneState, PaneRect }
 export type { PipelineEvent }
+export type { AppSettings }
 
 export interface BingbongBrowserApi {
   navigate(input: string): Promise<boolean>
@@ -19,10 +21,17 @@ export interface BingbongAssistantApi {
   onEvent(listener: (event: PipelineEvent) => void): () => void
 }
 
+export interface BingbongSettingsApi {
+  get(): Promise<AppSettings>
+  update(settings: AppSettings): Promise<AppSettings>
+  onChanged(listener: (settings: AppSettings) => void): () => void
+}
+
 export interface BingbongApi {
   version: string
   browser: BingbongBrowserApi
   assistant: BingbongAssistantApi
+  settings: BingbongSettingsApi
 }
 
 declare global {

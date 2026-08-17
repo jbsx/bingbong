@@ -177,6 +177,7 @@ describe('command pipeline', () => {
         callId: 'c1',
         toolName: 'submit_form',
         prompt: 'Submit the form to x.test?',
+        expiresAt: 60_000,
         at: 0,
       })
       expect(events).toContainEqual({ type: 'speak', text: 'Submit the form to x.test?', at: 0 })
@@ -225,6 +226,33 @@ describe('command pipeline', () => {
       })
       expect(events).toContainEqual({ type: 'tool_result', callId: 'c1', name: 'submit_form', ok: false, error: 'denied — the user did not respond in time; do not retry this action', at: 60_000 })
       expect(events.at(-1)).toMatchObject({ type: 'done' })
+    })
+
+    it('announces the countdown deadline on the request so the dashboard can tick', async () => {
+      const clock = new FakeClock(1_000)
+      const llm = new ScriptedLlm([
+        { kind: 'tool_calls', calls: [{ id: 'c1', name: 'submit_form', args: { url: 'x.test' } }] },
+        { kind: 'answer', speak: 'Submitted.', display: 'Detail.' },
+      ])
+      const pipeline = createCommandPipeline({
+        llm,
+        tts: new RecordingTts(),
+        clock,
+        tools: [riskyTool],
+        confirmTimeoutMs: 15_000,
+      })
+
+      const events = await collect(pipeline, 'submit it', confirmWhenAsked(true))
+
+      expect(events).toContainEqual({
+        type: 'confirmation_requested',
+        confirmationId: 'confirm-1',
+        callId: 'c1',
+        toolName: 'submit_form',
+        prompt: 'Submit the form to x.test?',
+        expiresAt: 16_000,
+        at: 1_000,
+      })
     })
 
     it('never executes a denied call, not even after approval would arrive', async () => {
@@ -281,6 +309,7 @@ describe('command pipeline', () => {
         callId: 'c1',
         toolName: 'flaky',
         prompt: 'Run flaky?',
+        expiresAt: 60_000,
         at: 0,
       })
       expect(events).toContainEqual({ type: 'tool_result', callId: 'c1', name: 'flaky', ok: true, result: 'ran', at: 0 })

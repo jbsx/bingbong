@@ -19,6 +19,8 @@ export type PipelineEvent =
       callId: string
       toolName: string
       prompt: string
+      /** Wall-clock deadline for the auto-deny — the dashboard counts down to it. */
+      expiresAt: number
       at: number
     }
   | {

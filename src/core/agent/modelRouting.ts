@@ -24,6 +24,14 @@ const ROLES: Record<AgentRole, RoleConfig> = {
   vision: { envPrefix: 'BINGBONG_VISION', defaultKeyEnv: 'ZAI_API_KEY' },
 }
 
+/** Every role, in declaration order — the single list all role-iterating code shares. */
+export const AGENT_ROLES = ['orchestrator', 'subagent', 'vision'] as const satisfies readonly AgentRole[]
+
+/** The env var prefix (`BINGBONG_ORCHESTRATOR`, …) that configures one role. */
+export function routingEnvPrefix(role: AgentRole): string {
+  return ROLES[role].envPrefix
+}
+
 /** Every env var that configures a role — used by tests that unset config. */
 export function routingEnvKeys(role: AgentRole): string[] {
   const { envPrefix, defaultKeyEnv } = ROLES[role]

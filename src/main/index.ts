@@ -14,6 +14,9 @@ import { attachAssistantToWindow, registerAssistantIpc } from './agent/attachAss
 import { createAssistantPipeline } from './agent/createAssistantPipeline'
 import { resolveDownloadsDir } from './downloadsDir'
 import { resolvePreloadPath } from './preloadPath'
+import { createSettingsStore } from './settings/settingsStore'
+import { registerSettingsIpc } from './settings/attachSettings'
+import { settingsToEnv } from '../core/settings/settings'
 
 // e2e harness seam: isolate the profile (cookies, cache, singleton lock) per run.
 if (process.env.BINGBONG_USER_DATA_DIR) {
@@ -25,6 +28,15 @@ if (process.env.BINGBONG_USER_DATA_DIR) {
 // are provable without the dashboard's UI.
 const CLI_HARNESS_FLAG = '--browser-cli'
 const runningCliHarness = process.argv.includes(CLI_HARNESS_FLAG) || process.env.BINGBONG_CLI === '1'
+
+// Dashboard-editable settings (keys, routing, mic, …) live beside the profile.
+// They layer over process.env, so a settings-page save re-routes the LLM on
+// the next command without a restart.
+const settingsStore = createSettingsStore(join(app.getPath('userData'), 'settings.json'))
+
+function currentEnv(): Record<string, string | undefined> {
+  return { ...process.env, ...settingsToEnv(settingsStore.get()) }
+}
 
 let cliHarnessStarted = false
 
@@ -83,7 +95,10 @@ function createWindow(): BrowserWindow {
   })
 
   if (runningCliHarness) startCliHarness(controller, downloadsDir)
-  attachAssistantToWindow(createAssistantPipeline({ controller, env: process.env, tts }), win)
+  attachAssistantToWindow(
+    createAssistantPipeline({ controller, env: currentEnv(), getEnv: currentEnv, tts }),
+    win,
+  )
 
   if (process.env.ELECTRON_RENDERER_URL) {
     void win.loadURL(process.env.ELECTRON_RENDERER_URL)
@@ -97,6 +112,7 @@ function createWindow(): BrowserWindow {
 app.whenReady().then(() => {
   registerBrowserIpc()
   registerAssistantIpc()
+  registerSettingsIpc(settingsStore)
   createWindow()
 
   app.on('activate', () => {

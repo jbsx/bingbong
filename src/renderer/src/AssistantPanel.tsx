@@ -48,9 +48,22 @@ export function ConfirmationCard({
   pending: PendingConfirmation
   onResolve: (confirmationId: string, approved: boolean) => void
 }) {
+  const [now, setNow] = useState(() => Date.now())
+
+  useEffect(() => {
+    setNow(Date.now())
+    const timer = setInterval(() => setNow(Date.now()), 250)
+    return () => clearInterval(timer)
+  }, [pending.confirmationId])
+
+  const secondsLeft = Math.max(0, Math.ceil((pending.expiresAt - now) / 1000))
+
   return (
     <div className="confirmation-card" role="alertdialog" aria-label="Confirmation required">
       <span className="confirmation-prompt">{pending.prompt}</span>
+      <span className="confirmation-countdown" aria-label="auto-deny countdown">
+        {secondsLeft}s
+      </span>
       <span className="confirmation-actions">
         <button type="button" onClick={() => onResolve(pending.confirmationId, true)}>
           Approve
@@ -81,8 +94,19 @@ function TranscriptLine({ entry }: { entry: TranscriptEntry }) {
       )
     case 'display':
       return <p className="transcript-entry transcript-entry--display">{entry.text}</p>
-    case 'error':
-      return <p className="transcript-entry transcript-entry--error">{entry.text}</p>
+    case 'error': {
+      const summary = entry.text.split('\n', 1)[0]
+      const trimmed = summary.length > 140 ? `${summary.slice(0, 140)}…` : summary
+      if (trimmed === entry.text) {
+        return <p className="transcript-entry transcript-entry--error">{entry.text}</p>
+      }
+      return (
+        <details className="transcript-entry transcript-entry--error">
+          <summary>{trimmed}</summary>
+          <pre className="transcript-error-detail">{entry.text}</pre>
+        </details>
+      )
+    }
   }
 }
 

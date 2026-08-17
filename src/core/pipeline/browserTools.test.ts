@@ -283,6 +283,7 @@ describe('browser tools through the pipeline', () => {
         callId: 'c1',
         toolName: 'click',
         prompt: 'Submit the form via "Send"?',
+        expiresAt: 60_000,
         at: 0,
       })
       expect(browser.clicks).toEqual([7])

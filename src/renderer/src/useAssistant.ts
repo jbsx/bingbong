@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { PipelineEvent, PipelineStatus } from '../../core/pipeline/events'
 
-export type OrbStatus = 'idle' | PipelineStatus
+export type OrbStatus = 'idle' | 'listening' | PipelineStatus
 
 export type TranscriptEntry =
   | { id: number; kind: 'command'; text: string }
@@ -13,6 +13,8 @@ export type TranscriptEntry =
 export interface PendingConfirmation {
   confirmationId: string
   prompt: string
+  /** Wall-clock auto-deny deadline — the card counts down to it. */
+  expiresAt: number
 }
 
 export interface Assistant {
@@ -84,7 +86,11 @@ export function useAssistant(): Assistant {
           append({ kind: 'error', text: event.message })
           return
         case 'confirmation_requested':
-          setPendingConfirmation({ confirmationId: event.confirmationId, prompt: event.prompt })
+          setPendingConfirmation({
+            confirmationId: event.confirmationId,
+            prompt: event.prompt,
+            expiresAt: event.expiresAt,
+          })
           return
         case 'confirmation_resolved':
           setPendingConfirmation((current) =>

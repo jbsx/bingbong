@@ -85,6 +85,34 @@ describe('createAssistantPipeline', () => {
     expect(events.find((e) => e.type === 'speak')).toMatchObject({ text: 'Hi.' })
   })
 
+  it('re-resolves the LLM when live env changes, so settings apply without restart', async () => {
+    const requests: { url: string; headers: Record<string, string> }[] = []
+    const fetchFn = (async (url: string | URL | Request, init?: RequestInit) => {
+      requests.push({ url: String(url), headers: Object.fromEntries(new Headers(init?.headers).entries()) })
+      return new Response(JSON.stringify({ choices: [{ message: { content: '{"speak":"Hi.","display":"Detail."}' } }] }), { status: 200 })
+    }) as typeof fetch
+
+    let env: Record<string, string | undefined> = {}
+    const pipeline = createAssistantPipeline({
+      controller: new FakeBrowser(),
+      env: {},
+      getEnv: () => env,
+      fetchFn,
+      tts: new RecordingTts(),
+    })
+
+    const before = await collect(pipeline, 'hello')
+    expect(before.find((e) => e.type === 'error')?.message).toMatch(/model routing for 'orchestrator' is not configured/)
+    expect(requests).toHaveLength(0)
+
+    env = FULL_ENV
+    const after = await collect(pipeline, 'hello again')
+
+    expect(after.find((e) => e.type === 'error')).toBeUndefined()
+    expect(requests).toHaveLength(1)
+    expect(requests[0].headers.authorization).toBe('Bearer test-key')
+  })
+
   it('exposes search and media tools alongside the browser verbs', async () => {
     const results: SearchResult[] = [{ title: 'Hit', url: 'https://hit.test', snippet: 'snip' }]
     const browser = new FakeBrowser()
