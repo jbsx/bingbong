@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { VoiceHeardEvent, VoiceListenReason } from '../../core/voice/ipcChannels'
+import type { VoiceHeardEvent, VoiceListenReason, VoiceState } from '../../core/voice/ipcChannels'
 import { VAD_FRAME_SAMPLES } from '../../core/voice/vadEndpointing'
 
 const TARGET_RATE = 16000
@@ -11,6 +11,8 @@ export interface VoiceApi {
   listening: boolean
   /** Reason for listening — drives the hint line next to the orb. */
   reason: VoiceListenReason | null
+  /** Wake-word monitoring is live — the mic stays open between commands. */
+  monitoring: boolean
   /** Hotkey handler — arm when idle, disarm when listening. */
   toggleHotkey(): void
 }
@@ -35,16 +37,18 @@ async function preferC920(micId: string): Promise<string> {
 }
 
 /**
- * Renderer half of the ears (T9): the hotkey (Ctrl/Cmd+Space) arms the
+ * Renderer half of the ears (T9/T10): the hotkey (Ctrl/Cmd+Space) arms the
  * main-process session, and the mic opens whenever the session says it is
- * listening — for the hotkey or for the confirmation window's 12 s voice
- * answers. The AudioContext resamples to 16 kHz; the worklet downmixes to
- * mono and whole 512-sample frames go over IPC. Listening ends (mic
- * included) when the session says so — one utterance per hotkey press.
+ * listening — for the hotkey, the wake word, or the confirmation window's
+ * 12 s voice answers. With wake monitoring enabled the mic simply stays
+ * open: the session endpoints an utterance after each activation, then falls
+ * back to listening for the wake word. The AudioContext resamples to 16 kHz;
+ * the worklet downmixes to mono and whole 512-sample frames go over IPC.
  */
 export function useVoice(deps: UseVoiceDeps): VoiceApi {
   const [listening, setListening] = useState(false)
   const [reason, setReason] = useState<VoiceListenReason | null>(null)
+  const [monitoring, setMonitoring] = useState(false)
 
   // Latest deps without resubscribing when callers rebuild the object.
   const depsRef = useRef(deps)
@@ -127,15 +131,19 @@ export function useVoice(deps: UseVoiceDeps): VoiceApi {
   }, [listening])
 
   useEffect(() => {
-    const unsubscribeState = window.bingbong.voice.onState((state) => {
+    const applyState = (state: VoiceState) => {
       setListening(state.listening)
       setReason(state.reason)
-      if (state.listening) {
+      setMonitoring(state.monitoring)
+      if (state.listening || state.monitoring) {
         void startCapture()
       } else {
         stopCapture()
       }
-    })
+    }
+    const unsubscribeState = window.bingbong.voice.onState(applyState)
+    // Monitoring can start before this component mounted — pull the truth.
+    void window.bingbong.voice.getState().then(applyState)
     const unsubscribeHeard = window.bingbong.voice.onHeard((heard) => depsRef.current.onHeard(heard))
     const unsubscribeError = window.bingbong.voice.onError((error) => depsRef.current.onError(error.message))
     return () => {
@@ -147,5 +155,5 @@ export function useVoice(deps: UseVoiceDeps): VoiceApi {
 
   useEffect(() => stopCapture, [stopCapture])
 
-  return { listening, reason, toggleHotkey }
+  return { listening, reason, monitoring, toggleHotkey }
 }

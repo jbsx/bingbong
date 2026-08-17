@@ -3,7 +3,7 @@ import { systemClock } from '../../core/ports/clock'
 import type { TtsIdle, TtsSpeaker } from '../../core/ports/tts'
 import type { Transcriber, VadScorer } from '../../core/ports/stt'
 import { VOICE_IPC, type VoiceHeardEvent, type VoiceState } from '../../core/voice/ipcChannels'
-import { createVoiceSession, type VoiceSession } from '../../core/voice/voiceSession'
+import { createVoiceSession, type VoiceSession, type VoiceWakeDeps } from '../../core/voice/voiceSession'
 import { pipelineFor, runAssistantCommand } from '../agent/attachAssistant'
 
 // IPC glue for the ears (T9): the renderer's worklet streams 16 kHz mono PCM
@@ -32,6 +32,10 @@ export function registerVoiceIpc(): void {
     const session = sessionFor(event)
     if (session) void session.pushAudio(chunk)
   })
+
+  ipcMain.handle(VOICE_IPC.getState, (event) => {
+    return sessionFor(event)?.getState() ?? { listening: false, reason: null, monitoring: false }
+  })
 }
 
 export function attachVoiceToWindow(win: BrowserWindow, deps: AttachVoiceDeps): VoiceSession {
@@ -41,6 +45,7 @@ export function attachVoiceToWindow(win: BrowserWindow, deps: AttachVoiceDeps): 
     clock: systemClock,
     tts: deps.tts,
     ttsIdle: deps.ttsIdle,
+    wake: deps.wake,
     onSubmitCommand: (text) => {
       void runAssistantCommand(win, text)
     },
@@ -61,6 +66,9 @@ export function attachVoiceToWindow(win: BrowserWindow, deps: AttachVoiceDeps): 
 
   sessions.set(win, session)
   win.on('closed', () => sessions.delete(win))
+  // The always-on ear (T10): monitoring starts with the window when a wake
+  // detector is configured; a dead detector disables itself on first error.
+  if (deps.wake) session.enableWakeMonitoring()
   return session
 }
 
@@ -69,4 +77,6 @@ export interface AttachVoiceDeps {
   transcriber: Transcriber
   tts: TtsSpeaker
   ttsIdle: TtsIdle
+  /** Wake-word plumbing; absent means hotkey-only. */
+  wake?: VoiceWakeDeps
 }

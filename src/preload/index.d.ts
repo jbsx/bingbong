@@ -39,6 +39,8 @@ export interface BingbongVoiceApi {
   disarm(): Promise<void>
   /** One chunk of mono 16 kHz PCM from the mic worklet (multiple of 512 samples). */
   sendAudio(chunk: Float32Array): void
+  /** Current voice state — pulled on mount since events can predate the renderer. */
+  getState(): Promise<VoiceState>
   onState(listener: (state: VoiceState) => void): () => void
   onHeard(listener: (heard: VoiceHeardEvent) => void): () => void
   onError(listener: (error: { message: string }) => void): () => void

@@ -1,6 +1,8 @@
 import type { Clock } from '../ports/clock'
 import type { AssistantTurn, LlmClient, LlmRequest } from '../ports/llm'
 import type { TtsSpeaker } from '../ports/tts'
+import type { Transcriber, VadScorer } from '../ports/stt'
+import type { WakeWordDetector } from '../ports/wake'
 import type { BrowserController, BrowserState, KeyPress } from '../ports/browser'
 import type { SnapshotRef } from '../browser/snapshot'
 import type { SearchProvider, SearchResult } from '../ports/search'
@@ -133,8 +135,72 @@ export class FakeBrowser implements BrowserController {
   }
 }
 
-export class FakeSearch implements SearchProvider {
-  readonly queries: string[] = []
+/** Queue-driven VAD: one probability per frame, last value repeats. */
+export class FakeVad implements VadScorer {
+  queue: number[]
+  private last = 0.01
+  readonly frames: Float32Array[] = []
+  resets = 0
+  failWith: Error | null = null
+
+  constructor(probs: number[] = []) {
+    this.queue = [...probs]
+  }
+
+  async score(frame: Float32Array): Promise<number> {
+    this.frames.push(frame)
+    if (this.failWith) throw this.failWith
+    if (this.queue.length > 0) this.last = this.queue.shift() ?? this.last
+    return this.last
+  }
+
+  reset(): void {
+    this.resets += 1
+  }
+}
+
+/** Queue-driven transcriber: one transcript per utterance, then ''. */
+export class FakeTranscriber implements Transcriber {
+  private queue: string[]
+  readonly audio: Float32Array[] = []
+  rejectWith: Error | null = null
+
+  constructor(script: string[] = []) {
+    this.queue = [...script]
+  }
+
+  async transcribe(pcm: Float32Array): Promise<string> {
+    this.audio.push(pcm)
+    if (this.rejectWith) throw this.rejectWith
+    return this.queue.shift() ?? ''
+  }
+}
+
+/** Queue-driven wake detector: one score per 1280-sample chunk, last value repeats. */
+export class FakeWakeDetector implements WakeWordDetector {
+  queue: number[]
+  private last = 0
+  readonly chunks: Float32Array[] = []
+  resets = 0
+  failWith: Error | null = null
+
+  constructor(scores: number[] = []) {
+    this.queue = [...scores]
+  }
+
+  async score(chunk: Float32Array): Promise<number> {
+    this.chunks.push(chunk)
+    if (this.failWith) throw this.failWith
+    if (this.queue.length > 0) this.last = this.queue.shift() ?? this.last
+    return this.last
+  }
+
+  reset(): void {
+    this.resets += 1
+  }
+}
+
+export class FakeSearch implements SearchProvider {  readonly queries: string[] = []
   private readonly results: SearchResult[]
 
   constructor(results: SearchResult[] = []) {

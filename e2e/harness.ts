@@ -83,7 +83,10 @@ export async function startHarness(
     userDataDir,
     args: options?.launchArgs,
     pipeStdio: options?.pipeStdio,
-    env: options?.env,
+    // Wake-word monitoring keeps the mic hot from app start; tests opt in
+    // explicitly (BINGBONG_WAKE_ENGINE + BINGBONG_WAKE_SCRIPT) so the default
+    // suite stays hotkey-only.
+    env: { BINGBONG_WAKE_ENGINE: 'off', ...options?.env },
   })
   const teardown = async () => {
     try {

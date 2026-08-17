@@ -41,6 +41,10 @@ export function App() {
           <span className="voice-hint" role="status">
             {voice.reason === 'confirmation' ? 'listening — yes or no?' : 'listening — say a command'}
           </span>
+        ) : voice.monitoring ? (
+          <span className="voice-hint voice-hint--monitoring" role="status">
+            say “hey jarvis” or press Ctrl+Space
+          </span>
         ) : null}
         <button
           type="button"

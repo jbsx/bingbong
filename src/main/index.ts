@@ -22,6 +22,10 @@ import { createSpeakingGate } from '../core/tts/speakingGate'
 import { resolveVoiceConfig } from './voice/voiceConfig'
 import { createMainVoice } from './voice/createMainVoice'
 import { attachVoiceToWindow, registerVoiceIpc } from './voice/attachVoice'
+import { resolveWakeConfig } from './wake/wakeConfig'
+import { createMainWake } from './wake/createMainWake'
+import { createChimeWav } from '../core/tts/chime'
+import { createAplayPlayer } from './tts/createAplayPlayer'
 
 // e2e harness seam: isolate the profile (cookies, cache, singleton lock) per run.
 if (process.env.BINGBONG_USER_DATA_DIR) {
@@ -46,6 +50,13 @@ const piperConfig = resolvePiperConfig(process.env, app.getPath('userData'))
 // Ears (T9): Silero VAD + whisper, shared by every window so the models
 // load once. Scripted doubles ride the same seam for e2e.
 const voiceConfig = resolveVoiceConfig(process.env, app.getPath('userData'))
+
+// Wake word (T10): interim "hey jarvis" via the openWakeWord ONNX trio; the
+// Python sidecar is the config-only fallback (BINGBONG_WAKE_ENGINE=python).
+const wakeConfig = resolveWakeConfig(process.env, app.getPath('userData'), app.getAppPath())
+const wakeDetector = createMainWake(wakeConfig)
+const chimeWav = createChimeWav()
+const chimePlayer = createAplayPlayer()
 
 function currentEnv(): Record<string, string | undefined> {
   return { ...process.env, ...settingsToEnv(settingsStore.get()) }
@@ -123,6 +134,17 @@ async function createWindow(): Promise<BrowserWindow> {
     transcriber: voice.transcriber,
     tts: speakingGate.tts,
     ttsIdle: speakingGate,
+    wake: wakeDetector
+      ? {
+          detector: wakeDetector,
+          // The settings slider applies to the next 80 ms chunk.
+          getThreshold: () => settingsStore.get().wakeWordThreshold,
+          chime: () => {
+            // The cue must never break activation — a player failure is silent.
+            chimePlayer.play(chimeWav).done.catch(() => {})
+          },
+        }
+      : undefined,
   })
   attachAssistantToWindow(
     createAssistantPipeline({ controller, env: currentEnv(), getEnv: currentEnv, tts: speakingGate.tts }),

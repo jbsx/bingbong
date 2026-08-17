@@ -5,6 +5,8 @@ export const VOICE_IPC = {
   disarm: 'voice:disarm',
   /** Renderer → main: mono 16 kHz PCM chunk (multiple of 512 samples). */
   audio: 'voice:audio',
+  /** Renderer → main: current voice state (monitoring starts before the renderer subscribes). */
+  getState: 'voice:getState',
   /** Main → renderer: listening state changes. */
   stateChanged: 'voice:stateChanged',
   /** Main → renderer: a transcript was heard and where it went. */
@@ -13,11 +15,13 @@ export const VOICE_IPC = {
   error: 'voice:error',
 } as const
 
-export type VoiceListenReason = 'hotkey' | 'confirmation'
+export type VoiceListenReason = 'hotkey' | 'confirmation' | 'wake'
 
 export interface VoiceState {
   listening: boolean
   reason: VoiceListenReason | null
+  /** Wake-word monitoring is live — the mic stays open even while not listening. */
+  monitoring: boolean
 }
 
 export interface VoiceHeardEvent {

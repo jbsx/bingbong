@@ -2,20 +2,34 @@ import type { PipelineEvent } from '../pipeline/events'
 import type { Clock } from '../ports/clock'
 import type { TtsIdle, TtsSpeaker } from '../ports/tts'
 import type { Transcriber, VadScorer } from '../ports/stt'
+import type { WakeWordDetector } from '../ports/wake'
 import type { VoiceHeardEvent, VoiceListenReason, VoiceState } from './ipcChannels'
 import { createUtteranceEndpointer, VAD_FRAME_SAMPLES, type UtteranceEndpointerConfig } from './vadEndpointing'
+import { createWakeMonitor } from './wakeMonitor'
 import { parseYesNo } from './yesNo'
 
 export const CONFIRM_VOICE_WINDOW_MS = 12_000
+
+/** Wake-word plumbing (T10); absent means the session stays hotkey-only. */
+export interface VoiceWakeDeps {
+  detector: WakeWordDetector
+  /** Live from settings, so the slider applies to the next 80 ms chunk. */
+  getThreshold(): number
+  /** Music/noise gate override — rarely needed, the default matches the VAD. */
+  vadGate?: number
+  /** Audible activation cue; playback failures are the caller's problem. */
+  chime(): void
+}
 
 export interface VoiceSessionDeps {
   vad: VadScorer
   transcriber: Transcriber
   clock: Clock
-  /** Stopped when the hotkey arms — the barge-in stand-in until the wake word (T10). */
+  /** Stopped when the hotkey arms or the wake word fires — the barge-in hook. */
   tts: TtsSpeaker
   /** Delays a confirmation window until the spoken prompt has finished. */
   ttsIdle: TtsIdle
+  wake?: VoiceWakeDeps
   confirmWindowMs?: number
   endpointerConfig?: Partial<UtteranceEndpointerConfig>
   /** Where recognized commands go — the exact path the text box takes. */
@@ -29,6 +43,11 @@ export interface VoiceSessionDeps {
 export interface VoiceSession {
   arm(): void
   disarm(): void
+  /** Start/stop wake-word monitoring (the always-on ear). No-op without a detector. */
+  enableWakeMonitoring(): void
+  disableWakeMonitoring(): void
+  /** Current state — the renderer pulls this on mount (events can predate it). */
+  getState(): VoiceState
   /** One mono 16 kHz PCM chunk from the worklet; frames are 512 samples. */
   pushAudio(chunk: Float32Array): Promise<void>
   /** Pipeline events drive the confirmation window. */
@@ -36,23 +55,72 @@ export interface VoiceSession {
 }
 
 /**
- * Ears, minus the wake word (T9): mic audio in the, command-pipeline
- * callbacks out. The hotkey arms single-shot listening — one utterance is
+ * Ears: mic audio in, command-pipeline callbacks out. The hotkey arms
+ * single-shot listening; with a wake detector wired (T10) the session can
+ * also monitor continuously — the wake word chimes, barges in on any speech
+ * in flight, and opens the same single-shot listen. One utterance is
  * transcribed and submitted through the same surface as the text box, then
- * the session disarms. Confirmation prompts open a 12 s voice window after
- * the spoken prompt finishes; spoken yes/no resolves it, everything else
- * (including the tap fallback) stays in charge of the 60 s auto-deny.
+ * listening ends (monitoring resumes if it was on). Confirmation prompts open
+ * a 12 s voice window after the spoken prompt finishes; spoken yes/no
+ * resolves it, everything else (including the tap fallback) stays in charge
+ * of the 60 s auto-deny.
  */
 export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
   const confirmWindowMs = deps.confirmWindowMs ?? CONFIRM_VOICE_WINDOW_MS
   const endpointer = createUtteranceEndpointer(deps.endpointerConfig)
 
   let listening = false
+  let monitoring = false
   let reason: VoiceListenReason | null = null
   let activeConfirmation: string | null = null
   let cancelWindowTimer: (() => void) | null = null
   // Chunks are processed strictly in arrival order; scoring is async.
   let audioChain: Promise<void> = Promise.resolve()
+  let monitorChain: Promise<void> = Promise.resolve()
+
+  function emitState(): void {
+    deps.onStateChange({ listening, reason, monitoring })
+  }
+
+  const monitor = deps.wake
+    ? createWakeMonitor({
+        vad: deps.vad,
+        detector: deps.wake.detector,
+        getThreshold: deps.wake.getThreshold,
+        vadGate: deps.wake.vadGate,
+        onWake: activateFromWake,
+        onError: (message) => {
+          deps.onError(message)
+          // A dead detector would re-fail on every chunk — drop the ear
+          // instead of spamming; the hotkey path still works.
+          monitoring = false
+          emitState()
+        },
+      })
+    : null
+
+  function activateFromWake(): void {
+    // A hotkey/confirmation listen already owns the mic — nothing to do.
+    if (listening) return
+    startListening('wake')
+    // The chime follows the barge-in stop: speech dies first, then the cue
+    // confirms activation before the user finishes their sentence.
+    deps.wake?.chime()
+  }
+
+  /** Hotkey and wake-word activations share everything but the reason. */
+  function startListening(nextReason: 'hotkey' | 'wake'): void {
+    // Barge-in: activating cuts any speech in flight.
+    deps.tts.stop()
+    // Arming while already listening never overrides the open reason: a
+    // hotkey press during a confirmation window keeps serving the prompt.
+    if (listening) return
+    listening = true
+    reason = nextReason
+    endpointer.reset()
+    deps.vad.reset()
+    emitState()
+  }
 
   function stopListening(): void {
     cancelWindowTimer?.()
@@ -62,7 +130,10 @@ export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
     reason = null
     endpointer.reset()
     deps.vad.reset()
-    deps.onStateChange({ listening: false, reason: null })
+    emitState()
+    // Back to a clean ear: the wake word itself must not echo into the next
+    // detection window (the monitor latches until this reset).
+    if (monitoring) monitor?.reset()
   }
 
   function fail(message: string): void {
@@ -112,7 +183,7 @@ export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
       return
     }
 
-    if (reason !== 'hotkey') {
+    if (reason !== 'hotkey' && reason !== 'wake') {
       deps.onHeard({ text, routed: 'ignored' })
       return
     }
@@ -132,7 +203,7 @@ export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
     listening = true
     reason = 'confirmation'
     endpointer.reset()
-    deps.onStateChange({ listening: true, reason: 'confirmation' })
+    emitState()
     cancelWindowTimer = deps.clock.setTimer(confirmWindowMs, () => {
       cancelWindowTimer = null
       if (listening && reason === 'confirmation' && activeConfirmation === confirmationId) {
@@ -144,26 +215,42 @@ export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
 
   return {
     arm() {
-      // Barge-in stand-in until the wake word (T10): arming cuts speech.
-      deps.tts.stop()
-      // Arming while already listening never overrides the open reason: a
-      // hotkey press during a confirmation window keeps serving the prompt.
-      if (listening) return
-      listening = true
-      reason = 'hotkey'
-      endpointer.reset()
-      deps.onStateChange({ listening: true, reason: 'hotkey' })
+      startListening('hotkey')
     },
 
     disarm: () => stopListening(),
 
+    getState: () => ({ listening, reason, monitoring }),
+
+    enableWakeMonitoring() {
+      if (!monitor || monitoring) return
+      monitoring = true
+      monitor.reset()
+      emitState()
+    },
+
+    disableWakeMonitoring() {
+      if (!monitoring) return
+      monitoring = false
+      emitState()
+    },
+
     pushAudio(chunk) {
-      if (!listening) return Promise.resolve()
-      audioChain = audioChain.then(
-        () => handleChunk(chunk),
-        () => handleChunk(chunk),
-      )
-      return audioChain
+      if (listening) {
+        audioChain = audioChain.then(
+          () => handleChunk(chunk),
+          () => handleChunk(chunk),
+        )
+        return audioChain
+      }
+      if (monitoring && monitor) {
+        monitorChain = monitorChain.then(
+          () => monitor.pushAudio(chunk),
+          () => monitor.pushAudio(chunk),
+        )
+        return monitorChain
+      }
+      return Promise.resolve()
     },
 
     handlePipelineEvent(event) {

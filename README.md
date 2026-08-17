@@ -24,7 +24,7 @@ volume, next, seek; never ad-skipping), and download routing — approved
 downloads land in `~/Downloads/bingbong_downloads/` and the filename is
 spoken and displayed on completion.
 
-T9 adds the **ears** (wake word comes in T10): `Ctrl/Cmd+Space` arms
+T9 adds the **ears**: `Ctrl/Cmd+Space` arms
 listening; mic audio (the settings-page mic, preferring the C920 over the OS
 default) streams from an AudioWorklet at 16 kHz mono, Silero VAD endpoints
 the utterance, and smart-whisper transcribes it into the same command
@@ -51,6 +51,25 @@ curl -L -o ~/.config/bingbong/models/ggml-base.en.bin \
 `BINGBONG_VAD_SCRIPT` / `BINGBONG_STT_SCRIPT` (JSON arrays of probabilities /
 transcripts) replace the real engines — used by the e2e suite and keyless
 demos, mirroring `BINGBONG_LLM_SCRIPT`.
+
+T10 adds **hands-free activation**: with the wake models present (see
+`docs/wake-parity.md` for download links and the parity write-up), the
+interim "hey jarvis" runs fully in Node via onnxruntime-node
+(melspectrogram → speech embedding → classifier), Silero VAD gates the scores
+against music/noise false positives, and the settings-page threshold slider
+applies live. Wake → chime → single-shot listen; saying the wake word during
+a spoken answer kills playback instantly and listens again (barge-in). Env
+knobs:
+
+```sh
+BINGBONG_WAKE_ENGINE=node|python|off   # default node; python = reference sidecar
+BINGBONG_WAKE_CLASSIFIER_MODEL=…       # swap in a custom bing_bong model
+BINGBONG_WAKE_SCRIPT='[0.01, 0.99]'    # scripted scores, e2e double
+```
+
+The Python fallback needs `pip install openwakeword onnxruntime` and is a
+pure config swap — the seam (`WakeWordDetector`) and the VAD gate above it
+are identical for both engines.
 
 ## Configuring models
 

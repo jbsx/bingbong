@@ -53,6 +53,7 @@ contextBridge.exposeInMainWorld('bingbong', {
     sendAudio: (chunk: Float32Array): void => {
       ipcRenderer.send(VOICE_IPC.audio, chunk)
     },
+    getState: (): Promise<VoiceState> => ipcRenderer.invoke(VOICE_IPC.getState),
     onState: (listener: (state: VoiceState) => void): (() => void) => {
       const wrapped = (_event: unknown, state: VoiceState): void => listener(state)
       ipcRenderer.on(VOICE_IPC.stateChanged, wrapped)

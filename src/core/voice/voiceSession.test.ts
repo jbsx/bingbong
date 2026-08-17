@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { PipelineEvent } from '../pipeline/events'
-import type { Transcriber, VadScorer } from '../ports/stt'
-import { FakeClock, RecordingTts } from '../testing/doubles'
+import { FakeClock, FakeTranscriber, FakeVad, FakeWakeDetector, RecordingTts } from '../testing/doubles'
 import type { VoiceHeardEvent, VoiceState } from './ipcChannels'
 import { createVoiceSession } from './voiceSession'
 
@@ -17,45 +16,6 @@ const SILENCE = 0.01
 /** One utterance of VAD probabilities: 8 speech frames + 30 trailing silence. */
 function utteranceProbs(speechFrames = 8): number[] {
   return [...Array.from({ length: speechFrames }, () => SPEECH), ...Array.from({ length: 30 }, () => SILENCE)]
-}
-
-class FakeVad implements VadScorer {
-  queue: number[]
-  private last = SILENCE
-  readonly frames: Float32Array[] = []
-  resets = 0
-  failWith: Error | null = null
-
-  constructor(probs: number[] = []) {
-    this.queue = [...probs]
-  }
-
-  async score(frame: Float32Array): Promise<number> {
-    this.frames.push(frame)
-    if (this.failWith) throw this.failWith
-    if (this.queue.length > 0) this.last = this.queue.shift() ?? this.last
-    return this.last
-  }
-
-  reset(): void {
-    this.resets += 1
-  }
-}
-
-class FakeTranscriber implements Transcriber {
-  private queue: string[]
-  readonly audio: Float32Array[] = []
-  rejectWith: Error | null = null
-
-  constructor(script: string[] = []) {
-    this.queue = [...script]
-  }
-
-  async transcribe(pcm: Float32Array): Promise<string> {
-    this.audio.push(pcm)
-    if (this.rejectWith) throw this.rejectWith
-    return this.queue.shift() ?? ''
-  }
 }
 
 class DeferredIdle {
@@ -84,6 +44,7 @@ interface SessionHarness {
   errors: string[]
   commands: string[]
   resolutions: { confirmationId: string; approved: boolean }[]
+  chimes: number[]
   speakUtterance(probs?: number[]): Promise<void>
   session: ReturnType<typeof createVoiceSession>
 }
@@ -96,6 +57,7 @@ async function createSession(overrides?: {
   transcriber?: FakeTranscriber
   vad?: FakeVad
   confirmWindowMs?: number
+  wake?: { detector: FakeWakeDetector; threshold?: number }
 }): Promise<SessionHarness> {
   const vad = overrides?.vad ?? new FakeVad()
   const transcriber = overrides?.transcriber ?? new FakeTranscriber()
@@ -107,6 +69,8 @@ async function createSession(overrides?: {
   const errors: string[] = []
   const commands: string[] = []
   const resolutions: { confirmationId: string; approved: boolean }[] = []
+  const chimes: number[] = []
+  const threshold = overrides?.wake?.threshold ?? 0.5
 
   const session = createVoiceSession({
     vad,
@@ -115,6 +79,13 @@ async function createSession(overrides?: {
     tts,
     ttsIdle: idle,
     confirmWindowMs: overrides?.confirmWindowMs,
+    wake: overrides?.wake
+      ? {
+          detector: overrides.wake.detector,
+          getThreshold: () => threshold,
+          chime: () => chimes.push(1),
+        }
+      : undefined,
     onSubmitCommand: (text) => commands.push(text),
     onResolveConfirmation: (confirmationId, approved) => resolutions.push({ confirmationId, approved }),
     onStateChange: (state) => states.push(state),
@@ -132,7 +103,7 @@ async function createSession(overrides?: {
     }
   }
 
-  return { vad, transcriber, clock, tts, idle, states, heard, errors, commands, resolutions, speakUtterance, session }
+  return { vad, transcriber, clock, tts, idle, states, heard, errors, commands, resolutions, chimes, speakUtterance, session }
 }
 
 function confirmationRequested(id = 'confirm-1'): PipelineEvent {
@@ -156,8 +127,8 @@ describe('voice session', () => {
 
     expect(harness.commands).toEqual(['open youtube'])
     expect(harness.states).toEqual([
-      { listening: true, reason: 'hotkey' },
-      { listening: false, reason: null },
+      { listening: true, reason: 'hotkey', monitoring: false },
+      { listening: false, reason: null, monitoring: false },
     ])
     expect(harness.heard).toEqual([{ text: 'open youtube', routed: 'command' }])
     // The utterance audio handed to STT is the endpointed utterance: the
@@ -189,7 +160,7 @@ describe('voice session', () => {
     await harness.speakUtterance()
 
     expect(harness.commands).toEqual([])
-    expect(harness.states).toEqual([{ listening: true, reason: 'hotkey' }])
+    expect(harness.states).toEqual([{ listening: true, reason: 'hotkey', monitoring: false }])
     expect(harness.heard).toEqual([])
   })
 
@@ -199,7 +170,7 @@ describe('voice session', () => {
     harness.session.arm()
 
     expect(harness.tts.stopCalls).toBe(1)
-    expect(harness.states).toEqual([{ listening: true, reason: 'hotkey' }])
+    expect(harness.states).toEqual([{ listening: true, reason: 'hotkey', monitoring: false }])
   })
 
   it('drops audio entirely while not listening', async () => {
@@ -223,7 +194,7 @@ describe('voice session', () => {
     harness.idle.becomeIdle()
     await flush()
 
-    expect(harness.states).toEqual([{ listening: true, reason: 'confirmation' }])
+    expect(harness.states).toEqual([{ listening: true, reason: 'confirmation', monitoring: false }])
   })
 
   it('answers a confirmation with a spoken yes and disarms', async () => {
@@ -236,7 +207,7 @@ describe('voice session', () => {
     expect(harness.resolutions).toEqual([{ confirmationId: 'confirm-7', approved: true }])
     expect(harness.heard).toEqual([{ text: 'um, yeah sure', routed: 'confirmation' }])
     expect(harness.commands).toEqual([])
-    expect(harness.states.at(-1)).toEqual({ listening: false, reason: null })
+    expect(harness.states.at(-1)).toEqual({ listening: false, reason: null, monitoring: false })
   })
 
   it('answers a confirmation with a spoken no', async () => {
@@ -259,7 +230,7 @@ describe('voice session', () => {
     expect(harness.resolutions).toEqual([])
     expect(harness.commands).toEqual([])
     expect(harness.heard).toEqual([{ text: 'maybe', routed: 'ignored' }])
-    expect(harness.states.at(-1)).toEqual({ listening: true, reason: 'confirmation' })
+    expect(harness.states.at(-1)).toEqual({ listening: true, reason: 'confirmation', monitoring: false })
 
     await harness.speakUtterance()
     expect(harness.resolutions).toEqual([{ confirmationId: 'confirm-3', approved: true }])
@@ -273,7 +244,7 @@ describe('voice session', () => {
 
     harness.clock.advance(12_000)
 
-    expect(harness.states.at(-1)).toEqual({ listening: false, reason: null })
+    expect(harness.states.at(-1)).toEqual({ listening: false, reason: null, monitoring: false })
     expect(harness.resolutions).toEqual([])
   })
 
@@ -282,7 +253,7 @@ describe('voice session', () => {
 
     harness.session.handlePipelineEvent(confirmationRequested('confirm-4'))
     await flush()
-    expect(harness.states.at(-1)).toEqual({ listening: true, reason: 'confirmation' })
+    expect(harness.states.at(-1)).toEqual({ listening: true, reason: 'confirmation', monitoring: false })
 
     harness.session.handlePipelineEvent({
       type: 'confirmation_resolved',
@@ -292,7 +263,7 @@ describe('voice session', () => {
       at: 1_000,
     })
 
-    expect(harness.states.at(-1)).toEqual({ listening: false, reason: null })
+    expect(harness.states.at(-1)).toEqual({ listening: false, reason: null, monitoring: false })
     // The 12 s window timer is gone too — no late disarm state event.
     harness.clock.advance(12_000)
     expect(harness.states).toHaveLength(2)
@@ -325,7 +296,7 @@ describe('voice session', () => {
     await harness.speakUtterance()
 
     expect(harness.errors).toEqual(['whisper model missing'])
-    expect(harness.states.at(-1)).toEqual({ listening: false, reason: null })
+    expect(harness.states.at(-1)).toEqual({ listening: false, reason: null, monitoring: false })
   })
 
   it('surfaces a failed VAD as an error and disarms', async () => {
@@ -337,7 +308,7 @@ describe('voice session', () => {
     await harness.session.pushAudio(new Float32Array(512))
 
     expect(harness.errors).toEqual(['silero model missing'])
-    expect(harness.states.at(-1)).toEqual({ listening: false, reason: null })
+    expect(harness.states.at(-1)).toEqual({ listening: false, reason: null, monitoring: false })
   })
 
   it('disarm drops in-flight utterance audio', async () => {
@@ -355,7 +326,8 @@ describe('voice session', () => {
 
     expect(harness.commands).toEqual([])
     expect(harness.transcriber.audio).toHaveLength(0)
-    expect(harness.vad.resets).toBe(1)
+    // VAD state resets on arm (fresh episode) and on disarm.
+    expect(harness.vad.resets).toBe(2)
   })
 
   it('hotkey arm during an open confirmation window keeps serving that confirmation', async () => {
@@ -370,5 +342,136 @@ describe('voice session', () => {
     // Still routed to the open confirmation, not submitted as a command.
     expect(harness.resolutions).toEqual([{ confirmationId: 'confirm-9', approved: true }])
     expect(harness.commands).toEqual([])
+  })
+})
+
+describe('voice session — wake word (T10)', () => {
+  /** Push `frames` monitoring frames (512 samples each) with the given VAD probs. */
+  async function monitorFrames(harness: SessionHarness, probs: number[]): Promise<void> {
+    for (const prob of probs) {
+      harness.vad.queue.push(prob)
+      await harness.session.pushAudio(new Float32Array(512))
+    }
+  }
+
+  it('monitors without listening: audio feeds the wake detector, not the transcriber', async () => {
+    const detector = new FakeWakeDetector([0.1, 0.1])
+    const harness = await createSession({ wake: { detector } })
+
+    harness.session.enableWakeMonitoring()
+    await monitorFrames(harness, [SPEECH, SPEECH, SPEECH, SPEECH, SPEECH])
+
+    expect(harness.states).toEqual([{ listening: false, reason: null, monitoring: true }])
+    expect(detector.chunks.length).toBeGreaterThan(0)
+    expect(harness.transcriber.audio).toHaveLength(0)
+  })
+
+  it('wake detection chimes, barges in on speech, and listens — one utterance, then back to monitoring', async () => {
+    const detector = new FakeWakeDetector([0.9])
+    const harness = await createSession({
+      transcriber: new FakeTranscriber(['open youtube']),
+      wake: { detector },
+    })
+    harness.session.enableWakeMonitoring()
+
+    // Two and a half frames complete the first 1280-sample wake chunk.
+    await monitorFrames(harness, [SPEECH, SPEECH, SPEECH])
+
+    // Activation: chime + barge-in stop + listening with the wake reason.
+    expect(harness.chimes).toHaveLength(1)
+    expect(harness.tts.stopCalls).toBe(1)
+    expect(harness.states.at(-1)).toEqual({ listening: true, reason: 'wake', monitoring: true })
+
+    // The utterance submits like a hotkey command, then monitoring resumes.
+    await harness.speakUtterance()
+    expect(harness.commands).toEqual(['open youtube'])
+    expect(harness.heard).toEqual([{ text: 'open youtube', routed: 'command' }])
+    expect(harness.states.at(-1)).toEqual({ listening: false, reason: null, monitoring: true })
+  })
+
+  it('keeps monitoring after a wake so the next wake word lands', async () => {
+    const detector = new FakeWakeDetector([0.9, 0.9])
+    const harness = await createSession({
+      transcriber: new FakeTranscriber(['first', 'second']),
+      wake: { detector },
+    })
+    harness.session.enableWakeMonitoring()
+
+    await monitorFrames(harness, [SPEECH, SPEECH, SPEECH])
+    await harness.speakUtterance()
+    expect(harness.commands).toEqual(['first'])
+
+    // Monitoring resumed: the detector fires again on new audio.
+    await monitorFrames(harness, [SPEECH, SPEECH, SPEECH])
+    expect(harness.states.at(-1)).toEqual({ listening: true, reason: 'wake', monitoring: true })
+    await harness.speakUtterance()
+    expect(harness.commands).toEqual(['first', 'second'])
+    expect(harness.chimes).toHaveLength(2)
+  })
+
+  it('a detector failure surfaces one error and disables monitoring', async () => {
+    const detector = new FakeWakeDetector()
+    detector.failWith = new Error('hey_jarvis_v0.1.onnx missing')
+    const harness = await createSession({ wake: { detector } })
+    harness.session.enableWakeMonitoring()
+
+    await monitorFrames(harness, [SPEECH, SPEECH, SPEECH, SPEECH, SPEECH])
+
+    expect(harness.errors).toEqual(['hey_jarvis_v0.1.onnx missing'])
+    expect(harness.states.at(-1)).toEqual({ listening: false, reason: null, monitoring: false })
+
+    // Inert from here: later audio is dropped, not retried against the model.
+    detector.queue.push(0.9)
+    await monitorFrames(harness, [SPEECH, SPEECH, SPEECH])
+    expect(harness.states.at(-1)).toEqual({ listening: false, reason: null, monitoring: false })
+  })
+
+  it('the hotkey still works while monitoring, and disarm keeps monitoring live', async () => {
+    const detector = new FakeWakeDetector()
+    const harness = await createSession({
+      transcriber: new FakeTranscriber(['open youtube']),
+      wake: { detector },
+    })
+    harness.session.enableWakeMonitoring()
+
+    harness.session.arm()
+    await harness.speakUtterance()
+    expect(harness.commands).toEqual(['open youtube'])
+    expect(harness.states).toContainEqual({ listening: true, reason: 'hotkey', monitoring: true })
+
+    // Toggling the hotkey off stops listening; the wake ear stays on.
+    harness.session.arm()
+    harness.session.disarm()
+    expect(harness.states.at(-1)).toEqual({ listening: false, reason: null, monitoring: true })
+
+    await monitorFrames(harness, [SPEECH, SPEECH, SPEECH])
+    expect(detector.chunks.length).toBeGreaterThan(0)
+  })
+
+  it('a confirmation window while monitoring returns to monitoring after the spoken yes', async () => {
+    const detector = new FakeWakeDetector()
+    const harness = await createSession({
+      transcriber: new FakeTranscriber(['yes']),
+      wake: { detector },
+    })
+    harness.session.enableWakeMonitoring()
+
+    harness.session.handlePipelineEvent(confirmationRequested('confirm-w'))
+    await flush()
+    expect(harness.states.at(-1)).toEqual({ listening: true, reason: 'confirmation', monitoring: true })
+
+    await harness.speakUtterance()
+    expect(harness.resolutions).toEqual([{ confirmationId: 'confirm-w', approved: true }])
+    expect(harness.states.at(-1)).toEqual({ listening: false, reason: null, monitoring: true })
+  })
+
+  it('without a wake detector, enableWakeMonitoring is a no-op', async () => {
+    const harness = await createSession()
+
+    harness.session.enableWakeMonitoring()
+    await harness.speakUtterance()
+
+    expect(harness.states).toEqual([])
+    expect(harness.vad.frames).toHaveLength(0)
   })
 })
