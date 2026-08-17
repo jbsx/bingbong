@@ -39,7 +39,7 @@ export class SubagentCancelledError extends Error {
   }
 }
 
-const DEFAULT_MAX_TOOL_ROUNDS = 12
+const DEFAULT_MAX_TOOL_ROUNDS = 20
 
 function toErrorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err)

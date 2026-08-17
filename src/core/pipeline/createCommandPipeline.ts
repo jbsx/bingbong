@@ -32,7 +32,7 @@ export interface CommandPipeline {
 export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipeline {
   const { llm, tts, clock, tools } = deps
   const confirmTimeoutMs = deps.confirmTimeoutMs ?? 60_000
-  const maxToolRounds = deps.maxToolRounds ?? 20
+  const maxToolRounds = deps.maxToolRounds ?? 40
   const toolsByName = new Map(tools.map((tool) => [tool.name, tool]))
   const pendingConfirmations = new Map<string, (decision: ConfirmationDecision) => void>()
   let confirmationCounter = 0
