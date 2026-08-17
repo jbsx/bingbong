@@ -76,7 +76,7 @@ export function ConfirmationCard({
   )
 }
 
-function TranscriptLine({ entry }: { entry: TranscriptEntry }) {
+export function TranscriptLine({ entry }: { entry: TranscriptEntry }) {
   switch (entry.kind) {
     case 'command':
       return (

@@ -1,15 +1,19 @@
 import { useCallback, useEffect, useState } from 'react'
 import { BrowserPane } from './BrowserPane'
 import { AssistantPanel, StatusOrb } from './AssistantPanel'
+import { IdleScreen } from './IdleScreen'
 import { SettingsPage } from './SettingsPage'
 import { useAssistant } from './useAssistant'
+import { useIdle } from './useIdle'
 import { useSettings } from './useSettings'
 import { useVoice } from './useVoice'
+import { useWeather } from './useWeather'
 
 export function App() {
   const assistant = useAssistant()
   const { settings, save } = useSettings()
   const [view, setView] = useState<'dashboard' | 'settings'>('dashboard')
+  const idle = useIdle()
 
   const getMicId = useCallback(() => settings?.micId ?? 'default', [settings])
   const voice = useVoice({
@@ -17,6 +21,18 @@ export function App() {
     onHeard: assistant.appendVoiceHeard,
     onError: assistant.appendVoiceError,
   })
+
+  // Pipeline and voice activity count as "not idle" alongside real input, so
+  // the idle screen never covers a running command.
+  const { ping } = idle
+  useEffect(() => {
+    const unsubEvent = window.bingbong.assistant.onEvent(() => ping())
+    const unsubVoice = window.bingbong.voice.onState(() => ping())
+    return () => {
+      unsubEvent()
+      unsubVoice()
+    }
+  }, [ping])
 
   // The hotkey arms the ears: Ctrl/Cmd+Space toggles listening.
   useEffect(() => {
@@ -31,9 +47,17 @@ export function App() {
   }, [voice])
 
   const orbStatus = voice.listening ? 'listening' : assistant.status
+  // Never idle over a running command, an open mic, or the settings page —
+  // the timer must not unmount a form mid-edit.
+  const showIdle = idle.idle && orbStatus === 'idle' && !voice.listening && view === 'dashboard'
+  const weather = useWeather(settings?.weather ?? null, showIdle)
+
+  if (showIdle) {
+    return <IdleScreen entries={assistant.entries} weather={weather} />
+  }
 
   return (
-    <div className="dashboard">
+    <div className={window.bingbong.app.kiosk ? 'dashboard dashboard--kiosk' : 'dashboard'}>
       <header className="dashboard-header">
         <StatusOrb status={orbStatus} />
         <h1>Bing Bong</h1>

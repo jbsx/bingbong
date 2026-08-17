@@ -26,6 +26,11 @@ import { resolveWakeConfig } from './wake/wakeConfig'
 import { createMainWake } from './wake/createMainWake'
 import { createChimeWav } from '../core/tts/chime'
 import { createAplayPlayer } from './tts/createAplayPlayer'
+import { KIOSK_FLAG, resolveLaunchConfig } from '../core/app/launchConfig'
+
+// Appliance mode (T11): --kiosk goes fullscreen; the idle timeout reaches the
+// renderer through the preload's launch-config snapshot.
+const launchConfig = resolveLaunchConfig(process.argv, process.env)
 
 // e2e harness seam: isolate the profile (cookies, cache, singleton lock) per run.
 if (process.env.BINGBONG_USER_DATA_DIR) {
@@ -86,11 +91,17 @@ async function createWindow(): Promise<BrowserWindow> {
     width: 1280,
     height: 800,
     title: 'Bing Bong',
+    // Kiosk = fullscreen appliance; the renderer reads the same flag and lets
+    // the browser pane take over the layout.
+    ...(launchConfig.kiosk ? { fullscreen: true, autoHideMenuBar: true } : {}),
     webPreferences: {
       preload: resolvePreloadPath(join(__dirname, '../preload')),
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: false,
+      // App args don't reach the renderer's argv; additionalArguments is how
+      // the preload learns about --kiosk. The idle timeout rides the env.
+      additionalArguments: launchConfig.kiosk ? [KIOSK_FLAG] : [],
     },
   })
 

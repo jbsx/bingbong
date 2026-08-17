@@ -465,3 +465,67 @@ details.transcript-entry--error summary {
   color: var(--muted);
   font-style: italic;
 }
+
+.idle-screen {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  height: 100%;
+  padding: 48px;
+  gap: 32px;
+}
+
+.idle-screen-top {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8vh;
+}
+
+.idle-clock {
+  margin: 0;
+  font-size: clamp(4rem, 16vw, 9rem);
+  font-weight: 200;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
+.idle-date {
+  margin: 0;
+  font-size: 1.4rem;
+  color: var(--muted);
+}
+
+.idle-weather {
+  margin: 12px 0 0;
+  font-size: 1.1rem;
+  color: var(--text);
+}
+
+.idle-transcript {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-width: 720px;
+  width: 100%;
+  margin: 0 auto;
+  font-size: 0.95rem;
+  color: var(--muted);
+  overflow: hidden;
+}
+
+/* Kiosk: the browser pane is the appliance's main surface — chrome and the
+   assistant panel shrink to give it the window. */
+.dashboard--kiosk {
+  padding: 8px;
+  gap: 8px;
+}
+
+.dashboard--kiosk .dashboard-header h1 {
+  display: none;
+}
+
+.dashboard--kiosk .assistant-panel {
+  max-height: 18vh;
+}

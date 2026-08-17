@@ -4,13 +4,18 @@ import { PIPELINE_IPC } from '../core/pipeline/ipcChannels'
 import { SETTINGS_IPC } from '../core/settings/ipcChannels'
 import { TTS_IPC } from '../core/tts/ipcChannels'
 import { VOICE_IPC } from '../core/voice/ipcChannels'
+import { resolveLaunchConfig } from '../core/app/launchConfig'
 import type { BrowserPaneState, PaneRect } from '../core/browser/paneState'
 import type { PipelineEvent } from '../core/pipeline/events'
 import type { AppSettings } from '../core/settings/settings'
 import type { VoiceHeardEvent, VoiceState } from '../core/voice/ipcChannels'
 
+// Launch config is a snapshot: the flags and env can't change after start.
+const launch = resolveLaunchConfig(process.argv, process.env)
+
 contextBridge.exposeInMainWorld('bingbong', {
   version: '0.1.0',
+  app: launch,
   browser: {
     navigate: (input: string): Promise<boolean> => ipcRenderer.invoke(BROWSER_IPC.navigate, input),
     goBack: (): Promise<void> => ipcRenderer.invoke(BROWSER_IPC.goBack),

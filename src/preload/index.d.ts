@@ -2,11 +2,13 @@ import type { BrowserPaneState, PaneRect } from '../core/browser/paneState'
 import type { PipelineEvent } from '../core/pipeline/events'
 import type { AppSettings } from '../core/settings/settings'
 import type { VoiceHeardEvent, VoiceState } from '../core/voice/ipcChannels'
+import type { LaunchConfig } from '../core/app/launchConfig'
 
 export type { BrowserPaneState, PaneRect }
 export type { PipelineEvent }
 export type { AppSettings }
 export type { VoiceHeardEvent, VoiceState }
+export type { LaunchConfig }
 
 export interface BingbongBrowserApi {
   navigate(input: string): Promise<boolean>
@@ -48,6 +50,8 @@ export interface BingbongVoiceApi {
 
 export interface BingbongApi {
   version: string
+  /** Launch flags/env snapshot (kiosk mode, idle timeout). */
+  app: LaunchConfig
   browser: BingbongBrowserApi
   assistant: BingbongAssistantApi
   settings: BingbongSettingsApi
