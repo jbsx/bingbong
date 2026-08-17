@@ -34,7 +34,6 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
   const confirmTimeoutMs = deps.confirmTimeoutMs ?? 60_000
   const maxToolRounds = deps.maxToolRounds ?? 20
   const toolsByName = new Map(tools.map((tool) => [tool.name, tool]))
-  const toolContext: ToolContext = { clock }
   const pendingConfirmations = new Map<string, (decision: ConfirmationDecision) => void>()
   let confirmationCounter = 0
 
@@ -147,6 +146,10 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
     }
 
     try {
+      const toolContext: ToolContext = {
+        clock,
+        acquireVision: () => visionBudget.tryAcquire(),
+      }
       const result = await tool.execute(call, toolContext)
       return { ok: true, result }
     } catch (err) {

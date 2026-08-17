@@ -78,6 +78,7 @@ class FixtureBrowserController implements BrowserController {
   async describeRef(ref: number): Promise<SnapshotRef | undefined> {
     return this.overrides.get(ref) ?? findSnapshotRef(this.snapshot, ref)
   }
+
 }
 
 async function collect(pipeline: CommandPipeline, command: string): Promise<PipelineEvent[]> {

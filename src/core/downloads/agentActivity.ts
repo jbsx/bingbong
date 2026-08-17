@@ -1,5 +1,5 @@
 import { systemClock, type Clock } from '../ports/clock'
-import type { BrowserController } from '../ports/browser'
+import type { BrowserController, VisualGroundingController } from '../ports/browser'
 
 // "Agent-initiated" download detection: a download started while an agent
 // browser action (click/type/navigate) is in flight — or within a short grace
@@ -42,7 +42,10 @@ export function createAgentActivityTracker(options?: { graceMs?: number; clock?:
  * agent-initiated. Delegates verb-by-verb (no spread — class-based
  * controllers keep their methods on the prototype).
  */
-export function withAgentActivity(controller: BrowserController, tracker: AgentActivityTracker): BrowserController {
+export function withAgentActivity(
+  controller: BrowserController & VisualGroundingController,
+  tracker: AgentActivityTracker,
+): BrowserController & VisualGroundingController {
   const run = <T>(action: () => Promise<T>): Promise<T> => tracker.run(action)
   return {
     navigate: (url) => run(() => controller.navigate(url)),
@@ -55,5 +58,7 @@ export function withAgentActivity(controller: BrowserController, tracker: AgentA
     pressKey: (press, times) => controller.pressKey(press, times),
     state: () => controller.state(),
     describeRef: (ref) => controller.describeRef(ref),
+    groundingSnapshot: () => controller.groundingSnapshot(),
+    refAtPoint: (point) => controller.refAtPoint(point),
   }
 }

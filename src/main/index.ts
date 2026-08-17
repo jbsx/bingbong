@@ -1,6 +1,6 @@
 import { app, BrowserWindow, ipcMain } from 'electron'
 import { join } from 'node:path'
-import type { BrowserController } from '../core/ports/browser'
+import type { BrowserController, VisualGroundingController } from '../core/ports/browser'
 import { createAgentActivityTracker, withAgentActivity } from '../core/downloads/agentActivity'
 import { PIPELINE_IPC } from '../core/pipeline/ipcChannels'
 import { createBrowserPane } from './browser/createBrowserPane'
@@ -132,7 +132,7 @@ async function createWindow(): Promise<BrowserWindow> {
   const pane = createBrowserPane()
   attachBrowserPaneToWindow(pane, win)
   const agentActivity = createAgentActivityTracker()
-  const controller: BrowserController = withAgentActivity(createPaneBrowserController(pane), agentActivity)
+  const controller: BrowserController & VisualGroundingController = withAgentActivity(createPaneBrowserController(pane), agentActivity)
 
   const downloadsDir = resolveDownloadsDir(process.env, app.getPath('downloads'))
   // Spoken output (T8), wrapped in a speaking gate (T9): the pipeline,

@@ -1,8 +1,11 @@
 import type { ToolCall } from '../ports/llm'
 import type { Clock } from '../ports/clock'
+import type { VisionGrant } from '../agent/subagentRails'
 
 export interface ToolContext {
   clock: Clock
+  /** Consume one call only when a conditional tool actually falls back to vision. */
+  acquireVision?(): VisionGrant
 }
 
 /** Parameter description for the tool catalog sent to the model. */

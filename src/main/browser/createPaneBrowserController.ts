@@ -1,4 +1,4 @@
-import type { BrowserController } from '../../core/ports/browser'
+import type { BrowserController, VisualGroundingController } from '../../core/ports/browser'
 import { COLLECT_PAGE_SCRIPT } from './collectPageScript'
 import { createCdpBrowserController, type CdpDebugger, type CdpPageDriver } from './createCdpBrowserController'
 
@@ -26,7 +26,9 @@ function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promi
   })
 }
 
-export function createPaneBrowserController(pane: { view: { webContents: Electron.WebContents } }): BrowserController {
+export function createPaneBrowserController(
+  pane: { view: { webContents: Electron.WebContents } },
+): BrowserController & VisualGroundingController {
   const wc = pane.view.webContents
   let attached = false
 

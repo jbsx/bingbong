@@ -57,6 +57,7 @@ class FakeController implements BrowserController {
   async describeRef(ref: number): Promise<SnapshotRef | undefined> {
     return findSnapshotRef(buildPageSnapshot(youtubeFixture), ref)
   }
+
 }
 
 function harnessWith(overrides?: Partial<CliHarnessDeps>) {

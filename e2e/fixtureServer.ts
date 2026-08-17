@@ -125,6 +125,24 @@ function mediaPage(): string {
 </html>`
 }
 
+// Vision-grounding fixture: the play affordance is intentionally an
+// unlabeled div with no interactive role, so the DOM collector cannot expose
+// it. Only screenshot grounding can register it as a temporary ref.
+function visualTargetPage(): string {
+  return `<!doctype html>
+<html>
+<head><title>visual target fixture</title></head>
+<body style="background:#111;color:#fff;margin:0">
+  <h1 style="margin:24px">Featured video</h1>
+  <div style="position:fixed;left:240px;top:160px;width:320px;height:180px;background:linear-gradient(135deg,#a82d3d,#31142c);box-shadow:0 20px 60px #000">
+    <div id="visual-play" onclick="document.title='clicked:visual-play'" style="position:absolute;left:110px;top:45px;width:100px;height:90px;border-radius:50%;background:rgba(255,255,255,.92);cursor:pointer">
+      <span style="position:absolute;left:41px;top:27px;width:0;height:0;border-top:18px solid transparent;border-bottom:18px solid transparent;border-left:28px solid #8f2337"></span>
+    </div>
+  </div>
+</body>
+</html>`
+}
+
 export async function startFixtureServer(): Promise<FixtureServer> {
   const httpServer: Server = createServer((req, res) => {
     if (req.url === '/dl') {
@@ -158,6 +176,10 @@ export async function startFixtureServer(): Promise<FixtureServer> {
     }
     if (req.url === '/media') {
       res.end(mediaPage())
+      return
+    }
+    if (req.url === '/visual-target') {
+      res.end(visualTargetPage())
       return
     }
     res.end(page('<input id=t style="font-size:40px;width:100%;height:120px">'))

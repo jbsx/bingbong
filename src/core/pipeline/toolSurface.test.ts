@@ -1,10 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import type { Tool } from './tool'
 import { createBrowserTools } from './browserTools'
+import { createVisionGroundingTools } from './visionGroundingTools'
 import { createMediaTools } from './mediaTools'
 import { createSearchTools } from './searchTools'
 import { createSubagentTools } from './subagentTools'
 import { FakeBrowser, FakeSearch } from '../testing/doubles'
+
+const unusedVision = { locate: async () => ({ x: 0, y: 0 }) }
 
 // The full orchestrator tool catalog, assembled exactly as
 // createAssistantPipeline assembles it (main/agent/createAssistantPipeline.ts).
@@ -16,6 +19,7 @@ import { FakeBrowser, FakeSearch } from '../testing/doubles'
 function orchestratorToolCatalog(): Tool[] {
   return [
     ...createBrowserTools(new FakeBrowser()),
+    ...createVisionGroundingTools(new FakeBrowser(), unusedVision),
     ...createMediaTools(new FakeBrowser()),
     ...createSearchTools(new FakeSearch()),
   ]
@@ -50,6 +54,7 @@ describe('orchestrator tool surface', () => {
         'scroll',
         'screenshot',
         'back',
+        'ground_visual',
         'media_control',
         'web_search',
       ].sort(),

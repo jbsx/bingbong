@@ -1,8 +1,13 @@
-import type { SnapshotRef } from '../browser/snapshot'
+import type { PageSnapshot, SnapshotRef } from '../browser/snapshot'
 
 export interface BrowserState {
   url: string | null
   title: string | null
+}
+
+export interface ViewportPoint {
+  x: number
+  y: number
 }
 
 /**
@@ -28,4 +33,12 @@ export interface BrowserController {
   state(): BrowserState
   /** Facts about a snapshot ref for risk assessment; undefined when the ref no longer resolves. */
   describeRef(ref: number): Promise<SnapshotRef | undefined>
+}
+
+/** Extra browser capability required only by visual grounding. */
+export interface VisualGroundingController {
+  /** Structured current-page snapshot used by deterministic grounding. */
+  groundingSnapshot(): Promise<PageSnapshot>
+  /** Register the live element at viewport coordinates as a normal, risk-described ref. */
+  refAtPoint(point: ViewportPoint): Promise<number>
 }

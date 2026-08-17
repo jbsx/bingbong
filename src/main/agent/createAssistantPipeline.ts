@@ -1,12 +1,14 @@
 import type { LlmClient, AssistantTurn } from '../../core/ports/llm'
 import type { TtsSpeaker } from '../../core/ports/tts'
 import { systemClock, type Clock } from '../../core/ports/clock'
-import type { BrowserController } from '../../core/ports/browser'
+import type { BrowserController, VisualGroundingController } from '../../core/ports/browser'
 import type { SearchProvider } from '../../core/ports/search'
+import type { VisionLocator } from '../../core/ports/vision'
 import { createCommandPipeline, type CommandPipeline } from '../../core/pipeline/createCommandPipeline'
 import { createSingleShotPipeline } from '../../core/pipeline/singleShotPipeline'
 import type { Tool } from '../../core/pipeline/tool'
 import { createBrowserTools } from '../../core/pipeline/browserTools'
+import { createVisionGroundingTools } from '../../core/pipeline/visionGroundingTools'
 import { createMediaTools } from '../../core/pipeline/mediaTools'
 import { createSearchTools } from '../../core/pipeline/searchTools'
 import { resolveModelEndpoint, routingEnvKeys } from '../../core/agent/modelRouting'
@@ -16,9 +18,10 @@ import { ScriptedLlm, silentTts, UnavailableLlm } from '../../core/testing/doubl
 import { createDuckDuckGoSearchProvider } from '../search/createDuckDuckGoSearchProvider'
 import { createOpenAiLlmClient } from './openAiLlmClient'
 import { ORCHESTRATOR_SYSTEM_PROMPT } from './orchestratorPrompt'
+import { createZaiVisionLocator } from '../vision/createZaiVisionLocator'
 
 export interface AssistantPipelineDeps {
-  controller: BrowserController
+  controller: BrowserController & VisualGroundingController
   env: Record<string, string | undefined>
   /**
    * Live env source (settings file layered over process.env). When provided,
@@ -35,6 +38,8 @@ export interface AssistantPipelineDeps {
   subagentTools?: Tool[]
   /** Receives per-turn orchestrator token usage (daily spend estimate). */
   onLlmUsage?: UsageSink
+  /** Override for deterministic tests; production uses the Z.AI Vision MCP adapter. */
+  vision?: VisionLocator
 }
 
 function resolveLlm(
@@ -106,15 +111,18 @@ function createDynamicLlm(
 export function createAssistantPipeline(deps: AssistantPipelineDeps): CommandPipeline {
   const fetchFn = deps.fetchFn ?? fetch
   const search = deps.search ?? createDuckDuckGoSearchProvider({ fetchFn })
+  const getEnv = deps.getEnv ?? (() => deps.env)
+  const vision = deps.vision ?? createZaiVisionLocator({ getEnv })
   const tools: Tool[] = [
     ...createBrowserTools(deps.controller),
+    ...createVisionGroundingTools(deps.controller, vision),
     ...createMediaTools(deps.controller),
     ...createSearchTools(search),
     ...(deps.subagentTools ?? []),
   ]
   const clock = deps.clock ?? systemClock
   const pipeline = createCommandPipeline({
-    llm: createDynamicLlm(deps.getEnv ?? (() => deps.env), fetchFn, tools, deps.onLlmUsage),
+    llm: createDynamicLlm(getEnv, fetchFn, tools, deps.onLlmUsage),
     tts: deps.tts ?? silentTts,
     clock,
     tools,

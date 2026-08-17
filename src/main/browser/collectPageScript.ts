@@ -124,13 +124,13 @@ export const COLLECT_PAGE_SCRIPT = `(() => {
   // here is exactly what the controller's element registry is keyed by.
   const collected = dialogElements.concat(pageElements).slice(0, 400)
   window.__bingbongRefs = collected
-  const elements = collected.map((el) => {
+  const describeElement = (el) => {
     const rect = el.getBoundingClientRect()
     const form = formOf(el)
     const formFlags = formFlagsOf(form)
     return {
       tag: el.tagName.toLowerCase(),
-      role: el.getAttribute('role'),
+      role: el.getAttribute('role') || (el.hasAttribute('onclick') ? 'button' : null),
       inputType: el.tagName === 'INPUT' ? el.type : null,
       label: labelOf(el),
       rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
@@ -144,7 +144,9 @@ export const COLLECT_PAGE_SCRIPT = `(() => {
       formHasPayment: formFlags.formHasPayment,
       layer: inDialog(el) ? 'dialog' : 'page'
     }
-  })
+  }
+  window.__bingbongDescribeElement = describeElement
+  const elements = collected.map(describeElement)
   return {
     url: location.href,
     title: document.title,

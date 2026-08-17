@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { BrowserController } from '../ports/browser'
+import type { BrowserController, VisualGroundingController } from '../ports/browser'
 import { FakeBrowser, FakeClock } from '../testing/doubles'
 import { createAgentActivityTracker, withAgentActivity } from './agentActivity'
 
@@ -91,7 +91,7 @@ describe('withAgentActivity', () => {
 
   it('keeps the controller surface intact', () => {
     const tracked = withAgentActivity(new FakeBrowser(), trackerWithClock().tracker)
-    const verbs: Array<keyof BrowserController> = [
+    const verbs: Array<keyof (BrowserController & VisualGroundingController)> = [
       'navigate',
       'readPage',
       'click',
@@ -102,6 +102,8 @@ describe('withAgentActivity', () => {
       'pressKey',
       'state',
       'describeRef',
+      'groundingSnapshot',
+      'refAtPoint',
     ]
     for (const verb of verbs) {
       expect(typeof tracked[verb]).toBe('function')

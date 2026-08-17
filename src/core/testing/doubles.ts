@@ -3,8 +3,8 @@ import type { AssistantTurn, LlmClient, LlmRequest } from '../ports/llm'
 import type { TtsSpeaker } from '../ports/tts'
 import type { Transcriber, VadScorer } from '../ports/stt'
 import type { WakeWordDetector } from '../ports/wake'
-import type { BrowserController, BrowserState, KeyPress } from '../ports/browser'
-import type { SnapshotRef } from '../browser/snapshot'
+import type { BrowserController, BrowserState, KeyPress, ViewportPoint, VisualGroundingController } from '../ports/browser'
+import type { PageSnapshot, SnapshotRef } from '../browser/snapshot'
 import type { SearchProvider, SearchResult } from '../ports/search'
 
 export class FakeClock implements Clock {
@@ -54,7 +54,25 @@ export class ScriptedLlm implements LlmClient {
     this.requests.push(request)
     const next = this.script.shift()
     if (!next) throw new Error('ScriptedLlm ran out of scripted turns')
-    return next
+    if (next.kind !== 'tool_calls') return next
+    const groundedRef = [...request.toolResults]
+      .reverse()
+      .find((result) => result.outcome.ok && typeof result.outcome.result === 'string' && /\buse ref \d+\b/.test(result.outcome.result))
+    const ref = groundedRef?.outcome.ok && typeof groundedRef.outcome.result === 'string'
+      ? Number(/\buse ref (\d+)\b/.exec(groundedRef.outcome.result)?.[1])
+      : undefined
+    return {
+      ...next,
+      calls: next.calls.map((call) => ({
+        ...call,
+        args: Object.fromEntries(
+          Object.entries(call.args).map(([name, value]) => [
+            name,
+            name === 'ref' && value === '$grounded_ref' && ref !== undefined ? ref : value,
+          ]),
+        ),
+      })),
+    }
   }
 }
 
@@ -83,7 +101,7 @@ export class FailingTts implements TtsSpeaker {
   stop(): void {}
 }
 
-export class FakeBrowser implements BrowserController {
+export class FakeBrowser implements BrowserController, VisualGroundingController {
   readonly navigations: string[] = []
   readonly clicks: number[] = []
   readonly typed: { ref: number; text: string }[] = []
@@ -92,6 +110,18 @@ export class FakeBrowser implements BrowserController {
   /** Refs the risk gate can describe; empty means every ref is unknown. */
   readonly refs = new Map<number, SnapshotRef>()
   private pageState: BrowserState = { url: null, title: null }
+  snapshot: PageSnapshot = {
+    url: 'about:blank',
+    title: '',
+    viewport: { width: 800, height: 600, scrollY: 0, scrollHeight: 600 },
+    refs: [],
+    totalVisible: 0,
+    truncated: false,
+  }
+  screenshotBytes = new Uint8Array()
+  screenshotCalls = 0
+  pointRef = 1
+  readonly refPoints: { x: number; y: number }[] = []
 
   async navigate(url: string): Promise<void> {
     this.navigations.push(url)
@@ -119,7 +149,8 @@ export class FakeBrowser implements BrowserController {
   }
 
   async screenshot(): Promise<Uint8Array> {
-    return new Uint8Array()
+    this.screenshotCalls += 1
+    return this.screenshotBytes
   }
 
   async back(): Promise<void> {
@@ -132,6 +163,15 @@ export class FakeBrowser implements BrowserController {
 
   async describeRef(ref: number): Promise<SnapshotRef | undefined> {
     return this.refs.get(ref)
+  }
+
+  async groundingSnapshot(): Promise<PageSnapshot> {
+    return this.snapshot
+  }
+
+  async refAtPoint(point: ViewportPoint): Promise<number> {
+    this.refPoints.push(point)
+    return this.pointRef
   }
 }
 

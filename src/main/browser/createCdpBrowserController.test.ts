@@ -23,6 +23,31 @@ class FakeCdp implements CdpDebugger {
     if (method === 'Runtime.evaluate') {
       if (this.evaluateException) return { exceptionDetails: { text: this.evaluateException } } as T
       const expression = typeof params?.expression === 'string' ? params.expression : ''
+      if (expression.includes('const hit = document.elementFromPoint')) {
+        return {
+          result: {
+            value: {
+              index: 20,
+              element: {
+                tag: 'div',
+                role: 'button',
+                inputType: null,
+                label: '',
+                rect: { x: 300, y: 180, width: 100, height: 100 },
+                href: null,
+                downloadsFile: false,
+                submitsForm: false,
+                credentialField: false,
+                paymentField: false,
+                inForm: false,
+                formHasCredential: false,
+                formHasPayment: false,
+                layer: 'page',
+              },
+            },
+          },
+        } as T
+      }
       if (expression.includes('__bingbongRefs')) {
         if (expression.includes('.click()')) return { result: { value: { clicked: true } } } as T
         if (this.prepStaleOnce) {
@@ -30,6 +55,9 @@ class FakeCdp implements CdpDebugger {
           return { result: { value: { ok: false } } } as T
         }
         const index = Number(/\)\[(\d+)\]/.exec(expression)?.[1] ?? -1)
+        if (index === 20) {
+          return { result: { value: { ok: true, clickable: true, x: 350, y: 230 } } } as T
+        }
         const snapshot = buildPageSnapshot(this.evaluateValue as CollectedPage)
         const target = snapshot.refs[index]
         if (!target) return { result: { value: { ok: false } } } as T
@@ -164,6 +192,32 @@ describe('createCdpBrowserController describeRef', () => {
     await controller.describeRef(7)
 
     expect(cdp.collectCalls()).toHaveLength(collectsBefore)
+  })
+})
+
+describe('createCdpBrowserController visual point mapping', () => {
+  it('registers a hit-tested element as a normal ref that click can use', async () => {
+    const { cdp, controller } = makeController()
+    await controller.readPage()
+
+    const ref = await controller.refAtPoint({ x: 315, y: 195 })
+
+    expect(ref).toBe(21)
+    expect(await controller.describeRef(ref)).toMatchObject({
+      ref: 21,
+      kind: 'button',
+      rect: { x: 300, y: 180, width: 100, height: 100 },
+      credentialField: false,
+      paymentField: false,
+    })
+    await controller.click(ref)
+    expect(cdp.inputCalls()[1]?.params).toMatchObject({ type: 'mousePressed', x: 315, y: 195 })
+  })
+
+  it('rejects a vision point outside the captured viewport', async () => {
+    const { controller } = makeController()
+
+    await expect(controller.refAtPoint({ x: 1_500, y: 900 })).rejects.toThrow(/outside the current viewport/)
   })
 })
 

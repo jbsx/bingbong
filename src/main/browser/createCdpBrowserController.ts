@@ -1,4 +1,4 @@
-import type { BrowserController, BrowserState, KeyPress } from '../../core/ports/browser'
+import type { BrowserController, BrowserState, KeyPress, ViewportPoint, VisualGroundingController } from '../../core/ports/browser'
 import { normalizeUrlInput } from '../../core/browser/urlInput'
 import {
   buildPageSnapshot,
@@ -63,6 +63,11 @@ interface ClickPrep {
   x?: number
   y?: number
   clickable?: boolean
+}
+
+interface PointRefResult {
+  index: number
+  element: import('../../core/browser/snapshot').CollectedElement
 }
 
 function sleep(ms: number): Promise<void> {
@@ -139,13 +144,15 @@ function shortcutEventFor(press: KeyPress): { key: string; code: string; keyCode
   }
 }
 
-export function createCdpBrowserController(deps: CdpBrowserControllerDeps): BrowserController {
+export function createCdpBrowserController(deps: CdpBrowserControllerDeps): BrowserController & VisualGroundingController {
   const { cdp, page, collectScript } = deps
   const pacing: ControllerPacing = { ...HUMAN_PACING, ...deps.pacing }
   let lastSnapshot: PageSnapshot | undefined
+  const visualPoints = new Map<number, ViewportPoint>()
 
   async function collectSnapshot(): Promise<PageSnapshot> {
     const snapshot = buildPageSnapshot(parseCollectedPage(await evaluateInPage<unknown>(collectScript)))
+    visualPoints.clear()
     lastSnapshot = snapshot
     return snapshot
   }
@@ -221,8 +228,23 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
   }
 
   async function dispatchClick(ref: number): Promise<void> {
-    const { snapshot, target } = await resolveRef(ref)
-    let index = snapshot.refs.indexOf(target)
+    const { target } = await resolveRef(ref)
+    const visualPoint = visualPoints.get(ref)
+    if (visualPoint) {
+      const index = target.ref - 1
+      const reachable = await evaluateInPage<boolean>(`(() => {
+        const el = (window.__bingbongRefs || [])[${index}]
+        if (!el || !el.isConnected) return false
+        const top = document.elementFromPoint(${JSON.stringify(visualPoint.x)}, ${JSON.stringify(visualPoint.y)})
+        return top === el || (top !== null && el.contains(top))
+      })()`)
+      if (!reachable) throw new Error(`ref ${ref} no longer resolves at the visually grounded point`)
+      await dispatchPointClick(visualPoint)
+      visualPoints.delete(ref)
+      lastSnapshot = undefined
+      return
+    }
+    let index = target.ref - 1
     let prep = await prepClick(index)
     if (!prep.ok) {
       // The element registry died with the page (navigation); re-collect.
@@ -231,7 +253,7 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
       if (!freshTarget) {
         throw new Error(`ref ${ref} not found — the page may have changed, run read_page to refresh refs`)
       }
-      index = fresh.refs.indexOf(freshTarget)
+      index = freshTarget.ref - 1
       prep = await prepClick(index)
       if (!prep.ok) {
         throw new Error(`ref ${ref} not found — the page may have changed, run read_page to refresh refs`)
@@ -239,26 +261,7 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
     }
 
     if (prep.clickable && typeof prep.x === 'number' && typeof prep.y === 'number') {
-      const { x, y } = prep
-      await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x, y })
-      await sleep(pacing.moveMs)
-      await cdp.send('Input.dispatchMouseEvent', {
-        type: 'mousePressed',
-        x,
-        y,
-        button: 'left',
-        buttons: 1,
-        clickCount: 1,
-      })
-      await sleep(pacing.clickMs)
-      await cdp.send('Input.dispatchMouseEvent', {
-        type: 'mouseReleased',
-        x,
-        y,
-        button: 'left',
-        buttons: 0,
-        clickCount: 1,
-      })
+      await dispatchPointClick({ x: prep.x, y: prep.y })
     } else {
       // Coordinates can't reach the element (overlay on top, clipped away):
       // activate it directly, Vimium-style, so nothing can swallow the click.
@@ -266,6 +269,29 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
     }
     // A click can navigate (link) or mutate the page; never trust old refs.
     lastSnapshot = undefined
+  }
+
+  async function dispatchPointClick(point: ViewportPoint): Promise<void> {
+    const { x, y } = point
+    await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x, y })
+    await sleep(pacing.moveMs)
+    await cdp.send('Input.dispatchMouseEvent', {
+      type: 'mousePressed',
+      x,
+      y,
+      button: 'left',
+      buttons: 1,
+      clickCount: 1,
+    })
+    await sleep(pacing.clickMs)
+    await cdp.send('Input.dispatchMouseEvent', {
+      type: 'mouseReleased',
+      x,
+      y,
+      button: 'left',
+      buttons: 0,
+      clickCount: 1,
+    })
   }
 
   /** Scroll the ref's element into view, then report fresh click coordinates
@@ -348,6 +374,55 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
     }
   }
 
+  async function groundingSnapshot(): Promise<PageSnapshot> {
+    return collectSnapshot()
+  }
+
+  async function refAtPoint(point: ViewportPoint): Promise<number> {
+    const { x, y } = point
+    const snapshot = await currentSnapshot()
+    if (!Number.isFinite(x) || !Number.isFinite(y) || x < 0 || y < 0 || x >= snapshot.viewport.width || y >= snapshot.viewport.height) {
+      throw new Error('vision location is outside the current viewport')
+    }
+    const result = await evaluateInPage<PointRefResult>(`(() => {
+      const x = ${JSON.stringify(x)}
+      const y = ${JSON.stringify(y)}
+      const hit = document.elementFromPoint(x, y)
+      if (!hit) throw new Error('no element at vision location')
+      const el = hit.closest('a,area,button,input,select,textarea,video,audio,[contenteditable="true"],[role], [onclick]') || hit
+      const refs = window.__bingbongRefs || []
+      let index = refs.indexOf(el)
+      if (index < 0) {
+        index = refs.length
+        refs.push(el)
+        window.__bingbongRefs = refs
+      }
+      const describe = window.__bingbongDescribeElement
+      if (typeof describe !== 'function') throw new Error('page element collector is unavailable')
+      return { index, element: describe(el) }
+    })()`)
+    if (!result || !Number.isInteger(result.index) || result.index < 0) {
+      throw new Error('vision location could not be mapped to a page element')
+    }
+    const parsed = parseCollectedPage({
+      url: snapshot.url,
+      title: snapshot.title,
+      viewport: snapshot.viewport,
+      elements: [result.element],
+    })
+    const built = buildPageSnapshot(parsed, { maxRefs: 1 }).refs[0]
+    if (!built) throw new Error('element at vision location is not actionable')
+    const ref = result.index + 1
+    const target = { ...built, ref }
+    lastSnapshot = {
+      ...snapshot,
+      refs: [...snapshot.refs.filter((candidate) => candidate.ref !== ref), target],
+      totalVisible: Math.max(snapshot.totalVisible, ref),
+    }
+    visualPoints.set(ref, point)
+    return ref
+  }
+
   function state(): BrowserState {
     return { url: page.url(), title: page.title() }
   }
@@ -363,5 +438,7 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
     pressKey,
     state,
     describeRef,
+    groundingSnapshot,
+    refAtPoint,
   }
 }
