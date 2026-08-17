@@ -20,6 +20,8 @@ export interface CollectedElement {
   inForm?: boolean
   formHasCredential?: boolean
   formHasPayment?: boolean
+  /** 'dialog' marks elements of the page's topmost open dialog; absent in older payloads. */
+  layer?: 'dialog' | 'page'
 }
 
 export interface CollectedViewport {
@@ -140,6 +142,7 @@ export function parseCollectedPage(raw: unknown): CollectedPage {
       inForm: optionalBoolean(el.inForm),
       formHasCredential: optionalBoolean(el.formHasCredential),
       formHasPayment: optionalBoolean(el.formHasPayment),
+      layer: el.layer === 'dialog' || el.layer === 'page' ? el.layer : undefined,
     }
   })
 
@@ -164,7 +167,12 @@ function truncateLabel(label: string): string {
 
 export function buildPageSnapshot(page: CollectedPage, options?: { maxRefs?: number }): PageSnapshot {
   const maxRefs = options?.maxRefs ?? MAX_SNAPSHOT_REFS
-  const visible = page.elements.filter((element) => intersectsViewport(element, page.viewport))
+  // Dialog-layer elements bypass the viewport bound: the dialog is the page's
+  // current interaction layer, and its controls may sit below the fold inside
+  // the dialog's own scroller (the click path scrolls them into view).
+  const visible = page.elements.filter(
+    (element) => element.layer === 'dialog' || intersectsViewport(element, page.viewport),
+  )
   const taken = visible.slice(0, maxRefs)
 
   return {

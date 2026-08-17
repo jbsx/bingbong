@@ -1,14 +1,20 @@
 import { describe, expect, it } from 'vitest'
 import youtubeHome from '../../core/browser/fixtures/youtube-home.json'
 import type { CollectedPage } from '../../core/browser/snapshot'
+import { buildPageSnapshot, clickPoint } from '../../core/browser/snapshot'
 import type { CdpDebugger, CdpPageDriver } from './createCdpBrowserController'
 import { createCdpBrowserController } from './createCdpBrowserController'
 
 const youtubeFixture = youtubeHome as unknown as CollectedPage
+const COLLECT_EXPRESSION = '/* COLLECT */'
 
 class FakeCdp implements CdpDebugger {
   readonly calls: { method: string; params?: Record<string, unknown> }[] = []
   evaluateException: string | null = null
+  /** When set, click-prep reports the element as covered (DOM fallback path). */
+  prepCovered = false
+  /** When set, the next click-prep reports a stale registry once (re-collect path). */
+  prepStaleOnce = false
 
   constructor(private evaluateValue: unknown = youtubeFixture) {}
 
@@ -16,6 +22,20 @@ class FakeCdp implements CdpDebugger {
     this.calls.push({ method, params })
     if (method === 'Runtime.evaluate') {
       if (this.evaluateException) return { exceptionDetails: { text: this.evaluateException } } as T
+      const expression = typeof params?.expression === 'string' ? params.expression : ''
+      if (expression.includes('__bingbongRefs')) {
+        if (expression.includes('.click()')) return { result: { value: { clicked: true } } } as T
+        if (this.prepStaleOnce) {
+          this.prepStaleOnce = false
+          return { result: { value: { ok: false } } } as T
+        }
+        const index = Number(/\)\[(\d+)\]/.exec(expression)?.[1] ?? -1)
+        const snapshot = buildPageSnapshot(this.evaluateValue as CollectedPage)
+        const target = snapshot.refs[index]
+        if (!target) return { result: { value: { ok: false } } } as T
+        // Mirror the in-page prep math: fresh clickPoint, hit-test result set by the test.
+        return { result: { value: { ok: true, clickable: !this.prepCovered, ...clickPoint(target, snapshot.viewport) } } } as T
+      }
       return { result: { value: this.evaluateValue } } as T
     }
     if (method === 'Page.captureScreenshot') return { data: Buffer.from('fake-jpeg-bytes').toString('base64') } as T
@@ -25,6 +45,13 @@ class FakeCdp implements CdpDebugger {
 
   inputCalls(): { method: string; params?: Record<string, unknown> }[] {
     return this.calls.filter((call) => call.method.startsWith('Input.'))
+  }
+
+  /** Collector-script invocations only (click-prep probes evaluate too). */
+  collectCalls(): { method: string; params?: Record<string, unknown> }[] {
+    return this.calls.filter(
+      (call) => call.method === 'Runtime.evaluate' && call.params?.expression === COLLECT_EXPRESSION,
+    )
   }
 }
 
@@ -127,11 +154,11 @@ describe('createCdpBrowserController describeRef', () => {
   it('reuses an existing snapshot instead of re-collecting', async () => {
     const { cdp, controller } = makeController()
     await controller.readPage()
-    const evaluatesBefore = cdp.calls.filter((call) => call.method === 'Runtime.evaluate').length
+    const collectsBefore = cdp.collectCalls().length
 
     await controller.describeRef(7)
 
-    expect(cdp.calls.filter((call) => call.method === 'Runtime.evaluate')).toHaveLength(evaluatesBefore)
+    expect(cdp.collectCalls()).toHaveLength(collectsBefore)
   })
 })
 
@@ -173,7 +200,7 @@ describe('createCdpBrowserController click', () => {
 
     await controller.click(1)
 
-    expect(cdp.calls.filter((call) => call.method === 'Runtime.evaluate')).toHaveLength(1)
+    expect(cdp.collectCalls()).toHaveLength(1)
     expect(cdp.inputCalls()[1]?.params).toMatchObject({ type: 'mousePressed', x: 36, y: 32 })
   })
 
@@ -201,6 +228,37 @@ describe('createCdpBrowserController click', () => {
     await controller.click(1)
 
     expect(cdp.inputCalls()[0]?.params).toMatchObject({ type: 'mouseMoved', x: 60, y: 799 })
+  })
+
+  it('activates the element directly when an overlay covers the click point', async () => {
+    const cdp = new FakeCdp()
+    cdp.prepCovered = true
+    const { controller } = makeController({ cdp })
+    await controller.readPage()
+
+    await controller.click(3)
+
+    // No synthetic mouse input can reach a covered element — the click is
+    // dispatched on the element itself instead.
+    expect(cdp.inputCalls()).toHaveLength(0)
+    const domClick = cdp.calls.find(
+      (call) => call.method === 'Runtime.evaluate' && typeof call.params?.expression === 'string' && call.params.expression.includes('.click()'),
+    )
+    expect(domClick?.params?.expression).toContain('__bingbongRefs')
+  })
+
+  it('re-collects once when the element registry went stale, then clicks', async () => {
+    const cdp = new FakeCdp()
+    cdp.prepStaleOnce = true
+    const { controller } = makeController({ cdp })
+
+    // The first prep reports a stale registry (the page navigated without
+    // the snapshot being invalidated); re-collecting rebuilds it and the
+    // retried prep succeeds.
+    await controller.click(3)
+
+    expect(cdp.collectCalls()).toHaveLength(2)
+    expect(cdp.inputCalls()[0]?.params).toMatchObject({ type: 'mouseMoved', x: 654, y: 32 })
   })
 })
 
@@ -259,25 +317,25 @@ describe('createCdpBrowserController type', () => {
 describe('createCdpBrowserController ref staleness', () => {
   it('invalidates refs after acting, so the next action re-reads the page', async () => {
     const { cdp, controller } = makeController()
-    const evaluates = () => cdp.calls.filter((call) => call.method === 'Runtime.evaluate').length
+    const collects = () => cdp.collectCalls().length
 
     await controller.readPage()
-    expect(evaluates()).toBe(1)
+    expect(collects()).toBe(1)
 
     // First action after a read uses the cached refs...
     await controller.click(1)
-    expect(evaluates()).toBe(1)
+    expect(collects()).toBe(1)
 
     // ...but acting invalidates them: a click may navigate, and scrolling
     // shifts every viewport-relative rect.
     await controller.scroll('down')
-    expect(evaluates()).toBe(2)
+    expect(collects()).toBe(2)
     await controller.click(2)
-    expect(evaluates()).toBe(3)
+    expect(collects()).toBe(3)
     await controller.type(3, 'query\n')
-    expect(evaluates()).toBe(4)
+    expect(collects()).toBe(4)
     await controller.click(4)
-    expect(evaluates()).toBe(5)
+    expect(collects()).toBe(5)
   })
 })
 
@@ -310,7 +368,7 @@ describe('createCdpBrowserController scroll', () => {
 
     await controller.scroll('down')
 
-    expect(cdp.calls.filter((call) => call.method === 'Runtime.evaluate')).toHaveLength(1)
+    expect(cdp.collectCalls()).toHaveLength(1)
     expect(cdp.inputCalls()[0]?.params).toMatchObject({ type: 'mouseWheel' })
   })
 })
@@ -337,9 +395,9 @@ describe('createCdpBrowserController navigate and back', () => {
 
     expect(page.loadedUrls).toEqual(['https://youtube.com'])
     // Refs are stale after a navigation: the next click must re-collect.
-    const evaluatesBefore = cdp.calls.filter((call) => call.method === 'Runtime.evaluate').length
+    const collectsBefore = cdp.collectCalls().length
     await controller.click(1)
-    expect(cdp.calls.filter((call) => call.method === 'Runtime.evaluate').length).toBe(evaluatesBefore + 1)
+    expect(cdp.collectCalls().length).toBe(collectsBefore + 1)
   })
 
   it('rejects input that is not navigable', async () => {
@@ -364,9 +422,9 @@ describe('createCdpBrowserController navigate and back', () => {
     await controller.back()
 
     expect(page.wentBack).toBe(1)
-    const evaluatesBefore = cdp.calls.filter((call) => call.method === 'Runtime.evaluate').length
+    const collectsBefore = cdp.collectCalls().length
     await controller.click(1)
-    expect(cdp.calls.filter((call) => call.method === 'Runtime.evaluate').length).toBe(evaluatesBefore + 1)
+    expect(cdp.collectCalls().length).toBe(collectsBefore + 1)
   })
 
   it('propagates go-back failures', async () => {

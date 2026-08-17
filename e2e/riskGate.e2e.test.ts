@@ -112,4 +112,33 @@ describe('risk gate e2e', () => {
       await harness.quit()
     }
   })
+
+  it('lets a cookie-consent submit through without pausing on the dialog', async () => {
+    const script: AssistantTurn[] = [
+      { kind: 'tool_calls', calls: [{ id: 'c1', name: 'navigate', args: { url: fixture.url('/consent') } }] },
+      { kind: 'tool_calls', calls: [{ id: 'c2', name: 'click', args: { ref: 1 } }] },
+      { kind: 'answer', speak: 'Consent dismissed.', display: 'Cookie consent dismissed.' },
+    ]
+    const harness = await startHarness({ fixture, env: { BINGBONG_LLM_SCRIPT: JSON.stringify(script) } })
+    try {
+      await harness.dashboardEval<string>(commandBoxScript('accept the cookies'))
+      await harness.waitForPaneUrl(fixture.url('/consent'))
+
+      // The click submits the consent form — no confirmation ever requested.
+      await waitFor(
+        async () => {
+          const title = await harness.paneEval<string>(`document.title`)
+          return title === 'submitted:consent' ? title : undefined
+        },
+        { timeoutMs: 20000, intervalMs: 250 },
+      )
+
+      const confirmationShown = await harness.dashboardEval<boolean>(`!!document.querySelector('.confirmation-card')`)
+      expect(confirmationShown).toBe(false)
+      const transcript = await transcriptText(harness)
+      expect(transcript).toContain('Consent dismissed.')
+    } finally {
+      await harness.quit()
+    }
+  })
 })

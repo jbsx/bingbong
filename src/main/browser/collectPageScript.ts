@@ -27,18 +27,20 @@ export const COLLECT_PAGE_SCRIPT = `(() => {
     '[role="menuitem"]',
     '[role="option"]'
   ].join(',')
-  const isVisible = (el) => {
+  // Vimium-style visibility: rect intersection only. Overlays do NOT hide an
+  // element from detection — a covered "background" button is still a real
+  // target (the click path activates elements directly when coordinates
+  // can't reach them).
+  const hasSize = (el) => {
+    const rect = el.getBoundingClientRect()
+    return rect.width >= 1 && rect.height >= 1
+  }
+  const rectVisible = (el) => {
     const style = window.getComputedStyle(el)
     if (style.display === 'none' || style.visibility === 'hidden') return false
+    if (!hasSize(el)) return false
     const rect = el.getBoundingClientRect()
-    return (
-      rect.width >= 1 &&
-      rect.height >= 1 &&
-      rect.bottom > 0 &&
-      rect.right > 0 &&
-      rect.top < vh &&
-      rect.left < vw
-    )
+    return rect.bottom > 0 && rect.right > 0 && rect.top < vh && rect.left < vw
   }
   const labelOf = (el) => {
     const parts = []
@@ -97,15 +99,36 @@ export const COLLECT_PAGE_SCRIPT = `(() => {
     }
     return { inForm: true, formHasCredential: credential, formHasPayment: payment }
   }
-  const elements = []
+  // The topmost open dialog is the page's current interaction layer (consent
+  // walls, pop-ups). Its controls are listed even when they sit below the
+  // fold inside the dialog's own scroller — the click path scrolls them into
+  // view — so the model can target them without a scroll dance.
+  const DIALOG_SELECTOR = 'dialog[open], tp-yt-paper-dialog, [role="dialog"], [role="alertdialog"], [aria-modal="true"]'
+  const dialogs = document.querySelectorAll(DIALOG_SELECTOR)
+  const dialogRoot = dialogs.length > 0 ? dialogs[dialogs.length - 1] : null
+  const inDialog = (el) => dialogRoot !== null && dialogRoot.contains(el)
+
+  const dialogElements = []
+  const pageElements = []
   for (const el of document.querySelectorAll(SELECTOR)) {
-    if (elements.length >= 400) break
     if (el.tagName === 'INPUT' && el.type === 'hidden') continue
-    if (!isVisible(el)) continue
+    if (inDialog(el)) {
+      if (!hasSize(el)) continue
+      dialogElements.push(el)
+    } else {
+      if (!rectVisible(el)) continue
+      pageElements.push(el)
+    }
+  }
+  // Dialog controls come first so they survive the collection cap; the order
+  // here is exactly what the controller's element registry is keyed by.
+  const collected = dialogElements.concat(pageElements).slice(0, 400)
+  window.__bingbongRefs = collected
+  const elements = collected.map((el) => {
     const rect = el.getBoundingClientRect()
     const form = formOf(el)
     const formFlags = formFlagsOf(form)
-    elements.push({
+    return {
       tag: el.tagName.toLowerCase(),
       role: el.getAttribute('role'),
       inputType: el.tagName === 'INPUT' ? el.type : null,
@@ -118,9 +141,10 @@ export const COLLECT_PAGE_SCRIPT = `(() => {
       paymentField: isPaymentField(el),
       inForm: formFlags.inForm,
       formHasCredential: formFlags.formHasCredential,
-      formHasPayment: formFlags.formHasPayment
-    })
-  }
+      formHasPayment: formFlags.formHasPayment,
+      layer: inDialog(el) ? 'dialog' : 'page'
+    }
+  })
   return {
     url: location.href,
     title: document.title,

@@ -75,6 +75,17 @@ describe('parseCollectedPage', () => {
 
     expect(parsed.elements[0]).toMatchObject({ credentialField: true, inForm: true, formHasCredential: true })
   })
+
+  it('keeps the dialog layer marker and drops unknown layer values', () => {
+    const parsed = parseCollectedPage(
+      page({
+        elements: [element({ layer: 'dialog' }), element({ layer: 'bogus' as unknown as 'dialog' })],
+      }),
+    )
+
+    expect(parsed.elements[0]?.layer).toBe('dialog')
+    expect(parsed.elements[1]?.layer).toBeUndefined()
+  })
 })
 
 describe('buildPageSnapshot', () => {
@@ -155,6 +166,33 @@ describe('buildPageSnapshot', () => {
 
     expect(snapshot.refs[0]).toMatchObject({ href: 'http://x.test/dl', downloadsFile: true })
     expect(snapshot.refs[1]).toMatchObject({ href: null, downloadsFile: false, submitsForm: false, credentialField: false })
+  })
+
+  it('keeps dialog-layer elements even when they sit below the fold', () => {
+    const snapshot = buildPageSnapshot(
+      page({
+        elements: [
+          // Consent-wall buttons inside the dialog's own scroller, far past
+          // the 800px viewport.
+          element({ label: 'Accept all', rect: { x: 500, y: 2100, width: 120, height: 40 }, layer: 'dialog' }),
+          element({ label: 'Page button' }),
+          element({ label: 'Off-screen page button', rect: { x: 10, y: 900, width: 50, height: 30 } }),
+        ],
+      }),
+    )
+
+    expect(snapshot.refs.map((r) => r.label)).toEqual(['Accept all', 'Page button'])
+  })
+
+  it('counts dialog-layer elements as listed, not truncated away', () => {
+    const snapshot = buildPageSnapshot(
+      page({
+        elements: [element({ label: 'Dialog control', rect: { x: 10, y: 5000, width: 50, height: 30 }, layer: 'dialog' })],
+      }),
+    )
+
+    expect(snapshot.totalVisible).toBe(1)
+    expect(snapshot.truncated).toBe(false)
   })
 })
 

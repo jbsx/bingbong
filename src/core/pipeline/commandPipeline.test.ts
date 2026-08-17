@@ -201,7 +201,7 @@ describe('command pipeline', () => {
       const events = await collect(pipeline, 'submit it', confirmWhenAsked(false))
 
       expect(events).toContainEqual({ type: 'confirmation_resolved', confirmationId: 'confirm-1', approved: false, reason: 'user', at: 0 })
-      expect(events).toContainEqual({ type: 'tool_result', callId: 'c1', name: 'submit_form', ok: false, error: 'denied by user', at: 0 })
+      expect(events).toContainEqual({ type: 'tool_result', callId: 'c1', name: 'submit_form', ok: false, error: 'denied by the user; do not retry this action', at: 0 })
     })
 
     it('auto-denies via the clock when no answer arrives before the timeout', async () => {
@@ -223,7 +223,7 @@ describe('command pipeline', () => {
         reason: 'timeout',
         at: 60_000,
       })
-      expect(events).toContainEqual({ type: 'tool_result', callId: 'c1', name: 'submit_form', ok: false, error: 'denied by timeout', at: 60_000 })
+      expect(events).toContainEqual({ type: 'tool_result', callId: 'c1', name: 'submit_form', ok: false, error: 'denied — the user did not respond in time; do not retry this action', at: 60_000 })
       expect(events.at(-1)).toMatchObject({ type: 'done' })
     })
 

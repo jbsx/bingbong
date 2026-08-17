@@ -297,7 +297,7 @@ describe('browser tools through the pipeline', () => {
       }
 
       expect(browser.clicks).toEqual([])
-      expect(events.find((e) => e.type === 'tool_result')).toMatchObject({ ok: false, error: 'denied by user' })
+      expect(events.find((e) => e.type === 'tool_result')).toMatchObject({ ok: false, error: 'denied by the user; do not retry this action' })
     })
   })
 })

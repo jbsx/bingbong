@@ -2,7 +2,6 @@ import type { BrowserController, BrowserState } from '../../core/ports/browser'
 import { normalizeUrlInput } from '../../core/browser/urlInput'
 import {
   buildPageSnapshot,
-  clickPoint,
   findSnapshotRef,
   formatPageSnapshot,
   parseCollectedPage,
@@ -56,6 +55,14 @@ interface ScreenshotResponse {
   data: string
 }
 
+/** Result of the in-page click-preparation probe. */
+interface ClickPrep {
+  ok: boolean
+  x?: number
+  y?: number
+  clickable?: boolean
+}
+
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
@@ -87,16 +94,20 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
   let lastSnapshot: PageSnapshot | undefined
 
   async function collectSnapshot(): Promise<PageSnapshot> {
+    const snapshot = buildPageSnapshot(parseCollectedPage(await evaluateInPage<unknown>(collectScript)))
+    lastSnapshot = snapshot
+    return snapshot
+  }
+
+  async function evaluateInPage<T>(expression: string): Promise<T> {
     const response = await cdp.send<EvaluateResponse>('Runtime.evaluate', {
-      expression: collectScript,
+      expression,
       returnByValue: true,
     })
     if (response.exceptionDetails) {
       throw new Error(`page evaluation failed: ${response.exceptionDetails.text}`)
     }
-    const snapshot = buildPageSnapshot(parseCollectedPage(response.result?.value))
-    lastSnapshot = snapshot
-    return snapshot
+    return (response.result?.value ?? undefined) as T
   }
 
   async function currentSnapshot(): Promise<PageSnapshot> {
@@ -160,28 +171,73 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
 
   async function dispatchClick(ref: number): Promise<void> {
     const { snapshot, target } = await resolveRef(ref)
-    const { x, y } = clickPoint(target, snapshot.viewport)
-    await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x, y })
-    await sleep(pacing.moveMs)
-    await cdp.send('Input.dispatchMouseEvent', {
-      type: 'mousePressed',
-      x,
-      y,
-      button: 'left',
-      buttons: 1,
-      clickCount: 1,
-    })
-    await sleep(pacing.clickMs)
-    await cdp.send('Input.dispatchMouseEvent', {
-      type: 'mouseReleased',
-      x,
-      y,
-      button: 'left',
-      buttons: 0,
-      clickCount: 1,
-    })
+    let index = snapshot.refs.indexOf(target)
+    let prep = await prepClick(index)
+    if (!prep.ok) {
+      // The element registry died with the page (navigation); re-collect.
+      const fresh = await collectSnapshot()
+      const freshTarget = findSnapshotRef(fresh, ref)
+      if (!freshTarget) {
+        throw new Error(`ref ${ref} not found — the page may have changed, run read_page to refresh refs`)
+      }
+      index = fresh.refs.indexOf(freshTarget)
+      prep = await prepClick(index)
+      if (!prep.ok) {
+        throw new Error(`ref ${ref} not found — the page may have changed, run read_page to refresh refs`)
+      }
+    }
+
+    if (prep.clickable && typeof prep.x === 'number' && typeof prep.y === 'number') {
+      const { x, y } = prep
+      await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x, y })
+      await sleep(pacing.moveMs)
+      await cdp.send('Input.dispatchMouseEvent', {
+        type: 'mousePressed',
+        x,
+        y,
+        button: 'left',
+        buttons: 1,
+        clickCount: 1,
+      })
+      await sleep(pacing.clickMs)
+      await cdp.send('Input.dispatchMouseEvent', {
+        type: 'mouseReleased',
+        x,
+        y,
+        button: 'left',
+        buttons: 0,
+        clickCount: 1,
+      })
+    } else {
+      // Coordinates can't reach the element (overlay on top, clipped away):
+      // activate it directly, Vimium-style, so nothing can swallow the click.
+      await evaluateInPage(`(window.__bingbongRefs || [])[${index}].click()`)
+    }
     // A click can navigate (link) or mutate the page; never trust old refs.
     lastSnapshot = undefined
+  }
+
+  /** Scroll the ref's element into view, then report fresh click coordinates
+   * and whether a coordinate click would actually land on it. */
+  async function prepClick(index: number): Promise<ClickPrep> {
+    return evaluateInPage<ClickPrep>(`(() => {
+      const el = (window.__bingbongRefs || [])[${index}]
+      if (!el || !el.isConnected) return { ok: false }
+      el.scrollIntoView({ block: 'center', inline: 'nearest' })
+      const vw = window.innerWidth
+      const vh = window.innerHeight
+      const rect = el.getBoundingClientRect()
+      const clamp = (value, low, high) => Math.min(Math.max(value, low), high)
+      const visibleLeft = Math.max(rect.x, 0)
+      const visibleRight = Math.min(rect.x + rect.width, vw)
+      const visibleTop = Math.max(rect.y, 0)
+      const visibleBottom = Math.min(rect.y + rect.height, vh)
+      const x = Math.round(clamp(rect.x + rect.width / 2, visibleLeft, Math.max(visibleLeft, visibleRight - 1)))
+      const y = Math.round(clamp(rect.y + rect.height / 2, visibleTop, Math.max(visibleTop, visibleBottom - 1)))
+      if (x < 0 || y < 0 || x >= vw || y >= vh) return { ok: true, clickable: false }
+      const top = document.elementFromPoint(x, y)
+      return { ok: true, x, y, clickable: top === el || (top !== null && el.contains(top)) }
+    })()`)
   }
 
   async function type(ref: number, text: string): Promise<void> {

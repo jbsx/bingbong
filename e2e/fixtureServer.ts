@@ -60,6 +60,51 @@ function riskyPage(): string {
 </html>`
 }
 
+// Cookie-consent form shaped like consent.youtube.com: hidden inputs plus
+// submit buttons whose only payload is the consent choice. Refs in DOM
+// order: [1] Accept all [2] Reject all. Submissions record into the title.
+function consentPage(): string {
+  return `<!doctype html>
+<html>
+<head><title>consent fixture</title></head>
+<body style="background:#222;color:#fff;margin:0">
+  <h1>Before you continue</h1>
+  <form onsubmit="document.title='submitted:consent';return false">
+    <input type="hidden" name="continue" value="/">
+    <button aria-label="Accept all" style="font-size:20px">Accept all</button>
+    <button aria-label="Reject all" style="font-size:20px">Reject all</button>
+  </form>
+</body>
+</html>`
+}
+
+// The www.youtube.com consent wall geometry: a fixed scrim over the page
+// and a fixed role=dialog container whose consent buttons sit far below the
+// fold inside the dialog's own scroller. Page elements stay rect-visible but
+// are covered, so the click path must activate them directly; the dialog's
+// buttons must be listed (dialog layer) even though they are off-screen.
+function consentWallPage(): string {
+  return `<!doctype html>
+<html>
+<head><title>consent wall fixture</title></head>
+<body style="background:#222;color:#fff;margin:0">
+  <h1>page behind a consent wall</h1>
+  <button id="btn-bg" onclick="document.title='clicked:btn-bg'" style="font-size:20px">Background button</button>
+  <a href="/second" style="font-size:20px">Background link</a>
+  <div style="position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:100"></div>
+  <div role="dialog" aria-modal="true" style="position:fixed;inset:0;overflow:auto;background:#333;z-index:101;padding:24px">
+    <h2>Before you continue to this fixture</h2>
+    <div style="height:2000px"></div>
+    <form onsubmit="document.title='submitted:consent';return false">
+      <input type="hidden" name="continue" value="/">
+      <button aria-label="Accept all" style="font-size:20px">Accept all</button>
+      <button aria-label="Reject all" style="font-size:20px">Reject all</button>
+    </form>
+  </div>
+</body>
+</html>`
+}
+
 export async function startFixtureServer(): Promise<FixtureServer> {
   const httpServer: Server = createServer((req, res) => {
     if (req.url === '/dl') {
@@ -81,6 +126,14 @@ export async function startFixtureServer(): Promise<FixtureServer> {
     }
     if (req.url === '/risky') {
       res.end(riskyPage())
+      return
+    }
+    if (req.url === '/consent') {
+      res.end(consentPage())
+      return
+    }
+    if (req.url === '/consent-wall') {
+      res.end(consentWallPage())
       return
     }
     res.end(page('<input id=t style="font-size:40px;width:100%;height:120px">'))

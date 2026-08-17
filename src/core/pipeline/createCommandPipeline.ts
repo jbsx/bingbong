@@ -31,7 +31,7 @@ export interface CommandPipeline {
 export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipeline {
   const { llm, tts, clock, tools } = deps
   const confirmTimeoutMs = deps.confirmTimeoutMs ?? 60_000
-  const maxToolRounds = deps.maxToolRounds ?? 8
+  const maxToolRounds = deps.maxToolRounds ?? 20
   const toolsByName = new Map(tools.map((tool) => [tool.name, tool]))
   const toolContext: ToolContext = { clock }
   const pendingConfirmations = new Map<string, (decision: ConfirmationDecision) => void>()
@@ -121,7 +121,11 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
         at: clock.now(),
       }
       if (!resolved.approved) {
-        return { ok: false, error: resolved.reason === 'timeout' ? 'denied by timeout' : 'denied by user' }
+        const detail =
+          resolved.reason === 'timeout'
+            ? 'denied — the user did not respond in time; do not retry this action'
+            : 'denied by the user; do not retry this action'
+        return { ok: false, error: detail }
       }
     }
 

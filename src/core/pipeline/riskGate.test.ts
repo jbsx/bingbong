@@ -114,6 +114,39 @@ describe('assessBrowserAction', () => {
       })
     })
 
+    it('allows cookie-consent submits like the YouTube consent wall', () => {
+      const accept = target({ label: 'Accept all', submitsForm: true, inForm: true })
+      const reject = target({ label: 'Reject all', submitsForm: true, inForm: true })
+      const withCookies = target({ label: 'Accept all cookies', submitsForm: true, inForm: true })
+      const allowCookies = target({ label: 'Allow all cookies', submitsForm: true, inForm: true })
+      // The collector joins aria-label and visible text: "Accept all" twice.
+      const doubled = target({ label: 'Accept all Accept all', submitsForm: true, inForm: true })
+
+      expect(assessBrowserAction(call('click', { ref: 1 }), accept)).toEqual({ kind: 'allow' })
+      expect(assessBrowserAction(call('click', { ref: 1 }), reject)).toEqual({ kind: 'allow' })
+      expect(assessBrowserAction(call('click', { ref: 1 }), withCookies)).toEqual({ kind: 'allow' })
+      expect(assessBrowserAction(call('click', { ref: 1 }), allowCookies)).toEqual({ kind: 'allow' })
+      expect(assessBrowserAction(call('click', { ref: 1 }), doubled)).toEqual({ kind: 'allow' })
+    })
+
+    it('still confirms consent-labelled submits on credential forms', () => {
+      const login = target({ label: 'Accept all', submitsForm: true, inForm: true, formHasCredential: true })
+
+      expect(assessBrowserAction(call('click', { ref: 1 }), login)).toEqual({
+        kind: 'confirm',
+        prompt: 'Submit the login form?',
+      })
+    })
+
+    it('still confirms ordinary form submits that mention cookies in passing', () => {
+      const send = target({ label: 'Send me cookies news', submitsForm: true, inForm: true })
+
+      expect(assessBrowserAction(call('click', { ref: 1 }), send)).toEqual({
+        kind: 'confirm',
+        prompt: 'Submit the form via "Send me cookies news"?',
+      })
+    })
+
     it('asks before submitting any other form', () => {
       const send = target({ label: 'Send', submitsForm: true, inForm: true })
 
