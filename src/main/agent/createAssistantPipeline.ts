@@ -10,6 +10,8 @@ import { createBrowserTools } from '../../core/pipeline/browserTools'
 import { createMediaTools } from '../../core/pipeline/mediaTools'
 import { createSearchTools } from '../../core/pipeline/searchTools'
 import { resolveModelEndpoint, routingEnvKeys } from '../../core/agent/modelRouting'
+import type { UsageSink } from '../../core/agent/usageTracking'
+import { withUsageTracking } from '../../core/agent/usageTracking'
 import { ScriptedLlm, silentTts, UnavailableLlm } from '../../core/testing/doubles'
 import { createDuckDuckGoSearchProvider } from '../search/createDuckDuckGoSearchProvider'
 import { createOpenAiLlmClient } from './openAiLlmClient'
@@ -29,26 +31,42 @@ export interface AssistantPipelineDeps {
   tts?: TtsSpeaker
   /** Search provider behind web_search; DuckDuckGo HTML by default. */
   search?: SearchProvider
+  /** Delegation tools (spawn/cancel/agent_results) when subagents are on. */
+  subagentTools?: Tool[]
+  /** Receives per-turn orchestrator token usage (daily spend estimate). */
+  onLlmUsage?: UsageSink
 }
 
-function resolveLlm(env: Record<string, string | undefined>, fetchFn: typeof fetch, tools: Tool[]): LlmClient {
+function resolveLlm(
+  env: Record<string, string | undefined>,
+  fetchFn: typeof fetch,
+  tools: Tool[],
+  onUsage?: UsageSink,
+): LlmClient {
+  let client: LlmClient
+  let model: string
+
   // Testing/demo hook: a scripted turn list instead of a live model. This is
   // what the e2e suite and keyless demos run against.
   const script = env.BINGBONG_LLM_SCRIPT
   if (script !== undefined && script.trim() !== '') {
     try {
-      return new ScriptedLlm(JSON.parse(script) as AssistantTurn[])
+      client = new ScriptedLlm(JSON.parse(script) as AssistantTurn[])
+      model = 'scripted'
     } catch (err) {
       return new UnavailableLlm(`BINGBONG_LLM_SCRIPT is not valid JSON: ${err instanceof Error ? err.message : String(err)}`)
     }
+  } else {
+    try {
+      const endpoint = resolveModelEndpoint(env, 'orchestrator')
+      client = createOpenAiLlmClient({ endpoint, systemPrompt: ORCHESTRATOR_SYSTEM_PROMPT, tools, fetchFn })
+      model = endpoint.model
+    } catch (err) {
+      return new UnavailableLlm(err instanceof Error ? err.message : String(err))
+    }
   }
 
-  try {
-    const endpoint = resolveModelEndpoint(env, 'orchestrator')
-    return createOpenAiLlmClient({ endpoint, systemPrompt: ORCHESTRATOR_SYSTEM_PROMPT, tools, fetchFn })
-  } catch (err) {
-    return new UnavailableLlm(err instanceof Error ? err.message : String(err))
-  }
+  return onUsage ? withUsageTracking(client, 'orchestrator', () => model, onUsage) : client
 }
 
 /** Env keys that decide which LLM client serves the orchestrator. */
@@ -63,7 +81,12 @@ function llmSignature(env: Record<string, string | undefined>): string {
  * commands. Resolution failures degrade to UnavailableLlm, so a half-edited
  * settings page never crashes the pipeline.
  */
-function createDynamicLlm(getEnv: () => Record<string, string | undefined>, fetchFn: typeof fetch, tools: Tool[]): LlmClient {
+function createDynamicLlm(
+  getEnv: () => Record<string, string | undefined>,
+  fetchFn: typeof fetch,
+  tools: Tool[],
+  onUsage?: UsageSink,
+): LlmClient {
   let signature: string | null = null
   let client: LlmClient | null = null
   return {
@@ -71,7 +94,7 @@ function createDynamicLlm(getEnv: () => Record<string, string | undefined>, fetc
       const env = getEnv()
       const nextSignature = llmSignature(env)
       if (client === null || nextSignature !== signature) {
-        client = resolveLlm(env, fetchFn, tools)
+        client = resolveLlm(env, fetchFn, tools, onUsage)
         signature = nextSignature
       }
       return client.complete(request)
@@ -87,10 +110,11 @@ export function createAssistantPipeline(deps: AssistantPipelineDeps): CommandPip
     ...createBrowserTools(deps.controller),
     ...createMediaTools(deps.controller),
     ...createSearchTools(search),
+    ...(deps.subagentTools ?? []),
   ]
   const clock = deps.clock ?? systemClock
   const pipeline = createCommandPipeline({
-    llm: createDynamicLlm(deps.getEnv ?? (() => deps.env), fetchFn, tools),
+    llm: createDynamicLlm(deps.getEnv ?? (() => deps.env), fetchFn, tools, deps.onLlmUsage),
     tts: deps.tts ?? silentTts,
     clock,
     tools,

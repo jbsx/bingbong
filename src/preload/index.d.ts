@@ -3,12 +3,14 @@ import type { PipelineEvent } from '../core/pipeline/events'
 import type { AppSettings } from '../core/settings/settings'
 import type { VoiceHeardEvent, VoiceState } from '../core/voice/ipcChannels'
 import type { LaunchConfig } from '../core/app/launchConfig'
+import type { UsageSummary } from '../core/agent/spendEstimate'
 
 export type { BrowserPaneState, PaneRect }
 export type { PipelineEvent }
 export type { AppSettings }
 export type { VoiceHeardEvent, VoiceState }
 export type { LaunchConfig }
+export type { UsageSummary }
 
 export interface BingbongBrowserApi {
   navigate(input: string): Promise<boolean>
@@ -29,6 +31,20 @@ export interface BingbongSettingsApi {
   get(): Promise<AppSettings>
   update(settings: AppSettings): Promise<AppSettings>
   onChanged(listener: (settings: AppSettings) => void): () => void
+}
+
+export interface BingbongSubagentsApi {
+  /** Report a live tab viewport's rect (drives the WebContentsView bounds). */
+  reportTabRect(agentId: string, rect: PaneRect): void
+  /** Reopen a closed subagent tab from its retained card. */
+  reopenTab(agentId: string): Promise<boolean>
+  /** Cancel a running subagent (the card's Cancel button). */
+  cancel(agentId: string): Promise<boolean>
+}
+
+export interface BingbongUsageApi {
+  /** Today's spend estimate (warn-only) for the settings page. */
+  getToday(): Promise<UsageSummary>
 }
 
 export interface BingbongTtsApi {
@@ -55,6 +71,8 @@ export interface BingbongApi {
   browser: BingbongBrowserApi
   assistant: BingbongAssistantApi
   settings: BingbongSettingsApi
+  subagents: BingbongSubagentsApi
+  usage: BingbongUsageApi
   tts: BingbongTtsApi
   voice: BingbongVoiceApi
 }

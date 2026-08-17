@@ -370,4 +370,39 @@ describe('command pipeline', () => {
     })
     expect(events.at(-1)).toMatchObject({ type: 'done' })
   })
+
+  it('enforces the ten-call vision rail through the real tool execution seam', async () => {
+    let executions = 0
+    const vision = {
+      name: 'analyze_page',
+      usesVision: true,
+      async execute() {
+        executions += 1
+        return 'grounded'
+      },
+    }
+    const calls = Array.from({ length: 15 }, (_, index) => ({
+      id: `v${index}`,
+      name: 'analyze_page',
+      args: {},
+    }))
+    const llm = new ScriptedLlm([
+      { kind: 'tool_calls', calls },
+      { kind: 'answer', speak: 'Done.', display: 'Vision bounded.' },
+    ])
+    const pipeline = createCommandPipeline({
+      llm,
+      tts: new RecordingTts(),
+      clock: new FakeClock(),
+      tools: [vision],
+    })
+
+    const events = await collect(pipeline, 'look at the page')
+
+    expect(executions).toBe(10)
+    expect(events.filter((event) => event.type === 'tool_result' && !event.ok)).toHaveLength(5)
+    expect(events.find((event) => event.type === 'tool_result' && !event.ok)).toMatchObject({
+      error: expect.stringMatching(/vision call limit \(10\)/),
+    })
+  })
 })

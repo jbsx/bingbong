@@ -136,6 +136,35 @@ describe('openAiLlmClient', () => {
     ])
   })
 
+  it('keeps explicitly optional tool parameters out of the required schema', async () => {
+    const fetch = new ScriptedFetch([
+      completionResponse({ content: '{"speak":"Done.","display":"Done."}' }),
+    ])
+    const client = createOpenAiLlmClient({
+      endpoint: ENDPOINT,
+      systemPrompt: ORCHESTRATOR_SYSTEM_PROMPT,
+      fetchFn: fetch.fetchFn,
+      tools: [
+        {
+          name: 'optional_probe',
+          parameters: {
+            required_value: { type: 'string', description: 'Required' },
+            optional_value: { type: 'string', description: 'Optional', required: false },
+          },
+          async execute() {
+            return 'ok'
+          },
+        },
+      ],
+    })
+
+    await client.complete({ command: 'probe', toolResults: [] })
+
+    expect(fetch.calls[0]?.body.tools?.[0]?.function.parameters).toMatchObject({
+      required: ['required_value'],
+    })
+  })
+
   it('caps the spoken answer to two sentences', async () => {
     const fetch = new ScriptedFetch([
       completionResponse({ content: '{"speak":"First. Second. Third.","display":"detail"}' }),

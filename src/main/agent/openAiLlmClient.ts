@@ -1,4 +1,4 @@
-import type { AssistantTurn, LlmClient, LlmRequest, ToolCall, ToolResult } from '../../core/ports/llm'
+import type { AssistantTurn, LlmClient, LlmRequest, TokenUsage, ToolCall, ToolResult } from '../../core/ports/llm'
 import type { Tool, ToolParameterSpec } from '../../core/pipeline/tool'
 import type { ModelEndpointConfig } from '../../core/agent/modelRouting'
 import { parseAssistantAnswer } from '../../core/agent/answerContract'
@@ -48,7 +48,9 @@ function toolDefinitions(tools: Tool[]): { type: 'function'; function: Record<st
       parameters: {
         type: 'object',
         properties: Object.fromEntries(Object.entries(tool.parameters ?? {}).map(([name, spec]) => [name, parameterSchema(spec)])),
-        required: Object.keys(tool.parameters ?? {}),
+        required: Object.entries(tool.parameters ?? {})
+          .filter(([, spec]) => spec.required !== false)
+          .map(([name]) => name),
       },
     },
   }))
@@ -117,19 +119,26 @@ export function createOpenAiLlmClient(deps: OpenAiLlmClientDeps): LlmClient {
     }
 
     const payload = (await response.json()) as {
+      usage?: { prompt_tokens?: number; completion_tokens?: number }
       choices?: { message?: { content?: string | null; tool_calls?: WireToolCall[] } }[]
     }
     const message = payload.choices?.[0]?.message
+    const usage = normalizeUsage(payload.usage)
     if (message?.tool_calls && message.tool_calls.length > 0) {
-      return { kind: 'tool_calls', calls: message.tool_calls.map(toToolCall) }
+      return { kind: 'tool_calls', calls: message.tool_calls.map(toToolCall), ...(usage ? { usage } : {}) }
     }
     const content = message?.content
     if (typeof content === 'string' && content.trim() !== '') {
       const { speak, display } = parseAssistantAnswer(content)
-      return { kind: 'answer', speak, display }
+      return { kind: 'answer', speak, display, ...(usage ? { usage } : {}) }
     }
     throw new Error('orchestrator returned an empty completion')
   }
 
   return { complete }
+}
+
+function normalizeUsage(raw: { prompt_tokens?: number; completion_tokens?: number } | undefined): TokenUsage | undefined {
+  if (!raw || typeof raw.prompt_tokens !== 'number' || typeof raw.completion_tokens !== 'number') return undefined
+  return { promptTokens: raw.prompt_tokens, completionTokens: raw.completion_tokens }
 }

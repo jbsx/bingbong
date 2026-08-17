@@ -18,9 +18,15 @@ export interface LlmRequest {
   toolResults: ToolResult[]
 }
 
+/** Token usage as reported by the provider (absent when unknown). */
+export interface TokenUsage {
+  promptTokens: number
+  completionTokens: number
+}
+
 export type AssistantTurn =
-  | { kind: 'answer'; speak: string; display: string }
-  | { kind: 'tool_calls'; calls: ToolCall[] }
+  | { kind: 'answer'; speak: string; display: string; usage?: TokenUsage }
+  | { kind: 'tool_calls'; calls: ToolCall[]; usage?: TokenUsage }
 
 export interface LlmClient {
   complete(request: LlmRequest): Promise<AssistantTurn>

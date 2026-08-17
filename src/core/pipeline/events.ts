@@ -1,5 +1,24 @@
 export type PipelineStatus = 'thinking' | 'acting' | 'speaking'
 
+import type { SubagentKind, SubagentStatus } from '../agent/subagentManager'
+import type { SubagentTabPhase } from '../browser/subagentTabs'
+
+/** Live-card view of one subagent, merged from manager + tab state. */
+export interface SubagentCard {
+  id: string
+  kind: SubagentKind
+  task: string
+  status: SubagentStatus
+  startedAt: number
+  finishedAt: number | null
+  steps: number
+  lastAction: string | null
+  result: string | null
+  error: string | null
+  /** Present for browse agents; phase drives the viewport and reopen. */
+  tab?: { phase: SubagentTabPhase; url: string; title: string }
+}
+
 export type PipelineEvent =
   | { type: 'command'; text: string; at: number }
   | { type: 'status'; status: PipelineStatus; at: number }
@@ -33,4 +52,6 @@ export type PipelineEvent =
   | { type: 'speak'; text: string; at: number }
   | { type: 'display'; text: string; at: number }
   | { type: 'error'; message: string; at: number }
+  /** A subagent's state changed — the dashboard keeps one card per agent id. */
+  | { type: 'agent_update'; agent: SubagentCard; at: number }
   | { type: 'done'; at: number }

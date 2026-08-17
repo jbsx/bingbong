@@ -3,6 +3,7 @@ import type { Tool } from './tool'
 import { createBrowserTools } from './browserTools'
 import { createMediaTools } from './mediaTools'
 import { createSearchTools } from './searchTools'
+import { createSubagentTools } from './subagentTools'
 import { FakeBrowser, FakeSearch } from '../testing/doubles'
 
 // The full orchestrator tool catalog, assembled exactly as
@@ -18,6 +19,19 @@ function orchestratorToolCatalog(): Tool[] {
     ...createMediaTools(new FakeBrowser()),
     ...createSearchTools(new FakeSearch()),
   ]
+}
+
+// The delegation tools (spawn/cancel/agent_results) are added on top by
+// createAssistantPipeline when the subagent runtime is attached — same rule:
+// they must never mention ads either.
+function delegationToolCatalog(): Tool[] {
+  const manager = {
+    spawn: () => ({ ok: false as const, reason: 'test' }),
+    cancel: () => ({ ok: false as const, reason: 'test' }),
+    results: async () => 'none',
+    list: () => [],
+  }
+  return createSubagentTools(manager)
 }
 
 // Matches any phrasing that pairs skipping/closing/bypassing with ads.
@@ -42,14 +56,19 @@ describe('orchestrator tool surface', () => {
     )
   })
 
+  it('delegation adds exactly spawn_agent, cancel_agent and agent_results', () => {
+    const names = delegationToolCatalog().map((tool) => tool.name)
+    expect(names.sort()).toEqual(['agent_results', 'cancel_agent', 'spawn_agent'])
+  })
+
   it('has no tool whose name or description mentions skipping ads', () => {
-    for (const tool of orchestratorToolCatalog()) {
+    for (const tool of [...orchestratorToolCatalog(), ...delegationToolCatalog()]) {
       expect(`${tool.name} ${tool.description ?? ''}`).not.toMatch(AD_SKIP_RE)
     }
   })
 
   it('has no parameter enum value for skipping ads', () => {
-    for (const tool of orchestratorToolCatalog()) {
+    for (const tool of [...orchestratorToolCatalog(), ...delegationToolCatalog()]) {
       for (const spec of Object.values(tool.parameters ?? {})) {
         for (const value of spec.enum ?? []) {
           expect(value).not.toMatch(AD_SKIP_RE)

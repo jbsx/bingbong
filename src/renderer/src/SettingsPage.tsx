@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { AppSettings, RoleRoutingSettings } from '../../core/settings/settings'
 import type { AgentRole } from '../../core/agent/modelRouting'
 import { WAKE_WORD_THRESHOLD_MAX, WAKE_WORD_THRESHOLD_MIN } from '../../core/settings/settings'
+import type { UsageSummary } from '../../core/agent/spendEstimate'
 import { DEFAULT_PIPER_VOICE } from '../../core/tts/piperVoices'
 
 const ROLES: { role: AgentRole; label: string }[] = [
@@ -68,6 +69,58 @@ function useTtsVoices(): string[] {
   }, [])
 
   return voices
+}
+
+function useTodayUsage(): UsageSummary | null {
+  const [usage, setUsage] = useState<UsageSummary | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    // Refreshed on open and every minute — the estimate grows while agents run.
+    const load = () => {
+      void window.bingbong.usage
+        .getToday()
+        .then((summary) => {
+          if (!cancelled) setUsage(summary)
+        })
+        .catch(() => undefined)
+    }
+    load()
+    const timer = setInterval(load, 60_000)
+    return () => {
+      cancelled = true
+      clearInterval(timer)
+    }
+  }, [])
+
+  return usage
+}
+
+function UsageSection() {
+  const usage = useTodayUsage()
+  if (!usage) return null
+
+  const roles = (['orchestrator', 'subagent', 'vision'] as const).filter((role) => usage.byRole[role])
+  return (
+    <section className="settings-section" aria-label="usage">
+      <h2>Usage today</h2>
+      <p className={`settings-usage${usage.overWarn ? ' settings-usage--warn' : ''}`} role="status">
+        Estimated spend: ${usage.estimateUsd.toFixed(2)} across {usage.requests} model request
+        {usage.requests === 1 ? '' : 's'} — warn-only, never blocking.
+        {usage.overWarn ? ` Above your $${usage.warnUsd} daily estimate.` : ''}
+      </p>
+      {roles.length > 0 ? (
+        <p className="settings-usage-detail">
+          {roles
+            .map((role) => {
+              const entry = usage.byRole[role]!
+              return `${role}: ${entry.requests} requests`
+            })
+            .join(' · ')}
+        </p>
+      ) : null}
+    </section>
+  )
 }
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
@@ -279,6 +332,8 @@ export function SettingsPage({
             />
           ))}
         </section>
+
+        <UsageSection />
       </div>
 
       <div className="settings-actions">

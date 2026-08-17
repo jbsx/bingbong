@@ -3,6 +3,7 @@ import { BrowserPane } from './BrowserPane'
 import { AssistantPanel, StatusOrb } from './AssistantPanel'
 import { IdleScreen } from './IdleScreen'
 import { SettingsPage } from './SettingsPage'
+import { SubagentCards } from './SubagentCards'
 import { useAssistant } from './useAssistant'
 import { useIdle } from './useIdle'
 import { useSettings } from './useSettings'
@@ -95,7 +96,10 @@ export function App() {
             <p className="settings-loading">Loading settings…</p>
           )
         ) : (
-          <BrowserPane />
+          <div className="dashboard-browsing">
+            <SubagentCards agents={assistant.agents} />
+            <BrowserPane />
+          </div>
         )}
       </main>
 

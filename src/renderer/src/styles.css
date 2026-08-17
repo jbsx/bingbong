@@ -529,3 +529,134 @@ details.transcript-entry--error summary {
 .dashboard--kiosk .assistant-panel {
   max-height: 18vh;
 }
+
+/* Subagents (T12): live cards above the browser pane — one per agent, with
+   tab viewports whose rects drive the window's WebContentsViews. */
+.dashboard-browsing {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
+  gap: 8px;
+}
+
+.subagent-cards {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  flex: none;
+  min-height: 0;
+  padding-bottom: 2px;
+}
+
+.subagent-card {
+  flex: 0 0 320px;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--edge);
+  border-radius: 12px;
+  background: var(--panel);
+  overflow: hidden;
+}
+
+.subagent-card-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--edge);
+  font-size: 0.8rem;
+}
+
+.subagent-card-id {
+  font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
+}
+
+.subagent-card-status {
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+  min-width: 0;
+}
+
+.subagent-card-status--running { color: var(--accent); }
+.subagent-card-status--failed { color: #e06c75; }
+
+.subagent-cancel,
+.subagent-reopen {
+  width: auto;
+  padding: 0 10px;
+  font-size: 0.8rem;
+  height: 24px;
+}
+
+.subagent-card-task {
+  margin: 0;
+  padding: 6px 10px;
+  font-size: 0.85rem;
+  color: var(--text);
+  border-bottom: 1px solid var(--edge);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.subagent-viewport {
+  height: 170px;
+  background: var(--bg);
+}
+
+.subagent-card-url,
+.subagent-card-error {
+  margin: 0;
+  padding: 6px 10px;
+  font-size: 0.78rem;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+.subagent-card-error { color: #e06c75; }
+
+.subagent-card-result summary {
+  padding: 4px 10px;
+  font-size: 0.8rem;
+  color: var(--accent);
+  cursor: pointer;
+}
+
+.subagent-card-result pre {
+  margin: 0;
+  padding: 0 10px 8px;
+  font-size: 0.75rem;
+  color: var(--text);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 140px;
+  overflow-y: auto;
+}
+
+/* Settings: today's warn-only spend estimate. */
+.settings-usage {
+  margin: 0 0 4px;
+  font-size: 0.95rem;
+  color: var(--text);
+}
+
+.settings-usage--warn {
+  color: #e5c07b;
+  font-weight: 600;
+}
+
+.settings-usage-detail {
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+/* Kiosk: cards shrink a row shorter so browsing stays the main surface. */
+.dashboard--kiosk .subagent-card { flex-basis: 280px; }
+.dashboard--kiosk .subagent-viewport { height: 120px; }

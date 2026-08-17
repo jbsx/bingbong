@@ -4,10 +4,13 @@ import { PIPELINE_IPC } from '../core/pipeline/ipcChannels'
 import { SETTINGS_IPC } from '../core/settings/ipcChannels'
 import { TTS_IPC } from '../core/tts/ipcChannels'
 import { VOICE_IPC } from '../core/voice/ipcChannels'
+import { SUBAGENT_IPC } from '../core/agent/subagentIpcChannels'
+import { USAGE_IPC } from '../core/settings/usageIpcChannels'
 import { resolveLaunchConfig } from '../core/app/launchConfig'
 import type { BrowserPaneState, PaneRect } from '../core/browser/paneState'
 import type { PipelineEvent } from '../core/pipeline/events'
 import type { AppSettings } from '../core/settings/settings'
+import type { UsageSummary } from '../core/agent/spendEstimate'
 import type { VoiceHeardEvent, VoiceState } from '../core/voice/ipcChannels'
 
 // Launch config is a snapshot: the flags and env can't change after start.
@@ -48,6 +51,16 @@ contextBridge.exposeInMainWorld('bingbong', {
       ipcRenderer.on(SETTINGS_IPC.changed, wrapped)
       return () => ipcRenderer.removeListener(SETTINGS_IPC.changed, wrapped)
     },
+  },
+  subagents: {
+    reportTabRect: (agentId: string, rect: PaneRect): void => {
+      ipcRenderer.send(SUBAGENT_IPC.tabRect, agentId, rect)
+    },
+    reopenTab: (agentId: string): Promise<boolean> => ipcRenderer.invoke(SUBAGENT_IPC.reopenTab, agentId),
+    cancel: (agentId: string): Promise<boolean> => ipcRenderer.invoke(SUBAGENT_IPC.cancel, agentId),
+  },
+  usage: {
+    getToday: (): Promise<UsageSummary> => ipcRenderer.invoke(USAGE_IPC.getToday),
   },
   tts: {
     listVoices: (): Promise<string[]> => ipcRenderer.invoke(TTS_IPC.listVoices),

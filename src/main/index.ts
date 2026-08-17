@@ -1,4 +1,4 @@
-import { app, BrowserWindow } from 'electron'
+import { app, BrowserWindow, ipcMain } from 'electron'
 import { join } from 'node:path'
 import type { BrowserController } from '../core/ports/browser'
 import { createAgentActivityTracker, withAgentActivity } from '../core/downloads/agentActivity'
@@ -10,11 +10,16 @@ import { attachDownloadRouter } from './browser/attachDownloadRouter'
 import { runCliHarness, saveScreenshotFile } from './cli/runCliHarness'
 import { attachAssistantToWindow, registerAssistantIpc } from './agent/attachAssistant'
 import { createAssistantPipeline } from './agent/createAssistantPipeline'
+import { createSubagentRuntime, type SubagentRuntime } from './agent/createSubagentRuntime'
+import { registerSubagentIpc } from './browser/subagentPanePool'
 import { resolveDownloadsDir } from './downloadsDir'
 import { resolvePreloadPath } from './preloadPath'
 import { createSettingsStore } from './settings/settingsStore'
 import { registerSettingsIpc } from './settings/attachSettings'
 import { settingsToEnv } from '../core/settings/settings'
+import { createUsageStore } from './settings/usageStore'
+import { USAGE_IPC } from '../core/settings/usageIpcChannels'
+import { DEFAULT_DAILY_SPEND_WARN_USD } from '../core/agent/spendEstimate'
 import { resolvePiperConfig } from './tts/piperConfig'
 import { createMainTts } from './tts/createMainTts'
 import { registerTtsIpc } from './tts/attachTts'
@@ -47,6 +52,19 @@ const runningCliHarness = process.argv.includes(CLI_HARNESS_FLAG) || process.env
 // They layer over process.env, so a settings-page save re-routes the LLM on
 // the next command without a restart.
 const settingsStore = createSettingsStore(join(app.getPath('userData'), 'settings.json'))
+
+// Daily spend estimate (warn-only): every orchestrator/subagent turn with
+// reported usage lands here and surfaces on the settings page.
+const usageStore = createUsageStore(join(app.getPath('userData'), 'usage.json'))
+
+// Subagent runtime (T12) is per-window: panes attach to the window's content
+// view. The IPC layer resolves the window from the event sender.
+const subagentRuntimes = new WeakMap<BrowserWindow, SubagentRuntime>()
+
+function dailySpendWarnUsd(): number {
+  const raw = Number(currentEnv().BINGBONG_DAILY_SPEND_WARN_USD)
+  return Number.isFinite(raw) && raw > 0 ? raw : DEFAULT_DAILY_SPEND_WARN_USD
+}
 
 // Piper TTS: binary, voices dir, and base voice come from env (defaults
 // suffice for a standard install); the settings page's voice wins per line.
@@ -137,6 +155,27 @@ async function createWindow(): Promise<BrowserWindow> {
   })
 
   if (runningCliHarness) startCliHarness(controller, downloadsDir)
+
+  // Subagents (T12): tab machine + pane pool + workhorse manager behind the
+  // orchestrator's spawn/cancel/results tools. Events (live cards, spoken
+  // announcements) ride the same pipeline channel as everything else.
+  const subagentRuntime = createSubagentRuntime({
+    win,
+    session: pane.session,
+    downloadsDir,
+    getEnv: currentEnv,
+    tts: speakingGate.tts,
+    emit: (event) => {
+      if (!win.isDestroyed()) win.webContents.send(PIPELINE_IPC.event, event)
+    },
+    onUsage: (record) => usageStore.record(record.role, record.model, record.usage),
+  })
+  subagentRuntimes.set(win, subagentRuntime)
+  win.on('closed', () => {
+    subagentRuntime.dispose()
+    subagentRuntimes.delete(win)
+  })
+
   const voice = await createMainVoice(voiceConfig)
   // Voice before assistant: the pipeline's event tap feeds the session's
   // confirmation window, so the session must exist when events start.
@@ -158,7 +197,14 @@ async function createWindow(): Promise<BrowserWindow> {
       : undefined,
   })
   attachAssistantToWindow(
-    createAssistantPipeline({ controller, env: currentEnv(), getEnv: currentEnv, tts: speakingGate.tts }),
+    createAssistantPipeline({
+      controller,
+      env: currentEnv(),
+      getEnv: currentEnv,
+      tts: speakingGate.tts,
+      subagentTools: subagentRuntime.tools,
+      onLlmUsage: (record) => usageStore.record(record.role, record.model, record.usage),
+    }),
     win,
     (event) => voiceSession.handlePipelineEvent(event),
   )
@@ -175,7 +221,12 @@ async function createWindow(): Promise<BrowserWindow> {
 app.whenReady().then(async () => {
   registerBrowserIpc()
   registerAssistantIpc()
+  registerSubagentIpc((event) => {
+    const win = BrowserWindow.fromWebContents(event.sender)
+    return win ? subagentRuntimes.get(win) : undefined
+  })
   registerSettingsIpc(settingsStore)
+  ipcMain.handle(USAGE_IPC.getToday, () => usageStore.summary(dailySpendWarnUsd()))
   registerTtsIpc({ voicesDir: () => piperConfig.voicesDir })
   registerVoiceIpc()
   await createWindow()

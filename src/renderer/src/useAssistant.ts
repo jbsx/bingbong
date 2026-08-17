@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { PipelineEvent, PipelineStatus } from '../../core/pipeline/events'
+import type { PipelineEvent, PipelineStatus, SubagentCard } from '../../core/pipeline/events'
 import type { VoiceHeardEvent } from '../../core/voice/ipcChannels'
+import { describeToolAction } from '../../core/pipeline/toolCallDisplay'
 
 export type OrbStatus = 'idle' | 'listening' | PipelineStatus
 
@@ -23,6 +24,8 @@ export interface Assistant {
   status: OrbStatus
   entries: TranscriptEntry[]
   pendingConfirmation: PendingConfirmation | null
+  /** Live subagent cards, newest last; history persists after tabs close. */
+  agents: SubagentCard[]
   submit(text: string): void
   resolveConfirmation(confirmationId: string, approved: boolean): void
   /** A heard-but-not-a-command transcript (voice yes/no, undecided answers). */
@@ -31,36 +34,14 @@ export interface Assistant {
   appendVoiceError(message: string): void
 }
 
-/** Compact, human-readable rendering of a tool call for the transcript. */
-function describeToolCall(name: string, args: Record<string, unknown>): string {
-  switch (name) {
-    case 'navigate':
-      return `→ ${String(args.url ?? '')}`
-    case 'click':
-      return `click [${String(args.ref ?? '?')}]`
-    case 'type':
-      return `type "${String(args.text ?? '')}" into [${String(args.ref ?? '?')}]`
-    case 'scroll':
-      return `scroll ${String(args.direction ?? '')}`
-    case 'web_search':
-      return `search "${String(args.query ?? '')}"`
-    case 'media_control':
-      return `media ${String(args.action ?? '')}${args.offset !== undefined ? ` ${String(args.offset)}s` : ''}`
-    case 'read_page':
-      return 'read page'
-    case 'screenshot':
-      return 'screenshot'
-    case 'back':
-      return 'go back'
-    default:
-      return `${name} ${JSON.stringify(args)}`
-  }
-}
+/** Cards kept in history after their tab closes — bounded for long sessions. */
+const MAX_AGENT_CARDS = 20
 
 export function useAssistant(): Assistant {
   const [status, setStatus] = useState<OrbStatus>('idle')
   const [entries, setEntries] = useState<TranscriptEntry[]>([])
   const [pendingConfirmation, setPendingConfirmation] = useState<PendingConfirmation | null>(null)
+  const [agents, setAgents] = useState<SubagentCard[]>([])
   const nextId = useRef(0)
 
   const append = useCallback((entry: Omit<TranscriptEntry, 'id'>) => {
@@ -77,7 +58,7 @@ export function useAssistant(): Assistant {
           setStatus(event.status)
           return
         case 'tool_call':
-          append({ kind: 'tool', text: describeToolCall(event.name, event.args) })
+          append({ kind: 'tool', text: describeToolAction(event.name, event.args) })
           return
         case 'tool_result':
           if (!event.ok) append({ kind: 'error', text: `${event.name} failed: ${event.error}` })
@@ -102,6 +83,15 @@ export function useAssistant(): Assistant {
           setPendingConfirmation((current) =>
             current?.confirmationId === event.confirmationId ? null : current,
           )
+          return
+        case 'agent_update':
+          setAgents((current) => {
+            const index = current.findIndex((card) => card.id === event.agent.id)
+            if (index === -1) return [...current, event.agent].slice(-MAX_AGENT_CARDS)
+            const next = [...current]
+            next[index] = event.agent
+            return next
+          })
           return
         case 'done':
           setStatus('idle')
@@ -135,5 +125,5 @@ export function useAssistant(): Assistant {
     append({ kind: 'error', text: `voice: ${message}` })
   }, [append])
 
-  return { status, entries, pendingConfirmation, submit, resolveConfirmation, appendVoiceHeard, appendVoiceError }
+  return { status, entries, pendingConfirmation, agents, submit, resolveConfirmation, appendVoiceHeard, appendVoiceError }
 }

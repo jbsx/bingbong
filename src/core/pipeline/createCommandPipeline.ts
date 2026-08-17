@@ -4,6 +4,7 @@ import type { Clock } from '../ports/clock'
 import type { LlmClient, ToolCall, ToolResult, ToolResultOutcome } from '../ports/llm'
 import type { TtsSpeaker } from '../ports/tts'
 import { spokenErrorLine } from '../agent/answerContract'
+import { createVisionBudget, type VisionBudget } from '../agent/subagentRails'
 
 export interface CommandPipelineDeps {
   llm: LlmClient
@@ -54,6 +55,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
 
     try {
       const toolResults: ToolResult[] = []
+      const visionBudget = createVisionBudget()
       let rounds = 0
 
       for (;;) {
@@ -71,7 +73,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
         rounds += 1
         for (const call of turn.calls) {
           yield { type: 'tool_call', callId: call.id, name: call.name, args: call.args, at: clock.now() }
-          const outcome = yield* runGatedTool(call)
+          const outcome = yield* runGatedTool(call, visionBudget)
           toolResults.push({ call, outcome })
           yield {
             type: 'tool_result',
@@ -95,7 +97,10 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
     yield { type: 'done', at: clock.now() }
   }
 
-  async function* runGatedTool(call: ToolCall): AsyncGenerator<PipelineEvent, ToolResultOutcome> {
+  async function* runGatedTool(
+    call: ToolCall,
+    visionBudget: VisionBudget,
+  ): AsyncGenerator<PipelineEvent, ToolResultOutcome> {
     const tool = toolsByName.get(call.name)
     if (!tool) return { ok: false, error: `unknown tool: '${call.name}'` }
 
@@ -134,6 +139,11 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
             : 'denied by the user; do not retry this action'
         return { ok: false, error: detail }
       }
+    }
+
+    if (tool.usesVision) {
+      const grant = visionBudget.tryAcquire()
+      if (!grant.ok) return { ok: false, error: grant.reason }
     }
 
     try {
