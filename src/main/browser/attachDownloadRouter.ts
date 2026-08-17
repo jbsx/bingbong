@@ -43,7 +43,9 @@ export function attachDownloadRouter(target: Session, deps: DownloadRouterDeps):
       const { speak, display } = downloadAnnouncements(filename, savePath)
       emit({ type: 'display', text: display, at: clock.now() })
       emit({ type: 'speak', text: speak, at: clock.now() })
-      void tts.speak(speak)
+      void tts.speak(speak).then((outcome) => {
+        if (!outcome.ok) emit({ type: 'error', message: `Voice unavailable: ${outcome.error}`, at: clock.now() })
+      })
     })
   })
 }

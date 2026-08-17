@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { AppSettings, RoleRoutingSettings } from '../../core/settings/settings'
 import type { AgentRole } from '../../core/agent/modelRouting'
 import { WAKE_WORD_THRESHOLD_MAX, WAKE_WORD_THRESHOLD_MIN } from '../../core/settings/settings'
+import { DEFAULT_PIPER_VOICE } from '../../core/tts/piperVoices'
 
 const ROLES: { role: AgentRole; label: string }[] = [
   { role: 'orchestrator', label: 'Orchestrator' },
@@ -11,6 +12,8 @@ const ROLES: { role: AgentRole; label: string }[] = [
 
 /** Select value for "the saved mic is not plugged in right now". */
 const STALE_MIC_VALUE = '__stale__'
+/** Select value for "the saved voice is not installed right now". */
+const STALE_VOICE_VALUE = '__stale__'
 
 function sameSettings(a: AppSettings, b: AppSettings): boolean {
   return JSON.stringify(a) === JSON.stringify(b)
@@ -46,6 +49,25 @@ function useMicrophones(): MicOption[] {
   }, [])
 
   return mics
+}
+
+function useTtsVoices(): string[] {
+  const [voices, setVoices] = useState<string[]>([])
+
+  useEffect(() => {
+    let cancelled = false
+    void window.bingbong.tts
+      .listVoices()
+      .then((installed) => {
+        if (!cancelled) setVoices(installed)
+      })
+      .catch(() => setVoices([]))
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  return voices
 }
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
@@ -112,6 +134,7 @@ export function SettingsPage({
   const [draft, setDraft] = useState<AppSettings>(settings)
   const [savedAt, setSavedAt] = useState<number | null>(null)
   const mics = useMicrophones()
+  const voices = useTtsVoices()
   const lastSynced = useRef<AppSettings>(settings)
 
   // Follow external changes (another window's save, or our own sanitized
@@ -126,6 +149,7 @@ export function SettingsPage({
 
   const dirty = !sameSettings(draft, settings)
   const micKnown = draft.micId === 'default' || mics.some((mic) => mic.deviceId === draft.micId)
+  const voiceKnown = draft.ttsVoice === '' || voices.includes(draft.ttsVoice)
 
   const submit = async () => {
     await onSave(draft)
@@ -194,14 +218,23 @@ export function SettingsPage({
             />
           </Field>
           <Field label="TTS voice">
-            <input
-              type="text"
-              value={draft.ttsVoice}
-              placeholder="piper voice id (TTS lands in T8)"
-              spellCheck={false}
+            <select
+              value={voiceKnown ? draft.ttsVoice : STALE_VOICE_VALUE}
               aria-label="TTS voice"
               onChange={(event) => setDraft({ ...draft, ttsVoice: event.target.value })}
-            />
+            >
+              <option value="">Default ({DEFAULT_PIPER_VOICE})</option>
+              {voices.map((voice) => (
+                <option key={voice} value={voice}>
+                  {voice}
+                </option>
+              ))}
+              {voiceKnown ? null : (
+                <option value={STALE_VOICE_VALUE} disabled>
+                  Previously selected voice ({draft.ttsVoice}, not installed)
+                </option>
+              )}
+            </select>
           </Field>
         </section>
 

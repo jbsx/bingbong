@@ -37,6 +37,17 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
   const pendingConfirmations = new Map<string, (decision: ConfirmationDecision) => void>()
   let confirmationCounter = 0
 
+  async function* speakLine(text: string): AsyncGenerator<PipelineEvent> {
+    yield { type: 'status', status: 'speaking', at: clock.now() }
+    yield { type: 'speak', text, at: clock.now() }
+    const outcome = await tts.speak(text)
+    if (!outcome.ok) {
+      // Voice is gone — the text is already on the dashboard, so the failure
+      // itself degrades to a displayed one-liner.
+      yield { type: 'error', message: spokenErrorLine(outcome.error), at: clock.now() }
+    }
+  }
+
   async function* execute(command: string): AsyncIterable<PipelineEvent> {
     yield { type: 'command', text: command, at: clock.now() }
     yield { type: 'status', status: 'thinking', at: clock.now() }
@@ -52,9 +63,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
         const turn = await llm.complete({ command, toolResults })
         if (turn.kind === 'answer') {
           yield { type: 'display', text: turn.display, at: clock.now() }
-          yield { type: 'status', status: 'speaking', at: clock.now() }
-          yield { type: 'speak', text: turn.speak, at: clock.now() }
-          await tts.speak(turn.speak)
+          yield* speakLine(turn.speak)
           break
         }
 
@@ -81,9 +90,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
       const message = toErrorMessage(err)
       const spoken = spokenErrorLine(message)
       yield { type: 'error', message, at: clock.now() }
-      yield { type: 'status', status: 'speaking', at: clock.now() }
-      yield { type: 'speak', text: spoken, at: clock.now() }
-      await tts.speak(spoken)
+      yield* speakLine(spoken)
     }
     yield { type: 'done', at: clock.now() }
   }
@@ -111,8 +118,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
         at: clock.now(),
       }
       // The prompt is both shown (dialog) and spoken; voice yes/no lands in T9.
-      yield { type: 'speak', text: verdict.prompt, at: clock.now() }
-      await tts.speak(verdict.prompt)
+      yield* speakLine(verdict.prompt)
       const resolved = await decision
       yield {
         type: 'confirmation_resolved',

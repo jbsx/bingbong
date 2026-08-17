@@ -58,10 +58,27 @@ export class ScriptedLlm implements LlmClient {
 
 export class RecordingTts implements TtsSpeaker {
   readonly spoken: string[] = []
+  stopCalls = 0
 
-  async speak(text: string): Promise<void> {
+  async speak(text: string) {
     this.spoken.push(text)
+    return { ok: true as const }
   }
+
+  stop(): void {
+    this.stopCalls += 1
+  }
+}
+
+/** TTS that always fails — exercises the display-only degradation path. */
+export class FailingTts implements TtsSpeaker {
+  constructor(private readonly error: string) {}
+
+  async speak() {
+    return { ok: false as const, error: this.error }
+  }
+
+  stop(): void {}
 }
 
 export class FakeBrowser implements BrowserController {
@@ -132,9 +149,12 @@ export class FakeSearch implements SearchProvider {
 
 // Production stand-ins used below the seam until real adapters land:
 
-/** TTS output is a later ticket (Piper, T8); speak events still flow to the dashboard. */
+/** No-speaker stand-in; speak events still flow to the dashboard. */
 export const silentTts: TtsSpeaker = {
-  async speak() {},
+  async speak() {
+    return { ok: true as const }
+  },
+  stop() {},
 }
 
 /** An LLM that always fails — keeps the app usable when config is missing or invalid. */

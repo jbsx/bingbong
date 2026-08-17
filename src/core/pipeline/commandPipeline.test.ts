@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { createCommandPipeline, type CommandPipeline } from './createCommandPipeline'
-import { FakeClock, RecordingTts, ScriptedLlm } from '../testing/doubles'
+import { FailingTts, FakeClock, RecordingTts, ScriptedLlm } from '../testing/doubles'
 import type { PipelineEvent } from './events'
 
 async function collect(
@@ -51,6 +51,27 @@ describe('command pipeline', () => {
       text: 'Something went wrong: ScriptedLlm ran out of scripted turns',
     })
     expect(tts.spoken).toEqual(['Something went wrong: ScriptedLlm ran out of scripted turns'])
+  })
+
+  it('degrades to display-only with a one-liner when TTS fails', async () => {
+    const llm = new ScriptedLlm([{ kind: 'answer', speak: 'Done.', display: 'Full detail here.' }])
+    const pipeline = createCommandPipeline({
+      llm,
+      tts: new FailingTts('piper binary not found'),
+      clock: new FakeClock(1000),
+      tools: [],
+    })
+
+    const events = await collect(pipeline, 'hello')
+
+    expect(events).toContainEqual({ type: 'display', text: 'Full detail here.', at: 1000 })
+    expect(events).toContainEqual({ type: 'speak', text: 'Done.', at: 1000 })
+    expect(events).toContainEqual({
+      type: 'error',
+      message: 'Something went wrong: piper binary not found',
+      at: 1000,
+    })
+    expect(events.at(-1)).toMatchObject({ type: 'done' })
   })
 
   it('executes requested tools, feeds results back to the LLM, then answers', async () => {

@@ -27,11 +27,17 @@ export interface BingbongSettingsApi {
   onChanged(listener: (settings: AppSettings) => void): () => void
 }
 
+export interface BingbongTtsApi {
+  /** Installed piper voice ids, for the settings picker. */
+  listVoices(): Promise<string[]>
+}
+
 export interface BingbongApi {
   version: string
   browser: BingbongBrowserApi
   assistant: BingbongAssistantApi
   settings: BingbongSettingsApi
+  tts: BingbongTtsApi
 }
 
 declare global {

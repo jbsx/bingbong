@@ -3,7 +3,6 @@ import { join } from 'node:path'
 import type { BrowserController } from '../core/ports/browser'
 import type { TtsSpeaker } from '../core/ports/tts'
 import { createAgentActivityTracker, withAgentActivity } from '../core/downloads/agentActivity'
-import { silentTts } from '../core/testing/doubles'
 import { PIPELINE_IPC } from '../core/pipeline/ipcChannels'
 import { createBrowserPane } from './browser/createBrowserPane'
 import { attachBrowserPaneToWindow, registerBrowserIpc } from './browser/attachBrowserPane'
@@ -17,6 +16,9 @@ import { resolvePreloadPath } from './preloadPath'
 import { createSettingsStore } from './settings/settingsStore'
 import { registerSettingsIpc } from './settings/attachSettings'
 import { settingsToEnv } from '../core/settings/settings'
+import { resolvePiperConfig } from './tts/piperConfig'
+import { createMainTts } from './tts/createMainTts'
+import { registerTtsIpc } from './tts/attachTts'
 
 // e2e harness seam: isolate the profile (cookies, cache, singleton lock) per run.
 if (process.env.BINGBONG_USER_DATA_DIR) {
@@ -33,6 +35,10 @@ const runningCliHarness = process.argv.includes(CLI_HARNESS_FLAG) || process.env
 // They layer over process.env, so a settings-page save re-routes the LLM on
 // the next command without a restart.
 const settingsStore = createSettingsStore(join(app.getPath('userData'), 'settings.json'))
+
+// Piper TTS: binary, voices dir, and base voice come from env (defaults
+// suffice for a standard install); the settings page's voice wins per line.
+const piperConfig = resolvePiperConfig(process.env, app.getPath('userData'))
 
 function currentEnv(): Record<string, string | undefined> {
   return { ...process.env, ...settingsToEnv(settingsStore.get()) }
@@ -82,9 +88,13 @@ function createWindow(): BrowserWindow {
   const controller: BrowserController = withAgentActivity(createPaneBrowserController(pane), agentActivity)
 
   const downloadsDir = resolveDownloadsDir(process.env, app.getPath('downloads'))
-  // Piper TTS arrives in T8; the pipeline and download announcements share
-  // the same speaker so voice lands whenever it exists.
-  const tts: TtsSpeaker = silentTts
+  // Spoken output (T8). The pipeline and download announcements share this
+  // speaker, and tts.stop() is the barge-in hook the wake word (T10) will call.
+  const tts: TtsSpeaker = createMainTts({
+    config: piperConfig,
+    pane: pane.view.webContents,
+    getVoiceId: () => settingsStore.get().ttsVoice.trim() || piperConfig.voiceId,
+  })
   attachDownloadRouter(pane.session, {
     dir: downloadsDir,
     tts,
@@ -113,6 +123,7 @@ app.whenReady().then(() => {
   registerBrowserIpc()
   registerAssistantIpc()
   registerSettingsIpc(settingsStore)
+  registerTtsIpc({ voicesDir: () => piperConfig.voicesDir })
   createWindow()
 
   app.on('activate', () => {

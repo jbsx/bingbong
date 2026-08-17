@@ -22,7 +22,7 @@ export interface AppSettings {
   /** Microphone device id from enumerateDevices; 'default' follows the OS. */
   micId: string
   wakeWordThreshold: number
-  /** Piper voice id (TTS lands in T8). */
+  /** Piper voice id; '' follows BINGBONG_PIPER_VOICE / the default voice. */
   ttsVoice: string
   weather: { city: string; units: WeatherUnits }
   modelRouting: Record<AgentRole, RoleRoutingSettings>
