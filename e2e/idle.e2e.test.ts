@@ -3,7 +3,8 @@ import { startHarness, type Harness } from './harness'
 import { startFixtureServer, type FixtureServer } from './fixtureServer'
 import { waitFor } from './waitFor'
 
-// Idle screen e2e (T11): a short BINGBONG_IDLE_TIMEOUT_MS stands in for the
+// Idle screen e2e (T11): the app boots into the idle screen and returns to
+// it after inactivity. A short BINGBONG_IDLE_TIMEOUT_MS stands in for the
 // real 5-minute default. No weather city is configured, so the weather line
 // renders its settings prompt without any network call.
 
@@ -19,6 +20,28 @@ describe('idle screen e2e', () => {
   afterAll(async () => {
     await harness?.quit()
     await fixture?.close()
+  })
+
+  it('boots into the idle screen and wakes on first interaction', async () => {
+    const app = await startHarness({ fixture, wakeFromBootIdle: false })
+    try {
+      // Fresh boot, untouched: the idle screen is up, not the dashboard.
+      expect(await app.dashboardEval<boolean>(`!!document.querySelector('.idle-screen')`)).toBe(true)
+      expect(await app.dashboardEval<boolean>(`!!document.querySelector('.url-input')`)).toBe(false)
+
+      // First interaction wakes the dashboard.
+      await app.dashboardEval<string>(`window.dispatchEvent(new KeyboardEvent('keydown')); 'pinged'`)
+      await waitFor(
+        async () => {
+          const up = await app.dashboardEval<boolean>(`!!document.querySelector('.url-input')`)
+          return up || undefined
+        },
+        { timeoutMs: 20000, intervalMs: 250 },
+      )
+      expect(await app.dashboardEval<boolean>(`!!document.querySelector('.idle-screen')`)).toBe(false)
+    } finally {
+      await app.quit()
+    }
   })
 
   it('shows clock, weather prompt and empty transcript after the timeout', async () => {

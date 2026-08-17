@@ -15,9 +15,11 @@ export interface IdleTimer {
 export function createIdleTimer(deps: {
   clock: Clock
   timeoutMs: number
+  /** Boot straight into idle (appliance mode): no countdown until the first ping. */
+  startIdle?: boolean
   onChange(idle: boolean): void
 }): IdleTimer {
-  let idle = false
+  let idle = deps.startIdle ?? false
   let disposed = false
   let cancel: (() => void) | null = null
 
@@ -28,7 +30,7 @@ export function createIdleTimer(deps: {
       deps.onChange(true)
     })
   }
-  arm()
+  if (!idle) arm()
 
   return {
     isIdle: () => idle,

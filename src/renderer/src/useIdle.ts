@@ -9,18 +9,21 @@ export interface IdleApi {
 }
 
 /**
- * Inactivity countdown for the idle screen (T11). Pointer/keyboard input is
- * tracked here; callers ping for non-input activity (pipeline events, voice
- * state changes). The timeout comes from the launch config snapshot.
+ * Inactivity countdown for the idle screen (T11). The app boots into idle —
+ * the idle screen is the rest state; any interaction (input, a wake, a
+ * command) wakes the dashboard, and the countdown only runs from there.
+ * Pointer/keyboard input is tracked here; callers ping for non-input
+ * activity. The timeout comes from the launch config snapshot.
  */
 export function useIdle(): IdleApi {
-  const [idle, setIdle] = useState(false)
+  const [idle, setIdle] = useState(true)
   const pingRef = useRef<() => void>(() => {})
 
   useEffect(() => {
     const timer = createIdleTimer({
       clock: systemClock,
       timeoutMs: window.bingbong.app.idleTimeoutMs,
+      startIdle: true,
       onChange: setIdle,
     })
     pingRef.current = () => timer.ping()

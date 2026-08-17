@@ -22,15 +22,21 @@ export function App() {
     onError: assistant.appendVoiceError,
   })
 
-  // Pipeline and voice activity count as "not idle" alongside real input, so
-  // the idle screen never covers a running command.
+  // Real activity — a command running, speech heard, a listen starting —
+  // counts as "not idle" alongside input, so the idle screen never covers a
+  // working assistant. (Wake-monitoring on/off transitions are not activity;
+  // pinging on those would cancel the boot-into-idle state.)
   const { ping } = idle
   useEffect(() => {
     const unsubEvent = window.bingbong.assistant.onEvent(() => ping())
-    const unsubVoice = window.bingbong.voice.onState(() => ping())
+    const unsubVoice = window.bingbong.voice.onState((state) => {
+      if (state.listening) ping()
+    })
+    const unsubHeard = window.bingbong.voice.onHeard(() => ping())
     return () => {
       unsubEvent()
       unsubVoice()
+      unsubHeard()
     }
   }, [ping])
 

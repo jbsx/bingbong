@@ -98,4 +98,34 @@ describe('createIdleTimer', () => {
 
     expect(timer.isIdle()).toBe(false)
   })
+
+  describe('startIdle', () => {
+    it('starts idle without emitting a change or arming the countdown', () => {
+      const clock = fakeClock()
+      const events: boolean[] = []
+      const timer = createIdleTimer({ clock, timeoutMs: 30_000, startIdle: true, onChange: (idle) => events.push(idle) })
+
+      expect(timer.isIdle()).toBe(true)
+      clock.advance(120_000)
+      expect(timer.isIdle()).toBe(true)
+      expect(events).toEqual([])
+      timer.dispose()
+    })
+
+    it('first activity wakes it and starts the countdown', () => {
+      const clock = fakeClock()
+      const events: boolean[] = []
+      const timer = createIdleTimer({ clock, timeoutMs: 30_000, startIdle: true, onChange: (idle) => events.push(idle) })
+
+      timer.ping()
+
+      expect(timer.isIdle()).toBe(false)
+      expect(events).toEqual([false])
+
+      clock.advance(30_000)
+      expect(timer.isIdle()).toBe(true)
+      expect(events).toEqual([false, true])
+      timer.dispose()
+    })
+  })
 })

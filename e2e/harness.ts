@@ -69,6 +69,12 @@ export async function startHarness(
     launchArgs?: string[]
     pipeStdio?: boolean
     env?: Record<string, string | undefined>
+    /**
+     * The app boots into the idle screen; by default the harness wakes the
+     * dashboard (synthetic keydown) so tests start on the URL bar. Pass
+     * false to observe the boot-idle state itself.
+     */
+    wakeFromBootIdle?: boolean
   },
 ): Promise<Harness> {
   const ownsFixture = !options?.fixture
@@ -97,14 +103,19 @@ export async function startHarness(
     }
   }
   try {
-    return await buildHarness(app, fixture, teardown)
+    return await buildHarness(app, fixture, teardown, options?.wakeFromBootIdle ?? true)
   } catch (error) {
     await teardown().catch(() => {})
     throw error
   }
 }
 
-async function buildHarness(app: LaunchedApp, fixture: FixtureServer, teardown: () => Promise<void>): Promise<Harness> {
+async function buildHarness(
+  app: LaunchedApp,
+  fixture: FixtureServer,
+  teardown: () => Promise<void>,
+  wakeFromBootIdle: boolean,
+): Promise<Harness> {
   const { cdp } = app
 
   const sessions = new Map<string, TargetInfo>()
@@ -126,12 +137,21 @@ async function buildHarness(app: LaunchedApp, fixture: FixtureServer, teardown: 
   const paneSid = () => sidOf('pane')
 
   await waitFor(async () => dashboardSid(), { timeoutMs: 15000, intervalMs: 250 })
-  // Wait until React has mounted the URL bar, not just until the target exists.
+  // Wait until React has mounted, not just until the target exists. The app
+  // boots into the idle screen (T11): by default the harness wakes it — the
+  // synthetic keydown is the same "any interaction wakes it" real input
+  // produces, retried until the listeners exist and the dashboard shows.
   await waitFor(
     async () => {
       const sid = dashboardSid()
       if (!sid) return undefined
-      const ready = await evaluate<boolean>(cdp, sid, `!!document.querySelector('.url-input')`)
+      const ready = await evaluate<boolean>(
+        cdp,
+        sid,
+        wakeFromBootIdle
+          ? `(window.dispatchEvent(new KeyboardEvent('keydown')), !!document.querySelector('.url-input'))`
+          : `!!document.querySelector('.url-input') || !!document.querySelector('.idle-screen')`,
+      )
       return ready ? sid : undefined
     },
     { timeoutMs: 15000, intervalMs: 250 },
