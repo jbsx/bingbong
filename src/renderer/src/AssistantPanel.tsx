@@ -94,6 +94,8 @@ function TranscriptLine({ entry }: { entry: TranscriptEntry }) {
       )
     case 'display':
       return <p className="transcript-entry transcript-entry--display">{entry.text}</p>
+    case 'voice':
+      return <p className="transcript-entry transcript-entry--voice">{entry.text}</p>
     case 'error': {
       const summary = entry.text.split('\n', 1)[0]
       const trimmed = summary.length > 140 ? `${summary.slice(0, 140)}…` : summary

@@ -3,9 +3,11 @@ import { BROWSER_IPC } from '../core/browser/ipcChannels'
 import { PIPELINE_IPC } from '../core/pipeline/ipcChannels'
 import { SETTINGS_IPC } from '../core/settings/ipcChannels'
 import { TTS_IPC } from '../core/tts/ipcChannels'
+import { VOICE_IPC } from '../core/voice/ipcChannels'
 import type { BrowserPaneState, PaneRect } from '../core/browser/paneState'
 import type { PipelineEvent } from '../core/pipeline/events'
 import type { AppSettings } from '../core/settings/settings'
+import type { VoiceHeardEvent, VoiceState } from '../core/voice/ipcChannels'
 
 contextBridge.exposeInMainWorld('bingbong', {
   version: '0.1.0',
@@ -44,5 +46,27 @@ contextBridge.exposeInMainWorld('bingbong', {
   },
   tts: {
     listVoices: (): Promise<string[]> => ipcRenderer.invoke(TTS_IPC.listVoices),
+  },
+  voice: {
+    arm: (): Promise<void> => ipcRenderer.invoke(VOICE_IPC.arm),
+    disarm: (): Promise<void> => ipcRenderer.invoke(VOICE_IPC.disarm),
+    sendAudio: (chunk: Float32Array): void => {
+      ipcRenderer.send(VOICE_IPC.audio, chunk)
+    },
+    onState: (listener: (state: VoiceState) => void): (() => void) => {
+      const wrapped = (_event: unknown, state: VoiceState): void => listener(state)
+      ipcRenderer.on(VOICE_IPC.stateChanged, wrapped)
+      return () => ipcRenderer.removeListener(VOICE_IPC.stateChanged, wrapped)
+    },
+    onHeard: (listener: (heard: VoiceHeardEvent) => void): (() => void) => {
+      const wrapped = (_event: unknown, heard: VoiceHeardEvent): void => listener(heard)
+      ipcRenderer.on(VOICE_IPC.heard, wrapped)
+      return () => ipcRenderer.removeListener(VOICE_IPC.heard, wrapped)
+    },
+    onError: (listener: (error: { message: string }) => void): (() => void) => {
+      const wrapped = (_event: unknown, error: { message: string }): void => listener(error)
+      ipcRenderer.on(VOICE_IPC.error, wrapped)
+      return () => ipcRenderer.removeListener(VOICE_IPC.error, wrapped)
+    },
   },
 })

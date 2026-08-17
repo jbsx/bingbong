@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { PipelineEvent, PipelineStatus } from '../../core/pipeline/events'
+import type { VoiceHeardEvent } from '../../core/voice/ipcChannels'
 
 export type OrbStatus = 'idle' | 'listening' | PipelineStatus
 
@@ -9,6 +10,7 @@ export type TranscriptEntry =
   | { id: number; kind: 'display'; text: string }
   | { id: number; kind: 'speak'; text: string }
   | { id: number; kind: 'error'; text: string }
+  | { id: number; kind: 'voice'; text: string }
 
 export interface PendingConfirmation {
   confirmationId: string
@@ -23,6 +25,10 @@ export interface Assistant {
   pendingConfirmation: PendingConfirmation | null
   submit(text: string): void
   resolveConfirmation(confirmationId: string, approved: boolean): void
+  /** A heard-but-not-a-command transcript (voice yes/no, undecided answers). */
+  appendVoiceHeard(heard: VoiceHeardEvent): void
+  /** Mic/engine failures from the voice half. */
+  appendVoiceError(message: string): void
 }
 
 /** Compact, human-readable rendering of a tool call for the transcript. */
@@ -117,5 +123,17 @@ export function useAssistant(): Assistant {
     void window.bingbong.assistant.resolveConfirmation(confirmationId, approved)
   }, [])
 
-  return { status, entries, pendingConfirmation, submit, resolveConfirmation }
+  const appendVoiceHeard = useCallback((heard: VoiceHeardEvent) => {
+    // Commands are echoed by the pipeline itself; only answers and undecided
+    // words land here.
+    if (heard.routed === 'command') return
+    const suffix = heard.routed === 'confirmation' ? ' (answered)' : ' — not a yes or no'
+    append({ kind: 'voice', text: `heard "${heard.text}"${suffix}` })
+  }, [append])
+
+  const appendVoiceError = useCallback((message: string) => {
+    append({ kind: 'error', text: `voice: ${message}` })
+  }, [append])
+
+  return { status, entries, pendingConfirmation, submit, resolveConfirmation, appendVoiceHeard, appendVoiceError }
 }

@@ -31,3 +31,8 @@ export interface AudioDucker {
   duck(): void
   restore(): void
 }
+
+/** Answers "is anything being said right now" — the confirmation voice window waits for the prompt to finish. */
+export interface TtsIdle {
+  waitIdle(): Promise<void>
+}

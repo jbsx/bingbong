@@ -1,7 +1,6 @@
 import { app, BrowserWindow } from 'electron'
 import { join } from 'node:path'
 import type { BrowserController } from '../core/ports/browser'
-import type { TtsSpeaker } from '../core/ports/tts'
 import { createAgentActivityTracker, withAgentActivity } from '../core/downloads/agentActivity'
 import { PIPELINE_IPC } from '../core/pipeline/ipcChannels'
 import { createBrowserPane } from './browser/createBrowserPane'
@@ -19,6 +18,10 @@ import { settingsToEnv } from '../core/settings/settings'
 import { resolvePiperConfig } from './tts/piperConfig'
 import { createMainTts } from './tts/createMainTts'
 import { registerTtsIpc } from './tts/attachTts'
+import { createSpeakingGate } from '../core/tts/speakingGate'
+import { resolveVoiceConfig } from './voice/voiceConfig'
+import { createMainVoice } from './voice/createMainVoice'
+import { attachVoiceToWindow, registerVoiceIpc } from './voice/attachVoice'
 
 // e2e harness seam: isolate the profile (cookies, cache, singleton lock) per run.
 if (process.env.BINGBONG_USER_DATA_DIR) {
@@ -39,6 +42,10 @@ const settingsStore = createSettingsStore(join(app.getPath('userData'), 'setting
 // Piper TTS: binary, voices dir, and base voice come from env (defaults
 // suffice for a standard install); the settings page's voice wins per line.
 const piperConfig = resolvePiperConfig(process.env, app.getPath('userData'))
+
+// Ears (T9): Silero VAD + whisper, shared by every window so the models
+// load once. Scripted doubles ride the same seam for e2e.
+const voiceConfig = resolveVoiceConfig(process.env, app.getPath('userData'))
 
 function currentEnv(): Record<string, string | undefined> {
   return { ...process.env, ...settingsToEnv(settingsStore.get()) }
@@ -63,7 +70,7 @@ function startCliHarness(controller: BrowserController, downloadsDir: string): v
   })
 }
 
-function createWindow(): BrowserWindow {
+async function createWindow(): Promise<BrowserWindow> {
   const win = new BrowserWindow({
     width: 1280,
     height: 800,
@@ -88,16 +95,19 @@ function createWindow(): BrowserWindow {
   const controller: BrowserController = withAgentActivity(createPaneBrowserController(pane), agentActivity)
 
   const downloadsDir = resolveDownloadsDir(process.env, app.getPath('downloads'))
-  // Spoken output (T8). The pipeline and download announcements share this
-  // speaker, and tts.stop() is the barge-in hook the wake word (T10) will call.
-  const tts: TtsSpeaker = createMainTts({
-    config: piperConfig,
-    pane: pane.view.webContents,
-    getVoiceId: () => settingsStore.get().ttsVoice.trim() || piperConfig.voiceId,
-  })
+  // Spoken output (T8), wrapped in a speaking gate (T9): the pipeline,
+  // download announcements and the confirmation window share it, so the
+  // 12 s voice window opens only after the prompt finishes speaking.
+  const speakingGate = createSpeakingGate(
+    createMainTts({
+      config: piperConfig,
+      pane: pane.view.webContents,
+      getVoiceId: () => settingsStore.get().ttsVoice.trim() || piperConfig.voiceId,
+    }),
+  )
   attachDownloadRouter(pane.session, {
     dir: downloadsDir,
-    tts,
+    tts: speakingGate.tts,
     isAgentActive: agentActivity.isActive,
     emit: (event) => {
       if (!win.isDestroyed()) win.webContents.send(PIPELINE_IPC.event, event)
@@ -105,9 +115,19 @@ function createWindow(): BrowserWindow {
   })
 
   if (runningCliHarness) startCliHarness(controller, downloadsDir)
+  const voice = await createMainVoice(voiceConfig)
+  // Voice before assistant: the pipeline's event tap feeds the session's
+  // confirmation window, so the session must exist when events start.
+  const voiceSession = attachVoiceToWindow(win, {
+    vad: voice.vad,
+    transcriber: voice.transcriber,
+    tts: speakingGate.tts,
+    ttsIdle: speakingGate,
+  })
   attachAssistantToWindow(
-    createAssistantPipeline({ controller, env: currentEnv(), getEnv: currentEnv, tts }),
+    createAssistantPipeline({ controller, env: currentEnv(), getEnv: currentEnv, tts: speakingGate.tts }),
     win,
+    (event) => voiceSession.handlePipelineEvent(event),
   )
 
   if (process.env.ELECTRON_RENDERER_URL) {
@@ -119,12 +139,13 @@ function createWindow(): BrowserWindow {
   return win
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   registerBrowserIpc()
   registerAssistantIpc()
   registerSettingsIpc(settingsStore)
   registerTtsIpc({ voicesDir: () => piperConfig.voicesDir })
-  createWindow()
+  registerVoiceIpc()
+  await createWindow()
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()

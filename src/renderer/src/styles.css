@@ -45,6 +45,12 @@ body {
   margin: 0;
 }
 
+.voice-hint {
+  font-size: 0.85rem;
+  color: #b48bff;
+  animation: orb-pulse 1.6s ease-in-out infinite;
+}
+
 .status-orb {
   width: 18px;
   height: 18px;
@@ -308,6 +314,11 @@ body {
 
 .transcript-entry--display {
   color: var(--muted);
+}
+
+.transcript-entry--voice {
+  color: #b48bff;
+  font-size: 0.85rem;
 }
 
 .transcript-entry--error {

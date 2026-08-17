@@ -1,10 +1,12 @@
 import type { BrowserPaneState, PaneRect } from '../core/browser/paneState'
 import type { PipelineEvent } from '../core/pipeline/events'
 import type { AppSettings } from '../core/settings/settings'
+import type { VoiceHeardEvent, VoiceState } from '../core/voice/ipcChannels'
 
 export type { BrowserPaneState, PaneRect }
 export type { PipelineEvent }
 export type { AppSettings }
+export type { VoiceHeardEvent, VoiceState }
 
 export interface BingbongBrowserApi {
   navigate(input: string): Promise<boolean>
@@ -32,12 +34,23 @@ export interface BingbongTtsApi {
   listVoices(): Promise<string[]>
 }
 
+export interface BingbongVoiceApi {
+  arm(): Promise<void>
+  disarm(): Promise<void>
+  /** One chunk of mono 16 kHz PCM from the mic worklet (multiple of 512 samples). */
+  sendAudio(chunk: Float32Array): void
+  onState(listener: (state: VoiceState) => void): () => void
+  onHeard(listener: (heard: VoiceHeardEvent) => void): () => void
+  onError(listener: (error: { message: string }) => void): () => void
+}
+
 export interface BingbongApi {
   version: string
   browser: BingbongBrowserApi
   assistant: BingbongAssistantApi
   settings: BingbongSettingsApi
   tts: BingbongTtsApi
+  voice: BingbongVoiceApi
 }
 
 declare global {

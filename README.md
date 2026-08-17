@@ -24,6 +24,34 @@ volume, next, seek; never ad-skipping), and download routing — approved
 downloads land in `~/Downloads/bingbong_downloads/` and the filename is
 spoken and displayed on completion.
 
+T9 adds the **ears** (wake word comes in T10): `Ctrl/Cmd+Space` arms
+listening; mic audio (the settings-page mic, preferring the C920 over the OS
+default) streams from an AudioWorklet at 16 kHz mono, Silero VAD endpoints
+the utterance, and smart-whisper transcribes it into the same command
+pipeline as the text box. Confirmation prompts open a 12 s voice window once
+the spoken prompt finishes — "yes"/"no" resolves it, the on-screen buttons
+stay, and the 60 s auto-deny still backs everything. STT latency on the
+5600G is measured and the base.en decision recorded in
+`docs/stt-latency.md`.
+
+## Voice models
+
+The first voice command needs two model files in `<userData>/models`
+(`~/.config/bingbong/models` on Linux — set `BINGBONG_VAD_MODEL` /
+`BINGBONG_WHISPER_MODEL` to override):
+
+```sh
+mkdir -p ~/.config/bingbong/models
+curl -L -o ~/.config/bingbong/models/silero_vad.onnx \
+  https://github.com/snakers4/silero-vad/raw/master/src/silero_vad/data/silero_vad.onnx
+curl -L -o ~/.config/bingbong/models/ggml-base.en.bin \
+  https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.en.bin
+```
+
+`BINGBONG_VAD_SCRIPT` / `BINGBONG_STT_SCRIPT` (JSON arrays of probabilities /
+transcripts) replace the real engines — used by the e2e suite and keyless
+demos, mirroring `BINGBONG_LLM_SCRIPT`.
+
 ## Configuring models
 
 Model routing is env-only — no model ids are hardcoded. Per role
@@ -60,12 +88,15 @@ speak/display payloads, and errors.
 
 - **Above the seam** (thin adapters, later tickets): voice pipeline, dashboard UI.
 - **Below the seam** (interfaces + test doubles, `src/core/ports`): LLM client,
-  browser controller, TTS, search, clock (injectable for timeout tests).
+  browser controller, TTS, STT, search, clock (injectable for timeout tests).
+  Scripted doubles resolve env-side in the main adapters
+  (`BINGBONG_*_SCRIPT`); pure doubles for unit tests live in `src/core/testing`.
 
 ## Commands
 
 ```sh
-pnpm install    # install
+pnpm install    # install (native deps: onnxruntime-node + smart-whisper build via node-gyp;
+                #   with gcc ≥ 14 export CFLAGS=-D_GNU_SOURCE CXXFLAGS=-D_GNU_SOURCE first)
 pnpm dev        # launch the app in dev mode
 pnpm test       # run the test suite
 pnpm typecheck  # tsc over main/preload/core + renderer
@@ -79,11 +110,13 @@ pnpm build      # production build to out/
 src/
   main/        Electron main process
     agent/     model-routed OpenAI client, orchestrator prompt, pipeline glue, IPC
+    voice/     Silero VAD + smart-whisper adapters, voice IPC (T9)
   preload/     contextBridge preload
-  renderer/    React dashboard (command box, transcript, status orb, browser pane)
+  renderer/    React dashboard (command box, transcript, status orb, browser pane, mic worklet)
   core/
     agent/     model routing config + the answer contract (speak/display)
     pipeline/  command pipeline + event types (the seam)
-    ports/     interfaces for LLM, browser, TTS, search, clock
+    ports/     interfaces for LLM, browser, TTS, STT, search, clock
+    voice/     VAD endpointing, yes/no parsing, voice session (the ears' seam)
     testing/   test doubles (scripted LLM, fake clock, fakes)
 ```
