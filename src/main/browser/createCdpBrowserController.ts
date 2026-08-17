@@ -1,4 +1,4 @@
-import type { BrowserController, BrowserState } from '../../core/ports/browser'
+import type { BrowserController, BrowserState, KeyPress } from '../../core/ports/browser'
 import { normalizeUrlInput } from '../../core/browser/urlInput'
 import {
   buildPageSnapshot,
@@ -21,6 +21,8 @@ export interface CdpPageDriver {
   goBack(): Promise<void>
   url(): string
   title(): string
+  /** Makes the page the focused webContents — synthetic keys are dropped otherwise. */
+  focus(): void
 }
 
 export interface ControllerPacing {
@@ -74,6 +76,9 @@ interface KeyEvent {
   keyCode: number
 }
 
+/** CDP Input modifier bit for Shift. */
+const SHIFT_MODIFIER = 8
+
 const SPECIAL_KEYS: Record<string, KeyEvent> = {
   '\n': { key: 'Enter', code: 'Enter', text: '\r', keyCode: 13 },
   '\r': { key: 'Enter', code: 'Enter', text: '\r', keyCode: 13 },
@@ -86,6 +91,52 @@ function keyEventFor(ch: string): KeyEvent {
   const special = SPECIAL_KEYS[ch]
   if (special) return special
   return { key: ch, text: ch, keyCode: ch.toUpperCase().charCodeAt(0) }
+}
+
+// Virtual key codes for named (non-character) keys the agent may inject.
+const NAMED_KEY_CODES: Record<string, number> = {
+  Enter: 13,
+  Tab: 9,
+  Backspace: 8,
+  Escape: 27,
+  Space: 32,
+  ArrowLeft: 37,
+  ArrowUp: 38,
+  ArrowRight: 39,
+  ArrowDown: 40,
+  PageUp: 33,
+  PageDown: 34,
+  Home: 36,
+  End: 35,
+}
+
+// Shortcut events carry no `text`: they drive page key handlers (media
+// players, players' global shortcuts) without typing into focused inputs.
+function shortcutEventFor(press: KeyPress): { key: string; code: string; keyCode: number; modifiers?: number } {
+  const shift = press.shift === true
+  if (press.key.length === 1) {
+    if (!/^[a-z0-9]$/i.test(press.key)) {
+      throw new Error(`pressKey: unsupported key '${press.key}'`)
+    }
+    const upper = press.key.toUpperCase()
+    const code = /^[0-9]$/.test(press.key) ? `Digit${press.key}` : `Key${upper}`
+    return {
+      key: shift ? upper : press.key,
+      code,
+      keyCode: upper.charCodeAt(0),
+      ...(shift ? { modifiers: SHIFT_MODIFIER } : {}),
+    }
+  }
+  const keyCode = NAMED_KEY_CODES[press.key]
+  if (keyCode === undefined) {
+    throw new Error(`pressKey: unsupported key '${press.key}'`)
+  }
+  return {
+    key: press.key,
+    code: press.key,
+    keyCode,
+    ...(shift ? { modifiers: SHIFT_MODIFIER } : {}),
+  }
 }
 
 export function createCdpBrowserController(deps: CdpBrowserControllerDeps): BrowserController {
@@ -262,6 +313,32 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
     }
   }
 
+  async function dispatchShortcut(key: { key: string; code: string; keyCode: number; modifiers?: number }): Promise<void> {
+    const params = {
+      key: key.key,
+      code: key.code,
+      windowsVirtualKeyCode: key.keyCode,
+      ...(key.modifiers !== undefined ? { modifiers: key.modifiers } : {}),
+    }
+    await cdp.send('Input.dispatchKeyEvent', { type: 'keyDown', ...params })
+    await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', ...params })
+  }
+
+  async function pressKey(press: KeyPress, times = 1): Promise<void> {
+    if (!Number.isInteger(times) || times < 1) {
+      throw new Error(`pressKey: 'times' must be a positive integer (got ${times})`)
+    }
+    const event = shortcutEventFor(press)
+    // Keys only land on the focused webContents — after a text-box command
+    // the dashboard holds focus, so claim it for the page first.
+    page.focus()
+    await sleep(pacing.settleMs)
+    for (let i = 0; i < times; i++) {
+      await dispatchShortcut(event)
+      if (i < times - 1) await sleep(pacing.keystrokeMs)
+    }
+  }
+
   async function describeRef(ref: number): Promise<SnapshotRef | undefined> {
     try {
       const { target } = await resolveRef(ref)
@@ -283,6 +360,7 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
     scroll,
     screenshot,
     back,
+    pressKey,
     state,
     describeRef,
   }

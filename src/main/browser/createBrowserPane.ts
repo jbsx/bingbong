@@ -9,6 +9,8 @@ export const BROWSER_PARTITION = 'persist:browse'
 
 export interface BrowserPane {
   view: WebContentsView
+  /** The pane's persistent session — download routing attaches here. */
+  session: Electron.Session
   navigate(input: string): boolean
   goBack(): void
   goForward(): void
@@ -28,8 +30,8 @@ export function createBrowserPane(): BrowserPane {
     }),
   )
 
-  // Manual-browsing downloads keep Electron's default OS save dialog; agent-side
-  // routing to ~/Downloads/bingbong_downloads arrives in T6.
+  // Downloads keep Electron's default OS save dialog unless the agent
+  // started them — attachDownloadRouter + the agent-activity tracker decide.
 
   const view = new WebContentsView({
     webPreferences: {
@@ -77,6 +79,7 @@ export function createBrowserPane(): BrowserPane {
 
   return {
     view,
+    session: partitionSession,
     navigate(input) {
       if (wc.isDestroyed()) return false
       const url = normalizeUrlInput(input)

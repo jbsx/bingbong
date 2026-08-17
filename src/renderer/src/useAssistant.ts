@@ -34,6 +34,10 @@ function describeToolCall(name: string, args: Record<string, unknown>): string {
       return `type "${String(args.text ?? '')}" into [${String(args.ref ?? '?')}]`
     case 'scroll':
       return `scroll ${String(args.direction ?? '')}`
+    case 'web_search':
+      return `search "${String(args.query ?? '')}"`
+    case 'media_control':
+      return `media ${String(args.action ?? '')}${args.offset !== undefined ? ` ${String(args.offset)}s` : ''}`
     case 'read_page':
       return 'read page'
     case 'screenshot':

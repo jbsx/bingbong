@@ -1,7 +1,7 @@
 import type { Clock } from '../ports/clock'
 import type { AssistantTurn, LlmClient, LlmRequest } from '../ports/llm'
 import type { TtsSpeaker } from '../ports/tts'
-import type { BrowserController, BrowserState } from '../ports/browser'
+import type { BrowserController, BrowserState, KeyPress } from '../ports/browser'
 import type { SnapshotRef } from '../browser/snapshot'
 import type { SearchProvider, SearchResult } from '../ports/search'
 
@@ -69,6 +69,7 @@ export class FakeBrowser implements BrowserController {
   readonly clicks: number[] = []
   readonly typed: { ref: number; text: string }[] = []
   readonly scrolls: ('up' | 'down')[] = []
+  readonly pressedKeys: { press: KeyPress; times: number }[] = []
   /** Refs the risk gate can describe; empty means every ref is unknown. */
   readonly refs = new Map<number, SnapshotRef>()
   private pageState: BrowserState = { url: null, title: null }
@@ -92,6 +93,10 @@ export class FakeBrowser implements BrowserController {
 
   async scroll(direction: 'up' | 'down'): Promise<void> {
     this.scrolls.push(direction)
+  }
+
+  async pressKey(press: KeyPress, times = 1): Promise<void> {
+    this.pressedKeys.push({ press, times })
   }
 
   async screenshot(): Promise<Uint8Array> {

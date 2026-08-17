@@ -1,12 +1,18 @@
 import { app, BrowserWindow } from 'electron'
 import { join } from 'node:path'
 import type { BrowserController } from '../core/ports/browser'
+import type { TtsSpeaker } from '../core/ports/tts'
+import { createAgentActivityTracker, withAgentActivity } from '../core/downloads/agentActivity'
+import { silentTts } from '../core/testing/doubles'
+import { PIPELINE_IPC } from '../core/pipeline/ipcChannels'
 import { createBrowserPane } from './browser/createBrowserPane'
 import { attachBrowserPaneToWindow, registerBrowserIpc } from './browser/attachBrowserPane'
 import { createPaneBrowserController } from './browser/createPaneBrowserController'
+import { attachDownloadRouter } from './browser/attachDownloadRouter'
 import { runCliHarness, saveScreenshotFile } from './cli/runCliHarness'
 import { attachAssistantToWindow, registerAssistantIpc } from './agent/attachAssistant'
 import { createAssistantPipeline } from './agent/createAssistantPipeline'
+import { resolveDownloadsDir } from './downloadsDir'
 import { resolvePreloadPath } from './preloadPath'
 
 // e2e harness seam: isolate the profile (cookies, cache, singleton lock) per run.
@@ -22,17 +28,16 @@ const runningCliHarness = process.argv.includes(CLI_HARNESS_FLAG) || process.env
 
 let cliHarnessStarted = false
 
-function startCliHarness(controller: BrowserController): void {
+function startCliHarness(controller: BrowserController, downloadsDir: string): void {
   if (cliHarnessStarted) return
   cliHarnessStarted = true
 
-  const screenshotDir = () => join(app.getPath('downloads'), 'bingbong_downloads')
   void runCliHarness({
     controller,
     input: process.stdin,
     output: process.stdout,
     exit: () => app.quit(),
-    screenshotDir,
+    screenshotDir: () => downloadsDir,
     saveScreenshot: saveScreenshotFile,
   }).catch((err: unknown) => {
     process.stderr.write(`browser cli harness failed: ${err instanceof Error ? err.message : String(err)}\n`)
@@ -56,12 +61,29 @@ function createWindow(): BrowserWindow {
   // A pane per window; the persistent `persist:browse` session partition is what
   // keeps logins alive across windows and restarts. One CDP controller is
   // shared by everything that drives the pane (CLI harness, assistant) —
-  // webContents.debugger allows a single attachment.
+  // webContents.debugger allows a single attachment. The activity tracker
+  // marks its download-capable verbs, so only agent-initiated downloads get
+  // routed; manual ones keep the OS save dialog.
   const pane = createBrowserPane()
   attachBrowserPaneToWindow(pane, win)
-  const controller = createPaneBrowserController(pane)
-  if (runningCliHarness) startCliHarness(controller)
-  attachAssistantToWindow(createAssistantPipeline({ controller, env: process.env }), win)
+  const agentActivity = createAgentActivityTracker()
+  const controller: BrowserController = withAgentActivity(createPaneBrowserController(pane), agentActivity)
+
+  const downloadsDir = resolveDownloadsDir(process.env, app.getPath('downloads'))
+  // Piper TTS arrives in T8; the pipeline and download announcements share
+  // the same speaker so voice lands whenever it exists.
+  const tts: TtsSpeaker = silentTts
+  attachDownloadRouter(pane.session, {
+    dir: downloadsDir,
+    tts,
+    isAgentActive: agentActivity.isActive,
+    emit: (event) => {
+      if (!win.isDestroyed()) win.webContents.send(PIPELINE_IPC.event, event)
+    },
+  })
+
+  if (runningCliHarness) startCliHarness(controller, downloadsDir)
+  attachAssistantToWindow(createAssistantPipeline({ controller, env: process.env, tts }), win)
 
   if (process.env.ELECTRON_RENDERER_URL) {
     void win.loadURL(process.env.ELECTRON_RENDERER_URL)

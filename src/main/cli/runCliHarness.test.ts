@@ -2,7 +2,7 @@ import { PassThrough } from 'node:stream'
 import { describe, expect, it } from 'vitest'
 import youtubeHome from '../../core/browser/fixtures/youtube-home.json'
 import { buildPageSnapshot, findSnapshotRef, formatPageSnapshot, type CollectedPage, type SnapshotRef } from '../../core/browser/snapshot'
-import type { BrowserController, BrowserState } from '../../core/ports/browser'
+import type { BrowserController, BrowserState, KeyPress } from '../../core/ports/browser'
 import { runCliHarness, type CliHarnessDeps } from './runCliHarness'
 
 const youtubeFixture = youtubeHome as unknown as CollectedPage
@@ -12,6 +12,7 @@ class FakeController implements BrowserController {
   readonly clicks: number[] = []
   readonly typed: { ref: number; text: string }[] = []
   readonly scrolls: ('up' | 'down')[] = []
+  readonly pressed: { press: KeyPress; times: number }[] = []
   readonly backs: number[] = []
   failRead = false
   saved: { path: string; bytes: Uint8Array }[] = []
@@ -35,6 +36,10 @@ class FakeController implements BrowserController {
 
   async scroll(direction: 'up' | 'down'): Promise<void> {
     this.scrolls.push(direction)
+  }
+
+  async pressKey(press: KeyPress, times = 1): Promise<void> {
+    this.pressed.push({ press, times })
   }
 
   async screenshot(): Promise<Uint8Array> {
@@ -150,6 +155,24 @@ describe('runCliHarness', () => {
 
     cli.input.write('screenshot /tmp/other.jpg\n')
     await cli.expectOutput('saved screenshot to /tmp/other.jpg (4 bytes)')
+
+    cli.input.write('quit\n')
+    await cli.done
+  })
+
+  it('presses shortcut keys on the page', async () => {
+    const cli = harnessWith()
+    await cli.expectOutput('bingbong> ')
+
+    cli.input.write('press k\n')
+    await cli.expectOutput('pressed k')
+
+    cli.input.write('press l 3\n')
+    await cli.expectOutput('pressed l ×3')
+    expect(cli.controller.pressed).toEqual([
+      { press: { key: 'k' }, times: 1 },
+      { press: { key: 'l' }, times: 3 },
+    ])
 
     cli.input.write('quit\n')
     await cli.done

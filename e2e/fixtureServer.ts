@@ -105,6 +105,26 @@ function consentWallPage(): string {
 </html>`
 }
 
+// Media-verb fixture: a page that records every keydown it receives, so the
+// e2e can assert the exact trusted key events media_control injects (keys,
+// shift state) without depending on a real video provider.
+function mediaPage(): string {
+  return `<!doctype html>
+<html>
+<head><title>media fixture</title></head>
+<body style="background:#222;color:#fff;margin:0">
+  <h1>media fixture page</h1>
+  <video controls width="320" height="180" title="Fixture player"></video>
+  <script>
+    window.__pressedKeys = []
+    document.addEventListener('keydown', (e) => {
+      window.__pressedKeys.push({ key: e.key, shift: e.shiftKey })
+    })
+  </script>
+</body>
+</html>`
+}
+
 export async function startFixtureServer(): Promise<FixtureServer> {
   const httpServer: Server = createServer((req, res) => {
     if (req.url === '/dl') {
@@ -134,6 +154,10 @@ export async function startFixtureServer(): Promise<FixtureServer> {
     }
     if (req.url === '/consent-wall') {
       res.end(consentWallPage())
+      return
+    }
+    if (req.url === '/media') {
+      res.end(mediaPage())
       return
     }
     res.end(page('<input id=t style="font-size:40px;width:100%;height:120px">'))

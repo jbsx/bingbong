@@ -62,6 +62,9 @@ export function createPaneBrowserController(pane: BrowserPane): BrowserControlle
     },
     url: () => wc.getURL(),
     title: () => wc.getTitle(),
+    focus: () => {
+      if (!wc.isDestroyed()) wc.focus()
+    },
   }
 
   return createCdpBrowserController({ cdp, page, collectScript: COLLECT_PAGE_SCRIPT })

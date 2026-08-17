@@ -8,7 +8,7 @@ import {
   type CollectedPage,
   type SnapshotRef,
 } from '../browser/snapshot'
-import type { BrowserController, BrowserState } from '../ports/browser'
+import type { BrowserController, BrowserState, KeyPress } from '../ports/browser'
 import { createCommandPipeline, type CommandPipeline } from './createCommandPipeline'
 import { createBrowserTools } from './browserTools'
 import { FakeClock, RecordingTts, ScriptedLlm } from '../testing/doubles'
@@ -56,6 +56,12 @@ class FixtureBrowserController implements BrowserController {
   async scroll(direction: 'up' | 'down'): Promise<void> {
     this.scrolls.push(direction)
   }
+
+  async pressKey(press: KeyPress): Promise<void> {
+    this.pressed.push(press)
+  }
+
+  readonly pressed: KeyPress[] = []
 
   async screenshot(): Promise<Uint8Array> {
     return this.screenshotBytes

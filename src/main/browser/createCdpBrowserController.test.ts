@@ -58,6 +58,7 @@ class FakeCdp implements CdpDebugger {
 class FakePage implements CdpPageDriver {
   readonly loadedUrls: string[] = []
   wentBack = 0
+  focusCount = 0
   failLoad = false
   failBack = false
 
@@ -77,6 +78,10 @@ class FakePage implements CdpPageDriver {
 
   title(): string {
     return 'YouTube'
+  }
+
+  focus(): void {
+    this.focusCount += 1
   }
 }
 
@@ -383,6 +388,57 @@ describe('createCdpBrowserController screenshot', () => {
       format: 'jpeg',
     })
     expect(bytes).toEqual(new Uint8Array(Buffer.from('fake-jpeg-bytes')))
+  })
+})
+
+describe('createCdpBrowserController pressKey', () => {
+  it('focuses the page once before dispatching, then sends keyDown/keyUp without text', async () => {
+    const { cdp, page, controller } = makeController()
+
+    await controller.pressKey({ key: 'k' }, 3)
+
+    // Synthetic keys are dropped unless the page is the focused webContents;
+    // focus is claimed once per call, not per repeat.
+    expect(page.focusCount).toBe(1)
+    const firstKeyIndex = cdp.calls.findIndex((call) => call.method === 'Input.dispatchKeyEvent')
+    expect(firstKeyIndex).toBeGreaterThan(-1)
+
+    const keys = cdp.calls.filter((call) => call.method === 'Input.dispatchKeyEvent')
+    expect(keys.map((call) => call.params)).toHaveLength(6)
+    expect(keys[0]?.params).toEqual({ type: 'keyDown', key: 'k', code: 'KeyK', windowsVirtualKeyCode: 75 })
+    expect(keys[1]?.params).toEqual({ type: 'keyUp', key: 'k', code: 'KeyK', windowsVirtualKeyCode: 75 })
+  })
+
+  it('maps named keys like the arrows with their virtual key codes', async () => {
+    const { cdp, controller } = makeController()
+
+    await controller.pressKey({ key: 'ArrowUp' })
+
+    const keys = cdp.calls.filter((call) => call.method === 'Input.dispatchKeyEvent')
+    expect(keys.map((call) => call.params)).toEqual([
+      { type: 'keyDown', key: 'ArrowUp', code: 'ArrowUp', windowsVirtualKeyCode: 38 },
+      { type: 'keyUp', key: 'ArrowUp', code: 'ArrowUp', windowsVirtualKeyCode: 38 },
+    ])
+  })
+
+  it('applies the Shift modifier for shifted shortcuts', async () => {
+    const { cdp, controller } = makeController()
+
+    await controller.pressKey({ key: 'n', shift: true })
+
+    const keys = cdp.calls.filter((call) => call.method === 'Input.dispatchKeyEvent')
+    expect(keys.map((call) => call.params)).toEqual([
+      { type: 'keyDown', key: 'N', code: 'KeyN', windowsVirtualKeyCode: 78, modifiers: 8 },
+      { type: 'keyUp', key: 'N', code: 'KeyN', windowsVirtualKeyCode: 78, modifiers: 8 },
+    ])
+  })
+
+  it('rejects unsupported keys and invalid repeat counts', async () => {
+    const { controller } = makeController()
+
+    await expect(controller.pressKey({ key: 'NotAKey' })).rejects.toThrow(/unsupported key/)
+    await expect(controller.pressKey({ key: '' })).rejects.toThrow(/unsupported key/)
+    await expect(controller.pressKey({ key: 'k' }, 0)).rejects.toThrow(/times/)
   })
 })
 

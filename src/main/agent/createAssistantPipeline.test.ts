@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { createAssistantPipeline } from './createAssistantPipeline'
-import { FakeBrowser, FakeClock, RecordingTts } from '../../core/testing/doubles'
+import { FakeBrowser, FakeClock, FakeSearch, RecordingTts } from '../../core/testing/doubles'
+import type { SearchResult } from '../../core/ports/search'
 import type { CommandPipeline } from '../../core/pipeline/createCommandPipeline'
 import type { PipelineEvent } from '../../core/pipeline/events'
 
@@ -82,5 +83,35 @@ describe('createAssistantPipeline', () => {
     expect(requests[0].url).toBe('https://ai.z.ai/api/coding/paas/v4/chat/completions')
     expect(requests[0].body.model).toBe('glm-5.3')
     expect(events.find((e) => e.type === 'speak')).toMatchObject({ text: 'Hi.' })
+  })
+
+  it('exposes search and media tools alongside the browser verbs', async () => {
+    const results: SearchResult[] = [{ title: 'Hit', url: 'https://hit.test', snippet: 'snip' }]
+    const browser = new FakeBrowser()
+    const pipeline = createAssistantPipeline({
+      controller: browser,
+      env: {
+        BINGBONG_LLM_SCRIPT: JSON.stringify([
+          {
+            kind: 'tool_calls',
+            calls: [
+              { id: 'w1', name: 'web_search', args: { query: 'keyboards' } },
+              { id: 'm1', name: 'media_control', args: { action: 'next' } },
+            ],
+          },
+          { kind: 'answer', speak: 'Done.', display: 'Detail.' },
+        ]),
+      },
+      search: new FakeSearch(results),
+      clock: new FakeClock(),
+    })
+
+    const events = await collect(pipeline, 'search and skip to the next track')
+
+    expect(events.find((e) => e.type === 'tool_result' && e.name === 'web_search')).toMatchObject({
+      ok: true,
+      result: '1. Hit — https://hit.test\n   snip',
+    })
+    expect(browser.pressedKeys).toEqual([{ press: { key: 'n', shift: true }, times: 1 }])
   })
 })

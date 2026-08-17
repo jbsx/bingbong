@@ -28,6 +28,7 @@ const HELP_TEXT = [
   '  click <ref>        click element <ref> from the last snapshot',
   '  type <ref> <text>  click <ref> and type text (\\n sends Enter)',
   '  scroll up|down     scroll the page',
+  '  press <key> [n]    inject a shortcut key n times (k, j, l, up, down, left, right, space, enter, next)',
   '  screenshot [path]  save a jpeg screenshot (default: screenshot dir)',
   '  back               go back in history',
   '  quit               exit the app',
@@ -66,6 +67,10 @@ export function runCliHarness(deps: CliHarnessDeps): Promise<void> {
       case 'scroll':
         await controller.scroll(command.direction)
         write(`scrolled ${command.direction}\n`)
+        return
+      case 'press':
+        await controller.pressKey(command.press, command.times)
+        write(`pressed ${command.press.key}${command.times > 1 ? ` ×${command.times}` : ''}\n`)
         return
       case 'screenshot': {
         const bytes = await controller.screenshot()

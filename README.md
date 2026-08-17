@@ -17,6 +17,13 @@ T5 adds the **risk gate**: every click/type is classified from snapshot facts
 spoken + on-screen confirmation (auto-deny after 60 s); credential fills and
 payment submissions are hard-denied in code — no confirmation, no override.
 
+T6 adds the **utility tools**: `web_search` (DuckDuckGo's no-JS HTML endpoint
+behind the `SearchProvider` seam), media verbs (`media_control` drives
+playback on the focused page via injected YouTube-style shortcuts — pause,
+volume, next, seek; never ad-skipping), and download routing — approved
+downloads land in `~/Downloads/bingbong_downloads/` and the filename is
+spoken and displayed on completion.
+
 ## Configuring models
 
 Model routing is env-only — no model ids are hardcoded. Per role

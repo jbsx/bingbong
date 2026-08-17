@@ -61,6 +61,41 @@ describe('parseCliCommand', () => {
     })
   })
 
+  it('parses press with a known key and optional repeat count', () => {
+    expect(parseCliCommand('press k')).toEqual({
+      ok: true,
+      command: { type: 'press', press: { key: 'k' }, times: 1 },
+    })
+    expect(parseCliCommand('press l 3')).toEqual({
+      ok: true,
+      command: { type: 'press', press: { key: 'l' }, times: 3 },
+    })
+    expect(parseCliCommand('press up')).toEqual({
+      ok: true,
+      command: { type: 'press', press: { key: 'ArrowUp' }, times: 1 },
+    })
+    expect(parseCliCommand('press next')).toEqual({
+      ok: true,
+      command: { type: 'press', press: { key: 'n', shift: true }, times: 1 },
+    })
+  })
+
+  it('rejects press with an unknown key or bad count', () => {
+    expect(parseCliCommand('press')).toEqual({
+      ok: false,
+      error: "press: expected 'press <key> [times]' with key one of k, j, l, up, down, left, right, space, enter, next",
+    })
+    expect(parseCliCommand('press qwerty')).toEqual({
+      ok: false,
+      error: "press: expected 'press <key> [times]' with key one of k, j, l, up, down, left, right, space, enter, next",
+    })
+    expect(parseCliCommand('press k zero')).toEqual({
+      ok: false,
+      error: "press: times must be a positive integer",
+    })
+    expect(parseCliCommand('press k 0')).toEqual({ ok: false, error: 'press: times must be a positive integer' })
+  })
+
   it('parses back, help, and quit/exit', () => {
     expect(parseCliCommand('back')).toEqual({ ok: true, command: { type: 'back' } })
     expect(parseCliCommand('help')).toEqual({ ok: true, command: { type: 'help' } })

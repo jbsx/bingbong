@@ -31,6 +31,15 @@ describe('fixtureServer', () => {
     expect(await response.text()).toBe('download-probe-payload')
   })
 
+  it('serves /media with the keydown recorder in place', async () => {
+    server = await startFixtureServer()
+    const response = await fetch(server.url('/media'))
+    const html = await response.text()
+    expect(html).toContain('media fixture page')
+    expect(html).toContain('__pressedKeys')
+    expect(html).toContain('<video')
+  })
+
   it('reports the bound URL with an ephemeral port', async () => {
     server = await startFixtureServer()
     expect(server.url('/')).toMatch(/^http:\/\/127\.0\.0\.1:\d+\/$/)

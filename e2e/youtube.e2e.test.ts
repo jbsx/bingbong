@@ -96,6 +96,9 @@ async function closeStrayPopups(harness: Harness): Promise<void> {
   await harness.focusPane().catch(() => {})
 }
 
+// Shared with the media-verb test below: the URL the ref-click test landed on.
+let watchUrl: string | undefined
+
 describe.skipIf(!process.env.BINGBONG_YOUTUBE_E2E)('youtube validation gate (network)', () => {
   let harness: Harness
   let screenshotPath: string
@@ -177,6 +180,43 @@ describe.skipIf(!process.env.BINGBONG_YOUTUBE_E2E)('youtube validation gate (net
     }
 
     expect(landed).toBeDefined()
+    watchUrl = landed
+  })
+
+  it('controls playback with injected media keys (pause, resume)', async () => {
+    if (!watchUrl) throw new Error('the ref-click test must land on a watch page first')
+    await cli(harness, `navigate ${watchUrl}`, /^navigated: /)
+    await harness.waitForPaneUrl(watchUrl)
+    await harness.focusPane()
+
+    // k toggles whatever is playing (content or ad — the toggle is the point).
+    const pausedBefore = await waitFor(
+      async () => {
+        const paused = await harness.paneEval<boolean | null>(
+          `document.querySelector('video') ? document.querySelector('video').paused : null`,
+        )
+        return paused === null ? undefined : paused
+      },
+      { timeoutMs: 20000, intervalMs: 500 },
+    )
+
+    await cli(harness, 'press k', /^pressed k$/)
+    await waitFor(
+      async () => {
+        const paused = await harness.paneEval<boolean | null>(`document.querySelector('video')?.paused ?? null`)
+        return paused === !pausedBefore ? paused : undefined
+      },
+      { timeoutMs: 15000, intervalMs: 250 },
+    )
+
+    await cli(harness, 'press k', /^pressed k$/)
+    await waitFor(
+      async () => {
+        const paused = await harness.paneEval<boolean | null>(`document.querySelector('video')?.paused ?? null`)
+        return paused === pausedBefore ? paused : undefined
+      },
+      { timeoutMs: 15000, intervalMs: 250 },
+    )
   })
 
   it('captures a real screenshot of youtube', async () => {
