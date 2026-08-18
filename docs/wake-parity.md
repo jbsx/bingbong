@@ -1,7 +1,8 @@
 # Wake-word parity: Node port vs the Python reference
 
-The "bing bong" wake word and the "abort" / "hold on" interrupt heads run
-fully in Node (`src/main/wake/createOpenWakeWordDetector.ts`) — a streaming
+The "bing bong" wake word and the "stop now" (abort) / "hold on" interrupt
+heads run fully in Node (`src/main/wake/createOpenWakeWordDetector.ts`) — a
+streaming
 port of openWakeWord's ONNX inference pipeline. This document records what
 the port does, where it intentionally deviates, and how parity is validated.
 
@@ -86,11 +87,12 @@ training run) and land in `<userData>/models/wake/` as `bing_bong.onnx`,
 `BINGBONG_WAKE_HOLD_ON_MODEL`. The Python sidecar engine scores the wake
 head only; the node engine runs all three.
 
-Known training gap (Aug 2026 run): the interrupt heads spike on speech
-*onsets* — `abort` ≈ 0.99 and `hold_on` ≈ 0.99 for 2–3 chunks when speech
-starts after silence, decaying to ~0 while speech continues (`bing_bong`
-peaks at 0.19 on the same clip). Idle false-fires are no-ops (the session
-gates interrupts on an active run), but mid-run any speech onset reads as
-"abort"/"hold on". The threshold can't separate onset transients from the
-real phrases — the fix is retraining with onset-heavy negatives, not
-retuning.
+Known training gap (Aug 2026 run): the interrupt heads spike on some
+speech *onsets* — `hold_on` ≈ 0.99 for 2–3 chunks when speech starts
+after silence, decaying to ~0 while speech continues, and `stop_now` ≈
+0.54 on the same clip (`bing_bong` peaks at 0.19). Idle false-fires are
+no-ops (the session gates interrupts on an active run), but mid-run a
+speech onset can read as "hold on" (and "cancel that please" scores 0.99
+on the `stop_now` head). The threshold can't separate onset transients
+from the real phrases — the fix is retraining with onset-heavy negatives,
+not retuning.

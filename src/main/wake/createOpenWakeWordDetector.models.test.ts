@@ -64,12 +64,12 @@ describe.skipIf(!haveAssets)('openWakeWord detector (real models)', () => {
 
     // Negative control: the clip contains none of the three phrases. The
     // wake head must stay below the default threshold. The interrupt heads
-    // as currently trained spike on the speech *onset* (abort ≈ 0.99,
-    // hold_on ≈ 0.99 for 2–3 chunks around chunk 8, then decay to ~0 while
-    // speech continues) — a threshold can't separate that from a real
-    // "abort", so their maxes are logged for the next training run rather
-    // than asserted. Idle false-fires are harmless (interrupt() no-ops), but
-    // mid-run any speech onset would read as "abort"/"hold on".
+    // as currently trained spike on the speech *onset* (hold_on ≈ 0.99 for
+    // 2–3 chunks around chunk 8 then decaying to ~0 while speech continues,
+    // stop_now ≈ 0.54) — a threshold can't separate that from a real
+    // "stop now"/"hold on", so their maxes are logged for the next training
+    // run rather than asserted. Idle false-fires are harmless (interrupt()
+    // no-ops), but mid-run a speech onset can read as "hold on".
     const maxes = {
       wake: Math.max(...first.map((s) => s.wake)),
       abort: Math.max(...first.map((s) => s.abort)),

@@ -65,7 +65,7 @@ T10 adds **hands-free activation**: with the wake models present (see
 `docs/wake-parity.md` for download links and the parity write-up), three
 custom heads run fully in Node via onnxruntime-node (melspectrogram →
 speech embedding → one classifier per head): "bing bong" wakes the
-assistant, "abort" cancels the active run, and "hold on" pauses it for a
+assistant, "stop now" cancels the active run, and "hold on" pauses it for a
 spoken steering instruction. Silero VAD gates the scores against
 music/noise false positives, and the settings-page threshold slider
 applies live. Wake → chime → single-shot listen; saying the wake word
