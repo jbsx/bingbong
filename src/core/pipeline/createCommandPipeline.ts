@@ -210,12 +210,12 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
     // One id per turn (#28): adopted when the voice session minted it at
     // utterance end, freshly minted for text-box commands.
     const id = turnId ?? mintTurnId()
-    for await (const event of runTurn(command)) {
+    for await (const event of runTurn(command, id)) {
       yield stampTurn(event, id)
     }
   }
 
-  async function* runTurn(command: string): AsyncIterable<UnstampedEvent> {
+  async function* runTurn(command: string, turnId: string): AsyncIterable<UnstampedEvent> {
     const run: ActiveRun = { aborted: false, paused: false }
     activeRun = run
 
@@ -243,6 +243,9 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
           const turn = await llm.complete({
             command,
             toolResults,
+            // The turn id rides the request so the perf wrapper keys each
+            // llm span to this turn (#29).
+            turnId,
             ...(history.length > 0 ? { history } : {}),
             ...(steering ? { steering } : {}),
           })

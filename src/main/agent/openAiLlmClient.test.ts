@@ -359,4 +359,44 @@ describe('openAiLlmClient', () => {
     await expect(client.complete({ command: 'x', toolResults: [] })).rejects.toThrow(/empty completion/)
     expect(fetch.calls).toHaveLength(3)
   })
+
+  it('reports each retry attempt through the request hook (#29)', async () => {
+    const fetch = new ScriptedFetch([
+      completionResponse({ content: null }),
+      completionResponse({ content: null }),
+      completionResponse({ content: '{"speak":"hi","display":"hi"}' }),
+    ])
+    const client = makeClient(fetch)
+    const attempts: number[] = []
+
+    await client.complete({ command: 'x', toolResults: [], onRetryAttempt: (attempt) => attempts.push(attempt) })
+
+    expect(attempts).toEqual([2, 3])
+  })
+
+  it('reports no retry attempt when the first try succeeds', async () => {
+    const fetch = new ScriptedFetch([completionResponse({ content: '{"speak":"hi","display":"hi"}' })])
+    const client = makeClient(fetch)
+    const attempts: number[] = []
+
+    await client.complete({ command: 'x', toolResults: [], onRetryAttempt: (attempt) => attempts.push(attempt) })
+
+    expect(attempts).toEqual([])
+  })
+
+  it('reports the retries before throwing on repeated empty completions', async () => {
+    const fetch = new ScriptedFetch([
+      completionResponse({ content: null }),
+      completionResponse({ content: null }),
+      completionResponse({ content: null }),
+    ])
+    const client = makeClient(fetch)
+    const attempts: number[] = []
+
+    await expect(
+      client.complete({ command: 'x', toolResults: [], onRetryAttempt: (attempt) => attempts.push(attempt) }),
+    ).rejects.toThrow(/empty completion/)
+
+    expect(attempts).toEqual([2, 3])
+  })
 })

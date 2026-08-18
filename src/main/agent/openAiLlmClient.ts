@@ -133,6 +133,9 @@ export function createOpenAiLlmClient(deps: OpenAiLlmClientDeps): LlmClient {
     let lastRequestId: string | undefined
     let lastRaw = ''
     for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+      // Retry visibility (#29): attempts beyond the first are reported so a
+      // tripled round-trip shows up in the perf log as separate events.
+      if (attempt > 1) request.onRetryAttempt?.(attempt)
       const outgoing =
         attempt === MAX_ATTEMPTS
           ? [...messages, { role: 'user' as const, content: 'Your previous reply was empty. Respond with tool calls or the final JSON answer.' }]

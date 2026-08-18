@@ -5,6 +5,7 @@ import { FakeBrowser, FakeClock, FakeSearch, RecordingTts } from '../../core/tes
 import type { SearchResult } from '../../core/ports/search'
 import type { CommandPipeline } from '../../core/pipeline/createCommandPipeline'
 import type { PipelineEvent } from '../../core/pipeline/events'
+import type { PerfTracer } from '../../core/perf/perfTracer'
 
 const FULL_ENV = {
   BINGBONG_ORCHESTRATOR_BASE_URL: 'https://ai.z.ai/api/coding/paas/v4',
@@ -107,6 +108,31 @@ describe('createAssistantPipeline', () => {
     for (const event of events) {
       expect('turnId' in event && event.turnId).toBe('turn-tr-1')
     }
+  })
+
+  it('records an llm span per orchestrator round through the injected tracer (#29)', async () => {
+    const records: { turnId: string; stage: string; durMs: number; detail?: Record<string, unknown> }[] = []
+    const monotonicMs = 0
+    const tracer: PerfTracer = {
+      mintTurnId: () => 'turn-tr-1',
+      now: () => monotonicMs,
+      span: (turnId, stage, durMs, detail) => {
+        records.push({ turnId, stage, durMs, ...(detail ? { detail } : {}) })
+      },
+    }
+    const pipeline = createAssistantPipeline({
+      controller: new FakeBrowser(),
+      env: { BINGBONG_LLM_SCRIPT: SCRIPT },
+      clock: new FakeClock(),
+      tracer,
+    })
+
+    const events = await collect(pipeline, 'open youtube')
+
+    // Two orchestrator rounds (tool_calls, then the answer), both keyed to
+    // the turn's id.
+    expect(records.filter((r) => r.stage === 'llm').map((r) => r.turnId)).toEqual(['turn-tr-1', 'turn-tr-1'])
+    expect(events.at(-1)).toMatchObject({ type: 'done', turnId: 'turn-tr-1' })
   })
 
   it('rejects a malformed LLM script override loudly', async () => {

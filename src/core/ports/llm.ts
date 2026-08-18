@@ -26,6 +26,14 @@ export interface LlmRequest {
   steering?: string
   /** Distilled prior turns, oldest first; absent when the session is empty. */
   history?: SessionTurn[]
+  /** Turn correlation id (#28); perf spans key on it when present (#29). */
+  turnId?: string
+  /**
+   * Retry visibility (#29): a client with an internal retry loop reports
+   * each attempt beyond the first, so silent retries show up in the perf
+   * log instead of hiding inside one inflated round.
+   */
+  onRetryAttempt?: (attempt: number) => void
 }
 
 /** Token usage as reported by the provider (absent when unknown). */

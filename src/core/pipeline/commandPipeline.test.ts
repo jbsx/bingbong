@@ -248,6 +248,7 @@ describe('command pipeline', () => {
       command: 'original command',
       toolResults: [],
       steering: 'Use Paris instead.',
+      turnId: expect.any(String),
     })
     expect(executions).toBe(0)
     expect(events).toContainEqual({ type: 'status', status: 'paused', at: 0 })
@@ -298,6 +299,7 @@ describe('command pipeline', () => {
         call: { id: 'one', name: 'continue_action', args: {} },
         outcome: { ok: true, result: 'continued' },
       }],
+      turnId: expect.any(String),
     })
   })
 
@@ -1112,6 +1114,30 @@ describe('command pipeline — turn correlation (#28)', () => {
     expect(session.history()).toEqual([
       { role: 'user', text: 'spin it' },
       { role: 'assistant', text: 'Done.' },
+    ])
+  })
+
+  it('stamps the turn id on every LLM request of the turn (#29)', async () => {
+    const llm = new ScriptedLlm([
+      { kind: 'tool_calls', calls: [{ id: 'c1', name: 'spin', args: {} }] },
+      { kind: 'answer', speak: 'Done.', display: 'Done.' },
+      { kind: 'answer', speak: 'Done.', display: 'Done.' },
+    ])
+    const pipeline = createCommandPipeline({
+      llm,
+      tts: new RecordingTts(),
+      clock: new FakeClock(),
+      tools: [spinner],
+    })
+
+    await collectStamped(pipeline, 'spin it', 'turn-voice-1')
+    expect(llm.requests.map((request) => request.turnId)).toEqual(['turn-voice-1', 'turn-voice-1'])
+
+    const events = await collectStamped(pipeline, 'typed command')
+    expect(llm.requests.map((request) => request.turnId)).toEqual([
+      'turn-voice-1',
+      'turn-voice-1',
+      turnIdsOf(events)[0],
     ])
   })
 

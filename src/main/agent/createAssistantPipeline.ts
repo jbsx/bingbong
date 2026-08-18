@@ -18,6 +18,7 @@ import { resolveModelEndpoint, routingEnvKeys } from '../../core/agent/modelRout
 import type { UsageSink } from '../../core/agent/usageTracking'
 import { withUsageTracking } from '../../core/agent/usageTracking'
 import type { PerfTracer } from '../../core/perf/perfTracer'
+import { withPerfTracing } from '../../core/perf/perfTracing'
 import { ScriptedLlm, silentTts, UnavailableLlm } from '../../core/testing/doubles'
 import { createDuckDuckGoSearchProvider } from '../search/createDuckDuckGoSearchProvider'
 import { createOpenAiLlmClient } from './openAiLlmClient'
@@ -71,6 +72,7 @@ function resolveLlm(
   fetchFn: typeof fetch,
   tools: Tool[],
   onUsage?: UsageSink,
+  tracer?: PerfTracer,
 ): LlmClient {
   let client: LlmClient
   let model: string
@@ -95,7 +97,10 @@ function resolveLlm(
     }
   }
 
-  return onUsage ? withUsageTracking(client, 'orchestrator', () => model, onUsage) : client
+  const tracked = onUsage ? withUsageTracking(client, 'orchestrator', () => model, onUsage) : client
+  // Perf sits outermost (#29): each orchestrator round is one `llm` span,
+  // and retry attempts surface as their own events.
+  return tracer ? withPerfTracing(tracked, tracer) : tracked
 }
 
 /** Env keys that decide which LLM client serves the orchestrator. */
@@ -120,6 +125,7 @@ function createDynamicLlm(
   fetchFn: typeof fetch,
   tools: Tool[],
   onUsage?: UsageSink,
+  tracer?: PerfTracer,
 ): LlmClient {
   let signature: string | null = null
   let client: LlmClient | null = null
@@ -128,7 +134,7 @@ function createDynamicLlm(
       const env = getEnv()
       const nextSignature = llmSignature(env)
       if (client === null || nextSignature !== signature) {
-        client = resolveLlm(env, fetchFn, tools, onUsage)
+        client = resolveLlm(env, fetchFn, tools, onUsage, tracer)
         signature = nextSignature
       }
       return client.complete(request)
@@ -156,7 +162,7 @@ export function createAssistantPipeline(deps: AssistantPipelineDeps): CommandPip
   const clock = deps.clock ?? systemClock
   const configuredAskTimeoutMs = askTimeoutMs(deps.env)
   const pipeline = createCommandPipeline({
-    llm: createDynamicLlm(getEnv, fetchFn, tools, deps.onLlmUsage),
+    llm: createDynamicLlm(getEnv, fetchFn, tools, deps.onLlmUsage, deps.tracer),
     tts: deps.tts ?? silentTts,
     clock,
     tools,
