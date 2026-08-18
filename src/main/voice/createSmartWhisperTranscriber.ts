@@ -18,6 +18,8 @@ interface WhisperLike {
 
 export interface SmartWhisperDeps {
   modelPath: string
+  /** Vocabulary biasing passed as whisper's initial_prompt; skips the param when empty. */
+  initialPrompt?: string
   /** Injectable for tests; defaults to the smart-whisper import. */
   loadLib?: () => Promise<{ Whisper: new (file: string, config?: Record<string, unknown>) => WhisperLike }>
   threads?: number
@@ -48,6 +50,7 @@ export function createSmartWhisperTranscriber(deps: SmartWhisperDeps): Transcrib
       const whisper = await ensureWhisper()
       const task = await whisper.transcribe(pcm, {
         language: 'en',
+        ...(deps.initialPrompt?.trim() ? { initial_prompt: deps.initialPrompt.trim() } : {}),
         n_threads: threads,
         print_progress: false,
         print_realtime: false,

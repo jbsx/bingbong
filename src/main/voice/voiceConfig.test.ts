@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { resolveVoiceConfig } from './voiceConfig'
+import { DEFAULT_STT_PROMPT, resolveVoiceConfig } from './voiceConfig'
 
 // Voice model resolution follows the piper config pattern: env wins, then
 // the per-profile models dir, so a standard fetch lands in the right place
@@ -12,6 +12,7 @@ describe('resolveVoiceConfig', () => {
     expect(resolveVoiceConfig({}, USER_DATA)).toEqual({
       vadModel: `${USER_DATA}/models/silero_vad.onnx`,
       whisperModel: `${USER_DATA}/models/ggml-base.en.bin`,
+      sttPrompt: DEFAULT_STT_PROMPT,
       sttScript: undefined,
       vadScript: undefined,
     })
@@ -23,6 +24,7 @@ describe('resolveVoiceConfig', () => {
         {
           BINGBONG_VAD_MODEL: '/opt/vad.onnx',
           BINGBONG_WHISPER_MODEL: '/opt/ggml-tiny.en.bin',
+          BINGBONG_STT_PROMPT: 'Linus Tech Tips, MKBHD',
           BINGBONG_STT_SCRIPT: '["open youtube"]',
           BINGBONG_VAD_SCRIPT: '[0.9, 0.1]',
         },
@@ -31,6 +33,7 @@ describe('resolveVoiceConfig', () => {
     ).toEqual({
       vadModel: '/opt/vad.onnx',
       whisperModel: '/opt/ggml-tiny.en.bin',
+      sttPrompt: 'Linus Tech Tips, MKBHD',
       sttScript: '["open youtube"]',
       vadScript: '[0.9, 0.1]',
     })
