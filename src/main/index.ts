@@ -31,6 +31,8 @@ import { resolvePiperConfig } from './tts/piperConfig'
 import { createMainTts } from './tts/createMainTts'
 import { registerTtsIpc } from './tts/attachTts'
 import { createSpeakingGate } from '../core/tts/speakingGate'
+import { createPerfTracer } from '../core/perf/perfTracer'
+import { createJsonlPerfSink } from './perf/jsonlPerfSink'
 import { resolveVoiceConfig } from './voice/voiceConfig'
 import { createMainVoice } from './voice/createMainVoice'
 import { attachVoiceToWindow, registerVoiceIpc } from './voice/attachVoice'
@@ -69,6 +71,11 @@ const usageStore = createUsageStore(join(app.getPath('userData'), 'usage.json'))
 // restart hydrates exactly what was on screen.
 const historyStore = createSqliteHistoryStore(join(app.getPath('userData'), 'history.db'))
 const historyRecorder = createHistoryRecorder(historyStore, { now: () => Date.now() })
+
+// Always-on perf logging (#27): one JSONL span per finished stage under the
+// profile's logs dir — zero configuration, no timers; rolling and the 7-day
+// purge ride startup and writes.
+const perfTracer = createPerfTracer({ sink: createJsonlPerfSink(join(app.getPath('userData'), 'logs')) })
 
 // Subagent runtime (T12) is per-window: panes attach to the window's content
 // view. The IPC layer resolves the window from the event sender.
@@ -223,6 +230,7 @@ async function createWindow(): Promise<BrowserWindow> {
       : undefined,
     recordHeard: (heard) => historyRecorder.heard(heard),
     recordError: (message, at) => historyRecorder.voiceError(message, at),
+    tracer: perfTracer,
   })
   // Session continuity (spec #23): one in-memory thread per window, fed from
   // the same run-observer seam as the history recorder. The pipeline reads it

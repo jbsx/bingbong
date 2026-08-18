@@ -18,8 +18,12 @@ interface AttachedPipeline {
 
 const pipelines = new WeakMap<BrowserWindow, AttachedPipeline>()
 
-/** Runs one command through the window's pipeline, forwarding events to the dashboard. */
-export async function runAssistantCommand(win: BrowserWindow, text: string): Promise<boolean> {
+/**
+ * Runs one command through the window's pipeline, forwarding events to the
+ * dashboard. `turnId` is the voice turn's perf id (#27); the runner's
+ * adoption of it (event stamping, history run ids) lands with #28.
+ */
+export async function runAssistantCommand(win: BrowserWindow, text: string, _turnId?: string): Promise<boolean> {
   const attached = pipelines.get(win)
   if (!attached) return false
   const observeRun = attached.createRunObserver?.()

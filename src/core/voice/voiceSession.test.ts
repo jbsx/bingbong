@@ -4,6 +4,7 @@ import { FakeClock, FakeTranscriber, FakeVad, FakeWakeDetector, RecordingTts } f
 import type { VoiceHeardEvent, VoiceState } from './ipcChannels'
 import { createVoiceSession } from './voiceSession'
 import type { CommandRunState } from '../pipeline/createCommandPipeline'
+import { createPerfTracer, type PerfSpanRecord } from '../perf/perfTracer'
 
 // The voice session is T9's coordinator: mic audio in (through the VadScorer
 // and utterance endpointing), transcripts out to the same command pipeline as
@@ -13,6 +14,8 @@ import type { CommandRunState } from '../pipeline/createCommandPipeline'
 
 const SPEECH = 0.95
 const SILENCE = 0.01
+/** Fake wall-clock base for the perf tracer's stamps (deterministic ids). */
+const PERF_WALL_ORIGIN = 1_700_000_000_000
 
 /** One utterance of VAD probabilities: 8 speech frames + 30 trailing silence. */
 function utteranceProbs(speechFrames = 8): number[] {
@@ -44,6 +47,10 @@ interface SessionHarness {
   heard: VoiceHeardEvent[]
   errors: string[]
   commands: string[]
+  /** Submit-command calls with their threaded turn id (#27). */
+  submitted: { text: string; turnId?: string }[]
+  /** Span records when perf instrumentation is on (#27). */
+  perf: PerfSpanRecord[]
   resolutions: { confirmationId: string; approved: boolean }[]
   askResolutions: { askId: string; answer: string }[]
   aborts: number[]
@@ -64,9 +71,11 @@ async function createSession(overrides?: {
   confirmWindowMs?: number
   wake?: { detector: FakeWakeDetector; threshold?: number }
   runState?: { value: CommandRunState }
+  /** Turns on perf instrumentation; sttMs is the scripted STT duration. */
+  perf?: { sttMs?: number }
 }): Promise<SessionHarness> {
   const vad = overrides?.vad ?? new FakeVad()
-  const transcriber = overrides?.transcriber ?? new FakeTranscriber()
+  const baseTranscriber = overrides?.transcriber ?? new FakeTranscriber()
   const clock = new FakeClock()
   const tts = new RecordingTts()
   const idle = new DeferredIdle()
@@ -74,6 +83,8 @@ async function createSession(overrides?: {
   const heard: VoiceHeardEvent[] = []
   const errors: string[] = []
   const commands: string[] = []
+  const submitted: { text: string; turnId?: string }[] = []
+  const perf: PerfSpanRecord[] = []
   const resolutions: { confirmationId: string; approved: boolean }[] = []
   const askResolutions: { askId: string; answer: string }[] = []
   const aborts: number[] = []
@@ -82,6 +93,24 @@ async function createSession(overrides?: {
   const chimes: number[] = []
   const threshold = overrides?.wake?.threshold ?? 0.5
 
+  // The real tracer over an in-memory sink, on the same FakeClock the session
+  // uses — deterministic durations and wall stamps (#27's injectable seam).
+  const tracer = overrides?.perf
+    ? createPerfTracer({
+        sink: { write: (record) => perf.push(record) },
+        clock: { monotonic: () => clock.now(), wall: () => PERF_WALL_ORIGIN + clock.now() },
+      })
+    : undefined
+  // Scripted STT latency: transcription advances the fake clock.
+  const transcriber = overrides?.perf
+    ? {
+        transcribe: async (pcm: Float32Array) => {
+          clock.advance(overrides.perf?.sttMs ?? 1_500)
+          return baseTranscriber.transcribe(pcm)
+        },
+      }
+    : baseTranscriber
+
   const session = createVoiceSession({
     vad,
     transcriber,
@@ -89,6 +118,7 @@ async function createSession(overrides?: {
     tts,
     ttsIdle: idle,
     confirmWindowMs: overrides?.confirmWindowMs,
+    tracer,
     wake: overrides?.wake
       ? {
           detector: overrides.wake.detector,
@@ -96,7 +126,10 @@ async function createSession(overrides?: {
           chime: () => chimes.push(1),
         }
       : undefined,
-    onSubmitCommand: (text) => commands.push(text),
+    onSubmitCommand: (text, turnId) => {
+      commands.push(text)
+      submitted.push({ text, turnId })
+    },
     onResolveConfirmation: (confirmationId, approved) => resolutions.push({ confirmationId, approved }),
     onResolveAsk: (askId, answer) => askResolutions.push({ askId, answer }),
     getRunState: () => overrides?.runState?.value ?? 'idle',
@@ -124,7 +157,7 @@ async function createSession(overrides?: {
     }
   }
 
-  return { vad, transcriber, clock, tts, idle, states, heard, errors, commands, resolutions, askResolutions, aborts, pauses, resumes, chimes, speakUtterance, session }
+  return { vad, transcriber: baseTranscriber, clock, tts, idle, states, heard, errors, commands, submitted, perf, resolutions, askResolutions, aborts, pauses, resumes, chimes, speakUtterance, session }
 }
 
 function confirmationRequested(id = 'confirm-1'): PipelineEvent {
@@ -736,5 +769,66 @@ describe('voice session — wake word (T10)', () => {
 
     expect(harness.states).toEqual([])
     expect(harness.vad.frames).toHaveLength(0)
+  })
+})
+
+describe('voice session — perf spans (#27)', () => {
+  it('mints one turn id at utterance end and logs stt + wake-to-transcript spans sharing it', async () => {
+    const harness = await createSession({ transcriber: new FakeTranscriber(['open youtube']), perf: {} })
+
+    harness.session.arm() // listen start: the wake-to-transcript clock starts here
+    harness.clock.advance(300) // the user speaks
+    await harness.speakUtterance() // utterance ends at t=300; STT takes 1500ms
+
+    const stt = harness.perf.find((record) => record.stage === 'stt')
+    const wake = harness.perf.find((record) => record.stage === 'wake-to-transcript')
+    expect(stt).toBeDefined()
+    expect(wake).toBeDefined()
+    expect(stt!.turnId).toBe(wake!.turnId)
+    // The id is wall-stamped at mint time (utterance end, before STT).
+    expect(stt!.turnId).toBe(`turn-${(PERF_WALL_ORIGIN + 300).toString(36)}-1`)
+    expect(stt!.durMs).toBe(1_500)
+    expect(wake!.durMs).toBe(1_800)
+    expect(stt!.t).toBe(1_800)
+    expect(stt!.at).toBe(PERF_WALL_ORIGIN + 1_800)
+    // The turn id rides the submit-command callback for the next ticket.
+    expect(harness.submitted).toEqual([{ text: 'open youtube', turnId: stt!.turnId }])
+    // Instrumentation changes no pipeline behavior.
+    expect(harness.commands).toEqual(['open youtube'])
+    expect(harness.heard).toEqual([{ text: 'open youtube', routed: 'command' }])
+  })
+
+  it('carries utterance speech ms, total ms, and truncated flag in the stt detail', async () => {
+    const harness = await createSession({ transcriber: new FakeTranscriber(['go']), perf: {} })
+
+    harness.session.arm()
+    await harness.speakUtterance() // 8 speech frames; 31 frames handed to STT
+
+    const stt = harness.perf.find((record) => record.stage === 'stt')
+    expect(stt!.detail).toEqual({ speechMs: 8 * 32, totalMs: 31 * 32, truncated: false })
+  })
+
+  it('logs the stt span for confirmation answers but no wake-to-transcript span', async () => {
+    const harness = await createSession({ transcriber: new FakeTranscriber(['yes']), perf: {} })
+
+    harness.session.handlePipelineEvent(confirmationRequested('confirm-p'))
+    await flush()
+    await harness.speakUtterance()
+
+    expect(harness.perf.map((record) => record.stage)).toEqual(['stt'])
+    expect(harness.submitted).toEqual([])
+  })
+
+  it('still logs the stt span with the error when transcription fails', async () => {
+    const transcriber = new FakeTranscriber(['x'])
+    transcriber.rejectWith = new Error('whisper model missing')
+    const harness = await createSession({ transcriber, perf: {} })
+
+    harness.session.arm()
+    await harness.speakUtterance()
+
+    expect(harness.perf.map((record) => record.stage)).toEqual(['stt'])
+    expect(harness.perf[0].detail).toMatchObject({ error: 'whisper model missing', truncated: false })
+    expect(harness.errors).toEqual(['whisper model missing'])
   })
 })

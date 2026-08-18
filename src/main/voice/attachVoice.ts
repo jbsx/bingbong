@@ -2,6 +2,7 @@ import { BrowserWindow, ipcMain } from 'electron'
 import { systemClock } from '../../core/ports/clock'
 import type { TtsIdle, TtsSpeaker } from '../../core/ports/tts'
 import type { Transcriber, VadScorer } from '../../core/ports/stt'
+import type { PerfTracer } from '../../core/perf/perfTracer'
 import { VOICE_IPC, type VoiceHeardEvent, type VoiceState } from '../../core/voice/ipcChannels'
 import { createVoiceSession, type VoiceSession, type VoiceWakeDeps } from '../../core/voice/voiceSession'
 import { pipelineFor, runAssistantCommand } from '../agent/attachAssistant'
@@ -46,8 +47,9 @@ export function attachVoiceToWindow(win: BrowserWindow, deps: AttachVoiceDeps): 
     tts: deps.tts,
     ttsIdle: deps.ttsIdle,
     wake: deps.wake,
-    onSubmitCommand: (text) => {
-      void runAssistantCommand(win, text)
+    tracer: deps.tracer,
+    onSubmitCommand: (text, turnId) => {
+      void runAssistantCommand(win, text, turnId)
     },
     onResolveConfirmation: (confirmationId, approved) => {
       if (win.isDestroyed()) return
@@ -91,6 +93,8 @@ export interface AttachVoiceDeps {
   ttsIdle: TtsIdle
   /** Wake-word plumbing; absent means hotkey-only. */
   wake?: VoiceWakeDeps
+  /** Always-on perf tracer (#27); absent keeps the session uninstrumented. */
+  tracer?: PerfTracer
   /** Persistence taps (spec: transcript history) — same wording as the dashboard. */
   recordHeard?: (heard: VoiceHeardEvent) => void
   recordError?: (message: string, at: number) => void

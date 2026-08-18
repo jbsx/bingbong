@@ -4,10 +4,11 @@ import type { TtsIdle, TtsSpeaker } from '../ports/tts'
 import type { Transcriber, VadScorer } from '../ports/stt'
 import type { WakeWordDetector } from '../ports/wake'
 import type { VoiceHeardEvent, VoiceListenReason, VoiceState } from './ipcChannels'
-import { createUtteranceEndpointer, VAD_FRAME_SAMPLES, type UtteranceEndpointerConfig } from './vadEndpointing'
+import { createUtteranceEndpointer, VAD_FRAME_SAMPLES, type UtteranceEnd, type UtteranceEndpointerConfig } from './vadEndpointing'
 import { createWakeMonitor } from './wakeMonitor'
 import { parseYesNo } from './yesNo'
 import type { CommandRunState } from '../pipeline/createCommandPipeline'
+import type { PerfTracer } from '../perf/perfTracer'
 
 export const CONFIRM_VOICE_WINDOW_MS = 12_000
 /** Free-text ask window: as long as the ask_user timeout, for spoken answers. */
@@ -36,8 +37,10 @@ export interface VoiceSessionDeps {
   confirmWindowMs?: number
   askWindowMs?: number
   endpointerConfig?: Partial<UtteranceEndpointerConfig>
+  /** Always-on perf logging (#27); absent keeps the session uninstrumented. */
+  tracer?: PerfTracer
   /** Where recognized commands go — the exact path the text box takes. */
-  onSubmitCommand(text: string): void
+  onSubmitCommand(text: string, turnId?: string): void
   onResolveConfirmation(confirmationId: string, approved: boolean): void
   /** A spoken ask_user answer — free text, returned to the model verbatim. */
   onResolveAsk(askId: string, answer: string): void
@@ -92,6 +95,9 @@ export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
   // Chunks are processed strictly in arrival order; scoring is async.
   let audioChain: Promise<void> = Promise.resolve()
   let monitorChain: Promise<void> = Promise.resolve()
+  // Wake→transcript span (#27): the monotonic marker of the command listen's
+  // start (hotkey or wake word); null outside a command listen.
+  let commandListenStart: number | null = null
 
   const abortPhrases = new Set(['stop', 'abort', 'cancel', 'never mind'])
   const pausePhrases = new Set(['pause', 'hold on', 'wait'])
@@ -148,6 +154,7 @@ export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
     if (listening) return
     listening = true
     reason = nextReason
+    commandListenStart = deps.tracer?.now() ?? null
     endpointer.reset()
     deps.vad.reset()
     emitState()
@@ -161,6 +168,7 @@ export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
     if (!listening) return
     listening = false
     reason = null
+    commandListenStart = null
     endpointer.reset()
     deps.vad.reset()
     emitState()
@@ -213,19 +221,42 @@ export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
       }
       if (!listening) return
       const utterance = endpointer.push(prob, frame)
-      if (utterance) await handleUtterance(utterance.pcm)
+      if (utterance) await handleUtterance(utterance)
     }
   }
 
-  async function handleUtterance(pcm: Float32Array): Promise<void> {
+  async function handleUtterance(utterance: UtteranceEnd): Promise<void> {
+    // The turn id rides utterance end, not wake detection, so blips that
+    // never become turns mint nothing; STT is the turn's first span (#27).
+    const tracer = deps.tracer
+    const turnId = tracer ? tracer.mintTurnId() : null
+    const sttStart = tracer ? tracer.now() : 0
+    const recordStt = (extra?: Record<string, unknown>): void => {
+      if (!tracer || turnId === null) return
+      tracer.span(turnId, 'stt', tracer.now() - sttStart, {
+        speechMs: utterance.speechMs,
+        totalMs: utterance.totalMs,
+        truncated: utterance.truncated,
+        ...extra,
+      })
+    }
+
     let text: string
     try {
-      text = (await deps.transcriber.transcribe(pcm)).trim()
+      text = (await deps.transcriber.transcribe(utterance.pcm)).trim()
     } catch (err) {
-      fail(err instanceof Error ? err.message : String(err))
+      const message = err instanceof Error ? err.message : String(err)
+      recordStt({ error: message })
+      fail(message)
       return
     }
+    recordStt()
     if (!listening || text === '') return
+
+    if (tracer && turnId !== null && commandListenStart !== null) {
+      tracer.span(turnId, 'wake-to-transcript', tracer.now() - commandListenStart, { reason })
+      commandListenStart = null
+    }
 
     const phrase = normalizedPhrase(text)
     const runState = deps.getRunState()
@@ -286,7 +317,7 @@ export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
       deps.onHeard({ text, routed: 'ignored' })
       return
     }
-    deps.onSubmitCommand(text)
+    deps.onSubmitCommand(text, turnId ?? undefined)
     deps.onHeard({ text, routed: 'command' })
     stopListening()
   }
