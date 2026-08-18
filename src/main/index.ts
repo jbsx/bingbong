@@ -253,6 +253,7 @@ async function createWindow(): Promise<BrowserWindow> {
     subagentControl: subagentRuntime,
     onLlmUsage: (record) => usageStore.record(record.role, record.model, record.usage),
     session: sessionMemory,
+    tracer: perfTracer,
   })
   attachAssistantToWindow(
     pipeline,

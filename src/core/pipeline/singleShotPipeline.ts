@@ -1,26 +1,42 @@
 import type { CommandPipeline } from './createCommandPipeline'
 import type { Clock } from '../ports/clock'
 import type { PipelineEvent } from './events'
+import type { PerfTracer } from '../perf/perfTracer'
+import { createTurnIdSource } from '../perf/perfTracer'
 import { spokenErrorLine } from '../agent/answerContract'
 
 // Single-shot interaction in v0.1: one command runs at a time. The busy
 // rejection rides the normal event stream (command echoed, error, spoken
 // one-liner, done) so the dashboard needs no special case.
-export function createSingleShotPipeline(inner: CommandPipeline, clock: Clock): CommandPipeline {
+
+export interface SingleShotPipelineDeps {
+  /** Turn-id source (#28); absent falls back to a local id mint. */
+  tracer?: PerfTracer
+}
+
+export function createSingleShotPipeline(
+  inner: CommandPipeline,
+  clock: Clock,
+  deps?: SingleShotPipelineDeps,
+): CommandPipeline {
+  const mintTurnId = createTurnIdSource(deps?.tracer)
   let running = false
 
-  async function* execute(command: string): AsyncIterable<PipelineEvent> {
+  async function* execute(command: string, turnId?: string): AsyncIterable<PipelineEvent> {
+    // A rejected submission is still an observable turn (#28): it gets the
+    // submitted id (voice) or a fresh one (text box), stamped on its events.
+    const id = turnId ?? mintTurnId()
     if (running) {
       const message = 'another command is already running — wait for it to finish'
-      yield { type: 'command', text: command, at: clock.now() }
-      yield { type: 'error', message, at: clock.now() }
-      yield { type: 'speak', text: spokenErrorLine(message), at: clock.now() }
-      yield { type: 'done', outcome: 'failed', at: clock.now() }
+      yield { type: 'command', text: command, turnId: id, at: clock.now() }
+      yield { type: 'error', message, turnId: id, at: clock.now() }
+      yield { type: 'speak', text: spokenErrorLine(message), turnId: id, at: clock.now() }
+      yield { type: 'done', outcome: 'failed', turnId: id, at: clock.now() }
       return
     }
     running = true
     try {
-      yield* inner.execute(command)
+      yield* inner.execute(command, id)
     } finally {
       running = false
     }

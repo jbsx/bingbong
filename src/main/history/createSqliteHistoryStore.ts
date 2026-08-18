@@ -15,7 +15,8 @@ const SCHEMA = `
     command TEXT NOT NULL,
     started_at INTEGER NOT NULL,
     finished_at INTEGER,
-    outcome TEXT
+    outcome TEXT,
+    turn_id TEXT
   );
   CREATE TABLE IF NOT EXISTS entries (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -35,11 +36,21 @@ export function createSqliteHistoryStore(path: string): HistoryStore {
   db.pragma('journal_mode = WAL')
   db.exec(SCHEMA)
 
+  // In-place migration for databases from before #28: runs gain the turn_id
+  // column (legacy rows read back as null).
+  const runColumns = db.prepare("PRAGMA table_info('runs')").all() as { name: string }[]
+  if (!runColumns.some((column) => column.name === 'turn_id')) {
+    db.exec('ALTER TABLE runs ADD COLUMN turn_id TEXT')
+  }
+  // A logged turn maps 1:1 to a run row (#28): unique at the schema level.
+  // Legacy rows are null and unaffected (SQLite treats nulls as distinct).
+  db.exec('CREATE UNIQUE INDEX IF NOT EXISTS runs_turn_id ON runs(turn_id)')
+
   // Crash recovery: anything still open when the process died is interrupted.
   db.prepare("UPDATE runs SET outcome = 'interrupted' WHERE finished_at IS NULL").run()
 
-  const insertRun = db.prepare<{ command: string; started_at: number }>(
-    'INSERT INTO runs (command, started_at) VALUES (@command, @started_at)',
+  const insertRun = db.prepare<{ command: string; started_at: number; turn_id: string }>(
+    'INSERT INTO runs (command, started_at, turn_id) VALUES (@command, @started_at, @turn_id)',
   )
   const finishRun = db.prepare<{ id: number; outcome: RunOutcome; finished_at: number }>(
     'UPDATE runs SET outcome = @outcome, finished_at = @finished_at WHERE id = @id',
@@ -48,7 +59,7 @@ export function createSqliteHistoryStore(path: string): HistoryStore {
     'INSERT INTO entries (run_id, kind, text, at) VALUES (@run_id, @kind, @text, @at)',
   )
   const selectEntries = db.prepare('SELECT id, run_id, kind, text, at FROM entries ORDER BY id DESC LIMIT ?')
-  const selectRuns = db.prepare('SELECT id, command, started_at, finished_at, outcome FROM runs ORDER BY id DESC LIMIT ?')
+  const selectRuns = db.prepare('SELECT id, turn_id, command, started_at, finished_at, outcome FROM runs ORDER BY id DESC LIMIT ?')
 
   interface EntryRow {
     id: number
@@ -60,6 +71,7 @@ export function createSqliteHistoryStore(path: string): HistoryStore {
 
   interface RunRow {
     id: number
+    turn_id: string | null
     command: string
     started_at: number
     finished_at: number | null
@@ -76,6 +88,7 @@ export function createSqliteHistoryStore(path: string): HistoryStore {
 
   const toRun = (row: RunRow): RunRecord => ({
     id: row.id,
+    turnId: row.turn_id,
     command: row.command,
     startedAt: row.started_at,
     finishedAt: row.finished_at,
@@ -85,8 +98,8 @@ export function createSqliteHistoryStore(path: string): HistoryStore {
   const reverse = <T>(rows: T[]): T[] => rows.reverse()
 
   return {
-    startRun(command, at) {
-      const info = insertRun.run({ command, started_at: at }) as { lastInsertRowid: number | bigint }
+    startRun(command, at, turnId) {
+      const info = insertRun.run({ command, started_at: at, turn_id: turnId }) as { lastInsertRowid: number | bigint }
       return Number(info.lastInsertRowid)
     },
     finishRun(runId, outcome, at) {

@@ -12,6 +12,18 @@ import type {
   VisionLocation,
   VisionModel,
 } from '../ports/vision'
+import type { PipelineEvent } from '../pipeline/events'
+
+/**
+ * Drops the #28 turn-id stamp — behavior tests written before turn
+ * correlation keep asserting the exact pre-#28 event shape; stamping itself
+ * is covered by the turn-correlation tests.
+ */
+export function withoutTurnId(event: PipelineEvent): PipelineEvent {
+  const rest = { ...event } as { turnId?: string }
+  delete rest.turnId
+  return rest as PipelineEvent
+}
 
 export class FakeClock implements Clock {
   private nowMs: number

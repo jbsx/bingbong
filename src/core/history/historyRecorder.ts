@@ -52,7 +52,9 @@ export function createHistoryRecorder(
                 store.finishRun(runId, 'interrupted', event.at)
                 removeActiveRun(runId)
               }
-              runId = store.startRun(event.text, event.at)
+              // The run row adopts the turn's id (#28): a logged turn maps
+              // 1:1 to a row in the review-only history database.
+              runId = store.startRun(event.text, event.at, event.turnId)
               activeRunIds.push(runId)
               lastStatus = null
               failed = false

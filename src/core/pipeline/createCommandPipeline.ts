@@ -5,6 +5,8 @@ import type { LlmClient, SessionTurn, ToolCall, ToolResult, ToolResultOutcome } 
 import type { TtsSpeaker } from '../ports/tts'
 import type { SessionHistorySource } from '../session/sessionMemory'
 import { spokenErrorLine } from '../agent/answerContract'
+import type { PerfTracer } from '../perf/perfTracer'
+import { createTurnIdSource } from '../perf/perfTracer'
 import {
   createVisionBudget,
   MAX_ORCHESTRATOR_VISION_CALLS,
@@ -25,6 +27,8 @@ export interface CommandPipelineDeps {
   onAbort?(): void
   onPause?(): void
   onResume?(): void
+  /** Turn-id source (#28); absent falls back to a local id mint. */
+  tracer?: PerfTracer
 }
 
 interface ConfirmationDecision {
@@ -72,7 +76,12 @@ function toErrorMessage(err: unknown): string {
 }
 
 export interface CommandPipeline {
-  execute(command: string): AsyncIterable<PipelineEvent>
+  /**
+   * Runs one command as a turn (#28): adopts the given `turnId` (the voice
+   * session's, minted at utterance end) or mints a fresh one (text box), and
+   * stamps every event of the turn with it.
+   */
+  execute(command: string, turnId?: string): AsyncIterable<PipelineEvent>
   resolveConfirmation(confirmationId: string, approved: boolean): void
   /** Answer an open ask_user window (typed card or voice transcript). */
   resolveAsk(askId: string, answer: string): void
@@ -82,8 +91,22 @@ export interface CommandPipeline {
   getState(): CommandRunState
 }
 
+/**
+ * A pipeline event before turn stamping (#28): the run body constructs
+ * events without knowing the turn id; `execute` stamps every one of them on
+ * the way out, which is the single place a stamp can be missed.
+ */
+type WithoutTurnId<T> = T extends unknown ? Omit<T, 'turnId'> : never
+type UnstampedEvent = WithoutTurnId<PipelineEvent>
+
+/** Stamps one run-body event with the turn's id. */
+function stampTurn(event: UnstampedEvent, turnId: string): PipelineEvent {
+  return { ...event, turnId } as PipelineEvent
+}
+
 export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipeline {
   const { llm, tts, clock, tools } = deps
+  const mintTurnId = createTurnIdSource(deps.tracer)
   const confirmTimeoutMs = deps.confirmTimeoutMs ?? 60_000
   const askTimeoutMs = deps.askTimeoutMs ?? ASK_TIMEOUT_MS
   const maxToolRounds = deps.maxToolRounds ?? 40
@@ -116,7 +139,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
     run: ActiveRun,
     resumeStatus: 'thinking' | 'acting',
     consumeSteering = true,
-  ): AsyncGenerator<PipelineEvent, string | undefined> {
+  ): AsyncGenerator<UnstampedEvent, string | undefined> {
     throwIfAborted(run)
     while (run.paused) {
       yield { type: 'status', status: 'paused', at: clock.now() }
@@ -137,8 +160,8 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
   async function* awaitDecision<T>(
     decision: PendingDecision<T>,
     run: ActiveRun,
-    deadlineEvent: (expiresAt: number | null) => PipelineEvent,
-  ): AsyncGenerator<PipelineEvent, T> {
+    deadlineEvent: (expiresAt: number | null) => UnstampedEvent,
+  ): AsyncGenerator<UnstampedEvent, T> {
     for (;;) {
       if (run.aborted) return await decision.promise
       while (run.paused) {
@@ -160,8 +183,8 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
   async function* waitThroughPause<T>(
     decision: PendingDecision<T>,
     run: ActiveRun,
-    deadlineEvent: (expiresAt: number | null) => PipelineEvent,
-  ): AsyncGenerator<PipelineEvent> {
+    deadlineEvent: (expiresAt: number | null) => UnstampedEvent,
+  ): AsyncGenerator<UnstampedEvent> {
     yield deadlineEvent(null)
     try {
       yield* checkpoint(run, 'acting', false)
@@ -172,7 +195,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
     if (!run.steering) yield deadlineEvent(decision.expiresAt())
   }
 
-  async function* speakLine(text: string): AsyncGenerator<PipelineEvent> {
+  async function* speakLine(text: string): AsyncGenerator<UnstampedEvent> {
     yield { type: 'status', status: 'speaking', at: clock.now() }
     yield { type: 'speak', text, at: clock.now() }
     const outcome = await tts.speak(text)
@@ -183,7 +206,16 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
     }
   }
 
-  async function* execute(command: string): AsyncIterable<PipelineEvent> {
+  async function* execute(command: string, turnId?: string): AsyncIterable<PipelineEvent> {
+    // One id per turn (#28): adopted when the voice session minted it at
+    // utterance end, freshly minted for text-box commands.
+    const id = turnId ?? mintTurnId()
+    for await (const event of runTurn(command)) {
+      yield stampTurn(event, id)
+    }
+  }
+
+  async function* runTurn(command: string): AsyncIterable<UnstampedEvent> {
     const run: ActiveRun = { aborted: false, paused: false }
     activeRun = run
 
@@ -288,7 +320,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
     visionBudget: VisionBudget,
     toolContext: ToolContext,
     run: ActiveRun,
-  ): AsyncGenerator<PipelineEvent, ToolResultOutcome> {
+  ): AsyncGenerator<UnstampedEvent, ToolResultOutcome> {
     const tool = toolsByName.get(call.name)
     if (!tool) return { ok: false, error: `unknown tool: '${call.name}'` }
 
@@ -367,7 +399,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
         at: clock.now(),
       }
       // The prompt is both shown (dialog) and spoken; voice yes/no lands in T9.
-      const deadlineEvent = (expiresAt: number | null): PipelineEvent => ({
+      const deadlineEvent = (expiresAt: number | null): UnstampedEvent => ({
         type: 'confirmation_deadline',
         confirmationId,
         expiresAt,

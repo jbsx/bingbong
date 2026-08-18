@@ -19,12 +19,21 @@ export interface SubagentCard {
   tab?: { phase: SubagentTabPhase; url: string; title: string }
 }
 
+/**
+ * One id per turn, everywhere a turn is observable (#28): every event the
+ * pipeline generator yields during a turn is stamped with that turn's
+ * `turnId` (required below). `speak`/`display`/`error` carry it optionally —
+ * the download router and subagent cards emit the same variants outside any
+ * turn's stream, and those announcements are not turn-scoped. `agent_update`
+ * and `session_started` are never pipeline-emitted and stay unstamped.
+ */
 export type PipelineEvent =
-  | { type: 'command'; text: string; at: number }
-  | { type: 'status'; status: PipelineStatus; at: number }
-  | { type: 'tool_call'; callId: string; name: string; args: Record<string, unknown>; at: number }
+  | { type: 'command'; turnId: string; text: string; at: number }
+  | { type: 'status'; turnId: string; status: PipelineStatus; at: number }
+  | { type: 'tool_call'; turnId: string; callId: string; name: string; args: Record<string, unknown>; at: number }
   | {
       type: 'tool_result'
+      turnId: string
       callId: string
       name: string
       ok: boolean
@@ -34,6 +43,7 @@ export type PipelineEvent =
     }
   | {
       type: 'confirmation_requested'
+      turnId: string
       confirmationId: string
       callId: string
       toolName: string
@@ -44,6 +54,7 @@ export type PipelineEvent =
     }
   | {
       type: 'confirmation_resolved'
+      turnId: string
       confirmationId: string
       approved: boolean
       reason: 'user' | 'timeout' | 'cancelled' | 'steered'
@@ -51,6 +62,7 @@ export type PipelineEvent =
     }
   | {
       type: 'confirmation_deadline'
+      turnId: string
       confirmationId: string
       /** Null while pause suspends the countdown. */
       expiresAt: number | null
@@ -59,6 +71,7 @@ export type PipelineEvent =
   /** A tool asked the user a free-text question (ask_user, Tier 3). */
   | {
       type: 'ask_requested'
+      turnId: string
       askId: string
       callId: string
       question: string
@@ -68,6 +81,7 @@ export type PipelineEvent =
     }
   | {
       type: 'ask_resolved'
+      turnId: string
       askId: string
       /** The user's answer; null when the window timed out. */
       answer: string | null
@@ -76,17 +90,18 @@ export type PipelineEvent =
     }
   | {
       type: 'ask_deadline'
+      turnId: string
       askId: string
       /** Null while pause suspends the countdown. */
       expiresAt: number | null
       at: number
     }
-  | { type: 'speak'; text: string; at: number }
-  | { type: 'display'; text: string; at: number }
-  | { type: 'error'; message: string; at: number }
+  | { type: 'speak'; turnId?: string; text: string; at: number }
+  | { type: 'display'; turnId?: string; text: string; at: number }
+  | { type: 'error'; turnId?: string; message: string; at: number }
   /** A subagent's state changed — the dashboard keeps one card per agent id. */
   | { type: 'agent_update'; agent: SubagentCard; at: number }
-  | { type: 'done'; outcome?: 'done' | 'failed' | 'cancelled'; at: number }
+  | { type: 'done'; turnId: string; outcome?: 'done' | 'failed' | 'cancelled'; at: number }
   /**
    * A new session began (spec #25) — the window lapsed before this command,
    * or the model invoked new_session. Not emitted by the pipeline generator:

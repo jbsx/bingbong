@@ -6,6 +6,10 @@ import type { PipelineEvent } from '../pipeline/events'
 // event seam as the history recorder and answers one question — which
 // distilled turns ride along with the next command's LLM requests.
 
+// Turn ids became part of every event shape (#28); the session store keys on
+// time, not ids, so these fixtures carry one placeholder.
+const TURN = 'turn-fixture'
+
 function feed(observer: { event(event: PipelineEvent): void }, events: PipelineEvent[]): void {
   for (const event of events) observer.event(event)
 }
@@ -17,11 +21,11 @@ function runEvents(
   outcome: 'done' | 'failed' | 'cancelled' = 'done',
 ): PipelineEvent[] {
   return [
-    { type: 'command', text: command, at },
-    { type: 'status', status: 'thinking', at },
+    { type: 'command', turnId: TURN, text: command, at },
+    { type: 'status', turnId: TURN, status: 'thinking', at },
     { type: 'display', text: answer, at: at + 1 },
     { type: 'speak', text: answer, at: at + 2 },
-    { type: 'done', outcome, at: at + 3 },
+    { type: 'done', turnId: TURN, outcome, at: at + 3 },
   ]
 }
 
@@ -36,7 +40,7 @@ describe('sessionMemory', () => {
     const session = createSessionMemory()
     feed(session.run(), runEvents('find a pizza place', 'Found two: Pizza A and Pizza B.', 1_000))
     const next = session.run()
-    next.event({ type: 'command', text: 'what about the second one?', at: 60_000 })
+    next.event({ type: 'command', turnId: TURN, text: 'what about the second one?', at: 60_000 })
 
     expect(session.history()).toEqual([
       { role: 'user', text: 'find a pizza place' },
@@ -49,7 +53,7 @@ describe('sessionMemory', () => {
     feed(session.run(), runEvents('find a pizza place', 'Found two: Pizza A and Pizza B.', 1_000))
     feed(session.run(), runEvents('what about the second one?', 'Pizza B on Main Street.', 60_000))
     const third = session.run()
-    third.event({ type: 'command', text: 'navigate there', at: 60_000 + 9 * 60 * 1000 })
+    third.event({ type: 'command', turnId: TURN, text: 'navigate there', at: 60_000 + 9 * 60 * 1000 })
 
     expect(session.history()).toEqual([
       { role: 'user', text: 'find a pizza place' },
@@ -64,7 +68,7 @@ describe('sessionMemory', () => {
     feed(session.run(), runEvents('find a pizza place', 'Found two: Pizza A and Pizza B.', 1_000))
     feed(session.run(), runEvents('what about the second one?', 'Pizza B on Main Street.', 60_000))
     const third = session.run()
-    third.event({ type: 'command', text: 'pause it', at: 60_000 + 10 * 60 * 1000 + 10_000 })
+    third.event({ type: 'command', turnId: TURN, text: 'pause it', at: 60_000 + 10 * 60 * 1000 + 10_000 })
 
     expect(session.history()).toEqual([
       { role: 'user', text: 'what about the second one?' },
@@ -78,7 +82,7 @@ describe('sessionMemory', () => {
     feed(session.run(), runEvents('what about the second one?', 'Pizza B on Main Street.', 60_000))
     feed(session.run(), runEvents('pause it', 'Paused.', 60_000 + 10 * 60 * 1000 + 10_000))
     const fourth = session.run()
-    fourth.event({ type: 'command', text: 'resume it', at: 60_000 + 11 * 60 * 1000 + 10_000 })
+    fourth.event({ type: 'command', turnId: TURN, text: 'resume it', at: 60_000 + 11 * 60 * 1000 + 10_000 })
 
     expect(session.history()).toEqual([
       { role: 'user', text: 'what about the second one?' },
@@ -91,12 +95,12 @@ describe('sessionMemory', () => {
   it('includes a cancelled run as the command plus a cancelled note', () => {
     const session = createSessionMemory()
     feed(session.run(), [
-      { type: 'command', text: 'find a pizza place', at: 1_000 },
-      { type: 'status', status: 'cancelled', at: 2_000 },
-      { type: 'done', outcome: 'cancelled', at: 3_000 },
+      { type: 'command', turnId: TURN, text: 'find a pizza place', at: 1_000 },
+      { type: 'status', turnId: TURN, status: 'cancelled', at: 2_000 },
+      { type: 'done', turnId: TURN, outcome: 'cancelled', at: 3_000 },
     ])
     const next = session.run()
-    next.event({ type: 'command', text: 'try again', at: 60_000 })
+    next.event({ type: 'command', turnId: TURN, text: 'try again', at: 60_000 })
 
     expect(session.history()).toEqual([
       { role: 'user', text: 'find a pizza place' },
@@ -107,12 +111,12 @@ describe('sessionMemory', () => {
   it('includes a failed run as the command plus a failed note', () => {
     const session = createSessionMemory()
     feed(session.run(), [
-      { type: 'command', text: 'find a pizza place', at: 1_000 },
+      { type: 'command', turnId: TURN, text: 'find a pizza place', at: 1_000 },
       { type: 'error', message: 'orchestrator request failed', at: 2_000 },
-      { type: 'done', outcome: 'failed', at: 3_000 },
+      { type: 'done', turnId: TURN, outcome: 'failed', at: 3_000 },
     ])
     const next = session.run()
-    next.event({ type: 'command', text: 'try again', at: 60_000 })
+    next.event({ type: 'command', turnId: TURN, text: 'try again', at: 60_000 })
 
     expect(session.history()).toEqual([
       { role: 'user', text: 'find a pizza place' },
@@ -126,7 +130,7 @@ describe('sessionMemory', () => {
       feed(session.run(), runEvents(`command ${index}`, `answer ${index}`, index * 60_000))
     }
     const next = session.run()
-    next.event({ type: 'command', text: 'one more', at: 10 * 60_000 })
+    next.event({ type: 'command', turnId: TURN, text: 'one more', at: 10 * 60_000 })
 
     const history = session.history()
     expect(history).toHaveLength(16)
@@ -143,7 +147,7 @@ describe('sessionMemory', () => {
       feed(session.run(), runEvents(turn(`command ${index}:`), turn(`answer ${index}:`), index * 60_000))
     }
     const next = session.run()
-    next.event({ type: 'command', text: 'one more', at: 8 * 60_000 })
+    next.event({ type: 'command', turnId: TURN, text: 'one more', at: 8 * 60_000 })
 
     const history = session.history()
     expect(history).toHaveLength(12)
@@ -155,7 +159,7 @@ describe('sessionMemory', () => {
     const session = createSessionMemory()
     feed(session.run(), runEvents('c'.repeat(5_000), 'd'.repeat(5_000), 1_000))
     const next = session.run()
-    next.event({ type: 'command', text: 'what about the second one?', at: 60_000 })
+    next.event({ type: 'command', turnId: TURN, text: 'what about the second one?', at: 60_000 })
 
     expect(session.history()).toEqual([
       { role: 'user', text: 'c'.repeat(1_000) },
@@ -170,11 +174,11 @@ describe('sessionMemory', () => {
     // owns the history from its start, so the first run's late done must not
     // release the frozen turns while the second is still mid-run.
     const longRun = session.run()
-    longRun.event({ type: 'command', text: 'keep working', at: 2_000 })
+    longRun.event({ type: 'command', turnId: TURN, text: 'keep working', at: 2_000 })
     const busy = session.run()
-    busy.event({ type: 'command', text: 'interrupt attempt', at: 2_500 })
+    busy.event({ type: 'command', turnId: TURN, text: 'interrupt attempt', at: 2_500 })
     busy.event({ type: 'error', message: 'another command is already running', at: 2_600 })
-    busy.event({ type: 'done', outcome: 'failed', at: 2_700 })
+    busy.event({ type: 'done', turnId: TURN, outcome: 'failed', at: 2_700 })
 
     const stillFrozen = session.history()
     expect(stillFrozen).toEqual([
@@ -185,10 +189,10 @@ describe('sessionMemory', () => {
     // The busy-rejected command still joins the thread for the next run.
     feed(longRun, [
       { type: 'display', text: 'Work complete.', at: 2_900 },
-      { type: 'done', outcome: 'done', at: 3_000 },
+      { type: 'done', turnId: TURN, outcome: 'done', at: 3_000 },
     ])
     const next = session.run()
-    next.event({ type: 'command', text: 'one more', at: 4_000 })
+    next.event({ type: 'command', turnId: TURN, text: 'one more', at: 4_000 })
     expect(session.history()).toEqual([
       { role: 'user', text: 'find a pizza place' },
       { role: 'assistant', text: 'Found two.' },
@@ -202,12 +206,12 @@ describe('sessionMemory', () => {
   it('falls back to the spoken line when a completed run showed no display text', () => {
     const session = createSessionMemory()
     feed(session.run(), [
-      { type: 'command', text: 'find a pizza place', at: 1_000 },
+      { type: 'command', turnId: TURN, text: 'find a pizza place', at: 1_000 },
       { type: 'speak', text: 'Found two nearby.', at: 2_000 },
-      { type: 'done', outcome: 'done', at: 3_000 },
+      { type: 'done', turnId: TURN, outcome: 'done', at: 3_000 },
     ])
     const next = session.run()
-    next.event({ type: 'command', text: 'what about the second one?', at: 60_000 })
+    next.event({ type: 'command', turnId: TURN, text: 'what about the second one?', at: 60_000 })
 
     expect(session.history()).toEqual([
       { role: 'user', text: 'find a pizza place' },
@@ -219,7 +223,7 @@ describe('sessionMemory', () => {
     const session = createSessionMemory()
     feed(session.run(), runEvents('find a pizza place', 'Found two: Pizza A and Pizza B.', 1_000))
     const reset = session.run()
-    reset.event({ type: 'command', text: 'forget all that — different question', at: 60_000 })
+    reset.event({ type: 'command', turnId: TURN, text: 'forget all that — different question', at: 60_000 })
 
     // Mid-run reset (spec #24): the store is read live per LLM round, so the
     // clear must override the run's frozen turns immediately.
@@ -232,13 +236,13 @@ describe('sessionMemory', () => {
     const session = createSessionMemory()
     feed(session.run(), runEvents('find a pizza place', 'Found two: Pizza A and Pizza B.', 1_000))
     const reset = session.run()
-    reset.event({ type: 'command', text: 'forget all that — different question', at: 60_000 })
+    reset.event({ type: 'command', turnId: TURN, text: 'forget all that — different question', at: 60_000 })
     reset.event({ type: 'display', text: 'Fresh start — what do you need?', at: 60_003 })
     // The clear happens when the new_session tool executes, mid-run.
     session.clear()
-    reset.event({ type: 'done', outcome: 'done', at: 60_004 })
+    reset.event({ type: 'done', turnId: TURN, outcome: 'done', at: 60_004 })
     const next = session.run()
-    next.event({ type: 'command', text: 'what is two plus two', at: 120_000 })
+    next.event({ type: 'command', turnId: TURN, text: 'what is two plus two', at: 120_000 })
 
     expect(session.history()).toEqual([])
   })
@@ -247,18 +251,18 @@ describe('sessionMemory', () => {
     const session = createSessionMemory()
     feed(session.run(), runEvents('find a pizza place', 'Found two.', 1_000))
     const reset = session.run()
-    reset.event({ type: 'command', text: 'forget all that', at: 60_000 })
+    reset.event({ type: 'command', turnId: TURN, text: 'forget all that', at: 60_000 })
     session.clear()
-    reset.event({ type: 'done', outcome: 'done', at: 60_006 })
+    reset.event({ type: 'done', turnId: TURN, outcome: 'done', at: 60_006 })
     const next = session.run()
-    next.event({ type: 'command', text: 'what is two plus two', at: 120_000 })
+    next.event({ type: 'command', turnId: TURN, text: 'what is two plus two', at: 120_000 })
     expect(session.history()).toEqual([])
     feed(next, [
       { type: 'display', text: 'Four.', at: 120_005 },
-      { type: 'done', outcome: 'done', at: 120_006 },
+      { type: 'done', turnId: TURN, outcome: 'done', at: 120_006 },
     ])
     const after = session.run()
-    after.event({ type: 'command', text: 'and twice that?', at: 180_000 })
+    after.event({ type: 'command', turnId: TURN, text: 'and twice that?', at: 180_000 })
 
     expect(session.history()).toEqual([
       { role: 'user', text: 'what is two plus two' },
@@ -275,7 +279,7 @@ describe('sessionMemory', () => {
     const session = createSessionMemory({ onSessionStart: () => { starts += 1 } })
     feed(session.run(), runEvents('find a pizza place', 'Found two.', 1_000))
     const next = session.run()
-    next.event({ type: 'command', text: 'pause it', at: 1_000 + SESSION_WINDOW_MS + 1_000 })
+    next.event({ type: 'command', turnId: TURN, text: 'pause it', at: 1_000 + SESSION_WINDOW_MS + 1_000 })
 
     expect(starts).toBe(1)
   })
@@ -285,7 +289,7 @@ describe('sessionMemory', () => {
     const session = createSessionMemory({ onSessionStart: () => { starts += 1 } })
     feed(session.run(), runEvents('find a pizza place', 'Found two.', 1_000))
     const next = session.run()
-    next.event({ type: 'command', text: 'what about the second one?', at: 60_000 })
+    next.event({ type: 'command', turnId: TURN, text: 'what about the second one?', at: 60_000 })
 
     expect(starts).toBe(0)
   })
@@ -295,7 +299,7 @@ describe('sessionMemory', () => {
     const session = createSessionMemory({ onSessionStart: () => { starts += 1 } })
     feed(session.run(), runEvents('find a pizza place', 'Found two.', 1_000))
     const reset = session.run()
-    reset.event({ type: 'command', text: 'forget all that', at: 60_000 })
+    reset.event({ type: 'command', turnId: TURN, text: 'forget all that', at: 60_000 })
 
     session.clear()
 
@@ -309,13 +313,13 @@ describe('sessionMemory', () => {
     session.clear()
     feed(session.run(), runEvents('find a pizza place', 'Found two.', 1_000))
     const reset = session.run()
-    reset.event({ type: 'command', text: 'forget all that', at: 60_000 })
+    reset.event({ type: 'command', turnId: TURN, text: 'forget all that', at: 60_000 })
     session.clear()
-    reset.event({ type: 'done', outcome: 'done', at: 60_006 })
+    reset.event({ type: 'done', turnId: TURN, outcome: 'done', at: 60_006 })
     // The reset already announced the boundary; the next command continues
     // the fresh session, so it must not clear the reset run's answer.
     const next = session.run()
-    next.event({ type: 'command', text: 'what is two plus two', at: 120_000 })
+    next.event({ type: 'command', turnId: TURN, text: 'what is two plus two', at: 120_000 })
 
     expect(starts).toBe(1)
   })
@@ -325,9 +329,9 @@ describe('sessionMemory', () => {
     const session = createSessionMemory({ onSessionStart: () => { starts += 1 } })
     feed(session.run(), runEvents('find a pizza place', 'Found two.', 1_000))
     const longRun = session.run()
-    longRun.event({ type: 'command', text: 'keep working', at: 2_000 })
+    longRun.event({ type: 'command', turnId: TURN, text: 'keep working', at: 2_000 })
     const busy = session.run()
-    busy.event({ type: 'command', text: 'interrupt attempt', at: 1_000 + SESSION_WINDOW_MS + 1_000 })
+    busy.event({ type: 'command', turnId: TURN, text: 'interrupt attempt', at: 1_000 + SESSION_WINDOW_MS + 1_000 })
 
     expect(starts).toBe(0)
   })
@@ -337,13 +341,13 @@ describe('sessionMemory', () => {
     const session = createSessionMemory({ windowMs: 5_000, onSessionStart: () => { starts += 1 } })
     feed(session.run(), runEvents('find a pizza place', 'Found two.', 1_000))
     const within = session.run()
-    within.event({ type: 'command', text: 'follow up', at: 4_000 })
+    within.event({ type: 'command', turnId: TURN, text: 'follow up', at: 4_000 })
     feed(within, [
       { type: 'display', text: 'Followed.', at: 4_001 },
-      { type: 'done', outcome: 'done', at: 4_002 },
+      { type: 'done', turnId: TURN, outcome: 'done', at: 4_002 },
     ])
     const lapsed = session.run()
-    lapsed.event({ type: 'command', text: 'much later', at: 4_002 + 5_000 + 1 })
+    lapsed.event({ type: 'command', turnId: TURN, text: 'much later', at: 4_002 + 5_000 + 1 })
 
     expect(starts).toBe(1)
   })

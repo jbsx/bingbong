@@ -75,11 +75,38 @@ describe('createAssistantPipeline', () => {
 
     expect(events).toContainEqual({
       type: 'ask_resolved',
+      turnId: expect.any(String),
       askId: 'ask-1',
       answer: null,
       reason: 'timeout',
       at: 1500,
     })
+  })
+
+  it('mints turn ids through the injected tracer, stamped on every event (#28)', async () => {
+    const minted: string[] = []
+    const tracer = {
+      mintTurnId: () => {
+        minted.push(`turn-tr-${minted.length + 1}`)
+        return minted.at(-1)!
+      },
+      now: () => 0,
+      span: () => {},
+    }
+    const pipeline = createAssistantPipeline({
+      controller: new FakeBrowser(),
+      env: { BINGBONG_LLM_SCRIPT: SCRIPT },
+      clock: new FakeClock(),
+      tracer,
+    })
+
+    const events = await collect(pipeline, 'open youtube')
+
+    expect(minted).toEqual(['turn-tr-1'])
+    expect(events.length).toBeGreaterThan(0)
+    for (const event of events) {
+      expect('turnId' in event && event.turnId).toBe('turn-tr-1')
+    }
   })
 
   it('rejects a malformed LLM script override loudly', async () => {

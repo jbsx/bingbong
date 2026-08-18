@@ -163,6 +163,7 @@ async function createSession(overrides?: {
 function confirmationRequested(id = 'confirm-1'): PipelineEvent {
   return {
     type: 'confirmation_requested',
+    turnId: 'turn-fixture',
     confirmationId: id,
     callId: 'c1',
     toolName: 'click',
@@ -175,6 +176,7 @@ function confirmationRequested(id = 'confirm-1'): PipelineEvent {
 function askRequested(id = 'ask-1'): PipelineEvent {
   return {
     type: 'ask_requested',
+    turnId: 'turn-fixture',
     askId: id,
     callId: 'c1',
     question: 'Which city do you mean?',
@@ -245,8 +247,8 @@ describe('voice session', () => {
     // Abort came from the UI/Escape, not the voice session: the pipeline
     // goes idle and emits its terminal events, but nobody told the session.
     runState.value = 'idle'
-    harness.session.handlePipelineEvent({ type: 'status', status: 'cancelled', at: 0 })
-    harness.session.handlePipelineEvent({ type: 'done', outcome: 'cancelled', at: 0 })
+    harness.session.handlePipelineEvent({ type: 'status', turnId: 'turn-fixture', status: 'cancelled', at: 0 })
+    harness.session.handlePipelineEvent({ type: 'done', turnId: 'turn-fixture', outcome: 'cancelled', at: 0 })
     expect(harness.states.at(-1)).toEqual({ listening: false, reason: null, monitoring: false })
 
     // The next activation behaves normally instead of routing to ignored.
@@ -412,6 +414,7 @@ describe('voice session', () => {
 
     harness.session.handlePipelineEvent({
       type: 'confirmation_resolved',
+      turnId: 'turn-fixture',
       confirmationId: 'confirm-4',
       approved: true,
       reason: 'user',
@@ -431,6 +434,7 @@ describe('voice session', () => {
     harness.session.handlePipelineEvent(confirmationRequested('confirm-5'))
     harness.session.handlePipelineEvent({
       type: 'confirmation_resolved',
+      turnId: 'turn-fixture',
       confirmationId: 'confirm-5',
       approved: false,
       reason: 'user',
@@ -561,6 +565,7 @@ describe('voice session — ask_user window (issue #18)', () => {
 
     harness.session.handlePipelineEvent({
       type: 'ask_resolved',
+      turnId: 'turn-fixture',
       askId: 'ask-5',
       answer: 'typed answer',
       reason: 'user',

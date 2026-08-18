@@ -3,9 +3,12 @@ import { createCommandPipeline, type CommandPipeline } from './createCommandPipe
 import { createAskUserTool } from './askUserTools'
 import { createNewSessionTool } from './sessionTools'
 import { createSessionMemory } from '../session/sessionMemory'
-import { FailingTts, FakeClock, RecordingTts, ScriptedLlm } from '../testing/doubles'
+import { createHistoryRecorder } from '../history/historyRecorder'
+import type { HistoryStore, RecordedEntry, RunRecord } from '../history/historyStore'
+import { FailingTts, FakeClock, RecordingTts, ScriptedLlm, withoutTurnId } from '../testing/doubles'
 import type { PipelineEvent } from './events'
 import type { AssistantTurn, LlmClient, LlmRequest } from '../ports/llm'
+import type { PerfTracer } from '../perf/perfTracer'
 
 async function collect(
   pipeline: CommandPipeline,
@@ -13,10 +16,18 @@ async function collect(
   onEvent?: (event: PipelineEvent, pipeline: CommandPipeline) => void,
 ): Promise<PipelineEvent[]> {
   const events: PipelineEvent[] = []
-  for await (const event of pipeline.execute(command)) {
+  for await (const raw of pipeline.execute(command)) {
+    const event = withoutTurnId(raw)
     events.push(event)
     onEvent?.(event, pipeline)
   }
+  return events
+}
+
+/** Raw event collection — keeps the turnId stamp (#28). */
+async function collectStamped(pipeline: CommandPipeline, command: string, turnId?: string): Promise<PipelineEvent[]> {
+  const events: PipelineEvent[] = []
+  for await (const event of pipeline.execute(command, turnId)) events.push(event)
   return events
 }
 
@@ -1020,5 +1031,129 @@ describe('command pipeline', () => {
     expect(spoken).toEqual(['Fresh start — what do you need?'])
     // The resetting run's own exchange never joins the thread.
     expect(session.history()).toEqual([])
+  })
+})
+
+describe('command pipeline — turn correlation (#28)', () => {
+  const spinner = { name: 'spin', async execute() { return 'spun' } }
+
+  function inMemoryHistoryStore(): HistoryStore & { entries: RecordedEntry[]; runs: RunRecord[] } {
+    const entries: RecordedEntry[] = []
+    const runs: RunRecord[] = []
+    let nextEntryId = 1
+    let nextRunId = 1
+    return {
+      entries,
+      runs,
+      startRun(command, at, turnId) {
+        const id = nextRunId++
+        runs.push({ id, turnId, command, startedAt: at, finishedAt: null, outcome: null })
+        return id
+      },
+      finishRun(runId, outcome, at) {
+        const run = runs.find((candidate) => candidate.id === runId)
+        if (run) {
+          run.finishedAt = at
+          run.outcome = outcome
+        }
+      },
+      appendEntry(entry) {
+        entries.push({ id: nextEntryId++, ...entry })
+      },
+      recentEntries(limit) {
+        return [...entries].slice(-limit)
+      },
+      recentRuns(limit) {
+        return [...runs].slice(-limit)
+      },
+      close() {},
+    }
+  }
+
+  function fullTurnPipeline(): CommandPipeline {
+    return createCommandPipeline({
+      llm: new ScriptedLlm([
+        { kind: 'tool_calls', calls: [{ id: 'c1', name: 'spin', args: {} }] },
+        { kind: 'answer', speak: 'Done.', display: 'Done.' },
+      ]),
+      tts: new RecordingTts(),
+      clock: new FakeClock(),
+      tools: [spinner],
+    })
+  }
+
+  /** The turn id of every event, undefined where a stamp is missing. */
+  function turnIdsOf(events: PipelineEvent[]): (string | undefined)[] {
+    return events.map((event) => ('turnId' in event ? event.turnId : undefined))
+  }
+
+  it('stamps the adopted voice turn id on every event of a full turn', async () => {
+    const store = inMemoryHistoryStore()
+    const recorder = createHistoryRecorder(store, { now: () => 0 })
+    const session = createSessionMemory()
+    const historyRun = recorder.run()
+    const sessionRun = session.run()
+    const events = await collectStamped(fullTurnPipeline(), 'spin it', 'turn-voice-1')
+
+    // The same events the renderer relay, history recorder, and session
+    // memory observe — every one of them carries the turn's id.
+    for (const event of events) {
+      historyRun.event(event)
+      sessionRun.event(event)
+    }
+
+    expect(events.map((event) => event.type)).toEqual([
+      'command', 'status', 'status', 'tool_call', 'tool_result', 'status', 'display', 'status', 'speak', 'done',
+    ])
+    expect(turnIdsOf(events)).toEqual(Array.from({ length: events.length }, () => 'turn-voice-1'))
+    // The history run row adopts the id; the session thread builds from the
+    // same stamped stream.
+    expect(store.runs[0]).toMatchObject({ turnId: 'turn-voice-1', command: 'spin it', outcome: 'done' })
+    expect(session.history()).toEqual([
+      { role: 'user', text: 'spin it' },
+      { role: 'assistant', text: 'Done.' },
+    ])
+  })
+
+  it('mints a fresh id for text-box commands — one per turn, stable within it', async () => {
+    const pipeline = fullTurnPipeline()
+
+    const first = await collectStamped(pipeline, 'first command')
+    const second = await collectStamped(pipeline, 'second command')
+
+    const firstIds = new Set(turnIdsOf(first))
+    const secondIds = new Set(turnIdsOf(second))
+    expect(firstIds.size).toBe(1)
+    expect(secondIds.size).toBe(1)
+    const firstId = [...firstIds][0]
+    expect(firstId).toMatch(/^turn-/)
+    expect([...secondIds][0]).toMatch(/^turn-/)
+    expect([...secondIds][0]).not.toBe(firstId)
+  })
+
+  it('mints through the injected tracer and never mints when a turn id is adopted', async () => {
+    const minted: string[] = []
+    const tracer: PerfTracer = {
+      mintTurnId: () => {
+        minted.push(`turn-tracer-${minted.length + 1}`)
+        return minted.at(-1)!
+      },
+      now: () => 0,
+      span: () => {},
+    }
+    const pipeline = createCommandPipeline({
+      llm: new ScriptedLlm([{ kind: 'answer', speak: 'Done.', display: 'Done.' }]),
+      tts: new RecordingTts(),
+      clock: new FakeClock(),
+      tools: [spinner],
+      tracer,
+    })
+
+    const textBox = await collectStamped(pipeline, 'typed command')
+    expect(minted).toHaveLength(1)
+    expect(new Set(turnIdsOf(textBox))).toEqual(new Set([`turn-tracer-1`]))
+
+    await collectStamped(pipeline, 'spoken command', 'turn-voice-adopted')
+    expect(minted).toHaveLength(1) // adoption never mints
   })
 })

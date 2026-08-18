@@ -23,6 +23,12 @@ export interface RecordedEntry extends TranscriptEvent {
 
 export interface RunRecord {
   id: number
+  /**
+   * The turn this run correlates to (#28) — the same id the pipeline stamps
+   * on every event of the turn, so a logged turn maps 1:1 to a run row.
+   * Null only on rows recorded before turn ids existed.
+   */
+  turnId: string | null
   command: string
   startedAt: number
   finishedAt: number | null
@@ -36,7 +42,7 @@ export interface HistoryEntryInput extends TranscriptEvent {
 
 export interface HistoryStore {
   /** Opens a run; entries recorded while it is open link to it. */
-  startRun(command: string, at: number): number
+  startRun(command: string, at: number, turnId: string): number
   finishRun(runId: number, outcome: RunOutcome, at: number): void
   appendEntry(entry: HistoryEntryInput): void
   /** Most recent entries, oldest first. */

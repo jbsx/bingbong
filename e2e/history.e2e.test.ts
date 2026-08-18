@@ -72,11 +72,16 @@ describe('history persistence e2e', () => {
       )
       expect(transcript).not.toContain('open the fixture page')
 
-      // …but the run history survived the relaunch.
-      const runs = await second.dashboardEval<Array<{ command: string; outcome: string }>>(
+      // …but the run history survived the relaunch, its run row carrying the
+      // turn id the pipeline minted for the text-box command (#28).
+      const runs = await second.dashboardEval<Array<{ command: string; outcome: string; turnId: string | null }>>(
         `window.bingbong.history.recentRuns()`,
       )
-      expect(runs.at(-1)).toMatchObject({ command: 'open the fixture page', outcome: 'done' })
+      expect(runs.at(-1)).toMatchObject({
+        command: 'open the fixture page',
+        outcome: 'done',
+        turnId: expect.any(String),
+      })
 
       // A fresh run starts a clean transcript.
       const submittedAgain = await second.dashboardEval<string>(commandBoxScript('open it again'))

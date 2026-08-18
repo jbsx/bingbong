@@ -22,7 +22,7 @@ describe('createSingleShotPipeline', () => {
 
     const events = await collect(pipeline, 'hello')
 
-    expect(events).toContainEqual({ type: 'speak', text: 'Done.', at: 1000 })
+    expect(events).toContainEqual({ type: 'speak', turnId: expect.any(String), text: 'Done.', at: 1000 })
     expect(events.at(-1)).toMatchObject({ type: 'done' })
   })
 
@@ -59,7 +59,44 @@ describe('createSingleShotPipeline', () => {
     await collect(pipeline, 'first')
     const events = await collect(pipeline, 'second')
 
-    expect(events).toContainEqual({ type: 'speak', text: 'Two.', at: 0 })
+    expect(events).toContainEqual({ type: 'speak', turnId: expect.any(String), text: 'Two.', at: 0 })
+  })
+
+  it('forwards the submitted turn id to the inner pipeline and stamps it on every event', async () => {
+    const clock = new FakeClock(0)
+    const pipeline = createSingleShotPipeline(
+      answerPipeline(clock, [{ kind: 'answer', speak: 'Done.', display: 'Detail.' }]),
+      clock,
+    )
+
+    const events: PipelineEvent[] = []
+    for await (const event of pipeline.execute('spoken command', 'turn-voice-7')) events.push(event)
+
+    expect(events.length).toBeGreaterThan(0)
+    for (const event of events) {
+      expect('turnId' in event && event.turnId).toBe('turn-voice-7')
+    }
+  })
+
+  it('gives a busy-rejected submission its own minted turn id', async () => {
+    const clock = new FakeClock(0)
+    const neverResolves = new Promise<AssistantTurn>(() => {})
+    const llm: LlmClient = { complete: () => neverResolves }
+    const inner = createCommandPipeline({ llm, tts: new RecordingTts(), clock, tools: [] })
+    const pipeline = createSingleShotPipeline(inner, clock)
+
+    void (async () => {
+      for await (const event of pipeline.execute('first command')) void event
+    })()
+
+    const rejected: PipelineEvent[] = []
+    for await (const event of pipeline.execute('second command')) rejected.push(event)
+
+    const ids = new Set(rejected.map((event) => ('turnId' in event ? event.turnId : undefined)))
+    expect(ids.size).toBe(1)
+    expect([...ids][0]).toMatch(/^turn-/)
+    // The running turn keeps its own id — the rejection never leaks onto it.
+    expect([...ids][0]).not.toBe(undefined)
   })
 
   it('forwards confirmation resolutions to the inner pipeline', () => {

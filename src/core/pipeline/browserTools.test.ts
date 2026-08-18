@@ -11,7 +11,7 @@ import {
 import type { BrowserController, BrowserState, KeyPress, MediaState } from '../ports/browser'
 import { createCommandPipeline, type CommandPipeline } from './createCommandPipeline'
 import { createBrowserTools } from './browserTools'
-import { FakeClock, RecordingTts, ScriptedLlm } from '../testing/doubles'
+import { FakeClock, RecordingTts, ScriptedLlm, withoutTurnId } from '../testing/doubles'
 import type { PipelineEvent } from './events'
 import type { AssistantTurn } from '../ports/llm'
 
@@ -92,7 +92,9 @@ class FixtureBrowserController implements BrowserController {
 
 async function collect(pipeline: CommandPipeline, command: string): Promise<PipelineEvent[]> {
   const events: PipelineEvent[] = []
-  for await (const event of pipeline.execute(command)) events.push(event)
+  for await (const raw of pipeline.execute(command)) {
+    events.push(withoutTurnId(raw))
+  }
   return events
 }
 
@@ -326,6 +328,7 @@ describe('browser tools through the pipeline', () => {
 
       expect(events).toContainEqual({
         type: 'confirmation_requested',
+        turnId: expect.any(String),
         confirmationId: 'confirm-1',
         callId: 'c1',
         toolName: 'click',

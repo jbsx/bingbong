@@ -16,9 +16,9 @@ function fakeStore(): HistoryStore & { entries: RecordedEntry[]; runs: RunRecord
   return {
     entries,
     runs,
-    startRun(command, at) {
+    startRun(command, at, turnId) {
       const id = nextRunId++
-      runs.push({ id, command, startedAt: at, finishedAt: null, outcome: null })
+      runs.push({ id, turnId, command, startedAt: at, finishedAt: null, outcome: null })
       return id
     },
     finishRun(runId, outcome, at) {
@@ -56,13 +56,13 @@ describe('historyRecorder', () => {
     const run = recorder.run()
 
     for (const event of eventsOf(
-      { type: 'command', text: 'open the fixture page', at: 100 },
-      { type: 'status', status: 'thinking', at: 101 },
-      { type: 'tool_call', callId: 'c1', name: 'navigate', args: { url: 'http://fixture/' }, at: 102 },
-      { type: 'tool_result', callId: 'c1', name: 'navigate', ok: true, at: 103 },
+      { type: 'command', turnId: 'turn-r1', text: 'open the fixture page', at: 100 },
+      { type: 'status', turnId: 'turn-r1', status: 'thinking', at: 101 },
+      { type: 'tool_call', turnId: 'turn-r1', callId: 'c1', name: 'navigate', args: { url: 'http://fixture/' }, at: 102 },
+      { type: 'tool_result', turnId: 'turn-r1', callId: 'c1', name: 'navigate', ok: true, at: 103 },
       { type: 'speak', text: 'Opened it.', at: 104 },
       { type: 'display', text: 'Navigated to the fixture page.', at: 105 },
-      { type: 'done', at: 106 },
+      { type: 'done', turnId: 'turn-r1', at: 106 },
     )) {
       run.event(event)
     }
@@ -74,7 +74,32 @@ describe('historyRecorder', () => {
       ['display', 'Navigated to the fixture page.', 1],
     ])
     expect(store.recentRuns(1)).toEqual([
-      { id: 1, command: 'open the fixture page', startedAt: 100, finishedAt: 106, outcome: 'done' },
+      { id: 1, turnId: 'turn-r1', command: 'open the fixture page', startedAt: 100, finishedAt: 106, outcome: 'done' },
+    ])
+  })
+
+  it('adopts the command event turn id as the run row identifier (#28)', () => {
+    const store = fakeStore()
+    const recorder = recorderWith(store)
+    const run = recorder.run()
+
+    for (const event of eventsOf(
+      { type: 'command', turnId: 'turn-voice-1', text: 'open the fixture page', at: 100 },
+      { type: 'status', turnId: 'turn-voice-1', status: 'thinking', at: 101 },
+      { type: 'done', turnId: 'turn-voice-1', at: 106 },
+    )) {
+      run.event(event)
+    }
+
+    expect(store.recentRuns(1)).toEqual([
+      {
+        id: 1,
+        turnId: 'turn-voice-1',
+        command: 'open the fixture page',
+        startedAt: 100,
+        finishedAt: 106,
+        outcome: 'done',
+      },
     ])
   })
 
@@ -84,10 +109,10 @@ describe('historyRecorder', () => {
     const run = recorder.run()
 
     for (const event of eventsOf(
-      { type: 'command', text: 'stop me', at: 200 },
-      { type: 'status', status: 'acting', at: 201 },
-      { type: 'status', status: 'cancelled', at: 202 },
-      { type: 'done', at: 203 },
+      { type: 'command', turnId: 'turn-r2', text: 'stop me', at: 200 },
+      { type: 'status', turnId: 'turn-r2', status: 'acting', at: 201 },
+      { type: 'status', turnId: 'turn-r2', status: 'cancelled', at: 202 },
+      { type: 'done', turnId: 'turn-r2', at: 203 },
     )) {
       run.event(event)
     }
@@ -100,9 +125,9 @@ describe('historyRecorder', () => {
     const recorder = recorderWith(store)
     const run = recorder.run()
 
-    run.event({ type: 'command', text: 'broken run', at: 250 })
+    run.event({ type: 'command', turnId: 'turn-r3', text: 'broken run', at: 250 })
     run.event({ type: 'error', message: 'model routing is unconfigured', at: 251 })
-    run.event({ type: 'done', at: 252 })
+    run.event({ type: 'done', turnId: 'turn-r3', at: 252 })
 
     expect(store.recentRuns(1)[0]).toMatchObject({ outcome: 'failed', finishedAt: 252 })
   })
@@ -113,9 +138,10 @@ describe('historyRecorder', () => {
     const run = recorder.run()
 
     for (const event of eventsOf(
-      { type: 'command', text: 'break things', at: 300 },
+      { type: 'command', turnId: 'turn-r4', text: 'break things', at: 300 },
       {
         type: 'tool_result',
+        turnId: 'turn-r4',
         callId: 'c1',
         name: 'navigate',
         ok: false,
@@ -123,7 +149,7 @@ describe('historyRecorder', () => {
         at: 301,
       },
       { type: 'error', message: 'model routing is unconfigured', at: 302 },
-      { type: 'done', at: 303 },
+      { type: 'done', turnId: 'turn-r4', at: 303 },
     )) {
       run.event(event)
     }
@@ -165,9 +191,9 @@ describe('historyRecorder', () => {
     const recorder = recorderWith(store)
     const run = recorder.run()
 
-    run.event({ type: 'command', text: 'risky thing', at: 500 })
+    run.event({ type: 'command', turnId: 'turn-r5', text: 'risky thing', at: 500 })
     recorder.heard({ text: 'yes', routed: 'confirmation' })
-    run.event({ type: 'done', at: 501 })
+    run.event({ type: 'done', turnId: 'turn-r5', at: 501 })
 
     expect(store.recentEntries(2)[1]).toMatchObject({ kind: 'voice', runId: 1 })
   })
@@ -177,9 +203,9 @@ describe('historyRecorder', () => {
     const recorder = recorderWith(store)
     const run = recorder.run()
 
-    run.event({ type: 'command', text: 'first', at: 600 })
-    run.event({ type: 'command', text: 'second', at: 601 })
-    run.event({ type: 'done', at: 602 })
+    run.event({ type: 'command', turnId: 'turn-r6', text: 'first', at: 600 })
+    run.event({ type: 'command', turnId: 'turn-r7', text: 'second', at: 601 })
+    run.event({ type: 'done', turnId: 'turn-r7', at: 602 })
 
     expect(store.recentRuns(2).map((run) => [run.command, run.outcome])).toEqual([
       ['first', 'interrupted'],
@@ -192,7 +218,7 @@ describe('historyRecorder', () => {
     const recorder = recorderWith(store)
     const run = recorder.run()
 
-    run.event({ type: 'done', at: 700 })
+    run.event({ type: 'done', turnId: 'turn-r8', at: 700 })
 
     expect(store.recentRuns(1)).toEqual([])
     expect(store.recentEntries(1)).toEqual([])
@@ -204,12 +230,12 @@ describe('historyRecorder', () => {
     const first = recorder.run()
     const second = recorder.run()
 
-    first.event({ type: 'command', text: 'first', at: 800 })
-    second.event({ type: 'command', text: 'second', at: 801 })
+    first.event({ type: 'command', turnId: 'turn-r9', text: 'first', at: 800 })
+    second.event({ type: 'command', turnId: 'turn-r10', text: 'second', at: 801 })
     second.event({ type: 'error', message: 'already running', at: 802 })
-    second.event({ type: 'done', outcome: 'failed', at: 803 })
+    second.event({ type: 'done', turnId: 'turn-r10', outcome: 'failed', at: 803 })
     first.event({ type: 'display', text: 'First completed.', at: 804 })
-    first.event({ type: 'done', outcome: 'done', at: 805 })
+    first.event({ type: 'done', turnId: 'turn-r9', outcome: 'done', at: 805 })
 
     expect(store.recentRuns(10).map((run) => [run.command, run.outcome])).toEqual([
       ['first', 'done'],

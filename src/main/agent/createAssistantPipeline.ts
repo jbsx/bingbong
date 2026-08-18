@@ -17,6 +17,7 @@ import { createNewSessionTool } from '../../core/pipeline/sessionTools'
 import { resolveModelEndpoint, routingEnvKeys } from '../../core/agent/modelRouting'
 import type { UsageSink } from '../../core/agent/usageTracking'
 import { withUsageTracking } from '../../core/agent/usageTracking'
+import type { PerfTracer } from '../../core/perf/perfTracer'
 import { ScriptedLlm, silentTts, UnavailableLlm } from '../../core/testing/doubles'
 import { createDuckDuckGoSearchProvider } from '../search/createDuckDuckGoSearchProvider'
 import { createOpenAiLlmClient } from './openAiLlmClient'
@@ -57,6 +58,12 @@ export interface AssistantPipelineDeps {
    * recorder.
    */
   session?: SessionHistorySource & SessionResetSource
+  /**
+   * Always-on perf logging (#27/#28): the tracer mints the turn ids the
+   * pipeline stamps on every event, so the perf log, the event stream, and
+   * the history run rows share one id per turn.
+   */
+  tracer?: PerfTracer
 }
 
 function resolveLlm(
@@ -154,10 +161,11 @@ export function createAssistantPipeline(deps: AssistantPipelineDeps): CommandPip
     clock,
     tools,
     ...(deps.session ? { session: deps.session } : {}),
+    ...(deps.tracer ? { tracer: deps.tracer } : {}),
     onAbort: () => deps.subagentControl?.cancelAll(),
     onPause: () => deps.subagentControl?.pauseAll(),
     onResume: () => deps.subagentControl?.resumeAll(),
     ...(configuredAskTimeoutMs !== undefined ? { askTimeoutMs: configuredAskTimeoutMs } : {}),
   })
-  return createSingleShotPipeline(pipeline, clock)
+  return createSingleShotPipeline(pipeline, clock, { tracer: deps.tracer })
 }

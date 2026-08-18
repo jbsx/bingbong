@@ -71,3 +71,22 @@ export function createPerfTracer(deps: { sink: PerfSink; clock?: PerfClock }): P
     },
   }
 }
+
+// Fallback id source for pipelines running without a tracer (tests, direct
+// use): events must carry a turn id everywhere (#28) even when nothing perf-
+// logs. Module-scoped so ids never collide between pipelines in one process.
+let fallbackTurnSeq = 0
+
+export function nextFallbackTurnId(): string {
+  fallbackTurnSeq += 1
+  return `turn-local-${fallbackTurnSeq.toString(36)}`
+}
+
+/**
+ * The adopt-or-mint id source pipelines share (#28): a tracer's mint when
+ * one is injected, the local fallback otherwise. Callers layer adoption on
+ * top (`turnId ?? mintTurnId()`).
+ */
+export function createTurnIdSource(tracer?: PerfTracer): () => string {
+  return tracer ? () => tracer.mintTurnId() : nextFallbackTurnId
+}
