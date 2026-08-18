@@ -20,7 +20,9 @@ function page(overrides: Partial<CollectedPage> = {}): CollectedPage {
   return {
     url: 'https://example.com/',
     title: 'Example',
-    viewport: { width: 1280, height: 800, scrollY: 0, scrollHeight: 1000 },
+    viewport: { width: 1280, height: 800, scrollX: 0, scrollY: 0, scrollHeight: 1000 },
+    dialogOpen: false,
+    textDigest: '',
     elements: [],
     ...overrides,
   }
@@ -85,6 +87,37 @@ describe('parseCollectedPage', () => {
 
     expect(parsed.elements[0]?.layer).toBe('dialog')
     expect(parsed.elements[1]?.layer).toBeUndefined()
+  })
+
+  it('keeps cheap page and element state collected for action outcomes', () => {
+    const parsed = parseCollectedPage(
+      page({
+        dialogOpen: true,
+        textDigest: 'Main heading\nUseful page text',
+        viewport: { width: 1280, height: 800, scrollX: 24, scrollY: 50, scrollHeight: 1000 },
+        elements: [
+          element({
+            tag: 'input',
+            checked: true,
+            selectedOption: 'Beta',
+            value: 'current value',
+            ariaPressed: 'mixed',
+          }),
+        ],
+      }),
+    )
+
+    expect(parsed).toMatchObject({
+      dialogOpen: true,
+      textDigest: 'Main heading\nUseful page text',
+      viewport: { scrollX: 24 },
+    })
+    expect(parsed.elements[0]).toMatchObject({
+      checked: true,
+      selectedOption: 'Beta',
+      value: 'current value',
+      ariaPressed: 'mixed',
+    })
   })
 })
 
@@ -243,6 +276,35 @@ viewport 1280x800 scroll 0/4521
     const text = formatPageSnapshot(buildPageSnapshot(many, { maxRefs: 5 }))
 
     expect(text.endsWith('(+16 more not listed)')).toBe(true)
+  })
+
+  it('includes the capped text digest after the interactive refs', () => {
+    const text = formatPageSnapshot(
+      buildPageSnapshot(page({ textDigest: 'Main heading\nFirst useful paragraph.' })),
+    )
+
+    expect(text).toContain('\npage text:\nMain heading\nFirst useful paragraph.')
+  })
+
+  it('renders cheap interactive state fields collected from the page', () => {
+    const text = formatPageSnapshot(
+      buildPageSnapshot(
+        page({
+          elements: [
+            element({
+              tag: 'input',
+              inputType: 'checkbox',
+              checked: true,
+              selectedOption: 'Beta',
+              value: 'chosen',
+              ariaPressed: 'mixed',
+            }),
+          ],
+        }),
+      ),
+    )
+
+    expect(text).toContain('[1] input[checkbox] "A button" checked=true selected="Beta" value="chosen" aria-pressed="mixed"')
   })
 })
 

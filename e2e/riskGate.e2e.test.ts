@@ -16,6 +16,16 @@ async function transcriptText(harness: Harness): Promise<string> {
   )
 }
 
+async function waitForTranscript(harness: Harness, expected: string): Promise<void> {
+  await waitFor(
+    async () => {
+      const transcript = await transcriptText(harness)
+      return transcript.includes(expected) ? transcript : undefined
+    },
+    { timeoutMs: 20000, intervalMs: 250 },
+  )
+}
+
 describe('risk gate e2e', () => {
   let fixture: FixtureServer
 
@@ -106,8 +116,7 @@ describe('risk gate e2e', () => {
         { timeoutMs: 20000, intervalMs: 250 },
       )
 
-      const transcript = await transcriptText(harness)
-      expect(transcript).toContain('Form sent.')
+      await waitForTranscript(harness, 'Form sent.')
     } finally {
       await harness.quit()
     }
@@ -135,8 +144,7 @@ describe('risk gate e2e', () => {
 
       const confirmationShown = await harness.dashboardEval<boolean>(`!!document.querySelector('.confirmation-card')`)
       expect(confirmationShown).toBe(false)
-      const transcript = await transcriptText(harness)
-      expect(transcript).toContain('Consent dismissed.')
+      await waitForTranscript(harness, 'Consent dismissed.')
     } finally {
       await harness.quit()
     }

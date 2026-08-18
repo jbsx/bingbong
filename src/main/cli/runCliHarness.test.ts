@@ -2,7 +2,7 @@ import { PassThrough } from 'node:stream'
 import { describe, expect, it } from 'vitest'
 import youtubeHome from '../../core/browser/fixtures/youtube-home.json'
 import { buildPageSnapshot, findSnapshotRef, formatPageSnapshot, type CollectedPage, type SnapshotRef } from '../../core/browser/snapshot'
-import type { BrowserController, BrowserState, KeyPress } from '../../core/ports/browser'
+import type { BrowserController, BrowserState, KeyPress, MediaState } from '../../core/ports/browser'
 import { runCliHarness, type CliHarnessDeps } from './runCliHarness'
 
 const youtubeFixture = youtubeHome as unknown as CollectedPage
@@ -17,8 +17,9 @@ class FakeController implements BrowserController {
   failRead = false
   saved: { path: string; bytes: Uint8Array }[] = []
 
-  async navigate(url: string): Promise<void> {
+  async navigate(url: string): Promise<string> {
     this.url = url
+    return `navigated: url=${url} title="YouTube"`
   }
 
   async readPage(): Promise<string> {
@@ -26,28 +27,36 @@ class FakeController implements BrowserController {
     return formatPageSnapshot(buildPageSnapshot(youtubeFixture))
   }
 
-  async click(ref: number): Promise<void> {
+  async click(ref: number): Promise<string> {
     this.clicks.push(ref)
+    return `clicked [${ref}]: urlChanged=false dialogOpen=false; no observable change`
   }
 
-  async type(ref: number, text: string): Promise<void> {
+  async type(ref: number, text: string): Promise<string> {
     this.typed.push({ ref, text })
+    return `typed [${ref}]: value=${JSON.stringify(text)}`
   }
 
-  async scroll(direction: 'up' | 'down'): Promise<void> {
+  async scroll(direction: 'up' | 'down'): Promise<string> {
     this.scrolls.push(direction)
+    return `scrolled ${direction}: x=0 y=0`
   }
 
   async pressKey(press: KeyPress, times = 1): Promise<void> {
     this.pressed.push({ press, times })
   }
 
+  async mediaState(): Promise<MediaState | null> {
+    return { paused: true, currentTime: 0, volume: 1 }
+  }
+
   async screenshot(): Promise<Uint8Array> {
     return new Uint8Array([1, 2, 3, 4])
   }
 
-  async back(): Promise<void> {
+  async back(): Promise<string> {
     this.backs.push(1)
+    return 'went back: url=https://www.youtube.com/ title="YouTube"'
   }
 
   state(): BrowserState {

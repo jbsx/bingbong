@@ -22,11 +22,17 @@ export interface CollectedElement {
   formHasPayment?: boolean
   /** 'dialog' marks elements of the page's topmost open dialog; absent in older payloads. */
   layer?: 'dialog' | 'page'
+  checked?: boolean | null
+  selectedOption?: string | null
+  value?: string | null
+  ariaPressed?: string | null
+  className?: string
 }
 
 export interface CollectedViewport {
   width: number
   height: number
+  scrollX?: number
   scrollY: number
   scrollHeight: number
 }
@@ -38,6 +44,8 @@ export interface CollectedPage {
   url: string
   title: string
   viewport: CollectedViewport
+  dialogOpen?: boolean
+  textDigest?: string
   elements: CollectedElement[]
 }
 
@@ -60,12 +68,19 @@ export interface SnapshotRef {
   inForm: boolean
   formHasCredential: boolean
   formHasPayment: boolean
+  checked?: boolean | null
+  selectedOption?: string | null
+  value?: string | null
+  ariaPressed?: string | null
+  className?: string
 }
 
 export interface PageSnapshot {
   url: string
   title: string
   viewport: CollectedViewport
+  dialogOpen: boolean
+  textDigest: string
   refs: SnapshotRef[]
   totalVisible: number
   truncated: boolean
@@ -99,6 +114,10 @@ function optionalString(value: unknown): string | null {
 
 function optionalBoolean(value: unknown): boolean {
   return value === true
+}
+
+function nullableBoolean(value: unknown): boolean | null {
+  return typeof value === 'boolean' ? value : null
 }
 
 export function parseCollectedPage(raw: unknown): CollectedPage {
@@ -143,13 +162,28 @@ export function parseCollectedPage(raw: unknown): CollectedPage {
       formHasCredential: optionalBoolean(el.formHasCredential),
       formHasPayment: optionalBoolean(el.formHasPayment),
       layer: el.layer === 'dialog' || el.layer === 'page' ? el.layer : undefined,
+      checked: nullableBoolean(el.checked),
+      selectedOption: optionalString(el.selectedOption),
+      value: typeof el.value === 'string' ? el.value : null,
+      ariaPressed: optionalString(el.ariaPressed),
+      className: typeof el.className === 'string' ? el.className : '',
     }
   })
+
+  const parsedViewport = viewport as Record<string, unknown>
 
   return {
     url: candidate.url,
     title: candidate.title,
-    viewport: viewport as CollectedViewport,
+    viewport: {
+      width: parsedViewport.width as number,
+      height: parsedViewport.height as number,
+      scrollX: isFiniteNumber(parsedViewport.scrollX) ? parsedViewport.scrollX : 0,
+      scrollY: parsedViewport.scrollY as number,
+      scrollHeight: parsedViewport.scrollHeight as number,
+    },
+    dialogOpen: candidate.dialogOpen === true,
+    textDigest: typeof candidate.textDigest === 'string' ? candidate.textDigest : '',
     elements,
   }
 }
@@ -179,6 +213,8 @@ export function buildPageSnapshot(page: CollectedPage, options?: { maxRefs?: num
     url: page.url,
     title: page.title,
     viewport: page.viewport,
+    dialogOpen: page.dialogOpen ?? false,
+    textDigest: page.textDigest ?? '',
     refs: taken.map((element, index) => ({
       ref: index + 1,
       kind: refKindOf(element),
@@ -193,6 +229,11 @@ export function buildPageSnapshot(page: CollectedPage, options?: { maxRefs?: num
       inForm: element.inForm ?? false,
       formHasCredential: element.formHasCredential ?? false,
       formHasPayment: element.formHasPayment ?? false,
+      checked: element.checked ?? null,
+      selectedOption: element.selectedOption ?? null,
+      value: element.value ?? null,
+      ariaPressed: element.ariaPressed ?? null,
+      className: element.className ?? '',
     })),
     totalVisible: visible.length,
     truncated: visible.length > taken.length,
@@ -207,11 +248,18 @@ export function formatPageSnapshot(snapshot: PageSnapshot): string {
   for (const ref of snapshot.refs) {
     const subtype = ref.kind === 'input' && ref.inputType ? `[${ref.inputType}]` : ''
     const label = ref.label ? ` "${ref.label}"` : ''
-    lines.push(`[${ref.ref}] ${ref.kind}${subtype}${label}`)
+    const state = [
+      ...(typeof ref.checked === 'boolean' ? [`checked=${ref.checked}`] : []),
+      ...(ref.selectedOption ? [`selected=${JSON.stringify(ref.selectedOption)}`] : []),
+      ...(ref.value ? [`value=${JSON.stringify(ref.value)}`] : []),
+      ...(ref.ariaPressed ? [`aria-pressed=${JSON.stringify(ref.ariaPressed)}`] : []),
+    ]
+    lines.push(`[${ref.ref}] ${ref.kind}${subtype}${label}${state.length > 0 ? ` ${state.join(' ')}` : ''}`)
   }
   if (snapshot.truncated) {
     lines.push(`(+${snapshot.totalVisible - snapshot.refs.length} more not listed)`)
   }
+  if (snapshot.textDigest) lines.push('page text:', snapshot.textDigest)
   return lines.join('\n')
 }
 

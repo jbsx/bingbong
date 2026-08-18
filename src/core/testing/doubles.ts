@@ -3,7 +3,7 @@ import type { AssistantTurn, LlmClient, LlmRequest } from '../ports/llm'
 import type { TtsSpeaker } from '../ports/tts'
 import type { Transcriber, VadScorer } from '../ports/stt'
 import type { WakeWordDetector } from '../ports/wake'
-import type { BrowserController, BrowserState, KeyPress, ViewportPoint, VisualGroundingController } from '../ports/browser'
+import type { BrowserController, BrowserState, KeyPress, MediaState, ViewportPoint, VisualGroundingController } from '../ports/browser'
 import type { PageSnapshot, SnapshotRef } from '../browser/snapshot'
 import type { SearchProvider, SearchResult } from '../ports/search'
 
@@ -113,7 +113,9 @@ export class FakeBrowser implements BrowserController, VisualGroundingController
   snapshot: PageSnapshot = {
     url: 'about:blank',
     title: '',
-    viewport: { width: 800, height: 600, scrollY: 0, scrollHeight: 600 },
+    viewport: { width: 800, height: 600, scrollX: 0, scrollY: 0, scrollHeight: 600 },
+    dialogOpen: false,
+    textDigest: '',
     refs: [],
     totalVisible: 0,
     truncated: false,
@@ -122,30 +124,39 @@ export class FakeBrowser implements BrowserController, VisualGroundingController
   screenshotCalls = 0
   pointRef = 1
   readonly refPoints: { x: number; y: number }[] = []
+  media: MediaState | null = { paused: true, currentTime: 0, volume: 1 }
 
-  async navigate(url: string): Promise<void> {
+  async navigate(url: string): Promise<string> {
     this.navigations.push(url)
     this.pageState = { url, title: `Fake page: ${url}` }
+    return `navigated: url=${url} title=${JSON.stringify(this.pageState.title)}`
   }
 
   async readPage(): Promise<string> {
     return `<page>${this.pageState.url ?? 'blank'}</page>`
   }
 
-  async click(ref: number): Promise<void> {
+  async click(ref: number): Promise<string> {
     this.clicks.push(ref)
+    return `clicked [${ref}]: urlChanged=false dialogOpen=false; no observable change`
   }
 
-  async type(ref: number, text: string): Promise<void> {
+  async type(ref: number, text: string): Promise<string> {
     this.typed.push({ ref, text })
+    return `typed [${ref}]: value=${JSON.stringify(text)}`
   }
 
-  async scroll(direction: 'up' | 'down'): Promise<void> {
+  async scroll(direction: 'up' | 'down'): Promise<string> {
     this.scrolls.push(direction)
+    return `scrolled ${direction}: x=0 y=0`
   }
 
   async pressKey(press: KeyPress, times = 1): Promise<void> {
     this.pressedKeys.push({ press, times })
+  }
+
+  async mediaState(): Promise<MediaState | null> {
+    return this.media
   }
 
   async screenshot(): Promise<Uint8Array> {
@@ -153,8 +164,9 @@ export class FakeBrowser implements BrowserController, VisualGroundingController
     return this.screenshotBytes
   }
 
-  async back(): Promise<void> {
+  async back(): Promise<string> {
     this.pageState = { url: null, title: null }
+    return 'went back: url= title=""'
   }
 
   state(): BrowserState {

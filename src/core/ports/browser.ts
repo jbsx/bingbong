@@ -5,6 +5,12 @@ export interface BrowserState {
   title: string | null
 }
 
+export interface MediaState {
+  paused: boolean
+  currentTime: number
+  volume: number
+}
+
 export interface ViewportPoint {
   x: number
   y: number
@@ -21,15 +27,17 @@ export interface KeyPress {
 }
 
 export interface BrowserController {
-  navigate(url: string): Promise<void>
+  navigate(url: string): Promise<string>
   readPage(): Promise<string>
-  click(ref: number): Promise<void>
-  type(ref: number, text: string): Promise<void>
-  scroll(direction: 'up' | 'down'): Promise<void>
+  click(ref: number): Promise<string>
+  type(ref: number, text: string): Promise<string>
+  scroll(direction: 'up' | 'down'): Promise<string>
   screenshot(): Promise<Uint8Array>
-  back(): Promise<void>
+  back(): Promise<string>
   /** Inject a shortcut key (times consecutive presses) on the focused page. */
   pressKey(press: KeyPress, times?: number): Promise<void>
+  /** Read actual state from the page's active media element after controls settle. */
+  mediaState(): Promise<MediaState | null>
   state(): BrowserState
   /** Facts about a snapshot ref for risk assessment; undefined when the ref no longer resolves. */
   describeRef(ref: number): Promise<SnapshotRef | undefined>

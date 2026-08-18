@@ -8,7 +8,7 @@ import {
   type CollectedPage,
   type SnapshotRef,
 } from '../browser/snapshot'
-import type { BrowserController, BrowserState, KeyPress } from '../ports/browser'
+import type { BrowserController, BrowserState, KeyPress, MediaState } from '../ports/browser'
 import { createCommandPipeline, type CommandPipeline } from './createCommandPipeline'
 import { createBrowserTools } from './browserTools'
 import { FakeClock, RecordingTts, ScriptedLlm } from '../testing/doubles'
@@ -37,28 +37,36 @@ class FixtureBrowserController implements BrowserController {
     this.overrides.set(ref.ref, ref)
   }
 
-  async navigate(url: string): Promise<void> {
+  async navigate(url: string): Promise<string> {
     this.navigations.push(url)
+    return 'navigated outcome'
   }
 
   async readPage(): Promise<string> {
     return formatYoutubeSnapshot()
   }
 
-  async click(ref: number): Promise<void> {
+  async click(ref: number): Promise<string> {
     this.clicks.push(ref)
+    return 'click outcome'
   }
 
-  async type(ref: number, text: string): Promise<void> {
+  async type(ref: number, text: string): Promise<string> {
     this.typed.push({ ref, text })
+    return 'type outcome'
   }
 
-  async scroll(direction: 'up' | 'down'): Promise<void> {
+  async scroll(direction: 'up' | 'down'): Promise<string> {
     this.scrolls.push(direction)
+    return 'scroll outcome'
   }
 
   async pressKey(press: KeyPress): Promise<void> {
     this.pressed.push(press)
+  }
+
+  async mediaState(): Promise<MediaState | null> {
+    return { paused: true, currentTime: 0, volume: 1 }
   }
 
   readonly pressed: KeyPress[] = []
@@ -67,8 +75,9 @@ class FixtureBrowserController implements BrowserController {
     return this.screenshotBytes
   }
 
-  async back(): Promise<void> {
+  async back(): Promise<string> {
     this.wentBack += 1
+    return 'back outcome'
   }
 
   state(): BrowserState {
@@ -164,6 +173,43 @@ describe('browser tools through the pipeline', () => {
     expect(browser.typed).toEqual([{ ref: 3, text: 'mechanical keyboards\n' }])
     expect(browser.scrolls).toEqual(['down'])
     expect(browser.wentBack).toBe(1)
+  })
+
+  it('surfaces a non-empty observable outcome for every mutating browser tool', async () => {
+    const browser = new FixtureBrowserController()
+    const { pipeline } = pipelineWith(browser, [
+      {
+        kind: 'tool_calls',
+        calls: [
+          { id: 'c1', name: 'navigate', args: { url: 'youtube.com' } },
+          { id: 'c2', name: 'click', args: { ref: 7 } },
+          { id: 'c3', name: 'type', args: { ref: 3, text: 'query' } },
+          { id: 'c4', name: 'scroll', args: { direction: 'down' } },
+          { id: 'c5', name: 'back', args: {} },
+        ],
+      },
+      { kind: 'answer', speak: 'Done.', display: 'Detail.' },
+    ])
+
+    const events = await collect(pipeline, 'act and report')
+
+    expect(events.filter((event) => event.type === 'tool_result').map((event) => event.result)).toEqual([
+      'navigated outcome',
+      'click outcome',
+      'type outcome',
+      'scroll outcome',
+      'back outcome',
+    ])
+  })
+
+  it('describes the outcomes each browser tool actually returns', () => {
+    const descriptions = Object.fromEntries(createBrowserTools(new FixtureBrowserController()).map((tool) => [tool.name, tool.description]))
+
+    expect(descriptions.read_page).toMatch(/text digest/i)
+    expect(descriptions.click).toMatch(/URL-change.*dialog.*state delta/i)
+    expect(descriptions.type).toMatch(/actual.*value/i)
+    expect(descriptions.scroll).toMatch(/scroll position/i)
+    expect(descriptions.back).toMatch(/URL.*title/i)
   })
 
   it('reports a screenshot as a byte-count summary', async () => {

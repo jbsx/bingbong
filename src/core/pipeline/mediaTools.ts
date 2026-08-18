@@ -34,13 +34,20 @@ function seekOffset(value: unknown): number | null {
   return offset
 }
 
-function seekPresses(offset: number): { press: KeyPress; times: number; seconds: number } {
+function seekPresses(offset: number): { press: KeyPress; times: number } {
   const times = Math.min(Math.ceil(Math.abs(offset) / SEEK_STEP_SECONDS), MAX_SEEK_PRESSES)
   return {
     press: { key: offset > 0 ? 'l' : 'j' },
     times,
-    seconds: times * SEEK_STEP_SECONDS,
   }
+}
+
+async function mediaOutcome(browser: BrowserController): Promise<string> {
+  const state = await browser.mediaState()
+  if (!state) return 'media: no media element found'
+  const currentTime = Number(state.currentTime.toFixed(2))
+  const volume = Math.round(state.volume * 100)
+  return `media: paused=${state.paused} currentTime=${currentTime}s volume=${volume}%`
 }
 
 export function createMediaTools(browser: BrowserController): Tool[] {
@@ -60,7 +67,7 @@ export function createMediaTools(browser: BrowserController): Tool[] {
     {
       name: 'media_control',
       description:
-        'Control media playback on the focused page (YouTube etc.): pause or resume with play_pause, nudge volume, next track, or seek by seconds.',
+        'Control media playback on the focused page (YouTube etc.), then return actual paused, currentTime, and volume state read from the page.',
       parameters,
       execute: async (call) => {
         const action = call.args.action
@@ -73,23 +80,13 @@ export function createMediaTools(browser: BrowserController): Tool[] {
           if (offset === null) {
             throw new Error(`media_control: 'offset' must be a non-zero number of seconds for action 'seek'`)
           }
-          const { press, times, seconds } = seekPresses(offset)
+          const { press, times } = seekPresses(offset)
           await browser.pressKey(press, times)
-          const direction = offset > 0 ? 'forward' : 'backward'
-          return `seeked ${direction} ${seconds}s (${times} presses)`
+          return mediaOutcome(browser)
         }
 
         await browser.pressKey(MEDIA_KEYS[action])
-        switch (action) {
-          case 'play_pause':
-            return 'toggled play/pause'
-          case 'volume_up':
-            return 'volume up (5%)'
-          case 'volume_down':
-            return 'volume down (5%)'
-          case 'next':
-            return 'next track'
-        }
+        return mediaOutcome(browser)
       },
     },
   ]

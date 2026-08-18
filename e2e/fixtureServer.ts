@@ -22,6 +22,8 @@ function interactivePage(): string {
 <body style="background:#222;color:#fff;margin:0;height:3000px">
   <h1>interactive fixture page</h1>
   <button id="btn-hello" onclick="document.title='clicked:btn-hello'">Say hello</button>
+  <button id="btn-noop">Do nothing</button>
+  <button id="btn-dialog" onclick="if(!document.getElementById('opened-dialog')){const replacement=this.cloneNode(true);replacement.setAttribute('aria-pressed','true');this.replaceWith(replacement);const dialog=document.createElement('div');dialog.id='opened-dialog';dialog.setAttribute('role','dialog');dialog.textContent='Opened dialog';dialog.style.cssText='position:fixed;inset:100px;background:#444';document.body.appendChild(dialog)}">Open dialog</button>
   <a id="link-second" href="/second">Second page</a>
   <input id="q" placeholder="Type here" style="font-size:24px;width:320px">
   <textarea id="notes" placeholder="Notes"></textarea>

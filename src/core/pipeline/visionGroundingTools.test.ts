@@ -11,6 +11,8 @@ const snapshot: PageSnapshot = {
   url: 'https://fixture.test/',
   title: 'Fixture',
   viewport: { width: 800, height: 600, scrollY: 0, scrollHeight: 600 },
+  dialogOpen: false,
+  textDigest: '',
   refs: [
     {
       ref: 1,

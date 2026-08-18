@@ -43,13 +43,14 @@ describe('media_control tool', () => {
 
   it('seek presses l/j once per full 10-second step, rounded up', async () => {
     const browser = new FakeBrowser()
+    browser.media = { paused: false, currentTime: 42.25, volume: 0.65 }
 
     const events = await run(browser, [{ id: 'm1', args: { action: 'seek', offset: 30 } }])
 
     expect(browser.pressedKeys).toEqual([{ press: { key: 'l' }, times: 3 }])
     expect(events.find((e) => e.type === 'tool_result')).toMatchObject({
       ok: true,
-      result: 'seeked forward 30s (3 presses)',
+      result: 'media: paused=false currentTime=42.25s volume=65%',
     })
   })
 
@@ -122,8 +123,9 @@ describe('media_control tool', () => {
     expect(events.find((e) => e.type === 'tool_result')).toMatchObject({ ok: true })
   })
 
-  it('summarizes simple actions for the model', async () => {
+  it('reports actual page media state instead of canned action claims', async () => {
     const browser = new FakeBrowser()
+    browser.media = { paused: true, currentTime: 12.5, volume: 0.4 }
 
     const events = await run(browser, [
       { id: 'm1', args: { action: 'play_pause' } },
@@ -134,7 +136,23 @@ describe('media_control tool', () => {
     const results = events
       .filter((e) => e.type === 'tool_result')
       .map((e) => (e as { result?: unknown }).result)
-    expect(results).toEqual(['toggled play/pause', 'volume up (5%)', 'next track'])
+    expect(results).toEqual([
+      'media: paused=true currentTime=12.5s volume=40%',
+      'media: paused=true currentTime=12.5s volume=40%',
+      'media: paused=true currentTime=12.5s volume=40%',
+    ])
+  })
+
+  it('honestly reports when the page has no media element', async () => {
+    const browser = new FakeBrowser()
+    browser.media = null
+
+    const events = await run(browser, [{ id: 'm1', args: { action: 'play_pause' } }])
+
+    expect(events.find((e) => e.type === 'tool_result')).toMatchObject({
+      ok: true,
+      result: 'media: no media element found',
+    })
   })
 })
 

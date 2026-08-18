@@ -104,27 +104,43 @@ export const COLLECT_PAGE_SCRIPT = `(() => {
   // fold inside the dialog's own scroller — the click path scrolls them into
   // view — so the model can target them without a scroll dance.
   const DIALOG_SELECTOR = 'dialog[open], tp-yt-paper-dialog, [role="dialog"], [role="alertdialog"], [aria-modal="true"]'
-  const dialogs = document.querySelectorAll(DIALOG_SELECTOR)
-  const dialogRoot = dialogs.length > 0 ? dialogs[dialogs.length - 1] : null
-  const inDialog = (el) => dialogRoot !== null && dialogRoot.contains(el)
-
-  const dialogElements = []
-  const pageElements = []
-  for (const el of document.querySelectorAll(SELECTOR)) {
-    if (el.tagName === 'INPUT' && el.type === 'hidden') continue
-    if (inDialog(el)) {
-      if (!hasSize(el)) continue
-      dialogElements.push(el)
-    } else {
-      if (!rectVisible(el)) continue
-      pageElements.push(el)
+  const currentDialogRoot = () => {
+    const dialogs = Array.from(document.querySelectorAll(DIALOG_SELECTOR)).filter((dialog) => {
+      const style = window.getComputedStyle(dialog)
+      return dialog.getAttribute('aria-hidden') !== 'true' && style.display !== 'none' && style.visibility !== 'hidden' && hasSize(dialog)
+    })
+    return dialogs.length > 0 ? dialogs[dialogs.length - 1] : null
+  }
+  const collectElements = (dialogRoot) => {
+    const dialogElements = []
+    const pageElements = []
+    for (const el of document.querySelectorAll(SELECTOR)) {
+      if (el.tagName === 'INPUT' && el.type === 'hidden') continue
+      if (dialogRoot !== null && dialogRoot.contains(el)) {
+        if (!hasSize(el)) continue
+        dialogElements.push(el)
+      } else {
+        if (!rectVisible(el)) continue
+        pageElements.push(el)
+      }
+    }
+    return dialogElements.concat(pageElements).slice(0, 400)
+  }
+  const textOf = (el) => (el.innerText || el.textContent || '').replace(/\\s+/g, ' ').trim()
+  const heading = document.querySelector('h1, [role="heading"][aria-level="1"]')
+  const textRoot = document.querySelector('main, article') || document.body
+  const digestParts = []
+  const headingText = heading ? textOf(heading) : ''
+  if (headingText) digestParts.push(headingText)
+  if (textRoot) {
+    for (const block of textRoot.querySelectorAll('p, li, h2, h3')) {
+      const text = textOf(block)
+      if (text && text !== headingText && !digestParts.includes(text)) digestParts.push(text)
     }
   }
-  // Dialog controls come first so they survive the collection cap; the order
-  // here is exactly what the controller's element registry is keyed by.
-  const collected = dialogElements.concat(pageElements).slice(0, 400)
-  window.__bingbongRefs = collected
-  const describeElement = (el) => {
+  const textDigest = digestParts.join('\\n').slice(0, 1800)
+
+  const describeElement = (el, dialogRoot) => {
     const rect = el.getBoundingClientRect()
     const form = formOf(el)
     const formFlags = formFlagsOf(form)
@@ -142,23 +158,59 @@ export const COLLECT_PAGE_SCRIPT = `(() => {
       inForm: formFlags.inForm,
       formHasCredential: formFlags.formHasCredential,
       formHasPayment: formFlags.formHasPayment,
-      layer: inDialog(el) ? 'dialog' : 'page'
+      layer: dialogRoot !== null && dialogRoot.contains(el) ? 'dialog' : 'page',
+      checked: typeof el.checked === 'boolean' ? el.checked : null,
+      selectedOption: el.tagName === 'SELECT' && el.selectedOptions.length > 0
+        ? textOf(el.selectedOptions[0]).slice(0, 160)
+        : null,
+      value: typeof el.value === 'string' && !(el.tagName === 'INPUT' && el.type === 'password')
+        ? el.value.slice(0, 160)
+        : (el.isContentEditable ? textOf(el).slice(0, 160) : null),
+      ariaPressed: el.getAttribute('aria-pressed'),
+      className: typeof el.className === 'string' ? el.className.slice(0, 160) : ''
     }
   }
-  window.__bingbongDescribeElement = describeElement
-  const elements = collected.map(describeElement)
+  window.__bingbongDescribeElement = (el) => describeElement(el, currentDialogRoot())
+  window.__bingbongPageProbe = (targetIndex, targetLabel) => {
+    const dialogRoot = currentDialogRoot()
+    const refs = collectElements(dialogRoot).slice(0, 75)
+    const truncateLabel = (label) => label.length <= 80 ? label : label.slice(0, 79) + '…'
+    const labels = refs.map((ref) => truncateLabel(labelOf(ref)))
+    const target = labels[targetIndex] === targetLabel ? refs[targetIndex] : null
+    return {
+      target: target ? describeElement(target, dialogRoot) : null,
+      signature: {
+        url: location.href,
+        title: document.title,
+        scrollX: window.scrollX,
+        scrollY: window.scrollY,
+        refCount: refs.length,
+        labels,
+        dialogOpen: dialogRoot !== null
+      }
+    }
+  }
+  const dialogRoot = currentDialogRoot()
+  // Dialog controls come first so they survive the collection cap; the order
+  // here is exactly what the controller's element registry is keyed by.
+  const collected = collectElements(dialogRoot)
+  window.__bingbongRefs = collected
+  const elements = collected.map((el) => describeElement(el, dialogRoot))
   return {
     url: location.href,
     title: document.title,
     viewport: {
       width: vw,
       height: vh,
+      scrollX: window.scrollX,
       scrollY: window.scrollY,
       scrollHeight: Math.max(
         document.documentElement.scrollHeight,
         document.body ? document.body.scrollHeight : 0
       )
     },
+    dialogOpen: dialogRoot !== null,
+    textDigest,
     elements
   }
 })()`

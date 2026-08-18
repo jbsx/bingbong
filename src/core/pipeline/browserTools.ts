@@ -59,12 +59,12 @@ export function createBrowserTools(browser: BrowserController): Tool[] {
     {
       name: 'read_page',
       description:
-        'Return a numbered-ref snapshot of the visible interactive elements (links, buttons, inputs, media) plus the page URL and title. Use refs like [7] with click/type.',
+        'Return the page URL, title, scroll state, numbered interactive refs, and a capped text digest. Use refs like [7] with click/type.',
       execute: () => browser.readPage(),
     },
     {
       name: 'click',
-      description: 'Click an element identified by its ref number from the most recent read_page snapshot.',
+      description: 'Click a ref, then return the URL-change flag, dialog-open flag, clicked state delta, and any coarse page change (including no observable change).',
       parameters: {
         ref: { type: 'integer', description: 'Element ref number from the snapshot, e.g. 7 for the element shown as [7]' },
       },
@@ -74,7 +74,7 @@ export function createBrowserTools(browser: BrowserController): Tool[] {
     {
       name: 'type',
       description:
-        'Click an element and type text into it. A trailing newline ("\\n") sends Enter — use it to submit search boxes.',
+        'Click a ref and type text, then return the field actual current value. A trailing newline ("\\n") sends Enter and may navigate.',
       parameters: {
         ref: { type: 'integer', description: 'Element ref number to type into' },
         text: { type: 'string', description: 'Text to type' },
@@ -84,7 +84,7 @@ export function createBrowserTools(browser: BrowserController): Tool[] {
     },
     {
       name: 'scroll',
-      description: 'Scroll the page up or down by about one screen, then report the new snapshot.',
+      description: 'Scroll the page up or down by about one screen, then return the new horizontal and vertical scroll position.',
       parameters: {
         direction: { type: 'string', enum: ['up', 'down'], description: 'Direction to scroll' },
       },
@@ -100,7 +100,7 @@ export function createBrowserTools(browser: BrowserController): Tool[] {
     },
     {
       name: 'back',
-      description: 'Go back one step in browser history.',
+      description: 'Go back one step in browser history, then return the new URL and page title.',
       execute: () => browser.back(),
     },
   ]

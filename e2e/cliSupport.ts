@@ -14,5 +14,5 @@ export function refOf(line: string): number {
 
 /** Matches a snapshot line like `[3] input[search] "Search"`. */
 export function refLine(kind: string, label: string): RegExp {
-  return new RegExp(`^\\[(\\d+)\\] ${kind}${label ? ` "${label}"` : ''}$`)
+  return new RegExp(`^\\[(\\d+)\\] ${kind}${label ? ` "${label}"` : ''}(?: .*)?$`)
 }

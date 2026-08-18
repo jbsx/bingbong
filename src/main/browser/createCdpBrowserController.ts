@@ -1,4 +1,4 @@
-import type { BrowserController, BrowserState, KeyPress, ViewportPoint, VisualGroundingController } from '../../core/ports/browser'
+import type { BrowserController, BrowserState, KeyPress, MediaState, ViewportPoint, VisualGroundingController } from '../../core/ports/browser'
 import { normalizeUrlInput } from '../../core/browser/urlInput'
 import {
   buildPageSnapshot,
@@ -63,6 +63,29 @@ interface ClickPrep {
   x?: number
   y?: number
   clickable?: boolean
+}
+
+interface ElementState {
+  checked: boolean | null
+  selectedOption: string | null
+  value: string | null
+  ariaPressed: string | null
+  className: string
+}
+
+interface PageSignature {
+  url: string
+  title: string
+  scrollX: number
+  scrollY: number
+  refCount: number
+  labels: string[]
+  dialogOpen: boolean
+}
+
+interface ActionProbe {
+  target: ElementState | null
+  signature: PageSignature
 }
 
 interface PointRefResult {
@@ -178,7 +201,96 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
   // entirely on short viewports, so they never appear in a snapshot.
   const SCROLL_STEP_PX = 120
 
-  async function scroll(direction: 'up' | 'down'): Promise<void> {
+  function elementState(target: SnapshotRef): ElementState {
+    return {
+      checked: target.checked ?? null,
+      selectedOption: target.selectedOption ?? null,
+      value: target.value ?? null,
+      ariaPressed: target.ariaPressed ?? null,
+      className: target.className ?? '',
+    }
+  }
+
+  function signatureOf(snapshot: PageSnapshot): PageSignature {
+    return {
+      url: snapshot.url,
+      title: snapshot.title,
+      scrollX: snapshot.viewport.scrollX ?? 0,
+      scrollY: snapshot.viewport.scrollY,
+      refCount: snapshot.refs.length,
+      labels: snapshot.refs.map((ref) => ref.label),
+      dialogOpen: snapshot.dialogOpen,
+    }
+  }
+
+  async function probeAction(index: number, expectedLabel = ''): Promise<ActionProbe> {
+    return evaluateInPage<ActionProbe>(`(() => {
+      /* ACTION_OUTCOME */
+      const index = ${index}
+      const expectedLabel = ${JSON.stringify(expectedLabel)}
+      const refs = window.__bingbongRefs || []
+      const el = refs[index]
+      const describe = window.__bingbongDescribeElement
+      const described = el && el.isConnected && typeof describe === 'function' ? describe(el) : null
+      const fresh = typeof window.__bingbongPageProbe === 'function'
+        ? window.__bingbongPageProbe(index, expectedLabel)
+        : null
+      const targetDescription = described || fresh?.target
+      const target = targetDescription ? {
+        checked: targetDescription.checked,
+        selectedOption: targetDescription.selectedOption,
+        value: targetDescription.value,
+        ariaPressed: targetDescription.ariaPressed,
+        className: targetDescription.className
+      } : null
+      const signature = fresh
+        ? fresh.signature
+        : {
+            url: location.href,
+            title: document.title,
+            scrollX: window.scrollX,
+            scrollY: window.scrollY,
+            refCount: Math.min(refs.length, 75),
+            labels: [],
+            dialogOpen: false
+          }
+      return {
+        target,
+        signature
+      }
+    })()`)
+  }
+
+  function signaturesEqual(before: PageSignature, after: PageSignature): boolean {
+    return before.url === after.url &&
+      before.title === after.title &&
+      before.scrollX === after.scrollX &&
+      before.scrollY === after.scrollY &&
+      before.refCount === after.refCount &&
+      before.dialogOpen === after.dialogOpen &&
+      before.labels.length === after.labels.length &&
+      before.labels.every((label, index) => label === after.labels[index])
+  }
+
+  function stateDeltas(before: ElementState, after: ElementState | null): string[] {
+    if (!after) return []
+    const fields: { key: keyof ElementState; label: string }[] = [
+      { key: 'checked', label: 'checked' },
+      { key: 'selectedOption', label: 'selected' },
+      { key: 'value', label: 'value' },
+      { key: 'ariaPressed', label: 'aria-pressed' },
+      { key: 'className', label: 'class' },
+    ]
+    return fields.flatMap(({ key, label }) => before[key] === after[key]
+      ? []
+      : [`${label}=${JSON.stringify(before[key])} -> ${JSON.stringify(after[key])}`])
+  }
+
+  function truncateOutcomeText(text: string, maxLength: number): string {
+    return text.length <= maxLength ? text : `${text.slice(0, maxLength - 1)}…`
+  }
+
+  async function scroll(direction: 'up' | 'down'): Promise<string> {
     const { viewport } = await currentSnapshot()
     const deltaY = direction === 'down' ? SCROLL_STEP_PX : -SCROLL_STEP_PX
     const x = Math.floor(viewport.width / 2)
@@ -189,14 +301,17 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
     }
     // Viewport-relative rects shift with the scroll; refs must be re-read.
     lastSnapshot = undefined
+    const { signature } = await probeAction(-1)
+    return `scrolled ${direction}: x=${signature.scrollX} y=${signature.scrollY}`
   }
 
-  async function navigate(input: string): Promise<void> {
+  async function navigate(input: string): Promise<string> {
     const url = normalizeUrlInput(input)
     if (!url) throw new Error(`cannot navigate to: "${input}"`)
     await page.loadUrl(url)
     lastSnapshot = undefined
     await sleep(pacing.settleMs)
+    return `navigated: url=${page.url()} title=${JSON.stringify(page.title())}`
   }
 
   async function screenshot(): Promise<Uint8Array> {
@@ -204,10 +319,11 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
     return new Uint8Array(Buffer.from(response.data, 'base64'))
   }
 
-  async function back(): Promise<void> {
+  async function back(): Promise<string> {
     await page.goBack()
     lastSnapshot = undefined
     await sleep(pacing.settleMs)
+    return `went back: url=${page.url()} title=${JSON.stringify(page.title())}`
   }
 
   async function readPage(): Promise<string> {
@@ -227,8 +343,8 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
     return { snapshot, target }
   }
 
-  async function dispatchClick(ref: number): Promise<void> {
-    const { target } = await resolveRef(ref)
+  async function performClick(ref: number): Promise<{ index: number; label: string; before: ElementState; signature: PageSignature }> {
+    let { snapshot, target } = await resolveRef(ref)
     const visualPoint = visualPoints.get(ref)
     if (visualPoint) {
       const index = target.ref - 1
@@ -242,7 +358,7 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
       await dispatchPointClick(visualPoint)
       visualPoints.delete(ref)
       lastSnapshot = undefined
-      return
+      return { index, label: target.label, before: elementState(target), signature: signatureOf(snapshot) }
     }
     let index = target.ref - 1
     let prep = await prepClick(index)
@@ -253,6 +369,8 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
       if (!freshTarget) {
         throw new Error(`ref ${ref} not found — the page may have changed, run read_page to refresh refs`)
       }
+      snapshot = fresh
+      target = freshTarget
       index = freshTarget.ref - 1
       prep = await prepClick(index)
       if (!prep.ok) {
@@ -265,10 +383,32 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
     } else {
       // Coordinates can't reach the element (overlay on top, clipped away):
       // activate it directly, Vimium-style, so nothing can swallow the click.
-      await evaluateInPage(`(window.__bingbongRefs || [])[${index}].click()`)
+      await evaluateInPage(`(() => {
+        const el = (window.__bingbongRefs || [])[${index}]
+        if (typeof el.focus === 'function') el.focus()
+        el.click()
+      })()`)
     }
     // A click can navigate (link) or mutate the page; never trust old refs.
     lastSnapshot = undefined
+    return { index, label: target.label, before: elementState(target), signature: signatureOf(snapshot) }
+  }
+
+  async function click(ref: number): Promise<string> {
+    const before = await performClick(ref)
+    await sleep(pacing.settleMs)
+    const after = await probeAction(before.index, before.label)
+    const urlChanged = before.signature.url !== after.signature.url
+    if (urlChanged) after.signature = signatureOf(await collectSnapshot())
+    const deltas = stateDeltas(before.before, after.target)
+    const pageChanged = !signaturesEqual(before.signature, after.signature)
+    const rawChanges = deltas.length > 0 ? deltas.join(', ') : pageChanged ? 'page signature changed' : 'no observable change'
+    const location = urlChanged
+      ? `; url=${truncateOutcomeText(after.signature.url, 100)} title=${JSON.stringify(truncateOutcomeText(after.signature.title, 50))}`
+      : ''
+    const prefix = `clicked [${ref}]: urlChanged=${urlChanged} dialogOpen=${after.signature.dialogOpen}; `
+    const changes = truncateOutcomeText(rawChanges, Math.min(240, Math.max(30, 300 - prefix.length - location.length)))
+    return `${prefix}${changes}${location}`
   }
 
   async function dispatchPointClick(point: ViewportPoint): Promise<void> {
@@ -317,8 +457,8 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
     })()`)
   }
 
-  async function type(ref: number, text: string): Promise<void> {
-    await dispatchClick(ref)
+  async function type(ref: number, text: string): Promise<string> {
+    const clicked = await performClick(ref)
     await sleep(pacing.settleMs)
     for (const ch of text) {
       const key = keyEventFor(ch)
@@ -337,6 +477,13 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
       })
       await sleep(pacing.keystrokeMs)
     }
+    await sleep(pacing.settleMs)
+    const after = await probeAction(clicked.index, clicked.label)
+    if (!after.target) {
+      return `typed [${ref}]: field unavailable after page change; url=${after.signature.url} title=${JSON.stringify(after.signature.title)}`
+    }
+    const value = after.target.value ?? after.target.selectedOption ?? ''
+    return `typed [${ref}]: value=${JSON.stringify(value)}`
   }
 
   async function dispatchShortcut(key: { key: string; code: string; keyCode: number; modifiers?: number }): Promise<void> {
@@ -363,6 +510,17 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
       await dispatchShortcut(event)
       if (i < times - 1) await sleep(pacing.keystrokeMs)
     }
+  }
+
+  async function mediaState(): Promise<MediaState | null> {
+    await sleep(pacing.settleMs)
+    return evaluateInPage<MediaState | null>(`(() => {
+      /* MEDIA_STATE */
+      const media = Array.from(document.querySelectorAll('video, audio'))
+      const active = media.find((el) => !el.paused) || media[0]
+      if (!active) return null
+      return { paused: active.paused, currentTime: active.currentTime, volume: active.volume }
+    })()`)
   }
 
   async function describeRef(ref: number): Promise<SnapshotRef | undefined> {
@@ -430,12 +588,13 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
   return {
     navigate,
     readPage,
-    click: dispatchClick,
+    click,
     type,
     scroll,
     screenshot,
     back,
     pressKey,
+    mediaState,
     state,
     describeRef,
     groundingSnapshot,

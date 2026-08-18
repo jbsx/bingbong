@@ -15,6 +15,9 @@ class FakeCdp implements CdpDebugger {
   prepCovered = false
   /** When set, the next click-prep reports a stale registry once (re-collect path). */
   prepStaleOnce = false
+  actionProbe: unknown = undefined
+  mediaProbe: unknown = { paused: true, currentTime: 12.5, volume: 0.4 }
+  collectValues: unknown[] = []
 
   constructor(private evaluateValue: unknown = youtubeFixture) {}
 
@@ -23,6 +26,40 @@ class FakeCdp implements CdpDebugger {
     if (method === 'Runtime.evaluate') {
       if (this.evaluateException) return { exceptionDetails: { text: this.evaluateException } } as T
       const expression = typeof params?.expression === 'string' ? params.expression : ''
+      if (expression === COLLECT_EXPRESSION && this.collectValues.length > 0) {
+        return { result: { value: this.collectValues.shift() } } as T
+      }
+      if (expression.includes('/* ACTION_OUTCOME */')) {
+        if (this.actionProbe !== undefined) return { result: { value: this.actionProbe } } as T
+        const snapshot = buildPageSnapshot(this.evaluateValue as CollectedPage)
+        const index = Number(/const index = (\d+)/.exec(expression)?.[1] ?? -1)
+        const target = snapshot.refs[index]
+        return {
+          result: {
+            value: {
+              target: target
+                ? {
+                    checked: target.checked ?? null,
+                    selectedOption: target.selectedOption ?? null,
+                    value: target.value ?? null,
+                    ariaPressed: target.ariaPressed ?? null,
+                    className: target.className ?? '',
+                  }
+                : null,
+              signature: {
+                url: snapshot.url,
+                title: snapshot.title,
+                scrollX: snapshot.viewport.scrollX ?? 0,
+                scrollY: snapshot.viewport.scrollY,
+                refCount: snapshot.refs.length,
+                labels: snapshot.refs.map((ref) => ref.label),
+                dialogOpen: snapshot.dialogOpen,
+              },
+            },
+          },
+        } as T
+      }
+      if (expression.includes('/* MEDIA_STATE */')) return { result: { value: this.mediaProbe } } as T
       if (expression.includes('const hit = document.elementFromPoint')) {
         return {
           result: {
@@ -222,6 +259,108 @@ describe('createCdpBrowserController visual point mapping', () => {
 })
 
 describe('createCdpBrowserController click', () => {
+  it('reports flags and no observable change when the click changes nothing', async () => {
+    const { controller } = makeController()
+
+    const outcome = await controller.click(3)
+
+    expect(outcome).toBe('clicked [3]: urlChanged=false dialogOpen=false; no observable change')
+  })
+
+  it('reports clicked-element state deltas and coarse page changes', async () => {
+    const changed = {
+      ...youtubeFixture,
+      elements: [
+        {
+          tag: 'button',
+          role: 'button',
+          inputType: null,
+          label: 'Toggle captions',
+          rect: { x: 10, y: 10, width: 100, height: 40 },
+          ariaPressed: 'false',
+          className: 'toggle off',
+        },
+      ],
+    }
+    const cdp = new FakeCdp(changed)
+    cdp.collectValues = [
+      changed,
+      {
+        ...changed,
+        url: 'https://www.youtube.com/watch?v=abc',
+        title: 'Playing video',
+        dialogOpen: true,
+      },
+    ]
+    cdp.actionProbe = {
+      target: {
+        checked: null,
+        selectedOption: null,
+        value: null,
+        ariaPressed: 'true',
+        className: 'toggle on',
+      },
+      signature: {
+        url: 'https://www.youtube.com/watch?v=abc',
+        title: 'Playing video',
+        scrollX: 0,
+        scrollY: 0,
+        refCount: 1,
+        labels: ['Toggle captions'],
+        dialogOpen: true,
+      },
+    }
+    const { controller } = makeController({ cdp })
+
+    const outcome = await controller.click(1)
+
+    expect(outcome).toBe(
+      'clicked [1]: urlChanged=true dialogOpen=true; aria-pressed="false" -> "true", class="toggle off" -> "toggle on"; url=https://www.youtube.com/watch?v=abc title="Playing video"',
+    )
+  })
+
+  it('caps verbose clicked-element deltas', async () => {
+    const changed = {
+      ...youtubeFixture,
+      elements: [
+        {
+          tag: 'button',
+          role: 'button',
+          inputType: null,
+          label: 'Verbose toggle',
+          rect: { x: 10, y: 10, width: 100, height: 40 },
+          value: 'a'.repeat(160),
+          className: 'before '.repeat(20),
+        },
+      ],
+    }
+    const cdp = new FakeCdp(changed)
+    cdp.actionProbe = {
+      target: {
+        checked: null,
+        selectedOption: null,
+        value: 'b'.repeat(160),
+        ariaPressed: null,
+        className: 'after '.repeat(20),
+      },
+      signature: {
+        url: changed.url,
+        title: changed.title,
+        scrollX: 0,
+        scrollY: 0,
+        refCount: 1,
+        labels: ['Verbose toggle'],
+        dialogOpen: false,
+      },
+    }
+    const { controller } = makeController({ cdp })
+
+    const outcome = await controller.click(1)
+
+    expect(outcome.length).toBeLessThanOrEqual(320)
+    expect(outcome).toMatch(/…$/)
+  })
+
   it('dispatches paced mouse move/press/release at the ref center', async () => {
     const { cdp, controller } = makeController()
     await controller.readPage()
@@ -304,6 +443,7 @@ describe('createCdpBrowserController click', () => {
       (call) => call.method === 'Runtime.evaluate' && typeof call.params?.expression === 'string' && call.params.expression.includes('.click()'),
     )
     expect(domClick?.params?.expression).toContain('__bingbongRefs')
+    expect(domClick?.params?.expression).toContain('.focus()')
   })
 
   it('re-collects once when the element registry went stale, then clicks', async () => {
@@ -319,9 +459,61 @@ describe('createCdpBrowserController click', () => {
     expect(cdp.collectCalls()).toHaveLength(2)
     expect(cdp.inputCalls()[0]?.params).toMatchObject({ type: 'mouseMoved', x: 654, y: 32 })
   })
+
+  it('uses the refreshed page as click before-state when the registry went stale', async () => {
+    const stale = { ...youtubeFixture, url: 'https://stale.example/' }
+    const fresh = { ...youtubeFixture, url: 'https://fresh.example/' }
+    const cdp = new FakeCdp(fresh)
+    cdp.collectValues = [stale, fresh]
+    cdp.prepStaleOnce = true
+    cdp.actionProbe = {
+      target: {
+        checked: null,
+        selectedOption: null,
+        value: null,
+        ariaPressed: null,
+        className: '',
+      },
+      signature: {
+        url: fresh.url,
+        title: fresh.title,
+        scrollX: 0,
+        scrollY: 0,
+        refCount: 20,
+        labels: buildPageSnapshot(fresh).refs.map((candidate) => candidate.label),
+        dialogOpen: false,
+      },
+    }
+    const { controller } = makeController({ cdp })
+
+    const outcome = await controller.click(3)
+
+    expect(outcome).toBe('clicked [3]: urlChanged=false dialogOpen=false; no observable change')
+  })
 })
 
 describe('createCdpBrowserController type', () => {
+  it('reads back the field actual value after typing', async () => {
+    const cdp = new FakeCdp()
+    cdp.actionProbe = {
+      target: { checked: null, selectedOption: null, value: 'hello', ariaPressed: null, className: '' },
+      signature: {
+        url: youtubeFixture.url,
+        title: youtubeFixture.title,
+        scrollX: 0,
+        scrollY: 0,
+        refCount: 20,
+        labels: buildPageSnapshot(youtubeFixture).refs.map((ref) => ref.label),
+        dialogOpen: false,
+      },
+    }
+    const { controller } = makeController({ cdp })
+
+    const outcome = await controller.type(3, 'hello')
+
+    expect(outcome).toBe('typed [3]: value="hello"')
+  })
+
   it('focuses the ref with a click, then sends keyDown/keyUp per character', async () => {
     const { cdp, controller } = makeController()
 
@@ -399,6 +591,27 @@ describe('createCdpBrowserController ref staleness', () => {
 })
 
 describe('createCdpBrowserController scroll', () => {
+  it('reports the new horizontal and vertical scroll position', async () => {
+    const cdp = new FakeCdp()
+    cdp.actionProbe = {
+      target: null,
+      signature: {
+        url: youtubeFixture.url,
+        title: youtubeFixture.title,
+        scrollX: 12,
+        scrollY: 360,
+        refCount: 20,
+        labels: buildPageSnapshot(youtubeFixture).refs.map((ref) => ref.label),
+        dialogOpen: false,
+      },
+    }
+    const { controller } = makeController({ cdp })
+
+    const outcome = await controller.scroll('down')
+
+    expect(outcome).toBe('scrolled down: x=12 y=360')
+  })
+
   it('sends paced wheel ticks downward from the viewport center', async () => {
     const { cdp, controller } = makeController()
     await controller.readPage()
@@ -496,7 +709,24 @@ describe('createCdpBrowserController pressKey', () => {
   })
 })
 
+describe('createCdpBrowserController mediaState', () => {
+  it('reports actual playback state from the page after controls settle', async () => {
+    const { controller } = makeController()
+
+    expect(await controller.mediaState()).toEqual({ paused: true, currentTime: 12.5, volume: 0.4 })
+  })
+})
+
 describe('createCdpBrowserController navigate and back', () => {
+  it('reports the current URL and title after navigation and history changes', async () => {
+    const { controller } = makeController()
+
+    expect(await controller.navigate('youtube.com')).toBe(
+      'navigated: url=https://www.youtube.com/ title="YouTube"',
+    )
+    expect(await controller.back()).toBe('went back: url=https://www.youtube.com/ title="YouTube"')
+  })
+
   it('normalizes input, loads the url, and invalidates the ref mapping', async () => {
     const { cdp, page, controller } = makeController()
     await controller.readPage()
