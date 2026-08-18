@@ -2,8 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import type { PipelineEvent, PipelineStatus, SubagentCard } from '../../core/pipeline/events'
 import type { VoiceHeardEvent } from '../../core/voice/ipcChannels'
 import { describeHeard } from '../../core/voice/heardDisplay'
-import type { RecordedEntry, TranscriptEvent } from '../../core/history/historyStore'
-import { filterHydratedDuplicates } from '../../core/history/mergeHistory'
+import type { TranscriptEvent } from '../../core/history/historyStore'
 import { projectPipelineEvent } from '../../core/history/transcriptProjection'
 
 export type OrbStatus = 'idle' | 'listening' | PipelineStatus
@@ -47,14 +46,6 @@ export interface Assistant {
 /** Cards kept in history after their tab closes — bounded for long sessions. */
 const MAX_AGENT_CARDS = 20
 
-/**
- * Hydrated history gets negative ids so persisted and live entries can never
- * collide (live ids count up from zero; the DB's own ids are irrelevant here).
- */
-function hydrateEntry(recorded: RecordedEntry, index: number): TranscriptEntry {
-  return { id: -(index + 1), kind: recorded.kind, text: recorded.text, at: recorded.at }
-}
-
 export function useAssistant(): Assistant {
   const [status, setStatus] = useState<OrbStatus>('idle')
   const [entries, setEntries] = useState<TranscriptEntry[]>([])
@@ -66,22 +57,6 @@ export function useAssistant(): Assistant {
 
   const append = useCallback((entry: TranscriptEvent) => {
     setEntries((current) => [...current, { ...entry, id: nextId.current++ }])
-  }, [])
-
-  useEffect(() => {
-    // Restart hydration (spec: transcript persists): the seeded history lands
-    // below anything live that arrived while the fetch was in flight.
-    let cancelled = false
-    void window.bingbong.history.recentEntries().then((recorded) => {
-      if (cancelled || recorded.length === 0) return
-      setEntries((current) => [
-        ...recorded.map(hydrateEntry),
-        ...filterHydratedDuplicates(recorded, current),
-      ])
-    })
-    return () => {
-      cancelled = true
-    }
   }, [])
 
   useEffect(() => {

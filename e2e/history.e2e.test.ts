@@ -9,9 +9,8 @@ import { waitFor } from './waitFor'
 import type { AssistantTurn } from '../src/core/ports/llm'
 
 // Spec #1, Persistence: transcript and agent-run history live in SQLite under
-// userData and survive restarts. Run 1 executes a command; run 2 relaunches on
-// the same profile and must hydrate the previous transcript before anything
-// new happens — the idle screen's "recent transcript" is this history.
+// userData and survive restarts. The dashboard itself boots stateless — no
+// transcript hydration — but the persisted run history remains queryable.
 
 function scriptedTurns(fixtureUrl: string): AssistantTurn[] {
   return [
@@ -38,7 +37,7 @@ describe('history persistence e2e', () => {
     if (userDataDir) await rm(userDataDir, { recursive: true, force: true })
   })
 
-  it('hydrates the transcript and run history after a graceful relaunch', async () => {
+  it('persists run history across a relaunch while the transcript boots empty', async () => {
     const env = { BINGBONG_LLM_SCRIPT: JSON.stringify(scriptedTurns(fixture.url('/'))) }
 
     const first = await startHarness({ fixture, userDataDir, env })
@@ -63,29 +62,23 @@ describe('history persistence e2e', () => {
 
     const second = await startHarness({ fixture, userDataDir, env })
     try {
-      // Hydration lands before any new interaction: the previous run's
-      // command, tool and answer lines are already in the transcript.
-      const hydrated = await waitFor(
-        async () => {
-          const transcript = await second.dashboardEval<string>(
-            `Array.from(document.querySelectorAll('.transcript-entry')).map((el) => el.textContent).join('\\n')`,
-          )
-          return transcript.includes('open the fixture page')
-            && transcript.includes('→ ' + fixture.url('/'))
-            && transcript.includes('Opened the fixture page.')
-            ? transcript
-            : undefined
-        },
+      // Stateless boot: the previous run's transcript is NOT rehydrated.
+      await waitFor(
+        () => second.dashboardEval<boolean>(`!!document.querySelector('.status-orb--idle')`),
         { timeoutMs: 20000, intervalMs: 250 },
       )
-      expect(hydrated).toContain('Navigated to the fixture page.')
+      const transcript = await second.dashboardEval<string>(
+        `Array.from(document.querySelectorAll('.transcript-entry')).map((el) => el.textContent).join('\\n')`,
+      )
+      expect(transcript).not.toContain('open the fixture page')
 
+      // …but the run history survived the relaunch.
       const runs = await second.dashboardEval<Array<{ command: string; outcome: string }>>(
         `window.bingbong.history.recentRuns()`,
       )
       expect(runs.at(-1)).toMatchObject({ command: 'open the fixture page', outcome: 'done' })
 
-      // History sits below new live output: a fresh run appends after it.
+      // A fresh run starts a clean transcript.
       const submittedAgain = await second.dashboardEval<string>(commandBoxScript('open it again'))
       expect(submittedAgain).toBe('submitted')
       await waitFor(
@@ -95,7 +88,7 @@ describe('history persistence e2e', () => {
       const lines = await second.dashboardEval<string[]>(
         `Array.from(document.querySelectorAll('.transcript-entry--command')).map((el) => el.textContent)`,
       )
-      expect(lines).toEqual(['you open the fixture page', 'you open it again'])
+      expect(lines).toEqual(['you open it again'])
     } finally {
       await second.quit()
     }
