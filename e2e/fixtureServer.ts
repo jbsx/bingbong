@@ -2,8 +2,56 @@ import { createServer, type Server } from 'node:http'
 
 export const DOWNLOAD_PAYLOAD = 'download-probe-payload'
 
+/** 1x1 transparent PNG — the ad/ok assets differ only by URL. */
+const PIXEL_PNG = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==',
+  'base64',
+)
+
+// EasyList-syntax list for the adblocker e2e: two network filters (a banner
+// path and a tracker script) plus a generic cosmetic filter. The app fetches
+// this from BINGBONG_ADBLOCK_LISTS, so the engine is exercised offline.
+const ADBLOCK_LIST_BODY = [
+  '! Title: bingbong e2e blocklist',
+  '/ad-banner.png',
+  '/tracker.js',
+  '##.ad-slot',
+  '',
+].join('\n')
+
+// The page under test: a blocked banner image, an allowed image, a blocked
+// tracker script and a cosmetic ad slot. Asset outcomes land in
+// window.__assets so probes don't depend on naturalWidth heuristics.
+function adblockPage(): string {
+  return `<!doctype html>
+<html>
+<head><title>adblock fixture</title></head>
+<body style="background:#222;color:#fff;margin:0">
+  <h1>adblock fixture page</h1>
+  <div class="ad-slot" id="ad-slot">Sponsored content</div>
+  <script>
+    window.__gen = Math.random()
+    window.__assets = { ad: 'pending', ok: 'pending' }
+    const addImg = (id, src, key) => {
+      const el = document.createElement('img')
+      el.id = id
+      el.onload = () => { window.__assets[key] = 'loaded' }
+      el.onerror = () => { window.__assets[key] = 'error' }
+      el.src = src
+      document.body.appendChild(el)
+    }
+    addImg('ad-img', '/ad-banner.png', 'ad')
+    addImg('ok-img', '/ok-asset.png', 'ok')
+  </script>
+  <script src="/tracker.js"></script>
+</body>
+</html>`
+}
+
 export interface FixtureServer {
   url(path: string): string
+  /** How many times the adblock filter list has been fetched (cache probes). */
+  adblockListHits(): number
   close(): Promise<void>
 }
 
@@ -225,6 +273,7 @@ function visualTargetPage(): string {
 }
 
 export async function startFixtureServer(): Promise<FixtureServer> {
+  let adblockListHits = 0
   const httpServer: Server = createServer((req, res) => {
     if (req.url === '/dl') {
       res.writeHead(200, {
@@ -232,6 +281,22 @@ export async function startFixtureServer(): Promise<FixtureServer> {
         'Content-Disposition': 'attachment; filename="probe.bin"',
       })
       res.end(DOWNLOAD_PAYLOAD)
+      return
+    }
+    if (req.url === '/ad-banner.png' || req.url === '/ok-asset.png') {
+      res.writeHead(200, { 'Content-Type': 'image/png' })
+      res.end(PIXEL_PNG)
+      return
+    }
+    if (req.url === '/tracker.js') {
+      res.writeHead(200, { 'Content-Type': 'application/javascript' })
+      res.end('window.__trackerRan = true\n')
+      return
+    }
+    if (req.url === '/adblock-list') {
+      adblockListHits += 1
+      res.writeHead(200, { 'Content-Type': 'text/plain' })
+      res.end(ADBLOCK_LIST_BODY)
       return
     }
     if (req.url === '/slow') {
@@ -291,6 +356,10 @@ export async function startFixtureServer(): Promise<FixtureServer> {
       res.end(visualTargetPage())
       return
     }
+    if (req.url === '/adblock') {
+      res.end(adblockPage())
+      return
+    }
     res.end(page('<input id=t style="font-size:40px;width:100%;height:120px">'))
   })
 
@@ -300,6 +369,7 @@ export async function startFixtureServer(): Promise<FixtureServer> {
 
   return {
     url: (path) => `http://127.0.0.1:${address.port}${path}`,
+    adblockListHits: () => adblockListHits,
     close: () =>
       new Promise<void>((resolve, reject) =>
         httpServer.close((error) => (error ? reject(error) : resolve())),

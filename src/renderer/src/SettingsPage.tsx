@@ -292,6 +292,19 @@ export function SettingsPage({
         </section>
 
         <section className="settings-section">
+          <h2>Browsing</h2>
+          <Field label="Block ads, trackers and malware domains">
+            <input
+              type="checkbox"
+              checked={draft.adblockEnabled}
+              aria-label="Block ads, trackers and malware domains"
+              onChange={(event) => setDraft({ ...draft, adblockEnabled: event.target.checked })}
+            />
+          </Field>
+          <p className="settings-note">Kill switch for the built-in blocker — takes effect without a restart.</p>
+        </section>
+
+        <section className="settings-section">
           <h2>Weather</h2>
           <Field label="City">
             <input

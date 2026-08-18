@@ -40,6 +40,26 @@ describe('fixtureServer', () => {
     expect(html).toContain('<video')
   })
 
+  it('serves the adblock list, assets and fixture page, counting list hits', async () => {
+    server = await startFixtureServer()
+    const list = await fetch(server.url('/adblock-list'))
+    expect(list.headers.get('content-type')).toContain('text/plain')
+    expect(await list.text()).toContain('##.ad-slot')
+
+    const png = await fetch(server.url('/ok-asset.png'))
+    expect(png.headers.get('content-type')).toBe('image/png')
+    expect((await png.arrayBuffer()).byteLength).toBeGreaterThan(0)
+
+    const page = await fetch(server.url('/adblock'))
+    const html = await page.text()
+    expect(html).toContain('ad-slot')
+    expect(html).toContain('/ad-banner.png')
+    expect(html).toContain('/tracker.js')
+
+    await fetch(server.url('/adblock-list'))
+    expect(server.adblockListHits()).toBe(2)
+  })
+
   it('reports the bound URL with an ephemeral port', async () => {
     server = await startFixtureServer()
     expect(server.url('/')).toMatch(/^http:\/\/127\.0\.0\.1:\d+\/$/)

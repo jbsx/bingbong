@@ -91,8 +91,17 @@ export async function startHarness(
     pipeStdio: options?.pipeStdio,
     // Wake-word monitoring keeps the mic hot from app start; tests opt in
     // explicitly (BINGBONG_WAKE_ENGINE + BINGBONG_WAKE_SCRIPT) so the default
-    // suite stays hotkey-only.
-    env: { BINGBONG_WAKE_ENGINE: 'off', ...options?.env },
+    // suite stays hotkey-only. The adblocker always runs, but on the fixture
+    // server's tiny local list — offline, deterministic, and it exercises the
+    // engine in every test instead of downloading EasyList per launch. The
+    // empty resources value means "skip scriptlet resources" (set-but-empty
+    // in resolveAdblockConfig), keeping even that fetch off the network.
+    env: {
+      BINGBONG_WAKE_ENGINE: 'off',
+      BINGBONG_ADBLOCK_LISTS: fixture.url('/adblock-list'),
+      BINGBONG_ADBLOCK_RESOURCES: '',
+      ...options?.env,
+    },
   })
   const teardown = async () => {
     try {

@@ -16,6 +16,7 @@
     "cli": "pnpm build && electron . --browser-cli"
   },
   "dependencies": {
+    "@ghostery/adblocker-electron": "^2.18.2",
     "@modelcontextprotocol/sdk": "1.26.0",
     "@z_ai/mcp-server": "0.1.4",
     "onnxruntime-node": "^1.27.0",

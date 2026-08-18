@@ -16,6 +16,7 @@ describe('defaultSettings', () => {
     expect(settings.wakeWordThreshold).toBeLessThanOrEqual(1)
     expect(settings.ttsVoice).toBe('')
     expect(settings.weather).toEqual({ city: '', units: 'metric' })
+    expect(settings.adblockEnabled).toBe(true)
     for (const role of ['orchestrator', 'subagent', 'vision'] as const) {
       expect(settings.modelRouting[role]).toEqual({ baseUrl: '', model: '', apiKey: '' })
     }
@@ -58,6 +59,12 @@ describe('sanitizeSettings', () => {
     expect(sanitizeSettings({ wakeWordThreshold: -1 }).wakeWordThreshold).toBe(WAKE_WORD_THRESHOLD_MIN)
     expect(sanitizeSettings({ wakeWordThreshold: 7 }).wakeWordThreshold).toBe(WAKE_WORD_THRESHOLD_MAX)
     expect(sanitizeSettings({ wakeWordThreshold: 'loud' }).wakeWordThreshold).toBe(defaultSettings().wakeWordThreshold)
+  })
+
+  it('keeps an explicit adblock kill switch but defaults to on', () => {
+    expect(sanitizeSettings({ adblockEnabled: false }).adblockEnabled).toBe(false)
+    expect(sanitizeSettings({}).adblockEnabled).toBe(true)
+    expect(sanitizeSettings({ adblockEnabled: 'nope' }).adblockEnabled).toBe(true)
   })
 
   it('drops unknown weather units and non-string fields', () => {

@@ -1,9 +1,10 @@
-import { app, BrowserWindow, ipcMain } from 'electron'
+import { app, BrowserWindow, ipcMain, session } from 'electron'
 import { join } from 'node:path'
 import type { BrowserController, VisualGroundingController } from '../core/ports/browser'
 import { createAgentActivityTracker, withAgentActivity } from '../core/downloads/agentActivity'
 import { PIPELINE_IPC } from '../core/pipeline/ipcChannels'
-import { createBrowserPane } from './browser/createBrowserPane'
+import { attachAdblock } from './browser/attachAdblock'
+import { createBrowserPane, BROWSER_PARTITION } from './browser/createBrowserPane'
 import { attachBrowserPaneToWindow, registerBrowserIpc } from './browser/attachBrowserPane'
 import { createPaneBrowserController } from './browser/createPaneBrowserController'
 import { attachDownloadRouter } from './browser/attachDownloadRouter'
@@ -239,6 +240,22 @@ app.whenReady().then(async () => {
   ipcMain.handle(USAGE_IPC.getToday, () => usageStore.summary(dailySpendWarnUsd()))
   registerTtsIpc({ voicesDir: () => piperConfig.voicesDir })
   registerVoiceIpc()
+
+  // Embedder-level adblocker (issue #21): enabled before the first window so
+  // every view on the persistent browse partition (main pane + subagent
+  // tabs) is covered from its first navigation. The await is a deliberate
+  // tradeoff — a cold cache delays the first window by one list download
+  // (bounded fetches; failures degrade to no blocking) so "on at startup"
+  // is never "racing the first navigation".
+  const adblock = attachAdblock({
+    session: session.fromPartition(BROWSER_PARTITION, { cache: true }),
+    settingsStore,
+    userDataDir: app.getPath('userData'),
+    env: process.env,
+  })
+  app.on('will-quit', () => adblock.dispose())
+  await adblock.ready()
+
   await createWindow()
 
   app.on('activate', () => {

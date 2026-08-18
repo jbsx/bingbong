@@ -24,6 +24,8 @@ export interface AppSettings {
   wakeWordThreshold: number
   /** Piper voice id; '' follows BINGBONG_PIPER_VOICE / the default voice. */
   ttsVoice: string
+  /** Kill switch for the embedder-level adblocker (issue #21). */
+  adblockEnabled: boolean
   weather: { city: string; units: WeatherUnits }
   modelRouting: Record<AgentRole, RoleRoutingSettings>
 }
@@ -34,6 +36,7 @@ export function defaultSettings(): AppSettings {
     micId: 'default',
     wakeWordThreshold: 0.5,
     ttsVoice: '',
+    adblockEnabled: true,
     weather: { city: '', units: 'metric' },
     modelRouting: {
       orchestrator: { baseUrl: '', model: '', apiKey: '' },
@@ -83,6 +86,8 @@ export function sanitizeSettings(raw: unknown): AppSettings {
     micId: asString(record.micId, defaults.micId),
     wakeWordThreshold: asThreshold(record.wakeWordThreshold, defaults.wakeWordThreshold),
     ttsVoice: asString(record.ttsVoice, defaults.ttsVoice),
+    // Only an explicit false disables the engine — missing/garbage means on.
+    adblockEnabled: record.adblockEnabled === false ? false : defaults.adblockEnabled,
     weather: {
       city: asString(weather?.city, defaults.weather.city),
       units: weather?.units === 'imperial' ? 'imperial' : defaults.weather.units,
