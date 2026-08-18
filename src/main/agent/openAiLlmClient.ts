@@ -96,9 +96,43 @@ export function createOpenAiLlmClient(deps: OpenAiLlmClientDeps): LlmClient {
   }
 
   async function complete(request: LlmRequest): Promise<AssistantTurn> {
+    const messages = buildMessages(request)
+
+    // GLM sometimes answers 200 with finish_reason "stop", empty content and
+    // no tool_calls — the reasoning trace shows it meant to call a tool but
+    // the call was dropped server-side. It is nondeterministic, so retry:
+    // once identically, then once with a nudge, then give up and log the raw
+    // payload (request_id included) so the provider incident is reportable.
+    const MAX_ATTEMPTS = 3
+    let lastRequestId: string | undefined
+    let lastRaw = ''
+    for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+      const outgoing =
+        attempt === MAX_ATTEMPTS
+          ? [...messages, { role: 'user' as const, content: 'Your previous reply was empty. Respond with tool calls or the final JSON answer.' }]
+          : messages
+      const { payload, requestId, raw } = await requestOnce(outgoing)
+      const turn = toTurn(payload)
+      if (turn) return turn
+      lastRequestId = requestId
+      lastRaw = raw
+    }
+    console.warn(
+      `[llm] empty completion after ${MAX_ATTEMPTS} attempts (request_id: ${lastRequestId ?? 'unknown'}): ${lastRaw.slice(0, 1000)}`,
+    )
+    throw new Error(`orchestrator returned an empty completion (request_id: ${lastRequestId ?? 'unknown'})`)
+  }
+
+  interface CompletionPayload {
+    request_id?: string
+    usage?: { prompt_tokens?: number; completion_tokens?: number }
+    choices?: { message?: { content?: string | null; tool_calls?: WireToolCall[] } }[]
+  }
+
+  async function requestOnce(messages: WireMessage[]): Promise<{ payload: CompletionPayload; requestId?: string; raw: string }> {
     const body: Record<string, unknown> = {
       model: endpoint.model,
-      messages: buildMessages(request),
+      messages,
       stream: false,
     }
     if (tools.length > 0) {
@@ -121,10 +155,12 @@ export function createOpenAiLlmClient(deps: OpenAiLlmClientDeps): LlmClient {
       throw new Error(`orchestrator request failed (HTTP ${response.status}): ${detail}`)
     }
 
-    const payload = (await response.json()) as {
-      usage?: { prompt_tokens?: number; completion_tokens?: number }
-      choices?: { message?: { content?: string | null; tool_calls?: WireToolCall[] } }[]
-    }
+    const raw = await response.text()
+    const payload = JSON.parse(raw) as CompletionPayload
+    return { payload, requestId: payload.request_id, raw }
+  }
+
+  function toTurn(payload: CompletionPayload): AssistantTurn | null {
     const message = payload.choices?.[0]?.message
     const usage = normalizeUsage(payload.usage)
     if (message?.tool_calls && message.tool_calls.length > 0) {
@@ -135,7 +171,7 @@ export function createOpenAiLlmClient(deps: OpenAiLlmClientDeps): LlmClient {
       const { speak, display } = parseAssistantAnswer(content)
       return { kind: 'answer', speak, display, ...(usage ? { usage } : {}) }
     }
-    throw new Error('orchestrator returned an empty completion')
+    return null
   }
 
   return { complete }

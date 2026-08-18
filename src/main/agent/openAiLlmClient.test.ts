@@ -224,10 +224,44 @@ describe('openAiLlmClient', () => {
     await expect(client.complete({ command: 'x', toolResults: [] })).rejects.toThrow(/HTTP 401.*invalid api key/)
   })
 
-  it('throws on an empty completion', async () => {
-    const fetch = new ScriptedFetch([completionResponse({ content: null })])
+  it('retries an empty completion and succeeds on a later attempt', async () => {
+    const fetch = new ScriptedFetch([
+      completionResponse({ content: null }),
+      completionResponse({ content: '{"speak":"hi","display":"hi"}' }),
+    ])
+    const client = makeClient(fetch)
+
+    const turn = await client.complete({ command: 'x', toolResults: [] })
+
+    expect(turn).toEqual({ kind: 'answer', speak: 'hi', display: 'hi' })
+    expect(fetch.calls).toHaveLength(2)
+  })
+
+  it('appends a nudge message on the final retry', async () => {
+    const fetch = new ScriptedFetch([
+      completionResponse({ content: null }),
+      completionResponse({ content: null }),
+      completionResponse({ content: '{"speak":"hi","display":"hi"}' }),
+    ])
+    const client = makeClient(fetch)
+
+    const turn = await client.complete({ command: 'x', toolResults: [] })
+
+    expect(turn.kind).toBe('answer')
+    expect(fetch.calls).toHaveLength(3)
+    const lastMessages = fetch.calls[2].body.messages
+    expect(lastMessages.at(-1)).toMatchObject({ role: 'user', content: expect.stringContaining('previous reply was empty') })
+  })
+
+  it('throws after repeated empty completions', async () => {
+    const fetch = new ScriptedFetch([
+      completionResponse({ content: null }),
+      completionResponse({ content: null }),
+      completionResponse({ content: null }),
+    ])
     const client = makeClient(fetch)
 
     await expect(client.complete({ command: 'x', toolResults: [] })).rejects.toThrow(/empty completion/)
+    expect(fetch.calls).toHaveLength(3)
   })
 })
