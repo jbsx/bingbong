@@ -68,6 +68,10 @@ describe('createSingleShotPipeline', () => {
       async *execute() {},
       resolveConfirmation: (id, approved) => calls.push(`${id}:${approved}`),
       resolveAsk: () => {},
+      abort: () => {},
+      pause: () => {},
+      resume: () => {},
+      getState: () => 'idle',
     }
     const pipeline = createSingleShotPipeline(inner, new FakeClock())
 
@@ -82,6 +86,10 @@ describe('createSingleShotPipeline', () => {
       async *execute() {},
       resolveConfirmation: () => {},
       resolveAsk: (id, answer) => calls.push(`${id}:${answer}`),
+      abort: () => {},
+      pause: () => {},
+      resume: () => {},
+      getState: () => 'idle',
     }
     const pipeline = createSingleShotPipeline(inner, new FakeClock())
 

@@ -60,6 +60,14 @@ export function registerAssistantIpc(): void {
       pipeline.resolveAsk(askId, answer)
     }
   })
+
+  ipcMain.handle(PIPELINE_IPC.abort, (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender)
+    const pipeline = win ? pipelineFor(win) : undefined
+    if (!pipeline || pipeline.getState() === 'idle') return false
+    pipeline.abort()
+    return true
+  })
 }
 
 export function attachAssistantToWindow(
@@ -68,5 +76,20 @@ export function attachAssistantToWindow(
   onEvent?: (event: PipelineEvent) => void,
 ): void {
   pipelines.set(win, { pipeline, onEvent })
+  const contents = win.webContents
+  const detachAbortHotkey = attachAssistantAbortHotkey(pipeline, contents)
   win.on('closed', () => pipelines.delete(win))
+  win.on('closed', detachAbortHotkey)
+}
+
+/** Capture Escape when the embedded browser, rather than React, owns focus. */
+export function attachAssistantAbortHotkey(pipeline: CommandPipeline, contents: WebContents): () => void {
+  const onBeforeInput = (event: Electron.Event, input: Electron.Input) => {
+    if (input.type === 'keyDown' && input.key === 'Escape' && pipeline.getState() !== 'idle') {
+      event.preventDefault()
+      pipeline.abort()
+    }
+  }
+  contents.on('before-input-event', onBeforeInput)
+  return () => contents.removeListener('before-input-event', onBeforeInput)
 }

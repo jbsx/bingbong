@@ -34,6 +34,9 @@ function delegationToolCatalog(): Tool[] {
   const manager = {
     spawn: () => ({ ok: false as const, reason: 'test' }),
     cancel: () => ({ ok: false as const, reason: 'test' }),
+    cancelAll: () => 0,
+    pauseAll: () => {},
+    resumeAll: () => {},
     results: async () => 'none',
     list: () => [],
   }

@@ -39,6 +39,8 @@ export interface SubagentRuntimeDeps {
   tts: TtsSpeaker
   emit(event: PipelineEvent): void
   onUsage?(record: UsageRecord): void
+  /** Escape while a subagent tab owns focus. */
+  onEscape?(): boolean
 }
 
 export interface SubagentRuntime {
@@ -48,6 +50,9 @@ export interface SubagentRuntime {
   pool: SubagentPanePool
   /** Direct card-cancel path (the dashboard button) — no LLM round-trip. */
   cancel(agentId: string): boolean
+  cancelAll(): number
+  pauseAll(): void
+  resumeAll(): void
   dispose(): void
 }
 
@@ -64,7 +69,10 @@ export function createSubagentRuntime(deps: SubagentRuntimeDeps): SubagentRuntim
   const vision = createZaiVisionLocator({ getEnv: deps.getEnv })
 
   const tabs = createSubagentTabs({ clock, lingerMs })
-  const pool = createSubagentPanePool(deps.win, tabs, { session: deps.session })
+  const pool = createSubagentPanePool(deps.win, tabs, {
+    session: deps.session,
+    ...(deps.onEscape ? { onEscape: deps.onEscape } : {}),
+  })
 
   // The manager needs an event sink and the bridge needs the manager — a
   // late-bound ref breaks the cycle without ordering hacks.
@@ -109,6 +117,9 @@ export function createSubagentRuntime(deps: SubagentRuntimeDeps): SubagentRuntim
     tools: createSubagentTools(manager),
     pool,
     cancel: (agentId) => manager.cancel(agentId).ok,
+    cancelAll: () => manager.cancelAll(),
+    pauseAll: () => manager.pauseAll(),
+    resumeAll: () => manager.resumeAll(),
     dispose: () => pool.dispose(),
   }
 }

@@ -1,4 +1,4 @@
-export type PipelineStatus = 'thinking' | 'acting' | 'speaking'
+export type PipelineStatus = 'thinking' | 'acting' | 'speaking' | 'paused' | 'cancelled'
 
 import type { SubagentKind, SubagentStatus } from '../agent/subagentManager'
 import type { SubagentTabPhase } from '../browser/subagentTabs'
@@ -46,7 +46,14 @@ export type PipelineEvent =
       type: 'confirmation_resolved'
       confirmationId: string
       approved: boolean
-      reason: 'user' | 'timeout'
+      reason: 'user' | 'timeout' | 'cancelled' | 'steered'
+      at: number
+    }
+  | {
+      type: 'confirmation_deadline'
+      confirmationId: string
+      /** Null while pause suspends the countdown. */
+      expiresAt: number | null
       at: number
     }
   /** A tool asked the user a free-text question (ask_user, Tier 3). */
@@ -64,7 +71,14 @@ export type PipelineEvent =
       askId: string
       /** The user's answer; null when the window timed out. */
       answer: string | null
-      reason: 'user' | 'timeout'
+      reason: 'user' | 'timeout' | 'cancelled' | 'steered'
+      at: number
+    }
+  | {
+      type: 'ask_deadline'
+      askId: string
+      /** Null while pause suspends the countdown. */
+      expiresAt: number | null
       at: number
     }
   | { type: 'speak'; text: string; at: number }

@@ -57,6 +57,10 @@ export function attachVoiceToWindow(win: BrowserWindow, deps: AttachVoiceDeps): 
       if (win.isDestroyed()) return
       pipelineFor(win)?.resolveAsk(askId, answer)
     },
+    getRunState: () => pipelineFor(win)?.getState() ?? 'idle',
+    onAbort: () => pipelineFor(win)?.abort(),
+    onPause: () => pipelineFor(win)?.pause(),
+    onResume: (steering) => pipelineFor(win)?.resume(steering),
     onStateChange: (state: VoiceState) => {
       if (!win.isDestroyed()) win.webContents.send(VOICE_IPC.stateChanged, state)
     },

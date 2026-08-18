@@ -60,12 +60,7 @@ export function createSubagentTools(manager: SubagentManager): Tool[] {
       async execute(call) {
         const agentId = stringArg(call, 'agent_id', 'cancel_agent')
         if (agentId === 'all') {
-          const running = manager.list().filter((record) => record.status === 'running')
-          for (const record of running) {
-            const result = manager.cancel(record.id)
-            if (!result.ok) throw new Error(result.reason)
-          }
-          return `cancelled ${running.length} running subagent(s)`
+          return `cancelled ${manager.cancelAll()} running subagent(s)`
         }
         const result = manager.cancel(agentId)
         if (!result.ok) throw new Error(result.reason)

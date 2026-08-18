@@ -26,6 +26,8 @@ export interface BingbongAssistantApi {
   resolveConfirmation(confirmationId: string, approved: boolean): Promise<void>
   /** Answer an open ask_user window with free text (the dashboard card). */
   resolveAsk(askId: string, answer: string): Promise<void>
+  /** Abort the active run; false means there was no run to stop. */
+  abort(): Promise<boolean>
   onEvent(listener: (event: PipelineEvent) => void): () => void
 }
 

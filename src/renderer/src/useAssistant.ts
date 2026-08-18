@@ -17,14 +17,14 @@ export interface PendingConfirmation {
   confirmationId: string
   prompt: string
   /** Wall-clock auto-deny deadline — the card counts down to it. */
-  expiresAt: number
+  expiresAt: number | null
 }
 
 export interface PendingAsk {
   askId: string
   question: string
   /** Wall-clock deadline — the card counts down to it. */
-  expiresAt: number
+  expiresAt: number | null
 }
 
 export interface Assistant {
@@ -38,6 +38,7 @@ export interface Assistant {
   submit(text: string): void
   resolveConfirmation(confirmationId: string, approved: boolean): void
   resolveAsk(askId: string, answer: string): void
+  abort(): void
   /** A heard-but-not-a-command transcript (voice yes/no, undecided answers). */
   appendVoiceHeard(heard: VoiceHeardEvent): void
   /** Mic/engine failures from the voice half. */
@@ -54,6 +55,7 @@ export function useAssistant(): Assistant {
   const [pendingAsk, setPendingAsk] = useState<PendingAsk | null>(null)
   const [agents, setAgents] = useState<SubagentCard[]>([])
   const nextId = useRef(0)
+  const lastStatus = useRef<OrbStatus>('idle')
 
   const append = useCallback((entry: Omit<TranscriptEntry, 'id'>) => {
     setEntries((current) => [...current, { ...entry, id: nextId.current++ }])
@@ -66,6 +68,7 @@ export function useAssistant(): Assistant {
           append({ kind: 'command', text: event.text })
           return
         case 'status':
+          lastStatus.current = event.status
           setStatus(event.status)
           return
         case 'tool_call':
@@ -95,6 +98,13 @@ export function useAssistant(): Assistant {
             current?.confirmationId === event.confirmationId ? null : current,
           )
           return
+        case 'confirmation_deadline':
+          setPendingConfirmation((current) =>
+            current?.confirmationId === event.confirmationId
+              ? { ...current, expiresAt: event.expiresAt }
+              : current,
+          )
+          return
         case 'ask_requested':
           setPendingAsk({
             askId: event.askId,
@@ -104,6 +114,11 @@ export function useAssistant(): Assistant {
           return
         case 'ask_resolved':
           setPendingAsk((current) => (current?.askId === event.askId ? null : current))
+          return
+        case 'ask_deadline':
+          setPendingAsk((current) =>
+            current?.askId === event.askId ? { ...current, expiresAt: event.expiresAt } : current,
+          )
           return
         case 'agent_update':
           setAgents((current) => {
@@ -115,7 +130,7 @@ export function useAssistant(): Assistant {
           })
           return
         case 'done':
-          setStatus('idle')
+          if (lastStatus.current !== 'cancelled') setStatus('idle')
           setPendingConfirmation(null)
           setPendingAsk(null)
           return
@@ -142,6 +157,10 @@ export function useAssistant(): Assistant {
     void window.bingbong.assistant.resolveAsk(askId, trimmed)
   }, [])
 
+  const abort = useCallback(() => {
+    void window.bingbong.assistant.abort()
+  }, [])
+
   const appendVoiceHeard = useCallback((heard: VoiceHeardEvent) => {
     // Commands are echoed by the pipeline itself; only answers and undecided
     // words land here.
@@ -151,7 +170,15 @@ export function useAssistant(): Assistant {
         ? ' (answered)'
         : heard.routed === 'ask'
           ? ' (your answer)'
-          : ' — not a yes or no'
+          : heard.routed === 'abort'
+            ? ' (stopping)'
+            : heard.routed === 'pause'
+              ? ' (paused)'
+              : heard.routed === 'resume'
+                ? ' (resumed)'
+                : heard.routed === 'steering'
+                  ? ' (steering)'
+                  : ' — not a yes or no'
     append({ kind: 'voice', text: `heard "${heard.text}"${suffix}` })
   }, [append])
 
@@ -159,5 +186,5 @@ export function useAssistant(): Assistant {
     append({ kind: 'error', text: `voice: ${message}` })
   }, [append])
 
-  return { status, entries, pendingConfirmation, pendingAsk, agents, submit, resolveConfirmation, resolveAsk, appendVoiceHeard, appendVoiceError }
+  return { status, entries, pendingConfirmation, pendingAsk, agents, submit, resolveConfirmation, resolveAsk, abort, appendVoiceHeard, appendVoiceError }
 }

@@ -11,6 +11,9 @@ function fakeManager(overrides: Partial<SubagentManager> = {}): SubagentManager 
   return {
     spawn: () => ({ ok: true, agent: { id: 'a-1', kind: 'research', task: 't', status: 'running', startedAt: 0, finishedAt: null, steps: 0, lastAction: null, result: null, error: null } }),
     cancel: () => ({ ok: true }),
+    cancelAll: () => 0,
+    pauseAll: () => {},
+    resumeAll: () => {},
     results: async () => 'merged results',
     list: () => [],
     ...overrides,
@@ -75,10 +78,7 @@ describe('subagent tools', () => {
   it('cancel_agent cancels one id or all running agents', async () => {
     const cancelled: string[] = []
     const tools = createSubagentTools(fakeManager({
-      list: () => [
-        { id: 'a-1', kind: 'research', task: 't', status: 'running', startedAt: 0, finishedAt: null, steps: 0, lastAction: null, result: null, error: null },
-        { id: 'a-2', kind: 'browse', task: 't', status: 'running', startedAt: 0, finishedAt: null, steps: 0, lastAction: null, result: null, error: null },
-      ],
+      cancelAll: () => 2,
       cancel: (id) => {
         cancelled.push(id)
         return { ok: true }
@@ -89,7 +89,7 @@ describe('subagent tools', () => {
 
     expect(await cancel.execute({ id: 'c1', name: 'cancel_agent', args: { agent_id: 'a-1' } }, ctx)).toContain('a-1')
     expect(await cancel.execute({ id: 'c2', name: 'cancel_agent', args: { agent_id: 'all' } }, ctx)).toContain('2')
-    expect(cancelled).toEqual(['a-1', 'a-1', 'a-2'])
+    expect(cancelled).toEqual(['a-1'])
   })
 
   it('cancel_agent reports unknown ids and refuses an empty one', async () => {

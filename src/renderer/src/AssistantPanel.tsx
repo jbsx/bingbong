@@ -1,6 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
 import type { Assistant, PendingAsk, PendingConfirmation, OrbStatus, TranscriptEntry } from './useAssistant'
 
+function deadlineText(expiresAt: number | null, now: number): string {
+  return expiresAt === null ? 'paused' : `${Math.max(0, Math.ceil((expiresAt - now) / 1000))}s`
+}
+
 export function StatusOrb({ status }: { status: OrbStatus }) {
   return <div className={`status-orb status-orb--${status}`} aria-label={`assistant ${status}`} />
 }
@@ -56,13 +60,11 @@ export function ConfirmationCard({
     return () => clearInterval(timer)
   }, [pending.confirmationId])
 
-  const secondsLeft = Math.max(0, Math.ceil((pending.expiresAt - now) / 1000))
-
   return (
     <div className="confirmation-card" role="alertdialog" aria-label="Confirmation required">
       <span className="confirmation-prompt">{pending.prompt}</span>
       <span className="confirmation-countdown" aria-label="auto-deny countdown">
-        {secondsLeft}s
+        {deadlineText(pending.expiresAt, now)}
       </span>
       <span className="confirmation-actions">
         <button type="button" onClick={() => onResolve(pending.confirmationId, true)}>
@@ -94,8 +96,6 @@ export function AskCard({
     return () => clearInterval(timer)
   }, [pending.askId])
 
-  const secondsLeft = Math.max(0, Math.ceil((pending.expiresAt - now) / 1000))
-
   return (
     <form
       className="ask-card"
@@ -109,7 +109,7 @@ export function AskCard({
         {pending.question}
       </label>
       <span className="confirmation-countdown" aria-label="answer window countdown">
-        {secondsLeft}s
+        {deadlineText(pending.expiresAt, now)}
       </span>
       <span className="ask-controls">
         <input
@@ -185,9 +185,17 @@ export function Transcript({ entries }: { entries: TranscriptEntry[] }) {
 }
 
 export function AssistantPanel({ assistant }: { assistant: Assistant }) {
+  const active = assistant.status !== 'idle' && assistant.status !== 'cancelled'
   return (
     <div className="assistant-panel">
-      <CommandBox disabled={assistant.status !== 'idle'} onSubmit={assistant.submit} />
+      <div className="command-row">
+        <CommandBox disabled={active} onSubmit={assistant.submit} />
+        {active ? (
+          <button type="button" className="assistant-stop" onClick={assistant.abort} aria-label="Stop active command">
+            Stop
+          </button>
+        ) : null}
+      </div>
       {assistant.pendingConfirmation ? (
         <ConfirmationCard pending={assistant.pendingConfirmation} onResolve={assistant.resolveConfirmation} />
       ) : null}

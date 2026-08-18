@@ -89,6 +89,9 @@ export function createOpenAiLlmClient(deps: OpenAiLlmClientDeps): LlmClient {
       })
       messages.push({ role: 'tool', tool_call_id: call.id, content: toolResultContent(outcome) })
     }
+    if (request.steering) {
+      messages.push({ role: 'user', content: `Steering directive: ${request.steering}` })
+    }
     return messages
   }
 

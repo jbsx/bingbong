@@ -64,11 +64,15 @@ export class ScriptedLlm implements LlmClient {
       const lastError = [...request.toolResults]
         .reverse()
         .find((result) => !result.outcome.ok)?.outcome
-      if (!lastError || lastError.ok) return next
+      const lastErrorText = lastError && !lastError.ok ? lastError.error : null
       return {
         ...next,
-        speak: next.speak.replaceAll('$last_tool_error', lastError.error),
-        display: next.display.replaceAll('$last_tool_error', lastError.error),
+        speak: next.speak
+          .replaceAll('$last_tool_error', lastErrorText ?? '$last_tool_error')
+          .replaceAll('$steering', request.steering ?? ''),
+        display: next.display
+          .replaceAll('$last_tool_error', lastErrorText ?? '$last_tool_error')
+          .replaceAll('$steering', request.steering ?? ''),
       }
     }
     const groundedRef = [...request.toolResults]

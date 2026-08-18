@@ -229,4 +229,43 @@ describe('runSubagent', () => {
 
     await expect(running).rejects.toBeInstanceOf(SubagentCancelledError)
   })
+
+  it('waits at checkpoints while paused and resumes with completed tool context intact', async () => {
+    let paused = false
+    let releasePause!: () => void
+    const pauseGate = new Promise<void>((resolve) => {
+      releasePause = resolve
+    })
+    const tool: Tool = {
+      name: 'step',
+      async execute() {
+        paused = true
+        return 'first result'
+      },
+    }
+    const llm = new ScriptedLlm([
+      { kind: 'tool_calls', calls: [{ id: 'one', name: 'step', args: {} }] },
+      { kind: 'answer', speak: 'done', display: 'Finished with context.' },
+    ])
+
+    const running = runSubagent(
+      { llm, tools: [tool], clock: new FakeClock() },
+      {
+        task: 'do both steps',
+        isCancelled: () => false,
+        waitIfPaused: () => (paused ? pauseGate : Promise.resolve()),
+      },
+    )
+    await Promise.resolve()
+    await Promise.resolve()
+
+    expect(llm.requests).toHaveLength(1)
+    releasePause()
+    const result = await running
+
+    expect(result).toBe('Finished with context.')
+    expect(llm.requests[1]?.toolResults).toMatchObject([
+      { call: { id: 'one' }, outcome: { ok: true, result: 'first result' } },
+    ])
+  })
 })

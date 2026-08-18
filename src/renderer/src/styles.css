@@ -79,6 +79,15 @@ body {
   animation: orb-pulse 0.7s ease-in-out infinite;
 }
 
+.status-orb--paused {
+  background: #b48bff;
+  box-shadow: 0 0 0 4px rgba(180, 139, 255, 0.16);
+}
+
+.status-orb--cancelled {
+  background: #ff6b6b;
+}
+
 @keyframes orb-pulse {
   0%,
   100% {
@@ -199,7 +208,27 @@ body {
 }
 
 .command-form {
+  flex: 1;
+}
+
+.command-row {
+  display: flex;
+  gap: 8px;
   flex: none;
+}
+
+.assistant-stop {
+  min-width: 72px;
+  border: 1px solid #ff6b6b;
+  border-radius: 17px;
+  background: rgba(255, 107, 107, 0.12);
+  color: #ffb3b3;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.assistant-stop:hover {
+  background: rgba(255, 107, 107, 0.22);
 }
 
 .command-input {

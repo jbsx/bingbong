@@ -3,6 +3,7 @@ import { createCommandPipeline, type CommandPipeline } from './createCommandPipe
 import { createAskUserTool } from './askUserTools'
 import { FailingTts, FakeClock, RecordingTts, ScriptedLlm } from '../testing/doubles'
 import type { PipelineEvent } from './events'
+import type { AssistantTurn, LlmClient, LlmRequest } from '../ports/llm'
 
 async function collect(
   pipeline: CommandPipeline,
@@ -17,7 +18,276 @@ async function collect(
   return events
 }
 
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>((settle) => {
+    resolve = settle
+  })
+  return { promise, resolve }
+}
+
+async function flush(): Promise<void> {
+  await Promise.resolve()
+  await Promise.resolve()
+}
+
+async function waitUntil(predicate: () => boolean): Promise<void> {
+  for (let attempt = 0; attempt < 20 && !predicate(); attempt += 1) await flush()
+  expect(predicate()).toBe(true)
+}
+
 describe('command pipeline', () => {
+  it('aborts at the next model checkpoint and speaks only the stopped acknowledgement', async () => {
+    const turn = deferred<AssistantTurn>()
+    const llm: LlmClient = { complete: () => turn.promise }
+    const tts = new RecordingTts()
+    let abortHooks = 0
+    const pipeline = createCommandPipeline({
+      llm,
+      tts,
+      clock: new FakeClock(),
+      tools: [],
+      onAbort: () => { abortHooks += 1 },
+    })
+
+    const run = collect(pipeline, 'keep working')
+    await flush()
+    expect(pipeline.getState()).toBe('running')
+
+    pipeline.abort()
+    turn.resolve({ kind: 'answer', speak: 'Finished.', display: 'Stale answer.' })
+    const events = await run
+
+    expect(tts.stopCalls).toBe(1)
+    expect(abortHooks).toBe(1)
+    expect(tts.spoken).toEqual(['Stopped.'])
+    expect(events).toContainEqual({ type: 'status', status: 'cancelled', at: 0 })
+    expect(events).toContainEqual({ type: 'speak', text: 'Stopped.', at: 0 })
+    expect(events.some((event) => event.type === 'display' && event.text === 'Stale answer.')).toBe(false)
+    expect(events.some((event) => event.type === 'error')).toBe(false)
+    expect(events.at(-1)).toEqual({ type: 'done', at: 0 })
+    expect(pipeline.getState()).toBe('idle')
+  })
+
+  it('denies a pending confirmation cleanly when aborted', async () => {
+    let executions = 0
+    const riskyTool = {
+      name: 'submit_form',
+      assessRisk: () => ({ kind: 'confirm' as const, prompt: 'Submit this form?' }),
+      async execute() {
+        executions += 1
+        return 'submitted'
+      },
+    }
+    const llm = new ScriptedLlm([
+      { kind: 'tool_calls', calls: [{ id: 'c1', name: 'submit_form', args: {} }] },
+      { kind: 'answer', speak: 'Submitted.', display: 'Submitted.' },
+    ])
+    const tts = new RecordingTts()
+    const pipeline = createCommandPipeline({ llm, tts, clock: new FakeClock(), tools: [riskyTool] })
+
+    const events = await collect(pipeline, 'submit it', (event, activePipeline) => {
+      if (event.type === 'confirmation_requested') activePipeline.abort()
+    })
+
+    expect(executions).toBe(0)
+    expect(events).toContainEqual({
+      type: 'confirmation_resolved',
+      confirmationId: 'confirm-1',
+      approved: false,
+      reason: 'cancelled',
+      at: 0,
+    })
+    expect(events).toContainEqual({ type: 'status', status: 'cancelled', at: 0 })
+    expect(tts.spoken.at(-1)).toBe('Stopped.')
+  })
+
+  it('aborts during ask_user speech without opening a new answer wait', async () => {
+    const holder: { pipeline?: CommandPipeline } = {}
+    const tts = {
+      async speak() {
+        holder.pipeline?.abort()
+        return { ok: true as const }
+      },
+      stop() {},
+    }
+    const pipeline = createCommandPipeline({
+      llm: new ScriptedLlm([
+        { kind: 'tool_calls', calls: [{ id: 'ask', name: 'ask_user', args: { question: 'Which city?' } }] },
+      ]),
+      tts,
+      clock: new FakeClock(),
+      tools: [createAskUserTool()],
+    })
+    holder.pipeline = pipeline
+
+    const events = await collect(pipeline, 'book it')
+
+    expect(events.some((event) => event.type === 'ask_requested')).toBe(false)
+    expect(events).toContainEqual({ type: 'status', status: 'cancelled', at: 0 })
+    expect(events.at(-1)).toEqual({ type: 'done', at: 0 })
+  })
+
+  it('pauses during ask_user speech before any timed answer window is created', async () => {
+    const holder: { pipeline?: CommandPipeline } = {}
+    let speechCount = 0
+    const tts = {
+      async speak() {
+        speechCount += 1
+        if (speechCount === 1) holder.pipeline?.pause()
+        return { ok: true as const }
+      },
+      stop() {},
+    }
+    const clock = new FakeClock()
+    const llm = new ScriptedLlm([
+      { kind: 'tool_calls', calls: [{ id: 'ask', name: 'ask_user', args: { question: 'Which city?' } }] },
+      { kind: 'answer', speak: 'Redirected.', display: 'Used steering.' },
+    ])
+    const pipeline = createCommandPipeline({ llm, tts, clock, tools: [createAskUserTool()] })
+    holder.pipeline = pipeline
+
+    const events = await collect(pipeline, 'book it', (event, activePipeline) => {
+      if (event.type === 'status' && event.status === 'paused') {
+        clock.advance(24 * 60 * 60 * 1000)
+        activePipeline.resume('Use Paris instead.')
+      }
+    })
+
+    expect(events.some((event) => event.type === 'ask_requested')).toBe(false)
+    expect(llm.requests[1]?.steering).toBe('Use Paris instead.')
+  })
+
+  it('honours pause and steering that arrive during asynchronous risk assessment', async () => {
+    const verdict = deferred<{ kind: 'confirm'; prompt: string }>()
+    let riskStarted = false
+    let executions = 0
+    const tool = {
+      name: 'risky_action',
+      assessRisk: () => {
+        riskStarted = true
+        return verdict.promise
+      },
+      async execute() {
+        executions += 1
+        return 'executed'
+      },
+    }
+    const llm = new ScriptedLlm([
+      { kind: 'tool_calls', calls: [{ id: 'risk', name: 'risky_action', args: {} }] },
+      { kind: 'answer', speak: 'Redirected.', display: 'Used the correction.' },
+    ])
+    const pipeline = createCommandPipeline({ llm, tts: new RecordingTts(), clock: new FakeClock(), tools: [tool] })
+
+    const run = collect(pipeline, 'do the risky thing')
+    await waitUntil(() => riskStarted)
+    pipeline.pause()
+    verdict.resolve({ kind: 'confirm', prompt: 'Proceed?' })
+    await waitUntil(() => pipeline.getState() === 'paused')
+    pipeline.resume('Do not proceed.')
+    const events = await run
+
+    expect(executions).toBe(0)
+    expect(events.some((event) => event.type === 'confirmation_requested')).toBe(false)
+    expect(llm.requests[1]?.steering).toBe('Do not proceed.')
+  })
+
+  it('pauses indefinitely and injects steering into the next model call without executing stale tools', async () => {
+    const firstTurn = deferred<AssistantTurn>()
+    const requests: LlmRequest[] = []
+    const llm: LlmClient = {
+      async complete(request) {
+        requests.push(request)
+        if (requests.length === 1) return firstTurn.promise
+        return { kind: 'answer', speak: 'Changed course.', display: 'Using the steering.' }
+      },
+    }
+    let executions = 0
+    const staleTool = {
+      name: 'stale_action',
+      async execute() {
+        executions += 1
+        return 'should not run'
+      },
+    }
+    const clock = new FakeClock()
+    const tts = new RecordingTts()
+    const pipeline = createCommandPipeline({ llm, tts, clock, tools: [staleTool] })
+
+    const run = collect(pipeline, 'original command')
+    await waitUntil(() => requests.length === 1)
+    pipeline.pause()
+    firstTurn.resolve({ kind: 'tool_calls', calls: [{ id: 'stale', name: 'stale_action', args: {} }] })
+    await flush()
+
+    expect(pipeline.getState()).toBe('paused')
+    expect(tts.stopCalls).toBe(1)
+    clock.advance(24 * 60 * 60 * 1000)
+    await flush()
+    expect(requests).toHaveLength(1)
+    expect(executions).toBe(0)
+
+    pipeline.resume('Use Paris instead.')
+    const events = await run
+
+    expect(requests).toHaveLength(2)
+    expect(requests[1]).toEqual({
+      command: 'original command',
+      toolResults: [],
+      steering: 'Use Paris instead.',
+    })
+    expect(executions).toBe(0)
+    expect(events).toContainEqual({ type: 'status', status: 'paused', at: 0 })
+    expect(events).toContainEqual({ type: 'display', text: 'Using the steering.', at: 86_400_000 })
+  })
+
+  it('resumes without steering and continues the untouched model turn', async () => {
+    const firstTurn = deferred<AssistantTurn>()
+    const llm = new ScriptedLlm([
+      { kind: 'answer', speak: 'Finished.', display: 'Kept going.' },
+    ])
+    const requests: LlmRequest[] = []
+    const client: LlmClient = {
+      async complete(request) {
+        requests.push(request)
+        if (requests.length === 1) return firstTurn.promise
+        return llm.complete(request)
+      },
+    }
+    let executions = 0
+    const tool = {
+      name: 'continue_action',
+      async execute() {
+        executions += 1
+        return 'continued'
+      },
+    }
+    const pipeline = createCommandPipeline({
+      llm: client,
+      tts: new RecordingTts(),
+      clock: new FakeClock(),
+      tools: [tool],
+    })
+
+    const run = collect(pipeline, 'original')
+    await waitUntil(() => requests.length === 1)
+    pipeline.pause()
+    firstTurn.resolve({ kind: 'tool_calls', calls: [{ id: 'one', name: 'continue_action', args: {} }] })
+    await waitUntil(() => pipeline.getState() === 'paused')
+
+    pipeline.resume()
+    await run
+
+    expect(executions).toBe(1)
+    expect(requests[1]).toEqual({
+      command: 'original',
+      toolResults: [{
+        call: { id: 'one', name: 'continue_action', args: {} },
+        outcome: { ok: true, result: 'continued' },
+      }],
+    })
+  })
+
   it('speaks and displays a plain answer, then finishes', async () => {
     const llm = new ScriptedLlm([{ kind: 'answer', speak: 'Done.', display: 'Full detail here.' }])
     const tts = new RecordingTts()
@@ -248,6 +518,59 @@ describe('command pipeline', () => {
       })
       expect(events).toContainEqual({ type: 'tool_result', callId: 'c1', name: 'submit_form', ok: false, error: 'denied — the user did not respond in time; do not retry this action', at: 60_000 })
       expect(events.at(-1)).toMatchObject({ type: 'done' })
+    })
+
+    it('suspends the confirmation timeout while paused and resumes the untouched decision', async () => {
+      const clock = new FakeClock()
+      let executions = 0
+      const tool = {
+        ...riskyTool,
+        async execute() {
+          executions += 1
+          return 'submitted'
+        },
+      }
+      const llm = new ScriptedLlm([
+        { kind: 'tool_calls', calls: [{ id: 'c1', name: 'submit_form', args: { url: 'x.test' } }] },
+        { kind: 'answer', speak: 'Submitted.', display: 'Submitted.' },
+      ])
+      const tts = new RecordingTts()
+      const pipeline = createCommandPipeline({ llm, tts, clock, tools: [tool] })
+      let spokenWhilePaused: string[] = []
+
+      const events = await collect(pipeline, 'submit it', (event, activePipeline) => {
+        if (event.type === 'confirmation_requested') activePipeline.pause()
+        if (event.type === 'status' && event.status === 'paused') {
+          spokenWhilePaused = [...tts.spoken]
+          clock.advance(60_000)
+          activePipeline.resume()
+        }
+        if (event.type === 'confirmation_deadline' && event.expiresAt !== null) {
+          activePipeline.resolveConfirmation(event.confirmationId, true)
+        }
+      })
+
+      expect(executions).toBe(1)
+      expect(spokenWhilePaused).toEqual([])
+      expect(events).toContainEqual({
+        type: 'confirmation_deadline',
+        confirmationId: 'confirm-1',
+        expiresAt: null,
+        at: 0,
+      })
+      expect(events).toContainEqual({
+        type: 'confirmation_deadline',
+        confirmationId: 'confirm-1',
+        expiresAt: 120_000,
+        at: 60_000,
+      })
+      expect(events).toContainEqual({
+        type: 'confirmation_resolved',
+        confirmationId: 'confirm-1',
+        approved: true,
+        reason: 'user',
+        at: 60_000,
+      })
     })
 
     it('announces the countdown deadline on the request so the dashboard can tick', async () => {

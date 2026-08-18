@@ -30,5 +30,9 @@ export function createSingleShotPipeline(inner: CommandPipeline, clock: Clock): 
     execute,
     resolveConfirmation: (confirmationId, approved) => inner.resolveConfirmation(confirmationId, approved),
     resolveAsk: (askId, answer) => inner.resolveAsk(askId, answer),
+    abort: () => inner.abort(),
+    pause: () => inner.pause(),
+    resume: (steering) => inner.resume(steering),
+    getState: () => inner.getState(),
   }
 }

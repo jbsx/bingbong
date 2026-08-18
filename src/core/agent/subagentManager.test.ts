@@ -15,6 +15,7 @@ interface ManualTask {
   reject(error: Error): void
   progress(step: number, action: string): void
   cancelFlag(): boolean
+  waitIfPaused(): Promise<void>
 }
 
 /** TaskApi double: tasks sit running until manually resolved/rejected. */
@@ -25,7 +26,7 @@ function manualTaskApi() {
     started,
     tasks,
     api: {
-      start(spec: { id: string; kind: string; task: string }, hooks: { isCancelled(): boolean; onProgress(step: number, action: string): void }) {
+      start(spec: { id: string; kind: string; task: string }, hooks: { isCancelled(): boolean; waitIfPaused?(): Promise<void>; onProgress(step: number, action: string): void }) {
         started.push({ id: spec.id, kind: spec.kind, task: spec.task })
         let settle: ((report: string) => void) | null = null
         let fail: ((error: Error) => void) | null = null
@@ -39,6 +40,7 @@ function manualTaskApi() {
           reject: (error) => fail?.(error),
           progress: hooks.onProgress,
           cancelFlag: () => hooks.isCancelled(),
+          waitIfPaused: () => hooks.waitIfPaused?.() ?? Promise.resolve(),
         })
         return { done }
       },
@@ -205,6 +207,56 @@ describe('subagent manager', () => {
     api.tasks.get('a-1')!.resolve('fast')
     await flush()
     expect(mgr.cancel('a-1').ok).toBe(false)
+  })
+
+  it('cancels every running agent without changing completed agents', async () => {
+    const { mgr, api } = manager()
+    mgr.spawn('research', 'already done')
+    mgr.spawn('research', 'still running')
+    mgr.spawn('browse', 'also running')
+    api.tasks.get('a-1')!.resolve('complete')
+    await flush()
+
+    expect(mgr.cancelAll()).toBe(2)
+    expect(api.tasks.get('a-1')!.cancelFlag()).toBe(false)
+    expect(api.tasks.get('a-2')!.cancelFlag()).toBe(true)
+    expect(api.tasks.get('a-3')!.cancelFlag()).toBe(true)
+  })
+
+  it('pauses every workhorse on a shared gate until resumed', async () => {
+    const { mgr, api } = manager()
+    mgr.spawn('research', 'one')
+    mgr.spawn('browse', 'two')
+
+    mgr.pauseAll()
+    let firstResumed = false
+    let secondResumed = false
+    void api.tasks.get('a-1')!.waitIfPaused().then(() => { firstResumed = true })
+    void api.tasks.get('a-2')!.waitIfPaused().then(() => { secondResumed = true })
+    await flush()
+    expect([firstResumed, secondResumed]).toEqual([false, false])
+
+    mgr.resumeAll()
+    await flush()
+    expect([firstResumed, secondResumed]).toEqual([true, true])
+  })
+
+  it('clears the shared pause when mass-cancelling so future agents can run', async () => {
+    const { mgr, api } = manager()
+    mgr.spawn('research', 'paused work')
+    mgr.pauseAll()
+    let cancelledAgentReleased = false
+    void api.tasks.get('a-1')!.waitIfPaused().then(() => { cancelledAgentReleased = true })
+
+    expect(mgr.cancelAll()).toBe(1)
+    await flush()
+    expect(cancelledAgentReleased).toBe(true)
+
+    mgr.spawn('research', 'next command work')
+    let nextAgentReleased = false
+    void api.tasks.get('a-2')!.waitIfPaused().then(() => { nextAgentReleased = true })
+    await flush()
+    expect(nextAgentReleased).toBe(true)
   })
 
   it('marks a rejected task as failed with its error', async () => {

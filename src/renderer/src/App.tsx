@@ -51,7 +51,7 @@ export function App() {
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [voice])
+  }, [assistant, voice])
 
   const orbStatus = voice.listening ? 'listening' : assistant.status
   // Never idle over a running command, an open mic, or the settings page —
@@ -74,6 +74,8 @@ export function App() {
               ? 'listening — yes or no?'
               : voice.reason === 'ask'
                 ? 'listening — your answer'
+                : voice.reason === 'pause'
+                  ? 'paused — say resume or steer me'
                 : 'listening — say a command'}
           </span>
         ) : voice.monitoring ? (

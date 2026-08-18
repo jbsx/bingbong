@@ -16,6 +16,8 @@ export interface ToolResult {
 export interface LlmRequest {
   command: string
   toolResults: ToolResult[]
+  /** A user correction captured while the current run was paused. */
+  steering?: string
 }
 
 /** Token usage as reported by the provider (absent when unknown). */

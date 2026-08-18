@@ -44,6 +44,7 @@ export interface SubagentSpec {
 
 export interface SubagentTaskHooks {
   isCancelled(): boolean
+  waitIfPaused?(): Promise<void>
   onProgress(step: number, action: string): void
 }
 
@@ -75,6 +76,9 @@ export type CancelResult = { ok: true } | { ok: false; reason: string }
 export interface SubagentManager {
   spawn(kind: SubagentKind, task: string): SpawnResult
   cancel(agentId: string): CancelResult
+  cancelAll(): number
+  pauseAll(): void
+  resumeAll(): void
   results(options: { ids?: string[]; wait?: boolean }): Promise<string>
   list(): SubagentRecord[]
 }
@@ -90,6 +94,23 @@ export function createSubagentManager(deps: SubagentManagerDeps): SubagentManage
   const records = new Map<string, SubagentRecord>()
   const cancelled = new Set<string>()
   const settled = new Map<string, Promise<void>>()
+  const pauseWaiters = new Map<string, Set<() => void>>()
+  let paused = false
+
+  function releasePause(agentId: string): void {
+    const waiters = pauseWaiters.get(agentId)
+    pauseWaiters.delete(agentId)
+    for (const resolve of waiters ?? []) resolve()
+  }
+
+  function waitIfPaused(agentId: string): Promise<void> {
+    if (!paused || cancelled.has(agentId)) return Promise.resolve()
+    return new Promise((resolve) => {
+      const waiters = pauseWaiters.get(agentId) ?? new Set<() => void>()
+      waiters.add(resolve)
+      pauseWaiters.set(agentId, waiters)
+    })
+  }
 
   function liveCount(): number {
     let live = 0
@@ -137,6 +158,7 @@ export function createSubagentManager(deps: SubagentManagerDeps): SubagentManage
 
       const { done } = taskApi.start({ id, kind, task }, {
         isCancelled: () => cancelled.has(id),
+        waitIfPaused: () => waitIfPaused(id),
         onProgress: (step, action) => {
           record.steps = step
           record.lastAction = action
@@ -170,7 +192,30 @@ export function createSubagentManager(deps: SubagentManagerDeps): SubagentManage
       if (!record) return { ok: false, reason: `no such subagent: '${agentId}'` }
       if (record.status !== 'running') return { ok: false, reason: `subagent ${agentId} already ${record.status}` }
       cancelled.add(agentId)
+      releasePause(agentId)
       return { ok: true }
+    },
+
+    cancelAll() {
+      let count = 0
+      for (const record of records.values()) {
+        if (record.status !== 'running') continue
+        cancelled.add(record.id)
+        releasePause(record.id)
+        count += 1
+      }
+      paused = false
+      for (const agentId of [...pauseWaiters.keys()]) releasePause(agentId)
+      return count
+    },
+
+    pauseAll() {
+      paused = true
+    },
+
+    resumeAll() {
+      paused = false
+      for (const agentId of [...pauseWaiters.keys()]) releasePause(agentId)
     },
 
     async results(options) {

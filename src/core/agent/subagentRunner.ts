@@ -31,6 +31,8 @@ export interface RunSubagentOptions {
   task: string
   /** Polled before each model call and each tool call. */
   isCancelled(): boolean
+  /** Resolves immediately while running, or after the shared pause gate opens. */
+  waitIfPaused?(): Promise<void>
   onProgress?(progress: SubagentProgress): void
 }
 
@@ -44,6 +46,12 @@ const DEFAULT_MAX_TOOL_ROUNDS = 20
 
 function toErrorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err)
+}
+
+async function checkpoint(options: RunSubagentOptions): Promise<void> {
+  if (options.isCancelled()) throw new SubagentCancelledError()
+  await options.waitIfPaused?.()
+  if (options.isCancelled()) throw new SubagentCancelledError()
 }
 
 export async function runSubagent(deps: RunSubagentDeps, options: RunSubagentOptions): Promise<string> {
@@ -60,20 +68,20 @@ export async function runSubagent(deps: RunSubagentDeps, options: RunSubagentOpt
   let rounds = 0
 
   for (;;) {
-    if (options.isCancelled()) throw new SubagentCancelledError()
+    await checkpoint(options)
     if (rounds >= maxToolRounds) {
       throw new Error(`subagent tool round limit (${maxToolRounds}) reached`)
     }
 
     const turn = await llm.complete({ command: options.task, toolResults })
-    if (options.isCancelled()) throw new SubagentCancelledError()
+    await checkpoint(options)
     if (turn.kind === 'answer') {
       return turn.display !== '' ? turn.display : turn.speak
     }
 
     rounds += 1
     for (const call of turn.calls) {
-      if (options.isCancelled()) throw new SubagentCancelledError()
+      await checkpoint(options)
       options.onProgress?.({ step: rounds, action: describeToolAction(call.name, call.args) })
 
       let outcome: ToolResultOutcome
@@ -100,7 +108,7 @@ export async function runSubagent(deps: RunSubagentDeps, options: RunSubagentOpt
               }
             }
             const result = await tool.execute(call, toolContext)
-            if (options.isCancelled()) throw new SubagentCancelledError()
+            await checkpoint(options)
             if (typeof result === 'string' && result.startsWith(`${ASK_ESCALATION_PREFIX} `)) {
               // A subagent cannot continue until the orchestrator asks the
               // user. Return the directive as its report verbatim so

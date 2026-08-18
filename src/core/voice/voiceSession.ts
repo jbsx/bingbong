@@ -7,6 +7,7 @@ import type { VoiceHeardEvent, VoiceListenReason, VoiceState } from './ipcChanne
 import { createUtteranceEndpointer, VAD_FRAME_SAMPLES, type UtteranceEndpointerConfig } from './vadEndpointing'
 import { createWakeMonitor } from './wakeMonitor'
 import { parseYesNo } from './yesNo'
+import type { CommandRunState } from '../pipeline/createCommandPipeline'
 
 export const CONFIRM_VOICE_WINDOW_MS = 12_000
 /** Free-text ask window: as long as the ask_user timeout, for spoken answers. */
@@ -40,6 +41,10 @@ export interface VoiceSessionDeps {
   onResolveConfirmation(confirmationId: string, approved: boolean): void
   /** A spoken ask_user answer — free text, returned to the model verbatim. */
   onResolveAsk(askId: string, answer: string): void
+  getRunState(): CommandRunState
+  onAbort(): void
+  onPause(): void
+  onResume(steering?: string): void
   onStateChange(state: VoiceState): void
   onHeard(event: VoiceHeardEvent): void
   onError(message: string): void
@@ -57,6 +62,8 @@ export interface VoiceSession {
   pushAudio(chunk: Float32Array): Promise<void>
   /** Pipeline events drive the confirmation window. */
   handlePipelineEvent(event: PipelineEvent): void
+  /** Handler surface for the dedicated always-on heads arriving in issue #23. */
+  interrupt(kind: 'abort' | 'pause'): boolean
 }
 
 /**
@@ -85,6 +92,14 @@ export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
   // Chunks are processed strictly in arrival order; scoring is async.
   let audioChain: Promise<void> = Promise.resolve()
   let monitorChain: Promise<void> = Promise.resolve()
+
+  const abortPhrases = new Set(['stop', 'abort', 'cancel', 'never mind'])
+  const pausePhrases = new Set(['pause', 'hold on', 'wait'])
+  const resumePhrases = new Set(['continue', 'resume'])
+
+  function normalizedPhrase(text: string): string {
+    return text.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim()
+  }
 
   function emitState(): void {
     deps.onStateChange({ listening, reason, monitoring })
@@ -146,6 +161,32 @@ export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
     if (monitoring) monitor?.reset()
   }
 
+  function enterPauseListening(): void {
+    cancelWindowTimer?.()
+    cancelWindowTimer = null
+    cancelAskTimer?.()
+    cancelAskTimer = null
+    listening = true
+    reason = 'pause'
+    endpointer.reset()
+    deps.vad.reset()
+    emitState()
+  }
+
+  function interrupt(kind: 'abort' | 'pause'): boolean {
+    const runState = deps.getRunState()
+    if (kind === 'abort') {
+      if (runState === 'idle') return false
+      deps.onAbort()
+      stopListening()
+      return true
+    }
+    if (runState !== 'running') return false
+    deps.onPause()
+    enterPauseListening()
+    return true
+  }
+
   function fail(message: string): void {
     deps.onError(message)
     stopListening()
@@ -177,6 +218,36 @@ export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
       return
     }
     if (!listening || text === '') return
+
+    const phrase = normalizedPhrase(text)
+    const runState = deps.getRunState()
+    if (runState !== 'idle' && abortPhrases.has(phrase)) {
+      deps.onAbort()
+      deps.onHeard({ text, routed: 'abort' })
+      stopListening()
+      return
+    }
+    if (runState === 'paused') {
+      if (resumePhrases.has(phrase)) {
+        deps.onResume()
+        deps.onHeard({ text, routed: 'resume' })
+        stopListening()
+        return
+      }
+      if (pausePhrases.has(phrase)) {
+        deps.onHeard({ text, routed: 'pause' })
+        return
+      }
+      deps.onResume(text)
+      deps.onHeard({ text, routed: 'steering' })
+      stopListening()
+      return
+    }
+    if (runState === 'running' && pausePhrases.has(phrase)) {
+      interrupt('pause')
+      deps.onHeard({ text, routed: 'pause' })
+      return
+    }
 
     if (activeConfirmation !== null) {
       const decision = parseYesNo(text)
@@ -313,5 +384,7 @@ export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
         if (listening && reason === 'ask') stopListening()
       }
     },
+
+    interrupt,
   }
 }

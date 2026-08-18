@@ -4,4 +4,6 @@ export const PIPELINE_IPC = {
   resolveConfirmation: 'pipeline:resolve-confirmation',
   /** Answer an open ask_user window with free text (the dashboard card). */
   resolveAsk: 'pipeline:resolve-ask',
+  /** Renderer → main: abort the active run, if any. */
+  abort: 'pipeline:abort',
 } as const

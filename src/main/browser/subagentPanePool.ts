@@ -33,7 +33,7 @@ export interface SubagentPanePool {
 export function createSubagentPanePool(
   win: BrowserWindow,
   tabs: SubagentTabs,
-  deps: { session: Electron.Session },
+  deps: { session: Electron.Session; onEscape?(): boolean },
 ): SubagentPanePool {
   const views = new Map<string, PooledView>()
 
@@ -54,6 +54,9 @@ export function createSubagentPanePool(
     view.setBounds(toPaneBounds(HIDDEN_PANE_RECT))
 
     const wc = view.webContents
+    wc.on('before-input-event', (event, input) => {
+      if (input.type === 'keyDown' && input.key === 'Escape' && deps.onEscape?.()) event.preventDefault()
+    })
     wc.on('did-navigate', (_event, url) => tabs.update(tab.agentId, { url }))
     wc.on('did-navigate-in-page', (_event, url) => tabs.update(tab.agentId, { url }))
     wc.on('page-title-updated', (_event, title) => tabs.update(tab.agentId, { title }))

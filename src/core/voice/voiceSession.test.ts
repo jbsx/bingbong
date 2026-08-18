@@ -3,6 +3,7 @@ import type { PipelineEvent } from '../pipeline/events'
 import { FakeClock, FakeTranscriber, FakeVad, FakeWakeDetector, RecordingTts } from '../testing/doubles'
 import type { VoiceHeardEvent, VoiceState } from './ipcChannels'
 import { createVoiceSession } from './voiceSession'
+import type { CommandRunState } from '../pipeline/createCommandPipeline'
 
 // The voice session is T9's coordinator: mic audio in (through the VadScorer
 // and utterance endpointing), transcripts out to the same command pipeline as
@@ -45,6 +46,9 @@ interface SessionHarness {
   commands: string[]
   resolutions: { confirmationId: string; approved: boolean }[]
   askResolutions: { askId: string; answer: string }[]
+  aborts: number[]
+  pauses: number[]
+  resumes: (string | undefined)[]
   chimes: number[]
   speakUtterance(probs?: number[]): Promise<void>
   session: ReturnType<typeof createVoiceSession>
@@ -59,6 +63,7 @@ async function createSession(overrides?: {
   vad?: FakeVad
   confirmWindowMs?: number
   wake?: { detector: FakeWakeDetector; threshold?: number }
+  runState?: { value: CommandRunState }
 }): Promise<SessionHarness> {
   const vad = overrides?.vad ?? new FakeVad()
   const transcriber = overrides?.transcriber ?? new FakeTranscriber()
@@ -71,6 +76,9 @@ async function createSession(overrides?: {
   const commands: string[] = []
   const resolutions: { confirmationId: string; approved: boolean }[] = []
   const askResolutions: { askId: string; answer: string }[] = []
+  const aborts: number[] = []
+  const pauses: number[] = []
+  const resumes: (string | undefined)[] = []
   const chimes: number[] = []
   const threshold = overrides?.wake?.threshold ?? 0.5
 
@@ -91,6 +99,16 @@ async function createSession(overrides?: {
     onSubmitCommand: (text) => commands.push(text),
     onResolveConfirmation: (confirmationId, approved) => resolutions.push({ confirmationId, approved }),
     onResolveAsk: (askId, answer) => askResolutions.push({ askId, answer }),
+    getRunState: () => overrides?.runState?.value ?? 'idle',
+    onAbort: () => aborts.push(1),
+    onPause: () => {
+      pauses.push(1)
+      if (overrides?.runState) overrides.runState.value = 'paused'
+    },
+    onResume: (steering) => {
+      resumes.push(steering)
+      if (overrides?.runState) overrides.runState.value = 'running'
+    },
     onStateChange: (state) => states.push(state),
     onHeard: (event) => heard.push(event),
     onError: (message) => errors.push(message),
@@ -106,7 +124,7 @@ async function createSession(overrides?: {
     }
   }
 
-  return { vad, transcriber, clock, tts, idle, states, heard, errors, commands, resolutions, askResolutions, chimes, speakUtterance, session }
+  return { vad, transcriber, clock, tts, idle, states, heard, errors, commands, resolutions, askResolutions, aborts, pauses, resumes, chimes, speakUtterance, session }
 }
 
 function confirmationRequested(id = 'confirm-1'): PipelineEvent {
@@ -133,6 +151,72 @@ function askRequested(id = 'ask-1'): PipelineEvent {
 }
 
 describe('voice session', () => {
+  it.each(['stop', 'abort', 'cancel', 'never mind'])('routes active "%s" to abort before confirmation handling', async (phrase) => {
+    const runState = { value: 'running' as CommandRunState }
+    const harness = await createSession({ transcriber: new FakeTranscriber([phrase]), runState })
+    harness.session.handlePipelineEvent(confirmationRequested())
+    await flush()
+
+    await harness.speakUtterance()
+
+    expect(harness.aborts).toEqual([1])
+    expect(harness.resolutions).toEqual([])
+    expect(harness.commands).toEqual([])
+    expect(harness.heard).toEqual([{ text: phrase, routed: 'abort' }])
+  })
+
+  it('routes idle stop as an ordinary command', async () => {
+    const harness = await createSession({ transcriber: new FakeTranscriber(['stop']) })
+    harness.session.arm()
+
+    await harness.speakUtterance()
+
+    expect(harness.aborts).toEqual([])
+    expect(harness.commands).toEqual(['stop'])
+  })
+
+  it('keeps listening after pause with no timeout, then resumes with spoken steering', async () => {
+    const runState = { value: 'running' as CommandRunState }
+    const harness = await createSession({
+      transcriber: new FakeTranscriber(['hold on', 'use Paris instead']),
+      runState,
+    })
+    harness.session.arm()
+
+    await harness.speakUtterance()
+    expect(harness.pauses).toEqual([1])
+    expect(harness.states.at(-1)).toEqual({ listening: true, reason: 'pause', monitoring: false })
+
+    harness.clock.advance(24 * 60 * 60 * 1000)
+    expect(harness.states.at(-1)).toEqual({ listening: true, reason: 'pause', monitoring: false })
+
+    await harness.speakUtterance()
+    expect(harness.resumes).toEqual(['use Paris instead'])
+    expect(harness.heard).toEqual([
+      { text: 'hold on', routed: 'pause' },
+      { text: 'use Paris instead', routed: 'steering' },
+    ])
+    expect(harness.states.at(-1)).toEqual({ listening: false, reason: null, monitoring: false })
+  })
+
+  it('exposes active-only handlers for future dedicated abort and pause wake heads', async () => {
+    const runState = { value: 'running' as CommandRunState }
+    const harness = await createSession({ runState })
+
+    expect(harness.session.interrupt('pause')).toBe(true)
+    expect(harness.pauses).toEqual([1])
+    expect(harness.states.at(-1)).toEqual({ listening: true, reason: 'pause', monitoring: false })
+
+    runState.value = 'running'
+    expect(harness.session.interrupt('abort')).toBe(true)
+    expect(harness.aborts).toEqual([1])
+    expect(harness.states.at(-1)).toEqual({ listening: false, reason: null, monitoring: false })
+
+    runState.value = 'idle'
+    expect(harness.session.interrupt('abort')).toBe(false)
+    expect(harness.session.interrupt('pause')).toBe(false)
+  })
+
   it('submits a spoken command through the same callback the text box uses, then disarms', async () => {
     const harness = await createSession({ transcriber: new FakeTranscriber(['open youtube']) })
 

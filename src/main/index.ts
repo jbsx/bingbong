@@ -8,7 +8,7 @@ import { attachBrowserPaneToWindow, registerBrowserIpc } from './browser/attachB
 import { createPaneBrowserController } from './browser/createPaneBrowserController'
 import { attachDownloadRouter } from './browser/attachDownloadRouter'
 import { runCliHarness, saveScreenshotFile } from './cli/runCliHarness'
-import { attachAssistantToWindow, registerAssistantIpc } from './agent/attachAssistant'
+import { attachAssistantAbortHotkey, attachAssistantToWindow, pipelineFor, registerAssistantIpc } from './agent/attachAssistant'
 import { createAssistantPipeline } from './agent/createAssistantPipeline'
 import { createSubagentRuntime, type SubagentRuntime } from './agent/createSubagentRuntime'
 import { registerSubagentIpc } from './browser/subagentPanePool'
@@ -169,6 +169,12 @@ async function createWindow(): Promise<BrowserWindow> {
       if (!win.isDestroyed()) win.webContents.send(PIPELINE_IPC.event, event)
     },
     onUsage: (record) => usageStore.record(record.role, record.model, record.usage),
+    onEscape: () => {
+      const activePipeline = pipelineFor(win)
+      if (!activePipeline || activePipeline.getState() === 'idle') return false
+      activePipeline.abort()
+      return true
+    },
   })
   subagentRuntimes.set(win, subagentRuntime)
   win.on('closed', () => {
@@ -196,18 +202,22 @@ async function createWindow(): Promise<BrowserWindow> {
         }
       : undefined,
   })
+  const pipeline = createAssistantPipeline({
+    controller,
+    env: currentEnv(),
+    getEnv: currentEnv,
+    tts: speakingGate.tts,
+    subagentTools: subagentRuntime.tools,
+    subagentControl: subagentRuntime,
+    onLlmUsage: (record) => usageStore.record(record.role, record.model, record.usage),
+  })
   attachAssistantToWindow(
-    createAssistantPipeline({
-      controller,
-      env: currentEnv(),
-      getEnv: currentEnv,
-      tts: speakingGate.tts,
-      subagentTools: subagentRuntime.tools,
-      onLlmUsage: (record) => usageStore.record(record.role, record.model, record.usage),
-    }),
+    pipeline,
     win,
     (event) => voiceSession.handlePipelineEvent(event),
   )
+  const detachPaneAbort = attachAssistantAbortHotkey(pipeline, pane.view.webContents)
+  win.on('closed', detachPaneAbort)
 
   if (process.env.ELECTRON_RENDERER_URL) {
     void win.loadURL(process.env.ELECTRON_RENDERER_URL)

@@ -136,6 +136,27 @@ describe('openAiLlmClient', () => {
     ])
   })
 
+  it('places a steering directive after retained tool context', async () => {
+    const fetch = new ScriptedFetch([
+      completionResponse({ content: '{"speak":"Changed.","display":"Changed course."}' }),
+    ])
+    const client = makeClient(fetch)
+
+    await client.complete({
+      command: 'book the trip',
+      toolResults: [{
+        call: { id: 'c1', name: 'navigate', args: { url: 'example.test' } },
+        outcome: { ok: true, result: 'navigated' },
+      }],
+      steering: 'Use Paris instead.',
+    })
+
+    expect(fetch.calls[0].body.messages.at(-1)).toEqual({
+      role: 'user',
+      content: 'Steering directive: Use Paris instead.',
+    })
+  })
+
   it('keeps explicitly optional tool parameters out of the required schema', async () => {
     const fetch = new ScriptedFetch([
       completionResponse({ content: '{"speak":"Done.","display":"Done."}' }),

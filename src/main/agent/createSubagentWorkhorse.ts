@@ -101,7 +101,12 @@ export function createSubagentTaskApi(deps: SubagentWorkhorseDeps): SubagentTask
           ...(deps.clock ? { clock: deps.clock } : {}),
           ...(deps.maxToolRounds !== undefined ? { maxToolRounds: deps.maxToolRounds } : {}),
         },
-        { task: spec.task, isCancelled: hooks.isCancelled, onProgress: (progress) => hooks.onProgress(progress.step, progress.action) },
+        {
+          task: spec.task,
+          isCancelled: hooks.isCancelled,
+          waitIfPaused: hooks.waitIfPaused ?? (() => Promise.resolve()),
+          onProgress: (progress) => hooks.onProgress(progress.step, progress.action),
+        },
       )
       return { done }
     },

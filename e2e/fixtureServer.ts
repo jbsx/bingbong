@@ -234,6 +234,14 @@ export async function startFixtureServer(): Promise<FixtureServer> {
       res.end(DOWNLOAD_PAYLOAD)
       return
     }
+    if (req.url === '/slow') {
+      setTimeout(() => {
+        if (res.destroyed) return
+        res.writeHead(200, { 'Content-Type': 'text/html' })
+        res.end(page('<h1 style="color:#fff">slow fixture page</h1>'))
+      }, 3_000)
+      return
+    }
     res.writeHead(200, { 'Content-Type': 'text/html' })
     if (req.url === '/second') {
       res.end(page('<h1 style="color:#fff">second fixture page</h1>'))

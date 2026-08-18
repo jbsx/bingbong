@@ -37,6 +37,12 @@ export interface AssistantPipelineDeps {
   search?: SearchProvider
   /** Delegation tools (spawn/cancel/agent_results) when subagents are on. */
   subagentTools?: Tool[]
+  /** Fan-out controls shared with every running subagent. */
+  subagentControl?: {
+    cancelAll(): number
+    pauseAll(): void
+    resumeAll(): void
+  }
   /** Receives per-turn orchestrator token usage (daily spend estimate). */
   onLlmUsage?: UsageSink
   /** Override for deterministic tests; production uses the Z.AI Vision MCP adapter. */
@@ -134,6 +140,9 @@ export function createAssistantPipeline(deps: AssistantPipelineDeps): CommandPip
     tts: deps.tts ?? silentTts,
     clock,
     tools,
+    onAbort: () => deps.subagentControl?.cancelAll(),
+    onPause: () => deps.subagentControl?.pauseAll(),
+    onResume: () => deps.subagentControl?.resumeAll(),
     ...(configuredAskTimeoutMs !== undefined ? { askTimeoutMs: configuredAskTimeoutMs } : {}),
   })
   return createSingleShotPipeline(pipeline, clock)
