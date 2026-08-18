@@ -23,6 +23,7 @@ import { createUsageStore } from './settings/usageStore'
 import { USAGE_IPC } from '../core/settings/usageIpcChannels'
 import { HISTORY_IPC, HISTORY_HYDRATE_LIMIT } from '../core/history/ipcChannels'
 import { createHistoryRecorder } from '../core/history/historyRecorder'
+import { createSessionMemory } from '../core/session/sessionMemory'
 import { createSqliteHistoryStore } from './history/createSqliteHistoryStore'
 import { DEFAULT_DAILY_SPEND_WARN_USD } from '../core/agent/spendEstimate'
 import { resolvePiperConfig } from './tts/piperConfig'
@@ -215,6 +216,10 @@ async function createWindow(): Promise<BrowserWindow> {
     recordHeard: (heard) => historyRecorder.heard(heard),
     recordError: (message, at) => historyRecorder.voiceError(message, at),
   })
+  // Session continuity (spec #23): one in-memory thread per window, fed from
+  // the same run-observer seam as the history recorder. The pipeline reads it
+  // live on every orchestrator round; it dies on quit and never persists.
+  const sessionMemory = createSessionMemory()
   const pipeline = createAssistantPipeline({
     controller,
     env: currentEnv(),
@@ -223,12 +228,20 @@ async function createWindow(): Promise<BrowserWindow> {
     subagentTools: subagentRuntime.tools,
     subagentControl: subagentRuntime,
     onLlmUsage: (record) => usageStore.record(record.role, record.model, record.usage),
+    session: sessionMemory,
   })
   attachAssistantToWindow(
     pipeline,
     win,
     (event) => voiceSession.handlePipelineEvent(event),
-    () => historyRecorder.run().event,
+    () => {
+      const historyRun = historyRecorder.run()
+      const sessionRun = sessionMemory.run()
+      return (event) => {
+        historyRun.event(event)
+        sessionRun.event(event)
+      }
+    },
   )
   const detachPaneAbort = attachAssistantAbortHotkey(pipeline, pane.view.webContents)
   win.on('closed', detachPaneAbort)

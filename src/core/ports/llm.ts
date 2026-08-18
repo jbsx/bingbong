@@ -13,11 +13,19 @@ export interface ToolResult {
   outcome: ToolResultOutcome
 }
 
+/** One distilled prior exchange turn (session continuity, spec #23). */
+export interface SessionTurn {
+  role: 'user' | 'assistant'
+  text: string
+}
+
 export interface LlmRequest {
   command: string
   toolResults: ToolResult[]
   /** A user correction captured while the current run was paused. */
   steering?: string
+  /** Distilled prior turns, oldest first; absent when the session is empty. */
+  history?: SessionTurn[]
 }
 
 /** Token usage as reported by the provider (absent when unknown). */

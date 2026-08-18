@@ -4,6 +4,7 @@ import { systemClock, type Clock } from '../../core/ports/clock'
 import type { BrowserController, VisualGroundingController } from '../../core/ports/browser'
 import type { SearchProvider } from '../../core/ports/search'
 import type { VisionModel } from '../../core/ports/vision'
+import type { SessionMemory } from '../../core/session/sessionMemory'
 import { createCommandPipeline, type CommandPipeline } from '../../core/pipeline/createCommandPipeline'
 import { createSingleShotPipeline } from '../../core/pipeline/singleShotPipeline'
 import type { Tool } from '../../core/pipeline/tool'
@@ -47,6 +48,12 @@ export interface AssistantPipelineDeps {
   onLlmUsage?: UsageSink
   /** Override for deterministic tests; production uses the Z.AI Vision MCP adapter. */
   vision?: VisionModel
+  /**
+   * Session continuity (spec #23): prior distilled turns ride along with
+   * every orchestrator round. Created per window by main and fed from the
+   * same run-observer seam as the history recorder.
+   */
+  session?: Pick<SessionMemory, 'history'>
 }
 
 function resolveLlm(
@@ -140,6 +147,7 @@ export function createAssistantPipeline(deps: AssistantPipelineDeps): CommandPip
     tts: deps.tts ?? silentTts,
     clock,
     tools,
+    ...(deps.session ? { session: deps.session } : {}),
     onAbort: () => deps.subagentControl?.cancelAll(),
     onPause: () => deps.subagentControl?.pauseAll(),
     onResume: () => deps.subagentControl?.resumeAll(),

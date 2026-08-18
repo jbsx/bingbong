@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { createCommandPipeline, type CommandPipeline } from './createCommandPipeline'
 import { createAskUserTool } from './askUserTools'
+import { createSessionMemory } from '../session/sessionMemory'
 import { FailingTts, FakeClock, RecordingTts, ScriptedLlm } from '../testing/doubles'
 import type { PipelineEvent } from './events'
 import type { AssistantTurn, LlmClient, LlmRequest } from '../ports/llm'
@@ -881,5 +882,87 @@ describe('command pipeline', () => {
     expect(events.find((event) => event.type === 'tool_result' && !event.ok)).toMatchObject({
       error: expect.stringMatching(/vision call limit \(30\)/),
     })
+  })
+
+  it('rides the session store\'s history along on every LLM round, reading it live', async () => {
+    let reads = 0
+    const session = {
+      history() {
+        reads += 1
+        return [
+          { role: 'user' as const, text: 'find a pizza place' },
+          { role: 'assistant' as const, text: 'Found two: Pizza A and Pizza B.' },
+        ]
+      },
+    }
+    const spinner = { name: 'spin', async execute() { return 'spun' } }
+    const llm = new ScriptedLlm([
+      { kind: 'tool_calls', calls: [{ id: 'c1', name: 'spin', args: {} }] },
+      { kind: 'answer', speak: 'The second one.', display: 'Pizza B.' },
+    ])
+    const pipeline = createCommandPipeline({ llm, tts: new RecordingTts(), clock: new FakeClock(), tools: [spinner], session })
+
+    await collect(pipeline, 'what about the second one?')
+
+    expect(reads).toBe(2)
+    expect(llm.requests).toHaveLength(2)
+    for (const request of llm.requests) {
+      expect(request.history).toEqual([
+        { role: 'user', text: 'find a pizza place' },
+        { role: 'assistant', text: 'Found two: Pizza A and Pizza B.' },
+      ])
+    }
+  })
+
+  it('omits the history field entirely when the session has no prior turns', async () => {
+    const spinner = { name: 'spin', async execute() { return 'spun' } }
+    const llm = new ScriptedLlm([
+      { kind: 'tool_calls', calls: [{ id: 'c1', name: 'spin', args: {} }] },
+      { kind: 'answer', speak: 'Done.', display: 'Done.' },
+    ])
+    const session = { history: () => [] }
+    const withSession = createCommandPipeline({ llm, tts: new RecordingTts(), clock: new FakeClock(), tools: [spinner], session })
+    const withoutSession = createCommandPipeline({
+      llm: new ScriptedLlm([
+        { kind: 'tool_calls', calls: [{ id: 'c1', name: 'spin', args: {} }] },
+        { kind: 'answer', speak: 'Done.', display: 'Done.' },
+      ]),
+      tts: new RecordingTts(),
+      clock: new FakeClock(),
+      tools: [spinner],
+    })
+
+    await collect(withSession, 'first command')
+    await collect(withoutSession, 'first command')
+
+    for (const request of llm.requests) expect(request).not.toHaveProperty('history')
+  })
+
+  it('feeds a real session store from its own event stream: run two sees run one', async () => {
+    const session = createSessionMemory()
+    const spinner = { name: 'spin', async execute() { return 'spun' } }
+    const clock = new FakeClock()
+    const llm = new ScriptedLlm([
+      { kind: 'answer', speak: 'Found two.', display: '1. Pizza A 2. Pizza B' },
+      { kind: 'answer', speak: 'The second one.', display: 'Pizza B.' },
+    ])
+    const pipeline = createCommandPipeline({ llm, tts: new RecordingTts(), clock, tools: [spinner], session })
+    const observe = (events: PipelineEvent[]): void => {
+      const observer = session.run()
+      for (const event of events) observer.event(event)
+    }
+
+    const runOne: PipelineEvent[] = []
+    for await (const event of pipeline.execute('find a pizza place')) runOne.push(event)
+    observe(runOne)
+
+    const runTwo: PipelineEvent[] = []
+    for await (const event of pipeline.execute('what about the second one?')) runTwo.push(event)
+
+    expect(llm.requests[0]).not.toHaveProperty('history')
+    expect(llm.requests[1].history).toEqual([
+      { role: 'user', text: 'find a pizza place' },
+      { role: 'assistant', text: '1. Pizza A 2. Pizza B' },
+    ])
   })
 })

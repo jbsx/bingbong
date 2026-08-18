@@ -1,8 +1,9 @@
 import type { PipelineEvent } from './events'
 import type { RiskVerdict, Tool, ToolContext } from './tool'
 import type { Clock } from '../ports/clock'
-import type { LlmClient, ToolCall, ToolResult, ToolResultOutcome } from '../ports/llm'
+import type { LlmClient, SessionTurn, ToolCall, ToolResult, ToolResultOutcome } from '../ports/llm'
 import type { TtsSpeaker } from '../ports/tts'
+import type { SessionMemory } from '../session/sessionMemory'
 import { spokenErrorLine } from '../agent/answerContract'
 import {
   createVisionBudget,
@@ -15,6 +16,8 @@ export interface CommandPipelineDeps {
   tts: TtsSpeaker
   clock: Clock
   tools: Tool[]
+  /** Distilled session turns that ride along on every LLM round (spec #23). */
+  session?: Pick<SessionMemory, 'history'>
   confirmTimeoutMs?: number
   /** How long an ask_user window stays open (voice + typed answers). */
   askTimeoutMs?: number
@@ -204,7 +207,13 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
             throw new Error(`tool round limit (${maxToolRounds}) reached`)
           }
           steering = (yield* checkpoint(run, 'thinking')) ?? steering
-          const turn = await llm.complete({ command, toolResults, ...(steering ? { steering } : {}) })
+          const history: SessionTurn[] = deps.session?.history() ?? []
+          const turn = await llm.complete({
+            command,
+            toolResults,
+            ...(history.length > 0 ? { history } : {}),
+            ...(steering ? { steering } : {}),
+          })
           steering = undefined
           const afterModelSteering = yield* checkpoint(run, 'thinking')
           if (afterModelSteering) {

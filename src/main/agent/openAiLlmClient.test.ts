@@ -136,6 +136,64 @@ describe('openAiLlmClient', () => {
     ])
   })
 
+  it('places session history as a continuation line plus prior turns, before the current command', async () => {
+    const fetch = new ScriptedFetch([
+      completionResponse({ content: '{"speak":"The second one.","display":"Chose the second one."}' }),
+    ])
+    const client = makeClient(fetch)
+
+    await client.complete({
+      command: 'what about the second one?',
+      toolResults: [
+        {
+          call: { id: 'c1', name: 'navigate', args: { url: 'pizza.test' } },
+          outcome: { ok: true, result: 'navigated' },
+        },
+      ],
+      history: [
+        { role: 'user', text: 'find a pizza place' },
+        { role: 'assistant', text: 'Found two: Pizza A and Pizza B.' },
+      ],
+    })
+
+    const messages = fetch.calls[0].body.messages
+    expect(messages[0]).toEqual({ role: 'system', content: ORCHESTRATOR_SYSTEM_PROMPT })
+    expect(messages[1].role).toBe('system')
+    expect(messages[1].content).toMatch(/previous commands and answers in this session/i)
+    expect(messages.slice(2, 4)).toEqual([
+      { role: 'user', content: 'find a pizza place' },
+      { role: 'assistant', content: 'Found two: Pizza A and Pizza B.' },
+    ])
+    expect(messages[4]).toEqual({ role: 'user', content: 'what about the second one?' })
+    expect(messages.slice(5)).toEqual([
+      {
+        role: 'assistant',
+        content: null,
+        tool_calls: [{ id: 'c1', type: 'function', function: { name: 'navigate', arguments: '{"url":"pizza.test"}' } }],
+      },
+      { role: 'tool', tool_call_id: 'c1', content: 'navigated' },
+    ])
+  })
+
+  it('keeps requests without session history byte-identical to pre-history requests', async () => {
+    const answers = [
+      completionResponse({ content: '{"speak":"Done.","display":"Done."}' }),
+      completionResponse({ content: '{"speak":"Done.","display":"Done."}' }),
+    ]
+    const fetch = new ScriptedFetch(answers)
+    const client = makeClient(fetch)
+
+    await client.complete({ command: 'open youtube', toolResults: [] })
+    await client.complete({ command: 'open youtube', toolResults: [], history: [] })
+
+    const [withoutHistory, withEmptyHistory] = fetch.calls.map((call) => call.body.messages)
+    expect(withoutHistory).toEqual([
+      { role: 'system', content: ORCHESTRATOR_SYSTEM_PROMPT },
+      { role: 'user', content: 'open youtube' },
+    ])
+    expect(withEmptyHistory).toEqual(withoutHistory)
+  })
+
   it('places a steering directive after retained tool context', async () => {
     const fetch = new ScriptedFetch([
       completionResponse({ content: '{"speak":"Changed.","display":"Changed course."}' }),

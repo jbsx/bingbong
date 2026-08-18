@@ -1,4 +1,4 @@
-import type { AssistantTurn, LlmClient, LlmRequest, TokenUsage, ToolCall, ToolResult } from '../../core/ports/llm'
+import type { AssistantTurn, LlmClient, LlmRequest, SessionTurn, TokenUsage, ToolCall, ToolResult } from '../../core/ports/llm'
 import type { Tool, ToolParameterSpec } from '../../core/pipeline/tool'
 import type { ModelEndpointConfig } from '../../core/agent/modelRouting'
 import { parseAssistantAnswer } from '../../core/agent/answerContract'
@@ -72,6 +72,20 @@ function completionsUrl(baseUrl: string): string {
   return `${baseUrl.replace(/\/+$/, '')}/chat/completions`
 }
 
+/** Sits between the system prompt and prior turns when history rides along. */
+export const CONTINUATION_SYSTEM_LINE =
+  'The user/assistant messages directly below are the previous commands and answers in this session. ' +
+  'The current command may refer to them (for example "the second one" or "pause it"); ' +
+  'resolve such references against that conversation instead of asking again.'
+
+function historyMessages(history: SessionTurn[]): WireMessage[] {
+  if (history.length === 0) return []
+  return [
+    { role: 'system', content: CONTINUATION_SYSTEM_LINE },
+    ...history.map((turn) => ({ role: turn.role, content: turn.text })),
+  ]
+}
+
 export function createOpenAiLlmClient(deps: OpenAiLlmClientDeps): LlmClient {
   const { endpoint, systemPrompt, tools, fetchFn } = deps
   const timeoutMs = deps.requestTimeoutMs ?? 120_000
@@ -79,6 +93,7 @@ export function createOpenAiLlmClient(deps: OpenAiLlmClientDeps): LlmClient {
   function buildMessages(request: LlmRequest): WireMessage[] {
     const messages: WireMessage[] = [
       { role: 'system', content: systemPrompt },
+      ...historyMessages(request.history ?? []),
       { role: 'user', content: request.command },
     ]
     for (const { call, outcome } of request.toolResults) {

@@ -60,6 +60,11 @@ export class ScriptedLlm implements LlmClient {
     this.requests.push(request)
     const next = this.script.shift()
     if (!next) throw new Error('ScriptedLlm ran out of scripted turns')
+    // Renders the request's session history (spec #23) into scripted text,
+    // so e2e can prove prior turns rode along with a follow-up command.
+    const historyText = (request.history ?? [])
+      .map((turn) => `[${turn.role}] ${turn.text}`)
+      .join('\n')
     if (next.kind !== 'tool_calls') {
       const lastError = [...request.toolResults]
         .reverse()
@@ -69,10 +74,12 @@ export class ScriptedLlm implements LlmClient {
         ...next,
         speak: next.speak
           .replaceAll('$last_tool_error', lastErrorText ?? '$last_tool_error')
-          .replaceAll('$steering', request.steering ?? ''),
+          .replaceAll('$steering', request.steering ?? '')
+          .replaceAll('$history', historyText),
         display: next.display
           .replaceAll('$last_tool_error', lastErrorText ?? '$last_tool_error')
-          .replaceAll('$steering', request.steering ?? ''),
+          .replaceAll('$steering', request.steering ?? '')
+          .replaceAll('$history', historyText),
       }
     }
     const groundedRef = [...request.toolResults]
