@@ -12,6 +12,8 @@ interface AttachedPipeline {
   pipeline: CommandPipeline
   /** Observes every event a run emits (the voice session's confirmation window). */
   onEvent?: (event: PipelineEvent) => void
+  /** Creates an isolated persistence observer for each execute() invocation. */
+  createRunObserver?: () => (event: PipelineEvent) => void
 }
 
 const pipelines = new WeakMap<BrowserWindow, AttachedPipeline>()
@@ -20,15 +22,22 @@ const pipelines = new WeakMap<BrowserWindow, AttachedPipeline>()
 export async function runAssistantCommand(win: BrowserWindow, text: string): Promise<boolean> {
   const attached = pipelines.get(win)
   if (!attached) return false
+  const observeRun = attached.createRunObserver?.()
   for await (const pipelineEvent of attached.pipeline.execute(text)) {
     if (win.isDestroyed()) break
-    deliver(win.webContents, attached, pipelineEvent)
+    deliver(win.webContents, attached, pipelineEvent, observeRun)
   }
   return true
 }
 
-function deliver(sender: WebContents, attached: AttachedPipeline, pipelineEvent: PipelineEvent): void {
+function deliver(
+  sender: WebContents,
+  attached: AttachedPipeline,
+  pipelineEvent: PipelineEvent,
+  observeRun?: (event: PipelineEvent) => void,
+): void {
   if (!sender.isDestroyed()) sender.send(PIPELINE_IPC.event, pipelineEvent)
+  observeRun?.(pipelineEvent)
   attached.onEvent?.(pipelineEvent)
 }
 
@@ -79,8 +88,9 @@ export function attachAssistantToWindow(
   pipeline: CommandPipeline,
   win: BrowserWindow,
   onEvent?: (event: PipelineEvent) => void,
+  createRunObserver?: () => (event: PipelineEvent) => void,
 ): void {
-  pipelines.set(win, { pipeline, onEvent })
+  pipelines.set(win, { pipeline, onEvent, createRunObserver })
   const contents = win.webContents
   const detachAbortHotkey = attachAssistantAbortHotkey(pipeline, contents)
   win.on('closed', () => pipelines.delete(win))

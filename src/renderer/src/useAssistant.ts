@@ -1,17 +1,16 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { PipelineEvent, PipelineStatus, SubagentCard } from '../../core/pipeline/events'
 import type { VoiceHeardEvent } from '../../core/voice/ipcChannels'
-import { describeToolAction } from '../../core/pipeline/toolCallDisplay'
+import { describeHeard } from '../../core/voice/heardDisplay'
+import type { RecordedEntry, TranscriptEvent } from '../../core/history/historyStore'
+import { filterHydratedDuplicates } from '../../core/history/mergeHistory'
+import { projectPipelineEvent } from '../../core/history/transcriptProjection'
 
 export type OrbStatus = 'idle' | 'listening' | PipelineStatus
 
-export type TranscriptEntry =
-  | { id: number; kind: 'command'; text: string }
-  | { id: number; kind: 'tool'; text: string }
-  | { id: number; kind: 'display'; text: string }
-  | { id: number; kind: 'speak'; text: string }
-  | { id: number; kind: 'error'; text: string }
-  | { id: number; kind: 'voice'; text: string }
+export interface TranscriptEntry extends TranscriptEvent {
+  id: number
+}
 
 export interface PendingConfirmation {
   confirmationId: string
@@ -42,21 +41,18 @@ export interface Assistant {
   /** A heard-but-not-a-command transcript (voice yes/no, undecided answers). */
   appendVoiceHeard(heard: VoiceHeardEvent): void
   /** Mic/engine failures from the voice half. */
-  appendVoiceError(message: string): void
+  appendVoiceError(message: string, at?: number): void
 }
 
 /** Cards kept in history after their tab closes — bounded for long sessions. */
 const MAX_AGENT_CARDS = 20
 
-/** Transcript annotation per heard-but-not-command routing. */
-const HEARD_SUFFIX: Record<Exclude<VoiceHeardEvent['routed'], 'command'>, string> = {
-  confirmation: ' (answered)',
-  ask: ' (your answer)',
-  abort: ' (stopping)',
-  pause: ' (paused)',
-  resume: ' (resumed)',
-  steering: ' (steering)',
-  ignored: ' — not a yes or no',
+/**
+ * Hydrated history gets negative ids so persisted and live entries can never
+ * collide (live ids count up from zero; the DB's own ids are irrelevant here).
+ */
+function hydrateEntry(recorded: RecordedEntry, index: number): TranscriptEntry {
+  return { id: -(index + 1), kind: recorded.kind, text: recorded.text, at: recorded.at }
 }
 
 export function useAssistant(): Assistant {
@@ -68,34 +64,42 @@ export function useAssistant(): Assistant {
   const nextId = useRef(0)
   const lastStatus = useRef<OrbStatus>('idle')
 
-  const append = useCallback((entry: Omit<TranscriptEntry, 'id'>) => {
+  const append = useCallback((entry: TranscriptEvent) => {
     setEntries((current) => [...current, { ...entry, id: nextId.current++ }])
   }, [])
 
   useEffect(() => {
+    // Restart hydration (spec: transcript persists): the seeded history lands
+    // below anything live that arrived while the fetch was in flight.
+    let cancelled = false
+    void window.bingbong.history.recentEntries().then((recorded) => {
+      if (cancelled || recorded.length === 0) return
+      setEntries((current) => [
+        ...recorded.map(hydrateEntry),
+        ...filterHydratedDuplicates(recorded, current),
+      ])
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  useEffect(() => {
     return window.bingbong.assistant.onEvent((event: PipelineEvent) => {
+      const projected = projectPipelineEvent(event)
+      if (projected) append(projected)
       switch (event.type) {
         case 'command':
-          append({ kind: 'command', text: event.text })
           return
         case 'status':
           lastStatus.current = event.status
           setStatus(event.status)
           return
         case 'tool_call':
-          append({ kind: 'tool', text: describeToolAction(event.name, event.args) })
-          return
         case 'tool_result':
-          if (!event.ok) append({ kind: 'error', text: `${event.name} failed: ${event.error}` })
-          return
         case 'display':
-          append({ kind: 'display', text: event.text })
-          return
         case 'speak':
-          append({ kind: 'speak', text: event.text })
-          return
         case 'error':
-          append({ kind: 'error', text: event.message })
           return
         case 'confirmation_requested':
           setPendingConfirmation({
@@ -176,11 +180,11 @@ export function useAssistant(): Assistant {
     // Commands are echoed by the pipeline itself; only answers and undecided
     // words land here.
     if (heard.routed === 'command') return
-    append({ kind: 'voice', text: `heard "${heard.text}"${HEARD_SUFFIX[heard.routed]}` })
+    append({ kind: 'voice', text: describeHeard(heard), at: heard.at ?? Date.now() })
   }, [append])
 
-  const appendVoiceError = useCallback((message: string) => {
-    append({ kind: 'error', text: `voice: ${message}` })
+  const appendVoiceError = useCallback((message: string, at = Date.now()) => {
+    append({ kind: 'error', text: `voice: ${message}`, at })
   }, [append])
 
   return { status, entries, pendingConfirmation, pendingAsk, agents, submit, resolveConfirmation, resolveAsk, abort, appendVoiceHeard, appendVoiceError }

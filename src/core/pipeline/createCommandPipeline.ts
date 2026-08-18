@@ -185,6 +185,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
     activeRun = run
 
     try {
+      let runOutcome: 'done' | 'failed' | 'cancelled' = 'done'
       yield { type: 'command', text: command, at: clock.now() }
       yield { type: 'status', status: 'thinking', at: clock.now() }
 
@@ -250,6 +251,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
         }
       } catch (err) {
         if (err instanceof CommandAbortedError) {
+          runOutcome = 'cancelled'
           yield { type: 'status', status: 'cancelled', at: clock.now() }
           yield { type: 'speak', text: 'Stopped.', at: clock.now() }
           const outcome = await tts.speak('Stopped.')
@@ -257,6 +259,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
             yield { type: 'error', message: spokenErrorLine(outcome.error), at: clock.now() }
           }
         } else {
+          runOutcome = 'failed'
           // Errors are spoken as one-liners; the full detail reaches the
           // dashboard via the error event.
           const message = toErrorMessage(err)
@@ -265,7 +268,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
           yield* speakLine(spoken)
         }
       }
-      yield { type: 'done', at: clock.now() }
+      yield { type: 'done', outcome: runOutcome, at: clock.now() }
     } finally {
       if (activeRun === run) activeRun = null
     }

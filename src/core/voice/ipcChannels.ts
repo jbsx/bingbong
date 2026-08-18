@@ -27,4 +27,12 @@ export interface VoiceState {
 export interface VoiceHeardEvent {
   text: string
   routed: 'command' | 'confirmation' | 'ask' | 'abort' | 'pause' | 'resume' | 'steering' | 'ignored'
+  /** Main stamps this before persistence + IPC; core session tests may omit it. */
+  at?: number
+}
+
+export interface VoiceErrorEvent {
+  message: string
+  /** Shared by persistence and renderer hydration deduplication. */
+  at: number
 }

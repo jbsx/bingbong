@@ -86,4 +86,4 @@ export type PipelineEvent =
   | { type: 'error'; message: string; at: number }
   /** A subagent's state changed — the dashboard keeps one card per agent id. */
   | { type: 'agent_update'; agent: SubagentCard; at: number }
-  | { type: 'done'; at: number }
+  | { type: 'done'; outcome?: 'done' | 'failed' | 'cancelled'; at: number }

@@ -6,12 +6,14 @@ import { TTS_IPC } from '../core/tts/ipcChannels'
 import { VOICE_IPC } from '../core/voice/ipcChannels'
 import { SUBAGENT_IPC } from '../core/agent/subagentIpcChannels'
 import { USAGE_IPC } from '../core/settings/usageIpcChannels'
+import { HISTORY_IPC } from '../core/history/ipcChannels'
 import { resolveLaunchConfig } from '../core/app/launchConfig'
 import type { BrowserPaneState, PaneRect } from '../core/browser/paneState'
 import type { PipelineEvent } from '../core/pipeline/events'
 import type { AppSettings } from '../core/settings/settings'
 import type { UsageSummary } from '../core/agent/spendEstimate'
-import type { VoiceHeardEvent, VoiceState } from '../core/voice/ipcChannels'
+import type { VoiceErrorEvent, VoiceHeardEvent, VoiceState } from '../core/voice/ipcChannels'
+import type { RecordedEntry, RunRecord } from '../core/history/historyStore'
 
 // Launch config is a snapshot: the flags and env can't change after start.
 const launch = resolveLaunchConfig(process.argv, process.env)
@@ -65,6 +67,12 @@ contextBridge.exposeInMainWorld('bingbong', {
   usage: {
     getToday: (): Promise<UsageSummary> => ipcRenderer.invoke(USAGE_IPC.getToday),
   },
+  history: {
+    recentEntries: (): Promise<RecordedEntry[]> => ipcRenderer.invoke(HISTORY_IPC.recentEntries),
+    recentRuns: (): Promise<RunRecord[]> => ipcRenderer.invoke(HISTORY_IPC.recentRuns),
+    recordVoiceError: (message: string): Promise<number | null> =>
+      ipcRenderer.invoke(HISTORY_IPC.recordVoiceError, message),
+  },
   tts: {
     listVoices: (): Promise<string[]> => ipcRenderer.invoke(TTS_IPC.listVoices),
   },
@@ -85,8 +93,8 @@ contextBridge.exposeInMainWorld('bingbong', {
       ipcRenderer.on(VOICE_IPC.heard, wrapped)
       return () => ipcRenderer.removeListener(VOICE_IPC.heard, wrapped)
     },
-    onError: (listener: (error: { message: string }) => void): (() => void) => {
-      const wrapped = (_event: unknown, error: { message: string }): void => listener(error)
+    onError: (listener: (error: VoiceErrorEvent) => void): (() => void) => {
+      const wrapped = (_event: unknown, error: VoiceErrorEvent): void => listener(error)
       ipcRenderer.on(VOICE_IPC.error, wrapped)
       return () => ipcRenderer.removeListener(VOICE_IPC.error, wrapped)
     },

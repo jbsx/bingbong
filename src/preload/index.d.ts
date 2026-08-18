@@ -1,16 +1,18 @@
 import type { BrowserPaneState, PaneRect } from '../core/browser/paneState'
 import type { PipelineEvent } from '../core/pipeline/events'
 import type { AppSettings } from '../core/settings/settings'
-import type { VoiceHeardEvent, VoiceState } from '../core/voice/ipcChannels'
+import type { VoiceErrorEvent, VoiceHeardEvent, VoiceState } from '../core/voice/ipcChannels'
 import type { LaunchConfig } from '../core/app/launchConfig'
 import type { UsageSummary } from '../core/agent/spendEstimate'
+import type { RecordedEntry, RunRecord } from '../core/history/historyStore'
 
 export type { BrowserPaneState, PaneRect }
 export type { PipelineEvent }
 export type { AppSettings }
-export type { VoiceHeardEvent, VoiceState }
+export type { VoiceErrorEvent, VoiceHeardEvent, VoiceState }
 export type { LaunchConfig }
 export type { UsageSummary }
+export type { RecordedEntry, RunRecord }
 
 export interface BingbongBrowserApi {
   navigate(input: string): Promise<boolean>
@@ -65,7 +67,16 @@ export interface BingbongVoiceApi {
   getState(): Promise<VoiceState>
   onState(listener: (state: VoiceState) => void): () => void
   onHeard(listener: (heard: VoiceHeardEvent) => void): () => void
-  onError(listener: (error: { message: string }) => void): () => void
+  onError(listener: (error: VoiceErrorEvent) => void): () => void
+}
+
+export interface BingbongHistoryApi {
+  /** Persisted transcript entries, oldest first — hydrates the dashboard on launch. */
+  recentEntries(): Promise<RecordedEntry[]>
+  /** Persisted run records, oldest first. */
+  recentRuns(): Promise<RunRecord[]>
+  /** Persist a renderer-side mic/capture error and return its shared timestamp. */
+  recordVoiceError(message: string): Promise<number | null>
 }
 
 export interface BingbongApi {
@@ -79,6 +90,7 @@ export interface BingbongApi {
   usage: BingbongUsageApi
   tts: BingbongTtsApi
   voice: BingbongVoiceApi
+  history: BingbongHistoryApi
 }
 
 declare global {

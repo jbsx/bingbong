@@ -64,11 +64,15 @@ export function attachVoiceToWindow(win: BrowserWindow, deps: AttachVoiceDeps): 
     onStateChange: (state: VoiceState) => {
       if (!win.isDestroyed()) win.webContents.send(VOICE_IPC.stateChanged, state)
     },
-    onHeard: (heard: VoiceHeardEvent) => {
-      if (!win.isDestroyed()) win.webContents.send(VOICE_IPC.heard, heard)
+    onHeard: (heard) => {
+      const stamped = { ...heard, at: Date.now() }
+      deps.recordHeard?.(stamped)
+      if (!win.isDestroyed()) win.webContents.send(VOICE_IPC.heard, stamped)
     },
-    onError: (message: string) => {
-      if (!win.isDestroyed()) win.webContents.send(VOICE_IPC.error, { message })
+    onError: (message) => {
+      const error = { message, at: Date.now() }
+      deps.recordError?.(error.message, error.at)
+      if (!win.isDestroyed()) win.webContents.send(VOICE_IPC.error, error)
     },
   })
 
@@ -87,4 +91,7 @@ export interface AttachVoiceDeps {
   ttsIdle: TtsIdle
   /** Wake-word plumbing; absent means hotkey-only. */
   wake?: VoiceWakeDeps
+  /** Persistence taps (spec: transcript history) — same wording as the dashboard. */
+  recordHeard?: (heard: VoiceHeardEvent) => void
+  recordError?: (message: string, at: number) => void
 }

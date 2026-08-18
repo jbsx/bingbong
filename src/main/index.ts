@@ -3,6 +3,7 @@ import { join } from 'node:path'
 import type { BrowserController, VisualGroundingController } from '../core/ports/browser'
 import { createAgentActivityTracker, withAgentActivity } from '../core/downloads/agentActivity'
 import { PIPELINE_IPC } from '../core/pipeline/ipcChannels'
+import type { PipelineEvent } from '../core/pipeline/events'
 import { attachAdblock } from './browser/attachAdblock'
 import { createBrowserPane, BROWSER_PARTITION } from './browser/createBrowserPane'
 import { attachBrowserPaneToWindow, registerBrowserIpc } from './browser/attachBrowserPane'
@@ -20,6 +21,9 @@ import { registerSettingsIpc } from './settings/attachSettings'
 import { settingsToEnv } from '../core/settings/settings'
 import { createUsageStore } from './settings/usageStore'
 import { USAGE_IPC } from '../core/settings/usageIpcChannels'
+import { HISTORY_IPC, HISTORY_HYDRATE_LIMIT } from '../core/history/ipcChannels'
+import { createHistoryRecorder } from '../core/history/historyRecorder'
+import { createSqliteHistoryStore } from './history/createSqliteHistoryStore'
 import { DEFAULT_DAILY_SPEND_WARN_USD } from '../core/agent/spendEstimate'
 import { resolvePiperConfig } from './tts/piperConfig'
 import { createMainTts } from './tts/createMainTts'
@@ -57,6 +61,12 @@ const settingsStore = createSettingsStore(join(app.getPath('userData'), 'setting
 // Daily spend estimate (warn-only): every orchestrator/subagent turn with
 // reported usage lands here and surfaces on the settings page.
 const usageStore = createUsageStore(join(app.getPath('userData'), 'usage.json'))
+
+// Transcript + agent-run history (spec #1, Persistence): every event the
+// dashboard renders is recorded here through the same projection, so a
+// restart hydrates exactly what was on screen.
+const historyStore = createSqliteHistoryStore(join(app.getPath('userData'), 'history.db'))
+const historyRecorder = createHistoryRecorder(historyStore, { now: () => Date.now() })
 
 // Subagent runtime (T12) is per-window: panes attach to the window's content
 // view. The IPC layer resolves the window from the event sender.
@@ -124,6 +134,11 @@ async function createWindow(): Promise<BrowserWindow> {
     },
   })
 
+  const emitPipelineEvent = (event: PipelineEvent): void => {
+    historyRecorder.event(event)
+    if (!win.isDestroyed()) win.webContents.send(PIPELINE_IPC.event, event)
+  }
+
   // A pane per window; the persistent `persist:browse` session partition is what
   // keeps logins alive across windows and restarts. One CDP controller is
   // shared by everything that drives the pane (CLI harness, assistant) —
@@ -150,9 +165,7 @@ async function createWindow(): Promise<BrowserWindow> {
     dir: downloadsDir,
     tts: speakingGate.tts,
     isAgentActive: agentActivity.isActive,
-    emit: (event) => {
-      if (!win.isDestroyed()) win.webContents.send(PIPELINE_IPC.event, event)
-    },
+    emit: emitPipelineEvent,
   })
 
   if (runningCliHarness) startCliHarness(controller, downloadsDir)
@@ -166,9 +179,7 @@ async function createWindow(): Promise<BrowserWindow> {
     downloadsDir,
     getEnv: currentEnv,
     tts: speakingGate.tts,
-    emit: (event) => {
-      if (!win.isDestroyed()) win.webContents.send(PIPELINE_IPC.event, event)
-    },
+    emit: emitPipelineEvent,
     onUsage: (record) => usageStore.record(record.role, record.model, record.usage),
     onEscape: () => {
       const activePipeline = pipelineFor(win)
@@ -200,6 +211,8 @@ async function createWindow(): Promise<BrowserWindow> {
           },
         }
       : undefined,
+    recordHeard: (heard) => historyRecorder.heard(heard),
+    recordError: (message, at) => historyRecorder.voiceError(message, at),
   })
   const pipeline = createAssistantPipeline({
     controller,
@@ -214,6 +227,7 @@ async function createWindow(): Promise<BrowserWindow> {
     pipeline,
     win,
     (event) => voiceSession.handlePipelineEvent(event),
+    () => historyRecorder.run().event,
   )
   const detachPaneAbort = attachAssistantAbortHotkey(pipeline, pane.view.webContents)
   win.on('closed', detachPaneAbort)
@@ -236,6 +250,14 @@ app.whenReady().then(async () => {
   })
   registerSettingsIpc(settingsStore)
   ipcMain.handle(USAGE_IPC.getToday, () => usageStore.summary(dailySpendWarnUsd()))
+  ipcMain.handle(HISTORY_IPC.recentEntries, () => historyStore.recentEntries(HISTORY_HYDRATE_LIMIT))
+  ipcMain.handle(HISTORY_IPC.recentRuns, () => historyStore.recentRuns(50))
+  ipcMain.handle(HISTORY_IPC.recordVoiceError, (_event, message: unknown) => {
+    if (typeof message !== 'string' || message.trim() === '') return null
+    const at = Date.now()
+    historyRecorder.voiceError(message, at)
+    return at
+  })
   registerTtsIpc({ voicesDir: () => piperConfig.voicesDir })
   registerVoiceIpc()
 
@@ -251,7 +273,10 @@ app.whenReady().then(async () => {
     userDataDir: app.getPath('userData'),
     env: process.env,
   })
-  app.on('will-quit', () => adblock.dispose())
+  app.on('will-quit', () => {
+    adblock.dispose()
+    historyStore.close()
+  })
   await adblock.ready()
 
   await createWindow()

@@ -15,7 +15,7 @@ export function createSingleShotPipeline(inner: CommandPipeline, clock: Clock): 
       yield { type: 'command', text: command, at: clock.now() }
       yield { type: 'error', message, at: clock.now() }
       yield { type: 'speak', text: spokenErrorLine(message), at: clock.now() }
-      yield { type: 'done', at: clock.now() }
+      yield { type: 'done', outcome: 'failed', at: clock.now() }
       return
     }
     running = true

@@ -21,7 +21,7 @@ export interface UseVoiceDeps {
   /** Mic device from the settings page ('default' prefers the C920, then the OS default). */
   getMicId(): string
   onHeard(heard: VoiceHeardEvent): void
-  onError(message: string): void
+  onError(message: string, at?: number): void
 }
 
 /** The C920 is the default per spec; labels are empty until permission exists. */
@@ -115,7 +115,9 @@ export function useVoice(deps: UseVoiceDeps): VoiceApi {
         },
       }
     } catch (err) {
-      depsRef.current.onError(err instanceof Error ? err.message : String(err))
+      const message = err instanceof Error ? err.message : String(err)
+      const at = await window.bingbong.history.recordVoiceError(message).catch(() => null)
+      depsRef.current.onError(message, at ?? Date.now())
       await window.bingbong.voice.disarm()
     } finally {
       startingRef.current = false
@@ -145,7 +147,9 @@ export function useVoice(deps: UseVoiceDeps): VoiceApi {
     // Monitoring can start before this component mounted — pull the truth.
     void window.bingbong.voice.getState().then(applyState)
     const unsubscribeHeard = window.bingbong.voice.onHeard((heard) => depsRef.current.onHeard(heard))
-    const unsubscribeError = window.bingbong.voice.onError((error) => depsRef.current.onError(error.message))
+    const unsubscribeError = window.bingbong.voice.onError((error) =>
+      depsRef.current.onError(error.message, error.at),
+    )
     return () => {
       unsubscribeState()
       unsubscribeHeard()

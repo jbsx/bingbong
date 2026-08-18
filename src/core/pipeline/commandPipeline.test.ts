@@ -65,7 +65,7 @@ describe('command pipeline', () => {
     expect(events).toContainEqual({ type: 'speak', text: 'Stopped.', at: 0 })
     expect(events.some((event) => event.type === 'display' && event.text === 'Stale answer.')).toBe(false)
     expect(events.some((event) => event.type === 'error')).toBe(false)
-    expect(events.at(-1)).toEqual({ type: 'done', at: 0 })
+    expect(events.at(-1)).toEqual({ type: 'done', outcome: 'cancelled', at: 0 })
     expect(pipeline.getState()).toBe('idle')
   })
 
@@ -125,7 +125,7 @@ describe('command pipeline', () => {
 
     expect(events.some((event) => event.type === 'ask_requested')).toBe(false)
     expect(events).toContainEqual({ type: 'status', status: 'cancelled', at: 0 })
-    expect(events.at(-1)).toEqual({ type: 'done', at: 0 })
+    expect(events.at(-1)).toEqual({ type: 'done', outcome: 'cancelled', at: 0 })
   })
 
   it('pauses during ask_user speech before any timed answer window is created', async () => {
@@ -302,7 +302,7 @@ describe('command pipeline', () => {
       { type: 'display', text: 'Full detail here.', at: 1000 },
       { type: 'status', status: 'speaking', at: 1000 },
       { type: 'speak', text: 'Done.', at: 1000 },
-      { type: 'done', at: 1000 },
+      { type: 'done', outcome: 'done', at: 1000 },
     ])
     expect(tts.spoken).toEqual(['Done.'])
   })

@@ -43,7 +43,7 @@ describe('createSingleShotPipeline', () => {
     expect(events[0]).toMatchObject({ type: 'command', text: 'second command', at: 0 })
     expect(events[1]).toMatchObject({ type: 'error', message: expect.stringContaining('already running'), at: 0 })
     expect(events[2]).toMatchObject({ type: 'speak', text: expect.stringContaining('Something went wrong'), at: 0 })
-    expect(events[3]).toMatchObject({ type: 'done', at: 0 })
+    expect(events[3]).toMatchObject({ type: 'done', outcome: 'failed', at: 0 })
   })
 
   it('frees up once the running command finishes', async () => {
