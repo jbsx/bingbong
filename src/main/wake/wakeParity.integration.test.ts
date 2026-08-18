@@ -18,7 +18,7 @@ const modelPaths = {
   embeddingModelPath: join(modelsDir, 'embedding_model.onnx'),
   headModelPaths: {
     wake: join(modelsDir, 'wake', 'bing_bong.onnx'),
-    abort: join(modelsDir, 'wake', 'abort.onnx'),
+    abort: join(modelsDir, 'wake', 'stop_now.onnx'),
     holdOn: join(modelsDir, 'wake', 'hold_on.onnx'),
   },
 }

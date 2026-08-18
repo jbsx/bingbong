@@ -10,7 +10,7 @@ describe('wake config', () => {
       melspecModel: '/profile/models/melspectrogram.onnx',
       embeddingModel: '/profile/models/embedding_model.onnx',
       wakeModel: '/profile/models/wake/bing_bong.onnx',
-      abortModel: '/profile/models/wake/abort.onnx',
+      abortModel: '/profile/models/wake/stop_now.onnx',
       holdOnModel: '/profile/models/wake/hold_on.onnx',
       pythonBin: 'python3',
       sidecarScript: '/app/scripts/wake_sidecar.py',

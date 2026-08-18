@@ -18,7 +18,7 @@ Per 1280-sample (80 ms) 16 kHz chunk:
 2. **Speech embedding** (`embedding_model.onnx`, input `input_1`): the
    trailing 76×32 window, batched as `[1, 76, 32, 1]`, yields one 96-dim
    embedding per chunk, appended to the feature buffer (cap 120).
-3. **Classifiers** (`wake/bing_bong.onnx`, `wake/abort.onnx`,
+3. **Classifiers** (`wake/bing_bong.onnx`, `wake/stop_now.onnx`,
    `wake/hold_on.onnx`, each under its own first input name): the trailing
    16 embeddings as `[1, 16, 96]` → one score per head in 0..1. The three
    heads share the feature stack — melspec and embedding run once per chunk.
@@ -81,7 +81,7 @@ curl -LO https://github.com/dscripka/openWakeWord/releases/download/v0.5.1/embed
 
 The three heads are custom-trained (openWakeWord Colab notebook, one
 training run) and land in `<userData>/models/wake/` as `bing_bong.onnx`,
-`abort.onnx`, and `hold_on.onnx`. Paths are overridable via
+`stop_now.onnx`, and `hold_on.onnx`. Paths are overridable via
 `BINGBONG_WAKE_MODEL`, `BINGBONG_WAKE_ABORT_MODEL`, and
 `BINGBONG_WAKE_HOLD_ON_MODEL`. The Python sidecar engine scores the wake
 head only; the node engine runs all three.

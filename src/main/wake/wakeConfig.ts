@@ -28,7 +28,7 @@ export function resolveWakeConfig(env: Record<string, string | undefined>, userD
     melspecModel: env.BINGBONG_WAKE_MELSPEC_MODEL?.trim() || join(modelsDir, 'melspectrogram.onnx'),
     embeddingModel: env.BINGBONG_WAKE_EMBEDDING_MODEL?.trim() || join(modelsDir, 'embedding_model.onnx'),
     wakeModel: env.BINGBONG_WAKE_MODEL?.trim() || join(modelsDir, 'wake', 'bing_bong.onnx'),
-    abortModel: env.BINGBONG_WAKE_ABORT_MODEL?.trim() || join(modelsDir, 'wake', 'abort.onnx'),
+    abortModel: env.BINGBONG_WAKE_ABORT_MODEL?.trim() || join(modelsDir, 'wake', 'stop_now.onnx'),
     holdOnModel: env.BINGBONG_WAKE_HOLD_ON_MODEL?.trim() || join(modelsDir, 'wake', 'hold_on.onnx'),
     pythonBin: env.BINGBONG_WAKE_PYTHON_BIN?.trim() || 'python3',
     sidecarScript: env.BINGBONG_WAKE_SIDECAR_SCRIPT?.trim() || join(appDir, 'scripts', 'wake_sidecar.py'),
