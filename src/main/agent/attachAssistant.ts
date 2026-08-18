@@ -36,6 +36,13 @@ export function pipelineFor(win: BrowserWindow): CommandPipeline | undefined {
   return pipelines.get(win)?.pipeline
 }
 
+/** Abort the run if one is active. Returns whether an abort happened. */
+export function abortActiveRun(pipeline: CommandPipeline): boolean {
+  if (pipeline.getState() === 'idle') return false
+  pipeline.abort()
+  return true
+}
+
 export function registerAssistantIpc(): void {
   ipcMain.handle(PIPELINE_IPC.submit, async (event, text: unknown) => {
     const win = BrowserWindow.fromWebContents(event.sender)
@@ -64,9 +71,7 @@ export function registerAssistantIpc(): void {
   ipcMain.handle(PIPELINE_IPC.abort, (event) => {
     const win = BrowserWindow.fromWebContents(event.sender)
     const pipeline = win ? pipelineFor(win) : undefined
-    if (!pipeline || pipeline.getState() === 'idle') return false
-    pipeline.abort()
-    return true
+    return pipeline ? abortActiveRun(pipeline) : false
   })
 }
 
@@ -85,9 +90,8 @@ export function attachAssistantToWindow(
 /** Capture Escape when the embedded browser, rather than React, owns focus. */
 export function attachAssistantAbortHotkey(pipeline: CommandPipeline, contents: WebContents): () => void {
   const onBeforeInput = (event: Electron.Event, input: Electron.Input) => {
-    if (input.type === 'keyDown' && input.key === 'Escape' && pipeline.getState() !== 'idle') {
+    if (input.type === 'keyDown' && input.key === 'Escape' && abortActiveRun(pipeline)) {
       event.preventDefault()
-      pipeline.abort()
     }
   }
   contents.on('before-input-event', onBeforeInput)

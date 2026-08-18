@@ -62,6 +62,8 @@ class CommandAbortedError extends Error {
 /** Default ask_user window: ~45s for a spoken or typed free-text answer. */
 export const ASK_TIMEOUT_MS = 45_000
 
+const STEERED_CANCELLED = 'cancelled by the user\'s steering'
+
 function toErrorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err)
 }
@@ -91,6 +93,20 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
 
   function throwIfAborted(run: ActiveRun): void {
     if (run.aborted) throw new CommandAbortedError()
+  }
+
+  function settlePendingDecisions(reason: 'cancelled' | 'steered'): void {
+    for (const pending of pendingConfirmations.values()) {
+      pending.settle({ approved: false, reason })
+    }
+    for (const pending of pendingAsks.values()) {
+      pending.settle({ answer: null, reason })
+    }
+  }
+
+  function eachPendingDecision(visit: (pending: { pause(): void; resume(): void }) => void): void {
+    for (const pending of pendingConfirmations.values()) visit(pending)
+    for (const pending of pendingAsks.values()) visit(pending)
   }
 
   async function* checkpoint(
@@ -280,7 +296,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
       throwIfAborted(run)
       yield* checkpoint(run, 'acting', false)
       if (run.steering) {
-        return { ok: true, result: 'cancelled by the user\'s steering' }
+        return { ok: true, result: STEERED_CANCELLED }
       }
       const askId = `ask-${++askCounter}`
       const decision = waitForAsk(askId)
@@ -321,7 +337,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
     throwIfAborted(run)
     yield* checkpoint(run, 'acting', false)
     if (run.steering) {
-      return { ok: false, error: 'cancelled by the user\'s steering; do not retry this action' }
+      return { ok: false, error: `${STEERED_CANCELLED}; do not retry this action` }
     }
     if (verdict.kind === 'deny') {
       return { ok: false, error: verdict.reason }
@@ -361,7 +377,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
           resolved.reason === 'timeout'
             ? 'denied — the user did not respond in time; do not retry this action'
             : resolved.reason === 'steered'
-              ? 'cancelled by the user\'s steering; do not retry this action'
+              ? `${STEERED_CANCELLED}; do not retry this action`
             : 'denied by the user; do not retry this action'
         return { ok: false, error: detail }
       }
@@ -469,12 +485,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
       activeRun.aborted = true
       activeRun.paused = false
       deps.onAbort?.()
-      for (const pending of pendingConfirmations.values()) {
-        pending.settle({ approved: false, reason: 'cancelled' })
-      }
-      for (const pending of pendingAsks.values()) {
-        pending.settle({ answer: null, reason: 'cancelled' })
-      }
+      settlePendingDecisions('cancelled')
       activeRun.releaseControl?.()
       activeRun.releasePause?.()
       tts.stop()
@@ -483,8 +494,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
       if (!activeRun || activeRun.aborted || activeRun.paused) return
       activeRun.paused = true
       deps.onPause?.()
-      for (const pending of pendingConfirmations.values()) pending.pause()
-      for (const pending of pendingAsks.values()) pending.pause()
+      eachPendingDecision((pending) => pending.pause())
       activeRun.releaseControl?.()
       tts.stop()
     },
@@ -494,15 +504,9 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
       if (trimmed) {
         activeRun.steering = trimmed
         // A steering correction invalidates blocked, not-yet-executed work.
-        for (const pending of pendingConfirmations.values()) {
-          pending.settle({ approved: false, reason: 'steered' })
-        }
-        for (const pending of pendingAsks.values()) {
-          pending.settle({ answer: null, reason: 'steered' })
-        }
+        settlePendingDecisions('steered')
       } else {
-        for (const pending of pendingConfirmations.values()) pending.resume()
-        for (const pending of pendingAsks.values()) pending.resume()
+        eachPendingDecision((pending) => pending.resume())
       }
       activeRun.paused = false
       deps.onResume?.()

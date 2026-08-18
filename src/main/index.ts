@@ -9,7 +9,7 @@ import { attachBrowserPaneToWindow, registerBrowserIpc } from './browser/attachB
 import { createPaneBrowserController } from './browser/createPaneBrowserController'
 import { attachDownloadRouter } from './browser/attachDownloadRouter'
 import { runCliHarness, saveScreenshotFile } from './cli/runCliHarness'
-import { attachAssistantAbortHotkey, attachAssistantToWindow, pipelineFor, registerAssistantIpc } from './agent/attachAssistant'
+import { abortActiveRun, attachAssistantAbortHotkey, attachAssistantToWindow, pipelineFor, registerAssistantIpc } from './agent/attachAssistant'
 import { createAssistantPipeline } from './agent/createAssistantPipeline'
 import { createSubagentRuntime, type SubagentRuntime } from './agent/createSubagentRuntime'
 import { registerSubagentIpc } from './browser/subagentPanePool'
@@ -172,9 +172,7 @@ async function createWindow(): Promise<BrowserWindow> {
     onUsage: (record) => usageStore.record(record.role, record.model, record.usage),
     onEscape: () => {
       const activePipeline = pipelineFor(win)
-      if (!activePipeline || activePipeline.getState() === 'idle') return false
-      activePipeline.abort()
-      return true
+      return activePipeline ? abortActiveRun(activePipeline) : false
     },
   })
   subagentRuntimes.set(win, subagentRuntime)

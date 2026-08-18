@@ -48,6 +48,17 @@ export interface Assistant {
 /** Cards kept in history after their tab closes — bounded for long sessions. */
 const MAX_AGENT_CARDS = 20
 
+/** Transcript annotation per heard-but-not-command routing. */
+const HEARD_SUFFIX: Record<Exclude<VoiceHeardEvent['routed'], 'command'>, string> = {
+  confirmation: ' (answered)',
+  ask: ' (your answer)',
+  abort: ' (stopping)',
+  pause: ' (paused)',
+  resume: ' (resumed)',
+  steering: ' (steering)',
+  ignored: ' — not a yes or no',
+}
+
 export function useAssistant(): Assistant {
   const [status, setStatus] = useState<OrbStatus>('idle')
   const [entries, setEntries] = useState<TranscriptEntry[]>([])
@@ -165,21 +176,7 @@ export function useAssistant(): Assistant {
     // Commands are echoed by the pipeline itself; only answers and undecided
     // words land here.
     if (heard.routed === 'command') return
-    const suffix =
-      heard.routed === 'confirmation'
-        ? ' (answered)'
-        : heard.routed === 'ask'
-          ? ' (your answer)'
-          : heard.routed === 'abort'
-            ? ' (stopping)'
-            : heard.routed === 'pause'
-              ? ' (paused)'
-              : heard.routed === 'resume'
-                ? ' (resumed)'
-                : heard.routed === 'steering'
-                  ? ' (steering)'
-                  : ' — not a yes or no'
-    append({ kind: 'voice', text: `heard "${heard.text}"${suffix}` })
+    append({ kind: 'voice', text: `heard "${heard.text}"${HEARD_SUFFIX[heard.routed]}` })
   }, [append])
 
   const appendVoiceError = useCallback((message: string) => {
