@@ -124,6 +124,13 @@ export function useAssistant(): Assistant {
           setPendingConfirmation(null)
           setPendingAsk(null)
           return
+        case 'session_started':
+          // Session-scoped transcript (spec #25): a new session began — the
+          // window lapsed before this command, or the model invoked
+          // new_session. The view clears lazily, only at this moment; older
+          // sessions are never rendered again (no dividers).
+          setEntries([])
+          return
       }
     })
   }, [append])

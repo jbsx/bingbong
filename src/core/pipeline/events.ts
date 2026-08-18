@@ -87,6 +87,14 @@ export type PipelineEvent =
   /** A subagent's state changed — the dashboard keeps one card per agent id. */
   | { type: 'agent_update'; agent: SubagentCard; at: number }
   | { type: 'done'; outcome?: 'done' | 'failed' | 'cancelled'; at: number }
+  /**
+   * A new session began (spec #25) — the window lapsed before this command,
+   * or the model invoked new_session. Not emitted by the pipeline generator:
+   * main injects it into the dashboard stream when the session store reports
+   * the boundary. The transcript clears on it; the history projection maps
+   * it to no entry, so history.db recording is unchanged.
+   */
+  | { type: 'session_started'; at: number }
 
 /**
  * Derives a run's outcome when its `done` event omits one: a seen cancelled

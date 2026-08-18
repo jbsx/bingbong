@@ -78,6 +78,13 @@ function dailySpendWarnUsd(): number {
   return Number.isFinite(raw) && raw > 0 ? raw : DEFAULT_DAILY_SPEND_WARN_USD
 }
 
+// Session window override (default 10 min, ADR 0001) — an e2e knob, like
+// BINGBONG_ASK_TIMEOUT_MS: the lazy-clear flow can't wait out real minutes.
+function sessionWindowMs(env: Record<string, string | undefined>): number | undefined {
+  const value = Number(env.BINGBONG_SESSION_WINDOW_MS)
+  return Number.isFinite(value) && value > 0 ? value : undefined
+}
+
 // Piper TTS: binary, voices dir, and base voice come from env (defaults
 // suffice for a standard install); the settings page's voice wins per line.
 const piperConfig = resolvePiperConfig(process.env, app.getPath('userData'))
@@ -219,7 +226,15 @@ async function createWindow(): Promise<BrowserWindow> {
   // Session continuity (spec #23): one in-memory thread per window, fed from
   // the same run-observer seam as the history recorder. The pipeline reads it
   // live on every orchestrator round; it dies on quit and never persists.
-  const sessionMemory = createSessionMemory()
+  // Session-scoped transcript (spec #25): when the store reports a new
+  // session — window-lapsed command or model-invoked reset — the dashboard
+  // gets a session_started event and clears the transcript. history.db is
+  // untouched: the event projects to no transcript entry.
+  const sessionWindowOverride = sessionWindowMs(currentEnv())
+  const sessionMemory = createSessionMemory({
+    ...(sessionWindowOverride !== undefined ? { windowMs: sessionWindowOverride } : {}),
+    onSessionStart: () => emitPipelineEvent({ type: 'session_started', at: Date.now() }),
+  })
   const pipeline = createAssistantPipeline({
     controller,
     env: currentEnv(),

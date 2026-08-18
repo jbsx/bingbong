@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { createSessionMemory } from './sessionMemory'
+import { createSessionMemory, SESSION_WINDOW_MS } from './sessionMemory'
 import type { PipelineEvent } from '../pipeline/events'
 
 // Session continuity (spec #23): the store is fed from the same pipeline
@@ -264,5 +264,87 @@ describe('sessionMemory', () => {
       { role: 'user', text: 'what is two plus two' },
       { role: 'assistant', text: 'Four.' },
     ])
+  })
+
+  // Session-scoped transcript (spec #25): the store already decides when a
+  // new session begins — onSessionStart surfaces that decision so the
+  // dashboard can clear the transcript at exactly that moment (lazy clear).
+
+  it('announces a session start when a command arrives after the window lapses', () => {
+    let starts = 0
+    const session = createSessionMemory({ onSessionStart: () => { starts += 1 } })
+    feed(session.run(), runEvents('find a pizza place', 'Found two.', 1_000))
+    const next = session.run()
+    next.event({ type: 'command', text: 'pause it', at: 1_000 + SESSION_WINDOW_MS + 1_000 })
+
+    expect(starts).toBe(1)
+  })
+
+  it('stays silent for the first-ever command and for commands inside the window', () => {
+    let starts = 0
+    const session = createSessionMemory({ onSessionStart: () => { starts += 1 } })
+    feed(session.run(), runEvents('find a pizza place', 'Found two.', 1_000))
+    const next = session.run()
+    next.event({ type: 'command', text: 'what about the second one?', at: 60_000 })
+
+    expect(starts).toBe(0)
+  })
+
+  it('announces a session start on a mid-run clear that discards history', () => {
+    let starts = 0
+    const session = createSessionMemory({ onSessionStart: () => { starts += 1 } })
+    feed(session.run(), runEvents('find a pizza place', 'Found two.', 1_000))
+    const reset = session.run()
+    reset.event({ type: 'command', text: 'forget all that', at: 60_000 })
+
+    session.clear()
+
+    expect(starts).toBe(1)
+  })
+
+  it('stays silent on a clear with nothing to forget and on the command after a reset', () => {
+    let starts = 0
+    const session = createSessionMemory({ onSessionStart: () => { starts += 1 } })
+    // Idempotent no-op on an empty store (ADR 0002) — no session boundary.
+    session.clear()
+    feed(session.run(), runEvents('find a pizza place', 'Found two.', 1_000))
+    const reset = session.run()
+    reset.event({ type: 'command', text: 'forget all that', at: 60_000 })
+    session.clear()
+    reset.event({ type: 'done', outcome: 'done', at: 60_006 })
+    // The reset already announced the boundary; the next command continues
+    // the fresh session, so it must not clear the reset run's answer.
+    const next = session.run()
+    next.event({ type: 'command', text: 'what is two plus two', at: 120_000 })
+
+    expect(starts).toBe(1)
+  })
+
+  it('stays silent for a busy-rejected overlapping command, even after the window lapses', () => {
+    let starts = 0
+    const session = createSessionMemory({ onSessionStart: () => { starts += 1 } })
+    feed(session.run(), runEvents('find a pizza place', 'Found two.', 1_000))
+    const longRun = session.run()
+    longRun.event({ type: 'command', text: 'keep working', at: 2_000 })
+    const busy = session.run()
+    busy.event({ type: 'command', text: 'interrupt attempt', at: 1_000 + SESSION_WINDOW_MS + 1_000 })
+
+    expect(starts).toBe(0)
+  })
+
+  it('honours a custom window for the lapse decision', () => {
+    let starts = 0
+    const session = createSessionMemory({ windowMs: 5_000, onSessionStart: () => { starts += 1 } })
+    feed(session.run(), runEvents('find a pizza place', 'Found two.', 1_000))
+    const within = session.run()
+    within.event({ type: 'command', text: 'follow up', at: 4_000 })
+    feed(within, [
+      { type: 'display', text: 'Followed.', at: 4_001 },
+      { type: 'done', outcome: 'done', at: 4_002 },
+    ])
+    const lapsed = session.run()
+    lapsed.event({ type: 'command', text: 'much later', at: 4_002 + 5_000 + 1 })
+
+    expect(starts).toBe(1)
   })
 })

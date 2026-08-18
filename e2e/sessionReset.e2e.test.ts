@@ -95,6 +95,18 @@ describe('session reset e2e', () => {
     expect(afterReset).not.toContain('[user] find a pizza place')
     expect(afterReset).not.toContain('[assistant] 1. Pizza A on Main St')
 
+    // Session-scoped transcript (spec #25): the reset is a session boundary,
+    // so the view cleared at that moment — the old session's commands and
+    // answers (including the reset command's own echo) are gone; only the
+    // fresh session's tail renders.
+    const visibleText = await harness.dashboardEval<string>(
+      `Array.from(document.querySelectorAll('.transcript-entry')).map((el) => el.textContent).join('\\n')`,
+    )
+    expect(visibleText).toContain('AFTER RESET:')
+    expect(visibleText).not.toContain('Pizza A on Main St')
+    expect(visibleText).not.toContain('find a pizza place')
+    expect(visibleText).not.toContain('forget all that')
+
     await submitAndAwaitAnswer(harness, 'what is two plus two', 'NEXT COMMAND:')
 
     // The resetting run itself left nothing behind: the next command sees an

@@ -35,6 +35,22 @@ export type SessionHistorySource = Pick<SessionMemory, 'history'>
 /** The seam the new_session tool clears through (spec #24). */
 export type SessionResetSource = Pick<SessionMemory, 'clear'>
 
+export interface SessionMemoryOptions {
+  /** Continuation window override (default SESSION_WINDOW_MS) — e2e knob. */
+  windowMs?: number
+  /**
+   * Session-scoped transcript (spec #25): fired at the exact moment a new
+   * session begins — a command arriving after the window lapsed, or a
+   * model-invoked clear() that actually discards history — so the dashboard
+   * can lazily clear the transcript. Never fired for the first-ever command,
+   * a no-op clear, or the command following a reset (that command continues
+   * the fresh session; the reset run's answer stays visible). Carries no
+   * timestamp: this module has no clock, and the boundary is "now" for the
+   * listener.
+   */
+  onSessionStart?: () => void
+}
+
 export interface SessionMemory extends SessionHistorySource, SessionResetSource {
   /** Turns that ride along with the active command, oldest first (live read). */
   history(): SessionTurn[]
@@ -76,7 +92,8 @@ function enforceBudget(exchanges: SessionExchange[]): SessionExchange[] {
   return kept
 }
 
-export function createSessionMemory(): SessionMemory {
+export function createSessionMemory(options?: SessionMemoryOptions): SessionMemory {
+  const windowMs = options?.windowMs ?? SESSION_WINDOW_MS
   let exchanges: SessionExchange[] = []
   // The continuation decision (window check) is made once, when the first
   // concurrently-running command starts; every history() read until that run
@@ -93,9 +110,14 @@ export function createSessionMemory(): SessionMemory {
       return activeRunHistory ?? toTurns(exchanges)
     },
     clear() {
+      // Announce only a real boundary: an idempotent clear on an empty store
+      // (ADR 0002) starts nothing, and the on-screen run continues the
+      // current session.
+      const hadThread = exchanges.length > 0 || (activeRunHistory?.length ?? 0) > 0
       exchanges = []
       activeRunHistory = null
       for (const run of liveRuns) run.suppressed = true
+      if (hadThread) options?.onSessionStart?.()
     },
     run() {
       const runId = ++nextRunId
@@ -123,13 +145,17 @@ export function createSessionMemory(): SessionMemory {
               const last = exchanges.at(-1)
               if (!last) {
                 activeRunHistory = []
-              } else if (event.at - last.finishedAt < SESSION_WINDOW_MS) {
+              } else if (event.at - last.finishedAt < windowMs) {
                 activeRunHistory = toTurns(exchanges)
               } else {
                 // Window lapsed: a fresh thread that still keeps the most
                 // recent exchange, so "pause it" resolves after a long pause.
                 exchanges = [last]
                 activeRunHistory = toTurns(exchanges)
+                // Lazy clear (spec #25): the old session's transcript stays
+                // readable until this moment — the first command of the new
+                // session.
+                options?.onSessionStart?.()
               }
               return
             }

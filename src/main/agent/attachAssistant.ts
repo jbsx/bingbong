@@ -36,8 +36,11 @@ function deliver(
   pipelineEvent: PipelineEvent,
   observeRun?: (event: PipelineEvent) => void,
 ): void {
-  if (!sender.isDestroyed()) sender.send(PIPELINE_IPC.event, pipelineEvent)
+  // Observers run first: the session store decides on the command event
+  // whether a new session begins, and its session_started notification must
+  // reach the dashboard before the command echo it clears (spec #25).
   observeRun?.(pipelineEvent)
+  if (!sender.isDestroyed()) sender.send(PIPELINE_IPC.event, pipelineEvent)
   attached.onEvent?.(pipelineEvent)
 }
 
