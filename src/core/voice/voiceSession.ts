@@ -62,7 +62,7 @@ export interface VoiceSession {
   pushAudio(chunk: Float32Array): Promise<void>
   /** Pipeline events drive the confirmation window. */
   handlePipelineEvent(event: PipelineEvent): void
-  /** Handler surface for the dedicated always-on heads arriving in issue #23. */
+  /** Handler surface for the dedicated "abort" / "hold on" wake heads (#22) and the keyword interception (#20). */
   interrupt(kind: 'abort' | 'pause'): boolean
 }
 
@@ -112,6 +112,14 @@ export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
         getThreshold: deps.wake.getThreshold,
         vadGate: deps.wake.vadGate,
         onWake: activateFromWake,
+        // The dedicated always-on heads (#22) feed the #20 interrupt surface;
+        // interrupt() gates on the run state, so idle detections are no-ops.
+        onAbort: () => {
+          interrupt('abort')
+        },
+        onPause: () => {
+          interrupt('pause')
+        },
         onError: (message) => {
           deps.onError(message)
           // A dead detector would re-fail on every chunk — drop the ear

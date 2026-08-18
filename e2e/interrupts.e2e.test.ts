@@ -288,4 +288,84 @@ describe('run interruption e2e', () => {
       await harness.quit()
     }
   })
+
+  it('the abort wake head cancels an active run mid-tool', async () => {
+    const harness = await startHarness({
+      fixture,
+      env: {
+        BINGBONG_LLM_SCRIPT: JSON.stringify([
+          { kind: 'tool_calls', calls: [{ id: 'nav', name: 'navigate', args: { url: fixture.url('/slow') } }] },
+          { kind: 'answer', speak: 'This answer should not run.', display: 'This answer should not run.' },
+        ]),
+        BINGBONG_WAKE_ENGINE: 'node',
+        // Stuck-hot abort head (the scripted last value repeats): ambient
+        // device audio fires it while idle — a no-op there — and it lands as
+        // soon as a run is active.
+        BINGBONG_WAKE_SCRIPT: JSON.stringify({ wake: [0.01], abort: [0.99] }),
+        BINGBONG_VAD_SCRIPT: JSON.stringify(Array.from({ length: 5000 }, () => 0.95)),
+      },
+    })
+    try {
+      expect(await harness.dashboardEval<string>(commandBoxScript('load the slow page'))).toBe('submitted')
+
+      await waitFor(
+        () => harness.dashboardEval<boolean>(`!!document.querySelector('.status-orb--cancelled')`),
+        { timeoutMs: 20_000, intervalMs: 250 },
+      )
+      await waitFor(
+        async () => (await transcript(harness)).includes('Stopped.') || undefined,
+        { timeoutMs: 20_000, intervalMs: 250 },
+      )
+      expect(await transcript(harness)).not.toContain('This answer should not run.')
+    } finally {
+      await harness.quit()
+    }
+  })
+
+  it('the hold on wake head pauses an active run and opens the steering listen', async () => {
+    const harness = await startHarness({
+      fixture,
+      env: {
+        BINGBONG_LLM_SCRIPT: JSON.stringify([
+          { kind: 'tool_calls', calls: [{ id: 'nav', name: 'navigate', args: { url: fixture.url('/slow') } }] },
+          { kind: 'answer', speak: 'Finished after resume.', display: 'Finished after resume.' },
+        ]),
+        BINGBONG_WAKE_ENGINE: 'node',
+        // Stuck-hot hold-on head: fires the moment a run is active. Once the
+        // pause listen opens, audio routes to the session instead of the
+        // monitor, so the hot head can't re-fire during the steering window.
+        BINGBONG_WAKE_SCRIPT: JSON.stringify({ wake: [0.01], holdOn: [0.99] }),
+        BINGBONG_VAD_SCRIPT: JSON.stringify(Array.from({ length: 5000 }, () => 0.95)),
+        BINGBONG_STT_SCRIPT: JSON.stringify(['resume']),
+      },
+    })
+    try {
+      expect(await harness.dashboardEval<string>(commandBoxScript('load the slow page'))).toBe('submitted')
+
+      await waitFor(
+        () => harness.dashboardEval<boolean>(`!!document.querySelector('.status-orb--paused')`),
+        { timeoutMs: 20_000, intervalMs: 250 },
+      )
+      await waitFor(
+        async () => {
+          const hint = await harness.dashboardEval<string>(`document.querySelector('.voice-hint')?.textContent ?? ''`)
+          return hint === 'paused — say resume or steer me' ? hint : undefined
+        },
+        { timeoutMs: 5_000, intervalMs: 100 },
+      )
+
+      // The steering listen endpoints on the 15 s cap under the all-speech
+      // VAD script — 'resume' continues the run.
+      await harness.dashboardEval<string>(`(() => {
+        for (let i = 0; i < 500; i++) window.bingbong.voice.sendAudio(new Float32Array(512))
+        return 'fed'
+      })()`)
+      await waitFor(
+        async () => (await transcript(harness)).includes('heard "resume" (resumed)') || undefined,
+        { timeoutMs: 25_000, intervalMs: 250 },
+      )
+    } finally {
+      await harness.quit()
+    }
+  })
 })

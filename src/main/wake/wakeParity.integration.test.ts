@@ -7,20 +7,28 @@ import { createOpenWakeWordDetector } from './createOpenWakeWordDetector'
 import { createPythonWakeDetector } from './createPythonWakeDetector'
 
 // Parity check (T10 acceptance): the same clip through the Node ONNX port
-// and the Python reference sidecar, chunk by chunk, scores compared. Manual
-// validation tool — skipped unless BINGBONG_WAKE_PARITY_CLIP points at a
-// 16 kHz s16le mono WAV and the models + a python with openwakeword exist.
-// See docs/wake-parity.md.
+// and the Python reference sidecar, chunk by chunk, wake-head scores
+// compared (the sidecar scores no interrupt heads). Manual validation tool —
+// skipped unless BINGBONG_WAKE_PARITY_CLIP points at a 16 kHz s16le mono WAV
+// and the models + a python with openwakeword exist. See docs/wake-parity.md.
 
 const modelsDir = join(homedir(), '.config/bingbong/models')
 const modelPaths = {
   melspecModelPath: join(modelsDir, 'melspectrogram.onnx'),
   embeddingModelPath: join(modelsDir, 'embedding_model.onnx'),
-  classifierModelPath: join(modelsDir, 'hey_jarvis_v0.1.onnx'),
+  headModelPaths: {
+    wake: join(modelsDir, 'wake', 'bing_bong.onnx'),
+    abort: join(modelsDir, 'wake', 'abort.onnx'),
+    holdOn: join(modelsDir, 'wake', 'hold_on.onnx'),
+  },
 }
 const clipPath = process.env.BINGBONG_WAKE_PARITY_CLIP ?? ''
 const sidecarScript = join(__dirname, '../../../scripts/wake_sidecar.py')
-const haveAssets = clipPath !== '' && [...Object.values(modelPaths), clipPath, sidecarScript].every(existsSync)
+const haveAssets =
+  clipPath !== '' &&
+  [modelPaths.melspecModelPath, modelPaths.embeddingModelPath, ...Object.values(modelPaths.headModelPaths), clipPath, sidecarScript].every(
+    existsSync,
+  )
 
 /** Canonical 44-byte-header s16le mono 16 kHz WAV → normalized PCM. */
 function loadWav(path: string): Float32Array {
@@ -38,15 +46,15 @@ describe.skipIf(!haveAssets)('wake parity: node port vs python reference', () =>
     const python = createPythonWakeDetector({
       pythonBin: process.env.BINGBONG_WAKE_PYTHON_BIN ?? 'python3',
       scriptPath: sidecarScript,
-      classifierModelPath: modelPaths.classifierModelPath,
+      wakeModelPath: modelPaths.headModelPaths.wake,
     })
 
     const nodeScores: number[] = []
     const pythonScores: number[] = []
     for (let offset = 0; offset + WAKE_CHUNK_SAMPLES <= clip.length; offset += WAKE_CHUNK_SAMPLES) {
       const chunk = clip.subarray(offset, offset + WAKE_CHUNK_SAMPLES)
-      nodeScores.push(await node.score(chunk))
-      pythonScores.push(await python.score(chunk))
+      nodeScores.push((await node.score(chunk)).wake)
+      pythonScores.push((await python.score(chunk)).wake)
     }
 
     expect(nodeScores.length).toBeGreaterThan(0)

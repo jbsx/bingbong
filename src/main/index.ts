@@ -85,8 +85,9 @@ const piperConfig = resolvePiperConfig(process.env, app.getPath('userData'))
 // load once. Scripted doubles ride the same seam for e2e.
 const voiceConfig = resolveVoiceConfig(process.env, app.getPath('userData'))
 
-// Wake word (T10): interim "hey jarvis" via the openWakeWord ONNX trio; the
-// Python sidecar is the config-only fallback (BINGBONG_WAKE_ENGINE=python).
+// Wake word: "bing bong" plus the "abort" / "hold on" interrupt heads via the
+// openWakeWord ONNX stack; the Python sidecar is the config-only fallback
+// (BINGBONG_WAKE_ENGINE=python, wake head only).
 const wakeConfig = resolveWakeConfig(process.env, app.getPath('userData'), app.getAppPath())
 const wakeDetector = createMainWake(wakeConfig)
 const chimeWav = createChimeWav()

@@ -62,18 +62,22 @@ transcripts) replace the real engines — used by the e2e suite and keyless
 demos, mirroring `BINGBONG_LLM_SCRIPT`.
 
 T10 adds **hands-free activation**: with the wake models present (see
-`docs/wake-parity.md` for download links and the parity write-up), the
-interim "hey jarvis" runs fully in Node via onnxruntime-node
-(melspectrogram → speech embedding → classifier), Silero VAD gates the scores
-against music/noise false positives, and the settings-page threshold slider
-applies live. Wake → chime → single-shot listen; saying the wake word during
-a spoken answer kills playback instantly and listens again (barge-in). Env
-knobs:
+`docs/wake-parity.md` for download links and the parity write-up), three
+custom heads run fully in Node via onnxruntime-node (melspectrogram →
+speech embedding → one classifier per head): "bing bong" wakes the
+assistant, "abort" cancels the active run, and "hold on" pauses it for a
+spoken steering instruction. Silero VAD gates the scores against
+music/noise false positives, and the settings-page threshold slider
+applies live. Wake → chime → single-shot listen; saying the wake word
+during a spoken answer kills playback instantly and listens again
+(barge-in). Env knobs:
 
 ```sh
-BINGBONG_WAKE_ENGINE=node|python|off   # default node; python = reference sidecar
-BINGBONG_WAKE_CLASSIFIER_MODEL=…       # swap in a custom bing_bong model
-BINGBONG_WAKE_SCRIPT='[0.01, 0.99]'    # scripted scores, e2e double
+BINGBONG_WAKE_ENGINE=node|python|off   # default node; python = reference sidecar (wake head only)
+BINGBONG_WAKE_MODEL=…                  # override the "bing bong" head path
+BINGBONG_WAKE_ABORT_MODEL=…            # override the "abort" head path
+BINGBONG_WAKE_HOLD_ON_MODEL=…          # override the "hold on" head path
+BINGBONG_WAKE_SCRIPT='[0.01, 0.99]'    # scripted scores, e2e double (object form scripts each head)
 ```
 
 The Python fallback needs `pip install openwakeword onnxruntime` and is a

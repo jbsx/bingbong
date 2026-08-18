@@ -1,12 +1,13 @@
-import type { WakeWordDetector } from '../../core/ports/wake'
-import { assertWakeChunk, WAKE_CHUNK_SAMPLES } from '../../core/ports/wake'
+import type { WakeScores, WakeWordDetector } from '../../core/ports/wake'
+import { assertWakeChunk, WAKE_CHUNK_SAMPLES, WAKE_HEADS } from '../../core/ports/wake'
 
 /**
- * The interim "hey jarvis" wake word (T10): openWakeWord's ONNX trio —
- * melspectrogram → Google speech embedding → per-wake-word classifier — run
- * in onnxruntime-node. This is a streaming port of the Python reference
- * (openwakeword utils.py AudioFeatures + model.py Model.predict); see
- * docs/wake-parity.md for the algorithm and the documented deviations.
+ * The "bing bong" wake word plus the "abort" / "hold on" interrupt heads:
+ * openWakeWord's ONNX feature stack — melspectrogram → Google speech
+ * embedding — run once per chunk, then one Colab-trained classifier per
+ * head, all in onnxruntime-node. This is a streaming port of the Python
+ * reference (openwakeword utils.py AudioFeatures + model.py Model.predict);
+ * see docs/wake-parity.md for the algorithm and the documented deviations.
  * Runtime and models load lazily on first use, so missing model files
  * surface as a rejected score() (the session shows it and drops the ear),
  * not a startup crash.
@@ -26,7 +27,8 @@ interface OrtSession {
 export interface CreateOpenWakeWordDetectorDeps {
   melspecModelPath: string
   embeddingModelPath: string
-  classifierModelPath: string
+  /** One classifier ONNX per head; all three share the feature stack. */
+  headModelPaths: Record<keyof WakeScores, string>
   /** Injectable for tests; defaults to the onnxruntime-node import. */
   loadRuntime?: () => Promise<OrtModule>
 }
@@ -61,7 +63,8 @@ function firstOutput(outputs: Record<string, { data: ArrayLike<number> }>): Arra
 
 export function createOpenWakeWordDetector(deps: CreateOpenWakeWordDetectorDeps): WakeWordDetector {
   let ort: OrtModule | null = null
-  let sessionsReady: Promise<{ melspec: OrtSession; embedding: OrtSession; classifier: OrtSession }> | null = null
+  let sessionsReady: Promise<{ melspec: OrtSession; embedding: OrtSession; heads: Record<keyof WakeScores, OrtSession> }> | null =
+    null
 
   // Streaming state, mirroring the reference buffers.
   let rawTail = new Float32Array(0) // last 480 samples (empty right after reset)
@@ -84,13 +87,19 @@ export function createOpenWakeWordDetector(deps: CreateOpenWakeWordDetectorDeps)
     sessionsReady ??= Promise.all([
       ort.InferenceSession.create(deps.melspecModelPath),
       ort.InferenceSession.create(deps.embeddingModelPath),
-      ort.InferenceSession.create(deps.classifierModelPath),
-    ]).then(([melspec, embedding, classifier]) => ({ melspec, embedding, classifier }))
+      ort.InferenceSession.create(deps.headModelPaths.wake),
+      ort.InferenceSession.create(deps.headModelPaths.abort),
+      ort.InferenceSession.create(deps.headModelPaths.holdOn),
+    ]).then(([melspec, embedding, wake, abort, holdOn]) => ({
+      melspec,
+      embedding,
+      heads: { wake, abort, holdOn },
+    }))
     return { ort, ...(await sessionsReady) }
   }
 
-  async function scoreChunk(chunk: Float32Array): Promise<number> {
-    const { ort: runtime, melspec, embedding, classifier } = await ensureSessions()
+  async function scoreChunk(chunk: Float32Array): Promise<WakeScores> {
+    const { ort: runtime, melspec, embedding, heads } = await ensureSessions()
 
     // Melspectrogram: lookback tail + chunk, int16-valued floats in.
     const input = new Float32Array(rawTail.length + chunk.length)
@@ -119,28 +128,33 @@ export function createOpenWakeWordDetector(deps: CreateOpenWakeWordDetectorDeps)
     featureRows.push(Float32Array.from(firstOutput(embOut)))
     if (featureRows.length > FEATURE_BUFFER_MAX) featureRows = featureRows.slice(featureRows.length - FEATURE_BUFFER_MAX)
 
-    // Classifier over the trailing 16 embeddings.
+    // One classifier per head over the trailing 16 embeddings.
     const features = featureRows.slice(featureRows.length - FEATURE_WINDOW)
     const classifierInput = new Float32Array(FEATURE_WINDOW * EMBEDDING_DIM)
     features.forEach((row, f) => classifierInput.set(row, f * EMBEDDING_DIM))
-    const classifierInputName = classifier.inputNames[0] ?? 'input'
-    const clsOut = await classifier.run({
-      [classifierInputName]: new runtime.Tensor('float32', classifierInput, [1, FEATURE_WINDOW, EMBEDDING_DIM]),
-    })
-    const score = Number(firstOutput(clsOut)[0])
+    const scores = {} as WakeScores
+    for (const head of WAKE_HEADS) {
+      const session = heads[head]
+      const inputName = session.inputNames[0] ?? 'input'
+      const out = await session.run({
+        [inputName]: new runtime.Tensor('float32', classifierInput, [1, FEATURE_WINDOW, EMBEDDING_DIM]),
+      })
+      scores[head] = Number(firstOutput(out)[0])
+    }
 
     const suppressed = chunksSinceReset < WARMUP_CHUNKS
     chunksSinceReset += 1
-    return suppressed ? 0 : score
+    return suppressed ? { wake: 0, abort: 0, holdOn: 0 } : scores
   }
 
   return {
     async score(chunk) {
       assertWakeChunk(chunk)
-      // Like the reference's group prediction: per-chunk scores, max wins.
-      let max = 0
+      // Like the reference's group prediction: per-chunk scores, per-head max wins.
+      const max: WakeScores = { wake: 0, abort: 0, holdOn: 0 }
       for (let offset = 0; offset < chunk.length; offset += WAKE_CHUNK_SAMPLES) {
-        max = Math.max(max, await scoreChunk(chunk.subarray(offset, offset + WAKE_CHUNK_SAMPLES)))
+        const scores = await scoreChunk(chunk.subarray(offset, offset + WAKE_CHUNK_SAMPLES))
+        for (const head of WAKE_HEADS) max[head] = Math.max(max[head], scores[head])
       }
       return max
     },

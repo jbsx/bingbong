@@ -2,14 +2,16 @@ import { describe, expect, it } from 'vitest'
 import { resolveWakeConfig } from './wakeConfig'
 
 describe('wake config', () => {
-  it('defaults to the node engine with the hey jarvis trio under userData/models', () => {
+  it('defaults to the node engine with the three custom heads under userData/models/wake', () => {
     const config = resolveWakeConfig({}, '/profile', '/app')
 
     expect(config).toEqual({
       engine: 'node',
       melspecModel: '/profile/models/melspectrogram.onnx',
       embeddingModel: '/profile/models/embedding_model.onnx',
-      classifierModel: '/profile/models/hey_jarvis_v0.1.onnx',
+      wakeModel: '/profile/models/wake/bing_bong.onnx',
+      abortModel: '/profile/models/wake/abort.onnx',
+      holdOnModel: '/profile/models/wake/hold_on.onnx',
       pythonBin: 'python3',
       sidecarScript: '/app/scripts/wake_sidecar.py',
       wakeScript: undefined,
@@ -24,7 +26,9 @@ describe('wake config', () => {
   it('honors model path, python bin, and scripted-score overrides', () => {
     const config = resolveWakeConfig(
       {
-        BINGBONG_WAKE_CLASSIFIER_MODEL: '/models/bing_bong.onnx',
+        BINGBONG_WAKE_MODEL: '/models/custom_wake.onnx',
+        BINGBONG_WAKE_ABORT_MODEL: '/models/custom_abort.onnx',
+        BINGBONG_WAKE_HOLD_ON_MODEL: '/models/custom_hold_on.onnx',
         BINGBONG_WAKE_MELSPEC_MODEL: '/models/mels.onnx',
         BINGBONG_WAKE_EMBEDDING_MODEL: '/models/emb.onnx',
         BINGBONG_WAKE_PYTHON_BIN: '/venv/bin/python',
@@ -34,7 +38,9 @@ describe('wake config', () => {
       '/a',
     )
 
-    expect(config.classifierModel).toBe('/models/bing_bong.onnx')
+    expect(config.wakeModel).toBe('/models/custom_wake.onnx')
+    expect(config.abortModel).toBe('/models/custom_abort.onnx')
+    expect(config.holdOnModel).toBe('/models/custom_hold_on.onnx')
     expect(config.melspecModel).toBe('/models/mels.onnx')
     expect(config.embeddingModel).toBe('/models/emb.onnx')
     expect(config.pythonBin).toBe('/venv/bin/python')

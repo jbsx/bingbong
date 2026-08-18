@@ -7,8 +7,10 @@ export interface WakeConfig {
   engine: WakeEngine
   melspecModel: string
   embeddingModel: string
-  /** Interim hey_jarvis_v0.1.onnx; point at a custom bing_bong model once trained. */
-  classifierModel: string
+  /** The three Colab-trained heads: "bing bong" wakes, "abort" cancels, "hold on" pauses. */
+  wakeModel: string
+  abortModel: string
+  holdOnModel: string
   pythonBin: string
   sidecarScript: string
   /** Scripted scores (e2e double), mirroring BINGBONG_VAD_SCRIPT. */
@@ -25,7 +27,9 @@ export function resolveWakeConfig(env: Record<string, string | undefined>, userD
     engine: engineRaw,
     melspecModel: env.BINGBONG_WAKE_MELSPEC_MODEL?.trim() || join(modelsDir, 'melspectrogram.onnx'),
     embeddingModel: env.BINGBONG_WAKE_EMBEDDING_MODEL?.trim() || join(modelsDir, 'embedding_model.onnx'),
-    classifierModel: env.BINGBONG_WAKE_CLASSIFIER_MODEL?.trim() || join(modelsDir, 'hey_jarvis_v0.1.onnx'),
+    wakeModel: env.BINGBONG_WAKE_MODEL?.trim() || join(modelsDir, 'wake', 'bing_bong.onnx'),
+    abortModel: env.BINGBONG_WAKE_ABORT_MODEL?.trim() || join(modelsDir, 'wake', 'abort.onnx'),
+    holdOnModel: env.BINGBONG_WAKE_HOLD_ON_MODEL?.trim() || join(modelsDir, 'wake', 'hold_on.onnx'),
     pythonBin: env.BINGBONG_WAKE_PYTHON_BIN?.trim() || 'python3',
     sidecarScript: env.BINGBONG_WAKE_SIDECAR_SCRIPT?.trim() || join(appDir, 'scripts', 'wake_sidecar.py'),
     wakeScript: env.BINGBONG_WAKE_SCRIPT?.trim() || undefined,

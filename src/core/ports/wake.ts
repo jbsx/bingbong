@@ -1,10 +1,23 @@
-/** Mono 16 kHz PCM in, wake-word confidence out (openWakeWord trio or the Python sidecar in main). */
+/** Per-head confidences from one scored chunk: the wake word plus the two interrupt heads. */
+export interface WakeScores {
+  /** "bing bong" — hands-free activation. */
+  wake: number
+  /** "abort" — cancels the active run (a no-op while idle). */
+  abort: number
+  /** "hold on" — pauses the active run for steering. */
+  holdOn: number
+}
+
+/** Every head, in stable order — the single place the closed set is enumerated. */
+export const WAKE_HEADS = ['wake', 'abort', 'holdOn'] as const satisfies readonly (keyof WakeScores)[]
+
+/** Mono 16 kHz PCM in, per-head wake confidences out (openWakeWord trio or the Python sidecar in main). */
 export interface WakeWordDetector {
   /**
-   * Scores one 1280-sample (80 ms) chunk; resolves the wake-word confidence
+   * Scores one 1280-sample (80 ms) chunk; resolves every head's confidence
    * (0..1). Adapter failures (missing model, dead sidecar) reject.
    */
-  score(chunk: Float32Array): Promise<number>
+  score(chunk: Float32Array): Promise<WakeScores>
   /** Clears feature buffers between listening episodes. */
   reset(): void
 }

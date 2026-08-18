@@ -595,17 +595,17 @@ describe('voice session — wake word (T10)', () => {
 
   it('a detector failure surfaces one error and disables monitoring', async () => {
     const detector = new FakeWakeDetector()
-    detector.failWith = new Error('hey_jarvis_v0.1.onnx missing')
+    detector.failWith = new Error('wake/bing_bong.onnx missing')
     const harness = await createSession({ wake: { detector } })
     harness.session.enableWakeMonitoring()
 
     await monitorFrames(harness, [SPEECH, SPEECH, SPEECH, SPEECH, SPEECH])
 
-    expect(harness.errors).toEqual(['hey_jarvis_v0.1.onnx missing'])
+    expect(harness.errors).toEqual(['wake/bing_bong.onnx missing'])
     expect(harness.states.at(-1)).toEqual({ listening: false, reason: null, monitoring: false })
 
     // Inert from here: later audio is dropped, not retried against the model.
-    detector.queue.push(0.9)
+    detector.push('wake', 0.9)
     await monitorFrames(harness, [SPEECH, SPEECH, SPEECH])
     expect(harness.states.at(-1)).toEqual({ listening: false, reason: null, monitoring: false })
   })
@@ -646,6 +646,61 @@ describe('voice session — wake word (T10)', () => {
 
     await harness.speakUtterance()
     expect(harness.resolutions).toEqual([{ confirmationId: 'confirm-w', approved: true }])
+    expect(harness.states.at(-1)).toEqual({ listening: false, reason: null, monitoring: true })
+  })
+
+  it('the abort head cancels an active run from the always-on ear', async () => {
+    const runState = { value: 'running' as CommandRunState }
+    const detector = new FakeWakeDetector({ abort: [0.95] })
+    const harness = await createSession({ wake: { detector }, runState })
+    harness.session.enableWakeMonitoring()
+
+    await monitorFrames(harness, [SPEECH, SPEECH, SPEECH])
+
+    expect(harness.aborts).toHaveLength(1)
+    expect(harness.states.at(-1)).toEqual({ listening: false, reason: null, monitoring: true })
+  })
+
+  it('the abort head is a no-op while idle', async () => {
+    const detector = new FakeWakeDetector({ abort: [0.95, 0.95] })
+    const harness = await createSession({ wake: { detector } })
+    harness.session.enableWakeMonitoring()
+
+    await monitorFrames(harness, [SPEECH, SPEECH, SPEECH, SPEECH, SPEECH])
+
+    expect(harness.aborts).toHaveLength(0)
+    expect(harness.states.at(-1)).toEqual({ listening: false, reason: null, monitoring: true })
+  })
+
+  it('the hold on head pauses an active run and opens the steering listen', async () => {
+    const runState = { value: 'running' as CommandRunState }
+    const detector = new FakeWakeDetector({ holdOn: [0.95] })
+    const harness = await createSession({
+      transcriber: new FakeTranscriber(['use Paris instead']),
+      wake: { detector },
+      runState,
+    })
+    harness.session.enableWakeMonitoring()
+
+    await monitorFrames(harness, [SPEECH, SPEECH, SPEECH])
+
+    expect(harness.pauses).toHaveLength(1)
+    expect(harness.states.at(-1)).toEqual({ listening: true, reason: 'pause', monitoring: true })
+
+    // The steering utterance routes exactly like the keyword path (#20).
+    await harness.speakUtterance()
+    expect(harness.resumes).toEqual(['use Paris instead'])
+    expect(harness.heard).toEqual([{ text: 'use Paris instead', routed: 'steering' }])
+  })
+
+  it('the hold on head is a no-op while idle', async () => {
+    const detector = new FakeWakeDetector({ holdOn: [0.95, 0.95] })
+    const harness = await createSession({ wake: { detector } })
+    harness.session.enableWakeMonitoring()
+
+    await monitorFrames(harness, [SPEECH, SPEECH, SPEECH, SPEECH, SPEECH])
+
+    expect(harness.pauses).toHaveLength(0)
     expect(harness.states.at(-1)).toEqual({ listening: false, reason: null, monitoring: true })
   })
 

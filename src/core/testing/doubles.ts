@@ -2,7 +2,7 @@ import type { Clock } from '../ports/clock'
 import type { AssistantTurn, LlmClient, LlmRequest } from '../ports/llm'
 import type { TtsSpeaker } from '../ports/tts'
 import type { Transcriber, VadScorer } from '../ports/stt'
-import type { WakeWordDetector } from '../ports/wake'
+import { WAKE_HEADS, type WakeScores, type WakeWordDetector } from '../ports/wake'
 import type { BrowserController, BrowserState, KeyPress, MediaState, ViewportPoint, VisualGroundingController } from '../ports/browser'
 import type { PageSnapshot, SnapshotRef } from '../browser/snapshot'
 import type { SearchProvider, SearchResult } from '../ports/search'
@@ -267,27 +267,45 @@ export class FakeTranscriber implements Transcriber {
   }
 }
 
-/** Queue-driven wake detector: one score per 1280-sample chunk, last value repeats. */
+/**
+ * Queue-driven wake detector: one score per head per 1280-sample chunk, each
+ * head's last value repeating. A plain number[] scripts the wake head only.
+ */
 export class FakeWakeDetector implements WakeWordDetector {
-  queue: number[]
-  private last = 0
+  private readonly queues: Record<keyof WakeScores, number[]>
+  private readonly lasts: Record<keyof WakeScores, number> = { wake: 0, abort: 0, holdOn: 0 }
   readonly chunks: Float32Array[] = []
   resets = 0
   failWith: Error | null = null
 
-  constructor(scores: number[] = []) {
-    this.queue = [...scores]
+  constructor(scores: number[] | Partial<Record<keyof WakeScores, number[]>> = []) {
+    const heads = Array.isArray(scores) ? { wake: scores } : scores
+    this.queues = {
+      wake: [...(heads.wake ?? [])],
+      abort: [...(heads.abort ?? [])],
+      holdOn: [...(heads.holdOn ?? [])],
+    }
   }
 
-  async score(chunk: Float32Array): Promise<number> {
+  score(chunk: Float32Array): Promise<WakeScores> {
     this.chunks.push(chunk)
-    if (this.failWith) throw this.failWith
-    if (this.queue.length > 0) this.last = this.queue.shift() ?? this.last
-    return this.last
+    if (this.failWith) return Promise.reject(this.failWith)
+    const scores = { ...this.lasts }
+    for (const head of WAKE_HEADS) {
+      const queue = this.queues[head]
+      if (queue.length > 0) this.lasts[head] = queue.shift() ?? this.lasts[head]
+      scores[head] = this.lasts[head]
+    }
+    return Promise.resolve(scores)
   }
 
   reset(): void {
     this.resets += 1
+  }
+
+  /** Appends scores to a head's queue mid-test. */
+  push(head: keyof WakeScores, ...scores: number[]): void {
+    this.queues[head].push(...scores)
   }
 }
 

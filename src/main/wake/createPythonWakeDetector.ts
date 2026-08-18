@@ -3,11 +3,14 @@ import type { WakeWordDetector } from '../../core/ports/wake'
 import { assertWakeChunk } from '../../core/ports/wake'
 
 /**
- * Python sidecar fallback (T10): the reference openwakeword implementation
- * running in a spawned python3, behind the same WakeWordDetector seam as the
- * ONNX port — the swap is config-only (BINGBONG_WAKE_ENGINE=python). The
- * process is lazily spawned on the first score; a dead sidecar rejects
- * score() (the session shows it and drops the ear), never crashes the app.
+ * Python sidecar fallback: the reference openwakeword implementation running
+ * in a spawned python3, behind the same WakeWordDetector seam as the ONNX
+ * port — the swap is config-only (BINGBONG_WAKE_ENGINE=python). The
+ * reference scores one model per process, so the sidecar drives the wake
+ * head only; the abort/holdOn heads report 0 on this engine (the node
+ * engine runs all three). The process is lazily spawned on the first
+ * score; a dead sidecar rejects score() (the session shows it and drops
+ * the ear), never crashes the app.
  *
  * Wire protocol (both directions): 4-byte LE length (type byte + payload),
  * 1 type byte, payload. Node→Python: 0 = audio (s16le PCM), 1 = reset.
@@ -22,7 +25,8 @@ const MSG_ERROR = 1
 export interface CreatePythonWakeDetectorDeps {
   pythonBin: string
   scriptPath: string
-  classifierModelPath: string
+  /** The "bing bong" head; the reference sidecar scores no interrupt heads. */
+  wakeModelPath: string
   /** Injectable for tests; defaults to child_process.spawn. */
   spawnFn?: typeof nodeSpawn
 }
@@ -80,7 +84,7 @@ export function createPythonWakeDetector(deps: CreatePythonWakeDetectorDeps): Wa
     if (dead) throw dead
     if (child) return child
 
-    const spawned = spawnFn(deps.pythonBin, ['-u', deps.scriptPath, '--model', deps.classifierModelPath])
+    const spawned = spawnFn(deps.pythonBin, ['-u', deps.scriptPath, '--model', deps.wakeModelPath])
     child = spawned
     let stderrTail = ''
     spawned.stderr?.on('data', (chunk: Buffer) => {
@@ -116,20 +120,11 @@ export function createPythonWakeDetector(deps: CreatePythonWakeDetectorDeps): Wa
   }
 
   return {
-    score(chunk) {
-      try {
-        assertWakeChunk(chunk)
-      } catch (err) {
-        return Promise.reject(err instanceof Error ? err : new Error(String(err)))
-      }
-      let spawned: ReturnType<typeof nodeSpawn>
-      try {
-        spawned = ensureChild()
-      } catch (err) {
-        return Promise.reject(err instanceof Error ? err : new Error(String(err)))
-      }
+    async score(chunk) {
+      assertWakeChunk(chunk)
+      const spawned = ensureChild()
       const pcm = toS16le(chunk)
-      const result = new Promise<number>((resolve, reject) => {
+      const wake = await new Promise<number>((resolve, reject) => {
         // Pending is registered synchronously — response frames pair FIFO with
         // score() calls, and a fast sidecar can answer before the write chain runs.
         pending.push({ resolve, reject })
@@ -139,7 +134,7 @@ export function createPythonWakeDetector(deps: CreatePythonWakeDetectorDeps): Wa
           writeFrameTo(spawned, MSG_AUDIO, pcm)
         })
       })
-      return result
+      return { wake, abort: 0, holdOn: 0 }
     },
 
     reset() {

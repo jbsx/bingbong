@@ -69,7 +69,7 @@ function createDetector(spawnFn: ReturnType<typeof fakeSpawn>['spawnFn']) {
   return createPythonWakeDetector({
     pythonBin: 'python3',
     scriptPath: 'scripts/wake_sidecar.py',
-    classifierModelPath: 'hey_jarvis_v0.1.onnx',
+    wakeModelPath: 'bing_bong.onnx',
     spawnFn,
   })
 }
@@ -83,7 +83,7 @@ describe('python wake sidecar', () => {
     const scoring = detector.score(new Float32Array(1280).fill(0.5))
     expect(calls).toHaveLength(1)
     expect(calls[0]!.command).toBe('python3')
-    expect(calls[0]!.args).toEqual(['-u', 'scripts/wake_sidecar.py', '--model', 'hey_jarvis_v0.1.onnx'])
+    expect(calls[0]!.args).toEqual(['-u', 'scripts/wake_sidecar.py', '--model', 'bing_bong.onnx'])
 
     const frames = await readFrames(calls[0]!.child, 1)
     expect(frames[0]!.type).toBe(MSG_AUDIO)
@@ -91,7 +91,7 @@ describe('python wake sidecar', () => {
     expect(frames[0]!.payload.readInt16LE(0)).toBe(Math.round(0.5 * 32767))
 
     calls[0]!.child.sendScore(0.42)
-    await expect(scoring).resolves.toBeCloseTo(0.42, 5)
+    await expect(scoring).resolves.toEqual({ wake: 0.42, abort: 0, holdOn: 0 })
   })
 
   it('resolves scores in write order across multiple chunks', async () => {
@@ -103,8 +103,8 @@ describe('python wake sidecar', () => {
     calls[0]!.child.sendScore(0.1)
     calls[0]!.child.sendScore(0.2)
 
-    await expect(first).resolves.toBeCloseTo(0.1, 5)
-    await expect(second).resolves.toBeCloseTo(0.2, 5)
+    await expect(first).resolves.toEqual({ wake: 0.1, abort: 0, holdOn: 0 })
+    await expect(second).resolves.toEqual({ wake: 0.2, abort: 0, holdOn: 0 })
   })
 
   it('handles score frames split across stdout reads', async () => {
@@ -120,7 +120,7 @@ describe('python wake sidecar', () => {
     child.stdout.write(frame.subarray(0, 7))
     child.stdout.write(frame.subarray(7))
 
-    await expect(scoring).resolves.toBeCloseTo(0.123456, 5)
+    await expect(scoring).resolves.toEqual({ wake: 0.123456, abort: 0, holdOn: 0 })
   })
 
   it('reset() sends a reset frame once the sidecar is running', async () => {

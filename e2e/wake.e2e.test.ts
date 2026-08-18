@@ -95,7 +95,7 @@ describe('wake word e2e', () => {
           const text = await harness.dashboardEval<string>(
             `document.querySelector('.voice-hint--monitoring')?.textContent ?? ''`,
           )
-          return text.includes('hey jarvis') ? text : undefined
+          return text.includes('bing bong') ? text : undefined
         },
         { timeoutMs: 20000, intervalMs: 250 },
       )

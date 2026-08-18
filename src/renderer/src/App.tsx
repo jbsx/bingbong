@@ -80,7 +80,7 @@ export function App() {
           </span>
         ) : voice.monitoring ? (
           <span className="voice-hint voice-hint--monitoring" role="status">
-            say “hey jarvis” or press Ctrl+Space
+            say “bing bong” or press Ctrl+Space
           </span>
         ) : null}
         <button

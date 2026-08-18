@@ -16,6 +16,9 @@ export interface WakeMonitorDeps {
   /** Music/noise gate: a detection only counts when speech was heard recently. */
   vadGate?: number
   onWake(): void
+  /** Interrupt heads ("abort" / "hold on"); the session gates them by run state. */
+  onAbort?(): void
+  onPause?(): void
   onError(message: string): void
 }
 
@@ -27,12 +30,14 @@ export interface WakeMonitor {
 }
 
 /**
- * The always-on ear (T10): while the voice session isn't listening, every mic
- * frame is VAD-scored and every 80 ms chunk is wake-scored. A detection
- * activates only when the score clears the threshold AND speech was heard in
- * the last ~0.5 s — openWakeWord's own VAD-gate idea, driven by the Silero
- * instance the ears already loaded. After firing (or failing) the monitor
- * latches until reset(), so one wake word produces exactly one activation.
+ * The always-on ear: while the voice session isn't listening, every mic
+ * frame is VAD-scored and every 80 ms chunk is wake-scored on all three
+ * heads. A detection activates only when the score clears the threshold AND
+ * speech was heard in the last ~0.5 s — openWakeWord's own VAD-gate idea,
+ * driven by the Silero instance the ears already loaded. A wake detection
+ * latches the monitor until reset(), so one wake word produces exactly one
+ * activation; the abort/pause heads don't latch (the session's interrupt
+ * handler is idempotent and no-ops while idle).
  */
 export function createWakeMonitor(deps: WakeMonitorDeps): WakeMonitor {
   const vadGate = deps.vadGate ?? DEFAULT_VAD_GATE
@@ -64,12 +69,18 @@ export function createWakeMonitor(deps: WakeMonitorDeps): WakeMonitor {
     while (wakeCarry.length >= WAKE_CHUNK_SAMPLES && latched === null) {
       const chunk = wakeCarry.slice(0, WAKE_CHUNK_SAMPLES)
       wakeCarry = wakeCarry.slice(WAKE_CHUNK_SAMPLES)
-      const score = await deps.detector.score(chunk)
+      const scores = await deps.detector.score(chunk)
       const gateMax = recentVad.length > 0 ? Math.max(...recentVad) : 0
-      if (score >= deps.getThreshold() && gateMax >= vadGate) {
+      const cleared = scores.wake >= deps.getThreshold() && gateMax >= vadGate
+      if (cleared) {
         latched = 'fired'
         deps.onWake()
+        continue
       }
+      // Interrupt heads: same gate, no latch — the session's interrupt
+      // handler no-ops them while idle, so a hot head can't wedge the ear.
+      if (scores.abort >= deps.getThreshold() && gateMax >= vadGate) deps.onAbort?.()
+      if (scores.holdOn >= deps.getThreshold() && gateMax >= vadGate) deps.onPause?.()
     }
   }
 

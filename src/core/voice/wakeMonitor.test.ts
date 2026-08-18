@@ -17,6 +17,8 @@ interface MonitorHarness {
   vad: FakeVad
   detector: FakeWakeDetector
   wakes: number
+  aborts: number
+  pauses: number
   errors: string[]
   threshold: number
   monitor: ReturnType<typeof createWakeMonitor>
@@ -33,6 +35,8 @@ function createMonitor(overrides?: { vad?: FakeVad; detector?: FakeWakeDetector;
     detector,
     threshold: overrides?.threshold ?? 0.5,
     wakes: 0,
+    aborts: 0,
+    pauses: 0,
     errors,
     monitor: undefined as unknown as MonitorHarness['monitor'],
     async pushFrames(probs) {
@@ -46,6 +50,12 @@ function createMonitor(overrides?: { vad?: FakeVad; detector?: FakeWakeDetector;
     getThreshold: () => harness.threshold,
     onWake: () => {
       harness.wakes += 1
+    },
+    onAbort: () => {
+      harness.aborts += 1
+    },
+    onPause: () => {
+      harness.pauses += 1
     },
     onError: (message) => errors.push(message),
   })
@@ -122,19 +132,55 @@ describe('wake monitor', () => {
     expect(harness.wakes).toBe(2)
   })
 
+  it('fires the abort and pause heads above the threshold while speech is present', async () => {
+    const harness = createMonitor({ detector: new FakeWakeDetector({ abort: [0.9, 0.1], holdOn: [0.1, 0.9] }) })
+
+    await harness.pushFrames([SPEECH, SPEECH, SPEECH, SPEECH, SPEECH])
+
+    expect(harness.aborts).toBe(1)
+    expect(harness.pauses).toBe(1)
+    expect(harness.wakes).toBe(0)
+  })
+
+  it('gates the interrupt heads on recent speech and the live threshold', async () => {
+    const harness = createMonitor({ detector: new FakeWakeDetector({ abort: [0.99, 0.6, 0.9] }) })
+
+    // Music/noise: a hot abort head without recent speech stays quiet.
+    await harness.pushFrames([SILENCE, SILENCE, SILENCE])
+    expect(harness.aborts).toBe(0)
+
+    // The slider applies to the interrupt heads too: 0.6 < 0.7.
+    harness.threshold = 0.7
+    await harness.pushFrames([SPEECH, SPEECH, SPEECH])
+    expect(harness.aborts).toBe(0)
+
+    harness.threshold = 0.5
+    await harness.pushFrames([SPEECH, SPEECH, SPEECH])
+    expect(harness.aborts).toBe(1)
+  })
+
+  it('does not latch on an interrupt head — the wake head still fires afterwards', async () => {
+    const harness = createMonitor({ detector: new FakeWakeDetector({ abort: [0.9], wake: [0.1, 0.95] }) })
+
+    await harness.pushFrames([SPEECH, SPEECH, SPEECH, SPEECH, SPEECH])
+
+    expect(harness.aborts).toBe(1)
+    expect(harness.wakes).toBe(1)
+  })
+
   it('surfaces a detector failure once and goes inert until reset', async () => {
     const detector = new FakeWakeDetector()
-    detector.failWith = new Error('hey_jarvis_v0.1.onnx missing')
+    detector.failWith = new Error('wake/bing_bong.onnx missing')
     const harness = createMonitor({ detector })
 
     await harness.pushFrames([SPEECH, SPEECH, SPEECH, SPEECH, SPEECH])
     await harness.pushFrames([SPEECH, SPEECH, SPEECH])
 
-    expect(harness.errors).toEqual(['hey_jarvis_v0.1.onnx missing'])
+    expect(harness.errors).toEqual(['wake/bing_bong.onnx missing'])
     expect(harness.wakes).toBe(0)
 
     detector.failWith = null
-    detector.queue.push(0.9)
+    detector.push('wake', 0.9)
     harness.monitor.reset()
     await harness.pushFrames([SPEECH, SPEECH, SPEECH, SPEECH, SPEECH])
     expect(harness.wakes).toBe(1)
