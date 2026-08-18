@@ -1,8 +1,8 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { commandBoxScript } from './scripts'
 import { startHarness, type Harness } from './harness'
 import { startFixtureServer, type FixtureServer } from './fixtureServer'
-import { sleep, waitFor } from './waitFor'
+import { sleep } from './waitFor'
+import { submitAndAwaitAnswer, transcriptText } from './transcript'
 import type { AssistantTurn } from '../src/core/ports/llm'
 
 // Session-scoped transcript (spec #25): the dashboard shows only the current
@@ -18,27 +18,6 @@ const SCRIPT: AssistantTurn[] = [
   { kind: 'answer', speak: 'Second answer.', display: 'ANSWER TWO' },
   { kind: 'answer', speak: 'Third answer.', display: 'ANSWER THREE' },
 ]
-
-async function transcriptText(harness: Harness): Promise<string> {
-  return harness.dashboardEval<string>(
-    `Array.from(document.querySelectorAll('.transcript-entry')).map((el) => el.textContent).join('\\n')`,
-  )
-}
-
-// Submit, then wait for THIS run's answer marker — not merely the idle orb,
-// whose first poll can race the run's start (see sessionReset.e2e.test.ts).
-async function submitAndAwaitAnswer(harness: Harness, command: string, marker: string): Promise<void> {
-  const submitted = await harness.dashboardEval<string>(commandBoxScript(command))
-  expect(submitted).toBe('submitted')
-  await waitFor(
-    async () => {
-      const text = await transcriptText(harness)
-      const answered = text.includes(marker) && (await harness.dashboardEval<boolean>(`!!document.querySelector('.status-orb--idle')`))
-      return answered || undefined
-    },
-    { timeoutMs: 20000, intervalMs: 250 },
-  )
-}
 
 describe('session-scoped transcript e2e', () => {
   let fixture: FixtureServer

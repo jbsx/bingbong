@@ -1,8 +1,8 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { commandBoxScript } from './scripts'
 import { startHarness, type Harness } from './harness'
 import { startFixtureServer, type FixtureServer } from './fixtureServer'
 import { waitFor } from './waitFor'
+import { submitAndAwaitAnswer, transcriptDisplays, transcriptText } from './transcript'
 import type { AssistantTurn } from '../src/core/ports/llm'
 
 // Model-invoked session reset (spec #24): "forget all that — different
@@ -32,31 +32,6 @@ const SCRIPT: AssistantTurn[] = [
     display: 'NEXT COMMAND:\n$history',
   },
 ]
-
-// The transcript's display entries, joined — the shared probe both waits and
-// assertions read.
-async function transcriptDisplays(harness: Harness): Promise<string> {
-  return harness.dashboardEval<string>(
-    `Array.from(document.querySelectorAll('.transcript-entry--display')).map((el) => el.textContent).join('\\n---\\n')`,
-  )
-}
-
-// Submit, then wait for THIS run's answer marker in the transcript — not
-// merely the idle orb, whose first poll can race the run's start (the orb
-// is still idle from boot before the thinking status lands, which would let
-// the next submit hit a disabled input).
-async function submitAndAwaitAnswer(harness: Harness, command: string, marker: string): Promise<void> {
-  const submitted = await harness.dashboardEval<string>(commandBoxScript(command))
-  expect(submitted).toBe('submitted')
-  await waitFor(
-    async () => {
-      const entries = await transcriptDisplays(harness)
-      const answered = entries.includes(marker) && (await harness.dashboardEval<boolean>(`!!document.querySelector('.status-orb--idle')`))
-      return answered || undefined
-    },
-    { timeoutMs: 20000, intervalMs: 250 },
-  )
-}
 
 async function displayEntry(harness: Harness, marker: string): Promise<string> {
   return waitFor(
@@ -99,9 +74,7 @@ describe('session reset e2e', () => {
     // so the view cleared at that moment — the old session's commands and
     // answers (including the reset command's own echo) are gone; only the
     // fresh session's tail renders.
-    const visibleText = await harness.dashboardEval<string>(
-      `Array.from(document.querySelectorAll('.transcript-entry')).map((el) => el.textContent).join('\\n')`,
-    )
+    const visibleText = await transcriptText(harness)
     expect(visibleText).toContain('AFTER RESET:')
     expect(visibleText).not.toContain('Pizza A on Main St')
     expect(visibleText).not.toContain('find a pizza place')

@@ -3,18 +3,13 @@ import { approveConfirmationScript, commandBoxScript } from './scripts'
 import { startHarness, type Harness } from './harness'
 import { startFixtureServer, type FixtureServer } from './fixtureServer'
 import { waitFor } from './waitFor'
+import { transcriptText } from './transcript'
 import type { AssistantTurn } from '../src/core/ports/llm'
 
 // Risk gate e2e: real Electron app, real CDP pane, scripted LLM. The /risky
 // fixture's DOM order fixes the refs: [2] password, [5] Pay now, [7] Send.
 // Seam tests cover deny/approve/timeout with a fake clock; here we prove the
 // gate holds through the real collector script, controller, IPC and dialog.
-
-async function transcriptText(harness: Harness): Promise<string> {
-  return harness.dashboardEval<string>(
-    `Array.from(document.querySelectorAll('.transcript-entry')).map((el) => el.textContent).join('\\n')`,
-  )
-}
 
 async function waitForTranscript(harness: Harness, expected: string): Promise<void> {
   await waitFor(

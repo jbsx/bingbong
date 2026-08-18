@@ -23,7 +23,8 @@ import { createUsageStore } from './settings/usageStore'
 import { USAGE_IPC } from '../core/settings/usageIpcChannels'
 import { HISTORY_IPC, HISTORY_HYDRATE_LIMIT } from '../core/history/ipcChannels'
 import { createHistoryRecorder } from '../core/history/historyRecorder'
-import { createSessionMemory } from '../core/session/sessionMemory'
+import { createSessionMemory, SESSION_WINDOW_MS } from '../core/session/sessionMemory'
+import { systemClock } from '../core/ports/clock'
 import { createSqliteHistoryStore } from './history/createSqliteHistoryStore'
 import { DEFAULT_DAILY_SPEND_WARN_USD } from '../core/agent/spendEstimate'
 import { resolvePiperConfig } from './tts/piperConfig'
@@ -232,8 +233,8 @@ async function createWindow(): Promise<BrowserWindow> {
   // untouched: the event projects to no transcript entry.
   const sessionWindowOverride = sessionWindowMs(currentEnv())
   const sessionMemory = createSessionMemory({
-    ...(sessionWindowOverride !== undefined ? { windowMs: sessionWindowOverride } : {}),
-    onSessionStart: () => emitPipelineEvent({ type: 'session_started', at: Date.now() }),
+    windowMs: sessionWindowOverride ?? SESSION_WINDOW_MS,
+    onSessionStart: () => emitPipelineEvent({ type: 'session_started', at: systemClock.now() }),
   })
   const pipeline = createAssistantPipeline({
     controller,

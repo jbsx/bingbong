@@ -1,8 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { commandBoxScript } from './scripts'
 import { startHarness, type Harness } from './harness'
 import { startFixtureServer, type FixtureServer } from './fixtureServer'
-import { waitFor } from './waitFor'
+import { submitAndAwaitAnswer, transcriptDisplays } from './transcript'
 import type { AssistantTurn } from '../src/core/ports/llm'
 
 // Session continuity (spec #23): a follow-up command within the 10-minute
@@ -23,15 +22,6 @@ const SCRIPT: AssistantTurn[] = [
   },
 ]
 
-async function submitAndAwaitIdle(harness: Harness, command: string): Promise<void> {
-  const submitted = await harness.dashboardEval<string>(commandBoxScript(command))
-  expect(submitted).toBe('submitted')
-  await waitFor(
-    () => harness.dashboardEval<boolean>(`!!document.querySelector('.status-orb--idle')`),
-    { timeoutMs: 20000, intervalMs: 250 },
-  )
-}
-
 describe('session continuity e2e', () => {
   let fixture: FixtureServer
   let harness: Harness
@@ -50,19 +40,14 @@ describe('session continuity e2e', () => {
   })
 
   it('replays the prior exchange to the orchestrator for a follow-up command', async () => {
-    await submitAndAwaitIdle(harness, 'find a pizza place')
+    // Wait for each run's own answer marker, not merely the idle orb: the
+    // orb's first poll can race the run's start and let the next submit hit
+    // a disabled input (see e2e/transcript.ts).
+    await submitAndAwaitAnswer(harness, 'find a pizza place', 'Pizza A on Main St')
 
-    await submitAndAwaitIdle(harness, 'what about the second one?')
+    await submitAndAwaitAnswer(harness, 'what about the second one?', 'RESOLVED AGAINST:')
 
-    const echoed = await waitFor(
-      async () => {
-        const entries = await harness.dashboardEval<string>(
-          `Array.from(document.querySelectorAll('.transcript-entry--display')).map((el) => el.textContent).join('\\n---\\n')`,
-        )
-        return entries.includes('RESOLVED AGAINST:') ? entries : undefined
-      },
-      { timeoutMs: 20000, intervalMs: 250 },
-    )
+    const echoed = await transcriptDisplays(harness)
     expect(echoed).toContain('[user] find a pizza place')
     expect(echoed).toContain('[assistant] 1. Pizza A on Main St')
   })
