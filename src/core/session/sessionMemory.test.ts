@@ -163,6 +163,42 @@ describe('sessionMemory', () => {
     ])
   })
 
+  it('keeps a newer run\'s frozen history when an older overlapping run finishes', () => {
+    const session = createSessionMemory()
+    feed(session.run(), runEvents('find a pizza place', 'Found two.', 1_000))
+    // A long run overlaps a busy-rejected second command: the second command
+    // owns the history from its start, so the first run's late done must not
+    // release the frozen turns while the second is still mid-run.
+    const longRun = session.run()
+    longRun.event({ type: 'command', text: 'keep working', at: 2_000 })
+    const busy = session.run()
+    busy.event({ type: 'command', text: 'interrupt attempt', at: 2_500 })
+    busy.event({ type: 'error', message: 'another command is already running', at: 2_600 })
+    busy.event({ type: 'done', outcome: 'failed', at: 2_700 })
+
+    const stillFrozen = session.history()
+    expect(stillFrozen).toEqual([
+      { role: 'user', text: 'find a pizza place' },
+      { role: 'assistant', text: 'Found two.' },
+    ])
+
+    // The busy-rejected command still joins the thread for the next run.
+    feed(longRun, [
+      { type: 'display', text: 'Work complete.', at: 2_900 },
+      { type: 'done', outcome: 'done', at: 3_000 },
+    ])
+    const next = session.run()
+    next.event({ type: 'command', text: 'one more', at: 4_000 })
+    expect(session.history()).toEqual([
+      { role: 'user', text: 'find a pizza place' },
+      { role: 'assistant', text: 'Found two.' },
+      { role: 'user', text: 'interrupt attempt' },
+      { role: 'assistant', text: '(run failed)' },
+      { role: 'user', text: 'keep working' },
+      { role: 'assistant', text: 'Work complete.' },
+    ])
+  })
+
   it('falls back to the spoken line when a completed run showed no display text', () => {
     const session = createSessionMemory()
     feed(session.run(), [

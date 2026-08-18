@@ -4,6 +4,7 @@
 // the same pipeline event seam as the history recorder; dies on app quit and
 // never touches history.db, which stays review-only.
 
+import { inferRunOutcome } from '../pipeline/events'
 import type { PipelineEvent } from '../pipeline/events'
 import type { SessionTurn } from '../ports/llm'
 
@@ -26,7 +27,10 @@ interface SessionExchange {
   finishedAt: number
 }
 
-export interface SessionMemory {
+/** The seam the pipeline reads: live access to the turns for the active run. */
+export type SessionHistorySource = Pick<SessionMemory, 'history'>
+
+export interface SessionMemory extends SessionHistorySource {
   /** Turns that ride along with the active command, oldest first (live read). */
   history(): SessionTurn[]
   /** Observes one independent run's events, like the history recorder. */
@@ -63,13 +67,22 @@ function enforceBudget(exchanges: SessionExchange[]): SessionExchange[] {
 
 export function createSessionMemory(): SessionMemory {
   let exchanges: SessionExchange[] = []
-  let latched: SessionTurn[] | null = null
+  // The continuation decision (window check) is made once, when the first
+  // concurrently-running command starts; every history() read until that run
+  // finishes returns the same turns. Overlapping runs (a busy-rejected
+  // command) join the store but cannot disturb the frozen list.
+  let activeRunHistory: SessionTurn[] | null = null
+  let outstandingRuns = 0
+  let historyOwner: number | null = null
+  let nextRunId = 0
 
   return {
     history() {
-      return latched ?? toTurns(exchanges)
+      return activeRunHistory ?? toTurns(exchanges)
     },
     run() {
+      const runId = ++nextRunId
+      let started = false
       let command: string | null = null
       let display: string | null = null
       let speak: string | null = null
@@ -80,21 +93,25 @@ export function createSessionMemory(): SessionMemory {
         event(event) {
           switch (event.type) {
             case 'command': {
+              started = true
+              outstandingRuns += 1
               command = event.text
               display = null
               speak = null
               lastStatus = null
               failed = false
+              if (historyOwner !== null) return
+              historyOwner = runId
               const last = exchanges.at(-1)
               if (!last) {
-                latched = []
+                activeRunHistory = []
               } else if (event.at - last.finishedAt < SESSION_WINDOW_MS) {
-                latched = toTurns(exchanges)
+                activeRunHistory = toTurns(exchanges)
               } else {
                 // Window lapsed: a fresh thread that still keeps the most
                 // recent exchange, so "pause it" resolves after a long pause.
                 exchanges = [last]
-                latched = toTurns(exchanges)
+                activeRunHistory = toTurns(exchanges)
               }
               return
             }
@@ -111,9 +128,12 @@ export function createSessionMemory(): SessionMemory {
               failed = true
               return
             case 'done': {
+              if (started) {
+                started = false
+                outstandingRuns -= 1
+              }
               if (command !== null) {
-                const outcome = event.outcome
-                  ?? (lastStatus === 'cancelled' ? 'cancelled' : failed ? 'failed' : 'done')
+                const outcome = inferRunOutcome(event.outcome, lastStatus, failed)
                 const answer =
                   outcome === 'cancelled'
                     ? '(run was cancelled)'
@@ -125,7 +145,10 @@ export function createSessionMemory(): SessionMemory {
                   { command: truncate(command), answer: truncate(answer), finishedAt: event.at },
                 ])
               }
-              latched = null
+              if (historyOwner === runId) {
+                historyOwner = null
+                activeRunHistory = null
+              }
               return
             }
             default:

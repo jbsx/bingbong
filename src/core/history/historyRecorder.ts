@@ -1,4 +1,5 @@
 import type { PipelineEvent } from '../pipeline/events'
+import { inferRunOutcome } from '../pipeline/events'
 import type { VoiceHeardEvent } from '../voice/ipcChannels'
 import { describeHeard } from '../voice/heardDisplay'
 import type { HistoryStore } from './historyStore'
@@ -64,8 +65,7 @@ export function createHistoryRecorder(
               return
             case 'done': {
               if (runId !== null) {
-                const outcome = event.outcome
-                  ?? (lastStatus === 'cancelled' ? 'cancelled' : failed ? 'failed' : 'done')
+                const outcome = inferRunOutcome(event.outcome, lastStatus, failed)
                 store.finishRun(runId, outcome, event.at)
                 removeActiveRun(runId)
                 runId = null

@@ -87,3 +87,16 @@ export type PipelineEvent =
   /** A subagent's state changed — the dashboard keeps one card per agent id. */
   | { type: 'agent_update'; agent: SubagentCard; at: number }
   | { type: 'done'; outcome?: 'done' | 'failed' | 'cancelled'; at: number }
+
+/**
+ * Derives a run's outcome when its `done` event omits one: a seen cancelled
+ * status wins, else any error means failed, else the run succeeded. Shared
+ * by every observer of the run event seam (history recorder, session memory).
+ */
+export function inferRunOutcome(
+  explicit: 'done' | 'failed' | 'cancelled' | undefined,
+  lastStatus: string | null,
+  sawError: boolean,
+): 'done' | 'failed' | 'cancelled' {
+  return explicit ?? (lastStatus === 'cancelled' ? 'cancelled' : sawError ? 'failed' : 'done')
+}

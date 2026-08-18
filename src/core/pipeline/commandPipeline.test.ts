@@ -916,17 +916,24 @@ describe('command pipeline', () => {
 
   it('omits the history field entirely when the session has no prior turns', async () => {
     const spinner = { name: 'spin', async execute() { return 'spun' } }
-    const llm = new ScriptedLlm([
+    const answer = { kind: 'answer' as const, speak: 'Done.', display: 'Done.' }
+    const withSessionLlm = new ScriptedLlm([
       { kind: 'tool_calls', calls: [{ id: 'c1', name: 'spin', args: {} }] },
-      { kind: 'answer', speak: 'Done.', display: 'Done.' },
+      answer,
     ])
-    const session = { history: () => [] }
-    const withSession = createCommandPipeline({ llm, tts: new RecordingTts(), clock: new FakeClock(), tools: [spinner], session })
+    const withoutSessionLlm = new ScriptedLlm([
+      { kind: 'tool_calls', calls: [{ id: 'c1', name: 'spin', args: {} }] },
+      answer,
+    ])
+    const withSession = createCommandPipeline({
+      llm: withSessionLlm,
+      tts: new RecordingTts(),
+      clock: new FakeClock(),
+      tools: [spinner],
+      session: { history: () => [] },
+    })
     const withoutSession = createCommandPipeline({
-      llm: new ScriptedLlm([
-        { kind: 'tool_calls', calls: [{ id: 'c1', name: 'spin', args: {} }] },
-        { kind: 'answer', speak: 'Done.', display: 'Done.' },
-      ]),
+      llm: withoutSessionLlm,
       tts: new RecordingTts(),
       clock: new FakeClock(),
       tools: [spinner],
@@ -935,7 +942,9 @@ describe('command pipeline', () => {
     await collect(withSession, 'first command')
     await collect(withoutSession, 'first command')
 
-    for (const request of llm.requests) expect(request).not.toHaveProperty('history')
+    for (const request of [...withSessionLlm.requests, ...withoutSessionLlm.requests]) {
+      expect(request).not.toHaveProperty('history')
+    }
   })
 
   it('feeds a real session store from its own event stream: run two sees run one', async () => {

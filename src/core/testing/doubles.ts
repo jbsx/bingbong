@@ -62,24 +62,22 @@ export class ScriptedLlm implements LlmClient {
     if (!next) throw new Error('ScriptedLlm ran out of scripted turns')
     // Renders the request's session history (spec #23) into scripted text,
     // so e2e can prove prior turns rode along with a follow-up command.
-    const historyText = (request.history ?? [])
-      .map((turn) => `[${turn.role}] ${turn.text}`)
-      .join('\n')
+    const substitutions: [string, string][] = [
+      ['$history', (request.history ?? []).map((turn) => `[${turn.role}] ${turn.text}`).join('\n')],
+      ['$steering', request.steering ?? ''],
+    ]
     if (next.kind !== 'tool_calls') {
       const lastError = [...request.toolResults]
         .reverse()
         .find((result) => !result.outcome.ok)?.outcome
       const lastErrorText = lastError && !lastError.ok ? lastError.error : null
+      const apply = (text: string): string =>
+        [...substitutions, ['$last_tool_error', lastErrorText ?? '$last_tool_error']]
+          .reduce((rendered, [token, value]) => rendered.replaceAll(token, value), text)
       return {
         ...next,
-        speak: next.speak
-          .replaceAll('$last_tool_error', lastErrorText ?? '$last_tool_error')
-          .replaceAll('$steering', request.steering ?? '')
-          .replaceAll('$history', historyText),
-        display: next.display
-          .replaceAll('$last_tool_error', lastErrorText ?? '$last_tool_error')
-          .replaceAll('$steering', request.steering ?? '')
-          .replaceAll('$history', historyText),
+        speak: apply(next.speak),
+        display: apply(next.display),
       }
     }
     const groundedRef = [...request.toolResults]
