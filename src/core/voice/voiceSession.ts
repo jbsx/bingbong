@@ -391,6 +391,12 @@ export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
         activeAsk = null
         if (listening && reason === 'ask') stopListening()
       }
+      if (event.type === 'done') {
+        // The run ended outside the voice session (Escape, UI stop). A pause
+        // listen has no timeout by design, so without this it would swallow
+        // every later utterance into the ignored branch forever.
+        if (listening && reason === 'pause') stopListening()
+      }
     },
 
     interrupt,

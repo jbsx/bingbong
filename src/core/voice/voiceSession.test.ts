@@ -199,6 +199,30 @@ describe('voice session', () => {
     expect(harness.states.at(-1)).toEqual({ listening: false, reason: null, monitoring: false })
   })
 
+  it('recovers when the run is aborted externally during pause listening', async () => {
+    const runState = { value: 'running' as CommandRunState }
+    const harness = await createSession({
+      transcriber: new FakeTranscriber(['open youtube']),
+      runState,
+    })
+
+    expect(harness.session.interrupt('pause')).toBe(true)
+    expect(harness.states.at(-1)).toEqual({ listening: true, reason: 'pause', monitoring: false })
+
+    // Abort came from the UI/Escape, not the voice session: the pipeline
+    // goes idle and emits its terminal events, but nobody told the session.
+    runState.value = 'idle'
+    harness.session.handlePipelineEvent({ type: 'status', status: 'cancelled', at: 0 })
+    harness.session.handlePipelineEvent({ type: 'done', outcome: 'cancelled', at: 0 })
+    expect(harness.states.at(-1)).toEqual({ listening: false, reason: null, monitoring: false })
+
+    // The next activation behaves normally instead of routing to ignored.
+    harness.session.arm()
+    await harness.speakUtterance()
+    expect(harness.commands).toEqual(['open youtube'])
+    expect(harness.states.at(-1)).toEqual({ listening: false, reason: null, monitoring: false })
+  })
+
   it('exposes active-only handlers for future dedicated abort and pause wake heads', async () => {
     const runState = { value: 'running' as CommandRunState }
     const harness = await createSession({ runState })
