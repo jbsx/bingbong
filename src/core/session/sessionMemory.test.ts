@@ -214,4 +214,55 @@ describe('sessionMemory', () => {
       { role: 'assistant', text: 'Found two nearby.' },
     ])
   })
+
+  it('clears the frozen history for the active run, so the next read is empty', () => {
+    const session = createSessionMemory()
+    feed(session.run(), runEvents('find a pizza place', 'Found two: Pizza A and Pizza B.', 1_000))
+    const reset = session.run()
+    reset.event({ type: 'command', text: 'forget all that — different question', at: 60_000 })
+
+    // Mid-run reset (spec #24): the store is read live per LLM round, so the
+    // clear must override the run's frozen turns immediately.
+    session.clear()
+
+    expect(session.history()).toEqual([])
+  })
+
+  it('drops the resetting run\'s own exchange, so the next command starts clean', () => {
+    const session = createSessionMemory()
+    feed(session.run(), runEvents('find a pizza place', 'Found two: Pizza A and Pizza B.', 1_000))
+    const reset = session.run()
+    reset.event({ type: 'command', text: 'forget all that — different question', at: 60_000 })
+    reset.event({ type: 'display', text: 'Fresh start — what do you need?', at: 60_003 })
+    // The clear happens when the new_session tool executes, mid-run.
+    session.clear()
+    reset.event({ type: 'done', outcome: 'done', at: 60_004 })
+    const next = session.run()
+    next.event({ type: 'command', text: 'what is two plus two', at: 120_000 })
+
+    expect(session.history()).toEqual([])
+  })
+
+  it('keeps a later run\'s exchange after a clear, so the thread rebuilds from the reset', () => {
+    const session = createSessionMemory()
+    feed(session.run(), runEvents('find a pizza place', 'Found two.', 1_000))
+    const reset = session.run()
+    reset.event({ type: 'command', text: 'forget all that', at: 60_000 })
+    session.clear()
+    reset.event({ type: 'done', outcome: 'done', at: 60_006 })
+    const next = session.run()
+    next.event({ type: 'command', text: 'what is two plus two', at: 120_000 })
+    expect(session.history()).toEqual([])
+    feed(next, [
+      { type: 'display', text: 'Four.', at: 120_005 },
+      { type: 'done', outcome: 'done', at: 120_006 },
+    ])
+    const after = session.run()
+    after.event({ type: 'command', text: 'and twice that?', at: 180_000 })
+
+    expect(session.history()).toEqual([
+      { role: 'user', text: 'what is two plus two' },
+      { role: 'assistant', text: 'Four.' },
+    ])
+  })
 })

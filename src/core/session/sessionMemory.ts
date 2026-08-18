@@ -2,7 +2,9 @@
 // command ("what about the second one?") carries the recent distilled
 // exchanges so the model can resolve references against the thread. Fed from
 // the same pipeline event seam as the history recorder; dies on app quit and
-// never touches history.db, which stays review-only.
+// never touches history.db, which stays review-only. The model clears it
+// mid-run through new_session (spec #24) — the read stays live, so the next
+// LLM round of the same run already sees an empty thread.
 
 import { inferRunOutcome } from '../pipeline/events'
 import type { PipelineEvent } from '../pipeline/events'
@@ -30,11 +32,20 @@ interface SessionExchange {
 /** The seam the pipeline reads: live access to the turns for the active run. */
 export type SessionHistorySource = Pick<SessionMemory, 'history'>
 
-export interface SessionMemory extends SessionHistorySource {
+/** The seam the new_session tool clears through (spec #24). */
+export type SessionResetSource = Pick<SessionMemory, 'clear'>
+
+export interface SessionMemory extends SessionHistorySource, SessionResetSource {
   /** Turns that ride along with the active command, oldest first (live read). */
   history(): SessionTurn[]
   /** Observes one independent run's events, like the history recorder. */
   run(): { event(event: PipelineEvent): void }
+  /**
+   * Forgets the whole thread (spec #24): the next history() read is empty,
+   * even mid-run, and runs in flight stop recording their own exchange so
+   * the command after the reset starts clean.
+   */
+  clear(): void
 }
 
 function truncate(text: string): string {
@@ -70,18 +81,25 @@ export function createSessionMemory(): SessionMemory {
   // The continuation decision (window check) is made once, when the first
   // concurrently-running command starts; every history() read until that run
   // finishes returns the same turns. Overlapping runs (a busy-rejected
-  // command) join the store but cannot disturb the frozen list.
+  // command) join the store but cannot disturb the frozen list. A clear()
+  // overrides the frozen turns live (spec #24).
   let activeRunHistory: SessionTurn[] | null = null
-  let outstandingRuns = 0
   let historyOwner: number | null = null
   let nextRunId = 0
+  const liveRuns = new Set<{ suppressed: boolean }>()
 
   return {
     history() {
       return activeRunHistory ?? toTurns(exchanges)
     },
+    clear() {
+      exchanges = []
+      activeRunHistory = null
+      for (const run of liveRuns) run.suppressed = true
+    },
     run() {
       const runId = ++nextRunId
+      const state = { suppressed: false }
       let started = false
       let command: string | null = null
       let display: string | null = null
@@ -94,7 +112,7 @@ export function createSessionMemory(): SessionMemory {
           switch (event.type) {
             case 'command': {
               started = true
-              outstandingRuns += 1
+              liveRuns.add(state)
               command = event.text
               display = null
               speak = null
@@ -130,9 +148,9 @@ export function createSessionMemory(): SessionMemory {
             case 'done': {
               if (started) {
                 started = false
-                outstandingRuns -= 1
               }
-              if (command !== null) {
+              liveRuns.delete(state)
+              if (command !== null && !state.suppressed) {
                 const outcome = inferRunOutcome(event.outcome, lastStatus, failed)
                 const answer =
                   outcome === 'cancelled'

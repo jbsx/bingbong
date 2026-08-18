@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { createCommandPipeline, type CommandPipeline } from './createCommandPipeline'
 import { createAskUserTool } from './askUserTools'
+import { createNewSessionTool } from './sessionTools'
 import { createSessionMemory } from '../session/sessionMemory'
 import { FailingTts, FakeClock, RecordingTts, ScriptedLlm } from '../testing/doubles'
 import type { PipelineEvent } from './events'
@@ -973,5 +974,51 @@ describe('command pipeline', () => {
       { role: 'user', text: 'find a pizza place' },
       { role: 'assistant', text: '1. Pizza A 2. Pizza B' },
     ])
+  })
+
+  it('drops the session history for the next LLM round after a new_session tool call', async () => {
+    const session = createSessionMemory()
+    const priorRun = session.run()
+    for (const event of [
+      { type: 'command', text: 'find a pizza place', at: 0 },
+      { type: 'display', text: '1. Pizza A 2. Pizza B', at: 1 },
+      { type: 'done', outcome: 'done', at: 2 },
+    ] as PipelineEvent[]) priorRun.event(event)
+
+    const llm = new ScriptedLlm([
+      { kind: 'tool_calls', calls: [{ id: 'c1', name: 'new_session', args: {} }] },
+      { kind: 'answer', speak: 'Fresh start — what do you need?', display: 'Fresh start.' },
+    ])
+    const pipeline = createCommandPipeline({
+      llm,
+      tts: new RecordingTts(),
+      clock: new FakeClock(),
+      tools: [createNewSessionTool(session)],
+      session,
+    })
+
+    const events: PipelineEvent[] = []
+    const observer = session.run()
+    for await (const event of pipeline.execute('forget all that — different question')) {
+      events.push(event)
+      observer.event(event)
+    }
+
+    // Round one replays the prior exchange; the round after the reset drops it.
+    expect(llm.requests[0].history).toEqual([
+      { role: 'user', text: 'find a pizza place' },
+      { role: 'assistant', text: '1. Pizza A 2. Pizza B' },
+    ])
+    expect(llm.requests[1]).not.toHaveProperty('history')
+    // The tool result confirms the clear; no canned voice line exists — the
+    // model's own answer is the only acknowledgment.
+    expect(events.find((event) => event.type === 'tool_result')).toMatchObject({
+      ok: true,
+      result: expect.stringContaining('Session cleared'),
+    })
+    const spoken = events.filter((event) => event.type === 'speak').map((event) => event.text)
+    expect(spoken).toEqual(['Fresh start — what do you need?'])
+    // The resetting run's own exchange never joins the thread.
+    expect(session.history()).toEqual([])
   })
 })

@@ -4,7 +4,7 @@ import { systemClock, type Clock } from '../../core/ports/clock'
 import type { BrowserController, VisualGroundingController } from '../../core/ports/browser'
 import type { SearchProvider } from '../../core/ports/search'
 import type { VisionModel } from '../../core/ports/vision'
-import type { SessionHistorySource } from '../../core/session/sessionMemory'
+import type { SessionHistorySource, SessionResetSource } from '../../core/session/sessionMemory'
 import { createCommandPipeline, type CommandPipeline } from '../../core/pipeline/createCommandPipeline'
 import { createSingleShotPipeline } from '../../core/pipeline/singleShotPipeline'
 import type { Tool } from '../../core/pipeline/tool'
@@ -13,6 +13,7 @@ import { createBrowserTools } from '../../core/pipeline/browserTools'
 import { createVisionGroundingTools } from '../../core/pipeline/visionGroundingTools'
 import { createMediaTools } from '../../core/pipeline/mediaTools'
 import { createSearchTools } from '../../core/pipeline/searchTools'
+import { createNewSessionTool } from '../../core/pipeline/sessionTools'
 import { resolveModelEndpoint, routingEnvKeys } from '../../core/agent/modelRouting'
 import type { UsageSink } from '../../core/agent/usageTracking'
 import { withUsageTracking } from '../../core/agent/usageTracking'
@@ -49,11 +50,13 @@ export interface AssistantPipelineDeps {
   /** Override for deterministic tests; production uses the Z.AI Vision MCP adapter. */
   vision?: VisionModel
   /**
-   * Session continuity (spec #23): prior distilled turns ride along with
-   * every orchestrator round. Created per window by main and fed from the
-   * same run-observer seam as the history recorder.
+   * Session continuity (spec #23) and the model-invoked reset (spec #24):
+   * prior distilled turns ride along with every orchestrator round, and the
+   * model can clear them mid-run via the new_session tool. Created per
+   * window by main and fed from the same run-observer seam as the history
+   * recorder.
    */
-  session?: SessionHistorySource
+  session?: SessionHistorySource & SessionResetSource
 }
 
 function resolveLlm(
@@ -139,6 +142,9 @@ export function createAssistantPipeline(deps: AssistantPipelineDeps): CommandPip
     ...createMediaTools(deps.controller),
     ...createSearchTools(search),
     ...(deps.subagentTools ?? []),
+    // Offered only in rounds that carry history (requiresHistory), so a
+    // fresh session's catalog stays lean (spec #24).
+    ...(deps.session ? [createNewSessionTool(deps.session)] : []),
   ]
   const clock = deps.clock ?? systemClock
   const configuredAskTimeoutMs = askTimeoutMs(deps.env)

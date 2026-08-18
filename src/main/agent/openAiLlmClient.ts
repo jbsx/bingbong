@@ -67,6 +67,16 @@ function toToolCall(call: WireToolCall): ToolCall {
   return { id: call.id, name: call.function.name, args }
 }
 
+/**
+ * The catalog for one round: history-gated tools (spec #24) ride along only
+ * when the request carries prior session turns, so fresh sessions keep the
+ * lean tool list.
+ */
+function offeredTools(tools: Tool[], request: LlmRequest): Tool[] {
+  if ((request.history ?? []).length > 0) return tools
+  return tools.filter((tool) => !tool.requiresHistory)
+}
+
 /** Strips a trailing slash so baseUrl joins cleanly with /chat/completions. */
 function completionsUrl(baseUrl: string): string {
   return `${baseUrl.replace(/\/+$/, '')}/chat/completions`
@@ -112,6 +122,7 @@ export function createOpenAiLlmClient(deps: OpenAiLlmClientDeps): LlmClient {
 
   async function complete(request: LlmRequest): Promise<AssistantTurn> {
     const messages = buildMessages(request)
+    const catalog = offeredTools(tools, request)
 
     // GLM sometimes answers 200 with finish_reason "stop", empty content and
     // no tool_calls — the reasoning trace shows it meant to call a tool but
@@ -126,7 +137,7 @@ export function createOpenAiLlmClient(deps: OpenAiLlmClientDeps): LlmClient {
         attempt === MAX_ATTEMPTS
           ? [...messages, { role: 'user' as const, content: 'Your previous reply was empty. Respond with tool calls or the final JSON answer.' }]
           : messages
-      const { payload, requestId, raw } = await requestOnce(outgoing)
+      const { payload, requestId, raw } = await requestOnce(outgoing, catalog)
       const turn = toTurn(payload)
       if (turn) return turn
       lastRequestId = requestId
@@ -144,14 +155,17 @@ export function createOpenAiLlmClient(deps: OpenAiLlmClientDeps): LlmClient {
     choices?: { message?: { content?: string | null; tool_calls?: WireToolCall[] } }[]
   }
 
-  async function requestOnce(messages: WireMessage[]): Promise<{ payload: CompletionPayload; requestId?: string; raw: string }> {
+  async function requestOnce(
+    messages: WireMessage[],
+    catalog: Tool[],
+  ): Promise<{ payload: CompletionPayload; requestId?: string; raw: string }> {
     const body: Record<string, unknown> = {
       model: endpoint.model,
       messages,
       stream: false,
     }
-    if (tools.length > 0) {
-      body.tools = toolDefinitions(tools)
+    if (catalog.length > 0) {
+      body.tools = toolDefinitions(catalog)
       body.tool_choice = 'auto'
     }
 

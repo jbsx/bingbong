@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { createOpenAiLlmClient } from './openAiLlmClient'
 import { ORCHESTRATOR_SYSTEM_PROMPT } from './orchestratorPrompt'
 import { createBrowserTools } from '../../core/pipeline/browserTools'
+import { createNewSessionTool } from '../../core/pipeline/sessionTools'
 import { FakeBrowser } from '../../core/testing/doubles'
 
 // ---- OpenAI wire types (subset we consume) ----
@@ -242,6 +243,42 @@ describe('openAiLlmClient', () => {
     expect(fetch.calls[0]?.body.tools?.[0]?.function.parameters).toMatchObject({
       required: ['required_value'],
     })
+  })
+
+  it('offers a requiresHistory tool only in rounds that carry session history', async () => {
+    const answers = [
+      completionResponse({ content: '{"speak":"Fresh.","display":"Fresh."}' }),
+      completionResponse({ content: '{"speak":"Gone.","display":"Gone."}' }),
+      completionResponse({ content: '{"speak":"Done.","display":"Done."}' }),
+    ]
+    const fetch = new ScriptedFetch(answers)
+    const client = createOpenAiLlmClient({
+      endpoint: ENDPOINT,
+      systemPrompt: ORCHESTRATOR_SYSTEM_PROMPT,
+      fetchFn: fetch.fetchFn,
+      tools: [
+        ...createBrowserTools(new FakeBrowser()),
+        { ...createNewSessionTool({ clear: () => {} }) },
+      ],
+    })
+
+    // With history riding along, the reset is offered…
+    await client.complete({
+      command: 'forget all that — different question',
+      toolResults: [],
+      history: [{ role: 'user', text: 'find a pizza place' }, { role: 'assistant', text: 'Found two.' }],
+    })
+    // …after the reset it is gone, and the catalog is exactly the base one.
+    await client.complete({ command: 'forget all that — different question', toolResults: [], history: [] })
+    await client.complete({ command: 'a fresh session', toolResults: [] })
+
+    const withHistory = fetch.calls[0].body.tools?.map((t) => t.function.name)
+    const afterReset = fetch.calls[1].body.tools?.map((t) => t.function.name)
+    const freshSession = fetch.calls[2].body.tools?.map((t) => t.function.name)
+
+    expect(withHistory).toEqual(['navigate', 'read_page', 'click', 'type', 'scroll', 'screenshot', 'back', 'new_session'])
+    expect(afterReset).toEqual(['navigate', 'read_page', 'click', 'type', 'scroll', 'screenshot', 'back'])
+    expect(freshSession).toEqual(['navigate', 'read_page', 'click', 'type', 'scroll', 'screenshot', 'back'])
   })
 
   it('caps the spoken answer to two sentences', async () => {
