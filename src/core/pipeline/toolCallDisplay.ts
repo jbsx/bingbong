@@ -23,6 +23,8 @@ export function describeToolAction(name: string, args: Record<string, unknown>):
       return 'screenshot'
     case 'ground_visual':
       return `visually locate "${String(args.target ?? '')}"`
+    case 'look':
+      return 'look at page'
     case 'back':
       return 'go back'
     case 'spawn_agent':

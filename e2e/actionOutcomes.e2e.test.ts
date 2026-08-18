@@ -43,6 +43,7 @@ describe('action outcome lines e2e', () => {
         BINGBONG_LLM_SCRIPT: JSON.stringify(
           outcomeScript(fixture.url('/interactive')),
         ),
+        BINGBONG_VISION_DESCRIPTION_SCRIPT: JSON.stringify(['The page is visible with no blocking overlays.']),
       },
     })
   })
@@ -90,7 +91,10 @@ describe('action outcome lines e2e', () => {
 
     expect(byId.navigate).toBe(`navigated: url=${fixture.url('/interactive')} title="interactive fixture"`)
     expect(byId.read).toContain('page text:\ninteractive fixture page')
-    expect(byId.noop).toBe('clicked [2]: urlChanged=false dialogOpen=false; no observable change')
+    expect(byId.noop).toBe(
+      'clicked [2]: urlChanged=false dialogOpen=false; no observable change\n' +
+        'Auto-vision (no observable change): The page is visible with no blocking overlays.',
+    )
     expect(byId.dialog).toBe(
       'clicked [3]: urlChanged=false dialogOpen=true; aria-pressed=null -> "true"; dialog open: "Opened dialog"',
     )

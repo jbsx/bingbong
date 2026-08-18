@@ -1,6 +1,6 @@
 import { access, readFile } from 'node:fs/promises'
 import { describe, expect, it } from 'vitest'
-import type { VisionLocateRequest } from '../../core/ports/vision'
+import type { VisionDescribeRequest, VisionLocateRequest } from '../../core/ports/vision'
 import {
   createZaiVisionLocator,
   type VisionMcpSession,
@@ -11,6 +11,11 @@ const request: VisionLocateRequest = {
   image: new Uint8Array([1, 2, 3]),
   target: 'the play button in the thumbnail',
   viewport: { width: 800, height: 600, scrollY: 0, scrollHeight: 600 },
+}
+
+const describeRequest: VisionDescribeRequest = {
+  image: new Uint8Array([4, 5, 6]),
+  prompt: 'Describe anything blocking progress.',
 }
 
 describe('createZaiVisionLocator', () => {
@@ -72,5 +77,42 @@ describe('createZaiVisionLocator', () => {
 
     await expect(locator.locate(request)).rejects.toThrow(/valid JSON point/)
     await expect(locator.locate(request)).rejects.toThrow(/outside the viewport/)
+  })
+
+  it('returns the MCP image analysis as a plain-text page description', async () => {
+    let imagePath = ''
+    const locator = createZaiVisionLocator({
+      getEnv: () => ({
+        BINGBONG_VISION_BASE_URL: 'https://api.z.ai/api/paas/v4',
+        BINGBONG_VISION_MODEL: 'glm-4.6v',
+        BINGBONG_VISION_API_KEY: 'secret-value',
+      }),
+      createSession: async () => ({
+        listTools: async () => ['analyze_image'],
+        async callTool(name, args) {
+          expect(name).toBe('analyze_image')
+          imagePath = String(args.image_source)
+          expect(new Uint8Array(await readFile(imagePath))).toEqual(describeRequest.image)
+          expect(args.prompt).toBe(describeRequest.prompt)
+          return 'A cookie consent overlay covers the page.'
+        },
+        close: async () => {},
+      }),
+    })
+
+    await expect(locator.describe(describeRequest)).resolves.toBe('A cookie consent overlay covers the page.')
+    await expect(access(imagePath)).rejects.toThrow()
+  })
+
+  it('supports scripted descriptions for deterministic e2e runs', async () => {
+    const locator = createZaiVisionLocator({
+      getEnv: () => ({
+        BINGBONG_VISION_DESCRIPTION_SCRIPT: JSON.stringify(['First page state.', 'Second page state.']),
+      }),
+    })
+
+    await expect(locator.describe(describeRequest)).resolves.toBe('First page state.')
+    await expect(locator.describe(describeRequest)).resolves.toBe('Second page state.')
+    await expect(locator.describe(describeRequest)).rejects.toThrow('ran out of descriptions')
   })
 })

@@ -4,7 +4,7 @@ import type { LlmClient, ToolResult, ToolResultOutcome } from '../ports/llm'
 import type { Tool, ToolContext } from '../pipeline/tool'
 import { ASK_ESCALATION_PREFIX } from '../pipeline/askUserTools'
 import { describeToolAction } from '../pipeline/toolCallDisplay'
-import { createVisionBudget } from './subagentRails'
+import { createVisionBudget, MAX_SUBAGENT_VISION_CALLS } from './subagentRails'
 
 // The subagent workhorse loop (issue #13): one LLM (deepseek-chat via the
 // model router) driving its own tool set until it produces a final report.
@@ -51,8 +51,11 @@ export async function runSubagent(deps: RunSubagentDeps, options: RunSubagentOpt
   const clock = deps.clock ?? systemClock
   const maxToolRounds = deps.maxToolRounds ?? DEFAULT_MAX_TOOL_ROUNDS
   const toolsByName = new Map(tools.map((tool) => [tool.name, tool]))
-  const toolContext: ToolContext = { clock }
-  const visionBudget = createVisionBudget()
+  const visionBudget = createVisionBudget(MAX_SUBAGENT_VISION_CALLS)
+  const toolContext: ToolContext = {
+    clock,
+    acquireVision: () => visionBudget.tryAcquire(),
+  }
   const toolResults: ToolResult[] = []
   let rounds = 0
 

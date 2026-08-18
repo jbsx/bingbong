@@ -1,7 +1,66 @@
-import type { RiskVerdict, Tool } from './tool'
+import type { RiskVerdict, Tool, ToolContext } from './tool'
 import type { ToolCall } from '../ports/llm'
 import type { BrowserController } from '../ports/browser'
+import type { VisionDescriber } from '../ports/vision'
 import { assessBrowserAction } from './riskGate'
+
+const STALE_REF_RE = /ref \d+ not found.*page may have changed/i
+const AUTO_VISION_PROMPT =
+  'Describe the current browser screenshot, focusing on page state, popups, dialogs, overlays, errors, and anything blocking the requested task.'
+
+interface ReadState {
+  refs: Set<number>
+}
+
+function refsFrom(result: string): Set<number> {
+  return new Set([...result.matchAll(/^\[(\d+)\]/gm)].map((match) => Number(match[1])))
+}
+
+function similarity(left: Set<number>, right: Set<number>): number {
+  const union = new Set([...left, ...right])
+  if (union.size === 0) return 1
+  let shared = 0
+  for (const ref of left) if (right.has(ref)) shared += 1
+  return shared / union.size
+}
+
+async function autoDescribe(
+  browser: BrowserController,
+  vision: VisionDescriber,
+  context: ToolContext,
+  reason: string,
+): Promise<string> {
+  const grant = context.acquireVision?.()
+  if (!grant) return 'Auto-vision refused: vision budget is unavailable'
+  if (!grant.ok) return `Auto-vision refused: ${grant.reason}`
+  try {
+    const description = await vision.describe({
+      image: await browser.screenshot(),
+      prompt: `${AUTO_VISION_PROMPT}\nTrigger: ${reason}.`,
+    })
+    return `Auto-vision (${reason}): ${description}`
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    return `Auto-vision failed (${reason}): ${message}`
+  }
+}
+
+function withStaleRefVision<T extends unknown[]>(
+  browser: BrowserController,
+  vision: VisionDescriber | undefined,
+  action: (...args: T) => Promise<string>,
+): (...args: [...T, ToolContext]) => Promise<string> {
+  return async (...args) => {
+    const context = args.at(-1) as ToolContext
+    try {
+      return await action(...args.slice(0, -1) as T)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      if (!vision || !STALE_REF_RE.test(message)) throw error
+      throw new Error(`${message}\n${await autoDescribe(browser, vision, context, 'stale ref')}`)
+    }
+  }
+}
 
 function stringArg(call: ToolCall, name: string, tool: string): string {
   const value = call.args[name]
@@ -45,7 +104,11 @@ async function assessRefAction(browser: BrowserController, call: ToolCall, tool:
 // classifies the target's snapshot facts (core/pipeline/riskGate.ts) and the
 // pipeline enforces the verdict — confirm for form submits/downloads, hard
 // deny for credential fills and payment submits.
-export function createBrowserTools(browser: BrowserController): Tool[] {
+export function createBrowserTools(browser: BrowserController, vision?: VisionDescriber): Tool[] {
+  const reads = new WeakMap<ToolContext, ReadState>()
+  const resetReads = (context: ToolContext) => reads.delete(context)
+  const click = withStaleRefVision(browser, vision, (ref: number) => browser.click(ref))
+  const type = withStaleRefVision(browser, vision, (ref: number, text: string) => browser.type(ref, text))
   return [
     {
       name: 'navigate',
@@ -54,13 +117,25 @@ export function createBrowserTools(browser: BrowserController): Tool[] {
       parameters: {
         url: { type: 'string', description: 'URL or search terms to open, e.g. "https://youtube.com" or "best mechanical keyboards"' },
       },
-      execute: (call) => browser.navigate(stringArg(call, 'url', 'navigate')),
+      execute: (call, context) => {
+        resetReads(context)
+        return browser.navigate(stringArg(call, 'url', 'navigate'))
+      },
     },
     {
       name: 'read_page',
       description:
         'Return the page URL, title, scroll state, numbered interactive refs, and a capped text digest. Use refs like [7] with click/type.',
-      execute: () => browser.readPage(),
+      async execute(_call, context) {
+        const result = await browser.readPage()
+        const refs = refsFrom(result)
+        const previous = reads.get(context)
+        reads.set(context, { refs })
+        if (vision && previous && similarity(previous.refs, refs) >= 0.9) {
+          return `${result}\n${await autoDescribe(browser, vision, context, 'repeated near-identical page reads')}`
+        }
+        return result
+      },
     },
     {
       name: 'click',
@@ -69,7 +144,14 @@ export function createBrowserTools(browser: BrowserController): Tool[] {
         ref: { type: 'integer', description: 'Element ref number from the snapshot, e.g. 7 for the element shown as [7]' },
       },
       assessRisk: (call) => assessRefAction(browser, call, 'click'),
-      execute: (call) => browser.click(refArg(call, 'click')),
+      async execute(call, context) {
+        resetReads(context)
+        const result = await click(refArg(call, 'click'), context)
+        if (vision && /\bno observable change\b/i.test(result)) {
+          return `${result}\n${await autoDescribe(browser, vision, context, 'no observable change')}`
+        }
+        return result
+      },
     },
     {
       name: 'type',
@@ -80,7 +162,10 @@ export function createBrowserTools(browser: BrowserController): Tool[] {
         text: { type: 'string', description: 'Text to type' },
       },
       assessRisk: (call) => assessRefAction(browser, call, 'type'),
-      execute: (call) => browser.type(refArg(call, 'type'), stringArg(call, 'text', 'type')),
+      execute(call, context) {
+        resetReads(context)
+        return type(refArg(call, 'type'), stringArg(call, 'text', 'type'), context)
+      },
     },
     {
       name: 'scroll',
@@ -88,12 +173,16 @@ export function createBrowserTools(browser: BrowserController): Tool[] {
       parameters: {
         direction: { type: 'string', enum: ['up', 'down'], description: 'Direction to scroll' },
       },
-      execute: (call) => browser.scroll(directionArg(call)),
+      execute: (call, context) => {
+        resetReads(context)
+        return browser.scroll(directionArg(call))
+      },
     },
     {
       name: 'screenshot',
       description: 'Capture a screenshot of the current page (reported as a byte count).',
-      execute: async () => {
+      execute: async (_call, context) => {
+        resetReads(context)
         const bytes = await browser.screenshot()
         return `screenshot captured (${bytes.byteLength} bytes)`
       },
@@ -101,7 +190,10 @@ export function createBrowserTools(browser: BrowserController): Tool[] {
     {
       name: 'back',
       description: 'Go back one step in browser history, then return the new URL and page title.',
-      execute: () => browser.back(),
+      execute: (_call, context) => {
+        resetReads(context)
+        return browser.back()
+      },
     },
   ]
 }

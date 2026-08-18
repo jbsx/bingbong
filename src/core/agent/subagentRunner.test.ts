@@ -181,7 +181,7 @@ describe('runSubagent', () => {
     ).rejects.toThrow('subagent tool round limit (2) reached')
   })
 
-  it('enforces the ten-call vision rail for a subagent task', async () => {
+  it('enforces the fifteen-call vision rail for a subagent task', async () => {
     let executions = 0
     const vision: Tool = {
       name: 'analyze_page',
@@ -194,14 +194,14 @@ describe('runSubagent', () => {
     const llm = new ScriptedLlm([
       {
         kind: 'tool_calls',
-        calls: Array.from({ length: 15 }, (_, index) => ({ id: `v${index}`, name: 'analyze_page', args: {} })),
+        calls: Array.from({ length: 20 }, (_, index) => ({ id: `v${index}`, name: 'analyze_page', args: {} })),
       },
       { kind: 'answer', speak: 's', display: 'bounded' },
     ])
 
     await runSubagent({ llm, tools: [vision], clock: new FakeClock() }, { task: 't', isCancelled: () => false })
 
-    expect(executions).toBe(10)
+    expect(executions).toBe(15)
     expect(llm.requests[1]?.toolResults.filter((result) => !result.outcome.ok)).toHaveLength(5)
   })
 

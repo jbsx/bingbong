@@ -4,7 +4,11 @@ import type { Clock } from '../ports/clock'
 import type { LlmClient, ToolCall, ToolResult, ToolResultOutcome } from '../ports/llm'
 import type { TtsSpeaker } from '../ports/tts'
 import { spokenErrorLine } from '../agent/answerContract'
-import { createVisionBudget, type VisionBudget } from '../agent/subagentRails'
+import {
+  createVisionBudget,
+  MAX_ORCHESTRATOR_VISION_CALLS,
+  type VisionBudget,
+} from '../agent/subagentRails'
 
 export interface CommandPipelineDeps {
   llm: LlmClient
@@ -69,7 +73,11 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
 
     try {
       const toolResults: ToolResult[] = []
-      const visionBudget = createVisionBudget()
+      const visionBudget = createVisionBudget(MAX_ORCHESTRATOR_VISION_CALLS)
+      const toolContext: ToolContext = {
+        clock,
+        acquireVision: () => visionBudget.tryAcquire(),
+      }
       let rounds = 0
 
       for (;;) {
@@ -87,7 +95,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
         rounds += 1
         for (const call of turn.calls) {
           yield { type: 'tool_call', callId: call.id, name: call.name, args: call.args, at: clock.now() }
-          const outcome = yield* runGatedTool(call, visionBudget)
+          const outcome = yield* runGatedTool(call, visionBudget, toolContext)
           toolResults.push({ call, outcome })
           yield {
             type: 'tool_result',
@@ -114,6 +122,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
   async function* runGatedTool(
     call: ToolCall,
     visionBudget: VisionBudget,
+    toolContext: ToolContext,
   ): AsyncGenerator<PipelineEvent, ToolResultOutcome> {
     const tool = toolsByName.get(call.name)
     if (!tool) return { ok: false, error: `unknown tool: '${call.name}'` }
@@ -195,10 +204,6 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
     }
 
     try {
-      const toolContext: ToolContext = {
-        clock,
-        acquireVision: () => visionBudget.tryAcquire(),
-      }
       const result = await tool.execute(call, toolContext)
       return { ok: true, result }
     } catch (err) {

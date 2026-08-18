@@ -1,6 +1,6 @@
 import type { SnapshotRef } from '../browser/snapshot'
 import type { BrowserController, VisualGroundingController } from '../ports/browser'
-import type { VisionLocator } from '../ports/vision'
+import type { VisionDescriber, VisionModel } from '../ports/vision'
 import type { ToolCall } from '../ports/llm'
 import type { Tool } from './tool'
 
@@ -30,7 +30,23 @@ function domMatch(target: string, refs: SnapshotRef[]): SnapshotRef | undefined 
   return matches.length === 1 ? matches[0] : undefined
 }
 
-export function createVisionGroundingTools(browser: BrowserController & VisualGroundingController, vision: VisionLocator): Tool[] {
+export function createLookTool(browser: BrowserController, vision: VisionDescriber): Tool {
+  return {
+    name: 'look',
+    usesVision: true,
+    description:
+      'Inspect a screenshot of the current browser page and return a text description of visible page state, popups, overlays, and anything blocking progress.',
+    async execute() {
+      return vision.describe({
+        image: await browser.screenshot(),
+        prompt:
+          'Describe the current browser page. Focus on page state, popups, dialogs, overlays, consent prompts, errors, and anything that could block the requested task.',
+      })
+    },
+  }
+}
+
+export function createVisionGroundingTools(browser: BrowserController & VisualGroundingController, vision: VisionModel): Tool[] {
   return [
     {
       name: 'ground_visual',
@@ -57,5 +73,6 @@ export function createVisionGroundingTools(browser: BrowserController & VisualGr
         return `Vision match: use ref ${ref}`
       },
     },
+    createLookTool(browser, vision),
   ]
 }

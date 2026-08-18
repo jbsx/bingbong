@@ -3,6 +3,7 @@ import type { LlmClient } from '../../core/ports/llm'
 import type { SearchProvider } from '../../core/ports/search'
 import type { Tool } from '../../core/pipeline/tool'
 import type { BrowserController } from '../../core/ports/browser'
+import type { VisionDescriber } from '../../core/ports/vision'
 import type { UsageRecord } from '../../core/agent/usageTracking'
 import { withUsageTracking } from '../../core/agent/usageTracking'
 import { resolveModelEndpoint, routingEnvKeys } from '../../core/agent/modelRouting'
@@ -10,6 +11,7 @@ import { runSubagent } from '../../core/agent/subagentRunner'
 import type { SubagentKind, SubagentSpec, SubagentTaskApi, SubagentTaskHooks } from '../../core/agent/subagentManager'
 import { ScriptedLlm, UnavailableLlm } from '../../core/testing/doubles'
 import { createBrowserTools } from '../../core/pipeline/browserTools'
+import { createLookTool } from '../../core/pipeline/visionGroundingTools'
 import { createSearchTools } from '../../core/pipeline/searchTools'
 import { createReadUrlTool } from '../../core/pipeline/readUrlTool'
 import { createSubagentAskTool } from '../../core/pipeline/askUserTools'
@@ -40,6 +42,7 @@ export interface SubagentWorkhorseDeps {
   clock?: Clock
   maxToolRounds?: number
   onUsage?(record: UsageRecord): void
+  vision?: VisionDescriber
 }
 
 function toolsForKind(
@@ -56,7 +59,11 @@ function toolsForKind(
   if (kind === 'background') return [createSubagentAskTool(), ...(deps.backgroundTools ?? [])]
   const controller = deps.controllerFor?.(spec.id) ?? null
   return controller
-    ? [createSubagentAskTool(), ...withoutConfirmations(createBrowserTools(controller))]
+    ? [
+        createSubagentAskTool(),
+        ...withoutConfirmations(createBrowserTools(controller, deps.vision)),
+        ...(deps.vision ? [createLookTool(controller, deps.vision)] : []),
+      ]
     : [createSubagentAskTool()]
 }
 

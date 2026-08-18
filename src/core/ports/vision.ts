@@ -7,8 +7,19 @@ export interface VisionLocateRequest {
   viewport: CollectedViewport
 }
 
+export interface VisionDescribeRequest {
+  image: Uint8Array
+  prompt: string
+}
+
 export type VisionLocation = ViewportPoint
 
 export interface VisionLocator {
   locate(request: VisionLocateRequest): Promise<VisionLocation>
 }
+
+export interface VisionDescriber {
+  describe(request: VisionDescribeRequest): Promise<string>
+}
+
+export interface VisionModel extends VisionLocator, VisionDescriber {}

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { PageSnapshot } from '../browser/snapshot'
-import type { VisionLocateRequest, VisionLocator } from '../ports/vision'
-import { FakeBrowser, FakeClock, RecordingTts, ScriptedLlm } from '../testing/doubles'
+import type { VisionModel } from '../ports/vision'
+import { FakeBrowser, FakeClock, FakeVision, RecordingTts, ScriptedLlm } from '../testing/doubles'
 import { createCommandPipeline } from './createCommandPipeline'
 import { createBrowserTools } from './browserTools'
 import type { PipelineEvent } from './events'
@@ -35,16 +35,7 @@ const snapshot: PageSnapshot = {
   truncated: false,
 }
 
-class RecordingVisionLocator implements VisionLocator {
-  readonly requests: VisionLocateRequest[] = []
-
-  async locate(request: VisionLocateRequest) {
-    this.requests.push(request)
-    return { x: 340, y: 220 }
-  }
-}
-
-async function runGrounding(browser: FakeBrowser, vision: VisionLocator, target: string): Promise<PipelineEvent[]> {
+async function runGrounding(browser: FakeBrowser, vision: VisionModel, target: string): Promise<PipelineEvent[]> {
   const llm = new ScriptedLlm([
     { kind: 'tool_calls', calls: [{ id: 'v1', name: 'ground_visual', args: { target } }] },
     { kind: 'answer', speak: 'Found it.', display: 'Found it.' },
@@ -65,11 +56,11 @@ describe('vision grounding through the command pipeline', () => {
     const browser = new FakeBrowser()
     browser.snapshot = snapshot
     browser.screenshotBytes = new Uint8Array([1, 2, 3])
-    const vision = new RecordingVisionLocator()
+    const vision = new FakeVision()
 
     const events = await runGrounding(browser, vision, 'play video button')
 
-    expect(vision.requests).toHaveLength(0)
+    expect(vision.locateRequests).toHaveLength(0)
     expect(browser.screenshotCalls).toBe(0)
     expect(events.find((event) => event.type === 'tool_result')).toMatchObject({
       ok: true,
@@ -82,11 +73,12 @@ describe('vision grounding through the command pipeline', () => {
     browser.snapshot = { ...snapshot, refs: [], totalVisible: 0 }
     browser.screenshotBytes = new Uint8Array([4, 5, 6])
     browser.pointRef = 23
-    const vision = new RecordingVisionLocator()
+    const vision = new FakeVision()
+    vision.location = { x: 340, y: 220 }
 
     const events = await runGrounding(browser, vision, 'the play button in the video thumbnail')
 
-    expect(vision.requests).toEqual([
+    expect(vision.locateRequests).toEqual([
       {
         image: new Uint8Array([4, 5, 6]),
         target: 'the play button in the video thumbnail',
@@ -104,7 +96,8 @@ describe('vision grounding through the command pipeline', () => {
     const browser = new FakeBrowser()
     browser.snapshot = { ...snapshot, refs: [], totalVisible: 0 }
     browser.pointRef = 23
-    const vision = new RecordingVisionLocator()
+    const vision = new FakeVision()
+    vision.location = { x: 340, y: 220 }
     const pipeline = createCommandPipeline({
       llm: new ScriptedLlm([
         {
@@ -127,11 +120,11 @@ describe('vision grounding through the command pipeline', () => {
     expect(browser.clicks).toEqual([23])
   })
 
-  it('enforces ten actual fallback calls per task', async () => {
+  it('enforces thirty actual fallback calls per orchestrator run', async () => {
     const browser = new FakeBrowser()
     browser.snapshot = { ...snapshot, refs: [], totalVisible: 0 }
-    const vision = new RecordingVisionLocator()
-    const calls = Array.from({ length: 15 }, (_, index) => ({
+    const vision = new FakeVision()
+    const calls = Array.from({ length: 35 }, (_, index) => ({
       id: `v${index}`,
       name: 'ground_visual',
       args: { target: `unlabelled target ${index}` },
@@ -148,11 +141,40 @@ describe('vision grounding through the command pipeline', () => {
     const events: PipelineEvent[] = []
     for await (const event of pipeline.execute('find many targets')) events.push(event)
 
-    expect(vision.requests).toHaveLength(10)
-    expect(browser.screenshotCalls).toBe(10)
+    expect(vision.locateRequests).toHaveLength(30)
+    expect(browser.screenshotCalls).toBe(30)
     expect(events.filter((event) => event.type === 'tool_result' && !event.ok)).toHaveLength(5)
     expect(events.find((event) => event.type === 'tool_result' && !event.ok)).toMatchObject({
-      error: expect.stringMatching(/vision call limit \(10\)/),
+      error: expect.stringMatching(/vision call limit \(30\)/),
+    })
+  })
+
+  it('returns a page description through look on demand', async () => {
+    const browser = new FakeBrowser()
+    browser.screenshotBytes = new Uint8Array([7, 8, 9])
+    const vision = new FakeVision()
+    vision.descriptions = ['A sign-in modal blocks the article.']
+    const pipeline = createCommandPipeline({
+      llm: new ScriptedLlm([
+        { kind: 'tool_calls', calls: [{ id: 'l1', name: 'look', args: {} }] },
+        { kind: 'answer', speak: 'Seen.', display: 'Seen.' },
+      ]),
+      tts: new RecordingTts(),
+      clock: new FakeClock(),
+      tools: createVisionGroundingTools(browser, vision),
+    })
+    const events: PipelineEvent[] = []
+    for await (const event of pipeline.execute('what is blocking the page')) events.push(event)
+
+    expect(vision.describeRequests).toEqual([
+      {
+        image: new Uint8Array([7, 8, 9]),
+        prompt: expect.stringMatching(/current browser page/i),
+      },
+    ])
+    expect(events.find((event) => event.type === 'tool_result')).toMatchObject({
+      ok: true,
+      result: 'A sign-in modal blocks the article.',
     })
   })
 })

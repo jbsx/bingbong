@@ -5,7 +5,7 @@ import { createRequire } from 'node:module'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
 import { resolveModelEndpoint } from '../../core/agent/modelRouting'
-import type { VisionLocation, VisionLocator } from '../../core/ports/vision'
+import type { VisionLocation, VisionModel } from '../../core/ports/vision'
 
 export interface VisionMcpSession {
   listTools(): Promise<string[]>
@@ -81,10 +81,40 @@ function parsePoint(answer: string, width: number, height: number): VisionLocati
   return { x: Math.round(x), y: Math.round(y) }
 }
 
-export function createZaiVisionLocator(deps: ZaiVisionLocatorDeps): VisionLocator {
+export function createZaiVisionLocator(deps: ZaiVisionLocatorDeps): VisionModel {
   const createSession = deps.createSession ?? createMcpSession
   let scriptSource: string | undefined
   let scriptedLocations: unknown[] = []
+  let descriptionScriptSource: string | undefined
+  let scriptedDescriptions: unknown[] = []
+
+  async function analyze(image: Uint8Array, prompt: string): Promise<string> {
+    const env = deps.getEnv()
+    const endpoint = resolveModelEndpoint(env, 'vision')
+    const dir = await mkdtemp(join(tmpdir(), 'bingbong-vision-'))
+    const imagePath = join(dir, 'page.jpg')
+    let session: VisionMcpSession | undefined
+    try {
+      await writeFile(imagePath, image)
+      session = await createSession({
+        ...inheritedEnv(),
+        Z_AI_API_KEY: endpoint.apiKey,
+        Z_AI_BASE_URL: `${endpoint.baseUrl.replace(/\/+$/, '')}/`,
+        Z_AI_VISION_MODEL: endpoint.model,
+      })
+      const tools = await session.listTools()
+      const tool = tools.find((name) => name === 'analyze_image')
+      if (!tool) throw new Error('Vision MCP server does not expose analyze_image')
+      return await session.callTool(tool, { image_source: imagePath, prompt })
+    } finally {
+      try {
+        await session?.close()
+      } finally {
+        await rm(dir, { recursive: true, force: true })
+      }
+    }
+  }
+
   return {
     async locate(request) {
       const env = deps.getEnv()
@@ -106,36 +136,36 @@ export function createZaiVisionLocator(deps: ZaiVisionLocatorDeps): VisionLocato
         return parsePoint(JSON.stringify(next), request.viewport.width, request.viewport.height)
       }
 
-      const endpoint = resolveModelEndpoint(env, 'vision')
-      const dir = await mkdtemp(join(tmpdir(), 'bingbong-vision-'))
-      const imagePath = join(dir, 'page.jpg')
-      let session: VisionMcpSession | undefined
-      try {
-        await writeFile(imagePath, request.image)
-        session = await createSession({
-          ...inheritedEnv(),
-          Z_AI_API_KEY: endpoint.apiKey,
-          Z_AI_BASE_URL: `${endpoint.baseUrl.replace(/\/+$/, '')}/`,
-          Z_AI_VISION_MODEL: endpoint.model,
-        })
-        const tools = await session.listTools()
-        const tool = tools.find((name) => name === 'analyze_image')
-        if (!tool) throw new Error('Vision MCP server does not expose analyze_image')
-        const answer = await session.callTool(tool, {
-          image_source: imagePath,
-          prompt:
-            `Locate ${JSON.stringify(request.target)} in this browser screenshot. ` +
-            `The viewport is ${request.viewport.width}x${request.viewport.height} CSS pixels. ` +
-            'Return only JSON with the center point in viewport pixels: {"x": number, "y": number}.',
-        })
-        return parsePoint(answer, request.viewport.width, request.viewport.height)
-      } finally {
-        try {
-          await session?.close()
-        } finally {
-          await rm(dir, { recursive: true, force: true })
+      const answer = await analyze(
+        request.image,
+        `Locate ${JSON.stringify(request.target)} in this browser screenshot. ` +
+          `The viewport is ${request.viewport.width}x${request.viewport.height} CSS pixels. ` +
+          'Return only JSON with the center point in viewport pixels: {"x": number, "y": number}.',
+      )
+      return parsePoint(answer, request.viewport.width, request.viewport.height)
+    },
+    async describe(request) {
+      const env = deps.getEnv()
+      const script = env.BINGBONG_VISION_DESCRIPTION_SCRIPT?.trim()
+      if (script) {
+        if (script !== descriptionScriptSource) {
+          let parsed: unknown
+          try {
+            parsed = JSON.parse(script)
+          } catch (error) {
+            throw new Error(`BINGBONG_VISION_DESCRIPTION_SCRIPT is not valid JSON: ${error instanceof Error ? error.message : String(error)}`)
+          }
+          if (!Array.isArray(parsed) || parsed.some((value) => typeof value !== 'string')) {
+            throw new Error('BINGBONG_VISION_DESCRIPTION_SCRIPT must be an array of strings')
+          }
+          scriptedDescriptions = [...parsed]
+          descriptionScriptSource = script
         }
+        const next = scriptedDescriptions.shift()
+        if (next === undefined) throw new Error('BINGBONG_VISION_DESCRIPTION_SCRIPT ran out of descriptions')
+        return String(next)
       }
+      return analyze(request.image, request.prompt)
     },
   }
 }

@@ -147,3 +147,55 @@ describe('subagents e2e', () => {
     await harness.clickDashboardElement('.settings-toggle')
   })
 })
+
+describe('subagent vision budget e2e', () => {
+  let fixture: FixtureServer
+  let harness: Harness
+
+  beforeAll(async () => {
+    fixture = await startFixtureServer()
+    const lookCalls = Array.from({ length: 16 }, (_, index) => ({
+      id: `look-${index}`,
+      name: 'look',
+      args: {},
+    }))
+    harness = await startHarness({
+      fixture,
+      env: {
+        BINGBONG_LLM_SCRIPT: JSON.stringify([
+          { kind: 'tool_calls', calls: [{ id: 'spawn', name: 'spawn_agent', args: { kind: 'browse', task: 'inspect the page repeatedly' } }] },
+          { kind: 'tool_calls', calls: [{ id: 'results', name: 'agent_results', args: { wait: true } }] },
+          { kind: 'answer', speak: 'Inspection finished.', display: 'Inspection finished.' },
+        ]),
+        BINGBONG_SUBAGENT_LLM_SCRIPT: JSON.stringify([
+          { kind: 'tool_calls', calls: lookCalls },
+          { kind: 'answer', speak: '$last_tool_error', display: '$last_tool_error' },
+        ]),
+        BINGBONG_VISION_DESCRIPTION_SCRIPT: JSON.stringify(
+          Array.from({ length: 15 }, (_, index) => `Subagent page description ${index + 1}.`),
+        ),
+        BINGBONG_TAB_LINGER_MS: '5000',
+      },
+    })
+  })
+
+  afterAll(async () => {
+    await harness?.quit()
+    await fixture?.close()
+  })
+
+  it('returns a refusal after fifteen shared subagent vision calls', async () => {
+    expect(await harness.dashboardEval<string>(commandBoxScript('run the vision budget agent'))).toBe('submitted')
+
+    const result = await waitFor(
+      async () => {
+        const text = await harness.dashboardEval<string>(
+          `document.querySelector('.subagent-card--completed .subagent-card-result')?.textContent ?? ''`,
+        )
+        return text.includes('vision call limit') ? text : undefined
+      },
+      { timeoutMs: 20_000, intervalMs: 250 },
+    )
+    expect(result).toContain('vision call limit (15) reached for this run')
+  })
+})

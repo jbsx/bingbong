@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { FakeBrowser, FakeClock, FakeSearch } from '../../core/testing/doubles'
+import { FakeBrowser, FakeClock, FakeSearch, FakeVision } from '../../core/testing/doubles'
 import type { SearchResult } from '../../core/ports/search'
 import { createSubagentTaskApi } from './createSubagentWorkhorse'
 import { withAgentActivity } from '../../core/downloads/agentActivity'
@@ -56,6 +56,32 @@ describe('createSubagentTaskApi', () => {
     await done
 
     expect(browser.navigations).toEqual(['https://shop.test'])
+  })
+
+  it('gives browse agents screenshot descriptions through look', async () => {
+    const browser = new FakeBrowser()
+    browser.screenshotBytes = new Uint8Array([1, 2, 3])
+    const vision = new FakeVision()
+    vision.description = 'A modal covers the page.'
+    const script = JSON.stringify([
+      { kind: 'tool_calls', calls: [{ id: 'l1', name: 'look', args: {} }] },
+      { kind: 'answer', speak: 's', display: 'The modal is blocking progress.' },
+    ])
+    const api = createSubagentTaskApi({
+      getEnv: () => envWith(script),
+      fetchFn: fetch,
+      controllerFor: () => browser,
+      vision,
+      clock: new FakeClock(),
+    })
+
+    const report = await api.start(
+      { id: 'a-1', kind: 'browse', task: 'inspect the page' },
+      { isCancelled: () => false, onProgress: () => undefined },
+    ).done
+
+    expect(vision.describeRequests.map((request) => request.image)).toEqual([new Uint8Array([1, 2, 3])])
+    expect(report).toBe('The modal is blocking progress.')
   })
 
   it('gives background agents the dedicated download/file toolbox without a tab', async () => {

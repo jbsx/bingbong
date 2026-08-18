@@ -6,9 +6,9 @@ import { createVisionGroundingTools } from './visionGroundingTools'
 import { createMediaTools } from './mediaTools'
 import { createSearchTools } from './searchTools'
 import { createSubagentTools } from './subagentTools'
-import { FakeBrowser, FakeSearch } from '../testing/doubles'
+import { FakeBrowser, FakeSearch, FakeVision } from '../testing/doubles'
 
-const unusedVision = { locate: async () => ({ x: 0, y: 0 }) }
+const unusedVision = new FakeVision()
 
 // The full orchestrator tool catalog, assembled exactly as
 // createAssistantPipeline assembles it (main/agent/createAssistantPipeline.ts).
@@ -20,7 +20,7 @@ const unusedVision = { locate: async () => ({ x: 0, y: 0 }) }
 function orchestratorToolCatalog(): Tool[] {
   return [
     createAskUserTool(),
-    ...createBrowserTools(new FakeBrowser()),
+    ...createBrowserTools(new FakeBrowser(), unusedVision),
     ...createVisionGroundingTools(new FakeBrowser(), unusedVision),
     ...createMediaTools(new FakeBrowser()),
     ...createSearchTools(new FakeSearch()),
@@ -58,6 +58,7 @@ describe('orchestrator tool surface', () => {
         'screenshot',
         'back',
         'ground_visual',
+        'look',
         'media_control',
         'web_search',
       ].sort(),

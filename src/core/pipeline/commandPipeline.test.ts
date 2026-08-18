@@ -525,7 +525,7 @@ describe('command pipeline', () => {
     expect(events.at(-1)).toMatchObject({ type: 'done' })
   })
 
-  it('enforces the ten-call vision rail through the real tool execution seam', async () => {
+  it('enforces the thirty-call orchestrator vision rail through the real tool execution seam', async () => {
     let executions = 0
     const vision = {
       name: 'analyze_page',
@@ -535,7 +535,7 @@ describe('command pipeline', () => {
         return 'grounded'
       },
     }
-    const calls = Array.from({ length: 15 }, (_, index) => ({
+    const calls = Array.from({ length: 35 }, (_, index) => ({
       id: `v${index}`,
       name: 'analyze_page',
       args: {},
@@ -553,10 +553,10 @@ describe('command pipeline', () => {
 
     const events = await collect(pipeline, 'look at the page')
 
-    expect(executions).toBe(10)
+    expect(executions).toBe(30)
     expect(events.filter((event) => event.type === 'tool_result' && !event.ok)).toHaveLength(5)
     expect(events.find((event) => event.type === 'tool_result' && !event.ok)).toMatchObject({
-      error: expect.stringMatching(/vision call limit \(10\)/),
+      error: expect.stringMatching(/vision call limit \(30\)/),
     })
   })
 })

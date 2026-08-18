@@ -1,15 +1,16 @@
 // Rails enforced in code, not prompt (issue #13): at most 4 concurrent
 // subagents, at most 3 subagent tabs beside the main pane, tabs linger 60 s
-// after their agent finishes before auto-closing, and at most 10 vision-model
-// calls per task. Every limit has a seam test under a scripted storm.
+// after their agent finishes before auto-closing. Vision calls share one pool
+// per run: 30 for the orchestrator and 15 for each subagent.
 
-export const MAX_VISION_CALLS_PER_TASK = 10
+export const MAX_ORCHESTRATOR_VISION_CALLS = 30
+export const MAX_SUBAGENT_VISION_CALLS = 15
 
 export const SUBAGENT_LIMITS = {
   maxConcurrentAgents: 4,
   maxSubagentTabs: 3,
   tabLingerMs: 60_000,
-  maxVisionCallsPerTask: MAX_VISION_CALLS_PER_TASK,
+  maxVisionCallsPerTask: MAX_SUBAGENT_VISION_CALLS,
 } as const
 
 export type VisionGrant = { ok: true } | { ok: false; reason: string }
@@ -25,12 +26,12 @@ export interface VisionBudget {
  * a tool result — the model sees it and must fall back to DOM grounding.
  * Refusals never consume budget.
  */
-export function createVisionBudget(limit: number = MAX_VISION_CALLS_PER_TASK): VisionBudget {
+export function createVisionBudget(limit: number): VisionBudget {
   let used = 0
   return {
     tryAcquire() {
       if (used >= limit) {
-        return { ok: false, reason: `vision call limit (${limit}) reached for this task — use read_page instead` }
+        return { ok: false, reason: `vision call limit (${limit}) reached for this run` }
       }
       used += 1
       return { ok: true }

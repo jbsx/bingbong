@@ -6,6 +6,12 @@ import type { WakeWordDetector } from '../ports/wake'
 import type { BrowserController, BrowserState, KeyPress, MediaState, ViewportPoint, VisualGroundingController } from '../ports/browser'
 import type { PageSnapshot, SnapshotRef } from '../browser/snapshot'
 import type { SearchProvider, SearchResult } from '../ports/search'
+import type {
+  VisionDescribeRequest,
+  VisionLocateRequest,
+  VisionLocation,
+  VisionModel,
+} from '../ports/vision'
 
 export class FakeClock implements Clock {
   private nowMs: number
@@ -54,7 +60,17 @@ export class ScriptedLlm implements LlmClient {
     this.requests.push(request)
     const next = this.script.shift()
     if (!next) throw new Error('ScriptedLlm ran out of scripted turns')
-    if (next.kind !== 'tool_calls') return next
+    if (next.kind !== 'tool_calls') {
+      const lastError = [...request.toolResults]
+        .reverse()
+        .find((result) => !result.outcome.ok)?.outcome
+      if (!lastError || lastError.ok) return next
+      return {
+        ...next,
+        speak: next.speak.replaceAll('$last_tool_error', lastError.error),
+        display: next.display.replaceAll('$last_tool_error', lastError.error),
+      }
+    }
     const groundedRef = [...request.toolResults]
       .reverse()
       .find((result) => result.outcome.ok && typeof result.outcome.result === 'string' && /\buse ref \d+\b/.test(result.outcome.result))
@@ -185,6 +201,24 @@ export class FakeBrowser implements BrowserController, VisualGroundingController
   async refAtPoint(point: ViewportPoint): Promise<number> {
     this.refPoints.push(point)
     return this.pointRef
+  }
+}
+
+export class FakeVision implements VisionModel {
+  readonly locateRequests: VisionLocateRequest[] = []
+  readonly describeRequests: VisionDescribeRequest[] = []
+  location: VisionLocation = { x: 0, y: 0 }
+  description = 'A cookie popup covers the page.'
+  descriptions: string[] = []
+
+  async locate(request: VisionLocateRequest): Promise<VisionLocation> {
+    this.locateRequests.push(request)
+    return this.location
+  }
+
+  async describe(request: VisionDescribeRequest): Promise<string> {
+    this.describeRequests.push(request)
+    return this.descriptions.shift() ?? this.description
   }
 }
 

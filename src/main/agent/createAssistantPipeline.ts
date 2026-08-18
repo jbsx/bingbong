@@ -3,7 +3,7 @@ import type { TtsSpeaker } from '../../core/ports/tts'
 import { systemClock, type Clock } from '../../core/ports/clock'
 import type { BrowserController, VisualGroundingController } from '../../core/ports/browser'
 import type { SearchProvider } from '../../core/ports/search'
-import type { VisionLocator } from '../../core/ports/vision'
+import type { VisionModel } from '../../core/ports/vision'
 import { createCommandPipeline, type CommandPipeline } from '../../core/pipeline/createCommandPipeline'
 import { createSingleShotPipeline } from '../../core/pipeline/singleShotPipeline'
 import type { Tool } from '../../core/pipeline/tool'
@@ -40,7 +40,7 @@ export interface AssistantPipelineDeps {
   /** Receives per-turn orchestrator token usage (daily spend estimate). */
   onLlmUsage?: UsageSink
   /** Override for deterministic tests; production uses the Z.AI Vision MCP adapter. */
-  vision?: VisionLocator
+  vision?: VisionModel
 }
 
 function resolveLlm(
@@ -121,7 +121,7 @@ export function createAssistantPipeline(deps: AssistantPipelineDeps): CommandPip
   const vision = deps.vision ?? createZaiVisionLocator({ getEnv })
   const tools: Tool[] = [
     createAskUserTool(),
-    ...createBrowserTools(deps.controller),
+    ...createBrowserTools(deps.controller, vision),
     ...createVisionGroundingTools(deps.controller, vision),
     ...createMediaTools(deps.controller),
     ...createSearchTools(search),
