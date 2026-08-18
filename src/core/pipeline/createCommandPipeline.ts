@@ -12,6 +12,8 @@ export interface CommandPipelineDeps {
   clock: Clock
   tools: Tool[]
   confirmTimeoutMs?: number
+  /** How long an ask_user window stays open (voice + typed answers). */
+  askTimeoutMs?: number
   maxToolRounds?: number
 }
 
@@ -20,6 +22,14 @@ interface ConfirmationDecision {
   reason: 'user' | 'timeout'
 }
 
+interface AskDecision {
+  answer: string | null
+  reason: 'user' | 'timeout'
+}
+
+/** Default ask_user window: ~45s for a spoken or typed free-text answer. */
+export const ASK_TIMEOUT_MS = 45_000
+
 function toErrorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err)
 }
@@ -27,15 +37,20 @@ function toErrorMessage(err: unknown): string {
 export interface CommandPipeline {
   execute(command: string): AsyncIterable<PipelineEvent>
   resolveConfirmation(confirmationId: string, approved: boolean): void
+  /** Answer an open ask_user window (typed card or voice transcript). */
+  resolveAsk(askId: string, answer: string): void
 }
 
 export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipeline {
   const { llm, tts, clock, tools } = deps
   const confirmTimeoutMs = deps.confirmTimeoutMs ?? 60_000
+  const askTimeoutMs = deps.askTimeoutMs ?? ASK_TIMEOUT_MS
   const maxToolRounds = deps.maxToolRounds ?? 40
   const toolsByName = new Map(tools.map((tool) => [tool.name, tool]))
   const pendingConfirmations = new Map<string, (decision: ConfirmationDecision) => void>()
+  const pendingAsks = new Map<string, (answer: string) => void>()
   let confirmationCounter = 0
+  let askCounter = 0
 
   async function* speakLine(text: string): AsyncGenerator<PipelineEvent> {
     yield { type: 'status', status: 'speaking', at: clock.now() }
@@ -102,6 +117,40 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
   ): AsyncGenerator<PipelineEvent, ToolResultOutcome> {
     const tool = toolsByName.get(call.name)
     if (!tool) return { ok: false, error: `unknown tool: '${call.name}'` }
+
+    // ask_user (Tier 3): the pipeline owns the ask — render + speak the
+    // question, wait for a voice or typed answer, hand it back as the result.
+    if (tool.askUser) {
+      let question: string
+      try {
+        question = tool.askUser(call)
+      } catch (err) {
+        return { ok: false, error: toErrorMessage(err) }
+      }
+      // Finish the spoken question before the answer window begins. This
+      // prevents the mic from transcribing the assistant and gives the user
+      // the full timeout after they can first respond.
+      yield* speakLine(question)
+      const askId = `ask-${++askCounter}`
+      const decision = waitForAsk(askId)
+      yield {
+        type: 'ask_requested',
+        askId,
+        callId: call.id,
+        question,
+        expiresAt: clock.now() + askTimeoutMs,
+        at: clock.now(),
+      }
+      const resolved = await decision
+      yield {
+        type: 'ask_resolved',
+        askId,
+        answer: resolved.answer,
+        reason: resolved.reason,
+        at: clock.now(),
+      }
+      return { ok: true, result: resolved.answer ?? "user didn't answer" }
+    }
 
     // Hard policy lives here, in code: a denied call never reaches execute,
     // even if the user would have approved it.
@@ -181,10 +230,29 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
     })
   }
 
+  function waitForAsk(askId: string): Promise<AskDecision> {
+    return new Promise((resolve) => {
+      const settle = (decision: AskDecision) => {
+        pendingAsks.delete(askId)
+        cancelTimer()
+        resolve(decision)
+      }
+      const cancelTimer = clock.setTimer(askTimeoutMs, () =>
+        settle({ answer: null, reason: 'timeout' }),
+      )
+      pendingAsks.set(askId, (answer) => settle({ answer, reason: 'user' }))
+    })
+  }
+
   return {
     execute,
     resolveConfirmation: (confirmationId, approved) => {
       pendingConfirmations.get(confirmationId)?.({ approved, reason: 'user' })
+    },
+    resolveAsk: (askId, answer) => {
+      const trimmed = answer.trim()
+      if (trimmed === '') return // Empty input never resolves a real question.
+      pendingAsks.get(askId)?.(trimmed)
     },
   }
 }

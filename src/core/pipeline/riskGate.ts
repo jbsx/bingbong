@@ -1,4 +1,5 @@
 import type { SnapshotRef } from '../browser/snapshot'
+import { CONSENT_LABEL_RE } from '../browser/dialogPolicy'
 import type { ToolCall } from '../ports/llm'
 import type { RiskVerdict } from './tool'
 
@@ -14,11 +15,9 @@ const DENY_PAYMENT_SUBMIT = 'payments are never submitted by the agent'
 // Cookie-consent dialogs (e.g. the YouTube consent wall) submit button-only
 // forms whose labels are a consent choice ("Accept all", "Reject all",
 // "Allow all cookies"). Submitting one stores a cookie — no user data — so it
-// is allowed without pausing. Deliberately narrow: a verb of consent followed
-// by "all"/"cookies"/"consent"; anything else (e.g. "Send me cookies news")
-// still confirms.
-const CONSENT_SUBMIT_LABEL_RE =
-  /\b(accept|reject|allow|decline)\s+(all(\s+cookies?)?|cookies?(\s+consent)?|consent)\b|\b(accept|reject)\s+all\b/i
+// is allowed without pausing. The label pattern lives in
+// core/browser/dialogPolicy.ts (shared with the Tier-1 auto-dismissal).
+const CONSENT_SUBMIT_LABEL_RE = CONSENT_LABEL_RE
 
 const DOWNLOAD_EXTENSIONS = new Set([
   'zip', 'tar', 'gz', 'tgz', 'bz2', 'xz', '7z', 'rar',

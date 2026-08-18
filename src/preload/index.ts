@@ -37,6 +37,8 @@ contextBridge.exposeInMainWorld('bingbong', {
     submit: (text: string): Promise<boolean> => ipcRenderer.invoke(PIPELINE_IPC.submit, text),
     resolveConfirmation: (confirmationId: string, approved: boolean): Promise<void> =>
       ipcRenderer.invoke(PIPELINE_IPC.resolveConfirmation, confirmationId, approved),
+    resolveAsk: (askId: string, answer: string): Promise<void> =>
+      ipcRenderer.invoke(PIPELINE_IPC.resolveAsk, askId, answer),
     onEvent: (listener: (event: PipelineEvent) => void): (() => void) => {
       const wrapped = (_event: unknown, event: PipelineEvent): void => listener(event)
       ipcRenderer.on(PIPELINE_IPC.event, wrapped)

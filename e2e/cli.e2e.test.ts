@@ -94,43 +94,22 @@ describe('cli browser harness e2e', () => {
     }
   })
 
-  it('targets consent-wall buttons directly and clicks through overlays', async () => {
+  it('auto-dismisses consent walls and reports overlay interception', async () => {
     const url = harness.fixture.url('/consent-wall')
     await cli(harness, `navigate ${url}`, /^navigated: /)
     await harness.waitForPaneUrl(url)
     await harness.focusPane()
 
-    // Dialog-layer controls are listed even below the fold, ahead of the
-    // covered page elements; covered page elements stay listed too (rect
-    // visibility, Vimium-style) — activation handles the overlay.
-    await cli(harness, 'read', /# consent wall fixture/)
-    const output = harness.cliOutput()
-    const dialogRef = output
-      .split('\n')
-      .find((line) => /^\[\d+\] button "Accept all/.test(line.replace(/^bingbong> /, '')))
-    const backgroundRef = output
-      .split('\n')
-      .find((line) => /^\[\d+\] button "Background button"/.test(line.replace(/^bingbong> /, '')))
-    expect(dialogRef).toBeDefined()
-    expect(backgroundRef).toBeDefined()
-    expect(Number(refOf(dialogRef!))).toBeLessThan(Number(refOf(backgroundRef!)))
-
-    // Clicking a covered page element still lands: coordinates can't reach
-    // it through the scrim, so the element is activated directly.
-    await cli(harness, `click ${refOf(backgroundRef!)}`, new RegExp(`^clicked ref ${refOf(backgroundRef!)}$`))
-    await panePoll(harness, 'document.title', (value) => value === 'clicked:btn-bg')
-
-    // Clicking the below-the-fold consent button scrolls it into view inside
-    // the dialog and submits the consent form through real mouse input.
-    // (The title changed with the click above, so key reads on the URL.)
-    await cli(harness, 'read', new RegExp(`# .* ${url}`))
-    const acceptLine = harness
-      .cliOutput()
-      .split('\n')
-      .reverse()
-      .find((line) => /^\[\d+\] button "Accept all/.test(line.replace(/^bingbong> /, '')))
-    await cli(harness, `click ${refOf(acceptLine!)}`, new RegExp(`^clicked ref ${refOf(acceptLine!)}$`))
+    await cli(harness, 'read', /^dismissed consent dialog: clicked \[2\] "Reject all(?: Reject all)?"$/)
     await panePoll(harness, 'document.title', (value) => value === 'submitted:consent')
+
+    const overlayUrl = harness.fixture.url('/overlay')
+    await cli(harness, `navigate ${overlayUrl}`, /^navigated: /)
+    await harness.waitForPaneUrl(overlayUrl)
+    const covered = await cli(harness, 'read', refLine('button', 'Under the overlay'))
+    const ref = refOf(covered)
+    await cli(harness, `click ${ref}`, new RegExp(`^clicked ref ${ref}$`))
+    expect(await harness.paneEval<string>('document.title')).toBe('overlay fixture')
 
     // Later tests assume the pane sits on /interactive.
     await cli(harness, `navigate ${harness.fixture.url('/interactive')}`, /^navigated: /)

@@ -41,5 +41,11 @@ export interface Tool {
    * A throwing assessment is treated as 'confirm' (fail closed).
    */
   assessRisk?(call: ToolCall): RiskVerdict | Promise<RiskVerdict>
+  /**
+   * Declares an interactive ask: instead of execute, the pipeline shows and
+   * speaks the returned question, waits for the user's free-text answer
+   * (voice or typed), and reports it as the tool result.
+   */
+  askUser?(call: ToolCall): string
   execute(call: ToolCall, ctx: ToolContext): Promise<unknown>
 }

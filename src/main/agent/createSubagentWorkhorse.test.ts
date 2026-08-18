@@ -92,6 +92,35 @@ describe('createSubagentTaskApi', () => {
     expect(report).toBe('Downloaded.')
   })
 
+  it('gives every kind the escalation-only ask_user (never an interactive ask)', async () => {
+    for (const kind of ['research', 'browse', 'background'] as const) {
+      const script = JSON.stringify([
+        { kind: 'tool_calls', calls: [{ id: 'q1', name: 'ask_user', args: { question: 'Which one?' } }] },
+        { kind: 'answer', speak: 's', display: 'Escalated.' },
+      ])
+      const reports: string[] = []
+      const api = createSubagentTaskApi({
+        getEnv: () => envWith(script),
+        fetchFn: fetch,
+        ...(kind === 'browse' ? { controllerFor: () => new FakeBrowser() } : {}),
+        ...(kind === 'background' ? { backgroundTools: [] } : {}),
+        ...(kind === 'research' ? { search: new FakeSearch(results) } : {}),
+        clock: new FakeClock(),
+      })
+
+      const { done } = api.start(
+        { id: 'a-1', kind, task: 'do it' },
+        { isCancelled: () => false, onProgress: (_step, action) => reports.push(action) },
+      )
+      const report = await done
+
+      // The ask tool is wired into every kind's catalog (the directive it
+      // returns is asserted in askUserTools.test.ts).
+      expect(report).toContain('ASK_USER: Which one?')
+      expect(reports.join(' ')).toContain('ask you: Which one?')
+    }
+  })
+
   it('gives every agent a fresh script from the top', async () => {
     const api = createSubagentTaskApi({
       getEnv: () => envWith(RESEARCH_SCRIPT),

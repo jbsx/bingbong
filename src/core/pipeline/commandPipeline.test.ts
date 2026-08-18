@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { createCommandPipeline, type CommandPipeline } from './createCommandPipeline'
+import { createAskUserTool } from './askUserTools'
 import { FailingTts, FakeClock, RecordingTts, ScriptedLlm } from '../testing/doubles'
 import type { PipelineEvent } from './events'
 
@@ -334,6 +335,159 @@ describe('command pipeline', () => {
         at: 0,
       })
       expect(events).toContainEqual({ type: 'tool_result', callId: 'c1', name: 'flaky', ok: true, result: 'ran', at: 0 })
+    })
+  })
+
+  describe('ask_user', () => {
+    it('shows and speaks the question, then returns the typed answer to the model', async () => {
+      const llm = new ScriptedLlm([
+        { kind: 'tool_calls', calls: [{ id: 'a1', name: 'ask_user', args: { question: 'Which city do you mean?' } }] },
+        { kind: 'answer', speak: 'Booking Paris.', display: 'Detail.' },
+      ])
+      const tts = new RecordingTts()
+      const pipeline = createCommandPipeline({ llm, tts, clock: new FakeClock(), tools: [createAskUserTool()] })
+
+      const events = await collect(pipeline, 'book a hotel', (event, pipe) => {
+        if (event.type === 'ask_requested') pipe.resolveAsk(event.askId, 'Paris, France')
+      })
+
+      expect(events).toContainEqual({
+        type: 'ask_requested',
+        askId: 'ask-1',
+        callId: 'a1',
+        question: 'Which city do you mean?',
+        expiresAt: 45_000,
+        at: 0,
+      })
+      expect(events).toContainEqual({ type: 'speak', text: 'Which city do you mean?', at: 0 })
+      expect(tts.spoken[0]).toBe('Which city do you mean?')
+      expect(events).toContainEqual({ type: 'ask_resolved', askId: 'ask-1', answer: 'Paris, France', reason: 'user', at: 0 })
+      expect(events).toContainEqual({
+        type: 'tool_result',
+        callId: 'a1',
+        name: 'ask_user',
+        ok: true,
+        result: 'Paris, France',
+        at: 0,
+      })
+      expect(llm.requests[1]?.toolResults[0]?.outcome).toEqual({ ok: true, result: 'Paris, France' })
+      expect(events.at(-1)).toMatchObject({ type: 'done' })
+    })
+
+    it('starts the full answer timeout only after the spoken question finishes', async () => {
+      const clock = new FakeClock(1_000)
+      const tts = {
+        async speak() {
+          clock.advance(2_500)
+          return { ok: true as const }
+        },
+        stop() {},
+      }
+      const llm = new ScriptedLlm([
+        { kind: 'tool_calls', calls: [{ id: 'a1', name: 'ask_user', args: { question: 'Which city?' } }] },
+        { kind: 'answer', speak: 'Using Paris.', display: 'Detail.' },
+      ])
+      const pipeline = createCommandPipeline({ llm, tts, clock, tools: [createAskUserTool()] })
+
+      const events = await collect(pipeline, 'book a hotel', (event, pipe) => {
+        if (event.type === 'ask_requested') pipe.resolveAsk(event.askId, 'Paris')
+      })
+
+      expect(events).toContainEqual({
+        type: 'ask_requested',
+        askId: 'ask-1',
+        callId: 'a1',
+        question: 'Which city?',
+        expiresAt: 48_500,
+        at: 3_500,
+      })
+    })
+
+    it('returns "user didn\'t answer" to the model when nothing arrives before the timeout', async () => {
+      const clock = new FakeClock(0)
+      const llm = new ScriptedLlm([
+        { kind: 'tool_calls', calls: [{ id: 'a1', name: 'ask_user', args: { question: 'Which city?' } }] },
+        { kind: 'answer', speak: 'Proceeding without it.', display: 'Detail.' },
+      ])
+      const pipeline = createCommandPipeline({ llm, tts: new RecordingTts(), clock, tools: [createAskUserTool()] })
+
+      const events = await collect(pipeline, 'book a hotel', (event) => {
+        if (event.type === 'ask_requested') clock.advance(45_000)
+      })
+
+      expect(events).toContainEqual({ type: 'ask_resolved', askId: 'ask-1', answer: null, reason: 'timeout', at: 45_000 })
+      expect(events).toContainEqual({
+        type: 'tool_result',
+        callId: 'a1',
+        name: 'ask_user',
+        ok: true,
+        result: "user didn't answer",
+        at: 45_000,
+      })
+    })
+
+    it('honors a custom ask timeout for the countdown deadline', async () => {
+      const clock = new FakeClock(1_000)
+      const llm = new ScriptedLlm([
+        { kind: 'tool_calls', calls: [{ id: 'a1', name: 'ask_user', args: { question: 'Which?' } }] },
+        { kind: 'answer', speak: 'Ok.', display: 'Detail.' },
+      ])
+      const pipeline = createCommandPipeline({
+        llm,
+        tts: new RecordingTts(),
+        clock,
+        tools: [createAskUserTool()],
+        askTimeoutMs: 20_000,
+      })
+
+      const events = await collect(pipeline, 'go', (event, pipe) => {
+        if (event.type === 'ask_requested') pipe.resolveAsk(event.askId, 'this')
+      })
+
+      expect(events).toContainEqual({
+        type: 'ask_requested',
+        askId: 'ask-1',
+        callId: 'a1',
+        question: 'Which?',
+        expiresAt: 21_000,
+        at: 1_000,
+      })
+    })
+
+    it('keeps waiting when an empty answer arrives', async () => {
+      const clock = new FakeClock(0)
+      const llm = new ScriptedLlm([
+        { kind: 'tool_calls', calls: [{ id: 'a1', name: 'ask_user', args: { question: 'Which?' } }] },
+        { kind: 'answer', speak: 'Ok.', display: 'Detail.' },
+      ])
+      const pipeline = createCommandPipeline({ llm, tts: new RecordingTts(), clock, tools: [createAskUserTool()] })
+
+      const events = await collect(pipeline, 'go', (event, pipe) => {
+        if (event.type === 'ask_requested') {
+          pipe.resolveAsk(event.askId, '   ')
+          clock.advance(45_000)
+        }
+      })
+
+      expect(events).toContainEqual({ type: 'ask_resolved', askId: 'ask-1', answer: null, reason: 'timeout', at: 45_000 })
+    })
+
+    it('reports a missing question as a failed tool result', async () => {
+      const llm = new ScriptedLlm([
+        { kind: 'tool_calls', calls: [{ id: 'a1', name: 'ask_user', args: {} }] },
+        { kind: 'answer', speak: 'Recovered.', display: 'Detail.' },
+      ])
+      const pipeline = createCommandPipeline({ llm, tts: new RecordingTts(), clock: new FakeClock(), tools: [createAskUserTool()] })
+
+      const events = await collect(pipeline, 'go')
+
+      expect(events.find((e) => e.type === 'tool_result')).toMatchObject({
+        type: 'tool_result',
+        callId: 'a1',
+        name: 'ask_user',
+        ok: false,
+        error: "ask_user: 'question' must be a non-empty string",
+      })
     })
   })
 

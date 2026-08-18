@@ -31,6 +31,8 @@ export function describeToolAction(name: string, args: Record<string, unknown>):
       return `cancel ${String(args.agent_id ?? args.agentId ?? '')}`.trim()
     case 'agent_results':
       return `collect results${args.wait === true ? ' (waiting)' : ''}`
+    case 'ask_user':
+      return `ask you: ${String(args.question ?? '')}`
     default:
       return `${name} ${JSON.stringify(args)}`
   }

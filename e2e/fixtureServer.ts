@@ -82,9 +82,9 @@ function consentPage(): string {
 
 // The www.youtube.com consent wall geometry: a fixed scrim over the page
 // and a fixed role=dialog container whose consent buttons sit far below the
-// fold inside the dialog's own scroller. Page elements stay rect-visible but
-// are covered, so the click path must activate them directly; the dialog's
-// buttons must be listed (dialog layer) even though they are off-screen.
+// fold inside the dialog's own scroller. Submitting the form dismisses the
+// wall (like real consent walls do). Refs in DOM order: [1] Accept all
+// [2] Reject all [3] Background button.
 function consentWallPage(): string {
   return `<!doctype html>
 <html>
@@ -97,12 +97,91 @@ function consentWallPage(): string {
   <div role="dialog" aria-modal="true" style="position:fixed;inset:0;overflow:auto;background:#333;z-index:101;padding:24px">
     <h2>Before you continue to this fixture</h2>
     <div style="height:2000px"></div>
-    <form onsubmit="document.title='submitted:consent';return false">
+    <form onsubmit="document.title='submitted:consent';this.closest('[role=dialog]').remove();return false">
       <input type="hidden" name="continue" value="/">
       <button aria-label="Accept all" style="font-size:20px">Accept all</button>
       <button aria-label="Reject all" style="font-size:20px">Reject all</button>
     </form>
   </div>
+</body>
+</html>`
+}
+
+// A Tier-2 wall: no consent labels anywhere, so nothing is auto-dismissable.
+// The dialog's text + controls must reach the model, and "Not now" must be
+// clickable through real input.
+// Refs in DOM order: [1] Sign in [2] Not now [3] Background button.
+function dialogWallPage(): string {
+  return `<!doctype html>
+<html>
+<head><title>dialog wall fixture</title></head>
+<body style="background:#222;color:#fff;margin:0">
+  <h1>page behind a sign-in wall</h1>
+  <button id="btn-bg2" onclick="document.title='clicked:btn-bg2'" style="font-size:20px">Background button</button>
+  <div style="position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:100"></div>
+  <div role="dialog" aria-modal="true" style="position:fixed;inset:0;overflow:auto;background:#333;z-index:101;padding:24px">
+    <h2>Sign in to continue to this fixture</h2>
+    <div style="height:24px"></div>
+    <button id="btn-signin" onclick="document.title='clicked:signin'" style="font-size:20px">Sign in</button>
+    <button id="btn-notnow" onclick="document.title='clicked:notnow';this.closest('[role=dialog]').remove()" style="font-size:20px">Not now</button>
+  </div>
+</body>
+</html>`
+}
+
+// Native JS dialogs: alert/confirm block the renderer until CDP answers.
+// Buttons record what happened after the dialog was auto-dismissed.
+// Refs in DOM order: [1] Show alert [2] Ask confirm [3] Leave page link.
+function nativeDialogPage(): string {
+  return `<!doctype html>
+<html>
+<head><title>native dialog fixture</title></head>
+<body style="background:#222;color:#fff;margin:0">
+  <h1>native dialog fixture page</h1>
+  <button id="btn-alert" style="font-size:20px" onclick="window.__alertShown = true; alert('native hello'); window.__alertAfter = true">Show alert</button>
+  <button id="btn-confirm" style="font-size:20px" onclick="window.__confirmAnswer = confirm('really proceed?')">Ask confirm</button>
+  <a id="link-leave" href="/second" style="font-size:20px">Leave page</a>
+</body>
+</html>`
+}
+
+// A real beforeunload prompt. Dismissing it with accept=false keeps the page
+// in place; the controller reports the native dialog to the model.
+function beforeUnloadPage(): string {
+  return `<!doctype html>
+<html>
+<head><title>beforeunload fixture</title></head>
+<body style="background:#222;color:#fff;margin:0">
+  <h1>beforeunload fixture page</h1>
+  <a id="link-leave" href="/second" style="font-size:20px">Leave with unsaved work</a>
+  <script>window.onbeforeunload = () => 'unsaved work'</script>
+</body>
+</html>`
+}
+
+// window.open popup: denied at open by the pane, URL reported to the model.
+// Refs in DOM order: [1] Open popup.
+function popupPage(): string {
+  return `<!doctype html>
+<html>
+<head><title>popup fixture</title></head>
+<body style="background:#222;color:#fff;margin:0">
+  <h1>popup fixture page</h1>
+  <button id="btn-open" style="font-size:20px" onclick="window.__popup = window.open('/second'); document.title='clicked:open'">Open popup</button>
+</body>
+</html>`
+}
+
+// A plain overlay (no dialog semantics) covering a button: the click must be
+// reported as blocked, not clicked through. Refs: [1] Under the overlay.
+function overlayPage(): string {
+  return `<!doctype html>
+<html>
+<head><title>overlay fixture</title></head>
+<body style="background:#222;color:#fff;margin:0">
+  <h1>overlay fixture page</h1>
+  <button id="btn-under" onclick="document.title='clicked:btn-under'" style="font-size:20px">Under the overlay</button>
+  <div style="position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:50"></div>
 </body>
 </html>`
 }
@@ -174,6 +253,26 @@ export async function startFixtureServer(): Promise<FixtureServer> {
     }
     if (req.url === '/consent-wall') {
       res.end(consentWallPage())
+      return
+    }
+    if (req.url === '/dialog-wall') {
+      res.end(dialogWallPage())
+      return
+    }
+    if (req.url === '/native-dialog') {
+      res.end(nativeDialogPage())
+      return
+    }
+    if (req.url === '/beforeunload') {
+      res.end(beforeUnloadPage())
+      return
+    }
+    if (req.url === '/popup') {
+      res.end(popupPage())
+      return
+    }
+    if (req.url === '/overlay') {
+      res.end(overlayPage())
       return
     }
     if (req.url === '/media') {

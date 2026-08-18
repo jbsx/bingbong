@@ -227,6 +227,27 @@ describe('buildPageSnapshot', () => {
     expect(snapshot.totalVisible).toBe(1)
     expect(snapshot.truncated).toBe(false)
   })
+
+  it('carries the dialog text and the per-ref dialog layer marker', () => {
+    const snapshot = buildPageSnapshot(
+      page({
+        dialogOpen: true,
+        dialogText: 'Before you continue',
+        elements: [element({ label: 'Reject all', layer: 'dialog' }), element({ label: 'Page button' })],
+      }),
+    )
+
+    expect(snapshot.dialogOpen).toBe(true)
+    expect(snapshot.dialogText).toBe('Before you continue')
+    expect(snapshot.refs[0]?.layer).toBe('dialog')
+    expect(snapshot.refs[1]?.layer).toBe('page')
+  })
+
+  it('defaults the dialog text to empty when the collector omits it', () => {
+    const snapshot = buildPageSnapshot(page({ dialogOpen: true }))
+
+    expect(snapshot.dialogText).toBe('')
+  })
 })
 
 describe('formatPageSnapshot', () => {
@@ -305,6 +326,36 @@ viewport 1280x800 scroll 0/4521
     )
 
     expect(text).toContain('[1] input[checkbox] "A button" checked=true selected="Beta" value="chosen" aria-pressed="mixed"')
+  })
+
+  it('surfaces an open dialog with its text and marks its controls (Tier 2)', () => {
+    const text = formatPageSnapshot(
+      buildPageSnapshot(
+        page({
+          dialogOpen: true,
+          dialogText: 'Sign in to continue?',
+          elements: [
+            element({ label: 'Sign in', layer: 'dialog' }),
+            element({ label: 'Not now', layer: 'dialog' }),
+            element({ label: 'Page button' }),
+          ],
+        }),
+      ),
+    )
+
+    expect(text).toContain('dialog open: "Sign in to continue?"')
+    expect(text).toContain('[1] button "Sign in" (dialog)')
+    expect(text).toContain('[2] button "Not now" (dialog)')
+    expect(text).toContain('[3] button "Page button"')
+  })
+
+  it('caps very long dialog text in the formatted line', () => {
+    const text = formatPageSnapshot(
+      buildPageSnapshot(page({ dialogOpen: true, dialogText: 'x'.repeat(400) })),
+    )
+
+    expect(text).toContain(`dialog open: "${'x'.repeat(199)}…`)
+    expect(text).not.toContain('x'.repeat(201))
   })
 })
 

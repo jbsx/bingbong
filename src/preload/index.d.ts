@@ -24,6 +24,8 @@ export interface BingbongBrowserApi {
 export interface BingbongAssistantApi {
   submit(text: string): Promise<boolean>
   resolveConfirmation(confirmationId: string, approved: boolean): Promise<void>
+  /** Answer an open ask_user window with free text (the dashboard card). */
+  resolveAsk(askId: string, answer: string): Promise<void>
   onEvent(listener: (event: PipelineEvent) => void): () => void
 }
 

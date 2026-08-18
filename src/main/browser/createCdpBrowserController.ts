@@ -1,5 +1,6 @@
 import type { BrowserController, BrowserState, KeyPress, MediaState, ViewportPoint, VisualGroundingController } from '../../core/ports/browser'
 import { normalizeUrlInput } from '../../core/browser/urlInput'
+import { chooseConsentDismissal, isConsentDialog } from '../../core/browser/dialogPolicy'
 import {
   buildPageSnapshot,
   findSnapshotRef,
@@ -13,6 +14,8 @@ import {
 // and the Electron glue (webContents.debugger) stays a thin adapter.
 export interface CdpDebugger {
   send<T = unknown>(method: string, params?: Record<string, unknown>): Promise<T>
+  /** Subscribe to a CDP domain event (e.g. Page.javascriptDialogOpening). */
+  on?(event: string, handler: (params: unknown) => void): void
 }
 
 // Page-level operations the pane already knows how to do (load, history, url).
@@ -46,6 +49,8 @@ export interface CdpBrowserControllerDeps {
   page: CdpPageDriver
   collectScript: string
   pacing?: Partial<ControllerPacing>
+  /** Drains popup-block URLs the pane recorded (window.open denied + closed). */
+  consumePopupBlocks?: () => string[]
 }
 
 interface EvaluateResponse {
@@ -172,6 +177,75 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
   const pacing: ControllerPacing = { ...HUMAN_PACING, ...deps.pacing }
   let lastSnapshot: PageSnapshot | undefined
   const visualPoints = new Map<number, ViewportPoint>()
+
+  // Native JS dialogs (alert/confirm/prompt/beforeunload) freeze the page's
+  // JS thread — there is nothing to deliberate with while one is open, so
+  // they are dismissed deterministically (Tier 1) and their text is queued
+  // for the next outcome line the model reads.
+  const nativeDialogReports: string[] = []
+  cdp.on?.('Page.javascriptDialogOpening', (params) => {
+    const { type, message } = (params ?? {}) as { type?: unknown; message?: unknown }
+    const kind = typeof type === 'string' ? type : 'dialog'
+    const text = typeof message === 'string' ? message : ''
+    nativeDialogReports.push(`native ${kind} dialog auto-dismissed: ${JSON.stringify(truncateOutcomeText(text, 120))}`)
+    void cdp.send('Page.handleJavaScriptDialog', { accept: false }).catch(() => {})
+  })
+
+  /** Popup blocks + native dialog reports since the last outcome line. */
+  function drainedReports(): string[] {
+    const reports = [
+      ...(deps.consumePopupBlocks?.() ?? []).map((url) => `popup blocked: ${truncateOutcomeText(url, 160)}`),
+      ...nativeDialogReports.splice(0),
+    ]
+    return reports
+  }
+
+  /** Tier 1: deterministically dismiss a consent-classified dialog. */
+  async function dismissConsentIfOpen(snapshot: PageSnapshot): Promise<string | null> {
+    if (!snapshot.dialogOpen) return null
+    const controls = snapshot.refs.filter((ref) => ref.layer === 'dialog')
+    const labels = controls.map((ref) => ref.label)
+    if (!isConsentDialog(snapshot.dialogText, labels)) return null
+    const choice = chooseConsentDismissal(labels)
+    if (choice === null) return null
+    const target = controls[choice]
+    const clicked = await evaluateInPage<boolean>(`(() => {
+      const el = (window.__bingbongRefs || [])[${target.ref - 1}]
+      if (!el || !el.isConnected) return false
+      if (typeof el.focus === 'function') el.focus()
+      el.click()
+      return true
+    })()`)
+    lastSnapshot = undefined
+    await sleep(pacing.settleMs)
+    return clicked
+      ? `dismissed consent dialog: clicked [${target.ref}] ${JSON.stringify(truncateOutcomeText(target.label, 60))}`
+      : null
+  }
+
+  function dialogDetail(snapshot: PageSnapshot): string | null {
+    if (!snapshot.dialogOpen) return null
+    const controls = snapshot.refs.filter((ref) => ref.layer === 'dialog')
+    const shown = controls.slice(0, 4).map((control) => {
+      const label = control.label === '' ? '' : ` ${JSON.stringify(truncateOutcomeText(control.label, 40))}`
+      return `[${control.ref}] ${control.kind}${label}`
+    })
+    const text = snapshot.dialogText === ''
+      ? 'dialog open'
+      : `dialog open: ${JSON.stringify(truncateOutcomeText(snapshot.dialogText, 80))}`
+    if (shown.length === 0) return text
+    const remainder = controls.length > shown.length ? ` (+${controls.length - shown.length} more)` : ''
+    return `${text}; controls: ${shown.join(', ')}${remainder}`
+  }
+
+  function dialogSuffix(snapshot: PageSnapshot): string {
+    const detail = dialogDetail(snapshot)
+    return detail === null ? '' : `; ${detail}`
+  }
+
+  function reportsSuffix(reports: string[]): string {
+    return reports.length > 0 ? `; ${reports.join('; ')}` : ''
+  }
 
   async function collectSnapshot(): Promise<PageSnapshot> {
     const snapshot = buildPageSnapshot(parseCollectedPage(await evaluateInPage<unknown>(collectScript)))
@@ -327,7 +401,13 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
   }
 
   async function readPage(): Promise<string> {
-    return formatPageSnapshot(await collectSnapshot())
+    const first = await collectSnapshot()
+    const dismissal = await dismissConsentIfOpen(first)
+    const reports = drainedReports()
+    const snapshot = dismissal !== null ? await collectSnapshot() : first
+    const header = dismissal !== null ? `${dismissal}\n` : ''
+    const footer = reports.length > 0 ? `\n${reports.join('\n')}` : ''
+    return `${header}${formatPageSnapshot(snapshot)}${footer}`
   }
 
   async function resolveRef(ref: number): Promise<{ snapshot: PageSnapshot; target: SnapshotRef }> {
@@ -343,7 +423,12 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
     return { snapshot, target }
   }
 
-  async function performClick(ref: number): Promise<{ index: number; label: string; before: ElementState; signature: PageSignature }> {
+  /** What performClick did: a real (or direct) activation, or a blocked attempt. */
+  type ClickAttempt =
+    | { kind: 'acted'; direct: boolean; index: number; label: string; before: ElementState; signature: PageSignature }
+    | { kind: 'blocked'; signature: PageSignature; snapshot: PageSnapshot }
+
+  async function performClick(ref: number): Promise<ClickAttempt> {
     let { snapshot, target } = await resolveRef(ref)
     const visualPoint = visualPoints.get(ref)
     if (visualPoint) {
@@ -358,7 +443,7 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
       await dispatchPointClick(visualPoint)
       visualPoints.delete(ref)
       lastSnapshot = undefined
-      return { index, label: target.label, before: elementState(target), signature: signatureOf(snapshot) }
+      return { kind: 'acted', direct: false, index, label: target.label, before: elementState(target), signature: signatureOf(snapshot) }
     }
     let index = target.ref - 1
     let prep = await prepClick(index)
@@ -380,9 +465,15 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
 
     if (prep.clickable && typeof prep.x === 'number' && typeof prep.y === 'number') {
       await dispatchPointClick({ x: prep.x, y: prep.y })
+    } else if (typeof prep.x === 'number' && typeof prep.y === 'number') {
+      // An overlay covers the click point. Interception is reported to the
+      // model (which can dismiss the dialog, wait, or ask the user) instead
+      // of silently clicking through whatever sits on top.
+      return { kind: 'blocked', signature: signatureOf(snapshot), snapshot }
     } else {
-      // Coordinates can't reach the element (overlay on top, clipped away):
-      // activate it directly, Vimium-style, so nothing can swallow the click.
+      // The element cannot be brought into the viewport at all (clipped
+      // away inside its own scroller); activate it directly, Vimium-style,
+      // and say so in the outcome.
       await evaluateInPage(`(() => {
         const el = (window.__bingbongRefs || [])[${index}]
         if (typeof el.focus === 'function') el.focus()
@@ -391,24 +482,46 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
     }
     // A click can navigate (link) or mutate the page; never trust old refs.
     lastSnapshot = undefined
-    return { index, label: target.label, before: elementState(target), signature: signatureOf(snapshot) }
+    return { kind: 'acted', direct: !(prep.clickable), index, label: target.label, before: elementState(target), signature: signatureOf(snapshot) }
   }
 
   async function click(ref: number): Promise<string> {
-    const before = await performClick(ref)
+    const attempt = await performClick(ref)
+    if (attempt.kind === 'blocked') {
+      return `clicked [${ref}]: not clicked — blocked by overlay${dialogSuffix(attempt.snapshot)}${reportsSuffix(drainedReports())}`
+    }
     await sleep(pacing.settleMs)
-    const after = await probeAction(before.index, before.label)
-    const urlChanged = before.signature.url !== after.signature.url
-    if (urlChanged) after.signature = signatureOf(await collectSnapshot())
-    const deltas = stateDeltas(before.before, after.target)
-    const pageChanged = !signaturesEqual(before.signature, after.signature)
+    const after = await probeAction(attempt.index, attempt.label)
+    const urlChanged = attempt.signature.url !== after.signature.url
+    const dialogNowOpen = after.signature.dialogOpen
+    let fresh: PageSnapshot | undefined
+    if (urlChanged || dialogNowOpen) fresh = await collectSnapshot()
+    if (urlChanged && fresh) after.signature = signatureOf(fresh)
+    const deltas = stateDeltas(attempt.before, after.target)
+    const pageChanged = !signaturesEqual(attempt.signature, after.signature)
     const rawChanges = deltas.length > 0 ? deltas.join(', ') : pageChanged ? 'page signature changed' : 'no observable change'
     const location = urlChanged
       ? `; url=${truncateOutcomeText(after.signature.url, 100)} title=${JSON.stringify(truncateOutcomeText(after.signature.title, 50))}`
       : ''
     const prefix = `clicked [${ref}]: urlChanged=${urlChanged} dialogOpen=${after.signature.dialogOpen}; `
     const changes = truncateOutcomeText(rawChanges, Math.min(240, Math.max(30, 300 - prefix.length - location.length)))
-    return `${prefix}${changes}${location}`
+
+    // Dialog escalation: consent dialogs are dismissed deterministically
+    // (Tier 1); anything else has its text surfaced for the model to decide
+    // (Tier 2 — dismiss, interact, or ask_user).
+    const extras: string[] = []
+    if (attempt.direct) extras.push('activated directly (outside viewport)')
+    if (dialogNowOpen && fresh) {
+      const dismissal = await dismissConsentIfOpen(fresh)
+      if (dismissal !== null) extras.push(dismissal)
+      else {
+        const detail = dialogDetail(fresh)
+        if (detail !== null) extras.push(detail)
+      }
+    }
+    extras.push(...drainedReports())
+    const suffix = extras.length > 0 ? `; ${extras.join('; ')}` : ''
+    return `${prefix}${changes}${location}${suffix}`
   }
 
   async function dispatchPointClick(point: ViewportPoint): Promise<void> {
@@ -459,6 +572,9 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
 
   async function type(ref: number, text: string): Promise<string> {
     const clicked = await performClick(ref)
+    if (clicked.kind === 'blocked') {
+      return `typed [${ref}]: not typed — blocked by overlay${dialogSuffix(clicked.snapshot)}${reportsSuffix(drainedReports())}`
+    }
     await sleep(pacing.settleMs)
     for (const ch of text) {
       const key = keyEventFor(ch)

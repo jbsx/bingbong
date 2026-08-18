@@ -12,6 +12,7 @@ const snapshot: PageSnapshot = {
   title: 'Fixture',
   viewport: { width: 800, height: 600, scrollY: 0, scrollHeight: 600 },
   dialogOpen: false,
+  dialogText: '',
   textDigest: '',
   refs: [
     {

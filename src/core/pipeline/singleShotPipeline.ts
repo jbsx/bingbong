@@ -29,5 +29,6 @@ export function createSingleShotPipeline(inner: CommandPipeline, clock: Clock): 
   return {
     execute,
     resolveConfirmation: (confirmationId, approved) => inner.resolveConfirmation(confirmationId, approved),
+    resolveAsk: (askId, answer) => inner.resolveAsk(askId, answer),
   }
 }

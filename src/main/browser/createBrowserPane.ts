@@ -17,6 +17,8 @@ export interface BrowserPane {
   setPaneRect(rect: PaneRect): void
   state(): BrowserPaneState
   onState(listener: (state: BrowserPaneState) => void): () => void
+  /** Drains URLs of window.open popups blocked since the last call. */
+  consumePopupBlocks(): string[]
 }
 
 export function createBrowserPane(): BrowserPane {
@@ -44,8 +46,15 @@ export function createBrowserPane(): BrowserPane {
   view.setBackgroundColor('#171d29')
   const wc = view.webContents
 
-  // Popups (e.g. OAuth sign-in) open as real windows sharing the same session.
-  wc.setWindowOpenHandler(() => ({ action: 'allow' }))
+  // window.open popups are auto-closed: denied at open (they steal OS focus
+  // and hide agent-driven state) and their URL is reported to the model via
+  // the controller's outcome lines (issue #18). The model can still ask the
+  // user or navigate deliberately.
+  const popupBlocks: string[] = []
+  wc.setWindowOpenHandler((details) => {
+    popupBlocks.push(details.url)
+    return { action: 'deny' }
+  })
 
   // Flush cookies/DOM storage on graceful quit so logins survive restarts.
   app.once('before-quit', () => partitionSession.flushStorageData())
@@ -105,5 +114,6 @@ export function createBrowserPane(): BrowserPane {
       listeners.add(listener)
       return () => listeners.delete(listener)
     },
+    consumePopupBlocks: () => popupBlocks.splice(0),
   }
 }

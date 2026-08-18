@@ -57,8 +57,19 @@ export function createSubagentPanePool(
     wc.on('did-navigate', (_event, url) => tabs.update(tab.agentId, { url }))
     wc.on('did-navigate-in-page', (_event, url) => tabs.update(tab.agentId, { url }))
     wc.on('page-title-updated', (_event, title) => tabs.update(tab.agentId, { title }))
+    // Subagent tabs auto-close window.open popups too; the URLs surface in
+    // the subagent's own click/read outcomes.
+    const popupBlocks: string[] = []
+    wc.setWindowOpenHandler((details) => {
+      popupBlocks.push(details.url)
+      return { action: 'deny' }
+    })
 
-    const pooled: PooledView = { view, controller: createPaneBrowserController({ view }), rect: HIDDEN_PANE_RECT }
+    const pooled: PooledView = {
+      view,
+      controller: createPaneBrowserController({ view, consumePopupBlocks: () => popupBlocks.splice(0) }),
+      rect: HIDDEN_PANE_RECT,
+    }
     views.set(tab.agentId, pooled)
     return pooled
   }

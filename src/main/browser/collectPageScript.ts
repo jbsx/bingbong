@@ -210,6 +210,7 @@ export const COLLECT_PAGE_SCRIPT = `(() => {
       )
     },
     dialogOpen: dialogRoot !== null,
+    dialogText: dialogRoot !== null ? textOf(dialogRoot).slice(0, 400) : '',
     textDigest,
     elements
   }

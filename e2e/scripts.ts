@@ -38,3 +38,16 @@ export function approveConfirmationScript(): string {
     return 'approved'
   })()`
 }
+
+export function answerAskScript(answer: string): string {
+  return `(async () => {
+    const input = document.querySelector('.ask-input')
+    if (!input) return 'no-ask-input'
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set
+    setter.call(input, ${JSON.stringify(answer)})
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+    await new Promise((r) => setTimeout(r, 200))
+    document.querySelector('.ask-card').requestSubmit()
+    return 'answered'
+  })()`
+}

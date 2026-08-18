@@ -70,7 +70,11 @@ export function App() {
         <h1>Bing Bong</h1>
         {voice.listening ? (
           <span className="voice-hint" role="status">
-            {voice.reason === 'confirmation' ? 'listening — yes or no?' : 'listening — say a command'}
+            {voice.reason === 'confirmation'
+              ? 'listening — yes or no?'
+              : voice.reason === 'ask'
+                ? 'listening — your answer'
+                : 'listening — say a command'}
           </span>
         ) : voice.monitoring ? (
           <span className="voice-hint voice-hint--monitoring" role="status">

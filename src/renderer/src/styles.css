@@ -266,6 +266,61 @@ body {
   background: var(--edge);
 }
 
+.ask-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex: none;
+  padding: 8px 12px;
+  border: 1px solid #7ab0ff;
+  border-radius: 10px;
+  background: rgba(122, 176, 255, 0.08);
+}
+
+.ask-question {
+  color: var(--text);
+  flex: 1;
+}
+
+.ask-controls {
+  display: flex;
+  gap: 8px;
+  flex: none;
+  align-items: center;
+}
+
+.ask-input {
+  height: 28px;
+  width: 220px;
+  padding: 0 10px;
+  border: 1px solid var(--edge);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text);
+  font-size: 0.9rem;
+}
+
+.ask-controls button {
+  height: 28px;
+  padding: 0 12px;
+  border: 1px solid var(--edge);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text);
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.ask-controls button:hover:not(:disabled) {
+  background: var(--edge);
+}
+
+.ask-controls button:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
 .transcript {
   min-height: 40px;
   overflow-y: auto;

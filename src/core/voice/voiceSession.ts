@@ -9,6 +9,8 @@ import { createWakeMonitor } from './wakeMonitor'
 import { parseYesNo } from './yesNo'
 
 export const CONFIRM_VOICE_WINDOW_MS = 12_000
+/** Free-text ask window: as long as the ask_user timeout, for spoken answers. */
+export const ASK_VOICE_WINDOW_MS = 45_000
 
 /** Wake-word plumbing (T10); absent means the session stays hotkey-only. */
 export interface VoiceWakeDeps {
@@ -31,10 +33,13 @@ export interface VoiceSessionDeps {
   ttsIdle: TtsIdle
   wake?: VoiceWakeDeps
   confirmWindowMs?: number
+  askWindowMs?: number
   endpointerConfig?: Partial<UtteranceEndpointerConfig>
   /** Where recognized commands go — the exact path the text box takes. */
   onSubmitCommand(text: string): void
   onResolveConfirmation(confirmationId: string, approved: boolean): void
+  /** A spoken ask_user answer — free text, returned to the model verbatim. */
+  onResolveAsk(askId: string, answer: string): void
   onStateChange(state: VoiceState): void
   onHeard(event: VoiceHeardEvent): void
   onError(message: string): void
@@ -67,13 +72,16 @@ export interface VoiceSession {
  */
 export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
   const confirmWindowMs = deps.confirmWindowMs ?? CONFIRM_VOICE_WINDOW_MS
+  const askWindowMs = deps.askWindowMs ?? ASK_VOICE_WINDOW_MS
   const endpointer = createUtteranceEndpointer(deps.endpointerConfig)
 
   let listening = false
   let monitoring = false
   let reason: VoiceListenReason | null = null
   let activeConfirmation: string | null = null
+  let activeAsk: string | null = null
   let cancelWindowTimer: (() => void) | null = null
+  let cancelAskTimer: (() => void) | null = null
   // Chunks are processed strictly in arrival order; scoring is async.
   let audioChain: Promise<void> = Promise.resolve()
   let monitorChain: Promise<void> = Promise.resolve()
@@ -125,6 +133,8 @@ export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
   function stopListening(): void {
     cancelWindowTimer?.()
     cancelWindowTimer = null
+    cancelAskTimer?.()
+    cancelAskTimer = null
     if (!listening) return
     listening = false
     reason = null
@@ -183,6 +193,16 @@ export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
       return
     }
 
+    if (activeAsk !== null) {
+      // Free text: the whole transcript is the answer.
+      const askId = activeAsk
+      activeAsk = null
+      deps.onResolveAsk(askId, text)
+      deps.onHeard({ text, routed: 'ask' })
+      stopListening()
+      return
+    }
+
     if (reason !== 'hotkey' && reason !== 'wake') {
       deps.onHeard({ text, routed: 'ignored' })
       return
@@ -208,6 +228,27 @@ export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
       cancelWindowTimer = null
       if (listening && reason === 'confirmation' && activeConfirmation === confirmationId) {
         // Window over — the on-screen buttons and the 60 s auto-deny remain.
+        stopListening()
+      }
+    })
+  }
+
+  async function armForAsk(askId: string): Promise<void> {
+    activeAsk = askId
+    // The window starts when the user could first answer, not while the
+    // question itself is still being spoken into the mic.
+    await deps.ttsIdle.waitIdle()
+    if (activeAsk !== askId) return // answered by typing while asking
+    if (listening) return // the hotkey got there first
+
+    listening = true
+    reason = 'ask'
+    endpointer.reset()
+    emitState()
+    cancelAskTimer = deps.clock.setTimer(askWindowMs, () => {
+      cancelAskTimer = null
+      if (listening && reason === 'ask' && activeAsk === askId) {
+        // Voice window over — the typed card and the pipeline timeout remain.
         stopListening()
       }
     })
@@ -261,6 +302,15 @@ export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
       if (event.type === 'confirmation_resolved') {
         activeConfirmation = null
         if (listening && reason === 'confirmation') stopListening()
+        return
+      }
+      if (event.type === 'ask_requested') {
+        void armForAsk(event.askId)
+        return
+      }
+      if (event.type === 'ask_resolved') {
+        activeAsk = null
+        if (listening && reason === 'ask') stopListening()
       }
     },
   }

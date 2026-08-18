@@ -52,6 +52,35 @@ describe('createAssistantPipeline', () => {
     expect(events.at(-1)).toMatchObject({ type: 'done' })
   })
 
+  it('uses the configured ask timeout for dashboard and voice test windows', async () => {
+    const clock = new FakeClock()
+    const pipeline = createAssistantPipeline({
+      controller: new FakeBrowser(),
+      env: {
+        BINGBONG_ASK_TIMEOUT_MS: '1500',
+        BINGBONG_LLM_SCRIPT: JSON.stringify([
+          { kind: 'tool_calls', calls: [{ id: 'a1', name: 'ask_user', args: { question: 'Which city?' } }] },
+          { kind: 'answer', speak: 'Stopped.', display: 'No answer.' },
+        ]),
+      },
+      clock,
+    })
+
+    const events: PipelineEvent[] = []
+    for await (const event of pipeline.execute('book a hotel')) {
+      events.push(event)
+      if (event.type === 'ask_requested') clock.advance(1500)
+    }
+
+    expect(events).toContainEqual({
+      type: 'ask_resolved',
+      askId: 'ask-1',
+      answer: null,
+      reason: 'timeout',
+      at: 1500,
+    })
+  })
+
   it('rejects a malformed LLM script override loudly', async () => {
     const pipeline = createAssistantPipeline({
       controller: new FakeBrowser(),

@@ -52,6 +52,14 @@ export function registerAssistantIpc(): void {
       pipeline.resolveConfirmation(confirmationId, approved === true)
     }
   })
+
+  ipcMain.handle(PIPELINE_IPC.resolveAsk, (event, askId: unknown, answer: unknown) => {
+    const win = BrowserWindow.fromWebContents(event.sender)
+    const pipeline = win ? pipelineFor(win) : undefined
+    if (pipeline && typeof askId === 'string' && typeof answer === 'string') {
+      pipeline.resolveAsk(askId, answer)
+    }
+  })
 }
 
 export function attachAssistantToWindow(

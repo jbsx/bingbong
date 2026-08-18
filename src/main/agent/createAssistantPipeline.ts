@@ -7,6 +7,7 @@ import type { VisionLocator } from '../../core/ports/vision'
 import { createCommandPipeline, type CommandPipeline } from '../../core/pipeline/createCommandPipeline'
 import { createSingleShotPipeline } from '../../core/pipeline/singleShotPipeline'
 import type { Tool } from '../../core/pipeline/tool'
+import { createAskUserTool } from '../../core/pipeline/askUserTools'
 import { createBrowserTools } from '../../core/pipeline/browserTools'
 import { createVisionGroundingTools } from '../../core/pipeline/visionGroundingTools'
 import { createMediaTools } from '../../core/pipeline/mediaTools'
@@ -81,6 +82,11 @@ function llmSignature(env: Record<string, string | undefined>): string {
   return JSON.stringify(LLM_ENV_KEYS.map((key) => env[key] ?? ''))
 }
 
+function askTimeoutMs(env: Record<string, string | undefined>): number | undefined {
+  const value = Number(env.BINGBONG_ASK_TIMEOUT_MS)
+  return Number.isFinite(value) && value > 0 ? value : undefined
+}
+
 /**
  * Re-resolves the underlying client whenever the routing env changes between
  * commands. Resolution failures degrade to UnavailableLlm, so a half-edited
@@ -114,6 +120,7 @@ export function createAssistantPipeline(deps: AssistantPipelineDeps): CommandPip
   const getEnv = deps.getEnv ?? (() => deps.env)
   const vision = deps.vision ?? createZaiVisionLocator({ getEnv })
   const tools: Tool[] = [
+    createAskUserTool(),
     ...createBrowserTools(deps.controller),
     ...createVisionGroundingTools(deps.controller, vision),
     ...createMediaTools(deps.controller),
@@ -121,11 +128,13 @@ export function createAssistantPipeline(deps: AssistantPipelineDeps): CommandPip
     ...(deps.subagentTools ?? []),
   ]
   const clock = deps.clock ?? systemClock
+  const configuredAskTimeoutMs = askTimeoutMs(deps.env)
   const pipeline = createCommandPipeline({
     llm: createDynamicLlm(getEnv, fetchFn, tools, deps.onLlmUsage),
     tts: deps.tts ?? silentTts,
     clock,
     tools,
+    ...(configuredAskTimeoutMs !== undefined ? { askTimeoutMs: configuredAskTimeoutMs } : {}),
   })
   return createSingleShotPipeline(pipeline, clock)
 }

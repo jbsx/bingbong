@@ -45,6 +45,8 @@ export interface CollectedPage {
   title: string
   viewport: CollectedViewport
   dialogOpen?: boolean
+  /** Text of the topmost open dialog (Tier 2 facts for the model). */
+  dialogText?: string
   textDigest?: string
   elements: CollectedElement[]
 }
@@ -73,6 +75,8 @@ export interface SnapshotRef {
   value?: string | null
   ariaPressed?: string | null
   className?: string
+  /** 'dialog' marks a control of the topmost open dialog; 'page' otherwise. */
+  layer?: 'dialog' | 'page'
 }
 
 export interface PageSnapshot {
@@ -80,6 +84,8 @@ export interface PageSnapshot {
   title: string
   viewport: CollectedViewport
   dialogOpen: boolean
+  /** Text of the topmost open dialog, capped; '' when no dialog is open. */
+  dialogText: string
   textDigest: string
   refs: SnapshotRef[]
   totalVisible: number
@@ -183,6 +189,7 @@ export function parseCollectedPage(raw: unknown): CollectedPage {
       scrollHeight: parsedViewport.scrollHeight as number,
     },
     dialogOpen: candidate.dialogOpen === true,
+    dialogText: typeof candidate.dialogText === 'string' ? candidate.dialogText : '',
     textDigest: typeof candidate.textDigest === 'string' ? candidate.textDigest : '',
     elements,
   }
@@ -214,6 +221,7 @@ export function buildPageSnapshot(page: CollectedPage, options?: { maxRefs?: num
     title: page.title,
     viewport: page.viewport,
     dialogOpen: page.dialogOpen ?? false,
+    dialogText: page.dialogText ?? '',
     textDigest: page.textDigest ?? '',
     refs: taken.map((element, index) => ({
       ref: index + 1,
@@ -234,17 +242,26 @@ export function buildPageSnapshot(page: CollectedPage, options?: { maxRefs?: num
       value: element.value ?? null,
       ariaPressed: element.ariaPressed ?? null,
       className: element.className ?? '',
+      layer: element.layer ?? 'page',
     })),
     totalVisible: visible.length,
     truncated: visible.length > taken.length,
   }
 }
 
+const MAX_DIALOG_TEXT = 200
+
 export function formatPageSnapshot(snapshot: PageSnapshot): string {
   const lines = [
     `# ${snapshot.title} — ${snapshot.url}`,
     `viewport ${snapshot.viewport.width}x${snapshot.viewport.height} scroll ${snapshot.viewport.scrollY}/${snapshot.viewport.scrollHeight}`,
   ]
+  if (snapshot.dialogOpen) {
+    const text = snapshot.dialogText.length > MAX_DIALOG_TEXT
+      ? `${snapshot.dialogText.slice(0, MAX_DIALOG_TEXT - 1)}…`
+      : snapshot.dialogText
+    lines.push(`dialog open: ${JSON.stringify(text)}`)
+  }
   for (const ref of snapshot.refs) {
     const subtype = ref.kind === 'input' && ref.inputType ? `[${ref.inputType}]` : ''
     const label = ref.label ? ` "${ref.label}"` : ''
@@ -254,7 +271,8 @@ export function formatPageSnapshot(snapshot: PageSnapshot): string {
       ...(ref.value ? [`value=${JSON.stringify(ref.value)}`] : []),
       ...(ref.ariaPressed ? [`aria-pressed=${JSON.stringify(ref.ariaPressed)}`] : []),
     ]
-    lines.push(`[${ref.ref}] ${ref.kind}${subtype}${label}${state.length > 0 ? ` ${state.join(' ')}` : ''}`)
+    const dialogMarker = ref.layer === 'dialog' ? ' (dialog)' : ''
+    lines.push(`[${ref.ref}] ${ref.kind}${subtype}${label}${state.length > 0 ? ` ${state.join(' ')}` : ''}${dialogMarker}`)
   }
   if (snapshot.truncated) {
     lines.push(`(+${snapshot.totalVisible - snapshot.refs.length} more not listed)`)

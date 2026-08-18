@@ -24,6 +24,15 @@ volume, next, seek; never ad-skipping), and download routing — approved
 downloads land in `~/Downloads/bingbong_downloads/` and the filename is
 spoken and displayed on completion.
 
+Popup and dialog escalation adds three tiers: cookie/consent walls are
+auto-dismissed with an outcome line; other DOM dialogs expose their text and
+controls to the model; and `ask_user` shows and speaks a free-text question,
+accepting a typed or spoken answer for about 45 seconds. Native JS dialogs are
+auto-dismissed and reported, `window.open` popups are closed with their URL
+reported, and covered clicks report the overlay instead of silently clicking
+through it. `BINGBONG_ASK_TIMEOUT_MS` overrides the ask window for tests or
+special deployments.
+
 T9 adds the **ears**: `Ctrl/Cmd+Space` arms
 listening; mic audio (the settings-page mic, preferring the C920 over the OS
 default) streams from an AudioWorklet at 16 kHz mono, Silero VAD endpoints
@@ -102,8 +111,8 @@ watch the loop navigate, read, type, and click.
 
 Everything is tested through one boundary: a text command goes in, a typed
 event stream comes out (`src/core/pipeline`). The stream covers status
-transitions, tool calls/results, confirmation requests and resolutions,
-speak/display payloads, and errors.
+transitions, tool calls/results, confirmation and free-text ask requests and
+resolutions, speak/display payloads, and errors.
 
 - **Above the seam** (thin adapters, later tickets): voice pipeline, dashboard UI.
 - **Below the seam** (interfaces + test doubles, `src/core/ports`): LLM client,

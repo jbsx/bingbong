@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Tool } from './tool'
+import { createAskUserTool } from './askUserTools'
 import { createBrowserTools } from './browserTools'
 import { createVisionGroundingTools } from './visionGroundingTools'
 import { createMediaTools } from './mediaTools'
@@ -18,6 +19,7 @@ const unusedVision = { locate: async () => ({ x: 0, y: 0 }) }
 
 function orchestratorToolCatalog(): Tool[] {
   return [
+    createAskUserTool(),
     ...createBrowserTools(new FakeBrowser()),
     ...createVisionGroundingTools(new FakeBrowser(), unusedVision),
     ...createMediaTools(new FakeBrowser()),
@@ -47,6 +49,7 @@ describe('orchestrator tool surface', () => {
 
     expect(names.sort()).toEqual(
       [
+        'ask_user',
         'navigate',
         'read_page',
         'click',

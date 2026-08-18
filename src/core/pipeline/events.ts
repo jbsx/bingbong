@@ -49,6 +49,24 @@ export type PipelineEvent =
       reason: 'user' | 'timeout'
       at: number
     }
+  /** A tool asked the user a free-text question (ask_user, Tier 3). */
+  | {
+      type: 'ask_requested'
+      askId: string
+      callId: string
+      question: string
+      /** Wall-clock deadline — the dashboard counts down to it. */
+      expiresAt: number
+      at: number
+    }
+  | {
+      type: 'ask_resolved'
+      askId: string
+      /** The user's answer; null when the window timed out. */
+      answer: string | null
+      reason: 'user' | 'timeout'
+      at: number
+    }
   | { type: 'speak'; text: string; at: number }
   | { type: 'display'; text: string; at: number }
   | { type: 'error'; message: string; at: number }

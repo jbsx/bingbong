@@ -27,13 +27,19 @@ function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promi
 }
 
 export function createPaneBrowserController(
-  pane: { view: { webContents: Electron.WebContents } },
+  pane: {
+    view: { webContents: Electron.WebContents }
+    /** Popup-block reports recorded by the pane (main pane only). */
+    consumePopupBlocks?: () => string[]
+  },
 ): BrowserController & VisualGroundingController {
   const wc = pane.view.webContents
   let attached = false
+  let pageEventsEnabled = false
 
   wc.debugger.on('detach', () => {
     attached = false
+    pageEventsEnabled = false
   })
 
   const cdp: CdpDebugger = {
@@ -47,7 +53,19 @@ export function createPaneBrowserController(
         }
         attached = true
       }
+      if (!pageEventsEnabled) {
+        // Page-domain events (native JS dialogs) only flow once enabled.
+        // Commands queue in order behind it, so the first click's alert is
+        // always observable.
+        pageEventsEnabled = true
+        void wc.debugger.sendCommand('Page.enable').catch(() => {})
+      }
       return wc.debugger.sendCommand(method, params ?? undefined)
+    },
+    on(event, handler) {
+      wc.debugger.on('message', (_event, method, params) => {
+        if (method === event) handler(params)
+      })
     },
   }
 
@@ -68,5 +86,10 @@ export function createPaneBrowserController(
     },
   }
 
-  return createCdpBrowserController({ cdp, page, collectScript: COLLECT_PAGE_SCRIPT })
+  return createCdpBrowserController({
+    cdp,
+    page,
+    collectScript: COLLECT_PAGE_SCRIPT,
+    ...(pane.consumePopupBlocks ? { consumePopupBlocks: pane.consumePopupBlocks } : {}),
+  })
 }

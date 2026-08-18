@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { FakeClock, ScriptedLlm } from '../testing/doubles'
 import { runSubagent, SubagentCancelledError } from './subagentRunner'
 import type { Tool } from '../pipeline/tool'
+import { ASK_ESCALATION_PREFIX, createSubagentAskTool } from '../pipeline/askUserTools'
 
 // The workhorse loop behind every subagent (issue #13): a deepseek-chat LLM
 // with its own tool set, no confirmations (the policy wrapper already
@@ -113,6 +114,20 @@ describe('runSubagent', () => {
     await runSubagent({ llm, tools: [], clock: new FakeClock() }, { task: 't', isCancelled: () => false })
 
     expect(llm.requests[1]?.toolResults).toMatchObject([{ outcome: { ok: false, error: "unknown tool: 'nope'" } }])
+  })
+
+  it('returns ask_user escalation verbatim without another model round', async () => {
+    const llm = new ScriptedLlm([
+      { kind: 'tool_calls', calls: [{ id: 'q1', name: 'ask_user', args: { question: 'Which city?' } }] },
+    ])
+
+    const result = await runSubagent(
+      { llm, tools: [createSubagentAskTool()], clock: new FakeClock() },
+      { task: 'plan the trip', isCancelled: () => false },
+    )
+
+    expect(result).toContain(`${ASK_ESCALATION_PREFIX} Which city?`)
+    expect(llm.requests).toHaveLength(1)
   })
 
   it('stops at the next checkpoint once cancelled — no further tools or model calls', async () => {

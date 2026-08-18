@@ -67,11 +67,26 @@ describe('createSingleShotPipeline', () => {
     const inner: CommandPipeline = {
       async *execute() {},
       resolveConfirmation: (id, approved) => calls.push(`${id}:${approved}`),
+      resolveAsk: () => {},
     }
     const pipeline = createSingleShotPipeline(inner, new FakeClock())
 
     pipeline.resolveConfirmation('confirm-9', true)
 
     expect(calls).toEqual(['confirm-9:true'])
+  })
+
+  it('forwards ask answers to the inner pipeline', () => {
+    const calls: string[] = []
+    const inner: CommandPipeline = {
+      async *execute() {},
+      resolveConfirmation: () => {},
+      resolveAsk: (id, answer) => calls.push(`${id}:${answer}`),
+    }
+    const pipeline = createSingleShotPipeline(inner, new FakeClock())
+
+    pipeline.resolveAsk('ask-1', 'Paris')
+
+    expect(calls).toEqual(['ask-1:Paris'])
   })
 })

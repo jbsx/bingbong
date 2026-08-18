@@ -12,6 +12,7 @@ import { ScriptedLlm, UnavailableLlm } from '../../core/testing/doubles'
 import { createBrowserTools } from '../../core/pipeline/browserTools'
 import { createSearchTools } from '../../core/pipeline/searchTools'
 import { createReadUrlTool } from '../../core/pipeline/readUrlTool'
+import { createSubagentAskTool } from '../../core/pipeline/askUserTools'
 import { withoutConfirmations } from '../../core/pipeline/subagentToolPolicy'
 import { createOpenAiLlmClient } from './openAiLlmClient'
 import { SUBAGENT_SYSTEM_PROMPT } from './subagentPrompt'
@@ -20,6 +21,9 @@ import { SUBAGENT_SYSTEM_PROMPT } from './subagentPrompt'
 // spawn resolves the subagent LLM fresh (deepseek-chat via the router; a
 // scripted override for tests/keyless demos — every agent starts the script
 // from the top), gets the tool catalog for its kind, and runs runSubagent.
+// Every kind carries the escalation-only ask_user (issue #18): subagents
+// cannot reach the user, so their ask returns a directive the report relays
+// through the orchestrator.
 
 const SUBAGENT_SCRIPT_ENV = 'BINGBONG_SUBAGENT_LLM_SCRIPT'
 
@@ -44,14 +48,16 @@ function toolsForKind(
   spec: SubagentSpec,
 ): Tool[] {
   if (kind === 'research') {
-    const tools: Tool[] = []
+    const tools: Tool[] = [createSubagentAskTool()]
     if (deps.search) tools.push(...createSearchTools(deps.search))
     tools.push(createReadUrlTool({ fetchFn: deps.fetchFn }))
     return tools
   }
-  if (kind === 'background') return deps.backgroundTools ?? []
+  if (kind === 'background') return [createSubagentAskTool(), ...(deps.backgroundTools ?? [])]
   const controller = deps.controllerFor?.(spec.id) ?? null
-  return controller ? withoutConfirmations(createBrowserTools(controller)) : []
+  return controller
+    ? [createSubagentAskTool(), ...withoutConfirmations(createBrowserTools(controller))]
+    : [createSubagentAskTool()]
 }
 
 function resolveSubagentLlm(deps: SubagentWorkhorseDeps, tools: Tool[]): LlmClient {

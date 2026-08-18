@@ -20,14 +20,24 @@ export interface PendingConfirmation {
   expiresAt: number
 }
 
+export interface PendingAsk {
+  askId: string
+  question: string
+  /** Wall-clock deadline — the card counts down to it. */
+  expiresAt: number
+}
+
 export interface Assistant {
   status: OrbStatus
   entries: TranscriptEntry[]
   pendingConfirmation: PendingConfirmation | null
+  /** An open ask_user question awaiting a spoken or typed free-text answer. */
+  pendingAsk: PendingAsk | null
   /** Live subagent cards, newest last; history persists after tabs close. */
   agents: SubagentCard[]
   submit(text: string): void
   resolveConfirmation(confirmationId: string, approved: boolean): void
+  resolveAsk(askId: string, answer: string): void
   /** A heard-but-not-a-command transcript (voice yes/no, undecided answers). */
   appendVoiceHeard(heard: VoiceHeardEvent): void
   /** Mic/engine failures from the voice half. */
@@ -41,6 +51,7 @@ export function useAssistant(): Assistant {
   const [status, setStatus] = useState<OrbStatus>('idle')
   const [entries, setEntries] = useState<TranscriptEntry[]>([])
   const [pendingConfirmation, setPendingConfirmation] = useState<PendingConfirmation | null>(null)
+  const [pendingAsk, setPendingAsk] = useState<PendingAsk | null>(null)
   const [agents, setAgents] = useState<SubagentCard[]>([])
   const nextId = useRef(0)
 
@@ -84,6 +95,16 @@ export function useAssistant(): Assistant {
             current?.confirmationId === event.confirmationId ? null : current,
           )
           return
+        case 'ask_requested':
+          setPendingAsk({
+            askId: event.askId,
+            question: event.question,
+            expiresAt: event.expiresAt,
+          })
+          return
+        case 'ask_resolved':
+          setPendingAsk((current) => (current?.askId === event.askId ? null : current))
+          return
         case 'agent_update':
           setAgents((current) => {
             const index = current.findIndex((card) => card.id === event.agent.id)
@@ -96,6 +117,7 @@ export function useAssistant(): Assistant {
         case 'done':
           setStatus('idle')
           setPendingConfirmation(null)
+          setPendingAsk(null)
           return
       }
     })
@@ -113,11 +135,23 @@ export function useAssistant(): Assistant {
     void window.bingbong.assistant.resolveConfirmation(confirmationId, approved)
   }, [])
 
+  const resolveAsk = useCallback((askId: string, answer: string) => {
+    const trimmed = answer.trim()
+    if (trimmed === '') return
+    setPendingAsk(null)
+    void window.bingbong.assistant.resolveAsk(askId, trimmed)
+  }, [])
+
   const appendVoiceHeard = useCallback((heard: VoiceHeardEvent) => {
     // Commands are echoed by the pipeline itself; only answers and undecided
     // words land here.
     if (heard.routed === 'command') return
-    const suffix = heard.routed === 'confirmation' ? ' (answered)' : ' — not a yes or no'
+    const suffix =
+      heard.routed === 'confirmation'
+        ? ' (answered)'
+        : heard.routed === 'ask'
+          ? ' (your answer)'
+          : ' — not a yes or no'
     append({ kind: 'voice', text: `heard "${heard.text}"${suffix}` })
   }, [append])
 
@@ -125,5 +159,5 @@ export function useAssistant(): Assistant {
     append({ kind: 'error', text: `voice: ${message}` })
   }, [append])
 
-  return { status, entries, pendingConfirmation, agents, submit, resolveConfirmation, appendVoiceHeard, appendVoiceError }
+  return { status, entries, pendingConfirmation, pendingAsk, agents, submit, resolveConfirmation, resolveAsk, appendVoiceHeard, appendVoiceError }
 }

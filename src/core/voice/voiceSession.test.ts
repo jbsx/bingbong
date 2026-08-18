@@ -44,6 +44,7 @@ interface SessionHarness {
   errors: string[]
   commands: string[]
   resolutions: { confirmationId: string; approved: boolean }[]
+  askResolutions: { askId: string; answer: string }[]
   chimes: number[]
   speakUtterance(probs?: number[]): Promise<void>
   session: ReturnType<typeof createVoiceSession>
@@ -69,6 +70,7 @@ async function createSession(overrides?: {
   const errors: string[] = []
   const commands: string[] = []
   const resolutions: { confirmationId: string; approved: boolean }[] = []
+  const askResolutions: { askId: string; answer: string }[] = []
   const chimes: number[] = []
   const threshold = overrides?.wake?.threshold ?? 0.5
 
@@ -88,6 +90,7 @@ async function createSession(overrides?: {
       : undefined,
     onSubmitCommand: (text) => commands.push(text),
     onResolveConfirmation: (confirmationId, approved) => resolutions.push({ confirmationId, approved }),
+    onResolveAsk: (askId, answer) => askResolutions.push({ askId, answer }),
     onStateChange: (state) => states.push(state),
     onHeard: (event) => heard.push(event),
     onError: (message) => errors.push(message),
@@ -103,7 +106,7 @@ async function createSession(overrides?: {
     }
   }
 
-  return { vad, transcriber, clock, tts, idle, states, heard, errors, commands, resolutions, chimes, speakUtterance, session }
+  return { vad, transcriber, clock, tts, idle, states, heard, errors, commands, resolutions, askResolutions, chimes, speakUtterance, session }
 }
 
 function confirmationRequested(id = 'confirm-1'): PipelineEvent {
@@ -114,6 +117,17 @@ function confirmationRequested(id = 'confirm-1'): PipelineEvent {
     toolName: 'click',
     prompt: 'Run click?',
     expiresAt: 60_000,
+    at: 0,
+  }
+}
+
+function askRequested(id = 'ask-1'): PipelineEvent {
+  return {
+    type: 'ask_requested',
+    askId: id,
+    callId: 'c1',
+    question: 'Which city do you mean?',
+    expiresAt: 45_000,
     at: 0,
   }
 }
@@ -341,6 +355,92 @@ describe('voice session', () => {
 
     // Still routed to the open confirmation, not submitted as a command.
     expect(harness.resolutions).toEqual([{ confirmationId: 'confirm-9', approved: true }])
+    expect(harness.commands).toEqual([])
+  })
+})
+
+describe('voice session — ask_user window (issue #18)', () => {
+  it('opens a free-text listen window once the spoken question finishes', async () => {
+    const harness = await createSession()
+
+    harness.idle.busy = true
+    harness.session.handlePipelineEvent(askRequested('ask-1'))
+    await flush()
+    // Still speaking — the window has not opened yet.
+    expect(harness.states).toEqual([])
+
+    harness.idle.becomeIdle()
+    await flush()
+
+    expect(harness.states).toEqual([{ listening: true, reason: 'ask', monitoring: false }])
+  })
+
+  it('returns the spoken transcript as the free-text answer', async () => {
+    const harness = await createSession({ transcriber: new FakeTranscriber(['the one in Paris, France']) })
+
+    harness.session.handlePipelineEvent(askRequested('ask-4'))
+    await flush()
+    await harness.speakUtterance()
+
+    expect(harness.askResolutions).toEqual([{ askId: 'ask-4', answer: 'the one in Paris, France' }])
+    expect(harness.heard).toEqual([{ text: 'the one in Paris, France', routed: 'ask' }])
+    expect(harness.commands).toEqual([])
+    expect(harness.states.at(-1)).toEqual({ listening: false, reason: null, monitoring: false })
+  })
+
+  it('keeps the window open when speech transcribes to nothing', async () => {
+    const harness = await createSession({ transcriber: new FakeTranscriber(['']) })
+
+    harness.session.handlePipelineEvent(askRequested('ask-2'))
+    await flush()
+    await harness.speakUtterance()
+
+    expect(harness.askResolutions).toEqual([])
+    expect(harness.states.at(-1)).toEqual({ listening: true, reason: 'ask', monitoring: false })
+  })
+
+  it('closes the window after 45 s without resolving — typed answers stay possible', async () => {
+    const harness = await createSession()
+
+    harness.session.handlePipelineEvent(askRequested('ask-3'))
+    await flush()
+
+    harness.clock.advance(45_000)
+
+    expect(harness.states.at(-1)).toEqual({ listening: false, reason: null, monitoring: false })
+    expect(harness.askResolutions).toEqual([])
+  })
+
+  it('stops listening when the ask is answered by typing', async () => {
+    const harness = await createSession()
+
+    harness.session.handlePipelineEvent(askRequested('ask-5'))
+    await flush()
+    expect(harness.states.at(-1)).toEqual({ listening: true, reason: 'ask', monitoring: false })
+
+    harness.session.handlePipelineEvent({
+      type: 'ask_resolved',
+      askId: 'ask-5',
+      answer: 'typed answer',
+      reason: 'user',
+      at: 900,
+    })
+
+    expect(harness.states.at(-1)).toEqual({ listening: false, reason: null, monitoring: false })
+    // The window timer is gone too — no late disarm state event.
+    harness.clock.advance(45_000)
+    expect(harness.states).toHaveLength(2)
+  })
+
+  it('serves a hotkey-armed mic to the open ask, not as a command', async () => {
+    const harness = await createSession({ transcriber: new FakeTranscriber(['paris']) })
+
+    harness.session.handlePipelineEvent(askRequested('ask-6'))
+    await flush()
+    harness.session.arm()
+    await harness.speakUtterance()
+
+    expect(harness.askResolutions).toEqual([{ askId: 'ask-6', answer: 'paris' }])
     expect(harness.commands).toEqual([])
   })
 })

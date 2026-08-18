@@ -2,6 +2,7 @@ import type { Clock } from '../ports/clock'
 import { systemClock } from '../ports/clock'
 import type { LlmClient, ToolResult, ToolResultOutcome } from '../ports/llm'
 import type { Tool, ToolContext } from '../pipeline/tool'
+import { ASK_ESCALATION_PREFIX } from '../pipeline/askUserTools'
 import { describeToolAction } from '../pipeline/toolCallDisplay'
 import { createVisionBudget } from './subagentRails'
 
@@ -97,6 +98,13 @@ export async function runSubagent(deps: RunSubagentDeps, options: RunSubagentOpt
             }
             const result = await tool.execute(call, toolContext)
             if (options.isCancelled()) throw new SubagentCancelledError()
+            if (typeof result === 'string' && result.startsWith(`${ASK_ESCALATION_PREFIX} `)) {
+              // A subagent cannot continue until the orchestrator asks the
+              // user. Return the directive as its report verbatim so
+              // agent_results reliably routes it upward; do not trust the
+              // workhorse model to preserve it in another round.
+              return result
+            }
             outcome = { ok: true, result }
           }
         } catch (err) {

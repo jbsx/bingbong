@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import youtubeHome from '../../core/browser/fixtures/youtube-home.json'
-import type { CollectedPage } from '../../core/browser/snapshot'
+import type { CollectedElement, CollectedPage } from '../../core/browser/snapshot'
 import { buildPageSnapshot, clickPoint } from '../../core/browser/snapshot'
 import type { CdpDebugger, CdpPageDriver } from './createCdpBrowserController'
 import { createCdpBrowserController } from './createCdpBrowserController'
@@ -8,21 +8,82 @@ import { createCdpBrowserController } from './createCdpBrowserController'
 const youtubeFixture = youtubeHome as unknown as CollectedPage
 const COLLECT_EXPRESSION = '/* COLLECT */'
 
+function dialogButton(label: string): Partial<CollectedElement> {
+  return {
+    tag: 'button',
+    role: null,
+    inputType: null,
+    label,
+    layer: 'dialog',
+    // Below the fold inside the dialog's own scroller — dialog-layer refs
+    // bypass the viewport bound.
+    rect: { x: 500, y: 2100, width: 140, height: 40 },
+  }
+}
+
+/** A consent wall shaped like the e2e fixture: dialog over a covered page. */
+function consentWallPage(): CollectedPage {
+  return {
+    ...youtubeFixture,
+    dialogOpen: true,
+    dialogText: 'Before you continue to this fixture',
+    elements: [
+      { ...dialogButton('Accept all') } as CollectedElement,
+      { ...dialogButton('Reject all') } as CollectedElement,
+      {
+        tag: 'button',
+        role: null,
+        inputType: null,
+        label: 'Background button',
+        rect: { x: 10, y: 10, width: 160, height: 40 },
+      },
+    ],
+  }
+}
+
+/** A Tier-2 dialog: no consent labels, the model must decide. */
+function signInDialogPage(): CollectedPage {
+  return {
+    ...youtubeFixture,
+    dialogOpen: true,
+    dialogText: 'Opened dialog',
+    elements: [
+      { ...dialogButton('Sign in') } as CollectedElement,
+      { ...dialogButton('Not now') } as CollectedElement,
+    ],
+  }
+}
+
 class FakeCdp implements CdpDebugger {
   readonly calls: { method: string; params?: Record<string, unknown> }[] = []
   evaluateException: string | null = null
-  /** When set, click-prep reports the element as covered (DOM fallback path). */
+  /** When set, click-prep reports the element as covered (blocked path). */
   prepCovered = false
+  /** When set, click-prep reports the element as offscreen (no coordinates). */
+  prepOffscreen = false
   /** When set, the next click-prep reports a stale registry once (re-collect path). */
   prepStaleOnce = false
   actionProbe: unknown = undefined
   mediaProbe: unknown = { paused: true, currentTime: 12.5, volume: 0.4 }
   collectValues: unknown[] = []
+  private readonly handlers = new Map<string, ((params: unknown) => void)[]>()
 
   constructor(private evaluateValue: unknown = youtubeFixture) {}
 
+  on(event: string, handler: (params: unknown) => void): void {
+    const existing = this.handlers.get(event) ?? []
+    existing.push(handler)
+    this.handlers.set(event, existing)
+  }
+
+  /** Test helper: fire a CDP domain event at the registered handlers. */
+  emit(event: string, params: unknown): void {
+    for (const handler of this.handlers.get(event) ?? []) handler(params)
+  }
+
   async send<T = unknown>(method: string, params?: Record<string, unknown>): Promise<T> {
     this.calls.push({ method, params })
+    if (method === 'Page.handleJavaScriptDialog') return {} as T
     if (method === 'Runtime.evaluate') {
       if (this.evaluateException) return { exceptionDetails: { text: this.evaluateException } } as T
       const expression = typeof params?.expression === 'string' ? params.expression : ''
@@ -98,6 +159,9 @@ class FakeCdp implements CdpDebugger {
         const snapshot = buildPageSnapshot(this.evaluateValue as CollectedPage)
         const target = snapshot.refs[index]
         if (!target) return { result: { value: { ok: false } } } as T
+        // Offscreen: scrollIntoView could not bring the element into the
+        // viewport at all — no coordinates, no hit-test.
+        if (this.prepOffscreen) return { result: { value: { ok: true, clickable: false } } } as T
         // Mirror the in-page prep math: fresh clickPoint, hit-test result set by the test.
         return { result: { value: { ok: true, clickable: !this.prepCovered, ...clickPoint(target, snapshot.viewport) } } } as T
       }
@@ -150,9 +214,10 @@ class FakePage implements CdpPageDriver {
   }
 }
 
-function makeController(options?: { cdp?: FakeCdp; page?: FakePage }) {
+function makeController(options?: { cdp?: FakeCdp; page?: FakePage; popupBlocks?: string[] }) {
   const cdp = options?.cdp ?? new FakeCdp()
   const page = options?.page ?? new FakePage()
+  const popupQueue = options?.popupBlocks ? [...options.popupBlocks] : []
   const controller = createCdpBrowserController({
     cdp,
     page,
@@ -160,6 +225,7 @@ function makeController(options?: { cdp?: FakeCdp; page?: FakePage }) {
     // Real pacing is policy for the live page; tests only care about the
     // sequence of CDP messages, so don't pay the human-paced sleeps.
     pacing: { settleMs: 0, moveMs: 0, clickMs: 0, keystrokeMs: 0, scrollTickMs: 0 },
+    consumePopupBlocks: () => popupQueue.splice(0),
   })
   return { cdp, page, controller }
 }
@@ -315,7 +381,7 @@ describe('createCdpBrowserController click', () => {
     const outcome = await controller.click(1)
 
     expect(outcome).toBe(
-      'clicked [1]: urlChanged=true dialogOpen=true; aria-pressed="false" -> "true", class="toggle off" -> "toggle on"; url=https://www.youtube.com/watch?v=abc title="Playing video"',
+      'clicked [1]: urlChanged=true dialogOpen=true; aria-pressed="false" -> "true", class="toggle off" -> "toggle on"; url=https://www.youtube.com/watch?v=abc title="Playing video"; dialog open',
     )
   })
 
@@ -428,22 +494,54 @@ describe('createCdpBrowserController click', () => {
     expect(cdp.inputCalls()[0]?.params).toMatchObject({ type: 'mouseMoved', x: 60, y: 799 })
   })
 
-  it('activates the element directly when an overlay covers the click point', async () => {
+  it('reports an overlay-blocked click instead of clicking through', async () => {
     const cdp = new FakeCdp()
     cdp.prepCovered = true
     const { controller } = makeController({ cdp })
     await controller.readPage()
 
-    await controller.click(3)
+    const outcome = await controller.click(3)
 
-    // No synthetic mouse input can reach a covered element — the click is
-    // dispatched on the element itself instead.
+    // Nothing reaches the page: no synthetic input, no direct activation —
+    // the interception is reported for the model to decide.
+    expect(outcome).toBe('clicked [3]: not clicked — blocked by overlay')
     expect(cdp.inputCalls()).toHaveLength(0)
+    expect(
+      cdp.calls.some(
+        (call) => call.method === 'Runtime.evaluate' && typeof call.params?.expression === 'string' && call.params.expression.includes('.click()'),
+      ),
+    ).toBe(false)
+  })
+
+  it('reports the open dialog alongside an overlay-blocked click', async () => {
+    const wall = consentWallPage()
+    const cdp = new FakeCdp(wall)
+    cdp.prepCovered = true
+    const { controller } = makeController({ cdp })
+
+    // The covered target is the page-level button behind the wall.
+    const outcome = await controller.click(3)
+
+    expect(outcome).toBe(
+      'clicked [3]: not clicked — blocked by overlay; dialog open: "Before you continue to this fixture"; controls: [1] button "Accept all", [2] button "Reject all"',
+    )
+  })
+
+  it('still activates directly when the element sits outside the viewport', async () => {
+    const cdp = new FakeCdp()
+    cdp.prepOffscreen = true
+    const { controller } = makeController({ cdp })
+    await controller.readPage()
+
+    const outcome = await controller.click(3)
+
+    expect(outcome).toBe(
+      'clicked [3]: urlChanged=false dialogOpen=false; no observable change; activated directly (outside viewport)',
+    )
     const domClick = cdp.calls.find(
       (call) => call.method === 'Runtime.evaluate' && typeof call.params?.expression === 'string' && call.params.expression.includes('.click()'),
     )
     expect(domClick?.params?.expression).toContain('__bingbongRefs')
-    expect(domClick?.params?.expression).toContain('.focus()')
   })
 
   it('re-collects once when the element registry went stale, then clicks', async () => {
@@ -714,6 +812,151 @@ describe('createCdpBrowserController mediaState', () => {
     const { controller } = makeController()
 
     expect(await controller.mediaState()).toEqual({ paused: true, currentTime: 12.5, volume: 0.4 })
+  })
+})
+
+describe('createCdpBrowserController dialog tiers', () => {
+  it('auto-dismisses a consent dialog on read_page and reports it in one line', async () => {
+    const wall = consentWallPage()
+    const cleared = { ...wall, dialogOpen: false, dialogText: '', elements: wall.elements.slice(2) }
+    const cdp = new FakeCdp(cleared)
+    // First collect returns the wall; the post-dismissal re-collect returns
+    // the cleared page.
+    cdp.collectValues = [wall, cleared]
+    const { controller } = makeController({ cdp })
+
+    const text = await controller.readPage()
+
+    expect(text.startsWith('dismissed consent dialog: clicked [2] "Reject all"\n# YouTube — ')).toBe(true)
+    expect(text).not.toContain('dialog open:')
+    // The dismissal clicked the real registry element (prefer reject).
+    const domClick = cdp.calls.find(
+      (call) => call.method === 'Runtime.evaluate' && typeof call.params?.expression === 'string' && call.params.expression.includes('.click()'),
+    )
+    expect(domClick?.params?.expression).toContain('(window.__bingbongRefs || [])[1]')
+  })
+
+  it('leaves a non-consent dialog open and surfaces text + controls for the model', async () => {
+    const cdp = new FakeCdp(signInDialogPage())
+    const { controller } = makeController({ cdp })
+
+    const text = await controller.readPage()
+
+    expect(text).toContain('dialog open: "Opened dialog"')
+    expect(text).toContain('[1] button "Sign in" (dialog)')
+    expect(text).toContain('[2] button "Not now" (dialog)')
+    expect(text).not.toContain('dismissed consent dialog')
+  })
+
+  it('dismisses a consent dialog a click opened, appending the one-liner', async () => {
+    const cdp = new FakeCdp(youtubeFixture)
+    // resolveRef collects the base page first; the post-click collect sees
+    // the consent wall the click opened.
+    cdp.collectValues = [youtubeFixture, consentWallPage()]
+    cdp.actionProbe = {
+      target: null,
+      signature: {
+        url: youtubeFixture.url,
+        title: youtubeFixture.title,
+        scrollX: 0,
+        scrollY: 0,
+        refCount: 20,
+        labels: buildPageSnapshot(youtubeFixture).refs.map((ref) => ref.label),
+        dialogOpen: true,
+      },
+    }
+    const { controller } = makeController({ cdp })
+
+    const outcome = await controller.click(3)
+
+    expect(outcome).toBe(
+      'clicked [3]: urlChanged=false dialogOpen=true; page signature changed; dismissed consent dialog: clicked [2] "Reject all"',
+    )
+  })
+
+  it('surfaces the text of a non-consent dialog a click opened (Tier 2)', async () => {
+    const cdp = new FakeCdp(youtubeFixture)
+    cdp.collectValues = [youtubeFixture, signInDialogPage()]
+    cdp.actionProbe = {
+      target: null,
+      signature: {
+        url: youtubeFixture.url,
+        title: youtubeFixture.title,
+        scrollX: 0,
+        scrollY: 0,
+        refCount: 20,
+        labels: buildPageSnapshot(youtubeFixture).refs.map((ref) => ref.label),
+        dialogOpen: true,
+      },
+    }
+    const { controller } = makeController({ cdp })
+
+    const outcome = await controller.click(3)
+
+    expect(outcome).toBe(
+      'clicked [3]: urlChanged=false dialogOpen=true; page signature changed; dialog open: "Opened dialog"; controls: [1] button "Sign in", [2] button "Not now"',
+    )
+  })
+
+  it('does not treat dialogs without consent labels as auto-dismissable', async () => {
+    const cdp = new FakeCdp(signInDialogPage())
+    const { controller } = makeController({ cdp })
+
+    const text = await controller.readPage()
+
+    expect(cdp.calls.some((call) => call.method === 'Runtime.evaluate' && typeof call.params?.expression === 'string' && call.params.expression.includes('.click()'))).toBe(false)
+    expect(text).toContain('dialog open:')
+  })
+})
+
+describe('createCdpBrowserController native dialogs and popups', () => {
+  it('auto-dismisses native JS dialogs and reports them on the next outcome', async () => {
+    const cdp = new FakeCdp()
+    const { controller } = makeController({ cdp })
+    await controller.readPage()
+
+    cdp.emit('Page.javascriptDialogOpening', { type: 'alert', message: 'hello from alert' })
+
+    const outcome = await controller.click(3)
+
+    expect(outcome).toBe(
+      'clicked [3]: urlChanged=false dialogOpen=false; no observable change; native alert dialog auto-dismissed: "hello from alert"',
+    )
+    expect(cdp.calls).toContainEqual({ method: 'Page.handleJavaScriptDialog', params: { accept: false } })
+  })
+
+  it('reports multiple native dialogs in order', async () => {
+    const cdp = new FakeCdp()
+    const { controller } = makeController({ cdp })
+    await controller.readPage()
+
+    cdp.emit('Page.javascriptDialogOpening', { type: 'confirm', message: 'first' })
+    cdp.emit('Page.javascriptDialogOpening', { type: 'beforeunload', message: 'second' })
+
+    const outcome = await controller.click(3)
+
+    expect(outcome).toContain('native confirm dialog auto-dismissed: "first"')
+    expect(outcome).toContain('native beforeunload dialog auto-dismissed: "second"')
+  })
+
+  it('reports blocked window.open popups with their URL on the next outcome', async () => {
+    const cdp = new FakeCdp()
+    const { controller } = makeController({ cdp, popupBlocks: ['http://x.test/popup'] })
+
+    const outcome = await controller.click(3)
+
+    expect(outcome).toBe(
+      'clicked [3]: urlChanged=false dialogOpen=false; no observable change; popup blocked: http://x.test/popup',
+    )
+  })
+
+  it('reports blocked popups and native dialogs on read_page too', async () => {
+    const cdp = new FakeCdp()
+    const { controller } = makeController({ cdp, popupBlocks: ['http://x.test/popup'] })
+
+    const text = await controller.readPage()
+
+    expect(text.endsWith('\npopup blocked: http://x.test/popup')).toBe(true)
   })
 })
 
