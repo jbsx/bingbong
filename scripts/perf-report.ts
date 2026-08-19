@@ -3,8 +3,9 @@
 // (same precedent as scripts/measure-stt-latency.mjs) over every rotated
 // perf-*.jsonl under the user-data logs dir — per-stage p50/p95/max/count,
 // plus the summary self-check. Node runs this .ts directly via type
-// stripping, so it needs Node >= 22.18 and .ts-extension imports (the
-// scripts-scoped tsconfig allows exactly that; src/ stays extensionless).
+// stripping, so it needs Node >= 22.18 and .ts-extension imports — both
+// here and in every src file on its runtime import graph (#36); src files
+// that only run bundled stay extensionless.
 //
 // Usage:
 //   pnpm perf:report [logs-dir]

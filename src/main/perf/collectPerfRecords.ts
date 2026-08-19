@@ -2,7 +2,7 @@ import { readdirSync, readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import type { PerfSpanRecord } from '../../core/perf/perfTracer'
-import { PERF_FILE_PATTERN } from './perfFiles'
+import { PERF_FILE_PATTERN } from './perfFiles.ts'
 
 // The #33 report's file half: every perf-*.jsonl under the logs dir, parsed
 // in file-name (creation) order. Malformed lines — a torn final line after a
@@ -12,7 +12,9 @@ import { PERF_FILE_PATTERN } from './perfFiles'
 // platform's default user-data dir. The shared file pattern lives in
 // perfFiles (zero imports) so this file still runs unbundled under the
 // standalone script; the perf-*.jsonl contract with the sink is pinned by a
-// round-trip test.
+// round-trip test. The perfFiles import carries a .ts extension (#36):
+// under the script's node type stripping, extensionless relative imports
+// are ERR_MODULE_NOT_FOUND. jsonlPerfSink (bundled only) stays extensionless.
 
 export interface PerfLogCollection {
   records: PerfSpanRecord[]

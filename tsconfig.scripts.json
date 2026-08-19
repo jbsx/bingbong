@@ -2,8 +2,7 @@
   "extends": "./tsconfig.node.json",
   "compilerOptions": {
     "composite": false,
-    "noEmit": true,
-    "allowImportingTsExtensions": true
+    "noEmit": true
   },
   "include": ["scripts/**/*.ts"]
 }
