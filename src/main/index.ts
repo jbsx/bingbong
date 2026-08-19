@@ -119,8 +119,8 @@ function sessionWindowMs(env: Record<string, string | undefined>): number | unde
 // suffice for a standard install); the settings page's voice wins per line.
 const piperConfig = resolvePiperConfig(process.env, app.getPath('userData'))
 
-// Ears (T9): Silero VAD + whisper, shared by every window so the models
-// load once. Scripted doubles ride the same seam for e2e.
+// Ears (T9): Silero VAD + streaming Moonshine, shared by every window so
+// the models load once. Scripted doubles ride the same seam for e2e.
 const voiceConfig = resolveVoiceConfig(process.env, app.getPath('userData'))
 
 // Wake word: "bing bong" plus the "abort" / "hold on" interrupt heads via the

@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import { finalOnlyTranscriber } from './finalOnlyTranscriber'
 
-// The #40 streaming-port adapter for batch engines (whisper.cpp, the scripted
-// e2e double, the #39 Moonshine proof-of-life): the utterance arrives whole at
-// the endpoint, lifecycle calls are no-ops, and the partial stream stays
-// silent — externally the engine behaves exactly as before.
+// The #40 streaming-port adapter for final-only engines (the scripted e2e
+// double): the utterance arrives whole at the endpoint, lifecycle calls are
+// no-ops, and the partial stream stays silent — externally the engine
+// behaves exactly as before.
 
 describe('finalOnlyTranscriber', () => {
   it('resolves finish with the batch transcript over the complete utterance', async () => {
@@ -21,9 +21,9 @@ describe('finalOnlyTranscriber', () => {
 
   it('rejects finish when the batch pass rejects — adapter failures propagate', async () => {
     const transcriber = finalOnlyTranscriber(async () => {
-      throw new Error('whisper model missing')
+      throw new Error('stt model missing')
     })
-    await expect(transcriber.finish(new Float32Array(512))).rejects.toThrow('whisper model missing')
+    await expect(transcriber.finish(new Float32Array(512))).rejects.toThrow('stt model missing')
   })
 
   it('treats begin, push and cancel as no-ops and never emits partials', async () => {

@@ -30,7 +30,7 @@ const NO_WORDS = new Set([
   'never',
 ])
 
-/** Filler whisper tends to pick up around a one-word answer. */
+/** Filler STT tends to pick up around a one-word answer. */
 const FILLER = new Set(['um', 'uh', 'uhh', 'er', 'ah', 'hey', 'please', 'so', 'well', 'like'])
 
 /** Two-word assent phrases checked before single words. */

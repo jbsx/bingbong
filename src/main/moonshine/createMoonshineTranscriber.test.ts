@@ -2,12 +2,14 @@ import { describe, expect, it } from 'vitest'
 import { parseMoonshineTokenizer } from '../../core/moonshine/bpeTokenizer'
 import { createMoonshineTranscriber, MOONSHINE_BASE_DIMS } from './createMoonshineTranscriber'
 
-// The #39 proof-of-life Moonshine adapter: greedy decode over the official
-// merged ONNX export (encoder_model + decoder_model_merged with
-// use_cache_branch and past/present KV plumbing), the exact contract the
-// upstream C++ core implements. The fake runtime below scripts logits and
-// marks every present.* tensor so the tests can assert the cache moves the
-// way the reference requires.
+// The #41 streaming Moonshine adapter: greedy decode over the official merged
+// ONNX export (encoder_model + decoder_model_merged with use_cache_branch and
+// past/present KV plumbing), the exact contract the upstream C++ core
+// implements, driven as the streaming Transcriber port — rolling partial
+// passes over pushed frames during speech, one final pass over the complete
+// utterance at finish(). The fake runtime below scripts per-pass logits,
+// records every encoder feed and marks every present.* tensor so the tests
+// can assert what audio each pass saw and how the cache moves.
 
 const VOCAB = parseMoonshineTokenizer(
   JSON.stringify({
@@ -18,6 +20,9 @@ const VOCAB = parseMoonshineTokenizer(
     model: { type: 'BPE', vocab: { '<unk>': 0, '<s>': 1, '</s>': 2, '▁And': 3, '▁so': 7 } },
   }),
 )
+
+/** Per-pass streaming knobs small enough for one-frame pushes to cross. */
+const TINY_PARTIALS = { partialMinSamples: 512, partialStrideSamples: 512, minPassSamples: 512 }
 
 const DECODER_INPUTS = [
   'input_ids',
@@ -47,15 +52,26 @@ class FakeTensor {
   ) {}
 }
 
-function fakeRuntime(script: ScriptedStep[], opts: { decoderInputs?: string[]; encoderInputs?: string[] } = {}) {
+/**
+ * Scripts one logits row per decoder step of a pass, one script per pass:
+ * each encoder.run advances to the next script (resets the step counter), so
+ * pass N's tokens come from scripts[N]. `beforeEncoder` gates each pass —
+ * resolve its promise to let the pass start.
+ */
+function fakeRuntime(
+  scripts: ScriptedStep[][],
+  opts: { decoderInputs?: string[]; encoderInputs?: string[]; beforeEncoder?: () => Promise<void> } = {},
+) {
   const decoderFeeds: Record<string, unknown>[] = []
   const encoderFeeds: Record<string, unknown>[] = []
   let step = 0
+  let pass = -1
   const decoder = {
     inputNames: opts.decoderInputs ?? DECODER_INPUTS,
     outputNames: DECODER_OUTPUTS,
     async run(feeds: Record<string, unknown>) {
       decoderFeeds.push(feeds)
+      const script = scripts[Math.max(0, Math.min(pass, scripts.length - 1))]
       const s = script[Math.min(step, script.length - 1)]
       const vocab = 10
       const rows = [...(s.decoyRows ?? []), s.next]
@@ -74,7 +90,10 @@ function fakeRuntime(script: ScriptedStep[], opts: { decoderInputs?: string[]; e
     inputNames: opts.encoderInputs ?? ['input_values'],
     outputNames: ['last_hidden_state'],
     async run(feeds: Record<string, unknown>) {
+      await opts.beforeEncoder?.()
       encoderFeeds.push(feeds)
+      pass += 1
+      step = 0
       return { last_hidden_state: { marker: 'hidden' } }
     },
   }
@@ -83,6 +102,7 @@ function fakeRuntime(script: ScriptedStep[], opts: { decoderInputs?: string[]; e
     decoderFeeds,
     encoderFeeds,
     created,
+    encoderInputName: opts.encoderInputs?.[0] ?? 'input_values',
     module: {
       InferenceSession: {
         async create(path: string) {
@@ -97,15 +117,28 @@ function fakeRuntime(script: ScriptedStep[], opts: { decoderInputs?: string[]; e
 
 const PCM = new Float32Array(16_000) // 1 s
 
+function makeTranscriber(
+  rt: ReturnType<typeof fakeRuntime>,
+  extra: Partial<Parameters<typeof createMoonshineTranscriber>[0]> = {},
+) {
+  return createMoonshineTranscriber({
+    encoderPath: '/m/encoder.onnx',
+    decoderPath: '/m/decoder.onnx',
+    loadVocab: async () => VOCAB,
+    loadRuntime: async () => rt.module as unknown as never,
+    ...extra,
+  })
+}
+
+/** Lets queued background passes (partials) settle before assertions. */
+async function settlePasses(): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, 0))
+}
+
 describe('createMoonshineTranscriber', () => {
   it('greedy-decodes: start token, then single tokens, EOS stops, text decodes', async () => {
-    const rt = fakeRuntime([{ next: 3 }, { next: 7 }, { next: 2 }])
-    const transcriber = createMoonshineTranscriber({
-      encoderPath: '/m/encoder.onnx',
-      decoderPath: '/m/decoder.onnx',
-      vocab: VOCAB,
-      loadRuntime: async () => rt.module as unknown as never,
-    })
+    const rt = fakeRuntime([[{ next: 3 }, { next: 7 }, { next: 2 }]])
+    const transcriber = makeTranscriber(rt)
 
     await expect(transcriber.finish(PCM)).resolves.toBe('And so')
 
@@ -124,13 +157,8 @@ describe('createMoonshineTranscriber', () => {
   })
 
   it('starts every past KV as zeros of the base shape and cycles present → past', async () => {
-    const rt = fakeRuntime([{ next: 7, decoyRows: [3] }, { next: 3 }, { next: 2 }])
-    const transcriber = createMoonshineTranscriber({
-      encoderPath: '/m/encoder.onnx',
-      decoderPath: '/m/decoder.onnx',
-      vocab: VOCAB,
-      loadRuntime: async () => rt.module as unknown as never,
-    })
+    const rt = fakeRuntime([[{ next: 7, decoyRows: [3] }, { next: 3 }, { next: 2 }]])
+    const transcriber = makeTranscriber(rt)
     await transcriber.finish(PCM)
 
     const first = rt.decoderFeeds[0]
@@ -155,13 +183,8 @@ describe('createMoonshineTranscriber', () => {
   })
 
   it('feeds an all-ones encoder_attention_mask when the decoder export asks for one', async () => {
-    const rt = fakeRuntime([{ next: 2 }], { decoderInputs: ['input_ids', 'encoder_hidden_states', 'encoder_attention_mask', ...DECODER_INPUTS.slice(2)] })
-    const transcriber = createMoonshineTranscriber({
-      encoderPath: '/m/encoder.onnx',
-      decoderPath: '/m/decoder.onnx',
-      vocab: VOCAB,
-      loadRuntime: async () => rt.module as unknown as never,
-    })
+    const rt = fakeRuntime([[{ next: 2 }]], { decoderInputs: ['input_ids', 'encoder_hidden_states', 'encoder_attention_mask', ...DECODER_INPUTS.slice(2)] })
+    const transcriber = makeTranscriber(rt)
     await transcriber.finish(PCM)
 
     const mask = rt.decoderFeeds[0].encoder_attention_mask as FakeTensor
@@ -170,27 +193,202 @@ describe('createMoonshineTranscriber', () => {
   })
 
   it('stops at the token cap when no EOS arrives', async () => {
-    const rt = fakeRuntime([{ next: 7 }, { next: 7 }, { next: 7 }])
-    const transcriber = createMoonshineTranscriber({
-      encoderPath: '/m/encoder.onnx',
-      decoderPath: '/m/decoder.onnx',
-      vocab: VOCAB,
-      loadRuntime: async () => rt.module as unknown as never,
-      maxTokensPerSecond: 2, // 1 s audio → 2 steps
-    })
+    const rt = fakeRuntime([[{ next: 7 }, { next: 7 }, { next: 7 }]])
+    const transcriber = makeTranscriber(rt, { maxTokensPerSecond: 2 }) // 1 s audio → 2 steps
     await transcriber.finish(PCM)
     expect(rt.decoderFeeds.length).toBe(2)
   })
 
   it('resolves empty audio to empty text without loading any model', async () => {
-    const rt = fakeRuntime([{ next: 2 }])
-    const transcriber = createMoonshineTranscriber({
-      encoderPath: '/m/encoder.onnx',
-      decoderPath: '/m/decoder.onnx',
-      vocab: VOCAB,
-      loadRuntime: async () => rt.module as unknown as never,
-    })
+    const rt = fakeRuntime([[{ next: 2 }]])
+    const transcriber = makeTranscriber(rt)
     await expect(transcriber.finish(new Float32Array(0))).resolves.toBe('')
     expect(rt.created).toEqual([])
+  })
+
+  it('pads sub-second audio to one second before encoding', async () => {
+    const rt = fakeRuntime([[{ next: 2 }]])
+    const transcriber = makeTranscriber(rt)
+    await transcriber.finish(new Float32Array(8_000))
+    const feed = rt.encoderFeeds[0][rt.encoderInputName] as FakeTensor
+    expect(feed.dims).toEqual([1, 16_000])
+  })
+})
+
+describe('streaming capture (rolling partials, final at endpoint)', () => {
+  it('emits a partial over the pushed frames, then a final over the complete utterance', async () => {
+    const rt = fakeRuntime([
+      [{ next: 3 }, { next: 2 }], // partial: "And"
+      [{ next: 7 }, { next: 2 }], // final: "so"
+    ])
+    const transcriber = makeTranscriber(rt, TINY_PARTIALS)
+    const partials: string[] = []
+    transcriber.onPartial((text) => partials.push(text))
+
+    transcriber.begin()
+    transcriber.push(new Float32Array(512))
+    await settlePasses()
+    expect(partials).toEqual(['And'])
+    // The partial pass saw exactly the pushed frames.
+    let feed = rt.encoderFeeds[0][rt.encoderInputName] as FakeTensor
+    expect(feed.dims).toEqual([1, 512])
+
+    const full = new Float32Array(2_048) // pushed frames + pre-roll + endpoint tail
+    await expect(transcriber.finish(full)).resolves.toBe('so')
+    expect(partials).toEqual(['And']) // the final is not a partial
+    // The final pass encoded the complete utterance, not the pushed prefix.
+    feed = rt.encoderFeeds[1][rt.encoderInputName] as FakeTensor
+    expect(feed.dims).toEqual([1, 2_048])
+  })
+
+  it('rolls partial passes over the growing accumulation while speech continues', async () => {
+    const rt = fakeRuntime([
+      [{ next: 3 }, { next: 2 }],
+      [{ next: 7 }, { next: 2 }],
+      [{ next: 3 }, { next: 7 }, { next: 2 }],
+    ])
+    const transcriber = makeTranscriber(rt, TINY_PARTIALS)
+    const partials: string[] = []
+    transcriber.onPartial((text) => partials.push(text))
+
+    transcriber.begin()
+    transcriber.push(new Float32Array(512))
+    await settlePasses()
+    transcriber.push(new Float32Array(1_024))
+    await settlePasses()
+    transcriber.push(new Float32Array(2_048))
+    await settlePasses()
+
+    expect(partials).toEqual(['And', 'so', 'And so'])
+    const dims = rt.encoderFeeds.map((feeds) => (feeds[rt.encoderInputName] as FakeTensor).dims[1])
+    expect(dims).toEqual([512, 1_536, 3_584]) // each pass covered everything pushed so far
+  })
+
+  it('keeps at most one partial pass per capture in flight; queued stale passes skip', async () => {
+    const rt = fakeRuntime([[{ next: 3 }, { next: 2 }]])
+    const transcriber = makeTranscriber(rt, TINY_PARTIALS)
+    transcriber.begin()
+    // A burst of pushes while one pass runs: no pass stacking.
+    for (let i = 0; i < 8; i++) transcriber.push(new Float32Array(512))
+    await settlePasses()
+    expect(rt.encoderFeeds.length).toBeLessThanOrEqual(8)
+  })
+
+  it('waits for the in-flight partial, then runs the final — and never emits the stale partial', async () => {
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const rt = fakeRuntime([
+      [{ next: 3 }, { next: 2 }], // gated partial
+      [{ next: 7 }, { next: 2 }], // final
+    ], { beforeEncoder: () => gate })
+    const transcriber = makeTranscriber(rt, TINY_PARTIALS)
+    const partials: string[] = []
+    transcriber.onPartial((text) => partials.push(text))
+
+    transcriber.begin()
+    transcriber.push(new Float32Array(512))
+    await settlePasses()
+    let finished = false
+    const final = transcriber.finish(new Float32Array(1_024)).then((text) => {
+      finished = true
+      return text
+    })
+    await settlePasses()
+    expect(finished).toBe(false) // the final waits for the in-flight partial
+    release()
+    await expect(final).resolves.toBe('so')
+    expect(partials).toEqual([]) // the capture ended: its partial never emits
+  })
+
+  it('cancel drops the capture — in-flight partials finish silently and nothing emits', async () => {
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const rt = fakeRuntime([[{ next: 3 }, { next: 2 }]], { beforeEncoder: () => gate })
+    const transcriber = makeTranscriber(rt, TINY_PARTIALS)
+    const partials: string[] = []
+    transcriber.onPartial((text) => partials.push(text))
+
+    transcriber.begin()
+    transcriber.push(new Float32Array(512))
+    transcriber.cancel()
+    release()
+    await settlePasses()
+    expect(partials).toEqual([])
+  })
+
+  it('begin starts a fresh capture — frames from a discarded capture never leak', async () => {
+    const rt = fakeRuntime([
+      [{ next: 3 }, { next: 2 }], // fresh capture's partial
+      [{ next: 7 }, { next: 2 }], // fresh capture's final
+    ])
+    const transcriber = makeTranscriber(rt, TINY_PARTIALS)
+
+    transcriber.begin()
+    transcriber.push(new Float32Array(512))
+    transcriber.cancel()
+    await settlePasses()
+    expect(rt.encoderFeeds.length).toBe(0) // nothing ran: cancel dropped it pre-flight
+
+    transcriber.begin()
+    transcriber.push(new Float32Array(512))
+    await settlePasses()
+    await expect(transcriber.finish(new Float32Array(1_024))).resolves.toBe('so')
+    const dims = rt.encoderFeeds.map((feeds) => (feeds[rt.encoderInputName] as FakeTensor).dims[1])
+    expect(dims).toEqual([512, 1_024]) // only the second capture's audio
+  })
+
+  it('a failed partial pass is swallowed; the final still transcribes', async () => {
+    const rt = fakeRuntime([[{ next: 2 }]]) // both passes EOS immediately
+    let encoderRuns = 0
+    const create = rt.module.InferenceSession.create.bind(rt.module.InferenceSession)
+    const failing: typeof rt = {
+      ...rt,
+      module: {
+        ...rt.module,
+        InferenceSession: {
+          create: async (path: string) => {
+            const session = await create(path)
+            if (!path.endsWith('encoder.onnx')) return session
+            // The encoder explodes on its first run (the partial pass); the
+            // engine must swallow it and still serve the final.
+            return {
+              ...session,
+              run: async (feeds: Record<string, unknown>) => {
+                encoderRuns += 1
+                if (encoderRuns === 1) throw new Error('ort exploded')
+                return session.run(feeds)
+              },
+            }
+          },
+        },
+      },
+    }
+    const transcriber = makeTranscriber(failing, TINY_PARTIALS)
+    const partials: string[] = []
+    transcriber.onPartial((text) => partials.push(text))
+
+    transcriber.begin()
+    transcriber.push(new Float32Array(512))
+    await settlePasses()
+    expect(partials).toEqual([])
+
+    await expect(transcriber.finish(new Float32Array(1_024))).resolves.toBe('')
+  })
+
+  it('unsubscribes partial listeners', async () => {
+    const rt = fakeRuntime([[{ next: 3 }, { next: 2 }]])
+    const transcriber = makeTranscriber(rt, TINY_PARTIALS)
+    const heard: string[] = []
+    const stop = transcriber.onPartial((text) => heard.push(text))
+    stop()
+
+    transcriber.begin()
+    transcriber.push(new Float32Array(512))
+    await settlePasses()
+    expect(heard).toEqual([])
   })
 })

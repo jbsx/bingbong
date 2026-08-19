@@ -1,17 +1,17 @@
 import type { Transcriber } from '../../core/ports/stt'
-import { finalOnlyTranscriber } from '../../core/voice/finalOnlyTranscriber'
 import type { MoonshineVocab } from '../../core/moonshine/bpeTokenizer.ts'
 import { decodeMoonshineTokens } from '../../core/moonshine/bpeTokenizer.ts'
 import { WAV_SAMPLE_RATE } from '../../core/voice/utteranceDump.ts'
 
-// The #39 A/B harness's proof-of-life Moonshine Base path: greedy decode over
-// the official merged ONNX export on the app's existing onnxruntime-node
-// stack. This mirrors the upstream C++ core's contract exactly — encoder
-// hidden states feed a merged decoder that takes `input_ids`,
-// `encoder_hidden_states`, `use_cache_branch` and per-layer
+// The shipped STT engine (#41): greedy decode over the official merged ONNX
+// export on the app's onnxruntime-node stack, driven as the streaming
+// Transcriber port — rolling partial passes over the frames pushed during
+// speech, then one final pass over the complete utterance at finish(). This
+// mirrors the upstream C++ core's contract exactly — encoder hidden states
+// feed a merged decoder that takes `input_ids`, `encoder_hidden_states`,
+// `use_cache_branch` and per-layer
 // `past_key_values.{i}.{decoder,encoder}.{key,value}` caches, returns `logits`
-// plus `present.*`; on cached steps only the decoder.* halves refresh. Dev
-// tool only — the shipped voice path still runs whisper.cpp until #41.
+// plus `present.*`; on cached steps only the decoder.* halves refresh.
 
 /** Base architecture: 8 decoder layers, 8 KV heads, 52-dim heads. */
 export const MOONSHINE_BASE_DIMS = { layers: 8, kvHeads: 8, headDim: 52 } as const
@@ -20,6 +20,18 @@ export const MOONSHINE_BASE_DIMS = { layers: 8, kvHeads: 8, headDim: 52 } as con
 const DECODER_START_TOKEN_ID = 1n
 const EOS_TOKEN_ID = 2n
 const HARD_TOKEN_CAP = 194
+
+/** Passes encode at least one second of audio — Moonshine's preprocessing
+ * pads sub-second clips with zeros, and the endpointer's shortest real
+ * utterance (~0.7 s incl. pre-roll and silence tail) must not hit the
+ * encoder raw.
+ */
+const DEFAULT_MIN_PASS_SAMPLES = WAV_SAMPLE_RATE
+
+/** First partial pass waits for a second of speech by default. */
+const DEFAULT_PARTIAL_MIN_SAMPLES = WAV_SAMPLE_RATE
+/** New partial passes wait for another half second of speech by default. */
+const DEFAULT_PARTIAL_STRIDE_SAMPLES = WAV_SAMPLE_RATE / 2
 
 /** The onnxruntime-node surface this adapter needs. */
 interface OrtModule {
@@ -45,12 +57,19 @@ async function importOrt(): Promise<OrtModule> {
 export interface MoonshineTranscriberDeps {
   encoderPath: string
   decoderPath: string
-  vocab: MoonshineVocab
+  /** Parsed lazily on the first pass; the app path reads it after the model fetch. */
+  loadVocab: () => Promise<MoonshineVocab>
   /** Injectable for tests; defaults to the onnxruntime-node import. */
   loadRuntime?: () => Promise<OrtModule>
   dims?: { layers: number; kvHeads: number; headDim: number }
   /** Greedy token budget per second of audio (upstream default 6.5). */
   maxTokensPerSecond?: number
+  /** Passes encode at least this many samples (default 1 s of padding). */
+  minPassSamples?: number
+  /** Accumulated samples required before the first partial pass (default 1 s). */
+  partialMinSamples?: number
+  /** New-sample growth required between partial passes (default 0.5 s). */
+  partialStrideSamples?: number
 }
 
 /** Greedy argmax over the LAST logits row ([1, seq, vocab] → id). */
@@ -75,9 +94,13 @@ export function createMoonshineTranscriber(deps: MoonshineTranscriberDeps): Tran
   const dims = deps.dims ?? MOONSHINE_BASE_DIMS
   const tokensPerSecond = deps.maxTokensPerSecond ?? 6.5
   const loadRuntime = deps.loadRuntime ?? importOrt
+  const minPassSamples = Math.max(1, deps.minPassSamples ?? DEFAULT_MIN_PASS_SAMPLES)
+  const partialMinSamples = deps.partialMinSamples ?? DEFAULT_PARTIAL_MIN_SAMPLES
+  const partialStrideSamples = deps.partialStrideSamples ?? DEFAULT_PARTIAL_STRIDE_SAMPLES
 
   let ort: OrtModule | null = null
   let sessionsReady: Promise<{ runtime: OrtModule; encoder: OrtSession; decoder: OrtSession }> | null = null
+  let vocabReady: Promise<MoonshineVocab> | null = null
 
   function ensureSessions(): Promise<{ runtime: OrtModule; encoder: OrtSession; decoder: OrtSession }> {
     sessionsReady ??= (async () => {
@@ -90,12 +113,28 @@ export function createMoonshineTranscriber(deps: MoonshineTranscriberDeps): Tran
     return sessionsReady
   }
 
-  return finalOnlyTranscriber(async (pcm) => {
-    if (pcm.length === 0) return ''
+  function ensureVocab(): Promise<MoonshineVocab> {
+    // A failed load (missing model, bad tokenizer) un-memoizes so the next
+    // pass retries instead of caching the failure forever.
+    vocabReady ??= deps.loadVocab().catch((err: unknown) => {
+      vocabReady = null
+      throw err
+    })
+    return vocabReady
+  }
+
+  /** One full greedy pass over the given audio; rejects on engine failure. */
+  async function decodePass(pcm: Float32Array): Promise<string> {
     const { runtime, encoder, decoder } = await ensureSessions()
+    const vocab = await ensureVocab()
+    const audio = pcm.length >= minPassSamples ? pcm : (() => {
+      const padded = new Float32Array(minPassSamples)
+      padded.set(pcm)
+      return padded
+    })()
 
     const encoded = await encoder.run({
-      [encoder.inputNames[0]]: new runtime.Tensor('float32', pcm, [1, pcm.length]),
+      [encoder.inputNames[0]]: new runtime.Tensor('float32', audio, [1, audio.length]),
     })
     const hidden = encoded[encoder.outputNames[0]]
 
@@ -114,7 +153,7 @@ export function createMoonshineTranscriber(deps: MoonshineTranscriberDeps): Tran
     let inputIds = [DECODER_START_TOKEN_ID]
     const maxTokens = Math.min(
       HARD_TOKEN_CAP,
-      Math.max(1, Math.ceil((pcm.length / WAV_SAMPLE_RATE) * tokensPerSecond)),
+      Math.max(1, Math.ceil((audio.length / WAV_SAMPLE_RATE) * tokensPerSecond)),
     )
 
     for (let step = 0; step < maxTokens; step++) {
@@ -128,8 +167,8 @@ export function createMoonshineTranscriber(deps: MoonshineTranscriberDeps): Tran
           // Newer optimum exports gate cross-attention with an all-ones mask.
           feeds.encoder_attention_mask = new runtime.Tensor(
             'int64',
-            BigInt64Array.from({ length: pcm.length }, () => 1n),
-            [1, pcm.length],
+            BigInt64Array.from({ length: audio.length }, () => 1n),
+            [1, audio.length],
           )
         } else if (name === 'use_cache_branch') {
           feeds.use_cache_branch = new runtime.Tensor('bool', new Uint8Array([step > 0 ? 1 : 0]), [1])
@@ -156,6 +195,120 @@ export function createMoonshineTranscriber(deps: MoonshineTranscriberDeps): Tran
       }
     }
 
-    return decodeMoonshineTokens(deps.vocab, tokens)
-  })
+    return decodeMoonshineTokens(vocab, tokens)
+  }
+
+  // ---- streaming capture state -------------------------------------------
+
+  const partialListeners = new Set<(text: string) => void>()
+  /**
+   * Bumped by begin/finish/cancel: passes check it on completion so results
+   * and emissions from an ended capture are dropped — a partial landing
+   * after the endpoint (or a cancel) must never surface.
+   */
+  let generation = 0
+  let frames: Float32Array[] = []
+  let accumulated = 0
+  /** Accumulation at the last partial-pass start (stride bookkeeping). */
+  let lastPartialSamples = 0
+  /** A partial pass for the current capture is queued or running. */
+  let partialActive = false
+  /**
+   * Serializes every decode pass (shared ORT sessions, one pass at a time):
+   * the final pass waits out any in-flight partial instead of racing it.
+   */
+  let passes: Promise<void> = Promise.resolve()
+
+  function resetCapture(): void {
+    frames = []
+    accumulated = 0
+    lastPartialSamples = 0
+    partialActive = false
+  }
+
+  function schedulePartial(gen: number): void {
+    partialActive = true
+    passes = passes.then(async () => {
+      if (gen !== generation) return
+      // The accumulated prefix so far — a partial always transcribes from
+      // the utterance start, never a delta (deltas cut words mid-way).
+      const pcm = concatFrames(frames)
+      lastPartialSamples = pcm.length
+      try {
+        const text = await decodePass(pcm)
+        if (gen === generation) for (const listener of partialListeners) listener(text)
+      } catch {
+        // Partials are advisory: a failed pass must never break the capture
+        // or the final — the same failure surfaces there if it is real.
+      }
+      // A capture that ended mid-pass owns no state anymore (its finish,
+      // cancel or begin already reset the flags).
+      if (gen !== generation) return
+      partialActive = false
+      // Speech kept growing while this pass ran: roll straight into the next.
+      if (accumulated - lastPartialSamples >= partialStrideSamples) schedulePartial(gen)
+    })
+  }
+
+  return {
+    begin() {
+      generation += 1
+      resetCapture()
+    },
+
+    push(frame: Float32Array) {
+      frames.push(frame)
+      accumulated += frame.length
+      if (
+        !partialActive &&
+        accumulated >= partialMinSamples &&
+        accumulated - lastPartialSamples >= partialStrideSamples
+      ) {
+        schedulePartial(generation)
+      }
+    },
+
+    onPartial(listener: (text: string) => void): () => void {
+      partialListeners.add(listener)
+      return () => {
+        partialListeners.delete(listener)
+      }
+    },
+
+    finish(pcm: Float32Array): Promise<string> {
+      if (pcm.length === 0) return Promise.resolve('')
+      // The capture ends here: in-flight partials run out but never emit;
+      // the final pass is the submitted transcript over the complete
+      // utterance (pre-roll and endpoint frame included).
+      generation += 1
+      resetCapture()
+      const pass = passes.then(() => decodePass(pcm))
+      passes = pass.then(
+        () => undefined,
+        () => undefined,
+      )
+      return pass
+    },
+
+    cancel() {
+      generation += 1
+      resetCapture()
+    },
+  }
+}
+
+function accumulatedAtConcat(frames: Float32Array[]): number {
+  let total = 0
+  for (const frame of frames) total += frame.length
+  return total
+}
+
+function concatFrames(frames: Float32Array[]): Float32Array {
+  const out = new Float32Array(accumulatedAtConcat(frames))
+  let offset = 0
+  for (const frame of frames) {
+    out.set(frame, offset)
+    offset += frame.length
+  }
+  return out
 }

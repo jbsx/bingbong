@@ -1,8 +1,15 @@
 # STT latency on the 5600G — validation gate (T9)
 
+> Historical record of the whisper.cpp measurements that drove the T9
+> base.en decision. Superseded by #41: whisper.cpp is removed and Moonshine
+> Base streams (see `docs/moonshine-ab.md`); live latency now comes from the
+> `stt` perf span via `pnpm perf:report`. The benchmark script was removed
+> with the engine.
+
 Measured 2026-08-17 on the target machine (Ryzen 5 5600G, 12 SMT threads,
-CPU-only) with `scripts/measure-stt-latency.mjs`, 6 threads (physical cores —
-fastest of 4/6/8/12 measured), greedy decoding, model warm after first load.
+CPU-only) with the since-removed `scripts/measure-stt-latency.mjs`, 6
+threads (physical cores — fastest of 4/6/8/12 measured), greedy decoding,
+model warm after first load.
 
 | model | first load | 2 s utterance | 5 s utterance | 10 s utterance |
 | --- | --- | --- | --- | --- |
@@ -31,18 +38,14 @@ Two facts drive the decision:
   ~3 s tiny.en would save; base.en clearly out-transcribes tiny.en on the
   sample material.
 
-`BINGBONG_WHISPER_MODEL` (or the settings env layer) points at a different
-ggml file — `ggml-tiny.en.bin` (~3 s turns) is the documented step-down if
-response feel matters more than accuracy.
+`BINGBONG_WHISPER_MODEL` (or the settings env layer) pointed at a different
+ggml file — `ggml-tiny.en.bin` (~3 s turns) was the documented step-down if
+response feel mattered more than accuracy. Both knobs are gone with the
+engine (#41).
 
 ## Reproducing
 
-```sh
-# models live in ~/.config/bingbong/models (see README)
-node scripts/measure-stt-latency.mjs
-```
-
-Real utterances for A/B runs: launch the app with `BINGBONG_AUDIO_DUMP=1`
+The whisper benchmark is gone with the engine. Real utterances for offline
+replay: launch the app with `BINGBONG_AUDIO_DUMP=1`
 and it writes every detected utterance to `~/.config/bingbong/audio-dumps/`
-as a 16 kHz mono WAV (timestamp/sequence names) — the same shape this
-script's `pcmFromWav` reads.
+as a 16 kHz mono WAV (timestamp/sequence names).

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { parseYesNo } from './yesNo'
 
 // The confirmation gate's voice half: a spoken answer inside the 12 s window
-// must resolve the prompt. Whisper transcripts carry punctuation, casing and
+// must resolve the prompt. STT transcripts carry punctuation, casing and
 // filler, so matching is on normalized words.
 
 describe('parseYesNo', () => {

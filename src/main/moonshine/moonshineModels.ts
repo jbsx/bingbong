@@ -1,12 +1,13 @@
 import { existsSync, mkdirSync, statSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 
-// Where the #39 harness gets Moonshine Base: the model-dir convention puts
-// engine files under <userData>/models (README), one subdir per engine (the
-// wake models already do this), fetched on demand from the official
-// moonshine-ai HuggingFace export — the same int8-quantized merged graphs the
-// upstream C++ core ships. The float tokenizer.json is shared by both
-// variants. Dev tool only; the app never looks here.
+// Where Moonshine Base lives (#41): the model-dir convention puts engine
+// files under <userData>/models (README), one subdir per engine (the wake
+// models already do this), fetched on demand from the official moonshine-ai
+// HuggingFace export — the same int8-quantized merged graphs the upstream
+// C++ core ships. The float tokenizer.json is shared by both variants. The
+// app fetches on first boot (background prefetch, see
+// createMainMoonshineTranscriber); partial/truncated files are refetched.
 
 export const MOONSHINE_BASE_DIR = 'moonshine-base'
 
@@ -59,7 +60,7 @@ export async function ensureMoonshineModels(
   return { dir, fetched }
 }
 
-/** Node fs + fetch implementation for the script (redirect-following). */
+/** Node fs + fetch implementation for the app and scripts (redirect-following). */
 export const fsMoonshineStore: MoonshineModelStore = {
   exists: existsSync,
   size(path) {

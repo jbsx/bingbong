@@ -12,7 +12,7 @@ import type { PipelineEvent } from '../src/core/pipeline/events'
 // Voice e2e (T9): the mic worklet needs real hardware, so the renderer's
 // capture is bypassed — the test arms the session and pushes PCM through the
 // same preload API the worklet uses, with BINGBONG_VAD_SCRIPT +
-// BINGBONG_STT_SCRIPT standing in for Silero and whisper. Everything below
+// BINGBONG_STT_SCRIPT standing in for Silero and Moonshine. Everything below
 // the mic is real: IPC, endpointing, session routing, pipeline, pane, orb.
 
 /** One utterance of VAD probabilities: pre-roll silence, speech, trailing silence. */

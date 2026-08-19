@@ -533,13 +533,13 @@ describe('voice session', () => {
 
   it('surfaces a failed transcriber as an error and disarms', async () => {
     const transcriber = new FakeTranscriber(['x'])
-    transcriber.rejectWith = new Error('whisper model missing')
+    transcriber.rejectWith = new Error('stt model missing')
     const harness = await createSession({ transcriber })
 
     harness.session.arm()
     await harness.speakUtterance()
 
-    expect(harness.errors).toEqual(['whisper model missing'])
+    expect(harness.errors).toEqual(['stt model missing'])
     expect(harness.states.at(-1)).toEqual({ listening: false, reason: null, monitoring: false, transcribing: false })
   })
 
@@ -911,15 +911,15 @@ describe('voice session — perf spans (#27)', () => {
 
   it('still logs the stt span with the error when transcription fails', async () => {
     const transcriber = new FakeTranscriber(['x'])
-    transcriber.rejectWith = new Error('whisper model missing')
+    transcriber.rejectWith = new Error('stt model missing')
     const harness = await createSession({ transcriber, perf: {} })
 
     harness.session.arm()
     await harness.speakUtterance()
 
     expect(harness.perf.map((record) => record.stage)).toEqual(['stt'])
-    expect(harness.perf[0].detail).toMatchObject({ error: 'whisper model missing', truncated: false })
-    expect(harness.errors).toEqual(['whisper model missing'])
+    expect(harness.perf[0].detail).toMatchObject({ error: 'stt model missing', truncated: false })
+    expect(harness.errors).toEqual(['stt model missing'])
   })
 
   it('keeps the wake-to-transcript clock running through an empty transcript', async () => {
@@ -1234,13 +1234,13 @@ describe('voice session — utterance audio dumps (#34)', () => {
 
   it('still dumps the utterance when transcription fails — the audio survives for offline A/B', async () => {
     const transcriber = new FakeTranscriber(['x'])
-    transcriber.rejectWith = new Error('whisper model missing')
+    transcriber.rejectWith = new Error('stt model missing')
     const harness = await createSession({ transcriber, audioDump: true })
 
     harness.session.arm()
     await harness.speakUtterance()
 
     expect(harness.dumps).toHaveLength(1)
-    expect(harness.errors).toEqual(['whisper model missing'])
+    expect(harness.errors).toEqual(['stt model missing'])
   })
 })

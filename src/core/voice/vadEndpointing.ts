@@ -22,7 +22,7 @@ export interface UtteranceEndpointerConfig {
   endFrames: number
   /** Audio kept before the start trigger so the first syllable survives. */
   startPaddingMs: number
-  /** Trailing silence kept after the end trigger (whisper tolerates a little). */
+  /** Trailing silence kept after the end trigger (transcribers tolerate a little). */
   endPaddingMs: number
   /** Hard cap: an utterance never grows past this, even mid-speech. */
   maxUtteranceMs: number

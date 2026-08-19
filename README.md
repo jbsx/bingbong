@@ -36,26 +36,30 @@ special deployments.
 T9 adds the **ears**: `Ctrl/Cmd+Space` arms
 listening; mic audio (the settings-page mic, preferring the C920 over the OS
 default) streams from an AudioWorklet at 16 kHz mono, Silero VAD endpoints
-the utterance, and smart-whisper transcribes it into the same command
-pipeline as the text box. Confirmation prompts open a 12 s voice window once
-the spoken prompt finishes — "yes"/"no" resolves it, the on-screen buttons
-stay, and the 60 s auto-deny still backs everything. STT latency on the
-5600G is measured and the base.en decision recorded in
-`docs/stt-latency.md`.
+the utterance, and Moonshine Base transcribes it — streaming: partial
+passes run over the accumulated speech while you talk, one final pass over
+the complete utterance lands ~immediately at the endpoint (the engine swap
+and its evidence: `docs/moonshine-ab.md`). Transcripts enter the same
+command pipeline as the text box. Confirmation prompts open a 12 s voice
+window once the spoken prompt finishes — "yes"/"no" resolves it, the
+on-screen buttons stay, and the 60 s auto-deny still backs everything.
 
 ## Voice models
 
-The first voice command needs two model files in `<userData>/models`
-(`~/.config/bingbong/models` on Linux — set `BINGBONG_VAD_MODEL` /
-`BINGBONG_WHISPER_MODEL` to override):
+The first voice command needs the Silero VAD model in `<userData>/models`
+(`~/.config/bingbong/models` on Linux — set `BINGBONG_VAD_MODEL` to
+override):
 
 ```sh
 mkdir -p ~/.config/bingbong/models
 curl -L -o ~/.config/bingbong/models/silero_vad.onnx \
   https://github.com/snakers4/silero-vad/raw/master/src/silero_vad/data/silero_vad.onnx
-curl -L -o ~/.config/bingbong/models/ggml-base.en.bin \
-  https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.en.bin
 ```
+
+Moonshine Base (STT) is app-managed: the int8 ONNX export (~63 MB) fetches
+automatically into `~/.config/bingbong/models/moonshine-base` on first
+launch, in the background; a fetch failure surfaces as an STT error on the
+first spoken command, not a startup crash.
 
 `BINGBONG_VAD_SCRIPT` / `BINGBONG_STT_SCRIPT` (JSON arrays of probabilities /
 transcripts) replace the real engines — used by the e2e suite and keyless
@@ -121,20 +125,10 @@ BINGBONG_AUDIO_DUMP=1                  # dump each utterance as a WAV for offlin
 ```
 
 With this set, every detected utterance is written to `audio-dumps/` under
-the profile as a 16 kHz mono WAV named by timestamp and sequence — the same
-artifact shape `scripts/measure-stt-latency.mjs` consumes, so STT changes
-can be replayed against real utterances. Off by default: a benchmarking
-tap, not an always-on recorder.
-
-Replay those dumps through both STT engines for the Moonshine go/no-go
-(#39, evidence in `docs/moonshine-ab.md`):
-
-```sh
-pnpm stt:ab   # fetches Moonshine Base (quantized ONNX) on first run
-```
-
-It prints per-utterance transcript pairs, per-file latency for whisper.cpp
-and Moonshine Base, and the latency distribution summary.
+the profile as a 16 kHz mono WAV named by timestamp and sequence — the
+artifact shape offline STT benchmarks replay, so engine changes can be
+checked against real utterances. Off by default: a benchmarking tap, not an
+always-on recorder.
 
 ## Try it
 
@@ -162,8 +156,8 @@ resolutions, speak/display payloads, and errors.
 ## Commands
 
 ```sh
-pnpm install    # install (native deps: onnxruntime-node + smart-whisper build via node-gyp;
-                #   with gcc ≥ 14 export CFLAGS=-D_GNU_SOURCE CXXFLAGS=-D_GNU_SOURCE first)
+pnpm install    # install (native dep: onnxruntime-node; with gcc ≥ 14 export
+                #   CFLAGS=-D_GNU_SOURCE CXXFLAGS=-D_GNU_SOURCE first)
 pnpm dev        # launch the app in dev mode
 pnpm test       # run the test suite
 pnpm typecheck  # tsc over main/preload/core + renderer
@@ -177,7 +171,8 @@ pnpm build      # production build to out/
 src/
   main/        Electron main process
     agent/     model-routed OpenAI client, orchestrator prompt, pipeline glue, IPC
-    voice/     Silero VAD + smart-whisper adapters, voice IPC (T9)
+    voice/     Silero VAD adapter, scripted doubles, voice IPC (T9)
+    moonshine/ streaming Moonshine Base STT engine + model fetch (#41)
   preload/     contextBridge preload
   renderer/    React dashboard (command box, transcript, status orb, browser pane, mic worklet)
   core/

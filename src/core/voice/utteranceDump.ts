@@ -15,7 +15,7 @@ export function audioDumpEnabled(env: Record<string, string | undefined>): boole
   return envFlagEnabled(env, AUDIO_DUMP_ENV)
 }
 
-/** The voice pipeline's one and only audio rate: whisper/Silero territory. */
+/** The voice pipeline's one and only audio rate: Silero/Moonshine territory. */
 export const WAV_SAMPLE_RATE = 16_000
 
 /**

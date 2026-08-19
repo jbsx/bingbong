@@ -1,4 +1,4 @@
-/** Mono 16 kHz PCM in, transcript text out (whisper in main). */
+/** Mono 16 kHz PCM in, transcript text out (Moonshine in main). */
 export interface Transcriber {
   /**
    * Streaming transcription (#40): the voice session begins a capture when

@@ -1,9 +1,10 @@
 # Moonshine Base vs whisper.cpp — go/no-go evidence (#39)
 
 Measured 2026-08-19 on the target machine (Ryzen 5 5600G, 12 SMT threads,
-CPU-only) with `pnpm stt:ab` — the A/B harness replays utterance-dump WAVs
-(`BINGBONG_AUDIO_DUMP=1` → `<userData>/audio-dumps`, #34) through both engines
-and prints transcript pairs plus per-file latency.
+CPU-only) with the #39 A/B harness (`pnpm stt:ab`, since removed with the
+whisper engine in #41) — it replayed utterance-dump WAVs
+(`BINGBONG_AUDIO_DUMP=1` → `<userData>/audio-dumps`, #34) through both
+engines and printed transcript pairs plus per-file latency.
 
 Engines, both greedy and warm:
 
@@ -64,15 +65,10 @@ the wake/barge-in path, not the spoken-command path.
 ## The user's own voice
 
 No `BINGBONG_AUDIO_DUMP=1` captures existed on this machine at write time.
-To run the real decision material:
-
-```sh
-BINGBONG_AUDIO_DUMP=1 pnpm dev   # speak a day's worth of real commands
-pnpm stt:ab                       # replays ~/.config/bingbong/audio-dumps
-```
-
-Models fetch automatically into `~/.config/bingbong/models/moonshine-base`
-on first run (the `models/wake` subdir convention).
+Utterance dumps still work (`BINGBONG_AUDIO_DUMP=1 pnpm dev`, #34) for
+replaying real commands offline against the shipped Moonshine engine —
+the models live in `~/.config/bingbong/models/moonshine-base`
+(auto-fetched, the `models/wake` subdir convention).
 
 ## Go / no-go
 
@@ -81,8 +77,13 @@ matching accuracy on natural speech is the whole point of #35's engine swap;
 6.5 s of dead air after every command is what makes the current pipeline feel
 broken. No escalation to Moonshine Small on accuracy grounds (Base matches
 whisper base.en on the material tested); Small remains available if #40/#41
-profiling wants the headroom. The synthetic-voice failure mode goes on the
+profiling wants the headroom. The synthetic-voice failure mode went on the
 #41 acceptance list: barge-in robustness needs its own test (either
 endpointing keeps TTS playback out of STT, or Moonshine's empty-transcript
 on synthetic audio degrades to a harmless no-op — it cannot, however, be
 allowed to swallow a real spoken command, which today's data does not show).
+
+Shipped in #41: whisper.cpp and the `BINGBONG_WHISPER_MODEL` /
+`BINGBONG_STT_PROMPT` knobs are gone; the streaming engine lives in
+`src/main/moonshine/` (unit tests at the Transcriber port with the fake
+runtime, real-models test with the `jfk.wav` fixture).
