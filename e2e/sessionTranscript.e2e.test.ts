@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { startHarness, type Harness } from './harness'
 import { startFixtureServer, type FixtureServer } from './fixtureServer'
 import { sleep } from './waitFor'
-import { submitAndAwaitAnswer, transcriptText } from './transcript'
+import { submitAndAwaitAnswer, feedText } from './feed'
 import type { AssistantTurn } from '../src/core/ports/llm'
 
 // Session-scoped transcript (spec #25): the dashboard shows only the current
@@ -44,21 +44,21 @@ describe('session-scoped transcript e2e', () => {
 
     // Within the window the session continues: the transcript accumulates.
     await submitAndAwaitAnswer(harness, 'second command', 'ANSWER TWO')
-    const continued = await transcriptText(harness)
+    const continued = await feedText(harness)
     expect(continued).toContain('ANSWER ONE')
     expect(continued).toContain('ANSWER TWO')
 
     // Lazy clear: the window lapsing on its own never wipes the view — the
     // old answer stays readable until the next command starts a new session.
     await sleep(WINDOW_MS + 750)
-    const afterLapse = await transcriptText(harness)
+    const afterLapse = await feedText(harness)
     expect(afterLapse).toContain('ANSWER ONE')
     expect(afterLapse).toContain('ANSWER TWO')
 
     // The post-window command is the boundary: the old session's entries are
     // never rendered again, and the new session starts from an empty view.
     await submitAndAwaitAnswer(harness, 'third command', 'ANSWER THREE')
-    const fresh = await transcriptText(harness)
+    const fresh = await feedText(harness)
     expect(fresh).toContain('third command')
     expect(fresh).toContain('ANSWER THREE')
     expect(fresh).not.toContain('first command')

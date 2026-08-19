@@ -1,15 +1,17 @@
-import type { RecordedEntry, TranscriptEvent } from './historyStore'
+import type { RecordedEntry } from './historyStore'
 
-function fingerprint(entry: TranscriptEvent): string {
+function fingerprint(entry: { at: number; kind: string; text: string }): string {
   return `${entry.at}\0${entry.kind}\0${entry.text}`
 }
 
 /**
  * Remove live events already contained in an IPC history snapshot. The count
  * map preserves legitimate repeated lines while closing the startup race
- * between event subscription and asynchronous hydration.
+ * between event subscription and asynchronous hydration. Structural over
+ * (at, kind, text) so both transcript entries and the feed's richer entry
+ * shape (whose kind union adds never-recorded detail kinds) can ride it.
  */
-export function filterHydratedDuplicates<T extends TranscriptEvent>(
+export function filterHydratedDuplicates<T extends { at: number; kind: string; text: string }>(
   recorded: readonly RecordedEntry[],
   live: readonly T[],
 ): T[] {

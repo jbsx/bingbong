@@ -78,7 +78,7 @@ describe('voice e2e', () => {
       await waitFor(
         async () => {
           const transcript = await harness.dashboardEval<string>(
-            `Array.from(document.querySelectorAll('.transcript-entry')).map((el) => el.textContent).join('\\n')`,
+            `Array.from(document.querySelectorAll('.feed-entry')).map((el) => el.textContent).join('\\n')`,
           )
           return transcript.includes('open the fixture page') && transcript.includes('Opened the fixture page.')
             ? transcript
@@ -132,7 +132,7 @@ describe('voice e2e', () => {
       await waitFor(
         async () => {
           const transcript = await harness.dashboardEval<string>(
-            `Array.from(document.querySelectorAll('.transcript-entry')).map((el) => el.textContent).join('\\n')`,
+            `Array.from(document.querySelectorAll('.feed-entry')).map((el) => el.textContent).join('\\n')`,
           )
           return transcript.includes('heard "yeah" (answered)') && transcript.includes('Form sent.')
             ? transcript
@@ -191,7 +191,7 @@ describe('voice e2e', () => {
         result: 'Paris, France',
       }))
       const transcript = await harness.dashboardEval<string>(
-        `Array.from(document.querySelectorAll('.transcript-entry')).map((el) => el.textContent).join('\\n')`,
+        `Array.from(document.querySelectorAll('.feed-entry')).map((el) => el.textContent).join('\\n')`,
       )
       expect(transcript).toContain('heard "Paris, France" (your answer)')
       expect(await harness.dashboardEval<boolean>(`!!document.querySelector('.ask-card')`)).toBe(false)
@@ -284,7 +284,7 @@ describe('voice e2e', () => {
       await waitFor(
         async () => {
           const transcript = await harness.dashboardEval<string>(
-            `Array.from(document.querySelectorAll('.transcript-entry')).map((el) => el.textContent).join('\\n')`,
+            `Array.from(document.querySelectorAll('.feed-entry')).map((el) => el.textContent).join('\\n')`,
           )
           return transcript.includes('Done.') ? transcript : undefined
         },

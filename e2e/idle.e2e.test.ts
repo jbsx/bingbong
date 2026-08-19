@@ -60,7 +60,7 @@ describe('idle screen e2e', () => {
     expect(weather).toBe('Set a weather city in settings')
 
     const transcript = await harness.dashboardEval<string>(
-      `document.querySelector('.idle-transcript')?.textContent ?? ''`,
+      `document.querySelector('.idle-feed')?.textContent ?? ''`,
     )
     expect(transcript).toContain('Nothing yet')
 

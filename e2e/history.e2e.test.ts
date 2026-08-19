@@ -8,9 +8,10 @@ import { startFixtureServer, type FixtureServer } from './fixtureServer'
 import { waitFor } from './waitFor'
 import type { AssistantTurn } from '../src/core/ports/llm'
 
-// Spec #1, Persistence: transcript and agent-run history live in SQLite under
-// userData and survive restarts. The dashboard itself boots stateless — no
-// transcript hydration — but the persisted run history remains queryable.
+// Spec #1, Persistence: transcript and agent-run history live in SQLite
+// under userData and survive restarts. The activity feed (#44) hydrates
+// after a restart — stage outcome entries only, never detail lines (they
+// are never recorded) — and the persisted run history remains queryable.
 
 function scriptedTurns(fixtureUrl: string): AssistantTurn[] {
   return [
@@ -37,7 +38,7 @@ describe('history persistence e2e', () => {
     if (userDataDir) await rm(userDataDir, { recursive: true, force: true })
   })
 
-  it('persists run history across a relaunch while the transcript boots empty', async () => {
+  it('persists run history across a relaunch and rehydrates feed outcomes only', async () => {
     const env = { BINGBONG_LLM_SCRIPT: JSON.stringify(scriptedTurns(fixture.url('/'))) }
 
     const first = await startHarness({ fixture, userDataDir, env })
@@ -48,7 +49,7 @@ describe('history persistence e2e', () => {
     await waitFor(
       async () => {
         const speak = await first.dashboardEval<string>(
-          `document.querySelector('.transcript-entry--speak')?.textContent ?? ''`,
+          `document.querySelector('.feed-entry--speak')?.textContent ?? ''`,
         )
         return speak.includes('Opened the fixture page.') ? speak : undefined
       },
@@ -62,17 +63,29 @@ describe('history persistence e2e', () => {
 
     const second = await startHarness({ fixture, userDataDir, env })
     try {
-      // Stateless boot: the previous run's transcript is NOT rehydrated.
       await waitFor(
         () => second.dashboardEval<boolean>(`!!document.querySelector('.status-orb--idle')`),
         { timeoutMs: 20000, intervalMs: 250 },
       )
-      const transcript = await second.dashboardEval<string>(
-        `Array.from(document.querySelectorAll('.transcript-entry')).map((el) => el.textContent).join('\\n')`,
+      // Restart hydration (#44): the feed seeds the previous run's stage
+      // outcomes from history — command, tool line, answer — while detail
+      // lines (retries and friends) are never recorded, so never rehydrate.
+      const fixtureUrl = fixture.url('/')
+      await waitFor(
+        async () => {
+          const hydrated = await second.dashboardEval<string>(
+            `Array.from(document.querySelectorAll('.feed-entry')).map((el) => el.textContent).join('\\n')`,
+          )
+          return hydrated.includes('open the fixture page') &&
+            hydrated.includes('Opened the fixture page.') &&
+            hydrated.includes(fixtureUrl)
+            ? hydrated
+            : undefined
+        },
+        { timeoutMs: 20000, intervalMs: 250 },
       )
-      expect(transcript).not.toContain('open the fixture page')
 
-      // …but the run history survived the relaunch, its run row carrying the
+      // …and the run history survived the relaunch, its run row carrying the
       // turn id the pipeline minted for the text-box command (#28).
       const runs = await second.dashboardEval<Array<{ command: string; outcome: string; turnId: string | null }>>(
         `window.bingbong.history.recentRuns()`,
@@ -83,17 +96,19 @@ describe('history persistence e2e', () => {
         turnId: expect.any(String),
       })
 
-      // A fresh run starts a clean transcript.
+      // A fresh run appends to the hydrated view: the first command after a
+      // restart is a fresh session store's first-ever command, so no session
+      // boundary fires (ADR 0003) and the outcomes stay readable.
       const submittedAgain = await second.dashboardEval<string>(commandBoxScript('open it again'))
       expect(submittedAgain).toBe('submitted')
       await waitFor(
         () => second.dashboardEval<boolean>(`!!document.querySelector('.status-orb--idle')`),
         { timeoutMs: 20000, intervalMs: 250 },
       )
-      const lines = await second.dashboardEval<string[]>(
-        `Array.from(document.querySelectorAll('.transcript-entry--command')).map((el) => el.textContent)`,
+      const commands = await second.dashboardEval<string[]>(
+        `Array.from(document.querySelectorAll('.feed-entry--command .feed-text')).map((el) => el.textContent)`,
       )
-      expect(lines).toEqual(['you open it again'])
+      expect(commands).toEqual(['you open the fixture page', 'you open it again'])
     } finally {
       await second.quit()
     }

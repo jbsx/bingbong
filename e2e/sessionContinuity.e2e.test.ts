@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { startHarness, type Harness } from './harness'
 import { startFixtureServer, type FixtureServer } from './fixtureServer'
-import { submitAndAwaitAnswer, transcriptDisplays } from './transcript'
+import { submitAndAwaitAnswer, feedDisplays } from './feed'
 import type { AssistantTurn } from '../src/core/ports/llm'
 
 // Session continuity (spec #23): a follow-up command within the 10-minute
@@ -42,12 +42,12 @@ describe('session continuity e2e', () => {
   it('replays the prior exchange to the orchestrator for a follow-up command', async () => {
     // Wait for each run's own answer marker, not merely the idle orb: the
     // orb's first poll can race the run's start and let the next submit hit
-    // a disabled input (see e2e/transcript.ts).
+    // a disabled input (see e2e/feed.ts).
     await submitAndAwaitAnswer(harness, 'find a pizza place', 'Pizza A on Main St')
 
     await submitAndAwaitAnswer(harness, 'what about the second one?', 'RESOLVED AGAINST:')
 
-    const echoed = await transcriptDisplays(harness)
+    const echoed = await feedDisplays(harness)
     expect(echoed).toContain('[user] find a pizza place')
     expect(echoed).toContain('[assistant] 1. Pizza A on Main St')
   })

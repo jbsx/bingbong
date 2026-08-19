@@ -3,7 +3,7 @@ import { approveConfirmationScript, commandBoxScript } from './scripts'
 import { startHarness, type Harness } from './harness'
 import { startFixtureServer, type FixtureServer } from './fixtureServer'
 import { waitFor } from './waitFor'
-import { transcriptText } from './transcript'
+import { feedText } from './feed'
 import type { AssistantTurn } from '../src/core/ports/llm'
 
 // Risk gate e2e: real Electron app, real CDP pane, scripted LLM. The /risky
@@ -14,7 +14,7 @@ import type { AssistantTurn } from '../src/core/ports/llm'
 async function waitForTranscript(harness: Harness, expected: string): Promise<void> {
   await waitFor(
     async () => {
-      const transcript = await transcriptText(harness)
+      const transcript = await feedText(harness)
       return transcript.includes(expected) ? transcript : undefined
     },
     { timeoutMs: 20000, intervalMs: 250 },
@@ -51,7 +51,7 @@ describe('risk gate e2e', () => {
 
       await waitFor(
         async () => {
-          const text = await transcriptText(harness)
+          const text = await feedText(harness)
           return text.includes('credential fields are never filled') && text.includes('payments are never submitted')
             ? text
             : undefined

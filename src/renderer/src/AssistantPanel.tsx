@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from 'react'
-import type { Assistant, PendingAsk, PendingConfirmation, OrbStatus, TranscriptEntry } from './useAssistant'
+import { useEffect, useState } from 'react'
+import type { Assistant, PendingAsk, PendingConfirmation, OrbStatus } from './useAssistant'
 import { describeRunProgress, type RunProgress } from '../../core/pipeline/runProgress'
 
 function deadlineText(expiresAt: number | null, now: number): string {
@@ -152,60 +152,6 @@ export function AskCard({
   )
 }
 
-export function TranscriptLine({ entry }: { entry: TranscriptEntry }) {
-  switch (entry.kind) {
-    case 'command':
-      return (
-        <p className="transcript-entry transcript-entry--command">
-          <span className="transcript-speaker">you</span> {entry.text}
-        </p>
-      )
-    case 'tool':
-      return <p className="transcript-entry transcript-entry--tool">{entry.text}</p>
-    case 'speak':
-      return (
-        <p className="transcript-entry transcript-entry--speak">
-          <span className="transcript-speaker">bing bong</span> {entry.text}
-        </p>
-      )
-    case 'display':
-      return <p className="transcript-entry transcript-entry--display">{entry.text}</p>
-    case 'voice':
-      return <p className="transcript-entry transcript-entry--voice">{entry.text}</p>
-    case 'error': {
-      const summary = entry.text.split('\n', 1)[0]
-      const trimmed = summary.length > 140 ? `${summary.slice(0, 140)}…` : summary
-      if (trimmed === entry.text) {
-        return <p className="transcript-entry transcript-entry--error">{entry.text}</p>
-      }
-      return (
-        <details className="transcript-entry transcript-entry--error">
-          <summary>{trimmed}</summary>
-          <pre className="transcript-error-detail">{entry.text}</pre>
-        </details>
-      )
-    }
-  }
-}
-
-export function Transcript({ entries }: { entries: TranscriptEntry[] }) {
-  const listRef = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    const list = listRef.current
-    if (list) list.scrollTop = list.scrollHeight
-  }, [entries])
-
-  return (
-    <div className="transcript" ref={listRef} aria-label="transcript" aria-live="polite">
-      {entries.length === 0 ? <p className="transcript-empty">Say or type a command to begin.</p> : null}
-      {entries.map((entry) => (
-        <TranscriptLine key={entry.id} entry={entry} />
-      ))}
-    </div>
-  )
-}
-
 export function AssistantPanel({ assistant }: { assistant: Assistant }) {
   const active = assistant.status !== 'idle' && assistant.status !== 'cancelled'
   return (
@@ -222,7 +168,6 @@ export function AssistantPanel({ assistant }: { assistant: Assistant }) {
         <ConfirmationCard pending={assistant.pendingConfirmation} onResolve={assistant.resolveConfirmation} />
       ) : null}
       {assistant.pendingAsk ? <AskCard pending={assistant.pendingAsk} onAnswer={assistant.resolveAsk} /> : null}
-      <Transcript entries={assistant.entries} />
     </div>
   )
 }

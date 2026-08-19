@@ -79,7 +79,7 @@ describe('download routing e2e', () => {
     await waitFor(
       async () => {
         const transcript = await harness.dashboardEval<string>(
-          `Array.from(document.querySelectorAll('.transcript-entry')).map((el) => el.textContent).join('\\n')`,
+          `Array.from(document.querySelectorAll('.feed-entry')).map((el) => el.textContent).join('\\n')`,
         )
         return transcript.includes('Download complete: probe.bin') && transcript.includes(downloadsDir)
           ? transcript

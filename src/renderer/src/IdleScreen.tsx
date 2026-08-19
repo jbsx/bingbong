@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
-import type { TranscriptEntry } from './useAssistant'
-import { TranscriptLine } from './AssistantPanel'
+import type { FeedEntry } from '../../core/history/feedProjection'
+import { FeedLine } from './ActivityFeed'
 import { formatWeather } from '../../core/weather/weather'
 import type { WeatherState } from './useWeather'
 
@@ -29,11 +29,11 @@ function weatherLine(weather: WeatherState): string {
 
 /**
  * The at-rest screen (T11): big clock, weather for the configured city, and
- * the recent transcript — the smart-display half of the appliance. Mounts in
+ * the recent activity — the smart-display half of the appliance. Mounts in
  * place of the whole dashboard after the inactivity timeout; any activity
  * (input, pipeline or voice event) unmounts it.
  */
-export function IdleScreen({ entries, weather }: { entries: TranscriptEntry[]; weather: WeatherState }) {
+export function IdleScreen({ entries, weather }: { entries: FeedEntry[]; weather: WeatherState }) {
   const [now, setNow] = useState(() => new Date())
 
   useEffect(() => {
@@ -54,11 +54,11 @@ export function IdleScreen({ entries, weather }: { entries: TranscriptEntry[]; w
           {weatherLine(weather)}
         </p>
       </div>
-      <div className="idle-transcript" aria-label="recent transcript">
+      <div className="idle-feed" aria-label="recent activity">
         {recent.length === 0 ? (
-          <p className="transcript-empty">Nothing yet — say the wake word or type a command.</p>
+          <p className="feed-empty">Nothing yet — say the wake word or type a command.</p>
         ) : (
-          recent.map((entry) => <TranscriptLine key={entry.id} entry={entry} />)
+          recent.map((entry) => <FeedLine key={entry.id} entry={entry} />)
         )}
       </div>
     </div>

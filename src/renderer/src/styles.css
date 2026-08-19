@@ -125,6 +125,151 @@ body {
   min-height: 0;
 }
 
+/* The workspace (#44): browsing (or settings) beside the right-edge
+   activity feed panel — observation owns the right edge, interaction stays
+   in the footer. */
+.dashboard-workspace {
+  display: flex;
+  gap: 16px;
+  height: 100%;
+  min-height: 0;
+}
+
+.dashboard-workspace > .dashboard-browsing,
+.dashboard-workspace > .settings-page,
+.dashboard-workspace > .settings-loading {
+  flex: 1;
+  min-width: 0;
+}
+
+.feed-panel {
+  flex: 0 0 340px;
+  min-height: 0;
+  border: 1px solid var(--edge);
+  border-radius: 12px;
+  background: var(--panel);
+  overflow: hidden;
+}
+
+.feed {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+.feed-header {
+  flex: none;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--edge);
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+}
+
+.feed-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 12px;
+}
+
+.feed-empty {
+  margin: 0;
+  color: var(--muted);
+  font-style: italic;
+}
+
+.feed-entry {
+  display: flex;
+  gap: 8px;
+  margin: 0;
+  line-height: 1.35;
+}
+
+.feed-entry summary {
+  display: flex;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.feed-time {
+  flex: none;
+  color: var(--muted);
+  opacity: 0.7;
+  font-size: 0.7rem;
+  font-variant-numeric: tabular-nums;
+  padding-top: 2px;
+}
+
+.feed-text {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.feed-speaker {
+  font-weight: 600;
+  margin-right: 4px;
+}
+
+.feed-entry--command .feed-text {
+  color: var(--text);
+}
+
+.feed-entry--command .feed-speaker {
+  color: var(--accent);
+}
+
+.feed-entry--tool .feed-text {
+  color: var(--muted);
+  font-family: ui-monospace, monospace;
+  font-size: 0.8rem;
+}
+
+.feed-entry--speak .feed-text {
+  color: var(--text);
+}
+
+.feed-entry--speak .feed-speaker {
+  color: #5fd38a;
+}
+
+.feed-entry--display .feed-text {
+  color: var(--muted);
+}
+
+.feed-entry--voice .feed-text {
+  color: #b48bff;
+  font-size: 0.85rem;
+}
+
+/* Retry lines (#44): ephemeral detail — quiet, so outcomes read first. */
+.feed-entry--retry .feed-text {
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-style: italic;
+}
+
+.feed-entry--error .feed-text {
+  color: #ff7a7a;
+}
+
+.feed-error-detail {
+  margin: 4px 0 0;
+  padding: 6px 8px;
+  border-left: 2px solid #ff7a7a;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: ui-monospace, monospace;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
 .browser-pane {
   display: flex;
   flex-direction: column;
@@ -225,7 +370,6 @@ body {
   flex-direction: column;
   gap: 8px;
   min-height: 0;
-  max-height: 34vh;
 }
 
 .command-form {
@@ -369,80 +513,6 @@ body {
 .ask-controls button:disabled {
   opacity: 0.55;
   cursor: default;
-}
-
-.transcript {
-  min-height: 40px;
-  overflow-y: auto;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.transcript-empty {
-  margin: 0;
-  color: var(--muted);
-  font-style: italic;
-}
-
-.transcript-entry {
-  margin: 0;
-  line-height: 1.35;
-}
-
-.transcript-speaker {
-  font-weight: 600;
-  margin-right: 4px;
-}
-
-.transcript-entry--command {
-  color: var(--text);
-}
-
-.transcript-entry--command .transcript-speaker {
-  color: var(--accent);
-}
-
-.transcript-entry--tool {
-  color: var(--muted);
-  font-family: ui-monospace, monospace;
-  font-size: 0.8rem;
-}
-
-.transcript-entry--speak {
-  color: var(--text);
-}
-
-.transcript-entry--speak .transcript-speaker {
-  color: #5fd38a;
-}
-
-.transcript-entry--display {
-  color: var(--muted);
-}
-
-.transcript-entry--voice {
-  color: #b48bff;
-  font-size: 0.85rem;
-}
-
-.transcript-entry--error {
-  color: #ff7a7a;
-}
-
-details.transcript-entry--error summary {
-  cursor: pointer;
-}
-
-.transcript-error-detail {
-  margin: 4px 0 0;
-  padding: 6px 8px;
-  border-left: 2px solid #ff7a7a;
-  white-space: pre-wrap;
-  word-break: break-word;
-  font-family: ui-monospace, monospace;
-  font-size: 0.8rem;
-  color: var(--muted);
 }
 
 .settings-toggle {
@@ -620,7 +690,7 @@ details.transcript-entry--error summary {
   color: var(--text);
 }
 
-.idle-transcript {
+.idle-feed {
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -643,8 +713,8 @@ details.transcript-entry--error summary {
   display: none;
 }
 
-.dashboard--kiosk .assistant-panel {
-  max-height: 18vh;
+.dashboard--kiosk .feed-panel {
+  flex-basis: 300px;
 }
 
 /* Subagents (T12): live cards above the browser pane — one per agent, with

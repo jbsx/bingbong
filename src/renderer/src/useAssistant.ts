@@ -2,15 +2,10 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import type { PipelineEvent, PipelineStatus, SubagentCard } from '../../core/pipeline/events'
 import type { VoiceHeardEvent } from '../../core/voice/ipcChannels'
 import { describeHeard } from '../../core/voice/heardDisplay'
-import type { TranscriptEvent } from '../../core/history/historyStore'
-import { projectPipelineEvent } from '../../core/history/transcriptProjection'
+import { createFeedProjection, type FeedEntry } from '../../core/history/feedProjection'
 import { createRunProgressTracker, type RunProgress } from '../../core/pipeline/runProgress'
 
 export type OrbStatus = 'idle' | 'listening' | 'transcribing' | PipelineStatus
-
-export interface TranscriptEntry extends TranscriptEvent {
-  id: number
-}
 
 export interface PendingConfirmation {
   confirmationId: string
@@ -28,7 +23,13 @@ export interface PendingAsk {
 
 export interface Assistant {
   status: OrbStatus
-  entries: TranscriptEntry[]
+  /**
+   * The right-edge activity feed (#44): timestamped outcome lines plus
+   * ephemeral detail (retries), folded from the event stream by the pure
+   * feed projection. Session-scoped like the transcript was (ADR 0003);
+   * restart hydrates outcome entries only.
+   */
+  feed: FeedEntry[]
   pendingConfirmation: PendingConfirmation | null
   /** An open ask_user question awaiting a spoken or typed free-text answer. */
   pendingAsk: PendingAsk | null
@@ -44,7 +45,7 @@ export interface Assistant {
   resolveConfirmation(confirmationId: string, approved: boolean): void
   resolveAsk(askId: string, answer: string): void
   abort(): void
-  /** A heard-but-not-a-command transcript (voice yes/no, undecided answers). */
+  /** A heard-but-not-a-command line (voice yes/no, undecided answers). */
   appendVoiceHeard(heard: VoiceHeardEvent): void
   /** Mic/engine failures from the voice half. */
   appendVoiceError(message: string, at?: number): void
@@ -55,23 +56,38 @@ const MAX_AGENT_CARDS = 20
 
 export function useAssistant(): Assistant {
   const [status, setStatus] = useState<OrbStatus>('idle')
-  const [entries, setEntries] = useState<TranscriptEntry[]>([])
+  const [feed, setFeed] = useState<FeedEntry[]>([])
   const [pendingConfirmation, setPendingConfirmation] = useState<PendingConfirmation | null>(null)
   const [pendingAsk, setPendingAsk] = useState<PendingAsk | null>(null)
   const [agents, setAgents] = useState<SubagentCard[]>([])
   const [progress, setProgress] = useState<RunProgress | null>(null)
-  const nextId = useRef(0)
   const lastStatus = useRef<OrbStatus>('idle')
+  const feedProjection = useRef(createFeedProjection())
   const progressTracker = useRef(createRunProgressTracker())
 
-  const append = useCallback((entry: TranscriptEvent) => {
-    setEntries((current) => [...current, { ...entry, id: nextId.current++ }])
+  // Restart hydration (#44): the feed seeds from recorded history — outcome
+  // entries only; detail lines are never recorded, so they never rehydrate.
+  // The projection's dedup closes the race with events that arrive live
+  // while the fetch is in flight; a failed read just boots the feed empty.
+  useEffect(() => {
+    let cancelled = false
+    void window.bingbong.history
+      .recentEntries()
+      .then((recorded) => {
+        if (cancelled) return
+        feedProjection.current.hydrate(recorded)
+        setFeed(feedProjection.current.entries())
+      })
+      .catch(() => {})
+    return () => {
+      cancelled = true
+    }
   }, [])
 
   useEffect(() => {
     return window.bingbong.assistant.onEvent((event: PipelineEvent) => {
-      const projected = projectPipelineEvent(event)
-      if (projected) append(projected)
+      feedProjection.current.onEvent(event)
+      setFeed(feedProjection.current.entries())
       progressTracker.current.onEvent(event)
       setProgress(progressTracker.current.current())
       switch (event.type) {
@@ -138,15 +154,12 @@ export function useAssistant(): Assistant {
           setPendingAsk(null)
           return
         case 'session_started':
-          // Session-scoped transcript (spec #25): a new session began — the
-          // window lapsed before this command, or the model invoked
-          // new_session. The view clears lazily, only at this moment; older
-          // sessions are never rendered again (no dividers).
-          setEntries([])
+          // Session-scoped feed (ADR 0003): the projection cleared on the
+          // event itself — same lazy-clear semantics the transcript had.
           return
       }
     })
-  }, [append])
+  }, [])
 
   const submit = useCallback(
     (text: string) => {
@@ -175,12 +188,14 @@ export function useAssistant(): Assistant {
     // Commands are echoed by the pipeline itself; only answers and undecided
     // words land here.
     if (heard.routed === 'command') return
-    append({ kind: 'voice', text: describeHeard(heard), at: heard.at ?? Date.now() })
-  }, [append])
+    feedProjection.current.append({ kind: 'voice', text: describeHeard(heard), at: heard.at ?? Date.now() })
+    setFeed(feedProjection.current.entries())
+  }, [])
 
   const appendVoiceError = useCallback((message: string, at = Date.now()) => {
-    append({ kind: 'error', text: `voice: ${message}`, at })
-  }, [append])
+    feedProjection.current.append({ kind: 'error', text: `voice: ${message}`, at })
+    setFeed(feedProjection.current.entries())
+  }, [])
 
-  return { status, entries, pendingConfirmation, pendingAsk, agents, progress, submit, resolveConfirmation, resolveAsk, abort, appendVoiceHeard, appendVoiceError }
+  return { status, feed, pendingConfirmation, pendingAsk, agents, progress, submit, resolveConfirmation, resolveAsk, abort, appendVoiceHeard, appendVoiceError }
 }

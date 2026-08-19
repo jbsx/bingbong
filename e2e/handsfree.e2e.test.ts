@@ -62,7 +62,7 @@ describe('hands-free loop e2e', () => {
     await waitFor(
       async () => {
         const speak = await harness.dashboardEval<string>(
-          `document.querySelector('.transcript-entry--speak')?.textContent ?? ''`,
+          `document.querySelector('.feed-entry--speak')?.textContent ?? ''`,
         )
         return speak.includes('Opened the fixture page.') ? speak : undefined
       },
@@ -84,7 +84,7 @@ describe('hands-free loop e2e', () => {
           `(() => {
             const screen = document.querySelector('.idle-screen')
             if (!screen) return ''
-            const recent = document.querySelector('.idle-transcript')?.textContent ?? ''
+            const recent = document.querySelector('.idle-feed')?.textContent ?? ''
             return recent
           })()`,
         )

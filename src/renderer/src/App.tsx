@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+import { ActivityFeed } from './ActivityFeed'
 import { BrowserPane } from './BrowserPane'
 import { AssistantPanel, RunHint, StatusOrb } from './AssistantPanel'
 import { IdleScreen } from './IdleScreen'
@@ -62,7 +63,7 @@ export function App() {
   const weather = useWeather(settings?.weather ?? null, showIdle)
 
   if (showIdle) {
-    return <IdleScreen entries={assistant.entries} weather={weather} />
+    return <IdleScreen entries={assistant.feed} weather={weather} />
   }
 
   return (
@@ -105,18 +106,26 @@ export function App() {
       </header>
 
       <main className="dashboard-main">
-        {view === 'settings' ? (
-          settings ? (
-            <SettingsPage settings={settings} onSave={save} onClose={() => setView('dashboard')} />
+        {/* The feed panel (#44) owns observation on the right edge — the
+            same panel in dashboard and kiosk mode; interactions stay in the
+            footer. */}
+        <div className="dashboard-workspace">
+          {view === 'settings' ? (
+            settings ? (
+              <SettingsPage settings={settings} onSave={save} onClose={() => setView('dashboard')} />
+            ) : (
+              <p className="settings-loading">Loading settings…</p>
+            )
           ) : (
-            <p className="settings-loading">Loading settings…</p>
-          )
-        ) : (
-          <div className="dashboard-browsing">
-            <SubagentCards agents={assistant.agents} />
-            <BrowserPane />
-          </div>
-        )}
+            <div className="dashboard-browsing">
+              <SubagentCards agents={assistant.agents} />
+              <BrowserPane />
+            </div>
+          )}
+          <aside className="feed-panel">
+            <ActivityFeed entries={assistant.feed} />
+          </aside>
+        </div>
       </main>
 
       <footer className="dashboard-footer">

@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { startHarness, type Harness } from './harness'
 import { startFixtureServer, type FixtureServer } from './fixtureServer'
 import { waitFor } from './waitFor'
-import { submitAndAwaitAnswer, transcriptDisplays, transcriptText } from './transcript'
+import { submitAndAwaitAnswer, feedDisplays, feedText } from './feed'
 import type { AssistantTurn } from '../src/core/ports/llm'
 
 // Model-invoked session reset (spec #24): "forget all that — different
@@ -36,7 +36,7 @@ const SCRIPT: AssistantTurn[] = [
 async function displayEntry(harness: Harness, marker: string): Promise<string> {
   return waitFor(
     async () => {
-      const entries = await transcriptDisplays(harness)
+      const entries = await feedDisplays(harness)
       return entries.includes(marker) ? entries : undefined
     },
     { timeoutMs: 20000, intervalMs: 250 },
@@ -74,7 +74,7 @@ describe('session reset e2e', () => {
     // so the view cleared at that moment — the old session's commands and
     // answers (including the reset command's own echo) are gone; only the
     // fresh session's tail renders.
-    const visibleText = await transcriptText(harness)
+    const visibleText = await feedText(harness)
     expect(visibleText).toContain('AFTER RESET:')
     expect(visibleText).not.toContain('Pizza A on Main St')
     expect(visibleText).not.toContain('find a pizza place')

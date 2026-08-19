@@ -96,7 +96,7 @@ describe('media verbs e2e', () => {
     await waitFor(
       async () => {
         const spoken = await harness.dashboardEval<string>(
-          `Array.from(document.querySelectorAll('.transcript-entry--speak')).map((el) => el.textContent).join('\\n')`,
+          `Array.from(document.querySelectorAll('.feed-entry--speak')).map((el) => el.textContent).join('\\n')`,
         )
         return spoken.includes('Media keys sent.') ? spoken : undefined
       },

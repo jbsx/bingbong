@@ -40,7 +40,7 @@ async function waitForConfirmation(harness: Harness): Promise<void> {
 
 async function transcript(harness: Harness): Promise<string> {
   return harness.dashboardEval<string>(
-    `Array.from(document.querySelectorAll('.transcript-entry')).map((el) => el.textContent).join('\\n')`,
+    `Array.from(document.querySelectorAll('.feed-entry')).map((el) => el.textContent).join('\\n')`,
   )
 }
 
@@ -54,7 +54,7 @@ async function expectCancelledWithoutSubmit(harness: Harness): Promise<void> {
     const state = await harness.dashboardEval(`({
       orb: document.querySelector('.status-orb')?.className ?? '',
       hint: document.querySelector('.voice-hint')?.textContent ?? '',
-      transcript: Array.from(document.querySelectorAll('.transcript-entry')).map((el) => el.textContent).join('\\n'),
+      transcript: Array.from(document.querySelectorAll('.feed-entry')).map((el) => el.textContent).join('\\n'),
       confirmation: !!document.querySelector('.confirmation-card')
     })`)
     throw new Error(`cancelled status not shown: ${JSON.stringify(state)}`, { cause: error })

@@ -52,7 +52,7 @@ describe('vision grounding e2e', () => {
     )
 
     const tools = await harness.dashboardEval<string>(
-      `Array.from(document.querySelectorAll('.transcript-entry--tool')).map((el) => el.textContent).join('\\n')`,
+      `Array.from(document.querySelectorAll('.feed-entry--tool')).map((el) => el.textContent).join('\\n')`,
     )
     expect(tools).toContain('visually locate "the play button in the video thumbnail"')
     expect(tools).toContain('click [1]')
