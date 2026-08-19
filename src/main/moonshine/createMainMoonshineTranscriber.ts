@@ -4,6 +4,7 @@ import type { Transcriber } from '../../core/ports/stt'
 import { parseMoonshineTokenizer } from '../../core/moonshine/bpeTokenizer'
 import { createMoonshineTranscriber } from './createMoonshineTranscriber'
 import { ensureMoonshineModels, fsMoonshineStore, MOONSHINE_BASE_DIR } from './moonshineModels'
+import { createRetriable } from './retriable'
 
 /**
  * The app's Moonshine wiring (#41): the engine itself stays pure (paths +
@@ -14,18 +15,11 @@ import { ensureMoonshineModels, fsMoonshineStore, MOONSHINE_BASE_DIR } from './m
  * session shows the error and disarms, not a startup crash.
  */
 export function createMainMoonshineTranscriber(deps: { modelsDir: string }): Transcriber {
-  let dirReady: Promise<string> | null = null
-  const ensureDir = (): Promise<string> => {
-    dirReady ??= ensureMoonshineModels(deps.modelsDir, fsMoonshineStore).then(
-      (result) => result.dir,
-      (err: unknown) => {
-        // Un-memoize so the next utterance retries a transient network fail.
-        dirReady = null
-        throw err
-      },
-    )
-    return dirReady
-  }
+  // A failed fetch un-memoizes so the next utterance retries a transient
+  // network failure (retriable, #41 review).
+  const ensureDir = createRetriable(async () =>
+    (await ensureMoonshineModels(deps.modelsDir, fsMoonshineStore)).dir,
+  )
   // Startup prefetch — the rejection is observed (and retried) by the first
   // finish(); this branch only exists to keep it from going unhandled.
   void ensureDir().catch(() => {})

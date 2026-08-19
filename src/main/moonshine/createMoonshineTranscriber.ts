@@ -2,6 +2,7 @@ import type { Transcriber } from '../../core/ports/stt'
 import type { MoonshineVocab } from '../../core/moonshine/bpeTokenizer.ts'
 import { decodeMoonshineTokens } from '../../core/moonshine/bpeTokenizer.ts'
 import { WAV_SAMPLE_RATE } from '../../core/voice/utteranceDump.ts'
+import { createRetriable } from './retriable.ts'
 
 // The shipped STT engine (#41): greedy decode over the official merged ONNX
 // export on the app's onnxruntime-node stack, driven as the streaming
@@ -99,34 +100,18 @@ export function createMoonshineTranscriber(deps: MoonshineTranscriberDeps): Tran
   const partialStrideSamples = deps.partialStrideSamples ?? DEFAULT_PARTIAL_STRIDE_SAMPLES
 
   let ort: OrtModule | null = null
-  let sessionsReady: Promise<{ runtime: OrtModule; encoder: OrtSession; decoder: OrtSession }> | null = null
-  let vocabReady: Promise<MoonshineVocab> | null = null
 
-  function ensureSessions(): Promise<{ runtime: OrtModule; encoder: OrtSession; decoder: OrtSession }> {
-    // A failed create (missing/partial model file) un-memoizes so the next
-    // pass retries — a poisoned memo would break STT until restart.
-    sessionsReady ??= (async () => {
-      ort ??= await loadRuntime()
-      const runtime = ort
-      const encoder = await runtime.InferenceSession.create(deps.encoderPath)
-      const decoder = await runtime.InferenceSession.create(deps.decoderPath)
-      return { runtime, encoder, decoder }
-    })().catch((err: unknown) => {
-      sessionsReady = null
-      throw err
-    })
-    return sessionsReady
-  }
+  // A failed create/load (missing or partial model file) un-memoizes so the
+  // next pass retries — a poisoned memo would break STT until restart.
+  const ensureSessions = createRetriable(async () => {
+    ort ??= await loadRuntime()
+    const runtime = ort
+    const encoder = await runtime.InferenceSession.create(deps.encoderPath)
+    const decoder = await runtime.InferenceSession.create(deps.decoderPath)
+    return { runtime, encoder, decoder }
+  })
 
-  function ensureVocab(): Promise<MoonshineVocab> {
-    // A failed load (missing model, bad tokenizer) un-memoizes so the next
-    // pass retries instead of caching the failure forever.
-    vocabReady ??= deps.loadVocab().catch((err: unknown) => {
-      vocabReady = null
-      throw err
-    })
-    return vocabReady
-  }
+  const ensureVocab = createRetriable(deps.loadVocab)
 
   /** One full greedy pass over the given audio; rejects on engine failure. */
   async function decodePass(pcm: Float32Array): Promise<string> {
