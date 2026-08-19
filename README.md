@@ -126,6 +126,16 @@ artifact shape `scripts/measure-stt-latency.mjs` consumes, so STT changes
 can be replayed against real utterances. Off by default: a benchmarking
 tap, not an always-on recorder.
 
+Replay those dumps through both STT engines for the Moonshine go/no-go
+(#39, evidence in `docs/moonshine-ab.md`):
+
+```sh
+pnpm stt:ab   # fetches Moonshine Base (quantized ONNX) on first run
+```
+
+It prints per-utterance transcript pairs, per-file latency for whisper.cpp
+and Moonshine Base, and the latency distribution summary.
+
 ## Try it
 
 ```sh

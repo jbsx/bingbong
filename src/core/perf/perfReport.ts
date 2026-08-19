@@ -1,4 +1,5 @@
 import type { PerfSpanRecord, StageTally } from './perfTracer'
+import { formatMs, nearestRankPercentile } from '../report/stats.ts'
 
 // The #33 report: per-stage p50/p95/max/count over every span in the log,
 // ranked by p95 — optimization targets ranked by percentiles over many
@@ -6,6 +7,8 @@ import type { PerfSpanRecord, StageTally } from './perfTracer'
 // `summary` event from its turn's raw spans and flags discrepancies (the
 // realistic hazard: a rotated-away file held some of the turn's spans).
 // Pure functions over parsed records; the file half lives at the main seam.
+// Percentile/ms-formatting live in src/core/report/stats.ts, shared with the
+// #39 STT A/B report.
 
 export interface StageStats {
   stage: string
@@ -45,18 +48,6 @@ const SUMMARY_STAGE = 'summary'
  * beyond this is real data loss, not rounding noise. */
 const DURATION_TOLERANCE_MS = 1
 
-/** Nearest-rank percentile: the smallest value at or above the p-th percentile. */
-function percentile(sorted: number[], p: number): number {
-  const n = sorted.length
-  if (n === 0) return 0
-  const rank = Math.min(Math.max(Math.ceil((p / 100) * n), 1), n)
-  return sorted[rank - 1]
-}
-
-function fmtMs(value: number): string {
-  return `${Math.round(value)}ms`
-}
-
 /** Defensively reads a summary record's stage tallies; garbage degrades to {}. */
 function storedStages(record: PerfSpanRecord): Record<string, StageTally> {
   const stages = record.detail?.stages
@@ -78,22 +69,22 @@ function diffSummary(record: PerfSpanRecord, raw: Map<string, StageTally> | unde
   const recomputedTotal = raw ? [...raw.values()].reduce((sum, t) => sum + t.durMs, 0) : 0
   const problems: string[] = []
   if (Math.abs(record.durMs - recomputedTotal) > DURATION_TOLERANCE_MS) {
-    problems.push(`total: stored ${fmtMs(record.durMs)}, recomputed ${fmtMs(recomputedTotal)} from raw spans`)
+    problems.push(`total: stored ${formatMs(record.durMs)}, recomputed ${formatMs(recomputedTotal)} from raw spans`)
   }
   const stageProblems: string[] = []
   for (const [stage, s] of Object.entries(stored)) {
     const r = raw?.get(stage)
     if (r === undefined) {
-      stageProblems.push(`stage ${stage}: stored count ${s.count}, ${fmtMs(s.durMs)}; no raw spans`)
+      stageProblems.push(`stage ${stage}: stored count ${s.count}, ${formatMs(s.durMs)}; no raw spans`)
     } else if (s.count !== r.count || Math.abs(s.durMs - r.durMs) > DURATION_TOLERANCE_MS) {
       stageProblems.push(
-        `stage ${stage}: stored count ${s.count}, ${fmtMs(s.durMs)}; recomputed count ${r.count}, ${fmtMs(r.durMs)}`,
+        `stage ${stage}: stored count ${s.count}, ${formatMs(s.durMs)}; recomputed count ${r.count}, ${formatMs(r.durMs)}`,
       )
     }
   }
   for (const [stage, t] of raw ?? []) {
     if (!(stage in stored)) {
-      stageProblems.push(`stage ${stage}: missing from stored summary; recomputed count ${t.count}, ${fmtMs(t.durMs)}`)
+      stageProblems.push(`stage ${stage}: missing from stored summary; recomputed count ${t.count}, ${formatMs(t.durMs)}`)
     }
   }
   problems.push(...stageProblems.sort())
@@ -135,8 +126,8 @@ export function buildPerfReport(records: readonly PerfSpanRecord[]): PerfReport 
       return {
         stage,
         count: sorted.length,
-        p50: percentile(sorted, 50),
-        p95: percentile(sorted, 95),
+        p50: nearestRankPercentile(sorted, 50),
+        p95: nearestRankPercentile(sorted, 95),
         max: sorted[sorted.length - 1],
         totalMs: sorted.reduce((sum, d) => sum + d, 0),
       }
@@ -175,10 +166,10 @@ export function formatPerfReport(report: PerfReport, context: ReportContext): st
   const rows = report.stageStats.map((s) => [
     s.stage,
     String(s.count),
-    fmtMs(s.p50),
-    fmtMs(s.p95),
-    fmtMs(s.max),
-    fmtMs(s.totalMs),
+    formatMs(s.p50),
+    formatMs(s.p95),
+    formatMs(s.max),
+    formatMs(s.totalMs),
   ])
   const widths = headers.map((h, i) => Math.max(h.length, ...rows.map((row) => row[i].length)))
   lines.push(headers.map((h, i) => (i === 0 ? h.padEnd(widths[0]) : h.padStart(widths[i]))).join('  '))
