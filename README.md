@@ -128,7 +128,8 @@ With this set, every detected utterance is written to `audio-dumps/` under
 the profile as a 16 kHz mono WAV named by timestamp and sequence — the
 artifact shape offline STT benchmarks replay, so engine changes can be
 checked against real utterances. Off by default: a benchmarking tap, not an
-always-on recorder.
+always-on recorder. Replay them (transcripts + endpoint→transcript
+p50/p95) against the shipped Moonshine engine with `pnpm stt:replay`.
 
 ## Try it
 
@@ -163,6 +164,8 @@ pnpm test       # run the test suite
 pnpm typecheck  # tsc over main/preload/core + renderer
 pnpm lint       # eslint
 pnpm build      # production build to out/
+pnpm perf:report  # per-stage latency percentiles from the rotating perf log
+pnpm stt:replay   # replay utterance dumps through the shipped STT engine
 ```
 
 ## Layout

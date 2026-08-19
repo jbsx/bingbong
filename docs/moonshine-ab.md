@@ -1,8 +1,9 @@
 # Moonshine Base vs whisper.cpp — go/no-go evidence (#39)
 
 Measured 2026-08-19 on the target machine (Ryzen 5 5600G, 12 SMT threads,
-CPU-only) with the #39 A/B harness (`pnpm stt:ab`, since removed with the
-whisper engine in #41) — it replayed utterance-dump WAVs
+CPU-only) with the #39 A/B harness (`pnpm stt:ab`, removed with the whisper
+engine in #41; its Moonshine half lives on as `pnpm stt:replay`) — it
+replayed utterance-dump WAVs
 (`BINGBONG_AUDIO_DUMP=1` → `<userData>/audio-dumps`, #34) through both
 engines and printed transcript pairs plus per-file latency.
 
@@ -65,10 +66,12 @@ the wake/barge-in path, not the spoken-command path.
 ## The user's own voice
 
 No `BINGBONG_AUDIO_DUMP=1` captures existed on this machine at write time.
-Utterance dumps still work (`BINGBONG_AUDIO_DUMP=1 pnpm dev`, #34) for
-replaying real commands offline against the shipped Moonshine engine —
-the models live in `~/.config/bingbong/models/moonshine-base`
-(auto-fetched, the `models/wake` subdir convention).
+Utterance dumps still work (`BINGBONG_AUDIO_DUMP=1 pnpm dev`, #34); replay
+them offline against the shipped Moonshine engine with `pnpm stt:replay`
+(real-time-paced pushes, per-file transcripts, endpoint→transcript p50/p95
+in the same units as the live `stt` span) — the models live in
+`~/.config/bingbong/models/moonshine-base` (auto-fetched, the `models/wake`
+subdir convention).
 
 ## Go / no-go
 

@@ -3,8 +3,9 @@
 > Historical record of the whisper.cpp measurements that drove the T9
 > base.en decision. Superseded by #41: whisper.cpp is removed and Moonshine
 > Base streams (see `docs/moonshine-ab.md`); live latency now comes from the
-> `stt` perf span via `pnpm perf:report`. The benchmark script was removed
-> with the engine.
+> `stt` perf span via `pnpm perf:report`, and captured utterances replay
+> offline through the shipped engine via `pnpm stt:replay`. The whisper
+> benchmark script was removed with the engine.
 
 Measured 2026-08-17 on the target machine (Ryzen 5 5600G, 12 SMT threads,
 CPU-only) with the since-removed `scripts/measure-stt-latency.mjs`, 6

@@ -14,7 +14,8 @@
     "test:e2e": "pnpm build && vitest run --config vitest.e2e.config.ts",
     "test:watch": "vitest",
     "cli": "pnpm build && electron . --browser-cli",
-    "perf:report": "node scripts/perf-report.ts"
+    "perf:report": "node scripts/perf-report.ts",
+    "stt:replay": "node scripts/replay-stt.ts"
   },
   "dependencies": {
     "@ghostery/adblocker-electron": "^2.18.2",
