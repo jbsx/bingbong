@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { createCommandPipeline, type CommandPipeline } from './createCommandPipeline'
+import { createSpeechCoordinator } from '../tts/speechCoordinator'
 import { createAskUserTool } from './askUserTools'
 import { createNewSessionTool } from './sessionTools'
 import { createSessionMemory } from '../session/sessionMemory'
@@ -1381,5 +1382,111 @@ describe('command pipeline — tool spans and turn summary (#30)', () => {
     const events = await collectStamped(pipeline, 'spin it', 'turn-voice-1')
 
     expect(events.at(-1)).toMatchObject({ type: 'done', outcome: 'done' })
+  })
+})
+
+// The turn-keying half of the TTS span split (#31): spoken lines of a turn
+// ride the turn id through speakLine into the shared coordinator, so the
+// synthesis/playback spans land keyed by the same adopted id the rest of
+// the turn's spans carry — and the run-end summary composes them.
+describe('command pipeline — spoken-line tts spans (#31)', () => {
+  /** Synth/player doubles over the harness clock: rendering costs `synthMs`, speaking costs `playMs`. */
+  function timedCoordinator(
+    state: { monotonicMs: number },
+    tracer: ReturnType<typeof fakePerfHarness>['tracer'],
+    synthMs: number,
+    playMs: number,
+  ) {
+    return createSpeechCoordinator({
+      synth: {
+        async synthesize() {
+          state.monotonicMs += synthMs
+          return new Uint8Array([1])
+        },
+      },
+      player: {
+        play() {
+          let resolveDone!: () => void
+          const done = new Promise<void>((resolve) => {
+            resolveDone = resolve
+          })
+          // Speaking time passes while done is pending, not inside play().
+          queueMicrotask(() => {
+            state.monotonicMs += playMs
+            resolveDone()
+          })
+          return { done, stop: () => resolveDone() }
+        },
+      },
+      tracer,
+    })
+  }
+
+  it('keys the spoken answer’s synthesis and playback spans to the turn id, composed into the run summary', async () => {
+    const { records, state, tracer } = fakePerfHarness()
+    const pipeline = createCommandPipeline({
+      llm: new ScriptedLlm([{ kind: 'answer', speak: 'Done.', display: 'Done.' }]),
+      tts: timedCoordinator(state, tracer, 100, 400),
+      clock: new FakeClock(),
+      tools: [],
+      tracer,
+    })
+
+    const events = await collectStamped(pipeline, 'hello', 'turn-voice-1')
+
+    expect(events.at(-1)).toMatchObject({ type: 'done', turnId: 'turn-voice-1' })
+    expect(records).toEqual([
+      { turnId: 'turn-voice-1', stage: 'tts-synthesis', durMs: 100, at: 1_700_000_000_000, t: 100 },
+      { turnId: 'turn-voice-1', stage: 'tts-playback', durMs: 400, at: 1_700_000_000_000, t: 500 },
+      {
+        turnId: 'turn-voice-1',
+        stage: 'summary',
+        durMs: 500,
+        at: 1_700_000_000_000,
+        t: 500,
+        detail: { stages: { 'tts-synthesis': { count: 1, durMs: 100 }, 'tts-playback': { count: 1, durMs: 400 } } },
+      },
+    ])
+  })
+
+  it('keys the spoken error line to the turn as well', async () => {
+    const { records, state, tracer } = fakePerfHarness()
+    const pipeline = createCommandPipeline({
+      llm: new ScriptedLlm([]), // runs dry → the failure path speaks a one-liner
+      tts: timedCoordinator(state, tracer, 50, 150),
+      clock: new FakeClock(),
+      tools: [],
+      tracer,
+    })
+
+    await collectStamped(pipeline, 'boom', 'turn-voice-1')
+
+    const lineSpans = records.filter((record) => record.stage !== 'summary')
+    expect(lineSpans.map((record) => record.stage)).toEqual(['tts-synthesis', 'tts-playback'])
+    expect(lineSpans.every((record) => record.turnId === 'turn-voice-1')).toBe(true)
+  })
+
+  it('keys the stopped acknowledgement to the turn when a run is aborted', async () => {
+    const { records, state, tracer } = fakePerfHarness()
+    const turn = deferred<AssistantTurn>()
+    const llm: LlmClient = { complete: () => turn.promise }
+    const pipeline = createCommandPipeline({
+      llm,
+      tts: timedCoordinator(state, tracer, 50, 150),
+      clock: new FakeClock(),
+      tools: [],
+      tracer,
+    })
+
+    const run = collectStamped(pipeline, 'keep working', 'turn-voice-1')
+    await flush()
+    pipeline.abort()
+    turn.resolve({ kind: 'answer', speak: 'Stale answer.', display: 'Stale answer.' })
+    const events = await run
+
+    expect(events.at(-1)).toMatchObject({ type: 'done', outcome: 'cancelled', turnId: 'turn-voice-1' })
+    const lineSpans = records.filter((record) => record.stage !== 'summary')
+    expect(lineSpans.map((record) => record.stage)).toEqual(['tts-synthesis', 'tts-playback'])
+    expect(lineSpans.every((record) => record.turnId === 'turn-voice-1')).toBe(true)
   })
 })

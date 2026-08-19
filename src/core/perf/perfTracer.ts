@@ -10,7 +10,7 @@
 export interface PerfSpanRecord {
   /** Correlates every span of one turn; minted at utterance end (#27). */
   turnId: string
-  /** Stage vocabulary: 'stt', 'wake-to-transcript', 'llm', 'llm-retry' (a zero-duration event, not a stage), … */
+  /** Stage vocabulary: 'stt', 'wake-to-transcript', 'llm', 'tool', 'tts-synthesis', 'tts-playback', 'llm-retry' (a zero-duration event, not a stage), … */
   stage: string
   /** Stage duration in ms — a monotonic difference only. */
   durMs: number

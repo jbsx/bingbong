@@ -1,5 +1,6 @@
 import type { WebContents } from 'electron'
 import type { TtsSpeaker } from '../../core/ports/tts'
+import type { PerfTracer } from '../../core/perf/perfTracer'
 import { createSpeechCoordinator } from '../../core/tts/speechCoordinator'
 import type { PiperConfig } from './piperConfig'
 import { createPiperSynthesizer } from './createPiperSynthesizer'
@@ -12,6 +13,8 @@ export interface MainTtsDeps {
   pane: WebContents
   /** Resolved per line, so a settings-page voice change applies immediately. */
   getVoiceId(): string
+  /** Always-on perf tracer (#31): keys the per-line synthesis/playback spans. */
+  tracer?: PerfTracer
 }
 
 /** Composition root for spoken output (T8): piper → aplay, ducking the pane. */
@@ -24,5 +27,6 @@ export function createMainTts(deps: MainTtsDeps): TtsSpeaker {
     }),
     player: createAplayPlayer(),
     ducker: createPaneAudioDucker(deps.pane),
+    ...(deps.tracer ? { tracer: deps.tracer } : {}),
   })
 }

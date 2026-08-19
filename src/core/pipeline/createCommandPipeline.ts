@@ -217,10 +217,12 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
     if (!run.steering) yield deadlineEvent(decision.expiresAt())
   }
 
-  async function* speakLine(text: string): AsyncGenerator<UnstampedEvent> {
+  async function* speakLine(text: string, turnId: string): AsyncGenerator<UnstampedEvent> {
     yield { type: 'status', status: 'speaking', at: clock.now() }
     yield { type: 'speak', text, at: clock.now() }
-    const outcome = await tts.speak(text)
+    // The turn id rides the line so the coordinator keys its synthesis and
+    // playback spans to this turn (#31).
+    const outcome = await tts.speak(text, turnId)
     if (!outcome.ok) {
       // Voice is gone — the text is already on the dashboard, so the failure
       // itself degrades to a displayed one-liner.
@@ -279,7 +281,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
           }
           if (turn.kind === 'answer') {
             yield { type: 'display', text: turn.display, at: clock.now() }
-            yield* speakLine(turn.speak)
+            yield* speakLine(turn.speak, turnId)
             yield* checkpoint(run, 'thinking')
             break
           }
@@ -320,7 +322,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
           runOutcome = 'cancelled'
           yield { type: 'status', status: 'cancelled', at: clock.now() }
           yield { type: 'speak', text: 'Stopped.', at: clock.now() }
-          const outcome = await tts.speak('Stopped.')
+          const outcome = await tts.speak('Stopped.', turnId)
           if (!outcome.ok) {
             yield { type: 'error', message: spokenErrorLine(outcome.error), at: clock.now() }
           }
@@ -331,7 +333,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
           const message = toErrorMessage(err)
           const spoken = spokenErrorLine(message)
           yield { type: 'error', message, at: clock.now() }
-          yield* speakLine(spoken)
+          yield* speakLine(spoken, turnId)
         }
       }
       yield { type: 'done', outcome: runOutcome, at: clock.now() }
@@ -367,7 +369,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
       // Finish the spoken question before the answer window begins. This
       // prevents the mic from transcribing the assistant and gives the user
       // the full timeout after they can first respond.
-      yield* speakLine(question)
+      yield* speakLine(question, turnId)
       throwIfAborted(run)
       yield* checkpoint(run, 'acting', false)
       if (run.steering) {
@@ -437,7 +439,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
         at: clock.now(),
       })
       while (run.paused) yield* waitThroughPause(decision, run, deadlineEvent)
-      if (!run.aborted && !run.steering) yield* speakLine(verdict.prompt)
+      if (!run.aborted && !run.steering) yield* speakLine(verdict.prompt, turnId)
       const resolved = yield* awaitDecision(decision, run, deadlineEvent)
       yield {
         type: 'confirmation_resolved',

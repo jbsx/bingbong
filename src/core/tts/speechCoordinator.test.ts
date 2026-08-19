@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { createSpeechCoordinator } from './speechCoordinator'
 import type { AudioPlayback, AudioPlayer, SpeechSynthesizer } from '../ports/tts'
+import { createPerfTracer } from '../perf/perfTracer'
+import { fakePerfHarness } from '../testing/doubles'
 
 class FakeSynth implements SpeechSynthesizer {
   readonly texts: string[] = []
@@ -215,5 +217,134 @@ describe('speech coordinator', () => {
   it('stop() with nothing playing is a safe no-op', () => {
     const tts = createSpeechCoordinator({ synth: new FakeSynth(), player: new FakePlayer() })
     expect(() => tts.stop()).not.toThrow()
+  })
+})
+
+// The TTS half of the perf log (#31): every spoken line of a turn records
+// two spans at this seam — one for synthesis (piper rendering), one for
+// playback (aplay speaking) — so the full-clip design's cost is visible as
+// "time to first audio" vs "time speaking". Keyed by the turn id the caller
+// rides on speak(); the coordinator's queue guarantees the pair order.
+describe('speech coordinator — synthesis/playback span split (#31)', () => {
+  it('records a synthesis span then a playback span per spoken line, keyed by the turn id, in queue order', async () => {
+    const { records, state, tracer } = fakePerfHarness()
+    const synth = new FakeSynth()
+    const player = new FakePlayer()
+    const tts = createSpeechCoordinator({ synth, player, tracer })
+
+    const first = tts.speak('one', 'turn-voice-1')
+    const second = tts.speak('two', 'turn-voice-1')
+    await flush()
+    state.monotonicMs = 120
+    synth.finishNext()
+    await flush()
+    state.monotonicMs = 500
+    player.playbacks[0]!.finish()
+    await first
+    await flush()
+    state.monotonicMs = 620
+    synth.finishNext()
+    await flush()
+    state.monotonicMs = 1_100
+    player.playbacks[1]!.finish()
+    expect(await second).toEqual({ ok: true })
+
+    expect(records).toEqual([
+      { turnId: 'turn-voice-1', stage: 'tts-synthesis', durMs: 120, at: 1_700_000_000_000, t: 120 },
+      { turnId: 'turn-voice-1', stage: 'tts-playback', durMs: 380, at: 1_700_000_000_000, t: 500 },
+      { turnId: 'turn-voice-1', stage: 'tts-synthesis', durMs: 120, at: 1_700_000_000_000, t: 620 },
+      { turnId: 'turn-voice-1', stage: 'tts-playback', durMs: 480, at: 1_700_000_000_000, t: 1_100 },
+    ])
+  })
+
+  it('records the synthesis span but no playback span when stop() lands during synthesis', async () => {
+    const { records, state, tracer } = fakePerfHarness()
+    const synth = new FakeSynth()
+    const player = new FakePlayer()
+    const tts = createSpeechCoordinator({ synth, player, tracer })
+
+    const outcome = tts.speak('hello', 'turn-voice-1')
+    tts.stop()
+    state.monotonicMs = 90
+    synth.finishNext()
+    expect(await outcome).toEqual({ ok: true })
+
+    expect(records).toEqual([
+      { turnId: 'turn-voice-1', stage: 'tts-synthesis', durMs: 90, at: 1_700_000_000_000, t: 90 },
+    ])
+  })
+
+  it('records the playback span up to the stop when barge-in lands mid-playback', async () => {
+    const { records, state, tracer } = fakePerfHarness()
+    const synth = new FakeSynth()
+    const player = new FakePlayer()
+    const tts = createSpeechCoordinator({ synth, player, tracer })
+
+    const outcome = tts.speak('hello', 'turn-voice-1')
+    state.monotonicMs = 200
+    synth.finishNext()
+    await flush()
+    state.monotonicMs = 350
+    tts.stop()
+    expect(await outcome).toEqual({ ok: true })
+
+    expect(records).toEqual([
+      { turnId: 'turn-voice-1', stage: 'tts-synthesis', durMs: 200, at: 1_700_000_000_000, t: 200 },
+      { turnId: 'turn-voice-1', stage: 'tts-playback', durMs: 150, at: 1_700_000_000_000, t: 350 },
+    ])
+  })
+
+  it('records the synthesis span when synthesis fails — the render time was spent', async () => {
+    const { records, state, tracer } = fakePerfHarness()
+    const synth = new FakeSynth()
+    const player = new FakePlayer()
+    const tts = createSpeechCoordinator({ synth, player, tracer })
+
+    const outcome = tts.speak('hello', 'turn-voice-1')
+    state.monotonicMs = 150
+    synth.failNext('piper died')
+
+    expect(await outcome).toEqual({ ok: false, error: 'piper died' })
+    expect(records).toEqual([
+      { turnId: 'turn-voice-1', stage: 'tts-synthesis', durMs: 150, at: 1_700_000_000_000, t: 150 },
+    ])
+  })
+
+  it('logs nothing for lines without a turn id — download and subagent speech', async () => {
+    const { records, state, tracer } = fakePerfHarness()
+    const synth = new FakeSynth()
+    const player = new FakePlayer()
+    const tts = createSpeechCoordinator({ synth, player, tracer })
+
+    const outcome = tts.speak('download finished')
+    state.monotonicMs = 40
+    synth.finishNext()
+    await flush()
+    player.playbacks[0]!.finish()
+    expect(await outcome).toEqual({ ok: true })
+
+    expect(records).toEqual([])
+  })
+
+  it('never breaks speech over bookkeeping — a throwing sink still resolves ok', async () => {
+    const state = { monotonicMs: 0 }
+    const tracer = createPerfTracer({
+      sink: {
+        write() {
+          throw new Error('disk full')
+        },
+      },
+      clock: { monotonic: () => state.monotonicMs, wall: () => 0 },
+    })
+    const synth = new FakeSynth()
+    const player = new FakePlayer()
+    const tts = createSpeechCoordinator({ synth, player, tracer })
+
+    const outcome = tts.speak('hello', 'turn-voice-1')
+    synth.finishNext()
+    await flush()
+    player.playbacks[0]!.finish()
+
+    expect(await outcome).toEqual({ ok: true })
   })
 })

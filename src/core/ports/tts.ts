@@ -4,9 +4,11 @@ export interface TtsSpeaker {
   /**
    * Voice one line; resolves when playback finishes (or is stopped). TTS
    * failures resolve with `ok: false` instead of throwing, so callers degrade
-   * to display-only without a try/catch.
+   * to display-only without a try/catch. The optional `turnId` (#31) keys the
+   * line's synthesis/playback perf spans to its turn; callers without a turn
+   * (download announcements, subagent lines) omit it.
    */
-  speak(text: string): Promise<SpeakOutcome>
+  speak(text: string, turnId?: string): Promise<SpeakOutcome>
   /** Barge-in hook (wake word, T10): kills playback and queued lines instantly. Safe to call anytime. */
   stop(): void
 }

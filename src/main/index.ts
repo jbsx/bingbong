@@ -176,6 +176,7 @@ async function createWindow(): Promise<BrowserWindow> {
       config: piperConfig,
       pane: pane.view.webContents,
       getVoiceId: () => settingsStore.get().ttsVoice.trim() || piperConfig.voiceId,
+      tracer: perfTracer,
     }),
   )
   attachDownloadRouter(pane.session, {
