@@ -87,3 +87,22 @@ Shipped in #41: whisper.cpp and the `BINGBONG_WHISPER_MODEL` /
 `BINGBONG_STT_PROMPT` knobs are gone; the streaming engine lives in
 `src/main/moonshine/` (unit tests at the Transcriber port with the fake
 runtime, real-models test with the `jfk.wav` fixture).
+
+## #41 streaming evidence (same machine, warm engine)
+
+Driven the way the voice session drives the engine — frames pushed during
+speech, one `finish()` at the endpoint whose wall time (the `stt` perf
+span's measure) is drain-in-flight-partial + final full-utterance pass:
+
+| material | endpoint → transcript |
+| --- | --- |
+| command-length cuts (2–4.5 s of jfk speech) | 97–108 ms |
+| full jfk.wav (11.0 s) | 270 ms |
+| realistic push cadence, 18 partials during speech | 394 ms |
+| **p95 over 20 utterances** | **267 ms** |
+
+Well under the 500 ms target. First use pays ~0.9 s of model load (like the
+old whisper adapter, then ~7× cheaper). Live verification on real usage
+stays with `pnpm perf:report` (`stt` span). Partials grew prefix-correctly
+("And so" → "…ask not what your country can do for you"), and none landed
+after the endpoint.

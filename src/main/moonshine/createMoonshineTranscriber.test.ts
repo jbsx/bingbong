@@ -391,4 +391,54 @@ describe('streaming capture (rolling partials, final at endpoint)', () => {
     await settlePasses()
     expect(heard).toEqual([])
   })
+
+  it('ensures the vocab before creating sessions — the fetch precedes the load', async () => {
+    const rt = fakeRuntime([[{ next: 2 }]])
+    const order: string[] = []
+    const transcriber = createMoonshineTranscriber({
+      encoderPath: '/m/encoder.onnx',
+      decoderPath: '/m/decoder.onnx',
+      // The app's loadVocab awaits the model fetch; sessions must not be
+      // created until the files are on disk.
+      loadVocab: async () => {
+        order.push('vocab')
+        return VOCAB
+      },
+      loadRuntime: async () => {
+        order.push('runtime')
+        return rt.module as unknown as never
+      },
+    })
+    await transcriber.finish(PCM)
+    expect(order).toEqual(['vocab', 'runtime'])
+  })
+
+  it('a failed pass un-memoizes vocab and sessions — the next finish retries and succeeds', async () => {
+    const rt = fakeRuntime([[{ next: 3 }, { next: 2 }]])
+    let vocabLoads = 0
+    let runtimeLoads = 0
+    const transcriber = createMoonshineTranscriber({
+      encoderPath: '/m/encoder.onnx',
+      decoderPath: '/m/decoder.onnx',
+      loadVocab: async () => {
+        vocabLoads += 1
+        if (vocabLoads === 1) throw new Error('fetch failed')
+        return VOCAB
+      },
+      loadRuntime: async () => {
+        runtimeLoads += 1
+        if (runtimeLoads === 1) throw new Error('session create failed')
+        return rt.module as unknown as never
+      },
+    })
+
+    // A transient failure surfaces at finish (the missing-VAD-model story)…
+    await expect(transcriber.finish(PCM)).rejects.toThrow('fetch failed')
+    expect(runtimeLoads).toBe(0) // vocab first: sessions never raced the fetch
+    // …but is not cached: the next utterance retries the whole load chain.
+    await expect(transcriber.finish(PCM)).rejects.toThrow('session create failed')
+    await expect(transcriber.finish(PCM)).resolves.toBe('And')
+    expect(vocabLoads).toBe(2) // the success stayed memoized
+    expect(runtimeLoads).toBe(2) // the failure did not
+  })
 })

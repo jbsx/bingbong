@@ -13,8 +13,10 @@ import { createMoonshineTranscriber } from './createMoonshineTranscriber'
 // the complete utterance produces the submitted transcript. The
 // fake-runtime unit tests pin the protocol; this one catches drift between
 // the protocol and the real model files. Skipped unless the models and a
-// sample clip are present (auto-fetched into the models dir on first app
-// run — see README voice models).
+// sample clip are present: the engine files auto-fetch on first app run,
+// the jfk.wav fixture follows the wake models test convention —
+//   curl -L -o ~/.config/bingbong/models/jfk.wav \
+//     https://raw.githubusercontent.com/ggerganov/whisper.cpp/master/samples/jfk.wav
 
 const modelsDir = join(homedir(), '.config/bingbong/models')
 const moonshineDir = join(modelsDir, 'moonshine-base')

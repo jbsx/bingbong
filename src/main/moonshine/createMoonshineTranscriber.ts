@@ -103,13 +103,18 @@ export function createMoonshineTranscriber(deps: MoonshineTranscriberDeps): Tran
   let vocabReady: Promise<MoonshineVocab> | null = null
 
   function ensureSessions(): Promise<{ runtime: OrtModule; encoder: OrtSession; decoder: OrtSession }> {
+    // A failed create (missing/partial model file) un-memoizes so the next
+    // pass retries — a poisoned memo would break STT until restart.
     sessionsReady ??= (async () => {
       ort ??= await loadRuntime()
       const runtime = ort
       const encoder = await runtime.InferenceSession.create(deps.encoderPath)
       const decoder = await runtime.InferenceSession.create(deps.decoderPath)
       return { runtime, encoder, decoder }
-    })()
+    })().catch((err: unknown) => {
+      sessionsReady = null
+      throw err
+    })
     return sessionsReady
   }
 
@@ -125,8 +130,11 @@ export function createMoonshineTranscriber(deps: MoonshineTranscriberDeps): Tran
 
   /** One full greedy pass over the given audio; rejects on engine failure. */
   async function decodePass(pcm: Float32Array): Promise<string> {
-    const { runtime, encoder, decoder } = await ensureSessions()
+    // Vocab before sessions: the app-side loadVocab awaits the model fetch,
+    // so session creation never races a download — creating on a partial
+    // file would reject (and un-memoize) on garbage that refetches fine.
     const vocab = await ensureVocab()
+    const { runtime, encoder, decoder } = await ensureSessions()
     const audio = pcm.length >= minPassSamples ? pcm : (() => {
       const padded = new Float32Array(minPassSamples)
       padded.set(pcm)
@@ -297,14 +305,14 @@ export function createMoonshineTranscriber(deps: MoonshineTranscriberDeps): Tran
   }
 }
 
-function accumulatedAtConcat(frames: Float32Array[]): number {
+function totalSamples(frames: Float32Array[]): number {
   let total = 0
   for (const frame of frames) total += frame.length
   return total
 }
 
 function concatFrames(frames: Float32Array[]): Float32Array {
-  const out = new Float32Array(accumulatedAtConcat(frames))
+  const out = new Float32Array(totalSamples(frames))
   let offset = 0
   for (const frame of frames) {
     out.set(frame, offset)
