@@ -32,6 +32,7 @@ import { createMainTts } from './tts/createMainTts'
 import { registerTtsIpc } from './tts/attachTts'
 import { createSpeakingGate } from '../core/tts/speakingGate'
 import { createPerfTracer } from '../core/perf/perfTracer'
+import { browserSubspansEnabled, createBrowserSubspans } from '../core/perf/browserSubspans'
 import { createJsonlPerfSink } from './perf/jsonlPerfSink'
 import { resolveVoiceConfig } from './voice/voiceConfig'
 import { createMainVoice } from './voice/createMainVoice'
@@ -76,6 +77,13 @@ const historyRecorder = createHistoryRecorder(historyStore, { now: () => Date.no
 // profile's logs dir — zero configuration, no timers; rolling and the 7-day
 // purge ride startup and writes.
 const perfTracer = createPerfTracer({ sink: createJsonlPerfSink(join(app.getPath('userData'), 'logs')) })
+
+// Verbose browser sub-spans (#32), opt-in behind the established env-flag
+// pattern: one shared channel between the pipeline's tool gate (which opens
+// the turn scope) and the main pane's controller (which emits). Flag off —
+// the channel stays wired but writes nothing, so the default log keeps
+// whole browser actions as plain tool spans, byte-identical.
+const browserSubspans = createBrowserSubspans({ tracer: perfTracer, enabled: browserSubspansEnabled(currentEnv()) })
 
 // Subagent runtime (T12) is per-window: panes attach to the window's content
 // view. The IPC layer resolves the window from the event sender.
@@ -165,7 +173,10 @@ async function createWindow(): Promise<BrowserWindow> {
   const pane = createBrowserPane()
   attachBrowserPaneToWindow(pane, win)
   const agentActivity = createAgentActivityTracker()
-  const controller: BrowserController & VisualGroundingController = withAgentActivity(createPaneBrowserController(pane), agentActivity)
+  const controller: BrowserController & VisualGroundingController = withAgentActivity(
+    createPaneBrowserController(pane, { subspans: browserSubspans }),
+    agentActivity,
+  )
 
   const downloadsDir = resolveDownloadsDir(process.env, app.getPath('downloads'))
   // Spoken output (T8), wrapped in a speaking gate (T9): the pipeline,
@@ -255,6 +266,7 @@ async function createWindow(): Promise<BrowserWindow> {
     onLlmUsage: (record) => usageStore.record(record.role, record.model, record.usage),
     session: sessionMemory,
     tracer: perfTracer,
+    browserSubspans,
   })
   attachAssistantToWindow(
     pipeline,

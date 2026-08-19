@@ -1,4 +1,5 @@
 import type { BrowserController, VisualGroundingController } from '../../core/ports/browser'
+import type { BrowserSubspans } from '../../core/perf/browserSubspans'
 import { COLLECT_PAGE_SCRIPT } from './collectPageScript'
 import { createCdpBrowserController, type CdpDebugger, type CdpPageDriver } from './createCdpBrowserController'
 
@@ -31,6 +32,10 @@ export function createPaneBrowserController(
     view: { webContents: Electron.WebContents }
     /** Popup-block reports recorded by the pane (main pane only). */
     consumePopupBlocks?: () => string[]
+  },
+  deps?: {
+    /** Verbose browser sub-spans (#32); absent — no sub-span emission. */
+    subspans?: BrowserSubspans
   },
 ): BrowserController & VisualGroundingController {
   const wc = pane.view.webContents
@@ -91,5 +96,6 @@ export function createPaneBrowserController(
     page,
     collectScript: COLLECT_PAGE_SCRIPT,
     ...(pane.consumePopupBlocks ? { consumePopupBlocks: pane.consumePopupBlocks } : {}),
+    ...(deps?.subspans ? { subspans: deps.subspans } : {}),
   })
 }

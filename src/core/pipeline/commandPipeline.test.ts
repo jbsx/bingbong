@@ -11,6 +11,7 @@ import type { PipelineEvent } from './events'
 import type { AssistantTurn, LlmClient, LlmRequest } from '../ports/llm'
 import { createPerfTracer, type PerfTracer } from '../perf/perfTracer'
 import { withPerfTracing } from '../perf/perfTracing'
+import { createBrowserSubspans } from '../perf/browserSubspans'
 
 async function collect(
   pipeline: CommandPipeline,
@@ -1286,6 +1287,67 @@ describe('command pipeline — tool spans and turn summary (#30)', () => {
 
     expect(events.filter((event) => event.type === 'tool_result').map((event) => event.ok)).toEqual([false, false])
     expect(records.filter((record) => record.stage === 'tool')).toEqual([])
+  })
+
+  // Verbose browser sub-spans (#32): the tool gate opens the channel's turn
+  // scope around each gated execution, so a controller emitting inside a
+  // browser tool keys its sub-spans to this turn's id — without the channel
+  // dep, nothing changes.
+  it('opens the browser sub-span turn scope around gated tool executions', async () => {
+    const { records, state, tracer } = fakePerfHarness()
+    const subspans = createBrowserSubspans({ tracer, enabled: true })
+    const probe = {
+      name: 'poke',
+      async execute() {
+        state.monotonicMs += 120
+        subspans.emit('browser-settle', 120, { action: 'click', ms: 90 })
+        return 'poked'
+      },
+    }
+    const pipeline = createCommandPipeline({
+      llm: new ScriptedLlm([
+        { kind: 'tool_calls', calls: [{ id: 'c1', name: 'poke', args: {} }] },
+        { kind: 'answer', speak: 'Done.', display: 'Done.' },
+      ]),
+      tts: new RecordingTts(),
+      clock: new FakeClock(),
+      tools: [probe],
+      tracer,
+      browserSubspans: subspans,
+    })
+
+    await collectStamped(pipeline, 'poke it', 'turn-voice-1')
+
+    expect(records.filter((record) => record.stage === 'browser-settle')).toEqual([
+      { turnId: 'turn-voice-1', stage: 'browser-settle', durMs: 120, at: 1_700_000_000_000, t: 120, detail: { action: 'click', ms: 90 } },
+    ])
+  })
+
+  it('runs tools unchanged when no browser sub-span channel is wired', async () => {
+    const { records, tracer } = fakePerfHarness()
+    const probe = {
+      name: 'poke',
+      async execute() {
+        // No scope is open without the channel; a stray emit (a controller
+        // wired to some other channel instance) would record nothing anyway.
+        return 'poked'
+      },
+    }
+    const pipeline = createCommandPipeline({
+      llm: new ScriptedLlm([
+        { kind: 'tool_calls', calls: [{ id: 'c1', name: 'poke', args: {} }] },
+        { kind: 'answer', speak: 'Done.', display: 'Done.' },
+      ]),
+      tts: new RecordingTts(),
+      clock: new FakeClock(),
+      tools: [probe],
+      tracer,
+    })
+
+    const events = await collectStamped(pipeline, 'poke it', 'turn-voice-1')
+
+    expect(events.find((event) => event.type === 'tool_result')).toMatchObject({ ok: true })
+    expect(records.filter((record) => record.stage === 'browser-settle')).toEqual([])
   })
 
   it('at run end, stores a synthetic summary event matching the turn’s spans and prints the one-line summary', async () => {

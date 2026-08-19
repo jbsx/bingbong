@@ -7,6 +7,7 @@ import type { SessionHistorySource } from '../session/sessionMemory'
 import { spokenErrorLine } from '../agent/answerContract'
 import type { PerfTracer } from '../perf/perfTracer'
 import { createTurnIdSource } from '../perf/perfTracer'
+import type { BrowserSubspans } from '../perf/browserSubspans'
 import { emitTurnSummary } from '../perf/turnSummary'
 import {
   createVisionBudget,
@@ -30,6 +31,13 @@ export interface CommandPipelineDeps {
   onResume?(): void
   /** Turn-id source (#28) and span/summary recorder (#29/#30); absent falls back to a local id mint. */
   tracer?: PerfTracer
+  /**
+   * Verbose browser sub-spans (#32): when wired, the tool gate opens the
+   * channel's turn scope around each gated execution, so the browser
+   * controller's internal delays and extra round-trips key to this turn.
+   * Must be the same channel instance the controller holds.
+   */
+  browserSubspans?: BrowserSubspans
   /** Where the per-turn summary line goes (#30); defaults to console.log. */
   printSummary?: (line: string) => void
 }
@@ -476,7 +484,12 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
       const toolStart = tracer?.now()
       let result: unknown
       try {
-        result = await tool.execute(call, toolContext)
+        // The sub-span turn scope (#32): emissions inside the tool (browser
+        // controller internals) key to this turn while it is open. Absent
+        // channel — the call runs untouched.
+        result = deps.browserSubspans
+          ? await deps.browserSubspans.runInTurn(turnId, () => tool.execute(call, toolContext))
+          : await tool.execute(call, toolContext)
       } finally {
         if (tracer && toolStart !== undefined) {
           recordSpan(tracer, turnId, 'tool', tracer.now() - toolStart, { tool: call.name })

@@ -19,6 +19,7 @@ import type { UsageSink } from '../../core/agent/usageTracking'
 import { withUsageTracking } from '../../core/agent/usageTracking'
 import type { PerfTracer } from '../../core/perf/perfTracer'
 import { withPerfTracing } from '../../core/perf/perfTracing'
+import type { BrowserSubspans } from '../../core/perf/browserSubspans'
 import { ScriptedLlm, silentTts, UnavailableLlm } from '../../core/testing/doubles'
 import { createDuckDuckGoSearchProvider } from '../search/createDuckDuckGoSearchProvider'
 import { createOpenAiLlmClient } from './openAiLlmClient'
@@ -65,6 +66,13 @@ export interface AssistantPipelineDeps {
    * the history run rows share one id per turn.
    */
   tracer?: PerfTracer
+  /**
+   * Verbose browser sub-spans (#32): the same channel instance the browser
+   * controller holds, so its internal delays and extra round-trips key to
+   * the running turn. Absent (or the env flag off) — nothing below the
+   * whole-action tool span is logged.
+   */
+  browserSubspans?: BrowserSubspans
 }
 
 function resolveLlm(
@@ -168,6 +176,7 @@ export function createAssistantPipeline(deps: AssistantPipelineDeps): CommandPip
     tools,
     ...(deps.session ? { session: deps.session } : {}),
     ...(deps.tracer ? { tracer: deps.tracer } : {}),
+    ...(deps.browserSubspans ? { browserSubspans: deps.browserSubspans } : {}),
     onAbort: () => deps.subagentControl?.cancelAll(),
     onPause: () => deps.subagentControl?.pauseAll(),
     onResume: () => deps.subagentControl?.resumeAll(),

@@ -2,6 +2,10 @@ import { describe, expect, it } from 'vitest'
 import youtubeHome from '../../core/browser/fixtures/youtube-home.json'
 import type { CollectedElement, CollectedPage } from '../../core/browser/snapshot'
 import { buildPageSnapshot, clickPoint } from '../../core/browser/snapshot'
+import type { BrowserSubspans } from '../../core/perf/browserSubspans'
+import { createBrowserSubspans } from '../../core/perf/browserSubspans'
+import type { PerfSpanRecord } from '../../core/perf/perfTracer'
+import { fakePerfHarness } from '../../core/testing/doubles'
 import type { CdpDebugger, CdpPageDriver } from './createCdpBrowserController'
 import { createCdpBrowserController } from './createCdpBrowserController'
 
@@ -214,7 +218,7 @@ class FakePage implements CdpPageDriver {
   }
 }
 
-function makeController(options?: { cdp?: FakeCdp; page?: FakePage; popupBlocks?: string[] }) {
+function makeController(options?: { cdp?: FakeCdp; page?: FakePage; popupBlocks?: string[]; subspans?: BrowserSubspans }) {
   const cdp = options?.cdp ?? new FakeCdp()
   const page = options?.page ?? new FakePage()
   const popupQueue = options?.popupBlocks ? [...options.popupBlocks] : []
@@ -226,6 +230,7 @@ function makeController(options?: { cdp?: FakeCdp; page?: FakePage; popupBlocks?
     // sequence of CDP messages, so don't pay the human-paced sleeps.
     pacing: { settleMs: 0, moveMs: 0, clickMs: 0, keystrokeMs: 0, scrollTickMs: 0 },
     consumePopupBlocks: () => popupQueue.splice(0),
+    ...(options?.subspans ? { subspans: options.subspans } : {}),
   })
   return { cdp, page, controller }
 }
@@ -1016,5 +1021,133 @@ describe('createCdpBrowserController navigate and back', () => {
     const { controller } = makeController({ page })
 
     await expect(controller.back()).rejects.toThrow(/cannot go back/)
+  })
+})
+
+// Verbose browser sub-spans (#32): behind the env flag, the controller's
+// internal delays and extra round-trips become sub-spans keyed by the turn
+// scope the pipeline's tool gate opens. Flag off (or no scope open) — the
+// fake sink below stays empty, i.e. the default log is byte-identical to
+// whole-action tool spans.
+describe('createCdpBrowserController verbose sub-spans (#32)', () => {
+  function subspanHarness(enabled: boolean): { records: PerfSpanRecord[]; subspans: BrowserSubspans } {
+    const { records, tracer } = fakePerfHarness()
+    return { records, subspans: createBrowserSubspans({ tracer, enabled }) }
+  }
+
+  it('emits a settle sub-span for the navigate sleep, keyed by the open turn', async () => {
+    const { records, subspans } = subspanHarness(true)
+    const { controller } = makeController({ subspans })
+
+    await subspans.runInTurn('turn-1', () => controller.navigate('youtube.com'))
+
+    expect(records).toEqual([
+      { turnId: 'turn-1', stage: 'browser-settle', durMs: 0, at: 1_700_000_000_000, t: 0, detail: { action: 'navigate', ms: 0 } },
+    ])
+  })
+
+  it('emits recollection, safety, and settle sub-spans in order for a cold click', async () => {
+    const { records, subspans } = subspanHarness(true)
+    const { controller } = makeController({ subspans })
+
+    await subspans.runInTurn('turn-1', () => controller.click(3))
+
+    expect(records.map((record) => [record.turnId, record.stage, record.detail])).toEqual([
+      ['turn-1', 'browser-recollection', { reason: 'resolve-ref' }],
+      ['turn-1', 'browser-safety', { kind: 'click-prep' }],
+      ['turn-1', 'browser-settle', { action: 'pointer', ms: 0 }],
+      ['turn-1', 'browser-settle', { action: 'pointer', ms: 0 }],
+      ['turn-1', 'browser-settle', { action: 'click', ms: 0 }],
+    ])
+  })
+
+  it('emits a keystroke settle per typed character plus the focus/settle waits', async () => {
+    const { records, subspans } = subspanHarness(true)
+    const { controller } = makeController({ subspans })
+
+    await subspans.runInTurn('turn-1', () => controller.type(3, 'hi'))
+
+    const settles = records.filter((record) => record.stage === 'browser-settle').map((record) => record.detail?.action)
+    expect(settles).toEqual(['pointer', 'pointer', 'type', 'keystroke', 'keystroke', 'type'])
+  })
+
+  it('emits a recollection per scroll tick settle and the missing-snapshot collect', async () => {
+    const { records, subspans } = subspanHarness(true)
+    const { controller } = makeController({ subspans })
+
+    await subspans.runInTurn('turn-1', () => controller.scroll('down'))
+
+    expect(records.filter((record) => record.stage === 'browser-recollection').map((record) => record.detail)).toEqual([
+      { reason: 'no-snapshot' },
+    ])
+    expect(records.filter((record) => record.stage === 'browser-settle').map((record) => record.detail?.action)).toEqual([
+      'scroll',
+      'scroll',
+      'scroll',
+    ])
+  })
+
+  it('emits the stale-registry recollection when a click must re-collect', async () => {
+    const { records, subspans } = subspanHarness(true)
+    const cdp = new FakeCdp()
+    cdp.prepStaleOnce = true
+    const { controller } = makeController({ cdp, subspans })
+
+    await subspans.runInTurn('turn-1', () => controller.click(3))
+
+    expect(records.filter((record) => record.stage === 'browser-recollection').map((record) => record.detail)).toEqual([
+      { reason: 'resolve-ref' },
+      { reason: 'stale-registry' },
+    ])
+  })
+
+  it('emits the post-dismissal recollection when read_page clears a consent wall', async () => {
+    const { records, subspans } = subspanHarness(true)
+    const wall = consentWallPage()
+    const cleared = { ...wall, dialogOpen: false, dialogText: '', elements: wall.elements.slice(2) }
+    const cdp = new FakeCdp(cleared)
+    cdp.collectValues = [wall, cleared]
+    const { controller } = makeController({ cdp, subspans })
+
+    await subspans.runInTurn('turn-1', () => controller.readPage())
+
+    expect(records.filter((record) => record.stage === 'browser-recollection').map((record) => record.detail)).toEqual([
+      { reason: 'post-dismissal' },
+    ])
+    expect(records).toContainEqual(
+      expect.objectContaining({ stage: 'browser-settle', detail: { action: 'consent-dismiss', ms: 0 } }),
+    )
+  })
+
+  it('emits nothing when the flag is off — the default log stays byte-identical', async () => {
+    const { records, subspans } = subspanHarness(false)
+    const { controller } = makeController({ subspans })
+
+    await subspans.runInTurn('turn-1', async () => {
+      await controller.navigate('youtube.com')
+      await controller.click(3)
+      await controller.type(3, 'hi')
+    })
+
+    expect(records).toEqual([])
+  })
+
+  it('emits nothing outside a turn scope (CLI harness, detached panes)', async () => {
+    const { records, subspans } = subspanHarness(true)
+    const { controller } = makeController({ subspans })
+
+    await controller.navigate('youtube.com')
+    await controller.click(3)
+
+    expect(records).toEqual([])
+  })
+
+  it('keeps acting normally without a channel — the no-subspans default', async () => {
+    const { controller } = makeController()
+
+    await expect(controller.navigate('youtube.com')).resolves.toBe(
+      'navigated: url=https://www.youtube.com/ title="YouTube"',
+    )
+    await expect(controller.click(3)).resolves.toBe('clicked [3]: urlChanged=false dialogOpen=false; no observable change')
   })
 })

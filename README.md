@@ -101,6 +101,21 @@ Any OpenAI-compatible provider works for any role — swapping providers is a
 config change. `BINGBONG_LLM_SCRIPT` (a JSON array of scripted turns) replaces
 the live model entirely — used by the e2e suite and keyless demos.
 
+## Performance log
+
+Every turn is perf-logged, zero config: one JSONL span per finished stage
+(STT, each LLM round, each tool call, TTS), keyed by a `turnId` shared with
+the event stream and history, written to a rotating `logs/` dir under the
+profile. Whole browser actions appear as their tool span; set
+
+```sh
+BINGBONG_BROWSER_SUBSPANS=1            # verbose drill-down inside browser actions
+```
+
+to additionally time the deliberate delays and extra round-trips inside them
+(settle sleeps, snapshot recollections, pre-click safety probes) as
+`browser-*` sub-spans. Off by default — the default log stays whole-action.
+
 ## Try it
 
 ```sh

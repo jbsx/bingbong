@@ -1,4 +1,5 @@
 import type { BrowserController, BrowserState, KeyPress, MediaState, ViewportPoint, VisualGroundingController } from '../../core/ports/browser'
+import type { BrowserSubspans } from '../../core/perf/browserSubspans'
 import { normalizeUrlInput } from '../../core/browser/urlInput'
 import { chooseConsentDismissal, isConsentDialog } from '../../core/browser/dialogPolicy'
 import {
@@ -51,6 +52,13 @@ export interface CdpBrowserControllerDeps {
   pacing?: Partial<ControllerPacing>
   /** Drains popup-block URLs the pane recorded (window.open denied + closed). */
   consumePopupBlocks?: () => string[]
+  /**
+   * Verbose sub-span channel (#32): when provided (and the env flag enabled
+   * it), the deliberate delays and extra round-trips inside browser actions
+   * become sub-spans keyed by the turn scope the pipeline's tool gate opens.
+   * Absent — no sub-spans, actions behave identically.
+   */
+  subspans?: BrowserSubspans
 }
 
 interface EvaluateResponse {
@@ -175,8 +183,47 @@ function shortcutEventFor(press: KeyPress): { key: string; code: string; keyCode
 export function createCdpBrowserController(deps: CdpBrowserControllerDeps): BrowserController & VisualGroundingController {
   const { cdp, page, collectScript } = deps
   const pacing: ControllerPacing = { ...HUMAN_PACING, ...deps.pacing }
+  const subspans = deps.subspans
   let lastSnapshot: PageSnapshot | undefined
   const visualPoints = new Map<number, ViewportPoint>()
+
+  // Verbose sub-span instrumentation (#32). Timing-only wrappers: the sleep,
+  // collect, or probe always runs exactly as before; a channel is present
+  // only when main wired one, and emission inside it is gated by the env
+  // flag and the pipeline's open turn scope.
+
+  /** A deliberate delay inside a browser action — one `browser-settle` sub-span when verbose. */
+  async function settle(action: string, ms: number): Promise<void> {
+    if (subspans === undefined) {
+      await sleep(ms)
+      return
+    }
+    const start = subspans.now()
+    await sleep(ms)
+    subspans.emit('browser-settle', subspans.now() - start, { action, ms })
+  }
+
+  /** An extra snapshot round-trip inside an action — one `browser-recollection` sub-span. */
+  async function recollection<T>(reason: string, collect: () => Promise<T>): Promise<T> {
+    if (subspans === undefined) return collect()
+    const start = subspans.now()
+    try {
+      return await collect()
+    } finally {
+      subspans.emit('browser-recollection', subspans.now() - start, { reason })
+    }
+  }
+
+  /** A pre-action safety round-trip before a risky interaction — one `browser-safety` sub-span. */
+  async function safety<T>(kind: string, probe: () => Promise<T>): Promise<T> {
+    if (subspans === undefined) return probe()
+    const start = subspans.now()
+    try {
+      return await probe()
+    } finally {
+      subspans.emit('browser-safety', subspans.now() - start, { kind })
+    }
+  }
 
   // Native JS dialogs (alert/confirm/prompt/beforeunload) freeze the page's
   // JS thread — there is nothing to deliberate with while one is open, so
@@ -217,7 +264,7 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
       return true
     })()`)
     lastSnapshot = undefined
-    await sleep(pacing.settleMs)
+    await settle('consent-dismiss', pacing.settleMs)
     return clicked
       ? `dismissed consent dialog: clicked [${target.ref}] ${JSON.stringify(truncateOutcomeText(target.label, 60))}`
       : null
@@ -266,7 +313,7 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
   }
 
   async function currentSnapshot(): Promise<PageSnapshot> {
-    return lastSnapshot ?? collectSnapshot()
+    return lastSnapshot ?? recollection('no-snapshot', () => collectSnapshot())
   }
 
   const SCROLL_TICKS = 3
@@ -371,7 +418,7 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
     const y = Math.floor(viewport.height / 2)
     for (let tick = 0; tick < SCROLL_TICKS; tick++) {
       await cdp.send('Input.dispatchMouseEvent', { type: 'mouseWheel', x, y, deltaX: 0, deltaY })
-      await sleep(pacing.scrollTickMs)
+      await settle('scroll', pacing.scrollTickMs)
     }
     // Viewport-relative rects shift with the scroll; refs must be re-read.
     lastSnapshot = undefined
@@ -384,7 +431,7 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
     if (!url) throw new Error(`cannot navigate to: "${input}"`)
     await page.loadUrl(url)
     lastSnapshot = undefined
-    await sleep(pacing.settleMs)
+    await settle('navigate', pacing.settleMs)
     return `navigated: url=${page.url()} title=${JSON.stringify(page.title())}`
   }
 
@@ -396,7 +443,7 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
   async function back(): Promise<string> {
     await page.goBack()
     lastSnapshot = undefined
-    await sleep(pacing.settleMs)
+    await settle('back', pacing.settleMs)
     return `went back: url=${page.url()} title=${JSON.stringify(page.title())}`
   }
 
@@ -404,7 +451,7 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
     const first = await collectSnapshot()
     const dismissal = await dismissConsentIfOpen(first)
     const reports = drainedReports()
-    const snapshot = dismissal !== null ? await collectSnapshot() : first
+    const snapshot = dismissal !== null ? await recollection('post-dismissal', () => collectSnapshot()) : first
     const header = dismissal !== null ? `${dismissal}\n` : ''
     const footer = reports.length > 0 ? `\n${reports.join('\n')}` : ''
     return `${header}${formatPageSnapshot(snapshot)}${footer}`
@@ -415,7 +462,7 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
       const target = findSnapshotRef(lastSnapshot, ref)
       if (target) return { snapshot: lastSnapshot, target }
     }
-    const snapshot = await collectSnapshot()
+    const snapshot = await recollection('resolve-ref', () => collectSnapshot())
     const target = findSnapshotRef(snapshot, ref)
     if (!target) {
       throw new Error(`ref ${ref} not found — the page may have changed, run read_page to refresh refs`)
@@ -433,12 +480,12 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
     const visualPoint = visualPoints.get(ref)
     if (visualPoint) {
       const index = target.ref - 1
-      const reachable = await evaluateInPage<boolean>(`(() => {
+      const reachable = await safety('visual-reach', () => evaluateInPage<boolean>(`(() => {
         const el = (window.__bingbongRefs || [])[${index}]
         if (!el || !el.isConnected) return false
         const top = document.elementFromPoint(${JSON.stringify(visualPoint.x)}, ${JSON.stringify(visualPoint.y)})
         return top === el || (top !== null && el.contains(top))
-      })()`)
+      })()`))
       if (!reachable) throw new Error(`ref ${ref} no longer resolves at the visually grounded point`)
       await dispatchPointClick(visualPoint)
       visualPoints.delete(ref)
@@ -446,10 +493,10 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
       return { kind: 'acted', direct: false, index, label: target.label, before: elementState(target), signature: signatureOf(snapshot) }
     }
     let index = target.ref - 1
-    let prep = await prepClick(index)
+    let prep = await safety('click-prep', () => prepClick(index))
     if (!prep.ok) {
       // The element registry died with the page (navigation); re-collect.
-      const fresh = await collectSnapshot()
+      const fresh = await recollection('stale-registry', () => collectSnapshot())
       const freshTarget = findSnapshotRef(fresh, ref)
       if (!freshTarget) {
         throw new Error(`ref ${ref} not found — the page may have changed, run read_page to refresh refs`)
@@ -457,7 +504,7 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
       snapshot = fresh
       target = freshTarget
       index = freshTarget.ref - 1
-      prep = await prepClick(index)
+      prep = await safety('click-prep', () => prepClick(index))
       if (!prep.ok) {
         throw new Error(`ref ${ref} not found — the page may have changed, run read_page to refresh refs`)
       }
@@ -490,12 +537,12 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
     if (attempt.kind === 'blocked') {
       return `clicked [${ref}]: not clicked — blocked by overlay${dialogSuffix(attempt.snapshot)}${reportsSuffix(drainedReports())}`
     }
-    await sleep(pacing.settleMs)
+    await settle('click', pacing.settleMs)
     const after = await probeAction(attempt.index, attempt.label)
     const urlChanged = attempt.signature.url !== after.signature.url
     const dialogNowOpen = after.signature.dialogOpen
     let fresh: PageSnapshot | undefined
-    if (urlChanged || dialogNowOpen) fresh = await collectSnapshot()
+    if (urlChanged || dialogNowOpen) fresh = await recollection('post-action', () => collectSnapshot())
     if (urlChanged && fresh) after.signature = signatureOf(fresh)
     const deltas = stateDeltas(attempt.before, after.target)
     const pageChanged = !signaturesEqual(attempt.signature, after.signature)
@@ -527,7 +574,7 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
   async function dispatchPointClick(point: ViewportPoint): Promise<void> {
     const { x, y } = point
     await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x, y })
-    await sleep(pacing.moveMs)
+    await settle('pointer', pacing.moveMs)
     await cdp.send('Input.dispatchMouseEvent', {
       type: 'mousePressed',
       x,
@@ -536,7 +583,7 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
       buttons: 1,
       clickCount: 1,
     })
-    await sleep(pacing.clickMs)
+    await settle('pointer', pacing.clickMs)
     await cdp.send('Input.dispatchMouseEvent', {
       type: 'mouseReleased',
       x,
@@ -575,7 +622,7 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
     if (clicked.kind === 'blocked') {
       return `typed [${ref}]: not typed — blocked by overlay${dialogSuffix(clicked.snapshot)}${reportsSuffix(drainedReports())}`
     }
-    await sleep(pacing.settleMs)
+    await settle('type', pacing.settleMs)
     for (const ch of text) {
       const key = keyEventFor(ch)
       await cdp.send('Input.dispatchKeyEvent', {
@@ -591,9 +638,9 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
         ...(key.code ? { code: key.code } : {}),
         windowsVirtualKeyCode: key.keyCode,
       })
-      await sleep(pacing.keystrokeMs)
+      await settle('keystroke', pacing.keystrokeMs)
     }
-    await sleep(pacing.settleMs)
+    await settle('type', pacing.settleMs)
     const after = await probeAction(clicked.index, clicked.label)
     if (!after.target) {
       return `typed [${ref}]: field unavailable after page change; url=${after.signature.url} title=${JSON.stringify(after.signature.title)}`
@@ -621,15 +668,15 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
     // Keys only land on the focused webContents — after a text-box command
     // the dashboard holds focus, so claim it for the page first.
     page.focus()
-    await sleep(pacing.settleMs)
+    await settle('press-key', pacing.settleMs)
     for (let i = 0; i < times; i++) {
       await dispatchShortcut(event)
-      if (i < times - 1) await sleep(pacing.keystrokeMs)
+      if (i < times - 1) await settle('keystroke', pacing.keystrokeMs)
     }
   }
 
   async function mediaState(): Promise<MediaState | null> {
-    await sleep(pacing.settleMs)
+    await settle('media-state', pacing.settleMs)
     return evaluateInPage<MediaState | null>(`(() => {
       /* MEDIA_STATE */
       const media = Array.from(document.querySelectorAll('video, audio'))
