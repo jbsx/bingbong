@@ -287,20 +287,56 @@ export class FakeVad implements VadScorer {
   }
 }
 
-/** Queue-driven transcriber: one transcript per utterance, then ''. */
+/**
+ * Queue-driven transcriber: one transcript per finish(), then ''. Records the
+ * streaming lifecycle (#40) in `events` so tests can assert what the session
+ * fed the engine and in which order.
+ */
 export class FakeTranscriber implements Transcriber {
   private queue: string[]
+  /** The complete utterance pcm of every finish() call. */
   readonly audio: Float32Array[] = []
+  /** Every frame pushed during speech. */
+  readonly pushedFrames: Float32Array[] = []
+  /** Lifecycle record: 'begin', 'push' ×n, then 'finish' or 'cancel'. */
+  readonly events: string[] = []
+  private readonly partialListeners = new Set<(text: string) => void>()
   rejectWith: Error | null = null
 
   constructor(script: string[] = []) {
     this.queue = [...script]
   }
 
-  async transcribe(pcm: Float32Array): Promise<string> {
+  begin(): void {
+    this.events.push('begin')
+  }
+
+  push(frame: Float32Array): void {
+    this.pushedFrames.push(frame)
+    this.events.push('push')
+  }
+
+  onPartial(listener: (text: string) => void): () => void {
+    this.partialListeners.add(listener)
+    return () => {
+      this.partialListeners.delete(listener)
+    }
+  }
+
+  /** Test hook: broadcast a partial transcript to subscribers. */
+  emitPartial(text: string): void {
+    for (const listener of this.partialListeners) listener(text)
+  }
+
+  async finish(pcm: Float32Array): Promise<string> {
     this.audio.push(pcm)
+    this.events.push('finish')
     if (this.rejectWith) throw this.rejectWith
     return this.queue.shift() ?? ''
+  }
+
+  cancel(): void {
+    this.events.push('cancel')
   }
 }
 

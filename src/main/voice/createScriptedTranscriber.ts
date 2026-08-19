@@ -1,4 +1,5 @@
 import type { Transcriber } from '../../core/ports/stt'
+import { finalOnlyTranscriber } from '../../core/voice/finalOnlyTranscriber'
 
 /** A scripted utterance: the transcript, optionally held for a delay. */
 interface ScriptedUtterance {
@@ -29,13 +30,11 @@ export function createScriptedTranscriber(scriptJson: string): Transcriber {
     typeof t === 'string' ? { text: t } : t,
   )
 
-  return {
-    async transcribe() {
-      const next = script.shift() ?? { text: '' }
-      if (next.delayMs && next.delayMs > 0) {
-        await new Promise((resolve) => setTimeout(resolve, next.delayMs))
-      }
-      return next.text
-    },
-  }
+  return finalOnlyTranscriber(async () => {
+    const next = script.shift() ?? { text: '' }
+    if (next.delayMs && next.delayMs > 0) {
+      await new Promise((resolve) => setTimeout(resolve, next.delayMs))
+    }
+    return next.text
+  })
 }

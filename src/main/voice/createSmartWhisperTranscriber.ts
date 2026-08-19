@@ -1,11 +1,14 @@
 import { availableParallelism } from 'node:os'
 import type { Transcriber } from '../../core/ports/stt'
+import { finalOnlyTranscriber } from '../../core/voice/finalOnlyTranscriber'
 
 /**
  * smart-whisper (whisper.cpp) transcription, CPU-only per the target
  * hardware. The model loads lazily on the first utterance and stays warm
  * (offload disabled), so the first spoken command pays the load cost, not
- * every one. English-only .en models per the spec.
+ * every one. English-only .en models per the spec. A batch engine behind the
+ * streaming port (#40): no partials, the whole utterance transcribes at the
+ * endpoint.
  */
 
 interface WhisperLike {
@@ -45,22 +48,20 @@ export function createSmartWhisperTranscriber(deps: SmartWhisperDeps): Transcrib
     return whisperReady
   }
 
-  return {
-    async transcribe(pcm) {
-      const whisper = await ensureWhisper()
-      const task = await whisper.transcribe(pcm, {
-        language: 'en',
-        ...(deps.initialPrompt?.trim() ? { initial_prompt: deps.initialPrompt.trim() } : {}),
-        n_threads: threads,
-        print_progress: false,
-        print_realtime: false,
-        print_timestamps: false,
-      })
-      const segments = await task.result
-      return segments
-        .map((segment) => segment.text)
-        .join(' ')
-        .trim()
-    },
-  }
+  return finalOnlyTranscriber(async (pcm) => {
+    const whisper = await ensureWhisper()
+    const task = await whisper.transcribe(pcm, {
+      language: 'en',
+      ...(deps.initialPrompt?.trim() ? { initial_prompt: deps.initialPrompt.trim() } : {}),
+      n_threads: threads,
+      print_progress: false,
+      print_realtime: false,
+      print_timestamps: false,
+    })
+    const segments = await task.result
+    return segments
+      .map((segment) => segment.text)
+      .join(' ')
+      .trim()
+  })
 }

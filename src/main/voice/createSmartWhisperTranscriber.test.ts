@@ -26,7 +26,7 @@ describe('createSmartWhisperTranscriber', () => {
       initialPrompt: 'Linus Tech Tips, MKBHD, YouTube',
       loadLib: async () => lib as unknown as never,
     })
-    await transcriber.transcribe(new Float32Array(512))
+    await transcriber.finish(new Float32Array(512))
     expect(calls[0].params.initial_prompt).toBe('Linus Tech Tips, MKBHD, YouTube')
     expect(calls[0].params.language).toBe('en')
   })
@@ -37,7 +37,7 @@ describe('createSmartWhisperTranscriber', () => {
       modelPath: '/models/ggml-base.en.bin',
       loadLib: async () => lib as unknown as never,
     })
-    await transcriber.transcribe(new Float32Array(512))
+    await transcriber.finish(new Float32Array(512))
     expect(calls[0].params.initial_prompt).toBeUndefined()
   })
 })

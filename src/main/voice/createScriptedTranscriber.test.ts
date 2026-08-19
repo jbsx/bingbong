@@ -14,9 +14,9 @@ describe('createScriptedTranscriber', () => {
   it('returns plain-string entries immediately, one per utterance, then empty', async () => {
     const transcriber = createScriptedTranscriber(JSON.stringify(['first', 'second']))
 
-    expect(await transcriber.transcribe(new Float32Array(512))).toBe('first')
-    expect(await transcriber.transcribe(new Float32Array(512))).toBe('second')
-    expect(await transcriber.transcribe(new Float32Array(512))).toBe('')
+    expect(await transcriber.finish(new Float32Array(512))).toBe('first')
+    expect(await transcriber.finish(new Float32Array(512))).toBe('second')
+    expect(await transcriber.finish(new Float32Array(512))).toBe('')
   })
 
   it('holds a { text, delayMs } entry for its delay before resolving the transcript', async () => {
@@ -25,7 +25,7 @@ describe('createScriptedTranscriber', () => {
       JSON.stringify([{ text: 'open the fixture page', delayMs: 150 }]),
     )
 
-    const pending = transcriber.transcribe(new Float32Array(512))
+    const pending = transcriber.finish(new Float32Array(512))
     let settled = false
     void pending.then(() => {
       settled = true

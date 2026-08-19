@@ -1,4 +1,5 @@
 import type { Transcriber } from '../../core/ports/stt'
+import { finalOnlyTranscriber } from '../../core/voice/finalOnlyTranscriber'
 import type { MoonshineVocab } from '../../core/moonshine/bpeTokenizer.ts'
 import { decodeMoonshineTokens } from '../../core/moonshine/bpeTokenizer.ts'
 import { WAV_SAMPLE_RATE } from '../../core/voice/utteranceDump.ts'
@@ -89,74 +90,72 @@ export function createMoonshineTranscriber(deps: MoonshineTranscriberDeps): Tran
     return sessionsReady
   }
 
-  return {
-    async transcribe(pcm) {
-      if (pcm.length === 0) return ''
-      const { runtime, encoder, decoder } = await ensureSessions()
+  return finalOnlyTranscriber(async (pcm) => {
+    if (pcm.length === 0) return ''
+    const { runtime, encoder, decoder } = await ensureSessions()
 
-      const encoded = await encoder.run({
-        [encoder.inputNames[0]]: new runtime.Tensor('float32', pcm, [1, pcm.length]),
-      })
-      const hidden = encoded[encoder.outputNames[0]]
+    const encoded = await encoder.run({
+      [encoder.inputNames[0]]: new runtime.Tensor('float32', pcm, [1, pcm.length]),
+    })
+    const hidden = encoded[encoder.outputNames[0]]
 
-      // past_key_values.<layer>.<decoder|encoder>.<key|value> → zero KV caches.
-      const pastSuffixes = decoder.inputNames
-        .filter((name) => name.startsWith('past_key_values.'))
-        .map((name) => name.slice('past_key_values.'.length))
-      const cacheElements = dims.kvHeads * dims.headDim
-      const cacheDims = [1, dims.kvHeads, 1, dims.headDim]
-      const past: Record<string, unknown> = {}
+    // past_key_values.<layer>.<decoder|encoder>.<key|value> → zero KV caches.
+    const pastSuffixes = decoder.inputNames
+      .filter((name) => name.startsWith('past_key_values.'))
+      .map((name) => name.slice('past_key_values.'.length))
+    const cacheElements = dims.kvHeads * dims.headDim
+    const cacheDims = [1, dims.kvHeads, 1, dims.headDim]
+    const past: Record<string, unknown> = {}
+    for (const suffix of pastSuffixes) {
+      past[`past_key_values.${suffix}`] = new runtime.Tensor('float32', new Float32Array(cacheElements), cacheDims)
+    }
+
+    const tokens: number[] = [Number(DECODER_START_TOKEN_ID)]
+    let inputIds = [DECODER_START_TOKEN_ID]
+    const maxTokens = Math.min(
+      HARD_TOKEN_CAP,
+      Math.max(1, Math.ceil((pcm.length / WAV_SAMPLE_RATE) * tokensPerSecond)),
+    )
+
+    for (let step = 0; step < maxTokens; step++) {
+      const feeds: Record<string, unknown> = {}
+      for (const name of decoder.inputNames) {
+        if (name === 'input_ids') {
+          feeds.input_ids = new runtime.Tensor('int64', BigInt64Array.from(inputIds), [1, inputIds.length])
+        } else if (name === 'encoder_hidden_states') {
+          feeds.encoder_hidden_states = hidden
+        } else if (name === 'encoder_attention_mask') {
+          // Newer optimum exports gate cross-attention with an all-ones mask.
+          feeds.encoder_attention_mask = new runtime.Tensor(
+            'int64',
+            BigInt64Array.from({ length: pcm.length }, () => 1n),
+            [1, pcm.length],
+          )
+        } else if (name === 'use_cache_branch') {
+          feeds.use_cache_branch = new runtime.Tensor('bool', new Uint8Array([step > 0 ? 1 : 0]), [1])
+        } else if (name in past) {
+          feeds[name] = past[name]
+        } else {
+          throw new Error(`moonshine decoder has unexpected input ${name}`)
+        }
+      }
+
+      const outputs = await decoder.run(feeds)
+      const next = argmaxLastRow(outputs.logits as { data: ArrayLike<number>; dims: readonly number[] })
+      tokens.push(next)
+      if (next === Number(EOS_TOKEN_ID)) break
+      inputIds = [BigInt(next)]
+
+      // On the first step every present.* becomes the next past; on cached
+      // steps the graph leaves the encoder.* halves untouched — copying
+      // them back would be wasted work, and the reference skips them too.
       for (const suffix of pastSuffixes) {
-        past[`past_key_values.${suffix}`] = new runtime.Tensor('float32', new Float32Array(cacheElements), cacheDims)
-      }
-
-      const tokens: number[] = [Number(DECODER_START_TOKEN_ID)]
-      let inputIds = [DECODER_START_TOKEN_ID]
-      const maxTokens = Math.min(
-        HARD_TOKEN_CAP,
-        Math.max(1, Math.ceil((pcm.length / WAV_SAMPLE_RATE) * tokensPerSecond)),
-      )
-
-      for (let step = 0; step < maxTokens; step++) {
-        const feeds: Record<string, unknown> = {}
-        for (const name of decoder.inputNames) {
-          if (name === 'input_ids') {
-            feeds.input_ids = new runtime.Tensor('int64', BigInt64Array.from(inputIds), [1, inputIds.length])
-          } else if (name === 'encoder_hidden_states') {
-            feeds.encoder_hidden_states = hidden
-          } else if (name === 'encoder_attention_mask') {
-            // Newer optimum exports gate cross-attention with an all-ones mask.
-            feeds.encoder_attention_mask = new runtime.Tensor(
-              'int64',
-              BigInt64Array.from({ length: pcm.length }, () => 1n),
-              [1, pcm.length],
-            )
-          } else if (name === 'use_cache_branch') {
-            feeds.use_cache_branch = new runtime.Tensor('bool', new Uint8Array([step > 0 ? 1 : 0]), [1])
-          } else if (name in past) {
-            feeds[name] = past[name]
-          } else {
-            throw new Error(`moonshine decoder has unexpected input ${name}`)
-          }
-        }
-
-        const outputs = await decoder.run(feeds)
-        const next = argmaxLastRow(outputs.logits as { data: ArrayLike<number>; dims: readonly number[] })
-        tokens.push(next)
-        if (next === Number(EOS_TOKEN_ID)) break
-        inputIds = [BigInt(next)]
-
-        // On the first step every present.* becomes the next past; on cached
-        // steps the graph leaves the encoder.* halves untouched — copying
-        // them back would be wasted work, and the reference skips them too.
-        for (const suffix of pastSuffixes) {
-          if (step === 0 || suffix.includes('decoder')) {
-            past[`past_key_values.${suffix}`] = outputs[`present.${suffix}`]
-          }
+        if (step === 0 || suffix.includes('decoder')) {
+          past[`past_key_values.${suffix}`] = outputs[`present.${suffix}`]
         }
       }
+    }
 
-      return decodeMoonshineTokens(deps.vocab, tokens)
-    },
-  }
+    return decodeMoonshineTokens(deps.vocab, tokens)
+  })
 }

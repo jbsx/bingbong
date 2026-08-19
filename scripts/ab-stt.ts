@@ -92,7 +92,7 @@ const warmStart = performance.now()
 await whisperTranscribe(firstPcm.slice(0, 32_000))
 const whisperLoadMs = performance.now() - warmStart
 const moonStart = performance.now()
-await moonshineTranscriber.transcribe(firstPcm)
+await moonshineTranscriber.finish(firstPcm)
 const moonshineLoadMs = performance.now() - moonStart
 
 const rows: AbRow[] = []
@@ -102,8 +102,10 @@ for (const file of files) {
   const whisperStart = performance.now()
   const whisperText = await whisperTranscribe(pcm)
   const whisperMs = performance.now() - whisperStart
+  // Final-only behind the streaming port (#40): no begin/push, the whole
+  // utterance transcribes at finish().
   const moonshineStart = performance.now()
-  const moonshineText = await moonshineTranscriber.transcribe(pcm)
+  const moonshineText = await moonshineTranscriber.finish(pcm)
   const moonshineMs = performance.now() - moonshineStart
   rows.push({ file: file.split('/').pop()!, durationSec, whisperText, whisperMs, moonshineText, moonshineMs })
 }

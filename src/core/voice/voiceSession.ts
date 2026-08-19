@@ -225,6 +225,9 @@ export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
     commandListenStart = null
     endpointer.reset()
     deps.vad.reset()
+    // Drop any in-flight utterance capture with the listen (#40); a finished
+    // capture makes this a no-op for the engine.
+    deps.transcriber.cancel()
     emitState()
     // Back to a clean ear: the wake word itself must not echo into the next
     // detection window (the monitor latches until this reset).
@@ -240,6 +243,9 @@ export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
     transcribing = false
     reason = 'pause'
     resetEndpointer()
+    // The interrupted utterance's capture dies with the endpointer reset —
+    // the pause listen starts a fresh one (#40).
+    deps.transcriber.cancel()
     deps.vad.reset()
     emitState()
   }
@@ -280,8 +286,21 @@ export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
         return
       }
       if (!listening) return
+      const wasIdle = endpointer.isIdle()
       const utterance = endpointer.push(prob, frame)
-      if (utterance) await handleUtterance(utterance)
+      if (utterance) {
+        await handleUtterance(utterance)
+      } else if (!endpointer.isIdle()) {
+        // Streaming STT (#40): utterance frames flow to the transcriber as
+        // they arrive, so a streaming engine transcribes during speech; a
+        // final-only engine ignores them and still gets the whole utterance
+        // at finish().
+        if (wasIdle) deps.transcriber.begin()
+        deps.transcriber.push(frame)
+      } else if (!wasIdle) {
+        // The endpointer discarded a blip — drop the in-flight capture too.
+        deps.transcriber.cancel()
+      }
     }
   }
 
@@ -320,7 +339,7 @@ export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
 
     let text: string
     try {
-      text = (await deps.transcriber.transcribe(utterance.pcm)).trim()
+      text = (await deps.transcriber.finish(utterance.pcm)).trim()
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
       recordStt({ error: message })

@@ -107,7 +107,7 @@ describe('createMoonshineTranscriber', () => {
       loadRuntime: async () => rt.module as unknown as never,
     })
 
-    await expect(transcriber.transcribe(PCM)).resolves.toBe('And so')
+    await expect(transcriber.finish(PCM)).resolves.toBe('And so')
 
     expect(rt.created).toEqual(['/m/encoder.onnx', '/m/decoder.onnx'])
     expect(rt.encoderFeeds.length).toBe(1)
@@ -131,7 +131,7 @@ describe('createMoonshineTranscriber', () => {
       vocab: VOCAB,
       loadRuntime: async () => rt.module as unknown as never,
     })
-    await transcriber.transcribe(PCM)
+    await transcriber.finish(PCM)
 
     const first = rt.decoderFeeds[0]
     const pastNames = Object.keys(first).filter((n) => n.startsWith('past_key_values.'))
@@ -162,7 +162,7 @@ describe('createMoonshineTranscriber', () => {
       vocab: VOCAB,
       loadRuntime: async () => rt.module as unknown as never,
     })
-    await transcriber.transcribe(PCM)
+    await transcriber.finish(PCM)
 
     const mask = rt.decoderFeeds[0].encoder_attention_mask as FakeTensor
     expect(mask.data).toEqual(BigInt64Array.from({ length: PCM.length }, () => 1n))
@@ -178,7 +178,7 @@ describe('createMoonshineTranscriber', () => {
       loadRuntime: async () => rt.module as unknown as never,
       maxTokensPerSecond: 2, // 1 s audio → 2 steps
     })
-    await transcriber.transcribe(PCM)
+    await transcriber.finish(PCM)
     expect(rt.decoderFeeds.length).toBe(2)
   })
 
@@ -190,7 +190,7 @@ describe('createMoonshineTranscriber', () => {
       vocab: VOCAB,
       loadRuntime: async () => rt.module as unknown as never,
     })
-    await expect(transcriber.transcribe(new Float32Array(0))).resolves.toBe('')
+    await expect(transcriber.finish(new Float32Array(0))).resolves.toBe('')
     expect(rt.created).toEqual([])
   })
 })

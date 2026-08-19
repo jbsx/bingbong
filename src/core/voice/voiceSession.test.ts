@@ -115,12 +115,16 @@ async function createSession(overrides?: {
         clock: { monotonic: () => clock.now(), wall: () => PERF_WALL_ORIGIN + clock.now() },
       })
     : undefined
-  // Scripted STT latency: transcription advances the fake clock.
+  // Scripted STT latency: the final pass advances the fake clock.
   const transcriber = overrides?.perf
     ? {
-        transcribe: async (pcm: Float32Array) => {
+        begin: () => baseTranscriber.begin(),
+        push: (frame: Float32Array) => baseTranscriber.push(frame),
+        onPartial: (listener: (text: string) => void) => baseTranscriber.onPartial(listener),
+        cancel: () => baseTranscriber.cancel(),
+        finish: async (pcm: Float32Array) => {
           clock.advance(overrides.perf?.sttMs ?? 1_500)
-          return baseTranscriber.transcribe(pcm)
+          return baseTranscriber.finish(pcm)
         },
       }
     : baseTranscriber
@@ -957,7 +961,7 @@ describe('voice session — transcribing state (#38)', () => {
   class DeferredTranscriber extends FakeTranscriber {
     private resolveText: ((text: string) => void) | null = null
 
-    override transcribe(pcm: Float32Array): Promise<string> {
+    override finish(pcm: Float32Array): Promise<string> {
       this.audio.push(pcm)
       return new Promise((resolve) => {
         this.resolveText = resolve
@@ -1094,6 +1098,101 @@ describe('voice session — transcribing state (#38)', () => {
       { listening: true, reason: 'hotkey', monitoring: false, transcribing: false },
       { listening: false, reason: 'hotkey', monitoring: false, transcribing: true },
       { listening: true, reason: 'pause', monitoring: false, transcribing: false },
+    ])
+  })
+})
+
+describe('voice session — streaming transcriber port (#40)', () => {
+  it('begins the capture at speech start and pushes every utterance frame before finish', async () => {
+    const harness = await createSession({ transcriber: new FakeTranscriber(['open youtube']) })
+
+    harness.session.arm()
+    await harness.speakUtterance() // 8 speech frames + trailing silence, default config
+
+    // Frames 1–2 sit in pre-roll (startFrames 3); frame 3 begins the capture.
+    // Frames 3–8 (6 speech) plus 15 silence frames flow through push; the
+    // 16th silence frame (endFrames for the 500 ms default) fires the
+    // endpoint and is not pushed — finish() gets the complete utterance.
+    expect(harness.transcriber.events).toEqual([
+      'begin',
+      ...Array.from({ length: 21 }, () => 'push'),
+      'finish',
+      'cancel', // stopListening after the command submit resets the ear
+    ])
+    expect(harness.transcriber.pushedFrames).toHaveLength(21)
+    expect(harness.transcriber.audio).toHaveLength(1)
+    expect(harness.transcriber.audio[0]).toHaveLength(22 * 512) // pre-roll + speech + tail, padding trimmed
+    expect(harness.commands).toEqual(['open youtube'])
+  })
+
+  it('discards the capture when the endpointer drops a blip — no finish ever runs', async () => {
+    const harness = await createSession({ transcriber: new FakeTranscriber(['open youtube']) })
+
+    harness.session.arm()
+    // 4 speech frames = 128 ms < minSpeechMs 160: a blip, not an utterance.
+    await harness.speakUtterance([...Array.from({ length: 4 }, () => SPEECH), ...Array.from({ length: 30 }, () => SILENCE)])
+
+    expect(harness.transcriber.events).toEqual(['begin', ...Array.from({ length: 17 }, () => 'push'), 'cancel'])
+    expect(harness.transcriber.audio).toEqual([])
+    expect(harness.commands).toEqual([])
+    // The ear stays open — a blip never left the listening state.
+    expect(harness.session.getState()).toEqual({ listening: true, reason: 'hotkey', monitoring: false, transcribing: false })
+  })
+
+  it('cancels the in-flight capture on disarm mid-utterance', async () => {
+    const harness = await createSession({ transcriber: new FakeTranscriber(['open youtube']) })
+
+    harness.session.arm()
+    for (let i = 0; i < 5; i++) {
+      harness.vad.queue.push(SPEECH)
+      await harness.session.pushAudio(new Float32Array(512))
+    }
+    harness.session.disarm()
+
+    expect(harness.transcriber.events).toEqual(['begin', 'push', 'push', 'push', 'cancel'])
+    expect(harness.transcriber.audio).toEqual([])
+    expect(harness.commands).toEqual([])
+  })
+
+  it('cancels the in-flight capture when a pause interrupt reopens the ear mid-utterance', async () => {
+    const runState = { value: 'running' as CommandRunState }
+    const harness = await createSession({ transcriber: new FakeTranscriber(['open youtube']), runState })
+
+    harness.session.arm()
+    for (let i = 0; i < 5; i++) {
+      harness.vad.queue.push(SPEECH)
+      await harness.session.pushAudio(new Float32Array(512))
+    }
+    // "hold on" wake head / keyword mid-speech: the pause listen takes the mic.
+    harness.session.interrupt('pause')
+
+    expect(harness.transcriber.events).toEqual(['begin', 'push', 'push', 'push', 'cancel'])
+    expect(harness.transcriber.audio).toEqual([])
+    // The pause listen is live: the next utterance begins a fresh capture.
+    expect(harness.session.getState()).toEqual({ listening: true, reason: 'pause', monitoring: false, transcribing: false })
+  })
+
+  it('partial transcripts are observable at the port during speech — the session is unaffected', async () => {
+    const harness = await createSession({ transcriber: new FakeTranscriber(['open youtube']) })
+    const partials: string[] = []
+    harness.transcriber.onPartial((text) => partials.push(text))
+
+    harness.session.arm()
+    for (let i = 0; i < 3; i++) {
+      harness.vad.queue.push(SPEECH)
+      await harness.session.pushAudio(new Float32Array(512))
+    }
+    // Mid-speech: a streaming engine would have emitted this by now.
+    harness.transcriber.emitPartial('open you')
+    expect(partials).toEqual(['open you'])
+
+    await harness.speakUtterance([...Array.from({ length: 5 }, () => SPEECH), ...Array.from({ length: 30 }, () => SILENCE)])
+
+    expect(harness.commands).toEqual(['open youtube'])
+    expect(harness.states).toEqual([
+      { listening: true, reason: 'hotkey', monitoring: false, transcribing: false },
+      { listening: false, reason: 'hotkey', monitoring: false, transcribing: true },
+      { listening: false, reason: null, monitoring: false, transcribing: false },
     ])
   })
 })
