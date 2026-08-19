@@ -720,6 +720,33 @@ describe('voice session — wake word (T10)', () => {
     expect(harness.states.at(-1)).toEqual({ listening: false, reason: null, monitoring: true, transcribing: false })
   })
 
+  it('a barge-in tail that transcribes empty is a harmless no-op — the real command after it is not swallowed (#41 acceptance)', async () => {
+    const detector = new FakeWakeDetector([0.9])
+    // First finish is the stopped speech's tail (or the activation chime)
+    // reaching the mic — synthetic audio Moonshine can zero out; the second
+    // is the user's actual spoken command.
+    const harness = await createSession({
+      transcriber: new FakeTranscriber(['', 'open youtube']),
+      wake: { detector },
+    })
+    harness.session.enableWakeMonitoring()
+
+    await monitorFrames(harness, [SPEECH, SPEECH, SPEECH])
+    expect(harness.tts.stopCalls).toBe(1)
+
+    // Utterance 1 — the tail: an empty transcript must reopen the ear with
+    // the wake listen intact (the harmless no-op branch), not close it.
+    await harness.speakUtterance()
+    expect(harness.states.at(-1)).toEqual({ listening: true, reason: 'wake', monitoring: true, transcribing: false })
+    expect(harness.commands).toEqual([])
+    expect(harness.errors).toEqual([])
+
+    // Utterance 2 — the real command: submitted through the text-box surface.
+    await harness.speakUtterance()
+    expect(harness.commands).toEqual(['open youtube'])
+    expect(harness.heard).toEqual([{ text: 'open youtube', routed: 'command' }])
+  })
+
   it('keeps monitoring after a wake so the next wake word lands', async () => {
     const detector = new FakeWakeDetector([0.9, 0.9])
     const harness = await createSession({

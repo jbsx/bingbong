@@ -85,6 +85,7 @@ profiling wants the headroom. The synthetic-voice failure mode went on the
 endpointing keeps TTS playback out of STT, or Moonshine's empty-transcript
 on synthetic audio degrades to a harmless no-op — it cannot, however, be
 allowed to swallow a real spoken command, which today's data does not show).
+That test exists now — see the close-out section below.
 
 Shipped in #41: whisper.cpp and the `BINGBONG_WHISPER_MODEL` /
 `BINGBONG_STT_PROMPT` knobs are gone; the streaming engine lives in
@@ -109,3 +110,34 @@ old whisper adapter, then ~7× cheaper). Live verification on real usage
 stays with `pnpm perf:report` (`stt` span). Partials grew prefix-correctly
 ("And so" → "…ask not what your country can do for you"), and none landed
 after the endpoint.
+
+## #35 close-out: barge-in robustness + real-voice evidence
+
+The go/no-go section's open acceptance item — the synthetic-voice failure
+mode needs its own test — is closed at both seams:
+
+- **Engine** (`createMoonshineTranscriber.test.ts`): audio that makes the
+  engine sample EOS on the first token resolves `finish()` to `''` (the
+  harmless no-op), and the shared sessions stay ready — the next utterance
+  transcribes normally.
+- **Session** (`voiceSession.test.ts`): during a wake barge-in listen, an
+  utterance that transcribes empty (the stopped speech's tail or the
+  activation chime reaching the mic) reopens the ear with the wake listen
+  intact; the real spoken command after it is submitted, never swallowed.
+
+Real voice, measured after the swap on the target machine:
+
+- Live `stt` span (perf:report): **164 ms** — from the session started
+  15:52 UTC, after the #41 engine-swap commit (15:10 UTC). A fresh report's
+  aggregate stt p95 of ~6.5 s mixes in pre-swap whisper sessions (the
+  6.0–6.6 s fixed-window profile of docs/stt-latency.md); one live
+  post-swap span is a sample, not a p95 — ongoing usage accrues it through
+  the same report.
+- `pnpm stt:replay` over the captured live dump (3.1 s utterance, real-time
+  pacing): **135 ms**, transcript verbatim ("Open the first line of
+  stackedups video you can find.").
+
+Acceptance standing: every endpoint→transcript measurement on the shipped
+engine — fixtures (p95 267 ms over 20), the live span (164 ms), real-voice
+replay (135 ms) — sits well under the 500 ms target, with `perf:report`
+as the ongoing live check.

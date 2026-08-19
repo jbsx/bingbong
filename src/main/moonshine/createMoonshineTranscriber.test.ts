@@ -206,6 +206,24 @@ describe('createMoonshineTranscriber', () => {
     expect(rt.created).toEqual([])
   })
 
+  it('synthetic-audio zeroing (EOS on the first sampled token) resolves empty — the next utterance still transcribes (#41 acceptance)', async () => {
+    // The A/B failure mode: TTS-like audio makes the engine emit EOS
+    // immediately. That must resolve to '' (a harmless no-op upstream), and
+    // it must leave the shared sessions ready for the real command after it.
+    const rt = fakeRuntime([
+      [{ next: 2 }], // tail: EOS before any text token
+      [{ next: 3 }, { next: 2 }], // the real command right after
+    ])
+    const transcriber = makeTranscriber(rt)
+
+    await expect(transcriber.finish(PCM)).resolves.toBe('')
+    await expect(transcriber.finish(PCM)).resolves.toBe('And')
+    // Sessions were created once and reused across both passes — the EOS
+    // pass must not un-memoize them into a per-utterance model reload.
+    expect(rt.created).toEqual(['/m/encoder.onnx', '/m/decoder.onnx'])
+    expect(rt.encoderFeeds).toHaveLength(2)
+  })
+
   it('pads sub-second audio to one second before encoding', async () => {
     const rt = fakeRuntime([[{ next: 2 }]])
     const transcriber = makeTranscriber(rt)
