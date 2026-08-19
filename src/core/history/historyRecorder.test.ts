@@ -248,4 +248,42 @@ describe('historyRecorder', () => {
       ['First completed.', 1],
     ])
   })
+
+  it('maps the progress detail variants (#43) to no entry — recording byte-for-byte unchanged', () => {
+    const detail = fakeStore()
+    const plain = fakeStore()
+    const detailRun = recorderWith(detail).run()
+    const plainRun = recorderWith(plain).run()
+
+    const turnId = 'turn-r11'
+    detailRun.event({ type: 'command', turnId, text: 'collect agent reports', at: 900 })
+    detailRun.event({ type: 'status', turnId, status: 'thinking', at: 901 })
+    detailRun.event({ type: 'llm_retry', turnId, attempt: 2, maxAttempts: 3, at: 960 })
+    detailRun.event({ type: 'llm_retry', turnId, attempt: 3, maxAttempts: 3, at: 990 })
+    detailRun.event({ type: 'tool_call', turnId, callId: 'c1', name: 'agent_results', args: { wait: true }, at: 991 })
+    detailRun.event({ type: 'waiting_on_agents', turnId, running: 2, at: 992 })
+    detailRun.event({ type: 'tool_result', turnId, callId: 'c1', name: 'agent_results', ok: true, at: 995 })
+    detailRun.event({ type: 'speak', text: 'Collected.', at: 996 })
+    detailRun.event({ type: 'done', turnId, outcome: 'done', at: 997 })
+
+    plainRun.event({ type: 'command', turnId, text: 'collect agent reports', at: 900 })
+    plainRun.event({ type: 'status', turnId, status: 'thinking', at: 901 })
+    plainRun.event({ type: 'tool_call', turnId, callId: 'c1', name: 'agent_results', args: { wait: true }, at: 991 })
+    plainRun.event({ type: 'tool_result', turnId, callId: 'c1', name: 'agent_results', ok: true, at: 995 })
+    plainRun.event({ type: 'speak', text: 'Collected.', at: 996 })
+    plainRun.event({ type: 'done', turnId, outcome: 'done', at: 997 })
+
+    expect(detail.recentEntries(50)).toEqual(plain.recentEntries(50))
+    expect(detail.recentRuns(50)).toEqual(plain.recentRuns(50))
+  })
+
+  it('auxiliary detail events outside any run record nothing', () => {
+    const store = fakeStore()
+    const recorder = recorderWith(store)
+
+    recorder.event({ type: 'llm_retry', turnId: 'turn-x', attempt: 2, maxAttempts: 3, at: 1_000 })
+    recorder.event({ type: 'waiting_on_agents', turnId: 'turn-x', running: 1, at: 1_001 })
+
+    expect(store.recentEntries(10)).toEqual([])
+  })
 })

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { Assistant, PendingAsk, PendingConfirmation, OrbStatus, TranscriptEntry } from './useAssistant'
+import { describeRunProgress, type RunProgress } from '../../core/pipeline/runProgress'
 
 function deadlineText(expiresAt: number | null, now: number): string {
   return expiresAt === null ? 'paused' : `${Math.max(0, Math.ceil((expiresAt - now) / 1000))}s`
@@ -7,6 +8,27 @@ function deadlineText(expiresAt: number | null, now: number): string {
 
 export function StatusOrb({ status }: { status: OrbStatus }) {
   return <div className={`status-orb status-orb--${status}`} aria-label={`assistant ${status}`} />
+}
+
+/**
+ * The header's live progress line (#43): stage + climbing elapsed counter,
+ * rendered from event timestamps with a renderer-side tick — no heartbeat
+ * IPC. A genuine hang reads as an honestly climbing number; Stop stays the
+ * only escape.
+ */
+export function RunHint({ progress }: { progress: RunProgress }) {
+  const [now, setNow] = useState(() => Date.now())
+
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 1_000)
+    return () => clearInterval(timer)
+  }, [])
+
+  return (
+    <span className="run-hint" role="status">
+      {describeRunProgress(progress, now)}
+    </span>
+  )
 }
 
 export function CommandBox({

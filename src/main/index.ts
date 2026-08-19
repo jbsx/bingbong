@@ -287,6 +287,9 @@ async function createWindow(): Promise<BrowserWindow> {
     session: sessionMemory,
     tracer: perfTracer,
     browserSubspans,
+    // Progress detail (#43): mid-await signals ride the same channel; the
+    // history projection maps them to no entry, so recording is unchanged.
+    emitDetail: emitPipelineEvent,
   })
   attachAssistantToWindow(
     pipeline,

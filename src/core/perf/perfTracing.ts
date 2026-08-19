@@ -31,9 +31,9 @@ export function withPerfTracing(client: LlmClient, tracer: PerfTracer, stage = '
           ...request,
           // Chained, never replaced: a caller's own retry hook still fires
           // alongside the perf event.
-          onRetryAttempt: (attempt) => {
-            callerOnRetry?.(attempt)
-            record(`${stage}-retry`, 0, { attempt })
+          onRetryAttempt: (attempt, maxAttempts) => {
+            callerOnRetry?.(attempt, maxAttempts)
+            record(`${stage}-retry`, 0, { attempt, maxAttempts })
           },
         })
       } finally {

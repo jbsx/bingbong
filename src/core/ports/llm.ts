@@ -29,11 +29,11 @@ export interface LlmRequest {
   /** Turn correlation id (#28); perf spans key on it when present (#29). */
   turnId?: string
   /**
-   * Retry visibility (#29): a client with an internal retry loop reports
-   * each attempt beyond the first, so silent retries show up in the perf
-   * log instead of hiding inside one inflated round.
+   * Retry visibility (#29, #43): a client with an internal retry loop
+   * reports each attempt beyond the first — with the loop's ceiling, so
+   * the dashboard can render "retrying 2/3" — before the attempt starts.
    */
-  onRetryAttempt?: (attempt: number) => void
+  onRetryAttempt?: (attempt: number, maxAttempts: number) => void
 }
 
 /** Token usage as reported by the provider (absent when unknown). */

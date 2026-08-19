@@ -99,6 +99,21 @@ export type PipelineEvent =
   | { type: 'speak'; turnId?: string; text: string; at: number }
   | { type: 'display'; turnId?: string; text: string; at: number }
   | { type: 'error'; turnId?: string; message: string; at: number }
+  /**
+   * An empty-completion retry by the orchestrator client (#43): fired by
+   * the retry hook while the LLM round is still in flight, so a tripled
+   * round-trip reads as activity on the dashboard. Detail event — the
+   * history projection maps it to no entry, so history.db recording is
+   * unchanged.
+   */
+  | { type: 'llm_retry'; turnId: string; attempt: number; maxAttempts: number; at: number }
+  /**
+   * The run is blocked in agent_results(wait) on running subagents (#43):
+   * `running` is the snapshot at wait start; live agent_update events keep
+   * the dashboard's count honest while the wait continues. Detail event —
+   * maps to no history entry.
+   */
+  | { type: 'waiting_on_agents'; turnId: string; running: number; at: number }
   /** A subagent's state changed — the dashboard keeps one card per agent id. */
   | { type: 'agent_update'; agent: SubagentCard; at: number }
   | { type: 'done'; turnId: string; outcome?: 'done' | 'failed' | 'cancelled'; at: number }

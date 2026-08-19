@@ -85,10 +85,17 @@ export function createSubagentTools(manager: SubagentManager): Tool[] {
           required: false,
         },
       },
-      async execute(call) {
+      async execute(call, ctx) {
         const rawId = call.args.agent_id
         const ids = typeof rawId === 'string' && rawId.trim() !== '' ? [rawId.trim()] : undefined
         const wait = call.args.wait === true
+        if (wait) {
+          // Progress detail (#43): the wait only reads as a stall if the
+          // dashboard doesn't know what it is waiting on. Snapshot at wait
+          // start; live agent cards keep the count honest from there.
+          const running = manager.list().filter((record) => record.status === 'running').length
+          if (running > 0) ctx.waitingOnAgents?.(running)
+        }
         return manager.results({ ids, wait })
       },
     },

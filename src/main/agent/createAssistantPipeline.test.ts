@@ -1,10 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import { createAssistantPipeline } from './createAssistantPipeline'
 import { createSessionMemory } from '../../core/session/sessionMemory'
-import { FakeBrowser, FakeClock, FakeSearch, RecordingTts } from '../../core/testing/doubles'
+import { FakeBrowser, FakeClock, FakeSearch, RecordingTts, fakeSubagentManager, subagentRecord } from '../../core/testing/doubles'
 import type { SearchResult } from '../../core/ports/search'
 import type { CommandPipeline } from '../../core/pipeline/createCommandPipeline'
 import type { PipelineEvent } from '../../core/pipeline/events'
+import { createSubagentTools } from '../../core/pipeline/subagentTools'
 import type { PerfTracer } from '../../core/perf/perfTracer'
 
 const FULL_ENV = {
@@ -279,5 +280,29 @@ describe('createAssistantPipeline', () => {
 
     const tools = (requests[0].tools as { function: { name: string } }[]).map((t) => t.function.name)
     expect(tools).not.toContain('new_session')
+  })
+
+  it('wires the detail sink through to blocking tools, turn-stamped (#43)', async () => {
+    const detail: PipelineEvent[] = []
+    const manager = fakeSubagentManager([subagentRecord('a-1'), subagentRecord('a-2')])
+    const pipeline = createAssistantPipeline({
+      controller: new FakeBrowser(),
+      env: {
+        BINGBONG_LLM_SCRIPT: JSON.stringify([
+          { kind: 'tool_calls', calls: [{ id: 'c1', name: 'agent_results', args: { wait: true } }] },
+          { kind: 'answer', speak: 'Collected.', display: 'Collected.' },
+        ]),
+      },
+      clock: new FakeClock(),
+      subagentTools: createSubagentTools(manager),
+      emitDetail: (event) => detail.push(event),
+    })
+
+    const events = await collect(pipeline, 'collect the reports')
+
+    expect(detail).toEqual([
+      { type: 'waiting_on_agents', turnId: expect.any(String), running: 2, at: 0 },
+    ])
+    expect(events.some((event) => event.type === 'waiting_on_agents')).toBe(false)
   })
 })

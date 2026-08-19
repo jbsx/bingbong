@@ -6,9 +6,10 @@ import { createNewSessionTool } from './sessionTools'
 import { createSessionMemory } from '../session/sessionMemory'
 import { createHistoryRecorder } from '../history/historyRecorder'
 import type { HistoryStore, RecordedEntry, RunRecord } from '../history/historyStore'
-import { FailingTts, FakeClock, fakePerfHarness, RecordingTts, ScriptedLlm, withoutTurnId } from '../testing/doubles'
+import { FailingTts, FakeClock, fakePerfHarness, fakeSubagentManager, RecordingTts, ScriptedLlm, subagentRecord, withoutTurnId } from '../testing/doubles'
 import type { PipelineEvent } from './events'
 import type { AssistantTurn, LlmClient, LlmRequest } from '../ports/llm'
+import { createSubagentTools } from './subagentTools'
 import { createPerfTracer, type PerfTracer } from '../perf/perfTracer'
 import { withPerfTracing } from '../perf/perfTracing'
 import { createBrowserSubspans } from '../perf/browserSubspans'
@@ -1550,5 +1551,145 @@ describe('command pipeline — spoken-line tts spans (#31)', () => {
     const lineSpans = records.filter((record) => record.stage !== 'summary')
     expect(lineSpans.map((record) => record.stage)).toEqual(['tts-synthesis', 'tts-playback'])
     expect(lineSpans.every((record) => record.turnId === 'turn-voice-1')).toBe(true)
+  })
+})
+
+describe('progress detail (#43)', () => {
+  it('surfaces an empty-completion retry on the detail channel before the next attempt starts', async () => {
+    const sink: PipelineEvent[] = []
+    // The double stands where the provider's retry loop stands: the hook
+    // fires mid-complete(), the round is still in flight. What the sink
+    // holds at that moment is what the dashboard sees before the next
+    // attempt starts.
+    let sinkAtHook: PipelineEvent[] = []
+    const llm: LlmClient = {
+      async complete(request) {
+        request.onRetryAttempt?.(2, 3)
+        sinkAtHook = [...sink]
+        return { kind: 'answer', speak: 'Done.', display: 'Done.' }
+      },
+    }
+    const pipeline = createCommandPipeline({
+      llm,
+      tts: new RecordingTts(),
+      clock: new FakeClock(),
+      tools: [],
+      emitDetail: (event) => sink.push(event),
+    })
+
+    const events = await collectStamped(pipeline, 'work', 'turn-r')
+
+    expect(sinkAtHook).toEqual([{ type: 'llm_retry', turnId: 'turn-r', attempt: 2, maxAttempts: 3, at: 0 }])
+    // The side channel is the only transport — never duplicated into the
+    // generator's own stream.
+    expect(sink).toEqual(sinkAtHook)
+    expect(events.some((event) => event.type === 'llm_retry')).toBe(false)
+  })
+
+  it('names what the run is waiting on while agent_results blocks', async () => {
+    const sink: PipelineEvent[] = []
+    let sinkAtResults: PipelineEvent[] = []
+    const manager = fakeSubagentManager([subagentRecord('a-1'), subagentRecord('a-2')], {
+      results: async () => {
+        sinkAtResults = [...sink]
+        return 'agent reports'
+      },
+    })
+    const llm = new ScriptedLlm([
+      { kind: 'tool_calls', calls: [{ id: 'c1', name: 'agent_results', args: { wait: true } }] },
+      { kind: 'answer', speak: 'Done.', display: 'Done.' },
+    ])
+    const pipeline = createCommandPipeline({
+      llm,
+      tts: new RecordingTts(),
+      clock: new FakeClock(),
+      tools: createSubagentTools(manager),
+      emitDetail: (event) => sink.push(event),
+    })
+
+    const events = await collectStamped(pipeline, 'collect', 'turn-w')
+
+    expect(sinkAtResults).toEqual([{ type: 'waiting_on_agents', turnId: 'turn-w', running: 2, at: 0 }])
+    expect(sink).toEqual(sinkAtResults)
+    expect(events.some((event) => event.type === 'waiting_on_agents')).toBe(false)
+  })
+
+  it('stays silent when agent_results waits on nothing, or does not wait', async () => {
+    const sink: PipelineEvent[] = []
+    const manager = fakeSubagentManager([subagentRecord('a-1', 'completed')])
+    const llm = new ScriptedLlm([
+      { kind: 'tool_calls', calls: [{ id: 'c1', name: 'agent_results', args: { wait: true } }] },
+      { kind: 'tool_calls', calls: [{ id: 'c2', name: 'agent_results', args: {} }] },
+      { kind: 'answer', speak: 'Done.', display: 'Done.' },
+    ])
+    const pipeline = createCommandPipeline({
+      llm,
+      tts: new RecordingTts(),
+      clock: new FakeClock(),
+      tools: createSubagentTools(manager),
+      emitDetail: (event) => sink.push(event),
+    })
+
+    await collect(pipeline, 'collect')
+
+    expect(sink).toEqual([])
+  })
+
+  it('joins the detail channel into the stream in delivery order — FIFO, one channel', async () => {
+    const merged: PipelineEvent[] = []
+    const llm: LlmClient = {
+      async complete(request) {
+        request.onRetryAttempt?.(2, 3)
+        return { kind: 'answer', speak: 'Done.', display: 'Done.' }
+      },
+    }
+    const pipeline = createCommandPipeline({
+      llm,
+      tts: new RecordingTts(),
+      clock: new FakeClock(),
+      tools: [],
+      emitDetail: (event) => merged.push(event),
+    })
+
+    // Generator events and detail events land in one log at the moment of
+    // delivery: detail only fires while the generator is parked mid-await,
+    // so the joined sequence is the sequence the renderer receives.
+    for await (const event of pipeline.execute('work', 'turn-o')) merged.push(event)
+
+    expect(merged.map((event) => event.type)).toEqual([
+      'command',
+      'status',
+      'llm_retry',
+      'display',
+      'status',
+      'speak',
+      'done',
+    ])
+  })
+
+  it('keeps the orb states unchanged — detail rides beside, not through, the status events', async () => {
+    const sink: PipelineEvent[] = []
+    const llm: LlmClient = {
+      async complete(request) {
+        request.onRetryAttempt?.(3, 3)
+        return { kind: 'answer', speak: 'Done.', display: 'Done.' }
+      },
+    }
+    const pipeline = createCommandPipeline({
+      llm,
+      tts: new RecordingTts(),
+      clock: new FakeClock(),
+      tools: [],
+      emitDetail: (event) => sink.push(event),
+    })
+
+    const events = await collect(pipeline, 'work')
+
+    const statuses = events.filter((event) => event.type === 'status')
+    expect(statuses).toEqual([
+      { type: 'status', status: 'thinking', at: 0 },
+      { type: 'status', status: 'speaking', at: 0 },
+    ])
+    expect(sink.map((event) => event.type)).toEqual(['llm_retry'])
   })
 })

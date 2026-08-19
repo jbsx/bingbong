@@ -40,6 +40,16 @@ export interface CommandPipelineDeps {
   browserSubspans?: BrowserSubspans
   /** Where the per-turn summary line goes (#30); defaults to console.log. */
   printSummary?: (line: string) => void
+  /**
+   * Progress detail sink (#43): live signals that fire while the run body
+   * is blocked mid-await — LLM retry attempts inside `llm.complete`, the
+   * agent wait inside a blocking tool. They cannot ride the generator
+   * (it is suspended), so they fan out through this side channel onto the
+   * same pipeline event stream. Order stays FIFO: the sink only fires
+   * while the generator is parked, so the two transports never interleave.
+   * Turn-stamped by the run before delivery.
+   */
+  emitDetail?: (event: PipelineEvent) => void
 }
 
 interface ConfirmationDecision {
@@ -250,6 +260,9 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
   async function* runTurn(command: string, turnId: string): AsyncIterable<UnstampedEvent> {
     const run: ActiveRun = { aborted: false, paused: false }
     activeRun = run
+    const emitDetail = deps.emitDetail
+      ? (event: UnstampedEvent): void => deps.emitDetail!(stampTurn(event, turnId))
+      : undefined
 
     try {
       let runOutcome: 'done' | 'failed' | 'cancelled' = 'done'
@@ -265,6 +278,13 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
           // The turn id rides the context so fan-out tools (spawn_agent)
           // correlate their subagent rounds to this turn (#29).
           turnId,
+          ...(emitDetail
+            ? {
+                // Progress detail (#43): what the run waits on, live.
+                waitingOnAgents: (running: number): void =>
+                  emitDetail({ type: 'waiting_on_agents', running, at: clock.now() }),
+              }
+            : {}),
         }
         let rounds = 0
         let steering: string | undefined
@@ -283,6 +303,15 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
             turnId,
             ...(history.length > 0 ? { history } : {}),
             ...(steering ? { steering } : {}),
+            // Retry visibility (#43): each attempt beyond the first is a
+            // detail event on the side channel — emitted before the next
+            // attempt starts, while this round is still in flight.
+            ...(emitDetail
+              ? {
+                  onRetryAttempt: (attempt: number, maxAttempts: number): void =>
+                    emitDetail({ type: 'llm_retry', attempt, maxAttempts, at: clock.now() }),
+                }
+              : {}),
           })
           steering = undefined
           const afterModelSteering = yield* checkpoint(run, 'thinking')

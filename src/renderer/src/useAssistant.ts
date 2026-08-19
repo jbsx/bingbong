@@ -4,6 +4,7 @@ import type { VoiceHeardEvent } from '../../core/voice/ipcChannels'
 import { describeHeard } from '../../core/voice/heardDisplay'
 import type { TranscriptEvent } from '../../core/history/historyStore'
 import { projectPipelineEvent } from '../../core/history/transcriptProjection'
+import { createRunProgressTracker, type RunProgress } from '../../core/pipeline/runProgress'
 
 export type OrbStatus = 'idle' | 'listening' | 'transcribing' | PipelineStatus
 
@@ -33,6 +34,12 @@ export interface Assistant {
   pendingAsk: PendingAsk | null
   /** Live subagent cards, newest last; history persists after tabs close. */
   agents: SubagentCard[]
+  /**
+   * The active run's progress (#43): stage + elapsed anchor + detail
+   * signals, folded from the event stream. The hint ticks elapsed in the
+   * renderer — no per-second IPC.
+   */
+  progress: RunProgress | null
   submit(text: string): void
   resolveConfirmation(confirmationId: string, approved: boolean): void
   resolveAsk(askId: string, answer: string): void
@@ -52,8 +59,10 @@ export function useAssistant(): Assistant {
   const [pendingConfirmation, setPendingConfirmation] = useState<PendingConfirmation | null>(null)
   const [pendingAsk, setPendingAsk] = useState<PendingAsk | null>(null)
   const [agents, setAgents] = useState<SubagentCard[]>([])
+  const [progress, setProgress] = useState<RunProgress | null>(null)
   const nextId = useRef(0)
   const lastStatus = useRef<OrbStatus>('idle')
+  const progressTracker = useRef(createRunProgressTracker())
 
   const append = useCallback((entry: TranscriptEvent) => {
     setEntries((current) => [...current, { ...entry, id: nextId.current++ }])
@@ -63,6 +72,8 @@ export function useAssistant(): Assistant {
     return window.bingbong.assistant.onEvent((event: PipelineEvent) => {
       const projected = projectPipelineEvent(event)
       if (projected) append(projected)
+      progressTracker.current.onEvent(event)
+      setProgress(progressTracker.current.current())
       switch (event.type) {
         case 'command':
           return
@@ -75,6 +86,8 @@ export function useAssistant(): Assistant {
         case 'display':
         case 'speak':
         case 'error':
+        case 'llm_retry':
+        case 'waiting_on_agents':
           return
         case 'confirmation_requested':
           setPendingConfirmation({
@@ -169,5 +182,5 @@ export function useAssistant(): Assistant {
     append({ kind: 'error', text: `voice: ${message}`, at })
   }, [append])
 
-  return { status, entries, pendingConfirmation, pendingAsk, agents, submit, resolveConfirmation, resolveAsk, abort, appendVoiceHeard, appendVoiceError }
+  return { status, entries, pendingConfirmation, pendingAsk, agents, progress, submit, resolveConfirmation, resolveAsk, abort, appendVoiceHeard, appendVoiceError }
 }

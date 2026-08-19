@@ -12,6 +12,13 @@ export interface ToolContext {
    * model rounds land in the turn's perf spans.
    */
   turnId?: string
+  /**
+   * Progress detail (#43): a tool that blocks on observable background
+   * work (agent_results with wait) reports what the run is waiting on,
+   * with the running count at wait start. Reaches the dashboard on the
+   * detail channel while the tool is still in flight.
+   */
+  waitingOnAgents?(running: number): void
 }
 
 /** Parameter description for the tool catalog sent to the model. */

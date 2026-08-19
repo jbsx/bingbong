@@ -360,26 +360,37 @@ describe('openAiLlmClient', () => {
     expect(fetch.calls).toHaveLength(3)
   })
 
-  it('reports each retry attempt through the request hook (#29)', async () => {
+  it('reports each retry attempt with the loop ceiling through the request hook (#29/#43)', async () => {
     const fetch = new ScriptedFetch([
       completionResponse({ content: null }),
       completionResponse({ content: null }),
       completionResponse({ content: '{"speak":"hi","display":"hi"}' }),
     ])
     const client = makeClient(fetch)
-    const attempts: number[] = []
+    const attempts: [number, number][] = []
 
-    await client.complete({ command: 'x', toolResults: [], onRetryAttempt: (attempt) => attempts.push(attempt) })
+    await client.complete({
+      command: 'x',
+      toolResults: [],
+      onRetryAttempt: (attempt, maxAttempts) => attempts.push([attempt, maxAttempts]),
+    })
 
-    expect(attempts).toEqual([2, 3])
+    expect(attempts).toEqual([
+      [2, 3],
+      [3, 3],
+    ])
   })
 
   it('reports no retry attempt when the first try succeeds', async () => {
     const fetch = new ScriptedFetch([completionResponse({ content: '{"speak":"hi","display":"hi"}' })])
     const client = makeClient(fetch)
-    const attempts: number[] = []
+    const attempts: [number, number][] = []
 
-    await client.complete({ command: 'x', toolResults: [], onRetryAttempt: (attempt) => attempts.push(attempt) })
+    await client.complete({
+      command: 'x',
+      toolResults: [],
+      onRetryAttempt: (attempt, maxAttempts) => attempts.push([attempt, maxAttempts]),
+    })
 
     expect(attempts).toEqual([])
   })
@@ -391,12 +402,19 @@ describe('openAiLlmClient', () => {
       completionResponse({ content: null }),
     ])
     const client = makeClient(fetch)
-    const attempts: number[] = []
+    const attempts: [number, number][] = []
 
     await expect(
-      client.complete({ command: 'x', toolResults: [], onRetryAttempt: (attempt) => attempts.push(attempt) }),
+      client.complete({
+        command: 'x',
+        toolResults: [],
+        onRetryAttempt: (attempt, maxAttempts) => attempts.push([attempt, maxAttempts]),
+      }),
     ).rejects.toThrow(/empty completion/)
 
-    expect(attempts).toEqual([2, 3])
+    expect(attempts).toEqual([
+      [2, 3],
+      [3, 3],
+    ])
   })
 })

@@ -57,6 +57,15 @@ body {
   animation: orb-pulse 1.2s ease-in-out infinite;
 }
 
+/* The header's live run line (#43): stage + climbing elapsed, gentle pulse
+   so a long round reads as alive; a hang is an honestly climbing number. */
+.run-hint {
+  font-size: 0.85rem;
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+  animation: orb-pulse 2.4s ease-in-out infinite;
+}
+
 .status-orb {
   width: 18px;
   height: 18px;

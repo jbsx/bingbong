@@ -7,6 +7,7 @@ import type { VisionModel } from '../../core/ports/vision'
 import type { SessionHistorySource, SessionResetSource } from '../../core/session/sessionMemory'
 import { createCommandPipeline, type CommandPipeline } from '../../core/pipeline/createCommandPipeline'
 import { createSingleShotPipeline } from '../../core/pipeline/singleShotPipeline'
+import type { PipelineEvent } from '../../core/pipeline/events'
 import type { Tool } from '../../core/pipeline/tool'
 import { createAskUserTool } from '../../core/pipeline/askUserTools'
 import { createBrowserTools } from '../../core/pipeline/browserTools'
@@ -73,6 +74,12 @@ export interface AssistantPipelineDeps {
    * whole-action tool span is logged.
    */
   browserSubspans?: BrowserSubspans
+  /**
+   * Progress detail sink (#43): mid-await live signals (LLM retries, the
+   * agent wait) reach the dashboard on the same pipeline event channel.
+   * Wired by main to the window's emitter; absent in tests unless asserted.
+   */
+  emitDetail?: (event: PipelineEvent) => void
 }
 
 function resolveLlm(
@@ -177,6 +184,7 @@ export function createAssistantPipeline(deps: AssistantPipelineDeps): CommandPip
     ...(deps.session ? { session: deps.session } : {}),
     ...(deps.tracer ? { tracer: deps.tracer } : {}),
     ...(deps.browserSubspans ? { browserSubspans: deps.browserSubspans } : {}),
+    ...(deps.emitDetail ? { emitDetail: deps.emitDetail } : {}),
     onAbort: () => deps.subagentControl?.cancelAll(),
     onPause: () => deps.subagentControl?.pauseAll(),
     onResume: () => deps.subagentControl?.resumeAll(),

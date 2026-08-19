@@ -13,6 +13,7 @@ import type {
   VisionModel,
 } from '../ports/vision'
 import type { PipelineEvent } from '../pipeline/events'
+import type { SubagentManager, SubagentRecord, SubagentStatus } from '../agent/subagentManager'
 import { createPerfTracer, type PerfSpanRecord, type PerfTracer } from '../perf/perfTracer'
 
 /**
@@ -411,5 +412,42 @@ export class UnavailableLlm implements LlmClient {
 
   async complete(): Promise<AssistantTurn> {
     throw new Error(this.reason)
+  }
+}
+
+/** One subagent record in the given lifecycle state. */
+export function subagentRecord(id: string, status: SubagentStatus = 'running'): SubagentRecord {
+  return {
+    id,
+    kind: 'research',
+    task: 't',
+    status,
+    startedAt: 0,
+    finishedAt: status === 'running' ? null : 0,
+    steps: 0,
+    lastAction: null,
+    result: null,
+    error: null,
+  }
+}
+
+/**
+ * A subagent manager double: spawns succeed, results merge to a fixed
+ * string, and `list()` returns the given records — the seam the delegation
+ * tools and the progress-detail tests drive.
+ */
+export function fakeSubagentManager(
+  records: SubagentRecord[] = [],
+  overrides: Partial<SubagentManager> = {},
+): SubagentManager {
+  return {
+    spawn: (kind, task) => ({ ok: true as const, agent: { ...subagentRecord('a-1'), kind, task } }),
+    cancel: () => ({ ok: true as const }),
+    cancelAll: () => 0,
+    pauseAll: () => {},
+    resumeAll: () => {},
+    list: () => records.map((record) => ({ ...record })),
+    results: async () => 'merged results',
+    ...overrides,
   }
 }

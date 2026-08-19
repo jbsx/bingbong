@@ -51,9 +51,9 @@ describe('withPerfTracing', () => {
   it('records one llm-retry event per reported retry attempt, attempt number in detail', async () => {
     const { records, state, tracer } = fakePerfHarness()
     const client = new FakeLlm(state, (request) => {
-      request.onRetryAttempt?.(2)
+      request.onRetryAttempt?.(2, 3)
       state.monotonicMs += 100
-      request.onRetryAttempt?.(3)
+      request.onRetryAttempt?.(3, 3)
       state.monotonicMs += 100
       return ANSWER
     })
@@ -62,17 +62,17 @@ describe('withPerfTracing', () => {
     await traced.complete({ command: 'x', toolResults: [], turnId: 'turn-7' })
 
     expect(records).toEqual([
-      { turnId: 'turn-7', stage: 'llm-retry', durMs: 0, at: 1_700_000_000_000, t: 0, detail: { attempt: 2 } },
-      { turnId: 'turn-7', stage: 'llm-retry', durMs: 0, at: 1_700_000_000_000, t: 100, detail: { attempt: 3 } },
+      { turnId: 'turn-7', stage: 'llm-retry', durMs: 0, at: 1_700_000_000_000, t: 0, detail: { attempt: 2, maxAttempts: 3 } },
+      { turnId: 'turn-7', stage: 'llm-retry', durMs: 0, at: 1_700_000_000_000, t: 100, detail: { attempt: 3, maxAttempts: 3 } },
       { turnId: 'turn-7', stage: 'llm', durMs: 200, at: 1_700_000_000_000, t: 200 },
     ])
   })
 
   it('chains a caller-supplied onRetryAttempt instead of clobbering it', async () => {
     const { records, state, tracer } = fakePerfHarness()
-    const seenAttempts: number[] = []
+    const seenAttempts: [number, number][] = []
     const client = new FakeLlm(state, (request) => {
-      request.onRetryAttempt?.(2)
+      request.onRetryAttempt?.(2, 3)
       return ANSWER
     })
     const traced = withPerfTracing(client, tracer)
@@ -81,14 +81,15 @@ describe('withPerfTracing', () => {
       command: 'x',
       toolResults: [],
       turnId: 'turn-3',
-      onRetryAttempt: (attempt) => seenAttempts.push(attempt),
+      onRetryAttempt: (attempt, maxAttempts) => seenAttempts.push([attempt, maxAttempts]),
     })
 
-    // The caller's hook still fires (the wrapper must not drop it) and the
-    // retry is recorded under the same chain.
-    expect(seenAttempts).toEqual([2])
+    // The caller's hook still fires with the full pair (the wrapper must
+    // not drop it or the ceiling) and the retry is recorded under the
+    // same chain.
+    expect(seenAttempts).toEqual([[2, 3]])
     expect(records).toEqual([
-      { turnId: 'turn-3', stage: 'llm-retry', durMs: 0, at: 1_700_000_000_000, t: 0, detail: { attempt: 2 } },
+      { turnId: 'turn-3', stage: 'llm-retry', durMs: 0, at: 1_700_000_000_000, t: 0, detail: { attempt: 2, maxAttempts: 3 } },
       { turnId: 'turn-3', stage: 'llm', durMs: 0, at: 1_700_000_000_000, t: 0 },
     ])
   })
@@ -97,7 +98,7 @@ describe('withPerfTracing', () => {
     const { records, state, tracer } = fakePerfHarness()
     const client = new FakeLlm(state, (request) => {
       state.monotonicMs += 250
-      request.onRetryAttempt?.(2)
+      request.onRetryAttempt?.(2, 3)
       return ANSWER
     })
     const traced = withPerfTracing(client, tracer, 'subagent-llm')
@@ -105,7 +106,7 @@ describe('withPerfTracing', () => {
     await traced.complete({ command: 'x', toolResults: [], turnId: 'turn-4' })
 
     expect(records).toEqual([
-      { turnId: 'turn-4', stage: 'subagent-llm-retry', durMs: 0, at: 1_700_000_000_000, t: 250, detail: { attempt: 2 } },
+      { turnId: 'turn-4', stage: 'subagent-llm-retry', durMs: 0, at: 1_700_000_000_000, t: 250, detail: { attempt: 2, maxAttempts: 3 } },
       { turnId: 'turn-4', stage: 'subagent-llm', durMs: 250, at: 1_700_000_000_000, t: 250 },
     ])
   })
@@ -128,7 +129,7 @@ describe('withPerfTracing', () => {
   it('passes the request through untouched when it carries no turn id', async () => {
     const { records, state, tracer } = fakePerfHarness()
     const client = new FakeLlm(state, (request) => {
-      request.onRetryAttempt?.(2) // a hook the wrapper never installed stays silent
+      request.onRetryAttempt?.(2, 3) // a hook the wrapper never installed stays silent
       return ANSWER
     })
     const traced = withPerfTracing(client, tracer)

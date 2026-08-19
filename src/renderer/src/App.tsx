@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { BrowserPane } from './BrowserPane'
-import { AssistantPanel, StatusOrb } from './AssistantPanel'
+import { AssistantPanel, RunHint, StatusOrb } from './AssistantPanel'
 import { IdleScreen } from './IdleScreen'
 import { SettingsPage } from './SettingsPage'
 import { SubagentCards } from './SubagentCards'
@@ -70,6 +70,10 @@ export function App() {
       <header className="dashboard-header">
         <StatusOrb status={orbStatus} />
         <h1>Bing Bong</h1>
+        {/* Run progress (#43) keeps its place even when the mic opens
+            mid-run — the climbing timer must never disappear behind a
+            listening hint, or a long round reads as frozen again. */}
+        {assistant.progress ? <RunHint progress={assistant.progress} /> : null}
         {voice.transcribing ? (
           <span className="voice-hint voice-hint--transcribing" role="status">
             transcribing…
