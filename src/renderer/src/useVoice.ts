@@ -9,6 +9,8 @@ const FRAMES_PER_CHUNK = 4
 export interface VoiceApi {
   /** True while the main-process session accepts mic audio (hotkey or confirmation window). */
   listening: boolean
+  /** True while a finished utterance is being transcribed — the STT window (#38). */
+  transcribing: boolean
   /** Reason for listening — drives the hint line next to the orb. */
   reason: VoiceListenReason | null
   /** Wake-word monitoring is live — the mic stays open between commands. */
@@ -47,6 +49,7 @@ async function preferC920(micId: string): Promise<string> {
  */
 export function useVoice(deps: UseVoiceDeps): VoiceApi {
   const [listening, setListening] = useState(false)
+  const [transcribing, setTranscribing] = useState(false)
   const [reason, setReason] = useState<VoiceListenReason | null>(null)
   const [monitoring, setMonitoring] = useState(false)
 
@@ -135,9 +138,13 @@ export function useVoice(deps: UseVoiceDeps): VoiceApi {
   useEffect(() => {
     const applyState = (state: VoiceState) => {
       setListening(state.listening)
+      setTranscribing(state.transcribing)
       setReason(state.reason)
       setMonitoring(state.monitoring)
-      if (state.listening || state.monitoring) {
+      // The mic also stays up through the STT window: a discarded blip
+      // returns to listening, and re-acquiring the device would eat the
+      // first frames of whatever the user says next (#38).
+      if (state.listening || state.transcribing || state.monitoring) {
         void startCapture()
       } else {
         stopCapture()
@@ -159,5 +166,5 @@ export function useVoice(deps: UseVoiceDeps): VoiceApi {
 
   useEffect(() => stopCapture, [stopCapture])
 
-  return { listening, reason, monitoring, toggleHotkey }
+  return { listening, transcribing, reason, monitoring, toggleHotkey }
 }

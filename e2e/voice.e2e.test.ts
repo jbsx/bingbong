@@ -200,6 +200,58 @@ describe('voice e2e', () => {
     }
   })
 
+  it('shows a distinct transcribing state during the STT window (#38)', async () => {
+    const script: AssistantTurn[] = [
+      { kind: 'tool_calls', calls: [{ id: 'c1', name: 'navigate', args: { url: fixture.url('/') } }] },
+      { kind: 'answer', speak: 'Opened the fixture page.', display: 'Navigated to the fixture page.' },
+    ]
+    const harness = await startHarness({
+      fixture,
+      env: {
+        BINGBONG_LLM_SCRIPT: JSON.stringify(script),
+        // The held transcript widens the STT window so the indicator is
+        // observable — the real engine spends seconds there.
+        BINGBONG_STT_SCRIPT: JSON.stringify([{ text: 'open the fixture page', delayMs: 1500 }]),
+        BINGBONG_VAD_SCRIPT: vadScript(),
+      },
+    })
+    try {
+      await harness.dashboardEval(`
+        window.__voiceStates = []
+        window.bingbong.voice.onState((state) => window.__voiceStates.push(state))
+      `)
+      await harness.dashboardEval<string>(armScript)
+      await waitForOrb(harness, 'listening')
+      await harness.dashboardEval<string>(feedAudioScript)
+
+      // The endpoint fired and STT is held: the orb and the hint must show
+      // transcribing, never the listening prompt.
+      await waitForOrb(harness, 'transcribing')
+      const hint = await harness.dashboardEval<string>(`document.querySelector('.voice-hint')?.textContent ?? ''`)
+      expect(hint).toBe('transcribing…')
+
+      // The transcript lands and the run proceeds as an ordinary command.
+      await harness.waitForPaneUrl(fixture.url('/'))
+      await waitForOrb(harness, 'idle')
+
+      // The state sequence left listening at endpoint fire — not at the
+      // transcript — and exited transcribing when the command submitted.
+      const states = await harness.dashboardEval<{ listening: boolean; transcribing: boolean }[]>(
+        'window.__voiceStates || []',
+      )
+      const listeningAt = states.findIndex((state) => state.listening)
+      const transcribingAt = states.findIndex((state) => state.transcribing)
+      const closedAt = states.findIndex(
+        (state, index) => index > transcribingAt && !state.listening && !state.transcribing,
+      )
+      expect(transcribingAt).toBeGreaterThan(listeningAt)
+      expect(states[transcribingAt].listening).toBe(false)
+      expect(closedAt).toBeGreaterThan(transcribingAt)
+    } finally {
+      await harness.quit()
+    }
+  })
+
   it('dumps each utterance as a 16 kHz mono WAV under the profile when BINGBONG_AUDIO_DUMP is set (#34)', async () => {
     // The benchmark script's own reader, verbatim: find the data chunk,
     // decode s16le. A dumped utterance must survive this exact parser.

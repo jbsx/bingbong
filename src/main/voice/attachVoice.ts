@@ -37,7 +37,7 @@ export function registerVoiceIpc(): void {
   })
 
   ipcMain.handle(VOICE_IPC.getState, (event) => {
-    return sessionFor(event)?.getState() ?? { listening: false, reason: null, monitoring: false }
+    return sessionFor(event)?.getState() ?? { listening: false, reason: null, monitoring: false, transcribing: false }
   })
 }
 

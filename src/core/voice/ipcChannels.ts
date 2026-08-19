@@ -22,6 +22,12 @@ export interface VoiceState {
   reason: VoiceListenReason | null
   /** Wake-word monitoring is live — the mic stays open even while not listening. */
   monitoring: boolean
+  /**
+   * The endpoint fired: a finished utterance is being transcribed (#38).
+   * `listening` is false for the whole STT window — the UI must not claim
+   * the ear is open while it thinks.
+   */
+  transcribing: boolean
 }
 
 export interface VoiceHeardEvent {

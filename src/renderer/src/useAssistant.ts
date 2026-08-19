@@ -5,7 +5,7 @@ import { describeHeard } from '../../core/voice/heardDisplay'
 import type { TranscriptEvent } from '../../core/history/historyStore'
 import { projectPipelineEvent } from '../../core/history/transcriptProjection'
 
-export type OrbStatus = 'idle' | 'listening' | PipelineStatus
+export type OrbStatus = 'idle' | 'listening' | 'transcribing' | PipelineStatus
 
 export interface TranscriptEntry extends TranscriptEvent {
   id: number

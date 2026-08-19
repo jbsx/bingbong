@@ -51,6 +51,12 @@ body {
   animation: orb-pulse 1.6s ease-in-out infinite;
 }
 
+/* The STT window hint (#38): matches the transcribing orb, not the ear. */
+.voice-hint--transcribing {
+  color: var(--accent);
+  animation: orb-pulse 1.2s ease-in-out infinite;
+}
+
 .status-orb {
   width: 18px;
   height: 18px;
@@ -67,6 +73,12 @@ body {
 .status-orb--listening {
   background: #b48bff;
   animation: orb-pulse 1.6s ease-in-out infinite;
+}
+
+/* The STT window (#38): blue like thinking, never the listening purple. */
+.status-orb--transcribing {
+  background: var(--accent);
+  animation: orb-pulse 1.2s ease-in-out infinite;
 }
 
 .status-orb--acting {

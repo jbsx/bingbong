@@ -117,6 +117,10 @@ export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
 
   let listening = false
   let monitoring = false
+  // The STT window (#38): true from endpoint fire until the utterance's fate
+  // is decided. Implies the emitted `listening` is false while the internal
+  // listen stays open (its reason/window survive a discarded utterance).
+  let transcribing = false
   let reason: VoiceListenReason | null = null
   let activeConfirmation: string | null = null
   let activeAsk: string | null = null
@@ -137,8 +141,24 @@ export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
     return text.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim()
   }
 
+  /** The single source of the emitted state — emitState and getState agree. */
+  function currentState(): VoiceState {
+    return { listening: listening && !transcribing, reason, monitoring, transcribing }
+  }
+
   function emitState(): void {
-    deps.onStateChange({ listening, reason, monitoring })
+    deps.onStateChange(currentState())
+  }
+
+  /**
+   * The utterance's fate didn't end the listen (a blip, an undecided
+   * answer): leave the STT window and reopen the emitted ear. A listen that
+   * already closed underneath stopListening emitted its own terminal state.
+   */
+  function backToListening(): void {
+    if (!transcribing) return
+    transcribing = false
+    if (listening) emitState()
   }
 
   const monitor = deps.wake
@@ -167,8 +187,9 @@ export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
     : null
 
   function activateFromWake(): void {
-    // A hotkey/confirmation listen already owns the mic — nothing to do.
-    if (listening) return
+    // A hotkey/confirmation listen — or an in-flight transcript — owns the
+    // mic; nothing to do.
+    if (listening || transcribing) return
     startListening('wake')
     // The chime follows the barge-in stop: speech dies first, then the cue
     // confirms activation before the user finishes their sentence.
@@ -180,8 +201,10 @@ export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
     // Barge-in: activating cuts any speech in flight.
     deps.tts.stop()
     // Arming while already listening never overrides the open reason: a
-    // hotkey press during a confirmation window keeps serving the prompt.
-    if (listening) return
+    // hotkey press during a confirmation window keeps serving the prompt. A
+    // press during the STT window is equally a no-op — the transcript in
+    // flight decides that listen.
+    if (listening || transcribing) return
     listening = true
     reason = nextReason
     commandListenStart = deps.tracer?.now() ?? null
@@ -197,6 +220,7 @@ export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
     cancelAskTimer = null
     if (!listening) return
     listening = false
+    transcribing = false
     reason = null
     commandListenStart = null
     endpointer.reset()
@@ -213,6 +237,7 @@ export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
     cancelAskTimer?.()
     cancelAskTimer = null
     listening = true
+    transcribing = false
     reason = 'pause'
     resetEndpointer()
     deps.vad.reset()
@@ -261,6 +286,12 @@ export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
   }
 
   async function handleUtterance(utterance: UtteranceEnd): Promise<void> {
+    // The endpoint fired: the ear is closed for this utterance's STT window
+    // (#38) — the state flips here, not when the transcript arrives, so the
+    // UI never claims "listening" while it thinks.
+    transcribing = true
+    emitState()
+
     // The dump rides detection, not transcription (#34): the WAV exists for
     // A/B-ing STT offline, so it must survive — and precede — any STT outcome.
     // The dumper itself never throws and writes nothing with the flag off.
@@ -297,7 +328,17 @@ export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
       return
     }
     recordStt()
-    if (!listening || text === '') return
+    if (!listening) {
+      // The listen closed under the STT window (disarm, window timeout) —
+      // stopListening emitted the terminal state; drop the transcript.
+      transcribing = false
+      return
+    }
+    if (text === '') {
+      // A blip, not a command: back to the open ear, reason and window intact.
+      backToListening()
+      return
+    }
 
     if (tracer && turnId !== null && commandListenStart !== null) {
       // Advisory like every tracer call — but the marker is control flow
@@ -327,6 +368,7 @@ export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
       }
       if (pausePhrases.has(phrase)) {
         deps.onHeard({ text, routed: 'pause' })
+        backToListening()
         return
       }
       deps.onResume(text)
@@ -345,6 +387,7 @@ export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
       if (decision === null) {
         // Undecided — the window stays open for another try or a tap.
         deps.onHeard({ text, routed: 'ignored' })
+        backToListening()
         return
       }
       const confirmationId = activeConfirmation
@@ -367,6 +410,7 @@ export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
 
     if (reason !== 'hotkey' && reason !== 'wake') {
       deps.onHeard({ text, routed: 'ignored' })
+      backToListening()
       return
     }
     deps.onSubmitCommand(text, turnId ?? undefined)
@@ -423,7 +467,7 @@ export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
 
     disarm: () => stopListening(),
 
-    getState: () => ({ listening, reason, monitoring }),
+    getState: () => currentState(),
 
     enableWakeMonitoring() {
       if (!monitor || monitoring) return

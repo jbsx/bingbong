@@ -53,10 +53,12 @@ export function App() {
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [assistant, voice])
 
-  const orbStatus = voice.listening ? 'listening' : assistant.status
-  // Never idle over a running command, an open mic, or the settings page —
-  // the timer must not unmount a form mid-edit.
-  const showIdle = idle.idle && orbStatus === 'idle' && !voice.listening && view === 'dashboard'
+  // Transcribing outranks listening (#38): the endpoint fired, STT is
+  // thinking — never claim the ear is open while it works.
+  const orbStatus = voice.transcribing ? 'transcribing' : voice.listening ? 'listening' : assistant.status
+  // Never idle over a running command, an open mic, the STT window, or the
+  // settings page — the timer must not unmount a form mid-edit.
+  const showIdle = idle.idle && orbStatus === 'idle' && !voice.listening && !voice.transcribing && view === 'dashboard'
   const weather = useWeather(settings?.weather ?? null, showIdle)
 
   if (showIdle) {
@@ -68,7 +70,11 @@ export function App() {
       <header className="dashboard-header">
         <StatusOrb status={orbStatus} />
         <h1>Bing Bong</h1>
-        {voice.listening ? (
+        {voice.transcribing ? (
+          <span className="voice-hint voice-hint--transcribing" role="status">
+            transcribing…
+          </span>
+        ) : voice.listening ? (
           <span className="voice-hint" role="status">
             {voice.reason === 'confirmation'
               ? 'listening — yes or no?'
@@ -76,7 +82,7 @@ export function App() {
                 ? 'listening — your answer'
                 : voice.reason === 'pause'
                   ? 'paused — say resume or steer me'
-                : 'listening — say a command'}
+                  : 'listening — say a command'}
           </span>
         ) : voice.monitoring ? (
           <span className="voice-hint voice-hint--monitoring" role="status">
