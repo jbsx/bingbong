@@ -250,8 +250,9 @@ describe('voice e2e', () => {
       expect(wav.readUInt32LE(24)).toBe(16_000)
       expect(wav.readUInt16LE(34)).toBe(16) // bits per sample
       // vadScript(8): the ring carries 3 pre-roll silence + 3 trigger speech
-      // frames, then 5 more speech + 25 end-trigger silence, − 2 tail trim.
-      expect(pcmFromWav(wav).length).toBe((3 + 3 + 5 + 25 - 2) * 512)
+      // frames, then 5 more speech + 16 end-trigger silence (the ~500 ms
+      // default, #37), − 2 tail trim.
+      expect(pcmFromWav(wav).length).toBe((3 + 3 + 5 + 16 - 2) * 512)
     } finally {
       await harness.quit()
       await rm(userDataDir, { recursive: true, force: true }).catch(() => {})

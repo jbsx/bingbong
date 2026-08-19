@@ -3,6 +3,8 @@ import {
   defaultSettings,
   sanitizeSettings,
   settingsToEnv,
+  ENDPOINT_DELAY_MS_MAX,
+  ENDPOINT_DELAY_MS_MIN,
   WAKE_WORD_THRESHOLD_MAX,
   WAKE_WORD_THRESHOLD_MIN,
 } from './settings'
@@ -14,6 +16,7 @@ describe('defaultSettings', () => {
     expect(settings.micId).toBe('default')
     expect(settings.wakeWordThreshold).toBeGreaterThan(0)
     expect(settings.wakeWordThreshold).toBeLessThanOrEqual(1)
+    expect(settings.endpointDelayMs).toBe(500)
     expect(settings.ttsVoice).toBe('')
     expect(settings.weather).toEqual({ city: '', units: 'metric' })
     expect(settings.adblockEnabled).toBe(true)
@@ -42,6 +45,7 @@ describe('sanitizeSettings', () => {
       apiKeys: { zai: 'k1', deepseek: 'k2' },
       micId: 'abc',
       wakeWordThreshold: 0.8,
+      endpointDelayMs: 650,
       ttsVoice: 'en_US-lessac-high',
       weather: { city: 'Berlin', units: 'imperial' },
       modelRouting: {
@@ -50,6 +54,7 @@ describe('sanitizeSettings', () => {
     })
     expect(settings.apiKeys).toEqual({ zai: 'k1', deepseek: 'k2' })
     expect(settings.wakeWordThreshold).toBe(0.8)
+    expect(settings.endpointDelayMs).toBe(650)
     expect(settings.weather).toEqual({ city: 'Berlin', units: 'imperial' })
     expect(settings.modelRouting.orchestrator).toEqual({ baseUrl: 'https://x.test/v1', model: 'glm-4.6', apiKey: 'sk-1' })
     expect(settings.modelRouting.subagent).toEqual(defaultSettings().modelRouting.subagent)
@@ -59,6 +64,15 @@ describe('sanitizeSettings', () => {
     expect(sanitizeSettings({ wakeWordThreshold: -1 }).wakeWordThreshold).toBe(WAKE_WORD_THRESHOLD_MIN)
     expect(sanitizeSettings({ wakeWordThreshold: 7 }).wakeWordThreshold).toBe(WAKE_WORD_THRESHOLD_MAX)
     expect(sanitizeSettings({ wakeWordThreshold: 'loud' }).wakeWordThreshold).toBe(defaultSettings().wakeWordThreshold)
+  })
+
+  it('clamps the endpoint delay into its slider range', () => {
+    expect(sanitizeSettings({ endpointDelayMs: 10 }).endpointDelayMs).toBe(ENDPOINT_DELAY_MS_MIN)
+    expect(sanitizeSettings({ endpointDelayMs: 90_000 }).endpointDelayMs).toBe(ENDPOINT_DELAY_MS_MAX)
+    // Missing and garbage values fall back to the ~500 ms default (#37).
+    expect(sanitizeSettings({}).endpointDelayMs).toBe(defaultSettings().endpointDelayMs)
+    expect(sanitizeSettings({ endpointDelayMs: 'soon' }).endpointDelayMs).toBe(defaultSettings().endpointDelayMs)
+    expect(sanitizeSettings({ endpointDelayMs: null }).endpointDelayMs).toBe(defaultSettings().endpointDelayMs)
   })
 
   it('keeps an explicit adblock kill switch but defaults to on', () => {

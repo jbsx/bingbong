@@ -3,6 +3,7 @@ import type { PipelineEvent } from '../pipeline/events'
 import { FakeClock, FakeTranscriber, FakeVad, FakeWakeDetector, RecordingTts } from '../testing/doubles'
 import type { VoiceHeardEvent, VoiceState } from './ipcChannels'
 import { createVoiceSession } from './voiceSession'
+import type { UtteranceEndpointerConfig } from './vadEndpointing'
 import type { CommandRunState } from '../pipeline/createCommandPipeline'
 import { createPerfTracer, type PerfSpanRecord } from '../perf/perfTracer'
 import { audioDumpEnabled, createUtteranceDumper, type UtteranceDumpWriter } from './utteranceDump'
@@ -78,6 +79,8 @@ async function createSession(overrides?: {
   perf?: { sttMs?: number; throwing?: boolean }
   /** Sets BINGBONG_AUDIO_DUMP for the session's dumper (#34). */
   audioDump?: boolean
+  /** Live endpointer config (#37) — the settings slider seam. */
+  getEndpointerConfig?: () => Partial<UtteranceEndpointerConfig>
 }): Promise<SessionHarness> {
   const vad = overrides?.vad ?? new FakeVad()
   const baseTranscriber = overrides?.transcriber ?? new FakeTranscriber()
@@ -146,6 +149,7 @@ async function createSession(overrides?: {
     tts,
     ttsIdle: idle,
     confirmWindowMs: overrides?.confirmWindowMs,
+    getEndpointerConfig: overrides?.getEndpointerConfig,
     tracer,
     dumper,
     wake: overrides?.wake
@@ -319,8 +323,50 @@ describe('voice session', () => {
     expect(harness.heard).toEqual([{ text: 'open youtube', routed: 'command' }])
     // The utterance audio handed to STT is the endpointed utterance: the
     // 3-frame ring the trigger fired on (incl. the first speech frames) + 8
-    // speech + 25 silence frames, tail-trimmed by 2 → 31 frames total.
-    expect(harness.transcriber.audio[0].length).toBe(31 * 512)
+    // speech + 16 silence frames (the ~500 ms default, #37), tail-trimmed by
+    // 2 → 22 frames total.
+    expect(harness.transcriber.audio[0].length).toBe(22 * 512)
+  })
+
+  it('applies a changed endpoint delay to the next utterance without a restart (#37)', async () => {
+    let endFrames = 25 // The old ~800 ms default, as a saved settings file would carry.
+    const harness = await createSession({
+      transcriber: new FakeTranscriber(['first', 'second']),
+      getEndpointerConfig: () => ({ endFrames }),
+    })
+
+    harness.session.arm()
+    // Exactly 8 speech + 25 silence: the utterance emits on the last frame, so
+    // the fake VAD's queue holds no leftovers for the next utterance.
+    await harness.speakUtterance([...Array.from({ length: 8 }, () => SPEECH), ...Array.from({ length: 25 }, () => SILENCE)])
+    expect(harness.transcriber.audio[0].length).toBe((8 + 25 - 2) * 512)
+
+    endFrames = 5 // Slider moved to the snappy end; no restart, no rebuild.
+    harness.session.arm()
+    await harness.speakUtterance()
+    // The second utterance ends after just 5 silence frames — the new value.
+    expect(harness.transcriber.audio[1].length).toBe((8 + 5 - 2) * 512)
+    expect(harness.commands).toEqual(['first', 'second'])
+  })
+
+  it('applies a changed endpoint delay inside a window that stays open (#37)', async () => {
+    let endFrames = 25
+    const harness = await createSession({
+      transcriber: new FakeTranscriber(['hmm', 'yes']),
+      getEndpointerConfig: () => ({ endFrames }),
+    })
+
+    // A confirmation window survives an undecided utterance — the slider must
+    // still reach the very next utterance, not just the next listen start.
+    harness.session.handlePipelineEvent(confirmationRequested())
+    await flush()
+    await harness.speakUtterance([...Array.from({ length: 8 }, () => SPEECH), ...Array.from({ length: 25 }, () => SILENCE)])
+    expect(harness.resolutions).toEqual([]) // 'hmm' is undecided — window open
+
+    endFrames = 5
+    await harness.speakUtterance()
+    expect(harness.transcriber.audio[1].length).toBe((8 + 5 - 2) * 512)
+    expect(harness.resolutions).toEqual([{ confirmationId: 'confirm-1', approved: true }])
   })
 
   it('splits pushed chunks into 512-sample frames for the VAD', async () => {
@@ -836,10 +882,10 @@ describe('voice session — perf spans (#27)', () => {
     const harness = await createSession({ transcriber: new FakeTranscriber(['go']), perf: {} })
 
     harness.session.arm()
-    await harness.speakUtterance() // 8 speech frames; 31 frames handed to STT
+    await harness.speakUtterance() // 8 speech frames; 22 frames handed to STT (#37 default)
 
     const stt = harness.perf.find((record) => record.stage === 'stt')
-    expect(stt!.detail).toEqual({ speechMs: 8 * 32, totalMs: 31 * 32, truncated: false })
+    expect(stt!.detail).toEqual({ speechMs: 8 * 32, totalMs: 22 * 32, truncated: false })
   })
 
   it('logs the stt span for confirmation answers but no wake-to-transcript span', async () => {

@@ -38,6 +38,7 @@ import { resolveVoiceConfig } from './voice/voiceConfig'
 import { createMainVoice } from './voice/createMainVoice'
 import { attachVoiceToWindow, registerVoiceIpc } from './voice/attachVoice'
 import { audioDumpEnabled, createUtteranceDumper } from '../core/voice/utteranceDump'
+import { silenceFramesForMs } from '../core/voice/vadEndpointing'
 import { fsUtteranceDumpWriter } from './voice/utteranceDumpWriter'
 import { resolveWakeConfig } from './wake/wakeConfig'
 import { createMainWake } from './wake/createMainWake'
@@ -254,6 +255,10 @@ async function createWindow(): Promise<BrowserWindow> {
           },
         }
       : undefined,
+    // The endpoint-delay slider (#37) applies to the next utterance, live.
+    getEndpointerConfig: () => ({
+      endFrames: silenceFramesForMs(settingsStore.get().endpointDelayMs),
+    }),
     recordHeard: (heard) => historyRecorder.heard(heard),
     recordError: (message, at) => historyRecorder.voiceError(message, at),
     tracer: perfTracer,

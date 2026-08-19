@@ -38,6 +38,12 @@ export interface VoiceSessionDeps {
   confirmWindowMs?: number
   askWindowMs?: number
   endpointerConfig?: Partial<UtteranceEndpointerConfig>
+  /**
+   * Live from settings (#37): supersedes endpointerConfig when present, and a
+   * changed value re-creates the endpointer at the next listen start (the
+   * config is captured at construction) — the getThreshold pattern.
+   */
+  getEndpointerConfig?(): Partial<UtteranceEndpointerConfig>
   /** Always-on perf logging (#27); absent keeps the session uninstrumented. */
   tracer?: PerfTracer
   /** Opt-in utterance audio dumps (#34); absent keeps the session dump-free. */
@@ -86,7 +92,28 @@ export interface VoiceSession {
 export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
   const confirmWindowMs = deps.confirmWindowMs ?? CONFIRM_VOICE_WINDOW_MS
   const askWindowMs = deps.askWindowMs ?? ASK_VOICE_WINDOW_MS
-  const endpointer = createUtteranceEndpointer(deps.endpointerConfig)
+  let appliedEndpointerConfig: Partial<UtteranceEndpointerConfig> | undefined = deps.endpointerConfig
+  let endpointer = createUtteranceEndpointer(appliedEndpointerConfig)
+
+  /**
+   * The endpoint delay slider (#37) applies to the next utterance: the
+   * endpointer captures its config at construction, so a changed live config
+   * swaps in a fresh endpointer — always between utterances, never mid-flight.
+   * (JSON compare is safe here: the config is caller-built literals with
+   * number fields only, and main's getter returns one stable key order.)
+   */
+  function syncEndpointer(): void {
+    const next = deps.getEndpointerConfig ? deps.getEndpointerConfig() : appliedEndpointerConfig
+    if (JSON.stringify(next) === JSON.stringify(appliedEndpointerConfig)) return
+    appliedEndpointerConfig = next
+    endpointer = createUtteranceEndpointer(next)
+  }
+
+  /** Listen start: apply any config change, then drop in-flight audio. */
+  function resetEndpointer(): void {
+    syncEndpointer()
+    endpointer.reset()
+  }
 
   let listening = false
   let monitoring = false
@@ -158,7 +185,7 @@ export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
     listening = true
     reason = nextReason
     commandListenStart = deps.tracer?.now() ?? null
-    endpointer.reset()
+    resetEndpointer()
     deps.vad.reset()
     emitState()
   }
@@ -187,7 +214,7 @@ export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
     cancelAskTimer = null
     listening = true
     reason = 'pause'
-    endpointer.reset()
+    resetEndpointer()
     deps.vad.reset()
     emitState()
   }
@@ -212,6 +239,11 @@ export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
   }
 
   async function handleChunk(chunk: Float32Array): Promise<void> {
+    // Live endpoint delay (#37): swap in a changed config as audio arrives,
+    // but only between utterances — never mid-flight. Windows that survive an
+    // utterance (an undecided confirmation, a pause listen) get the new value
+    // on their very next utterance.
+    if (endpointer.isIdle()) syncEndpointer()
     for (let offset = 0; offset + VAD_FRAME_SAMPLES <= chunk.length; offset += VAD_FRAME_SAMPLES) {
       if (!listening) return
       const frame = chunk.subarray(offset, offset + VAD_FRAME_SAMPLES)
@@ -352,7 +384,7 @@ export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
 
     listening = true
     reason = 'confirmation'
-    endpointer.reset()
+    resetEndpointer()
     emitState()
     cancelWindowTimer = deps.clock.setTimer(confirmWindowMs, () => {
       cancelWindowTimer = null
@@ -373,7 +405,7 @@ export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
 
     listening = true
     reason = 'ask'
-    endpointer.reset()
+    resetEndpointer()
     emitState()
     cancelAskTimer = deps.clock.setTimer(askWindowMs, () => {
       cancelAskTimer = null

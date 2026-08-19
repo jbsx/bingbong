@@ -7,6 +7,10 @@ import { AGENT_ROLES, routingEnvPrefix, type AgentRole } from '../agent/modelRou
 
 export const WAKE_WORD_THRESHOLD_MIN = 0
 export const WAKE_WORD_THRESHOLD_MAX = 1
+/** Endpoint-delay slider bounds (#37): silence that ends an utterance. */
+export const ENDPOINT_DELAY_MS_MIN = 200
+export const ENDPOINT_DELAY_MS_MAX = 1500
+export const ENDPOINT_DELAY_MS_DEFAULT = 500
 
 export type WeatherUnits = 'metric' | 'imperial'
 
@@ -22,6 +26,8 @@ export interface AppSettings {
   /** Microphone device id from enumerateDevices; 'default' follows the OS. */
   micId: string
   wakeWordThreshold: number
+  /** Silence (ms) that ends an utterance — the endpoint-delay slider (#37). */
+  endpointDelayMs: number
   /** Piper voice id; '' follows BINGBONG_PIPER_VOICE / the default voice. */
   ttsVoice: string
   /** Kill switch for the embedder-level adblocker (issue #21). */
@@ -35,6 +41,7 @@ export function defaultSettings(): AppSettings {
     apiKeys: {},
     micId: 'default',
     wakeWordThreshold: 0.5,
+    endpointDelayMs: ENDPOINT_DELAY_MS_DEFAULT,
     ttsVoice: '',
     adblockEnabled: true,
     weather: { city: '', units: 'metric' },
@@ -57,6 +64,11 @@ function asString(value: unknown, fallback: string): string {
 function asThreshold(value: unknown, fallback: number): number {
   if (typeof value !== 'number' || Number.isNaN(value)) return fallback
   return Math.min(WAKE_WORD_THRESHOLD_MAX, Math.max(WAKE_WORD_THRESHOLD_MIN, value))
+}
+
+function asEndpointDelay(value: unknown, fallback: number): number {
+  if (typeof value !== 'number' || Number.isNaN(value)) return fallback
+  return Math.min(ENDPOINT_DELAY_MS_MAX, Math.max(ENDPOINT_DELAY_MS_MIN, value))
 }
 
 function sanitizeRouting(value: unknown): RoleRoutingSettings {
@@ -85,6 +97,7 @@ export function sanitizeSettings(raw: unknown): AppSettings {
     },
     micId: asString(record.micId, defaults.micId),
     wakeWordThreshold: asThreshold(record.wakeWordThreshold, defaults.wakeWordThreshold),
+    endpointDelayMs: asEndpointDelay(record.endpointDelayMs, defaults.endpointDelayMs),
     ttsVoice: asString(record.ttsVoice, defaults.ttsVoice),
     // Only an explicit false disables the engine — missing/garbage means on.
     adblockEnabled: record.adblockEnabled === false ? false : defaults.adblockEnabled,

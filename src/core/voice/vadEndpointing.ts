@@ -8,6 +8,11 @@ export const VAD_FRAME_SAMPLES = 512
 /** 512 @ 16 kHz. */
 export const VAD_FRAME_MS = 32
 
+/** Whole silence frames for a millisecond delay — the settings slider (#37) speaks ms. */
+export function silenceFramesForMs(ms: number): number {
+  return Math.max(1, Math.round(ms / VAD_FRAME_MS))
+}
+
 export interface UtteranceEndpointerConfig {
   /** Probability at/above which a frame counts as speech. */
   speechThreshold: number
@@ -29,7 +34,7 @@ export function vadDefaults(): UtteranceEndpointerConfig {
   return {
     speechThreshold: 0.5,
     startFrames: 3, // ~96 ms of speech before an utterance counts
-    endFrames: 25, // ~800 ms of silence ends it
+    endFrames: silenceFramesForMs(500), // ~500 ms of silence ends it (#37)
     startPaddingMs: 192, // ~6 frames of pre-roll
     endPaddingMs: 64, // ~2 frames of tail
     maxUtteranceMs: 15_000,
@@ -53,6 +58,8 @@ export interface UtteranceEndpointer {
   push(prob: number, frame: Float32Array): UtteranceEnd | null
   /** Drop all in-flight audio (disarm). */
   reset(): void
+  /** True when no utterance is in flight — swapping config here loses at most pre-roll. */
+  isIdle(): boolean
 }
 
 interface SpeakingState {
@@ -140,6 +147,10 @@ export function createUtteranceEndpointer(
 
     reset() {
       state = { kind: 'waiting', ring: [], speechRun: 0 }
+    },
+
+    isIdle() {
+      return state.kind === 'waiting'
     },
   }
 }

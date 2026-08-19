@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { AppSettings, RoleRoutingSettings } from '../../core/settings/settings'
 import type { AgentRole } from '../../core/agent/modelRouting'
-import { WAKE_WORD_THRESHOLD_MAX, WAKE_WORD_THRESHOLD_MIN } from '../../core/settings/settings'
+import { ENDPOINT_DELAY_MS_MAX, ENDPOINT_DELAY_MS_MIN, WAKE_WORD_THRESHOLD_MAX, WAKE_WORD_THRESHOLD_MIN } from '../../core/settings/settings'
 import type { UsageSummary } from '../../core/agent/spendEstimate'
 import { DEFAULT_PIPER_VOICE } from '../../core/tts/piperVoices'
 
@@ -270,6 +270,21 @@ export function SettingsPage({
               onChange={(event) => setDraft({ ...draft, wakeWordThreshold: Number(event.target.value) })}
             />
           </Field>
+          <Field label={`Endpoint delay — ${draft.endpointDelayMs} ms`}>
+            <input
+              type="range"
+              min={ENDPOINT_DELAY_MS_MIN}
+              max={ENDPOINT_DELAY_MS_MAX}
+              step={50}
+              value={draft.endpointDelayMs}
+              aria-label="Endpoint delay"
+              onChange={(event) => setDraft({ ...draft, endpointDelayMs: Number(event.target.value) })}
+            />
+          </Field>
+          <p className="settings-note">
+            How long a pause ends your turn — lower responds sooner, higher avoids cutting you
+            off mid-thought. Applies to the next utterance, no restart.
+          </p>
           <Field label="TTS voice">
             <select
               value={voiceKnown ? draft.ttsVoice : STALE_VOICE_VALUE}

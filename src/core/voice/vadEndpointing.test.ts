@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { createUtteranceEndpointer, VAD_FRAME_SAMPLES, vadDefaults } from './vadEndpointing'
+import { createUtteranceEndpointer, silenceFramesForMs, VAD_FRAME_SAMPLES, vadDefaults } from './vadEndpointing'
 
 // The endpointer is the "no clipping, no hanging" half of T9: it consumes
 // per-frame speech probabilities (the Silero adapter produces them) and
@@ -29,6 +29,19 @@ function endpointerWith(overrides?: Partial<ReturnType<typeof vadDefaults>>): Ha
 }
 
 describe('utterance endpointing', () => {
+  it('defaults to ~500 ms of trailing silence before the endpoint fires (#37)', () => {
+    const defaults = vadDefaults()
+    expect(defaults.endFrames * 32).toBeGreaterThanOrEqual(500)
+    expect(defaults.endFrames * 32).toBeLessThan(500 + 32)
+  })
+
+  it('converts endpoint-delay milliseconds to whole silence frames', () => {
+    expect(silenceFramesForMs(500)).toBe(16) // 512 ms
+    expect(silenceFramesForMs(200)).toBe(6) // 192 ms
+    expect(silenceFramesForMs(1500)).toBe(47) // 1504 ms
+    expect(silenceFramesForMs(0)).toBe(1) // never a zero-silence endpoint
+  })
+
   it('ends an utterance after sustained silence and keeps the spoken frames', () => {
     const { pushProbs } = endpointerWith()
     const defaults = vadDefaults()
@@ -156,5 +169,21 @@ describe('utterance endpointing', () => {
     endpointer.reset()
     // The trailing silence that would have ended the pre-reset utterance.
     for (let i = 0; i < defaults.endFrames + 5; i++) expect(endpointer.push(0.01, FRAME)).toBeNull()
+  })
+
+  it('reports idle only between utterances (#37)', () => {
+    const endpointer = createUtteranceEndpointer()
+    const defaults = vadDefaults()
+
+    expect(endpointer.isIdle()).toBe(true) // waiting before any speech
+    for (let i = 0; i < defaults.startFrames; i++) endpointer.push(0.95, FRAME)
+    expect(endpointer.isIdle()).toBe(false) // utterance in flight
+    for (let i = 0; i < defaults.endFrames; i++) {
+      expect(endpointer.isIdle()).toBe(false)
+      endpointer.push(0.01, FRAME)
+    }
+    // The endFrames-th silence frame emitted the utterance (8 speech frames ≥
+    // minSpeechMs) — back to waiting.
+    expect(endpointer.isIdle()).toBe(true)
   })
 })

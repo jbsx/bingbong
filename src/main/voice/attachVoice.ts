@@ -4,6 +4,7 @@ import type { TtsIdle, TtsSpeaker } from '../../core/ports/tts'
 import type { Transcriber, VadScorer } from '../../core/ports/stt'
 import type { PerfTracer } from '../../core/perf/perfTracer'
 import type { UtteranceDumper } from '../../core/voice/utteranceDump'
+import type { UtteranceEndpointerConfig } from '../../core/voice/vadEndpointing'
 import { VOICE_IPC, type VoiceHeardEvent, type VoiceState } from '../../core/voice/ipcChannels'
 import { createVoiceSession, type VoiceSession, type VoiceWakeDeps } from '../../core/voice/voiceSession'
 import { pipelineFor, runAssistantCommand } from '../agent/attachAssistant'
@@ -48,6 +49,7 @@ export function attachVoiceToWindow(win: BrowserWindow, deps: AttachVoiceDeps): 
     tts: deps.tts,
     ttsIdle: deps.ttsIdle,
     wake: deps.wake,
+    getEndpointerConfig: deps.getEndpointerConfig,
     tracer: deps.tracer,
     dumper: deps.dumper,
     onSubmitCommand: (text, turnId) => {
@@ -95,6 +97,8 @@ export interface AttachVoiceDeps {
   ttsIdle: TtsIdle
   /** Wake-word plumbing; absent means hotkey-only. */
   wake?: VoiceWakeDeps
+  /** Live endpointer config from the settings slider (#37); absent keeps VAD defaults. */
+  getEndpointerConfig?(): Partial<UtteranceEndpointerConfig>
   /** Always-on perf tracer (#27); absent keeps the session uninstrumented. */
   tracer?: PerfTracer
   /** Opt-in utterance audio dumps (#34); absent keeps the session dump-free. */
