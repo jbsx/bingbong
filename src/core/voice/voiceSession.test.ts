@@ -5,6 +5,7 @@ import type { VoiceHeardEvent, VoiceState } from './ipcChannels'
 import { createVoiceSession } from './voiceSession'
 import type { CommandRunState } from '../pipeline/createCommandPipeline'
 import { createPerfTracer, type PerfSpanRecord } from '../perf/perfTracer'
+import { audioDumpEnabled, createUtteranceDumper, type UtteranceDumpWriter } from './utteranceDump'
 
 // The voice session is T9's coordinator: mic audio in (through the VadScorer
 // and utterance endpointing), transcripts out to the same command pipeline as
@@ -51,6 +52,8 @@ interface SessionHarness {
   submitted: { text: string; turnId?: string }[]
   /** Span records when perf instrumentation is on (#27). */
   perf: PerfSpanRecord[]
+  /** WAV writes when the audio-dump flag is on (#34). */
+  dumps: { path: string; bytes: Uint8Array }[]
   resolutions: { confirmationId: string; approved: boolean }[]
   askResolutions: { askId: string; answer: string }[]
   aborts: number[]
@@ -73,6 +76,8 @@ async function createSession(overrides?: {
   runState?: { value: CommandRunState }
   /** Turns on perf instrumentation; sttMs is the scripted STT duration. */
   perf?: { sttMs?: number }
+  /** Sets BINGBONG_AUDIO_DUMP for the session's dumper (#34). */
+  audioDump?: boolean
 }): Promise<SessionHarness> {
   const vad = overrides?.vad ?? new FakeVad()
   const baseTranscriber = overrides?.transcriber ?? new FakeTranscriber()
@@ -85,6 +90,7 @@ async function createSession(overrides?: {
   const commands: string[] = []
   const submitted: { text: string; turnId?: string }[] = []
   const perf: PerfSpanRecord[] = []
+  const dumps: { path: string; bytes: Uint8Array }[] = []
   const resolutions: { confirmationId: string; approved: boolean }[] = []
   const askResolutions: { askId: string; answer: string }[] = []
   const aborts: number[] = []
@@ -111,6 +117,23 @@ async function createSession(overrides?: {
       }
     : baseTranscriber
 
+  // The real dumper over an in-memory writer, switched by the env flag the
+  // way main wires it (#34): flag off — wired but writes nothing.
+  const dumpDir = '/user-data/audio-dumps'
+  const dumpWriter: UtteranceDumpWriter = {
+    mkdir: () => {},
+    writeFile: (path, bytes) => dumps.push({ path, bytes }),
+  }
+  const dumper =
+    overrides?.audioDump !== undefined
+      ? createUtteranceDumper({
+          dir: dumpDir,
+          writer: dumpWriter,
+          enabled: audioDumpEnabled({ BINGBONG_AUDIO_DUMP: overrides.audioDump ? '1' : undefined }),
+          now: () => PERF_WALL_ORIGIN + clock.now(),
+        })
+      : undefined
+
   const session = createVoiceSession({
     vad,
     transcriber,
@@ -119,6 +142,7 @@ async function createSession(overrides?: {
     ttsIdle: idle,
     confirmWindowMs: overrides?.confirmWindowMs,
     tracer,
+    dumper,
     wake: overrides?.wake
       ? {
           detector: overrides.wake.detector,
@@ -157,7 +181,7 @@ async function createSession(overrides?: {
     }
   }
 
-  return { vad, transcriber: baseTranscriber, clock, tts, idle, states, heard, errors, commands, submitted, perf, resolutions, askResolutions, aborts, pauses, resumes, chimes, speakUtterance, session }
+  return { vad, transcriber: baseTranscriber, clock, tts, idle, states, heard, errors, commands, submitted, perf, dumps, resolutions, askResolutions, aborts, pauses, resumes, chimes, speakUtterance, session }
 }
 
 function confirmationRequested(id = 'confirm-1'): PipelineEvent {
@@ -834,6 +858,54 @@ describe('voice session — perf spans (#27)', () => {
 
     expect(harness.perf.map((record) => record.stage)).toEqual(['stt'])
     expect(harness.perf[0].detail).toMatchObject({ error: 'whisper model missing', truncated: false })
+    expect(harness.errors).toEqual(['whisper model missing'])
+  })
+})
+
+describe('voice session — utterance audio dumps (#34)', () => {
+  /** The benchmark reader again (scripts/measure-stt-latency.mjs shape check). */
+  function pcmFromWav(bytes: Uint8Array): Float32Array {
+    const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
+    const samples = new Float32Array((bytes.length - 44) / 2)
+    for (let i = 0; i < samples.length; i++) samples[i] = view.getInt16(44 + i * 2, true) / 32768
+    return samples
+  }
+
+  it('with the flag set, each detected utterance lands as a timestamp/sequence WAV holding exactly the STT audio', async () => {
+    const harness = await createSession({ transcriber: new FakeTranscriber(['open youtube']), audioDump: true })
+
+    harness.session.arm()
+    await harness.speakUtterance()
+
+    expect(harness.dumps).toHaveLength(1)
+    expect(harness.dumps[0].path).toBe(`/user-data/audio-dumps/utterance-${PERF_WALL_ORIGIN}-0001.wav`)
+    const dumped = pcmFromWav(harness.dumps[0].bytes)
+    const transcribed = harness.transcriber.audio[0]
+    expect(dumped.length).toBe(transcribed.length)
+    dumped.forEach((sample, i) => expect(sample).toBeCloseTo(transcribed[i], 4))
+    // The command flow is unchanged by the dump.
+    expect(harness.commands).toEqual(['open youtube'])
+  })
+
+  it('with the flag unset, nothing is written — not even the directory', async () => {
+    const harness = await createSession({ transcriber: new FakeTranscriber(['open youtube']), audioDump: false })
+
+    harness.session.arm()
+    await harness.speakUtterance()
+
+    expect(harness.dumps).toEqual([])
+    expect(harness.commands).toEqual(['open youtube'])
+  })
+
+  it('still dumps the utterance when transcription fails — the audio survives for offline A/B', async () => {
+    const transcriber = new FakeTranscriber(['x'])
+    transcriber.rejectWith = new Error('whisper model missing')
+    const harness = await createSession({ transcriber, audioDump: true })
+
+    harness.session.arm()
+    await harness.speakUtterance()
+
+    expect(harness.dumps).toHaveLength(1)
     expect(harness.errors).toEqual(['whisper model missing'])
   })
 })

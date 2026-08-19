@@ -37,6 +37,8 @@ import { createJsonlPerfSink } from './perf/jsonlPerfSink'
 import { resolveVoiceConfig } from './voice/voiceConfig'
 import { createMainVoice } from './voice/createMainVoice'
 import { attachVoiceToWindow, registerVoiceIpc } from './voice/attachVoice'
+import { audioDumpEnabled, createUtteranceDumper } from '../core/voice/utteranceDump'
+import { fsUtteranceDumpWriter } from './voice/utteranceDumpWriter'
 import { resolveWakeConfig } from './wake/wakeConfig'
 import { createMainWake } from './wake/createMainWake'
 import { createChimeWav } from '../core/tts/chime'
@@ -84,6 +86,17 @@ const perfTracer = createPerfTracer({ sink: createJsonlPerfSink(join(app.getPath
 // the channel stays wired but writes nothing, so the default log keeps
 // whole browser actions as plain tool spans, byte-identical.
 const browserSubspans = createBrowserSubspans({ tracer: perfTracer, enabled: browserSubspansEnabled(currentEnv()) })
+
+// Opt-in utterance audio dumps (#34): BINGBONG_AUDIO_DUMP=1 writes each
+// detected utterance under <userData>/audio-dumps as a 16 kHz mono WAV —
+// exactly the artifact shape the offline STT benchmark replays. Off by
+// default (a benchmarking tap, not a recorder); the dumper stays wired but
+// touches nothing until an utterance arrives with the flag on.
+const utteranceDumper = createUtteranceDumper({
+  dir: join(app.getPath('userData'), 'audio-dumps'),
+  writer: fsUtteranceDumpWriter,
+  enabled: audioDumpEnabled(currentEnv()),
+})
 
 // Subagent runtime (T12) is per-window: panes attach to the window's content
 // view. The IPC layer resolves the window from the event sender.
@@ -243,6 +256,7 @@ async function createWindow(): Promise<BrowserWindow> {
     recordHeard: (heard) => historyRecorder.heard(heard),
     recordError: (message, at) => historyRecorder.voiceError(message, at),
     tracer: perfTracer,
+    dumper: utteranceDumper,
   })
   // Session continuity (spec #23): one in-memory thread per window, fed from
   // the same run-observer seam as the history recorder. The pipeline reads it

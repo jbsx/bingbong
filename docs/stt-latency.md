@@ -41,3 +41,8 @@ response feel matters more than accuracy.
 # models live in ~/.config/bingbong/models (see README)
 node scripts/measure-stt-latency.mjs
 ```
+
+Real utterances for A/B runs: launch the app with `BINGBONG_AUDIO_DUMP=1`
+and it writes every detected utterance to `~/.config/bingbong/audio-dumps/`
+as a 16 kHz mono WAV (timestamp/sequence names) — the same shape this
+script's `pcmFromWav` reads.

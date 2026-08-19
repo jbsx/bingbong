@@ -5,6 +5,7 @@ import type { Transcriber, VadScorer } from '../ports/stt'
 import type { WakeWordDetector } from '../ports/wake'
 import type { VoiceHeardEvent, VoiceListenReason, VoiceState } from './ipcChannels'
 import { createUtteranceEndpointer, VAD_FRAME_SAMPLES, type UtteranceEnd, type UtteranceEndpointerConfig } from './vadEndpointing'
+import type { UtteranceDumper } from './utteranceDump'
 import { createWakeMonitor } from './wakeMonitor'
 import { parseYesNo } from './yesNo'
 import type { CommandRunState } from '../pipeline/createCommandPipeline'
@@ -39,6 +40,8 @@ export interface VoiceSessionDeps {
   endpointerConfig?: Partial<UtteranceEndpointerConfig>
   /** Always-on perf logging (#27); absent keeps the session uninstrumented. */
   tracer?: PerfTracer
+  /** Opt-in utterance audio dumps (#34); absent keeps the session dump-free. */
+  dumper?: UtteranceDumper
   /** Where recognized commands go — the exact path the text box takes. */
   onSubmitCommand(text: string, turnId?: string): void
   onResolveConfirmation(confirmationId: string, approved: boolean): void
@@ -226,6 +229,11 @@ export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
   }
 
   async function handleUtterance(utterance: UtteranceEnd): Promise<void> {
+    // The dump rides detection, not transcription (#34): the WAV exists for
+    // A/B-ing STT offline, so it must survive — and precede — any STT outcome.
+    // The dumper itself never throws and writes nothing with the flag off.
+    deps.dumper?.dump(utterance.pcm)
+
     // The turn id rides utterance end, not wake detection, so blips that
     // never become turns mint nothing; STT is the turn's first span (#27).
     const tracer = deps.tracer

@@ -1,4 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { mkdtemp, readdir, readFile, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { commandBoxScript } from './scripts'
 import { startHarness, type Harness } from './harness'
 import { startFixtureServer, type FixtureServer } from './fixtureServer'
@@ -194,6 +197,64 @@ describe('voice e2e', () => {
       expect(await harness.dashboardEval<boolean>(`!!document.querySelector('.ask-card')`)).toBe(false)
     } finally {
       await harness.quit()
+    }
+  })
+
+  it('dumps each utterance as a 16 kHz mono WAV under the profile when BINGBONG_AUDIO_DUMP is set (#34)', async () => {
+    // The benchmark script's own reader, verbatim: find the data chunk,
+    // decode s16le. A dumped utterance must survive this exact parser.
+    const pcmFromWav = (buffer: Buffer): Float32Array => {
+      const dataOffset = buffer.indexOf(Buffer.from('data'))
+      const samples = buffer.subarray(dataOffset + 8)
+      const pcm = new Float32Array(samples.length / 2)
+      for (let i = 0; i < pcm.length; i++) pcm[i] = samples.readInt16LE(i * 2) / 32768
+      return pcm
+    }
+
+    const script: AssistantTurn[] = [
+      { kind: 'answer', speak: 'Done.', display: 'Done.' },
+    ]
+    const userDataDir = await mkdtemp(join(tmpdir(), 'bingbong-e2e-dumps-'))
+    const harness = await startHarness({
+      fixture,
+      userDataDir,
+      env: {
+        BINGBONG_LLM_SCRIPT: JSON.stringify(script),
+        BINGBONG_STT_SCRIPT: JSON.stringify(['open the fixture page']),
+        BINGBONG_VAD_SCRIPT: vadScript(),
+        BINGBONG_AUDIO_DUMP: '1',
+      },
+    })
+    try {
+      await harness.dashboardEval<string>(armScript)
+      await waitForOrb(harness, 'listening')
+      await harness.dashboardEval<string>(feedAudioScript)
+      await waitFor(
+        async () => {
+          const transcript = await harness.dashboardEval<string>(
+            `Array.from(document.querySelectorAll('.transcript-entry')).map((el) => el.textContent).join('\\n')`,
+          )
+          return transcript.includes('Done.') ? transcript : undefined
+        },
+        { timeoutMs: 20000, intervalMs: 250 },
+      )
+
+      const dumpsDir = join(userDataDir, 'audio-dumps')
+      const names = await readdir(dumpsDir)
+      expect(names).toHaveLength(1)
+      expect(names[0]).toMatch(/^utterance-\d{13,}-0001\.wav$/)
+      const wav = await readFile(join(dumpsDir, names[0]))
+      expect(wav.subarray(0, 4).toString()).toBe('RIFF')
+      expect(wav.subarray(8, 12).toString()).toBe('WAVE')
+      expect(wav.readUInt16LE(22)).toBe(1) // mono
+      expect(wav.readUInt32LE(24)).toBe(16_000)
+      expect(wav.readUInt16LE(34)).toBe(16) // bits per sample
+      // vadScript(8): the ring carries 3 pre-roll silence + 3 trigger speech
+      // frames, then 5 more speech + 25 end-trigger silence, − 2 tail trim.
+      expect(pcmFromWav(wav).length).toBe((3 + 3 + 5 + 25 - 2) * 512)
+    } finally {
+      await harness.quit()
+      await rm(userDataDir, { recursive: true, force: true }).catch(() => {})
     }
   })
 })

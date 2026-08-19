@@ -116,6 +116,16 @@ to additionally time the deliberate delays and extra round-trips inside them
 (settle sleeps, snapshot recollections, pre-click safety probes) as
 `browser-*` sub-spans. Off by default — the default log stays whole-action.
 
+```sh
+BINGBONG_AUDIO_DUMP=1                  # dump each utterance as a WAV for offline STT A/B
+```
+
+With this set, every detected utterance is written to `audio-dumps/` under
+the profile as a 16 kHz mono WAV named by timestamp and sequence — the same
+artifact shape `scripts/measure-stt-latency.mjs` consumes, so STT changes
+can be replayed against real utterances. Off by default: a benchmarking
+tap, not an always-on recorder.
+
 ## Try it
 
 ```sh

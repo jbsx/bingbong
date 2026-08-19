@@ -3,6 +3,7 @@ import { systemClock } from '../../core/ports/clock'
 import type { TtsIdle, TtsSpeaker } from '../../core/ports/tts'
 import type { Transcriber, VadScorer } from '../../core/ports/stt'
 import type { PerfTracer } from '../../core/perf/perfTracer'
+import type { UtteranceDumper } from '../../core/voice/utteranceDump'
 import { VOICE_IPC, type VoiceHeardEvent, type VoiceState } from '../../core/voice/ipcChannels'
 import { createVoiceSession, type VoiceSession, type VoiceWakeDeps } from '../../core/voice/voiceSession'
 import { pipelineFor, runAssistantCommand } from '../agent/attachAssistant'
@@ -48,6 +49,7 @@ export function attachVoiceToWindow(win: BrowserWindow, deps: AttachVoiceDeps): 
     ttsIdle: deps.ttsIdle,
     wake: deps.wake,
     tracer: deps.tracer,
+    dumper: deps.dumper,
     onSubmitCommand: (text, turnId) => {
       void runAssistantCommand(win, text, turnId)
     },
@@ -95,6 +97,8 @@ export interface AttachVoiceDeps {
   wake?: VoiceWakeDeps
   /** Always-on perf tracer (#27); absent keeps the session uninstrumented. */
   tracer?: PerfTracer
+  /** Opt-in utterance audio dumps (#34); absent keeps the session dump-free. */
+  dumper?: UtteranceDumper
   /** Persistence taps (spec: transcript history) — same wording as the dashboard. */
   recordHeard?: (heard: VoiceHeardEvent) => void
   recordError?: (message: string, at: number) => void
