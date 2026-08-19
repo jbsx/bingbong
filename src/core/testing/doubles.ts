@@ -13,6 +13,7 @@ import type {
   VisionModel,
 } from '../ports/vision'
 import type { PipelineEvent } from '../pipeline/events'
+import { createPerfTracer, type PerfSpanRecord, type PerfTracer } from '../perf/perfTracer'
 
 /**
  * Drops the #28 turn-id stamp — behavior tests written before turn
@@ -58,6 +59,25 @@ export class FakeClock implements Clock {
     }
     this.nowMs = target
   }
+}
+
+/**
+ * In-memory perf harness (#27-#30): a real tracer over a sink that captures
+ * records, on a scriptable monotonic/wall clock — the shared seam for
+ * tracer, wrapper, and pipeline perf tests.
+ */
+export function fakePerfHarness(): {
+  records: PerfSpanRecord[]
+  state: { monotonicMs: number; wallMs: number }
+  tracer: PerfTracer
+} {
+  const records: PerfSpanRecord[] = []
+  const state = { monotonicMs: 0, wallMs: 1_700_000_000_000 }
+  const tracer = createPerfTracer({
+    sink: { write: (record) => records.push(record) },
+    clock: { monotonic: () => state.monotonicMs, wall: () => state.wallMs },
+  })
+  return { records, state, tracer }
 }
 
 export class ScriptedLlm implements LlmClient {

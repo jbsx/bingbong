@@ -5,10 +5,11 @@ import { createNewSessionTool } from './sessionTools'
 import { createSessionMemory } from '../session/sessionMemory'
 import { createHistoryRecorder } from '../history/historyRecorder'
 import type { HistoryStore, RecordedEntry, RunRecord } from '../history/historyStore'
-import { FailingTts, FakeClock, RecordingTts, ScriptedLlm, withoutTurnId } from '../testing/doubles'
+import { FailingTts, FakeClock, fakePerfHarness, RecordingTts, ScriptedLlm, withoutTurnId } from '../testing/doubles'
 import type { PipelineEvent } from './events'
 import type { AssistantTurn, LlmClient, LlmRequest } from '../ports/llm'
-import type { PerfTracer } from '../perf/perfTracer'
+import { createPerfTracer, type PerfTracer } from '../perf/perfTracer'
+import { withPerfTracing } from '../perf/perfTracing'
 
 async function collect(
   pipeline: CommandPipeline,
@@ -1166,6 +1167,7 @@ describe('command pipeline — turn correlation (#28)', () => {
       },
       now: () => 0,
       span: () => {},
+      summarize: () => null,
     }
     const pipeline = createCommandPipeline({
       llm: new ScriptedLlm([{ kind: 'answer', speak: 'Done.', display: 'Done.' }]),
@@ -1181,5 +1183,203 @@ describe('command pipeline — turn correlation (#28)', () => {
 
     await collectStamped(pipeline, 'spoken command', 'turn-voice-adopted')
     expect(minted).toHaveLength(1) // adoption never mints
+  })
+})
+
+// Tool spans + the run-end summary (#30), observed at the seam the history
+// recorder, session memory, and renderer relay use: the test runs a turn
+// through the pipeline with a real tracer over an in-memory sink, consumes
+// the stamped event stream, then asserts the sink holds one `tool` span per
+// gated execution (tool name in detail) and a final synthetic `summary`
+// record whose contents match the spans recorded for the same turn.
+describe('command pipeline — tool spans and turn summary (#30)', () => {
+  /** A tool whose execution costs `ms` of fake monotonic time. */
+  function timedTool(name: string, ms: number, state: { monotonicMs: number }, fail = false) {
+    return {
+      name,
+      async execute() {
+        state.monotonicMs += ms
+        if (fail) throw new Error(`${name} exploded`)
+        return `${name} done`
+      },
+    }
+  }
+
+  it('records one tool span per gated execution, tool name in detail, keyed by the turn id', async () => {
+    const { records, state, tracer } = fakePerfHarness()
+    const pipeline = createCommandPipeline({
+      llm: new ScriptedLlm([
+        {
+          kind: 'tool_calls',
+          calls: [
+            { id: 'c1', name: 'spin', args: {} },
+            { id: 'c2', name: 'twirl', args: {} },
+          ],
+        },
+        { kind: 'answer', speak: 'Done.', display: 'Done.' },
+      ]),
+      tts: new RecordingTts(),
+      clock: new FakeClock(),
+      tools: [timedTool('spin', 400, state), timedTool('twirl', 300, state)],
+      tracer,
+    })
+
+    await collectStamped(pipeline, 'spin and twirl', 'turn-voice-1')
+
+    expect(records.filter((record) => record.stage === 'tool')).toEqual([
+      { turnId: 'turn-voice-1', stage: 'tool', durMs: 400, at: 1_700_000_000_000, t: 400, detail: { tool: 'spin' } },
+      { turnId: 'turn-voice-1', stage: 'tool', durMs: 300, at: 1_700_000_000_000, t: 700, detail: { tool: 'twirl' } },
+    ])
+  })
+
+  it('records the tool span even when the execution fails — the time was spent', async () => {
+    const { records, state, tracer } = fakePerfHarness()
+    const pipeline = createCommandPipeline({
+      llm: new ScriptedLlm([
+        { kind: 'tool_calls', calls: [{ id: 'c1', name: 'bang', args: {} }] },
+        { kind: 'answer', speak: 'It broke.', display: 'It broke.' },
+      ]),
+      tts: new RecordingTts(),
+      clock: new FakeClock(),
+      tools: [timedTool('bang', 250, state, true)],
+      tracer,
+    })
+
+    const events = await collectStamped(pipeline, 'try it', 'turn-voice-1')
+
+    expect(events.find((event) => event.type === 'tool_result')).toMatchObject({ ok: false, error: 'bang exploded' })
+    expect(records.filter((record) => record.stage === 'tool')).toEqual([
+      { turnId: 'turn-voice-1', stage: 'tool', durMs: 250, at: 1_700_000_000_000, t: 250, detail: { tool: 'bang' } },
+    ])
+  })
+
+  it('records no tool span when the call never executes — unknown or hard-denied', async () => {
+    const { records, tracer } = fakePerfHarness()
+    const denied = {
+      name: 'wipe',
+      async assessRisk() {
+        return { kind: 'deny' as const, reason: 'destructive' }
+      },
+      async execute() {
+        throw new Error('must never run')
+      },
+    }
+    const pipeline = createCommandPipeline({
+      llm: new ScriptedLlm([
+        {
+          kind: 'tool_calls',
+          calls: [
+            { id: 'c1', name: 'ghost', args: {} },
+            { id: 'c2', name: 'wipe', args: {} },
+          ],
+        },
+        { kind: 'answer', speak: 'Done.', display: 'Done.' },
+      ]),
+      tts: new RecordingTts(),
+      clock: new FakeClock(),
+      tools: [denied],
+      tracer,
+    })
+
+    const events = await collectStamped(pipeline, 'do both', 'turn-voice-1')
+
+    expect(events.filter((event) => event.type === 'tool_result').map((event) => event.ok)).toEqual([false, false])
+    expect(records.filter((record) => record.stage === 'tool')).toEqual([])
+  })
+
+  it('at run end, stores a synthetic summary event matching the turn’s spans and prints the one-line summary', async () => {
+    const { records, state, tracer } = fakePerfHarness()
+    const printed: string[] = []
+    // The voice session's half of the turn: the STT span lands before the
+    // pipeline ever runs, keyed by the same adopted id.
+    tracer.span('turn-voice-1', 'stt', 6_900, { speechMs: 2_000, totalMs: 2_400, truncated: false })
+    state.monotonicMs = 6_900
+    const rounds: AssistantTurn[] = [
+      { kind: 'tool_calls', calls: [{ id: 'c1', name: 'spin', args: {} }] },
+      { kind: 'answer', speak: 'Done.', display: 'Done.' },
+    ]
+    // llm spans arrive through the #29 wrapper — the summary composes with
+    // whatever stages the turn recorded, wherever they were measured.
+    const llm = withPerfTracing(
+      {
+        async complete() {
+          state.monotonicMs += 200
+          return rounds.shift()!
+        },
+      },
+      tracer,
+    )
+    const pipeline = createCommandPipeline({
+      llm,
+      tts: new RecordingTts(),
+      clock: new FakeClock(),
+      tools: [timedTool('spin', 400, state)],
+      tracer,
+      printSummary: (line) => printed.push(line),
+    })
+
+    const events = await collectStamped(pipeline, 'spin it', 'turn-voice-1')
+
+    expect(events.at(-1)).toMatchObject({ type: 'done', turnId: 'turn-voice-1' })
+    expect(records.at(-1)).toEqual({
+      turnId: 'turn-voice-1',
+      stage: 'summary',
+      durMs: 7_700,
+      at: 1_700_000_000_000,
+      t: 7_700,
+      detail: {
+        stages: {
+          stt: { count: 1, durMs: 6_900 },
+          llm: { count: 2, durMs: 400 },
+          tool: { count: 1, durMs: 400 },
+        },
+      },
+    })
+    // The same data, human-readable: every stage kind and the total.
+    expect(printed).toEqual(['stt 6.9s | llm(n=2) 0.4s | tool 0.4s | total 7.7s'])
+  })
+
+  it('a turn that recorded no spans stores no summary event and prints nothing', async () => {
+    const { records, tracer } = fakePerfHarness()
+    const printed: string[] = []
+    const pipeline = createCommandPipeline({
+      llm: new ScriptedLlm([{ kind: 'answer', speak: 'Hi.', display: 'Hi.' }]),
+      tts: new RecordingTts(),
+      clock: new FakeClock(),
+      tools: [],
+      tracer,
+      printSummary: (line) => printed.push(line),
+    })
+
+    await collectStamped(pipeline, 'hello', 'turn-voice-1')
+
+    expect(records).toEqual([])
+    expect(printed).toEqual([])
+  })
+
+  it('bookkeeping never breaks a run — a throwing sink still yields the done event', async () => {
+    const { state } = fakePerfHarness()
+    const tracer = createPerfTracer({
+      sink: {
+        write() {
+          throw new Error('disk full')
+        },
+      },
+      clock: { monotonic: () => state.monotonicMs, wall: () => 0 },
+    })
+    const pipeline = createCommandPipeline({
+      llm: new ScriptedLlm([
+        { kind: 'tool_calls', calls: [{ id: 'c1', name: 'spin', args: {} }] },
+        { kind: 'answer', speak: 'Done.', display: 'Done.' },
+      ]),
+      tts: new RecordingTts(),
+      clock: new FakeClock(),
+      tools: [timedTool('spin', 100, state)],
+      tracer,
+    })
+
+    const events = await collectStamped(pipeline, 'spin it', 'turn-voice-1')
+
+    expect(events.at(-1)).toMatchObject({ type: 'done', outcome: 'done' })
   })
 })

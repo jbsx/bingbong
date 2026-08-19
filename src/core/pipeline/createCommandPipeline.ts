@@ -7,6 +7,7 @@ import type { SessionHistorySource } from '../session/sessionMemory'
 import { spokenErrorLine } from '../agent/answerContract'
 import type { PerfTracer } from '../perf/perfTracer'
 import { createTurnIdSource } from '../perf/perfTracer'
+import { emitTurnSummary } from '../perf/turnSummary'
 import {
   createVisionBudget,
   MAX_ORCHESTRATOR_VISION_CALLS,
@@ -27,8 +28,10 @@ export interface CommandPipelineDeps {
   onAbort?(): void
   onPause?(): void
   onResume?(): void
-  /** Turn-id source (#28); absent falls back to a local id mint. */
+  /** Turn-id source (#28) and span/summary recorder (#29/#30); absent falls back to a local id mint. */
   tracer?: PerfTracer
+  /** Where the per-turn summary line goes (#30); defaults to console.log. */
+  printSummary?: (line: string) => void
 }
 
 interface ConfirmationDecision {
@@ -73,6 +76,25 @@ const STEERED_CANCELLED = 'cancelled by the user\'s steering'
 
 function toErrorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err)
+}
+
+/**
+ * Advisory bookkeeping (#29/#30): the perf log must never fail a command,
+ * so a throwing sink/tracer is swallowed at the recording call sites.
+ */
+function recordSpan(
+  tracer: PerfTracer | undefined,
+  turnId: string,
+  stage: string,
+  durMs: number,
+  detail?: Record<string, unknown>,
+): void {
+  if (!tracer) return
+  try {
+    tracer.span(turnId, stage, durMs, detail)
+  } catch {
+    // swallowed — see above
+  }
 }
 
 export interface CommandPipeline {
@@ -273,7 +295,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
               break
             }
             yield { type: 'tool_call', callId: call.id, name: call.name, args: call.args, at: clock.now() }
-            const outcome = yield* runGatedTool(call, visionBudget, toolContext, run)
+            const outcome = yield* runGatedTool(call, turnId, visionBudget, toolContext, run)
             toolResults.push({ call, outcome })
             yield {
               type: 'tool_result',
@@ -315,11 +337,17 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
       yield { type: 'done', outcome: runOutcome, at: clock.now() }
     } finally {
       if (activeRun === run) activeRun = null
+      // Run end (#30): close the turn out — one synthetic `summary` event
+      // in the log and the same data as a one-line console summary. Turns
+      // that recorded nothing (no tracer, an untraced run) degrade to a
+      // no-op; bookkeeping failures never break the run.
+      emitTurnSummary(deps.tracer, turnId, deps.printSummary ?? console.log)
     }
   }
 
   async function* runGatedTool(
     call: ToolCall,
+    turnId: string,
     visionBudget: VisionBudget,
     toolContext: ToolContext,
     run: ActiveRun,
@@ -437,7 +465,21 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
 
     try {
       throwIfAborted(run)
-      const result = await tool.execute(call, toolContext)
+      // The tool span (#30): one span per gated execution, tool name in
+      // detail, so "navigate cost 4.1s p95" is answerable. Confirmation
+      // waits above are user time and stay out of it; a call that never
+      // reaches execute records nothing. Recorded even when the tool
+      // fails — the time was spent either way.
+      const tracer = deps.tracer
+      const toolStart = tracer?.now()
+      let result: unknown
+      try {
+        result = await tool.execute(call, toolContext)
+      } finally {
+        if (tracer && toolStart !== undefined) {
+          recordSpan(tracer, turnId, 'tool', tracer.now() - toolStart, { tool: call.name })
+        }
+      }
       throwIfAborted(run)
       return { ok: true, result }
     } catch (err) {

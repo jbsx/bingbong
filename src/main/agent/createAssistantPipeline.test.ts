@@ -93,6 +93,7 @@ describe('createAssistantPipeline', () => {
       },
       now: () => 0,
       span: () => {},
+      summarize: () => null,
     }
     const pipeline = createAssistantPipeline({
       controller: new FakeBrowser(),
@@ -119,6 +120,7 @@ describe('createAssistantPipeline', () => {
       span: (turnId, stage, durMs, detail) => {
         records.push({ turnId, stage, durMs, ...(detail ? { detail } : {}) })
       },
+      summarize: () => null,
     }
     const pipeline = createAssistantPipeline({
       controller: new FakeBrowser(),

@@ -40,6 +40,28 @@ export interface PerfTracer {
   now(): number
   /** Records one finished stage; `at`/`t` are stamped at call time. */
   span(turnId: string, stage: string, durMs: number, detail?: Record<string, unknown>): void
+  /**
+   * Closes out a turn (#30): aggregates the turn's spans into per-stage
+   * tallies, records a synthetic `summary` event through the sink (so the
+   * report can self-check by recomputing totals from raw spans), and frees
+   * the turn's tally. Returns null when the turn recorded nothing — turns
+   * with missing stages degrade gracefully.
+   */
+  summarize(turnId: string): TurnSummary | null
+}
+
+/** Per-stage aggregate over one turn's spans. */
+export interface StageTally {
+  count: number
+  durMs: number
+}
+
+/** One turn's close-out: every stage kind it recorded, plus the total. */
+export interface TurnSummary {
+  turnId: string
+  /** Stage tallies in first-recorded order. */
+  stages: Record<string, StageTally>
+  totalMs: number
 }
 
 function systemPerfClock(): PerfClock {
@@ -53,6 +75,11 @@ function systemPerfClock(): PerfClock {
 export function createPerfTracer(deps: { sink: PerfSink; clock?: PerfClock }): PerfTracer {
   const clock = deps.clock ?? systemPerfClock()
   let turnSeq = 0
+  // Per-turn span tallies for the run-end summary (#30). A turn's entry is
+  // freed by `summarize`; spans whose turn never ends (an empty transcript
+  // or abort phrase dies after the STT span) are evicted oldest-first at
+  // the cap so they can't leak.
+  const tallies = new Map<string, Map<string, StageTally>>()
 
   return {
     mintTurnId() {
@@ -68,9 +95,47 @@ export function createPerfTracer(deps: { sink: PerfSink; clock?: PerfClock }): P
       const record: PerfSpanRecord = { turnId, stage, durMs, at: clock.wall(), t: clock.monotonic() }
       if (detail !== undefined) record.detail = detail
       deps.sink.write(record)
+      let stages = tallies.get(turnId)
+      if (stages === undefined) {
+        if (tallies.size >= MAX_PENDING_TURNS) {
+          const oldest = tallies.keys().next().value
+          if (oldest !== undefined) tallies.delete(oldest)
+        }
+        stages = new Map()
+        tallies.set(turnId, stages)
+      }
+      const tally = stages.get(stage) ?? { count: 0, durMs: 0 }
+      tally.count += 1
+      tally.durMs += durMs
+      stages.set(stage, tally)
+    },
+
+    summarize(turnId) {
+      const stages = tallies.get(turnId)
+      if (stages === undefined) return null
+      tallies.delete(turnId)
+      const summary: TurnSummary = { turnId, stages: {}, totalMs: 0 }
+      for (const [stage, tally] of stages) {
+        summary.stages[stage] = { count: tally.count, durMs: tally.durMs }
+        summary.totalMs += tally.durMs
+      }
+      // The synthetic event rides the same record shape; it is never tallied
+      // itself, so the report can recompute totals from raw spans and diff.
+      deps.sink.write({
+        turnId,
+        stage: 'summary',
+        durMs: summary.totalMs,
+        at: clock.wall(),
+        t: clock.monotonic(),
+        detail: { stages: summary.stages },
+      })
+      return summary
     },
   }
 }
+
+/** Bound on orphaned per-turn tallies — see the eviction note above. */
+export const MAX_PENDING_TURNS = 64
 
 // Fallback id source for pipelines running without a tracer (tests, direct
 // use): events must carry a turn id everywhere (#28) even when nothing perf-
