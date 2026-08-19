@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { FakeBrowser, FakeClock, FakeSearch, FakeVision } from '../../core/testing/doubles'
+import { FakeBrowser, FakeClock, FakeSearch, FakeVision, fakePerfHarness } from '../../core/testing/doubles'
 import type { SearchResult } from '../../core/ports/search'
 import { createSubagentTaskApi } from './createSubagentWorkhorse'
 import { withAgentActivity } from '../../core/downloads/agentActivity'
@@ -160,6 +160,42 @@ describe('createSubagentTaskApi', () => {
 
     expect(first).toBe('Keyboards compared across sources.')
     expect(second).toBe('Keyboards compared across sources.')
+  })
+
+  it('keys subagent-llm spans to the spawning turn when the spec carries one', async () => {
+    const { records, tracer } = fakePerfHarness()
+    const api = createSubagentTaskApi({
+      getEnv: () => envWith(RESEARCH_SCRIPT),
+      fetchFn: (async () => new Response('<p>x</p>', { status: 200 })) as typeof fetch,
+      search: new FakeSearch(results),
+      clock: new FakeClock(),
+      tracer,
+    })
+
+    await api.start(
+      { id: 'a-1', kind: 'research', task: 'compare keyboards', turnId: 'turn-voice-2' },
+      { isCancelled: () => false, onProgress: () => undefined },
+    ).done
+
+    expect(records).toEqual([
+      expect.objectContaining({ turnId: 'turn-voice-2', stage: 'subagent-llm' }),
+      expect.objectContaining({ turnId: 'turn-voice-2', stage: 'subagent-llm' }),
+    ])
+  })
+
+  it('records no subagent spans when the spec carries no turn id', async () => {
+    const { records, tracer } = fakePerfHarness()
+    const api = createSubagentTaskApi({
+      getEnv: () => envWith(RESEARCH_SCRIPT),
+      fetchFn: (async () => new Response('<p>x</p>', { status: 200 })) as typeof fetch,
+      search: new FakeSearch(results),
+      clock: new FakeClock(),
+      tracer,
+    })
+
+    await api.start({ id: 'a-1', kind: 'research', task: 'compare keyboards' }, { isCancelled: () => false, onProgress: () => undefined }).done
+
+    expect(records).toEqual([])
   })
 
   it('degrades to a failed agent when subagent routing is unconfigured', async () => {

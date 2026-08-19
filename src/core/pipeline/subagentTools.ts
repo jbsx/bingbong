@@ -43,10 +43,12 @@ export function createSubagentTools(manager: SubagentManager): Tool[] {
         const task = typeof call.args.task === 'string' ? call.args.task.trim() : 'this task'
         return { kind: 'confirm', prompt: `Start background download/file task: "${task}"?` }
       },
-      async execute(call) {
+      async execute(call, ctx) {
         const kind = kindArg(call)
         const task = stringArg(call, 'task', 'spawn_agent')
-        const spawned = manager.spawn(kind, task)
+        // The orchestrator's turn id rides the spawn (#29): the workhorse's
+        // LLM rounds key their spans to the turn that started them.
+        const spawned = manager.spawn(kind, task, ctx.turnId)
         if (!spawned.ok) throw new Error(spawned.reason)
         return `spawned ${spawned.agent.id} [${kind}] — poll with agent_results (wait: true) or keep working`
       },

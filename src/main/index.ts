@@ -223,6 +223,7 @@ async function createWindow(): Promise<BrowserWindow> {
     tts: speakingGate.tts,
     emit: emitPipelineEvent,
     onUsage: (record) => usageStore.record(record.role, record.model, record.usage),
+    tracer: perfTracer,
     onEscape: () => {
       const activePipeline = pipelineFor(win)
       return activePipeline ? abortActiveRun(activePipeline) : false

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { createSingleShotPipeline } from './singleShotPipeline'
 import { createCommandPipeline, type CommandPipeline } from './createCommandPipeline'
 import type { AssistantTurn, LlmClient } from '../ports/llm'
-import { FakeClock, RecordingTts, ScriptedLlm } from '../testing/doubles'
+import { FakeClock, RecordingTts, ScriptedLlm, fakePerfHarness } from '../testing/doubles'
 import type { PipelineEvent } from './events'
 
 async function collect(pipeline: CommandPipeline, command: string): Promise<PipelineEvent[]> {
@@ -97,6 +97,48 @@ describe('createSingleShotPipeline', () => {
     expect([...ids][0]).toMatch(/^turn-/)
     // The running turn keeps its own id — the rejection never leaks onto it.
     expect([...ids][0]).not.toBe(undefined)
+  })
+
+  it('closes out a busy-rejected turn that recorded spans: summary event + console line', async () => {
+    const { records, tracer } = fakePerfHarness()
+    // The voice session already recorded this turn's stt span at utterance end.
+    tracer.span('turn-voice-5', 'stt', 700, { speechMs: 4_000 })
+    const clock = new FakeClock(0)
+    const neverResolves = new Promise<AssistantTurn>(() => {})
+    const llm: LlmClient = { complete: () => neverResolves }
+    const inner = createCommandPipeline({ llm, tts: new RecordingTts(), clock, tools: [] })
+    const lines: string[] = []
+    const pipeline = createSingleShotPipeline(inner, clock, { tracer, printSummary: (line) => lines.push(line) })
+
+    void (async () => {
+      for await (const event of pipeline.execute('first command')) void event
+    })()
+
+    const rejected: PipelineEvent[] = []
+    for await (const event of pipeline.execute('spoken command', 'turn-voice-5')) rejected.push(event)
+
+    expect(rejected.at(-1)).toMatchObject({ type: 'done', outcome: 'failed' })
+    expect(records.at(-1)).toMatchObject({ turnId: 'turn-voice-5', stage: 'summary', durMs: 700 })
+    expect(lines).toEqual(['stt 0.7s | total 0.7s'])
+  })
+
+  it('a busy-rejected text-box turn with no spans prints nothing', async () => {
+    const { records, tracer } = fakePerfHarness()
+    const clock = new FakeClock(0)
+    const neverResolves = new Promise<AssistantTurn>(() => {})
+    const llm: LlmClient = { complete: () => neverResolves }
+    const inner = createCommandPipeline({ llm, tts: new RecordingTts(), clock, tools: [] })
+    const lines: string[] = []
+    const pipeline = createSingleShotPipeline(inner, clock, { tracer, printSummary: (line) => lines.push(line) })
+
+    void (async () => {
+      for await (const event of pipeline.execute('first command')) void event
+    })()
+
+    for await (const event of pipeline.execute('second command')) void event
+
+    expect(records.filter((record) => record.stage === 'summary')).toEqual([])
+    expect(lines).toEqual([])
   })
 
   it('forwards confirmation resolutions to the inner pipeline', () => {

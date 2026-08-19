@@ -6,6 +6,12 @@ export interface ToolContext {
   clock: Clock
   /** Consume one call only when a conditional tool actually falls back to vision. */
   acquireVision?(): VisionGrant
+  /**
+   * The running turn's correlation id (#29): tools that fan out work
+   * (spawn_agent starts subagent LLM loops) key it to the turn so their
+   * model rounds land in the turn's perf spans.
+   */
+  turnId?: string
 }
 
 /** Parameter description for the tool catalog sent to the model. */

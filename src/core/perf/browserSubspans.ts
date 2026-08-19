@@ -1,4 +1,5 @@
 import type { PerfTracer } from './perfTracer'
+import { envFlagEnabled } from './envFlag'
 
 // Verbose browser sub-spans (#32): browser actions already appear as whole
 // `tool` spans at the pipeline's gated-execution choke point (#30). Behind an
@@ -15,8 +16,7 @@ import type { PerfTracer } from './perfTracer'
 export const BROWSER_SUBSPANS_ENV = 'BINGBONG_BROWSER_SUBSPANS'
 
 export function browserSubspansEnabled(env: Record<string, string | undefined>): boolean {
-  const value = env[BROWSER_SUBSPANS_ENV]?.trim().toLowerCase()
-  return value === '1' || value === 'true' || value === 'yes' || value === 'on'
+  return envFlagEnabled(env, BROWSER_SUBSPANS_ENV)
 }
 
 /** Sub-span stage vocabulary: deliberate delays, extra snapshot round-trips, pre-action safety probes. */

@@ -68,6 +68,48 @@ describe('withPerfTracing', () => {
     ])
   })
 
+  it('chains a caller-supplied onRetryAttempt instead of clobbering it', async () => {
+    const { records, state, tracer } = fakePerfHarness()
+    const seenAttempts: number[] = []
+    const client = new FakeLlm(state, (request) => {
+      request.onRetryAttempt?.(2)
+      return ANSWER
+    })
+    const traced = withPerfTracing(client, tracer)
+
+    await traced.complete({
+      command: 'x',
+      toolResults: [],
+      turnId: 'turn-3',
+      onRetryAttempt: (attempt) => seenAttempts.push(attempt),
+    })
+
+    // The caller's hook still fires (the wrapper must not drop it) and the
+    // retry is recorded under the same chain.
+    expect(seenAttempts).toEqual([2])
+    expect(records).toEqual([
+      { turnId: 'turn-3', stage: 'llm-retry', durMs: 0, at: 1_700_000_000_000, t: 0, detail: { attempt: 2 } },
+      { turnId: 'turn-3', stage: 'llm', durMs: 0, at: 1_700_000_000_000, t: 0 },
+    ])
+  })
+
+  it('records under a custom stage and derives its retry stage from it', async () => {
+    const { records, state, tracer } = fakePerfHarness()
+    const client = new FakeLlm(state, (request) => {
+      state.monotonicMs += 250
+      request.onRetryAttempt?.(2)
+      return ANSWER
+    })
+    const traced = withPerfTracing(client, tracer, 'subagent-llm')
+
+    await traced.complete({ command: 'x', toolResults: [], turnId: 'turn-4' })
+
+    expect(records).toEqual([
+      { turnId: 'turn-4', stage: 'subagent-llm-retry', durMs: 0, at: 1_700_000_000_000, t: 250, detail: { attempt: 2 } },
+      { turnId: 'turn-4', stage: 'subagent-llm', durMs: 250, at: 1_700_000_000_000, t: 250 },
+    ])
+  })
+
   it('still records the llm span when the round fails — the time was spent', async () => {
     const { records, state, tracer } = fakePerfHarness()
     const client = new FakeLlm(state, () => {

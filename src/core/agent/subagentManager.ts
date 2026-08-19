@@ -40,6 +40,12 @@ export interface SubagentSpec {
   id: string
   kind: SubagentKind
   task: string
+  /**
+   * The orchestrator turn that spawned this agent (#29): the workhorse keys
+   * its LLM perf spans to it. Absent for spawns outside any turn (tests,
+   * the CLI harness) — those rounds simply go unlogged.
+   */
+  turnId?: string
 }
 
 export interface SubagentTaskHooks {
@@ -74,7 +80,7 @@ export type SpawnResult = { ok: true; agent: SubagentRecord } | { ok: false; rea
 export type CancelResult = { ok: true } | { ok: false; reason: string }
 
 export interface SubagentManager {
-  spawn(kind: SubagentKind, task: string): SpawnResult
+  spawn(kind: SubagentKind, task: string, turnId?: string): SpawnResult
   cancel(agentId: string): CancelResult
   cancelAll(): number
   pauseAll(): void
@@ -128,7 +134,7 @@ export function createSubagentManager(deps: SubagentManagerDeps): SubagentManage
   }
 
   return {
-    spawn(kind, task) {
+    spawn(kind, task, turnId) {
       if (liveCount() >= maxConcurrent) {
         return {
           ok: false,
@@ -156,7 +162,7 @@ export function createSubagentManager(deps: SubagentManagerDeps): SubagentManage
       }
       records.set(id, record)
 
-      const { done } = taskApi.start({ id, kind, task }, {
+      const { done } = taskApi.start({ id, kind, task, ...(turnId !== undefined ? { turnId } : {}) }, {
         isCancelled: () => cancelled.has(id),
         waitIfPaused: () => waitIfPaused(id),
         onProgress: (step, action) => {

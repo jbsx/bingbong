@@ -75,7 +75,7 @@ async function createSession(overrides?: {
   wake?: { detector: FakeWakeDetector; threshold?: number }
   runState?: { value: CommandRunState }
   /** Turns on perf instrumentation; sttMs is the scripted STT duration. */
-  perf?: { sttMs?: number }
+  perf?: { sttMs?: number; throwing?: boolean }
   /** Sets BINGBONG_AUDIO_DUMP for the session's dumper (#34). */
   audioDump?: boolean
 }): Promise<SessionHarness> {
@@ -103,7 +103,12 @@ async function createSession(overrides?: {
   // uses — deterministic durations and wall stamps (#27's injectable seam).
   const tracer = overrides?.perf
     ? createPerfTracer({
-        sink: { write: (record) => perf.push(record) },
+        sink: {
+          write: (record) => {
+            if (overrides.perf?.throwing) throw new Error('disk full')
+            perf.push(record)
+          },
+        },
         clock: { monotonic: () => clock.now(), wall: () => PERF_WALL_ORIGIN + clock.now() },
       })
     : undefined
@@ -859,6 +864,36 @@ describe('voice session — perf spans (#27)', () => {
     expect(harness.perf.map((record) => record.stage)).toEqual(['stt'])
     expect(harness.perf[0].detail).toMatchObject({ error: 'whisper model missing', truncated: false })
     expect(harness.errors).toEqual(['whisper model missing'])
+  })
+
+  it('keeps the wake-to-transcript clock running through an empty transcript', async () => {
+    // Only a non-empty transcript can end a command listen, so the marker
+    // must survive an empty one: the command that follows is still measured
+    // from the original listen start, not from the empty blip.
+    const harness = await createSession({ transcriber: new FakeTranscriber(['', 'open youtube']), perf: {} })
+
+    harness.session.arm() // listen start at t=0
+    harness.clock.advance(300)
+    await harness.speakUtterance() // empty transcript — listen stays open, marker intact
+    harness.clock.advance(400)
+    await harness.speakUtterance() // the command
+
+    const wake = harness.perf.find((record) => record.stage === 'wake-to-transcript')
+    expect(wake).toBeDefined()
+    // 300ms to the blip + 1500ms its STT + 400ms gap + 1500ms the command's STT.
+    expect(wake!.durMs).toBe(3_700)
+    expect(harness.submitted).toEqual([{ text: 'open youtube', turnId: expect.any(String) }])
+  })
+
+  it('never fails an utterance over perf bookkeeping — a throwing sink is swallowed', async () => {
+    const harness = await createSession({ transcriber: new FakeTranscriber(['open youtube']), perf: { throwing: true } })
+
+    harness.session.arm()
+    await harness.speakUtterance()
+
+    expect(harness.submitted).toEqual([{ text: 'open youtube', turnId: expect.any(String) }])
+    expect(harness.heard).toEqual([{ text: 'open youtube', routed: 'command' }])
+    expect(harness.errors).toEqual([])
   })
 })
 

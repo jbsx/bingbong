@@ -1,6 +1,7 @@
 import { appendFileSync, existsSync, mkdirSync, readdirSync, rmSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import type { PerfSink, PerfSpanRecord } from '../../core/perf/perfTracer'
+import { PERF_FILE_PATTERN } from './perfFiles'
 
 // The rotating JSONL sink half of #27's tracer: span records land one JSON
 // line per finished stage in a perf-*.jsonl file under the user-data logs
@@ -11,8 +12,6 @@ import type { PerfSink, PerfSpanRecord } from '../../core/perf/perfTracer'
 
 export const PERF_ROLL_BYTES = 5 * 1024 * 1024
 export const PERF_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000
-
-const PERF_FILE_PATTERN = /^perf-.*\.jsonl$/
 
 export interface JsonlPerfSinkOptions {
   /** Roll to a new file once the active one reaches this size. */

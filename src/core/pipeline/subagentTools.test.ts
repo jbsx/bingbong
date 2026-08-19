@@ -43,6 +43,24 @@ describe('subagent tools', () => {
     expect(result).toContain('browse')
   })
 
+  it('spawn_agent hands the orchestrator turn id to the manager', async () => {
+    const seenTurnIds: (string | undefined)[] = []
+    const tools = createSubagentTools(fakeManager({
+      spawn: (kind, task, turnId) => {
+        seenTurnIds.push(turnId)
+        return { ok: true, agent: { id: 'a-1', kind, task, status: 'running', startedAt: 0, finishedAt: null, steps: 0, lastAction: null, result: null, error: null } }
+      },
+    }))
+    const spawn = tools.find((tool) => tool.name === 'spawn_agent')!
+
+    await spawn.execute(
+      { id: 'c1', name: 'spawn_agent', args: { kind: 'research', task: 'x' } },
+      { clock: { now: () => 0, setTimer: () => () => {} }, turnId: 'turn-voice-8' },
+    )
+
+    expect(seenTurnIds).toEqual(['turn-voice-8'])
+  })
+
   it('spawn_agent rejects invalid kinds and empty tasks', async () => {
     const tools = createSubagentTools(fakeManager())
     const spawn = tools.find((tool) => tool.name === 'spawn_agent')!

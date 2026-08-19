@@ -29,6 +29,11 @@ export interface RunSubagentDeps {
 
 export interface RunSubagentOptions {
   task: string
+  /**
+   * The orchestrator turn that spawned this agent (#29): stamped on every
+   * model round so a perf-wrapped client keys its spans to that turn.
+   */
+  turnId?: string
   /** Polled before each model call and each tool call. */
   isCancelled(): boolean
   /** Resolves immediately while running, or after the shared pause gate opens. */
@@ -73,7 +78,11 @@ export async function runSubagent(deps: RunSubagentDeps, options: RunSubagentOpt
       throw new Error(`subagent tool round limit (${maxToolRounds}) reached`)
     }
 
-    const turn = await llm.complete({ command: options.task, toolResults })
+    const turn = await llm.complete({
+      command: options.task,
+      toolResults,
+      ...(options.turnId !== undefined ? { turnId: options.turnId } : {}),
+    })
     await checkpoint(options)
     if (turn.kind === 'answer') {
       return turn.display !== '' ? turn.display : turn.speak

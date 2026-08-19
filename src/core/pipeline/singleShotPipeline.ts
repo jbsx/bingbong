@@ -3,6 +3,7 @@ import type { Clock } from '../ports/clock'
 import type { PipelineEvent } from './events'
 import type { PerfTracer } from '../perf/perfTracer'
 import { createTurnIdSource } from '../perf/perfTracer'
+import { emitTurnSummary } from '../perf/turnSummary'
 import { spokenErrorLine } from '../agent/answerContract'
 
 // Single-shot interaction in v0.1: one command runs at a time. The busy
@@ -12,6 +13,8 @@ import { spokenErrorLine } from '../agent/answerContract'
 export interface SingleShotPipelineDeps {
   /** Turn-id source (#28); absent falls back to a local id mint. */
   tracer?: PerfTracer
+  /** Where the per-turn summary line goes (#30); defaults to console.log. */
+  printSummary?: (line: string) => void
 }
 
 export function createSingleShotPipeline(
@@ -32,6 +35,11 @@ export function createSingleShotPipeline(
       yield { type: 'error', message, turnId: id, at: clock.now() }
       yield { type: 'speak', text: spokenErrorLine(message), turnId: id, at: clock.now() }
       yield { type: 'done', outcome: 'failed', turnId: id, at: clock.now() }
+      // A rejected turn never reaches the inner run's finally (#30), so its
+      // close-out happens here: a voice turn's already-recorded stt spans
+      // get their summary event and console line instead of lingering as
+      // turnsWithoutSummary. Ids with no spans degrade to a no-op.
+      emitTurnSummary(deps?.tracer, id, deps?.printSummary ?? console.log)
       return
     }
     running = true

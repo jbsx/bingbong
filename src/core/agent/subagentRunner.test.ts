@@ -14,6 +14,26 @@ function noopTools(): Tool[] {
 }
 
 describe('runSubagent', () => {
+  it('stamps the spawning turn id on every model round', async () => {
+    const noop: Tool = {
+      name: 'noop',
+      async execute() {
+        return 'ok'
+      },
+    }
+    const llm = new ScriptedLlm([
+      { kind: 'tool_calls', calls: [{ id: 's1', name: 'noop', args: {} }] },
+      { kind: 'answer', speak: 's', display: 'Done.' },
+    ])
+
+    await runSubagent(
+      { llm, tools: [noop], clock: new FakeClock() },
+      { task: 'do work', turnId: 'turn-voice-31', isCancelled: () => false },
+    )
+
+    expect(llm.requests.map((request) => request.turnId)).toEqual(['turn-voice-31', 'turn-voice-31'])
+  })
+
   it('runs tool calls, reports progress per step, and returns the final report', async () => {
     const search: Tool = {
       name: 'web_search',

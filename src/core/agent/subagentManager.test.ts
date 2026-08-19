@@ -21,13 +21,13 @@ interface ManualTask {
 /** TaskApi double: tasks sit running until manually resolved/rejected. */
 function manualTaskApi() {
   const tasks = new Map<string, ManualTask>()
-  const started: { id: string; kind: string; task: string }[] = []
+  const started: { id: string; kind: string; task: string; turnId?: string }[] = []
   return {
     started,
     tasks,
     api: {
-      start(spec: { id: string; kind: string; task: string }, hooks: { isCancelled(): boolean; waitIfPaused?(): Promise<void>; onProgress(step: number, action: string): void }) {
-        started.push({ id: spec.id, kind: spec.kind, task: spec.task })
+      start(spec: { id: string; kind: string; task: string; turnId?: string }, hooks: { isCancelled(): boolean; waitIfPaused?(): Promise<void>; onProgress(step: number, action: string): void }) {
+        started.push({ id: spec.id, kind: spec.kind, task: spec.task, turnId: spec.turnId })
         let settle: ((report: string) => void) | null = null
         let fail: ((error: Error) => void) | null = null
         const done = new Promise<string>((resolve, reject) => {
@@ -113,6 +113,14 @@ describe('subagent manager', () => {
     expect(mgr.list()[0]).toMatchObject({ status: 'completed', result: 'Keyboards compared: A vs B.' })
     const kinds = events.map((e) => `${e.type}:${e.record.status}`)
     expect(kinds).toEqual(['spawned:running', 'progress:running', 'finished:completed'])
+  })
+
+  it('threads the spawning turn id into the task spec', () => {
+    const { mgr, api } = manager()
+
+    expect(mgr.spawn('research', 'compare keyboards', 'turn-voice-4').ok).toBe(true)
+
+    expect(api.started[0]).toMatchObject({ id: 'a-1', kind: 'research', task: 'compare keyboards', turnId: 'turn-voice-4' })
   })
 
   it('enforces the 4-concurrent-agent rail under a scripted storm', () => {

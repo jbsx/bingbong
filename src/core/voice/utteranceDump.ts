@@ -6,12 +6,13 @@
 // this is a benchmarking tap, not an always-on recorder. Dumps must never
 // become the voice pipeline's problem — every write failure is swallowed.
 
+import { envFlagEnabled } from '../perf/envFlag'
+
 /** Env opt-in for utterance audio dumps (#34): `BINGBONG_AUDIO_DUMP=1`. */
 export const AUDIO_DUMP_ENV = 'BINGBONG_AUDIO_DUMP'
 
 export function audioDumpEnabled(env: Record<string, string | undefined>): boolean {
-  const value = env[AUDIO_DUMP_ENV]?.trim().toLowerCase()
-  return value === '1' || value === 'true' || value === 'yes' || value === 'on'
+  return envFlagEnabled(env, AUDIO_DUMP_ENV)
 }
 
 /** The voice pipeline's one and only audio rate: whisper/Silero territory. */

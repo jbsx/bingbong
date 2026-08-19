@@ -6,6 +6,7 @@ import type { SearchProvider } from '../../core/ports/search'
 import type { PipelineEvent } from '../../core/pipeline/events'
 import type { Tool } from '../../core/pipeline/tool'
 import type { UsageRecord } from '../../core/agent/usageTracking'
+import type { PerfTracer } from '../../core/perf/perfTracer'
 import { SUBAGENT_LIMITS } from '../../core/agent/subagentRails'
 import { createSubagentManager } from '../../core/agent/subagentManager'
 import { createSubagentCardBridge, type SubagentCardBridge } from '../../core/agent/subagentCards'
@@ -41,6 +42,8 @@ export interface SubagentRuntimeDeps {
   onUsage?(record: UsageRecord): void
   /** Escape while a subagent tab owns focus. */
   onEscape?(): boolean
+  /** Perf tracing for subagent LLM rounds (#29); absent keeps them unlogged. */
+  tracer?: PerfTracer
 }
 
 export interface SubagentRuntime {
@@ -87,6 +90,7 @@ export function createSubagentRuntime(deps: SubagentRuntimeDeps): SubagentRuntim
       clock,
       vision,
       ...(deps.onUsage ? { onUsage: deps.onUsage } : {}),
+      ...(deps.tracer ? { tracer: deps.tracer } : {}),
     }),
     tabs: {
       openFor: (agentId) => tabs.open(agentId, ''),

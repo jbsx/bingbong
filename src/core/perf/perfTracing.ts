@@ -10,28 +10,34 @@ import type { PerfTracer } from './perfTracer'
 // Logging only: turns pass through unmodified and a span is recorded even
 // when the round fails — the time was spent either way.
 
-export function withPerfTracing(client: LlmClient, tracer: PerfTracer): LlmClient {
+export function withPerfTracing(client: LlmClient, tracer: PerfTracer, stage = 'llm'): LlmClient {
   return {
     async complete(request: LlmRequest): Promise<AssistantTurn> {
       const turnId = request.turnId
       if (turnId === undefined) return client.complete(request)
       // The log is advisory; never fail a command over bookkeeping (the same
       // guard usage tracking gives its sink).
-      const record = (stage: string, durMs: number, detail?: Record<string, unknown>): void => {
+      const record = (retryStage: string, durMs: number, detail?: Record<string, unknown>): void => {
         try {
-          tracer.span(turnId, stage, durMs, detail)
+          tracer.span(turnId, retryStage, durMs, detail)
         } catch {
           // swallowed — see above
         }
       }
       const start = tracer.now()
+      const callerOnRetry = request.onRetryAttempt
       try {
         return await client.complete({
           ...request,
-          onRetryAttempt: (attempt) => record('llm-retry', 0, { attempt }),
+          // Chained, never replaced: a caller's own retry hook still fires
+          // alongside the perf event.
+          onRetryAttempt: (attempt) => {
+            callerOnRetry?.(attempt)
+            record(`${stage}-retry`, 0, { attempt })
+          },
         })
       } finally {
-        record('llm', tracer.now() - start)
+        record(stage, tracer.now() - start)
       }
     },
   }

@@ -6,6 +6,8 @@ import type { BrowserController } from '../../core/ports/browser'
 import type { VisionDescriber } from '../../core/ports/vision'
 import type { UsageRecord } from '../../core/agent/usageTracking'
 import { withUsageTracking } from '../../core/agent/usageTracking'
+import type { PerfTracer } from '../../core/perf/perfTracer'
+import { withPerfTracing } from '../../core/perf/perfTracing'
 import { resolveModelEndpoint, routingEnvKeys } from '../../core/agent/modelRouting'
 import { runSubagent } from '../../core/agent/subagentRunner'
 import type { SubagentKind, SubagentSpec, SubagentTaskApi, SubagentTaskHooks } from '../../core/agent/subagentManager'
@@ -43,6 +45,12 @@ export interface SubagentWorkhorseDeps {
   maxToolRounds?: number
   onUsage?(record: UsageRecord): void
   vision?: VisionDescriber
+  /**
+   * Perf tracing (#29), the same wrapper seam as the orchestrator: when a
+   * spec carries its spawning turn's id, every workhorse round becomes a
+   * `subagent-llm` span keyed to that turn; without an id nothing logs.
+   */
+  tracer?: PerfTracer
 }
 
 function toolsForKind(
@@ -93,7 +101,11 @@ export function createSubagentTaskApi(deps: SubagentWorkhorseDeps): SubagentTask
   return {
     start(spec: SubagentSpec, hooks: SubagentTaskHooks) {
       const tools = toolsForKind(spec.kind, deps, spec)
-      const llm = resolveSubagentLlm(deps, tools)
+      // Perf outermost, the same order as the orchestrator's client: the
+      // span times the whole round including usage bookkeeping.
+      const llm = deps.tracer
+        ? withPerfTracing(resolveSubagentLlm(deps, tools), deps.tracer, 'subagent-llm')
+        : resolveSubagentLlm(deps, tools)
       const done = runSubagent(
         {
           llm,
@@ -103,6 +115,7 @@ export function createSubagentTaskApi(deps: SubagentWorkhorseDeps): SubagentTask
         },
         {
           task: spec.task,
+          ...(spec.turnId !== undefined ? { turnId: spec.turnId } : {}),
           isCancelled: hooks.isCancelled,
           waitIfPaused: hooks.waitIfPaused ?? (() => Promise.resolve()),
           onProgress: (progress) => hooks.onProgress(progress.step, progress.action),
@@ -112,3 +125,4 @@ export function createSubagentTaskApi(deps: SubagentWorkhorseDeps): SubagentTask
     },
   }
 }
+

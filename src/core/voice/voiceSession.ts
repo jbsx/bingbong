@@ -241,12 +241,18 @@ export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
     const sttStart = tracer ? tracer.now() : 0
     const recordStt = (extra?: Record<string, unknown>): void => {
       if (!tracer || turnId === null) return
-      tracer.span(turnId, 'stt', tracer.now() - sttStart, {
-        speechMs: utterance.speechMs,
-        totalMs: utterance.totalMs,
-        truncated: utterance.truncated,
-        ...extra,
-      })
+      // The log is advisory; never fail an utterance over bookkeeping (the
+      // same guard every other perf call site gives its tracer).
+      try {
+        tracer.span(turnId, 'stt', tracer.now() - sttStart, {
+          speechMs: utterance.speechMs,
+          totalMs: utterance.totalMs,
+          truncated: utterance.truncated,
+          ...extra,
+        })
+      } catch {
+        // swallowed — see above
+      }
     }
 
     let text: string
@@ -262,7 +268,13 @@ export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
     if (!listening || text === '') return
 
     if (tracer && turnId !== null && commandListenStart !== null) {
-      tracer.span(turnId, 'wake-to-transcript', tracer.now() - commandListenStart, { reason })
+      // Advisory like every tracer call — but the marker is control flow
+      // (only a non-empty transcript may consume it), so it clears either way.
+      try {
+        tracer.span(turnId, 'wake-to-transcript', tracer.now() - commandListenStart, { reason })
+      } catch {
+        // swallowed — see recordStt above
+      }
       commandListenStart = null
     }
 

@@ -262,6 +262,9 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
         const toolContext: ToolContext = {
           clock,
           acquireVision: () => visionBudget.tryAcquire(),
+          // The turn id rides the context so fan-out tools (spawn_agent)
+          // correlate their subagent rounds to this turn (#29).
+          turnId,
         }
         let rounds = 0
         let steering: string | undefined
