@@ -43,7 +43,9 @@ export function createBrowserPane(): BrowserPane {
       sandbox: true,
     },
   })
-  view.setBackgroundColor('#171d29')
+  // The behind-content canvas (#50): gruvbox light1, matching the chrome —
+  // no dark flash between navigations on the light dashboard.
+  view.setBackgroundColor('#ebdbb2')
   const wc = view.webContents
 
   // window.open popups are auto-closed: denied at open (they steal OS focus

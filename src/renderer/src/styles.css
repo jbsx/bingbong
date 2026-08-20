@@ -1,15 +1,52 @@
+/* Bing Bong dashboard skin (#50): gruvbox light (medium), bundled Inter,
+   calibrated for a 21-inch 1080p panel viewed from ~2 m. Hard light
+   switch — no dark mode, no toggle. Web content stays untouched. */
+
+@font-face {
+  font-family: 'InterVariable';
+  src: url('./assets/fonts/InterVariable.woff2') format('woff2');
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'InterVariable';
+  src: url('./assets/fonts/InterVariable-Italic.woff2') format('woff2');
+  font-weight: 100 900;
+  font-style: italic;
+  font-display: swap;
+}
+
 :root {
-  color-scheme: dark;
-  --bg: #10141c;
-  --panel: #171d29;
-  --edge: #2a3245;
-  --text: #e6ebf4;
-  --muted: #8b95a8;
-  --accent: #5aa7ff;
+  color-scheme: light;
+  /* Gruvbox light (medium) palette. */
+  --bg: #fbf1c7; /* light0 — the dashboard canvas */
+  --panel: #ebdbb2; /* light1 — raised surfaces */
+  --edge: #d5c4a1; /* light2 — hairlines on bg and panels */
+  --text: #3c3836; /* dark1 — foreground */
+  --muted: #a89984; /* light4 — quiet text */
+  --accent: #076678; /* neutral blue — focus, links, thinking */
+  /* Status semantics (#50): gruvbox neutral accents. blue = thinking and
+     transcribing, purple = listening and paused, yellow = acting and
+     warnings, green = speaking and success, red = errors. */
+  --status-blue: #076678;
+  --status-purple: #8f3f71;
+  --status-yellow: #b57614;
+  --status-green: #427b58;
+  --status-red: #9d0006;
+  /* The single calibration knob (#49): every rem size derives from it.
+     Root 22px; conversation 1.4rem (~31px), labels/timestamps 1.1rem,
+     tool detail 1rem. Nudge this one variable to re-calibrate. */
+  --font-scale: 1;
 }
 
 * {
   box-sizing: border-box;
+}
+
+html {
+  font-size: calc(22px * var(--font-scale));
 }
 
 html,
@@ -22,103 +59,106 @@ body,
 body {
   background: var(--bg);
   color: var(--text);
-  font-family: system-ui, sans-serif;
+  font-family: InterVariable, system-ui, sans-serif;
 }
 
 .dashboard {
   display: grid;
   grid-template-rows: auto 1fr auto;
   height: 100%;
-  padding: 16px;
-  gap: 16px;
+  padding: 28px;
+  gap: 28px;
 }
 
 .dashboard-header {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 16px;
 }
 
 .dashboard-header h1 {
   font-size: 1.1rem;
-  font-weight: 600;
+  font-weight: 650;
   margin: 0;
 }
 
+/* Voice hints are quiet detail beside the state pill (#50): muted, still —
+   the pill and orb carry the state color, the hint carries instruction. */
 .voice-hint {
-  font-size: 0.85rem;
-  color: #b48bff;
-  animation: orb-pulse 1.6s ease-in-out infinite;
+  font-size: 1.1rem;
+  color: var(--muted);
 }
 
-/* The STT window hint (#38): matches the transcribing orb, not the ear. */
+/* The STT window hint (#38): still muted — the pill names "Transcribing…". */
 .voice-hint--transcribing {
-  color: var(--accent);
-  animation: orb-pulse 1.2s ease-in-out infinite;
+  color: var(--muted);
 }
 
-/* The header's live run line (#43): stage + climbing elapsed, gentle pulse
-   so a long round reads as alive; a hang is an honestly climbing number. */
+/* The header's live run line (#43): stage + climbing elapsed. The climbing
+   number is the honest "still alive" signal — no pulse needed (#50). */
 .run-hint {
-  font-size: 0.85rem;
+  font-size: 1.1rem;
   color: var(--accent);
   font-variant-numeric: tabular-nums;
-  animation: orb-pulse 2.4s ease-in-out infinite;
 }
 
+/* A static colored dot (#50): state lives in color, named by the pill. */
 .status-orb {
-  width: 18px;
-  height: 18px;
+  width: 26px;
+  height: 26px;
   border-radius: 50%;
-  background: var(--muted);
+  background: var(--status-color, var(--muted));
   flex: none;
 }
 
-.status-orb--thinking {
-  background: var(--accent);
-  animation: orb-pulse 1.2s ease-in-out infinite;
+/* The status pill (#50): the state, named in text beside the still orb —
+   readable from across the room without any motion. */
+.status-pill {
+  flex: none;
+  padding: 4px 16px;
+  border-radius: 999px;
+  font-size: 1.1rem;
+  font-weight: 600;
+  line-height: 1.4;
+  color: var(--status-color, var(--muted));
+  border: 1px solid color-mix(in srgb, var(--status-color, var(--muted)) 45%, transparent);
+  background: color-mix(in srgb, var(--status-color, var(--muted)) 10%, transparent);
 }
 
-.status-orb--listening {
-  background: #b48bff;
-  animation: orb-pulse 1.6s ease-in-out infinite;
+/* One color table per state (#50), shared by the orb and the pill: blue
+   thinks and transcribes, purple listens and pauses, yellow acts, green
+   speaks, red stops — idle stays muted. */
+.status-orb--thinking,
+.status-pill--thinking,
+.status-orb--transcribing,
+.status-pill--transcribing {
+  --status-color: var(--status-blue);
 }
 
-/* The STT window (#38): blue like thinking, never the listening purple. */
-.status-orb--transcribing {
-  background: var(--accent);
-  animation: orb-pulse 1.2s ease-in-out infinite;
+.status-orb--listening,
+.status-pill--listening,
+.status-orb--paused,
+.status-pill--paused {
+  --status-color: var(--status-purple);
 }
 
-.status-orb--acting {
-  background: #ffb054;
-  animation: orb-pulse 0.7s ease-in-out infinite;
+.status-orb--acting,
+.status-pill--acting {
+  --status-color: var(--status-yellow);
 }
 
-.status-orb--speaking {
-  background: #5fd38a;
-  animation: orb-pulse 0.7s ease-in-out infinite;
+.status-orb--speaking,
+.status-pill--speaking {
+  --status-color: var(--status-green);
+}
+
+.status-orb--cancelled,
+.status-pill--cancelled {
+  --status-color: var(--status-red);
 }
 
 .status-orb--paused {
-  background: #b48bff;
-  box-shadow: 0 0 0 4px rgba(180, 139, 255, 0.16);
-}
-
-.status-orb--cancelled {
-  background: #ff6b6b;
-}
-
-@keyframes orb-pulse {
-  0%,
-  100% {
-    opacity: 1;
-    transform: scale(1);
-  }
-  50% {
-    opacity: 0.55;
-    transform: scale(0.82);
-  }
+  box-shadow: 0 0 0 4px rgba(143, 63, 113, 0.16);
 }
 
 .dashboard-main {
@@ -133,7 +173,7 @@ body {
 .dashboard-workspace {
   position: relative;
   display: flex;
-  gap: 16px;
+  gap: 28px;
   height: 100%;
   min-height: 0;
 }
@@ -156,13 +196,13 @@ body {
   top: 0;
   right: 0;
   height: 100%;
-  width: 340px;
+  width: 440px;
 }
 
 /* Docked takes real layout space — unless collapsed, where every mode
    shrinks to the edge tab. */
 .feed-slot--docked:not(.feed-slot--collapsed) {
-  flex: 0 0 340px;
+  flex: 0 0 440px;
   min-height: 0;
 }
 
@@ -171,8 +211,8 @@ body {
   top: 50%;
   right: 0;
   transform: translateY(-50%);
-  width: 28px;
-  height: 140px;
+  width: 36px;
+  height: 180px;
 }
 
 .feed {
@@ -184,10 +224,10 @@ body {
 
 .feed-header {
   flex: none;
-  padding: 8px 12px;
+  padding: 12px 18px;
   border-bottom: 1px solid var(--edge);
-  font-size: 0.72rem;
-  font-weight: 600;
+  font-size: 1rem;
+  font-weight: 650;
   text-transform: uppercase;
   letter-spacing: 0.08em;
   color: var(--muted);
@@ -199,8 +239,8 @@ body {
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  padding: 8px 12px;
+  gap: 10px;
+  padding: 14px 18px;
 }
 
 .feed-empty {
@@ -211,14 +251,14 @@ body {
 
 .feed-entry {
   display: flex;
-  gap: 8px;
+  gap: 12px;
   margin: 0;
-  line-height: 1.35;
+  line-height: 1.4;
 }
 
 .feed-entry summary {
   display: flex;
-  gap: 8px;
+  gap: 12px;
   cursor: pointer;
 }
 
@@ -226,7 +266,7 @@ body {
   flex: none;
   color: var(--muted);
   opacity: 0.7;
-  font-size: 0.7rem;
+  font-size: 1.1rem;
   font-variant-numeric: tabular-nums;
   padding-top: 2px;
 }
@@ -237,45 +277,50 @@ body {
 }
 
 .feed-speaker {
-  font-weight: 600;
-  margin-right: 4px;
+  font-weight: 650;
+  margin-right: 8px;
 }
 
+/* Conversation tier (#49): your words and Bing Bong's read at 1.4rem. */
 .feed-entry--command .feed-text {
   color: var(--text);
+  font-size: 1.4rem;
 }
 
 .feed-entry--command .feed-speaker {
   color: var(--accent);
 }
 
+/* Tool detail tier (#49): monospaced quiet lines at 1rem. */
 .feed-entry--tool .feed-text {
   color: var(--muted);
   font-family: ui-monospace, monospace;
-  font-size: 0.8rem;
+  font-size: 1rem;
 }
 
 .feed-entry--speak .feed-text {
   color: var(--text);
+  font-size: 1.4rem;
 }
 
 .feed-entry--speak .feed-speaker {
-  color: #5fd38a;
+  color: var(--status-green);
 }
 
 .feed-entry--display .feed-text {
-  color: var(--muted);
+  color: var(--text);
+  font-size: 1.4rem;
 }
 
 .feed-entry--voice .feed-text {
-  color: #b48bff;
-  font-size: 0.85rem;
+  color: var(--muted);
+  font-size: 1.1rem;
 }
 
 /* Retry lines (#44): ephemeral detail — quiet, so outcomes read first. */
 .feed-entry--retry .feed-text {
   color: var(--muted);
-  font-size: 0.8rem;
+  font-size: 1rem;
   font-style: italic;
 }
 
@@ -283,7 +328,7 @@ body {
    retry detail, but accented so it never reads as the model's words. */
 .feed-entry--steer .feed-text {
   color: var(--muted);
-  font-size: 0.8rem;
+  font-size: 1rem;
   font-style: italic;
 }
 
@@ -291,18 +336,18 @@ body {
   color: var(--accent);
 }
 
-/* Streamed answer text (#47): the growing partial — real answer words, so
-   they render at reading size; the final display entry replaces the run. */
+/* Streamed answer text (#47): the growing partial — real answer words at
+   conversation size; the final display entry replaces the run. */
 .feed-entry--answer_stream .feed-text {
   color: var(--text);
-  font-size: 0.85rem;
+  font-size: 1.4rem;
 }
 
 /* Reasoning traces (#47): dimmed bonus direction — present only when the
    provider emits reasoning_content, absent otherwise. */
 .feed-entry--reasoning .feed-text {
   color: var(--muted);
-  font-size: 0.78rem;
+  font-size: 1rem;
   font-style: italic;
   opacity: 0.75;
 }
@@ -312,7 +357,7 @@ body {
    it reads as an action, not a thought. */
 .feed-entry--intent .feed-text {
   color: var(--muted);
-  font-size: 0.8rem;
+  font-size: 1rem;
   opacity: 0.85;
 }
 
@@ -321,23 +366,23 @@ body {
    stage; these lines exist for reconstructing timings afterwards. */
 .feed-entry--stage .feed-text {
   color: var(--muted);
-  font-size: 0.75rem;
+  font-size: 1rem;
   font-style: italic;
   opacity: 0.6;
 }
 
 .feed-entry--error .feed-text {
-  color: #ff7a7a;
+  color: var(--status-red);
 }
 
 .feed-error-detail {
-  margin: 4px 0 0;
-  padding: 6px 8px;
-  border-left: 2px solid #ff7a7a;
+  margin: 6px 0 0;
+  padding: 8px 12px;
+  border-left: 2px solid var(--status-red);
   white-space: pre-wrap;
   word-break: break-word;
   font-family: ui-monospace, monospace;
-  font-size: 0.8rem;
+  font-size: 1rem;
   color: var(--muted);
 }
 
@@ -346,28 +391,29 @@ body {
   flex-direction: column;
   height: 100%;
   border: 1px solid var(--edge);
-  border-radius: 12px;
+  border-radius: 16px;
   overflow: hidden;
+  background: var(--panel);
 }
 
 .browser-chrome {
   position: relative;
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 8px;
+  gap: 12px;
+  padding: 10px 12px;
   background: var(--panel);
   border-bottom: 1px solid var(--edge);
 }
 
 .chrome-button {
-  width: 30px;
-  height: 30px;
+  width: 44px;
+  height: 44px;
   border: 1px solid var(--edge);
-  border-radius: 8px;
+  border-radius: 10px;
   background: transparent;
   color: var(--text);
-  font-size: 1rem;
+  font-size: 1.1rem;
   cursor: pointer;
   flex: none;
 }
@@ -389,13 +435,13 @@ body {
 
 .url-input {
   width: 100%;
-  height: 30px;
-  padding: 0 12px;
+  height: 44px;
+  padding: 0 16px;
   border: 1px solid var(--edge);
-  border-radius: 15px;
+  border-radius: 22px;
   background: var(--bg);
   color: var(--text);
-  font-size: 0.9rem;
+  font-size: 1.1rem;
 }
 
 .url-input:focus {
@@ -403,24 +449,14 @@ body {
   border-color: var(--accent);
 }
 
+/* The loading indicator (#50): a quiet text spinner in the chrome — calm
+   braille frames, no sliding bar, no motion styling. */
 .chrome-loading {
-  position: absolute;
-  left: 0;
-  bottom: -1px;
-  height: 2px;
-  width: 40%;
-  background: var(--accent);
-  border-radius: 1px;
-  animation: chrome-loading-slide 1.2s ease-in-out infinite alternate;
-}
-
-@keyframes chrome-loading-slide {
-  from {
-    transform: translateX(-30%);
-  }
-  to {
-    transform: translateX(160%);
-  }
+  flex: none;
+  color: var(--accent);
+  font-size: 1.1rem;
+  line-height: 1;
+  padding: 0 4px;
 }
 
 .browser-viewport {
@@ -431,15 +467,15 @@ body {
 
 .dashboard-footer {
   border-top: 1px solid var(--edge);
-  padding-top: 12px;
+  padding-top: 16px;
   color: var(--muted);
-  font-size: 0.9rem;
+  font-size: 1.1rem;
 }
 
 .assistant-panel {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 12px;
   min-height: 0;
 }
 
@@ -449,33 +485,34 @@ body {
 
 .command-row {
   display: flex;
-  gap: 8px;
+  gap: 12px;
   flex: none;
 }
 
 .assistant-stop {
-  min-width: 72px;
-  border: 1px solid #ff6b6b;
-  border-radius: 17px;
-  background: rgba(255, 107, 107, 0.12);
-  color: #ffb3b3;
+  min-width: 96px;
+  border: 1px solid var(--status-red);
+  border-radius: 26px;
+  background: rgba(157, 0, 6, 0.1);
+  color: var(--status-red);
+  font-size: 1.1rem;
   font-weight: 650;
   cursor: pointer;
 }
 
 .assistant-stop:hover {
-  background: rgba(255, 107, 107, 0.22);
+  background: rgba(157, 0, 6, 0.18);
 }
 
 .command-input {
   width: 100%;
-  height: 34px;
-  padding: 0 14px;
+  height: 52px;
+  padding: 0 22px;
   border: 1px solid var(--edge);
-  border-radius: 17px;
+  border-radius: 26px;
   background: var(--panel);
   color: var(--text);
-  font-size: 0.95rem;
+  font-size: 1.4rem;
 }
 
 .command-input:focus {
@@ -491,39 +528,40 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: 16px;
   flex: none;
-  padding: 8px 12px;
-  border: 1px solid #ffb054;
-  border-radius: 10px;
-  background: rgba(255, 176, 84, 0.08);
+  padding: 12px 18px;
+  border: 1px solid var(--status-yellow);
+  border-radius: 12px;
+  background: rgba(181, 118, 20, 0.08);
 }
 
 .confirmation-prompt {
   color: var(--text);
+  font-size: 1.4rem;
 }
 
 .confirmation-countdown {
   color: var(--muted);
   font-variant-numeric: tabular-nums;
-  font-size: 0.85rem;
+  font-size: 1.1rem;
   flex: none;
 }
 
 .confirmation-actions {
   display: flex;
-  gap: 8px;
+  gap: 12px;
   flex: none;
 }
 
 .confirmation-actions button {
-  height: 28px;
-  padding: 0 12px;
+  height: 44px;
+  padding: 0 16px;
   border: 1px solid var(--edge);
-  border-radius: 8px;
+  border-radius: 10px;
   background: transparent;
   color: var(--text);
-  font-size: 0.85rem;
+  font-size: 1.1rem;
   cursor: pointer;
 }
 
@@ -535,45 +573,46 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: 16px;
   flex: none;
-  padding: 8px 12px;
-  border: 1px solid #7ab0ff;
-  border-radius: 10px;
-  background: rgba(122, 176, 255, 0.08);
+  padding: 12px 18px;
+  border: 1px solid var(--accent);
+  border-radius: 12px;
+  background: rgba(7, 102, 120, 0.08);
 }
 
 .ask-question {
   color: var(--text);
   flex: 1;
+  font-size: 1.4rem;
 }
 
 .ask-controls {
   display: flex;
-  gap: 8px;
+  gap: 12px;
   flex: none;
   align-items: center;
 }
 
 .ask-input {
-  height: 28px;
-  width: 220px;
-  padding: 0 10px;
+  height: 44px;
+  width: 300px;
+  padding: 0 14px;
   border: 1px solid var(--edge);
-  border-radius: 8px;
+  border-radius: 10px;
   background: transparent;
   color: var(--text);
-  font-size: 0.9rem;
+  font-size: 1.1rem;
 }
 
 .ask-controls button {
-  height: 28px;
-  padding: 0 12px;
+  height: 44px;
+  padding: 0 16px;
   border: 1px solid var(--edge);
-  border-radius: 8px;
+  border-radius: 10px;
   background: transparent;
   color: var(--text);
-  font-size: 0.85rem;
+  font-size: 1.1rem;
   cursor: pointer;
 }
 
@@ -600,7 +639,7 @@ body {
   height: 100%;
   min-height: 0;
   border: 1px solid var(--edge);
-  border-radius: 12px;
+  border-radius: 16px;
   background: var(--panel);
   overflow: hidden;
 }
@@ -609,58 +648,58 @@ body {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding: 16px 20px;
+  padding: 24px 32px;
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: 32px;
 }
 
 .settings-section h2 {
-  margin: 0 0 8px;
-  font-size: 0.95rem;
-  font-weight: 600;
+  margin: 0 0 12px;
+  font-size: 1.1rem;
+  font-weight: 650;
 }
 
 .settings-field {
   display: grid;
-  grid-template-columns: 180px 1fr;
+  grid-template-columns: 240px 1fr;
   align-items: center;
-  gap: 12px;
-  margin-bottom: 8px;
+  gap: 16px;
+  margin-bottom: 12px;
 }
 
 .settings-label {
   color: var(--muted);
-  font-size: 0.85rem;
+  font-size: 1.1rem;
 }
 
 .settings-field input[type='text'],
 .settings-field input[type='password'],
 .settings-field select {
-  height: 30px;
-  padding: 0 10px;
+  height: 44px;
+  padding: 0 12px;
   border: 1px solid var(--edge);
-  border-radius: 8px;
+  border-radius: 10px;
   background: var(--bg);
   color: var(--text);
-  font-size: 0.9rem;
-  max-width: 420px;
+  font-size: 1.1rem;
+  max-width: 520px;
 }
 
 .settings-field input[type='range'] {
-  max-width: 420px;
+  max-width: 520px;
 }
 
 .settings-field input[type='checkbox'] {
-  width: 18px;
-  height: 18px;
+  width: 22px;
+  height: 22px;
   accent-color: var(--accent);
 }
 
 .settings-note {
-  margin: 0 0 8px;
+  margin: 0 0 12px;
   color: var(--muted);
-  font-size: 0.8rem;
+  font-size: 1rem;
 }
 
 .settings-field input:focus,
@@ -671,47 +710,47 @@ body {
 
 .settings-role {
   border: 1px solid var(--edge);
-  border-radius: 10px;
-  padding: 10px 14px;
-  margin: 0 0 12px;
+  border-radius: 12px;
+  padding: 14px 20px;
+  margin: 0 0 16px;
 }
 
 .settings-role legend {
-  padding: 0 6px;
+  padding: 0 8px;
   color: var(--muted);
-  font-size: 0.85rem;
+  font-size: 1.1rem;
 }
 
 .settings-actions {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 10px 20px;
+  gap: 16px;
+  padding: 14px 32px;
   border-top: 1px solid var(--edge);
 }
 
 .settings-status {
   flex: 1;
-  color: #5fd38a;
-  font-size: 0.85rem;
+  color: var(--status-green);
+  font-size: 1.1rem;
 }
 
 .settings-button {
-  height: 30px;
-  padding: 0 14px;
+  height: 44px;
+  padding: 0 18px;
   border: 1px solid var(--edge);
-  border-radius: 8px;
+  border-radius: 10px;
   background: transparent;
   color: var(--text);
-  font-size: 0.9rem;
+  font-size: 1.1rem;
   cursor: pointer;
 }
 
 .settings-button--primary {
   background: var(--accent);
   border-color: var(--accent);
-  color: #0b0e14;
-  font-weight: 600;
+  color: var(--bg);
+  font-weight: 650;
 }
 
 .settings-button:disabled {
@@ -729,15 +768,15 @@ body {
   flex-direction: column;
   justify-content: space-between;
   height: 100%;
-  padding: 48px;
-  gap: 32px;
+  padding: 64px;
+  gap: 48px;
 }
 
 .idle-screen-top {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 8px;
+  gap: 12px;
   margin-top: 8vh;
 }
 
@@ -756,19 +795,19 @@ body {
 }
 
 .idle-weather {
-  margin: 12px 0 0;
-  font-size: 1.1rem;
+  margin: 16px 0 0;
+  font-size: 1.4rem;
   color: var(--text);
 }
 
 .idle-feed {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  max-width: 720px;
+  gap: 10px;
+  max-width: 960px;
   width: 100%;
   margin: 0 auto;
-  font-size: 0.95rem;
+  font-size: 1.1rem;
   color: var(--muted);
   overflow: hidden;
 }
@@ -776,8 +815,8 @@ body {
 /* Kiosk: the browser pane is the appliance's main surface — chrome and the
    assistant panel shrink to give it the window. */
 .dashboard--kiosk {
-  padding: 8px;
-  gap: 8px;
+  padding: 12px;
+  gap: 12px;
 }
 
 .dashboard--kiosk .dashboard-header h1 {
@@ -785,11 +824,11 @@ body {
 }
 
 .dashboard--kiosk .feed-slot--overlay:not(.feed-slot--collapsed) {
-  width: 300px;
+  width: 400px;
 }
 
 .dashboard--kiosk .feed-slot--docked:not(.feed-slot--collapsed) {
-  flex-basis: 300px;
+  flex-basis: 400px;
 }
 
 /* Subagents (T12): live cards above the browser pane — one per agent, with
@@ -799,24 +838,24 @@ body {
   flex-direction: column;
   min-height: 0;
   height: 100%;
-  gap: 8px;
+  gap: 12px;
 }
 
 .subagent-cards {
   display: flex;
-  gap: 8px;
+  gap: 12px;
   overflow-x: auto;
   flex: none;
   min-height: 0;
-  padding-bottom: 2px;
+  padding-bottom: 4px;
 }
 
 .subagent-card {
-  flex: 0 0 320px;
+  flex: 0 0 400px;
   display: flex;
   flex-direction: column;
   border: 1px solid var(--edge);
-  border-radius: 12px;
+  border-radius: 16px;
   background: var(--panel);
   overflow: hidden;
 }
@@ -824,14 +863,14 @@ body {
 .subagent-card-header {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 6px 10px;
+  gap: 12px;
+  padding: 10px 16px;
   border-bottom: 1px solid var(--edge);
-  font-size: 0.8rem;
+  font-size: 1rem;
 }
 
 .subagent-card-id {
-  font-weight: 600;
+  font-weight: 650;
   color: var(--text);
   white-space: nowrap;
 }
@@ -846,20 +885,20 @@ body {
 }
 
 .subagent-card-status--running { color: var(--accent); }
-.subagent-card-status--failed { color: #e06c75; }
+.subagent-card-status--failed { color: var(--status-red); }
 
 .subagent-cancel,
 .subagent-reopen {
   width: auto;
-  padding: 0 10px;
-  font-size: 0.8rem;
-  height: 24px;
+  padding: 0 14px;
+  font-size: 1rem;
+  height: 36px;
 }
 
 .subagent-card-task {
   margin: 0;
-  padding: 6px 10px;
-  font-size: 0.85rem;
+  padding: 10px 16px;
+  font-size: 1.1rem;
   color: var(--text);
   border-bottom: 1px solid var(--edge);
   overflow: hidden;
@@ -868,57 +907,57 @@ body {
 }
 
 .subagent-viewport {
-  height: 170px;
+  height: 200px;
   background: var(--bg);
 }
 
 .subagent-card-url,
 .subagent-card-error {
   margin: 0;
-  padding: 6px 10px;
-  font-size: 0.78rem;
+  padding: 10px 16px;
+  font-size: 1rem;
   color: var(--muted);
   overflow-wrap: anywhere;
 }
 
-.subagent-card-error { color: #e06c75; }
+.subagent-card-error { color: var(--status-red); }
 
 .subagent-card-result summary {
-  padding: 4px 10px;
-  font-size: 0.8rem;
+  padding: 6px 16px;
+  font-size: 1rem;
   color: var(--accent);
   cursor: pointer;
 }
 
 .subagent-card-result pre {
   margin: 0;
-  padding: 0 10px 8px;
-  font-size: 0.75rem;
+  padding: 0 16px 12px;
+  font-size: 1rem;
   color: var(--text);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
-  max-height: 140px;
+  max-height: 160px;
   overflow-y: auto;
 }
 
 /* Settings: today's warn-only spend estimate. */
 .settings-usage {
-  margin: 0 0 4px;
-  font-size: 0.95rem;
+  margin: 0 0 8px;
+  font-size: 1.1rem;
   color: var(--text);
 }
 
 .settings-usage--warn {
-  color: #e5c07b;
-  font-weight: 600;
+  color: var(--status-yellow);
+  font-weight: 650;
 }
 
 .settings-usage-detail {
   margin: 0;
-  font-size: 0.8rem;
+  font-size: 1rem;
   color: var(--muted);
 }
 
 /* Kiosk: cards shrink a row shorter so browsing stays the main surface. */
-.dashboard--kiosk .subagent-card { flex-basis: 280px; }
-.dashboard--kiosk .subagent-viewport { height: 120px; }
+.dashboard--kiosk .subagent-card { flex-basis: 360px; }
+.dashboard--kiosk .subagent-viewport { height: 150px; }

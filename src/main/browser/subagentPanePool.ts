@@ -49,7 +49,8 @@ export function createSubagentPanePool(
         sandbox: true,
       },
     })
-    view.setBackgroundColor('#171d29')
+    // The behind-content canvas (#50): gruvbox light1 like the cards.
+    view.setBackgroundColor('#ebdbb2')
     win.contentView.addChildView(view)
     view.setBounds(toPaneBounds(HIDDEN_PANE_RECT))
     // The feed panel overlay (#45) must stay above every dynamically added

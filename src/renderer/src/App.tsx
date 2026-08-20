@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { BrowserPane } from './BrowserPane'
-import { AssistantPanel, RunHint, StatusOrb } from './AssistantPanel'
+import { AssistantPanel, RunHint, StatusOrb, StatusPill } from './AssistantPanel'
 import { IdleScreen } from './IdleScreen'
 import { SettingsPage } from './SettingsPage'
 import { SubagentCards } from './SubagentCards'
@@ -64,10 +64,10 @@ export function App() {
 
   // Transcribing outranks listening (#38): the endpoint fired, STT is
   // thinking — never claim the ear is open while it works.
-  const orbStatus = voice.transcribing ? 'transcribing' : voice.listening ? 'listening' : assistant.status
+  const status = voice.transcribing ? 'transcribing' : voice.listening ? 'listening' : assistant.status
   // Never idle over a running command, an open mic, the STT window, or the
   // settings page — the timer must not unmount a form mid-edit.
-  const showIdle = idle.idle && orbStatus === 'idle' && !voice.listening && !voice.transcribing && view === 'dashboard'
+  const showIdle = idle.idle && status === 'idle' && !voice.listening && !voice.transcribing && view === 'dashboard'
   const weather = useWeather(settings?.weather ?? null, showIdle)
 
   if (showIdle) {
@@ -77,7 +77,10 @@ export function App() {
   return (
     <div className={window.bingbong.app.kiosk ? 'dashboard dashboard--kiosk' : 'dashboard'}>
       <header className="dashboard-header">
-        <StatusOrb status={orbStatus} />
+        <StatusOrb status={status} />
+        {/* The state, named in text (#50): the pill reads from across the
+            room while the orb carries the color — both always still. */}
+        <StatusPill status={status} />
         <h1>Bing Bong</h1>
         {/* Run progress (#43) keeps its place even when the mic opens
             mid-run — the climbing timer must never disappear behind a

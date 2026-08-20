@@ -10,12 +10,29 @@ function paneRectFrom(rect: DOMRect): PaneRect {
   return { x: rect.x, y: rect.y, width: rect.width, height: rect.height }
 }
 
+/** Braille spinner frames (#50): quiet text, no styled motion. */
+const SPINNER_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'] as const
+const SPINNER_INTERVAL_MS = 120
+
+function useSpinnerFrame(active: boolean): string {
+  const [frame, setFrame] = useState(0)
+
+  useEffect(() => {
+    if (!active) return
+    const timer = setInterval(() => setFrame((current) => (current + 1) % SPINNER_FRAMES.length), SPINNER_INTERVAL_MS)
+    return () => clearInterval(timer)
+  }, [active])
+
+  return active ? SPINNER_FRAMES[frame] : ''
+}
+
 export function BrowserPane() {
   const viewportRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   const [state, setState] = useState<BrowserPaneState>(idleBrowserPaneState)
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState('')
+  const spinnerFrame = useSpinnerFrame(state.loading)
 
   useEffect(() => {
     void window.bingbong.browser.getState().then(setState)
@@ -87,7 +104,13 @@ export function BrowserPane() {
             onBlur={() => setEditing(false)}
           />
         </form>
-        {state.loading ? <div className="chrome-loading" role="progressbar" /> : null}
+        {/* The loading indicator (#50): a quiet text spinner — calm frames
+            in the chrome, not a sliding bar. */}
+        {state.loading ? (
+          <span className="chrome-loading" role="status" aria-label="loading">
+            {spinnerFrame}
+          </span>
+        ) : null}
       </div>
       <div ref={viewportRef} className="browser-viewport" />
     </section>
