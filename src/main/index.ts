@@ -306,6 +306,8 @@ async function createWindow(): Promise<BrowserWindow> {
     controller,
     env: currentEnv(),
     getEnv: currentEnv,
+    // The tool-round ceiling (settings slider) applies to the next command.
+    getMaxToolRounds: () => settingsStore.get().maxToolRounds,
     tts: speakingGate.tts,
     subagentTools: subagentRuntime.tools,
     subagentControl: subagentRuntime,

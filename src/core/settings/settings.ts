@@ -11,6 +11,10 @@ export const WAKE_WORD_THRESHOLD_MAX = 1
 export const ENDPOINT_DELAY_MS_MIN = 200
 export const ENDPOINT_DELAY_MS_MAX = 1500
 export const ENDPOINT_DELAY_MS_DEFAULT = 500
+/** Orchestrator tool-round ceiling — a runaway rail, not a budget. */
+export const MAX_TOOL_ROUNDS_MIN = 10
+export const MAX_TOOL_ROUNDS_MAX = 200
+export const MAX_TOOL_ROUNDS_DEFAULT = 80
 
 export type WeatherUnits = 'metric' | 'imperial'
 
@@ -28,6 +32,8 @@ export interface AppSettings {
   wakeWordThreshold: number
   /** Silence (ms) that ends an utterance — the endpoint-delay slider (#37). */
   endpointDelayMs: number
+  /** Orchestrator tool-round ceiling; applies to the next command, no restart. */
+  maxToolRounds: number
   /** Piper voice id; '' follows BINGBONG_PIPER_VOICE / the default voice. */
   ttsVoice: string
   /** Kill switch for the embedder-level adblocker (issue #21). */
@@ -42,6 +48,7 @@ export function defaultSettings(): AppSettings {
     micId: 'default',
     wakeWordThreshold: 0.5,
     endpointDelayMs: ENDPOINT_DELAY_MS_DEFAULT,
+    maxToolRounds: MAX_TOOL_ROUNDS_DEFAULT,
     ttsVoice: '',
     adblockEnabled: true,
     weather: { city: '', units: 'metric' },
@@ -71,6 +78,11 @@ function asEndpointDelay(value: unknown, fallback: number): number {
   return Math.min(ENDPOINT_DELAY_MS_MAX, Math.max(ENDPOINT_DELAY_MS_MIN, value))
 }
 
+function asMaxToolRounds(value: unknown, fallback: number): number {
+  if (typeof value !== 'number' || Number.isNaN(value)) return fallback
+  return Math.min(MAX_TOOL_ROUNDS_MAX, Math.max(MAX_TOOL_ROUNDS_MIN, Math.round(value)))
+}
+
 function sanitizeRouting(value: unknown): RoleRoutingSettings {
   const record = asRecord(value)
   return {
@@ -98,6 +110,7 @@ export function sanitizeSettings(raw: unknown): AppSettings {
     micId: asString(record.micId, defaults.micId),
     wakeWordThreshold: asThreshold(record.wakeWordThreshold, defaults.wakeWordThreshold),
     endpointDelayMs: asEndpointDelay(record.endpointDelayMs, defaults.endpointDelayMs),
+    maxToolRounds: asMaxToolRounds(record.maxToolRounds, defaults.maxToolRounds),
     ttsVoice: asString(record.ttsVoice, defaults.ttsVoice),
     // Only an explicit false disables the engine — missing/garbage means on.
     adblockEnabled: record.adblockEnabled === false ? false : defaults.adblockEnabled,

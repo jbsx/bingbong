@@ -872,6 +872,39 @@ describe('command pipeline', () => {
     expect(events.at(-1)).toMatchObject({ type: 'done' })
   })
 
+  it('re-reads getMaxToolRounds for each command', async () => {
+    let executions = 0
+    const spinner = {
+      name: 'spin',
+      async execute() {
+        executions += 1
+        return 'spun'
+      },
+    }
+    const endlessToolCalls = Array.from({ length: 5 }, (_, i) => ({
+      kind: 'tool_calls' as const,
+      calls: [{ id: `c${i}`, name: 'spin', args: {} }],
+    }))
+    const llm = new ScriptedLlm(endlessToolCalls)
+    let currentLimit = 2
+    const pipeline = createCommandPipeline({
+      llm,
+      tts: new RecordingTts(),
+      clock: new FakeClock(),
+      tools: [spinner],
+      maxToolRounds: 1,
+      getMaxToolRounds: () => currentLimit,
+    })
+
+    const firstEvents = await collect(pipeline, 'first command')
+    currentLimit = 3
+    const secondEvents = await collect(pipeline, 'second command')
+
+    expect(executions).toBe(5)
+    expect(firstEvents.find((e) => e.type === 'error')).toMatchObject({ type: 'error', message: 'tool round limit (2) reached' })
+    expect(secondEvents.find((e) => e.type === 'error')).toMatchObject({ type: 'error', message: 'tool round limit (3) reached' })
+  })
+
   it('enforces the thirty-call orchestrator vision rail through the real tool execution seam', async () => {
     let executions = 0
     const vision = {

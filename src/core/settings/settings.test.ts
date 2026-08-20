@@ -5,6 +5,8 @@ import {
   settingsToEnv,
   ENDPOINT_DELAY_MS_MAX,
   ENDPOINT_DELAY_MS_MIN,
+  MAX_TOOL_ROUNDS_MAX,
+  MAX_TOOL_ROUNDS_MIN,
   WAKE_WORD_THRESHOLD_MAX,
   WAKE_WORD_THRESHOLD_MIN,
 } from './settings'
@@ -17,6 +19,7 @@ describe('defaultSettings', () => {
     expect(settings.wakeWordThreshold).toBeGreaterThan(0)
     expect(settings.wakeWordThreshold).toBeLessThanOrEqual(1)
     expect(settings.endpointDelayMs).toBe(500)
+    expect(settings.maxToolRounds).toBe(80)
     expect(settings.ttsVoice).toBe('')
     expect(settings.weather).toEqual({ city: '', units: 'metric' })
     expect(settings.adblockEnabled).toBe(true)
@@ -73,6 +76,16 @@ describe('sanitizeSettings', () => {
     expect(sanitizeSettings({}).endpointDelayMs).toBe(defaultSettings().endpointDelayMs)
     expect(sanitizeSettings({ endpointDelayMs: 'soon' }).endpointDelayMs).toBe(defaultSettings().endpointDelayMs)
     expect(sanitizeSettings({ endpointDelayMs: null }).endpointDelayMs).toBe(defaultSettings().endpointDelayMs)
+  })
+
+  it('clamps the max tool rounds into its slider range', () => {
+    expect(sanitizeSettings({ maxToolRounds: 1 }).maxToolRounds).toBe(MAX_TOOL_ROUNDS_MIN)
+    expect(sanitizeSettings({ maxToolRounds: 100_000 }).maxToolRounds).toBe(MAX_TOOL_ROUNDS_MAX)
+    expect(sanitizeSettings({ maxToolRounds: 55.4 }).maxToolRounds).toBe(55)
+    // Missing and garbage values fall back to the default ceiling.
+    expect(sanitizeSettings({}).maxToolRounds).toBe(defaultSettings().maxToolRounds)
+    expect(sanitizeSettings({ maxToolRounds: 'lots' }).maxToolRounds).toBe(defaultSettings().maxToolRounds)
+    expect(sanitizeSettings({ maxToolRounds: null }).maxToolRounds).toBe(defaultSettings().maxToolRounds)
   })
 
   it('keeps an explicit adblock kill switch but defaults to on', () => {

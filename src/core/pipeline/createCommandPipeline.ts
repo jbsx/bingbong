@@ -27,6 +27,12 @@ export interface CommandPipelineDeps {
   /** How long an ask_user window stays open (voice + typed answers). */
   askTimeoutMs?: number
   maxToolRounds?: number
+  /**
+   * Live source for the tool-round ceiling: read at the start of each run,
+   * so settings changes apply to the next command without a restart.
+   * Overrides the static `maxToolRounds` when both are provided.
+   */
+  getMaxToolRounds?: () => number
   onAbort?(): void
   onPause?(): void
   onResume?(): void
@@ -99,6 +105,9 @@ class CommandAbortedError extends Error {
 /** Default ask_user window: ~45s for a spoken or typed free-text answer. */
 export const ASK_TIMEOUT_MS = 45_000
 
+/** Default orchestrator tool-round ceiling — mirrors MAX_TOOL_ROUNDS_DEFAULT in settings. */
+const DEFAULT_MAX_TOOL_ROUNDS = 80
+
 const STEERED_CANCELLED = 'cancelled by the user\'s steering'
 
 function toErrorMessage(err: unknown): string {
@@ -163,7 +172,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
   const mintTurnId = createTurnIdSource(deps.tracer)
   const confirmTimeoutMs = deps.confirmTimeoutMs ?? 60_000
   const askTimeoutMs = deps.askTimeoutMs ?? ASK_TIMEOUT_MS
-  const maxToolRounds = deps.maxToolRounds ?? 40
+  const maxToolRounds = deps.maxToolRounds ?? DEFAULT_MAX_TOOL_ROUNDS
   const toolsByName = new Map(tools.map((tool) => [tool.name, tool]))
   const pendingConfirmations = new Map<string, PendingDecision<ConfirmationDecision>>()
   const pendingAsks = new Map<string, PendingDecision<AskDecision>>()
@@ -316,10 +325,12 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
         }
         let rounds = 0
         let steering: string | undefined
+        // Re-read per run: a settings change applies to the next command.
+        const effectiveMaxToolRounds = deps.getMaxToolRounds?.() ?? maxToolRounds
 
         for (;;) {
-          if (rounds >= maxToolRounds) {
-            throw new Error(`tool round limit (${maxToolRounds}) reached`)
+          if (rounds >= effectiveMaxToolRounds) {
+            throw new Error(`tool round limit (${effectiveMaxToolRounds}) reached`)
           }
           steering = (yield* checkpoint(run, 'thinking')) ?? steering
           const history: SessionTurn[] = deps.session?.history() ?? []
