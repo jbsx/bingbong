@@ -108,6 +108,14 @@ export type PipelineEvent =
    */
   | { type: 'llm_retry'; turnId: string; attempt: number; maxAttempts: number; at: number }
   /**
+   * A batched fragment of streamed orchestrator output (#47): answer text
+   * (the visible part of the raw content, answer-contract aware) or a
+   * reasoning trace, flushed every ~120ms while the round is in flight —
+   * not per token. Emitted on the detail channel like `llm_retry`; maps to
+   * no history entry, so history.db recording is unchanged.
+   */
+  | { type: 'llm_delta'; turnId: string; kind: 'text' | 'reasoning'; text: string; at: number }
+  /**
    * The run is blocked in agent_results(wait) on running subagents (#43):
    * `running` is the snapshot at wait start; live agent_update events keep
    * the dashboard's count honest while the wait continues. Detail event —

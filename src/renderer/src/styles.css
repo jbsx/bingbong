@@ -291,6 +291,22 @@ body {
   color: var(--accent);
 }
 
+/* Streamed answer text (#47): the growing partial — real answer words, so
+   they render at reading size; the final display entry replaces the run. */
+.feed-entry--answer_stream .feed-text {
+  color: var(--text);
+  font-size: 0.85rem;
+}
+
+/* Reasoning traces (#47): dimmed bonus direction — present only when the
+   provider emits reasoning_content, absent otherwise. */
+.feed-entry--reasoning .feed-text {
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-style: italic;
+  opacity: 0.75;
+}
+
 .feed-entry--error .feed-text {
   color: #ff7a7a;
 }

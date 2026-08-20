@@ -34,7 +34,32 @@ export interface LlmRequest {
    * the dashboard can render "retrying 2/3" — before the attempt starts.
    */
   onRetryAttempt?: (attempt: number, maxAttempts: number) => void
+  /**
+   * Streaming (#47): when present, a streaming-capable client streams this
+   * round and invokes the listener as SSE chunks arrive — mirroring the
+   * transcriber's partial-transcript idiom (`Transcriber.onPartial`).
+   * Absent, the round stays non-streaming (the scripted-double fallback
+   * shape; subagent clients never pass one).
+   */
+  onDelta?: (delta: LlmStreamDelta) => void
+  /**
+   * Aborts the in-flight HTTP request immediately (#47): the pipeline
+   * wires Stop to this signal so aborting a run no longer waits out the
+   * request timeout. Clients that ignore it keep the old contract.
+   */
+  signal?: AbortSignal
 }
+
+/** One streamed fragment of an orchestrator round (#47). */
+export type LlmStreamDelta =
+  /** Raw answer content as emitted by the provider (pre answer-contract). */
+  | { kind: 'text'; text: string }
+  /**
+   * Reasoning trace fragment — `reasoning_content`, the de facto
+   * OpenAI-compatible field. Opportunistic pass-through: absent deltas
+   * simply never arrive for providers that don't emit them.
+   */
+  | { kind: 'reasoning'; text: string }
 
 /** Token usage as reported by the provider (absent when unknown). */
 export interface TokenUsage {

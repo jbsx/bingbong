@@ -7,11 +7,14 @@ import type { RecordedEntry, TranscriptEvent } from './historyStore'
 // pipeline events in, ordered feed entries out. Outcome lines reuse the
 // shared transcript projection word-for-word, so what the feed shows as
 // outcomes is exactly what history records and rehydrates; retry lines are
-// ephemeral detail (never recorded, trimmed beyond the cap). Session-
-// scoped exactly like the transcript (ADR 0003): session_started clears.
+// ephemeral detail (never recorded, trimmed beyond the cap). Streamed
+// deltas (#47) grow live answer/reasoning runs — also ephemeral detail —
+// with the answer's display entry replacing its partial at round end.
+// Session-scoped exactly like the transcript (ADR 0003): session_started
+// clears.
 
 /** The entry kinds the feed renders: transcript kinds plus detail lines. */
-export type FeedEntryKind = TranscriptEvent['kind'] | 'retry' | 'steer'
+export type FeedEntryKind = TranscriptEvent['kind'] | 'retry' | 'steer' | 'answer_stream' | 'reasoning'
 
 export interface FeedEntry {
   /** Rising, unique across the projection's life — the renderer's React key. */
@@ -41,13 +44,36 @@ export function createFeedProjection(): {
   // boundary must not resurrect the old session's outcomes — nothing older
   // is ever rendered again (ADR 0003).
   let sessionCleared = false
+  // Open streamed runs (#47): the feed entry a live delta grows, if any —
+  // one per kind, closed (frozen in place) by any other event so each run
+  // reads as one growing line. Null after close/boundary/replacement.
+  let openTextId: number | null = null
+  let openReasoningId: number | null = null
+
+  const closeStreaming = (): void => {
+    openTextId = null
+    openReasoningId = null
+  }
+
+  /** Drops the open streamed-answer run — its final entry replaces it. */
+  const dropOpenText = (): void => {
+    if (openTextId === null) return
+    feed = feed.filter((entry) => entry.id !== openTextId)
+    openTextId = null
+  }
 
   const appendOutcome = (entry: TranscriptEvent): void => {
+    closeStreaming()
     feed = [...feed, { ...entry, id: nextId++, detail: false }]
   }
 
   const appendDetail = (at: number, text: string, kind: 'retry' | 'steer' = 'retry'): void => {
+    closeStreaming()
     feed = [...feed, { id: nextId++, at, kind, text, detail: true }]
+    trimDetail()
+  }
+
+  function trimDetail(): void {
     // Ephemeral lines are trimmed beyond the cap, oldest first; outcome
     // entries are session-scoped and unbounded, exactly like the transcript.
     let detailCount = 0
@@ -58,9 +84,38 @@ export function createFeedProjection(): {
     }
   }
 
+  /** One streamed fragment (#47): grows the open run of its kind, or opens one. */
+  const appendDelta = (kind: 'answer_stream' | 'reasoning', fragment: string, at: number): void => {
+    if (fragment === '') return
+    const openId = kind === 'answer_stream' ? openTextId : openReasoningId
+    if (openId !== null) {
+      const index = feed.findIndex((entry) => entry.id === openId)
+      if (index !== -1) {
+        // Same id — React re-renders the growing line, never re-keys it.
+        const grown = { ...feed[index]!, text: feed[index]!.text + fragment }
+        feed = [...feed.slice(0, index), grown, ...feed.slice(index + 1)]
+        return
+      }
+    }
+    const id = nextId++
+    feed = [...feed, { id, at, kind, text: fragment, detail: true }]
+    if (kind === 'answer_stream') openTextId = id
+    else openReasoningId = id
+    trimDetail()
+  }
+
   return {
     onEvent(event) {
       switch (event.type) {
+        case 'llm_delta':
+          appendDelta(event.kind === 'text' ? 'answer_stream' : 'reasoning', event.text, event.at)
+          return
+        case 'display':
+          // The answer's final display entry supersedes its streamed
+          // partial — never both on screen.
+          dropOpenText()
+          appendOutcome(projectPipelineEvent(event)!)
+          return
         case 'llm_retry':
           appendDetail(event.at, `empty response — retrying ${event.attempt}/${event.maxAttempts}`)
           return
@@ -72,16 +127,19 @@ export function createFeedProjection(): {
           // view; nothing older is ever rendered again.
           feed = []
           sessionCleared = true
+          closeStreaming()
           return
         default: {
           const projected = projectPipelineEvent(event)
           if (projected) appendOutcome(projected)
+          else closeStreaming()
         }
       }
     },
     append: appendOutcome,
     hydrate(recorded) {
       if (recorded.length === 0 || sessionCleared) return
+      closeStreaming()
       // Recorded history is older than anything live; entries that arrived
       // live while the fetch was in flight also ride the snapshot's tail,
       // so dedup closes the startup race (idempotent by the same count map).

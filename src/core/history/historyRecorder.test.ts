@@ -258,12 +258,16 @@ describe('historyRecorder', () => {
     const turnId = 'turn-r11'
     detailRun.event({ type: 'command', turnId, text: 'collect agent reports', at: 900 })
     detailRun.event({ type: 'status', turnId, status: 'thinking', at: 901 })
+    detailRun.event({ type: 'llm_delta', turnId, kind: 'reasoning', text: 'the user wants reports', at: 910 })
+    detailRun.event({ type: 'llm_delta', turnId, kind: 'text', text: 'Collecting', at: 920 })
     detailRun.event({ type: 'llm_retry', turnId, attempt: 2, maxAttempts: 3, at: 960 })
     detailRun.event({ type: 'llm_retry', turnId, attempt: 3, maxAttempts: 3, at: 990 })
+    detailRun.event({ type: 'llm_delta', turnId, kind: 'text', text: ' reports', at: 994 })
     detailRun.event({ type: 'tool_call', turnId, callId: 'c1', name: 'agent_results', args: { wait: true }, at: 991 })
     detailRun.event({ type: 'waiting_on_agents', turnId, running: 2, at: 992 })
     detailRun.event({ type: 'steer', turnId, text: 'use Paris instead', at: 993 })
     detailRun.event({ type: 'tool_result', turnId, callId: 'c1', name: 'agent_results', ok: true, at: 995 })
+    detailRun.event({ type: 'display', turnId, text: 'Collected.', at: 995.5 })
     detailRun.event({ type: 'speak', text: 'Collected.', at: 996 })
     detailRun.event({ type: 'done', turnId, outcome: 'done', at: 997 })
 
@@ -271,6 +275,7 @@ describe('historyRecorder', () => {
     plainRun.event({ type: 'status', turnId, status: 'thinking', at: 901 })
     plainRun.event({ type: 'tool_call', turnId, callId: 'c1', name: 'agent_results', args: { wait: true }, at: 991 })
     plainRun.event({ type: 'tool_result', turnId, callId: 'c1', name: 'agent_results', ok: true, at: 995 })
+    plainRun.event({ type: 'display', turnId, text: 'Collected.', at: 995.5 })
     plainRun.event({ type: 'speak', text: 'Collected.', at: 996 })
     plainRun.event({ type: 'done', turnId, outcome: 'done', at: 997 })
 
@@ -285,6 +290,7 @@ describe('historyRecorder', () => {
     recorder.event({ type: 'llm_retry', turnId: 'turn-x', attempt: 2, maxAttempts: 3, at: 1_000 })
     recorder.event({ type: 'waiting_on_agents', turnId: 'turn-x', running: 1, at: 1_001 })
     recorder.event({ type: 'steer', turnId: 'turn-x', text: 'use Paris instead', at: 1_002 })
+    recorder.event({ type: 'llm_delta', turnId: 'turn-x', kind: 'text', text: 'stray fragment', at: 1_003 })
 
     expect(store.recentEntries(10)).toEqual([])
   })

@@ -178,6 +178,92 @@ describe('feed projection', () => {
     })
   })
 
+  describe('streamed deltas (#47)', () => {
+    const delta = (kind: 'text' | 'reasoning', text: string, at: number, turnId = T): PipelineEvent =>
+      ({ type: 'llm_delta', turnId, kind, text, at })
+
+    it('grows one streamed-answer entry as batched flushes arrive', () => {
+      const feed = createFeedProjection()
+      feed.onEvent(command('go', 1_000))
+      feed.onEvent(delta('text', 'Opening ', 2_000))
+      feed.onEvent(delta('text', 'YouTu', 2_120))
+      feed.onEvent(delta('text', 'be.', 2_240))
+
+      expect(outline(feed.entries())).toEqual([
+        { kind: 'command', text: 'go', detail: false },
+        { kind: 'answer_stream', text: 'Opening YouTube.', detail: true },
+      ])
+      // The growing entry keeps one stable id — React re-renders, never
+      // re-keys, the streaming line.
+      expect(feed.entries()[1]!.id).toBe(1)
+    })
+
+    it('renders reasoning as its own dim detail line, separate from the answer run', () => {
+      const feed = createFeedProjection()
+      feed.onEvent(delta('reasoning', 'the user wants music', 1_000))
+      feed.onEvent(delta('reasoning', ', so navigate', 1_120))
+      feed.onEvent(delta('text', 'Done.', 1_240))
+
+      expect(outline(feed.entries())).toEqual([
+        { kind: 'reasoning', text: 'the user wants music, so navigate', detail: true },
+        { kind: 'answer_stream', text: 'Done.', detail: true },
+      ])
+    })
+
+    it('closes the open entries on any other event; a later delta opens a fresh one', () => {
+      const feed = createFeedProjection()
+      feed.onEvent(delta('text', 'partial text', 1_000))
+      feed.onEvent({ type: 'tool_call', turnId: T, callId: 'c1', name: 'navigate', args: { url: 'x.test' }, at: 2_000 })
+      feed.onEvent(delta('text', 'after the tool', 3_000))
+
+      expect(outline(feed.entries())).toEqual([
+        { kind: 'answer_stream', text: 'partial text', detail: true },
+        { kind: 'tool', text: '→ x.test', detail: false },
+        { kind: 'answer_stream', text: 'after the tool', detail: true },
+      ])
+    })
+
+    it('replaces the open streamed run with the answer\'s display entry — never partial + full', () => {
+      const feed = createFeedProjection()
+      feed.onEvent(delta('text', 'Done. Playing it n', 1_000))
+      feed.onEvent({ type: 'display', turnId: T, text: 'Done. Playing it now.', at: 2_000 })
+
+      expect(outline(feed.entries())).toEqual([
+        { kind: 'display', text: 'Done. Playing it now.', detail: false },
+      ])
+    })
+
+    it('ignores blank delta fragments', () => {
+      const feed = createFeedProjection()
+      feed.onEvent(delta('text', '', 1_000))
+      expect(feed.entries()).toEqual([])
+    })
+
+    it('counts streamed entries as detail for the trim', () => {
+      const feed = createFeedProjection()
+      for (let i = 0; i < MAX_DETAIL_ENTRIES + 5; i += 1) {
+        // A tool line between fragments closes each run, so every delta
+        // becomes its own detail entry.
+        feed.onEvent(delta('text', `t${i}`, i + 1))
+        feed.onEvent({ type: 'status', turnId: T, status: 'thinking', at: i + 1 })
+      }
+
+      expect(feed.entries()).toHaveLength(MAX_DETAIL_ENTRIES)
+      expect(feed.entries().every((entry) => entry.detail)).toBe(true)
+    })
+
+    it('a session boundary resets the streaming state — post-boundary deltas open clean', () => {
+      const feed = createFeedProjection()
+      feed.onEvent(delta('text', 'old session partial', 1_000))
+      feed.onEvent({ type: 'session_started', at: 2_000 })
+      feed.onEvent(delta('text', 'fresh', 3_000))
+
+      expect(outline(feed.entries())).toEqual([
+        { kind: 'answer_stream', text: 'fresh', detail: true },
+      ])
+    })
+  })
+
   describe('restart hydration', () => {
     it('seeds recorded history as outcome entries below anything live', () => {
       const feed = createFeedProjection()

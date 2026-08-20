@@ -1,4 +1,4 @@
-import type { AssistantTurn, LlmClient, LlmRequest, SessionTurn, TokenUsage, ToolCall, ToolResult } from '../../core/ports/llm'
+import type { AssistantTurn, LlmClient, LlmRequest, LlmStreamDelta, SessionTurn, TokenUsage, ToolCall, ToolResult } from '../../core/ports/llm'
 import type { Tool, ToolParameterSpec } from '../../core/pipeline/tool'
 import type { ModelEndpointConfig } from '../../core/agent/modelRouting'
 import { parseAssistantAnswer } from '../../core/agent/answerContract'
@@ -123,12 +123,18 @@ export function createOpenAiLlmClient(deps: OpenAiLlmClientDeps): LlmClient {
   async function complete(request: LlmRequest): Promise<AssistantTurn> {
     const messages = buildMessages(request)
     const catalog = offeredTools(tools, request)
+    // Streaming (#47): a round streams only when the caller subscribed a
+    // delta listener (the orchestrator pipeline does; subagent clients
+    // never do and keep the non-streaming contract).
+    const streaming = request.onDelta !== undefined
 
     // GLM sometimes answers 200 with finish_reason "stop", empty content and
     // no tool_calls — the reasoning trace shows it meant to call a tool but
     // the call was dropped server-side. It is nondeterministic, so retry:
     // once identically, then once with a nudge, then give up and log the raw
     // payload (request_id included) so the provider incident is reportable.
+    // Detection moved to stream-close for streaming rounds (#47) — same
+    // loop, same ceiling, same give-up error.
     const MAX_ATTEMPTS = 3
     let lastRequestId: string | undefined
     let lastRaw = ''
@@ -142,7 +148,11 @@ export function createOpenAiLlmClient(deps: OpenAiLlmClientDeps): LlmClient {
         attempt === MAX_ATTEMPTS
           ? [...messages, { role: 'user' as const, content: 'Your previous reply was empty. Respond with tool calls or the final JSON answer.' }]
           : messages
-      const { payload, requestId, raw } = await requestOnce(outgoing, catalog)
+      const { payload, requestId, raw } = await requestOnce(outgoing, catalog, {
+        streaming,
+        onDelta: request.onDelta,
+        signal: request.signal,
+      })
       const turn = toTurn(payload)
       if (turn) return turn
       lastRequestId = requestId
@@ -160,19 +170,60 @@ export function createOpenAiLlmClient(deps: OpenAiLlmClientDeps): LlmClient {
     choices?: { message?: { content?: string | null; tool_calls?: WireToolCall[] } }[]
   }
 
+  /** A wire tool-call delta fragment (streaming only, #47). */
+  interface WireToolCallDelta {
+    index?: number
+    id?: string
+    type?: 'function'
+    function: { name?: string; arguments?: string }
+  }
+
+  /**
+   * Collapses \r\n and lone \r to \n. A trailing lone \r is kept (its pair
+   * may arrive in the next chunk) unless the stream has ended.
+   */
+  function normalizeLineEndings(text: string, ended = false): string {
+    if (!text.includes('\r')) return text
+    const keepTrailing = !ended && text.endsWith('\r')
+    const body = keepTrailing ? text.slice(0, -1) : text
+    return body.replace(/\r\n|\r/g, '\n') + (keepTrailing ? '\r' : '')
+  }
+
+  /**
+   * What one attempt resolved to, normalized across transports: the
+   * completion payload (assembled from SSE chunks when streaming), the
+   * provider's request id (payload field or `x-request-id` header), and a
+   * raw excerpt for the give-up log.
+   */
+  interface AttemptResult {
+    payload: CompletionPayload
+    requestId?: string
+    raw: string
+  }
+
   async function requestOnce(
     messages: WireMessage[],
     catalog: Tool[],
-  ): Promise<{ payload: CompletionPayload; requestId?: string; raw: string }> {
+    options: { streaming: boolean; onDelta?: (delta: LlmStreamDelta) => void; signal?: AbortSignal },
+  ): Promise<AttemptResult> {
     const body: Record<string, unknown> = {
       model: endpoint.model,
       messages,
-      stream: false,
+      stream: options.streaming,
+    }
+    if (options.streaming) {
+      // The include_usage convention (OpenAI-compatible): a final,
+      // choices-less chunk carries token usage.
+      body.stream_options = { include_usage: true }
     }
     if (catalog.length > 0) {
       body.tools = toolDefinitions(catalog)
       body.tool_choice = 'auto'
     }
+    // Stop reaches the request through the caller's signal (#47): combined
+    // with the timeout so either one cancels the in-flight round.
+    const timeoutSignal = AbortSignal.timeout(timeoutMs)
+    const signal = options.signal ? AbortSignal.any([timeoutSignal, options.signal]) : timeoutSignal
 
     const response = await fetchFn(completionsUrl(endpoint.baseUrl), {
       method: 'POST',
@@ -181,7 +232,7 @@ export function createOpenAiLlmClient(deps: OpenAiLlmClientDeps): LlmClient {
         authorization: `Bearer ${endpoint.apiKey}`,
       },
       body: JSON.stringify(body),
-      signal: AbortSignal.timeout(timeoutMs),
+      signal,
     })
 
     if (!response.ok) {
@@ -189,9 +240,122 @@ export function createOpenAiLlmClient(deps: OpenAiLlmClientDeps): LlmClient {
       throw new Error(`orchestrator request failed (HTTP ${response.status}): ${detail}`)
     }
 
+    if (options.streaming) return consumeSseStream(response, options.onDelta)
+
     const raw = await response.text()
     const payload = JSON.parse(raw) as CompletionPayload
     return { payload, requestId: payload.request_id, raw }
+  }
+
+  /** Accumulates one streamed round while fragments fan out to onDelta. */
+  interface StreamAssembly {
+    content: string
+    reasoning: string
+    toolCalls: Map<number, WireToolCall>
+    sawToolCall: boolean
+    usage?: { prompt_tokens?: number; completion_tokens?: number }
+  }
+
+  /**
+   * The hand-rolled SSE parse loop (#47): reads the response body chunk by
+   * chunk, splits server-sent events on blank-line boundaries, and parses
+   * each `data:` payload. Answer and reasoning fragments fan out to the
+   * delta listener as they arrive; tool-call argument fragments accumulate
+   * per index and are assembled (JSON-parsed) at stream close.
+   */
+  async function consumeSseStream(
+    response: Response,
+    onDelta: ((delta: LlmStreamDelta) => void) | undefined,
+  ): Promise<AttemptResult> {
+    const assembly: StreamAssembly = { content: '', reasoning: '', toolCalls: new Map(), sawToolCall: false }
+    const rawChunks: string[] = []
+    let buffer = ''
+
+    const handleEvent = (eventText: string): void => {
+      const data = eventText
+        .split('\n')
+        .filter((line) => line.startsWith('data:'))
+        .map((line) => line.slice(5).trimStart())
+        .join('\n')
+      if (data === '') return
+      rawChunks.push(data)
+      if (data === '[DONE]') return
+      let chunk: {
+        choices?: { delta?: { content?: string | null; reasoning_content?: string | null; tool_calls?: WireToolCallDelta[] } }[]
+        usage?: { prompt_tokens?: number; completion_tokens?: number }
+      }
+      try {
+        chunk = JSON.parse(data)
+      } catch {
+        return // A malformed chunk never fails the round.
+      }
+      if (chunk.usage && typeof chunk.usage.prompt_tokens === 'number') assembly.usage = chunk.usage
+      const delta = chunk.choices?.[0]?.delta
+      if (!delta) return
+      if (typeof delta.reasoning_content === 'string' && delta.reasoning_content !== '') {
+        onDelta?.({ kind: 'reasoning', text: delta.reasoning_content })
+      }
+      if (typeof delta.content === 'string' && delta.content !== '') {
+        assembly.content += delta.content
+        onDelta?.({ kind: 'text', text: delta.content })
+      }
+      for (const call of delta.tool_calls ?? []) {
+        const index = call.index ?? 0
+        const existing = assembly.toolCalls.get(index)
+        if (!existing) {
+          // The first fragment carries the id and name; later ones only
+          // argument fragments.
+          assembly.toolCalls.set(index, {
+            id: call.id ?? '',
+            type: 'function',
+            function: { name: call.function?.name ?? '', arguments: call.function?.arguments ?? '' },
+          })
+          assembly.sawToolCall = true
+          continue
+        }
+        if (call.id) existing.id = call.id
+        if (call.function?.name) existing.function.name = call.function.name
+        existing.function.arguments += call.function?.arguments ?? ''
+      }
+    }
+
+    const reader = response.body?.getReader()
+    if (reader) {
+      const decoder = new TextDecoder()
+      for (;;) {
+        const { done, value } = await reader.read()
+        if (done) break
+        buffer += decoder.decode(value, { stream: true })
+        // SSE legally allows \r\n and \r line endings; normalize to \n so
+        // every compliant provider splits the same way. A trailing lone \r
+        // stays buffered — its pair may arrive in the next chunk.
+        buffer = normalizeLineEndings(buffer)
+        // SSE events are blank-line separated; a trailing partial stays
+        // buffered until its terminator arrives (possibly next chunk).
+        for (;;) {
+          const boundary = buffer.indexOf('\n\n')
+          if (boundary === -1) break
+          const eventText = buffer.slice(0, boundary)
+          buffer = buffer.slice(boundary + 2)
+          handleEvent(eventText)
+        }
+      }
+      handleEvent(normalizeLineEndings(buffer, true))
+    }
+
+    // Empty-completion detection at stream close (#47): the assembled
+    // message feeds the same toTurn the non-streaming path uses.
+    const toolCalls = [...assembly.toolCalls.entries()].sort(([a], [b]) => a - b).map(([, call]) => call)
+    const payload: CompletionPayload = {
+      choices: [{
+        message: {
+          ...(assembly.content !== '' ? { content: assembly.content } : {}),
+          ...(assembly.sawToolCall ? { tool_calls: toolCalls } : {}),
+        },
+      }],
+      ...(assembly.usage ? { usage: assembly.usage } : {}),
+    }
+    return { payload, requestId: response.headers.get('x-request-id') ?? undefined, raw: rawChunks.join('\n') }
   }
 
   function toTurn(payload: CompletionPayload): AssistantTurn | null {

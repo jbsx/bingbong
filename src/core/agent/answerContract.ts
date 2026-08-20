@@ -35,6 +35,63 @@ function extractJsonSlice(content: string): string | null {
   return slice === content ? null : slice
 }
 
+const ESCAPES: Record<string, string> = {
+  '"': '"',
+  '\\': '\\',
+  '/': '/',
+  b: '\b',
+  f: '\f',
+  n: '\n',
+  r: '\r',
+  t: '\t',
+}
+
+/**
+ * The string value starting at `openQuote` (its index in `content`), with
+ * completed escapes unescaped — everything visible so far. Stops at the
+ * closing quote or the first incomplete escape.
+ */
+function partialStringValue(content: string, openQuote: number): string {
+  let out = ''
+  for (let i = openQuote + 1; i < content.length; i += 1) {
+    const char = content[i]!
+    if (char === '"') return out
+    if (char !== '\\') {
+      out += char
+      continue
+    }
+    const escaped = content[i + 1]
+    if (escaped === undefined) return out
+    if (escaped === 'u') {
+      const hex = content.slice(i + 2, i + 6)
+      if (hex.length < 4 || /[^0-9a-fA-F]/.test(hex)) return out
+      out += String.fromCharCode(Number.parseInt(hex, 16))
+      i += 5
+      continue
+    }
+    out += ESCAPES[escaped] ?? `\\${escaped}`
+    i += 1
+  }
+  return out
+}
+
+/**
+ * The visible fragment of a partially streamed answer (#47): the raw
+ * content buffer is the answer-contract JSON in flight, so the first
+ * `"display"`/`"speak"` value that opens streams (unescaping completed
+ * escapes); prose — the fallback contract — streams raw. Monotonic: the
+ * visible text only grows as the buffer grows, so successive calls diff
+ * cleanly into flush fragments. The first key to open owns the stream; a
+ * later key never shrinks it (the final display entry replaces the
+ * partial at round end).
+ */
+export function partialAnswerText(content: string): string {
+  if (!content.trimStart().startsWith('{')) return content
+  const key = /"(?:display|speak)"\s*:\s*"/.exec(content)
+  if (!key) return ''
+  return partialStringValue(content, key.index + key[0].length - 1)
+}
+
 /**
  * Parse the model's final message into {speak, display}. Accepted shapes, in
  * order: a bare JSON object, a JSON object in a code fence, a JSON object with

@@ -23,10 +23,59 @@ interface CompletionBody {
   model: string
   messages: WireMessage[]
   tools?: { type: 'function'; function: Record<string, unknown> }[]
+  stream?: boolean
+  stream_options?: { include_usage: boolean }
 }
 
 function completionResponse(message: { content?: string | null; tool_calls?: WireToolCall[] }): Response {
   return new Response(JSON.stringify({ choices: [{ message }] }), { status: 200 })
+}
+
+// ---- Scripted SSE streaming (#47) ----
+
+/** One SSE `data:` payload, already JSON-encoded. */
+function sseChunk(payload: Record<string, unknown>): string {
+  return `data: ${JSON.stringify(payload)}\n\n`
+}
+
+function textDelta(content: string, extra: Record<string, unknown> = {}): string {
+  return sseChunk({ choices: [{ delta: { content } }], ...extra })
+}
+
+function reasoningDelta(text: string): string {
+  return sseChunk({ choices: [{ delta: { reasoning_content: text } }] })
+}
+
+function toolCallDelta(index: number, call: { id?: string; name?: string; arguments: string }): string {
+  return sseChunk({
+    choices: [{
+      delta: {
+        tool_calls: [{
+          index,
+          ...(call.id !== undefined ? { id: call.id } : {}),
+          type: 'function',
+          function: { ...(call.name !== undefined ? { name: call.name } : {}), arguments: call.arguments },
+        }],
+      },
+    }],
+  })
+}
+
+function usageChunk(usage: { prompt_tokens: number; completion_tokens: number }): string {
+  // The include_usage convention: a final choices-less chunk carries usage.
+  return sseChunk({ choices: [], usage })
+}
+
+function sseResponse(chunks: string[], headers: Record<string, string> = {}): Response {
+  const body = new ReadableStream<Uint8Array>({
+    start(controller) {
+      const encoder = new TextEncoder()
+      for (const chunk of chunks) controller.enqueue(encoder.encode(chunk))
+      controller.enqueue(encoder.encode('data: [DONE]\n\n'))
+      controller.close()
+    },
+  })
+  return new Response(body, { status: 200, headers: { 'content-type': 'text/event-stream', ...headers } })
 }
 
 class ScriptedFetch {
@@ -416,5 +465,240 @@ describe('openAiLlmClient', () => {
       [2, 3],
       [3, 3],
     ])
+  })
+})
+
+describe('openAiLlmClient streaming (#47)', () => {
+  it('streams answer text through onDelta and returns the assembled, contracted turn', async () => {
+    const fetch = new ScriptedFetch([
+      sseResponse([
+        textDelta('{"speak":"Done. '),
+        textDelta('Playing.","display":"Opened <a>yt</a>"}'),
+        usageChunk({ prompt_tokens: 10, completion_tokens: 6 }),
+      ]),
+    ])
+    const client = makeClient(fetch)
+    const deltas: string[] = []
+
+    const turn = await client.complete({
+      command: 'open youtube',
+      toolResults: [],
+      onDelta: (delta) => {
+        if (delta.kind === 'text') deltas.push(delta.text)
+      },
+    })
+
+    // Raw fragments stream; the final turn is the full contracted answer.
+    expect(deltas).toEqual(['{"speak":"Done. ', 'Playing.","display":"Opened <a>yt</a>"}'])
+    expect(turn).toEqual({
+      kind: 'answer',
+      speak: 'Done. Playing.',
+      display: 'Opened <a>yt</a>',
+      usage: { promptTokens: 10, completionTokens: 6 },
+    })
+
+    const request = fetch.calls[0]
+    expect(request.body.stream).toBe(true)
+    expect(request.body.stream_options).toEqual({ include_usage: true })
+  })
+
+  it('streams reasoning_content fragments when the provider emits them, and nothing when it does not', async () => {
+    const withReasoning = new ScriptedFetch([
+      sseResponse([reasoningDelta('the user wants '), reasoningDelta('music'), textDelta('{"speak":"OK.","display":"OK."}')]),
+    ])
+    const withoutReasoning = new ScriptedFetch([sseResponse([textDelta('{"speak":"OK.","display":"OK."}')])])
+
+    const seen: { client: string; kind: string }[] = []
+    const listen = (tag: string) => (delta: { kind: string; text: string }) => seen.push({ client: tag, kind: delta.kind })
+
+    await makeClient(withReasoning).complete({ command: 'x', toolResults: [], onDelta: listen('with') })
+    await makeClient(withoutReasoning).complete({ command: 'x', toolResults: [], onDelta: listen('without') })
+
+    expect(seen).toEqual([
+      { client: 'with', kind: 'reasoning' },
+      { client: 'with', kind: 'reasoning' },
+      { client: 'with', kind: 'text' },
+      { client: 'without', kind: 'text' },
+    ])
+  })
+
+  it('assembles tool-call argument fragments across chunk boundaries into executable calls', async () => {
+    const fetch = new ScriptedFetch([
+      sseResponse([
+        toolCallDelta(0, { id: 'call-1', name: 'navigate', arguments: '{"url":"ht' }),
+        toolCallDelta(0, { arguments: 'tps://youtube.com"}' }),
+        toolCallDelta(1, { id: 'call-2', name: 'click', arguments: '{"ref"' }),
+        toolCallDelta(1, { arguments: ':5}' }),
+      ]),
+    ])
+    const client = makeClient(fetch)
+
+    const turn = await client.complete({ command: 'open and click', toolResults: [], onDelta: () => {} })
+
+    expect(turn).toEqual({
+      kind: 'tool_calls',
+      calls: [
+        { id: 'call-1', name: 'navigate', args: { url: 'https://youtube.com' } },
+        { id: 'call-2', name: 'click', args: { ref: 5 } },
+      ],
+    })
+  })
+
+  it('detects the empty completion at stream close and keeps the 3-attempt loop — give-up names the request id', async () => {
+    const empty = (id: string) => sseResponse([], { 'x-request-id': id })
+    const fetch = new ScriptedFetch([empty('req-stream-1'), empty('req-stream-2'), empty('req-stream-3')])
+    const client = makeClient(fetch)
+    const attempts: [number, number][] = []
+
+    await expect(
+      client.complete({
+        command: 'x',
+        toolResults: [],
+        onDelta: () => {},
+        onRetryAttempt: (attempt, maxAttempts) => attempts.push([attempt, maxAttempts]),
+      }),
+    ).rejects.toThrow(/empty completion \(request_id: req-stream-3\)/)
+
+    expect(attempts).toEqual([
+      [2, 3],
+      [3, 3],
+    ])
+    // Attempt 3 carries the nudge, same as non-streaming.
+    expect(fetch.calls[2].body.messages.at(-1)).toMatchObject({ role: 'user', content: expect.stringContaining('previous reply was empty') })
+  })
+
+  it('retries an empty stream and succeeds on a later attempt', async () => {
+    const fetch = new ScriptedFetch([
+      sseResponse([]),
+      sseResponse([textDelta('{"speak":"hi","display":"hi"}')]),
+    ])
+    const client = makeClient(fetch)
+
+    const turn = await client.complete({ command: 'x', toolResults: [], onDelta: () => {} })
+
+    expect(turn).toEqual({ kind: 'answer', speak: 'hi', display: 'hi' })
+    expect(fetch.calls).toHaveLength(2)
+  })
+
+  it('keeps requests without onDelta non-streaming (subagent shape)', async () => {
+    const fetch = new ScriptedFetch([completionResponse({ content: '{"speak":"hi","display":"hi"}' })])
+    const client = makeClient(fetch)
+
+    await client.complete({ command: 'x', toolResults: [] })
+
+    expect(fetch.calls[0].body.stream).toBe(false)
+    expect(fetch.calls[0].body.stream_options).toBeUndefined()
+  })
+
+  it('parses CRLF line endings — any compliant provider, not just \n ones', async () => {
+    // Three events, \r\n endings; event B's terminator is split across the
+    // chunk boundary (lone \r | \n) — the deferral keeps it intact.
+    const crlfChunks = [
+      `data: ${JSON.stringify({ choices: [{ delta: { content: '{"speak":"Done.","dis' } }] })}\r\n\r\ndata: ${JSON.stringify({ choices: [{ delta: { content: 'play":"Done."}' } }] })}\r`,
+      `\n\r\ndata: ${JSON.stringify({ choices: [], usage: { prompt_tokens: 3, completion_tokens: 5 } })}\r\n\r\n`,
+    ]
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        const encoder = new TextEncoder()
+        for (const chunk of crlfChunks) controller.enqueue(encoder.encode(chunk))
+        controller.enqueue(encoder.encode('data: [DONE]\r\n\r\n'))
+        controller.close()
+      },
+    })
+    const fetch = new ScriptedFetch([new Response(body, { status: 200, headers: { 'content-type': 'text/event-stream' } })])
+    const client = makeClient(fetch)
+    const deltas: string[] = []
+
+    const turn = await client.complete({
+      command: 'x',
+      toolResults: [],
+      onDelta: (delta) => {
+        if (delta.kind === 'text') deltas.push(delta.text)
+      },
+    })
+
+    expect(deltas).toEqual(['{"speak":"Done.","dis', 'play":"Done."}'])
+    expect(turn).toEqual({
+      kind: 'answer',
+      speak: 'Done.',
+      display: 'Done.',
+      usage: { promptTokens: 3, completionTokens: 5 },
+    })
+  })
+
+  it('aborts mid-stream: a cancelled body read propagates the abort error', async () => {
+    const controller = new AbortController()
+    // A body that stays open until the fetch signal aborts — then errors,
+    // which is what undici does when an in-flight stream is cancelled.
+    const openBody = new ReadableStream<Uint8Array>({
+      start(streamController) {
+        const encoder = new TextEncoder()
+        streamController.enqueue(encoder.encode(textDelta('{"speak":"partial' )))
+        controller.signal.addEventListener('abort', () => {
+          const err = new Error('This operation was aborted')
+          err.name = 'AbortError'
+          streamController.error(err)
+        })
+      },
+    })
+    const fetch = new ScriptedFetch([new Response(openBody, { status: 200, headers: { 'content-type': 'text/event-stream' } })])
+    const client = makeClient(fetch)
+    const deltas: string[] = []
+
+    const pending = client.complete({
+      command: 'x',
+      toolResults: [],
+      onDelta: (delta) => {
+        if (delta.kind === 'text') deltas.push(delta.text)
+      },
+      signal: controller.signal,
+    })
+    const outcome = pending.then(
+      () => 'resolved',
+      (err: Error) => err.name,
+    )
+    // Mid-stream: let the first chunk be read and delivered, then cancel.
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    controller.abort()
+
+    expect(await outcome).toBe('AbortError')
+    // Fragments that arrived before the abort were delivered.
+    expect(deltas).toEqual(['{"speak":"partial'])
+    // The empty-completion loop never retried over an abort.
+    expect(fetch.calls).toHaveLength(1)
+  })
+
+  it('forwards the request signal to fetch so Stop cancels the in-flight request', async () => {
+    const controller = new AbortController()
+    const seenSignals: AbortSignal[] = []
+    const neverSettles = (_url: string | URL | Request, init?: RequestInit): Promise<Response> => {
+      seenSignals.push(init!.signal as AbortSignal)
+      return new Promise((_resolve, reject) => {
+        init!.signal!.addEventListener('abort', () => {
+          const err = new Error('This operation was aborted')
+          err.name = 'AbortError'
+          reject(err)
+        })
+      })
+    }
+    const client = createOpenAiLlmClient({
+      endpoint: ENDPOINT,
+      systemPrompt: ORCHESTRATOR_SYSTEM_PROMPT,
+      tools: createBrowserTools(new FakeBrowser()),
+      fetchFn: neverSettles as typeof fetch,
+    })
+
+    const pending = client.complete({ command: 'x', toolResults: [], onDelta: () => {}, signal: controller.signal })
+    const outcome = pending.then(
+      () => 'resolved',
+      (err: Error) => err.name,
+    )
+    controller.abort()
+
+    // The rejection propagates (the pipeline maps it to a cancelled run);
+    // the empty-completion loop never retries an abort.
+    expect(await outcome).toBe('AbortError')
+    expect(seenSignals).toHaveLength(1)
+    expect(seenSignals[0]!.aborted).toBe(true)
   })
 })

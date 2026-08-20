@@ -14,6 +14,7 @@ import { createSubagentTools } from './subagentTools'
 import { createPerfTracer, type PerfTracer } from '../perf/perfTracer'
 import { withPerfTracing } from '../perf/perfTracing'
 import { createBrowserSubspans } from '../perf/browserSubspans'
+import { DELTA_FLUSH_MS } from './deltaBatcher'
 
 async function collect(
   pipeline: CommandPipeline,
@@ -254,6 +255,8 @@ describe('command pipeline', () => {
       toolResults: [],
       steering: 'Use Paris instead.',
       turnId: expect.any(String),
+      // Every round carries its abort signal (#47).
+      signal: expect.any(AbortSignal),
     })
     expect(executions).toBe(0)
     expect(events).toContainEqual({ type: 'status', status: 'paused', at: 0 })
@@ -305,6 +308,7 @@ describe('command pipeline', () => {
         outcome: { ok: true, result: 'continued' },
       }],
       turnId: expect.any(String),
+      signal: expect.any(AbortSignal),
     })
   })
 
@@ -1694,6 +1698,206 @@ describe('progress detail (#43)', () => {
     expect(sink.map((event) => event.type)).toEqual(['llm_retry'])
   })
 })
+
+describe('orchestrator streaming (#47)', () => {
+  it('flushes batched answer and reasoning deltas onto the detail channel while the round is in flight', async () => {
+    const clock = new FakeClock()
+    const sink: PipelineEvent[] = []
+    let sinkMidRound: PipelineEvent[] = []
+    const release = deferred<void>()
+    const llm: LlmClient = {
+      async complete(request) {
+        request.onDelta?.({ kind: 'reasoning', text: 'the user wants ' })
+        request.onDelta?.({ kind: 'reasoning', text: 'music' })
+        request.onDelta?.({ kind: 'text', text: '{"speak":"Done. ' })
+        // A window closes mid-round — batched flush, not per fragment.
+        clock.advance(DELTA_FLUSH_MS)
+        request.onDelta?.({ kind: 'text', text: 'Playing.' })
+        sinkMidRound = [...sink]
+        await release.promise
+        return { kind: 'answer', speak: 'Done. Playing.', display: 'Done. Playing.' }
+      },
+    }
+    const pipeline = createCommandPipeline({
+      llm,
+      tts: new RecordingTts(),
+      clock,
+      tools: [],
+      emitDetail: (event) => sink.push(event),
+    })
+
+    const run = collectStamped(pipeline, 'play something', 'turn-s')
+    await waitUntil(() => sinkMidRound.length > 0)
+    // Window one: reasoning raw, answer as its visible part — batched
+    // into one fragment per kind, stamped with the turn id.
+    expect(sinkMidRound).toEqual([
+      { type: 'llm_delta', turnId: 'turn-s', kind: 'reasoning', text: 'the user wants music', at: DELTA_FLUSH_MS },
+      { type: 'llm_delta', turnId: 'turn-s', kind: 'text', text: 'Done. ', at: DELTA_FLUSH_MS },
+    ])
+
+    clock.advance(DELTA_FLUSH_MS)
+    release.resolve(undefined)
+    const events = await run
+
+    expect(sunkTexts(sink)).toEqual(['the user wants music', 'Done. ', 'Playing.'])
+    // The side channel is the only transport — never the generator's own.
+    expect(events.some((event) => event.type === 'llm_delta')).toBe(false)
+  })
+
+  it('drains the tail at round end before the display event lands', async () => {
+    const clock = new FakeClock()
+    const merged: PipelineEvent[] = []
+    const llm: LlmClient = {
+      async complete(request) {
+        request.onDelta?.({ kind: 'text', text: '{"speak":"Tail.' })
+        // No window ever closes mid-round; only the round-end drain
+        // carries the fragment.
+        return { kind: 'answer', speak: 'Tail.', display: 'Tail.' }
+      },
+    }
+    const pipeline = createCommandPipeline({
+      llm,
+      tts: new RecordingTts(),
+      clock,
+      tools: [],
+      emitDetail: (event) => merged.push(event),
+    })
+
+    for await (const event of pipeline.execute('work', 'turn-t')) merged.push(event)
+
+    expect(merged.map((event) => event.type)).toEqual([
+      'command',
+      'status',
+      'llm_delta',
+      'display',
+      'status',
+      'speak',
+      'done',
+    ])
+    expect(merged[2]).toMatchObject({ type: 'llm_delta', kind: 'text', text: 'Tail.', at: 0 })
+  })
+
+  it('resets the stream between rounds — each round flushes only its own fragments', async () => {
+    const clock = new FakeClock()
+    const sink: PipelineEvent[] = []
+    const llm: LlmClient = {
+      async complete(request) {
+        request.onDelta?.({ kind: 'text', text: request.toolResults.length === 0 ? '{"speak":"Rou' : 'nd two.' })
+        return request.toolResults.length === 0
+          ? { kind: 'tool_calls', calls: [{ id: 'c1', name: 'noop_tool', args: {} }] }
+          : { kind: 'answer', speak: 'Round two.', display: 'Round two.' }
+      },
+    }
+    const pipeline = createCommandPipeline({
+      llm,
+      tts: new RecordingTts(),
+      clock,
+      tools: [{ name: 'noop_tool', async execute() { return 'ok' } }],
+      emitDetail: (event) => sink.push(event),
+    })
+
+    await collect(pipeline, 'two rounds')
+
+    expect(sunkTexts(sink)).toEqual(['Rou', 'nd two.'])
+  })
+
+  it('passes an abort signal with each round; Stop aborts it and the run cancels without waiting', async () => {
+    const clock = new FakeClock()
+    const signals: AbortSignal[] = []
+    const llm: LlmClient = {
+      complete(request) {
+        signals.push(request.signal!)
+        return new Promise((_resolve, reject) => {
+          request.signal?.addEventListener('abort', () => {
+            // What a real fetch rejection looks like.
+            const err = new Error('This operation was aborted')
+            err.name = 'AbortError'
+            reject(err)
+          })
+        })
+      },
+    }
+    const tts = new RecordingTts()
+    const pipeline = createCommandPipeline({
+      llm,
+      tts,
+      clock,
+      tools: [],
+      emitDetail: () => {},
+    })
+
+    const run = collect(pipeline, 'long round')
+    await waitUntil(() => signals.length === 1)
+    expect(signals[0]!.aborted).toBe(false)
+
+    pipeline.abort()
+    // The signal flips synchronously — the in-flight request is cancelled
+    // immediately, not at the next checkpoint.
+    expect(signals[0]!.aborted).toBe(true)
+    const events = await run
+
+    expect(pipeline.getState()).toBe('idle')
+    expect(events.filter((event) => event.type === 'status').at(-1)).toMatchObject({ status: 'cancelled' })
+    expect(events.at(-1)).toMatchObject({ type: 'done', outcome: 'cancelled' })
+    expect(events.some((event) => event.type === 'error')).toBe(false)
+  })
+
+  it('drains the failed attempt\'s partial stream before a retry — fragments never concatenate across attempts', async () => {
+    const sink: PipelineEvent[] = []
+    const llm: LlmClient = {
+      async complete(request) {
+        request.onDelta?.({ kind: 'text', text: '{"speak":"Attempt one.' })
+        request.onRetryAttempt?.(2, 3)
+        request.onDelta?.({ kind: 'text', text: '{"speak":"Attempt two.' })
+        return { kind: 'answer', speak: 'Attempt two.', display: 'Attempt two.' }
+      },
+    }
+    const pipeline = createCommandPipeline({
+      llm,
+      tts: new RecordingTts(),
+      clock: new FakeClock(),
+      tools: [],
+      emitDetail: (event) => sink.push(event),
+    })
+
+    await collect(pipeline, 'work')
+
+    // Attempt one's partial closes as its own run ahead of the retry line;
+    // attempt two streams fresh — no cross-attempt junk fragment.
+    expect(sink.map((event) => (event.type === 'llm_delta' ? `${event.kind}:${event.text}` : event.type))).toEqual([
+      'text:Attempt one.',
+      'llm_retry',
+      'text:Attempt two.',
+    ])
+  })
+
+  it('keeps the request non-streaming when no detail sink is wired', async () => {
+    const seen: LlmRequest[] = []
+    const llm: LlmClient = {
+      async complete(request) {
+        seen.push(request)
+        return { kind: 'answer', speak: 'Done.', display: 'Done.' }
+      },
+    }
+    const pipeline = createCommandPipeline({
+      llm,
+      tts: new RecordingTts(),
+      clock: new FakeClock(),
+      tools: [],
+    })
+
+    await collect(pipeline, 'work')
+
+    expect(seen[0]!.onDelta).toBeUndefined()
+    // The abort signal rides regardless — Stop must always reach the
+    // in-flight request.
+    expect(seen[0]!.signal).toBeInstanceOf(AbortSignal)
+  })
+})
+
+function sunkTexts(sink: PipelineEvent[]): string[] {
+  return sink.flatMap((event) => (event.type === 'llm_delta' ? [event.text] : []))
+}
 
 describe('typed steering (#46)', () => {
   it('steers a running run mid-round: the directive rides the next model call, stale tools never execute', async () => {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { capSentences, parseAssistantAnswer, spokenErrorLine } from './answerContract'
+import { capSentences, parseAssistantAnswer, partialAnswerText, spokenErrorLine } from './answerContract'
 
 describe('capSentences', () => {
   it('keeps the first n sentences', () => {
@@ -49,6 +49,39 @@ describe('parseAssistantAnswer', () => {
     const answer = parseAssistantAnswer('{"speak":"Done.","display":42} Not quite valid.')
 
     expect(answer.display).toBe('{"speak":"Done.","display":42} Not quite valid.')
+  })
+})
+
+describe('partialAnswerText', () => {
+  it('shows nothing while the JSON preamble has not reached a value', () => {
+    expect(partialAnswerText('')).toBe('')
+    expect(partialAnswerText('{"speak"')).toBe('')
+    expect(partialAnswerText('{"speak":')).toBe('')
+  })
+
+  it('streams the first key that opens — display or speak — and freezes it once closed', () => {
+    expect(partialAnswerText('{"display":"# Det')).toBe('# Det')
+    expect(partialAnswerText('{"display":"# Detail\\nwith markdown"}')).toBe('# Detail\nwith markdown')
+    // speak came first in this buffer, so it owns the stream; a later
+    // display key never shrinks the visible text (the final display entry
+    // replaces the partial at round end).
+    expect(partialAnswerText('{"speak":"Done.","display":"Full.')).toBe('Done.')
+  })
+
+  it('passes prose straight through — the fallback contract streams raw', () => {
+    expect(partialAnswerText('Plain reply, no JS')).toBe('Plain reply, no JS')
+    expect(partialAnswerText('Here you go: {"speak')).toBe('Here you go: {"speak')
+  })
+
+  it('is monotonic as the buffer grows', () => {
+    const steps = ['{"display":"Open', '{"display":"Opening YouTu', '{"display":"Opening YouTube.\\nDone."}']
+    let previous = ''
+    for (const step of steps) {
+      const visible = partialAnswerText(step)
+      expect(visible.startsWith(previous)).toBe(true)
+      previous = visible
+    }
+    expect(previous).toBe('Opening YouTube.\nDone.')
   })
 })
 

@@ -1,7 +1,8 @@
 import type { PipelineEvent } from './events'
 import type { RiskVerdict, Tool, ToolContext } from './tool'
 import type { Clock } from '../ports/clock'
-import type { LlmClient, SessionTurn, ToolCall, ToolResult, ToolResultOutcome } from '../ports/llm'
+import type { AssistantTurn, LlmClient, LlmStreamDelta, SessionTurn, ToolCall, ToolResult, ToolResultOutcome } from '../ports/llm'
+import { createLlmDeltaBatcher } from './deltaBatcher'
 import type { TtsSpeaker } from '../ports/tts'
 import type { SessionHistorySource } from '../session/sessionMemory'
 import { spokenErrorLine } from '../agent/answerContract'
@@ -80,6 +81,12 @@ interface ActiveRun {
   steering?: string
   releasePause?: () => void
   releaseControl?: () => void
+  /**
+   * Aborts the in-flight LLM round's HTTP request (#47): set while the
+   * round is awaiting, fired by abort() so Stop cancels the request
+   * immediately instead of waiting out the request timeout.
+   */
+  abortLlm?: () => void
 }
 
 class CommandAbortedError extends Error {
@@ -270,6 +277,14 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
     const emitDetail = deps.emitDetail
       ? (event: UnstampedEvent): void => deps.emitDetail!(stampTurn(event, turnId))
       : undefined
+    // Streamed deltas (#47): one batcher per run — fragments accumulate
+    // per round and flush (resetting it) at each round's end.
+    const batcher = emitDetail
+      ? createLlmDeltaBatcher({
+          clock,
+          emit: ({ kind, text, at }) => emitDetail({ type: 'llm_delta', kind, text, at }),
+        })
+      : undefined
 
     try {
       let runOutcome: 'done' | 'failed' | 'cancelled' = 'done'
@@ -302,24 +317,54 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
           }
           steering = (yield* checkpoint(run, 'thinking')) ?? steering
           const history: SessionTurn[] = deps.session?.history() ?? []
-          const turn = await llm.complete({
-            command,
-            toolResults,
-            // The turn id rides the request so the perf wrapper keys each
-            // llm span to this turn (#29).
-            turnId,
-            ...(history.length > 0 ? { history } : {}),
-            ...(steering ? { steering } : {}),
-            // Retry visibility (#43): each attempt beyond the first is a
-            // detail event on the side channel — emitted before the next
-            // attempt starts, while this round is still in flight.
-            ...(emitDetail
-              ? {
-                  onRetryAttempt: (attempt: number, maxAttempts: number): void =>
-                    emitDetail({ type: 'llm_retry', attempt, maxAttempts, at: clock.now() }),
-                }
-              : {}),
-          })
+          // Stop reaches the in-flight request through this signal (#47):
+          // abort() fires it, the client cancels the HTTP request, and the
+          // rejection below maps back to a cancelled run — no waiting out
+          // the request timeout.
+          const roundAbort = new AbortController()
+          run.abortLlm = () => roundAbort.abort()
+          let turn: AssistantTurn
+          try {
+            turn = await llm.complete({
+              command,
+              toolResults,
+              // The turn id rides the request so the perf wrapper keys each
+              // llm span to this turn (#29).
+              turnId,
+              ...(history.length > 0 ? { history } : {}),
+              ...(steering ? { steering } : {}),
+              // Retry visibility (#43): each attempt beyond the first is a
+              // detail event on the side channel — emitted before the next
+              // attempt starts, while this round is still in flight.
+              ...(emitDetail
+                ? {
+                    onRetryAttempt: (attempt: number, maxAttempts: number): void => {
+                      // Drain the failed attempt's partial stream first (#47):
+                      // its fragments close as their own feed run, so the
+                      // next attempt streams fresh instead of concatenating
+                      // onto stale buffer.
+                      batcher?.flush()
+                      emitDetail({ type: 'llm_retry', attempt, maxAttempts, at: clock.now() })
+                    },
+                  }
+                : {}),
+              // Streaming (#47): the round streams only when the detail
+              // channel is wired (absent → the non-streaming fallback).
+              ...(batcher ? { onDelta: (delta: LlmStreamDelta): void => batcher.onDelta(delta) } : {}),
+              signal: roundAbort.signal,
+            })
+          } catch (err) {
+            // The aborted signal rejects the request; the run was stopped,
+            // so this is a cancellation whatever the rejection looks like.
+            if (run.aborted) throw new CommandAbortedError()
+            throw err
+          } finally {
+            run.abortLlm = undefined
+            // Round end (#47): drain the streamed tail (and reset the
+            // batcher) before the round's events continue — the feed gets
+            // every fragment ahead of the answer's display entry.
+            batcher?.flush()
+          }
           steering = undefined
           const afterModelSteering = yield* checkpoint(run, 'thinking')
           if (afterModelSteering) {
@@ -628,6 +673,9 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
       activeRun.aborted = true
       activeRun.paused = false
       deps.onAbort?.()
+      // Cancel the in-flight LLM request immediately (#47) — the signal
+      // flips synchronously, so the provider round ends now.
+      activeRun.abortLlm?.()
       settlePendingDecisions('cancelled')
       activeRun.releaseControl?.()
       activeRun.releasePause?.()
