@@ -20,10 +20,11 @@ describe('kiosk mode e2e', () => {
     // Real fullscreen at the window-manager level, not just a big window:
     // the window's outer bounds cover the whole screen (Electron's CDP
     // doesn't expose the Browser domain, so screen coverage is the signal).
+    // A 1px tolerance: X11 fullscreen bounds can round one pixel short.
     await waitFor(
       async () => {
         const covers = await app.dashboardEval<boolean>(
-          `window.outerWidth === screen.width && window.outerHeight === screen.height`,
+          `window.outerWidth >= screen.width - 1 && window.outerHeight >= screen.height - 1`,
         )
         return covers || undefined
       },

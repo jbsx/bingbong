@@ -190,10 +190,18 @@ describe('voice e2e', () => {
         ok: true,
         result: 'Paris, France',
       }))
-      const transcript = await harness.overlayEval<string>(
-        `Array.from(document.querySelectorAll('.feed-entry')).map((el) => el.textContent).join('\\n')`,
+      // The overlay's projection rides the same broadcasts on its own
+      // webContents — it can legitimately lag the dashboard's `done`, so
+      // wait for the heard line like every other transcript assertion.
+      await waitFor(
+        async () => {
+          const transcript = await harness.overlayEval<string>(
+            `Array.from(document.querySelectorAll('.feed-entry')).map((el) => el.textContent).join('\\n')`,
+          )
+          return transcript.includes('heard "Paris, France" (your answer)') ? transcript : undefined
+        },
+        { timeoutMs: 20_000, intervalMs: 250 },
       )
-      expect(transcript).toContain('heard "Paris, France" (your answer)')
       expect(await harness.dashboardEval<boolean>(`!!document.querySelector('.ask-card')`)).toBe(false)
     } finally {
       await harness.quit()
