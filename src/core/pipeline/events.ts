@@ -142,11 +142,13 @@ export type PipelineEvent =
   | { type: 'agent_update'; agent: SubagentCard; at: number }
   | { type: 'done'; turnId: string; outcome?: 'done' | 'failed' | 'cancelled'; at: number }
   /**
-   * A new session began (spec #25) — the window lapsed before this command,
-   * or the model invoked new_session. Not emitted by the pipeline generator:
-   * main injects it into the dashboard stream when the session store reports
-   * the boundary. The transcript clears on it; the history projection maps
-   * it to no entry, so history.db recording is unchanged.
+   * A new session began (spec #25; made eager by ADR 0005) — the lapse
+   * timer expired while idle, a command arrived after the window lapsed,
+   * or the model invoked new_session. Not emitted by the pipeline
+   * generator: main injects it into the dashboard stream when the session
+   * store reports the boundary. The feed/transcript clears on it; the
+   * history projection maps it to no entry, so history.db recording is
+   * unchanged.
    */
   | { type: 'session_started'; at: number }
 

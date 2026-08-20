@@ -9,9 +9,13 @@
 import { inferRunOutcome } from '../pipeline/events'
 import type { PipelineEvent } from '../pipeline/events'
 import type { SessionTurn } from '../ports/llm'
+import { systemClock, type Clock } from '../ports/clock'
 
-/** A run continues the session while the last run finished within this window. */
-export const SESSION_WINDOW_MS = 10 * 60 * 1000
+/**
+ * A run continues the session while the last run finished within this
+ * window. 30 minutes (ADR 0005 widened ADR 0001's original 10).
+ */
+export const SESSION_WINDOW_MS = 30 * 60 * 1000
 
 /** At most this many prior exchanges ride along (oldest dropped first). */
 export const MAX_SESSION_EXCHANGES = 8
@@ -40,15 +44,18 @@ export interface SessionMemoryOptions {
   windowMs?: number
   /**
    * Session-scoped transcript (spec #25): fired at the exact moment a new
-   * session begins — a command arriving after the window lapsed, or a
-   * model-invoked clear() that actually discards history — so the dashboard
-   * can lazily clear the transcript. Never fired for the first-ever command,
-   * a no-op clear, or the command following a reset (that command continues
-   * the fresh session; the reset run's answer stays visible). Carries no
-   * timestamp: this module has no clock, and the boundary is "now" for the
-   * listener.
+   * session begins — a command arriving after the window lapsed, a
+   * model-invoked clear() that actually discards history, or the eager
+   * lapse timer (ADR 0005) reporting the window's expiry while idle — so
+   * the dashboard can clear the view at exactly that moment. Never fired
+   * for the first-ever command, a no-op clear, the command following a
+   * reset, or a lapse that was already announced (eagerly or lazily): one
+   * boundary, one announcement. Carries no timestamp: listeners stamp
+   * "now" themselves.
    */
   onSessionStart?: () => void
+  /** Eager-lapse timing (ADR 0005); defaults to the system clock. */
+  clock?: Clock
 }
 
 export interface SessionMemory extends SessionHistorySource, SessionResetSource {
@@ -94,6 +101,7 @@ function enforceBudget(exchanges: SessionExchange[]): SessionExchange[] {
 
 export function createSessionMemory(options?: SessionMemoryOptions): SessionMemory {
   const windowMs = options?.windowMs ?? SESSION_WINDOW_MS
+  const clock = options?.clock ?? systemClock
   let exchanges: SessionExchange[] = []
   // The continuation decision (window check) is made once, when the first
   // concurrently-running command starts; every history() read until that run
@@ -104,6 +112,41 @@ export function createSessionMemory(options?: SessionMemoryOptions): SessionMemo
   let historyOwner: number | null = null
   let nextRunId = 0
   const liveRuns = new Set<{ suppressed: boolean }>()
+
+  // Eager lapse (ADR 0005): while idle, a timer announces the boundary the
+  // moment the window expires, so the view wipes without waiting for the
+  // next command. The thread itself is untouched — retention of the most
+  // recent exchange (ADR 0001) happens at the next command as always.
+  // True when the boundary after the current tail was already announced,
+  // so the lapsed command that follows stays silent (one lapse, one clear).
+  let lapseAnnounced = false
+  let cancelLapseTimer: (() => void) | null = null
+
+  const cancelLapse = (): void => {
+    cancelLapseTimer?.()
+    cancelLapseTimer = null
+  }
+
+  const fireLapse = (): void => {
+    cancelLapseTimer = null
+    // Never mid-run: a live command cancels the timer on arrival; the guard
+    // holds even for stray fires (belt — re-arming happens on its done).
+    if (liveRuns.size > 0) return
+    const last = exchanges.at(-1)
+    if (!last) return
+    const remaining = last.finishedAt + windowMs - clock.now()
+    if (remaining > 0) {
+      cancelLapseTimer = clock.setTimer(remaining, fireLapse)
+      return
+    }
+    lapseAnnounced = true
+    options?.onSessionStart?.()
+  }
+
+  const armLapse = (finishedAt: number): void => {
+    cancelLapse()
+    cancelLapseTimer = clock.setTimer(Math.max(0, finishedAt + windowMs - clock.now()), fireLapse)
+  }
 
   return {
     history() {
@@ -116,6 +159,9 @@ export function createSessionMemory(options?: SessionMemoryOptions): SessionMemo
       const hadThread = exchanges.length > 0 || (activeRunHistory?.length ?? 0) > 0
       exchanges = []
       activeRunHistory = null
+      // The thread is gone — nothing left to lapse.
+      cancelLapse()
+      lapseAnnounced = false
       for (const run of liveRuns) run.suppressed = true
       if (hadThread) options?.onSessionStart?.()
     },
@@ -135,6 +181,10 @@ export function createSessionMemory(options?: SessionMemoryOptions): SessionMemo
             case 'command': {
               started = true
               liveRuns.add(state)
+              // A live command is never wiped underneath (ADR 0005): the
+              // pending boundary dies here and re-arms from this run's
+              // finish — the view stays stable while work is in flight.
+              cancelLapse()
               command = event.text
               display = null
               speak = null
@@ -152,11 +202,12 @@ export function createSessionMemory(options?: SessionMemoryOptions): SessionMemo
                 // recent exchange, so "pause it" resolves after a long pause.
                 exchanges = [last]
                 activeRunHistory = toTurns(exchanges)
-                // Lazy clear (spec #25): the old session's transcript stays
-                // readable until this moment — the first command of the new
-                // session.
-                options?.onSessionStart?.()
+                // The lapse was already announced by the eager timer (ADR
+                // 0005) unless the command beat the clock to it — one
+                // boundary, one announcement either way.
+                if (!lapseAnnounced) options?.onSessionStart?.()
               }
+              lapseAnnounced = false
               return
             }
             case 'status':
@@ -192,6 +243,12 @@ export function createSessionMemory(options?: SessionMemoryOptions): SessionMemo
               if (historyOwner === runId) {
                 historyOwner = null
                 activeRunHistory = null
+              }
+              // Idle again with a thread: the boundary timer re-arms from
+              // the newest exchange (ADR 0005). While other runs overlap,
+              // the last one to finish does the arming.
+              if (liveRuns.size === 0 && exchanges.length > 0) {
+                armLapse(exchanges.at(-1)!.finishedAt)
               }
               return
             }

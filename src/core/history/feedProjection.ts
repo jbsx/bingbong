@@ -14,7 +14,9 @@ import type { RecordedEntry, TranscriptEvent } from './historyStore'
 // with the answer's display entry replacing its partial at round end.
 // Tool-intent lines (#48) grow the same way while call arguments stream,
 // superseded by the tool's outcome line at execution. Session-scoped
-// exactly like the transcript (ADR 0003): session_started clears.
+// (ADR 0003, made eager by ADR 0005): session_started — fired lazily at
+// the boundary command or eagerly by the lapse timer — wipes the view, and
+// restart hydration seeds only the still-open session.
 
 /** The entry kinds the feed renders: transcript kinds plus detail lines. */
 export type FeedEntryKind =
@@ -44,8 +46,14 @@ export function createFeedProjection(): {
   onEvent(event: PipelineEvent): void
   /** Voice-half lines (heard words, mic errors) ride the same feed. */
   append(entry: TranscriptEvent): void
-  /** Restart hydration: recorded history seeds outcome entries only. */
-  hydrate(recorded: RecordedEntry[]): void
+  /**
+   * Restart hydration: recorded history seeds outcome entries only. Pass
+   * `sessionStartAt` to scope the seeding to the still-open session (ADR
+   * 0005) — entries older than the boundary stay gone, and `null` (a
+   * lapsed session) seeds nothing at all. Omitted scope hydrates
+   * everything recorded (unscoped callers).
+   */
+  hydrate(recorded: RecordedEntry[], options?: { sessionStartAt: number | null }): void
   entries(): FeedEntry[]
 } {
   let feed: FeedEntry[] = []
@@ -167,8 +175,10 @@ export function createFeedProjection(): {
           appendDetail(event.at, `steer: ${event.text}`, 'steer')
           return
         case 'session_started':
-          // The lazy session clear (ADR 0003): the boundary alone wipes the
-          // view; nothing older is ever rendered again.
+          // The eager session clear (ADR 0005, superseding ADR 0003's lazy
+          // one): the boundary alone wipes the view — the lapse timer fires
+          // it while idle, or the boundary command/model reset does — and
+          // nothing older is ever rendered again.
           feed = []
           sessionCleared = true
           closeStreaming()
@@ -181,14 +191,19 @@ export function createFeedProjection(): {
       }
     },
     append: appendOutcome,
-    hydrate(recorded) {
-      if (recorded.length === 0 || sessionCleared) return
+    hydrate(recorded, options) {
+      // Session-scoped first (ADR 0005): the lapsed past never renders,
+      // even for the entries the recorder did (and must keep) recording.
+      const scope = options?.sessionStartAt
+      const inSession =
+        scope === undefined ? recorded : scope === null ? [] : recorded.filter((entry) => entry.at >= scope)
+      if (inSession.length === 0 || sessionCleared) return
       closeStreaming()
       // Recorded history is older than anything live; entries that arrived
       // live while the fetch was in flight also ride the snapshot's tail,
       // so dedup closes the startup race (idempotent by the same count map).
-      const live = filterHydratedDuplicates(recorded, feed)
-      feed = [...recorded.map((entry) => ({ ...entry, id: nextId++, detail: false })), ...live]
+      const live = filterHydratedDuplicates(inSession, feed)
+      feed = [...inSession.map((entry) => ({ ...entry, id: nextId++, detail: false })), ...live]
     },
     entries: () => feed,
   }

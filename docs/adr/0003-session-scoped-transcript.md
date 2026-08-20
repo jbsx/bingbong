@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted
+Accepted — the lazy clear is superseded by ADR 0005 (eager lapse wipe + filtered boot hydration); the `session_started` channel and its guarantees remain
 
 ## Context
 

@@ -293,6 +293,9 @@ describe('historyRecorder', () => {
     recorder.event({ type: 'steer', turnId: 'turn-x', text: 'use Paris instead', at: 1_002 })
     recorder.event({ type: 'llm_delta', turnId: 'turn-x', kind: 'text', text: 'stray fragment', at: 1_003 })
     recorder.event({ type: 'llm_tool_intent', turnId: 'turn-x', index: 0, name: 'click', args: '{"ref":1}', at: 1_004 })
+    // The eager lapse boundary (ADR 0005) rides the same channel — it must
+    // stay unrecorded, so history.db is byte-for-byte unchanged.
+    recorder.event({ type: 'session_started', at: 1_005 })
 
     expect(store.recentEntries(10)).toEqual([])
   })

@@ -22,6 +22,7 @@ import { settingsToEnv } from '../core/settings/settings'
 import { createUsageStore } from './settings/usageStore'
 import { USAGE_IPC } from '../core/settings/usageIpcChannels'
 import { HISTORY_IPC, HISTORY_HYDRATE_LIMIT } from '../core/history/ipcChannels'
+import { openSessionStart, type HydrationSnapshot } from '../core/history/hydrationScope'
 import { createHistoryRecorder } from '../core/history/historyRecorder'
 import { createSessionMemory, SESSION_WINDOW_MS } from '../core/session/sessionMemory'
 import { systemClock } from '../core/ports/clock'
@@ -109,8 +110,9 @@ function dailySpendWarnUsd(): number {
   return Number.isFinite(raw) && raw > 0 ? raw : DEFAULT_DAILY_SPEND_WARN_USD
 }
 
-// Session window override (default 10 min, ADR 0001) — an e2e knob, like
-// BINGBONG_ASK_TIMEOUT_MS: the lazy-clear flow can't wait out real minutes.
+// Session window override (default 30 min, ADR 0005 amends ADR 0001) — an
+// e2e knob, like BINGBONG_ASK_TIMEOUT_MS: the lapse flows can't wait out
+// real minutes. One knob for both the live store and boot hydration scope.
 function sessionWindowMs(env: Record<string, string | undefined>): number | undefined {
   const value = Number(env.BINGBONG_SESSION_WINDOW_MS)
   return Number.isFinite(value) && value > 0 ? value : undefined
@@ -286,10 +288,11 @@ async function createWindow(): Promise<BrowserWindow> {
   // Session continuity (spec #23): one in-memory thread per window, fed from
   // the same run-observer seam as the history recorder. The pipeline reads it
   // live on every orchestrator round; it dies on quit and never persists.
-  // Session-scoped transcript (spec #25): when the store reports a new
-  // session — window-lapsed command or model-invoked reset — the dashboard
-  // gets a session_started event and clears the transcript. history.db is
-  // untouched: the event projects to no transcript entry.
+  // Session-scoped feed (spec #25; ADR 0005 supersedes ADR 0003's lazy
+  // clear): when the store reports a new session — the eager lapse timer
+  // firing while idle, a window-lapsed command, or a model-invoked reset —
+  // the dashboard gets a session_started event and wipes the view eagerly.
+  // history.db is untouched: the event projects to no transcript entry.
   const sessionWindowOverride = sessionWindowMs(currentEnv())
   const sessionMemory = createSessionMemory({
     windowMs: sessionWindowOverride ?? SESSION_WINDOW_MS,
@@ -350,7 +353,16 @@ app.whenReady().then(async () => {
   registerSettingsIpc(settingsStore)
   registerFeedPanelIpc()
   ipcMain.handle(USAGE_IPC.getToday, () => usageStore.summary(dailySpendWarnUsd()))
-  ipcMain.handle(HISTORY_IPC.recentEntries, () => historyStore.recentEntries(HISTORY_HYDRATE_LIMIT))
+  ipcMain.handle(HISTORY_IPC.recentEntries, (): HydrationSnapshot => {
+    // Restart hydration (ADR 0005): entries ship unfiltered — recording and
+    // the read stay review-only — beside the still-open session's start,
+    // computed with the same window the live store uses. The renderer's
+    // projection decides what renders; a lapsed session boots blank.
+    const windowMs = sessionWindowMs(currentEnv()) ?? SESSION_WINDOW_MS
+    const entries = historyStore.recentEntries(HISTORY_HYDRATE_LIMIT)
+    const runs = historyStore.recentRuns(HISTORY_HYDRATE_LIMIT)
+    return { entries, sessionStartAt: openSessionStart(runs, systemClock.now(), windowMs) }
+  })
   ipcMain.handle(HISTORY_IPC.recentRuns, () => historyStore.recentRuns(50))
   ipcMain.handle(HISTORY_IPC.recordVoiceError, (_event, message: unknown) => {
     if (typeof message !== 'string' || message.trim() === '') return null

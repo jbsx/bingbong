@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { createSessionMemory, SESSION_WINDOW_MS } from './sessionMemory'
+import type { Clock } from '../ports/clock'
 import type { PipelineEvent } from '../pipeline/events'
 
 // Session continuity (spec #23): the store is fed from the same pipeline
@@ -27,6 +28,35 @@ function runEvents(
     { type: 'speak', text: answer, at: at + 2 },
     { type: 'done', turnId: TURN, outcome, at: at + 3 },
   ]
+}
+
+/** Deterministic clock for the eager-lapse timer (ADR 0005): manual advance. */
+function fakeClock(): { clock: Clock; advance(to: number): void } {
+  let now = 0
+  const timers = new Set<{ at: number; fn: () => void; cancelled: boolean }>()
+  return {
+    clock: {
+      now: () => now,
+      setTimer(ms, fn) {
+        const timer = { at: now + ms, fn, cancelled: false }
+        timers.add(timer)
+        return () => {
+          timer.cancelled = true
+        }
+      },
+    },
+    // Each timer fires at most once; a timer re-armed from inside a firing
+    // callback is scheduled against the already-advanced `now`, so it never
+    // re-fires within the same advance.
+    advance(to) {
+      now = to
+      for (const timer of [...timers]) {
+        if (timer.cancelled || timer.at > now) continue
+        timer.cancelled = true
+        timer.fn()
+      }
+    },
+  }
 }
 
 describe('sessionMemory', () => {
@@ -68,12 +98,17 @@ describe('sessionMemory', () => {
     ])
   })
 
-  it('keeps the whole thread within the 10-minute window', () => {
+  it('keeps the whole thread within the 30-minute window', () => {
     const session = createSessionMemory()
     feed(session.run(), runEvents('find a pizza place', 'Found two: Pizza A and Pizza B.', 1_000))
     feed(session.run(), runEvents('what about the second one?', 'Pizza B on Main Street.', 60_000))
     const third = session.run()
-    third.event({ type: 'command', turnId: TURN, text: 'navigate there', at: 60_000 + 9 * 60 * 1000 })
+    third.event({
+      type: 'command',
+      turnId: TURN,
+      text: 'navigate there',
+      at: 60_003 + SESSION_WINDOW_MS - 60_000,
+    })
 
     expect(session.history()).toEqual([
       { role: 'user', text: 'find a pizza place' },
@@ -88,7 +123,7 @@ describe('sessionMemory', () => {
     feed(session.run(), runEvents('find a pizza place', 'Found two: Pizza A and Pizza B.', 1_000))
     feed(session.run(), runEvents('what about the second one?', 'Pizza B on Main Street.', 60_000))
     const third = session.run()
-    third.event({ type: 'command', turnId: TURN, text: 'pause it', at: 60_000 + 10 * 60 * 1000 + 10_000 })
+    third.event({ type: 'command', turnId: TURN, text: 'pause it', at: 60_003 + SESSION_WINDOW_MS + 10_000 })
 
     expect(session.history()).toEqual([
       { role: 'user', text: 'what about the second one?' },
@@ -100,9 +135,14 @@ describe('sessionMemory', () => {
     const session = createSessionMemory()
     feed(session.run(), runEvents('find a pizza place', 'Found two: Pizza A and Pizza B.', 1_000))
     feed(session.run(), runEvents('what about the second one?', 'Pizza B on Main Street.', 60_000))
-    feed(session.run(), runEvents('pause it', 'Paused.', 60_000 + 10 * 60 * 1000 + 10_000))
+    feed(session.run(), runEvents('pause it', 'Paused.', 60_003 + SESSION_WINDOW_MS + 10_000))
     const fourth = session.run()
-    fourth.event({ type: 'command', turnId: TURN, text: 'resume it', at: 60_000 + 11 * 60 * 1000 + 10_000 })
+    fourth.event({
+      type: 'command',
+      turnId: TURN,
+      text: 'resume it',
+      at: 60_003 + SESSION_WINDOW_MS + 70_000,
+    })
 
     expect(session.history()).toEqual([
       { role: 'user', text: 'what about the second one?' },
@@ -370,5 +410,167 @@ describe('sessionMemory', () => {
     lapsed.event({ type: 'command', turnId: TURN, text: 'much later', at: 4_002 + 5_000 + 1 })
 
     expect(starts).toBe(1)
+  })
+
+  // Eager lapse (ADR 0005, superseding ADR 0003's lazy clear): the boundary
+  // announces itself on a timer while idle — the view wipes without waiting
+  // for the next command. Never mid-run; the thread keeps its most recent
+  // exchange exactly as before (ADR 0001's asymmetry is untouched).
+
+  describe('eager lapse', () => {
+    it('announces the boundary on a timer once the window elapses while idle', () => {
+      const { clock, advance } = fakeClock()
+      let starts = 0
+      const session = createSessionMemory({ onSessionStart: () => { starts += 1 }, clock })
+      feed(session.run(), runEvents('find a pizza place', 'Found two.', 1_000))
+
+      advance(1_003 + SESSION_WINDOW_MS - 1)
+      expect(starts).toBe(0)
+      advance(1_003 + SESSION_WINDOW_MS)
+      expect(starts).toBe(1)
+    })
+
+    it('uses the 30-minute default window for the timer', () => {
+      const { clock, advance } = fakeClock()
+      let starts = 0
+      const session = createSessionMemory({ onSessionStart: () => { starts += 1 }, clock })
+      feed(session.run(), runEvents('find a pizza place', 'Found two.', 1_000))
+
+      // One minute short of 30 minutes: still the same session.
+      advance(1_003 + 29 * 60 * 1000)
+      expect(starts).toBe(0)
+      // Past 30 minutes of idleness: the boundary fired.
+      advance(1_003 + 30 * 60 * 1000 + 1)
+      expect(starts).toBe(1)
+    })
+
+    it('re-arms the boundary as later runs finish inside the window', () => {
+      const { clock, advance } = fakeClock()
+      let starts = 0
+      const session = createSessionMemory({ onSessionStart: () => { starts += 1 }, clock })
+      feed(session.run(), runEvents('find a pizza place', 'Found two.', 1_000))
+      // A follow-up well inside the window pushes the boundary out to its
+      // own finish; the first boundary instant passes without firing.
+      advance(30_000)
+      feed(session.run(), runEvents('what about the second one?', 'Pizza B.', 30_000))
+
+      advance(1_003 + SESSION_WINDOW_MS + 10_000)
+      expect(starts).toBe(0)
+      advance(30_003 + SESSION_WINDOW_MS)
+      expect(starts).toBe(1)
+    })
+
+    it('never announces mid-run: a live command cancels the pending boundary until it finishes', () => {
+      const { clock, advance } = fakeClock()
+      let starts = 0
+      const session = createSessionMemory({ onSessionStart: () => { starts += 1 }, clock })
+      feed(session.run(), runEvents('find a pizza place', 'Found two.', 1_000))
+
+      // A long run starts inside the window and outruns the first boundary:
+      // the view is never wiped underneath a live command.
+      advance(20_000)
+      const longRun = session.run()
+      longRun.event({ type: 'command', turnId: TURN, text: 'keep working', at: 20_000 })
+      advance(1_003 + SESSION_WINDOW_MS + 10_000)
+      expect(starts).toBe(0)
+
+      feed(longRun, [
+        { type: 'display', text: 'Work complete.', at: 60_000 },
+        { type: 'done', turnId: TURN, outcome: 'done', at: 60_003 },
+      ])
+      advance(60_003 + SESSION_WINDOW_MS)
+      expect(starts).toBe(1)
+    })
+
+    it('keeps the most recent exchange in the thread after an eager lapse', () => {
+      const { clock, advance } = fakeClock()
+      let starts = 0
+      const session = createSessionMemory({ onSessionStart: () => { starts += 1 }, clock })
+      feed(session.run(), runEvents('find a pizza place', 'Found two.', 1_000))
+      feed(session.run(), runEvents('what about the second one?', 'Pizza B.', 60_000))
+      advance(60_003 + SESSION_WINDOW_MS)
+      expect(starts).toBe(1)
+
+      // ADR 0001's retention is untouched by the eager view wipe: a later
+      // "pause it" still resolves against the most recent exchange.
+      const next = session.run()
+      next.event({ type: 'command', turnId: TURN, text: 'pause it', at: 60_003 + SESSION_WINDOW_MS + 5_000 })
+      expect(session.history()).toEqual([
+        { role: 'user', text: 'what about the second one?' },
+        { role: 'assistant', text: 'Pizza B.' },
+      ])
+    })
+
+    it('does not announce twice for one lapse — the next command stays silent', () => {
+      const { clock, advance } = fakeClock()
+      let starts = 0
+      const session = createSessionMemory({ onSessionStart: () => { starts += 1 }, clock })
+      feed(session.run(), runEvents('find a pizza place', 'Found two.', 1_000))
+      advance(1_003 + SESSION_WINDOW_MS)
+      expect(starts).toBe(1)
+
+      const next = session.run()
+      next.event({ type: 'command', turnId: TURN, text: 'different question', at: 1_003 + SESSION_WINDOW_MS + 5_000 })
+
+      expect(starts).toBe(1)
+    })
+
+    it('announces lazily still when the command beats the timer to the same boundary', () => {
+      // Defensive path: event timestamps outrun the clock (skewed `at`
+      // stamps), so the command itself reports the lapse first.
+      const { clock } = fakeClock()
+      let starts = 0
+      const session = createSessionMemory({ onSessionStart: () => { starts += 1 }, clock })
+      feed(session.run(), runEvents('find a pizza place', 'Found two.', 1_000))
+      const next = session.run()
+      next.event({ type: 'command', turnId: TURN, text: 'much later', at: 1_003 + SESSION_WINDOW_MS + 1 })
+
+      expect(starts).toBe(1)
+    })
+
+    it('announces again for the session after the lapsed one', () => {
+      const { clock, advance } = fakeClock()
+      let starts = 0
+      const session = createSessionMemory({ onSessionStart: () => { starts += 1 }, clock })
+      feed(session.run(), runEvents('find a pizza place', 'Found two.', 1_000))
+      advance(1_003 + SESSION_WINDOW_MS)
+      expect(starts).toBe(1)
+
+      feed(session.run(), runEvents('different question', 'Answer.', 1_003 + SESSION_WINDOW_MS + 5_000))
+      advance(1_003 + SESSION_WINDOW_MS + 5_003 + SESSION_WINDOW_MS)
+      expect(starts).toBe(2)
+    })
+
+    it('honours a custom window for the eager boundary', () => {
+      const { clock, advance } = fakeClock()
+      let starts = 0
+      const session = createSessionMemory({ windowMs: 5_000, onSessionStart: () => { starts += 1 }, clock })
+      feed(session.run(), runEvents('find a pizza place', 'Found two.', 1_000))
+
+      advance(1_003 + 5_000 - 1)
+      expect(starts).toBe(0)
+      advance(1_003 + 5_000)
+      expect(starts).toBe(1)
+    })
+
+    it('a model-invoked clear cancels the pending boundary', () => {
+      const { clock, advance } = fakeClock()
+      let starts = 0
+      const session = createSessionMemory({ onSessionStart: () => { starts += 1 }, clock })
+      feed(session.run(), runEvents('find a pizza place', 'Found two.', 1_000))
+      session.clear()
+      expect(starts).toBe(1)
+
+      advance(1_003 + SESSION_WINDOW_MS + 10_000)
+      expect(starts).toBe(1)
+    })
+
+    it('stays silent while the store is empty — nothing to lapse', () => {
+      const { clock, advance } = fakeClock()
+      let starts = 0
+      createSessionMemory({ onSessionStart: () => { starts += 1 }, clock })
+      advance(SESSION_WINDOW_MS * 3)
+      expect(starts).toBe(0)
+    })
   })
 })

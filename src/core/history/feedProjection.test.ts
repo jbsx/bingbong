@@ -6,10 +6,10 @@ import type { RecordedEntry } from './historyStore'
 // Feed projection (#44): the right-edge activity feed's entries as a pure
 // function over the pipeline event stream — timestamped outcome lines
 // (commands, tool lines, spoken/displayed text, errors) plus ephemeral
-// detail lines (retries), session-scoped exactly like the transcript
-// (ADR 0003), detail trimmed beyond ~500, hydrated after restart from
-// recorded history only (never detail). Table-driven like the transcript
-// projection's suite.
+// detail lines (retries), session-scoped (ADR 0005: boundaries wipe
+// eagerly; hydration seeds only the still-open session), detail trimmed
+// beyond ~500, hydrated after restart from recorded history only (never
+// detail). Table-driven like the transcript projection's suite.
 
 const T = 'turn-1'
 
@@ -496,6 +496,81 @@ describe('feed projection', () => {
       feed.hydrate([recorded('command', 'pre-boundary', 500)])
 
       expect(feed.entries()).toEqual([])
+    })
+  })
+
+  describe('session-scoped hydration (ADR 0005)', () => {
+    it('hydrates only entries inside the still-open session — older sessions stay gone', () => {
+      const feed = createFeedProjection()
+
+      feed.hydrate(
+        [
+          recorded('command', 'yesterday session', 1_000),
+          recorded('speak', 'Old answer.', 2_000),
+          recorded('command', 'current session', 10_000),
+          recorded('speak', 'Fresh answer.', 11_000),
+        ],
+        { sessionStartAt: 10_000 },
+      )
+
+      expect(outline(feed.entries())).toEqual([
+        { kind: 'command', text: 'current session', detail: false },
+        { kind: 'speak', text: 'Fresh answer.', detail: false },
+      ])
+    })
+
+    it('hydrates nothing for a lapsed session — the feed boots blank on restart', () => {
+      const feed = createFeedProjection()
+
+      feed.hydrate([recorded('command', 'stale session', 1_000), recorded('speak', 'Old answer.', 2_000)], {
+        sessionStartAt: null,
+      })
+
+      expect(feed.entries()).toEqual([])
+    })
+
+    it('keeps live entries that raced the fetch when the session lapsed', () => {
+      const feed = createFeedProjection()
+      feed.onEvent(command('typed while fetching', 5_000))
+
+      feed.hydrate([recorded('command', 'stale session', 1_000)], { sessionStartAt: null })
+
+      expect(outline(feed.entries())).toEqual([
+        { kind: 'command', text: 'typed while fetching', detail: false },
+      ])
+    })
+
+    it('keeps the boundary entry itself — the session\'s first command renders', () => {
+      const feed = createFeedProjection()
+
+      feed.hydrate([recorded('command', 'session opener', 7_000), recorded('speak', 'Answer.', 8_000)], {
+        sessionStartAt: 7_000,
+      })
+
+      expect(outline(feed.entries())).toEqual([
+        { kind: 'command', text: 'session opener', detail: false },
+        { kind: 'speak', text: 'Answer.', detail: false },
+      ])
+    })
+
+    it('dedups against the in-session entries only', () => {
+      const feed = createFeedProjection()
+      // Raced live entry that the recording also carries inside the session.
+      feed.onEvent(command('raced', 12_000))
+
+      feed.hydrate(
+        [
+          recorded('command', 'old session', 1_000),
+          recorded('command', 'raced', 12_000),
+          recorded('speak', 'Answer.', 13_000),
+        ],
+        { sessionStartAt: 10_000 },
+      )
+
+      expect(outline(feed.entries())).toEqual([
+        { kind: 'command', text: 'raced', detail: false },
+        { kind: 'speak', text: 'Answer.', detail: false },
+      ])
     })
   })
 })

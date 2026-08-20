@@ -26,8 +26,8 @@ export interface Assistant {
   /**
    * The right-edge activity feed (#44): timestamped outcome lines plus
    * ephemeral detail (retries), folded from the event stream by the pure
-   * feed projection. Session-scoped like the transcript was (ADR 0003);
-   * restart hydrates outcome entries only.
+   * feed projection. Session-scoped (ADR 0005): boundaries wipe eagerly
+   * and restart hydration seeds only the still-open session.
    */
   feed: FeedEntry[]
   pendingConfirmation: PendingConfirmation | null
@@ -136,8 +136,9 @@ export function useAssistant(): Assistant {
           setPendingAsk(null)
           return
         case 'session_started':
-          // Session-scoped feed (ADR 0003): the projection cleared on the
-          // event itself — same lazy-clear semantics the transcript had.
+          // Session-scoped feed (ADR 0005): the projection already wiped
+          // on the event itself — eagerly, whether the lapse timer, a
+          // lapsed command, or a model reset fired it.
           return
       }
     })

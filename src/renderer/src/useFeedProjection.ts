@@ -28,9 +28,12 @@ export function useFeedProjection(): FeedProjection {
     let cancelled = false
     void window.bingbong.history
       .recentEntries()
-      .then((recorded) => {
+      .then((snapshot) => {
         if (cancelled) return
-        projection.current.hydrate(recorded)
+        // Session-scoped hydration (ADR 0005): only the still-open session
+        // seeds the view — a lapsed session boots blank. The projection
+        // applies the scope; live entries that raced the fetch survive.
+        projection.current.hydrate(snapshot.entries, { sessionStartAt: snapshot.sessionStartAt })
         setFeed(projection.current.entries())
       })
       .catch(() => {})
