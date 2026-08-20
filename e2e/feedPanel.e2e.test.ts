@@ -114,11 +114,15 @@ describe('feed panel layout e2e', () => {
         intervalMs: 100,
       })
 
-      // The keyboard shortcut collapses the panel from the dashboard.
-      await app.dashboardEval(
-        `window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyF', ctrlKey: true, shiftKey: true, bubbles: true }))`,
-      )
+      // The keyboard shortcut collapses the panel — dispatched as a real
+      // keypress with the PANE focused, proving the shortcut works from
+      // every input surface (main's before-input-event handling), not just
+      // the dashboard's DOM.
+      await app.pressPanelShortcut('pane')
       await waitFor(() => app.overlayEval<boolean>(COLLAPSED_CHROME), { timeoutMs: 5000, intervalMs: 100 })
+      // …and re-opens from the dashboard surface.
+      await app.pressPanelShortcut('dashboard')
+      await waitFor(() => app.overlayEval<boolean>(OPEN_CHROME), { timeoutMs: 5000, intervalMs: 100 })
     } finally {
       await app.quit()
     }

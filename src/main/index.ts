@@ -186,6 +186,8 @@ async function createWindow(): Promise<BrowserWindow> {
   // after it so the z-order is right from the first frame. Main's state
   // fold rides the same pipeline events the dashboard receives.
   const feedPanel = attachFeedPanelOverlayToWindow(win, { preloadDir: join(__dirname, '../preload') })
+  // The panel shortcut also fires while the pane owns focus.
+  feedPanel.registerShortcut(pane.view.webContents)
 
   const emitPipelineEvent = (event: PipelineEvent): void => {
     historyRecorder.event(event)

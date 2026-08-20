@@ -1,5 +1,5 @@
 import type { PaneRect } from '../browser/paneState'
-import type { FeedPanelMode, FeedPanelState } from './feedPanelState'
+import { isFeedPanelMode, type FeedPanelMode, type FeedPanelState } from './feedPanelState'
 
 // Feed panel IPC (#45): the dashboard reports the panel slot's rect (the
 // native overlay view's bounds, exactly like the browser pane's viewport
@@ -32,5 +32,5 @@ export type FeedPanelStatePayload = FeedPanelState
 export function isFeedPanelStatePayload(value: unknown): value is FeedPanelStatePayload {
   if (typeof value !== 'object' || value === null) return false
   const state = value as Record<string, unknown>
-  return (state.mode === 'overlay' || state.mode === 'docked') && typeof state.open === 'boolean'
+  return isFeedPanelMode(state.mode) && typeof state.open === 'boolean'
 }

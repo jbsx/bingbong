@@ -23,6 +23,8 @@ export interface Harness {
   overlayEval<T = unknown>(expression: string): Promise<T>
   clickPaneAt(x: number, y: number): Promise<void>
   typeIntoPane(text: string): Promise<void>
+  /** Real (input-pipeline) Ctrl/Cmd+Shift+F — fires before-input-event. */
+  pressPanelShortcut(target?: TargetKind): Promise<void>
   clickDashboardElement(selector: string): Promise<void>
   /** Click an element in the feed panel's overlay webContents (#45). */
   clickOverlayElement(selector: string): Promise<void>
@@ -277,6 +279,31 @@ async function buildHarness(
       if (!sid) throw new Error('pane target not found')
       await activateFor('pane')
       await cdp.send('Input.insertText', { text }, sid)
+    },
+
+    async pressPanelShortcut(target = 'pane' as TargetKind) {
+      // A real keypress through the input pipeline — unlike a synthetic
+      // window KeyboardEvent, this exercises main's before-input-event
+      // handling with the target's focus, exactly like a user keypress.
+      const kind = target
+      const sid = sidOf(kind)
+      if (!sid) throw new Error(`${kind} target not found`)
+      await activateFor(kind)
+      const modifiers = 2 /* Ctrl */ | 8 /* Shift */
+      for (const type of ['rawKeyDown', 'keyUp'] as const) {
+        await cdp.send(
+          'Input.dispatchKeyEvent',
+          {
+            type,
+            modifiers,
+            key: 'F',
+            code: 'KeyF',
+            windowsVirtualKeyCode: 70,
+            nativeVirtualKeyCode: 70,
+          },
+          sid,
+        )
+      }
     },
 
     async clickDashboardElement(selector) {

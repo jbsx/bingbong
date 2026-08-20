@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { PipelineEvent, PipelineStatus, SubagentCard } from '../../core/pipeline/events'
 import type { VoiceHeardEvent } from '../../core/voice/ipcChannels'
-import { describeHeard } from '../../core/voice/heardDisplay'
-import { createFeedProjection, type FeedEntry } from '../../core/history/feedProjection'
+import type { FeedEntry } from '../../core/history/feedProjection'
+import { useFeedProjection } from './useFeedProjection'
 import { createRunProgressTracker, type RunProgress } from '../../core/pipeline/runProgress'
 
 export type OrbStatus = 'idle' | 'listening' | 'transcribing' | PipelineStatus
@@ -56,38 +56,20 @@ const MAX_AGENT_CARDS = 20
 
 export function useAssistant(): Assistant {
   const [status, setStatus] = useState<OrbStatus>('idle')
-  const [feed, setFeed] = useState<FeedEntry[]>([])
   const [pendingConfirmation, setPendingConfirmation] = useState<PendingConfirmation | null>(null)
   const [pendingAsk, setPendingAsk] = useState<PendingAsk | null>(null)
   const [agents, setAgents] = useState<SubagentCard[]>([])
   const [progress, setProgress] = useState<RunProgress | null>(null)
   const lastStatus = useRef<OrbStatus>('idle')
-  const feedProjection = useRef(createFeedProjection())
   const progressTracker = useRef(createRunProgressTracker())
-
-  // Restart hydration (#44): the feed seeds from recorded history — outcome
-  // entries only; detail lines are never recorded, so they never rehydrate.
-  // The projection's dedup closes the race with events that arrive live
-  // while the fetch is in flight; a failed read just boots the feed empty.
-  useEffect(() => {
-    let cancelled = false
-    void window.bingbong.history
-      .recentEntries()
-      .then((recorded) => {
-        if (cancelled) return
-        feedProjection.current.hydrate(recorded)
-        setFeed(feedProjection.current.entries())
-      })
-      .catch(() => {})
-    return () => {
-      cancelled = true
-    }
-  }, [])
+  // The feed's projection wiring (#44) is shared with the panel's overlay
+  // page (#45): same events in, same entries out.
+  const feedProjection = useFeedProjection()
+  const feed = feedProjection.feed
 
   useEffect(() => {
     return window.bingbong.assistant.onEvent((event: PipelineEvent) => {
-      feedProjection.current.onEvent(event)
-      setFeed(feedProjection.current.entries())
+      feedProjection.handleEvent(event)
       progressTracker.current.onEvent(event)
       setProgress(progressTracker.current.current())
       switch (event.type) {
@@ -184,18 +166,19 @@ export function useAssistant(): Assistant {
     void window.bingbong.assistant.abort()
   }, [])
 
-  const appendVoiceHeard = useCallback((heard: VoiceHeardEvent) => {
-    // Commands are echoed by the pipeline itself; only answers and undecided
-    // words land here.
-    if (heard.routed === 'command') return
-    feedProjection.current.append({ kind: 'voice', text: describeHeard(heard), at: heard.at ?? Date.now() })
-    setFeed(feedProjection.current.entries())
-  }, [])
+  const appendVoiceHeard = useCallback(
+    (heard: VoiceHeardEvent) => {
+      feedProjection.appendHeard(heard)
+    },
+    [feedProjection],
+  )
 
-  const appendVoiceError = useCallback((message: string, at = Date.now()) => {
-    feedProjection.current.append({ kind: 'error', text: `voice: ${message}`, at })
-    setFeed(feedProjection.current.entries())
-  }, [])
+  const appendVoiceError = useCallback(
+    (message: string, at?: number) => {
+      feedProjection.appendVoiceError(message, at)
+    },
+    [feedProjection],
+  )
 
   return { status, feed, pendingConfirmation, pendingAsk, agents, progress, submit, resolveConfirmation, resolveAsk, abort, appendVoiceHeard, appendVoiceError }
 }

@@ -48,17 +48,14 @@ export function App() {
     }
   }, [ping])
 
-  // The hotkey arms the ears: Ctrl/Cmd+Space toggles listening.
-  // Ctrl/Cmd+Shift+F toggles the feed panel (#45).
+  // The hotkey arms the ears: Ctrl/Cmd+Space toggles listening. (The feed
+  // panel's Ctrl/Cmd+Shift+F lives in main — before-input-event on every
+  // input surface, so it works from the pane and overlay too, #45.)
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.code === 'Space' && (event.ctrlKey || event.metaKey) && !event.altKey) {
         event.preventDefault()
         voice.toggleHotkey()
-      }
-      if (event.code === 'KeyF' && (event.ctrlKey || event.metaKey) && event.shiftKey && !event.altKey) {
-        event.preventDefault()
-        window.bingbong.feedPanel.toggle()
       }
     }
     window.addEventListener('keydown', onKeyDown)

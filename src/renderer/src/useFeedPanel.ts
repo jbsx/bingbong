@@ -58,7 +58,7 @@ export function useFeedPanel(): FeedPanelState {
  * overlay page reflows against an empty viewport mid-transition and
  * synthesized (and real) clicks land on stale element positions.
  */
-export function useFeedSlotRect(slotRef: RefObject<HTMLDivElement | null>, key: string): void {
+export function useFeedSlotRect(slotRef: RefObject<HTMLDivElement | null>, layoutKey: string): void {
   useEffect(() => {
     const el = slotRef.current
     if (!el) return
@@ -73,9 +73,9 @@ export function useFeedSlotRect(slotRef: RefObject<HTMLDivElement | null>, key: 
     return () => {
       observer.disconnect()
     }
-    // The slot element itself is stable; `key` (mode/open) re-reports the
-    // position-only moves a ResizeObserver cannot see.
-  }, [key])
+    // The slot element itself is stable; `layoutKey` (mode/open) re-reports
+    // the position-only moves a ResizeObserver cannot see.
+  }, [layoutKey])
 
   // Unmount-only: the overlay view must not outlive its slot.
   useEffect(
