@@ -68,6 +68,11 @@ describe('feed projection', () => {
       { type: 'steer', turnId: T, text: 'use Paris instead', at: 8_000 } as PipelineEvent,
       { kind: 'steer', text: 'steer: use Paris instead', detail: true },
     ],
+    [
+      'stage entry line (#42 story 17)',
+      { type: 'status', turnId: T, status: 'thinking', at: 9_000 } as PipelineEvent,
+      { kind: 'stage', text: 'thinking', detail: true },
+    ],
   ])('maps %s to a feed entry', (_name, event, expected) => {
     const feed = createFeedProjection()
     feed.onEvent(event as PipelineEvent)
@@ -100,7 +105,6 @@ describe('feed projection', () => {
   })
 
   it.each([
-    ['status', { type: 'status', turnId: T, status: 'thinking', at: 1_000 } as PipelineEvent],
     ['waiting_on_agents', { type: 'waiting_on_agents', turnId: T, running: 2, at: 1_000 } as PipelineEvent],
     ['agent_update', { type: 'agent_update', at: 1_000, agent: { id: 'a', kind: 'research', task: 't', status: 'running', startedAt: 0, finishedAt: null, steps: 0, lastAction: null, result: null, error: null } } as PipelineEvent],
     ['confirmation cards', { type: 'confirmation_requested', turnId: T, confirmationId: 'cf1', callId: 'c1', toolName: 'download', prompt: 'ok?', expiresAt: 9_000, at: 1_000 } as PipelineEvent],
@@ -368,6 +372,58 @@ describe('feed projection', () => {
 
       expect(feed.entries()).toHaveLength(MAX_DETAIL_ENTRIES)
       expect(feed.entries().every((entry) => entry.detail)).toBe(true)
+    })
+  })
+
+  describe('stage entry lines (#42 story 17)', () => {
+    const status = (stage: 'thinking' | 'acting' | 'speaking', at: number): PipelineEvent =>
+      ({ type: 'status', turnId: T, status: stage, at })
+
+    it('timestamps every stage entry so consecutive lines reconstruct phase durations', () => {
+      const feed = createFeedProjection()
+      feed.onEvent(command('go', 1_000))
+      feed.onEvent(status('thinking', 1_100))
+      feed.onEvent(status('acting', 4_000))
+      feed.onEvent(status('speaking', 9_500))
+
+      expect(outline(feed.entries())).toEqual([
+        { kind: 'command', text: 'go', detail: false },
+        { kind: 'stage', text: 'thinking', detail: true },
+        { kind: 'stage', text: 'acting', detail: true },
+        { kind: 'stage', text: 'speaking', detail: true },
+      ])
+      expect(feed.entries().map(({ at }) => at)).toEqual([1_000, 1_100, 4_000, 9_500])
+    })
+
+    it('closes the open streamed run when the stage turns — the run freezes above the line', () => {
+      const feed = createFeedProjection()
+      feed.onEvent({ type: 'llm_delta', turnId: T, kind: 'text', text: 'Opening YouTu', at: 1_000 })
+      feed.onEvent(status('acting', 2_000))
+
+      expect(outline(feed.entries())).toEqual([
+        { kind: 'answer_stream', text: 'Opening YouTu', detail: true },
+        { kind: 'stage', text: 'acting', detail: true },
+      ])
+      // Closed: a later delta opens a fresh run below the stage line.
+      feed.onEvent({ type: 'llm_delta', turnId: T, kind: 'text', text: 'next round', at: 3_000 })
+      expect(outline(feed.entries())).toEqual([
+        { kind: 'answer_stream', text: 'Opening YouTu', detail: true },
+        { kind: 'stage', text: 'acting', detail: true },
+        { kind: 'answer_stream', text: 'next round', detail: true },
+      ])
+    })
+
+    it('counts stage lines as detail for the trim — never hydrated, never recorded', () => {
+      const feed = createFeedProjection()
+      feed.onEvent(command('keep me', 0))
+      for (let i = 0; i < MAX_DETAIL_ENTRIES + 10; i += 1) {
+        feed.onEvent(status('thinking', i + 1))
+      }
+
+      const entries = feed.entries()
+      expect(entries).toHaveLength(MAX_DETAIL_ENTRIES + 1)
+      expect(entries[0]).toMatchObject({ kind: 'command', detail: false })
+      expect(entries.filter((entry) => entry.detail)).toHaveLength(MAX_DETAIL_ENTRIES)
     })
   })
 

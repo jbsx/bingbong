@@ -1,5 +1,6 @@
 import type { PipelineEvent } from '../pipeline/events'
 import { describeToolIntent } from '../pipeline/toolCallDisplay'
+import { formatRetryLine } from '../pipeline/runProgress'
 import { projectPipelineEvent } from './transcriptProjection'
 import { filterHydratedDuplicates } from './mergeHistory'
 import type { RecordedEntry, TranscriptEvent } from './historyStore'
@@ -16,7 +17,14 @@ import type { RecordedEntry, TranscriptEvent } from './historyStore'
 // exactly like the transcript (ADR 0003): session_started clears.
 
 /** The entry kinds the feed renders: transcript kinds plus detail lines. */
-export type FeedEntryKind = TranscriptEvent['kind'] | 'retry' | 'steer' | 'answer_stream' | 'reasoning' | 'intent'
+export type FeedEntryKind =
+  | TranscriptEvent['kind']
+  | 'retry'
+  | 'steer'
+  | 'stage'
+  | 'answer_stream'
+  | 'reasoning'
+  | 'intent'
 
 export interface FeedEntry {
   /** Rising, unique across the projection's life — the renderer's React key. */
@@ -74,7 +82,7 @@ export function createFeedProjection(): {
     feed = [...feed, { ...entry, id: nextId++, detail: false }]
   }
 
-  const appendDetail = (at: number, text: string, kind: 'retry' | 'steer' = 'retry'): void => {
+  const appendDetail = (at: number, text: string, kind: 'retry' | 'steer' | 'stage' = 'retry'): void => {
     closeStreaming()
     feed = [...feed, { id: nextId++, at, kind, text, detail: true }]
     trimDetail()
@@ -146,7 +154,14 @@ export function createFeedProjection(): {
           appendOutcome(projectPipelineEvent(event)!)
           return
         case 'llm_retry':
-          appendDetail(event.at, `empty response — retrying ${event.attempt}/${event.maxAttempts}`)
+          appendDetail(event.at, formatRetryLine(event.attempt, event.maxAttempts))
+          return
+        case 'status':
+          // Stage entries (#42 story 17): every stage transition lands as a
+          // timestamped detail line, so consecutive lines reconstruct how
+          // long each phase took. Exits are implicit — the next line's
+          // timestamp closes the previous stage. Ephemeral like all detail.
+          appendDetail(event.at, event.status, 'stage')
           return
         case 'steer':
           appendDetail(event.at, `steer: ${event.text}`, 'steer')

@@ -100,7 +100,15 @@ export function describeRunProgress(progress: RunProgress, now: number): string 
     text += ` · waiting on agents (${progress.waitingOnAgents.running} running)`
   }
   if (progress.retry) {
-    text += ` · empty response — retrying ${progress.retry.attempt}/${progress.retry.maxAttempts}`
+    text += ` · ${formatRetryLine(progress.retry.attempt, progress.retry.maxAttempts)}`
   }
   return text
+}
+
+/**
+ * The one retry phrasing (#43/#44): the header hint's suffix and the feed's
+ * retry line share it, so the two surfaces can never drift apart.
+ */
+export function formatRetryLine(attempt: number, maxAttempts: number): string {
+  return `empty response — retrying ${attempt}/${maxAttempts}`
 }

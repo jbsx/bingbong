@@ -270,6 +270,10 @@ export function createOpenAiLlmClient(deps: OpenAiLlmClientDeps): LlmClient {
     const assembly: StreamAssembly = { content: '', reasoning: '', toolCalls: new Map(), sawToolCall: false }
     const rawChunks: string[] = []
     let buffer = ''
+    // Some providers (GLM, DeepSeek) carry request_id in every SSE chunk
+    // body instead of an x-request-id header — the give-up error keeps the
+    // id on that convention too (#47: header-less providers stay reportable).
+    let bodyRequestId: string | undefined
 
     const handleEvent = (eventText: string): void => {
       const data = eventText
@@ -281,6 +285,7 @@ export function createOpenAiLlmClient(deps: OpenAiLlmClientDeps): LlmClient {
       rawChunks.push(data)
       if (data === '[DONE]') return
       let chunk: {
+        request_id?: string
         choices?: { delta?: { content?: string | null; reasoning_content?: string | null; tool_calls?: WireToolCallDelta[] } }[]
         usage?: { prompt_tokens?: number; completion_tokens?: number }
       }
@@ -289,6 +294,7 @@ export function createOpenAiLlmClient(deps: OpenAiLlmClientDeps): LlmClient {
       } catch {
         return // A malformed chunk never fails the round.
       }
+      if (typeof chunk.request_id === 'string' && chunk.request_id !== '') bodyRequestId = chunk.request_id
       if (chunk.usage && typeof chunk.usage.prompt_tokens === 'number') assembly.usage = chunk.usage
       const delta = chunk.choices?.[0]?.delta
       if (!delta) return
@@ -360,7 +366,7 @@ export function createOpenAiLlmClient(deps: OpenAiLlmClientDeps): LlmClient {
       }],
       ...(assembly.usage ? { usage: assembly.usage } : {}),
     }
-    return { payload, requestId: response.headers.get('x-request-id') ?? undefined, raw: rawChunks.join('\n') }
+    return { payload, requestId: bodyRequestId ?? response.headers.get('x-request-id') ?? undefined, raw: rawChunks.join('\n') }
   }
 
   function toTurn(payload: CompletionPayload): AssistantTurn | null {

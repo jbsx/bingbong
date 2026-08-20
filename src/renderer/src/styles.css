@@ -316,6 +316,16 @@ body {
   opacity: 0.85;
 }
 
+/* Stage entries (#42 story 17): the run's phase markers — the quietest
+   lines in the feed, since the header hint already narrates the live
+   stage; these lines exist for reconstructing timings afterwards. */
+.feed-entry--stage .feed-text {
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-style: italic;
+  opacity: 0.6;
+}
+
 .feed-entry--error .feed-text {
   color: #ff7a7a;
 }

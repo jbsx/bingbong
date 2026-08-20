@@ -639,6 +639,20 @@ describe('openAiLlmClient streaming (#47)', () => {
     expect(fetch.calls[2].body.messages.at(-1)).toMatchObject({ role: 'user', content: expect.stringContaining('previous reply was empty') })
   })
 
+  it('names the request id from the SSE body when the header is absent (GLM/DeepSeek convention)', async () => {
+    // Chunks carry request_id in the JSON body; the response has no
+    // x-request-id header — the streaming give-up must not degrade to
+    // "unknown" while the non-streaming path would have had the id.
+    const emptyWithBodyId = (id: string) =>
+      sseResponse([sseChunk({ request_id: id, choices: [{ delta: {} }] })])
+    const fetch = new ScriptedFetch([emptyWithBodyId('req-body-1'), emptyWithBodyId('req-body-2'), emptyWithBodyId('req-body-3')])
+    const client = makeClient(fetch)
+
+    await expect(
+      client.complete({ command: 'x', toolResults: [], onDelta: () => {} }),
+    ).rejects.toThrow(/empty completion \(request_id: req-body-3\)/)
+  })
+
   it('retries an empty stream and succeeds on a later attempt', async () => {
     const fetch = new ScriptedFetch([
       sseResponse([]),

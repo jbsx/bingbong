@@ -29,9 +29,8 @@ export interface LlmDeltaBatcher {
 export function createLlmDeltaBatcher(deps: {
   clock: Clock
   emit(fragment: DeltaFlush): void
-  flushMs?: number
 }): LlmDeltaBatcher {
-  const flushMs = deps.flushMs ?? DELTA_FLUSH_MS
+  const flushMs = DELTA_FLUSH_MS
   let rawText = ''
   let reasoning = ''
   let lastVisible = ''

@@ -37,13 +37,13 @@ export function readStoredFeedMode(storage: { getItem(key: string): string | nul
  * announcements) leaves the state untouched. `toggleOpen`/`setMode` are the
  * manual controls (header button, keyboard shortcut, dock toggle).
  */
-export function createFeedPanelStateFold(initial?: Partial<FeedPanelState>): {
+export function createFeedPanelStateFold(): {
   onEvent(event: PipelineEvent): void
   setMode(mode: FeedPanelMode): void
   toggleOpen(): void
   state(): FeedPanelState
 } {
-  let state: FeedPanelState = { mode: 'overlay', open: false, ...initial }
+  let state: FeedPanelState = { mode: 'overlay', open: false }
 
   return {
     onEvent(event) {
