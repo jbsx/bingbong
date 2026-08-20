@@ -25,6 +25,11 @@ function recorded(kind: RecordedEntry['kind'], text: string, at: number): Record
   return { id: 1, runId: null, kind, text, at }
 }
 
+/** A snapshot whose session began at/before the first entry — hydrates all. */
+function snapshotOf(...entries: RecordedEntry[]) {
+  return { entries, sessionStartAt: entries[0]?.at ?? 0 }
+}
+
 /** The entry surface the panel renders: order + kind + text + detail flag. */
 function outline(entries: ReturnType<ReturnType<typeof createFeedProjection>['entries']>) {
   return entries.map(({ kind, text, detail }) => ({ kind, text, detail }))
@@ -432,7 +437,7 @@ describe('feed projection', () => {
       const feed = createFeedProjection()
       feed.onEvent(command('live first', 5_000))
 
-      feed.hydrate([recorded('command', 'open the fixture page', 1_000), recorded('speak', 'Opened it.', 2_000)])
+      feed.hydrate(snapshotOf(recorded('command', 'open the fixture page', 1_000), recorded('speak', 'Opened it.', 2_000)))
 
       expect(outline(feed.entries())).toEqual([
         { kind: 'command', text: 'open the fixture page', detail: false },
@@ -443,7 +448,7 @@ describe('feed projection', () => {
 
     it('never hydrates detail lines — recordings are outcome-only by construction', () => {
       const feed = createFeedProjection()
-      feed.hydrate([recorded('command', 'go', 1_000)])
+      feed.hydrate(snapshotOf(recorded('command', 'go', 1_000)))
       expect(feed.entries().every((entry) => !entry.detail)).toBe(true)
       expect(feed.entries().map(({ kind }) => kind).sort()).toEqual(['command'])
     })
@@ -455,7 +460,7 @@ describe('feed projection', () => {
       feed.onEvent(command('raced', 2_000))
       feed.onEvent({ type: 'speak', turnId: T, text: 'Raced answer.', at: 3_000 })
 
-      feed.hydrate([recorded('command', 'pre-restart', 1_000), recorded('command', 'raced', 2_000), recorded('speak', 'Raced answer.', 3_000)])
+      feed.hydrate(snapshotOf(recorded('command', 'pre-restart', 1_000), recorded('command', 'raced', 2_000), recorded('speak', 'Raced answer.', 3_000)))
 
       expect(outline(feed.entries())).toEqual([
         { kind: 'command', text: 'pre-restart', detail: false },
@@ -469,7 +474,7 @@ describe('feed projection', () => {
       feed.onEvent(command('again', 2_000))
       feed.onEvent(command('again', 3_000))
 
-      feed.hydrate([recorded('command', 'again', 1_000), recorded('command', 'again', 2_000)])
+      feed.hydrate(snapshotOf(recorded('command', 'again', 1_000), recorded('command', 'again', 2_000)))
 
       // The live 'again' that the snapshot already carries is deduped; the
       // later legitimate repeat (a distinct fingerprint — `at` differs)
@@ -483,7 +488,7 @@ describe('feed projection', () => {
 
     it('is idempotent — a second hydrate call seeds nothing new', () => {
       const feed = createFeedProjection()
-      const snapshot = [recorded('command', 'go', 1_000)]
+      const snapshot = snapshotOf(recorded('command', 'go', 1_000))
       feed.hydrate(snapshot)
       feed.hydrate(snapshot)
       expect(feed.entries()).toHaveLength(1)
@@ -493,7 +498,7 @@ describe('feed projection', () => {
       const feed = createFeedProjection()
       feed.onEvent({ type: 'session_started', at: 1_000 })
 
-      feed.hydrate([recorded('command', 'pre-boundary', 500)])
+      feed.hydrate(snapshotOf(recorded('command', 'pre-boundary', 500)))
 
       expect(feed.entries()).toEqual([])
     })
@@ -503,15 +508,15 @@ describe('feed projection', () => {
     it('hydrates only entries inside the still-open session — older sessions stay gone', () => {
       const feed = createFeedProjection()
 
-      feed.hydrate(
-        [
+      feed.hydrate({
+        entries: [
           recorded('command', 'yesterday session', 1_000),
           recorded('speak', 'Old answer.', 2_000),
           recorded('command', 'current session', 10_000),
           recorded('speak', 'Fresh answer.', 11_000),
         ],
-        { sessionStartAt: 10_000 },
-      )
+        sessionStartAt: 10_000,
+      })
 
       expect(outline(feed.entries())).toEqual([
         { kind: 'command', text: 'current session', detail: false },
@@ -522,7 +527,8 @@ describe('feed projection', () => {
     it('hydrates nothing for a lapsed session — the feed boots blank on restart', () => {
       const feed = createFeedProjection()
 
-      feed.hydrate([recorded('command', 'stale session', 1_000), recorded('speak', 'Old answer.', 2_000)], {
+      feed.hydrate({
+        entries: [recorded('command', 'stale session', 1_000), recorded('speak', 'Old answer.', 2_000)],
         sessionStartAt: null,
       })
 
@@ -533,7 +539,7 @@ describe('feed projection', () => {
       const feed = createFeedProjection()
       feed.onEvent(command('typed while fetching', 5_000))
 
-      feed.hydrate([recorded('command', 'stale session', 1_000)], { sessionStartAt: null })
+      feed.hydrate({ entries: [recorded('command', 'stale session', 1_000)], sessionStartAt: null })
 
       expect(outline(feed.entries())).toEqual([
         { kind: 'command', text: 'typed while fetching', detail: false },
@@ -543,7 +549,8 @@ describe('feed projection', () => {
     it('keeps the boundary entry itself — the session\'s first command renders', () => {
       const feed = createFeedProjection()
 
-      feed.hydrate([recorded('command', 'session opener', 7_000), recorded('speak', 'Answer.', 8_000)], {
+      feed.hydrate({
+        entries: [recorded('command', 'session opener', 7_000), recorded('speak', 'Answer.', 8_000)],
         sessionStartAt: 7_000,
       })
 
@@ -558,14 +565,14 @@ describe('feed projection', () => {
       // Raced live entry that the recording also carries inside the session.
       feed.onEvent(command('raced', 12_000))
 
-      feed.hydrate(
-        [
+      feed.hydrate({
+        entries: [
           recorded('command', 'old session', 1_000),
           recorded('command', 'raced', 12_000),
           recorded('speak', 'Answer.', 13_000),
         ],
-        { sessionStartAt: 10_000 },
-      )
+        sessionStartAt: 10_000,
+      })
 
       expect(outline(feed.entries())).toEqual([
         { kind: 'command', text: 'raced', detail: false },

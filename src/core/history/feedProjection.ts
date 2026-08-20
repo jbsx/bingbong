@@ -3,7 +3,8 @@ import { describeToolIntent } from '../pipeline/toolCallDisplay'
 import { formatRetryLine } from '../pipeline/runProgress'
 import { projectPipelineEvent } from './transcriptProjection'
 import { filterHydratedDuplicates } from './mergeHistory'
-import type { RecordedEntry, TranscriptEvent } from './historyStore'
+import type { HydrationSnapshot } from './hydrationScope'
+import type { TranscriptEvent } from './historyStore'
 
 // Feed projection (#44): the right-edge activity feed as a pure function —
 // pipeline events in, ordered feed entries out. Outcome lines reuse the
@@ -47,13 +48,12 @@ export function createFeedProjection(): {
   /** Voice-half lines (heard words, mic errors) ride the same feed. */
   append(entry: TranscriptEvent): void
   /**
-   * Restart hydration: recorded history seeds outcome entries only. Pass
-   * `sessionStartAt` to scope the seeding to the still-open session (ADR
-   * 0005) — entries older than the boundary stay gone, and `null` (a
-   * lapsed session) seeds nothing at all. Omitted scope hydrates
-   * everything recorded (unscoped callers).
+   * Restart hydration: recorded history seeds outcome entries only, scoped
+   * to the still-open session (ADR 0005) — entries older than the
+   * snapshot's `sessionStartAt` boundary stay gone, and `null` (a lapsed
+   * session) seeds nothing at all.
    */
-  hydrate(recorded: RecordedEntry[], options?: { sessionStartAt: number | null }): void
+  hydrate(snapshot: HydrationSnapshot): void
   entries(): FeedEntry[]
 } {
   let feed: FeedEntry[] = []
@@ -191,12 +191,12 @@ export function createFeedProjection(): {
       }
     },
     append: appendOutcome,
-    hydrate(recorded, options) {
+    hydrate(snapshot) {
       // Session-scoped first (ADR 0005): the lapsed past never renders,
       // even for the entries the recorder did (and must keep) recording.
-      const scope = options?.sessionStartAt
+      const { sessionStartAt } = snapshot
       const inSession =
-        scope === undefined ? recorded : scope === null ? [] : recorded.filter((entry) => entry.at >= scope)
+        sessionStartAt === null ? [] : snapshot.entries.filter((entry) => entry.at >= sessionStartAt)
       if (inSession.length === 0 || sessionCleared) return
       closeStreaming()
       // Recorded history is older than anything live; entries that arrived

@@ -118,6 +118,11 @@ function sessionWindowMs(env: Record<string, string | undefined>): number | unde
   return Number.isFinite(value) && value > 0 ? value : undefined
 }
 
+/** The window the live session store and the hydration scope both use. */
+function effectiveSessionWindowMs(): number {
+  return sessionWindowMs(currentEnv()) ?? SESSION_WINDOW_MS
+}
+
 // Piper TTS: binary, voices dir, and base voice come from env (defaults
 // suffice for a standard install); the settings page's voice wins per line.
 const piperConfig = resolvePiperConfig(process.env, app.getPath('userData'))
@@ -293,9 +298,8 @@ async function createWindow(): Promise<BrowserWindow> {
   // firing while idle, a window-lapsed command, or a model-invoked reset —
   // the dashboard gets a session_started event and wipes the view eagerly.
   // history.db is untouched: the event projects to no transcript entry.
-  const sessionWindowOverride = sessionWindowMs(currentEnv())
   const sessionMemory = createSessionMemory({
-    windowMs: sessionWindowOverride ?? SESSION_WINDOW_MS,
+    windowMs: effectiveSessionWindowMs(),
     onSessionStart: () => emitPipelineEvent({ type: 'session_started', at: systemClock.now() }),
   })
   const pipeline = createAssistantPipeline({
@@ -358,7 +362,7 @@ app.whenReady().then(async () => {
     // the read stay review-only — beside the still-open session's start,
     // computed with the same window the live store uses. The renderer's
     // projection decides what renders; a lapsed session boots blank.
-    const windowMs = sessionWindowMs(currentEnv()) ?? SESSION_WINDOW_MS
+    const windowMs = effectiveSessionWindowMs()
     const entries = historyStore.recentEntries(HISTORY_HYDRATE_LIMIT)
     const runs = historyStore.recentRuns(HISTORY_HYDRATE_LIMIT)
     return { entries, sessionStartAt: openSessionStart(runs, systemClock.now(), windowMs) }

@@ -33,7 +33,7 @@ export function useFeedProjection(): FeedProjection {
         // Session-scoped hydration (ADR 0005): only the still-open session
         // seeds the view — a lapsed session boots blank. The projection
         // applies the scope; live entries that raced the fetch survive.
-        projection.current.hydrate(snapshot.entries, { sessionStartAt: snapshot.sessionStartAt })
+        projection.current.hydrate(snapshot)
         setFeed(projection.current.entries())
       })
       .catch(() => {})
