@@ -7,6 +7,9 @@ import { createSpeakingGate } from './speakingGate'
 // (every speak() the pipeline and download announcements make) and answers
 // "is anything being said right now".
 
+// The gate is also the single TTS boundary (#52): markdown the model leaked
+// into any spoken line is stripped here, so no consumer can bypass it.
+
 function deferredSpeaker(): {
   speaker: TtsSpeaker
   finish(text: string): void
@@ -112,5 +115,16 @@ describe('speaking gate', () => {
     gate.tts.stop()
     await flush()
     expect(idle).toBe(true)
+  })
+
+  it('strips markdown before the line reaches the inner speaker', async () => {
+    const { speaker, spoken, finish } = deferredSpeaker()
+    const gate = createSpeakingGate(speaker)
+
+    void gate.tts.speak('Opened **YouTube** — see [the video](https://youtu.be/abc).')
+    await flush()
+
+    expect(spoken).toEqual(['Opened YouTube — see the video.'])
+    finish('Opened YouTube — see the video.')
   })
 })

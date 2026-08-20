@@ -1,4 +1,5 @@
 import type { TtsIdle, TtsSpeaker } from '../ports/tts'
+import { stripMarkdownForSpeech } from './stripMarkdownForSpeech'
 
 export interface SpeakingGate extends TtsIdle {
   /** The wrapped speaker — hand this to the pipeline instead of the raw one. */
@@ -9,6 +10,10 @@ export interface SpeakingGate extends TtsIdle {
  * Watches the shared speaker so listeners can wait for speech to drain — the
  * confirmation voice window opens only after the spoken prompt finishes, so
  * the mic never transcribes the assistant's own voice.
+ *
+ * This gate is also the single TTS boundary (#52): every spoken line is
+ * stripped of markdown here, so pipeline answers, download announcements
+ * and confirmation prompts can never leak markers or URLs to the synth.
  */
 export function createSpeakingGate(inner: TtsSpeaker): SpeakingGate {
   let outstanding = 0
@@ -25,7 +30,7 @@ export function createSpeakingGate(inner: TtsSpeaker): SpeakingGate {
   const tts: TtsSpeaker = {
     speak: (text, turnId) => {
       outstanding += 1
-      return inner.speak(text, turnId).then(
+      return inner.speak(stripMarkdownForSpeech(text), turnId).then(
         (outcome) => {
           settled()
           return outcome
