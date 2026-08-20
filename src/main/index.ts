@@ -37,6 +37,7 @@ import { createJsonlPerfSink } from './perf/jsonlPerfSink'
 import { resolveVoiceConfig } from './voice/voiceConfig'
 import { createMainVoice } from './voice/createMainVoice'
 import { attachVoiceToWindow, registerVoiceIpc } from './voice/attachVoice'
+import { attachFeedPanelOverlayToWindow, registerFeedPanelIpc } from './panel/createFeedPanelOverlay'
 import { audioDumpEnabled, createUtteranceDumper } from '../core/voice/utteranceDump'
 import { silenceFramesForMs } from '../core/voice/vadEndpointing'
 import { fsUtteranceDumpWriter } from './voice/utteranceDumpWriter'
@@ -173,11 +174,6 @@ async function createWindow(): Promise<BrowserWindow> {
     },
   })
 
-  const emitPipelineEvent = (event: PipelineEvent): void => {
-    historyRecorder.event(event)
-    if (!win.isDestroyed()) win.webContents.send(PIPELINE_IPC.event, event)
-  }
-
   // A pane per window; the persistent `persist:browse` session partition is what
   // keeps logins alive across windows and restarts. One CDP controller is
   // shared by everything that drives the pane (CLI harness, assistant) —
@@ -186,6 +182,16 @@ async function createWindow(): Promise<BrowserWindow> {
   // routed; manual ones keep the OS save dialog.
   const pane = createBrowserPane()
   attachBrowserPaneToWindow(pane, win)
+  // The feed panel overlay (#45) stacks above the browser pane — attached
+  // after it so the z-order is right from the first frame. Main's state
+  // fold rides the same pipeline events the dashboard receives.
+  const feedPanel = attachFeedPanelOverlayToWindow(win, { preloadDir: join(__dirname, '../preload') })
+
+  const emitPipelineEvent = (event: PipelineEvent): void => {
+    historyRecorder.event(event)
+    if (!win.isDestroyed()) win.webContents.send(PIPELINE_IPC.event, event)
+    feedPanel.handlePipelineEvent(event)
+  }
   const agentActivity = createAgentActivityTracker()
   const controller: BrowserController & VisualGroundingController = withAgentActivity(
     createPaneBrowserController(pane, { subspans: browserSubspans }),
@@ -229,6 +235,9 @@ async function createWindow(): Promise<BrowserWindow> {
       const activePipeline = pipelineFor(win)
       return activePipeline ? abortActiveRun(activePipeline) : false
     },
+    // New subagent views append above older ones — the feed overlay
+    // re-tops itself so the panel never slides beneath a tab viewport.
+    onViewAdded: () => feedPanel.bringToTop(),
   })
   subagentRuntimes.set(win, subagentRuntime)
   win.on('closed', () => {
@@ -259,8 +268,16 @@ async function createWindow(): Promise<BrowserWindow> {
     getEndpointerConfig: () => ({
       endFrames: silenceFramesForMs(settingsStore.get().endpointDelayMs),
     }),
-    recordHeard: (heard) => historyRecorder.heard(heard),
-    recordError: (message, at) => historyRecorder.voiceError(message, at),
+    recordHeard: (heard) => {
+      historyRecorder.heard(heard)
+      // The panel's feed carries voice lines too (#45): the same stamped
+      // payload the dashboard gets rides the overlay's voice channel.
+      feedPanel.forwardHeard(heard)
+    },
+    recordError: (message, at) => {
+      historyRecorder.voiceError(message, at)
+      feedPanel.forwardVoiceError({ message, at })
+    },
     tracer: perfTracer,
     dumper: utteranceDumper,
   })
@@ -294,7 +311,12 @@ async function createWindow(): Promise<BrowserWindow> {
   attachAssistantToWindow(
     pipeline,
     win,
-    (event) => voiceSession.handlePipelineEvent(event),
+    (event) => {
+      voiceSession.handlePipelineEvent(event)
+      // Run events reach the panel's fold through the same observer tap —
+      // one seam, every event (the fold's command/done pair drives peek).
+      feedPanel.handlePipelineEvent(event)
+    },
     () => {
       const historyRun = historyRecorder.run()
       const sessionRun = sessionMemory.run()
@@ -324,6 +346,7 @@ app.whenReady().then(async () => {
     return win ? subagentRuntimes.get(win) : undefined
   })
   registerSettingsIpc(settingsStore)
+  registerFeedPanelIpc()
   ipcMain.handle(USAGE_IPC.getToday, () => usageStore.summary(dailySpendWarnUsd()))
   ipcMain.handle(HISTORY_IPC.recentEntries, () => historyStore.recentEntries(HISTORY_HYDRATE_LIMIT))
   ipcMain.handle(HISTORY_IPC.recentRuns, () => historyStore.recentRuns(50))

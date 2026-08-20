@@ -51,7 +51,7 @@ describe('vision grounding e2e', () => {
       { timeoutMs: 20_000, intervalMs: 250 },
     )
 
-    const tools = await harness.dashboardEval<string>(
+    const tools = await harness.overlayEval<string>(
       `Array.from(document.querySelectorAll('.feed-entry--tool')).map((el) => el.textContent).join('\\n')`,
     )
     expect(tools).toContain('visually locate "the play button in the video thumbnail"')

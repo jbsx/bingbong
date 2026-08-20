@@ -5,6 +5,7 @@ import type { VoiceErrorEvent, VoiceHeardEvent, VoiceState } from '../core/voice
 import type { LaunchConfig } from '../core/app/launchConfig'
 import type { UsageSummary } from '../core/agent/spendEstimate'
 import type { RecordedEntry, RunRecord } from '../core/history/historyStore'
+import type { FeedPanelMode, FeedPanelState } from '../core/panel/feedPanelState'
 
 export type { BrowserPaneState, PaneRect }
 export type { PipelineEvent }
@@ -79,6 +80,18 @@ export interface BingbongHistoryApi {
   recordVoiceError(message: string): Promise<number | null>
 }
 
+export interface BingbongFeedPanelApi {
+  /** The current folded state — pulled on mount; changes arrive via onState. */
+  getState(): Promise<FeedPanelState | null>
+  /** Switch overlay/docked layout mode (persisted by the dashboard). */
+  setMode(mode: FeedPanelMode): void
+  /** Flip the peaked/collapsed state (header button, shortcut, edge tab). */
+  toggle(): void
+  /** Report the panel slot's rect — drives the native overlay view's bounds. */
+  reportRect(rect: PaneRect): void
+  onState(listener: (state: FeedPanelState) => void): () => void
+}
+
 export interface BingbongApi {
   version: string
   /** Launch flags/env snapshot (kiosk mode, idle timeout). */
@@ -91,6 +104,7 @@ export interface BingbongApi {
   tts: BingbongTtsApi
   voice: BingbongVoiceApi
   history: BingbongHistoryApi
+  feedPanel: BingbongFeedPanelApi
 }
 
 declare global {

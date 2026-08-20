@@ -33,7 +33,7 @@ export interface SubagentPanePool {
 export function createSubagentPanePool(
   win: BrowserWindow,
   tabs: SubagentTabs,
-  deps: { session: Electron.Session; onEscape?(): boolean },
+  deps: { session: Electron.Session; onEscape?(): boolean; onViewAdded?(): void },
 ): SubagentPanePool {
   const views = new Map<string, PooledView>()
 
@@ -52,6 +52,9 @@ export function createSubagentPanePool(
     view.setBackgroundColor('#171d29')
     win.contentView.addChildView(view)
     view.setBounds(toPaneBounds(HIDDEN_PANE_RECT))
+    // The feed panel overlay (#45) must stay above every dynamically added
+    // view — it re-tops itself whenever a new view lands.
+    deps.onViewAdded?.()
 
     const wc = view.webContents
     wc.on('before-input-event', (event, input) => {

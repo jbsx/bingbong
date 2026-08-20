@@ -125,10 +125,13 @@ body {
   min-height: 0;
 }
 
-/* The workspace (#44): browsing (or settings) beside the right-edge
-   activity feed panel — observation owns the right edge, interaction stays
-   in the footer. */
+/* The workspace (#44): browsing (or settings) beside the feed panel's
+   layout slot. The panel itself renders in a native overlay view (#45);
+   the slot reports its rect — overlay mode floats out-of-flow above the
+   browsing area (no layout reflow beneath), docked mode takes real layout
+   space, and the collapsed state is a slim edge tab. */
 .dashboard-workspace {
+  position: relative;
   display: flex;
   gap: 16px;
   height: 100%;
@@ -142,13 +145,34 @@ body {
   min-width: 0;
 }
 
-.feed-panel {
+/* A pure rect reporter: the native overlay view fills it; it never takes
+   input, and only docked mode lets it take layout space. */
+.feed-slot {
+  pointer-events: none;
+}
+
+.feed-slot--overlay {
+  position: absolute;
+  top: 0;
+  right: 0;
+  height: 100%;
+  width: 340px;
+}
+
+/* Docked takes real layout space — unless collapsed, where every mode
+   shrinks to the edge tab. */
+.feed-slot--docked:not(.feed-slot--collapsed) {
   flex: 0 0 340px;
   min-height: 0;
-  border: 1px solid var(--edge);
-  border-radius: 12px;
-  background: var(--panel);
-  overflow: hidden;
+}
+
+.feed-slot--collapsed {
+  position: absolute;
+  top: 50%;
+  right: 0;
+  transform: translateY(-50%);
+  width: 28px;
+  height: 140px;
 }
 
 .feed {
@@ -713,7 +737,11 @@ body {
   display: none;
 }
 
-.dashboard--kiosk .feed-panel {
+.dashboard--kiosk .feed-slot--overlay:not(.feed-slot--collapsed) {
+  width: 300px;
+}
+
+.dashboard--kiosk .feed-slot--docked:not(.feed-slot--collapsed) {
   flex-basis: 300px;
 }
 

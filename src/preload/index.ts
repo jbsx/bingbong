@@ -7,6 +7,8 @@ import { VOICE_IPC } from '../core/voice/ipcChannels'
 import { SUBAGENT_IPC } from '../core/agent/subagentIpcChannels'
 import { USAGE_IPC } from '../core/settings/usageIpcChannels'
 import { HISTORY_IPC } from '../core/history/ipcChannels'
+import { PANEL_IPC } from '../core/panel/ipcChannels'
+import type { FeedPanelMode, FeedPanelState } from '../core/panel/feedPanelState'
 import { resolveLaunchConfig } from '../core/app/launchConfig'
 import type { BrowserPaneState, PaneRect } from '../core/browser/paneState'
 import type { PipelineEvent } from '../core/pipeline/events'
@@ -72,6 +74,23 @@ contextBridge.exposeInMainWorld('bingbong', {
     recentRuns: (): Promise<RunRecord[]> => ipcRenderer.invoke(HISTORY_IPC.recentRuns),
     recordVoiceError: (message: string): Promise<number | null> =>
       ipcRenderer.invoke(HISTORY_IPC.recordVoiceError, message),
+  },
+  feedPanel: {
+    getState: (): Promise<FeedPanelState | null> => ipcRenderer.invoke(PANEL_IPC.get),
+    setMode: (mode: FeedPanelMode): void => {
+      ipcRenderer.send(PANEL_IPC.setMode, { mode })
+    },
+    toggle: (): void => {
+      ipcRenderer.send(PANEL_IPC.toggle)
+    },
+    reportRect: (rect: PaneRect): void => {
+      ipcRenderer.send(PANEL_IPC.rect, { rect })
+    },
+    onState: (listener: (state: FeedPanelState) => void): (() => void) => {
+      const wrapped = (_event: unknown, state: FeedPanelState): void => listener(state)
+      ipcRenderer.on(PANEL_IPC.state, wrapped)
+      return () => ipcRenderer.removeListener(PANEL_IPC.state, wrapped)
+    },
   },
   tts: {
     listVoices: (): Promise<string[]> => ipcRenderer.invoke(TTS_IPC.listVoices),

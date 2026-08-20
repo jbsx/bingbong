@@ -19,9 +19,13 @@ export interface Harness {
   waitForPaneUrl(url: string): Promise<string>
   paneEval<T = unknown>(expression: string): Promise<T>
   dashboardEval<T = unknown>(expression: string): Promise<T>
+  /** Evaluate in the feed panel's overlay webContents (#45). */
+  overlayEval<T = unknown>(expression: string): Promise<T>
   clickPaneAt(x: number, y: number): Promise<void>
   typeIntoPane(text: string): Promise<void>
   clickDashboardElement(selector: string): Promise<void>
+  /** Click an element in the feed panel's overlay webContents (#45). */
+  clickOverlayElement(selector: string): Promise<void>
   /** Write one line to the app's CLI harness stdin (requires `pipeStdio`). */
   cliWrite(line: string): void
   /** Resolve with the first CLI harness stdout line matching. */
@@ -42,14 +46,17 @@ interface TargetInfo {
   url: string
 }
 
-type TargetKind = 'dashboard' | 'pane'
+type TargetKind = 'dashboard' | 'overlay' | 'pane'
 
 const repoRoot = fileURLToPath(new URL('..', import.meta.url))
 
 // targetInfo.url goes stale after navigations; the predicates only rely on
 // values that never change for a given target (kind of page, initial URL).
+// The feed panel overlay (#45) is a second out/renderer page — the
+// dashboard predicate must exclude it, the pane predicate already does.
 const targetPredicates: Record<TargetKind, (info: TargetInfo) => boolean> = {
-  dashboard: (info) => info.url.includes('out/renderer'),
+  dashboard: (info) => info.url.includes('out/renderer') && !info.url.includes('overlay.html'),
+  overlay: (info) => info.url.includes('out/renderer/overlay.html'),
   pane: (info) => info.type === 'page' && !info.url.includes('out/renderer'),
 }
 
@@ -60,6 +67,16 @@ async function evaluate<T>(cdp: CdpClient, sessionId: string, expression: string
   }>('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true }, sessionId)
   if (response.exceptionDetails) throw new Error(`evaluation failed: ${response.exceptionDetails.text}`)
   return response.result?.value as T
+}
+
+/** Center of the first element matching `selector`, in page coordinates. */
+function elementCenterScript(selector: string): string {
+  return `(() => {
+    const el = document.querySelector(${JSON.stringify(selector)})
+    if (!el) return null
+    const r = el.getBoundingClientRect()
+    return { x: r.x + r.width / 2, y: r.y + r.height / 2 }
+  })()`
 }
 
 export async function startHarness(
@@ -143,6 +160,7 @@ async function buildHarness(
   const findTarget = (kind: TargetKind) => [...sessions.values()].find(targetPredicates[kind])
   const sidOf = (kind: TargetKind) => findTarget(kind)?.sessionId
   const dashboardSid = () => sidOf('dashboard')
+  const overlaySid = () => sidOf('overlay')
   const paneSid = () => sidOf('pane')
 
   await waitFor(async () => dashboardSid(), { timeoutMs: 15000, intervalMs: 250 })
@@ -240,6 +258,13 @@ async function buildHarness(
       return evaluate(cdp, sid, expression)
     },
 
+    async overlayEval<T = unknown>(expression: string): Promise<T> {
+      // The overlay attaches alongside the dashboard but may finish loading
+      // later — first use waits for it, mirroring the dashboard readiness wait.
+      const sid = await waitFor(async () => overlaySid(), { timeoutMs: 15000, intervalMs: 250 })
+      return evaluate<T>(cdp, sid, expression)
+    },
+
     async clickPaneAt(x, y) {
       const sid = paneSid()
       if (!sid) throw new Error('pane target not found')
@@ -260,15 +285,31 @@ async function buildHarness(
       const center = await evaluate<{ x: number; y: number } | null>(
         cdp,
         sid,
-        `(() => {
-          const el = document.querySelector(${JSON.stringify(selector)})
-          if (!el) return null
-          const r = el.getBoundingClientRect()
-          return { x: r.x + r.width / 2, y: r.y + r.height / 2 }
-        })()`,
+        elementCenterScript(selector),
       )
       if (!center) throw new Error(`element not found: ${selector}`)
       await activateFor('dashboard')
+      await dispatchClick(sid, center.x, center.y)
+    },
+
+    async clickOverlayElement(selector) {
+      const sid = overlaySid()
+      if (!sid) throw new Error('overlay target not found')
+      // The overlay view resizes asynchronously after every panel state
+      // change (the dashboard reports the new slot rect, then Chromium
+      // resizes the view). A click computed against the mid-transition
+      // viewport lands on stale element positions — settle first.
+      const center = await waitFor(
+        async () => {
+          const viewportWidth = await evaluate<number>(cdp, sid, 'innerWidth')
+          if (viewportWidth < 100) return undefined
+          return (await evaluate<{ x: number; y: number } | null>(cdp, sid, elementCenterScript(selector))) ?? undefined
+        },
+        { timeoutMs: 5000, intervalMs: 100 },
+      )
+      await activateFor('overlay')
+      // The overlay is its own target: input coordinates are view-local,
+      // same as pane clicks.
       await dispatchClick(sid, center.x, center.y)
     },
 

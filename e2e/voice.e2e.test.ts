@@ -77,7 +77,7 @@ describe('voice e2e', () => {
       await harness.waitForPaneUrl(fixture.url('/'))
       await waitFor(
         async () => {
-          const transcript = await harness.dashboardEval<string>(
+          const transcript = await harness.overlayEval<string>(
             `Array.from(document.querySelectorAll('.feed-entry')).map((el) => el.textContent).join('\\n')`,
           )
           return transcript.includes('open the fixture page') && transcript.includes('Opened the fixture page.')
@@ -131,7 +131,7 @@ describe('voice e2e', () => {
       // The heard answer shows in the transcript and the run completes.
       await waitFor(
         async () => {
-          const transcript = await harness.dashboardEval<string>(
+          const transcript = await harness.overlayEval<string>(
             `Array.from(document.querySelectorAll('.feed-entry')).map((el) => el.textContent).join('\\n')`,
           )
           return transcript.includes('heard "yeah" (answered)') && transcript.includes('Form sent.')
@@ -190,7 +190,7 @@ describe('voice e2e', () => {
         ok: true,
         result: 'Paris, France',
       }))
-      const transcript = await harness.dashboardEval<string>(
+      const transcript = await harness.overlayEval<string>(
         `Array.from(document.querySelectorAll('.feed-entry')).map((el) => el.textContent).join('\\n')`,
       )
       expect(transcript).toContain('heard "Paris, France" (your answer)')
@@ -283,7 +283,7 @@ describe('voice e2e', () => {
       await harness.dashboardEval<string>(feedAudioScript)
       await waitFor(
         async () => {
-          const transcript = await harness.dashboardEval<string>(
+          const transcript = await harness.overlayEval<string>(
             `Array.from(document.querySelectorAll('.feed-entry')).map((el) => el.textContent).join('\\n')`,
           )
           return transcript.includes('Done.') ? transcript : undefined

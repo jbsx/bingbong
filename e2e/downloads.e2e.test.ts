@@ -78,7 +78,7 @@ describe('download routing e2e', () => {
     // The completion is announced with the filename — spoken and displayed.
     await waitFor(
       async () => {
-        const transcript = await harness.dashboardEval<string>(
+        const transcript = await harness.overlayEval<string>(
           `Array.from(document.querySelectorAll('.feed-entry')).map((el) => el.textContent).join('\\n')`,
         )
         return transcript.includes('Download complete: probe.bin') && transcript.includes(downloadsDir)

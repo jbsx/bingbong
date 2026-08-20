@@ -61,7 +61,7 @@ describe('hands-free loop e2e', () => {
     await harness.waitForPaneUrl(fixture.url('/'))
     await waitFor(
       async () => {
-        const speak = await harness.dashboardEval<string>(
+        const speak = await harness.overlayEval<string>(
           `document.querySelector('.feed-entry--speak')?.textContent ?? ''`,
         )
         return speak.includes('Opened the fixture page.') ? speak : undefined

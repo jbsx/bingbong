@@ -2,11 +2,10 @@ import { useEffect, useRef } from 'react'
 import type { FeedEntry } from '../../core/history/feedProjection'
 
 /**
- * The right-edge activity feed panel (#44): timestamped entries for
- * commands, tool lines, spoken/displayed text, errors, and retry detail
- * lines — everything the footer transcript used to show, observation only.
- * Interactions (command box, Stop, confirmation/ask cards) stay in the
- * footer; subagent cards stay above the browser pane.
+ * The activity feed list (#44): timestamped entries for commands, tool
+ * lines, spoken/displayed text, errors, and retry detail lines —
+ * observation only. Rendered by the feed panel's overlay webContents
+ * (#45); the idle screen reuses FeedLine for its digest.
  */
 
 function formatFeedTime(at: number): string {
@@ -66,7 +65,7 @@ export function FeedLine({ entry }: { entry: FeedEntry }) {
   }
 }
 
-export function ActivityFeed({ entries }: { entries: FeedEntry[] }) {
+export function ActivityFeed({ entries, headerActions }: { entries: FeedEntry[]; headerActions?: React.ReactNode }) {
   const listRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -76,7 +75,10 @@ export function ActivityFeed({ entries }: { entries: FeedEntry[] }) {
 
   return (
     <div className="feed" aria-label="activity feed">
-      <div className="feed-header">activity</div>
+      <div className="feed-header">
+        activity
+        {headerActions ? <span className="feed-header-actions">{headerActions}</span> : null}
+      </div>
       <div className="feed-list" ref={listRef} aria-live="polite">
         {entries.length === 0 ? <p className="feed-empty">Say or type a command to begin.</p> : null}
         {entries.map((entry) => (

@@ -48,7 +48,7 @@ describe('history persistence e2e', () => {
     // idle, so an idle-check alone can pass before the run even starts.
     await waitFor(
       async () => {
-        const speak = await first.dashboardEval<string>(
+        const speak = await first.overlayEval<string>(
           `document.querySelector('.feed-entry--speak')?.textContent ?? ''`,
         )
         return speak.includes('Opened the fixture page.') ? speak : undefined
@@ -73,7 +73,7 @@ describe('history persistence e2e', () => {
       const fixtureUrl = fixture.url('/')
       await waitFor(
         async () => {
-          const hydrated = await second.dashboardEval<string>(
+          const hydrated = await second.overlayEval<string>(
             `Array.from(document.querySelectorAll('.feed-entry')).map((el) => el.textContent).join('\\n')`,
           )
           return hydrated.includes('open the fixture page') &&
@@ -105,7 +105,7 @@ describe('history persistence e2e', () => {
         () => second.dashboardEval<boolean>(`!!document.querySelector('.status-orb--idle')`),
         { timeoutMs: 20000, intervalMs: 250 },
       )
-      const commands = await second.dashboardEval<string[]>(
+      const commands = await second.overlayEval<string[]>(
         `Array.from(document.querySelectorAll('.feed-entry--command .feed-text')).map((el) => el.textContent)`,
       )
       expect(commands).toEqual(['you open the fixture page', 'you open it again'])

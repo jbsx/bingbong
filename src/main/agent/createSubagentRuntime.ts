@@ -42,6 +42,8 @@ export interface SubagentRuntimeDeps {
   onUsage?(record: UsageRecord): void
   /** Escape while a subagent tab owns focus. */
   onEscape?(): boolean
+  /** Called after each pooled view is added — keeps the feed overlay on top. */
+  onViewAdded?(): void
   /** Perf tracing for subagent LLM rounds (#29); absent keeps them unlogged. */
   tracer?: PerfTracer
 }
@@ -75,6 +77,7 @@ export function createSubagentRuntime(deps: SubagentRuntimeDeps): SubagentRuntim
   const pool = createSubagentPanePool(deps.win, tabs, {
     session: deps.session,
     ...(deps.onEscape ? { onEscape: deps.onEscape } : {}),
+    ...(deps.onViewAdded ? { onViewAdded: deps.onViewAdded } : {}),
   })
 
   // The manager needs an event sink and the bridge needs the manager — a

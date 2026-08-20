@@ -58,7 +58,7 @@ describe('assistant text-box trigger e2e', () => {
     // The transcript shows the spoken + display answer…
     await waitFor(
       async () => {
-        const transcript = await harness.dashboardEval<string>(
+        const transcript = await harness.overlayEval<string>(
           `(() => {
             const speak = document.querySelector('.feed-entry--speak')?.textContent ?? ''
             const display = document.querySelector('.feed-entry--display')?.textContent ?? ''
@@ -73,7 +73,7 @@ describe('assistant text-box trigger e2e', () => {
     )
 
     // …the tool calls are visible…
-    const toolLines = await harness.dashboardEval<string>(
+    const toolLines = await harness.overlayEval<string>(
       `Array.from(document.querySelectorAll('.feed-entry--tool')).map((el) => el.textContent).join('\\n')`,
     )
     expect(toolLines).toContain(`→ ${root}`)
@@ -94,7 +94,7 @@ describe('assistant text-box trigger e2e', () => {
 
       const error = await waitFor(
         async () => {
-          const text = await app.dashboardEval<string>(
+          const text = await app.overlayEval<string>(
             `document.querySelector('.feed-entry--error')?.textContent ?? ''`,
           )
           return text === '' ? undefined : text

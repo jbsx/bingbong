@@ -39,7 +39,7 @@ async function waitForConfirmation(harness: Harness): Promise<void> {
 }
 
 async function transcript(harness: Harness): Promise<string> {
-  return harness.dashboardEval<string>(
+  return harness.overlayEval<string>(
     `Array.from(document.querySelectorAll('.feed-entry')).map((el) => el.textContent).join('\\n')`,
   )
 }
@@ -51,13 +51,17 @@ async function expectCancelledWithoutSubmit(harness: Harness): Promise<void> {
       { timeoutMs: 20_000, intervalMs: 250 },
     )
   } catch (error) {
-    const state = await harness.dashboardEval(`({
-      orb: document.querySelector('.status-orb')?.className ?? '',
-      hint: document.querySelector('.voice-hint')?.textContent ?? '',
-      transcript: Array.from(document.querySelectorAll('.feed-entry')).map((el) => el.textContent).join('\\n'),
-      confirmation: !!document.querySelector('.confirmation-card')
-    })`)
-    throw new Error(`cancelled status not shown: ${JSON.stringify(state)}`, { cause: error })
+    const [dashboard, feed] = await Promise.all([
+      harness.dashboardEval<Record<string, unknown>>(`({
+        orb: document.querySelector('.status-orb')?.className ?? '',
+        hint: document.querySelector('.voice-hint')?.textContent ?? '',
+        confirmation: !!document.querySelector('.confirmation-card')
+      })`),
+      harness.overlayEval<string>(
+        `Array.from(document.querySelectorAll('.feed-entry')).map((el) => el.textContent).join('\\n')`,
+      ),
+    ])
+    throw new Error(`cancelled status not shown: ${JSON.stringify({ ...dashboard, transcript: feed })}`, { cause: error })
   }
   try {
     await waitFor(

@@ -72,7 +72,7 @@ describe('wake word e2e', () => {
       await harness.waitForPaneUrl(fixture.url('/'))
       await waitFor(
         async () => {
-          const transcript = await harness.dashboardEval<string>(
+          const transcript = await harness.overlayEval<string>(
             `Array.from(document.querySelectorAll('.feed-entry')).map((el) => el.textContent).join('\\n')`,
           )
           return transcript.includes('open the fixture page') && transcript.includes('Opened the fixture page.')

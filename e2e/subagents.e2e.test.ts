@@ -80,7 +80,7 @@ describe('subagents e2e', () => {
     // Both finish; the merged answer lands in the transcript…
     await waitFor(
       async () => {
-        const display = await harness.dashboardEval<string>(`document.querySelector('.feed-entry--display')?.textContent ?? ''`)
+        const display = await harness.overlayEval<string>(`document.querySelector('.feed-entry--display')?.textContent ?? ''`)
         return display.includes('Merged both browsing reports') ? display : undefined
       },
       { timeoutMs: 20000, intervalMs: 250 },
@@ -89,7 +89,7 @@ describe('subagents e2e', () => {
     // …completions are announced (the TTS line rides the transcript)…
     await waitFor(
       async () => {
-        const spoken = await harness.dashboardEval<string>(
+        const spoken = await harness.overlayEval<string>(
           `Array.from(document.querySelectorAll('.feed-entry--speak')).map((el) => el.textContent).join('\\n')`,
         )
         return spoken.includes('browsing agent finished') ? spoken : undefined

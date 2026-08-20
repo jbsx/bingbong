@@ -4,19 +4,20 @@ import type { Harness } from './harness'
 import { waitFor } from './waitFor'
 
 // Shared feed probes for the dashboard e2e suites: every helper reads the
-// rendered activity feed through the dashboard's own DOM, so assertions and
-// waits see exactly what the user sees.
+// rendered activity feed through the panel's own DOM (#45 — the feed lives
+// in its overlay webContents), so assertions and waits see exactly what
+// the user sees.
 
 /** All feed entries (commands, tool lines, answers, retries), joined by newline. */
 export async function feedText(harness: Harness): Promise<string> {
-  return harness.dashboardEval<string>(
+  return harness.overlayEval<string>(
     `Array.from(document.querySelectorAll('.feed-entry')).map((el) => el.textContent).join('\\n')`,
   )
 }
 
 /** Display (assistant answer) entries only, joined by a divider. */
 export async function feedDisplays(harness: Harness): Promise<string> {
-  return harness.dashboardEval<string>(
+  return harness.overlayEval<string>(
     `Array.from(document.querySelectorAll('.feed-entry--display')).map((el) => el.textContent).join('\\n---\\n')`,
   )
 }

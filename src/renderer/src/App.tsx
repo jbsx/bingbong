@@ -1,11 +1,11 @@
-import { useCallback, useEffect, useState } from 'react'
-import { ActivityFeed } from './ActivityFeed'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { BrowserPane } from './BrowserPane'
 import { AssistantPanel, RunHint, StatusOrb } from './AssistantPanel'
 import { IdleScreen } from './IdleScreen'
 import { SettingsPage } from './SettingsPage'
 import { SubagentCards } from './SubagentCards'
 import { useAssistant } from './useAssistant'
+import { useFeedPanel, useFeedSlotRect } from './useFeedPanel'
 import { useIdle } from './useIdle'
 import { useSettings } from './useSettings'
 import { useVoice } from './useVoice'
@@ -16,6 +16,12 @@ export function App() {
   const { settings, save } = useSettings()
   const [view, setView] = useState<'dashboard' | 'settings'>('dashboard')
   const idle = useIdle()
+  // Feed panel layout state (#45): the panel renders in its own overlay
+  // webContents above the browser pane; this slot is the rect its bounds
+  // follow (overlay floats out-of-flow; docked takes real layout space).
+  const panel = useFeedPanel()
+  const feedSlotRef = useRef<HTMLDivElement>(null)
+  useFeedSlotRect(feedSlotRef, `${panel.mode}-${panel.open}`)
 
   const getMicId = useCallback(() => settings?.micId ?? 'default', [settings])
   const voice = useVoice({
@@ -43,16 +49,21 @@ export function App() {
   }, [ping])
 
   // The hotkey arms the ears: Ctrl/Cmd+Space toggles listening.
+  // Ctrl/Cmd+Shift+F toggles the feed panel (#45).
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.code === 'Space' && (event.ctrlKey || event.metaKey) && !event.altKey) {
         event.preventDefault()
         voice.toggleHotkey()
       }
+      if (event.code === 'KeyF' && (event.ctrlKey || event.metaKey) && event.shiftKey && !event.altKey) {
+        event.preventDefault()
+        window.bingbong.feedPanel.toggle()
+      }
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [assistant, voice])
+  }, [voice])
 
   // Transcribing outranks listening (#38): the endpoint fired, STT is
   // thinking — never claim the ear is open while it works.
@@ -96,6 +107,16 @@ export function App() {
         ) : null}
         <button
           type="button"
+          className="chrome-button feed-panel-toggle"
+          aria-label={panel.open ? 'Collapse the activity feed' : 'Open the activity feed'}
+          aria-pressed={panel.open}
+          title="Activity feed (Ctrl+Shift+F)"
+          onClick={() => window.bingbong.feedPanel.toggle()}
+        >
+          ▤
+        </button>
+        <button
+          type="button"
           className="chrome-button settings-toggle"
           aria-label={view === 'settings' ? 'Back to dashboard' : 'Open settings'}
           aria-pressed={view === 'settings'}
@@ -106,9 +127,10 @@ export function App() {
       </header>
 
       <main className="dashboard-main">
-        {/* The feed panel (#44) owns observation on the right edge — the
-            same panel in dashboard and kiosk mode; interactions stay in the
-            footer. */}
+        {/* The feed panel slot (#45) reports where the panel's native
+            overlay view sits — floating above the browsing area in overlay
+            mode, beside it in docked mode, a slim edge tab when collapsed.
+            Identical in kiosk mode; the panel itself renders elsewhere. */}
         <div className="dashboard-workspace">
           {view === 'settings' ? (
             settings ? (
@@ -122,9 +144,13 @@ export function App() {
               <BrowserPane />
             </div>
           )}
-          <aside className="feed-panel">
-            <ActivityFeed entries={assistant.feed} />
-          </aside>
+          {/* The slot always carries the mode — collapsed or not — so the
+              persisted layout is observable (and assertable) at boot. */}
+          <div
+            ref={feedSlotRef}
+            className={`feed-slot feed-slot--${panel.mode}${panel.open ? '' : ' feed-slot--collapsed'}`}
+            aria-hidden="true"
+          />
         </div>
       </main>
 
