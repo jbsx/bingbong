@@ -18,6 +18,17 @@ Default five-role vocabulary (`needs-triage`, `needs-info`, `ready-for-agent`, `
 
 Single-context: `CONTEXT.md` + `docs/adr/` at the repo root. See `docs/agents/domain.md`.
 
+## Testing
+
+### E2E tests must run under Xvfb
+
+Never run e2e tests against the developer's real display — Electron windows
+would pop up on screen. Always use `pnpm test:e2e` (it wraps vitest in
+`xvfb-run`). When invoking the e2e vitest config directly, wrap it yourself:
+`xvfb-run -a -s "-screen 0 1280x800x24" vitest run --config vitest.e2e.config.ts`.
+The launch harness (`e2e/electronApp.ts`) forces the X11/Ozone backend and
+strips `WAYLAND_DISPLAY` so Electron binds to Xvfb even on Wayland sessions.
+
 ## graphify
 
 This project has a knowledge graph at graphify-out/ with god nodes, community structure, and cross-file relationships.

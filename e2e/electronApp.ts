@@ -73,10 +73,19 @@ export async function launchApp({
   env,
   pipeStdio = false,
 }: LaunchOptions): Promise<LaunchedApp> {
-  const proc = spawn(electronBinary, [entry, ...args, `--remote-debugging-port=${debugPort}`], {
+  // Chromium's Ozone auto-detection prefers Wayland when WAYLAND_DISPLAY is
+  // set (e.g. a sway session), which bypasses the Xvfb DISPLAY the suite runs
+  // under and pops real windows on the developer's screen. Force X11.
+  const proc = spawn(electronBinary, [entry, ...args, '--ozone-platform=x11', `--remote-debugging-port=${debugPort}`], {
     cwd,
     stdio: pipeStdio ? ['pipe', 'pipe', 'pipe'] : ['ignore', 'ignore', 'pipe'],
-    env: buildEnv(process.env, { BINGBONG_USER_DATA_DIR: userDataDir, ...env }),
+    env: buildEnv(process.env, {
+      BINGBONG_USER_DATA_DIR: userDataDir,
+      ELECTRON_OZONE_PLATFORM_HINT: 'x11',
+      WAYLAND_DISPLAY: undefined,
+      XDG_SESSION_TYPE: 'x11',
+      ...env,
+    }),
   })
   const exited = new Promise<void>((resolve) => proc.once('exit', () => resolve()))
   let stderr = ''
