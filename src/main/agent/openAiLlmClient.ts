@@ -301,21 +301,26 @@ export function createOpenAiLlmClient(deps: OpenAiLlmClientDeps): LlmClient {
       }
       for (const call of delta.tool_calls ?? []) {
         const index = call.index ?? 0
-        const existing = assembly.toolCalls.get(index)
+        let existing = assembly.toolCalls.get(index)
         if (!existing) {
           // The first fragment carries the id and name; later ones only
           // argument fragments.
-          assembly.toolCalls.set(index, {
+          existing = {
             id: call.id ?? '',
             type: 'function',
             function: { name: call.function?.name ?? '', arguments: call.function?.arguments ?? '' },
-          })
+          }
+          assembly.toolCalls.set(index, existing)
           assembly.sawToolCall = true
-          continue
+        } else {
+          if (call.id) existing.id = call.id
+          if (call.function?.name) existing.function.name = call.function.name
+          existing.function.arguments += call.function?.arguments ?? ''
         }
-        if (call.id) existing.id = call.id
-        if (call.function?.name) existing.function.name = call.function.name
-        existing.function.arguments += call.function?.arguments ?? ''
+        // Intent (#48): each fragment rides out as an accumulated snapshot
+        // while the arguments are still streaming — the feed shows what is
+        // about to happen before the tool executes.
+        onDelta?.({ kind: 'tool_intent', index, name: existing.function.name, args: existing.function.arguments })
       }
     }
 

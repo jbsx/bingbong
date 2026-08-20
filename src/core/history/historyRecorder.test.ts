@@ -260,6 +260,7 @@ describe('historyRecorder', () => {
     detailRun.event({ type: 'status', turnId, status: 'thinking', at: 901 })
     detailRun.event({ type: 'llm_delta', turnId, kind: 'reasoning', text: 'the user wants reports', at: 910 })
     detailRun.event({ type: 'llm_delta', turnId, kind: 'text', text: 'Collecting', at: 920 })
+    detailRun.event({ type: 'llm_tool_intent', turnId, index: 0, name: 'agent_results', args: '{"wait":true', at: 930 })
     detailRun.event({ type: 'llm_retry', turnId, attempt: 2, maxAttempts: 3, at: 960 })
     detailRun.event({ type: 'llm_retry', turnId, attempt: 3, maxAttempts: 3, at: 990 })
     detailRun.event({ type: 'llm_delta', turnId, kind: 'text', text: ' reports', at: 994 })
@@ -291,6 +292,7 @@ describe('historyRecorder', () => {
     recorder.event({ type: 'waiting_on_agents', turnId: 'turn-x', running: 1, at: 1_001 })
     recorder.event({ type: 'steer', turnId: 'turn-x', text: 'use Paris instead', at: 1_002 })
     recorder.event({ type: 'llm_delta', turnId: 'turn-x', kind: 'text', text: 'stray fragment', at: 1_003 })
+    recorder.event({ type: 'llm_tool_intent', turnId: 'turn-x', index: 0, name: 'click', args: '{"ref":1}', at: 1_004 })
 
     expect(store.recentEntries(10)).toEqual([])
   })

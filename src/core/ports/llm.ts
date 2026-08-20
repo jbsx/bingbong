@@ -56,10 +56,17 @@ export type LlmStreamDelta =
   | { kind: 'text'; text: string }
   /**
    * Reasoning trace fragment — `reasoning_content`, the de facto
-   * OpenAI-compatible field. Opportunistic pass-through: absent deltas
-   * simply never arrive for providers that don't emit them.
+   * OpenAI-compatible reasoning field. Opportunistic pass-through: absent
+   * deltas simply never arrive for providers that don't emit them.
    */
   | { kind: 'reasoning'; text: string }
+  /**
+   * Tool-call intent (#48): the accumulated name and raw argument JSON
+   * so far for the call at `index`, emitted while the arguments are still
+   * streaming — before the tool executes. Lets the feed show direction
+   * ("clicking 'Search'…") ahead of execution.
+   */
+  | { kind: 'tool_intent'; index: number; name: string; args: string }
 
 /** Token usage as reported by the provider (absent when unknown). */
 export interface TokenUsage {

@@ -278,11 +278,17 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
       ? (event: UnstampedEvent): void => deps.emitDetail!(stampTurn(event, turnId))
       : undefined
     // Streamed deltas (#47): one batcher per run — fragments accumulate
-    // per round and flush (resetting it) at each round's end.
+    // per round and flush (resetting it) at each round's end. Tool-intent
+    // snapshots (#48) ride the same window as their own detail variant.
     const batcher = emitDetail
       ? createLlmDeltaBatcher({
           clock,
-          emit: ({ kind, text, at }) => emitDetail({ type: 'llm_delta', kind, text, at }),
+          emit: (fragment) =>
+            emitDetail(
+              fragment.kind === 'tool_intent'
+                ? { type: 'llm_tool_intent', index: fragment.index, name: fragment.name, args: fragment.args, at: fragment.at }
+                : { type: 'llm_delta', kind: fragment.kind, text: fragment.text, at: fragment.at },
+            ),
         })
       : undefined
 

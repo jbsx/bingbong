@@ -264,6 +264,113 @@ describe('feed projection', () => {
     })
   })
 
+  describe('tool-call intent (#48)', () => {
+    const intent = (index: number, name: string, args: string, at: number, turnId = T): PipelineEvent =>
+      ({ type: 'llm_tool_intent', turnId, index, name, args, at })
+    const reasoning = (text: string, at: number): PipelineEvent =>
+      ({ type: 'llm_delta', turnId: T, kind: 'reasoning', text, at })
+
+    it('renders the intent line while the arguments stream — naming the action and its target', () => {
+      const feed = createFeedProjection()
+      feed.onEvent(command('click the search button', 1_000))
+      feed.onEvent(intent(0, 'click', '{"ref":"Sea', 2_000))
+
+      expect(outline(feed.entries())).toEqual([
+        { kind: 'command', text: 'click the search button', detail: false },
+        { kind: 'intent', text: 'clicking \'Sea…\'', detail: true },
+      ])
+    })
+
+    it('grows the same line as more arguments arrive — one id, replaced text', () => {
+      const feed = createFeedProjection()
+      feed.onEvent(intent(0, 'web_search', '{"query":"mech', 1_000))
+      feed.onEvent(intent(0, 'web_search', '{"query":"mechanical keyboards"}', 1_120))
+
+      expect(outline(feed.entries())).toEqual([
+        { kind: 'intent', text: 'searching for \'mechanical keyboards\'…', detail: true },
+      ])
+      expect(feed.entries()).toHaveLength(1)
+    })
+
+    it('keeps parallel calls as their own lines, keyed by index', () => {
+      const feed = createFeedProjection()
+      feed.onEvent(intent(0, 'navigate', '{"url":"x.test"}', 1_000))
+      feed.onEvent(intent(1, 'click', '{"ref":"Search"}', 1_120))
+
+      expect(outline(feed.entries())).toEqual([
+        { kind: 'intent', text: 'opening \'x.test\'…', detail: true },
+        { kind: 'intent', text: 'clicking \'Search\'…', detail: true },
+      ])
+    })
+
+    it('closes the open intent on any other event; the tool outcome line follows it', () => {
+      const feed = createFeedProjection()
+      feed.onEvent(intent(0, 'click', '{"ref":"Search"}', 1_000))
+      feed.onEvent({ type: 'tool_call', turnId: T, callId: 'c1', name: 'click', args: { ref: 'Search' }, at: 2_000 })
+
+      expect(outline(feed.entries())).toEqual([
+        { kind: 'intent', text: 'clicking \'Search\'…', detail: true },
+        { kind: 'tool', text: 'click [Search]', detail: false },
+      ])
+      // Closed: a later intent for the same index opens a fresh line.
+      feed.onEvent(intent(0, 'click', '{"ref":"Next"}', 3_000))
+      expect(outline(feed.entries())).toEqual([
+        { kind: 'intent', text: 'clicking \'Search\'…', detail: true },
+        { kind: 'tool', text: 'click [Search]', detail: false },
+        { kind: 'intent', text: 'clicking \'Next\'…', detail: true },
+      ])
+    })
+
+    it('rides beside reasoning without closing it — both stay open in one round', () => {
+      const feed = createFeedProjection()
+      feed.onEvent(reasoning('the user wants youtube', 1_000))
+      feed.onEvent(intent(0, 'web_search', '{"query":"music videos"}', 1_120))
+      feed.onEvent(reasoning(', music videos', 1_240))
+
+      expect(outline(feed.entries())).toEqual([
+        { kind: 'reasoning', text: 'the user wants youtube, music videos', detail: true },
+        { kind: 'intent', text: 'searching for \'music videos\'…', detail: true },
+      ])
+    })
+
+    it('a session boundary resets the open intents — post-boundary intents open clean', () => {
+      const feed = createFeedProjection()
+      feed.onEvent(intent(0, 'click', '{"ref":"Sea', 1_000))
+      feed.onEvent({ type: 'session_started', at: 2_000 })
+      feed.onEvent(intent(0, 'click', '{"ref":"Fresh"}', 3_000))
+
+      expect(outline(feed.entries())).toEqual([
+        { kind: 'intent', text: 'clicking \'Fresh\'…', detail: true },
+      ])
+    })
+
+    it('renders nothing for intent when the stream carries no tool calls — providers without reasoning behave identically minus the dim lines', () => {
+      const feed = createFeedProjection()
+      feed.onEvent(command('work', 1_000))
+      // A reasoning-free, tool-free round: answer text only.
+      feed.onEvent({ type: 'llm_delta', turnId: T, kind: 'text', text: 'Done.', at: 2_000 } as PipelineEvent)
+      feed.onEvent({ type: 'display', turnId: T, text: 'Done.', at: 3_000 })
+
+      expect(outline(feed.entries())).toEqual([
+        { kind: 'command', text: 'work', detail: false },
+        { kind: 'display', text: 'Done.', detail: false },
+      ])
+    })
+
+    it('counts intent lines as detail for the trim', () => {
+      const feed = createFeedProjection()
+      for (let i = 0; i < MAX_DETAIL_ENTRIES + 5; i += 1) {
+        // A tool line between intents closes each run, so every intent
+        // becomes its own detail entry.
+        feed.onEvent(intent(0, 'click', `{"ref":"r${i}"}`, i + 1))
+        feed.onEvent({ type: 'status', turnId: T, status: 'thinking', at: i + 1 })
+      }
+
+      expect(feed.entries()).toHaveLength(MAX_DETAIL_ENTRIES)
+      expect(feed.entries().every((entry) => entry.detail)).toBe(true)
+    })
+  })
+
   describe('restart hydration', () => {
     it('seeds recorded history as outcome entries below anything live', () => {
       const feed = createFeedProjection()

@@ -116,6 +116,14 @@ export type PipelineEvent =
    */
   | { type: 'llm_delta'; turnId: string; kind: 'text' | 'reasoning'; text: string; at: number }
   /**
+   * A tool call's intent while its arguments are still streaming (#48):
+   * the accumulated tool name and raw argument JSON so far for the call
+   * at `index`, flushed batched like `llm_delta` — so the feed can show
+   * "clicking 'Search'…" before the tool executes. Detail event — maps
+   * to no history entry, so history.db recording is unchanged.
+   */
+  | { type: 'llm_tool_intent'; turnId: string; index: number; name: string; args: string; at: number }
+  /**
    * The run is blocked in agent_results(wait) on running subagents (#43):
    * `running` is the snapshot at wait start; live agent_update events keep
    * the dashboard's count honest while the wait continues. Detail event —

@@ -1895,6 +1895,100 @@ describe('orchestrator streaming (#47)', () => {
   })
 })
 
+describe('tool-call intent (#48)', () => {
+  it('flushes intent onto the detail channel while the round is in flight — before the tool executes', async () => {
+    const clock = new FakeClock()
+    const sink: PipelineEvent[] = []
+    let sinkMidRound: PipelineEvent[] = []
+    const release = deferred<void>()
+    const llm: LlmClient = {
+      async complete(request) {
+        if (request.toolResults.length > 0) return { kind: 'answer', speak: 'Done.', display: 'Done.' }
+        request.onDelta?.({ kind: 'reasoning', text: 'the user wants youtube' })
+        request.onDelta?.({ kind: 'tool_intent', index: 0, name: 'web_search', args: '{"query":"mech' })
+        request.onDelta?.({ kind: 'tool_intent', index: 0, name: 'web_search', args: '{"query":"mechanical keyboards"}' })
+        clock.advance(DELTA_FLUSH_MS)
+        sinkMidRound = [...sink]
+        await release.promise
+        return { kind: 'tool_calls', calls: [{ id: 'c1', name: 'noop_tool', args: {} }] }
+      },
+    }
+    const pipeline = createCommandPipeline({
+      llm,
+      tts: new RecordingTts(),
+      clock,
+      tools: [{ name: 'noop_tool', async execute() { return 'ok' } }],
+      emitDetail: (event) => sink.push(event),
+    })
+
+    const run = collectStamped(pipeline, 'search keyboards', 'turn-i')
+    await waitUntil(() => sinkMidRound.length > 0)
+    // Mid-round: the latest snapshot per index, batched into one flush —
+    // the tool has not executed (the round has not even finished).
+    expect(sinkMidRound).toEqual([
+      { type: 'llm_delta', turnId: 'turn-i', kind: 'reasoning', text: 'the user wants youtube', at: DELTA_FLUSH_MS },
+      { type: 'llm_tool_intent', turnId: 'turn-i', index: 0, name: 'web_search', args: '{"query":"mechanical keyboards"}', at: DELTA_FLUSH_MS },
+    ])
+
+    release.resolve(undefined)
+    const events = await run
+
+    // The round really executed the tool; the side channel is the only
+    // transport — never the generator's own.
+    expect(events.some((event) => event.type === 'tool_call')).toBe(true)
+    expect(events.some((event) => event.type === 'llm_tool_intent')).toBe(false)
+  })
+
+  it('drains a pending intent at round end so the feed still shows the direction before the tool line', async () => {
+    const clock = new FakeClock()
+    const sink: PipelineEvent[] = []
+    const llm: LlmClient = {
+      async complete(request) {
+        if (request.toolResults.length > 0) return { kind: 'answer', speak: 'Done.', display: 'Done.' }
+        request.onDelta?.({ kind: 'tool_intent', index: 0, name: 'click', args: '{"ref":"Search"}' })
+        // No window closes mid-round; only the round-end drain carries it.
+        return { kind: 'tool_calls', calls: [{ id: 'c1', name: 'noop_tool', args: {} }] }
+      },
+    }
+    const pipeline = createCommandPipeline({
+      llm,
+      tts: new RecordingTts(),
+      clock,
+      tools: [{ name: 'noop_tool', async execute() { return 'ok' } }],
+      emitDetail: (event) => sink.push(event),
+    })
+
+    await collect(pipeline, 'click it')
+
+    expect(sink.filter((event) => event.type === 'llm_tool_intent')).toEqual([
+      { type: 'llm_tool_intent', turnId: expect.any(String), index: 0, name: 'click', args: '{"ref":"Search"}', at: 0 },
+    ])
+  })
+
+  it('emits no intent events when the model streams no tool calls', async () => {
+    const clock = new FakeClock()
+    const sink: PipelineEvent[] = []
+    const llm: LlmClient = {
+      async complete(request) {
+        request.onDelta?.({ kind: 'text', text: '{"speak":"Done.","display":"Done."}' })
+        clock.advance(DELTA_FLUSH_MS)
+        return { kind: 'answer', speak: 'Done.', display: 'Done.' }
+      },
+    }
+    const pipeline = createCommandPipeline({
+      llm,
+      tts: new RecordingTts(),
+      clock,
+      tools: [],
+      emitDetail: (event) => sink.push(event),
+    })
+
+    await collect(pipeline, 'work')
+
+    expect(sink.some((event) => event.type === 'llm_tool_intent')).toBe(false)
+  })
+})
+
 function sunkTexts(sink: PipelineEvent[]): string[] {
   return sink.flatMap((event) => (event.type === 'llm_delta' ? [event.text] : []))
 }

@@ -509,7 +509,7 @@ describe('openAiLlmClient streaming (#47)', () => {
     const withoutReasoning = new ScriptedFetch([sseResponse([textDelta('{"speak":"OK.","display":"OK."}')])])
 
     const seen: { client: string; kind: string }[] = []
-    const listen = (tag: string) => (delta: { kind: string; text: string }) => seen.push({ client: tag, kind: delta.kind })
+    const listen = (tag: string) => (delta: { kind: string }) => seen.push({ client: tag, kind: delta.kind })
 
     await makeClient(withReasoning).complete({ command: 'x', toolResults: [], onDelta: listen('with') })
     await makeClient(withoutReasoning).complete({ command: 'x', toolResults: [], onDelta: listen('without') })
@@ -542,6 +542,78 @@ describe('openAiLlmClient streaming (#47)', () => {
         { id: 'call-2', name: 'click', args: { ref: 5 } },
       ],
     })
+  })
+
+  it('emits tool-intent snapshots while the arguments are still streaming — before the tool executes', async () => {
+    const fetch = new ScriptedFetch([
+      sseResponse([
+        reasoningDelta('the user wants youtube'),
+        toolCallDelta(0, { id: 'call-1', name: 'web_search', arguments: '{"query":"mech' }),
+        toolCallDelta(0, { arguments: 'anical keyboards"}' }),
+      ]),
+    ])
+    const client = makeClient(fetch)
+    const deltas: { kind: string; index?: number; name?: string; args?: string; text?: string }[] = []
+
+    const turn = await client.complete({
+      command: 'search keyboards',
+      toolResults: [],
+      onDelta: (delta) => {
+        if (delta.kind === 'tool_intent') deltas.push({ kind: delta.kind, index: delta.index, name: delta.name, args: delta.args })
+        else deltas.push({ kind: delta.kind, text: delta.text })
+      },
+    })
+
+    // Each snapshot is accumulated-so-far, keyed by the call index —
+    // intent lands mid-stream, ahead of the assembled turn.
+    expect(deltas).toEqual([
+      { kind: 'reasoning', text: 'the user wants youtube' },
+      { kind: 'tool_intent', index: 0, name: 'web_search', args: '{"query":"mech' },
+      { kind: 'tool_intent', index: 0, name: 'web_search', args: '{"query":"mechanical keyboards"}' },
+    ])
+    expect(turn).toEqual({ kind: 'tool_calls', calls: [{ id: 'call-1', name: 'web_search', args: { query: 'mechanical keyboards' } }] })
+  })
+
+  it('emits the intent of a second tool call under its own index while the first streams', async () => {
+    const fetch = new ScriptedFetch([
+      sseResponse([
+        toolCallDelta(0, { id: 'call-1', name: 'navigate', arguments: '{"url":"https://x.test' }),
+        toolCallDelta(1, { id: 'call-2', name: 'click', arguments: '{"ref"' }),
+        toolCallDelta(0, { arguments: '.tld"}' }),
+        toolCallDelta(1, { arguments: ':"Search"}' }),
+      ]),
+    ])
+    const client = makeClient(fetch)
+    const intents: { index: number; name: string; args: string }[] = []
+
+    await client.complete({
+      command: 'go',
+      toolResults: [],
+      onDelta: (delta) => {
+        if (delta.kind === 'tool_intent') intents.push({ index: delta.index, name: delta.name, args: delta.args })
+      },
+    })
+
+    expect(intents).toEqual([
+      { index: 0, name: 'navigate', args: '{"url":"https://x.test' },
+      { index: 1, name: 'click', args: '{"ref"' },
+      { index: 0, name: 'navigate', args: '{"url":"https://x.test.tld"}' },
+      { index: 1, name: 'click', args: '{"ref":"Search"}' },
+    ])
+  })
+
+  it('stays silent on intent when the round carries no tool calls — any provider', async () => {
+    const fetch = new ScriptedFetch([sseResponse([textDelta('{"speak":"OK.","display":"OK."}')])])
+    const client = makeClient(fetch)
+    const kinds: string[] = []
+
+    await client.complete({
+      command: 'x',
+      toolResults: [],
+      onDelta: (delta) => kinds.push(delta.kind),
+    })
+
+    expect(kinds).toEqual(['text'])
   })
 
   it('detects the empty completion at stream close and keeps the 3-attempt loop — give-up names the request id', async () => {

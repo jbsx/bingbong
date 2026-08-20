@@ -55,7 +55,8 @@ export function FeedLine({ entry }: { entry: FeedEntry }) {
       )
     }
     default:
-      // tool lines, displayed text, voice lines, retries — timestamp + text.
+      // tool lines, displayed text, voice lines, retries, streamed
+      // answer/reasoning runs, tool intent — timestamp + text.
       return (
         <p className={`feed-entry feed-entry--${entry.kind}`}>
           {time}

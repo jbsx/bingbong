@@ -1,4 +1,5 @@
 import type { PipelineEvent } from '../pipeline/events'
+import { describeToolIntent } from '../pipeline/toolCallDisplay'
 import { projectPipelineEvent } from './transcriptProjection'
 import { filterHydratedDuplicates } from './mergeHistory'
 import type { RecordedEntry, TranscriptEvent } from './historyStore'
@@ -10,11 +11,12 @@ import type { RecordedEntry, TranscriptEvent } from './historyStore'
 // ephemeral detail (never recorded, trimmed beyond the cap). Streamed
 // deltas (#47) grow live answer/reasoning runs — also ephemeral detail —
 // with the answer's display entry replacing its partial at round end.
-// Session-scoped exactly like the transcript (ADR 0003): session_started
-// clears.
+// Tool-intent lines (#48) grow the same way while call arguments stream,
+// superseded by the tool's outcome line at execution. Session-scoped
+// exactly like the transcript (ADR 0003): session_started clears.
 
 /** The entry kinds the feed renders: transcript kinds plus detail lines. */
-export type FeedEntryKind = TranscriptEvent['kind'] | 'retry' | 'steer' | 'answer_stream' | 'reasoning'
+export type FeedEntryKind = TranscriptEvent['kind'] | 'retry' | 'steer' | 'answer_stream' | 'reasoning' | 'intent'
 
 export interface FeedEntry {
   /** Rising, unique across the projection's life — the renderer's React key. */
@@ -49,10 +51,15 @@ export function createFeedProjection(): {
   // reads as one growing line. Null after close/boundary/replacement.
   let openTextId: number | null = null
   let openReasoningId: number | null = null
+  // Open intent lines (#48), keyed by the provider's call index — the
+  // entry a growing snapshot replaces in place until another event closes
+  // it (the tool's outcome line follows).
+  let openIntentIds = new Map<number, number>()
 
   const closeStreaming = (): void => {
     openTextId = null
     openReasoningId = null
+    openIntentIds = new Map()
   }
 
   /** Drops the open streamed-answer run — its final entry replaces it. */
@@ -104,11 +111,33 @@ export function createFeedProjection(): {
     trimDetail()
   }
 
+  /** One intent snapshot (#48): replaces the open line for its call index. */
+  const appendIntent = (index: number, name: string, args: string, at: number): void => {
+    const text = describeToolIntent(name, args)
+    const openId = openIntentIds.get(index)
+    if (openId !== undefined) {
+      const open = feed.findIndex((entry) => entry.id === openId)
+      if (open !== -1) {
+        // Same id, replaced text — the phrase grows as arguments arrive.
+        const grown = { ...feed[open]!, text }
+        feed = [...feed.slice(0, open), grown, ...feed.slice(open + 1)]
+        return
+      }
+    }
+    const id = nextId++
+    feed = [...feed, { id, at, kind: 'intent', text, detail: true }]
+    openIntentIds.set(index, id)
+    trimDetail()
+  }
+
   return {
     onEvent(event) {
       switch (event.type) {
         case 'llm_delta':
           appendDelta(event.kind === 'text' ? 'answer_stream' : 'reasoning', event.text, event.at)
+          return
+        case 'llm_tool_intent':
+          appendIntent(event.index, event.name, event.args, event.at)
           return
         case 'display':
           // The answer's final display entry supersedes its streamed

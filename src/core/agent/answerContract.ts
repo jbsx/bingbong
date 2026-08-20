@@ -48,23 +48,25 @@ const ESCAPES: Record<string, string> = {
 
 /**
  * The string value starting at `openQuote` (its index in `content`), with
- * completed escapes unescaped — everything visible so far. Stops at the
- * closing quote or the first incomplete escape.
+ * completed escapes unescaped — everything visible so far — plus whether
+ * the closing quote arrived. Shared scanner for partially streamed JSON:
+ * the answer contract's visible-part derivation and the feed's tool-intent
+ * phrases both read values mid-stream with it.
  */
-function partialStringValue(content: string, openQuote: number): string {
+export function scanPartialJsonString(content: string, openQuote: number): { value: string; closed: boolean } {
   let out = ''
   for (let i = openQuote + 1; i < content.length; i += 1) {
     const char = content[i]!
-    if (char === '"') return out
+    if (char === '"') return { value: out, closed: true }
     if (char !== '\\') {
       out += char
       continue
     }
     const escaped = content[i + 1]
-    if (escaped === undefined) return out
+    if (escaped === undefined) return { value: out, closed: false }
     if (escaped === 'u') {
       const hex = content.slice(i + 2, i + 6)
-      if (hex.length < 4 || /[^0-9a-fA-F]/.test(hex)) return out
+      if (hex.length < 4 || /[^0-9a-fA-F]/.test(hex)) return { value: out, closed: false }
       out += String.fromCharCode(Number.parseInt(hex, 16))
       i += 5
       continue
@@ -72,7 +74,7 @@ function partialStringValue(content: string, openQuote: number): string {
     out += ESCAPES[escaped] ?? `\\${escaped}`
     i += 1
   }
-  return out
+  return { value: out, closed: false }
 }
 
 /**
@@ -89,7 +91,7 @@ export function partialAnswerText(content: string): string {
   if (!content.trimStart().startsWith('{')) return content
   const key = /"(?:display|speak)"\s*:\s*"/.exec(content)
   if (!key) return ''
-  return partialStringValue(content, key.index + key[0].length - 1)
+  return scanPartialJsonString(content, key.index + key[0].length - 1).value
 }
 
 /**
