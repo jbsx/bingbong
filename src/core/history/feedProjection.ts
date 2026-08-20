@@ -11,7 +11,7 @@ import type { RecordedEntry, TranscriptEvent } from './historyStore'
 // scoped exactly like the transcript (ADR 0003): session_started clears.
 
 /** The entry kinds the feed renders: transcript kinds plus detail lines. */
-export type FeedEntryKind = TranscriptEvent['kind'] | 'retry'
+export type FeedEntryKind = TranscriptEvent['kind'] | 'retry' | 'steer'
 
 export interface FeedEntry {
   /** Rising, unique across the projection's life — the renderer's React key. */
@@ -46,8 +46,8 @@ export function createFeedProjection(): {
     feed = [...feed, { ...entry, id: nextId++, detail: false }]
   }
 
-  const appendDetail = (at: number, text: string): void => {
-    feed = [...feed, { id: nextId++, at, kind: 'retry', text, detail: true }]
+  const appendDetail = (at: number, text: string, kind: 'retry' | 'steer' = 'retry'): void => {
+    feed = [...feed, { id: nextId++, at, kind, text, detail: true }]
     // Ephemeral lines are trimmed beyond the cap, oldest first; outcome
     // entries are session-scoped and unbounded, exactly like the transcript.
     let detailCount = 0
@@ -63,6 +63,9 @@ export function createFeedProjection(): {
       switch (event.type) {
         case 'llm_retry':
           appendDetail(event.at, `empty response — retrying ${event.attempt}/${event.maxAttempts}`)
+          return
+        case 'steer':
+          appendDetail(event.at, `steer: ${event.text}`, 'steer')
           return
         case 'session_started':
           // The lazy session clear (ADR 0003): the boundary alone wipes the

@@ -31,6 +31,11 @@ export interface BingbongAssistantApi {
   resolveAsk(askId: string, answer: string): Promise<void>
   /** Abort the active run; false means there was no run to stop. */
   abort(): Promise<boolean>
+  /**
+   * Steer the active run from the feed panel's box (#46) — the same seam
+   * as spoken steering. False means nothing was taken.
+   */
+  steer(directive: string): Promise<boolean>
   onEvent(listener: (event: PipelineEvent) => void): () => void
 }
 

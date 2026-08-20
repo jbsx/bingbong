@@ -149,7 +149,7 @@ describe('createSingleShotPipeline', () => {
       resolveAsk: () => {},
       abort: () => {},
       pause: () => {},
-      resume: () => {},
+      resume: () => false,
       getState: () => 'idle',
     }
     const pipeline = createSingleShotPipeline(inner, new FakeClock())
@@ -167,7 +167,7 @@ describe('createSingleShotPipeline', () => {
       resolveAsk: (id, answer) => calls.push(`${id}:${answer}`),
       abort: () => {},
       pause: () => {},
-      resume: () => {},
+      resume: () => false,
       getState: () => 'idle',
     }
     const pipeline = createSingleShotPipeline(inner, new FakeClock())

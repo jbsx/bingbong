@@ -73,6 +73,8 @@ interface PendingDecision<T> {
 export type CommandRunState = 'idle' | 'running' | 'paused'
 
 interface ActiveRun {
+  /** The turn's id — stamps the steer echo resume() emits outside the generator (#46). */
+  turnId: string
   aborted: boolean
   paused: boolean
   steering?: string
@@ -127,7 +129,12 @@ export interface CommandPipeline {
   resolveAsk(askId: string, answer: string): void
   abort(): void
   pause(): void
-  resume(steering?: string): void
+  /**
+   * Resume a paused run, optionally with a steering directive. Returns
+   * whether the resume (and the directive, if any) was actually taken —
+   * false means no paused run accepted it.
+   */
+  resume(steering?: string): boolean
   getState(): CommandRunState
 }
 
@@ -258,7 +265,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
   }
 
   async function* runTurn(command: string, turnId: string): AsyncIterable<UnstampedEvent> {
-    const run: ActiveRun = { aborted: false, paused: false }
+    const run: ActiveRun = { turnId, aborted: false, paused: false }
     activeRun = run
     const emitDetail = deps.emitDetail
       ? (event: UnstampedEvent): void => deps.emitDetail!(stampTurn(event, turnId))
@@ -635,18 +642,23 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
       tts.stop()
     },
     resume: (steering) => {
-      if (!activeRun || activeRun.aborted || !activeRun.paused) return
+      if (!activeRun || activeRun.aborted || !activeRun.paused) return false
       const trimmed = steering?.trim()
       if (trimmed) {
         activeRun.steering = trimmed
         // A steering correction invalidates blocked, not-yet-executed work.
         settlePendingDecisions('steered')
+        // The feed echo (#46): fired before the run unparks, so it lands
+        // ahead of the next model round's events on the joined channel.
+        // Spoken and typed steering share this one seam.
+        deps.emitDetail?.({ type: 'steer', turnId: activeRun.turnId, text: trimmed, at: clock.now() })
       } else {
         eachPendingDecision((pending) => pending.resume())
       }
       activeRun.paused = false
       deps.onResume?.()
       activeRun.releasePause?.()
+      return true
     },
     getState: () => (activeRun ? (activeRun.paused ? 'paused' : 'running') : 'idle'),
   }

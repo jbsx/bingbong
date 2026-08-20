@@ -2,6 +2,7 @@ import { BrowserWindow, ipcMain, type WebContents } from 'electron'
 import { PIPELINE_IPC } from '../../core/pipeline/ipcChannels'
 import type { PipelineEvent } from '../../core/pipeline/events'
 import type { CommandPipeline } from '../../core/pipeline/createCommandPipeline'
+import { steerPipeline } from '../../core/pipeline/steering'
 
 // Glue between the dashboard and the command pipeline: submit a command
 // (text box or voice), receive the event stream, resolve confirmations.
@@ -89,6 +90,16 @@ export function registerAssistantIpc(): void {
     const win = BrowserWindow.fromWebContents(event.sender)
     const pipeline = win ? pipelineFor(win) : undefined
     return pipeline ? abortActiveRun(pipeline) : false
+  })
+
+  // The typed steer box (#46) lives in the panel's overlay webContents;
+  // fromWebContents resolves its owning window, exactly like the panel's
+  // own IPC does. False means nothing was taken (no run, blank directive).
+  ipcMain.handle(PIPELINE_IPC.steer, (event, directive: unknown) => {
+    const win = BrowserWindow.fromWebContents(event.sender)
+    const pipeline = win ? pipelineFor(win) : undefined
+    if (!pipeline || typeof directive !== 'string') return false
+    return steerPipeline(pipeline, directive)
   })
 }
 

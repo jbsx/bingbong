@@ -44,6 +44,7 @@ contextBridge.exposeInMainWorld('bingbong', {
     resolveAsk: (askId: string, answer: string): Promise<void> =>
       ipcRenderer.invoke(PIPELINE_IPC.resolveAsk, askId, answer),
     abort: (): Promise<boolean> => ipcRenderer.invoke(PIPELINE_IPC.abort),
+    steer: (directive: string): Promise<boolean> => ipcRenderer.invoke(PIPELINE_IPC.steer, directive),
     onEvent: (listener: (event: PipelineEvent) => void): (() => void) => {
       const wrapped = (_event: unknown, event: PipelineEvent): void => listener(event)
       ipcRenderer.on(PIPELINE_IPC.event, wrapped)

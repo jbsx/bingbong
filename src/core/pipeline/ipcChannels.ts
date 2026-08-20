@@ -6,4 +6,6 @@ export const PIPELINE_IPC = {
   resolveAsk: 'pipeline:resolve-ask',
   /** Renderer → main: abort the active run, if any. */
   abort: 'pipeline:abort',
+  /** The feed panel's steer box → main: steer the active run (#46). */
+  steer: 'pipeline:steer',
 } as const

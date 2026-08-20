@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { createCommandPipeline, type CommandPipeline } from './createCommandPipeline'
+import { steerPipeline } from './steering'
 import { createSpeechCoordinator } from '../tts/speechCoordinator'
 import { createAskUserTool } from './askUserTools'
 import { createNewSessionTool } from './sessionTools'
@@ -1691,5 +1692,237 @@ describe('progress detail (#43)', () => {
       { type: 'status', status: 'speaking', at: 0 },
     ])
     expect(sink.map((event) => event.type)).toEqual(['llm_retry'])
+  })
+})
+
+describe('typed steering (#46)', () => {
+  it('steers a running run mid-round: the directive rides the next model call, stale tools never execute', async () => {
+    const firstTurn = deferred<AssistantTurn>()
+    const requests: LlmRequest[] = []
+    const llm: LlmClient = {
+      async complete(request) {
+        requests.push(request)
+        if (requests.length === 1) return firstTurn.promise
+        return { kind: 'answer', speak: 'Changed course.', display: 'Using the typed steering.' }
+      },
+    }
+    let executions = 0
+    const staleTool = {
+      name: 'stale_action',
+      async execute() {
+        executions += 1
+        return 'should not run'
+      },
+    }
+    const pipeline = createCommandPipeline({ llm, tts: new RecordingTts(), clock: new FakeClock(), tools: [staleTool] })
+
+    const run = collect(pipeline, 'original command')
+    await waitUntil(() => requests.length === 1)
+    expect(pipeline.getState()).toBe('running')
+
+    // The typed box: one submit, no spoken "hold on" first — the pause (if
+    // needed) rides inside the steer.
+    expect(steerPipeline(pipeline, '  Use Paris instead.  ')).toBe(true)
+    firstTurn.resolve({ kind: 'tool_calls', calls: [{ id: 'stale', name: 'stale_action', args: {} }] })
+    const events = await run
+
+    expect(executions).toBe(0)
+    expect(requests).toHaveLength(2)
+    expect(requests[1]!.steering).toBe('Use Paris instead.')
+    expect(events).toContainEqual({ type: 'display', text: 'Using the typed steering.', at: 0 })
+    // The pause-and-resume is one atomic steer: no paused status surfaces.
+    expect(events.some((event) => event.type === 'status' && event.status === 'paused')).toBe(false)
+  })
+
+  it('steers an already-paused run through the same seam as the spoken path', async () => {
+    const firstTurn = deferred<AssistantTurn>()
+    const requests: LlmRequest[] = []
+    const llm: LlmClient = {
+      async complete(request) {
+        requests.push(request)
+        if (requests.length === 1) return firstTurn.promise
+        return { kind: 'answer', speak: 'Redirected.', display: 'Used the typed steering.' }
+      },
+    }
+    let executions = 0
+    const staleTool = {
+      name: 'stale_action',
+      async execute() {
+        executions += 1
+        return 'should not run'
+      },
+    }
+    const pipeline = createCommandPipeline({ llm, tts: new RecordingTts(), clock: new FakeClock(), tools: [staleTool] })
+
+    const run = collect(pipeline, 'original command')
+    await waitUntil(() => requests.length === 1)
+    pipeline.pause()
+    firstTurn.resolve({ kind: 'tool_calls', calls: [{ id: 'stale', name: 'stale_action', args: {} }] })
+    await waitUntil(() => pipeline.getState() === 'paused')
+
+    expect(steerPipeline(pipeline, 'Use Paris instead.')).toBe(true)
+    await run
+
+    expect(executions).toBe(0)
+    expect(requests[1]!.steering).toBe('Use Paris instead.')
+  })
+
+  it('settles a pending confirmation as steered and cancels the not-yet-executed call', async () => {
+    let executions = 0
+    const riskyTool = {
+      name: 'submit_form',
+      assessRisk: () => ({ kind: 'confirm' as const, prompt: 'Submit this form?' }),
+      async execute() {
+        executions += 1
+        return 'submitted'
+      },
+    }
+    const llm = new ScriptedLlm([
+      { kind: 'tool_calls', calls: [{ id: 'c1', name: 'submit_form', args: {} }] },
+      { kind: 'answer', speak: 'Redirected.', display: 'Used the typed steering.' },
+    ])
+    const pipeline = createCommandPipeline({ llm, tts: new RecordingTts(), clock: new FakeClock(), tools: [riskyTool] })
+
+    const steered: boolean[] = []
+    const events = await collect(pipeline, 'submit it', (event, activePipeline) => {
+      if (event.type === 'confirmation_requested') {
+        steered.push(steerPipeline(activePipeline, 'Use Paris instead.'))
+      }
+    })
+
+    expect(steered).toEqual([true])
+    expect(executions).toBe(0)
+    expect(events).toContainEqual({
+      type: 'confirmation_resolved',
+      confirmationId: 'confirm-1',
+      approved: false,
+      reason: 'steered',
+      at: 0,
+    })
+    expect(llm.requests[1]?.steering).toBe('Use Paris instead.')
+  })
+
+  it('refuses to steer without an active run, and drops blank directives mid-run', async () => {
+    const firstTurn = deferred<AssistantTurn>()
+    const requests: LlmRequest[] = []
+    const llm: LlmClient = {
+      async complete(request) {
+        requests.push(request)
+        if (requests.length === 1) return firstTurn.promise
+        return { kind: 'answer', speak: 'Done.', display: 'Done.' }
+      },
+    }
+    const pipeline = createCommandPipeline({ llm, tts: new RecordingTts(), clock: new FakeClock(), tools: [] })
+
+    // Idle: never silently take input.
+    expect(steerPipeline(pipeline, 'Use Paris instead.')).toBe(false)
+
+    const run = collect(pipeline, 'go')
+    await waitUntil(() => requests.length === 1)
+    expect(steerPipeline(pipeline, '   ')).toBe(false)
+    expect(pipeline.getState()).toBe('running')
+    firstTurn.resolve({ kind: 'answer', speak: 'Done.', display: 'Done.' })
+    await run
+
+    // The refused blank never queued a directive or a re-ask.
+    expect(requests).toHaveLength(1)
+    expect(steerPipeline(pipeline, 'Use Paris instead.')).toBe(false)
+  })
+
+  it('refuses to steer a run that is aborting — never claims a dropped directive', async () => {
+    const firstTurn = deferred<AssistantTurn>()
+    const requests: LlmRequest[] = []
+    const llm: LlmClient = {
+      async complete(request) {
+        requests.push(request)
+        return firstTurn.promise
+      },
+    }
+    const pipeline = createCommandPipeline({ llm, tts: new RecordingTts(), clock: new FakeClock(), tools: [] })
+
+    const run = collect(pipeline, 'go')
+    await waitUntil(() => requests.length === 1)
+    // Abort winds down while the model round is still in flight: state
+    // still reads 'running', but nothing may be taken anymore.
+    pipeline.abort()
+    expect(steerPipeline(pipeline, 'Use Paris instead.')).toBe(false)
+    firstTurn.resolve({ kind: 'answer', speak: 'Stale.', display: 'Stale.' })
+    await run
+
+    expect(requests[0]!.steering).toBeUndefined()
+    expect(requests).toHaveLength(1)
+  })
+
+  it('echoes the received directive on the detail channel — turn-stamped, before the steered round lands', async () => {
+    const merged: PipelineEvent[] = []
+    const firstTurn = deferred<AssistantTurn>()
+    const requests: LlmRequest[] = []
+    const llm: LlmClient = {
+      async complete(request) {
+        requests.push(request)
+        if (requests.length === 1) return firstTurn.promise
+        return { kind: 'answer', speak: 'Changed course.', display: 'Using the steering.' }
+      },
+    }
+    const pipeline = createCommandPipeline({
+      llm,
+      tts: new RecordingTts(),
+      clock: new FakeClock(),
+      tools: [],
+      emitDetail: (event) => merged.push(event),
+    })
+
+    const run = (async () => {
+      for await (const event of pipeline.execute('go', 'turn-s')) merged.push(event)
+    })()
+    await waitUntil(() => requests.length === 1)
+    steerPipeline(pipeline, 'Use Paris instead.')
+    firstTurn.resolve({ kind: 'answer', speak: 'Stale answer.', display: 'Stale.' })
+    await run
+
+    // One channel, delivery order: the echo arrives after the in-flight
+    // round's events and before the steered round's — exactly what the
+    // renderer receives.
+    expect(merged.map((event) => event.type)).toEqual([
+      'command',
+      'status',
+      'steer',
+      'display',
+      'status',
+      'speak',
+      'done',
+    ])
+    expect(merged[2]).toEqual({ type: 'steer', turnId: 'turn-s', text: 'Use Paris instead.', at: 0 })
+  })
+
+  it('echoes the spoken steering path identically — one seam, both entry points', async () => {
+    const sink: PipelineEvent[] = []
+    const firstTurn = deferred<AssistantTurn>()
+    const requests: LlmRequest[] = []
+    const llm: LlmClient = {
+      async complete(request) {
+        requests.push(request)
+        if (requests.length === 1) return firstTurn.promise
+        return { kind: 'answer', speak: 'Changed course.', display: 'Using the steering.' }
+      },
+    }
+    const pipeline = createCommandPipeline({
+      llm,
+      tts: new RecordingTts(),
+      clock: new FakeClock(),
+      tools: [],
+      emitDetail: (event) => sink.push(event),
+    })
+
+    const run = collect(pipeline, 'go')
+    await waitUntil(() => requests.length === 1)
+    pipeline.pause()
+    firstTurn.resolve({ kind: 'tool_calls', calls: [{ id: 'stale', name: 'noop', args: {} }] })
+    await waitUntil(() => pipeline.getState() === 'paused')
+    pipeline.resume('Use Paris instead.')
+    await run
+
+    expect(sink).toEqual([{ type: 'steer', turnId: expect.any(String), text: 'Use Paris instead.', at: 0 }])
+    expect(requests[1]!.steering).toBe('Use Paris instead.')
   })
 })

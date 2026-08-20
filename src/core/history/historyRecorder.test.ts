@@ -262,6 +262,7 @@ describe('historyRecorder', () => {
     detailRun.event({ type: 'llm_retry', turnId, attempt: 3, maxAttempts: 3, at: 990 })
     detailRun.event({ type: 'tool_call', turnId, callId: 'c1', name: 'agent_results', args: { wait: true }, at: 991 })
     detailRun.event({ type: 'waiting_on_agents', turnId, running: 2, at: 992 })
+    detailRun.event({ type: 'steer', turnId, text: 'use Paris instead', at: 993 })
     detailRun.event({ type: 'tool_result', turnId, callId: 'c1', name: 'agent_results', ok: true, at: 995 })
     detailRun.event({ type: 'speak', text: 'Collected.', at: 996 })
     detailRun.event({ type: 'done', turnId, outcome: 'done', at: 997 })
@@ -283,6 +284,7 @@ describe('historyRecorder', () => {
 
     recorder.event({ type: 'llm_retry', turnId: 'turn-x', attempt: 2, maxAttempts: 3, at: 1_000 })
     recorder.event({ type: 'waiting_on_agents', turnId: 'turn-x', running: 1, at: 1_001 })
+    recorder.event({ type: 'steer', turnId: 'turn-x', text: 'use Paris instead', at: 1_002 })
 
     expect(store.recentEntries(10)).toEqual([])
   })

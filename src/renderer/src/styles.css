@@ -279,6 +279,18 @@ body {
   font-style: italic;
 }
 
+/* Steer echoes (#46): your directive, received and pending — quiet like
+   retry detail, but accented so it never reads as the model's words. */
+.feed-entry--steer .feed-text {
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-style: italic;
+}
+
+.feed-entry--steer .feed-time {
+  color: var(--accent);
+}
+
 .feed-entry--error .feed-text {
   color: #ff7a7a;
 }

@@ -48,6 +48,26 @@ describe('sessionMemory', () => {
     ])
   })
 
+  it('never threads steering directives into the session history (ADR 0001)', () => {
+    const session = createSessionMemory()
+    feed(session.run(), runEvents('find a pizza place', 'Found two: Pizza A and Pizza B.', 1_000))
+    const next = session.run()
+    next.event({ type: 'command', turnId: TURN, text: 'what about the second one?', at: 60_000 })
+    // The steer echo (#46) rides the same seam — it must not read as a
+    // user turn (the directive reaches the model via the request, not the
+    // distilled thread).
+    next.event({ type: 'steer', turnId: TURN, text: 'use Paris instead', at: 60_100 })
+    next.event({ type: 'display', text: 'Pizza B on Main Street.', at: 60_200 })
+    next.event({ type: 'done', turnId: TURN, outcome: 'done', at: 60_300 })
+
+    expect(session.history()).toEqual([
+      { role: 'user', text: 'find a pizza place' },
+      { role: 'assistant', text: 'Found two: Pizza A and Pizza B.' },
+      { role: 'user', text: 'what about the second one?' },
+      { role: 'assistant', text: 'Pizza B on Main Street.' },
+    ])
+  })
+
   it('keeps the whole thread within the 10-minute window', () => {
     const session = createSessionMemory()
     feed(session.run(), runEvents('find a pizza place', 'Found two: Pizza A and Pizza B.', 1_000))

@@ -114,6 +114,14 @@ export type PipelineEvent =
    * maps to no history entry.
    */
   | { type: 'waiting_on_agents'; turnId: string; running: number; at: number }
+  /**
+   * A steering directive was received (#46) — spoken or typed. Emitted on
+   * the detail channel the moment resume(steering) queues the directive,
+   * so the feed can echo it ("steer: use Paris instead") while it waits
+   * for the next model call. Detail event — maps to no history entry, and
+   * never enters session history (ADR 0001).
+   */
+  | { type: 'steer'; turnId: string; text: string; at: number }
   /** A subagent's state changed — the dashboard keeps one card per agent id. */
   | { type: 'agent_update'; agent: SubagentCard; at: number }
   | { type: 'done'; turnId: string; outcome?: 'done' | 'failed' | 'cancelled'; at: number }

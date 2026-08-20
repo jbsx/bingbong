@@ -65,7 +65,16 @@ export function FeedLine({ entry }: { entry: FeedEntry }) {
   }
 }
 
-export function ActivityFeed({ entries, headerActions }: { entries: FeedEntry[]; headerActions?: React.ReactNode }) {
+export function ActivityFeed({
+  entries,
+  headerActions,
+  footer,
+}: {
+  entries: FeedEntry[]
+  headerActions?: React.ReactNode
+  /** Below the list — the panel's steer box (#46). */
+  footer?: React.ReactNode
+}) {
   const listRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -85,6 +94,7 @@ export function ActivityFeed({ entries, headerActions }: { entries: FeedEntry[];
           <FeedLine key={entry.id} entry={entry} />
         ))}
       </div>
+      {footer}
     </div>
   )
 }

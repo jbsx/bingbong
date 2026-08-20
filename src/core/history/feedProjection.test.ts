@@ -63,6 +63,11 @@ describe('feed projection', () => {
       retry(2, 7_000),
       { kind: 'retry', text: 'empty response — retrying 2/3', detail: true },
     ],
+    [
+      'steer echo',
+      { type: 'steer', turnId: T, text: 'use Paris instead', at: 8_000 } as PipelineEvent,
+      { kind: 'steer', text: 'steer: use Paris instead', detail: true },
+    ],
   ])('maps %s to a feed entry', (_name, event, expected) => {
     const feed = createFeedProjection()
     feed.onEvent(event as PipelineEvent)
