@@ -284,6 +284,16 @@ viewport 1280x800 scroll 0/4521
     expect(text).toContain('[1] button')
   })
 
+  it('rounds fractional scroll offsets in the viewport line', () => {
+    // Page zoom (#53) divides wheel deltas by the zoom factor, so scrollY
+    // lands on fractional CSS pixels; the header keeps its integer contract.
+    const text = formatPageSnapshot(
+      buildPageSnapshot(page({ viewport: { width: 1280, height: 800, scrollX: 3.1, scrollY: 276.92, scrollHeight: 3000 } })),
+    )
+
+    expect(text).toContain('viewport 1280x800 scroll 277/3000')
+  })
+
   it('truncates labels longer than 80 characters', () => {
     const longLabel = 'x'.repeat(150)
     const text = formatPageSnapshot(buildPageSnapshot(page({ elements: [element({ label: longLabel })] })))

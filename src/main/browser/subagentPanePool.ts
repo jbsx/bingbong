@@ -7,6 +7,7 @@ import type { SubagentTab, SubagentTabs } from '../../core/browser/subagentTabs'
 import type { BrowserController } from '../../core/ports/browser'
 import { SUBAGENT_IPC } from '../../core/agent/subagentIpcChannels'
 import { createPaneBrowserController } from './createPaneBrowserController'
+import { applyPaneZoom } from './paneZoom'
 
 // Electron glue for subagent tabs (issue #13): one WebContentsView per
 // active/lingering tab on the window's content view, sharing the main
@@ -33,7 +34,13 @@ export interface SubagentPanePool {
 export function createSubagentPanePool(
   win: BrowserWindow,
   tabs: SubagentTabs,
-  deps: { session: Electron.Session; onEscape?(): boolean; onViewAdded?(): void },
+  deps: {
+    session: Electron.Session
+    onEscape?(): boolean
+    onViewAdded?(): void
+    /** Web-zoom setting (#53), applied like the main pane — see paneZoom. */
+    getZoomPercent?(): number
+  },
 ): SubagentPanePool {
   const views = new Map<string, PooledView>()
 
@@ -58,10 +65,14 @@ export function createSubagentPanePool(
     deps.onViewAdded?.()
 
     const wc = view.webContents
+    applyPaneZoom(wc, deps.getZoomPercent)
     wc.on('before-input-event', (event, input) => {
       if (input.type === 'keyDown' && input.key === 'Escape' && deps.onEscape?.()) event.preventDefault()
     })
-    wc.on('did-navigate', (_event, url) => tabs.update(tab.agentId, { url }))
+    wc.on('did-navigate', (_event, url) => {
+      applyPaneZoom(wc, deps.getZoomPercent)
+      tabs.update(tab.agentId, { url })
+    })
     wc.on('did-navigate-in-page', (_event, url) => tabs.update(tab.agentId, { url }))
     wc.on('page-title-updated', (_event, title) => tabs.update(tab.agentId, { title }))
     // Subagent tabs auto-close window.open popups too; the URLs surface in

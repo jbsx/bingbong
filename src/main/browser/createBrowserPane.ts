@@ -4,6 +4,7 @@ import { idleBrowserPaneState } from '../../core/browser/paneState'
 import { toPaneBounds } from '../../core/browser/paneGeometry'
 import { normalizeUrlInput } from '../../core/browser/urlInput'
 import { browserUserAgent } from '../../core/browser/userAgent'
+import { applyPaneZoom } from './paneZoom'
 
 export const BROWSER_PARTITION = 'persist:browse'
 
@@ -21,7 +22,10 @@ export interface BrowserPane {
   consumePopupBlocks(): string[]
 }
 
-export function createBrowserPane(): BrowserPane {
+export function createBrowserPane(deps?: {
+  /** Web-zoom setting (#53), read live so a save applies on the next load. */
+  getZoomPercent?: () => number
+}): BrowserPane {
   const partitionSession = session.fromPartition(BROWSER_PARTITION, { cache: true })
 
   partitionSession.setUserAgent(
@@ -81,12 +85,16 @@ export function createBrowserPane(): BrowserPane {
     })
   }
 
-  wc.on('did-navigate', (_event, url) => syncNavigationState(url))
+  wc.on('did-navigate', (_event, url) => {
+    applyPaneZoom(wc, deps?.getZoomPercent)
+    syncNavigationState(url)
+  })
   wc.on('did-navigate-in-page', (_event, url) => syncNavigationState(url))
   wc.on('page-title-updated', (_event, title) => update({ title: title || state.url }))
   wc.on('did-start-loading', () => update({ loading: true }))
   wc.on('did-stop-loading', () => update({ loading: false }))
   wc.on('render-process-gone', () => update({ title: 'Renderer process crashed' }))
+  applyPaneZoom(wc, deps?.getZoomPercent)
 
   return {
     view,

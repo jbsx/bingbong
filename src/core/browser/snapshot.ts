@@ -254,7 +254,9 @@ const MAX_DIALOG_TEXT = 200
 export function formatPageSnapshot(snapshot: PageSnapshot): string {
   const lines = [
     `# ${snapshot.title} — ${snapshot.url}`,
-    `viewport ${snapshot.viewport.width}x${snapshot.viewport.height} scroll ${snapshot.viewport.scrollY}/${snapshot.viewport.scrollHeight}`,
+    // Zoomed pages (#53) scroll on fractional CSS pixels; the header line
+    // keeps its integer-pixel contract.
+    `viewport ${snapshot.viewport.width}x${snapshot.viewport.height} scroll ${Math.round(snapshot.viewport.scrollY)}/${Math.round(snapshot.viewport.scrollHeight)}`,
   ]
   if (snapshot.dialogOpen) {
     const text = snapshot.dialogText.length > MAX_DIALOG_TEXT

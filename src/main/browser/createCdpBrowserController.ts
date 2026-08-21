@@ -423,7 +423,9 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
     // Viewport-relative rects shift with the scroll; refs must be re-read.
     lastSnapshot = undefined
     const { signature } = await probeAction(-1)
-    return `scrolled ${direction}: x=${signature.scrollX} y=${signature.scrollY}`
+    // Zoomed pages (#53) scroll on fractional CSS pixels; the outcome line
+    // keeps its integer-pixel contract.
+    return `scrolled ${direction}: x=${Math.round(signature.scrollX)} y=${Math.round(signature.scrollY)}`
   }
 
   async function navigate(input: string): Promise<string> {

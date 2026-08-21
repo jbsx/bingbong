@@ -44,6 +44,8 @@ export interface SubagentRuntimeDeps {
   onEscape?(): boolean
   /** Called after each pooled view is added — keeps the feed overlay on top. */
   onViewAdded?(): void
+  /** Web-zoom setting (#53), applied to every subagent pane. */
+  getZoomPercent?(): number
   /** Perf tracing for subagent LLM rounds (#29); absent keeps them unlogged. */
   tracer?: PerfTracer
 }
@@ -78,6 +80,7 @@ export function createSubagentRuntime(deps: SubagentRuntimeDeps): SubagentRuntim
     session: deps.session,
     ...(deps.onEscape ? { onEscape: deps.onEscape } : {}),
     ...(deps.onViewAdded ? { onViewAdded: deps.onViewAdded } : {}),
+    ...(deps.getZoomPercent ? { getZoomPercent: deps.getZoomPercent } : {}),
   })
 
   // The manager needs an event sink and the bridge needs the manager — a

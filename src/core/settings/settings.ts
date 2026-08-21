@@ -15,6 +15,10 @@ export const ENDPOINT_DELAY_MS_DEFAULT = 500
 export const MAX_TOOL_ROUNDS_MIN = 10
 export const MAX_TOOL_ROUNDS_MAX = 200
 export const MAX_TOOL_ROUNDS_DEFAULT = 80
+/** Web-zoom slider bounds (#53): readable-from-the-couch page zoom. */
+export const WEB_ZOOM_PERCENT_MIN = 75
+export const WEB_ZOOM_PERCENT_MAX = 200
+export const WEB_ZOOM_PERCENT_DEFAULT = 130
 
 export type WeatherUnits = 'metric' | 'imperial'
 
@@ -34,6 +38,8 @@ export interface AppSettings {
   endpointDelayMs: number
   /** Orchestrator tool-round ceiling; applies to the next command, no restart. */
   maxToolRounds: number
+  /** Page zoom for the main pane and subagent panes, in percent (#53). */
+  webZoomPercent: number
   /** Piper voice id; '' follows BINGBONG_PIPER_VOICE / the default voice. */
   ttsVoice: string
   /** Kill switch for the embedder-level adblocker (issue #21). */
@@ -49,6 +55,7 @@ export function defaultSettings(): AppSettings {
     wakeWordThreshold: 0.5,
     endpointDelayMs: ENDPOINT_DELAY_MS_DEFAULT,
     maxToolRounds: MAX_TOOL_ROUNDS_DEFAULT,
+    webZoomPercent: WEB_ZOOM_PERCENT_DEFAULT,
     ttsVoice: '',
     adblockEnabled: true,
     weather: { city: '', units: 'metric' },
@@ -83,6 +90,11 @@ function asMaxToolRounds(value: unknown, fallback: number): number {
   return Math.min(MAX_TOOL_ROUNDS_MAX, Math.max(MAX_TOOL_ROUNDS_MIN, Math.round(value)))
 }
 
+function asWebZoomPercent(value: unknown, fallback: number): number {
+  if (typeof value !== 'number' || Number.isNaN(value)) return fallback
+  return Math.min(WEB_ZOOM_PERCENT_MAX, Math.max(WEB_ZOOM_PERCENT_MIN, Math.round(value)))
+}
+
 function sanitizeRouting(value: unknown): RoleRoutingSettings {
   const record = asRecord(value)
   return {
@@ -111,6 +123,7 @@ export function sanitizeSettings(raw: unknown): AppSettings {
     wakeWordThreshold: asThreshold(record.wakeWordThreshold, defaults.wakeWordThreshold),
     endpointDelayMs: asEndpointDelay(record.endpointDelayMs, defaults.endpointDelayMs),
     maxToolRounds: asMaxToolRounds(record.maxToolRounds, defaults.maxToolRounds),
+    webZoomPercent: asWebZoomPercent(record.webZoomPercent, defaults.webZoomPercent),
     ttsVoice: asString(record.ttsVoice, defaults.ttsVoice),
     // Only an explicit false disables the engine — missing/garbage means on.
     adblockEnabled: record.adblockEnabled === false ? false : defaults.adblockEnabled,

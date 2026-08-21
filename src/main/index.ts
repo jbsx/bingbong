@@ -187,7 +187,7 @@ async function createWindow(): Promise<BrowserWindow> {
   // webContents.debugger allows a single attachment. The activity tracker
   // marks its download-capable verbs, so only agent-initiated downloads get
   // routed; manual ones keep the OS save dialog.
-  const pane = createBrowserPane()
+  const pane = createBrowserPane({ getZoomPercent: () => settingsStore.get().webZoomPercent })
   attachBrowserPaneToWindow(pane, win)
   // The feed panel overlay (#45) stacks above the browser pane — attached
   // after it so the z-order is right from the first frame. Main's state
@@ -247,6 +247,8 @@ async function createWindow(): Promise<BrowserWindow> {
     // New subagent views append above older ones — the feed overlay
     // re-tops itself so the panel never slides beneath a tab viewport.
     onViewAdded: () => feedPanel.bringToTop(),
+    // Subagent panes inherit the web-zoom setting (#53).
+    getZoomPercent: () => settingsStore.get().webZoomPercent,
   })
   subagentRuntimes.set(win, subagentRuntime)
   win.on('closed', () => {

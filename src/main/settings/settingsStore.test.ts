@@ -25,10 +25,11 @@ describe('settingsStore', () => {
 
   it('persists updates to disk so they survive a restart', () => {
     const store = createSettingsStore(path)
-    store.update({ ...defaultSettings(), micId: 'mic-9', weather: { city: 'Berlin', units: 'imperial' } })
+    store.update({ ...defaultSettings(), micId: 'mic-9', webZoomPercent: 90, weather: { city: 'Berlin', units: 'imperial' } })
 
     const reopened = createSettingsStore(path)
     expect(reopened.get().micId).toBe('mic-9')
+    expect(reopened.get().webZoomPercent).toBe(90)
     expect(reopened.get().weather).toEqual({ city: 'Berlin', units: 'imperial' })
   })
 

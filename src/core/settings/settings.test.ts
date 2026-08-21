@@ -7,6 +7,8 @@ import {
   ENDPOINT_DELAY_MS_MIN,
   MAX_TOOL_ROUNDS_MAX,
   MAX_TOOL_ROUNDS_MIN,
+  WEB_ZOOM_PERCENT_MAX,
+  WEB_ZOOM_PERCENT_MIN,
   WAKE_WORD_THRESHOLD_MAX,
   WAKE_WORD_THRESHOLD_MIN,
 } from './settings'
@@ -20,6 +22,7 @@ describe('defaultSettings', () => {
     expect(settings.wakeWordThreshold).toBeLessThanOrEqual(1)
     expect(settings.endpointDelayMs).toBe(500)
     expect(settings.maxToolRounds).toBe(80)
+    expect(settings.webZoomPercent).toBe(130)
     expect(settings.ttsVoice).toBe('')
     expect(settings.weather).toEqual({ city: '', units: 'metric' })
     expect(settings.adblockEnabled).toBe(true)
@@ -49,6 +52,7 @@ describe('sanitizeSettings', () => {
       micId: 'abc',
       wakeWordThreshold: 0.8,
       endpointDelayMs: 650,
+      webZoomPercent: 100,
       ttsVoice: 'en_US-lessac-high',
       weather: { city: 'Berlin', units: 'imperial' },
       modelRouting: {
@@ -58,6 +62,7 @@ describe('sanitizeSettings', () => {
     expect(settings.apiKeys).toEqual({ zai: 'k1', deepseek: 'k2' })
     expect(settings.wakeWordThreshold).toBe(0.8)
     expect(settings.endpointDelayMs).toBe(650)
+    expect(settings.webZoomPercent).toBe(100)
     expect(settings.weather).toEqual({ city: 'Berlin', units: 'imperial' })
     expect(settings.modelRouting.orchestrator).toEqual({ baseUrl: 'https://x.test/v1', model: 'glm-4.6', apiKey: 'sk-1' })
     expect(settings.modelRouting.subagent).toEqual(defaultSettings().modelRouting.subagent)
@@ -86,6 +91,15 @@ describe('sanitizeSettings', () => {
     expect(sanitizeSettings({}).maxToolRounds).toBe(defaultSettings().maxToolRounds)
     expect(sanitizeSettings({ maxToolRounds: 'lots' }).maxToolRounds).toBe(defaultSettings().maxToolRounds)
     expect(sanitizeSettings({ maxToolRounds: null }).maxToolRounds).toBe(defaultSettings().maxToolRounds)
+  })
+
+  it('clamps the web zoom into its slider range', () => {
+    expect(sanitizeSettings({ webZoomPercent: 10 }).webZoomPercent).toBe(WEB_ZOOM_PERCENT_MIN)
+    expect(sanitizeSettings({ webZoomPercent: 500 }).webZoomPercent).toBe(WEB_ZOOM_PERCENT_MAX)
+    // Missing and garbage values fall back to the couch-readable default (#53).
+    expect(sanitizeSettings({}).webZoomPercent).toBe(defaultSettings().webZoomPercent)
+    expect(sanitizeSettings({ webZoomPercent: 'big' }).webZoomPercent).toBe(defaultSettings().webZoomPercent)
+    expect(sanitizeSettings({ webZoomPercent: null }).webZoomPercent).toBe(defaultSettings().webZoomPercent)
   })
 
   it('keeps an explicit adblock kill switch but defaults to on', () => {

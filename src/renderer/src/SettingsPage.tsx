@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { AppSettings, RoleRoutingSettings } from '../../core/settings/settings'
 import type { AgentRole } from '../../core/agent/modelRouting'
-import { ENDPOINT_DELAY_MS_MAX, ENDPOINT_DELAY_MS_MIN, MAX_TOOL_ROUNDS_MAX, MAX_TOOL_ROUNDS_MIN, WAKE_WORD_THRESHOLD_MAX, WAKE_WORD_THRESHOLD_MIN } from '../../core/settings/settings'
+import { ENDPOINT_DELAY_MS_MAX, ENDPOINT_DELAY_MS_MIN, MAX_TOOL_ROUNDS_MAX, MAX_TOOL_ROUNDS_MIN, WEB_ZOOM_PERCENT_MAX, WEB_ZOOM_PERCENT_MIN, WAKE_WORD_THRESHOLD_MAX, WAKE_WORD_THRESHOLD_MIN } from '../../core/settings/settings'
 import type { UsageSummary } from '../../core/agent/spendEstimate'
 import { DEFAULT_PIPER_VOICE } from '../../core/tts/piperVoices'
 
@@ -336,6 +336,21 @@ export function SettingsPage({
             />
           </Field>
           <p className="settings-note">Kill switch for the built-in blocker — takes effect without a restart.</p>
+          <Field label={`Web zoom — ${draft.webZoomPercent}%`}>
+            <input
+              type="range"
+              min={WEB_ZOOM_PERCENT_MIN}
+              max={WEB_ZOOM_PERCENT_MAX}
+              step={5}
+              value={draft.webZoomPercent}
+              aria-label="Web zoom percent"
+              onChange={(event) => setDraft({ ...draft, webZoomPercent: Number(event.target.value) })}
+            />
+          </Field>
+          <p className="settings-note">
+            How large webpages render in the browser pane and subagent tabs — applied on every page
+            load. Manual zoom resets on the next navigation.
+          </p>
         </section>
 
         <section className="settings-section">
