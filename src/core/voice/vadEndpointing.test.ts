@@ -1,13 +1,28 @@
 import { describe, expect, it } from 'vitest'
-import { createUtteranceEndpointer, silenceFramesForMs, VAD_FRAME_SAMPLES, vadDefaults } from './vadEndpointing'
+import {
+  createUtteranceEndpointer,
+  mergeFramesFor,
+  RESUMPTION_MERGE_MS_DEFAULT,
+  silenceFramesForMs,
+  VAD_FRAME_SAMPLES,
+  vadDefaults,
+} from './vadEndpointing'
 
 // The endpointer is the "no clipping, no hanging" half of T9: it consumes
 // per-frame speech probabilities (the Silero adapter produces them) and
 // decides when an utterance starts and ends. Expected values come from the
-// config in frames — 512 samples @16 kHz = 32 ms per frame.
+// config in frames — 512 samples @16 kHz = 32 ms per frame. Since #60 an
+// utterance that hits its silence endpoint holds for the resumption-merge
+// window before it is released: speech inside the window rejoins the same
+// utterance, silence submits it.
 
 const SAMPLES = VAD_FRAME_SAMPLES
 const FRAME = new Float32Array(SAMPLES)
+const SPEECH = 0.95
+const SILENCE = 0.01
+
+/** Silence frames the merge window holds after the endpoint fires (#60). */
+const MERGE_FRAMES = mergeFramesFor(vadDefaults())
 
 interface Harness {
   pushProbs: (probs: number[]) => { speechMs: number; totalMs: number; truncated: boolean }[]
@@ -29,10 +44,15 @@ function endpointerWith(overrides?: Partial<ReturnType<typeof vadDefaults>>): Ha
 }
 
 describe('utterance endpointing', () => {
-  it('defaults to ~500 ms of trailing silence before the endpoint fires (#37)', () => {
+  it('defaults to ~900 ms of trailing silence before the endpoint fires (#60)', () => {
     const defaults = vadDefaults()
-    expect(defaults.endFrames * 32).toBeGreaterThanOrEqual(500)
-    expect(defaults.endFrames * 32).toBeLessThan(500 + 32)
+    expect(defaults.endFrames * 32).toBeGreaterThanOrEqual(900 - 32)
+    expect(defaults.endFrames * 32).toBeLessThan(900 + 32)
+  })
+
+  it('defaults to a ~1.5 s resumption-merge window (#60)', () => {
+    expect(vadDefaults().resumptionMergeMs).toBe(RESUMPTION_MERGE_MS_DEFAULT)
+    expect(RESUMPTION_MERGE_MS_DEFAULT).toBe(1_500)
   })
 
   it('converts endpoint-delay milliseconds to whole silence frames', () => {
@@ -47,11 +67,9 @@ describe('utterance endpointing', () => {
     const defaults = vadDefaults()
     const speechFrames = defaults.minSpeechMs / 32 + 2
 
-    const silence = 0.01
-    const speech = 0.95
     const utterances = pushProbs([
-      ...Array.from({ length: speechFrames }, () => speech),
-      ...Array.from({ length: defaults.endFrames + 1 }, () => silence),
+      ...Array.from({ length: speechFrames }, () => SPEECH),
+      ...Array.from({ length: defaults.endFrames + MERGE_FRAMES + 1 }, () => SILENCE),
     ])
 
     expect(utterances).toHaveLength(1)
@@ -66,7 +84,7 @@ describe('utterance endpointing', () => {
     const endpointer = createUtteranceEndpointer()
     const defaults = vadDefaults()
     const frames: Float32Array[] = []
-    for (let i = 0; i < 200; i++) {
+    for (let i = 0; i < 300; i++) {
       frames.push(Float32Array.from({ length: SAMPLES }, (_, idx) => (i * SAMPLES + idx) / 1000))
     }
 
@@ -75,7 +93,7 @@ describe('utterance endpointing', () => {
     const probs = [
       ...Array.from({ length: leadingSilence }, () => 0.01),
       ...Array.from({ length: speechFrames }, () => 0.95),
-      ...Array.from({ length: defaults.endFrames }, () => 0.01),
+      ...Array.from({ length: defaults.endFrames + MERGE_FRAMES }, () => 0.01),
     ]
     let ended: { pcm: Float32Array } | null = null
     probs.forEach((prob, i) => {
@@ -90,7 +108,7 @@ describe('utterance endpointing', () => {
     const preRollSilence = 192 / 32 - defaults.startFrames
     const startFrameIndex = leadingSilence - preRollSilence
     const expectedFrames =
-      192 / 32 + speechFrames - defaults.startFrames + defaults.endFrames - defaults.endPaddingMs / 32
+      192 / 32 + speechFrames - defaults.startFrames + defaults.endFrames + MERGE_FRAMES - defaults.endPaddingMs / 32
     expect(ended!.pcm.length).toBe(expectedFrames * SAMPLES)
     // …and the first sample is genuinely from the pre-roll frame, not the trigger.
     expect(ended!.pcm[0]).toBeCloseTo((startFrameIndex * SAMPLES) / 1000, 5)
@@ -101,9 +119,9 @@ describe('utterance endpointing', () => {
     const defaults = vadDefaults()
 
     const utterances = pushProbs([
-      ...Array.from({ length: Math.max(1, defaults.startFrames - 1) }, () => 0.95),
-      ...Array.from({ length: defaults.endFrames + 2 }, () => 0.01),
-      ...Array.from({ length: 20 }, () => 0.01),
+      ...Array.from({ length: Math.max(1, defaults.startFrames - 1) }, () => SPEECH),
+      ...Array.from({ length: defaults.endFrames + 2 }, () => SILENCE),
+      ...Array.from({ length: 20 }, () => SILENCE),
     ])
 
     // Never triggered a start (startFrames speech frames never accumulated),
@@ -116,7 +134,7 @@ describe('utterance endpointing', () => {
     const defaults = vadDefaults()
 
     const framesToCap = Math.ceil(defaults.maxUtteranceMs / 32) + 5
-    const utterances = pushProbs(Array.from({ length: framesToCap }, () => 0.95))
+    const utterances = pushProbs(Array.from({ length: framesToCap }, () => SPEECH))
 
     expect(utterances).toHaveLength(1)
     expect(utterances[0].truncated).toBe(true)
@@ -130,10 +148,10 @@ describe('utterance endpointing', () => {
     const defaults = vadDefaults()
 
     const utterances = pushProbs([
-      ...Array.from({ length: defaults.startFrames + 10 }, () => 0.95),
+      ...Array.from({ length: defaults.startFrames + 10 }, () => SPEECH),
       0.02,
-      ...Array.from({ length: defaults.startFrames }, () => 0.95),
-      ...Array.from({ length: defaults.endFrames }, () => 0.02),
+      ...Array.from({ length: defaults.startFrames }, () => SPEECH),
+      ...Array.from({ length: defaults.endFrames + MERGE_FRAMES }, () => 0.02),
     ])
 
     expect(utterances).toHaveLength(1)
@@ -146,15 +164,13 @@ describe('utterance endpointing', () => {
     const { pushProbs } = endpointerWith()
     const defaults = vadDefaults()
     const speechFrames = defaults.minSpeechMs / 32 + 2
-    const speech = 0.95
-    const silence = 0.01
 
     const utterances = pushProbs([
-      ...Array.from({ length: speechFrames }, () => speech),
-      ...Array.from({ length: defaults.endFrames }, () => silence),
+      ...Array.from({ length: speechFrames }, () => SPEECH),
+      ...Array.from({ length: defaults.endFrames + MERGE_FRAMES }, () => SILENCE),
       // Second, longer utterance — silence between them must not leak in.
-      ...Array.from({ length: speechFrames + 5 }, () => speech),
-      ...Array.from({ length: defaults.endFrames }, () => silence),
+      ...Array.from({ length: speechFrames + 5 }, () => SPEECH),
+      ...Array.from({ length: defaults.endFrames + MERGE_FRAMES }, () => SILENCE),
     ])
 
     expect(utterances).toHaveLength(2)
@@ -165,25 +181,140 @@ describe('utterance endpointing', () => {
     const endpointer = createUtteranceEndpointer()
     const defaults = vadDefaults()
 
-    for (let i = 0; i < defaults.startFrames + 5; i++) expect(endpointer.push(0.95, FRAME)).toBeNull()
+    for (let i = 0; i < defaults.startFrames + 5; i++) expect(endpointer.push(SPEECH, FRAME)).toBeNull()
     endpointer.reset()
     // The trailing silence that would have ended the pre-reset utterance.
-    for (let i = 0; i < defaults.endFrames + 5; i++) expect(endpointer.push(0.01, FRAME)).toBeNull()
+    for (let i = 0; i < defaults.endFrames + MERGE_FRAMES + 5; i++) expect(endpointer.push(SILENCE, FRAME)).toBeNull()
+  })
+})
+
+describe('resumption-merge window (#60)', () => {
+  it('rejoins speech that resumes inside the window into the same utterance', () => {
+    const { pushProbs } = endpointerWith()
+    const defaults = vadDefaults()
+    const halfA = defaults.minSpeechMs / 32 + 2 // 7 frames
+
+    // Half A, endpoint-firing silence, half B inside the window, then enough
+    // silence to submit.
+    const utterances = pushProbs([
+      ...Array.from({ length: halfA }, () => SPEECH),
+      ...Array.from({ length: defaults.endFrames }, () => SILENCE),
+      ...Array.from({ length: 5 }, () => SPEECH),
+      ...Array.from({ length: defaults.endFrames + MERGE_FRAMES }, () => SILENCE),
+    ])
+
+    expect(utterances).toHaveLength(1)
+    // Both halves count as speech; the pause between them does not.
+    expect(utterances[0].speechMs).toBe((halfA + 5) * 32)
+    expect(utterances[0].truncated).toBe(false)
   })
 
-  it('reports idle only between utterances (#37)', () => {
+  it('a burst shorter than startFrames does not rejoin — noise must not re-arm the window', () => {
+    const { pushProbs } = endpointerWith()
+    const defaults = vadDefaults()
+    const speechFrames = defaults.minSpeechMs / 32 + 2
+
+    // Half A, endpoint-firing silence, then two stray speech frames (below
+    // startFrames) inside the window, then silence.
+    const utterances = pushProbs([
+      ...Array.from({ length: speechFrames }, () => SPEECH),
+      ...Array.from({ length: defaults.endFrames }, () => SILENCE),
+      ...Array.from({ length: defaults.startFrames - 1 }, () => SPEECH),
+      ...Array.from({ length: MERGE_FRAMES }, () => SILENCE),
+    ])
+
+    // The stray frames neither rejoined nor extended the hold: the utterance
+    // submits after exactly the endpoint + merge silence, counting only
+    // half A as speech.
+    expect(utterances).toHaveLength(1)
+    expect(utterances[0].speechMs).toBe(speechFrames * 32)
+    expect(utterances[0].truncated).toBe(false)
+  })
+
+  it('holds the utterance while the window is open, submitting only when it closes in silence', () => {
+    const endpointer = createUtteranceEndpointer()
+    const defaults = vadDefaults()
+    const speechFrames = defaults.minSpeechMs / 32 + 2
+    const submitSilence = defaults.endFrames + MERGE_FRAMES
+
+    for (let i = 0; i < speechFrames; i++) endpointer.push(SPEECH, FRAME)
+    // Every silence frame up to (but not including) the window's close.
+    for (let i = 0; i < submitSilence - 1; i++) expect(endpointer.push(SILENCE, FRAME)).toBeNull()
+    // One more silent frame closes the window and releases the utterance.
+    expect(endpointer.push(SILENCE, FRAME)).not.toBeNull()
+  })
+
+  it('a resumptionMergeMs of 0 disables the hold — the endpoint submits directly', () => {
+    const { pushProbs } = endpointerWith({ resumptionMergeMs: 0 })
+    const defaults = vadDefaults()
+    const speechFrames = defaults.minSpeechMs / 32 + 2
+
+    const utterances = pushProbs([
+      ...Array.from({ length: speechFrames }, () => SPEECH),
+      ...Array.from({ length: defaults.endFrames }, () => SILENCE),
+    ])
+
+    expect(utterances).toHaveLength(1)
+    // Speech that would have rejoined under the default window now starts a
+    // second utterance instead.
+    const rejoined = pushProbs([
+      ...Array.from({ length: speechFrames }, () => SPEECH),
+      ...Array.from({ length: defaults.endFrames }, () => SILENCE),
+      ...Array.from({ length: 5 }, () => SPEECH),
+      ...Array.from({ length: defaults.endFrames }, () => SILENCE),
+    ])
+    expect(rejoined).toHaveLength(2)
+  })
+
+  it('the window is tunable — a shorter merge submits sooner', () => {
+    const config = { ...vadDefaults(), resumptionMergeMs: 320 }
+    const merge = mergeFramesFor(config) // 10 frames
+    const endpointer = createUtteranceEndpointer(config)
+    const speechFrames = config.minSpeechMs / 32 + 2
+
+    for (let i = 0; i < speechFrames; i++) endpointer.push(SPEECH, FRAME)
+    // endFrames + merge − 1 silence frames: still holding.
+    for (let i = 0; i < config.endFrames + merge - 1; i++) expect(endpointer.push(SILENCE, FRAME)).toBeNull()
+    expect(endpointer.push(SILENCE, FRAME)).not.toBeNull()
+  })
+
+  it('the hard cap outranks the hold — a held utterance still submits at the cap, flagged truncated', () => {
+    const { pushProbs } = endpointerWith({ maxUtteranceMs: 1_500 })
+    const defaults = vadDefaults()
+
+    // 10 speech frames (320 ms) + silence into the hold crosses 1500 ms of
+    // total audio before the window could close (≈2400 ms of silence).
+    const utterances = pushProbs([
+      ...Array.from({ length: 10 }, () => SPEECH),
+      ...Array.from({ length: defaults.endFrames + MERGE_FRAMES }, () => SILENCE),
+    ])
+
+    expect(utterances).toHaveLength(1)
+    expect(utterances[0].truncated).toBe(true)
+    expect(utterances[0].totalMs).toBeGreaterThanOrEqual(1_500 - 32)
+    expect(utterances[0].totalMs).toBeLessThan(1_500 + 32)
+  })
+
+  it('reports idle only between utterances — the hold keeps the utterance in flight (#60)', () => {
     const endpointer = createUtteranceEndpointer()
     const defaults = vadDefaults()
 
     expect(endpointer.isIdle()).toBe(true) // waiting before any speech
-    for (let i = 0; i < defaults.startFrames; i++) endpointer.push(0.95, FRAME)
+    for (let i = 0; i < defaults.startFrames; i++) endpointer.push(SPEECH, FRAME)
     expect(endpointer.isIdle()).toBe(false) // utterance in flight
-    for (let i = 0; i < defaults.endFrames; i++) {
+    for (let i = 0; i < defaults.endFrames - 1; i++) {
       expect(endpointer.isIdle()).toBe(false)
-      endpointer.push(0.01, FRAME)
+      endpointer.push(SILENCE, FRAME)
     }
-    // The endFrames-th silence frame emitted the utterance (8 speech frames ≥
-    // minSpeechMs) — back to waiting.
+    // The endFrames-th silence frame fired the endpoint — but the merge
+    // window holds the utterance, so it is still in flight.
+    endpointer.push(SILENCE, FRAME)
+    expect(endpointer.isIdle()).toBe(false)
+    for (let i = 0; i < MERGE_FRAMES; i++) {
+      expect(endpointer.isIdle()).toBe(false)
+      endpointer.push(SILENCE, FRAME)
+    }
+    // The window closed in silence and the utterance was released.
     expect(endpointer.isIdle()).toBe(true)
   })
 })

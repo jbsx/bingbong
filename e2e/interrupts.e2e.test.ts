@@ -1,20 +1,24 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import type { AssistantTurn } from '../src/core/ports/llm'
+import { mergeFramesFor, vadDefaults } from '../src/core/voice/vadEndpointing'
 import { commandBoxScript } from './scripts'
 import { startHarness, type Harness } from './harness'
 import { startFixtureServer, type FixtureServer } from './fixtureServer'
 import { waitFor } from './waitFor'
 
+/** Trailing silence that releases an utterance: endpoint + merge window (#60). */
+const SUBMIT_SILENCE = vadDefaults().endFrames + mergeFramesFor(vadDefaults())
+
 function vadUtterance(): number[] {
   return [
     ...Array.from({ length: 6 }, () => 0.01),
     ...Array.from({ length: 8 }, () => 0.95),
-    ...Array.from({ length: 40 }, () => 0.01),
+    ...Array.from({ length: SUBMIT_SILENCE + 5 }, () => 0.01),
   ]
 }
 
 const feedAudioScript = `(() => {
-  for (let i = 0; i < 60; i++) window.bingbong.voice.sendAudio(new Float32Array(512))
+  for (let i = 0; i < 200; i++) window.bingbong.voice.sendAudio(new Float32Array(512))
   return 'fed'
 })()`
 

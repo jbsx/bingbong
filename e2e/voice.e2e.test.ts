@@ -8,6 +8,7 @@ import { startFixtureServer, type FixtureServer } from './fixtureServer'
 import { waitFor } from './waitFor'
 import type { AssistantTurn } from '../src/core/ports/llm'
 import type { PipelineEvent } from '../src/core/pipeline/events'
+import { silenceFramesForMs, vadDefaults } from '../src/core/voice/vadEndpointing'
 
 // Voice e2e (T9): the mic worklet needs real hardware, so the renderer's
 // capture is bypassed — the test arms the session and pushes PCM through the
@@ -15,12 +16,15 @@ import type { PipelineEvent } from '../src/core/pipeline/events'
 // BINGBONG_STT_SCRIPT standing in for Silero and Moonshine. Everything below
 // the mic is real: IPC, endpointing, session routing, pipeline, pane, orb.
 
+/** Trailing silence that releases an utterance: endpoint + merge window (#60). */
+const SUBMIT_SILENCE = vadDefaults().endFrames + silenceFramesForMs(vadDefaults().resumptionMergeMs)
+
 /** One utterance of VAD probabilities: pre-roll silence, speech, trailing silence. */
 function vadScript(speechFrames = 8): string {
   return JSON.stringify([
     ...Array.from({ length: 6 }, () => 0.01),
     ...Array.from({ length: speechFrames }, () => 0.95),
-    ...Array.from({ length: 40 }, () => 0.01),
+    ...Array.from({ length: SUBMIT_SILENCE + 5 }, () => 0.01),
   ])
 }
 
@@ -30,7 +34,7 @@ const armScript = `(async () => {
 })()`
 
 const feedAudioScript = `(() => {
-  for (let i = 0; i < 60; i++) window.bingbong.voice.sendAudio(new Float32Array(512))
+  for (let i = 0; i < 110; i++) window.bingbong.voice.sendAudio(new Float32Array(512))
   return 'fed'
 })()`
 
@@ -310,9 +314,9 @@ describe('voice e2e', () => {
       expect(wav.readUInt32LE(24)).toBe(16_000)
       expect(wav.readUInt16LE(34)).toBe(16) // bits per sample
       // vadScript(8): the ring carries 3 pre-roll silence + 3 trigger speech
-      // frames, then 5 more speech + 16 end-trigger silence (the ~500 ms
-      // default, #37), − 2 tail trim.
-      expect(pcmFromWav(wav).length).toBe((3 + 3 + 5 + 16 - 2) * 512)
+      // frames, then 5 more speech + the endpoint/merge silence (~900 ms +
+      // ~1.5 s, #60), − 2 tail trim.
+      expect(pcmFromWav(wav).length).toBe((3 + 3 + 5 + SUBMIT_SILENCE - 2) * 512)
     } finally {
       await harness.quit()
       await rm(userDataDir, { recursive: true, force: true }).catch(() => {})

@@ -3,7 +3,7 @@ import type { PipelineEvent } from '../pipeline/events'
 import { FakeClock, FakeTranscriber, FakeVad, FakeWakeDetector, RecordingTts } from '../testing/doubles'
 import type { VoiceHeardEvent, VoiceState } from './ipcChannels'
 import { createVoiceSession } from './voiceSession'
-import type { UtteranceEndpointerConfig } from './vadEndpointing'
+import { mergeFramesFor, vadDefaults, type UtteranceEndpointerConfig } from './vadEndpointing'
 import type { CommandRunState } from '../pipeline/createCommandPipeline'
 import { createPerfTracer, type PerfSpanRecord } from '../perf/perfTracer'
 import { audioDumpEnabled, createUtteranceDumper, type UtteranceDumpWriter } from './utteranceDump'
@@ -19,9 +19,14 @@ const SILENCE = 0.01
 /** Fake wall-clock base for the perf tracer's stamps (deterministic ids). */
 const PERF_WALL_ORIGIN = 1_700_000_000_000
 
-/** One utterance of VAD probabilities: 8 speech frames + 30 trailing silence. */
+/** Default endpoint timings (#37/#60), in frames, for exact-count assertions. */
+const DEFAULTS = vadDefaults()
+/** Silence frames that release an utterance: endpoint + merge window (#60). */
+const SUBMIT_SILENCE = DEFAULTS.endFrames + mergeFramesFor(DEFAULTS)
+
+/** One utterance of VAD probabilities: 8 speech frames + enough trailing silence to submit. */
 function utteranceProbs(speechFrames = 8): number[] {
-  return [...Array.from({ length: speechFrames }, () => SPEECH), ...Array.from({ length: 30 }, () => SILENCE)]
+  return [...Array.from({ length: speechFrames }, () => SPEECH), ...Array.from({ length: SUBMIT_SILENCE + 5 }, () => SILENCE)]
 }
 
 class DeferredIdle {
@@ -328,16 +333,17 @@ describe('voice session', () => {
     expect(harness.heard).toEqual([{ text: 'open youtube', routed: 'command' }])
     // The utterance audio handed to STT is the endpointed utterance: the
     // 3-frame ring the trigger fired on (incl. the first speech frames) + 8
-    // speech + 16 silence frames (the ~500 ms default, #37), tail-trimmed by
-    // 2 → 22 frames total.
-    expect(harness.transcriber.audio[0].length).toBe(22 * 512)
+    // speech + the endpoint/merge silence (~900 ms + ~1.5 s, #60),
+    // tail-trimmed by 2.
+    expect(harness.transcriber.audio[0].length).toBe((8 + SUBMIT_SILENCE - 2) * 512)
   })
 
   it('applies a changed endpoint delay to the next utterance without a restart (#37)', async () => {
     let endFrames = 25 // The old ~800 ms default, as a saved settings file would carry.
     const harness = await createSession({
       transcriber: new FakeTranscriber(['first', 'second']),
-      getEndpointerConfig: () => ({ endFrames }),
+      // The merge hold is pinned off (#60): this test is the silence timing.
+      getEndpointerConfig: () => ({ endFrames, resumptionMergeMs: 0 }),
     })
 
     harness.session.arm()
@@ -358,7 +364,7 @@ describe('voice session', () => {
     let endFrames = 25
     const harness = await createSession({
       transcriber: new FakeTranscriber(['hmm', 'yes']),
-      getEndpointerConfig: () => ({ endFrames }),
+      getEndpointerConfig: () => ({ endFrames, resumptionMergeMs: 0 }),
     })
 
     // A confirmation window survives an undecided utterance — the slider must
@@ -586,6 +592,109 @@ describe('voice session', () => {
     // Still routed to the open confirmation, not submitted as a command.
     expect(harness.resolutions).toEqual([{ confirmationId: 'confirm-9', approved: true }])
     expect(harness.commands).toEqual([])
+  })
+})
+
+describe('voice session — resumption merge (#60)', () => {
+  /** Push one 512-sample frame with the given VAD prob. */
+  async function frame(harness: SessionHarness, prob: number): Promise<void> {
+    harness.vad.queue.push(prob)
+    await harness.session.pushAudio(new Float32Array(512))
+  }
+
+  it('rejoins a sub-window pause into one command containing both halves', async () => {
+    const harness = await createSession({ transcriber: new FakeTranscriber(['open youtube and then play it']) })
+
+    harness.session.arm()
+    // Half A, endpoint-firing silence (~900 ms), half B inside the ~1.5 s
+    // window, then silence long enough to submit.
+    await harness.speakUtterance([
+      ...Array.from({ length: 8 }, () => SPEECH),
+      ...Array.from({ length: DEFAULTS.endFrames }, () => SILENCE),
+      ...Array.from({ length: 6 }, () => SPEECH),
+      ...Array.from({ length: SUBMIT_SILENCE + 5 }, () => SILENCE),
+    ])
+
+    expect(harness.commands).toEqual(['open youtube and then play it'])
+    expect(harness.heard).toEqual([{ text: 'open youtube and then play it', routed: 'command' }])
+    // One utterance of STT audio: half A + the pause + half B, tail-trimmed.
+    expect(harness.transcriber.audio).toHaveLength(1)
+    expect(harness.transcriber.audio[0].length).toBe((8 + DEFAULTS.endFrames + 6 + SUBMIT_SILENCE - 2) * 512)
+  })
+
+  it('keeps the ear open through the pause — the STT window starts only when the utterance submits', async () => {
+    const harness = await createSession({ transcriber: new FakeTranscriber(['open youtube']) })
+
+    harness.session.arm()
+    // Half A plus endpoint-firing silence: the merge window is open, the ear
+    // is still listening, nothing is transcribing.
+    for (const prob of [...Array.from({ length: 8 }, () => SPEECH), ...Array.from({ length: DEFAULTS.endFrames }, () => SILENCE)]) {
+      await frame(harness, prob)
+    }
+    expect(harness.session.getState()).toEqual({ listening: true, reason: 'hotkey', monitoring: false, transcribing: false })
+
+    // Half B rejoins; the command submits when the window closes in silence.
+    await harness.speakUtterance([...Array.from({ length: 6 }, () => SPEECH), ...Array.from({ length: SUBMIT_SILENCE + 5 }, () => SILENCE)])
+    expect(harness.commands).toEqual(['open youtube'])
+    expect(harness.states.filter((state) => state.transcribing)).toHaveLength(1)
+  })
+
+  it('submits silence-ended speech only when the window closes — never sooner', async () => {
+    const harness = await createSession({ transcriber: new FakeTranscriber(['open youtube']) })
+
+    harness.session.arm()
+    await harness.speakUtterance([...Array.from({ length: 8 }, () => SPEECH), ...Array.from({ length: SUBMIT_SILENCE - 1 }, () => SILENCE)])
+    // The endpoint fired, but the merge window is still open: no submission.
+    expect(harness.commands).toEqual([])
+    expect(harness.session.getState()).toEqual({ listening: true, reason: 'hotkey', monitoring: false, transcribing: false })
+
+    await frame(harness, SILENCE) // the window closes in silence
+    await flush()
+
+    expect(harness.commands).toEqual(['open youtube'])
+    expect(harness.states.at(-1)).toEqual({ listening: false, reason: null, monitoring: false, transcribing: false })
+  })
+
+  it('the merge window is tunable through the endpointer-config seam, live (#60)', async () => {
+    let config: Partial<UtteranceEndpointerConfig> = { endFrames: 6, resumptionMergeMs: 0 }
+    const harness = await createSession({
+      transcriber: new FakeTranscriber(['first', 'second']),
+      getEndpointerConfig: () => config,
+    })
+
+    // Merge off: the utterance submits at the endpoint itself (6 frames).
+    harness.session.arm()
+    await harness.speakUtterance([...Array.from({ length: 8 }, () => SPEECH), ...Array.from({ length: 6 }, () => SILENCE)])
+    expect(harness.commands).toEqual(['first'])
+
+    // Merge on for the next utterance — no restart, no rebuild.
+    config = { endFrames: 6, resumptionMergeMs: 1_500 }
+    harness.session.arm()
+    await harness.speakUtterance([...Array.from({ length: 8 }, () => SPEECH), ...Array.from({ length: 6 + 46 }, () => SILENCE)])
+    // One frame short of the window's close: still holding.
+    expect(harness.commands).toEqual(['first'])
+    expect(harness.session.getState()).toEqual({ listening: true, reason: 'hotkey', monitoring: false, transcribing: false })
+
+    await frame(harness, SILENCE)
+    expect(harness.commands).toEqual(['first', 'second'])
+  })
+
+  it('disarm during the open window drops the held utterance', async () => {
+    const harness = await createSession({ transcriber: new FakeTranscriber(['open youtube']) })
+
+    harness.session.arm()
+    // Speech, then silence into the open merge window (short of submitting).
+    await harness.speakUtterance([...Array.from({ length: 8 }, () => SPEECH), ...Array.from({ length: DEFAULTS.endFrames + 10 }, () => SILENCE)])
+    expect(harness.commands).toEqual([])
+    harness.session.disarm()
+
+    // The rest of the window's silence arrives late and is dropped.
+    await harness.speakUtterance(Array.from({ length: SUBMIT_SILENCE + 5 }, () => SILENCE))
+
+    expect(harness.commands).toEqual([])
+    expect(harness.transcriber.audio).toEqual([])
+    expect(harness.transcriber.events.at(-1)).toBe('cancel')
+    expect(harness.states.at(-1)).toEqual({ listening: false, reason: null, monitoring: false, transcribing: false })
   })
 })
 
@@ -919,10 +1028,10 @@ describe('voice session — perf spans (#27)', () => {
     const harness = await createSession({ transcriber: new FakeTranscriber(['go']), perf: {} })
 
     harness.session.arm()
-    await harness.speakUtterance() // 8 speech frames; 22 frames handed to STT (#37 default)
+    await harness.speakUtterance() // 8 speech frames; 8 + 75 − 2 frames handed to STT (#60 defaults)
 
     const stt = harness.perf.find((record) => record.stage === 'stt')
-    expect(stt!.detail).toEqual({ speechMs: 8 * 32, totalMs: 22 * 32, truncated: false })
+    expect(stt!.detail).toEqual({ speechMs: 8 * 32, totalMs: (8 + SUBMIT_SILENCE - 2) * 32, truncated: false })
   })
 
   it('logs the stt span for confirmation answers but no wake-to-transcript span', async () => {
@@ -1137,18 +1246,19 @@ describe('voice session — streaming transcriber port (#40)', () => {
     await harness.speakUtterance() // 8 speech frames + trailing silence, default config
 
     // Frames 1–2 sit in pre-roll (startFrames 3); frame 3 begins the capture.
-    // Frames 3–8 (6 speech) plus 15 silence frames flow through push; the
-    // 16th silence frame (endFrames for the 500 ms default) fires the
-    // endpoint and is not pushed — finish() gets the complete utterance.
+    // Frames 3–8 (6 speech) flow through push, then every silence frame but
+    // the last — the endpoint + merge silence (#60) holds the utterance, and
+    // the frame that finally releases it is not pushed — finish() gets the
+    // complete utterance.
     expect(harness.transcriber.events).toEqual([
       'begin',
-      ...Array.from({ length: 21 }, () => 'push'),
+      ...Array.from({ length: 6 + SUBMIT_SILENCE - 1 }, () => 'push'),
       'finish',
       'cancel', // stopListening after the command submit resets the ear
     ])
-    expect(harness.transcriber.pushedFrames).toHaveLength(21)
+    expect(harness.transcriber.pushedFrames).toHaveLength(6 + SUBMIT_SILENCE - 1)
     expect(harness.transcriber.audio).toHaveLength(1)
-    expect(harness.transcriber.audio[0]).toHaveLength(22 * 512) // pre-roll + speech + tail, padding trimmed
+    expect(harness.transcriber.audio[0]).toHaveLength((8 + SUBMIT_SILENCE - 2) * 512) // pre-roll + speech + tail, padding trimmed
     expect(harness.commands).toEqual(['open youtube'])
   })
 
@@ -1157,9 +1267,15 @@ describe('voice session — streaming transcriber port (#40)', () => {
 
     harness.session.arm()
     // 4 speech frames = 128 ms < minSpeechMs 160: a blip, not an utterance.
-    await harness.speakUtterance([...Array.from({ length: 4 }, () => SPEECH), ...Array.from({ length: 30 }, () => SILENCE)])
+    await harness.speakUtterance([...Array.from({ length: 4 }, () => SPEECH), ...Array.from({ length: SUBMIT_SILENCE + 5 }, () => SILENCE)])
 
-    expect(harness.transcriber.events).toEqual(['begin', ...Array.from({ length: 17 }, () => 'push'), 'cancel'])
+    // The blip rides the merge hold too (#60): frames stream until the window
+    // closes in silence and discards it.
+    expect(harness.transcriber.events).toEqual([
+      'begin',
+      ...Array.from({ length: 2 + SUBMIT_SILENCE - 1 }, () => 'push'),
+      'cancel',
+    ])
     expect(harness.transcriber.audio).toEqual([])
     expect(harness.commands).toEqual([])
     // The ear stays open — a blip never left the listening state.
@@ -1213,7 +1329,7 @@ describe('voice session — streaming transcriber port (#40)', () => {
     harness.transcriber.emitPartial('open you')
     expect(partials).toEqual(['open you'])
 
-    await harness.speakUtterance([...Array.from({ length: 5 }, () => SPEECH), ...Array.from({ length: 30 }, () => SILENCE)])
+    await harness.speakUtterance([...Array.from({ length: 5 }, () => SPEECH), ...Array.from({ length: SUBMIT_SILENCE + 5 }, () => SILENCE)])
 
     expect(harness.commands).toEqual(['open youtube'])
     expect(harness.states).toEqual([

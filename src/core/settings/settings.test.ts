@@ -20,7 +20,7 @@ describe('defaultSettings', () => {
     expect(settings.micId).toBe('default')
     expect(settings.wakeWordThreshold).toBeGreaterThan(0)
     expect(settings.wakeWordThreshold).toBeLessThanOrEqual(1)
-    expect(settings.endpointDelayMs).toBe(500)
+    expect(settings.endpointDelayMs).toBe(900)
     expect(settings.maxToolRounds).toBe(80)
     expect(settings.webZoomPercent).toBe(130)
     expect(settings.ttsVoice).toBe('')
@@ -77,7 +77,7 @@ describe('sanitizeSettings', () => {
   it('clamps the endpoint delay into its slider range', () => {
     expect(sanitizeSettings({ endpointDelayMs: 10 }).endpointDelayMs).toBe(ENDPOINT_DELAY_MS_MIN)
     expect(sanitizeSettings({ endpointDelayMs: 90_000 }).endpointDelayMs).toBe(ENDPOINT_DELAY_MS_MAX)
-    // Missing and garbage values fall back to the ~500 ms default (#37).
+    // Missing and garbage values fall back to the ~900 ms default (#37/#60).
     expect(sanitizeSettings({}).endpointDelayMs).toBe(defaultSettings().endpointDelayMs)
     expect(sanitizeSettings({ endpointDelayMs: 'soon' }).endpointDelayMs).toBe(defaultSettings().endpointDelayMs)
     expect(sanitizeSettings({ endpointDelayMs: null }).endpointDelayMs).toBe(defaultSettings().endpointDelayMs)

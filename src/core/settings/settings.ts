@@ -10,7 +10,8 @@ export const WAKE_WORD_THRESHOLD_MAX = 1
 /** Endpoint-delay slider bounds (#37): silence that ends an utterance. */
 export const ENDPOINT_DELAY_MS_MIN = 200
 export const ENDPOINT_DELAY_MS_MAX = 1500
-export const ENDPOINT_DELAY_MS_DEFAULT = 500
+/** Raised 500 → 900 ms (#60): half-commands from mid-sentence pauses die here. */
+export const ENDPOINT_DELAY_MS_DEFAULT = 900
 /** Orchestrator tool-round ceiling — a runaway rail, not a budget. */
 export const MAX_TOOL_ROUNDS_MIN = 10
 export const MAX_TOOL_ROUNDS_MAX = 200
