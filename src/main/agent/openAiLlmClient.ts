@@ -90,11 +90,13 @@ export const CONTINUATION_SYSTEM_LINE =
 
 /**
  * In-band truncation flag (#61): appended to a command whose utterance hit
- * the 30 s recording cap. The system prompt's truncation rule tells the
- * model what to do with it — ask the user to finish, never guess.
+ * the recording cap. Wording stays duration-agnostic — the cap is
+ * config-driven, the note must not lie about it. The system prompt's
+ * truncation rule tells the model what to do with it: ask the user to
+ * finish, never guess.
  */
 export const TRUNCATION_NOTE =
-  '[This spoken request hit the 30-second recording limit and may be cut off mid-sentence. ' +
+  '[This spoken request hit the recording time limit and may be cut off mid-sentence. ' +
   'The end of the request may be missing — do not guess it; ask the user to finish their request.]'
 
 function historyMessages(history: SessionTurn[]): WireMessage[] {
