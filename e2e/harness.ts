@@ -137,10 +137,17 @@ export async function startHarness(
     // engine in every test instead of downloading EasyList per launch. The
     // empty resources value means "skip scriptlet resources" (set-but-empty
     // in resolveAdblockConfig), keeping even that fetch off the network.
+    // The empty vision scripts do the same for the vision models: without
+    // them, any "no observable change" click auto-describes the page with a
+    // live Z.ai call — a hang or flake waiting to happen, and a real API
+    // bill. Set-but-empty makes every scripted path fail fast instead;
+    // tests that want vision pass their own non-empty script and override.
     env: {
       BINGBONG_WAKE_ENGINE: 'off',
       BINGBONG_ADBLOCK_LISTS: fixture.url('/adblock-list'),
       BINGBONG_ADBLOCK_RESOURCES: '',
+      BINGBONG_VISION_SCRIPT: '[]',
+      BINGBONG_VISION_DESCRIPTION_SCRIPT: '[]',
       ...options?.env,
     },
   })
