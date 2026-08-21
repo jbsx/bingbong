@@ -41,7 +41,11 @@ export function IdleScreen({ entries, weather }: { entries: FeedEntry[]; weather
     return () => clearInterval(timer)
   }, [])
 
-  const recent = entries.filter((entry) => entry.kind === 'command' || entry.kind === 'speak').slice(-RECENT_LINES)
+  // The conversation digest (#54): your commands and Bing Bong's answers —
+  // display cards where they render, spoken lines where they don't.
+  const recent = entries
+    .filter((entry) => entry.kind === 'command' || entry.kind === 'display' || entry.kind === 'speak')
+    .slice(-RECENT_LINES)
 
   return (
     <div className="idle-screen" aria-label="idle screen">

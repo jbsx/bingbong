@@ -111,7 +111,7 @@ describe('risk gate e2e', () => {
         { timeoutMs: 20000, intervalMs: 250 },
       )
 
-      await waitForTranscript(harness, 'Form sent.')
+      await waitForTranscript(harness, 'The contact form was submitted.')
     } finally {
       await harness.quit()
     }
@@ -139,7 +139,7 @@ describe('risk gate e2e', () => {
 
       const confirmationShown = await harness.dashboardEval<boolean>(`!!document.querySelector('.confirmation-card')`)
       expect(confirmationShown).toBe(false)
-      await waitForTranscript(harness, 'Consent dismissed.')
+      await waitForTranscript(harness, 'Cookie consent dismissed.')
     } finally {
       await harness.quit()
     }

@@ -4,8 +4,11 @@ import type { FeedEntry } from '../../core/history/feedProjection'
 /**
  * The activity feed list (#44): timestamped entries for commands, tool
  * lines, spoken/displayed text, errors, and retry detail lines —
- * observation only. Rendered by the feed panel's overlay webContents
- * (#45); the idle screen reuses FeedLine for its digest.
+ * observation only. Conversation structure (#54): user entries render
+ * right-aligned in muted bubbles, assistant answers as left-aligned
+ * railed cards; everything else stays a plain system line. Rendered by
+ * the feed panel's overlay webContents (#45); the idle screen reuses
+ * FeedLine for its digest.
  */
 
 function formatFeedTime(at: number): string {
@@ -14,25 +17,36 @@ function formatFeedTime(at: number): string {
 
 export function FeedLine({ entry }: { entry: FeedEntry }) {
   const time = <time className="feed-time">{formatFeedTime(entry.at)}</time>
+  if (entry.role === 'user') {
+    // Your words (#54): commands and heard transcriptions, right-aligned
+    // in muted bubbles.
+    return (
+      <p className={`feed-entry feed-entry--user feed-entry--${entry.kind}`}>
+        <span className="feed-bubble">
+          <span className="feed-text">
+            {entry.kind === 'command' && <span className="feed-speaker">you</span>} {entry.text}
+          </span>
+        </span>
+        {time}
+      </p>
+    )
+  }
+  if (entry.role === 'assistant') {
+    // Bing Bong's answers (#54): display entries, the live answer stream,
+    // and display-less spoken lines — left-aligned railed cards at
+    // conversation size.
+    return (
+      <p className={`feed-entry feed-entry--assistant feed-entry--${entry.kind}`}>
+        {time}
+        <span className="feed-card">
+          <span className="feed-text">
+            {entry.kind === 'speak' && <span className="feed-speaker">bing bong</span>} {entry.text}
+          </span>
+        </span>
+      </p>
+    )
+  }
   switch (entry.kind) {
-    case 'command':
-      return (
-        <p className="feed-entry feed-entry--command">
-          {time}
-          <span className="feed-text">
-            <span className="feed-speaker">you</span> {entry.text}
-          </span>
-        </p>
-      )
-    case 'speak':
-      return (
-        <p className="feed-entry feed-entry--speak">
-          {time}
-          <span className="feed-text">
-            <span className="feed-speaker">bing bong</span> {entry.text}
-          </span>
-        </p>
-      )
     case 'error': {
       const summary = entry.text.split('\n', 1)[0]
       const trimmed = summary.length > 140 ? `${summary.slice(0, 140)}…` : summary

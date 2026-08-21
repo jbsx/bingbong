@@ -6,6 +6,7 @@ import { commandBoxScript } from './scripts'
 import { startHarness } from './harness'
 import { startFixtureServer, type FixtureServer } from './fixtureServer'
 import { waitFor } from './waitFor'
+import { waitForDisplay } from './feed'
 import type { AssistantTurn } from '../src/core/ports/llm'
 
 // Spec #1, Persistence: transcript and agent-run history live in SQLite
@@ -45,16 +46,9 @@ describe('history persistence e2e', () => {
     const submitted = await first.dashboardEval<string>(commandBoxScript('open the fixture page'))
     expect(submitted).toBe('submitted')
     // Wait for the answer before the orb: right after submit the orb is still
-    // idle, so an idle-check alone can pass before the run even starts.
-    await waitFor(
-      async () => {
-        const speak = await first.overlayEval<string>(
-          `document.querySelector('.feed-entry--speak')?.textContent ?? ''`,
-        )
-        return speak.includes('Opened the fixture page.') ? speak : undefined
-      },
-      { timeoutMs: 20000, intervalMs: 250 },
-    )
+    // idle, so an idle-check alone can pass before the run even starts. The
+    // answer card renders (#54); its spoken line is TTS-only.
+    await waitForDisplay(first, 'Navigated to the fixture page.')
     await waitFor(
       () => first.dashboardEval<boolean>(`!!document.querySelector('.status-orb--idle')`),
       { timeoutMs: 20000, intervalMs: 250 },

@@ -208,7 +208,7 @@ describe('run interruption e2e', () => {
       expect(await harness.dashboardEval<string>(feedAudioScript)).toBe('fed')
 
       await waitFor(
-        async () => (await transcript(harness)).includes('Idle stop was a command.') || undefined,
+        async () => (await transcript(harness)).includes('Handled stop normally.') || undefined,
         { timeoutMs: 20_000, intervalMs: 250 },
       )
       expect(await transcript(harness)).toContain('you stop')

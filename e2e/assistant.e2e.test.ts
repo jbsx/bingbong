@@ -55,19 +55,18 @@ describe('assistant text-box trigger e2e', () => {
     // The pane really navigated (navigate tool through the CDP controller).
     await harness.waitForPaneUrl(root)
 
-    // The transcript shows the spoken + display answer…
+    // The transcript shows the answer card (#54): the display entry
+    // renders, and its spoken line is suppressed from the view (TTS-only
+    // — the pipeline still speaks it).
     await waitFor(
       async () => {
-        const transcript = await harness.overlayEval<string>(
-          `(() => {
-            const speak = document.querySelector('.feed-entry--speak')?.textContent ?? ''
-            const display = document.querySelector('.feed-entry--display')?.textContent ?? ''
-            return speak + '|' + display
-          })()`,
+        const answer = await harness.overlayEval<{ display: string; spoken: string }>(
+          `(() => ({
+            display: document.querySelector('.feed-entry--display')?.textContent ?? '',
+            spoken: document.querySelector('.feed-entry--speak')?.textContent ?? '',
+          }))()`,
         )
-        return transcript.includes('Opened the fixture page') && transcript.includes('Navigated to the fixture page')
-          ? transcript
-          : undefined
+        return answer.display.includes('Navigated to the fixture page') && answer.spoken === '' ? answer : undefined
       },
       { timeoutMs: 20000, intervalMs: 250 },
     )

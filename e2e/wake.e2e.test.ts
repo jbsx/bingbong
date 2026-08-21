@@ -75,7 +75,7 @@ describe('wake word e2e', () => {
           const transcript = await harness.overlayEval<string>(
             `Array.from(document.querySelectorAll('.feed-entry')).map((el) => el.textContent).join('\\n')`,
           )
-          return transcript.includes('open the fixture page') && transcript.includes('Opened the fixture page.')
+          return transcript.includes('open the fixture page') && transcript.includes('Navigated to the fixture page.')
             ? transcript
             : undefined
         },

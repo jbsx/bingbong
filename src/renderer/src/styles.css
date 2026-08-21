@@ -254,6 +254,8 @@ body {
   gap: 12px;
   margin: 0;
   line-height: 1.4;
+  /* Left by default (#54); user rows flip the row rightward below. */
+  justify-content: flex-start;
 }
 
 .feed-entry summary {
@@ -279,6 +281,39 @@ body {
 .feed-speaker {
   font-weight: 650;
   margin-right: 8px;
+}
+
+/* Conversation separation (#54): the feed reads as a chat between two
+   voices — your words right-aligned in muted bubbles (gruvbox light2),
+   Bing Bong's answers as left-aligned railed cards (light0 raised, with
+   the speaking-green rail). System detail keeps the plain tier below. */
+.feed-entry--user {
+  justify-content: flex-end;
+}
+
+.feed-bubble {
+  min-width: 0;
+  max-width: 88%;
+  background: var(--edge);
+  border-radius: 18px 18px 4px 18px;
+  padding: 6px 16px;
+}
+
+/* Inside a bubble, every user line — command or heard words — reads as
+   your voice at conversation size (#54). The extra class keeps this rule
+   winning over the later per-kind tiers (e.g. voice's muted detail). */
+.feed-entry--user .feed-bubble .feed-text {
+  color: var(--text);
+  font-size: 1.4rem;
+}
+
+.feed-card {
+  min-width: 0;
+  max-width: 92%;
+  background: var(--bg);
+  border-left: 5px solid var(--status-green);
+  border-radius: 4px 14px 14px 4px;
+  padding: 10px 16px;
 }
 
 /* Conversation tier (#49): your words and Bing Bong's read at 1.4rem. */

@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { startHarness, type Harness } from './harness'
 import { startFixtureServer, type FixtureServer } from './fixtureServer'
 import { waitFor } from './waitFor'
+import { waitForDisplay } from './feed'
 import type { AssistantTurn } from '../src/core/ports/llm'
 
 // The v0.1 integration pass (T11): the full hands-free loop end to end —
@@ -53,21 +54,15 @@ describe('hands-free loop e2e', () => {
       { timeoutMs: 20000, intervalMs: 250 },
     )
 
-    // The spoken command: browser acts, one-liner lands in the transcript.
+    // The spoken command: browser acts, the answer card lands in the
+    // transcript (#54 — the spoken line is TTS-only when a display card
+    // renders for the turn).
     await harness.dashboardEval<string>(`(() => {
       for (let i = 0; i < 500; i++) window.bingbong.voice.sendAudio(new Float32Array(512))
       return 'fed'
     })()`)
     await harness.waitForPaneUrl(fixture.url('/'))
-    await waitFor(
-      async () => {
-        const speak = await harness.overlayEval<string>(
-          `document.querySelector('.feed-entry--speak')?.textContent ?? ''`,
-        )
-        return speak.includes('Opened the fixture page.') ? speak : undefined
-      },
-      { timeoutMs: 20000, intervalMs: 250 },
-    )
+    await waitForDisplay(harness, 'Navigated to the fixture page.')
 
     // Back to idle — and the idle screen closes the loop, carrying the
     // transcript of the exchange.
@@ -88,7 +83,7 @@ describe('hands-free loop e2e', () => {
             return recent
           })()`,
         )
-        return text.includes('open the fixture page') && text.includes('Opened the fixture page.') ? text : undefined
+        return text.includes('open the fixture page') && text.includes('Navigated to the fixture page.') ? text : undefined
       },
       { timeoutMs: 20000, intervalMs: 250 },
     )

@@ -3,6 +3,7 @@ import { commandBoxScript } from './scripts'
 import { startHarness, type Harness } from './harness'
 import { startFixtureServer, type FixtureServer } from './fixtureServer'
 import { waitFor } from './waitFor'
+import { waitForDisplay } from './feed'
 import type { AssistantTurn } from '../src/core/ports/llm'
 
 // Media verbs e2e: the orchestrator's media_control calls must land as real
@@ -92,15 +93,8 @@ describe('media verbs e2e', () => {
 
     expect(pressed).toEqual(expectedKeys)
 
-    // The run completed and the answer reached the transcript.
-    await waitFor(
-      async () => {
-        const spoken = await harness.overlayEval<string>(
-          `Array.from(document.querySelectorAll('.feed-entry--speak')).map((el) => el.textContent).join('\\n')`,
-        )
-        return spoken.includes('Media keys sent.') ? spoken : undefined
-      },
-      { timeoutMs: 20000, intervalMs: 250 },
-    )
+    // The run completed and the answer card reached the transcript (#54:
+    // the spoken one-liner is TTS-only beside a rendered display).
+    await waitForDisplay(harness, 'All media verbs were dispatched.')
   })
 })

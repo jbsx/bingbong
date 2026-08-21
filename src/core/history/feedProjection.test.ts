@@ -9,7 +9,10 @@ import type { RecordedEntry } from './historyStore'
 // detail lines (retries), session-scoped (ADR 0005: boundaries wipe
 // eagerly; hydration seeds only the still-open session), detail trimmed
 // beyond ~500, hydrated after restart from recorded history only (never
-// detail). Table-driven like the transcript projection's suite.
+// detail). Conversation structure (#54): every entry carries a role —
+// your words vs Bing Bong's answers vs system detail — and a turn's
+// spoken line is suppressed when its display card renders (keyed on the
+// shared turn id). Table-driven like the transcript projection's suite.
 
 const T = 'turn-1'
 
@@ -30,53 +33,57 @@ function snapshotOf(...entries: RecordedEntry[]) {
   return { entries, sessionStartAt: entries[0]?.at ?? 0 }
 }
 
-/** The entry surface the panel renders: order + kind + text + detail flag. */
+/** The entry surface the panel renders: order + kind + role + text + detail flag. */
 function outline(entries: ReturnType<ReturnType<typeof createFeedProjection>['entries']>) {
-  return entries.map(({ kind, text, detail }) => ({ kind, text, detail }))
+  return entries.map(({ kind, role, text, detail }) => ({ kind, role, text, detail }))
 }
+
+const USER = 'user' as const
+const ASSISTANT = 'assistant' as const
+const SYSTEM = 'system' as const
 
 describe('feed projection', () => {
   it.each([
-    ['command echo', command('open youtube', 1_000), { kind: 'command', text: 'open youtube', detail: false }],
+    ['command echo', command('open youtube', 1_000), { kind: 'command', role: USER, text: 'open youtube', detail: false }],
     [
       'tool line',
       { type: 'tool_call', turnId: T, callId: 'c1', name: 'navigate', args: { url: 'https://example.com' }, at: 2_000 } as PipelineEvent,
-      { kind: 'tool', text: '→ https://example.com', detail: false },
+      { kind: 'tool', role: SYSTEM, text: '→ https://example.com', detail: false },
     ],
     [
       'spoken text',
       { type: 'speak', turnId: T, text: 'Opened it.', at: 3_000 } as PipelineEvent,
-      { kind: 'speak', text: 'Opened it.', detail: false },
+      { kind: 'speak', role: ASSISTANT, text: 'Opened it.', detail: false },
     ],
     [
       'displayed text',
       { type: 'display', turnId: T, text: 'Navigated.', at: 4_000 } as PipelineEvent,
-      { kind: 'display', text: 'Navigated.', detail: false },
+      { kind: 'display', role: ASSISTANT, text: 'Navigated.', detail: false },
     ],
     [
       'error text',
       { type: 'error', turnId: T, message: 'boom', at: 5_000 } as PipelineEvent,
-      { kind: 'error', text: 'boom', detail: false },
+      { kind: 'error', role: SYSTEM, text: 'boom', detail: false },
     ],
     [
       'failed tool result',
       { type: 'tool_result', turnId: T, callId: 'c1', name: 'click', ok: false, error: 'ref gone', at: 6_000 } as PipelineEvent,
-      { kind: 'error', text: 'click failed: ref gone', detail: false },
+      { kind: 'error', role: SYSTEM, text: 'click failed: ref gone', detail: false },
     ],
     [
       'retry line',
       retry(2, 7_000),
-      { kind: 'retry', text: 'empty response — retrying 2/3', detail: true },
+      { kind: 'retry', role: SYSTEM, text: 'empty response — retrying 2/3', detail: true },
     ],
     [
       'steer echo',
       { type: 'steer', turnId: T, text: 'use Paris instead', at: 8_000 } as PipelineEvent,
-      { kind: 'steer', text: 'steer: use Paris instead', detail: true },
+      { kind: 'steer', role: SYSTEM, text: 'steer: use Paris instead', detail: true },
     ],
     [
       'stage entry line (#42 story 17)',
       { type: 'status', turnId: T, status: 'thinking', at: 9_000 } as PipelineEvent,
-      { kind: 'stage', text: 'thinking', detail: true },
+      { kind: 'stage', role: SYSTEM, text: 'thinking', detail: true },
     ],
   ])('maps %s to a feed entry', (_name, event, expected) => {
     const feed = createFeedProjection()
@@ -92,10 +99,10 @@ describe('feed projection', () => {
     feed.onEvent({ type: 'speak', turnId: T, text: 'Found cats.', at: 4_000 })
 
     expect(outline(feed.entries())).toEqual([
-      { kind: 'command', text: 'go', detail: false },
-      { kind: 'tool', text: 'search "cats"', detail: false },
-      { kind: 'retry', text: 'empty response — retrying 2/3', detail: true },
-      { kind: 'speak', text: 'Found cats.', detail: false },
+      { kind: 'command', role: USER, text: 'go', detail: false },
+      { kind: 'tool', role: SYSTEM, text: 'search "cats"', detail: false },
+      { kind: 'retry', role: SYSTEM, text: 'empty response — retrying 2/3', detail: true },
+      { kind: 'speak', role: ASSISTANT, text: 'Found cats.', detail: false },
     ])
   })
 
@@ -133,7 +140,7 @@ describe('feed projection', () => {
     // The next session's entries render alone; ids keep rising (React keys
     // never collide with the cleared view).
     feed.onEvent(command('new session', 5_000))
-    expect(outline(feed.entries())).toEqual([{ kind: 'command', text: 'new session', detail: false }])
+    expect(outline(feed.entries())).toEqual([{ kind: 'command', role: USER, text: 'new session', detail: false }])
   })
 
   it('voice-half lines (heard words, mic errors) ride the feed as outcome entries', () => {
@@ -142,8 +149,8 @@ describe('feed projection', () => {
     feed.append({ kind: 'error', text: 'voice: mic failed', at: 2_000 })
 
     expect(outline(feed.entries())).toEqual([
-      { kind: 'voice', text: 'heard: maybe', detail: false },
-      { kind: 'error', text: 'voice: mic failed', detail: false },
+      { kind: 'voice', role: USER, text: 'heard: maybe', detail: false },
+      { kind: 'error', role: SYSTEM, text: 'voice: mic failed', detail: false },
     ])
   })
 
@@ -160,8 +167,8 @@ describe('feed projection', () => {
       expect(entries).toHaveLength(MAX_DETAIL_ENTRIES + 2)
       // The interleaved outcome lines survive the trim…
       expect(outline(entries.filter((entry) => !entry.detail))).toEqual([
-        { kind: 'command', text: 'keep me', detail: false },
-        { kind: 'speak', text: 'Done.', detail: false },
+        { kind: 'command', role: USER, text: 'keep me', detail: false },
+        { kind: 'speak', role: ASSISTANT, text: 'Done.', detail: false },
       ])
       // …and the kept detail lines are the newest MAX_DETAIL_ENTRIES.
       const retried = entries.filter((entry) => entry.detail)
@@ -199,8 +206,8 @@ describe('feed projection', () => {
       feed.onEvent(delta('text', 'be.', 2_240))
 
       expect(outline(feed.entries())).toEqual([
-        { kind: 'command', text: 'go', detail: false },
-        { kind: 'answer_stream', text: 'Opening YouTube.', detail: true },
+        { kind: 'command', role: USER, text: 'go', detail: false },
+        { kind: 'answer_stream', role: ASSISTANT, text: 'Opening YouTube.', detail: true },
       ])
       // The growing entry keeps one stable id — React re-renders, never
       // re-keys, the streaming line.
@@ -214,8 +221,8 @@ describe('feed projection', () => {
       feed.onEvent(delta('text', 'Done.', 1_240))
 
       expect(outline(feed.entries())).toEqual([
-        { kind: 'reasoning', text: 'the user wants music, so navigate', detail: true },
-        { kind: 'answer_stream', text: 'Done.', detail: true },
+        { kind: 'reasoning', role: SYSTEM, text: 'the user wants music, so navigate', detail: true },
+        { kind: 'answer_stream', role: ASSISTANT, text: 'Done.', detail: true },
       ])
     })
 
@@ -226,9 +233,9 @@ describe('feed projection', () => {
       feed.onEvent(delta('text', 'after the tool', 3_000))
 
       expect(outline(feed.entries())).toEqual([
-        { kind: 'answer_stream', text: 'partial text', detail: true },
-        { kind: 'tool', text: '→ x.test', detail: false },
-        { kind: 'answer_stream', text: 'after the tool', detail: true },
+        { kind: 'answer_stream', role: ASSISTANT, text: 'partial text', detail: true },
+        { kind: 'tool', role: SYSTEM, text: '→ x.test', detail: false },
+        { kind: 'answer_stream', role: ASSISTANT, text: 'after the tool', detail: true },
       ])
     })
 
@@ -238,7 +245,7 @@ describe('feed projection', () => {
       feed.onEvent({ type: 'display', turnId: T, text: 'Done. Playing it now.', at: 2_000 })
 
       expect(outline(feed.entries())).toEqual([
-        { kind: 'display', text: 'Done. Playing it now.', detail: false },
+        { kind: 'display', role: ASSISTANT, text: 'Done. Playing it now.', detail: false },
       ])
     })
 
@@ -268,7 +275,7 @@ describe('feed projection', () => {
       feed.onEvent(delta('text', 'fresh', 3_000))
 
       expect(outline(feed.entries())).toEqual([
-        { kind: 'answer_stream', text: 'fresh', detail: true },
+        { kind: 'answer_stream', role: ASSISTANT, text: 'fresh', detail: true },
       ])
     })
   })
@@ -285,8 +292,8 @@ describe('feed projection', () => {
       feed.onEvent(intent(0, 'click', '{"ref":"Sea', 2_000))
 
       expect(outline(feed.entries())).toEqual([
-        { kind: 'command', text: 'click the search button', detail: false },
-        { kind: 'intent', text: 'clicking \'Sea…\'', detail: true },
+        { kind: 'command', role: USER, text: 'click the search button', detail: false },
+        { kind: 'intent', role: SYSTEM, text: 'clicking \'Sea…\'', detail: true },
       ])
     })
 
@@ -296,7 +303,7 @@ describe('feed projection', () => {
       feed.onEvent(intent(0, 'web_search', '{"query":"mechanical keyboards"}', 1_120))
 
       expect(outline(feed.entries())).toEqual([
-        { kind: 'intent', text: 'searching for \'mechanical keyboards\'…', detail: true },
+        { kind: 'intent', role: SYSTEM, text: 'searching for \'mechanical keyboards\'…', detail: true },
       ])
       expect(feed.entries()).toHaveLength(1)
     })
@@ -307,8 +314,8 @@ describe('feed projection', () => {
       feed.onEvent(intent(1, 'click', '{"ref":"Search"}', 1_120))
 
       expect(outline(feed.entries())).toEqual([
-        { kind: 'intent', text: 'opening \'x.test\'…', detail: true },
-        { kind: 'intent', text: 'clicking \'Search\'…', detail: true },
+        { kind: 'intent', role: SYSTEM, text: 'opening \'x.test\'…', detail: true },
+        { kind: 'intent', role: SYSTEM, text: 'clicking \'Search\'…', detail: true },
       ])
     })
 
@@ -318,15 +325,15 @@ describe('feed projection', () => {
       feed.onEvent({ type: 'tool_call', turnId: T, callId: 'c1', name: 'click', args: { ref: 'Search' }, at: 2_000 })
 
       expect(outline(feed.entries())).toEqual([
-        { kind: 'intent', text: 'clicking \'Search\'…', detail: true },
-        { kind: 'tool', text: 'click [Search]', detail: false },
+        { kind: 'intent', role: SYSTEM, text: 'clicking \'Search\'…', detail: true },
+        { kind: 'tool', role: SYSTEM, text: 'click [Search]', detail: false },
       ])
       // Closed: a later intent for the same index opens a fresh line.
       feed.onEvent(intent(0, 'click', '{"ref":"Next"}', 3_000))
       expect(outline(feed.entries())).toEqual([
-        { kind: 'intent', text: 'clicking \'Search\'…', detail: true },
-        { kind: 'tool', text: 'click [Search]', detail: false },
-        { kind: 'intent', text: 'clicking \'Next\'…', detail: true },
+        { kind: 'intent', role: SYSTEM, text: 'clicking \'Search\'…', detail: true },
+        { kind: 'tool', role: SYSTEM, text: 'click [Search]', detail: false },
+        { kind: 'intent', role: SYSTEM, text: 'clicking \'Next\'…', detail: true },
       ])
     })
 
@@ -337,8 +344,8 @@ describe('feed projection', () => {
       feed.onEvent(reasoning(', music videos', 1_240))
 
       expect(outline(feed.entries())).toEqual([
-        { kind: 'reasoning', text: 'the user wants youtube, music videos', detail: true },
-        { kind: 'intent', text: 'searching for \'music videos\'…', detail: true },
+        { kind: 'reasoning', role: SYSTEM, text: 'the user wants youtube, music videos', detail: true },
+        { kind: 'intent', role: SYSTEM, text: 'searching for \'music videos\'…', detail: true },
       ])
     })
 
@@ -349,7 +356,7 @@ describe('feed projection', () => {
       feed.onEvent(intent(0, 'click', '{"ref":"Fresh"}', 3_000))
 
       expect(outline(feed.entries())).toEqual([
-        { kind: 'intent', text: 'clicking \'Fresh\'…', detail: true },
+        { kind: 'intent', role: SYSTEM, text: 'clicking \'Fresh\'…', detail: true },
       ])
     })
 
@@ -361,8 +368,8 @@ describe('feed projection', () => {
       feed.onEvent({ type: 'display', turnId: T, text: 'Done.', at: 3_000 })
 
       expect(outline(feed.entries())).toEqual([
-        { kind: 'command', text: 'work', detail: false },
-        { kind: 'display', text: 'Done.', detail: false },
+        { kind: 'command', role: USER, text: 'work', detail: false },
+        { kind: 'display', role: ASSISTANT, text: 'Done.', detail: false },
       ])
     })
 
@@ -392,10 +399,10 @@ describe('feed projection', () => {
       feed.onEvent(status('speaking', 9_500))
 
       expect(outline(feed.entries())).toEqual([
-        { kind: 'command', text: 'go', detail: false },
-        { kind: 'stage', text: 'thinking', detail: true },
-        { kind: 'stage', text: 'acting', detail: true },
-        { kind: 'stage', text: 'speaking', detail: true },
+        { kind: 'command', role: USER, text: 'go', detail: false },
+        { kind: 'stage', role: SYSTEM, text: 'thinking', detail: true },
+        { kind: 'stage', role: SYSTEM, text: 'acting', detail: true },
+        { kind: 'stage', role: SYSTEM, text: 'speaking', detail: true },
       ])
       expect(feed.entries().map(({ at }) => at)).toEqual([1_000, 1_100, 4_000, 9_500])
     })
@@ -406,15 +413,15 @@ describe('feed projection', () => {
       feed.onEvent(status('acting', 2_000))
 
       expect(outline(feed.entries())).toEqual([
-        { kind: 'answer_stream', text: 'Opening YouTu', detail: true },
-        { kind: 'stage', text: 'acting', detail: true },
+        { kind: 'answer_stream', role: ASSISTANT, text: 'Opening YouTu', detail: true },
+        { kind: 'stage', role: SYSTEM, text: 'acting', detail: true },
       ])
       // Closed: a later delta opens a fresh run below the stage line.
       feed.onEvent({ type: 'llm_delta', turnId: T, kind: 'text', text: 'next round', at: 3_000 })
       expect(outline(feed.entries())).toEqual([
-        { kind: 'answer_stream', text: 'Opening YouTu', detail: true },
-        { kind: 'stage', text: 'acting', detail: true },
-        { kind: 'answer_stream', text: 'next round', detail: true },
+        { kind: 'answer_stream', role: ASSISTANT, text: 'Opening YouTu', detail: true },
+        { kind: 'stage', role: SYSTEM, text: 'acting', detail: true },
+        { kind: 'answer_stream', role: ASSISTANT, text: 'next round', detail: true },
       ])
     })
 
@@ -440,9 +447,9 @@ describe('feed projection', () => {
       feed.hydrate(snapshotOf(recorded('command', 'open the fixture page', 1_000), recorded('speak', 'Opened it.', 2_000)))
 
       expect(outline(feed.entries())).toEqual([
-        { kind: 'command', text: 'open the fixture page', detail: false },
-        { kind: 'speak', text: 'Opened it.', detail: false },
-        { kind: 'command', text: 'live first', detail: false },
+        { kind: 'command', role: USER, text: 'open the fixture page', detail: false },
+        { kind: 'speak', role: ASSISTANT, text: 'Opened it.', detail: false },
+        { kind: 'command', role: USER, text: 'live first', detail: false },
       ])
     })
 
@@ -463,9 +470,9 @@ describe('feed projection', () => {
       feed.hydrate(snapshotOf(recorded('command', 'pre-restart', 1_000), recorded('command', 'raced', 2_000), recorded('speak', 'Raced answer.', 3_000)))
 
       expect(outline(feed.entries())).toEqual([
-        { kind: 'command', text: 'pre-restart', detail: false },
-        { kind: 'command', text: 'raced', detail: false },
-        { kind: 'speak', text: 'Raced answer.', detail: false },
+        { kind: 'command', role: USER, text: 'pre-restart', detail: false },
+        { kind: 'command', role: USER, text: 'raced', detail: false },
+        { kind: 'speak', role: ASSISTANT, text: 'Raced answer.', detail: false },
       ])
     })
 
@@ -480,9 +487,9 @@ describe('feed projection', () => {
       // later legitimate repeat (a distinct fingerprint — `at` differs)
       // survives, and both recorded copies seed the view.
       expect(outline(feed.entries())).toEqual([
-        { kind: 'command', text: 'again', detail: false },
-        { kind: 'command', text: 'again', detail: false },
-        { kind: 'command', text: 'again', detail: false },
+        { kind: 'command', role: USER, text: 'again', detail: false },
+        { kind: 'command', role: USER, text: 'again', detail: false },
+        { kind: 'command', role: USER, text: 'again', detail: false },
       ])
     })
 
@@ -519,8 +526,8 @@ describe('feed projection', () => {
       })
 
       expect(outline(feed.entries())).toEqual([
-        { kind: 'command', text: 'current session', detail: false },
-        { kind: 'speak', text: 'Fresh answer.', detail: false },
+        { kind: 'command', role: USER, text: 'current session', detail: false },
+        { kind: 'speak', role: ASSISTANT, text: 'Fresh answer.', detail: false },
       ])
     })
 
@@ -542,7 +549,7 @@ describe('feed projection', () => {
       feed.hydrate({ entries: [recorded('command', 'stale session', 1_000)], sessionStartAt: null })
 
       expect(outline(feed.entries())).toEqual([
-        { kind: 'command', text: 'typed while fetching', detail: false },
+        { kind: 'command', role: USER, text: 'typed while fetching', detail: false },
       ])
     })
 
@@ -555,8 +562,8 @@ describe('feed projection', () => {
       })
 
       expect(outline(feed.entries())).toEqual([
-        { kind: 'command', text: 'session opener', detail: false },
-        { kind: 'speak', text: 'Answer.', detail: false },
+        { kind: 'command', role: USER, text: 'session opener', detail: false },
+        { kind: 'speak', role: ASSISTANT, text: 'Answer.', detail: false },
       ])
     })
 
@@ -575,9 +582,120 @@ describe('feed projection', () => {
       })
 
       expect(outline(feed.entries())).toEqual([
-        { kind: 'command', text: 'raced', detail: false },
-        { kind: 'speak', text: 'Answer.', detail: false },
+        { kind: 'command', role: USER, text: 'raced', detail: false },
+        { kind: 'speak', role: ASSISTANT, text: 'Answer.', detail: false },
+      ])
+    })
+  })
+
+  describe('conversation structure (#54)', () => {
+    it.each([
+      ['your commands', command('open youtube', 1_000), USER],
+      ['heard transcriptions', appendable('voice', 'heard: maybe', 2_000), USER],
+      ['displayed answers', { type: 'display', turnId: T, text: 'Full detail.', at: 3_000 } as PipelineEvent, ASSISTANT],
+      ['spoken lines', { type: 'speak', turnId: T, text: 'Done.', at: 4_000 } as PipelineEvent, ASSISTANT],
+      [
+        'live answer streams',
+        { type: 'llm_delta', turnId: T, kind: 'text', text: 'Answering…', at: 5_000 } as PipelineEvent,
+        ASSISTANT,
+      ],
+      ['tool lines', { type: 'tool_call', turnId: T, callId: 'c1', name: 'navigate', args: {}, at: 6_000 } as PipelineEvent, SYSTEM],
+      ['errors', { type: 'error', turnId: T, message: 'boom', at: 7_000 } as PipelineEvent, SYSTEM],
+      ['retries', retry(2, 8_000), SYSTEM],
+      ['stage markers', { type: 'status', turnId: T, status: 'thinking', at: 9_000 } as PipelineEvent, SYSTEM],
+      ['steer echoes', { type: 'steer', turnId: T, text: 'use Paris', at: 10_000 } as PipelineEvent, SYSTEM],
+      [
+        'reasoning traces',
+        { type: 'llm_delta', turnId: T, kind: 'reasoning', text: 'thinking…', at: 11_000 } as PipelineEvent,
+        SYSTEM,
+      ],
+      ['tool intents', { type: 'llm_tool_intent', turnId: T, index: 0, name: 'click', args: '{}', at: 12_000 } as PipelineEvent, SYSTEM],
+    ])('renders %s as %s', (_name, event, role) => {
+      const feed = createFeedProjection()
+      if (typeof event === 'function') event(feed)
+      else feed.onEvent(event as PipelineEvent)
+      expect(feed.entries().every((entry) => entry.role === role)).toBe(true)
+    })
+
+    it('suppresses the speak entry when its turn already rendered a display card', () => {
+      const feed = createFeedProjection()
+      feed.onEvent(command('search pizzas', 1_000))
+      feed.onEvent({ type: 'display', turnId: T, text: '1. Pizza A 2. Pizza B', at: 2_000 })
+      feed.onEvent({ type: 'speak', turnId: T, text: 'Found two.', at: 3_000 })
+
+      expect(outline(feed.entries())).toEqual([
+        { kind: 'command', role: USER, text: 'search pizzas', detail: false },
+        { kind: 'display', role: ASSISTANT, text: '1. Pizza A 2. Pizza B', detail: false },
+      ])
+    })
+
+    it('renders the speak entry when no display exists for its turn — spoken-only answers', () => {
+      const feed = createFeedProjection()
+      feed.onEvent(command('stop that', 1_000))
+      // Cancellation path: a speak line with no display counterpart.
+      feed.onEvent({ type: 'speak', turnId: T, text: 'Stopped.', at: 2_000 })
+
+      expect(outline(feed.entries())).toEqual([
+        { kind: 'command', role: USER, text: 'stop that', detail: false },
+        { kind: 'speak', role: ASSISTANT, text: 'Stopped.', detail: false },
+      ])
+    })
+
+    it('drops an already-rendered speak when the display lands after it (either order suppresses)', () => {
+      const feed = createFeedProjection()
+      feed.onEvent({ type: 'speak', turnId: T, text: 'Short line.', at: 1_000 })
+      feed.onEvent({ type: 'display', turnId: T, text: 'The full card.', at: 2_000 })
+
+      expect(outline(feed.entries())).toEqual([
+        { kind: 'display', role: ASSISTANT, text: 'The full card.', detail: false },
+      ])
+    })
+
+    it('keys suppression on the shared turn id — other turns and unstamped announcements render', () => {
+      const feed = createFeedProjection()
+      // A display for one turn never suppresses another turn's speak.
+      feed.onEvent({ type: 'display', turnId: 'turn-a', text: 'Turn A card.', at: 1_000 })
+      feed.onEvent({ type: 'speak', turnId: 'turn-b', text: 'Turn B spoken.', at: 2_000 })
+      // Download-router announcements are unstamped — not turn-scoped, so
+      // the spoken line renders beside its display (TTS announces it).
+      feed.onEvent({ type: 'display', text: 'Downloaded "report.pdf".', at: 3_000 })
+      feed.onEvent({ type: 'speak', text: 'Download complete: report.pdf', at: 3_100 })
+
+      expect(outline(feed.entries())).toEqual([
+        { kind: 'display', role: ASSISTANT, text: 'Turn A card.', detail: false },
+        { kind: 'speak', role: ASSISTANT, text: 'Turn B spoken.', detail: false },
+        { kind: 'display', role: ASSISTANT, text: 'Downloaded "report.pdf".', detail: false },
+        { kind: 'speak', role: ASSISTANT, text: 'Download complete: report.pdf', detail: false },
+      ])
+    })
+
+    it('hydrates recorded entries with roles derived from their kind', () => {
+      const feed = createFeedProjection()
+
+      feed.hydrate(snapshotOf(recorded('command', 'go', 1_000), recorded('display', 'Full card.', 2_000), recorded('speak', 'Done.', 3_000), recorded('tool', '→ x.test', 4_000)))
+
+      expect(outline(feed.entries())).toEqual([
+        { kind: 'command', role: USER, text: 'go', detail: false },
+        { kind: 'display', role: ASSISTANT, text: 'Full card.', detail: false },
+        { kind: 'speak', role: ASSISTANT, text: 'Done.', detail: false },
+        { kind: 'tool', role: SYSTEM, text: '→ x.test', detail: false },
+      ])
+    })
+
+    it('a session boundary forgets rendered displays — the id never suppresses across sessions', () => {
+      const feed = createFeedProjection()
+      feed.onEvent({ type: 'display', turnId: T, text: 'Old card.', at: 1_000 })
+      feed.onEvent({ type: 'session_started', at: 2_000 })
+      feed.onEvent({ type: 'speak', turnId: T, text: 'Fresh words.', at: 3_000 })
+
+      expect(outline(feed.entries())).toEqual([
+        { kind: 'speak', role: ASSISTANT, text: 'Fresh words.', detail: false },
       ])
     })
   })
 })
+
+/** A voice-half append, pre-bound so the table can drive it. */
+function appendable(kind: 'voice', text: string, at: number): (feed: ReturnType<typeof createFeedProjection>) => void {
+  return (feed) => feed.append({ kind, text, at })
+}

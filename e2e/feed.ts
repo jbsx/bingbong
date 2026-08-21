@@ -22,6 +22,14 @@ export async function feedDisplays(harness: Harness): Promise<string> {
   )
 }
 
+/** Waits until some display card's text includes `expected` (#54: the answer card, not the TTS-only spoken line). */
+export async function waitForDisplay(harness: Harness, expected: string): Promise<void> {
+  await waitFor(async () => ((await feedDisplays(harness)).includes(expected) ? true : undefined), {
+    timeoutMs: 20000,
+    intervalMs: 250,
+  })
+}
+
 // Submit, then wait for THIS run's answer marker in the feed — not merely
 // the idle orb, whose first poll can race the run's start (the orb is still
 // idle from boot before the thinking status lands, which would let the next
