@@ -12,7 +12,11 @@ import type { RecordedEntry } from './historyStore'
 // detail). Conversation structure (#54): every entry carries a role —
 // your words vs Bing Bong's answers vs system detail — and a turn's
 // spoken line is suppressed when its display card renders (keyed on the
-// shared turn id). Table-driven like the transcript projection's suite.
+// shared turn id). Run grouping (#55): run noise (tool lines, failed
+// tool results, intents, reasoning runs, stage markers, retries, steer
+// echoes) carries its run's id for the renderer's per-run expander, and
+// the projection names the live run whose expander auto-opens. Table-
+// driven like the transcript projection's suite.
 
 const T = 'turn-1'
 
@@ -691,6 +695,168 @@ describe('feed projection', () => {
       expect(outline(feed.entries())).toEqual([
         { kind: 'speak', role: ASSISTANT, text: 'Fresh words.', detail: false },
       ])
+    })
+  })
+
+  describe('run grouping (#55)', () => {
+    it.each([
+      [
+        'tool calls',
+        { type: 'tool_call', turnId: T, callId: 'c1', name: 'navigate', args: { url: 'x.test' }, at: 1_000 } as PipelineEvent,
+      ],
+      [
+        'failed tool results',
+        { type: 'tool_result', turnId: T, callId: 'c1', name: 'click', ok: false, error: 'ref gone', at: 2_000 } as PipelineEvent,
+      ],
+      [
+        'tool intents',
+        { type: 'llm_tool_intent', turnId: T, index: 0, name: 'click', args: '{"ref":"Search"}', at: 3_000 } as PipelineEvent,
+      ],
+      [
+        'reasoning runs',
+        { type: 'llm_delta', turnId: T, kind: 'reasoning', text: 'thinking…', at: 4_000 } as PipelineEvent,
+      ],
+      ['retries', retry(2, 5_000)],
+      ['stage markers', { type: 'status', turnId: T, status: 'thinking', at: 6_000 } as PipelineEvent],
+      ['steer echoes', { type: 'steer', turnId: T, text: 'use Paris', at: 7_000 } as PipelineEvent],
+    ])('groups %s under the run — the entry carries the turn id', (_name, event) => {
+      const feed = createFeedProjection()
+      feed.onEvent(event as PipelineEvent)
+      expect(feed.entries()).toHaveLength(1)
+      expect(feed.entries()[0]!.runId).toBe(T)
+    })
+
+    it.each([
+      ['commands', command('go', 1_000)],
+      ['display cards', { type: 'display', turnId: T, text: 'Full card.', at: 2_000 } as PipelineEvent],
+      ['spoken lines', { type: 'speak', turnId: T, text: 'Done.', at: 3_000 } as PipelineEvent],
+      ['live answer streams', { type: 'llm_delta', turnId: T, kind: 'text', text: 'Answering…', at: 4_000 } as PipelineEvent],
+      ['pipeline errors', { type: 'error', turnId: T, message: 'boom', at: 5_000 } as PipelineEvent],
+      ['heard voice lines', appendable('voice', 'heard: maybe', 6_000)],
+    ])('keeps %s top-level — no run id on conversation lines', (_name, event) => {
+      const feed = createFeedProjection()
+      if (typeof event === 'function') event(feed)
+      else feed.onEvent(event as PipelineEvent)
+      expect(feed.entries()).toHaveLength(1)
+      expect(feed.entries()[0]!.runId).toBeUndefined()
+    })
+
+    it('stamps one run id across the whole run, with interleaved conversation lines ungrouped', () => {
+      const feed = createFeedProjection()
+      feed.onEvent(command('search flights', 1_000))
+      feed.onEvent({ type: 'status', turnId: T, status: 'thinking', at: 1_100 })
+      feed.onEvent({ type: 'llm_delta', turnId: T, kind: 'reasoning', text: 'comparing dates', at: 1_200 })
+      feed.onEvent({ type: 'llm_delta', turnId: T, kind: 'text', text: 'Partial answer.', at: 1_300 })
+      feed.onEvent({ type: 'tool_call', turnId: T, callId: 'c1', name: 'navigate', args: { url: 'x.test' }, at: 1_400 })
+      feed.onEvent({ type: 'display', turnId: T, text: 'The full card.', at: 1_500 })
+      feed.onEvent({ type: 'done', turnId: T, outcome: 'done', at: 1_600 })
+
+      // Content is unchanged — every line still renders, order intact.
+      expect(outline(feed.entries())).toEqual([
+        { kind: 'command', role: USER, text: 'search flights', detail: false },
+        { kind: 'stage', role: SYSTEM, text: 'thinking', detail: true },
+        { kind: 'reasoning', role: SYSTEM, text: 'comparing dates', detail: true },
+        { kind: 'answer_stream', role: ASSISTANT, text: 'Partial answer.', detail: true },
+        { kind: 'tool', role: SYSTEM, text: '→ x.test', detail: false },
+        { kind: 'display', role: ASSISTANT, text: 'The full card.', detail: false },
+      ])
+      // …and the run noise carries one shared id for the renderer's fold.
+      expect(feed.entries().map(({ kind, runId }) => [kind, runId])).toEqual([
+        ['command', undefined],
+        ['stage', T],
+        ['reasoning', T],
+        ['answer_stream', undefined],
+        ['tool', T],
+        ['display', undefined],
+      ])
+    })
+
+    it('separates runs by turn id — one expander per run, never merged', () => {
+      const feed = createFeedProjection()
+      feed.onEvent(command('first', 1_000, 'turn-a'))
+      feed.onEvent({ type: 'status', turnId: 'turn-a', status: 'thinking', at: 1_100 })
+      feed.onEvent(command('second', 2_000, 'turn-b'))
+      feed.onEvent({ type: 'status', turnId: 'turn-b', status: 'thinking', at: 2_100 })
+
+      expect(feed.entries().map(({ text, runId }) => [text, runId])).toEqual([
+        ['first', undefined],
+        ['thinking', 'turn-a'],
+        ['second', undefined],
+        ['thinking', 'turn-b'],
+      ])
+    })
+
+    describe('the live run — the expander that auto-opens', () => {
+      it('is null before any run and while nothing is in flight', () => {
+        const feed = createFeedProjection()
+        expect(feed.liveRunId()).toBeNull()
+      })
+
+      it('opens on the command and stays open through the run\'s noise', () => {
+        const feed = createFeedProjection()
+        feed.onEvent(command('go', 1_000))
+        feed.onEvent({ type: 'status', turnId: T, status: 'acting', at: 1_100 })
+        expect(feed.liveRunId()).toBe(T)
+      })
+
+      it('closes on the run\'s done', () => {
+        const feed = createFeedProjection()
+        feed.onEvent(command('go', 1_000))
+        feed.onEvent({ type: 'done', turnId: T, outcome: 'done', at: 2_000 })
+        expect(feed.liveRunId()).toBeNull()
+      })
+
+      it('ignores a straggler done from another turn — the live run stays open', () => {
+        const feed = createFeedProjection()
+        feed.onEvent(command('live one', 1_000))
+        feed.onEvent({ type: 'done', turnId: 'turn-old', outcome: 'done', at: 1_500 })
+        expect(feed.liveRunId()).toBe(T)
+      })
+
+      it('closes on a session boundary — no run outlives the wipe', () => {
+        const feed = createFeedProjection()
+        feed.onEvent(command('go', 1_000))
+        feed.onEvent({ type: 'session_started', at: 2_000 })
+        expect(feed.liveRunId()).toBeNull()
+      })
+
+      it('moves to the newest command when a second run starts', () => {
+        const feed = createFeedProjection()
+        feed.onEvent(command('first', 1_000, 'turn-a'))
+        feed.onEvent(command('second', 2_000, 'turn-b'))
+        expect(feed.liveRunId()).toBe('turn-b')
+      })
+    })
+
+    describe('restart hydration', () => {
+      it('groups recorded tool lines under their recorder run — namespaced off live turn ids', () => {
+        const feed = createFeedProjection()
+        feed.hydrate(
+          snapshotOf(
+            { id: 1, runId: 7, kind: 'command', text: 'go', at: 1_000 },
+            { id: 2, runId: 7, kind: 'tool', text: '→ x.test', at: 1_500 },
+            { id: 3, runId: 7, kind: 'display', text: 'Done card.', at: 2_000 },
+          ),
+        )
+
+        expect(feed.entries().map(({ kind, runId }) => [kind, runId])).toEqual([
+          ['command', undefined],
+          ['tool', 'run-7'],
+          ['display', undefined],
+        ])
+      })
+
+      it('keeps unlinked tool lines top-level — runs recorded before run ids existed', () => {
+        const feed = createFeedProjection()
+        feed.hydrate(snapshotOf({ id: 1, runId: null, kind: 'tool', text: '→ x.test', at: 1_000 }))
+        expect(feed.entries()[0]!.runId).toBeUndefined()
+      })
+
+      it('keeps recorded errors top-level — history cannot tell tool failures from pipeline errors', () => {
+        const feed = createFeedProjection()
+        feed.hydrate(snapshotOf({ id: 1, runId: 7, kind: 'error', text: 'click failed: gone', at: 1_000 }))
+        expect(feed.entries()[0]!.runId).toBeUndefined()
+      })
     })
   })
 })

@@ -15,7 +15,7 @@ import { useRunActive } from './useRunActive'
  * edge tab, exactly as the transcript always lived in the dashboard's DOM.
  */
 export function OverlayPanel() {
-  const feed = useOverlayFeed()
+  const { feed, liveRunId } = useOverlayFeed()
   const { mode, open } = usePanelState()
   const runActive = useRunActive()
 
@@ -24,6 +24,7 @@ export function OverlayPanel() {
       <div className={`feed-surface feed-surface--${mode}`} aria-label="activity feed panel" aria-hidden={!open}>
         <ActivityFeed
           entries={feed}
+          liveRunId={liveRunId}
           footer={<SteerBox disabled={!runActive} />}
           headerActions={
             <>

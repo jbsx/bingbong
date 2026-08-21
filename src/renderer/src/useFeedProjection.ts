@@ -12,6 +12,8 @@ import { createFeedProjection, type FeedEntry } from '../../core/history/feedPro
 
 export interface FeedProjection {
   feed: FeedEntry[]
+  /** The run currently in flight (#55) — its expander auto-opens. */
+  liveRunId: string | null
   /** Fold one pipeline event into the feed. */
   handleEvent(event: PipelineEvent): void
   /** A heard-but-not-a-command voice line. */
@@ -21,8 +23,12 @@ export interface FeedProjection {
 }
 
 export function useFeedProjection(): FeedProjection {
-  const [feed, setFeed] = useState<FeedEntry[]>([])
+  const [state, setState] = useState<{ feed: FeedEntry[]; liveRunId: string | null }>({ feed: [], liveRunId: null })
   const projection = useRef(createFeedProjection())
+  // One sync point for every mutator: entries + the live run (#55) move
+  // together, and each mutator closes over only stable things (the ref,
+  // setState) so the first-render closures subscribers capture stay live.
+  const sync = () => setState({ feed: projection.current.entries(), liveRunId: projection.current.liveRunId() })
 
   useEffect(() => {
     let cancelled = false
@@ -34,7 +40,7 @@ export function useFeedProjection(): FeedProjection {
         // seeds the view — a lapsed session boots blank. The projection
         // applies the scope; live entries that raced the fetch survive.
         projection.current.hydrate(snapshot)
-        setFeed(projection.current.entries())
+        sync()
       })
       .catch(() => {})
     return () => {
@@ -43,21 +49,22 @@ export function useFeedProjection(): FeedProjection {
   }, [])
 
   return {
-    feed,
+    feed: state.feed,
+    liveRunId: state.liveRunId,
     handleEvent(event) {
       projection.current.onEvent(event)
-      setFeed(projection.current.entries())
+      sync()
     },
     appendHeard(heard) {
       // Commands are echoed by the pipeline itself; only answers and
       // undecided words land here.
       if (heard.routed === 'command') return
       projection.current.append({ kind: 'voice', text: describeHeard(heard), at: heard.at ?? Date.now() })
-      setFeed(projection.current.entries())
+      sync()
     },
     appendVoiceError(message, at = Date.now()) {
       projection.current.append({ kind: 'error', text: `voice: ${message}`, at })
-      setFeed(projection.current.entries())
+      sync()
     },
   }
 }

@@ -30,6 +30,8 @@ export interface Assistant {
    * and restart hydration seeds only the still-open session.
    */
   feed: FeedEntry[]
+  /** The run currently in flight (#55) — its expander auto-opens. */
+  liveRunId: string | null
   pendingConfirmation: PendingConfirmation | null
   /** An open ask_user question awaiting a spoken or typed free-text answer. */
   pendingAsk: PendingAsk | null
@@ -66,6 +68,7 @@ export function useAssistant(): Assistant {
   // page (#45): same events in, same entries out.
   const feedProjection = useFeedProjection()
   const feed = feedProjection.feed
+  const liveRunId = feedProjection.liveRunId
 
   useEffect(() => {
     return window.bingbong.assistant.onEvent((event: PipelineEvent) => {
@@ -181,5 +184,5 @@ export function useAssistant(): Assistant {
     [feedProjection],
   )
 
-  return { status, feed, pendingConfirmation, pendingAsk, agents, progress, submit, resolveConfirmation, resolveAsk, abort, appendVoiceHeard, appendVoiceError }
+  return { status, feed, liveRunId, pendingConfirmation, pendingAsk, agents, progress, submit, resolveConfirmation, resolveAsk, abort, appendVoiceHeard, appendVoiceError }
 }

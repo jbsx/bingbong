@@ -25,6 +25,8 @@ export interface Harness {
   typeIntoPane(text: string): Promise<void>
   /** Real (input-pipeline) Ctrl/Cmd+Shift+F — fires before-input-event. */
   pressPanelShortcut(target?: TargetKind): Promise<void>
+  /** Real (input-pipeline) keypress in a target's focused element. */
+  pressKey(target: TargetKind, key: HarnessKey): Promise<void>
   clickDashboardElement(selector: string): Promise<void>
   /** Click an element in the feed panel's overlay webContents (#45). */
   clickOverlayElement(selector: string): Promise<void>
@@ -39,6 +41,15 @@ export interface Harness {
   /** Give the pane target OS/webContents focus so synthetic input lands. */
   focusPane(): Promise<void>
   quit(): Promise<void>
+}
+
+/** One real keypress: DOM `key`, plus the CDP fields optional keys need. */
+interface HarnessKey {
+  key: string
+  code?: string
+  windowsVirtualKeyCode?: number
+  /** CDP modifier bitmask (e.g. 2 Ctrl | 8 Shift). */
+  modifiers?: number
 }
 
 interface TargetInfo {
@@ -285,21 +296,24 @@ async function buildHarness(
       // A real keypress through the input pipeline — unlike a synthetic
       // window KeyboardEvent, this exercises main's before-input-event
       // handling with the target's focus, exactly like a user keypress.
-      const kind = target
-      const sid = sidOf(kind)
-      if (!sid) throw new Error(`${kind} target not found`)
-      await activateFor(kind)
-      const modifiers = 2 /* Ctrl */ | 8 /* Shift */
+      await harness.pressKey(target, { key: 'F', code: 'KeyF', windowsVirtualKeyCode: 70, modifiers: 2 /* Ctrl */ | 8 /* Shift */ })
+    },
+
+    async pressKey(target: TargetKind, key: HarnessKey) {
+      const sid = sidOf(target)
+      if (!sid) throw new Error(`${target} target not found`)
+      await activateFor(target)
+      const { key: keyValue, code = keyValue, windowsVirtualKeyCode = 0, modifiers = 0 } = key
       for (const type of ['rawKeyDown', 'keyUp'] as const) {
         await cdp.send(
           'Input.dispatchKeyEvent',
           {
             type,
             modifiers,
-            key: 'F',
-            code: 'KeyF',
-            windowsVirtualKeyCode: 70,
-            nativeVirtualKeyCode: 70,
+            key: keyValue,
+            code,
+            windowsVirtualKeyCode,
+            nativeVirtualKeyCode: windowsVirtualKeyCode,
           },
           sid,
         )

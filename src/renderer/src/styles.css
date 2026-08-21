@@ -410,6 +410,68 @@ body {
   color: var(--status-red);
 }
 
+/* Per-run details expander (#55): run noise — tool lines, tool results,
+   intents, reasoning runs, stage markers, retries, steer echoes — folds
+   under one quiet section per run, collapsed by default and auto-open
+   while the run is live. The grouped lines keep their plain tiers above;
+   the expander adds only the fold, never restyles its contents. */
+.feed-run {
+  border-left: 3px solid var(--edge);
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--panel) 55%, transparent);
+  padding: 4px 10px;
+}
+
+.feed-run-summary {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 1.1rem;
+  user-select: none;
+  list-style: none;
+}
+
+.feed-run-summary::-webkit-details-marker {
+  display: none;
+}
+
+/* The fold marker: a quiet triangle that turns with the section. */
+.feed-run-summary::before {
+  content: '▸';
+  font-size: 0.9rem;
+  transition: rotate 120ms ease;
+}
+
+.feed-run[open] .feed-run-summary::before {
+  rotate: 90deg;
+}
+
+.feed-run-title {
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-weight: 650;
+}
+
+/* While its run is live, the title reads as activity, not archive. */
+.feed-run--live .feed-run-title {
+  color: var(--status-blue);
+}
+
+.feed-run-count {
+  font-size: 1rem;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.7;
+}
+
+.feed-run-entries {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 4px 0 2px 4px;
+}
+
 .feed-error-detail {
   margin: 6px 0 0;
   padding: 8px 12px;

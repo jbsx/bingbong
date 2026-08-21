@@ -9,7 +9,7 @@ import { useFeedProjection } from '../useFeedProjection'
 // subscriptions — hydration, pipeline events, and voice lines all arrive
 // over the same channels the dashboard subscribes to.
 
-export function useOverlayFeed(): ReturnType<typeof useFeedProjection>['feed'] {
+export function useOverlayFeed(): Pick<ReturnType<typeof useFeedProjection>, 'feed' | 'liveRunId'> {
   const projection = useFeedProjection()
 
   useEffect(() => {
@@ -31,7 +31,7 @@ export function useOverlayFeed(): ReturnType<typeof useFeedProjection>['feed'] {
     // close over one ref-backed projection — subscribing once is correct.
   }, [])
 
-  return projection.feed
+  return { feed: projection.feed, liveRunId: projection.liveRunId }
 }
 
 export function usePanelState(): FeedPanelState {
