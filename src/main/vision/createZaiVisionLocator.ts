@@ -13,11 +13,34 @@ export interface VisionMcpSession {
   close(): Promise<void>
 }
 
-export type VisionMcpSessionFactory = (env: Record<string, string>) => Promise<VisionMcpSession>
+export type VisionMcpSessionFactory = (
+  env: Record<string, string>,
+  signal?: AbortSignal,
+) => Promise<VisionMcpSession>
 
 export interface ZaiVisionLocatorDeps {
   getEnv(): Record<string, string | undefined>
   createSession?: VisionMcpSessionFactory
+  /** Test override; BINGBONG_VISION_TIMEOUT_MS and the default apply otherwise. */
+  timeoutMs?: number
+}
+
+/** Ceiling for one full vision MCP exchange (spawn/handshake + tool call). */
+export const DEFAULT_VISION_TIMEOUT_MS = 30_000
+
+export function resolveVisionTimeoutMs(
+  override: number | undefined,
+  env: Record<string, string | undefined>,
+): number {
+  if (typeof override === 'number') return override
+  const raw = Number(env.BINGBONG_VISION_TIMEOUT_MS)
+  return Number.isFinite(raw) && raw > 0 ? raw : DEFAULT_VISION_TIMEOUT_MS
+}
+
+interface SessionEntry {
+  session: VisionMcpSession
+  toolName: string
+  key: string
 }
 
 function inheritedEnv(): Record<string, string> {
@@ -26,7 +49,7 @@ function inheritedEnv(): Record<string, string> {
   )
 }
 
-async function createMcpSession(env: Record<string, string>): Promise<VisionMcpSession> {
+async function createMcpSession(env: Record<string, string>, signal?: AbortSignal): Promise<VisionMcpSession> {
   const require = createRequire(import.meta.url)
   const serverPath = require.resolve('@z_ai/mcp-server')
   const transport = new StdioClientTransport({
@@ -35,8 +58,11 @@ async function createMcpSession(env: Record<string, string>): Promise<VisionMcpS
     env,
     stderr: 'pipe',
   })
+  // An undrained stderr pipe fills its OS buffer and deadlocks the child server,
+  // so keep the pipe flowing even though the output is discarded.
+  transport.stderr?.on('data', () => {})
   const client = new Client({ name: 'bingbong-vision', version: '0.1.0' })
-  await client.connect(transport)
+  await client.connect(transport, signal ? { signal } : undefined)
   return {
     async listTools() {
       const result = await client.listTools()
@@ -87,30 +113,80 @@ export function createZaiVisionLocator(deps: ZaiVisionLocatorDeps): VisionModel 
   let scriptedLocations: unknown[] = []
   let descriptionScriptSource: string | undefined
   let scriptedDescriptions: unknown[] = []
+  let cached: SessionEntry | undefined
 
-  async function analyze(image: Uint8Array, prompt: string): Promise<string> {
+  function dropSession(): void {
+    const entry = cached
+    cached = undefined
+    if (entry) void entry.session.close().catch(() => {})
+  }
+
+  async function acquireSession(signal: AbortSignal): Promise<SessionEntry> {
     const env = deps.getEnv()
     const endpoint = resolveModelEndpoint(env, 'vision')
-    const dir = await mkdtemp(join(tmpdir(), 'bingbong-vision-'))
-    const imagePath = join(dir, 'page.jpg')
-    let session: VisionMcpSession | undefined
-    try {
-      await writeFile(imagePath, image)
-      session = await createSession({
+    const key = `${endpoint.baseUrl}\n${endpoint.model}\n${endpoint.apiKey}`
+    if (cached?.key === key) return cached
+    dropSession()
+    const session = await createSession(
+      {
         ...inheritedEnv(),
         Z_AI_API_KEY: endpoint.apiKey,
         Z_AI_BASE_URL: `${endpoint.baseUrl.replace(/\/+$/, '')}/`,
         Z_AI_VISION_MODEL: endpoint.model,
+      },
+      signal,
+    )
+    const tools = await session.listTools()
+    const toolName = tools.find((name) => name === 'analyze_image')
+    if (!toolName) {
+      void session.close().catch(() => {})
+      throw new Error('Vision MCP server does not expose analyze_image')
+    }
+    cached = { session, toolName, key }
+    return cached
+  }
+
+  async function analyze(image: Uint8Array, prompt: string): Promise<string> {
+    const timeoutMs = resolveVisionTimeoutMs(deps.timeoutMs, deps.getEnv())
+    const signal = AbortSignal.timeout(timeoutMs)
+    const dir = await mkdtemp(join(tmpdir(), 'bingbong-vision-'))
+    const imagePath = join(dir, 'page.jpg')
+    try {
+      await writeFile(imagePath, image)
+      // The whole exchange — session reuse or spawn, plus the tool call — must
+      // fit the deadline; a stuck call force-closes the session instead of
+      // stalling the assistant run forever.
+      let settled = false
+      const exchange = (async () => {
+        const entry = await acquireSession(signal)
+        try {
+          return await entry.session.callTool(entry.toolName, { image_source: imagePath, prompt })
+        } catch (error) {
+          if (cached === entry) dropSession()
+          throw error
+        }
+      })().finally(() => {
+        settled = true
       })
-      const tools = await session.listTools()
-      const tool = tools.find((name) => name === 'analyze_image')
-      if (!tool) throw new Error('Vision MCP server does not expose analyze_image')
-      return await session.callTool(tool, { image_source: imagePath, prompt })
+      const timeout = new Promise<never>((_, reject) => {
+        signal.addEventListener(
+          'abort',
+          () => {
+            // AbortSignal.timeout fires on schedule even after a success —
+            // only act when the exchange genuinely missed the deadline.
+            if (settled) return
+            dropSession()
+            reject(new Error(`Vision request timed out after ${timeoutMs}ms`))
+          },
+          { once: true },
+        )
+      })
+      return await Promise.race([exchange, timeout])
     } finally {
       try {
-        await session?.close()
-      } finally {
         await rm(dir, { recursive: true, force: true })
+      } catch {
+        // best effort — a lingering temp dir never blocks the answer
       }
     }
   }
