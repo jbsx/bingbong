@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { FeedEntry } from '../../core/history/feedProjection'
+import { FeedMarkdown } from './FeedMarkdown'
 
 /**
  * The activity feed list (#44): timestamped entries for commands, tool
@@ -10,9 +11,11 @@ import type { FeedEntry } from '../../core/history/feedProjection'
  * (#55): run noise — tool lines, tool results, intents, reasoning runs,
  * stage markers, retries, steer echoes — folds under one per-run details
  * expander (#55), collapsed by default and auto-open while its run is
- * live, so the conversation reads as just you and Bing Bong. Rendered by
- * the feed panel's overlay webContents (#45); the idle screen reuses
- * FeedLine for its digest.
+ * live, so the conversation reads as just you and Bing Bong. Markdown
+ * (#56): display entries and the live answer stream render as structure
+ * (FeedMarkdown) — code blocks, lists, headings, links that navigate the
+ * pane. Rendered by the feed panel's overlay webContents (#45); the idle
+ * screen reuses FeedLine for its digest.
  */
 
 function formatFeedTime(at: number): string {
@@ -38,16 +41,25 @@ export function FeedLine({ entry }: { entry: FeedEntry }) {
   if (entry.role === 'assistant') {
     // Bing Bong's answers (#54): display entries, the live answer stream,
     // and display-less spoken lines — left-aligned railed cards at
-    // conversation size.
+    // conversation size. Display and stream text render as markdown
+    // (#56): structured, styled, links navigating the pane; spoken lines
+    // are speech-derived plain text.
+    const markdown = entry.kind === 'display' || entry.kind === 'answer_stream'
     return (
-      <p className={`feed-entry feed-entry--assistant feed-entry--${entry.kind}`}>
+      <div className={`feed-entry feed-entry--assistant feed-entry--${entry.kind}`}>
         {time}
-        <span className="feed-card">
-          <span className="feed-text">
-            {entry.kind === 'speak' && <span className="feed-speaker">bing bong</span>} {entry.text}
-          </span>
-        </span>
-      </p>
+        <div className="feed-card">
+          {markdown ? (
+            <div className="feed-text feed-text--markdown">
+              <FeedMarkdown text={entry.text} />
+            </div>
+          ) : (
+            <span className="feed-text">
+              {entry.kind === 'speak' && <span className="feed-speaker">bing bong</span>} {entry.text}
+            </span>
+          )}
+        </div>
+      </div>
     )
   }
   switch (entry.kind) {

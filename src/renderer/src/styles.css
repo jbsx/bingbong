@@ -35,6 +35,11 @@
   --status-yellow: #b57614;
   --status-green: #427b58;
   --status-red: #9d0006;
+  /* Markdown code surfaces (#56): the one deliberately dark element on
+     the light dashboard — dark1 surface, light1 text — so fenced blocks
+     read as blocks from across the room. */
+  --code-bg: #3c3836; /* dark1 */
+  --code-text: #ebdbb2; /* light1 */
   /* The single calibration knob (#49): every rem size derives from it.
      Root 22px; conversation 1.4rem (~31px), labels/timestamps 1.1rem,
      tool detail 1rem. Nudge this one variable to re-calibrate. */
@@ -408,6 +413,127 @@ body {
 
 .feed-entry--error .feed-text {
   color: var(--status-red);
+}
+
+/* Markdown answers (#56): structured rendering inside the railed answer
+   cards — display entries and the live stream. Prose stays conversation
+   size (inherited from .feed-text); code blocks take the gruvbox dark
+   treatment (dark1 surface, light1 text) so they read as blocks from
+   across the room; links carry the accent and navigate the main pane. */
+.feed-markdown > :first-child {
+  margin-top: 0;
+}
+
+.feed-markdown > :last-child {
+  margin-bottom: 0;
+}
+
+.feed-markdown p {
+  margin: 0 0 0.6em;
+}
+
+.feed-markdown h1,
+.feed-markdown h2,
+.feed-markdown h3,
+.feed-markdown h4,
+.feed-markdown h5,
+.feed-markdown h6 {
+  margin: 1em 0 0.4em;
+  line-height: 1.25;
+  color: var(--text);
+}
+
+.feed-markdown h1 {
+  font-size: 1.8rem;
+}
+
+.feed-markdown h2 {
+  font-size: 1.65rem;
+}
+
+.feed-markdown h3 {
+  font-size: 1.5rem;
+}
+
+.feed-markdown h4,
+.feed-markdown h5,
+.feed-markdown h6 {
+  font-size: 1.4rem;
+}
+
+.feed-markdown ul,
+.feed-markdown ol {
+  margin: 0 0 0.6em;
+  padding-left: 1.4em;
+}
+
+.feed-markdown li {
+  margin: 0.15em 0;
+}
+
+.feed-markdown blockquote {
+  margin: 0 0 0.6em;
+  padding: 2px 0 2px 14px;
+  border-left: 4px solid var(--edge);
+  color: var(--muted);
+}
+
+.feed-markdown hr {
+  border: none;
+  border-top: 1px solid var(--edge);
+  margin: 0.8em 0;
+}
+
+.feed-markdown strong {
+  font-weight: 750;
+}
+
+.feed-markdown em {
+  font-style: italic;
+}
+
+/* Inline code: quiet raised chip at near-conversation size. */
+.feed-markdown :not(pre) > code {
+  padding: 0 8px;
+  border-radius: 8px;
+  background: var(--panel);
+  border: 1px solid var(--edge);
+  font-family: ui-monospace, monospace;
+  font-size: 1.15rem;
+}
+
+/* Fenced code blocks: the gruvbox dark surface — dark1 with light1 text,
+   the one deliberately dark element on the light dashboard, so code reads
+   as a block. Horizontal scroll, never reflowed text. */
+.feed-markdown pre {
+  margin: 0 0 0.6em;
+  padding: 14px 16px;
+  border-radius: 10px;
+  background: var(--code-bg);
+  color: var(--code-text);
+  overflow-x: auto;
+}
+
+.feed-markdown pre code {
+  font-family: ui-monospace, monospace;
+  font-size: 1.1rem;
+  line-height: 1.45;
+  background: none;
+  border: none;
+  padding: 0;
+}
+
+/* Links in answers (#56): accent blue, honestly underlined — one click
+   navigates the main pane (the renderer intercepts the click). */
+.feed-markdown .feed-link {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
+.feed-markdown .feed-link:hover {
+  color: var(--status-green);
 }
 
 /* Per-run details expander (#55): run noise — tool lines, tool results,

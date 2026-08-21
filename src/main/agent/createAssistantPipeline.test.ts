@@ -305,4 +305,36 @@ describe('createAssistantPipeline', () => {
     ])
     expect(events.some((event) => event.type === 'waiting_on_agents')).toBe(false)
   })
+
+  it('streams a scripted answer through onDelta as llm_delta detail events (#56)', async () => {
+    // e2e's markdown-streaming seam: streamChunks on a scripted answer
+    // flow through the round's onDelta — the delta batcher derives the
+    // visible text (prose passes raw) and the detail channel carries the
+    // llm_delta fragments ahead of the final display entry. The fake clock
+    // never advances, so the batcher's whole window drains at round end
+    // as one merged fragment.
+    const detail: PipelineEvent[] = []
+    const pipeline = createAssistantPipeline({
+      controller: new FakeBrowser(),
+      env: {
+        BINGBONG_LLM_SCRIPT: JSON.stringify([
+          {
+            kind: 'answer',
+            speak: 'Done.',
+            display: 'Final display.',
+            streamChunks: ['## Part one\n\n', 'and **two**.'],
+          },
+        ]),
+      },
+      clock: new FakeClock(),
+      emitDetail: (event) => detail.push(event),
+    })
+
+    const events = await collect(pipeline, 'explain streaming')
+
+    expect(detail.filter((event) => event.type === 'llm_delta')).toEqual([
+      { type: 'llm_delta', turnId: expect.any(String), kind: 'text', text: '## Part one\n\nand **two**.', at: 0 },
+    ])
+    expect(events.find((event) => event.type === 'display')).toMatchObject({ text: 'Final display.' })
+  })
 })

@@ -82,11 +82,22 @@ async function evaluate<T>(cdp: CdpClient, sessionId: string, expression: string
   return response.result?.value as T
 }
 
-/** Center of the first element matching `selector`, in page coordinates. */
+/**
+ * Center of the first element matching `selector`, in page coordinates.
+ * Inline elements that wrap across lines have a union bounding rect whose
+ * center can fall in the gaps between line boxes — so prefer the first
+ * client rect whose center actually hits the element (or a descendant).
+ */
 function elementCenterScript(selector: string): string {
   return `(() => {
     const el = document.querySelector(${JSON.stringify(selector)})
     if (!el) return null
+    const contains = (hit) => hit !== null && (hit === el || el.contains(hit))
+    for (const rect of el.getClientRects()) {
+      const x = rect.x + rect.width / 2
+      const y = rect.y + rect.height / 2
+      if (contains(document.elementFromPoint(x, y))) return { x, y }
+    }
     const r = el.getBoundingClientRect()
     return { x: r.x + r.width / 2, y: r.y + r.height / 2 }
   })()`
@@ -340,7 +351,7 @@ async function buildHarness(
       // change (the dashboard reports the new slot rect, then Chromium
       // resizes the view). A click computed against the mid-transition
       // viewport lands on stale element positions — settle first.
-      const center = await waitFor(
+      await waitFor(
         async () => {
           const viewportWidth = await evaluate<number>(cdp, sid, 'innerWidth')
           if (viewportWidth < 100) return undefined
@@ -349,9 +360,15 @@ async function buildHarness(
         { timeoutMs: 5000, intervalMs: 100 },
       )
       await activateFor('overlay')
+      // Re-read the center against the settled layout: the activation
+      // settle follows the view resize, and the feed's contents can
+      // re-layout (and auto-scroll) in that window — a center captured
+      // pre-settle lands on whatever moved into the spot.
+      const settled = await evaluate<{ x: number; y: number } | null>(cdp, sid, elementCenterScript(selector))
+      if (!settled) throw new Error(`element not found: ${selector}`)
       // The overlay is its own target: input coordinates are view-local,
       // same as pane clicks.
-      await dispatchClick(sid, center.x, center.y)
+      await dispatchClick(sid, settled.x, settled.y)
     },
 
     cliWrite(line) {

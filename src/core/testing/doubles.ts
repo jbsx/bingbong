@@ -1,5 +1,5 @@
 import type { Clock } from '../ports/clock'
-import type { AssistantTurn, LlmClient, LlmRequest } from '../ports/llm'
+import type { AssistantTurn, LlmClient, LlmRequest, LlmStreamDelta } from '../ports/llm'
 import type { TtsSpeaker } from '../ports/tts'
 import type { Transcriber, VadScorer } from '../ports/stt'
 import { WAKE_HEADS, type WakeScores, type WakeWordDetector } from '../ports/wake'
@@ -81,6 +81,41 @@ export function fakePerfHarness(): {
   return { records, state, tracer }
 }
 
+/**
+ * A scripted answer turn may opt into streaming (#56 e2e): `streamChunks`
+ * are emitted through the round's onDelta before the final turn resolves.
+ */
+export type ScriptedAnswerTurn = Extract<AssistantTurn, { kind: 'answer' }> & {
+  streamChunks?: string[]
+}
+
+/**
+ * Inter-chunk pause (#56): longer than the delta batcher's flush window
+ * (120ms), so e2e observes mid-stream renders — formatting appears while
+ * the run is still live, before the final display entry replaces it.
+ */
+export const SCRIPTED_STREAM_CHUNK_DELAY_MS = 150
+
+/** The turn's streamed chunks when it opted in (and they parse as a list). */
+function scriptedChunks(turn: AssistantTurn): string[] | undefined {
+  if (turn.kind !== 'answer') return undefined
+  const chunks = (turn as ScriptedAnswerTurn).streamChunks
+  return Array.isArray(chunks) ? chunks : undefined
+}
+
+async function streamScriptedChunks(
+  turn: AssistantTurn,
+  onDelta: ((delta: LlmStreamDelta) => void) | undefined,
+): Promise<void> {
+  if (!onDelta) return
+  const chunks = scriptedChunks(turn)
+  if (!chunks) return
+  for (const chunk of chunks) {
+    if (chunk !== '') onDelta({ kind: 'text', text: chunk })
+    await new Promise((resolve) => setTimeout(resolve, SCRIPTED_STREAM_CHUNK_DELAY_MS))
+  }
+}
+
 export class ScriptedLlm implements LlmClient {
   private readonly script: AssistantTurn[]
   readonly requests: LlmRequest[] = []
@@ -93,6 +128,7 @@ export class ScriptedLlm implements LlmClient {
     this.requests.push(request)
     const next = this.script.shift()
     if (!next) throw new Error('ScriptedLlm ran out of scripted turns')
+    await streamScriptedChunks(next, request.onDelta)
     // Renders the request's session history (spec #23) into scripted text,
     // so e2e can prove prior turns rode along with a follow-up command.
     const substitutions: [string, string][] = [
