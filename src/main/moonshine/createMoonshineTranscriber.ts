@@ -1,6 +1,7 @@
 import type { Transcriber } from '../../core/ports/stt'
 import type { MoonshineVocab } from '../../core/moonshine/bpeTokenizer.ts'
 import { decodeMoonshineTokens } from '../../core/moonshine/bpeTokenizer.ts'
+import { createBiasApplier, type BiasApplier, type LogitsTensor } from '../../core/moonshine/contextualBiasing.ts'
 import { WAV_SAMPLE_RATE } from '../../core/voice/utteranceDump.ts'
 import { createRetriable } from './retriable.ts'
 
@@ -71,10 +72,16 @@ export interface MoonshineTranscriberDeps {
   partialMinSamples?: number
   /** New-sample growth required between partial passes (default 0.5 s). */
   partialStrideSamples?: number
+  /**
+   * Contextual-biasing lexicon (#62): phrases whose pieces get a logit
+   * boost at each greedy step when the decoded suffix starts or continues
+   * them. Data only — the decode code never knows the words.
+   */
+  biasPhrases?: readonly string[]
 }
 
 /** Greedy argmax over the LAST logits row ([1, seq, vocab] → id). */
-function argmaxLastRow(logits: { data: ArrayLike<number>; dims: readonly number[] }): number {
+function argmaxLastRow(logits: LogitsTensor): number {
   const seq = logits.dims[1]
   const vocab = logits.dims[2]
   const row = logits.data
@@ -113,12 +120,27 @@ export function createMoonshineTranscriber(deps: MoonshineTranscriberDeps): Tran
 
   const ensureVocab = createRetriable(deps.loadVocab)
 
+  /**
+   * The bias applier is built once per loaded vocab (its tries depend only
+   * on vocab + lexicon, both stable between passes); a vocab reload — only
+   * possible after a failed pass un-memoized it — rebuilds lazily.
+   */
+  let biasCache: { vocab: MoonshineVocab; applier: BiasApplier } | null = null
+  function applierFor(vocab: MoonshineVocab): BiasApplier | null {
+    if (!deps.biasPhrases || deps.biasPhrases.length === 0) return null
+    if (biasCache?.vocab !== vocab) {
+      biasCache = { vocab, applier: createBiasApplier(vocab, deps.biasPhrases) }
+    }
+    return biasCache.applier
+  }
+
   /** One full greedy pass over the given audio; rejects on engine failure. */
   async function decodePass(pcm: Float32Array): Promise<string> {
     // Vocab before sessions: the app-side loadVocab awaits the model fetch,
     // so session creation never races a download — creating on a partial
     // file would reject (and un-memoize) on garbage that refetches fine.
     const vocab = await ensureVocab()
+    const bias = applierFor(vocab)
     const { runtime, encoder, decoder } = await ensureSessions()
     const audio = pcm.length >= minPassSamples ? pcm : (() => {
       const padded = new Float32Array(minPassSamples)
@@ -173,7 +195,12 @@ export function createMoonshineTranscriber(deps: MoonshineTranscriberDeps): Tran
       }
 
       const outputs = await decoder.run(feeds)
-      const next = argmaxLastRow(outputs.logits as { data: ArrayLike<number>; dims: readonly number[] })
+      const logits = outputs.logits as LogitsTensor
+      // Contextual biasing (#62): the decoded suffix so far decides which
+      // lexicon continuations get a logit boost on this step's last row.
+      const next = bias
+        ? bias.nextToken(decodeMoonshineTokens(vocab, tokens), logits)
+        : argmaxLastRow(logits)
       tokens.push(next)
       if (next === Number(EOS_TOKEN_ID)) break
       inputIds = [BigInt(next)]

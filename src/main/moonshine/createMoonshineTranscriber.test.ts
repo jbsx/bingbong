@@ -37,12 +37,22 @@ const DECODER_OUTPUTS = ['logits', ...Array.from({ length: MOONSHINE_BASE_DIMS.l
 ).flat()]
 
 /** One scripted decoder step: marker tensors for present.*, argmax pick. */
-interface ScriptedStep {
-  /** The argmax of the LAST logits row — what greedy decoding takes. */
-  next: number
-  /** Extra rows in front of the scored row; argmax must ignore them. */
-  decoyRows?: number[]
-}
+type ScriptedStep =
+  | {
+      /** The argmax of the LAST logits row — what greedy decoding takes. */
+      next: number
+      /** Extra rows in front of the scored row; argmax must ignore them. */
+      decoyRows?: number[]
+    }
+  | {
+      /**
+       * Explicit scores for the scored (last) row, id → logit — for
+       * scripting near-ties the biasing is supposed to flip (argmax and
+       * boosted argmax differ).
+       */
+      lastRowScores: Record<number, number>
+      decoyRows?: number[]
+    }
 
 class FakeTensor {
   constructor(
@@ -74,13 +84,21 @@ function fakeRuntime(
       const script = scripts[Math.max(0, Math.min(pass, scripts.length - 1))]
       const s = script[Math.min(step, script.length - 1)]
       const vocab = 10
-      const rows = [...(s.decoyRows ?? []), s.next]
-      const data = new Float32Array(rows.length * vocab)
-      rows.forEach((token, row) => {
+      const decoys = s.decoyRows ?? []
+      const rows = decoys.length + 1
+      const data = new Float32Array(rows * vocab)
+      decoys.forEach((token, row) => {
         data[row * vocab] = 5 // decoy argmax at 0 in early rows
-        data[row * vocab + token] = row === rows.length - 1 ? 9 : 6 // last row wins
+        data[row * vocab + token] = 6
       })
-      const out: Record<string, unknown> = { logits: new FakeTensor('float32', data, [1, rows.length, vocab]) }
+      const last = decoys.length * vocab
+      if ('lastRowScores' in s) {
+        for (const [id, score] of Object.entries(s.lastRowScores)) data[last + Number(id)] = score
+      } else {
+        data[last] = 5
+        data[last + s.next] = 9 // last row wins
+      }
+      const out: Record<string, unknown> = { logits: new FakeTensor('float32', data, [1, rows, vocab]) }
       for (const name of DECODER_OUTPUTS.slice(1)) out[name] = { marker: `${name}@${step}` }
       step += 1
       return out
@@ -458,5 +476,57 @@ describe('streaming capture (rolling partials, final at endpoint)', () => {
     await expect(transcriber.finish(PCM)).resolves.toBe('And')
     expect(vocabLoads).toBe(2) // the success stayed memoized
     expect(runtimeLoads).toBe(2) // the failure did not
+  })
+})
+
+describe('contextual biasing in the greedy decode loop (#62)', () => {
+  const BIAS_VOCAB = parseMoonshineTokenizer(
+    JSON.stringify({
+      added_tokens: [
+        { id: 1, content: '<s>', special: true },
+        { id: 2, content: '</s>', special: true },
+      ],
+      model: { type: 'BPE', vocab: { '<unk>': 0, '<s>': 1, '</s>': 2, '▁open': 3, '▁the': 4, '▁pedal': 5, '▁panel': 6 } },
+    }),
+  )
+
+  /**
+   * "open the…" then the mishear: acoustics favor ' pedal' with ' panel'
+   * one logit behind — inside the boost margin, outside hearing aid.
+   */
+  const MISHEAR_SCRIPT: ScriptedStep[] = [
+    { lastRowScores: { 3: 9 } },
+    { lastRowScores: { 4: 9 } },
+    { lastRowScores: { 5: 2, 6: 1 } },
+    { next: 2 },
+  ]
+
+  it('the lexicon phrase wins the near-tie — transcript favors it over the garbage', async () => {
+    const rt = fakeRuntime([MISHEAR_SCRIPT])
+    const transcriber = makeTranscriber(rt, {
+      biasPhrases: ['panel'],
+      loadVocab: async () => BIAS_VOCAB,
+    })
+    await expect(transcriber.finish(PCM)).resolves.toBe('open the panel')
+  })
+
+  it('without bias phrases the same acoustics transcribe the mishear', async () => {
+    const rt = fakeRuntime([MISHEAR_SCRIPT])
+    const transcriber = makeTranscriber(rt, { loadVocab: async () => BIAS_VOCAB })
+    await expect(transcriber.finish(PCM)).resolves.toBe('open the pedal')
+  })
+
+  it('biasing adds no decode work — same encoder and decoder step count as unbiased', async () => {
+    // Latency class is the ONNX pass count: one encode, one decoder step
+    // per token. The boost is per-step string work beside an ORT call.
+    const unbiased = fakeRuntime([MISHEAR_SCRIPT])
+    await makeTranscriber(unbiased, { loadVocab: async () => BIAS_VOCAB }).finish(PCM)
+    const biased = fakeRuntime([MISHEAR_SCRIPT])
+    await makeTranscriber(biased, {
+      biasPhrases: ['panel'],
+      loadVocab: async () => BIAS_VOCAB,
+    }).finish(PCM)
+    expect(biased.encoderFeeds.length).toBe(unbiased.encoderFeeds.length)
+    expect(biased.decoderFeeds.length).toBe(unbiased.decoderFeeds.length) // 4 incl. EOS
   })
 })

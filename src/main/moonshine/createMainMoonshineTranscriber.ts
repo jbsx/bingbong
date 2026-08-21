@@ -2,6 +2,7 @@ import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { Transcriber } from '../../core/ports/stt'
 import { parseMoonshineTokenizer } from '../../core/moonshine/bpeTokenizer'
+import { BIAS_LEXICON } from './biasLexicon'
 import { createMoonshineTranscriber } from './createMoonshineTranscriber'
 import { ensureMoonshineModels, fsMoonshineStore, MOONSHINE_BASE_DIR } from './moonshineModels'
 import { createRetriable } from './retriable'
@@ -29,5 +30,6 @@ export function createMainMoonshineTranscriber(deps: { modelsDir: string }): Tra
     encoderPath: join(dir, 'encoder_model.onnx'),
     decoderPath: join(dir, 'decoder_model_merged.onnx'),
     loadVocab: async () => parseMoonshineTokenizer(await readFile(join(await ensureDir(), 'tokenizer.json'), 'utf8')),
+    biasPhrases: BIAS_LEXICON,
   })
 }

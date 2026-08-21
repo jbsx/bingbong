@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest'
 import { parseMoonshineTokenizer } from '../../core/moonshine/bpeTokenizer'
 import { VAD_FRAME_SAMPLES } from '../../core/voice/vadEndpointing'
 import { createMoonshineTranscriber } from './createMoonshineTranscriber'
+import { BIAS_LEXICON } from './biasLexicon'
 
 // Real-models port-boundary test for the streaming engine (#41): proves the
 // adapter drives the actual Moonshine Base ONNX export end to end through
@@ -105,5 +106,35 @@ describe.skipIf(!haveAssets)('moonshine transcriber (real models)', () => {
     transcriber.begin()
     transcriber.push(clip.subarray(0, VAD_FRAME_SAMPLES * 64))
     await expect(transcriber.finish(clip)).resolves.toContain('my fellow Americans')
+  }, 60_000)
+
+  it('the full bias lexicon leaves ordinary speech untouched (#62)', async () => {
+    // jfk.wav contains no lexicon words: with the real vocab and the real
+    // lexicon armed, the boost must not flip any token — and the biased
+    // final must stay in the same latency class as the unbiased one.
+    const clip = loadWav(clipPath)
+    const unbiased = makeEngine()
+    const biased = createMoonshineTranscriber({
+      encoderPath: join(moonshineDir, 'encoder_model.onnx'),
+      decoderPath: join(moonshineDir, 'decoder_model_merged.onnx'),
+      loadVocab: async () => parseMoonshineTokenizer(readFileSync(join(moonshineDir, 'tokenizer.json'), 'utf8')),
+      biasPhrases: BIAS_LEXICON,
+    })
+
+    const plainStart = performance.now()
+    const plain = await unbiased.finish(clip)
+    const plainMs = performance.now() - plainStart
+    const biasedStart = performance.now()
+    const biasedText = await biased.finish(clip)
+    const biasedMs = performance.now() - biasedStart
+
+    expect(biasedText).toBe(plain)
+    expect(biasedText).toContain('my fellow Americans')
+    console.log(
+      `jfk.wav biased vs unbiased: ${Math.round(biasedMs)}ms vs ${Math.round(plainMs)}ms — "${biasedText}"`,
+    )
+    // Same pass count and only per-step string work added: the biased final
+    // must not drift beyond a generous scheduling-noise allowance.
+    expect(biasedMs).toBeLessThan(plainMs * 2 + 500)
   }, 60_000)
 })
