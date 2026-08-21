@@ -15,6 +15,7 @@ import {
   MAX_ORCHESTRATOR_VISION_CALLS,
   type VisionBudget,
 } from '../agent/subagentRails'
+import { MAX_TOOL_ROUNDS_DEFAULT } from '../settings/settings'
 
 export interface CommandPipelineDeps {
   llm: LlmClient
@@ -105,8 +106,8 @@ class CommandAbortedError extends Error {
 /** Default ask_user window: ~45s for a spoken or typed free-text answer. */
 export const ASK_TIMEOUT_MS = 45_000
 
-/** Default orchestrator tool-round ceiling — mirrors MAX_TOOL_ROUNDS_DEFAULT in settings. */
-const DEFAULT_MAX_TOOL_ROUNDS = 80
+/** Default orchestrator tool-round ceiling — the settings store's default, so the pipeline and the settings page agree. */
+const DEFAULT_MAX_TOOL_ROUNDS = MAX_TOOL_ROUNDS_DEFAULT
 
 const STEERED_CANCELLED = 'cancelled by the user\'s steering'
 

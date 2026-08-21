@@ -42,7 +42,7 @@ export interface SubagentRuntimeDeps {
   onUsage?(record: UsageRecord): void
   /** Escape while a subagent tab owns focus. */
   onEscape?(): boolean
-  /** Called after each pooled view is added — keeps the feed overlay on top. */
+  /** Called when a pooled view is reopened into the main browsing area — keeps the feed overlay above it. */
   onViewAdded?(): void
   /** Web-zoom setting (#53), applied to every subagent pane. */
   getZoomPercent?(): number

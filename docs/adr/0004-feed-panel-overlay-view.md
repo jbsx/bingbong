@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted
+Accepted — amended by #57: parked subagent thumbnail views deliberately stack *above* the overlay (they need unoccluded pixels for their first paint, and the overlay covers exactly the right edge where they park); the overlay is re-topped only when a pane is reopened into the main browsing area. The `onViewAdded` hook survives with that narrower meaning.
 
 ## Context
 

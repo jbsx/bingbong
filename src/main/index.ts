@@ -244,8 +244,9 @@ async function createWindow(): Promise<BrowserWindow> {
       const activePipeline = pipelineFor(win)
       return activePipeline ? abortActiveRun(activePipeline) : false
     },
-    // New subagent views append above older ones — the feed overlay
-    // re-tops itself so the panel never slides beneath a tab viewport.
+    // A subagent pane reopened into the main browsing area rises above the
+    // main pane — the feed overlay re-tops itself so the panel stays
+    // reachable above it. Parked thumbnail views are exempt (ADR 0004).
     onViewAdded: () => feedPanel.bringToTop(),
     // Subagent panes inherit the web-zoom setting (#53).
     getZoomPercent: () => settingsStore.get().webZoomPercent,
