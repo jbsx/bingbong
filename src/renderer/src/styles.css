@@ -1129,9 +1129,22 @@ body {
   white-space: nowrap;
 }
 
-.subagent-viewport {
-  height: 200px;
+/* The captured page preview (#57): frames arrive at the card's aspect
+   ratio (the desktop viewport they were captured at), so the box reserves
+   its shape before the first frame lands — but capped, so a rail of cards
+   never starves the main browsing area a reopened pane moves into. */
+.subagent-thumbnail-frame {
+  aspect-ratio: 1280 / 800;
+  max-height: 150px;
   background: var(--bg);
+  overflow: hidden;
+}
+
+.subagent-thumbnail {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 
 .subagent-card-url,
@@ -1183,4 +1196,3 @@ body {
 
 /* Kiosk: cards shrink a row shorter so browsing stays the main surface. */
 .dashboard--kiosk .subagent-card { flex-basis: 360px; }
-.dashboard--kiosk .subagent-viewport { height: 150px; }

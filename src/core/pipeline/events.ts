@@ -3,6 +3,19 @@ export type PipelineStatus = 'thinking' | 'acting' | 'speaking' | 'paused' | 'ca
 import type { SubagentKind, SubagentStatus } from '../agent/subagentManager'
 import type { SubagentTabPhase } from '../browser/subagentTabs'
 
+/** The tab slice a subagent card carries — the bridge merges it in from the tab machine. */
+export interface SubagentCardTab {
+  phase: SubagentTabPhase
+  url: string
+  title: string
+  /**
+   * The latest in-memory capture of the tab's page (#57): a JPEG data URL
+   * refreshed ~1fps while the agent runs, kept in renderer memory only
+   * (the capture path never writes to disk).
+   */
+  thumbnail?: string
+}
+
 /** Live-card view of one subagent, merged from manager + tab state. */
 export interface SubagentCard {
   id: string
@@ -15,8 +28,8 @@ export interface SubagentCard {
   lastAction: string | null
   result: string | null
   error: string | null
-  /** Present for browse agents; phase drives the viewport and reopen. */
-  tab?: { phase: SubagentTabPhase; url: string; title: string }
+  /** Present for browse agents; phase drives the thumbnail and reopen. */
+  tab?: SubagentCardTab
 }
 
 /**

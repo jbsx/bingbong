@@ -115,6 +115,20 @@ describe('subagent manager', () => {
     expect(kinds).toEqual(['spawned:running', 'progress:running', 'finished:completed'])
   })
 
+  it('isRunning is the live-work gate the capture loop polls', async () => {
+    const { mgr, api } = manager()
+
+    const spawned = mgr.spawn('research', 'slow work')
+    expect(spawned.ok).toBe(true)
+    if (!spawned.ok) return
+    expect(mgr.isRunning(spawned.agent.id)).toBe(true)
+
+    api.tasks.get(spawned.agent.id)!.resolve('done')
+    await flush()
+    expect(mgr.isRunning(spawned.agent.id)).toBe(false)
+    expect(mgr.isRunning('a-ghost')).toBe(false)
+  })
+
   it('threads the spawning turn id into the task spec', () => {
     const { mgr, api } = manager()
 

@@ -483,6 +483,7 @@ export function fakeSubagentManager(
     pauseAll: () => {},
     resumeAll: () => {},
     list: () => records.map((record) => ({ ...record })),
+    isRunning: (agentId) => records.some((record) => record.id === agentId && record.status === 'running'),
     results: async () => 'merged results',
     ...overrides,
   }

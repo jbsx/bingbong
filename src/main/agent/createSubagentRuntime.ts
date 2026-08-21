@@ -12,7 +12,7 @@ import { createSubagentManager } from '../../core/agent/subagentManager'
 import { createSubagentCardBridge, type SubagentCardBridge } from '../../core/agent/subagentCards'
 import { createSubagentTabs } from '../../core/browser/subagentTabs'
 import { createSubagentTools } from '../../core/pipeline/subagentTools'
-import { createSubagentPanePool, type SubagentPanePool } from '../browser/subagentPanePool'
+import { createSubagentPanePool, type MainPaneRectSource, type SubagentPanePool } from '../browser/subagentPanePool'
 import { createSubagentTaskApi } from './createSubagentWorkhorse'
 import { createBackgroundTools } from './backgroundTools'
 import { createDuckDuckGoSearchProvider } from '../search/createDuckDuckGoSearchProvider'
@@ -46,6 +46,8 @@ export interface SubagentRuntimeDeps {
   onViewAdded?(): void
   /** Web-zoom setting (#53), applied to every subagent pane. */
   getZoomPercent?(): number
+  /** The main browsing area — the cards' Reopen control moves panes there (#57). */
+  mainPane?: MainPaneRectSource
   /** Perf tracing for subagent LLM rounds (#29); absent keeps them unlogged. */
   tracer?: PerfTracer
 }
@@ -76,11 +78,21 @@ export function createSubagentRuntime(deps: SubagentRuntimeDeps): SubagentRuntim
   const vision = createZaiVisionLocator({ getEnv: deps.getEnv })
 
   const tabs = createSubagentTabs({ clock, lingerMs })
+  // The capture loop asks the manager who is running, but the manager needs
+  // the pool — a late-bound ref breaks the cycle, like bridgeRef below.
+  const managerRef: { current?: ReturnType<typeof createSubagentManager> } = {}
   const pool = createSubagentPanePool(deps.win, tabs, {
     session: deps.session,
     ...(deps.onEscape ? { onEscape: deps.onEscape } : {}),
     ...(deps.onViewAdded ? { onViewAdded: deps.onViewAdded } : {}),
     ...(deps.getZoomPercent ? { getZoomPercent: deps.getZoomPercent } : {}),
+    ...(deps.mainPane ? { mainPane: deps.mainPane } : {}),
+    clock,
+    // #57: ~1fps in-memory thumbnails while an agent runs and its card is
+    // visible; frames ride the existing agent_update payload via the tab
+    // machine, so the dashboard refreshes like any other card change.
+    isAgentRunning: (agentId) => managerRef.current?.isRunning(agentId) ?? false,
+    onThumbnail: (agentId, dataUrl) => tabs.update(agentId, { thumbnail: dataUrl }),
   })
 
   // The manager needs an event sink and the bridge needs the manager — a
@@ -105,6 +117,7 @@ export function createSubagentRuntime(deps: SubagentRuntimeDeps): SubagentRuntim
     clock,
     onEvent: (event) => bridgeRef.bridge?.onManagerEvent(event),
   })
+  managerRef.current = manager
   bridgeRef.bridge = createSubagentCardBridge({
     manager,
     tabs,

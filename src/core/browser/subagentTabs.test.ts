@@ -71,6 +71,20 @@ describe('subagent tab lifecycle', () => {
     expect(tabs.snapshot().find((t) => t.agentId === 'a-1')?.phase).toBe('active')
   })
 
+  it('reopen while lingering cancels the auto-close — a pane moved into the main area must not vanish mid-use (#57)', () => {
+    const { tabs, clock, changes } = machine()
+    tabs.open('a-1', 'https://a.test')
+    tabs.finish('a-1') // lingering, 60 s timer armed
+
+    const reopened = tabs.reopen('a-1')
+    expect(reopened.ok).toBe(true)
+    if (reopened.ok) expect(reopened.tab.phase).toBe('active')
+
+    clock.advance(120_000)
+    expect(tabs.snapshot().find((t) => t.agentId === 'a-1')?.phase).toBe('active')
+    expect(changes.filter((t) => t.agentId === 'a-1').map((t) => t.phase)).toEqual(['active', 'lingering', 'active'])
+  })
+
   it('reopen still respects the 3-tab rail', () => {
     const { tabs, clock } = machine()
     tabs.open('a-1', 'https://a.test')
@@ -121,5 +135,29 @@ describe('subagent tab lifecycle', () => {
     tabs.finish('a-1')
     clock.advance(100)
     expect(tabs.snapshot().find((t) => t.agentId === 'a-1')?.phase).toBe('closed')
+  })
+
+  it('carries a captured thumbnail on the tab and announces it like navigation', () => {
+    const { tabs, changes } = machine()
+    tabs.open('a-1', 'https://a.test')
+
+    tabs.update('a-1', { thumbnail: 'data:image/jpeg;base64,frame-1' })
+
+    expect(tabs.snapshot().find((t) => t.agentId === 'a-1')?.thumbnail).toBe('data:image/jpeg;base64,frame-1')
+    expect(changes.at(-1)).toMatchObject({ agentId: 'a-1', thumbnail: 'data:image/jpeg;base64,frame-1' })
+  })
+
+  it('retains the last thumbnail through linger and close like the last URL', () => {
+    const { tabs, clock } = machine()
+    tabs.open('a-1', 'https://a.test')
+    tabs.update('a-1', { thumbnail: 'data:image/jpeg;base64,frame-final' })
+    tabs.finish('a-1')
+    clock.advance(60_000)
+
+    const closed = tabs.snapshot().find((t) => t.agentId === 'a-1')
+    expect(closed).toMatchObject({
+      phase: 'closed',
+      thumbnail: 'data:image/jpeg;base64,frame-final',
+    })
   })
 })

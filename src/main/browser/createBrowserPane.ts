@@ -1,6 +1,6 @@
 import { app, session, WebContentsView } from 'electron'
 import type { BrowserPaneState, PaneRect } from '../../core/browser/paneState'
-import { idleBrowserPaneState } from '../../core/browser/paneState'
+import { HIDDEN_PANE_RECT, idleBrowserPaneState } from '../../core/browser/paneState'
 import { toPaneBounds } from '../../core/browser/paneGeometry'
 import { normalizeUrlInput } from '../../core/browser/urlInput'
 import { browserUserAgent } from '../../core/browser/userAgent'
@@ -16,6 +16,9 @@ export interface BrowserPane {
   goBack(): void
   goForward(): void
   setPaneRect(rect: PaneRect): void
+  /** The last rect the renderer reported — reopened subagent panes mirror it (#57). */
+  rect(): PaneRect
+  onRect(listener: (rect: PaneRect) => void): () => void
   state(): BrowserPaneState
   onState(listener: (state: BrowserPaneState) => void): () => void
   /** Drains URLs of window.open popups blocked since the last call. */
@@ -67,6 +70,8 @@ export function createBrowserPane(deps?: {
 
   const listeners = new Set<(state: BrowserPaneState) => void>()
   let state: BrowserPaneState = { ...idleBrowserPaneState(), url: wc.getURL() }
+  const rectListeners = new Set<(rect: PaneRect) => void>()
+  let paneRect: PaneRect = HIDDEN_PANE_RECT
 
   function whenLive(fn: () => void): void {
     if (!wc.isDestroyed()) fn()
@@ -117,7 +122,14 @@ export function createBrowserPane(deps?: {
       })
     },
     setPaneRect(rect) {
+      paneRect = rect
       whenLive(() => view.setBounds(toPaneBounds(rect)))
+      for (const listener of rectListeners) listener(rect)
+    },
+    rect: () => paneRect,
+    onRect(listener) {
+      rectListeners.add(listener)
+      return () => rectListeners.delete(listener)
     },
     state: () => state,
     onState(listener) {

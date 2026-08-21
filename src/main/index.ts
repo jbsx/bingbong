@@ -249,6 +249,9 @@ async function createWindow(): Promise<BrowserWindow> {
     onViewAdded: () => feedPanel.bringToTop(),
     // Subagent panes inherit the web-zoom setting (#53).
     getZoomPercent: () => settingsStore.get().webZoomPercent,
+    // The cards' Reopen control moves a subagent pane into the main
+    // browsing area (#57) — it mirrors the main pane's rect from then on.
+    mainPane: pane,
   })
   subagentRuntimes.set(win, subagentRuntime)
   win.on('closed', () => {

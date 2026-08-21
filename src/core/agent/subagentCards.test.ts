@@ -137,4 +137,31 @@ describe('subagent card bridge', () => {
     expect(phases).toContain('lingering')
     expect(phases).toContain('closed')
   })
+
+  it('rides captured thumbnails on the agent_update payload — the card\'s live preview (#57)', async () => {
+    const w = wiring()
+    w.manager.spawn('browse', 'compare prices')
+
+    w.tabs.update('a-1', { thumbnail: 'data:image/jpeg;base64,frame-1' })
+    w.tabs.update('a-1', { thumbnail: 'data:image/jpeg;base64,frame-2' })
+    w.settle('a-1', 'resolve', 'done')
+    await flush()
+
+    const frames = agentUpdates(w.events).map((e) => e.agent.tab?.thumbnail)
+    expect(frames).toContain('data:image/jpeg;base64,frame-1')
+    expect(frames).toContain('data:image/jpeg;base64,frame-2')
+    // The last frame survives the finish — the card keeps its final preview.
+    expect(frames.at(-1)).toBe('data:image/jpeg;base64,frame-2')
+  })
+
+  it('renders no thumbnail for agents without a tab', async () => {
+    const w = wiring()
+    w.manager.spawn('research', 'pure research')
+    w.settle('a-1', 'resolve', 'found')
+    await flush()
+
+    for (const update of agentUpdates(w.events)) {
+      expect(update.agent.tab).toBeUndefined()
+    }
+  })
 })

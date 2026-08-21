@@ -39,6 +39,7 @@ function delegationToolCatalog(): Tool[] {
     resumeAll: () => {},
     results: async () => 'none',
     list: () => [],
+    isRunning: () => false,
   }
   return createSubagentTools(manager)
 }

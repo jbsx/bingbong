@@ -2,30 +2,44 @@ import { useEffect, useRef } from 'react'
 import type { SubagentCard } from '../../core/pipeline/events'
 import { HIDDEN_PANE_RECT, type PaneRect } from '../../core/browser/paneState'
 
-// One live card per subagent (issue #13): status, task, progress, and — for
-// browse agents — a viewport whose rect drives the window's
-// WebContentsView. Closed tabs keep their card with a Reopen button; running
-// agents offer Cancel (the same cancel_agent path, by card instead of voice).
+// One live card per subagent (issue #13): status, task, and progress. Since
+// #57 browse agents show a captured thumbnail of their page instead of the
+// page itself — their views live hidden at a desktop viewport, and main
+// ships ~1fps in-memory frames on the agent_update payload. Direct in-card
+// interaction is gone; Reopen moves the pane into the main browsing area.
 
 function paneRectFrom(rect: DOMRect): PaneRect {
   return { x: rect.x, y: rect.y, width: rect.width, height: rect.height }
 }
 
-function TabViewport({ agentId }: { agentId: string }) {
-  const viewportRef = useRef<HTMLDivElement>(null)
+function intersects(a: DOMRect, b: DOMRect): boolean {
+  return a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top
+}
+
+/**
+ * The card's thumbnail frame. Doubles as the visibility reporter: its rect
+ * rides the existing tab-rect channel so main captures only while the card
+ * is actually on screen (a card scrolled out of the rail reports hidden),
+ * and its CSS width sizes the frames main sends.
+ */
+function ThumbnailFrame({ agentId, src }: { agentId: string; src: string | undefined }) {
+  const frameRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    const viewport = viewportRef.current
-    if (!viewport) return
+    const frame = frameRef.current
+    if (!frame) return
 
     const report = () => {
-      window.bingbong.subagents.reportTabRect(agentId, paneRectFrom(viewport.getBoundingClientRect()))
+      const rail = frame.closest('.subagent-cards')
+      const rect = frame.getBoundingClientRect()
+      const visible = rail === null || intersects(rect, rail.getBoundingClientRect())
+      window.bingbong.subagents.reportTabRect(agentId, visible ? paneRectFrom(rect) : HIDDEN_PANE_RECT)
     }
 
     report()
     const observer = new ResizeObserver(report)
-    observer.observe(viewport)
-    const cards = viewport.closest('.subagent-cards')
+    observer.observe(frame)
+    const cards = frame.closest('.subagent-cards')
     cards?.addEventListener('scroll', report, { passive: true })
     window.addEventListener('resize', report)
     return () => {
@@ -36,7 +50,11 @@ function TabViewport({ agentId }: { agentId: string }) {
     }
   }, [agentId])
 
-  return <div className="subagent-viewport" ref={viewportRef} aria-label={`subagent ${agentId} tab`} />
+  return (
+    <div className="subagent-thumbnail-frame" ref={frameRef} aria-label={`subagent ${agentId} page preview`}>
+      {src ? <img className="subagent-thumbnail" src={src} alt="" /> : null}
+    </div>
+  )
 }
 
 function statusLabel(agent: SubagentCard): string {
@@ -45,8 +63,6 @@ function statusLabel(agent: SubagentCard): string {
 }
 
 export function SubagentCardView({ agent }: { agent: SubagentCard }) {
-  const hasLiveTab = agent.tab !== undefined && agent.tab.phase !== 'closed'
-
   return (
     <article className={`subagent-card subagent-card--${agent.status}`} aria-label={`subagent ${agent.id}`}>
       <header className="subagent-card-header">
@@ -63,7 +79,7 @@ export function SubagentCardView({ agent }: { agent: SubagentCard }) {
             Cancel
           </button>
         ) : null}
-        {agent.tab && agent.tab.phase === 'closed' ? (
+        {agent.tab ? (
           <button
             type="button"
             className="chrome-button subagent-reopen"
@@ -74,8 +90,8 @@ export function SubagentCardView({ agent }: { agent: SubagentCard }) {
         ) : null}
       </header>
       <p className="subagent-card-task">{agent.task}</p>
-      {hasLiveTab ? <TabViewport agentId={agent.id} /> : null}
-      {agent.tab && !hasLiveTab ? (
+      {agent.tab ? <ThumbnailFrame agentId={agent.id} src={agent.tab.thumbnail} /> : null}
+      {agent.tab && agent.tab.phase === 'closed' ? (
         <p className="subagent-card-url">
           last page: {agent.tab.url === '' ? '(none)' : agent.tab.url}
         </p>

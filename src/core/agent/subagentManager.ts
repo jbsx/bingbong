@@ -87,6 +87,8 @@ export interface SubagentManager {
   resumeAll(): void
   results(options: { ids?: string[]; wait?: boolean }): Promise<string>
   list(): SubagentRecord[]
+  /** Whether the agent is still working — the capture loop's gate (#57). */
+  isRunning(agentId: string): boolean
 }
 
 const DEFAULT_WAIT_TIMEOUT_MS = 120_000
@@ -246,6 +248,8 @@ export function createSubagentManager(deps: SubagentManagerDeps): SubagentManage
     },
 
     list: () => [...records.values()].map((record) => ({ ...record })),
+
+    isRunning: (agentId) => records.get(agentId)?.status === 'running',
   }
 }
 

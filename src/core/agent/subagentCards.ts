@@ -1,5 +1,5 @@
 import type { Clock } from '../ports/clock'
-import type { PipelineEvent, SubagentCard } from '../pipeline/events'
+import type { PipelineEvent, SubagentCard, SubagentCardTab } from '../pipeline/events'
 import type { SubagentEvent, SubagentManager } from './subagentManager'
 import { subagentAnnouncement } from './subagentManager'
 import type { SubagentTab, SubagentTabs } from '../browser/subagentTabs'
@@ -25,11 +25,20 @@ export interface SubagentCardBridge {
 export function createSubagentCardBridge(deps: SubagentCardBridgeDeps): SubagentCardBridge {
   const { manager, tabs, clock, emit } = deps
 
+  function tabCard(tab: SubagentTab): SubagentCardTab {
+    return {
+      phase: tab.phase,
+      url: tab.url,
+      title: tab.title,
+      ...(tab.thumbnail !== undefined ? { thumbnail: tab.thumbnail } : {}),
+    }
+  }
+
   function cardFor(agentId: string): SubagentCard | null {
     const record = manager.list().find((candidate) => candidate.id === agentId)
     if (!record) return null
     const tab = tabs.snapshot().find((candidate) => candidate.agentId === agentId)
-    return { ...record, ...(tab ? { tab: { phase: tab.phase, url: tab.url, title: tab.title } } : {}) }
+    return { ...record, ...(tab ? { tab: tabCard(tab) } : {}) }
   }
 
   function emitCard(agentId: string): void {

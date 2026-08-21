@@ -16,6 +16,7 @@ function fakeManager(overrides: Partial<SubagentManager> = {}): SubagentManager 
     resumeAll: () => {},
     results: async () => 'merged results',
     list: () => [],
+    isRunning: () => false,
     ...overrides,
   }
 }

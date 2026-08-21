@@ -16,6 +16,13 @@ export interface SubagentTab {
   /** Last known URL — retained after close so reopen can restore it. */
   url: string
   title: string
+  /**
+   * Latest in-memory capture of the tab's page (#57): a JPEG data URL the
+   * card displays as a live thumbnail. Held in renderer memory only — the
+   * capture path never touches disk. Retained after close like the URL, so
+   * the finished card keeps its last frame.
+   */
+  thumbnail?: string
 }
 
 export interface SubagentTabsDeps {
@@ -32,10 +39,10 @@ export interface SubagentTabs {
   open(agentId: string, startUrl: string): OpenResult
   /** The agent finished (any outcome) — the tab lingers, then auto-closes. */
   finish(agentId: string): void
-  /** Reopen a closed tab (restores the retained URL) within the tab rail. */
+  /** Bring a lingering or closed tab back into active use; a closed tab restores its retained URL. */
   reopen(agentId: string): ReopenResult
   /** Navigation updates for the card (URL/title); emits like phase changes. */
-  update(agentId: string, patch: { url?: string; title?: string }): void
+  update(agentId: string, patch: { url?: string; title?: string; thumbnail?: string }): void
   snapshot(): SubagentTab[]
   /** Fires on every phase change or navigation update with the tab (a copy). */
   subscribe(listener: (tab: SubagentTab) => void): () => void
@@ -99,11 +106,17 @@ export function createSubagentTabs(deps: SubagentTabsDeps): SubagentTabs {
 
     reopen(agentId) {
       const tab = tabs.get(agentId)
-      if (!tab || tab.phase !== 'closed') {
+      if (!tab || tab.phase === 'active') {
         return { ok: false, reason: tab ? `tab is ${tab.phase}, not closed` : 'no such subagent tab' }
       }
-      if (occupyingCount() >= maxTabs) return { ok: false, reason: fullReason() }
+      // A lingering tab already occupies the rail; only a closed reopen
+      // claims a new slot. Both paths disarm the linger timer — a pane the
+      // user moved into the main browsing area (#57) must not auto-close
+      // mid-interaction.
+      if (tab.phase === 'closed' && occupyingCount() >= maxTabs) return { ok: false, reason: fullReason() }
 
+      lingerTimers.get(agentId)?.()
+      lingerTimers.delete(agentId)
       tab.phase = 'active'
       emit(tab)
       return { ok: true, tab }
@@ -114,6 +127,7 @@ export function createSubagentTabs(deps: SubagentTabsDeps): SubagentTabs {
       if (!tab) return
       if (patch.url !== undefined) tab.url = patch.url
       if (patch.title !== undefined) tab.title = patch.title
+      if (patch.thumbnail !== undefined) tab.thumbnail = patch.thumbnail
       // Cards follow navigation while the agent works, so updates emit too.
       emit(tab)
     },
