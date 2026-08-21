@@ -138,9 +138,11 @@ export interface CommandPipeline {
   /**
    * Runs one command as a turn (#28): adopts the given `turnId` (the voice
    * session's, minted at utterance end) or mints a fresh one (text box), and
-   * stamps every event of the turn with it.
+   * stamps every event of the turn with it. `truncated` (#61) is true when
+   * the spoken utterance hit the 30 s cap — the flag rides every LLM round
+   * so the model asks the user to finish instead of guessing.
    */
-  execute(command: string, turnId?: string): AsyncIterable<PipelineEvent>
+  execute(command: string, turnId?: string, truncated?: boolean): AsyncIterable<PipelineEvent>
   resolveConfirmation(confirmationId: string, approved: boolean): void
   /** Answer an open ask_user window (typed card or voice transcript). */
   resolveAsk(askId: string, answer: string): void
@@ -272,16 +274,16 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
     }
   }
 
-  async function* execute(command: string, turnId?: string): AsyncIterable<PipelineEvent> {
+  async function* execute(command: string, turnId?: string, truncated?: boolean): AsyncIterable<PipelineEvent> {
     // One id per turn (#28): adopted when the voice session minted it at
     // utterance end, freshly minted for text-box commands.
     const id = turnId ?? mintTurnId()
-    for await (const event of runTurn(command, id)) {
+    for await (const event of runTurn(command, id, truncated)) {
       yield stampTurn(event, id)
     }
   }
 
-  async function* runTurn(command: string, turnId: string): AsyncIterable<UnstampedEvent> {
+  async function* runTurn(command: string, turnId: string, truncated?: boolean): AsyncIterable<UnstampedEvent> {
     const run: ActiveRun = { turnId, aborted: false, paused: false }
     activeRun = run
     const emitDetail = deps.emitDetail
@@ -346,6 +348,9 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
             turn = await llm.complete({
               command,
               toolResults,
+              // The truncation flag (#61) rides every round: the model sees
+              // the possibly-cut-off note for as long as the turn runs.
+              ...(truncated ? { truncated: true } : {}),
               // The turn id rides the request so the perf wrapper keys each
               // llm span to this turn (#29).
               turnId,

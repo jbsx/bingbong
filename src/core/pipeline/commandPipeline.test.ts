@@ -331,6 +331,31 @@ describe('command pipeline', () => {
     expect(tts.spoken).toEqual(['Done.'])
   })
 
+  it('carries a capped utterance\'s truncation flag to every orchestrator round (#61)', async () => {
+    const llm = new ScriptedLlm([
+      { kind: 'tool_calls', calls: [{ id: 'c1', name: 'noop', args: {} }] },
+      { kind: 'answer', speak: 'Please finish your request.', display: 'Asked for the rest.' },
+    ])
+    const noop = { name: 'noop', async execute() { return 'done' } }
+    const pipeline = createCommandPipeline({ llm, tts: new RecordingTts(), clock: new FakeClock(), tools: [noop] })
+
+    const events: PipelineEvent[] = []
+    for await (const raw of pipeline.execute('and then open the', 'turn-voice-9', true)) events.push(raw)
+
+    expect(events.at(-1)).toMatchObject({ type: 'done', outcome: 'done' })
+    // The flag rides every round of the turn, not just the first.
+    expect(llm.requests.map((request) => request.truncated)).toEqual([true, true])
+  })
+
+  it('leaves the truncation flag absent on uncapped commands (#61)', async () => {
+    const llm = new ScriptedLlm([{ kind: 'answer', speak: 'Done.', display: 'Done.' }])
+    const pipeline = createCommandPipeline({ llm, tts: new RecordingTts(), clock: new FakeClock(), tools: [] })
+
+    await collect(pipeline, 'open youtube')
+
+    expect(llm.requests[0].truncated).toBeUndefined()
+  })
+
   it('emits an error event and speaks a one-liner when the LLM fails', async () => {
     const llm = new ScriptedLlm([])
     const tts = new RecordingTts()

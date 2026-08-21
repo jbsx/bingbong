@@ -78,6 +78,17 @@ describe('createSingleShotPipeline', () => {
     }
   })
 
+  it('forwards a capped utterance\'s truncation flag to the inner pipeline (#61)', async () => {
+    const clock = new FakeClock(0)
+    const llm = new ScriptedLlm([{ kind: 'answer', speak: 'Finish your request?', display: 'Asked.' }])
+    const inner = createCommandPipeline({ llm, tts: new RecordingTts(), clock, tools: [] })
+    const pipeline = createSingleShotPipeline(inner, clock)
+
+    for await (const event of pipeline.execute('and then open the', 'turn-voice-8', true)) void event
+
+    expect(llm.requests[0].truncated).toBe(true)
+  })
+
   it('gives a busy-rejected submission its own minted turn id', async () => {
     const clock = new FakeClock(0)
     const neverResolves = new Promise<AssistantTurn>(() => {})

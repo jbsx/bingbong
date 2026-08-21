@@ -22,6 +22,13 @@ export interface SessionTurn {
 export interface LlmRequest {
   command: string
   toolResults: ToolResult[]
+  /**
+   * The spoken utterance hit the 30 s hard cap (#61): the command may be
+   * cut off mid-sentence. Clients flag it in-band (a note appended to the
+   * command message) so the model asks the user to finish instead of
+   * guessing at the truncated intent. Absent on complete commands.
+   */
+  truncated?: boolean
   /** A user correction captured while the current run was paused. */
   steering?: string
   /** Distilled prior turns, oldest first; absent when the session is empty. */

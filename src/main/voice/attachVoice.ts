@@ -52,8 +52,8 @@ export function attachVoiceToWindow(win: BrowserWindow, deps: AttachVoiceDeps): 
     getEndpointerConfig: deps.getEndpointerConfig,
     tracer: deps.tracer,
     dumper: deps.dumper,
-    onSubmitCommand: (text, turnId) => {
-      void runAssistantCommand(win, text, turnId)
+    onSubmitCommand: (text, turnId, truncated) => {
+      void runAssistantCommand(win, text, turnId, truncated)
     },
     onResolveConfirmation: (confirmationId, approved) => {
       if (win.isDestroyed()) return

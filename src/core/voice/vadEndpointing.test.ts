@@ -55,6 +55,10 @@ describe('utterance endpointing', () => {
     expect(RESUMPTION_MERGE_MS_DEFAULT).toBe(1_500)
   })
 
+  it('defaults to a 30 s hard cap — the STT model ceiling (#61)', () => {
+    expect(vadDefaults().maxUtteranceMs).toBe(30_000)
+  })
+
   it('converts endpoint-delay milliseconds to whole silence frames', () => {
     expect(silenceFramesForMs(500)).toBe(16) // 512 ms
     expect(silenceFramesForMs(200)).toBe(6) // 192 ms

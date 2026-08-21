@@ -25,7 +25,7 @@ export function createSingleShotPipeline(
   const mintTurnId = createTurnIdSource(deps?.tracer)
   let running = false
 
-  async function* execute(command: string, turnId?: string): AsyncIterable<PipelineEvent> {
+  async function* execute(command: string, turnId?: string, truncated?: boolean): AsyncIterable<PipelineEvent> {
     // A rejected submission is still an observable turn (#28): it gets the
     // submitted id (voice) or a fresh one (text box), stamped on its events.
     const id = turnId ?? mintTurnId()
@@ -44,7 +44,7 @@ export function createSingleShotPipeline(
     }
     running = true
     try {
-      yield* inner.execute(command, id)
+      yield* inner.execute(command, id, truncated)
     } finally {
       running = false
     }

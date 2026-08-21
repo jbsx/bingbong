@@ -64,7 +64,10 @@ export function vadDefaults(): UtteranceEndpointerConfig {
     resumptionMergeMs: RESUMPTION_MERGE_MS_DEFAULT, // then ~1.5 s holds submission for rejoined speech (#60)
     startPaddingMs: 192, // ~6 frames of pre-roll
     endPaddingMs: 64, // ~2 frames of tail
-    maxUtteranceMs: 15_000,
+    // The STT model's ceiling (#61): long spoken requests survive whole;
+    // the voice session flags a capped utterance so the model asks the
+    // user to finish instead of guessing.
+    maxUtteranceMs: 30_000,
     minSpeechMs: 160,
   }
 }

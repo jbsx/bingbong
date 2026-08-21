@@ -48,8 +48,13 @@ export interface VoiceSessionDeps {
   tracer?: PerfTracer
   /** Opt-in utterance audio dumps (#34); absent keeps the session dump-free. */
   dumper?: UtteranceDumper
-  /** Where recognized commands go — the exact path the text box takes. */
-  onSubmitCommand(text: string, turnId?: string): void
+  /**
+   * Where recognized commands go — the exact path the text box takes. The
+   * truncation flag (#61) is true when the utterance hit the hard cap: the
+   * command still submits, but the orchestrator is told it may be cut off
+   * mid-sentence so it asks the user to finish instead of guessing.
+   */
+  onSubmitCommand(text: string, turnId?: string, truncated?: boolean): void
   onResolveConfirmation(confirmationId: string, approved: boolean): void
   /** A spoken ask_user answer — free text, returned to the model verbatim. */
   onResolveAsk(askId: string, answer: string): void
@@ -432,7 +437,7 @@ export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
       backToListening()
       return
     }
-    deps.onSubmitCommand(text, turnId ?? undefined)
+    deps.onSubmitCommand(text, turnId ?? undefined, utterance.truncated)
     deps.onHeard({ text, routed: 'command' })
     stopListening()
   }

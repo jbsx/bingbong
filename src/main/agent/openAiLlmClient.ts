@@ -88,6 +88,15 @@ export const CONTINUATION_SYSTEM_LINE =
   'The current command may refer to them (for example "the second one" or "pause it"); ' +
   'resolve such references against that conversation instead of asking again.'
 
+/**
+ * In-band truncation flag (#61): appended to a command whose utterance hit
+ * the 30 s recording cap. The system prompt's truncation rule tells the
+ * model what to do with it — ask the user to finish, never guess.
+ */
+export const TRUNCATION_NOTE =
+  '[This spoken request hit the 30-second recording limit and may be cut off mid-sentence. ' +
+  'The end of the request may be missing — do not guess it; ask the user to finish their request.]'
+
 function historyMessages(history: SessionTurn[]): WireMessage[] {
   if (history.length === 0) return []
   return [
@@ -104,7 +113,12 @@ export function createOpenAiLlmClient(deps: OpenAiLlmClientDeps): LlmClient {
     const messages: WireMessage[] = [
       { role: 'system', content: systemPrompt },
       ...historyMessages(request.history ?? []),
-      { role: 'user', content: request.command },
+      {
+        role: 'user',
+        // The truncation note rides the command itself (#61): one user
+        // message, no extra metadata the provider might strip.
+        content: request.truncated ? `${request.command}\n\n${TRUNCATION_NOTE}` : request.command,
+      },
     ]
     for (const { call, outcome } of request.toolResults) {
       messages.push({

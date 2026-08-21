@@ -23,13 +23,15 @@ const pipelines = new WeakMap<BrowserWindow, AttachedPipeline>()
  * Runs one command through the window's pipeline, forwarding events to the
  * dashboard. `turnId` is the voice turn's id, minted at utterance end (#27)
  * — the pipeline adopts it and stamps every event of the turn with it;
- * without one (text box) the pipeline mints a fresh id (#28).
+ * without one (text box) the pipeline mints a fresh id (#28). `truncated`
+ * (#61) is true when the spoken utterance hit the 30 s cap — the pipeline
+ * flags the request in-band so the model asks the user to finish.
  */
-export async function runAssistantCommand(win: BrowserWindow, text: string, turnId?: string): Promise<boolean> {
+export async function runAssistantCommand(win: BrowserWindow, text: string, turnId?: string, truncated?: boolean): Promise<boolean> {
   const attached = pipelines.get(win)
   if (!attached) return false
   const observeRun = attached.createRunObserver?.()
-  for await (const pipelineEvent of attached.pipeline.execute(text, turnId)) {
+  for await (const pipelineEvent of attached.pipeline.execute(text, turnId, truncated)) {
     if (win.isDestroyed()) break
     deliver(win.webContents, attached, pipelineEvent, observeRun)
   }

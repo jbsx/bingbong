@@ -54,8 +54,8 @@ interface SessionHarness {
   heard: VoiceHeardEvent[]
   errors: string[]
   commands: string[]
-  /** Submit-command calls with their threaded turn id (#27). */
-  submitted: { text: string; turnId?: string }[]
+  /** Submit-command calls with their threaded turn id (#27) and cap flag (#61). */
+  submitted: { text: string; turnId?: string; truncated: boolean }[]
   /** Span records when perf instrumentation is on (#27). */
   perf: PerfSpanRecord[]
   /** WAV writes when the audio-dump flag is on (#34). */
@@ -86,6 +86,8 @@ async function createSession(overrides?: {
   audioDump?: boolean
   /** Live endpointer config (#37) — the settings slider seam. */
   getEndpointerConfig?: () => Partial<UtteranceEndpointerConfig>
+  /** Static endpointer overrides — the small-cap seam for truncation tests (#61). */
+  endpointerConfig?: Partial<UtteranceEndpointerConfig>
 }): Promise<SessionHarness> {
   const vad = overrides?.vad ?? new FakeVad()
   const baseTranscriber = overrides?.transcriber ?? new FakeTranscriber()
@@ -96,7 +98,7 @@ async function createSession(overrides?: {
   const heard: VoiceHeardEvent[] = []
   const errors: string[] = []
   const commands: string[] = []
-  const submitted: { text: string; turnId?: string }[] = []
+  const submitted: { text: string; turnId?: string; truncated: boolean }[] = []
   const perf: PerfSpanRecord[] = []
   const dumps: { path: string; bytes: Uint8Array }[] = []
   const resolutions: { confirmationId: string; approved: boolean }[] = []
@@ -158,6 +160,7 @@ async function createSession(overrides?: {
     tts,
     ttsIdle: idle,
     confirmWindowMs: overrides?.confirmWindowMs,
+    endpointerConfig: overrides?.endpointerConfig,
     getEndpointerConfig: overrides?.getEndpointerConfig,
     tracer,
     dumper,
@@ -168,9 +171,9 @@ async function createSession(overrides?: {
           chime: () => chimes.push(1),
         }
       : undefined,
-    onSubmitCommand: (text, turnId) => {
+    onSubmitCommand: (text, turnId, truncated) => {
       commands.push(text)
-      submitted.push({ text, turnId })
+      submitted.push({ text, turnId, truncated: truncated ?? false })
     },
     onResolveConfirmation: (confirmationId, approved) => resolutions.push({ confirmationId, approved }),
     onResolveAsk: (askId, answer) => askResolutions.push({ askId, answer }),
@@ -336,6 +339,32 @@ describe('voice session', () => {
     // speech + the endpoint/merge silence (~900 ms + ~1.5 s, #60),
     // tail-trimmed by 2.
     expect(harness.transcriber.audio[0].length).toBe((8 + SUBMIT_SILENCE - 2) * 512)
+  })
+
+  it('submits an utterance that hit the hard cap with the truncation flag (#61)', async () => {
+    // A small cap keeps the test short; the flag is the cap's, not a
+    // duration's — any capped utterance proves the threading.
+    const harness = await createSession({
+      transcriber: new FakeTranscriber(['and then I want you to open']),
+      endpointerConfig: { maxUtteranceMs: 640 },
+    })
+
+    harness.session.arm()
+    // Unbroken speech: only the cap can end this utterance (truncated=true).
+    await harness.speakUtterance(Array.from({ length: 40 }, () => SPEECH))
+
+    expect(harness.commands).toEqual(['and then I want you to open'])
+    expect(harness.submitted[0].truncated).toBe(true)
+    expect(harness.heard).toEqual([{ text: 'and then I want you to open', routed: 'command' }])
+  })
+
+  it('submits a silence-ended utterance without the truncation flag (#61)', async () => {
+    const harness = await createSession({ transcriber: new FakeTranscriber(['open youtube']) })
+
+    harness.session.arm()
+    await harness.speakUtterance()
+
+    expect(harness.submitted).toEqual([{ text: 'open youtube', turnId: undefined, truncated: false }])
   })
 
   it('applies a changed endpoint delay to the next utterance without a restart (#37)', async () => {
@@ -1018,7 +1047,7 @@ describe('voice session — perf spans (#27)', () => {
     expect(stt!.t).toBe(1_800)
     expect(stt!.at).toBe(PERF_WALL_ORIGIN + 1_800)
     // The turn id rides the submit-command callback for the next ticket.
-    expect(harness.submitted).toEqual([{ text: 'open youtube', turnId: stt!.turnId }])
+    expect(harness.submitted).toEqual([{ text: 'open youtube', turnId: stt!.turnId, truncated: false }])
     // Instrumentation changes no pipeline behavior.
     expect(harness.commands).toEqual(['open youtube'])
     expect(harness.heard).toEqual([{ text: 'open youtube', routed: 'command' }])
@@ -1074,7 +1103,7 @@ describe('voice session — perf spans (#27)', () => {
     expect(wake).toBeDefined()
     // 300ms to the blip + 1500ms its STT + 400ms gap + 1500ms the command's STT.
     expect(wake!.durMs).toBe(3_700)
-    expect(harness.submitted).toEqual([{ text: 'open youtube', turnId: expect.any(String) }])
+    expect(harness.submitted).toEqual([{ text: 'open youtube', turnId: expect.any(String), truncated: false }])
   })
 
   it('never fails an utterance over perf bookkeeping — a throwing sink is swallowed', async () => {
@@ -1083,7 +1112,7 @@ describe('voice session — perf spans (#27)', () => {
     harness.session.arm()
     await harness.speakUtterance()
 
-    expect(harness.submitted).toEqual([{ text: 'open youtube', turnId: expect.any(String) }])
+    expect(harness.submitted).toEqual([{ text: 'open youtube', turnId: expect.any(String), truncated: false }])
     expect(harness.heard).toEqual([{ text: 'open youtube', routed: 'command' }])
     expect(harness.errors).toEqual([])
   })

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { createOpenAiLlmClient } from './openAiLlmClient'
+import { createOpenAiLlmClient, TRUNCATION_NOTE } from './openAiLlmClient'
 import { ORCHESTRATOR_SYSTEM_PROMPT } from './orchestratorPrompt'
 import { createBrowserTools } from '../../core/pipeline/browserTools'
 import { createNewSessionTool } from '../../core/pipeline/sessionTools'
@@ -263,6 +263,34 @@ describe('openAiLlmClient', () => {
       role: 'user',
       content: 'Steering directive: Use Paris instead.',
     })
+  })
+
+  it('appends the in-band truncation note to a capped utterance\'s command (#61)', async () => {
+    const fetch = new ScriptedFetch([
+      completionResponse({ content: '{"speak":"Please finish your request.","display":"Asked."}' }),
+    ])
+    const client = makeClient(fetch)
+
+    await client.complete({ command: 'and then open the', toolResults: [], truncated: true })
+
+    const messages = fetch.calls[0].body.messages
+    expect(messages[1]).toEqual({ role: 'user', content: `and then open the\n\n${TRUNCATION_NOTE}` })
+    // The handling rule travels with every request: the system prompt tells
+    // the model what the note means.
+    expect(messages[0]).toEqual({ role: 'system', content: ORCHESTRATOR_SYSTEM_PROMPT })
+    expect(ORCHESTRATOR_SYSTEM_PROMPT).toMatch(/cut off|truncat/i)
+    expect(ORCHESTRATOR_SYSTEM_PROMPT).toMatch(/ask the user to (finish|complete)/i)
+  })
+
+  it('sends an uncapped command as-is — no truncation note (#61)', async () => {
+    const fetch = new ScriptedFetch([
+      completionResponse({ content: '{"speak":"Done.","display":"Done."}' }),
+    ])
+    const client = makeClient(fetch)
+
+    await client.complete({ command: 'open youtube', toolResults: [] })
+
+    expect(fetch.calls[0].body.messages[1]).toEqual({ role: 'user', content: 'open youtube' })
   })
 
   it('keeps explicitly optional tool parameters out of the required schema', async () => {
