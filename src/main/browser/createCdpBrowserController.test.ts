@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import challengeIframe from '../../core/browser/fixtures/challenge-iframe.json'
 import youtubeHome from '../../core/browser/fixtures/youtube-home.json'
 import type { CollectedElement, CollectedPage } from '../../core/browser/snapshot'
 import { buildPageSnapshot, clickPoint } from '../../core/browser/snapshot'
@@ -10,6 +11,7 @@ import type { CdpDebugger, CdpPageDriver } from './createCdpBrowserController'
 import { createCdpBrowserController } from './createCdpBrowserController'
 
 const youtubeFixture = youtubeHome as unknown as CollectedPage
+const challengeFixture = challengeIframe as unknown as CollectedPage
 const COLLECT_EXPRESSION = '/* COLLECT */'
 
 function dialogButton(label: string): Partial<CollectedElement> {
@@ -281,6 +283,19 @@ describe('createCdpBrowserController readPage', () => {
     const { controller } = makeController()
 
     expect(controller.state()).toEqual({ url: 'https://www.youtube.com/', title: 'YouTube' })
+  })
+})
+
+describe('createCdpBrowserController iframe refs', () => {
+  it('lists a cross-origin challenge iframe as a ref with its src on read_page', async () => {
+    const { controller } = makeController({ cdp: new FakeCdp(challengeFixture) })
+
+    const text = await controller.readPage()
+
+    expect(text).toContain(
+      '[1] iframe "Widget containing a Cloudflare security challenge" src="https://challenges.cloudflare.com/cdn-cgi/challenge-platform"',
+    )
+    expect(text).toContain('[2] button "Continue"')
   })
 })
 

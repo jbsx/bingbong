@@ -21,6 +21,7 @@ const snapshot: PageSnapshot = {
       label: 'Play video',
       inputType: null,
       rect: { x: 300, y: 200, width: 80, height: 40 },
+      src: null,
       href: null,
       downloadsFile: false,
       submitsForm: false,

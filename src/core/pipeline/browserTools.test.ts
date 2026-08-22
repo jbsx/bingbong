@@ -315,6 +315,7 @@ describe('browser tools through the pipeline', () => {
         label: '',
         inputType: null,
         rect: { x: 0, y: 0, width: 10, height: 10 },
+        src: null,
         href: null,
         downloadsFile: false,
         submitsForm: false,

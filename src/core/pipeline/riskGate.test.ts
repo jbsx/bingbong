@@ -10,6 +10,7 @@ function target(overrides: Partial<SnapshotRef> = {}): SnapshotRef {
     label: 'A button',
     inputType: null,
     rect: { x: 0, y: 0, width: 10, height: 10 },
+    src: null,
     href: null,
     downloadsFile: false,
     submitsForm: false,

@@ -40,6 +40,16 @@ describe('fixtureServer', () => {
     expect(html).toContain('<video')
   })
 
+  it('serves /challenge with the challenge iframe and its decoys', async () => {
+    server = await startFixtureServer()
+    const response = await fetch(server.url('/challenge'))
+    const html = await response.text()
+    expect(html).toContain('challenge fixture page')
+    expect(html).toContain('src="https://challenges.cloudflare.com/cdn-cgi/challenge-platform/h/b/turnstile"')
+    expect(html).toContain('src="/second"')
+    expect(html).toContain('<iframe title="srcless embed"')
+  })
+
   it('serves the adblock list, assets and fixture page, counting list hits', async () => {
     server = await startFixtureServer()
     const list = await fetch(server.url('/adblock-list'))

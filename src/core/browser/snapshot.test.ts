@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest'
+import challengeIframe from './fixtures/challenge-iframe.json'
 import youtubeHome from './fixtures/youtube-home.json'
 import type { CollectedElement, CollectedPage } from './snapshot'
 import { buildPageSnapshot, clickPoint, formatPageSnapshot, parseCollectedPage } from './snapshot'
 
 const youtubeFixture = youtubeHome as unknown as CollectedPage
+const challengeFixture = challengeIframe as unknown as CollectedPage
 
 function element(overrides: Partial<CollectedElement> = {}): CollectedElement {
   return {
@@ -366,6 +368,107 @@ viewport 1280x800 scroll 0/4521
 
     expect(text).toContain(`dialog open: "${'x'.repeat(199)}…`)
     expect(text).not.toContain('x'.repeat(201))
+  })
+})
+
+// ADR 0007: challenge widgets (Turnstile/reCAPTCHA) live in cross-origin
+// iframes the top-frame collector cannot read. Listing them as refs with
+// their src makes Blockers visible to read_page instead of invisible.
+describe('iframe refs (challenge widgets)', () => {
+  it('keeps the collector-supplied iframe src and defaults it when absent', () => {
+    const parsed = parseCollectedPage(challengeFixture)
+
+    expect(parsed.elements[0]).toMatchObject({
+      tag: 'iframe',
+      src: 'https://challenges.cloudflare.com/cdn-cgi/challenge-platform',
+    })
+    const plain = parseCollectedPage(page({ elements: [element()] }))
+    expect(plain.elements[0]?.src).toBeNull()
+  })
+
+  it('lists a cross-origin challenge iframe as an iframe ref carrying its src', () => {
+    const snapshot = buildPageSnapshot(challengeFixture)
+
+    expect(snapshot.refs[0]).toMatchObject({
+      ref: 1,
+      kind: 'iframe',
+      label: 'Widget containing a Cloudflare security challenge',
+      src: 'https://challenges.cloudflare.com/cdn-cgi/challenge-platform',
+    })
+    expect(snapshot.refs[1]).toMatchObject({ ref: 2, kind: 'button', label: 'Continue' })
+  })
+
+  it('renders the iframe ref line with its src after the label', () => {
+    const text = formatPageSnapshot(buildPageSnapshot(challengeFixture))
+
+    expect(text).toContain(
+      '[1] iframe "Widget containing a Cloudflare security challenge" src="https://challenges.cloudflare.com/cdn-cgi/challenge-platform"',
+    )
+    expect(text).toContain('[2] button "Continue"')
+  })
+
+  it('omits the label when the iframe has none but still shows the src', () => {
+    const text = formatPageSnapshot(
+      buildPageSnapshot(
+        page({
+          elements: [
+            element({ tag: 'iframe', label: '', src: 'https://challenges.cloudflare.com/cdn-cgi/challenge-platform' }),
+          ],
+        }),
+      ),
+    )
+
+    expect(text).toContain('[1] iframe src="https://challenges.cloudflare.com/cdn-cgi/challenge-platform"')
+  })
+
+  it('truncates very long iframe srcs', () => {
+    const text = formatPageSnapshot(
+      buildPageSnapshot(
+        page({
+          elements: [element({ tag: 'iframe', src: `https://tc.example/${'x'.repeat(120)}` })],
+        }),
+      ),
+    )
+
+    expect(text).toContain(`src="https://tc.example/${'x'.repeat(60)}…"`)
+    expect(text).not.toContain('x'.repeat(61))
+  })
+
+  it('counts iframes against the ref cap like any other element', () => {
+    const snapshot = buildPageSnapshot(challengeFixture, { maxRefs: 1 })
+
+    expect(snapshot.refs).toHaveLength(1)
+    expect(snapshot.totalVisible).toBe(2)
+    expect(snapshot.truncated).toBe(true)
+  })
+
+  it('keeps dialog controls ahead of a page iframe when a dialog is open', () => {
+    const snapshot = buildPageSnapshot(
+      page({
+        dialogOpen: true,
+        dialogText: 'Before you continue',
+        elements: [
+          element({ label: 'Accept all', layer: 'dialog', rect: { x: 500, y: 2100, width: 120, height: 40 } }),
+          element({
+            tag: 'iframe',
+            label: 'Widget containing a Cloudflare security challenge',
+            src: 'https://challenges.cloudflare.com/x',
+          }),
+        ],
+      }),
+    )
+
+    expect(snapshot.refs.map((r) => r.layer)).toEqual(['dialog', 'page'])
+    expect(formatPageSnapshot(snapshot)).toContain(
+      '[1] button "Accept all" (dialog)\n[2] iframe "Widget containing a Cloudflare security challenge" src="https://challenges.cloudflare.com/x"',
+    )
+  })
+
+  it('leaves iframe-free pages unchanged', () => {
+    const snapshot = buildPageSnapshot(youtubeFixture)
+
+    expect(formatPageSnapshot(snapshot)).not.toContain('iframe')
+    expect(snapshot.refs.every((r) => r.src === null)).toBe(true)
   })
 })
 

@@ -272,6 +272,26 @@ function visualTargetPage(): string {
 </html>`
 }
 
+// Blocker-visibility fixture (ADR 0007): a Turnstile-shaped challenge
+// iframe whose src host is what matters — the collector reads the element
+// attribute, so the widget is listed even though its content never loads
+// offline. The same-origin and srcless iframes are decoys that must NOT
+// become refs. Refs in DOM order: [1] iframe (challenge) [2] Continue.
+function challengePage(): string {
+  return `<!doctype html>
+<html>
+<head><title>challenge fixture</title></head>
+<body style="background:#222;color:#fff;margin:0">
+  <h1>challenge fixture page</h1>
+  <p>Verifying you are human. This may take a few seconds.</p>
+  <iframe title="Widget containing a Cloudflare security challenge" src="https://challenges.cloudflare.com/cdn-cgi/challenge-platform/h/b/turnstile" width="300" height="65" style="border:1px solid #555"></iframe>
+  <iframe title="same-origin embed" src="/second" width="10" height="10"></iframe>
+  <iframe title="srcless embed" width="10" height="10"></iframe>
+  <button id="btn-continue" style="font-size:20px">Continue</button>
+</body>
+</html>`
+}
+
 export async function startFixtureServer(): Promise<FixtureServer> {
   let adblockListHits = 0
   const httpServer: Server = createServer((req, res) => {
@@ -330,6 +350,10 @@ export async function startFixtureServer(): Promise<FixtureServer> {
     }
     if (req.url === '/dialog-wall') {
       res.end(dialogWallPage())
+      return
+    }
+    if (req.url === '/challenge') {
+      res.end(challengePage())
       return
     }
     if (req.url === '/native-dialog') {

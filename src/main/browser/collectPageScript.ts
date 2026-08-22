@@ -25,7 +25,8 @@ export const COLLECT_PAGE_SCRIPT = `(() => {
     '[role="switch"]',
     '[role="tab"]',
     '[role="menuitem"]',
-    '[role="option"]'
+    '[role="option"]',
+    'iframe[src]'
   ].join(',')
   // Vimium-style visibility: rect intersection only. Overlays do NOT hide an
   // element from detection — a covered "background" button is still a real
@@ -111,11 +112,28 @@ export const COLLECT_PAGE_SCRIPT = `(() => {
     })
     return dialogs.length > 0 ? dialogs[dialogs.length - 1] : null
   }
+  // Challenge widgets (Turnstile, reCAPTCHA) live in cross-origin iframes
+  // whose content the top frame cannot read. Listing them (ADR 0007) with
+  // their absolute src makes the Blocker visible to read_page. Same-origin
+  // frames are page chrome, not Blockers — they stay invisible.
+  const crossOriginIframeSrc = (el) => {
+    const raw = el.getAttribute('src')
+    if (!raw) return null
+    try {
+      const url = new URL(raw, location.href)
+      if (url.origin === location.origin) return null
+      if (url.protocol !== 'http:' && url.protocol !== 'https:') return null
+      return url.href
+    } catch (e) {
+      return null
+    }
+  }
   const collectElements = (dialogRoot) => {
     const dialogElements = []
     const pageElements = []
     for (const el of document.querySelectorAll(SELECTOR)) {
       if (el.tagName === 'INPUT' && el.type === 'hidden') continue
+      if (el.tagName === 'IFRAME' && crossOriginIframeSrc(el) === null) continue
       if (dialogRoot !== null && dialogRoot.contains(el)) {
         if (!hasSize(el)) continue
         dialogElements.push(el)
@@ -150,6 +168,7 @@ export const COLLECT_PAGE_SCRIPT = `(() => {
       inputType: el.tagName === 'INPUT' ? el.type : null,
       label: labelOf(el),
       rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
+      src: el.tagName === 'IFRAME' ? crossOriginIframeSrc(el) : null,
       href: el.getAttribute('href'),
       downloadsFile: el.hasAttribute('download'),
       submitsForm: submitsFormOf(el, form),

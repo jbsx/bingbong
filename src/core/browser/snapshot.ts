@@ -11,6 +11,8 @@ export interface CollectedElement {
   inputType: string | null
   label: string
   rect: CollectedRect
+  /** Absolute src of a cross-origin iframe (challenge widget); absent in older payloads. */
+  src?: string | null
   /** Risk facts, computed in-page (DOM-specific); absent in older payloads. */
   href?: string | null
   downloadsFile?: boolean
@@ -51,7 +53,7 @@ export interface CollectedPage {
   elements: CollectedElement[]
 }
 
-export type RefKind = 'link' | 'button' | 'input' | 'media'
+export type RefKind = 'link' | 'button' | 'input' | 'media' | 'iframe'
 
 // Facts the risk gate (core/pipeline/riskGate.ts) classifies from. All DOM
 // heuristics (autocomplete tokens, name/id matching, form association) are
@@ -62,6 +64,8 @@ export interface SnapshotRef {
   label: string
   inputType: string | null
   rect: CollectedRect
+  /** Absolute src for iframe refs (cross-origin challenge widgets); null otherwise. */
+  src: string | null
   href: string | null
   downloadsFile: boolean
   submitsForm: boolean
@@ -98,6 +102,7 @@ const MAX_LABEL_LENGTH = 80
 const BUTTON_INPUT_TYPES = new Set(['submit', 'button', 'reset', 'image'])
 
 function refKindOf(element: CollectedElement): RefKind {
+  if (element.tag === 'iframe') return 'iframe'
   if (element.tag === 'video' || element.tag === 'audio') return 'media'
   if (element.tag === 'a' || element.tag === 'area' || element.role === 'link') return 'link'
   if (
@@ -159,6 +164,7 @@ export function parseCollectedPage(raw: unknown): CollectedPage {
       inputType: el.inputType as string | null,
       label: el.label,
       rect: rect as CollectedRect,
+      src: optionalString(el.src),
       href: optionalString(el.href),
       downloadsFile: optionalBoolean(el.downloadsFile),
       submitsForm: optionalBoolean(el.submitsForm),
@@ -229,6 +235,7 @@ export function buildPageSnapshot(page: CollectedPage, options?: { maxRefs?: num
       label: truncateLabel(element.label),
       inputType: element.inputType,
       rect: element.rect,
+      src: element.src ? truncateLabel(element.src) : null,
       href: element.href ?? null,
       downloadsFile: element.downloadsFile ?? false,
       submitsForm: element.submitsForm ?? false,
@@ -267,6 +274,7 @@ export function formatPageSnapshot(snapshot: PageSnapshot): string {
   for (const ref of snapshot.refs) {
     const subtype = ref.kind === 'input' && ref.inputType ? `[${ref.inputType}]` : ''
     const label = ref.label ? ` "${ref.label}"` : ''
+    const src = ref.src ? ` src=${JSON.stringify(ref.src)}` : ''
     const state = [
       ...(typeof ref.checked === 'boolean' ? [`checked=${ref.checked}`] : []),
       ...(ref.selectedOption ? [`selected=${JSON.stringify(ref.selectedOption)}`] : []),
@@ -274,7 +282,7 @@ export function formatPageSnapshot(snapshot: PageSnapshot): string {
       ...(ref.ariaPressed ? [`aria-pressed=${JSON.stringify(ref.ariaPressed)}`] : []),
     ]
     const dialogMarker = ref.layer === 'dialog' ? ' (dialog)' : ''
-    lines.push(`[${ref.ref}] ${ref.kind}${subtype}${label}${state.length > 0 ? ` ${state.join(' ')}` : ''}${dialogMarker}`)
+    lines.push(`[${ref.ref}] ${ref.kind}${subtype}${label}${src}${state.length > 0 ? ` ${state.join(' ')}` : ''}${dialogMarker}`)
   }
   if (snapshot.truncated) {
     lines.push(`(+${snapshot.totalVisible - snapshot.refs.length} more not listed)`)

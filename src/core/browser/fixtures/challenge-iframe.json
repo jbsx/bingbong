@@ -1,0 +1,9 @@
+{
+  "url": "https://shop.example/checkout",
+  "title": "shop.example checkout",
+  "viewport": { "width": 1280, "height": 800, "scrollY": 0, "scrollHeight": 1000 },
+  "elements": [
+    { "tag": "iframe", "role": null, "inputType": null, "label": "Widget containing a Cloudflare security challenge", "src": "https://challenges.cloudflare.com/cdn-cgi/challenge-platform", "rect": { "x": 490, "y": 300, "width": 300, "height": 65 } },
+    { "tag": "button", "role": null, "inputType": null, "label": "Continue", "rect": { "x": 490, "y": 400, "width": 140, "height": 40 } }
+  ]
+}
