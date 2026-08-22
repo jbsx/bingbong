@@ -22,6 +22,8 @@ describe('describeToolIntent', () => {
     ['ask_user', 'ask_user', '{"question":"which one?', 'asking you \'which one?…\''],
     ['spawn_agent names the kind', 'spawn_agent', '{"kind":"research","task":"compare keyboards', 'spawning research agent: \'compare keyboards…\''],
     ['no-args tool is the verb alone', 'read_page', '{}', 'reading the page…'],
+    ['panel toggle is the verb alone', 'toggle_panel', '{}', 'toggling the panel…'],
+    ['panel mode streams its target', 'set_panel_mode', '{"mode":"dock', "setting panel mode 'dock…'"],
     ['unknown tool falls back to its name', 'mystery_tool', '{"x":1}', 'calling mystery_tool…'],
   ])('maps %s to an intent phrase', (_name, tool, args, expected) => {
     expect(describeToolIntent(tool, args)).toBe(expected)

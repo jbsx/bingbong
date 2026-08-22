@@ -282,6 +282,75 @@ describe('createAssistantPipeline', () => {
     expect(tools).not.toContain('new_session')
   })
 
+  it('registers the panel tools when a panel is attached, and they drive it silently', async () => {
+    // A recording stand-in for the window's feed panel overlay: the same
+    // toggle/setMode/state seam (#64).
+    let open = false
+    let mode: 'overlay' | 'docked' = 'overlay'
+    const panel = {
+      toggle: () => {
+        open = !open
+      },
+      setMode: (next: 'overlay' | 'docked') => {
+        mode = next
+      },
+      state: () => ({ mode, open }),
+    }
+    const tts = new RecordingTts()
+    const pipeline = createAssistantPipeline({
+      controller: new FakeBrowser(),
+      env: {
+        BINGBONG_LLM_SCRIPT: JSON.stringify([
+          {
+            kind: 'tool_calls',
+            calls: [
+              { id: 'p1', name: 'toggle_panel', args: {} },
+              { id: 'p2', name: 'set_panel_mode', args: { mode: 'docked' } },
+            ],
+          },
+          { kind: 'answer', speak: 'Docked.', display: 'The panel is docked.' },
+        ]),
+      },
+      clock: new FakeClock(),
+      tts,
+      panel,
+    })
+
+    const events = await collect(pipeline, 'dock the panel')
+
+    expect(events.filter((e) => e.type === 'confirmation_requested')).toEqual([])
+    expect(events.find((e) => e.type === 'tool_result' && e.name === 'toggle_panel')).toMatchObject({ ok: true })
+    expect(events.find((e) => e.type === 'tool_result' && e.name === 'set_panel_mode')).toMatchObject({
+      ok: true,
+      result: 'Panel mode set to docked.',
+    })
+    expect(panel.state()).toEqual({ mode: 'docked', open: true })
+    // Silent ops: nothing spoke besides the model's own answer.
+    expect(events.filter((e) => e.type === 'speak').map((e) => (e as { text: string }).text)).toEqual(['Docked.'])
+    expect(tts.spoken).toEqual(['Docked.'])
+  })
+
+  it('keeps the panel tools out of the catalog when no panel is attached', async () => {
+    const requests: Record<string, unknown>[] = []
+    const fetchFn = (async (_url: string | URL | Request, init?: RequestInit) => {
+      requests.push(JSON.parse(String(init?.body)) as Record<string, unknown>)
+      return new Response(JSON.stringify({ choices: [{ message: { content: '{"speak":"Hi.","display":"Detail."}' } }] }), { status: 200 })
+    }) as typeof fetch
+
+    const pipeline = createAssistantPipeline({
+      controller: new FakeBrowser(),
+      env: FULL_ENV,
+      fetchFn,
+      tts: new RecordingTts(),
+    })
+
+    await collect(pipeline, 'hello')
+
+    const tools = (requests[0].tools as { function: { name: string } }[]).map((t) => t.function.name)
+    expect(tools).not.toContain('toggle_panel')
+    expect(tools).not.toContain('set_panel_mode')
+  })
+
   it('wires the detail sink through to blocking tools, turn-stamped (#43)', async () => {
     const detail: PipelineEvent[] = []
     const manager = fakeSubagentManager([subagentRecord('a-1'), subagentRecord('a-2')])

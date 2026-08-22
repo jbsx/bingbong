@@ -323,6 +323,9 @@ async function createWindow(): Promise<BrowserWindow> {
     tts: speakingGate.tts,
     subagentTools: subagentRuntime.tools,
     subagentControl: subagentRuntime,
+    // Panel voice tools (#64): the same overlay seam the dashboard buttons
+    // and the shortcut drive.
+    panel: feedPanel,
     onLlmUsage: (record) => usageStore.record(record.role, record.model, record.usage),
     session: sessionMemory,
     tracer: perfTracer,

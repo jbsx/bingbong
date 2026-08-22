@@ -6,6 +6,8 @@ import { createVisionGroundingTools } from './visionGroundingTools'
 import { createMediaTools } from './mediaTools'
 import { createSearchTools } from './searchTools'
 import { createSubagentTools } from './subagentTools'
+import { createPanelTools, type PanelControls } from './panelTools'
+import type { FeedPanelMode, FeedPanelState } from '../panel/feedPanelState'
 import { FakeBrowser, FakeSearch, FakeVision } from '../testing/doubles'
 
 const unusedVision = new FakeVision()
@@ -25,6 +27,23 @@ function orchestratorToolCatalog(): Tool[] {
     ...createMediaTools(new FakeBrowser()),
     ...createSearchTools(new FakeSearch()),
   ]
+}
+
+// The panel tools (toggle_panel/set_panel_mode) are added on top by
+// createAssistantPipeline when a feed panel is attached — in production it
+// always is (one per window). Same scan rules apply.
+function panelToolCatalog(): Tool[] {
+  let state: FeedPanelState = { mode: 'overlay', open: false }
+  const panel: PanelControls = {
+    toggle: () => {
+      state = { ...state, open: !state.open }
+    },
+    setMode: (mode: FeedPanelMode) => {
+      state = { ...state, mode }
+    },
+    state: () => state,
+  }
+  return createPanelTools(panel)
 }
 
 // The delegation tools (spawn/cancel/agent_results) are added on top by
@@ -74,14 +93,23 @@ describe('orchestrator tool surface', () => {
     expect(names.sort()).toEqual(['agent_results', 'cancel_agent', 'spawn_agent'])
   })
 
+  it('panel adds exactly toggle_panel and set_panel_mode, ungated on history', () => {
+    const panel = panelToolCatalog()
+    const names = panel.map((tool) => tool.name)
+    expect(names.sort()).toEqual(['set_panel_mode', 'toggle_panel'])
+    for (const tool of panel) {
+      expect(tool.requiresHistory).not.toBe(true)
+    }
+  })
+
   it('has no tool whose name or description mentions skipping ads', () => {
-    for (const tool of [...orchestratorToolCatalog(), ...delegationToolCatalog()]) {
+    for (const tool of [...orchestratorToolCatalog(), ...delegationToolCatalog(), ...panelToolCatalog()]) {
       expect(`${tool.name} ${tool.description ?? ''}`).not.toMatch(AD_SKIP_RE)
     }
   })
 
   it('has no parameter enum value for skipping ads', () => {
-    for (const tool of [...orchestratorToolCatalog(), ...delegationToolCatalog()]) {
+    for (const tool of [...orchestratorToolCatalog(), ...delegationToolCatalog(), ...panelToolCatalog()]) {
       for (const spec of Object.values(tool.parameters ?? {})) {
         for (const value of spec.enum ?? []) {
           expect(value).not.toMatch(AD_SKIP_RE)

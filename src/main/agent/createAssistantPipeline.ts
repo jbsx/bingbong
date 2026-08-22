@@ -15,6 +15,7 @@ import { createVisionGroundingTools } from '../../core/pipeline/visionGroundingT
 import { createMediaTools } from '../../core/pipeline/mediaTools'
 import { createSearchTools } from '../../core/pipeline/searchTools'
 import { createNewSessionTool } from '../../core/pipeline/sessionTools'
+import { createPanelTools, type PanelControls } from '../../core/pipeline/panelTools'
 import { resolveModelEndpoint, routingEnvKeys } from '../../core/agent/modelRouting'
 import type { UsageSink } from '../../core/agent/usageTracking'
 import { withUsageTracking } from '../../core/agent/usageTracking'
@@ -59,6 +60,12 @@ export interface AssistantPipelineDeps {
   onLlmUsage?: UsageSink
   /** Override for deterministic tests; production uses the Z.AI Vision MCP adapter. */
   vision?: VisionModel
+  /**
+   * Panel voice tools (#64, ADR 0006): toggle_panel/set_panel_mode on the
+   * window's feed panel. Wired by main to the overlay attached to the same
+   * window; absent in tests unless asserted.
+   */
+  panel?: PanelControls
   /**
    * Session continuity (spec #23) and the model-invoked reset (spec #24):
    * prior distilled turns ride along with every orchestrator round, and the
@@ -176,6 +183,8 @@ export function createAssistantPipeline(deps: AssistantPipelineDeps): CommandPip
     ...createMediaTools(deps.controller),
     ...createSearchTools(search),
     ...(deps.subagentTools ?? []),
+    // Panel voice tools (#64): silent, unconfirmed, model-invoked.
+    ...(deps.panel ? createPanelTools(deps.panel) : []),
     // Offered only in rounds that carry history (requiresHistory), so a
     // fresh session's catalog stays lean (spec #24).
     ...(deps.session ? [createNewSessionTool(deps.session)] : []),

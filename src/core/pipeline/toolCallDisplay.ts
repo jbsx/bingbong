@@ -37,6 +37,10 @@ export function describeToolAction(name: string, args: Record<string, unknown>):
       return `collect results${args.wait === true ? ' (waiting)' : ''}`
     case 'ask_user':
       return `ask you: ${String(args.question ?? '')}`
+    case 'toggle_panel':
+      return 'toggle panel'
+    case 'set_panel_mode':
+      return `panel mode ${String(args.mode ?? '')}`.trim()
     default:
       return `${name} ${JSON.stringify(args)}`
   }
@@ -89,6 +93,10 @@ export function describeToolIntent(name: string, args: string): string {
       return 'collecting results…'
     case 'new_session':
       return 'starting a new session…'
+    case 'toggle_panel':
+      return 'toggling the panel…'
+    case 'set_panel_mode':
+      return withTarget('setting panel mode', args, 'mode')
     default:
       return `calling ${name}…`
   }
