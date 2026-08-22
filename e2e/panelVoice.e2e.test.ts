@@ -1,4 +1,9 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import {
+  FEED_PANEL_WIDTH_DEFAULT,
+  FEED_PANEL_WIDTH_STEP,
+  FEED_WIDTH_STORAGE_KEY,
+} from '../src/core/panel/feedPanelState'
 import { startHarness } from './harness'
 import { startFixtureServer, type FixtureServer } from './fixtureServer'
 import { waitFor } from './waitFor'
@@ -125,6 +130,104 @@ describe('panel voice tools e2e', () => {
             : undefined,
         { timeoutMs: 5000, intervalMs: 100 },
       )
+    } finally {
+      await app.quit()
+    }
+  })
+
+  it('a scripted orchestrator resizes the panel — steps, preset, clamped — persisting like a drag (#71)', async () => {
+    // Every width move is followed by a slow navigate so the panel stays
+    // open (run active) and the width is observable on both surfaces
+    // before the run's done-collapse could mask it.
+    const widthScript = (slowUrl: string): AssistantTurn[] => [
+      {
+        kind: 'tool_calls',
+        calls: [
+          { id: 'x1', name: 'set_panel_width', args: { direction: 'narrower', steps: 2 } },
+          { id: 'x2', name: 'navigate', args: { url: slowUrl } },
+        ],
+      },
+      {
+        kind: 'tool_calls',
+        calls: [
+          { id: 'x3', name: 'set_panel_width', args: { preset: 'half_screen' } },
+          { id: 'x4', name: 'navigate', args: { url: slowUrl } },
+        ],
+      },
+      {
+        kind: 'tool_calls',
+        calls: [
+          { id: 'x5', name: 'set_panel_width', args: { direction: 'wider', steps: 5 } },
+          { id: 'x6', name: 'navigate', args: { url: slowUrl } },
+        ],
+      },
+      { kind: 'answer', speak: 'Resized.', display: 'Width fits now.' },
+    ]
+
+    const app = await startHarness({
+      fixture,
+      env: { BINGBONG_LLM_SCRIPT: JSON.stringify(widthScript(fixture.url('/slow'))) },
+    })
+    try {
+      const slotWidth = async (): Promise<number> => app.dashboardEval<number>(`document.querySelector('.feed-slot')?.getBoundingClientRect().width ?? 0`)
+      const workspaceWidth = async (): Promise<number> =>
+        app.dashboardEval<number>(`document.querySelector('.dashboard-workspace')?.getBoundingClientRect().width ?? 0`)
+      const foldWidth = async (): Promise<number> =>
+        app.dashboardEval<number>(`window.bingbong.feedPanel.getState().then((s) => s?.width ?? 0)`)
+      const storedWidth = async (): Promise<string | null> =>
+        app.dashboardEval<string | null>(`window.localStorage.getItem(${JSON.stringify(FEED_WIDTH_STORAGE_KEY)})`)
+      // The fold owns the width; the slot re-clamps it to its own
+      // containing block (75% of the workspace), which can be tighter than
+      // the fold's window bound — expect each surface at its own truth.
+      const waitForWidth = async (expectedFold: number): Promise<void> => {
+        await waitFor(
+          async () => {
+            const [slot, fold, workspace] = await Promise.all([slotWidth(), foldWidth(), workspaceWidth()])
+            const expectedSlot = Math.min(expectedFold, Math.floor(workspace * 0.75))
+            return Math.abs(fold - expectedFold) <= 2 && Math.abs(slot - expectedSlot) <= 2 ? true : undefined
+          },
+          { timeoutMs: 10000, intervalMs: 100 },
+        )
+      }
+
+      // Boot at the 880px default, then submit. Two narrower steps land on
+      // BOTH surfaces (fold + dashboard slot).
+      await app.clickDashboardElement('.feed-panel-toggle')
+      expect(await app.dashboardEval<string>(commandBoxScript('make the panel much narrower'))).toBe('submitted')
+      await waitForWidth(FEED_PANEL_WIDTH_DEFAULT - 2 * FEED_PANEL_WIDTH_STEP)
+
+      // The voice-set width persisted exactly like a drag would — same View
+      // Preference key, mirrored the moment the broadcast landed.
+      await waitFor(async () => ((await storedWidth()) === String(FEED_PANEL_WIDTH_DEFAULT - 2 * FEED_PANEL_WIDTH_STEP) ? true : undefined), {
+        timeoutMs: 5000,
+        intervalMs: 100,
+      })
+
+      // The half_screen preset: half the window's content width (the
+      // dashboard fills the window, so innerWidth is the fold's basis).
+      const windowWidth = await app.dashboardEval<number>(`window.innerWidth`)
+      await waitForWidth(Math.max(320, Math.min(Math.round(windowWidth / 2), Math.floor(windowWidth * 0.75))))
+
+      // Five wider steps from half: 160px past the ceiling, so the fold
+      // clamps to 75% of the window — the same bound a drag hits.
+      await waitForWidth(Math.floor(windowWidth * 0.75))
+      await waitForDisplay(app, 'Width fits now.')
+
+      // Silent, unconfirmed policy: no confirmation card ever appeared.
+      expect(await app.dashboardEval<boolean>(`!document.querySelector('.confirmation-card')`)).toBe(true)
+
+      // All three width moves ran through the orchestrator as feed lines —
+      // relative grammar only, never a pixel count.
+      const feed = await feedText(app)
+      expect(feed).toContain('panel width narrower ×2')
+      expect(feed).toContain('panel width half screen')
+      expect(feed).toContain('panel width wider ×5')
+
+      // The final (clamped) width is the persisted preference.
+      const ceiling = await app.dashboardEval<number>(
+        `window.bingbong.feedPanel.getState().then((s) => s?.width ?? 0)`,
+      )
+      expect(await storedWidth()).toBe(String(ceiling))
     } finally {
       await app.quit()
     }

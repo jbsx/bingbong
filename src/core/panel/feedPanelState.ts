@@ -30,6 +30,16 @@ export const FEED_PANEL_WIDTH_MIN = 320
 /** No wider than this fraction of the window's content width. */
 export const FEED_PANEL_WIDTH_MAX_FRACTION = 0.75
 
+/** One voice step (#71): the fixed quantum "wider"/"narrower" moves by. */
+export const FEED_PANEL_WIDTH_STEP = 160
+/** The most steps one set_panel_width call may move (#71). */
+export const FEED_PANEL_WIDTH_MAX_STEPS = 5
+
+/** The relative-step directions the voice width tool accepts (#71). */
+export type PanelWidthDirection = 'wider' | 'narrower'
+/** The named width presets the voice width tool accepts (#71). */
+export type PanelWidthPreset = 'half_screen'
+
 /** The boot-time width per launch mode (#65) — kiosk ships narrower. */
 export function defaultFeedPanelWidth(kiosk: boolean): number {
   return kiosk ? FEED_PANEL_WIDTH_KIOSK : FEED_PANEL_WIDTH_DEFAULT
@@ -54,6 +64,45 @@ export function clampFeedPanelWidth(width: number, windowWidth: number): number 
 
 export function isFeedPanelMode(value: unknown): value is FeedPanelMode {
   return value === 'overlay' || value === 'docked'
+}
+
+export function isPanelWidthDirection(value: unknown): value is PanelWidthDirection {
+  return value === 'wider' || value === 'narrower'
+}
+
+export function isPanelWidthPreset(value: unknown): value is PanelWidthPreset {
+  return value === 'half_screen'
+}
+
+/**
+ * The relative-step target (#71): current ± step×count, clamped to the same
+ * bounds every width writer applies. A fractional or non-positive count
+ * degrades to one step — the direction is the user's intent, the count is
+ * emphasis, and neither may ever move the panel backwards or freeze it.
+ */
+export function stepFeedPanelWidth(
+  current: number,
+  direction: PanelWidthDirection,
+  steps: number,
+  windowWidth: number,
+): number {
+  const count = Number.isFinite(steps) ? Math.max(1, Math.round(steps)) : 1
+  const delta = FEED_PANEL_WIDTH_STEP * count * (direction === 'wider' ? 1 : -1)
+  return clampFeedPanelWidth(current + delta, windowWidth)
+}
+
+/** Each preset's fraction of the window's content width — exhaustively one row per preset. */
+const PANEL_WIDTH_PRESET_FRACTIONS: Record<PanelWidthPreset, number> = {
+  half_screen: 0.5,
+}
+
+/**
+ * The preset target (#71): a named fraction of the window's content width,
+ * clamped to the same bounds — "half screen" on a 400px window is still the
+ * 320px floor, because the floor is the hard promise.
+ */
+export function presetFeedPanelWidth(preset: PanelWidthPreset, windowWidth: number): number {
+  return clampFeedPanelWidth(windowWidth * PANEL_WIDTH_PRESET_FRACTIONS[preset], windowWidth)
 }
 
 /**

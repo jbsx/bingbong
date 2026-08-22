@@ -4,13 +4,19 @@ import {
   FEED_MODE_STORAGE_KEY,
   FEED_PANEL_WIDTH_DEFAULT,
   FEED_PANEL_WIDTH_KIOSK,
+  FEED_PANEL_WIDTH_MAX_STEPS,
   FEED_PANEL_WIDTH_MIN,
+  FEED_PANEL_WIDTH_STEP,
   FEED_WIDTH_STORAGE_KEY,
   clampFeedPanelWidth,
   createFeedPanelStateFold,
   isFeedPanelMode,
+  isPanelWidthDirection,
+  isPanelWidthPreset,
+  presetFeedPanelWidth,
   readStoredFeedMode,
   readStoredFeedWidth,
+  stepFeedPanelWidth,
 } from './feedPanelState'
 import { isFeedPanelStatePayload } from './ipcChannels'
 
@@ -155,6 +161,68 @@ describe('clampFeedPanelWidth', () => {
     // CSS clamp() semantics (max(MIN, min(VAL, MAX))): the stated 320px
     // floor is the hard promise even on a 400px window.
     expect(clampFeedPanelWidth(880, 400)).toBe(FEED_PANEL_WIDTH_MIN)
+  })
+})
+
+describe('stepFeedPanelWidth', () => {
+  it('moves one fixed step per count in the given direction', () => {
+    expect(FEED_PANEL_WIDTH_STEP).toBeGreaterThan(0)
+    expect(stepFeedPanelWidth(880, 'narrower', 1, 1280)).toBe(880 - FEED_PANEL_WIDTH_STEP)
+    expect(stepFeedPanelWidth(880, 'narrower', 2, 1280)).toBe(880 - 2 * FEED_PANEL_WIDTH_STEP)
+    expect(stepFeedPanelWidth(560, 'wider', 1, 1280)).toBe(560 + FEED_PANEL_WIDTH_STEP)
+  })
+
+  it('clamps to the same bounds as every other width writer', () => {
+    // Below the floor…
+    expect(stepFeedPanelWidth(360, 'narrower', 1, 1280)).toBe(FEED_PANEL_WIDTH_MIN)
+    // …and above the ceiling.
+    expect(stepFeedPanelWidth(880, 'wider', 2, 1280)).toBe(Math.floor(1280 * 0.75))
+  })
+
+  it('treats a fractional or non-positive count as one step — never zero or reversed', () => {
+    expect(stepFeedPanelWidth(880, 'wider', 0, 1280)).toBe(stepFeedPanelWidth(880, 'wider', 1, 1280))
+    expect(stepFeedPanelWidth(880, 'wider', 2.4, 1280)).toBe(stepFeedPanelWidth(880, 'wider', 2, 1280))
+    expect(stepFeedPanelWidth(880, 'wider', Number.NaN, 1280)).toBe(stepFeedPanelWidth(880, 'wider', 1, 1280))
+  })
+})
+
+describe('presetFeedPanelWidth', () => {
+  it('half_screen is half the window content width', () => {
+    expect(presetFeedPanelWidth('half_screen', 1280)).toBe(640)
+    // Odd widths round with the fold's usual whole-pixel policy.
+    expect(presetFeedPanelWidth('half_screen', 1001)).toBe(501)
+  })
+
+  it('clamps presets to the bounds on extreme windows', () => {
+    // Half of 400 is 200, but the 320px floor is the hard promise.
+    expect(presetFeedPanelWidth('half_screen', 400)).toBe(FEED_PANEL_WIDTH_MIN)
+  })
+
+  it('the max step count cannot cross the whole bounds range from the default', () => {
+    // 5 steps from either end stays inside the policy's reach: reachable
+    // from the default in both directions (with clamping), and the count
+    // is small enough that one call is one nudge, not a teleport.
+    expect(FEED_PANEL_WIDTH_MAX_STEPS).toBeGreaterThanOrEqual(1)
+    expect(FEED_PANEL_WIDTH_MAX_STEPS).toBeLessThanOrEqual(5)
+  })
+})
+
+describe('isPanelWidthDirection', () => {
+  it('accepts only wider/narrower', () => {
+    expect(isPanelWidthDirection('wider')).toBe(true)
+    expect(isPanelWidthDirection('narrower')).toBe(true)
+    expect(isPanelWidthDirection('wider ')).toBe(false)
+    expect(isPanelWidthDirection('half_screen')).toBe(false)
+    expect(isPanelWidthDirection(undefined)).toBe(false)
+  })
+})
+
+describe('isPanelWidthPreset', () => {
+  it('accepts only half_screen', () => {
+    expect(isPanelWidthPreset('half_screen')).toBe(true)
+    expect(isPanelWidthPreset('wider')).toBe(false)
+    expect(isPanelWidthPreset('full_screen')).toBe(false)
+    expect(isPanelWidthPreset(1)).toBe(false)
   })
 })
 

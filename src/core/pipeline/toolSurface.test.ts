@@ -29,9 +29,9 @@ function orchestratorToolCatalog(): Tool[] {
   ]
 }
 
-// The panel tools (toggle_panel/set_panel_mode) are added on top by
-// createAssistantPipeline when a feed panel is attached — in production it
-// always is (one per window). Same scan rules apply.
+// The panel tools (toggle_panel/set_panel_mode/set_panel_width) are added on
+// top by createAssistantPipeline when a feed panel is attached — in
+// production it always is (one per window). Same scan rules apply.
 function panelToolCatalog(): Tool[] {
   return createPanelTools(new FakePanel())
 }
@@ -113,13 +113,30 @@ describe('orchestrator tool surface', () => {
     expect(names.sort()).toEqual(['agent_results', 'cancel_agent', 'spawn_agent'])
   })
 
-  it('panel adds exactly toggle_panel and set_panel_mode, ungated on history', () => {
+  it('panel adds exactly toggle_panel, set_panel_mode and set_panel_width, ungated on history', () => {
     const panel = panelToolCatalog()
     const names = panel.map((tool) => tool.name)
-    expect(names.sort()).toEqual(['set_panel_mode', 'toggle_panel'])
+    expect(names.sort()).toEqual(['set_panel_mode', 'set_panel_width', 'toggle_panel'])
     for (const tool of panel) {
       expect(tool.requiresHistory).not.toBe(true)
     }
+  })
+
+  it('set_panel_width speaks relative grammar only — no absolute-pixel surface', async () => {
+    // Spec #71 / ADR 0006: voice width is steps and presets, never pixels.
+    // Structural: the width tool's parameter surface is exactly the two
+    // enums plus a bounded step count — no parameter names or offers a
+    // pixel quantity.
+    const width = panelToolCatalog().find((tool) => tool.name === 'set_panel_width')!
+    expect(Object.keys(width.parameters ?? {}).sort()).toEqual(['direction', 'preset', 'steps'])
+    expect(width.parameters?.['direction']?.enum).toEqual(['wider', 'narrower'])
+    expect(width.parameters?.['preset']?.enum).toEqual(['half_screen'])
+    expect(width.parameters?.['steps']?.enum).toBeUndefined()
+
+    // Behavioral: a pixel arg has no way in — the call rejects.
+    await expect(
+      width.execute?.({ id: 'c', name: 'set_panel_width', args: { width: 500 } }, { clock: { now: () => 0, setTimer: () => () => {} } }),
+    ).rejects.toThrow(/exactly one/i)
   })
 
   it('settings adds exactly set_setting, firing immediately and ungated', () => {

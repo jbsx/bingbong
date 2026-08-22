@@ -24,6 +24,8 @@ describe('describeToolIntent', () => {
     ['no-args tool is the verb alone', 'read_page', '{}', 'reading the page…'],
     ['panel toggle is the verb alone', 'toggle_panel', '{}', 'toggling the panel…'],
     ['panel mode streams its target', 'set_panel_mode', '{"mode":"dock', "setting panel mode 'dock…'"],
+    ['panel width streams its direction', 'set_panel_width', '{"direction":"wid', "setting panel width 'wid…'"],
+    ['panel width streams its preset', 'set_panel_width', '{"preset":"half_scr', "setting panel width 'half_scr…'"],
     ['go_forward parity with back', 'go_forward', '{}', 'going forward…'],
     ['set_setting streams its target', 'set_setting', '{"setting":"weather_city', "setting 'weather_city…'"],
     ['app_control streams its action', 'app_control', '{"action":"qu', "app 'qu…'"],
@@ -46,6 +48,12 @@ describe('describeToolIntent', () => {
       describeToolAction('set_setting', { setting: 'model_routing_model', role: 'subagent', string_value: 'deepseek-chat' }),
     ).toBe('set model_routing_model (subagent) to deepseek-chat')
     expect(describeToolAction('app_control', { action: 'quit' })).toBe('app quit')
+  })
+
+  it('renders set_panel_width as relative moves — never a pixel count', () => {
+    expect(describeToolAction('set_panel_width', { direction: 'wider' })).toBe('panel width wider')
+    expect(describeToolAction('set_panel_width', { direction: 'narrower', steps: 2 })).toBe('panel width narrower ×2')
+    expect(describeToolAction('set_panel_width', { preset: 'half_screen' })).toBe('panel width half screen')
   })
 
   it('is monotonic as fragments arrive — the line only grows', () => {

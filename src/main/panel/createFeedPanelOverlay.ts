@@ -67,6 +67,8 @@ export interface FeedPanelOverlay {
   setMode(mode: FeedPanelMode): void
   /** Sets the panel width, clamped to [320px, 75% of the window] (#65). */
   setWidth(width: number): void
+  /** The window's content width — the basis for width presets and clamping (#71). */
+  windowWidth(): number
   /** A width drag started: cloak the view window-wide so the drag keeps tracking (#65). */
   beginResize(): void
   /** The width drag ended: restore the view bounds from the reported slot (#65). */
@@ -197,6 +199,7 @@ export function attachFeedPanelOverlayToWindow(
       fold.setWidth(clampFeedPanelWidth(width, windowWidth))
       if (fold.state() !== before) broadcast()
     },
+    windowWidth: () => (win.isDestroyed() ? 0 : win.getContentSize()[0]),
     beginResize() {
       if (resizing) return
       const rect = lastRect

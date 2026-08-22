@@ -16,7 +16,7 @@ import type { PipelineEvent } from '../pipeline/events'
 import type { SubagentManager, SubagentRecord, SubagentStatus } from '../agent/subagentManager'
 import type { PanelControls } from '../pipeline/panelTools'
 import type { AppControls, SettingsControls } from '../pipeline/settingsTools'
-import { FEED_PANEL_WIDTH_DEFAULT, type FeedPanelMode, type FeedPanelState } from '../panel/feedPanelState'
+import { FEED_PANEL_WIDTH_DEFAULT, clampFeedPanelWidth, type FeedPanelMode, type FeedPanelState } from '../panel/feedPanelState'
 import { defaultSettings, sanitizeSettings, type AppSettings } from '../settings/settings'
 import { createPerfTracer, type PerfSpanRecord, type PerfTracer } from '../perf/perfTracer'
 
@@ -442,16 +442,22 @@ export class FakeSearch implements SearchProvider {  readonly queries: string[] 
 }
 
 /**
- * Recording stand-in for the window's feed panel overlay (#64): folds
- * toggle/setMode exactly like the real panel-state fold, remembering every
- * call so tests can assert what the model-invoked tools drove.
+ * Recording stand-in for the window's feed panel overlay (#64/#71): folds
+ * toggle/setMode/setWidth exactly like the real panel-state fold — widths
+ * clamp against the configured window just as the overlay clamps against
+ * the live one — remembering every call so tests can assert what the
+ * model-invoked tools drove.
  */
 export class FakePanel implements PanelControls {
   readonly toggles: boolean[] = []
   readonly modes: FeedPanelMode[] = []
+  readonly widths: number[] = []
   private current: FeedPanelState
 
-  constructor(initial: FeedPanelState = { mode: 'overlay', open: false, width: FEED_PANEL_WIDTH_DEFAULT }) {
+  constructor(
+    initial: FeedPanelState = { mode: 'overlay', open: false, width: FEED_PANEL_WIDTH_DEFAULT },
+    private readonly windowWidthValue = 1280,
+  ) {
     this.current = initial
   }
 
@@ -463,6 +469,15 @@ export class FakePanel implements PanelControls {
   setMode(mode: FeedPanelMode): void {
     this.modes.push(mode)
     this.current = { ...this.current, mode }
+  }
+
+  setWidth(width: number): void {
+    this.widths.push(width)
+    this.current = { ...this.current, width: clampFeedPanelWidth(width, this.windowWidthValue) }
+  }
+
+  windowWidth(): number {
+    return this.windowWidthValue
   }
 
   state(): FeedPanelState {

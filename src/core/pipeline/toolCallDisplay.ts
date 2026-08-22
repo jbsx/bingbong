@@ -43,6 +43,14 @@ export function describeToolAction(name: string, args: Record<string, unknown>):
       return 'toggle panel'
     case 'set_panel_mode':
       return `panel mode ${String(args.mode ?? '')}`.trim()
+    case 'set_panel_width': {
+      // Relative grammar only (#71): the line names the move, never a pixel
+      // count — mirrors what the tool accepts.
+      const steps = typeof args.steps === 'number' && args.steps > 1 ? ` ×${args.steps}` : ''
+      const move =
+        args.direction !== undefined ? String(args.direction) : String(args.preset ?? '').replaceAll('_', ' ')
+      return `panel width ${move}${steps}`.trim()
+    }
     case 'set_setting': {
       const setting = String(args.setting ?? '')
       const role = args.role !== undefined ? ` (${String(args.role)})` : ''
@@ -109,6 +117,8 @@ export function describeToolIntent(name: string, args: string): string {
       return 'toggling the panel…'
     case 'set_panel_mode':
       return withTarget('setting panel mode', args, 'mode')
+    case 'set_panel_width':
+      return withTarget('setting panel width', args, 'direction', 'preset')
     case 'set_setting':
       return withTarget('setting', args, 'setting')
     case 'app_control':
