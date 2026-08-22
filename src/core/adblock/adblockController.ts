@@ -1,13 +1,24 @@
 // Orchestrator for the embedder-level adblocker (issue #21). Owns the
-// disk-cache-vs-network decision, the scheduled list refresh, engine swaps
-// and the settings kill switch. All IO (fetch, parse, disk, session apply)
-// arrives as deps so the policy is unit-testable; the Electron glue lives in
+// disk-cache-vs-network decision per artifact (issue #69: the quick-fixes
+// list refreshes hourly while lists and resources stay on their daily
+// cadence), the scheduled staleness sweeps, engine swaps and the settings
+// kill switch. All IO (fetch, parse, disk, session apply) arrives as deps so
+// the policy is unit-testable; the Electron glue lives in
 // src/main/browser/attachAdblock.ts.
 
-import { cacheIsUsable, type AdblockCacheMeta } from './adblockConfig'
+import {
+  adblockEntryIsStale,
+  adblockNextRefreshAtMs,
+  cacheIsUsable,
+  type AdblockCacheEntry,
+  type AdblockCacheMeta,
+} from './adblockConfig'
 
 /** After a failed fetch, retry in an hour instead of waiting a full day. */
 export const ADBLOCK_RETRY_MS = 60 * 60 * 1000
+
+/** Floor for scheduled sweeps so clock jitter can never spin the timer. */
+const ADBLOCK_MIN_SCHEDULE_MS = 60_000
 
 /** Opaque handle for a parsed blocking engine (an ElectronBlocker in the glue). */
 export type AdblockEngine = object
@@ -16,6 +27,9 @@ export interface AdblockControllerDeps {
   lists: string[]
   resourcesUrl: string | null
   fetchText(url: string): Promise<string>
+  /** Raw-text disk cache, keyed per URL. null means "not cached". */
+  readListText(url: string): string | null
+  writeListText(url: string, text: string): void
   parseEngine(listsText: string[], resources: string | null): AdblockEngine
   serializeEngine(engine: AdblockEngine): Uint8Array
   deserializeEngine(raw: Uint8Array): AdblockEngine
@@ -25,7 +39,6 @@ export interface AdblockControllerDeps {
   applyEngine(engine: AdblockEngine | null, enabled: boolean): void
   enabledAtStart: boolean
   now(): number
-  updateEveryMs: number
   schedule(callback: () => Promise<void> | void, ms: number): () => void
   onWarning?(message: string): void
 }
@@ -52,34 +65,88 @@ export function createAdblockController(deps: AdblockControllerDeps): AdblockCon
     deps.onWarning?.(message)
   }
 
-  /** Always goes to the network — the refresh path. */
-  async function fetchEngine(): Promise<AdblockEngine> {
-    const listsText = await Promise.all(deps.lists.map((url) => deps.fetchText(url)))
-    // Scriptlet resources are optional: cosmetic hiding and network blocking
-    // work without them, so a failed fetch must not take the engine down.
-    const resources =
-      deps.resourcesUrl === null ? null : await deps.fetchText(deps.resourcesUrl).catch(() => null)
-    const engine = deps.parseEngine(listsText, resources)
-    deps.writeCache(deps.serializeEngine(engine), { urls: deps.lists, updatedAt: deps.now() })
-    return engine
+  /** One artifact (list or resources): cached text when fresh, else fetched. */
+  async function loadArtifact(
+    url: string,
+    cachedEntry: AdblockCacheEntry | undefined,
+  ): Promise<{ text: string; entry: AdblockCacheEntry }> {
+    if (cachedEntry !== undefined && !adblockEntryIsStale(cachedEntry, deps.now())) {
+      const cachedText = deps.readListText(url)
+      if (cachedText !== null) return { text: cachedText, entry: cachedEntry }
+    }
+    const text = await deps.fetchText(url)
+    deps.writeListText(url, text)
+    return { text, entry: { url, updatedAt: deps.now() } }
+  }
+
+  /** Rebuilds the whole engine, going to the network only for stale or
+   * missing artifacts. Any *list* fetch failure rejects (the caller keeps the
+   * previous engine); resources degrade to their cached text or null. */
+  async function rebuildEngine(meta: AdblockCacheMeta | null): Promise<{ engine: AdblockEngine; meta: AdblockCacheMeta }> {
+    const now = deps.now()
+    const lists = await Promise.all(
+      deps.lists.map((url, index) => {
+        const cachedEntry = meta?.lists[index]?.url === url ? meta.lists[index] : undefined
+        return loadArtifact(url, cachedEntry)
+      }),
+    )
+
+    let resources: { text: string | null; entry: AdblockCacheEntry | null } = { text: null, entry: null }
+    if (deps.resourcesUrl !== null) {
+      const cachedEntry = meta?.resources?.url === deps.resourcesUrl ? meta.resources : undefined
+      if (cachedEntry !== undefined && !adblockEntryIsStale(cachedEntry, now)) {
+        const cachedText = deps.readListText(deps.resourcesUrl)
+        if (cachedText !== null) resources = { text: cachedText, entry: cachedEntry }
+      }
+      if (resources.text === null) {
+        // Scriptlet resources are optional: cosmetic hiding and network
+        // blocking work without them, so a failed fetch must not take the
+        // engine down. A stale cached copy still beats no scriptlets.
+        const fetched = await deps.fetchText(deps.resourcesUrl).catch(() => null)
+        if (fetched !== null) {
+          deps.writeListText(deps.resourcesUrl, fetched)
+          resources = { text: fetched, entry: { url: deps.resourcesUrl, updatedAt: deps.now() } }
+        } else {
+          const staleText = deps.readListText(deps.resourcesUrl)
+          if (staleText !== null) resources = { text: staleText, entry: cachedEntry ?? null }
+        }
+      }
+    }
+
+    const engine = deps.parseEngine(
+      lists.map((artifact) => artifact.text),
+      resources.text,
+    )
+    const nextMeta: AdblockCacheMeta = {
+      lists: lists.map((artifact) => artifact.entry),
+      resources: resources.entry,
+    }
+    deps.writeCache(deps.serializeEngine(engine), nextMeta)
+    return { engine, meta: nextMeta }
   }
 
   /** Cache-first — what launches use so lists aren't re-downloaded. */
-  async function loadEngine(): Promise<AdblockEngine> {
+  async function loadEngine(): Promise<{ engine: AdblockEngine; meta: AdblockCacheMeta }> {
     const cached = deps.readCache()
-    if (cached !== null && cacheIsUsable(cached.meta, deps.lists, deps.now(), deps.updateEveryMs)) {
+    if (cached !== null && cacheIsUsable(cached.meta, deps.lists, deps.resourcesUrl, deps.now())) {
       try {
-        return deps.deserializeEngine(cached.engine)
+        return { engine: deps.deserializeEngine(cached.engine), meta: cached.meta }
       } catch {
         // Corrupt cache (or a serialized engine from another library
-        // version): fall through and rebuild from the network.
+        // version): fall through and rebuild — offline from cached texts if
+        // every artifact is still fresh.
       }
     }
-    return fetchEngine()
+    return rebuildEngine(cached?.meta ?? null)
   }
 
   function applyCurrent(): void {
     deps.applyEngine(current, enabled)
+  }
+
+  function scheduleAfter(meta: AdblockCacheMeta): void {
+    const delay = Math.max(adblockNextRefreshAtMs(meta) - deps.now(), ADBLOCK_MIN_SCHEDULE_MS)
+    scheduleNext(delay)
   }
 
   function scheduleNext(ms: number): void {
@@ -87,13 +154,16 @@ export function createAdblockController(deps: AdblockControllerDeps): AdblockCon
     cancelSchedule = deps.schedule(() => refresh(), ms)
   }
 
+  /** Sweeps whatever went stale since the last tick. */
   async function refresh(): Promise<void> {
     if (disposed) return
+    const cached = deps.readCache()
     try {
-      current = await fetchEngine()
+      const { engine, meta } = await rebuildEngine(cached?.meta ?? null)
       if (disposed) return
+      current = engine
       applyCurrent()
-      scheduleNext(deps.updateEveryMs)
+      scheduleAfter(meta)
     } catch (error) {
       warn(`adblock list refresh failed: ${error instanceof Error ? error.message : String(error)}`)
       // Keep the previous engine enforced; try again sooner.
@@ -103,10 +173,11 @@ export function createAdblockController(deps: AdblockControllerDeps): AdblockCon
 
   const ready = (async () => {
     try {
-      current = await loadEngine()
+      const { engine, meta } = await loadEngine()
       if (disposed) return
+      current = engine
       applyCurrent()
-      scheduleNext(deps.updateEveryMs)
+      scheduleAfter(meta)
     } catch (error) {
       warn(`adblock engine init failed: ${error instanceof Error ? error.message : String(error)}`)
       current = null

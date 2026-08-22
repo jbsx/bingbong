@@ -1,12 +1,8 @@
+import { createHash } from 'node:crypto'
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
-import { dirname } from 'node:path'
+import { dirname, join } from 'node:path'
 import { ElectronBlocker } from '@ghostery/adblocker-electron'
-import {
-  ADBLOCK_UPDATE_INTERVAL_MS,
-  adblockCachePaths,
-  resolveAdblockConfig,
-  type AdblockCacheMeta,
-} from '../../core/adblock/adblockConfig'
+import { adblockCachePaths, resolveAdblockConfig, type AdblockCacheMeta } from '../../core/adblock/adblockConfig'
 import {
   createAdblockController,
   type AdblockControllerDeps,
@@ -38,6 +34,10 @@ export function attachAdblock(deps: {
   const config = resolveAdblockConfig(env)
   const paths = adblockCachePaths(userDataDir)
 
+  /** Raw-text cache path per URL; hashed so env-overridden lists can't collide
+   *  or produce hostile filenames. */
+  const listTextPath = (url: string): string => join(paths.listsDir, `${createHash('sha256').update(url).digest('hex')}.txt`)
+
   // Exactly one engine is enforced at a time; swaps disable the old context
   // before enabling the new one (the library owns global ipcMain channels).
   let enforced: ElectronBlocker | null = null
@@ -50,6 +50,19 @@ export function attachAdblock(deps: {
       const response = await fetch(url, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) })
       if (!response.ok) throw new Error(`${url} responded ${response.status}`)
       return response.text()
+    },
+
+    readListText: (url) => {
+      try {
+        return readFileSync(listTextPath(url), 'utf8')
+      } catch {
+        return null
+      }
+    },
+    writeListText: (url, text) => {
+      const path = listTextPath(url)
+      mkdirSync(dirname(path), { recursive: true })
+      writeFileSync(path, text, 'utf8')
     },
 
     parseEngine: (listsText, resources) => {
@@ -94,7 +107,6 @@ export function attachAdblock(deps: {
 
     enabledAtStart: settingsStore.get().adblockEnabled,
     now: () => Date.now(),
-    updateEveryMs: ADBLOCK_UPDATE_INTERVAL_MS,
     schedule: (callback, ms) => {
       const timer = setTimeout(() => void callback(), ms)
       timer.unref?.()
