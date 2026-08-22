@@ -191,9 +191,11 @@ class FakeCdp implements CdpDebugger {
 class FakePage implements CdpPageDriver {
   readonly loadedUrls: string[] = []
   wentBack = 0
+  wentForward = 0
   focusCount = 0
   failLoad = false
   failBack = false
+  failForward = false
 
   async loadUrl(url: string): Promise<void> {
     this.loadedUrls.push(url)
@@ -203,6 +205,11 @@ class FakePage implements CdpPageDriver {
   async goBack(): Promise<void> {
     this.wentBack += 1
     if (this.failBack) throw new Error('cannot go back: no history')
+  }
+
+  async goForward(): Promise<void> {
+    this.wentForward += 1
+    if (this.failForward) throw new Error('cannot go forward: no history')
   }
 
   url(): string {
@@ -973,6 +980,7 @@ describe('createCdpBrowserController navigate and back', () => {
       'navigated: url=https://www.youtube.com/ title="YouTube"',
     )
     expect(await controller.back()).toBe('went back: url=https://www.youtube.com/ title="YouTube"')
+    expect(await controller.forward()).toBe('went forward: url=https://www.youtube.com/ title="YouTube"')
   })
 
   it('normalizes input, loads the url, and invalidates the ref mapping', async () => {
@@ -1013,6 +1021,26 @@ describe('createCdpBrowserController navigate and back', () => {
     const collectsBefore = cdp.collectCalls().length
     await controller.click(1)
     expect(cdp.collectCalls().length).toBe(collectsBefore + 1)
+  })
+
+  it('goes forward and invalidates the ref mapping', async () => {
+    const { cdp, page, controller } = makeController()
+    await controller.readPage()
+
+    await controller.forward()
+
+    expect(page.wentForward).toBe(1)
+    const collectsBefore = cdp.collectCalls().length
+    await controller.click(1)
+    expect(cdp.collectCalls().length).toBe(collectsBefore + 1)
+  })
+
+  it('propagates go-forward failures', async () => {
+    const page = new FakePage()
+    page.failForward = true
+    const { controller } = makeController({ page })
+
+    await expect(controller.forward()).rejects.toThrow(/cannot go forward/)
   })
 
   it('propagates go-back failures', async () => {

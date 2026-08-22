@@ -99,6 +99,7 @@ describe('withAgentActivity', () => {
       'scroll',
       'screenshot',
       'back',
+      'forward',
       'pressKey',
       'state',
       'describeRef',

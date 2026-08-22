@@ -27,6 +27,7 @@ function outcomeScript(interactiveUrl: string): AssistantTurn[] {
     { kind: 'tool_calls', calls: [{ id: 'reset', name: 'navigate', args: { url: interactiveUrl } }] },
     { kind: 'tool_calls', calls: [{ id: 'click-navigate', name: 'click', args: { ref: 4 } }] },
     { kind: 'tool_calls', calls: [{ id: 'back', name: 'back', args: {} }] },
+    { kind: 'tool_calls', calls: [{ id: 'forward', name: 'go_forward', args: {} }] },
     { kind: 'answer', speak: 'Outcomes observed.', display: 'Every browser action returned an outcome.' },
   ]
 }
@@ -86,6 +87,7 @@ describe('action outcome lines e2e', () => {
       'reset',
       'click-navigate',
       'back',
+      'forward',
     ])
     const byId = Object.fromEntries(results.map((event) => [event.callId, event.result]))
 
@@ -106,5 +108,6 @@ describe('action outcome lines e2e', () => {
     expect(byId.reset).toBe(`navigated: url=${fixture.url('/interactive')} title="interactive fixture"`)
     expect(byId['click-navigate']).toMatch(/^clicked \[4\]: urlChanged=true dialogOpen=false; page signature changed; url=.*\/second title=/)
     expect(byId.back).toMatch(/^went back: url=.*\/interactive title="interactive fixture"$/)
+    expect(byId.forward).toMatch(/^went forward: url=.*\/second title=".*"$/)
   })
 })

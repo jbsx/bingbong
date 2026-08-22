@@ -143,7 +143,7 @@ describe('openAiLlmClient', () => {
       required: ['url'],
     })
     expect(request.body.tools?.map((t) => t.function.name)).toEqual([
-      'navigate', 'read_page', 'click', 'type', 'scroll', 'screenshot', 'back',
+      'navigate', 'read_page', 'click', 'type', 'scroll', 'screenshot', 'back', 'go_forward',
     ])
   })
 
@@ -353,9 +353,9 @@ describe('openAiLlmClient', () => {
     const afterReset = fetch.calls[1].body.tools?.map((t) => t.function.name)
     const freshSession = fetch.calls[2].body.tools?.map((t) => t.function.name)
 
-    expect(withHistory).toEqual(['navigate', 'read_page', 'click', 'type', 'scroll', 'screenshot', 'back', 'new_session'])
-    expect(afterReset).toEqual(['navigate', 'read_page', 'click', 'type', 'scroll', 'screenshot', 'back'])
-    expect(freshSession).toEqual(['navigate', 'read_page', 'click', 'type', 'scroll', 'screenshot', 'back'])
+    expect(withHistory).toEqual(['navigate', 'read_page', 'click', 'type', 'scroll', 'screenshot', 'back', 'go_forward', 'new_session'])
+    expect(afterReset).toEqual(['navigate', 'read_page', 'click', 'type', 'scroll', 'screenshot', 'back', 'go_forward'])
+    expect(freshSession).toEqual(['navigate', 'read_page', 'click', 'type', 'scroll', 'screenshot', 'back', 'go_forward'])
   })
 
   it('caps the spoken answer to two sentences', async () => {

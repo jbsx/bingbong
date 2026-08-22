@@ -29,6 +29,8 @@ export function describeToolAction(name: string, args: Record<string, unknown>):
       return 'look at page'
     case 'back':
       return 'go back'
+    case 'go_forward':
+      return 'go forward'
     case 'spawn_agent':
       return `spawn ${String(args.kind ?? 'research')} agent: ${String(args.task ?? '')}`
     case 'cancel_agent':
@@ -89,6 +91,8 @@ export function describeToolIntent(name: string, args: string): string {
       return 'looking at the page…'
     case 'back':
       return 'going back…'
+    case 'go_forward':
+      return 'going forward…'
     case 'agent_results':
       return 'collecting results…'
     case 'new_session':

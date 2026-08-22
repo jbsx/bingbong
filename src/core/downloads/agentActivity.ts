@@ -55,6 +55,7 @@ export function withAgentActivity(
     scroll: (direction) => controller.scroll(direction),
     screenshot: () => controller.screenshot(),
     back: () => controller.back(),
+    forward: () => controller.forward(),
     pressKey: (press, times) => controller.pressKey(press, times),
     mediaState: () => controller.mediaState(),
     state: () => controller.state(),

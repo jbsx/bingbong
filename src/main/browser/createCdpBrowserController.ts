@@ -23,6 +23,7 @@ export interface CdpDebugger {
 export interface CdpPageDriver {
   loadUrl(url: string): Promise<void>
   goBack(): Promise<void>
+  goForward(): Promise<void>
   url(): string
   title(): string
   /** Makes the page the focused webContents — synthetic keys are dropped otherwise. */
@@ -449,6 +450,13 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
     return `went back: url=${page.url()} title=${JSON.stringify(page.title())}`
   }
 
+  async function forward(): Promise<string> {
+    await page.goForward()
+    lastSnapshot = undefined
+    await settle('forward', pacing.settleMs)
+    return `went forward: url=${page.url()} title=${JSON.stringify(page.title())}`
+  }
+
   async function readPage(): Promise<string> {
     const first = await collectSnapshot()
     const dismissal = await dismissConsentIfOpen(first)
@@ -758,6 +766,7 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
     scroll,
     screenshot,
     back,
+    forward,
     pressKey,
     mediaState,
     state,

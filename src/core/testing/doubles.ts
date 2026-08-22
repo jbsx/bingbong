@@ -266,6 +266,11 @@ export class FakeBrowser implements BrowserController, VisualGroundingController
     return 'went back: url= title=""'
   }
 
+  async forward(): Promise<string> {
+    this.pageState = { url: null, title: null }
+    return 'went forward: url= title=""'
+  }
+
   state(): BrowserState {
     return this.pageState
   }

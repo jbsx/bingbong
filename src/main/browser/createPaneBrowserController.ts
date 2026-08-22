@@ -9,7 +9,7 @@ import { createCdpBrowserController, type CdpDebugger, type CdpPageDriver } from
 
 const DEBUGGER_PROTOCOL_VERSION = '1.3'
 const LOAD_TIMEOUT_MS = 30_000
-const BACK_TIMEOUT_MS = 15_000
+const HISTORY_STEP_TIMEOUT_MS = 15_000
 
 function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promise<T> {
   return new Promise<T>((resolve, reject) => {
@@ -74,16 +74,20 @@ export function createPaneBrowserController(
     },
   }
 
+  /** One step in history ('back'/'forward'): guarded, awaited, bounded. */
+  async function historyStep(canGo: boolean, go: () => void, direction: string): Promise<void> {
+    if (!canGo) throw new Error(`cannot go ${direction}: no history`)
+    const navigated = new Promise<void>((resolve) => {
+      wc.once('did-navigate', () => resolve())
+    })
+    go()
+    await withTimeout(navigated, HISTORY_STEP_TIMEOUT_MS, `timed out going ${direction}`)
+  }
+
   const page: CdpPageDriver = {
     loadUrl: (url) => withTimeout(wc.loadURL(url), LOAD_TIMEOUT_MS, `timed out loading ${url}`),
-    async goBack() {
-      if (!wc.navigationHistory.canGoBack()) throw new Error('cannot go back: no history')
-      const navigated = new Promise<void>((resolve) => {
-        wc.once('did-navigate', () => resolve())
-      })
-      wc.navigationHistory.goBack()
-      await withTimeout(navigated, BACK_TIMEOUT_MS, 'timed out going back')
-    },
+    goBack: () => historyStep(wc.navigationHistory.canGoBack(), () => wc.navigationHistory.goBack(), 'back'),
+    goForward: () => historyStep(wc.navigationHistory.canGoForward(), () => wc.navigationHistory.goForward(), 'forward'),
     url: () => wc.getURL(),
     title: () => wc.getTitle(),
     focus: () => {

@@ -69,12 +69,30 @@ describe('orchestrator tool surface', () => {
         'scroll',
         'screenshot',
         'back',
+        'go_forward',
         'ground_visual',
         'look',
         'media_control',
         'web_search',
       ].sort(),
     )
+  })
+
+  it('go_forward is registered at parity with back', () => {
+    const byName = Object.fromEntries(orchestratorToolCatalog().map((tool) => [tool.name, tool]))
+    const back = byName.back
+    const goForward = byName.go_forward
+
+    expect(back).toBeDefined()
+    expect(goForward).toBeDefined()
+    // Same grammar as back: parameter-free, ungated, history-independent.
+    for (const tool of [back, goForward]) {
+      expect(tool.parameters ?? {}).toEqual({})
+      expect(tool.assessRisk).toBeUndefined()
+      expect(tool.requiresHistory).not.toBe(true)
+    }
+    expect(goForward.description).toMatch(/forward/i)
+    expect(goForward.description).toMatch(/history/i)
   })
 
   it('delegation adds exactly spawn_agent, cancel_agent and agent_results', () => {

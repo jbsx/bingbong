@@ -80,6 +80,15 @@ class FixtureBrowserController implements BrowserController {
     return 'back outcome'
   }
 
+  wentForward = 0
+  forwardError: Error | null = null
+
+  async forward(): Promise<string> {
+    this.wentForward += 1
+    if (this.forwardError) throw this.forwardError
+    return 'forward outcome'
+  }
+
   state(): BrowserState {
     return { url: youtubeFixture.url, title: youtubeFixture.title }
   }
@@ -212,6 +221,47 @@ describe('browser tools through the pipeline', () => {
     expect(descriptions.type).toMatch(/actual.*value/i)
     expect(descriptions.scroll).toMatch(/scroll position/i)
     expect(descriptions.back).toMatch(/URL.*title/i)
+    expect(descriptions.go_forward).toMatch(/URL.*title/i)
+  })
+
+  it('go_forward drives browser forward at parity with back', async () => {
+    const browser = new FixtureBrowserController()
+    const { pipeline } = pipelineWith(browser, [
+      {
+        kind: 'tool_calls',
+        calls: [
+          { id: 'c1', name: 'back', args: {} },
+          { id: 'c2', name: 'go_forward', args: {} },
+        ],
+      },
+      { kind: 'answer', speak: 'Done.', display: 'Detail.' },
+    ])
+
+    const events = await collect(pipeline, 'go back then forward')
+
+    expect(browser.wentBack).toBe(1)
+    expect(browser.wentForward).toBe(1)
+    expect(events.filter((event) => event.type === 'tool_result').map((event) => (event as { result: string }).result)).toEqual([
+      'back outcome',
+      'forward outcome',
+    ])
+  })
+
+  it('reports end-of-history forward as a failed result the model can recover from', async () => {
+    const browser = new FixtureBrowserController()
+    browser.forwardError = new Error('cannot go forward: no history')
+    const { pipeline } = pipelineWith(browser, [
+      { kind: 'tool_calls', calls: [{ id: 'c1', name: 'go_forward', args: {} }] },
+      { kind: 'answer', speak: 'Nowhere to go.', display: 'Detail.' },
+    ])
+
+    const events = await collect(pipeline, 'go forward')
+
+    expect(browser.wentForward).toBe(1)
+    expect(events.find((e) => e.type === 'tool_result')).toMatchObject({
+      ok: false,
+      error: 'cannot go forward: no history',
+    })
   })
 
   it('reports a screenshot as a byte-count summary', async () => {

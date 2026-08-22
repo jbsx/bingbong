@@ -59,6 +59,10 @@ class FakeController implements BrowserController {
     return 'went back: url=https://www.youtube.com/ title="YouTube"'
   }
 
+  async forward(): Promise<string> {
+    return 'went forward: url=https://www.youtube.com/ title="YouTube"'
+  }
+
   state(): BrowserState {
     return { url: this.url, title: 'YouTube' }
   }

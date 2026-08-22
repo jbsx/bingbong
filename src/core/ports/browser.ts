@@ -34,6 +34,7 @@ export interface BrowserController {
   scroll(direction: 'up' | 'down'): Promise<string>
   screenshot(): Promise<Uint8Array>
   back(): Promise<string>
+  forward(): Promise<string>
   /** Inject a shortcut key (times consecutive presses) on the focused page. */
   pressKey(press: KeyPress, times?: number): Promise<void>
   /** Read actual state from the page's active media element after controls settle. */

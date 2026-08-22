@@ -195,5 +195,13 @@ export function createBrowserTools(browser: BrowserController, vision?: VisionDe
         return browser.back()
       },
     },
+    {
+      name: 'go_forward',
+      description: 'Go forward one step in browser history, then return the new URL and page title.',
+      execute: (_call, context) => {
+        resetReads(context)
+        return browser.forward()
+      },
+    },
   ]
 }
