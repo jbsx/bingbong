@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { createAssistantPipeline } from './createAssistantPipeline'
 import { createSessionMemory } from '../../core/session/sessionMemory'
-import { FakeBrowser, FakeClock, FakeSearch, RecordingTts, fakeSubagentManager, subagentRecord } from '../../core/testing/doubles'
+import { FakeBrowser, FakeClock, FakePanel, FakeSearch, RecordingTts, fakeSubagentManager, subagentRecord } from '../../core/testing/doubles'
 import type { SearchResult } from '../../core/ports/search'
 import type { CommandPipeline } from '../../core/pipeline/createCommandPipeline'
 import type { PipelineEvent } from '../../core/pipeline/events'
@@ -283,19 +283,7 @@ describe('createAssistantPipeline', () => {
   })
 
   it('registers the panel tools when a panel is attached, and they drive it silently', async () => {
-    // A recording stand-in for the window's feed panel overlay: the same
-    // toggle/setMode/state seam (#64).
-    let open = false
-    let mode: 'overlay' | 'docked' = 'overlay'
-    const panel = {
-      toggle: () => {
-        open = !open
-      },
-      setMode: (next: 'overlay' | 'docked') => {
-        mode = next
-      },
-      state: () => ({ mode, open }),
-    }
+    const panel = new FakePanel()
     const tts = new RecordingTts()
     const pipeline = createAssistantPipeline({
       controller: new FakeBrowser(),
@@ -328,6 +316,28 @@ describe('createAssistantPipeline', () => {
     // Silent ops: nothing spoke besides the model's own answer.
     expect(events.filter((e) => e.type === 'speak').map((e) => (e as { text: string }).text)).toEqual(['Docked.'])
     expect(tts.spoken).toEqual(['Docked.'])
+  })
+
+  it('offers both panel tools to the model in the request catalog when a panel is attached', async () => {
+    const requests: Record<string, unknown>[] = []
+    const fetchFn = (async (_url: string | URL | Request, init?: RequestInit) => {
+      requests.push(JSON.parse(String(init?.body)) as Record<string, unknown>)
+      return new Response(JSON.stringify({ choices: [{ message: { content: '{"speak":"Hi.","display":"Detail."}' } }] }), { status: 200 })
+    }) as typeof fetch
+
+    const pipeline = createAssistantPipeline({
+      controller: new FakeBrowser(),
+      env: FULL_ENV,
+      fetchFn,
+      tts: new RecordingTts(),
+      panel: new FakePanel(),
+    })
+
+    await collect(pipeline, 'hello')
+
+    const tools = (requests[0].tools as { function: { name: string } }[]).map((t) => t.function.name)
+    expect(tools).toContain('toggle_panel')
+    expect(tools).toContain('set_panel_mode')
   })
 
   it('keeps the panel tools out of the catalog when no panel is attached', async () => {

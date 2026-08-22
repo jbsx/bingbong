@@ -14,6 +14,8 @@ import type {
 } from '../ports/vision'
 import type { PipelineEvent } from '../pipeline/events'
 import type { SubagentManager, SubagentRecord, SubagentStatus } from '../agent/subagentManager'
+import type { PanelControls } from '../pipeline/panelTools'
+import type { FeedPanelMode, FeedPanelState } from '../panel/feedPanelState'
 import { createPerfTracer, type PerfSpanRecord, type PerfTracer } from '../perf/perfTracer'
 
 /**
@@ -429,6 +431,35 @@ export class FakeSearch implements SearchProvider {  readonly queries: string[] 
   async search(query: string): Promise<SearchResult[]> {
     this.queries.push(query)
     return this.results
+  }
+}
+
+/**
+ * Recording stand-in for the window's feed panel overlay (#64): folds
+ * toggle/setMode exactly like the real panel-state fold, remembering every
+ * call so tests can assert what the model-invoked tools drove.
+ */
+export class FakePanel implements PanelControls {
+  readonly toggles: boolean[] = []
+  readonly modes: FeedPanelMode[] = []
+  private current: FeedPanelState
+
+  constructor(initial: FeedPanelState = { mode: 'overlay', open: false }) {
+    this.current = initial
+  }
+
+  toggle(): void {
+    this.toggles.push(true)
+    this.current = { ...this.current, open: !this.current.open }
+  }
+
+  setMode(mode: FeedPanelMode): void {
+    this.modes.push(mode)
+    this.current = { ...this.current, mode }
+  }
+
+  state(): FeedPanelState {
+    return this.current
   }
 }
 

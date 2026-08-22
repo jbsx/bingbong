@@ -6,9 +6,8 @@ import { createVisionGroundingTools } from './visionGroundingTools'
 import { createMediaTools } from './mediaTools'
 import { createSearchTools } from './searchTools'
 import { createSubagentTools } from './subagentTools'
-import { createPanelTools, type PanelControls } from './panelTools'
-import type { FeedPanelMode, FeedPanelState } from '../panel/feedPanelState'
-import { FakeBrowser, FakeSearch, FakeVision } from '../testing/doubles'
+import { createPanelTools } from './panelTools'
+import { FakeBrowser, FakePanel, FakeSearch, FakeVision } from '../testing/doubles'
 
 const unusedVision = new FakeVision()
 
@@ -33,17 +32,7 @@ function orchestratorToolCatalog(): Tool[] {
 // createAssistantPipeline when a feed panel is attached — in production it
 // always is (one per window). Same scan rules apply.
 function panelToolCatalog(): Tool[] {
-  let state: FeedPanelState = { mode: 'overlay', open: false }
-  const panel: PanelControls = {
-    toggle: () => {
-      state = { ...state, open: !state.open }
-    },
-    setMode: (mode: FeedPanelMode) => {
-      state = { ...state, mode }
-    },
-    state: () => state,
-  }
-  return createPanelTools(panel)
+  return createPanelTools(new FakePanel())
 }
 
 // The delegation tools (spawn/cancel/agent_results) are added on top by

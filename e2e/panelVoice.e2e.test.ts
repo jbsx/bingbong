@@ -16,6 +16,7 @@ import type { AssistantTurn } from '../src/core/ports/llm'
 const OPEN_CHROME = `!!document.querySelector('.overlay-chrome--open .feed-surface')`
 const COLLAPSED_CHROME = `!!document.querySelector('.overlay-chrome--collapsed .feed-edge-tab')`
 const ANSWER_MARKER = 'The panel is docked now.'
+const OVERLAY_MARKER = 'The panel floats again.'
 
 function panelScript(slowUrl: string): AssistantTurn[] {
   return [
@@ -30,6 +31,9 @@ function panelScript(slowUrl: string): AssistantTurn[] {
     },
     { kind: 'tool_calls', calls: [{ id: 'p3', name: 'set_panel_mode', args: { mode: 'docked' } }] },
     { kind: 'answer', speak: 'Docked.', display: ANSWER_MARKER },
+    // Second command: switch back — the overlay direction of the mode tool.
+    { kind: 'tool_calls', calls: [{ id: 'p4', name: 'set_panel_mode', args: { mode: 'overlay' } }] },
+    { kind: 'answer', speak: 'Floating.', display: OVERLAY_MARKER },
   ]
 }
 
@@ -92,6 +96,30 @@ describe('panel voice tools e2e', () => {
         async () =>
           (await app.dashboardEval<boolean>(`!!document.querySelector('.feed-slot--docked:not(.feed-slot--collapsed)')`)) &&
           (await app.overlayEval<boolean>(`!!document.querySelector('.feed-surface--docked')`)) &&
+          (await app.overlayEval<boolean>(OPEN_CHROME))
+            ? true
+            : undefined,
+        { timeoutMs: 5000, intervalMs: 100 },
+      )
+
+      // …and a second scripted command floats it again — the overlay
+      // direction of set_panel_mode. The run's done collapses the panel
+      // before these reads can race it, so wait for the collapse first,
+      // then reopen and assert the floating layout on BOTH renderers.
+      expect(await app.dashboardEval<string>(commandBoxScript('float the panel'))).toBe('submitted')
+      await waitForDisplay(app, OVERLAY_MARKER)
+      await waitFor(
+        () => app.overlayEval<boolean>(COLLAPSED_CHROME),
+        { timeoutMs: 10000, intervalMs: 250 },
+      )
+      // The overlay-direction tool call also ran through the orchestrator.
+      const feedAfterFloat = await feedText(app)
+      expect(feedAfterFloat).toContain('panel mode overlay')
+      await app.clickDashboardElement('.feed-panel-toggle')
+      await waitFor(
+        async () =>
+          (await app.dashboardEval<boolean>(`!!document.querySelector('.feed-slot--overlay:not(.feed-slot--collapsed)')`)) &&
+          (await app.overlayEval<boolean>(`!!document.querySelector('.feed-surface--overlay')`)) &&
           (await app.overlayEval<boolean>(OPEN_CHROME))
             ? true
             : undefined,

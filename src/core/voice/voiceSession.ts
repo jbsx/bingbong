@@ -15,6 +15,18 @@ export const CONFIRM_VOICE_WINDOW_MS = 12_000
 /** Free-text ask window: as long as the ask_user timeout, for spoken answers. */
 export const ASK_VOICE_WINDOW_MS = 45_000
 
+/**
+ * The complete local phrase-routing vocabulary — run control only (abort,
+ * pause, resume), the sanctioned exceptions (ADR 0006). Everything else a
+ * user says rides to the model as a command; tests pin that UI vocabulary
+ * (panel, dock, overlay…) never joins this list.
+ */
+export const LOCAL_CONTROL_PHRASES: Readonly<Record<'abort' | 'pause' | 'resume', readonly string[]>> = {
+  abort: ['stop', 'abort', 'cancel', 'never mind'],
+  pause: ['pause', 'hold on', 'wait'],
+  resume: ['continue', 'resume'],
+}
+
 /** Wake-word plumbing (T10); absent means the session stays hotkey-only. */
 export interface VoiceWakeDeps {
   detector: WakeWordDetector
@@ -138,9 +150,9 @@ export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
   // start (hotkey or wake word); null outside a command listen.
   let commandListenStart: number | null = null
 
-  const abortPhrases = new Set(['stop', 'abort', 'cancel', 'never mind'])
-  const pausePhrases = new Set(['pause', 'hold on', 'wait'])
-  const resumePhrases = new Set(['continue', 'resume'])
+  const abortPhrases = new Set(LOCAL_CONTROL_PHRASES.abort)
+  const pausePhrases = new Set(LOCAL_CONTROL_PHRASES.pause)
+  const resumePhrases = new Set(LOCAL_CONTROL_PHRASES.resume)
 
   function normalizedPhrase(text: string): string {
     return text.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim()
