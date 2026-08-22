@@ -312,7 +312,7 @@ describe('createAssistantPipeline', () => {
       ok: true,
       result: 'Panel mode set to docked.',
     })
-    expect(panel.state()).toEqual({ mode: 'docked', open: true })
+    expect(panel.state()).toMatchObject({ mode: 'docked', open: true })
     // Silent ops: nothing spoke besides the model's own answer.
     expect(events.filter((e) => e.type === 'speak').map((e) => (e as { text: string }).text)).toEqual(['Docked.'])
     expect(tts.spoken).toEqual(['Docked.'])

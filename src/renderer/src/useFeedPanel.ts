@@ -3,39 +3,51 @@ import type { RefObject } from 'react'
 import { HIDDEN_PANE_RECT, type PaneRect } from '../../core/browser/paneState'
 import {
   FEED_MODE_STORAGE_KEY,
+  FEED_WIDTH_STORAGE_KEY,
+  defaultFeedPanelWidth,
   readStoredFeedMode,
+  readStoredFeedWidth,
   type FeedPanelState,
 } from '../../core/panel/feedPanelState'
 
 // The dashboard half of the feed panel (#45): the panel itself renders in
 // its own overlay webContents; the dashboard owns the layout slot its rect
 // is reported from, persists the mode (a view preference, not app
-// settings), and mounts the header button / shortcut controls.
+// settings), and mounts the header button / shortcut controls. The width
+// rides the same preference flow (#65): stored width (or the mode's
+// default — kiosk ships narrower) is pushed to the fold at mount, and
+// every broadcast mirrors back to storage, whoever set it (drag, voice).
 
-const DEFAULT_PANEL_STATE: FeedPanelState = { mode: 'overlay', open: false }
+function storedWidth(): number {
+  return readStoredFeedWidth(window.localStorage, defaultFeedPanelWidth(window.bingbong.app.kiosk))
+}
 
 export function useFeedPanel(): FeedPanelState {
-  // First paint honors the persisted mode; main (the fold) confirms the
+  // First paint honors the persisted layout; main (the fold) confirms the
   // open state right after mount.
   const [state, setState] = useState<FeedPanelState>(() => ({
-    ...DEFAULT_PANEL_STATE,
     mode: readStoredFeedMode(window.localStorage),
+    open: false,
+    width: storedWidth(),
   }))
 
   useEffect(() => {
-    // The stored mode is the dashboard's truth — push it to the fold so a
-    // restart restores the layout the user chose.
+    // The stored layout is the dashboard's truth — push it to the fold so a
+    // restart restores the layout the user chose. Main clamps the width
+    // against the live window before folding; the broadcast reconciles us.
     window.bingbong.feedPanel.setMode(readStoredFeedMode(window.localStorage))
+    window.bingbong.feedPanel.setWidth(storedWidth())
     let cancelled = false
     void window.bingbong.feedPanel.getState().then((pulled) => {
       if (!cancelled && pulled) setState(pulled)
     })
     const unsubscribe = window.bingbong.feedPanel.onState((next) => {
       setState(next)
-      // Mirror every mode change back to storage, whoever toggled it
-      // (header button, shortcut, or the panel's own dock control).
+      // Mirror every layout change back to storage, whoever made it
+      // (header button, shortcut, drag handle, or a set_panel tool).
       try {
         window.localStorage.setItem(FEED_MODE_STORAGE_KEY, next.mode)
+        window.localStorage.setItem(FEED_WIDTH_STORAGE_KEY, String(next.width))
       } catch {
         // Private-browsing-style storage failures just lose persistence.
       }

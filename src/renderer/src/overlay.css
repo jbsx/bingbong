@@ -34,15 +34,23 @@ body,
   display: none;
 }
 
-/* The panel surface fills the view bounds the dashboard reported.
-   Overlay mode floats above the live page: a translucent gruvbox panel,
-   rounded on the window-facing edge, so the browsing beneath stays
-   readable — a light scrim, never a dark one (#50). */
+/* The panel surface paints at the folded width (#65), right-anchored:
+   in steady state the view bounds equal that width, so min(100%, var)
+   changes nothing — but during a resize drag main cloaks the view wider
+   (window-left to panel-right) so the pointer never leaves it, and the
+   surface must stay exactly where it was. Overlay mode floats above the
+   live page: a translucent gruvbox panel, rounded on the window-facing
+   edge, so the browsing beneath stays readable — a light scrim, never a
+   dark one (#50). */
 .feed-surface {
+  position: relative;
   display: flex;
   flex-direction: column;
   height: 100%;
   min-height: 0;
+  width: min(100%, var(--panel-width, 100%));
+  align-self: flex-end;
+  flex: none;
   border: 1px solid var(--edge);
   overflow: hidden;
 }
@@ -58,6 +66,44 @@ body,
 .feed-surface--docked {
   background: var(--panel);
   border-radius: 16px;
+}
+
+/* The drag-resize grip (#65): a slim col-resize strip on the surface's
+   left edge. Invisible until hovered/dragged, full height, above the
+   feed's own scrolling — the drag is the panel's only resize affordance. */
+.feed-resize-handle {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 14px;
+  margin-left: -7px;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: col-resize;
+  touch-action: none;
+  background: transparent;
+  border: none;
+  padding: 0;
+}
+
+.feed-resize-handle::before {
+  content: '';
+  width: 4px;
+  height: 48px;
+  border-radius: 2px;
+  background: transparent;
+  transition: background 120ms ease;
+}
+
+.feed-resize-handle:hover::before {
+  background: var(--edge);
+}
+
+.feed-resize-handle:active::before {
+  background: var(--accent);
 }
 
 .feed-surface .feed {

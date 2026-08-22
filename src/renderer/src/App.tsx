@@ -130,8 +130,13 @@ export function App() {
         {/* The feed panel slot (#45) reports where the panel's native
             overlay view sits — floating above the browsing area in overlay
             mode, beside it in docked mode, a slim edge tab when collapsed.
-            Identical in kiosk mode; the panel itself renders elsewhere. */}
-        <div className="dashboard-workspace">
+            Identical in kiosk mode; the panel itself renders elsewhere.
+            The width (#65) rides the folded panel state as a CSS var; the
+            slot rules clamp it to [320px, 75% of the workspace]. */}
+        <div
+          className="dashboard-workspace"
+          style={{ '--feed-panel-width': `${panel.width}px` } as React.CSSProperties}
+        >
           {view === 'settings' ? (
             settings ? (
               <SettingsPage settings={settings} onSave={save} onClose={() => setView('dashboard')} />

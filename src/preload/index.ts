@@ -82,6 +82,15 @@ contextBridge.exposeInMainWorld('bingbong', {
     setMode: (mode: FeedPanelMode): void => {
       ipcRenderer.send(PANEL_IPC.setMode, { mode })
     },
+    setWidth: (width: number): void => {
+      ipcRenderer.send(PANEL_IPC.setWidth, { width })
+    },
+    beginResize: (): void => {
+      ipcRenderer.send(PANEL_IPC.beginResize)
+    },
+    endResize: (): void => {
+      ipcRenderer.send(PANEL_IPC.endResize)
+    },
     toggle: (): void => {
       ipcRenderer.send(PANEL_IPC.toggle)
     },

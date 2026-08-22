@@ -191,7 +191,11 @@ body {
 }
 
 /* A pure rect reporter: the native overlay view fills it; it never takes
-   input, and only docked mode lets it take layout space. */
+   input, and only docked mode lets it take layout space. The width (#65)
+   comes from the folded panel state as a var; the fold owns the spec's
+   bound (min 320 / max 75% of the window) and this live clamp re-bounds
+   the slot against the workspace (the containing block) when the window
+   shrinks, without discarding the persisted width. */
 .feed-slot {
   pointer-events: none;
 }
@@ -201,14 +205,15 @@ body {
   top: 0;
   right: 0;
   height: 100%;
-  width: 440px;
+  width: clamp(320px, var(--feed-panel-width, 880px), 75%);
 }
 
 /* Docked takes real layout space — unless collapsed, where every mode
    shrinks to the edge tab. */
 .feed-slot--docked:not(.feed-slot--collapsed) {
-  flex: 0 0 440px;
+  flex: none;
   min-height: 0;
+  width: clamp(320px, var(--feed-panel-width, 880px), 75%);
 }
 
 .feed-slot--collapsed {
@@ -291,14 +296,16 @@ body {
 /* Conversation separation (#54): the feed reads as a chat between two
    voices — your words right-aligned in muted bubbles (gruvbox light2),
    Bing Bong's answers as left-aligned railed cards (light0 raised, with
-   the speaking-green rail). System detail keeps the plain tier below. */
+   the speaking-green rail). System detail keeps the plain tier below.
+   Bubbles and cards span the full panel (#65): the widened panel exists
+   to buy readable lines, so neither caps at a chat-app fraction. */
 .feed-entry--user {
   justify-content: flex-end;
 }
 
 .feed-bubble {
   min-width: 0;
-  max-width: 88%;
+  max-width: 100%;
   background: var(--edge);
   border-radius: 18px 18px 4px 18px;
   padding: 6px 16px;
@@ -314,7 +321,7 @@ body {
 
 .feed-card {
   min-width: 0;
-  max-width: 92%;
+  max-width: 100%;
   background: var(--bg);
   border-left: 5px solid var(--status-green);
   border-radius: 4px 14px 14px 4px;
@@ -504,14 +511,16 @@ body {
 
 /* Fenced code blocks: the gruvbox dark surface — dark1 with light1 text,
    the one deliberately dark element on the light dashboard, so code reads
-   as a block. Horizontal scroll, never reflowed text. */
+   as a block. Code wraps (#65): a glanceable panel must never hide lines
+   off its right edge, so no horizontal scroll — long tokens break. */
 .feed-markdown pre {
   margin: 0 0 0.6em;
   padding: 14px 16px;
   border-radius: 10px;
   background: var(--code-bg);
   color: var(--code-text);
-  overflow-x: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 .feed-markdown pre code {
@@ -1036,7 +1045,9 @@ body {
 }
 
 /* Kiosk: the browser pane is the appliance's main surface — chrome and the
-   assistant panel shrink to give it the window. */
+   assistant panel shrink to give it the window. The panel width needs no
+   kiosk rule: its default (#65) ships narrower (800px) through the same
+   folded-state var every other surface reads. */
 .dashboard--kiosk {
   padding: 12px;
   gap: 12px;
@@ -1044,14 +1055,6 @@ body {
 
 .dashboard--kiosk .dashboard-header h1 {
   display: none;
-}
-
-.dashboard--kiosk .feed-slot--overlay:not(.feed-slot--collapsed) {
-  width: 400px;
-}
-
-.dashboard--kiosk .feed-slot--docked:not(.feed-slot--collapsed) {
-  flex-basis: 400px;
 }
 
 /* Subagents (T12): live cards above the browser pane — one per agent, with

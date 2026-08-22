@@ -133,9 +133,9 @@ export function createSubagentPanePool(
     // Top of the stack (above the feed overlay too — see below): the
     // parked view must own a sliver of real, unoccluded pixels or Chromium
     // never gives it its first paint. The overlay is NOT re-topped above
-    // parked views on purpose: it covers the right 440 px of the window,
-    // exactly where the park slivers live, and a view born under it would
-    // never paint. The cost is one pixel of the overlay's right edge.
+    // parked views on purpose: it covers the window's right edge, exactly
+    // where the park slivers live, and a view born under it would never
+    // paint. The cost is one pixel of the overlay's right edge.
     win.contentView.addChildView(view)
     view.setBounds(parkedBoundsFor(tab.agentId))
 

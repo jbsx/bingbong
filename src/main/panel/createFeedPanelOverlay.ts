@@ -1,7 +1,14 @@
 import { BrowserWindow, WebContentsView, ipcMain } from 'electron'
 import { join } from 'node:path'
 import { PANEL_IPC } from '../../core/panel/ipcChannels'
-import { isFeedPanelMode, createFeedPanelStateFold, type FeedPanelMode, type FeedPanelState } from '../../core/panel/feedPanelState'
+import {
+  clampFeedPanelWidth,
+  createFeedPanelStateFold,
+  isFeedPanelMode,
+  isUsableFeedPanelWidth,
+  type FeedPanelMode,
+  type FeedPanelState,
+} from '../../core/panel/feedPanelState'
 import { isPaneRect } from '../../core/browser/paneState'
 import { toPaneBounds } from '../../core/browser/paneGeometry'
 import { PIPELINE_IPC } from '../../core/pipeline/ipcChannels'
@@ -32,6 +39,16 @@ export function registerFeedPanelIpc(): void {
     const mode = (payload as { mode?: unknown } | null | undefined)?.mode
     if (isFeedPanelMode(mode)) overlayFor(event.sender)?.setMode(mode)
   })
+  ipcMain.on(PANEL_IPC.setWidth, (event, payload: unknown) => {
+    const width = (payload as { width?: unknown } | null | undefined)?.width
+    if (isUsableFeedPanelWidth(width)) overlayFor(event.sender)?.setWidth(width)
+  })
+  ipcMain.on(PANEL_IPC.beginResize, (event) => {
+    overlayFor(event.sender)?.beginResize()
+  })
+  ipcMain.on(PANEL_IPC.endResize, (event) => {
+    overlayFor(event.sender)?.endResize()
+  })
   ipcMain.on(PANEL_IPC.toggle, (event) => {
     overlayFor(event.sender)?.toggle()
   })
@@ -48,6 +65,12 @@ export interface FeedPanelOverlay {
   bringToTop(): void
   setRect(rect: { x: number; y: number; width: number; height: number }): void
   setMode(mode: FeedPanelMode): void
+  /** Sets the panel width, clamped to [320px, 75% of the window] (#65). */
+  setWidth(width: number): void
+  /** A width drag started: cloak the view window-wide so the drag keeps tracking (#65). */
+  beginResize(): void
+  /** The width drag ended: restore the view bounds from the reported slot (#65). */
+  endResize(): void
   toggle(): void
   state(): FeedPanelState
   /**
@@ -72,7 +95,7 @@ function isPanelShortcut(input: Electron.Input): boolean {
 
 export function attachFeedPanelOverlayToWindow(
   win: BrowserWindow,
-  deps: { preloadDir: string },
+  deps: { preloadDir: string; defaultWidth?: number },
 ): FeedPanelOverlay {
   const view = new WebContentsView({
     webPreferences: {
@@ -95,7 +118,19 @@ export function attachFeedPanelOverlayToWindow(
     void wc.loadFile(join(__dirname, '../renderer/overlay.html'))
   }
 
-  const fold = createFeedPanelStateFold()
+  const fold = createFeedPanelStateFold({ defaultWidth: deps.defaultWidth })
+
+  // Width drag (#65): widening moves the pointer LEFT, out of the view —
+  // and input lands on whichever view sits under the cursor, so a drag
+  // that stayed view-sized would die at the panel's own edge. While
+  // resizing, the view is "cloaked": stretched from the window's left
+  // edge to the panel's (fixed) right edge, so every move of the drag
+  // lands in the overlay and pointer capture holds trivially. The page
+  // paints the surface right-anchored at the folded width, so nothing
+  // moves visually; rect reports are cached, not applied, and the cached
+  // slot restores the true bounds on end.
+  let resizing = false
+  let lastRect: { x: number; y: number; width: number; height: number } | null = null
 
   function broadcast(): void {
     if (win.isDestroyed()) return
@@ -147,12 +182,37 @@ export function attachFeedPanelOverlayToWindow(
       win.contentView.addChildView(view)
     },
     setRect(rect) {
+      lastRect = rect
+      if (resizing) return
       if (!wc.isDestroyed()) view.setBounds(toPaneBounds(rect))
     },
     setMode(mode) {
       const before = fold.state()
       fold.setMode(mode)
       if (fold.state() !== before) broadcast()
+    },
+    setWidth(width) {
+      const before = fold.state()
+      const windowWidth = win.isDestroyed() ? 0 : win.getContentSize()[0]
+      fold.setWidth(clampFeedPanelWidth(width, windowWidth))
+      if (fold.state() !== before) broadcast()
+    },
+    beginResize() {
+      if (resizing) return
+      const rect = lastRect
+      // No visible slot yet means no basis for a cloak — the drag degrades
+      // to the view following the slot (naive resize), never a stale one.
+      if (win.isDestroyed() || !rect || rect.width <= 0) return
+      resizing = true
+      if (!wc.isDestroyed()) {
+        view.setBounds(toPaneBounds({ x: 0, y: rect.y, width: rect.x + rect.width, height: rect.height }))
+      }
+    },
+    endResize() {
+      if (!resizing) return
+      resizing = false
+      const rect = lastRect
+      if (rect && !wc.isDestroyed()) view.setBounds(toPaneBounds(rect))
     },
     toggle() {
       fold.toggleOpen()

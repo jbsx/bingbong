@@ -29,12 +29,12 @@ describe('createPanelTools', () => {
     const result = await tool.execute(callOf('toggle_panel'), { clock: new FakeClock() })
 
     expect(panel.toggles).toHaveLength(1)
-    expect(panel.state()).toEqual({ mode: 'overlay', open: true })
+    expect(panel.state()).toMatchObject({ mode: 'overlay', open: true })
     expect(result).toEqual('Panel opened.')
   })
 
   it('toggle_panel collapses an open panel', async () => {
-    const panel = new FakePanel({ mode: 'overlay', open: true })
+    const panel = new FakePanel({ mode: 'overlay', open: true, width: 880 })
     const tool = createPanelTools(panel).find((t) => t.name === 'toggle_panel')!
 
     const result = await tool.execute(callOf('toggle_panel'), { clock: new FakeClock() })
@@ -55,13 +55,13 @@ describe('createPanelTools', () => {
   })
 
   it('set_panel_mode switches back docked→overlay', async () => {
-    const panel = new FakePanel({ mode: 'docked', open: true })
+    const panel = new FakePanel({ mode: 'docked', open: true, width: 880 })
     const tool = createPanelTools(panel).find((t) => t.name === 'set_panel_mode')!
 
     const result = await tool.execute(callOf('set_panel_mode', { mode: 'overlay' }), { clock: new FakeClock() })
 
     expect(panel.modes).toEqual(['overlay'])
-    expect(panel.state()).toEqual({ mode: 'overlay', open: true })
+    expect(panel.state()).toMatchObject({ mode: 'overlay', open: true })
     expect(result).toEqual('Panel mode set to overlay.')
   })
 

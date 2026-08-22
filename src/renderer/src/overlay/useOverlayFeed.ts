@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { PipelineEvent } from '../../../core/pipeline/events'
 import type { VoiceErrorEvent, VoiceHeardEvent } from '../../../core/voice/ipcChannels'
-import type { FeedPanelState } from '../../../core/panel/feedPanelState'
+import { defaultFeedPanelWidth, type FeedPanelState } from '../../../core/panel/feedPanelState'
 import { useFeedProjection } from '../useFeedProjection'
 
 // The overlay half of the feed panel (#45): the shared feed projection
@@ -35,7 +35,13 @@ export function useOverlayFeed(): Pick<ReturnType<typeof useFeedProjection>, 'fe
 }
 
 export function usePanelState(): FeedPanelState {
-  const [state, setState] = useState<FeedPanelState>({ mode: 'overlay', open: false })
+  // Kiosk ships a narrower default width (#65); main's folded state
+  // (pulled on mount, then broadcast) is the truth this mirrors.
+  const [state, setState] = useState<FeedPanelState>(() => ({
+    mode: 'overlay',
+    open: false,
+    width: defaultFeedPanelWidth(window.bingbong.app.kiosk),
+  }))
 
   useEffect(() => {
     let cancelled = false

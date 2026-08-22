@@ -30,6 +30,12 @@ export interface Harness {
   clickDashboardElement(selector: string): Promise<void>
   /** Click an element in the feed panel's overlay webContents (#45). */
   clickOverlayElement(selector: string): Promise<void>
+  /**
+   * One real (input-pipeline) mouse event in the overlay view — the
+   * press/move/release primitives a drag-resize (#65) needs, dispatched
+   * against the overlay's own session like clickOverlayElement.
+   */
+  overlayMouseEvent(kind: 'down' | 'move' | 'up', x: number, y: number): Promise<void>
   /** Write one line to the app's CLI harness stdin (requires `pipeStdio`). */
   cliWrite(line: string): void
   /** Resolve with the first CLI harness stdout line matching. */
@@ -376,6 +382,23 @@ async function buildHarness(
       // The overlay is its own target: input coordinates are view-local,
       // same as pane clicks.
       await dispatchClick(sid, settled.x, settled.y)
+    },
+
+    async overlayMouseEvent(kind: 'down' | 'move' | 'up', x: number, y: number) {
+      const sid = await waitFor(async () => overlaySid(), { timeoutMs: 15000, intervalMs: 250 })
+      await activateFor('overlay')
+      await cdp.send(
+        'Input.dispatchMouseEvent',
+        {
+          type: kind === 'down' ? 'mousePressed' : kind === 'move' ? 'mouseMoved' : 'mouseReleased',
+          x,
+          y,
+          button: 'left',
+          buttons: kind === 'up' ? 0 : 1,
+          clickCount: kind === 'move' ? 0 : 1,
+        },
+        sid,
+      )
     },
 
     cliWrite(line) {

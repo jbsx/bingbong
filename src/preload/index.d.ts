@@ -95,6 +95,12 @@ export interface BingbongFeedPanelApi {
   getState(): Promise<FeedPanelState | null>
   /** Switch overlay/docked layout mode (persisted by the dashboard). */
   setMode(mode: FeedPanelMode): void
+  /** Set the panel width in px — main clamps to [320, 75% of window]. */
+  setWidth(width: number): void
+  /** A width drag started: cloak the view so the overlay tracks the pointer window-wide. */
+  beginResize(): void
+  /** The width drag ended: restore the view bounds from the folded width. */
+  endResize(): void
   /** Flip the peaked/collapsed state (header button, shortcut, edge tab). */
   toggle(): void
   /** Report the panel slot's rect — drives the native overlay view's bounds. */

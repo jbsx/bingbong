@@ -39,6 +39,7 @@ import { resolveVoiceConfig } from './voice/voiceConfig'
 import { createMainVoice } from './voice/createMainVoice'
 import { attachVoiceToWindow, registerVoiceIpc } from './voice/attachVoice'
 import { attachFeedPanelOverlayToWindow, registerFeedPanelIpc } from './panel/createFeedPanelOverlay'
+import { defaultFeedPanelWidth } from '../core/panel/feedPanelState'
 import { audioDumpEnabled, createUtteranceDumper } from '../core/voice/utteranceDump'
 import { RESUMPTION_MERGE_MS_DEFAULT, silenceFramesForMs } from '../core/voice/vadEndpointing'
 import { fsUtteranceDumpWriter } from './voice/utteranceDumpWriter'
@@ -193,8 +194,13 @@ async function createWindow(): Promise<BrowserWindow> {
   attachBrowserPaneToWindow(pane, win)
   // The feed panel overlay (#45) stacks above the browser pane — attached
   // after it so the z-order is right from the first frame. Main's state
-  // fold rides the same pipeline events the dashboard receives.
-  const feedPanel = attachFeedPanelOverlayToWindow(win, { preloadDir: join(__dirname, '../preload') })
+  // fold rides the same pipeline events the dashboard receives; the fold's
+  // width default matches the launch mode (#65) until the dashboard pushes
+  // the persisted preference.
+  const feedPanel = attachFeedPanelOverlayToWindow(win, {
+    preloadDir: join(__dirname, '../preload'),
+    defaultWidth: defaultFeedPanelWidth(launchConfig.kiosk),
+  })
   // The panel shortcut also fires while the pane owns focus.
   feedPanel.registerShortcut(pane.view.webContents)
 

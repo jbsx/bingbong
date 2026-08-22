@@ -15,7 +15,7 @@ import type {
 import type { PipelineEvent } from '../pipeline/events'
 import type { SubagentManager, SubagentRecord, SubagentStatus } from '../agent/subagentManager'
 import type { PanelControls } from '../pipeline/panelTools'
-import type { FeedPanelMode, FeedPanelState } from '../panel/feedPanelState'
+import { FEED_PANEL_WIDTH_DEFAULT, type FeedPanelMode, type FeedPanelState } from '../panel/feedPanelState'
 import { createPerfTracer, type PerfSpanRecord, type PerfTracer } from '../perf/perfTracer'
 
 /**
@@ -444,7 +444,7 @@ export class FakePanel implements PanelControls {
   readonly modes: FeedPanelMode[] = []
   private current: FeedPanelState
 
-  constructor(initial: FeedPanelState = { mode: 'overlay', open: false }) {
+  constructor(initial: FeedPanelState = { mode: 'overlay', open: false, width: FEED_PANEL_WIDTH_DEFAULT }) {
     this.current = initial
   }
 

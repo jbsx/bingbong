@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react'
 import { ActivityFeed } from '../ActivityFeed'
 import { SteerBox } from './SteerBox'
 import { useOverlayFeed, usePanelState } from './useOverlayFeed'
@@ -13,15 +14,86 @@ import { useRunActive } from './useRunActive'
  * The feed stays mounted when collapsed (CSS hides it): the panel is a
  * visibility toggle, not an unmount — entries keep accumulating behind the
  * edge tab, exactly as the transcript always lived in the dashboard's DOM.
+ *
+ * The left-edge handle drag-resizes (#65): main cloaks the view across the
+ * window for the drag's duration (widening moves the pointer left, out of
+ * a view-sized view), so every move still lands in this page. Moves are
+ * tracked at the window, not on the handle — capture retargeting is not
+ * something every input path honors — and the width (the surface's fixed
+ * right edge minus the cursor) streams to the fold, which clamps it. The
+ * surface itself paints right-anchored at the folded width, so the cloak
+ * never shifts it a pixel.
  */
 export function OverlayPanel() {
   const { feed, liveRunId } = useOverlayFeed()
-  const { mode, open } = usePanelState()
+  const { mode, open, width } = usePanelState()
   const runActive = useRunActive()
+  const surfaceRef = useRef<HTMLDivElement>(null)
+  // Drag bookkeeping: the surface's fixed right edge (the panel hugs it
+  // for the whole drag). Null when no drag is live.
+  const dragBaseRef = useRef<number | null>(null)
+
+  useEffect(() => {
+    const onMove = (event: PointerEvent): void => {
+      const base = dragBaseRef.current
+      if (base === null) return
+      // Raw delta to the fold — main owns the clamp against the live window.
+      window.bingbong.feedPanel.setWidth(base - event.clientX)
+    }
+    const onEnd = (): void => {
+      if (dragBaseRef.current === null) return
+      dragBaseRef.current = null
+      window.bingbong.feedPanel.endResize()
+    }
+    const onKey = (event: KeyboardEvent): void => {
+      if (event.key === 'Escape') onEnd()
+    }
+    window.addEventListener('pointermove', onMove)
+    window.addEventListener('pointerup', onEnd)
+    window.addEventListener('pointercancel', onEnd)
+    window.addEventListener('keydown', onKey)
+    return () => {
+      window.removeEventListener('pointermove', onMove)
+      window.removeEventListener('pointerup', onEnd)
+      window.removeEventListener('pointercancel', onEnd)
+      window.removeEventListener('keydown', onKey)
+    }
+    // One subscription for the app's life: the drag state lives in the
+    // ref, so the listeners never go stale across re-renders.
+  }, [])
+
+  const onHandlePointerDown = (event: React.PointerEvent<HTMLDivElement>): void => {
+    if (event.button !== 0 || dragBaseRef.current !== null) return
+    const surface = surfaceRef.current
+    if (!surface) return
+    event.preventDefault()
+    try {
+      // Best-effort for input paths that honor capture; the window
+      // listeners above are the ones doing the work.
+      event.currentTarget.setPointerCapture(event.pointerId)
+    } catch {
+      // Synthetic pointers may not be capturable — the drag rides on.
+    }
+    dragBaseRef.current = surface.getBoundingClientRect().right
+    window.bingbong.feedPanel.beginResize()
+  }
 
   return (
     <div className={`overlay-chrome overlay-chrome--${open ? 'open' : 'collapsed'}`}>
-      <div className={`feed-surface feed-surface--${mode}`} aria-label="activity feed panel" aria-hidden={!open}>
+      <div
+        ref={surfaceRef}
+        className={`feed-surface feed-surface--${mode}`}
+        style={{ '--panel-width': `${width}px` } as React.CSSProperties}
+        aria-label="activity feed panel"
+        aria-hidden={!open}
+      >
+        <div
+          className="feed-resize-handle"
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="Resize the feed panel"
+          onPointerDown={onHandlePointerDown}
+        />
         <ActivityFeed
           entries={feed}
           liveRunId={liveRunId}
