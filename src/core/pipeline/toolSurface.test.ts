@@ -60,6 +60,11 @@ function settingsToolCatalog(): Tool[] {
   return [createSetSettingTool(new FakeSettings()), createAppControlTool(new FakeAppControls())]
 }
 
+/** Every catalog the ad-skip scans cover — the whole orchestrator surface. */
+function allCatalogs(): Tool[] {
+  return [...orchestratorToolCatalog(), ...delegationToolCatalog(), ...panelToolCatalog(), ...settingsToolCatalog()]
+}
+
 // Matches any phrasing that pairs skipping/closing/bypassing with ads.
 const AD_SKIP_RE = /\b(skip|close|bypass|fast[- ]forward)\b[^.\n]*\bads?\b|\bads?\b[^.\n]*\b(skip|close|bypass|fast[- ]forward)\b/i
 
@@ -174,25 +179,13 @@ describe('orchestrator tool surface', () => {
   })
 
   it('has no tool whose name or description mentions skipping ads', () => {
-    const catalogs = [
-      ...orchestratorToolCatalog(),
-      ...delegationToolCatalog(),
-      ...panelToolCatalog(),
-      ...settingsToolCatalog(),
-    ]
-    for (const tool of catalogs) {
+    for (const tool of allCatalogs()) {
       expect(`${tool.name} ${tool.description ?? ''}`).not.toMatch(AD_SKIP_RE)
     }
   })
 
   it('has no parameter enum value for skipping ads', () => {
-    const catalogs = [
-      ...orchestratorToolCatalog(),
-      ...delegationToolCatalog(),
-      ...panelToolCatalog(),
-      ...settingsToolCatalog(),
-    ]
-    for (const tool of catalogs) {
+    for (const tool of allCatalogs()) {
       for (const spec of Object.values(tool.parameters ?? {})) {
         for (const value of spec.enum ?? []) {
           expect(value).not.toMatch(AD_SKIP_RE)

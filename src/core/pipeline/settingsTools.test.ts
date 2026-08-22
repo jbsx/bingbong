@@ -97,6 +97,25 @@ describe('createSetSettingTool', () => {
     expect(baseUrl.result).toBe('orchestrator base URL set to https://api.deepseek.com/v1.')
   })
 
+  it('sets the STT tier, rejecting a value the fold would silently coerce', async () => {
+    const { settings, result } = await executeSetting({ setting: 'stt_model', string_value: 'medium' })
+    expect(settings.get().sttModel).toBe('medium')
+    expect(result).toBe('STT model set to medium; it loads at the next restart.')
+
+    const invalid = new FakeSettings()
+    const tool = createSetSettingTool(invalid)
+    await expect(
+      tool.execute(callOf('set_setting', { setting: 'stt_model', string_value: 'giant' }), ctx()),
+    ).rejects.toThrow(/stt_model must be one of: base, medium/)
+    expect(invalid.updates).toEqual([])
+  })
+
+  it('sets the tool-round ceiling, clamped by the fold', async () => {
+    const { settings, result } = await executeSetting({ setting: 'max_tool_rounds', number_value: 5 })
+    expect(settings.get().maxToolRounds).toBe(10)
+    expect(result).toBe('Max tool rounds set to 10.')
+  })
+
   it('merges the patch onto the current settings — unrelated values survive a set', async () => {
     const settings = new FakeSettings()
     settings.update({ ...settings.get(), ttsVoice: 'en_US-amy-medium', weather: { city: 'Oslo', units: 'metric' } })
@@ -153,7 +172,7 @@ describe('createSetSettingTool', () => {
     expect(settings.updates).toEqual([])
   })
 
-  it('exposes exactly the seven non-credential setting domains in its parameter enum', () => {
+  it('exposes every non-credential setting in its parameter enum — credentials, keys, mic absent', () => {
     const tool = createSetSettingTool(new FakeSettings())
     expect(Object.keys(tool.parameters ?? {}).sort()).toEqual(
       ['boolean_value', 'number_value', 'role', 'setting', 'string_value'].sort(),
@@ -166,6 +185,8 @@ describe('createSetSettingTool', () => {
       'web_zoom_percent',
       'weather_city',
       'weather_units',
+      'stt_model',
+      'max_tool_rounds',
       'model_routing_model',
       'model_routing_base_url',
     ])

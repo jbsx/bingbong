@@ -48,6 +48,8 @@ const SETTING_KEYS = [
   'web_zoom_percent',
   'weather_city',
   'weather_units',
+  'stt_model',
+  'max_tool_rounds',
   'model_routing_model',
   'model_routing_base_url',
 ] as const
@@ -56,19 +58,85 @@ type SettingKey = (typeof SETTING_KEYS)[number]
 
 type ValueKind = 'number' | 'string' | 'boolean'
 
-const SETTING_KINDS: Record<SettingKey, ValueKind> = {
-  wake_word_threshold: 'number',
-  endpoint_delay_ms: 'number',
-  tts_voice: 'string',
-  adblock_enabled: 'boolean',
-  web_zoom_percent: 'number',
-  weather_city: 'string',
-  weather_units: 'string',
-  model_routing_model: 'string',
-  model_routing_base_url: 'string',
+/**
+ * One row per voice-reachable Setting: the value type it takes, the patch it
+ * contributes on top of the current settings, and the line reporting the
+ * effective value after the sanitize fold (clamped values read back clamped).
+ * Adding a Setting means adding one row — nothing else in this file changes.
+ */
+interface SettingSpec {
+  kind: ValueKind
+  /** Restricts string values to exactly these (the fold would silently coerce garbage). */
+  values?: readonly string[]
+  /** The model-routing settings also need the `role` parameter. */
+  routing?: boolean
+  patch(value: unknown, role: AgentRole | undefined): Record<string, unknown>
+  describe(settings: AppSettings, role: AgentRole | undefined): string
 }
 
-const ROUTING_SETTINGS: readonly SettingKey[] = ['model_routing_model', 'model_routing_base_url']
+const SETTING_SPECS: Record<SettingKey, SettingSpec> = {
+  wake_word_threshold: {
+    kind: 'number',
+    patch: (value) => ({ wakeWordThreshold: value }),
+    describe: (s) => `Wake word threshold set to ${s.wakeWordThreshold}.`,
+  },
+  endpoint_delay_ms: {
+    kind: 'number',
+    patch: (value) => ({ endpointDelayMs: value }),
+    describe: (s) => `Endpoint delay set to ${s.endpointDelayMs} ms.`,
+  },
+  tts_voice: {
+    kind: 'string',
+    patch: (value) => ({ ttsVoice: value }),
+    describe: (s) => (s.ttsVoice.trim() === '' ? 'TTS voice set to the default.' : `TTS voice set to ${s.ttsVoice}.`),
+  },
+  adblock_enabled: {
+    kind: 'boolean',
+    patch: (value) => ({ adblockEnabled: value }),
+    describe: (s) => (s.adblockEnabled ? 'Adblock enabled.' : 'Adblock disabled.'),
+  },
+  web_zoom_percent: {
+    kind: 'number',
+    patch: (value) => ({ webZoomPercent: value }),
+    describe: (s) => `Web zoom set to ${s.webZoomPercent}%.`,
+  },
+  weather_city: {
+    kind: 'string',
+    patch: (value) => ({ weather: { city: value } }),
+    describe: (s) => (s.weather.city.trim() === '' ? 'Weather city cleared.' : `Weather city set to ${s.weather.city}.`),
+  },
+  weather_units: {
+    kind: 'string',
+    values: ['metric', 'imperial'],
+    patch: (value) => ({ weather: { units: value } }),
+    describe: (s) => `Weather units set to ${s.weather.units}.`,
+  },
+  stt_model: {
+    kind: 'string',
+    values: ['base', 'medium'],
+    // The tier loads at the next transcriber construction — a restart (#63).
+    patch: (value) => ({ sttModel: value }),
+    describe: (s) => `STT model set to ${s.sttModel}; it loads at the next restart.`,
+  },
+  max_tool_rounds: {
+    kind: 'number',
+    // Applies to the next command, no restart.
+    patch: (value) => ({ maxToolRounds: value }),
+    describe: (s) => `Max tool rounds set to ${s.maxToolRounds}.`,
+  },
+  model_routing_model: {
+    kind: 'string',
+    routing: true,
+    patch: (value, role) => ({ modelRouting: { [role!]: { model: value } } }),
+    describe: (s, role) => `${role} model set to ${s.modelRouting[role!].model}.`,
+  },
+  model_routing_base_url: {
+    kind: 'string',
+    routing: true,
+    patch: (value, role) => ({ modelRouting: { [role!]: { baseUrl: value } } }),
+    describe: (s, role) => `${role} base URL set to ${s.modelRouting[role!].baseUrl}.`,
+  },
+}
 
 function isSettingKey(value: unknown): value is SettingKey {
   return typeof value === 'string' && (SETTING_KEYS as readonly string[]).includes(value)
@@ -85,17 +153,20 @@ function numericArg(value: unknown): number | undefined {
 }
 
 function typedValue(key: SettingKey, args: Record<string, unknown>): unknown {
-  const kind = SETTING_KINDS[key]
-  if (kind === 'number') {
+  const spec = SETTING_SPECS[key]
+  if (spec.kind === 'number') {
     const value = numericArg(args.number_value)
     if (value === undefined) throw new Error(`set_setting: ${key} needs number_value`)
     return value
   }
-  if (kind === 'boolean') {
+  if (spec.kind === 'boolean') {
     if (typeof args.boolean_value !== 'boolean') throw new Error(`set_setting: ${key} needs boolean_value`)
     return args.boolean_value
   }
   if (typeof args.string_value !== 'string') throw new Error(`set_setting: ${key} needs string_value`)
+  if (spec.values && !spec.values.includes(args.string_value)) {
+    throw new Error(`set_setting: ${key} must be one of: ${spec.values.join(', ')}`)
+  }
   return args.string_value
 }
 
@@ -104,57 +175,6 @@ function routingRole(key: SettingKey, args: Record<string, unknown>): AgentRole 
     throw new Error(`set_setting: ${key} also needs 'role' (${AGENT_ROLES.join(', ')})`)
   }
   return args.role
-}
-
-/** The patch one call contributes, on top of the current settings. */
-function patchFor(key: SettingKey, value: unknown, role: AgentRole | undefined): Record<string, unknown> {
-  switch (key) {
-    case 'wake_word_threshold':
-      return { wakeWordThreshold: value }
-    case 'endpoint_delay_ms':
-      return { endpointDelayMs: value }
-    case 'tts_voice':
-      return { ttsVoice: value }
-    case 'adblock_enabled':
-      return { adblockEnabled: value }
-    case 'web_zoom_percent':
-      return { webZoomPercent: value }
-    case 'weather_city':
-      return { weather: { city: value } }
-    case 'weather_units':
-      return { weather: { units: value } }
-    case 'model_routing_model':
-      return { modelRouting: { [role!]: { model: value } } }
-    case 'model_routing_base_url':
-      return { modelRouting: { [role!]: { baseUrl: value } } }
-  }
-}
-
-function describeEffect(key: SettingKey, settings: AppSettings, role: AgentRole | undefined): string {
-  switch (key) {
-    case 'wake_word_threshold':
-      return `Wake word threshold set to ${settings.wakeWordThreshold}.`
-    case 'endpoint_delay_ms':
-      return `Endpoint delay set to ${settings.endpointDelayMs} ms.`
-    case 'tts_voice':
-      return settings.ttsVoice.trim() === ''
-        ? 'TTS voice set to the default.'
-        : `TTS voice set to ${settings.ttsVoice}.`
-    case 'adblock_enabled':
-      return settings.adblockEnabled ? 'Adblock enabled.' : 'Adblock disabled.'
-    case 'web_zoom_percent':
-      return `Web zoom set to ${settings.webZoomPercent}%.`
-    case 'weather_city':
-      return settings.weather.city.trim() === ''
-        ? 'Weather city cleared.'
-        : `Weather city set to ${settings.weather.city}.`
-    case 'weather_units':
-      return `Weather units set to ${settings.weather.units}.`
-    case 'model_routing_model':
-      return `${role} model set to ${settings.modelRouting[role!].model}.`
-    case 'model_routing_base_url':
-      return `${role} base URL set to ${settings.modelRouting[role!].baseUrl}.`
-  }
 }
 
 /** Deep-merge a patch onto the current settings — nested objects merge, scalars replace. */
@@ -177,18 +197,20 @@ export function createSetSettingTool(settings: SettingsControls): Tool {
       enum: [...SETTING_KEYS],
       description:
         'The Setting to change: wake_word_threshold (0–1), endpoint_delay_ms (200–1500 silence that submits an utterance), ' +
-        'tts_voice (Piper voice id), adblock_enabled, web_zoom_percent (75–200), weather_city, weather_units (metric|imperial), ' +
-        'model_routing_model or model_routing_base_url (with role). Credentials, API keys and microphone are keyboard-only.',
+        'tts_voice (Piper voice id), adblock_enabled, web_zoom_percent (75–200), weather_city, weather_units ' +
+        '(metric|imperial), stt_model (base|medium), max_tool_rounds, model_routing_model or model_routing_base_url ' +
+        '(with role). Credentials, API keys and microphone are keyboard-only.',
     },
     number_value: {
       type: 'number',
-      description: 'The new value for numeric settings (wake_word_threshold, endpoint_delay_ms, web_zoom_percent)',
+      description:
+        'The new value for numeric settings (wake_word_threshold, endpoint_delay_ms, web_zoom_percent, max_tool_rounds)',
       required: false,
     },
     string_value: {
       type: 'string',
       description:
-        'The new value for string settings (tts_voice, weather_city, weather_units, model_routing_model, model_routing_base_url)',
+        'The new value for string settings (tts_voice, weather_city, weather_units, stt_model, model_routing_model, model_routing_base_url)',
       required: false,
     },
     boolean_value: {
@@ -208,19 +230,20 @@ export function createSetSettingTool(settings: SettingsControls): Tool {
     name: 'set_setting',
     description:
       'Change one of the app Settings by voice: wake word threshold, endpoint delay, TTS voice, adblock, ' +
-      'web zoom, weather city/units, or model routing (model or base URL per role). Applies immediately with ' +
-      'no confirmation. Credentials, API keys and microphone selection are not voice-reachable — the user ' +
-      'must type those in the settings page.',
+      'web zoom, weather city/units, STT model, tool-round ceiling, or model routing (model or base URL per ' +
+      'role). Applies immediately with no confirmation. Credentials, API keys and microphone selection are ' +
+      'not voice-reachable — the user must type those in the settings page.',
     parameters,
     execute: async (call) => {
       const key = call.args.setting
       if (!isSettingKey(key)) {
         throw new Error(`set_setting: 'setting' must be one of: ${SETTING_KEYS.join(', ')}`)
       }
+      const spec = SETTING_SPECS[key]
       const value = typedValue(key, call.args)
-      const role = ROUTING_SETTINGS.includes(key) ? routingRole(key, call.args) : undefined
-      const updated = settings.update(mergedUpdate(settings.get(), patchFor(key, value, role)))
-      return describeEffect(key, updated, role)
+      const role = spec.routing ? routingRole(key, call.args) : undefined
+      const updated = settings.update(mergedUpdate(settings.get(), spec.patch(value, role)))
+      return spec.describe(updated, role)
     },
   }
 }
