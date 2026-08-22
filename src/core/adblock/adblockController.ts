@@ -27,9 +27,10 @@ export interface AdblockControllerDeps {
   lists: string[]
   resourcesUrl: string | null
   fetchText(url: string): Promise<string>
-  /** Raw-text disk cache, keyed per URL. null means "not cached". */
-  readListText(url: string): string | null
-  writeListText(url: string, text: string): void
+  /** Raw-text disk cache for lists and resources, keyed per URL. null means
+   *  "not cached". */
+  readCachedText(url: string): string | null
+  writeCachedText(url: string, text: string): void
   parseEngine(listsText: string[], resources: string | null): AdblockEngine
   serializeEngine(engine: AdblockEngine): Uint8Array
   deserializeEngine(raw: Uint8Array): AdblockEngine
@@ -51,6 +52,18 @@ export interface AdblockController {
   dispose(): void
 }
 
+/** One cached artifact (list or resources): its text and freshness entry. */
+interface AdblockArtifact {
+  text: string
+  entry: AdblockCacheEntry
+}
+
+/** On-disk metas written before per-list cadence (issue #69) lack `lists`;
+ *  treat those — and anything else malformed — as "no cache". */
+function normalizeMeta(meta: AdblockCacheMeta | null): AdblockCacheMeta | null {
+  return meta !== null && Array.isArray(meta.lists) ? meta : null
+}
+
 export function createAdblockController(deps: AdblockControllerDeps): AdblockController {
   if (deps.lists.length === 0) {
     return { ready: () => Promise.resolve(), setEnabled: () => {}, dispose: () => {} }
@@ -65,25 +78,27 @@ export function createAdblockController(deps: AdblockControllerDeps): AdblockCon
     deps.onWarning?.(message)
   }
 
+  /** Cached text for a still-fresh entry, or null when it must be fetched. */
+  function readFreshText(url: string, cachedEntry: AdblockCacheEntry | undefined): AdblockArtifact | null {
+    if (cachedEntry === undefined || adblockEntryIsStale(cachedEntry, deps.now())) return null
+    const cachedText = deps.readCachedText(url)
+    return cachedText === null ? null : { text: cachedText, entry: cachedEntry }
+  }
+
   /** One artifact (list or resources): cached text when fresh, else fetched. */
-  async function loadArtifact(
-    url: string,
-    cachedEntry: AdblockCacheEntry | undefined,
-  ): Promise<{ text: string; entry: AdblockCacheEntry }> {
-    if (cachedEntry !== undefined && !adblockEntryIsStale(cachedEntry, deps.now())) {
-      const cachedText = deps.readListText(url)
-      if (cachedText !== null) return { text: cachedText, entry: cachedEntry }
-    }
+  async function loadArtifact(url: string, cachedEntry: AdblockCacheEntry | undefined): Promise<AdblockArtifact> {
+    const fresh = readFreshText(url, cachedEntry)
+    if (fresh !== null) return fresh
     const text = await deps.fetchText(url)
-    deps.writeListText(url, text)
+    deps.writeCachedText(url, text)
     return { text, entry: { url, updatedAt: deps.now() } }
   }
 
   /** Rebuilds the whole engine, going to the network only for stale or
    * missing artifacts. Any *list* fetch failure rejects (the caller keeps the
    * previous engine); resources degrade to their cached text or null. */
-  async function rebuildEngine(meta: AdblockCacheMeta | null): Promise<{ engine: AdblockEngine; meta: AdblockCacheMeta }> {
-    const now = deps.now()
+  async function rebuildEngine(rawMeta: AdblockCacheMeta | null): Promise<{ engine: AdblockEngine; meta: AdblockCacheMeta }> {
+    const meta = normalizeMeta(rawMeta)
     const lists = await Promise.all(
       deps.lists.map((url, index) => {
         const cachedEntry = meta?.lists[index]?.url === url ? meta.lists[index] : undefined
@@ -94,20 +109,19 @@ export function createAdblockController(deps: AdblockControllerDeps): AdblockCon
     let resources: { text: string | null; entry: AdblockCacheEntry | null } = { text: null, entry: null }
     if (deps.resourcesUrl !== null) {
       const cachedEntry = meta?.resources?.url === deps.resourcesUrl ? meta.resources : undefined
-      if (cachedEntry !== undefined && !adblockEntryIsStale(cachedEntry, now)) {
-        const cachedText = deps.readListText(deps.resourcesUrl)
-        if (cachedText !== null) resources = { text: cachedText, entry: cachedEntry }
-      }
-      if (resources.text === null) {
+      const fresh = readFreshText(deps.resourcesUrl, cachedEntry)
+      if (fresh !== null) {
+        resources = fresh
+      } else {
         // Scriptlet resources are optional: cosmetic hiding and network
         // blocking work without them, so a failed fetch must not take the
         // engine down. A stale cached copy still beats no scriptlets.
         const fetched = await deps.fetchText(deps.resourcesUrl).catch(() => null)
         if (fetched !== null) {
-          deps.writeListText(deps.resourcesUrl, fetched)
+          deps.writeCachedText(deps.resourcesUrl, fetched)
           resources = { text: fetched, entry: { url: deps.resourcesUrl, updatedAt: deps.now() } }
         } else {
-          const staleText = deps.readListText(deps.resourcesUrl)
+          const staleText = deps.readCachedText(deps.resourcesUrl)
           if (staleText !== null) resources = { text: staleText, entry: cachedEntry ?? null }
         }
       }

@@ -52,14 +52,14 @@ export function attachAdblock(deps: {
       return response.text()
     },
 
-    readListText: (url) => {
+    readCachedText: (url) => {
       try {
         return readFileSync(listTextPath(url), 'utf8')
       } catch {
         return null
       }
     },
-    writeListText: (url, text) => {
+    writeCachedText: (url, text) => {
       const path = listTextPath(url)
       mkdirSync(dirname(path), { recursive: true })
       writeFileSync(path, text, 'utf8')

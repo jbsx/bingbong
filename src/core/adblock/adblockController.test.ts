@@ -66,8 +66,8 @@ function baseDeps(overrides?: Partial<AdblockControllerDeps>): DepsHarness {
       fetched.push(url)
       return `filters-for ${url}`
     },
-    readListText: (url) => listTexts.get(url) ?? null,
-    writeListText: (url, text) => {
+    readCachedText: (url) => listTexts.get(url) ?? null,
+    writeCachedText: (url, text) => {
       listTexts.set(url, text)
     },
     parseEngine: () => ({ id: `engine-${nextEngineId++}` }) as unknown as FakeEngine,
@@ -212,6 +212,23 @@ describe('createAdblockController startup', () => {
 
     expect(deps.fetched).toEqual([deps.urls.dailyA])
     expect(deps.applied).toHaveLength(1)
+
+    controller.dispose()
+  })
+
+  it('treats a pre-per-list-cadence cache (one updatedAt for all urls) as a cold start', async () => {
+    const deps = baseDeps()
+    const legacy = { urls: deps.lists, updatedAt: T0 } as unknown as AdblockCacheMeta
+    deps.setCache({ engine: new TextEncoder().encode('serialized:engine-cached'), meta: legacy })
+    const controller = createAdblockController(deps)
+    await controller.ready()
+
+    // No crash, no reuse: everything goes back to the network and the cache is
+    // rewritten in the per-artifact shape.
+    expect(deps.fetched).toEqual([deps.urls.dailyA, deps.urls.quickFixes, deps.urls.dailyB, deps.urls.resources])
+    expect(deps.applied).toEqual([{ engine: { id: 'engine-0' }, enabled: true }])
+    expect(deps.written).toHaveLength(1)
+    expect(deps.written[0]!.meta.lists.map((entry) => entry.url)).toEqual(deps.lists)
 
     controller.dispose()
   })
