@@ -1032,18 +1032,6 @@ body {
   color: var(--text);
 }
 
-.idle-feed {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  max-width: 960px;
-  width: 100%;
-  margin: 0 auto;
-  font-size: 1.1rem;
-  color: var(--muted);
-  overflow: hidden;
-}
-
 /* Kiosk: the browser pane is the appliance's main surface — chrome and the
    assistant panel shrink to give it the window. The panel width needs no
    kiosk rule: its default (#65) ships narrower (800px) through the same

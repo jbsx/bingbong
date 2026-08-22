@@ -24,7 +24,7 @@ import { USAGE_IPC } from '../core/settings/usageIpcChannels'
 import { HISTORY_IPC, HISTORY_HYDRATE_LIMIT } from '../core/history/ipcChannels'
 import { openSessionStart, type HydrationSnapshot } from '../core/history/hydrationScope'
 import { createHistoryRecorder } from '../core/history/historyRecorder'
-import { createSessionMemory, SESSION_WINDOW_MS } from '../core/session/sessionMemory'
+import { createSessionMemory } from '../core/session/sessionMemory'
 import { systemClock } from '../core/ports/clock'
 import { createSqliteHistoryStore } from './history/createSqliteHistoryStore'
 import { DEFAULT_DAILY_SPEND_WARN_USD } from '../core/agent/spendEstimate'
@@ -111,18 +111,10 @@ function dailySpendWarnUsd(): number {
   return Number.isFinite(raw) && raw > 0 ? raw : DEFAULT_DAILY_SPEND_WARN_USD
 }
 
-// Session window override (default 30 min, ADR 0005 amends ADR 0001) — an
-// e2e knob, like BINGBONG_ASK_TIMEOUT_MS: the lapse flows can't wait out
-// real minutes. One knob for both the live store and boot hydration scope.
-function sessionWindowMs(env: Record<string, string | undefined>): number | undefined {
-  const value = Number(env.BINGBONG_SESSION_WINDOW_MS)
-  return Number.isFinite(value) && value > 0 ? value : undefined
-}
-
-/** The window the live session store and the hydration scope both use. */
-function effectiveSessionWindowMs(): number {
-  return sessionWindowMs(currentEnv()) ?? SESSION_WINDOW_MS
-}
+// Session window (default 30 min, ADR 0005 amends ADR 0001): resolved once
+// with the launch config — BINGBONG_SESSION_WINDOW_MS is the one e2e knob
+// (the lapse flows can't wait out real minutes), driving the live store,
+// the boot-hydration scope, and the renderer's Active Session gate (#70).
 
 // Piper TTS: binary, voices dir, and base voice come from env (defaults
 // suffice for a standard install); the settings page's voice wins per line.
@@ -317,7 +309,7 @@ async function createWindow(): Promise<BrowserWindow> {
   // the dashboard gets a session_started event and wipes the view eagerly.
   // history.db is untouched: the event projects to no transcript entry.
   const sessionMemory = createSessionMemory({
-    windowMs: effectiveSessionWindowMs(),
+    windowMs: launchConfig.sessionWindowMs,
     onSessionStart: () => emitPipelineEvent({ type: 'session_started', at: systemClock.now() }),
   })
   const pipeline = createAssistantPipeline({
@@ -397,13 +389,18 @@ app.whenReady().then(async () => {
   ipcMain.handle(USAGE_IPC.getToday, () => usageStore.summary(dailySpendWarnUsd()))
   ipcMain.handle(HISTORY_IPC.recentEntries, (): HydrationSnapshot => {
     // Restart hydration (ADR 0005): entries ship unfiltered — recording and
-    // the read stay review-only — beside the still-open session's start,
-    // computed with the same window the live store uses. The renderer's
-    // projection decides what renders; a lapsed session boots blank.
-    const windowMs = effectiveSessionWindowMs()
+    // the read stay review-only — beside the run spans and the current
+    // session's start boundary, computed with the same window the live
+    // store uses. The renderer's projection decides what renders; a lapsed
+    // session boots blank. The spans (#70) seed the renderer's Active
+    // Session gate, which reuses the same isSessionActive computation as
+    // the scoping here.
+    const windowMs = launchConfig.sessionWindowMs
     const entries = historyStore.recentEntries(HISTORY_HYDRATE_LIMIT)
-    const runs = historyStore.recentRuns(HISTORY_HYDRATE_LIMIT)
-    return { entries, sessionStartAt: openSessionStart(runs, systemClock.now(), windowMs) }
+    const runs = historyStore
+      .recentRuns(HISTORY_HYDRATE_LIMIT)
+      .map((run) => ({ startedAt: run.startedAt, finishedAt: run.finishedAt }))
+    return { entries, runs, sessionStartAt: openSessionStart(runs, systemClock.now(), windowMs) }
   })
   ipcMain.handle(HISTORY_IPC.recentRuns, () => historyStore.recentRuns(50))
   ipcMain.handle(HISTORY_IPC.recordVoiceError, (_event, message: unknown) => {

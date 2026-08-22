@@ -80,8 +80,10 @@ export interface BingbongVoiceApi {
 export interface BingbongHistoryApi {
   /**
    * Restart hydration snapshot (ADR 0005): recorded entries beside the
-   * still-open session's start — `null` when the session lapsed, so the
-   * feed boots blank. The renderer's projection does the scoping.
+   * recorded run spans and the current session's start boundary — `null`
+   * when the session already lapsed, so the feed boots blank. The
+   * projection does the scoping; the spans seed the Active Session idle
+   * gate (#70).
    */
   recentEntries(): Promise<HydrationSnapshot>
   /** Persisted run records, oldest first. */

@@ -3,6 +3,8 @@
 // deployment from T11: fullscreen, with the idle screen's timeout tunable via
 // env so e2e doesn't wait real minutes.
 
+import { SESSION_WINDOW_MS } from '../session/sessionMemory'
+
 export const KIOSK_FLAG = '--kiosk'
 
 /** Default inactivity timeout before the idle screen appears: 5 minutes. */
@@ -13,15 +15,24 @@ export interface LaunchConfig {
   kiosk: boolean
   /** Inactivity timeout before the idle screen; BINGBONG_IDLE_TIMEOUT_MS overrides. */
   idleTimeoutMs: number
+  /**
+   * The Session Window (#70): while an Active Session exists (newest run
+   * finished within it, or a run in progress) the idle timeout never swaps
+   * the dashboard away. BINGBONG_SESSION_WINDOW_MS overrides — the same e2e
+   * knob the live store and boot hydration read.
+   */
+  sessionWindowMs: number
 }
 
 export function resolveLaunchConfig(
   argv: readonly string[],
   env: Record<string, string | undefined>,
 ): LaunchConfig {
-  const parsed = Number(env.BINGBONG_IDLE_TIMEOUT_MS)
+  const parsedIdle = Number(env.BINGBONG_IDLE_TIMEOUT_MS)
+  const parsedWindow = Number(env.BINGBONG_SESSION_WINDOW_MS)
   return {
     kiosk: argv.includes(KIOSK_FLAG),
-    idleTimeoutMs: Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_IDLE_TIMEOUT_MS,
+    idleTimeoutMs: Number.isFinite(parsedIdle) && parsedIdle > 0 ? parsedIdle : DEFAULT_IDLE_TIMEOUT_MS,
+    sessionWindowMs: Number.isFinite(parsedWindow) && parsedWindow > 0 ? parsedWindow : SESSION_WINDOW_MS,
   }
 }

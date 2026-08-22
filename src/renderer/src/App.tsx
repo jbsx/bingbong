@@ -4,6 +4,7 @@ import { AssistantPanel, RunHint, StatusOrb, StatusPill } from './AssistantPanel
 import { IdleScreen } from './IdleScreen'
 import { SettingsPage } from './SettingsPage'
 import { SubagentCards } from './SubagentCards'
+import { useActiveSession } from './useActiveSession'
 import { useAssistant } from './useAssistant'
 import { useFeedPanel, useFeedSlotRect } from './useFeedPanel'
 import { useIdle } from './useIdle'
@@ -65,13 +66,24 @@ export function App() {
   // Transcribing outranks listening (#38): the endpoint fired, STT is
   // thinking — never claim the ear is open while it works.
   const status = voice.transcribing ? 'transcribing' : voice.listening ? 'listening' : assistant.status
+  // The Active Session gate (#70): while the newest run finished within the
+  // Session Window (or a run is in progress), the idle timeout never swaps
+  // the dashboard for the idle screen — a 5-minute pause mid-Session keeps
+  // the work on screen. Only a lapsed (or never-started) session idles.
+  const activeSession = useActiveSession(window.bingbong.app.sessionWindowMs)
   // Never idle over a running command, an open mic, the STT window, or the
   // settings page — the timer must not unmount a form mid-edit.
-  const showIdle = idle.idle && status === 'idle' && !voice.listening && !voice.transcribing && view === 'dashboard'
+  const showIdle =
+    idle.idle &&
+    status === 'idle' &&
+    !voice.listening &&
+    !voice.transcribing &&
+    view === 'dashboard' &&
+    !activeSession
   const weather = useWeather(settings?.weather ?? null, showIdle)
 
   if (showIdle) {
-    return <IdleScreen entries={assistant.feed} weather={weather} />
+    return <IdleScreen weather={weather} />
   }
 
   return (

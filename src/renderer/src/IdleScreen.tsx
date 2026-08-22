@@ -1,10 +1,6 @@
 import { useEffect, useState } from 'react'
-import type { FeedEntry } from '../../core/history/feedProjection'
-import { FeedLine } from './ActivityFeed'
 import { formatWeather } from '../../core/weather/weather'
 import type { WeatherState } from './useWeather'
-
-const RECENT_LINES = 6
 
 function formatClock(now: Date): string {
   return now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
@@ -28,24 +24,20 @@ function weatherLine(weather: WeatherState): string {
 }
 
 /**
- * The at-rest screen (T11): big clock, weather for the configured city, and
- * the recent activity — the smart-display half of the appliance. Mounts in
- * place of the whole dashboard after the inactivity timeout; any activity
- * (input, pipeline or voice event) unmounts it.
+ * The at-rest screen (T11): clock and weather — the smart-display half of
+ * the appliance, and nothing else (#70: no Feed Entries; a future redesign
+ * plans the rest). Mounts in place of the whole dashboard only when no
+ * Active Session exists — App's gate keeps it off the screen while the
+ * Session Window still holds — and any activity (input, pipeline or voice
+ * event) unmounts it.
  */
-export function IdleScreen({ entries, weather }: { entries: FeedEntry[]; weather: WeatherState }) {
+export function IdleScreen({ weather }: { weather: WeatherState }) {
   const [now, setNow] = useState(() => new Date())
 
   useEffect(() => {
     const timer = setInterval(() => setNow(new Date()), 1000)
     return () => clearInterval(timer)
   }, [])
-
-  // The conversation digest (#54): your commands and Bing Bong's answers —
-  // display cards where they render, spoken lines where they don't.
-  const recent = entries
-    .filter((entry) => entry.kind === 'command' || entry.kind === 'display' || entry.kind === 'speak')
-    .slice(-RECENT_LINES)
 
   return (
     <div className="idle-screen" aria-label="idle screen">
@@ -57,13 +49,6 @@ export function IdleScreen({ entries, weather }: { entries: FeedEntry[]; weather
         <p className="idle-weather" aria-label="weather">
           {weatherLine(weather)}
         </p>
-      </div>
-      <div className="idle-feed" aria-label="recent activity">
-        {recent.length === 0 ? (
-          <p className="feed-empty">Nothing yet — say the wake word or type a command.</p>
-        ) : (
-          recent.map((entry) => <FeedLine key={entry.id} entry={entry} />)
-        )}
       </div>
     </div>
   )

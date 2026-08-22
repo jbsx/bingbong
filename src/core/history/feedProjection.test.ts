@@ -34,7 +34,7 @@ function recorded(kind: RecordedEntry['kind'], text: string, at: number): Record
 
 /** A snapshot whose session began at/before the first entry — hydrates all. */
 function snapshotOf(...entries: RecordedEntry[]) {
-  return { entries, sessionStartAt: entries[0]?.at ?? 0 }
+  return { entries, runs: [], sessionStartAt: entries[0]?.at ?? 0 }
 }
 
 /** The entry surface the panel renders: order + kind + role + text + detail flag. */
@@ -526,6 +526,7 @@ describe('feed projection', () => {
           recorded('command', 'current session', 10_000),
           recorded('speak', 'Fresh answer.', 11_000),
         ],
+        runs: [],
         sessionStartAt: 10_000,
       })
 
@@ -540,6 +541,7 @@ describe('feed projection', () => {
 
       feed.hydrate({
         entries: [recorded('command', 'stale session', 1_000), recorded('speak', 'Old answer.', 2_000)],
+        runs: [],
         sessionStartAt: null,
       })
 
@@ -550,7 +552,7 @@ describe('feed projection', () => {
       const feed = createFeedProjection()
       feed.onEvent(command('typed while fetching', 5_000))
 
-      feed.hydrate({ entries: [recorded('command', 'stale session', 1_000)], sessionStartAt: null })
+      feed.hydrate({ entries: [recorded('command', 'stale session', 1_000)], runs: [], sessionStartAt: null })
 
       expect(outline(feed.entries())).toEqual([
         { kind: 'command', role: USER, text: 'typed while fetching', detail: false },
@@ -562,6 +564,7 @@ describe('feed projection', () => {
 
       feed.hydrate({
         entries: [recorded('command', 'session opener', 7_000), recorded('speak', 'Answer.', 8_000)],
+        runs: [],
         sessionStartAt: 7_000,
       })
 
@@ -582,6 +585,7 @@ describe('feed projection', () => {
           recorded('command', 'raced', 12_000),
           recorded('speak', 'Answer.', 13_000),
         ],
+        runs: [],
         sessionStartAt: 10_000,
       })
 

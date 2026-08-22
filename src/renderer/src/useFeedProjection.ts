@@ -3,6 +3,7 @@ import type { PipelineEvent } from '../../core/pipeline/events'
 import type { VoiceHeardEvent } from '../../core/voice/ipcChannels'
 import { describeHeard } from '../../core/voice/heardDisplay'
 import { createFeedProjection, type FeedEntry } from '../../core/history/feedProjection'
+import { hydrationSnapshot } from './hydrationSnapshot'
 
 // The feed projection's renderer wiring (#44, #45): one projection instance,
 // restart hydration (outcome entries only, dedup closing the live race),
@@ -32,8 +33,7 @@ export function useFeedProjection(): FeedProjection {
 
   useEffect(() => {
     let cancelled = false
-    void window.bingbong.history
-      .recentEntries()
+    void hydrationSnapshot()
       .then((snapshot) => {
         if (cancelled) return
         // Session-scoped hydration (ADR 0005): only the still-open session
