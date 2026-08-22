@@ -210,6 +210,16 @@ describe('createMoonshineTranscriber', () => {
     expect(mask.dims).toEqual([1, PCM.length])
   })
 
+  it('feeds an all-ones attention_mask when the encoder export asks for one (Medium, #63)', async () => {
+    const rt = fakeRuntime([[{ next: 2 }]], { encoderInputs: ['input_values', 'attention_mask'] })
+    const transcriber = makeTranscriber(rt)
+    await transcriber.finish(PCM)
+
+    const mask = rt.encoderFeeds[0].attention_mask as FakeTensor
+    expect(mask.data).toEqual(BigInt64Array.from({ length: PCM.length }, () => 1n))
+    expect(mask.dims).toEqual([1, PCM.length])
+  })
+
   it('stops at the token cap when no EOS arrives', async () => {
     const rt = fakeRuntime([[{ next: 7 }, { next: 7 }, { next: 7 }]])
     const transcriber = makeTranscriber(rt, { maxTokensPerSecond: 2 }) // 1 s audio → 2 steps
@@ -247,6 +257,20 @@ describe('createMoonshineTranscriber', () => {
     const transcriber = makeTranscriber(rt)
     await transcriber.finish(new Float32Array(8_000))
     const feed = rt.encoderFeeds[0][rt.encoderInputName] as FakeTensor
+    expect(feed.dims).toEqual([1, 16_000])
+  })
+
+  it('pads to the encoder frame multiple when the tier requires one (Medium, #63)', async () => {
+    const rt = fakeRuntime([[{ next: 2 }]])
+    const transcriber = makeTranscriber(rt, { frameSamples: 80 })
+    // Above the 1 s floor but off the 5 ms frame quantum → zero-padded up.
+    await transcriber.finish(new Float32Array(20_003))
+    let feed = rt.encoderFeeds[0][rt.encoderInputName] as FakeTensor
+    expect(feed.dims).toEqual([1, 20_080]) // ceil(20_003 / 80) frames
+
+    // Below the floor the 1 s pad already satisfies the quantum (16_000 = 200 × 80).
+    await transcriber.finish(new Float32Array(8_123))
+    feed = rt.encoderFeeds[1][rt.encoderInputName] as FakeTensor
     expect(feed.dims).toEqual([1, 16_000])
   })
 })

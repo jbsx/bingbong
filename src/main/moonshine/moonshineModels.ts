@@ -1,5 +1,9 @@
 import { existsSync, mkdirSync, statSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
+import type { SttModel } from '../../core/settings/settings'
+// .ts extension: this module sits on scripts/replay-stt's type-stripping
+// runtime graph, where Node resolves no extensionless imports.
+import { MOONSHINE_BASE_DIMS } from './createMoonshineTranscriber.ts'
 
 // Where Moonshine Base lives (#41): the model-dir convention puts engine
 // files under <userData>/models (README), one subdir per engine (the wake
@@ -10,8 +14,20 @@ import { dirname, join } from 'node:path'
 // createMainMoonshineTranscriber); partial/truncated files are refetched.
 
 export const MOONSHINE_BASE_DIR = 'moonshine-base'
+export const MOONSHINE_MEDIUM_DIR = 'moonshine-medium'
 
 const BASE_URL = 'https://huggingface.co/moonshine-ai/moonshine/resolve/main/onnx/merged/base'
+
+// The Medium tier (#63) is the moonshine-streaming-medium checkpoint. The
+// official org ships no merged ONNX of it (its own onnx/medium graphs are
+// the chunked streaming architecture — a different contract this engine
+// cannot drive), so this is an optimum-style quantized export of that
+// checkpoint keeping the exact merged-decoder protocol: input_ids,
+// encoder_hidden_states, use_cache_branch, past/present KV per layer. Its
+// encoder additionally declares an attention_mask (fed all-ones by the
+// engine), and its tokenizer.json is the official medium vocab — one token
+// differs from Base's, so the tiers cannot share one.
+const MEDIUM_URL = 'https://huggingface.co/Immortalizer/moonshine-streaming-medium-onnx/resolve/main'
 
 /**
  * The files Moonshine Base needs, each with the minimum size a completed
@@ -22,6 +38,35 @@ export const MOONSHINE_BASE_FILES = [
   { name: 'decoder_model_merged.onnx', url: `${BASE_URL}/quantized/decoder_model_merged.onnx`, minBytes: 42_000_000 },
   { name: 'tokenizer.json', url: `${BASE_URL}/float/tokenizer.json`, minBytes: 1_000_000 },
 ] as const
+
+/** The medium tier's files — ~380 MB fetched on first opt-in use. */
+export const MOONSHINE_MEDIUM_FILES = [
+  { name: 'encoder_model.onnx', url: `${MEDIUM_URL}/encoder_model_quantized.onnx`, minBytes: 142_000_000 },
+  { name: 'decoder_model_merged.onnx', url: `${MEDIUM_URL}/decoder_model_merged_quantized.onnx`, minBytes: 238_000_000 },
+  { name: 'tokenizer.json', url: `${MEDIUM_URL}/tokenizer.json`, minBytes: 3_000_000 },
+] as const
+
+export interface MoonshineTierSpec {
+  dir: string
+  files: readonly { name: string; url: string; minBytes: number }[]
+  /** The merged decoder's KV-cache shape this tier's graphs were exported with. */
+  dims: { layers: number; kvHeads: number; headDim: number }
+  /** The encoder's framing quantum in samples — audio is zero-padded to it. */
+  frameSamples: number
+}
+
+/** Per-tier metadata: fetch set, install dir, decoder shape, framing (#63). */
+export const MOONSHINE_TIERS: Record<SttModel, MoonshineTierSpec> = {
+  base: { dir: MOONSHINE_BASE_DIR, files: MOONSHINE_BASE_FILES, dims: MOONSHINE_BASE_DIMS, frameSamples: 1 },
+  // moonshine-streaming-medium config.json: 14 decoder layers, 10 KV heads,
+  // 64-dim heads, 5 ms encoder frames (80 samples at 16 kHz).
+  medium: {
+    dir: MOONSHINE_MEDIUM_DIR,
+    files: MOONSHINE_MEDIUM_FILES,
+    dims: { layers: 14, kvHeads: 10, headDim: 64 },
+    frameSamples: 80,
+  },
+}
 
 /** The filesystem/network seam: tests fake it, the script supplies Node. */
 export interface MoonshineModelStore {
@@ -44,14 +89,16 @@ function isComplete(store: MoonshineModelStore, path: string, minBytes: number):
   return size === undefined || size >= minBytes
 }
 
-/** Guarantees every Moonshine Base file exists under models/<moonshine-base>. */
+/** Guarantees every file of the selected tier exists under models/<tier-dir>. */
 export async function ensureMoonshineModels(
   modelsDir: string,
   store: MoonshineModelStore,
+  tier: SttModel = 'base',
 ): Promise<EnsuredMoonshineModels> {
-  const dir = join(modelsDir, MOONSHINE_BASE_DIR)
+  const spec = MOONSHINE_TIERS[tier]
+  const dir = join(modelsDir, spec.dir)
   const fetched: string[] = []
-  for (const file of MOONSHINE_BASE_FILES) {
+  for (const file of spec.files) {
     const dest = join(dir, file.name)
     if (isComplete(store, dest, file.minBytes)) continue
     await store.fetch(file.url, dest)

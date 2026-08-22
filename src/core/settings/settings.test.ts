@@ -24,6 +24,7 @@ describe('defaultSettings', () => {
     expect(settings.maxToolRounds).toBe(80)
     expect(settings.webZoomPercent).toBe(130)
     expect(settings.ttsVoice).toBe('')
+    expect(settings.sttModel).toBe('base')
     expect(settings.weather).toEqual({ city: '', units: 'metric' })
     expect(settings.adblockEnabled).toBe(true)
     for (const role of ['orchestrator', 'subagent', 'vision'] as const) {
@@ -106,6 +107,15 @@ describe('sanitizeSettings', () => {
     expect(sanitizeSettings({ adblockEnabled: false }).adblockEnabled).toBe(false)
     expect(sanitizeSettings({}).adblockEnabled).toBe(true)
     expect(sanitizeSettings({ adblockEnabled: 'nope' }).adblockEnabled).toBe(true)
+  })
+
+  it('keeps the opt-in medium STT tier and defaults everything else to base (#63)', () => {
+    expect(sanitizeSettings({ sttModel: 'medium' }).sttModel).toBe('medium')
+    // Missing, unknown or garbage tiers keep the 4 GB hardware floor.
+    expect(sanitizeSettings({}).sttModel).toBe('base')
+    expect(sanitizeSettings({ sttModel: 'tiny' }).sttModel).toBe('base')
+    expect(sanitizeSettings({ sttModel: true }).sttModel).toBe('base')
+    expect(sanitizeSettings({ sttModel: null }).sttModel).toBe('base')
   })
 
   it('drops unknown weather units and non-string fields', () => {

@@ -3,7 +3,7 @@
 // pipeline pieces (mic, wake word, TTS voice, weather). The settings file
 // overrides env only where a value is set, so env stays the base layer.
 
-import { AGENT_ROLES, routingEnvPrefix, type AgentRole } from '../agent/modelRouting'
+import { AGENT_ROLES, routingEnvPrefix, type AgentRole } from '../agent/modelRouting.ts'
 
 export const WAKE_WORD_THRESHOLD_MIN = 0
 export const WAKE_WORD_THRESHOLD_MAX = 1
@@ -22,6 +22,13 @@ export const WEB_ZOOM_PERCENT_MAX = 200
 export const WEB_ZOOM_PERCENT_DEFAULT = 130
 
 export type WeatherUnits = 'metric' | 'imperial'
+
+/**
+ * STT engine tier (#63): Base is the default everywhere (the hardware
+ * floor target is 4 GB RAM); Medium is the opt-in for capable hardware,
+ * applied when the transcriber is constructed — a restart.
+ */
+export type SttModel = 'base' | 'medium'
 
 export interface RoleRoutingSettings {
   baseUrl: string
@@ -43,6 +50,8 @@ export interface AppSettings {
   webZoomPercent: number
   /** Piper voice id; '' follows BINGBONG_PIPER_VOICE / the default voice. */
   ttsVoice: string
+  /** STT engine tier — loads at the next transcriber construction (#63). */
+  sttModel: SttModel
   /** Kill switch for the embedder-level adblocker (issue #21). */
   adblockEnabled: boolean
   weather: { city: string; units: WeatherUnits }
@@ -58,6 +67,7 @@ export function defaultSettings(): AppSettings {
     maxToolRounds: MAX_TOOL_ROUNDS_DEFAULT,
     webZoomPercent: WEB_ZOOM_PERCENT_DEFAULT,
     ttsVoice: '',
+    sttModel: 'base',
     adblockEnabled: true,
     weather: { city: '', units: 'metric' },
     modelRouting: {
@@ -96,6 +106,11 @@ function asWebZoomPercent(value: unknown, fallback: number): number {
   return Math.min(WEB_ZOOM_PERCENT_MAX, Math.max(WEB_ZOOM_PERCENT_MIN, Math.round(value)))
 }
 
+/** Anything that is not an explicit 'medium' stays on the Base tier (#63). */
+export function asSttModel(value: unknown): SttModel {
+  return value === 'medium' ? 'medium' : 'base'
+}
+
 function sanitizeRouting(value: unknown): RoleRoutingSettings {
   const record = asRecord(value)
   return {
@@ -126,6 +141,8 @@ export function sanitizeSettings(raw: unknown): AppSettings {
     maxToolRounds: asMaxToolRounds(record.maxToolRounds, defaults.maxToolRounds),
     webZoomPercent: asWebZoomPercent(record.webZoomPercent, defaults.webZoomPercent),
     ttsVoice: asString(record.ttsVoice, defaults.ttsVoice),
+    // Only an explicit opt-in raises the tier — anything else stays Base.
+    sttModel: asSttModel(record.sttModel),
     // Only an explicit false disables the engine — missing/garbage means on.
     adblockEnabled: record.adblockEnabled === false ? false : defaults.adblockEnabled,
     weather: {

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { AppSettings, RoleRoutingSettings } from '../../core/settings/settings'
 import type { AgentRole } from '../../core/agent/modelRouting'
-import { ENDPOINT_DELAY_MS_MAX, ENDPOINT_DELAY_MS_MIN, MAX_TOOL_ROUNDS_MAX, MAX_TOOL_ROUNDS_MIN, WEB_ZOOM_PERCENT_MAX, WEB_ZOOM_PERCENT_MIN, WAKE_WORD_THRESHOLD_MAX, WAKE_WORD_THRESHOLD_MIN } from '../../core/settings/settings'
+import { ENDPOINT_DELAY_MS_MAX, ENDPOINT_DELAY_MS_MIN, MAX_TOOL_ROUNDS_MAX, MAX_TOOL_ROUNDS_MIN, WEB_ZOOM_PERCENT_MAX, WEB_ZOOM_PERCENT_MIN, WAKE_WORD_THRESHOLD_MAX, WAKE_WORD_THRESHOLD_MIN, asSttModel } from '../../core/settings/settings'
 import type { UsageSummary } from '../../core/agent/spendEstimate'
 import { DEFAULT_PIPER_VOICE } from '../../core/tts/piperVoices'
 
@@ -284,6 +284,21 @@ export function SettingsPage({
           <p className="settings-note">
             How long a pause ends your turn — lower responds sooner, higher avoids cutting you
             off mid-thought. Applies to the next utterance, no restart.
+          </p>
+          <Field label="STT model">
+            <select
+              value={draft.sttModel}
+              aria-label="STT model"
+              onChange={(event) => setDraft({ ...draft, sttModel: asSttModel(event.target.value) })}
+            >
+              <option value="base">Base — default</option>
+              <option value="medium">Medium — higher accuracy, ~380 MB download</option>
+            </select>
+          </Field>
+          <p className="settings-note">
+            The larger speech model trades a one-time download and heavier decoding for accuracy —
+            for capable hardware only, via a community ONNX export of the Medium checkpoint. Applies
+            the next time the app starts.
           </p>
           <Field label="TTS voice">
             <select

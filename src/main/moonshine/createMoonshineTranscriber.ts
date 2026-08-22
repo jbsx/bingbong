@@ -68,6 +68,13 @@ export interface MoonshineTranscriberDeps {
   maxTokensPerSecond?: number
   /** Passes encode at least this many samples (default 1 s of padding). */
   minPassSamples?: number
+  /**
+   * The encoder's framing quantum (#63): the streaming-medium export
+   * reshapes raw audio into fixed frames (5 ms = 80 samples), so the
+   * encoded length must be a multiple — remainders are zero-padded.
+   * Default 1: any length (Base's contract).
+   */
+  frameSamples?: number
   /** Accumulated samples required before the first partial pass (default 1 s). */
   partialMinSamples?: number
   /** New-sample growth required between partial passes (default 0.5 s). */
@@ -103,6 +110,7 @@ export function createMoonshineTranscriber(deps: MoonshineTranscriberDeps): Tran
   const tokensPerSecond = deps.maxTokensPerSecond ?? 6.5
   const loadRuntime = deps.loadRuntime ?? importOrt
   const minPassSamples = Math.max(1, deps.minPassSamples ?? DEFAULT_MIN_PASS_SAMPLES)
+  const frameSamples = Math.max(1, deps.frameSamples ?? 1)
   const partialMinSamples = deps.partialMinSamples ?? DEFAULT_PARTIAL_MIN_SAMPLES
   const partialStrideSamples = deps.partialStrideSamples ?? DEFAULT_PARTIAL_STRIDE_SAMPLES
 
@@ -142,15 +150,33 @@ export function createMoonshineTranscriber(deps: MoonshineTranscriberDeps): Tran
     const vocab = await ensureVocab()
     const bias = applierFor(vocab)
     const { runtime, encoder, decoder } = await ensureSessions()
-    const audio = pcm.length >= minPassSamples ? pcm : (() => {
-      const padded = new Float32Array(minPassSamples)
+    // The floor and the frame quantum together: pad up to at least the
+    // minimum pass length AND a whole number of encoder frames.
+    const targetSamples = Math.max(
+      minPassSamples,
+      Math.ceil(pcm.length / frameSamples) * frameSamples,
+    )
+    const audio = pcm.length === targetSamples ? pcm : (() => {
+      const padded = new Float32Array(targetSamples)
       padded.set(pcm)
       return padded
     })()
 
-    const encoded = await encoder.run({
+    // Some exports gate the encoder with an attention_mask over the audio
+    // (Medium, #63); full-length ones attend every sample — padding only
+    // exists for shorter batched clips, which this single-clip engine
+    // never sends.
+    const encoderFeeds: Record<string, unknown> = {
       [encoder.inputNames[0]]: new runtime.Tensor('float32', audio, [1, audio.length]),
-    })
+    }
+    if (encoder.inputNames.includes('attention_mask')) {
+      encoderFeeds.attention_mask = new runtime.Tensor(
+        'int64',
+        BigInt64Array.from({ length: audio.length }, () => 1n),
+        [1, audio.length],
+      )
+    }
+    const encoded = await encoder.run(encoderFeeds)
     const hidden = encoded[encoder.outputNames[0]]
 
     // past_key_values.<layer>.<decoder|encoder>.<key|value> → zero KV caches.

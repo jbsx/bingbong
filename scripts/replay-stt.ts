@@ -17,21 +17,26 @@
 //
 // Defaults: ~/.config/bingbong/audio-dumps and ~/.config/bingbong/models
 // (the Moonshine export auto-fetches on first run). With no dumps present
-// the script falls back to the models-dir's jfk.wav fixture.
+// the script falls back to the models-dir's jfk.wav fixture. Set
+// BINGBONG_STT_MODEL=medium to replay through the opt-in tier (#63).
 
 import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { performance } from 'node:perf_hooks'
+import type { SttModel } from '../src/core/settings/settings.ts'
 import { readUtteranceWavPcm } from '../src/core/sttAb/utteranceWav.ts'
 import { formatReplayReport, type ReplayRow } from '../src/core/sttAb/replayReport.ts'
 import { VAD_FRAME_SAMPLES, VAD_FRAME_MS } from '../src/core/voice/vadEndpointing.ts'
 import { parseMoonshineTokenizer } from '../src/core/moonshine/bpeTokenizer.ts'
 import { createMoonshineTranscriber } from '../src/main/moonshine/createMoonshineTranscriber.ts'
-import { ensureMoonshineModels, fsMoonshineStore } from '../src/main/moonshine/moonshineModels.ts'
+import { ensureMoonshineModels, fsMoonshineStore, MOONSHINE_TIERS } from '../src/main/moonshine/moonshineModels.ts'
 
 const dumpsDir = process.argv[2] ?? join(homedir(), '.config/bingbong/audio-dumps')
 const modelsDir = process.argv[3] ?? join(homedir(), '.config/bingbong/models')
+// Parsed inline: importing the settings sanitizer would pull the
+// extensionless main-tree module graph into Node's type-stripping runtime.
+const sttModel: SttModel = process.env.BINGBONG_STT_MODEL === 'medium' ? 'medium' : 'base'
 
 function wavFiles(dir: string): string[] {
   if (!existsSync(dir)) return []
@@ -54,14 +59,18 @@ if (files.length === 0) {
   files = [fixture]
 }
 
-// The shipped engine, wired exactly like createMainMoonshineTranscriber.
-const moonshine = await ensureMoonshineModels(modelsDir, fsMoonshineStore)
+// The shipped engine, wired exactly like createMainMoonshineTranscriber
+// (which itself stays off this script's type-stripping runtime graph).
+const moonshine = await ensureMoonshineModels(modelsDir, fsMoonshineStore, sttModel)
 for (const name of moonshine.fetched) console.log(`fetched ${name}`)
+const tier = MOONSHINE_TIERS[sttModel]
 const transcriber = createMoonshineTranscriber({
   encoderPath: join(moonshine.dir, 'encoder_model.onnx'),
   decoderPath: join(moonshine.dir, 'decoder_model_merged.onnx'),
   loadVocab: async () =>
     parseMoonshineTokenizer(readFileSync(join(moonshine.dir, 'tokenizer.json'), 'utf8')),
+  dims: tier.dims,
+  frameSamples: tier.frameSamples,
 })
 
 /** Real-time-paced push: partials overlap speech the way they do live. */

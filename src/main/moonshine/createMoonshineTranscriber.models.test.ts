@@ -6,6 +6,7 @@ import { parseMoonshineTokenizer } from '../../core/moonshine/bpeTokenizer'
 import { VAD_FRAME_SAMPLES } from '../../core/voice/vadEndpointing'
 import { createMoonshineTranscriber } from './createMoonshineTranscriber'
 import { BIAS_LEXICON } from './biasLexicon'
+import { MOONSHINE_TIERS } from './moonshineModels'
 
 // Real-models port-boundary test for the streaming engine (#41): proves the
 // adapter drives the actual Moonshine Base ONNX export end to end through
@@ -137,4 +138,38 @@ describe.skipIf(!haveAssets)('moonshine transcriber (real models)', () => {
     // must not drift beyond a generous scheduling-noise allowance.
     expect(biasedMs).toBeLessThan(plainMs * 2 + 500)
   }, 60_000)
+})
+
+// The opt-in tier (#63): same merged-decoder protocol through the real
+// medium graphs — 14 layers of KV, the encoder's attention_mask input and
+// the medium tokenizer. Skipped unless the medium files have been fetched
+// (opt-in Setting, or a manual run of the app/replay script with the tier
+// selected) — the same self-skipping convention as the Base block above.
+const mediumDir = join(modelsDir, MOONSHINE_TIERS.medium.dir)
+const haveMedium = [
+  join(mediumDir, 'encoder_model.onnx'),
+  join(mediumDir, 'decoder_model_merged.onnx'),
+  join(mediumDir, 'tokenizer.json'),
+  clipPath,
+].every(existsSync)
+
+describe.skipIf(!haveMedium)('moonshine transcriber (real medium models, #63)', () => {
+  it('transcribes the fixture through the medium graphs and its own tokenizer', async () => {
+    const clip = loadWav(clipPath)
+    const transcriber = createMoonshineTranscriber({
+      encoderPath: join(mediumDir, 'encoder_model.onnx'),
+      decoderPath: join(mediumDir, 'decoder_model_merged.onnx'),
+      loadVocab: async () => parseMoonshineTokenizer(readFileSync(join(mediumDir, 'tokenizer.json'), 'utf8')),
+      dims: MOONSHINE_TIERS.medium.dims,
+      frameSamples: MOONSHINE_TIERS.medium.frameSamples,
+      biasPhrases: BIAS_LEXICON,
+    })
+
+    const start = performance.now()
+    const final = await transcriber.finish(clip)
+    console.log(`jfk.wav (medium): final in ${Math.round(performance.now() - start)}ms — "${final}"`)
+
+    expect(final).toContain('my fellow Americans')
+    expect(final).toContain('ask not')
+  }, 120_000)
 })

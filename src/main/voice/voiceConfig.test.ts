@@ -14,6 +14,7 @@ describe('resolveVoiceConfig', () => {
     expect(resolveVoiceConfig({}, USER_DATA)).toEqual({
       vadModel: `${USER_DATA}/models/silero_vad.onnx`,
       modelsDir: `${USER_DATA}/models`,
+      sttModel: 'base',
       sttScript: undefined,
       vadScript: undefined,
     })
@@ -32,8 +33,14 @@ describe('resolveVoiceConfig', () => {
     ).toEqual({
       vadModel: '/opt/vad.onnx',
       modelsDir: `${USER_DATA}/models`,
+      sttModel: 'base',
       sttScript: '["open youtube"]',
       vadScript: '[0.9, 0.1]',
     })
+  })
+
+  it('carries the settings-selected STT tier (#63)', () => {
+    expect(resolveVoiceConfig({}, USER_DATA, 'medium').sttModel).toBe('medium')
+    expect(resolveVoiceConfig({}, USER_DATA, 'base').sttModel).toBe('base')
   })
 })

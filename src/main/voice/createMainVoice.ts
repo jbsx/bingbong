@@ -19,6 +19,6 @@ export async function createMainVoice(config: VoiceConfig): Promise<MainVoice> {
   const vad: VadScorer = config.vadScript ? createScriptedVad(config.vadScript) : await createSileroVad({ modelPath: config.vadModel })
   const transcriber: Transcriber = config.sttScript
     ? createScriptedTranscriber(config.sttScript)
-    : createMainMoonshineTranscriber({ modelsDir: config.modelsDir })
+    : createMainMoonshineTranscriber({ modelsDir: config.modelsDir, sttModel: config.sttModel })
   return { vad, transcriber }
 }

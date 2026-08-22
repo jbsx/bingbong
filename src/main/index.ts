@@ -128,8 +128,10 @@ function effectiveSessionWindowMs(): number {
 const piperConfig = resolvePiperConfig(process.env, app.getPath('userData'))
 
 // Ears (T9): Silero VAD + streaming Moonshine, shared by every window so
-// the models load once. Scripted doubles ride the same seam for e2e.
-const voiceConfig = resolveVoiceConfig(process.env, app.getPath('userData'))
+// the models load once. Scripted doubles ride the same seam for e2e. The
+// STT tier is the settings snapshot at startup (#63) — switching the
+// Setting applies at the next start.
+const voiceConfig = resolveVoiceConfig(process.env, app.getPath('userData'), settingsStore.get().sttModel)
 
 // Wake word: "bing bong" plus the "abort" / "hold on" interrupt heads via the
 // openWakeWord ONNX stack; the Python sidecar is the config-only fallback

@@ -6,7 +6,7 @@
 // speech inside the window rejoins the same utterance (a mid-sentence pause
 // is not half a command), silence submits it.
 
-import { ENDPOINT_DELAY_MS_DEFAULT } from '../settings/settings'
+import { ENDPOINT_DELAY_MS_DEFAULT } from '../settings/settings.ts'
 
 /** Silero v5 consumes fixed 512-sample windows at 16 kHz. */
 export const VAD_FRAME_SAMPLES = 512

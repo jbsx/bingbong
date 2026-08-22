@@ -33,6 +33,17 @@ describe('settingsStore', () => {
     expect(reopened.get().weather).toEqual({ city: 'Berlin', units: 'imperial' })
   })
 
+  it('persists the opt-in STT tier across restarts — switching is not per-session (#63)', () => {
+    const store = createSettingsStore(path)
+    store.update({ ...defaultSettings(), sttModel: 'medium' })
+
+    const reopened = createSettingsStore(path)
+    expect(reopened.get().sttModel).toBe('medium')
+    // And a corrupt tier on disk still lands on the Base default.
+    writeFileSync(path, JSON.stringify({ ...defaultSettings(), sttModel: 'gargantuan' }))
+    expect(createSettingsStore(path).get().sttModel).toBe('base')
+  })
+
   it('sanitizes incoming updates before persisting', () => {
     const store = createSettingsStore(path)
     store.update({ wakeWordThreshold: 99, micId: 42 })
