@@ -15,7 +15,9 @@ import type {
 import type { PipelineEvent } from '../pipeline/events'
 import type { SubagentManager, SubagentRecord, SubagentStatus } from '../agent/subagentManager'
 import type { PanelControls } from '../pipeline/panelTools'
+import type { AppControls, SettingsControls } from '../pipeline/settingsTools'
 import { FEED_PANEL_WIDTH_DEFAULT, type FeedPanelMode, type FeedPanelState } from '../panel/feedPanelState'
+import { defaultSettings, sanitizeSettings, type AppSettings } from '../settings/settings'
 import { createPerfTracer, type PerfSpanRecord, type PerfTracer } from '../perf/perfTracer'
 
 /**
@@ -465,6 +467,52 @@ export class FakePanel implements PanelControls {
 
   state(): FeedPanelState {
     return this.current
+  }
+}
+
+/**
+ * Recording stand-in for the settings store (#67): update() sanitizes with
+ * the real fold, so clamped read-backs (zoom bounds, threshold bounds) are
+ * assertable at the tool seam; every raw payload is remembered.
+ */
+export class FakeSettings implements SettingsControls {
+  readonly updates: unknown[] = []
+  private current: AppSettings
+
+  constructor(initial: AppSettings = defaultSettings()) {
+    this.current = initial
+  }
+
+  get(): AppSettings {
+    return this.current
+  }
+
+  update(raw: unknown): AppSettings {
+    this.updates.push(raw)
+    this.current = sanitizeSettings(raw)
+    return this.current
+  }
+}
+
+/**
+ * Recording stand-in for the app controls (#67): quit/reload/speakAck calls
+ * land in order, so tests can assert the destructive-op policy — ack spoken
+ * before the action, never after.
+ */
+export class FakeAppControls implements AppControls {
+  /** Ordered ops — 'ack:<line>' entries prove the ack preceded the action. */
+  readonly calls: string[] = []
+
+  quit(): void {
+    this.calls.push('quit')
+  }
+
+  reload(): void {
+    this.calls.push('reload')
+  }
+
+  async speakAck(text: string): Promise<void> {
+    this.calls.push(`ack:${text}`)
   }
 }
 

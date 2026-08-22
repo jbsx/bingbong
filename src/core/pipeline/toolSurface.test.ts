@@ -7,7 +7,8 @@ import { createMediaTools } from './mediaTools'
 import { createSearchTools } from './searchTools'
 import { createSubagentTools } from './subagentTools'
 import { createPanelTools } from './panelTools'
-import { FakeBrowser, FakePanel, FakeSearch, FakeVision } from '../testing/doubles'
+import { createAppControlTool, createSetSettingTool } from './settingsTools'
+import { FakeAppControls, FakeBrowser, FakePanel, FakeSearch, FakeSettings, FakeVision } from '../testing/doubles'
 
 const unusedVision = new FakeVision()
 
@@ -50,6 +51,13 @@ function delegationToolCatalog(): Tool[] {
     isRunning: () => false,
   }
   return createSubagentTools(manager)
+}
+
+// The settings tools (#67) are added on top by createAssistantPipeline when
+// the settings store and app controls are attached — in production they
+// always are. Same scan rules apply.
+function settingsToolCatalog(): Tool[] {
+  return [createSetSettingTool(new FakeSettings()), createAppControlTool(new FakeAppControls())]
 }
 
 // Matches any phrasing that pairs skipping/closing/bypassing with ads.
@@ -109,14 +117,82 @@ describe('orchestrator tool surface', () => {
     }
   })
 
+  it('settings adds exactly set_setting, firing immediately and ungated', () => {
+    const [setSetting, appControl] = settingsToolCatalog()
+    expect(setSetting.name).toBe('set_setting')
+    expect(appControl.name).toBe('app_control')
+
+    // set_setting: no confirmation, no ask, no history gating — tuning is
+    // instantly reversible, so it never pauses for a risk gate.
+    expect(setSetting.assessRisk).toBeUndefined()
+    expect(setSetting.askUser).toBeUndefined()
+    expect(setSetting.requiresHistory).not.toBe(true)
+  })
+
+  it('app_control is confirm-gated: quit and reload both pause on the yes/no gate', () => {
+    const appControl = settingsToolCatalog()[1]!
+    expect(appControl.assessRisk).toBeDefined()
+    expect(appControl.assessRisk!({ id: 'c', name: 'app_control', args: { action: 'quit' } })).toEqual({
+      kind: 'confirm',
+      prompt: 'Quit Bing Bong?',
+    })
+    expect(appControl.assessRisk!({ id: 'c', name: 'app_control', args: { action: 'reload' } })).toEqual({
+      kind: 'confirm',
+      prompt: 'Reload the app window?',
+    })
+    expect(appControl.requiresHistory).not.toBe(true)
+  })
+
+  it('credential, API-key and mic settings are not expressible through set_setting', () => {
+    // Keyboard-only territory (ADR 0006). "Expressible" is structural: a
+    // tool name, parameter name, or enum value that names a credential or
+    // mic field. Descriptions are exempt — they state the exclusion as
+    // policy ("API keys ... are not voice-reachable"), the same way the
+    // prompt's risk-gate section does.
+    const CREDENTIAL_RE = /api[ _-]?key|credential|secret|password|mic(rophone)?/i
+    for (const tool of settingsToolCatalog()) {
+      expect(tool.name).not.toMatch(CREDENTIAL_RE)
+      for (const [paramName, spec] of Object.entries(tool.parameters ?? {})) {
+        expect(paramName).not.toMatch(CREDENTIAL_RE)
+        for (const value of spec.enum ?? []) {
+          expect(value).not.toMatch(CREDENTIAL_RE)
+        }
+      }
+    }
+
+    // The hard guarantee behind the scan: no setting enum value names a
+    // credential or mic field, and calling one rejects without a store write.
+    const setSetting = settingsToolCatalog()[0]!
+    const enumValues = setSetting.parameters?.['setting']?.enum ?? []
+    expect(enumValues).not.toContain('api_keys')
+    expect(enumValues).not.toContain('mic_id')
+    const settings = new FakeSettings()
+    void setSetting.execute?.({ id: 'c', name: 'set_setting', args: { setting: 'mic_id', string_value: 'x' } }, {
+      clock: { now: () => 0, setTimer: () => () => {} },
+    }).catch(() => {})
+    expect(settings.updates).toEqual([])
+  })
+
   it('has no tool whose name or description mentions skipping ads', () => {
-    for (const tool of [...orchestratorToolCatalog(), ...delegationToolCatalog(), ...panelToolCatalog()]) {
+    const catalogs = [
+      ...orchestratorToolCatalog(),
+      ...delegationToolCatalog(),
+      ...panelToolCatalog(),
+      ...settingsToolCatalog(),
+    ]
+    for (const tool of catalogs) {
       expect(`${tool.name} ${tool.description ?? ''}`).not.toMatch(AD_SKIP_RE)
     }
   })
 
   it('has no parameter enum value for skipping ads', () => {
-    for (const tool of [...orchestratorToolCatalog(), ...delegationToolCatalog(), ...panelToolCatalog()]) {
+    const catalogs = [
+      ...orchestratorToolCatalog(),
+      ...delegationToolCatalog(),
+      ...panelToolCatalog(),
+      ...settingsToolCatalog(),
+    ]
+    for (const tool of catalogs) {
       for (const spec of Object.values(tool.parameters ?? {})) {
         for (const value of spec.enum ?? []) {
           expect(value).not.toMatch(AD_SKIP_RE)

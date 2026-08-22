@@ -43,6 +43,14 @@ export function describeToolAction(name: string, args: Record<string, unknown>):
       return 'toggle panel'
     case 'set_panel_mode':
       return `panel mode ${String(args.mode ?? '')}`.trim()
+    case 'set_setting': {
+      const setting = String(args.setting ?? '')
+      const role = args.role !== undefined ? ` (${String(args.role)})` : ''
+      const value = args.number_value ?? args.string_value ?? args.boolean_value
+      return `set ${setting}${role} to ${String(value ?? '')}`.trim()
+    }
+    case 'app_control':
+      return `app ${String(args.action ?? '')}`.trim()
     default:
       return `${name} ${JSON.stringify(args)}`
   }
@@ -101,6 +109,10 @@ export function describeToolIntent(name: string, args: string): string {
       return 'toggling the panel…'
     case 'set_panel_mode':
       return withTarget('setting panel mode', args, 'mode')
+    case 'set_setting':
+      return withTarget('setting', args, 'setting')
+    case 'app_control':
+      return withTarget('app', args, 'action')
     default:
       return `calling ${name}…`
   }

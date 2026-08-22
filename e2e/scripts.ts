@@ -39,6 +39,18 @@ export function approveConfirmationScript(): string {
   })()`
 }
 
+// Clicks the Deny button of the confirmation dialog, if shown.
+export function denyConfirmationScript(): string {
+  return `(() => {
+    const card = document.querySelector('.confirmation-card')
+    if (!card) return 'no-confirmation'
+    const deny = [...card.querySelectorAll('.confirmation-actions button')].find((b) => b.textContent?.trim() === 'Deny')
+    if (!deny) return 'no-deny-button'
+    deny.click()
+    return 'denied'
+  })()`
+}
+
 export function answerAskScript(answer: string): string {
   return `(async () => {
     const input = document.querySelector('.ask-input')

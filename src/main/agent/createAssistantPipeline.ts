@@ -16,6 +16,7 @@ import { createMediaTools } from '../../core/pipeline/mediaTools'
 import { createSearchTools } from '../../core/pipeline/searchTools'
 import { createNewSessionTool } from '../../core/pipeline/sessionTools'
 import { createPanelTools, type PanelControls } from '../../core/pipeline/panelTools'
+import { createAppControlTool, createSetSettingTool, type AppControls, type SettingsControls } from '../../core/pipeline/settingsTools'
 import { resolveModelEndpoint, routingEnvKeys } from '../../core/agent/modelRouting'
 import type { UsageSink } from '../../core/agent/usageTracking'
 import { withUsageTracking } from '../../core/agent/usageTracking'
@@ -66,6 +67,19 @@ export interface AssistantPipelineDeps {
    * window; absent in tests unless asserted.
    */
   panel?: PanelControls
+  /**
+   * Settings voice tool (#67, ADR 0006): set_setting writes through the
+   * same settings-store seam the settings page drives, so changes apply
+   * live. Wired by main to the app's settings store; absent in tests
+   * unless asserted.
+   */
+  settings?: SettingsControls
+  /**
+   * App voice tool (#67, ADR 0006): app_control (quit/reload) behind the
+   * yes/no confirmation gate, with a spoken ack before acting. Wired by
+   * main per window; absent in tests unless asserted.
+   */
+  app?: AppControls
   /**
    * Session continuity (spec #23) and the model-invoked reset (spec #24):
    * prior distilled turns ride along with every orchestrator round, and the
@@ -185,6 +199,10 @@ export function createAssistantPipeline(deps: AssistantPipelineDeps): CommandPip
     ...(deps.subagentTools ?? []),
     // Panel voice tools (#64): silent, unconfirmed, model-invoked.
     ...(deps.panel ? createPanelTools(deps.panel) : []),
+    // Settings voice tools (#67): set_setting immediate and silent;
+    // app_control confirm-gated with a spoken ack.
+    ...(deps.settings ? [createSetSettingTool(deps.settings)] : []),
+    ...(deps.app ? [createAppControlTool(deps.app)] : []),
     // Offered only in rounds that carry history (requiresHistory), so a
     // fresh session's catalog stays lean (spec #24).
     ...(deps.session ? [createNewSessionTool(deps.session)] : []),

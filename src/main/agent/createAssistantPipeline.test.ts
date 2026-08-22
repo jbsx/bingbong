@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { createAssistantPipeline } from './createAssistantPipeline'
 import { createSessionMemory } from '../../core/session/sessionMemory'
-import { FakeBrowser, FakeClock, FakePanel, FakeSearch, RecordingTts, fakeSubagentManager, subagentRecord } from '../../core/testing/doubles'
+import { FakeAppControls, FakeBrowser, FakeClock, FakePanel, FakeSearch, FakeSettings, RecordingTts, fakeSubagentManager, subagentRecord } from '../../core/testing/doubles'
 import type { SearchResult } from '../../core/ports/search'
 import type { CommandPipeline } from '../../core/pipeline/createCommandPipeline'
 import type { PipelineEvent } from '../../core/pipeline/events'
@@ -359,6 +359,145 @@ describe('createAssistantPipeline', () => {
     const tools = (requests[0].tools as { function: { name: string } }[]).map((t) => t.function.name)
     expect(tools).not.toContain('toggle_panel')
     expect(tools).not.toContain('set_panel_mode')
+  })
+
+  it('applies a set_setting call immediately through the settings seam, unconfirmed and silent', async () => {
+    const settings = new FakeSettings()
+    const tts = new RecordingTts()
+    const pipeline = createAssistantPipeline({
+      controller: new FakeBrowser(),
+      env: {
+        BINGBONG_LLM_SCRIPT: JSON.stringify([
+          {
+            kind: 'tool_calls',
+            calls: [{ id: 's1', name: 'set_setting', args: { setting: 'web_zoom_percent', number_value: 90 } }],
+          },
+          { kind: 'answer', speak: 'Ninety percent.', display: 'Zoom set to 90%.' },
+        ]),
+      },
+      clock: new FakeClock(),
+      tts,
+      settings,
+    })
+
+    const events = await collect(pipeline, 'zoom the web to ninety percent')
+
+    expect(events.filter((e) => e.type === 'confirmation_requested')).toEqual([])
+    expect(events.find((e) => e.type === 'tool_result' && e.name === 'set_setting')).toMatchObject({
+      ok: true,
+      result: 'Web zoom set to 90%.',
+    })
+    expect(settings.get().webZoomPercent).toBe(90)
+    // Silent: nothing spoke besides the model's own answer.
+    expect(tts.spoken).toEqual(['Ninety percent.'])
+  })
+
+  it('holds an app_control quit on the confirmation gate and never quits when denied', async () => {
+    const app = new FakeAppControls()
+    const pipeline = createAssistantPipeline({
+      controller: new FakeBrowser(),
+      env: {
+        BINGBONG_LLM_SCRIPT: JSON.stringify([
+          { kind: 'tool_calls', calls: [{ id: 'q1', name: 'app_control', args: { action: 'quit' } }] },
+          { kind: 'answer', speak: 'Still here.', display: 'Quit cancelled.' },
+        ]),
+      },
+      clock: new FakeClock(),
+      tts: new RecordingTts(),
+      app,
+    })
+
+    const events: PipelineEvent[] = []
+    for await (const event of pipeline.execute('quit the app')) {
+      events.push(event)
+      if (event.type === 'confirmation_requested') pipeline.resolveConfirmation(event.confirmationId, false)
+    }
+
+    const requested = events.find((e) => e.type === 'confirmation_requested')
+    expect(requested).toMatchObject({ toolName: 'app_control', prompt: 'Quit Bing Bong?' })
+    expect(events.find((e) => e.type === 'tool_result' && e.name === 'app_control')).toMatchObject({
+      ok: false,
+      error: expect.stringContaining('denied by the user'),
+    })
+    expect(app.calls).toEqual([])
+    expect(events.find((e) => e.type === 'display')).toMatchObject({ text: 'Quit cancelled.' })
+  })
+
+  it('speaks the ack before an approved app_control quit', async () => {
+    const app = new FakeAppControls()
+    const tts = new RecordingTts()
+    const pipeline = createAssistantPipeline({
+      controller: new FakeBrowser(),
+      env: {
+        BINGBONG_LLM_SCRIPT: JSON.stringify([
+          { kind: 'tool_calls', calls: [{ id: 'q1', name: 'app_control', args: { action: 'quit' } }] },
+          // The app quits inside the tool; the scripted round after it only
+          // exists so the loop has a turn to land on.
+          { kind: 'answer', speak: 'Goodbye.', display: 'Goodbye.' },
+        ]),
+      },
+      clock: new FakeClock(),
+      tts,
+      app,
+    })
+
+    const events: PipelineEvent[] = []
+    for await (const event of pipeline.execute('quit the app')) {
+      events.push(event)
+      if (event.type === 'confirmation_requested') pipeline.resolveConfirmation(event.confirmationId, true)
+    }
+
+    expect(events.find((e) => e.type === 'tool_result' && e.name === 'app_control')).toMatchObject({
+      ok: true,
+      result: 'Quitting.',
+    })
+    // Order is the policy: the pipeline speaks the confirmation prompt, then
+    // the tool speaks its ack, and only then the app quits.
+    expect(app.calls).toEqual(['ack:Quitting.', 'quit'])
+  })
+
+  it('offers set_setting and app_control to the model when the seams are attached', async () => {
+    const requests: Record<string, unknown>[] = []
+    const fetchFn = (async (_url: string | URL | Request, init?: RequestInit) => {
+      requests.push(JSON.parse(String(init?.body)) as Record<string, unknown>)
+      return new Response(JSON.stringify({ choices: [{ message: { content: '{"speak":"Hi.","display":"Detail."}' } }] }), { status: 200 })
+    }) as typeof fetch
+
+    const pipeline = createAssistantPipeline({
+      controller: new FakeBrowser(),
+      env: FULL_ENV,
+      fetchFn,
+      tts: new RecordingTts(),
+      settings: new FakeSettings(),
+      app: new FakeAppControls(),
+    })
+
+    await collect(pipeline, 'hello')
+
+    const tools = (requests[0].tools as { function: { name: string } }[]).map((t) => t.function.name)
+    expect(tools).toContain('set_setting')
+    expect(tools).toContain('app_control')
+  })
+
+  it('keeps set_setting and app_control out of the catalog when no seams are attached', async () => {
+    const requests: Record<string, unknown>[] = []
+    const fetchFn = (async (_url: string | URL | Request, init?: RequestInit) => {
+      requests.push(JSON.parse(String(init?.body)) as Record<string, unknown>)
+      return new Response(JSON.stringify({ choices: [{ message: { content: '{"speak":"Hi.","display":"Detail."}' } }] }), { status: 200 })
+    }) as typeof fetch
+
+    const pipeline = createAssistantPipeline({
+      controller: new FakeBrowser(),
+      env: FULL_ENV,
+      fetchFn,
+      tts: new RecordingTts(),
+    })
+
+    await collect(pipeline, 'hello')
+
+    const tools = (requests[0].tools as { function: { name: string } }[]).map((t) => t.function.name)
+    expect(tools).not.toContain('set_setting')
+    expect(tools).not.toContain('app_control')
   })
 
   it('wires the detail sink through to blocking tools, turn-stamped (#43)', async () => {

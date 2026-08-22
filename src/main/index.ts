@@ -332,6 +332,21 @@ async function createWindow(): Promise<BrowserWindow> {
     // Panel voice tools (#64): the same overlay seam the dashboard buttons
     // and the shortcut drive.
     panel: feedPanel,
+    // Settings voice tool (#67): the same store the settings page drives,
+    // so a voice change persists and broadcasts exactly like a typed one.
+    settings: settingsStore,
+    // App voice tool (#67): quit/reload behind the confirmation gate, acks
+    // spoken through the same speaking gate as every other line.
+    app: {
+      quit: () => app.quit(),
+      reload: () => {
+        if (!win.isDestroyed()) win.webContents.reload()
+      },
+      speakAck: async (text, turnId) => {
+        // A dead speaker never blocks a confirmed action.
+        await speakingGate.tts.speak(text, turnId).catch(() => {})
+      },
+    },
     onLlmUsage: (record) => usageStore.record(record.role, record.model, record.usage),
     session: sessionMemory,
     tracer: perfTracer,

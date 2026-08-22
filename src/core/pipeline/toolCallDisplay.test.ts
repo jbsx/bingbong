@@ -25,6 +25,8 @@ describe('describeToolIntent', () => {
     ['panel toggle is the verb alone', 'toggle_panel', '{}', 'toggling the panel…'],
     ['panel mode streams its target', 'set_panel_mode', '{"mode":"dock', "setting panel mode 'dock…'"],
     ['go_forward parity with back', 'go_forward', '{}', 'going forward…'],
+    ['set_setting streams its target', 'set_setting', '{"setting":"weather_city', "setting 'weather_city…'"],
+    ['app_control streams its action', 'app_control', '{"action":"qu', "app 'qu…'"],
     ['unknown tool falls back to its name', 'mystery_tool', '{"x":1}', 'calling mystery_tool…'],
   ])('maps %s to an intent phrase', (_name, tool, args, expected) => {
     expect(describeToolIntent(tool, args)).toBe(expected)
@@ -34,6 +36,16 @@ describe('describeToolIntent', () => {
     const args = '{"query":"mechanical keyboards"}'
     expect(describeToolIntent('web_search', args)).toBe("searching for 'mechanical keyboards'…")
     expect(describeToolAction('web_search', { query: 'mechanical keyboards' })).toBe('search "mechanical keyboards"')
+  })
+
+  it('renders set_setting and app_control calls as compact feed lines', () => {
+    expect(describeToolAction('set_setting', { setting: 'weather_city', string_value: 'Berlin' })).toBe(
+      'set weather_city to Berlin',
+    )
+    expect(
+      describeToolAction('set_setting', { setting: 'model_routing_model', role: 'subagent', string_value: 'deepseek-chat' }),
+    ).toBe('set model_routing_model (subagent) to deepseek-chat')
+    expect(describeToolAction('app_control', { action: 'quit' })).toBe('app quit')
   })
 
   it('is monotonic as fragments arrive — the line only grows', () => {
