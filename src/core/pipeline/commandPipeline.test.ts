@@ -1118,11 +1118,95 @@ describe('command pipeline', () => {
     const refusals = events.filter((event) => event.type === 'tool_result' && !event.ok)
     expect(refusals).toHaveLength(1)
     expect(refusals[0]).toMatchObject({
-      error: expect.stringMatching(/web_search loop limit \(5 consecutive similar searches\)/),
+      error: expect.stringMatching(/[Ss]earch loop limit \(5 consecutive similar searches/),
     })
     // A refusal redirects, it never fails the run.
     expect(events.find((event) => event.type === 'error')).toBeUndefined()
     expect(events.at(-1)).toMatchObject({ type: 'done', outcome: 'done' })
+  })
+
+  it('chains a q=-carrying navigate into the search streak instead of resetting it (#82)', async () => {
+    const search = {
+      name: 'web_search',
+      async execute() {
+        return '1. A result — https://example.com/a'
+      },
+    }
+    const navigate = {
+      name: 'navigate',
+      async execute() {
+        return 'navigated: url=https://www.google.com/search?q=… title="Google Search"'
+      },
+    }
+    const llm = new ScriptedLlm([
+      { kind: 'tool_calls', calls: [{ id: 's1', name: 'web_search', args: { query: 'best mechanical keyboards 2026' } }] },
+      { kind: 'tool_calls', calls: [{ id: 's2', name: 'web_search', args: { query: 'best mechanical keyboard 2026 reddit' } }] },
+      {
+        kind: 'tool_calls',
+        calls: [{ id: 'n1', name: 'navigate', args: { url: 'https://www.google.com/search?q=best+mechanical+keyboards+2026+guide' } }],
+      },
+      { kind: 'answer', speak: 'Recovered.', display: 'Recovered.' },
+    ])
+    const pipeline = createCommandPipeline({ llm, tts: new RecordingTts(), clock: new FakeClock(), tools: [search, navigate] })
+
+    const events = await collect(pipeline, 'find keyboards')
+
+    // The third similar search — via navigate — chains (run 47's invisible
+    // reset) and carries the advisory nudge on its result.
+    const results = events.filter((event) => event.type === 'tool_result' && event.ok)
+    expect(results[0]).toMatchObject({ result: expect.not.stringMatching(/ask_user/) })
+    expect(results[2]).toMatchObject({
+      callId: 'n1',
+      result: expect.stringMatching(/navigated[\s\S]*reword[\s\S]*ask_user/),
+    })
+  })
+
+  it('chains text typed into a search input into the search streak (#82)', async () => {
+    const type = {
+      name: 'type',
+      async execute() {
+        return 'typed [7]: value="…"'
+      },
+    }
+    const llm = new ScriptedLlm([
+      { kind: 'tool_calls', calls: [{ id: 't1', name: 'type', args: { ref: 7, text: 'reddit manhwa tier list horizon\n' } }] },
+      { kind: 'tool_calls', calls: [{ id: 't2', name: 'type', args: { ref: 7, text: 'reddit manhwa tier list horizon boxer\n' } }] },
+      { kind: 'tool_calls', calls: [{ id: 't3', name: 'type', args: { ref: 7, text: 'reddit manhwa tier list 2023\n' } }] },
+      { kind: 'answer', speak: 'Recovered.', display: 'Recovered.' },
+    ])
+    const pipeline = createCommandPipeline({
+      llm,
+      tts: new RecordingTts(),
+      clock: new FakeClock(),
+      tools: [type],
+      // The GUI search signature seam (#82): ref facts tell the rail the
+      // text went into a search box.
+      describeRef: async () => ({
+        ref: 7,
+        kind: 'input',
+        label: 'Search',
+        inputType: null,
+        rect: { x: 0, y: 0, width: 200, height: 32 },
+        src: null,
+        href: null,
+        downloadsFile: false,
+        submitsForm: false,
+        credentialField: false,
+        paymentField: false,
+        inForm: false,
+        formHasCredential: false,
+        formHasPayment: false,
+      }),
+    })
+
+    const events = await collect(pipeline, 'find the post')
+
+    const results = events.filter((event) => event.type === 'tool_result' && event.ok)
+    expect(results[0]).toMatchObject({ result: expect.not.stringMatching(/ask_user/) })
+    expect(results[2]).toMatchObject({
+      callId: 't3',
+      result: expect.stringMatching(/typed[\s\S]*reword[\s\S]*ask_user/),
+    })
   })
 
   it('refuses same-wall browser calls after a marker rides a result, and the run continues (#80)', async () => {

@@ -18,6 +18,7 @@ import {
 } from '../agent/subagentRails'
 import type { SearchLoopRail } from './searchLoopRail'
 import { createSearchLoopRail } from './searchLoopRail'
+import type { SnapshotRef } from '../browser/snapshot'
 import type { BlockerGate } from './blockerGate'
 import { createBlockerGate } from './blockerGate'
 import { MAX_TOOL_ROUNDS_DEFAULT } from '../settings/settings'
@@ -46,6 +47,13 @@ export interface CommandPipelineDeps {
    * lines and still refuses same-host navigate calls by their URL argument.
    */
   currentHost?: () => string | null
+  /**
+   * Resolves a snapshot ref to its facts (#82) — how the search-loop rail
+   * recognizes text typed into a search input (the GUI search signature).
+   * Absent, typed searches cannot be classified and the rail still tracks
+   * web_search and q= navigations.
+   */
+  describeRef?: (ref: number) => Promise<SnapshotRef | undefined>
   onAbort?(): void
   onPause?(): void
   onResume?(): void
@@ -324,10 +332,14 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
       try {
         const toolResults: ToolResult[] = []
         const visionBudget = createVisionBudget(MAX_ORCHESTRATOR_VISION_CALLS)
-        // Run rails (#74): per-run streak of consecutive similar web_search
-        // calls — nudges first, refuses at the cap, resets on a successful
-        // other tool call. Created fresh per run, like the vision budget.
-        const searchLoopRail = createSearchLoopRail()
+        // Run rails (#74, re-targeted to the GUI search signature by #82):
+        // per-run streak of consecutive similar searches — web_search, q=
+        // navigations, or text typed into a search input — nudges first,
+        // refuses at the cap, resets on a successful other tool call.
+        // Created fresh per run, like the vision budget.
+        const searchLoopRail = createSearchLoopRail(
+          deps.describeRef ? { describeRef: deps.describeRef } : undefined,
+        )
         // Same-wall Blocker gate (#80, ADR 0010): arms when a tool result
         // carries a BLOCKER marker; while armed, browser calls targeting
         // that host (other than read_page/look/ask_user) are refused
@@ -440,11 +452,11 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
             // interaction disarms it. Sees the raw outcome — advisory
             // nudges appended below change nothing it consumes.
             blockerGate.observe(call, outcome)
-            // Search-loop rail (#74): observe every processed call (this is
+            // Search-loop rail (#74/#82): observe every processed call (this is
             // what tracks and resets the streak — a failed intervening tool
             // leaves it alone) and let an advisory nudge ride the search
             // result the model sees and the feed shows.
-            const searchLoopNudge = searchLoopRail.observe(call, outcome)
+            const searchLoopNudge = await searchLoopRail.observe(call, outcome)
             const observedOutcome: ToolResultOutcome =
               searchLoopNudge && outcome.ok && typeof outcome.result === 'string'
                 ? { ok: true, result: `${outcome.result}\n\n${searchLoopNudge}` }
@@ -626,10 +638,11 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
       if (!grant.ok) return { ok: false, error: grant.reason }
     }
 
-    // Run rails (#74): a blind search loop — consecutive similar web_search
-    // calls with nothing in between — is refused before it executes, like
-    // the vision budget. Any other tool call clears the cap.
-    const searchLoopGate = searchLoopRail.gate(call)
+    // Run rails (#74/#82): a blind search loop — consecutive similar
+    // searches (web_search, q= navigations, typed search box queries) with
+    // nothing in between — is refused before it executes, like the vision
+    // budget. Any other tool call clears the cap.
+    const searchLoopGate = await searchLoopRail.gate(call)
     if (!searchLoopGate.ok) return { ok: false, error: searchLoopGate.reason }
 
     try {

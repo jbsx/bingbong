@@ -1,17 +1,39 @@
 import type { ToolCall, ToolResultOutcome } from '../ports/llm'
+import type { SnapshotRef } from '../browser/snapshot'
+import { normalizeUrlInput } from '../browser/urlInput'
 
 // Issue #74, run rails: the 80-round flail's signature is a blind search
-// loop — consecutive web_search calls rewording one query with no
-// intervening read/click/navigate. This rail detects it with pure token
-// similarity (the Blocker-nudge pattern: pattern → decision, no side
-// effects) and answers in two tiers: an advisory nudge appended to results,
-// then a pre-execution refusal alongside the vision budget. It never kills
-// the run. The streak chains — each search compares to the previous one, so
-// slow drift stays caught — and only a successful other tool call resets
-// it: a failed read or navigate consumed nothing, so the model is still
-// blind (run 46: failing tools plus endless reworded searches). Known blind
-// spot, accepted for a first pass: synonym rewordings that share no tokens
-// ("best pizza near me" vs "top pizza places nearby") do not chain.
+// loop — consecutive searches rewording one query with no intervening
+// read/click/navigate. Issue #82 re-targets the rail's observable from the
+// off-screen web_search tool to the GUI search signature, so the flail
+// guard survives the tool's death (spec #75, on-screen browsing): one
+// search observation is now any of
+// — a web_search call (the old observable, kept until the on-screen
+//   switch ticket removes the tool — both coexist),
+// — a navigate whose URL carries a q= search param (plain search terms
+//   normalize to exactly that), or
+// — text typed into a search input (resolved via snapshot ref facts).
+// The q= navigate close is the diagnosis hole from failed run 47: navigates
+// to google.com/search?q=… and reddit search URLs were invisible resets
+// that wiped the streak mid-flail — now they count as the searches they
+// are.
+//
+// The rail detects same-intent rewording with pure token similarity (the
+// Blocker-nudge pattern: pattern → decision, no side effects) and answers
+// in two tiers: an advisory nudge appended to results, then a
+// pre-execution refusal alongside the vision budget. It never kills the
+// run. The streak chains — each search compares against the previous
+// query and the streak's first (anchor), so slow drift stays caught and a
+// return to the original wording after drifting does not walk out of the
+// rail — and only a successful other tool call resets it: a failed read or
+// navigate consumed nothing, so the model is still blind (run 46: failing
+// tools plus endless reworded searches). Run 47's real rewordings score
+// ~0.4–0.6 against their neighbors, so the threshold sits below the old
+// 0.6 at 0.45; the replay fixture in searchLoopRail.test.ts pins that the
+// actual 80-call sequence now produces refusals (the pre-#82 rail produced
+// zero). Known blind spot, still accepted: synonym rewordings that share
+// no tokens ("best pizza near me" vs "top pizza places nearby") do not
+// chain.
 
 /** Consecutive similar searches before the advisory nudge rides the result. */
 export const SEARCH_LOOP_NUDGE_AFTER = 3
@@ -20,30 +42,40 @@ export const SEARCH_LOOP_NUDGE_AFTER = 3
 export const SEARCH_LOOP_REFUSE_AFTER = 5
 
 /** Token-Jaccard similarity at or above which two queries share one intent. */
-const SIMILARITY_THRESHOLD = 0.6
+const SIMILARITY_THRESHOLD = 0.45
 
 export type SearchLoopGate = { ok: true } | { ok: false; reason: string }
 
+export interface SearchLoopRailDeps {
+  /**
+   * Resolves a type call's target ref to its snapshot facts (#82) — how the
+   * rail knows typed text went into a search input. Absent, type calls
+   * cannot be classified and pass as ordinary calls.
+   */
+  describeRef?: (ref: number) => Promise<SnapshotRef | undefined>
+}
+
 export interface SearchLoopRail {
   /**
-   * Pre-execution gate (vision-budget pattern): refuses a web_search whose
-   * query repeats the current streak's intent once the cap is reached.
-   * Every other call passes untouched.
+   * Pre-execution gate (vision-budget pattern): refuses a search —
+   * web_search, q= navigate, or typed search box query — whose intent
+   * repeats the current streak once the cap is reached. Every other call
+   * passes untouched.
    */
-  gate(call: ToolCall): SearchLoopGate
+  gate(call: ToolCall): Promise<SearchLoopGate>
   /**
    * Post-execution observation of every processed tool call — this is what
    * tracks (and resets) the streak. A successful non-search call resets it;
    * a failed one leaves it alone. Returns the advisory nudge once the
    * streak reaches the nudge tier; null otherwise.
    */
-  observe(call: ToolCall, outcome: ToolResultOutcome): string | null
+  observe(call: ToolCall, outcome: ToolResultOutcome): Promise<string | null>
 }
 
 const NUDGE =
-  'The last web_search calls repeat the same intent with reworded queries — more searches will not surface new results. Change strategy: navigate to a promising result, read the page (read_page/read_url), or answer from what you already have. If you cannot proceed, say so and ask_user.'
+  'The last searches reword one intent (web_search, a q= navigate, or a search box query) — more searches will not surface new results. Change strategy: open a promising result by its href, read the page (read_page), or answer from what you already have. If you cannot proceed, say so and ask_user.'
 
-const REFUSAL = `web_search loop limit (${SEARCH_LOOP_REFUSE_AFTER} consecutive similar searches) reached for this run — the queries repeat the same intent. Change strategy or ask_user; any successful other tool call clears the limit.`
+const REFUSAL = `Search loop limit (${SEARCH_LOOP_REFUSE_AFTER} consecutive similar searches — web_search, q= navigate, or typed search box query) reached for this run — the queries repeat one intent. Change strategy or ask_user; any successful other tool call clears the limit.`
 
 /** Lowercase, punctuation-free tokens with a light plural fold (keyboard ≈ keyboards). */
 function queryTokens(query: string): Set<string> {
@@ -72,44 +104,148 @@ export function similarQueries(a: string, b: string): boolean {
   return shared / (left.size + right.size - shared) >= SIMILARITY_THRESHOLD
 }
 
+/**
+ * The query a navigate URL carries: its q= search param after the same
+ * normalization the browser applies (plain search terms normalize to a
+ * q= search URL), or null for a plain URL. This is the pure half of the
+ * GUI search signature (#82).
+ */
+export function searchQueryFromUrl(raw: string): string | null {
+  const normalized = normalizeUrlInput(raw)
+  if (normalized === null) return null
+  try {
+    const q = new URL(normalized).searchParams.get('q')
+    return q !== null && q.trim() !== '' ? q : null
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Pure search-input classification from snapshot ref facts (#82): an
+ * input-kind ref that is type=search or carries "search" as a word in its
+ * label (aria-label, placeholder, or a form label — how Google's,
+ * DuckDuckGo's, and Reddit's boxes all present).
+ */
+export function isSearchInputRef(ref: SnapshotRef): boolean {
+  if (ref.kind !== 'input') return false
+  if (ref.inputType === 'search') return true
+  return /\bsearch\b/i.test(ref.label)
+}
+
+/** Typed text as a query: the trailing newline submits the search and is not part of it; blank text has nothing to chain on. */
+function typedQuery(text: string): string | null {
+  const stripped = text.replace(/[\r\n]+$/, '').trim()
+  return stripped === '' ? null : stripped
+}
+
 function usableQuery(call: ToolCall): string | null {
   const value = call.args.query
   return typeof value === 'string' && value.trim() !== '' ? value : null
 }
 
-export function createSearchLoopRail(): SearchLoopRail {
+function refNumberOf(call: ToolCall): number | null {
+  const value = call.args.ref
+  const ref = typeof value === 'string' ? Number(value) : value
+  return typeof ref === 'number' && Number.isInteger(ref) && ref >= 1 ? ref : null
+}
+
+/**
+ * What a call is to the rail: a search observation with its query, a
+ * search-family call with nothing usable to chain on (malformed — starts
+ * the streak over), or an ordinary call (resets on success only).
+ */
+type Classification = { kind: 'search'; query: string } | { kind: 'malformed' } | { kind: 'other' }
+
+export function createSearchLoopRail(deps: SearchLoopRailDeps = {}): SearchLoopRail {
   let lastQuery: string | null = null
+  // The streak's first query: rewordings compare against both the previous
+  // query and this anchor, so a drift that wanders one token per call — or
+  // one that drifts out and returns to the original wording — stays caught.
+  let anchor: string | null = null
   let streak = 0
+  // describeRef memo between one call's gate and observe: the pipeline
+  // classifies every call twice, and the ref's facts cannot change between
+  // the pre-execution gate and the post-execution observation.
+  let typeMemo: { call: ToolCall; query: string | null } | null = null
+
+  function reset(): void {
+    lastQuery = null
+    anchor = null
+    streak = 0
+  }
+
+  function continuesStreak(query: string): boolean {
+    return (
+      (lastQuery !== null && similarQueries(query, lastQuery)) ||
+      (anchor !== null && similarQueries(query, anchor))
+    )
+  }
+
+  async function typeSearchQuery(call: ToolCall): Promise<string | null> {
+    if (typeMemo?.call === call) return typeMemo.query
+    const ref = refNumberOf(call)
+    let query: string | null = null
+    if (ref !== null && deps.describeRef) {
+      let facts: SnapshotRef | undefined
+      try {
+        facts = await deps.describeRef(ref)
+      } catch {
+        facts = undefined
+      }
+      const text = call.args.text
+      if (facts && isSearchInputRef(facts) && typeof text === 'string') query = typedQuery(text)
+    }
+    typeMemo = { call, query }
+    return query
+  }
+
+  async function classify(call: ToolCall): Promise<Classification> {
+    if (call.name === 'web_search') {
+      const query = usableQuery(call)
+      return query === null ? { kind: 'malformed' } : { kind: 'search', query }
+    }
+    if (call.name === 'navigate') {
+      const url = call.args.url
+      if (typeof url !== 'string' || url.trim() === '') return { kind: 'other' }
+      const query = searchQueryFromUrl(url)
+      return query === null ? { kind: 'other' } : { kind: 'search', query }
+    }
+    if (call.name === 'type') {
+      const query = await typeSearchQuery(call)
+      return query === null ? { kind: 'other' } : { kind: 'search', query }
+    }
+    return { kind: 'other' }
+  }
 
   return {
-    gate(call) {
-      if (call.name !== 'web_search') return { ok: true }
-      const query = usableQuery(call)
-      if (query === null || lastQuery === null || !similarQueries(query, lastQuery)) return { ok: true }
-      return streak >= SEARCH_LOOP_REFUSE_AFTER ? { ok: false, reason: REFUSAL } : { ok: true }
+    async gate(call) {
+      const classified = await classify(call)
+      if (classified.kind !== 'search') return { ok: true }
+      return streak >= SEARCH_LOOP_REFUSE_AFTER && continuesStreak(classified.query)
+        ? { ok: false, reason: REFUSAL }
+        : { ok: true }
     },
-    observe(call, outcome) {
-      if (call.name !== 'web_search') {
+    async observe(call, outcome) {
+      const classified = await classify(call)
+      if (classified.kind === 'other') {
         // A successful other tool consumed something, breaking the blind
         // loop; a failed one changes nothing, so the streak survives.
-        if (outcome.ok) {
-          lastQuery = null
-          streak = 0
-        }
+        if (outcome.ok) reset()
         return null
       }
-      const query = usableQuery(call)
-      if (query === null) {
-        // A malformed search starts over — there is nothing to chain to.
-        lastQuery = null
-        streak = 0
+      if (classified.kind === 'malformed') {
+        // A search with nothing to chain on starts the streak over.
+        reset()
         return null
       }
-      // Chain to the previous search, not the streak's first query —
-      // one-token-per-call drift must not walk out of the rail.
-      const continues = lastQuery !== null && similarQueries(query, lastQuery)
+      // Chain to the previous query and the anchor, not just the streak's
+      // first query — drift must not walk out of the rail in either
+      // direction.
+      const continues = continuesStreak(classified.query)
       streak = continues ? streak + 1 : 1
-      lastQuery = query
+      anchor = continues ? anchor : classified.query
+      lastQuery = classified.query
       return streak >= SEARCH_LOOP_NUDGE_AFTER ? NUDGE : null
     },
   }

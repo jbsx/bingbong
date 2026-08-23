@@ -218,6 +218,9 @@ export function createAssistantPipeline(deps: AssistantPipelineDeps): CommandPip
     // Same-wall Blocker gate (#80, ADR 0010): the host current-page browser
     // verbs (click/type/scroll/…) target — the main tab's page.
     currentHost: () => hostFromUrl(deps.controller.state().url ?? ''),
+    // Search-loop rail's GUI search signature (#82): typed searches are
+    // classified from the typed ref's snapshot facts.
+    describeRef: (ref) => deps.controller.describeRef(ref),
     ...(deps.session ? { session: deps.session } : {}),
     ...(deps.tracer ? { tracer: deps.tracer } : {}),
     ...(deps.browserSubspans ? { browserSubspans: deps.browserSubspans } : {}),
