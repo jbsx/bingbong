@@ -1,0 +1,23 @@
+{
+  "url": "https://shop.example.com/checkout",
+  "title": "shop.example checkout — review your order",
+  "viewport": { "width": 1280, "height": 800, "scrollY": 0, "scrollHeight": 1600 },
+  "textDigest": "Checkout\nReview your order, then complete the security challenge so we can place it. Delivery is free on orders over $50 and returns are accepted within 30 days.",
+  "elements": [
+    { "tag": "a", "role": null, "inputType": null, "label": "shop.example", "href": "https://shop.example.com/", "rect": { "x": 40, "y": 30, "width": 140, "height": 32 } },
+    { "tag": "a", "role": null, "inputType": null, "label": "Cart (3 items)", "href": "https://shop.example.com/cart", "rect": { "x": 1080, "y": 30, "width": 140, "height": 32 } },
+    { "tag": "a", "role": null, "inputType": null, "label": "Back to search", "href": "https://shop.example.com/search?q=keyboards", "rect": { "x": 40, "y": 90, "width": 150, "height": 30 } },
+    { "tag": "a", "role": null, "inputType": null, "label": "Keyboard — product page", "href": "https://shop.example.com/products/keyboard", "rect": { "x": 120, "y": 200, "width": 260, "height": 30 } },
+    { "tag": "a", "role": null, "inputType": null, "label": "Switches — product page", "href": "https://shop.example.com/products/switches", "rect": { "x": 120, "y": 240, "width": 250, "height": 30 } },
+    { "tag": "a", "role": null, "inputType": null, "label": "Keycaps — product page", "href": "https://shop.example.com/products/keycaps", "rect": { "x": 120, "y": 280, "width": 240, "height": 30 } },
+    { "tag": "button", "role": null, "inputType": null, "label": "Remove item", "rect": { "x": 700, "y": 200, "width": 120, "height": 30 } },
+    { "tag": "button", "role": null, "inputType": null, "label": "Remove item", "rect": { "x": 700, "y": 240, "width": 120, "height": 30 } },
+    { "tag": "button", "role": null, "inputType": null, "label": "Remove item", "rect": { "x": 700, "y": 280, "width": 120, "height": 30 } },
+    { "tag": "input", "role": "textbox", "inputType": "text", "label": "Delivery name", "rect": { "x": 120, "y": 420, "width": 300, "height": 36 } },
+    { "tag": "input", "role": "textbox", "inputType": "text", "label": "Delivery address", "rect": { "x": 120, "y": 470, "width": 300, "height": 36 } },
+    { "tag": "input", "role": "textbox", "inputType": "email", "label": "Email for receipt", "rect": { "x": 120, "y": 520, "width": 300, "height": 36 } },
+    { "tag": "iframe", "role": null, "inputType": null, "label": "Widget containing a Cloudflare security challenge", "src": "https://challenges.cloudflare.com/cdn-cgi/challenge-platform", "rect": { "x": 490, "y": 620, "width": 300, "height": 65 } },
+    { "tag": "button", "role": null, "inputType": "submit", "label": "Place order", "rect": { "x": 490, "y": 710, "width": 160, "height": 44 } },
+    { "tag": "a", "role": null, "inputType": null, "label": "Terms of sale", "href": "https://shop.example.com/terms", "rect": { "x": 490, "y": 770, "width": 110, "height": 30 } }
+  ]
+}

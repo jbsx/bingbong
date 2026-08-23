@@ -1,0 +1,10 @@
+{
+  "url": "https://www.reddit.com/?js_challenge=1&solution=bmF2aWdhdGlvbl90b2tlbg%3D%3D&sei=red",
+  "title": "Reddit",
+  "viewport": { "width": 1280, "height": 800, "scrollY": 0, "scrollHeight": 700 },
+  "textDigest": "",
+  "elements": [
+    { "tag": "a", "role": null, "inputType": null, "label": "Log In", "href": "https://www.reddit.com/login/", "rect": { "x": 1050, "y": 40, "width": 90, "height": 34 } },
+    { "tag": "a", "role": null, "inputType": null, "label": "Sign Up", "href": "https://www.reddit.com/register/", "rect": { "x": 1150, "y": 40, "width": 90, "height": 34 } }
+  ]
+}

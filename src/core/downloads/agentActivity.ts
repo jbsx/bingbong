@@ -59,6 +59,7 @@ export function withAgentActivity(
     pressKey: (press, times) => controller.pressKey(press, times),
     mediaState: () => controller.mediaState(),
     state: () => controller.state(),
+    pageFacts: () => controller.pageFacts(),
     describeRef: (ref) => controller.describeRef(ref),
     groundingSnapshot: () => controller.groundingSnapshot(),
     refAtPoint: (point) => controller.refAtPoint(point),

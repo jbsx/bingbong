@@ -1,4 +1,5 @@
 import type { BrowserController, BrowserState, KeyPress, MediaState, ViewportPoint, VisualGroundingController } from '../../core/ports/browser'
+import { blockerFactsFromSnapshot } from '../../core/browser/blockerNudge'
 import type { BrowserSubspans } from '../../core/perf/browserSubspans'
 import { normalizeUrlInput } from '../../core/browser/urlInput'
 import { chooseConsentDismissal, isConsentDialog } from '../../core/browser/dialogPolicy'
@@ -760,6 +761,12 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
     return { url: page.url(), title: page.title() }
   }
 
+  // ADR 0010 classifier facts off the freshest collected snapshot — free
+  // right after readPage() set lastSnapshot; recollects otherwise.
+  async function pageFacts() {
+    return blockerFactsFromSnapshot(await currentSnapshot())
+  }
+
   return {
     navigate,
     readPage,
@@ -772,6 +779,7 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
     pressKey,
     mediaState,
     state,
+    pageFacts,
     describeRef,
     groundingSnapshot,
     refAtPoint,

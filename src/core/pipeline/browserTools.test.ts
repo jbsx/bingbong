@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import youtubeHome from '../browser/fixtures/youtube-home.json'
+import redditHumanity from '../browser/fixtures/reddit-humanity.json'
+import redditNetworkBlock from '../browser/fixtures/reddit-network-block.json'
+import { blockerFactsFromSnapshot, type BlockerPageFacts } from '../browser/blockerNudge'
 import {
   buildPageSnapshot,
   findSnapshotRef,
@@ -32,6 +35,8 @@ class FixtureBrowserController implements BrowserController {
   screenshotBytes = new Uint8Array([1, 2, 3])
   /** state() override; null falls back to the benign fixture page. */
   browserState: BrowserState | null = null
+  /** ADR 0010 classifier facts override; null falls back to the benign fixture page. */
+  facts: BlockerPageFacts | null = null
   private readonly snapshot = buildPageSnapshot(parseCollectedPage(youtubeHome))
   private readonly overrides = new Map<number, SnapshotRef>()
 
@@ -93,6 +98,10 @@ class FixtureBrowserController implements BrowserController {
 
   state(): BrowserState {
     return this.browserState ?? { url: youtubeFixture.url, title: youtubeFixture.title }
+  }
+
+  async pageFacts(): Promise<BlockerPageFacts> {
+    return this.facts ?? blockerFactsFromSnapshot(this.snapshot)
   }
 
   async describeRef(ref: number): Promise<SnapshotRef | undefined> {
@@ -322,7 +331,7 @@ describe('browser tools through the pipeline', () => {
 
       expect(events.find((e) => e.type === 'tool_result')).toMatchObject({
         ok: true,
-        result: `navigated outcome\nThis page may be a Blocker: the URL or title looks like a CAPTCHA or challenge wall. Verify with look (vision) before trusting the page. If it is a Blocker, say so and ask_user how to proceed.`,
+        result: `navigated outcome\nBLOCKER:challenge shop.example.com\nThis page is a Blocker — a challenge wall (CAPTCHA or human verification). Verify with look (vision) before trusting the page, then say so and ask_user: what helps is the user completing the challenge on screen in the browser tab, or picking a different site. Never attempt to get past it yourself.`,
       })
     })
 
@@ -345,7 +354,7 @@ describe('browser tools through the pipeline', () => {
 
       const results = events.filter((event) => event.type === 'tool_result')
       for (const result of results) {
-        expect(result.result).toContain('This page may be a Blocker: it landed on a sign-in wall.')
+        expect(result.result).toContain('This page is a Blocker — a login wall')
         expect(result.result).toContain('ask_user')
       }
     })
@@ -375,6 +384,81 @@ describe('browser tools through the pipeline', () => {
       const events = await collect(pipeline, 'open the site')
 
       expect(events.find((e) => e.type === 'tool_result')).toMatchObject({ ok: true, result: 'navigated outcome' })
+    })
+  })
+
+  describe('blocker marker lines at both choke points (ADR 0010)', () => {
+    it('navigate-settle emits the machine marker + flavored nudge for a Google /sorry landing', async () => {
+      const browser = new FixtureBrowserController()
+      browser.browserState = {
+        url: 'https://www.google.com/sorry/index?continue=https%3A%2F%2Fwww.google.com%2Fsearch%3Fq%3Dtest&q=test',
+        title: 'https://www.google.com/search?q=test',
+      }
+      const { pipeline } = pipelineWith(browser, [
+        { kind: 'tool_calls', calls: [{ id: 'c1', name: 'navigate', args: { url: 'https://www.google.com/search?q=test' } }] },
+        { kind: 'answer', speak: 'Walled.', display: 'Detail.' },
+      ])
+
+      const events = await collect(pipeline, 'search for it')
+
+      const result = events.find((e) => e.type === 'tool_result')
+      expect(result?.ok).toBe(true)
+      expect(result?.result).toContain('\nBLOCKER:challenge www.google.com\n')
+      expect(result?.result).toContain('completing the challenge on screen')
+    })
+
+    it('read_page classifies the page facts and rides the marker + nudge on the tool result', async () => {
+      const browser = new FixtureBrowserController()
+      browser.facts = blockerFactsFromSnapshot(buildPageSnapshot(parseCollectedPage(redditHumanity)))
+      const { pipeline } = pipelineWith(browser, [
+        { kind: 'tool_calls', calls: [{ id: 'c1', name: 'read_page', args: {} }] },
+        { kind: 'answer', speak: 'Walled.', display: 'Detail.' },
+      ])
+
+      const events = await collect(pipeline, 'what is on the page')
+
+      const result = events.find((e) => e.type === 'tool_result')
+      expect(result?.ok).toBe(true)
+      expect(result?.result).toContain(`\nBLOCKER:challenge www.reddit.com\n`)
+      expect(result?.result).toContain('ask_user')
+    })
+
+    it('read_page names the network-block flavor with its different help (sign in / different route)', async () => {
+      const browser = new FixtureBrowserController()
+      browser.facts = blockerFactsFromSnapshot(buildPageSnapshot(parseCollectedPage(redditNetworkBlock)))
+      const { pipeline } = pipelineWith(browser, [
+        { kind: 'tool_calls', calls: [{ id: 'c1', name: 'read_page', args: {} }] },
+        { kind: 'answer', speak: 'Blocked.', display: 'Detail.' },
+      ])
+
+      const events = await collect(pipeline, 'read the post')
+
+      const result = events.find((e) => e.type === 'tool_result')
+      expect(result?.result).toContain('\nBLOCKER:network-block www.reddit.com\n')
+      expect(result?.result).toContain('network block')
+      expect(result?.result).toContain('signing in')
+      expect(result?.result).toContain('different route')
+      expect(result?.result).not.toContain('completing the challenge on screen')
+    })
+
+    it('leaves ordinary pages marker-free at both choke points', async () => {
+      const browser = new FixtureBrowserController()
+      const { pipeline } = pipelineWith(browser, [
+        {
+          kind: 'tool_calls',
+          calls: [
+            { id: 'c1', name: 'navigate', args: { url: 'https://www.youtube.com/' } },
+            { id: 'c2', name: 'read_page', args: {} },
+          ],
+        },
+        { kind: 'answer', speak: 'All clear.', display: 'Detail.' },
+      ])
+
+      const events = await collect(pipeline, 'open and read')
+
+      const results = events.filter((event) => event.type === 'tool_result')
+      expect(results[0]?.result).toBe('navigated outcome')
+      expect(results[1]?.result).toBe(formatYoutubeSnapshot())
     })
   })
 

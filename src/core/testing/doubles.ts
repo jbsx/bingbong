@@ -4,6 +4,7 @@ import type { TtsSpeaker } from '../ports/tts'
 import type { Transcriber, VadScorer } from '../ports/stt'
 import { WAKE_HEADS, type WakeScores, type WakeWordDetector } from '../ports/wake'
 import type { BrowserController, BrowserState, KeyPress, MediaState, ViewportPoint, VisualGroundingController } from '../ports/browser'
+import { blockerFactsFromSnapshot } from '../browser/blockerNudge'
 import type { PageSnapshot, SnapshotRef } from '../browser/snapshot'
 import type { SearchProvider, SearchResult } from '../ports/search'
 import type {
@@ -275,6 +276,11 @@ export class FakeBrowser implements BrowserController, VisualGroundingController
 
   state(): BrowserState {
     return this.pageState
+  }
+
+  // ADR 0010 classifier facts, off the overridable snapshot.
+  async pageFacts() {
+    return blockerFactsFromSnapshot(this.snapshot)
   }
 
   async describeRef(ref: number): Promise<SnapshotRef | undefined> {

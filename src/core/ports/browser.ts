@@ -1,3 +1,4 @@
+import type { BlockerPageFacts } from '../browser/blockerNudge'
 import type { PageSnapshot, SnapshotRef } from '../browser/snapshot'
 
 export interface BrowserState {
@@ -40,6 +41,12 @@ export interface BrowserController {
   /** Read actual state from the page's active media element after controls settle. */
   mediaState(): Promise<MediaState | null>
   state(): BrowserState
+  /**
+   * Facts for the mechanical Blocker classifier (ADR 0010): URL, title,
+   * leading body text, dialog text, and ref kinds/srcs of the current page.
+   * Cheap right after readPage(); may re-collect if the snapshot went stale.
+   */
+  pageFacts(): Promise<BlockerPageFacts>
   /** Facts about a snapshot ref for risk assessment; undefined when the ref no longer resolves. */
   describeRef(ref: number): Promise<SnapshotRef | undefined>
 }

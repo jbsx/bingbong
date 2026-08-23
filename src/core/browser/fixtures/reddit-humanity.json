@@ -1,0 +1,11 @@
+{
+  "url": "https://www.reddit.com/search/?q=mechanical%20keyboards",
+  "title": "Prove your humanity",
+  "viewport": { "width": 1280, "height": 800, "scrollY": 0, "scrollHeight": 800 },
+  "textDigest": "Prove your humanity\nWhoa there, pardner! Reddit's systems have flagged this session. Complete the verification below to continue to the results you were looking for.",
+  "elements": [
+    { "tag": "iframe", "role": null, "inputType": null, "label": "Widget containing a reCAPTCHA security challenge", "src": "https://www.google.com/recaptcha/api2/anchor?ar=1&k=6LeTfxkT&co=reddit", "rect": { "x": 540, "y": 360, "width": 300, "height": 74 } },
+    { "tag": "button", "role": null, "inputType": null, "label": "Verify you are human", "rect": { "x": 490, "y": 460, "width": 300, "height": 44 } },
+    { "tag": "a", "role": null, "inputType": null, "label": "Get help", "href": "https://www.reddithelp.com/", "rect": { "x": 490, "y": 520, "width": 100, "height": 30 } }
+  ]
+}

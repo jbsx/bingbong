@@ -1,0 +1,22 @@
+{
+  "url": "https://blog.example.org/posts/the-quiet-death-of-the-captcha",
+  "title": "The quiet death of the CAPTCHA",
+  "viewport": { "width": 1280, "height": 800, "scrollY": 0, "scrollHeight": 2400 },
+  "textDigest": "The quiet death of the CAPTCHA\nNobody misses squinting at traffic lights. The widget that asked you to sort fire hydrants from signal poles is quietly disappearing from the modern web, replaced by invisible risk scoring that most visitors never see.\nIts own inventor has apologised for the collective hours of human attention it burned, and publishers have spent a decade quietly removing it from forms.\nStill, the moment a site does ask you to prove your humanity, the friction of the old web comes rushing back — a reminder of how much of the web once ran on suspicion.",
+  "elements": [
+    { "tag": "a", "role": null, "inputType": null, "label": "Home", "href": "https://blog.example.org/", "rect": { "x": 40, "y": 30, "width": 60, "height": 30 } },
+    { "tag": "a", "role": null, "inputType": null, "label": "Archive", "href": "https://blog.example.org/archive", "rect": { "x": 120, "y": 30, "width": 90, "height": 30 } },
+    { "tag": "a", "role": null, "inputType": null, "label": "About", "href": "https://blog.example.org/about", "rect": { "x": 230, "y": 30, "width": 70, "height": 30 } },
+    { "tag": "input", "role": "searchbox", "inputType": "search", "label": "Search the blog", "rect": { "x": 950, "y": 28, "width": 240, "height": 34 } },
+    { "tag": "a", "role": null, "inputType": null, "label": "How reCAPTCHA APIs changed the web", "href": "https://blog.example.org/posts/recaptcha-apis", "rect": { "x": 120, "y": 200, "width": 420, "height": 60 } },
+    { "tag": "a", "role": null, "inputType": null, "label": "The arms race against bots", "href": "https://blog.example.org/posts/bot-arms-race", "rect": { "x": 120, "y": 280, "width": 380, "height": 60 } },
+    { "tag": "a", "role": null, "inputType": null, "label": "Previous post: Cookies without the dialog", "href": "https://blog.example.org/posts/cookies-without-dialogs", "rect": { "x": 120, "y": 700, "width": 300, "height": 30 } },
+    { "tag": "a", "role": null, "inputType": null, "label": "Next post: WebAuthn for humans", "href": "https://blog.example.org/posts/webauthn-for-humans", "rect": { "x": 500, "y": 700, "width": 260, "height": 30 } },
+    { "tag": "button", "role": null, "inputType": null, "label": "Share on Mastodon", "rect": { "x": 120, "y": 750, "width": 180, "height": 34 } },
+    { "tag": "button", "role": null, "inputType": null, "label": "Copy link", "rect": { "x": 320, "y": 750, "width": 120, "height": 34 } },
+    { "tag": "input", "role": "textbox", "inputType": "email", "label": "Email address for the newsletter", "rect": { "x": 120, "y": 820, "width": 300, "height": 36 } },
+    { "tag": "button", "role": null, "inputType": "submit", "label": "Subscribe", "rect": { "x": 440, "y": 820, "width": 120, "height": 36 } },
+    { "tag": "a", "role": null, "inputType": null, "label": "RSS feed", "href": "https://blog.example.org/feed.xml", "rect": { "x": 40, "y": 900, "width": 90, "height": 30 } },
+    { "tag": "a", "role": null, "inputType": null, "label": "Colophon", "href": "https://blog.example.org/colophon", "rect": { "x": 150, "y": 900, "width": 90, "height": 30 } }
+  ]
+}

@@ -1,0 +1,13 @@
+{
+  "url": "https://old.reddit.com/login/?reason=lor2&dest=https%3A%2F%2Fold.reddit.com%2Fr%2Fmechanicalkeys",
+  "title": "Welcome to Reddit",
+  "viewport": { "width": 1280, "height": 800, "scrollY": 0, "scrollHeight": 1400 },
+  "textDigest": "log in\nUser account menu\nUsername\nPassword\nAlready a redditor? Just log in and go.",
+  "elements": [
+    { "tag": "input", "role": null, "inputType": "text", "label": "username", "rect": { "x": 490, "y": 220, "width": 300, "height": 36 } },
+    { "tag": "input", "role": null, "inputType": "password", "label": "password", "rect": { "x": 490, "y": 270, "width": 300, "height": 36 } },
+    { "tag": "button", "role": null, "inputType": null, "label": "log in", "rect": { "x": 490, "y": 320, "width": 140, "height": 40 } },
+    { "tag": "a", "role": null, "inputType": null, "label": "sign up", "href": "https://old.reddit.com/register/", "rect": { "x": 640, "y": 320, "width": 90, "height": 40 } },
+    { "tag": "a", "role": null, "inputType": null, "label": "reset password", "href": "https://old.reddit.com/password", "rect": { "x": 490, "y": 380, "width": 160, "height": 30 } }
+  ]
+}

@@ -1,0 +1,9 @@
+{
+  "url": "https://www.reddit.com/r/MechanicalKeyboards/comments/1abcde/whats_your_favorite_switch/",
+  "title": "Reddit",
+  "viewport": { "width": 1280, "height": 800, "scrollY": 0, "scrollHeight": 800 },
+  "textDigest": "blocked by network security\nYou are unable to access reddit.com. This happens when our security systems detect activity from your network that does not match normal browsing patterns. The block is not something a page action can remove.",
+  "elements": [
+    { "tag": "a", "role": null, "inputType": null, "label": "Reddit Help Center", "href": "https://www.reddithelp.com/", "rect": { "x": 540, "y": 500, "width": 200, "height": 30 } }
+  ]
+}

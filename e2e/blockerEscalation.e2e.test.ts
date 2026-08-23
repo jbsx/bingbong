@@ -112,9 +112,10 @@ describe('blocker detect → verify → escalate e2e', () => {
     const results = events.filter((event): event is ToolResultEvent => event.type === 'tool_result' && event.ok)
     const byId = Object.fromEntries(results.map((event) => [event.callId, event.result]))
 
-    // Detect: the navigation outcome carries the passive nudge.
+    // Detect: the navigation outcome carries the marker line + flavored nudge.
     expect(byId['challenge-nav']).toContain('navigated: url=')
-    expect(byId['challenge-nav']).toContain('This page may be a Blocker')
+    expect(byId['challenge-nav']).toContain('BLOCKER:challenge 127.0.0.1')
+    expect(byId['challenge-nav']).toContain('This page is a Blocker — a challenge wall')
     expect(byId['challenge-nav']).toContain('look (vision)')
     expect(byId['challenge-nav']).toContain('ask_user')
 
@@ -135,7 +136,8 @@ describe('blocker detect → verify → escalate e2e', () => {
     expect(events.filter((event) => event.type === 'tool_call' && event.name === 'type')).toEqual([])
 
     // Login walls are nudged on navigation too.
-    expect(byId['signin-nav']).toContain('This page may be a Blocker: it landed on a sign-in wall.')
+    expect(byId['signin-nav']).toContain('BLOCKER:login-wall 127.0.0.1')
+    expect(byId['signin-nav']).toContain('This page is a Blocker — a login wall')
 
     // Consent keeps auto-clearing — dismissed deterministically, not escalated.
     expect(byId['consent-read']).toMatch(/^dismissed consent dialog: clicked \[2\] "Reject all(?: Reject all)?"/)

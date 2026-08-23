@@ -3,21 +3,29 @@ import type { ToolCall } from '../ports/llm'
 import type { BrowserController } from '../ports/browser'
 import type { VisionDescriber } from '../ports/vision'
 import { assessBrowserAction } from './riskGate'
-import { classifyBlockerNavigation } from '../browser/blockerNudge'
+import { classifyBlockerPage, type BlockerClassification } from '../browser/blockerNudge'
 
 const STALE_REF_RE = /ref \d+ not found.*page may have changed/i
 const AUTO_VISION_PROMPT =
   'Describe the current browser screenshot, focusing on page state, popups, dialogs, overlays, errors, and anything blocking the requested task.'
 
-// ADR 0007 layer 3: after a navigation settles, passively sniff the landing
-// URL/title; a suspicious page gets a nudge appended to the tool result
-// telling the model to verify with vision and escalate. The nudge is
-// advisory — it never performs or orders any page action.
+// ADR 0010: when a choke point detects a wall, the tool result the model
+// sees carries the machine-readable marker line plus the flavored nudge.
+// The marker is what the Blocker gate (same ADR) consumes; the nudge names
+// what would actually help. Advisory only — never performs or orders any
+// page action.
+function blockerSuffix(verdict: BlockerClassification): string {
+  return verdict.marker === null ? verdict.nudge : `${verdict.marker}\n${verdict.nudge}`
+}
+
+// ADR 0007 layer 3 / ADR 0010 choke point 1: after a navigation settles,
+// classify the landing URL/title; a walled page gets the marker + nudge
+// appended to the tool result.
 async function withBlockerNudge(browser: BrowserController, action: () => Promise<string>): Promise<string> {
   const outcome = await action()
   const { url, title } = browser.state()
-  const nudge = classifyBlockerNavigation(url ?? '', title ?? '')
-  return nudge ? `${outcome}\n${nudge.nudge}` : outcome
+  const verdict = classifyBlockerPage({ url: url ?? '', title: title ?? '' })
+  return verdict ? `${outcome}\n${blockerSuffix(verdict)}` : outcome
 }
 
 interface ReadState {
@@ -137,16 +145,20 @@ export function createBrowserTools(browser: BrowserController, vision?: VisionDe
     {
       name: 'read_page',
       description:
-        'Return the page URL, title, scroll state, numbered interactive refs (link refs carry their hrefs — open them with navigate), and a capped text digest. Use refs like [7] with click/type.',
+        'Return the page URL, title, scroll state, numbered interactive refs (link refs carry their hrefs — open them with navigate), and a capped text digest. Use refs like [7] with click/type. Walls are reported as a BLOCKER: marker line with what to do.',
       async execute(_call, context) {
         const result = await browser.readPage()
+        // ADR 0010 choke point 2: the digest, dialog text, and refs the
+        // snapshot just collected are exactly the classifier's input.
+        const verdict = classifyBlockerPage(await browser.pageFacts())
+        const flagged = verdict ? `${result}\n${blockerSuffix(verdict)}` : result
         const refs = refsFrom(result)
         const previous = reads.get(context)
         reads.set(context, { refs })
         if (vision && previous && similarity(previous.refs, refs) >= 0.9) {
-          return `${result}\n${await autoDescribe(browser, vision, context, 'repeated near-identical page reads')}`
+          return `${flagged}\n${await autoDescribe(browser, vision, context, 'repeated near-identical page reads')}`
         }
-        return result
+        return flagged
       },
     },
     {
