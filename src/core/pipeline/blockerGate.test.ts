@@ -67,6 +67,17 @@ describe('createBlockerGate', () => {
     }
   })
 
+  it('refuses every non-exempt browser verb on the armed host — exempt-first, fail-closed', () => {
+    const gate = createBlockerGate(() => 'www.reddit.com')
+    gate.observe(navigate('https://www.reddit.com/search'), ok(WALLED_RESULT))
+    // navigate is absent: it targets by its URL argument, not the tab's
+    // current host — covered by the same-host-navigate test above.
+    for (const name of ['click', 'type', 'scroll', 'screenshot', 'back', 'go_forward']) {
+      expect(gate.gate(verb(name)).ok).toBe(false)
+    }
+    expect(gate.gate(verb('read_page'))).toEqual({ ok: true })
+  })
+
   it('passes navigate whose target cannot be classified (search terms, bare domain)', () => {
     const gate = createBlockerGate()
     gate.observe(navigate('https://www.reddit.com/search'), ok(WALLED_RESULT))

@@ -18,12 +18,6 @@ import type { PageSnapshot, RefKind } from './snapshot'
 /** Which kind of Blocker the page smells like (ADR 0010 flavors). */
 export type BlockerSignal = 'challenge' | 'network-block' | 'login-wall'
 
-export interface BlockerNudge {
-  signal: BlockerSignal
-  /** Model-facing line appended to the navigation tool result. */
-  nudge: string
-}
-
 /** The ref facts the classifier consumes: kind and, for iframes, the src. */
 export interface BlockerRefFacts {
   kind: RefKind
@@ -220,14 +214,4 @@ export function blockerFactsFromSnapshot(snapshot: PageSnapshot): BlockerPageFac
     dialogText: snapshot.dialogOpen ? snapshot.dialogText : '',
     refs: snapshot.refs.map((ref) => ({ kind: ref.kind, src: ref.src })),
   }
-}
-
-/**
- * ADR 0007 navigation nudge, now a thin mapping over the ADR 0010
- * classifier: URL/title facts only, nudge without the marker line (the
- * navigate-settle choke point emits marker + nudge itself).
- */
-export function classifyBlockerNavigation(url: string, title: string): BlockerNudge | null {
-  const classification = classifyBlockerPage({ url, title })
-  return classification === null ? null : { signal: classification.signal, nudge: classification.nudge }
 }

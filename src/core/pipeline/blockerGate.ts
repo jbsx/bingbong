@@ -60,8 +60,11 @@ export function hostFromUrl(value: string): string | null {
   }
 }
 
-/** Browser verbs the gate refuses on the armed host. read_page stays out — the model must be able to re-inspect the wall; look and ask_user are not browser tools at all. */
-const INTERACTING_BROWSER_TOOLS = new Set(['navigate', 'click', 'type', 'scroll', 'screenshot', 'back', 'go_forward'])
+/** The browser verbs (the BrowserController tool surface in browserTools.ts). */
+const BROWSER_TOOLS = new Set(['navigate', 'read_page', 'click', 'type', 'scroll', 'screenshot', 'back', 'go_forward'])
+
+/** Browser verbs exempt from the same-host refusal. read_page stays out — the model must be able to re-inspect the wall; every other browser verb is refused, so a verb added later fails closed. look/ground_visual (vision, not browser verbs) and ask_user never reach this check. */
+const BLOCKER_EXEMPT_TOOLS = new Set(['read_page'])
 
 /** What the refusal tells the model actually helps, per ADR 0010 flavor. */
 const HELP_BY_SIGNAL: Record<BlockerSignal, string> = {
@@ -121,7 +124,8 @@ export function createBlockerGate(
   return {
     gate(call) {
       if (armed === null) return { ok: true }
-      if (!INTERACTING_BROWSER_TOOLS.has(call.name)) return { ok: true }
+      if (!BROWSER_TOOLS.has(call.name)) return { ok: true }
+      if (BLOCKER_EXEMPT_TOOLS.has(call.name)) return { ok: true }
       const host = targetHost(call)
       if (host === null || host !== armed.host) return { ok: true }
       return { ok: false, reason: refusal(armed, call) }
@@ -129,7 +133,7 @@ export function createBlockerGate(
     observe(call, outcome) {
       // Disarm before arming: a successful move to a different host that
       // itself turns out walled ends up armed on the new wall, not both.
-      if (outcome.ok && armed !== null && INTERACTING_BROWSER_TOOLS.has(call.name)) {
+      if (outcome.ok && armed !== null && BROWSER_TOOLS.has(call.name) && !BLOCKER_EXEMPT_TOOLS.has(call.name)) {
         const host = targetHost(call)
         if (host !== null && host !== armed.host) armed = null
       }

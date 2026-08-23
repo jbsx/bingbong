@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { classifyBlockerNavigation, classifyBlockerPage, blockerFactsFromSnapshot, parseBlockerMarker } from './blockerNudge'
+import { classifyBlockerPage, blockerFactsFromSnapshot, parseBlockerMarker } from './blockerNudge'
 import { buildPageSnapshot, parseCollectedPage } from './snapshot'
 import googleSorry from './fixtures/google-sorry.json'
 import oldRedditLogin from './fixtures/old-reddit-login.json'
@@ -10,68 +10,73 @@ import captchaArticle from './fixtures/captcha-article.json'
 import challengeIframe from './fixtures/challenge-iframe.json'
 import challengeIframeRich from './fixtures/challenge-iframe-rich.json'
 
-// ADR 0007 layer 3: the passive navigation nudge. A pure URL/title pattern
-// check decides whether a fresh navigation smells like a Blocker; the nudge
-// it returns tells the model to verify with vision and escalate — never to
-// clear anything itself. Pattern → decision only; no browser involved.
+// ADR 0010: the classifier is one pure pattern → decision function over page
+// facts — no browser, no side effects. The navigate-settle choke point feeds
+// it URL/title only; read_page adds body text, dialog text, and refs. The
+// nudge tells the model to verify with vision and escalate — never to clear
+// anything itself.
 
-describe('classifyBlockerNavigation', () => {
-  it('nudges on challenge hosts in the URL', () => {
-    expect(classifyBlockerNavigation('https://challenges.cloudflare.com/cdn-cgi/challenge-platform/h/b/turnstile', 'challenge')).toMatchObject({ signal: 'challenge' })
-    expect(classifyBlockerNavigation('https://www.google.com/recaptcha/api2/anchor?k=xyz', 'reCAPTCHA')).toMatchObject({ signal: 'challenge' })
-    expect(classifyBlockerNavigation('https://hcaptcha.com/getcaptcha/sitekey', 'hCaptcha')).toMatchObject({ signal: 'challenge' })
+function nav(url: string, title: string) {
+  return classifyBlockerPage({ url, title })
+}
+
+describe('classifyBlockerPage on URL/title facts (the navigate-settle choke point)', () => {
+  it('classifies challenge hosts in the URL', () => {
+    expect(nav('https://challenges.cloudflare.com/cdn-cgi/challenge-platform/h/b/turnstile', 'challenge')).toMatchObject({ signal: 'challenge' })
+    expect(nav('https://www.google.com/recaptcha/api2/anchor?k=xyz', 'reCAPTCHA')).toMatchObject({ signal: 'challenge' })
+    expect(nav('https://hcaptcha.com/getcaptcha/sitekey', 'hCaptcha')).toMatchObject({ signal: 'challenge' })
   })
 
-  it('nudges on Cloudflare challenge tokens in the URL', () => {
-    expect(classifyBlockerNavigation('https://shop.example.com/?__cf_chl_tk=abc123', 'Shop')).toMatchObject({ signal: 'challenge' })
+  it('classifies Cloudflare challenge tokens in the URL', () => {
+    expect(nav('https://shop.example.com/?__cf_chl_tk=abc123', 'Shop')).toMatchObject({ signal: 'challenge' })
   })
 
-  it('nudges on challenge interstitial titles', () => {
-    expect(classifyBlockerNavigation('https://shop.example.com/', 'Just a moment...')).toMatchObject({ signal: 'challenge' })
-    expect(classifyBlockerNavigation('https://www.google.com/search?q=x', 'Sorry...')).toBeNull()
+  it('classifies challenge interstitial titles', () => {
+    expect(nav('https://shop.example.com/', 'Just a moment...')).toMatchObject({ signal: 'challenge' })
+    expect(nav('https://www.google.com/search?q=x', 'Sorry...')).toBeNull()
     expect(
-      classifyBlockerNavigation('https://www.google.com/search?q=x', '/search — our systems have detected unusual traffic from your computer network'),
+      nav('https://www.google.com/search?q=x', '/search — our systems have detected unusual traffic from your computer network'),
     ).toMatchObject({ signal: 'challenge' })
-    expect(classifyBlockerNavigation('https://shop.example.com/', 'Attention Required! | Cloudflare')).toMatchObject({ signal: 'challenge' })
-    expect(classifyBlockerNavigation('https://check.example.com/', 'Checking your browser before accessing')).toMatchObject({ signal: 'challenge' })
+    expect(nav('https://shop.example.com/', 'Attention Required! | Cloudflare')).toMatchObject({ signal: 'challenge' })
+    expect(nav('https://check.example.com/', 'Checking your browser before accessing')).toMatchObject({ signal: 'challenge' })
   })
 
-  it('nudges on sign-in redirects', () => {
-    expect(classifyBlockerNavigation('https://accounts.google.com/ServiceLogin?continue=https://mail.google.com', 'Sign in')).toMatchObject({ signal: 'login-wall' })
-    expect(classifyBlockerNavigation('https://login.microsoftonline.com/common/oauth2/authorize', 'Sign in to your account')).toMatchObject({ signal: 'login-wall' })
-    expect(classifyBlockerNavigation('https://news.example.com/signin?returnUrl=%2Farticle', 'Sign in')).toMatchObject({ signal: 'login-wall' })
-    expect(classifyBlockerNavigation('https://news.example.com/login', 'Log in')).toMatchObject({ signal: 'login-wall' })
+  it('classifies sign-in redirects as login walls', () => {
+    expect(nav('https://accounts.google.com/ServiceLogin?continue=https://mail.google.com', 'Sign in')).toMatchObject({ signal: 'login-wall' })
+    expect(nav('https://login.microsoftonline.com/common/oauth2/authorize', 'Sign in to your account')).toMatchObject({ signal: 'login-wall' })
+    expect(nav('https://news.example.com/signin?returnUrl=%2Farticle', 'Sign in')).toMatchObject({ signal: 'login-wall' })
+    expect(nav('https://news.example.com/login', 'Log in')).toMatchObject({ signal: 'login-wall' })
   })
 
-  it('does not nudge on ordinary pages — consent walls stay the auto-clear class', () => {
+  it('stays null on ordinary pages — consent walls are the auto-clear class, not Blockers', () => {
     // CONTEXT.md: Consent Dialogs are a Blocker class, but the one that is
-    // auto-cleared (dialogPolicy.ts) — they are never nudged or escalated.
-    expect(classifyBlockerNavigation('https://www.youtube.com/', 'YouTube')).toBeNull()
-    expect(classifyBlockerNavigation('https://news.example.com/article/about-recaptcha-apis', 'How recaptcha APIs changed the web')).toBeNull()
-    expect(classifyBlockerNavigation('https://shop.example.com/products/login-chairs', 'Login chairs — the furniture of account pages')).toBeNull()
-    expect(classifyBlockerNavigation('https://news.example.com/consent', 'Welcome — choose your cookies')).toBeNull()
-    expect(classifyBlockerNavigation('', '')).toBeNull()
+    // auto-cleared (dialogPolicy.ts) — they are never classified or escalated.
+    expect(nav('https://www.youtube.com/', 'YouTube')).toBeNull()
+    expect(nav('https://news.example.com/article/about-recaptcha-apis', 'How recaptcha APIs changed the web')).toBeNull()
+    expect(nav('https://shop.example.com/products/login-chairs', 'Login chairs — the furniture of account pages')).toBeNull()
+    expect(nav('https://news.example.com/consent', 'Welcome — choose your cookies')).toBeNull()
+    expect(nav('', '')).toBeNull()
   })
 
   it('does not crash on unparseable or blank URLs the controller may report mid-navigation', () => {
-    expect(classifyBlockerNavigation('about:blank', '')).toBeNull()
+    expect(nav('about:blank', '')).toBeNull()
   })
 
   it('returns a nudge that orders verify-with-vision and escalation, never clearing', () => {
-    const challenge = classifyBlockerNavigation('https://challenges.cloudflare.com/x', 'Just a moment...')
+    const challenge = nav('https://challenges.cloudflare.com/x', 'Just a moment...')
     expect(challenge?.nudge).toMatch(/Verify with look \(vision\) before trusting the page/)
     expect(challenge?.nudge).toMatch(/ask_user/)
     expect(challenge?.nudge).not.toMatch(/\b(click|dismiss|clear|solve|accept)\b/i)
 
-    const login = classifyBlockerNavigation('https://accounts.google.com/ServiceLogin', 'Sign in')
+    const login = nav('https://accounts.google.com/ServiceLogin', 'Sign in')
     expect(login?.nudge).toMatch(/Verify with look \(vision\) before trusting the page/)
     expect(login?.nudge).toMatch(/ask_user/)
     expect(login?.nudge).not.toMatch(/\b(click|dismiss|clear|solve|accept)\b/i)
   })
 
-  it('distinguishes the two nudge texts by class', () => {
-    const challenge = classifyBlockerNavigation('https://challenges.cloudflare.com/x', 'challenge')
-    const login = classifyBlockerNavigation('https://news.example.com/login', 'Log in')
+  it('distinguishes the nudge texts by class', () => {
+    const challenge = nav('https://challenges.cloudflare.com/x', 'challenge')
+    const login = nav('https://news.example.com/login', 'Log in')
     expect(challenge?.nudge).not.toBe(login?.nudge)
     expect(challenge?.nudge).toMatch(/captcha|challenge/i)
     expect(login?.nudge).toMatch(/sign[- ]in|login/i)
