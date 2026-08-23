@@ -1053,6 +1053,44 @@ describe('command pipeline', () => {
     ).toHaveLength(0)
   })
 
+  it('keeps the search-loop streak across a failed intervening tool call (#74)', async () => {
+    const search = {
+      name: 'web_search',
+      async execute() {
+        return '1. A result — https://example.com/a'
+      },
+    }
+    const failingNavigate = {
+      name: 'navigate',
+      async execute() {
+        throw new Error('navigation failed')
+      },
+    }
+    const llm = new ScriptedLlm([
+      { kind: 'tool_calls', calls: [{ id: 's1', name: 'web_search', args: { query: 'best mechanical keyboards 2026' } }] },
+      { kind: 'tool_calls', calls: [{ id: 'n1', name: 'navigate', args: { url: 'https://example.com/a' } }] },
+      { kind: 'tool_calls', calls: [{ id: 's2', name: 'web_search', args: { query: 'best mechanical keyboard 2026 reddit' } }] },
+      { kind: 'tool_calls', calls: [{ id: 's3', name: 'web_search', args: { query: 'best mechanical keyboards 2026 guide' } }] },
+      { kind: 'answer', speak: 'Recovered.', display: 'Recovered.' },
+    ])
+    const pipeline = createCommandPipeline({
+      llm,
+      tts: new RecordingTts(),
+      clock: new FakeClock(),
+      tools: [search, failingNavigate],
+    })
+
+    const events = await collect(pipeline, 'find keyboards')
+
+    // The failed navigate consumed nothing — the third similar search still
+    // nudges (run 46: failing tools + endless reworded searches).
+    const nudged = events.filter(
+      (event) => event.type === 'tool_result' && event.ok && event.name === 'web_search' && typeof event.result === 'string' && event.result.includes('ask_user'),
+    )
+    expect(nudged).toHaveLength(1)
+    expect(nudged[0]).toMatchObject({ callId: 's3' })
+  })
+
   it('refuses the search loop at the cap without executing, and the run continues (#74)', async () => {
     let executions = 0
     const search = {

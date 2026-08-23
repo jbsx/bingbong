@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { ToolCall } from '../ports/llm'
+import type { ToolCall, ToolResultOutcome } from '../ports/llm'
 import {
   createSearchLoopRail,
   SEARCH_LOOP_NUDGE_AFTER,
@@ -7,13 +7,9 @@ import {
   similarQueries,
 } from './searchLoopRail'
 
-// Issue #74, run rails: a blind search loop — consecutive web_search calls
-// that reword the same query with no intervening read/click/navigate — is
-// the 80-round flail's signature. The rail detects it with pure token
-// similarity (Blocker-nudge pattern: pattern → decision, no side effects)
-// and answers in two tiers: an advisory nudge appended to results, then a
-// pre-execution refusal alongside the vision budget. Never a run-killer:
-// any other tool call resets the streak.
+// Issue #74, run rails: the rail that breaks blind search loops — pure
+// token similarity over the streak, advisory nudge first, pre-execution
+// refusal second. See the module header for the full policy.
 
 function search(query: string): ToolCall {
   return { id: 's', name: 'web_search', args: { query } }
@@ -22,6 +18,9 @@ function search(query: string): ToolCall {
 function other(name: string): ToolCall {
   return { id: 'o', name, args: {} }
 }
+
+const ok: ToolResultOutcome = { ok: true, result: 'done' }
+const fail: ToolResultOutcome = { ok: false, error: 'boom' }
 
 describe('similarQueries', () => {
   it('matches identical and reworded variants of the same intent', () => {
@@ -47,51 +46,67 @@ describe('createSearchLoopRail', () => {
   it('stays quiet while consecutive searches explore different intents', () => {
     const rail = createSearchLoopRail()
     expect(rail.gate(search('mechanical keyboards'))).toEqual({ ok: true })
-    expect(rail.observe(search('mechanical keyboards'))).toBeNull()
+    expect(rail.observe(search('mechanical keyboards'), ok)).toBeNull()
     expect(rail.gate(search('weather london'))).toEqual({ ok: true })
-    expect(rail.observe(search('weather london'))).toBeNull()
+    expect(rail.observe(search('weather london'), ok)).toBeNull()
   })
 
   it('nudges on the nth consecutive similar search — advisory, never a refusal', () => {
     const rail = createSearchLoopRail()
     for (let i = 1; i < SEARCH_LOOP_NUDGE_AFTER; i += 1) {
       expect(rail.gate(search(`best mechanical keyboards 2026 v${i}`))).toEqual({ ok: true })
-      expect(rail.observe(search(`best mechanical keyboards 2026 v${i}`))).toBeNull()
+      expect(rail.observe(search(`best mechanical keyboards 2026 v${i}`), ok)).toBeNull()
     }
     const last = `best mechanical keyboards 2026 v${SEARCH_LOOP_NUDGE_AFTER}`
     expect(rail.gate(search(last))).toEqual({ ok: true })
-    const nudge = rail.observe(search(last))
+    const nudge = rail.observe(search(last), ok)
     expect(nudge).toMatch(/same (intent|thing)|reword/i)
     expect(nudge).toMatch(/web_search/)
     expect(nudge).toMatch(/ask_user/)
     expect(nudge).toMatch(/navigate|read|open/i)
   })
 
-  it('resets the streak when any other tool intervenes', () => {
+  it('catches slow drift: each query similar to the previous, not to the first', () => {
+    const rail = createSearchLoopRail()
+    rail.observe(search('best mechanical keyboards 2026'), ok)
+    rail.observe(search('best mechanical keyboards 2027'), ok)
+    // Similar to the previous query, but only 0.5 against the first —
+    // anchor-based comparison would reset here and miss the drift loop.
+    expect(rail.observe(search('mechanical keyboards 2027'), ok)).toMatch(/ask_user/)
+  })
+
+  it('resets the streak when a successful other tool intervenes', () => {
     const rail = createSearchLoopRail()
     for (let i = 0; i < SEARCH_LOOP_NUDGE_AFTER; i += 1) {
-      rail.gate(search(`mechanical keyboards ${i === 0 ? '' : 'gaming'}`.trim()))
-      rail.observe(search(`mechanical keyboards ${i === 0 ? '' : 'gaming'}`.trim()))
+      rail.observe(search('mechanical keyboards gaming'), ok)
     }
-    rail.observe(other('navigate'))
+    rail.observe(other('navigate'), ok)
     expect(rail.gate(search('mechanical keyboards gaming'))).toEqual({ ok: true })
-    expect(rail.observe(search('mechanical keyboards gaming'))).toBeNull()
+    expect(rail.observe(search('mechanical keyboards gaming'), ok)).toBeNull()
+  })
+
+  it('keeps the streak when the intervening tool fails — the model is still blind (run 46)', () => {
+    const rail = createSearchLoopRail()
+    rail.observe(search('mechanical keyboards'), ok)
+    rail.observe(search('mechanical keyboards gaming'), ok)
+    expect(rail.observe(other('navigate'), fail)).toBeNull()
+    expect(rail.observe(search('mechanical keyboards gaming 2026'), ok)).toMatch(/ask_user/)
   })
 
   it('resets the streak when the model moves to a new search intent', () => {
     const rail = createSearchLoopRail()
-    rail.observe(search('mechanical keyboards'))
-    rail.observe(search('mechanical keyboards gaming'))
-    rail.observe(search('mechanical keyboards 2026'))
-    expect(rail.observe(search('weather in london'))).toBeNull()
-    expect(rail.observe(search('weather in tokyo'))).toBeNull()
+    rail.observe(search('mechanical keyboards'), ok)
+    rail.observe(search('mechanical keyboards gaming'), ok)
+    rail.observe(search('mechanical keyboards 2026'), ok)
+    expect(rail.observe(search('weather in london'), ok)).toBeNull()
+    expect(rail.observe(search('weather in tokyo'), ok)).toBeNull()
   })
 
   it('refuses pre-execution once the consecutive-similar cap is reached, with a reason the model can act on', () => {
     const rail = createSearchLoopRail()
     for (let i = 0; i < SEARCH_LOOP_REFUSE_AFTER; i += 1) {
       expect(rail.gate(search(`mechanical keyboards run ${i}`))).toEqual({ ok: true })
-      rail.observe(search(`mechanical keyboards run ${i}`))
+      rail.observe(search(`mechanical keyboards run ${i}`), ok)
     }
     const refusal = rail.gate(search('mechanical keyboards run 99'))
     expect(refusal.ok).toBe(false)
@@ -106,27 +121,27 @@ describe('createSearchLoopRail', () => {
     const rail = createSearchLoopRail()
     for (let i = 0; i < SEARCH_LOOP_REFUSE_AFTER; i += 1) {
       rail.gate(search(`mechanical keyboards run ${i}`))
-      rail.observe(search(`mechanical keyboards run ${i}`))
+      rail.observe(search(`mechanical keyboards run ${i}`), ok)
     }
     expect(rail.gate(search('train times tokyo osaka'))).toEqual({ ok: true })
   })
 
-  it('clears the cap after an intervening tool call — following the nudge recovers search', () => {
+  it('clears the cap after a successful other tool call — following the nudge recovers search', () => {
     const rail = createSearchLoopRail()
     for (let i = 0; i < SEARCH_LOOP_REFUSE_AFTER; i += 1) {
       rail.gate(search(`mechanical keyboards run ${i}`))
-      rail.observe(search(`mechanical keyboards run ${i}`))
+      rail.observe(search(`mechanical keyboards run ${i}`), ok)
     }
     expect(rail.gate(search('mechanical keyboards run 99')).ok).toBe(false)
-    rail.observe(other('read_page'))
+    rail.observe(other('read_page'), ok)
     expect(rail.gate(search('mechanical keyboards after reading'))).toEqual({ ok: true })
   })
 
   it('treats a web_search without a usable query as a reset, never a throw', () => {
     const rail = createSearchLoopRail()
-    rail.observe(search('mechanical keyboards'))
-    rail.observe(search('mechanical keyboards gaming'))
-    expect(rail.observe({ id: 's', name: 'web_search', args: {} })).toBeNull()
+    rail.observe(search('mechanical keyboards'), ok)
+    rail.observe(search('mechanical keyboards gaming'), ok)
+    expect(rail.observe({ id: 's', name: 'web_search', args: {} }, fail)).toBeNull()
     expect(rail.gate({ id: 's', name: 'web_search', args: { query: 7 } })).toEqual({ ok: true })
   })
 
@@ -134,7 +149,7 @@ describe('createSearchLoopRail', () => {
     const rail = createSearchLoopRail()
     for (let i = 0; i < SEARCH_LOOP_REFUSE_AFTER; i += 1) {
       rail.gate(search(`mechanical keyboards run ${i}`))
-      rail.observe(search(`mechanical keyboards run ${i}`))
+      rail.observe(search(`mechanical keyboards run ${i}`), ok)
     }
     expect(rail.gate(other('navigate'))).toEqual({ ok: true })
     expect(rail.gate(other('look'))).toEqual({ ok: true })

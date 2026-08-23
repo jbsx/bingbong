@@ -421,9 +421,10 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
             yield { type: 'tool_call', callId: call.id, name: call.name, args: call.args, at: clock.now() }
             const outcome = yield* runGatedTool(call, turnId, visionBudget, searchLoopRail, toolContext, run)
             // Search-loop rail (#74): observe every processed call (this is
-            // what tracks and resets the streak) and let an advisory nudge
-            // ride the search result the model sees and the feed shows.
-            const searchLoopNudge = searchLoopRail.observe(call)
+            // what tracks and resets the streak — a failed intervening tool
+            // leaves it alone) and let an advisory nudge ride the search
+            // result the model sees and the feed shows.
+            const searchLoopNudge = searchLoopRail.observe(call, outcome)
             const observedOutcome: ToolResultOutcome =
               searchLoopNudge && outcome.ok && typeof outcome.result === 'string'
                 ? { ok: true, result: `${outcome.result}\n\n${searchLoopNudge}` }
