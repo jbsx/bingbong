@@ -54,6 +54,13 @@ retains the most recent exchange (an accepted asymmetry).
 **Run**:
 One command execution: pipeline start to done/failed/cancelled.
 
+**Search Loop**:
+A run flailing blind — consecutive `web_search` calls rewording one intent with
+no intervening read or navigation. A run rail breaks it: an advisory nudge
+rides the 3rd similar result, further similar searches are refused at the 5th;
+any other tool call resets it.
+_Avoid_: search spam, retry storm
+
 **Boot Hydration**:
 What a restart renders from recorded history: at most the last exchange of an
 Active Session; a lapsed Session boots blank. Recording is never trimmed by

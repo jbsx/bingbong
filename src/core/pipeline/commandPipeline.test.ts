@@ -994,6 +994,98 @@ describe('command pipeline', () => {
     })
   })
 
+  it('appends the search-loop nudge to the third consecutive similar web_search result (#74)', async () => {
+    let executions = 0
+    const search = {
+      name: 'web_search',
+      async execute() {
+        executions += 1
+        return '1. A result — https://example.com/a'
+      },
+    }
+    const llm = new ScriptedLlm([
+      { kind: 'tool_calls', calls: [{ id: 's1', name: 'web_search', args: { query: 'best mechanical keyboards 2026' } }] },
+      { kind: 'tool_calls', calls: [{ id: 's2', name: 'web_search', args: { query: 'best mechanical keyboard 2026 reddit' } }] },
+      { kind: 'tool_calls', calls: [{ id: 's3', name: 'web_search', args: { query: 'best mechanical keyboards 2026 guide' } }] },
+      { kind: 'answer', speak: 'Recovered.', display: 'Recovered.' },
+    ])
+    const pipeline = createCommandPipeline({ llm, tts: new RecordingTts(), clock: new FakeClock(), tools: [search] })
+
+    const events = await collect(pipeline, 'find keyboards')
+
+    expect(executions).toBe(3)
+    const results = events.filter((event) => event.type === 'tool_result' && event.ok)
+    expect(results[0]).toMatchObject({ result: expect.not.stringMatching(/ask_user/) })
+    expect(results[2]).toMatchObject({
+      result: expect.stringMatching(/1\. A result[\s\S]*web_search[\s\S]*ask_user/),
+    })
+    // The nudge rides the tool result into the next model round.
+    const lastResult = llm.requests[3].toolResults.at(-1)
+    expect(lastResult?.outcome).toMatchObject({ ok: true, result: expect.stringMatching(/ask_user/) })
+  })
+
+  it('resets the search-loop streak when another tool intervenes (#74)', async () => {
+    const search = {
+      name: 'web_search',
+      async execute() {
+        return '1. A result — https://example.com/a'
+      },
+    }
+    const navigate = {
+      name: 'navigate',
+      async execute() {
+        return 'navigated'
+      },
+    }
+    const llm = new ScriptedLlm([
+      { kind: 'tool_calls', calls: [{ id: 's1', name: 'web_search', args: { query: 'best mechanical keyboards 2026' } }] },
+      { kind: 'tool_calls', calls: [{ id: 's2', name: 'web_search', args: { query: 'best mechanical keyboards 2026 reddit' } }] },
+      { kind: 'tool_calls', calls: [{ id: 'n1', name: 'navigate', args: { url: 'https://example.com/a' } }] },
+      { kind: 'tool_calls', calls: [{ id: 's3', name: 'web_search', args: { query: 'best mechanical keyboards 2026 guide' } }] },
+      { kind: 'answer', speak: 'Done.', display: 'Done.' },
+    ])
+    const pipeline = createCommandPipeline({ llm, tts: new RecordingTts(), clock: new FakeClock(), tools: [search, navigate] })
+
+    const events = await collect(pipeline, 'find keyboards')
+
+    expect(
+      events.filter((event) => event.type === 'tool_result' && event.ok && typeof event.result === 'string' && event.result.includes('ask_user')),
+    ).toHaveLength(0)
+  })
+
+  it('refuses the search loop at the cap without executing, and the run continues (#74)', async () => {
+    let executions = 0
+    const search = {
+      name: 'web_search',
+      async execute() {
+        executions += 1
+        return '1. A result — https://example.com/a'
+      },
+    }
+    const searchRound = (i: number) => ({
+      kind: 'tool_calls' as const,
+      calls: [{ id: `s${i}`, name: 'web_search', args: { query: 'best mechanical keyboards 2026' } }],
+    })
+    const llm = new ScriptedLlm([
+      ...Array.from({ length: 6 }, (_, i) => searchRound(i)),
+      { kind: 'answer', speak: 'Recovered.', display: 'Recovered.' },
+    ])
+    const pipeline = createCommandPipeline({ llm, tts: new RecordingTts(), clock: new FakeClock(), tools: [search] })
+
+    const events = await collect(pipeline, 'find keyboards')
+
+    // Five similar searches ran; the sixth was refused before execution.
+    expect(executions).toBe(5)
+    const refusals = events.filter((event) => event.type === 'tool_result' && !event.ok)
+    expect(refusals).toHaveLength(1)
+    expect(refusals[0]).toMatchObject({
+      error: expect.stringMatching(/web_search loop limit \(5 consecutive similar searches\)/),
+    })
+    // A refusal redirects, it never fails the run.
+    expect(events.find((event) => event.type === 'error')).toBeUndefined()
+    expect(events.at(-1)).toMatchObject({ type: 'done', outcome: 'done' })
+  })
+
   it('rides the session store\'s history along on every LLM round, reading it live', async () => {
     let reads = 0
     const session = {

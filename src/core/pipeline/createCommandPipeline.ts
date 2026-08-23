@@ -16,6 +16,8 @@ import {
   MAX_ORCHESTRATOR_VISION_CALLS,
   type VisionBudget,
 } from '../agent/subagentRails'
+import type { SearchLoopRail } from './searchLoopRail'
+import { createSearchLoopRail } from './searchLoopRail'
 import { MAX_TOOL_ROUNDS_DEFAULT } from '../settings/settings'
 
 export interface CommandPipelineDeps {
@@ -313,6 +315,10 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
       try {
         const toolResults: ToolResult[] = []
         const visionBudget = createVisionBudget(MAX_ORCHESTRATOR_VISION_CALLS)
+        // Run rails (#74): per-run streak of consecutive similar web_search
+        // calls — nudges first, refuses at the cap, resets on any other
+        // tool. Created fresh per run, like the vision budget.
+        const searchLoopRail = createSearchLoopRail()
         const toolContext: ToolContext = {
           clock,
           acquireVision: () => visionBudget.tryAcquire(),
@@ -413,14 +419,22 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
               break
             }
             yield { type: 'tool_call', callId: call.id, name: call.name, args: call.args, at: clock.now() }
-            const outcome = yield* runGatedTool(call, turnId, visionBudget, toolContext, run)
-            toolResults.push({ call, outcome })
+            const outcome = yield* runGatedTool(call, turnId, visionBudget, searchLoopRail, toolContext, run)
+            // Search-loop rail (#74): observe every processed call (this is
+            // what tracks and resets the streak) and let an advisory nudge
+            // ride the search result the model sees and the feed shows.
+            const searchLoopNudge = searchLoopRail.observe(call)
+            const observedOutcome: ToolResultOutcome =
+              searchLoopNudge && outcome.ok && typeof outcome.result === 'string'
+                ? { ok: true, result: `${outcome.result}\n\n${searchLoopNudge}` }
+                : outcome
+            toolResults.push({ call, outcome: observedOutcome })
             yield {
               type: 'tool_result',
               callId: call.id,
               name: call.name,
-              ok: outcome.ok,
-              ...(outcome.ok ? { result: outcome.result } : { error: outcome.error }),
+              ok: observedOutcome.ok,
+              ...(observedOutcome.ok ? { result: observedOutcome.result } : { error: observedOutcome.error }),
               at: clock.now(),
             }
             const afterToolSteering = yield* checkpoint(run, 'acting')
@@ -467,6 +481,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
     call: ToolCall,
     turnId: string,
     visionBudget: VisionBudget,
+    searchLoopRail: SearchLoopRail,
     toolContext: ToolContext,
     run: ActiveRun,
   ): AsyncGenerator<UnstampedEvent, ToolResultOutcome> {
@@ -580,6 +595,12 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
       const grant = visionBudget.tryAcquire()
       if (!grant.ok) return { ok: false, error: grant.reason }
     }
+
+    // Run rails (#74): a blind search loop — consecutive similar web_search
+    // calls with nothing in between — is refused before it executes, like
+    // the vision budget. Any other tool call clears the cap.
+    const searchLoopGate = searchLoopRail.gate(call)
+    if (!searchLoopGate.ok) return { ok: false, error: searchLoopGate.reason }
 
     try {
       throwIfAborted(run)
