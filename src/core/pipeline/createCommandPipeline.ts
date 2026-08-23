@@ -561,6 +561,14 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
       }
     }
 
+    // Same-wall Blocker gate (#80, ADR 0010): while armed, browser calls
+    // targeting the walled host — other than read_page, look, and ask_user
+    // — are refused before it executes, with the escalation instruction.
+    // Ahead of the risk tiers on purpose: a call this run will not perform
+    // must never reach a user-facing confirmation.
+    const blockerGateVerdict = blockerGate.gate(call)
+    if (!blockerGateVerdict.ok) return { ok: false, error: blockerGateVerdict.reason }
+
     // Hard policy lives here, in code: a denied call never reaches execute,
     // even if the user would have approved it.
     const verdict = await assessCall(tool, call)
@@ -623,12 +631,6 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
     // the vision budget. Any other tool call clears the cap.
     const searchLoopGate = searchLoopRail.gate(call)
     if (!searchLoopGate.ok) return { ok: false, error: searchLoopGate.reason }
-
-    // Same-wall Blocker gate (#80, ADR 0010): while armed, browser calls
-    // targeting the walled host — other than read_page, look, and ask_user
-    // — are refused before it executes, with the escalation instruction.
-    const blockerGateVerdict = blockerGate.gate(call)
-    if (!blockerGateVerdict.ok) return { ok: false, error: blockerGateVerdict.reason }
 
     try {
       throwIfAborted(run)

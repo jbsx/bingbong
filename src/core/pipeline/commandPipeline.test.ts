@@ -1325,6 +1325,46 @@ describe('command pipeline', () => {
     expect(events.filter((event) => event.type === 'tool_result' && !event.ok)).toHaveLength(0)
   })
 
+  it('refuses a walled-host confirm-tier call before any user-facing confirmation opens (#80)', async () => {
+    const WALLED = 'navigated to https://www.reddit.com/search\nBLOCKER:challenge www.reddit.com\nThis page is a Blocker — a challenge wall.'
+    const current = 'www.reddit.com'
+    let executions = 0
+    const navigate = {
+      name: 'navigate',
+      async execute() {
+        return WALLED
+      },
+    }
+    const submitClick = {
+      name: 'click',
+      assessRisk: () => ({ kind: 'confirm' as const, prompt: 'Click this submit button?' }),
+      async execute() {
+        executions += 1
+        return 'clicked'
+      },
+    }
+    const llm = new ScriptedLlm([
+      { kind: 'tool_calls', calls: [{ id: 'n1', name: 'navigate', args: { url: 'https://www.reddit.com/search' } }] },
+      { kind: 'tool_calls', calls: [{ id: 'c1', name: 'click', args: { ref: 9 } }] },
+      { kind: 'answer', speak: 'Escalated instead.', display: 'Escalated instead.' },
+    ])
+    const pipeline = createCommandPipeline({
+      llm,
+      tts: new RecordingTts(),
+      clock: new FakeClock(),
+      tools: [navigate, submitClick],
+      currentHost: () => current,
+    })
+
+    const events = await collect(pipeline, 'post the comment')
+
+    expect(executions).toBe(0)
+    expect(events.some((event) => event.type === 'confirmation_requested')).toBe(false)
+    expect(events.find((event) => event.type === 'tool_result' && !event.ok)).toMatchObject({
+      error: expect.stringMatching(/www\.reddit\.com is walled for this run/),
+    })
+  })
+
   it('rides the session store\'s history along on every LLM round, reading it live', async () => {
     let reads = 0
     const session = {
