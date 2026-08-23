@@ -98,19 +98,42 @@ territory, everything else voice-reachable.
 
 ### Browser
 
+**On-Screen Principle**:
+Every web read and write happens in a rendered, visible tab. Off-screen fetching of web content does not exist.
+_Avoid_: background fetch, scraping, headless lookup
+
 **Consent Dialog**:
 A cookie/consent wall auto-dismissed on read, privacy-preferring controls
 first.
 
 **Blocker**:
-Anything between the agent and page content: Consent Dialogs, CAPTCHAs, login
-walls, paywalls, age gates, file-select dialogs. Detected dynamically, then
-escalated — never auto-cleared (the Consent Dialog is the one exception).
+Anything between the agent and page content: Consent Dialogs, CAPTCHAs,
+login walls, paywalls, age gates, file-select dialogs. Detected mechanically
+— in code, at navigation and at read — then escalated; never auto-cleared
+(the Consent Dialog is the one exception).
 _Avoid_: obstacle
+
+**Challenge**:
+A Blocker the user can clear on screen — a CAPTCHA or human-verification
+wall. Escalation asks the user to complete it in view.
+_Avoid_: captcha wall
+
+**Network Block**:
+A Blocker no in-view action clears — the site refuses this network or
+session outright. Escalation offers sign-in or a different route.
+_Avoid_: IP ban, blacklist
 
 **Escalation**:
 Handing a Blocker from the agent to the user via a spoken ask — the fallback
 when no automatic path exists.
+
+### Delegation
+
+**Subagent**:
+A delegated worker spawned mid-run. Browse kinds work in their own visible
+tab; background kinds do approved non-web file work. No subagent fetches the
+web off-screen.
+_Avoid_: research agent, worker, task runner
 
 ### Vision
 
