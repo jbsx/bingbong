@@ -31,6 +31,17 @@ export interface ToolParameterSpec {
 }
 
 /**
+ * Models send numbers as strings ("2") often enough that every numeric arg
+ * passes through this coercion (media seek established it): a non-empty
+ * string becomes its Number, anything else passes through; the result is
+ * undefined unless it is a finite number. Callers layer their own bounds.
+ */
+export function coercedNumber(value: unknown): number | undefined {
+  const coerced = typeof value === 'string' && value.trim() !== '' ? Number(value) : value
+  return typeof coerced === 'number' && Number.isFinite(coerced) ? coerced : undefined
+}
+
+/**
  * Risk-gate verdict for a single tool call, decided in code (never by the
  * model): 'allow' runs immediately, 'confirm' blocks on a user confirmation
  * showing the prompt, 'deny' never runs — the reason goes back to the model

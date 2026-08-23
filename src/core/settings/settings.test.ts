@@ -7,6 +7,8 @@ import {
   ENDPOINT_DELAY_MS_MIN,
   MAX_TOOL_ROUNDS_MAX,
   MAX_TOOL_ROUNDS_MIN,
+  RESUMPTION_MERGE_MS_MAX,
+  RESUMPTION_MERGE_MS_MIN,
   WEB_ZOOM_PERCENT_MAX,
   WEB_ZOOM_PERCENT_MIN,
   WAKE_WORD_THRESHOLD_MAX,
@@ -21,6 +23,7 @@ describe('defaultSettings', () => {
     expect(settings.wakeWordThreshold).toBeGreaterThan(0)
     expect(settings.wakeWordThreshold).toBeLessThanOrEqual(1)
     expect(settings.endpointDelayMs).toBe(900)
+    expect(settings.resumptionMergeMs).toBe(1500)
     expect(settings.maxToolRounds).toBe(80)
     expect(settings.webZoomPercent).toBe(130)
     expect(settings.ttsVoice).toBe('')
@@ -53,6 +56,7 @@ describe('sanitizeSettings', () => {
       micId: 'abc',
       wakeWordThreshold: 0.8,
       endpointDelayMs: 650,
+      resumptionMergeMs: 1_200,
       webZoomPercent: 100,
       ttsVoice: 'en_US-lessac-high',
       weather: { city: 'Berlin', units: 'imperial' },
@@ -78,6 +82,12 @@ describe('sanitizeSettings', () => {
   it('clamps the endpoint delay into its slider range', () => {
     expect(sanitizeSettings({ endpointDelayMs: 10 }).endpointDelayMs).toBe(ENDPOINT_DELAY_MS_MIN)
     expect(sanitizeSettings({ endpointDelayMs: 90_000 }).endpointDelayMs).toBe(ENDPOINT_DELAY_MS_MAX)
+    expect(sanitizeSettings({ resumptionMergeMs: 2_500 }).resumptionMergeMs).toBe(2_500)
+    expect(sanitizeSettings({ resumptionMergeMs: -1 }).resumptionMergeMs).toBe(RESUMPTION_MERGE_MS_MIN)
+    expect(sanitizeSettings({ resumptionMergeMs: 60_000 }).resumptionMergeMs).toBe(RESUMPTION_MERGE_MS_MAX)
+    expect(sanitizeSettings({}).resumptionMergeMs).toBe(defaultSettings().resumptionMergeMs)
+    expect(sanitizeSettings({ resumptionMergeMs: 'soon' }).resumptionMergeMs).toBe(defaultSettings().resumptionMergeMs)
+    expect(sanitizeSettings({ resumptionMergeMs: null }).resumptionMergeMs).toBe(defaultSettings().resumptionMergeMs)
     // Missing and garbage values fall back to the ~900 ms default (#37/#60).
     expect(sanitizeSettings({}).endpointDelayMs).toBe(defaultSettings().endpointDelayMs)
     expect(sanitizeSettings({ endpointDelayMs: 'soon' }).endpointDelayMs).toBe(defaultSettings().endpointDelayMs)

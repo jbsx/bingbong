@@ -1,5 +1,5 @@
 import type { BrowserController, KeyPress } from '../ports/browser'
-import type { Tool, ToolParameterSpec } from './tool'
+import { coercedNumber, type Tool, type ToolParameterSpec } from './tool'
 
 // Media verbs for the orchestrator, driven by key injection on the focused
 // page (YouTube's shortcuts: k toggles play, arrows nudge volume, Shift+N
@@ -29,9 +29,8 @@ function isMediaAction(value: unknown): value is MediaAction {
 }
 
 function seekOffset(value: unknown): number | null {
-  const offset = typeof value === 'string' && value.trim() !== '' ? Number(value) : value
-  if (typeof offset !== 'number' || !Number.isFinite(offset) || offset === 0) return null
-  return offset
+  const offset = coercedNumber(value)
+  return offset !== undefined && offset !== 0 ? offset : null
 }
 
 function seekPresses(offset: number): { press: KeyPress; times: number } {

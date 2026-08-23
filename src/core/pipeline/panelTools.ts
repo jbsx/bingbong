@@ -9,6 +9,7 @@ import {
   type FeedPanelState,
 } from '../panel/feedPanelState'
 import type { Tool, ToolParameterSpec } from './tool'
+import { coercedNumber } from './tool'
 
 // Panel voice tools (#64/#71, ADR 0006): the orchestrator opens/collapses,
 // docks/floats, and resizes the feed panel by model-invoked tools on the
@@ -34,12 +35,12 @@ export interface PanelControls {
 }
 
 /**
- * A step count may arrive as a string ("2"); media seek established the
- * coercion. Anything but a whole number 1-max rejects — emphasis has bounds.
+ * A step count may arrive as a string ("2") — the shared coercion. Anything
+ * but a whole number 1-max rejects — emphasis has bounds.
  */
 function stepCount(raw: unknown): number {
-  const value = typeof raw === 'string' && raw.trim() !== '' ? Number(raw) : raw
-  if (typeof value !== 'number' || !Number.isInteger(value) || value < 1 || value > FEED_PANEL_WIDTH_MAX_STEPS) {
+  const value = coercedNumber(raw)
+  if (value === undefined || !Number.isInteger(value) || value < 1 || value > FEED_PANEL_WIDTH_MAX_STEPS) {
     throw new Error(`set_panel_width: 'steps' must be a whole number 1-${FEED_PANEL_WIDTH_MAX_STEPS}`)
   }
   return value

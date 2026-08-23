@@ -6,7 +6,7 @@
 // speech inside the window rejoins the same utterance (a mid-sentence pause
 // is not half a command), silence submits it.
 
-import { ENDPOINT_DELAY_MS_DEFAULT } from '../settings/settings.ts'
+import { ENDPOINT_DELAY_MS_DEFAULT, RESUMPTION_MERGE_MS_DEFAULT } from '../settings/settings.ts'
 
 /** Silero v5 consumes fixed 512-sample windows at 16 kHz. */
 export const VAD_FRAME_SAMPLES = 512
@@ -21,8 +21,10 @@ export function silenceFramesForMs(ms: number): number {
 /**
  * Resumption-merge window (#60): after the endpoint fires, submission holds
  * this long for resumed speech. Tunable through the endpointer-config seam.
+ * The constant lives in settings (the Setting's home, like the endpoint
+ * delay); re-exported for the existing importers.
  */
-export const RESUMPTION_MERGE_MS_DEFAULT = 1_500
+export { RESUMPTION_MERGE_MS_DEFAULT }
 
 export interface UtteranceEndpointerConfig {
   /** Probability at/above which a frame counts as speech. */

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { AppSettings, RoleRoutingSettings } from '../../core/settings/settings'
 import type { AgentRole } from '../../core/agent/modelRouting'
-import { ENDPOINT_DELAY_MS_MAX, ENDPOINT_DELAY_MS_MIN, MAX_TOOL_ROUNDS_MAX, MAX_TOOL_ROUNDS_MIN, WEB_ZOOM_PERCENT_MAX, WEB_ZOOM_PERCENT_MIN, WAKE_WORD_THRESHOLD_MAX, WAKE_WORD_THRESHOLD_MIN, asSttModel } from '../../core/settings/settings'
+import { ENDPOINT_DELAY_MS_MAX, ENDPOINT_DELAY_MS_MIN, MAX_TOOL_ROUNDS_MAX, MAX_TOOL_ROUNDS_MIN, RESUMPTION_MERGE_MS_MAX, RESUMPTION_MERGE_MS_MIN, WEB_ZOOM_PERCENT_MAX, WEB_ZOOM_PERCENT_MIN, WAKE_WORD_THRESHOLD_MAX, WAKE_WORD_THRESHOLD_MIN, asSttModel } from '../../core/settings/settings'
 import type { UsageSummary } from '../../core/agent/spendEstimate'
 import { DEFAULT_PIPER_VOICE } from '../../core/tts/piperVoices'
 
@@ -284,6 +284,23 @@ export function SettingsPage({
           <p className="settings-note">
             How long a pause ends your turn — lower responds sooner, higher avoids cutting you
             off mid-thought. Applies to the next utterance, no restart.
+          </p>
+          <Field
+            label={`Merge window — ${draft.resumptionMergeMs === 0 ? 'off' : `${draft.resumptionMergeMs} ms`}`}
+          >
+            <input
+              type="range"
+              min={RESUMPTION_MERGE_MS_MIN}
+              max={RESUMPTION_MERGE_MS_MAX}
+              step={100}
+              value={draft.resumptionMergeMs}
+              aria-label="Merge window"
+              onChange={(event) => setDraft({ ...draft, resumptionMergeMs: Number(event.target.value) })}
+            />
+          </Field>
+          <p className="settings-note">
+            After that pause, how long speech may resume and still join the same turn — 0 submits
+            immediately. Applies to the next utterance, no restart.
           </p>
           <Field label="STT model">
             <select

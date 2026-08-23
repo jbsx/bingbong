@@ -53,6 +53,16 @@ describe('createSetSettingTool', () => {
     expect(result).toBe('Endpoint delay set to 1200 ms.')
   })
 
+  it('sets the resumption-merge window — 0 disables the hold', async () => {
+    const { settings, result } = await executeSetting({ setting: 'resumption_merge_ms', number_value: 2_200 })
+    expect(settings.get().resumptionMergeMs).toBe(2_200)
+    expect(result).toBe('Merge window set to 2200 ms.')
+
+    const off = await executeSetting({ setting: 'resumption_merge_ms', number_value: 0 })
+    expect(off.settings.get().resumptionMergeMs).toBe(0)
+    expect(off.result).toBe('Merge window disabled.')
+  })
+
   it('sets string settings: tts voice and weather city', async () => {
     const voice = await executeSetting({ setting: 'tts_voice', string_value: 'en_US-lessac-medium' })
     expect(voice.settings.get().ttsVoice).toBe('en_US-lessac-medium')
@@ -180,6 +190,7 @@ describe('createSetSettingTool', () => {
     expect(tool.parameters?.['setting']?.enum).toEqual([
       'wake_word_threshold',
       'endpoint_delay_ms',
+      'resumption_merge_ms',
       'tts_voice',
       'adblock_enabled',
       'web_zoom_percent',

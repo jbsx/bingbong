@@ -1,6 +1,6 @@
 import { AGENT_ROLES, type AgentRole } from '../agent/modelRouting'
 import type { AppSettings } from '../settings/settings'
-import type { Tool, ToolParameterSpec } from './tool'
+import { coercedNumber, type Tool, type ToolParameterSpec } from './tool'
 
 // set_setting + app_control (#67, ADR 0006): every non-credential Setting is
 // voice-reachable. set_setting writes through the same settings-store seam
@@ -43,6 +43,7 @@ export interface AppControls {
 const SETTING_KEYS = [
   'wake_word_threshold',
   'endpoint_delay_ms',
+  'resumption_merge_ms',
   'tts_voice',
   'adblock_enabled',
   'web_zoom_percent',
@@ -84,6 +85,11 @@ const SETTING_SPECS: Record<SettingKey, SettingSpec> = {
     kind: 'number',
     patch: (value) => ({ endpointDelayMs: value }),
     describe: (s) => `Endpoint delay set to ${s.endpointDelayMs} ms.`,
+  },
+  resumption_merge_ms: {
+    kind: 'number',
+    patch: (value) => ({ resumptionMergeMs: value }),
+    describe: (s) => (s.resumptionMergeMs === 0 ? 'Merge window disabled.' : `Merge window set to ${s.resumptionMergeMs} ms.`),
   },
   tts_voice: {
     kind: 'string',
@@ -146,16 +152,10 @@ function isAgentRole(value: unknown): value is AgentRole {
   return typeof value === 'string' && (AGENT_ROLES as readonly string[]).includes(value)
 }
 
-/** A numeric arg may arrive as a string ("900"); media seek established the coercion. */
-function numericArg(value: unknown): number | undefined {
-  const coerced = typeof value === 'string' && value.trim() !== '' ? Number(value) : value
-  return typeof coerced === 'number' && Number.isFinite(coerced) ? coerced : undefined
-}
-
 function typedValue(key: SettingKey, args: Record<string, unknown>): unknown {
   const spec = SETTING_SPECS[key]
   if (spec.kind === 'number') {
-    const value = numericArg(args.number_value)
+    const value = coercedNumber(args.number_value)
     if (value === undefined) throw new Error(`set_setting: ${key} needs number_value`)
     return value
   }
@@ -197,14 +197,15 @@ export function createSetSettingTool(settings: SettingsControls): Tool {
       enum: [...SETTING_KEYS],
       description:
         'The Setting to change: wake_word_threshold (0–1), endpoint_delay_ms (200–1500 silence that submits an utterance), ' +
-        'tts_voice (Piper voice id), adblock_enabled, web_zoom_percent (75–200), weather_city, weather_units ' +
-        '(metric|imperial), stt_model (base|medium), max_tool_rounds, model_routing_model or model_routing_base_url ' +
-        '(with role). Credentials, API keys and microphone are keyboard-only.',
+        'resumption_merge_ms (0–3000 silence held for resumed speech before submitting, 0 off), tts_voice (Piper voice id), ' +
+        'adblock_enabled, web_zoom_percent (75–200), weather_city, weather_units (metric|imperial), stt_model (base|medium), ' +
+        'max_tool_rounds, model_routing_model or model_routing_base_url (with role). Credentials, API keys and microphone ' +
+        'are keyboard-only.',
     },
     number_value: {
       type: 'number',
       description:
-        'The new value for numeric settings (wake_word_threshold, endpoint_delay_ms, web_zoom_percent, max_tool_rounds)',
+        'The new value for numeric settings (wake_word_threshold, endpoint_delay_ms, resumption_merge_ms, web_zoom_percent, max_tool_rounds)',
       required: false,
     },
     string_value: {
@@ -229,7 +230,7 @@ export function createSetSettingTool(settings: SettingsControls): Tool {
   return {
     name: 'set_setting',
     description:
-      'Change one of the app Settings by voice: wake word threshold, endpoint delay, TTS voice, adblock, ' +
+      'Change one of the app Settings by voice: wake word threshold, endpoint delay, merge window, TTS voice, adblock, ' +
       'web zoom, weather city/units, STT model, tool-round ceiling, or model routing (model or base URL per ' +
       'role). Applies immediately with no confirmation. Credentials, API keys and microphone selection are ' +
       'not voice-reachable — the user must type those in the settings page.',
