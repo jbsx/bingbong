@@ -1,3 +1,4 @@
+import { VisionDeadlineError } from '../ports/vision'
 import type { PipelineEvent } from './events'
 import type { RiskVerdict, Tool, ToolContext } from './tool'
 import type { Clock } from '../ports/clock'
@@ -606,17 +607,16 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
       return { ok: true, result }
     } catch (err) {
       if (err instanceof CommandAbortedError) throw err
-      const message = toErrorMessage(err)
       // ADR 0008: a missed Vision Deadline must not become a blind browse —
       // the failure carries an advisory nudge to fall back to the DOM or
       // escalate, mirroring the Blocker nudge pattern.
-      if (tool.usesVision && /timed out after \d+ms/.test(message)) {
+      if (err instanceof VisionDeadlineError) {
         return {
           ok: false,
-          error: `${message}\nVision is unavailable right now. Proceed with the DOM snapshot (read_page) or ask_user — do not keep retrying look.`,
+          error: `${err.message}\nVision is unavailable right now. Proceed with the DOM snapshot (read_page) or ask_user — do not keep retrying look.`,
         }
       }
-      return { ok: false, error: message }
+      return { ok: false, error: toErrorMessage(err) }
     }
   }
 

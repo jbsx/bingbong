@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { VisionDeadlineError } from '../ports/vision'
 import { createCommandPipeline, type CommandPipeline } from './createCommandPipeline'
 import { steerPipeline } from './steering'
 import { createSpeechCoordinator } from '../tts/speechCoordinator'
@@ -935,7 +936,7 @@ describe('command pipeline', () => {
       name: 'look',
       usesVision: true,
       async execute() {
-        throw new Error('Vision request timed out after 15000ms')
+        throw new VisionDeadlineError(15_000)
       },
     }
     const llm = new ScriptedLlm([

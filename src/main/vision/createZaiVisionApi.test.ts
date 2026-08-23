@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { VisionDescribeRequest, VisionLocateRequest } from '../../core/ports/vision'
-import { createZaiVisionApi, DESCRIBE_MAX_TOKENS, DESCRIBE_TIMEOUT_MS, LOCATE_MAX_TOKENS, LOCATE_TIMEOUT_MS, resolveVisionTimeouts } from './createZaiVisionApi'
+import { VisionDeadlineError } from '../../core/ports/vision'
+import { createZaiVisionApi, DESCRIBE_MAX_TOKENS, LOCATE_MAX_TOKENS, resolveVisionTimeouts } from './createZaiVisionApi'
 
 const locateRequest: VisionLocateRequest = {
   image: new Uint8Array([1, 2, 3]),
@@ -29,34 +30,54 @@ function okResponse(content: string): Response {
 }
 
 describe('createZaiVisionApi', () => {
-  it('resolveVisionTimeouts: 15s describe / 60s locate, one env var scales both, bad values ignored', () => {
-    expect(resolveVisionTimeouts({})).toEqual({ describeMs: DESCRIBE_TIMEOUT_MS, locateMs: LOCATE_TIMEOUT_MS })
-    expect(DESCRIBE_TIMEOUT_MS).toBe(15_000)
-    expect(LOCATE_TIMEOUT_MS).toBe(60_000)
-    expect(resolveVisionTimeouts({ BINGBONG_VISION_TIMEOUT_MS: '2' })).toEqual({
-      describeMs: 2_000,
-      locateMs: 8_000,
-    })
-    expect(resolveVisionTimeouts({ BINGBONG_VISION_TIMEOUT_MS: 'soon' })).toEqual({
-      describeMs: DESCRIBE_TIMEOUT_MS,
-      locateMs: LOCATE_TIMEOUT_MS,
-    })
-    expect(resolveVisionTimeouts({ BINGBONG_VISION_TIMEOUT_MS: '0' })).toEqual({
-      describeMs: DESCRIBE_TIMEOUT_MS,
-      locateMs: LOCATE_TIMEOUT_MS,
-    })
+  it('resolveVisionTimeouts: 15s describe / 60s locate, seconds-based env scaling with plausible bounds', () => {
+    expect(resolveVisionTimeouts({})).toEqual({ describeMs: 15_000, locateMs: 60_000 })
+    expect(resolveVisionTimeouts({ BINGBONG_VISION_TIMEOUT_MS: '2' })).toEqual({ describeMs: 2_000, locateMs: 8_000 })
+    // Non-numeric, zero, negative: defaults.
+    for (const raw of ['soon', '0', '-5']) {
+      expect(resolveVisionTimeouts({ BINGBONG_VISION_TIMEOUT_MS: raw })).toEqual({ describeMs: 15_000, locateMs: 60_000 })
+    }
+    // Implausibly large (a legacy milliseconds value like 30000) is rejected to defaults.
+    expect(resolveVisionTimeouts({ BINGBONG_VISION_TIMEOUT_MS: '30000' })).toEqual({ describeMs: 15_000, locateMs: 60_000 })
   })
 
-  it('times out a stuck call per capability and reports the deadline in the message', async () => {
-    const never = new Promise<Response>(() => {})
+  it('times out a stuck call per capability, aborting the request and naming the deadline', async () => {
+    let observedSignal: AbortSignal | undefined
     const vision = createZaiVisionApi({
       getEnv: () => ({ ...configuredEnv }),
-      fetch: async () => never,
+      fetch: async (_url, init) => {
+        observedSignal = init?.signal ?? undefined
+        return new Promise<Response>((_resolve, reject) => {
+          init?.signal?.addEventListener('abort', () => reject(new Error('aborted')), { once: true })
+        })
+      },
       timeoutMs: { describeMs: 30, locateMs: 60 },
     })
 
-    await expect(vision.describe(describeRequest)).rejects.toThrow(/timed out after 30ms/)
-    await expect(vision.locate(locateRequest)).rejects.toThrow(/timed out after 60ms/)
+    const failure = await vision.describe(describeRequest).catch((error: unknown) => error)
+    expect(failure).toBeInstanceOf(VisionDeadlineError)
+    expect(String((failure as Error).message)).toContain('timed out after 30ms')
+    expect(observedSignal?.aborted).toBe(true)
+    await expect(vision.locate(locateRequest)).rejects.toBeInstanceOf(VisionDeadlineError)
+  })
+
+  it('covers slow response bodies within the deadline', async () => {
+    const vision = createZaiVisionApi({
+      getEnv: () => ({ ...configuredEnv }),
+      fetch: async () =>
+        new Response(
+          new ReadableStream({
+            start(controller) {
+              // Headers arrive; the body never completes within the deadline.
+              setTimeout(() => controller.error(new Error('body never finishes')), 5_000)
+            },
+          }),
+          { status: 200 },
+        ),
+      timeoutMs: { describeMs: 50, locateMs: 50 },
+    })
+
+    await expect(vision.describe(describeRequest)).rejects.toBeInstanceOf(VisionDeadlineError)
   })
 
   it('describe: disables thinking and caps tokens on the fast path', async () => {
@@ -100,7 +121,7 @@ describe('createZaiVisionApi', () => {
     expect(prompt).toContain('800x600')
   })
 
-  it('sends the screenshot as base64 image_url parts', async () => {
+  it('sends the screenshot as a base64 image_url part', async () => {
     let content: unknown
     const vision = createZaiVisionApi({
       getEnv: () => ({ ...configuredEnv }),
@@ -135,5 +156,26 @@ describe('createZaiVisionApi', () => {
       })
       await expect(vision.locate(locateRequest)).rejects.toThrow(/valid JSON point|outside the viewport/)
     }
+  })
+
+  it('serves scripted describe/locate test hooks without live calls', async () => {
+    const calls: string[] = []
+    const vision = createZaiVisionApi({
+      getEnv: () => ({
+        ...configuredEnv,
+        BINGBONG_VISION_SCRIPT: JSON.stringify([{ x: 10, y: 20 }]),
+        BINGBONG_VISION_DESCRIPTION_SCRIPT: JSON.stringify(['Scripted state.']),
+      }),
+      fetch: async (url) => {
+        calls.push(String(url))
+        return okResponse('unused')
+      },
+    })
+
+    await expect(vision.locate(locateRequest)).resolves.toEqual({ x: 10, y: 20 })
+    await expect(vision.describe(describeRequest)).resolves.toBe('Scripted state.')
+    expect(calls).toEqual([])
+    await expect(vision.locate(locateRequest)).rejects.toThrow(/ran out of points/)
+    await expect(vision.describe(describeRequest)).rejects.toThrow(/ran out of descriptions/)
   })
 })

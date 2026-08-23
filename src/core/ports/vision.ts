@@ -14,6 +14,15 @@ export interface VisionDescribeRequest {
 
 export type VisionLocation = ViewportPoint
 
+/** A Look that missed its Vision Deadline (ADR 0008). Typed so callers key
+ * advisory behaviour off the error class, not message text. */
+export class VisionDeadlineError extends Error {
+  constructor(deadlineMs: number) {
+    super(`Vision request timed out after ${deadlineMs}ms`)
+    this.name = 'VisionDeadlineError'
+  }
+}
+
 export interface VisionLocator {
   locate(request: VisionLocateRequest): Promise<VisionLocation>
 }
