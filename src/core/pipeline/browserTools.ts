@@ -15,7 +15,7 @@ const AUTO_VISION_PROMPT =
 // what would actually help. Advisory only — never performs or orders any
 // page action.
 function blockerSuffix(verdict: BlockerClassification): string {
-  return verdict.marker === null ? verdict.nudge : `${verdict.marker}\n${verdict.nudge}`
+  return `${verdict.marker}\n${verdict.nudge}`
 }
 
 // ADR 0007 layer 3 / ADR 0010 choke point 1: after a navigation settles,

@@ -54,11 +54,11 @@ export interface BlockerPageFacts {
 /** ADR 0010 verdict: flavor, walling host, machine marker, flavored nudge. */
 export interface BlockerClassification {
   signal: BlockerSignal
-  /** Hostname of the page the wall belongs to ('' when the URL won't parse). */
+  /** Hostname of the page the wall belongs to ('(unknown)' when the URL won't parse). */
   host: string
   /** Machine-readable line the model sees and the Blocker gate consumes:
-   * `BLOCKER:<signal> <host>`. Null only in the degraded no-hostname case. */
-  marker: string | null
+   * `BLOCKER:<signal> <host>`. Always present when a wall is detected. */
+  marker: string
   /** Flavored nudge naming what would actually help. */
   nudge: string
 }
@@ -76,8 +76,12 @@ const GOOGLE_HOST_RE = /(^|\.)google\.[a-z.]+$/i
 const SORRY_PATH_RE = /^\/sorry(\/|$)/i
 
 // Reddit's challenge redirect carries no title signal — the wall is in the
-// query string (runs 46/47): ?js_challenge=1&solution=…&sei=…
-const CHALLENGE_QUERY_PARAMS = new Set(['js_challenge', 'solution', 'sei'])
+// query string (runs 46/47): ?js_challenge=1&solution=…&sei=… Those params
+// were captured on reddit hosts; generic names like `solution` stay scoped
+// there, while `js_challenge` is specific enough to signal on any host.
+const REDDIT_HOST_RE = /(^|\.)reddit\.com$/i
+const CHALLENGE_QUERY_PARAMS_ANY_HOST = new Set(['js_challenge'])
+const CHALLENGE_QUERY_PARAMS_REDDIT = new Set(['js_challenge', 'solution', 'sei'])
 
 // Wall text the blocked page leads with (runs 46/47). "Near the digest
 // start": a wall page's leading text IS the wall, while an article about
@@ -123,7 +127,11 @@ function verdict(signal: BlockerSignal, url: string): BlockerClassification {
   }
   const nudge =
     signal === 'challenge' ? CHALLENGE_NUDGE : signal === 'network-block' ? NETWORK_BLOCK_NUDGE : LOGIN_NUDGE
-  return { signal, host, marker: host !== '' ? `BLOCKER:${signal} ${host}` : null, nudge }
+  // The marker line is the contract both choke points emit and the Blocker
+  // gate consumes — a detected wall always carries one, so a host-less
+  // degraded URL yields '(unknown)' (which never matches a real host, and
+  // therefore never arms a same-host refusal).
+  return { signal, host, marker: `BLOCKER:${signal} ${host !== '' ? host : '(unknown)'}`, nudge }
 }
 
 /**
@@ -170,7 +178,8 @@ export function classifyBlockerPage(facts: BlockerPageFacts): BlockerClassificat
     CHALLENGE_HOST_RE.test(hostname) ||
     /^\/recaptcha(\/|$)/i.test(pathname) ||
     (GOOGLE_HOST_RE.test(hostname) && SORRY_PATH_RE.test(pathname)) ||
-    queryParams.some((param) => CHALLENGE_QUERY_PARAMS.has(param))
+    queryParams.some((param) => CHALLENGE_QUERY_PARAMS_ANY_HOST.has(param)) ||
+    (REDDIT_HOST_RE.test(hostname) && queryParams.some((param) => CHALLENGE_QUERY_PARAMS_REDDIT.has(param)))
   ) {
     return verdict('challenge', facts.url)
   }

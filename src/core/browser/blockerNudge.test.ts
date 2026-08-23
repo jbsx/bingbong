@@ -128,7 +128,11 @@ describe('classifyBlockerPage (ADR 0010)', () => {
   it('detects the Reddit challenge-redirect query params', () => {
     expect(classifyBlockerPage({ url: 'https://www.reddit.com/?js_challenge=1&solution=x', title: 'Reddit' })).toMatchObject({ signal: 'challenge' })
     expect(classifyBlockerPage({ url: 'https://www.reddit.com/?sei=abc', title: 'Reddit' })).toMatchObject({ signal: 'challenge' })
-    expect(classifyBlockerPage({ url: 'https://www.example.com/?solution=42', title: 'Example' })).toMatchObject({ signal: 'challenge' })
+    expect(classifyBlockerPage({ url: 'https://www.reddit.com/?solution=42', title: 'Reddit' })).toMatchObject({ signal: 'challenge' })
+    // Generic names like `solution` stay scoped to the hosts the failed
+    // runs captured them on; `js_challenge` is specific enough for any host.
+    expect(classifyBlockerPage({ url: 'https://www.example.com/?js_challenge=1', title: 'Example' })).toMatchObject({ signal: 'challenge' })
+    expect(classifyBlockerPage({ url: 'https://www.example.com/?solution=42', title: 'Example' })).toBeNull()
     expect(classifyBlockerPage({ url: 'https://www.example.com/?resolution=42', title: 'Example' })).toBeNull()
   })
 
@@ -188,8 +192,12 @@ describe('classifyBlockerPage (ADR 0010)', () => {
     expect(networkBlock?.nudge).toMatch(/different route/)
   })
 
-  it('marks no host only in the degraded unparseable-URL case', () => {
-    expect(classifyBlockerPage({ url: '', title: 'Just a moment...' })).toMatchObject({ signal: 'challenge', marker: null })
+  it('always carries a machine marker, (unknown) host only in the degraded unparseable-URL case', () => {
+    expect(classifyBlockerPage({ url: '', title: 'Just a moment...' })).toMatchObject({
+      signal: 'challenge',
+      host: '',
+      marker: 'BLOCKER:challenge (unknown)',
+    })
     expect(classifyBlockerPage({ url: 'https://www.youtube.com/', title: 'YouTube' })).toBeNull()
     expect(classifyBlockerPage({ url: 'about:blank', title: '' })).toBeNull()
   })
