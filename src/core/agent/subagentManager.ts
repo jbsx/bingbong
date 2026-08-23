@@ -11,7 +11,7 @@ import { SubagentCancelledError } from './subagentRunner'
 // orchestrator model can read — a rail hit is a recoverable tool result,
 // never a crash.
 
-export type SubagentKind = 'research' | 'browse' | 'background'
+export type SubagentKind = 'browse' | 'background'
 
 export type SubagentStatus = 'running' | 'completed' | 'cancelled' | 'failed'
 
@@ -254,7 +254,6 @@ export function createSubagentManager(deps: SubagentManagerDeps): SubagentManage
 }
 
 const KIND_LABEL: Record<SubagentKind, string> = {
-  research: 'research',
   browse: 'browsing',
   background: 'background',
 }

@@ -36,28 +36,28 @@ describe('runSubagent', () => {
   })
 
   it('runs tool calls, reports progress per step, and returns the final report', async () => {
-    const search: Tool = {
-      name: 'web_search',
+    const navigate: Tool = {
+      name: 'navigate',
       async execute() {
-        return '1. Hit — https://hit.test'
+        return 'navigated: url=https://hit.test title="Hit"'
       },
     }
     const llm = new ScriptedLlm([
-      { kind: 'tool_calls', calls: [{ id: 's1', name: 'web_search', args: { query: 'keyboards' } }] },
+      { kind: 'tool_calls', calls: [{ id: 'n1', name: 'navigate', args: { url: 'https://hit.test' } }] },
       { kind: 'answer', speak: 'short', display: 'Full research report.' },
     ])
     const progress: { step: number; action: string }[] = []
 
     const result = await runSubagent(
-      { llm, tools: [search], clock: new FakeClock() },
-      { task: 'research keyboards', isCancelled: () => false, onProgress: (p) => progress.push(p) },
+      { llm, tools: [navigate], clock: new FakeClock() },
+      { task: 'open the hit page', isCancelled: () => false, onProgress: (p) => progress.push(p) },
     )
 
     expect(result).toBe('Full research report.')
-    expect(progress).toEqual([{ step: 1, action: 'search "keyboards"' }])
+    expect(progress).toEqual([{ step: 1, action: '→ https://hit.test' }])
     // The tool result reached the next LLM round.
     expect(llm.requests[1]?.toolResults).toMatchObject([
-      { call: { name: 'web_search' }, outcome: { ok: true, result: '1. Hit — https://hit.test' } },
+      { call: { name: 'navigate' }, outcome: { ok: true, result: 'navigated: url=https://hit.test title="Hit"' } },
     ])
   })
 

@@ -9,7 +9,7 @@ import { createSubagentTools } from './subagentTools'
 
 function fakeManager(overrides: Partial<SubagentManager> = {}): SubagentManager {
   return {
-    spawn: () => ({ ok: true, agent: { id: 'a-1', kind: 'research', task: 't', status: 'running', startedAt: 0, finishedAt: null, steps: 0, lastAction: null, result: null, error: null } }),
+    spawn: () => ({ ok: true, agent: { id: 'a-1', kind: 'background', task: 't', status: 'running', startedAt: 0, finishedAt: null, steps: 0, lastAction: null, result: null, error: null } }),
     cancel: () => ({ ok: true }),
     cancelAll: () => 0,
     pauseAll: () => {},
@@ -55,7 +55,7 @@ describe('subagent tools', () => {
     const spawn = tools.find((tool) => tool.name === 'spawn_agent')!
 
     await spawn.execute(
-      { id: 'c1', name: 'spawn_agent', args: { kind: 'research', task: 'x' } },
+      { id: 'c1', name: 'spawn_agent', args: { kind: 'browse', task: 'x' } },
       { clock: { now: () => 0, setTimer: () => () => {} }, turnId: 'turn-voice-8' },
     )
 
@@ -68,15 +68,16 @@ describe('subagent tools', () => {
     const ctx = { clock: { now: () => 0, setTimer: () => () => {} } }
 
     await expect(spawn.execute({ id: 'c1', name: 'spawn_agent', args: { kind: 'vibes', task: 'x' } }, ctx)).rejects.toThrow(/kind/)
-    await expect(spawn.execute({ id: 'c2', name: 'spawn_agent', args: { kind: 'research', task: '  ' } }, ctx)).rejects.toThrow(/task/)
-    expect(spawn.parameters?.kind?.enum).toEqual(['research', 'browse', 'background'])
+    await expect(spawn.execute({ id: 'c1', name: 'spawn_agent', args: { kind: 'research', task: 'x' } }, ctx)).rejects.toThrow(/kind/)
+    await expect(spawn.execute({ id: 'c2', name: 'spawn_agent', args: { kind: 'browse', task: '  ' } }, ctx)).rejects.toThrow(/task/)
+    expect(spawn.parameters?.kind?.enum).toEqual(['browse', 'background'])
   })
 
   it('confirmation-gates background file/download work at spawn', async () => {
     const spawn = createSubagentTools(fakeManager()).find((tool) => tool.name === 'spawn_agent')!
 
     expect(
-      await spawn.assessRisk!({ id: 'c1', name: 'spawn_agent', args: { kind: 'research', task: 'read' } }),
+      await spawn.assessRisk!({ id: 'c1', name: 'spawn_agent', args: { kind: 'browse', task: 'read' } }),
     ).toEqual({ kind: 'allow' })
     expect(
       await spawn.assessRisk!({ id: 'c2', name: 'spawn_agent', args: { kind: 'background', task: 'download report' } }),
@@ -90,7 +91,7 @@ describe('subagent tools', () => {
     const spawn = tools.find((tool) => tool.name === 'spawn_agent')!
 
     await expect(
-      spawn.execute({ id: 'c1', name: 'spawn_agent', args: { kind: 'research', task: 'x' } }, { clock: { now: () => 0, setTimer: () => () => {} } }),
+      spawn.execute({ id: 'c1', name: 'spawn_agent', args: { kind: 'browse', task: 'x' } }, { clock: { now: () => 0, setTimer: () => () => {} } }),
     ).rejects.toThrow('subagent limit (4) reached')
   })
 

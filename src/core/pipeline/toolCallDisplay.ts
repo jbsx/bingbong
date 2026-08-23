@@ -13,10 +13,6 @@ export function describeToolAction(name: string, args: Record<string, unknown>):
       return `type "${String(args.text ?? '')}" into [${String(args.ref ?? '?')}]`
     case 'scroll':
       return `scroll ${String(args.direction ?? '')}`
-    case 'web_search':
-      return `search "${String(args.query ?? '')}"`
-    case 'read_url':
-      return `read ${String(args.url ?? '')}`
     case 'media_control':
       return `media ${String(args.action ?? '')}${args.offset !== undefined ? ` ${String(args.offset)}s` : ''}`
     case 'read_page':
@@ -31,8 +27,10 @@ export function describeToolAction(name: string, args: Record<string, unknown>):
       return 'go back'
     case 'go_forward':
       return 'go forward'
-    case 'spawn_agent':
-      return `spawn ${String(args.kind ?? 'research')} agent: ${String(args.task ?? '')}`
+    case 'spawn_agent': {
+      const kind = typeof args.kind === 'string' && args.kind !== '' ? `${args.kind} ` : ''
+      return `spawn ${kind}agent: ${String(args.task ?? '')}`
+    }
     case 'cancel_agent':
       return `cancel ${String(args.agent_id ?? args.agentId ?? '')}`.trim()
     case 'agent_results':
@@ -82,10 +80,6 @@ export function describeToolIntent(name: string, args: string): string {
       return withTarget('typing', args, 'text')
     case 'scroll':
       return withTarget('scrolling', args, 'direction')
-    case 'web_search':
-      return withTarget('searching for', args, 'query')
-    case 'read_url':
-      return withTarget('reading', args, 'url')
     case 'media_control':
       return withTarget('media', args, 'action')
     case 'ground_visual':

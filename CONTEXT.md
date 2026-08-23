@@ -56,11 +56,11 @@ One command execution: pipeline start to done/failed/cancelled.
 
 **Search Loop**:
 A run flailing blind — consecutive searches rewording one intent with no
-intervening read or navigation. One search observation is a `web_search`
-call, a navigate to a q=-carrying search URL, or text typed into a search
-input (the GUI search signature). A run rail breaks it: an advisory nudge
-rides the 3rd similar result, further similar searches are refused after
-the 5th; a successful other tool call resets it.
+intervening read or navigation. One search observation is the GUI search
+signature: a navigate to a q=-carrying search URL (plain search terms
+normalize to exactly that) or text typed into a search input. A run rail
+breaks it: an advisory nudge rides the 3rd similar result, further similar
+searches are refused after the 5th; a successful other tool call resets it.
 _Avoid_: search spam, retry storm
 
 **Boot Hydration**:

@@ -2,7 +2,6 @@ import type { BrowserWindow } from 'electron'
 import type { Clock } from '../../core/ports/clock'
 import { systemClock } from '../../core/ports/clock'
 import type { TtsSpeaker } from '../../core/ports/tts'
-import type { SearchProvider } from '../../core/ports/search'
 import type { PipelineEvent } from '../../core/pipeline/events'
 import type { Tool } from '../../core/pipeline/tool'
 import type { UsageRecord } from '../../core/agent/usageTracking'
@@ -15,7 +14,6 @@ import { createSubagentTools } from '../../core/pipeline/subagentTools'
 import { createSubagentPanePool, type MainPaneRectSource, type SubagentPanePool } from '../browser/subagentPanePool'
 import { createSubagentTaskApi } from './createSubagentWorkhorse'
 import { createBackgroundTools } from './backgroundTools'
-import { createDuckDuckGoSearchProvider } from '../search/createDuckDuckGoSearchProvider'
 import { createZaiVisionApi } from '../vision/createZaiVisionApi'
 
 // Composes the whole subagent surface for one window (issue #13): tab
@@ -35,7 +33,6 @@ export interface SubagentRuntimeDeps {
   downloadsDir: string
   getEnv(): Record<string, string | undefined>
   fetchFn?: typeof fetch
-  search?: SearchProvider
   clock?: Clock
   tts: TtsSpeaker
   emit(event: PipelineEvent): void
@@ -73,7 +70,6 @@ function resolveLingerMs(env: Record<string, string | undefined>): number {
 export function createSubagentRuntime(deps: SubagentRuntimeDeps): SubagentRuntime {
   const clock = deps.clock ?? systemClock
   const fetchFn = deps.fetchFn ?? fetch
-  const search = deps.search ?? createDuckDuckGoSearchProvider({ fetchFn })
   const lingerMs = resolveLingerMs(deps.getEnv())
   const vision = createZaiVisionApi({ getEnv: deps.getEnv })
 
@@ -104,7 +100,6 @@ export function createSubagentRuntime(deps: SubagentRuntimeDeps): SubagentRuntim
       fetchFn,
       controllerFor: (agentId) => pool.controllerFor(agentId),
       backgroundTools: createBackgroundTools({ downloadsDir: deps.downloadsDir, fetchFn }),
-      search,
       clock,
       vision,
       ...(deps.onUsage ? { onUsage: deps.onUsage } : {}),

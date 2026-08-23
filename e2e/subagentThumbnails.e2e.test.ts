@@ -25,7 +25,7 @@ function orchestratorScript(): AssistantTurn[] {
         // exercising the per-view column staggering (an occluded parked
         // view never produces frames).
         { id: 's1', name: 'spawn_agent', args: { kind: 'browse', task: 'open the slow page then the interactive one' } },
-        { id: 's2', name: 'spawn_agent', args: { kind: 'research', task: 'think without a browser' } },
+        { id: 's2', name: 'spawn_agent', args: { kind: 'background', task: 'think without a browser' } },
         { id: 's3', name: 'spawn_agent', args: { kind: 'browse', task: 'visit the interactive page too' } },
       ],
     },
@@ -129,6 +129,14 @@ describe('subagent thumbnails e2e', () => {
   it('shows live thumbnails while the agents run, laid out at a desktop viewport', async () => {
     expect(await harness.dashboardEval<string>(commandBoxScript('browse then summarize'))).toBe('submitted')
 
+    // The background agent's spawn is confirm-gated (approved download/file
+    // work) — approve it so all three agents run.
+    await waitFor(
+      () => harness.dashboardEval<boolean>(`!!document.querySelector('.confirmation-card')`),
+      { timeoutMs: 20_000, intervalMs: 250 },
+    )
+    await harness.clickDashboardElement('.confirmation-actions button')
+
     // While the browse agents are still running (the slow page holds them
     // for ~3 s), BOTH cards show captured frames — two views parked edge-on
     // at once, each keeping its own unoccluded capture column. Frames are
@@ -157,7 +165,7 @@ describe('subagent thumbnails e2e', () => {
     expect(Math.round(layout.width * layout.dpr)).toBeGreaterThanOrEqual(1278)
     expect(Math.round(layout.height * layout.dpr)).toBeGreaterThanOrEqual(798)
 
-    // Cards without a tab (the research agent) never show a frame — no
+    // Cards without a tab (the background agent) never show a frame — no
     // capture, no placeholder.
     const thumbnails = await waitFor(
       async () => {

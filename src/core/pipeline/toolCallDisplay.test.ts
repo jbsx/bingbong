@@ -11,16 +11,16 @@ import { describeToolAction, describeToolIntent } from './toolCallDisplay'
 
 describe('describeToolIntent', () => {
   it.each([
-    ['complete args', 'web_search', '{"query":"mechanical keyboards"}', 'searching for \'mechanical keyboards\'…'],
+    ['complete args', 'type', '{"ref":7,"text":"mechanical keyboards"}', 'typing \'mechanical keyboards\'…'],
     ['target still streaming', 'click', '{"ref":"Sea', 'clicking \'Sea…\''],
     ['name only, args not started', 'click', '', 'clicking…'],
-    ['key arrived, value not started', 'web_search', '{"query":', 'searching for…'],
+    ['key arrived, value not started', 'type', '{"text":', 'typing…'],
     ['navigate url partial', 'navigate', '{"url":"https://you', 'opening \'https://you…\''],
     ['type partial', 'type', '{"ref":4,"text":"hello wo', 'typing \'hello wo…\''],
     ['numeric target streams raw', 'click', '{"ref":1', 'clicking \'1…\''],
-    ['escapes unescape as they close', 'web_search', '{"query":"say \\"hi\\"', 'searching for \'say "hi"…\''],
+    ['escapes unescape as they close', 'navigate', '{"url":"https://x.test/?q=say \\"hi\\"', 'opening \'https://x.test/?q=say "hi"…\''],
     ['ask_user', 'ask_user', '{"question":"which one?', 'asking you \'which one?…\''],
-    ['spawn_agent names the kind', 'spawn_agent', '{"kind":"research","task":"compare keyboards', 'spawning research agent: \'compare keyboards…\''],
+    ['spawn_agent names the kind', 'spawn_agent', '{"kind":"browse","task":"compare keyboards', 'spawning browse agent: \'compare keyboards…\''],
     ['no-args tool is the verb alone', 'read_page', '{}', 'reading the page…'],
     ['panel toggle is the verb alone', 'toggle_panel', '{}', 'toggling the panel…'],
     ['panel mode streams its target', 'set_panel_mode', '{"mode":"dock', "setting panel mode 'dock…'"],
@@ -35,9 +35,10 @@ describe('describeToolIntent', () => {
   })
 
   it('agrees with the outcome phrase once the args are complete', () => {
-    const args = '{"query":"mechanical keyboards"}'
-    expect(describeToolIntent('web_search', args)).toBe("searching for 'mechanical keyboards'…")
-    expect(describeToolAction('web_search', { query: 'mechanical keyboards' })).toBe('search "mechanical keyboards"')
+    const args = '{"ref":7,"text":"mechanical keyboards\\n"}'
+    // The streamed value's escapes unescape, so the newline is real here.
+    expect(describeToolIntent('type', args)).toBe('typing \'mechanical keyboards\n\'…')
+    expect(describeToolAction('type', { ref: 7, text: 'mechanical keyboards\n' })).toBe('type "mechanical keyboards\n" into [7]')
   })
 
   it('renders set_setting and app_control calls as compact feed lines', () => {
@@ -57,14 +58,14 @@ describe('describeToolIntent', () => {
   })
 
   it('is monotonic as fragments arrive — the line only grows', () => {
-    const fragments = ['{"qu', 'ery":"mech', 'anical key', 'boards"}']
-    const phrases = fragments.map((_, i) => describeToolIntent('web_search', fragments.slice(0, i + 1).join('')))
+    const fragments = ['{"te', 'xt":"mech', 'anical key', 'boards"}']
+    const phrases = fragments.map((_, i) => describeToolIntent('type', fragments.slice(0, i + 1).join('')))
     // Trailing ellipsis/quote markers shift when a value closes; the words
     // themselves never regress.
     const stripped = (phrase: string): string => phrase.replace(/…'?$/, '')
     for (let i = 1; i < phrases.length; i += 1) {
       expect(phrases[i]!.startsWith(stripped(phrases[i - 1]!))).toBe(true)
     }
-    expect(phrases.at(-1)).toBe("searching for 'mechanical keyboards'…")
+    expect(phrases.at(-1)).toBe("typing 'mechanical keyboards'…")
   })
 })

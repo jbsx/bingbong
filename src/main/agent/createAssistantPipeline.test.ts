@@ -1,8 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { createAssistantPipeline } from './createAssistantPipeline'
 import { createSessionMemory } from '../../core/session/sessionMemory'
-import { FakeAppControls, FakeBrowser, FakeClock, FakePanel, FakeSearch, FakeSettings, RecordingTts, fakeSubagentManager, subagentRecord } from '../../core/testing/doubles'
-import type { SearchResult } from '../../core/ports/search'
+import { FakeAppControls, FakeBrowser, FakeClock, FakePanel, FakeSettings, RecordingTts, fakeSubagentManager, subagentRecord } from '../../core/testing/doubles'
 import type { CommandPipeline } from '../../core/pipeline/createCommandPipeline'
 import type { PipelineEvent } from '../../core/pipeline/events'
 import { createSubagentTools } from '../../core/pipeline/subagentTools'
@@ -199,8 +198,7 @@ describe('createAssistantPipeline', () => {
     expect(requests[0].headers.authorization).toBe('Bearer test-key')
   })
 
-  it('exposes search and media tools alongside the browser verbs', async () => {
-    const results: SearchResult[] = [{ title: 'Hit', url: 'https://hit.test', snippet: 'snip' }]
+  it('exposes media tools alongside the browser verbs, and no off-screen web tool (#83)', async () => {
     const browser = new FakeBrowser()
     const pipeline = createAssistantPipeline({
       controller: browser,
@@ -216,15 +214,16 @@ describe('createAssistantPipeline', () => {
           { kind: 'answer', speak: 'Done.', display: 'Detail.' },
         ]),
       },
-      search: new FakeSearch(results),
       clock: new FakeClock(),
     })
 
-    const events = await collect(pipeline, 'search and skip to the next track')
+    const events = await collect(pipeline, 'skip to the next track')
 
+    // web_search is deleted (ADR 0009): an off-screen call cannot run, and
+    // the model sees a recoverable unknown-tool result instead.
     expect(events.find((e) => e.type === 'tool_result' && e.name === 'web_search')).toMatchObject({
-      ok: true,
-      result: '1. Hit — https://hit.test\n   snip',
+      ok: false,
+      error: "unknown tool: 'web_search'",
     })
     expect(browser.pressedKeys).toEqual([{ press: { key: 'n', shift: true }, times: 1 }])
   })

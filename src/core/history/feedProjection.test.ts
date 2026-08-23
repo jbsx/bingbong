@@ -98,13 +98,13 @@ describe('feed projection', () => {
   it('keeps the event order: entries land as the stream delivers them', () => {
     const feed = createFeedProjection()
     feed.onEvent(command('go', 1_000))
-    feed.onEvent({ type: 'tool_call', turnId: T, callId: 'c1', name: 'web_search', args: { query: 'cats' }, at: 2_000 })
+    feed.onEvent({ type: 'tool_call', turnId: T, callId: 'c1', name: 'type', args: { ref: 7, text: 'cats\\n' }, at: 2_000 })
     feed.onEvent(retry(2, 3_000))
     feed.onEvent({ type: 'speak', turnId: T, text: 'Found cats.', at: 4_000 })
 
     expect(outline(feed.entries())).toEqual([
       { kind: 'command', role: USER, text: 'go', detail: false },
-      { kind: 'tool', role: SYSTEM, text: 'search "cats"', detail: false },
+      { kind: 'tool', role: SYSTEM, text: 'type "cats\\n" into [7]', detail: false },
       { kind: 'retry', role: SYSTEM, text: 'empty response — retrying 2/3', detail: true },
       { kind: 'speak', role: ASSISTANT, text: 'Found cats.', detail: false },
     ])
@@ -122,7 +122,7 @@ describe('feed projection', () => {
 
   it.each([
     ['waiting_on_agents', { type: 'waiting_on_agents', turnId: T, running: 2, at: 1_000 } as PipelineEvent],
-    ['agent_update', { type: 'agent_update', at: 1_000, agent: { id: 'a', kind: 'research', task: 't', status: 'running', startedAt: 0, finishedAt: null, steps: 0, lastAction: null, result: null, error: null } } as PipelineEvent],
+    ['agent_update', { type: 'agent_update', at: 1_000, agent: { id: 'a', kind: 'background', task: 't', status: 'running', startedAt: 0, finishedAt: null, steps: 0, lastAction: null, result: null, error: null } } as PipelineEvent],
     ['confirmation cards', { type: 'confirmation_requested', turnId: T, confirmationId: 'cf1', callId: 'c1', toolName: 'download', prompt: 'ok?', expiresAt: 9_000, at: 1_000 } as PipelineEvent],
     ['ask cards', { type: 'ask_requested', turnId: T, askId: 'a1', callId: 'c1', question: 'which?', expiresAt: 9_000, at: 1_000 } as PipelineEvent],
     ['done', { type: 'done', turnId: T, outcome: 'done', at: 9_000 } as PipelineEvent],
@@ -303,11 +303,11 @@ describe('feed projection', () => {
 
     it('grows the same line as more arguments arrive — one id, replaced text', () => {
       const feed = createFeedProjection()
-      feed.onEvent(intent(0, 'web_search', '{"query":"mech', 1_000))
-      feed.onEvent(intent(0, 'web_search', '{"query":"mechanical keyboards"}', 1_120))
+      feed.onEvent(intent(0, 'navigate', '{"url":"https://x.test/?q=mech', 1_000))
+      feed.onEvent(intent(0, 'navigate', '{"url":"https://x.test/?q=mechanical+keyboards"}', 1_120))
 
       expect(outline(feed.entries())).toEqual([
-        { kind: 'intent', role: SYSTEM, text: 'searching for \'mechanical keyboards\'…', detail: true },
+        { kind: 'intent', role: SYSTEM, text: 'opening \'https://x.test/?q=mechanical+keyboards\'…', detail: true },
       ])
       expect(feed.entries()).toHaveLength(1)
     })
@@ -344,12 +344,12 @@ describe('feed projection', () => {
     it('rides beside reasoning without closing it — both stay open in one round', () => {
       const feed = createFeedProjection()
       feed.onEvent(reasoning('the user wants youtube', 1_000))
-      feed.onEvent(intent(0, 'web_search', '{"query":"music videos"}', 1_120))
+      feed.onEvent(intent(0, 'type', '{"ref":3,"text":"music videos\\n"}', 1_120))
       feed.onEvent(reasoning(', music videos', 1_240))
 
       expect(outline(feed.entries())).toEqual([
         { kind: 'reasoning', role: SYSTEM, text: 'the user wants youtube, music videos', detail: true },
-        { kind: 'intent', role: SYSTEM, text: 'searching for \'music videos\'…', detail: true },
+        { kind: 'intent', role: SYSTEM, text: 'typing \'music videos\n\'…', detail: true },
       ])
     })
 

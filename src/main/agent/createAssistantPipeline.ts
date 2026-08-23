@@ -2,7 +2,6 @@ import type { LlmClient, AssistantTurn } from '../../core/ports/llm'
 import type { TtsSpeaker } from '../../core/ports/tts'
 import { systemClock, type Clock } from '../../core/ports/clock'
 import type { BrowserController, VisualGroundingController } from '../../core/ports/browser'
-import type { SearchProvider } from '../../core/ports/search'
 import type { VisionModel } from '../../core/ports/vision'
 import type { SessionHistorySource, SessionResetSource } from '../../core/session/sessionMemory'
 import { createCommandPipeline, type CommandPipeline } from '../../core/pipeline/createCommandPipeline'
@@ -14,7 +13,6 @@ import { createBrowserTools } from '../../core/pipeline/browserTools'
 import { hostFromUrl } from '../../core/pipeline/blockerGate'
 import { createVisionGroundingTools } from '../../core/pipeline/visionGroundingTools'
 import { createMediaTools } from '../../core/pipeline/mediaTools'
-import { createSearchTools } from '../../core/pipeline/searchTools'
 import { createNewSessionTool } from '../../core/pipeline/sessionTools'
 import { createPanelTools, type PanelControls } from '../../core/pipeline/panelTools'
 import { createAppControlTool, createSetSettingTool, type AppControls, type SettingsControls } from '../../core/pipeline/settingsTools'
@@ -25,7 +23,6 @@ import type { PerfTracer } from '../../core/perf/perfTracer'
 import { withPerfTracing } from '../../core/perf/perfTracing'
 import type { BrowserSubspans } from '../../core/perf/browserSubspans'
 import { ScriptedLlm, silentTts, UnavailableLlm } from '../../core/testing/doubles'
-import { createDuckDuckGoSearchProvider } from '../search/createDuckDuckGoSearchProvider'
 import { createOpenAiLlmClient } from './openAiLlmClient'
 import { ORCHESTRATOR_SYSTEM_PROMPT } from './orchestratorPrompt'
 import { createZaiVisionApi } from '../vision/createZaiVisionApi'
@@ -48,8 +45,6 @@ export interface AssistantPipelineDeps {
   fetchFn?: typeof fetch
   clock?: Clock
   tts?: TtsSpeaker
-  /** Search provider behind web_search; DuckDuckGo HTML by default. */
-  search?: SearchProvider
   /** Delegation tools (spawn/cancel/agent_results) when subagents are on. */
   subagentTools?: Tool[]
   /** Fan-out controls shared with every running subagent. */
@@ -185,10 +180,9 @@ function createDynamicLlm(
   }
 }
 
-/** The text-driven assistant: browser, media and search tools + model-routed LLM behind the command pipeline. */
+/** The text-driven assistant: browser and media tools + model-routed LLM behind the command pipeline. */
 export function createAssistantPipeline(deps: AssistantPipelineDeps): CommandPipeline {
   const fetchFn = deps.fetchFn ?? fetch
-  const search = deps.search ?? createDuckDuckGoSearchProvider({ fetchFn })
   const getEnv = deps.getEnv ?? (() => deps.env)
   const vision = deps.vision ?? createZaiVisionApi({ getEnv })
   const tools: Tool[] = [
@@ -196,7 +190,6 @@ export function createAssistantPipeline(deps: AssistantPipelineDeps): CommandPip
     ...createBrowserTools(deps.controller, vision),
     ...createVisionGroundingTools(deps.controller, vision),
     ...createMediaTools(deps.controller),
-    ...createSearchTools(search),
     ...(deps.subagentTools ?? []),
     // Panel voice tools (#64): silent, unconfirmed, model-invoked.
     ...(deps.panel ? createPanelTools(deps.panel) : []),

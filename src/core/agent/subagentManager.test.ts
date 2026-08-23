@@ -99,10 +99,10 @@ describe('subagent manager', () => {
   it('spawns a running agent, streams progress, and records its result', async () => {
     const { mgr, api, events } = manager()
 
-    const spawned = mgr.spawn('research', 'compare mechanical keyboards')
+    const spawned = mgr.spawn('background', 'compare mechanical keyboards')
     expect(spawned.ok).toBe(true)
     if (!spawned.ok) return
-    expect(spawned.agent).toMatchObject({ kind: 'research', task: 'compare mechanical keyboards', status: 'running' })
+    expect(spawned.agent).toMatchObject({ kind: 'background', task: 'compare mechanical keyboards', status: 'running' })
 
     api.tasks.get(spawned.agent.id)!.progress(1, 'search "mechanical keyboards"')
     expect(mgr.list()[0]).toMatchObject({ steps: 1, lastAction: 'search "mechanical keyboards"' })
@@ -118,7 +118,7 @@ describe('subagent manager', () => {
   it('isRunning is the live-work gate the capture loop polls', async () => {
     const { mgr, api } = manager()
 
-    const spawned = mgr.spawn('research', 'slow work')
+    const spawned = mgr.spawn('background', 'slow work')
     expect(spawned.ok).toBe(true)
     if (!spawned.ok) return
     expect(mgr.isRunning(spawned.agent.id)).toBe(true)
@@ -132,18 +132,18 @@ describe('subagent manager', () => {
   it('threads the spawning turn id into the task spec', () => {
     const { mgr, api } = manager()
 
-    expect(mgr.spawn('research', 'compare keyboards', 'turn-voice-4').ok).toBe(true)
+    expect(mgr.spawn('background', 'compare keyboards', 'turn-voice-4').ok).toBe(true)
 
-    expect(api.started[0]).toMatchObject({ id: 'a-1', kind: 'research', task: 'compare keyboards', turnId: 'turn-voice-4' })
+    expect(api.started[0]).toMatchObject({ id: 'a-1', kind: 'background', task: 'compare keyboards', turnId: 'turn-voice-4' })
   })
 
   it('enforces the 4-concurrent-agent rail under a scripted storm', () => {
     const { mgr } = manager()
 
     for (let i = 1; i <= 4; i += 1) {
-      expect(mgr.spawn('research', `task ${i}`).ok).toBe(true)
+      expect(mgr.spawn('background', `task ${i}`).ok).toBe(true)
     }
-    const fifth = mgr.spawn('research', 'task 5')
+    const fifth = mgr.spawn('background', 'task 5')
     expect(fifth.ok).toBe(false)
     if (!fifth.ok) expect(fifth.reason).toMatch(/4/)
   })
@@ -156,11 +156,11 @@ describe('subagent manager', () => {
     const second = mgr.spawn('browse', 'open site B')
     expect(second.ok).toBe(true)
 
-    // Slot freed for research kinds even while the browse tab lingers.
+    // Slot freed for tab-less kinds even while the browse tab lingers.
     api.tasks.get('a-1')!.resolve('done A')
     await flush()
     expect(mgr.list().find((r) => r.id === 'a-1')?.status).toBe('completed')
-    expect(mgr.spawn('research', 'more research').ok).toBe(true)
+    expect(mgr.spawn('background', 'more filing').ok).toBe(true)
 
     // The finished browse tab still occupies tab capacity until it closes.
     expect(mgr.spawn('browse', 'site C').ok).toBe(true)
@@ -200,7 +200,7 @@ describe('subagent manager', () => {
   it('cancel flags a running agent and records cancellation when the loop notices', async () => {
     const { mgr, api, events } = manager()
 
-    const spawned = mgr.spawn('research', 'long task')
+    const spawned = mgr.spawn('background', 'long task')
     expect(spawned.ok).toBe(true)
     if (!spawned.ok) return
     const id = spawned.agent.id
@@ -224,7 +224,7 @@ describe('subagent manager', () => {
 
     expect(mgr.cancel('ghost').ok).toBe(false)
 
-    const spawned = mgr.spawn('research', 'quick')
+    const spawned = mgr.spawn('background', 'quick')
     expect(spawned.ok).toBe(true)
     api.tasks.get('a-1')!.resolve('fast')
     await flush()
@@ -233,8 +233,8 @@ describe('subagent manager', () => {
 
   it('cancels every running agent without changing completed agents', async () => {
     const { mgr, api } = manager()
-    mgr.spawn('research', 'already done')
-    mgr.spawn('research', 'still running')
+    mgr.spawn('background', 'already done')
+    mgr.spawn('background', 'still running')
     mgr.spawn('browse', 'also running')
     api.tasks.get('a-1')!.resolve('complete')
     await flush()
@@ -247,7 +247,7 @@ describe('subagent manager', () => {
 
   it('pauses every workhorse on a shared gate until resumed', async () => {
     const { mgr, api } = manager()
-    mgr.spawn('research', 'one')
+    mgr.spawn('background', 'one')
     mgr.spawn('browse', 'two')
 
     mgr.pauseAll()
@@ -265,7 +265,7 @@ describe('subagent manager', () => {
 
   it('clears the shared pause when mass-cancelling so future agents can run', async () => {
     const { mgr, api } = manager()
-    mgr.spawn('research', 'paused work')
+    mgr.spawn('background', 'paused work')
     mgr.pauseAll()
     let cancelledAgentReleased = false
     void api.tasks.get('a-1')!.waitIfPaused().then(() => { cancelledAgentReleased = true })
@@ -274,7 +274,7 @@ describe('subagent manager', () => {
     await flush()
     expect(cancelledAgentReleased).toBe(true)
 
-    mgr.spawn('research', 'next command work')
+    mgr.spawn('background', 'next command work')
     let nextAgentReleased = false
     void api.tasks.get('a-2')!.waitIfPaused().then(() => { nextAgentReleased = true })
     await flush()
@@ -284,7 +284,7 @@ describe('subagent manager', () => {
   it('marks a rejected task as failed with its error', async () => {
     const { mgr, api } = manager()
 
-    mgr.spawn('research', 'doomed')
+    mgr.spawn('background', 'doomed')
     api.tasks.get('a-1')!.reject(new Error('model routing for subagent is not configured'))
     await flush()
 
@@ -294,7 +294,7 @@ describe('subagent manager', () => {
   it('merges results across agents in one report for the orchestrator', async () => {
     const { mgr, api } = manager()
 
-    mgr.spawn('research', 'task one')
+    mgr.spawn('background', 'task one')
     mgr.spawn('browse', 'task two')
     api.tasks.get('a-1')!.resolve('Report one.')
     api.tasks.get('a-2')!.resolve('Report two.')
@@ -302,7 +302,8 @@ describe('subagent manager', () => {
 
     const merged = await mgr.results({})
     expect(merged).toContain('a-1')
-    expect(merged).toContain('research')
+    expect(merged).toContain('background')
+    expect(merged).toContain('[browsing]')
     expect(merged).toContain('Report one.')
     expect(merged).toContain('a-2')
     expect(merged).toContain('Report two.')
@@ -311,8 +312,8 @@ describe('subagent manager', () => {
   it('results(wait) blocks until the selected agents finish', async () => {
     const { mgr, api } = manager()
 
-    mgr.spawn('research', 'slow one')
-    mgr.spawn('research', 'slow two')
+    mgr.spawn('background', 'slow one')
+    mgr.spawn('background', 'slow two')
     api.tasks.get('a-2')!.resolve('Second report.')
 
     const waiting = mgr.results({ ids: ['a-1', 'a-2'], wait: true })
@@ -327,7 +328,7 @@ describe('subagent manager', () => {
     const clock = new FakeClock(0)
     const { mgr } = manager({ clock, waitTimeoutMs: 5_000 })
 
-    mgr.spawn('research', 'slow one') // never resolves
+    mgr.spawn('background', 'slow one') // never resolves
 
     const waiting = mgr.results({ wait: true })
     clock.advance(5_000)
@@ -340,8 +341,8 @@ describe('subagent manager', () => {
   it('results reports running agents plainly when not waiting', async () => {
     const { mgr, api } = manager()
 
-    mgr.spawn('research', 'pending')
-    mgr.spawn('research', 'done')
+    mgr.spawn('background', 'pending')
+    mgr.spawn('background', 'done')
     api.tasks.get('a-2')!.resolve('Finished report.')
     await flush()
 
@@ -360,7 +361,7 @@ describe('subagent manager', () => {
 describe('SubagentRecord shape', () => {
   it('exposes copies, not live records', () => {
     const { mgr } = manager()
-    mgr.spawn('research', 'task')
+    mgr.spawn('background', 'task')
     const first = mgr.list()[0] as SubagentRecord
     const before = first.status
     first.status = 'completed'
@@ -371,7 +372,7 @@ describe('SubagentRecord shape', () => {
 describe('subagentAnnouncement', () => {
   const base: SubagentRecord = {
     id: 'a-1',
-    kind: 'research',
+    kind: 'background',
     task: 'compare keyboards',
     status: 'completed',
     startedAt: 0,
@@ -384,18 +385,18 @@ describe('subagentAnnouncement', () => {
 
   it('speaks the first sentence of a completed report', () => {
     expect(subagentAnnouncement({ ...base, result: 'Keyboards compared. Full table on screen. Bye.' })).toBe(
-      'The research agent finished: Keyboards compared.',
+      'The background agent finished: Keyboards compared.',
     )
   })
 
   it('speaks a plain finish line when the report is empty', () => {
-    expect(subagentAnnouncement({ ...base, result: '' })).toBe('The research agent finished.')
+    expect(subagentAnnouncement({ ...base, result: '' })).toBe('The background agent finished.')
   })
 
   it('speaks the failure plainly, naming the kind', () => {
     expect(
       subagentAnnouncement({ ...base, status: 'failed', error: 'model routing for subagent is not configured. Set vars.' }),
-    ).toBe('The research agent failed: model routing for subagent is not configured.')
+    ).toBe('The background agent failed: model routing for subagent is not configured.')
   })
 
   it('stays silent for cancelled agents', () => {

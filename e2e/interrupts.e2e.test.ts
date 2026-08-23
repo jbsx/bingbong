@@ -112,13 +112,14 @@ describe('run interruption e2e', () => {
   it('fans abort out to a running subagent', async () => {
     const orchestrator: AssistantTurn[] = [
       { kind: 'tool_calls', calls: [{ id: 'nav', name: 'navigate', args: { url: fixture.url('/risky') } }] },
-      { kind: 'tool_calls', calls: [{ id: 'spawn', name: 'spawn_agent', args: { kind: 'research', task: 'read the slow fixture' } }] },
+      { kind: 'tool_calls', calls: [{ id: 'spawn', name: 'spawn_agent', args: { kind: 'browse', task: 'read the slow fixture' } }] },
       { kind: 'tool_calls', calls: [{ id: 'submit', name: 'click', args: { ref: 7 } }] },
       { kind: 'answer', speak: 'Should not finish.', display: 'Should not finish.' },
     ]
     const subagent: AssistantTurn[] = [
-      { kind: 'tool_calls', calls: [{ id: 'read', name: 'read_url', args: { url: fixture.url('/slow') } }] },
-      { kind: 'answer', speak: 'done', display: 'Slow read finished.' },
+      { kind: 'tool_calls', calls: [{ id: 'nav2', name: 'navigate', args: { url: fixture.url('/slow') } }] },
+      { kind: 'tool_calls', calls: [{ id: 'read', name: 'read_page', args: {} }] },
+      { kind: 'answer', speak: 'done', display: 'Slow page read finished.' },
     ]
     const harness = await startHarness({
       fixture,
@@ -142,7 +143,7 @@ describe('run interruption e2e', () => {
         () => harness.dashboardEval<boolean>(`!!document.querySelector('.subagent-card--cancelled')`),
         { timeoutMs: 20_000, intervalMs: 250 },
       )
-      expect(await transcript(harness)).not.toContain('Slow read finished.')
+      expect(await transcript(harness)).not.toContain('Slow page read finished.')
     } finally {
       await harness.quit()
     }

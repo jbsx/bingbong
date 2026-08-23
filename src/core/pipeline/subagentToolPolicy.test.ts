@@ -55,9 +55,9 @@ describe('withoutConfirmations', () => {
 
   it('leaves ungated tools untouched', () => {
     const plain: Tool = {
-      name: 'web_search',
+      name: 'read_page',
       async execute() {
-        return 'results'
+        return 'snapshot'
       },
     }
     expect(withoutConfirmations([plain])[0]).toBe(plain)

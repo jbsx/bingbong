@@ -62,7 +62,7 @@ describe('createBlockerGate', () => {
   it('never refuses read_page, look, or ask_user — and non-browser tools pass untouched', () => {
     const gate = createBlockerGate(() => 'www.reddit.com')
     gate.observe(navigate('https://www.reddit.com/search'), ok(WALLED_RESULT))
-    for (const call of [verb('read_page'), verb('look'), verb('ask_user'), verb('web_search'), verb('spawn_agent')]) {
+    for (const call of [verb('read_page'), verb('look'), verb('ask_user'), verb('set_setting'), verb('spawn_agent')]) {
       expect(gate.gate(call)).toEqual({ ok: true })
     }
   })

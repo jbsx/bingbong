@@ -332,6 +332,52 @@ function signInWallPage(): string {
 </html>`
 }
 
+// On-screen search fixtures (#83, ADR 0009): a tiny search engine — a
+// standalone type=search box whose Enter keydown navigates to the results
+// page (outside any form, so the risk gate never pauses on it) — plus a
+// results page whose links carry real hrefs and the article they open. The
+// on-screen-search e2e drives the whole GUI loop over these pages:
+// navigate → read → type query+\n → read results → open the hit by href.
+function searchEnginePage(): string {
+  return `<!doctype html>
+<html>
+<head><title>fixture engine</title></head>
+<body style="background:#222;color:#fff;margin:0">
+  <h1>fixture engine page</h1>
+  <input id="engine-q" type="search" placeholder="Search the fixture web" aria-label="Search the fixture web" style="font-size:24px;width:420px">
+  <script>
+    document.getElementById('engine-q').addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.keyCode === 13) {
+        location.assign('/results?q=' + encodeURIComponent(e.target.value.replace(/[\\n\\r]$/, '')))
+      }
+    })
+  </script>
+</body>
+</html>`
+}
+
+function searchResultsPage(query: string): string {
+  return `<!doctype html>
+<html>
+<head><title>${query} — fixture engine results</title></head>
+<body style="background:#222;color:#fff;margin:0">
+  <h1>results for "${query}"</h1>
+  <a id="result-1" href="/widgets-article">Fixture widgets: the complete guide</a>
+</body>
+</html>`
+}
+
+function widgetsArticlePage(): string {
+  return `<!doctype html>
+<html>
+<head><title>fixture widgets article</title></head>
+<body style="background:#222;color:#fff;margin:0">
+  <h1>Fixture widgets: the complete guide</h1>
+  <p>Everything about fixture widgets, found entirely on screen.</p>
+</body>
+</html>`
+}
+
 export async function startFixtureServer(): Promise<FixtureServer> {
   let adblockListHits = 0
   let visionEndpointHits = 0
@@ -418,6 +464,19 @@ export async function startFixtureServer(): Promise<FixtureServer> {
     }
     if (req.url === '/signin') {
       res.end(signInWallPage())
+      return
+    }
+    if (req.url === '/engine') {
+      res.end(searchEnginePage())
+      return
+    }
+    if (req.url === '/widgets-article') {
+      res.end(widgetsArticlePage())
+      return
+    }
+    if (req.url !== undefined && req.url.startsWith('/results?')) {
+      const query = new URL(req.url, 'http://fixture.invalid').searchParams.get('q') ?? ''
+      res.end(searchResultsPage(query))
       return
     }
     if (req.url === '/native-dialog') {

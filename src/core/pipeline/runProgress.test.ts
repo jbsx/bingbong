@@ -24,7 +24,7 @@ function agentCard(id: string, agentStatus: 'running' | 'completed', at = 0): Pi
     at,
     agent: {
       id,
-      kind: 'research',
+      kind: 'background',
       task: 't',
       status: agentStatus,
       startedAt: at,

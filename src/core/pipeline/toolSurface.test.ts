@@ -4,11 +4,10 @@ import { createAskUserTool } from './askUserTools'
 import { createBrowserTools } from './browserTools'
 import { createVisionGroundingTools } from './visionGroundingTools'
 import { createMediaTools } from './mediaTools'
-import { createSearchTools } from './searchTools'
 import { createSubagentTools } from './subagentTools'
 import { createPanelTools } from './panelTools'
 import { createAppControlTool, createSetSettingTool } from './settingsTools'
-import { FakeAppControls, FakeBrowser, FakePanel, FakeSearch, FakeSettings, FakeVision } from '../testing/doubles'
+import { FakeAppControls, FakeBrowser, FakePanel, FakeSettings, FakeVision } from '../testing/doubles'
 
 const unusedVision = new FakeVision()
 
@@ -18,6 +17,8 @@ const unusedVision = new FakeVision()
 // not as a tool, not as a parameter enum value, not hidden in a description.
 // (The system prompt's "never skip ads" rule is policy, not surface; tool
 // descriptions deliberately never mention ads so this scan can stay strict.)
+// Since #83 / ADR 0009 the same strictness covers the deleted off-screen web
+// tools: every read and write happens in a visible tab.
 
 function orchestratorToolCatalog(): Tool[] {
   return [
@@ -25,7 +26,6 @@ function orchestratorToolCatalog(): Tool[] {
     ...createBrowserTools(new FakeBrowser(), unusedVision),
     ...createVisionGroundingTools(new FakeBrowser(), unusedVision),
     ...createMediaTools(new FakeBrowser()),
-    ...createSearchTools(new FakeSearch()),
   ]
 }
 
@@ -86,9 +86,25 @@ describe('orchestrator tool surface', () => {
         'ground_visual',
         'look',
         'media_control',
-        'web_search',
       ].sort(),
     )
+  })
+
+  it('has no off-screen web tool anywhere on the surface (#83, ADR 0009)', () => {
+    // web_search and read_url are deleted: every web read and write happens
+    // in a rendered, visible tab. The names must never reappear in any
+    // catalog — not as a tool, not as a parameter enum value.
+    for (const catalog of [orchestratorToolCatalog(), delegationToolCatalog(), panelToolCatalog(), settingsToolCatalog()]) {
+      for (const tool of catalog) {
+        expect(tool.name).not.toMatch(/web_search|read_url/)
+        for (const paramName of Object.keys(tool.parameters ?? {})) {
+          expect(paramName).not.toMatch(/web_search|read_url/)
+        }
+        for (const spec of Object.values(tool.parameters ?? {})) {
+          for (const value of spec.enum ?? []) expect(value).not.toMatch(/web_search|read_url/)
+        }
+      }
+    }
   })
 
   it('go_forward is registered at parity with back', () => {

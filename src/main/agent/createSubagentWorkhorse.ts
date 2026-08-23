@@ -1,6 +1,5 @@
 import type { Clock } from '../../core/ports/clock'
 import type { LlmClient } from '../../core/ports/llm'
-import type { SearchProvider } from '../../core/ports/search'
 import type { Tool } from '../../core/pipeline/tool'
 import type { BrowserController } from '../../core/ports/browser'
 import type { VisionDescriber } from '../../core/ports/vision'
@@ -15,8 +14,6 @@ import { ScriptedLlm, UnavailableLlm } from '../../core/testing/doubles'
 import { createBrowserTools } from '../../core/pipeline/browserTools'
 import { hostFromUrl } from '../../core/pipeline/blockerGate'
 import { createLookTool } from '../../core/pipeline/visionGroundingTools'
-import { createSearchTools } from '../../core/pipeline/searchTools'
-import { createReadUrlTool } from '../../core/pipeline/readUrlTool'
 import { createSubagentAskTool } from '../../core/pipeline/askUserTools'
 import { withoutConfirmations } from '../../core/pipeline/subagentToolPolicy'
 import { createOpenAiLlmClient } from './openAiLlmClient'
@@ -28,7 +25,9 @@ import { SUBAGENT_SYSTEM_PROMPT } from './subagentPrompt'
 // from the top), gets the tool catalog for its kind, and runs runSubagent.
 // Every kind carries the escalation-only ask_user (issue #18): subagents
 // cannot reach the user, so their ask returns a directive the report relays
-// through the orchestrator.
+// through the orchestrator. Kinds are browse (own visible tab; ADR 0009
+// killed the off-screen fetcher, so all web work is on-screen GUI search)
+// and background (approved download/file tools).
 
 const SUBAGENT_SCRIPT_ENV = 'BINGBONG_SUBAGENT_LLM_SCRIPT'
 
@@ -38,10 +37,9 @@ export const SUBAGENT_LLM_ENV_KEYS = [SUBAGENT_SCRIPT_ENV, ...routingEnvKeys('su
 export interface SubagentWorkhorseDeps {
   getEnv(): Record<string, string | undefined>
   fetchFn: typeof fetch
-  /** The pane controller behind a browsing agent's tab; research agents pass nothing. */
+  /** The pane controller behind a browsing agent's tab; background agents pass nothing. */
   controllerFor?(agentId: string): BrowserController | null
   backgroundTools?: Tool[]
-  search?: SearchProvider
   clock?: Clock
   maxToolRounds?: number
   onUsage?(record: UsageRecord): void
@@ -54,17 +52,12 @@ export interface SubagentWorkhorseDeps {
   tracer?: PerfTracer
 }
 
-function toolsForKind(
+/** The per-kind tool catalog, exported for the surface pin in the test. */
+export function toolsForKind(
   kind: SubagentKind,
   deps: SubagentWorkhorseDeps,
   controller: BrowserController | null,
 ): Tool[] {
-  if (kind === 'research') {
-    const tools: Tool[] = [createSubagentAskTool()]
-    if (deps.search) tools.push(...createSearchTools(deps.search))
-    tools.push(createReadUrlTool({ fetchFn: deps.fetchFn }))
-    return tools
-  }
   if (kind === 'background') return [createSubagentAskTool(), ...(deps.backgroundTools ?? [])]
   return controller
     ? [
@@ -101,11 +94,10 @@ export function createSubagentTaskApi(deps: SubagentWorkhorseDeps): SubagentTask
   return {
     start(spec: SubagentSpec, hooks: SubagentTaskHooks) {
       // One controller lookup per spawn, claimed only by tab kinds —
-      // research and background agents must not grab a tab (looking one
-      // up would). The kind structure mirrors toolsForKind's: whatever
-      // isn't research/background is a browser kind.
-      const controller =
-        spec.kind !== 'research' && spec.kind !== 'background' ? deps.controllerFor?.(spec.id) ?? null : null
+      // background agents must not grab a tab (looking one up would). The
+      // kind structure mirrors toolsForKind's: whatever isn't background is
+      // a browser kind.
+      const controller = spec.kind !== 'background' ? deps.controllerFor?.(spec.id) ?? null : null
       const tools = toolsForKind(spec.kind, deps, controller)
       // Perf outermost, the same order as the orchestrator's client: the
       // span times the whole round including usage bookkeeping.

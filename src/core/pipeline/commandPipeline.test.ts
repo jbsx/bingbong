@@ -995,22 +995,47 @@ describe('command pipeline', () => {
     })
   })
 
-  it('appends the search-loop nudge to the third consecutive similar web_search result (#74)', async () => {
+  // The GUI search signature seam (#82): ref facts telling the rail the
+  // typed text went into a search box.
+  const searchBoxDescribeRef = async () => ({
+    ref: 7,
+    kind: 'input' as const,
+    label: 'Search',
+    inputType: null,
+    rect: { x: 0, y: 0, width: 200, height: 32 },
+    src: null,
+    href: null,
+    downloadsFile: false,
+    submitsForm: false,
+    credentialField: false,
+    paymentField: false,
+    inForm: false,
+    formHasCredential: false,
+    formHasPayment: false,
+  })
+
+  it('appends the search-loop nudge to the third consecutive similar typed search result (#74/#83)', async () => {
     let executions = 0
-    const search = {
-      name: 'web_search',
+    const type = {
+      name: 'type',
       async execute() {
         executions += 1
-        return '1. A result — https://example.com/a'
+        return 'typed [7]: value="best mechanical keyboards 2026 guide"'
       },
     }
     const llm = new ScriptedLlm([
-      { kind: 'tool_calls', calls: [{ id: 's1', name: 'web_search', args: { query: 'best mechanical keyboards 2026' } }] },
-      { kind: 'tool_calls', calls: [{ id: 's2', name: 'web_search', args: { query: 'best mechanical keyboard 2026 reddit' } }] },
-      { kind: 'tool_calls', calls: [{ id: 's3', name: 'web_search', args: { query: 'best mechanical keyboards 2026 guide' } }] },
+      { kind: 'tool_calls', calls: [{ id: 't1', name: 'type', args: { ref: 7, text: 'best mechanical keyboards 2026\n' } }] },
+      { kind: 'tool_calls', calls: [{ id: 't2', name: 'type', args: { ref: 7, text: 'best mechanical keyboard 2026 reddit\n' } }] },
+      { kind: 'tool_calls', calls: [{ id: 't3', name: 'type', args: { ref: 7, text: 'best mechanical keyboards 2026 guide\n' } }] },
       { kind: 'answer', speak: 'Recovered.', display: 'Recovered.' },
     ])
-    const pipeline = createCommandPipeline({ llm, tts: new RecordingTts(), clock: new FakeClock(), tools: [search] })
+    const pipeline = createCommandPipeline({
+      llm,
+      tts: new RecordingTts(),
+      clock: new FakeClock(),
+      tools: [type],
+      describeRef: searchBoxDescribeRef,
+    })
 
     const events = await collect(pipeline, 'find keyboards')
 
@@ -1018,7 +1043,7 @@ describe('command pipeline', () => {
     const results = events.filter((event) => event.type === 'tool_result' && event.ok)
     expect(results[0]).toMatchObject({ result: expect.not.stringMatching(/ask_user/) })
     expect(results[2]).toMatchObject({
-      result: expect.stringMatching(/1\. A result[\s\S]*web_search[\s\S]*ask_user/),
+      result: expect.stringMatching(/typed \[7\][\s\S]*search box[\s\S]*ask_user/),
     })
     // The nudge rides the tool result into the next model round.
     const lastResult = llm.requests[3].toolResults.at(-1)
@@ -1026,10 +1051,10 @@ describe('command pipeline', () => {
   })
 
   it('resets the search-loop streak when another tool intervenes (#74)', async () => {
-    const search = {
-      name: 'web_search',
+    const type = {
+      name: 'type',
       async execute() {
-        return '1. A result — https://example.com/a'
+        return 'typed [7]: value="…"'
       },
     }
     const navigate = {
@@ -1039,13 +1064,19 @@ describe('command pipeline', () => {
       },
     }
     const llm = new ScriptedLlm([
-      { kind: 'tool_calls', calls: [{ id: 's1', name: 'web_search', args: { query: 'best mechanical keyboards 2026' } }] },
-      { kind: 'tool_calls', calls: [{ id: 's2', name: 'web_search', args: { query: 'best mechanical keyboards 2026 reddit' } }] },
+      { kind: 'tool_calls', calls: [{ id: 't1', name: 'type', args: { ref: 7, text: 'best mechanical keyboards 2026\n' } }] },
+      { kind: 'tool_calls', calls: [{ id: 't2', name: 'type', args: { ref: 7, text: 'best mechanical keyboards 2026 reddit\n' } }] },
       { kind: 'tool_calls', calls: [{ id: 'n1', name: 'navigate', args: { url: 'https://example.com/a' } }] },
-      { kind: 'tool_calls', calls: [{ id: 's3', name: 'web_search', args: { query: 'best mechanical keyboards 2026 guide' } }] },
+      { kind: 'tool_calls', calls: [{ id: 't3', name: 'type', args: { ref: 7, text: 'best mechanical keyboards 2026 guide\n' } }] },
       { kind: 'answer', speak: 'Done.', display: 'Done.' },
     ])
-    const pipeline = createCommandPipeline({ llm, tts: new RecordingTts(), clock: new FakeClock(), tools: [search, navigate] })
+    const pipeline = createCommandPipeline({
+      llm,
+      tts: new RecordingTts(),
+      clock: new FakeClock(),
+      tools: [type, navigate],
+      describeRef: searchBoxDescribeRef,
+    })
 
     const events = await collect(pipeline, 'find keyboards')
 
@@ -1055,10 +1086,10 @@ describe('command pipeline', () => {
   })
 
   it('keeps the search-loop streak across a failed intervening tool call (#74)', async () => {
-    const search = {
-      name: 'web_search',
+    const type = {
+      name: 'type',
       async execute() {
-        return '1. A result — https://example.com/a'
+        return 'typed [7]: value="…"'
       },
     }
     const failingNavigate = {
@@ -1068,17 +1099,18 @@ describe('command pipeline', () => {
       },
     }
     const llm = new ScriptedLlm([
-      { kind: 'tool_calls', calls: [{ id: 's1', name: 'web_search', args: { query: 'best mechanical keyboards 2026' } }] },
+      { kind: 'tool_calls', calls: [{ id: 't1', name: 'type', args: { ref: 7, text: 'best mechanical keyboards 2026\n' } }] },
       { kind: 'tool_calls', calls: [{ id: 'n1', name: 'navigate', args: { url: 'https://example.com/a' } }] },
-      { kind: 'tool_calls', calls: [{ id: 's2', name: 'web_search', args: { query: 'best mechanical keyboard 2026 reddit' } }] },
-      { kind: 'tool_calls', calls: [{ id: 's3', name: 'web_search', args: { query: 'best mechanical keyboards 2026 guide' } }] },
+      { kind: 'tool_calls', calls: [{ id: 't2', name: 'type', args: { ref: 7, text: 'best mechanical keyboard 2026 reddit\n' } }] },
+      { kind: 'tool_calls', calls: [{ id: 't3', name: 'type', args: { ref: 7, text: 'best mechanical keyboards 2026 guide\n' } }] },
       { kind: 'answer', speak: 'Recovered.', display: 'Recovered.' },
     ])
     const pipeline = createCommandPipeline({
       llm,
       tts: new RecordingTts(),
       clock: new FakeClock(),
-      tools: [search, failingNavigate],
+      tools: [type, failingNavigate],
+      describeRef: searchBoxDescribeRef,
     })
 
     const events = await collect(pipeline, 'find keyboards')
@@ -1086,30 +1118,36 @@ describe('command pipeline', () => {
     // The failed navigate consumed nothing — the third similar search still
     // nudges (run 46: failing tools + endless reworded searches).
     const nudged = events.filter(
-      (event) => event.type === 'tool_result' && event.ok && event.name === 'web_search' && typeof event.result === 'string' && event.result.includes('ask_user'),
+      (event) => event.type === 'tool_result' && event.ok && event.name === 'type' && typeof event.result === 'string' && event.result.includes('ask_user'),
     )
     expect(nudged).toHaveLength(1)
-    expect(nudged[0]).toMatchObject({ callId: 's3' })
+    expect(nudged[0]).toMatchObject({ callId: 't3' })
   })
 
   it('refuses the search loop at the cap without executing, and the run continues (#74)', async () => {
     let executions = 0
-    const search = {
-      name: 'web_search',
+    const type = {
+      name: 'type',
       async execute() {
         executions += 1
-        return '1. A result — https://example.com/a'
+        return 'typed [7]: value="best mechanical keyboards 2026"'
       },
     }
     const searchRound = (i: number) => ({
       kind: 'tool_calls' as const,
-      calls: [{ id: `s${i}`, name: 'web_search', args: { query: 'best mechanical keyboards 2026' } }],
+      calls: [{ id: `t${i}`, name: 'type', args: { ref: 7, text: 'best mechanical keyboards 2026\n' } }],
     })
     const llm = new ScriptedLlm([
       ...Array.from({ length: 6 }, (_, i) => searchRound(i)),
       { kind: 'answer', speak: 'Recovered.', display: 'Recovered.' },
     ])
-    const pipeline = createCommandPipeline({ llm, tts: new RecordingTts(), clock: new FakeClock(), tools: [search] })
+    const pipeline = createCommandPipeline({
+      llm,
+      tts: new RecordingTts(),
+      clock: new FakeClock(),
+      tools: [type],
+      describeRef: searchBoxDescribeRef,
+    })
 
     const events = await collect(pipeline, 'find keyboards')
 
@@ -1126,10 +1164,10 @@ describe('command pipeline', () => {
   })
 
   it('chains a q=-carrying navigate into the search streak instead of resetting it (#82)', async () => {
-    const search = {
-      name: 'web_search',
+    const type = {
+      name: 'type',
       async execute() {
-        return '1. A result — https://example.com/a'
+        return 'typed [7]: value="…"'
       },
     }
     const navigate = {
@@ -1139,15 +1177,21 @@ describe('command pipeline', () => {
       },
     }
     const llm = new ScriptedLlm([
-      { kind: 'tool_calls', calls: [{ id: 's1', name: 'web_search', args: { query: 'best mechanical keyboards 2026' } }] },
-      { kind: 'tool_calls', calls: [{ id: 's2', name: 'web_search', args: { query: 'best mechanical keyboard 2026 reddit' } }] },
+      { kind: 'tool_calls', calls: [{ id: 't1', name: 'type', args: { ref: 7, text: 'best mechanical keyboards 2026\n' } }] },
+      { kind: 'tool_calls', calls: [{ id: 't2', name: 'type', args: { ref: 7, text: 'best mechanical keyboard 2026 reddit\n' } }] },
       {
         kind: 'tool_calls',
         calls: [{ id: 'n1', name: 'navigate', args: { url: 'https://www.google.com/search?q=best+mechanical+keyboards+2026+guide' } }],
       },
       { kind: 'answer', speak: 'Recovered.', display: 'Recovered.' },
     ])
-    const pipeline = createCommandPipeline({ llm, tts: new RecordingTts(), clock: new FakeClock(), tools: [search, navigate] })
+    const pipeline = createCommandPipeline({
+      llm,
+      tts: new RecordingTts(),
+      clock: new FakeClock(),
+      tools: [type, navigate],
+      describeRef: searchBoxDescribeRef,
+    })
 
     const events = await collect(pipeline, 'find keyboards')
 
@@ -1179,24 +1223,7 @@ describe('command pipeline', () => {
       tts: new RecordingTts(),
       clock: new FakeClock(),
       tools: [type],
-      // The GUI search signature seam (#82): ref facts tell the rail the
-      // text went into a search box.
-      describeRef: async () => ({
-        ref: 7,
-        kind: 'input',
-        label: 'Search',
-        inputType: null,
-        rect: { x: 0, y: 0, width: 200, height: 32 },
-        src: null,
-        href: null,
-        downloadsFile: false,
-        submitsForm: false,
-        credentialField: false,
-        paymentField: false,
-        inForm: false,
-        formHasCredential: false,
-        formHasPayment: false,
-      }),
+      describeRef: searchBoxDescribeRef,
     })
 
     const events = await collect(pipeline, 'find the post')

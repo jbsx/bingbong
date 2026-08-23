@@ -51,3 +51,37 @@ describe('orchestrator prompt Blocker policy', () => {
     )
   })
 })
+
+// #83 / ADR 0009 pins: the on-screen switch — web search steered as GUI
+// search, the deleted off-screen tools unnameable, and the Blocker flavors
+// spoken in the Challenge/Network Block vocabulary.
+
+describe('orchestrator prompt on-screen browsing', () => {
+  it('steers GUI search: engine box + trailing newline, read results, open by href', () => {
+    const line = ORCHESTRATOR_SYSTEM_PROMPT.split('\n').find((candidate) => candidate.includes('GUI search'))
+    if (!line) throw new Error('GUI search line missing from the orchestrator prompt')
+    expect(line).toMatch(/search box/)
+    expect(line).toMatch(/\\n/)
+    expect(line).toMatch(/read_page/)
+    expect(line).toMatch(/href/)
+  })
+
+  it('never names the deleted off-screen web tools', () => {
+    expect(ORCHESTRATOR_SYSTEM_PROMPT).not.toMatch(/web_search|read_url/)
+  })
+
+  it('speaks the Challenge/Network Block escalation vocabulary (#78/#83)', () => {
+    const line = blockerLine()
+    expect(line).toMatch(/challenge wall/)
+    expect(line).toMatch(/network block/)
+    // What helps, per flavor: completing a challenge on screen vs signing in once.
+    expect(line).toMatch(/completing it on screen/)
+    expect(line).toMatch(/signing in to the site once in the tab/)
+  })
+
+  it('keeps the delegation kinds at two after the research collapse', () => {
+    expect(ORCHESTRATOR_SYSTEM_PROMPT).not.toMatch(/research kind/)
+    expect(ORCHESTRATOR_SYSTEM_PROMPT).toMatch(/browse kind/)
+    expect(ORCHESTRATOR_SYSTEM_PROMPT).toMatch(/background kind/)
+  })
+})

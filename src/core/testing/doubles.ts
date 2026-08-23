@@ -6,7 +6,6 @@ import { WAKE_HEADS, type WakeScores, type WakeWordDetector } from '../ports/wak
 import type { BrowserController, BrowserState, KeyPress, MediaState, ViewportPoint, VisualGroundingController } from '../ports/browser'
 import { blockerFactsFromSnapshot } from '../browser/blockerNudge'
 import type { PageSnapshot, SnapshotRef } from '../browser/snapshot'
-import type { SearchProvider, SearchResult } from '../ports/search'
 import type {
   VisionDescribeRequest,
   VisionLocateRequest,
@@ -434,19 +433,6 @@ export class FakeWakeDetector implements WakeWordDetector {
   }
 }
 
-export class FakeSearch implements SearchProvider {  readonly queries: string[] = []
-  private readonly results: SearchResult[]
-
-  constructor(results: SearchResult[] = []) {
-    this.results = results
-  }
-
-  async search(query: string): Promise<SearchResult[]> {
-    this.queries.push(query)
-    return this.results
-  }
-}
-
 /**
  * Recording stand-in for the window's feed panel overlay (#64/#71): folds
  * toggle/setMode/setWidth exactly like the real panel-state fold — widths
@@ -560,7 +546,7 @@ export class UnavailableLlm implements LlmClient {
 export function subagentRecord(id: string, status: SubagentStatus = 'running'): SubagentRecord {
   return {
     id,
-    kind: 'research',
+    kind: 'background',
     task: 't',
     status,
     startedAt: 0,

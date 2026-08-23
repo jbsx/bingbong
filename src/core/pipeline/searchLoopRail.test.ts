@@ -14,12 +14,14 @@ import {
 
 // Issue #74, run rails: the rail that breaks blind search loops — pure
 // token similarity over the streak, advisory nudge first, pre-execution
-// refusal second. Issue #82 re-targets the observable to the GUI search
-// signature (web_search coexists with q= navigations and typed search box
-// queries). See the module header for the full policy.
+// refusal second. Issue #82 re-targeted the observable to the GUI search
+// signature; #83 deleted web_search, so every observation here is on-screen:
+// a q= navigation or text typed into a search box. See the module header.
 
 function search(query: string): ToolCall {
-  return { id: 's', name: 'web_search', args: { query } }
+  // The GUI form of one search observation (#83): the query typed into a
+  // search input, submitted with the trailing newline.
+  return { id: 's', name: 'type', args: { ref: 7, text: `${query}\n` } }
 }
 
 function nav(url: string): ToolCall {
@@ -128,7 +130,7 @@ describe('createSearchLoopRail', () => {
   })
 
   it('stays quiet while consecutive searches explore different intents', async () => {
-    const rail = createSearchLoopRail()
+    const rail = createSearchLoopRail(searchBoxAt)
     expect(await rail.gate(search('mechanical keyboards'))).toEqual({ ok: true })
     expect(await rail.observe(search('mechanical keyboards'), ok)).toBeNull()
     expect(await rail.gate(search('weather london'))).toEqual({ ok: true })
@@ -136,7 +138,7 @@ describe('createSearchLoopRail', () => {
   })
 
   it('nudges on the nth consecutive similar search — advisory, never a refusal', async () => {
-    const rail = createSearchLoopRail()
+    const rail = createSearchLoopRail(searchBoxAt)
     for (let i = 1; i < SEARCH_LOOP_NUDGE_AFTER; i += 1) {
       expect(await rail.gate(search(`best mechanical keyboards 2026 v${i}`))).toEqual({ ok: true })
       expect(await rail.observe(search(`best mechanical keyboards 2026 v${i}`), ok)).toBeNull()
@@ -145,13 +147,14 @@ describe('createSearchLoopRail', () => {
     expect(await rail.gate(search(last))).toEqual({ ok: true })
     const nudge = await rail.observe(search(last), ok)
     expect(nudge).toMatch(/reword|same intent|one intent/i)
-    expect(nudge).toMatch(/web_search/)
+    expect(nudge).toMatch(/q= navigate|search box/)
+    expect(nudge).not.toMatch(/web_search|read_url/)
     expect(nudge).toMatch(/ask_user/)
     expect(nudge).toMatch(/navigate|read|open|href/i)
   })
 
   it('catches slow drift: each query similar to the previous, not to the first', async () => {
-    const rail = createSearchLoopRail()
+    const rail = createSearchLoopRail(searchBoxAt)
     await rail.observe(search('best mechanical keyboards 2026'), ok)
     await rail.observe(search('best mechanical keyboards 2027'), ok)
     // Similar to the previous query, but only 0.5 against the first —
@@ -160,7 +163,7 @@ describe('createSearchLoopRail', () => {
   })
 
   it('chains a return to the original wording after drifting away from it (#82)', async () => {
-    const rail = createSearchLoopRail()
+    const rail = createSearchLoopRail(searchBoxAt)
     await rail.observe(search('reddit manhwa tier list horizon'), ok)
     // Similar to the previous (0.67) — streak 2.
     await rail.observe(search('reddit manhwa tier list horizon boxer image'), ok)
@@ -170,7 +173,7 @@ describe('createSearchLoopRail', () => {
   })
 
   it('resets the streak when a successful other tool intervenes', async () => {
-    const rail = createSearchLoopRail()
+    const rail = createSearchLoopRail(searchBoxAt)
     for (let i = 0; i < SEARCH_LOOP_NUDGE_AFTER; i += 1) {
       await rail.observe(search('mechanical keyboards gaming'), ok)
     }
@@ -180,7 +183,7 @@ describe('createSearchLoopRail', () => {
   })
 
   it('keeps the streak when the intervening tool fails — the model is still blind (run 46)', async () => {
-    const rail = createSearchLoopRail()
+    const rail = createSearchLoopRail(searchBoxAt)
     await rail.observe(search('mechanical keyboards'), ok)
     await rail.observe(search('mechanical keyboards gaming'), ok)
     expect(await rail.observe(other('navigate'), fail)).toBeNull()
@@ -188,7 +191,7 @@ describe('createSearchLoopRail', () => {
   })
 
   it('resets the streak when the model moves to a new search intent', async () => {
-    const rail = createSearchLoopRail()
+    const rail = createSearchLoopRail(searchBoxAt)
     await rail.observe(search('mechanical keyboards'), ok)
     await rail.observe(search('mechanical keyboards gaming'), ok)
     await rail.observe(search('mechanical keyboards 2026'), ok)
@@ -197,7 +200,7 @@ describe('createSearchLoopRail', () => {
   })
 
   it('refuses pre-execution once the consecutive-similar cap is reached, with a reason the model can act on', async () => {
-    const rail = createSearchLoopRail()
+    const rail = createSearchLoopRail(searchBoxAt)
     for (let i = 0; i < SEARCH_LOOP_REFUSE_AFTER; i += 1) {
       expect(await rail.gate(search(`mechanical keyboards run ${i}`))).toEqual({ ok: true })
       await rail.observe(search(`mechanical keyboards run ${i}`), ok)
@@ -205,14 +208,15 @@ describe('createSearchLoopRail', () => {
     const refusal = await rail.gate(search('mechanical keyboards run 99'))
     expect(refusal.ok).toBe(false)
     if (!refusal.ok) {
-      expect(refusal.reason).toMatch(/web_search/)
+      expect(refusal.reason).toMatch(/q= navigate|search box/)
+      expect(refusal.reason).not.toMatch(/web_search|read_url/)
       expect(refusal.reason).toMatch(String(SEARCH_LOOP_REFUSE_AFTER))
       expect(refusal.reason).toMatch(/ask_user|change strategy/i)
     }
   })
 
   it('lets a genuinely different search through even at the cap — the rail loops on intent, not the tool', async () => {
-    const rail = createSearchLoopRail()
+    const rail = createSearchLoopRail(searchBoxAt)
     for (let i = 0; i < SEARCH_LOOP_REFUSE_AFTER; i += 1) {
       await rail.gate(search(`mechanical keyboards run ${i}`))
       await rail.observe(search(`mechanical keyboards run ${i}`), ok)
@@ -221,7 +225,7 @@ describe('createSearchLoopRail', () => {
   })
 
   it('clears the cap after a successful other tool call — following the nudge recovers search', async () => {
-    const rail = createSearchLoopRail()
+    const rail = createSearchLoopRail(searchBoxAt)
     for (let i = 0; i < SEARCH_LOOP_REFUSE_AFTER; i += 1) {
       await rail.gate(search(`mechanical keyboards run ${i}`))
       await rail.observe(search(`mechanical keyboards run ${i}`), ok)
@@ -231,16 +235,19 @@ describe('createSearchLoopRail', () => {
     expect(await rail.gate(search('mechanical keyboards after reading'))).toEqual({ ok: true })
   })
 
-  it('treats a web_search without a usable query as a reset, never a throw', async () => {
-    const rail = createSearchLoopRail()
+  it('a blank type into the search box has nothing to chain on — ordinary call, not a search', async () => {
+    const rail = createSearchLoopRail(searchBoxAt)
     await rail.observe(search('mechanical keyboards'), ok)
     await rail.observe(search('mechanical keyboards gaming'), ok)
-    expect(await rail.observe({ id: 's', name: 'web_search', args: {} }, fail)).toBeNull()
-    expect(await rail.gate({ id: 's', name: 'web_search', args: { query: 7 } })).toEqual({ ok: true })
+    expect(await rail.gate(type(7, '\n'))).toEqual({ ok: true })
+    // Failed: leaves the streak alone. Successful: resets like any other tool.
+    expect(await rail.observe(type(7, '\n'), fail)).toBeNull()
+    expect(await rail.observe(type(7, '\n'), ok)).toBeNull()
+    expect(await rail.observe(search('mechanical keyboards gaming 2026'), ok)).toBeNull()
   })
 
   it('only rails searches — other tools pass the gate untouched', async () => {
-    const rail = createSearchLoopRail()
+    const rail = createSearchLoopRail(searchBoxAt)
     for (let i = 0; i < SEARCH_LOOP_REFUSE_AFTER; i += 1) {
       await rail.gate(search(`mechanical keyboards run ${i}`))
       await rail.observe(search(`mechanical keyboards run ${i}`), ok)
@@ -252,7 +259,7 @@ describe('createSearchLoopRail', () => {
 
 describe('createSearchLoopRail GUI search signature (#82)', () => {
   it('counts a q=-carrying navigate as a search observation, not a streak reset', async () => {
-    const rail = createSearchLoopRail()
+    const rail = createSearchLoopRail(searchBoxAt)
     await rail.observe(search('reddit manhwa tier list horizon'), ok)
     await rail.observe(search('reddit manhwa tier list horizon boxer'), ok)
     // Run 47's hole: this navigate is the same search reworded — before #82
@@ -265,14 +272,14 @@ describe('createSearchLoopRail GUI search signature (#82)', () => {
   })
 
   it('counts plain search-term navigations as searches too', async () => {
-    const rail = createSearchLoopRail()
+    const rail = createSearchLoopRail(searchBoxAt)
     await rail.observe(search('best mechanical keyboards 2026'), ok)
     await rail.observe(search('best mechanical keyboard 2026 reddit'), ok)
     expect(await rail.observe(nav('best mechanical keyboards 2026 guide'), ok)).toMatch(/ask_user/)
   })
 
   it('a successful navigate to a plain URL still resets the streak', async () => {
-    const rail = createSearchLoopRail()
+    const rail = createSearchLoopRail(searchBoxAt)
     await rail.observe(search('best mechanical keyboards 2026'), ok)
     await rail.observe(search('best mechanical keyboard 2026 reddit'), ok)
     expect(await rail.observe(nav('https://www.reddit.com/r/manhwa/comments/z8sfnn/'), ok)).toBeNull()
@@ -280,7 +287,7 @@ describe('createSearchLoopRail GUI search signature (#82)', () => {
   })
 
   it('refuses a q=-carrying navigate at the cap, before it executes', async () => {
-    const rail = createSearchLoopRail()
+    const rail = createSearchLoopRail(searchBoxAt)
     for (let i = 0; i < SEARCH_LOOP_REFUSE_AFTER; i += 1) {
       await rail.observe(nav(`https://www.google.com/search?q=reddit+manhwa+tier+list+run+${i}`), ok)
     }
@@ -290,7 +297,7 @@ describe('createSearchLoopRail GUI search signature (#82)', () => {
   })
 
   it('lets a genuinely different q= navigate through even at the cap', async () => {
-    const rail = createSearchLoopRail()
+    const rail = createSearchLoopRail(searchBoxAt)
     for (let i = 0; i < SEARCH_LOOP_REFUSE_AFTER; i += 1) {
       await rail.observe(nav(`https://www.google.com/search?q=reddit+manhwa+tier+list+run+${i}`), ok)
     }
@@ -346,18 +353,20 @@ describe('createSearchLoopRail GUI search signature (#82)', () => {
   })
 })
 
-describe('createSearchLoopRail replay of failed run 47 (#82)', () => {
+describe('createSearchLoopRail replay of failed run 47 (#82/#83)', () => {
   // The actual 80-call sequence from history.db run 47 (the run that
   // motived #74 and whose navigates-to-search-URLs defeated the old rail):
-  // 21 web_search calls, 13 navigations to google/reddit search URLs, all
-  // one intent reworded ~34 ways. Feed-line projections — 'search "q"' is
-  // web_search, '→ url' is navigate, the rest are read/click/scroll. The
-  // history entries record no per-call outcome; like the #74-era diagnosis
-  // replay, every non-refused call is observed as successful (the run
-  // reached round 80, so nothing here ended it).
+  // 21 searches, 13 navigations to google/reddit search URLs, all one
+  // intent reworded ~34 ways. Feed-line projections — 'search "q"' was the
+  // off-screen web_search then; since #83 every search is on-screen, so it
+  // replays as the same query typed into a search box (submitted by the
+  // trailing newline). '→ url' is navigate, the rest are read/click/scroll.
+  // The history entries record no per-call outcome; like the #74-era
+  // diagnosis replay, every non-refused call is observed as successful (the
+  // run reached round 80, so nothing here ended it).
   function callFrom(entry: string): ToolCall {
     if (entry.startsWith('search "')) {
-      return { id: entry, name: 'web_search', args: { query: entry.slice(8, entry.lastIndexOf('"')) } }
+      return { id: entry, name: 'type', args: { ref: 7, text: `${entry.slice(8, entry.lastIndexOf('"'))}\n` } }
     }
     if (entry.startsWith('→ ')) {
       return { id: entry, name: 'navigate', args: { url: entry.slice(2) } }
@@ -367,8 +376,8 @@ describe('createSearchLoopRail replay of failed run 47 (#82)', () => {
     return { id: entry, name: 'scroll', args: {} }
   }
 
-  it('produces refusals where the pre-#82 rail produced zero', async () => {
-    const rail = createSearchLoopRail()
+  it('produces refusals under the GUI signature alone', async () => {
+    const rail = createSearchLoopRail(searchBoxAt)
     let refusals = 0
     let nudges = 0
     let searchObservations = 0
@@ -384,7 +393,7 @@ describe('createSearchLoopRail replay of failed run 47 (#82)', () => {
       }
       const url = call.args.url
       if (
-        call.name === 'web_search' ||
+        call.name === 'type' ||
         (call.name === 'navigate' && typeof url === 'string' && searchQueryFromUrl(url) !== null)
       ) {
         searchObservations += 1
@@ -392,11 +401,11 @@ describe('createSearchLoopRail replay of failed run 47 (#82)', () => {
       if ((await rail.observe(call, ok)) !== null) nudges += 1
     }
     expect(run47Sequence).toHaveLength(80)
-    // 21 web_search calls plus the 22 navigations the feed shows going to
-    // q=-carrying URLs — one merged search stream under the new
-    // observable, where the old rail saw 21 searches and 22 resets.
+    // 21 typed searches plus the 22 navigations the feed shows going to
+    // q=-carrying URLs — one merged search stream under the GUI signature.
     expect(searchObservations).toBeGreaterThanOrEqual(34)
     expect(nudges).toBeGreaterThanOrEqual(1)
     expect(refusals).toBeGreaterThanOrEqual(3)
   })
 })
+

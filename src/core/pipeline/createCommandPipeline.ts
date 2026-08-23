@@ -51,7 +51,7 @@ export interface CommandPipelineDeps {
    * Resolves a snapshot ref to its facts (#82) — how the search-loop rail
    * recognizes text typed into a search input (the GUI search signature).
    * Absent, typed searches cannot be classified and the rail still tracks
-   * web_search and q= navigations.
+   * q= navigations.
    */
   describeRef?: (ref: number) => Promise<SnapshotRef | undefined>
   onAbort?(): void
@@ -332,11 +332,10 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
       try {
         const toolResults: ToolResult[] = []
         const visionBudget = createVisionBudget(MAX_ORCHESTRATOR_VISION_CALLS)
-        // Run rails (#74, re-targeted to the GUI search signature by #82):
-        // per-run streak of consecutive similar searches — web_search, q=
-        // navigations, or text typed into a search input — nudges first,
-        // refuses at the cap, resets on a successful other tool call.
-        // Created fresh per run, like the vision budget.
+        // Run rails (#74/#82/#83): per-run streak of consecutive similar
+        // GUI searches — q= navigations or text typed into a search input —
+        // nudges first, refuses at the cap, resets on a successful other
+        // tool call. Created fresh per run, like the vision budget.
         const searchLoopRail = createSearchLoopRail({ describeRef: deps.describeRef })
         // Same-wall Blocker gate (#80, ADR 0010): arms when a tool result
         // carries a BLOCKER marker; while armed, browser calls targeting
@@ -636,8 +635,8 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
       if (!grant.ok) return { ok: false, error: grant.reason }
     }
 
-    // Run rails (#74/#82): a blind search loop — consecutive similar
-    // searches (web_search, q= navigations, typed search box queries) with
+    // Run rails (#74/#82/#83): a blind search loop — consecutive similar
+    // GUI searches (q= navigations, typed search box queries) with
     // nothing in between — is refused before it executes, like the vision
     // budget. Any other tool call clears the cap.
     const searchLoopGate = await searchLoopRail.gate(call)

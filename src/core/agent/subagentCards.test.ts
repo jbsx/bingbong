@@ -99,11 +99,11 @@ describe('subagent card bridge', () => {
 
   it('announces completions as speak events, and failures too', async () => {
     const w = wiring()
-    w.manager.spawn('research', 'one')
+    w.manager.spawn('background', 'one')
     w.settle('a-1', 'resolve', 'Found it. Details on screen.')
     await flush()
 
-    w.manager.spawn('research', 'two')
+    w.manager.spawn('background', 'two')
     w.settle('a-2', 'reject', 'model routing for subagent is not configured')
     await flush()
 
@@ -114,7 +114,7 @@ describe('subagent card bridge', () => {
 
   it('stays silent for cancelled agents', async () => {
     const w = wiring()
-    const spawned = w.manager.spawn('research', 'one')
+    const spawned = w.manager.spawn('background', 'one')
     expect(spawned.ok).toBe(true)
     w.manager.cancel('a-1')
     w.settle('a-1', 'reject', 'subagent cancelled by the user')
@@ -156,7 +156,7 @@ describe('subagent card bridge', () => {
 
   it('renders no thumbnail for agents without a tab', async () => {
     const w = wiring()
-    w.manager.spawn('research', 'pure research')
+    w.manager.spawn('background', 'pure filing work')
     w.settle('a-1', 'resolve', 'found')
     await flush()
 

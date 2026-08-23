@@ -29,7 +29,7 @@ export interface RunSubagentDeps {
   /**
    * The host this agent's own tab is on (browse kinds); the same-wall
    * Blocker gate (#81) classifies non-navigate browser calls by it.
-   * Absent — like a research subagent with no tab — the gate only
+   * Absent — like a background subagent with no tab — the gate only
    * matches navigate calls it can classify by URL.
    */
   currentHost?(): string | null

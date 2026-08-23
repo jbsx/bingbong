@@ -3,15 +3,15 @@ import type { Tool } from './tool'
 import type { ToolCall } from '../ports/llm'
 
 // The orchestrator's delegation tools (issue #13): spawn_agent starts a
-// workhorse subagent (research = web only, browse = own tab, background =
-// approved download/file tools),
-// cancel_agent stops one or all, agent_results merges reports — optionally
-// blocking until the selected agents finish.
+// workhorse subagent (browse = own visible tab, background = approved
+// download/file tools), cancel_agent stops one or all, agent_results merges
+// reports — optionally blocking until the selected agents finish. The old
+// research kind died with the off-screen fetcher (ADR 0009): all web work
+// now happens in a visible tab.
 
-const KINDS: SubagentKind[] = ['research', 'browse', 'background']
+const KINDS: SubagentKind[] = ['browse', 'background']
 
-const KIND_HINT =
-  'research: web_search + read_url, no tab; browse: drives its own visible tab; background: approved downloads/file work'
+const KIND_HINT = 'browse: drives its own visible tab (searches and reads happen on screen); background: approved downloads/file work'
 
 function stringArg(call: ToolCall, name: string, tool: string): string {
   const value = call.args[name]

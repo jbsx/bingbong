@@ -1,21 +1,20 @@
 import { describe, expect, it } from 'vitest'
-import { FakeBrowser, FakeClock, FakeSearch, FakeVision, fakePerfHarness } from '../../core/testing/doubles'
-import type { SearchResult } from '../../core/ports/search'
-import { createSubagentTaskApi } from './createSubagentWorkhorse'
+import { FakeBrowser, FakeClock, FakeVision, fakePerfHarness } from '../../core/testing/doubles'
+import { createSubagentTaskApi, toolsForKind } from './createSubagentWorkhorse'
 import { withAgentActivity } from '../../core/downloads/agentActivity'
 import { createAgentActivityTracker } from '../../core/downloads/agentActivity'
 import type { Tool } from '../../core/pipeline/tool'
 
-// The taskApi seam: research agents get web_search + read_url; browse agents
-// get pane-bound browser tools with confirm-class actions denied; the
-// scripted override makes every agent start the script from the top; routing
-// failures degrade to a failed agent, not a crash.
+// The taskApi seam (#83, ADR 0009): kinds are browse (pane-bound browser
+// tools, confirm-class actions denied — searching happens on screen in the
+// agent's own tab) and background (approved download/file tools). The old
+// research kind and its off-screen web_search/read_url toolbox are gone;
+// the scripted override makes every agent start the script from the top;
+// routing failures degrade to a failed agent, not a crash.
 
-const results: SearchResult[] = [{ title: 'Hit', url: 'https://hit.test', snippet: 'snip' }]
-
-const RESEARCH_SCRIPT = JSON.stringify([
-  { kind: 'tool_calls', calls: [{ id: 's1', name: 'web_search', args: { query: 'keyboards' } }] },
-  { kind: 'answer', speak: 'Compared.', display: 'Keyboards compared across sources.' },
+const BROWSE_SCRIPT = JSON.stringify([
+  { kind: 'tool_calls', calls: [{ id: 'n1', name: 'navigate', args: { url: 'https://engine.test' } }] },
+  { kind: 'answer', speak: 'Compared.', display: 'Keyboards compared on screen.' },
 ])
 
 function envWith(script?: string): Record<string, string | undefined> {
@@ -23,20 +22,20 @@ function envWith(script?: string): Record<string, string | undefined> {
 }
 
 describe('createSubagentTaskApi', () => {
-  it('runs a research agent through web_search to a final report', async () => {
-    const search = new FakeSearch(results)
+  it('drives a browse agent through its own tab to a final report', async () => {
+    const browser = new FakeBrowser()
     const api = createSubagentTaskApi({
-      getEnv: () => envWith(RESEARCH_SCRIPT),
+      getEnv: () => envWith(BROWSE_SCRIPT),
       fetchFn: (async () => new Response('<p>x</p>', { status: 200 })) as typeof fetch,
-      search,
+      controllerFor: () => browser,
       clock: new FakeClock(),
     })
 
-    const { done } = api.start({ id: 'a-1', kind: 'research', task: 'compare keyboards' }, { isCancelled: () => false, onProgress: () => undefined })
+    const { done } = api.start({ id: 'a-1', kind: 'browse', task: 'search keyboards' }, { isCancelled: () => false, onProgress: () => undefined })
     const report = await done
 
-    expect(search.queries).toEqual(['keyboards'])
-    expect(report).toBe('Keyboards compared across sources.')
+    expect(browser.navigations).toEqual(['https://engine.test'])
+    expect(report).toBe('Keyboards compared on screen.')
   })
 
   it('binds browse agents to their own pane controller, confirm actions denied', async () => {
@@ -175,8 +174,24 @@ describe('createSubagentTaskApi', () => {
     expect(report).toBe('Downloaded.')
   })
 
+  it('exposes no off-screen web tool to any kind (#83, ADR 0009)', () => {
+    // web_search and read_url died with the research kind: every subagent
+    // web read happens in its own visible tab now.
+    const deps = { getEnv: () => ({}) as Record<string, string | undefined>, fetchFn: fetch, vision: new FakeVision() }
+    for (const kind of ['browse', 'background'] as const) {
+      const tools = toolsForKind(kind, deps, kind === 'browse' ? new FakeBrowser() : null)
+      const names = tools.map((tool) => tool.name)
+      expect(names).not.toContain('web_search')
+      expect(names).not.toContain('read_url')
+      expect(names).toContain('ask_user')
+    }
+    // The browse catalog is exactly the pane-bound browser verbs plus look.
+    const browseNames = toolsForKind('browse', deps, new FakeBrowser()).map((tool) => tool.name)
+    expect(browseNames.sort()).toEqual(['ask_user', 'back', 'click', 'go_forward', 'look', 'navigate', 'read_page', 'screenshot', 'scroll', 'type'].sort())
+  })
+
   it('gives every kind the escalation-only ask_user (never an interactive ask)', async () => {
-    for (const kind of ['research', 'browse', 'background'] as const) {
+    for (const kind of ['browse', 'background'] as const) {
       const script = JSON.stringify([
         { kind: 'tool_calls', calls: [{ id: 'q1', name: 'ask_user', args: { question: 'Which one?' } }] },
         { kind: 'answer', speak: 's', display: 'Escalated.' },
@@ -187,7 +202,6 @@ describe('createSubagentTaskApi', () => {
         fetchFn: fetch,
         ...(kind === 'browse' ? { controllerFor: () => new FakeBrowser() } : {}),
         ...(kind === 'background' ? { backgroundTools: [] } : {}),
-        ...(kind === 'research' ? { search: new FakeSearch(results) } : {}),
         clock: new FakeClock(),
       })
 
@@ -206,31 +220,31 @@ describe('createSubagentTaskApi', () => {
 
   it('gives every agent a fresh script from the top', async () => {
     const api = createSubagentTaskApi({
-      getEnv: () => envWith(RESEARCH_SCRIPT),
+      getEnv: () => envWith(BROWSE_SCRIPT),
       fetchFn: (async () => new Response('<p>x</p>', { status: 200 })) as typeof fetch,
-      search: new FakeSearch(results),
+      controllerFor: () => new FakeBrowser(),
       clock: new FakeClock(),
     })
 
-    const first = await api.start({ id: 'a-1', kind: 'research', task: 'one' }, { isCancelled: () => false, onProgress: () => undefined }).done
-    const second = await api.start({ id: 'a-2', kind: 'research', task: 'two' }, { isCancelled: () => false, onProgress: () => undefined }).done
+    const first = await api.start({ id: 'a-1', kind: 'browse', task: 'one' }, { isCancelled: () => false, onProgress: () => undefined }).done
+    const second = await api.start({ id: 'a-2', kind: 'browse', task: 'two' }, { isCancelled: () => false, onProgress: () => undefined }).done
 
-    expect(first).toBe('Keyboards compared across sources.')
-    expect(second).toBe('Keyboards compared across sources.')
+    expect(first).toBe('Keyboards compared on screen.')
+    expect(second).toBe('Keyboards compared on screen.')
   })
 
   it('keys subagent-llm spans to the spawning turn when the spec carries one', async () => {
     const { records, tracer } = fakePerfHarness()
     const api = createSubagentTaskApi({
-      getEnv: () => envWith(RESEARCH_SCRIPT),
+      getEnv: () => envWith(BROWSE_SCRIPT),
       fetchFn: (async () => new Response('<p>x</p>', { status: 200 })) as typeof fetch,
-      search: new FakeSearch(results),
+      controllerFor: () => new FakeBrowser(),
       clock: new FakeClock(),
       tracer,
     })
 
     await api.start(
-      { id: 'a-1', kind: 'research', task: 'compare keyboards', turnId: 'turn-voice-2' },
+      { id: 'a-1', kind: 'browse', task: 'compare keyboards', turnId: 'turn-voice-2' },
       { isCancelled: () => false, onProgress: () => undefined },
     ).done
 
@@ -243,14 +257,14 @@ describe('createSubagentTaskApi', () => {
   it('records no subagent spans when the spec carries no turn id', async () => {
     const { records, tracer } = fakePerfHarness()
     const api = createSubagentTaskApi({
-      getEnv: () => envWith(RESEARCH_SCRIPT),
+      getEnv: () => envWith(BROWSE_SCRIPT),
       fetchFn: (async () => new Response('<p>x</p>', { status: 200 })) as typeof fetch,
-      search: new FakeSearch(results),
+      controllerFor: () => new FakeBrowser(),
       clock: new FakeClock(),
       tracer,
     })
 
-    await api.start({ id: 'a-1', kind: 'research', task: 'compare keyboards' }, { isCancelled: () => false, onProgress: () => undefined }).done
+    await api.start({ id: 'a-1', kind: 'browse', task: 'compare keyboards' }, { isCancelled: () => false, onProgress: () => undefined }).done
 
     expect(records).toEqual([])
   })
@@ -263,22 +277,22 @@ describe('createSubagentTaskApi', () => {
     })
 
     await expect(
-      api.start({ id: 'a-1', kind: 'research', task: 't' }, { isCancelled: () => false, onProgress: () => undefined }).done,
+      api.start({ id: 'a-1', kind: 'background', task: 't' }, { isCancelled: () => false, onProgress: () => undefined }).done,
     ).rejects.toThrow(/model routing for 'subagent' is not configured/)
   })
 
   it('reports progress from tool calls', async () => {
     const progress: { step: number; action: string }[] = []
     const api = createSubagentTaskApi({
-      getEnv: () => envWith(RESEARCH_SCRIPT),
+      getEnv: () => envWith(BROWSE_SCRIPT),
       fetchFn: (async () => new Response('<p>x</p>', { status: 200 })) as typeof fetch,
-      search: new FakeSearch(results),
+      controllerFor: () => new FakeBrowser(),
       clock: new FakeClock(),
     })
 
-    await api.start({ id: 'a-1', kind: 'research', task: 't' }, { isCancelled: () => false, onProgress: (step, action) => progress.push({ step, action }) }).done
+    await api.start({ id: 'a-1', kind: 'browse', task: 't' }, { isCancelled: () => false, onProgress: (step, action) => progress.push({ step, action }) }).done
 
-    expect(progress).toEqual([{ step: 1, action: 'search "keyboards"' }])
+    expect(progress).toEqual([{ step: 1, action: '→ https://engine.test' }])
   })
 
   it('routes browse agents through the agent-activity tracker when wrapped outside', async () => {

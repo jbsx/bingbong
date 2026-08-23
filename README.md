@@ -17,12 +17,13 @@ T5 adds the **risk gate**: every click/type is classified from snapshot facts
 spoken + on-screen confirmation (auto-deny after 60 s); credential fills and
 payment submissions are hard-denied in code — no confirmation, no override.
 
-T6 adds the **utility tools**: `web_search` (DuckDuckGo's no-JS HTML endpoint
-behind the `SearchProvider` seam), media verbs (`media_control` drives
+T6 adds the **utility tools**: media verbs (`media_control` drives
 playback on the focused page via injected YouTube-style shortcuts — pause,
 volume, next, seek; never ad-skipping), and download routing — approved
 downloads land in `~/Downloads/bingbong_downloads/` and the filename is
-spoken and displayed on completion.
+spoken and displayed on completion. (The `web_search` tool T6 originally
+shipped is gone: since ADR 0009 every web read and write happens in a
+visible tab — search is GUI search.)
 
 Popup and dialog escalation adds three tiers: cookie/consent walls are
 auto-dismissed with an outcome line; other DOM dialogs expose their text and
