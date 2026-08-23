@@ -1,10 +1,10 @@
-// Filtered boot hydration (ADR 0005): the session the feed hydrates after
-// an app restart is the still-open one — never older sessions, and nothing
-// at all once the newest session lapsed. Pure over recorded run spans +
-// the continuation window, mirroring the connectedness rule the in-memory
-// session store applies live (ADR 0001): a run joins the session when it
-// starts within one window of the previous run's finish; the session is
-// open while the newest run finished within one window of now.
+// Filtered boot hydration (ADR 0005, capped by #73): what a restart
+// renders is the Active Session's last exchange — never older sessions,
+// and nothing at all once the newest session lapses — mirroring the
+// model-side retention asymmetry (ADR 0001/0005): connected run chains
+// spanning hours never re-render wholesale. Pure over recorded run spans +
+// the continuation window; the boot-armed Lapse anchor (#73) shares the
+// same activeness rule, so what hydrates is exactly what the timer wipes.
 // history.db recording is untouched — this only decides what renders.
 
 import type { RecordedEntry } from './historyStore'
@@ -24,41 +24,48 @@ function effectiveFinish(run: RunSpan): number {
 /**
  * The restart hydration payload: every recorded entry (the renderer-side
  * projection decides what renders) beside the recorded run spans and the
- * current session's start boundary — `null` means the session already
- * lapsed and the feed boots blank (ADR 0005). The spans feed the renderer's
- * Active Session gate (#70) — the same `isSessionActive` computation this
- * module's scoping uses.
+ * render boundary — `renderFromAt` is the hydrated last exchange's start,
+ * `null` a session already lapsed and a feed that boots blank (ADR 0005).
+ * The spans feed the renderer's Active Session gate (#70) — the same
+ * `isSessionActive` computation this module's scoping uses.
  */
 export interface HydrationSnapshot {
   entries: RecordedEntry[]
   runs: RunSpan[]
-  sessionStartAt: number | null
+  /** Entries stamped before this stay gone (#73): the view renders at most the last exchange. */
+  renderFromAt: number | null
 }
 
 /**
- * The wall-clock start of the still-open session — hydration renders only
- * entries stamped at/after it — or null when the session already lapsed
- * (or nothing was recorded): hydrate nothing, the feed boots blank.
+ * The last exchange's start — hydration renders only entries stamped
+ * at/after it — or null when the session already lapsed (or nothing was
+ * recorded): hydrate nothing, the feed boots blank. Always the newest run's
+ * start while the session is active (#73's cap): a connected chain hours
+ * long still hydrates exactly one exchange, never the chain.
  */
-export function openSessionStart(runs: RunSpan[], now: number, windowMs: number): number | null {
+export function lastExchangeStart(runs: RunSpan[], now: number, windowMs: number): number | null {
   if (!isSessionActive(runs, now, windowMs)) return null
-  const newest = runs.at(-1)!
-  // Walk back through connected runs; the oldest connected run's start is
-  // where the session (and the hydrated view) begins.
-  let boundary = newest.startedAt
-  for (let i = runs.length - 1; i > 0; i -= 1) {
-    if (runs[i]!.startedAt - effectiveFinish(runs[i - 1]!) >= windowMs) break
-    boundary = runs[i - 1]!.startedAt
-  }
-  return boundary
+  return runs.at(-1)!.startedAt
+}
+
+/**
+ * The finish the boot-armed eager-Lapse timer anchors to (#73): the newest
+ * run's effective finish while the session is still active — null when the
+ * session lapsed or nothing was recorded (a blank boot has nothing to
+ * wipe). Shares `isSessionActive` with `lastExchangeStart`, so the timer
+ * arms exactly when hydration rendered.
+ */
+export function bootLapseFinish(runs: RunSpan[], now: number, windowMs: number): number | null {
+  if (!isSessionActive(runs, now, windowMs)) return null
+  return effectiveFinish(runs.at(-1)!)
 }
 
 /**
  * The Active Session predicate (#70; the one shared computation): true while
  * the newest run finished within the window, or a run is in progress (an
  * unfinished run ages from its start, the recorder's crash convention).
- * The idle gate evaluates it live over tracked spans; boot hydration reuses
- * it through `openSessionStart` — one definition of "the session still owns
+ * The idle gate evaluates it live over tracked spans; boot hydration and
+ * the boot-armed Lapse reuse it — one definition of "the session still owns
  * the screen", so the idle screen can never contradict the hydrated view.
  */
 export function isSessionActive(runs: RunSpan[], now: number, windowMs: number): boolean {

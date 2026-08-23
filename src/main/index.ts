@@ -22,7 +22,7 @@ import { settingsToEnv } from '../core/settings/settings'
 import { createUsageStore } from './settings/usageStore'
 import { USAGE_IPC } from '../core/settings/usageIpcChannels'
 import { HISTORY_IPC, HISTORY_HYDRATE_LIMIT } from '../core/history/ipcChannels'
-import { openSessionStart, type HydrationSnapshot } from '../core/history/hydrationScope'
+import { bootLapseFinish, lastExchangeStart, type HydrationSnapshot, type RunSpan } from '../core/history/hydrationScope'
 import { createHistoryRecorder } from '../core/history/historyRecorder'
 import { createSessionMemory } from '../core/session/sessionMemory'
 import { systemClock } from '../core/ports/clock'
@@ -136,6 +136,13 @@ const chimePlayer = createAplayPlayer()
 
 function currentEnv(): Record<string, string | undefined> {
   return { ...process.env, ...settingsToEnv(settingsStore.get()) }
+}
+
+/** Recorded run spans (oldest first) — the shared input of boot hydration and the boot-armed Lapse. */
+function recordedSpans(): RunSpan[] {
+  return historyStore
+    .recentRuns(HISTORY_HYDRATE_LIMIT)
+    .map((run) => ({ startedAt: run.startedAt, finishedAt: run.finishedAt }))
 }
 
 let cliHarnessStarted = false
@@ -312,6 +319,12 @@ async function createWindow(): Promise<BrowserWindow> {
     windowMs: launchConfig.sessionWindowMs,
     onSessionStart: () => emitPipelineEvent({ type: 'session_started', at: systemClock.now() }),
   })
+  // Boot-armed Lapse (#73): a restart within the Session Window hydrated a
+  // view, so the eager boundary must own it — the timer anchors at the
+  // recorded last-run finish and wipes on schedule without a live run.
+  // The thread stays fresh (ADR 0005's asymmetry); only the timer arms.
+  const lapseFinish = bootLapseFinish(recordedSpans(), systemClock.now(), launchConfig.sessionWindowMs)
+  if (lapseFinish !== null) sessionMemory.armBootLapse(lapseFinish)
   const pipeline = createAssistantPipeline({
     controller,
     env: currentEnv(),
@@ -367,6 +380,9 @@ async function createWindow(): Promise<BrowserWindow> {
   )
   const detachPaneAbort = attachAssistantAbortHotkey(pipeline, pane.view.webContents)
   win.on('closed', detachPaneAbort)
+  // The session store dies with its window (#73): a pending Lapse boundary
+  // must never fire into the channels a closed window left behind.
+  win.on('closed', () => sessionMemory.dispose())
 
   if (process.env.ELECTRON_RENDERER_URL) {
     void win.loadURL(process.env.ELECTRON_RENDERER_URL)
@@ -388,19 +404,20 @@ app.whenReady().then(async () => {
   registerFeedPanelIpc()
   ipcMain.handle(USAGE_IPC.getToday, () => usageStore.summary(dailySpendWarnUsd()))
   ipcMain.handle(HISTORY_IPC.recentEntries, (): HydrationSnapshot => {
-    // Restart hydration (ADR 0005): entries ship unfiltered — recording and
-    // the read stay review-only — beside the run spans and the current
-    // session's start boundary, computed with the same window the live
-    // store uses. The renderer's projection decides what renders; a lapsed
-    // session boots blank. The spans (#70) seed the renderer's Active
-    // Session gate, which reuses the same isSessionActive computation as
-    // the scoping here.
-    const windowMs = launchConfig.sessionWindowMs
-    const entries = historyStore.recentEntries(HISTORY_HYDRATE_LIMIT)
-    const runs = historyStore
-      .recentRuns(HISTORY_HYDRATE_LIMIT)
-      .map((run) => ({ startedAt: run.startedAt, finishedAt: run.finishedAt }))
-    return { entries, runs, sessionStartAt: openSessionStart(runs, systemClock.now(), windowMs) }
+    // Restart hydration (ADR 0005, capped by #73): entries ship unfiltered
+    // — recording and the read stay review-only — beside the run spans and
+    // the render boundary, computed with the same window the live store
+    // uses. The renderer's projection decides what renders: at most the
+    // last exchange of the Active Session; a lapsed session boots
+    // blank. The spans (#70) seed the renderer's Active Session gate,
+    // which reuses the same isSessionActive computation as the scoping
+    // here.
+    const runs = recordedSpans()
+    return {
+      entries: historyStore.recentEntries(HISTORY_HYDRATE_LIMIT),
+      runs,
+      renderFromAt: lastExchangeStart(runs, systemClock.now(), launchConfig.sessionWindowMs),
+    }
   })
   ipcMain.handle(HISTORY_IPC.recentRuns, () => historyStore.recentRuns(50))
   ipcMain.handle(HISTORY_IPC.recordVoiceError, (_event, message: unknown) => {

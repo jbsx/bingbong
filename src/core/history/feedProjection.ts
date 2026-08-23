@@ -17,7 +17,8 @@ import type { TranscriptEvent } from './historyStore'
 // superseded by the tool's outcome line at execution. Session-scoped
 // (ADR 0003, made eager by ADR 0005): session_started — fired lazily at
 // the boundary command or eagerly by the lapse timer — wipes the view, and
-// restart hydration seeds only the still-open session. Conversation
+// restart hydration seeds only the Active Session, capped at the last
+// exchange (#73). Conversation
 // structure (#54): every entry carries its role in the chat — your words
 // (user) vs Bing Bong's answers (assistant) vs system detail — and a
 // turn's spoken line is suppressed from the view once its display card
@@ -81,9 +82,9 @@ export function createFeedProjection(): {
   append(entry: TranscriptEvent): void
   /**
    * Restart hydration: recorded history seeds outcome entries only, scoped
-   * to the still-open session (ADR 0005) — entries older than the
-   * snapshot's `sessionStartAt` boundary stay gone, and `null` (a lapsed
-   * session) seeds nothing at all.
+   * to the Active Session and capped at the last exchange (#73 caps
+   * ADR 0005) — entries older than the snapshot's `renderFromAt` boundary
+   * stay gone, and `null` (a lapsed session) seeds nothing at all.
    */
   hydrate(snapshot: HydrationSnapshot): void
   entries(): FeedEntry[]
@@ -298,15 +299,17 @@ export function createFeedProjection(): {
     },
     append: appendOutcome,
     hydrate(snapshot) {
-      // Session-scoped first (ADR 0005): the lapsed past never renders,
-      // even for the entries the recorder did (and must keep) recording.
+      // Session-scoped first (ADR 0005), capped at the last exchange
+      // (#73): the lapsed past never renders, and neither do the older
+      // exchanges of a connected chain — even for the entries the
+      // recorder did (and must keep) recording.
       // Recorded entries carry no turn ids (#54: history recording stays
       // exactly as it was, per #49), so speak suppression — keyed on the
       // shared turn id — is a live-stream behavior only: a hydrated speak
       // renders beside its recorded display, and roles derive from kind.
-      const { sessionStartAt } = snapshot
+      const { renderFromAt } = snapshot
       const inSession =
-        sessionStartAt === null ? [] : snapshot.entries.filter((entry) => entry.at >= sessionStartAt)
+        renderFromAt === null ? [] : snapshot.entries.filter((entry) => entry.at >= renderFromAt)
       if (inSession.length === 0 || sessionCleared) return
       closeStreaming()
       // Recorded history is older than anything live; entries that arrived

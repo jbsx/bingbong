@@ -32,9 +32,9 @@ function recorded(kind: RecordedEntry['kind'], text: string, at: number): Record
   return { id: 1, runId: null, kind, text, at }
 }
 
-/** A snapshot whose session began at/before the first entry — hydrates all. */
+/** A snapshot whose render boundary began at/before the first entry — hydrates all. */
 function snapshotOf(...entries: RecordedEntry[]) {
-  return { entries, runs: [], sessionStartAt: entries[0]?.at ?? 0 }
+  return { entries, runs: [], renderFromAt: entries[0]?.at ?? 0 }
 }
 
 /** The entry surface the panel renders: order + kind + role + text + detail flag. */
@@ -515,7 +515,7 @@ describe('feed projection', () => {
     })
   })
 
-  describe('session-scoped hydration (ADR 0005)', () => {
+  describe('session-scoped hydration (ADR 0005, capped at the last exchange by #73)', () => {
     it('hydrates only entries inside the still-open session — older sessions stay gone', () => {
       const feed = createFeedProjection()
 
@@ -527,7 +527,7 @@ describe('feed projection', () => {
           recorded('speak', 'Fresh answer.', 11_000),
         ],
         runs: [],
-        sessionStartAt: 10_000,
+        renderFromAt: 10_000,
       })
 
       expect(outline(feed.entries())).toEqual([
@@ -542,7 +542,7 @@ describe('feed projection', () => {
       feed.hydrate({
         entries: [recorded('command', 'stale session', 1_000), recorded('speak', 'Old answer.', 2_000)],
         runs: [],
-        sessionStartAt: null,
+        renderFromAt: null,
       })
 
       expect(feed.entries()).toEqual([])
@@ -552,7 +552,7 @@ describe('feed projection', () => {
       const feed = createFeedProjection()
       feed.onEvent(command('typed while fetching', 5_000))
 
-      feed.hydrate({ entries: [recorded('command', 'stale session', 1_000)], runs: [], sessionStartAt: null })
+      feed.hydrate({ entries: [recorded('command', 'stale session', 1_000)], runs: [], renderFromAt: null })
 
       expect(outline(feed.entries())).toEqual([
         { kind: 'command', role: USER, text: 'typed while fetching', detail: false },
@@ -565,12 +565,36 @@ describe('feed projection', () => {
       feed.hydrate({
         entries: [recorded('command', 'session opener', 7_000), recorded('speak', 'Answer.', 8_000)],
         runs: [],
-        sessionStartAt: 7_000,
+        renderFromAt: 7_000,
       })
 
       expect(outline(feed.entries())).toEqual([
         { kind: 'command', role: USER, text: 'session opener', detail: false },
         { kind: 'speak', role: ASSISTANT, text: 'Answer.', detail: false },
+      ])
+    })
+
+    it('caps at the last exchange — a connected chain spanning hours never re-renders wholesale', () => {
+      // Same still-open session, but the boundary (#73) is the newest run's
+      // start: the model-side retention asymmetry, mirrored at boot.
+      const feed = createFeedProjection()
+
+      feed.hydrate({
+        entries: [
+          recorded('command', 'first command hours ago', 1_000),
+          recorded('speak', 'First answer.', 2_000),
+          recorded('command', 'second command', 60_000),
+          recorded('speak', 'Second answer.', 61_000),
+          recorded('command', 'last command', 120_000),
+          recorded('speak', 'Last answer.', 121_000),
+        ],
+        runs: [],
+        renderFromAt: 120_000,
+      })
+
+      expect(outline(feed.entries())).toEqual([
+        { kind: 'command', role: USER, text: 'last command', detail: false },
+        { kind: 'speak', role: ASSISTANT, text: 'Last answer.', detail: false },
       ])
     })
 
@@ -586,7 +610,7 @@ describe('feed projection', () => {
           recorded('speak', 'Answer.', 13_000),
         ],
         runs: [],
-        sessionStartAt: 10_000,
+        renderFromAt: 10_000,
       })
 
       expect(outline(feed.entries())).toEqual([

@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { startHarness, type Harness } from './harness'
 import { startFixtureServer, type FixtureServer } from './fixtureServer'
-import { sleep } from './waitFor'
+import { sleep, waitFor } from './waitFor'
 import { submitAndAwaitAnswer, feedText } from './feed'
 import type { AssistantTurn } from '../src/core/ports/llm'
 
@@ -113,6 +113,76 @@ describe('session-scoped boot hydration e2e', () => {
       expect(hydrated).toBe('')
     } finally {
       await second.quit()
+    }
+  })
+})
+
+describe('boot hydration last-exchange cap + boot-armed Lapse e2e (#73)', () => {
+  // A window wide enough that two scripted exchanges, a quit, and a
+  // relaunch all land inside it (a connected chain), short enough that the
+  // boot-armed Lapse is wait-out-able. The restart must render at most the
+  // last exchange — never the chain — and the eager-Lapse timer, armed at
+  // boot from the hydrated last-run finish, wipes that view on schedule
+  // without any live run after the restart.
+  const WINDOW_MS = 15_000
+
+  const SCRIPT: AssistantTurn[] = [
+    { kind: 'answer', speak: 'First answer.', display: 'ANSWER ONE' },
+    { kind: 'answer', speak: 'Second answer.', display: 'ANSWER TWO' },
+  ]
+
+  it('hydrates only the last exchange after an in-window restart, then the boot-armed Lapse wipes it', async () => {
+    const fixture = await startFixtureServer()
+    const userDataDir = await mkdtemp(join(tmpdir(), 'bingbong-e2e-boot-cap-'))
+    const env = {
+      BINGBONG_LLM_SCRIPT: JSON.stringify(SCRIPT),
+      BINGBONG_SESSION_WINDOW_MS: String(WINDOW_MS),
+    }
+
+    try {
+      // One connected session of two exchanges, then quit — the chain the
+      // restart must NOT resurrect wholesale.
+      const first = await startHarness({ fixture, userDataDir, env })
+      try {
+        await submitAndAwaitAnswer(first, 'first command', 'ANSWER ONE')
+        await submitAndAwaitAnswer(first, 'second command', 'ANSWER TWO')
+      } finally {
+        await first.quit()
+      }
+
+      // Restart inside the window: the hydrated view carries at most the
+      // last exchange (#73's cap, mirroring the model-side retention).
+      const second = await startHarness({ fixture, userDataDir, env })
+      try {
+        await waitFor(
+          async () => {
+            const hydrated = await feedText(second)
+            return hydrated.includes('second command') && hydrated.includes('ANSWER TWO')
+              ? hydrated
+              : undefined
+          },
+          { timeoutMs: 20_000, intervalMs: 250 },
+        )
+        const hydrated = await feedText(second)
+        expect(hydrated).not.toContain('first command')
+        expect(hydrated).not.toContain('ANSWER ONE')
+
+        // No command was issued after the restart, yet the window's expiry
+        // wipes the hydrated view: the Lapse timer armed at boot from the
+        // recorded last-run finish.
+        await waitFor(
+          async () => ((await feedText(second)) === '' ? true : undefined),
+          { timeoutMs: WINDOW_MS + 15_000, intervalMs: 250 },
+        )
+        // And it stays wiped — one boundary, one clear.
+        await sleep(1_000)
+        expect(await feedText(second)).toBe('')
+      } finally {
+        await second.quit()
+      }
+    } finally {
+      await fixture.close()
+      await rm(userDataDir, { recursive: true, force: true })
     }
   })
 })

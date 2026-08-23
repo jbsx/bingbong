@@ -69,6 +69,21 @@ export interface SessionMemory extends SessionHistorySource, SessionResetSource 
    * the command after the reset starts clean.
    */
   clear(): void
+  /**
+   * Boot-armed lapse (#73): arms the eager-Lapse timer from the hydrated
+   * last-run finish, so a restart within the Session Window wipes its
+   * hydrated view on schedule without a live run first. Nothing joins the
+   * thread — the model still starts fresh on restart (ADR 0005's accepted
+   * asymmetry); a store with a live thread or run ignores the call (the
+   * live path's own newest exchange owns the boundary).
+   */
+  armBootLapse(finishedAt: number): void
+  /**
+   * Tears the store down with its window: cancels the pending boundary
+   * without announcing it. A closed window's timer must never fire into
+   * the channels it left behind (#73 review).
+   */
+  dispose(): void
 }
 
 function truncate(text: string): string {
@@ -121,6 +136,11 @@ export function createSessionMemory(options?: SessionMemoryOptions): SessionMemo
   // so the lapsed command that follows stays silent (one lapse, one clear).
   let lapseAnnounced = false
   let cancelLapseTimer: (() => void) | null = null
+  // The boot-hydrated last-run finish (#73): the eager-Lapse anchor while
+  // the thread is still empty. Every path that fills the thread cancels or
+  // re-arms the timer, so the anchor only ever serves a boot that saw no
+  // command — exactly the restart-with-hydrated-view case.
+  let bootFinish: number | null = null
 
   const cancelLapse = (): void => {
     cancelLapseTimer?.()
@@ -132,14 +152,17 @@ export function createSessionMemory(options?: SessionMemoryOptions): SessionMemo
     // Never mid-run: a live command cancels the timer on arrival; the guard
     // holds even for stray fires (belt — re-arming happens on its done).
     if (liveRuns.size > 0) return
-    const last = exchanges.at(-1)
-    if (!last) return
-    const remaining = last.finishedAt + windowMs - clock.now()
+    // The lapse anchor: the thread's newest exchange once one exists (the
+    // live path), else the boot-hydrated finish (#73).
+    const anchor = exchanges.at(-1)?.finishedAt ?? bootFinish
+    if (anchor === null) return
+    const remaining = anchor + windowMs - clock.now()
     if (remaining > 0) {
       cancelLapseTimer = clock.setTimer(remaining, fireLapse)
       return
     }
     lapseAnnounced = true
+    bootFinish = null
     options?.onSessionStart?.()
   }
 
@@ -159,11 +182,27 @@ export function createSessionMemory(options?: SessionMemoryOptions): SessionMemo
       const hadThread = exchanges.length > 0 || (activeRunHistory?.length ?? 0) > 0
       exchanges = []
       activeRunHistory = null
-      // The thread is gone — nothing left to lapse.
+      // The thread is gone — nothing left to lapse, boot anchor included.
       cancelLapse()
       lapseAnnounced = false
+      bootFinish = null
       for (const run of liveRuns) run.suppressed = true
       if (hadThread) options?.onSessionStart?.()
+    },
+    armBootLapse(finishedAt) {
+      // A live thread owns its boundary (its runs' done handlers arm it),
+      // and a live run cancels any arming on arrival; the boot anchor only
+      // ever describes a store that saw neither.
+      if (exchanges.length > 0 || liveRuns.size > 0) return
+      bootFinish = finishedAt
+      armLapse(finishedAt)
+    },
+    dispose() {
+      // No announcement: the window is gone, its channels with it. The
+      // never-mid-run belt in fireLapse covers even an undisposed stray.
+      cancelLapse()
+      bootFinish = null
+      for (const run of liveRuns) run.suppressed = true
     },
     run() {
       const runId = ++nextRunId
