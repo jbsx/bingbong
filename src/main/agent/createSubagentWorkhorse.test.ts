@@ -58,6 +58,63 @@ describe('createSubagentTaskApi', () => {
     expect(browser.navigations).toEqual(['https://shop.test'])
   })
 
+  it('runs the same-wall Blocker gate inside browse agents against their own tab (#81)', async () => {
+    // The login-wall classifier fires on the accounts.* host at the
+    // navigate-settle choke point, so the marker rides the real navigate
+    // tool result through the FakeBrowser.
+    const browser = new FakeBrowser()
+    const script = JSON.stringify([
+      { kind: 'tool_calls', calls: [{ id: 'n1', name: 'navigate', args: { url: 'https://accounts.shop.test/' } }] },
+      { kind: 'tool_calls', calls: [{ id: 'c1', name: 'click', args: { ref: 2 } }] },
+      { kind: 'tool_calls', calls: [{ id: 'n2', name: 'navigate', args: { url: 'https://shop.test/' } }] },
+      { kind: 'tool_calls', calls: [{ id: 'c2', name: 'click', args: { ref: 3 } }] },
+      { kind: 'answer', speak: 's', display: 'Worked a different site.' },
+    ])
+    const api = createSubagentTaskApi({
+      getEnv: () => envWith(script),
+      fetchFn: (async () => new Response('{}')) as typeof fetch,
+      controllerFor: () => browser,
+      clock: new FakeClock(),
+    })
+
+    const report = await api.start(
+      { id: 'a-1', kind: 'browse', task: 'open the shop' },
+      { isCancelled: () => false, onProgress: () => undefined },
+    ).done
+
+    // The walled navigate executed (detection never blocks) and armed the
+    // gate; the same-host click was refused — never reached the controller.
+    // Moving to a different host disarmed it, so the second click ran.
+    expect(browser.navigations).toEqual(['https://accounts.shop.test/', 'https://shop.test/'])
+    expect(browser.clicks).toEqual([3])
+    expect(report).toBe('Worked a different site.')
+  })
+
+  it('ends a walled browse agent with the ASK_USER relay as its report (#81)', async () => {
+    const browser = new FakeBrowser()
+    const script = JSON.stringify([
+      { kind: 'tool_calls', calls: [{ id: 'n1', name: 'navigate', args: { url: 'https://accounts.shop.test/' } }] },
+      { kind: 'tool_calls', calls: [{ id: 'c1', name: 'click', args: { ref: 2 } }] },
+      { kind: 'tool_calls', calls: [{ id: 'q1', name: 'ask_user', args: { question: 'Can you sign in to this site once in the browser tab?' } }] },
+    ])
+    const api = createSubagentTaskApi({
+      getEnv: () => envWith(script),
+      fetchFn: (async () => new Response('{}')) as typeof fetch,
+      controllerFor: () => browser,
+      clock: new FakeClock(),
+    })
+
+    const report = await api.start(
+      { id: 'a-1', kind: 'browse', task: 'open the account page' },
+      { isCancelled: () => false, onProgress: () => undefined },
+    ).done
+
+    // The refused click never reached the controller, and the run ended
+    // with the relay directive — not rounds of failed hammering.
+    expect(browser.clicks).toEqual([])
+    expect(report).toContain('ASK_USER: Can you sign in to this site once in the browser tab?')
+  })
+
   it('gives browse agents screenshot descriptions through look', async () => {
     const browser = new FakeBrowser()
     browser.screenshotBytes = new Uint8Array([1, 2, 3])

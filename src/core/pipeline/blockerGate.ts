@@ -16,6 +16,13 @@ import { parseBlockerMarker, UNKNOWN_BLOCKER_HOST } from '../browser/blockerNudg
 // disarms it — the model demonstrably moved on, so a later return (the user
 // may have signed in meanwhile) is allowed to try again.
 //
+// One module, two runners (#81): the same gate runs inside the subagent
+// runner with one difference — subagents cannot ask the user directly, so
+// the refusal names the ASK_USER relay (report back with
+// "ASK_USER: <question>" per the delegation contract) instead of ask_user.
+// Only the escalation wording differs; the arming, matching, and disarming
+// behavior is identical.
+//
 // read_page, look, and ask_user are never refused (ADR 0010): re-reading
 // the walled page re-shows the marker, vision verifies it, and ask_user is
 // the escalation itself. Hosts compare exactly, lowercased — old.reddit.com
@@ -63,12 +70,33 @@ const HELP_BY_SIGNAL: Record<BlockerSignal, string> = {
   'login-wall': 'the user signing in once in the browser tab',
 }
 
+/** The escalation sentence the refusal carries — the runner's only difference. */
+export type BlockerEscalation = (signal: BlockerSignal) => string
+
+/** The orchestrator's route (#80): it can ask the user directly. */
+export const orchestratorBlockerEscalation: BlockerEscalation = (signal) =>
+  `Two real options: say so and ask_user — what helps is ${HELP_BY_SIGNAL[signal]} — ` + 'or navigate to a genuinely different site.'
+
+/**
+ * The subagent's route (#81): it cannot ask the user directly, so the
+ * refusal names the ASK_USER relay — ask_user returns the directive, and
+ * the final report carries it back to the orchestrator (delegation
+ * contract; the runner returns the directive verbatim as the report).
+ */
+export const subagentBlockerEscalation: BlockerEscalation = (signal) =>
+  `Two real options: call ask_user — its "ASK_USER: <question>" directive ends your task; ` +
+  `your report relays it to the user, and what helps is ${HELP_BY_SIGNAL[signal]} — ` +
+  'or navigate to a genuinely different site.'
+
 interface Armed {
   signal: BlockerSignal
   host: string
 }
 
-export function createBlockerGate(currentHost: () => string | null = () => null): BlockerGate {
+export function createBlockerGate(
+  currentHost: () => string | null = () => null,
+  escalate: BlockerEscalation = orchestratorBlockerEscalation,
+): BlockerGate {
   let armed: Armed | null = null
 
   // The host a browser call targets: the navigate argument's URL when it
@@ -84,8 +112,8 @@ export function createBlockerGate(currentHost: () => string | null = () => null)
     return (
       `${call.name} refused before execution: ${a.host} is walled for this run ` +
       `(Blocker: ${a.signal}) — interacting with that host again cannot succeed. ` +
-      `Two real options: say so and ask_user — what helps is ${HELP_BY_SIGNAL[a.signal]} — ` +
-      `or navigate to a genuinely different site. read_page and look still work on ${a.host}; ` +
+      `${escalate(a.signal)} ` +
+      `read_page and look still work on ${a.host}; ` +
       'any successful interaction with a different host lifts the refusal.'
     )
   }

@@ -13,6 +13,7 @@ import { runSubagent } from '../../core/agent/subagentRunner'
 import type { SubagentKind, SubagentSpec, SubagentTaskApi, SubagentTaskHooks } from '../../core/agent/subagentManager'
 import { ScriptedLlm, UnavailableLlm } from '../../core/testing/doubles'
 import { createBrowserTools } from '../../core/pipeline/browserTools'
+import { hostFromUrl } from '../../core/pipeline/blockerGate'
 import { createLookTool } from '../../core/pipeline/visionGroundingTools'
 import { createSearchTools } from '../../core/pipeline/searchTools'
 import { createReadUrlTool } from '../../core/pipeline/readUrlTool'
@@ -56,7 +57,7 @@ export interface SubagentWorkhorseDeps {
 function toolsForKind(
   kind: SubagentKind,
   deps: SubagentWorkhorseDeps,
-  spec: SubagentSpec,
+  controller: BrowserController | null,
 ): Tool[] {
   if (kind === 'research') {
     const tools: Tool[] = [createSubagentAskTool()]
@@ -65,7 +66,6 @@ function toolsForKind(
     return tools
   }
   if (kind === 'background') return [createSubagentAskTool(), ...(deps.backgroundTools ?? [])]
-  const controller = deps.controllerFor?.(spec.id) ?? null
   return controller
     ? [
         createSubagentAskTool(),
@@ -100,7 +100,13 @@ function resolveSubagentLlm(deps: SubagentWorkhorseDeps, tools: Tool[]): LlmClie
 export function createSubagentTaskApi(deps: SubagentWorkhorseDeps): SubagentTaskApi {
   return {
     start(spec: SubagentSpec, hooks: SubagentTaskHooks) {
-      const tools = toolsForKind(spec.kind, deps, spec)
+      // One controller lookup per spawn, claimed only by tab kinds —
+      // research and background agents must not grab a tab (looking one
+      // up would). The kind structure mirrors toolsForKind's: whatever
+      // isn't research/background is a browser kind.
+      const controller =
+        spec.kind !== 'research' && spec.kind !== 'background' ? deps.controllerFor?.(spec.id) ?? null : null
+      const tools = toolsForKind(spec.kind, deps, controller)
       // Perf outermost, the same order as the orchestrator's client: the
       // span times the whole round including usage bookkeeping.
       const llm = deps.tracer
@@ -112,6 +118,10 @@ export function createSubagentTaskApi(deps: SubagentWorkhorseDeps): SubagentTask
           tools,
           ...(deps.clock ? { clock: deps.clock } : {}),
           ...(deps.maxToolRounds !== undefined ? { maxToolRounds: deps.maxToolRounds } : {}),
+          // The host this agent's own tab is on — the same-wall Blocker
+          // gate (#81) classifies non-navigate browser calls by it, the
+          // same seam the orchestrator uses for its main pane.
+          ...(controller ? { currentHost: () => hostFromUrl(controller.state().url ?? '') } : {}),
         },
         {
           task: spec.task,

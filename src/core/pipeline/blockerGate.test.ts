@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { ToolCall, ToolResultOutcome } from '../ports/llm'
-import { createBlockerGate, hostFromUrl } from './blockerGate'
+import { createBlockerGate, hostFromUrl, subagentBlockerEscalation } from './blockerGate'
 
 // Issue #80, ADR 0010: the same-wall Blocker gate — a marker line on a
 // tool result arms it (flavor + host); while armed, browser calls
@@ -134,5 +134,24 @@ describe('createBlockerGate', () => {
     const gate = createBlockerGate()
     gate.observe(navigate('https://www.reddit.com/search'), fail)
     expect(gate.gate(verb('click'))).toEqual({ ok: true })
+  })
+
+  it('names the ASK_USER relay under the subagent escalation — one module, two wordings (#81)', () => {
+    const gate = createBlockerGate(() => 'www.reddit.com', subagentBlockerEscalation)
+    gate.observe(navigate('https://www.reddit.com/search'), ok(WALLED_RESULT))
+    const refusal = gate.gate(verb('click'))
+    expect(refusal.ok).toBe(false)
+    if (!refusal.ok) {
+      // The relay, not the orchestrator's direct ask: the directive rides
+      // the subagent's report back.
+      expect(refusal.reason).toMatch(/ASK_USER: <question>/)
+      expect(refusal.reason).toMatch(/report/)
+      expect(refusal.reason).not.toMatch(/say so and ask_user/)
+      // Behavior otherwise identical: host, signal, and both options.
+      expect(refusal.reason).toMatch(/www\.reddit\.com/)
+      expect(refusal.reason).toMatch(/challenge/)
+      expect(refusal.reason).toMatch(/genuinely different site/)
+      expect(refusal.reason).toMatch(/read_page and look still work/)
+    }
   })
 })
