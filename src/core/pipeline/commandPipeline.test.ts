@@ -930,6 +930,34 @@ describe('command pipeline', () => {
     expect(secondEvents.find((e) => e.type === 'error')).toMatchObject({ type: 'error', message: 'tool round limit (3) reached' })
   })
 
+  it('appends an advisory nudge when a vision tool misses its deadline', async () => {
+    const vision = {
+      name: 'look',
+      usesVision: true,
+      async execute() {
+        throw new Error('Vision request timed out after 15000ms')
+      },
+    }
+    const llm = new ScriptedLlm([
+      { kind: 'tool_calls', calls: [{ id: 'l1', name: 'look', args: {} }] },
+      { kind: 'answer', speak: 'Proceeding by DOM.', display: 'Proceeding by DOM.' },
+    ])
+    const pipeline = createCommandPipeline({
+      llm,
+      tts: new RecordingTts(),
+      clock: new FakeClock(),
+      tools: [vision],
+    })
+
+    const events = await collect(pipeline, 'look at the page')
+
+    expect(events.find((event) => event.type === 'tool_result' && !event.ok)).toMatchObject({
+      error: expect.stringMatching(
+        /Vision request timed out after 15000ms[\s\S]*read_page[\s\S]*ask_user/,
+      ),
+    })
+  })
+
   it('enforces the thirty-call orchestrator vision rail through the real tool execution seam', async () => {
     let executions = 0
     const vision = {

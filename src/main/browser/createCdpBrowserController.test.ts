@@ -778,6 +778,7 @@ describe('createCdpBrowserController screenshot', () => {
 
     expect(cdp.calls.find((call) => call.method === 'Page.captureScreenshot')?.params).toMatchObject({
       format: 'jpeg',
+      quality: 60,
     })
     expect(bytes).toEqual(new Uint8Array(Buffer.from('fake-jpeg-bytes')))
   })

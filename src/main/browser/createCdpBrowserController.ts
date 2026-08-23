@@ -439,7 +439,9 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
   }
 
   async function screenshot(): Promise<Uint8Array> {
-    const response = await cdp.send<ScreenshotResponse>('Page.captureScreenshot', { format: 'jpeg' })
+    // q60 keeps the upload ~4x smaller for the vision model; full width is
+    // retained so Locate points map cleanly to viewport coordinates (ADR 0008).
+    const response = await cdp.send<ScreenshotResponse>('Page.captureScreenshot', { format: 'jpeg', quality: 60 })
     return new Uint8Array(Buffer.from(response.data, 'base64'))
   }
 

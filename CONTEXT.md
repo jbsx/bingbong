@@ -104,3 +104,29 @@ _Avoid_: obstacle
 **Escalation**:
 Handing a Blocker from the agent to the user via a spoken ask — the fallback
 when no automatic path exists.
+
+### Vision
+
+**Look**:
+A vision-model inspection of the current page screenshot, returned as text.
+The tool named `look` is one Look; Auto-vision is another.
+_Avoid_: screenshot analysis, image check
+
+**Auto-vision**:
+A Look the pipeline fires itself when an anomaly is suspected (stale ref, click
+with no observable change) — not requested by the model.
+
+**Describe / Locate**:
+The two Look capabilities. Describe answers "what does the page show" (fast,
+answer-bounded). Locate answers "where is the visually described target" as a
+viewport point (precise, DOM-first — vision only when the DOM cannot identify
+one target).
+_Avoid_: vision call for both (say which capability)
+
+**Vision Budget**:
+The maximum number of Looks one run may spend, orchestrator and subagents alike.
+
+**Vision Deadline**:
+The maximum wall-clock one Look may take, per capability — a safety net against
+endpoint variance, not a latency target. Breach surfaces as a failure plus a
+nudge, never a silent blind browse.

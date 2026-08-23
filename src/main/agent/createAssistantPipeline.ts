@@ -27,7 +27,7 @@ import { ScriptedLlm, silentTts, UnavailableLlm } from '../../core/testing/doubl
 import { createDuckDuckGoSearchProvider } from '../search/createDuckDuckGoSearchProvider'
 import { createOpenAiLlmClient } from './openAiLlmClient'
 import { ORCHESTRATOR_SYSTEM_PROMPT } from './orchestratorPrompt'
-import { createZaiVisionLocator } from '../vision/createZaiVisionLocator'
+import { createZaiVisionApi } from '../vision/createZaiVisionApi'
 
 export interface AssistantPipelineDeps {
   controller: BrowserController & VisualGroundingController
@@ -189,7 +189,7 @@ export function createAssistantPipeline(deps: AssistantPipelineDeps): CommandPip
   const fetchFn = deps.fetchFn ?? fetch
   const search = deps.search ?? createDuckDuckGoSearchProvider({ fetchFn })
   const getEnv = deps.getEnv ?? (() => deps.env)
-  const vision = deps.vision ?? createZaiVisionLocator({ getEnv })
+  const vision = deps.vision ?? createZaiVisionApi({ getEnv })
   const tools: Tool[] = [
     createAskUserTool(),
     ...createBrowserTools(deps.controller, vision),

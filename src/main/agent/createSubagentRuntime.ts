@@ -16,7 +16,7 @@ import { createSubagentPanePool, type MainPaneRectSource, type SubagentPanePool 
 import { createSubagentTaskApi } from './createSubagentWorkhorse'
 import { createBackgroundTools } from './backgroundTools'
 import { createDuckDuckGoSearchProvider } from '../search/createDuckDuckGoSearchProvider'
-import { createZaiVisionLocator } from '../vision/createZaiVisionLocator'
+import { createZaiVisionApi } from '../vision/createZaiVisionApi'
 
 // Composes the whole subagent surface for one window (issue #13): tab
 // machine + pane pool (Electron), manager + bridge (core), workhorse taskApi
@@ -75,7 +75,7 @@ export function createSubagentRuntime(deps: SubagentRuntimeDeps): SubagentRuntim
   const fetchFn = deps.fetchFn ?? fetch
   const search = deps.search ?? createDuckDuckGoSearchProvider({ fetchFn })
   const lingerMs = resolveLingerMs(deps.getEnv())
-  const vision = createZaiVisionLocator({ getEnv: deps.getEnv })
+  const vision = createZaiVisionApi({ getEnv: deps.getEnv })
 
   const tabs = createSubagentTabs({ clock, lingerMs })
   // The capture loop asks the manager who is running, but the manager needs
