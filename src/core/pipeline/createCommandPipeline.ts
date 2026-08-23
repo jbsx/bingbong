@@ -337,9 +337,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
         // navigations, or text typed into a search input — nudges first,
         // refuses at the cap, resets on a successful other tool call.
         // Created fresh per run, like the vision budget.
-        const searchLoopRail = createSearchLoopRail(
-          deps.describeRef ? { describeRef: deps.describeRef } : undefined,
-        )
+        const searchLoopRail = createSearchLoopRail({ describeRef: deps.describeRef })
         // Same-wall Blocker gate (#80, ADR 0010): arms when a tool result
         // carries a BLOCKER marker; while armed, browser calls targeting
         // that host (other than read_page/look/ask_user) are refused
