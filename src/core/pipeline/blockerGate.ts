@@ -60,8 +60,12 @@ export function hostFromUrl(value: string): string | null {
   }
 }
 
-/** The browser verbs (the BrowserController tool surface in browserTools.ts). */
-const BROWSER_TOOLS = new Set(['navigate', 'read_page', 'click', 'type', 'scroll', 'screenshot', 'back', 'go_forward'])
+/**
+ * The browser verbs (the BrowserController tool surface in browserTools.ts).
+ * Exported so toolSurface.test.ts can pin this set against the real
+ * catalog — a verb added there must fail closed here, not slip through.
+ */
+export const BROWSER_TOOLS = new Set(['navigate', 'read_page', 'click', 'type', 'scroll', 'screenshot', 'back', 'go_forward'])
 
 /** Browser verbs exempt from the same-host refusal. read_page stays out — the model must be able to re-inspect the wall; every other browser verb is refused, so a verb added later fails closed. look/ground_visual (vision, not browser verbs) and ask_user never reach this check. */
 const BLOCKER_EXEMPT_TOOLS = new Set(['read_page'])

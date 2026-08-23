@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { Tool } from './tool'
 import { createAskUserTool } from './askUserTools'
 import { createBrowserTools } from './browserTools'
+import { BROWSER_TOOLS } from './blockerGate'
 import { createVisionGroundingTools } from './visionGroundingTools'
 import { createMediaTools } from './mediaTools'
 import { createSubagentTools } from './subagentTools'
@@ -231,5 +232,13 @@ describe('orchestrator tool surface', () => {
   it('media verbs are playback-only', () => {
     const media = createMediaTools(new FakeBrowser()).find((tool) => tool.name === 'media_control')
     expect(media?.parameters?.['action']?.enum).toEqual(['play_pause', 'volume_up', 'volume_down', 'next', 'seek'])
+  })
+
+  it('the Blocker gate knows every browser verb — a new one cannot slip past it (#80)', () => {
+    // The same-wall gate refuses all browser verbs on an armed host except
+    // its exemptions; its verb set is hand-enumerated, so this pins it to
+    // the real catalog — drift here would silently exempt a new verb.
+    const browserToolNames = createBrowserTools(new FakeBrowser(), unusedVision).map((tool) => tool.name)
+    expect([...BROWSER_TOOLS].sort()).toEqual(browserToolNames.sort())
   })
 })
