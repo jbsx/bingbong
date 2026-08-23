@@ -301,6 +301,21 @@ function challengePage(): string {
 </html>`
 }
 
+// #79 mid-load self-redirect: the inline script re-navigates the tab while
+// the requested load is still pending — exactly the shape behind Google's
+// consent jump and Reddit's challenge reload, which surface as the original
+// loadURL rejecting with net::ERR_ABORTED.
+function midLoadRedirectPage(): string {
+  return `<!doctype html>
+<html>
+<head><title>redirecting fixture</title></head>
+<body style="background:#222;color:#fff;margin:0">
+  <h1>redirecting fixture page</h1>
+  <script>location.replace('/challenge')</script>
+</body>
+</html>`
+}
+
 // Sign-in wall fixture (ADR 0007): a login wall at a /signin path — the
 // URL shape the passive classifier treats as a login-wall Blocker.
 function signInWallPage(): string {
@@ -395,6 +410,10 @@ export async function startFixtureServer(): Promise<FixtureServer> {
     }
     if (req.url === '/challenge') {
       res.end(challengePage())
+      return
+    }
+    if (req.url === '/mid-load-redirect') {
+      res.end(midLoadRedirectPage())
       return
     }
     if (req.url === '/signin') {

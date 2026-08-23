@@ -33,6 +33,12 @@ function blockerScript(fixture: FixtureServer): AssistantTurn[] {
     { kind: 'answer', speak: 'Waiting on you at the challenge page.', display: 'Escalated the CAPTCHA to the user.' },
     // Login walls are nudged on navigation too (detect happens passively).
     { kind: 'tool_calls', calls: [{ id: 'signin-nav', name: 'navigate', args: { url: fixture.url('/signin') } }] },
+    // #79: a mid-load self-redirect must land as a normal outcome on the
+    // walled page — marker included — not a dead ERR_ABORTED error.
+    {
+      kind: 'tool_calls',
+      calls: [{ id: 'abort-nav', name: 'navigate', args: { url: fixture.url('/mid-load-redirect') } }],
+    },
     // Consent stays the auto-clear class: read_page dismisses it, no ask.
     {
       kind: 'tool_calls',
@@ -138,6 +144,12 @@ describe('blocker detect → verify → escalate e2e', () => {
     // Login walls are nudged on navigation too.
     expect(byId['signin-nav']).toContain('BLOCKER:login-wall 127.0.0.1')
     expect(byId['signin-nav']).toContain('This page is a Blocker — a login wall')
+
+    // #79: the aborted load recovered into a normal navigate outcome naming
+    // the real landed URL, and the classifier judged the landing — marker
+    // line present, no failed tool result.
+    expect(byId['abort-nav']).toContain(`navigated: url=${fixture.url('/challenge')}`)
+    expect(byId['abort-nav']).toContain('BLOCKER:challenge 127.0.0.1')
 
     // Consent keeps auto-clearing — dismissed deterministically, not escalated.
     expect(byId['consent-read']).toMatch(/^dismissed consent dialog: clicked \[2\] "Reject all(?: Reject all)?"/)

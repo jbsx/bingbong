@@ -196,11 +196,22 @@ class FakePage implements CdpPageDriver {
   wentForward = 0
   focusCount = 0
   failLoad = false
+  /** When set, loadUrl rejects with this exact error (timeout shapes). */
+  failLoadError: Error | null = null
+  /** When set, loadUrl rejects with ERR_ABORTED — the site self-navigated mid-load. */
+  abortLoad = false
+  /** Landing hops an aborted load settles through: url() advances one hop
+   * per read, then sticks on the last (the settled landing). */
+  landingHops: { url: string; title: string }[] = []
+  private hops: { url: string; title: string }[] | null = null
   failBack = false
   failForward = false
 
   async loadUrl(url: string): Promise<void> {
     this.loadedUrls.push(url)
+    this.hops = this.landingHops.length > 0 ? [...this.landingHops] : null
+    if (this.abortLoad) throw new Error('net::ERR_ABORTED')
+    if (this.failLoadError) throw this.failLoadError
     if (this.failLoad) throw new Error('ERR_NAME_NOT_RESOLVED')
   }
 
@@ -215,11 +226,12 @@ class FakePage implements CdpPageDriver {
   }
 
   url(): string {
-    return 'https://www.youtube.com/'
+    if (this.hops && this.hops.length > 1) this.hops.shift()
+    return this.hops ? this.hops[0].url : 'https://www.youtube.com/'
   }
 
   title(): string {
-    return 'YouTube'
+    return this.hops ? this.hops[0].title : 'YouTube'
   }
 
   focus(): void {
@@ -1065,6 +1077,76 @@ describe('createCdpBrowserController navigate and back', () => {
     const { controller } = makeController({ page })
 
     await expect(controller.back()).rejects.toThrow(/cannot go back/)
+  })
+})
+
+// #79: a site's own mid-load redirect (Google's consent jump, Reddit's
+// challenge reload) aborts the requested load with ERR_ABORTED while the
+// tab lands somewhere readable. Navigate waits for the landing and reports
+// it as a normal outcome; timeouts and real load errors stay hard errors.
+describe('createCdpBrowserController navigate abort recovery (#79)', () => {
+  it('reports the settled landing as a normal navigate outcome', async () => {
+    const page = new FakePage()
+    page.abortLoad = true
+    page.landingHops = [
+      { url: 'https://consent.google.com/m?continue=%2Fsearch', title: 'Before you continue' },
+      {
+        url: 'https://www.google.com/sorry/index?continue=https%3A%2F%2Fwww.google.com%2Fsearch%3Fq%3Dtest',
+        title: 'Unusual traffic from your computer',
+      },
+    ]
+    const { controller } = makeController({ page })
+
+    await expect(controller.navigate('https://www.google.com/search?q=test')).resolves.toBe(
+      'navigated: url=https://www.google.com/sorry/index?continue=https%3A%2F%2Fwww.google.com%2Fsearch%3Fq%3Dtest title="Unusual traffic from your computer"',
+    )
+    expect(page.loadedUrls).toEqual(['https://www.google.com/search?q=test'])
+  })
+
+  it('waits for a redirect chain to finish landing before reporting', async () => {
+    const page = new FakePage()
+    page.abortLoad = true
+    page.landingHops = [
+      { url: 'http://127.0.0.1:1/hop-1', title: 'First hop' },
+      { url: 'http://127.0.0.1:1/hop-2', title: 'Second hop' },
+      { url: 'http://127.0.0.1:1/landed', title: 'Landed page' },
+    ]
+    const { controller } = makeController({ page })
+
+    await expect(controller.navigate('http://127.0.0.1:1/original')).resolves.toBe(
+      'navigated: url=http://127.0.0.1:1/landed title="Landed page"',
+    )
+  })
+
+  it('reports the current page when an abort leaves the tab where it was', async () => {
+    const page = new FakePage()
+    page.abortLoad = true
+    const { controller } = makeController({ page })
+
+    await expect(controller.navigate('https://www.youtube.com/watch?v=abc')).resolves.toBe(
+      'navigated: url=https://www.youtube.com/ title="YouTube"',
+    )
+  })
+
+  it('invalidates the ref mapping after a recovered landing', async () => {
+    const { cdp, page, controller } = makeController()
+    await controller.readPage()
+    page.abortLoad = true
+    page.landingHops = [{ url: 'https://www.google.com/sorry/', title: 'Unusual traffic' }]
+
+    await controller.navigate('https://www.google.com/search?q=test')
+
+    const collectsBefore = cdp.collectCalls().length
+    await controller.click(1)
+    expect(cdp.collectCalls().length).toBe(collectsBefore + 1)
+  })
+
+  it('keeps load timeouts hard errors', async () => {
+    const page = new FakePage()
+    page.failLoadError = new Error('timed out loading https://slow.test/')
+    const { controller } = makeController({ page })
+
+    await expect(controller.navigate('https://slow.test/')).rejects.toThrow(/timed out loading/)
   })
 })
 

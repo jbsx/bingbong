@@ -182,6 +182,21 @@ function shortcutEventFor(press: KeyPress): { key: string; code: string; keyCode
   }
 }
 
+// Chromium's net code for a load aborted mid-flight — most commonly the
+// site re-navigating the tab itself (Google's consent jump, Reddit's
+// challenge reload) while the requested load was still pending (#79).
+// Electron rejects loadURL with the code on the message and/or as `code`.
+const ABORT_ERROR_CODE = 'ERR_ABORTED'
+
+// How many settle intervals a recovered landing may take to stop moving
+// before the outcome reports whatever page is current anyway.
+const ABORT_SETTLE_POLLS = 50
+
+function isAbortedLoad(error: unknown): boolean {
+  if ((error as { code?: unknown } | null)?.code === ABORT_ERROR_CODE) return true
+  return error instanceof Error && error.message.includes(ABORT_ERROR_CODE)
+}
+
 export function createCdpBrowserController(deps: CdpBrowserControllerDeps): BrowserController & VisualGroundingController {
   const { cdp, page, collectScript } = deps
   const pacing: ControllerPacing = { ...HUMAN_PACING, ...deps.pacing }
@@ -430,13 +445,42 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
     return `scrolled ${direction}: x=${Math.round(signature.scrollX)} y=${Math.round(signature.scrollY)}`
   }
 
+  function navigationOutcome(): string {
+    return `navigated: url=${page.url()} title=${JSON.stringify(page.title())}`
+  }
+
+  /** Wait out a mid-load abort: poll until the tab's landing stops changing
+   * (or the poll budget runs out), so the outcome names a settled page. */
+  async function settleAfterAbort(): Promise<void> {
+    let previous = `${page.url()}\u0000${page.title()}`
+    for (let poll = 0; poll < ABORT_SETTLE_POLLS; poll++) {
+      await settle('navigate-abort', pacing.settleMs)
+      const current = `${page.url()}\u0000${page.title()}`
+      if (current === previous && page.url() !== '') return
+      previous = current
+    }
+  }
+
   async function navigate(input: string): Promise<string> {
     const url = normalizeUrlInput(input)
     if (!url) throw new Error(`cannot navigate to: "${input}"`)
-    await page.loadUrl(url)
+    try {
+      await page.loadUrl(url)
+    } catch (error) {
+      // A mid-load abort usually means the site re-navigated the tab itself:
+      // the load we asked for died, but the tab is landing somewhere
+      // readable. Wait out the landing and report it as a normal outcome —
+      // the navigate-settle Blocker classifier then judges the landed page
+      // (ADR 0010 choke point 1). Timeouts and genuine load errors stay
+      // hard errors.
+      if (!isAbortedLoad(error)) throw error
+      lastSnapshot = undefined
+      await settleAfterAbort()
+      return navigationOutcome()
+    }
     lastSnapshot = undefined
     await settle('navigate', pacing.settleMs)
-    return `navigated: url=${page.url()} title=${JSON.stringify(page.title())}`
+    return navigationOutcome()
   }
 
   async function screenshot(): Promise<Uint8Array> {
