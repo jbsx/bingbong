@@ -52,6 +52,10 @@ export interface FixtureServer {
   url(path: string): string
   /** How many times the adblock filter list has been fetched (cache probes). */
   adblockListHits(): number
+  /** How many times the OpenAI-compatible vision endpoint was called (#76 e2e). */
+  visionEndpointHits(): number
+  /** Authorization header of the latest vision call — proves which credentials reached the wire. */
+  lastVisionAuthorization(): string | undefined
   close(): Promise<void>
 }
 
@@ -312,7 +316,23 @@ function signInWallPage(): string {
 
 export async function startFixtureServer(): Promise<FixtureServer> {
   let adblockListHits = 0
+  let visionEndpointHits = 0
+  let lastAuthorization: string | undefined
   const httpServer: Server = createServer((req, res) => {
+    // OpenAI-compatible chat completions (#76 e2e): stands in for the vision
+    // provider, so the real adapter can be driven with .env-only routing.
+    if (req.url === '/chat/completions' && req.method === 'POST') {
+      visionEndpointHits += 1
+      lastAuthorization = req.headers.authorization
+      req.resume()
+      res.writeHead(200, { 'Content-Type': 'application/json' })
+      res.end(
+        JSON.stringify({
+          choices: [{ message: { content: 'A fixture page described by the .env-configured vision role.' } }],
+        }),
+      )
+      return
+    }
     if (req.url === '/dl') {
       res.writeHead(200, {
         'Content-Type': 'application/octet-stream',
@@ -416,6 +436,8 @@ export async function startFixtureServer(): Promise<FixtureServer> {
   return {
     url: (path) => `http://127.0.0.1:${address.port}${path}`,
     adblockListHits: () => adblockListHits,
+    visionEndpointHits: () => visionEndpointHits,
+    lastVisionAuthorization: () => lastAuthorization,
     close: () =>
       new Promise<void>((resolve, reject) =>
         httpServer.close((error) => (error ? reject(error) : resolve())),

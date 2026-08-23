@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { CdpClient } from './cdpClient'
+import { routingEnvKeys } from '../src/core/agent/modelRouting'
 import { launchApp, pickFreeDebugPort, type LaunchedApp } from './electronApp'
 import { startFixtureServer, type FixtureServer } from './fixtureServer'
 import { urlBarNavigationScript } from './scripts'
@@ -68,6 +69,15 @@ interface TargetInfo {
 type TargetKind = 'dashboard' | 'overlay' | 'pane'
 
 const repoRoot = fileURLToPath(new URL('..', import.meta.url))
+
+// E2e must never inherit the developer's real model routing (a sourced
+// shell, an exported key): every routing env var is unset by default, so
+// tests that need routing declare it — hermetic and credential-free.
+const ROUTING_ENV_UNSET: Record<string, undefined> = Object.fromEntries(
+  (['orchestrator', 'subagent', 'vision'] as const).flatMap((role) =>
+    routingEnvKeys(role).map((key) => [key, undefined]),
+  ),
+)
 
 // targetInfo.url goes stale after navigations; the predicates only rely on
 // values that never change for a given target (kind of page, initial URL).
@@ -148,12 +158,18 @@ export async function startHarness(
     // live Z.ai call — a hang or flake waiting to happen, and a real API
     // bill. Set-but-empty makes every scripted path fail fast instead;
     // tests that want vision pass their own non-empty script and override.
+    // The env-file pointer (#76) aims the app's new .env loader at a path
+    // that doesn't exist, so e2e never picks up the developer's real .env
+    // next to the repo — tests that want file config pass their own
+    // BINGBONG_ENV_FILE and override this.
     env: {
       BINGBONG_WAKE_ENGINE: 'off',
       BINGBONG_ADBLOCK_LISTS: fixture.url('/adblock-list'),
       BINGBONG_ADBLOCK_RESOURCES: '',
       BINGBONG_VISION_SCRIPT: '[]',
       BINGBONG_VISION_DESCRIPTION_SCRIPT: '[]',
+      BINGBONG_ENV_FILE: join(userDataDir, 'env-file-not-set'),
+      ...ROUTING_ENV_UNSET,
       ...options?.env,
     },
   })

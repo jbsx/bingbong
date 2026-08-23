@@ -4,6 +4,7 @@ import type { AgentRole } from '../../core/agent/modelRouting'
 import { ENDPOINT_DELAY_MS_MAX, ENDPOINT_DELAY_MS_MIN, MAX_TOOL_ROUNDS_MAX, MAX_TOOL_ROUNDS_MIN, RESUMPTION_MERGE_MS_MAX, RESUMPTION_MERGE_MS_MIN, WEB_ZOOM_PERCENT_MAX, WEB_ZOOM_PERCENT_MIN, WAKE_WORD_THRESHOLD_MAX, WAKE_WORD_THRESHOLD_MIN, asSttModel } from '../../core/settings/settings'
 import type { UsageSummary } from '../../core/agent/spendEstimate'
 import { DEFAULT_PIPER_VOICE } from '../../core/tts/piperVoices'
+import { useRoutingStatus } from './useSettings'
 
 const ROLES: { role: AgentRole; label: string }[] = [
   { role: 'orchestrator', label: 'Orchestrator' },
@@ -135,15 +136,25 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 function RoleRoutingFields({
   label,
   value,
+  configured,
   onChange,
 }: {
   label: string
   value: RoleRoutingSettings
+  /** Null while the routing status loads; the main process resolves it (#76). */
+  configured: boolean | null
   onChange: (next: RoleRoutingSettings) => void
 }) {
   return (
     <fieldset className="settings-role">
       <legend>{label}</legend>
+      {configured === null ? null : (
+        <p className={`settings-role-status${configured ? '' : ' settings-role-status--off'}`}>
+          {configured
+            ? 'Configured — this role resolves and will serve requests.'
+            : 'Not configured — set a base URL, model and API key here, or in .env / the environment.'}
+        </p>
+      )}
       <Field label="Base URL">
         <input
           type="text"
@@ -188,6 +199,7 @@ export function SettingsPage({
   const [savedAt, setSavedAt] = useState<number | null>(null)
   const mics = useMicrophones()
   const voices = useTtsVoices()
+  const routingStatus = useRoutingStatus()
   const lastSynced = useRef<AppSettings>(settings)
 
   // Follow external changes (another window's save, or our own sanitized
@@ -420,6 +432,7 @@ export function SettingsPage({
               key={role}
               label={label}
               value={draft.modelRouting[role]}
+              configured={routingStatus ? routingStatus[role] : null}
               onChange={(next) =>
                 setDraft({ ...draft, modelRouting: { ...draft.modelRouting, [role]: next } })
               }

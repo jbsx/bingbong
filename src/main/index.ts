@@ -19,6 +19,9 @@ import { resolvePreloadPath } from './preloadPath'
 import { createSettingsStore } from './settings/settingsStore'
 import { registerSettingsIpc } from './settings/attachSettings'
 import { settingsToEnv } from '../core/settings/settings'
+import { layerEnv } from '../core/settings/dotEnv'
+import { resolveRoutingStatus } from '../core/agent/modelRouting'
+import { loadEnvFile } from './envFile'
 import { createUsageStore } from './settings/usageStore'
 import { USAGE_IPC } from '../core/settings/usageIpcChannels'
 import { HISTORY_IPC, HISTORY_HYDRATE_LIMIT } from '../core/history/ipcChannels'
@@ -68,6 +71,13 @@ const runningCliHarness = process.argv.includes(CLI_HARNESS_FLAG) || process.env
 // They layer over process.env, so a settings-page save re-routes the LLM on
 // the next command without a restart.
 const settingsStore = createSettingsStore(join(app.getPath('userData'), 'settings.json'))
+
+// The `.env` next to the app (#76): read once at boot and layered under
+// process.env, completing the .env < process.env < settings precedence that
+// currentEnv() resolves. Boot-scoped launch flags (kiosk, idle timeout) stay
+// argv/process-env — the renderer's preload reads its own process env and
+// must never disagree with main's.
+const envFileValues = loadEnvFile(process.env, app.getAppPath())
 
 // Daily spend estimate (warn-only): every orchestrator/subagent turn with
 // reported usage lands here and surfaces on the settings page.
@@ -135,7 +145,7 @@ const chimeWav = createChimeWav()
 const chimePlayer = createAplayPlayer()
 
 function currentEnv(): Record<string, string | undefined> {
-  return { ...process.env, ...settingsToEnv(settingsStore.get()) }
+  return { ...layerEnv(envFileValues, process.env), ...settingsToEnv(settingsStore.get()) }
 }
 
 /** Recorded run spans (oldest first) — the shared input of boot hydration and the boot-armed Lapse. */
@@ -399,7 +409,7 @@ app.whenReady().then(async () => {
     const win = BrowserWindow.fromWebContents(event.sender)
     return win ? subagentRuntimes.get(win) : undefined
   })
-  registerSettingsIpc(settingsStore)
+  registerSettingsIpc(settingsStore, () => resolveRoutingStatus(currentEnv()))
   registerFeedPanelIpc()
   ipcMain.handle(USAGE_IPC.getToday, () => usageStore.summary(dailySpendWarnUsd()))
   ipcMain.handle(HISTORY_IPC.recentEntries, (): HydrationSnapshot => {

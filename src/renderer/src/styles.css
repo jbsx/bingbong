@@ -953,6 +953,18 @@ body {
   font-size: 1.1rem;
 }
 
+/* Routing status line (#76): green when the role resolves through the same
+   env the pipeline reads; red names the outage a `look` call would hit. */
+.settings-role-status {
+  margin: 0 0 12px;
+  font-size: 0.95rem;
+  color: var(--status-green);
+}
+
+.settings-role-status--off {
+  color: var(--status-red);
+}
+
 .settings-actions {
   display: flex;
   align-items: center;

@@ -84,3 +84,24 @@ export function resolveModelEndpoint(env: Record<string, string | undefined>, ro
 
   return { baseUrl, model, apiKey }
 }
+
+/** Which roles resolve right now — the settings page's configured/unconfigured lines (#76). */
+export type RoutingStatus = Record<AgentRole, boolean>
+
+/** One role's resolvability, throw-free — the same resolution the pipeline runs. */
+export function roleConfigured(env: Record<string, string | undefined>, role: AgentRole): boolean {
+  try {
+    resolveModelEndpoint(env, role)
+    return true
+  } catch {
+    return false
+  }
+}
+
+export function resolveRoutingStatus(env: Record<string, string | undefined>): RoutingStatus {
+  return {
+    orchestrator: roleConfigured(env, 'orchestrator'),
+    subagent: roleConfigured(env, 'subagent'),
+    vision: roleConfigured(env, 'vision'),
+  }
+}

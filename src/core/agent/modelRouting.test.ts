@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { resolveModelEndpoint, type AgentRole } from './modelRouting'
+import { resolveModelEndpoint, resolveRoutingStatus, roleConfigured, type AgentRole } from './modelRouting'
 
 const GLM_CODING_PLAN_URL = 'https://ai.z.ai/api/coding/paas/v4'
 
@@ -82,5 +82,26 @@ describe('resolveModelEndpoint', () => {
     expect(() =>
       resolveModelEndpoint(envWithRole('orchestrator', { BINGBONG_ORCHESTRATOR_MODEL: '  ' }), 'orchestrator'),
     ).toThrow(/BINGBONG_ORCHESTRATOR_MODEL/)
+  })
+})
+
+describe('routing status', () => {
+  it('reports each role configured exactly when its endpoint resolves (#76)', () => {
+    const visionOnly = {
+      BINGBONG_VISION_BASE_URL: GLM_CODING_PLAN_URL,
+      BINGBONG_VISION_MODEL: 'glm-4.6v',
+      ZAI_API_KEY: 'zai-secret',
+    }
+    expect(roleConfigured(visionOnly, 'vision')).toBe(true)
+    expect(roleConfigured(visionOnly, 'orchestrator')).toBe(false)
+    expect(resolveRoutingStatus(visionOnly)).toEqual({
+      orchestrator: false,
+      subagent: false,
+      vision: true,
+    })
+  })
+
+  it('reports nothing configured from an empty env', () => {
+    expect(resolveRoutingStatus({})).toEqual({ orchestrator: false, subagent: false, vision: false })
   })
 })

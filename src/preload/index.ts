@@ -13,6 +13,7 @@ import { resolveLaunchConfig } from '../core/app/launchConfig'
 import type { BrowserPaneState, PaneRect } from '../core/browser/paneState'
 import type { PipelineEvent } from '../core/pipeline/events'
 import type { AppSettings } from '../core/settings/settings'
+import type { RoutingStatus } from '../core/agent/modelRouting'
 import type { UsageSummary } from '../core/agent/spendEstimate'
 import type { VoiceErrorEvent, VoiceHeardEvent, VoiceState } from '../core/voice/ipcChannels'
 import type { RunRecord } from '../core/history/historyStore'
@@ -59,6 +60,12 @@ contextBridge.exposeInMainWorld('bingbong', {
       const wrapped = (_event: unknown, settings: AppSettings): void => listener(settings)
       ipcRenderer.on(SETTINGS_IPC.changed, wrapped)
       return () => ipcRenderer.removeListener(SETTINGS_IPC.changed, wrapped)
+    },
+    routingStatus: (): Promise<RoutingStatus> => ipcRenderer.invoke(SETTINGS_IPC.routingStatus),
+    onRoutingStatusChanged: (listener: (status: RoutingStatus) => void): (() => void) => {
+      const wrapped = (_event: unknown, status: RoutingStatus): void => listener(status)
+      ipcRenderer.on(SETTINGS_IPC.routingStatusChanged, wrapped)
+      return () => ipcRenderer.removeListener(SETTINGS_IPC.routingStatusChanged, wrapped)
     },
   },
   subagents: {

@@ -1,6 +1,7 @@
 import type { BrowserPaneState, PaneRect } from '../core/browser/paneState'
 import type { PipelineEvent } from '../core/pipeline/events'
 import type { AppSettings } from '../core/settings/settings'
+import type { RoutingStatus } from '../core/agent/modelRouting'
 import type { VoiceErrorEvent, VoiceHeardEvent, VoiceState } from '../core/voice/ipcChannels'
 import type { LaunchConfig } from '../core/app/launchConfig'
 import type { UsageSummary } from '../core/agent/spendEstimate'
@@ -11,6 +12,7 @@ import type { FeedPanelMode, FeedPanelState } from '../core/panel/feedPanelState
 export type { BrowserPaneState, PaneRect }
 export type { PipelineEvent }
 export type { AppSettings }
+export type { RoutingStatus }
 export type { VoiceErrorEvent, VoiceHeardEvent, VoiceState }
 export type { LaunchConfig }
 export type { UsageSummary }
@@ -44,6 +46,9 @@ export interface BingbongSettingsApi {
   get(): Promise<AppSettings>
   update(settings: AppSettings): Promise<AppSettings>
   onChanged(listener: (settings: AppSettings) => void): () => void
+  /** Which agent roles resolve right now — the routing status lines (#76). */
+  routingStatus(): Promise<RoutingStatus>
+  onRoutingStatusChanged(listener: (status: RoutingStatus) => void): () => void
 }
 
 export interface BingbongSubagentsApi {
