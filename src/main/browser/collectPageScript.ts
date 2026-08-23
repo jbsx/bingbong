@@ -116,17 +116,30 @@ export const COLLECT_PAGE_SCRIPT = `(() => {
   // whose content the top frame cannot read. Listing them (ADR 0007) with
   // their absolute src makes the Blocker visible to read_page. Same-origin
   // frames are page chrome, not Blockers — they stay invisible.
-  const crossOriginIframeSrc = (el) => {
-    const raw = el.getAttribute('src')
+  // Attribute values resolved against the page URL; null when the attribute
+  // is absent or unresolvable.
+  const absoluteAttr = (el, name) => {
+    const raw = el.getAttribute(name)
     if (!raw) return null
     try {
-      const url = new URL(raw, location.href)
-      if (url.origin === location.origin) return null
-      if (url.protocol !== 'http:' && url.protocol !== 'https:') return null
-      return url.href
+      return new URL(raw, location.href)
     } catch (e) {
       return null
     }
+  }
+  const crossOriginIframeSrc = (el) => {
+    const url = absoluteAttr(el, 'src')
+    if (!url) return null
+    if (url.origin === location.origin) return null
+    if (url.protocol !== 'http:' && url.protocol !== 'https:') return null
+    return url.href
+  }
+  // Snapshot hrefs (#77): resolve the raw attribute against the page so the
+  // model sees — and can navigate to — where links actually go; root-relative
+  // result URLs are the norm on SERPs.
+  const absoluteHref = (el) => {
+    const url = absoluteAttr(el, 'href')
+    return url ? url.href : null
   }
   const collectElements = (dialogRoot) => {
     const dialogElements = []
@@ -169,7 +182,7 @@ export const COLLECT_PAGE_SCRIPT = `(() => {
       label: labelOf(el),
       rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
       src: el.tagName === 'IFRAME' ? crossOriginIframeSrc(el) : null,
-      href: el.getAttribute('href'),
+      href: absoluteHref(el),
       downloadsFile: el.hasAttribute('download'),
       submitsForm: submitsFormOf(el, form),
       credentialField: isCredentialField(el),

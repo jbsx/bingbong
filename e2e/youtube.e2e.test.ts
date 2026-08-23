@@ -68,7 +68,7 @@ function selectVideoLinks(refs: string[]): string[] {
   const selected: string[] = []
   lines.forEach((line, i) => {
     if (!/^\[\d+\] link "/.test(line)) return
-    const label = line.slice(line.indexOf('"') + 1, -1)
+    const label = /^\[\d+\] link "([^"]*)"/.exec(line)?.[1] ?? ''
     if (new RegExp(`^(?:${SIDEBAR_LABELS})`).test(label)) return
     if (lines.slice(i + 1, i + 3).some((l) => /button "My Ad Centre"/.test(l))) return
     const isTimestampLink = /^\d+:\d+/.test(label)

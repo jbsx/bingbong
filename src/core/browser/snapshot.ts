@@ -13,8 +13,9 @@ export interface CollectedElement {
   rect: CollectedRect
   /** Absolute src of a cross-origin iframe (challenge widget); absent in older payloads. */
   src?: string | null
-  /** Risk facts, computed in-page (DOM-specific); absent in older payloads. */
+  /** Absolute link target; absent in older payloads. */
   href?: string | null
+  /** Risk facts, computed in-page (DOM-specific); absent in older payloads. */
   downloadsFile?: boolean
   submitsForm?: boolean
   credentialField?: boolean
@@ -66,6 +67,8 @@ export interface SnapshotRef {
   rect: CollectedRect
   /** Absolute src for iframe refs (cross-origin challenge widgets); null otherwise. */
   src: string | null
+  /** Absolute link target for link refs; null otherwise. Never truncated here —
+   * the risk gate reads it; only the formatted display truncates. */
   href: string | null
   downloadsFile: boolean
   submitsForm: boolean
@@ -98,6 +101,7 @@ export interface PageSnapshot {
 
 export const MAX_SNAPSHOT_REFS = 75
 const MAX_LABEL_LENGTH = 80
+const MAX_HREF_LENGTH = 80
 
 const BUTTON_INPUT_TYPES = new Set(['submit', 'button', 'reset', 'image'])
 
@@ -207,9 +211,20 @@ function intersectsViewport(element: CollectedElement, viewport: CollectedViewpo
   return y + height > 0 && x + width > 0 && y < viewport.height && x < viewport.width
 }
 
+function truncateText(text: string, maxLength: number): string {
+  if (text.length <= maxLength) return text
+  return `${text.slice(0, maxLength - 1)}…`
+}
+
 function truncateLabel(label: string): string {
-  if (label.length <= MAX_LABEL_LENGTH) return label
-  return `${label.slice(0, MAX_LABEL_LENGTH - 1)}…`
+  return truncateText(label, MAX_LABEL_LENGTH)
+}
+
+// Display-only truncation (#77): the ref keeps the full href for the risk
+// gate; only the formatted line caps it, so a link-dense SERP stays within
+// format bounds.
+function truncateHref(href: string): string {
+  return truncateText(href, MAX_HREF_LENGTH)
 }
 
 export function buildPageSnapshot(page: CollectedPage, options?: { maxRefs?: number }): PageSnapshot {
@@ -266,15 +281,14 @@ export function formatPageSnapshot(snapshot: PageSnapshot): string {
     `viewport ${snapshot.viewport.width}x${snapshot.viewport.height} scroll ${Math.round(snapshot.viewport.scrollY)}/${Math.round(snapshot.viewport.scrollHeight)}`,
   ]
   if (snapshot.dialogOpen) {
-    const text = snapshot.dialogText.length > MAX_DIALOG_TEXT
-      ? `${snapshot.dialogText.slice(0, MAX_DIALOG_TEXT - 1)}…`
-      : snapshot.dialogText
+    const text = truncateText(snapshot.dialogText, MAX_DIALOG_TEXT)
     lines.push(`dialog open: ${JSON.stringify(text)}`)
   }
   for (const ref of snapshot.refs) {
     const subtype = ref.kind === 'input' && ref.inputType ? `[${ref.inputType}]` : ''
     const label = ref.label ? ` "${ref.label}"` : ''
     const src = ref.src ? ` src=${JSON.stringify(ref.src)}` : ''
+    const href = ref.href ? ` href=${JSON.stringify(truncateHref(ref.href))}` : ''
     const state = [
       ...(typeof ref.checked === 'boolean' ? [`checked=${ref.checked}`] : []),
       ...(ref.selectedOption ? [`selected=${JSON.stringify(ref.selectedOption)}`] : []),
@@ -282,7 +296,7 @@ export function formatPageSnapshot(snapshot: PageSnapshot): string {
       ...(ref.ariaPressed ? [`aria-pressed=${JSON.stringify(ref.ariaPressed)}`] : []),
     ]
     const dialogMarker = ref.layer === 'dialog' ? ' (dialog)' : ''
-    lines.push(`[${ref.ref}] ${ref.kind}${subtype}${label}${src}${state.length > 0 ? ` ${state.join(' ')}` : ''}${dialogMarker}`)
+    lines.push(`[${ref.ref}] ${ref.kind}${subtype}${label}${src}${href}${state.length > 0 ? ` ${state.join(' ')}` : ''}${dialogMarker}`)
   }
   if (snapshot.truncated) {
     lines.push(`(+${snapshot.totalVisible - snapshot.refs.length} more not listed)`)

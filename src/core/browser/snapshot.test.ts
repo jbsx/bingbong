@@ -472,6 +472,73 @@ describe('iframe refs (challenge widgets)', () => {
   })
 })
 
+// Snapshot hrefs (#77, on-screen browsing): link refs carry their href so
+// the model opens result URLs directly instead of constructing them. The
+// href is truncated only in the formatted line — the ref keeps the full URL
+// the risk gate reads.
+describe('link hrefs', () => {
+  it('renders a link ref with its href after the label', () => {
+    const text = formatPageSnapshot(
+      buildPageSnapshot(page({ elements: [element({ tag: 'a', label: 'Second page', href: 'https://example.com/second' })] })),
+    )
+
+    expect(text).toContain('[1] link "Second page" href="https://example.com/second"')
+  })
+
+  it('renders links without an href unchanged', () => {
+    const text = formatPageSnapshot(buildPageSnapshot(page({ elements: [element({ tag: 'a', label: 'Anchor' })] })))
+
+    expect(text).toContain('[1] link "Anchor"')
+    expect(text).not.toContain('href=')
+  })
+
+  it('truncates very long hrefs', () => {
+    const text = formatPageSnapshot(
+      buildPageSnapshot(
+        page({
+          elements: [element({ tag: 'a', label: 'Long link', href: `https://example.com/${'x'.repeat(120)}` })],
+        }),
+      ),
+    )
+
+    expect(text).toContain(`href="https://example.com/${'x'.repeat(59)}…"`)
+    expect(text).not.toContain('x'.repeat(60))
+  })
+
+  it('keeps the full href on the ref — truncation is display-only', () => {
+    const href = `https://example.com/long/${'z'.repeat(120)}`
+    const snapshot = buildPageSnapshot(page({ elements: [element({ tag: 'a', label: 'Long link', href })] }))
+
+    expect(snapshot.refs[0]?.href).toBe(href)
+    expect(formatPageSnapshot(snapshot)).not.toContain(href)
+  })
+
+  it('stays within format bounds on a link-dense SERP', () => {
+    // Worst-case SERP rows: every result carries a maximal label AND a very
+    // long href, so the per-line bound is exercised, not just the ref cap.
+    const longHref = (index: number) => `https://results.test/${'y'.repeat(300)}?i=${index}`
+    const serp = page({
+      elements: Array.from(
+        { length: 120 },
+        (_, i) => element({ tag: 'a', label: `Result ${i} ${'r'.repeat(150)}`, href: longHref(i) }),
+      ),
+    })
+
+    const snapshot = buildPageSnapshot(serp)
+    const text = formatPageSnapshot(snapshot)
+
+    expect(snapshot.refs).toHaveLength(75)
+    expect(snapshot.truncated).toBe(true)
+    const refLines = text.split('\n').filter((line) => /^\[\d+\] link /.test(line))
+    expect(refLines).toHaveLength(75)
+    // [NN] link (9) + "80-char label" (82) + href="80-char" (88) ≤ 179.
+    for (const line of refLines) expect(line.length).toBeLessThanOrEqual(200)
+    expect(text).toContain('(+45 more not listed)')
+    expect(text).not.toContain('y'.repeat(81))
+    expect(text).not.toContain('r'.repeat(81))
+  })
+})
+
 describe('clickPoint', () => {
   it('returns the element center when it is fully inside the viewport', () => {
     const snapshot = buildPageSnapshot(

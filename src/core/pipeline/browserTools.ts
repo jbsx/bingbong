@@ -137,7 +137,7 @@ export function createBrowserTools(browser: BrowserController, vision?: VisionDe
     {
       name: 'read_page',
       description:
-        'Return the page URL, title, scroll state, numbered interactive refs, and a capped text digest. Use refs like [7] with click/type.',
+        'Return the page URL, title, scroll state, numbered interactive refs (link refs carry their hrefs — open them with navigate), and a capped text digest. Use refs like [7] with click/type.',
       async execute(_call, context) {
         const result = await browser.readPage()
         const refs = refsFrom(result)
