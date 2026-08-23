@@ -11,6 +11,7 @@ import type { PipelineEvent } from '../../core/pipeline/events'
 import type { Tool } from '../../core/pipeline/tool'
 import { createAskUserTool } from '../../core/pipeline/askUserTools'
 import { createBrowserTools } from '../../core/pipeline/browserTools'
+import { hostFromUrl } from '../../core/pipeline/blockerGate'
 import { createVisionGroundingTools } from '../../core/pipeline/visionGroundingTools'
 import { createMediaTools } from '../../core/pipeline/mediaTools'
 import { createSearchTools } from '../../core/pipeline/searchTools'
@@ -214,6 +215,9 @@ export function createAssistantPipeline(deps: AssistantPipelineDeps): CommandPip
     tts: deps.tts ?? silentTts,
     clock,
     tools,
+    // Same-wall Blocker gate (#80, ADR 0010): the host current-page browser
+    // verbs (click/type/scroll/…) target — the main tab's page.
+    currentHost: () => hostFromUrl(deps.controller.state().url ?? ''),
     ...(deps.session ? { session: deps.session } : {}),
     ...(deps.tracer ? { tracer: deps.tracer } : {}),
     ...(deps.browserSubspans ? { browserSubspans: deps.browserSubspans } : {}),

@@ -118,6 +118,9 @@ function isChallengeSrc(src: string): boolean {
   }
 }
 
+/** Sentinel host for a degraded URL that won't parse — never matches a real host. */
+export const UNKNOWN_BLOCKER_HOST = '(unknown)'
+
 function verdict(signal: BlockerSignal, url: string): BlockerClassification {
   let host = ''
   try {
@@ -129,9 +132,25 @@ function verdict(signal: BlockerSignal, url: string): BlockerClassification {
     signal === 'challenge' ? CHALLENGE_NUDGE : signal === 'network-block' ? NETWORK_BLOCK_NUDGE : LOGIN_NUDGE
   // The marker line is the contract both choke points emit and the Blocker
   // gate consumes — a detected wall always carries one, so a host-less
-  // degraded URL yields '(unknown)' (which never matches a real host, and
+  // degraded URL yields the sentinel (which never matches a real host, and
   // therefore never arms a same-host refusal).
-  return { signal, host, marker: `BLOCKER:${signal} ${host !== '' ? host : '(unknown)'}`, nudge }
+  return { signal, host, marker: `BLOCKER:${signal} ${host !== '' ? host : UNKNOWN_BLOCKER_HOST}`, nudge }
+}
+
+const MARKER_LINE_RE = /^BLOCKER:(challenge|network-block|login-wall) (\S+)$/gm
+
+/**
+ * The last `BLOCKER:<signal> <host>` marker line riding a tool result text,
+ * or null when none does — the same-wall Blocker gate's (#80, ADR 0010)
+ * arming signal. Last line wins: the most recent choke point's verdict is
+ * the wall the run is facing now.
+ */
+export function parseBlockerMarker(text: string): { signal: BlockerSignal; host: string } | null {
+  let last: { signal: BlockerSignal; host: string } | null = null
+  for (const match of text.matchAll(MARKER_LINE_RE)) {
+    last = { signal: match[1] as BlockerSignal, host: match[2] }
+  }
+  return last
 }
 
 /**

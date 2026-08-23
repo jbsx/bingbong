@@ -18,6 +18,8 @@ import {
 } from '../agent/subagentRails'
 import type { SearchLoopRail } from './searchLoopRail'
 import { createSearchLoopRail } from './searchLoopRail'
+import type { BlockerGate } from './blockerGate'
+import { createBlockerGate } from './blockerGate'
 import { MAX_TOOL_ROUNDS_DEFAULT } from '../settings/settings'
 
 export interface CommandPipelineDeps {
@@ -37,6 +39,13 @@ export interface CommandPipelineDeps {
    * Overrides the static `maxToolRounds` when both are provided.
    */
   getMaxToolRounds?: () => number
+  /**
+   * Hostname of the page the browser tab is currently on (#80, ADR 0010) —
+   * what current-page browser verbs (click/type/scroll/…) target for the
+   * same-wall Blocker gate. Absent, the gate still arms from BLOCKER marker
+   * lines and still refuses same-host navigate calls by their URL argument.
+   */
+  currentHost?: () => string | null
   onAbort?(): void
   onPause?(): void
   onResume?(): void
@@ -319,6 +328,12 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
         // calls — nudges first, refuses at the cap, resets on a successful
         // other tool call. Created fresh per run, like the vision budget.
         const searchLoopRail = createSearchLoopRail()
+        // Same-wall Blocker gate (#80, ADR 0010): arms when a tool result
+        // carries a BLOCKER marker; while armed, browser calls targeting
+        // that host (other than read_page/look/ask_user) are refused
+        // pre-execution with the escalation instruction. Fresh per run,
+        // like the vision budget and the search-loop rail.
+        const blockerGate = createBlockerGate(deps.currentHost)
         const toolContext: ToolContext = {
           clock,
           acquireVision: () => visionBudget.tryAcquire(),
@@ -419,7 +434,12 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
               break
             }
             yield { type: 'tool_call', callId: call.id, name: call.name, args: call.args, at: clock.now() }
-            const outcome = yield* runGatedTool(call, turnId, visionBudget, searchLoopRail, toolContext, run)
+            const outcome = yield* runGatedTool(call, turnId, visionBudget, searchLoopRail, blockerGate, toolContext, run)
+            // Same-wall Blocker gate (#80): marker lines riding successful
+            // results arm it; a successful different-host browser
+            // interaction disarms it. Sees the raw outcome — advisory
+            // nudges appended below change nothing it consumes.
+            blockerGate.observe(call, outcome)
             // Search-loop rail (#74): observe every processed call (this is
             // what tracks and resets the streak — a failed intervening tool
             // leaves it alone) and let an advisory nudge ride the search
@@ -483,6 +503,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
     turnId: string,
     visionBudget: VisionBudget,
     searchLoopRail: SearchLoopRail,
+    blockerGate: BlockerGate,
     toolContext: ToolContext,
     run: ActiveRun,
   ): AsyncGenerator<UnstampedEvent, ToolResultOutcome> {
@@ -602,6 +623,12 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
     // the vision budget. Any other tool call clears the cap.
     const searchLoopGate = searchLoopRail.gate(call)
     if (!searchLoopGate.ok) return { ok: false, error: searchLoopGate.reason }
+
+    // Same-wall Blocker gate (#80, ADR 0010): while armed, browser calls
+    // targeting the walled host — other than read_page, look, and ask_user
+    // — are refused before it executes, with the escalation instruction.
+    const blockerGateVerdict = blockerGate.gate(call)
+    if (!blockerGateVerdict.ok) return { ok: false, error: blockerGateVerdict.reason }
 
     try {
       throwIfAborted(run)

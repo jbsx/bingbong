@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { VisionDeadlineError } from '../ports/vision'
 import { createCommandPipeline, type CommandPipeline } from './createCommandPipeline'
+import { hostFromUrl } from './blockerGate'
 import { steerPipeline } from './steering'
 import { createSpeechCoordinator } from '../tts/speechCoordinator'
 import { createAskUserTool } from './askUserTools'
@@ -10,7 +11,7 @@ import { createHistoryRecorder } from '../history/historyRecorder'
 import type { HistoryStore, RecordedEntry, RunRecord } from '../history/historyStore'
 import { FailingTts, FakeClock, fakePerfHarness, fakeSubagentManager, RecordingTts, ScriptedLlm, subagentRecord, withoutTurnId } from '../testing/doubles'
 import type { PipelineEvent } from './events'
-import type { AssistantTurn, LlmClient, LlmRequest } from '../ports/llm'
+import type { AssistantTurn, LlmClient, LlmRequest, ToolCall } from '../ports/llm'
 import { createSubagentTools } from './subagentTools'
 import { createPerfTracer, type PerfTracer } from '../perf/perfTracer'
 import { withPerfTracing } from '../perf/perfTracing'
@@ -1122,6 +1123,206 @@ describe('command pipeline', () => {
     // A refusal redirects, it never fails the run.
     expect(events.find((event) => event.type === 'error')).toBeUndefined()
     expect(events.at(-1)).toMatchObject({ type: 'done', outcome: 'done' })
+  })
+
+  it('refuses same-wall browser calls after a marker rides a result, and the run continues (#80)', async () => {
+    const WALLED = 'navigated to https://www.reddit.com/search\nBLOCKER:challenge www.reddit.com\nThis page is a Blocker — a challenge wall.'
+    let current: string | null = null
+    let navigateRuns = 0
+    let clickRuns = 0
+    const navigate = {
+      name: 'navigate',
+      async execute(call: ToolCall) {
+        navigateRuns += 1
+        const url = typeof call.args.url === 'string' ? call.args.url : ''
+        current = hostFromUrl(url) ?? current
+        return WALLED
+      },
+    }
+    const click = {
+      name: 'click',
+      async execute() {
+        clickRuns += 1
+        return 'clicked'
+      },
+    }
+    const llm = new ScriptedLlm([
+      { kind: 'tool_calls', calls: [{ id: 'n1', name: 'navigate', args: { url: 'https://www.reddit.com/search' } }] },
+      { kind: 'tool_calls', calls: [{ id: 'n2', name: 'navigate', args: { url: 'https://www.reddit.com/r/other' } }] },
+      { kind: 'tool_calls', calls: [{ id: 'c1', name: 'click', args: { ref: 7 } }] },
+      { kind: 'answer', speak: 'Escalated.', display: 'Escalated.' },
+    ])
+    const pipeline = createCommandPipeline({
+      llm,
+      tts: new RecordingTts(),
+      clock: new FakeClock(),
+      tools: [navigate, click],
+      currentHost: () => current,
+    })
+
+    const events = await collect(pipeline, 'find the post')
+
+    // The wall-detecting interaction executed (detection never blocks); the
+    // repeated same-wall navigate and click were refused pre-execution.
+    expect(navigateRuns).toBe(1)
+    expect(clickRuns).toBe(0)
+    const refusals = events.filter((event) => event.type === 'tool_result' && !event.ok)
+    expect(refusals).toHaveLength(2)
+    for (const refusal of refusals) {
+      expect(refusal).toMatchObject({
+        error: expect.stringMatching(/www\.reddit\.com is walled for this run \(Blocker: challenge\)/),
+      })
+      expect((refusal as { error: string }).error).toMatch(/ask_user/)
+      expect((refusal as { error: string }).error).toMatch(/genuinely different site/)
+    }
+    // The refusal is a redirect, never a failed run — and the marker line
+    // still rides the tool result the model sees.
+    expect(events.find((event) => event.type === 'error')).toBeUndefined()
+    expect(events.at(-1)).toMatchObject({ type: 'done', outcome: 'done' })
+    expect(llm.requests[1].toolResults[0]?.outcome).toMatchObject({
+      ok: true,
+      result: expect.stringMatching(/BLOCKER:challenge www\.reddit\.com/),
+    })
+    // The refusals ride the accumulated results into the final round.
+    expect(llm.requests[3].toolResults.map((entry) => entry.outcome.ok)).toEqual([true, false, false])
+  })
+
+  it('never refuses read_page, look, or ask_user on the walled host (#80)', async () => {
+    const WALLED = 'page\nBLOCKER:challenge www.reddit.com\nThis page is a Blocker — a challenge wall.'
+    const current = 'www.reddit.com'
+    let readRuns = 0
+    let lookRuns = 0
+    const navigate = {
+      name: 'navigate',
+      async execute() {
+        return WALLED
+      },
+    }
+    const readPage = {
+      name: 'read_page',
+      async execute() {
+        readRuns += 1
+        return WALLED
+      },
+    }
+    const look = {
+      name: 'look',
+      usesVision: true,
+      async execute() {
+        lookRuns += 1
+        return 'a challenge wall fills the page'
+      },
+    }
+    const llm = new ScriptedLlm([
+      { kind: 'tool_calls', calls: [{ id: 'n1', name: 'navigate', args: { url: 'https://www.reddit.com/search' } }] },
+      { kind: 'tool_calls', calls: [{ id: 'r1', name: 'read_page', args: {} }] },
+      { kind: 'tool_calls', calls: [{ id: 'l1', name: 'look', args: {} }] },
+      { kind: 'tool_calls', calls: [{ id: 'a1', name: 'ask_user', args: { question: 'Can you complete the challenge in the browser tab?' } }] },
+      { kind: 'answer', speak: 'Asking for help.', display: 'Asking for help.' },
+    ])
+    const pipeline = createCommandPipeline({
+      llm,
+      tts: new RecordingTts(),
+      clock: new FakeClock(),
+      tools: [navigate, readPage, look, createAskUserTool()],
+      currentHost: () => current,
+    })
+
+    const events = await collect(pipeline, 'find the post', (event, activePipeline) => {
+      if (event.type === 'ask_requested') activePipeline.resolveAsk(event.askId, 'Done, I solved it.')
+    })
+
+    expect(readRuns).toBe(1)
+    expect(lookRuns).toBe(1)
+    expect(events.filter((event) => event.type === 'tool_result' && !event.ok)).toHaveLength(0)
+    const askResult = events.find((event) => event.type === 'tool_result' && event.name === 'ask_user')
+    expect(askResult).toMatchObject({ ok: true, result: 'Done, I solved it.' })
+    expect(events.at(-1)).toMatchObject({ type: 'done', outcome: 'done' })
+  })
+
+  it('disarms the same-wall gate after a successful different-host interaction (#80)', async () => {
+    const WALLED = 'navigated to https://www.reddit.com/search\nBLOCKER:challenge www.reddit.com\nThis page is a Blocker — a challenge wall.'
+    let current: string | null = null
+    let clickRuns = 0
+    const navigate = {
+      name: 'navigate',
+      async execute(call: ToolCall) {
+        const url = typeof call.args.url === 'string' ? call.args.url : ''
+        current = hostFromUrl(url) ?? current
+        return url.includes('reddit.com') ? WALLED : `navigated to ${url}`
+      },
+    }
+    const click = {
+      name: 'click',
+      async execute() {
+        clickRuns += 1
+        return 'clicked'
+      },
+    }
+    const llm = new ScriptedLlm([
+      { kind: 'tool_calls', calls: [{ id: 'n1', name: 'navigate', args: { url: 'https://www.reddit.com/search' } }] },
+      { kind: 'tool_calls', calls: [{ id: 'n2', name: 'navigate', args: { url: 'https://example.com/article' } }] },
+      { kind: 'tool_calls', calls: [{ id: 'c1', name: 'click', args: { ref: 3 } }] },
+      { kind: 'answer', speak: 'Read it elsewhere.', display: 'Read it elsewhere.' },
+    ])
+    const pipeline = createCommandPipeline({
+      llm,
+      tts: new RecordingTts(),
+      clock: new FakeClock(),
+      tools: [navigate, click],
+      currentHost: () => current,
+    })
+
+    const events = await collect(pipeline, 'find the post')
+
+    // Moving on and interacting elsewhere lifts the refusal.
+    expect(clickRuns).toBe(1)
+    expect(events.filter((event) => event.type === 'tool_result' && !event.ok)).toHaveLength(0)
+    expect(events.at(-1)).toMatchObject({ type: 'done', outcome: 'done' })
+  })
+
+  it('creates the same-wall gate fresh per run (#80)', async () => {
+    const WALLED = 'navigated to https://www.reddit.com/search\nBLOCKER:challenge www.reddit.com\nThis page is a Blocker — a challenge wall.'
+    const current = 'www.reddit.com'
+    let clickRuns = 0
+    const navigate = {
+      name: 'navigate',
+      async execute() {
+        return WALLED
+      },
+    }
+    const click = {
+      name: 'click',
+      async execute() {
+        clickRuns += 1
+        return 'clicked'
+      },
+    }
+    const llm = new ScriptedLlm([
+      // First run: the wall is detected, then the same-host click refuses.
+      { kind: 'tool_calls', calls: [{ id: 'n1', name: 'navigate', args: { url: 'https://www.reddit.com/search' } }] },
+      { kind: 'tool_calls', calls: [{ id: 'c1', name: 'click', args: { ref: 1 } }] },
+      { kind: 'answer', speak: 'Stopped at the wall.', display: 'Stopped at the wall.' },
+      // Second run: the same click on the same host starts clear.
+      { kind: 'tool_calls', calls: [{ id: 'c2', name: 'click', args: { ref: 1 } }] },
+      { kind: 'answer', speak: 'Clicked.', display: 'Clicked.' },
+    ])
+    const pipeline = createCommandPipeline({
+      llm,
+      tts: new RecordingTts(),
+      clock: new FakeClock(),
+      tools: [navigate, click],
+      currentHost: () => current,
+    })
+
+    const firstEvents = await collect(pipeline, 'first command')
+    const events = await collect(pipeline, 'second command')
+
+    // Run one refused the click; run two — same pipeline, same tab, same
+    // host — executed it: one run's wall never poisons the next.
+    expect(clickRuns).toBe(1)
+    expect(firstEvents.filter((event) => event.type === 'tool_result' && !event.ok)).toHaveLength(1)
+    expect(events.filter((event) => event.type === 'tool_result' && !event.ok)).toHaveLength(0)
   })
 
   it('rides the session store\'s history along on every LLM round, reading it live', async () => {

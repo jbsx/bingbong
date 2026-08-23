@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { classifyBlockerNavigation, classifyBlockerPage, blockerFactsFromSnapshot } from './blockerNudge'
+import { classifyBlockerNavigation, classifyBlockerPage, blockerFactsFromSnapshot, parseBlockerMarker } from './blockerNudge'
 import { buildPageSnapshot, parseCollectedPage } from './snapshot'
 import googleSorry from './fixtures/google-sorry.json'
 import oldRedditLogin from './fixtures/old-reddit-login.json'
@@ -200,5 +200,33 @@ describe('classifyBlockerPage (ADR 0010)', () => {
     })
     expect(classifyBlockerPage({ url: 'https://www.youtube.com/', title: 'YouTube' })).toBeNull()
     expect(classifyBlockerPage({ url: 'about:blank', title: '' })).toBeNull()
+  })
+})
+
+describe('parseBlockerMarker', () => {
+  // The marker line is the contract between the choke points and the
+  // same-wall Blocker gate (#80): the parser below must round-trip every
+  // marker the classifier above can emit.
+
+  it('round-trips the classifier marker for every signal', () => {
+    for (const facts of [
+      { url: 'https://www.google.com/sorry/index?continue=x', title: 'Sorry...' },
+      { url: 'https://www.reddit.com/r/x/', title: 'Reddit', textDigest: 'blocked by network security' },
+      { url: 'https://old.reddit.com/login', title: 'Log in' },
+    ]) {
+      const verdict = classifyBlockerPage(facts)
+      expect(verdict).not.toBeNull()
+      const riding = `navigated to ${facts.url}\n${verdict!.marker}\n${verdict!.nudge}`
+      expect(parseBlockerMarker(riding)).toEqual({ signal: verdict!.signal, host: verdict!.host })
+    }
+  })
+
+  it('returns the last marker when a result carries several, and null when none', () => {
+    expect(parseBlockerMarker('BLOCKER:challenge a.test\nnudge\nBLOCKER:network-block b.test\nnudge')).toEqual({
+      signal: 'network-block',
+      host: 'b.test',
+    })
+    expect(parseBlockerMarker('an ordinary result mentioning BLOCKER: mid-line')).toBeNull()
+    expect(parseBlockerMarker('')).toBeNull()
   })
 })
