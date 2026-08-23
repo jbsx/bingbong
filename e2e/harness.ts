@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { CdpClient } from './cdpClient'
-import { routingEnvKeys } from '../src/core/agent/modelRouting'
+import { AGENT_ROLES, routingEnvKeys } from '../src/core/agent/modelRouting'
 import { launchApp, pickFreeDebugPort, type LaunchedApp } from './electronApp'
 import { startFixtureServer, type FixtureServer } from './fixtureServer'
 import { urlBarNavigationScript } from './scripts'
@@ -74,9 +74,7 @@ const repoRoot = fileURLToPath(new URL('..', import.meta.url))
 // shell, an exported key): every routing env var is unset by default, so
 // tests that need routing declare it — hermetic and credential-free.
 const ROUTING_ENV_UNSET: Record<string, undefined> = Object.fromEntries(
-  (['orchestrator', 'subagent', 'vision'] as const).flatMap((role) =>
-    routingEnvKeys(role).map((key) => [key, undefined]),
-  ),
+  AGENT_ROLES.flatMap((role) => routingEnvKeys(role).map((key) => [key, undefined])),
 )
 
 // targetInfo.url goes stale after navigations; the predicates only rely on

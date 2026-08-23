@@ -105,6 +105,14 @@ Any OpenAI-compatible provider works for any role — swapping providers is a
 config change. `BINGBONG_LLM_SCRIPT` (a JSON array of scripted turns) replaces
 the live model entirely — used by the e2e suite and keyless demos.
 
+Routing and keys may also live in the `.env` file next to the app (read once
+at boot; malformed lines are ignored). Precedence is
+`.env` < process environment < the settings page's saved values — a value
+set anywhere above never gets overridden. Point `BINGBONG_ENV_FILE` at
+another path to load a different file. The settings page's Model routing
+section shows each role configured/unconfigured from the same resolution
+the pipeline uses.
+
 ## Performance log
 
 Every turn is perf-logged, zero config: one JSONL span per finished stage

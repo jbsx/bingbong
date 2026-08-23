@@ -1,7 +1,7 @@
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterAll, describe, expect, it } from 'vitest'
+import { afterAll, describe, expect, it, vi } from 'vitest'
 import { loadEnvFile, resolveEnvFilePath } from './envFile'
 
 const dir = mkdtempSync(join(tmpdir(), 'bingbong-envfile-'))
@@ -27,5 +27,18 @@ describe('loadEnvFile', () => {
 
   it('returns no config for a missing file', () => {
     expect(loadEnvFile({}, join(dir, 'does-not-exist'))).toEqual({})
+  })
+
+  it('warns on stderr when the file exists but cannot be read', () => {
+    const unreadable = join(dir, 'unreadable-env')
+    mkdirSync(unreadable) // a directory: present, but never readable as a file
+    const write = vi.spyOn(process.stderr, 'write').mockReturnValue(true)
+    try {
+      expect(loadEnvFile({ BINGBONG_ENV_FILE: unreadable }, dir)).toEqual({})
+      expect(write).toHaveBeenCalledTimes(1)
+      expect(String(write.mock.calls[0]?.[0])).toContain(unreadable)
+    } finally {
+      write.mockRestore()
+    }
   })
 })

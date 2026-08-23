@@ -2,6 +2,9 @@ import { createServer, type Server } from 'node:http'
 
 export const DOWNLOAD_PAYLOAD = 'download-probe-payload'
 
+/** What the fake vision endpoint describes — asserted by the .env e2e (#76). */
+export const VISION_COMPLETION_CONTENT = 'A fixture page described by the .env-configured vision role.'
+
 /** 1x1 transparent PNG — the ad/ok assets differ only by URL. */
 const PIXEL_PNG = Buffer.from(
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==',
@@ -328,7 +331,7 @@ export async function startFixtureServer(): Promise<FixtureServer> {
       res.writeHead(200, { 'Content-Type': 'application/json' })
       res.end(
         JSON.stringify({
-          choices: [{ message: { content: 'A fixture page described by the .env-configured vision role.' } }],
+          choices: [{ message: { content: VISION_COMPLETION_CONTENT } }],
         }),
       )
       return

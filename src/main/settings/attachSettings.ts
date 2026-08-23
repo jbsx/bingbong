@@ -15,19 +15,14 @@ export function registerSettingsIpc(store: SettingsStore, getRoutingStatus: () =
   // what a `look` call would actually do.
   ipcMain.handle(SETTINGS_IPC.routingStatus, () => getRoutingStatus())
 
-  const broadcastRoutingStatus = () => {
-    const status = getRoutingStatus()
-    for (const win of BrowserWindow.getAllWindows()) {
-      if (!win.isDestroyed()) win.webContents.send(SETTINGS_IPC.routingStatusChanged, status)
-    }
-  }
-
   // Every change reaches every window, whichever one made it — and flips
   // the routing status lines with it (a saved key or endpoint re-resolves).
   store.subscribe((settings) => {
+    const status = getRoutingStatus()
     for (const win of BrowserWindow.getAllWindows()) {
-      if (!win.isDestroyed()) win.webContents.send(SETTINGS_IPC.changed, settings)
+      if (win.isDestroyed()) continue
+      win.webContents.send(SETTINGS_IPC.changed, settings)
+      win.webContents.send(SETTINGS_IPC.routingStatusChanged, status)
     }
-    broadcastRoutingStatus()
   })
 }

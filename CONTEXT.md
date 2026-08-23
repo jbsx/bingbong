@@ -100,7 +100,6 @@ territory, everything else voice-reachable.
 The `.env` file next to the app, read once at boot. The bottom configuration
 layer: Env File below process environment below Settings. Never persists,
 never overrides a value that is set anywhere above it.
-_Avoid_: dotenv (say Env File)
 
 ### Browser
 
