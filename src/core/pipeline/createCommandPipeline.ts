@@ -316,8 +316,8 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
         const toolResults: ToolResult[] = []
         const visionBudget = createVisionBudget(MAX_ORCHESTRATOR_VISION_CALLS)
         // Run rails (#74): per-run streak of consecutive similar web_search
-        // calls — nudges first, refuses at the cap, resets on any other
-        // tool. Created fresh per run, like the vision budget.
+        // calls — nudges first, refuses at the cap, resets on a successful
+        // other tool call. Created fresh per run, like the vision budget.
         const searchLoopRail = createSearchLoopRail()
         const toolContext: ToolContext = {
           clock,
