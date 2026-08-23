@@ -15,7 +15,11 @@ function iframeSnapshotScript(fixture: FixtureServer): AssistantTurn[] {
     {
       kind: 'tool_calls',
       calls: [
-        { id: 'challenge-nav', name: 'navigate', args: { url: fixture.url('/challenge') } },
+        // The challenge page lives on the fixture's second site (#84): its
+        // BLOCKER marker arms the gate for that host, and the plain-page
+        // navigate below targets the primary site, so it executes instead
+        // of being refused.
+        { id: 'challenge-nav', name: 'navigate', args: { url: fixture.altUrl('/challenge') } },
         { id: 'challenge-read', name: 'read_page', args: {} },
       ],
     },

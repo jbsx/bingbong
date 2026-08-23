@@ -84,4 +84,16 @@ describe('fixtureServer', () => {
     server = await startFixtureServer()
     expect(server.url('/')).toMatch(/^http:\/\/127\.0\.0\.1:\d+\/$/)
   })
+
+  it('serves the same pages from a second site at a distinct loopback host (#84)', async () => {
+    server = await startFixtureServer()
+    // Two loopback IP literals — no DNS, no IPv6 fallback — so the app's
+    // Blocker gate sees genuinely different hosts between url() and altUrl().
+    const alt = new URL(server.altUrl('/challenge'))
+    expect(alt.hostname).toMatch(/^127\.0\.0\.\d+$/)
+    expect(alt.hostname).not.toBe(new URL(server.url('/challenge')).hostname)
+    const response = await fetch(server.altUrl('/signin'))
+    expect(response.ok).toBe(true)
+    expect(await response.text()).toContain('Sign in to continue')
+  })
 })

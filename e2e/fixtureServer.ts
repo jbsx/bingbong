@@ -1,4 +1,4 @@
-import { createServer, type Server } from 'node:http'
+import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
 
 export const DOWNLOAD_PAYLOAD = 'download-probe-payload'
 
@@ -53,6 +53,13 @@ function adblockPage(): string {
 
 export interface FixtureServer {
   url(path: string): string
+  /**
+   * Same pages under a genuinely different hostname (#84): a second
+   * loopback IP literal (127.0.0.x, never 127.0.0.1) with its own port.
+   * The same-wall Blocker gate (ADR 0010) compares hosts exactly, so a
+   * scripted post-wall navigate to this host both executes and disarms.
+   */
+  altUrl(path: string): string
   /** How many times the adblock filter list has been fetched (cache probes). */
   adblockListHits(): number
   /** How many times the OpenAI-compatible vision endpoint was called (#76 e2e). */
@@ -382,7 +389,7 @@ export async function startFixtureServer(): Promise<FixtureServer> {
   let adblockListHits = 0
   let visionEndpointHits = 0
   let lastAuthorization: string | undefined
-  const httpServer: Server = createServer((req, res) => {
+  const handle = (req: IncomingMessage, res: ServerResponse): void => {
     // OpenAI-compatible chat completions (#76 e2e): stands in for the vision
     // provider, so the real adapter can be driven with .env-only routing.
     if (req.url === '/chat/completions' && req.method === 'POST') {
@@ -508,20 +515,38 @@ export async function startFixtureServer(): Promise<FixtureServer> {
       return
     }
     res.end(page('<input id=t style="font-size:40px;width:100%;height:120px">'))
-  })
+  }
 
-  await new Promise<void>((resolve) => httpServer.listen(0, '127.0.0.1', resolve))
-  const address = httpServer.address()
-  if (address === null || typeof address === 'string') throw new Error('fixture server has no port')
+  // #84: one handler, two loopback listeners. The primary site binds
+  // 127.0.0.1; the second site binds 127.0.0.2 (the whole 127/8 range is
+  // the loopback interface on Linux and macOS). Both are IP literals, so
+  // Chromium needs no DNS and has no IPv6 fallback to surprise us.
+  const listenOn = (host: string): Promise<{ server: Server; url: (path: string) => string }> =>
+    new Promise((resolve, reject) => {
+      const server = createServer(handle)
+      server.once('error', reject)
+      server.listen(0, host, () => {
+        const address = server.address()
+        if (address === null || typeof address === 'string') {
+          reject(new Error(`fixture server on ${host} has no port`))
+          return
+        }
+        resolve({ server, url: (path) => `http://${host}:${address.port}${path}` })
+      })
+    })
+
+  const [primary, alt] = await Promise.all([listenOn('127.0.0.1'), listenOn('127.0.0.2')])
+  const close = (server: Server): Promise<void> =>
+    new Promise((resolve, reject) =>
+      server.close((error) => (error ? reject(error) : resolve())),
+    )
 
   return {
-    url: (path) => `http://127.0.0.1:${address.port}${path}`,
+    url: primary.url,
+    altUrl: alt.url,
     adblockListHits: () => adblockListHits,
     visionEndpointHits: () => visionEndpointHits,
     lastVisionAuthorization: () => lastAuthorization,
-    close: () =>
-      new Promise<void>((resolve, reject) =>
-        httpServer.close((error) => (error ? reject(error) : resolve())),
-      ),
+    close: () => Promise.all([close(primary.server), close(alt.server)]).then(() => undefined),
   }
 }

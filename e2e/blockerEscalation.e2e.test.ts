@@ -13,14 +13,27 @@ type ToolResultEvent = Extract<PipelineEvent, { type: 'tool_result' }>
 // (look), escalates through a spoken ask_user, and never attempts to clear
 // the challenge itself. The sign-in wall gets the same passive nudge, and
 // the consent wall keeps auto-clearing — never escalated.
+//
+// Wall pages live on the fixture server's second site (#84): the same-wall
+// Blocker gate refuses repeat interactions per host, so the tour crosses
+// hosts deliberately — each post-wall navigate targets the OTHER site,
+// executes, and disarms the gate, exactly the "moved on to a genuinely
+// different site" path the refusal offers. The mid-load self-redirect (#79)
+// stays on the primary site: it must execute while the login-wall gate is
+// armed on the second site, then land on that site's own /challenge.
 
 const VISION_CHALLENGE_DESCRIPTION =
   'A Cloudflare Turnstile challenge widget sits mid-page with a checkbox; the page says "Just a moment..." and no content is reachable until it is solved.'
 
+/** The second fixture site's hostname (#84) — where the wall pages live. */
+function altHost(fixture: FixtureServer): string {
+  return new URL(fixture.altUrl('/')).hostname
+}
+
 function blockerScript(fixture: FixtureServer): AssistantTurn[] {
   return [
     // Detect: navigate, and the passive nudge rides along on the result.
-    { kind: 'tool_calls', calls: [{ id: 'challenge-nav', name: 'navigate', args: { url: fixture.url('/challenge') } }] },
+    { kind: 'tool_calls', calls: [{ id: 'challenge-nav', name: 'navigate', args: { url: fixture.altUrl('/challenge') } }] },
     // Verify with vision before announcing.
     { kind: 'tool_calls', calls: [{ id: 'challenge-verify', name: 'look', args: {} }] },
     // Announce + escalate via spoken ask_user; the run waits for the answer.
@@ -32,18 +45,22 @@ function blockerScript(fixture: FixtureServer): AssistantTurn[] {
     },
     { kind: 'answer', speak: 'Waiting on you at the challenge page.', display: 'Escalated the CAPTCHA to the user.' },
     // Login walls are nudged on navigation too (detect happens passively).
-    { kind: 'tool_calls', calls: [{ id: 'signin-nav', name: 'navigate', args: { url: fixture.url('/signin') } }] },
+    { kind: 'tool_calls', calls: [{ id: 'signin-nav', name: 'navigate', args: { url: fixture.altUrl('/signin') } }] },
     // #79: a mid-load self-redirect must land as a normal outcome on the
-    // walled page — marker included — not a dead ERR_ABORTED error.
+    // walled page — marker included — not a dead ERR_ABORTED error. The
+    // target is the primary site, so the second-site login-wall gate lets
+    // it through; the redirect lands on the primary site's /challenge.
     {
       kind: 'tool_calls',
       calls: [{ id: 'abort-nav', name: 'navigate', args: { url: fixture.url('/mid-load-redirect') } }],
     },
     // Consent stays the auto-clear class: read_page dismisses it, no ask.
+    // Back to the second site — different host from the primary-site
+    // challenge the redirect landed on, so the gate lets it through again.
     {
       kind: 'tool_calls',
       calls: [
-        { id: 'consent-nav', name: 'navigate', args: { url: fixture.url('/consent-wall') } },
+        { id: 'consent-nav', name: 'navigate', args: { url: fixture.altUrl('/consent-wall') } },
         { id: 'consent-read', name: 'read_page', args: {} },
       ],
     },
@@ -120,7 +137,7 @@ describe('blocker detect → verify → escalate e2e', () => {
 
     // Detect: the navigation outcome carries the marker line + flavored nudge.
     expect(byId['challenge-nav']).toContain('navigated: url=')
-    expect(byId['challenge-nav']).toContain('BLOCKER:challenge 127.0.0.1')
+    expect(byId['challenge-nav']).toContain(`BLOCKER:challenge ${altHost(fixture)}`)
     expect(byId['challenge-nav']).toContain('This page is a Blocker — a challenge wall')
     expect(byId['challenge-nav']).toContain('look (vision)')
     expect(byId['challenge-nav']).toContain('ask_user')
@@ -142,7 +159,7 @@ describe('blocker detect → verify → escalate e2e', () => {
     expect(events.filter((event) => event.type === 'tool_call' && event.name === 'type')).toEqual([])
 
     // Login walls are nudged on navigation too.
-    expect(byId['signin-nav']).toContain('BLOCKER:login-wall 127.0.0.1')
+    expect(byId['signin-nav']).toContain(`BLOCKER:login-wall ${altHost(fixture)}`)
     expect(byId['signin-nav']).toContain('This page is a Blocker — a login wall')
 
     // #79: the aborted load recovered into a normal navigate outcome naming
