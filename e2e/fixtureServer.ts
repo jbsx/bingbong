@@ -276,18 +276,36 @@ function visualTargetPage(): string {
 // iframe whose src host is what matters — the collector reads the element
 // attribute, so the widget is listed even though its content never loads
 // offline. The same-origin and srcless iframes are decoys that must NOT
-// become refs. Refs in DOM order: [1] iframe (challenge) [2] Continue.
+// become refs. The Cloudflare-interstitial title ("Just a moment...") is
+// what the passive navigation classifier keys on. Refs in DOM order:
+// [1] iframe (challenge) [2] Continue.
 function challengePage(): string {
   return `<!doctype html>
 <html>
-<head><title>challenge fixture</title></head>
+<head><title>Just a moment...</title></head>
 <body style="background:#222;color:#fff;margin:0">
-  <h1>challenge fixture page</h1>
+  <h1>Just a moment...</h1>
   <p>Verifying you are human. This may take a few seconds.</p>
   <iframe title="Widget containing a Cloudflare security challenge" src="https://challenges.cloudflare.com/cdn-cgi/challenge-platform/h/b/turnstile" width="300" height="65" style="border:1px solid #555"></iframe>
   <iframe title="same-origin embed" src="/second" width="10" height="10"></iframe>
   <iframe title="srcless embed" width="10" height="10"></iframe>
-  <button id="btn-continue" style="font-size:20px">Continue</button>
+  <button id="btn-continue" onclick="document.title='clicked:continue'" style="font-size:20px">Continue</button>
+</body>
+</html>`
+}
+
+// Sign-in wall fixture (ADR 0007): a login wall at a /signin path — the
+// URL shape the passive classifier treats as a login-wall Blocker.
+function signInWallPage(): string {
+  return `<!doctype html>
+<html>
+<head><title>Sign in to continue</title></head>
+<body style="background:#1b2330;color:#fff;margin:0">
+  <h1>Sign in to continue to the article</h1>
+  <p>This page is only available to subscribers.</p>
+  <input type="email" placeholder="Email" style="font-size:18px">
+  <input type="password" placeholder="Password" style="font-size:18px">
+  <button style="font-size:20px">Sign in</button>
 </body>
 </html>`
 }
@@ -354,6 +372,10 @@ export async function startFixtureServer(): Promise<FixtureServer> {
     }
     if (req.url === '/challenge') {
       res.end(challengePage())
+      return
+    }
+    if (req.url === '/signin') {
+      res.end(signInWallPage())
       return
     }
     if (req.url === '/native-dialog') {

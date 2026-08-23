@@ -3,10 +3,22 @@ import type { ToolCall } from '../ports/llm'
 import type { BrowserController } from '../ports/browser'
 import type { VisionDescriber } from '../ports/vision'
 import { assessBrowserAction } from './riskGate'
+import { classifyBlockerNavigation } from '../browser/blockerNudge'
 
 const STALE_REF_RE = /ref \d+ not found.*page may have changed/i
 const AUTO_VISION_PROMPT =
   'Describe the current browser screenshot, focusing on page state, popups, dialogs, overlays, errors, and anything blocking the requested task.'
+
+// ADR 0007 layer 3: after a navigation settles, passively sniff the landing
+// URL/title; a suspicious page gets a nudge appended to the tool result
+// telling the model to verify with vision and escalate. The nudge is
+// advisory — it never performs or orders any page action.
+async function withBlockerNudge(browser: BrowserController, action: () => Promise<string>): Promise<string> {
+  const outcome = await action()
+  const { url, title } = browser.state()
+  const nudge = classifyBlockerNavigation(url ?? '', title ?? '')
+  return nudge ? `${outcome}\n${nudge.nudge}` : outcome
+}
 
 interface ReadState {
   refs: Set<number>
@@ -119,7 +131,7 @@ export function createBrowserTools(browser: BrowserController, vision?: VisionDe
       },
       execute: (call, context) => {
         resetReads(context)
-        return browser.navigate(stringArg(call, 'url', 'navigate'))
+        return withBlockerNudge(browser, () => browser.navigate(stringArg(call, 'url', 'navigate')))
       },
     },
     {
@@ -192,7 +204,7 @@ export function createBrowserTools(browser: BrowserController, vision?: VisionDe
       description: 'Go back one step in browser history, then return the new URL and page title.',
       execute: (_call, context) => {
         resetReads(context)
-        return browser.back()
+        return withBlockerNudge(browser, () => browser.back())
       },
     },
     {
@@ -200,7 +212,7 @@ export function createBrowserTools(browser: BrowserController, vision?: VisionDe
       description: 'Go forward one step in browser history, then return the new URL and page title.',
       execute: (_call, context) => {
         resetReads(context)
-        return browser.forward()
+        return withBlockerNudge(browser, () => browser.forward())
       },
     },
   ]

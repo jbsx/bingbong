@@ -44,10 +44,20 @@ describe('fixtureServer', () => {
     server = await startFixtureServer()
     const response = await fetch(server.url('/challenge'))
     const html = await response.text()
-    expect(html).toContain('challenge fixture page')
+    // Cloudflare-interstitial title — what the passive Blocker classifier
+    // keys on (ADR 0007).
+    expect(html).toContain('<title>Just a moment...</title>')
     expect(html).toContain('src="https://challenges.cloudflare.com/cdn-cgi/challenge-platform/h/b/turnstile"')
     expect(html).toContain('src="/second"')
     expect(html).toContain('<iframe title="srcless embed"')
+  })
+
+  it('serves /signin as a login wall at a sign-in path', async () => {
+    server = await startFixtureServer()
+    const response = await fetch(server.url('/signin'))
+    const html = await response.text()
+    expect(html).toContain('Sign in to continue')
+    expect(html).toContain('type="password"')
   })
 
   it('serves the adblock list, assets and fixture page, counting list hits', async () => {

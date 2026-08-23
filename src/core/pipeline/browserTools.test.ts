@@ -30,6 +30,8 @@ class FixtureBrowserController implements BrowserController {
   readonly scrolls: ('up' | 'down')[] = []
   wentBack = 0
   screenshotBytes = new Uint8Array([1, 2, 3])
+  /** state() override; null falls back to the benign fixture page. */
+  browserState: BrowserState | null = null
   private readonly snapshot = buildPageSnapshot(parseCollectedPage(youtubeHome))
   private readonly overrides = new Map<number, SnapshotRef>()
 
@@ -90,7 +92,7 @@ class FixtureBrowserController implements BrowserController {
   }
 
   state(): BrowserState {
-    return { url: youtubeFixture.url, title: youtubeFixture.title }
+    return this.browserState ?? { url: youtubeFixture.url, title: youtubeFixture.title }
   }
 
   async describeRef(ref: number): Promise<SnapshotRef | undefined> {
@@ -305,6 +307,75 @@ describe('browser tools through the pipeline', () => {
     ])
     expect(browser.clicks).toEqual([])
     expect(events.some((e) => e.type === 'confirmation_requested')).toBe(false)
+  })
+
+  describe('blocker nudge on navigation (ADR 0007)', () => {
+    it('appends the verify-and-escalate nudge when navigation lands on a challenge', async () => {
+      const browser = new FixtureBrowserController()
+      browser.browserState = { url: 'https://shop.example.com/', title: 'Just a moment...' }
+      const { pipeline } = pipelineWith(browser, [
+        { kind: 'tool_calls', calls: [{ id: 'c1', name: 'navigate', args: { url: 'https://shop.example.com/' } }] },
+        { kind: 'answer', speak: 'Blocked.', display: 'Detail.' },
+      ])
+
+      const events = await collect(pipeline, 'open the shop')
+
+      expect(events.find((e) => e.type === 'tool_result')).toMatchObject({
+        ok: true,
+        result: `navigated outcome\nThis page may be a Blocker: the URL or title looks like a CAPTCHA or challenge wall. Verify with look (vision) before trusting the page. If it is a Blocker, say so and ask_user how to proceed.`,
+      })
+    })
+
+    it('nudges on sign-in wall landings through every navigation verb', async () => {
+      const browser = new FixtureBrowserController()
+      browser.browserState = { url: 'https://news.example.com/signin?returnUrl=%2Farticle', title: 'Sign in' }
+      const { pipeline } = pipelineWith(browser, [
+        {
+          kind: 'tool_calls',
+          calls: [
+            { id: 'c1', name: 'navigate', args: { url: 'https://news.example.com/article' } },
+            { id: 'c2', name: 'back', args: {} },
+            { id: 'c3', name: 'go_forward', args: {} },
+          ],
+        },
+        { kind: 'answer', speak: 'Walls everywhere.', display: 'Detail.' },
+      ])
+
+      const events = await collect(pipeline, 'read the article')
+
+      const results = events.filter((event) => event.type === 'tool_result')
+      for (const result of results) {
+        expect(result.result).toContain('This page may be a Blocker: it landed on a sign-in wall.')
+        expect(result.result).toContain('ask_user')
+      }
+    })
+
+    it('leaves ordinary navigations — including consent walls — unnudged', async () => {
+      const browser = new FixtureBrowserController()
+      browser.browserState = { url: 'https://news.example.com/', title: 'Welcome — choose your cookies' }
+      const { pipeline } = pipelineWith(browser, [
+        { kind: 'tool_calls', calls: [{ id: 'c1', name: 'navigate', args: { url: 'https://news.example.com/' } }] },
+        { kind: 'answer', speak: 'Read it.', display: 'Detail.' },
+      ])
+
+      const events = await collect(pipeline, 'open the news')
+
+      // Consent stays the auto-clear class: no Blocker nudge, ever.
+      expect(events.find((e) => e.type === 'tool_result')).toMatchObject({ ok: true, result: 'navigated outcome' })
+    })
+
+    it('tolerates null state fields the controller reports mid-navigation', async () => {
+      const browser = new FixtureBrowserController()
+      browser.browserState = { url: null, title: null }
+      const { pipeline } = pipelineWith(browser, [
+        { kind: 'tool_calls', calls: [{ id: 'c1', name: 'navigate', args: { url: 'https://x.test/' } }] },
+        { kind: 'answer', speak: 'Went there.', display: 'Detail.' },
+      ])
+
+      const events = await collect(pipeline, 'open the site')
+
+      expect(events.find((e) => e.type === 'tool_result')).toMatchObject({ ok: true, result: 'navigated outcome' })
+    })
   })
 
   describe('risk gate', () => {
