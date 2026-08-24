@@ -215,7 +215,12 @@ describe('run interruption e2e', () => {
         async () => (await transcript(harness)).includes('Handled stop normally.') || undefined,
         { timeoutMs: 20_000, intervalMs: 250 },
       )
-      expect(await transcript(harness)).toContain('you stop')
+      // The spoken 'stop' routed as a command: the echo bubble carries the
+      // bare word — no 'you' handle (ADR 0013).
+      const commands = await harness.overlayEval<string[]>(
+        `Array.from(document.querySelectorAll('.feed-entry--command .feed-text')).map((el) => el.textContent)`,
+      )
+      expect(commands).toContain('stop')
       expect(await harness.dashboardEval<boolean>(`!!document.querySelector('.status-orb--cancelled')`)).toBe(false)
     } finally {
       await harness.quit()

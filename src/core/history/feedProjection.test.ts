@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { createFeedProjection, MAX_DETAIL_ENTRIES } from './feedProjection'
 import type { PipelineEvent } from '../pipeline/events'
 import type { RecordedEntry } from './historyStore'
+import type { HydratedEntry } from './hydrationScope'
 
 // Feed projection (#44): the right-edge activity feed's entries as a pure
 // function over the pipeline event stream — timestamped outcome lines
@@ -11,7 +12,7 @@ import type { RecordedEntry } from './historyStore'
 // beyond ~500, hydrated after restart from recorded history only (never
 // detail). Conversation structure (#54): every entry carries a role —
 // your words vs Bing Bong's answers vs system detail — and a turn's
-// spoken line is suppressed when its display card renders (keyed on the
+// Spoken Rendering is suppressed when its Card renders (keyed on the
 // shared turn id). Run grouping (#55): run noise (tool lines, failed
 // tool results, intents, reasoning runs, stage markers, retries, steer
 // echoes) carries its run's id for the renderer's per-run expander, and
@@ -28,12 +29,12 @@ function retry(attempt: number, at: number, turnId = T): PipelineEvent {
   return { type: 'llm_retry', turnId, attempt, maxAttempts: 3, at }
 }
 
-function recorded(kind: RecordedEntry['kind'], text: string, at: number): RecordedEntry {
-  return { id: 1, runId: null, kind, text, at }
+function recorded(kind: RecordedEntry['kind'], text: string, at: number): HydratedEntry {
+  return { id: 1, runId: null, turnId: null, kind, text, at }
 }
 
 /** A snapshot whose render boundary began at/before the first entry — hydrates all. */
-function snapshotOf(...entries: RecordedEntry[]) {
+function snapshotOf(...entries: HydratedEntry[]) {
   return { entries, runs: [], renderFromAt: entries[0]?.at ?? 0 }
 }
 
@@ -230,14 +231,17 @@ describe('feed projection', () => {
       ])
     })
 
-    it('closes the open entries on any other event; a later delta opens a fresh one', () => {
+    it('resolves the typing indicator on any other event; a later delta opens a fresh one', () => {
       const feed = createFeedProjection()
       feed.onEvent(delta('text', 'partial text', 1_000))
       feed.onEvent({ type: 'tool_call', turnId: T, callId: 'c1', name: 'navigate', args: { url: 'x.test' }, at: 2_000 })
       feed.onEvent(delta('text', 'after the tool', 3_000))
 
+      // The indicator never outlives the moment it stood for (ADR 0013):
+      // the tool call resolves the first; a fresh one opens for the new
+      // round. The old frozen-partial semantics applied to rendered text,
+      // and the indicator renders none.
       expect(outline(feed.entries())).toEqual([
-        { kind: 'answer_stream', role: ASSISTANT, text: 'partial text', detail: true },
         { kind: 'tool', role: SYSTEM, text: '→ x.test', detail: false },
         { kind: 'answer_stream', role: ASSISTANT, text: 'after the tool', detail: true },
       ])
@@ -250,6 +254,19 @@ describe('feed projection', () => {
 
       expect(outline(feed.entries())).toEqual([
         { kind: 'display', role: ASSISTANT, text: 'Done. Playing it now.', detail: false },
+      ])
+    })
+
+    it('drops the open streamed answer when its run ends without a display — no typing indicator outlives the run (ADR 0013)', () => {
+      const feed = createFeedProjection()
+      feed.onEvent(command('go', 1_000))
+      feed.onEvent(delta('text', 'partial answer', 2_000))
+      feed.onEvent({ type: 'speak', text: 'Stopped.', at: 3_000 })
+      feed.onEvent({ type: 'done', turnId: T, outcome: 'cancelled', at: 3_100 })
+
+      expect(outline(feed.entries())).toEqual([
+        { kind: 'command', role: USER, text: 'go', detail: false },
+        { kind: 'speak', role: ASSISTANT, text: 'Stopped.', detail: false },
       ])
     })
 
@@ -297,6 +314,16 @@ describe('feed projection', () => {
 
       expect(outline(feed.entries())).toEqual([
         { kind: 'command', role: USER, text: 'click the search button', detail: false },
+        { kind: 'intent', role: SYSTEM, text: 'clicking \'Sea…\'', detail: true },
+      ])
+    })
+
+    it('resolves the typing indicator when tool intent starts streaming', () => {
+      const feed = createFeedProjection()
+      feed.onEvent({ type: 'llm_delta', turnId: T, kind: 'text', text: 'partial answer', at: 1_000 })
+      feed.onEvent(intent(0, 'click', '{"ref":"Sea', 1_120))
+
+      expect(outline(feed.entries())).toEqual([
         { kind: 'intent', role: SYSTEM, text: 'clicking \'Sea…\'', detail: true },
       ])
     })
@@ -411,19 +438,19 @@ describe('feed projection', () => {
       expect(feed.entries().map(({ at }) => at)).toEqual([1_000, 1_100, 4_000, 9_500])
     })
 
-    it('closes the open streamed run when the stage turns — the run freezes above the line', () => {
+    it('resolves the streamed indicator when the stage turns; a later delta opens a fresh run', () => {
       const feed = createFeedProjection()
       feed.onEvent({ type: 'llm_delta', turnId: T, kind: 'text', text: 'Opening YouTu', at: 1_000 })
       feed.onEvent(status('acting', 2_000))
 
+      // The stage turn resolves the indicator (ADR 0013) — dropped, not
+      // frozen; only the stage line remains.
       expect(outline(feed.entries())).toEqual([
-        { kind: 'answer_stream', role: ASSISTANT, text: 'Opening YouTu', detail: true },
         { kind: 'stage', role: SYSTEM, text: 'acting', detail: true },
       ])
       // Closed: a later delta opens a fresh run below the stage line.
       feed.onEvent({ type: 'llm_delta', turnId: T, kind: 'text', text: 'next round', at: 3_000 })
       expect(outline(feed.entries())).toEqual([
-        { kind: 'answer_stream', role: ASSISTANT, text: 'Opening YouTu', detail: true },
         { kind: 'stage', role: SYSTEM, text: 'acting', detail: true },
         { kind: 'answer_stream', role: ASSISTANT, text: 'next round', detail: true },
       ])
@@ -625,7 +652,7 @@ describe('feed projection', () => {
       ['your commands', command('open youtube', 1_000), USER],
       ['heard transcriptions', appendable('voice', 'heard: maybe', 2_000), USER],
       ['displayed answers', { type: 'display', turnId: T, text: 'Full detail.', at: 3_000 } as PipelineEvent, ASSISTANT],
-      ['spoken lines', { type: 'speak', turnId: T, text: 'Done.', at: 4_000 } as PipelineEvent, ASSISTANT],
+      ['Spoken Renderings', { type: 'speak', turnId: T, text: 'Done.', at: 4_000 } as PipelineEvent, ASSISTANT],
       [
         'live answer streams',
         { type: 'llm_delta', turnId: T, kind: 'text', text: 'Answering…', at: 5_000 } as PipelineEvent,
@@ -688,8 +715,10 @@ describe('feed projection', () => {
       // A display for one turn never suppresses another turn's speak.
       feed.onEvent({ type: 'display', turnId: 'turn-a', text: 'Turn A card.', at: 1_000 })
       feed.onEvent({ type: 'speak', turnId: 'turn-b', text: 'Turn B spoken.', at: 2_000 })
-      // Download-router announcements are unstamped — not turn-scoped, so
-      // the spoken line renders beside its display (TTS announces it).
+      // Unstamped speaks are not turn-scoped, so they render beside a
+      // display — subagent announcements work this way (their own TTS,
+      // no card twin). The download router no longer emits a feed speak
+      // at all (ADR 0013): its card is the one entry, TTS the voice.
       feed.onEvent({ type: 'display', text: 'Downloaded "report.pdf".', at: 3_000 })
       feed.onEvent({ type: 'speak', text: 'Download complete: report.pdf', at: 3_100 })
 
@@ -711,6 +740,101 @@ describe('feed projection', () => {
         { kind: 'display', role: ASSISTANT, text: 'Full card.', detail: false },
         { kind: 'speak', role: ASSISTANT, text: 'Done.', detail: false },
         { kind: 'tool', role: SYSTEM, text: '→ x.test', detail: false },
+      ])
+    })
+
+    it('suppresses a recorded Spoken Rendering whose turn carried a Card — one Answer, one entry, after restart too (ADR 0013)', () => {
+      const feed = createFeedProjection()
+
+      feed.hydrate(
+        snapshotOf(
+          { ...recorded('command', 'go', 1_000), turnId: 'turn-9' },
+          { ...recorded('display', 'Full card.', 2_000), turnId: 'turn-9' },
+          { ...recorded('speak', 'Done.', 3_000), turnId: 'turn-9' },
+        ),
+      )
+
+      expect(outline(feed.entries())).toEqual([
+        { kind: 'command', role: USER, text: 'go', detail: false },
+        { kind: 'display', role: ASSISTANT, text: 'Full card.', detail: false },
+      ])
+    })
+
+    it('renders a recorded Spoken Rendering whose turn carried no Card — the Spoken Rendering is the turn\'s only trace', () => {
+      const feed = createFeedProjection()
+
+      feed.hydrate(
+        snapshotOf(
+          { ...recorded('command', 'go', 1_000), turnId: 'turn-9' },
+          { ...recorded('speak', 'Stopped.', 2_000), turnId: 'turn-9' },
+        ),
+      )
+
+      expect(outline(feed.entries())).toEqual([
+        { kind: 'command', role: USER, text: 'go', detail: false },
+        { kind: 'speak', role: ASSISTANT, text: 'Stopped.', detail: false },
+      ])
+    })
+
+    it('seeds the suppression from hydration — a turn that displayed before the restart never speaks into the view after it', () => {
+      const feed = createFeedProjection()
+      feed.hydrate(snapshotOf({ ...recorded('display', 'Hydrated card.', 1_000), turnId: 'turn-9' }))
+
+      // A straggler speak for the same turn arrives live after hydration
+      // resolved (the startup race): the card already owns the turn.
+      feed.onEvent({ type: 'speak', turnId: 'turn-9', text: 'Straggler.', at: 2_000 })
+
+      expect(outline(feed.entries())).toEqual([
+        { kind: 'display', role: ASSISTANT, text: 'Hydrated card.', detail: false },
+      ])
+    })
+
+    it('deduplicates a live spoken twin before suppressing its recorded copy', () => {
+      const feed = createFeedProjection()
+      feed.onEvent({ type: 'speak', turnId: 'turn-9', text: 'Done.', at: 3_000 })
+
+      feed.hydrate(
+        snapshotOf(
+          { ...recorded('display', 'Hydrated card.', 2_000), turnId: 'turn-9' },
+          { ...recorded('speak', 'Done.', 3_000), turnId: 'turn-9' },
+        ),
+      )
+
+      expect(outline(feed.entries())).toEqual([
+        { kind: 'display', role: ASSISTANT, text: 'Hydrated card.', detail: false },
+      ])
+    })
+
+    it('drops a live spoken twin when hydration supplies its Card', () => {
+      const feed = createFeedProjection()
+      feed.onEvent({ type: 'speak', turnId: 'turn-9', text: 'Done.', at: 3_000 })
+
+      feed.hydrate(snapshotOf({ ...recorded('display', 'Hydrated card.', 2_000), turnId: 'turn-9' }))
+
+      expect(outline(feed.entries())).toEqual([
+        { kind: 'display', role: ASSISTANT, text: 'Hydrated card.', detail: false },
+      ])
+    })
+
+    it('suppresses a hydrated spoken twin when its Card arrived live', () => {
+      const feed = createFeedProjection()
+      feed.onEvent({ type: 'display', turnId: 'turn-9', text: 'Live card.', at: 2_000 })
+
+      feed.hydrate(snapshotOf({ ...recorded('speak', 'Done.', 1_000), turnId: 'turn-9' }))
+
+      expect(outline(feed.entries())).toEqual([
+        { kind: 'display', role: ASSISTANT, text: 'Live card.', detail: false },
+      ])
+    })
+
+    it('drops a hydrated Spoken Rendering when its Card arrives live afterward', () => {
+      const feed = createFeedProjection()
+      feed.hydrate(snapshotOf({ ...recorded('speak', 'Done.', 1_000), turnId: 'turn-9' }))
+
+      feed.onEvent({ type: 'display', turnId: 'turn-9', text: 'Live card.', at: 2_000 })
+
+      expect(outline(feed.entries())).toEqual([
+        { kind: 'display', role: ASSISTANT, text: 'Live card.', detail: false },
       ])
     })
 
@@ -757,7 +881,7 @@ describe('feed projection', () => {
     it.each([
       ['commands', command('go', 1_000)],
       ['display cards', { type: 'display', turnId: T, text: 'Full card.', at: 2_000 } as PipelineEvent],
-      ['spoken lines', { type: 'speak', turnId: T, text: 'Done.', at: 3_000 } as PipelineEvent],
+      ['Spoken Renderings', { type: 'speak', turnId: T, text: 'Done.', at: 3_000 } as PipelineEvent],
       ['live answer streams', { type: 'llm_delta', turnId: T, kind: 'text', text: 'Answering…', at: 4_000 } as PipelineEvent],
       ['pipeline errors', { type: 'error', turnId: T, message: 'boom', at: 5_000 } as PipelineEvent],
       ['heard voice lines', appendable('voice', 'heard: maybe', 6_000)],
@@ -779,12 +903,13 @@ describe('feed projection', () => {
       feed.onEvent({ type: 'display', turnId: T, text: 'The full card.', at: 1_500 })
       feed.onEvent({ type: 'done', turnId: T, outcome: 'done', at: 1_600 })
 
-      // Content is unchanged — every line still renders, order intact.
+      // Content is unchanged — every line still renders, order intact;
+      // the streamed indicator resolved at the tool call (ADR 0013:
+      // dropped, never frozen), so it is absent here.
       expect(outline(feed.entries())).toEqual([
         { kind: 'command', role: USER, text: 'search flights', detail: false },
         { kind: 'stage', role: SYSTEM, text: 'thinking', detail: true },
         { kind: 'reasoning', role: SYSTEM, text: 'comparing dates', detail: true },
-        { kind: 'answer_stream', role: ASSISTANT, text: 'Partial answer.', detail: true },
         { kind: 'tool', role: SYSTEM, text: '→ x.test', detail: false },
         { kind: 'display', role: ASSISTANT, text: 'The full card.', detail: false },
       ])
@@ -793,7 +918,6 @@ describe('feed projection', () => {
         ['command', undefined],
         ['stage', T],
         ['reasoning', T],
-        ['answer_stream', undefined],
         ['tool', T],
         ['display', undefined],
       ])
@@ -861,9 +985,9 @@ describe('feed projection', () => {
         const feed = createFeedProjection()
         feed.hydrate(
           snapshotOf(
-            { id: 1, runId: 7, kind: 'command', text: 'go', at: 1_000 },
-            { id: 2, runId: 7, kind: 'tool', text: '→ x.test', at: 1_500 },
-            { id: 3, runId: 7, kind: 'display', text: 'Done card.', at: 2_000 },
+            { id: 1, runId: 7, turnId: 'turn-7', kind: 'command', text: 'go', at: 1_000 },
+            { id: 2, runId: 7, turnId: 'turn-7', kind: 'tool', text: '→ x.test', at: 1_500 },
+            { id: 3, runId: 7, turnId: 'turn-7', kind: 'display', text: 'Done card.', at: 2_000 },
           ),
         )
 
@@ -876,13 +1000,13 @@ describe('feed projection', () => {
 
       it('keeps unlinked tool lines top-level — runs recorded before run ids existed', () => {
         const feed = createFeedProjection()
-        feed.hydrate(snapshotOf({ id: 1, runId: null, kind: 'tool', text: '→ x.test', at: 1_000 }))
+        feed.hydrate(snapshotOf({ id: 1, runId: null, turnId: null, kind: 'tool', text: '→ x.test', at: 1_000 }))
         expect(feed.entries()[0]!.runId).toBeUndefined()
       })
 
       it('keeps recorded errors top-level — history cannot tell tool failures from pipeline errors', () => {
         const feed = createFeedProjection()
-        feed.hydrate(snapshotOf({ id: 1, runId: 7, kind: 'error', text: 'click failed: gone', at: 1_000 }))
+        feed.hydrate(snapshotOf({ id: 1, runId: 7, turnId: 'turn-7', kind: 'error', text: 'click failed: gone', at: 1_000 }))
         expect(feed.entries()[0]!.runId).toBeUndefined()
       })
     })

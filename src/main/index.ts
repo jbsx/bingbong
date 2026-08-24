@@ -148,11 +148,14 @@ function currentEnv(): Record<string, string | undefined> {
   return { ...layerEnv(envFileValues, process.env), ...settingsToEnv(settingsStore.get()) }
 }
 
-/** Recorded run spans (oldest first) — the shared input of boot hydration and the boot-armed Lapse. */
+/** Recorded runs (oldest first) — the shared input of boot hydration, the boot-armed Lapse, and turn-id stamping (ADR 0013). */
+function recordedRuns() {
+  return historyStore.recentRuns(HISTORY_HYDRATE_LIMIT)
+}
+
+/** Recorded run spans — the time-span projection of the recorded runs. */
 function recordedSpans(): RunSpan[] {
-  return historyStore
-    .recentRuns(HISTORY_HYDRATE_LIMIT)
-    .map((run) => ({ startedAt: run.startedAt, finishedAt: run.finishedAt }))
+  return recordedRuns().map((run) => ({ startedAt: run.startedAt, finishedAt: run.finishedAt }))
 }
 
 let cliHarnessStarted = false
@@ -424,11 +427,18 @@ app.whenReady().then(async () => {
     // last exchange of the Active Session; a lapsed session boots
     // blank. The spans (#70) seed the renderer's Active Session gate,
     // which reuses the same isSessionActive computation as the scoping
-    // here.
-    const runs = recordedSpans()
+    // here. Each entry ships with its run's turn id (ADR 0013): runs
+    // correlate 1:1 to turns (#28), so the stamp derives from the run —
+    // the recorder itself stays unchanged (#49), and the projection can
+    // apply the same Answer suppression the live path applies.
+    const runs = recordedRuns()
+    const turnIdByRun = new Map(runs.map((run) => [run.id, run.turnId]))
     return {
-      entries: historyStore.recentEntries(HISTORY_HYDRATE_LIMIT),
-      runs,
+      entries: historyStore.recentEntries(HISTORY_HYDRATE_LIMIT).map((entry) => ({
+        ...entry,
+        turnId: entry.runId !== null ? turnIdByRun.get(entry.runId) ?? null : null,
+      })),
+      runs: runs.map((run) => ({ startedAt: run.startedAt, finishedAt: run.finishedAt })),
       renderFromAt: lastExchangeStart(runs, systemClock.now(), launchConfig.sessionWindowMs),
     }
   })

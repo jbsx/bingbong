@@ -6,16 +6,20 @@ import { FeedMarkdown } from './FeedMarkdown'
  * The activity feed list (#44): timestamped entries for commands, tool
  * lines, spoken/displayed text, errors, and retry detail lines —
  * observation only. Conversation structure (#54): user entries render
- * right-aligned in muted bubbles, assistant answers as left-aligned
- * railed cards; everything else stays a plain system line. Run grouping
- * (#55): run noise — tool lines, tool results, intents, reasoning runs,
- * stage markers, retries, steer echoes — folds under one per-run details
- * expander (#55), collapsed by default and auto-open while its run is
- * live, so the conversation reads as just you and Bing Bong. Markdown
- * (#56): display entries and the live answer stream render as structure
+ * right-aligned in muted bubbles, assistant Answers as left-aligned
+ * railed cards; everything else stays a plain system line. Attribution
+ * (ADR 0013): one device — the Status Capsule orb beside every assistant
+ * entry; no text handles, the name living in screen-reader text only.
+ * Run grouping (#55): run noise — tool lines, tool results, intents,
+ * reasoning runs, stage markers, retries, steer echoes — folds under one
+ * per-run details expander (#55), collapsed by default and auto-open
+ * while its run is live, so the conversation reads as just you and Bing
+ * Bong. Markdown (#56): the Answer's Card renders as structure
  * (FeedMarkdown) — code blocks, lists, headings, links that navigate the
- * pane. Rendered by the feed panel's overlay webContents (#45); the idle
- * screen reuses FeedLine for its digest.
+ * pane — while a display-less Answer renders its Spoken Rendering
+ * (italic speech) and the live stream shows a typing indicator under the
+ * orb (ADR 0013: internal JSON never flashes into the view). Rendered by
+ * the feed panel's overlay webContents (#45).
  */
 
 function formatFeedTime(at: number): string {
@@ -26,37 +30,53 @@ export function FeedLine({ entry }: { entry: FeedEntry }) {
   const time = <time className="feed-time">{formatFeedTime(entry.at)}</time>
   if (entry.role === 'user') {
     // Your words (#54): commands and heard transcriptions, right-aligned
-    // in muted bubbles.
+    // in muted bubbles — no glyph, no handle (ADR 0013): the orb marks
+    // Bing Bong only; your own words need no attribution.
     return (
       <p className={`feed-entry feed-entry--user feed-entry--${entry.kind}`}>
         <span className="feed-bubble">
-          <span className="feed-text">
-            {entry.kind === 'command' && <span className="feed-speaker">you</span>} {entry.text}
-          </span>
+          <span className="feed-text">{entry.text}</span>
         </span>
         {time}
       </p>
     )
   }
   if (entry.role === 'assistant') {
-    // Bing Bong's answers (#54): display entries, the live answer stream,
-    // and display-less spoken lines — left-aligned railed cards at
-    // conversation size. Display and stream text render as markdown
-    // (#56): structured, styled, links navigating the pane; spoken lines
-    // are speech-derived plain text.
-    const markdown = entry.kind === 'display' || entry.kind === 'answer_stream'
+    // Bing Bong's answers (#54, ADR 0013): one attribution device — the
+    // Status Capsule's orb beside every assistant entry, the name living
+    // in screen-reader text. The Card renders its markdown (#56); a
+    // display-less turn renders its Spoken Rendering — italic speech in
+    // the same card frame; a turn's two renderings never both render.
+    if (entry.kind === 'answer_stream') {
+      // The live answer stream (ADR 0013): the orb with a typing
+      // indicator — internal JSON never flashes into the view; the Card
+      // or Spoken Rendering lands when parsing completes.
+      return (
+        <div className="feed-entry feed-entry--assistant feed-entry--answer_stream">
+          {time}
+          <span className="feed-orb" aria-hidden="true" />
+          <div className="feed-card" role="status" aria-label="Bing Bong is answering">
+            <span className="feed-typing" aria-hidden="true">
+              <span className="feed-typing-dot" />
+              <span className="feed-typing-dot" />
+              <span className="feed-typing-dot" />
+            </span>
+          </div>
+        </div>
+      )
+    }
     return (
       <div className={`feed-entry feed-entry--assistant feed-entry--${entry.kind}`}>
         {time}
+        <span className="feed-orb" aria-hidden="true" />
         <div className="feed-card">
-          {markdown ? (
+          <span className="feed-sr">Bing Bong</span>
+          {entry.kind === 'display' ? (
             <div className="feed-text feed-text--markdown">
               <FeedMarkdown text={entry.text} />
             </div>
           ) : (
-            <span className="feed-text">
-              {entry.kind === 'speak' && <span className="feed-speaker">bing bong</span>} {entry.text}
-            </span>
+            <span className="feed-text feed-text--spoken">{entry.text}</span>
           )}
         </div>
       </div>

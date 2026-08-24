@@ -40,9 +40,10 @@ export function attachDownloadRouter(target: Session, deps: DownloadRouterDeps):
     item.once('done', (_doneEvent, state) => {
       reserved.delete(savePath)
       if (state !== 'completed') return
+      // One Answer, one entry (ADR 0013): the card renders and TTS speaks
+      // the short line — no second feed speak event to duplicate the card.
       const { speak, display } = downloadAnnouncements(filename, savePath)
       emit({ type: 'display', text: display, at: clock.now() })
-      emit({ type: 'speak', text: speak, at: clock.now() })
       void tts.speak(speak).then((outcome) => {
         if (!outcome.ok) emit({ type: 'error', message: `Voice unavailable: ${outcome.error}`, at: clock.now() })
       })

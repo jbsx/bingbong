@@ -122,11 +122,11 @@ describe('markdown answers e2e (#56)', () => {
     }
   })
 
-  it('renders formatting while the answer streams, before the final display entry', async () => {
+  it('shows the typing indicator while the answer streams, before the final display entry', async () => {
     // streamChunks flush mid-stream (each chunk > the 120ms batch window),
-    // so the growing answer_stream card parses markdown as it arrives —
-    // heading and bold visible while the run is still live, then the
-    // final display entry replaces the partial.
+    // so the live answer_stream entry holds the orb + typing indicator
+    // (ADR 0013: internal JSON never flashes into the view) — then the
+    // final display entry renders its markdown and replaces the partial.
     const script: ScriptedAnswerTurn[] = [
       {
         kind: 'answer',
@@ -143,25 +143,26 @@ describe('markdown answers e2e (#56)', () => {
       await openPanel(harness)
       expect(await harness.submitCommand('stream me an answer')).toBe('submitted')
 
-      // Mid-stream: the live answer_stream card renders the heading and
-      // the completed bold construct — formatted while streaming.
+      // Mid-stream: the answer_stream entry shows the orb with the typing
+      // indicator — never the raw streaming text.
       await waitFor(
         () =>
           harness.overlayEval<boolean>(
             `(() => {
-              const card = document.querySelector('.feed-entry--answer_stream .feed-markdown')
-              if (!card) return false
-              const heading = card.querySelector('h1')?.textContent
-              const bold = card.querySelector('strong')?.textContent
-              return heading === 'Streaming heading' && bold === 'bold' ? true : false
+              const entry = document.querySelector('.feed-entry--answer_stream')
+              if (!entry) return false
+              const typing = entry.querySelector('.feed-typing')
+              const orb = entry.querySelector('.feed-orb')
+              const raw = (entry.textContent ?? '').replace(/[\\d:]/g, '')
+              return orb && typing && raw.trim() === '' ? true : false
             })()`,
           ),
         { timeoutMs: 20000, intervalMs: 100 },
       )
 
       // The run is still live — the final display has not replaced the
-      // partial yet at the moment the formatted stream was observed.
-      // Then it lands and the partial disappears (one card, never both).
+      // partial yet at the moment the indicator was observed. Then it
+      // lands and the partial disappears (one card, never both).
       await waitFor(
         () =>
           harness.overlayEval<boolean>(

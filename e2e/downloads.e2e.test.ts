@@ -75,17 +75,26 @@ describe('download routing e2e', () => {
     })
     expect(await readFile(downloadPath, 'utf-8')).toBe(DOWNLOAD_PAYLOAD)
 
-    // The completion is announced with the filename — spoken and displayed.
+    // The completion is one Answer (ADR 0013): the card names the file and
+    // its saved path, and TTS speaks the short line — no duplicate spoken
+    // entry renders beside the card.
     await waitFor(
       async () => {
         const transcript = await harness.overlayEval<string>(
           `Array.from(document.querySelectorAll('.feed-entry')).map((el) => el.textContent).join('\\n')`,
         )
-        return transcript.includes('Download complete: probe.bin') && transcript.includes(downloadsDir)
+        return transcript.includes('Downloaded "probe.bin"') && transcript.includes(downloadsDir)
           ? transcript
           : undefined
       },
       { timeoutMs: 20000, intervalMs: 250 },
     )
+    // …and no spoken entry duplicates the announcement: the card is the
+    // one entry (the confirmation ask's Spoken Rendering appears too, as any
+    // display-less turn does — it is a different turn).
+    const announcementSpeakCount = await harness.overlayEval<number>(
+      `Array.from(document.querySelectorAll('.feed-entry--speak')).filter((el) => (el.textContent ?? '').includes('probe.bin')).length`,
+    )
+    expect(announcementSpeakCount).toBe(0)
   })
 })

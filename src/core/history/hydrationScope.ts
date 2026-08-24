@@ -16,6 +16,14 @@ export interface RunSpan {
   finishedAt: number | null
 }
 
+/**
+ * A recorded entry as served for hydration, stamped with its run's turn id
+ * (ADR 0013): runs correlate 1:1 to turns (#28), so the serving boundary
+ * derives the stamp from the run — recording itself stays unchanged. Null
+ * on entries with no run or runs recorded before turn ids existed.
+ */
+export type HydratedEntry = RecordedEntry & { turnId: string | null }
+
 /** A run's effective finish: its own when seen, else its start (aging rule). */
 function effectiveFinish(run: RunSpan): number {
   return run.finishedAt ?? run.startedAt
@@ -30,7 +38,7 @@ function effectiveFinish(run: RunSpan): number {
  * `isSessionActive` computation this module's scoping uses.
  */
 export interface HydrationSnapshot {
-  entries: RecordedEntry[]
+  entries: HydratedEntry[]
   runs: RunSpan[]
   /** Entries stamped before this stay gone (#73): the view renders at most the last exchange. */
   renderFromAt: number | null

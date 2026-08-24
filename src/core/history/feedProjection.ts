@@ -21,7 +21,7 @@ import type { TranscriptEvent } from './historyStore'
 // exchange (#73). Conversation
 // structure (#54): every entry carries its role in the chat — your words
 // (user) vs Bing Bong's answers (assistant) vs system detail — and a
-// turn's spoken line is suppressed from the view once its display card
+// turn's Spoken Rendering is suppressed from the view once its Card
 // renders, keyed on the shared turn id (the spoken text still reaches
 // TTS: the pipeline speaks it regardless of the feed). Run grouping
 // (#55): run noise — tool lines, failed tool results, intents, reasoning
@@ -103,6 +103,9 @@ export function createFeedProjection(): {
   // Open streamed runs (#47): the feed entry a live delta grows, if any —
   // one per kind, closed (frozen in place) by any other event so each run
   // reads as one growing line. Null after close/boundary/replacement.
+  // The answer stream's entry is the typing indicator (ADR 0013): when
+  // anything else happens it resolves — dropped, never frozen — so no
+  // indicator outlives the moment it stood for.
   let openTextId: number | null = null
   let openReasoningId: number | null = null
   // Open intent lines (#48), keyed by the provider's call index — the
@@ -110,7 +113,7 @@ export function createFeedProjection(): {
   // it (the tool's outcome line follows).
   let openIntentIds = new Map<number, number>()
   // Speak-entry suppression (#54), keyed on the shared turn id: turns
-  // whose display card rendered (their spoken line stays TTS-only), and
+  // whose Card rendered (their Spoken Rendering stays TTS-only), and
   // the rendered speak entry per turn (dropped if the display lands after
   // it). Unstamped announcements — downloads, subagent cards — are not
   // turn-scoped and never suppress.
@@ -121,7 +124,9 @@ export function createFeedProjection(): {
   let liveRunId: string | null = null
 
   const closeStreaming = (): void => {
-    openTextId = null
+    // The typing indicator resolves here: any other event means the
+    // answer is no longer forming (ADR 0013) — drop it, never freeze it.
+    dropOpenText()
     openReasoningId = null
     openIntentIds = new Map()
   }
@@ -217,13 +222,21 @@ export function createFeedProjection(): {
       // done (or a session boundary) closes it. Unstamped announcements
       // and stragglers from other turns leave the current run alone.
       if (event.type === 'command') liveRunId = event.turnId
-      else if (event.type === 'done' && liveRunId === event.turnId) liveRunId = null
-      else if (event.type === 'session_started') liveRunId = null
+      else if (event.type === 'done' && liveRunId === event.turnId) {
+        liveRunId = null
+        // The run ended without its display (cancelled or failed): the
+        // open streamed answer — the typing indicator (ADR 0013) — dies
+        // with the run; the turn's trace is whatever else it rendered.
+        dropOpenText()
+      } else if (event.type === 'session_started') liveRunId = null
       switch (event.type) {
         case 'llm_delta':
           appendDelta(event.kind === 'text' ? 'answer_stream' : 'reasoning', event.text, event.at, event.turnId)
           return
         case 'llm_tool_intent':
+          // Tool intent means the model is acting, not still forming an
+          // Answer: resolve the typing indicator before the intent grows.
+          dropOpenText()
           appendIntent(event.index, event.name, event.args, event.at, event.turnId)
           return
         case 'tool_call': {
@@ -247,7 +260,7 @@ export function createFeedProjection(): {
           dropOpenText()
           appendOutcome(projectPipelineEvent(event)!)
           if (event.turnId !== undefined) {
-            // And its spoken line (#54): the display card renders, so the
+            // And its Spoken Rendering (#54): the Card renders, so the
             // turn's speak entry stays out of the view — the pipeline
             // still speaks it. A speak that rendered first is dropped.
             displayedTurns.add(event.turnId)
@@ -256,8 +269,8 @@ export function createFeedProjection(): {
           return
         }
         case 'speak': {
-          // The short spoken line renders only when its turn has no
-          // display card (#54); TTS is unaffected — it happens in main,
+          // The Spoken Rendering appears only when its turn has no Card
+          // (#54); TTS is unaffected — it happens in main,
           // upstream of the feed.
           if (event.turnId !== undefined && displayedTurns.has(event.turnId)) return
           const id = appendOutcome(projectPipelineEvent(event)!)
@@ -303,33 +316,53 @@ export function createFeedProjection(): {
       // (#73): the lapsed past never renders, and neither do the older
       // exchanges of a connected chain — even for the entries the
       // recorder did (and must keep) recording.
-      // Recorded entries carry no turn ids (#54: history recording stays
-      // exactly as it was, per #49), so speak suppression — keyed on the
-      // shared turn id — is a live-stream behavior only: a hydrated speak
-      // renders beside its recorded display, and roles derive from kind.
+      // Answer suppression (ADR 0013): served entries carry their run's
+      // turn id, so the same displayed-turns rule the live path applies
+      // holds after a restart — a turn's Spoken Rendering appears only
+      // when it has no recorded Card. Unstamped entries (legacy rows, run-less
+      // voice lines) keep rendering beside their displays.
       const { renderFromAt } = snapshot
       const inSession =
         renderFromAt === null ? [] : snapshot.entries.filter((entry) => entry.at >= renderFromAt)
       if (inSession.length === 0 || sessionCleared) return
       closeStreaming()
-      // Recorded history is older than anything live; entries that arrived
-      // live while the fetch was in flight also ride the snapshot's tail,
-      // so dedup closes the startup race (idempotent by the same count map).
+      const displayed = new Set(
+        inSession.flatMap((entry) => (entry.kind === 'display' && entry.turnId ? [entry.turnId] : [])),
+      )
+      for (const turnId of displayed) {
+        displayedTurns.add(turnId)
+        // A speak may have arrived live while this snapshot was loading.
+        // Its hydrated Card owns the turn, so remove the live twin too.
+        dropRenderedSpeak(turnId)
+      }
+      // Dedup sees the complete recorded snapshot before Answer
+      // suppression filters its spoken twins. Otherwise a matching live
+      // speak could survive beside the hydrated Card.
       const live = filterHydratedDuplicates(inSession, feed)
+      const rendered = inSession.filter(
+        (entry) => !(entry.kind === 'speak' && entry.turnId && displayedTurns.has(entry.turnId)),
+      )
       feed = [
-        ...inSession.map((entry) => ({
-          ...entry,
-          id: nextId++,
-          role: feedRoleForKind(entry.kind),
-          detail: false,
-          // Recorded tool lines group under their run's expander (#55):
-          // the recorder links every entry to its run row, so a restart's
-          // still-open session keeps the conversation clean too. The
-          // namespaced id (`run-<n>`) can never collide with a live turn
-          // id. Recorded errors stay top-level: history cannot tell a
-          // failed tool result from a pipeline error.
-          runId: entry.kind === 'tool' && entry.runId !== null ? `run-${entry.runId}` : undefined,
-        })),
+        ...rendered.map((entry) => {
+          const id = nextId++
+          // A Card may arrive live after its Spoken Rendering hydrated;
+          // register the rendered id so the normal live suppression can
+          // remove that twin too.
+          if (entry.kind === 'speak' && entry.turnId) renderedSpeakIds.set(entry.turnId, id)
+          return {
+            ...entry,
+            id,
+            role: feedRoleForKind(entry.kind),
+            detail: false,
+            // Recorded tool lines group under their run's expander (#55):
+            // the recorder links every entry to its run row, so a restart's
+            // still-open session keeps the conversation clean too. The
+            // namespaced id (`run-<n>`) can never collide with a live turn
+            // id. Recorded errors stay top-level: history cannot tell a
+            // failed tool result from a pipeline error.
+            runId: entry.kind === 'tool' && entry.runId !== null ? `run-${entry.runId}` : undefined,
+          }
+        }),
         ...live,
       ]
     },

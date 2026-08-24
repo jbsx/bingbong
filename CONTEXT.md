@@ -96,8 +96,24 @@ The session-scoped projection of pipeline events. One projection feeds the
 dashboard, the overlay panel, and (formerly) the idle digest.
 
 **Feed Entry**:
-One rendered item in the Feed (command, display, speak, error, voice-heard).
+One rendered item in the Feed (command, Answer, error, voice-heard).
 _Avoid_: message
+
+**Answer**:
+One assistant turn's single output, carrying two renderings: a Spoken one
+for the ear and a Card one for the view. An Answer renders as at most one
+Feed Entry — the Card when it exists, otherwise the Spoken rendering.
+_Avoid_: message, reply, response
+
+**Spoken Rendering**:
+The ear-facing half of an Answer: what TTS says. Never renders beside its
+Card.
+_Avoid_: speak line, voice line
+
+**Card**:
+The view-facing half of an Answer: markdown shown in the Feed. Replaces the
+live answer stream and the Spoken rendering.
+_Avoid_: display text, answer card
 
 **Feed Panel**:
 The activity panel over the browser pane. Three states: Overlay, Docked,
@@ -117,7 +133,8 @@ _Avoid_: header, dashboard header, browser chrome, title bar
 
 **Status Capsule**:
 The single control naming the assistant's state — orb, pill, and the live
-run/voice hints collapsed into one pill-shaped surface.
+run/voice hints collapsed into one pill-shaped surface. Its orb is the feed's
+assistant mark: one visual identity for "this is Bing Bong".
 _Avoid_: status bar, status row, status line
 
 **View Preference**:

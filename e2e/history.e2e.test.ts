@@ -46,7 +46,7 @@ describe('history persistence e2e', () => {
     expect(submitted).toBe('submitted')
     // Wait for the answer before the orb: right after submit the orb is still
     // idle, so an idle-check alone can pass before the run even starts. The
-    // answer card renders (#54); its spoken line is TTS-only.
+    // Card renders (#54); its Spoken Rendering is TTS-only.
     await waitForDisplay(first, 'Navigated to the fixture page.')
     await waitFor(
       () => first.dashboardEval<boolean>(`!!document.querySelector('.status-orb--idle')`),
@@ -63,6 +63,8 @@ describe('history persistence e2e', () => {
       // Restart hydration (#44): the feed seeds the previous run's stage
       // outcomes from history — command, tool line, answer — while detail
       // lines (retries and friends) are never recorded, so never rehydrate.
+      // One Answer, one entry (ADR 0013): the hydrated card renders and
+      // its recorded Spoken Rendering stays out of the view — exactly as live.
       const fixtureUrl = fixture.url('/')
       await waitFor(
         async () => {
@@ -70,8 +72,9 @@ describe('history persistence e2e', () => {
             `Array.from(document.querySelectorAll('.feed-entry')).map((el) => el.textContent).join('\\n')`,
           )
           return hydrated.includes('open the fixture page') &&
-            hydrated.includes('Opened the fixture page.') &&
-            hydrated.includes(fixtureUrl)
+            hydrated.includes('Navigated to the fixture page.') &&
+            hydrated.includes(fixtureUrl) &&
+            !hydrated.includes('Opened the fixture page.')
             ? hydrated
             : undefined
         },
@@ -101,7 +104,7 @@ describe('history persistence e2e', () => {
       const commands = await second.overlayEval<string[]>(
         `Array.from(document.querySelectorAll('.feed-entry--command .feed-text')).map((el) => el.textContent)`,
       )
-      expect(commands).toEqual(['you open the fixture page', 'you open it again'])
+      expect(commands).toEqual(['open the fixture page', 'open it again'])
     } finally {
       await second.quit()
     }

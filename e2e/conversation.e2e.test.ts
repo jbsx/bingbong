@@ -96,10 +96,10 @@ describe('conversation separation e2e (#54)', () => {
       }>(CONVERSATION_LAYOUT)
       expect(layout).not.toBeNull()
 
-      // Your words: right-aligned muted bubble carrying the command.
+      // Your words: right-aligned muted bubble carrying the command — no
+      // handle (ADR 0013: the orb marks Bing Bong only).
       expect(layout.userAlign).toBe('flex-end')
-      expect(layout.commandText).toContain('you')
-      expect(layout.commandText).toContain('what is the answer')
+      expect(layout.commandText).toBe('what is the answer')
 
       // Bing Bong's answer: left-aligned railed card at conversation size
       // (1.2rem × 17px root), its rail the speaking-green edge.

@@ -3,10 +3,10 @@ import Markdown, { type Components } from 'react-markdown'
 
 /**
  * Markdown rendering in the answer cards (#56): assistant display entries
- * and the live streaming answer render as structure — dark-styled code
- * blocks, lists, headings, emphasis — never literal sigils. Links navigate
- * the main browser pane through the existing browser navigation seam, so
- * "open that" is one click from the feed.
+ * render as structure — dark-styled code blocks, lists, headings,
+ * emphasis — never literal sigils. Links navigate the main browser pane
+ * through the existing browser navigation seam, so "open that" is one
+ * click from the feed.
  */
 
 /** Only pane-navigable schemes are intercepted; react-markdown's default urlTransform already sanitized the href. */
@@ -34,10 +34,9 @@ const components: Components = {
 }
 
 /**
- * One markdown answer. Re-parses per render, so the streaming card
- * (`answer_stream`) formats constructs as they complete mid-stream — a
- * closed `**bold**` renders bold on the next flush, before the final
- * display entry lands.
+ * One markdown answer. The Card's text (ADR 0013): the live stream shows
+ * a typing indicator while the Answer forms, so this renders only final
+ * display text.
  */
 export const FeedMarkdown = memo(function FeedMarkdown({ text }: { text: string }) {
   return (
