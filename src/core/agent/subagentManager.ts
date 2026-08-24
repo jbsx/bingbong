@@ -1,8 +1,10 @@
 import type { Clock } from '../ports/clock'
 import { systemClock } from '../ports/clock'
 import type { SessionGeneration, SessionId } from '../session/sessionIdentity'
+import type { WorkingMemorySnapshot } from '../session/workingMemory'
 import { capSentences } from '../agent/answerContract'
 import { SUBAGENT_LIMITS } from './subagentRails'
+import type { SubagentReport } from './subagentReport'
 import { SubagentCancelledError } from './subagentRunner'
 
 // The subagent supervisor (issue #13). Owns the agent rail (≤4 concurrent),
@@ -12,7 +14,10 @@ import { SubagentCancelledError } from './subagentRunner'
 // orchestrator model can read — a rail hit is a recoverable tool result,
 // never a crash. Sessions own their agents outright (#97): retire() ends
 // every agent with the Session, discards its reports, and gates late
-// settlement so an ended Session can never reach a later one.
+// settlement so an ended Session can never reach a later one. Delegation
+// carries its own selected Memory Entries (#98): they ride the spec into
+// the workhorse as untrusted context, and completed agents keep their
+// structured Subagent Report for the orchestrator to reconcile.
 
 export type SubagentKind = 'browse' | 'background'
 
@@ -36,7 +41,10 @@ export interface SubagentRecord {
   finishedAt: number | null
   steps: number
   lastAction: string | null
+  /** The report's prose — what the card shows and the announcement speaks. */
   result: string | null
+  /** The validated structured report (#98) — present on completed agents. */
+  report?: Readonly<SubagentReport>
   error: string | null
   /** The Session that spawned this agent — late events stay attributable after the Session ends (#97). */
   owner?: SubagentOwner
@@ -57,6 +65,12 @@ export interface SubagentSpec {
    * the CLI harness) — those rounds simply go unlogged.
    */
   turnId?: string
+  /**
+   * The Memory Entries delegation selected for this task (#98): a frozen,
+   * bounded slice of the spawning Run's Working Memory snapshot. Absent
+   * when the orchestrator shared nothing.
+   */
+  memory?: WorkingMemorySnapshot
 }
 
 export interface SubagentTaskHooks {
@@ -67,7 +81,7 @@ export interface SubagentTaskHooks {
 
 /** Port: starts one workhorse loop (runSubagent in production). */
 export interface SubagentTaskApi {
-  start(spec: SubagentSpec, hooks: SubagentTaskHooks): { done: Promise<string> }
+  start(spec: SubagentSpec, hooks: SubagentTaskHooks): { done: Promise<SubagentReport> }
 }
 
 /** Port: the tab allocator (the subagent tab machine in production). */
@@ -93,7 +107,7 @@ export type SpawnResult = { ok: true; agent: SubagentRecord } | { ok: false; rea
 export type CancelResult = { ok: true } | { ok: false; reason: string }
 
 export interface SubagentManager {
-  spawn(kind: SubagentKind, task: string, turnId?: string): SpawnResult
+  spawn(kind: SubagentKind, task: string, turnId?: string, memory?: WorkingMemorySnapshot): SpawnResult
   cancel(agentId: string): CancelResult
   cancelAll(): number
   /**
@@ -150,11 +164,12 @@ export function createSubagentManager(deps: SubagentManagerDeps): SubagentManage
     return live
   }
 
-  function finish(record: SubagentRecord, spawnEpoch: number, status: SubagentStatus, result: string | null, error: string | null): void {
+  function finish(record: SubagentRecord, spawnEpoch: number, status: SubagentStatus, report: SubagentReport | null, error: string | null): void {
     if (spawnEpoch !== epoch) return
     record.status = status
     record.finishedAt = clock.now()
-    record.result = result
+    record.result = report !== null ? report.text : null
+    if (report !== null) record.report = report
     record.error = error
     tabs.finish(record.id)
     onEvent({ type: 'finished', record: { ...record } })
@@ -174,7 +189,7 @@ export function createSubagentManager(deps: SubagentManagerDeps): SubagentManage
   }
 
   return {
-    spawn(kind, task, turnId) {
+    spawn(kind, task, turnId, memory) {
       if (liveCount() >= maxConcurrent) {
         return {
           ok: false,
@@ -205,16 +220,25 @@ export function createSubagentManager(deps: SubagentManagerDeps): SubagentManage
       }
       records.set(id, record)
 
-      const { done } = taskApi.start({ id, kind, task, ...(turnId !== undefined ? { turnId } : {}) }, {
-        isCancelled: () => cancelled.has(id) || spawnEpoch !== epoch,
-        waitIfPaused: () => waitIfPaused(id),
-        onProgress: (step, action) => {
-          if (spawnEpoch !== epoch) return
-          record.steps = step
-          record.lastAction = action
-          onEvent({ type: 'progress', record: { ...record } })
+      const { done } = taskApi.start(
+        {
+          id,
+          kind,
+          task,
+          ...(turnId !== undefined ? { turnId } : {}),
+          ...(memory !== undefined && memory.length > 0 ? { memory } : {}),
         },
-      })
+        {
+          isCancelled: () => cancelled.has(id) || spawnEpoch !== epoch,
+          waitIfPaused: () => waitIfPaused(id),
+          onProgress: (step, action) => {
+            if (spawnEpoch !== epoch) return
+            record.steps = step
+            record.lastAction = action
+            onEvent({ type: 'progress', record: { ...record } })
+          },
+        },
+      )
 
       settled.set(
         id,
@@ -326,10 +350,35 @@ export function formatAgentResults(records: SubagentRecord[]): string {
   return records
     .map((record) => {
       const header = `${record.id} [${KIND_LABEL[record.kind]}] ${record.status} — ${record.task}`
-      if (record.status === 'completed') return `${header}\n${record.result ?? ''}`
+      if (record.status === 'completed') return `${header}\n${formatReport(record)}`
       if (record.status === 'failed') return `${header}\nfailed: ${record.error ?? 'unknown error'}`
       if (record.status === 'cancelled') return header
       return `${header} (still running${record.lastAction ? `, last: ${record.lastAction}` : ''})`
     })
     .join('\n\n')
+}
+
+/**
+ * One agent's report for agent_results (#98): the structured sections first
+ * — findings with their evidence, unresolved items — then the full prose.
+ * The id-prefixed header (added by formatAgentResults) is the provenance
+ * the orchestrator cites as subagent_id when it commits these findings.
+ */
+function formatReport(record: SubagentRecord): string {
+  const report = record.report
+  const sections: string[] = []
+  if (report && report.findings.length > 0) {
+    const findings = report.findings
+      .map((finding) => {
+        const evidence = finding.references.map((reference) => reference.url).join(' | ')
+        return `- ${finding.subject}: ${finding.detail}${evidence !== '' ? ` (evidence: ${evidence})` : ''}`
+      })
+      .join('\n')
+    sections.push(`findings:\n${findings}`)
+  }
+  if (report && report.unresolved.length > 0) {
+    sections.push(`unresolved:\n${report.unresolved.map((item) => `- ${item}`).join('\n')}`)
+  }
+  sections.push(`report:\n${record.result ?? ''}`)
+  return sections.join('\n')
 }

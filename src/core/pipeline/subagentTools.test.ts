@@ -1,11 +1,14 @@
 import { describe, expect, it } from 'vitest'
 import type { SubagentManager } from '../agent/subagentManager'
+import type { WorkingMemorySnapshot } from '../session/workingMemory'
 import { createSubagentTools } from './subagentTools'
 
 // The delegation surface the orchestrator model sees (issue #13):
 // spawn_agent / cancel_agent / agent_results over the manager. Rail refusals
 // surface as thrown errors — the command pipeline reports those as failed
-// tool results the model reads and recovers from.
+// tool results the model reads and recovers from. Memory sharing is
+// explicit (#98): spawn_agent names entry ids, the context's selector
+// validates them against this Run's snapshot, and only that slice ships.
 
 function fakeManager(overrides: Partial<SubagentManager> = {}): SubagentManager {
   return {
@@ -61,6 +64,84 @@ describe('subagent tools', () => {
     )
 
     expect(seenTurnIds).toEqual(['turn-voice-8'])
+  })
+
+  it('shares only the explicitly selected Memory Entries through the context selector (#98)', async () => {
+    const selection: WorkingMemorySnapshot = Object.freeze([Object.freeze({
+      id: 'memory-1' as never,
+      sessionId: 'session-1' as never,
+      kind: 'constraint' as const,
+      subject: 'Budget',
+      detail: 'Stay under $30.',
+      references: Object.freeze([]),
+      provenance: Object.freeze([]),
+    })])
+    let received: WorkingMemorySnapshot | undefined
+    let requested: readonly string[] | undefined
+    const tools = createSubagentTools(fakeManager({
+      spawn: (_kind, _task, _turnId, memory) => {
+        received = memory
+        return { ok: true, agent: { id: 'a-2', kind: _kind, task: _task, status: 'running', startedAt: 0, finishedAt: null, steps: 0, lastAction: null, result: null, error: null } }
+      },
+    }))
+    const spawn = tools.find((tool) => tool.name === 'spawn_agent')!
+
+    const result = await spawn.execute(
+      { id: 'c1', name: 'spawn_agent', args: { kind: 'browse', task: 'x', memory_ids: ['memory-1', 'memory-3'] } },
+      {
+        clock: { now: () => 0, setTimer: () => () => {} },
+        selectMemoryEntries: (ids) => {
+          requested = ids
+          return selection
+        },
+      },
+    )
+
+    expect(requested).toEqual(['memory-1', 'memory-3'])
+    expect(received).toBe(selection)
+    expect(result).toContain('with 1 shared memory entry')
+  })
+
+  it('spawns without memory when memory_ids is omitted — the store is never exposed whole (#98)', async () => {
+    let calls = 0
+    const tools = createSubagentTools(fakeManager({
+      spawn: () => {
+        calls += 1
+        return { ok: true, agent: { id: 'a-1', kind: 'browse', task: 't', status: 'running', startedAt: 0, finishedAt: null, steps: 0, lastAction: null, result: null, error: null } }
+      },
+    }))
+    const spawn = tools.find((tool) => tool.name === 'spawn_agent')!
+
+    const result = await spawn.execute(
+      { id: 'c1', name: 'spawn_agent', args: { kind: 'browse', task: 'x' } },
+      {
+        clock: { now: () => 0, setTimer: () => () => {} },
+        selectMemoryEntries: () => { throw new Error('selector must not run') },
+      },
+    )
+
+    expect(calls).toBe(1)
+    expect(result).not.toContain('shared memory')
+  })
+
+  it('refuses memory_ids shapes that are not non-empty string arrays (#98)', async () => {
+    const tools = createSubagentTools(fakeManager())
+    const spawn = tools.find((tool) => tool.name === 'spawn_agent')!
+    const ctx = { clock: { now: () => 0, setTimer: () => () => {} }, selectMemoryEntries: () => [] }
+
+    await expect(spawn.execute({ id: 'c1', name: 'spawn_agent', args: { kind: 'browse', task: 'x', memory_ids: 'memory-1' } }, ctx)).rejects.toThrow(/non-empty array/)
+    await expect(spawn.execute({ id: 'c2', name: 'spawn_agent', args: { kind: 'browse', task: 'x', memory_ids: [] } }, ctx)).rejects.toThrow(/non-empty array/)
+    await expect(spawn.execute({ id: 'c3', name: 'spawn_agent', args: { kind: 'browse', task: 'x', memory_ids: ['memory-1', ''] } }, ctx)).rejects.toThrow(/non-empty strings/)
+  })
+
+  it('refuses a delegation when this run has no Session memory to share (#98)', async () => {
+    const tools = createSubagentTools(fakeManager())
+    const spawn = tools.find((tool) => tool.name === 'spawn_agent')!
+
+    await expect(spawn.execute(
+      { id: 'c1', name: 'spawn_agent', args: { kind: 'browse', task: 'x', memory_ids: ['memory-1'] } },
+      { clock: { now: () => 0, setTimer: () => () => {} } },
+    )).rejects.toThrow(/no Session Working Memory/)
   })
 
   it('spawn_agent rejects invalid kinds and empty tasks', async () => {

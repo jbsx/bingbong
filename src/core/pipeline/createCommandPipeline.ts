@@ -3,6 +3,7 @@ import type { PipelineEvent } from './events'
 import type { RiskVerdict, Tool, ToolContext } from './tool'
 import type { Clock } from '../ports/clock'
 import type { AssistantTurn, LlmClient, LlmStreamDelta, ToolCall, ToolResult, ToolResultOutcome } from '../ports/llm'
+import { selectDelegatedMemory } from '../agent/subagentReport'
 import { createLlmDeltaBatcher } from './deltaBatcher'
 import type { TtsSpeaker } from '../ports/tts'
 import { spokenErrorLine } from '../agent/answerContract'
@@ -389,6 +390,17 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
           // The turn id rides the context so fan-out tools (spawn_agent)
           // correlate their subagent rounds to this turn (#29).
           turnId,
+          // Delegation's memory selection (#98): spawn_agent resolves
+          // memory_ids against this Run's immutable snapshot — the same one
+          // every model round sees — so a worker can never receive entries
+          // the orchestrator has not, and shared slices stay stable for the
+          // whole run.
+          ...(continuity
+            ? {
+                selectMemoryEntries: (ids: readonly string[]): WorkingMemorySnapshot =>
+                  selectDelegatedMemory(continuity.memory, ids),
+              }
+            : {}),
           ...(emitDetail
             ? {
                 // Progress detail (#43): what the run waits on, live.

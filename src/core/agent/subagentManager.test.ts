@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { FakeClock } from '../testing/doubles'
 import type { SessionId } from '../session/sessionIdentity'
+import type { WorkingMemorySnapshot } from '../session/workingMemory'
+import type { SubagentReport } from './subagentReport'
 import {
   createSubagentManager,
   subagentAnnouncement,
@@ -14,36 +16,42 @@ import { SubagentCancelledError } from './subagentRunner'
 // them, merges their results for the orchestrator — with the rails enforced
 // here in code: at most 4 concurrent agents, tab kinds bounded by the tab
 // allocator (3 tabs), refusals returned as reasons the orchestrator model
-// can read and act on.
+// can read and act on. Delegation carries its own selected Memory Entries
+// (#98), and completed agents keep their structured Subagent Report.
 
 interface ManualTask {
   id: string
-  resolve(report: string): void
+  resolve(report: string | SubagentReport): void
   reject(error: Error): void
   progress(step: number, action: string): void
   cancelFlag(): boolean
   waitIfPaused(): Promise<void>
 }
 
+/** A finished report from prose alone — the shape most loops produce. */
+function proseReport(text: string): SubagentReport {
+  return { text, findings: [], unresolved: [] }
+}
+
 /** TaskApi double: tasks sit running until manually resolved/rejected. */
 function manualTaskApi() {
   const tasks = new Map<string, ManualTask>()
-  const started: { id: string; kind: string; task: string; turnId?: string }[] = []
+  const started: { id: string; kind: string; task: string; turnId?: string; memory?: WorkingMemorySnapshot }[] = []
   return {
     started,
     tasks,
     api: {
-      start(spec: { id: string; kind: string; task: string; turnId?: string }, hooks: { isCancelled(): boolean; waitIfPaused?(): Promise<void>; onProgress(step: number, action: string): void }) {
-        started.push({ id: spec.id, kind: spec.kind, task: spec.task, turnId: spec.turnId })
-        let settle: ((report: string) => void) | null = null
+      start(spec: { id: string; kind: string; task: string; turnId?: string; memory?: WorkingMemorySnapshot }, hooks: { isCancelled(): boolean; waitIfPaused?(): Promise<void>; onProgress(step: number, action: string): void }) {
+        started.push({ id: spec.id, kind: spec.kind, task: spec.task, turnId: spec.turnId, ...(spec.memory !== undefined ? { memory: spec.memory } : {}) })
+        let settle: ((report: SubagentReport) => void) | null = null
         let fail: ((error: Error) => void) | null = null
-        const done = new Promise<string>((resolve, reject) => {
+        const done = new Promise<SubagentReport>((resolve, reject) => {
           settle = resolve
           fail = reject
         })
         tasks.set(spec.id, {
           id: spec.id,
-          resolve: (report) => settle?.(report),
+          resolve: (report) => settle?.(typeof report === 'string' ? proseReport(report) : report),
           reject: (error) => fail?.(error),
           progress: hooks.onProgress,
           cancelFlag: () => hooks.isCancelled(),
@@ -144,6 +152,50 @@ describe('subagent manager', () => {
     expect(mgr.spawn('background', 'compare keyboards', 'turn-voice-4').ok).toBe(true)
 
     expect(api.started[0]).toMatchObject({ id: 'a-1', kind: 'background', task: 'compare keyboards', turnId: 'turn-voice-4' })
+  })
+
+  it('threads the delegation-selected Memory Entries into the task spec (#98)', () => {
+    const { mgr, api } = manager()
+    const selection: WorkingMemorySnapshot = Object.freeze([Object.freeze({
+      id: 'memory-1' as never,
+      sessionId: 'session-1' as never,
+      kind: 'constraint' as const,
+      subject: 'Budget',
+      detail: 'Stay under $30.',
+      references: Object.freeze([]),
+      provenance: Object.freeze([]),
+    })])
+
+    expect(mgr.spawn('browse', 'compare keyboards', 'turn-voice-4', selection).ok).toBe(true)
+    expect(mgr.spawn('browse', 'no memory shared').ok).toBe(true)
+
+    // Only an explicit selection rides the spec — and it is the same frozen
+    // slice the pipeline validated, never a copy the worker could mutate.
+    expect(api.started[0]?.memory).toBe(selection)
+    expect(api.started[1]?.memory).toBeUndefined()
+  })
+
+  it('keeps the structured Subagent Report on completed records (#98)', async () => {
+    const { mgr, api } = manager()
+
+    mgr.spawn('browse', 'compare keyboards')
+    api.tasks.get('a-1')!.resolve({
+      text: 'Two strong candidates.',
+      findings: [{ subject: 'Winner', detail: 'Model X leads.', references: [{ url: 'https://reviews.test/x' }] }],
+      unresolved: ['Stock check pending'],
+    })
+    await flush()
+
+    const record = mgr.list()[0]!
+    expect(record.status).toBe('completed')
+    // The prose stays on result (card + announcement); the sections ride
+    // alongside as the validated report.
+    expect(record.result).toBe('Two strong candidates.')
+    expect(record.report).toEqual({
+      text: 'Two strong candidates.',
+      findings: [{ subject: 'Winner', detail: 'Model X leads.', references: [{ url: 'https://reviews.test/x' }] }],
+      unresolved: ['Stock check pending'],
+    })
   })
 
   it('enforces the 4-concurrent-agent rail under a scripted storm', () => {
@@ -364,6 +416,35 @@ describe('subagent manager', () => {
   it('results refuses unknown agent ids loudly', async () => {
     const { mgr } = manager()
     await expect(mgr.results({ ids: ['ghost'] })).rejects.toThrow(/ghost/)
+  })
+
+  it('renders structured reports in merged results — sections first, prose under report (#98)', async () => {
+    const { mgr, api } = manager()
+
+    mgr.spawn('browse', 'compare keyboards')
+    mgr.spawn('background', 'file the receipts')
+    api.tasks.get('a-1')!.resolve({
+      text: 'Full comparison prose.',
+      findings: [
+        { subject: 'Winner', detail: 'Model X leads on typing feel.', references: [{ url: 'https://reviews.test/x', title: 'Review' }, { url: 'https://shop.test/x' }] },
+        { subject: 'Runner-up', detail: 'Model Y is cheaper.', references: [] },
+      ],
+      unresolved: ['Stock check pending'],
+    })
+    api.tasks.get('a-2')!.resolve(proseReport('Receipts filed.'))
+    await flush()
+
+    const merged = await mgr.results({})
+    // Provenance stays the id-prefixed header the orchestrator cites as
+    // subagent_id when committing these findings.
+    expect(merged).toMatch(/a-1 \[browsing\] completed — compare keyboards\n/)
+    expect(merged).toContain('findings:\n- Winner: Model X leads on typing feel. (evidence: https://reviews.test/x | https://shop.test/x)')
+    expect(merged).toContain('- Runner-up: Model Y is cheaper.\n')
+    expect(merged).toContain('unresolved:\n- Stock check pending')
+    expect(merged).toContain('report:\nFull comparison prose.')
+    // A prose-only report renders without empty section headers.
+    const backgroundBlock = merged.split('\n\n').find((block) => block.startsWith('a-2'))!
+    expect(backgroundBlock).toBe('a-2 [background] completed — file the receipts\nreport:\nReceipts filed.')
   })
 })
 

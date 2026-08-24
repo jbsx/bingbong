@@ -36,6 +36,48 @@ describe('parseAssistantAnswer', () => {
     })
   })
 
+  it('parses valid Subagent Report sections without changing the visible Answer (#98)', () => {
+    const answer = parseAssistantAnswer(JSON.stringify({
+      speak: 'Found it.',
+      display: 'Model X leads.',
+      findings: [{ subject: 'Winner', detail: 'Model X leads.', references: [{ url: 'https://reviews.test/x', title: 'Review' }] }],
+      unresolved: ['Stock unknown'],
+    }))
+
+    expect(answer.speak).toBe('Found it.')
+    expect(answer.display).toBe('Model X leads.')
+    expect(answer.findings).toEqual([{
+      subject: 'Winner',
+      detail: 'Model X leads.',
+      references: [{ url: 'https://reviews.test/x', title: 'Review' }],
+    }])
+    expect(answer.unresolved).toEqual(['Stock unknown'])
+  })
+
+  it('drops invalid Subagent Report sections while keeping the Answer and the valid section (#98)', () => {
+    const answer = parseAssistantAnswer(JSON.stringify({
+      speak: 'Done.',
+      display: 'Prose carries everything.',
+      findings: [{ subject: 'No detail field' }],
+      unresolved: ['Still open'],
+    }))
+
+    expect(answer.display).toBe('Prose carries everything.')
+    expect(answer.findings).toBeUndefined()
+    expect(answer.unresolved).toEqual(['Still open'])
+  })
+
+  it('leaves orchestrator answers untouched by report sections (#98)', () => {
+    const answer = parseAssistantAnswer(
+      '{"speak":"Done.","display":"Detail.","run_note":"note","memory_patch":[{"op":"add","entry":{"kind":"decision","subject":"S","detail":"D"}}]}',
+    )
+
+    expect(answer.findings).toBeUndefined()
+    expect(answer.unresolved).toBeUndefined()
+    expect(answer.runNote).toBe('note')
+    expect(answer.memoryPatch).toEqual([{ op: 'add', entry: { kind: 'decision', subject: 'S', detail: 'D' } }])
+  })
+
   it('validates hidden Working Memory operations without changing the visible Answer', () => {
     const answer = parseAssistantAnswer(JSON.stringify({
       speak: 'Done.',

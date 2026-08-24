@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { FakeClock, ScriptedLlm } from '../testing/doubles'
 import { runSubagent, SubagentCancelledError } from './subagentRunner'
 import type { Tool } from '../pipeline/tool'
+import type { WorkingMemorySnapshot } from '../session/workingMemory'
 import { ASK_ESCALATION_PREFIX, createSubagentAskTool } from '../pipeline/askUserTools'
 import { hostFromUrl } from '../pipeline/blockerGate'
 
@@ -35,6 +36,67 @@ describe('runSubagent', () => {
     expect(llm.requests.map((request) => request.turnId)).toEqual(['turn-voice-31', 'turn-voice-31'])
   })
 
+  it('rides the delegated Memory Entries on every model round as untrusted data (#98)', async () => {
+    const noop: Tool = {
+      name: 'noop',
+      async execute() {
+        return 'ok'
+      },
+    }
+    const llm = new ScriptedLlm([
+      { kind: 'tool_calls', calls: [{ id: 's1', name: 'noop', args: {} }] },
+      { kind: 'answer', speak: 's', display: 'Done.' },
+    ])
+    const selection: WorkingMemorySnapshot = Object.freeze([
+      Object.freeze({
+        id: 'memory-1' as never,
+        sessionId: 'session-1' as never,
+        kind: 'constraint' as const,
+        subject: 'Budget',
+        detail: 'Stay under $30.',
+        references: Object.freeze([]),
+        provenance: Object.freeze([]),
+      }),
+    ])
+
+    await runSubagent(
+      { llm, tools: [noop], clock: new FakeClock() },
+      { task: 'compare within budget', memory: selection, isCancelled: () => false },
+    )
+
+    // The same frozen slice reaches every round — the loop cannot lose it
+    // between rounds, and never mutates it.
+    expect(llm.requests.map((request) => request.memory)).toEqual([selection, selection])
+  })
+
+  it('returns a structured report: prose text plus validated findings and unresolved items (#98)', async () => {
+    const llm = new ScriptedLlm([
+      {
+        kind: 'answer',
+        speak: 'Found it.',
+        display: 'Model X leads; stock unknown.',
+        findings: [{ subject: 'Winner', detail: 'Model X leads.', references: [{ url: 'https://reviews.test/x' }] }],
+        unresolved: ['Stock check pending'],
+      },
+    ])
+
+    const report = await runSubagent({ llm, tools: [], clock: new FakeClock() }, { task: 't', isCancelled: () => false })
+
+    expect(report).toEqual({
+      text: 'Model X leads; stock unknown.',
+      findings: [{ subject: 'Winner', detail: 'Model X leads.', references: [{ url: 'https://reviews.test/x' }] }],
+      unresolved: ['Stock check pending'],
+    })
+  })
+
+  it('keeps the report structured-but-empty when the answer carries no sections (#98)', async () => {
+    const llm = new ScriptedLlm([{ kind: 'answer', speak: 'short', display: 'Plain prose report.' }])
+
+    const report = await runSubagent({ llm, tools: [], clock: new FakeClock() }, { task: 't', isCancelled: () => false })
+
+    expect(report).toEqual({ text: 'Plain prose report.', findings: [], unresolved: [] })
+  })
+
   it('runs tool calls, reports progress per step, and returns the final report', async () => {
     const navigate: Tool = {
       name: 'navigate',
@@ -53,7 +115,7 @@ describe('runSubagent', () => {
       { task: 'open the hit page', isCancelled: () => false, onProgress: (p) => progress.push(p) },
     )
 
-    expect(result).toBe('Full research report.')
+    expect(result.text).toBe('Full research report.')
     expect(progress).toEqual([{ step: 1, action: '→ https://hit.test' }])
     // The tool result reached the next LLM round.
     expect(llm.requests[1]?.toolResults).toMatchObject([
@@ -78,7 +140,7 @@ describe('runSubagent', () => {
       { task: 'do work', isCancelled: () => false },
     )
 
-    expect(result).toBe('Recovered anyway.')
+    expect(result.text).toBe('Recovered anyway.')
     expect(llm.requests[1]?.toolResults).toMatchObject([{ outcome: { ok: false, error: 'kaboom' } }])
   })
 
@@ -147,7 +209,7 @@ describe('runSubagent', () => {
       { task: 'plan the trip', isCancelled: () => false },
     )
 
-    expect(result).toContain(`${ASK_ESCALATION_PREFIX} Which city?`)
+    expect(result.text).toContain(`${ASK_ESCALATION_PREFIX} Which city?`)
     expect(llm.requests).toHaveLength(1)
   })
 
@@ -280,7 +342,7 @@ describe('runSubagent', () => {
       ok: true,
       result: expect.stringMatching(/BLOCKER:challenge www\.reddit\.com/),
     })
-    expect(report).toBe('Escalated in the report.')
+    expect(report.text).toBe('Escalated in the report.')
   })
 
   it('never refuses read_page, look, or ask_user on the walled host (#81)', async () => {
@@ -326,7 +388,7 @@ describe('runSubagent', () => {
     expect(llm.requests.filter((request) => request.toolResults.some((entry) => !entry.outcome.ok))).toHaveLength(0)
     // The ask directive ends the run and becomes the report the
     // orchestrator relays — the escalation itself, untouched by the gate.
-    expect(report).toContain(`${ASK_ESCALATION_PREFIX} Can you complete the challenge in the browser tab?`)
+    expect(report.text).toContain(`${ASK_ESCALATION_PREFIX} Can you complete the challenge in the browser tab?`)
   })
 
   it('disarms the same-wall gate after a successful different-host interaction (#81)', async () => {
@@ -363,7 +425,7 @@ describe('runSubagent', () => {
     // Moving on and interacting elsewhere lifts the refusal.
     expect(clickRuns).toBe(1)
     expect(llm.requests.filter((request) => request.toolResults.some((entry) => !entry.outcome.ok))).toHaveLength(0)
-    expect(report).toBe('Read it elsewhere.')
+    expect(report.text).toBe('Read it elsewhere.')
   })
 
   it('refuses a walled-host call ahead of the risk tiers — before the confirm downgrade (#81)', async () => {
@@ -498,7 +560,7 @@ describe('runSubagent', () => {
     releasePause()
     const result = await running
 
-    expect(result).toBe('Finished with context.')
+    expect(result.text).toBe('Finished with context.')
     expect(llm.requests[1]?.toolResults).toMatchObject([
       { call: { id: 'one' }, outcome: { ok: true, result: 'first result' } },
     ])

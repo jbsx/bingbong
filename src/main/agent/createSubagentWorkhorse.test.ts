@@ -35,7 +35,7 @@ describe('createSubagentTaskApi', () => {
     const report = await done
 
     expect(browser.navigations).toEqual(['https://engine.test'])
-    expect(report).toBe('Keyboards compared on screen.')
+    expect(report.text).toBe('Keyboards compared on screen.')
   })
 
   it('binds browse agents to their own pane controller, confirm actions denied', async () => {
@@ -86,7 +86,7 @@ describe('createSubagentTaskApi', () => {
     // Moving to a different host disarmed it, so the second click ran.
     expect(browser.navigations).toEqual(['https://accounts.shop.test/', 'https://shop.test/'])
     expect(browser.clicks).toEqual([3])
-    expect(report).toBe('Worked a different site.')
+    expect(report.text).toBe('Worked a different site.')
   })
 
   it('ends a walled browse agent with the ASK_USER relay as its report (#81)', async () => {
@@ -111,7 +111,7 @@ describe('createSubagentTaskApi', () => {
     // The refused click never reached the controller, and the run ended
     // with the relay directive — not rounds of failed hammering.
     expect(browser.clicks).toEqual([])
-    expect(report).toContain('ASK_USER: Can you sign in to this site once in the browser tab?')
+    expect(report.text).toContain('ASK_USER: Can you sign in to this site once in the browser tab?')
   })
 
   it('gives browse agents screenshot descriptions through look', async () => {
@@ -137,7 +137,7 @@ describe('createSubagentTaskApi', () => {
     ).done
 
     expect(vision.describeRequests.map((request) => request.image)).toEqual([new Uint8Array([1, 2, 3])])
-    expect(report).toBe('The modal is blocking progress.')
+    expect(report.text).toBe('The modal is blocking progress.')
   })
 
   it('gives background agents the dedicated download/file toolbox without a tab', async () => {
@@ -171,7 +171,7 @@ describe('createSubagentTaskApi', () => {
     ).done
 
     expect(downloads).toBe(1)
-    expect(report).toBe('Downloaded.')
+    expect(report.text).toBe('Downloaded.')
   })
 
   it('exposes no off-screen web tool to any kind (#83, ADR 0009)', () => {
@@ -213,7 +213,7 @@ describe('createSubagentTaskApi', () => {
 
       // The ask tool is wired into every kind's catalog (the directive it
       // returns is asserted in askUserTools.test.ts).
-      expect(report).toContain('ASK_USER: Which one?')
+      expect(report.text).toContain('ASK_USER: Which one?')
       expect(reports.join(' ')).toContain('ask you: Which one?')
     }
   })
@@ -229,8 +229,8 @@ describe('createSubagentTaskApi', () => {
     const first = await api.start({ id: 'a-1', kind: 'browse', task: 'one' }, { isCancelled: () => false, onProgress: () => undefined }).done
     const second = await api.start({ id: 'a-2', kind: 'browse', task: 'two' }, { isCancelled: () => false, onProgress: () => undefined }).done
 
-    expect(first).toBe('Keyboards compared on screen.')
-    expect(second).toBe('Keyboards compared on screen.')
+    expect(first.text).toBe('Keyboards compared on screen.')
+    expect(second.text).toBe('Keyboards compared on screen.')
   })
 
   it('keys subagent-llm spans to the spawning turn when the spec carries one', async () => {

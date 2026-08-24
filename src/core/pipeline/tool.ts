@@ -1,6 +1,7 @@
 import type { ToolCall } from '../ports/llm'
 import type { Clock } from '../ports/clock'
 import type { VisionGrant } from '../agent/subagentRails'
+import type { WorkingMemorySnapshot } from '../session/workingMemory'
 
 export interface ToolContext {
   clock: Clock
@@ -19,13 +20,22 @@ export interface ToolContext {
    * detail channel while the tool is still in flight.
    */
   waitingOnAgents?(running: number): void
+  /**
+   * Delegation's memory selection (#98): picks the given entry ids out of
+   * this Run's immutable Working Memory snapshot, bounded and validated.
+   * Absent when the run carries no continuity (fresh spawns share nothing
+   * by design; the store is never exposed whole).
+   */
+  selectMemoryEntries?(ids: readonly string[]): WorkingMemorySnapshot
 }
 
 /** Parameter description for the tool catalog sent to the model. */
 export interface ToolParameterSpec {
-  type: 'string' | 'number' | 'integer' | 'boolean'
+  type: 'string' | 'number' | 'integer' | 'boolean' | 'array'
   description: string
   enum?: string[]
+  /** Element spec for array parameters (delegation's memory_ids, #98). */
+  items?: { type: 'string' }
   /** Defaults to true; false keeps the property optional in the model schema. */
   required?: boolean
 }

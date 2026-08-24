@@ -4,6 +4,7 @@
 
 import { MAX_RUN_NOTE_CHARS } from '../session/runJournal'
 import { parseMemoryPatch, type MemoryPatch } from '../session/workingMemory'
+import { parseSubagentReportSections } from './subagentReport'
 
 export const SPEAK_SENTENCE_LIMIT = 2
 
@@ -110,6 +111,8 @@ export function parseAssistantAnswer(content: string): {
   runNoteIssue?: 'malformed'
   memoryPatch?: MemoryPatch
   memoryPatchIssue?: 'malformed'
+  findings?: ReturnType<typeof parseSubagentReportSections>['findings']
+  unresolved?: ReturnType<typeof parseSubagentReportSections>['unresolved']
 } {
   const trimmed = content.trim()
   const candidates = [trimmed, extractFenced(trimmed), extractJsonSlice(trimmed)]
@@ -134,7 +137,16 @@ export function parseAssistantAnswer(content: string): {
           display: string
           memoryPatch?: MemoryPatch
           memoryPatchIssue?: 'malformed'
+          findings?: ReturnType<typeof parseSubagentReportSections>['findings']
+          unresolved?: ReturnType<typeof parseSubagentReportSections>['unresolved']
         } = { speak: capSentences(speak, SPEAK_SENTENCE_LIMIT), display }
+        // Subagent Report sections (#98): validated independently, absent
+        // when invalid — the orchestrator never emits these keys, and a
+        // subagent's prose report survives a bad section untouched.
+        const sections = parseSubagentReportSections(parsed)
+        if (sections.findings !== undefined || sections.unresolved !== undefined) {
+          answer = { ...answer, ...sections }
+        }
         if (rawMemoryPatch !== undefined) {
           const memoryPatch = parseMemoryPatch(rawMemoryPatch)
           answer = memoryPatch ? { ...answer, memoryPatch } : { ...answer, memoryPatchIssue: 'malformed' }

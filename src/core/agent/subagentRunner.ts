@@ -2,16 +2,21 @@ import type { Clock } from '../ports/clock'
 import { systemClock } from '../ports/clock'
 import type { LlmClient, ToolResult, ToolResultOutcome } from '../ports/llm'
 import type { Tool, ToolContext } from '../pipeline/tool'
+import type { WorkingMemorySnapshot } from '../session/workingMemory'
 import { ASK_ESCALATION_PREFIX } from '../pipeline/askUserTools'
 import { createBlockerGate, subagentBlockerEscalation } from '../pipeline/blockerGate'
 import { describeToolAction } from '../pipeline/toolCallDisplay'
 import { createVisionBudget, MAX_SUBAGENT_VISION_CALLS } from './subagentRails'
+import type { SubagentReport } from './subagentReport'
 
 // The subagent workhorse loop (issue #13): one LLM (deepseek-chat via the
 // model router) driving its own tool set until it produces a final report.
 // No confirmations flow here (subagents cannot ask — the policy wrapper
 // already downgraded confirm verdicts to denials); cancellation is polled at
-// every checkpoint so a voice "stop" lands within one tool call.
+// every checkpoint so a voice "stop" lands within one tool call. The report
+// is structured (#98): the prose answer plus validated findings and
+// unresolved items. Delegated Memory Entries (#98) ride every model round
+// as untrusted data — the worker reads them, never writes them.
 
 export interface SubagentProgress {
   /** 1-based step number within this agent's run. */
@@ -42,6 +47,12 @@ export interface RunSubagentOptions {
    * model round so a perf-wrapped client keys its spans to that turn.
    */
   turnId?: string
+  /**
+   * The Memory Entries delegation selected for this task (#98) — a frozen
+   * slice of the spawning Run's Working Memory snapshot. Rides every model
+   * round in the request's untrusted-data slot; the loop never mutates it.
+   */
+  memory?: WorkingMemorySnapshot
   /** Polled before each model call and each tool call. */
   isCancelled(): boolean
   /** Resolves immediately while running, or after the shared pause gate opens. */
@@ -67,7 +78,7 @@ async function checkpoint(options: RunSubagentOptions): Promise<void> {
   if (options.isCancelled()) throw new SubagentCancelledError()
 }
 
-export async function runSubagent(deps: RunSubagentDeps, options: RunSubagentOptions): Promise<string> {
+export async function runSubagent(deps: RunSubagentDeps, options: RunSubagentOptions): Promise<SubagentReport> {
   const { llm, tools } = deps
   const clock = deps.clock ?? systemClock
   const maxToolRounds = deps.maxToolRounds ?? DEFAULT_MAX_TOOL_ROUNDS
@@ -96,10 +107,15 @@ export async function runSubagent(deps: RunSubagentDeps, options: RunSubagentOpt
       command: options.task,
       toolResults,
       ...(options.turnId !== undefined ? { turnId: options.turnId } : {}),
+      ...(options.memory !== undefined && options.memory.length > 0 ? { memory: options.memory } : {}),
     })
     await checkpoint(options)
     if (turn.kind === 'answer') {
-      return turn.display !== '' ? turn.display : turn.speak
+      return {
+        text: turn.display !== '' ? turn.display : turn.speak,
+        findings: turn.findings ?? [],
+        unresolved: turn.unresolved ?? [],
+      }
     }
 
     rounds += 1
@@ -144,7 +160,7 @@ export async function runSubagent(deps: RunSubagentDeps, options: RunSubagentOpt
                   // user. Return the directive as its report verbatim so
                   // agent_results reliably routes it upward; do not trust the
                   // workhorse model to preserve it in another round.
-                  return result
+                  return { text: result, findings: [], unresolved: [] }
                 }
                 outcome = { ok: true, result }
               }

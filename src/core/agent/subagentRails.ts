@@ -1,7 +1,9 @@
 // Rails enforced in code, not prompt (issue #13): at most 4 concurrent
 // subagents, at most 3 subagent tabs beside the main pane, tabs linger 60 s
 // after their agent finishes before auto-closing. Vision calls share one pool
-// per run: 30 for the orchestrator and 15 for each subagent.
+// per run: 30 for the orchestrator and 15 for each subagent. Delegation
+// shares at most 10 Memory Entries per worker (#98), so a delegation prompt
+// stays focused and never sees the whole store.
 
 export const MAX_ORCHESTRATOR_VISION_CALLS = 30
 export const MAX_SUBAGENT_VISION_CALLS = 15
@@ -11,6 +13,7 @@ export const SUBAGENT_LIMITS = {
   maxSubagentTabs: 3,
   tabLingerMs: 60_000,
   maxVisionCallsPerTask: MAX_SUBAGENT_VISION_CALLS,
+  maxDelegatedMemoryEntries: 10,
 } as const
 
 export type VisionGrant = { ok: true } | { ok: false; reason: string }

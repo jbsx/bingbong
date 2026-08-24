@@ -45,7 +45,12 @@ export function createSubagentCardBridge(deps: SubagentCardBridgeDeps): Subagent
     const record = manager.list().find((candidate) => candidate.id === agentId)
     if (!record) return null
     const tab = tabs.snapshot().find((candidate) => candidate.agentId === agentId)
-    return { ...record, ...(tab ? { tab: tabCard(tab) } : {}) }
+    // The card is the user-facing surface: it keeps the report's prose
+    // (result) but not the structured sections (#98) — those reconcile
+    // through agent_results, not the dashboard.
+    const card: SubagentCard & { report?: unknown } = { ...record }
+    delete card.report
+    return { ...card, ...(tab ? { tab: tabCard(tab) } : {}) }
   }
 
   function emitCard(agentId: string): void {

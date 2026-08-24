@@ -118,6 +118,10 @@ export function createSubagentTaskApi(deps: SubagentWorkhorseDeps): SubagentTask
         {
           task: spec.task,
           ...(spec.turnId !== undefined ? { turnId: spec.turnId } : {}),
+          // The delegated Memory Entries (#98): the frozen slice the
+          // orchestrator selected for this task rides every model round as
+          // untrusted, source-attributed context.
+          ...(spec.memory !== undefined ? { memory: spec.memory } : {}),
           isCancelled: hooks.isCancelled,
           waitIfPaused: hooks.waitIfPaused ?? (() => Promise.resolve()),
           onProgress: (progress) => hooks.onProgress(progress.step, progress.action),

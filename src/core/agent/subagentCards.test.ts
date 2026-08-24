@@ -5,6 +5,7 @@ import { createSubagentManager, type SubagentEvent, type SubagentManager, type S
 import { createSubagentTabs, type SubagentTab, type SubagentTabs } from '../browser/subagentTabs'
 import { createSubagentCardBridge } from './subagentCards'
 import type { PipelineEvent } from '../pipeline/events'
+import type { SubagentReport } from './subagentReport'
 
 // The live-card seam (issue #13): manager events and tab-machine transitions
 // merge into agent_update pipeline events the dashboard reduces into cards,
@@ -16,7 +17,7 @@ interface Wiring {
   tabs: SubagentTabs
   events: PipelineEvent[]
   clock: FakeClock
-  settle(id: string, outcome: 'resolve' | 'reject', payload?: string): void
+  settle(id: string, outcome: 'resolve' | 'reject', payload?: string | SubagentReport): void
 }
 
 function wiring(owner?: () => SubagentOwner | null): Wiring {
@@ -24,7 +25,7 @@ function wiring(owner?: () => SubagentOwner | null): Wiring {
   const events: PipelineEvent[] = []
   const managerEvents: SubagentEvent[] = []
   const tabChanges: SubagentTab[] = []
-  const settlers = new Map<string, { resolve(r: string): void; reject(e: Error): void }>()
+  const settlers = new Map<string, { resolve(report: SubagentReport): void; reject(e: Error): void }>()
 
   // The bridge needs manager + tabs before the manager exists — a small
   // indirection wires onEvent through both collectors once built.
@@ -36,7 +37,7 @@ function wiring(owner?: () => SubagentOwner | null): Wiring {
   const manager = createSubagentManager({
     taskApi: {
       start(spec) {
-        const done = new Promise<string>((resolve, reject) => {
+        const done = new Promise<SubagentReport>((resolve, reject) => {
           settlers.set(spec.id, { resolve, reject })
         })
         return { done }
@@ -65,8 +66,11 @@ function wiring(owner?: () => SubagentOwner | null): Wiring {
     settle(id, outcome, payload = 'boom') {
       const settler = settlers.get(id)
       if (!settler) return
-      if (outcome === 'resolve') settler.resolve(payload)
-      else settler.reject(new Error(payload))
+      if (outcome === 'resolve') {
+        settler.resolve(typeof payload === 'string' ? { text: payload, findings: [], unresolved: [] } : payload)
+      } else {
+        settler.reject(new Error(typeof payload === 'string' ? payload : undefined))
+      }
     },
   }
 }

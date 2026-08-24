@@ -1,4 +1,5 @@
 import type { SubagentKind, SubagentManager } from '../agent/subagentManager'
+import type { WorkingMemorySnapshot } from '../session/workingMemory'
 import type { Tool } from './tool'
 import type { ToolCall } from '../ports/llm'
 
@@ -7,7 +8,10 @@ import type { ToolCall } from '../ports/llm'
 // download/file tools), cancel_agent stops one or all, agent_results merges
 // reports — optionally blocking until the selected agents finish. The old
 // research kind died with the off-screen fetcher (ADR 0009): all web work
-// now happens in a visible tab.
+// now happens in a visible tab. Delegation shares memory explicitly (#98):
+// spawn_agent names the Memory Entry ids the task needs, the pipeline
+// validates them against this Run's snapshot, and only that bounded slice
+// reaches the worker — never the whole store.
 
 const KINDS: SubagentKind[] = ['browse', 'background']
 
@@ -29,6 +33,22 @@ function kindArg(call: ToolCall): SubagentKind {
   return value as SubagentKind
 }
 
+/** The explicit memory selection (#98): non-empty unique entry ids, or nothing. */
+function memoryIdsArg(call: ToolCall): string[] | undefined {
+  const value = call.args.memory_ids
+  if (value === undefined) return undefined
+  if (!Array.isArray(value) || value.length === 0) {
+    throw new Error("spawn_agent: 'memory_ids' must be a non-empty array of Memory Entry ids, or omitted")
+  }
+  const ids = value.map((id) => {
+    if (typeof id !== 'string' || id.trim() === '') {
+      throw new Error("spawn_agent: 'memory_ids' entries must be non-empty strings")
+    }
+    return id.trim()
+  })
+  return [...new Set(ids)]
+}
+
 export function createSubagentTools(manager: SubagentManager): Tool[] {
   return [
     {
@@ -37,6 +57,12 @@ export function createSubagentTools(manager: SubagentManager): Tool[] {
       parameters: {
         kind: { type: 'string', enum: KINDS, description: `Which subagent to start — ${KIND_HINT}` },
         task: { type: 'string', description: 'Complete, self-contained instruction for the subagent, including any URLs' },
+        memory_ids: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Ids of the Memory Entries (from the Working Memory block in your context) this task needs. Omit when none apply — never share the whole store.',
+          required: false,
+        },
       },
       assessRisk(call) {
         if (call.args.kind !== 'background') return { kind: 'allow' }
@@ -46,11 +72,19 @@ export function createSubagentTools(manager: SubagentManager): Tool[] {
       async execute(call, ctx) {
         const kind = kindArg(call)
         const task = stringArg(call, 'task', 'spawn_agent')
+        const memoryIds = memoryIdsArg(call)
+        let memory: WorkingMemorySnapshot | undefined
+        if (memoryIds !== undefined) {
+          if (!ctx.selectMemoryEntries) {
+            throw new Error('spawn_agent: no Session Working Memory is available to this run')
+          }
+          memory = ctx.selectMemoryEntries(memoryIds)
+        }
         // The orchestrator's turn id rides the spawn (#29): the workhorse's
         // LLM rounds key their spans to the turn that started them.
-        const spawned = manager.spawn(kind, task, ctx.turnId)
+        const spawned = manager.spawn(kind, task, ctx.turnId, memory)
         if (!spawned.ok) throw new Error(spawned.reason)
-        return `spawned ${spawned.agent.id} [${kind}] — poll with agent_results (wait: true) or keep working`
+        return `spawned ${spawned.agent.id} [${kind}]${memory !== undefined ? ` with ${memory.length} shared memory entr${memory.length === 1 ? 'y' : 'ies'}` : ''} — poll with agent_results (wait: true) or keep working`
       },
     },
     {

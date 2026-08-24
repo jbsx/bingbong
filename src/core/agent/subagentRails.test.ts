@@ -10,12 +10,13 @@ import {
 // tests additionally prove tools marked usesVision consume this budget.
 
 describe('SUBAGENT_LIMITS', () => {
-  it('pins the coded rails: 4 concurrent agents, 3 tabs, 60s linger, 15 vision calls', () => {
+  it('pins the coded rails: 4 concurrent agents, 3 tabs, 60s linger, 15 vision calls, 10 shared memory entries', () => {
     expect(SUBAGENT_LIMITS).toEqual({
       maxConcurrentAgents: 4,
       maxSubagentTabs: 3,
       tabLingerMs: 60_000,
       maxVisionCallsPerTask: MAX_SUBAGENT_VISION_CALLS,
+      maxDelegatedMemoryEntries: 10,
     })
   })
 })

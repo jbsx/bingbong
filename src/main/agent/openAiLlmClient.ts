@@ -43,7 +43,12 @@ function toolResultContent(outcome: ToolResult['outcome']): string {
 }
 
 function parameterSchema(spec: ToolParameterSpec): Record<string, unknown> {
-  return { type: spec.type, description: spec.description, ...(spec.enum ? { enum: spec.enum } : {}) }
+  return {
+    type: spec.type,
+    description: spec.description,
+    ...(spec.enum ? { enum: spec.enum } : {}),
+    ...(spec.items ? { items: { type: spec.items.type } } : {}),
+  }
 }
 
 function toolDefinitions(tools: Tool[]): { type: 'function'; function: Record<string, unknown> }[] {

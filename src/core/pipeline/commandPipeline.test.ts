@@ -11,6 +11,8 @@ import type { HistoryStore, RecordedEntry, RunRecord } from '../history/historyS
 import { FailingTts, FakeClock, fakePerfHarness, fakeSubagentManager, RecordingTts, ScriptedLlm, subagentRecord, withoutTurnId } from '../testing/doubles'
 import type { PipelineEvent } from './events'
 import type { AssistantTurn, LlmClient, LlmRequest, ToolCall } from '../ports/llm'
+import type { Tool } from './tool'
+import type { WorkingMemorySnapshot } from '../session/workingMemory'
 import { createSubagentTools } from './subagentTools'
 import { createPerfTracer, type PerfTracer } from '../perf/perfTracer'
 import { withPerfTracing } from '../perf/perfTracing'
@@ -1506,6 +1508,91 @@ describe('command pipeline', () => {
     expect(llm.requests[1].journal).toBe(snapshot)
     expect(llm.requests[0].memory).toBe(memory)
     expect(llm.requests[1].memory).toBe(memory)
+  })
+
+  it('resolves delegation memory_ids against this Run\'s immutable snapshot (#98)', async () => {
+    const memory: WorkingMemorySnapshot = Object.freeze([Object.freeze({
+      id: 'memory-1' as never,
+      sessionId: 'session-1' as never,
+      kind: 'constraint' as const,
+      subject: 'Budget',
+      detail: 'Stay under $30.',
+      references: Object.freeze([]),
+      provenance: Object.freeze([]),
+    })])
+    let seen: unknown
+    const delegator: Tool = {
+      name: 'delegator',
+      async execute(_call, ctx) {
+        seen = ctx.selectMemoryEntries?.(['memory-1'])
+        return 'selected'
+      },
+    }
+    const llm = new ScriptedLlm([
+      { kind: 'tool_calls', calls: [{ id: 'c1', name: 'delegator', args: {} }] },
+      { kind: 'answer', speak: 'Delegated.', display: 'Delegated.' },
+    ])
+    const pipeline = createCommandPipeline({ llm, tts: new RecordingTts(), clock: new FakeClock(), tools: [delegator] })
+
+    for await (const event of pipeline.execute('delegate with memory', undefined, undefined, {
+      snapshot: Object.freeze([]),
+      memory,
+      commit: () => 'committed',
+    })) { void event }
+
+    // The worker receives the run's own frozen entry — not a copy it could
+    // mutate, and never entries outside the explicit selection.
+    const selected = seen as WorkingMemorySnapshot
+    expect(selected).toHaveLength(1)
+    expect(selected[0]).toBe(memory[0])
+    expect(Object.isFrozen(selected)).toBe(true)
+  })
+
+  it('reports an unknown memory id as a failed tool result the model can read (#98)', async () => {
+    const memory: WorkingMemorySnapshot = Object.freeze([])
+    const delegator: Tool = {
+      name: 'delegator',
+      async execute(_call, ctx) {
+        ctx.selectMemoryEntries?.(['memory-9'])
+        return 'never'
+      },
+    }
+    const llm = new ScriptedLlm([
+      { kind: 'tool_calls', calls: [{ id: 'c1', name: 'delegator', args: {} }] },
+      { kind: 'answer', speak: 'Noted.', display: 'Noted.' },
+    ])
+    const pipeline = createCommandPipeline({ llm, tts: new RecordingTts(), clock: new FakeClock(), tools: [delegator] })
+
+    for await (const event of pipeline.execute('delegate with memory', undefined, undefined, {
+      snapshot: Object.freeze([]),
+      memory,
+      commit: () => 'committed',
+    })) {
+      if (event.type === 'tool_result') {
+        expect(event.ok).toBe(false)
+        expect(event.error).toMatch(/unknown memory id 'memory-9'/)
+      }
+    }
+  })
+
+  it('offers no memory selection when the run carries no continuity (#98)', async () => {
+    let selector: unknown = 'unset'
+    const probe: Tool = {
+      name: 'probe',
+      async execute(_call, ctx) {
+        selector = ctx.selectMemoryEntries
+        return 'probed'
+      },
+    }
+    const llm = new ScriptedLlm([
+      { kind: 'tool_calls', calls: [{ id: 'c1', name: 'probe', args: {} }] },
+      { kind: 'answer', speak: 'Done.', display: 'Done.' },
+    ])
+    const pipeline = createCommandPipeline({ llm, tts: new RecordingTts(), clock: new FakeClock(), tools: [probe] })
+
+    await collect(pipeline, 'probe')
+
+    expect(selector).toBeUndefined()
   })
 
   it('commits a valid hidden Run Note immediately before done', async () => {
