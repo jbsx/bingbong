@@ -400,6 +400,7 @@ app.whenReady().then(async () => {
   ipcMain.handle(USAGE_IPC.getToday, () => usageStore.summary(dailySpendWarnUsd()))
   ipcMain.handle(HISTORY_IPC.recentEntries, () => historyStore.recentEntries(HISTORY_QUERY_LIMIT))
   ipcMain.handle(HISTORY_IPC.recentRuns, () => historyStore.recentRuns(50))
+  ipcMain.handle(HISTORY_IPC.recentSessions, () => historyStore.recentSessions(50))
   ipcMain.handle(HISTORY_IPC.recordVoiceError, (_event, message: unknown) => {
     if (typeof message !== 'string' || message.trim() === '') return null
     const at = Date.now()

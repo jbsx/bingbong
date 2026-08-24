@@ -3,6 +3,8 @@ export const HISTORY_IPC = {
   recentEntries: 'history:recentEntries',
   /** Renderer → main: recent run records (inspectable history). */
   recentRuns: 'history:recentRuns',
+  /** Renderer → main: explicit Session lifecycle records. */
+  recentSessions: 'history:recentSessions',
   /** Renderer → main: persist a mic/capture error raised above main. */
   recordVoiceError: 'history:recordVoiceError',
 } as const

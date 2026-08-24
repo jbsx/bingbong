@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import Database from 'better-sqlite3'
 import { afterAll, describe, expect, it } from 'vitest'
+import type { SessionId } from '../../core/session/sessionIdentity'
 import { createSqliteHistoryStore } from './createSqliteHistoryStore'
 
 // The store is the persistence half of the history port: these tests prove
@@ -36,10 +37,82 @@ describe('createSqliteHistoryStore', () => {
         ['voice', 'heard "yes" (answered)', null, 200],
       ])
       expect(store.recentRuns(10)).toEqual([
-        { id: runId, turnId: 'turn-abc-1', command: 'open the fixture page', startedAt: 100, finishedAt: 106, outcome: 'done' },
+        {
+          id: runId,
+          turnId: 'turn-abc-1',
+          sessionId: null,
+          command: 'open the fixture page',
+          startedAt: 100,
+          finishedAt: 106,
+          outcome: 'done',
+        },
       ])
     } finally {
       store.close()
+    }
+  })
+
+  it('round-trips multiple Sessions and their Run membership', () => {
+    const store = createSqliteHistoryStore(tempStorePath())
+    try {
+      const firstSessionId = 'session-1' as SessionId
+      const secondSessionId = 'session-2' as SessionId
+      store.startSession(firstSessionId, 100)
+      const firstRun = store.startRun('research cameras', 101, 'turn-session-1', firstSessionId)
+      store.finishRun(firstRun, 'done', 110)
+      store.finishSession(firstSessionId, 'lapsed', 120)
+
+      store.startSession(secondSessionId, 200)
+      const secondRun = store.startRun('book the hotel', 201, 'turn-session-2', secondSessionId)
+      store.finishRun(secondRun, 'cancelled', 210)
+
+      expect(store.recentSessions(10)).toEqual([
+        { sessionId: 'session-1', startedAt: 100, endedAt: 120, endReason: 'lapsed' },
+        { sessionId: 'session-2', startedAt: 200, endedAt: null, endReason: null },
+      ])
+      expect(store.recentRuns(10).map((run) => ({ command: run.command, sessionId: run.sessionId }))).toEqual([
+        { command: 'research cameras', sessionId: 'session-1' },
+        { command: 'book the hotel', sessionId: 'session-2' },
+      ])
+    } finally {
+      store.close()
+    }
+  })
+
+  it.each(['lapsed', 'reset', 'app_closed', 'interrupted'] as const)(
+    'round-trips the %s Session end reason',
+    (reason) => {
+      const store = createSqliteHistoryStore(tempStorePath())
+      try {
+        const sessionId = 'session-reason' as SessionId
+        store.startSession(sessionId, 100)
+        store.finishSession(sessionId, reason, 200)
+
+        expect(store.recentSessions(1)[0]).toEqual({
+          sessionId: 'session-reason',
+          startedAt: 100,
+          endedAt: 200,
+          endReason: reason,
+        })
+      } finally {
+        store.close()
+      }
+    },
+  )
+
+  it('marks a Session left open by a previous process as interrupted', () => {
+    const path = tempStorePath()
+    const first = createSqliteHistoryStore(path, { now: () => 500 })
+    first.startSession('session-crashed' as SessionId, 100)
+    first.close()
+
+    const reopened = createSqliteHistoryStore(path, { now: () => 600 })
+    try {
+      expect(reopened.recentSessions(1)).toEqual([
+        { sessionId: 'session-crashed', startedAt: 100, endedAt: 600, endReason: 'interrupted' },
+      ])
+    } finally {
+      reopened.close()
     }
   })
 
@@ -74,8 +147,24 @@ describe('createSqliteHistoryStore', () => {
     try {
       expect(reopened.recentEntries(10).map((entry) => entry.text)).toEqual(['finished', 'killed mid-run'])
       expect(reopened.recentRuns(10)).toEqual([
-        { id: finishedRun, turnId: 'turn-a-1', command: 'finished', startedAt: 300, finishedAt: 310, outcome: 'done' },
-        { id: openRun, turnId: 'turn-a-2', command: 'killed mid-run', startedAt: 320, finishedAt: null, outcome: 'interrupted' },
+        {
+          id: finishedRun,
+          turnId: 'turn-a-1',
+          sessionId: null,
+          command: 'finished',
+          startedAt: 300,
+          finishedAt: 310,
+          outcome: 'done',
+        },
+        {
+          id: openRun,
+          turnId: 'turn-a-2',
+          sessionId: null,
+          command: 'killed mid-run',
+          startedAt: 320,
+          finishedAt: null,
+          outcome: 'interrupted',
+        },
       ])
     } finally {
       reopened.close()
@@ -105,7 +194,7 @@ describe('createSqliteHistoryStore', () => {
     }
   })
 
-  it('migrates a pre-turn-id database in place, leaving legacy rows null', () => {
+  it('migrates a pre-Session database in place, leaving legacy Run membership null', () => {
     const path = tempStorePath()
 
     // A database from before #28: runs without a turn_id column.
@@ -131,10 +220,23 @@ describe('createSqliteHistoryStore', () => {
 
     const migrated = createSqliteHistoryStore(path)
     try {
-      const newRun = migrated.startRun('new command', 300, 'turn-after-migration')
+      const sessionId = 'session-after-migration' as SessionId
+      migrated.startSession(sessionId, 299)
+      const newRun = migrated.startRun('new command', 300, 'turn-after-migration', sessionId)
       expect(migrated.recentRuns(10)).toEqual([
-        { id: 1, turnId: null, command: 'old command', startedAt: 1, finishedAt: 2, outcome: 'done' },
-        { id: newRun, turnId: 'turn-after-migration', command: 'new command', startedAt: 300, finishedAt: null, outcome: null },
+        { id: 1, turnId: null, sessionId: null, command: 'old command', startedAt: 1, finishedAt: 2, outcome: 'done' },
+        {
+          id: newRun,
+          turnId: 'turn-after-migration',
+          sessionId: 'session-after-migration',
+          command: 'new command',
+          startedAt: 300,
+          finishedAt: null,
+          outcome: null,
+        },
+      ])
+      expect(migrated.recentSessions(10)).toEqual([
+        { sessionId: 'session-after-migration', startedAt: 299, endedAt: null, endReason: null },
       ])
     } finally {
       migrated.close()

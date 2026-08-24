@@ -16,9 +16,11 @@ function fakeStore(): HistoryStore & { entries: RecordedEntry[]; runs: RunRecord
   return {
     entries,
     runs,
-    startRun(command, at, turnId) {
+    startSession() {},
+    finishSession() {},
+    startRun(command, at, turnId, sessionId = null) {
       const id = nextRunId++
-      runs.push({ id, turnId, command, startedAt: at, finishedAt: null, outcome: null })
+      runs.push({ id, turnId, sessionId, command, startedAt: at, finishedAt: null, outcome: null })
       return id
     },
     finishRun(runId, outcome, at) {
@@ -36,6 +38,9 @@ function fakeStore(): HistoryStore & { entries: RecordedEntry[]; runs: RunRecord
     },
     recentRuns(limit) {
       return [...runs].slice(-limit)
+    },
+    recentSessions() {
+      return []
     },
     close() {},
   }
@@ -74,7 +79,15 @@ describe('historyRecorder', () => {
       ['display', 'Navigated to the fixture page.', 1],
     ])
     expect(store.recentRuns(1)).toEqual([
-      { id: 1, turnId: 'turn-r1', command: 'open the fixture page', startedAt: 100, finishedAt: 106, outcome: 'done' },
+      {
+        id: 1,
+        turnId: 'turn-r1',
+        sessionId: null,
+        command: 'open the fixture page',
+        startedAt: 100,
+        finishedAt: 106,
+        outcome: 'done',
+      },
     ])
   })
 
@@ -95,6 +108,7 @@ describe('historyRecorder', () => {
       {
         id: 1,
         turnId: 'turn-voice-1',
+        sessionId: null,
         command: 'open the fixture page',
         startedAt: 100,
         finishedAt: 106,

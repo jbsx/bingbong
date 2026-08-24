@@ -1625,9 +1625,11 @@ describe('command pipeline — turn correlation (#28)', () => {
     return {
       entries,
       runs,
-      startRun(command, at, turnId) {
+      startSession() {},
+      finishSession() {},
+      startRun(command, at, turnId, sessionId = null) {
         const id = nextRunId++
-        runs.push({ id, turnId, command, startedAt: at, finishedAt: null, outcome: null })
+        runs.push({ id, turnId, sessionId, command, startedAt: at, finishedAt: null, outcome: null })
         return id
       },
       finishRun(runId, outcome, at) {
@@ -1645,6 +1647,9 @@ describe('command pipeline — turn correlation (#28)', () => {
       },
       recentRuns(limit) {
         return [...runs].slice(-limit)
+      },
+      recentSessions() {
+        return []
       },
       close() {},
     }

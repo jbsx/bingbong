@@ -5,7 +5,7 @@ import type { RoutingStatus } from '../core/agent/modelRouting'
 import type { VoiceErrorEvent, VoiceHeardEvent, VoiceState } from '../core/voice/ipcChannels'
 import type { LaunchConfig } from '../core/app/launchConfig'
 import type { UsageSummary } from '../core/agent/spendEstimate'
-import type { RecordedEntry, RunRecord } from '../core/history/historyStore'
+import type { RecordedEntry, RunRecord, SessionRecord } from '../core/history/historyStore'
 import type { FeedPanelMode, FeedPanelState } from '../core/panel/feedPanelState'
 
 export type { BrowserPaneState, PaneRect }
@@ -15,7 +15,7 @@ export type { RoutingStatus }
 export type { VoiceErrorEvent, VoiceHeardEvent, VoiceState }
 export type { LaunchConfig }
 export type { UsageSummary }
-export type { RecordedEntry, RunRecord }
+export type { RecordedEntry, RunRecord, SessionRecord }
 export interface BingbongBrowserApi {
   navigate(input: string): Promise<boolean>
   goBack(): Promise<void>
@@ -85,6 +85,8 @@ export interface BingbongHistoryApi {
   recentEntries(): Promise<RecordedEntry[]>
   /** Persisted run records, oldest first. */
   recentRuns(): Promise<RunRecord[]>
+  /** Persisted Session lifecycle records, oldest first. */
+  recentSessions(): Promise<SessionRecord[]>
   /** Persist a renderer-side mic/capture error and return its shared timestamp. */
   recordVoiceError(message: string): Promise<number | null>
 }

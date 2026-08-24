@@ -1,7 +1,16 @@
 import Database from 'better-sqlite3'
 import { mkdirSync } from 'node:fs'
 import { dirname } from 'node:path'
-import type { HistoryStore, RecordedEntry, RunRecord, RunOutcome, TranscriptKind } from '../../core/history/historyStore'
+import type {
+  HistoryStore,
+  RecordedEntry,
+  RunRecord,
+  RunOutcome,
+  SessionEndReason,
+  SessionRecord,
+  TranscriptKind,
+} from '../../core/history/historyStore'
+import type { SessionId } from '../../core/session/sessionIdentity'
 
 // SQLite backing for the history port (spec #1, Persistence). Write-through
 // and synchronous: every statement is durable before the event that caused it
@@ -10,13 +19,20 @@ import type { HistoryStore, RecordedEntry, RunRecord, RunOutcome, TranscriptKind
 // that is forever "still going".
 
 const SCHEMA = `
+  CREATE TABLE IF NOT EXISTS sessions (
+    id TEXT PRIMARY KEY,
+    started_at INTEGER NOT NULL,
+    ended_at INTEGER,
+    end_reason TEXT
+  );
   CREATE TABLE IF NOT EXISTS runs (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     command TEXT NOT NULL,
     started_at INTEGER NOT NULL,
     finished_at INTEGER,
     outcome TEXT,
-    turn_id TEXT
+    turn_id TEXT,
+    session_id TEXT
   );
   CREATE TABLE IF NOT EXISTS entries (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -28,19 +44,25 @@ const SCHEMA = `
 `
 
 const OUTCOMES: readonly RunOutcome[] = ['done', 'failed', 'cancelled', 'interrupted']
+const SESSION_END_REASONS: readonly SessionEndReason[] = ['lapsed', 'reset', 'app_closed', 'interrupted']
 const KINDS: readonly TranscriptKind[] = ['command', 'tool', 'display', 'speak', 'error', 'voice']
 
-export function createSqliteHistoryStore(path: string): HistoryStore {
+export function createSqliteHistoryStore(
+  path: string,
+  deps: { now(): number } = { now: () => Date.now() },
+): HistoryStore {
   mkdirSync(dirname(path), { recursive: true })
   const db = new Database(path)
   db.pragma('journal_mode = WAL')
   db.exec(SCHEMA)
 
-  // In-place migration for databases from before #28: runs gain the turn_id
-  // column (legacy rows read back as null).
+  // Additive migrations preserve legacy rows without inferring identity.
   const runColumns = db.prepare("PRAGMA table_info('runs')").all() as { name: string }[]
   if (!runColumns.some((column) => column.name === 'turn_id')) {
     db.exec('ALTER TABLE runs ADD COLUMN turn_id TEXT')
+  }
+  if (!runColumns.some((column) => column.name === 'session_id')) {
+    db.exec('ALTER TABLE runs ADD COLUMN session_id TEXT')
   }
   // A logged turn maps 1:1 to a run row (#28): unique at the schema level.
   // Legacy rows are null and unaffected (SQLite treats nulls as distinct).
@@ -48,9 +70,18 @@ export function createSqliteHistoryStore(path: string): HistoryStore {
 
   // Crash recovery: anything still open when the process died is interrupted.
   db.prepare("UPDATE runs SET outcome = 'interrupted' WHERE finished_at IS NULL").run()
+  db.prepare(
+    "UPDATE sessions SET ended_at = ?, end_reason = 'interrupted' WHERE ended_at IS NULL",
+  ).run(deps.now())
 
-  const insertRun = db.prepare<{ command: string; started_at: number; turn_id: string }>(
-    'INSERT INTO runs (command, started_at, turn_id) VALUES (@command, @started_at, @turn_id)',
+  const insertSession = db.prepare<{ id: string; started_at: number }>(
+    'INSERT INTO sessions (id, started_at) VALUES (@id, @started_at)',
+  )
+  const finishSession = db.prepare<{ id: string; end_reason: SessionEndReason; ended_at: number }>(
+    'UPDATE sessions SET end_reason = @end_reason, ended_at = @ended_at WHERE id = @id AND ended_at IS NULL',
+  )
+  const insertRun = db.prepare<{ command: string; started_at: number; turn_id: string; session_id: string | null }>(
+    'INSERT INTO runs (command, started_at, turn_id, session_id) VALUES (@command, @started_at, @turn_id, @session_id)',
   )
   const finishRun = db.prepare<{ id: number; outcome: RunOutcome; finished_at: number }>(
     'UPDATE runs SET outcome = @outcome, finished_at = @finished_at WHERE id = @id',
@@ -59,7 +90,12 @@ export function createSqliteHistoryStore(path: string): HistoryStore {
     'INSERT INTO entries (run_id, kind, text, at) VALUES (@run_id, @kind, @text, @at)',
   )
   const selectEntries = db.prepare('SELECT id, run_id, kind, text, at FROM entries ORDER BY id DESC LIMIT ?')
-  const selectRuns = db.prepare('SELECT id, turn_id, command, started_at, finished_at, outcome FROM runs ORDER BY id DESC LIMIT ?')
+  const selectRuns = db.prepare(
+    'SELECT id, turn_id, session_id, command, started_at, finished_at, outcome FROM runs ORDER BY id DESC LIMIT ?',
+  )
+  const selectSessions = db.prepare(
+    'SELECT id, started_at, ended_at, end_reason FROM sessions ORDER BY rowid DESC LIMIT ?',
+  )
 
   interface EntryRow {
     id: number
@@ -72,10 +108,18 @@ export function createSqliteHistoryStore(path: string): HistoryStore {
   interface RunRow {
     id: number
     turn_id: string | null
+    session_id: string | null
     command: string
     started_at: number
     finished_at: number | null
     outcome: string | null
+  }
+
+  interface SessionRow {
+    id: string
+    started_at: number
+    ended_at: number | null
+    end_reason: string | null
   }
 
   const toEntry = (row: EntryRow): RecordedEntry => ({
@@ -89,17 +133,36 @@ export function createSqliteHistoryStore(path: string): HistoryStore {
   const toRun = (row: RunRow): RunRecord => ({
     id: row.id,
     turnId: row.turn_id,
+    sessionId: row.session_id as SessionId | null,
     command: row.command,
     startedAt: row.started_at,
     finishedAt: row.finished_at,
     outcome: row.outcome !== null && OUTCOMES.includes(row.outcome as RunOutcome) ? (row.outcome as RunOutcome) : null,
   })
 
+  const toSession = (row: SessionRow): SessionRecord => ({
+    sessionId: row.id as SessionId,
+    startedAt: row.started_at,
+    endedAt: row.ended_at,
+    endReason:
+      row.end_reason !== null && SESSION_END_REASONS.includes(row.end_reason as SessionEndReason)
+        ? (row.end_reason as SessionEndReason)
+        : null,
+  })
+
   const reverse = <T>(rows: T[]): T[] => rows.reverse()
 
   return {
-    startRun(command, at, turnId) {
-      const info = insertRun.run({ command, started_at: at, turn_id: turnId }) as { lastInsertRowid: number | bigint }
+    startSession(sessionId, at) {
+      insertSession.run({ id: sessionId, started_at: at })
+    },
+    finishSession(sessionId, reason, at) {
+      finishSession.run({ id: sessionId, end_reason: reason, ended_at: at })
+    },
+    startRun(command, at, turnId, sessionId = null) {
+      const info = insertRun.run({ command, started_at: at, turn_id: turnId, session_id: sessionId }) as {
+        lastInsertRowid: number | bigint
+      }
       return Number(info.lastInsertRowid)
     },
     finishRun(runId, outcome, at) {
@@ -113,6 +176,9 @@ export function createSqliteHistoryStore(path: string): HistoryStore {
     },
     recentRuns(limit) {
       return reverse((selectRuns.all(Math.max(0, limit)) as RunRow[]).map(toRun))
+    },
+    recentSessions(limit) {
+      return reverse((selectSessions.all(Math.max(0, limit)) as SessionRow[]).map(toSession))
     },
     close() {
       db.close()

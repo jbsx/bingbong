@@ -1,3 +1,8 @@
+import type { SessionEndReason } from '../session/sessionRuntime'
+import type { SessionId } from '../session/sessionIdentity'
+
+export type { SessionEndReason } from '../session/sessionRuntime'
+
 // Persistent history port (spec #1, Persistence): transcript entries and
 // agent-run records outlive the dashboard. The recorder (core) projects the
 // pipeline/voice event streams onto this port; SQLite backs it in main. No
@@ -29,10 +34,19 @@ export interface RunRecord {
    * Null only on rows recorded before turn ids existed.
    */
   turnId: string | null
+  /** Null only for legacy or expand-phase rows recorded before Session cutover. */
+  sessionId: SessionId | null
   command: string
   startedAt: number
   finishedAt: number | null
   outcome: RunOutcome | null
+}
+
+export interface SessionRecord {
+  sessionId: SessionId
+  startedAt: number
+  endedAt: number | null
+  endReason: SessionEndReason | null
 }
 
 /** One run-scoped transcript entry, as handed to the store. */
@@ -41,13 +55,17 @@ export interface HistoryEntryInput extends TranscriptEvent {
 }
 
 export interface HistoryStore {
+  startSession(sessionId: SessionId, at: number): void
+  finishSession(sessionId: SessionId, reason: SessionEndReason, at: number): void
   /** Opens a run; entries recorded while it is open link to it. */
-  startRun(command: string, at: number, turnId: string): number
+  startRun(command: string, at: number, turnId: string, sessionId?: SessionId | null): number
   finishRun(runId: number, outcome: RunOutcome, at: number): void
   appendEntry(entry: HistoryEntryInput): void
   /** Most recent entries, oldest first. */
   recentEntries(limit: number): RecordedEntry[]
   /** Most recent runs, oldest first. */
   recentRuns(limit: number): RunRecord[]
+  /** Most recent Sessions, oldest first. */
+  recentSessions(limit: number): SessionRecord[]
   close(): void
 }
