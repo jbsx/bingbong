@@ -214,10 +214,9 @@ export function createFeedProjection(): {
   return {
     onEvent(event) {
       if (event.type === 'session_started') {
-        if (event.sessionId === undefined || event.sessionGeneration === undefined) {
-          clearSession()
-          return
-        }
+        // Identity-bearing starts only (#99): the view clears on
+        // session_ended, and a start without an identity is foreign work.
+        if (event.sessionId === undefined || event.sessionGeneration === undefined) return
         if (activeSessionGeneration !== null && event.sessionGeneration < activeSessionGeneration) return
         if (activeSessionId !== null && event.sessionId !== activeSessionId) return
         explicitLifecycle = true

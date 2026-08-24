@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest'
 import { createAssistantPipeline } from './createAssistantPipeline'
-import { createSessionMemory } from '../../core/session/sessionMemory'
 import { FakeAppControls, FakeBrowser, FakeClock, FakePanel, FakeSettings, RecordingTts, fakeSubagentManager, subagentRecord } from '../../core/testing/doubles'
 import type { CommandPipeline } from '../../core/pipeline/createCommandPipeline'
 import type { PipelineEvent } from '../../core/pipeline/events'
@@ -228,57 +227,34 @@ describe('createAssistantPipeline', () => {
     expect(browser.pressedKeys).toEqual([{ press: { key: 'n', shift: true }, times: 1 }])
   })
 
-  it('registers new_session when a session store is attached, and the reset clears it', async () => {
-    const session = createSessionMemory()
-    for (const event of [
-      { type: 'command', text: 'find a pizza place', at: 0 },
-      { type: 'display', text: '1. Pizza A 2. Pizza B', at: 1 },
-      { type: 'done', outcome: 'done', at: 2 },
-    ] as PipelineEvent[]) session.run().event(event)
+  it('registers new_session, and its success consumes the resetting run (#99)', async () => {
     const pipeline = createAssistantPipeline({
       controller: new FakeBrowser(),
       env: {
         BINGBONG_LLM_SCRIPT: JSON.stringify([
-          { kind: 'tool_calls', calls: [{ id: 'c1', name: 'new_session', args: {} }] },
+          {
+            kind: 'tool_calls',
+            calls: [
+              { id: 'c1', name: 'new_session', args: {} },
+              { id: 'c2', name: 'media_control', args: { action: 'next' } },
+            ],
+          },
           { kind: 'answer', speak: 'Fresh start.', display: 'Fresh start.' },
         ]),
       },
       clock: new FakeClock(),
-      session,
     })
 
-    const events: PipelineEvent[] = []
-    const observer = session.run()
-    for await (const event of pipeline.execute('forget all that — different question')) {
-      events.push(event)
-      observer.event(event)
-    }
+    const events = await collect(pipeline, 'forget all that — different question')
 
     expect(events.find((e) => e.type === 'tool_result' && e.name === 'new_session')).toMatchObject({
       ok: true,
       result: expect.stringContaining('Session cleared'),
     })
-    expect(session.history()).toEqual([])
-  })
-
-  it('keeps the tool catalog unchanged when no session store is attached', async () => {
-    const requests: Record<string, unknown>[] = []
-    const fetchFn = (async (_url: string | URL | Request, init?: RequestInit) => {
-      requests.push(JSON.parse(String(init?.body)) as Record<string, unknown>)
-      return new Response(JSON.stringify({ choices: [{ message: { content: '{"speak":"Hi.","display":"Detail."}' } }] }), { status: 200 })
-    }) as typeof fetch
-
-    const pipeline = createAssistantPipeline({
-      controller: new FakeBrowser(),
-      env: FULL_ENV,
-      fetchFn,
-      tts: new RecordingTts(),
-    })
-
-    await collect(pipeline, 'hello')
-
-    const tools = (requests[0].tools as { function: { name: string } }[]).map((t) => t.function.name)
-    expect(tools).not.toContain('new_session')
+    // The sibling call from the same response never executes and no later
+    // model round happens: the run reports the reset boundary instead.
+    expect(events.some((e) => e.type === 'tool_call' && e.name === 'media_control')).toBe(false)
+    expect(events.at(-1)).toMatchObject({ type: 'done', outcome: 'reset' })
   })
 
   it('registers the panel tools when a panel is attached, and they drive it silently', async () => {

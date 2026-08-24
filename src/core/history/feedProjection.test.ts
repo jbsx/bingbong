@@ -121,19 +121,34 @@ describe('feed projection', () => {
     expect(feed.entries()).toEqual([])
   })
 
-  it('a session boundary clears the feed, exactly like the transcript (ADR 0003)', () => {
+  it('a session_ended boundary clears the feed — ended work never renders current (#99)', () => {
     const feed = createFeedProjection()
-    feed.onEvent(command('old session', 1_000))
-    feed.onEvent(retry(2, 2_000))
-    feed.onEvent({ type: 'speak', turnId: T, text: 'Old answer.', at: 3_000 })
+    const first = { sessionId: 'session-1', sessionGeneration: 0 } as const
+    const second = { sessionId: 'session-2', sessionGeneration: 1 } as const
+    feed.onEvent({ type: 'session_started', at: 500, ...first } as PipelineEvent)
+    feed.onEvent({ ...command('old session', 1_000), ...first } as PipelineEvent)
+    feed.onEvent({ ...retry(2, 2_000), ...first } as PipelineEvent)
+    feed.onEvent({ type: 'speak', turnId: T, text: 'Old answer.', at: 3_000, ...first } as PipelineEvent)
 
-    feed.onEvent({ type: 'session_started', at: 4_000 })
+    feed.onEvent({ type: 'session_ended', reason: 'reset', at: 4_000, ...first } as PipelineEvent)
 
     expect(feed.entries()).toEqual([])
     // The next session's entries render alone; ids keep rising (React keys
     // never collide with the cleared view).
-    feed.onEvent(command('new session', 5_000))
+    feed.onEvent({ type: 'session_started', at: 4_100, ...second } as PipelineEvent)
+    feed.onEvent({ ...command('new session', 5_000), ...second } as PipelineEvent)
     expect(outline(feed.entries())).toEqual([{ kind: 'command', role: USER, text: 'new session', detail: false }])
+  })
+
+  it('ignores an unowned session_started — boundaries carry identity (#99)', () => {
+    const feed = createFeedProjection()
+    feed.onEvent(command('live work', 1_000))
+
+    feed.onEvent({ type: 'session_started', at: 2_000 })
+
+    // No wipe: without a Session identity the event is foreign, and only a
+    // matching session_ended may clear.
+    expect(feed.entries()).toHaveLength(1)
   })
 
   it('clears on an owned Session end and rejects foreign, ended, and stale-generation events', () => {
@@ -294,11 +309,15 @@ describe('feed projection', () => {
       expect(feed.entries().every((entry) => entry.detail)).toBe(true)
     })
 
-    it('a session boundary resets the streaming state — post-boundary deltas open clean', () => {
+    it('a session_ended boundary resets the streaming state — post-boundary deltas open clean', () => {
       const feed = createFeedProjection()
-      feed.onEvent(delta('text', 'old session partial', 1_000))
-      feed.onEvent({ type: 'session_started', at: 2_000 })
-      feed.onEvent(delta('text', 'fresh', 3_000))
+      const first = { sessionId: 'session-1', sessionGeneration: 0 } as const
+      const second = { sessionId: 'session-2', sessionGeneration: 1 } as const
+      feed.onEvent({ type: 'session_started', at: 500, ...first } as PipelineEvent)
+      feed.onEvent({ ...delta('text', 'old session partial', 1_000), ...first } as PipelineEvent)
+      feed.onEvent({ type: 'session_ended', reason: 'reset', at: 2_000, ...first } as PipelineEvent)
+      feed.onEvent({ type: 'session_started', at: 2_100, ...second } as PipelineEvent)
+      feed.onEvent({ ...delta('text', 'fresh', 3_000), ...second } as PipelineEvent)
 
       expect(outline(feed.entries())).toEqual([
         { kind: 'answer_stream', role: ASSISTANT, text: 'fresh', detail: true },
@@ -385,14 +404,18 @@ describe('feed projection', () => {
       ])
     })
 
-    it('a session boundary resets the open intents — post-boundary intents open clean', () => {
+    it('a session_ended boundary resets the open intents — post-boundary intents open clean', () => {
       const feed = createFeedProjection()
-      feed.onEvent(intent(0, 'click', '{"ref":"Sea', 1_000))
-      feed.onEvent({ type: 'session_started', at: 2_000 })
-      feed.onEvent(intent(0, 'click', '{"ref":"Fresh"}', 3_000))
+      const first = { sessionId: 'session-1', sessionGeneration: 0 } as const
+      const second = { sessionId: 'session-2', sessionGeneration: 1 } as const
+      feed.onEvent({ type: 'session_started', at: 500, ...first } as PipelineEvent)
+      feed.onEvent({ ...intent(0, 'click', '{"ref":"Sea', 1_000), ...first } as PipelineEvent)
+      feed.onEvent({ type: 'session_ended', reason: 'reset', at: 2_000, ...first } as PipelineEvent)
+      feed.onEvent({ type: 'session_started', at: 2_100, ...second } as PipelineEvent)
+      feed.onEvent({ ...intent(0, 'click', '{"ref":"Fresh"}', 3_000), ...second } as PipelineEvent)
 
       expect(outline(feed.entries())).toEqual([
-        { kind: 'intent', role: SYSTEM, text: 'clicking \'Fresh\'…', detail: true },
+        { kind: 'intent', role: SYSTEM, text: "clicking 'Fresh'…", detail: true },
       ])
     })
 
@@ -560,9 +583,13 @@ describe('feed projection', () => {
 
     it('a session boundary forgets rendered displays — the id never suppresses across sessions', () => {
       const feed = createFeedProjection()
-      feed.onEvent({ type: 'display', turnId: T, text: 'Old card.', at: 1_000 })
-      feed.onEvent({ type: 'session_started', at: 2_000 })
-      feed.onEvent({ type: 'speak', turnId: T, text: 'Fresh words.', at: 3_000 })
+      const first = { sessionId: 'session-1', sessionGeneration: 0 } as const
+      const second = { sessionId: 'session-2', sessionGeneration: 1 } as const
+      feed.onEvent({ type: 'session_started', at: 500, ...first } as PipelineEvent)
+      feed.onEvent({ type: 'display', turnId: T, text: 'Old card.', at: 1_000, ...first } as PipelineEvent)
+      feed.onEvent({ type: 'session_ended', reason: 'reset', at: 2_000, ...first } as PipelineEvent)
+      feed.onEvent({ type: 'session_started', at: 2_100, ...second } as PipelineEvent)
+      feed.onEvent({ type: 'speak', turnId: T, text: 'Fresh words.', at: 3_000, ...second } as PipelineEvent)
 
       expect(outline(feed.entries())).toEqual([
         { kind: 'speak', role: ASSISTANT, text: 'Fresh words.', detail: false },
@@ -685,10 +712,12 @@ describe('feed projection', () => {
         expect(feed.liveRunId()).toBe(T)
       })
 
-      it('closes on a session boundary — no run outlives the wipe', () => {
+      it('closes on a session_ended boundary — no run outlives the wipe', () => {
         const feed = createFeedProjection()
-        feed.onEvent(command('go', 1_000))
-        feed.onEvent({ type: 'session_started', at: 2_000 })
+        const owned = { sessionId: 'session-1', sessionGeneration: 0 } as const
+        feed.onEvent({ type: 'session_started', at: 500, ...owned } as PipelineEvent)
+        feed.onEvent({ ...command('go', 1_000), ...owned } as PipelineEvent)
+        feed.onEvent({ type: 'session_ended', reason: 'reset', at: 2_000, ...owned } as PipelineEvent)
         expect(feed.liveRunId()).toBeNull()
       })
 

@@ -3,7 +3,6 @@ import type { TtsSpeaker } from '../../core/ports/tts'
 import { systemClock, type Clock } from '../../core/ports/clock'
 import type { BrowserController, VisualGroundingController } from '../../core/ports/browser'
 import type { VisionModel } from '../../core/ports/vision'
-import type { SessionResetSource } from '../../core/session/sessionMemory'
 import { createCommandPipeline, type CommandPipeline } from '../../core/pipeline/createCommandPipeline'
 import type { PipelineEvent } from '../../core/pipeline/events'
 import type { Tool } from '../../core/pipeline/tool'
@@ -75,11 +74,6 @@ export interface AssistantPipelineDeps {
    * main per window; absent in tests unless asserted.
    */
   app?: AppControls
-  /**
-   * Legacy model-invoked reset control (spec #24). Run continuity is supplied
-   * separately by the Session runtime's admission-bound Journal context.
-   */
-  session?: SessionResetSource
   /**
    * Always-on perf logging (#27/#28): the tracer mints the turn ids the
    * pipeline stamps on every event, so the perf log, the event stream, and
@@ -201,9 +195,10 @@ export function createAssistantPipeline(deps: AssistantPipelineDeps): CommandPip
     // app_control confirm-gated with a spoken ack.
     ...(deps.settings ? [createSetSettingTool(deps.settings)] : []),
     ...(deps.app ? [createAppControlTool(deps.app)] : []),
-    // Offered only in rounds that carry continuity, so a fresh Session's
-    // catalog stays lean (spec #24).
-    ...(deps.session ? [createNewSessionTool(deps.session)] : []),
+    // The model-invoked Session Reset boundary (#99): offered only in
+    // rounds that carry continuity, so a fresh Session's catalog stays
+    // lean (spec #24).
+    createNewSessionTool(),
   ]
   const clock = deps.clock ?? systemClock
   const configuredAskTimeoutMs = askTimeoutMs(deps.env)

@@ -5,9 +5,11 @@ import { waitFor } from './waitFor'
 import { submitAndAwaitAnswer, feedDisplays, feedText } from './feed'
 import type { AssistantTurn } from '../src/core/ports/llm'
 
-// Model-invoked session reset (spec #24): "forget all that — different
-// question" makes the orchestrator call the legacy new_session clear. Literal
-// identity-bearing reset and Journal isolation are covered by issue #99.
+// Model-invoked Session Reset (#99): "forget all that — different question"
+// makes the orchestrator call new_session. The resetting run is consumed at
+// that boundary, the old Session ends as `reset`, and the original command
+// restarts as the first work of a fresh Session — with no pre-reset
+// execution content in the live Feed.
 
 const SCRIPT: AssistantTurn[] = [
   {
@@ -58,25 +60,24 @@ describe('session reset e2e', () => {
     await fixture?.close()
   })
 
-  it('clears the session context mid-run and the next command starts clean', async () => {
+  it('restarts the resetting command in a fresh Session with no pre-reset Feed content', async () => {
     await submitAndAwaitAnswer(harness, 'find a pizza place', 'Pizza A on Main St')
     await submitAndAwaitAnswer(harness, 'forget all that — different question', 'AFTER RESET:')
 
-    // The legacy clear removes pre-reset work from the visible Feed.
+    // The replacement Session answers the original command directly.
     const afterReset = await displayEntry(harness, 'AFTER RESET:')
     expect(afterReset).toContain('AFTER RESET:')
-    expect(afterReset).not.toContain('[user] find a pizza place')
+    // Pre-reset execution content never crosses into the new Session.
     expect(afterReset).not.toContain('[assistant] 1. Pizza A on Main St')
 
-    // Session-scoped transcript (spec #25): the reset is a session boundary,
-    // so the view cleared at that moment — the old session's commands and
-    // answers (including the reset command's own echo) are gone; only the
-    // fresh session's tail renders.
     const visibleText = await feedText(harness)
     expect(visibleText).toContain('AFTER RESET:')
     expect(visibleText).not.toContain('Pizza A on Main St')
     expect(visibleText).not.toContain('find a pizza place')
-    expect(visibleText).not.toContain('forget all that')
+    // The resetting command is the first user-visible work of the new
+    // Session — exactly one echo: the discarded attempt's was wiped with
+    // the ended Session.
+    expect(visibleText.split('forget all that').length - 1).toBe(1)
 
     await submitAndAwaitAnswer(harness, 'what is two plus two', 'NEXT COMMAND:')
 

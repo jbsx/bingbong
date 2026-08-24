@@ -360,12 +360,10 @@ async function createWindow(): Promise<BrowserWindow> {
       sessionRuntime?.decline({ sessionId, generation })
     },
   })
-  // Temporary clear-only reset seam until the identity-bearing reset cutover
-  // (#99). It carries no transcript; accepted Runs receive Journal snapshots.
-  const sessionReset = {
-    clear: () =>
-      eventPublisher.publish({ source: 'lifecycle', event: { type: 'session_started', at: systemClock.now() } }),
-  }
+  // Model-invoked Session Reset (#99): the pipeline consumes the resetting
+  // run at the new_session boundary; this seam ends the live Session —
+  // history end record, Browser State, Subagents, Feed cleanup — before the
+  // command runner admits the original command as fresh work.
   const pipeline = createAssistantPipeline({
     controller,
     env: currentEnv(),
@@ -394,7 +392,6 @@ async function createWindow(): Promise<BrowserWindow> {
       },
     },
     onLlmUsage: (record) => usageStore.record(record.role, record.model, record.usage),
-    session: sessionReset,
     tracer: perfTracer,
     browserSubspans,
     // Progress detail (#43): mid-await signals ride the same channel; the
@@ -458,6 +455,11 @@ async function createWindow(): Promise<BrowserWindow> {
     pipeline,
     runtime: sessionRuntime,
     clock: systemClock,
+    onSessionReset: () => {
+      // The resetting run has fully unwound; end its Session so the
+      // replacement admission mints a fresh identity (generation advances).
+      sessionRuntime?.end('reset')
+    },
     onSessionStarted: (admission) => {
       historyStore.startSession(admission.sessionId, admission.acceptedAt)
       lastEndedSession = null

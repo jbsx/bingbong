@@ -402,7 +402,7 @@ describe('openAiLlmClient', () => {
       fetchFn: fetch.fetchFn,
       tools: [
         ...createBrowserTools(new FakeBrowser()),
-        { ...createNewSessionTool({ clear: () => {} }) },
+        { ...createNewSessionTool() },
       ],
     })
 

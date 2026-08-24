@@ -88,5 +88,14 @@ export interface Tool {
    * (voice or typed), and reports it as the tool result.
    */
   askUser?(call: ToolCall): string
+  /**
+   * Declares a Session Reset boundary (#99): when a call of this tool
+   * succeeds, the rest of its run is discarded — sibling calls from the
+   * same response never execute, no later model round happens, nothing is
+   * spoken or committed — and the run reports outcome 'reset' so the
+   * command runner can end the old Session and restart the original
+   * command as fresh work under a new one.
+   */
+  sessionReset?: boolean
   execute(call: ToolCall, ctx: ToolContext): Promise<unknown>
 }

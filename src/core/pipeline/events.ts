@@ -165,7 +165,7 @@ export type PipelineEvent = SessionEventIdentity & (
   | { type: 'steer'; turnId: string; text: string; at: number }
   /** A subagent's state changed — the dashboard keeps one card per agent id. */
   | { type: 'agent_update'; agent: SubagentCard; at: number }
-  | { type: 'done'; turnId: string; outcome?: 'done' | 'failed' | 'cancelled'; at: number }
+  | { type: 'done'; turnId: string; outcome?: 'done' | 'failed' | 'cancelled' | 'reset'; at: number }
   | { type: 'session_started'; at: number }
   | { type: 'session_expiring'; expiresAt: number; at: number }
   | { type: 'session_extended'; expiresAt: number; at: number }
@@ -174,13 +174,19 @@ export type PipelineEvent = SessionEventIdentity & (
 
 /**
  * Derives a run's outcome when its `done` event omits one: a seen cancelled
- * status wins, else any error means failed, else the run succeeded. Shared
- * by every observer of the run event seam (history recorder, session memory).
+ * status wins, else any error means failed, else the run succeeded. A
+ * model-invoked Session Reset (#99) is recorded as interrupted — the
+ * discarded run never finished its own work. Shared by every observer of
+ * the run event seam (history recorder, session memory).
  */
 export function inferRunOutcome(
-  explicit: 'done' | 'failed' | 'cancelled' | undefined,
+  explicit: 'done' | 'failed' | 'cancelled' | 'reset' | undefined,
   lastStatus: string | null,
   sawError: boolean,
-): 'done' | 'failed' | 'cancelled' {
+): RunOutcomeSummary {
+  if (explicit === 'reset') return 'interrupted'
   return explicit ?? (lastStatus === 'cancelled' ? 'cancelled' : sawError ? 'failed' : 'done')
 }
+
+/** The outcome shapes every run observer understands. */
+export type RunOutcomeSummary = 'done' | 'failed' | 'cancelled' | 'interrupted'

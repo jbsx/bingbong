@@ -5,7 +5,6 @@ import { hostFromUrl } from './blockerGate'
 import { steerPipeline } from './steering'
 import { createSpeechCoordinator } from '../tts/speechCoordinator'
 import { createAskUserTool } from './askUserTools'
-import { createSessionMemory } from '../session/sessionMemory'
 import { createHistoryRecorder } from '../history/historyRecorder'
 import type { HistoryStore, RecordedEntry, RunRecord } from '../history/historyStore'
 import { FailingTts, FakeClock, fakePerfHarness, fakeSubagentManager, memoryEntry, RecordingTts, ScriptedLlm, subagentRecord, withoutTurnId } from '../testing/doubles'
@@ -1794,29 +1793,21 @@ describe('command pipeline — turn correlation (#28)', () => {
   it('stamps the adopted voice turn id on every event of a full turn', async () => {
     const store = inMemoryHistoryStore()
     const recorder = createHistoryRecorder(store, { now: () => 0 })
-    const session = createSessionMemory()
     const historyRun = recorder.run()
-    const sessionRun = session.run()
     const events = await collectStamped(fullTurnPipeline(), 'spin it', 'turn-voice-1')
 
-    // The same events the renderer relay, history recorder, and session
-    // memory observe — every one of them carries the turn's id.
+    // The same events the renderer relays and history records — every one
+    // of them carries the turn's id.
     for (const event of events) {
       historyRun.event(event)
-      sessionRun.event(event)
     }
 
     expect(events.map((event) => event.type)).toEqual([
       'command', 'status', 'status', 'tool_call', 'tool_result', 'status', 'display', 'status', 'speak', 'done',
     ])
     expect(turnIdsOf(events)).toEqual(Array.from({ length: events.length }, () => 'turn-voice-1'))
-    // The history run row adopts the id; the session thread builds from the
-    // same stamped stream.
+    // The history run row adopts the id.
     expect(store.runs[0]).toMatchObject({ turnId: 'turn-voice-1', command: 'spin it', outcome: 'done' })
-    expect(session.history()).toEqual([
-      { role: 'user', text: 'spin it' },
-      { role: 'assistant', text: 'Done.' },
-    ])
   })
 
   it('stamps the turn id on every LLM request of the turn (#29)', async () => {
@@ -2915,5 +2906,100 @@ describe('typed steering (#46)', () => {
 
     expect(sink).toEqual([{ type: 'steer', turnId: expect.any(String), text: 'Use Paris instead.', at: 0 }])
     expect(requests[1]!.steering).toBe('Use Paris instead.')
+  })
+})
+
+describe('command pipeline — session reset (#99)', () => {
+  /** The model-invoked Session Reset boundary, as the real tool declares it. */
+  const newSessionTool = {
+    name: 'new_session',
+    sessionReset: true,
+    async execute() {
+      return 'Session cleared: previous commands and answers are gone from this conversation.'
+    },
+  }
+  let executions = 0
+  const spinner = {
+    name: 'spin',
+    async execute() {
+      executions += 1
+      return 'spun'
+    },
+  }
+
+  function resetPipeline(script: AssistantTurn[]): CommandPipeline {
+    return createCommandPipeline({
+      llm: new ScriptedLlm(script),
+      tts: new RecordingTts(),
+      clock: new FakeClock(),
+      tools: [newSessionTool, spinner],
+    })
+  }
+
+  it('consumes the rest of the run when the Session Reset tool succeeds', async () => {
+    executions = 0
+    const pipeline = resetPipeline([
+      { kind: 'tool_calls', calls: [
+        { id: 'c1', name: 'new_session', args: {} },
+        { id: 'c2', name: 'spin', args: {} },
+      ] },
+      { kind: 'answer', speak: 'Fresh start.', display: 'Never reached.' },
+    ])
+    const commits: string[] = []
+
+    const events: PipelineEvent[] = []
+    for await (const event of pipeline.execute('forget all that — different question', undefined, false, {
+      snapshot: [],
+      memory: [],
+      commit: (outcome, note) => {
+        commits.push(`${outcome}:${note}`)
+        return 'committed'
+      },
+    })) events.push(event)
+
+    // The sibling call from the same response never executes, and no later
+    // model round happens: the discarded run ends at the reset boundary.
+    expect(executions).toBe(0)
+    expect(events.map((event) => event.type)).toEqual([
+      'command', 'status', 'status', 'tool_call', 'tool_result', 'done',
+    ])
+    expect(events.find((event) => event.type === 'tool_result')).toMatchObject({
+      name: 'new_session',
+      ok: true,
+    })
+    // No answer, nothing spoken or displayed, and no continuity commit —
+    // pre-reset work is discarded wholesale.
+    expect(events.some((event) => event.type === 'display' || event.type === 'speak')).toBe(false)
+    expect(commits).toEqual([])
+    expect(events.at(-1)).toMatchObject({ type: 'done', outcome: 'reset' })
+  })
+
+  it('keeps a failed Session Reset tool inside its run like any other tool result', async () => {
+    executions = 0
+    const failingReset = {
+      name: 'new_session',
+      sessionReset: true,
+      async execute() {
+        throw new Error('reset unavailable')
+      },
+    }
+    const pipeline = createCommandPipeline({
+      llm: new ScriptedLlm([
+        { kind: 'tool_calls', calls: [{ id: 'c1', name: 'new_session', args: {} }] },
+        { kind: 'answer', speak: 'It failed.', display: 'It failed.' },
+      ]),
+      tts: new RecordingTts(),
+      clock: new FakeClock(),
+      tools: [failingReset, spinner],
+    })
+
+    const events = await collect(pipeline, 'forget all that')
+
+    expect(events.find((event) => event.type === 'tool_result')).toMatchObject({
+      name: 'new_session',
+      ok: false,
+      error: 'reset unavailable',
+    })
+    expect(events.at(-1)).toMatchObject({ type: 'done', outcome: 'done' })
   })
 })

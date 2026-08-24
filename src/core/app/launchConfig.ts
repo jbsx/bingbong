@@ -3,7 +3,7 @@
 // deployment from T11: fullscreen, with the idle screen's timeout tunable via
 // env so e2e doesn't wait real minutes.
 
-import { SESSION_WINDOW_MS } from '../session/sessionMemory'
+import { SESSION_WINDOW_MS } from '../session/sessionRuntime'
 
 export const KIOSK_FLAG = '--kiosk'
 

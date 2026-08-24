@@ -132,6 +132,27 @@ describe('historyRecorder', () => {
     expect(store.runs[0]?.sessionId).toBe('session-1')
   })
 
+  it('records a reset-consumed run as interrupted under its own Session (#99)', () => {
+    const store = fakeStore()
+    const run = recorderWith(store).run()
+
+    // The discarded attempt runs under the old Session and ends at the
+    // reset boundary with outcome 'reset'.
+    run.event({ type: 'command', turnId: 'turn-1', text: 'forget all that — new question', at: 100, sessionId: 'session-1' } as PipelineEvent)
+    run.event({ type: 'tool_call', callId: 'c1', name: 'new_session', args: {}, turnId: 'turn-1', at: 200, sessionId: 'session-1' } as PipelineEvent)
+    run.event({ type: 'tool_result', callId: 'c1', name: 'new_session', ok: true, result: 'Session cleared.', turnId: 'turn-1', at: 300, sessionId: 'session-1' } as PipelineEvent)
+    run.event({ type: 'done', outcome: 'reset', turnId: 'turn-1', at: 400, sessionId: 'session-1' } as PipelineEvent)
+
+    // The replacement Run is admitted fresh, with its own identity.
+    run.event({ type: 'command', turnId: 'turn-2', text: 'forget all that — new question', at: 500, sessionId: 'session-2' } as PipelineEvent)
+    run.event({ type: 'done', outcome: 'done', turnId: 'turn-2', at: 600, sessionId: 'session-2' } as PipelineEvent)
+
+    expect(store.runs.map(({ command, outcome, sessionId }) => ({ command, outcome, sessionId }))).toEqual([
+      { command: 'forget all that — new question', outcome: 'interrupted', sessionId: 'session-1' },
+      { command: 'forget all that — new question', outcome: 'done', sessionId: 'session-2' },
+    ])
+  })
+
   it('marks a run cancelled when the last status before done was cancelled', () => {
     const store = fakeStore()
     const recorder = recorderWith(store)

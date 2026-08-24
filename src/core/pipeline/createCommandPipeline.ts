@@ -366,6 +366,9 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
 
     try {
       let runOutcome: 'done' | 'failed' | 'cancelled' = 'done'
+      // A successful Session Reset tool (#99) discards the rest of the run:
+      // siblings never execute, no later round happens, nothing commits.
+      let resetConsumed = false
       let finalAnswer: Extract<AssistantTurn, { kind: 'answer' }> | undefined
       yield { type: 'command', text: command, at: clock.now() }
       yield { type: 'status', status: 'thinking', at: clock.now() }
@@ -520,6 +523,13 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
               ...(observedOutcome.ok ? { result: observedOutcome.result } : { error: observedOutcome.error }),
               at: clock.now(),
             }
+            // Session Reset boundary (#99): a successful reset tool ends
+            // this run here — its result is the last thing it ever emits.
+            // Remaining siblings stay unexecuted and unobserved.
+            if (observedOutcome.ok && toolsByName.get(call.name)?.sessionReset) {
+              resetConsumed = true
+              break
+            }
             const afterToolSteering = yield* checkpoint(run, 'acting')
             if (afterToolSteering) {
               steering = afterToolSteering
@@ -528,6 +538,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
             }
           }
           if (steerAfterTool) continue
+          if (resetConsumed) break
           yield { type: 'status', status: 'thinking', at: clock.now() }
         }
       } catch (err) {
@@ -549,7 +560,9 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
           yield* speakLine(spoken, turnId)
         }
       }
-      if (continuity) {
+      // A reset-consumed run commits nothing (#99): its observations and
+      // Subagent Reports belong to the Session that just ended.
+      if (continuity && !resetConsumed) {
         let note = deterministicRunNote(command, runOutcome)
         let patch: MemoryPatch = []
         if (runOutcome === 'done') {
@@ -577,7 +590,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
           logContinuityDegradation(deps.onContinuityDegraded, 'commit_rejected', turnId)
         }
       }
-      yield { type: 'done', outcome: runOutcome, at: clock.now() }
+      yield { type: 'done', outcome: resetConsumed ? 'reset' : runOutcome, at: clock.now() }
     } finally {
       if (activeRun === run) activeRun = null
       // Run end (#30): close the turn out — one synthetic `summary` event

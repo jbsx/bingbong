@@ -30,6 +30,13 @@ export type { SessionGeneration } from './sessionIdentity'
 export type SessionPhase = 'absent' | 'active' | 'expiring'
 export type SessionEndReason = 'lapsed' | 'reset' | 'app_closed' | 'interrupted'
 
+/**
+ * A Session stays open while the gap after the latest accepted Run's finish
+ * is shorter than this window. 30 minutes (ADR 0005 widened ADR 0001's
+ * original 10).
+ */
+export const SESSION_WINDOW_MS = 30 * 60 * 1000
+
 export interface Submission {
   submissionId: SubmissionId
   submittedAt: number

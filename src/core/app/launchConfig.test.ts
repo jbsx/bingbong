@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { DEFAULT_IDLE_TIMEOUT_MS, DEFAULT_SESSION_WARNING_MS, KIOSK_FLAG, resolveLaunchConfig } from './launchConfig'
-import { SESSION_WINDOW_MS } from '../session/sessionMemory'
+import { SESSION_WINDOW_MS } from '../session/sessionRuntime'
 
 describe('resolveLaunchConfig', () => {
   it('defaults to a windowed app with the default idle timeout', () => {

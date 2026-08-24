@@ -73,10 +73,22 @@ describe('pipeline acceptance gate', () => {
     expect(accepted(speak('orphan line', SESSION_ONE))).toBe(false)
   })
 
-  it('rejects everything but the legacy clear-only boundary when no Session is live', () => {
+  it('rejects everything, including unowned boundaries, when no Session is live', () => {
     const accepted = gate({ live: { sessionId: null, generation: 0 }, ended: SESSION_ONE })
-    expect(accepted({ type: 'session_started', at: 1 })).toBe(true)
+    // The legacy clear-only boundary is gone (#99): every event needs a
+    // live or just-ended Session behind it.
+    expect(accepted({ type: 'session_started', at: 1 })).toBe(false)
     expect(accepted(agentUpdate(SESSION_ONE))).toBe(false)
+  })
+
+  it('accepts an identity-bearing session_started of the live Session', () => {
+    const accepted = gate({ live: SESSION_TWO })
+    expect(
+      accepted({ type: 'session_started', at: 1, sessionId: SESSION_TWO.sessionId, sessionGeneration: SESSION_TWO.generation }),
+    ).toBe(true)
+    expect(
+      accepted({ type: 'session_started', at: 1, sessionId: SESSION_ONE.sessionId, sessionGeneration: SESSION_ONE.generation }),
+    ).toBe(false)
   })
 
   it('accepts only the session_ended of the Session that just ended', () => {
