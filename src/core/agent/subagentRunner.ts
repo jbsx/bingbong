@@ -48,6 +48,11 @@ export interface RunSubagentOptions {
    */
   turnId?: string
   /**
+   * This agent's own id: stamped on the report so it carries its producer's
+   * provenance into agent_results and, from there, into committed memory.
+   */
+  agentId?: string
+  /**
    * The Memory Entries delegation selected for this task (#98) — a frozen
    * slice of the spawning Run's Working Memory snapshot. Rides every model
    * round in the request's untrusted-data slot; the loop never mutates it.
@@ -112,6 +117,7 @@ export async function runSubagent(deps: RunSubagentDeps, options: RunSubagentOpt
     await checkpoint(options)
     if (turn.kind === 'answer') {
       return {
+        ...(options.agentId !== undefined ? { agentId: options.agentId } : {}),
         text: turn.display !== '' ? turn.display : turn.speak,
         findings: turn.findings ?? [],
         unresolved: turn.unresolved ?? [],

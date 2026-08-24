@@ -26,6 +26,13 @@ export interface SubagentReportFinding {
 
 /** A worker's full return: prose plus validated structured sections. */
 export interface SubagentReport {
+  /**
+   * Which agent produced this report — the provenance the orchestrator
+   * cites as `subagent_id` when it commits these findings (#98). Stamped
+   * by whoever starts the loop; absent for direct loop users that have no
+   * agent identity.
+   */
+  readonly agentId?: string
   /** The complete prose report — the model's "display" text. */
   readonly text: string
   readonly findings: readonly SubagentReportFinding[]
@@ -76,6 +83,22 @@ function parseFinding(value: unknown): SubagentReportFinding | null {
 }
 
 /**
+ * Parses every item or none: an array over its per-item parser, capped at
+ * `limit`. Returns null for non-arrays, oversized arrays, or any bad item —
+ * a section is either fully valid or absent.
+ */
+function parseAll<T>(value: unknown, limit: number, parseItem: (item: unknown) => T | null): T[] | null {
+  if (!Array.isArray(value) || value.length > limit) return null
+  const parsed: T[] = []
+  for (const item of value) {
+    const entry = parseItem(item)
+    if (entry === null) return null
+    parsed.push(entry)
+  }
+  return parsed
+}
+
+/**
  * Validates the report sections of a parsed final answer. Each section is
  * independent: an invalid or oversized `findings` array is dropped while a
  * valid `unresolved` survives, because the prose report still carries the
@@ -87,35 +110,14 @@ export function parseSubagentReportSections(value: unknown): {
 } {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) return {}
   const raw = value as Record<string, unknown>
-  let findings: readonly SubagentReportFinding[] | undefined
-  let unresolved: readonly string[] | undefined
-  if (Array.isArray(raw.findings) && raw.findings.length <= MAX_SUBAGENT_REPORT_FINDINGS) {
-    const parsed: SubagentReportFinding[] = []
-    let valid = true
-    for (const item of raw.findings) {
-      const finding = parseFinding(item)
-      if (!finding) {
-        valid = false
-        break
-      }
-      parsed.push(finding)
-    }
-    if (valid) findings = parsed
+  const findings = raw.findings !== undefined ? parseAll(raw.findings, MAX_SUBAGENT_REPORT_FINDINGS, parseFinding) : null
+  const unresolved = raw.unresolved !== undefined
+    ? parseAll(raw.unresolved, MAX_SUBAGENT_REPORT_UNRESOLVED, (item) => boundedString(item, MAX_SUBAGENT_UNRESOLVED_CHARS) ?? null)
+    : null
+  return {
+    ...(findings !== null ? { findings } : {}),
+    ...(unresolved !== null ? { unresolved } : {}),
   }
-  if (Array.isArray(raw.unresolved) && raw.unresolved.length <= MAX_SUBAGENT_REPORT_UNRESOLVED) {
-    const parsed: string[] = []
-    let valid = true
-    for (const item of raw.unresolved) {
-      const entry = boundedString(item, MAX_SUBAGENT_UNRESOLVED_CHARS)
-      if (entry === null) {
-        valid = false
-        break
-      }
-      parsed.push(entry)
-    }
-    if (valid) unresolved = parsed
-  }
-  return { ...(findings !== undefined ? { findings } : {}), ...(unresolved !== undefined ? { unresolved } : {}) }
 }
 
 /**

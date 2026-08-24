@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { MemoryEntry, WorkingMemorySnapshot } from '../session/workingMemory'
+import { memoryEntry } from '../testing/doubles'
 import { MAX_SUBAGENT_REPORT_FINDINGS, MAX_SUBAGENT_REPORT_UNRESOLVED, parseSubagentReportSections, selectDelegatedMemory } from './subagentReport'
 
 // The Subagent Report contract (#98): validated structured sections a
@@ -90,22 +91,14 @@ describe('parseSubagentReportSections', () => {
   })
 })
 
-function entry(id: string, subject: string): MemoryEntry {
-  return {
-    id: id as never,
-    sessionId: 'session-1' as never,
-    kind: 'constraint',
-    subject,
-    detail: `${subject} detail`,
-    references: [],
-    provenance: [],
-  }
+function frozen(entry: MemoryEntry): MemoryEntry {
+  return Object.freeze({ ...entry, references: Object.freeze([...entry.references]), provenance: Object.freeze([...entry.provenance]) })
 }
 
 const snapshot: WorkingMemorySnapshot = Object.freeze([
-  Object.freeze(entry('memory-1', 'Budget')),
-  Object.freeze(entry('memory-2', 'Deadline')),
-  Object.freeze(entry('memory-3', 'Ruled out')),
+  frozen(memoryEntry('memory-1', { subject: 'Budget', detail: 'Budget detail' })),
+  frozen(memoryEntry('memory-2', { subject: 'Deadline', detail: 'Deadline detail' })),
+  frozen(memoryEntry('memory-3', { subject: 'Ruled out', detail: 'Ruled out detail' })),
 ])
 
 describe('selectDelegatedMemory', () => {
@@ -126,7 +119,7 @@ describe('selectDelegatedMemory', () => {
   })
 
   it('refuses selections over the delegation bound', () => {
-    const many = Array.from({ length: 11 }, (_, i) => entry(`memory-${i}`, `E${i}`))
+    const many = Array.from({ length: 11 }, (_, i) => memoryEntry(`memory-${i}`, { subject: `E${i}`, detail: `E${i} detail` }))
 
     expect(() => selectDelegatedMemory(Object.freeze(many), many.map(({ id }) => id))).toThrow(/at most 10/)
   })

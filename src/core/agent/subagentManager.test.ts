@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { FakeClock } from '../testing/doubles'
+import { FakeClock, memoryEntry } from '../testing/doubles'
 import type { SessionId } from '../session/sessionIdentity'
 import type { WorkingMemorySnapshot } from '../session/workingMemory'
 import type { SubagentReport } from './subagentReport'
@@ -156,15 +156,7 @@ describe('subagent manager', () => {
 
   it('threads the delegation-selected Memory Entries into the task spec (#98)', () => {
     const { mgr, api } = manager()
-    const selection: WorkingMemorySnapshot = Object.freeze([Object.freeze({
-      id: 'memory-1' as never,
-      sessionId: 'session-1' as never,
-      kind: 'constraint' as const,
-      subject: 'Budget',
-      detail: 'Stay under $30.',
-      references: Object.freeze([]),
-      provenance: Object.freeze([]),
-    })])
+    const selection: WorkingMemorySnapshot = Object.freeze([Object.freeze(memoryEntry('memory-1'))])
 
     expect(mgr.spawn('browse', 'compare keyboards', 'turn-voice-4', selection).ok).toBe(true)
     expect(mgr.spawn('browse', 'no memory shared').ok).toBe(true)
@@ -438,7 +430,7 @@ describe('subagent manager', () => {
     // Provenance stays the id-prefixed header the orchestrator cites as
     // subagent_id when committing these findings.
     expect(merged).toMatch(/a-1 \[browsing\] completed — compare keyboards\n/)
-    expect(merged).toContain('findings:\n- Winner: Model X leads on typing feel. (evidence: https://reviews.test/x | https://shop.test/x)')
+    expect(merged).toContain('findings:\n- Winner: Model X leads on typing feel. (evidence: https://reviews.test/x — Review | https://shop.test/x)')
     expect(merged).toContain('- Runner-up: Model Y is cheaper.\n')
     expect(merged).toContain('unresolved:\n- Stock check pending')
     expect(merged).toContain('report:\nFull comparison prose.')

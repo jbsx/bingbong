@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { FakeClock, ScriptedLlm } from '../testing/doubles'
+import { FakeClock, ScriptedLlm, memoryEntry } from '../testing/doubles'
 import { runSubagent, SubagentCancelledError } from './subagentRunner'
 import type { Tool } from '../pipeline/tool'
 import type { WorkingMemorySnapshot } from '../session/workingMemory'
@@ -47,21 +47,11 @@ describe('runSubagent', () => {
       { kind: 'tool_calls', calls: [{ id: 's1', name: 'noop', args: {} }] },
       { kind: 'answer', speak: 's', display: 'Done.' },
     ])
-    const selection: WorkingMemorySnapshot = Object.freeze([
-      Object.freeze({
-        id: 'memory-1' as never,
-        sessionId: 'session-1' as never,
-        kind: 'constraint' as const,
-        subject: 'Budget',
-        detail: 'Stay under $30.',
-        references: Object.freeze([]),
-        provenance: Object.freeze([]),
-      }),
-    ])
+    const selection: WorkingMemorySnapshot = Object.freeze([Object.freeze(memoryEntry('memory-1'))])
 
     await runSubagent(
       { llm, tools: [noop], clock: new FakeClock() },
-      { task: 'compare within budget', memory: selection, isCancelled: () => false },
+      { task: 'compare within budget', agentId: 'a-1', memory: selection, isCancelled: () => false },
     )
 
     // The same frozen slice reaches every round — the loop cannot lose it
@@ -87,6 +77,17 @@ describe('runSubagent', () => {
       findings: [{ subject: 'Winner', detail: 'Model X leads.', references: [{ url: 'https://reviews.test/x' }] }],
       unresolved: ['Stock check pending'],
     })
+  })
+
+  it('stamps its own id on the report as provenance (#98)', async () => {
+    const llm = new ScriptedLlm([{ kind: 'answer', speak: 's', display: 'Done.' }])
+
+    const report = await runSubagent(
+      { llm, tools: [], clock: new FakeClock() },
+      { task: 't', agentId: 'a-7', isCancelled: () => false },
+    )
+
+    expect(report.agentId).toBe('a-7')
   })
 
   it('keeps the report structured-but-empty when the answer carries no sections (#98)', async () => {

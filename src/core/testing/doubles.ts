@@ -14,6 +14,7 @@ import type {
 } from '../ports/vision'
 import type { PipelineEvent } from '../pipeline/events'
 import type { SubagentManager, SubagentRecord, SubagentStatus } from '../agent/subagentManager'
+import type { MemoryEntry } from '../session/workingMemory'
 import type { PanelControls } from '../pipeline/panelTools'
 import type { AppControls, SettingsControls } from '../pipeline/settingsTools'
 import { FEED_PANEL_WIDTH_DEFAULT, clampFeedPanelWidth, type FeedPanelMode, type FeedPanelState } from '../panel/feedPanelState'
@@ -556,6 +557,20 @@ export function subagentRecord(id: string, status: SubagentStatus = 'running'): 
     lastAction: null,
     result: null,
     error: null,
+  }
+}
+
+/** One Session Working Memory entry (#94): valid by default; override per test. */
+export function memoryEntry(id: string, overrides: Partial<MemoryEntry> = {}): MemoryEntry {
+  return {
+    id: id as never,
+    sessionId: 'session-1' as never,
+    kind: 'constraint',
+    subject: 'Budget',
+    detail: 'Stay under $30.',
+    references: [],
+    provenance: [],
+    ...overrides,
   }
 }
 

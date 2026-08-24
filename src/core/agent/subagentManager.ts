@@ -361,8 +361,9 @@ export function formatAgentResults(records: SubagentRecord[]): string {
 /**
  * One agent's report for agent_results (#98): the structured sections first
  * — findings with their evidence, unresolved items — then the full prose.
- * The id-prefixed header (added by formatAgentResults) is the provenance
- * the orchestrator cites as subagent_id when it commits these findings.
+ * The id-prefixed header is the provenance the orchestrator cites as
+ * subagent_id when it commits these findings; evidence keeps its page titles
+ * so committed references can carry them too.
  */
 function formatReport(record: SubagentRecord): string {
   const report = record.report
@@ -370,7 +371,9 @@ function formatReport(record: SubagentRecord): string {
   if (report && report.findings.length > 0) {
     const findings = report.findings
       .map((finding) => {
-        const evidence = finding.references.map((reference) => reference.url).join(' | ')
+        const evidence = finding.references
+          .map((reference) => (reference.title !== undefined ? `${reference.url} — ${reference.title}` : reference.url))
+          .join(' | ')
         return `- ${finding.subject}: ${finding.detail}${evidence !== '' ? ` (evidence: ${evidence})` : ''}`
       })
       .join('\n')

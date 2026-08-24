@@ -117,6 +117,9 @@ export function createSubagentTaskApi(deps: SubagentWorkhorseDeps): SubagentTask
         },
         {
           task: spec.task,
+          // The report carries its producer's id (#98) — the provenance the
+          // orchestrator cites when committing these findings.
+          agentId: spec.id,
           ...(spec.turnId !== undefined ? { turnId: spec.turnId } : {}),
           // The delegated Memory Entries (#98): the frozen slice the
           // orchestrator selected for this task rides every model round as

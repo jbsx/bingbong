@@ -8,7 +8,7 @@ import { createAskUserTool } from './askUserTools'
 import { createSessionMemory } from '../session/sessionMemory'
 import { createHistoryRecorder } from '../history/historyRecorder'
 import type { HistoryStore, RecordedEntry, RunRecord } from '../history/historyStore'
-import { FailingTts, FakeClock, fakePerfHarness, fakeSubagentManager, RecordingTts, ScriptedLlm, subagentRecord, withoutTurnId } from '../testing/doubles'
+import { FailingTts, FakeClock, fakePerfHarness, fakeSubagentManager, memoryEntry, RecordingTts, ScriptedLlm, subagentRecord, withoutTurnId } from '../testing/doubles'
 import type { PipelineEvent } from './events'
 import type { AssistantTurn, LlmClient, LlmRequest, ToolCall } from '../ports/llm'
 import type { Tool } from './tool'
@@ -1481,15 +1481,7 @@ describe('command pipeline', () => {
     const snapshot = Object.freeze([
       Object.freeze({ runId: 'run-1' as never, outcome: 'done' as const, text: 'Found Pizza A and Pizza B.' }),
     ])
-    const memory = Object.freeze([Object.freeze({
-      id: 'memory-1' as never,
-      sessionId: 'session-1' as never,
-      kind: 'constraint' as const,
-      subject: 'Budget',
-      detail: 'Stay under $30.',
-      references: Object.freeze([]),
-      provenance: Object.freeze([Object.freeze({ runId: 'run-1' as never })]),
-    })])
+    const memory = Object.freeze([Object.freeze(memoryEntry('memory-1', { provenance: [{ runId: 'run-1' as never }] }))])
     const spinner = { name: 'spin', async execute() { return 'spun' } }
     const llm = new ScriptedLlm([
       { kind: 'tool_calls', calls: [{ id: 'c1', name: 'spin', args: {} }] },
@@ -1511,15 +1503,7 @@ describe('command pipeline', () => {
   })
 
   it('resolves delegation memory_ids against this Run\'s immutable snapshot (#98)', async () => {
-    const memory: WorkingMemorySnapshot = Object.freeze([Object.freeze({
-      id: 'memory-1' as never,
-      sessionId: 'session-1' as never,
-      kind: 'constraint' as const,
-      subject: 'Budget',
-      detail: 'Stay under $30.',
-      references: Object.freeze([]),
-      provenance: Object.freeze([]),
-    })])
+    const memory: WorkingMemorySnapshot = Object.freeze([Object.freeze(memoryEntry('memory-1'))])
     let seen: unknown
     const delegator: Tool = {
       name: 'delegator',

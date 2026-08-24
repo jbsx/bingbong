@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { SubagentManager } from '../agent/subagentManager'
 import type { WorkingMemorySnapshot } from '../session/workingMemory'
+import { memoryEntry } from '../testing/doubles'
 import { createSubagentTools } from './subagentTools'
 
 // The delegation surface the orchestrator model sees (issue #13):
@@ -67,15 +68,7 @@ describe('subagent tools', () => {
   })
 
   it('shares only the explicitly selected Memory Entries through the context selector (#98)', async () => {
-    const selection: WorkingMemorySnapshot = Object.freeze([Object.freeze({
-      id: 'memory-1' as never,
-      sessionId: 'session-1' as never,
-      kind: 'constraint' as const,
-      subject: 'Budget',
-      detail: 'Stay under $30.',
-      references: Object.freeze([]),
-      provenance: Object.freeze([]),
-    })])
+    const selection: WorkingMemorySnapshot = Object.freeze([Object.freeze(memoryEntry('memory-1'))])
     let received: WorkingMemorySnapshot | undefined
     let requested: readonly string[] | undefined
     const tools = createSubagentTools(fakeManager({
