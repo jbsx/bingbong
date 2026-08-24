@@ -57,8 +57,8 @@ export interface Tool {
   /** Each execution consumes one call from the per-task vision budget. */
   usesVision?: boolean
   /**
-   * Offer this tool only in LLM rounds that carry prior session history
-   * (spec #24). Rounds with no history keep today's exact catalog — the
+   * Offer this tool only in LLM rounds that carry prior Session continuity
+   * (spec #24). Rounds without continuity keep today's exact catalog — the
    * provider's empty-completion bug scales with prompt size, and the tool
    * list is the biggest lever. new_session is the current example.
    */

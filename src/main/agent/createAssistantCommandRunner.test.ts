@@ -149,6 +149,38 @@ describe('assistant command runner', () => {
     ])
   })
 
+  it('passes each accepted Run one Journal snapshot and the next Run sees the prior commit', async () => {
+    const clock = new FakeClock(1_000)
+    const runtime = createSessionRuntime({ clock, identities: new DeterministicIdentities() })
+    const snapshots: string[][] = []
+    const pipeline: CommandPipeline = {
+      async *execute(command, turnId = 'turn', _truncated, journal) {
+        snapshots.push((journal?.snapshot ?? []).map((entry) => entry.text))
+        yield { type: 'command', text: command, turnId, at: clock.now() }
+        journal?.commit('done', `Completed ${command}`)
+        yield { type: 'done', outcome: 'done', turnId, at: clock.now() }
+      },
+      resolveConfirmation: () => {},
+      resolveAsk: () => {},
+      abort: () => {},
+      pause: () => {},
+      resume: () => false,
+      getState: () => 'idle',
+    }
+    const runner = createAssistantCommandRunner({
+      pipeline,
+      runtime,
+      clock,
+      createRunPublisher: () => ({ publish: () => {} }),
+      publishFeedback: () => {},
+    })
+
+    await runner.run('first')
+    await runner.run('second')
+
+    expect(snapshots).toEqual([[], ['Completed first']])
+  })
+
   it('leaves live projections, continuity, and the Session deadline owned by the accepted Run', async () => {
     const clock = new FakeClock(1_000)
     const runtime = createSessionRuntime({ clock, identities: new DeterministicIdentities() })

@@ -2,11 +2,11 @@ import { VisionDeadlineError } from '../ports/vision'
 import type { PipelineEvent } from './events'
 import type { RiskVerdict, Tool, ToolContext } from './tool'
 import type { Clock } from '../ports/clock'
-import type { AssistantTurn, LlmClient, LlmStreamDelta, SessionTurn, ToolCall, ToolResult, ToolResultOutcome } from '../ports/llm'
+import type { AssistantTurn, LlmClient, LlmStreamDelta, ToolCall, ToolResult, ToolResultOutcome } from '../ports/llm'
 import { createLlmDeltaBatcher } from './deltaBatcher'
 import type { TtsSpeaker } from '../ports/tts'
-import type { SessionHistorySource } from '../session/sessionMemory'
 import { spokenErrorLine } from '../agent/answerContract'
+import { MAX_RUN_NOTE_CHARS, type RunJournalEntry, type RunJournalSnapshot } from '../session/runJournal'
 import type { PerfTracer } from '../perf/perfTracer'
 import { createTurnIdSource } from '../perf/perfTracer'
 import type { BrowserSubspans } from '../perf/browserSubspans'
@@ -28,8 +28,6 @@ export interface CommandPipelineDeps {
   tts: TtsSpeaker
   clock: Clock
   tools: Tool[]
-  /** Distilled session turns that ride along on every LLM round (spec #23). */
-  session?: SessionHistorySource
   confirmTimeoutMs?: number
   /** How long an ask_user window stays open (voice + typed answers). */
   askTimeoutMs?: number
@@ -78,6 +76,8 @@ export interface CommandPipelineDeps {
    * Turn-stamped by the run before delivery.
    */
   emitDetail?: (event: PipelineEvent) => void
+  /** Diagnostic-only sink; continuity degradation never becomes a user-visible pipeline error. */
+  onJournalDegraded?: (reason: 'missing' | 'malformed' | 'commit_rejected', turnId: string) => void
 }
 
 interface ConfirmationDecision {
@@ -135,6 +135,24 @@ function toErrorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err)
 }
 
+function deterministicRunNote(command: string, outcome: RunJournalEntry['outcome']): string {
+  const task = command.trim().replace(/\s+/g, ' ').slice(0, 500) || '(empty command)'
+  const label = outcome === 'done' ? 'Completed' : outcome === 'failed' ? 'Failed' : 'Cancelled'
+  return `${label} run: ${task}`
+}
+
+function logJournalDegradation(
+  sink: CommandPipelineDeps['onJournalDegraded'],
+  reason: 'missing' | 'malformed' | 'commit_rejected',
+  turnId: string,
+): void {
+  try {
+    ;(sink ?? ((why, id) => console.warn(`[run-journal] ${why} Run Note for ${id}`)))(reason, turnId)
+  } catch {
+    // Diagnostics cannot suppress a valid Answer or its done boundary.
+  }
+}
+
 /**
  * Advisory bookkeeping (#29/#30): the perf log must never fail a command,
  * so a throwing sink/tracer is swallowed at the recording call sites.
@@ -162,7 +180,7 @@ export interface CommandPipeline {
    * the spoken utterance hit the 30 s cap — the flag rides every LLM round
    * so the model asks the user to finish instead of guessing.
    */
-  execute(command: string, turnId?: string, truncated?: boolean): AsyncIterable<PipelineEvent>
+  execute(command: string, turnId?: string, truncated?: boolean, journal?: RunJournalContext): AsyncIterable<PipelineEvent>
   resolveConfirmation(confirmationId: string, approved: boolean): void
   /** Answer an open ask_user window (typed card or voice transcript). */
   resolveAsk(askId: string, answer: string): void
@@ -175,6 +193,11 @@ export interface CommandPipeline {
    */
   resume(steering?: string): boolean
   getState(): CommandRunState
+}
+
+export interface RunJournalContext {
+  readonly snapshot: RunJournalSnapshot
+  commit(outcome: RunJournalEntry['outcome'], note: string): boolean
 }
 
 /**
@@ -294,16 +317,26 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
     }
   }
 
-  async function* execute(command: string, turnId?: string, truncated?: boolean): AsyncIterable<PipelineEvent> {
+  async function* execute(
+    command: string,
+    turnId?: string,
+    truncated?: boolean,
+    journal?: RunJournalContext,
+  ): AsyncIterable<PipelineEvent> {
     // One id per turn (#28): adopted when the voice session minted it at
     // utterance end, freshly minted for text-box commands.
     const id = turnId ?? mintTurnId()
-    for await (const event of runTurn(command, id, truncated)) {
+    for await (const event of runTurn(command, id, truncated, journal)) {
       yield stampTurn(event, id)
     }
   }
 
-  async function* runTurn(command: string, turnId: string, truncated?: boolean): AsyncIterable<UnstampedEvent> {
+  async function* runTurn(
+    command: string,
+    turnId: string,
+    truncated?: boolean,
+    journal?: RunJournalContext,
+  ): AsyncIterable<UnstampedEvent> {
     const run: ActiveRun = { turnId, aborted: false, paused: false }
     activeRun = run
     const emitDetail = deps.emitDetail
@@ -326,6 +359,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
 
     try {
       let runOutcome: 'done' | 'failed' | 'cancelled' = 'done'
+      let finalAnswer: Extract<AssistantTurn, { kind: 'answer' }> | undefined
       yield { type: 'command', text: command, at: clock.now() }
       yield { type: 'status', status: 'thinking', at: clock.now() }
 
@@ -367,7 +401,6 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
             throw new Error(`tool round limit (${effectiveMaxToolRounds}) reached`)
           }
           steering = (yield* checkpoint(run, 'thinking')) ?? steering
-          const history: SessionTurn[] = deps.session?.history() ?? []
           // Stop reaches the in-flight request through this signal (#47):
           // abort() fires it, the client cancels the HTTP request, and the
           // rejection below maps back to a cancelled run — no waiting out
@@ -385,7 +418,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
               // The turn id rides the request so the perf wrapper keys each
               // llm span to this turn (#29).
               turnId,
-              ...(history.length > 0 ? { history } : {}),
+              ...(journal ? { journal: journal.snapshot } : {}),
               ...(steering ? { steering } : {}),
               // Retry visibility (#43): each attempt beyond the first is a
               // detail event on the side channel — emitted before the next
@@ -426,6 +459,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
             continue
           }
           if (turn.kind === 'answer') {
+            finalAnswer = turn
             yield { type: 'display', text: turn.display, at: clock.now() }
             yield* speakLine(turn.speak, turnId)
             yield* checkpoint(run, 'thinking')
@@ -494,6 +528,21 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
           const spoken = spokenErrorLine(message)
           yield { type: 'error', message, at: clock.now() }
           yield* speakLine(spoken, turnId)
+        }
+      }
+      if (journal) {
+        let note = deterministicRunNote(command, runOutcome)
+        if (runOutcome === 'done') {
+          const candidate = finalAnswer?.runNote
+          if (typeof candidate === 'string' && candidate.trim() !== '' && candidate.trim().length <= MAX_RUN_NOTE_CHARS) {
+            note = candidate.trim()
+          } else {
+            const reason = finalAnswer?.runNoteIssue === 'malformed' || candidate !== undefined ? 'malformed' : 'missing'
+            logJournalDegradation(deps.onJournalDegraded, reason, turnId)
+          }
+        }
+        if (!journal.commit(runOutcome, note)) {
+          logJournalDegradation(deps.onJournalDegraded, 'commit_rejected', turnId)
         }
       }
       yield { type: 'done', outcome: runOutcome, at: clock.now() }

@@ -2,6 +2,8 @@
 // spoken line (≤ SPEAK_SENTENCE_LIMIT sentences) plus full display text, and
 // errors get a spoken one-liner while the dashboard keeps the detail.
 
+import { MAX_RUN_NOTE_CHARS } from '../session/runJournal'
+
 export const SPEAK_SENTENCE_LIMIT = 2
 
 /**
@@ -100,7 +102,12 @@ export function partialAnswerText(content: string): string {
  * surrounding prose. Anything else falls back to the raw text — capped for
  * speaking, unchanged for display.
  */
-export function parseAssistantAnswer(content: string): { speak: string; display: string } {
+export function parseAssistantAnswer(content: string): {
+  speak: string
+  display: string
+  runNote?: string
+  runNoteIssue?: 'malformed'
+} {
   const trimmed = content.trim()
   const candidates = [trimmed, extractFenced(trimmed), extractJsonSlice(trimmed)]
 
@@ -113,8 +120,18 @@ export function parseAssistantAnswer(content: string): { speak: string; display:
         typeof (parsed as { speak?: unknown }).speak === 'string' &&
         typeof (parsed as { display?: unknown }).display === 'string'
       ) {
-        const { speak, display } = parsed as { speak: string; display: string }
-        return { speak: capSentences(speak, SPEAK_SENTENCE_LIMIT), display }
+        const { speak, display, run_note: rawRunNote } = parsed as {
+          speak: string
+          display: string
+          run_note?: unknown
+        }
+        const answer = { speak: capSentences(speak, SPEAK_SENTENCE_LIMIT), display }
+        if (rawRunNote === undefined) return answer
+        if (typeof rawRunNote !== 'string') return { ...answer, runNoteIssue: 'malformed' }
+        const runNote = rawRunNote.trim()
+        return runNote !== '' && runNote.length <= MAX_RUN_NOTE_CHARS
+          ? { ...answer, runNote }
+          : { ...answer, runNoteIssue: 'malformed' }
       }
     } catch {
       // try the next candidate

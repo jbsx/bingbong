@@ -79,6 +79,7 @@ describe('session runtime', () => {
       generation: 0,
       acceptedAt: 1_025,
       createsSession: true,
+      journal: [],
     })
     expect(identities.minted).toEqual(['submission-1', 'session-1', 'run-1'])
     expect(runtime.state()).toEqual({
@@ -208,6 +209,50 @@ describe('session runtime', () => {
 
     expect(runtime.state().acceptedRunIds).toEqual([admission.runId])
     expect(runtime.state().liveRunIds).toEqual([admission.runId])
+  })
+
+  it('atomically exposes each committed Run Note only to later admissions', () => {
+    const { runtime } = harness()
+    const first = runtime.accept(runtime.submit().submissionId)
+
+    expect(first.journal).toEqual([])
+    expect(runtime.commitRunNote(first.runId, 'done', 'Found two viable options.')).toBe(true)
+    expect(first.journal).toEqual([])
+    expect(runtime.commitRunNote(first.runId, 'done', 'duplicate')).toBe(false)
+    runtime.finish(first.runId)
+
+    const second = runtime.accept(runtime.submit().submissionId)
+    expect(second.journal).toEqual([{
+      runId: first.runId,
+      outcome: 'done',
+      text: 'Found two viable options.',
+    }])
+    expect(Object.isFrozen(second.journal)).toBe(true)
+    expect(Object.isFrozen(second.journal[0])).toBe(true)
+  })
+
+  it('bounds the Journal oldest-first and destroys it at Session end', () => {
+    const clock = new FakeClock(1_000)
+    const runtime = createSessionRuntime({
+      clock,
+      identities: new DeterministicIdentities(),
+      maxJournalChars: 1_200,
+    })
+    const firstNote = '1'.repeat(800)
+    const secondNote = 'a'.repeat(800)
+    const first = runtime.accept(runtime.submit().submissionId)
+    runtime.commitRunNote(first.runId, 'done', firstNote)
+    runtime.finish(first.runId)
+    const second = runtime.accept(runtime.submit().submissionId)
+    runtime.commitRunNote(second.runId, 'done', secondNote)
+    runtime.finish(second.runId)
+
+    const third = runtime.accept(runtime.submit().submissionId)
+    expect(third.journal.map((entry) => entry.text)).toEqual([secondNote])
+    runtime.end('app_closed')
+
+    const fresh = runtime.accept(runtime.submit().submissionId)
+    expect(fresh.journal).toEqual([])
   })
 
   it('warns once before the original deadline and lapses exactly once while idle', () => {
@@ -354,6 +399,7 @@ describe('session runtime', () => {
     expect(() => createSessionRuntime({ clock, identities, inactivityMs: 100, warningLeadMs: 100 })).toThrow(
       'shorter',
     )
+    expect(() => createSessionRuntime({ clock, identities, maxJournalChars: 1_199 })).toThrow('at least 1200')
   })
 
   it('rejects stale or foreign expiry decisions inside the runtime', () => {

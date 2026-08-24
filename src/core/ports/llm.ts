@@ -1,3 +1,5 @@
+import type { RunJournalSnapshot } from '../session/runJournal'
+
 export interface ToolCall {
   id: string
   name: string
@@ -13,12 +15,6 @@ export interface ToolResult {
   outcome: ToolResultOutcome
 }
 
-/** One distilled prior exchange turn (session continuity, spec #23). */
-export interface SessionTurn {
-  role: 'user' | 'assistant'
-  text: string
-}
-
 export interface LlmRequest {
   command: string
   toolResults: ToolResult[]
@@ -31,8 +27,8 @@ export interface LlmRequest {
   truncated?: boolean
   /** A user correction captured while the current run was paused. */
   steering?: string
-  /** Distilled prior turns, oldest first; absent when the session is empty. */
-  history?: SessionTurn[]
+  /** One immutable Session Journal snapshot, captured when this Run was accepted. */
+  journal?: RunJournalSnapshot
   /** Turn correlation id (#28); perf spans key on it when present (#29). */
   turnId?: string
   /**
@@ -82,7 +78,15 @@ export interface TokenUsage {
 }
 
 export type AssistantTurn =
-  | { kind: 'answer'; speak: string; display: string; usage?: TokenUsage }
+  | {
+      kind: 'answer'
+      speak: string
+      display: string
+      /** Hidden continuity output from the same final model response. */
+      runNote?: string
+      runNoteIssue?: 'malformed'
+      usage?: TokenUsage
+    }
   | { kind: 'tool_calls'; calls: ToolCall[]; usage?: TokenUsage }
 
 export interface LlmClient {

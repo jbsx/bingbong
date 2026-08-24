@@ -24,6 +24,27 @@ describe('parseAssistantAnswer', () => {
     expect(answer).toEqual({ speak: 'One. Two.', display: '# Full detail\nwith markdown' })
   })
 
+  it('extracts a hidden Run Note without changing the visible Answer', () => {
+    const answer = parseAssistantAnswer(
+      '{"speak":"Done.","display":"Useful detail.","run_note":"  Ruled out option A; option B remains.  "}',
+    )
+
+    expect(answer).toEqual({
+      speak: 'Done.',
+      display: 'Useful detail.',
+      runNote: 'Ruled out option A; option B remains.',
+    })
+  })
+
+  it.each([null, 42, '', ' '.repeat(2), 'x'.repeat(1_201)])(
+    'preserves a valid Answer while marking malformed Run Note %j',
+    (runNote) => {
+      const answer = parseAssistantAnswer(JSON.stringify({ speak: 'Done.', display: 'Useful detail.', run_note: runNote }))
+
+      expect(answer).toEqual({ speak: 'Done.', display: 'Useful detail.', runNoteIssue: 'malformed' })
+    },
+  )
+
   it('accepts JSON wrapped in a code fence', () => {
     const answer = parseAssistantAnswer('```json\n{"speak":"Done.","display":"Detail."}\n```')
 
@@ -57,6 +78,7 @@ describe('partialAnswerText', () => {
     expect(partialAnswerText('')).toBe('')
     expect(partialAnswerText('{"speak"')).toBe('')
     expect(partialAnswerText('{"speak":')).toBe('')
+    expect(partialAnswerText('{"run_note":"hidden","display"')).toBe('')
   })
 
   it('streams the first key that opens — display or speak — and freezes it once closed', () => {

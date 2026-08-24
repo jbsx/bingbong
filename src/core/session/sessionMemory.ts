@@ -8,7 +8,6 @@
 
 import { inferRunOutcome } from '../pipeline/events'
 import type { PipelineEvent } from '../pipeline/events'
-import type { SessionTurn } from '../ports/llm'
 import { systemClock, type Clock } from '../ports/clock'
 
 /**
@@ -31,6 +30,11 @@ interface SessionExchange {
   command: string
   answer: string
   finishedAt: number
+}
+
+interface SessionTurn {
+  role: 'user' | 'assistant'
+  text: string
 }
 
 /** The seam the pipeline reads: live access to the turns for the active run. */

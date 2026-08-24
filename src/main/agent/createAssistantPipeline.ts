@@ -3,7 +3,7 @@ import type { TtsSpeaker } from '../../core/ports/tts'
 import { systemClock, type Clock } from '../../core/ports/clock'
 import type { BrowserController, VisualGroundingController } from '../../core/ports/browser'
 import type { VisionModel } from '../../core/ports/vision'
-import type { SessionHistorySource, SessionResetSource } from '../../core/session/sessionMemory'
+import type { SessionResetSource } from '../../core/session/sessionMemory'
 import { createCommandPipeline, type CommandPipeline } from '../../core/pipeline/createCommandPipeline'
 import type { PipelineEvent } from '../../core/pipeline/events'
 import type { Tool } from '../../core/pipeline/tool'
@@ -76,13 +76,10 @@ export interface AssistantPipelineDeps {
    */
   app?: AppControls
   /**
-   * Session continuity (spec #23) and the model-invoked reset (spec #24):
-   * prior distilled turns ride along with every orchestrator round, and the
-   * model can clear them mid-run via the new_session tool. Created per
-   * window by main and fed from the same run-observer seam as the history
-   * recorder.
+   * Legacy model-invoked reset control (spec #24). Run continuity is supplied
+   * separately by the Session runtime's admission-bound Journal context.
    */
-  session?: SessionHistorySource & SessionResetSource
+  session?: SessionResetSource
   /**
    * Always-on perf logging (#27/#28): the tracer mints the turn ids the
    * pipeline stamps on every event, so the perf log, the event stream, and
@@ -204,8 +201,8 @@ export function createAssistantPipeline(deps: AssistantPipelineDeps): CommandPip
     // app_control confirm-gated with a spoken ack.
     ...(deps.settings ? [createSetSettingTool(deps.settings)] : []),
     ...(deps.app ? [createAppControlTool(deps.app)] : []),
-    // Offered only in rounds that carry history (requiresHistory), so a
-    // fresh session's catalog stays lean (spec #24).
+    // Offered only in rounds that carry continuity, so a fresh Session's
+    // catalog stays lean (spec #24).
     ...(deps.session ? [createNewSessionTool(deps.session)] : []),
   ]
   const clock = deps.clock ?? systemClock
@@ -221,7 +218,6 @@ export function createAssistantPipeline(deps: AssistantPipelineDeps): CommandPip
     // Search-loop rail's GUI search signature (#82): typed searches are
     // classified from the typed ref's snapshot facts.
     describeRef: (ref) => deps.controller.describeRef(ref),
-    ...(deps.session ? { session: deps.session } : {}),
     ...(deps.tracer ? { tracer: deps.tracer } : {}),
     ...(deps.browserSubspans ? { browserSubspans: deps.browserSubspans } : {}),
     ...(deps.emitDetail ? { emitDetail: deps.emitDetail } : {}),

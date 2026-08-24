@@ -45,7 +45,10 @@ export function createAssistantCommandRunner(deps: {
       try {
         if (admission.createsSession) deps.onSessionStarted?.(admission)
         const publisher = deps.createRunPublisher(admission)
-        for await (const event of deps.pipeline.execute(command, turnId, truncated)) {
+        for await (const event of deps.pipeline.execute(command, turnId, truncated, {
+          snapshot: admission.journal,
+          commit: (outcome, note) => deps.runtime.commitRunNote(admission.runId, outcome, note),
+        })) {
           if (deps.canPublish && !deps.canPublish()) break
           publisher.publish(event)
         }

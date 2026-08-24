@@ -27,7 +27,6 @@ import { createUsageStore } from './settings/usageStore'
 import { USAGE_IPC } from '../core/settings/usageIpcChannels'
 import { HISTORY_IPC, HISTORY_QUERY_LIMIT } from '../core/history/ipcChannels'
 import { createHistoryRecorder } from '../core/history/historyRecorder'
-import { createSessionMemory } from '../core/session/sessionMemory'
 import { systemClock } from '../core/ports/clock'
 import { createSessionRuntime, type EndedSession, type SessionRuntime } from '../core/session/sessionRuntime'
 import { createSessionIdentitySource } from './session/sessionIdentitySource'
@@ -236,10 +235,7 @@ async function createWindow(): Promise<BrowserWindow> {
       const run = historyRecorder.run()
       return (event) => run.event(event)
     },
-    createSessionRunObserver: () => {
-      const run = sessionMemory.run()
-      return (event) => run.event(event)
-    },
+    createSessionRunObserver: () => () => {},
     historyEvent: (event) => historyRecorder.event(event),
     historyHeard: (heard) => historyRecorder.heard(heard),
     historyVoiceError: (error) => historyRecorder.voiceError(error.message, error.at),
@@ -352,15 +348,12 @@ async function createWindow(): Promise<BrowserWindow> {
       sessionRuntime?.decline({ sessionId, generation })
     },
   })
-  // Session continuity (spec #23): one in-memory thread per window, fed from
-  // the same run-observer seam as the history recorder. The pipeline reads it
-  // live on every orchestrator round; it dies on quit and never persists.
-  const sessionMemory = createSessionMemory({
-    windowMs: launchConfig.sessionWindowMs,
-    announceLapse: false,
-    onSessionStart: () =>
+  // Temporary clear-only reset seam until the identity-bearing reset cutover
+  // (#99). It carries no transcript; accepted Runs receive Journal snapshots.
+  const sessionReset = {
+    clear: () =>
       eventPublisher.publish({ source: 'lifecycle', event: { type: 'session_started', at: systemClock.now() } }),
-  })
+  }
   const pipeline = createAssistantPipeline({
     controller,
     env: currentEnv(),
@@ -389,7 +382,7 @@ async function createWindow(): Promise<BrowserWindow> {
       },
     },
     onLlmUsage: (record) => usageStore.record(record.role, record.model, record.usage),
-    session: sessionMemory,
+    session: sessionReset,
     tracer: perfTracer,
     browserSubspans,
     // Progress detail (#43): mid-await signals ride the same channel; the
@@ -431,7 +424,6 @@ async function createWindow(): Promise<BrowserWindow> {
     onEnded: (ended) => {
       lastEndedSession = ended
       historyStore.finishSession(ended.sessionId, ended.reason, ended.endedAt)
-      sessionMemory.discard()
       subagentRuntime.cancelAll()
       pane.reset()
       eventPublisher.publish({
@@ -473,7 +465,6 @@ async function createWindow(): Promise<BrowserWindow> {
   // must never fire into the channels a closed window left behind.
   win.on('closed', () => {
     sessionRuntime?.dispose()
-    sessionMemory.dispose()
   })
 
   if (process.env.ELECTRON_RENDERER_URL) {

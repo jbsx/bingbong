@@ -133,10 +133,10 @@ export class ScriptedLlm implements LlmClient {
     const next = this.script.shift()
     if (!next) throw new Error('ScriptedLlm ran out of scripted turns')
     await streamScriptedChunks(next, request.onDelta)
-    // Renders the request's session history (spec #23) into scripted text,
-    // so e2e can prove prior turns rode along with a follow-up command.
+    // Renders continuity fields into scripted text so E2E can prove what the
+    // current Run received without exposing private request objects.
     const substitutions: [string, string][] = [
-      ['$history', (request.history ?? []).map((turn) => `[${turn.role}] ${turn.text}`).join('\n')],
+      ['$journal', (request.journal ?? []).map((entry) => `[${entry.runId}] ${entry.text}`).join('\n')],
       ['$steering', request.steering ?? ''],
     ]
     if (next.kind !== 'tool_calls') {
@@ -151,6 +151,7 @@ export class ScriptedLlm implements LlmClient {
         ...next,
         speak: apply(next.speak),
         display: apply(next.display),
+        ...(next.runNote !== undefined ? { runNote: apply(next.runNote) } : {}),
       }
     }
     const groundedRef = [...request.toolResults]

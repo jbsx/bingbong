@@ -6,6 +6,9 @@ import type {
   SessionIdentitySource,
   SubmissionId,
 } from './sessionIdentity'
+import { MAX_RUN_NOTE_CHARS, type RunJournalEntry, type RunJournalSnapshot } from './runJournal'
+
+export type { RunJournalEntry, RunJournalSnapshot } from './runJournal'
 
 export type { SessionGeneration } from './sessionIdentity'
 
@@ -25,6 +28,7 @@ export interface AcceptedRunAdmission {
   generation: SessionGeneration
   acceptedAt: number
   createsSession: boolean
+  journal: RunJournalSnapshot
 }
 
 export interface SessionRuntimeState {
@@ -66,6 +70,7 @@ export interface SessionRuntime {
   accept(submissionId: SubmissionId): AcceptedRunAdmission
   reject(submissionId: SubmissionId): boolean
   finish(runId: RunId): boolean
+  commitRunNote(runId: RunId, outcome: RunJournalEntry['outcome'], text: string): boolean
   beginExpiry(): boolean
   extend(decision: SessionDecision): boolean
   decline(decision: SessionDecision): EndedSession | null
@@ -81,6 +86,7 @@ export function createSessionRuntime(deps: {
   onExpiring?: (session: ExpiringSession) => void
   onExtended?: (session: ExtendedSession) => void
   onEnded?: (session: EndedSession) => void
+  maxJournalChars?: number
 }): SessionRuntime {
   if (deps.inactivityMs !== undefined) {
     if (!Number.isFinite(deps.inactivityMs) || deps.inactivityMs <= 0) {
@@ -93,6 +99,10 @@ export function createSessionRuntime(deps: {
       throw new Error('warningLeadMs must be shorter than inactivityMs')
     }
   }
+  const maxJournalChars = deps.maxJournalChars ?? 12_000
+  if (!Number.isFinite(maxJournalChars) || maxJournalChars < MAX_RUN_NOTE_CHARS) {
+    throw new Error(`maxJournalChars must be at least ${MAX_RUN_NOTE_CHARS}`)
+  }
   let phase: SessionPhase = 'absent'
   let sessionId: SessionId | null = null
   let generation = 0
@@ -100,6 +110,8 @@ export function createSessionRuntime(deps: {
   let acceptedRunIds: RunId[] = []
   const liveRunIds = new Set<RunId>()
   const pendingSubmissionIds = new Set<SubmissionId>()
+  let journal: RunJournalEntry[] = []
+  const committedRunIds = new Set<RunId>()
   let cancelWarning: (() => void) | null = null
   let cancelDeadline: (() => void) | null = null
   let deadlineAt: number | null = null
@@ -133,6 +145,8 @@ export function createSessionRuntime(deps: {
     acceptedRunIds = []
     liveRunIds.clear()
     pendingSubmissionIds.clear()
+    journal = []
+    committedRunIds.clear()
     if (reason === 'reset') generation += 1
     deps.onEnded?.(ended)
     return ended
@@ -174,6 +188,9 @@ export function createSessionRuntime(deps: {
     liveRunIds: [...liveRunIds],
   })
 
+  const journalSnapshot = (): RunJournalSnapshot =>
+    Object.freeze(journal.map((entry) => Object.freeze({ ...entry })))
+
   const matchesExpiringSession = (decision: SessionDecision): boolean =>
     phase === 'expiring' && sessionId === decision.sessionId && generation === decision.generation
 
@@ -199,6 +216,8 @@ export function createSessionRuntime(deps: {
         sessionId = acceptedSessionId
         startedAt = acceptedAt
         acceptedRunIds = []
+        journal = []
+        committedRunIds.clear()
       }
       phase = 'active'
       cancelExpiry()
@@ -214,6 +233,7 @@ export function createSessionRuntime(deps: {
         generation,
         acceptedAt,
         createsSession,
+        journal: journalSnapshot(),
       }
     },
     reject(submissionId) {
@@ -223,6 +243,19 @@ export function createSessionRuntime(deps: {
       const finished = liveRunIds.delete(runId)
       if (finished && liveRunIds.size === 0) armInactivity()
       return finished
+    },
+    commitRunNote(runId, outcome, text) {
+      const normalized = text.trim()
+      if (!liveRunIds.has(runId) || committedRunIds.has(runId) || normalized === '' || normalized.length > maxJournalChars) {
+        return false
+      }
+      journal.push({ runId, outcome, text: normalized })
+      committedRunIds.add(runId)
+      let chars = journal.reduce((total, entry) => total + entry.text.length, 0)
+      while (chars > maxJournalChars && journal.length > 1) {
+        chars -= journal.shift()!.text.length
+      }
+      return true
     },
     beginExpiry() {
       if (phase !== 'active' || liveRunIds.size > 0) return false

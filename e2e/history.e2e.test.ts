@@ -64,7 +64,7 @@ describe('history persistence e2e', () => {
       env: {
         BINGBONG_SESSION_WINDOW_MS: String(SESSION_WINDOW_MS),
         BINGBONG_LLM_SCRIPT: JSON.stringify([
-          { kind: 'answer', speak: 'Fresh context.', display: 'FRESH CONTEXT:\n$history' },
+          { kind: 'answer', speak: 'Fresh context.', display: 'FRESH CONTEXT:\n$journal' },
         ] satisfies AssistantTurn[]),
       },
     })

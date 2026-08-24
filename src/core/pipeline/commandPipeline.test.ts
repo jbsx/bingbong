@@ -5,7 +5,6 @@ import { hostFromUrl } from './blockerGate'
 import { steerPipeline } from './steering'
 import { createSpeechCoordinator } from '../tts/speechCoordinator'
 import { createAskUserTool } from './askUserTools'
-import { createNewSessionTool } from './sessionTools'
 import { createSessionMemory } from '../session/sessionMemory'
 import { createHistoryRecorder } from '../history/historyRecorder'
 import type { HistoryStore, RecordedEntry, RunRecord } from '../history/historyStore'
@@ -1476,141 +1475,135 @@ describe('command pipeline', () => {
     })
   })
 
-  it('rides the session store\'s history along on every LLM round, reading it live', async () => {
-    let reads = 0
-    const session = {
-      history() {
-        reads += 1
-        return [
-          { role: 'user' as const, text: 'find a pizza place' },
-          { role: 'assistant' as const, text: 'Found two: Pizza A and Pizza B.' },
-        ]
-      },
-    }
+  it('gives every model round the same immutable Journal snapshot', async () => {
+    const snapshot = Object.freeze([
+      Object.freeze({ runId: 'run-1' as never, outcome: 'done' as const, text: 'Found Pizza A and Pizza B.' }),
+    ])
     const spinner = { name: 'spin', async execute() { return 'spun' } }
     const llm = new ScriptedLlm([
       { kind: 'tool_calls', calls: [{ id: 'c1', name: 'spin', args: {} }] },
-      { kind: 'answer', speak: 'The second one.', display: 'Pizza B.' },
+      { kind: 'answer', speak: 'The second one.', display: 'Pizza B.', runNote: 'Selected Pizza B.' },
     ])
-    const pipeline = createCommandPipeline({ llm, tts: new RecordingTts(), clock: new FakeClock(), tools: [spinner], session })
+    const pipeline = createCommandPipeline({ llm, tts: new RecordingTts(), clock: new FakeClock(), tools: [spinner] })
 
-    await collect(pipeline, 'what about the second one?')
+    for await (const event of pipeline.execute('what about the second one?', undefined, undefined, {
+      snapshot,
+      commit: () => true,
+    })) { void event }
 
-    expect(reads).toBe(2)
     expect(llm.requests).toHaveLength(2)
-    for (const request of llm.requests) {
-      expect(request.history).toEqual([
-        { role: 'user', text: 'find a pizza place' },
-        { role: 'assistant', text: 'Found two: Pizza A and Pizza B.' },
-      ])
-    }
+    expect(llm.requests[0].journal).toBe(snapshot)
+    expect(llm.requests[1].journal).toBe(snapshot)
   })
 
-  it('omits the history field entirely when the session has no prior turns', async () => {
-    const spinner = { name: 'spin', async execute() { return 'spun' } }
-    const answer = { kind: 'answer' as const, speak: 'Done.', display: 'Done.' }
-    const withSessionLlm = new ScriptedLlm([
-      { kind: 'tool_calls', calls: [{ id: 'c1', name: 'spin', args: {} }] },
-      answer,
-    ])
-    const withoutSessionLlm = new ScriptedLlm([
-      { kind: 'tool_calls', calls: [{ id: 'c1', name: 'spin', args: {} }] },
-      answer,
-    ])
-    const withSession = createCommandPipeline({
-      llm: withSessionLlm,
-      tts: new RecordingTts(),
-      clock: new FakeClock(),
-      tools: [spinner],
-      session: { history: () => [] },
-    })
-    const withoutSession = createCommandPipeline({
-      llm: withoutSessionLlm,
-      tts: new RecordingTts(),
-      clock: new FakeClock(),
-      tools: [spinner],
-    })
-
-    await collect(withSession, 'first command')
-    await collect(withoutSession, 'first command')
-
-    for (const request of [...withSessionLlm.requests, ...withoutSessionLlm.requests]) {
-      expect(request).not.toHaveProperty('history')
-    }
-  })
-
-  it('feeds a real session store from its own event stream: run two sees run one', async () => {
-    const session = createSessionMemory()
-    const spinner = { name: 'spin', async execute() { return 'spun' } }
-    const clock = new FakeClock()
+  it('commits a valid hidden Run Note immediately before done', async () => {
+    const order: string[] = []
     const llm = new ScriptedLlm([
-      { kind: 'answer', speak: 'Found two.', display: '1. Pizza A 2. Pizza B' },
-      { kind: 'answer', speak: 'The second one.', display: 'Pizza B.' },
-    ])
-    const pipeline = createCommandPipeline({ llm, tts: new RecordingTts(), clock, tools: [spinner], session })
-    const observe = (events: PipelineEvent[]): void => {
-      const observer = session.run()
-      for (const event of events) observer.event(event)
-    }
-
-    const runOne: PipelineEvent[] = []
-    for await (const event of pipeline.execute('find a pizza place')) runOne.push(event)
-    observe(runOne)
-
-    const runTwo: PipelineEvent[] = []
-    for await (const event of pipeline.execute('what about the second one?')) runTwo.push(event)
-
-    expect(llm.requests[0]).not.toHaveProperty('history')
-    expect(llm.requests[1].history).toEqual([
-      { role: 'user', text: 'find a pizza place' },
-      { role: 'assistant', text: '1. Pizza A 2. Pizza B' },
-    ])
-  })
-
-  it('drops the session history for the next LLM round after a new_session tool call', async () => {
-    const session = createSessionMemory()
-    const priorRun = session.run()
-    for (const event of [
-      { type: 'command', text: 'find a pizza place', at: 0 },
-      { type: 'display', text: '1. Pizza A 2. Pizza B', at: 1 },
-      { type: 'done', outcome: 'done', at: 2 },
-    ] as PipelineEvent[]) priorRun.event(event)
-
-    const llm = new ScriptedLlm([
-      { kind: 'tool_calls', calls: [{ id: 'c1', name: 'new_session', args: {} }] },
-      { kind: 'answer', speak: 'Fresh start — what do you need?', display: 'Fresh start.' },
+      { kind: 'answer', speak: 'Found two.', display: 'Pizza choices.', runNote: 'Pizza B remains the strongest option.' },
     ])
     const pipeline = createCommandPipeline({
       llm,
       tts: new RecordingTts(),
       clock: new FakeClock(),
-      tools: [createNewSessionTool(session)],
-      session,
+      tools: [],
+    })
+
+    for await (const event of pipeline.execute('find pizza', undefined, undefined, {
+      snapshot: Object.freeze([]),
+      commit: (outcome, note) => {
+        order.push(`commit:${outcome}:${note}`)
+        return true
+      },
+    })) {
+      order.push(event.type)
+    }
+
+    expect(order.at(-2)).toBe('commit:done:Pizza B remains the strongest option.')
+    expect(order.at(-1)).toBe('done')
+  })
+
+  it('preserves the Answer and commits a deterministic fallback when its Run Note is malformed', async () => {
+    const degraded: string[] = []
+    const commits: string[] = []
+    const llm = new ScriptedLlm([
+      { kind: 'answer', speak: 'Useful answer.', display: 'Useful detail.', runNoteIssue: 'malformed' },
+    ])
+    const pipeline = createCommandPipeline({
+      llm,
+      tts: new RecordingTts(),
+      clock: new FakeClock(),
+      tools: [],
+      onJournalDegraded: (reason) => degraded.push(reason),
     })
 
     const events: PipelineEvent[] = []
-    const observer = session.run()
-    for await (const event of pipeline.execute('forget all that — different question')) {
-      events.push(event)
-      observer.event(event)
-    }
+    for await (const event of pipeline.execute('research options', undefined, undefined, {
+      snapshot: Object.freeze([]),
+      commit: (_outcome, note) => {
+        commits.push(note)
+        return true
+      },
+    })) events.push(event)
 
-    // Round one replays the prior exchange; the round after the reset drops it.
-    expect(llm.requests[0].history).toEqual([
-      { role: 'user', text: 'find a pizza place' },
-      { role: 'assistant', text: '1. Pizza A 2. Pizza B' },
-    ])
-    expect(llm.requests[1]).not.toHaveProperty('history')
-    // The tool result confirms the clear; no canned voice line exists — the
-    // model's own answer is the only acknowledgment.
-    expect(events.find((event) => event.type === 'tool_result')).toMatchObject({
-      ok: true,
-      result: expect.stringContaining('Session cleared'),
+    expect(events).toContainEqual(expect.objectContaining({ type: 'display', text: 'Useful detail.' }))
+    expect(events.at(-1)).toMatchObject({ type: 'done', outcome: 'done' })
+    expect(commits).toEqual(['Completed run: research options'])
+    expect(degraded).toEqual(['malformed'])
+  })
+
+  it('logs and falls back when a successful Answer omits its Run Note', async () => {
+    const degraded: string[] = []
+    const commits: string[] = []
+    const events: string[] = []
+    const pipeline = createCommandPipeline({
+      llm: new ScriptedLlm([{ kind: 'answer', speak: 'Done.', display: 'Still useful.' }]),
+      tts: new RecordingTts(),
+      clock: new FakeClock(),
+      tools: [],
+      onJournalDegraded: (reason) => {
+        degraded.push(reason)
+        throw new Error('diagnostic sink failed')
+      },
     })
-    const spoken = events.filter((event) => event.type === 'speak').map((event) => event.text)
-    expect(spoken).toEqual(['Fresh start — what do you need?'])
-    // The resetting run's own exchange never joins the thread.
-    expect(session.history()).toEqual([])
+
+    for await (const event of pipeline.execute('do useful work', undefined, undefined, {
+      snapshot: Object.freeze([]),
+      commit: (_outcome, note) => {
+        commits.push(note)
+        return true
+      },
+    })) events.push(event.type)
+
+    expect(commits).toEqual(['Completed run: do useful work'])
+    expect(degraded).toEqual(['missing'])
+    expect(events.at(-1)).toBe('done')
+  })
+
+  it.each(['failed', 'cancelled'] as const)('commits only a deterministic %s note', async (outcome) => {
+    const commits: Array<{ outcome: string; note: string }> = []
+    const llm = outcome === 'failed'
+      ? new ScriptedLlm([])
+      : new ScriptedLlm([{ kind: 'answer', speak: 'Partial.', display: 'Partial.', runNote: 'Unvalidated finding.' }])
+    const pipeline = createCommandPipeline({ llm, tts: new RecordingTts(), clock: new FakeClock(), tools: [] })
+    if (outcome === 'cancelled') pipeline.abort()
+
+    const iterator = pipeline.execute('attempt task', undefined, undefined, {
+      snapshot: Object.freeze([]),
+      commit: (committedOutcome, note) => {
+        commits.push({ outcome: committedOutcome, note })
+        return true
+      },
+    })[Symbol.asyncIterator]()
+    if (outcome === 'cancelled') {
+      await iterator.next()
+      pipeline.abort()
+    }
+    while (!(await iterator.next()).done) { /* consume */ }
+
+    expect(commits).toEqual([{
+      outcome,
+      note: `${outcome === 'failed' ? 'Failed' : 'Cancelled'} run: attempt task`,
+    }])
   })
 })
 

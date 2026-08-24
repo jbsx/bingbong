@@ -6,10 +6,8 @@ import { submitAndAwaitAnswer, feedDisplays, feedText } from './feed'
 import type { AssistantTurn } from '../src/core/ports/llm'
 
 // Model-invoked session reset (spec #24): "forget all that — different
-// question" makes the orchestrator call new_session. The store is read live
-// per round, so the reset lands on the next round of the same run and the
-// next command starts clean. The scripted LLM echoes `$history` into its
-// answers, so the transcript proves no prior turns rode along.
+// question" makes the orchestrator call the legacy new_session clear. Literal
+// identity-bearing reset and Journal isolation are covered by issue #99.
 
 const SCRIPT: AssistantTurn[] = [
   {
@@ -24,12 +22,12 @@ const SCRIPT: AssistantTurn[] = [
   {
     kind: 'answer',
     speak: 'Fresh start — what do you need?',
-    display: 'AFTER RESET:\n$history',
+    display: 'AFTER RESET:',
   },
   {
     kind: 'answer',
     speak: 'Four.',
-    display: 'NEXT COMMAND:\n$history',
+    display: 'NEXT COMMAND:',
   },
 ]
 
@@ -64,7 +62,7 @@ describe('session reset e2e', () => {
     await submitAndAwaitAnswer(harness, 'find a pizza place', 'Pizza A on Main St')
     await submitAndAwaitAnswer(harness, 'forget all that — different question', 'AFTER RESET:')
 
-    // The round after new_session, inside the same run, replays no prior turns.
+    // The legacy clear removes pre-reset work from the visible Feed.
     const afterReset = await displayEntry(harness, 'AFTER RESET:')
     expect(afterReset).toContain('AFTER RESET:')
     expect(afterReset).not.toContain('[user] find a pizza place')
@@ -82,8 +80,7 @@ describe('session reset e2e', () => {
 
     await submitAndAwaitAnswer(harness, 'what is two plus two', 'NEXT COMMAND:')
 
-    // The resetting run itself left nothing behind: the next command sees an
-    // empty thread — not even the reset exchange.
+    // The next command remains visually isolated from the cleared Feed.
     const nextCommand = await displayEntry(harness, 'NEXT COMMAND:')
     expect(nextCommand).toContain('NEXT COMMAND:')
     expect(nextCommand).not.toContain('[user] find a pizza place')
