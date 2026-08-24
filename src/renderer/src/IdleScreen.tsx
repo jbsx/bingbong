@@ -41,6 +41,9 @@ export function IdleScreen({ weather }: { weather: WeatherState }) {
 
   return (
     <div className="idle-screen" aria-label="idle screen">
+      {/* The window's drag region while the Toolbar is unmounted (ADR
+          0012) — invisible, top strip only, never covers the clock. */}
+      <div className="idle-drag-strip" aria-hidden="true" />
       <div className="idle-screen-top">
         <p className="idle-clock" aria-label="clock">
           {formatClock(now)}

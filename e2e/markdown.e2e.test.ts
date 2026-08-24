@@ -7,7 +7,7 @@ import type { ScriptedAnswerTurn } from '../src/core/testing/doubles'
 
 // Markdown rendering e2e (#56): answers look structured — react-markdown
 // renders assistant display entries and the live streaming answer inside
-// the answer cards (gruvbox-styled code blocks, lists, headings,
+// the answer cards (dark-styled code blocks, lists, headings,
 // emphasis), raw sigils never appear as literal text, and links in the
 // feed navigate the main browser pane through the existing navigation
 // seam — "open that" is one click.
@@ -109,8 +109,8 @@ describe('markdown answers e2e (#56)', () => {
       expect(structure!.inlineCode).toBe('npm run check')
       expect(structure!.linkHref).toBe('https://example.com/rubric')
 
-      // The fenced block reads as the gruvbox dark surface (dark1 #3c3836).
-      expect(structure!.fencedBg).toBe('rgb(60, 56, 54)')
+      // The fenced block reads as the dark surface (ink #1d1d1f).
+      expect(structure!.fencedBg).toBe('rgb(29, 29, 31)')
 
       // Raw markdown sigils never appear as literal text.
       expect(structure!.rawText).not.toContain('**')

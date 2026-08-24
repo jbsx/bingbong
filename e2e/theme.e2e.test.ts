@@ -4,17 +4,18 @@ import { startFixtureServer, type FixtureServer } from './fixtureServer'
 import { waitFor } from './waitFor'
 import type { AssistantTurn } from '../src/core/ports/llm'
 
-// Theme e2e (#50): the gruvbox light skin, bundled Inter type scale and
-// calm status indicators are asserted as computed-style observables on
-// every app surface — dashboard, feed panel overlay, settings, idle screen,
-// kiosk — plus the status pill text per state and the total absence of
-// pulse animation. The exact px assertions pin the #49 calibration (22px
-// root × rem tiers) deliberately; everything else stays token-level.
+// Theme e2e (ADR 0012): the neutral light skin, bundled Inter type scale
+// and calm status indicators are asserted as computed-style observables
+// on every app surface — dashboard toolbar, feed panel overlay, settings,
+// idle screen, kiosk — plus the status pill text per state and the total
+// absence of pulse animation. The exact px assertions pin the desk
+// calibration (17px root × rem tiers) deliberately; everything else stays
+// token-level.
 
-const GRUVBOX_BG = 'rgb(251, 241, 199)' // #fbf1c7
-const GRUVBOX_PANEL = 'rgb(235, 219, 178)' // #ebdbb2
-const GRUVBOX_BLUE = 'rgb(7, 102, 120)' // #076678 thinking/transcribing
-const GRUVBOX_PURPLE = 'rgb(143, 63, 113)' // #8f3f71 listening/paused
+const CANVAS_BG = 'rgb(245, 245, 247)' // #f5f5f7
+const PANEL_BG = 'rgb(255, 255, 255)' // #ffffff
+const APPLE_BLUE = 'rgb(0, 113, 227)' // #0071e3 thinking/transcribing
+const APPLE_PURPLE = 'rgb(175, 82, 222)' // #af52de listening/paused
 
 const pageTokensScript = `(() => ({
   bg: getComputedStyle(document.body).backgroundColor,
@@ -64,7 +65,7 @@ describe('dashboard theme e2e (#50)', () => {
     await fixture?.close()
   })
 
-  it('wears gruvbox light tokens with bundled Inter at the couch type scale', async () => {
+  it('wears neutral light tokens with bundled Inter at the desk type scale', async () => {
     const harness = await startHarness({
       fixture,
       env: {
@@ -73,30 +74,31 @@ describe('dashboard theme e2e (#50)', () => {
     })
     try {
       const tokens = await harness.dashboardEval<Record<string, string>>(pageTokensScript)
-      expect(tokens.bg).toBe(GRUVBOX_BG)
+      expect(tokens.bg).toBe(CANVAS_BG)
       expect(tokens.scheme).toBe('light')
       expect(tokens.font).toContain('InterVariable')
-      // Calibration (#49): 22px root so rem sizes land couch-readable.
-      expect(tokens.rootSize).toBe('22px')
+      // Desk calibration (ADR 0012): 17px root so rem sizes land
+      // desk-readable.
+      expect(tokens.rootSize).toBe('17px')
 
-      // The type scale: prompt bar 1.1rem (panel-local), labels 1.1rem,
-      // detail 1rem — measured in the overlay, where typed input lives.
+      // The type scale: prompt bar 0.95rem (panel-local), labels 0.9rem
+      // — measured in the overlay, where typed input lives.
       const sizes = await harness.overlayEval<Record<string, string>>(`(() => {
         const px = (el) => (el ? getComputedStyle(el).fontSize : '')
         return {
           prompt: px(document.querySelector('.prompt-input')),
         }
       })()`)
-      expect(sizes.prompt).toBe('24.2px')
+      expect(sizes.prompt).toBe('16.15px')
       const labelSizes = await harness.dashboardEval<Record<string, string>>(`(() => {
         const px = (el) => (el ? getComputedStyle(el).fontSize : '')
         return {
-          label: px(document.querySelector('.dashboard-header h1')),
+          label: px(document.querySelector('.status-pill')),
           // No cards pending: the footer is collapsed away entirely.
           footerWhileIdle: px(document.querySelector('.dashboard-footer')),
         }
       })()`)
-      expect(labelSizes.label).toBe('24.2px')
+      expect(labelSizes.label).toBe('15.3px')
       expect(labelSizes.footerWhileIdle).toBe('')
 
       // The font file is bundled and actually loaded — no CDN round trip.
@@ -105,11 +107,11 @@ describe('dashboard theme e2e (#50)', () => {
       )
       expect(fontFaces).toContainEqual(['InterVariable', 'loaded'])
 
-      // Panels sit on gruvbox light1.
-      const panel = await harness.dashboardEval<string>(
-        `getComputedStyle(document.querySelector('.browser-chrome')).backgroundColor`,
+      // The Status Capsule sits on white.
+      const capsule = await harness.dashboardEval<string>(
+        `getComputedStyle(document.querySelector('.status-capsule')).backgroundColor`,
       )
-      expect(panel).toBe(GRUVBOX_PANEL)
+      expect(capsule).toBe(PANEL_BG)
     } finally {
       await harness.quit()
     }
@@ -161,7 +163,7 @@ describe('dashboard theme e2e (#50)', () => {
       const listeningOrb = await harness.dashboardEval<string>(
         `getComputedStyle(document.querySelector('.status-orb')).backgroundColor`,
       )
-      expect(listeningOrb).toBe(GRUVBOX_PURPLE)
+      expect(listeningOrb).toBe(APPLE_PURPLE)
 
       // Transcribing (#38): the STT window — blue orb, blue pill, never the
       // listening prompt.
@@ -170,7 +172,7 @@ describe('dashboard theme e2e (#50)', () => {
       const transcribingOrb = await harness.dashboardEval<string>(
         `getComputedStyle(document.querySelector('.status-orb')).backgroundColor`,
       )
-      expect(transcribingOrb).toBe(GRUVBOX_BLUE)
+      expect(transcribingOrb).toBe(APPLE_BLUE)
 
       // The run settles back to idle.
       await waitForPill(harness, 'Idle')
@@ -218,23 +220,23 @@ describe('dashboard theme e2e (#50)', () => {
   it('themes the feed panel overlay and the settings page', async () => {
     const harness = await startHarness({ fixture })
     try {
-      // The overlay panel floats on gruvbox light1 — translucent overlay
-      // mode reads as the same warm panel, not a dark scrim.
+      // The overlay panel floats near-opaque white (ADR 0012) —
+      // readability over the live page won; no dark scrim.
       await waitFor(
         async () => {
           const surface = await harness.overlayEval<string>(
             `getComputedStyle(document.querySelector('.feed-surface')).backgroundColor`,
           )
-          return surface.startsWith('rgba(235, 219, 178') ? surface : undefined
+          return surface.startsWith('rgba(255, 255, 255') ? surface : undefined
         },
         { timeoutMs: 20000, intervalMs: 250 },
       )
       const overlayTokens = await harness.overlayEval<Record<string, string>>(pageTokensScript)
       expect(overlayTokens.scheme).toBe('light')
       expect(overlayTokens.font).toContain('InterVariable')
-      expect(overlayTokens.rootSize).toBe('22px')
+      expect(overlayTokens.rootSize).toBe('17px')
 
-      // Settings: a gruvbox panel page.
+      // Settings: full-bleed canvas — no page card of its own.
       await harness.clickDashboardElement('.settings-toggle')
       await waitFor(
         () =>
@@ -246,7 +248,7 @@ describe('dashboard theme e2e (#50)', () => {
       const settingsPanel = await harness.dashboardEval<string>(
         `getComputedStyle(document.querySelector('.settings-page')).backgroundColor`,
       )
-      expect(settingsPanel).toBe(GRUVBOX_PANEL)
+      expect(settingsPanel).toBe('rgba(0, 0, 0, 0)')
     } finally {
       await harness.quit()
     }
@@ -257,7 +259,7 @@ describe('dashboard theme e2e (#50)', () => {
     try {
       expect(await idleHarness.dashboardEval<boolean>(`!!document.querySelector('.idle-screen')`)).toBe(true)
       const idleTokens = await idleHarness.dashboardEval<Record<string, string>>(pageTokensScript)
-      expect(idleTokens.bg).toBe(GRUVBOX_BG)
+      expect(idleTokens.bg).toBe(CANVAS_BG)
       expect(idleTokens.scheme).toBe('light')
       expect(idleTokens.font).toContain('InterVariable')
       const clockFont = await idleHarness.dashboardEval<string>(
@@ -279,10 +281,10 @@ describe('dashboard theme e2e (#50)', () => {
         { timeoutMs: 20000, intervalMs: 250 },
       )
       const kioskTokens = await kioskHarness.dashboardEval<Record<string, string>>(pageTokensScript)
-      expect(kioskTokens.bg).toBe(GRUVBOX_BG)
+      expect(kioskTokens.bg).toBe(CANVAS_BG)
       expect(kioskTokens.scheme).toBe('light')
       expect(kioskTokens.font).toContain('InterVariable')
-      expect(kioskTokens.rootSize).toBe('22px')
+      expect(kioskTokens.rootSize).toBe('17px')
     } finally {
       await kioskHarness.quit()
     }

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { BrowserPane } from './BrowserPane'
+import { BrowserNav, BrowserPane } from './BrowserPane'
 import { AssistantPanel, RunHint, StatusOrb, StatusPill } from './AssistantPanel'
 import { IdleScreen } from './IdleScreen'
 import { SettingsPage } from './SettingsPage'
@@ -88,54 +88,66 @@ export function App() {
 
   return (
     <div className={window.bingbong.app.kiosk ? 'dashboard dashboard--kiosk' : 'dashboard'}>
-      <header className="dashboard-header">
-        <StatusOrb status={status} />
-        {/* The state, named in text (#50): the pill reads from across the
-            room while the orb carries the color — both always still. */}
-        <StatusPill status={status} />
-        <h1>Bing Bong</h1>
-        {/* Run progress (#43) keeps its place even when the mic opens
-            mid-run — the climbing timer must never disappear behind a
-            listening hint, or a long round reads as frozen again. */}
-        {assistant.progress ? <RunHint progress={assistant.progress} /> : null}
-        {voice.transcribing ? (
-          <span className="voice-hint voice-hint--transcribing" role="status">
-            transcribing…
-          </span>
-        ) : voice.listening ? (
-          <span className="voice-hint" role="status">
-            {voice.reason === 'confirmation'
-              ? 'listening — yes or no?'
-              : voice.reason === 'ask'
-                ? 'listening — your answer'
-                : voice.reason === 'pause'
-                  ? 'paused — say resume or steer me'
-                  : 'listening — say a command'}
-          </span>
-        ) : voice.monitoring ? (
-          <span className="voice-hint voice-hint--monitoring" role="status">
-            say “bing bong” or press Ctrl+Space
-          </span>
-        ) : null}
-        <button
-          type="button"
-          className="chrome-button feed-panel-toggle"
-          aria-label={panel.open ? 'Collapse the activity feed' : 'Open the activity feed'}
-          aria-pressed={panel.open}
-          title="Activity feed (Ctrl+Shift+F)"
-          onClick={() => window.bingbong.feedPanel.toggle()}
-        >
-          ▤
-        </button>
-        <button
-          type="button"
-          className="chrome-button settings-toggle"
-          aria-label={view === 'settings' ? 'Back to dashboard' : 'Open settings'}
-          aria-pressed={view === 'settings'}
-          onClick={() => setView(view === 'settings' ? 'dashboard' : 'settings')}
-        >
-          ⚙
-        </button>
+      {/* The Toolbar (ADR 0012): the one reserved band above the pane —
+          never overlapping it — and the window's only drag region. Status
+          Capsule left, address field center, controls right; the app title
+          is gone. Interactive controls opt out of the drag region in CSS. */}
+      <header className="toolbar">
+        {/* The Status Capsule (ADR 0012): orb + pill + the live run/voice
+            hints collapsed into one control. The class hooks inside
+            (.status-orb--*, .status-pill, .voice-hint, .run-hint) are
+            load-bearing e2e observation points. */}
+        <div className="status-capsule">
+          <StatusOrb status={status} />
+          <StatusPill status={status} />
+          {/* Run progress (#43) keeps its place even when the mic opens
+              mid-run — the climbing timer must never disappear behind a
+              listening hint, or a long round reads as frozen again. */}
+          {assistant.progress ? <RunHint progress={assistant.progress} /> : null}
+          {voice.transcribing ? (
+            <span className="voice-hint voice-hint--transcribing" role="status">
+              transcribing…
+            </span>
+          ) : voice.listening ? (
+            <span className="voice-hint" role="status">
+              {voice.reason === 'confirmation'
+                ? 'listening — yes or no?'
+                : voice.reason === 'ask'
+                  ? 'listening — your answer'
+                  : voice.reason === 'pause'
+                    ? 'paused — say resume or steer me'
+                    : 'listening — say a command'}
+            </span>
+          ) : voice.monitoring ? (
+            <span className="voice-hint voice-hint--monitoring" role="status">
+              say “bing bong” or press Ctrl+Space
+            </span>
+          ) : null}
+        </div>
+        {/* The address field lives in the Toolbar only while browsing
+            (ADR 0012); settings keeps capsule + controls. */}
+        {view === 'dashboard' ? <BrowserNav /> : null}
+        <div className="toolbar-actions">
+          <button
+            type="button"
+            className="chrome-button feed-panel-toggle"
+            aria-label={panel.open ? 'Collapse the activity feed' : 'Open the activity feed'}
+            aria-pressed={panel.open}
+            title="Activity feed (Ctrl+Shift+F)"
+            onClick={() => window.bingbong.feedPanel.toggle()}
+          >
+            ▤
+          </button>
+          <button
+            type="button"
+            className="chrome-button settings-toggle"
+            aria-label={view === 'settings' ? 'Back to dashboard' : 'Open settings'}
+            aria-pressed={view === 'settings'}
+            onClick={() => setView(view === 'settings' ? 'dashboard' : 'settings')}
+          >
+            ⚙
+          </button>
+        </div>
       </header>
 
       <main className="dashboard-main">
@@ -171,9 +183,10 @@ export function App() {
         </div>
       </main>
 
-      {/* The footer carries only transient cards now — typed input lives
-          in the feed panel's prompt bar (ADR 0011) — so it renders only
-          while a card is pending and collapses away otherwise. */}
+      {/* Transient cards only — typed input lives in the feed panel's
+          prompt bar (ADR 0011), and the band renders only while a card is
+          pending. The card floats centered on canvas (ADR 0012); it cannot
+          overlay the native pane, so it keeps this in-flow band. */}
       {assistant.pendingConfirmation || assistant.pendingAsk ? (
         <footer className="dashboard-footer">
           <AssistantPanel assistant={assistant} />

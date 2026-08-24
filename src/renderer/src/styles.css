@@ -1,6 +1,11 @@
-/* Bing Bong dashboard skin (#50): gruvbox light (medium), bundled Inter,
-   calibrated for a 21-inch 1080p panel viewed from ~2 m. Hard light
-   switch — no dark mode, no toggle. Web content stays untouched. */
+/* Bing Bong dashboard skin (ADR 0012): neutral light — an Apple-product
+   surface language on canvas #f5f5f7, white surfaces, hairline edges,
+   Apple system status colors, bundled Inter (the SF Pro stand-in).
+   Type is calibrated for desk distance: 17px root (conversation ≈20px,
+   labels ≈15px, detail ≈14.5px) — the old 2 m couch calibration was a
+   false premise. Hard light switch — no dark mode, no toggle. Web content
+   stays untouched. Motion boundary: text never travels — containers
+   breathe (opacity/scale), indicators may move. */
 
 @font-face {
   font-family: 'InterVariable';
@@ -20,29 +25,30 @@
 
 :root {
   color-scheme: light;
-  /* Gruvbox light (medium) palette. */
-  --bg: #fbf1c7; /* light0 — the dashboard canvas */
-  --panel: #ebdbb2; /* light1 — raised surfaces */
-  --edge: #d5c4a1; /* light2 — hairlines on bg and panels */
-  --text: #3c3836; /* dark1 — foreground */
-  --muted: #a89984; /* light4 — quiet text */
-  --accent: #076678; /* neutral blue — focus, links, thinking */
-  /* Status semantics (#50): gruvbox neutral accents. blue = thinking and
-     transcribing, purple = listening and paused, yellow = acting and
+  /* Neutral light palette (ADR 0012). */
+  --bg: #f5f5f7; /* canvas */
+  --panel: #ffffff; /* raised surfaces */
+  --edge: #d2d2d7; /* hairlines on canvas and panels */
+  --bubble: #e9e9ee; /* your words, as fills */
+  --text: #1d1d1f; /* ink */
+  --muted: #6e6e73; /* quiet text */
+  --accent: #0071e3; /* focus, links, thinking */
+  /* Status semantics: Apple system colors. blue = thinking and
+     transcribing, purple = listening and paused, orange = acting and
      warnings, green = speaking and success, red = errors. */
-  --status-blue: #076678;
-  --status-purple: #8f3f71;
-  --status-yellow: #b57614;
-  --status-green: #427b58;
-  --status-red: #9d0006;
-  /* Markdown code surfaces (#56): the one deliberately dark element on
-     the light dashboard — dark1 surface, light1 text — so fenced blocks
-     read as blocks from across the room. */
-  --code-bg: #3c3836; /* dark1 */
-  --code-text: #ebdbb2; /* light1 */
-  /* The single calibration knob (#49): every rem size derives from it.
-     Root 22px; conversation 1.4rem (~31px), labels/timestamps 1.1rem,
-     tool detail 1rem. Nudge this one variable to re-calibrate. */
+  --status-blue: #0071e3;
+  --status-purple: #af52de;
+  --status-yellow: #ff9500;
+  --status-green: #34c759;
+  --status-red: #ff3b30;
+  /* Markdown code surfaces: the one deliberately dark element on the
+     light dashboard — ink surface, canvas text — so fenced blocks read
+     as blocks at a glance. */
+  --code-bg: #1d1d1f;
+  --code-text: #f5f5f7;
+  /* The single calibration knob: every rem size derives from it. Root
+     17px; conversation 1.2rem (~20px), labels 0.9rem (~15px), tool
+     detail 0.85rem (~14.5px). Nudge this one variable to re-calibrate. */
   --font-scale: 1;
 }
 
@@ -51,7 +57,7 @@
 }
 
 html {
-  font-size: calc(22px * var(--font-scale));
+  font-size: calc(17px * var(--font-scale));
 }
 
 html,
@@ -67,72 +73,106 @@ body {
   font-family: InterVariable, system-ui, sans-serif;
 }
 
+/* Full bleed (ADR 0012): no window padding, no workspace gap — the pane
+   and the toolbar own every edge. Kiosk is pixel-identical to windowed
+   (the dashboard--kiosk class survives only as an observable flag). */
 .dashboard {
   display: grid;
   grid-template-rows: auto 1fr auto;
   height: 100%;
-  padding: 28px;
-  gap: 28px;
 }
 
-.dashboard-header {
+/* The Toolbar (ADR 0012): the one reserved band above the pane, and the
+   window's only drag region — the OS title bar is hidden. Capsule left,
+   address cluster center, controls right. Interactive controls opt out
+   of dragging below. */
+.toolbar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+  padding: 8px 14px;
+  -webkit-app-region: drag;
+}
+
+.toolbar button,
+.toolbar input,
+.toolbar form {
+  -webkit-app-region: no-drag;
+}
+
+.toolbar-actions {
+  justify-self: end;
+  display: flex;
+  gap: 8px;
+}
+
+/* The Status Capsule (ADR 0012): orb + pill + the live run/voice hints
+   collapsed into one white pill on canvas. The hooks inside
+   (.status-orb--*, .status-pill, .voice-hint, .run-hint) are e2e
+   observation points and must survive any restyle. */
+.status-capsule {
+  justify-self: start;
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: 10px;
+  min-width: 0;
+  padding: 7px 16px;
+  border: 1px solid var(--edge);
+  border-radius: 999px;
+  background: var(--panel);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
 }
 
-.dashboard-header h1 {
-  font-size: 1.1rem;
-  font-weight: 650;
-  margin: 0;
-}
-
-/* Voice hints are quiet detail beside the state pill (#50): muted, still —
-   the pill and orb carry the state color, the hint carries instruction. */
+/* Voice hints are quiet detail inside the capsule: muted, still — the
+   capsule and orb carry the state color, the hint carries instruction. */
 .voice-hint {
-  font-size: 1.1rem;
+  font-size: 0.9rem;
   color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-/* The STT window hint (#38): still muted — the pill names "Transcribing…". */
 .voice-hint--transcribing {
   color: var(--muted);
 }
 
 /* The header's live run line (#43): stage + climbing elapsed. The climbing
-   number is the honest "still alive" signal — no pulse needed (#50). */
+   number is the honest "still alive" signal — no pulse needed. */
 .run-hint {
-  font-size: 1.1rem;
+  font-size: 0.9rem;
   color: var(--accent);
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
-/* A static colored dot (#50): state lives in color, named by the pill. */
+/* A static colored dot: state lives in color, named by the pill. */
 .status-orb {
-  width: 26px;
-  height: 26px;
+  width: 12px;
+  height: 12px;
   border-radius: 50%;
   background: var(--status-color, var(--muted));
   flex: none;
 }
 
-/* The status pill (#50): the state, named in text beside the still orb —
-   readable from across the room without any motion. */
+/* The status pill: the state, named in text beside the still orb. Inside
+   the capsule it drops its own chrome — the capsule is the pill now. */
 .status-pill {
   flex: none;
-  padding: 4px 16px;
-  border-radius: 999px;
-  font-size: 1.1rem;
+  font-size: 0.9rem;
   font-weight: 600;
   line-height: 1.4;
   color: var(--status-color, var(--muted));
-  border: 1px solid color-mix(in srgb, var(--status-color, var(--muted)) 45%, transparent);
-  background: color-mix(in srgb, var(--status-color, var(--muted)) 10%, transparent);
+  border: none;
+  background: none;
+  padding: 0;
+  white-space: nowrap;
 }
 
-/* One color table per state (#50), shared by the orb and the pill: blue
-   thinks and transcribes, purple listens and pauses, yellow acts, green
-   speaks, red stops — idle stays muted. */
+/* One color table per state, shared by the orb and the pill: blue thinks
+   and transcribes, purple listens and pauses, orange acts, green speaks,
+   red stops — idle stays muted. */
 .status-orb--thinking,
 .status-pill--thinking,
 .status-orb--transcribing,
@@ -163,22 +203,22 @@ body {
 }
 
 .status-orb--paused {
-  box-shadow: 0 0 0 4px rgba(143, 63, 113, 0.16);
+  box-shadow: 0 0 0 4px rgba(175, 82, 222, 0.16);
 }
 
 .dashboard-main {
   min-height: 0;
 }
 
-/* The workspace (#44): browsing (or settings) beside the feed panel's
-   layout slot. The panel itself renders in a native overlay view (#45);
-   the slot reports its rect — overlay mode floats out-of-flow above the
-   browsing area (no layout reflow beneath), docked mode takes real layout
-   space, and the collapsed state is a slim edge tab. */
+/* The workspace: browsing (or settings) beside the feed panel's layout
+   slot, full bleed. The panel itself renders in a native overlay view
+   (ADR 0004); the slot reports its rect — overlay mode floats out-of-flow
+   above the browsing area (no layout reflow beneath), docked mode takes
+   real layout space flush against the pane, and the collapsed state is a
+   slim edge tab. */
 .dashboard-workspace {
   position: relative;
   display: flex;
-  gap: 28px;
   height: 100%;
   min-height: 0;
 }
@@ -191,10 +231,10 @@ body {
 }
 
 /* A pure rect reporter: the native overlay view fills it; it never takes
-   input, and only docked mode lets it take layout space. The width (#65)
-   comes from the folded panel state as a var; the fold owns the spec's
-   bound (min 320 / max 75% of the window) and this live clamp re-bounds
-   the slot against the workspace (the containing block) when the window
+   input, and only docked mode lets it take layout space. The width comes
+   from the folded panel state as a var; the fold owns the spec's bound
+   (min 320 / max 75% of the window) and this live clamp re-bounds the
+   slot against the workspace (the containing block) when the window
    shrinks, without discarding the persisted width. */
 .feed-slot {
   pointer-events: none;
@@ -236,7 +276,7 @@ body {
   flex: none;
   padding: 12px 18px;
   border-bottom: 1px solid var(--edge);
-  font-size: 1rem;
+  font-size: 0.8rem;
   font-weight: 650;
   text-transform: uppercase;
   letter-spacing: 0.08em;
@@ -250,7 +290,7 @@ body {
   display: flex;
   flex-direction: column;
   gap: 10px;
-  padding: 14px 18px;
+  padding: 14px 16px;
 }
 
 .feed-empty {
@@ -259,13 +299,21 @@ body {
   font-style: italic;
 }
 
+/* Motion boundary (ADR 0012): a new entry fades in where it lands —
+   opacity only, never translation. Text never travels. */
 .feed-entry {
   display: flex;
   gap: 12px;
   margin: 0;
-  line-height: 1.4;
-  /* Left by default (#54); user rows flip the row rightward below. */
+  line-height: 1.45;
   justify-content: flex-start;
+  animation: feed-entry-in 160ms ease;
+}
+
+@keyframes feed-entry-in {
+  from {
+    opacity: 0;
+  }
 }
 
 .feed-entry summary {
@@ -278,7 +326,7 @@ body {
   flex: none;
   color: var(--muted);
   opacity: 0.7;
-  font-size: 1.1rem;
+  font-size: 0.85rem;
   font-variant-numeric: tabular-nums;
   padding-top: 2px;
 }
@@ -293,12 +341,11 @@ body {
   margin-right: 8px;
 }
 
-/* Conversation separation (#54): the feed reads as a chat between two
-   voices — your words right-aligned in muted bubbles (gruvbox light2),
-   Bing Bong's answers as left-aligned railed cards (light0 raised, with
-   the speaking-green rail). System detail keeps the plain tier below.
-   Bubbles and cards span the full panel (#65): the widened panel exists
-   to buy readable lines, so neither caps at a chat-app fraction. */
+/* Conversation separation: the feed reads as a chat between two voices —
+   your words right-aligned in gray fills, Bing Bong's answers as
+   left-aligned white cards with the speaking-green rail. System detail
+   keeps the plain tier below. Bubbles and cards span the full panel: the
+   widened panel exists to buy readable lines. */
 .feed-entry--user {
   justify-content: flex-end;
 }
@@ -306,48 +353,50 @@ body {
 .feed-bubble {
   min-width: 0;
   max-width: 100%;
-  background: var(--edge);
-  border-radius: 18px 18px 4px 18px;
+  background: var(--bubble);
+  border-radius: 18px 18px 5px 18px;
   padding: 6px 16px;
 }
 
 /* Inside a bubble, every user line — command or heard words — reads as
-   your voice at conversation size (#54). The extra class keeps this rule
+   your voice at conversation size. The extra class keeps this rule
    winning over the later per-kind tiers (e.g. voice's muted detail). */
 .feed-entry--user .feed-bubble .feed-text {
   color: var(--text);
-  font-size: 1.4rem;
+  font-size: 1.2rem;
 }
 
 .feed-card {
   min-width: 0;
   max-width: 100%;
-  background: var(--bg);
-  border-left: 5px solid var(--status-green);
-  border-radius: 4px 14px 14px 4px;
+  background: var(--panel);
+  border: 1px solid var(--edge);
+  border-left: 4px solid var(--status-green);
+  border-radius: 5px 16px 16px 5px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
   padding: 10px 16px;
 }
 
-/* Conversation tier (#49): your words and Bing Bong's read at 1.4rem. */
+/* Conversation tier: your words and Bing Bong's read at 1.2rem (~20px). */
 .feed-entry--command .feed-text {
   color: var(--text);
-  font-size: 1.4rem;
+  font-size: 1.2rem;
 }
 
 .feed-entry--command .feed-speaker {
   color: var(--accent);
 }
 
-/* Tool detail tier (#49): monospaced quiet lines at 1rem. */
+/* Tool detail tier: monospaced quiet lines. */
 .feed-entry--tool .feed-text {
   color: var(--muted);
   font-family: ui-monospace, monospace;
-  font-size: 1rem;
+  font-size: 0.85rem;
 }
 
 .feed-entry--speak .feed-text {
   color: var(--text);
-  font-size: 1.4rem;
+  font-size: 1.2rem;
 }
 
 .feed-entry--speak .feed-speaker {
@@ -356,26 +405,26 @@ body {
 
 .feed-entry--display .feed-text {
   color: var(--text);
-  font-size: 1.4rem;
+  font-size: 1.2rem;
 }
 
 .feed-entry--voice .feed-text {
   color: var(--muted);
-  font-size: 1.1rem;
+  font-size: 0.9rem;
 }
 
-/* Retry lines (#44): ephemeral detail — quiet, so outcomes read first. */
+/* Retry lines: ephemeral detail — quiet, so outcomes read first. */
 .feed-entry--retry .feed-text {
   color: var(--muted);
-  font-size: 1rem;
+  font-size: 0.85rem;
   font-style: italic;
 }
 
-/* Steer echoes (#46): your directive, received and pending — quiet like
-   retry detail, but accented so it never reads as the model's words. */
+/* Steer echoes: your directive, received and pending — quiet like retry
+   detail, but accented so it never reads as the model's words. */
 .feed-entry--steer .feed-text {
   color: var(--muted);
-  font-size: 1rem;
+  font-size: 0.85rem;
   font-style: italic;
 }
 
@@ -383,37 +432,37 @@ body {
   color: var(--accent);
 }
 
-/* Streamed answer text (#47): the growing partial — real answer words at
+/* Streamed answer text: the growing partial — real answer words at
    conversation size; the final display entry replaces the run. */
 .feed-entry--answer_stream .feed-text {
   color: var(--text);
-  font-size: 1.4rem;
+  font-size: 1.2rem;
 }
 
-/* Reasoning traces (#47): dimmed bonus direction — present only when the
+/* Reasoning traces: dimmed bonus direction — present only when the
    provider emits reasoning_content, absent otherwise. */
 .feed-entry--reasoning .feed-text {
   color: var(--muted);
-  font-size: 1rem;
+  font-size: 0.85rem;
   font-style: italic;
   opacity: 0.75;
 }
 
-/* Tool-call intent (#48): what is about to happen, while the arguments
-   still stream — dim like reasoning (pre-execution direction), upright so
-   it reads as an action, not a thought. */
+/* Tool-call intent: what is about to happen, while the arguments still
+   stream — dim like reasoning (pre-execution direction), upright so it
+   reads as an action, not a thought. */
 .feed-entry--intent .feed-text {
   color: var(--muted);
-  font-size: 1rem;
+  font-size: 0.85rem;
   opacity: 0.85;
 }
 
-/* Stage entries (#42 story 17): the run's phase markers — the quietest
-   lines in the feed, since the header hint already narrates the live
-   stage; these lines exist for reconstructing timings afterwards. */
+/* Stage entries: the run's phase markers — the quietest lines in the
+   feed, since the capsule hint already narrates the live stage; these
+   lines exist for reconstructing timings afterwards. */
 .feed-entry--stage .feed-text {
   color: var(--muted);
-  font-size: 1rem;
+  font-size: 0.85rem;
   font-style: italic;
   opacity: 0.6;
 }
@@ -422,11 +471,11 @@ body {
   color: var(--status-red);
 }
 
-/* Markdown answers (#56): structured rendering inside the railed answer
-   cards — display entries and the live stream. Prose stays conversation
-   size (inherited from .feed-text); code blocks take the gruvbox dark
-   treatment (dark1 surface, light1 text) so they read as blocks from
-   across the room; links carry the accent and navigate the main pane. */
+/* Markdown answers: structured rendering inside the railed answer cards —
+   display entries and the live stream. Prose stays conversation size
+   (inherited from .feed-text); code blocks take the dark treatment (ink
+   surface, canvas text) so they read as blocks; links carry the accent
+   and navigate the main pane. */
 .feed-markdown > :first-child {
   margin-top: 0;
 }
@@ -451,21 +500,21 @@ body {
 }
 
 .feed-markdown h1 {
-  font-size: 1.8rem;
+  font-size: 1.5rem;
 }
 
 .feed-markdown h2 {
-  font-size: 1.65rem;
+  font-size: 1.35rem;
 }
 
 .feed-markdown h3 {
-  font-size: 1.5rem;
+  font-size: 1.25rem;
 }
 
 .feed-markdown h4,
 .feed-markdown h5,
 .feed-markdown h6 {
-  font-size: 1.4rem;
+  font-size: 1.15rem;
 }
 
 .feed-markdown ul,
@@ -503,20 +552,20 @@ body {
 .feed-markdown :not(pre) > code {
   padding: 0 8px;
   border-radius: 8px;
-  background: var(--panel);
+  background: var(--bg);
   border: 1px solid var(--edge);
   font-family: ui-monospace, monospace;
-  font-size: 1.15rem;
+  font-size: 0.9rem;
 }
 
-/* Fenced code blocks: the gruvbox dark surface — dark1 with light1 text,
-   the one deliberately dark element on the light dashboard, so code reads
-   as a block. Code wraps (#65): a glanceable panel must never hide lines
-   off its right edge, so no horizontal scroll — long tokens break. */
+/* Fenced code blocks: the dark surface — ink with canvas text, the one
+   deliberately dark element on the light dashboard, so code reads as a
+   block. Code wraps: a glanceable panel must never hide lines off its
+   right edge, so no horizontal scroll — long tokens break. */
 .feed-markdown pre {
   margin: 0 0 0.6em;
-  padding: 14px 16px;
-  border-radius: 10px;
+  padding: 12px 14px;
+  border-radius: 12px;
   background: var(--code-bg);
   color: var(--code-text);
   white-space: pre-wrap;
@@ -525,14 +574,14 @@ body {
 
 .feed-markdown pre code {
   font-family: ui-monospace, monospace;
-  font-size: 1.1rem;
+  font-size: 0.85rem;
   line-height: 1.45;
   background: none;
   border: none;
   padding: 0;
 }
 
-/* Links in answers (#56): accent blue, honestly underlined — one click
+/* Links in answers: accent blue, honestly underlined — one click
    navigates the main pane (the renderer intercepts the click). */
 .feed-markdown .feed-link {
   color: var(--accent);
@@ -545,7 +594,7 @@ body {
   color: var(--status-green);
 }
 
-/* Per-run details expander (#55): run noise — tool lines, tool results,
+/* Per-run details expander: run noise — tool lines, tool results,
    intents, reasoning runs, stage markers, retries, steer echoes — folds
    under one quiet section per run, collapsed by default and auto-open
    while the run is live. The grouped lines keep their plain tiers above;
@@ -553,7 +602,7 @@ body {
 .feed-run {
   border-left: 3px solid var(--edge);
   border-radius: 4px;
-  background: color-mix(in srgb, var(--panel) 55%, transparent);
+  background: color-mix(in srgb, var(--panel) 60%, transparent);
   padding: 4px 10px;
 }
 
@@ -563,7 +612,7 @@ body {
   gap: 10px;
   cursor: pointer;
   color: var(--muted);
-  font-size: 1.1rem;
+  font-size: 0.9rem;
   user-select: none;
   list-style: none;
 }
@@ -575,7 +624,7 @@ body {
 /* The fold marker: a quiet triangle that turns with the section. */
 .feed-run-summary::before {
   content: '▸';
-  font-size: 0.9rem;
+  font-size: 0.8rem;
   transition: rotate 120ms ease;
 }
 
@@ -595,7 +644,7 @@ body {
 }
 
 .feed-run-count {
-  font-size: 1rem;
+  font-size: 0.85rem;
   font-variant-numeric: tabular-nums;
   opacity: 0.7;
 }
@@ -611,43 +660,38 @@ body {
   margin: 6px 0 0;
   padding: 8px 12px;
   border-left: 2px solid var(--status-red);
+  border-radius: 0 8px 8px 0;
   white-space: pre-wrap;
   word-break: break-word;
   font-family: ui-monospace, monospace;
-  font-size: 1rem;
+  font-size: 0.85rem;
   color: var(--muted);
 }
 
-.browser-pane {
-  display: flex;
-  flex-direction: column;
-  height: 100%;
-  border: 1px solid var(--edge);
-  border-radius: 16px;
-  overflow: hidden;
-  background: var(--panel);
-}
-
-.browser-chrome {
-  position: relative;
+/* The Toolbar's browsing cluster (ADR 0012): back/forward and the pill
+   address field, centered. The .chrome-button/.url-input/.chrome-loading
+   hooks predate the restyle and stay as e2e observation points. */
+.browser-nav {
+  justify-self: center;
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 10px 12px;
-  background: var(--panel);
-  border-bottom: 1px solid var(--edge);
+  gap: 8px;
+  min-width: 0;
 }
 
 .chrome-button {
-  width: 44px;
-  height: 44px;
-  border: 1px solid var(--edge);
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: none;
   border-radius: 10px;
   background: transparent;
   color: var(--text);
-  font-size: 1.1rem;
+  font-size: 1rem;
+  line-height: 1;
   cursor: pointer;
   flex: none;
+  transition: background 120ms ease;
 }
 
 .chrome-button:disabled {
@@ -657,38 +701,50 @@ body {
 }
 
 .chrome-button:not(:disabled):hover {
-  background: var(--edge);
+  background: color-mix(in srgb, var(--text) 8%, transparent);
 }
 
 .url-form {
-  flex: 1;
+  flex: 0 1 auto;
+  width: min(480px, 38vw);
   min-width: 0;
 }
 
 .url-input {
   width: 100%;
-  height: 44px;
-  padding: 0 16px;
+  height: 34px;
+  padding: 0 18px;
   border: 1px solid var(--edge);
-  border-radius: 22px;
-  background: var(--bg);
+  border-radius: 17px;
+  background: var(--panel);
   color: var(--text);
-  font-size: 1.1rem;
+  font-size: 0.9rem;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
 }
 
 .url-input:focus {
   outline: none;
   border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(0, 113, 227, 0.15);
 }
 
-/* The loading indicator (#50): a quiet text spinner in the chrome — calm
-   braille frames, no sliding bar, no motion styling. */
+/* The loading indicator: a quiet text spinner in the toolbar — calm
+   braille frames, no sliding bar. */
 .chrome-loading {
   flex: none;
   color: var(--accent);
-  font-size: 1.1rem;
+  font-size: 0.9rem;
   line-height: 1;
   padding: 0 4px;
+}
+
+/* The browsing pane (ADR 0012): full bleed — edge to edge, no card. The
+   native pane view fills the viewport div; its rect drives the bounds. */
+.browser-pane {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
 }
 
 .browser-viewport {
@@ -697,11 +753,14 @@ body {
   background: var(--panel);
 }
 
+/* Transient cards (ADR 0012): a single centered floating card on canvas
+   — white, rounded, shadowed. Renderer DOM cannot float above the native
+   pane, so the band keeps its in-flow place below it. Containers breathe
+   in (opacity + scale, never translation). */
 .dashboard-footer {
-  border-top: 1px solid var(--edge);
-  padding-top: 16px;
-  color: var(--muted);
-  font-size: 1.1rem;
+  display: flex;
+  justify-content: center;
+  padding: 14px 16px 16px;
 }
 
 .assistant-panel {
@@ -709,29 +768,49 @@ body {
   flex-direction: column;
   gap: 12px;
   min-height: 0;
+  width: 100%;
+  max-width: 760px;
 }
 
-.confirmation-card {
+.confirmation-card,
+.ask-card {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 16px;
   flex: none;
-  padding: 12px 18px;
-  border: 1px solid var(--status-yellow);
-  border-radius: 12px;
-  background: rgba(181, 118, 20, 0.08);
+  padding: 14px 20px;
+  border: 1px solid var(--edge);
+  border-radius: 16px;
+  background: var(--panel);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.1);
+  animation: card-in 200ms ease;
+}
+
+@keyframes card-in {
+  from {
+    opacity: 0;
+    scale: 0.98;
+  }
+}
+
+.confirmation-card {
+  border-color: color-mix(in srgb, var(--status-yellow) 45%, var(--edge));
+}
+
+.ask-card {
+  border-color: color-mix(in srgb, var(--accent) 40%, var(--edge));
 }
 
 .confirmation-prompt {
   color: var(--text);
-  font-size: 1.4rem;
+  font-size: 1.2rem;
 }
 
 .confirmation-countdown {
   color: var(--muted);
   font-variant-numeric: tabular-nums;
-  font-size: 1.1rem;
+  font-size: 0.9rem;
   flex: none;
 }
 
@@ -742,36 +821,25 @@ body {
 }
 
 .confirmation-actions button {
-  height: 44px;
-  padding: 0 16px;
+  height: 36px;
+  padding: 0 18px;
   border: 1px solid var(--edge);
-  border-radius: 10px;
+  border-radius: 999px;
   background: transparent;
   color: var(--text);
-  font-size: 1.1rem;
+  font-size: 0.9rem;
   cursor: pointer;
+  transition: background 120ms ease;
 }
 
 .confirmation-actions button:hover {
-  background: var(--edge);
-}
-
-.ask-card {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  flex: none;
-  padding: 12px 18px;
-  border: 1px solid var(--accent);
-  border-radius: 12px;
-  background: rgba(7, 102, 120, 0.08);
+  background: color-mix(in srgb, var(--text) 6%, transparent);
 }
 
 .ask-question {
   color: var(--text);
   flex: 1;
-  font-size: 1.4rem;
+  font-size: 1.2rem;
 }
 
 .ask-controls {
@@ -782,29 +850,30 @@ body {
 }
 
 .ask-input {
-  height: 44px;
+  height: 36px;
   width: 300px;
-  padding: 0 14px;
+  padding: 0 16px;
   border: 1px solid var(--edge);
-  border-radius: 10px;
-  background: transparent;
+  border-radius: 999px;
+  background: var(--bg);
   color: var(--text);
-  font-size: 1.1rem;
+  font-size: 0.9rem;
 }
 
 .ask-controls button {
-  height: 44px;
-  padding: 0 16px;
+  height: 36px;
+  padding: 0 18px;
   border: 1px solid var(--edge);
-  border-radius: 10px;
+  border-radius: 999px;
   background: transparent;
   color: var(--text);
-  font-size: 1.1rem;
+  font-size: 0.9rem;
   cursor: pointer;
+  transition: background 120ms ease;
 }
 
 .ask-controls button:hover:not(:disabled) {
-  background: var(--edge);
+  background: color-mix(in srgb, var(--text) 6%, transparent);
 }
 
 .ask-controls button:disabled {
@@ -812,22 +881,17 @@ body {
   cursor: default;
 }
 
-.settings-toggle {
-  margin-left: auto;
-}
-
 .settings-toggle[aria-pressed='true'] {
-  background: var(--edge);
+  background: color-mix(in srgb, var(--text) 8%, transparent);
 }
 
+/* Settings (ADR 0012): full-bleed canvas with white grouped sections —
+   no page card. */
 .settings-page {
   display: flex;
   flex-direction: column;
   height: 100%;
   min-height: 0;
-  border: 1px solid var(--edge);
-  border-radius: 16px;
-  background: var(--panel);
   overflow: hidden;
 }
 
@@ -835,15 +899,25 @@ body {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding: 24px 32px;
+  padding: 28px 36px;
   display: flex;
   flex-direction: column;
-  gap: 32px;
+  gap: 24px;
+  max-width: 980px;
+  width: 100%;
+  margin: 0 auto;
+}
+
+.settings-section {
+  background: var(--panel);
+  border: 1px solid var(--edge);
+  border-radius: 16px;
+  padding: 20px 24px;
 }
 
 .settings-section h2 {
   margin: 0 0 12px;
-  font-size: 1.1rem;
+  font-size: 0.95rem;
   font-weight: 650;
 }
 
@@ -857,19 +931,19 @@ body {
 
 .settings-label {
   color: var(--muted);
-  font-size: 1.1rem;
+  font-size: 0.9rem;
 }
 
 .settings-field input[type='text'],
 .settings-field input[type='password'],
 .settings-field select {
-  height: 44px;
+  height: 36px;
   padding: 0 12px;
   border: 1px solid var(--edge);
   border-radius: 10px;
   background: var(--bg);
   color: var(--text);
-  font-size: 1.1rem;
+  font-size: 0.9rem;
   max-width: 520px;
 }
 
@@ -878,15 +952,15 @@ body {
 }
 
 .settings-field input[type='checkbox'] {
-  width: 22px;
-  height: 22px;
+  width: 18px;
+  height: 18px;
   accent-color: var(--accent);
 }
 
 .settings-note {
   margin: 0 0 12px;
   color: var(--muted);
-  font-size: 1rem;
+  font-size: 0.85rem;
 }
 
 .settings-field input:focus,
@@ -905,14 +979,14 @@ body {
 .settings-role legend {
   padding: 0 8px;
   color: var(--muted);
-  font-size: 1.1rem;
+  font-size: 0.9rem;
 }
 
-/* Routing status line (#76): green when the role resolves through the same
-   env the pipeline reads; red names the outage a `look` call would hit. */
+/* Routing status line: green when the role resolves through the same env
+   the pipeline reads; red names the outage a `look` call would hit. */
 .settings-role-status {
   margin: 0 0 12px;
-  font-size: 0.95rem;
+  font-size: 0.85rem;
   color: var(--status-green);
 }
 
@@ -924,32 +998,43 @@ body {
   display: flex;
   align-items: center;
   gap: 16px;
-  padding: 14px 32px;
-  border-top: 1px solid var(--edge);
+  padding: 14px 36px;
+  max-width: 980px;
+  width: 100%;
+  margin: 0 auto;
 }
 
 .settings-status {
   flex: 1;
   color: var(--status-green);
-  font-size: 1.1rem;
+  font-size: 0.9rem;
 }
 
 .settings-button {
-  height: 44px;
-  padding: 0 18px;
+  height: 36px;
+  padding: 0 20px;
   border: 1px solid var(--edge);
-  border-radius: 10px;
+  border-radius: 999px;
   background: transparent;
   color: var(--text);
-  font-size: 1.1rem;
+  font-size: 0.9rem;
   cursor: pointer;
+  transition: background 120ms ease;
 }
 
 .settings-button--primary {
   background: var(--accent);
   border-color: var(--accent);
-  color: var(--bg);
-  font-weight: 650;
+  color: #fff;
+  font-weight: 600;
+}
+
+.settings-button:not(:disabled):hover {
+  background: color-mix(in srgb, var(--text) 6%, transparent);
+}
+
+.settings-button--primary:not(:disabled):hover {
+  background: color-mix(in srgb, var(--accent) 88%, #000);
 }
 
 .settings-button:disabled {
@@ -960,15 +1045,28 @@ body {
 .settings-loading {
   color: var(--muted);
   font-style: italic;
+  padding: 28px 36px;
 }
 
+/* The idle screen: the smart-display half of the appliance. The top drag
+   strip keeps the window movable while the Toolbar is unmounted. */
 .idle-screen {
+  position: relative;
   display: flex;
   flex-direction: column;
   justify-content: space-between;
   height: 100%;
   padding: 64px;
   gap: 48px;
+}
+
+.idle-drag-strip {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 28px;
+  -webkit-app-region: drag;
 }
 
 .idle-screen-top {
@@ -981,7 +1079,7 @@ body {
 
 .idle-clock {
   margin: 0;
-  font-size: clamp(4rem, 16vw, 9rem);
+  font-size: clamp(4rem, 15vw, 8.5rem);
   font-weight: 200;
   font-variant-numeric: tabular-nums;
   line-height: 1;
@@ -989,31 +1087,18 @@ body {
 
 .idle-date {
   margin: 0;
-  font-size: 1.4rem;
+  font-size: 1.2rem;
   color: var(--muted);
 }
 
 .idle-weather {
   margin: 16px 0 0;
-  font-size: 1.4rem;
+  font-size: 1.2rem;
   color: var(--text);
 }
 
-/* Kiosk: the browser pane is the appliance's main surface — chrome and the
-   assistant panel shrink to give it the window. The panel width needs no
-   kiosk rule: its default (#65) ships narrower (800px) through the same
-   folded-state var every other surface reads. */
-.dashboard--kiosk {
-  padding: 12px;
-  gap: 12px;
-}
-
-.dashboard--kiosk .dashboard-header h1 {
-  display: none;
-}
-
-/* Subagents (T12): live cards above the browser pane — one per agent, with
-   tab viewports whose rects drive the window's WebContentsViews. */
+/* Subagents: live cards above the browser pane — one per agent, with tab
+   viewports whose rects drive the window's WebContentsViews. */
 .dashboard-browsing {
   display: flex;
   flex-direction: column;
@@ -1038,7 +1123,9 @@ body {
   border: 1px solid var(--edge);
   border-radius: 16px;
   background: var(--panel);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
   overflow: hidden;
+  animation: card-in 200ms ease;
 }
 
 .subagent-card-header {
@@ -1047,7 +1134,7 @@ body {
   gap: 12px;
   padding: 10px 16px;
   border-bottom: 1px solid var(--edge);
-  font-size: 1rem;
+  font-size: 0.85rem;
 }
 
 .subagent-card-id {
@@ -1072,14 +1159,14 @@ body {
 .subagent-reopen {
   width: auto;
   padding: 0 14px;
-  font-size: 1rem;
-  height: 36px;
+  font-size: 0.85rem;
+  height: 30px;
 }
 
 .subagent-card-task {
   margin: 0;
   padding: 10px 16px;
-  font-size: 1.1rem;
+  font-size: 0.9rem;
   color: var(--text);
   border-bottom: 1px solid var(--edge);
   overflow: hidden;
@@ -1087,9 +1174,9 @@ body {
   white-space: nowrap;
 }
 
-/* The captured page preview (#57): frames arrive at the card's aspect
-   ratio (the desktop viewport they were captured at), so the box reserves
-   its shape before the first frame lands — but capped, so a rail of cards
+/* The captured page preview: frames arrive at the card's aspect ratio
+   (the desktop viewport they were captured at), so the box reserves its
+   shape before the first frame lands — but capped, so a rail of cards
    never starves the main browsing area a reopened pane moves into. */
 .subagent-thumbnail-frame {
   aspect-ratio: 1280 / 800;
@@ -1109,7 +1196,7 @@ body {
 .subagent-card-error {
   margin: 0;
   padding: 10px 16px;
-  font-size: 1rem;
+  font-size: 0.85rem;
   color: var(--muted);
   overflow-wrap: anywhere;
 }
@@ -1118,7 +1205,7 @@ body {
 
 .subagent-card-result summary {
   padding: 6px 16px;
-  font-size: 1rem;
+  font-size: 0.85rem;
   color: var(--accent);
   cursor: pointer;
 }
@@ -1126,7 +1213,7 @@ body {
 .subagent-card-result pre {
   margin: 0;
   padding: 0 16px 12px;
-  font-size: 1rem;
+  font-size: 0.85rem;
   color: var(--text);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
@@ -1137,7 +1224,7 @@ body {
 /* Settings: today's warn-only spend estimate. */
 .settings-usage {
   margin: 0 0 8px;
-  font-size: 1.1rem;
+  font-size: 0.9rem;
   color: var(--text);
 }
 
@@ -1148,9 +1235,6 @@ body {
 
 .settings-usage-detail {
   margin: 0;
-  font-size: 1rem;
+  font-size: 0.85rem;
   color: var(--muted);
 }
-
-/* Kiosk: cards shrink a row shorter so browsing stays the main surface. */
-.dashboard--kiosk .subagent-card { flex-basis: 360px; }

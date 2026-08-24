@@ -1,7 +1,9 @@
-/* The feed panel overlay's own page (#45): a transparent WebContentsView
-   above the browser pane hosts this document. Only this entry loads these
-   rules — the dashboard keeps its own layout in styles.css. Re-themed
-   gruvbox light alongside every other surface (#50). */
+/* The feed panel overlay's own page (ADR 0004): a transparent
+   WebContentsView above the browser pane hosts this document. Only this
+   entry loads these rules — the dashboard keeps its own layout in
+   styles.css. Re-skinned neutral light (ADR 0012): the surface ships
+   near-opaque white (0.97) — true frost is impossible across native view
+   boundaries, and readability over the live page won. */
 
 html,
 body,
@@ -34,14 +36,15 @@ body,
   display: none;
 }
 
-/* The panel surface paints at the folded width (#65), right-anchored:
-   in steady state the view bounds equal that width, so min(100%, var)
+/* The panel surface paints at the folded width, right-anchored: in
+   steady state the view bounds equal that width, so min(100%, var)
    changes nothing — but during a resize drag main cloaks the view wider
    (window-left to panel-right) so the pointer never leaves it, and the
    surface must stay exactly where it was. Overlay mode floats above the
-   live page: a translucent gruvbox panel, rounded on the window-facing
-   edge, so the browsing beneath stays readable — a light scrim, never a
-   dark one (#50). */
+   live page flush against the window's right edge (ADR 0012): near-opaque
+   white with a whisper of depth, rounded on the window-facing edge —
+   visually identical to docked; the difference is what happens to the
+   page beneath (covered vs narrowed), never the skin. */
 .feed-surface {
   position: relative;
   display: flex;
@@ -52,25 +55,26 @@ body,
   align-self: flex-end;
   flex: none;
   border: 1px solid var(--edge);
+  border-right: none;
+  border-radius: 16px 0 0 16px;
   overflow: hidden;
 }
 
 .feed-surface--overlay {
-  background: rgba(235, 219, 178, 0.85);
-  border-radius: 16px 0 0 16px;
-  border-right: none;
-  box-shadow: -8px 0 24px rgba(60, 56, 54, 0.18);
+  background: rgba(255, 255, 255, 0.97);
+  box-shadow: -12px 0 32px rgba(0, 0, 0, 0.12);
 }
 
-/* Docked mode takes real layout space beside the pane — a solid surface. */
+/* Docked mode takes real layout space beside the pane — solid white,
+   same flush-right geometry. */
 .feed-surface--docked {
   background: var(--panel);
-  border-radius: 16px;
+  box-shadow: -12px 0 32px rgba(0, 0, 0, 0.08);
 }
 
-/* The drag-resize grip (#65): a slim col-resize strip on the surface's
-   left edge. Invisible until hovered/dragged, full height, above the
-   feed's own scrolling — the drag is the panel's only resize affordance. */
+/* The drag-resize grip: a slim col-resize strip on the surface's left
+   edge. Invisible until hovered/dragged, full height, above the feed's
+   own scrolling — the drag is the panel's only resize affordance. */
 .feed-resize-handle {
   position: absolute;
   left: 0;
@@ -123,21 +127,22 @@ body,
 
 .feed-header-button {
   flex: none;
-  width: 32px;
-  height: 32px;
+  width: 30px;
+  height: 30px;
   padding: 0;
-  border: 1px solid var(--edge);
-  border-radius: 8px;
+  border: none;
+  border-radius: 999px;
   background: transparent;
   color: var(--muted);
-  font-size: 1rem;
+  font-size: 0.9rem;
   line-height: 1;
   cursor: pointer;
+  transition: background 120ms ease;
 }
 
 .feed-header-button:hover {
   color: var(--text);
-  border-color: var(--muted);
+  background: color-mix(in srgb, var(--text) 8%, transparent);
 }
 
 /* The prompt bar: the panel's footer and the one typed-input surface.
@@ -146,48 +151,50 @@ body,
 .prompt-row {
   flex: none;
   display: flex;
-  gap: 10px;
-  padding: 12px 18px;
+  gap: 8px;
+  padding: 12px 16px;
   border-top: 1px solid var(--edge);
 }
 
 .prompt-form {
   flex: 1;
   display: flex;
-  gap: 10px;
+  gap: 8px;
   min-width: 0;
 }
 
 .prompt-input {
   flex: 1;
   min-width: 0;
-  padding: 8px 14px;
+  padding: 8px 16px;
   border: 1px solid var(--edge);
-  border-radius: 10px;
+  border-radius: 999px;
   background: var(--bg);
   color: var(--text);
-  font-size: 1.1rem;
+  font-size: 0.95rem;
 }
 
 .prompt-input:focus {
   outline: none;
   border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(0, 113, 227, 0.15);
 }
 
 .prompt-verb {
   flex: none;
-  padding: 8px 14px;
+  padding: 8px 16px;
   border: 1px solid var(--edge);
-  border-radius: 10px;
+  border-radius: 999px;
   background: transparent;
   color: var(--muted);
-  font-size: 1.1rem;
+  font-size: 0.9rem;
   cursor: pointer;
+  transition: background 120ms ease, color 120ms ease;
 }
 
 .prompt-verb:not(:disabled):hover {
   color: var(--text);
-  border-color: var(--muted);
+  background: color-mix(in srgb, var(--text) 6%, transparent);
 }
 
 .prompt-verb:disabled {
@@ -199,19 +206,20 @@ body,
   flex: none;
   min-width: 64px;
   border: 1px solid var(--status-red);
-  border-radius: 10px;
-  background: rgba(157, 0, 6, 0.1);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--status-red) 8%, transparent);
   color: var(--status-red);
-  font-size: 1.1rem;
+  font-size: 0.9rem;
   font-weight: 650;
   cursor: pointer;
+  transition: background 120ms ease;
 }
 
 .panel-stop:hover {
-  background: rgba(157, 0, 6, 0.18);
+  background: color-mix(in srgb, var(--status-red) 16%, transparent);
 }
 
-/* The collapsed edge tab (#45): idle runs collapse the panel to a slim
+/* The collapsed edge tab: idle runs collapse the panel to a slim
    right-edge tab — the only part of the feed that demands attention. */
 .feed-edge-tab {
   display: block;
@@ -222,6 +230,7 @@ body,
   border-right: none;
   border-radius: 12px 0 0 12px;
   background: var(--panel);
+  box-shadow: -8px 0 24px rgba(0, 0, 0, 0.1);
   color: var(--muted);
   cursor: pointer;
 }
@@ -234,7 +243,7 @@ body,
   writing-mode: vertical-rl;
   display: block;
   margin: 0 auto;
-  font-size: 1rem;
+  font-size: 0.9rem;
   font-weight: 650;
   text-transform: uppercase;
   letter-spacing: 0.08em;

@@ -107,6 +107,17 @@ What renders when no Active Session exists: clock and weather only. Never shows
 Feed Entries; never renders while a Session is active.
 _Avoid_: screensaver
 
+**Toolbar**:
+The one reserved band at the window's top: Status Capsule left, address
+field center, feed and settings controls right. The window's only drag
+region; never covers the browsing pane.
+_Avoid_: header, dashboard header, browser chrome, title bar
+
+**Status Capsule**:
+The single control naming the assistant's state — orb, pill, and the live
+run/voice hints collapsed into one pill-shaped surface.
+_Avoid_: status bar, status row, status line
+
 **View Preference**:
 A persisted UI choice owned by the renderer (panel mode, panel width) — never
 written to app Settings.

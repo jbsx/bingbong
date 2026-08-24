@@ -102,15 +102,15 @@ describe('conversation separation e2e (#54)', () => {
       expect(layout.commandText).toContain('what is the answer')
 
       // Bing Bong's answer: left-aligned railed card at conversation size
-      // (1.4rem × 22px root), its rail the speaking-green edge.
+      // (1.2rem × 17px root), its rail the speaking-green edge.
       expect(layout.systemAlign).toBe('flex-start')
-      expect(layout.cardRail).toBe('5px')
-      expect(layout.cardRailColor).toBe('rgb(66, 123, 88)') // #427b58
-      expect(layout.cardFont).toBe('30.8px')
+      expect(layout.cardRail).toBe('4px')
+      expect(layout.cardRailColor).toBe('rgb(52, 199, 89)') // #34c759
+      expect(layout.cardFont).toBe('20.4px')
       expect(layout.displayText).toContain('The full display card.')
 
       // The bubble's text reads at conversation size too.
-      expect(layout.bubbleFont).toBe('30.8px')
+      expect(layout.bubbleFont).toBe('20.4px')
 
       // The spoken line never rendered — its display card owns the turn
       // (#54); the pipeline still spoke it (TTS is upstream of the feed).

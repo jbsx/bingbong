@@ -179,8 +179,12 @@ async function createWindow(): Promise<BrowserWindow> {
     width: 1280,
     height: 800,
     title: 'Bing Bong',
-    // Kiosk = fullscreen appliance; the renderer reads the same flag and lets
-    // the browser pane take over the layout.
+    // The appliance commitment (ADR 0012): no OS title bar, no window
+    // buttons — the renderer's Toolbar band is the drag region, Alt+F4
+    // closes.
+    titleBarStyle: 'hidden',
+    // Kiosk = fullscreen appliance; the renderer reads the same flag and
+    // the layout is pixel-identical to windowed (ADR 0012).
     ...(launchConfig.kiosk ? { fullscreen: true, autoHideMenuBar: true } : {}),
     webPreferences: {
       preload: resolvePreloadPath(join(__dirname, '../preload')),

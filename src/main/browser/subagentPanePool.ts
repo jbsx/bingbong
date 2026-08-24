@@ -128,8 +128,8 @@ export function createSubagentPanePool(
         backgroundThrottling: false,
       },
     })
-    // The behind-content canvas (#50): gruvbox light1 like the cards.
-    view.setBackgroundColor('#ebdbb2')
+    // The behind-content canvas (ADR 0012): white like the cards.
+    view.setBackgroundColor('#ffffff')
     // Top of the stack (above the feed overlay too — see below): the
     // parked view must own a sliver of real, unoccluded pixels or Chromium
     // never gives it its first paint. The overlay is NOT re-topped above

@@ -3,7 +3,7 @@ import Markdown, { type Components } from 'react-markdown'
 
 /**
  * Markdown rendering in the answer cards (#56): assistant display entries
- * and the live streaming answer render as structure — gruvbox-styled code
+ * and the live streaming answer render as structure — dark-styled code
  * blocks, lists, headings, emphasis — never literal sigils. Links navigate
  * the main browser pane through the existing browser navigation seam, so
  * "open that" is one click from the feed.
