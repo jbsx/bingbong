@@ -54,6 +54,8 @@ export interface SessionMemoryOptions {
    * "now" themselves.
    */
   onSessionStart?: () => void
+  /** Disable timestamp-derived boundary announcements when another runtime owns Lapse. */
+  announceLapse?: boolean
   /** Eager-lapse timing (ADR 0005); defaults to the system clock. */
   clock?: Clock
 }
@@ -69,6 +71,8 @@ export interface SessionMemory extends SessionHistorySource, SessionResetSource 
    * the command after the reset starts clean.
    */
   clear(): void
+  /** Clears continuity at an explicit lifecycle end without creating another boundary. */
+  discard(): void
   /**
    * Tears the store down with its window: cancels the pending boundary
    * without announcing it. A closed window's timer must never fire into
@@ -145,11 +149,12 @@ export function createSessionMemory(options?: SessionMemoryOptions): SessionMemo
       return
     }
     lapseAnnounced = true
-    options?.onSessionStart?.()
+    if (options?.announceLapse !== false) options?.onSessionStart?.()
   }
 
   const armLapse = (finishedAt: number): void => {
     cancelLapse()
+    if (options?.announceLapse === false) return
     cancelLapseTimer = clock.setTimer(Math.max(0, finishedAt + windowMs - clock.now()), fireLapse)
   }
 
@@ -169,6 +174,13 @@ export function createSessionMemory(options?: SessionMemoryOptions): SessionMemo
       lapseAnnounced = false
       for (const run of liveRuns) run.suppressed = true
       if (hadThread) options?.onSessionStart?.()
+    },
+    discard() {
+      exchanges = []
+      activeRunHistory = null
+      cancelLapse()
+      lapseAnnounced = false
+      for (const run of liveRuns) run.suppressed = true
     },
     dispose() {
       // No announcement: the window is gone, its channels with it. The
@@ -206,7 +218,7 @@ export function createSessionMemory(options?: SessionMemoryOptions): SessionMemo
               const last = exchanges.at(-1)
               if (!last) {
                 activeRunHistory = []
-              } else if (event.at - last.finishedAt < windowMs) {
+              } else if (options?.announceLapse === false || event.at - last.finishedAt < windowMs) {
                 activeRunHistory = toTurns(exchanges)
               } else {
                 // Window lapsed: a fresh thread that still keeps the most
@@ -216,7 +228,7 @@ export function createSessionMemory(options?: SessionMemoryOptions): SessionMemo
                 // The lapse was already announced by the eager timer (ADR
                 // 0005) unless the command beat the clock to it — one
                 // boundary, one announcement either way.
-                if (!lapseAnnounced) options?.onSessionStart?.()
+                if (!lapseAnnounced && options?.announceLapse !== false) options?.onSessionStart?.()
               }
               lapseAnnounced = false
               return

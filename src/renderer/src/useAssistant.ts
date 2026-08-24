@@ -139,9 +139,13 @@ export function useAssistant(): Assistant {
           setPendingAsk(null)
           return
         case 'session_started':
-          // Session-scoped feed (ADR 0005): the projection already wiped
-          // on the event itself — eagerly, whether the lapse timer, a
-          // lapsed command, or a model reset fired it.
+          return
+        case 'session_ended':
+          lastStatus.current = 'idle'
+          setStatus('idle')
+          setPendingConfirmation(null)
+          setPendingAsk(null)
+          setAgents([])
           return
       }
     })

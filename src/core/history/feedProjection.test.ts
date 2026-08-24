@@ -136,6 +136,23 @@ describe('feed projection', () => {
     expect(outline(feed.entries())).toEqual([{ kind: 'command', role: USER, text: 'new session', detail: false }])
   })
 
+  it('clears on an owned Session end and rejects foreign, ended, and stale-generation events', () => {
+    const feed = createFeedProjection()
+    const owned = { sessionId: 'session-1', sessionGeneration: 2 } as const
+    feed.onEvent({ type: 'session_started', at: 1_000, ...owned } as PipelineEvent)
+    feed.onEvent({ ...command('current', 1_001), ...owned } as PipelineEvent)
+    feed.onEvent({ ...command('foreign', 1_002), sessionId: 'session-2', sessionGeneration: 2 } as PipelineEvent)
+    feed.onEvent({ ...command('stale', 1_003), sessionId: 'session-1', sessionGeneration: 1 } as PipelineEvent)
+
+    expect(feed.entries().map((entry) => entry.text)).toEqual(['current'])
+
+    feed.onEvent({ type: 'session_ended', reason: 'lapsed', at: 1_004, ...owned } as PipelineEvent)
+    feed.onEvent({ ...command('late', 1_005), ...owned } as PipelineEvent)
+
+    expect(feed.entries()).toEqual([])
+    expect(feed.liveRunId()).toBeNull()
+  })
+
   it('voice-half lines (heard words, mic errors) ride the feed as outcome entries', () => {
     const feed = createFeedProjection()
     feed.append({ kind: 'voice', text: 'heard: maybe', at: 1_000 })

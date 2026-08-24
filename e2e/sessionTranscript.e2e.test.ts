@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { startHarness, type Harness } from './harness'
 import { startFixtureServer, type FixtureServer } from './fixtureServer'
-import { sleep } from './waitFor'
+import { sleep, waitFor } from './waitFor'
 import { submitAndAwaitAnswer, feedText } from './feed'
 import type { AssistantTurn } from '../src/core/ports/llm'
 
@@ -45,6 +45,14 @@ describe('session-scoped transcript e2e', () => {
   })
 
   it('keeps the session on screen, then wipes eagerly when the window lapses while idle', async () => {
+    await harness.dashboardEval(`
+      globalThis.__sessionEnds = []
+      window.bingbong.assistant.onEvent((event) => {
+        if (event.type === 'session_ended') globalThis.__sessionEnds.push(event)
+      })
+    `)
+    await harness.dashboardEval(`window.bingbong.browser.navigate(${JSON.stringify(fixture.url('/'))})`)
+    await harness.waitForPaneUrl(fixture.url('/'))
     await submitAndAwaitAnswer(harness, 'first command', 'ANSWER ONE')
 
     // Within the window the session continues: the feed accumulates.
@@ -58,6 +66,23 @@ describe('session-scoped transcript e2e', () => {
     await sleep(WINDOW_MS + 750)
     const afterLapse = await feedText(harness)
     expect(afterLapse).toBe('')
+    const ended = await harness.dashboardEval<Array<{
+      reason: string
+      sessionId?: string
+      sessionGeneration?: number
+    }>>(`globalThis.__sessionEnds`)
+    expect(ended).toEqual([{
+      type: 'session_ended',
+      reason: 'lapsed',
+      at: expect.any(Number),
+      sessionId: expect.any(String),
+      sessionGeneration: 0,
+    }])
+    await waitFor(
+      async () => (await harness.paneEval<string>('location.href')) === 'about:blank' || undefined,
+      { timeoutMs: 10_000, intervalMs: 100 },
+    )
+    expect(await harness.overlayEval<boolean>(`!!document.querySelector('.overlay-chrome--collapsed')`)).toBe(true)
 
     // The next command renders alone in the fresh view.
     await submitAndAwaitAnswer(harness, 'third command', 'ANSWER THREE')

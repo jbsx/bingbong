@@ -24,7 +24,7 @@ const ownership = {
   generation: 3,
 }
 
-function setup(): {
+function setup(acceptPipelineEvent?: (event: PipelineEvent) => boolean): {
   publisher: ReturnType<typeof createWindowEventPublisher>
   calls: string[]
   pipelineEvents: PipelineEvent[]
@@ -37,6 +37,7 @@ function setup(): {
     pipelineEvents.push(event)
   }
   const deps: WindowEventPublisherDeps = {
+    acceptPipelineEvent,
     createHistoryRunObserver: () => recordPipeline('history-run'),
     createSessionRunObserver: () => recordPipeline('session-run'),
     historyEvent: recordPipeline('history-event'),
@@ -92,7 +93,7 @@ describe('window event publisher', () => {
     },
   )
 
-  it('inherits accepted Run ownership for its in-flight detail events and clears it on done', () => {
+  it('retains Session ownership for auxiliary events after Run completion', () => {
     const { publisher, pipelineEvents } = setup()
     const run = publisher.run(ownership)
 
@@ -101,7 +102,11 @@ describe('window event publisher', () => {
     publisher.publish({ source: 'detail', event: pipelineEvent })
 
     expect(pipelineEvents[0]).toMatchObject({ runId: 'run-1', sessionId: 'session-1', sessionGeneration: 3 })
-    expect(pipelineEvents.at(-1)).toBe(pipelineEvent)
+    expect(pipelineEvents.at(-1)).toMatchObject({
+      runId: 'run-1',
+      sessionId: 'session-1',
+      sessionGeneration: 3,
+    })
   })
 
   it('leaves legacy pipeline events unstamped when no accepted ownership exists', () => {
@@ -154,5 +159,14 @@ describe('window event publisher', () => {
 
     expect(calls).toEqual(['renderer-submission-feedback', 'overlay-submission-feedback'])
     expect(pipelineEvents).toEqual([])
+  })
+
+  it('drops rejected ownership before any observer or renderer sees it', () => {
+    const { publisher, calls } = setup((event) => event.sessionId === ownership.sessionId && event.sessionGeneration === 3)
+    const run = publisher.run({ ...ownership, sessionId: 'session-foreign' as SessionId })
+
+    run.publish({ type: 'command', turnId: 'turn-foreign', text: 'foreign', at: 20 })
+
+    expect(calls).toEqual([])
   })
 })

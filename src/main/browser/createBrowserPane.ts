@@ -15,6 +15,8 @@ export interface BrowserPane {
   navigate(input: string): boolean
   goBack(): void
   goForward(): void
+  /** Discards Session-owned navigation while preserving the persistent Browser Profile. */
+  reset(): void
   setPaneRect(rect: PaneRect): void
   /** The last rect the renderer reported — reopened subagent panes mirror it (#57). */
   rect(): PaneRect
@@ -119,6 +121,12 @@ export function createBrowserPane(deps?: {
     goForward() {
       whenLive(() => {
         if (wc.navigationHistory.canGoForward()) wc.navigationHistory.goForward()
+      })
+    },
+    reset() {
+      whenLive(() => {
+        wc.stop()
+        void wc.loadURL('about:blank').then(() => wc.navigationHistory.clear())
       })
     },
     setPaneRect(rect) {

@@ -47,7 +47,7 @@ export interface SubagentCard {
  * `turnId` (required below). `speak`/`display`/`error` carry it optionally —
  * the download router and subagent cards emit the same variants outside any
  * turn's stream, and those announcements are not turn-scoped. `agent_update`
- * and `session_started` are not pipeline-emitted. Explicit ownership remains
+ * and Session lifecycle events are not pipeline-emitted. Explicit ownership remains
  * optional on every variant while producers migrate to the Session runtime.
  */
 export type PipelineEvent = SessionEventIdentity & (
@@ -164,16 +164,8 @@ export type PipelineEvent = SessionEventIdentity & (
   /** A subagent's state changed — the dashboard keeps one card per agent id. */
   | { type: 'agent_update'; agent: SubagentCard; at: number }
   | { type: 'done'; turnId: string; outcome?: 'done' | 'failed' | 'cancelled'; at: number }
-  /**
-   * A new session began (spec #25; made eager by ADR 0005) — the lapse
-   * timer expired while idle, a command arrived after the window lapsed,
-   * or the model invoked new_session. Not emitted by the pipeline
-   * generator: main injects it into the dashboard stream when the session
-   * store reports the boundary. The feed/transcript clears on it; the
-   * history projection maps it to no entry, so history.db recording is
-   * unchanged.
-   */
   | { type: 'session_started'; at: number }
+  | { type: 'session_ended'; reason: 'lapsed' | 'reset' | 'app_closed' | 'interrupted'; at: number }
 )
 
 /**

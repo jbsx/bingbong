@@ -15,6 +15,7 @@ export function createAssistantCommandRunner(deps: {
   runtime: SessionRuntime
   clock: Clock
   createRunPublisher(ownership: AcceptedRunOwnership): WindowRunPublisher
+  onSessionStarted?(admission: AcceptedRunOwnership & { acceptedAt: number }): void
   publishFeedback(feedback: SubmissionFeedback): void
   canPublish?: () => boolean
   tracer?: PerfTracer
@@ -42,6 +43,7 @@ export function createAssistantCommandRunner(deps: {
       const admission = deps.runtime.accept(submission.submissionId)
       activeRun = admission
       try {
+        if (admission.createsSession) deps.onSessionStarted?.(admission)
         const publisher = deps.createRunPublisher(admission)
         for await (const event of deps.pipeline.execute(command, turnId, truncated)) {
           if (deps.canPublish && !deps.canPublish()) break

@@ -29,7 +29,7 @@ import { HISTORY_IPC, HISTORY_QUERY_LIMIT } from '../core/history/ipcChannels'
 import { createHistoryRecorder } from '../core/history/historyRecorder'
 import { createSessionMemory } from '../core/session/sessionMemory'
 import { systemClock } from '../core/ports/clock'
-import { createSessionRuntime } from '../core/session/sessionRuntime'
+import { createSessionRuntime, type EndedSession, type SessionRuntime } from '../core/session/sessionRuntime'
 import { createSessionIdentitySource } from './session/sessionIdentitySource'
 import { createSqliteHistoryStore } from './history/createSqliteHistoryStore'
 import { DEFAULT_DAILY_SPEND_WARN_USD } from '../core/agent/spendEstimate'
@@ -214,7 +214,23 @@ async function createWindow(): Promise<BrowserWindow> {
   const sendToRenderer = (channel: string, payload: unknown): void => {
     if (!win.isDestroyed() && !win.webContents.isDestroyed()) win.webContents.send(channel, payload)
   }
+  let sessionRuntime: SessionRuntime | null = null
+  let lastEndedSession: EndedSession | null = null
   const eventPublisher = createWindowEventPublisher({
+    acceptPipelineEvent: (event) => {
+      // The current new_session tool still emits an unowned clear-only
+      // boundary. Lapse and true Session starts/ends are identity-bearing.
+      if (event.type === 'session_started' && event.sessionId === undefined) return true
+      if (event.type === 'session_ended') {
+        const ended = lastEndedSession
+        return ended !== null && event.sessionId === ended.sessionId &&
+          event.sessionGeneration === ended.generation
+      }
+      const state = sessionRuntime?.state()
+      return state !== undefined && state.sessionId !== null &&
+        event.sessionId === state.sessionId &&
+        event.sessionGeneration === state.generation
+    },
     createHistoryRunObserver: () => {
       const run = historyRecorder.run()
       return (event) => run.event(event)
@@ -332,13 +348,9 @@ async function createWindow(): Promise<BrowserWindow> {
   // Session continuity (spec #23): one in-memory thread per window, fed from
   // the same run-observer seam as the history recorder. The pipeline reads it
   // live on every orchestrator round; it dies on quit and never persists.
-  // Session-scoped feed (spec #25; ADR 0005 supersedes ADR 0003's lazy
-  // clear): when the store reports a new session — the eager lapse timer
-  // firing while idle, a window-lapsed command, or a model-invoked reset —
-  // the dashboard gets a session_started event and wipes the view eagerly.
-  // history.db is untouched: the event projects to no transcript entry.
   const sessionMemory = createSessionMemory({
     windowMs: launchConfig.sessionWindowMs,
+    announceLapse: false,
     onSessionStart: () =>
       eventPublisher.publish({ source: 'lifecycle', event: { type: 'session_started', at: systemClock.now() } }),
   })
@@ -377,22 +389,56 @@ async function createWindow(): Promise<BrowserWindow> {
     // history projection maps them to no entry, so recording is unchanged.
     emitDetail: (event) => eventPublisher.publish({ source: 'detail', event }),
   })
-  const sessionRuntime = createSessionRuntime({ clock: systemClock, identities: createSessionIdentitySource() })
+  sessionRuntime = createSessionRuntime({
+    clock: systemClock,
+    identities: createSessionIdentitySource(),
+    inactivityMs: launchConfig.sessionWindowMs,
+    onEnded: (ended) => {
+      lastEndedSession = ended
+      historyStore.finishSession(ended.sessionId, ended.reason, ended.endedAt)
+      sessionMemory.discard()
+      subagentRuntime.cancelAll()
+      pane.reset()
+      eventPublisher.publish({
+        source: 'lifecycle',
+        event: {
+          type: 'session_ended',
+          reason: ended.reason,
+          at: ended.endedAt,
+          sessionId: ended.sessionId,
+          sessionGeneration: ended.generation,
+        },
+      })
+    },
+  })
   const commandRunner = createAssistantCommandRunner({
     pipeline,
     runtime: sessionRuntime,
     clock: systemClock,
+    onSessionStarted: (admission) => {
+      historyStore.startSession(admission.sessionId, admission.acceptedAt)
+      lastEndedSession = null
+      eventPublisher.publish({
+        source: 'lifecycle',
+        ownership: admission,
+        event: { type: 'session_started', at: admission.acceptedAt },
+      })
+    },
     createRunPublisher: (ownership) => eventPublisher.run(ownership),
     publishFeedback: (feedback) => eventPublisher.publish({ source: 'submission-feedback', feedback }),
     canPublish: () => !win.isDestroyed(),
     tracer: perfTracer,
   })
   attachAssistantToWindow(pipeline, win, commandRunner)
+  win.on('close', () => sessionRuntime?.end('app_closed'))
   const detachPaneAbort = attachAssistantAbortHotkey(pipeline, pane.view.webContents)
   win.on('closed', detachPaneAbort)
   // The session store dies with its window (#73): a pending Lapse boundary
   // must never fire into the channels a closed window left behind.
-  win.on('closed', () => sessionMemory.dispose())
+  win.on('closed', () => {
+    sessionRuntime?.dispose()
+    sessionMemory.dispose()
+  })
 
   if (process.env.ELECTRON_RENDERER_URL) {
     void win.loadURL(process.env.ELECTRON_RENDERER_URL)

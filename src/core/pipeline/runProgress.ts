@@ -80,6 +80,11 @@ export function createRunProgressTracker(): {
           activeTurn = null
           progress = null
           return
+        case 'session_ended':
+          activeTurn = null
+          progress = null
+          agentStatuses.clear()
+          return
         default:
           return
       }

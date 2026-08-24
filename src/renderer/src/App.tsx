@@ -35,9 +35,12 @@ export function App() {
   // counts as "not idle" alongside input, so the idle screen never covers a
   // working assistant. (Wake-monitoring on/off transitions are not activity;
   // pinging on those would cancel the boot-into-idle state.)
-  const { ping } = idle
+  const { ping, idleNow } = idle
   useEffect(() => {
-    const unsubEvent = window.bingbong.assistant.onEvent(() => ping())
+    const unsubEvent = window.bingbong.assistant.onEvent((event) => {
+      if (event.type === 'session_ended') idleNow()
+      else if (event.type !== 'session_started') ping()
+    })
     const unsubVoice = window.bingbong.voice.onState((state) => {
       if (state.listening) ping()
     })
@@ -47,7 +50,7 @@ export function App() {
       unsubVoice()
       unsubHeard()
     }
-  }, [ping])
+  }, [idleNow, ping])
 
   // The hotkey arms the ears: Ctrl/Cmd+Space toggles listening. (The feed
   // panel's Ctrl/Cmd+Shift+F lives in main — before-input-event on every
@@ -70,7 +73,7 @@ export function App() {
   // Session Window (or a run is in progress), the idle timeout never swaps
   // the dashboard for the idle screen — a 5-minute pause mid-Session keeps
   // the work on screen. Only a lapsed (or never-started) session idles.
-  const activeSession = useActiveSession(window.bingbong.app.sessionWindowMs)
+  const activeSession = useActiveSession()
   // Never idle over a running command, an open mic, the STT window, or the
   // settings page — the timer must not unmount a form mid-edit.
   const showIdle =

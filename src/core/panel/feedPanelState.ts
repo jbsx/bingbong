@@ -158,6 +158,7 @@ export function createFeedPanelStateFold(options?: { defaultWidth?: number }): {
           if (!state.open) state = { ...state, open: true }
           return
         case 'done':
+        case 'session_ended':
           if (state.open) state = { ...state, open: false }
           return
         default:

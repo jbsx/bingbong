@@ -87,6 +87,7 @@ describe('history persistence e2e', () => {
         command: string
         outcome: string
         turnId: string | null
+        sessionId: string | null
         finishedAt: number | null
       }>>(
         `window.bingbong.history.recentRuns()`,
@@ -95,6 +96,17 @@ describe('history persistence e2e', () => {
         command: 'open the fixture page',
         outcome: 'done',
         turnId: expect.any(String),
+        sessionId: expect.any(String),
+      })
+      const sessions = await second.dashboardEval<Array<{
+        sessionId: string
+        endReason: string | null
+        endedAt: number | null
+      }>>(`window.bingbong.history.recentSessions()`)
+      expect(sessions.at(-1)).toMatchObject({
+        sessionId: runs.at(-1)?.sessionId,
+        endReason: 'app_closed',
+        endedAt: expect.any(Number),
       })
       const entries = await second.dashboardEval<Array<{ kind: string; text: string }>>(
         `window.bingbong.history.recentEntries()`,

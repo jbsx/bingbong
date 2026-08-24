@@ -73,6 +73,7 @@ describe('session runtime', () => {
       sessionId: 'session-1',
       generation: 0,
       acceptedAt: 1_025,
+      createsSession: true,
     })
     expect(identities.minted).toEqual(['submission-1', 'session-1', 'run-1'])
     expect(runtime.state()).toEqual({
@@ -202,6 +203,50 @@ describe('session runtime', () => {
 
     expect(runtime.state().acceptedRunIds).toEqual([admission.runId])
     expect(runtime.state().liveRunIds).toEqual([admission.runId])
+  })
+
+  it('anchors inactivity at accepted Run completion and lapses exactly once while idle', () => {
+    const clock = new FakeClock(1_000)
+    const ended: string[] = []
+    const runtime = createSessionRuntime({
+      clock,
+      identities: new DeterministicIdentities(),
+      inactivityMs: 100,
+      onEnded: (session) => ended.push(`${session.sessionId}:${session.reason}:${session.endedAt}`),
+    })
+    const first = runtime.accept(runtime.submit().submissionId)
+
+    clock.advance(500)
+    expect(runtime.state().phase).toBe('active')
+    runtime.finish(first.runId)
+    clock.advance(99)
+    expect(runtime.state().phase).toBe('active')
+    clock.advance(1)
+
+    expect(runtime.state().phase).toBe('absent')
+    expect(ended).toEqual(['session-1:lapsed:1600'])
+    clock.advance(1_000)
+    expect(ended).toHaveLength(1)
+  })
+
+  it('suspends an armed expiry when another Run is accepted', () => {
+    const clock = new FakeClock(1_000)
+    const runtime = createSessionRuntime({
+      clock,
+      identities: new DeterministicIdentities(),
+      inactivityMs: 100,
+    })
+    const first = runtime.accept(runtime.submit().submissionId)
+    runtime.finish(first.runId)
+    clock.advance(90)
+    const second = runtime.accept(runtime.submit().submissionId)
+
+    clock.advance(100)
+    expect(runtime.state().sessionId).toBe(first.sessionId)
+    expect(runtime.state().liveRunIds).toEqual([second.runId])
+    runtime.finish(second.runId)
+    clock.advance(100)
+    expect(runtime.state().phase).toBe('absent')
   })
 
   it('can add explicit ownership to shared events without replacing legacy turn correlation', () => {

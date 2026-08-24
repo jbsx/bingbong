@@ -38,6 +38,36 @@ class DeterministicIdentities implements SessionIdentitySource {
 }
 
 describe('assistant command runner', () => {
+  it('publishes Session start before the first accepted command becomes observable', async () => {
+    const clock = new FakeClock(1_000)
+    const runtime = createSessionRuntime({ clock, identities: new DeterministicIdentities() })
+    const observed: string[] = []
+    const pipeline: CommandPipeline = {
+      async *execute() {
+        yield { type: 'command', text: 'hello', turnId: 'turn-1', at: clock.now() }
+        yield { type: 'done', turnId: 'turn-1', at: clock.now() }
+      },
+      resolveConfirmation: () => {},
+      resolveAsk: () => {},
+      abort: () => {},
+      pause: () => {},
+      resume: () => false,
+      getState: () => 'idle',
+    }
+    const runner = createAssistantCommandRunner({
+      pipeline,
+      runtime,
+      clock,
+      onSessionStarted: (admission) => observed.push(`started:${admission.sessionId}`),
+      createRunPublisher: () => ({ publish: (event) => observed.push(event.type) }),
+      publishFeedback: () => {},
+    })
+
+    await runner.run('hello')
+
+    expect(observed).toEqual(['started:session-1', 'command', 'done'])
+  })
+
   it('rejects a busy Submission before creating or publishing a Run', async () => {
     const clock = new FakeClock(1_000)
     const identities = new DeterministicIdentities()

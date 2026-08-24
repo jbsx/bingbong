@@ -24,6 +24,7 @@ export interface AcceptedRunAdmission {
   sessionId: SessionId
   generation: SessionGeneration
   acceptedAt: number
+  createsSession: boolean
 }
 
 export interface SessionRuntimeState {
@@ -54,11 +55,14 @@ export interface SessionRuntime {
   beginExpiry(): boolean
   extend(): boolean
   end(reason: SessionEndReason): EndedSession | null
+  dispose(): void
 }
 
 export function createSessionRuntime(deps: {
   clock: Clock
   identities: SessionIdentitySource
+  inactivityMs?: number
+  onEnded?: (session: EndedSession) => void
 }): SessionRuntime {
   let phase: SessionPhase = 'absent'
   let sessionId: SessionId | null = null
@@ -67,6 +71,51 @@ export function createSessionRuntime(deps: {
   let acceptedRunIds: RunId[] = []
   const liveRunIds = new Set<RunId>()
   const pendingSubmissionIds = new Set<SubmissionId>()
+  let cancelInactivity: (() => void) | null = null
+
+  const cancelExpiry = (): void => {
+    cancelInactivity?.()
+    cancelInactivity = null
+  }
+
+  const endSession = (reason: SessionEndReason): EndedSession | null => {
+    if (phase === 'absent' || sessionId === null || startedAt === null) return null
+    if (reason === 'lapsed' && (phase !== 'expiring' || liveRunIds.size > 0)) return null
+
+    cancelExpiry()
+    const ended: EndedSession = {
+      sessionId,
+      generation,
+      reason,
+      startedAt,
+      endedAt: deps.clock.now(),
+      acceptedRunIds: [...acceptedRunIds],
+      liveRunIds: [...liveRunIds],
+    }
+
+    phase = 'absent'
+    sessionId = null
+    startedAt = null
+    acceptedRunIds = []
+    liveRunIds.clear()
+    pendingSubmissionIds.clear()
+    if (reason === 'reset') generation += 1
+    deps.onEnded?.(ended)
+    return ended
+  }
+
+  const lapse = (): void => {
+    cancelInactivity = null
+    if (phase !== 'active' || liveRunIds.size > 0) return
+    phase = 'expiring'
+    endSession('lapsed')
+  }
+
+  const armInactivity = (): void => {
+    cancelExpiry()
+    if (deps.inactivityMs === undefined || phase !== 'active' || liveRunIds.size > 0) return
+    cancelInactivity = deps.clock.setTimer(deps.inactivityMs, lapse)
+  }
 
   const state = (): SessionRuntimeState => ({
     phase,
@@ -101,6 +150,7 @@ export function createSessionRuntime(deps: {
         acceptedRunIds = []
       }
       phase = 'active'
+      cancelExpiry()
 
       acceptedRunIds.push(runId)
       liveRunIds.add(runId)
@@ -112,13 +162,16 @@ export function createSessionRuntime(deps: {
         sessionId: acceptedSessionId,
         generation,
         acceptedAt,
+        createsSession,
       }
     },
     reject(submissionId) {
       return pendingSubmissionIds.delete(submissionId)
     },
     finish(runId) {
-      return liveRunIds.delete(runId)
+      const finished = liveRunIds.delete(runId)
+      if (finished && liveRunIds.size === 0) armInactivity()
+      return finished
     },
     beginExpiry() {
       if (phase !== 'active' || liveRunIds.size > 0) return false
@@ -128,30 +181,14 @@ export function createSessionRuntime(deps: {
     extend() {
       if (phase !== 'expiring') return false
       phase = 'active'
+      armInactivity()
       return true
     },
     end(reason) {
-      if (phase === 'absent' || sessionId === null || startedAt === null) return null
-      if (reason === 'lapsed' && (phase !== 'expiring' || liveRunIds.size > 0)) return null
-
-      const ended: EndedSession = {
-        sessionId,
-        generation,
-        reason,
-        startedAt,
-        endedAt: deps.clock.now(),
-        acceptedRunIds: [...acceptedRunIds],
-        liveRunIds: [...liveRunIds],
-      }
-
-      phase = 'absent'
-      sessionId = null
-      startedAt = null
-      acceptedRunIds = []
-      liveRunIds.clear()
-      pendingSubmissionIds.clear()
-      if (reason === 'reset') generation += 1
-      return ended
+      return endSession(reason)
+    },
+    dispose() {
+      cancelExpiry()
     },
   }
 }

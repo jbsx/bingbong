@@ -106,6 +106,9 @@ export function createFeedProjection(): {
   // The live run (#55): opened by its command, closed by its done or a
   // session boundary — the run whose expander auto-opens while it runs.
   let liveRunId: string | null = null
+  let activeSessionId: string | null = null
+  let activeSessionGeneration: number | null = null
+  let explicitLifecycle = false
 
   const closeStreaming = (): void => {
     // The typing indicator resolves here: any other event means the
@@ -200,8 +203,45 @@ export function createFeedProjection(): {
     trimDetail()
   }
 
+  const clearSession = (): void => {
+    feed = []
+    liveRunId = null
+    displayedTurns.clear()
+    renderedSpeakIds.clear()
+    closeStreaming()
+  }
+
   return {
     onEvent(event) {
+      if (event.type === 'session_started') {
+        if (event.sessionId === undefined || event.sessionGeneration === undefined) {
+          clearSession()
+          return
+        }
+        if (activeSessionGeneration !== null && event.sessionGeneration < activeSessionGeneration) return
+        if (activeSessionId !== null && event.sessionId !== activeSessionId) return
+        explicitLifecycle = true
+        activeSessionId = event.sessionId
+        activeSessionGeneration = event.sessionGeneration
+        return
+      }
+      if (event.type === 'session_ended') {
+        if (
+          explicitLifecycle &&
+          (event.sessionId !== activeSessionId || event.sessionGeneration !== activeSessionGeneration)
+        ) return
+        clearSession()
+        activeSessionId = null
+        if (event.sessionGeneration !== undefined) activeSessionGeneration = event.sessionGeneration
+        return
+      }
+      if (
+        explicitLifecycle &&
+        (activeSessionId === null ||
+          event.sessionId !== activeSessionId ||
+          event.sessionGeneration !== activeSessionGeneration)
+      ) return
+
       // The live run's bookkeeping (#55): a command opens its run, its
       // done (or a session boundary) closes it. Unstamped announcements
       // and stragglers from other turns leave the current run alone.
@@ -212,7 +252,7 @@ export function createFeedProjection(): {
         // open streamed answer — the typing indicator (ADR 0013) — dies
         // with the run; the turn's trace is whatever else it rendered.
         dropOpenText()
-      } else if (event.type === 'session_started') liveRunId = null
+      }
       switch (event.type) {
         case 'llm_delta':
           appendDelta(event.kind === 'text' ? 'answer_stream' : 'reasoning', event.text, event.at, event.turnId)
@@ -273,18 +313,6 @@ export function createFeedProjection(): {
           return
         case 'steer':
           appendDetail(event.at, `steer: ${event.text}`, 'steer', event.turnId)
-          return
-        case 'session_started':
-          // The eager session clear (ADR 0005, superseding ADR 0003's lazy
-          // one): the boundary alone wipes the view — the lapse timer fires
-          // it while idle, or the boundary command/model reset does — and
-          // nothing older is ever rendered again. The suppression keys die
-          // with the view (#54): turn ids never carry across sessions, and
-          // no run outlives the boundary (#55).
-          feed = []
-          displayedTurns.clear()
-          renderedSpeakIds.clear()
-          closeStreaming()
           return
         default: {
           const projected = projectPipelineEvent(event)

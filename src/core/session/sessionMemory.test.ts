@@ -148,6 +148,21 @@ describe('sessionMemory', () => {
     ])
   })
 
+  it('leaves lapse decisions to the explicit runtime when legacy announcements are disabled', () => {
+    const session = createSessionMemory({ announceLapse: false })
+    feed(session.run(), runEvents('first', 'First answer.', 1_000))
+    feed(session.run(), runEvents('second', 'Second answer.', 60_000))
+    const third = session.run()
+    third.event({ type: 'command', turnId: TURN, text: 'accepted at the deadline', at: 60_003 + SESSION_WINDOW_MS })
+
+    expect(session.history()).toEqual([
+      { role: 'user', text: 'first' },
+      { role: 'assistant', text: 'First answer.' },
+      { role: 'user', text: 'second' },
+      { role: 'assistant', text: 'Second answer.' },
+    ])
+  })
+
   it('starts a fresh thread after a lapse: the lapsed exchange joins, older ones stay dropped', () => {
     const session = createSessionMemory()
     feed(session.run(), runEvents('find a pizza place', 'Found two: Pizza A and Pizza B.', 1_000))

@@ -20,6 +20,7 @@ export type WindowEventPublication =
   | { source: 'submission-feedback'; feedback: SubmissionFeedback }
 
 export interface WindowEventPublisherDeps {
+  acceptPipelineEvent?(event: PipelineEvent): boolean
   createHistoryRunObserver(): (event: PipelineEvent) => void
   createSessionRunObserver(): (event: PipelineEvent) => void
   historyEvent(event: PipelineEvent): void
@@ -60,15 +61,22 @@ function withOwnership(event: PipelineEvent, ownership?: AcceptedRunOwnership): 
 
 export function createWindowEventPublisher(deps: WindowEventPublisherDeps): WindowEventPublisher {
   let activeRunOwnership: AcceptedRunOwnership | undefined
+  let activeSessionOwnership: AcceptedRunOwnership | undefined
+
+  const accepted = (event: PipelineEvent): boolean => deps.acceptPipelineEvent?.(event) ?? true
 
   return {
     run(ownership) {
       const historyRun = deps.createHistoryRunObserver()
       const sessionRun = deps.createSessionRunObserver()
-      if (ownership) activeRunOwnership = ownership
+      if (ownership) {
+        activeRunOwnership = ownership
+        activeSessionOwnership = ownership
+      }
       return {
         publish(event) {
           const ownedEvent = withOwnership(event, ownership)
+          if (!accepted(ownedEvent)) return
           historyRun(ownedEvent)
           sessionRun(ownedEvent)
           deps.sendPipelineEvent(ownedEvent)
@@ -84,11 +92,17 @@ export function createWindowEventPublisher(deps: WindowEventPublisherDeps): Wind
         case 'lifecycle':
         case 'download':
         case 'subagent': {
-          const ownership = publication.ownership ?? (publication.source === 'detail' ? activeRunOwnership : undefined)
+          const ownership = publication.ownership ??
+            (publication.source === 'lifecycle' ? undefined : activeRunOwnership ?? activeSessionOwnership)
           const event = withOwnership(publication.event, ownership)
+          if (!accepted(event)) return
           deps.historyEvent(event)
           deps.sendPipelineEvent(event)
           deps.overlayPipelineEvent(event)
+          if (event.type === 'session_ended') {
+            activeRunOwnership = undefined
+            activeSessionOwnership = undefined
+          }
           return
         }
         case 'voice-state':

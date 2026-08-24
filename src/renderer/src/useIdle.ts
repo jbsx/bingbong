@@ -6,6 +6,8 @@ export interface IdleApi {
   idle: boolean
   /** Record activity: resets the countdown and exits the idle screen. */
   ping(): void
+  /** Enter idle immediately on an explicit Session end. */
+  idleNow(): void
 }
 
 /**
@@ -18,6 +20,7 @@ export interface IdleApi {
 export function useIdle(): IdleApi {
   const [idle, setIdle] = useState(true)
   const pingRef = useRef<() => void>(() => {})
+  const idleRef = useRef<() => void>(() => {})
 
   useEffect(() => {
     const timer = createIdleTimer({
@@ -27,6 +30,7 @@ export function useIdle(): IdleApi {
       onChange: setIdle,
     })
     pingRef.current = () => timer.ping()
+    idleRef.current = () => timer.idle()
     const onInput = () => timer.ping()
     window.addEventListener('pointerdown', onInput)
     window.addEventListener('keydown', onInput)
@@ -34,10 +38,12 @@ export function useIdle(): IdleApi {
       window.removeEventListener('pointerdown', onInput)
       window.removeEventListener('keydown', onInput)
       pingRef.current = () => {}
+      idleRef.current = () => {}
       timer.dispose()
     }
   }, [])
 
   const ping = useCallback(() => pingRef.current(), [])
-  return { idle, ping }
+  const idleNow = useCallback(() => idleRef.current(), [])
+  return { idle, ping, idleNow }
 }

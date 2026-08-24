@@ -9,6 +9,8 @@ export interface IdleTimer {
   isIdle(): boolean
   /** Record activity: resets the countdown, and wakes the timer when idle. */
   ping(): void
+  /** Enter the rest state immediately; the next real input may wake it. */
+  idle(): void
   dispose(): void
 }
 
@@ -40,6 +42,12 @@ export function createIdleTimer(deps: {
       idle = false
       arm()
       if (wasIdle) deps.onChange(false)
+    },
+    idle() {
+      if (disposed || idle) return
+      cancel?.()
+      idle = true
+      deps.onChange(true)
     },
     dispose() {
       disposed = true

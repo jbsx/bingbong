@@ -117,6 +117,21 @@ describe('historyRecorder', () => {
     ])
   })
 
+  it('persists explicit Session membership from an owned command', () => {
+    const store = fakeStore()
+    const run = recorderWith(store).run()
+
+    run.event({
+      type: 'command',
+      turnId: 'turn-owned',
+      text: 'owned command',
+      at: 100,
+      sessionId: 'session-1',
+    } as PipelineEvent)
+
+    expect(store.runs[0]?.sessionId).toBe('session-1')
+  })
+
   it('marks a run cancelled when the last status before done was cancelled', () => {
     const store = fakeStore()
     const recorder = recorderWith(store)
