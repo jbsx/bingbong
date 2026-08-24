@@ -572,6 +572,7 @@ export function fakeSubagentManager(
     spawn: (kind, task) => ({ ok: true as const, agent: { ...subagentRecord('a-1'), kind, task } }),
     cancel: () => ({ ok: true as const }),
     cancelAll: () => 0,
+    retire: () => 0,
     pauseAll: () => {},
     resumeAll: () => {},
     list: () => records.map((record) => ({ ...record })),

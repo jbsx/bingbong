@@ -12,6 +12,7 @@ function fakeManager(overrides: Partial<SubagentManager> = {}): SubagentManager 
     spawn: () => ({ ok: true, agent: { id: 'a-1', kind: 'background', task: 't', status: 'running', startedAt: 0, finishedAt: null, steps: 0, lastAction: null, result: null, error: null } }),
     cancel: () => ({ ok: true }),
     cancelAll: () => 0,
+    retire: () => 0,
     pauseAll: () => {},
     resumeAll: () => {},
     results: async () => 'merged results',

@@ -6,6 +6,7 @@ import type { PipelineEvent } from '../../core/pipeline/events'
 import type { Tool } from '../../core/pipeline/tool'
 import type { UsageRecord } from '../../core/agent/usageTracking'
 import type { PerfTracer } from '../../core/perf/perfTracer'
+import type { SubagentOwner } from '../../core/agent/subagentManager'
 import { SUBAGENT_LIMITS } from '../../core/agent/subagentRails'
 import { createSubagentManager } from '../../core/agent/subagentManager'
 import { createSubagentCardBridge, type SubagentCardBridge } from '../../core/agent/subagentCards'
@@ -21,7 +22,10 @@ import { createZaiVisionApi } from '../vision/createZaiVisionApi'
 // (deepseek loops), and the orchestrator-facing tools. Pipeline events
 // (agent_update cards, speak announcements) flow to the dashboard through
 // `emit`; spoken announcements also reach TTS directly, like the download
-// router's completions.
+// router's completions. The whole surface is Session-owned (#97): retire()
+// ends it with the Session, and every event — including the TTS line — is
+// gated by the same acceptance predicate the window publisher uses, so late
+// asynchronous work from an ended Session can neither render nor speak.
 
 /** Overrides the 60 s tab linger (tests, e2e) — milliseconds. */
 export const TAB_LINGER_ENV = 'BINGBONG_TAB_LINGER_MS'
@@ -36,6 +40,16 @@ export interface SubagentRuntimeDeps {
   clock?: Clock
   tts: TtsSpeaker
   emit(event: PipelineEvent): void
+  /**
+   * The Session each new spawn belongs to (#97) — read live at spawn time;
+   * absent means spawns outside any Session (tests, the CLI harness).
+   */
+  owner?(): SubagentOwner | null
+  /**
+   * The window's pipeline acceptance predicate (#97): an event whose
+   * Session is not the live one is dropped before it can render or speak.
+   */
+  canPublish?(event: PipelineEvent): boolean
   onUsage?(record: UsageRecord): void
   /** Escape while a subagent tab owns focus. */
   onEscape?(): boolean
@@ -57,8 +71,13 @@ export interface SubagentRuntime {
   /** Direct card-cancel path (the dashboard button) — no LLM round-trip. */
   cancel(agentId: string): boolean
   cancelAll(): number
-  /** Close every subagent tab immediately, skipping the linger (#96 Browser State discard). */
-  closeAllTabs(): number
+  /**
+   * Session end (#97): cancel every running agent, discard its pending
+   * reports, and close + drop its tabs and panes. The runtime stays
+   * reusable — the next Session spawns on a clean rail. Returns how many
+   * agents were running.
+   */
+  retire(): number
   pauseAll(): void
   resumeAll(): void
   dispose(): void
@@ -113,6 +132,7 @@ export function createSubagentRuntime(deps: SubagentRuntimeDeps): SubagentRuntim
     },
     clock,
     onEvent: (event) => bridgeRef.bridge?.onManagerEvent(event),
+    ...(deps.owner ? { owner: deps.owner } : {}),
   })
   managerRef.current = manager
   bridgeRef.bridge = createSubagentCardBridge({
@@ -120,11 +140,17 @@ export function createSubagentRuntime(deps: SubagentRuntimeDeps): SubagentRuntim
     tabs,
     clock,
     emit: (event) => {
+      // The window's acceptance gate runs before anything the user can
+      // observe (#97): a rejected event neither renders nor speaks, so a
+      // late completion from an ended Session stays silent end to end.
+      if (deps.canPublish && !deps.canPublish(event)) return
       deps.emit(event)
       if (event.type === 'speak') {
         void deps.tts.speak(event.text).then((outcome) => {
           if (!outcome.ok) {
-            deps.emit({ type: 'error', message: `Voice unavailable: ${outcome.error}`, at: clock.now() })
+            const failure: PipelineEvent = { type: 'error', message: `Voice unavailable: ${outcome.error}`, at: clock.now() }
+            if (deps.canPublish && !deps.canPublish(failure)) return
+            deps.emit(failure)
           }
         })
       }
@@ -138,7 +164,14 @@ export function createSubagentRuntime(deps: SubagentRuntimeDeps): SubagentRuntim
     pool,
     cancel: (agentId) => manager.cancel(agentId).ok,
     cancelAll: () => manager.cancelAll(),
-    closeAllTabs: () => tabs.closeAll(),
+    retire: () => {
+      // Agents stop initiating work first; their transient tabs close and
+      // drop without the linger, which destroys the panes' webContents and
+      // aborts whatever was in flight.
+      const running = manager.retire()
+      tabs.retire()
+      return running
+    },
     pauseAll: () => manager.pauseAll(),
     resumeAll: () => manager.resumeAll(),
     dispose: () => pool.dispose(),

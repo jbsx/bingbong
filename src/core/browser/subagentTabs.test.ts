@@ -194,4 +194,51 @@ describe('subagent tab lifecycle', () => {
     expect(tabs.open('fresh-3', 'https://fresh.test').ok).toBe(true)
     expect(tabs.open('fresh-4', 'https://fresh.test').ok).toBe(false)
   })
+
+  // #97: Session end owns its tabs outright — they close without the linger
+  // and their records go too, so nothing from the ended Session can be
+  // reopened or inspected by the next one.
+  it('retire closes open tabs without the linger and drops every record', () => {
+    const { tabs, clock, changes } = machine()
+    tabs.open('a-1', 'https://a.test')
+    tabs.open('b-2', 'https://b.test')
+    tabs.finish('b-2') // lingering, 60 s timer armed
+
+    expect(tabs.retire()).toBe(2)
+
+    expect(tabs.snapshot()).toEqual([])
+    const phases = (id: string): string[] => changes.filter((t) => t.agentId === id).map((t) => t.phase)
+    expect(phases('a-1')).toEqual(['active', 'closed'])
+    expect(phases('b-2')).toEqual(['active', 'lingering', 'closed'])
+
+    // No record survives to reopen, and the disarmed linger never fires.
+    expect(tabs.reopen('a-1').ok).toBe(false)
+    clock.advance(120_000)
+    expect(tabs.snapshot()).toEqual([])
+    expect(changes.length).toBe(5)
+  })
+
+  it('retire drops closed records too — no reopen from an ended Session', () => {
+    const { tabs, clock } = machine()
+    tabs.open('a-1', 'https://deep.test/page')
+    tabs.finish('a-1')
+    clock.advance(60_000) // auto-closed, URL retained for reopen
+
+    expect(tabs.retire()).toBe(0)
+
+    expect(tabs.snapshot()).toEqual([])
+    expect(tabs.reopen('a-1').ok).toBe(false)
+  })
+
+  it('the rail stays reusable after retire — full capacity for the next Session', () => {
+    const { tabs } = machine()
+    tabs.open('a-1', 'https://a.test')
+    tabs.open('b-2', 'https://b.test')
+    tabs.retire()
+
+    expect(tabs.open('fresh-1', 'https://fresh.test').ok).toBe(true)
+    expect(tabs.open('fresh-2', 'https://fresh.test').ok).toBe(true)
+    expect(tabs.open('fresh-3', 'https://fresh.test').ok).toBe(true)
+    expect(tabs.open('fresh-4', 'https://fresh.test').ok).toBe(false)
+  })
 })

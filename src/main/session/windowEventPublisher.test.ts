@@ -164,11 +164,51 @@ describe('window event publisher', () => {
   })
 
   it('drops rejected ownership before any observer or renderer sees it', () => {
-    const { publisher, calls } = setup((event) => event.sessionId === ownership.sessionId && event.sessionGeneration === 3)
+    const { publisher, calls, pipelineEvents } = setup((event) => event.sessionId === ownership.sessionId && event.sessionGeneration === 3)
     const run = publisher.run({ ...ownership, sessionId: 'session-foreign' as SessionId })
 
     run.publish({ type: 'command', turnId: 'turn-foreign', text: 'foreign', at: 20 })
 
     expect(calls).toEqual([])
+    expect(pipelineEvents).toEqual([])
+  })
+
+  // #97: a producer's explicit Session identity must survive active Run
+  // ownership — only missing fields are filled. Otherwise a late subagent
+  // completion stamped with an ended Session would be re-attributed to the
+  // live Run's Session and slip past the acceptance gate.
+  it('fills only missing identity fields, never clobbering an explicit stamp', () => {
+    const { publisher, pipelineEvents } = setup()
+    const run = publisher.run(ownership)
+
+    run.publish({ type: 'agent_update', at: 30, sessionId: 'session-old' as SessionId, sessionGeneration: 1, agent: { id: 'a-1', kind: 'browse', task: 't', status: 'completed', startedAt: 0, finishedAt: 30, steps: 1, lastAction: null, result: 'late', error: null } })
+
+    const stamped = pipelineEvents.find((event) => event.type === 'agent_update')
+    expect(stamped).toMatchObject({ sessionId: 'session-old', sessionGeneration: 1 })
+    expect(stamped?.runId).toBe('run-1')
+  })
+
+  it('rejects a late foreign-Session subagent event even while a new Run is active', () => {
+    // The acceptance rule production wires (#97): an event must carry the
+    // live Session's identity or it is dropped.
+    const gate = (event: PipelineEvent): boolean =>
+      event.type === 'session_started' && event.sessionId === undefined
+        ? true
+        : event.sessionId === 'session-live' && event.sessionGeneration === 4
+    const { publisher, calls, pipelineEvents } = setup(gate)
+    const run = publisher.run({ ...ownership, sessionId: 'session-live' as SessionId, generation: 4 })
+
+    const lateAgentUpdate: PipelineEvent = {
+      type: 'agent_update',
+      at: 40,
+      sessionId: 'session-ended' as SessionId,
+      sessionGeneration: 3,
+      agent: { id: 'a-1', kind: 'browse', task: 't', status: 'completed', startedAt: 0, finishedAt: 40, steps: 2, lastAction: null, result: 'late report', error: null },
+    }
+    publisher.publish({ source: 'subagent', event: lateAgentUpdate })
+    run.publish({ type: 'command', turnId: 'turn-2', text: 'new work', at: 41 })
+
+    expect(calls).toEqual(['history-run', 'session-run', 'renderer-pipeline', 'voice-observer', 'overlay-pipeline'])
+    expect(pipelineEvents.every((event) => event.sessionId === 'session-live')).toBe(true)
   })
 })

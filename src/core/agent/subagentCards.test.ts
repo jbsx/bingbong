@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { FakeClock } from '../testing/doubles'
-import { createSubagentManager, type SubagentEvent, type SubagentManager } from './subagentManager'
+import type { SessionId } from '../session/sessionIdentity'
+import { createSubagentManager, type SubagentEvent, type SubagentManager, type SubagentOwner } from './subagentManager'
 import { createSubagentTabs, type SubagentTab, type SubagentTabs } from '../browser/subagentTabs'
 import { createSubagentCardBridge } from './subagentCards'
 import type { PipelineEvent } from '../pipeline/events'
@@ -18,7 +19,7 @@ interface Wiring {
   settle(id: string, outcome: 'resolve' | 'reject', payload?: string): void
 }
 
-function wiring(): Wiring {
+function wiring(owner?: () => SubagentOwner | null): Wiring {
   const clock = new FakeClock(0)
   const events: PipelineEvent[] = []
   const managerEvents: SubagentEvent[] = []
@@ -47,6 +48,7 @@ function wiring(): Wiring {
       managerEvents.push(event)
       bridge.onManagerEvent(event)
     },
+    ...(owner !== undefined ? { owner } : {}),
   })
   const bridge = createSubagentCardBridge({
     manager,
@@ -67,6 +69,11 @@ function wiring(): Wiring {
       else settler.reject(new Error(payload))
     },
   }
+}
+
+/** Wiring whose spawns are owned by one fixed Session (#97). */
+function ownedWiring(owner: SubagentOwner): Wiring {
+  return wiring(() => owner)
 }
 
 function flush(times = 4): Promise<void> {
@@ -162,6 +169,49 @@ describe('subagent card bridge', () => {
 
     for (const update of agentUpdates(w.events)) {
       expect(update.agent.tab).toBeUndefined()
+    }
+  })
+
+  // #97: cards and announcements carry the spawning Session's identity, so
+  // the window gate can reject them once that Session is no longer live.
+  it('stamps agent_update and speak events with the record’s Session identity', async () => {
+    const w = ownedWiring({ sessionId: 'session-1' as SessionId, generation: 2 })
+    w.manager.spawn('background', 'owned work')
+    w.settle('a-1', 'resolve', 'Report from session one.')
+    await flush()
+
+    const updates = agentUpdates(w.events)
+    expect(updates.length).toBeGreaterThanOrEqual(1)
+    for (const update of updates) {
+      expect(update.sessionId).toBe('session-1')
+      expect(update.sessionGeneration).toBe(2)
+      expect(update.agent.owner).toEqual({ sessionId: 'session-1', generation: 2 })
+    }
+    const spoken = w.events.find((e): e is Extract<PipelineEvent, { type: 'speak' }> => e.type === 'speak')
+    expect(spoken).toMatchObject({ sessionId: 'session-1', sessionGeneration: 2 })
+  })
+
+  it('tab phase changes carry the spawning Session’s identity too', async () => {
+    const w = ownedWiring({ sessionId: 'session-9' as SessionId, generation: 1 })
+    w.manager.spawn('browse', 'browse task')
+    w.settle('a-1', 'resolve', 'done')
+    await flush()
+    w.clock.advance(60_000) // linger ends → closed
+
+    const updates = agentUpdates(w.events)
+    const closed = updates.find((update) => update.agent.tab?.phase === 'closed')
+    expect(closed).toMatchObject({ sessionId: 'session-9', sessionGeneration: 1 })
+  })
+
+  it('leaves events unstamped for agents spawned outside any Session', async () => {
+    const w = wiring()
+    w.manager.spawn('background', 'unowned work')
+    w.settle('a-1', 'resolve', 'Report.')
+    await flush()
+
+    for (const event of w.events) {
+      expect(event.sessionId).toBeUndefined()
+      expect(event.sessionGeneration).toBeUndefined()
     }
   })
 })

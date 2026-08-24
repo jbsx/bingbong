@@ -48,14 +48,21 @@ export interface WindowEventPublisher {
   publish(publication: WindowEventPublication): void
 }
 
+/**
+ * Fills the Run/Session identity an event is missing, without clobbering
+ * what a producer already stamped (#97): subagent cards carry the Session
+ * that spawned the agent, and that identity must survive even while a later
+ * Run's ownership is active — otherwise a late completion from an ended
+ * Session would be re-attributed to the live one and slip past the gate.
+ */
 function withOwnership(event: PipelineEvent, ownership?: AcceptedRunOwnership): PipelineEvent {
   if (!ownership) return event
   return {
     ...event,
-    submissionId: ownership.submissionId,
-    runId: ownership.runId,
-    sessionId: ownership.sessionId,
-    sessionGeneration: ownership.generation,
+    submissionId: event.submissionId ?? ownership.submissionId,
+    runId: event.runId ?? ownership.runId,
+    sessionId: event.sessionId ?? ownership.sessionId,
+    sessionGeneration: event.sessionGeneration ?? ownership.generation,
   }
 }
 

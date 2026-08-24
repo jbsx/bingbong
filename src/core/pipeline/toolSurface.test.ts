@@ -45,6 +45,7 @@ function delegationToolCatalog(): Tool[] {
     spawn: () => ({ ok: false as const, reason: 'test' }),
     cancel: () => ({ ok: false as const, reason: 'test' }),
     cancelAll: () => 0,
+    retire: () => 0,
     pauseAll: () => {},
     resumeAll: () => {},
     results: async () => 'none',

@@ -1,6 +1,6 @@
 export type PipelineStatus = 'thinking' | 'acting' | 'speaking' | 'paused' | 'cancelled'
 
-import type { SubagentKind, SubagentStatus } from '../agent/subagentManager'
+import type { SubagentKind, SubagentOwner, SubagentStatus } from '../agent/subagentManager'
 import type { SubagentTabPhase } from '../browser/subagentTabs'
 import type { RunId, SessionGeneration, SessionId, SubmissionId } from '../session/sessionIdentity'
 
@@ -39,6 +39,8 @@ export interface SubagentCard {
   error: string | null
   /** Present for browse agents; phase drives the thumbnail and reopen. */
   tab?: SubagentCardTab
+  /** The Session that spawned this agent — the card is Session-owned work (#97). */
+  owner?: SubagentOwner
 }
 
 /**

@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import { FakeClock } from '../testing/doubles'
-import { createSubagentManager, subagentAnnouncement, type SubagentEvent, type SubagentRecord } from './subagentManager'
+import type { SessionId } from '../session/sessionIdentity'
+import {
+  createSubagentManager,
+  subagentAnnouncement,
+  type SubagentEvent,
+  type SubagentOwner,
+  type SubagentRecord,
+} from './subagentManager'
 import { SubagentCancelledError } from './subagentRunner'
 
 // The supervisor (issue #13): spawns workhorse loops, tracks them, cancels
@@ -73,6 +80,7 @@ function manager(options?: {
   events?: SubagentEvent[]
   clock?: FakeClock
   waitTimeoutMs?: number
+  owner?: () => SubagentOwner | null
 }) {
   const api = manualTaskApi()
   const tabs = fakeTabs(options?.tabsCapacity ?? 3)
@@ -84,6 +92,7 @@ function manager(options?: {
     clock,
     onEvent: (event) => events.push(event),
     ...(options?.waitTimeoutMs !== undefined ? { waitTimeoutMs: options.waitTimeoutMs } : {}),
+    ...(options?.owner !== undefined ? { owner: options.owner } : {}),
   })
   return { mgr, api, tabs, clock, events }
 }
@@ -355,6 +364,104 @@ describe('subagent manager', () => {
   it('results refuses unknown agent ids loudly', async () => {
     const { mgr } = manager()
     await expect(mgr.results({ ids: ['ghost'] })).rejects.toThrow(/ghost/)
+  })
+})
+
+// #97: Sessions own their subagents outright. retire() is the Session-end
+// seam — running agents cancel, pending reports vanish, and anything still
+// in flight from the ended Session can never re-enter through finish().
+describe('subagent manager retirement', () => {
+  it('retire cancels running agents and discards every report', async () => {
+    const { mgr, api } = manager()
+    mgr.spawn('background', 'running work')
+    mgr.spawn('background', 'finished work')
+    api.tasks.get('a-2')!.resolve('Finished report.')
+    await flush()
+
+    expect(mgr.retire()).toBe(1)
+    expect(api.tasks.get('a-1')!.cancelFlag()).toBe(true)
+    expect(mgr.list()).toEqual([])
+    await expect(mgr.results({})).resolves.toBe('no subagents have been spawned yet')
+    await expect(mgr.results({ ids: ['a-1'] })).rejects.toThrow(/a-1/)
+  })
+
+  it('late completion and progress from the ended Session never emit', async () => {
+    const { mgr, api, events, tabs } = manager()
+    mgr.spawn('browse', 'long work')
+    const eventsAtRetire = events.length
+    const finishedAtRetire = [...tabs.finished]
+
+    expect(mgr.retire()).toBe(1)
+
+    // The loop keeps running oblivious; its settlement and progress land
+    // after the Session ended.
+    api.tasks.get('a-1')!.progress(9, 'still working')
+    api.tasks.get('a-1')!.resolve('Late report from an ended Session.')
+    await flush()
+
+    expect(events.length).toBe(eventsAtRetire)
+    expect(tabs.finished).toEqual(finishedAtRetire)
+    expect(mgr.list()).toEqual([])
+  })
+
+  it('a late failure from the ended Session is equally silent', async () => {
+    const { mgr, api, events } = manager()
+    mgr.spawn('background', 'doomed but retired first')
+    const eventsAtRetire = events.length
+
+    mgr.retire()
+    api.tasks.get('a-1')!.reject(new Error('late failure'))
+    await flush()
+
+    expect(events.length).toBe(eventsAtRetire)
+  })
+
+  it('retire flags cancellation so in-flight loops stop initiating work', () => {
+    const { mgr, api } = manager()
+    mgr.spawn('background', 'still working')
+
+    mgr.retire()
+
+    expect(api.tasks.get('a-1')!.cancelFlag()).toBe(true)
+  })
+
+  it('the manager stays reusable for the next Session — fresh ids, live events', async () => {
+    const { mgr, api, events } = manager()
+    mgr.spawn('background', 'first Session work')
+    mgr.retire()
+
+    const respawned = mgr.spawn('background', 'next Session work')
+    expect(respawned.ok).toBe(true)
+    if (!respawned.ok) return
+    // The id namespace is Session-owned: the next Session starts at a-1.
+    expect(respawned.agent.id).toBe('a-1')
+
+    api.tasks.get('a-1')!.progress(1, 'reading')
+    api.tasks.get('a-1')!.resolve('Fresh report.')
+    await flush()
+
+    expect(mgr.list()[0]).toMatchObject({ status: 'completed', result: 'Fresh report.' })
+    expect(events.at(-1)).toMatchObject({ type: 'finished' })
+  })
+
+  it('stamps each record with the Session that spawned it', () => {
+    let owner: SubagentOwner | null = { sessionId: 'session-1' as SessionId, generation: 2 }
+    const { mgr } = manager({ owner: () => owner })
+
+    expect(mgr.spawn('background', 'owned work').ok).toBe(true)
+    expect(mgr.list()[0]).toMatchObject({ owner: { sessionId: 'session-1', generation: 2 } })
+
+    // The stamp is read live per spawn: the next Session's spawns carry it.
+    owner = { sessionId: 'session-2' as SessionId, generation: 3 }
+    expect(mgr.spawn('background', 'next Session work').ok).toBe(true)
+    expect(mgr.list()[1]).toMatchObject({ owner: { sessionId: 'session-2', generation: 3 } })
+  })
+
+  it('records spawned outside any Session carry no owner', () => {
+    const { mgr } = manager()
+
+    expect(mgr.spawn('background', 'unowned work').ok).toBe(true)
+    expect(mgr.list()[0]?.owner).toBeUndefined()
   })
 })
 

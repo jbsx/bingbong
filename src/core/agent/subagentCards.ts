@@ -1,6 +1,6 @@
 import type { Clock } from '../ports/clock'
 import type { PipelineEvent, SubagentCard, SubagentCardTab } from '../pipeline/events'
-import type { SubagentEvent, SubagentManager } from './subagentManager'
+import type { SubagentEvent, SubagentManager, SubagentRecord } from './subagentManager'
 import { subagentAnnouncement } from './subagentManager'
 import type { SubagentTab, SubagentTabs } from '../browser/subagentTabs'
 
@@ -9,6 +9,8 @@ import type { SubagentTab, SubagentTabs } from '../browser/subagentTabs'
 // keeps a card per agent id) plus a speak event when an agent completes or
 // fails (the runtime also routes the line to TTS). Cancelled agents change
 // the card but stay unannounced — the user asked for the cancellation.
+// Every event carries the spawning Session's identity (#97), so the window
+// gate rejects late progress or completion from an ended or foreign Session.
 
 export interface SubagentCardBridgeDeps {
   manager: SubagentManager
@@ -20,6 +22,11 @@ export interface SubagentCardBridgeDeps {
 export interface SubagentCardBridge {
   onManagerEvent(event: SubagentEvent): void
   onTabChange(tab: SubagentTab): void
+}
+
+/** Stamps an event with the record's owner, when it has one (#97). */
+function withOwner(event: PipelineEvent, owner: SubagentRecord['owner']): PipelineEvent {
+  return owner ? { ...event, sessionId: owner.sessionId, sessionGeneration: owner.generation } : event
 }
 
 export function createSubagentCardBridge(deps: SubagentCardBridgeDeps): SubagentCardBridge {
@@ -43,7 +50,7 @@ export function createSubagentCardBridge(deps: SubagentCardBridgeDeps): Subagent
 
   function emitCard(agentId: string): void {
     const card = cardFor(agentId)
-    if (card) emit({ type: 'agent_update', agent: card, at: clock.now() })
+    if (card) emit(withOwner({ type: 'agent_update', agent: card, at: clock.now() }, card.owner))
   }
 
   return {
@@ -51,7 +58,7 @@ export function createSubagentCardBridge(deps: SubagentCardBridgeDeps): Subagent
       emitCard(event.record.id)
       if (event.type === 'finished') {
         const announcement = subagentAnnouncement(event.record)
-        if (announcement) emit({ type: 'speak', text: announcement, at: clock.now() })
+        if (announcement) emit(withOwner({ type: 'speak', text: announcement, at: clock.now() }, event.record.owner))
       }
     },
     onTabChange(tab) {

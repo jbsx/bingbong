@@ -1,5 +1,6 @@
 import type { Clock } from '../ports/clock'
 import { systemClock } from '../ports/clock'
+import type { SessionGeneration, SessionId } from '../session/sessionIdentity'
 import { capSentences } from '../agent/answerContract'
 import { SUBAGENT_LIMITS } from './subagentRails'
 import { SubagentCancelledError } from './subagentRunner'
@@ -9,7 +10,9 @@ import { SubagentCancelledError } from './subagentRunner'
 // a tab), tracks every agent's lifecycle, and merges results for
 // the orchestrator's agent_results tool. Refusals come back as reasons the
 // orchestrator model can read — a rail hit is a recoverable tool result,
-// never a crash.
+// never a crash. Sessions own their agents outright (#97): retire() ends
+// every agent with the Session, discards its reports, and gates late
+// settlement so an ended Session can never reach a later one.
 
 export type SubagentKind = 'browse' | 'background'
 
@@ -17,6 +20,12 @@ export type SubagentStatus = 'running' | 'completed' | 'cancelled' | 'failed'
 
 /** Kinds that drive their own browser tab (bounded by the tab rail). */
 export const TAB_KINDS: readonly SubagentKind[] = ['browse']
+
+/** The Session identity that owns a spawned agent (#97) — absent outside any Session. */
+export interface SubagentOwner {
+  sessionId: SessionId
+  generation: SessionGeneration
+}
 
 export interface SubagentRecord {
   id: string
@@ -29,6 +38,8 @@ export interface SubagentRecord {
   lastAction: string | null
   result: string | null
   error: string | null
+  /** The Session that spawned this agent — late events stay attributable after the Session ends (#97). */
+  owner?: SubagentOwner
 }
 
 export type SubagentEvent =
@@ -73,6 +84,8 @@ export interface SubagentManagerDeps {
   maxConcurrent?: number
   /** How long agent_results(wait) blocks before reporting a snapshot. */
   waitTimeoutMs?: number
+  /** The Session that owns each new spawn (#97) — read live at spawn time. */
+  owner?(): SubagentOwner | null
 }
 
 export type SpawnResult = { ok: true; agent: SubagentRecord } | { ok: false; reason: string }
@@ -83,6 +96,13 @@ export interface SubagentManager {
   spawn(kind: SubagentKind, task: string, turnId?: string): SpawnResult
   cancel(agentId: string): CancelResult
   cancelAll(): number
+  /**
+   * Session end (#97): cancels every running agent, discards all records —
+   * pending reports included — and arms the epoch guard so late progress or
+   * completion from the ended Session never emits. The manager stays
+   * reusable for the next Session's spawns. Returns how many were running.
+   */
+  retire(): number
   pauseAll(): void
   resumeAll(): void
   results(options: { ids?: string[]; wait?: boolean }): Promise<string>
@@ -104,6 +124,10 @@ export function createSubagentManager(deps: SubagentManagerDeps): SubagentManage
   const settled = new Map<string, Promise<void>>()
   const pauseWaiters = new Map<string, Set<() => void>>()
   let paused = false
+  // Bumped by retire() (#97): a spawn captures the epoch it belongs to, and
+  // settlement or progress from a superseded epoch is dropped before it can
+  // touch tabs, records, or the event stream.
+  let epoch = 0
 
   function releasePause(agentId: string): void {
     const waiters = pauseWaiters.get(agentId)
@@ -126,13 +150,27 @@ export function createSubagentManager(deps: SubagentManagerDeps): SubagentManage
     return live
   }
 
-  function finish(record: SubagentRecord, status: SubagentStatus, result: string | null, error: string | null): void {
+  function finish(record: SubagentRecord, spawnEpoch: number, status: SubagentStatus, result: string | null, error: string | null): void {
+    if (spawnEpoch !== epoch) return
     record.status = status
     record.finishedAt = clock.now()
     record.result = result
     record.error = error
     tabs.finish(record.id)
     onEvent({ type: 'finished', record: { ...record } })
+  }
+
+  function cancelAllRunning(): number {
+    let count = 0
+    for (const record of records.values()) {
+      if (record.status !== 'running') continue
+      cancelled.add(record.id)
+      releasePause(record.id)
+      count += 1
+    }
+    paused = false
+    for (const agentId of [...pauseWaiters.keys()]) releasePause(agentId)
+    return count
   }
 
   return {
@@ -150,6 +188,8 @@ export function createSubagentManager(deps: SubagentManagerDeps): SubagentManage
         if (!tab.ok) return { ok: false, reason: tab.reason }
       }
 
+      const spawnEpoch = epoch
+      const owner = deps.owner?.() ?? undefined
       const record: SubagentRecord = {
         id,
         kind,
@@ -161,13 +201,15 @@ export function createSubagentManager(deps: SubagentManagerDeps): SubagentManage
         lastAction: null,
         result: null,
         error: null,
+        ...(owner ? { owner } : {}),
       }
       records.set(id, record)
 
       const { done } = taskApi.start({ id, kind, task, ...(turnId !== undefined ? { turnId } : {}) }, {
-        isCancelled: () => cancelled.has(id),
+        isCancelled: () => cancelled.has(id) || spawnEpoch !== epoch,
         waitIfPaused: () => waitIfPaused(id),
         onProgress: (step, action) => {
+          if (spawnEpoch !== epoch) return
           record.steps = step
           record.lastAction = action
           onEvent({ type: 'progress', record: { ...record } })
@@ -178,14 +220,14 @@ export function createSubagentManager(deps: SubagentManagerDeps): SubagentManage
         id,
         done.then(
           (report) => {
-            if (record.status === 'running') finish(record, 'completed', report, null)
+            if (record.status === 'running') finish(record, spawnEpoch, 'completed', report, null)
           },
           (err: unknown) => {
             if (record.status !== 'running') return
-            if (err instanceof SubagentCancelledError || cancelled.has(id)) {
-              finish(record, 'cancelled', null, null)
+            if (err instanceof SubagentCancelledError || cancelled.has(id) || spawnEpoch !== epoch) {
+              finish(record, spawnEpoch, 'cancelled', null, null)
             } else {
-              finish(record, 'failed', null, err instanceof Error ? err.message : String(err))
+              finish(record, spawnEpoch, 'failed', null, err instanceof Error ? err.message : String(err))
             }
           },
         ),
@@ -205,16 +247,20 @@ export function createSubagentManager(deps: SubagentManagerDeps): SubagentManage
     },
 
     cancelAll() {
-      let count = 0
-      for (const record of records.values()) {
-        if (record.status !== 'running') continue
-        cancelled.add(record.id)
-        releasePause(record.id)
-        count += 1
-      }
-      paused = false
-      for (const agentId of [...pauseWaiters.keys()]) releasePause(agentId)
-      return count
+      return cancelAllRunning()
+    },
+
+    retire() {
+      const running = cancelAllRunning()
+      // Everything the ended Session owned goes: pending reports, finished
+      // history, tab claims — a later Session starts from an empty rail and
+      // a fresh id namespace. The epoch bump keeps any in-flight settlement
+      // from re-entering through finish().
+      epoch += 1
+      records.clear()
+      cancelled.clear()
+      settled.clear()
+      return running
     },
 
     pauseAll() {

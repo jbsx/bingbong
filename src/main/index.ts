@@ -1,6 +1,7 @@
 import { app, BrowserWindow, ipcMain, session } from 'electron'
 import { join } from 'node:path'
 import type { BrowserController, VisualGroundingController } from '../core/ports/browser'
+import type { PipelineEvent } from '../core/pipeline/events'
 import { BROWSER_IPC } from '../core/browser/ipcChannels'
 import { createAgentActivityTracker, withAgentActivity } from '../core/downloads/agentActivity'
 import { PIPELINE_IPC } from '../core/pipeline/ipcChannels'
@@ -222,21 +223,25 @@ async function createWindow(): Promise<BrowserWindow> {
   }
   let sessionRuntime: SessionRuntime | null = null
   let lastEndedSession: EndedSession | null = null
+  // The one acceptance predicate every pipeline-level consumer shares (#97):
+  // legacy unowned clear-only session_started boundaries pass, session_ended
+  // must match the Session that just ended, and everything else must carry
+  // the live Session's identity — late subagent, browser, or Feed work from
+  // an ended or foreign Session is rejected here before it can render.
+  const acceptPipelineEvent = (event: PipelineEvent): boolean => {
+    if (event.type === 'session_started' && event.sessionId === undefined) return true
+    if (event.type === 'session_ended') {
+      const ended = lastEndedSession
+      return ended !== null && event.sessionId === ended.sessionId &&
+        event.sessionGeneration === ended.generation
+    }
+    const state = sessionRuntime?.state()
+    return state !== undefined && state.sessionId !== null &&
+      event.sessionId === state.sessionId &&
+      event.sessionGeneration === state.generation
+  }
   const eventPublisher = createWindowEventPublisher({
-    acceptPipelineEvent: (event) => {
-      // The current new_session tool still emits an unowned clear-only
-      // boundary. Lapse and true Session starts/ends are identity-bearing.
-      if (event.type === 'session_started' && event.sessionId === undefined) return true
-      if (event.type === 'session_ended') {
-        const ended = lastEndedSession
-        return ended !== null && event.sessionId === ended.sessionId &&
-          event.sessionGeneration === ended.generation
-      }
-      const state = sessionRuntime?.state()
-      return state !== undefined && state.sessionId !== null &&
-        event.sessionId === state.sessionId &&
-        event.sessionGeneration === state.generation
-    },
+    acceptPipelineEvent,
     createHistoryRunObserver: () => {
       const run = historyRecorder.run()
       return (event) => run.event(event)
@@ -288,7 +293,11 @@ async function createWindow(): Promise<BrowserWindow> {
 
   // Subagents (T12): tab machine + pane pool + workhorse manager behind the
   // orchestrator's spawn/cancel/results tools. Events (live cards, spoken
-  // announcements) ride the same pipeline channel as everything else.
+  // announcements) ride the same pipeline channel as everything else. The
+  // surface is Session-owned (#97): spawns stamp the live Session on the
+  // agent, and every event — TTS lines included — passes the window's
+  // acceptance gate, so an ended Session's late work neither renders nor
+  // speaks, whatever Session is live by then.
   const subagentRuntime = createSubagentRuntime({
     win,
     session: pane.session,
@@ -296,6 +305,13 @@ async function createWindow(): Promise<BrowserWindow> {
     getEnv: currentEnv,
     tts: speakingGate.tts,
     emit: (event) => eventPublisher.publish({ source: 'subagent', event }),
+    owner: () => {
+      const state = sessionRuntime?.state()
+      return state?.sessionId != null
+        ? { sessionId: state.sessionId, generation: state.generation }
+        : null
+    },
+    canPublish: acceptPipelineEvent,
     onUsage: (record) => usageStore.record(record.role, record.model, record.usage),
     tracer: perfTracer,
     onEscape: () => {

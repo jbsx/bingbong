@@ -6,6 +6,8 @@ import { SUBAGENT_LIMITS } from '../agent/subagentRails'
 // and then auto-closes, keeping its last URL so the dashboard's reopen button
 // can restore it. Electron glue maps phases to WebContentsView lifecycles;
 // this module owns capacity, linger timing and phase transitions only.
+// Session end owns its tabs outright (#97): retire() closes them without the
+// linger and drops the records, so the rail starts empty for the next Session.
 
 export type SubagentTabPhase = 'active' | 'lingering' | 'closed'
 
@@ -43,6 +45,12 @@ export interface SubagentTabs {
   reopen(agentId: string): ReopenResult
   /** Close every open tab now, skipping the linger — Session end discards its transient surfaces (#96). */
   closeAll(): number
+  /**
+   * Session end (#97): close every open tab without the linger and drop the
+   * records too — the ended Session's tabs cannot be reopened or inspected;
+   * the rail is empty for the next Session.
+   */
+  retire(): number
   /** Navigation updates for the card (URL/title); emits like phase changes. */
   update(agentId: string, patch: { url?: string; title?: string; thumbnail?: string }): void
   snapshot(): SubagentTab[]
@@ -84,6 +92,16 @@ export function createSubagentTabs(deps: SubagentTabsDeps): SubagentTabs {
     lingerTimers.delete(tab.agentId)
     tab.phase = 'closed'
     emit(tab)
+  }
+
+  function closeAllOpen(): number {
+    let count = 0
+    for (const tab of tabs.values()) {
+      if (tab.phase === 'closed') continue
+      closeTab(tab)
+      count += 1
+    }
+    return count
   }
 
   return {
@@ -131,13 +149,16 @@ export function createSubagentTabs(deps: SubagentTabsDeps): SubagentTabs {
     },
 
     closeAll() {
-      let count = 0
-      for (const tab of tabs.values()) {
-        if (tab.phase === 'closed') continue
-        closeTab(tab)
-        count += 1
-      }
-      return count
+      return closeAllOpen()
+    },
+
+    retire() {
+      const closed = closeAllOpen()
+      // Closed records linger only for reopen (#96); an ended Session owns
+      // its tabs outright, so they go too — no retained URL, no reopen, no
+      // snapshot residue. The emissions above already dropped every view.
+      tabs.clear()
+      return closed
     },
 
     update(agentId, patch) {
