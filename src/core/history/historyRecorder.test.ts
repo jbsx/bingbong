@@ -6,7 +6,7 @@ import type { HistoryStore, RecordedEntry, RunRecord } from './historyStore'
 
 // The recorder is the persistence half of the command-pipeline seam: the same
 // event stream the dashboard renders is projected onto the history store, so
-// what these tests assert is exactly what a restart will hydrate from.
+// what these tests assert is exactly what explicit history queries return.
 
 function fakeStore(): HistoryStore & { entries: RecordedEntry[]; runs: RunRecord[] } {
   const entries: RecordedEntry[] = []

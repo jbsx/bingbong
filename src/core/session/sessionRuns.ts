@@ -1,14 +1,13 @@
 // Live run spans for the Active Session gate (#70): the idle screen renders
 // only when no Active Session exists — newest run finished within the
 // Session Window, or a run in progress — and that decision is the same pure
-// computation boot hydration uses (`isSessionActive`, ADR 0005's
-// connectedness rule). This fold feeds it live: a command opens a span, its
-// done closes it, and a restart seeds the recorded history. Pure over the
-// pipeline event seam — no clock, no timers; the hook that consumes it
-// decides when to re-evaluate.
+// connectedness computation. This fold feeds it from the current launch: a
+// command opens a span and its done closes it. Pure over the pipeline event
+// seam — no clock, no timers; the hook that consumes it decides when to
+// re-evaluate.
 
 import type { PipelineEvent } from '../pipeline/events'
-import type { RunSpan } from '../history/hydrationScope'
+import type { RunSpan } from './activeSession'
 
 /** Tracked spans beyond this are trimmed, oldest first — only the newest feeds the gate. */
 export const MAX_SESSION_RUNS = 64
@@ -16,12 +15,6 @@ export const MAX_SESSION_RUNS = 64
 export interface SessionRuns {
   /** Fold one pipeline event; command/done are the span seams. */
   event(event: PipelineEvent): void
-  /**
-   * Seed from recorded history after a restart (oldest first). A span
-   * already tracked live — a command that beat the hydration fetch — stays
-   * after the history: this boot's runs are newer than any recording.
-   */
-  hydrate(runs: RunSpan[]): void
   /** The tracked spans, oldest first (a copy). */
   runs(): RunSpan[]
 }
@@ -54,9 +47,6 @@ export function createSessionRuns(): SessionRuns {
         default:
           return
       }
-    },
-    hydrate(runs) {
-      spans = [...runs, ...spans].slice(-MAX_SESSION_RUNS)
     },
     runs: () => spans.map((span) => ({ ...span })),
   }

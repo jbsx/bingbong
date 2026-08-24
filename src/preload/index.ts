@@ -16,8 +16,7 @@ import type { AppSettings } from '../core/settings/settings'
 import type { RoutingStatus } from '../core/agent/modelRouting'
 import type { UsageSummary } from '../core/agent/spendEstimate'
 import type { VoiceErrorEvent, VoiceHeardEvent, VoiceState } from '../core/voice/ipcChannels'
-import type { RunRecord } from '../core/history/historyStore'
-import type { HydrationSnapshot } from '../core/history/hydrationScope'
+import type { RecordedEntry, RunRecord } from '../core/history/historyStore'
 
 // Launch config is a snapshot: the flags and env can't change after start.
 const launch = resolveLaunchConfig(process.argv, process.env)
@@ -79,7 +78,7 @@ contextBridge.exposeInMainWorld('bingbong', {
     getToday: (): Promise<UsageSummary> => ipcRenderer.invoke(USAGE_IPC.getToday),
   },
   history: {
-    recentEntries: (): Promise<HydrationSnapshot> => ipcRenderer.invoke(HISTORY_IPC.recentEntries),
+    recentEntries: (): Promise<RecordedEntry[]> => ipcRenderer.invoke(HISTORY_IPC.recentEntries),
     recentRuns: (): Promise<RunRecord[]> => ipcRenderer.invoke(HISTORY_IPC.recentRuns),
     recordVoiceError: (message: string): Promise<number | null> =>
       ipcRenderer.invoke(HISTORY_IPC.recordVoiceError, message),

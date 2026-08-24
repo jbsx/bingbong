@@ -7,7 +7,7 @@ import { projectPipelineEvent } from './transcriptProjection'
 
 // Projects the dashboard's own event streams (pipeline events, heard voice,
 // voice errors) onto the history store, mirroring the renderer's transcript
-// word-for-word: what a restart hydrates is exactly what was on screen.
+// word-for-word for explicit Recorded History review.
 
 export interface HistoryRecorder {
   /** One independent command execution; concurrent attempts cannot collide. */

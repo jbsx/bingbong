@@ -4,14 +4,13 @@ import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { startHarness } from './harness'
 import { startFixtureServer, type FixtureServer } from './fixtureServer'
-import { waitFor } from './waitFor'
+import { sleep, waitFor } from './waitFor'
 import { waitForDisplay } from './feed'
 import type { AssistantTurn } from '../src/core/ports/llm'
 
-// Spec #1, Persistence: transcript and agent-run history live in SQLite
-// under userData and survive restarts. The activity feed (#44) hydrates
-// after a restart — stage outcome entries only, never detail lines (they
-// are never recorded) — and the persisted run history remains queryable.
+// Recorded History lives in SQLite under userData and survives restarts,
+// but Boot State is always launch-local: no live Feed, Active Session, or
+// model continuity is reconstructed from those records.
 
 function scriptedTurns(fixtureUrl: string): AssistantTurn[] {
   return [
@@ -25,6 +24,7 @@ function scriptedTurns(fixtureUrl: string): AssistantTurn[] {
 }
 
 describe('history persistence e2e', () => {
+  const SESSION_WINDOW_MS = 15_000
   let fixture: FixtureServer
   let userDataDir: string
 
@@ -38,10 +38,13 @@ describe('history persistence e2e', () => {
     if (userDataDir) await rm(userDataDir, { recursive: true, force: true })
   })
 
-  it('persists run history across a relaunch and rehydrates feed outcomes only', async () => {
-    const env = { BINGBONG_LLM_SCRIPT: JSON.stringify(scriptedTurns(fixture.url('/'))) }
+  it('boots idle and blank after relaunch while history stays explicitly queryable', async () => {
+    const firstEnv = {
+      BINGBONG_LLM_SCRIPT: JSON.stringify(scriptedTurns(fixture.url('/'))),
+      BINGBONG_SESSION_WINDOW_MS: String(SESSION_WINDOW_MS),
+    }
 
-    const first = await startHarness({ fixture, userDataDir, env })
+    const first = await startHarness({ fixture, userDataDir, env: firstEnv })
     const submitted = await first.submitCommand('open the fixture page')
     expect(submitted).toBe('submitted')
     // Wait for the answer before the orb: right after submit the orb is still
@@ -54,36 +57,38 @@ describe('history persistence e2e', () => {
     )
     await first.quit()
 
-    const second = await startHarness({ fixture, userDataDir, env })
+    const second = await startHarness({
+      fixture,
+      userDataDir,
+      wakeFromBootIdle: false,
+      env: {
+        BINGBONG_SESSION_WINDOW_MS: String(SESSION_WINDOW_MS),
+        BINGBONG_LLM_SCRIPT: JSON.stringify([
+          { kind: 'answer', speak: 'Fresh context.', display: 'FRESH CONTEXT:\n$history' },
+        ] satisfies AssistantTurn[]),
+      },
+    })
     try {
       await waitFor(
-        () => second.dashboardEval<boolean>(`!!document.querySelector('.status-orb--idle')`),
+        async () => (await second.dashboardEval<boolean>(`!!document.querySelector('.idle-screen')`)) || undefined,
         { timeoutMs: 20000, intervalMs: 250 },
       )
-      // Restart hydration (#44): the feed seeds the previous run's stage
-      // outcomes from history — command, tool line, answer — while detail
-      // lines (retries and friends) are never recorded, so never rehydrate.
-      // One Answer, one entry (ADR 0013): the hydrated card renders and
-      // its recorded Spoken Rendering stays out of the view — exactly as live.
-      const fixtureUrl = fixture.url('/')
-      await waitFor(
-        async () => {
-          const hydrated = await second.overlayEval<string>(
-            `Array.from(document.querySelectorAll('.feed-entry')).map((el) => el.textContent).join('\\n')`,
-          )
-          return hydrated.includes('open the fixture page') &&
-            hydrated.includes('Navigated to the fixture page.') &&
-            hydrated.includes(fixtureUrl) &&
-            !hydrated.includes('Opened the fixture page.')
-            ? hydrated
-            : undefined
-        },
-        { timeoutMs: 20000, intervalMs: 250 },
-      )
+      expect(await second.dashboardEval<boolean>(`!!document.querySelector('.url-input')`)).toBe(false)
+      expect(await second.overlayEval<number>(`document.querySelectorAll('.feed-entry').length`)).toBe(0)
+      await second.dashboardEval(`
+        globalThis.__bootSessionStarts = []
+        window.bingbong.assistant.onEvent((event) => {
+          if (event.type === 'session_started') globalThis.__bootSessionStarts.push(event.at)
+        })
+      `)
 
-      // …and the run history survived the relaunch, its run row carrying the
-      // turn id the pipeline minted for the text-box command (#28).
-      const runs = await second.dashboardEval<Array<{ command: string; outcome: string; turnId: string | null }>>(
+      // Recorded Runs and entries remain available only when explicitly queried.
+      const runs = await second.dashboardEval<Array<{
+        command: string
+        outcome: string
+        turnId: string | null
+        finishedAt: number | null
+      }>>(
         `window.bingbong.history.recentRuns()`,
       )
       expect(runs.at(-1)).toMatchObject({
@@ -91,20 +96,31 @@ describe('history persistence e2e', () => {
         outcome: 'done',
         turnId: expect.any(String),
       })
+      const entries = await second.dashboardEval<Array<{ kind: string; text: string }>>(
+        `window.bingbong.history.recentEntries()`,
+      )
+      expect(entries.some((entry) => entry.kind === 'command' && entry.text === 'open the fixture page')).toBe(true)
+      expect(entries.some((entry) => entry.kind === 'display' && entry.text === 'Navigated to the fixture page.')).toBe(true)
 
-      // A fresh run appends to the hydrated view: the first command after a
-      // restart is a fresh session store's first-ever command, so no session
-      // boundary fires (ADR 0003) and the outcomes stay readable.
-      const submittedAgain = await second.submitCommand('open it again')
+      // Cross the prior Run's deadline and prove no lifecycle timer was armed from history.
+      const priorFinish = runs.at(-1)?.finishedAt
+      expect(priorFinish).toEqual(expect.any(Number))
+      const remaining = priorFinish! + SESSION_WINDOW_MS - Date.now()
+      expect(remaining).toBeGreaterThan(0)
+      await sleep(remaining + 500)
+      expect(await second.dashboardEval<number>(`globalThis.__bootSessionStarts.length`)).toBe(0)
+
+      // The first post-restart model request receives no Recorded History as continuity.
+      const submittedAgain = await second.submitCommand('what do you remember')
       expect(submittedAgain).toBe('submitted')
-      await waitFor(
-        () => second.dashboardEval<boolean>(`!!document.querySelector('.status-orb--idle')`),
-        { timeoutMs: 20000, intervalMs: 250 },
+      await waitForDisplay(second, 'FRESH CONTEXT:')
+      const freshFeed = await second.overlayEval<string>(
+        `Array.from(document.querySelectorAll('.feed-entry')).map((el) => el.textContent).join('\\n')`,
       )
-      const commands = await second.overlayEval<string[]>(
-        `Array.from(document.querySelectorAll('.feed-entry--command .feed-text')).map((el) => el.textContent)`,
-      )
-      expect(commands).toEqual(['open the fixture page', 'open it again'])
+      expect(freshFeed).toContain('what do you remember')
+      expect(freshFeed).toContain('FRESH CONTEXT:')
+      expect(freshFeed).not.toContain('open the fixture page')
+      expect(freshFeed).not.toContain('Navigated to the fixture page.')
     } finally {
       await second.quit()
     }

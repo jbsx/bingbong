@@ -152,12 +152,12 @@ describe('active-session idle gating e2e (#70)', () => {
   })
 })
 
-describe('active-session restart gating e2e (#70)', () => {
-  it('boots the dashboard after a restart within the Session Window — no idle, and it stays', async () => {
+describe('restart Boot State e2e (#88)', () => {
+  it('boots the Idle Screen even when Recorded History is inside the old Session Window', async () => {
     const fixture = await startFixtureServer()
     const userDataDir = await mkdtemp(join(tmpdir(), 'bingbong-e2e-idle-gate-'))
-    // A window wide enough to survive the relaunch; an idle timeout small
-    // enough that an ungated boot would have shown the idle screen.
+    // The old timestamp remains inside this wide window during relaunch;
+    // Recorded History must still have no ownership of the new launch.
     const env = {
       BINGBONG_LLM_SCRIPT: JSON.stringify([{ kind: 'answer', speak: 'Recorded.', display: 'ANSWER ONE' }]),
       BINGBONG_IDLE_TIMEOUT_MS: '1500',
@@ -172,23 +172,20 @@ describe('active-session restart gating e2e (#70)', () => {
         await first.quit()
       }
 
-      // Restart inside the window: the hydrated Active Session owns the
-      // screen — the app boots the dashboard (no idle screen), without any
-      // waking input, and the idle timeout still cannot take it back.
+      // Restart inside the old window without waking input: Boot State owns
+      // the screen immediately and remains independent of Recorded History.
       const second = await startHarness({ fixture, userDataDir, env, wakeFromBootIdle: false })
       try {
         await waitFor(
           async () => {
-            const up = await second.dashboardEval<boolean>(`!!document.querySelector('.url-input')`)
-            return up || undefined
+            const idle = await second.dashboardEval<boolean>(`!!document.querySelector('.idle-screen')`)
+            return idle || undefined
           },
           { timeoutMs: 20000, intervalMs: 250 },
         )
-        // The idle timeout (1500ms) has long fired inside the window; the
-        // +1500 margin proves the gate keeps holding, not that it raced.
         await sleep(1_500 + 1_500)
-        expect(await second.dashboardEval<boolean>(`!!document.querySelector('.url-input')`)).toBe(true)
-        expect(await second.dashboardEval<boolean>(`!!document.querySelector('.idle-screen')`)).toBe(false)
+        expect(await second.dashboardEval<boolean>(`!!document.querySelector('.url-input')`)).toBe(false)
+        expect(await second.dashboardEval<boolean>(`!!document.querySelector('.idle-screen')`)).toBe(true)
       } finally {
         await second.quit()
       }

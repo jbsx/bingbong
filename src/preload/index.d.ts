@@ -6,7 +6,6 @@ import type { VoiceErrorEvent, VoiceHeardEvent, VoiceState } from '../core/voice
 import type { LaunchConfig } from '../core/app/launchConfig'
 import type { UsageSummary } from '../core/agent/spendEstimate'
 import type { RecordedEntry, RunRecord } from '../core/history/historyStore'
-import type { HydrationSnapshot } from '../core/history/hydrationScope'
 import type { FeedPanelMode, FeedPanelState } from '../core/panel/feedPanelState'
 
 export type { BrowserPaneState, PaneRect }
@@ -17,7 +16,6 @@ export type { VoiceErrorEvent, VoiceHeardEvent, VoiceState }
 export type { LaunchConfig }
 export type { UsageSummary }
 export type { RecordedEntry, RunRecord }
-export type { HydrationSnapshot }
 export interface BingbongBrowserApi {
   navigate(input: string): Promise<boolean>
   goBack(): Promise<void>
@@ -83,14 +81,8 @@ export interface BingbongVoiceApi {
 }
 
 export interface BingbongHistoryApi {
-  /**
-   * Restart hydration snapshot (ADR 0005): recorded entries beside the
-   * recorded run spans and the current session's start boundary — `null`
-   * when the session already lapsed, so the feed boots blank. The
-   * projection does the scoping; the spans seed the Active Session idle
-   * gate (#70).
-   */
-  recentEntries(): Promise<HydrationSnapshot>
+  /** Persisted Feed entries for an explicitly opened history surface. */
+  recentEntries(): Promise<RecordedEntry[]>
   /** Persisted run records, oldest first. */
   recentRuns(): Promise<RunRecord[]>
   /** Persist a renderer-side mic/capture error and return its shared timestamp. */

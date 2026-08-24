@@ -26,8 +26,8 @@ export interface Assistant {
   /**
    * The right-edge activity feed (#44): timestamped outcome lines plus
    * ephemeral detail (retries), folded from the event stream by the pure
-   * feed projection. Session-scoped (ADR 0005): boundaries wipe eagerly
-   * and restart hydration seeds only the still-open session.
+    * feed projection. Session-scoped boundaries wipe eagerly; every launch
+    * starts with an empty projection and Recorded History is review-only.
    */
   feed: FeedEntry[]
   /** The run currently in flight (#55) — its expander auto-opens. */

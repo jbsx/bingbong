@@ -1,16 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import { createFeedProjection, MAX_DETAIL_ENTRIES } from './feedProjection'
 import type { PipelineEvent } from '../pipeline/events'
-import type { RecordedEntry } from './historyStore'
-import type { HydratedEntry } from './hydrationScope'
 
 // Feed projection (#44): the right-edge activity feed's entries as a pure
 // function over the pipeline event stream — timestamped outcome lines
 // (commands, tool lines, spoken/displayed text, errors) plus ephemeral
 // detail lines (retries), session-scoped (ADR 0005: boundaries wipe
-// eagerly; hydration seeds only the still-open session), detail trimmed
-// beyond ~500, hydrated after restart from recorded history only (never
-// detail). Conversation structure (#54): every entry carries a role —
+// eagerly), and detail trimmed beyond ~500. Conversation structure (#54):
+// every entry carries a role —
 // your words vs Bing Bong's answers vs system detail — and a turn's
 // Spoken Rendering is suppressed when its Card renders (keyed on the
 // shared turn id). Run grouping (#55): run noise (tool lines, failed
@@ -27,15 +24,6 @@ function command(text: string, at: number, turnId = T): PipelineEvent {
 
 function retry(attempt: number, at: number, turnId = T): PipelineEvent {
   return { type: 'llm_retry', turnId, attempt, maxAttempts: 3, at }
-}
-
-function recorded(kind: RecordedEntry['kind'], text: string, at: number): HydratedEntry {
-  return { id: 1, runId: null, turnId: null, kind, text, at }
-}
-
-/** A snapshot whose render boundary began at/before the first entry — hydrates all. */
-function snapshotOf(...entries: HydratedEntry[]) {
-  return { entries, runs: [], renderFromAt: entries[0]?.at ?? 0 }
 }
 
 /** The entry surface the panel renders: order + kind + role + text + detail flag. */
@@ -456,7 +444,7 @@ describe('feed projection', () => {
       ])
     })
 
-    it('counts stage lines as detail for the trim — never hydrated, never recorded', () => {
+    it('counts stage lines as detail for the trim — never recorded', () => {
       const feed = createFeedProjection()
       feed.onEvent(command('keep me', 0))
       for (let i = 0; i < MAX_DETAIL_ENTRIES + 10; i += 1) {
@@ -467,183 +455,6 @@ describe('feed projection', () => {
       expect(entries).toHaveLength(MAX_DETAIL_ENTRIES + 1)
       expect(entries[0]).toMatchObject({ kind: 'command', detail: false })
       expect(entries.filter((entry) => entry.detail)).toHaveLength(MAX_DETAIL_ENTRIES)
-    })
-  })
-
-  describe('restart hydration', () => {
-    it('seeds recorded history as outcome entries below anything live', () => {
-      const feed = createFeedProjection()
-      feed.onEvent(command('live first', 5_000))
-
-      feed.hydrate(snapshotOf(recorded('command', 'open the fixture page', 1_000), recorded('speak', 'Opened it.', 2_000)))
-
-      expect(outline(feed.entries())).toEqual([
-        { kind: 'command', role: USER, text: 'open the fixture page', detail: false },
-        { kind: 'speak', role: ASSISTANT, text: 'Opened it.', detail: false },
-        { kind: 'command', role: USER, text: 'live first', detail: false },
-      ])
-    })
-
-    it('never hydrates detail lines — recordings are outcome-only by construction', () => {
-      const feed = createFeedProjection()
-      feed.hydrate(snapshotOf(recorded('command', 'go', 1_000)))
-      expect(feed.entries().every((entry) => !entry.detail)).toBe(true)
-      expect(feed.entries().map(({ kind }) => kind).sort()).toEqual(['command'])
-    })
-
-    it('drops live entries already contained in the recorded snapshot (startup race)', () => {
-      const feed = createFeedProjection()
-      // These two arrived live while the history fetch was in flight — and
-      // the recorder saw them too, so they ride the snapshot's tail.
-      feed.onEvent(command('raced', 2_000))
-      feed.onEvent({ type: 'speak', turnId: T, text: 'Raced answer.', at: 3_000 })
-
-      feed.hydrate(snapshotOf(recorded('command', 'pre-restart', 1_000), recorded('command', 'raced', 2_000), recorded('speak', 'Raced answer.', 3_000)))
-
-      expect(outline(feed.entries())).toEqual([
-        { kind: 'command', role: USER, text: 'pre-restart', detail: false },
-        { kind: 'command', role: USER, text: 'raced', detail: false },
-        { kind: 'speak', role: ASSISTANT, text: 'Raced answer.', detail: false },
-      ])
-    })
-
-    it('preserves legitimately repeated lines when deduplicating', () => {
-      const feed = createFeedProjection()
-      feed.onEvent(command('again', 2_000))
-      feed.onEvent(command('again', 3_000))
-
-      feed.hydrate(snapshotOf(recorded('command', 'again', 1_000), recorded('command', 'again', 2_000)))
-
-      // The live 'again' that the snapshot already carries is deduped; the
-      // later legitimate repeat (a distinct fingerprint — `at` differs)
-      // survives, and both recorded copies seed the view.
-      expect(outline(feed.entries())).toEqual([
-        { kind: 'command', role: USER, text: 'again', detail: false },
-        { kind: 'command', role: USER, text: 'again', detail: false },
-        { kind: 'command', role: USER, text: 'again', detail: false },
-      ])
-    })
-
-    it('is idempotent — a second hydrate call seeds nothing new', () => {
-      const feed = createFeedProjection()
-      const snapshot = snapshotOf(recorded('command', 'go', 1_000))
-      feed.hydrate(snapshot)
-      feed.hydrate(snapshot)
-      expect(feed.entries()).toHaveLength(1)
-    })
-
-    it('never resurrects a cleared session — a boundary that lands before the fetch resolves wins', () => {
-      const feed = createFeedProjection()
-      feed.onEvent({ type: 'session_started', at: 1_000 })
-
-      feed.hydrate(snapshotOf(recorded('command', 'pre-boundary', 500)))
-
-      expect(feed.entries()).toEqual([])
-    })
-  })
-
-  describe('session-scoped hydration (ADR 0005, capped at the last exchange by #73)', () => {
-    it('hydrates only entries inside the still-open session — older sessions stay gone', () => {
-      const feed = createFeedProjection()
-
-      feed.hydrate({
-        entries: [
-          recorded('command', 'yesterday session', 1_000),
-          recorded('speak', 'Old answer.', 2_000),
-          recorded('command', 'current session', 10_000),
-          recorded('speak', 'Fresh answer.', 11_000),
-        ],
-        runs: [],
-        renderFromAt: 10_000,
-      })
-
-      expect(outline(feed.entries())).toEqual([
-        { kind: 'command', role: USER, text: 'current session', detail: false },
-        { kind: 'speak', role: ASSISTANT, text: 'Fresh answer.', detail: false },
-      ])
-    })
-
-    it('hydrates nothing for a lapsed session — the feed boots blank on restart', () => {
-      const feed = createFeedProjection()
-
-      feed.hydrate({
-        entries: [recorded('command', 'stale session', 1_000), recorded('speak', 'Old answer.', 2_000)],
-        runs: [],
-        renderFromAt: null,
-      })
-
-      expect(feed.entries()).toEqual([])
-    })
-
-    it('keeps live entries that raced the fetch when the session lapsed', () => {
-      const feed = createFeedProjection()
-      feed.onEvent(command('typed while fetching', 5_000))
-
-      feed.hydrate({ entries: [recorded('command', 'stale session', 1_000)], runs: [], renderFromAt: null })
-
-      expect(outline(feed.entries())).toEqual([
-        { kind: 'command', role: USER, text: 'typed while fetching', detail: false },
-      ])
-    })
-
-    it('keeps the boundary entry itself — the session\'s first command renders', () => {
-      const feed = createFeedProjection()
-
-      feed.hydrate({
-        entries: [recorded('command', 'session opener', 7_000), recorded('speak', 'Answer.', 8_000)],
-        runs: [],
-        renderFromAt: 7_000,
-      })
-
-      expect(outline(feed.entries())).toEqual([
-        { kind: 'command', role: USER, text: 'session opener', detail: false },
-        { kind: 'speak', role: ASSISTANT, text: 'Answer.', detail: false },
-      ])
-    })
-
-    it('caps at the last exchange — a connected chain spanning hours never re-renders wholesale', () => {
-      // Same still-open session, but the boundary (#73) is the newest run's
-      // start: the model-side retention asymmetry, mirrored at boot.
-      const feed = createFeedProjection()
-
-      feed.hydrate({
-        entries: [
-          recorded('command', 'first command hours ago', 1_000),
-          recorded('speak', 'First answer.', 2_000),
-          recorded('command', 'second command', 60_000),
-          recorded('speak', 'Second answer.', 61_000),
-          recorded('command', 'last command', 120_000),
-          recorded('speak', 'Last answer.', 121_000),
-        ],
-        runs: [],
-        renderFromAt: 120_000,
-      })
-
-      expect(outline(feed.entries())).toEqual([
-        { kind: 'command', role: USER, text: 'last command', detail: false },
-        { kind: 'speak', role: ASSISTANT, text: 'Last answer.', detail: false },
-      ])
-    })
-
-    it('dedups against the in-session entries only', () => {
-      const feed = createFeedProjection()
-      // Raced live entry that the recording also carries inside the session.
-      feed.onEvent(command('raced', 12_000))
-
-      feed.hydrate({
-        entries: [
-          recorded('command', 'old session', 1_000),
-          recorded('command', 'raced', 12_000),
-          recorded('speak', 'Answer.', 13_000),
-        ],
-        runs: [],
-        renderFromAt: 10_000,
-      })
-
-      expect(outline(feed.entries())).toEqual([
-        { kind: 'command', role: USER, text: 'raced', detail: false },
-        { kind: 'speak', role: ASSISTANT, text: 'Answer.', detail: false },
-      ])
     })
   })
 
@@ -727,114 +538,6 @@ describe('feed projection', () => {
         { kind: 'speak', role: ASSISTANT, text: 'Turn B spoken.', detail: false },
         { kind: 'display', role: ASSISTANT, text: 'Downloaded "report.pdf".', detail: false },
         { kind: 'speak', role: ASSISTANT, text: 'Download complete: report.pdf', detail: false },
-      ])
-    })
-
-    it('hydrates recorded entries with roles derived from their kind', () => {
-      const feed = createFeedProjection()
-
-      feed.hydrate(snapshotOf(recorded('command', 'go', 1_000), recorded('display', 'Full card.', 2_000), recorded('speak', 'Done.', 3_000), recorded('tool', '→ x.test', 4_000)))
-
-      expect(outline(feed.entries())).toEqual([
-        { kind: 'command', role: USER, text: 'go', detail: false },
-        { kind: 'display', role: ASSISTANT, text: 'Full card.', detail: false },
-        { kind: 'speak', role: ASSISTANT, text: 'Done.', detail: false },
-        { kind: 'tool', role: SYSTEM, text: '→ x.test', detail: false },
-      ])
-    })
-
-    it('suppresses a recorded Spoken Rendering whose turn carried a Card — one Answer, one entry, after restart too (ADR 0013)', () => {
-      const feed = createFeedProjection()
-
-      feed.hydrate(
-        snapshotOf(
-          { ...recorded('command', 'go', 1_000), turnId: 'turn-9' },
-          { ...recorded('display', 'Full card.', 2_000), turnId: 'turn-9' },
-          { ...recorded('speak', 'Done.', 3_000), turnId: 'turn-9' },
-        ),
-      )
-
-      expect(outline(feed.entries())).toEqual([
-        { kind: 'command', role: USER, text: 'go', detail: false },
-        { kind: 'display', role: ASSISTANT, text: 'Full card.', detail: false },
-      ])
-    })
-
-    it('renders a recorded Spoken Rendering whose turn carried no Card — the Spoken Rendering is the turn\'s only trace', () => {
-      const feed = createFeedProjection()
-
-      feed.hydrate(
-        snapshotOf(
-          { ...recorded('command', 'go', 1_000), turnId: 'turn-9' },
-          { ...recorded('speak', 'Stopped.', 2_000), turnId: 'turn-9' },
-        ),
-      )
-
-      expect(outline(feed.entries())).toEqual([
-        { kind: 'command', role: USER, text: 'go', detail: false },
-        { kind: 'speak', role: ASSISTANT, text: 'Stopped.', detail: false },
-      ])
-    })
-
-    it('seeds the suppression from hydration — a turn that displayed before the restart never speaks into the view after it', () => {
-      const feed = createFeedProjection()
-      feed.hydrate(snapshotOf({ ...recorded('display', 'Hydrated card.', 1_000), turnId: 'turn-9' }))
-
-      // A straggler speak for the same turn arrives live after hydration
-      // resolved (the startup race): the card already owns the turn.
-      feed.onEvent({ type: 'speak', turnId: 'turn-9', text: 'Straggler.', at: 2_000 })
-
-      expect(outline(feed.entries())).toEqual([
-        { kind: 'display', role: ASSISTANT, text: 'Hydrated card.', detail: false },
-      ])
-    })
-
-    it('deduplicates a live spoken twin before suppressing its recorded copy', () => {
-      const feed = createFeedProjection()
-      feed.onEvent({ type: 'speak', turnId: 'turn-9', text: 'Done.', at: 3_000 })
-
-      feed.hydrate(
-        snapshotOf(
-          { ...recorded('display', 'Hydrated card.', 2_000), turnId: 'turn-9' },
-          { ...recorded('speak', 'Done.', 3_000), turnId: 'turn-9' },
-        ),
-      )
-
-      expect(outline(feed.entries())).toEqual([
-        { kind: 'display', role: ASSISTANT, text: 'Hydrated card.', detail: false },
-      ])
-    })
-
-    it('drops a live spoken twin when hydration supplies its Card', () => {
-      const feed = createFeedProjection()
-      feed.onEvent({ type: 'speak', turnId: 'turn-9', text: 'Done.', at: 3_000 })
-
-      feed.hydrate(snapshotOf({ ...recorded('display', 'Hydrated card.', 2_000), turnId: 'turn-9' }))
-
-      expect(outline(feed.entries())).toEqual([
-        { kind: 'display', role: ASSISTANT, text: 'Hydrated card.', detail: false },
-      ])
-    })
-
-    it('suppresses a hydrated spoken twin when its Card arrived live', () => {
-      const feed = createFeedProjection()
-      feed.onEvent({ type: 'display', turnId: 'turn-9', text: 'Live card.', at: 2_000 })
-
-      feed.hydrate(snapshotOf({ ...recorded('speak', 'Done.', 1_000), turnId: 'turn-9' }))
-
-      expect(outline(feed.entries())).toEqual([
-        { kind: 'display', role: ASSISTANT, text: 'Live card.', detail: false },
-      ])
-    })
-
-    it('drops a hydrated Spoken Rendering when its Card arrives live afterward', () => {
-      const feed = createFeedProjection()
-      feed.hydrate(snapshotOf({ ...recorded('speak', 'Done.', 1_000), turnId: 'turn-9' }))
-
-      feed.onEvent({ type: 'display', turnId: 'turn-9', text: 'Live card.', at: 2_000 })
-
-      expect(outline(feed.entries())).toEqual([
-        { kind: 'display', role: ASSISTANT, text: 'Live card.', detail: false },
       ])
     })
 
@@ -980,36 +683,6 @@ describe('feed projection', () => {
       })
     })
 
-    describe('restart hydration', () => {
-      it('groups recorded tool lines under their recorder run — namespaced off live turn ids', () => {
-        const feed = createFeedProjection()
-        feed.hydrate(
-          snapshotOf(
-            { id: 1, runId: 7, turnId: 'turn-7', kind: 'command', text: 'go', at: 1_000 },
-            { id: 2, runId: 7, turnId: 'turn-7', kind: 'tool', text: '→ x.test', at: 1_500 },
-            { id: 3, runId: 7, turnId: 'turn-7', kind: 'display', text: 'Done card.', at: 2_000 },
-          ),
-        )
-
-        expect(feed.entries().map(({ kind, runId }) => [kind, runId])).toEqual([
-          ['command', undefined],
-          ['tool', 'run-7'],
-          ['display', undefined],
-        ])
-      })
-
-      it('keeps unlinked tool lines top-level — runs recorded before run ids existed', () => {
-        const feed = createFeedProjection()
-        feed.hydrate(snapshotOf({ id: 1, runId: null, turnId: null, kind: 'tool', text: '→ x.test', at: 1_000 }))
-        expect(feed.entries()[0]!.runId).toBeUndefined()
-      })
-
-      it('keeps recorded errors top-level — history cannot tell tool failures from pipeline errors', () => {
-        const feed = createFeedProjection()
-        feed.hydrate(snapshotOf({ id: 1, runId: 7, turnId: 'turn-7', kind: 'error', text: 'click failed: gone', at: 1_000 }))
-        expect(feed.entries()[0]!.runId).toBeUndefined()
-      })
-    })
   })
 })
 

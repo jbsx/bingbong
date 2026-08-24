@@ -1,13 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import { createSessionRuns, MAX_SESSION_RUNS } from './sessionRuns'
 import type { PipelineEvent } from '../pipeline/events'
-import type { RunSpan } from '../history/hydrationScope'
 
-// Live run spans for the Active Session gate (#70): the same connectedness
-// computation boot hydration uses (ADR 0005) needs the runs' spans — this
-// fold tracks them live from the pipeline event seam (a command opens a
-// span, its done closes it) and seeds from recorded history on restart, so
-// `isSessionActive` decides from one shape wherever it runs.
+// Live run spans for the Active Session gate (#70): this fold tracks the
+// current launch from the pipeline event seam (a command opens a span and
+// its done closes it) so `isSessionActive` can evaluate the live Session.
 
 const T0 = 1_000_000
 
@@ -48,26 +45,6 @@ describe('createSessionRuns', () => {
     expect(runs.runs()).toEqual([
       { startedAt: T0, finishedAt: T0 + 5_000 },
       { startedAt: T0 + 8_000, finishedAt: null },
-    ])
-  })
-
-  it('seeds from recorded history — a restart hydrates the prior session', () => {
-    const runs = createSessionRuns()
-    const recorded: RunSpan[] = [
-      { startedAt: 500, finishedAt: 4_000 },
-      { startedAt: 8_000, finishedAt: 9_000 },
-    ]
-    runs.hydrate(recorded)
-    expect(runs.runs()).toEqual(recorded)
-  })
-
-  it('keeps any live boot-race span after the hydrated history — it is newer', () => {
-    const runs = createSessionRuns()
-    runs.event(command(T0, 'live'))
-    runs.hydrate([{ startedAt: 500, finishedAt: 900 }])
-    expect(runs.runs()).toEqual([
-      { startedAt: 500, finishedAt: 900 },
-      { startedAt: T0, finishedAt: null },
     ])
   })
 

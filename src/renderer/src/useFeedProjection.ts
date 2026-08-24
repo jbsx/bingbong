@@ -1,15 +1,13 @@
-import { useEffect, useRef, useState } from 'react'
+import { useRef, useState } from 'react'
 import type { PipelineEvent } from '../../core/pipeline/events'
 import type { VoiceHeardEvent } from '../../core/voice/ipcChannels'
 import { describeHeard } from '../../core/voice/heardDisplay'
 import { createFeedProjection, type FeedEntry } from '../../core/history/feedProjection'
-import { hydrationSnapshot } from './hydrationSnapshot'
 
-// The feed projection's renderer wiring (#44, #45): one projection instance,
-// restart hydration (outcome entries only, dedup closing the live race),
-// and the voice-half appends. Shared by the dashboard (useAssistant) and
-// the panel's overlay page (useOverlayFeed) — both render the same feed
-// from the same events; only the event sources differ.
+// The feed projection's renderer wiring (#44, #45): one launch-local
+// projection instance plus the voice-half appends. Shared by the dashboard
+// (useAssistant) and the panel's overlay page (useOverlayFeed) — both render
+// the same live feed from the same events; Recorded History is review-only.
 
 export interface FeedProjection {
   feed: FeedEntry[]
@@ -30,23 +28,6 @@ export function useFeedProjection(): FeedProjection {
   // together, and each mutator closes over only stable things (the ref,
   // setState) so the first-render closures subscribers capture stay live.
   const sync = () => setState({ feed: projection.current.entries(), liveRunId: projection.current.liveRunId() })
-
-  useEffect(() => {
-    let cancelled = false
-    void hydrationSnapshot()
-      .then((snapshot) => {
-        if (cancelled) return
-        // Session-scoped hydration (ADR 0005): only the still-open session
-        // seeds the view — a lapsed session boots blank. The projection
-        // applies the scope; live entries that raced the fetch survive.
-        projection.current.hydrate(snapshot)
-        sync()
-      })
-      .catch(() => {})
-    return () => {
-      cancelled = true
-    }
-  }, [])
 
   return {
     feed: state.feed,

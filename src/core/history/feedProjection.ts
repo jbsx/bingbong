@@ -2,23 +2,20 @@ import type { PipelineEvent } from '../pipeline/events'
 import { describeToolIntent } from '../pipeline/toolCallDisplay'
 import { formatRetryLine } from '../pipeline/runProgress'
 import { projectPipelineEvent } from './transcriptProjection'
-import { filterHydratedDuplicates } from './mergeHistory'
-import type { HydrationSnapshot } from './hydrationScope'
 import type { TranscriptEvent } from './historyStore'
 
 // Feed projection (#44): the right-edge activity feed as a pure function —
 // pipeline events in, ordered feed entries out. Outcome lines reuse the
 // shared transcript projection word-for-word, so what the feed shows as
-// outcomes is exactly what history records and rehydrates; retry lines are
+// outcomes is exactly what Recorded History stores; retry lines are
 // ephemeral detail (never recorded, trimmed beyond the cap). Streamed
 // deltas (#47) grow live answer/reasoning runs — also ephemeral detail —
 // with the answer's display entry replacing its partial at round end.
 // Tool-intent lines (#48) grow the same way while call arguments stream,
 // superseded by the tool's outcome line at execution. Session-scoped
 // (ADR 0003, made eager by ADR 0005): session_started — fired lazily at
-// the boundary command or eagerly by the lapse timer — wipes the view, and
-// restart hydration seeds only the Active Session, capped at the last
-// exchange (#73). Conversation
+// the boundary command or eagerly by the lapse timer — wipes the view.
+// Production launches always create this projection empty. Conversation
 // structure (#54): every entry carries its role in the chat — your words
 // (user) vs Bing Bong's answers (assistant) vs system detail — and a
 // turn's Spoken Rendering is suppressed from the view once its Card
@@ -59,16 +56,14 @@ export interface FeedEntry {
   /** The conversation role (#54): bubble (user) vs railed card (assistant). */
   role: FeedRole
   text: string
-  /** Detail entries are ephemeral: never hydrated, trimmed beyond the cap. */
+  /** Detail entries are ephemeral: never recorded, trimmed beyond the cap. */
   detail: boolean
   /**
    * The run this entry groups under (#55): set on run noise only — tool
    * lines, failed tool results, intents, reasoning runs, stage markers,
    * retries, steer echoes — so the renderer folds them into one per-run
    * details expander. Absent on every conversation line (bubbles, cards,
-   * pipeline errors) and on unstamped announcements. Hydrated tool lines
-   * carry their recorder run id, namespaced (`run-<n>`) so it can never
-   * collide with a live turn id.
+   * pipeline errors) and on unstamped announcements.
    */
   runId?: string
 }
@@ -80,13 +75,6 @@ export function createFeedProjection(): {
   onEvent(event: PipelineEvent): void
   /** Voice-half lines (heard words, mic errors) ride the same feed. */
   append(entry: TranscriptEvent): void
-  /**
-   * Restart hydration: recorded history seeds outcome entries only, scoped
-   * to the Active Session and capped at the last exchange (#73 caps
-   * ADR 0005) — entries older than the snapshot's `renderFromAt` boundary
-   * stay gone, and `null` (a lapsed session) seeds nothing at all.
-   */
-  hydrate(snapshot: HydrationSnapshot): void
   entries(): FeedEntry[]
   /**
    * The run currently in flight (#55): opened by its command, closed by
@@ -96,10 +84,6 @@ export function createFeedProjection(): {
 } {
   let feed: FeedEntry[] = []
   let nextId = 0
-  // A session boundary wipes the view; hydration that resolves after a
-  // boundary must not resurrect the old session's outcomes — nothing older
-  // is ever rendered again (ADR 0003).
-  let sessionCleared = false
   // Open streamed runs (#47): the feed entry a live delta grows, if any —
   // one per kind, closed (frozen in place) by any other event so each run
   // reads as one growing line. Null after close/boundary/replacement.
@@ -298,7 +282,6 @@ export function createFeedProjection(): {
           // with the view (#54): turn ids never carry across sessions, and
           // no run outlives the boundary (#55).
           feed = []
-          sessionCleared = true
           displayedTurns.clear()
           renderedSpeakIds.clear()
           closeStreaming()
@@ -311,61 +294,6 @@ export function createFeedProjection(): {
       }
     },
     append: appendOutcome,
-    hydrate(snapshot) {
-      // Session-scoped first (ADR 0005), capped at the last exchange
-      // (#73): the lapsed past never renders, and neither do the older
-      // exchanges of a connected chain — even for the entries the
-      // recorder did (and must keep) recording.
-      // Answer suppression (ADR 0013): served entries carry their run's
-      // turn id, so the same displayed-turns rule the live path applies
-      // holds after a restart — a turn's Spoken Rendering appears only
-      // when it has no recorded Card. Unstamped entries (legacy rows, run-less
-      // voice lines) keep rendering beside their displays.
-      const { renderFromAt } = snapshot
-      const inSession =
-        renderFromAt === null ? [] : snapshot.entries.filter((entry) => entry.at >= renderFromAt)
-      if (inSession.length === 0 || sessionCleared) return
-      closeStreaming()
-      const displayed = new Set(
-        inSession.flatMap((entry) => (entry.kind === 'display' && entry.turnId ? [entry.turnId] : [])),
-      )
-      for (const turnId of displayed) {
-        displayedTurns.add(turnId)
-        // A speak may have arrived live while this snapshot was loading.
-        // Its hydrated Card owns the turn, so remove the live twin too.
-        dropRenderedSpeak(turnId)
-      }
-      // Dedup sees the complete recorded snapshot before Answer
-      // suppression filters its spoken twins. Otherwise a matching live
-      // speak could survive beside the hydrated Card.
-      const live = filterHydratedDuplicates(inSession, feed)
-      const rendered = inSession.filter(
-        (entry) => !(entry.kind === 'speak' && entry.turnId && displayedTurns.has(entry.turnId)),
-      )
-      feed = [
-        ...rendered.map((entry) => {
-          const id = nextId++
-          // A Card may arrive live after its Spoken Rendering hydrated;
-          // register the rendered id so the normal live suppression can
-          // remove that twin too.
-          if (entry.kind === 'speak' && entry.turnId) renderedSpeakIds.set(entry.turnId, id)
-          return {
-            ...entry,
-            id,
-            role: feedRoleForKind(entry.kind),
-            detail: false,
-            // Recorded tool lines group under their run's expander (#55):
-            // the recorder links every entry to its run row, so a restart's
-            // still-open session keeps the conversation clean too. The
-            // namespaced id (`run-<n>`) can never collide with a live turn
-            // id. Recorded errors stay top-level: history cannot tell a
-            // failed tool result from a pipeline error.
-            runId: entry.kind === 'tool' && entry.runId !== null ? `run-${entry.runId}` : undefined,
-          }
-        }),
-        ...live,
-      ]
-    },
     entries: () => feed,
     liveRunId: () => liveRunId,
   }

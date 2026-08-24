@@ -1,5 +1,5 @@
 export const HISTORY_IPC = {
-  /** Renderer → main: hydrate the transcript after a restart. */
+  /** Renderer → main: recorded entries for an explicit history view. */
   recentEntries: 'history:recentEntries',
   /** Renderer → main: recent run records (inspectable history). */
   recentRuns: 'history:recentRuns',
@@ -7,5 +7,5 @@ export const HISTORY_IPC = {
   recordVoiceError: 'history:recordVoiceError',
 } as const
 
-/** How much transcript the dashboard hydrates on launch. */
-export const HISTORY_HYDRATE_LIMIT = 200
+/** Maximum recorded entries returned by one explicit history query. */
+export const HISTORY_QUERY_LIMIT = 200

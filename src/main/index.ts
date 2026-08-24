@@ -24,8 +24,7 @@ import { resolveRoutingStatus } from '../core/agent/modelRouting'
 import { loadEnvFile } from './envFile'
 import { createUsageStore } from './settings/usageStore'
 import { USAGE_IPC } from '../core/settings/usageIpcChannels'
-import { HISTORY_IPC, HISTORY_HYDRATE_LIMIT } from '../core/history/ipcChannels'
-import { bootLapseFinish, lastExchangeStart, type HydrationSnapshot, type RunSpan } from '../core/history/hydrationScope'
+import { HISTORY_IPC, HISTORY_QUERY_LIMIT } from '../core/history/ipcChannels'
 import { createHistoryRecorder } from '../core/history/historyRecorder'
 import { createSessionMemory } from '../core/session/sessionMemory'
 import { systemClock } from '../core/ports/clock'
@@ -85,9 +84,8 @@ const envFileValues = loadEnvFile(process.env, app.getAppPath())
 // reported usage lands here and surfaces on the settings page.
 const usageStore = createUsageStore(join(app.getPath('userData'), 'usage.json'))
 
-// Transcript + agent-run history (spec #1, Persistence): every event the
-// dashboard renders is recorded here through the same projection, so a
-// restart hydrates exactly what was on screen.
+// Recorded History (spec #1, Persistence): every live event is recorded for
+// explicit review, but launches never restore it into the Feed or continuity.
 const historyStore = createSqliteHistoryStore(join(app.getPath('userData'), 'history.db'))
 const historyRecorder = createHistoryRecorder(historyStore, { now: () => Date.now() })
 
@@ -125,8 +123,7 @@ function dailySpendWarnUsd(): number {
 
 // Session window (default 30 min, ADR 0005 amends ADR 0001): resolved once
 // with the launch config — BINGBONG_SESSION_WINDOW_MS is the one e2e knob
-// (the lapse flows can't wait out real minutes), driving the live store,
-// the boot-hydration scope, and the renderer's Active Session gate (#70).
+// (the lapse flows can't wait out real minutes), driving only live state.
 
 // Piper TTS: binary, voices dir, and base voice come from env (defaults
 // suffice for a standard install); the settings page's voice wins per line.
@@ -148,16 +145,6 @@ const chimePlayer = createAplayPlayer()
 
 function currentEnv(): Record<string, string | undefined> {
   return { ...layerEnv(envFileValues, process.env), ...settingsToEnv(settingsStore.get()) }
-}
-
-/** Recorded runs (oldest first) — the shared input of boot hydration, the boot-armed Lapse, and turn-id stamping (ADR 0013). */
-function recordedRuns() {
-  return historyStore.recentRuns(HISTORY_HYDRATE_LIMIT)
-}
-
-/** Recorded run spans — the time-span projection of the recorded runs. */
-function recordedSpans(): RunSpan[] {
-  return recordedRuns().map((run) => ({ startedAt: run.startedAt, finishedAt: run.finishedAt }))
 }
 
 let cliHarnessStarted = false
@@ -350,12 +337,6 @@ async function createWindow(): Promise<BrowserWindow> {
     onSessionStart: () =>
       eventPublisher.publish({ source: 'lifecycle', event: { type: 'session_started', at: systemClock.now() } }),
   })
-  // Boot-armed Lapse (#73): a restart within the Session Window hydrated a
-  // view, so the eager boundary must own it — the timer anchors at the
-  // recorded last-run finish and wipes on schedule without a live run.
-  // The thread stays fresh (ADR 0005's asymmetry); only the timer arms.
-  const lapseFinish = bootLapseFinish(recordedSpans(), systemClock.now(), launchConfig.sessionWindowMs)
-  if (lapseFinish !== null) sessionMemory.armBootLapse(lapseFinish)
   const pipeline = createAssistantPipeline({
     controller,
     env: currentEnv(),
@@ -417,29 +398,7 @@ app.whenReady().then(async () => {
   registerSettingsIpc(settingsStore, () => resolveRoutingStatus(currentEnv()))
   registerFeedPanelIpc()
   ipcMain.handle(USAGE_IPC.getToday, () => usageStore.summary(dailySpendWarnUsd()))
-  ipcMain.handle(HISTORY_IPC.recentEntries, (): HydrationSnapshot => {
-    // Restart hydration (ADR 0005, capped by #73): entries ship unfiltered
-    // — recording and the read stay review-only — beside the run spans and
-    // the render boundary, computed with the same window the live store
-    // uses. The renderer's projection decides what renders: at most the
-    // last exchange of the Active Session; a lapsed session boots
-    // blank. The spans (#70) seed the renderer's Active Session gate,
-    // which reuses the same isSessionActive computation as the scoping
-    // here. Each entry ships with its run's turn id (ADR 0013): runs
-    // correlate 1:1 to turns (#28), so the stamp derives from the run —
-    // the recorder itself stays unchanged (#49), and the projection can
-    // apply the same Answer suppression the live path applies.
-    const runs = recordedRuns()
-    const turnIdByRun = new Map(runs.map((run) => [run.id, run.turnId]))
-    return {
-      entries: historyStore.recentEntries(HISTORY_HYDRATE_LIMIT).map((entry) => ({
-        ...entry,
-        turnId: entry.runId !== null ? turnIdByRun.get(entry.runId) ?? null : null,
-      })),
-      runs: runs.map((run) => ({ startedAt: run.startedAt, finishedAt: run.finishedAt })),
-      renderFromAt: lastExchangeStart(runs, systemClock.now(), launchConfig.sessionWindowMs),
-    }
-  })
+  ipcMain.handle(HISTORY_IPC.recentEntries, () => historyStore.recentEntries(HISTORY_QUERY_LIMIT))
   ipcMain.handle(HISTORY_IPC.recentRuns, () => historyStore.recentRuns(50))
   ipcMain.handle(HISTORY_IPC.recordVoiceError, (_event, message: unknown) => {
     if (typeof message !== 'string' || message.trim() === '') return null
