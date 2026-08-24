@@ -202,6 +202,31 @@ describe('session runtime', () => {
     })
   })
 
+  // #96: Browser State cleanup hangs off onEnded — it must fire exactly
+  // once for every end reason, never twice for the same Session.
+  it('fires onEnded exactly once for every Session end reason', () => {
+    for (const reason of ['lapsed', 'reset', 'app_closed', 'interrupted'] as const) {
+      const ended: string[] = []
+      const runtime = createSessionRuntime({
+        clock: new FakeClock(1_000),
+        identities: new DeterministicIdentities(),
+        onEnded: (session) => ended.push(`${session.sessionId}:${session.reason}`),
+      })
+      const admission = runtime.accept(runtime.submit().submissionId)
+      // Lapse only ends an expiring Session — the other reasons end directly.
+      if (reason === 'lapsed') {
+        runtime.finish(admission.runId)
+        runtime.beginExpiry()
+      }
+
+      runtime.end(reason)
+      runtime.end(reason)
+      runtime.dispose()
+
+      expect(ended).toEqual([`session-1:${reason}`])
+    }
+  })
+
   it('advances the reset generation before accepting work into a fresh Session', () => {
     const { runtime } = harness()
     const oldRun = runtime.accept(runtime.submit().submissionId)

@@ -160,4 +160,38 @@ describe('subagent tab lifecycle', () => {
       thumbnail: 'data:image/jpeg;base64,frame-final',
     })
   })
+
+  // #96: Session end discards its transient browser surfaces — open tabs
+  // close immediately, no linger, no late auto-close firing afterwards.
+  it('closeAll closes active and lingering tabs immediately, skipping the linger', () => {
+    const { tabs, clock, changes } = machine()
+    tabs.open('a-1', 'https://a.test')
+    tabs.open('b-2', 'https://b.test')
+    tabs.finish('b-2') // lingering, 60 s timer armed
+    tabs.open('c-3', 'https://c.test')
+
+    expect(tabs.closeAll()).toBe(3)
+
+    const phases = (id: string): string[] => changes.filter((t) => t.agentId === id).map((t) => t.phase)
+    expect(phases('a-1')).toEqual(['active', 'closed'])
+    expect(phases('b-2')).toEqual(['active', 'lingering', 'closed'])
+    expect(phases('c-3')).toEqual(['active', 'closed'])
+
+    // The disarmed linger timer never fires late.
+    clock.advance(120_000)
+    expect(tabs.snapshot().every((t) => t.phase === 'closed')).toBe(true)
+    expect(tabs.closeAll()).toBe(0)
+  })
+
+  it('closeAll leaves the rail empty for the next Session', () => {
+    const { tabs } = machine()
+    tabs.open('a-1', 'https://a.test')
+    tabs.open('b-2', 'https://b.test')
+    tabs.closeAll()
+
+    expect(tabs.open('fresh-1', 'https://fresh.test').ok).toBe(true)
+    expect(tabs.open('fresh-2', 'https://fresh.test').ok).toBe(true)
+    expect(tabs.open('fresh-3', 'https://fresh.test').ok).toBe(true)
+    expect(tabs.open('fresh-4', 'https://fresh.test').ok).toBe(false)
+  })
 })

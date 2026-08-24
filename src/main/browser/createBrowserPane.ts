@@ -126,7 +126,13 @@ export function createBrowserPane(deps?: {
     reset() {
       whenLive(() => {
         wc.stop()
-        void wc.loadURL('about:blank').then(() => wc.navigationHistory.clear())
+        // Blocked-popup reports are Session-owned transient work (#96): an
+        // ended Session's denied popups never reach a later Session's
+        // outcome lines.
+        popupBlocks.length = 0
+        void wc.loadURL('about:blank').finally(() => {
+          if (!wc.isDestroyed()) wc.navigationHistory.clear()
+        })
       })
     },
     setPaneRect(rect) {

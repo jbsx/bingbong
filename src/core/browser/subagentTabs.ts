@@ -41,6 +41,8 @@ export interface SubagentTabs {
   finish(agentId: string): void
   /** Bring a lingering or closed tab back into active use; a closed tab restores its retained URL. */
   reopen(agentId: string): ReopenResult
+  /** Close every open tab now, skipping the linger — Session end discards its transient surfaces (#96). */
+  closeAll(): number
   /** Navigation updates for the card (URL/title); emits like phase changes. */
   update(agentId: string, patch: { url?: string; title?: string; thumbnail?: string }): void
   snapshot(): SubagentTab[]
@@ -73,8 +75,14 @@ export function createSubagentTabs(deps: SubagentTabsDeps): SubagentTabs {
   function closeAfterLinger(agentId: string): void {
     const tab = tabs.get(agentId)
     if (!tab || tab.phase !== 'lingering') return
+    closeTab(tab)
+  }
+
+  /** Disarm the linger timer and close the tab, announcing the phase change. */
+  function closeTab(tab: SubagentTab): void {
+    lingerTimers.get(tab.agentId)?.()
+    lingerTimers.delete(tab.agentId)
     tab.phase = 'closed'
-    lingerTimers.delete(agentId)
     emit(tab)
   }
 
@@ -120,6 +128,16 @@ export function createSubagentTabs(deps: SubagentTabsDeps): SubagentTabs {
       tab.phase = 'active'
       emit(tab)
       return { ok: true, tab }
+    },
+
+    closeAll() {
+      let count = 0
+      for (const tab of tabs.values()) {
+        if (tab.phase === 'closed') continue
+        closeTab(tab)
+        count += 1
+      }
+      return count
     },
 
     update(agentId, patch) {

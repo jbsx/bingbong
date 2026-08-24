@@ -57,6 +57,8 @@ export interface SubagentRuntime {
   /** Direct card-cancel path (the dashboard button) — no LLM round-trip. */
   cancel(agentId: string): boolean
   cancelAll(): number
+  /** Close every subagent tab immediately, skipping the linger (#96 Browser State discard). */
+  closeAllTabs(): number
   pauseAll(): void
   resumeAll(): void
   dispose(): void
@@ -136,6 +138,7 @@ export function createSubagentRuntime(deps: SubagentRuntimeDeps): SubagentRuntim
     pool,
     cancel: (agentId) => manager.cancel(agentId).ok,
     cancelAll: () => manager.cancelAll(),
+    closeAllTabs: () => tabs.closeAll(),
     pauseAll: () => manager.pauseAll(),
     resumeAll: () => manager.resumeAll(),
     dispose: () => pool.dispose(),

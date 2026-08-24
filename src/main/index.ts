@@ -8,6 +8,7 @@ import { attachAdblock } from './browser/attachAdblock'
 import { createBrowserPane, BROWSER_PARTITION } from './browser/createBrowserPane'
 import { attachBrowserPaneToWindow, registerBrowserIpc } from './browser/attachBrowserPane'
 import { createPaneBrowserController } from './browser/createPaneBrowserController'
+import { resetBrowserState } from './browser/resetBrowserState'
 import { attachDownloadRouter } from './browser/attachDownloadRouter'
 import { runCliHarness, saveScreenshotFile } from './cli/runCliHarness'
 import { abortActiveRun, attachAssistantAbortHotkey, attachAssistantToWindow, pipelineFor, registerAssistantIpc } from './agent/attachAssistant'
@@ -431,8 +432,9 @@ async function createWindow(): Promise<BrowserWindow> {
     onEnded: (ended) => {
       lastEndedSession = ended
       historyStore.finishSession(ended.sessionId, ended.reason, ended.endedAt)
-      subagentRuntime.cancelAll()
-      pane.reset()
+      // Every end reason discards Browser State through the same reusable
+      // cleanup (#96); the runtime fires onEnded exactly once per Session.
+      resetBrowserState(pane, subagentRuntime)
       eventPublisher.publish({
         source: 'lifecycle',
         event: {

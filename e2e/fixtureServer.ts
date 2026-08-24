@@ -69,6 +69,10 @@ export interface FixtureServer {
   close(): Promise<void>
 }
 
+// Browser Profile fixtures (#96): /set-cookie plants a cookie in the
+// persistent browse partition; /cookie-echo is a page of that origin that
+// sets nothing — reading the cookie from it proves the partition kept it.
+
 function page(body: string): string {
   return `<html><body style="background:#222">${body}</body></html>`
 }
@@ -428,6 +432,14 @@ export async function startFixtureServer(): Promise<FixtureServer> {
       res.end(ADBLOCK_LIST_BODY)
       return
     }
+    if (req.url === '/set-cookie') {
+      res.writeHead(200, {
+        'Content-Type': 'text/html',
+        'Set-Cookie': 'bb_profile=persisted; Path=/; Max-Age=3600; SameSite=Lax',
+      })
+      res.end(page('<h1 style="color:#fff">profile cookie set</h1>'))
+      return
+    }
     if (req.url === '/slow') {
       setTimeout(() => {
         if (res.destroyed) return
@@ -437,6 +449,10 @@ export async function startFixtureServer(): Promise<FixtureServer> {
       return
     }
     res.writeHead(200, { 'Content-Type': 'text/html' })
+    if (req.url === '/cookie-echo') {
+      res.end(page('<h1 style="color:#fff">cookie echo fixture page</h1>'))
+      return
+    }
     if (req.url === '/second') {
       res.end(page('<h1 style="color:#fff">second fixture page</h1>'))
       return
