@@ -2,6 +2,15 @@ export type PipelineStatus = 'thinking' | 'acting' | 'speaking' | 'paused' | 'ca
 
 import type { SubagentKind, SubagentStatus } from '../agent/subagentManager'
 import type { SubagentTabPhase } from '../browser/subagentTabs'
+import type { RunId, SessionGeneration, SessionId, SubmissionId } from '../session/sessionIdentity'
+
+/** Additive ownership metadata used while producers migrate off legacy turn correlation. */
+export interface SessionEventIdentity {
+  submissionId?: SubmissionId
+  runId?: RunId
+  sessionId?: SessionId
+  sessionGeneration?: SessionGeneration
+}
 
 /** The tab slice a subagent card carries — the bridge merges it in from the tab machine. */
 export interface SubagentCardTab {
@@ -38,9 +47,10 @@ export interface SubagentCard {
  * `turnId` (required below). `speak`/`display`/`error` carry it optionally —
  * the download router and subagent cards emit the same variants outside any
  * turn's stream, and those announcements are not turn-scoped. `agent_update`
- * and `session_started` are never pipeline-emitted and stay unstamped.
+ * and `session_started` are not pipeline-emitted. Explicit ownership remains
+ * optional on every variant while producers migrate to the Session runtime.
  */
-export type PipelineEvent =
+export type PipelineEvent = SessionEventIdentity & (
   | { type: 'command'; turnId: string; text: string; at: number }
   | { type: 'status'; turnId: string; status: PipelineStatus; at: number }
   | { type: 'tool_call'; turnId: string; callId: string; name: string; args: Record<string, unknown>; at: number }
@@ -164,6 +174,7 @@ export type PipelineEvent =
    * unchanged.
    */
   | { type: 'session_started'; at: number }
+)
 
 /**
  * Derives a run's outcome when its `done` event omits one: a seen cancelled
