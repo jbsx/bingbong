@@ -1,8 +1,8 @@
 import { BrowserWindow, ipcMain, type WebContents } from 'electron'
 import { PIPELINE_IPC } from '../../core/pipeline/ipcChannels'
-import type { PipelineEvent } from '../../core/pipeline/events'
 import type { CommandPipeline } from '../../core/pipeline/createCommandPipeline'
 import { steerPipeline } from '../../core/pipeline/steering'
+import type { WindowRunPublisher } from '../session/windowEventPublisher'
 
 // Glue between the dashboard and the command pipeline: submit a command
 // (text box or voice), receive the event stream, resolve confirmations.
@@ -11,10 +11,8 @@ import { steerPipeline } from '../../core/pipeline/steering'
 
 interface AttachedPipeline {
   pipeline: CommandPipeline
-  /** Observes every event a run emits (the voice session's confirmation window). */
-  onEvent?: (event: PipelineEvent) => void
-  /** Creates an isolated persistence observer for each execute() invocation. */
-  createRunObserver?: () => (event: PipelineEvent) => void
+  /** Creates the per-execution publication context before execute() starts. */
+  createRunPublisher: () => WindowRunPublisher
 }
 
 const pipelines = new WeakMap<BrowserWindow, AttachedPipeline>()
@@ -30,26 +28,12 @@ const pipelines = new WeakMap<BrowserWindow, AttachedPipeline>()
 export async function runAssistantCommand(win: BrowserWindow, text: string, turnId?: string, truncated?: boolean): Promise<boolean> {
   const attached = pipelines.get(win)
   if (!attached) return false
-  const observeRun = attached.createRunObserver?.()
+  const publisher = attached.createRunPublisher()
   for await (const pipelineEvent of attached.pipeline.execute(text, turnId, truncated)) {
     if (win.isDestroyed()) break
-    deliver(win.webContents, attached, pipelineEvent, observeRun)
+    publisher.publish(pipelineEvent)
   }
   return true
-}
-
-function deliver(
-  sender: WebContents,
-  attached: AttachedPipeline,
-  pipelineEvent: PipelineEvent,
-  observeRun?: (event: PipelineEvent) => void,
-): void {
-  // Observers run first: the session store decides on the command event
-  // whether a new session begins, and its session_started notification must
-  // reach the dashboard before the command echo it clears (spec #25).
-  observeRun?.(pipelineEvent)
-  if (!sender.isDestroyed()) sender.send(PIPELINE_IPC.event, pipelineEvent)
-  attached.onEvent?.(pipelineEvent)
 }
 
 export function pipelineFor(win: BrowserWindow): CommandPipeline | undefined {
@@ -108,10 +92,9 @@ export function registerAssistantIpc(): void {
 export function attachAssistantToWindow(
   pipeline: CommandPipeline,
   win: BrowserWindow,
-  onEvent?: (event: PipelineEvent) => void,
-  createRunObserver?: () => (event: PipelineEvent) => void,
+  createRunPublisher: () => WindowRunPublisher,
 ): void {
-  pipelines.set(win, { pipeline, onEvent, createRunObserver })
+  pipelines.set(win, { pipeline, createRunPublisher })
   const contents = win.webContents
   const detachAbortHotkey = attachAssistantAbortHotkey(pipeline, contents)
   win.on('closed', () => pipelines.delete(win))

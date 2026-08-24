@@ -2,6 +2,7 @@ import { BrowserWindow, ipcMain } from 'electron'
 import { BROWSER_IPC } from '../../core/browser/ipcChannels'
 import { isPaneRect } from '../../core/browser/paneState'
 import type { BrowserPane } from './createBrowserPane'
+import type { WindowEventPublisher } from '../session/windowEventPublisher'
 
 const panes = new WeakMap<BrowserWindow, BrowserPane>()
 
@@ -27,12 +28,16 @@ export function registerBrowserIpc(): void {
   })
 }
 
-export function attachBrowserPaneToWindow(pane: BrowserPane, win: BrowserWindow): void {
+export function attachBrowserPaneToWindow(
+  pane: BrowserPane,
+  win: BrowserWindow,
+  publisher: Pick<WindowEventPublisher, 'publish'>,
+): void {
   panes.set(win, pane)
   win.contentView.addChildView(pane.view)
 
   const unsubscribe = pane.onState((state) => {
-    if (!win.isDestroyed()) win.webContents.send(BROWSER_IPC.stateChanged, state)
+    publisher.publish({ source: 'browser', state })
   })
   win.on('closed', () => {
     unsubscribe()

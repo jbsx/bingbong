@@ -5,9 +5,10 @@ import type { Transcriber, VadScorer } from '../../core/ports/stt'
 import type { PerfTracer } from '../../core/perf/perfTracer'
 import type { UtteranceDumper } from '../../core/voice/utteranceDump'
 import type { UtteranceEndpointerConfig } from '../../core/voice/vadEndpointing'
-import { VOICE_IPC, type VoiceHeardEvent, type VoiceState } from '../../core/voice/ipcChannels'
+import { VOICE_IPC, type VoiceState } from '../../core/voice/ipcChannels'
 import { createVoiceSession, type VoiceSession, type VoiceWakeDeps } from '../../core/voice/voiceSession'
 import { pipelineFor, runAssistantCommand } from '../agent/attachAssistant'
+import type { WindowEventPublisher } from '../session/windowEventPublisher'
 
 // IPC glue for the ears (T9): the renderer's worklet streams 16 kHz mono PCM
 // here, the voice session (seam-tested in core) endpoints and transcribes it,
@@ -68,17 +69,15 @@ export function attachVoiceToWindow(win: BrowserWindow, deps: AttachVoiceDeps): 
     onPause: () => pipelineFor(win)?.pause(),
     onResume: (steering) => pipelineFor(win)?.resume(steering),
     onStateChange: (state: VoiceState) => {
-      if (!win.isDestroyed()) win.webContents.send(VOICE_IPC.stateChanged, state)
+      deps.publisher.publish({ source: 'voice-state', state })
     },
     onHeard: (heard) => {
       const stamped = { ...heard, at: Date.now() }
-      deps.recordHeard?.(stamped)
-      if (!win.isDestroyed()) win.webContents.send(VOICE_IPC.heard, stamped)
+      deps.publisher.publish({ source: 'voice-heard', heard: stamped })
     },
     onError: (message) => {
       const error = { message, at: Date.now() }
-      deps.recordError?.(error.message, error.at)
-      if (!win.isDestroyed()) win.webContents.send(VOICE_IPC.error, error)
+      deps.publisher.publish({ source: 'voice-error', error })
     },
   })
 
@@ -103,7 +102,5 @@ export interface AttachVoiceDeps {
   tracer?: PerfTracer
   /** Opt-in utterance audio dumps (#34); absent keeps the session dump-free. */
   dumper?: UtteranceDumper
-  /** Persistence taps (spec: transcript history) — same wording as the dashboard. */
-  recordHeard?: (heard: VoiceHeardEvent) => void
-  recordError?: (message: string, at: number) => void
+  publisher: Pick<WindowEventPublisher, 'publish'>
 }

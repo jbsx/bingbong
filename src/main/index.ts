@@ -1,9 +1,9 @@
 import { app, BrowserWindow, ipcMain, session } from 'electron'
 import { join } from 'node:path'
 import type { BrowserController, VisualGroundingController } from '../core/ports/browser'
+import { BROWSER_IPC } from '../core/browser/ipcChannels'
 import { createAgentActivityTracker, withAgentActivity } from '../core/downloads/agentActivity'
 import { PIPELINE_IPC } from '../core/pipeline/ipcChannels'
-import type { PipelineEvent } from '../core/pipeline/events'
 import { attachAdblock } from './browser/attachAdblock'
 import { createBrowserPane, BROWSER_PARTITION } from './browser/createBrowserPane'
 import { attachBrowserPaneToWindow, registerBrowserIpc } from './browser/attachBrowserPane'
@@ -51,6 +51,8 @@ import { createMainWake } from './wake/createMainWake'
 import { createChimeWav } from '../core/tts/chime'
 import { createAplayPlayer } from './tts/createAplayPlayer'
 import { KIOSK_FLAG, resolveLaunchConfig } from '../core/app/launchConfig'
+import { VOICE_IPC } from '../core/voice/ipcChannels'
+import { createWindowEventPublisher } from './session/windowEventPublisher'
 
 // Appliance mode (T11): --kiosk goes fullscreen; the idle timeout reaches the
 // renderer through the preload's launch-config snapshot.
@@ -207,9 +209,8 @@ async function createWindow(): Promise<BrowserWindow> {
   // marks its download-capable verbs, so only agent-initiated downloads get
   // routed; manual ones keep the OS save dialog.
   const pane = createBrowserPane({ getZoomPercent: () => settingsStore.get().webZoomPercent })
-  attachBrowserPaneToWindow(pane, win)
   // The feed panel overlay (#45) stacks above the browser pane — attached
-  // after it so the z-order is right from the first frame. Main's state
+  // above it before the first frame. Main's state
   // fold rides the same pipeline events the dashboard receives; the fold's
   // width default matches the launch mode (#65) until the dashboard pushes
   // the persisted preference.
@@ -220,11 +221,33 @@ async function createWindow(): Promise<BrowserWindow> {
   // The panel shortcut also fires while the pane owns focus.
   feedPanel.registerShortcut(pane.view.webContents)
 
-  const emitPipelineEvent = (event: PipelineEvent): void => {
-    historyRecorder.event(event)
-    if (!win.isDestroyed()) win.webContents.send(PIPELINE_IPC.event, event)
-    feedPanel.handlePipelineEvent(event)
+  const sendToRenderer = (channel: string, payload: unknown): void => {
+    if (!win.isDestroyed() && !win.webContents.isDestroyed()) win.webContents.send(channel, payload)
   }
+  const eventPublisher = createWindowEventPublisher({
+    createHistoryRunObserver: () => {
+      const run = historyRecorder.run()
+      return (event) => run.event(event)
+    },
+    createSessionRunObserver: () => {
+      const run = sessionMemory.run()
+      return (event) => run.event(event)
+    },
+    historyEvent: (event) => historyRecorder.event(event),
+    historyHeard: (heard) => historyRecorder.heard(heard),
+    historyVoiceError: (error) => historyRecorder.voiceError(error.message, error.at),
+    sendPipelineEvent: (event) => sendToRenderer(PIPELINE_IPC.event, event),
+    sendVoiceState: (state) => sendToRenderer(VOICE_IPC.stateChanged, state),
+    sendVoiceHeard: (heard) => sendToRenderer(VOICE_IPC.heard, heard),
+    sendVoiceError: (error) => sendToRenderer(VOICE_IPC.error, error),
+    sendBrowserState: (state) => sendToRenderer(BROWSER_IPC.stateChanged, state),
+    observeVoicePipelineEvent: (event) => voiceSession.handlePipelineEvent(event),
+    overlayPipelineEvent: (event) => feedPanel.handlePipelineEvent(event),
+    overlayVoiceHeard: (heard) => feedPanel.forwardHeard(heard),
+    overlayVoiceError: (error) => feedPanel.forwardVoiceError(error),
+  })
+  attachBrowserPaneToWindow(pane, win, eventPublisher)
+  feedPanel.bringToTop()
   const agentActivity = createAgentActivityTracker()
   const controller: BrowserController & VisualGroundingController = withAgentActivity(
     createPaneBrowserController(pane, { subspans: browserSubspans }),
@@ -247,7 +270,7 @@ async function createWindow(): Promise<BrowserWindow> {
     dir: downloadsDir,
     tts: speakingGate.tts,
     isAgentActive: agentActivity.isActive,
-    emit: emitPipelineEvent,
+    emit: (event) => eventPublisher.publish({ source: 'download', event }),
   })
 
   if (runningCliHarness) startCliHarness(controller, downloadsDir)
@@ -261,7 +284,7 @@ async function createWindow(): Promise<BrowserWindow> {
     downloadsDir,
     getEnv: currentEnv,
     tts: speakingGate.tts,
-    emit: emitPipelineEvent,
+    emit: (event) => eventPublisher.publish({ source: 'subagent', event }),
     onUsage: (record) => usageStore.record(record.role, record.model, record.usage),
     tracer: perfTracer,
     onEscape: () => {
@@ -310,16 +333,7 @@ async function createWindow(): Promise<BrowserWindow> {
       endFrames: silenceFramesForMs(settingsStore.get().endpointDelayMs),
       resumptionMergeMs: settingsStore.get().resumptionMergeMs,
     }),
-    recordHeard: (heard) => {
-      historyRecorder.heard(heard)
-      // The panel's feed carries voice lines too (#45): the same stamped
-      // payload the dashboard gets rides the overlay's voice channel.
-      feedPanel.forwardHeard(heard)
-    },
-    recordError: (message, at) => {
-      historyRecorder.voiceError(message, at)
-      feedPanel.forwardVoiceError({ message, at })
-    },
+    publisher: eventPublisher,
     tracer: perfTracer,
     dumper: utteranceDumper,
   })
@@ -333,7 +347,8 @@ async function createWindow(): Promise<BrowserWindow> {
   // history.db is untouched: the event projects to no transcript entry.
   const sessionMemory = createSessionMemory({
     windowMs: launchConfig.sessionWindowMs,
-    onSessionStart: () => emitPipelineEvent({ type: 'session_started', at: systemClock.now() }),
+    onSessionStart: () =>
+      eventPublisher.publish({ source: 'lifecycle', event: { type: 'session_started', at: systemClock.now() } }),
   })
   // Boot-armed Lapse (#73): a restart within the Session Window hydrated a
   // view, so the eager boundary must own it — the timer anchors at the
@@ -374,26 +389,9 @@ async function createWindow(): Promise<BrowserWindow> {
     browserSubspans,
     // Progress detail (#43): mid-await signals ride the same channel; the
     // history projection maps them to no entry, so recording is unchanged.
-    emitDetail: emitPipelineEvent,
+    emitDetail: (event) => eventPublisher.publish({ source: 'detail', event }),
   })
-  attachAssistantToWindow(
-    pipeline,
-    win,
-    (event) => {
-      voiceSession.handlePipelineEvent(event)
-      // Run events reach the panel's fold through the same observer tap —
-      // one seam, every event (the fold's command/done pair drives peek).
-      feedPanel.handlePipelineEvent(event)
-    },
-    () => {
-      const historyRun = historyRecorder.run()
-      const sessionRun = sessionMemory.run()
-      return (event) => {
-        historyRun.event(event)
-        sessionRun.event(event)
-      }
-    },
-  )
+  attachAssistantToWindow(pipeline, win, () => eventPublisher.run())
   const detachPaneAbort = attachAssistantAbortHotkey(pipeline, pane.view.webContents)
   win.on('closed', detachPaneAbort)
   // The session store dies with its window (#73): a pending Lapse boundary
