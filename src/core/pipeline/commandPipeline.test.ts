@@ -2957,8 +2957,8 @@ describe('command pipeline — session reset (#99)', () => {
       },
     })) events.push(event)
 
-    // The sibling call from the same response never executes, and no later
-    // model round happens: the discarded run ends at the reset boundary.
+    // The response's other calls never execute wherever they sit, and no
+    // later model round happens: the discarded run ends at the boundary.
     expect(executions).toBe(0)
     expect(events.map((event) => event.type)).toEqual([
       'command', 'status', 'status', 'tool_call', 'tool_result', 'done',
@@ -2974,7 +2974,25 @@ describe('command pipeline — session reset (#99)', () => {
     expect(events.at(-1)).toMatchObject({ type: 'done', outcome: 'reset' })
   })
 
-  it('keeps a failed Session Reset tool inside its run like any other tool result', async () => {
+  it('suppresses siblings listed before the Session Reset call too', async () => {
+    executions = 0
+    const pipeline = resetPipeline([
+      { kind: 'tool_calls', calls: [
+        { id: 'c1', name: 'spin', args: {} },
+        { id: 'c2', name: 'new_session', args: {} },
+        { id: 'c3', name: 'spin', args: {} },
+      ] },
+      { kind: 'answer', speak: 'Fresh start.', display: 'Never reached.' },
+    ])
+
+    const events = await collect(pipeline, 'forget all that — different question')
+
+    expect(executions).toBe(0)
+    expect(events.filter((event) => event.type === 'tool_call').map((event) => event.name)).toEqual(['new_session'])
+    expect(events.at(-1)).toMatchObject({ type: 'done', outcome: 'reset' })
+  })
+
+  it('keeps a failed Session Reset tool inside its run, answering its suppressed siblings', async () => {
     executions = 0
     const failingReset = {
       name: 'new_session',
@@ -2985,7 +3003,10 @@ describe('command pipeline — session reset (#99)', () => {
     }
     const pipeline = createCommandPipeline({
       llm: new ScriptedLlm([
-        { kind: 'tool_calls', calls: [{ id: 'c1', name: 'new_session', args: {} }] },
+        { kind: 'tool_calls', calls: [
+          { id: 'c1', name: 'spin', args: {} },
+          { id: 'c2', name: 'new_session', args: {} },
+        ] },
         { kind: 'answer', speak: 'It failed.', display: 'It failed.' },
       ]),
       tts: new RecordingTts(),
@@ -2995,11 +3016,13 @@ describe('command pipeline — session reset (#99)', () => {
 
     const events = await collect(pipeline, 'forget all that')
 
-    expect(events.find((event) => event.type === 'tool_result')).toMatchObject({
-      name: 'new_session',
-      ok: false,
-      error: 'reset unavailable',
-    })
+    // The reset call itself ran (and failed); the sibling was suppressed
+    // but still answered so the next round stays protocol-consistent.
+    expect(executions).toBe(0)
+    expect(events.filter((event) => event.type === 'tool_result')).toEqual([
+      { type: 'tool_result', callId: 'c2', name: 'new_session', ok: false, error: 'reset unavailable', at: 0 },
+      { type: 'tool_result', callId: 'c1', name: 'spin', ok: false, error: 'not executed: this response carried a session reset, but it failed', at: 0 },
+    ])
     expect(events.at(-1)).toMatchObject({ type: 'done', outcome: 'done' })
   })
 })

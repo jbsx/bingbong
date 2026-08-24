@@ -490,8 +490,17 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
 
           yield { type: 'status', status: 'acting', at: clock.now() }
           rounds += 1
+          // Session Reset boundary (#99): the whole response is known
+          // before any of it executes, so when it carries a reset call,
+          // every other call in it — before or after — is a discarded
+          // sibling: none executes, emits, or observes. Only the reset
+          // call itself runs; if it fails anyway, its suppressed siblings
+          // answer with a uniform not-executed notice so the next round
+          // stays protocol-consistent.
+          const resetCallIndex = turn.calls.findIndex((candidate) => toolsByName.get(candidate.name)?.sessionReset)
           let steerAfterTool = false
-          for (const call of turn.calls) {
+          for (const [index, call] of turn.calls.entries()) {
+            if (resetCallIndex !== -1 && index !== resetCallIndex) continue
             const beforeToolSteering = yield* checkpoint(run, 'acting')
             if (beforeToolSteering) {
               steering = beforeToolSteering
@@ -523,9 +532,8 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
               ...(observedOutcome.ok ? { result: observedOutcome.result } : { error: observedOutcome.error }),
               at: clock.now(),
             }
-            // Session Reset boundary (#99): a successful reset tool ends
-            // this run here — its result is the last thing it ever emits.
-            // Remaining siblings stay unexecuted and unobserved.
+            // The reset call succeeded: this run ends here — its result is
+            // the last thing it ever emits.
             if (observedOutcome.ok && toolsByName.get(call.name)?.sessionReset) {
               resetConsumed = true
               break
@@ -538,6 +546,16 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
             }
           }
           if (steerAfterTool) continue
+          // The reset call ran and failed: its discarded siblings still
+          // need answers for the following round to be protocol-consistent.
+          if (resetCallIndex !== -1 && !resetConsumed) {
+            for (const [index, call] of turn.calls.entries()) {
+              if (index === resetCallIndex) continue
+              const error = 'not executed: this response carried a session reset, but it failed'
+              toolResults.push({ call, outcome: { ok: false, error } })
+              yield { type: 'tool_result', callId: call.id, name: call.name, ok: false, error, at: clock.now() }
+            }
+          }
           if (resetConsumed) break
           yield { type: 'status', status: 'thinking', at: clock.now() }
         }

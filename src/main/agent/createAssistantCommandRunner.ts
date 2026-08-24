@@ -71,7 +71,10 @@ export function createAssistantCommandRunner(deps: {
         }
         if (!restartRequested) return true
         // The discarded run has fully unwound: end its Session so the next
-        // admission creates the replacement identity from scratch.
+        // admission creates the replacement identity from scratch. The
+        // replacement mints its own turn id — the old one belongs to the
+        // discarded attempt's perf spans — while `truncated` rides on: it
+        // describes the user's utterance, which is being retried verbatim.
         deps.onSessionReset(admission)
         currentTurnId = undefined
       }
