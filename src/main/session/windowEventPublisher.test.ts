@@ -5,6 +5,7 @@ import type { RunId, SessionId, SubmissionId } from '../../core/session/sessionI
 import type { SubmissionFeedback } from '../../core/session/submissionFeedback'
 import type { VoiceErrorEvent, VoiceHeardEvent, VoiceState } from '../../core/voice/ipcChannels'
 import { createWindowEventPublisher, type WindowEventPublisherDeps } from './windowEventPublisher'
+import { createPipelineAcceptanceGate } from './pipelineAcceptance'
 
 const pipelineEvent: PipelineEvent = { type: 'display', text: 'hello', at: 10 }
 const voiceState: VoiceState = { listening: true, reason: 'hotkey', monitoring: false, transcribing: false }
@@ -189,13 +190,14 @@ describe('window event publisher', () => {
   })
 
   it('rejects a late foreign-Session subagent event even while a new Run is active', () => {
-    // The acceptance rule production wires (#97): an event must carry the
-    // live Session's identity or it is dropped.
-    const gate = (event: PipelineEvent): boolean =>
-      event.type === 'session_started' && event.sessionId === undefined
-        ? true
-        : event.sessionId === 'session-live' && event.sessionGeneration === 4
-    const { publisher, calls, pipelineEvents } = setup(gate)
+    // The real production rule (#97), not a copy: only the live Session's
+    // identity passes, so a completion stamped with the ended Session is
+    // dropped before any observer or renderer sees it.
+    const accepted = createPipelineAcceptanceGate({
+      liveSession: () => ({ sessionId: 'session-live' as SessionId, generation: 4 }),
+      lastEndedSession: () => ({ sessionId: 'session-ended' as SessionId, generation: 3 }),
+    })
+    const { publisher, calls, pipelineEvents } = setup(accepted)
     const run = publisher.run({ ...ownership, sessionId: 'session-live' as SessionId, generation: 4 })
 
     const lateAgentUpdate: PipelineEvent = {

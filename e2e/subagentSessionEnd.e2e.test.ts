@@ -110,7 +110,9 @@ describe('subagent retirement at Session end e2e', () => {
 
     // A late completion from the ended Session neither renders nor speaks:
     // give the cancelled loop's settlement every chance to land, then hold
-    // the cleared state.
+    // the cleared state. (Cancelled agents are unannounced by design, so
+    // the deterministic rejection proof is the pipeline acceptance gate's
+    // unit tests; this asserts the end-to-end invariant holds regardless.)
     await sleep(1_500)
     expect(await cardCount(harness)).toBe(0)
     expect(await targetsOn(harness, slowUrl)).toBe(0)

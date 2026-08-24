@@ -1,7 +1,6 @@
 import { app, BrowserWindow, ipcMain, session } from 'electron'
 import { join } from 'node:path'
 import type { BrowserController, VisualGroundingController } from '../core/ports/browser'
-import type { PipelineEvent } from '../core/pipeline/events'
 import { BROWSER_IPC } from '../core/browser/ipcChannels'
 import { createAgentActivityTracker, withAgentActivity } from '../core/downloads/agentActivity'
 import { PIPELINE_IPC } from '../core/pipeline/ipcChannels'
@@ -61,6 +60,7 @@ import { createAplayPlayer } from './tts/createAplayPlayer'
 import { KIOSK_FLAG, resolveLaunchConfig } from '../core/app/launchConfig'
 import { VOICE_IPC } from '../core/voice/ipcChannels'
 import { createWindowEventPublisher } from './session/windowEventPublisher'
+import { createPipelineAcceptanceGate } from './session/pipelineAcceptance'
 import { attachSessionToWindow, registerSessionIpc } from './session/attachSession'
 
 // Appliance mode (T11): --kiosk goes fullscreen; the idle timeout reaches the
@@ -224,22 +224,12 @@ async function createWindow(): Promise<BrowserWindow> {
   let sessionRuntime: SessionRuntime | null = null
   let lastEndedSession: EndedSession | null = null
   // The one acceptance predicate every pipeline-level consumer shares (#97):
-  // legacy unowned clear-only session_started boundaries pass, session_ended
-  // must match the Session that just ended, and everything else must carry
-  // the live Session's identity — late subagent, browser, or Feed work from
-  // an ended or foreign Session is rejected here before it can render.
-  const acceptPipelineEvent = (event: PipelineEvent): boolean => {
-    if (event.type === 'session_started' && event.sessionId === undefined) return true
-    if (event.type === 'session_ended') {
-      const ended = lastEndedSession
-      return ended !== null && event.sessionId === ended.sessionId &&
-        event.sessionGeneration === ended.generation
-    }
-    const state = sessionRuntime?.state()
-    return state !== undefined && state.sessionId !== null &&
-      event.sessionId === state.sessionId &&
-      event.sessionGeneration === state.generation
-  }
+  // late subagent, browser, or Feed work from an ended or foreign Session
+  // is rejected before it can render, record, or speak.
+  const acceptPipelineEvent = createPipelineAcceptanceGate({
+    liveSession: () => sessionRuntime?.state(),
+    lastEndedSession: () => lastEndedSession,
+  })
   const eventPublisher = createWindowEventPublisher({
     acceptPipelineEvent,
     createHistoryRunObserver: () => {
