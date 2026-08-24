@@ -3,6 +3,7 @@
 // errors get a spoken one-liner while the dashboard keeps the detail.
 
 import { MAX_RUN_NOTE_CHARS } from '../session/runJournal'
+import { parseMemoryPatch, type MemoryPatch } from '../session/workingMemory'
 
 export const SPEAK_SENTENCE_LIMIT = 2
 
@@ -107,6 +108,8 @@ export function parseAssistantAnswer(content: string): {
   display: string
   runNote?: string
   runNoteIssue?: 'malformed'
+  memoryPatch?: MemoryPatch
+  memoryPatchIssue?: 'malformed'
 } {
   const trimmed = content.trim()
   const candidates = [trimmed, extractFenced(trimmed), extractJsonSlice(trimmed)]
@@ -120,12 +123,22 @@ export function parseAssistantAnswer(content: string): {
         typeof (parsed as { speak?: unknown }).speak === 'string' &&
         typeof (parsed as { display?: unknown }).display === 'string'
       ) {
-        const { speak, display, run_note: rawRunNote } = parsed as {
+        const { speak, display, run_note: rawRunNote, memory_patch: rawMemoryPatch } = parsed as {
           speak: string
           display: string
           run_note?: unknown
+          memory_patch?: unknown
         }
-        const answer = { speak: capSentences(speak, SPEAK_SENTENCE_LIMIT), display }
+        let answer: {
+          speak: string
+          display: string
+          memoryPatch?: MemoryPatch
+          memoryPatchIssue?: 'malformed'
+        } = { speak: capSentences(speak, SPEAK_SENTENCE_LIMIT), display }
+        if (rawMemoryPatch !== undefined) {
+          const memoryPatch = parseMemoryPatch(rawMemoryPatch)
+          answer = memoryPatch ? { ...answer, memoryPatch } : { ...answer, memoryPatchIssue: 'malformed' }
+        }
         if (rawRunNote === undefined) return answer
         if (typeof rawRunNote !== 'string') return { ...answer, runNoteIssue: 'malformed' }
         const runNote = rawRunNote.trim()

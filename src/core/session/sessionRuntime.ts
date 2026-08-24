@@ -7,8 +7,17 @@ import type {
   SubmissionId,
 } from './sessionIdentity'
 import { MAX_RUN_NOTE_CHARS, type RunJournalEntry, type RunJournalSnapshot } from './runJournal'
+import {
+  applyMemoryPatch,
+  freezeWorkingMemory,
+  type MemoryEntry,
+  type MemoryEntryId,
+  type MemoryPatch,
+  type WorkingMemorySnapshot,
+} from './workingMemory'
 
 export type { RunJournalEntry, RunJournalSnapshot } from './runJournal'
+export type { MemoryEntry, MemoryPatch, WorkingMemorySnapshot } from './workingMemory'
 
 export type { SessionGeneration } from './sessionIdentity'
 
@@ -29,6 +38,7 @@ export interface AcceptedRunAdmission {
   acceptedAt: number
   createsSession: boolean
   journal: RunJournalSnapshot
+  memory: WorkingMemorySnapshot
 }
 
 export interface SessionRuntimeState {
@@ -70,7 +80,12 @@ export interface SessionRuntime {
   accept(submissionId: SubmissionId): AcceptedRunAdmission
   reject(submissionId: SubmissionId): boolean
   finish(runId: RunId): boolean
-  commitRunNote(runId: RunId, outcome: RunJournalEntry['outcome'], text: string): boolean
+  commitRunContinuity(
+    runId: RunId,
+    outcome: RunJournalEntry['outcome'],
+    text: string,
+    patch: MemoryPatch,
+  ): 'committed' | 'invalid_patch' | 'rejected'
   beginExpiry(): boolean
   extend(decision: SessionDecision): boolean
   decline(decision: SessionDecision): EndedSession | null
@@ -87,6 +102,7 @@ export function createSessionRuntime(deps: {
   onExtended?: (session: ExtendedSession) => void
   onEnded?: (session: EndedSession) => void
   maxJournalChars?: number
+  maxMemoryChars?: number
 }): SessionRuntime {
   if (deps.inactivityMs !== undefined) {
     if (!Number.isFinite(deps.inactivityMs) || deps.inactivityMs <= 0) {
@@ -103,6 +119,10 @@ export function createSessionRuntime(deps: {
   if (!Number.isFinite(maxJournalChars) || maxJournalChars < MAX_RUN_NOTE_CHARS) {
     throw new Error(`maxJournalChars must be at least ${MAX_RUN_NOTE_CHARS}`)
   }
+  const maxMemoryChars = deps.maxMemoryChars ?? 24_000
+  if (!Number.isFinite(maxMemoryChars) || maxMemoryChars < 1_000) {
+    throw new Error('maxMemoryChars must be at least 1000')
+  }
   let phase: SessionPhase = 'absent'
   let sessionId: SessionId | null = null
   let generation = 0
@@ -111,6 +131,8 @@ export function createSessionRuntime(deps: {
   const liveRunIds = new Set<RunId>()
   const pendingSubmissionIds = new Set<SubmissionId>()
   let journal: RunJournalEntry[] = []
+  let memory: MemoryEntry[] = []
+  let nextMemoryId = 1
   const committedRunIds = new Set<RunId>()
   let cancelWarning: (() => void) | null = null
   let cancelDeadline: (() => void) | null = null
@@ -146,6 +168,8 @@ export function createSessionRuntime(deps: {
     liveRunIds.clear()
     pendingSubmissionIds.clear()
     journal = []
+    memory = []
+    nextMemoryId = 1
     committedRunIds.clear()
     if (reason === 'reset') generation += 1
     deps.onEnded?.(ended)
@@ -191,6 +215,8 @@ export function createSessionRuntime(deps: {
   const journalSnapshot = (): RunJournalSnapshot =>
     Object.freeze(journal.map((entry) => Object.freeze({ ...entry })))
 
+  const memorySnapshot = (): WorkingMemorySnapshot => freezeWorkingMemory(memory)
+
   const matchesExpiringSession = (decision: SessionDecision): boolean =>
     phase === 'expiring' && sessionId === decision.sessionId && generation === decision.generation
 
@@ -217,6 +243,8 @@ export function createSessionRuntime(deps: {
         startedAt = acceptedAt
         acceptedRunIds = []
         journal = []
+        memory = []
+        nextMemoryId = 1
         committedRunIds.clear()
       }
       phase = 'active'
@@ -234,6 +262,7 @@ export function createSessionRuntime(deps: {
         acceptedAt,
         createsSession,
         journal: journalSnapshot(),
+        memory: memorySnapshot(),
       }
     },
     reject(submissionId) {
@@ -244,18 +273,36 @@ export function createSessionRuntime(deps: {
       if (finished && liveRunIds.size === 0) armInactivity()
       return finished
     },
-    commitRunNote(runId, outcome, text) {
+    commitRunContinuity(runId, outcome, text, patch) {
       const normalized = text.trim()
       if (!liveRunIds.has(runId) || committedRunIds.has(runId) || normalized === '' || normalized.length > maxJournalChars) {
-        return false
+        return 'rejected'
+      }
+      let proposedMemory = memory
+      let proposedNextMemoryId = nextMemoryId
+      if (outcome === 'done') {
+        const applied = applyMemoryPatch(
+          memory,
+          patch,
+          runId,
+          sessionId!,
+          () => `memory-${proposedNextMemoryId++}` as MemoryEntryId,
+          maxMemoryChars,
+        )
+        if (applied === null) return 'invalid_patch'
+        proposedMemory = applied
+      } else if (patch.length > 0) {
+        return 'invalid_patch'
       }
       journal.push({ runId, outcome, text: normalized })
+      memory = proposedMemory
+      nextMemoryId = proposedNextMemoryId
       committedRunIds.add(runId)
       let chars = journal.reduce((total, entry) => total + entry.text.length, 0)
       while (chars > maxJournalChars && journal.length > 1) {
         chars -= journal.shift()!.text.length
       }
-      return true
+      return 'committed'
     },
     beginExpiry() {
       if (phase !== 'active' || liveRunIds.size > 0) return false

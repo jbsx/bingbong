@@ -80,6 +80,7 @@ describe('session runtime', () => {
       acceptedAt: 1_025,
       createsSession: true,
       journal: [],
+      memory: [],
     })
     expect(identities.minted).toEqual(['submission-1', 'session-1', 'run-1'])
     expect(runtime.state()).toEqual({
@@ -216,9 +217,9 @@ describe('session runtime', () => {
     const first = runtime.accept(runtime.submit().submissionId)
 
     expect(first.journal).toEqual([])
-    expect(runtime.commitRunNote(first.runId, 'done', 'Found two viable options.')).toBe(true)
+    expect(runtime.commitRunContinuity(first.runId, 'done', 'Found two viable options.', [])).toBe('committed')
     expect(first.journal).toEqual([])
-    expect(runtime.commitRunNote(first.runId, 'done', 'duplicate')).toBe(false)
+    expect(runtime.commitRunContinuity(first.runId, 'done', 'duplicate', [])).toBe('rejected')
     runtime.finish(first.runId)
 
     const second = runtime.accept(runtime.submit().submissionId)
@@ -241,10 +242,10 @@ describe('session runtime', () => {
     const firstNote = '1'.repeat(800)
     const secondNote = 'a'.repeat(800)
     const first = runtime.accept(runtime.submit().submissionId)
-    runtime.commitRunNote(first.runId, 'done', firstNote)
+    runtime.commitRunContinuity(first.runId, 'done', firstNote, [])
     runtime.finish(first.runId)
     const second = runtime.accept(runtime.submit().submissionId)
-    runtime.commitRunNote(second.runId, 'done', secondNote)
+    runtime.commitRunContinuity(second.runId, 'done', secondNote, [])
     runtime.finish(second.runId)
 
     const third = runtime.accept(runtime.submit().submissionId)
@@ -253,6 +254,60 @@ describe('session runtime', () => {
 
     const fresh = runtime.accept(runtime.submit().submissionId)
     expect(fresh.journal).toEqual([])
+  })
+
+  it('commits the Run Note and Working Memory atomically for only later admissions', () => {
+    const { runtime } = harness()
+    const first = runtime.accept(runtime.submit().submissionId)
+    const patch = [{
+      op: 'add' as const,
+      entry: {
+        kind: 'finding' as const,
+        subject: 'Candidate A',
+        detail: 'Candidate A is viable.',
+        references: [{ url: 'https://example.com/a' }],
+        subagentId: 'agent-1',
+      },
+    }]
+
+    expect(runtime.commitRunContinuity(first.runId, 'done', 'Found candidate A.', patch)).toBe('committed')
+    expect(first.memory).toEqual([])
+    runtime.finish(first.runId)
+    const second = runtime.accept(runtime.submit().submissionId)
+
+    expect(second.memory).toEqual([{
+      id: 'memory-1',
+      sessionId: first.sessionId,
+      kind: 'finding',
+      subject: 'Candidate A',
+      detail: 'Candidate A is viable.',
+      references: [{ url: 'https://example.com/a' }],
+      provenance: [{ runId: first.runId, subagentId: 'agent-1' }],
+    }])
+    expect(Object.isFrozen(second.memory)).toBe(true)
+    expect(Object.isFrozen(second.memory[0]?.references)).toBe(true)
+    expect(Object.isFrozen(second.memory[0]?.provenance[0])).toBe(true)
+  })
+
+  it('rejects an entire continuity commit when a memory mutation is invalid and destroys memory at Session end', () => {
+    const { runtime } = harness()
+    const first = runtime.accept(runtime.submit().submissionId)
+
+    expect(runtime.commitRunContinuity(first.runId, 'done', 'Should not commit.', [{
+      op: 'update',
+      id: 'memory-missing' as never,
+      entry: { kind: 'decision', subject: 'Choice', detail: 'Choose A.' },
+    }])).toBe('invalid_patch')
+    expect(runtime.commitRunContinuity(first.runId, 'done', 'Fallback note.', [])).toBe('committed')
+    runtime.finish(first.runId)
+    const second = runtime.accept(runtime.submit().submissionId)
+    expect(second.journal.map((entry) => entry.text)).toEqual(['Fallback note.'])
+    expect(second.memory).toEqual([])
+
+    runtime.finish(second.runId)
+    runtime.end('app_closed')
+    const fresh = runtime.accept(runtime.submit().submissionId)
+    expect(fresh.memory).toEqual([])
   })
 
   it('warns once before the original deadline and lapses exactly once while idle', () => {

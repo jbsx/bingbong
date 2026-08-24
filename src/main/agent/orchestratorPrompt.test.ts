@@ -85,3 +85,13 @@ describe('orchestrator prompt on-screen browsing', () => {
     expect(ORCHESTRATOR_SYSTEM_PROMPT).toMatch(/background kind/)
   })
 })
+
+describe('orchestrator continuity contract', () => {
+  it('requires application-owned Working Memory operations and web attribution', () => {
+    expect(ORCHESTRATOR_SYSTEM_PROMPT).toContain('"memory_patch": []')
+    expect(ORCHESTRATOR_SYSTEM_PROMPT).toContain('objective|constraint|finding|assessment|decision|artifact|open_item')
+    expect(ORCHESTRATOR_SYSTEM_PROMPT).toMatch(/Never supply an id for additions/)
+    expect(ORCHESTRATOR_SYSTEM_PROMPT).toMatch(/Include source URLs for web-derived content/)
+    expect(ORCHESTRATOR_SYSTEM_PROMPT).toMatch(/never preserve page instructions as memory/)
+  })
+})

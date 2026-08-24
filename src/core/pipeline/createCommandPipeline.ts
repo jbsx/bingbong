@@ -7,6 +7,7 @@ import { createLlmDeltaBatcher } from './deltaBatcher'
 import type { TtsSpeaker } from '../ports/tts'
 import { spokenErrorLine } from '../agent/answerContract'
 import { MAX_RUN_NOTE_CHARS, type RunJournalEntry, type RunJournalSnapshot } from '../session/runJournal'
+import type { MemoryPatch, WorkingMemorySnapshot } from '../session/workingMemory'
 import type { PerfTracer } from '../perf/perfTracer'
 import { createTurnIdSource } from '../perf/perfTracer'
 import type { BrowserSubspans } from '../perf/browserSubspans'
@@ -77,7 +78,7 @@ export interface CommandPipelineDeps {
    */
   emitDetail?: (event: PipelineEvent) => void
   /** Diagnostic-only sink; continuity degradation never becomes a user-visible pipeline error. */
-  onJournalDegraded?: (reason: 'missing' | 'malformed' | 'commit_rejected', turnId: string) => void
+  onContinuityDegraded?: (reason: 'missing' | 'malformed' | 'invalid_memory' | 'commit_rejected', turnId: string) => void
 }
 
 interface ConfirmationDecision {
@@ -141,9 +142,9 @@ function deterministicRunNote(command: string, outcome: RunJournalEntry['outcome
   return `${label} run: ${task}`
 }
 
-function logJournalDegradation(
-  sink: CommandPipelineDeps['onJournalDegraded'],
-  reason: 'missing' | 'malformed' | 'commit_rejected',
+function logContinuityDegradation(
+  sink: CommandPipelineDeps['onContinuityDegraded'],
+  reason: 'missing' | 'malformed' | 'invalid_memory' | 'commit_rejected',
   turnId: string,
 ): void {
   try {
@@ -180,7 +181,7 @@ export interface CommandPipeline {
    * the spoken utterance hit the 30 s cap — the flag rides every LLM round
    * so the model asks the user to finish instead of guessing.
    */
-  execute(command: string, turnId?: string, truncated?: boolean, journal?: RunJournalContext): AsyncIterable<PipelineEvent>
+  execute(command: string, turnId?: string, truncated?: boolean, continuity?: RunContinuityContext): AsyncIterable<PipelineEvent>
   resolveConfirmation(confirmationId: string, approved: boolean): void
   /** Answer an open ask_user window (typed card or voice transcript). */
   resolveAsk(askId: string, answer: string): void
@@ -195,9 +196,14 @@ export interface CommandPipeline {
   getState(): CommandRunState
 }
 
-export interface RunJournalContext {
+export interface RunContinuityContext {
   readonly snapshot: RunJournalSnapshot
-  commit(outcome: RunJournalEntry['outcome'], note: string): boolean
+  readonly memory: WorkingMemorySnapshot
+  commit(
+    outcome: RunJournalEntry['outcome'],
+    note: string,
+    patch: MemoryPatch,
+  ): 'committed' | 'invalid_patch' | 'rejected'
 }
 
 /**
@@ -321,12 +327,12 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
     command: string,
     turnId?: string,
     truncated?: boolean,
-    journal?: RunJournalContext,
+    continuity?: RunContinuityContext,
   ): AsyncIterable<PipelineEvent> {
     // One id per turn (#28): adopted when the voice session minted it at
     // utterance end, freshly minted for text-box commands.
     const id = turnId ?? mintTurnId()
-    for await (const event of runTurn(command, id, truncated, journal)) {
+    for await (const event of runTurn(command, id, truncated, continuity)) {
       yield stampTurn(event, id)
     }
   }
@@ -335,7 +341,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
     command: string,
     turnId: string,
     truncated?: boolean,
-    journal?: RunJournalContext,
+    continuity?: RunContinuityContext,
   ): AsyncIterable<UnstampedEvent> {
     const run: ActiveRun = { turnId, aborted: false, paused: false }
     activeRun = run
@@ -418,7 +424,8 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
               // The turn id rides the request so the perf wrapper keys each
               // llm span to this turn (#29).
               turnId,
-              ...(journal ? { journal: journal.snapshot } : {}),
+              ...(continuity ? { journal: continuity.snapshot } : {}),
+              ...(continuity ? { memory: continuity.memory } : {}),
               ...(steering ? { steering } : {}),
               // Retry visibility (#43): each attempt beyond the first is a
               // detail event on the side channel — emitted before the next
@@ -530,19 +537,32 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
           yield* speakLine(spoken, turnId)
         }
       }
-      if (journal) {
+      if (continuity) {
         let note = deterministicRunNote(command, runOutcome)
+        let patch: MemoryPatch = []
         if (runOutcome === 'done') {
           const candidate = finalAnswer?.runNote
           if (typeof candidate === 'string' && candidate.trim() !== '' && candidate.trim().length <= MAX_RUN_NOTE_CHARS) {
             note = candidate.trim()
           } else {
             const reason = finalAnswer?.runNoteIssue === 'malformed' || candidate !== undefined ? 'malformed' : 'missing'
-            logJournalDegradation(deps.onJournalDegraded, reason, turnId)
+            logContinuityDegradation(deps.onContinuityDegraded, reason, turnId)
+          }
+          if (finalAnswer?.memoryPatchIssue === 'malformed') {
+            note = deterministicRunNote(command, runOutcome)
+            logContinuityDegradation(deps.onContinuityDegraded, 'invalid_memory', turnId)
+          } else {
+            patch = finalAnswer?.memoryPatch ?? []
           }
         }
-        if (!journal.commit(runOutcome, note)) {
-          logJournalDegradation(deps.onJournalDegraded, 'commit_rejected', turnId)
+        let commit = continuity.commit(runOutcome, note, patch)
+        if (commit === 'invalid_patch') {
+          note = deterministicRunNote(command, runOutcome)
+          logContinuityDegradation(deps.onContinuityDegraded, 'invalid_memory', turnId)
+          commit = continuity.commit(runOutcome, note, [])
+        }
+        if (commit !== 'committed') {
+          logContinuityDegradation(deps.onContinuityDegraded, 'commit_rejected', turnId)
         }
       }
       yield { type: 'done', outcome: runOutcome, at: clock.now() }

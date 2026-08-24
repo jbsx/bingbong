@@ -153,11 +153,16 @@ describe('assistant command runner', () => {
     const clock = new FakeClock(1_000)
     const runtime = createSessionRuntime({ clock, identities: new DeterministicIdentities() })
     const snapshots: string[][] = []
+    const memorySnapshots: string[][] = []
     const pipeline: CommandPipeline = {
       async *execute(command, turnId = 'turn', _truncated, journal) {
         snapshots.push((journal?.snapshot ?? []).map((entry) => entry.text))
+        memorySnapshots.push((journal?.memory ?? []).map((entry) => entry.subject))
         yield { type: 'command', text: command, turnId, at: clock.now() }
-        journal?.commit('done', `Completed ${command}`)
+        journal?.commit('done', `Completed ${command}`, command === 'first' ? [{
+          op: 'add',
+          entry: { kind: 'objective', subject: 'Compare options', detail: 'Find the best option.' },
+        }] : [])
         yield { type: 'done', outcome: 'done', turnId, at: clock.now() }
       },
       resolveConfirmation: () => {},
@@ -179,6 +184,7 @@ describe('assistant command runner', () => {
     await runner.run('second')
 
     expect(snapshots).toEqual([[], ['Completed first']])
+    expect(memorySnapshots).toEqual([[], ['Compare options']])
   })
 
   it('leaves live projections, continuity, and the Session deadline owned by the accepted Run', async () => {

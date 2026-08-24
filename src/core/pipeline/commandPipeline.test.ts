@@ -1475,10 +1475,19 @@ describe('command pipeline', () => {
     })
   })
 
-  it('gives every model round the same immutable Journal snapshot', async () => {
+  it('gives every model round the same immutable Journal and Working Memory snapshots', async () => {
     const snapshot = Object.freeze([
       Object.freeze({ runId: 'run-1' as never, outcome: 'done' as const, text: 'Found Pizza A and Pizza B.' }),
     ])
+    const memory = Object.freeze([Object.freeze({
+      id: 'memory-1' as never,
+      sessionId: 'session-1' as never,
+      kind: 'constraint' as const,
+      subject: 'Budget',
+      detail: 'Stay under $30.',
+      references: Object.freeze([]),
+      provenance: Object.freeze([Object.freeze({ runId: 'run-1' as never })]),
+    })])
     const spinner = { name: 'spin', async execute() { return 'spun' } }
     const llm = new ScriptedLlm([
       { kind: 'tool_calls', calls: [{ id: 'c1', name: 'spin', args: {} }] },
@@ -1488,12 +1497,15 @@ describe('command pipeline', () => {
 
     for await (const event of pipeline.execute('what about the second one?', undefined, undefined, {
       snapshot,
-      commit: () => true,
+      memory,
+      commit: () => 'committed',
     })) { void event }
 
     expect(llm.requests).toHaveLength(2)
     expect(llm.requests[0].journal).toBe(snapshot)
     expect(llm.requests[1].journal).toBe(snapshot)
+    expect(llm.requests[0].memory).toBe(memory)
+    expect(llm.requests[1].memory).toBe(memory)
   })
 
   it('commits a valid hidden Run Note immediately before done', async () => {
@@ -1510,9 +1522,10 @@ describe('command pipeline', () => {
 
     for await (const event of pipeline.execute('find pizza', undefined, undefined, {
       snapshot: Object.freeze([]),
+      memory: Object.freeze([]),
       commit: (outcome, note) => {
         order.push(`commit:${outcome}:${note}`)
-        return true
+        return 'committed'
       },
     })) {
       order.push(event.type)
@@ -1533,15 +1546,16 @@ describe('command pipeline', () => {
       tts: new RecordingTts(),
       clock: new FakeClock(),
       tools: [],
-      onJournalDegraded: (reason) => degraded.push(reason),
+      onContinuityDegraded: (reason) => degraded.push(reason),
     })
 
     const events: PipelineEvent[] = []
     for await (const event of pipeline.execute('research options', undefined, undefined, {
       snapshot: Object.freeze([]),
+      memory: Object.freeze([]),
       commit: (_outcome, note) => {
         commits.push(note)
-        return true
+        return 'committed'
       },
     })) events.push(event)
 
@@ -1549,6 +1563,45 @@ describe('command pipeline', () => {
     expect(events.at(-1)).toMatchObject({ type: 'done', outcome: 'done' })
     expect(commits).toEqual(['Completed run: research options'])
     expect(degraded).toEqual(['malformed'])
+  })
+
+  it('preserves the Answer and retries the atomic commit without an invalid memory patch', async () => {
+    const degraded: string[] = []
+    const commits: unknown[][] = []
+    const pipeline = createCommandPipeline({
+      llm: new ScriptedLlm([{
+        kind: 'answer',
+        speak: 'Useful answer.',
+        display: 'Useful detail.',
+        runNote: 'Useful note.',
+        memoryPatch: [{
+          op: 'update',
+          id: 'memory-missing' as never,
+          entry: { kind: 'decision', subject: 'Choice', detail: 'Choose A.' },
+        }],
+      }]),
+      tts: new RecordingTts(),
+      clock: new FakeClock(),
+      tools: [],
+      onContinuityDegraded: (reason) => degraded.push(reason),
+    })
+
+    const eventTypes: string[] = []
+    for await (const event of pipeline.execute('choose', undefined, undefined, {
+      snapshot: Object.freeze([]),
+      memory: Object.freeze([]),
+      commit: (outcome, note, patch) => {
+        commits.push([outcome, note, patch])
+        return commits.length === 1 ? 'invalid_patch' : 'committed'
+      },
+    })) eventTypes.push(event.type)
+
+    expect(commits).toEqual([
+      ['done', 'Useful note.', expect.arrayContaining([expect.objectContaining({ op: 'update' })])],
+      ['done', 'Completed run: choose', []],
+    ])
+    expect(degraded).toEqual(['invalid_memory'])
+    expect(eventTypes.at(-1)).toBe('done')
   })
 
   it('logs and falls back when a successful Answer omits its Run Note', async () => {
@@ -1560,7 +1613,7 @@ describe('command pipeline', () => {
       tts: new RecordingTts(),
       clock: new FakeClock(),
       tools: [],
-      onJournalDegraded: (reason) => {
+      onContinuityDegraded: (reason) => {
         degraded.push(reason)
         throw new Error('diagnostic sink failed')
       },
@@ -1568,9 +1621,10 @@ describe('command pipeline', () => {
 
     for await (const event of pipeline.execute('do useful work', undefined, undefined, {
       snapshot: Object.freeze([]),
+      memory: Object.freeze([]),
       commit: (_outcome, note) => {
         commits.push(note)
-        return true
+        return 'committed'
       },
     })) events.push(event.type)
 
@@ -1589,9 +1643,10 @@ describe('command pipeline', () => {
 
     const iterator = pipeline.execute('attempt task', undefined, undefined, {
       snapshot: Object.freeze([]),
+      memory: Object.freeze([]),
       commit: (committedOutcome, note) => {
         commits.push({ outcome: committedOutcome, note })
-        return true
+        return 'committed'
       },
     })[Symbol.asyncIterator]()
     if (outcome === 'cancelled') {

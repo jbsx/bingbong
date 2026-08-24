@@ -1,4 +1,5 @@
 import type { RunJournalSnapshot } from '../session/runJournal'
+import type { MemoryPatch, WorkingMemorySnapshot } from '../session/workingMemory'
 
 export interface ToolCall {
   id: string
@@ -29,6 +30,8 @@ export interface LlmRequest {
   steering?: string
   /** One immutable Session Journal snapshot, captured when this Run was accepted. */
   journal?: RunJournalSnapshot
+  /** One immutable Session Working Memory snapshot captured with the Journal. */
+  memory?: WorkingMemorySnapshot
   /** Turn correlation id (#28); perf spans key on it when present (#29). */
   turnId?: string
   /**
@@ -85,6 +88,9 @@ export type AssistantTurn =
       /** Hidden continuity output from the same final model response. */
       runNote?: string
       runNoteIssue?: 'malformed'
+      /** Validated hidden Working Memory operations from the same final response. */
+      memoryPatch?: MemoryPatch
+      memoryPatchIssue?: 'malformed'
       usage?: TokenUsage
     }
   | { kind: 'tool_calls'; calls: ToolCall[]; usage?: TokenUsage }

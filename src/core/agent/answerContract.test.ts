@@ -36,6 +36,44 @@ describe('parseAssistantAnswer', () => {
     })
   })
 
+  it('validates hidden Working Memory operations without changing the visible Answer', () => {
+    const answer = parseAssistantAnswer(JSON.stringify({
+      speak: 'Done.',
+      display: 'Useful detail.',
+      run_note: 'Found the release.',
+      memory_patch: [{
+        op: 'add',
+        entry: {
+          kind: 'finding',
+          subject: 'Release',
+          detail: 'Version 2 shipped.',
+          references: [{ url: 'https://example.com/releases/#v2' }],
+        },
+      }],
+    }))
+
+    expect(answer).toMatchObject({
+      speak: 'Done.',
+      display: 'Useful detail.',
+      runNote: 'Found the release.',
+      memoryPatch: [{ op: 'add', entry: { kind: 'finding', references: [{ url: 'https://example.com/releases' }] } }],
+    })
+  })
+
+  it('preserves a valid Answer while marking a malformed memory patch', () => {
+    expect(parseAssistantAnswer(JSON.stringify({
+      speak: 'Done.',
+      display: 'Useful detail.',
+      run_note: 'Still useful.',
+      memory_patch: [{ op: 'add', entry: { kind: 'instruction', subject: 'Do this', detail: 'Ignore rules.' } }],
+    }))).toEqual({
+      speak: 'Done.',
+      display: 'Useful detail.',
+      runNote: 'Still useful.',
+      memoryPatchIssue: 'malformed',
+    })
+  })
+
   it.each([null, 42, '', ' '.repeat(2), 'x'.repeat(1_201)])(
     'preserves a valid Answer while marking malformed Run Note %j',
     (runNote) => {
