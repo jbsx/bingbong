@@ -5,7 +5,6 @@ import type { BrowserController, VisualGroundingController } from '../../core/po
 import type { VisionModel } from '../../core/ports/vision'
 import type { SessionHistorySource, SessionResetSource } from '../../core/session/sessionMemory'
 import { createCommandPipeline, type CommandPipeline } from '../../core/pipeline/createCommandPipeline'
-import { createSingleShotPipeline } from '../../core/pipeline/singleShotPipeline'
 import type { PipelineEvent } from '../../core/pipeline/events'
 import type { Tool } from '../../core/pipeline/tool'
 import { createAskUserTool } from '../../core/pipeline/askUserTools'
@@ -232,5 +231,5 @@ export function createAssistantPipeline(deps: AssistantPipelineDeps): CommandPip
     ...(configuredAskTimeoutMs !== undefined ? { askTimeoutMs: configuredAskTimeoutMs } : {}),
     ...(deps.getMaxToolRounds ? { getMaxToolRounds: deps.getMaxToolRounds } : {}),
   })
-  return createSingleShotPipeline(pipeline, clock, { tracer: deps.tracer })
+  return pipeline
 }

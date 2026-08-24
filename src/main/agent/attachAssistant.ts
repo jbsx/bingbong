@@ -2,17 +2,16 @@ import { BrowserWindow, ipcMain, type WebContents } from 'electron'
 import { PIPELINE_IPC } from '../../core/pipeline/ipcChannels'
 import type { CommandPipeline } from '../../core/pipeline/createCommandPipeline'
 import { steerPipeline } from '../../core/pipeline/steering'
-import type { WindowRunPublisher } from '../session/windowEventPublisher'
+import type { AssistantCommandRunner } from './createAssistantCommandRunner'
 
 // Glue between the dashboard and the command pipeline: submit a command
 // (text box or voice), receive the event stream, resolve confirmations.
-// Behavior (incl. the single-shot busy guard) lives in the pipeline
-// (seam-tested); this file is covered by e2e.
+// Admission and publication ordering live in the command runner (seam-tested);
+// this file owns only window routing and IPC.
 
 interface AttachedPipeline {
   pipeline: CommandPipeline
-  /** Creates the per-execution publication context before execute() starts. */
-  createRunPublisher: () => WindowRunPublisher
+  runner: AssistantCommandRunner
 }
 
 const pipelines = new WeakMap<BrowserWindow, AttachedPipeline>()
@@ -28,12 +27,7 @@ const pipelines = new WeakMap<BrowserWindow, AttachedPipeline>()
 export async function runAssistantCommand(win: BrowserWindow, text: string, turnId?: string, truncated?: boolean): Promise<boolean> {
   const attached = pipelines.get(win)
   if (!attached) return false
-  const publisher = attached.createRunPublisher()
-  for await (const pipelineEvent of attached.pipeline.execute(text, turnId, truncated)) {
-    if (win.isDestroyed()) break
-    publisher.publish(pipelineEvent)
-  }
-  return true
+  return attached.runner.run(text, turnId, truncated)
 }
 
 export function pipelineFor(win: BrowserWindow): CommandPipeline | undefined {
@@ -92,9 +86,9 @@ export function registerAssistantIpc(): void {
 export function attachAssistantToWindow(
   pipeline: CommandPipeline,
   win: BrowserWindow,
-  createRunPublisher: () => WindowRunPublisher,
+  runner: AssistantCommandRunner,
 ): void {
-  pipelines.set(win, { pipeline, createRunPublisher })
+  pipelines.set(win, { pipeline, runner })
   const contents = win.webContents
   const detachAbortHotkey = attachAssistantAbortHotkey(pipeline, contents)
   win.on('closed', () => pipelines.delete(win))

@@ -133,8 +133,8 @@ export function readStoredFeedWidth(
 
 /**
  * Folds pipeline events into the panel state: a command peaks the panel, the
- * run's done collapses it — busy rejections emit both, so the fold stays
- * balanced. Everything else (detail lines, statuses, out-of-turn
+ * run's done collapses it. Busy rejections bypass this Run fold entirely.
+ * Everything else (detail lines, statuses, out-of-turn
  * announcements) leaves the state untouched. `toggleOpen`/`setMode` are the
  * manual controls (header button, keyboard shortcut, dock toggle).
  */

@@ -1,6 +1,7 @@
 import type { BrowserPaneState } from '../../core/browser/paneState'
 import type { PipelineEvent } from '../../core/pipeline/events'
 import type { AcceptedRunAdmission } from '../../core/session/sessionRuntime'
+import type { SubmissionFeedback } from '../../core/session/submissionFeedback'
 import type { VoiceErrorEvent, VoiceHeardEvent, VoiceState } from '../../core/voice/ipcChannels'
 
 export type AcceptedRunOwnership = Pick<
@@ -16,6 +17,7 @@ export type WindowEventPublication =
   | { source: 'voice-heard'; heard: VoiceHeardEvent }
   | { source: 'voice-error'; error: VoiceErrorEvent }
   | { source: 'browser'; state: BrowserPaneState }
+  | { source: 'submission-feedback'; feedback: SubmissionFeedback }
 
 export interface WindowEventPublisherDeps {
   createHistoryRunObserver(): (event: PipelineEvent) => void
@@ -28,10 +30,12 @@ export interface WindowEventPublisherDeps {
   sendVoiceHeard(heard: VoiceHeardEvent): void
   sendVoiceError(error: VoiceErrorEvent): void
   sendBrowserState(state: BrowserPaneState): void
+  sendSubmissionFeedback(feedback: SubmissionFeedback): void
   observeVoicePipelineEvent(event: PipelineEvent): void
   overlayPipelineEvent(event: PipelineEvent): void
   overlayVoiceHeard(heard: VoiceHeardEvent): void
   overlayVoiceError(error: VoiceErrorEvent): void
+  overlaySubmissionFeedback(feedback: SubmissionFeedback): void
 }
 
 export interface WindowRunPublisher {
@@ -102,6 +106,10 @@ export function createWindowEventPublisher(deps: WindowEventPublisherDeps): Wind
           return
         case 'browser':
           deps.sendBrowserState(publication.state)
+          return
+        case 'submission-feedback':
+          deps.sendSubmissionFeedback(publication.feedback)
+          deps.overlaySubmissionFeedback(publication.feedback)
       }
     },
   }

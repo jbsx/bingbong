@@ -17,6 +17,7 @@ import type { RoutingStatus } from '../core/agent/modelRouting'
 import type { UsageSummary } from '../core/agent/spendEstimate'
 import type { VoiceErrorEvent, VoiceHeardEvent, VoiceState } from '../core/voice/ipcChannels'
 import type { RecordedEntry, RunRecord, SessionRecord } from '../core/history/historyStore'
+import type { SubmissionFeedback } from '../core/session/submissionFeedback'
 
 // Launch config is a snapshot: the flags and env can't change after start.
 const launch = resolveLaunchConfig(process.argv, process.env)
@@ -50,6 +51,11 @@ contextBridge.exposeInMainWorld('bingbong', {
       const wrapped = (_event: unknown, event: PipelineEvent): void => listener(event)
       ipcRenderer.on(PIPELINE_IPC.event, wrapped)
       return () => ipcRenderer.removeListener(PIPELINE_IPC.event, wrapped)
+    },
+    onSubmissionFeedback: (listener: (feedback: SubmissionFeedback) => void): (() => void) => {
+      const wrapped = (_event: unknown, feedback: SubmissionFeedback): void => listener(feedback)
+      ipcRenderer.on(PIPELINE_IPC.submissionFeedback, wrapped)
+      return () => ipcRenderer.removeListener(PIPELINE_IPC.submissionFeedback, wrapped)
     },
   },
   settings: {

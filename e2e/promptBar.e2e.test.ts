@@ -117,6 +117,39 @@ describe('prompt bar e2e', () => {
     }
   })
 
+  it('rejects a stale busy submit without replacing the live Run', async () => {
+    const script: AssistantTurn[] = [
+      { kind: 'tool_calls', calls: [{ id: 'nav', name: 'navigate', args: { url: fixture.url('/slow') } }] },
+      { kind: 'answer', speak: 'done', display: 'done' },
+    ]
+    const harness = await startHarness({
+      fixture,
+      env: { BINGBONG_LLM_SCRIPT: JSON.stringify(script) },
+    })
+    try {
+      await harness.ensurePanelOpen()
+      expect(await harness.overlayEval<string>(promptBarScript('browse the slow page'))).toBe('submitted')
+      await waitFor(async () => ((await verb(harness)) === 'steer' || undefined), { timeoutMs: 10_000, intervalMs: 100 })
+
+      expect(await harness.overlayEval<boolean>(`window.bingbong.assistant.submit('rejected second command')`)).toBe(false)
+      await waitFor(
+        async () => {
+          const text = await harness.overlayEval<string>(`document.querySelector('.submission-feedback')?.textContent ?? ''`)
+          return text.includes('already running') ? text : undefined
+        },
+        { timeoutMs: 5_000, intervalMs: 100 },
+      )
+
+      expect(await feedText(harness)).not.toContain('rejected second command')
+      expect(await verb(harness)).toBe('steer')
+      expect(await harness.overlayEval<boolean>(`!!document.querySelector('.panel-stop')`)).toBe(true)
+      const runs = await harness.overlayEval<Array<{ command: string }>>(`window.bingbong.history.recentRuns()`)
+      expect(runs.map((run) => run.command)).toEqual(['browse the slow page'])
+    } finally {
+      await harness.quit()
+    }
+  })
+
   it('focuses the bar when the panel opens', async () => {
     const harness = await startHarness({ fixture })
     try {

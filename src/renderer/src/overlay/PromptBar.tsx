@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 
 /**
  * The Prompt Bar: the one typed-input surface, living in the feed panel's
@@ -10,6 +10,9 @@ import { useState } from 'react'
  */
 export function PromptBar({ runActive }: { runActive: boolean }) {
   const [draft, setDraft] = useState('')
+  const [feedback, setFeedback] = useState('')
+
+  useEffect(() => window.bingbong.assistant.onSubmissionFeedback((item) => setFeedback(item.message)), [])
 
   const submit = async (): Promise<void> => {
     const text = draft.trim()
@@ -17,7 +20,10 @@ export function PromptBar({ runActive }: { runActive: boolean }) {
     const taken = runActive
       ? await window.bingbong.assistant.steer(text)
       : await window.bingbong.assistant.submit(text)
-    if (taken) setDraft('')
+    if (taken) {
+      setDraft('')
+      setFeedback('')
+    }
   }
 
   return (
@@ -28,21 +34,27 @@ export function PromptBar({ runActive }: { runActive: boolean }) {
         void submit()
       }}
     >
-      <input
-        className="prompt-input"
-        type="text"
-        placeholder={
-          runActive ? 'steer — "use Paris instead"' : 'Type a command — "open youtube and play the first MKBHD result"'
-        }
-        aria-label="Prompt bar"
-        autoComplete="off"
-        spellCheck={false}
-        value={draft}
-        onChange={(event) => setDraft(event.target.value)}
-      />
-      <button type="submit" className="prompt-verb" disabled={draft.trim() === ''}>
-        {runActive ? 'steer' : 'run'}
-      </button>
+      <div className="prompt-controls">
+        <input
+          className="prompt-input"
+          type="text"
+          placeholder={
+            runActive ? 'steer — "use Paris instead"' : 'Type a command — "open youtube and play the first MKBHD result"'
+          }
+          aria-label="Prompt bar"
+          aria-describedby={feedback ? 'submission-feedback' : undefined}
+          autoComplete="off"
+          spellCheck={false}
+          value={draft}
+          onChange={(event) => setDraft(event.target.value)}
+        />
+        <button type="submit" className="prompt-verb" disabled={draft.trim() === ''}>
+          {runActive ? 'steer' : 'run'}
+        </button>
+      </div>
+      <p id="submission-feedback" className="submission-feedback" aria-live="polite">
+        {feedback}
+      </p>
     </form>
   )
 }

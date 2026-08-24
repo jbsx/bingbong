@@ -13,6 +13,7 @@ import { isPaneRect } from '../../core/browser/paneState'
 import { toPaneBounds } from '../../core/browser/paneGeometry'
 import { PIPELINE_IPC } from '../../core/pipeline/ipcChannels'
 import type { PipelineEvent } from '../../core/pipeline/events'
+import type { SubmissionFeedback } from '../../core/session/submissionFeedback'
 import { VOICE_IPC, type VoiceErrorEvent, type VoiceHeardEvent } from '../../core/voice/ipcChannels'
 import { resolvePreloadPath } from '../preloadPath'
 
@@ -61,6 +62,8 @@ export interface FeedPanelOverlay {
   /** Voice-half feed lines (heard words, mic errors) — same payloads the dashboard gets. */
   forwardHeard(heard: VoiceHeardEvent): void
   forwardVoiceError(error: VoiceErrorEvent): void
+  /** Busy feedback is visible but never folded into Run or Feed state. */
+  forwardSubmissionFeedback(feedback: SubmissionFeedback): void
   /** Re-adds the view last so dynamically spawned subagent views stay below it. */
   bringToTop(): void
   setRect(rect: { x: number; y: number; width: number; height: number }): void
@@ -177,6 +180,9 @@ export function attachFeedPanelOverlayToWindow(
     },
     forwardVoiceError(error) {
       if (!wc.isDestroyed()) wc.send(VOICE_IPC.error, error)
+    },
+    forwardSubmissionFeedback(feedback) {
+      if (!wc.isDestroyed()) wc.send(PIPELINE_IPC.submissionFeedback, feedback)
     },
     bringToTop() {
       if (win.isDestroyed()) return

@@ -12,6 +12,7 @@ import { attachDownloadRouter } from './browser/attachDownloadRouter'
 import { runCliHarness, saveScreenshotFile } from './cli/runCliHarness'
 import { abortActiveRun, attachAssistantAbortHotkey, attachAssistantToWindow, pipelineFor, registerAssistantIpc } from './agent/attachAssistant'
 import { createAssistantPipeline } from './agent/createAssistantPipeline'
+import { createAssistantCommandRunner } from './agent/createAssistantCommandRunner'
 import { createSubagentRuntime, type SubagentRuntime } from './agent/createSubagentRuntime'
 import { registerSubagentIpc } from './browser/subagentPanePool'
 import { resolveDownloadsDir } from './downloadsDir'
@@ -28,6 +29,8 @@ import { HISTORY_IPC, HISTORY_QUERY_LIMIT } from '../core/history/ipcChannels'
 import { createHistoryRecorder } from '../core/history/historyRecorder'
 import { createSessionMemory } from '../core/session/sessionMemory'
 import { systemClock } from '../core/ports/clock'
+import { createSessionRuntime } from '../core/session/sessionRuntime'
+import { createSessionIdentitySource } from './session/sessionIdentitySource'
 import { createSqliteHistoryStore } from './history/createSqliteHistoryStore'
 import { DEFAULT_DAILY_SPEND_WARN_USD } from '../core/agent/spendEstimate'
 import { resolvePiperConfig } from './tts/piperConfig'
@@ -228,10 +231,12 @@ async function createWindow(): Promise<BrowserWindow> {
     sendVoiceHeard: (heard) => sendToRenderer(VOICE_IPC.heard, heard),
     sendVoiceError: (error) => sendToRenderer(VOICE_IPC.error, error),
     sendBrowserState: (state) => sendToRenderer(BROWSER_IPC.stateChanged, state),
+    sendSubmissionFeedback: (feedback) => sendToRenderer(PIPELINE_IPC.submissionFeedback, feedback),
     observeVoicePipelineEvent: (event) => voiceSession.handlePipelineEvent(event),
     overlayPipelineEvent: (event) => feedPanel.handlePipelineEvent(event),
     overlayVoiceHeard: (heard) => feedPanel.forwardHeard(heard),
     overlayVoiceError: (error) => feedPanel.forwardVoiceError(error),
+    overlaySubmissionFeedback: (feedback) => feedPanel.forwardSubmissionFeedback(feedback),
   })
   attachBrowserPaneToWindow(pane, win, eventPublisher)
   feedPanel.bringToTop()
@@ -372,7 +377,17 @@ async function createWindow(): Promise<BrowserWindow> {
     // history projection maps them to no entry, so recording is unchanged.
     emitDetail: (event) => eventPublisher.publish({ source: 'detail', event }),
   })
-  attachAssistantToWindow(pipeline, win, () => eventPublisher.run())
+  const sessionRuntime = createSessionRuntime({ clock: systemClock, identities: createSessionIdentitySource() })
+  const commandRunner = createAssistantCommandRunner({
+    pipeline,
+    runtime: sessionRuntime,
+    clock: systemClock,
+    createRunPublisher: (ownership) => eventPublisher.run(ownership),
+    publishFeedback: (feedback) => eventPublisher.publish({ source: 'submission-feedback', feedback }),
+    canPublish: () => !win.isDestroyed(),
+    tracer: perfTracer,
+  })
+  attachAssistantToWindow(pipeline, win, commandRunner)
   const detachPaneAbort = attachAssistantAbortHotkey(pipeline, pane.view.webContents)
   win.on('closed', detachPaneAbort)
   // The session store dies with its window (#73): a pending Lapse boundary

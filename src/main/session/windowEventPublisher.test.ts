@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { BrowserPaneState } from '../../core/browser/paneState'
 import type { PipelineEvent } from '../../core/pipeline/events'
 import type { RunId, SessionId, SubmissionId } from '../../core/session/sessionIdentity'
+import type { SubmissionFeedback } from '../../core/session/submissionFeedback'
 import type { VoiceErrorEvent, VoiceHeardEvent, VoiceState } from '../../core/voice/ipcChannels'
 import { createWindowEventPublisher, type WindowEventPublisherDeps } from './windowEventPublisher'
 
@@ -46,10 +47,12 @@ function setup(): {
     sendVoiceHeard: record('renderer-voice-heard'),
     sendVoiceError: record('renderer-voice-error'),
     sendBrowserState: record('renderer-browser'),
+    sendSubmissionFeedback: record('renderer-submission-feedback'),
     observeVoicePipelineEvent: recordPipeline('voice-observer'),
     overlayPipelineEvent: recordPipeline('overlay-pipeline'),
     overlayVoiceHeard: record('overlay-voice-heard'),
     overlayVoiceError: record('overlay-voice-error'),
+    overlaySubmissionFeedback: record('overlay-submission-feedback'),
   }
   return { publisher: createWindowEventPublisher(deps), calls, pipelineEvents }
 }
@@ -135,5 +138,21 @@ describe('window event publisher', () => {
     publisher.publish({ source: 'browser', state: browserState })
 
     expect(calls).toEqual(['renderer-browser'])
+  })
+
+  it('publishes Submission feedback without creating or notifying Run observers', () => {
+    const { publisher, calls, pipelineEvents } = setup()
+    const feedback: SubmissionFeedback = {
+      type: 'submission_rejected',
+      reason: 'busy',
+      submissionId: 'submission-2' as SubmissionId,
+      message: 'Another command is already running.',
+      at: 20,
+    }
+
+    publisher.publish({ source: 'submission-feedback', feedback })
+
+    expect(calls).toEqual(['renderer-submission-feedback', 'overlay-submission-feedback'])
+    expect(pipelineEvents).toEqual([])
   })
 })

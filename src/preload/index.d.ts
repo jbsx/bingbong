@@ -7,6 +7,7 @@ import type { LaunchConfig } from '../core/app/launchConfig'
 import type { UsageSummary } from '../core/agent/spendEstimate'
 import type { RecordedEntry, RunRecord, SessionRecord } from '../core/history/historyStore'
 import type { FeedPanelMode, FeedPanelState } from '../core/panel/feedPanelState'
+import type { SubmissionFeedback } from '../core/session/submissionFeedback'
 
 export type { BrowserPaneState, PaneRect }
 export type { PipelineEvent }
@@ -16,6 +17,7 @@ export type { VoiceErrorEvent, VoiceHeardEvent, VoiceState }
 export type { LaunchConfig }
 export type { UsageSummary }
 export type { RecordedEntry, RunRecord, SessionRecord }
+export type { SubmissionFeedback }
 export interface BingbongBrowserApi {
   navigate(input: string): Promise<boolean>
   goBack(): Promise<void>
@@ -38,6 +40,8 @@ export interface BingbongAssistantApi {
    */
   steer(directive: string): Promise<boolean>
   onEvent(listener: (event: PipelineEvent) => void): () => void
+  /** Non-Run feedback for a Submission rejected before admission. */
+  onSubmissionFeedback(listener: (feedback: SubmissionFeedback) => void): () => void
 }
 
 export interface BingbongSettingsApi {

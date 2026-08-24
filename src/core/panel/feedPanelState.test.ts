@@ -60,7 +60,7 @@ describe('createFeedPanelStateFold', () => {
     expect(fold.state().open).toBe(false)
   })
 
-  it('stays open across a run that ends failed (busy rejection keeps command/done balanced)', () => {
+  it('stays balanced across a run that ends failed', () => {
     const fold = createFeedPanelStateFold()
     fold.onEvent(feedEvents('command')[0]!)
     fold.onEvent(feedEvents('done')[0]!)
