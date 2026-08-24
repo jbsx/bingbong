@@ -1,5 +1,4 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { commandBoxScript } from './scripts'
 import { startHarness, type Harness } from './harness'
 import { startFixtureServer, type FixtureServer } from './fixtureServer'
 import { waitFor } from './waitFor'
@@ -73,7 +72,7 @@ describe('markdown answers e2e (#56)', () => {
     })
     try {
       await openPanel(harness)
-      expect(await harness.dashboardEval<string>(commandBoxScript('grade my homework'))).toBe('submitted')
+      expect(await harness.submitCommand('grade my homework')).toBe('submitted')
 
       await waitFor(
         () => harness.overlayEval<boolean>(`!!document.querySelector('.feed-entry--display .feed-markdown')`),
@@ -142,7 +141,7 @@ describe('markdown answers e2e (#56)', () => {
     })
     try {
       await openPanel(harness)
-      expect(await harness.dashboardEval<string>(commandBoxScript('stream me an answer'))).toBe('submitted')
+      expect(await harness.submitCommand('stream me an answer')).toBe('submitted')
 
       // Mid-stream: the live answer_stream card renders the heading and
       // the completed bold construct — formatted while streaming.
@@ -184,7 +183,7 @@ describe('markdown answers e2e (#56)', () => {
     })
     try {
       await openPanel(harness)
-      expect(await harness.dashboardEval<string>(commandBoxScript('grade it again'))).toBe('submitted')
+      expect(await harness.submitCommand('grade it again')).toBe('submitted')
 
       await waitFor(
         () => harness.overlayEval<boolean>(`!!document.querySelector('.feed-entry--display a.feed-link')`),

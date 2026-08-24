@@ -6,7 +6,7 @@ import type { CdpClient } from './cdpClient'
 import { AGENT_ROLES, routingEnvKeys } from '../src/core/agent/modelRouting'
 import { launchApp, pickFreeDebugPort, type LaunchedApp } from './electronApp'
 import { startFixtureServer, type FixtureServer } from './fixtureServer'
-import { urlBarNavigationScript } from './scripts'
+import { promptBarScript, urlBarNavigationScript } from './scripts'
 import { sleep, waitFor } from './waitFor'
 
 export interface Harness {
@@ -22,6 +22,14 @@ export interface Harness {
   dashboardEval<T = unknown>(expression: string): Promise<T>
   /** Evaluate in the feed panel's overlay webContents (#45). */
   overlayEval<T = unknown>(expression: string): Promise<T>
+  /**
+   * Submit one typed command through the Prompt Bar (ADR 0011): open the
+   * panel if the boot state collapsed it, then drive the bar in the
+   * overlay page — typing's only entry point now.
+   */
+  submitCommand(text: string): Promise<string>
+  /** Open the Feed Panel if it is collapsed; no-op when already open. */
+  ensurePanelOpen(): Promise<void>
   clickPaneAt(x: number, y: number): Promise<void>
   typeIntoPane(text: string): Promise<void>
   /** Real (input-pipeline) Ctrl/Cmd+Shift+F — fires before-input-event. */
@@ -314,6 +322,21 @@ async function buildHarness(
       // later — first use waits for it, mirroring the dashboard readiness wait.
       const sid = await waitFor(async () => overlaySid(), { timeoutMs: 15000, intervalMs: 250 })
       return evaluate<T>(cdp, sid, expression)
+    },
+
+    async ensurePanelOpen() {
+      const collapsed = await harness.overlayEval<boolean>(`!!document.querySelector('.overlay-chrome--collapsed')`)
+      if (!collapsed) return
+      await harness.overlayEval(`window.bingbong.feedPanel.toggle()`)
+      await waitFor(
+        async () => (await harness.overlayEval<boolean>(`!!document.querySelector('.overlay-chrome--open')`)) || undefined,
+        { timeoutMs: 5000, intervalMs: 100 },
+      )
+    },
+
+    async submitCommand(text) {
+      await harness.ensurePanelOpen()
+      return harness.overlayEval<string>(promptBarScript(text))
     },
 
     async clickPaneAt(x, y) {

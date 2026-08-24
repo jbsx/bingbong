@@ -5,7 +5,6 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { FEED_WIDTH_STORAGE_KEY } from '../src/core/panel/feedPanelState'
 import { startHarness, type Harness } from './harness'
 import { startFixtureServer, type FixtureServer } from './fixtureServer'
-import { commandBoxScript } from './scripts'
 import { waitFor } from './waitFor'
 import type { AssistantTurn } from '../src/core/ports/llm'
 
@@ -198,7 +197,7 @@ describe('feed panel width e2e (#65)', () => {
     })
     try {
       await openPanel(app)
-      expect(await app.dashboardEval<string>(commandBoxScript('print a long line'))).toBe('submitted')
+      expect(await app.submitCommand('print a long line')).toBe('submitted')
 
       const wrap = await waitFor(
         () => app.overlayEval<WrapProbe | null>(WRAP_PROBE).then((value) => value ?? undefined),

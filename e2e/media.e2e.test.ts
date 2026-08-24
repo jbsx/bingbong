@@ -1,5 +1,4 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { commandBoxScript } from './scripts'
 import { startHarness, type Harness } from './harness'
 import { startFixtureServer, type FixtureServer } from './fixtureServer'
 import { waitFor } from './waitFor'
@@ -36,7 +35,7 @@ function script(fixtureUrl: string): AssistantTurn[] {
 
 /** Submits a command through the real text box. */
 async function submitCommand(harness: Harness, text: string): Promise<void> {
-  const submitted = await harness.dashboardEval<string>(commandBoxScript(text))
+  const submitted = await harness.submitCommand(text)
   expect(submitted).toBe('submitted')
 }
 

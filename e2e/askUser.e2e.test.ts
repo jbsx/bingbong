@@ -3,7 +3,7 @@ import type { AssistantTurn } from '../src/core/ports/llm'
 import type { PipelineEvent } from '../src/core/pipeline/events'
 import { startFixtureServer, type FixtureServer } from './fixtureServer'
 import { startHarness, type Harness } from './harness'
-import { answerAskScript, commandBoxScript } from './scripts'
+import { answerAskScript } from './scripts'
 import { waitFor } from './waitFor'
 
 async function waitForEvents(harness: Harness, name: string): Promise<PipelineEvent[]> {
@@ -39,7 +39,7 @@ describe('ask_user typed answer e2e', () => {
       window.__askTypedEvents = []
       window.bingbong.assistant.onEvent((event) => window.__askTypedEvents.push(event))
     `)
-    expect(await harness.dashboardEval<string>(commandBoxScript('book a hotel'))).toBe('submitted')
+    expect(await harness.submitCommand('book a hotel')).toBe('submitted')
 
     const question = await waitFor(
       async () => {
@@ -96,7 +96,7 @@ describe('ask_user timeout e2e', () => {
       window.__askTimeoutEvents = []
       window.bingbong.assistant.onEvent((event) => window.__askTimeoutEvents.push(event))
     `)
-    expect(await harness.dashboardEval<string>(commandBoxScript('book a hotel'))).toBe('submitted')
+    expect(await harness.submitCommand('book a hotel')).toBe('submitted')
 
     const events = await waitForEvents(harness, '__askTimeoutEvents')
     expect(events).toContainEqual(expect.objectContaining({
@@ -151,7 +151,7 @@ describe('subagent ask_user relay e2e', () => {
       window.__askRelayEvents = []
       window.bingbong.assistant.onEvent((event) => window.__askRelayEvents.push(event))
     `)
-    expect(await harness.dashboardEval<string>(commandBoxScript('plan a trip'))).toBe('submitted')
+    expect(await harness.submitCommand('plan a trip')).toBe('submitted')
 
     const question = await waitFor(
       async () => {

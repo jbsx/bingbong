@@ -55,39 +55,19 @@ export function RunHint({ progress }: { progress: RunProgress }) {
   )
 }
 
-export function CommandBox({
-  disabled,
-  onSubmit,
-}: {
-  disabled: boolean
-  onSubmit: (text: string) => void
-}) {
-  const [draft, setDraft] = useState('')
-
+/**
+ * The dashboard footer's transient cards: confirmations and asks. Typed
+ * input lives in the feed panel's prompt bar (ADR 0011) — App renders the
+ * footer only while a card is pending, so it collapses entirely otherwise.
+ */
+export function AssistantPanel({ assistant }: { assistant: Assistant }) {
   return (
-    <form
-      className="command-form"
-      onSubmit={(event) => {
-        event.preventDefault()
-        const text = draft.trim()
-        if (text && !disabled) {
-          onSubmit(text)
-          setDraft('')
-        }
-      }}
-    >
-      <input
-        className="command-input"
-        type="text"
-        placeholder='Type a command — "open youtube and play the first MKBHD result"'
-        aria-label="Command box"
-        autoComplete="off"
-        spellCheck={false}
-        disabled={disabled}
-        value={draft}
-        onChange={(event) => setDraft(event.target.value)}
-      />
-    </form>
+    <div className="assistant-panel">
+      {assistant.pendingConfirmation ? (
+        <ConfirmationCard pending={assistant.pendingConfirmation} onResolve={assistant.resolveConfirmation} />
+      ) : null}
+      {assistant.pendingAsk ? <AskCard pending={assistant.pendingAsk} onAnswer={assistant.resolveAsk} /> : null}
+    </div>
   )
 }
 
@@ -176,22 +156,3 @@ export function AskCard({
   )
 }
 
-export function AssistantPanel({ assistant }: { assistant: Assistant }) {
-  const active = assistant.status !== 'idle' && assistant.status !== 'cancelled'
-  return (
-    <div className="assistant-panel">
-      <div className="command-row">
-        <CommandBox disabled={active} onSubmit={assistant.submit} />
-        {active ? (
-          <button type="button" className="assistant-stop" onClick={assistant.abort} aria-label="Stop active command">
-            Stop
-          </button>
-        ) : null}
-      </div>
-      {assistant.pendingConfirmation ? (
-        <ConfirmationCard pending={assistant.pendingConfirmation} onResolve={assistant.resolveConfirmation} />
-      ) : null}
-      {assistant.pendingAsk ? <AskCard pending={assistant.pendingAsk} onAnswer={assistant.resolveAsk} /> : null}
-    </div>
-  )
-}

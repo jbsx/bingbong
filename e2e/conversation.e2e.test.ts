@@ -1,5 +1,4 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { commandBoxScript } from './scripts'
 import { startHarness, type Harness } from './harness'
 import { startFixtureServer, type FixtureServer } from './fixtureServer'
 import { waitFor } from './waitFor'
@@ -71,7 +70,7 @@ describe('conversation separation e2e (#54)', () => {
       env: { BINGBONG_LLM_SCRIPT: JSON.stringify(script) },
     })
     try {
-      expect(await harness.dashboardEval<string>(commandBoxScript('what is the answer'))).toBe('submitted')
+      expect(await harness.submitCommand('what is the answer')).toBe('submitted')
       await waitFor(
         () =>
           harness.overlayEval<boolean>(
@@ -133,12 +132,12 @@ describe('conversation separation e2e (#54)', () => {
     })
     try {
       await openPanel(harness)
-      expect(await harness.dashboardEval<string>(commandBoxScript('open the slow page'))).toBe('submitted')
+      expect(await harness.submitCommand('open the slow page')).toBe('submitted')
       await waitFor(
         () => harness.dashboardEval<boolean>(`document.querySelector('.status-pill')?.textContent === 'Acting…'`),
         { timeoutMs: 20000, intervalMs: 250 },
       )
-      await harness.clickDashboardElement('.assistant-stop')
+      await harness.clickOverlayElement('.panel-stop')
 
       await waitFor(
         async () => {
@@ -175,7 +174,7 @@ describe('conversation separation e2e (#54)', () => {
     })
     try {
       await openPanel(harness)
-      expect(await harness.dashboardEval<string>(commandBoxScript('book a hotel'))).toBe('submitted')
+      expect(await harness.submitCommand('book a hotel')).toBe('submitted')
 
       // The ask window opens the mic; feed the utterance through it.
       await waitFor(

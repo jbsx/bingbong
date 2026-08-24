@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { approveConfirmationScript, commandBoxScript } from './scripts'
+import { approveConfirmationScript } from './scripts'
 import { startHarness, type Harness } from './harness'
 import { startFixtureServer, type FixtureServer } from './fixtureServer'
 import { waitFor } from './waitFor'
@@ -46,7 +46,7 @@ describe('risk gate e2e', () => {
     ]
     const harness = await startHarness({ fixture, env: { BINGBONG_LLM_SCRIPT: JSON.stringify(script) } })
     try {
-      await harness.dashboardEval<string>(commandBoxScript('log in and pay'))
+      await harness.submitCommand('log in and pay')
       await harness.waitForPaneUrl(fixture.url('/risky'))
 
       await waitFor(
@@ -81,7 +81,7 @@ describe('risk gate e2e', () => {
     ]
     const harness = await startHarness({ fixture, env: { BINGBONG_LLM_SCRIPT: JSON.stringify(script) } })
     try {
-      await harness.dashboardEval<string>(commandBoxScript('send the contact form'))
+      await harness.submitCommand('send the contact form')
 
       // The dialog appears with the gate's prompt…
       await waitFor(
@@ -125,7 +125,7 @@ describe('risk gate e2e', () => {
     ]
     const harness = await startHarness({ fixture, env: { BINGBONG_LLM_SCRIPT: JSON.stringify(script) } })
     try {
-      await harness.dashboardEval<string>(commandBoxScript('accept the cookies'))
+      await harness.submitCommand('accept the cookies')
       await harness.waitForPaneUrl(fixture.url('/consent'))
 
       // The click submits the consent form — no confirmation ever requested.

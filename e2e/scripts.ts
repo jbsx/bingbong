@@ -12,17 +12,18 @@ export function urlBarNavigationScript(url: string): string {
   })()`
 }
 
-export function commandBoxScript(text: string): string {
+// Drives the Prompt Bar (#46 consolidated) in the feed panel's footer —
+// the one typed-input surface, submit or steer by run state.
+export function promptBarScript(text: string): string {
   return `(async () => {
-    const input = document.querySelector('.command-input')
-    if (!input) return 'no-command-input'
-    if (input.disabled) return 'command-input-disabled'
+    const input = document.querySelector('.prompt-input')
+    if (!input) return 'no-prompt-input'
     input.focus()
     const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set
     setter.call(input, ${JSON.stringify(text)})
     input.dispatchEvent(new Event('input', { bubbles: true }))
     await new Promise((r) => setTimeout(r, 200))
-    document.querySelector('.command-form').requestSubmit()
+    document.querySelector('.prompt-form').requestSubmit()
     return 'submitted'
   })()`
 }

@@ -140,10 +140,10 @@ body,
   border-color: var(--muted);
 }
 
-/* The steer box (#46): the panel's footer. Enabled only while a run is
-   active — disabled never silently drops input, and the placeholder says
-   why. Submission rides the same seam as spoken steering. */
-.steer-form {
+/* The prompt bar: the panel's footer and the one typed-input surface.
+   The verb button names the current action (run / steer); the bar is
+   never disabled — a rejected submit restores the draft. */
+.prompt-row {
   flex: none;
   display: flex;
   gap: 10px;
@@ -151,7 +151,14 @@ body,
   border-top: 1px solid var(--edge);
 }
 
-.steer-input {
+.prompt-form {
+  flex: 1;
+  display: flex;
+  gap: 10px;
+  min-width: 0;
+}
+
+.prompt-input {
   flex: 1;
   min-width: 0;
   padding: 8px 14px;
@@ -162,16 +169,12 @@ body,
   font-size: 1.1rem;
 }
 
-.steer-input:focus {
+.prompt-input:focus {
   outline: none;
   border-color: var(--accent);
 }
 
-.steer-input:disabled {
-  opacity: 0.5;
-}
-
-.steer-submit {
+.prompt-verb {
   flex: none;
   padding: 8px 14px;
   border: 1px solid var(--edge);
@@ -182,14 +185,30 @@ body,
   cursor: pointer;
 }
 
-.steer-submit:not(:disabled):hover {
+.prompt-verb:not(:disabled):hover {
   color: var(--text);
   border-color: var(--muted);
 }
 
-.steer-submit:disabled {
+.prompt-verb:disabled {
   opacity: 0.5;
   cursor: default;
+}
+
+.panel-stop {
+  flex: none;
+  min-width: 64px;
+  border: 1px solid var(--status-red);
+  border-radius: 10px;
+  background: rgba(157, 0, 6, 0.1);
+  color: var(--status-red);
+  font-size: 1.1rem;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.panel-stop:hover {
+  background: rgba(157, 0, 6, 0.18);
 }
 
 /* The collapsed edge tab (#45): idle runs collapse the panel to a slim

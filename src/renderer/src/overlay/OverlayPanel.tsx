@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react'
 import { ActivityFeed } from '../ActivityFeed'
-import { SteerBox } from './SteerBox'
+import { PromptBar } from './PromptBar'
 import { useOverlayFeed, usePanelState } from './useOverlayFeed'
 import { useRunActive } from './useRunActive'
 
@@ -8,8 +8,9 @@ import { useRunActive } from './useRunActive'
  * The feed panel surface (#45), rendered inside its own transparent
  * WebContentsView above the browser pane. The view's bounds come from the
  * dashboard's slot rect; open/collapsed and overlay/docked styling come
- * from main's folded panel state. The steer box (#46) rides the panel's
- * footer — enabled only while a run is active.
+ * from main's folded panel state. The prompt bar rides the panel's
+ * footer — one typed-input surface whose verb follows the run-live signal,
+ * with the stop button beside it while a run is live.
  *
  * The feed stays mounted when collapsed (CSS hides it): the panel is a
  * visibility toggle, not an unmount — entries keep accumulating behind the
@@ -32,6 +33,13 @@ export function OverlayPanel() {
   // Drag bookkeeping: the surface's fixed right edge (the panel hugs it
   // for the whole drag). Null when no drag is live.
   const dragBaseRef = useRef<number | null>(null)
+
+  // Opening the panel puts the caret in the prompt bar — typing's entry
+  // point, since the dashboard carries no typed input of its own.
+  useEffect(() => {
+    if (!open) return
+    surfaceRef.current?.querySelector<HTMLInputElement>('.prompt-input')?.focus()
+  }, [open])
 
   useEffect(() => {
     const onMove = (event: PointerEvent): void => {
@@ -97,7 +105,21 @@ export function OverlayPanel() {
         <ActivityFeed
           entries={feed}
           liveRunId={liveRunId}
-          footer={<SteerBox disabled={!runActive} />}
+          footer={
+            <div className="prompt-row">
+              <PromptBar runActive={runActive} />
+              {runActive ? (
+                <button
+                  type="button"
+                  className="panel-stop"
+                  onClick={() => void window.bingbong.assistant.abort()}
+                  aria-label="Stop active command"
+                >
+                  Stop
+                </button>
+              ) : null}
+            </div>
+          }
           headerActions={
             <>
               <button

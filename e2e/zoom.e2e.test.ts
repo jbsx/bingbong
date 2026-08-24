@@ -2,7 +2,6 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { commandBoxScript } from './scripts'
 import { startHarness, type Harness } from './harness'
 import { startFixtureServer, type FixtureServer } from './fixtureServer'
 import { waitFor } from './waitFor'
@@ -138,7 +137,7 @@ describe('web zoom e2e', () => {
       },
       { timeoutMs: 10000, intervalMs: 250 },
     )
-    expect(await harness.dashboardEval<string>(commandBoxScript('browse the fixture page'))).toBe('submitted')
+    expect(await harness.submitCommand('browse the fixture page')).toBe('submitted')
 
     const targetId = await waitFor(
       async () => {

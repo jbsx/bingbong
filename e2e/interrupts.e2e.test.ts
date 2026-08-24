@@ -1,7 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import type { AssistantTurn } from '../src/core/ports/llm'
 import { mergeFramesFor, vadDefaults } from '../src/core/voice/vadEndpointing'
-import { commandBoxScript } from './scripts'
 import { startHarness, type Harness } from './harness'
 import { startFixtureServer, type FixtureServer } from './fixtureServer'
 import { waitFor } from './waitFor'
@@ -98,10 +97,10 @@ describe('run interruption e2e', () => {
       env: { BINGBONG_LLM_SCRIPT: JSON.stringify(interruptScript(fixture)) },
     })
     try {
-      expect(await harness.dashboardEval<string>(commandBoxScript('send the contact form'))).toBe('submitted')
+      expect(await harness.submitCommand('send the contact form')).toBe('submitted')
       await waitForConfirmation(harness)
 
-      await harness.clickDashboardElement('.assistant-stop')
+      await harness.clickOverlayElement('.panel-stop')
 
       await expectCancelledWithoutSubmit(harness)
     } finally {
@@ -129,14 +128,14 @@ describe('run interruption e2e', () => {
       },
     })
     try {
-      expect(await harness.dashboardEval<string>(commandBoxScript('research, then send the form'))).toBe('submitted')
+      expect(await harness.submitCommand('research, then send the form')).toBe('submitted')
       await waitFor(
         () => harness.dashboardEval<boolean>(`!!document.querySelector('.subagent-card--running')`),
         { timeoutMs: 10_000, intervalMs: 100 },
       )
       await waitForConfirmation(harness)
 
-      await harness.clickDashboardElement('.assistant-stop')
+      await harness.clickOverlayElement('.panel-stop')
 
       await expectCancelledWithoutSubmit(harness)
       await waitFor(
@@ -155,7 +154,7 @@ describe('run interruption e2e', () => {
       env: { BINGBONG_LLM_SCRIPT: JSON.stringify(interruptScript(fixture)) },
     })
     try {
-      expect(await harness.dashboardEval<string>(commandBoxScript('send the contact form'))).toBe('submitted')
+      expect(await harness.submitCommand('send the contact form')).toBe('submitted')
       await waitForConfirmation(harness)
       await harness.focusPane()
       const paneSessionId = harness.paneSessionId()
@@ -185,7 +184,7 @@ describe('run interruption e2e', () => {
       },
     })
     try {
-      expect(await harness.dashboardEval<string>(commandBoxScript('send the contact form'))).toBe('submitted')
+      expect(await harness.submitCommand('send the contact form')).toBe('submitted')
       await waitForConfirmation(harness)
 
       expect(await harness.dashboardEval<string>(feedAudioScript)).toBe('fed')
@@ -234,7 +233,7 @@ describe('run interruption e2e', () => {
       },
     })
     try {
-      expect(await harness.dashboardEval<string>(commandBoxScript('send the contact form'))).toBe('submitted')
+      expect(await harness.submitCommand('send the contact form')).toBe('submitted')
       await waitForConfirmation(harness)
 
       expect(await harness.dashboardEval<string>(feedAudioScript)).toBe('fed')
@@ -273,7 +272,7 @@ describe('run interruption e2e', () => {
       },
     })
     try {
-      expect(await harness.dashboardEval<string>(commandBoxScript('send the contact form'))).toBe('submitted')
+      expect(await harness.submitCommand('send the contact form')).toBe('submitted')
       await waitForConfirmation(harness)
 
       expect(await harness.dashboardEval<string>(feedAudioScript)).toBe('fed')
@@ -315,7 +314,7 @@ describe('run interruption e2e', () => {
       },
     })
     try {
-      expect(await harness.dashboardEval<string>(commandBoxScript('load the slow page'))).toBe('submitted')
+      expect(await harness.submitCommand('load the slow page')).toBe('submitted')
 
       await waitFor(
         () => harness.dashboardEval<boolean>(`!!document.querySelector('.status-orb--cancelled')`),
@@ -349,7 +348,7 @@ describe('run interruption e2e', () => {
       },
     })
     try {
-      expect(await harness.dashboardEval<string>(commandBoxScript('load the slow page'))).toBe('submitted')
+      expect(await harness.submitCommand('load the slow page')).toBe('submitted')
 
       await waitFor(
         () => harness.dashboardEval<boolean>(`!!document.querySelector('.status-orb--paused')`),

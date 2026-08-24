@@ -2,7 +2,7 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { commandBoxScript, denyConfirmationScript } from './scripts'
+import { denyConfirmationScript } from './scripts'
 import { startHarness, type Harness } from './harness'
 import { startFixtureServer, type FixtureServer } from './fixtureServer'
 import { waitFor } from './waitFor'
@@ -59,7 +59,7 @@ describe('settings and app control voice tools e2e', () => {
       env: { BINGBONG_LLM_SCRIPT: JSON.stringify(script) },
     })
 
-    expect(await harness.dashboardEval<string>(commandBoxScript('make the web eighty percent'))).toBe('submitted')
+    expect(await harness.submitCommand('make the web eighty percent')).toBe('submitted')
 
     // Unconfirmed: a settings change never pauses for a risk gate.
     await waitForDisplay(harness, 'Web zoom set to 80%.')
@@ -99,7 +99,7 @@ describe('settings and app control voice tools e2e', () => {
       env: { BINGBONG_LLM_SCRIPT: JSON.stringify(script) },
     })
 
-    expect(await harness.dashboardEval<string>(commandBoxScript('quit the app'))).toBe('submitted')
+    expect(await harness.submitCommand('quit the app')).toBe('submitted')
 
     // The gate holds: the dialog shows the spoken yes/no prompt…
     await waitFor(

@@ -2,7 +2,6 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { commandBoxScript } from './scripts'
 import { startHarness } from './harness'
 import { startFixtureServer, type FixtureServer } from './fixtureServer'
 import { waitFor } from './waitFor'
@@ -43,7 +42,7 @@ describe('history persistence e2e', () => {
     const env = { BINGBONG_LLM_SCRIPT: JSON.stringify(scriptedTurns(fixture.url('/'))) }
 
     const first = await startHarness({ fixture, userDataDir, env })
-    const submitted = await first.dashboardEval<string>(commandBoxScript('open the fixture page'))
+    const submitted = await first.submitCommand('open the fixture page')
     expect(submitted).toBe('submitted')
     // Wait for the answer before the orb: right after submit the orb is still
     // idle, so an idle-check alone can pass before the run even starts. The
@@ -93,7 +92,7 @@ describe('history persistence e2e', () => {
       // A fresh run appends to the hydrated view: the first command after a
       // restart is a fresh session store's first-ever command, so no session
       // boundary fires (ADR 0003) and the outcomes stay readable.
-      const submittedAgain = await second.dashboardEval<string>(commandBoxScript('open it again'))
+      const submittedAgain = await second.submitCommand('open it again')
       expect(submittedAgain).toBe('submitted')
       await waitFor(
         () => second.dashboardEval<boolean>(`!!document.querySelector('.status-orb--idle')`),

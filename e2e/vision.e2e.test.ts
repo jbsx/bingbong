@@ -1,6 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import type { AssistantTurn } from '../src/core/ports/llm'
-import { commandBoxScript } from './scripts'
 import { startFixtureServer, type FixtureServer } from './fixtureServer'
 import { startHarness, type Harness } from './harness'
 import { waitFor } from './waitFor'
@@ -40,7 +39,7 @@ describe('vision grounding e2e', () => {
   })
 
   it('clicks a visually described target that the DOM snapshot omits', async () => {
-    expect(await harness.dashboardEval<string>(commandBoxScript('click the play button in the video thumbnail'))).toBe('submitted')
+    expect(await harness.submitCommand('click the play button in the video thumbnail')).toBe('submitted')
     await harness.waitForPaneUrl(fixture.url('/visual-target'))
 
     await waitFor(
@@ -105,7 +104,7 @@ describe('automatic page vision e2e', () => {
       window.__autoVisionEvents = []
       window.bingbong.assistant.onEvent((event) => window.__autoVisionEvents.push(event))
     `)
-    expect(await harness.dashboardEval<string>(commandBoxScript('inspect and finish the blocked task'))).toBe('submitted')
+    expect(await harness.submitCommand('inspect and finish the blocked task')).toBe('submitted')
 
     const events = await waitFor(
       async () => {

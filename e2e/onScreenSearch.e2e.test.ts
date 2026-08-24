@@ -1,6 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import type { AssistantTurn } from '../src/core/ports/llm'
-import { commandBoxScript } from './scripts'
 import { startHarness, type Harness } from './harness'
 import { startFixtureServer, type FixtureServer } from './fixtureServer'
 import { waitFor } from './waitFor'
@@ -53,7 +52,7 @@ describe('on-screen GUI search e2e (#83)', () => {
   })
 
   it('completes a search task entirely in the visible tab', async () => {
-    const submitted = await harness.dashboardEval<string>(commandBoxScript('search for fixture widgets'))
+    const submitted = await harness.submitCommand('search for fixture widgets')
     expect(submitted).toBe('submitted')
 
     // The visible tab walked engine → results → article, all rendered.

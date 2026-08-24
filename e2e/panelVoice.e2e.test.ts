@@ -8,7 +8,6 @@ import { startHarness } from './harness'
 import { startFixtureServer, type FixtureServer } from './fixtureServer'
 import { waitFor } from './waitFor'
 import { feedText, waitForDisplay } from './feed'
-import { commandBoxScript } from './scripts'
 import type { AssistantTurn } from '../src/core/ports/llm'
 
 // Panel voice tools (#64, ADR 0006): "open the panel" / "dock the panel"
@@ -63,7 +62,7 @@ describe('panel voice tools e2e', () => {
       expect(await app.overlayEval<boolean>(COLLAPSED_CHROME)).toBe(true)
 
       // Submit the command. The command event auto-peaks the panel…
-      expect(await app.dashboardEval<string>(commandBoxScript('dock the panel'))).toBe('submitted')
+      expect(await app.submitCommand('dock the panel')).toBe('submitted')
       await waitFor(() => app.overlayEval<boolean>(OPEN_CHROME), { timeoutMs: 5000, intervalMs: 100 })
 
       // …then the model-invoked toggle_panel collapses it WHILE the run is
@@ -111,7 +110,7 @@ describe('panel voice tools e2e', () => {
       // direction of set_panel_mode. The run's done collapses the panel
       // before these reads can race it, so wait for the collapse first,
       // then reopen and assert the floating layout on BOTH renderers.
-      expect(await app.dashboardEval<string>(commandBoxScript('float the panel'))).toBe('submitted')
+      expect(await app.submitCommand('float the panel')).toBe('submitted')
       await waitForDisplay(app, OVERLAY_MARKER)
       await waitFor(
         () => app.overlayEval<boolean>(COLLAPSED_CHROME),
@@ -193,7 +192,7 @@ describe('panel voice tools e2e', () => {
       // Boot at the 880px default, then submit. Two narrower steps land on
       // BOTH surfaces (fold + dashboard slot).
       await app.clickDashboardElement('.feed-panel-toggle')
-      expect(await app.dashboardEval<string>(commandBoxScript('make the panel much narrower'))).toBe('submitted')
+      expect(await app.submitCommand('make the panel much narrower')).toBe('submitted')
       await waitForWidth(FEED_PANEL_WIDTH_DEFAULT - 2 * FEED_PANEL_WIDTH_STEP)
 
       // The voice-set width persisted exactly like a drag would — same View

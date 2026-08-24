@@ -2,7 +2,6 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { mkdtemp, readdir, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { commandBoxScript } from './scripts'
 import { startHarness, type Harness } from './harness'
 import { startFixtureServer, type FixtureServer } from './fixtureServer'
 import { waitFor } from './waitFor'
@@ -111,7 +110,7 @@ describe('voice e2e', () => {
       },
     })
     try {
-      await harness.dashboardEval<string>(commandBoxScript('send the contact form'))
+      await harness.submitCommand('send the contact form')
       await harness.waitForPaneUrl(fixture.url('/risky'))
 
       // The confirmation prompt opens the 12 s voice window: orb → listening.
@@ -168,7 +167,7 @@ describe('voice e2e', () => {
         window.__askVoiceEvents = []
         window.bingbong.assistant.onEvent((event) => window.__askVoiceEvents.push(event))
       `)
-      expect(await harness.dashboardEval<string>(commandBoxScript('book a hotel'))).toBe('submitted')
+      expect(await harness.submitCommand('book a hotel')).toBe('submitted')
 
       await waitForOrb(harness, 'listening')
       const hint = await waitFor(

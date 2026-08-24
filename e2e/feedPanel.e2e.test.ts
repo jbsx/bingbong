@@ -137,15 +137,12 @@ describe('feed panel layout e2e', () => {
       // Idle: collapsed.
       expect(await app.overlayEval<boolean>(COLLAPSED_CHROME)).toBe(true)
 
-      // Submit; the slow fixture page holds the run open long enough to
-      // observe the peaked panel mid-run.
-      const submitted = await app.dashboardEval<string>(`(() => {
-        const input = document.querySelector('.command-input')
-        const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set
-        setter.call(input, 'open the slow page')
-        input.dispatchEvent(new Event('input', { bubbles: true }))
-        document.querySelector('.command-form').requestSubmit()
-        return 'submitted'
+      // Submit through the assistant seam directly — the fold-level
+      // auto-peek this test targets is what any submission triggers
+      // (voice drives exactly this path from main), panel open or not.
+      const submitted = await app.overlayEval<string>(`(async () => {
+        const ok = await window.bingbong.assistant.submit('open the slow page')
+        return ok ? 'submitted' : 'rejected'
       })()`)
       expect(submitted).toBe('submitted')
 

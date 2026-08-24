@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { commandBoxScript, urlBarNavigationScript } from './scripts'
+import { promptBarScript, urlBarNavigationScript } from './scripts'
 
 describe('urlBarNavigationScript', () => {
   it('embeds the URL as a JSON string literal', () => {
@@ -25,14 +25,10 @@ describe('urlBarNavigationScript', () => {
   })
 })
 
-describe('commandBoxScript', () => {
-  it('embeds the command as a JSON string literal and submits the command form', () => {
-    const script = commandBoxScript('open youtube')
+describe('promptBarScript', () => {
+  it('embeds the command as a JSON string literal and submits the prompt form', () => {
+    const script = promptBarScript('open youtube')
     expect(script).toContain('"open youtube"')
-    expect(script).toContain("querySelector('.command-form').requestSubmit()")
-  })
-
-  it('reports a disabled command box instead of submitting', () => {
-    expect(commandBoxScript('x')).toContain("if (input.disabled) return 'command-input-disabled'")
+    expect(script).toContain("querySelector('.prompt-form').requestSubmit()")
   })
 })

@@ -171,9 +171,14 @@ export function App() {
         </div>
       </main>
 
-      <footer className="dashboard-footer">
-        <AssistantPanel assistant={assistant} />
-      </footer>
+      {/* The footer carries only transient cards now — typed input lives
+          in the feed panel's prompt bar (ADR 0011) — so it renders only
+          while a card is pending and collapses away otherwise. */}
+      {assistant.pendingConfirmation || assistant.pendingAsk ? (
+        <footer className="dashboard-footer">
+          <AssistantPanel assistant={assistant} />
+        </footer>
+      ) : null}
     </div>
   )
 }

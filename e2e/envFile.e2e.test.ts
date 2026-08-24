@@ -3,7 +3,6 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import type { AssistantTurn } from '../src/core/ports/llm'
-import { commandBoxScript } from './scripts'
 import { startFixtureServer, VISION_COMPLETION_CONTENT, type FixtureServer } from './fixtureServer'
 import { startHarness, type Harness } from './harness'
 import { waitFor } from './waitFor'
@@ -96,7 +95,7 @@ describe('.env config e2e', () => {
   it('serves a look call with .env-only vision credentials', async () => {
     await harness.dashboardEval(`window.__envFileEvents = []
       window.bingbong.assistant.onEvent((event) => window.__envFileEvents.push(event))`)
-    expect(await harness.dashboardEval<string>(commandBoxScript('look at this page'))).toBe('submitted')
+    expect(await harness.submitCommand('look at this page')).toBe('submitted')
 
     const events = await waitFor(
       async () => {

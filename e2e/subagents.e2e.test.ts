@@ -1,5 +1,4 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { commandBoxScript } from './scripts'
 import { startHarness, type Harness } from './harness'
 import { startFixtureServer, type FixtureServer } from './fixtureServer'
 import { waitFor } from './waitFor'
@@ -54,7 +53,7 @@ describe('subagents e2e', () => {
   it('spawns parallel browsing agents, merges results, announces, lingers, and reopens', async () => {
     const subUrl = fixture.url(SUB_PATH)
 
-    const submitted = await harness.dashboardEval<string>(commandBoxScript('compare the fixture pages in parallel'))
+    const submitted = await harness.submitCommand('compare the fixture pages in parallel')
     expect(submitted).toBe('submitted')
 
     // Two live cards appear…
@@ -185,7 +184,7 @@ describe('subagent vision budget e2e', () => {
   })
 
   it('returns a refusal after fifteen shared subagent vision calls', async () => {
-    expect(await harness.dashboardEval<string>(commandBoxScript('run the vision budget agent'))).toBe('submitted')
+    expect(await harness.submitCommand('run the vision budget agent')).toBe('submitted')
 
     const result = await waitFor(
       async () => {

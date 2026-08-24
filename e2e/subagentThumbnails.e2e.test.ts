@@ -1,5 +1,4 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { commandBoxScript } from './scripts'
 import { startHarness, type Harness } from './harness'
 import { startFixtureServer, type FixtureServer } from './fixtureServer'
 import { sleep, waitFor } from './waitFor'
@@ -127,7 +126,7 @@ describe('subagent thumbnails e2e', () => {
   })
 
   it('shows live thumbnails while the agents run, laid out at a desktop viewport', async () => {
-    expect(await harness.dashboardEval<string>(commandBoxScript('browse then summarize'))).toBe('submitted')
+    expect(await harness.submitCommand('browse then summarize')).toBe('submitted')
 
     // The background agent's spawn is confirm-gated (approved download/file
     // work) — approve it so all three agents run.

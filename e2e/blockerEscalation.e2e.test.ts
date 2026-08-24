@@ -3,7 +3,7 @@ import type { AssistantTurn } from '../src/core/ports/llm'
 import type { PipelineEvent } from '../src/core/pipeline/events'
 import { startFixtureServer, type FixtureServer } from './fixtureServer'
 import { startHarness, type Harness } from './harness'
-import { answerAskScript, commandBoxScript } from './scripts'
+import { answerAskScript } from './scripts'
 import { waitFor } from './waitFor'
 
 type ToolResultEvent = Extract<PipelineEvent, { type: 'tool_result' }>
@@ -93,7 +93,7 @@ describe('blocker detect → verify → escalate e2e', () => {
       window.__blockerEvents = []
       window.bingbong.assistant.onEvent((event) => window.__blockerEvents.push(event))
     `)
-    expect(await harness.dashboardEval<string>(commandBoxScript('open the challenge page'))).toBe('submitted')
+    expect(await harness.submitCommand('open the challenge page')).toBe('submitted')
 
     // The spoken escalation renders while the run waits for the answer.
     const question = await waitFor(
@@ -112,16 +112,16 @@ describe('blocker detect → verify → escalate e2e', () => {
     expect(await harness.paneEval<string>('document.title')).toBe('Just a moment...')
 
     // Second command continues the scripted session: the login-wall nudge
-    // and the consent contrast. The command input stays disabled while the
-    // first run drains, so wait for it to reopen first.
+    // and the consent contrast. The prompt bar is never disabled, so sync
+    // on the first run draining — the orb back at idle — before typing.
     await waitFor(
       async () => {
-        const enabled = await harness.dashboardEval<boolean>(`!document.querySelector('.command-input').disabled`)
-        return enabled ? enabled : undefined
+        const idle = await harness.dashboardEval<boolean>(`!!document.querySelector('.status-orb--idle')`)
+        return idle ? idle : undefined
       },
       { timeoutMs: 20_000, intervalMs: 250 },
     )
-    expect(await harness.dashboardEval<string>(commandBoxScript('now the sign-in and consent walls'))).toBe('submitted')
+    expect(await harness.submitCommand('now the sign-in and consent walls')).toBe('submitted')
 
     const events = await waitFor(
       async () => {

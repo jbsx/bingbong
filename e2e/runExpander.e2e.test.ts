@@ -1,5 +1,4 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { commandBoxScript } from './scripts'
 import { startHarness, type Harness } from './harness'
 import { startFixtureServer, type FixtureServer } from './fixtureServer'
 import { waitFor } from './waitFor'
@@ -40,7 +39,7 @@ describe('per-run details expander e2e (#55)', () => {
     const harness = await startHarness({ fixture, env: { BINGBONG_LLM_SCRIPT: JSON.stringify(script) } })
     try {
       await openPanel(harness)
-      expect(await harness.dashboardEval<string>(commandBoxScript('open the slow page'))).toBe('submitted')
+      expect(await harness.submitCommand('open the slow page')).toBe('submitted')
 
       // While the run is live: the expander exists, is marked live, and
       // carries the open attribute — work can be watched as it happens.
@@ -79,7 +78,7 @@ describe('per-run details expander e2e (#55)', () => {
     const harness = await startHarness({ fixture, env: { BINGBONG_LLM_SCRIPT: JSON.stringify(script) } })
     try {
       await openPanel(harness)
-      expect(await harness.dashboardEval<string>(commandBoxScript('open the fixture page'))).toBe('submitted')
+      expect(await harness.submitCommand('open the fixture page')).toBe('submitted')
 
       // The run finished: collapsed by default…
       await waitForDisplay(harness, 'Opened the fixture page.')

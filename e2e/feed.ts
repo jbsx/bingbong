@@ -1,5 +1,4 @@
 import { expect } from 'vitest'
-import { commandBoxScript } from './scripts'
 import type { Harness } from './harness'
 import { waitFor } from './waitFor'
 
@@ -35,7 +34,7 @@ export async function waitForDisplay(harness: Harness, expected: string): Promis
 // idle from boot before the thinking status lands, which would let the next
 // submit hit a disabled input).
 export async function submitAndAwaitAnswer(harness: Harness, command: string, marker: string): Promise<void> {
-  const submitted = await harness.dashboardEval<string>(commandBoxScript(command))
+  const submitted = await harness.submitCommand(command)
   expect(submitted).toBe('submitted')
   await waitFor(
     async () => {

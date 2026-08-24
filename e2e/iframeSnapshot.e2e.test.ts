@@ -3,7 +3,6 @@ import type { AssistantTurn } from '../src/core/ports/llm'
 import type { PipelineEvent } from '../src/core/pipeline/events'
 import { startFixtureServer, type FixtureServer } from './fixtureServer'
 import { startHarness, type Harness } from './harness'
-import { commandBoxScript } from './scripts'
 import { waitFor } from './waitFor'
 
 type ToolResultEvent = Extract<PipelineEvent, { type: 'tool_result' }>
@@ -57,7 +56,7 @@ describe('iframe-aware page snapshots e2e', () => {
       window.bingbong.assistant.onEvent((event) => window.__iframeSnapshotEvents.push(event))
     `)
 
-    expect(await harness.dashboardEval<string>(commandBoxScript('read pages with and without challenge iframes'))).toBe('submitted')
+    expect(await harness.submitCommand('read pages with and without challenge iframes')).toBe('submitted')
 
     const events = await waitFor(
       async () => {

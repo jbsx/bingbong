@@ -71,6 +71,24 @@ _Avoid_: restore, session replay
 
 ### Views
 
+**Prompt Bar**:
+The single typed-input surface, living in the Feed Panel's footer. Carries one
+of two verbs depending on run state: _submit_ starts a Run when none is live;
+_steer_ directs the live Run. The verb is chosen by the same run-live signal,
+never by which surface you typed in. The draft survives verb flips.
+_Avoid_: command box, steer box, input bar, activity bar
+
+**Steering**:
+Redirecting a live Run mid-flight with one Directive. Paused Runs stay
+steerable; Steering pauses-if-needed and resumes-with-directive as one atomic
+step. The typed path drives the exact seam the spoken "hold on" flow drives.
+_Avoid_: interrupting, mid-flight correction
+
+**Directive**:
+One instruction aimed at a live Run via Steering. Distinct from a command: a
+command starts a Run; a Directive bends one that already exists.
+_Avoid_: steer command, follow-up prompt
+
 **Feed**:
 The session-scoped projection of pipeline events. One projection feeds the
 dashboard, the overlay panel, and (formerly) the idle digest.

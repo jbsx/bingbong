@@ -3,7 +3,6 @@ import type { AssistantTurn } from '../src/core/ports/llm'
 import type { PipelineEvent } from '../src/core/pipeline/events'
 import { startFixtureServer, type FixtureServer } from './fixtureServer'
 import { startHarness, type Harness } from './harness'
-import { commandBoxScript } from './scripts'
 import { waitFor } from './waitFor'
 
 type ToolResultEvent = Extract<PipelineEvent, { type: 'tool_result' }>
@@ -85,7 +84,7 @@ describe('popup and dialog escalation tiers e2e', () => {
       window.bingbong.assistant.onEvent((event) => window.__dialogTierEvents.push(event))
     `)
 
-    expect(await harness.dashboardEval<string>(commandBoxScript('exercise dialog tiers'))).toBe('submitted')
+    expect(await harness.submitCommand('exercise dialog tiers')).toBe('submitted')
 
     const events = await waitFor(
       async () => {

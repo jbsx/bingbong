@@ -1,5 +1,4 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { commandBoxScript } from './scripts'
 import { startHarness, type Harness } from './harness'
 import { startFixtureServer, type FixtureServer } from './fixtureServer'
 import { waitFor } from './waitFor'
@@ -49,7 +48,7 @@ describe('assistant text-box trigger e2e', () => {
   it('runs a typed command end to end: browser acts, transcript answers, orb idles', async () => {
     const root = fixture.url('/')
 
-    const submitted = await harness.dashboardEval<string>(commandBoxScript('open the fixture page'))
+    const submitted = await harness.submitCommand('open the fixture page')
     expect(submitted).toBe('submitted')
 
     // The pane really navigated (navigate tool through the CDP controller).
@@ -88,7 +87,7 @@ describe('assistant text-box trigger e2e', () => {
   it('displays and speaks a one-liner when model routing is unconfigured', async () => {
     const app = await startHarness({ fixture, env: NO_ROUTING_ENV })
     try {
-      const submitted = await app.dashboardEval<string>(commandBoxScript('open youtube'))
+      const submitted = await app.submitCommand('open youtube')
       expect(submitted).toBe('submitted')
 
       const error = await waitFor(

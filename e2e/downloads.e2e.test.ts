@@ -2,7 +2,7 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { approveConfirmationScript, commandBoxScript } from './scripts'
+import { approveConfirmationScript } from './scripts'
 import { startHarness, type Harness } from './harness'
 import { startFixtureServer, DOWNLOAD_PAYLOAD, type FixtureServer } from './fixtureServer'
 import { waitFor } from './waitFor'
@@ -48,7 +48,7 @@ describe('download routing e2e', () => {
   })
 
   it('asks, then routes the approved download and announces it by filename', async () => {
-    expect(await harness.dashboardEval<string>(commandBoxScript('download the probe file'))).toBe('submitted')
+    expect(await harness.submitCommand('download the probe file')).toBe('submitted')
     await harness.waitForPaneUrl(fixture.url('/risky'))
 
     // The gate pauses on the download confirmation. It names the link's

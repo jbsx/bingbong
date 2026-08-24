@@ -1,5 +1,4 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { commandBoxScript } from './scripts'
 import { startHarness, type Harness } from './harness'
 import { startFixtureServer, type FixtureServer } from './fixtureServer'
 import { waitFor } from './waitFor'
@@ -80,18 +79,25 @@ describe('dashboard theme e2e (#50)', () => {
       // Calibration (#49): 22px root so rem sizes land couch-readable.
       expect(tokens.rootSize).toBe('22px')
 
-      // The type scale: conversation 1.4rem (~31px), labels 1.1rem, detail 1rem.
-      const sizes = await harness.dashboardEval<Record<string, string>>(`(() => {
+      // The type scale: prompt bar 1.1rem (panel-local), labels 1.1rem,
+      // detail 1rem — measured in the overlay, where typed input lives.
+      const sizes = await harness.overlayEval<Record<string, string>>(`(() => {
         const px = (el) => (el ? getComputedStyle(el).fontSize : '')
         return {
-          conversation: px(document.querySelector('.command-input')),
-          label: px(document.querySelector('.dashboard-header h1')),
-          detail: px(document.querySelector('.dashboard-footer')),
+          prompt: px(document.querySelector('.prompt-input')),
         }
       })()`)
-      expect(sizes.conversation).toBe('30.8px')
-      expect(sizes.label).toBe('24.2px')
-      expect(sizes.detail).toBe('24.2px')
+      expect(sizes.prompt).toBe('24.2px')
+      const labelSizes = await harness.dashboardEval<Record<string, string>>(`(() => {
+        const px = (el) => (el ? getComputedStyle(el).fontSize : '')
+        return {
+          label: px(document.querySelector('.dashboard-header h1')),
+          // No cards pending: the footer is collapsed away entirely.
+          footerWhileIdle: px(document.querySelector('.dashboard-footer')),
+        }
+      })()`)
+      expect(labelSizes.label).toBe('24.2px')
+      expect(labelSizes.footerWhileIdle).toBe('')
 
       // The font file is bundled and actually loaded — no CDN round trip.
       const fontFaces = await harness.dashboardEval<[string, string][]>(
@@ -183,7 +189,7 @@ describe('dashboard theme e2e (#50)', () => {
       env: { BINGBONG_LLM_SCRIPT: JSON.stringify(script) },
     })
     try {
-      expect(await harness.dashboardEval<string>(commandBoxScript('open the slow page'))).toBe('submitted')
+      expect(await harness.submitCommand('open the slow page')).toBe('submitted')
 
       // The /slow fixture holds the tool open: the pill names the state and
       // the chrome shows a text spinner — never a sliding bar.
@@ -202,7 +208,7 @@ describe('dashboard theme e2e (#50)', () => {
       )
 
       // Stop mid-run: the pill names the cancellation — red, still.
-      await harness.clickDashboardElement('.assistant-stop')
+      await harness.clickOverlayElement('.panel-stop')
       await waitForPill(harness, 'Cancelled')
     } finally {
       await harness.quit()
