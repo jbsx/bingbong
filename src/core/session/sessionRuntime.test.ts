@@ -7,7 +7,8 @@ import type {
   SessionIdentitySource,
   SubmissionId,
 } from './sessionIdentity'
-import { createSessionRuntime } from './sessionRuntime'
+import { createSessionRuntime, parseSessionContinuityBudgets } from './sessionRuntime'
+import type { SessionContinuityBudgets } from './sessionRuntime'
 
 class DeterministicIdentities implements SessionIdentitySource {
   readonly minted: string[] = []
@@ -44,6 +45,20 @@ function harness(start = 1_000) {
 function decision(runtime: ReturnType<typeof createSessionRuntime>) {
   const state = runtime.state()
   return { sessionId: state.sessionId!, generation: state.generation }
+}
+
+const roomyMemoryBudget = { high: 1_000, reserve: 1_100, hard: 1_200 }
+
+function budgets(
+  journal: SessionContinuityBudgets['journal'],
+  memory: SessionContinuityBudgets['memory'] = roomyMemoryBudget,
+): Record<string, SessionContinuityBudgets> {
+  return { 'test-model': { journal, memory } }
+}
+
+async function settleMaintenance(): Promise<void> {
+  await Promise.resolve()
+  await Promise.resolve()
 }
 
 describe('session runtime', () => {
@@ -254,6 +269,395 @@ describe('session runtime', () => {
 
     const fresh = runtime.accept(runtime.submit().submissionId)
     expect(fresh.journal).toEqual([])
+  })
+
+  it('selects separate Journal and Working Memory token thresholds for the active model', async () => {
+    const attempts: string[] = []
+    let model = 'large-model'
+    const runtime = createSessionRuntime({
+      clock: new FakeClock(),
+      identities: new DeterministicIdentities(),
+      continuityModel: () => model,
+      continuityBudgets: {
+        'large-model': {
+          journal: { high: 100, reserve: 110, hard: 120 },
+          memory: { high: 200, reserve: 210, hard: 220 },
+        },
+        'small-model': {
+          journal: { high: 10, reserve: 20, hard: 100 },
+          memory: { high: 100, reserve: 110, hard: 120 },
+        },
+      },
+      compactContinuity: async ({ model, journal, memory }) => {
+        attempts.push(`${model}:${journal.length}:${memory.length}`)
+        return { journal: journal.slice(-1), memory }
+      },
+    })
+    const run = runtime.accept(runtime.submit().submissionId)
+
+    runtime.commitRunContinuity(run.runId, 'done', 'j'.repeat(20), [])
+    runtime.finish(run.runId)
+    const next = runtime.accept(runtime.submit().submissionId)
+    model = 'small-model'
+    runtime.commitRunContinuity(next.runId, 'done', 'j'.repeat(44), [])
+    await settleMaintenance()
+
+    expect(attempts).toEqual(['small-model:2:0'])
+  })
+
+  it('parses model-specific continuity budgets from configuration', () => {
+    expect(parseSessionContinuityBudgets(JSON.stringify({
+      model: {
+        journal: { high: 10, reserve: 20, hard: 30 },
+        memory: { high: 40, reserve: 50, hard: 60 },
+      },
+    }))).toEqual({
+      model: {
+        journal: { high: 10, reserve: 20, hard: 30 },
+        memory: { high: 40, reserve: 50, hard: 60 },
+      },
+    })
+    expect(parseSessionContinuityBudgets(undefined)).toBeUndefined()
+    expect(parseSessionContinuityBudgets('[]')).toBeUndefined()
+    expect(parseSessionContinuityBudgets('not json')).toBeUndefined()
+  })
+
+  it('falls back to default budgets when the model resolver fails at construction', () => {
+    const degraded: string[] = []
+    const runtime = createSessionRuntime({
+      clock: new FakeClock(),
+      identities: new DeterministicIdentities(),
+      continuityModel: () => {
+        throw new Error('resolver down')
+      },
+      onContinuityDegraded: ({ reason }) => degraded.push(reason),
+    })
+    const run = runtime.accept(runtime.submit().submissionId)
+
+    expect(runtime.commitRunContinuity(run.runId, 'done', 'Works on default budgets.', [])).toBe('committed')
+    expect(degraded.length).toBeGreaterThanOrEqual(1)
+    expect(degraded.every((reason) => reason === 'budget_profile_invalid')).toBe(true)
+    runtime.finish(run.runId)
+    const next = runtime.accept(runtime.submit().submissionId)
+    expect(next.journal.map(({ text }) => text)).toEqual(['Works on default budgets.'])
+  })
+
+  it('compacts oldest continuity atomically while retaining protected and recent state', async () => {
+    const degraded: string[] = []
+    const runtime = createSessionRuntime({
+      clock: new FakeClock(),
+      identities: new DeterministicIdentities(),
+      continuityModel: 'test-model',
+      continuityBudgets: budgets({ high: 15, reserve: 80, hard: 100 }),
+      recentJournalEntries: 1,
+      onContinuityDegraded: ({ reason }) => degraded.push(reason),
+      compactContinuity: async ({ journal, memory }) => ({ journal: journal.slice(-1), memory }),
+    })
+    const first = runtime.accept(runtime.submit().submissionId)
+    runtime.commitRunContinuity(first.runId, 'done', 'old chronology'.repeat(2), [{
+      op: 'add',
+      entry: { kind: 'objective', subject: 'Goal', detail: 'Keep this objective.' },
+    }])
+    runtime.finish(first.runId)
+
+    const second = runtime.accept(runtime.submit().submissionId)
+    runtime.commitRunContinuity(second.runId, 'done', 'recent work'.repeat(4), [])
+    await settleMaintenance()
+    runtime.finish(second.runId)
+    const third = runtime.accept(runtime.submit().submissionId)
+
+    expect(third.journal.map(({ text }) => text)).toEqual(['recent work'.repeat(4)])
+    expect(third.memory.map(({ kind, subject }) => ({ kind, subject }))).toEqual([{ kind: 'objective', subject: 'Goal' }])
+    expect(degraded).toEqual([])
+  })
+
+  it('rolls back invalid compaction and does not retry while continuity remains above high water', async () => {
+    const degraded: string[] = []
+    let attempts = 0
+    const runtime = createSessionRuntime({
+      clock: new FakeClock(),
+      identities: new DeterministicIdentities(),
+      continuityModel: 'test-model',
+      continuityBudgets: budgets({ high: 10, reserve: 80, hard: 100 }),
+      onContinuityDegraded: ({ reason }) => degraded.push(reason),
+      compactContinuity: async () => {
+        attempts += 1
+        return { journal: [], memory: [] }
+      },
+    })
+    const first = runtime.accept(runtime.submit().submissionId)
+    runtime.commitRunContinuity(first.runId, 'failed', 'Known failed approach remains relevant.', [])
+    await settleMaintenance()
+    runtime.finish(first.runId)
+    const second = runtime.accept(runtime.submit().submissionId)
+    runtime.commitRunContinuity(second.runId, 'done', 'More work above high water.', [])
+    await settleMaintenance()
+
+    expect(attempts).toBe(1)
+    expect(degraded).toEqual(['compaction_invalid'])
+    runtime.finish(second.runId)
+    const third = runtime.accept(runtime.submit().submissionId)
+    expect(third.journal.map(({ text }) => text)).toEqual([
+      'Known failed approach remains relevant.',
+      'More work above high water.',
+    ])
+  })
+
+  it('rejects compaction that rewrites Journal chronology out of order', async () => {
+    const degraded: string[] = []
+    const runtime = createSessionRuntime({
+      clock: new FakeClock(),
+      identities: new DeterministicIdentities(),
+      continuityModel: 'test-model',
+      continuityBudgets: budgets({ high: 15, reserve: 80, hard: 100 }),
+      recentJournalEntries: 0,
+      onContinuityDegraded: ({ reason }) => degraded.push(reason),
+      compactContinuity: async ({ journal, memory }) => ({
+        journal: [...journal].reverse().map((entry, index) => ({ ...entry, text: `summary-${index}` })),
+        memory,
+      }),
+    })
+    for (const text of ['first chronology first chronology', 'second chronology second', 'third chronology third']) {
+      const run = runtime.accept(runtime.submit().submissionId)
+      runtime.commitRunContinuity(run.runId, 'done', text, [])
+      runtime.finish(run.runId)
+    }
+    await settleMaintenance()
+
+    expect(degraded).toEqual(['compaction_invalid'])
+    const next = runtime.accept(runtime.submit().submissionId)
+    expect(next.journal).toHaveLength(3)
+  })
+
+  it('rejects compaction that reattributes references or provenance', async () => {
+    const degraded: string[] = []
+    const runtime = createSessionRuntime({
+      clock: new FakeClock(),
+      identities: new DeterministicIdentities(),
+      continuityModel: 'test-model',
+      continuityBudgets: budgets(
+        { high: 1_000, reserve: 1_100, hard: 1_200 },
+        { high: 220, reserve: 300, hard: 400 },
+      ),
+      recentMemoryEntries: 0,
+      onContinuityDegraded: ({ reason }) => degraded.push(reason),
+      compactContinuity: async ({ journal, memory }) => ({
+        journal,
+        memory: [
+          { ...memory[0]!, detail: 'Short A.', references: memory[1]!.references },
+          { ...memory[1]!, detail: 'Short B.', references: memory[0]!.references },
+        ],
+      }),
+    })
+    const run = runtime.accept(runtime.submit().submissionId)
+    runtime.commitRunContinuity(run.runId, 'done', 'Found two candidates.', [
+      ...([['Candidate A', 'https://example.com/a'], ['Candidate B', 'https://example.com/b']] as const).map(([subject, url]) => ({
+        op: 'add' as const,
+        entry: {
+          kind: 'finding' as const,
+          subject,
+          detail: subject.repeat(25),
+          references: [{ url }],
+        },
+      })),
+    ])
+    runtime.finish(run.runId)
+    await settleMaintenance()
+
+    expect(degraded).toEqual(['compaction_invalid'])
+    const next = runtime.accept(runtime.submit().submissionId)
+    expect(next.memory.map(({ detail }) => detail)).toEqual([
+      'Candidate A'.repeat(25),
+      'Candidate B'.repeat(25),
+    ])
+  })
+
+  it('times out compaction without failing a Run or retrying immediately', async () => {
+    const clock = new FakeClock()
+    const degraded: string[] = []
+    let attempts = 0
+    const runtime = createSessionRuntime({
+      clock,
+      identities: new DeterministicIdentities(),
+      continuityModel: 'test-model',
+      continuityBudgets: budgets({ high: 10, reserve: 80, hard: 100 }),
+      compactionTimeoutMs: 25,
+      onContinuityDegraded: ({ reason }) => degraded.push(reason),
+      compactContinuity: () => {
+        attempts += 1
+        return new Promise(() => {})
+      },
+    })
+    const first = runtime.accept(runtime.submit().submissionId)
+
+    expect(runtime.commitRunContinuity(first.runId, 'done', 'Pressure without user-visible failure continues.', [])).toBe('committed')
+    clock.advance(25)
+    await settleMaintenance()
+    runtime.finish(first.runId)
+    const second = runtime.accept(runtime.submit().submissionId)
+    runtime.commitRunContinuity(second.runId, 'done', 'Still pressured.', [])
+    await settleMaintenance()
+
+    expect(attempts).toBe(1)
+    expect(degraded).toEqual(['compaction_timeout'])
+  })
+
+  it('rejects duplicate and explicitly low-priority additions first at reserve pressure', async () => {
+    const degraded: string[] = []
+    const runtime = createSessionRuntime({
+      clock: new FakeClock(),
+      identities: new DeterministicIdentities(),
+      continuityModel: 'test-model',
+      continuityBudgets: budgets(
+        { high: 1_000, reserve: 1_100, hard: 1_200 },
+        { high: 10, reserve: 20, hard: 200 },
+      ),
+      onContinuityDegraded: ({ reason }) => degraded.push(reason),
+      compactContinuity: () => new Promise(() => {}),
+    })
+    const first = runtime.accept(runtime.submit().submissionId)
+    runtime.commitRunContinuity(first.runId, 'done', 'Established goal.', [{
+      op: 'add',
+      entry: { kind: 'objective', subject: 'Goal', detail: 'x'.repeat(120) },
+    }])
+    runtime.finish(first.runId)
+    const second = runtime.accept(runtime.submit().submissionId)
+
+    expect(runtime.commitRunContinuity(second.runId, 'done', 'Pressure filtered additions.', [
+      { op: 'add', entry: { kind: 'objective', subject: 'Goal', detail: 'Duplicate goal.' } },
+      {
+        op: 'add',
+        entry: {
+          kind: 'finding',
+          subject: 'Weak lead',
+          detail: 'Not worth retaining.',
+          status: 'low_priority',
+          references: [{ url: 'https://example.com/weak' }],
+        },
+      },
+    ])).toBe('committed')
+    expect(degraded).toEqual(['reserve_addition_rejected'])
+    runtime.finish(second.runId)
+    const third = runtime.accept(runtime.submit().submissionId)
+    expect(third.memory.map(({ subject }) => subject)).toEqual(['Goal'])
+  })
+
+  it('filters duplicate and low-priority additions when their patch crosses reserve', () => {
+    const degraded: string[] = []
+    const runtime = createSessionRuntime({
+      clock: new FakeClock(),
+      identities: new DeterministicIdentities(),
+      continuityModel: 'test-model',
+      continuityBudgets: budgets(
+        { high: 1_000, reserve: 1_100, hard: 1_200 },
+        { high: 60, reserve: 100, hard: 500 },
+      ),
+      onContinuityDegraded: ({ reason }) => degraded.push(reason),
+      compactContinuity: () => new Promise(() => {}),
+    })
+    const first = runtime.accept(runtime.submit().submissionId)
+    runtime.commitRunContinuity(first.runId, 'done', 'Established goal.', [{
+      op: 'add',
+      entry: { kind: 'objective', subject: 'Goal', detail: 'Keep it.' },
+    }])
+    runtime.finish(first.runId)
+    const second = runtime.accept(runtime.submit().submissionId)
+
+    expect(runtime.commitRunContinuity(second.runId, 'done', 'Filtered crossing patch.', [
+      { op: 'add', entry: { kind: 'objective', subject: 'Goal', detail: 'Duplicate.' } },
+      {
+        op: 'add',
+        entry: {
+          kind: 'finding',
+          subject: 'Weak lead',
+          detail: 'x'.repeat(800),
+          status: 'low_priority',
+          references: [{ url: 'https://example.com/weak' }],
+        },
+      },
+      { op: 'add', entry: { kind: 'artifact', subject: 'Keep', detail: 'Retain this useful artifact.' } },
+    ])).toBe('committed')
+    expect(degraded).toEqual(['reserve_addition_rejected'])
+    runtime.finish(second.runId)
+    const next = runtime.accept(runtime.submit().submissionId)
+    expect(next.memory.map(({ subject }) => subject)).toEqual(['Goal', 'Keep'])
+  })
+
+  it('omits oldest Journal chronology at hard pressure before current Working Memory', () => {
+    const degraded: string[] = []
+    const runtime = createSessionRuntime({
+      clock: new FakeClock(),
+      identities: new DeterministicIdentities(),
+      continuityModel: 'test-model',
+      continuityBudgets: budgets(
+        { high: 10, reserve: 15, hard: 20 },
+        { high: 100, reserve: 110, hard: 120 },
+      ),
+      onContinuityDegraded: ({ reason }) => degraded.push(reason),
+      compactContinuity: () => new Promise(() => {}),
+    })
+    const first = runtime.accept(runtime.submit().submissionId)
+    runtime.commitRunContinuity(first.runId, 'done', 'oldest chronology'.repeat(3), [{
+      op: 'add',
+      entry: { kind: 'decision', subject: 'Chosen route', detail: 'Keep the current decision.' },
+    }])
+    runtime.finish(first.runId)
+    const second = runtime.accept(runtime.submit().submissionId)
+    runtime.commitRunContinuity(second.runId, 'done', 'newest chronology'.repeat(3), [])
+    runtime.finish(second.runId)
+
+    const third = runtime.accept(runtime.submit().submissionId)
+    expect(third.journal.map(({ text }) => text)).toEqual(['newest chronology'.repeat(3)])
+    expect(third.memory.map(({ subject }) => subject)).toEqual(['Chosen route'])
+    expect(degraded).toContain('hard_journal_omission')
+  })
+
+  it('attempts high-water compaction before hard Journal omission', async () => {
+    const degraded: string[] = []
+    let attempts = 0
+    const runtime = createSessionRuntime({
+      clock: new FakeClock(),
+      identities: new DeterministicIdentities(),
+      continuityModel: 'test-model',
+      continuityBudgets: budgets({ high: 10, reserve: 15, hard: 20 }),
+      recentJournalEntries: 0,
+      onContinuityDegraded: ({ reason }) => degraded.push(reason),
+      compactContinuity: async ({ journal, memory }) => {
+        attempts += 1
+        return { journal: [{ ...journal[0]!, text: 'milestone' }], memory }
+      },
+    })
+    const first = runtime.accept(runtime.submit().submissionId)
+    runtime.commitRunContinuity(first.runId, 'done', 'a'.repeat(40), [])
+    runtime.finish(first.runId)
+    const second = runtime.accept(runtime.submit().submissionId)
+    runtime.commitRunContinuity(second.runId, 'done', 'b'.repeat(44), [])
+    await settleMaintenance()
+
+    expect(attempts).toBe(1)
+    expect(degraded).toContain('hard_journal_omission')
+    runtime.finish(second.runId)
+    const next = runtime.accept(runtime.submit().submissionId)
+    expect(next.journal.map(({ text }) => text)).toEqual(['milestone'])
+  })
+
+  it('omits a single oversized Journal note at the hard boundary', () => {
+    const degraded: string[] = []
+    const runtime = createSessionRuntime({
+      clock: new FakeClock(),
+      identities: new DeterministicIdentities(),
+      continuityModel: 'test-model',
+      continuityBudgets: budgets({ high: 10, reserve: 15, hard: 20 }),
+      onContinuityDegraded: ({ reason }) => degraded.push(reason),
+      compactContinuity: () => new Promise(() => {}),
+    })
+    const run = runtime.accept(runtime.submit().submissionId)
+    runtime.commitRunContinuity(run.runId, 'done', 'x'.repeat(84), [])
+    runtime.finish(run.runId)
+
+    const next = runtime.accept(runtime.submit().submissionId)
+    expect(next.journal).toEqual([])
+    expect(degraded).toContain('hard_journal_omission')
   })
 
   it('commits the Run Note and Working Memory atomically for only later admissions', () => {

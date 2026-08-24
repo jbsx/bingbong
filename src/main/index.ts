@@ -28,7 +28,12 @@ import { USAGE_IPC } from '../core/settings/usageIpcChannels'
 import { HISTORY_IPC, HISTORY_QUERY_LIMIT } from '../core/history/ipcChannels'
 import { createHistoryRecorder } from '../core/history/historyRecorder'
 import { systemClock } from '../core/ports/clock'
-import { createSessionRuntime, type EndedSession, type SessionRuntime } from '../core/session/sessionRuntime'
+import {
+  createSessionRuntime,
+  parseSessionContinuityBudgets,
+  type EndedSession,
+  type SessionRuntime,
+} from '../core/session/sessionRuntime'
 import { createSessionIdentitySource } from './session/sessionIdentitySource'
 import { createSqliteHistoryStore } from './history/createSqliteHistoryStore'
 import { DEFAULT_DAILY_SPEND_WARN_USD } from '../core/agent/spendEstimate'
@@ -392,6 +397,8 @@ async function createWindow(): Promise<BrowserWindow> {
   sessionRuntime = createSessionRuntime({
     clock: systemClock,
     identities: createSessionIdentitySource(),
+    continuityModel: () => currentEnv().BINGBONG_LLM_SCRIPT ? 'scripted' : currentEnv().BINGBONG_ORCHESTRATOR_MODEL ?? 'unconfigured',
+    continuityBudgets: parseSessionContinuityBudgets(currentEnv().BINGBONG_CONTINUITY_BUDGETS),
     inactivityMs: launchConfig.sessionWindowMs,
     warningLeadMs: launchConfig.sessionWarningMs,
     onExpiring: (expiring) => {

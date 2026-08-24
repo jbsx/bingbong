@@ -106,6 +106,14 @@ Any OpenAI-compatible provider works for any role — swapping providers is a
 config change. `BINGBONG_LLM_SCRIPT` (a JSON array of scripted turns) replaces
 the live model entirely — used by the e2e suite and keyless demos.
 
+Session continuity thresholds may be configured per orchestrator model. Journal
+and Working Memory values are estimated tokens and must satisfy
+`high < reserve < hard`; a `"*"` profile is the fallback when routing changes:
+
+```sh
+BINGBONG_CONTINUITY_BUDGETS='{"glm-5.3":{"journal":{"high":2400,"reserve":2700,"hard":3000},"memory":{"high":4800,"reserve":5400,"hard":6000}},"*":{"journal":{"high":2400,"reserve":2700,"hard":3000},"memory":{"high":4800,"reserve":5400,"hard":6000}}}'
+```
+
 Routing and keys may also live in the `.env` file next to the app (read once
 at boot; malformed lines are ignored). Precedence is
 `.env` < process environment < the settings page's saved values — a value

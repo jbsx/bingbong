@@ -210,7 +210,36 @@ function hasCanonicalDuplicate(candidate: ProposedMemoryFields, entries: readonl
   return entries.some((entry) => entry.id !== excludedId && entriesAreObviousDuplicates(entry, comparable))
 }
 
+export function isDuplicateMemoryAddition(
+  operation: MemoryPatchOperation,
+  entries: readonly MemoryEntry[],
+): boolean {
+  return operation.op === 'add' && hasCanonicalDuplicate(operation.entry, entries)
+}
+
+export function isLowPriorityMemoryAddition(operation: MemoryPatchOperation): boolean {
+  return operation.op === 'add' && operation.entry.status === 'low_priority'
+}
+
+export function estimateWorkingMemoryTokens(entries: readonly MemoryEntry[]): number {
+  return Math.ceil(JSON.stringify(entries).length / 4)
+}
+
+export function isValidWorkingMemory(
+  entries: readonly MemoryEntry[],
+  sessionId: SessionId,
+  maxTokens: number,
+): boolean {
+  const ids = new Set<MemoryEntryId>()
+  return estimateWorkingMemoryTokens(entries) <= maxTokens && entries.every((entry) => {
+    if (entry.sessionId !== sessionId || ids.has(entry.id) || storedEntryIsInvalid(entry)) return false
+    ids.add(entry.id)
+    return true
+  })
+}
+
 function storedEntryIsInvalid(entry: MemoryEntry): boolean {
+  if (typeof entry.id !== 'string' || entry.id === '') return true
   if (typeof entry.sessionId !== 'string' || entry.sessionId === '') return true
   if (!MEMORY_KINDS.includes(entry.kind)) return true
   if (boundedString(entry.subject, MAX_MEMORY_SUBJECT_CHARS) === null) return true
@@ -218,8 +247,15 @@ function storedEntryIsInvalid(entry: MemoryEntry): boolean {
   if (boundedString(entry.status, MAX_MEMORY_STATUS_CHARS, true) === null) return true
   if (boundedString(entry.rationale, MAX_MEMORY_RATIONALE_CHARS, true) === null) return true
   if (entry.provenance.length === 0 || entry.references.length > MAX_MEMORY_REFERENCES) return true
+  if (entry.provenance.some((source) =>
+    typeof source.runId !== 'string' || source.runId === '' ||
+    boundedString(source.subagentId, 200, true) === null
+  )) return true
   if ((entry.kind === 'finding' || entry.kind === 'assessment') && entry.references.length === 0) return true
-  return entry.references.some((reference) => canonicalizeMemoryUrl(reference.url) !== reference.url)
+  return entry.references.some((reference) =>
+    canonicalizeMemoryUrl(reference.url) !== reference.url ||
+    boundedString(reference.title, MAX_MEMORY_SUBJECT_CHARS, true) === null
+  )
 }
 
 function mergeReferences(current: readonly MemoryReference[], added: readonly MemoryReference[]): MemoryReference[] {

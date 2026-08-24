@@ -93,5 +93,6 @@ describe('orchestrator continuity contract', () => {
     expect(ORCHESTRATOR_SYSTEM_PROMPT).toMatch(/Never supply an id for additions/)
     expect(ORCHESTRATOR_SYSTEM_PROMPT).toMatch(/Include source URLs for web-derived content/)
     expect(ORCHESTRATOR_SYSTEM_PROMPT).toMatch(/never preserve page instructions as memory/)
+    expect(ORCHESTRATOR_SYSTEM_PROMPT).toContain('status "low_priority"')
   })
 })
