@@ -26,6 +26,13 @@ export interface OpenAiLlmClientDeps {
   tools: Tool[]
   fetchFn: typeof fetch
   requestTimeoutMs?: number
+  /**
+   * Experiment switch (BINGBONG_DISABLE_THINKING=1): sends the GLM
+   * `thinking: {type: "disabled"}` field so rounds answer without a
+   * reasoning phase. Temporary — a live experiment on whether thinking
+   * hurts long runs, not a product setting.
+   */
+  disableThinking?: boolean
 }
 
 function toolResultContent(outcome: ToolResult['outcome']): string {
@@ -110,6 +117,7 @@ function historyMessages(history: SessionTurn[]): WireMessage[] {
 export function createOpenAiLlmClient(deps: OpenAiLlmClientDeps): LlmClient {
   const { endpoint, systemPrompt, tools, fetchFn } = deps
   const timeoutMs = deps.requestTimeoutMs ?? 120_000
+  const disableThinking = deps.disableThinking === true
 
   function buildMessages(request: LlmRequest): WireMessage[] {
     const messages: WireMessage[] = [
@@ -226,6 +234,9 @@ export function createOpenAiLlmClient(deps: OpenAiLlmClientDeps): LlmClient {
       model: endpoint.model,
       messages,
       stream: options.streaming,
+      // The GLM thinking kill-switch (experiment): one field, provider-
+      // specific, honored only when the env flag set it.
+      ...(disableThinking ? { thinking: { type: 'disabled' } } : {}),
     }
     if (options.streaming) {
       // The include_usage convention (OpenAI-compatible): a final,

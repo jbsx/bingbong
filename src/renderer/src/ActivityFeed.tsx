@@ -125,6 +125,34 @@ function foldRuns(entries: FeedEntry[]): FeedItem[] {
 }
 
 /**
+ * One round's thinking block: each LLM round's reasoning run renders as
+ * its own collapsible section — open while it is the run's trailing entry
+ * (the model is still thinking), collapsed the moment the orchestrator
+ * starts acting again (any later entry lands after it). The next round's
+ * thinking opens its own block. The user's toggle always wins over the
+ * trailing default, same contract as the run expander.
+ */
+function ReasoningBlock({ entry, live, trailing }: { entry: FeedEntry; live: boolean; trailing: boolean }) {
+  const [userOpen, setUserOpen] = useState<boolean | null>(null)
+  const open = userOpen ?? (live && trailing)
+  return (
+    <details
+      className={`feed-entry feed-entry--reasoning feed-reasoning${open ? ' feed-reasoning--live' : ''}`}
+      open={open}
+      onToggle={(event) => {
+        if (event.target !== event.currentTarget) return
+        setUserOpen((event.currentTarget as HTMLDetailsElement).open)
+      }}
+    >
+      <summary className="feed-reasoning-summary">
+        <span className="feed-reasoning-title">{open ? 'thinking' : 'thought'}</span>
+      </summary>
+      <pre className="feed-text feed-reasoning-text">{entry.text}</pre>
+    </details>
+  )
+}
+
+/**
  * One run's collapsible noise (#55): a native details/summary — keyboard
  * accessible by construction — collapsed by default, auto-open while its
  * run is live. The user's own toggles win over the live default: a
@@ -134,6 +162,17 @@ function foldRuns(entries: FeedEntry[]): FeedItem[] {
 function RunDetails({ runId, entries, live }: { runId: string; entries: FeedEntry[]; live: boolean }) {
   const [userOpen, setUserOpen] = useState<boolean | null>(null)
   const open = userOpen ?? live
+  const lastId = entries[entries.length - 1]?.id
+  // The noise pane is height-capped, so it scrolls itself: while open, new
+  // entries keep the newest line in view — same contract as the feed list,
+  // one nesting level down. The user's manual scroll position is not
+  // defended mid-live-run (neither is the list's); the cap keeps the
+  // conversation readable, the scroll keeps the frontier visible.
+  const entriesRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    const el = entriesRef.current
+    if (el && open) el.scrollTop = el.scrollHeight
+  }, [entries, open])
   return (
     <details
       className={`feed-run${live ? ' feed-run--live' : ''}`}
@@ -150,10 +189,14 @@ function RunDetails({ runId, entries, live }: { runId: string; entries: FeedEntr
         <span className="feed-run-title">{live ? 'working' : 'run detail'}</span>
         <span className="feed-run-count">{entries.length}</span>
       </summary>
-      <div className="feed-run-entries">
-        {entries.map((entry) => (
-          <FeedLine key={entry.id} entry={entry} />
-        ))}
+      <div className="feed-run-entries" ref={entriesRef}>
+        {entries.map((entry) =>
+          entry.kind === 'reasoning' ? (
+            <ReasoningBlock key={entry.id} entry={entry} live={live} trailing={entry.id === lastId} />
+          ) : (
+            <FeedLine key={entry.id} entry={entry} />
+          ),
+        )}
       </div>
     </details>
   )

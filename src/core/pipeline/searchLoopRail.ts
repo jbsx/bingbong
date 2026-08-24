@@ -16,22 +16,20 @@ import { normalizeUrlInput } from '../browser/urlInput'
 // that wiped the streak mid-flail — now they count as the searches they
 // are.
 //
-// The rail detects same-intent rewording with pure token similarity (the
-// Blocker-nudge pattern: pattern → decision, no side effects) and answers
-// in two tiers: an advisory nudge appended to results, then a
-// pre-execution refusal alongside the vision budget. It never kills the
-// run. The streak chains — each search compares against the previous
-// query and the streak's first (anchor), so slow drift stays caught and a
-// return to the original wording after drifting does not walk out of the
-// rail — and only a successful other tool call resets it: a failed read or
-// navigate consumed nothing, so the model is still blind (run 46: failing
-// tools plus endless reworded searches). Run 47's real rewordings score
-// ~0.4–0.6 against their neighbors, so the threshold sits below the old
-// 0.6 at 0.45; the replay fixture in searchLoopRail.test.ts pins that the
-// actual 80-call sequence produces refusals under the GUI signature alone.
-// Known blind spot, still accepted: synonym rewordings that share
-// no tokens ("best pizza near me" vs "top pizza places nearby") do not
-// chain.
+// Run 53 closed the second hole: reading between searches does not escape
+// a loop. search → read_page → search → read_page… reworded one intent 20
+// ways for 73 rounds, and every read_page reset the streak, so the rail
+// mathematically could not fire. read_page is now its own classification —
+// observed, never resetting — and only escaping resets: a successful
+// non-read, non-search tool call (opening a result by href or click, any
+// other tool). A failed call consumed nothing, so the model is still blind
+// (run 46: failing tools plus endless reworded searches). Run 47's real
+// rewordings score ~0.4–0.6 against their neighbors, so the threshold sits
+// below the old 0.6 at 0.45; the replay fixture in searchLoopRail.test.ts
+// pins that the actual 80-call sequence produces refusals under the GUI
+// signature alone. Known blind spot, still accepted: synonym rewordings
+// that share no tokens ("best pizza near me" vs "top pizza places nearby")
+// do not chain.
 
 /** Consecutive similar searches before the advisory nudge rides the result. */
 export const SEARCH_LOOP_NUDGE_AFTER = 3
@@ -62,9 +60,10 @@ export interface SearchLoopRail {
   gate(call: ToolCall): Promise<SearchLoopGate>
   /**
    * Post-execution observation of every processed tool call — this is what
-   * tracks (and resets) the streak. A successful non-search call resets it;
-   * a failed one leaves it alone. Returns the advisory nudge once the
-   * streak reaches the nudge tier; null otherwise.
+   * tracks (and resets) the streak. A successful escaping call (anything
+   * but a search or a read) resets it; reads never reset, failed calls
+   * leave it alone. Returns the advisory nudge once the streak reaches the
+   * nudge tier; null otherwise.
    */
   observe(call: ToolCall, outcome: ToolResultOutcome): Promise<string | null>
 }
@@ -72,7 +71,7 @@ export interface SearchLoopRail {
 const NUDGE =
   'The last searches reword one intent (a q= navigate or a search box query) — more searches will not surface new results. Change strategy: open a promising result by its href, read the page (read_page), or answer from what you already have. If you cannot proceed, say so and ask_user.'
 
-const REFUSAL = `Search loop limit (${SEARCH_LOOP_REFUSE_AFTER} consecutive similar searches — q= navigate or typed search box query) reached for this run — the queries repeat one intent. Change strategy or ask_user; any successful other tool call clears the limit.`
+const REFUSAL = `Search loop limit (${SEARCH_LOOP_REFUSE_AFTER} consecutive similar searches — q= navigate or typed search box query) reached for this run — the queries repeat one intent. Change strategy or ask_user; only escaping clears the limit (open a result by its href or a click, or any successful tool call other than read_page).`
 
 /** Lowercase, punctuation-free tokens with a light plural fold (keyboard ≈ keyboards). */
 function queryTokens(query: string): Set<string> {
@@ -143,10 +142,10 @@ function refNumberOf(call: ToolCall): number | null {
 }
 
 /**
- * What a call is to the rail: a search observation with its query, or an
- * ordinary call (resets on success only).
+ * What a call is to the rail: a search observation with its query, a read
+ * (observed, never resets), or an escaping call (resets on success only).
  */
-type Classification = { kind: 'search'; query: string } | { kind: 'other' }
+type Classification = { kind: 'search'; query: string } | { kind: 'read' } | { kind: 'other' }
 
 export function createSearchLoopRail(deps: SearchLoopRailDeps = {}): SearchLoopRail {
   let lastQuery: string | null = null
@@ -192,6 +191,9 @@ export function createSearchLoopRail(deps: SearchLoopRailDeps = {}): SearchLoopR
   }
 
   async function classify(call: ToolCall): Promise<Classification> {
+    // Reads never reset the streak (run 53): reading between reworded
+    // searches is inspection, not escape.
+    if (call.name === 'read_page') return { kind: 'read' }
     if (call.name === 'navigate') {
       const url = call.args.url
       if (typeof url !== 'string' || url.trim() === '') return { kind: 'other' }
@@ -215,8 +217,9 @@ export function createSearchLoopRail(deps: SearchLoopRailDeps = {}): SearchLoopR
     },
     async observe(call, outcome) {
       const classified = await classify(call)
+      if (classified.kind === 'read') return null
       if (classified.kind === 'other') {
-        // A successful other tool consumed something, breaking the blind
+        // A successful escape consumed something, breaking the blind
         // loop; a failed one changes nothing, so the streak survives.
         if (outcome.ok) reset()
         return null

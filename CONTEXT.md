@@ -55,12 +55,14 @@ retains the most recent exchange (an accepted asymmetry).
 One command execution: pipeline start to done/failed/cancelled.
 
 **Search Loop**:
-A run flailing blind — consecutive searches rewording one intent with no
-intervening read or navigation. One search observation is the GUI search
-signature: a navigate to a q=-carrying search URL (plain search terms
-normalize to exactly that) or text typed into a search input. A run rail
-breaks it: an advisory nudge rides the 3rd similar result, further similar
-searches are refused after the 5th; a successful other tool call resets it.
+A run flailing blind — consecutive searches rewording one intent. Reads
+between searches do not break it (reading is inspection, not escape);
+only escape breaks it — opening a result, or any other successful tool
+call. One search observation is the GUI search signature: a navigate to a
+q=-carrying search URL (plain search terms normalize to exactly that) or
+text typed into a search input. A run rail breaks it: an advisory nudge
+rides the 3rd similar result, further similar searches are refused after
+the 5th.
 _Avoid_: search spam, retry storm
 
 **Boot Hydration**:

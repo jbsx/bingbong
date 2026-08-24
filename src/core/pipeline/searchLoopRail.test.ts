@@ -224,15 +224,23 @@ describe('createSearchLoopRail', () => {
     expect(await rail.gate(search('train times tokyo osaka'))).toEqual({ ok: true })
   })
 
-  it('clears the cap after a successful other tool call — following the nudge recovers search', async () => {
+  it('clears the cap only after escaping — reading between searches is inspection, not escape (run 53)', async () => {
     const rail = createSearchLoopRail(searchBoxAt)
     for (let i = 0; i < SEARCH_LOOP_REFUSE_AFTER; i += 1) {
       await rail.gate(search(`mechanical keyboards run ${i}`))
       await rail.observe(search(`mechanical keyboards run ${i}`), ok)
     }
     expect((await rail.gate(search('mechanical keyboards run 99'))).ok).toBe(false)
+    // The run-53 shape: read_page between reworded searches kept the rail
+    // from ever firing — a read never resets the streak now.
     await rail.observe(other('read_page'), ok)
-    expect(await rail.gate(search('mechanical keyboards after reading'))).toEqual({ ok: true })
+    expect((await rail.gate(search('mechanical keyboards run 100'))).ok).toBe(false)
+    // A failed escape consumed nothing; the streak survives it too.
+    await rail.observe(other('click'), fail)
+    expect((await rail.gate(search('mechanical keyboards run 101'))).ok).toBe(false)
+    // Opening a result is the escape — the cap clears.
+    await rail.observe(other('click'), ok)
+    expect(await rail.gate(search('mechanical keyboards run 102'))).toEqual({ ok: true })
   })
 
   it('a blank type into the search box has nothing to chain on — ordinary call, not a search', async () => {

@@ -41,10 +41,11 @@ body,
    changes nothing — but during a resize drag main cloaks the view wider
    (window-left to panel-right) so the pointer never leaves it, and the
    surface must stay exactly where it was. Overlay mode floats above the
-   live page flush against the window's right edge (ADR 0012): near-opaque
-   white with a whisper of depth, rounded on the window-facing edge —
-   visually identical to docked; the difference is what happens to the
-   page beneath (covered vs narrowed), never the skin. */
+    live page flush against the window's right edge (ADR 0012): near-opaque
+    white with a whisper of depth — visually identical to docked; the
+    difference is what happens to the page beneath (covered vs narrowed),
+    never the skin. Square corners: the panel reads as a full-height slab
+    of the window, not a floating card. */
 .feed-surface {
   position: relative;
   display: flex;
@@ -56,7 +57,6 @@ body,
   flex: none;
   border: 1px solid var(--edge);
   border-right: none;
-  border-radius: 16px 0 0 16px;
   overflow: hidden;
 }
 
@@ -228,7 +228,6 @@ body,
   padding: 16px 6px;
   border: 1px solid var(--edge);
   border-right: none;
-  border-radius: 12px 0 0 12px;
   background: var(--panel);
   box-shadow: -8px 0 24px rgba(0, 0, 0, 0.1);
   color: var(--muted);

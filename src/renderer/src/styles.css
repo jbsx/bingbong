@@ -344,15 +344,16 @@ body {
 /* Conversation separation: the feed reads as a chat between two voices —
    your words right-aligned in gray fills, Bing Bong's answers as
    left-aligned white cards with the speaking-green rail. System detail
-   keeps the plain tier below. Bubbles and cards span the full panel: the
-   widened panel exists to buy readable lines. */
+   keeps the plain tier below. Bubbles and cards stop short of the panel's
+   full width — the negative space frames each voice and keeps the chat
+   scannable even in the widened panel. */
 .feed-entry--user {
   justify-content: flex-end;
 }
 
 .feed-bubble {
   min-width: 0;
-  max-width: 100%;
+  max-width: 70%;
   background: var(--bubble);
   border-radius: 18px 18px 5px 18px;
   padding: 6px 16px;
@@ -368,7 +369,7 @@ body {
 
 .feed-card {
   min-width: 0;
-  max-width: 100%;
+  max-width: 70%;
   background: var(--panel);
   border: 1px solid var(--edge);
   border-left: 4px solid var(--status-green);
@@ -654,6 +655,71 @@ body {
   flex-direction: column;
   gap: 6px;
   padding: 4px 0 2px 4px;
+  /* A long run's noise must not take the panel hostage: the block grows
+     to at most ~40% of the viewport and scrolls itself past that, so the
+     conversation lines around it stay readable. Scroll containment keeps
+     the inner wheel from dragging the whole feed list along. */
+  max-height: 40vh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+/* One round's thinking block: its own collapsible section inside the run
+   expander — open only while it trails the run (the model is still
+   thinking), collapsed once the orchestrator acts again. Same visual
+   grammar as the run expander (quiet triangle, uppercase title), one step
+   quieter. */
+.feed-reasoning {
+  border-left: 2px solid var(--edge);
+  border-radius: 4px;
+  padding: 2px 8px;
+}
+
+.feed-reasoning-summary {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 0.85rem;
+  user-select: none;
+  list-style: none;
+}
+
+.feed-reasoning-summary::-webkit-details-marker {
+  display: none;
+}
+
+.feed-reasoning-summary::before {
+  content: '▸';
+  font-size: 0.75rem;
+  transition: rotate 120ms ease;
+}
+
+.feed-reasoning[open] .feed-reasoning-summary::before {
+  rotate: 90deg;
+}
+
+.feed-reasoning-title {
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-weight: 650;
+}
+
+/* The trailing block of a live run reads as activity, not archive. */
+.feed-reasoning--live .feed-reasoning-title {
+  color: var(--status-blue);
+}
+
+.feed-reasoning-text {
+  margin: 4px 0 2px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: inherit;
+  color: var(--muted);
+  font-size: 0.85rem;
+  font-style: italic;
+  opacity: 0.75;
 }
 
 .feed-error-detail {

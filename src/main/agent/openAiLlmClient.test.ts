@@ -25,6 +25,7 @@ interface CompletionBody {
   tools?: { type: 'function'; function: Record<string, unknown> }[]
   stream?: boolean
   stream_options?: { include_usage: boolean }
+  thinking?: { type: string }
 }
 
 function completionResponse(message: { content?: string | null; tool_calls?: WireToolCall[] }): Response {
@@ -113,6 +114,21 @@ function makeClient(fetch: ScriptedFetch) {
 }
 
 describe('openAiLlmClient', () => {
+  it('sends thinking disabled when the kill-switch dep sets it', async () => {
+    const fetch = new ScriptedFetch([completionResponse({ content: '{"speak":"OK.","display":"OK."}' })])
+    const client = createOpenAiLlmClient({
+      endpoint: ENDPOINT,
+      systemPrompt: ORCHESTRATOR_SYSTEM_PROMPT,
+      tools: createBrowserTools(new FakeBrowser()),
+      fetchFn: fetch.fetchFn,
+      disableThinking: true,
+    })
+
+    await client.complete({ command: 'open youtube', toolResults: [] })
+
+    expect(fetch.calls[0]!.body.thinking).toEqual({ type: 'disabled' })
+  })
+
   it('posts the catalog and command, and maps tool_calls back', async () => {
     const fetch = new ScriptedFetch([
       completionResponse({
@@ -145,6 +161,7 @@ describe('openAiLlmClient', () => {
     expect(request.body.tools?.map((t) => t.function.name)).toEqual([
       'navigate', 'read_page', 'click', 'type', 'scroll', 'screenshot', 'back', 'go_forward',
     ])
+    expect(request.body.thinking).toBeUndefined()
   })
 
   it('replays the tool round-trip as messages on the next round', async () => {

@@ -128,7 +128,15 @@ function resolveLlm(
   } else {
     try {
       const endpoint = resolveModelEndpoint(env, 'orchestrator')
-      client = createOpenAiLlmClient({ endpoint, systemPrompt: ORCHESTRATOR_SYSTEM_PROMPT, tools, fetchFn })
+      client = createOpenAiLlmClient({
+        endpoint,
+        systemPrompt: ORCHESTRATOR_SYSTEM_PROMPT,
+        tools,
+        fetchFn,
+        // Thinking kill-switch (experiment): BINGBONG_DISABLE_THINKING=1
+        // drops the orchestrator's reasoning phase entirely.
+        ...(env.BINGBONG_DISABLE_THINKING === '1' ? { disableThinking: true } : {}),
+      })
       model = endpoint.model
     } catch (err) {
       return new UnavailableLlm(err instanceof Error ? err.message : String(err))
@@ -142,7 +150,7 @@ function resolveLlm(
 }
 
 /** Env keys that decide which LLM client serves the orchestrator. */
-const LLM_ENV_KEYS = ['BINGBONG_LLM_SCRIPT', ...routingEnvKeys('orchestrator')]
+const LLM_ENV_KEYS = ['BINGBONG_LLM_SCRIPT', 'BINGBONG_DISABLE_THINKING', ...routingEnvKeys('orchestrator')]
 
 function llmSignature(env: Record<string, string | undefined>): string {
   return JSON.stringify(LLM_ENV_KEYS.map((key) => env[key] ?? ''))
