@@ -228,7 +228,7 @@ export function createSessionMemory(options?: SessionMemoryOptions): SessionMemo
                 // The lapse was already announced by the eager timer (ADR
                 // 0005) unless the command beat the clock to it — one
                 // boundary, one announcement either way.
-                if (!lapseAnnounced && options?.announceLapse !== false) options?.onSessionStart?.()
+                if (!lapseAnnounced) options?.onSessionStart?.()
               }
               lapseAnnounced = false
               return

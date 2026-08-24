@@ -98,6 +98,7 @@ export function createWindowEventPublisher(deps: WindowEventPublisherDeps): Wind
           if (!accepted(event)) return
           deps.historyEvent(event)
           deps.sendPipelineEvent(event)
+          if (publication.source === 'lifecycle') deps.observeVoicePipelineEvent(event)
           deps.overlayPipelineEvent(event)
           if (event.type === 'session_ended') {
             activeRunOwnership = undefined

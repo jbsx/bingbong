@@ -10,6 +10,7 @@ import { createWakeMonitor } from './wakeMonitor'
 import { parseYesNo } from './yesNo'
 import type { CommandRunState } from '../pipeline/createCommandPipeline'
 import type { PerfTracer } from '../perf/perfTracer'
+import type { SessionGeneration, SessionId } from '../session/sessionIdentity'
 
 export const CONFIRM_VOICE_WINDOW_MS = 12_000
 /** Free-text ask window: as long as the ask_user timeout, for spoken answers. */
@@ -70,6 +71,8 @@ export interface VoiceSessionDeps {
   onResolveConfirmation(confirmationId: string, approved: boolean): void
   /** A spoken ask_user answer — free text, returned to the model verbatim. */
   onResolveAsk(askId: string, answer: string): void
+  onExtendSession(sessionId: SessionId, generation: SessionGeneration): void
+  onDeclineSession(sessionId: SessionId, generation: SessionGeneration): void
   getRunState(): CommandRunState
   onAbort(): void
   onPause(): void
@@ -141,6 +144,7 @@ export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
   let reason: VoiceListenReason | null = null
   let activeConfirmation: string | null = null
   let activeAsk: string | null = null
+  let activeSessionExpiry: { sessionId: SessionId; generation: SessionGeneration } | null = null
   let cancelWindowTimer: (() => void) | null = null
   let cancelAskTimer: (() => void) | null = null
   // Chunks are processed strictly in arrival order; scoring is async.
@@ -434,6 +438,20 @@ export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
       return
     }
 
+    if (activeSessionExpiry !== null) {
+      const decision = parseYesNo(text)
+      if (decision === null) {
+        backToListening()
+        return
+      }
+      const expiry = activeSessionExpiry
+      activeSessionExpiry = null
+      if (decision === 'yes') deps.onExtendSession(expiry.sessionId, expiry.generation)
+      else deps.onDeclineSession(expiry.sessionId, expiry.generation)
+      stopListening()
+      return
+    }
+
     if (activeAsk !== null) {
       // Free text: the whole transcript is the answer.
       const askId = activeAsk
@@ -496,6 +514,28 @@ export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
     })
   }
 
+  async function armForSessionExpiry(expiry: { sessionId: SessionId; generation: SessionGeneration }): Promise<void> {
+    activeSessionExpiry = expiry
+    await deps.ttsIdle.waitIdle()
+    if (activeSessionExpiry !== expiry || listening) return
+
+    listening = true
+    reason = 'session-expiry'
+    resetEndpointer()
+    emitState()
+    cancelWindowTimer = deps.clock.setTimer(confirmWindowMs, () => {
+      cancelWindowTimer = null
+      if (listening && reason === 'session-expiry' && activeSessionExpiry === expiry) stopListening()
+    })
+  }
+
+  function clearSessionExpiry(event: PipelineEvent): void {
+    const expiry = activeSessionExpiry
+    if (!expiry || event.sessionId !== expiry.sessionId || event.sessionGeneration !== expiry.generation) return
+    activeSessionExpiry = null
+    if (listening && reason === 'session-expiry') stopListening()
+  }
+
   return {
     arm() {
       startListening('hotkey')
@@ -537,6 +577,17 @@ export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
     },
 
     handlePipelineEvent(event) {
+      if (
+        event.type === 'session_expiring' &&
+        event.sessionId !== undefined &&
+        event.sessionGeneration !== undefined
+      ) {
+        void armForSessionExpiry({ sessionId: event.sessionId, generation: event.sessionGeneration })
+        return
+      }
+      if (event.type === 'session_extended' || event.type === 'session_ended' || event.type === 'command') {
+        clearSessionExpiry(event)
+      }
       if (event.type === 'confirmation_requested') {
         void armForConfirmation(event.confirmationId)
         return

@@ -8,6 +8,7 @@ import type { UsageSummary } from '../core/agent/spendEstimate'
 import type { RecordedEntry, RunRecord, SessionRecord } from '../core/history/historyStore'
 import type { FeedPanelMode, FeedPanelState } from '../core/panel/feedPanelState'
 import type { SubmissionFeedback } from '../core/session/submissionFeedback'
+import type { SessionDecisionRequest } from '../core/session/ipcChannels'
 
 export type { BrowserPaneState, PaneRect }
 export type { PipelineEvent }
@@ -51,6 +52,11 @@ export interface BingbongSettingsApi {
   /** Which agent roles resolve right now — the routing status lines (#76). */
   routingStatus(): Promise<RoutingStatus>
   onRoutingStatusChanged(listener: (status: RoutingStatus) => void): () => void
+}
+
+export interface BingbongSessionApi {
+  extend(request: SessionDecisionRequest): Promise<boolean>
+  decline(request: SessionDecisionRequest): Promise<boolean>
 }
 
 export interface BingbongSubagentsApi {
@@ -119,6 +125,7 @@ export interface BingbongApi {
   app: LaunchConfig
   browser: BingbongBrowserApi
   assistant: BingbongAssistantApi
+  session: BingbongSessionApi
   settings: BingbongSettingsApi
   subagents: BingbongSubagentsApi
   usage: BingbongUsageApi

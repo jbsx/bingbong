@@ -7,6 +7,7 @@ import type { UtteranceDumper } from '../../core/voice/utteranceDump'
 import type { UtteranceEndpointerConfig } from '../../core/voice/vadEndpointing'
 import { VOICE_IPC, type VoiceState } from '../../core/voice/ipcChannels'
 import { createVoiceSession, type VoiceSession, type VoiceWakeDeps } from '../../core/voice/voiceSession'
+import type { SessionGeneration, SessionId } from '../../core/session/sessionIdentity'
 import { pipelineFor, runAssistantCommand } from '../agent/attachAssistant'
 import type { WindowEventPublisher } from '../session/windowEventPublisher'
 
@@ -64,6 +65,8 @@ export function attachVoiceToWindow(win: BrowserWindow, deps: AttachVoiceDeps): 
       if (win.isDestroyed()) return
       pipelineFor(win)?.resolveAsk(askId, answer)
     },
+    onExtendSession: deps.onExtendSession,
+    onDeclineSession: deps.onDeclineSession,
     getRunState: () => pipelineFor(win)?.getState() ?? 'idle',
     onAbort: () => pipelineFor(win)?.abort(),
     onPause: () => pipelineFor(win)?.pause(),
@@ -102,5 +105,7 @@ export interface AttachVoiceDeps {
   tracer?: PerfTracer
   /** Opt-in utterance audio dumps (#34); absent keeps the session dump-free. */
   dumper?: UtteranceDumper
+  onExtendSession(sessionId: SessionId, generation: SessionGeneration): void
+  onDeclineSession(sessionId: SessionId, generation: SessionGeneration): void
   publisher: Pick<WindowEventPublisher, 'publish'>
 }

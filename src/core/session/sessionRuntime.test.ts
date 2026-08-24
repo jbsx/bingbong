@@ -41,6 +41,11 @@ function harness(start = 1_000) {
   return { clock, identities, runtime }
 }
 
+function decision(runtime: ReturnType<typeof createSessionRuntime>) {
+  const state = runtime.state()
+  return { sessionId: state.sessionId!, generation: state.generation }
+}
+
 describe('session runtime', () => {
   it('starts absent without minting any identity', () => {
     const { identities, runtime } = harness()
@@ -145,9 +150,9 @@ describe('session runtime', () => {
     expect(runtime.beginExpiry()).toBe(true)
     expect(runtime.state().phase).toBe('expiring')
     expect(runtime.beginExpiry()).toBe(false)
-    expect(runtime.extend()).toBe(true)
+    expect(runtime.extend(decision(runtime))).toBe(true)
     expect(runtime.state().phase).toBe('active')
-    expect(runtime.extend()).toBe(false)
+    expect(runtime.extend(decision(runtime))).toBe(false)
   })
 
   it('ends exactly once using the injected clock and clears Session-owned state', () => {
@@ -205,13 +210,16 @@ describe('session runtime', () => {
     expect(runtime.state().liveRunIds).toEqual([admission.runId])
   })
 
-  it('anchors inactivity at accepted Run completion and lapses exactly once while idle', () => {
+  it('warns once before the original deadline and lapses exactly once while idle', () => {
     const clock = new FakeClock(1_000)
     const ended: string[] = []
+    const expiring: string[] = []
     const runtime = createSessionRuntime({
       clock,
       identities: new DeterministicIdentities(),
       inactivityMs: 100,
+      warningLeadMs: 20,
+      onExpiring: (session) => expiring.push(`${session.sessionId}:${session.expiresAt}:${session.at}`),
       onEnded: (session) => ended.push(`${session.sessionId}:${session.reason}:${session.endedAt}`),
     })
     const first = runtime.accept(runtime.submit().submissionId)
@@ -219,8 +227,15 @@ describe('session runtime', () => {
     clock.advance(500)
     expect(runtime.state().phase).toBe('active')
     runtime.finish(first.runId)
-    clock.advance(99)
+    clock.advance(79)
     expect(runtime.state().phase).toBe('active')
+    clock.advance(1)
+
+    expect(runtime.state().phase).toBe('expiring')
+    expect(expiring).toEqual(['session-1:1600:1580'])
+    clock.advance(19)
+    expect(runtime.state().phase).toBe('expiring')
+    expect(ended).toEqual([])
     clock.advance(1)
 
     expect(runtime.state().phase).toBe('absent')
@@ -235,6 +250,7 @@ describe('session runtime', () => {
       clock,
       identities: new DeterministicIdentities(),
       inactivityMs: 100,
+      warningLeadMs: 20,
     })
     const first = runtime.accept(runtime.submit().submissionId)
     runtime.finish(first.runId)
@@ -245,8 +261,116 @@ describe('session runtime', () => {
     expect(runtime.state().sessionId).toBe(first.sessionId)
     expect(runtime.state().liveRunIds).toEqual([second.runId])
     runtime.finish(second.runId)
-    clock.advance(100)
+    clock.advance(80)
+    expect(runtime.state().phase).toBe('expiring')
+    clock.advance(20)
     expect(runtime.state().phase).toBe('absent')
+  })
+
+  it('restarts the full window on explicit extension and allows repeated extensions', () => {
+    const clock = new FakeClock(1_000)
+    const warnings: number[] = []
+    const extensions: number[] = []
+    const runtime = createSessionRuntime({
+      clock,
+      identities: new DeterministicIdentities(),
+      inactivityMs: 100,
+      warningLeadMs: 20,
+      onExpiring: ({ expiresAt }) => warnings.push(expiresAt),
+      onExtended: ({ expiresAt }) => extensions.push(expiresAt),
+    })
+    const run = runtime.accept(runtime.submit().submissionId)
+    runtime.finish(run.runId)
+
+    clock.advance(80)
+    expect(runtime.extend(decision(runtime))).toBe(true)
+    expect(extensions).toEqual([1_180])
+    clock.advance(80)
+    expect(warnings).toEqual([1_100, 1_180])
+    expect(runtime.extend(decision(runtime))).toBe(true)
+    expect(extensions).toEqual([1_180, 1_260])
+    clock.advance(79)
+    expect(runtime.state().phase).toBe('active')
+    clock.advance(1)
+    expect(warnings).toEqual([1_100, 1_180, 1_260])
+  })
+
+  it('declines immediately and silence preserves the original deadline', () => {
+    const clock = new FakeClock(1_000)
+    const runtime = createSessionRuntime({
+      clock,
+      identities: new DeterministicIdentities(),
+      inactivityMs: 100,
+      warningLeadMs: 20,
+    })
+    const run = runtime.accept(runtime.submit().submissionId)
+    runtime.finish(run.runId)
+    clock.advance(80)
+
+    expect(runtime.decline(decision(runtime))?.endedAt).toBe(1_080)
+    expect(runtime.state().phase).toBe('absent')
+
+    const next = runtime.accept(runtime.submit().submissionId)
+    runtime.finish(next.runId)
+    clock.advance(80)
+    clock.advance(20)
+    expect(runtime.state().phase).toBe('absent')
+  })
+
+  it('accepted work during the warning cancels the old deadline and anchors a full window at finish', () => {
+    const clock = new FakeClock(1_000)
+    const warnings: number[] = []
+    const runtime = createSessionRuntime({
+      clock,
+      identities: new DeterministicIdentities(),
+      inactivityMs: 100,
+      warningLeadMs: 20,
+      onExpiring: ({ expiresAt }) => warnings.push(expiresAt),
+    })
+    const first = runtime.accept(runtime.submit().submissionId)
+    runtime.finish(first.runId)
+    clock.advance(80)
+
+    const rejected = runtime.submit()
+    runtime.reject(rejected.submissionId)
+    clock.advance(10)
+    const second = runtime.accept(runtime.submit().submissionId)
+    clock.advance(100)
+    expect(runtime.state().liveRunIds).toEqual([second.runId])
+
+    runtime.finish(second.runId)
+    clock.advance(79)
+    expect(runtime.state().phase).toBe('active')
+    clock.advance(1)
+    expect(runtime.state().phase).toBe('expiring')
+    expect(warnings).toEqual([1_100, 1_290])
+  })
+
+  it('rejects invalid timed-window configuration', () => {
+    const clock = new FakeClock()
+    const identities = new DeterministicIdentities()
+
+    expect(() => createSessionRuntime({ clock, identities, inactivityMs: 100 })).toThrow('warningLeadMs')
+    expect(() => createSessionRuntime({ clock, identities, inactivityMs: 100, warningLeadMs: 100 })).toThrow(
+      'shorter',
+    )
+  })
+
+  it('rejects stale or foreign expiry decisions inside the runtime', () => {
+    const clock = new FakeClock(1_000)
+    const runtime = createSessionRuntime({
+      clock,
+      identities: new DeterministicIdentities(),
+      inactivityMs: 100,
+      warningLeadMs: 20,
+    })
+    const run = runtime.accept(runtime.submit().submissionId)
+    runtime.finish(run.runId)
+    clock.advance(80)
+
+    expect(runtime.extend({ sessionId: 'session-foreign' as SessionId, generation: 0 })).toBe(false)
+    expect(runtime.decline({ sessionId: run.sessionId, generation: 1 })).toBeNull()
+    expect(runtime.state().phase).toBe('expiring')
   })
 
   it('can add explicit ownership to shared events without replacing legacy turn correlation', () => {

@@ -18,6 +18,7 @@ import type { UsageSummary } from '../core/agent/spendEstimate'
 import type { VoiceErrorEvent, VoiceHeardEvent, VoiceState } from '../core/voice/ipcChannels'
 import type { RecordedEntry, RunRecord, SessionRecord } from '../core/history/historyStore'
 import type { SubmissionFeedback } from '../core/session/submissionFeedback'
+import { SESSION_IPC, type SessionDecisionRequest } from '../core/session/ipcChannels'
 
 // Launch config is a snapshot: the flags and env can't change after start.
 const launch = resolveLaunchConfig(process.argv, process.env)
@@ -57,6 +58,10 @@ contextBridge.exposeInMainWorld('bingbong', {
       ipcRenderer.on(PIPELINE_IPC.submissionFeedback, wrapped)
       return () => ipcRenderer.removeListener(PIPELINE_IPC.submissionFeedback, wrapped)
     },
+  },
+  session: {
+    extend: (request: SessionDecisionRequest): Promise<boolean> => ipcRenderer.invoke(SESSION_IPC.extend, request),
+    decline: (request: SessionDecisionRequest): Promise<boolean> => ipcRenderer.invoke(SESSION_IPC.decline, request),
   },
   settings: {
     get: (): Promise<AppSettings> => ipcRenderer.invoke(SETTINGS_IPC.get),

@@ -55,6 +55,7 @@ import { createAplayPlayer } from './tts/createAplayPlayer'
 import { KIOSK_FLAG, resolveLaunchConfig } from '../core/app/launchConfig'
 import { VOICE_IPC } from '../core/voice/ipcChannels'
 import { createWindowEventPublisher } from './session/windowEventPublisher'
+import { attachSessionToWindow, registerSessionIpc } from './session/attachSession'
 
 // Appliance mode (T11): --kiosk goes fullscreen; the idle timeout reaches the
 // renderer through the preload's launch-config snapshot.
@@ -344,6 +345,12 @@ async function createWindow(): Promise<BrowserWindow> {
     publisher: eventPublisher,
     tracer: perfTracer,
     dumper: utteranceDumper,
+    onExtendSession: (sessionId, generation) => {
+      sessionRuntime?.extend({ sessionId, generation })
+    },
+    onDeclineSession: (sessionId, generation) => {
+      sessionRuntime?.decline({ sessionId, generation })
+    },
   })
   // Session continuity (spec #23): one in-memory thread per window, fed from
   // the same run-observer seam as the history recorder. The pipeline reads it
@@ -393,6 +400,34 @@ async function createWindow(): Promise<BrowserWindow> {
     clock: systemClock,
     identities: createSessionIdentitySource(),
     inactivityMs: launchConfig.sessionWindowMs,
+    warningLeadMs: launchConfig.sessionWarningMs,
+    onExpiring: (expiring) => {
+      void speakingGate.tts.speak(
+        'Your session is about to expire. Say yes to keep it, or no to end it now.',
+      ).catch(() => {})
+      eventPublisher.publish({
+        source: 'lifecycle',
+        event: {
+          type: 'session_expiring',
+          expiresAt: expiring.expiresAt,
+          at: expiring.at,
+          sessionId: expiring.sessionId,
+          sessionGeneration: expiring.generation,
+        },
+      })
+    },
+    onExtended: (extended) => {
+      eventPublisher.publish({
+        source: 'lifecycle',
+        event: {
+          type: 'session_extended',
+          expiresAt: extended.expiresAt,
+          at: extended.at,
+          sessionId: extended.sessionId,
+          sessionGeneration: extended.generation,
+        },
+      })
+    },
     onEnded: (ended) => {
       lastEndedSession = ended
       historyStore.finishSession(ended.sessionId, ended.reason, ended.endedAt)
@@ -411,6 +446,7 @@ async function createWindow(): Promise<BrowserWindow> {
       })
     },
   })
+  attachSessionToWindow(win, sessionRuntime)
   const commandRunner = createAssistantCommandRunner({
     pipeline,
     runtime: sessionRuntime,
@@ -470,6 +506,7 @@ app.whenReady().then(async () => {
   })
   registerTtsIpc({ voicesDir: () => piperConfig.voicesDir })
   registerVoiceIpc()
+  registerSessionIpc()
 
   // Embedder-level adblocker (issue #21): enabled before the first window so
   // every view on the persistent browse partition (main pane + subagent

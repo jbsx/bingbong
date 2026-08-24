@@ -147,6 +147,39 @@ body {
   white-space: nowrap;
 }
 
+.session-expiry {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--status-yellow);
+  white-space: nowrap;
+}
+
+.session-expiry-countdown {
+  font-size: 0.9rem;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+}
+
+.session-expiry button {
+  border: 1px solid var(--edge);
+  border-radius: 999px;
+  background: var(--panel);
+  color: var(--text);
+  padding: 3px 8px;
+  font: inherit;
+  font-size: 0.78rem;
+  cursor: pointer;
+}
+
+.session-expiry-extend {
+  border-color: color-mix(in srgb, var(--status-yellow) 45%, var(--edge)) !important;
+}
+
+.session-expiry-decline {
+  color: var(--muted) !important;
+}
+
 /* A static colored dot: state lives in color, named by the pill. */
 .status-orb {
   width: 12px;

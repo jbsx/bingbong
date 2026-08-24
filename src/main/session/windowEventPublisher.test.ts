@@ -82,8 +82,10 @@ describe('window event publisher', () => {
 
       publisher.publish({ source, event: pipelineEvent, ownership })
 
-      expect(calls).toEqual(['history-event', 'renderer-pipeline', 'overlay-pipeline'])
-      expect(pipelineEvents).toHaveLength(3)
+      expect(calls).toEqual(source === 'lifecycle'
+        ? ['history-event', 'renderer-pipeline', 'voice-observer', 'overlay-pipeline']
+        : ['history-event', 'renderer-pipeline', 'overlay-pipeline'])
+      expect(pipelineEvents).toHaveLength(source === 'lifecycle' ? 4 : 3)
       expect(pipelineEvents[0]).toMatchObject({
         submissionId: 'submission-1',
         runId: 'run-1',

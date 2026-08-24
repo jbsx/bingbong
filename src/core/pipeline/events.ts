@@ -165,6 +165,8 @@ export type PipelineEvent = SessionEventIdentity & (
   | { type: 'agent_update'; agent: SubagentCard; at: number }
   | { type: 'done'; turnId: string; outcome?: 'done' | 'failed' | 'cancelled'; at: number }
   | { type: 'session_started'; at: number }
+  | { type: 'session_expiring'; expiresAt: number; at: number }
+  | { type: 'session_extended'; expiresAt: number; at: number }
   | { type: 'session_ended'; reason: 'lapsed' | 'reset' | 'app_closed' | 'interrupted'; at: number }
 )
 

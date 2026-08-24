@@ -7,6 +7,7 @@ import { mergeFramesFor, vadDefaults, type UtteranceEndpointerConfig } from './v
 import type { CommandRunState } from '../pipeline/createCommandPipeline'
 import { createPerfTracer, type PerfSpanRecord } from '../perf/perfTracer'
 import { audioDumpEnabled, createUtteranceDumper, type UtteranceDumpWriter } from './utteranceDump'
+import type { SessionId } from '../session/sessionIdentity'
 
 // The voice session is T9's coordinator: mic audio in (through the VadScorer
 // and utterance endpointing), transcripts out to the same command pipeline as
@@ -62,6 +63,7 @@ interface SessionHarness {
   dumps: { path: string; bytes: Uint8Array }[]
   resolutions: { confirmationId: string; approved: boolean }[]
   askResolutions: { askId: string; answer: string }[]
+  sessionDecisions: ('extend' | 'decline')[]
   aborts: number[]
   pauses: number[]
   resumes: (string | undefined)[]
@@ -103,6 +105,7 @@ async function createSession(overrides?: {
   const dumps: { path: string; bytes: Uint8Array }[] = []
   const resolutions: { confirmationId: string; approved: boolean }[] = []
   const askResolutions: { askId: string; answer: string }[] = []
+  const sessionDecisions: ('extend' | 'decline')[] = []
   const aborts: number[] = []
   const pauses: number[] = []
   const resumes: (string | undefined)[] = []
@@ -177,6 +180,8 @@ async function createSession(overrides?: {
     },
     onResolveConfirmation: (confirmationId, approved) => resolutions.push({ confirmationId, approved }),
     onResolveAsk: (askId, answer) => askResolutions.push({ askId, answer }),
+    onExtendSession: () => sessionDecisions.push('extend'),
+    onDeclineSession: () => sessionDecisions.push('decline'),
     getRunState: () => overrides?.runState?.value ?? 'idle',
     onAbort: () => aborts.push(1),
     onPause: () => {
@@ -202,7 +207,7 @@ async function createSession(overrides?: {
     }
   }
 
-  return { vad, transcriber: baseTranscriber, clock, tts, idle, states, heard, errors, commands, submitted, perf, dumps, resolutions, askResolutions, aborts, pauses, resumes, chimes, speakUtterance, session }
+  return { vad, transcriber: baseTranscriber, clock, tts, idle, states, heard, errors, commands, submitted, perf, dumps, resolutions, askResolutions, sessionDecisions, aborts, pauses, resumes, chimes, speakUtterance, session }
 }
 
 function confirmationRequested(id = 'confirm-1'): PipelineEvent {
@@ -230,7 +235,56 @@ function askRequested(id = 'ask-1'): PipelineEvent {
   }
 }
 
+function sessionExpiring(): PipelineEvent {
+  return {
+    type: 'session_expiring',
+    sessionId: 'session-1' as SessionId,
+    sessionGeneration: 2,
+    expiresAt: 60_000,
+    at: 0,
+  }
+}
+
 describe('voice session', () => {
+  it.each([
+    ['yes', 'extend'],
+    ['no', 'decline'],
+  ] as const)('routes an expiry answer "%s" without creating a command or heard entry', async (answer, decision) => {
+    const harness = await createSession({ transcriber: new FakeTranscriber([answer]) })
+    harness.session.handlePipelineEvent(sessionExpiring())
+    await flush()
+
+    expect(harness.session.getState().reason).toBe('session-expiry')
+    await harness.speakUtterance()
+
+    expect(harness.sessionDecisions).toEqual([decision])
+    expect(harness.commands).toEqual([])
+    expect(harness.heard).toEqual([])
+  })
+
+  it('waits for the warning speech, keeps silence unresolved, and clears on visual extension', async () => {
+    const harness = await createSession()
+    harness.idle.busy = true
+    harness.session.handlePipelineEvent(sessionExpiring())
+    await flush()
+    expect(harness.states).toEqual([])
+
+    harness.idle.becomeIdle()
+    await flush()
+    expect(harness.session.getState().reason).toBe('session-expiry')
+    harness.clock.advance(12_000)
+    expect(harness.sessionDecisions).toEqual([])
+
+    harness.session.handlePipelineEvent({
+      type: 'session_extended',
+      sessionId: 'session-1' as SessionId,
+      sessionGeneration: 2,
+      expiresAt: 90_000,
+      at: 12_000,
+    })
+    expect(harness.session.getState().reason).toBeNull()
+  })
+
   it.each(['stop', 'abort', 'cancel', 'never mind'])('routes active "%s" to abort before confirmation handling', async (phrase) => {
     const runState = { value: 'running' as CommandRunState }
     const harness = await createSession({ transcriber: new FakeTranscriber([phrase]), runState })

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { Assistant, PendingAsk, PendingConfirmation, OrbStatus } from './useAssistant'
 import { describeRunProgress, type RunProgress } from '../../core/pipeline/runProgress'
+import type { SessionExpiry } from './useSessionExpiry'
 
 function deadlineText(expiresAt: number | null, now: number): string {
   return expiresAt === null ? 'paused' : `${Math.max(0, Math.ceil((expiresAt - now) / 1000))}s`
@@ -51,6 +52,34 @@ export function RunHint({ progress }: { progress: RunProgress }) {
   return (
     <span className="run-hint" role="status">
       {describeRunProgress(progress, now)}
+    </span>
+  )
+}
+
+export function SessionExpiryControls({
+  expiry,
+  onExtend,
+  onDecline,
+}: {
+  expiry: SessionExpiry
+  onExtend(): void
+  onDecline(): void
+}) {
+  const [now, setNow] = useState(() => Date.now())
+
+  useEffect(() => {
+    setNow(Date.now())
+    const timer = setInterval(() => setNow(Date.now()), 250)
+    return () => clearInterval(timer)
+  }, [expiry.expiresAt])
+
+  const seconds = Math.max(0, Math.ceil((expiry.expiresAt - now) / 1_000))
+  const countdown = `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`
+  return (
+    <span className="session-expiry" role="alert">
+      <span className="session-expiry-countdown">Ends in {countdown}</span>
+      <button type="button" className="session-expiry-extend" onClick={onExtend}>Keep</button>
+      <button type="button" className="session-expiry-decline" onClick={onDecline}>End now</button>
     </span>
   )
 }
@@ -155,4 +184,3 @@ export function AskCard({
     </form>
   )
 }
-

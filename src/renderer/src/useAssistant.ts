@@ -139,6 +139,8 @@ export function useAssistant(): Assistant {
           setPendingAsk(null)
           return
         case 'session_started':
+        case 'session_expiring':
+        case 'session_extended':
           return
         case 'session_ended':
           lastStatus.current = 'idle'

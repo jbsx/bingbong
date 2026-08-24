@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { BrowserNav, BrowserPane } from './BrowserPane'
-import { AssistantPanel, RunHint, StatusOrb, StatusPill } from './AssistantPanel'
+import { AssistantPanel, RunHint, SessionExpiryControls, StatusOrb, StatusPill } from './AssistantPanel'
 import { IdleScreen } from './IdleScreen'
 import { SettingsPage } from './SettingsPage'
 import { SubagentCards } from './SubagentCards'
@@ -9,6 +9,7 @@ import { useAssistant } from './useAssistant'
 import { useFeedPanel, useFeedSlotRect } from './useFeedPanel'
 import { useIdle } from './useIdle'
 import { useSettings } from './useSettings'
+import { useSessionExpiry } from './useSessionExpiry'
 import { useVoice } from './useVoice'
 import { useWeather } from './useWeather'
 
@@ -17,6 +18,7 @@ export function App() {
   const { settings, save } = useSettings()
   const [view, setView] = useState<'dashboard' | 'settings'>('dashboard')
   const idle = useIdle()
+  const sessionExpiry = useSessionExpiry()
   // Feed panel layout state (#45): the panel renders in its own overlay
   // webContents above the browser pane; this slot is the rect its bounds
   // follow (overlay floats out-of-flow; docked takes real layout space).
@@ -39,7 +41,7 @@ export function App() {
   useEffect(() => {
     const unsubEvent = window.bingbong.assistant.onEvent((event) => {
       if (event.type === 'session_ended') idleNow()
-      else if (event.type !== 'session_started') ping()
+      else if (!event.type.startsWith('session_')) ping()
     })
     const unsubVoice = window.bingbong.voice.onState((state) => {
       if (state.listening) ping()
@@ -107,6 +109,13 @@ export function App() {
               mid-run — the climbing timer must never disappear behind a
               listening hint, or a long round reads as frozen again. */}
           {assistant.progress ? <RunHint progress={assistant.progress} /> : null}
+          {sessionExpiry.expiry ? (
+            <SessionExpiryControls
+              expiry={sessionExpiry.expiry}
+              onExtend={sessionExpiry.extend}
+              onDecline={sessionExpiry.decline}
+            />
+          ) : null}
           {voice.transcribing ? (
             <span className="voice-hint voice-hint--transcribing" role="status">
               transcribing…
@@ -115,6 +124,8 @@ export function App() {
             <span className="voice-hint" role="status">
               {voice.reason === 'confirmation'
                 ? 'listening — yes or no?'
+                : voice.reason === 'session-expiry'
+                  ? 'listening — keep this session?'
                 : voice.reason === 'ask'
                   ? 'listening — your answer'
                   : voice.reason === 'pause'

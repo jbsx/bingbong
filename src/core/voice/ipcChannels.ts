@@ -15,7 +15,7 @@ export const VOICE_IPC = {
   error: 'voice:error',
 } as const
 
-export type VoiceListenReason = 'hotkey' | 'confirmation' | 'ask' | 'wake' | 'pause'
+export type VoiceListenReason = 'hotkey' | 'confirmation' | 'ask' | 'wake' | 'pause' | 'session-expiry'
 
 export interface VoiceState {
   listening: boolean

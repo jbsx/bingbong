@@ -46,6 +46,20 @@ export interface EndedSession {
   liveRunIds: readonly RunId[]
 }
 
+export interface ExpiringSession {
+  sessionId: SessionId
+  generation: SessionGeneration
+  at: number
+  expiresAt: number
+}
+
+export type ExtendedSession = ExpiringSession
+
+export interface SessionDecision {
+  sessionId: SessionId
+  generation: SessionGeneration
+}
+
 export interface SessionRuntime {
   state(): SessionRuntimeState
   submit(): Submission
@@ -53,7 +67,8 @@ export interface SessionRuntime {
   reject(submissionId: SubmissionId): boolean
   finish(runId: RunId): boolean
   beginExpiry(): boolean
-  extend(): boolean
+  extend(decision: SessionDecision): boolean
+  decline(decision: SessionDecision): EndedSession | null
   end(reason: SessionEndReason): EndedSession | null
   dispose(): void
 }
@@ -62,8 +77,22 @@ export function createSessionRuntime(deps: {
   clock: Clock
   identities: SessionIdentitySource
   inactivityMs?: number
+  warningLeadMs?: number
+  onExpiring?: (session: ExpiringSession) => void
+  onExtended?: (session: ExtendedSession) => void
   onEnded?: (session: EndedSession) => void
 }): SessionRuntime {
+  if (deps.inactivityMs !== undefined) {
+    if (!Number.isFinite(deps.inactivityMs) || deps.inactivityMs <= 0) {
+      throw new Error('inactivityMs must be positive')
+    }
+    if (deps.warningLeadMs === undefined || !Number.isFinite(deps.warningLeadMs) || deps.warningLeadMs <= 0) {
+      throw new Error('warningLeadMs must be positive when inactivityMs is configured')
+    }
+    if (deps.warningLeadMs >= deps.inactivityMs) {
+      throw new Error('warningLeadMs must be shorter than inactivityMs')
+    }
+  }
   let phase: SessionPhase = 'absent'
   let sessionId: SessionId | null = null
   let generation = 0
@@ -71,11 +100,16 @@ export function createSessionRuntime(deps: {
   let acceptedRunIds: RunId[] = []
   const liveRunIds = new Set<RunId>()
   const pendingSubmissionIds = new Set<SubmissionId>()
-  let cancelInactivity: (() => void) | null = null
+  let cancelWarning: (() => void) | null = null
+  let cancelDeadline: (() => void) | null = null
+  let deadlineAt: number | null = null
 
   const cancelExpiry = (): void => {
-    cancelInactivity?.()
-    cancelInactivity = null
+    cancelWarning?.()
+    cancelDeadline?.()
+    cancelWarning = null
+    cancelDeadline = null
+    deadlineAt = null
   }
 
   const endSession = (reason: SessionEndReason): EndedSession | null => {
@@ -104,17 +138,31 @@ export function createSessionRuntime(deps: {
     return ended
   }
 
-  const lapse = (): void => {
-    cancelInactivity = null
-    if (phase !== 'active' || liveRunIds.size > 0) return
+  const warn = (): void => {
+    cancelWarning = null
+    if (phase !== 'active' || liveRunIds.size > 0 || sessionId === null || deadlineAt === null) return
     phase = 'expiring'
+    deps.onExpiring?.({ sessionId, generation, at: deps.clock.now(), expiresAt: deadlineAt })
+  }
+
+  const lapse = (): void => {
+    cancelDeadline = null
+    if (phase !== 'expiring' || liveRunIds.size > 0) return
     endSession('lapsed')
   }
 
-  const armInactivity = (): void => {
+  const armInactivity = (): number | null => {
     cancelExpiry()
-    if (deps.inactivityMs === undefined || phase !== 'active' || liveRunIds.size > 0) return
-    cancelInactivity = deps.clock.setTimer(deps.inactivityMs, lapse)
+    if (
+      deps.inactivityMs === undefined ||
+      deps.warningLeadMs === undefined ||
+      phase !== 'active' ||
+      liveRunIds.size > 0
+    ) return null
+    deadlineAt = deps.clock.now() + deps.inactivityMs
+    cancelWarning = deps.clock.setTimer(deps.inactivityMs - deps.warningLeadMs, warn)
+    cancelDeadline = deps.clock.setTimer(deps.inactivityMs, lapse)
+    return deadlineAt
   }
 
   const state = (): SessionRuntimeState => ({
@@ -125,6 +173,9 @@ export function createSessionRuntime(deps: {
     acceptedRunIds: [...acceptedRunIds],
     liveRunIds: [...liveRunIds],
   })
+
+  const matchesExpiringSession = (decision: SessionDecision): boolean =>
+    phase === 'expiring' && sessionId === decision.sessionId && generation === decision.generation
 
   return {
     state,
@@ -178,11 +229,17 @@ export function createSessionRuntime(deps: {
       phase = 'expiring'
       return true
     },
-    extend() {
-      if (phase !== 'expiring') return false
+    extend(decision) {
+      if (!matchesExpiringSession(decision)) return false
       phase = 'active'
-      armInactivity()
+      const expiresAt = armInactivity()
+      if (expiresAt !== null && sessionId !== null) {
+        deps.onExtended?.({ sessionId, generation, at: deps.clock.now(), expiresAt })
+      }
       return true
+    },
+    decline(decision) {
+      return matchesExpiringSession(decision) ? endSession('lapsed') : null
     },
     end(reason) {
       return endSession(reason)
