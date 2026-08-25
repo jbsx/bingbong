@@ -374,7 +374,7 @@ describe('assistant command runner', () => {
       // Continuity exists before the reset so the test can prove the
       // replacement Run does not inherit it: the first Run commits an
       // objective, the resetting command then arrives in that Session.
-      const newSessionTool = { name: 'new_session', sessionReset: true, async execute() { return 'Session cleared.' } }
+      const newSessionTool = { name: 'new_session', sessionReset: true, async execute() { return 'Session reset.' } }
       let siblingExecutions = 0
       const siblingTool = {
         name: 'spin',

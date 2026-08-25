@@ -127,7 +127,7 @@ describe('subagent tools', () => {
     await expect(spawn.execute({ id: 'c3', name: 'spawn_agent', args: { kind: 'browse', task: 'x', memory_ids: ['memory-1', ''] } }, ctx)).rejects.toThrow(/non-empty strings/)
   })
 
-  it('refuses a delegation when this run has no Session memory to share (#98)', async () => {
+  it('refuses a delegation when this run has no Session Working Memory to share (#98)', async () => {
     const tools = createSubagentTools(fakeManager())
     const spawn = tools.find((tool) => tool.name === 'spawn_agent')!
 

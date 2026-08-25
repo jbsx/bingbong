@@ -26,21 +26,25 @@ describe('createSqliteHistoryStore', () => {
     const store = createSqliteHistoryStore(tempStorePath())
     try {
       const runId = store.startRun('open the fixture page', 100, 'turn-abc-1', 'session-fix-1' as SessionId)
-      store.appendEntry({ runId, kind: 'command', text: 'open the fixture page', at: 100 })
-      store.appendEntry({ runId, kind: 'speak', text: 'Opened it.', at: 104 })
+      store.appendEntry({ runId, sessionId: 'session-fix-1' as SessionId, kind: 'command', text: 'open the fixture page', at: 100 })
+      store.appendEntry({ runId, sessionId: 'session-fix-1' as SessionId, kind: 'speak', text: 'Opened it.', at: 104 })
       store.finishRun(runId, 'done', 106)
-      store.appendEntry({ runId: null, kind: 'voice', text: 'heard "yes" (answered)', at: 200 })
+      store.appendEntry({ runId: null, sessionId: 'session-fix-1' as SessionId, kind: 'voice', text: 'heard "yes" (answered)', at: 200 })
+      store.appendEntry({ runId: null, sessionId: null, kind: 'voice', text: 'heard "hmm" (undecided)', at: 201 })
 
-      expect(store.recentEntries(10).map((entry) => [entry.kind, entry.text, entry.runId, entry.at])).toEqual([
-        ['command', 'open the fixture page', runId, 100],
-        ['speak', 'Opened it.', runId, 104],
-        ['voice', 'heard "yes" (answered)', null, 200],
+      expect(
+        store.recentEntries(10).map((entry) => [entry.kind, entry.text, entry.runId, entry.sessionId, entry.at]),
+      ).toEqual([
+        ['command', 'open the fixture page', runId, 'session-fix-1', 100],
+        ['speak', 'Opened it.', runId, 'session-fix-1', 104],
+        ['voice', 'heard "yes" (answered)', null, 'session-fix-1', 200],
+        ['voice', 'heard "hmm" (undecided)', null, null, 201],
       ])
       expect(store.recentRuns(10)).toEqual([
         {
           id: runId,
           turnId: 'turn-abc-1',
-          sessionId: 'session-fix-1',
+          sessionId: 'session-fix-1' as SessionId,
           command: 'open the fixture page',
           startedAt: 100,
           finishedAt: 106,
@@ -121,7 +125,7 @@ describe('createSqliteHistoryStore', () => {
     try {
       for (let i = 1; i <= 5; i++) {
         const runId = store.startRun(`command ${i}`, i, `turn-seq-${i}`, 'session-seq' as SessionId)
-        store.appendEntry({ runId, kind: 'command', text: `command ${i}`, at: i })
+        store.appendEntry({ runId, sessionId: 'session-seq' as SessionId, kind: 'command', text: `command ${i}`, at: i })
         store.finishRun(runId, 'done', i + 10)
       }
 
@@ -137,10 +141,10 @@ describe('createSqliteHistoryStore', () => {
 
     const first = createSqliteHistoryStore(path)
     const finishedRun = first.startRun('finished', 300, 'turn-a-1', 'session-a' as SessionId)
-    first.appendEntry({ runId: finishedRun, kind: 'command', text: 'finished', at: 300 })
+    first.appendEntry({ runId: finishedRun, sessionId: 'session-a' as SessionId, kind: 'command', text: 'finished', at: 300 })
     first.finishRun(finishedRun, 'done', 310)
     const openRun = first.startRun('killed mid-run', 320, 'turn-a-2', 'session-a' as SessionId)
-    first.appendEntry({ runId: openRun, kind: 'command', text: 'killed mid-run', at: 320 })
+    first.appendEntry({ runId: openRun, sessionId: 'session-a' as SessionId, kind: 'command', text: 'killed mid-run', at: 320 })
     first.close()
 
     const reopened = createSqliteHistoryStore(path)
@@ -150,7 +154,7 @@ describe('createSqliteHistoryStore', () => {
         {
           id: finishedRun,
           turnId: 'turn-a-1',
-          sessionId: 'session-a',
+          sessionId: 'session-a' as SessionId,
           command: 'finished',
           startedAt: 300,
           finishedAt: 310,
@@ -159,7 +163,7 @@ describe('createSqliteHistoryStore', () => {
         {
           id: openRun,
           turnId: 'turn-a-2',
-          sessionId: 'session-a',
+          sessionId: 'session-a' as SessionId,
           command: 'killed mid-run',
           startedAt: 320,
           finishedAt: null,
@@ -216,6 +220,7 @@ describe('createSqliteHistoryStore', () => {
       );
     `)
     legacy.prepare('INSERT INTO runs (command, started_at, finished_at, outcome) VALUES (?, ?, ?, ?)').run('old command', 1, 2, 'done')
+    legacy.prepare('INSERT INTO entries (run_id, kind, text, at) VALUES (?, ?, ?, ?)').run(1, 'command', 'old command', 1)
     legacy.close()
 
     const migrated = createSqliteHistoryStore(path)
@@ -234,6 +239,10 @@ describe('createSqliteHistoryStore', () => {
           finishedAt: null,
           outcome: null,
         },
+      ])
+      // Legacy entries survive with honest null Session membership.
+      expect(migrated.recentEntries(10).map((entry) => [entry.text, entry.sessionId])).toEqual([
+        ['old command', null],
       ])
       expect(migrated.recentSessions(10)).toEqual([
         { sessionId: 'session-after-migration', startedAt: 299, endedAt: null, endReason: null },

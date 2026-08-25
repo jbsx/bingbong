@@ -39,7 +39,8 @@ const SCHEMA = `
     run_id INTEGER,
     kind TEXT NOT NULL,
     text TEXT NOT NULL,
-    at INTEGER NOT NULL
+    at INTEGER NOT NULL,
+    session_id TEXT
   );
 `
 
@@ -64,6 +65,10 @@ export function createSqliteHistoryStore(
   if (!runColumns.some((column) => column.name === 'session_id')) {
     db.exec('ALTER TABLE runs ADD COLUMN session_id TEXT')
   }
+  const entryColumns = db.prepare("PRAGMA table_info('entries')").all() as { name: string }[]
+  if (!entryColumns.some((column) => column.name === 'session_id')) {
+    db.exec('ALTER TABLE entries ADD COLUMN session_id TEXT')
+  }
   // A logged turn maps 1:1 to a run row (#28): unique at the schema level.
   // Legacy rows are null and unaffected (SQLite treats nulls as distinct).
   db.exec('CREATE UNIQUE INDEX IF NOT EXISTS runs_turn_id ON runs(turn_id)')
@@ -86,10 +91,10 @@ export function createSqliteHistoryStore(
   const finishRun = db.prepare<{ id: number; outcome: RunOutcome; finished_at: number }>(
     'UPDATE runs SET outcome = @outcome, finished_at = @finished_at WHERE id = @id',
   )
-  const insertEntry = db.prepare<{ run_id: number | null; kind: string; text: string; at: number }>(
-    'INSERT INTO entries (run_id, kind, text, at) VALUES (@run_id, @kind, @text, @at)',
+  const insertEntry = db.prepare<{ run_id: number | null; kind: string; text: string; at: number; session_id: string | null }>(
+    'INSERT INTO entries (run_id, kind, text, at, session_id) VALUES (@run_id, @kind, @text, @at, @session_id)',
   )
-  const selectEntries = db.prepare('SELECT id, run_id, kind, text, at FROM entries ORDER BY id DESC LIMIT ?')
+  const selectEntries = db.prepare('SELECT id, run_id, kind, text, at, session_id FROM entries ORDER BY id DESC LIMIT ?')
   const selectRuns = db.prepare(
     'SELECT id, turn_id, session_id, command, started_at, finished_at, outcome FROM runs ORDER BY id DESC LIMIT ?',
   )
@@ -103,6 +108,7 @@ export function createSqliteHistoryStore(
     kind: string
     text: string
     at: number
+    session_id: string | null
   }
 
   interface RunRow {
@@ -125,6 +131,7 @@ export function createSqliteHistoryStore(
   const toEntry = (row: EntryRow): RecordedEntry => ({
     id: row.id,
     runId: row.run_id,
+    sessionId: row.session_id as SessionId | null,
     kind: (KINDS as readonly string[]).includes(row.kind) ? (row.kind as TranscriptKind) : 'error',
     text: row.text,
     at: row.at,
@@ -169,7 +176,13 @@ export function createSqliteHistoryStore(
       finishRun.run({ id: runId, outcome, finished_at: at })
     },
     appendEntry(entry) {
-      insertEntry.run({ run_id: entry.runId, kind: entry.kind, text: entry.text, at: entry.at })
+      insertEntry.run({
+        run_id: entry.runId,
+        kind: entry.kind,
+        text: entry.text,
+        at: entry.at,
+        session_id: entry.sessionId,
+      })
     },
     recentEntries(limit) {
       return reverse((selectEntries.all(Math.max(0, limit)) as EntryRow[]).map(toEntry))

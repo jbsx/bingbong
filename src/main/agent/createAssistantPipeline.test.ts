@@ -249,7 +249,7 @@ describe('createAssistantPipeline', () => {
 
     expect(events.find((e) => e.type === 'tool_result' && e.name === 'new_session')).toMatchObject({
       ok: true,
-      result: expect.stringContaining('Session cleared'),
+      result: expect.stringContaining('Session reset'),
     })
     // The sibling call from the same response never executes and no later
     // model round happens: the run reports the reset boundary instead.

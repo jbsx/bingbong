@@ -166,7 +166,7 @@ export interface SessionRuntime {
 export function createSessionRuntime(deps: {
   clock: Clock
   identities: SessionIdentitySource
-  inactivityMs?: number
+  sessionWindowMs?: number
   warningLeadMs?: number
   onExpiring?: (session: ExpiringSession) => void
   onExtended?: (session: ExtendedSession) => void
@@ -179,15 +179,15 @@ export function createSessionRuntime(deps: {
   recentMemoryEntries?: number
   onContinuityDegraded?: (degradation: ContinuityDegradation) => void
 }): SessionRuntime {
-  if (deps.inactivityMs !== undefined) {
-    if (!Number.isFinite(deps.inactivityMs) || deps.inactivityMs <= 0) {
-      throw new Error('inactivityMs must be positive')
+  if (deps.sessionWindowMs !== undefined) {
+    if (!Number.isFinite(deps.sessionWindowMs) || deps.sessionWindowMs <= 0) {
+      throw new Error('sessionWindowMs must be positive')
     }
     if (deps.warningLeadMs === undefined || !Number.isFinite(deps.warningLeadMs) || deps.warningLeadMs <= 0) {
-      throw new Error('warningLeadMs must be positive when inactivityMs is configured')
+      throw new Error('warningLeadMs must be positive when sessionWindowMs is configured')
     }
-    if (deps.warningLeadMs >= deps.inactivityMs) {
-      throw new Error('warningLeadMs must be shorter than inactivityMs')
+    if (deps.warningLeadMs >= deps.sessionWindowMs) {
+      throw new Error('warningLeadMs must be shorter than sessionWindowMs')
     }
   }
   /**
@@ -579,14 +579,14 @@ export function createSessionRuntime(deps: {
   const armInactivity = (): number | null => {
     cancelExpiry()
     if (
-      deps.inactivityMs === undefined ||
+      deps.sessionWindowMs === undefined ||
       deps.warningLeadMs === undefined ||
       phase !== 'active' ||
       liveRunIds.size > 0
     ) return null
-    deadlineAt = deps.clock.now() + deps.inactivityMs
-    cancelWarning = deps.clock.setTimer(deps.inactivityMs - deps.warningLeadMs, warn)
-    cancelDeadline = deps.clock.setTimer(deps.inactivityMs, lapse)
+    deadlineAt = deps.clock.now() + deps.sessionWindowMs
+    cancelWarning = deps.clock.setTimer(deps.sessionWindowMs - deps.warningLeadMs, warn)
+    cancelDeadline = deps.clock.setTimer(deps.sessionWindowMs, lapse)
     return deadlineAt
   }
 

@@ -751,7 +751,7 @@ describe('session runtime', () => {
     const runtime = createSessionRuntime({
       clock,
       identities: new DeterministicIdentities(),
-      inactivityMs: 100,
+      sessionWindowMs: 100,
       warningLeadMs: 20,
       onExpiring: (session) => expiring.push(`${session.sessionId}:${session.expiresAt}:${session.at}`),
       onEnded: (session) => ended.push(`${session.sessionId}:${session.reason}:${session.endedAt}`),
@@ -783,7 +783,7 @@ describe('session runtime', () => {
     const runtime = createSessionRuntime({
       clock,
       identities: new DeterministicIdentities(),
-      inactivityMs: 100,
+      sessionWindowMs: 100,
       warningLeadMs: 20,
     })
     const first = runtime.accept(runtime.submit().submissionId)
@@ -808,7 +808,7 @@ describe('session runtime', () => {
     const runtime = createSessionRuntime({
       clock,
       identities: new DeterministicIdentities(),
-      inactivityMs: 100,
+      sessionWindowMs: 100,
       warningLeadMs: 20,
       onExpiring: ({ expiresAt }) => warnings.push(expiresAt),
       onExtended: ({ expiresAt }) => extensions.push(expiresAt),
@@ -834,7 +834,7 @@ describe('session runtime', () => {
     const runtime = createSessionRuntime({
       clock,
       identities: new DeterministicIdentities(),
-      inactivityMs: 100,
+      sessionWindowMs: 100,
       warningLeadMs: 20,
     })
     const run = runtime.accept(runtime.submit().submissionId)
@@ -857,7 +857,7 @@ describe('session runtime', () => {
     const runtime = createSessionRuntime({
       clock,
       identities: new DeterministicIdentities(),
-      inactivityMs: 100,
+      sessionWindowMs: 100,
       warningLeadMs: 20,
       onExpiring: ({ expiresAt }) => warnings.push(expiresAt),
     })
@@ -884,8 +884,8 @@ describe('session runtime', () => {
     const clock = new FakeClock()
     const identities = new DeterministicIdentities()
 
-    expect(() => createSessionRuntime({ clock, identities, inactivityMs: 100 })).toThrow('warningLeadMs')
-    expect(() => createSessionRuntime({ clock, identities, inactivityMs: 100, warningLeadMs: 100 })).toThrow(
+    expect(() => createSessionRuntime({ clock, identities, sessionWindowMs: 100 })).toThrow('warningLeadMs')
+    expect(() => createSessionRuntime({ clock, identities, sessionWindowMs: 100, warningLeadMs: 100 })).toThrow(
       'shorter',
     )
   })
@@ -895,7 +895,7 @@ describe('session runtime', () => {
     const runtime = createSessionRuntime({
       clock,
       identities: new DeterministicIdentities(),
-      inactivityMs: 100,
+      sessionWindowMs: 100,
       warningLeadMs: 20,
     })
     const run = runtime.accept(runtime.submit().submissionId)

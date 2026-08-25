@@ -1,6 +1,7 @@
 import type { BrowserPaneState } from '../../core/browser/paneState'
 import type { PipelineEvent } from '../../core/pipeline/events'
 import type { AcceptedRunAdmission } from '../../core/session/sessionRuntime'
+import type { SessionId } from '../../core/session/sessionIdentity'
 import type { SubmissionFeedback } from '../../core/session/submissionFeedback'
 import type { VoiceErrorEvent, VoiceHeardEvent, VoiceState } from '../../core/voice/ipcChannels'
 
@@ -23,8 +24,9 @@ export interface WindowEventPublisherDeps {
   acceptPipelineEvent?(event: PipelineEvent): boolean
   createHistoryRunObserver(): (event: PipelineEvent) => void
   historyEvent(event: PipelineEvent): void
-  historyHeard(heard: VoiceHeardEvent): void
-  historyVoiceError(error: VoiceErrorEvent): void
+  /** `sessionId` attributes run-less voice records to their Session (#85). */
+  historyHeard(heard: VoiceHeardEvent, sessionId: SessionId | null): void
+  historyVoiceError(error: VoiceErrorEvent, sessionId: SessionId | null): void
   sendPipelineEvent(event: PipelineEvent): void
   sendVoiceState(state: VoiceState): void
   sendVoiceHeard(heard: VoiceHeardEvent): void
@@ -114,16 +116,23 @@ export function createWindowEventPublisher(deps: WindowEventPublisherDeps): Wind
         case 'voice-state':
           deps.sendVoiceState(publication.state)
           return
-        case 'voice-heard':
-          deps.historyHeard(publication.heard)
+        case 'voice-heard': {
+          // Run-less voice records still belong to a Session when one is
+          // active (#85); after session_ended the ownerships are cleared
+          // and the record lands honestly Session-less.
+          const ownership = activeRunOwnership ?? activeSessionOwnership
+          deps.historyHeard(publication.heard, ownership?.sessionId ?? null)
           deps.overlayVoiceHeard(publication.heard)
           deps.sendVoiceHeard(publication.heard)
           return
-        case 'voice-error':
-          deps.historyVoiceError(publication.error)
+        }
+        case 'voice-error': {
+          const ownership = activeRunOwnership ?? activeSessionOwnership
+          deps.historyVoiceError(publication.error, ownership?.sessionId ?? null)
           deps.overlayVoiceError(publication.error)
           deps.sendVoiceError(publication.error)
           return
+        }
         case 'browser':
           deps.sendBrowserState(publication.state)
           return

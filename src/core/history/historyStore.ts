@@ -24,6 +24,8 @@ export interface TranscriptEvent {
 export interface RecordedEntry extends TranscriptEvent {
   id: number
   runId: number | null
+  /** Owning Session (#85); null only for run-less records outside any Session and legacy rows. */
+  sessionId: SessionId | null
 }
 
 export interface RunRecord {
@@ -52,6 +54,8 @@ export interface SessionRecord {
 /** One run-scoped transcript entry, as handed to the store. */
 export interface HistoryEntryInput extends TranscriptEvent {
   runId: number | null
+  /** Owning Session for run-less records (#85); entries of a Run inherit the Run's. */
+  sessionId: SessionId | null
 }
 
 export interface HistoryStore {

@@ -29,9 +29,13 @@ function setup(acceptPipelineEvent?: (event: PipelineEvent) => boolean): {
   publisher: ReturnType<typeof createWindowEventPublisher>
   calls: string[]
   pipelineEvents: PipelineEvent[]
+  heardSessions: (string | null)[]
+  voiceErrorSessions: (string | null)[]
 } {
   const calls: string[] = []
   const pipelineEvents: PipelineEvent[] = []
+  const heardSessions: (string | null)[] = []
+  const voiceErrorSessions: (string | null)[] = []
   const record = (sink: string) => () => calls.push(sink)
   const recordPipeline = (sink: string) => (event: PipelineEvent) => {
     calls.push(sink)
@@ -41,8 +45,14 @@ function setup(acceptPipelineEvent?: (event: PipelineEvent) => boolean): {
     acceptPipelineEvent,
     createHistoryRunObserver: () => recordPipeline('history-run'),
     historyEvent: recordPipeline('history-event'),
-    historyHeard: record('history-heard'),
-    historyVoiceError: record('history-voice-error'),
+    historyHeard: (_heard, sessionId) => {
+      calls.push('history-heard')
+      heardSessions.push(sessionId)
+    },
+    historyVoiceError: (_error, sessionId) => {
+      calls.push('history-voice-error')
+      voiceErrorSessions.push(sessionId)
+    },
     sendPipelineEvent: recordPipeline('renderer-pipeline'),
     sendVoiceState: record('renderer-voice-state'),
     sendVoiceHeard: record('renderer-voice-heard'),
@@ -55,7 +65,7 @@ function setup(acceptPipelineEvent?: (event: PipelineEvent) => boolean): {
     overlayVoiceError: record('overlay-voice-error'),
     overlaySubmissionFeedback: record('overlay-submission-feedback'),
   }
-  return { publisher: createWindowEventPublisher(deps), calls, pipelineEvents }
+  return { publisher: createWindowEventPublisher(deps), calls, pipelineEvents, heardSessions, voiceErrorSessions }
 }
 
 describe('window event publisher', () => {
@@ -132,7 +142,7 @@ describe('window event publisher', () => {
   })
 
   it('publishes voice events through their existing source-specific sinks', () => {
-    const { publisher, calls } = setup()
+    const { publisher, calls, heardSessions, voiceErrorSessions } = setup()
 
     publisher.publish({ source: 'voice-state', state: voiceState })
     publisher.publish({ source: 'voice-heard', heard })
@@ -147,6 +157,29 @@ describe('window event publisher', () => {
       'overlay-voice-error',
       'renderer-voice-error',
     ])
+    // No Session exists yet: run-less voice records land honestly Session-less.
+    expect(heardSessions).toEqual([null])
+    expect(voiceErrorSessions).toEqual([null])
+  })
+
+  it('attributes run-less voice records to the active Session, and to none after it ends (#85)', () => {
+    const { publisher, heardSessions, voiceErrorSessions } = setup()
+    const run = publisher.run(ownership)
+    run.publish({ type: 'command', turnId: 'turn-1', text: 'hello', at: 10 })
+
+    publisher.publish({ source: 'voice-heard', heard })
+    publisher.publish({ source: 'voice-error', error: voiceError })
+    run.publish({ type: 'done', turnId: 'turn-1', at: 11 })
+    publisher.publish({ source: 'voice-heard', heard })
+
+    publisher.publish({
+      source: 'lifecycle',
+      event: { type: 'session_ended', sessionId: ownership.sessionId, sessionGeneration: ownership.generation, reason: 'lapsed', at: 20 },
+    })
+    publisher.publish({ source: 'voice-heard', heard })
+
+    expect(heardSessions).toEqual(['session-1', 'session-1', null])
+    expect(voiceErrorSessions).toEqual(['session-1'])
   })
 
   it('publishes browser state only to the renderer', () => {

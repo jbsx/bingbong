@@ -11,12 +11,12 @@ import type { ToolCall } from '../ports/llm'
 const call: ToolCall = { id: 'c1', name: 'new_session', args: {} }
 
 describe('createNewSessionTool', () => {
-  it('acknowledges the fresh thread in its tool result', async () => {
+  it('acknowledges the fresh Session in its tool result', async () => {
     const tool = createNewSessionTool()
 
     const result = await tool.execute(call, { clock: new FakeClock() })
 
-    expect(result).toEqual(expect.stringContaining('Session cleared'))
+    expect(result).toEqual(expect.stringContaining('Session reset'))
   })
 
   it('declares the reset boundary and history gating', () => {

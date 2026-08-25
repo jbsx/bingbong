@@ -14,12 +14,12 @@ export function createNewSessionTool(): Tool {
     requiresHistory: true,
     sessionReset: true,
     description:
-      'Forget every previous command and answer in this session and start a fresh thread. ' +
+      'Forget every previous command and answer in this Session and start a fresh Session. ' +
       'Call this once, on its own, when the user clearly abandons the earlier topic ' +
       '("forget all that", "never mind all that", "different question"), then handle ' +
       'their new request with no reference to what came before.',
     async execute() {
-      return 'Session cleared: previous commands and answers are gone from this conversation. Treat the current request as the first one.'
+      return 'Session reset: previous commands and answers are gone. Treat the current request as the first one.'
     },
   }
 }

@@ -98,6 +98,9 @@ const usageStore = createUsageStore(join(app.getPath('userData'), 'usage.json'))
 // explicit review, but launches never restore it into the Feed or continuity.
 const historyStore = createSqliteHistoryStore(join(app.getPath('userData'), 'history.db'))
 const historyRecorder = createHistoryRecorder(historyStore, { now: () => Date.now() })
+// The window owns the Session runtime; module-level handle for the few IPC
+// paths that need the live Session identity for history attribution (#85).
+let activeSessionRuntime: SessionRuntime | null = null
 
 // Always-on perf logging (#27): one JSONL span per finished stage under the
 // profile's logs dir — zero configuration, no timers; rolling and the 7-day
@@ -237,8 +240,8 @@ async function createWindow(): Promise<BrowserWindow> {
       return (event) => run.event(event)
     },
     historyEvent: (event) => historyRecorder.event(event),
-    historyHeard: (heard) => historyRecorder.heard(heard),
-    historyVoiceError: (error) => historyRecorder.voiceError(error.message, error.at),
+    historyHeard: (heard, sessionId) => historyRecorder.heard(heard, sessionId),
+    historyVoiceError: (error, sessionId) => historyRecorder.voiceError(error.message, error.at, sessionId),
     sendPipelineEvent: (event) => sendToRenderer(PIPELINE_IPC.event, event),
     sendVoiceState: (state) => sendToRenderer(VOICE_IPC.stateChanged, state),
     sendVoiceHeard: (heard) => sendToRenderer(VOICE_IPC.heard, heard),
@@ -402,9 +405,8 @@ async function createWindow(): Promise<BrowserWindow> {
     identities: createSessionIdentitySource(),
     continuityModel: () => currentEnv().BINGBONG_LLM_SCRIPT ? 'scripted' : currentEnv().BINGBONG_ORCHESTRATOR_MODEL ?? 'unconfigured',
     continuityBudgets: parseSessionContinuityBudgets(currentEnv().BINGBONG_CONTINUITY_BUDGETS),
-    inactivityMs: launchConfig.sessionWindowMs,
-    warningLeadMs: launchConfig.sessionWarningMs,
-    onExpiring: (expiring) => {
+    sessionWindowMs: launchConfig.sessionWindowMs,
+    warningLeadMs: launchConfig.sessionWarningMs,    onExpiring: (expiring) => {
       void speakingGate.tts.speak(
         'Your session is about to expire. Say yes to keep it, or no to end it now.',
       ).catch(() => {})
@@ -450,6 +452,7 @@ async function createWindow(): Promise<BrowserWindow> {
     },
   })
   attachSessionToWindow(win, sessionRuntime)
+  activeSessionRuntime = sessionRuntime
   const commandRunner = createAssistantCommandRunner({
     pipeline,
     runtime: sessionRuntime,
@@ -485,6 +488,7 @@ async function createWindow(): Promise<BrowserWindow> {
   // must never fire into the channels a closed window left behind.
   win.on('closed', () => {
     sessionRuntime?.dispose()
+    if (activeSessionRuntime === sessionRuntime) activeSessionRuntime = null
   })
 
   if (process.env.ELECTRON_RENDERER_URL) {
@@ -512,7 +516,7 @@ app.whenReady().then(async () => {
   ipcMain.handle(HISTORY_IPC.recordVoiceError, (_event, message: unknown) => {
     if (typeof message !== 'string' || message.trim() === '') return null
     const at = Date.now()
-    historyRecorder.voiceError(message, at)
+    historyRecorder.voiceError(message, at, activeSessionRuntime?.state().sessionId ?? null)
     return at
   })
   registerTtsIpc({ voicesDir: () => piperConfig.voicesDir })

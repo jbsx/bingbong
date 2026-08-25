@@ -9,6 +9,7 @@ import { createHistoryRecorder } from '../history/historyRecorder'
 import type { HistoryStore, RecordedEntry, RunRecord } from '../history/historyStore'
 import { FailingTts, FakeClock, fakePerfHarness, fakeSubagentManager, memoryEntry, RecordingTts, ScriptedLlm, subagentRecord, withoutTurnId } from '../testing/doubles'
 import type { PipelineEvent } from './events'
+import type { SessionId } from '../session/sessionIdentity'
 import type { AssistantTurn, LlmClient, LlmRequest, ToolCall } from '../ports/llm'
 import type { Tool } from './tool'
 import type { WorkingMemorySnapshot } from '../session/workingMemory'
@@ -1666,10 +1667,44 @@ describe('command pipeline', () => {
       },
     })) eventTypes.push(event.type)
 
+    // #85: only the invalid portion is rejected — the valid Run Note
+    // survives the retry; the patch alone is dropped.
     expect(commits).toEqual([
       ['done', 'Useful note.', expect.arrayContaining([expect.objectContaining({ op: 'update' })])],
-      ['done', 'Completed run: choose', []],
+      ['done', 'Useful note.', []],
     ])
+    expect(degraded).toEqual(['invalid_memory'])
+    expect(eventTypes.at(-1)).toBe('done')
+  })
+
+  it('keeps a valid Run Note when the memory patch alone is malformed (#85)', async () => {
+    const degraded: string[] = []
+    const commits: unknown[][] = []
+    const pipeline = createCommandPipeline({
+      llm: new ScriptedLlm([{
+        kind: 'answer',
+        speak: 'Useful answer.',
+        display: 'Useful detail.',
+        runNote: 'Valid continuity note.',
+        memoryPatchIssue: 'malformed',
+      }]),
+      tts: new RecordingTts(),
+      clock: new FakeClock(),
+      tools: [],
+      onContinuityDegraded: (reason) => degraded.push(reason),
+    })
+
+    const eventTypes: string[] = []
+    for await (const event of pipeline.execute('research', undefined, undefined, {
+      snapshot: Object.freeze([]),
+      memory: Object.freeze([]),
+      commit: (outcome, note, patch) => {
+        commits.push([outcome, note, patch])
+        return 'committed'
+      },
+    })) eventTypes.push(event.type)
+
+    expect(commits).toEqual([['done', 'Valid continuity note.', []]])
     expect(degraded).toEqual(['invalid_memory'])
     expect(eventTypes.at(-1)).toBe('done')
   })
@@ -1797,9 +1832,10 @@ describe('command pipeline — turn correlation (#28)', () => {
     const events = await collectStamped(fullTurnPipeline(), 'spin it', 'turn-voice-1')
 
     // The same events the renderer relays and history records — every one
-    // of them carries the turn's id.
+    // of them carries the turn's id, and (as the publisher stamps in
+    // production) the Run's Session identity.
     for (const event of events) {
-      historyRun.event(event)
+      historyRun.event({ ...event, sessionId: 'session-1' as SessionId })
     }
 
     expect(events.map((event) => event.type)).toEqual([
@@ -2915,7 +2951,7 @@ describe('command pipeline — session reset (#99)', () => {
     name: 'new_session',
     sessionReset: true,
     async execute() {
-      return 'Session cleared: previous commands and answers are gone from this conversation.'
+      return 'Session reset: previous commands and answers are gone.'
     },
   }
   let executions = 0

@@ -1,5 +1,6 @@
 import type { PipelineEvent } from '../pipeline/events'
 import { inferRunOutcome } from '../pipeline/events'
+import type { SessionId } from '../session/sessionIdentity'
 import type { VoiceHeardEvent } from '../voice/ipcChannels'
 import { describeHeard } from '../voice/heardDisplay'
 import type { HistoryStore } from './historyStore'
@@ -14,8 +15,9 @@ export interface HistoryRecorder {
   run(): { event(pipelineEvent: PipelineEvent): void }
   /** Auxiliary pipeline events (downloads/subagents) attach to the active run. */
   event(pipelineEvent: PipelineEvent): void
-  heard(heard: VoiceHeardEvent): void
-  voiceError(message: string, at?: number): void
+  /** `sessionId` attributes run-less voice records to their Session (#85). */
+  heard(heard: VoiceHeardEvent, sessionId?: SessionId | null): void
+  voiceError(message: string, at?: number, sessionId?: SessionId | null): void
 }
 
 export function createHistoryRecorder(
@@ -33,14 +35,16 @@ export function createHistoryRecorder(
     kind: 'command' | 'tool' | 'display' | 'speak' | 'error' | 'voice',
     text: string,
     at: number,
+    sessionId: SessionId | null,
     targetRunId = activeRunId(),
   ): void => {
-    store.appendEntry({ runId: targetRunId, kind, text, at })
+    store.appendEntry({ runId: targetRunId, sessionId, kind, text, at })
   }
 
   return {
     run() {
       let runId: number | null = null
+      let sessionId: SessionId | null = null
       let lastStatus: string | null = null
       let failed = false
 
@@ -56,12 +60,19 @@ export function createHistoryRecorder(
               // 1:1 to a row in the review-only history database. Every new
               // row also carries its owning Session (#100) — the publisher's
               // accepted-Run ownership stamps it on every event it emits.
-              runId = store.startRun(event.text, event.at, event.turnId, event.sessionId!)
+              if (event.sessionId === undefined) {
+                throw new Error(
+                  `command event for turn ${event.turnId} carries no Session identity — ` +
+                    'every accepted Run is published with one (#85)',
+                )
+              }
+              sessionId = event.sessionId
+              runId = store.startRun(event.text, event.at, event.turnId, sessionId)
               activeRunIds.push(runId)
               lastStatus = null
               failed = false
               const projected = projectPipelineEvent(event)
-              if (projected) append(projected.kind, projected.text, projected.at, runId)
+              if (projected) append(projected.kind, projected.text, projected.at, sessionId, runId)
               return
             }
             case 'status':
@@ -81,7 +92,9 @@ export function createHistoryRecorder(
             default: {
               if (event.type === 'error') failed = true
               const projected = projectPipelineEvent(event)
-              if (projected) append(projected.kind, projected.text, projected.at, runId)
+              if (projected) {
+                append(projected.kind, projected.text, projected.at, sessionId ?? event.sessionId ?? null, runId ?? undefined)
+              }
             }
           }
         },
@@ -89,16 +102,16 @@ export function createHistoryRecorder(
     },
     event(event) {
       const projected = projectPipelineEvent(event)
-      if (projected) append(projected.kind, projected.text, projected.at)
+      if (projected) append(projected.kind, projected.text, projected.at, event.sessionId ?? null)
     },
-    heard(heard) {
+    heard(heard, sessionId = null) {
       // Commands are echoed by the pipeline itself; only answers and
       // undecided words land in the transcript.
       if (heard.routed === 'command') return
-      append('voice', describeHeard(heard), heard.at ?? deps.now())
+      append('voice', describeHeard(heard), heard.at ?? deps.now(), sessionId)
     },
-    voiceError(message, at = deps.now()) {
-      append('error', `voice: ${message}`, at)
+    voiceError(message, at = deps.now(), sessionId = null) {
+      append('error', `voice: ${message}`, at, sessionId)
     },
   }
 }

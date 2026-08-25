@@ -591,8 +591,10 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
             const reason = finalAnswer?.runNoteIssue === 'malformed' || candidate !== undefined ? 'malformed' : 'missing'
             logContinuityDegradation(deps.onContinuityDegraded, reason, turnId)
           }
+          // #85: reject only the invalid portion — a malformed patch never
+          // discards an already-valid Run Note; the degradation is logged
+          // and the Memory Commit carries no memory changes.
           if (finalAnswer?.memoryPatchIssue === 'malformed') {
-            note = deterministicRunNote(command, runOutcome)
             logContinuityDegradation(deps.onContinuityDegraded, 'invalid_memory', turnId)
           } else {
             patch = finalAnswer?.memoryPatch ?? []
@@ -600,9 +602,9 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
         }
         let commit = continuity.commit(runOutcome, note, patch)
         if (commit === 'invalid_patch') {
-          note = deterministicRunNote(command, runOutcome)
+          patch = []
           logContinuityDegradation(deps.onContinuityDegraded, 'invalid_memory', turnId)
-          commit = continuity.commit(runOutcome, note, [])
+          commit = continuity.commit(runOutcome, note, patch)
         }
         if (commit !== 'committed') {
           logContinuityDegradation(deps.onContinuityDegraded, 'commit_rejected', turnId)
