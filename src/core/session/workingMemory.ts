@@ -68,7 +68,9 @@ function object(value: unknown): Record<string, unknown> | null {
     : null
 }
 
-function boundedString(value: unknown, max: number, optional = false): string | undefined | null {
+/** Shared envelope validation (#94, #98): one bounded-string rule for Memory
+ *  Entries and the Subagent Reports that feed them. */
+export function boundedString(value: unknown, max: number, optional = false): string | undefined | null {
   if (value === undefined && optional) return undefined
   if (typeof value !== 'string') return null
   const normalized = value.trim()

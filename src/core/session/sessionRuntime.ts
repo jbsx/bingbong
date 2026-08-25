@@ -156,7 +156,6 @@ export interface SessionRuntime {
     text: string,
     patch: MemoryPatch,
   ): 'committed' | 'invalid_patch' | 'rejected'
-  beginExpiry(): boolean
   extend(decision: SessionDecision): boolean
   decline(decision: SessionDecision): EndedSession | null
   end(reason: SessionEndReason): EndedSession | null
@@ -752,11 +751,6 @@ export function createSessionRuntime(deps: {
       }
       aboveHighWater = isAboveHighWater()
       return 'committed'
-    },
-    beginExpiry() {
-      if (phase !== 'active' || liveRunIds.size > 0) return false
-      phase = 'expiring'
-      return true
     },
     extend(decision) {
       if (!matchesExpiringSession(decision)) return false

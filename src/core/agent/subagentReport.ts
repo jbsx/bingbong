@@ -1,4 +1,5 @@
 import {
+  boundedString,
   canonicalizeMemoryUrl,
   MAX_MEMORY_DETAIL_CHARS,
   MAX_MEMORY_REFERENCES,
@@ -42,13 +43,6 @@ export interface SubagentReport {
 export const MAX_SUBAGENT_REPORT_FINDINGS = 10
 export const MAX_SUBAGENT_REPORT_UNRESOLVED = 10
 export const MAX_SUBAGENT_UNRESOLVED_CHARS = 500
-
-function boundedString(value: unknown, max: number, optional = false): string | null | undefined {
-  if (value === undefined && optional) return undefined
-  if (typeof value !== 'string') return null
-  const normalized = value.trim()
-  return normalized !== '' && normalized.length <= max ? normalized : null
-}
 
 function parseReference(value: unknown): MemoryReference | null {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) return null

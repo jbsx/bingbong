@@ -42,6 +42,19 @@ function harness(start = 1_000) {
   return { clock, identities, runtime }
 }
 
+/** A runtime whose Session Window (100ms, 50ms warning lead) is armed. */
+function expiringHarness(start = 1_000) {
+  const clock = new FakeClock(start)
+  const identities = new DeterministicIdentities()
+  const runtime = createSessionRuntime({
+    clock,
+    identities,
+    sessionWindowMs: 100,
+    warningLeadMs: 50,
+  })
+  return { clock, identities, runtime }
+}
+
 function decision(runtime: ReturnType<typeof createSessionRuntime>) {
   const state = runtime.state()
   return { sessionId: state.sessionId!, generation: state.generation }
@@ -159,27 +172,29 @@ describe('session runtime', () => {
   })
 
   it('exposes deterministic expiring and extension lifecycle transitions', () => {
-    const { runtime } = harness()
+    const { clock, runtime } = expiringHarness()
     const admission = runtime.accept(runtime.submit().submissionId)
 
-    expect(runtime.beginExpiry()).toBe(false)
+    // A live Run suspends expiry — time inside the window changes nothing.
+    clock.advance(60)
+    expect(runtime.state().phase).toBe('active')
     runtime.finish(admission.runId)
-    expect(runtime.beginExpiry()).toBe(true)
+    // The warning lead elapses after the Run finishes: one warning, then
+    // the phase is expiring until the deadline or an explicit decision.
+    clock.advance(50)
     expect(runtime.state().phase).toBe('expiring')
-    expect(runtime.beginExpiry()).toBe(false)
     expect(runtime.extend(decision(runtime))).toBe(true)
     expect(runtime.state().phase).toBe('active')
     expect(runtime.extend(decision(runtime))).toBe(false)
   })
 
   it('ends exactly once using the injected clock and clears Session-owned state', () => {
-    const { clock, runtime } = harness()
+    const { clock, runtime } = expiringHarness()
     const admission = runtime.accept(runtime.submit().submissionId)
 
     expect(runtime.end('lapsed')).toBeNull()
     runtime.finish(admission.runId)
     expect(runtime.end('lapsed')).toBeNull()
-    runtime.beginExpiry()
     clock.advance(50)
 
     expect(runtime.end('lapsed')).toEqual({
@@ -207,16 +222,19 @@ describe('session runtime', () => {
   it('fires onEnded exactly once for every Session end reason', () => {
     for (const reason of ['lapsed', 'reset', 'app_closed', 'interrupted'] as const) {
       const ended: string[] = []
+      const clock = new FakeClock(1_000)
       const runtime = createSessionRuntime({
-        clock: new FakeClock(1_000),
+        clock,
         identities: new DeterministicIdentities(),
+        sessionWindowMs: 100,
+        warningLeadMs: 50,
         onEnded: (session) => ended.push(`${session.sessionId}:${session.reason}`),
       })
       const admission = runtime.accept(runtime.submit().submissionId)
       // Lapse only ends an expiring Session — the other reasons end directly.
       if (reason === 'lapsed') {
         runtime.finish(admission.runId)
-        runtime.beginExpiry()
+        clock.advance(50)
       }
 
       runtime.end(reason)
