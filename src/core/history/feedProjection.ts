@@ -1,6 +1,7 @@
 import type { PipelineEvent } from '../pipeline/events'
 import { describeToolIntent } from '../pipeline/toolCallDisplay'
 import { formatRetryLine } from '../pipeline/runProgress'
+import type { SessionId } from '../session/sessionIdentity'
 import { projectPipelineEvent } from './transcriptProjection'
 import type { TranscriptEvent } from './historyStore'
 
@@ -112,7 +113,7 @@ export function createFeedProjection(): {
   // session_started, closed by its matching session_ended. Events of an
   // ended or foreign Session — and everything before the first start — are
   // ignored, so no launch ever renders work that is not current.
-  let activeSessionId: string | null = null
+  let activeSessionId: SessionId | null = null
   let activeSessionGeneration: number | null = null
 
   const closeStreaming = (): void => {
