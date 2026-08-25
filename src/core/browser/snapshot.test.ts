@@ -59,6 +59,8 @@ describe('parseCollectedPage', () => {
       inForm: false,
       formHasCredential: false,
       formHasPayment: false,
+      searchField: false,
+      formHasSearch: false,
     })
   })
 
@@ -78,6 +80,20 @@ describe('parseCollectedPage', () => {
     )
 
     expect(parsed.elements[0]).toMatchObject({ credentialField: true, inForm: true, formHasCredential: true })
+  })
+
+  it('keeps the search-flavor facts supplied by the collector (ADR 0015)', () => {
+    const parsed = parseCollectedPage(
+      page({
+        elements: [
+          element({ tag: 'input', searchField: true, inForm: true, formHasSearch: true }),
+          element({ tag: 'button', formHasSearch: true }),
+        ],
+      }),
+    )
+
+    expect(parsed.elements[0]).toMatchObject({ searchField: true, formHasSearch: true })
+    expect(parsed.elements[1]).toMatchObject({ searchField: false, formHasSearch: true })
   })
 
   it('keeps the dialog layer marker and drops unknown layer values', () => {

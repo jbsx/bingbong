@@ -3,6 +3,7 @@ import { FakeBrowser, FakeClock, FakeVision, fakePerfHarness } from '../../core/
 import { createSubagentTaskApi, toolsForKind } from './createSubagentWorkhorse'
 import { withAgentActivity } from '../../core/downloads/agentActivity'
 import { createAgentActivityTracker } from '../../core/downloads/agentActivity'
+import type { SnapshotRef } from '../../core/browser/snapshot'
 import type { Tool } from '../../core/pipeline/tool'
 
 // The taskApi seam (#83, ADR 0009): kinds are browse (pane-bound browser
@@ -188,6 +189,44 @@ describe('createSubagentTaskApi', () => {
     // The browse catalog is exactly the pane-bound browser verbs plus look.
     const browseNames = toolsForKind('browse', deps, new FakeBrowser()).map((tool) => tool.name)
     expect(browseNames.sort()).toEqual(['ask_user', 'back', 'click', 'go_forward', 'look', 'navigate', 'read_page', 'screenshot', 'scroll', 'type'].sort())
+  })
+
+  it('passes search submits through the confirm downgrade — browse agents can GUI-search (#102, ADR 0015)', async () => {
+    // The composition the acceptance criterion names: real gate verdicts
+    // under the subagent policy. A search-flavored submit is allow (never
+    // downgraded); a newsletter signup stays confirm-class and is denied
+    // for the subagent as before.
+    const browser = new FakeBrowser()
+    const base: SnapshotRef = {
+      ref: 1,
+      kind: 'input',
+      label: '',
+      inputType: null,
+      rect: { x: 0, y: 0, width: 10, height: 10 },
+      src: null,
+      href: null,
+      downloadsFile: false,
+      submitsForm: false,
+      credentialField: false,
+      paymentField: false,
+      inForm: false,
+      formHasCredential: false,
+      formHasPayment: false,
+      searchField: false,
+      formHasSearch: false,
+    }
+    browser.refs.set(1, { ...base, label: 'Search', inForm: true, searchField: true, formHasSearch: true })
+    browser.refs.set(2, { ...base, ref: 2, inputType: 'email', label: 'Your email', inForm: true })
+    const deps = { getEnv: () => ({}) as Record<string, string | undefined>, fetchFn: fetch }
+    const type = toolsForKind('browse', deps, browser).find((tool) => tool.name === 'type') as Tool
+
+    await expect(type.assessRisk!({ id: 'c1', name: 'type', args: { ref: 1, text: 'weather tomorrow\n' } })).resolves.toEqual({
+      kind: 'allow',
+    })
+    await expect(type.assessRisk!({ id: 'c2', name: 'type', args: { ref: 2, text: 'me@example.com\n' } })).resolves.toEqual({
+      kind: 'deny',
+      reason: 'subagents cannot ask the user for confirmation — skip this action and continue without it',
+    })
   })
 
   it('gives every kind the escalation-only ask_user (never an interactive ask)', async () => {

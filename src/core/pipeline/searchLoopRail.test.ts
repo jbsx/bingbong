@@ -55,6 +55,8 @@ function ref(facts: Partial<SnapshotRef> = {}): SnapshotRef {
     inForm: false,
     formHasCredential: false,
     formHasPayment: false,
+    searchField: false,
+    formHasSearch: false,
     ...facts,
   }
 }

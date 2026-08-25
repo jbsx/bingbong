@@ -23,6 +23,11 @@ export interface CollectedElement {
   inForm?: boolean
   formHasCredential?: boolean
   formHasPayment?: boolean
+  /** Search-flavored field (ADR 0015): type="search", or name/id/aria-label/
+   * placeholder matching /search|query|^q$/i; absent in older payloads. */
+  searchField?: boolean
+  /** The associated form contains a search-flavored field; absent in older payloads. */
+  formHasSearch?: boolean
   /** 'dialog' marks elements of the page's topmost open dialog; absent in older payloads. */
   layer?: 'dialog' | 'page'
   checked?: boolean | null
@@ -77,6 +82,10 @@ export interface SnapshotRef {
   inForm: boolean
   formHasCredential: boolean
   formHasPayment: boolean
+  /** Search-flavored field itself (ADR 0015); the Enter-submit exemption reads it. */
+  searchField: boolean
+  /** The associated form contains a search-flavored field; the click-submit exemption reads it. */
+  formHasSearch: boolean
   checked?: boolean | null
   selectedOption?: string | null
   value?: string | null
@@ -177,6 +186,8 @@ export function parseCollectedPage(raw: unknown): CollectedPage {
       inForm: optionalBoolean(el.inForm),
       formHasCredential: optionalBoolean(el.formHasCredential),
       formHasPayment: optionalBoolean(el.formHasPayment),
+      searchField: optionalBoolean(el.searchField),
+      formHasSearch: optionalBoolean(el.formHasSearch),
       layer: el.layer === 'dialog' || el.layer === 'page' ? el.layer : undefined,
       checked: nullableBoolean(el.checked),
       selectedOption: optionalString(el.selectedOption),
@@ -259,6 +270,8 @@ export function buildPageSnapshot(page: CollectedPage, options?: { maxRefs?: num
       inForm: element.inForm ?? false,
       formHasCredential: element.formHasCredential ?? false,
       formHasPayment: element.formHasPayment ?? false,
+      searchField: element.searchField ?? false,
+      formHasSearch: element.formHasSearch ?? false,
       checked: element.checked ?? null,
       selectedOption: element.selectedOption ?? null,
       value: element.value ?? null,

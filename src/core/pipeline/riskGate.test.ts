@@ -19,6 +19,8 @@ function target(overrides: Partial<SnapshotRef> = {}): SnapshotRef {
     inForm: false,
     formHasCredential: false,
     formHasPayment: false,
+    searchField: false,
+    formHasSearch: false,
     ...overrides,
   }
 }
@@ -94,6 +96,43 @@ describe('assessBrowserAction', () => {
 
       expect(assessBrowserAction(call('type', { ref: 1, text: 'mkbhd\n' }), search)).toEqual({ kind: 'allow' })
     })
+
+    it('allows Enter-submitting engine search forms — no confirmation (#102, ADR 0015)', () => {
+      // Real engines wrap the box in a <form>: Google's name=q shape and a
+      // type=search box alike must run without pausing the run.
+      const googleQ = target({ kind: 'input', label: 'Search', inForm: true, searchField: true, formHasSearch: true })
+      const typeSearch = target({ kind: 'input', inputType: 'search', label: 'Search', inForm: true, searchField: true, formHasSearch: true })
+
+      expect(assessBrowserAction(call('type', { ref: 1, text: 'weather tomorrow\n' }), googleQ)).toEqual({ kind: 'allow' })
+      expect(assessBrowserAction(call('type', { ref: 1, text: 'weather tomorrow\n' }), typeSearch)).toEqual({ kind: 'allow' })
+    })
+
+    it('still confirms Enter-submitting a single non-search input — newsletter signups send data', () => {
+      const email = target({ kind: 'input', inputType: 'email', label: 'Your email', inForm: true })
+
+      expect(assessBrowserAction(call('type', { ref: 1, text: 'me@example.com\n' }), email)).toEqual({
+        kind: 'confirm',
+        prompt: 'Submit the form via "Your email"?',
+      })
+    })
+
+    it('never lets the search flavor override the payment hard rule on Enter', () => {
+      const hybrid = target({ kind: 'input', searchField: true, inForm: true, formHasPayment: true })
+
+      expect(assessBrowserAction(call('type', { ref: 1, text: 'hi\n' }), hybrid)).toEqual({
+        kind: 'deny',
+        reason: 'payments are never submitted by the agent',
+      })
+    })
+
+    it('keeps the login-form confirm when a search-flavored field sits in it', () => {
+      const hybrid = target({ kind: 'input', searchField: true, inForm: true, formHasCredential: true })
+
+      expect(assessBrowserAction(call('type', { ref: 1, text: 'alice\n' }), hybrid)).toEqual({
+        kind: 'confirm',
+        prompt: 'Submit the login form?',
+      })
+    })
   })
 
   describe('click', () => {
@@ -128,6 +167,35 @@ describe('assessBrowserAction', () => {
       expect(assessBrowserAction(call('click', { ref: 1 }), withCookies)).toEqual({ kind: 'allow' })
       expect(assessBrowserAction(call('click', { ref: 1 }), allowCookies)).toEqual({ kind: 'allow' })
       expect(assessBrowserAction(call('click', { ref: 1 }), doubled)).toEqual({ kind: 'allow' })
+    })
+
+    it('allows clicking the submit control of a search form — the second exempt path (#102, ADR 0015)', () => {
+      const googleSearch = target({ label: 'Google Search', submitsForm: true, inForm: true, formHasSearch: true })
+
+      expect(assessBrowserAction(call('click', { ref: 1 }), googleSearch)).toEqual({ kind: 'allow' })
+    })
+
+    it('still confirms clicking submit on a newsletter signup form', () => {
+      const subscribe = target({ label: 'Subscribe', submitsForm: true, inForm: true })
+
+      expect(assessBrowserAction(call('click', { ref: 1 }), subscribe)).toEqual({
+        kind: 'confirm',
+        prompt: 'Submit the form via "Subscribe"?',
+      })
+    })
+
+    it('never lets the search flavor override the payment or login gates on click', () => {
+      const paidSearch = target({ label: 'Go', submitsForm: true, inForm: true, formHasSearch: true, formHasPayment: true })
+      const loginWithQ = target({ label: 'Go', submitsForm: true, inForm: true, formHasSearch: true, formHasCredential: true })
+
+      expect(assessBrowserAction(call('click', { ref: 1 }), paidSearch)).toEqual({
+        kind: 'deny',
+        reason: 'payments are never submitted by the agent',
+      })
+      expect(assessBrowserAction(call('click', { ref: 1 }), loginWithQ)).toEqual({
+        kind: 'confirm',
+        prompt: 'Submit the login form?',
+      })
     })
 
     it('still confirms consent-labelled submits on credential forms', () => {

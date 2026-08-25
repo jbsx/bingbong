@@ -30,6 +30,8 @@ const snapshot: PageSnapshot = {
       inForm: false,
       formHasCredential: false,
       formHasPayment: false,
+      searchField: false,
+      formHasSearch: false,
     },
   ],
   totalVisible: 1,

@@ -343,26 +343,41 @@ function signInWallPage(): string {
 </html>`
 }
 
-// On-screen search fixtures (#83, ADR 0009): a tiny search engine — a
-// standalone type=search box whose Enter keydown navigates to the results
-// page (outside any form, so the risk gate never pauses on it) — plus a
-// results page whose links carry real hrefs and the article they open. The
-// on-screen-search e2e drives the whole GUI loop over these pages:
-// navigate → read → type query+\n → read results → open the hit by href.
+// On-screen search fixtures (#83, ADR 0009): a tiny search engine shaped
+// like the real ones — the box sits inside a <form method=get>, so the
+// trailing-newline submit is a real form submission (#102). Since ADR 0015
+// the risk gate exempts search submits: the run must complete with no
+// Confirmation card, spoken ask, or mic window. Results links carry real
+// hrefs and open the article. Refs in DOM order: [1] q box [2] Search.
 function searchEnginePage(): string {
   return `<!doctype html>
 <html>
 <head><title>fixture engine</title></head>
 <body style="background:#222;color:#fff;margin:0">
   <h1>fixture engine page</h1>
-  <input id="engine-q" type="search" placeholder="Search the fixture web" aria-label="Search the fixture web" style="font-size:24px;width:420px">
-  <script>
-    document.getElementById('engine-q').addEventListener('keydown', (e) => {
-      if (e.key === 'Enter' || e.keyCode === 13) {
-        location.assign('/results?q=' + encodeURIComponent(e.target.value.replace(/[\\n\\r]$/, '')))
-      }
-    })
-  </script>
+  <form action="/results" method="get">
+    <input id="engine-q" name="q" type="search" placeholder="Search the fixture web" aria-label="Search the fixture web" style="font-size:24px;width:420px">
+    <button id="engine-go" style="font-size:20px">Search</button>
+  </form>
+</body>
+</html>`
+}
+
+// Site-local search box (#102): search-flavored ONLY through its
+// identifying attributes — name=query and a "Search…" placeholder, no
+// type=search — so the attribute clause of ADR 0015 is exercised on its
+// own. Submitting records into the title like the risky page.
+// Refs in DOM order: [1] query box [2] Go.
+function siteSearchPage(): string {
+  return `<!doctype html>
+<html>
+<head><title>site search fixture</title></head>
+<body style="background:#222;color:#fff;margin:0">
+  <h1>site search fixture page</h1>
+  <form onsubmit="document.title='submitted:sitesearch';return false">
+    <input id="site-q" name="query" placeholder="Search this site" style="font-size:24px;width:420px">
+    <button id="site-go" style="font-size:20px">Go</button>
+  </form>
 </body>
 </html>`
 }
@@ -491,6 +506,10 @@ export async function startFixtureServer(): Promise<FixtureServer> {
     }
     if (req.url === '/engine') {
       res.end(searchEnginePage())
+      return
+    }
+    if (req.url === '/site-search') {
+      res.end(siteSearchPage())
       return
     }
     if (req.url === '/widgets-article') {

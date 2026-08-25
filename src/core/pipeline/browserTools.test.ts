@@ -479,6 +479,8 @@ describe('browser tools through the pipeline', () => {
         inForm: false,
         formHasCredential: false,
         formHasPayment: false,
+        searchField: false,
+        formHasSearch: false,
         ...overrides,
       }
     }
@@ -543,6 +545,34 @@ describe('browser tools through the pipeline', () => {
         at: 0,
       })
       expect(browser.clicks).toEqual([7])
+    })
+
+    it('runs an Enter-submit into a form-wrapped search box with no confirmation (#102)', async () => {
+      const browser = new FixtureBrowserController()
+      browser.setRefFacts(refWith(3, { kind: 'input', label: 'Search', inForm: true, searchField: true, formHasSearch: true }))
+      const { pipeline } = pipelineWith(browser, [
+        { kind: 'tool_calls', calls: [{ id: 'c1', name: 'type', args: { ref: 3, text: 'weather tomorrow\n' } }] },
+        { kind: 'answer', speak: 'Searched.', display: 'Detail.' },
+      ])
+
+      const events = await collect(pipeline, 'search the weather')
+
+      expect(browser.typed).toEqual([{ ref: 3, text: 'weather tomorrow\n' }])
+      expect(events.some((e) => e.type === 'confirmation_requested')).toBe(false)
+    })
+
+    it('runs a click on a search form submit control with no confirmation (#102)', async () => {
+      const browser = new FixtureBrowserController()
+      browser.setRefFacts(refWith(4, { kind: 'button', label: 'Google Search', submitsForm: true, inForm: true, formHasSearch: true }))
+      const { pipeline } = pipelineWith(browser, [
+        { kind: 'tool_calls', calls: [{ id: 'c1', name: 'click', args: { ref: 4 } }] },
+        { kind: 'answer', speak: 'Searched.', display: 'Detail.' },
+      ])
+
+      const events = await collect(pipeline, 'run that search')
+
+      expect(browser.clicks).toEqual([4])
+      expect(events.some((e) => e.type === 'confirmation_requested')).toBe(false)
     })
 
     it('reports denial when a form submission is refused', async () => {

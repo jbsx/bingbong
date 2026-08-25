@@ -7,11 +7,13 @@ import { waitFor } from './waitFor'
 // #83 / ADR 0009 headline behavior, end to end: "search for X and find Y"
 // happens entirely on screen. The scripted orchestrator drives a visible
 // tab to the fixture engine, types the query into its search box (trailing
-// newline submits), reads the results page like any other page, and opens
-// the right result by its href. There is no off-screen channel to reach
-// for — the tools are deleted (pinned absent in unit tests) — so a green
-// run here is the whole demo: search costs navigates + keystrokes on the
-// pane the user is watching.
+// newline submits the surrounding <form> like a real engine's), reads the
+// results page like any other page, and opens the right result by its href.
+// There is no off-screen channel to reach for — the tools are deleted
+// (pinned absent in unit tests) — so a green run here is the whole demo:
+// search costs navigates + keystrokes on the pane the user is watching.
+// Since #102 / ADR 0015 the form-wrapped submit never pauses for a
+// Confirmation either — this run completing AFK is that proof.
 
 function scriptedTurns(engineUrl: string): AssistantTurn[] {
   return [

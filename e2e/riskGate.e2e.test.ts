@@ -144,4 +144,69 @@ describe('risk gate e2e', () => {
       await harness.quit()
     }
   })
+
+  it('runs a search-form submit AFK — no confirmation card on either submit path (#102, ADR 0015)', async () => {
+    // /engine refs: [1] the q box (type=search, name=q) [2] the Search
+    // button — a real <form method=get>, like Google/DDG/Bing. Path one:
+    // trailing-newline type. Path two: clicking the submit control. Both
+    // merely navigate, so neither may pause the run.
+    const script: AssistantTurn[] = [
+      { kind: 'tool_calls', calls: [{ id: 'c1', name: 'navigate', args: { url: fixture.url('/engine') } }] },
+      { kind: 'tool_calls', calls: [{ id: 'c2', name: 'type', args: { ref: 1, text: 'fixture widgets\n' } } ] },
+      { kind: 'tool_calls', calls: [{ id: 'c3', name: 'navigate', args: { url: fixture.url('/engine') } }] },
+      { kind: 'tool_calls', calls: [{ id: 'c4', name: 'click', args: { ref: 2 } }] },
+      { kind: 'answer', speak: 'Both searches ran hands-free.', display: 'Search submits are never confirmed.' },
+    ]
+    const harness = await startHarness({ fixture, env: { BINGBONG_LLM_SCRIPT: JSON.stringify(script) } })
+    try {
+      await harness.submitCommand('search for fixture widgets twice')
+
+      // The Enter submit landed on the results page…
+      await waitFor(
+        async () => {
+          const url = await harness.paneEval<string>('location.href')
+          return url.includes('/results?q=fixture') ? url : undefined
+        },
+        { timeoutMs: 20000, intervalMs: 250 },
+      )
+      // …and the clicked submit navigated again with no dialog ever shown.
+      await harness.waitForPaneUrl(fixture.url('/results?q='))
+      const confirmationShown = await harness.dashboardEval<boolean>(`!!document.querySelector('.confirmation-card')`)
+      expect(confirmationShown).toBe(false)
+
+      await waitForTranscript(harness, 'Search submits are never confirmed.')
+    } finally {
+      await harness.quit()
+    }
+  })
+
+  it('exempts a site-local search box flavored only by its attributes (#102, ADR 0015)', async () => {
+    // /site-search's box is name=query + "Search this site" placeholder —
+    // no type=search — so the attribute clause alone must carry the
+    // exemption, through the real collector script.
+    const script: AssistantTurn[] = [
+      { kind: 'tool_calls', calls: [{ id: 'c1', name: 'navigate', args: { url: fixture.url('/site-search') } }] },
+      { kind: 'tool_calls', calls: [{ id: 'c2', name: 'type', args: { ref: 1, text: 'gadgets\n' } }] },
+      { kind: 'answer', speak: 'Searched the site.', display: 'Site-local search ran without asking.' },
+    ]
+    const harness = await startHarness({ fixture, env: { BINGBONG_LLM_SCRIPT: JSON.stringify(script) } })
+    try {
+      await harness.submitCommand('search this site for gadgets')
+
+      // The Enter submit ran: the fixture form recorded it in the title.
+      await waitFor(
+        async () => {
+          const title = await harness.paneEval<string>(`document.title`)
+          return title === 'submitted:sitesearch' ? title : undefined
+        },
+        { timeoutMs: 20000, intervalMs: 250 },
+      )
+
+      const confirmationShown = await harness.dashboardEval<boolean>(`!!document.querySelector('.confirmation-card')`)
+      expect(confirmationShown).toBe(false)
+      await waitForTranscript(harness, 'Site-local search ran without asking.')
+    } finally {
+      await harness.quit()
+    }
+  })
 })

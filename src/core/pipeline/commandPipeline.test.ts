@@ -1013,6 +1013,8 @@ describe('command pipeline', () => {
     inForm: false,
     formHasCredential: false,
     formHasPayment: false,
+    searchField: true,
+    formHasSearch: false,
   })
 
   it('appends the search-loop nudge to the third consecutive similar typed search result (#74/#83)', async () => {

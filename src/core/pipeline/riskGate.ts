@@ -5,8 +5,11 @@ import type { RiskVerdict } from './tool'
 
 // The risk gate's policy, as a pure function over snapshot facts (collected
 // in-page). Hard rules — credential fills and payment submissions — deny
-// outright; form submissions and downloads ask the user first. Prompts are
-// worded so they can be both spoken and shown in the dialog.
+// outright; form submissions and downloads ask the user first. Search submits
+// merely navigate (ADR 0015), so both of their paths — a trailing-newline type
+// into a search-flavored field and a click on a search form's submit control —
+// run without asking. Prompts are worded so they can be both spoken and shown
+// in the dialog.
 
 const DENY_CREDENTIAL_FILL = 'credential fields are never filled by the agent — the user can type it themselves'
 const DENY_PAYMENT_FILL = 'payment details are never filled by the agent'
@@ -50,6 +53,10 @@ function submitsByEnter(call: ToolCall): boolean {
   return typeof text === 'string' && /[\n\r]$/.test(text)
 }
 
+// ADR 0015: a search submit merely navigates and is never Consequential. The
+// exemption is structural — the *submitted* field is search-flavored — never
+// an allowlist, and stays behind the payment/credential hard rules so hybrid
+// forms keep their gate.
 export function assessBrowserAction(call: ToolCall, target: SnapshotRef | undefined): RiskVerdict {
   // An unresolvable ref fails inside the tool with a clear error; there is
   // nothing to gate.
@@ -60,6 +67,8 @@ export function assessBrowserAction(call: ToolCall, target: SnapshotRef | undefi
     if (target.paymentField) return { kind: 'deny', reason: DENY_PAYMENT_FILL }
     if (submitsByEnter(call)) {
       if (target.formHasPayment) return { kind: 'deny', reason: DENY_PAYMENT_SUBMIT }
+      // Enter submits from the field itself: its own flavor decides.
+      if (target.searchField && !target.formHasCredential) return { kind: 'allow' }
       if (target.inForm) return { kind: 'confirm', prompt: submitPrompt(target) }
     }
     return { kind: 'allow' }
@@ -68,7 +77,9 @@ export function assessBrowserAction(call: ToolCall, target: SnapshotRef | undefi
   if (call.name === 'click') {
     if (target.submitsForm) {
       if (target.formHasPayment) return { kind: 'deny', reason: DENY_PAYMENT_SUBMIT }
-      if (!target.formHasCredential && CONSENT_SUBMIT_LABEL_RE.test(target.label)) {
+      // Clicking submits the whole form: a search-flavored field in it
+      // exempts the submit, exactly like a consent-labelled button.
+      if (!target.formHasCredential && (CONSENT_SUBMIT_LABEL_RE.test(target.label) || target.formHasSearch)) {
         return { kind: 'allow' }
       }
       return { kind: 'confirm', prompt: submitPrompt(target) }

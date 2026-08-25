@@ -73,6 +73,31 @@ export const COLLECT_PAGE_SCRIPT = `(() => {
   // the folded flags.
   const CREDENTIAL_AUTOCOMPLETE = ['username', 'current-password', 'new-password']
   const PAYMENT_NAME_RE = /card|ccnum|cvc|cvv|expir/i
+  // Search-flavored fields (ADR 0015): type="search", or the identifying
+  // attributes matching /search|query|^q$/i — each attribute tested whole, so
+  // Google's name=q matches while "qq" or a submit button named "search" do
+  // not leak in (button/hidden types are excluded below regardless). The
+  // attribute clause also reaches SPA search boxes that are not form controls:
+  // contenteditable and role=searchbox/textbox hosts qualify through their
+  // id/aria-label, so a click on their form's submit is exempt alike.
+  const SEARCH_HINT_RE = /search|query|^q$/i
+  const SEARCH_INPUT_TYPES = ['submit', 'button', 'reset', 'image', 'hidden', 'checkbox', 'radio', 'file']
+  const isEditableField = (el) => {
+    if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA') return true
+    if (el.isContentEditable) return true
+    const role = el.getAttribute('role')
+    return role === 'searchbox' || role === 'textbox'
+  }
+  const isSearchField = (el) => {
+    if (!isEditableField(el)) return false
+    if (el.tagName === 'INPUT') {
+      const type = (el.type || 'text').toLowerCase()
+      if (SEARCH_INPUT_TYPES.includes(type)) return false
+      if (type === 'search') return true
+    }
+    const hints = [el.name, el.id, el.getAttribute('aria-label'), el.placeholder]
+    return hints.some((hint) => typeof hint === 'string' && hint !== '' && SEARCH_HINT_RE.test(hint))
+  }
   const isCredentialField = (el) => {
     if (el.tagName === 'INPUT' && el.type === 'password') return true
     const ac = (el.getAttribute('autocomplete') || '').toLowerCase()
@@ -91,14 +116,16 @@ export const COLLECT_PAGE_SCRIPT = `(() => {
     return false
   }
   const formFlagsOf = (form) => {
-    if (!form) return { inForm: false, formHasCredential: false, formHasPayment: false }
+    if (!form) return { inForm: false, formHasCredential: false, formHasPayment: false, formHasSearch: false }
     let credential = false
     let payment = false
-    for (const field of form.querySelectorAll('input,select,textarea')) {
+    let search = false
+    for (const field of form.querySelectorAll('input,select,textarea,[contenteditable="true"],[role="searchbox"],[role="textbox"]')) {
       if (isCredentialField(field)) credential = true
       if (isPaymentField(field)) payment = true
+      if (isSearchField(field)) search = true
     }
-    return { inForm: true, formHasCredential: credential, formHasPayment: payment }
+    return { inForm: true, formHasCredential: credential, formHasPayment: payment, formHasSearch: search }
   }
   // The topmost open dialog is the page's current interaction layer (consent
   // walls, pop-ups). Its controls are listed even when they sit below the
@@ -190,6 +217,8 @@ export const COLLECT_PAGE_SCRIPT = `(() => {
       inForm: formFlags.inForm,
       formHasCredential: formFlags.formHasCredential,
       formHasPayment: formFlags.formHasPayment,
+      searchField: isSearchField(el),
+      formHasSearch: formFlags.formHasSearch,
       layer: dialogRoot !== null && dialogRoot.contains(el) ? 'dialog' : 'page',
       checked: typeof el.checked === 'boolean' ? el.checked : null,
       selectedOption: el.tagName === 'SELECT' && el.selectedOptions.length > 0
