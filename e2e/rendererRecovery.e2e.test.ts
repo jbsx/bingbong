@@ -1,5 +1,8 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { startHarness } from './harness'
+import { mkdtemp, readdir, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { startHarness, type Harness } from './harness'
 import { startFixtureServer, type FixtureServer } from './fixtureServer'
 import { feedText, waitForDisplay } from './feed'
 import { sleep, waitFor } from './waitFor'
@@ -11,6 +14,11 @@ import type { AssistantTurn } from '../src/core/ports/llm'
 // still-live Run's next entry (forward-only: nothing replays), a reloaded
 // dashboard keeps its active Session (no idle screen), and the overlay's
 // reload chords (Ctrl/Cmd+R, F5) are dropped outright.
+//
+// Crash recovery (#105) is the hard half of that contract: the renderer
+// process itself dies mid-Run, main reloads it (`render-process-gone`), and
+// the recovered page re-adopts the still-live Session. A crash also leaves
+// evidence — the crash reporter writes a dump under the profile.
 
 const OPEN_CHROME = `!!document.querySelector('.overlay-chrome--open .feed-surface')`
 
@@ -19,6 +27,33 @@ function navigateThenAnswer(slowUrl: string, answer: string): AssistantTurn[] {
     { kind: 'tool_calls', calls: [{ id: 'c1', name: 'navigate', args: { url: slowUrl } }] },
     { kind: 'answer', speak: 'Finally done.', display: answer },
   ]
+}
+
+/** All `.dmp` crash reports anywhere under `dir` (crashpad nests them). */
+async function countCrashDumps(dir: string): Promise<number> {
+  const entries = await readdir(dir, { recursive: true }).catch(() => [] as string[])
+  return entries.filter((path) => path.endsWith('.dmp')).length
+}
+
+/** Waits until the live Feed includes `text` (the mid-Run echo marker). */
+async function waitForFeedText(app: Harness, text: string): Promise<void> {
+  await waitFor(async () => ((await feedText(app)).includes(text) ? true : undefined), {
+    timeoutMs: 10_000,
+    intervalMs: 100,
+  })
+}
+
+/** The active Session wins: dashboard mounted, never the idle screen. */
+async function expectDashboardVisible(app: Harness): Promise<void> {
+  expect(await app.dashboardEval<boolean>(`!!document.querySelector('.idle-screen')`)).toBe(false)
+  expect(await app.dashboardEval<boolean>(`!!document.querySelector('.dashboard')`)).toBe(true)
+}
+
+/** Everything Recorded History holds, one line per entry. */
+function recordedHistoryText(app: Harness): Promise<string> {
+  return app.dashboardEval<string>(
+    `(async () => (await window.bingbong.history.recentEntries()).map((entry) => entry.text).join('\\n'))()`,
+  )
 }
 
 describe('renderer session re-adoption e2e', () => {
@@ -43,10 +78,7 @@ describe('renderer session re-adoption e2e', () => {
       // Mid-Run: the run is live inside the 3s slow navigation.
       const submitted = await app.submitCommand('open the slow page')
       expect(submitted).toBe('submitted')
-      await waitFor(
-        async () => ((await feedText(app)).includes('open the slow page') ? true : undefined),
-        { timeoutMs: 10_000, intervalMs: 100 },
-      )
+      await waitForFeedText(app, 'open the slow page')
 
       // The page is lost mid-Run — exactly the loss ADR 0017 records.
       await app.overlayEval('location.reload()')
@@ -61,9 +93,7 @@ describe('renderer session re-adoption e2e', () => {
       const text = await feedText(app)
       expect(text).not.toContain('open the slow page')
       expect(text).toContain('The slow page opened.')
-      const recorded = await app.dashboardEval<string>(
-        `(async () => (await window.bingbong.history.recentEntries()).map((entry) => entry.text).join('\\n'))()`,
-      )
+      const recorded = await recordedHistoryText(app)
       expect(recorded).toContain('open the slow page')
       expect(recorded).toContain('The slow page opened.')
     } finally {
@@ -101,13 +131,117 @@ describe('renderer session re-adoption e2e', () => {
       // The reloaded dashboard knows the Session is active: the dashboard
       // shows, never the idle screen — and stays that way past the idle
       // timeout that would have taken an identity-less fresh boot.
-      expect(await app.dashboardEval<boolean>(`!!document.querySelector('.idle-screen')`)).toBe(false)
-      expect(await app.dashboardEval<boolean>(`!!document.querySelector('.dashboard')`)).toBe(true)
+      await expectDashboardVisible(app)
       await sleep(3_500)
-      expect(await app.dashboardEval<boolean>(`!!document.querySelector('.idle-screen')`)).toBe(false)
-      expect(await app.dashboardEval<boolean>(`!!document.querySelector('.dashboard')`)).toBe(true)
+      await expectDashboardVisible(app)
     } finally {
       await app.quit()
+    }
+  })
+
+  it('a crashed Feed Panel renderer comes back live on its Session — the Run\'s answer renders, past entries never replay', async () => {
+    const app = await startHarness({
+      fixture,
+      env: {
+        BINGBONG_LLM_SCRIPT: JSON.stringify(navigateThenAnswer(fixture.url('/slow'), 'The slow page opened.')),
+      },
+    })
+    try {
+      // Mid-Run: the run is live inside the 3s slow navigation.
+      const submitted = await app.submitCommand('open the slow page')
+      expect(submitted).toBe('submitted')
+      await waitForFeedText(app, 'open the slow page')
+
+      // The panel's renderer process dies mid-Run — not a page reload, a
+      // real process loss; paint is gone until main reloads it (#105).
+      await app.crashRenderer('overlay')
+
+      // The reloaded panel re-adopts the still-live Session: the Run's
+      // answer renders on the fresh page instead of being silently
+      // rejected by a session-less projection.
+      await waitForDisplay(app, 'The slow page opened.')
+
+      // Forward-only, same as a reload: the command echo lost with the
+      // process never replays — it stays reviewable in Recorded History.
+      const text = await feedText(app)
+      expect(text).not.toContain('open the slow page')
+      expect(text).toContain('The slow page opened.')
+      const recorded = await recordedHistoryText(app)
+      expect(recorded).toContain('open the slow page')
+      expect(recorded).toContain('The slow page opened.')
+    } finally {
+      await app.quit()
+    }
+  })
+
+  it('a crashed dashboard renderer recovers the same way — its Session stays active and the Run keeps rendering', async () => {
+    const app = await startHarness({
+      fixture,
+      env: {
+        BINGBONG_LLM_SCRIPT: JSON.stringify(navigateThenAnswer(fixture.url('/slow'), 'The slow page opened.')),
+        // Idle would fire two seconds after the crash if the fresh page
+        // did not re-adopt its still-active Session.
+        BINGBONG_IDLE_TIMEOUT_MS: '2000',
+      },
+    })
+    try {
+      const submitted = await app.submitCommand('open the slow page')
+      expect(submitted).toBe('submitted')
+      await waitForFeedText(app, 'open the slow page')
+
+      // The dashboard's renderer process dies mid-Run.
+      await app.crashRenderer('dashboard')
+
+      // The recovered dashboard knows its Session is active — the
+      // dashboard shows, never the idle screen, and stays that way past
+      // the idle timeout that would have taken an identity-less fresh boot.
+      await waitFor(
+        async () => {
+          const mounted = await app.dashboardEval<boolean>(
+            `!!document.querySelector('.dashboard') || !!document.querySelector('.idle-screen')`,
+          )
+          return mounted || undefined
+        },
+        { timeoutMs: 15_000, intervalMs: 250 },
+      )
+      await expectDashboardVisible(app)
+      await sleep(3_500)
+      await expectDashboardVisible(app)
+
+      // The Run never noticed: its answer still renders in the panel.
+      await waitForDisplay(app, 'The slow page opened.')
+    } finally {
+      await app.quit()
+    }
+  })
+
+  it('a renderer crash leaves a crash report under the profile — both session-bearing pages', async () => {
+    // A dedicated profile the test owns (startHarness only cleans the
+    // per-run dirs it minted itself): each dump must appear under the
+    // profile in use, proving the crash reporter runs and writes locally.
+    const userDataDir = await mkdtemp(join(tmpdir(), 'bingbong-e2e-crash-'))
+    try {
+      const app = await startHarness({ fixture, userDataDir })
+      try {
+        expect(await countCrashDumps(userDataDir)).toBe(0)
+
+        // Crashpad writes each dump asynchronously on process death —
+        // poll until the evidence exists: one per session-bearing page.
+        await app.crashRenderer('overlay')
+        await waitFor(
+          async () => ((await countCrashDumps(userDataDir)) >= 1 ? true : undefined),
+          { timeoutMs: 20_000, intervalMs: 500 },
+        )
+        await app.crashRenderer('dashboard')
+        await waitFor(
+          async () => ((await countCrashDumps(userDataDir)) >= 2 ? true : undefined),
+          { timeoutMs: 20_000, intervalMs: 500 },
+        )
+      } finally {
+        await app.quit()
+      }
+    } finally {
+      await rm(userDataDir, { recursive: true, force: true }).catch(() => {})
     }
   })
 

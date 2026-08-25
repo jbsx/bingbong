@@ -63,10 +63,6 @@ import { createWindowEventPublisher } from './session/windowEventPublisher'
 import { createPipelineAcceptanceGate } from './session/pipelineAcceptance'
 import { attachSessionToWindow, registerSessionIpc } from './session/attachSession'
 
-// Crash evidence (ADR 0017): renderer death leaves a dump instead of
-// vanishing silently; reports stay local — nothing uploads anywhere.
-crashReporter.start({ uploadToServer: false })
-
 // Appliance mode (T11): --kiosk goes fullscreen; the idle timeout reaches the
 // renderer through the preload's launch-config snapshot.
 const launchConfig = resolveLaunchConfig(process.argv, process.env)
@@ -75,6 +71,13 @@ const launchConfig = resolveLaunchConfig(process.argv, process.env)
 if (process.env.BINGBONG_USER_DATA_DIR) {
   app.setPath('userData', process.env.BINGBONG_USER_DATA_DIR)
 }
+
+// Crash evidence (ADR 0017): renderer death leaves a dump instead of
+// vanishing silently; reports stay local — nothing uploads anywhere. The
+// dump directory is resolved at start(), so this must follow the profile
+// switch above — evidence lands beside the profile in use, still before
+// any renderer process exists.
+crashReporter.start({ uploadToServer: false })
 
 // Terminal harness for browser control before voice exists (issue #4): a REPL
 // over the same CDP controller the orchestrator will use, so browser actions

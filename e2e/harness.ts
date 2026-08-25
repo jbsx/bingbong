@@ -36,6 +36,12 @@ export interface Harness {
   pressPanelShortcut(target?: TargetKind): Promise<void>
   /** Real (input-pipeline) keypress in a target's focused element. */
   pressKey(target: TargetKind, key: HarnessKey): Promise<void>
+  /**
+   * Kill a target's renderer process (#105): a real render-process-gone,
+   * the exact loss main's crash recovery reloads from (ADR 0017) — not a
+   * page reload, which keeps the process alive.
+   */
+  crashRenderer(target: TargetKind): Promise<void>
   clickDashboardElement(selector: string): Promise<void>
   /** Click an element in the feed panel's overlay webContents (#45). */
   clickOverlayElement(selector: string): Promise<void>
@@ -75,6 +81,10 @@ interface TargetInfo {
 }
 
 type TargetKind = 'dashboard' | 'overlay' | 'pane'
+
+// The floor a crashed renderer gets before the harness touches anything
+// again — process death (and its crash report) must land first.
+const RENDERER_DEATH_GRACE_MS = 1500
 
 const repoRoot = fileURLToPath(new URL('..', import.meta.url))
 
@@ -379,6 +389,19 @@ async function buildHarness(
           sid,
         )
       }
+    },
+
+    async crashRenderer(target) {
+      const sid = sidOf(target)
+      if (!sid) throw new Error(`${target} target not found`)
+      // Page.crash kills the process before (or instead of) replying — the
+      // response may never arrive, so fire it and always give the process
+      // a beat to die instead of awaiting a reply that cannot exist.
+      cdp.send('Page.crash', {}, sid).catch(() => {})
+      await sleep(RENDERER_DEATH_GRACE_MS)
+      // The recovered (reloaded) renderer is unfocused; a stale activation
+      // cache would silently drop the next synthetic input aimed here.
+      lastActivated = undefined
     },
 
     async clickDashboardElement(selector) {
