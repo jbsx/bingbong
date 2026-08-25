@@ -406,7 +406,8 @@ async function createWindow(): Promise<BrowserWindow> {
     continuityModel: () => currentEnv().BINGBONG_LLM_SCRIPT ? 'scripted' : currentEnv().BINGBONG_ORCHESTRATOR_MODEL ?? 'unconfigured',
     continuityBudgets: parseSessionContinuityBudgets(currentEnv().BINGBONG_CONTINUITY_BUDGETS),
     sessionWindowMs: launchConfig.sessionWindowMs,
-    warningLeadMs: launchConfig.sessionWarningMs,    onExpiring: (expiring) => {
+    warningLeadMs: launchConfig.sessionWarningMs,
+    onExpiring: (expiring) => {
       void speakingGate.tts.speak(
         'Your session is about to expire. Say yes to keep it, or no to end it now.',
       ).catch(() => {})
