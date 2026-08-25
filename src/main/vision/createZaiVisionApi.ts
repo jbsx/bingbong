@@ -290,11 +290,18 @@ export function createZaiVisionApi(deps: ZaiVisionApiDeps): VisionModel {
       if (script) return descriptionScript.next(script)
 
       const { describeMs, firstTokenMs } = timeouts()
+      // Advisory budget (#106, ADR 0016): a caller-supplied cap can only
+      // shrink the Look — clamped to the configured cap — and the Vision
+      // Deadline (first-token window) keeps the default 8:15 ratio to it
+      // (never above the configured window), so a hung advisory request
+      // dies proportionally sooner.
+      const capMs = request.lookCapMs === undefined ? describeMs : Math.min(request.lookCapMs, describeMs)
+      const advisoryFirstTokenMs = Math.min(firstTokenMs, Math.round((capMs * FIRST_TOKEN_TIMEOUT_MS) / DESCRIBE_TIMEOUT_MS))
       return complete(request.image, request.prompt, {
         thinking: 'disabled',
         maxTokens: DESCRIBE_MAX_TOKENS,
-        timeoutMs: describeMs,
-        firstTokenMs,
+        timeoutMs: capMs,
+        firstTokenMs: request.lookCapMs === undefined ? firstTokenMs : advisoryFirstTokenMs,
       })
     },
   }

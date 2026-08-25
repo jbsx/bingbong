@@ -59,7 +59,7 @@ describe('vision grounding e2e', () => {
 })
 
 function autoVisionTurns(url: string): AssistantTurn[] {
-  const lookCalls = Array.from({ length: 27 }, (_, index) => ({
+  const lookCalls = Array.from({ length: 29 }, (_, index) => ({
     id: `budget-look-${index}`,
     name: 'look',
     args: {},
@@ -99,7 +99,7 @@ describe('automatic page vision e2e', () => {
     await fixture?.close()
   })
 
-  it('describes every anomaly and refuses look after the shared budget is exhausted', async () => {
+  it('describes the first anomaly, cools down the rest, and refuses look after the shared budget is exhausted', async () => {
     await harness.dashboardEval(`
       window.__autoVisionEvents = []
       window.bingbong.assistant.onEvent((event) => window.__autoVisionEvents.push(event))
@@ -118,13 +118,14 @@ describe('automatic page vision e2e', () => {
       toolResults.map((event) => [event.callId, event.ok ? String(event.result) : event.error]),
     )
 
+    // The first anomaly in the run fires auto-vision; the ones that follow
+    // during the cooldown (#106) degrade to a one-line skip note.
     expect(byId['no-change']).toContain('Auto-vision (no observable change): Visible page description 1.')
-    expect(byId['read-two']).toContain(
-      'Auto-vision (repeated near-identical page reads): Visible page description 2.',
-    )
-    expect(byId.stale).toContain('Auto-vision (stale ref): Visible page description 3.')
-    expect(byId['on-demand']).toBe('Visible page description 4.')
-    expect(byId['budget-look-25']).toBe('Visible page description 30.')
-    expect(byId['budget-look-26']).toBe('vision call limit (30) reached for this run')
+    expect(byId['read-two']).toContain('Auto-vision (repeated near-identical page reads) skipped')
+    expect(byId.stale).toContain('Auto-vision (stale ref) skipped')
+    // A model-requested Look is not auto-vision: no cooldown, full budget share.
+    expect(byId['on-demand']).toBe('Visible page description 2.')
+    expect(byId['budget-look-27']).toBe('Visible page description 30.')
+    expect(byId['budget-look-28']).toBe('vision call limit (30) reached for this run')
   })
 })

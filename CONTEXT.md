@@ -331,7 +331,9 @@ _Avoid_: screenshot analysis, image check
 
 **Auto-vision**:
 A Look the pipeline fires itself when an anomaly is suspected (stale ref, click
-with no observable change) — not requested by the model.
+with no observable change) — not requested by the model. Advisory: shorter
+deadline than a Look, a per-run cooldown between attempts, and failure is a
+one-line note in the tool result — never a nudge.
 
 **Describe / Locate**:
 The two Look capabilities. Describe answers "what does the page show" (fast,

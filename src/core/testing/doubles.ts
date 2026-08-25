@@ -304,6 +304,7 @@ export class FakeVision implements VisionModel {
   location: VisionLocation = { x: 0, y: 0 }
   description = 'A cookie popup covers the page.'
   descriptions: string[] = []
+  failWith: Error | null = null
 
   async locate(request: VisionLocateRequest): Promise<VisionLocation> {
     this.locateRequests.push(request)
@@ -312,6 +313,7 @@ export class FakeVision implements VisionModel {
 
   async describe(request: VisionDescribeRequest): Promise<string> {
     this.describeRequests.push(request)
+    if (this.failWith) throw this.failWith
     return this.descriptions.shift() ?? this.description
   }
 }

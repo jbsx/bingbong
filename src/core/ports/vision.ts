@@ -10,7 +10,24 @@ export interface VisionLocateRequest {
 export interface VisionDescribeRequest {
   image: Uint8Array
   prompt: string
+  /**
+   * Whole-Look cap this caller is willing to wait (#106, ADR 0016):
+   * auto-vision passes a smaller advisory budget than a model-requested
+   * Look. The adapter clamps it to the configured Describe cap and scales
+   * the Vision Deadline (first-token window) down with it; absent means
+   * the Look's own caps. (Naming: the glossary's Vision Deadline is the
+   * first-token wait — this field is the cap, hence lookCapMs.)
+   */
+  lookCapMs?: number
 }
+
+/**
+ * Advisory auto-vision budget (#106, ADR 0016): shorter than the Describe
+ * Look cap under the default shape; the adapter clamps it so it can never
+ * exceed the Look's cap under any env override. The Looks the pipeline
+ * fires itself must stop taxing the Run.
+ */
+export const AUTO_VISION_DESCRIBE_MS = 6_000
 
 export type VisionLocation = ViewportPoint
 

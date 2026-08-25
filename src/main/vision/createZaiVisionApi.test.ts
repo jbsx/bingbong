@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { VisionDescribeRequest, VisionLocateRequest } from '../../core/ports/vision'
-import { VisionDeadlineError } from '../../core/ports/vision'
-import { createZaiVisionApi, DESCRIBE_MAX_TOKENS, LOCATE_MAX_TOKENS, resolveVisionTimeouts } from './createZaiVisionApi'
+import { AUTO_VISION_DESCRIBE_MS, VisionDeadlineError } from '../../core/ports/vision'
+import { createZaiVisionApi, DESCRIBE_MAX_TOKENS, DESCRIBE_TIMEOUT_MS, LOCATE_MAX_TOKENS, resolveVisionTimeouts } from './createZaiVisionApi'
 
 const locateRequest: VisionLocateRequest = {
   image: new Uint8Array([1, 2, 3]),
@@ -197,6 +197,62 @@ describe('createZaiVisionApi', () => {
     await expect(vision.describe(describeRequest)).rejects.toMatchObject({
       name: 'VisionDeadlineError',
       message: 'Vision request timed out after 50ms',
+    })
+  })
+
+  it('auto-vision advisory budget stays shorter than the Describe Look cap', () => {
+    expect(AUTO_VISION_DESCRIBE_MS).toBeLessThan(DESCRIBE_TIMEOUT_MS)
+  })
+
+  it('honors an advisory deadline: clamps the whole-Look cap and scales the first-token window', async () => {
+    const vision = createZaiVisionApi({
+      getEnv: () => ({ ...configuredEnv }),
+      // A hung exchange: headers never arrive, no token ever flows.
+      fetch: () => new Promise<Response>(() => {}),
+      timeoutMs: { describeMs: 10_000, locateMs: 40_000, firstTokenMs: 6_000 },
+    })
+
+    // A 60ms advisory cap keeps the default 8:15 first-token ratio: 32ms.
+    await expect(vision.describe({ ...describeRequest, lookCapMs: 60 })).rejects.toMatchObject({
+      name: 'VisionDeadlineError',
+      message: 'Vision request did not begin answering within 32ms',
+    })
+  })
+
+  it('caps a stalling advisory describe at its shorter deadline, not the Look cap', async () => {
+    const vision = createZaiVisionApi({
+      getEnv: () => ({ ...configuredEnv }),
+      fetch: async () =>
+        new Response(
+          new ReadableStream({
+            start(controller) {
+              // One token flows immediately, then the stream stalls forever.
+              controller.enqueue(new TextEncoder().encode(sseChunk({ content: 'partial' })))
+            },
+          }),
+          { status: 200 },
+        ),
+      timeoutMs: { describeMs: 10_000, locateMs: 40_000, firstTokenMs: 6_000 },
+    })
+
+    await expect(vision.describe({ ...describeRequest, lookCapMs: 70 })).rejects.toMatchObject({
+      name: 'VisionDeadlineError',
+      message: 'Vision request timed out after 70ms',
+    })
+  })
+
+  it('clamps an advisory deadline larger than the configured Look cap', async () => {
+    const vision = createZaiVisionApi({
+      getEnv: () => ({ ...configuredEnv }),
+      fetch: () => new Promise<Response>(() => {}),
+      timeoutMs: { describeMs: 60, locateMs: 240, firstTokenMs: 10_000 },
+    })
+
+    // An absurd 999s advisory request dies at the 60ms Look cap, first-token
+    // window scaled to it (60 * 8/15 = 32ms).
+    await expect(vision.describe({ ...describeRequest, lookCapMs: 999_000 })).rejects.toMatchObject({
+      name: 'VisionDeadlineError',
+      message: 'Vision request did not begin answering within 32ms',
     })
   })
 

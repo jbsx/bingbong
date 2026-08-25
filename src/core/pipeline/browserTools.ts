@@ -2,12 +2,21 @@ import type { RiskVerdict, Tool, ToolContext } from './tool'
 import type { ToolCall } from '../ports/llm'
 import type { BrowserController } from '../ports/browser'
 import type { VisionDescriber } from '../ports/vision'
+import { AUTO_VISION_DESCRIBE_MS } from '../ports/vision'
 import { assessBrowserAction } from './riskGate'
 import { classifyBlockerPage, type BlockerClassification } from '../browser/blockerNudge'
 
 const STALE_REF_RE = /ref \d+ not found.*page may have changed/i
 const AUTO_VISION_PROMPT =
   'Describe the current browser screenshot, focusing on page state, popups, dialogs, overlays, errors, and anything blocking the requested task.'
+
+/**
+ * Per-run auto-vision cooldown (#106, ADR 0016): after any auto-vision
+ * attempt, this window suppresses the next ones in the same run — during a
+ * slow vision patch, repeated no-change clicks and near-duplicate reads
+ * skip the vision wait instead of each burning a fresh one.
+ */
+export const AUTO_VISION_COOLDOWN_MS = 60_000
 
 // ADR 0010: when a choke point detects a wall, the tool result the model
 // sees carries the machine-readable marker line plus the flavored nudge.
@@ -44,12 +53,19 @@ function similarity(left: Set<number>, right: Set<number>): number {
   return shared / union.size
 }
 
+type AutoVision = (context: ToolContext, reason: string) => Promise<string>
+
 async function autoDescribe(
   browser: BrowserController,
   vision: VisionDescriber,
   context: ToolContext,
   reason: string,
+  cooldownUntil: WeakMap<ToolContext, number>,
 ): Promise<string> {
+  const until = cooldownUntil.get(context)
+  if (until !== undefined && context.clock.now() < until) {
+    return `Auto-vision (${reason}) skipped: vision is cooling down after a recent attempt`
+  }
   const grant = context.acquireVision?.()
   if (!grant) return 'Auto-vision refused: vision budget is unavailable'
   if (!grant.ok) return `Auto-vision refused: ${grant.reason}`
@@ -57,17 +73,23 @@ async function autoDescribe(
     const description = await vision.describe({
       image: await browser.screenshot(),
       prompt: `${AUTO_VISION_PROMPT}\nTrigger: ${reason}.`,
+      // Advisory budget (#106, ADR 0016): auto-vision waits less than a
+      // model-requested Look; the adapter clamps this against the Look cap.
+      lookCapMs: AUTO_VISION_DESCRIBE_MS,
     })
     return `Auto-vision (${reason}): ${description}`
   } catch (error) {
+    // Advisory (#106): a missed Vision Deadline (or any failure) stays a
+    // one-line note — never the Look nudge, never an error of its own.
     const message = error instanceof Error ? error.message : String(error)
     return `Auto-vision failed (${reason}): ${message}`
+  } finally {
+    cooldownUntil.set(context, context.clock.now() + AUTO_VISION_COOLDOWN_MS)
   }
 }
 
 function withStaleRefVision<T extends unknown[]>(
-  browser: BrowserController,
-  vision: VisionDescriber | undefined,
+  autoVision: AutoVision | undefined,
   action: (...args: T) => Promise<string>,
 ): (...args: [...T, ToolContext]) => Promise<string> {
   return async (...args) => {
@@ -76,8 +98,8 @@ function withStaleRefVision<T extends unknown[]>(
       return await action(...args.slice(0, -1) as T)
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
-      if (!vision || !STALE_REF_RE.test(message)) throw error
-      throw new Error(`${message}\n${await autoDescribe(browser, vision, context, 'stale ref')}`)
+      if (!autoVision || !STALE_REF_RE.test(message)) throw error
+      throw new Error(`${message}\n${await autoVision(context, 'stale ref')}`)
     }
   }
 }
@@ -126,9 +148,15 @@ async function assessRefAction(browser: BrowserController, call: ToolCall, tool:
 // deny for credential fills and payment submits.
 export function createBrowserTools(browser: BrowserController, vision?: VisionDescriber): Tool[] {
   const reads = new WeakMap<ToolContext, ReadState>()
+  // Per-run auto-vision cooldown state (#106): keyed on the run's
+  // ToolContext like `reads`, so each run cools down independently.
+  const autoVisionCooldown = new WeakMap<ToolContext, number>()
   const resetReads = (context: ToolContext) => reads.delete(context)
-  const click = withStaleRefVision(browser, vision, (ref: number) => browser.click(ref))
-  const type = withStaleRefVision(browser, vision, (ref: number, text: string) => browser.type(ref, text))
+  const autoVision: AutoVision | undefined = vision
+    ? (context, reason) => autoDescribe(browser, vision, context, reason, autoVisionCooldown)
+    : undefined
+  const click = withStaleRefVision(autoVision, (ref: number) => browser.click(ref))
+  const type = withStaleRefVision(autoVision, (ref: number, text: string) => browser.type(ref, text))
   return [
     {
       name: 'navigate',
@@ -155,8 +183,8 @@ export function createBrowserTools(browser: BrowserController, vision?: VisionDe
         const refs = refsFrom(result)
         const previous = reads.get(context)
         reads.set(context, { refs })
-        if (vision && previous && similarity(previous.refs, refs) >= 0.9) {
-          return `${flagged}\n${await autoDescribe(browser, vision, context, 'repeated near-identical page reads')}`
+        if (autoVision && previous && similarity(previous.refs, refs) >= 0.9) {
+          return `${flagged}\n${await autoVision(context, 'repeated near-identical page reads')}`
         }
         return flagged
       },
@@ -171,8 +199,8 @@ export function createBrowserTools(browser: BrowserController, vision?: VisionDe
       async execute(call, context) {
         resetReads(context)
         const result = await click(refArg(call, 'click'), context)
-        if (vision && /\bno observable change\b/i.test(result)) {
-          return `${result}\n${await autoDescribe(browser, vision, context, 'no observable change')}`
+        if (autoVision && /\bno observable change\b/i.test(result)) {
+          return `${result}\n${await autoVision(context, 'no observable change')}`
         }
         return result
       },
