@@ -1,12 +1,14 @@
 import { describe, expect, it } from 'vitest'
 import { createFeedProjection, MAX_DETAIL_ENTRIES } from './feedProjection'
 import type { PipelineEvent } from '../pipeline/events'
+import type { SessionId } from '../session/sessionIdentity'
 
 // Feed projection (#44): the right-edge activity feed's entries as a pure
 // function over the pipeline event stream — timestamped outcome lines
 // (commands, tool lines, spoken/displayed text, errors) plus ephemeral
-// detail lines (retries), session-scoped (ADR 0005: boundaries wipe
-// eagerly), and detail trimmed beyond ~500. Conversation structure (#54):
+// detail lines (retries), explicitly Session-scoped (ADR 0014: only the
+// live Session's work renders; a matching end wipes), and detail trimmed
+// beyond ~500. Conversation structure (#54):
 // every entry carries a role —
 // your words vs Bing Bong's answers vs system detail — and a turn's
 // Spoken Rendering is suppressed when its Card renders (keyed on the
@@ -34,6 +36,25 @@ function outline(entries: ReturnType<ReturnType<typeof createFeedProjection>['en
 const USER = 'user' as const
 const ASSISTANT = 'assistant' as const
 const SYSTEM = 'system' as const
+
+/** The Session identity every mechanically-fed event rides under. */
+const SESSION = { sessionId: 'session-1' as SessionId, sessionGeneration: 0 }
+
+/**
+ * A projection past boot: one live Session is open, and fed events are
+ * stamped with its identity exactly as publication stamps them (#87).
+ * Lifecycle-boundary tests drive createFeedProjection() directly instead,
+ * opening and ending Sessions by hand.
+ */
+function openFeed(): ReturnType<typeof createFeedProjection> {
+  const feed = createFeedProjection()
+  feed.onEvent({ type: 'session_started', ...SESSION, at: 0 })
+  const forward = feed.onEvent.bind(feed)
+  return {
+    ...feed,
+    onEvent: (event) => forward({ ...SESSION, ...event }),
+  }
+}
 
 describe('feed projection', () => {
   it.each([
@@ -79,13 +100,13 @@ describe('feed projection', () => {
       { kind: 'stage', role: SYSTEM, text: 'thinking', detail: true },
     ],
   ])('maps %s to a feed entry', (_name, event, expected) => {
-    const feed = createFeedProjection()
+    const feed = openFeed()
     feed.onEvent(event as PipelineEvent)
     expect(outline(feed.entries())).toEqual([expected])
   })
 
   it('keeps the event order: entries land as the stream delivers them', () => {
-    const feed = createFeedProjection()
+    const feed = openFeed()
     feed.onEvent(command('go', 1_000))
     feed.onEvent({ type: 'tool_call', turnId: T, callId: 'c1', name: 'type', args: { ref: 7, text: 'cats\\n' }, at: 2_000 })
     feed.onEvent(retry(2, 3_000))
@@ -100,7 +121,7 @@ describe('feed projection', () => {
   })
 
   it('stamps entries with the event time and unique rising ids', () => {
-    const feed = createFeedProjection()
+    const feed = openFeed()
     feed.onEvent(command('one', 1_000))
     feed.onEvent(command('two', 2_500))
 
@@ -116,7 +137,7 @@ describe('feed projection', () => {
     ['ask cards', { type: 'ask_requested', turnId: T, askId: 'a1', callId: 'c1', question: 'which?', expiresAt: 9_000, at: 1_000 } as PipelineEvent],
     ['done', { type: 'done', turnId: T, outcome: 'done', at: 9_000 } as PipelineEvent],
   ])('maps %s to no entry — cards and cards-adjacent state stay out of the feed', (_name, event) => {
-    const feed = createFeedProjection()
+    const feed = openFeed()
     feed.onEvent(event as PipelineEvent)
     expect(feed.entries()).toEqual([])
   })
@@ -140,15 +161,25 @@ describe('feed projection', () => {
     expect(outline(feed.entries())).toEqual([{ kind: 'command', role: USER, text: 'new session', detail: false }])
   })
 
-  it('ignores an unowned session_started — boundaries carry identity (#99)', () => {
+  it('renders nothing before the first Session opens — boot has no Session', () => {
     const feed = createFeedProjection()
-    feed.onEvent(command('live work', 1_000))
+    feed.onEvent(command('pre-session work', 1_000))
 
-    feed.onEvent({ type: 'session_started', at: 2_000 })
+    expect(feed.entries()).toEqual([])
+    expect(feed.liveRunId()).toBeNull()
+  })
 
-    // No wipe: without a Session identity the event is foreign, and only a
-    // matching session_ended may clear.
-    expect(feed.entries()).toHaveLength(1)
+  it('a foreign Session start cannot hijack the live view', () => {
+    const feed = createFeedProjection()
+    feed.onEvent({ type: 'session_started', ...SESSION, at: 500 })
+    feed.onEvent({ ...command('live work', 1_000), ...SESSION } as PipelineEvent)
+
+    feed.onEvent({ type: 'session_started', sessionId: 'session-9' as SessionId, sessionGeneration: 9, at: 2_000 })
+
+    // The live Session is unchanged: the foreign start neither wiped nor
+    // re-owned the view, and the live work still renders.
+    feed.onEvent({ ...command('still live', 3_000), ...SESSION } as PipelineEvent)
+    expect(feed.entries().map((entry) => entry.text)).toEqual(['live work', 'still live'])
   })
 
   it('clears on an owned Session end and rejects foreign, ended, and stale-generation events', () => {
@@ -169,7 +200,7 @@ describe('feed projection', () => {
   })
 
   it('voice-half lines (heard words, mic errors) ride the feed as outcome entries', () => {
-    const feed = createFeedProjection()
+    const feed = openFeed()
     feed.append({ kind: 'voice', text: 'heard: maybe', at: 1_000 })
     feed.append({ kind: 'error', text: 'voice: mic failed', at: 2_000 })
 
@@ -181,7 +212,7 @@ describe('feed projection', () => {
 
   describe('detail trim', () => {
     it('trims the oldest detail entries beyond ~500, keeping outcome entries', () => {
-      const feed = createFeedProjection()
+      const feed = openFeed()
       feed.onEvent(command('keep me', 0))
       for (let i = 0; i < MAX_DETAIL_ENTRIES + 25; i += 1) {
         feed.onEvent(retry((i % 3) + 1, i + 1))
@@ -203,13 +234,13 @@ describe('feed projection', () => {
     })
 
     it('keeps exactly the cap at the boundary', () => {
-      const feed = createFeedProjection()
+      const feed = openFeed()
       for (let i = 0; i < MAX_DETAIL_ENTRIES; i += 1) feed.onEvent(retry(1, i + 1))
       expect(feed.entries()).toHaveLength(MAX_DETAIL_ENTRIES)
     })
 
     it('trims again after the feed grows past the cap a second time', () => {
-      const feed = createFeedProjection()
+      const feed = openFeed()
       for (let i = 0; i < MAX_DETAIL_ENTRIES; i += 1) feed.onEvent(retry(1, i + 1))
       for (let i = 0; i < 10; i += 1) feed.onEvent(retry(2, MAX_DETAIL_ENTRIES + i + 1))
 
@@ -224,7 +255,7 @@ describe('feed projection', () => {
       ({ type: 'llm_delta', turnId, kind, text, at })
 
     it('grows one streamed-answer entry as batched flushes arrive', () => {
-      const feed = createFeedProjection()
+      const feed = openFeed()
       feed.onEvent(command('go', 1_000))
       feed.onEvent(delta('text', 'Opening ', 2_000))
       feed.onEvent(delta('text', 'YouTu', 2_120))
@@ -240,7 +271,7 @@ describe('feed projection', () => {
     })
 
     it('renders reasoning as its own dim detail line, separate from the answer run', () => {
-      const feed = createFeedProjection()
+      const feed = openFeed()
       feed.onEvent(delta('reasoning', 'the user wants music', 1_000))
       feed.onEvent(delta('reasoning', ', so navigate', 1_120))
       feed.onEvent(delta('text', 'Done.', 1_240))
@@ -252,7 +283,7 @@ describe('feed projection', () => {
     })
 
     it('resolves the typing indicator on any other event; a later delta opens a fresh one', () => {
-      const feed = createFeedProjection()
+      const feed = openFeed()
       feed.onEvent(delta('text', 'partial text', 1_000))
       feed.onEvent({ type: 'tool_call', turnId: T, callId: 'c1', name: 'navigate', args: { url: 'x.test' }, at: 2_000 })
       feed.onEvent(delta('text', 'after the tool', 3_000))
@@ -268,7 +299,7 @@ describe('feed projection', () => {
     })
 
     it('replaces the open streamed run with the answer\'s display entry — never partial + full', () => {
-      const feed = createFeedProjection()
+      const feed = openFeed()
       feed.onEvent(delta('text', 'Done. Playing it n', 1_000))
       feed.onEvent({ type: 'display', turnId: T, text: 'Done. Playing it now.', at: 2_000 })
 
@@ -278,7 +309,7 @@ describe('feed projection', () => {
     })
 
     it('drops the open streamed answer when its run ends without a display — no typing indicator outlives the run (ADR 0013)', () => {
-      const feed = createFeedProjection()
+      const feed = openFeed()
       feed.onEvent(command('go', 1_000))
       feed.onEvent(delta('text', 'partial answer', 2_000))
       feed.onEvent({ type: 'speak', text: 'Stopped.', at: 3_000 })
@@ -291,13 +322,13 @@ describe('feed projection', () => {
     })
 
     it('ignores blank delta fragments', () => {
-      const feed = createFeedProjection()
+      const feed = openFeed()
       feed.onEvent(delta('text', '', 1_000))
       expect(feed.entries()).toEqual([])
     })
 
     it('counts streamed entries as detail for the trim', () => {
-      const feed = createFeedProjection()
+      const feed = openFeed()
       for (let i = 0; i < MAX_DETAIL_ENTRIES + 5; i += 1) {
         // A tool line between fragments closes each run, so every delta
         // becomes its own detail entry.
@@ -332,7 +363,7 @@ describe('feed projection', () => {
       ({ type: 'llm_delta', turnId: T, kind: 'reasoning', text, at })
 
     it('renders the intent line while the arguments stream — naming the action and its target', () => {
-      const feed = createFeedProjection()
+      const feed = openFeed()
       feed.onEvent(command('click the search button', 1_000))
       feed.onEvent(intent(0, 'click', '{"ref":"Sea', 2_000))
 
@@ -343,7 +374,7 @@ describe('feed projection', () => {
     })
 
     it('resolves the typing indicator when tool intent starts streaming', () => {
-      const feed = createFeedProjection()
+      const feed = openFeed()
       feed.onEvent({ type: 'llm_delta', turnId: T, kind: 'text', text: 'partial answer', at: 1_000 })
       feed.onEvent(intent(0, 'click', '{"ref":"Sea', 1_120))
 
@@ -353,7 +384,7 @@ describe('feed projection', () => {
     })
 
     it('grows the same line as more arguments arrive — one id, replaced text', () => {
-      const feed = createFeedProjection()
+      const feed = openFeed()
       feed.onEvent(intent(0, 'navigate', '{"url":"https://x.test/?q=mech', 1_000))
       feed.onEvent(intent(0, 'navigate', '{"url":"https://x.test/?q=mechanical+keyboards"}', 1_120))
 
@@ -364,7 +395,7 @@ describe('feed projection', () => {
     })
 
     it('keeps parallel calls as their own lines, keyed by index', () => {
-      const feed = createFeedProjection()
+      const feed = openFeed()
       feed.onEvent(intent(0, 'navigate', '{"url":"x.test"}', 1_000))
       feed.onEvent(intent(1, 'click', '{"ref":"Search"}', 1_120))
 
@@ -375,7 +406,7 @@ describe('feed projection', () => {
     })
 
     it('closes the open intent on any other event; the tool outcome line follows it', () => {
-      const feed = createFeedProjection()
+      const feed = openFeed()
       feed.onEvent(intent(0, 'click', '{"ref":"Search"}', 1_000))
       feed.onEvent({ type: 'tool_call', turnId: T, callId: 'c1', name: 'click', args: { ref: 'Search' }, at: 2_000 })
 
@@ -393,7 +424,7 @@ describe('feed projection', () => {
     })
 
     it('rides beside reasoning without closing it — both stay open in one round', () => {
-      const feed = createFeedProjection()
+      const feed = openFeed()
       feed.onEvent(reasoning('the user wants youtube', 1_000))
       feed.onEvent(intent(0, 'type', '{"ref":3,"text":"music videos\\n"}', 1_120))
       feed.onEvent(reasoning(', music videos', 1_240))
@@ -420,7 +451,7 @@ describe('feed projection', () => {
     })
 
     it('renders nothing for intent when the stream carries no tool calls — providers without reasoning behave identically minus the dim lines', () => {
-      const feed = createFeedProjection()
+      const feed = openFeed()
       feed.onEvent(command('work', 1_000))
       // A reasoning-free, tool-free round: answer text only.
       feed.onEvent({ type: 'llm_delta', turnId: T, kind: 'text', text: 'Done.', at: 2_000 } as PipelineEvent)
@@ -433,7 +464,7 @@ describe('feed projection', () => {
     })
 
     it('counts intent lines as detail for the trim', () => {
-      const feed = createFeedProjection()
+      const feed = openFeed()
       for (let i = 0; i < MAX_DETAIL_ENTRIES + 5; i += 1) {
         // A tool line between intents closes each run, so every intent
         // becomes its own detail entry.
@@ -451,7 +482,7 @@ describe('feed projection', () => {
       ({ type: 'status', turnId: T, status: stage, at })
 
     it('timestamps every stage entry so consecutive lines reconstruct phase durations', () => {
-      const feed = createFeedProjection()
+      const feed = openFeed()
       feed.onEvent(command('go', 1_000))
       feed.onEvent(status('thinking', 1_100))
       feed.onEvent(status('acting', 4_000))
@@ -467,7 +498,7 @@ describe('feed projection', () => {
     })
 
     it('resolves the streamed indicator when the stage turns; a later delta opens a fresh run', () => {
-      const feed = createFeedProjection()
+      const feed = openFeed()
       feed.onEvent({ type: 'llm_delta', turnId: T, kind: 'text', text: 'Opening YouTu', at: 1_000 })
       feed.onEvent(status('acting', 2_000))
 
@@ -485,7 +516,7 @@ describe('feed projection', () => {
     })
 
     it('counts stage lines as detail for the trim — never recorded', () => {
-      const feed = createFeedProjection()
+      const feed = openFeed()
       feed.onEvent(command('keep me', 0))
       for (let i = 0; i < MAX_DETAIL_ENTRIES + 10; i += 1) {
         feed.onEvent(status('thinking', i + 1))
@@ -521,14 +552,14 @@ describe('feed projection', () => {
       ],
       ['tool intents', { type: 'llm_tool_intent', turnId: T, index: 0, name: 'click', args: '{}', at: 12_000 } as PipelineEvent, SYSTEM],
     ])('renders %s as %s', (_name, event, role) => {
-      const feed = createFeedProjection()
+      const feed = openFeed()
       if (typeof event === 'function') event(feed)
       else feed.onEvent(event as PipelineEvent)
       expect(feed.entries().every((entry) => entry.role === role)).toBe(true)
     })
 
     it('suppresses the speak entry when its turn already rendered a display card', () => {
-      const feed = createFeedProjection()
+      const feed = openFeed()
       feed.onEvent(command('search pizzas', 1_000))
       feed.onEvent({ type: 'display', turnId: T, text: '1. Pizza A 2. Pizza B', at: 2_000 })
       feed.onEvent({ type: 'speak', turnId: T, text: 'Found two.', at: 3_000 })
@@ -540,7 +571,7 @@ describe('feed projection', () => {
     })
 
     it('renders the speak entry when no display exists for its turn — spoken-only answers', () => {
-      const feed = createFeedProjection()
+      const feed = openFeed()
       feed.onEvent(command('stop that', 1_000))
       // Cancellation path: a speak line with no display counterpart.
       feed.onEvent({ type: 'speak', turnId: T, text: 'Stopped.', at: 2_000 })
@@ -552,7 +583,7 @@ describe('feed projection', () => {
     })
 
     it('drops an already-rendered speak when the display lands after it (either order suppresses)', () => {
-      const feed = createFeedProjection()
+      const feed = openFeed()
       feed.onEvent({ type: 'speak', turnId: T, text: 'Short line.', at: 1_000 })
       feed.onEvent({ type: 'display', turnId: T, text: 'The full card.', at: 2_000 })
 
@@ -562,7 +593,7 @@ describe('feed projection', () => {
     })
 
     it('keys suppression on the shared turn id — other turns and unstamped announcements render', () => {
-      const feed = createFeedProjection()
+      const feed = openFeed()
       // A display for one turn never suppresses another turn's speak.
       feed.onEvent({ type: 'display', turnId: 'turn-a', text: 'Turn A card.', at: 1_000 })
       feed.onEvent({ type: 'speak', turnId: 'turn-b', text: 'Turn B spoken.', at: 2_000 })
@@ -619,7 +650,7 @@ describe('feed projection', () => {
       ['stage markers', { type: 'status', turnId: T, status: 'thinking', at: 6_000 } as PipelineEvent],
       ['steer echoes', { type: 'steer', turnId: T, text: 'use Paris', at: 7_000 } as PipelineEvent],
     ])('groups %s under the run — the entry carries the turn id', (_name, event) => {
-      const feed = createFeedProjection()
+      const feed = openFeed()
       feed.onEvent(event as PipelineEvent)
       expect(feed.entries()).toHaveLength(1)
       expect(feed.entries()[0]!.runId).toBe(T)
@@ -633,7 +664,7 @@ describe('feed projection', () => {
       ['pipeline errors', { type: 'error', turnId: T, message: 'boom', at: 5_000 } as PipelineEvent],
       ['heard voice lines', appendable('voice', 'heard: maybe', 6_000)],
     ])('keeps %s top-level — no run id on conversation lines', (_name, event) => {
-      const feed = createFeedProjection()
+      const feed = openFeed()
       if (typeof event === 'function') event(feed)
       else feed.onEvent(event as PipelineEvent)
       expect(feed.entries()).toHaveLength(1)
@@ -641,7 +672,7 @@ describe('feed projection', () => {
     })
 
     it('stamps one run id across the whole run, with interleaved conversation lines ungrouped', () => {
-      const feed = createFeedProjection()
+      const feed = openFeed()
       feed.onEvent(command('search flights', 1_000))
       feed.onEvent({ type: 'status', turnId: T, status: 'thinking', at: 1_100 })
       feed.onEvent({ type: 'llm_delta', turnId: T, kind: 'reasoning', text: 'comparing dates', at: 1_200 })
@@ -671,7 +702,7 @@ describe('feed projection', () => {
     })
 
     it('separates runs by turn id — one expander per run, never merged', () => {
-      const feed = createFeedProjection()
+      const feed = openFeed()
       feed.onEvent(command('first', 1_000, 'turn-a'))
       feed.onEvent({ type: 'status', turnId: 'turn-a', status: 'thinking', at: 1_100 })
       feed.onEvent(command('second', 2_000, 'turn-b'))
@@ -687,26 +718,26 @@ describe('feed projection', () => {
 
     describe('the live run — the expander that auto-opens', () => {
       it('is null before any run and while nothing is in flight', () => {
-        const feed = createFeedProjection()
+        const feed = openFeed()
         expect(feed.liveRunId()).toBeNull()
       })
 
       it('opens on the command and stays open through the run\'s noise', () => {
-        const feed = createFeedProjection()
+        const feed = openFeed()
         feed.onEvent(command('go', 1_000))
         feed.onEvent({ type: 'status', turnId: T, status: 'acting', at: 1_100 })
         expect(feed.liveRunId()).toBe(T)
       })
 
       it('closes on the run\'s done', () => {
-        const feed = createFeedProjection()
+        const feed = openFeed()
         feed.onEvent(command('go', 1_000))
         feed.onEvent({ type: 'done', turnId: T, outcome: 'done', at: 2_000 })
         expect(feed.liveRunId()).toBeNull()
       })
 
       it('ignores a straggler done from another turn — the live run stays open', () => {
-        const feed = createFeedProjection()
+        const feed = openFeed()
         feed.onEvent(command('live one', 1_000))
         feed.onEvent({ type: 'done', turnId: 'turn-old', outcome: 'done', at: 1_500 })
         expect(feed.liveRunId()).toBe(T)
@@ -722,7 +753,7 @@ describe('feed projection', () => {
       })
 
       it('moves to the newest command when a second run starts', () => {
-        const feed = createFeedProjection()
+        const feed = openFeed()
         feed.onEvent(command('first', 1_000, 'turn-a'))
         feed.onEvent(command('second', 2_000, 'turn-b'))
         expect(feed.liveRunId()).toBe('turn-b')

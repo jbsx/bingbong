@@ -25,7 +25,7 @@ describe('createSqliteHistoryStore', () => {
   it('round-trips entries and runs through the public read API', () => {
     const store = createSqliteHistoryStore(tempStorePath())
     try {
-      const runId = store.startRun('open the fixture page', 100, 'turn-abc-1')
+      const runId = store.startRun('open the fixture page', 100, 'turn-abc-1', 'session-fix-1' as SessionId)
       store.appendEntry({ runId, kind: 'command', text: 'open the fixture page', at: 100 })
       store.appendEntry({ runId, kind: 'speak', text: 'Opened it.', at: 104 })
       store.finishRun(runId, 'done', 106)
@@ -40,7 +40,7 @@ describe('createSqliteHistoryStore', () => {
         {
           id: runId,
           turnId: 'turn-abc-1',
-          sessionId: null,
+          sessionId: 'session-fix-1',
           command: 'open the fixture page',
           startedAt: 100,
           finishedAt: 106,
@@ -120,7 +120,7 @@ describe('createSqliteHistoryStore', () => {
     const store = createSqliteHistoryStore(tempStorePath())
     try {
       for (let i = 1; i <= 5; i++) {
-        const runId = store.startRun(`command ${i}`, i, `turn-seq-${i}`)
+        const runId = store.startRun(`command ${i}`, i, `turn-seq-${i}`, 'session-seq' as SessionId)
         store.appendEntry({ runId, kind: 'command', text: `command ${i}`, at: i })
         store.finishRun(runId, 'done', i + 10)
       }
@@ -136,10 +136,10 @@ describe('createSqliteHistoryStore', () => {
     const path = tempStorePath()
 
     const first = createSqliteHistoryStore(path)
-    const finishedRun = first.startRun('finished', 300, 'turn-a-1')
+    const finishedRun = first.startRun('finished', 300, 'turn-a-1', 'session-a' as SessionId)
     first.appendEntry({ runId: finishedRun, kind: 'command', text: 'finished', at: 300 })
     first.finishRun(finishedRun, 'done', 310)
-    const openRun = first.startRun('killed mid-run', 320, 'turn-a-2')
+    const openRun = first.startRun('killed mid-run', 320, 'turn-a-2', 'session-a' as SessionId)
     first.appendEntry({ runId: openRun, kind: 'command', text: 'killed mid-run', at: 320 })
     first.close()
 
@@ -150,7 +150,7 @@ describe('createSqliteHistoryStore', () => {
         {
           id: finishedRun,
           turnId: 'turn-a-1',
-          sessionId: null,
+          sessionId: 'session-a',
           command: 'finished',
           startedAt: 300,
           finishedAt: 310,
@@ -159,7 +159,7 @@ describe('createSqliteHistoryStore', () => {
         {
           id: openRun,
           turnId: 'turn-a-2',
-          sessionId: null,
+          sessionId: 'session-a',
           command: 'killed mid-run',
           startedAt: 320,
           finishedAt: null,
@@ -175,7 +175,7 @@ describe('createSqliteHistoryStore', () => {
     const path = tempStorePath()
     const store = createSqliteHistoryStore(path)
     try {
-      const runId = store.startRun('spoken command', 100, 'turn-voice-9')
+      const runId = store.startRun('spoken command', 100, 'turn-voice-9', 'session-v' as SessionId)
       store.finishRun(runId, 'done', 200)
 
       const raw = new Database(path)
@@ -188,7 +188,7 @@ describe('createSqliteHistoryStore', () => {
 
       // The mapping is 1:1 at the schema level: a second row for the same
       // turn is a constraint violation, not a shadow record.
-      expect(() => store.startRun('same turn again', 300, 'turn-voice-9')).toThrow(/UNIQUE/)
+      expect(() => store.startRun('same turn again', 300, 'turn-voice-9', 'session-v' as SessionId)).toThrow(/UNIQUE/)
     } finally {
       store.close()
     }

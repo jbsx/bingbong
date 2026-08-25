@@ -17,10 +17,9 @@ export interface LaunchConfig {
   /** Inactivity timeout before the idle screen; BINGBONG_IDLE_TIMEOUT_MS overrides. */
   idleTimeoutMs: number
   /**
-   * The Session Window (#70): while an Active Session exists (newest run
-   * finished within it, or a run in progress) the idle timeout never swaps
-   * the dashboard away. BINGBONG_SESSION_WINDOW_MS overrides — the same e2e
-   * knob the live store and boot hydration read.
+   * The Session Window (#70, ADR 0014): while an explicit Session is live
+   * the idle timeout never swaps the dashboard away. BINGBONG_SESSION_WINDOW_MS
+   * overrides — the same e2e knob the Session runtime reads.
    */
   sessionWindowMs: number
   /** Lead time before Session expiry; BINGBONG_SESSION_WARNING_MS overrides. */

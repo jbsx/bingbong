@@ -71,10 +71,10 @@ export function App() {
   // Transcribing outranks listening (#38): the endpoint fired, STT is
   // thinking — never claim the ear is open while it works.
   const status = voice.transcribing ? 'transcribing' : voice.listening ? 'listening' : assistant.status
-  // The Active Session gate (#70): while the newest run finished within the
-  // Session Window (or a run is in progress), the idle timeout never swaps
-  // the dashboard for the idle screen — a 5-minute pause mid-Session keeps
-  // the work on screen. Only a lapsed (or never-started) session idles.
+  // The Active Session gate (#70, ADR 0014): while an explicit Session is
+  // live — lifecycle events, never Run timestamps — the idle timeout never
+  // swaps the dashboard for the idle screen. Only a lapsed (or
+  // never-started) Session idles.
   const activeSession = useActiveSession()
   // Never idle over a running command, an open mic, the STT window, or the
   // settings page — the timer must not unmount a form mid-edit.

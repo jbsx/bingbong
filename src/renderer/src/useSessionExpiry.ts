@@ -14,11 +14,7 @@ export function useSessionExpiry(): {
   const [expiry, setExpiry] = useState<SessionExpiry | null>(null)
 
   useEffect(() => window.bingbong.assistant.onEvent((event: PipelineEvent) => {
-    if (
-      event.type === 'session_expiring' &&
-      event.sessionId !== undefined &&
-      event.sessionGeneration !== undefined
-    ) {
+    if (event.type === 'session_expiring') {
       setExpiry({
         sessionId: event.sessionId,
         generation: event.sessionGeneration,

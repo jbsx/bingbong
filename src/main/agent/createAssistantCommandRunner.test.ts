@@ -4,10 +4,8 @@ import type { PipelineEvent } from '../../core/pipeline/events'
 import { createFeedProjection } from '../../core/history/feedProjection'
 import { createFeedPanelStateFold } from '../../core/panel/feedPanelState'
 import { FakeClock, RecordingTts, ScriptedLlm } from '../../core/testing/doubles'
-import { isSessionActive } from '../../core/session/activeSession'
 import type { RunId, SessionId, SessionIdentitySource, SubmissionId } from '../../core/session/sessionIdentity'
 import { createSessionRuntime } from '../../core/session/sessionRuntime'
-import { createSessionRuns } from '../../core/session/sessionRuns'
 import type { SubmissionFeedback } from '../../core/session/submissionFeedback'
 import { createAssistantCommandRunner } from './createAssistantCommandRunner'
 
@@ -194,7 +192,6 @@ describe('assistant command runner', () => {
     const runtime = createSessionRuntime({ clock, identities: new DeterministicIdentities() })
     const feed = createFeedProjection()
     const panel = createFeedPanelStateFold()
-    const runs = createSessionRuns()
     let release!: () => void
     const blocked = new Promise<void>((resolve) => {
       release = resolve
@@ -218,12 +215,19 @@ describe('assistant command runner', () => {
       runtime,
       clock,
       onSessionReset: () => {},
+      onSessionStarted: (admission) => {
+        feed.onEvent({
+          type: 'session_started',
+          sessionId: admission.sessionId,
+          sessionGeneration: admission.generation,
+          at: admission.acceptedAt,
+        })
+      },
       createRunPublisher: () => {
         return {
           publish(event) {
-            feed.onEvent(event)
+            feed.onEvent({ ...event, sessionId: 'session-1' as SessionId, sessionGeneration: 0 })
             panel.onEvent(event)
-            runs.event(event)
           },
         }
       },
@@ -233,7 +237,6 @@ describe('assistant command runner', () => {
     const accepted = runner.run('accepted command', 'turn-accepted')
     while (feed.entries().length === 0) await Promise.resolve()
     const feedBeforeRejection = feed.entries()
-    const spansBeforeRejection = runs.runs()
     clock.advance(50)
 
     await expect(runner.run('busy command', 'turn-rejected')).resolves.toBe(false)
@@ -242,8 +245,6 @@ describe('assistant command runner', () => {
     expect(feed.entries().map((entry) => entry.text)).toContain('accepted command')
     expect(feed.liveRunId()).toBe('turn-accepted')
     expect(panel.state().open).toBe(true)
-    expect(runs.runs()).toEqual(spansBeforeRejection)
-    expect(isSessionActive(runs.runs(), clock.now(), 100)).toBe(true)
     // The busy-rejected submission never became a Run and never touched
     // continuity or the live-Run fold.
     expect(runtime.state()).toMatchObject({ acceptedRunIds: ['run-1'], liveRunIds: ['run-1'] })

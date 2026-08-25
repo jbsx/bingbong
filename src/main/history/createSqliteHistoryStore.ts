@@ -159,7 +159,7 @@ export function createSqliteHistoryStore(
     finishSession(sessionId, reason, at) {
       finishSession.run({ id: sessionId, end_reason: reason, ended_at: at })
     },
-    startRun(command, at, turnId, sessionId = null) {
+    startRun(command, at, turnId, sessionId) {
       const info = insertRun.run({ command, started_at: at, turn_id: turnId, session_id: sessionId }) as {
         lastInsertRowid: number | bigint
       }

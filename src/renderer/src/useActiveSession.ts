@@ -8,7 +8,7 @@ export function useActiveSession(): boolean {
 
   useEffect(() => window.bingbong.assistant.onEvent((event: PipelineEvent) => {
     const current = identity.current
-    if (event.type === 'session_started' && event.sessionId !== undefined && event.sessionGeneration !== undefined) {
+    if (event.type === 'session_started') {
       if (current && (current.sessionId !== event.sessionId || current.generation !== event.sessionGeneration)) return
       identity.current = { sessionId: event.sessionId, generation: event.sessionGeneration }
       setActive(true)

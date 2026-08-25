@@ -34,7 +34,7 @@ export interface RunRecord {
    * Null only on rows recorded before turn ids existed.
    */
   turnId: string | null
-  /** Null only for legacy or expand-phase rows recorded before Session cutover. */
+  /** Null only for legacy rows recorded before the Session cutover (#100). */
   sessionId: SessionId | null
   command: string
   startedAt: number
@@ -57,8 +57,12 @@ export interface HistoryEntryInput extends TranscriptEvent {
 export interface HistoryStore {
   startSession(sessionId: SessionId, at: number): void
   finishSession(sessionId: SessionId, reason: SessionEndReason, at: number): void
-  /** Opens a run; entries recorded while it is open link to it. */
-  startRun(command: string, at: number, turnId: string, sessionId?: SessionId | null): number
+  /**
+   * Opens a run; entries recorded while it is open link to it. Every new
+   * row carries the Run's turn id and its owning Session (#100) — the
+   * database column stays nullable only for rows predating the cutover.
+   */
+  startRun(command: string, at: number, turnId: string, sessionId: SessionId): number
   finishRun(runId: number, outcome: RunOutcome, at: number): void
   appendEntry(entry: HistoryEntryInput): void
   /** Most recent entries, oldest first. */

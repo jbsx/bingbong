@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { createRunProgressTracker, describeRunProgress } from './runProgress'
 import type { PipelineEvent, PipelineStatus } from './events'
+import type { SessionId } from '../session/sessionIdentity'
 
 // Progress projection (#43): the renderer's hint state as a pure function
 // over the pipeline event stream — stage + started-at from status events
@@ -151,7 +152,7 @@ describe('run progress tracker', () => {
     const tracker = createRunProgressTracker()
     tracker.onEvent(command(1_000))
     tracker.onEvent(status('thinking', 1_000))
-    tracker.onEvent({ type: 'session_started', at: 2_000 })
+    tracker.onEvent({ type: 'session_started', sessionId: 'session-1' as SessionId, sessionGeneration: 0, at: 2_000 })
 
     expect(tracker.current()?.stage).toBe('thinking')
   })

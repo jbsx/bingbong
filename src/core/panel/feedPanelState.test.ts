@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { PipelineEvent } from '../pipeline/events'
+import type { SessionId } from '../session/sessionIdentity'
 import {
   FEED_MODE_STORAGE_KEY,
   FEED_PANEL_WIDTH_DEFAULT,
@@ -89,7 +90,7 @@ describe('createFeedPanelStateFold', () => {
           error: null,
         },
       },
-      { type: 'session_started' },
+      { type: 'session_started', sessionId: 'session-1' as SessionId, sessionGeneration: 0 },
     )) {
       fold.onEvent(event)
     }

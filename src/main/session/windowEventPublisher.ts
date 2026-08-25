@@ -22,7 +22,6 @@ export type WindowEventPublication =
 export interface WindowEventPublisherDeps {
   acceptPipelineEvent?(event: PipelineEvent): boolean
   createHistoryRunObserver(): (event: PipelineEvent) => void
-  createSessionRunObserver(): (event: PipelineEvent) => void
   historyEvent(event: PipelineEvent): void
   historyHeard(heard: VoiceHeardEvent): void
   historyVoiceError(error: VoiceErrorEvent): void
@@ -44,7 +43,8 @@ export interface WindowRunPublisher {
 }
 
 export interface WindowEventPublisher {
-  run(ownership?: AcceptedRunOwnership): WindowRunPublisher
+  /** One accepted Run's publisher; the ownership stamps every event it emits. */
+  run(ownership: AcceptedRunOwnership): WindowRunPublisher
   publish(publication: WindowEventPublication): void
 }
 
@@ -55,8 +55,7 @@ export interface WindowEventPublisher {
  * Run's ownership is active — otherwise a late completion from an ended
  * Session would be re-attributed to the live one and slip past the gate.
  */
-function withOwnership(event: PipelineEvent, ownership?: AcceptedRunOwnership): PipelineEvent {
-  if (!ownership) return event
+function withOwnership(event: PipelineEvent, ownership: AcceptedRunOwnership): PipelineEvent {
   return {
     ...event,
     submissionId: event.submissionId ?? ownership.submissionId,
@@ -75,17 +74,13 @@ export function createWindowEventPublisher(deps: WindowEventPublisherDeps): Wind
   return {
     run(ownership) {
       const historyRun = deps.createHistoryRunObserver()
-      const sessionRun = deps.createSessionRunObserver()
-      if (ownership) {
-        activeRunOwnership = ownership
-        activeSessionOwnership = ownership
-      }
+      activeRunOwnership = ownership
+      activeSessionOwnership = ownership
       return {
         publish(event) {
           const ownedEvent = withOwnership(event, ownership)
           if (!accepted(ownedEvent)) return
           historyRun(ownedEvent)
-          sessionRun(ownedEvent)
           deps.sendPipelineEvent(ownedEvent)
           deps.observeVoicePipelineEvent(ownedEvent)
           deps.overlayPipelineEvent(ownedEvent)
@@ -101,7 +96,10 @@ export function createWindowEventPublisher(deps: WindowEventPublisherDeps): Wind
         case 'subagent': {
           const ownership = publication.ownership ??
             (publication.source === 'lifecycle' ? undefined : activeRunOwnership ?? activeSessionOwnership)
-          const event = withOwnership(publication.event, ownership)
+          // Lifecycle events carry their own identity; an auxiliary event
+          // with no Run to inherit from goes out as produced and the
+          // acceptance gate rejects it when it is not Session-scoped.
+          const event = ownership ? withOwnership(publication.event, ownership) : publication.event
           if (!accepted(event)) return
           deps.historyEvent(event)
           deps.sendPipelineEvent(event)

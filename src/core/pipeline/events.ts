@@ -4,7 +4,13 @@ import type { SubagentKind, SubagentOwner, SubagentStatus } from '../agent/subag
 import type { SubagentTabPhase } from '../browser/subagentTabs'
 import type { RunId, SessionGeneration, SessionId, SubmissionId } from '../session/sessionIdentity'
 
-/** Additive ownership metadata used while producers migrate off legacy turn correlation. */
+/**
+ * Ownership metadata on Session-scoped events (#86–#100): every published
+ * event carries the identity of the Run (or lifecycle moment) that produced
+ * it. Run-scoped variants are stamped by publication — the command runner's
+ * accepted ownership fills what the pipeline generator cannot know — and
+ * consumers reject events carrying an ended or foreign Session.
+ */
 export interface SessionEventIdentity {
   submissionId?: SubmissionId
   runId?: RunId
@@ -49,8 +55,9 @@ export interface SubagentCard {
  * `turnId` (required below). `speak`/`display`/`error` carry it optionally —
  * the download router and subagent cards emit the same variants outside any
  * turn's stream, and those announcements are not turn-scoped. `agent_update`
- * and Session lifecycle events are not pipeline-emitted. Explicit ownership remains
- * optional on every variant while producers migrate to the Session runtime.
+ * and Session lifecycle events are not pipeline-emitted. Session/Run identity
+ * is stamped at publication (see SessionEventIdentity); unstamped events are
+ * rejected by every consumer.
  */
 export type PipelineEvent = SessionEventIdentity & (
   | { type: 'command'; turnId: string; text: string; at: number }
@@ -160,16 +167,22 @@ export type PipelineEvent = SessionEventIdentity & (
    * the detail channel the moment resume(steering) queues the directive,
    * so the feed can echo it ("steer: use Paris instead") while it waits
    * for the next model call. Detail event — maps to no history entry, and
-   * never enters session history (ADR 0001).
+   * never enters Session continuity.
    */
   | { type: 'steer'; turnId: string; text: string; at: number }
   /** A subagent's state changed — the dashboard keeps one card per agent id. */
   | { type: 'agent_update'; agent: SubagentCard; at: number }
   | { type: 'done'; turnId: string; outcome?: 'done' | 'failed' | 'cancelled' | 'reset'; at: number }
-  | { type: 'session_started'; at: number }
-  | { type: 'session_expiring'; expiresAt: number; at: number }
-  | { type: 'session_extended'; expiresAt: number; at: number }
-  | { type: 'session_ended'; reason: 'lapsed' | 'reset' | 'app_closed' | 'interrupted'; at: number }
+  /**
+   * Identity-bearing Session lifecycle boundaries (#91): emitted by the
+   * Session runtime's window wiring, never by the pipeline generator. A
+   * start never clears anything — consumers clear on a matching
+   * `session_ended` and reject events of an ended or foreign Session.
+   */
+  | { type: 'session_started'; sessionId: SessionId; sessionGeneration: SessionGeneration; at: number }
+  | { type: 'session_expiring'; sessionId: SessionId; sessionGeneration: SessionGeneration; expiresAt: number; at: number }
+  | { type: 'session_extended'; sessionId: SessionId; sessionGeneration: SessionGeneration; expiresAt: number; at: number }
+  | { type: 'session_ended'; sessionId: SessionId; sessionGeneration: SessionGeneration; reason: 'lapsed' | 'reset' | 'app_closed' | 'interrupted'; at: number }
 )
 
 /**
@@ -177,7 +190,7 @@ export type PipelineEvent = SessionEventIdentity & (
  * status wins, else any error means failed, else the run succeeded. A
  * model-invoked Session Reset (#99) is recorded as interrupted — the
  * discarded run never finished its own work. Shared by every observer of
- * the run event seam (history recorder, session memory).
+ * the run event seam (the history recorder).
  */
 export function inferRunOutcome(
   explicit: 'done' | 'failed' | 'cancelled' | 'reset' | undefined,

@@ -131,9 +131,9 @@ function dailySpendWarnUsd(): number {
   return Number.isFinite(raw) && raw > 0 ? raw : DEFAULT_DAILY_SPEND_WARN_USD
 }
 
-// Session window (default 30 min, ADR 0005 amends ADR 0001): resolved once
-// with the launch config — BINGBONG_SESSION_WINDOW_MS is the one e2e knob
-// (the lapse flows can't wait out real minutes), driving only live state.
+// Session Window (default 30 min, ADR 0014): resolved once with the launch
+// config — BINGBONG_SESSION_WINDOW_MS is the one e2e knob (the lapse flows
+// can't wait out real minutes), driving only live runtime state.
 
 // Piper TTS: binary, voices dir, and base voice come from env (defaults
 // suffice for a standard install); the settings page's voice wins per line.
@@ -236,7 +236,6 @@ async function createWindow(): Promise<BrowserWindow> {
       const run = historyRecorder.run()
       return (event) => run.event(event)
     },
-    createSessionRunObserver: () => () => {},
     historyEvent: (event) => historyRecorder.event(event),
     historyHeard: (heard) => historyRecorder.heard(heard),
     historyVoiceError: (error) => historyRecorder.voiceError(error.message, error.at),
@@ -465,8 +464,12 @@ async function createWindow(): Promise<BrowserWindow> {
       lastEndedSession = null
       eventPublisher.publish({
         source: 'lifecycle',
-        ownership: admission,
-        event: { type: 'session_started', at: admission.acceptedAt },
+        event: {
+          type: 'session_started',
+          at: admission.acceptedAt,
+          sessionId: admission.sessionId,
+          sessionGeneration: admission.generation,
+        },
       })
     },
     createRunPublisher: (ownership) => eventPublisher.run(ownership),

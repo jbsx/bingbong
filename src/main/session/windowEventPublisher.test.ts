@@ -40,7 +40,6 @@ function setup(acceptPipelineEvent?: (event: PipelineEvent) => boolean): {
   const deps: WindowEventPublisherDeps = {
     acceptPipelineEvent,
     createHistoryRunObserver: () => recordPipeline('history-run'),
-    createSessionRunObserver: () => recordPipeline('session-run'),
     historyEvent: recordPipeline('history-event'),
     historyHeard: record('history-heard'),
     historyVoiceError: record('history-voice-error'),
@@ -65,8 +64,8 @@ describe('window event publisher', () => {
     const run = publisher.run(ownership)
     run.publish({ type: 'command', turnId: 'turn-1', text: 'hello', at: 10 })
 
-    expect(calls).toEqual(['history-run', 'session-run', 'renderer-pipeline', 'voice-observer', 'overlay-pipeline'])
-    expect(pipelineEvents).toHaveLength(5)
+    expect(calls).toEqual(['history-run', 'renderer-pipeline', 'voice-observer', 'overlay-pipeline'])
+    expect(pipelineEvents).toHaveLength(4)
     expect(pipelineEvents.every((event) => event === pipelineEvents[0])).toBe(true)
     expect(pipelineEvents[0]).toMatchObject({
       submissionId: 'submission-1',
@@ -112,14 +111,24 @@ describe('window event publisher', () => {
     })
   })
 
-  it('leaves legacy pipeline events unstamped when no accepted ownership exists', () => {
+  it('leaves lifecycle events carrying only their own identity', () => {
     const { publisher, pipelineEvents } = setup()
 
-    publisher.run().publish(pipelineEvent)
-    publisher.publish({ source: 'download', event: pipelineEvent })
+    publisher.publish({
+      source: 'lifecycle',
+      event: {
+        type: 'session_started',
+        sessionId: 'session-9' as SessionId,
+        sessionGeneration: 1,
+        at: 10,
+      },
+    })
 
-    expect(pipelineEvents).toHaveLength(8)
-    expect(pipelineEvents.every((event) => event === pipelineEvent)).toBe(true)
+    expect(pipelineEvents).toHaveLength(4)
+    expect(pipelineEvents.every((event) => event === pipelineEvents[0])).toBe(true)
+    expect(pipelineEvents[0]).toMatchObject({ sessionId: 'session-9', sessionGeneration: 1 })
+    expect(pipelineEvents[0].submissionId).toBeUndefined()
+    expect(pipelineEvents[0].runId).toBeUndefined()
   })
 
   it('publishes voice events through their existing source-specific sinks', () => {
@@ -210,7 +219,7 @@ describe('window event publisher', () => {
     publisher.publish({ source: 'subagent', event: lateAgentUpdate })
     run.publish({ type: 'command', turnId: 'turn-2', text: 'new work', at: 41 })
 
-    expect(calls).toEqual(['history-run', 'session-run', 'renderer-pipeline', 'voice-observer', 'overlay-pipeline'])
+    expect(calls).toEqual(['history-run', 'renderer-pipeline', 'voice-observer', 'overlay-pipeline'])
     expect(pipelineEvents.every((event) => event.sessionId === 'session-live')).toBe(true)
   })
 })

@@ -12,9 +12,11 @@ import type { TranscriptEvent } from './historyStore'
 // deltas (#47) grow live answer/reasoning runs — also ephemeral detail —
 // with the answer's display entry replacing its partial at round end.
 // Tool-intent lines (#48) grow the same way while call arguments stream,
-// superseded by the tool's outcome line at execution. Session-scoped
-// (ADR 0003, made eager by ADR 0005): session_started — fired lazily at
-// the boundary command or eagerly by the lapse timer — wipes the view.
+// superseded by the tool's outcome line at execution. Explicitly
+// Session-scoped (ADR 0014): an identity-bearing session_started opens the
+// view's live Session and a matching session_ended wipes it — events of an
+// ended or foreign Session never render, and nothing renders before the
+// first accepted Session exists.
 // Production launches always create this projection empty. Conversation
 // structure (#54): every entry carries its role in the chat — your words
 // (user) vs Bing Bong's answers (assistant) vs system detail — and a
@@ -106,9 +108,12 @@ export function createFeedProjection(): {
   // The live run (#55): opened by its command, closed by its done or a
   // session boundary — the run whose expander auto-opens while it runs.
   let liveRunId: string | null = null
+  // The live Session (ADR 0014): opened only by an identity-bearing
+  // session_started, closed by its matching session_ended. Events of an
+  // ended or foreign Session — and everything before the first start — are
+  // ignored, so no launch ever renders work that is not current.
   let activeSessionId: string | null = null
   let activeSessionGeneration: number | null = null
-  let explicitLifecycle = false
 
   const closeStreaming = (): void => {
     // The typing indicator resolves here: any other event means the
@@ -214,31 +219,26 @@ export function createFeedProjection(): {
   return {
     onEvent(event) {
       if (event.type === 'session_started') {
-        // Identity-bearing starts only (#99): the view clears on
-        // session_ended, and a start without an identity is foreign work.
-        if (event.sessionId === undefined || event.sessionGeneration === undefined) return
+        // Stale generations and foreign Sessions never open the view; a
+        // start never wipes anything — only a matching end clears.
         if (activeSessionGeneration !== null && event.sessionGeneration < activeSessionGeneration) return
         if (activeSessionId !== null && event.sessionId !== activeSessionId) return
-        explicitLifecycle = true
         activeSessionId = event.sessionId
         activeSessionGeneration = event.sessionGeneration
         return
       }
       if (event.type === 'session_ended') {
-        if (
-          explicitLifecycle &&
-          (event.sessionId !== activeSessionId || event.sessionGeneration !== activeSessionGeneration)
-        ) return
+        if (event.sessionId !== activeSessionId || event.sessionGeneration !== activeSessionGeneration) return
         clearSession()
         activeSessionId = null
-        if (event.sessionGeneration !== undefined) activeSessionGeneration = event.sessionGeneration
+        activeSessionGeneration = event.sessionGeneration
         return
       }
+      // Only the live Session's work renders.
       if (
-        explicitLifecycle &&
-        (activeSessionId === null ||
-          event.sessionId !== activeSessionId ||
-          event.sessionGeneration !== activeSessionGeneration)
+        activeSessionId === null ||
+        event.sessionId !== activeSessionId ||
+        event.sessionGeneration !== activeSessionGeneration
       ) return
 
       // The live run's bookkeeping (#55): a command opens its run, its

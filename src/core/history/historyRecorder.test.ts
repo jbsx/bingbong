@@ -3,6 +3,7 @@ import type { PipelineEvent } from '../pipeline/events'
 import type { VoiceHeardEvent } from '../voice/ipcChannels'
 import { createHistoryRecorder } from './historyRecorder'
 import type { HistoryStore, RecordedEntry, RunRecord } from './historyStore'
+import type { SessionId } from '../session/sessionIdentity'
 
 // The recorder is the persistence half of the command-pipeline seam: the same
 // event stream the dashboard renders is projected onto the history store, so
@@ -18,7 +19,7 @@ function fakeStore(): HistoryStore & { entries: RecordedEntry[]; runs: RunRecord
     runs,
     startSession() {},
     finishSession() {},
-    startRun(command, at, turnId, sessionId = null) {
+    startRun(command, at, turnId, sessionId) {
       const id = nextRunId++
       runs.push({ id, turnId, sessionId, command, startedAt: at, finishedAt: null, outcome: null })
       return id
@@ -61,7 +62,7 @@ describe('historyRecorder', () => {
     const run = recorder.run()
 
     for (const event of eventsOf(
-      { type: 'command', turnId: 'turn-r1', text: 'open the fixture page', at: 100 },
+      { type: 'command', turnId: 'turn-r1', text: 'open the fixture page', at: 100, sessionId: 'session-1' as SessionId },
       { type: 'status', turnId: 'turn-r1', status: 'thinking', at: 101 },
       { type: 'tool_call', turnId: 'turn-r1', callId: 'c1', name: 'navigate', args: { url: 'http://fixture/' }, at: 102 },
       { type: 'tool_result', turnId: 'turn-r1', callId: 'c1', name: 'navigate', ok: true, at: 103 },
@@ -82,7 +83,7 @@ describe('historyRecorder', () => {
       {
         id: 1,
         turnId: 'turn-r1',
-        sessionId: null,
+        sessionId: 'session-1',
         command: 'open the fixture page',
         startedAt: 100,
         finishedAt: 106,
@@ -97,7 +98,7 @@ describe('historyRecorder', () => {
     const run = recorder.run()
 
     for (const event of eventsOf(
-      { type: 'command', turnId: 'turn-voice-1', text: 'open the fixture page', at: 100 },
+      { type: 'command', turnId: 'turn-voice-1', text: 'open the fixture page', at: 100, sessionId: 'session-1' as SessionId },
       { type: 'status', turnId: 'turn-voice-1', status: 'thinking', at: 101 },
       { type: 'done', turnId: 'turn-voice-1', at: 106 },
     )) {
@@ -108,7 +109,7 @@ describe('historyRecorder', () => {
       {
         id: 1,
         turnId: 'turn-voice-1',
-        sessionId: null,
+        sessionId: 'session-1',
         command: 'open the fixture page',
         startedAt: 100,
         finishedAt: 106,
@@ -126,7 +127,7 @@ describe('historyRecorder', () => {
       turnId: 'turn-owned',
       text: 'owned command',
       at: 100,
-      sessionId: 'session-1',
+      sessionId: 'session-1' as SessionId,
     } as PipelineEvent)
 
     expect(store.runs[0]?.sessionId).toBe('session-1')
@@ -148,7 +149,7 @@ describe('historyRecorder', () => {
     run.event({ type: 'done', outcome: 'done', turnId: 'turn-2', at: 600, sessionId: 'session-2' } as PipelineEvent)
 
     expect(store.runs.map(({ command, outcome, sessionId }) => ({ command, outcome, sessionId }))).toEqual([
-      { command: 'forget all that — new question', outcome: 'interrupted', sessionId: 'session-1' },
+      { command: 'forget all that — new question', outcome: 'interrupted', sessionId: 'session-1' as SessionId },
       { command: 'forget all that — new question', outcome: 'done', sessionId: 'session-2' },
     ])
   })
@@ -343,9 +344,9 @@ describe('historyRecorder', () => {
     recorder.event({ type: 'steer', turnId: 'turn-x', text: 'use Paris instead', at: 1_002 })
     recorder.event({ type: 'llm_delta', turnId: 'turn-x', kind: 'text', text: 'stray fragment', at: 1_003 })
     recorder.event({ type: 'llm_tool_intent', turnId: 'turn-x', index: 0, name: 'click', args: '{"ref":1}', at: 1_004 })
-    // The eager lapse boundary (ADR 0005) rides the same channel — it must
+    // The eager lapse boundary rides the same channel — it must
     // stay unrecorded, so history.db is byte-for-byte unchanged.
-    recorder.event({ type: 'session_started', at: 1_005 })
+    recorder.event({ type: 'session_started', at: 1_005, sessionId: 'session-1' as SessionId, sessionGeneration: 0 })
 
     expect(store.recentEntries(10)).toEqual([])
   })

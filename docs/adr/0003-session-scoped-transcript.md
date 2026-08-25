@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted — the lazy clear is superseded by ADR 0005 (eager lapse wipe + filtered boot hydration); the `session_started` channel and its guarantees remain
+Superseded by ADR 0014 (explicit Session runtime and structured continuity), which replaces both the lazy clear (made eager by ADR 0005) and the `session_started`-as-boundary-clear channel
 
 ## Context
 

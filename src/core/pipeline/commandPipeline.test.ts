@@ -1745,7 +1745,7 @@ describe('command pipeline — turn correlation (#28)', () => {
       runs,
       startSession() {},
       finishSession() {},
-      startRun(command, at, turnId, sessionId = null) {
+      startRun(command, at, turnId, sessionId) {
         const id = nextRunId++
         runs.push({ id, turnId, sessionId, command, startedAt: at, finishedAt: null, outcome: null })
         return id

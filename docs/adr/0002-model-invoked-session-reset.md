@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted
+Superseded by ADR 0014 (explicit Session runtime and structured continuity)
 
 ## Context
 

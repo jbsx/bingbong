@@ -75,18 +75,20 @@ navigation, media, and transient Subagent tabs should not.
   Browser Workspace abstraction is introduced.
 
 This decision supersedes the architecture in ADR 0001, ADR 0002, ADR 0003, and
-ADR 0005. Those records remain as implementation history until the migration is
-complete.
+ADR 0005. Those records remain as implementation history; the contract phase
+of the migration (#100) removed their last obsolete mechanisms.
 
 ## Migration
 
-The replacement follows an expand-and-contract migration. Identity types, an
+The replacement followed an expand-and-contract migration. Identity types, an
 accepted-admission result, optional shared event ownership fields, and a
-deterministic runtime shell are added first. Legacy `turnId`, transcript
+deterministic runtime shell were added first. Legacy `turnId`, transcript
 continuity, `session_started` clearing, timestamp-derived Active Session views,
-history hydration, busy-rejection events, and current Browser State behavior
-remain unchanged during this expand phase. Producers and consumers migrate
-together before the obsolete mechanisms are removed.
+history hydration, busy-rejection events, and the old Browser State behavior
+remained unchanged during the expand phase. Producers and consumers migrated
+together, and #100 completed the contraction: lifecycle events carry required
+Session identity, run records require their owning Session, and the superseded
+stores, folds, fallbacks, and hydration paths are gone.
 
 ## Consequences
 

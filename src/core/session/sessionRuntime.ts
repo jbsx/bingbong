@@ -32,8 +32,8 @@ export type SessionEndReason = 'lapsed' | 'reset' | 'app_closed' | 'interrupted'
 
 /**
  * A Session stays open while the gap after the latest accepted Run's finish
- * is shorter than this window. 30 minutes (ADR 0005 widened ADR 0001's
- * original 10).
+ * is shorter than this window: 30 minutes (ADR 0005 widened ADR 0001's
+ * original 10; ADR 0014 owns the semantics now).
  */
 export const SESSION_WINDOW_MS = 30 * 60 * 1000
 
@@ -178,10 +178,6 @@ export function createSessionRuntime(deps: {
   recentJournalEntries?: number
   recentMemoryEntries?: number
   onContinuityDegraded?: (degradation: ContinuityDegradation) => void
-  /** @deprecated Prefer model-specific continuityBudgets. */
-  maxJournalChars?: number
-  /** @deprecated Prefer model-specific continuityBudgets. */
-  maxMemoryChars?: number
 }): SessionRuntime {
   if (deps.inactivityMs !== undefined) {
     if (!Number.isFinite(deps.inactivityMs) || deps.inactivityMs <= 0) {
@@ -194,25 +190,15 @@ export function createSessionRuntime(deps: {
       throw new Error('warningLeadMs must be shorter than inactivityMs')
     }
   }
-  const maxJournalChars = deps.maxJournalChars ?? 12_000
-  if (!Number.isFinite(maxJournalChars) || maxJournalChars < MAX_RUN_NOTE_CHARS) {
-    throw new Error(`maxJournalChars must be at least ${MAX_RUN_NOTE_CHARS}`)
-  }
-  const maxMemoryChars = deps.maxMemoryChars ?? 24_000
-  if (!Number.isFinite(maxMemoryChars) || maxMemoryChars < 1_000) {
-    throw new Error('maxMemoryChars must be at least 1000')
-  }
+  /**
+   * The default continuity budgets (ADR 0014): derived from the original
+   * char ceilings (12k Journal / 24k Working Memory at ~4 chars per token)
+   * with the 80/90/100% high/reserve/hard split. A model-specific profile
+   * in `continuityBudgets` replaces them wholesale.
+   */
   const fallbackBudgets: SessionContinuityBudgets = {
-    journal: {
-      high: Math.floor(maxJournalChars * 0.8 / 4),
-      reserve: Math.floor(maxJournalChars * 0.9 / 4),
-      hard: Math.floor(maxJournalChars / 4),
-    },
-    memory: {
-      high: Math.floor(maxMemoryChars * 0.8 / 4),
-      reserve: Math.floor(maxMemoryChars * 0.9 / 4),
-      hard: Math.floor(maxMemoryChars / 4),
-    },
+    journal: { high: 2_400, reserve: 2_700, hard: 3_000 },
+    memory: { high: 4_800, reserve: 5_400, hard: 6_000 },
   }
   const validateThresholds = (name: string, value: ContinuityTokenThresholds): void => {
     if (

@@ -53,8 +53,10 @@ export function createHistoryRecorder(
                 removeActiveRun(runId)
               }
               // The run row adopts the turn's id (#28): a logged turn maps
-              // 1:1 to a row in the review-only history database.
-              runId = store.startRun(event.text, event.at, event.turnId, event.sessionId)
+              // 1:1 to a row in the review-only history database. Every new
+              // row also carries its owning Session (#100) — the publisher's
+              // accepted-Run ownership stamps it on every event it emits.
+              runId = store.startRun(event.text, event.at, event.turnId, event.sessionId!)
               activeRunIds.push(runId)
               lastStatus = null
               failed = false

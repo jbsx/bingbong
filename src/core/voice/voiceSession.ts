@@ -577,11 +577,7 @@ export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
     },
 
     handlePipelineEvent(event) {
-      if (
-        event.type === 'session_expiring' &&
-        event.sessionId !== undefined &&
-        event.sessionGeneration !== undefined
-      ) {
+      if (event.type === 'session_expiring') {
         void armForSessionExpiry({ sessionId: event.sessionId, generation: event.sessionGeneration })
         return
       }

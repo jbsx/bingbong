@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted — amended twice. First: the idle-screen digest consequence below no longer holds; the idle screen is now gated on the Active Session (never renders while one is active) and shows clock/weather only, with the digest removed pending a future idle-screen redesign (#70). The feed/overlay wipe behavior is unchanged. Second (#73): boot hydration is capped at the last exchange, and the eager-Lapse timer arms at boot from the hydrated last-run finish.
+Superseded by ADR 0014 (explicit Session runtime and structured continuity), which removes boot hydration, the boot-armed Lapse timer, and timestamp-derived Active Session state. Originally: Accepted — amended twice. First: the idle-screen digest consequence below no longer holds; the idle screen is now gated on the Active Session (never renders while one is active) and shows clock/weather only, with the digest removed pending a future idle-screen redesign (#70). The feed/overlay wipe behavior is unchanged. Second (#73): boot hydration is capped at the last exchange, and the eager-Lapse timer arms at boot from the hydrated last-run finish.
 
 ## Context
 

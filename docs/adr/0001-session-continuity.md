@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted — the 10-minute window default was widened to 30 minutes by ADR 0005
+Superseded by ADR 0014 (explicit Session runtime and structured continuity). The 10-minute window default was widened to 30 minutes by ADR 0005 before the supersession.
 
 ## Context
 

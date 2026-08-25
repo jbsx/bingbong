@@ -277,7 +277,12 @@ describe('session runtime', () => {
     const runtime = createSessionRuntime({
       clock,
       identities: new DeterministicIdentities(),
-      maxJournalChars: 1_200,
+      continuityBudgets: {
+        '*': {
+          journal: { high: 150, reserve: 175, hard: 200 },
+          memory: { high: 4_800, reserve: 5_400, hard: 6_000 },
+        },
+      },
     })
     const firstNote = '1'.repeat(800)
     const secondNote = 'a'.repeat(800)
@@ -883,7 +888,6 @@ describe('session runtime', () => {
     expect(() => createSessionRuntime({ clock, identities, inactivityMs: 100, warningLeadMs: 100 })).toThrow(
       'shorter',
     )
-    expect(() => createSessionRuntime({ clock, identities, maxJournalChars: 1_199 })).toThrow('at least 1200')
   })
 
   it('rejects stale or foreign expiry decisions inside the runtime', () => {
@@ -903,12 +907,12 @@ describe('session runtime', () => {
     expect(runtime.state().phase).toBe('expiring')
   })
 
-  it('can add explicit ownership to shared events without replacing legacy turn correlation', () => {
+  it('stamps Session ownership alongside turn correlation without replacing it', () => {
     const { runtime } = harness()
     const admission = runtime.accept(runtime.submit().submissionId)
     const event: PipelineEvent = {
       type: 'command',
-      turnId: 'turn-legacy-1',
+      turnId: 'turn-1',
       text: 'hello',
       at: admission.acceptedAt,
       submissionId: admission.submissionId,
@@ -917,7 +921,7 @@ describe('session runtime', () => {
       sessionGeneration: admission.generation,
     }
 
-    expect(event.turnId).toBe('turn-legacy-1')
+    expect(event.turnId).toBe('turn-1')
     expect(event.runId).toBe(admission.runId)
   })
 })
