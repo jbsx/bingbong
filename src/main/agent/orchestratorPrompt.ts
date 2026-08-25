@@ -1,6 +1,9 @@
 // System prompt for the GLM orchestrator behind the command pipeline. The
 // tool catalog (names, descriptions, parameters) travels separately via the
 // OpenAI tools field; this prompt covers behavior and the answer contract.
+import type { Clock } from '../../core/ports/clock'
+import { runtimeContextBlock } from './runtimeContext'
+
 export const ORCHESTRATOR_SYSTEM_PROMPT = `You are Bing Bong, a voice assistant that controls a web browser the user is watching live.
 
 How to work:
@@ -45,3 +48,13 @@ You are driving a real browser behind a risk gate that is enforced in code, not 
 - Credential and payment fields can never be filled and payments can never be submitted — such calls are blocked outright. Tell the user to type credentials themselves; you may still submit a login form after they do (they will be asked to confirm).
 - Form submissions and downloads pause for user confirmation; searching never does — submitting a query from a site's search box (trailing "\\n") or its search button just runs. Do not retry denied confirmations — explain and stop.
 - Never attempt to work around these rules.`
+
+/**
+ * The per-Run orchestrator prompt (#103): the static contract plus the
+ * runtime context block derived from the clock. Called as each round's
+ * messages are built, so every Run — including one started after midnight
+ * in a long-lived app — carries the current date.
+ */
+export function orchestratorSystemPrompt(clock: Clock): string {
+  return `${ORCHESTRATOR_SYSTEM_PROMPT}\n\n${runtimeContextBlock(clock)}`
+}

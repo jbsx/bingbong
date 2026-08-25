@@ -3,6 +3,9 @@
 // structured report the orchestrator merges. Tools travel separately via the
 // OpenAI tools field.
 
+import type { Clock } from '../../core/ports/clock'
+import { runtimeContextBlock } from './runtimeContext'
+
 export const SUBAGENT_SYSTEM_PROMPT = `You are a subagent of Bing Bong, a voice assistant. You work autonomously on one delegated task and report back — you never talk to the user directly.
 
 How to work:
@@ -24,3 +27,12 @@ How to answer:
 - "findings" holds the durable facts you established, one entry each, with the source URLs you actually opened as references. Keep subjects short and details specific.
 - "unresolved" holds what remains open: unanswered questions, blocked steps, or leads worth a later attempt. Omit "findings" or "unresolved" when empty.
 - If the task failed, say plainly what failed in both fields.`
+
+/**
+ * The per-Run subagent prompt (#103): the static contract plus the runtime
+ * context block. Built when the workhorse resolves its LLM — once per spawn,
+ * i.e. once per subagent Run — from the same clock that drives the run.
+ */
+export function subagentSystemPrompt(clock: Clock): string {
+  return `${SUBAGENT_SYSTEM_PROMPT}\n\n${runtimeContextBlock(clock)}`
+}

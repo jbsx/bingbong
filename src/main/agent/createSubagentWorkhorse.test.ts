@@ -320,6 +320,32 @@ describe('createSubagentTaskApi', () => {
     ).rejects.toThrow(/model routing for 'subagent' is not configured/)
   })
 
+  it('carries the pinned clock date as runtime context in every spawn (#103)', async () => {
+    // Routed subagent (no script override), so the real OpenAI client posts
+    // the wire messages — one spawn before local midnight, one after.
+    const ROUTED_ENV = {
+      BINGBONG_SUBAGENT_BASE_URL: 'https://api.deepseek.test/v1',
+      BINGBONG_SUBAGENT_MODEL: 'deepseek-chat',
+      BINGBONG_SUBAGENT_API_KEY: 'test-key',
+    }
+    const bodies: Record<string, unknown>[] = []
+    const fetchFn = (async (_url: string | URL | Request, init?: RequestInit) => {
+      bodies.push(JSON.parse(String(init?.body)) as Record<string, unknown>)
+      return new Response(JSON.stringify({ choices: [{ message: { content: '{"speak":"s","display":"Done."}' } }] }), { status: 200 })
+    }) as typeof fetch
+    const clock = new FakeClock(new Date(2026, 7, 24, 23, 59).getTime())
+    const api = createSubagentTaskApi({ getEnv: () => ROUTED_ENV, fetchFn, clock })
+
+    await api.start({ id: 'a-1', kind: 'background', task: 'one' }, { isCancelled: () => false, onProgress: () => undefined }).done
+    clock.advance(2 * 60_000)
+    await api.start({ id: 'a-2', kind: 'background', task: 'two' }, { isCancelled: () => false, onProgress: () => undefined }).done
+
+    const systemOf = (index: number): unknown =>
+      (bodies[index].messages as { role: string; content: unknown }[]).find((message) => message.role === 'system')?.content
+    expect(systemOf(0)).toEqual(expect.stringContaining('Runtime context:\n- Today is 2026-08-24'))
+    expect(systemOf(1)).toEqual(expect.stringContaining('Runtime context:\n- Today is 2026-08-25'))
+  })
+
   it('reports progress from tool calls', async () => {
     const progress: { step: number; action: string }[] = []
     const api = createSubagentTaskApi({

@@ -22,7 +22,13 @@ interface WireMessage {
 
 export interface OpenAiLlmClientDeps {
   endpoint: ModelEndpointConfig
-  systemPrompt: string
+  /**
+   * Static prompt text, or a getter evaluated once per round as the wire
+   * messages are built (#103) — the per-Run runtime context (today's date)
+   * stays current across midnight in a long-lived app, where the client
+   * itself is cached across Runs.
+   */
+  systemPrompt: string | (() => string)
   tools: Tool[]
   fetchFn: typeof fetch
   requestTimeoutMs?: number
@@ -135,7 +141,9 @@ export function createOpenAiLlmClient(deps: OpenAiLlmClientDeps): LlmClient {
 
   function buildMessages(request: LlmRequest): WireMessage[] {
     const messages: WireMessage[] = [
-      { role: 'system', content: systemPrompt },
+      // The getter path re-derives the runtime context per round (#103);
+      // retries within one round reuse the messages built here.
+      { role: 'system', content: typeof systemPrompt === 'function' ? systemPrompt() : systemPrompt },
       ...memoryMessages(request.memory ?? []),
       ...journalMessages(request.journal ?? []),
       {

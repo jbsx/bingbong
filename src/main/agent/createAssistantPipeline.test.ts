@@ -169,6 +169,34 @@ describe('createAssistantPipeline', () => {
     expect(events.find((e) => e.type === 'speak')).toMatchObject({ text: 'Hi.' })
   })
 
+  it('carries the pinned clock date as runtime context in every Run (#103)', async () => {
+    const requests: { body: Record<string, unknown> }[] = []
+    const fetchFn = (async (_url: string | URL | Request, init?: RequestInit) => {
+      requests.push({ body: JSON.parse(String(init?.body)) as Record<string, unknown> })
+      return new Response(JSON.stringify({ choices: [{ message: { content: '{"speak":"Hi.","display":"Detail."}' } }] }), { status: 200 })
+    }) as typeof fetch
+
+    // One minute before local midnight: a Run now, then one after the clock
+    // rolls over — the long-lived pipeline sees the new date next Run.
+    const clock = new FakeClock(new Date(2026, 7, 24, 23, 59).getTime())
+    const pipeline = createAssistantPipeline({
+      controller: new FakeBrowser(),
+      env: FULL_ENV,
+      fetchFn,
+      tts: new RecordingTts(),
+      clock,
+    })
+
+    await collect(pipeline, 'hello')
+    clock.advance(2 * 60_000)
+    await collect(pipeline, 'hello again')
+
+    const systemOf = (index: number): unknown =>
+      (requests[index].body.messages as { role: string; content: unknown }[]).find((message) => message.role === 'system')?.content
+    expect(systemOf(0)).toEqual(expect.stringContaining('Runtime context:\n- Today is 2026-08-24'))
+    expect(systemOf(1)).toEqual(expect.stringContaining('Runtime context:\n- Today is 2026-08-25'))
+  })
+
   it('re-resolves the LLM when live env changes, so settings apply without restart', async () => {
     const requests: { url: string; headers: Record<string, string> }[] = []
     const fetchFn = (async (url: string | URL | Request, init?: RequestInit) => {

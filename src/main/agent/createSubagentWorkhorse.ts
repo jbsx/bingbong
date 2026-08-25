@@ -1,4 +1,5 @@
 import type { Clock } from '../../core/ports/clock'
+import { systemClock } from '../../core/ports/clock'
 import type { LlmClient } from '../../core/ports/llm'
 import type { Tool } from '../../core/pipeline/tool'
 import type { BrowserController } from '../../core/ports/browser'
@@ -17,7 +18,7 @@ import { createLookTool } from '../../core/pipeline/visionGroundingTools'
 import { createSubagentAskTool } from '../../core/pipeline/askUserTools'
 import { withoutConfirmations } from '../../core/pipeline/subagentToolPolicy'
 import { createOpenAiLlmClient } from './openAiLlmClient'
-import { SUBAGENT_SYSTEM_PROMPT } from './subagentPrompt'
+import { subagentSystemPrompt } from './subagentPrompt'
 
 // The manager's taskApi, backed by real workhorse loops (issue #13): each
 // spawn resolves the subagent LLM fresh (deepseek-chat via the router; a
@@ -81,7 +82,14 @@ function resolveSubagentLlm(deps: SubagentWorkhorseDeps, tools: Tool[]): LlmClie
   }
   try {
     const endpoint = resolveModelEndpoint(env, 'subagent')
-    const client = createOpenAiLlmClient({ endpoint, systemPrompt: SUBAGENT_SYSTEM_PROMPT, tools, fetchFn: deps.fetchFn })
+    const client = createOpenAiLlmClient({
+      endpoint,
+      // The runtime context (#103) is built here, once per spawn — one
+      // subagent Run, one date — from the same clock that drives the run.
+      systemPrompt: subagentSystemPrompt(deps.clock ?? systemClock),
+      tools,
+      fetchFn: deps.fetchFn,
+    })
     return deps.onUsage
       ? withUsageTracking(client, 'subagent', () => endpoint.model, deps.onUsage)
       : client

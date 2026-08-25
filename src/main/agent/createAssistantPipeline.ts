@@ -22,7 +22,7 @@ import { withPerfTracing } from '../../core/perf/perfTracing'
 import type { BrowserSubspans } from '../../core/perf/browserSubspans'
 import { ScriptedLlm, silentTts, UnavailableLlm } from '../../core/testing/doubles'
 import { createOpenAiLlmClient } from './openAiLlmClient'
-import { ORCHESTRATOR_SYSTEM_PROMPT } from './orchestratorPrompt'
+import { orchestratorSystemPrompt } from './orchestratorPrompt'
 import { createZaiVisionApi } from '../vision/createZaiVisionApi'
 
 export interface AssistantPipelineDeps {
@@ -99,6 +99,7 @@ function resolveLlm(
   env: Record<string, string | undefined>,
   fetchFn: typeof fetch,
   tools: Tool[],
+  clock: Clock,
   onUsage?: UsageSink,
   tracer?: PerfTracer,
 ): LlmClient {
@@ -120,7 +121,10 @@ function resolveLlm(
       const endpoint = resolveModelEndpoint(env, 'orchestrator')
       client = createOpenAiLlmClient({
         endpoint,
-        systemPrompt: ORCHESTRATOR_SYSTEM_PROMPT,
+        // The runtime context getter (#103): the client below is cached
+        // across Runs, so the date is re-derived when each round's messages
+        // are built — a Run started after midnight sees the new date.
+        systemPrompt: () => orchestratorSystemPrompt(clock),
         tools,
         fetchFn,
         // Thinking kill-switch (experiment): BINGBONG_DISABLE_THINKING=1
@@ -160,6 +164,7 @@ function createDynamicLlm(
   getEnv: () => Record<string, string | undefined>,
   fetchFn: typeof fetch,
   tools: Tool[],
+  clock: Clock,
   onUsage?: UsageSink,
   tracer?: PerfTracer,
 ): LlmClient {
@@ -170,7 +175,7 @@ function createDynamicLlm(
       const env = getEnv()
       const nextSignature = llmSignature(env)
       if (client === null || nextSignature !== signature) {
-        client = resolveLlm(env, fetchFn, tools, onUsage, tracer)
+        client = resolveLlm(env, fetchFn, tools, clock, onUsage, tracer)
         signature = nextSignature
       }
       return client.complete(request)
@@ -203,7 +208,7 @@ export function createAssistantPipeline(deps: AssistantPipelineDeps): CommandPip
   const clock = deps.clock ?? systemClock
   const configuredAskTimeoutMs = askTimeoutMs(deps.env)
   const pipeline = createCommandPipeline({
-    llm: createDynamicLlm(getEnv, fetchFn, tools, deps.onLlmUsage, deps.tracer),
+    llm: createDynamicLlm(getEnv, fetchFn, tools, clock, deps.onLlmUsage, deps.tracer),
     tts: deps.tts ?? silentTts,
     clock,
     tools,

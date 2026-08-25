@@ -3,7 +3,7 @@ import { createOpenAiLlmClient, TRUNCATION_NOTE } from './openAiLlmClient'
 import { ORCHESTRATOR_SYSTEM_PROMPT } from './orchestratorPrompt'
 import { createBrowserTools } from '../../core/pipeline/browserTools'
 import { createNewSessionTool } from '../../core/pipeline/sessionTools'
-import { FakeBrowser } from '../../core/testing/doubles'
+import { FakeBrowser, FakeClock } from '../../core/testing/doubles'
 
 // ---- OpenAI wire types (subset we consume) ----
 
@@ -201,6 +201,33 @@ describe('openAiLlmClient', () => {
       },
       { role: 'tool', tool_call_id: 'c2', content: 'error: ref 5 not on page' },
     ])
+  })
+
+  it('evaluates a getter system prompt per round, so the date rolls over at midnight (#103)', async () => {
+    const fetch = new ScriptedFetch([
+      completionResponse({ tool_calls: [{ id: 'c1', function: { name: 'read_page', arguments: '{}' } }] }),
+      completionResponse({ content: '{"speak":"Done.","display":"Done."}' }),
+    ])
+    const clock = new FakeClock(new Date(2026, 7, 24, 23, 59).getTime())
+    const client = createOpenAiLlmClient({
+      endpoint: ENDPOINT,
+      systemPrompt: () => `Static contract.\n\nRuntime context:\n- Today is ${new Date(clock.now()).toLocaleDateString('en-CA')}`,
+      tools: [],
+      fetchFn: fetch.fetchFn,
+    })
+
+    await client.complete({
+      command: 'look',
+      toolResults: [],
+    })
+    clock.advance(2 * 60_000)
+    await client.complete({
+      command: 'look again',
+      toolResults: [{ call: { id: 'c1', name: 'read_page', args: {} }, outcome: { ok: true, result: 'page' } }],
+    })
+
+    expect(fetch.calls[0].body.messages[0]).toEqual({ role: 'system', content: expect.stringContaining('Today is 2026-08-24') })
+    expect(fetch.calls[1].body.messages[0]).toEqual({ role: 'system', content: expect.stringContaining('Today is 2026-08-25') })
   })
 
   it('places the Run Journal as delimited untrusted data before the current command', async () => {
