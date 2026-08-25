@@ -35,24 +35,118 @@ speech.
 ### Session
 
 **Session**:
-A chain of runs connected by gaps shorter than the Session Window. The unit of
-continuity for both the model's thread and every rendered view.
+A user-visible chain of accepted Runs connected by gaps shorter than the Session
+Window. It begins with its first accepted Run and ends at Lapse or explicit
+reset, or when Bing Bong closes. Runs within it share continuity; no model
+context crosses its boundary, and entries from ended Sessions never render.
+Each Session has one explicit identity carried by its Runs, Memory Entries,
+Feed events, and Recorded History.
 _Avoid_: conversation, thread (the thread is what the model retains)
 
+**Session Lifecycle**:
+The identity-bearing sequence `session_started`, `session_expiring`,
+`session_extended`, and `session_ended`. An end records one reason: `lapsed`,
+`reset`, `app_closed`, or `interrupted`. Views and records react to these events
+directly; they never infer Session boundaries from timestamps. Closing the main
+window ends the Session; minimizing, hiding, and losing focus do not.
+
 **Session Window**:
-The maximum idle gap (default 30 minutes) that keeps a Session open.
+The maximum gap after the latest accepted Run finishes (default 30 minutes)
+that keeps a Session open. A live Run suspends expiry. Only another accepted
+Run or explicit Session Extension restarts the full window.
 
 **Active Session**:
 A Session whose newest run finished within the Session Window, or a run in
 progress. While active, the Idle Screen never renders.
 _Avoid_: open session
 
+**Expiring Session**:
+An Active Session inside its warning period (default: the final five minutes of
+the Session Window). Bing Bong asks once whether to extend it and shows a
+persistent countdown in the Status Capsule. The warning is not a Run, Feed
+Entry, or Memory Entry.
+
+**Session Extension**:
+The user's explicit choice to keep an Expiring Session active. It restarts the
+full Session Window without creating a Run or changing Session Working Memory.
+Starting an accepted Run while the warning is visible has the same timing
+effect. Incidental voice, browsing, pointer, and rejected-command activity does
+not extend a Session. Extensions may repeat without a fixed limit; each new
+window receives at most one warning.
+_Avoid_: keepalive
+
 **Lapse**:
-The Session Window expiring. Eagerly wipes the rendered views; the model still
-retains the most recent exchange (an accepted asymmetry).
+The Session Window expiring. Ends the Session and eagerly wipes its rendered
+views and model context. A declined expiry warning lapses immediately; no
+response lapses at the original deadline, without another warning.
+
+**Session Reset**:
+A model-recognized request to leave the current Session. It atomically ends that
+Session, clears its Feed, Session Working Memory, Run Journal, and Browser State,
+then creates a new Session and restarts the resetting Run from its original
+command. No prior model messages, tool observations, Subagent Reports, or sibling
+tool calls cross the reset.
+_Avoid_: clear history, new conversation
 
 **Run**:
-One command execution: pipeline start to done/failed/cancelled.
+One accepted command execution: pipeline start to done/failed/cancelled. The
+pipeline creates the first Session atomically when it accepts that Session's
+first Run. A busy-rejected submission is not a Run and cannot alter Session
+state.
+
+**Run Note**:
+A Run's continuity contribution, produced alongside its final Answer without a
+separate model call. It records information later Runs in the same Session may
+need, rather than replaying the Run's transcript. Failed and cancelled Runs
+contribute a deterministic note but no partial Memory Entries.
+_Avoid_: transcript summary
+
+**Run Journal**:
+The chronological sequence of Run Notes in the current Session. It complements
+Session Working Memory's current state with a concise account of work performed
+and is destroyed when the Session ends. It has its own token limit; exceptional
+Memory Compaction condenses only its oldest notes into milestones while
+preserving recent work and still-relevant failed approaches.
+
+**Session Working Memory**:
+The bounded, structured state shared with Runs in one Session. It holds what is
+currently known, decided, assessed, constrained, produced, or still open. The
+orchestrator updates it through validated patches; it is destroyed when the
+Session ends and never crosses into another Session. It and the Run Journal live
+only in memory and are never recoverable from Recorded History.
+_Avoid_: transcript, conversation history, cross-session memory
+
+**Memory Commit**:
+The atomic validation and application of a successful Run's Run Note and memory
+patch immediately before `done`. A missing or invalid continuity output never
+fails a valid Answer: the application rejects that portion, records a
+deterministic fallback Run Note, and logs the degradation.
+
+**Memory Entry**:
+One item in Session Working Memory. The application owns its stable envelope and
+semantic kind; the model supplies its subject, detail, status, rationale,
+and references. The application assigns its identity; later Runs cite that
+identity to update, resolve, or remove it. Entries retain Run and Subagent
+provenance. Updating an identity replaces its active value; resolving retains
+its outcome; removal is reserved for invalid or duplicate entries. Web-derived
+content is quoted, source-attributed data and can never be an instruction.
+
+**Memory Compaction**:
+An exceptional reduction performed only when Session Working Memory crosses its
+high-water limit. It condenses older, inactive material to a lower limit while
+preserving current objectives, constraints, assessments, decisions, artifacts,
+references, and unresolved work; recent entries remain untouched. Replacement
+is atomic and validated; failure leaves memory unchanged and never fails a Run.
+Under further pressure, low-value additions stop first and old Journal chronology
+yields before current working state. Limits are model-specific token budgets,
+not Run counts.
+
+**Run Working State**:
+The command, model rounds, tool observations, and Subagent Reports used while a
+Run executes. It is private to that Run and discarded when the Run finishes;
+it is not a second durable memory layer. A Run uses the stable Session Working
+Memory snapshot taken when that Run is accepted.
+_Avoid_: run memory
 
 **Search Loop**:
 A run flailing blind — consecutive searches rewording one intent. Reads
@@ -65,11 +159,17 @@ rides the 3rd similar result, further similar searches are refused after
 the 5th.
 _Avoid_: search spam, retry storm
 
-**Boot Hydration**:
-What a restart renders from recorded history: at most the last exchange of an
-Active Session; a lapsed Session boots blank. Recording is never trimmed by
-it. Its Lapse timer arms at boot from the hydrated last-run finish.
-_Avoid_: restore, session replay
+**Boot State**:
+Bing Bong starts with no Session and renders no entries from recorded history.
+Recorded history remains available outside the live Session experience.
+_Avoid_: hydration, restore, session replay
+
+**Recorded History**:
+The durable review and diagnostic record of past Runs. It may render only when
+the user explicitly opens a history view; it never hydrates the live Feed or
+provides continuity to a Session. It records each Session's identity, start,
+end, end reason, and Run membership.
+_Avoid_: session memory
 
 ### Views
 
@@ -122,7 +222,9 @@ _Avoid_: activity bar, sidebar, activity sidebar
 
 **Idle Screen**:
 What renders when no Active Session exists: clock and weather only. Never shows
-Feed Entries; never renders while a Session is active.
+Feed Entries; never renders while a Session is active. `session_ended` renders
+it immediately, clears the Feed, hides the feed overlay, and resets Browser
+State. Lifecycle events never count as user activity or delay that transition.
 _Avoid_: screensaver
 
 **Toolbar**:
@@ -152,6 +254,15 @@ layer: Env File below process environment below Settings. Never persists,
 never overrides a value that is set anywhere above it.
 
 ### Browser
+
+**Browser Profile**:
+Durable browser-owned data such as login cookies, site storage, consent choices,
+and preferences. It persists across Sessions but is not agent or model context.
+
+**Browser State**:
+The visible page, navigation state, media state, and transient tabs used during
+a Session. It is discarded when the Session ends; the Browser Profile remains.
+_Avoid_: browser context, browser workspace
 
 **On-Screen Principle**:
 Every web read and write happens in a rendered, visible tab. Off-screen fetching of web content does not exist.
@@ -190,6 +301,27 @@ tab; background kinds do approved non-web file work. No subagent fetches the
 web off-screen.
 _Avoid_: research agent, worker, task runner
 
+**Subagent Report**:
+A Subagent's structured return to its orchestrator, carrying findings, evidence,
+and unresolved items. A Subagent may read only the Memory Entries selected for
+its task and cannot mutate Session Working Memory directly.
+
+### Autonomy
+
+**Confirmation**:
+The pipeline's ask-before-acting gate, reserved for Consequential Actions.
+It asks once — card, spoken prompt, and a yes/no mic window — and on deny or
+silence the Run continues with "do not retry" fed back to the model.
+Non-consequential actions never ask.
+_Avoid_: approval, permission prompt
+
+**Consequential Action**:
+An action whose effects outlive the page or spend something: persisting or
+sending data, buying, downloading files, quitting the app. Searching — typing
+a query and submitting it — merely navigates to results and is never
+Consequential.
+_Avoid_: risky action, dangerous action
+
 ### Vision
 
 **Look**:
@@ -212,6 +344,7 @@ _Avoid_: vision call for both (say which capability)
 The maximum number of Looks one run may spend, orchestrator and subagents alike.
 
 **Vision Deadline**:
-The maximum wall-clock one Look may take, per capability — a safety net against
-endpoint variance, not a latency target. Breach surfaces as a failure plus a
-nudge, never a silent blind browse.
+The maximum time one Look may wait before the model starts answering, per
+capability; once answering has begun, a separate cap bounds the whole Look. A
+safety net against silent endpoint hangs, not a latency target. Breach
+surfaces as a failure plus a nudge, never a silent blind browse.
