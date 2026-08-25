@@ -2,6 +2,7 @@ import type { PipelineEvent } from '../pipeline/events'
 import { describeToolIntent } from '../pipeline/toolCallDisplay'
 import { formatRetryLine } from '../pipeline/runProgress'
 import type { SessionId } from '../session/sessionIdentity'
+import type { SessionAdoptionPayload } from '../session/ipcChannels'
 import { projectPipelineEvent } from './transcriptProjection'
 import type { TranscriptEvent } from './historyStore'
 
@@ -76,6 +77,15 @@ export const MAX_DETAIL_ENTRIES = 500
 
 export function createFeedProjection(): {
   onEvent(event: PipelineEvent): void
+  /**
+   * Re-adopts the live Session by identity (ADR 0017): a page that lost
+   * its state mid-Session re-opens the gate from main's truth. Adds no
+   * entries — recovery is forward-only; a matching session_ended still
+   * wipes exactly like an event-opened Session. Guarded exactly like a
+   * session_started: stale generations and foreign Sessions can never
+   * seize a gate the page already opened.
+   */
+  adopt(identity: SessionAdoptionPayload): void
   /** Voice-half lines (heard words, mic errors) ride the same feed. */
   append(entry: TranscriptEvent): void
   entries(): FeedEntry[]
@@ -322,6 +332,15 @@ export function createFeedProjection(): {
       }
     },
     append: appendOutcome,
+    adopt(identity) {
+      // Stale generations and foreign Sessions never re-own the view —
+      // the same rule a session_start follows. Entries are untouched
+      // (a fresh page has none, and a wipe is session_ended's alone).
+      if (activeSessionGeneration !== null && identity.generation < activeSessionGeneration) return
+      if (activeSessionId !== null && identity.sessionId !== activeSessionId) return
+      activeSessionId = identity.sessionId
+      activeSessionGeneration = identity.generation
+    },
     entries: () => feed,
     liveRunId: () => liveRunId,
   }

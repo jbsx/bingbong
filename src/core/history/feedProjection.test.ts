@@ -169,6 +169,78 @@ describe('feed projection', () => {
     expect(feed.liveRunId()).toBeNull()
   })
 
+  describe('session re-adoption (ADR 0017)', () => {
+    /** The re-adoption payload's shape (session ipcChannels): identity only. */
+    const identity = { sessionId: SESSION.sessionId, generation: SESSION.sessionGeneration }
+
+    it('adopt re-opens the gate for the still-live Run — the next entry renders', () => {
+      const feed = createFeedProjection()
+      // The page died mid-Run: events of the live Session were dropped by
+      // the fresh (identity-less) projection…
+      feed.onEvent({ ...command('lost with the page', 1_000), ...SESSION } as PipelineEvent)
+
+      // …main re-sends the identity, and the Run's next entry renders.
+      feed.adopt(identity)
+      feed.onEvent({ type: 'display', turnId: T, text: 'Still running.', at: 2_000, ...SESSION } as PipelineEvent)
+
+      expect(outline(feed.entries())).toEqual([
+        { kind: 'display', role: ASSISTANT, text: 'Still running.', detail: false },
+      ])
+    })
+
+    it('adoption is identity-only — no entries are replayed into the view', () => {
+      const feed = createFeedProjection()
+      feed.adopt(identity)
+      expect(feed.entries()).toEqual([])
+    })
+
+    it('an adopted Session ends exactly like an event-opened one', () => {
+      const feed = createFeedProjection()
+      feed.adopt(identity)
+      feed.onEvent({ type: 'display', turnId: T, text: 'Live again.', at: 1_000, ...SESSION } as PipelineEvent)
+
+      feed.onEvent({ type: 'session_ended', reason: 'lapsed', at: 2_000, ...SESSION } as PipelineEvent)
+
+      expect(feed.entries()).toEqual([])
+      feed.onEvent({ ...command('after the end', 3_000), ...SESSION } as PipelineEvent)
+      expect(feed.entries()).toEqual([])
+    })
+
+    it('adoption of the open identity is idempotent — a late re-send changes nothing', () => {
+      const feed = createFeedProjection()
+      feed.onEvent({ type: 'session_started', ...SESSION, at: 500 })
+      feed.onEvent({ ...command('live work', 1_000), ...SESSION } as PipelineEvent)
+
+      feed.adopt(identity)
+      feed.onEvent({ ...command('more work', 2_000), ...SESSION } as PipelineEvent)
+
+      expect(feed.entries().map((entry) => entry.text)).toEqual(['live work', 'more work'])
+    })
+
+    it('adopted gates still reject foreign and stale events', () => {
+      const feed = createFeedProjection()
+      feed.adopt(identity)
+
+      feed.onEvent({ ...command('foreign', 1_000), sessionId: 'session-2', sessionGeneration: 0 } as PipelineEvent)
+      feed.onEvent({ ...command('stale', 2_000), sessionId: SESSION.sessionId, sessionGeneration: -1 } as PipelineEvent)
+
+      expect(feed.entries()).toEqual([])
+    })
+
+    it('a stale or foreign adopt cannot seize a gate the page already opened', () => {
+      const feed = createFeedProjection()
+      feed.onEvent({ type: 'session_started', ...SESSION, at: 500 })
+
+      // A late re-send for a superseded Session (older generation) or a
+      // foreign one never re-owns the live view.
+      feed.adopt({ sessionId: SESSION.sessionId, generation: SESSION.sessionGeneration - 1 })
+      feed.adopt({ sessionId: 'session-9' as SessionId, generation: SESSION.sessionGeneration + 1 })
+
+      feed.onEvent({ ...command('still live', 3_000), ...SESSION } as PipelineEvent)
+      expect(feed.entries().map((entry) => entry.text)).toEqual(['still live'])
+    })
+  })
+
   it('a foreign Session start cannot hijack the live view', () => {
     const feed = createFeedProjection()
     feed.onEvent({ type: 'session_started', ...SESSION, at: 500 })

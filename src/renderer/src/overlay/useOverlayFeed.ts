@@ -3,6 +3,7 @@ import type { PipelineEvent } from '../../../core/pipeline/events'
 import type { VoiceErrorEvent, VoiceHeardEvent } from '../../../core/voice/ipcChannels'
 import { defaultFeedPanelWidth, type FeedPanelState } from '../../../core/panel/feedPanelState'
 import { useFeedProjection } from '../useFeedProjection'
+import { useSessionAdoption } from '../useSessionAdoption'
 
 // The overlay half of the feed panel (#45): the shared feed projection
 // (same as the dashboard's) fed from the panel's own webContents
@@ -30,6 +31,10 @@ export function useOverlayFeed(): Pick<ReturnType<typeof useFeedProjection>, 'fe
     // The projection object's identity changes per render, but its methods
     // close over one ref-backed projection — subscribing once is correct.
   }, [])
+
+  // Re-adoption (ADR 0017): a reloaded overlay's fresh projection accepts
+  // the still-live Run's next Feed Entries.
+  useSessionAdoption((identity) => projection.adoptSession(identity))
 
   return { feed: projection.feed, liveRunId: projection.liveRunId }
 }

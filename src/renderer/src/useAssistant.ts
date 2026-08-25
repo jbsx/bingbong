@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { PipelineEvent, PipelineStatus, SubagentCard } from '../../core/pipeline/events'
 import type { VoiceHeardEvent } from '../../core/voice/ipcChannels'
+import { useSessionAdoption } from './useSessionAdoption'
 import type { FeedEntry } from '../../core/history/feedProjection'
 import { useFeedProjection } from './useFeedProjection'
 import { createRunProgressTracker, type RunProgress } from '../../core/pipeline/runProgress'
@@ -71,7 +72,7 @@ export function useAssistant(): Assistant {
   const liveRunId = feedProjection.liveRunId
 
   useEffect(() => {
-    return window.bingbong.assistant.onEvent((event: PipelineEvent) => {
+    const unsubscribe = window.bingbong.assistant.onEvent((event: PipelineEvent) => {
       feedProjection.handleEvent(event)
       progressTracker.current.onEvent(event)
       setProgress(progressTracker.current.current())
@@ -151,7 +152,13 @@ export function useAssistant(): Assistant {
           return
       }
     })
+    return unsubscribe
   }, [])
+
+  // Renderer session re-adoption (ADR 0017): a reloaded dashboard's fresh
+  // projection accepts the still-live Run's subsequent events instead of
+  // silently rejecting them.
+  useSessionAdoption((identity) => feedProjection.adoptSession(identity))
 
   const submit = useCallback(
     (text: string) => {

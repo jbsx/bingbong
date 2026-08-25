@@ -18,7 +18,7 @@ import type { UsageSummary } from '../core/agent/spendEstimate'
 import type { VoiceErrorEvent, VoiceHeardEvent, VoiceState } from '../core/voice/ipcChannels'
 import type { RecordedEntry, RunRecord, SessionRecord } from '../core/history/historyStore'
 import type { SubmissionFeedback } from '../core/session/submissionFeedback'
-import { SESSION_IPC, type SessionDecisionRequest } from '../core/session/ipcChannels'
+import { SESSION_IPC, type SessionAdoptionPayload, type SessionDecisionRequest } from '../core/session/ipcChannels'
 
 // Launch config is a snapshot: the flags and env can't change after start.
 const launch = resolveLaunchConfig(process.argv, process.env)
@@ -62,6 +62,14 @@ contextBridge.exposeInMainWorld('bingbong', {
   session: {
     extend: (request: SessionDecisionRequest): Promise<boolean> => ipcRenderer.invoke(SESSION_IPC.extend, request),
     decline: (request: SessionDecisionRequest): Promise<boolean> => ipcRenderer.invoke(SESSION_IPC.decline, request),
+    /** The live Session's identity, or null — a reloaded page re-adopts from it (ADR 0017). */
+    current: (): Promise<SessionAdoptionPayload | null> => ipcRenderer.invoke(SESSION_IPC.current),
+    /** Main's re-send of the live Session identity on a late page load (ADR 0017). */
+    onReadopt: (listener: (identity: SessionAdoptionPayload) => void): (() => void) => {
+      const wrapped = (_event: unknown, identity: SessionAdoptionPayload): void => listener(identity)
+      ipcRenderer.on(SESSION_IPC.readopt, wrapped)
+      return () => ipcRenderer.removeListener(SESSION_IPC.readopt, wrapped)
+    },
   },
   settings: {
     get: (): Promise<AppSettings> => ipcRenderer.invoke(SETTINGS_IPC.get),

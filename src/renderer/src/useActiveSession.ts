@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
 import type { PipelineEvent } from '../../core/pipeline/events'
+import type { SessionAdoptionPayload } from '../../core/session/ipcChannels'
+import { useSessionAdoption } from './useSessionAdoption'
 
 /** Explicit lifecycle projection: boot is absent and Run timestamps never infer Session state. */
 export function useActiveSession(): boolean {
   const [active, setActive] = useState(false)
-  const identity = useRef<{ sessionId: string; generation: number } | null>(null)
+  const identity = useRef<SessionAdoptionPayload | null>(null)
 
   useEffect(() => window.bingbong.assistant.onEvent((event: PipelineEvent) => {
     const current = identity.current
@@ -22,6 +24,13 @@ export function useActiveSession(): boolean {
       setActive(false)
     }
   }), [])
+
+  // Re-adoption (ADR 0017): a reloaded dashboard knows its Session is
+  // active, so the idle screen never takes a live Session's dashboard.
+  useSessionAdoption((adopted) => {
+    identity.current = { sessionId: adopted.sessionId, generation: adopted.generation }
+    setActive(true)
+  })
 
   return active
 }

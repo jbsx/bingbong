@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, session } from 'electron'
+import { app, BrowserWindow, crashReporter, ipcMain, session } from 'electron'
 import { join } from 'node:path'
 import type { BrowserController, VisualGroundingController } from '../core/ports/browser'
 import { BROWSER_IPC } from '../core/browser/ipcChannels'
@@ -62,6 +62,10 @@ import { VOICE_IPC } from '../core/voice/ipcChannels'
 import { createWindowEventPublisher } from './session/windowEventPublisher'
 import { createPipelineAcceptanceGate } from './session/pipelineAcceptance'
 import { attachSessionToWindow, registerSessionIpc } from './session/attachSession'
+
+// Crash evidence (ADR 0017): renderer death leaves a dump instead of
+// vanishing silently; reports stay local — nothing uploads anywhere.
+crashReporter.start({ uploadToServer: false })
 
 // Appliance mode (T11): --kiosk goes fullscreen; the idle timeout reaches the
 // renderer through the preload's launch-config snapshot.
@@ -452,7 +456,10 @@ async function createWindow(): Promise<BrowserWindow> {
       })
     },
   })
-  attachSessionToWindow(win, sessionRuntime)
+  // Renderer session re-adoption (ADR 0017): both session-bearing pages —
+  // dashboard and feed panel overlay — re-adopt the live Session on any
+  // finished load, and a gone render process reloads into recovery.
+  attachSessionToWindow(win, sessionRuntime, { overlayContents: feedPanel.contents })
   activeSessionRuntime = sessionRuntime
   const commandRunner = createAssistantCommandRunner({
     pipeline,

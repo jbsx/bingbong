@@ -3,6 +3,7 @@ import type { PipelineEvent } from '../../core/pipeline/events'
 import type { VoiceHeardEvent } from '../../core/voice/ipcChannels'
 import { describeHeard } from '../../core/voice/heardDisplay'
 import { createFeedProjection, type FeedEntry } from '../../core/history/feedProjection'
+import type { SessionAdoptionPayload } from '../../core/session/ipcChannels'
 
 // The feed projection's renderer wiring (#44, #45): one launch-local
 // projection instance plus the voice-half appends. Shared by the dashboard
@@ -15,6 +16,8 @@ export interface FeedProjection {
   liveRunId: string | null
   /** Fold one pipeline event into the feed. */
   handleEvent(event: PipelineEvent): void
+  /** Re-adopt the live Session by identity (ADR 0017) — forward-only. */
+  adoptSession(identity: SessionAdoptionPayload): void
   /** A heard-but-not-a-command voice line. */
   appendHeard(heard: VoiceHeardEvent): void
   /** Mic/engine failures from the voice half. */
@@ -34,6 +37,10 @@ export function useFeedProjection(): FeedProjection {
     liveRunId: state.liveRunId,
     handleEvent(event) {
       projection.current.onEvent(event)
+      sync()
+    },
+    adoptSession(identity) {
+      projection.current.adopt(identity)
       sync()
     },
     appendHeard(heard) {

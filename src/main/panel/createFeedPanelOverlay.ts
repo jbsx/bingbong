@@ -85,6 +85,8 @@ export interface FeedPanelOverlay {
    * before-input-event handling (attachAssistant) is the prior art.
    */
   registerShortcut(contents: Electron.WebContents): void
+  /** The overlay page's webContents — session re-adoption targets it (ADR 0017). */
+  contents(): Electron.WebContents | null
   dispose(): void
 }
 
@@ -96,6 +98,18 @@ function isPanelShortcut(input: Electron.Input): boolean {
     input.shift &&
     !input.alt
   )
+}
+
+/**
+ * Reload chords (Ctrl/Cmd+R, F5 — shift variants included) never reload
+ * the overlay (ADR 0017): a mid-Session reload is a page loss the panel
+ * must not invite. Recovery is main's job; the input is simply dropped.
+ */
+function isReloadChord(input: Electron.Input): boolean {
+  if (input.type !== 'keyDown') return false
+  const key = input.key.toLowerCase()
+  if (key === 'f5') return true
+  return key === 'r' && (input.control || input.meta)
 }
 
 export function attachFeedPanelOverlayToWindow(
@@ -159,6 +173,16 @@ export function attachFeedPanelOverlayToWindow(
   }
   registerShortcut(win.webContents)
   registerShortcut(wc)
+
+  // The overlay's reload chords are blocked (ADR 0017): the panel's page
+  // is session-bearing state — an accidental Ctrl+R/F5 must not throw it
+  // away. Only the overlay: the pane is a real browser page (F5 is its
+  // user's to use) and the dashboard self-heals by re-adoption.
+  const onOverlayInput = (event: Electron.Event, input: Electron.Input): void => {
+    if (isReloadChord(input)) event.preventDefault()
+  }
+  wc.on('before-input-event', onOverlayInput)
+  wc.once('destroyed', () => wc.removeListener('before-input-event', onOverlayInput))
 
   // A late-loading overlay missed earlier broadcasts — re-push the fold to
   // it on load. The dashboard is deliberately excluded: it pulls getState
@@ -229,6 +253,7 @@ export function attachFeedPanelOverlayToWindow(
     },
     state: () => fold.state(),
     registerShortcut,
+    contents: () => (wc.isDestroyed() ? null : wc),
     dispose() {
       if (!win.isDestroyed()) win.contentView.removeChildView(view)
       if (!wc.isDestroyed()) wc.close()

@@ -8,7 +8,7 @@ import type { UsageSummary } from '../core/agent/spendEstimate'
 import type { RecordedEntry, RunRecord, SessionRecord } from '../core/history/historyStore'
 import type { FeedPanelMode, FeedPanelState } from '../core/panel/feedPanelState'
 import type { SubmissionFeedback } from '../core/session/submissionFeedback'
-import type { SessionDecisionRequest } from '../core/session/ipcChannels'
+import type { SessionAdoptionPayload, SessionDecisionRequest } from '../core/session/ipcChannels'
 
 export type { BrowserPaneState, PaneRect }
 export type { PipelineEvent }
@@ -57,6 +57,10 @@ export interface BingbongSettingsApi {
 export interface BingbongSessionApi {
   extend(request: SessionDecisionRequest): Promise<boolean>
   decline(request: SessionDecisionRequest): Promise<boolean>
+  /** The live Session's identity, or null — a reloaded page re-adopts from it (ADR 0017). */
+  current(): Promise<SessionAdoptionPayload | null>
+  /** Main's re-send of the live Session identity on a late page load (ADR 0017). */
+  onReadopt(listener: (identity: SessionAdoptionPayload) => void): () => void
 }
 
 export interface BingbongSubagentsApi {
