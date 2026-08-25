@@ -2,7 +2,10 @@
 
 ## Status
 
-Accepted
+Accepted — deadline mechanics partially superseded by ADR 0016 (streaming
+vision deadlines): the whole-exchange abort on a non-streaming request is
+replaced by a time-to-first-token deadline plus a whole-Look cap. The
+capability split, DOM-first Locate, and screenshot quality choices stand.
 
 ## Context
 

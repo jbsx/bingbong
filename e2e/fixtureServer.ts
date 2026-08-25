@@ -411,16 +411,15 @@ export async function startFixtureServer(): Promise<FixtureServer> {
   const handle = (req: IncomingMessage, res: ServerResponse): void => {
     // OpenAI-compatible chat completions (#76 e2e): stands in for the vision
     // provider, so the real adapter can be driven with .env-only routing.
+    // The adapter streams (ADR 0016), so the fixture answers in SSE frames.
     if (req.url === '/chat/completions' && req.method === 'POST') {
       visionEndpointHits += 1
       lastAuthorization = req.headers.authorization
       req.resume()
-      res.writeHead(200, { 'Content-Type': 'application/json' })
-      res.end(
-        JSON.stringify({
-          choices: [{ message: { content: VISION_COMPLETION_CONTENT } }],
-        }),
-      )
+      res.writeHead(200, { 'Content-Type': 'text/event-stream' })
+      res.write(`data: ${JSON.stringify({ choices: [{ delta: { role: 'assistant' } }] })}\n\n`)
+      res.write(`data: ${JSON.stringify({ choices: [{ delta: { content: VISION_COMPLETION_CONTENT } }] })}\n\n`)
+      res.end('data: [DONE]\n\n')
       return
     }
     if (req.url === '/dl') {

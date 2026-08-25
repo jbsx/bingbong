@@ -25,23 +25,80 @@ interface CapturedRequest {
   init: RequestInit
 }
 
+/** One SSE frame carrying a chat-completions chunk. */
+function sseChunk(delta: Record<string, unknown>): string {
+  return `data: ${JSON.stringify({ choices: [{ delta }] })}\n\n`
+}
+
+const SSE_DONE = 'data: [DONE]\n\n'
+
+function sseResponse(frames: string[]): Response {
+  return new Response(
+    new ReadableStream({
+      start(controller) {
+        const encoder = new TextEncoder()
+        for (const frame of frames) controller.enqueue(encoder.encode(frame))
+        controller.close()
+      },
+    }),
+    { status: 200, headers: { 'content-type': 'text/event-stream' } },
+  )
+}
+
+/** A completed streamed answer: content deltas, then the DONE frame. */
 function okResponse(content: string): Response {
-  return new Response(JSON.stringify({ choices: [{ message: { content } }] }), { status: 200 })
+  return sseResponse([sseChunk({ role: 'assistant' }), sseChunk({ content }), SSE_DONE])
+}
+
+/** Frames arrive on a schedule — the slow-but-generating shape (ADR 0016). */
+function timedSseResponse(frames: { afterMs: number; data: string }[]): Response {
+  return new Response(
+    new ReadableStream({
+      async start(controller) {
+        const encoder = new TextEncoder()
+        for (const frame of frames) {
+          await new Promise((resolve) => setTimeout(resolve, frame.afterMs))
+          controller.enqueue(encoder.encode(frame.data))
+        }
+        controller.close()
+      },
+    }),
+    { status: 200, headers: { 'content-type': 'text/event-stream' } },
+  )
 }
 
 describe('createZaiVisionApi', () => {
-  it('resolveVisionTimeouts: 15s describe / 60s locate, seconds-based env scaling with plausible bounds', () => {
-    expect(resolveVisionTimeouts({})).toEqual({ describeMs: 15_000, locateMs: 60_000 })
-    expect(resolveVisionTimeouts({ BINGBONG_VISION_TIMEOUT_MS: '2' })).toEqual({ describeMs: 2_000, locateMs: 8_000 })
+  it('resolveVisionTimeouts: 15s/60s caps with an 8s first-token window, seconds-based env scaling with plausible bounds', () => {
+    expect(resolveVisionTimeouts({})).toEqual({ describeMs: 15_000, locateMs: 60_000, firstTokenMs: 8_000 })
+    // The override scales both whole-Look caps; the first-token window
+    // shrinks with a lowered Describe cap but never grows past its default.
+    expect(resolveVisionTimeouts({ BINGBONG_VISION_TIMEOUT_MS: '2' })).toEqual({
+      describeMs: 2_000,
+      locateMs: 8_000,
+      firstTokenMs: 2_000,
+    })
+    expect(resolveVisionTimeouts({ BINGBONG_VISION_TIMEOUT_MS: '45' })).toEqual({
+      describeMs: 45_000,
+      locateMs: 180_000,
+      firstTokenMs: 8_000,
+    })
     // Non-numeric, zero, negative: defaults.
     for (const raw of ['soon', '0', '-5']) {
-      expect(resolveVisionTimeouts({ BINGBONG_VISION_TIMEOUT_MS: raw })).toEqual({ describeMs: 15_000, locateMs: 60_000 })
+      expect(resolveVisionTimeouts({ BINGBONG_VISION_TIMEOUT_MS: raw })).toEqual({
+        describeMs: 15_000,
+        locateMs: 60_000,
+        firstTokenMs: 8_000,
+      })
     }
     // Implausibly large (a legacy milliseconds value like 30000) is rejected to defaults.
-    expect(resolveVisionTimeouts({ BINGBONG_VISION_TIMEOUT_MS: '30000' })).toEqual({ describeMs: 15_000, locateMs: 60_000 })
+    expect(resolveVisionTimeouts({ BINGBONG_VISION_TIMEOUT_MS: '30000' })).toEqual({
+      describeMs: 15_000,
+      locateMs: 60_000,
+      firstTokenMs: 8_000,
+    })
   })
 
-  it('times out a stuck call per capability, aborting the request and naming the deadline', async () => {
+  it('fails a hung (never-answering) call at time-to-first-token, aborting the request', async () => {
     let observedSignal: AbortSignal | undefined
     const vision = createZaiVisionApi({
       getEnv: () => ({ ...configuredEnv }),
@@ -51,36 +108,129 @@ describe('createZaiVisionApi', () => {
           init?.signal?.addEventListener('abort', () => reject(new Error('aborted')), { once: true })
         })
       },
-      timeoutMs: { describeMs: 30, locateMs: 60 },
+      // Whole-Look caps far away: only the first-token deadline can fire.
+      timeoutMs: { describeMs: 10_000, locateMs: 40_000, firstTokenMs: 30 },
     })
 
     const failure = await vision.describe(describeRequest).catch((error: unknown) => error)
     expect(failure).toBeInstanceOf(VisionDeadlineError)
-    expect(String((failure as Error).message)).toContain('timed out after 30ms')
+    expect(String((failure as Error).message)).toContain('did not begin answering within 30ms')
     expect(observedSignal?.aborted).toBe(true)
-    await expect(vision.locate(locateRequest)).rejects.toBeInstanceOf(VisionDeadlineError)
+    await expect(vision.locate(locateRequest)).rejects.toMatchObject({
+      name: 'VisionDeadlineError',
+      message: expect.stringContaining('did not begin answering'),
+    })
   })
 
-  it('covers slow response bodies within the deadline', async () => {
+  it('fails a headers-but-tokenless stream at time-to-first-token', async () => {
     const vision = createZaiVisionApi({
       getEnv: () => ({ ...configuredEnv }),
       fetch: async () =>
         new Response(
           new ReadableStream({
             start(controller) {
-              // Headers arrive; the body never completes within the deadline.
+              // Headers arrive; the body never yields a token.
               setTimeout(() => controller.error(new Error('body never finishes')), 5_000)
             },
           }),
           { status: 200 },
         ),
-      timeoutMs: { describeMs: 50, locateMs: 50 },
+      timeoutMs: { describeMs: 10_000, locateMs: 10_000, firstTokenMs: 50 },
     })
 
-    await expect(vision.describe(describeRequest)).rejects.toBeInstanceOf(VisionDeadlineError)
+    await expect(vision.describe(describeRequest)).rejects.toMatchObject({
+      name: 'VisionDeadlineError',
+      message: expect.stringContaining('did not begin answering'),
+    })
   })
 
-  it('describe: disables thinking and caps tokens on the fast path', async () => {
+  it('lets a slow-but-generating Look stream past the first-token window to completion', async () => {
+    const vision = createZaiVisionApi({
+      getEnv: () => ({ ...configuredEnv }),
+      fetch: async () =>
+        timedSseResponse([
+          { afterMs: 10, data: sseChunk({ role: 'assistant' }) },
+          { afterMs: 10, data: sseChunk({ content: 'A cookie banner ' }) },
+          // Tokens keep flowing well past the 40ms first-token window.
+          { afterMs: 40, data: sseChunk({ content: 'covers ' }) },
+          { afterMs: 45, data: sseChunk({ content: 'the page.' }) },
+          { afterMs: 30, data: SSE_DONE },
+        ]),
+      timeoutMs: { describeMs: 1_000, locateMs: 4_000, firstTokenMs: 40 },
+    })
+
+    await expect(vision.describe(describeRequest)).resolves.toBe('A cookie banner covers the page.')
+  })
+
+  it('counts reasoning tokens as answering, accumulating only content (Locate)', async () => {
+    const vision = createZaiVisionApi({
+      getEnv: () => ({ ...configuredEnv }),
+      fetch: async () =>
+        timedSseResponse([
+          { afterMs: 5, data: sseChunk({ reasoning_content: 'scanning the thumbnail…' }) },
+          { afterMs: 30, data: sseChunk({ content: '{"x": 340, ' }) },
+          { afterMs: 20, data: sseChunk({ content: '"y": 220}' }) },
+          { afterMs: 5, data: SSE_DONE },
+        ]),
+      timeoutMs: { describeMs: 1_000, locateMs: 4_000, firstTokenMs: 30 },
+    })
+
+    await expect(vision.locate(locateRequest)).resolves.toEqual({ x: 340, y: 220 })
+  })
+
+  it('caps a stream that stalls mid-answer at the whole-Look deadline', async () => {
+    const vision = createZaiVisionApi({
+      getEnv: () => ({ ...configuredEnv }),
+      fetch: async () =>
+        new Response(
+          new ReadableStream({
+            start(controller) {
+              controller.enqueue(new TextEncoder().encode(sseChunk({ content: 'partial' })))
+              // Tokens flowed, then the stream stalls forever.
+            },
+          }),
+          { status: 200 },
+        ),
+      timeoutMs: { describeMs: 50, locateMs: 200, firstTokenMs: 10_000 },
+    })
+
+    await expect(vision.describe(describeRequest)).rejects.toMatchObject({
+      name: 'VisionDeadlineError',
+      message: 'Vision request timed out after 50ms',
+    })
+  })
+
+  it('rejects a stream that ends without any content', async () => {
+    const vision = createZaiVisionApi({
+      getEnv: () => ({ ...configuredEnv }),
+      fetch: async () => sseResponse([sseChunk({ role: 'assistant' }), SSE_DONE]),
+    })
+
+    await expect(vision.describe(describeRequest)).rejects.toThrow('Vision model returned no content')
+  })
+
+  it('parses the SSE event model: joined multi-line data, ignored comments and keep-alives', async () => {
+    // One JSON payload split across two data: lines of one event (at a JSON
+    // token boundary — data lines join with newlines), a comment line, and
+    // a frame split mid-line by the transport.
+    const whole = `data: ${JSON.stringify({ choices: [{ delta: { content: 'reassembled' } }] })}\n\n${SSE_DONE}`
+    const splitAt = Math.floor(whole.length / 2)
+    const vision = createZaiVisionApi({
+      getEnv: () => ({ ...configuredEnv }),
+      fetch: async () =>
+        sseResponse([
+          ': keep-alive\n',
+          'data: {"choices":\n',
+          'data: [{"delta":{"content":"joined payload"}}]}\n\n',
+          whole.slice(0, splitAt),
+          whole.slice(splitAt),
+        ]),
+    })
+
+    await expect(vision.describe(describeRequest)).resolves.toBe('joined payloadreassembled')
+  })
+
+  it('describe: streams, disables thinking, and caps tokens on the fast path', async () => {
     const captured: CapturedRequest[] = []
     const vision = createZaiVisionApi({
       getEnv: () => ({ ...configuredEnv }),
@@ -96,6 +246,7 @@ describe('createZaiVisionApi', () => {
     expect(String((captured[0]?.init.headers as Record<string, string>).authorization).toLowerCase()).toContain('bearer secret-value')
     expect(body.thinking).toEqual({ type: 'disabled' })
     expect(body.max_tokens).toBe(DESCRIBE_MAX_TOKENS)
+    expect(body.stream).toBe(true)
     expect(body.model).toBe('GLM-4.6V')
   })
 

@@ -3,11 +3,13 @@ import { VisionDeadlineError } from '../../core/ports/vision'
 import type { VisionLocation, VisionModel } from '../../core/ports/vision'
 
 /**
- * Direct chat-completions adapter for the vision role (ADR 0008). The Z.ai MCP
- * server hard-locks reasoning on, which costs ~7x latency on Describe calls
- * and crashes under a token cap; calling the same OpenAI-compatible endpoint
- * the orchestrator uses gives us every lever and drops the child process,
- * temp files, and stdio hop entirely.
+ * Direct chat-completions adapter for the vision role (ADR 0008). The Z.ai
+ * MCP server hard-locks reasoning on, which costs ~7x latency on Describe
+ * calls and crashes under a token cap; calling the same OpenAI-compatible
+ * endpoint the orchestrator uses gives us every lever and drops the child
+ * process, temp files, and stdio hop entirely. Requests stream so the
+ * deadline can tell hung from slow (ADR 0016); streaming is otherwise an
+ * implementation detail.
  */
 
 export type FetchLike = (url: string, init?: RequestInit) => Promise<Response>
@@ -16,9 +18,13 @@ export type FetchLike = (url: string, init?: RequestInit) => Promise<Response>
 export const DESCRIBE_MAX_TOKENS = 128
 export const LOCATE_MAX_TOKENS = 512
 
-/** Per-capability deadlines — safety nets against endpoint variance, not targets. */
+/** Per-capability whole-Look deadlines — safety nets against endpoint
+ * variance, not targets. */
 export const DESCRIBE_TIMEOUT_MS = 15_000
 export const LOCATE_TIMEOUT_MS = 60_000
+/** A Look that has not begun answering within this window is hung, not
+ * slow — it fails immediately (ADR 0016). */
+export const FIRST_TOKEN_TIMEOUT_MS = 8_000
 /** Locate gets four times Describe's deadline; the env override scales both. */
 const LOCATE_TO_DESCRIBE_RATIO = LOCATE_TIMEOUT_MS / DESCRIBE_TIMEOUT_MS
 /** Upper bound on the seconds-style override: legacy milliseconds values
@@ -28,17 +34,25 @@ const MAX_OVERRIDE_SECONDS = 600
 export interface VisionTimeouts {
   describeMs: number
   locateMs: number
+  firstTokenMs: number
 }
 
 /**
- * One env var (seconds) scales both deadlines proportionally — the override
- * exists for debugging, not per-capability tuning. Non-positive, non-numeric,
- * or implausibly large values (legacy milliseconds) fall back to the defaults.
+ * One env var (seconds) scales both whole-Look deadlines proportionally —
+ * the override exists for debugging, not per-capability tuning. Non-positive,
+ * non-numeric, or implausibly large values (legacy milliseconds) fall back
+ * to the defaults. The time-to-first-token window scales down with a lowered
+ * Describe cap (it can never exceed the whole-Look deadline it guards) but
+ * never grows past its default: a hung request is hung at any cap size.
  */
 export function resolveVisionTimeouts(env: Record<string, string | undefined>): VisionTimeouts {
   const raw = Number(env.BINGBONG_VISION_TIMEOUT_MS)
   const describeMs = Number.isFinite(raw) && raw > 0 && raw <= MAX_OVERRIDE_SECONDS ? raw * 1_000 : DESCRIBE_TIMEOUT_MS
-  return { describeMs, locateMs: describeMs * LOCATE_TO_DESCRIBE_RATIO }
+  return {
+    describeMs,
+    locateMs: describeMs * LOCATE_TO_DESCRIBE_RATIO,
+    firstTokenMs: Math.min(FIRST_TOKEN_TIMEOUT_MS, describeMs),
+  }
 }
 
 export interface ZaiVisionApiDeps {
@@ -103,6 +117,69 @@ function createScriptedQueue<T>(name: string, exhaustedMessage: string, validate
   }
 }
 
+/**
+ * Reads an OpenAI-compatible SSE stream, returning the accumulated content.
+ * `onFirstToken` fires once — on the first model token of any kind (content
+ * or reasoning) — because that is the evidence the exchange is generating
+ * rather than hung (ADR 0016). Parses per the SSE event model: `data:` lines
+ * of one event join with newlines before JSON parsing, so a payload the
+ * provider split across lines is not silently dropped.
+ */
+async function readSseStream(response: Response, onFirstToken: () => void): Promise<string> {
+  const reader = response.body?.getReader()
+  if (!reader) throw new Error('Vision response had no body')
+  const decoder = new TextDecoder()
+  let buffer = ''
+  let dataLines: string[] = []
+  let content = ''
+  let sawToken = false
+  const dispatchEvent = (): void => {
+    if (dataLines.length === 0) return
+    const payload = dataLines.join('\n').trim()
+    dataLines = []
+    if (payload === '' || payload === '[DONE]') return
+    let parsed: unknown
+    try {
+      parsed = JSON.parse(payload)
+    } catch {
+      return
+    }
+    const delta = (parsed as { choices?: { delta?: { content?: unknown; reasoning_content?: unknown } }[] })
+      .choices?.[0]?.delta
+    const text = typeof delta?.content === 'string' ? delta.content : ''
+    const reasoning = typeof delta?.reasoning_content === 'string' ? delta.reasoning_content : ''
+    if (!sawToken && (text !== '' || reasoning !== '')) {
+      sawToken = true
+      onFirstToken()
+    }
+    content += text
+  }
+  const consumeLine = (line: string): void => {
+    // A blank line ends an event; a `data:` line feeds the current one. Per
+    // the SSE spec, only a single leading space after the field name is
+    // stripped. Comment (`:…`) and other fields are ignored.
+    if (line === '') {
+      dispatchEvent()
+      return
+    }
+    if (line.startsWith('data:')) dataLines.push(line.slice(5).replace(/^ /, ''))
+  }
+  for (;;) {
+    const { done, value } = await reader.read()
+    if (done) break
+    buffer += decoder.decode(value, { stream: true })
+    let newline = buffer.indexOf('\n')
+    while (newline !== -1) {
+      consumeLine(buffer.slice(0, newline).replace(/\r$/, ''))
+      buffer = buffer.slice(newline + 1)
+      newline = buffer.indexOf('\n')
+    }
+  }
+  consumeLine(buffer.replace(/\r$/, ''))
+  dispatchEvent()
+  return content
+}
+
 export function createZaiVisionApi(deps: ZaiVisionApiDeps): VisionModel {
   const doFetch = deps.fetch ?? ((url: string, init?: RequestInit) => fetch(url, init))
 
@@ -114,7 +191,7 @@ export function createZaiVisionApi(deps: ZaiVisionApiDeps): VisionModel {
   async function complete(
     image: Uint8Array,
     prompt: string,
-    options: { thinking: 'enabled' | 'disabled'; maxTokens: number; timeoutMs: number },
+    options: { thinking: 'enabled' | 'disabled'; maxTokens: number; timeoutMs: number; firstTokenMs: number },
   ): Promise<string> {
     const endpoint = resolveModelEndpoint(deps.getEnv(), 'vision')
     const body = {
@@ -130,34 +207,51 @@ export function createZaiVisionApi(deps: ZaiVisionApiDeps): VisionModel {
       ],
       thinking: { type: options.thinking },
       max_tokens: options.maxTokens,
-      stream: false,
+      // Streaming exists solely to make progress observable (ADR 0016): the
+      // deadline can tell a hung request from a slowly generating one.
+      stream: true,
     }
-    // The deadline covers the whole exchange — request and response body: a
-    // stuck or slow-dribbling call is aborted (socket freed, spend stopped).
-    const signal = AbortSignal.timeout(options.timeoutMs)
-    const timedOut = new Promise<never>((_, reject) => {
-      signal.addEventListener(
-        'abort',
-        () => reject(new VisionDeadlineError(options.timeoutMs)),
-        { once: true },
-      )
+    // Streaming vision deadlines (ADR 0016): the exchange must begin
+    // answering within the time-to-first-token window or it is hung and
+    // fails immediately; once tokens flow, only the whole-Look cap bounds
+    // the rest — total wall-clock never exceeds the per-capability cap.
+    const firstTokenMs = Math.min(options.firstTokenMs, options.timeoutMs)
+    let firstTokenSeen = false
+    let firstTokenTimer: ReturnType<typeof setTimeout> | undefined
+    let wholeLookTimer: ReturnType<typeof setTimeout> | undefined
+    const controller = new AbortController()
+    const deadline = new Promise<never>((_, reject) => {
+      firstTokenTimer = setTimeout(() => {
+        if (!firstTokenSeen) reject(new VisionDeadlineError(firstTokenMs, 'first-token'))
+      }, firstTokenMs)
+      wholeLookTimer = setTimeout(() => reject(new VisionDeadlineError(options.timeoutMs)), options.timeoutMs)
     })
     const exchange = (async () => {
       const response = await doFetch(`${endpoint.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
         method: 'POST',
         headers: { 'content-type': 'application/json', authorization: `Bearer ${endpoint.apiKey}` },
         body: JSON.stringify(body),
-        signal,
+        signal: controller.signal,
       })
       if (!response.ok) throw new Error(`Vision request failed (HTTP ${await readError(response)})`)
-      const json = (await response.json()) as { choices?: { message?: { content?: string } }[] }
-      const content = json.choices?.[0]?.message?.content
-      if (typeof content !== 'string' || content.trim() === '') {
+      const content = await readSseStream(response, () => {
+        firstTokenSeen = true
+        clearTimeout(firstTokenTimer)
+      })
+      if (content.trim() === '') {
         throw new Error('Vision model returned no content')
       }
       return content
     })()
-    return await Promise.race([exchange, timedOut])
+    try {
+      return await Promise.race([exchange, deadline])
+    } finally {
+      clearTimeout(firstTokenTimer)
+      clearTimeout(wholeLookTimer)
+      // Abort whether the exchange won or lost: the socket is freed and
+      // spend stopped even if the loser is still pending.
+      controller.abort()
+    }
   }
 
   // Scripted test hooks (e2e harness): deterministic points/descriptions
@@ -181,13 +275,13 @@ export function createZaiVisionApi(deps: ZaiVisionApiDeps): VisionModel {
         return parsePoint(JSON.stringify(next), request.viewport.width, request.viewport.height)
       }
 
-      const { locateMs } = timeouts()
+      const { locateMs, firstTokenMs } = timeouts()
       const answer = await complete(
         request.image,
         `Locate ${JSON.stringify(request.target)} in this browser screenshot. ` +
           `The viewport is ${request.viewport.width}x${request.viewport.height} CSS pixels. ` +
           'Return only JSON with the center point in viewport pixels: {"x": number, "y": number}.',
-        { thinking: 'enabled', maxTokens: LOCATE_MAX_TOKENS, timeoutMs: locateMs },
+        { thinking: 'enabled', maxTokens: LOCATE_MAX_TOKENS, timeoutMs: locateMs, firstTokenMs },
       )
       return parsePoint(answer, request.viewport.width, request.viewport.height)
     },
@@ -195,8 +289,13 @@ export function createZaiVisionApi(deps: ZaiVisionApiDeps): VisionModel {
       const script = deps.getEnv().BINGBONG_VISION_DESCRIPTION_SCRIPT?.trim()
       if (script) return descriptionScript.next(script)
 
-      const { describeMs } = timeouts()
-      return complete(request.image, request.prompt, { thinking: 'disabled', maxTokens: DESCRIBE_MAX_TOKENS, timeoutMs: describeMs })
+      const { describeMs, firstTokenMs } = timeouts()
+      return complete(request.image, request.prompt, {
+        thinking: 'disabled',
+        maxTokens: DESCRIBE_MAX_TOKENS,
+        timeoutMs: describeMs,
+        firstTokenMs,
+      })
     },
   }
 }

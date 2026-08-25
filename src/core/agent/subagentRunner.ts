@@ -3,6 +3,7 @@ import { systemClock } from '../ports/clock'
 import type { LlmClient, ToolResult, ToolResultOutcome } from '../ports/llm'
 import type { Tool, ToolContext } from '../pipeline/tool'
 import type { WorkingMemorySnapshot } from '../session/workingMemory'
+import { VisionDeadlineError, VISION_DEADLINE_NUDGE } from '../ports/vision'
 import { ASK_ESCALATION_PREFIX } from '../pipeline/askUserTools'
 import { createBlockerGate, subagentBlockerEscalation } from '../pipeline/blockerGate'
 import { describeToolAction } from '../pipeline/toolCallDisplay'
@@ -173,7 +174,16 @@ export async function runSubagent(deps: RunSubagentDeps, options: RunSubagentOpt
             }
           } catch (err) {
             if (err instanceof SubagentCancelledError) throw err
-            outcome = { ok: false, error: toErrorMessage(err) }
+            // ADR 0016: a Subagent Look that missed the Vision Deadline gets
+            // the same nudge the orchestrator's look gets — fall back to the
+            // DOM or escalate; never keep retrying look blind.
+            outcome = {
+              ok: false,
+              error:
+                err instanceof VisionDeadlineError
+                  ? `${err.message}\n${VISION_DEADLINE_NUDGE}`
+                  : toErrorMessage(err),
+            }
           }
         }
       }

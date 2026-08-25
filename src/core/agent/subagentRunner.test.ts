@@ -3,6 +3,7 @@ import { FakeClock, ScriptedLlm, memoryEntry } from '../testing/doubles'
 import { runSubagent, SubagentCancelledError } from './subagentRunner'
 import type { Tool } from '../pipeline/tool'
 import type { WorkingMemorySnapshot } from '../session/workingMemory'
+import { VisionDeadlineError } from '../ports/vision'
 import { ASK_ESCALATION_PREFIX, createSubagentAskTool } from '../pipeline/askUserTools'
 import { hostFromUrl } from '../pipeline/blockerGate'
 
@@ -287,6 +288,30 @@ describe('runSubagent', () => {
 
     expect(executions).toBe(15)
     expect(llm.requests[1]?.toolResults.filter((result) => !result.outcome.ok)).toHaveLength(5)
+  })
+
+  it('nudges a Look that missed the Vision Deadline toward read_page/ask_user instead of a bare error', async () => {
+    const look: Tool = {
+      name: 'look',
+      usesVision: true,
+      async execute() {
+        throw new VisionDeadlineError(8_000, 'first-token')
+      },
+    }
+    const llm = new ScriptedLlm([
+      { kind: 'tool_calls', calls: [{ id: 'l1', name: 'look', args: {} }] },
+      { kind: 'answer', speak: 's', display: 'fell back to the DOM' },
+    ])
+
+    await runSubagent({ llm, tools: [look], clock: new FakeClock() }, { task: 't', isCancelled: () => false })
+
+    const outcome = llm.requests[1]?.toolResults[0]?.outcome
+    expect(outcome).toMatchObject({
+      ok: false,
+      error: expect.stringMatching(
+        /did not begin answering within 8000ms[\s\S]*read_page[\s\S]*ask_user[\s\S]*do not keep retrying look/,
+      ),
+    })
   })
 
   it('refuses the second same-host browser call with the ASK_USER relay (#81)', async () => {
