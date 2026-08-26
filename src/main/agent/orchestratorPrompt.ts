@@ -61,7 +61,7 @@ You are driving a real browser behind a risk gate that is enforced in code, not 
  */
 export function orchestratorSystemPrompt(clock: Clock, learnedTerms?: readonly string[]): string {
   const lexicon = learnedTerms && learnedTerms.length > 0
-    ? `\n\nLearned vocabulary (already biased in transcription — do not re-propose these; {"op":"remove"} if one is wrong):\n- ${learnedTerms.join(', ')}`
+    ? `\n\nLearned Terms (already biased in transcription — do not re-propose these; {"op":"remove"} if one is wrong):\n- ${learnedTerms.join(', ')}`
     : ''
   return `${ORCHESTRATOR_SYSTEM_PROMPT}${lexicon}\n\n${runtimeContextBlock(clock)}`
 }

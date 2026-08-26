@@ -3,6 +3,11 @@
 // data — extend it as mishears are discovered; no decode code changes.
 // Terms the acoustic model already hears fine (everyday words) are left out
 // on purpose: every entry is a near-tie waiting to be flipped.
+//
+// The Seed Lexicon half of the Bias Lexicon (ADR 0022): frozen in source,
+// the reserved set no runtime proposal may admit as a Learned Term.
+
+import { normalizeLearnedTerm } from '../../core/voice/learnedTerms'
 
 export const BIAS_LEXICON: readonly string[] = [
   // Feed Panel states and sizing (View Preferences, ADR 0006)
@@ -54,3 +59,12 @@ export const BIAS_LEXICON: readonly string[] = [
   'idle screen',
   'feed entry',
 ]
+
+/** The Seed Lexicon as the admission gate's reserved set (normalized). */
+export function seedLexiconSet(): ReadonlySet<string> {
+  return new Set(
+    BIAS_LEXICON
+      .map((term) => normalizeLearnedTerm(term))
+      .filter((term): term is string => term !== null),
+  )
+}

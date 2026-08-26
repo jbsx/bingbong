@@ -145,10 +145,10 @@ describe('orchestrator prompt Mishear proposals', () => {
   it('lists the current Learned Terms when any exist, and stays silent otherwise', () => {
     const clock = new FakeClock(0)
     const withTerms = orchestratorSystemPrompt(clock, ['linus tech tips', 'nguyen'])
-    expect(withTerms).toContain('Learned vocabulary')
+    expect(withTerms).toContain('Learned Terms')
     expect(withTerms).toContain('linus tech tips, nguyen')
 
     const without = orchestratorSystemPrompt(clock, [])
-    expect(without).not.toContain('Learned vocabulary')
+    expect(without).not.toContain('Learned Terms')
   })
 })

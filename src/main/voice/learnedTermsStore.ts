@@ -6,10 +6,12 @@ import {
   normalizeLearnedTerm,
   sanitizeLearnedTermsState,
   touchLearnedTerms,
+  type LearnedTermsControls,
   type LearnedTermsState,
-  type MishearProposal,
 } from '../../core/voice/learnedTerms'
-import { BIAS_LEXICON } from '../moonshine/biasLexicon'
+import { BIAS_LEXICON, seedLexiconSet } from '../moonshine/biasLexicon'
+
+export { seedLexiconSet }
 
 // The Learned Terms ledger's persistence (ADR 0022): lexicon.json in
 // userData, the same shape as the settings and usage stores. State
@@ -18,20 +20,7 @@ import { BIAS_LEXICON } from '../moonshine/biasLexicon'
 // seed-only — the decode keeps working, the vocabulary restarts empty, and
 // the next write replaces the corrupt file.
 
-/** The normalized Seed Lexicon — the reserved set no proposal may admit. */
-export function seedLexiconSet(): ReadonlySet<string> {
-  return new Set(
-    BIAS_LEXICON
-      .map((term) => normalizeLearnedTerm(term))
-      .filter((term): term is string => term !== null),
-  )
-}
-
-export interface LearnedTermsStore {
-  /** The pipeline seam (ADR 0022): apply one Run's validated proposals. */
-  applyProposals(proposals: readonly MishearProposal[]): void
-  /** The pipeline seam: LRU-touch admitted terms the transcript used. */
-  observeTranscript(text: string): void
+export interface LearnedTermsStore extends LearnedTermsControls {
   /** The admitted terms, in admission order — the Settings list. */
   list(): readonly string[]
   /**
@@ -90,8 +79,12 @@ export function createLearnedTermsStore(
 
   return {
     applyProposals(proposals) {
-      const { state: next } = applyMishearProposals(state, proposals, now(), reserved)
+      const { state: next, effects } = applyMishearProposals(state, proposals, now(), reserved)
       if (next !== state) commit(next)
+      // One line per admission/removal — the growth of the lexicon is the
+      // ADR's whole story; the log is how you watch it happen.
+      if (effects.admitted.length > 0) console.log(`[learned-terms] admitted: ${effects.admitted.join(', ')}`)
+      if (effects.removed.length > 0) console.log(`[learned-terms] removed: ${effects.removed.join(', ')}`)
     },
     observeTranscript(text) {
       const next = touchLearnedTerms(state, text, now())

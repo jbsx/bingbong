@@ -116,11 +116,11 @@ function buildPieceTrie(vocab: MoonshineVocab): PieceNode {
 
 /**
  * Continuations the decoded suffix leaves open: for every phrase whose
- * prefix (≥ 1 char) is matched from a word start, the remaining text; plus
- * every whole phrase with a leading space, so only word-starting pieces
- * can take the word-start boost.
+ * prefix (≥ 1 char) is matched from a word start, the remaining text.
+ * (The word-start half of the rests is static per lexicon — it lives in
+ * the rest trie below.)
  */
-function activeRests(decoded: string, trie: PhraseNode, wordStartRests: readonly string[]): string[] {
+function suffixRests(decoded: string, trie: PhraseNode): string[] {
   const lower = decoded.toLowerCase()
   const rests: string[] = []
 
@@ -133,12 +133,65 @@ function activeRests(decoded: string, trie: PhraseNode, wordStartRests: readonly
       for (const rest of node.rests) if (rest !== '') rests.push(rest)
     }
   }
-
-  // The word-start rests are a pure function of the phrase set, not the
-  // decoded text — precomputed at construction (ADR 0022: a 500-term
-  // lexicon must not rebuild 500 strings at every greedy step).
-  rests.push(...wordStartRests)
   return rests
+}
+
+/** A node of the static word-start rest trie: edges are rest characters. */
+interface RestNode {
+  children: Map<string, RestNode>
+}
+
+function buildRestTrie(rests: readonly string[]): RestNode {
+  const root: RestNode = { children: new Map() }
+  for (const rest of rests) {
+    let node = root
+    for (let i = 0; i < rest.length; i++) {
+      const char = rest[i]
+      let next = node.children.get(char)
+      if (!next) {
+        next = { children: new Map() }
+        node.children.set(char, next)
+      }
+      node = next
+    }
+  }
+  return root
+}
+
+/**
+ * The word-start boost, ADR 0022's word-start index: the static rests
+ * (' panel', ' dock mode', …) share prefixes, so they are merged into one
+ * trie walked in lockstep with the piece trie — shared prefixes are
+ * walked once, not once per phrase. Every piece id along the walk is
+ * exactly the set the per-rest walks would have collected.
+ */
+function boostWordStartPieces(
+  restTrie: RestNode,
+  pieceTrie: PieceNode,
+  row: ArrayLike<number>,
+  base: number,
+  boost: number,
+  boosted: Set<number>,
+): { best: number; bestScore: number } {
+  let best = -1
+  let bestScore = -Infinity
+  const stack: { rest: RestNode; piece: PieceNode }[] = [{ rest: restTrie, piece: pieceTrie }]
+  while (stack.length > 0) {
+    const { rest, piece } = stack.pop()!
+    for (const id of piece.ids) {
+      if (boosted.has(id)) continue
+      boosted.add(id)
+      if (row[base + id] + boost > bestScore) {
+        bestScore = row[base + id] + boost
+        best = id
+      }
+    }
+    for (const [char, restChild] of rest.children) {
+      const pieceChild = piece.children.get(char)
+      if (pieceChild) stack.push({ rest: restChild, piece: pieceChild })
+    }
+  }
+  return { best, bestScore }
 }
 
 export function createBiasApplier(vocab: MoonshineVocab, phrases: readonly string[]): BiasApplier {
@@ -146,7 +199,11 @@ export function createBiasApplier(vocab: MoonshineVocab, phrases: readonly strin
   const normalized = normalizePhrases(phrases)
   const phraseTrie = buildPhraseTrie(normalized)
   const pieceTrie = buildPieceTrie(vocab)
-  const wordStartRests = normalized.map((phrase) => ` ${phrase}`)
+  // The static half of the rests — every whole phrase with a leading
+  // space, so only word-starting pieces can take the word-start boost —
+  // precomputed once (ADR 0022: a 500-term lexicon must not rebuild 500
+  // strings, or walk 500 rests, at every greedy step).
+  const wordStartTrie = buildRestTrie(normalized.map((phrase) => ` ${phrase}`))
 
   return {
     nextToken(decoded, logits) {
@@ -165,7 +222,14 @@ export function createBiasApplier(vocab: MoonshineVocab, phrases: readonly strin
       }
 
       const boosted = new Set<number>()
-      for (const rest of activeRests(decoded, phraseTrie, wordStartRests)) {
+      // Word-start half: one lockstep walk over the merged rest trie.
+      const wordStart = boostWordStartPieces(wordStartTrie, pieceTrie, row, base, boost, boosted)
+      if (wordStart.best !== -1 && wordStart.bestScore > bestScore) {
+        bestScore = wordStart.bestScore
+        best = wordStart.best
+      }
+      // Decoded-suffix half: few rests, walked directly.
+      for (const rest of suffixRests(decoded, phraseTrie)) {
         let node: PieceNode | undefined = pieceTrie
         for (let k = 0; k < rest.length; k++) {
           node = node.children.get(rest[k])

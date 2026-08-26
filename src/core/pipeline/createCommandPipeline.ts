@@ -7,7 +7,7 @@ import { selectDelegatedMemory } from '../agent/subagentReport'
 import { createLlmDeltaBatcher } from './deltaBatcher'
 import type { TtsSpeaker } from '../ports/tts'
 import { spokenErrorLine } from '../agent/answerContract'
-import type { MishearProposal } from '../voice/learnedTerms'
+import type { LearnedTermsControls } from '../voice/learnedTerms'
 import { MAX_RUN_NOTE_CHARS, type RunJournalEntry, type RunJournalSnapshot } from '../session/runJournal'
 import type { MemoryPatch, WorkingMemorySnapshot } from '../session/workingMemory'
 import type { PerfTracer } from '../perf/perfTracer'
@@ -87,10 +87,7 @@ export interface CommandPipelineDeps {
    * at the Memory Commit tail — end of message, never mid-run. Absent in
    * tests unless asserted; a throwing implementation never fails a run.
    */
-  learnedTerms?: {
-    applyProposals(proposals: readonly MishearProposal[]): void
-    observeTranscript(text: string): void
-  }
+  learnedTerms?: LearnedTermsControls
 }
 
 interface ConfirmationDecision {

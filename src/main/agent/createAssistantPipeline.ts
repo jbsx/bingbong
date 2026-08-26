@@ -15,7 +15,7 @@ import { createNewSessionTool } from '../../core/pipeline/sessionTools'
 import { createPanelTools, type PanelControls } from '../../core/pipeline/panelTools'
 import { createAppControlTool, createSetSettingTool, type AppControls, type SettingsControls } from '../../core/pipeline/settingsTools'
 import { resolveModelEndpoint, routingEnvKeys } from '../../core/agent/modelRouting'
-import type { MishearProposal } from '../../core/voice/learnedTerms'
+import type { LearnedTermsControls } from '../../core/voice/learnedTerms'
 import type { UsageSink } from '../../core/agent/usageTracking'
 import { withUsageTracking } from '../../core/agent/usageTracking'
 import type { PerfTracer } from '../../core/perf/perfTracer'
@@ -73,10 +73,7 @@ export interface AssistantPipelineDeps {
    * the per-run transcript LRU touch, wired by main to the app-global
    * lexicon store. Absent in tests unless asserted.
    */
-  learnedTerms?: {
-    applyProposals(proposals: readonly MishearProposal[]): void
-    observeTranscript(text: string): void
-  }
+  learnedTerms?: LearnedTermsControls
   /**
    * Settings voice tool (#67, ADR 0006): set_setting writes through the
    * same settings-store seam the settings page drives, so changes apply

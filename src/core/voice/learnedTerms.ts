@@ -16,6 +16,9 @@ export const LEARNED_TERM_CAP = 500
 /** A Learned Term is a phrase, not a sentence — cap at four words. */
 const MAX_TERM_WORDS = 4
 
+/** One answer carries at most this many proposals — "at most a few" in the prompt, enforced here. */
+export const MAX_PROPOSALS_PER_RUN = 20
+
 /** Pending proposals are bounded too: one-off garbage must not pile up. */
 const MAX_PENDING = LEARNED_TERM_CAP
 
@@ -34,6 +37,18 @@ export interface AdmittedTerm {
   admittedAt: number
   /** Last evidence the term is in active use — admission, re-proposal, or a transcript that contains it. */
   lastTouched: number
+}
+
+/**
+ * The pipeline's view of the ledger: the two touchpoints a Run has with
+ * the lexicon. Declared once here so the core pipeline dep and the main
+ * wiring cannot drift apart.
+ */
+export interface LearnedTermsControls {
+  /** Apply one Run's end-of-message proposals (recurrence-gated). */
+  applyProposals(proposals: readonly MishearProposal[]): void
+  /** LRU touch: the run's input text used admitted terms. */
+  observeTranscript(text: string): void
 }
 
 /** The persisted ledger: pending proposals, admitted terms, rejection marks. */
@@ -70,7 +85,7 @@ function asRecord(value: unknown): Record<string, unknown> | null {
  * no-op, exactly like an empty memory patch.
  */
 export function parseMishearProposals(value: unknown): MishearProposal[] | null {
-  if (!Array.isArray(value) || value.length > 20) return null
+  if (!Array.isArray(value) || value.length > MAX_PROPOSALS_PER_RUN) return null
   const proposals: MishearProposal[] = []
   for (const item of value) {
     const raw = asRecord(item)

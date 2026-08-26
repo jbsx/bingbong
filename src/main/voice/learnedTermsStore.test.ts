@@ -2,7 +2,7 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
-import { BIAS_LEXICON } from '../moonshine/biasLexicon'
+import { seedLexiconSet } from '../moonshine/biasLexicon'
 import { createLearnedTermsStore } from './learnedTermsStore'
 
 // ADR 0022: the ledger's persistence — lexicon.json in userData. The store
@@ -23,7 +23,9 @@ async function tempDir(): Promise<string> {
   return dir
 }
 
-const SEED = new Set(BIAS_LEXICON.map((term) => term.toLowerCase()))
+// The same reserved set production wires — the seed can never drift from
+// what the gate actually enforces.
+const SEED = seedLexiconSet()
 
 describe('learned terms store', () => {
   it('admits on recurrence and survives a restart', async () => {
