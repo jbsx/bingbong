@@ -238,6 +238,40 @@ function popupPage(): string {
 </html>`
 }
 
+// Auth-identity echo (ADR 0018): renders the User-Agent the pane actually
+// sent, so the auth-host rewrite is assertable through read_page. Its two
+// openers exercise the popup allowlist: [1] opens a page on the same host
+// (allowed when that host is an auth host), [2] opens a data: URL (never an
+// auth host — denied and reported). Refs in DOM order: [1] Open sign-in
+// popup [2] Open data popup.
+function headerEchoPage(userAgent: string): string {
+  const escaped = userAgent.replace(/&/g, '&amp;').replace(/</g, '&lt;')
+  return `<!doctype html>
+<html>
+<head><title>header echo fixture</title></head>
+<body style="background:#222;color:#fff;margin:0">
+  <h1>request headers fixture</h1>
+  <p id="ua" style="font-size:20px">user-agent: ${escaped}</p>
+  <button id="btn-open-auth" style="font-size:20px" onclick="window.__authPopup = window.open('/popup-target')">Open sign-in popup</button>
+  <button id="btn-open-data" style="font-size:20px" onclick="window.__dataPopup = window.open('data:text/html,<b>data</b>')">Open data popup</button>
+</body>
+</html>`
+}
+
+// The auth popup's landing page: plain (no wall semantics) with one
+// recording button, so routed clicks land somewhere observable.
+// Refs in DOM order: [1] Popup button.
+function popupTargetPage(): string {
+  return `<!doctype html>
+<html>
+<head><title>popup target fixture</title></head>
+<body style="background:#222;color:#fff;margin:0">
+  <h1>popup target page</h1>
+  <button id="btn-popup" style="font-size:20px" onclick="document.title='clicked:popup-btn'">Popup button</button>
+</body>
+</html>`
+}
+
 // A plain overlay (no dialog semantics) covering a button: the click must be
 // reported as blocked, not clicked through. Refs: [1] Under the overlay.
 function overlayPage(): string {
@@ -530,6 +564,14 @@ export async function startFixtureServer(): Promise<FixtureServer> {
     }
     if (req.url === '/popup') {
       res.end(popupPage())
+      return
+    }
+    if (req.url === '/header-echo') {
+      res.end(headerEchoPage(String(req.headers['user-agent'] ?? '(none)')))
+      return
+    }
+    if (req.url === '/popup-target') {
+      res.end(popupTargetPage())
       return
     }
     if (req.url === '/overlay') {

@@ -1,12 +1,25 @@
-import { app, session, WebContentsView } from 'electron'
+import { app, BrowserWindow, session, WebContentsView } from 'electron'
 import type { BrowserPaneState, PaneRect } from '../../core/browser/paneState'
 import { HIDDEN_PANE_RECT, idleBrowserPaneState } from '../../core/browser/paneState'
 import { toPaneBounds } from '../../core/browser/paneGeometry'
 import { normalizeUrlInput } from '../../core/browser/urlInput'
 import { browserUserAgent } from '../../core/browser/userAgent'
+import { isAuthUrl, resolveAuthIdentity } from '../../core/browser/authIdentity'
 import { applyPaneZoom } from './paneZoom'
 
 export const BROWSER_PARTITION = 'persist:browse'
+
+/** Child-window options for an auth popup (ADR 0018): a plain, menu-free
+ * window big enough for a sign-in flow. */
+const AUTH_POPUP_WINDOW_OPTIONS = {
+  width: 480,
+  height: 700,
+  autoHideMenuBar: true,
+}
+
+/** How long an auth popup request waits for the controller's outcome-time
+ * drain before opening on its own (the manual-click path). */
+const AUTH_POPUP_FALLBACK_MS = 1_500
 
 export interface BrowserPane {
   view: WebContentsView
@@ -25,6 +38,18 @@ export interface BrowserPane {
   onState(listener: (state: BrowserPaneState) => void): () => void
   /** Drains URLs of window.open popups blocked since the last call. */
   consumePopupBlocks(): string[]
+  /**
+   * Opens the auth popups requested since the last call and returns their
+   * URLs (ADR 0018) — called by the controller at outcome time, when no
+   * pane command is in flight; a manual request opens itself via the
+   * fallback timer instead.
+   */
+  consumeAuthPopupOpens(): string[]
+  /**
+   * Fired for every auth popup window the pane opens — a real BrowserWindow
+   * on the browse partition, driven through the auth-popup director.
+   */
+  onAuthPopup(listener: (win: Electron.BrowserWindow) => void): () => void
 }
 
 export function createBrowserPane(deps?: {
@@ -60,9 +85,58 @@ export function createBrowserPane(deps?: {
   // window.open popups are auto-closed: denied at open (they steal OS focus
   // and hide agent-driven state) and their URL is reported to the model via
   // the controller's outcome lines (issue #18). The model can still ask the
-  // user or navigate deliberately.
+  // user or navigate deliberately. The one exception is auth hosts (ADR
+  // 0018): their popups are how sign-in flows talk back to the opening
+  // page — but Electron's native allow wedges the pane's debugger channel
+  // for the in-flight input command that triggered it (creation happens
+  // synchronously inside CDP input dispatch; the response never arrives).
+  // So the URL is queued and the window is opened by US, outside any
+  // pending command: drained at outcome time by the controller, or by a
+  // short fallback timer when no tool call is in flight (a manual click).
+  // Non-http(s) targets (data:, about:) never qualify.
+  const authIdentity = resolveAuthIdentity(process.env)
   const popupBlocks: string[] = []
+  const authPopupOpens: string[] = []
+  const authPopupListeners = new Set<(win: Electron.BrowserWindow) => void>()
+  let authPopupFallback: NodeJS.Timeout | null = null
+
+  function openAuthPopup(url: string): void {
+    const child = new BrowserWindow({
+      ...AUTH_POPUP_WINDOW_OPTIONS,
+      show: true,
+      webPreferences: {
+        session: partitionSession,
+        contextIsolation: true,
+        nodeIntegration: false,
+        sandbox: true,
+      },
+    })
+    child.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
+    for (const listener of authPopupListeners) listener(child)
+    void child.loadURL(url).catch(() => {})
+  }
+
+  /** Cancels the fallback timer and takes the queued URLs. */
+  function drainAuthPopupUrls(): string[] {
+    if (authPopupFallback !== null) {
+      clearTimeout(authPopupFallback)
+      authPopupFallback = null
+    }
+    return authPopupOpens.splice(0)
+  }
+
   wc.setWindowOpenHandler((details) => {
+    if (isAuthUrl(details.url, authIdentity.hosts)) {
+      authPopupOpens.push(details.url)
+      if (authPopupFallback === null) {
+        authPopupFallback = setTimeout(() => {
+          authPopupFallback = null
+          for (const url of drainAuthPopupUrls()) openAuthPopup(url)
+        }, AUTH_POPUP_FALLBACK_MS)
+        authPopupFallback.unref?.()
+      }
+      return { action: 'deny' }
+    }
     popupBlocks.push(details.url)
     return { action: 'deny' }
   })
@@ -126,10 +200,16 @@ export function createBrowserPane(deps?: {
     reset() {
       whenLive(() => {
         wc.stop()
-        // Blocked-popup reports are Session-owned transient work (#96): an
-        // ended Session's denied popups never reach a later Session's
-        // outcome lines.
+        // Blocked-popup reports and queued auth popups are Session-owned
+        // transient work (#96): an ended Session's denied popups never
+        // reach a later Session's outcome lines, and its queued sign-in
+        // windows never open.
         popupBlocks.length = 0
+        authPopupOpens.length = 0
+        if (authPopupFallback !== null) {
+          clearTimeout(authPopupFallback)
+          authPopupFallback = null
+        }
         void wc.loadURL('about:blank').finally(() => {
           if (!wc.isDestroyed()) wc.navigationHistory.clear()
         })
@@ -151,5 +231,14 @@ export function createBrowserPane(deps?: {
       return () => listeners.delete(listener)
     },
     consumePopupBlocks: () => popupBlocks.splice(0),
+    consumeAuthPopupOpens: () => {
+      const urls = drainAuthPopupUrls()
+      for (const url of urls) openAuthPopup(url)
+      return urls
+    },
+    onAuthPopup(listener) {
+      authPopupListeners.add(listener)
+      return () => authPopupListeners.delete(listener)
+    },
   }
 }

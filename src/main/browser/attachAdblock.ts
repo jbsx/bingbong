@@ -29,6 +29,9 @@ export function attachAdblock(deps: {
   settingsStore: SettingsStore
   userDataDir: string
   env: Record<string, string | undefined>
+  /** Fired after a disable wipes every webRequest listener on the partition —
+   * other components re-assert theirs here (attachIdentityHeaders, ADR 0018). */
+  onWebRequestCleared?: () => void
 }): AdblockAttachment {
   const { session: partitionSession, settingsStore, userDataDir, env } = deps
   const config = resolveAdblockConfig(env)
@@ -97,6 +100,7 @@ export function attachAdblock(deps: {
       if (enforced !== null && (enforced !== blocker || !enabled)) {
         enforced.disableBlockingInSession(partitionSession)
         enforced = null
+        deps.onWebRequestCleared?.()
       }
       // enableBlockingInSession is idempotent for the same blocker+session.
       if (blocker !== null && enabled) {

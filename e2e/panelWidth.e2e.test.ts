@@ -12,7 +12,8 @@ import type { AssistantTurn } from '../src/core/ports/llm'
 // enforced bounds (min 320px, max 75% of the window), drag-resize on the
 // panel's left edge that persists as a View Preference across restarts,
 // and content that wraps instead of horizontally scrolling — code blocks
-// reflow, cards and bubbles use the panel's full width.
+// reflow; cards and bubbles stop short of the full width (70%) so the
+// chat stays scannable in the widened panel.
 
 const OPEN_CHROME = `!!document.querySelector('.overlay-chrome--open .feed-surface')`
 const SLOT_WIDTH = `document.querySelector('.feed-slot')?.getBoundingClientRect().width ?? 0`
@@ -207,9 +208,10 @@ describe('feed panel width e2e (#65)', () => {
       // The block wraps: no horizontal overflow inside the panel.
       expect(wrap.whiteSpace).toBe('pre-wrap')
       expect(wrap.scrollWidth).toBeLessThanOrEqual(wrap.clientWidth)
-      // Cards and bubbles use the panel's full width.
-      expect(wrap.cardMaxWidth).toBe('100%')
-      expect(wrap.bubbleMaxWidth).toBe('100%')
+      // Cards and bubbles stop short of the full width (70%) — the
+      // negative space frames each voice in the widened panel.
+      expect(wrap.cardMaxWidth).toBe('70%')
+      expect(wrap.bubbleMaxWidth).toBe('70%')
     } finally {
       await app.quit()
     }

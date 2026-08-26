@@ -259,6 +259,18 @@ never overrides a value that is set anywhere above it.
 Durable browser-owned data such as login cookies, site storage, consent choices,
 and preferences. It persists across Sessions but is not agent or model context.
 
+**Auth Host**:
+A host whose pages authenticate the user (sign-in flows, identity popups).
+It sees a simplified, self-consistent browser identity; every other host sees
+the ordinary one.
+_Avoid_: trusted site, Google host
+
+**Auth Popup**:
+A sign-in flow's child window, opened by Bing Bong itself on the browse
+profile. While one is open, page actions act on it; closing it returns them
+to the pane. Popups to non-Auth-Host targets stay denied and reported.
+_Avoid_: login window, OAuth popup
+
 **Browser State**:
 The visible page, navigation state, media state, and transient tabs used during
 a Session. It is discarded when the Session ends; the Browser Profile remains.

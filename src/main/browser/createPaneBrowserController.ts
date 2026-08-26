@@ -1,5 +1,6 @@
 import type { BrowserController, VisualGroundingController } from '../../core/ports/browser'
 import type { BrowserSubspans } from '../../core/perf/browserSubspans'
+import { authIdentityScript, resolveAuthIdentity, type AuthIdentity } from '../../core/browser/authIdentity'
 import { COLLECT_PAGE_SCRIPT } from './collectPageScript'
 import { createCdpBrowserController, type CdpDebugger, type CdpPageDriver } from './createCdpBrowserController'
 
@@ -32,10 +33,14 @@ export function createPaneBrowserController(
     view: { webContents: Electron.WebContents }
     /** Popup-block reports recorded by the pane (main pane only). */
     consumePopupBlocks?: () => string[]
+    /** Auth-popup opens queued by the pane, opened here (main pane only). */
+    consumeAuthPopupOpens?: () => string[]
   },
   deps?: {
     /** Verbose browser sub-spans (#32); absent — no sub-span emission. */
     subspans?: BrowserSubspans
+    /** Auth-host identity (ADR 0018); defaults to the env-resolved policy. */
+    authIdentity?: AuthIdentity
   },
 ): BrowserController & VisualGroundingController {
   const wc = pane.view.webContents
@@ -74,6 +79,18 @@ export function createPaneBrowserController(
     },
   }
 
+  // Auth-identity injection (ADR 0018): registered now, at construction —
+  // before any navigation — so it runs ahead of page scripts on every load
+  // this surface ever makes, aligning navigator.userAgent/userAgentData
+  // with the header identity on auth hosts. Attaching the debugger here is
+  // the same lazy seam the first tool call would take, just earlier; a
+  // failure degrades to the header-only identity (still coherent to the
+  // server) and never blocks the controller.
+  const authIdentity = deps?.authIdentity ?? resolveAuthIdentity(process.env)
+  if (authIdentity.hosts.length > 0) {
+    void cdp.send('Page.addScriptToEvaluateOnNewDocument', { source: authIdentityScript(authIdentity) }).catch(() => {})
+  }
+
   /** One step in history ('back'/'forward'): guarded, awaited, bounded. */
   async function historyStep(canGo: boolean, go: () => void, direction: string): Promise<void> {
     if (!canGo) throw new Error(`cannot go ${direction}: no history`)
@@ -100,6 +117,7 @@ export function createPaneBrowserController(
     page,
     collectScript: COLLECT_PAGE_SCRIPT,
     ...(pane.consumePopupBlocks ? { consumePopupBlocks: pane.consumePopupBlocks } : {}),
+    ...(pane.consumeAuthPopupOpens ? { consumeAuthPopupOpens: pane.consumeAuthPopupOpens } : {}),
     ...(deps?.subspans ? { subspans: deps.subspans } : {}),
   })
 }

@@ -1,0 +1,21 @@
+file select pop up never gets cleared
+voice navigation for UI (side bar toggle)
+docker integration and encapsulation
+lower hardware requirements for an i3-6100 with 4gb ram
+intermediate messages TTS not working.
+TTS rambles. vet what piper gets as input better
+can the model not navigate back to an older page if it realises its straying off track?
+something cleared the activity feed, perhaps toggling the activity feed?
+too many approvals required. i shouldnt need to give approvals for google searches
+model thinks its 2025
+vision timeout still an issue
+youtube doesnt work with ad block
+
+
+# FEAT: PIN THIS
+Q14 - Wipe timing nuance: eager wipe at lapse has one consequence you should sign off on — you're reading a recipe/answer from across the room, 10 minutes pass, and the feed (including the idle-screen digest) empties while you look at it. Eager wipe on a timer anyway, or lazy wipe (content stays until your next command, but boot never hydrates a lapsed session)?
+Eager wipe. Your rule is "only the current session renders," and the 10-min window is the grace period; if an answer needs to outlive it, that's a future "pin this" feature, not a reason to render stale sessions.
+
+
+# metrics
+Decode-time biasing — you own the greedy loop; add a trie of bias phrases and boost the logits of the next token of any phrase whose prefix matches the decoded suffix (classic contextual biasing). Fixes it at the source, helps partials too, no new model, ~100–150 lines.

@@ -55,6 +55,13 @@ export interface CdpBrowserControllerDeps {
   /** Drains popup-block URLs the pane recorded (window.open denied + closed). */
   consumePopupBlocks?: () => string[]
   /**
+   * Drains auth-popup URLs the pane queued and opens their windows (ADR
+   * 0018) — called at outcome time, when no input command is in flight, so
+   * window creation never wedges the debugger channel. The returned URLs
+   * ride the outcome line so the model knows where the sign-in went.
+   */
+  consumeAuthPopupOpens?: () => string[]
+  /**
    * Verbose sub-span channel (#32): when provided (and the env flag enabled
    * it), the deliberate delays and extra round-trips inside browser actions
    * become sub-spans keyed by the turn scope the pipeline's tool gate opens.
@@ -255,9 +262,11 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
     void cdp.send('Page.handleJavaScriptDialog', { accept: false }).catch(() => {})
   })
 
-  /** Popup blocks + native dialog reports since the last outcome line. */
+  /** Popup blocks, auth-popup opens, and native dialog reports since the last outcome line. */
   function drainedReports(): string[] {
+    const authPopupOpens = deps.consumeAuthPopupOpens?.() ?? []
     const reports = [
+      ...authPopupOpens.map((url) => `auth popup opened: ${truncateOutcomeText(url, 160)}`),
       ...(deps.consumePopupBlocks?.() ?? []).map((url) => `popup blocked: ${truncateOutcomeText(url, 160)}`),
       ...nativeDialogReports.splice(0),
     ]

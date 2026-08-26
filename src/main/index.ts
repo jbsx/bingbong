@@ -5,9 +5,12 @@ import { BROWSER_IPC } from '../core/browser/ipcChannels'
 import { createAgentActivityTracker, withAgentActivity } from '../core/downloads/agentActivity'
 import { PIPELINE_IPC } from '../core/pipeline/ipcChannels'
 import { attachAdblock } from './browser/attachAdblock'
+import { attachIdentityHeaders } from './browser/attachIdentityHeaders'
 import { createBrowserPane, BROWSER_PARTITION } from './browser/createBrowserPane'
 import { attachBrowserPaneToWindow, registerBrowserIpc } from './browser/attachBrowserPane'
 import { createPaneBrowserController } from './browser/createPaneBrowserController'
+import { createAuthPopupDirector } from './browser/authPopupDirector'
+import { resolveAuthIdentity } from '../core/browser/authIdentity'
 import { resetBrowserState } from './browser/resetBrowserState'
 import { attachDownloadRouter } from './browser/attachDownloadRouter'
 import { runCliHarness, saveScreenshotFile } from './cli/runCliHarness'
@@ -58,6 +61,7 @@ import { createMainWake } from './wake/createMainWake'
 import { createChimeWav } from '../core/tts/chime'
 import { createAplayPlayer } from './tts/createAplayPlayer'
 import { KIOSK_FLAG, resolveLaunchConfig } from '../core/app/launchConfig'
+import { attachGpuStability, gpuCrashRecordPath } from './attachGpuStability'
 import { VOICE_IPC } from '../core/voice/ipcChannels'
 import { createWindowEventPublisher } from './session/windowEventPublisher'
 import { createPipelineAcceptanceGate } from './session/pipelineAcceptance'
@@ -71,6 +75,21 @@ const launchConfig = resolveLaunchConfig(process.argv, process.env)
 if (process.env.BINGBONG_USER_DATA_DIR) {
   app.setPath('userData', process.env.BINGBONG_USER_DATA_DIR)
 }
+
+// GPU crash-loop recovery: a crash-looping GPU process ends in a
+// browser-process FATAL ("GPU process isn't usable. Goodbye.") that takes
+// the whole app — window, live Session, in-flight Run — with it, with no
+// close handler left running. Boot with the GPU disabled when asked
+// (BINGBONG_DISABLE_GPU=1 / --disable-gpu) or when the previous run's
+// persisted deaths say it looped; relaunch with the switch when a loop
+// shows up live. Must precede app ready like every appendSwitch.
+attachGpuStability({
+  app,
+  argv: process.argv,
+  env: process.env,
+  recordPath: gpuCrashRecordPath(app.getPath('userData')),
+  now: systemClock.now,
+})
 
 // Crash evidence (ADR 0017): renderer death leaves a dump instead of
 // vanishing silently; reports stay local — nothing uploads anywhere. The
@@ -264,8 +283,14 @@ async function createWindow(): Promise<BrowserWindow> {
   attachBrowserPaneToWindow(pane, win, eventPublisher)
   feedPanel.bringToTop()
   const agentActivity = createAgentActivityTracker()
+  // Auth popups (ADR 0018): while a sign-in popup window is open, browser
+  // tools route to it — the flow is voice-interactable. The CLI harness and
+  // the assistant share this routed controller.
+  const authPopups = createAuthPopupDirector(pane, {
+    createController: (webContents) => createPaneBrowserController({ view: { webContents } }),
+  })
   const controller: BrowserController & VisualGroundingController = withAgentActivity(
-    createPaneBrowserController(pane, { subspans: browserSubspans }),
+    authPopups.route(createPaneBrowserController(pane, { subspans: browserSubspans })),
     agentActivity,
   )
 
@@ -534,6 +559,14 @@ app.whenReady().then(async () => {
   registerVoiceIpc()
   registerSessionIpc()
 
+  // Auth-host identity rewrite (ADR 0018): before the adblocker so both own
+  // webRequest listeners from the first request. Disabling the adblocker
+  // clears every listener on the partition, so its hook re-asserts this.
+  const identityHeaders = attachIdentityHeaders(
+    session.fromPartition(BROWSER_PARTITION, { cache: true }),
+    resolveAuthIdentity(currentEnv()),
+  )
+
   // Embedder-level adblocker (issue #21): enabled before the first window so
   // every view on the persistent browse partition (main pane + subagent
   // tabs) is covered from its first navigation. The await is a deliberate
@@ -545,12 +578,16 @@ app.whenReady().then(async () => {
     settingsStore,
     userDataDir: app.getPath('userData'),
     env: process.env,
+    onWebRequestCleared: () => identityHeaders.refresh(),
   })
   app.on('will-quit', () => {
     adblock.dispose()
     historyStore.close()
   })
   await adblock.ready()
+  // Enabling the blocker re-registers its listeners; re-assert ours so the
+  // ordering is deterministic regardless of enable/disable sequencing.
+  identityHeaders.refresh()
 
   await createWindow()
 
