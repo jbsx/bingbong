@@ -9,7 +9,7 @@ Accepted
 The project is billed as a local voice pipeline, but that billing was an
 artifact of how it was built, not a decided constraint — so it was put to a
 real decision when STT quality became the blocking complaint. The target
-machine (the Hardware Floor: a dual-core desktop-class CPU with 4 GB RAM,
+machine (the Hardware Floor: a dual-core mobile-class i3-7100U with 4 GB RAM,
 shared with the Electron/Chromium dashboard and the OS) cannot afford the
 accuracy ladder's top rungs, and cloud STT (Deepgram/OpenAI/Groq-class) is
 near-verbatim at ~300 ms on any CPU.

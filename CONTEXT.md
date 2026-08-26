@@ -407,7 +407,8 @@ _Avoid_: server, deployment environment, target machine
 
 **Hardware Floor**:
 The reference minimum machine every default must satisfy — currently the
-target kiosk: a dual-core desktop-class CPU with 4 GB of RAM, shared with the
-dashboard and OS. Defaults are chosen against the Floor; capability above it
-may be offered but is never required for acceptable operation.
+target kiosk: a dual-core mobile-class CPU (i3-7100U) with integrated
+graphics and 4 GB of RAM, shared with the dashboard and OS. Defaults are
+chosen against the Floor; capability above it may be offered but is never
+required for acceptable operation.
 _Avoid_: minimum spec, supported hardware, low-end profile
