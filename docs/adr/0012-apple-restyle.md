@@ -2,7 +2,8 @@
 
 ## Status
 
-Accepted
+Accepted — amended by ADR 0020: the "no dark mode, no toggle" stance is
+lifted; the palette below is the light-mode half of one token sheet.
 
 ## Context
 

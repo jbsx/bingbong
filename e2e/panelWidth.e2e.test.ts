@@ -8,12 +8,13 @@ import { startFixtureServer, type FixtureServer } from './fixtureServer'
 import { waitFor } from './waitFor'
 import type { AssistantTurn } from '../src/core/ports/llm'
 
-// Feed panel width (#65): the doubled default (880px, kiosk 800px) with
-// enforced bounds (min 320px, max 75% of the window), drag-resize on the
-// panel's left edge that persists as a View Preference across restarts,
-// and content that wraps instead of horizontally scrolling — code blocks
-// reflow; cards and bubbles stop short of the full width (70%) so the
-// chat stays scannable in the widened panel.
+// Feed panel width (#65, ADR 0021): the sidebar-scale default (380px,
+// kiosk identical) with enforced bounds (min 320px, max 75% of the
+// window), drag-resize on the panel's left edge that persists as a View
+// Preference across restarts, and content that wraps instead of
+// horizontally scrolling — code blocks reflow; cards and bubbles stop
+// short of the full width (70%) so the chat stays scannable in the
+// widened panel.
 
 const OPEN_CHROME = `!!document.querySelector('.overlay-chrome--open .feed-surface')`
 const SLOT_WIDTH = `document.querySelector('.feed-slot')?.getBoundingClientRect().width ?? 0`
@@ -84,15 +85,16 @@ describe('feed panel width e2e (#65)', () => {
     await fixture?.close()
   })
 
-  it('defaults to 880px and enforces both bounds through the fold', async () => {
+  it('defaults to the sidebar-scale 380px and enforces both bounds through the fold', async () => {
     const app = await startHarness({ fixture })
     try {
       await openPanel(app)
-      // The doubled default renders on both surfaces: the dashboard's slot
-      // and the overlay's surface paint one folded width.
-      await waitForSlotWidth(app, 880)
+      // The sidebar-scale default (ADR 0021) renders on both surfaces:
+      // the dashboard's slot and the overlay's surface paint one folded
+      // width.
+      await waitForSlotWidth(app, 380)
       const surfaceWidth = await app.overlayEval<number>(SURFACE_WIDTH)
-      expect(surfaceWidth).toBeGreaterThan(870)
+      expect(surfaceWidth).toBeGreaterThan(370)
 
       // Below the floor: the fold clamps to 320 — the IPC seam, not CSS.
       await app.dashboardEval(`window.bingbong.feedPanel.setWidth(120)`)
@@ -120,15 +122,30 @@ describe('feed panel width e2e (#65)', () => {
       const first = await startHarness({ fixture, userDataDir, env: { BINGBONG_IDLE_TIMEOUT_MS: '60000' } })
       try {
         await openPanel(first)
+        // Prime a wider starting width through the same IPC seam the voice
+        // tool drives: the sidebar-scale default (380, ADR 0021) leaves no
+        // room for the drag's overshoot moves in view-local coordinates,
+        // and this test exercises the drag gesture, not the default.
+        await first.dashboardEval(`window.bingbong.feedPanel.setWidth(800)`)
+        await waitForSlotWidth(first, 800)
+        // Settle the OVERLAY's own surface on the primed width too — the
+        // drag geometry below is read from the overlay's page, and a
+        // surface still laying out at the old width yields stale
+        // coordinates the drag's moves can never recover from.
+        await waitFor(
+          () => first.overlayEval<number>(SURFACE_WIDTH).then((w) => (Math.abs(w - 800) <= 2 ? w : undefined)),
+          { timeoutMs: 5000, intervalMs: 100 },
+        )
 
         // The drag: press on the resize handle, pull left to a definite
         // width, release. The handle sits at the surface's left edge; the
         // width is the surface's right edge minus the cursor. Settle the
         // view first — it resizes asynchronously after the open broadcast,
         // and a press aimed at mid-transition coordinates hits stale
-        // layout.
+        // layout. The open default is 380px (ADR 0021); settled means the
+        // view has reached that width.
         await waitFor(
-          () => first.overlayEval<number>(`innerWidth`).then((w) => (w > 800 ? w : undefined)),
+          () => first.overlayEval<number>(`innerWidth`).then((w) => (w > 370 ? w : undefined)),
           { timeoutMs: 5000, intervalMs: 100 },
         )
         const geometry = await waitFor(
@@ -176,12 +193,12 @@ describe('feed panel width e2e (#65)', () => {
     }
   })
 
-  it('ships the same wider default in kiosk (800px)', async () => {
+  it('ships the same sidebar-scale default in kiosk (380px)', async () => {
     const app = await startHarness({ fixture, launchArgs: ['--kiosk'], env: { BINGBONG_IDLE_TIMEOUT_MS: '60000' } })
     try {
       await openPanel(app)
-      await waitForSlotWidth(app, 800)
-      expect(await app.dashboardEval<number>(FOLD_WIDTH)).toBe(800)
+      await waitForSlotWidth(app, 380)
+      expect(await app.dashboardEval<number>(FOLD_WIDTH)).toBe(380)
     } finally {
       await app.quit()
     }

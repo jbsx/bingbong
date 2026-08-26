@@ -1,6 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import {
-  FEED_PANEL_WIDTH_DEFAULT,
   FEED_PANEL_WIDTH_STEP,
   FEED_WIDTH_STORAGE_KEY,
 } from '../src/core/panel/feedPanelState'
@@ -189,15 +188,19 @@ describe('panel voice tools e2e', () => {
         )
       }
 
-      // Boot at the 880px default, then submit. Two narrower steps land on
-      // BOTH surfaces (fold + dashboard slot).
+      // Boot at the sidebar-scale default (380, ADR 0021), prime a wider
+      // start through the same seam (two narrow steps from 380 would hit
+      // the 320px floor), then submit. Two narrower steps land on BOTH
+      // surfaces (fold + dashboard slot).
       await app.clickDashboardElement('.feed-panel-toggle')
+      const startWidth = 800
+      await app.dashboardEval(`window.bingbong.feedPanel.setWidth(${startWidth})`)
       expect(await app.submitCommand('make the panel much narrower')).toBe('submitted')
-      await waitForWidth(FEED_PANEL_WIDTH_DEFAULT - 2 * FEED_PANEL_WIDTH_STEP)
+      await waitForWidth(startWidth - 2 * FEED_PANEL_WIDTH_STEP)
 
       // The voice-set width persisted exactly like a drag would — same View
       // Preference key, mirrored the moment the broadcast landed.
-      await waitFor(async () => ((await storedWidth()) === String(FEED_PANEL_WIDTH_DEFAULT - 2 * FEED_PANEL_WIDTH_STEP) ? true : undefined), {
+      await waitFor(async () => ((await storedWidth()) === String(startWidth - 2 * FEED_PANEL_WIDTH_STEP) ? true : undefined), {
         timeoutMs: 5000,
         intervalMs: 100,
       })

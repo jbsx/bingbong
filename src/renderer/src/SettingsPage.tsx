@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { AppSettings, RoleRoutingSettings } from '../../core/settings/settings'
 import type { AgentRole } from '../../core/agent/modelRouting'
-import { ENDPOINT_DELAY_MS_MAX, ENDPOINT_DELAY_MS_MIN, MAX_TOOL_ROUNDS_MAX, MAX_TOOL_ROUNDS_MIN, RESUMPTION_MERGE_MS_MAX, RESUMPTION_MERGE_MS_MIN, WEB_ZOOM_PERCENT_MAX, WEB_ZOOM_PERCENT_MIN, WAKE_WORD_THRESHOLD_MAX, WAKE_WORD_THRESHOLD_MIN, asSttModel } from '../../core/settings/settings'
+import { ENDPOINT_DELAY_MS_MAX, ENDPOINT_DELAY_MS_MIN, MAX_TOOL_ROUNDS_MAX, MAX_TOOL_ROUNDS_MIN, RESUMPTION_MERGE_MS_MAX, RESUMPTION_MERGE_MS_MIN, WEB_ZOOM_PERCENT_MAX, WEB_ZOOM_PERCENT_MIN, WAKE_WORD_THRESHOLD_MAX, WAKE_WORD_THRESHOLD_MIN, asAppearance, asSttModel } from '../../core/settings/settings'
 import type { UsageSummary } from '../../core/agent/spendEstimate'
 import { DEFAULT_PIPER_VOICE } from '../../core/tts/piperVoices'
 import { useRoutingStatus } from './useSettings'
@@ -367,6 +367,26 @@ export function SettingsPage({
           <p className="settings-note">
             How many tool rounds the assistant may chain per command — raise this if long browsing
             tasks hit the round limit. Applies to the next command, no restart.
+          </p>
+        </section>
+
+        <section className="settings-section">
+          <h2>Appearance</h2>
+          <Field label="Theme">
+            <select
+              value={draft.appearance}
+              aria-label="Appearance"
+              onChange={(event) => {
+                setDraft({ ...draft, appearance: asAppearance(event.target.value) })
+              }}
+            >
+              <option value="system">Match this computer</option>
+              <option value="light">Light</option>
+              <option value="dark">Dark</option>
+            </select>
+          </Field>
+          <p className="settings-note">
+            Applies to the app and its panels immediately; websites follow their own dark-mode support.
           </p>
         </section>
 

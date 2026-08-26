@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted — amended by #57: parked subagent thumbnail views deliberately stack *above* the overlay (they need unoccluded pixels for their first paint, and the overlay covers exactly the right edge where they park); the overlay is re-topped only when a pane is reopened into the main browsing area. The `onViewAdded` hook survives with that narrower meaning. Amended again by ADR 0012: the overlay surface ships near-opaque (white at 0.97) — readability over the live page won, so semi-transparency is no longer the panel's identity. The architecture (native overlay view, slot rect, no reflow beneath) is unchanged.
+Accepted — amended by #57: parked subagent thumbnail views deliberately stack *above* the overlay (they need unoccluded pixels for their first paint, and the overlay covers exactly the right edge where they park); the overlay is re-topped only when a pane is reopened into the main browsing area. The `onViewAdded` hook survives with that narrower meaning. Amended again by ADR 0012: the overlay surface ships near-opaque (white at 0.97) — readability over the live page won, so semi-transparency is no longer the panel's identity. Amended again by ADR 0021: the `command → open` auto-peek fold below is deliberately gone — a command shows the Peek Card; the panel opens only by human act. The architecture (native overlay view, slot rect, no reflow beneath) is unchanged.
 
 ## Context
 

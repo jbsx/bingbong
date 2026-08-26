@@ -4,7 +4,6 @@ import type { SessionId } from '../session/sessionIdentity'
 import {
   FEED_MODE_STORAGE_KEY,
   FEED_PANEL_WIDTH_DEFAULT,
-  FEED_PANEL_WIDTH_KIOSK,
   FEED_PANEL_WIDTH_MAX_STEPS,
   FEED_PANEL_WIDTH_MIN,
   FEED_PANEL_WIDTH_STEP,
@@ -21,10 +20,12 @@ import {
 } from './feedPanelState'
 import { isFeedPanelStatePayload } from './ipcChannels'
 
-// Feed panel layout life (#45): overlay/docked mode plus the auto-peek open
-// state, as one pure fold over the same pipeline event seam every observer
-// rides. Table-driven like the projections it sits beside. The width axis
-// (#65) rides the same fold: defaults, bounds, storage.
+// Feed panel layout life (#45, ADR 0021): overlay/docked mode plus the
+// open state, as one pure fold over the same pipeline event seam every
+// observer rides. Voice never opens the panel — a command shows the Peek
+// Card instead — so only human acts and run ends move `open`. Table-driven
+// like the projections it sits beside. The width axis (#65) rides the same
+// fold: defaults, bounds, storage.
 
 function events(...parts: Array<Partial<PipelineEvent> & { type: PipelineEvent['type'] }>): PipelineEvent[] {
   return parts.map((part, index) => ({ at: index, ...part }) as PipelineEvent)
@@ -48,21 +49,15 @@ describe('createFeedPanelStateFold', () => {
     expect(fold.state()).toEqual({ mode: 'overlay', open: false, width: FEED_PANEL_WIDTH_DEFAULT })
   })
 
-  it('boots at the kiosk default width when created with one', () => {
-    const fold = createFeedPanelStateFold({ defaultWidth: FEED_PANEL_WIDTH_KIOSK })
-    expect(fold.state().width).toBe(FEED_PANEL_WIDTH_KIOSK)
-  })
-
-  it('auto-peaks on a command and collapses on done', () => {
+  it('a command never opens the panel — voice shows the Peek Card, not the slab (ADR 0021)', () => {
     const fold = createFeedPanelStateFold()
     for (const event of feedEvents('command', 'status', 'speak')) fold.onEvent(event)
-    expect(fold.state().open).toBe(true)
-    fold.onEvent(feedEvents('done')[0]!)
     expect(fold.state().open).toBe(false)
   })
 
-  it('stays balanced across a run that ends failed', () => {
+  it('done collapses a manually opened panel, and a failed run stays balanced', () => {
     const fold = createFeedPanelStateFold()
+    fold.toggleOpen()
     fold.onEvent(feedEvents('command')[0]!)
     fold.onEvent(feedEvents('done')[0]!)
     expect(fold.state().open).toBe(false)
@@ -70,7 +65,7 @@ describe('createFeedPanelStateFold', () => {
 
   it('ignores detail, status, and out-of-turn events', () => {
     const fold = createFeedPanelStateFold()
-    fold.onEvent(feedEvents('command')[0]!)
+    fold.toggleOpen()
     const before = fold.state()
     for (const event of events(
       { type: 'llm_retry', turnId: 't1', attempt: 2, maxAttempts: 3 },
@@ -108,16 +103,15 @@ describe('createFeedPanelStateFold', () => {
   it('a manual open survives until the next run boundary, not forever', () => {
     const fold = createFeedPanelStateFold()
     fold.toggleOpen()
-    // A run peaks (already open), then its done collapses — even a manual
-    // open yields to the run's end, so the idle panel is always collapsed.
-    fold.onEvent(feedEvents('command')[0]!)
+    // Even a manual open yields to the run's end, so the idle panel is
+    // always collapsed.
     fold.onEvent(feedEvents('done')[0]!)
     expect(fold.state().open).toBe(false)
   })
 
   it('setMode switches layout mode independently of open state', () => {
     const fold = createFeedPanelStateFold()
-    fold.onEvent(feedEvents('command')[0]!)
+    fold.toggleOpen()
     fold.setMode('docked')
     expect(fold.state()).toMatchObject({ mode: 'docked', open: true })
     fold.setMode('overlay')
@@ -126,7 +120,7 @@ describe('createFeedPanelStateFold', () => {
 
   it('setWidth stores a rounded width and leaves mode/open untouched', () => {
     const fold = createFeedPanelStateFold()
-    fold.onEvent(feedEvents('command')[0]!)
+    fold.toggleOpen()
     fold.setWidth(640.6)
     expect(fold.state()).toEqual({ mode: 'overlay', open: true, width: 641 })
     // Layout controls are independent axes: mode changes keep the width.
@@ -244,9 +238,9 @@ describe('readStoredFeedMode', () => {
 })
 
 describe('readStoredFeedWidth', () => {
-  it('defaults to the caller-supplied fallback (kiosk decides its own) with no storage or key', () => {
+  it('defaults to the caller-supplied fallback with no storage or key', () => {
     expect(readStoredFeedWidth(null, FEED_PANEL_WIDTH_DEFAULT)).toBe(FEED_PANEL_WIDTH_DEFAULT)
-    expect(readStoredFeedWidth({ getItem: () => null }, FEED_PANEL_WIDTH_KIOSK)).toBe(FEED_PANEL_WIDTH_KIOSK)
+    expect(readStoredFeedWidth({ getItem: () => null }, 420)).toBe(420)
   })
 
   it('reads a stored width', () => {

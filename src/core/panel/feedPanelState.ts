@@ -1,15 +1,17 @@
 import type { PipelineEvent } from '../pipeline/events'
 
-// Feed panel layout state (#45): overlay-vs-docked mode plus the auto-peek
-// open state, as a pure fold over the pipeline event seam — the same shape
+// Feed panel layout state (#45): overlay-vs-docked mode plus the open
+// state, as a pure fold over the pipeline event seam — the same shape
 // as the run-progress tracker. Main owns one fold per window and broadcasts
 // changes; the dashboard renders layout from it, the overlay renders chrome.
+// ADR 0021: voice never opens the panel — a command shows the Peek Card
+// (its own fold in peekCardState.ts); only human acts set `open` here.
 
 export type FeedPanelMode = 'overlay' | 'docked'
 
 export interface FeedPanelState {
   mode: FeedPanelMode
-  /** Peaked while a run is active; collapsed to the edge tab when idle. */
+  /** Open by human act; run ends and Session ends collapse it. */
   open: boolean
   /** Panel width in px (#65) — one folded value both renderers apply. */
   width: number
@@ -21,10 +23,12 @@ export const FEED_MODE_STORAGE_KEY = 'bingbong.feedMode'
 /** Where the dashboard persists the width — same view-preference deal. */
 export const FEED_WIDTH_STORAGE_KEY = 'bingbong.feedWidth'
 
-/** The doubled default (#65): typical answers readable at a glance. */
-export const FEED_PANEL_WIDTH_DEFAULT = 880
-/** Kiosk default — the appliance's pane keeps more of the window. */
-export const FEED_PANEL_WIDTH_KIOSK = 800
+/**
+ * The default width (ADR 0021): sidebar-scale, not document-scale — the
+ * panel is a summoned surface, so it opens narrow and users who want more
+ * widen it (persisted). Kiosk ships the same default.
+ */
+export const FEED_PANEL_WIDTH_DEFAULT = 380
 /** No narrower than this, whatever the window says. */
 export const FEED_PANEL_WIDTH_MIN = 320
 /** No wider than this fraction of the window's content width. */
@@ -40,9 +44,9 @@ export type PanelWidthDirection = 'wider' | 'narrower'
 /** The named width presets the voice width tool accepts (#71). */
 export type PanelWidthPreset = 'half_screen'
 
-/** The boot-time width per launch mode (#65) — kiosk ships narrower. */
-export function defaultFeedPanelWidth(kiosk: boolean): number {
-  return kiosk ? FEED_PANEL_WIDTH_KIOSK : FEED_PANEL_WIDTH_DEFAULT
+/** The boot-time width — one default everywhere now that it is sidebar-scale (ADR 0021). */
+export function defaultFeedPanelWidth(): number {
+  return FEED_PANEL_WIDTH_DEFAULT
 }
 
 /** The one junk-width guard: a finite, positive pixel count. */
@@ -132,11 +136,13 @@ export function readStoredFeedWidth(
 }
 
 /**
- * Folds pipeline events into the panel state: a command peaks the panel, the
- * run's done collapses it. Busy rejections bypass this Run fold entirely.
- * Everything else (detail lines, statuses, out-of-turn
- * announcements) leaves the state untouched. `toggleOpen`/`setMode` are the
- * manual controls (header button, keyboard shortcut, dock toggle).
+ * Folds pipeline events into the panel state (ADR 0021): commands never
+ * open the panel — voice shows the Peek Card — while the run's done and
+ * Session end collapse it, so a manual open always yields to the run
+ * boundary. Busy rejections bypass this fold entirely. Everything else
+ * (detail lines, statuses, out-of-turn announcements) leaves the state
+ * untouched. `toggleOpen`/`setMode` are the manual controls (header
+ * button, keyboard shortcut, dock toggle).
  */
 export function createFeedPanelStateFold(options?: { defaultWidth?: number }): {
   onEvent(event: PipelineEvent): void
@@ -154,9 +160,6 @@ export function createFeedPanelStateFold(options?: { defaultWidth?: number }): {
   return {
     onEvent(event) {
       switch (event.type) {
-        case 'command':
-          if (!state.open) state = { ...state, open: true }
-          return
         case 'done':
         case 'session_ended':
           if (state.open) state = { ...state, open: false }

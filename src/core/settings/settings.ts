@@ -32,6 +32,14 @@ export const WEB_ZOOM_PERCENT_DEFAULT = 130
 export type WeatherUnits = 'metric' | 'imperial'
 
 /**
+ * Appearance (ADR 0020): the tri-state theme Setting — `system` follows the
+ * OS signal, `light`/`dark` are manual overrides. Main resolves it against
+ * nativeTheme and both the app chrome tokens and the pages'
+ * prefers-color-scheme follow the resolved value.
+ */
+export type Appearance = 'system' | 'light' | 'dark'
+
+/**
  * STT engine tier (#63): Small is the default everywhere (the Hardware
  * Floor — dual-core, 4 GB RAM — fits its ~230 MB fetch comfortably);
  * Medium is the opt-in for capable hardware, Base the legacy tier. The
@@ -68,6 +76,8 @@ export interface AppSettings {
   sttModel: SttModel
   /** Kill switch for the embedder-level adblocker (issue #21). */
   adblockEnabled: boolean
+  /** Theme resolution (ADR 0020) — system follows the OS, manual wins. */
+  appearance: Appearance
   weather: { city: string; units: WeatherUnits }
   modelRouting: Record<AgentRole, RoleRoutingSettings>
 }
@@ -84,6 +94,7 @@ export function defaultSettings(): AppSettings {
     ttsVoice: '',
     sttModel: 'small',
     adblockEnabled: true,
+    appearance: 'system',
     weather: { city: '', units: 'metric' },
     modelRouting: {
       orchestrator: { baseUrl: '', model: '', apiKey: '' },
@@ -131,6 +142,11 @@ export function asSttModel(value: unknown): SttModel {
   return value === 'base' || value === 'medium' ? value : 'small'
 }
 
+/** Only the three literals pass; anything else falls back to following the OS. */
+export function asAppearance(value: unknown): Appearance {
+  return value === 'light' || value === 'dark' || value === 'system' ? value : 'system'
+}
+
 function sanitizeRouting(value: unknown): RoleRoutingSettings {
   const record = asRecord(value)
   return {
@@ -165,6 +181,7 @@ export function sanitizeSettings(raw: unknown): AppSettings {
     sttModel: asSttModel(record.sttModel),
     // Only an explicit false disables the engine — missing/garbage means on.
     adblockEnabled: record.adblockEnabled === false ? false : defaults.adblockEnabled,
+    appearance: asAppearance(record.appearance),
     weather: {
       city: asString(weather?.city, defaults.weather.city),
       units: weather?.units === 'imperial' ? 'imperial' : defaults.weather.units,

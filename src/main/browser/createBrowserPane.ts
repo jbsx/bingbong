@@ -5,6 +5,8 @@ import { toPaneBounds } from '../../core/browser/paneGeometry'
 import { normalizeUrlInput } from '../../core/browser/urlInput'
 import { browserUserAgent } from '../../core/browser/userAgent'
 import { isAuthUrl, resolveAuthIdentity } from '../../core/browser/authIdentity'
+import { attachPageContextMenu } from './attachPageContextMenu'
+import { trackPaneBackground, trackWindowBackground } from './paneBackgrounds'
 import { applyPaneZoom } from './paneZoom'
 
 export const BROWSER_PARTITION = 'persist:browse'
@@ -77,10 +79,16 @@ export function createBrowserPane(deps?: {
       sandbox: true,
     },
   })
-  // The behind-content canvas (ADR 0012): white, matching the pane's
-  // surface — no dark flash between navigations on the light dashboard.
-  view.setBackgroundColor('#ffffff')
+  // The behind-content canvas (ADR 0012, 0020): theme-tracked, so it
+  // matches the pane's surface in either appearance and repaints when the
+  // resolved theme changes — no wrong-color flash between navigations.
+  trackPaneBackground(view)
   const wc = view.webContents
+
+  // The reconstructed page menu (the appliance input pass): right-click on a page
+  // behaves like a browser's — nav verbs, honest link items, clipboard,
+  // image copies — on the pane and on every auth popup it opens.
+  attachPageContextMenu(wc)
 
   // window.open popups are auto-closed: denied at open (they steal OS focus
   // and hide agent-driven state) and their URL is reported to the model via
@@ -112,6 +120,10 @@ export function createBrowserPane(deps?: {
       },
     })
     child.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
+    attachPageContextMenu(child.webContents)
+    // The popup's native canvas follows the Appearance too (ADR 0020) —
+    // a sign-in flow in dark mode must not flash white.
+    trackWindowBackground(child)
     for (const listener of authPopupListeners) listener(child)
     void child.loadURL(url).catch(() => {})
   }
@@ -125,6 +137,14 @@ export function createBrowserPane(deps?: {
     return authPopupOpens.splice(0)
   }
 
+  function navigatePane(input: string): boolean {
+    if (wc.isDestroyed()) return false
+    const url = normalizeUrlInput(input)
+    if (!url) return false
+    void wc.loadURL(url)
+    return true
+  }
+
   wc.setWindowOpenHandler((details) => {
     if (isAuthUrl(details.url, authIdentity.hosts)) {
       authPopupOpens.push(details.url)
@@ -135,6 +155,14 @@ export function createBrowserPane(deps?: {
         }, AUTH_POPUP_FALLBACK_MS)
         authPopupFallback.unref?.()
       }
+      return { action: 'deny' }
+    }
+    // A middle-clicked (or ctrl-clicked) link is the user asking to open
+    // it (the appliance input pass): Chromium surfaces both as background-tab —
+    // no tabs exist, so it navigates the pane the user is looking at,
+    // same honest rule as the menu's "Open Link". Silent: a user
+    // navigation, like the address field, not model-reported.
+    if (details.disposition === 'background-tab' && navigatePane(details.url)) {
       return { action: 'deny' }
     }
     popupBlocks.push(details.url)
@@ -181,11 +209,7 @@ export function createBrowserPane(deps?: {
     view,
     session: partitionSession,
     navigate(input) {
-      if (wc.isDestroyed()) return false
-      const url = normalizeUrlInput(input)
-      if (!url) return false
-      void wc.loadURL(url)
-      return true
+      return navigatePane(input)
     },
     goBack() {
       whenLive(() => {

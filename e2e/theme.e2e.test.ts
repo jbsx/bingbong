@@ -4,18 +4,20 @@ import { startFixtureServer, type FixtureServer } from './fixtureServer'
 import { waitFor } from './waitFor'
 import type { AssistantTurn } from '../src/core/ports/llm'
 
-// Theme e2e (ADR 0012): the neutral light skin, bundled Inter type scale
-// and calm status indicators are asserted as computed-style observables
-// on every app surface — dashboard toolbar, feed panel overlay, settings,
-// idle screen, kiosk — plus the status pill text per state and the total
-// absence of pulse animation. The exact px assertions pin the desk
-// calibration (17px root × rem tiers) deliberately; everything else stays
-// token-level.
+// Theme e2e (ADR 0012, 0020): the neutral light skin, bundled Inter type
+// scale and calm status indicators are asserted as computed-style
+// observables on every app surface — dashboard toolbar, feed panel
+// overlay, settings, idle screen, kiosk — plus the status pill text per
+// state and the total absence of pulse animation. The exact px assertions
+// pin the desk calibration (17px root × rem tiers) deliberately;
+// everything else stays token-level. The dark pass pins ADR 0020: real
+// per-mode tokens and the page-side prefers-color-scheme signal.
 
 const CANVAS_BG = 'rgb(245, 245, 247)' // #f5f5f7
 const PANEL_BG = 'rgb(255, 255, 255)' // #ffffff
 const APPLE_BLUE = 'rgb(0, 113, 227)' // #0071e3 thinking/transcribing
 const APPLE_PURPLE = 'rgb(175, 82, 222)' // #af52de listening/paused
+const DARK_CANVAS_BG = 'rgb(30, 30, 32)' // #1e1e20
 
 const pageTokensScript = `(() => ({
   bg: getComputedStyle(document.body).backgroundColor,
@@ -249,6 +251,66 @@ describe('dashboard theme e2e (#50)', () => {
         `getComputedStyle(document.querySelector('.settings-page')).backgroundColor`,
       )
       expect(settingsPanel).toBe('rgba(0, 0, 0, 0)')
+    } finally {
+      await harness.quit()
+    }
+  })
+
+  it('wears the dark half of the sheet when the Appearance Setting says so, and signals pages', async () => {
+    // ADR 0020: appearance is a main-owned Setting resolved through
+    // nativeTheme — a manual `dark` re-skins every renderer's tokens
+    // (engine-fed prefers-color-scheme) and flips the pane's own
+    // prefers-color-scheme so pages can darken themselves.
+    const harness = await startHarness({ fixture })
+    try {
+      // Give the pane a real page first — the prefers-color-scheme probe
+      // below reads a live document, not a virgin about:blank.
+      await harness.navigatePane(fixture.url('/interactive'))
+      // Manual dark through the same settings seam the settings page and
+      // the voice tool drive.
+      await harness.dashboardEval(`window.bingbong.settings.update({ appearance: 'dark' })`)
+      await waitFor(
+        async () => {
+          const tokens = await harness.dashboardEval<Record<string, string>>(pageTokensScript)
+          return tokens.bg === DARK_CANVAS_BG && tokens.scheme === 'dark' ? tokens : undefined
+        },
+        { timeoutMs: 10000, intervalMs: 250 },
+      )
+      const dark = await harness.dashboardEval<Record<string, string>>(pageTokensScript)
+      expect(dark.bg).toBe(DARK_CANVAS_BG)
+      expect(dark.scheme).toBe('dark')
+
+      // The overlay re-skins from the same shared token sheet: the
+      // near-opaque surface goes dark, never a light slab in a dark app.
+      await waitFor(
+        async () => {
+          const surface = await harness.overlayEval<string>(
+            `getComputedStyle(document.querySelector('.feed-surface')).backgroundColor`,
+          )
+          return surface.startsWith('rgba(29, 29, 31') ? surface : undefined
+        },
+        { timeoutMs: 10000, intervalMs: 250 },
+      )
+      const overlayScheme = await harness.overlayEval<Record<string, string>>(pageTokensScript)
+      expect(overlayScheme.scheme).toBe('dark')
+
+      // The pane's pages are signalled, never restyled: the engine-level
+      // media query flips, the page's own styles are untouched.
+      const pageSignal = await harness.paneEval<boolean>(
+        `window.matchMedia('(prefers-color-scheme: dark)').matches`,
+      )
+      expect(pageSignal).toBe(true)
+
+      // Back to following the OS: system resolution restores the light
+      // boot skin under Xvfb (no OS preference).
+      await harness.dashboardEval(`window.bingbong.settings.update({ appearance: 'system' })`)
+      await waitFor(
+        async () => {
+          const tokens = await harness.dashboardEval<Record<string, string>>(pageTokensScript)
+          return tokens.scheme === 'light' ? tokens : undefined
+        },
+        { timeoutMs: 10000, intervalMs: 250 },
+      )
     } finally {
       await harness.quit()
     }

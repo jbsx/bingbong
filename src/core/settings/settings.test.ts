@@ -30,6 +30,7 @@ describe('defaultSettings', () => {
     expect(settings.sttModel).toBe('small')
     expect(settings.weather).toEqual({ city: '', units: 'metric' })
     expect(settings.adblockEnabled).toBe(true)
+    expect(settings.appearance).toBe('system')
     for (const role of ['orchestrator', 'subagent', 'vision'] as const) {
       expect(settings.modelRouting[role]).toEqual({ baseUrl: '', model: '', apiKey: '' })
     }
@@ -59,6 +60,7 @@ describe('sanitizeSettings', () => {
       resumptionMergeMs: 1_200,
       webZoomPercent: 100,
       ttsVoice: 'en_US-lessac-high',
+      appearance: 'dark',
       weather: { city: 'Berlin', units: 'imperial' },
       modelRouting: {
         orchestrator: { baseUrl: 'https://x.test/v1', model: 'glm-4.6', apiKey: 'sk-1' },
@@ -68,6 +70,7 @@ describe('sanitizeSettings', () => {
     expect(settings.wakeWordThreshold).toBe(0.8)
     expect(settings.endpointDelayMs).toBe(650)
     expect(settings.webZoomPercent).toBe(100)
+    expect(settings.appearance).toBe('dark')
     expect(settings.weather).toEqual({ city: 'Berlin', units: 'imperial' })
     expect(settings.modelRouting.orchestrator).toEqual({ baseUrl: 'https://x.test/v1', model: 'glm-4.6', apiKey: 'sk-1' })
     expect(settings.modelRouting.subagent).toEqual(defaultSettings().modelRouting.subagent)
@@ -117,6 +120,15 @@ describe('sanitizeSettings', () => {
     expect(sanitizeSettings({ adblockEnabled: false }).adblockEnabled).toBe(false)
     expect(sanitizeSettings({}).adblockEnabled).toBe(true)
     expect(sanitizeSettings({ adblockEnabled: 'nope' }).adblockEnabled).toBe(true)
+  })
+
+  it('accepts only the three appearance literals and defaults to system', () => {
+    expect(sanitizeSettings({ appearance: 'light' }).appearance).toBe('light')
+    expect(sanitizeSettings({ appearance: 'dark' }).appearance).toBe('dark')
+    expect(sanitizeSettings({ appearance: 'system' }).appearance).toBe('system')
+    expect(sanitizeSettings({}).appearance).toBe('system')
+    expect(sanitizeSettings({ appearance: 'auto' }).appearance).toBe('system')
+    expect(sanitizeSettings({ appearance: 1 }).appearance).toBe('system')
   })
 
   it('keeps explicit STT tiers and defaults everything else to small (#63)', () => {

@@ -89,6 +89,22 @@ describe('createSetSettingTool', () => {
     expect(result).toBe('Weather units set to imperial.')
   })
 
+  it('sets the appearance between system, light, and dark', async () => {
+    const dark = await executeSetting({ setting: 'appearance', string_value: 'dark' })
+    expect(dark.settings.get().appearance).toBe('dark')
+    expect(dark.result).toBe('Appearance set to dark.')
+
+    const system = await executeSetting({ setting: 'appearance', string_value: 'system' })
+    expect(system.settings.get().appearance).toBe('system')
+    expect(system.result).toBe('Appearance set to follow this computer\'s setting.')
+
+    const invalid = new FakeSettings()
+    const tool = createSetSettingTool(invalid)
+    await expect(
+      tool.execute(callOf('set_setting', { setting: 'appearance', string_value: 'midnight' }), ctx()),
+    ).rejects.toThrow(/appearance must be one of: system, light, dark/)
+  })
+
   it('sets model routing per role — model and base URL, never keys', async () => {
     const model = await executeSetting({
       setting: 'model_routing_model',
@@ -193,6 +209,7 @@ describe('createSetSettingTool', () => {
       'resumption_merge_ms',
       'tts_voice',
       'adblock_enabled',
+      'appearance',
       'web_zoom_percent',
       'weather_city',
       'weather_units',

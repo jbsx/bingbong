@@ -3,9 +3,11 @@
    Apple system status colors, bundled Inter (the SF Pro stand-in).
    Type is calibrated for desk distance: 17px root (conversation ≈20px,
    labels ≈15px, detail ≈14.5px) — the old 2 m couch calibration was a
-   false premise. Hard light switch — no dark mode, no toggle. Web content
-   stays untouched. Motion boundary: text never travels — containers
-   breathe (opacity/scale), indicators may move. */
+   false premise. Dark mode is a real second palette (ADR 0020), not an
+   inversion: one token sheet per resolved appearance, engine-fed by the
+   Appearance Setting through nativeTheme — pages are signalled, never
+   restyled. Motion boundary: text never travels — containers breathe
+   (opacity/scale), indicators may move. */
 
 @font-face {
   font-family: 'InterVariable';
@@ -28,6 +30,7 @@
   /* Neutral light palette (ADR 0012). */
   --bg: #f5f5f7; /* canvas */
   --panel: #ffffff; /* raised surfaces */
+  --panel-overlay: rgba(255, 255, 255, 0.97); /* the feed panel's near-opaque skin (ADR 0012) */
   --edge: #d2d2d7; /* hairlines on canvas and panels */
   --bubble: #e9e9ee; /* your words, as fills */
   --text: #1d1d1f; /* ink */
@@ -50,6 +53,32 @@
      17px; conversation 1.2rem (~20px), labels 0.9rem (~15px), tool
      detail 0.85rem (~14.5px). Nudge this one variable to re-calibrate. */
   --font-scale: 1;
+}
+
+/* The dark half of the sheet (ADR 0020): engine-selected — main resolves
+   the Appearance Setting through nativeTheme, and every renderer's
+   prefers-color-scheme follows. Real per-mode values (Apple dark system
+   colors), never computed inversions; the code-block treatment keeps its
+   deliberate contrast against the darker panels. */
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+    --bg: #1e1e20; /* canvas */
+    --panel: #2a2a2c; /* raised surfaces */
+    --panel-overlay: rgba(29, 29, 31, 0.97);
+    --edge: #3a3a3c;
+    --bubble: #3a3a3f;
+    --text: #f5f5f7;
+    --muted: #a1a1a6;
+    --accent: #0a84ff;
+    --status-blue: #0a84ff;
+    --status-purple: #bf5af2;
+    --status-yellow: #ff9f0a;
+    --status-green: #30d158;
+    --status-red: #ff453a;
+    --code-bg: #111113;
+    --code-text: #f5f5f7;
+  }
 }
 
 * {
@@ -954,6 +983,93 @@ body {
     opacity: 0;
     scale: 0.98;
   }
+}
+
+/* The Peek Card (ADR 0021): the transient report of the live Run and its
+   Answer while the Feed Panel is Collapsed — voice shows it, clicking it
+   opens the panel (the only interactive square inch; no buttons ride it).
+   Same floating-card language as the confirmation cards, one surface,
+   capped width; the orb repeats the feed's assistant mark. */
+.peek-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  flex: none;
+  max-width: 560px;
+  width: 100%;
+  padding: 14px 20px;
+  border: 1px solid var(--edge);
+  border-radius: 16px;
+  background: var(--panel);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.1);
+  animation: card-in 200ms ease;
+  cursor: pointer;
+}
+
+.peek-card:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.peek-orb {
+  width: 12px;
+  height: 12px;
+  margin-top: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  flex: none;
+}
+
+.peek-card--answer .peek-orb {
+  background: var(--status-green);
+}
+
+.peek-body {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  flex: 1;
+}
+
+.peek-command {
+  margin: 0;
+  color: var(--text);
+  font-size: 1.1rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.peek-step {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.peek-text {
+  margin: 0;
+  color: var(--text);
+  font-size: 1.05rem;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  overflow: hidden;
+}
+
+.peek-text--spoken {
+  font-style: italic;
+}
+
+.peek-text--error {
+  color: var(--status-red);
+}
+
+.peek-open-hint {
+  align-self: center;
+  color: var(--muted);
+  font-size: 0.85rem;
+  flex: none;
 }
 
 .confirmation-card {

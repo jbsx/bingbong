@@ -40,12 +40,12 @@ export function useOverlayFeed(): Pick<ReturnType<typeof useFeedProjection>, 'fe
 }
 
 export function usePanelState(): FeedPanelState {
-  // Kiosk ships a narrower default width (#65); main's folded state
-  // (pulled on mount, then broadcast) is the truth this mirrors.
+  // Main's folded state (pulled on mount, then broadcast) is the truth
+  // this mirrors — one sidebar-scale default (ADR 0021).
   const [state, setState] = useState<FeedPanelState>(() => ({
     mode: 'overlay',
     open: false,
-    width: defaultFeedPanelWidth(window.bingbong.app.kiosk),
+    width: defaultFeedPanelWidth(),
   }))
 
   useEffect(() => {

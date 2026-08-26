@@ -8,6 +8,8 @@ import type { SubagentTab, SubagentTabs } from '../../core/browser/subagentTabs'
 import type { BrowserController } from '../../core/ports/browser'
 import { SUBAGENT_IPC } from '../../core/agent/subagentIpcChannels'
 import { createPaneBrowserController } from './createPaneBrowserController'
+import { attachPageContextMenu } from './attachPageContextMenu'
+import { trackPaneBackground } from './paneBackgrounds'
 import { applyPaneZoom } from './paneZoom'
 
 // Electron glue for subagent tabs (issue #13): one WebContentsView per
@@ -128,8 +130,9 @@ export function createSubagentPanePool(
         backgroundThrottling: false,
       },
     })
-    // The behind-content canvas (ADR 0012): white like the cards.
-    view.setBackgroundColor('#ffffff')
+    // The behind-content canvas (ADR 0012, 0020): theme-tracked like the
+    // main pane's.
+    trackPaneBackground(view)
     // Top of the stack (above the feed overlay too — see below): the
     // parked view must own a sliver of real, unoccluded pixels or Chromium
     // never gives it its first paint. The overlay is NOT re-topped above
@@ -140,6 +143,9 @@ export function createSubagentPanePool(
     view.setBounds(parkedBoundsFor(tab.agentId))
 
     const wc = view.webContents
+    // The reconstructed page menu (the appliance input pass, with ADR 0020 and ADR 0021): subagent tabs are
+    // rendered, user-visible pages — right-click behaves like a browser's.
+    attachPageContextMenu(wc)
     applyPaneZoom(wc, deps.getZoomPercent)
     void wc.loadURL(INITIAL_PAINT_URL).catch(() => {})
     wc.on('before-input-event', (event, input) => {

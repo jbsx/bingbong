@@ -227,6 +227,13 @@ The activity panel over the browser pane. Three states: Overlay, Docked,
 Collapsed. A View Preference, resizable.
 _Avoid_: activity bar, sidebar, activity sidebar
 
+**Peek Card**:
+The transient, system-pushed surface that reports the live Run and its
+Answer while the Feed Panel is Collapsed. Not a state of the Feed Panel;
+clicking it opens the panel and dismisses it. Voice activity may show it;
+only a human act opens the panel.
+_Avoid_: toast, notification, mini panel, activity card
+
 **Idle Screen**:
 What renders when no Active Session exists: clock and weather only. Never shows
 Feed Entries; never renders while a Session is active. `session_ended` renders
@@ -252,8 +259,9 @@ written to app Settings.
 
 **Setting**:
 A persisted app configuration value owned by main (models, voice tuning,
-adblock, weather). Credentials are Settings; Settings are keyboard-setup
-territory, everything else voice-reachable.
+adblock, weather, appearance — `system | light | dark`). Credentials are
+Settings; Settings are keyboard-setup territory, everything else
+voice-reachable.
 
 **Env File**:
 The `.env` file next to the app, read once at boot. The bottom configuration

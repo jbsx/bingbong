@@ -62,6 +62,7 @@ import { createChimeWav } from '../core/tts/chime'
 import { createAplayPlayer } from './tts/createAplayPlayer'
 import { KIOSK_FLAG, resolveLaunchConfig } from '../core/app/launchConfig'
 import { attachGpuStability, gpuCrashRecordPath } from './attachGpuStability'
+import { attachAppearance } from './attachAppearance'
 import { VOICE_IPC } from '../core/voice/ipcChannels'
 import { createWindowEventPublisher } from './session/windowEventPublisher'
 import { createPipelineAcceptanceGate } from './session/pipelineAcceptance'
@@ -90,6 +91,13 @@ attachGpuStability({
   recordPath: gpuCrashRecordPath(app.getPath('userData')),
   now: systemClock.now,
 })
+
+// Middle-click autoscroll (the appliance input pass, with ADR 0020 and ADR 0021): Chromium ships autoscroll
+// off by default on Linux — one blink feature switch turns it on for
+// every webContents. It coexists with the pane's middle-click-on-link
+// rule: links still route through the window-open handler (current-pane
+// navigation), autoscroll owns the page area. Must precede app ready.
+app.commandLine.appendSwitch('enable-blink-features', 'MiddleClickAutoscroll')
 
 // Crash evidence (ADR 0017): renderer death leaves a dump instead of
 // vanishing silently; reports stay local — nothing uploads anywhere. The
@@ -242,7 +250,7 @@ async function createWindow(): Promise<BrowserWindow> {
   // the persisted preference.
   const feedPanel = attachFeedPanelOverlayToWindow(win, {
     preloadDir: join(__dirname, '../preload'),
-    defaultWidth: defaultFeedPanelWidth(launchConfig.kiosk),
+    defaultWidth: defaultFeedPanelWidth(),
   })
   // The panel shortcut also fires while the pane owns focus.
   feedPanel.registerShortcut(pane.view.webContents)
@@ -580,8 +588,15 @@ app.whenReady().then(async () => {
     env: process.env,
     onWebRequestCleared: () => identityHeaders.refresh(),
   })
+
+  // Appearance (ADR 0020): resolve the tri-state Setting through
+  // nativeTheme before the first window — renderers and pages read the
+  // resolved prefers-color-scheme from their first paint, and the native
+  // pane backgrounds repaint on every change.
+  const detachAppearance = attachAppearance(settingsStore)
   app.on('will-quit', () => {
     adblock.dispose()
+    detachAppearance()
     historyStore.close()
   })
   await adblock.ready()

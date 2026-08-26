@@ -5,14 +5,17 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { startHarness } from './harness'
 import { startFixtureServer, type FixtureServer } from './fixtureServer'
 import { waitFor } from './waitFor'
+import { PEEK_CARD_LINGER_MS } from '../src/core/panel/peekCardState'
 import type { AssistantTurn } from '../src/core/ports/llm'
 
-// Feed panel layout life (#45): the panel overlays the browser pane
-// semi-transparently by default (no layout reflow beneath it), docks to
-// take real layout space via a toggle, persists the choice across
-// restarts (localStorage), auto-peaks while a run is active and collapses
-// to an edge tab when idle, with a header button and Ctrl+Shift+F to
-// toggle manually. Identical in kiosk mode; the pane stays interactive.
+// Feed panel layout life (#45, ADR 0021): the panel overlays the browser
+// pane semi-transparently by default (no layout reflow beneath it), docks
+// to take real layout space via a toggle, persists the choice across
+// restarts (localStorage), and collapses to an edge tab when idle, with a
+// header button and Ctrl+Shift+F to toggle manually. A command never
+// opens it — voice's report is the transient Peek Card in the dashboard's
+// footer band; only human acts open the panel. Identical in kiosk mode;
+// the pane stays interactive.
 
 const OPEN_CHROME = `!!document.querySelector('.overlay-chrome--open .feed-surface')`
 const COLLAPSED_CHROME = `!!document.querySelector('.overlay-chrome--collapsed .feed-edge-tab')`
@@ -128,7 +131,7 @@ describe('feed panel layout e2e', () => {
     }
   })
 
-  it('auto-peaks while a run is active and collapses when idle', async () => {
+  it('shows the Peek Card instead of opening the panel, and clicking the card opens the panel', async () => {
     const app = await startHarness({
       fixture,
       env: { BINGBONG_LLM_SCRIPT: JSON.stringify(slowThenAnswer(fixture.url('/slow'))) },
@@ -137,30 +140,69 @@ describe('feed panel layout e2e', () => {
       // Idle: collapsed.
       expect(await app.overlayEval<boolean>(COLLAPSED_CHROME)).toBe(true)
 
-      // Submit through the assistant seam directly — the fold-level
-      // auto-peek this test targets is what any submission triggers
-      // (voice drives exactly this path from main), panel open or not.
-      const submitted = await app.overlayEval<string>(`(async () => {
-        const ok = await window.bingbong.assistant.submit('open the slow page')
-        return ok ? 'submitted' : 'rejected'
-      })()`)
-      expect(submitted).toBe('submitted')
+      // Kick the command WITHOUT awaiting the submit promise — it resolves
+      // only when the whole run finishes (the runner awaits the pipeline),
+      // and this test targets the run's live middle. The /slow navigate
+      // holds that middle open for seconds.
+      const kicked = await app.overlayEval<string>(`window.bingbong.assistant.submit('open the slow page'), 'kicked'`)
+      expect(kicked).toBe('kicked')
 
-      // While the run is active the panel is peaked (overlay mode, floating).
+      // While the run is active the panel STAYS collapsed (ADR 0021) and
+      // the Peek Card reports live from the dashboard's footer band. One
+      // poll reads phase and echo atomically — the run can outpace a
+      // second roundtrip.
+      const echo = await waitFor(
+        () =>
+          app.dashboardEval<string | null>(
+            `document.querySelector('.peek-card.peek-card--live .peek-command')?.textContent ?? null`,
+          ).then((text) => (text && text.includes('open the slow page') ? text : undefined)),
+        { timeoutMs: 5000, intervalMs: 100 },
+      )
+      expect(echo).toContain('open the slow page')
+      expect(await app.overlayEval<boolean>(COLLAPSED_CHROME)).toBe(true)
+
+      // Clicking the card is the human act that opens the panel — and it
+      // dismisses the card with it.
+      await app.clickDashboardElement('.peek-card')
       await waitFor(() => app.overlayEval<boolean>(OPEN_CHROME), { timeoutMs: 5000, intervalMs: 100 })
-      const peakedSlot = await app.dashboardEval<string>(`document.querySelector('.feed-slot')?.className ?? ''`)
-      expect(peakedSlot).toContain('feed-slot--overlay')
+      await waitFor(
+        () => app.dashboardEval<boolean>(`!document.querySelector('.peek-card')`).then((gone) => (gone ? true : undefined)),
+        { timeoutMs: 5000, intervalMs: 100 },
+      )
+    } finally {
+      await app.quit()
+    }
+  })
 
-      // The run's answer lands in the feed, then the panel collapses to
-      // the edge tab once idle.
+  it('the Answer lingers on the Peek Card, then the card retires on its own', async () => {
+    const app = await startHarness({
+      fixture,
+      env: { BINGBONG_LLM_SCRIPT: JSON.stringify(slowThenAnswer(fixture.url('/slow'))) },
+    })
+    try {
+      // Fire-and-forget for the same reason: the run's answer must land
+      // while this test is watching, not after the submit promise retires
+      // it.
+      const kicked = await app.overlayEval<string>(`window.bingbong.assistant.submit('open the slow page'), 'kicked'`)
+      expect(kicked).toBe('kicked')
+
+      // The run's answer lands on the card (the run itself also writes it
+      // into the feed behind the collapsed panel).
       await waitFor(
         () =>
-          app.overlayEval<boolean>(
-            `!!Array.from(document.querySelectorAll('.feed-entry--display')).find((el) => el.textContent.includes('The slow page opened.'))`,
+          app.dashboardEval<boolean>(
+            `!!(document.querySelector('.peek-card.peek-card--answer') && document.querySelector('.peek-card')?.textContent?.includes('The slow page opened.'))`,
           ),
         { timeoutMs: 20000, intervalMs: 250 },
       )
-      await waitFor(() => app.overlayEval<boolean>(COLLAPSED_CHROME), { timeoutMs: 10000, intervalMs: 250 })
+
+      // The linger is a fixed window past the answer (8s): the card
+      // retires by itself and the panel never opened.
+      await waitFor(
+        () => app.dashboardEval<boolean>(`!document.querySelector('.peek-card')`).then((gone) => (gone ? true : undefined)),
+        { timeoutMs: PEEK_CARD_LINGER_MS + 8000, intervalMs: 250 },
+      )
+      expect(await app.overlayEval<boolean>(COLLAPSED_CHROME)).toBe(true)
     } finally {
       await app.quit()
     }

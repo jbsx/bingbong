@@ -244,9 +244,10 @@ describe('assistant command runner', () => {
     expect(feed.entries()).toEqual(feedBeforeRejection)
     expect(feed.entries().map((entry) => entry.text)).toContain('accepted command')
     expect(feed.liveRunId()).toBe('turn-accepted')
-    expect(panel.state().open).toBe(true)
-    // The busy-rejected submission never became a Run and never touched
-    // continuity or the live-Run fold.
+    // A command never opens the panel (ADR 0021) — and the busy-rejected
+    // submission never became a Run and never touched continuity or the
+    // live-Run fold.
+    expect(panel.state().open).toBe(false)
     expect(runtime.state()).toMatchObject({ acceptedRunIds: ['run-1'], liveRunIds: ['run-1'] })
 
     clock.advance(50)

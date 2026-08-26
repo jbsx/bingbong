@@ -19,7 +19,7 @@ import {
 // every broadcast mirrors back to storage, whoever set it (drag, voice).
 
 function storedWidth(): number {
-  return readStoredFeedWidth(window.localStorage, defaultFeedPanelWidth(window.bingbong.app.kiosk))
+  return readStoredFeedWidth(window.localStorage, defaultFeedPanelWidth())
 }
 
 export function useFeedPanel(): FeedPanelState {

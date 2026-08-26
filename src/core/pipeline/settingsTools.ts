@@ -46,6 +46,7 @@ const SETTING_KEYS = [
   'resumption_merge_ms',
   'tts_voice',
   'adblock_enabled',
+  'appearance',
   'web_zoom_percent',
   'weather_city',
   'weather_units',
@@ -100,6 +101,15 @@ const SETTING_SPECS: Record<SettingKey, SettingSpec> = {
     kind: 'boolean',
     patch: (value) => ({ adblockEnabled: value }),
     describe: (s) => (s.adblockEnabled ? 'Adblock enabled.' : 'Adblock disabled.'),
+  },
+  appearance: {
+    kind: 'string',
+    values: ['system', 'light', 'dark'],
+    patch: (value) => ({ appearance: value }),
+    describe: (s) =>
+      s.appearance === 'system'
+        ? 'Appearance set to follow this computer\'s setting.'
+        : `Appearance set to ${s.appearance}.`,
   },
   web_zoom_percent: {
     kind: 'number',
@@ -198,9 +208,9 @@ export function createSetSettingTool(settings: SettingsControls): Tool {
       description:
         'The Setting to change: wake_word_threshold (0–1), endpoint_delay_ms (200–1500 silence that submits an utterance), ' +
         'resumption_merge_ms (0–3000 silence held for resumed speech before submitting, 0 off), tts_voice (Piper voice id), ' +
-        'adblock_enabled, web_zoom_percent (75–200), weather_city, weather_units (metric|imperial), stt_model (base|small|medium), ' +
-        'max_tool_rounds, model_routing_model or model_routing_base_url (with role). Credentials, API keys and microphone ' +
-        'are keyboard-only.',
+        'adblock_enabled, appearance (system|light|dark), web_zoom_percent (75–200), weather_city, weather_units ' +
+        '(metric|imperial), stt_model (base|small|medium), max_tool_rounds, model_routing_model or model_routing_base_url ' +
+        '(with role). Credentials, API keys and microphone are keyboard-only.',
     },
     number_value: {
       type: 'number',
@@ -211,7 +221,7 @@ export function createSetSettingTool(settings: SettingsControls): Tool {
     string_value: {
       type: 'string',
       description:
-        'The new value for string settings (tts_voice, weather_city, weather_units, stt_model, model_routing_model, model_routing_base_url)',
+        'The new value for string settings (tts_voice, weather_city, weather_units, appearance, stt_model, model_routing_model, model_routing_base_url)',
       required: false,
     },
     boolean_value: {
@@ -231,9 +241,9 @@ export function createSetSettingTool(settings: SettingsControls): Tool {
     name: 'set_setting',
     description:
       'Change one of the app Settings by voice: wake word threshold, endpoint delay, merge window, TTS voice, adblock, ' +
-      'web zoom, weather city/units, STT model, tool-round ceiling, or model routing (model or base URL per ' +
-      'role). Applies immediately with no confirmation. Credentials, API keys and microphone selection are ' +
-      'not voice-reachable — the user must type those in the settings page.',
+      'appearance (system, light, or dark), web zoom, weather city/units, STT model, tool-round ceiling, or model routing ' +
+      '(model or base URL per role). Applies immediately with no confirmation. Credentials, API keys and microphone ' +
+      'selection are not voice-reachable — the user must type those in the settings page.',
     parameters,
     execute: async (call) => {
       const key = call.args.setting

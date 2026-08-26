@@ -2,12 +2,14 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { BrowserNav, BrowserPane } from './BrowserPane'
 import { AssistantPanel, RunHint, SessionExpiryControls, StatusOrb, StatusPill } from './AssistantPanel'
 import { IdleScreen } from './IdleScreen'
+import { PeekCard } from './PeekCard'
 import { SettingsPage } from './SettingsPage'
 import { SubagentCards } from './SubagentCards'
 import { useActiveSession } from './useActiveSession'
 import { useAssistant } from './useAssistant'
 import { useFeedPanel, useFeedSlotRect } from './useFeedPanel'
 import { useIdle } from './useIdle'
+import { usePeekCard } from './usePeekCard'
 import { useSettings } from './useSettings'
 import { useSessionExpiry } from './useSessionExpiry'
 import { useVoice } from './useVoice'
@@ -25,6 +27,9 @@ export function App() {
   const panel = useFeedPanel()
   const feedSlotRef = useRef<HTMLDivElement>(null)
   useFeedSlotRect(feedSlotRef, `${panel.mode}-${panel.open}`)
+  // The Peek Card (ADR 0021): voice's report surface while the panel is
+  // Collapsed — shown by activity, dismissed by opening the panel.
+  const peek = usePeekCard(panel.open)
 
   const getMicId = useCallback(() => settings?.micId ?? 'default', [settings])
   const voice = useVoice({
@@ -200,9 +205,20 @@ export function App() {
       {/* Transient cards only — typed input lives in the feed panel's
           prompt bar (ADR 0011), and the band renders only while a card is
           pending. The card floats centered on canvas (ADR 0012); it cannot
-          overlay the native pane, so it keeps this in-flow band. */}
-      {assistant.pendingConfirmation || assistant.pendingAsk ? (
+          overlay the native pane, so it keeps this in-flow band. The Peek
+          Card rides the same band (ADR 0021) — and clicking it is the one
+          human act that opens the panel from it. */}
+      {peek.visible || assistant.pendingConfirmation || assistant.pendingAsk ? (
         <footer className="dashboard-footer">
+          {peek.visible ? (
+            <PeekCard
+              state={peek.state}
+              entries={assistant.feed}
+              progress={assistant.progress}
+              onOpen={() => window.bingbong.feedPanel.toggle()}
+              onPinned={peek.setPinned}
+            />
+          ) : null}
           <AssistantPanel assistant={assistant} />
         </footer>
       ) : null}

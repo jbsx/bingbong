@@ -1,9 +1,11 @@
 /* The feed panel overlay's own page (ADR 0004): a transparent
    WebContentsView above the browser pane hosts this document. Only this
    entry loads these rules — the dashboard keeps its own layout in
-   styles.css. Re-skinned neutral light (ADR 0012): the surface ships
-   near-opaque white (0.97) — true frost is impossible across native view
-   boundaries, and readability over the live page won. */
+   styles.css, and the color tokens themselves are shared through it:
+   light by default, the dark half of the sheet selected engine-side by
+   the Appearance Setting (ADR 0020). The surface ships near-opaque
+   (0.97) — true frost is impossible across native view boundaries, and
+   readability over the live page won. */
 
 html,
 body,
@@ -60,8 +62,13 @@ body,
   overflow: hidden;
 }
 
+/* Re-skinned neutral light (ADR 0012, 0020): the surface ships near-opaque
+   — true frost is impossible across native view boundaries, and
+   readability over the live page won. The token comes from styles.css's
+   shared sheet, so the resolved Appearance re-skins it with everything
+   else. */
 .feed-surface--overlay {
-  background: rgba(255, 255, 255, 0.97);
+  background: var(--panel-overlay);
   box-shadow: -12px 0 32px rgba(0, 0, 0, 0.12);
 }
 
