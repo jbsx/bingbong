@@ -399,6 +399,12 @@ surfaces as a failure plus a nudge, never a silent blind browse.
 
 ### Hardware
 
+**Kiosk**:
+The dedicated appliance machine Bing Bong ships to: one Linux box with screen,
+microphone, and speakers, running the app full-screen as its only
+application. The Hardware Floor is defined against it.
+_Avoid_: server, deployment environment, target machine
+
 **Hardware Floor**:
 The reference minimum machine every default must satisfy — currently the
 target kiosk: a dual-core desktop-class CPU with 4 GB of RAM, shared with the

@@ -37,7 +37,7 @@ special deployments.
 T9 adds the **ears**: `Ctrl/Cmd+Space` arms
 listening; mic audio (the settings-page mic, preferring the C920 over the OS
 default) streams from an AudioWorklet at 16 kHz mono, Silero VAD endpoints
-the utterance, and Moonshine Base transcribes it — streaming: partial
+the utterance, and Moonshine Small transcribes it — streaming: partial
 passes run over the accumulated speech while you talk, one final pass over
 the complete utterance lands ~immediately at the endpoint (the engine swap
 and its evidence: `docs/moonshine-ab.md`). Transcripts enter the same
@@ -57,8 +57,9 @@ curl -L -o ~/.config/bingbong/models/silero_vad.onnx \
   https://github.com/snakers4/silero-vad/raw/master/src/silero_vad/data/silero_vad.onnx
 ```
 
-Moonshine Base (STT) is app-managed: the int8 ONNX export (~63 MB) fetches
-automatically into `~/.config/bingbong/models/moonshine-base` on first
+Moonshine Small (STT, the default tier; Base and Medium are selectable on the
+settings page) is app-managed: the int8 ONNX export (~230 MB) fetches
+automatically into `~/.config/bingbong/models/moonshine-small` on first
 launch, in the background; a fetch failure surfaces as an STT error on the
 first spoken command, not a startup crash.
 
@@ -157,6 +158,25 @@ pnpm dev
 
 Type `open youtube and play the first MKBHD result` into the command box and
 watch the loop navigate, read, type, and click.
+
+## Kiosk deployment
+
+The appliance ships as a container (ADR 0023) — full voice loop, real screen,
+one command, no downloads on the kiosk:
+
+```sh
+cp .env.example config/.env   # fill model routing + keys
+scripts/kiosk-setup.sh        # diagnose-only preflight
+docker compose up --build -d
+```
+
+Run it inside the kiosk's X session (`xhost +local:` grants the container
+access to the screen). X11 and the PulseAudio socket are passed through, so
+the dashboard renders on the physical screen and mic/speakers work unchanged.
+Every model — Silero VAD, openWakeWord, the custom wake heads, Moonshine
+Small, the Piper voice — is baked into the image and seeded into `./data` on
+first boot. All durable state (Browser Profile, Settings, history, downloads)
+lives in `./data`: delete it for a fresh start, copy it to migrate.
 
 ## The seam
 

@@ -1,0 +1,16 @@
+# Secrets never enter the build context.
+.env
+config/
+
+# Everything the image rebuilds or mounts at runtime.
+node_modules
+out
+data/
+graphify-out
+.git
+.github
+.opencode
+e2e
+docs
+*.tsbuildinfo
+todo

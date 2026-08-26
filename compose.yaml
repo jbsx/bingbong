@@ -1,0 +1,46 @@
+# Bing Bong kiosk deployment (ADR 0023).
+#
+#   cp .env.example config/.env   # fill model routing + keys
+#   scripts/kiosk-setup.sh        # diagnose-only preflight
+#   docker compose up --build -d
+#
+# Host contract: Linux kiosk, single user UID 1000, X11 session, PipeWire
+# (pipewire-pulse) — see scripts/kiosk-setup.sh for the checks. Durable state
+# is one bind mount: ./data (HOME=/data inside). Fresh start = delete ./data;
+# migration = copy it.
+
+name: bingbong
+
+services:
+  bingbong:
+    build: .
+    image: bingbong-kiosk
+    user: 1000:1000
+    init: true
+    restart: unless-stopped
+    shm_size: 1g
+    environment:
+      # Durable state + downloads live under /data.
+      HOME: /data
+      BINGBONG_USER_DATA_DIR: /data/.config/bingbong
+      # X11 passthrough: draw real windows on the kiosk's screen (the
+      # On-Screen Principle holds literally — no VNC mirror). X access is
+      # granted host-side (xhost +local:, checked by kiosk-setup.sh).
+      DISPLAY: ${DISPLAY:?set DISPLAY on the host (run inside your X session)}
+      # PulseAudio unix-socket passthrough; ownership checks pass because the
+      # container user matches the socket's host UID (1000).
+      PULSE_SERVER: unix:/run/user/1000/pulse/native
+      TZ: ${TZ:-Etc/UTC}
+    volumes:
+      - ./data:/data
+      # The Env File stays next to the app and read-only: layering semantics
+      # (.env < process env < Settings) are preserved literally.
+      - ./config/.env:/app/.env:ro
+      - /tmp/.X11-unix:/tmp/.X11-unix:ro
+      - /run/user/1000/pulse/native:/run/user/1000/pulse/native
+    devices:
+      # GPU with the crash-loop guard as fallback (boots software-rendered if
+      # the driver loops). Drop these two lines on a headless-GPU box.
+      - /dev/dri:/dev/dri
+    group_add:
+      - video
