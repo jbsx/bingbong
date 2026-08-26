@@ -6,6 +6,8 @@ import {
   MOONSHINE_BASE_FILES,
   MOONSHINE_MEDIUM_DIR,
   MOONSHINE_MEDIUM_FILES,
+  MOONSHINE_SMALL_DIR,
+  MOONSHINE_SMALL_FILES,
   MOONSHINE_TIERS,
 } from './moonshineModels'
 
@@ -43,6 +45,25 @@ describe('MOONSHINE_BASE_FILES', () => {
   })
 })
 
+describe('MOONSHINE_SMALL_FILES', () => {
+  it('lists the small export: same merged-graph contract, its own tokenizer', () => {
+    expect(MOONSHINE_SMALL_FILES.map((f) => f.name)).toEqual(['encoder_model.onnx', 'decoder_model_merged.onnx', 'tokenizer.json'])
+    for (const file of MOONSHINE_SMALL_FILES) {
+      expect(file.url).toMatch(/^https:\/\/huggingface\.co\/Immortalizer\/moonshine-streaming-small-onnx\//)
+      expect(file.minBytes).toBeGreaterThan(0)
+    }
+    // The middle tier dwarfs Base but stays well under Medium — the 4 GB
+    // hardware floor's fit.
+    for (const name of ['encoder_model.onnx', 'decoder_model_merged.onnx']) {
+      const small = MOONSHINE_SMALL_FILES.find((f) => f.name === name)!
+      const base = MOONSHINE_BASE_FILES.find((f) => f.name === name)!
+      const medium = MOONSHINE_MEDIUM_FILES.find((f) => f.name === name)!
+      expect(small.minBytes).toBeGreaterThan(base.minBytes)
+      expect(small.minBytes).toBeLessThan(medium.minBytes)
+    }
+  })
+})
+
 describe('MOONSHINE_MEDIUM_FILES', () => {
   it('lists the medium export: same merged-graph contract, its own tokenizer', () => {
     expect(MOONSHINE_MEDIUM_FILES.map((f) => f.name)).toEqual(['encoder_model.onnx', 'decoder_model_merged.onnx', 'tokenizer.json'])
@@ -60,10 +81,16 @@ describe('MOONSHINE_MEDIUM_FILES', () => {
 
   it('keeps the tiers in separate dirs with their own decoder shapes', () => {
     expect(MOONSHINE_TIERS.base.dir).toBe(MOONSHINE_BASE_DIR)
+    expect(MOONSHINE_TIERS.small.dir).toBe(MOONSHINE_SMALL_DIR)
     expect(MOONSHINE_TIERS.medium.dir).toBe(MOONSHINE_MEDIUM_DIR)
     expect(MOONSHINE_TIERS.base.files).toBe(MOONSHINE_BASE_FILES)
+    expect(MOONSHINE_TIERS.small.files).toBe(MOONSHINE_SMALL_FILES)
     expect(MOONSHINE_TIERS.medium.files).toBe(MOONSHINE_MEDIUM_FILES)
     expect(MOONSHINE_TIERS.base.dims).toEqual(MOONSHINE_BASE_DIMS)
+    // moonshine-streaming-small config.json: 10 decoder layers, 8 KV heads,
+    // 64-dim heads, 5 ms encoder frames.
+    expect(MOONSHINE_TIERS.small.dims).toEqual({ layers: 10, kvHeads: 8, headDim: 64 })
+    expect(MOONSHINE_TIERS.small.frameSamples).toBe(80)
     // moonshine-streaming-medium config.json: 14 decoder layers, 10 KV heads,
     // 64-dim heads, 5 ms encoder frames.
     expect(MOONSHINE_TIERS.medium.dims).toEqual({ layers: 14, kvHeads: 10, headDim: 64 })
@@ -78,7 +105,7 @@ describe('ensureMoonshineModels', () => {
     for (const f of MOONSHINE_BASE_FILES) files[`/m/${MOONSHINE_BASE_DIR}/${f.name}`] = f.minBytes + 1
     const { fetched, store } = fakeStore(files)
 
-    const result = await ensureMoonshineModels('/m', store)
+    const result = await ensureMoonshineModels('/m', store, 'base')
 
     expect(fetched).toEqual([])
     expect(result.fetched).toEqual([])
@@ -92,7 +119,7 @@ describe('ensureMoonshineModels', () => {
     }
     const { fetched, store } = fakeStore(files)
 
-    const result = await ensureMoonshineModels('/m', store)
+    const result = await ensureMoonshineModels('/m', store, 'base')
 
     expect(result.fetched.sort()).toEqual(['decoder_model_merged.onnx', 'encoder_model.onnx'])
     expect(fetched.length).toBe(2)
@@ -100,11 +127,25 @@ describe('ensureMoonshineModels', () => {
     expect(fetched[0].dest).toBe(`/m/${MOONSHINE_BASE_DIR}/encoder_model.onnx`)
   })
 
-  it('defaults to base — the two-arg call keeps the hardware floor', async () => {
+  it('defaults to small — the two-arg call keeps the hardware floor', async () => {
     const { fetched, store } = fakeStore({})
     const result = await ensureMoonshineModels('/m', store)
-    expect(result.dir).toBe(`/m/${MOONSHINE_BASE_DIR}`)
-    for (const call of fetched) expect(call.dest.startsWith(`/m/${MOONSHINE_BASE_DIR}/`)).toBe(true)
+    expect(result.dir).toBe(`/m/${MOONSHINE_SMALL_DIR}`)
+    for (const call of fetched) expect(call.dest.startsWith(`/m/${MOONSHINE_SMALL_DIR}/`)).toBe(true)
+  })
+
+  it('fetches the small tier into its own dir with small URLs', async () => {
+    const { fetched, store } = fakeStore({})
+    const result = await ensureMoonshineModels('/m', store, 'small')
+
+    expect(result.dir).toBe(`/m/${MOONSHINE_SMALL_DIR}`)
+    expect(result.fetched.sort()).toEqual(['decoder_model_merged.onnx', 'encoder_model.onnx', 'tokenizer.json'])
+    expect(fetched.length).toBe(3)
+    for (const call of fetched) {
+      expect(call.dest.startsWith(`/m/${MOONSHINE_SMALL_DIR}/`)).toBe(true)
+      const file = MOONSHINE_SMALL_FILES.find((f) => call.dest.endsWith(f.name))!
+      expect(call.url).toBe(file.url)
+    }
   })
 
   it('fetches the medium tier into its own dir with medium URLs (#63)', async () => {

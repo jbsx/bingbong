@@ -41,7 +41,7 @@ describe('settingsStore', () => {
     expect(reopened.get().sttModel).toBe('medium')
     // And a corrupt tier on disk still lands on the Base default.
     writeFileSync(path, JSON.stringify({ ...defaultSettings(), sttModel: 'gargantuan' }))
-    expect(createSettingsStore(path).get().sttModel).toBe('base')
+    expect(createSettingsStore(path).get().sttModel).toBe('small')
   })
 
   it('sanitizes incoming updates before persisting', () => {

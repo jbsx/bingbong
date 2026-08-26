@@ -32,6 +32,13 @@ _Avoid_: silence detection
 Cutting speech in flight by activating (wake word or hotkey), not by arbitrary
 speech.
 
+**Bias Lexicon**:
+The app's own vocabulary that the STT decoder is biased toward while decoding
+— panel, view, settings, and navigation terms, plus mishears discovered in
+use ("pop up"). Extending it is the first response to a misheard domain word.
+It preferences what is heard; it never restricts what can be said.
+_Avoid_: hotword list, dictionary, custom vocabulary
+
 ### Session
 
 **Session**:
@@ -362,3 +369,12 @@ The maximum time one Look may wait before the model starts answering, per
 capability; once answering has begun, a separate cap bounds the whole Look. A
 safety net against silent endpoint hangs, not a latency target. Breach
 surfaces as a failure plus a nudge, never a silent blind browse.
+
+### Hardware
+
+**Hardware Floor**:
+The reference minimum machine every default must satisfy — currently the
+target kiosk: a dual-core desktop-class CPU with 4 GB of RAM, shared with the
+dashboard and OS. Defaults are chosen against the Floor; capability above it
+may be offered but is never required for acceptable operation.
+_Avoid_: minimum spec, supported hardware, low-end profile

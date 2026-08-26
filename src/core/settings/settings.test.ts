@@ -27,7 +27,7 @@ describe('defaultSettings', () => {
     expect(settings.maxToolRounds).toBe(80)
     expect(settings.webZoomPercent).toBe(130)
     expect(settings.ttsVoice).toBe('')
-    expect(settings.sttModel).toBe('base')
+    expect(settings.sttModel).toBe('small')
     expect(settings.weather).toEqual({ city: '', units: 'metric' })
     expect(settings.adblockEnabled).toBe(true)
     for (const role of ['orchestrator', 'subagent', 'vision'] as const) {
@@ -119,13 +119,15 @@ describe('sanitizeSettings', () => {
     expect(sanitizeSettings({ adblockEnabled: 'nope' }).adblockEnabled).toBe(true)
   })
 
-  it('keeps the opt-in medium STT tier and defaults everything else to base (#63)', () => {
+  it('keeps explicit STT tiers and defaults everything else to small (#63)', () => {
     expect(sanitizeSettings({ sttModel: 'medium' }).sttModel).toBe('medium')
+    expect(sanitizeSettings({ sttModel: 'small' }).sttModel).toBe('small')
+    expect(sanitizeSettings({ sttModel: 'base' }).sttModel).toBe('base')
     // Missing, unknown or garbage tiers keep the 4 GB hardware floor.
-    expect(sanitizeSettings({}).sttModel).toBe('base')
-    expect(sanitizeSettings({ sttModel: 'tiny' }).sttModel).toBe('base')
-    expect(sanitizeSettings({ sttModel: true }).sttModel).toBe('base')
-    expect(sanitizeSettings({ sttModel: null }).sttModel).toBe('base')
+    expect(sanitizeSettings({}).sttModel).toBe('small')
+    expect(sanitizeSettings({ sttModel: 'tiny' }).sttModel).toBe('small')
+    expect(sanitizeSettings({ sttModel: true }).sttModel).toBe('small')
+    expect(sanitizeSettings({ sttModel: null }).sttModel).toBe('small')
   })
 
   it('drops unknown weather units and non-string fields', () => {

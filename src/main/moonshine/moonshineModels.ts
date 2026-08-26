@@ -14,6 +14,7 @@ import { MOONSHINE_BASE_DIMS } from './createMoonshineTranscriber.ts'
 // createMainMoonshineTranscriber); partial/truncated files are refetched.
 
 export const MOONSHINE_BASE_DIR = 'moonshine-base'
+export const MOONSHINE_SMALL_DIR = 'moonshine-small'
 export const MOONSHINE_MEDIUM_DIR = 'moonshine-medium'
 
 const BASE_URL = 'https://huggingface.co/moonshine-ai/moonshine/resolve/main/onnx/merged/base'
@@ -28,6 +29,14 @@ const BASE_URL = 'https://huggingface.co/moonshine-ai/moonshine/resolve/main/onn
 // engine), and its tokenizer.json is the official medium vocab — one token
 // differs from Base's, so the tiers cannot share one.
 const MEDIUM_URL = 'https://huggingface.co/Immortalizer/moonshine-streaming-medium-onnx/resolve/main'
+
+// The Small tier is the streaming family's middle child — same export
+// contract as Medium (an optimum-style quantized merged-graph repack of the
+// official moonshine-streaming-small checkpoint, same Immortalizer
+// exporter), roughly half the fetch. It is the default tier: the official
+// model card targets "0.1–1 TOPS and sub-1-GB memory budgets", which the
+// Hardware Floor (dual-core, 4 GB RAM, shared with Chromium) sits inside.
+const SMALL_URL = 'https://huggingface.co/Immortalizer/moonshine-streaming-small-onnx/resolve/main'
 
 /**
  * The files Moonshine Base needs, each with the minimum size a completed
@@ -46,6 +55,13 @@ export const MOONSHINE_MEDIUM_FILES = [
   { name: 'tokenizer.json', url: `${MEDIUM_URL}/tokenizer.json`, minBytes: 3_000_000 },
 ] as const
 
+/** The small tier's files — ~230 MB fetched on first use (the default). */
+export const MOONSHINE_SMALL_FILES = [
+  { name: 'encoder_model.onnx', url: `${SMALL_URL}/encoder_model_quantized.onnx`, minBytes: 70_000_000 },
+  { name: 'decoder_model_merged.onnx', url: `${SMALL_URL}/decoder_model_merged_quantized.onnx`, minBytes: 145_000_000 },
+  { name: 'tokenizer.json', url: `${SMALL_URL}/tokenizer.json`, minBytes: 3_000_000 },
+] as const
+
 export interface MoonshineTierSpec {
   dir: string
   files: readonly { name: string; url: string; minBytes: number }[]
@@ -58,6 +74,14 @@ export interface MoonshineTierSpec {
 /** Per-tier metadata: fetch set, install dir, decoder shape, framing (#63). */
 export const MOONSHINE_TIERS: Record<SttModel, MoonshineTierSpec> = {
   base: { dir: MOONSHINE_BASE_DIR, files: MOONSHINE_BASE_FILES, dims: MOONSHINE_BASE_DIMS, frameSamples: 1 },
+  // moonshine-streaming-small config.json: 10 decoder layers, 8 KV heads,
+  // 64-dim heads, 5 ms encoder frames (80 samples at 16 kHz).
+  small: {
+    dir: MOONSHINE_SMALL_DIR,
+    files: MOONSHINE_SMALL_FILES,
+    dims: { layers: 10, kvHeads: 8, headDim: 64 },
+    frameSamples: 80,
+  },
   // moonshine-streaming-medium config.json: 14 decoder layers, 10 KV heads,
   // 64-dim heads, 5 ms encoder frames (80 samples at 16 kHz).
   medium: {
@@ -93,7 +117,7 @@ function isComplete(store: MoonshineModelStore, path: string, minBytes: number):
 export async function ensureMoonshineModels(
   modelsDir: string,
   store: MoonshineModelStore,
-  tier: SttModel = 'base',
+  tier: SttModel = 'small',
 ): Promise<EnsuredMoonshineModels> {
   const spec = MOONSHINE_TIERS[tier]
   const dir = join(modelsDir, spec.dir)

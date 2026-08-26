@@ -10,7 +10,7 @@ export interface VoiceConfig {
    */
   modelsDir: string
   /**
-   * STT engine tier (#63): snapshot from settings at construction — Base
+   * STT engine tier (#63): snapshot from settings at construction — Small
    * default, Medium opt-in; switching applies at the next app start.
    */
   sttModel: SttModel
@@ -23,7 +23,7 @@ export interface VoiceConfig {
 export function resolveVoiceConfig(
   env: Record<string, string | undefined>,
   userDataDir: string,
-  sttModel: SttModel = 'base',
+  sttModel: SttModel = 'small',
 ): VoiceConfig {
   const modelsDir = join(userDataDir, 'models')
   return {

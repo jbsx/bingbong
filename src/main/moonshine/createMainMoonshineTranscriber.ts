@@ -15,8 +15,8 @@ import { createRetriable } from './retriable'
  * the export in the background while the window opens; a fetch failure
  * surfaces at the first finish() — the missing-VAD-model story: the session
  * shows the error and disarms, not a startup crash. The tier comes from the
- * STT-model Setting (#63): Base by default, Medium opt-in for capable
- * hardware (~380 MB, its own dir and decoder shape).
+ * STT-model Setting (#63): Small by default (the Hardware Floor), Medium
+ * opt-in for capable hardware (~380 MB, its own dir and decoder shape).
  */
 export function createMainMoonshineTranscriber(deps: { modelsDir: string; sttModel: SttModel }): Transcriber {
   const tier = MOONSHINE_TIERS[deps.sttModel]

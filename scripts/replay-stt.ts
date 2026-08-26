@@ -36,7 +36,8 @@ const dumpsDir = process.argv[2] ?? join(homedir(), '.config/bingbong/audio-dump
 const modelsDir = process.argv[3] ?? join(homedir(), '.config/bingbong/models')
 // Parsed inline: importing the settings sanitizer would pull the
 // extensionless main-tree module graph into Node's type-stripping runtime.
-const sttModel: SttModel = process.env.BINGBONG_STT_MODEL === 'medium' ? 'medium' : 'base'
+const envTier = process.env.BINGBONG_STT_MODEL
+const sttModel: SttModel = envTier === 'base' || envTier === 'medium' || envTier === 'small' ? envTier : 'small'
 
 function wavFiles(dir: string): string[] {
   if (!existsSync(dir)) return []

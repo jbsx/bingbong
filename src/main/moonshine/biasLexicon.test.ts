@@ -19,8 +19,10 @@ describe('BIAS_LEXICON', () => {
       'wake word',
       'endpoint delay',
       'web zoom',
+      'web',
       'adblock',
       'model routing',
+      'pop up',
     ]) {
       expect(BIAS_LEXICON).toContain(term)
     }

@@ -32,11 +32,12 @@ export const WEB_ZOOM_PERCENT_DEFAULT = 130
 export type WeatherUnits = 'metric' | 'imperial'
 
 /**
- * STT engine tier (#63): Base is the default everywhere (the hardware
- * floor target is 4 GB RAM); Medium is the opt-in for capable hardware,
- * applied when the transcriber is constructed — a restart.
+ * STT engine tier (#63): Small is the default everywhere (the Hardware
+ * Floor — dual-core, 4 GB RAM — fits its ~230 MB fetch comfortably);
+ * Medium is the opt-in for capable hardware, Base the legacy tier. The
+ * tier applies when the transcriber is constructed — a restart.
  */
-export type SttModel = 'base' | 'medium'
+export type SttModel = 'base' | 'small' | 'medium'
 
 export interface RoleRoutingSettings {
   baseUrl: string
@@ -81,7 +82,7 @@ export function defaultSettings(): AppSettings {
     maxToolRounds: MAX_TOOL_ROUNDS_DEFAULT,
     webZoomPercent: WEB_ZOOM_PERCENT_DEFAULT,
     ttsVoice: '',
-    sttModel: 'base',
+    sttModel: 'small',
     adblockEnabled: true,
     weather: { city: '', units: 'metric' },
     modelRouting: {
@@ -125,9 +126,9 @@ function asWebZoomPercent(value: unknown, fallback: number): number {
   return Math.min(WEB_ZOOM_PERCENT_MAX, Math.max(WEB_ZOOM_PERCENT_MIN, Math.round(value)))
 }
 
-/** Anything that is not an explicit 'medium' stays on the Base tier (#63). */
+/** Any explicit tier passes through; anything else falls back to Small. */
 export function asSttModel(value: unknown): SttModel {
-  return value === 'medium' ? 'medium' : 'base'
+  return value === 'base' || value === 'medium' ? value : 'small'
 }
 
 function sanitizeRouting(value: unknown): RoleRoutingSettings {
@@ -161,7 +162,6 @@ export function sanitizeSettings(raw: unknown): AppSettings {
     maxToolRounds: asMaxToolRounds(record.maxToolRounds, defaults.maxToolRounds),
     webZoomPercent: asWebZoomPercent(record.webZoomPercent, defaults.webZoomPercent),
     ttsVoice: asString(record.ttsVoice, defaults.ttsVoice),
-    // Only an explicit opt-in raises the tier — anything else stays Base.
     sttModel: asSttModel(record.sttModel),
     // Only an explicit false disables the engine — missing/garbage means on.
     adblockEnabled: record.adblockEnabled === false ? false : defaults.adblockEnabled,

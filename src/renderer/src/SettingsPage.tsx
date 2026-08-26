@@ -320,14 +320,15 @@ export function SettingsPage({
               aria-label="STT model"
               onChange={(event) => setDraft({ ...draft, sttModel: asSttModel(event.target.value) })}
             >
-              <option value="base">Base — default</option>
-              <option value="medium">Medium — higher accuracy, ~380 MB download</option>
+              <option value="base">Base — fastest, lowest accuracy</option>
+              <option value="small">Small — default</option>
+              <option value="medium">Medium — highest accuracy, ~380 MB download</option>
             </select>
           </Field>
           <p className="settings-note">
-            The larger speech model trades a one-time download and heavier decoding for accuracy —
-            for capable hardware only, via a community ONNX export of the Medium checkpoint. Applies
-            the next time the app starts.
+            Larger speech models trade a heavier download and decoding for accuracy — Small fits the
+            4 GB hardware floor; Medium is for capable hardware. Each loads the next time the app
+            starts.
           </p>
           <Field label="TTS voice">
             <select

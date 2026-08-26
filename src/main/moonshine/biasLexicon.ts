@@ -19,6 +19,7 @@ export const BIAS_LEXICON: readonly string[] = [
   'half screen',
   'panel mode',
   'panel width',
+  'pop up',
 
   // Navigation and app control
   'forward',
@@ -34,6 +35,7 @@ export const BIAS_LEXICON: readonly string[] = [
   'endpoint delay',
   'tool rounds',
   'web zoom',
+  'web',
   'zoom',
   'voice',
   'adblock',

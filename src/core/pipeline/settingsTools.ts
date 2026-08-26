@@ -119,7 +119,7 @@ const SETTING_SPECS: Record<SettingKey, SettingSpec> = {
   },
   stt_model: {
     kind: 'string',
-    values: ['base', 'medium'],
+    values: ['base', 'small', 'medium'],
     // The tier loads at the next transcriber construction — a restart (#63).
     patch: (value) => ({ sttModel: value }),
     describe: (s) => `STT model set to ${s.sttModel}; it loads at the next restart.`,
@@ -198,7 +198,7 @@ export function createSetSettingTool(settings: SettingsControls): Tool {
       description:
         'The Setting to change: wake_word_threshold (0–1), endpoint_delay_ms (200–1500 silence that submits an utterance), ' +
         'resumption_merge_ms (0–3000 silence held for resumed speech before submitting, 0 off), tts_voice (Piper voice id), ' +
-        'adblock_enabled, web_zoom_percent (75–200), weather_city, weather_units (metric|imperial), stt_model (base|medium), ' +
+        'adblock_enabled, web_zoom_percent (75–200), weather_city, weather_units (metric|imperial), stt_model (base|small|medium), ' +
         'max_tool_rounds, model_routing_model or model_routing_base_url (with role). Credentials, API keys and microphone ' +
         'are keyboard-only.',
     },

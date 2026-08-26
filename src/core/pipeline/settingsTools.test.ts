@@ -116,7 +116,7 @@ describe('createSetSettingTool', () => {
     const tool = createSetSettingTool(invalid)
     await expect(
       tool.execute(callOf('set_setting', { setting: 'stt_model', string_value: 'giant' }), ctx()),
-    ).rejects.toThrow(/stt_model must be one of: base, medium/)
+    ).rejects.toThrow(/stt_model must be one of: base, small, medium/)
     expect(invalid.updates).toEqual([])
   })
 

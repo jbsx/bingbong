@@ -173,3 +173,35 @@ describe.skipIf(!haveMedium)('moonshine transcriber (real medium models, #63)', 
     expect(final).toContain('ask not')
   }, 120_000)
 })
+
+// The default tier: same protocol through the small graphs — 10 layers of
+// KV, 8 KV heads, the small tokenizer. Self-skipping until fetched (first
+// app run on the new default, or BINGBONG_STT_MODEL=small pnpm stt:replay).
+const smallDir = join(modelsDir, MOONSHINE_TIERS.small.dir)
+const haveSmall = [
+  join(smallDir, 'encoder_model.onnx'),
+  join(smallDir, 'decoder_model_merged.onnx'),
+  join(smallDir, 'tokenizer.json'),
+  clipPath,
+].every(existsSync)
+
+describe.skipIf(!haveSmall)('moonshine transcriber (real small models)', () => {
+  it('transcribes the fixture through the small graphs and its own tokenizer', async () => {
+    const clip = loadWav(clipPath)
+    const transcriber = createMoonshineTranscriber({
+      encoderPath: join(smallDir, 'encoder_model.onnx'),
+      decoderPath: join(smallDir, 'decoder_model_merged.onnx'),
+      loadVocab: async () => parseMoonshineTokenizer(readFileSync(join(smallDir, 'tokenizer.json'), 'utf8')),
+      dims: MOONSHINE_TIERS.small.dims,
+      frameSamples: MOONSHINE_TIERS.small.frameSamples,
+      biasPhrases: BIAS_LEXICON,
+    })
+
+    const start = performance.now()
+    const final = await transcriber.finish(clip)
+    console.log(`jfk.wav (small): final in ${Math.round(performance.now() - start)}ms — "${final}"`)
+
+    expect(final).toContain('my fellow Americans')
+    expect(final).toContain('ask not')
+  }, 120_000)
+})
