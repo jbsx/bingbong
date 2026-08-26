@@ -35,9 +35,28 @@ speech.
 **Bias Lexicon**:
 The app's own vocabulary that the STT decoder is biased toward while decoding
 — panel, view, settings, and navigation terms, plus mishears discovered in
-use ("pop up"). Extending it is the first response to a misheard domain word.
+use ("pop up"). Two parts: the Seed Lexicon and Learned Terms. Extending it
+is the first response to a misheard domain word.
 It preferences what is heard; it never restricts what can be said.
 _Avoid_: hotword list, dictionary, custom vocabulary
+
+**Seed Lexicon**:
+The compiled-in part of the Bias Lexicon: the app's shipped vocabulary.
+_Avoid_: base lexicon, default words
+
+**Mishear**:
+A divergence between what was said and what the transcript carries. The
+assistant proposes its repair at the end of its message; a proposal admits
+nothing by itself — the same proposed term must recur across Runs before it
+becomes a Learned Term. The user is never asked; the pipeline handles it.
+_Avoid_: typo, STT error
+
+**Learned Term**:
+A Bias Lexicon entry admitted at runtime after its proposal recurred across
+Runs. Same decode effect as the Seed Lexicon; capped (default 500,
+least-recently-used evicted), survives Sessions and restarts, and is
+inspected or edited only in Settings — never voice-reachable.
+_Avoid_: custom word, user dictionary entry
 
 ### Session
 

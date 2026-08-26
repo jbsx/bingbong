@@ -1272,6 +1272,44 @@ body {
   color: var(--status-red);
 }
 
+/* Learned Terms (ADR 0022): chips with a remove control — a vocabulary
+   list, not an editable transcript. */
+.settings-terms {
+  list-style: none;
+  margin: 0 0 12px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-width: 520px;
+}
+
+.settings-term {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 6px 12px;
+  border: 1px solid var(--edge);
+  border-radius: 10px;
+  font-size: 0.9rem;
+}
+
+.settings-term-remove {
+  border: none;
+  background: none;
+  color: var(--muted);
+  font-size: 0.8rem;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 6px;
+}
+
+.settings-term-remove:hover {
+  color: var(--status-red);
+  background: var(--bg);
+}
+
 .settings-actions {
   display: flex;
   align-items: center;

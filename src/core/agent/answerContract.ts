@@ -4,6 +4,7 @@
 
 import { MAX_RUN_NOTE_CHARS } from '../session/runJournal'
 import { parseMemoryPatch, type MemoryPatch } from '../session/workingMemory'
+import { parseMishearProposals, type MishearProposal } from '../voice/learnedTerms'
 import { parseSubagentReportSections } from './subagentReport'
 
 export const SPEAK_SENTENCE_LIMIT = 2
@@ -111,6 +112,8 @@ export function parseAssistantAnswer(content: string): {
   runNoteIssue?: 'malformed'
   memoryPatch?: MemoryPatch
   memoryPatchIssue?: 'malformed'
+  mishearProposals?: MishearProposal[]
+  mishearProposalsIssue?: 'malformed'
   findings?: ReturnType<typeof parseSubagentReportSections>['findings']
   unresolved?: ReturnType<typeof parseSubagentReportSections>['unresolved']
 } {
@@ -126,17 +129,20 @@ export function parseAssistantAnswer(content: string): {
         typeof (parsed as { speak?: unknown }).speak === 'string' &&
         typeof (parsed as { display?: unknown }).display === 'string'
       ) {
-        const { speak, display, run_note: rawRunNote, memory_patch: rawMemoryPatch } = parsed as {
+        const { speak, display, run_note: rawRunNote, memory_patch: rawMemoryPatch, mishear_proposals: rawMishearProposals } = parsed as {
           speak: string
           display: string
           run_note?: unknown
           memory_patch?: unknown
+          mishear_proposals?: unknown
         }
         let answer: {
           speak: string
           display: string
           memoryPatch?: MemoryPatch
           memoryPatchIssue?: 'malformed'
+          mishearProposals?: MishearProposal[]
+          mishearProposalsIssue?: 'malformed'
           findings?: ReturnType<typeof parseSubagentReportSections>['findings']
           unresolved?: ReturnType<typeof parseSubagentReportSections>['unresolved']
         } = { speak: capSentences(speak, SPEAK_SENTENCE_LIMIT), display }
@@ -150,6 +156,12 @@ export function parseAssistantAnswer(content: string): {
         if (rawMemoryPatch !== undefined) {
           const memoryPatch = parseMemoryPatch(rawMemoryPatch)
           answer = memoryPatch ? { ...answer, memoryPatch } : { ...answer, memoryPatchIssue: 'malformed' }
+        }
+        // Mishear proposals (ADR 0022): same rejection shape as the memory
+        // patch — malformed drops the whole list, the Answer stands.
+        if (rawMishearProposals !== undefined) {
+          const mishearProposals = parseMishearProposals(rawMishearProposals)
+          answer = mishearProposals ? { ...answer, mishearProposals } : { ...answer, mishearProposalsIssue: 'malformed' }
         }
         if (rawRunNote === undefined) return answer
         if (typeof rawRunNote !== 'string') return { ...answer, runNoteIssue: 'malformed' }

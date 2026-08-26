@@ -7,6 +7,7 @@ import { selectDelegatedMemory } from '../agent/subagentReport'
 import { createLlmDeltaBatcher } from './deltaBatcher'
 import type { TtsSpeaker } from '../ports/tts'
 import { spokenErrorLine } from '../agent/answerContract'
+import type { MishearProposal } from '../voice/learnedTerms'
 import { MAX_RUN_NOTE_CHARS, type RunJournalEntry, type RunJournalSnapshot } from '../session/runJournal'
 import type { MemoryPatch, WorkingMemorySnapshot } from '../session/workingMemory'
 import type { PerfTracer } from '../perf/perfTracer'
@@ -80,6 +81,16 @@ export interface CommandPipelineDeps {
   emitDetail?: (event: PipelineEvent) => void
   /** Diagnostic-only sink; continuity degradation never becomes a user-visible pipeline error. */
   onContinuityDegraded?: (reason: 'missing' | 'malformed' | 'invalid_memory' | 'commit_rejected', turnId: string) => void
+  /**
+   * Learned Terms seam (ADR 0022): the run's input text touches the LRU
+   * order at run start, and a done run's validated Mishear proposals apply
+   * at the Memory Commit tail — end of message, never mid-run. Absent in
+   * tests unless asserted; a throwing implementation never fails a run.
+   */
+  learnedTerms?: {
+    applyProposals(proposals: readonly MishearProposal[]): void
+    observeTranscript(text: string): void
+  }
 }
 
 interface ConfirmationDecision {
@@ -372,6 +383,14 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
       let finalAnswer: Extract<AssistantTurn, { kind: 'answer' }> | undefined
       yield { type: 'command', text: command, at: clock.now() }
       yield { type: 'status', status: 'thinking', at: clock.now() }
+      // LRU touch (ADR 0022): the run's input is the transcript an admitted
+      // term was heard in — use is the honest "recently biased" signal.
+      // Bookkeeping can never fail the run.
+      try {
+        deps.learnedTerms?.observeTranscript(command)
+      } catch {
+        // swallowed — the ledger is advisory
+      }
 
       try {
         const toolResults: ToolResult[] = []
@@ -608,6 +627,18 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
         }
         if (commit !== 'committed') {
           logContinuityDegradation(deps.onContinuityDegraded, 'commit_rejected', turnId)
+        }
+      }
+      // Mishear proposals (ADR 0022) apply at the same tail as the Memory
+      // Commit: end of message, done runs only, never a reset-consumed one.
+      // A malformed list was already dropped at the answer contract; an
+      // empty list applies nothing. The ledger is advisory — it can never
+      // fail a run.
+      if (runOutcome === 'done' && !resetConsumed && finalAnswer?.mishearProposals?.length) {
+        try {
+          deps.learnedTerms?.applyProposals(finalAnswer.mishearProposals)
+        } catch {
+          // swallowed — the ledger is advisory
         }
       }
       yield { type: 'done', outcome: resetConsumed ? 'reset' : runOutcome, at: clock.now() }

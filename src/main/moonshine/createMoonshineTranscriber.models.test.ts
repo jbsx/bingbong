@@ -138,6 +138,32 @@ describe.skipIf(!haveAssets)('moonshine transcriber (real models)', () => {
     // must not drift beyond a generous scheduling-noise allowance.
     expect(biasedMs).toBeLessThan(plainMs * 2 + 500)
   }, 60_000)
+
+  it('a full 500-term union (the Learned Term cap) still leaves ordinary speech untouched (ADR 0022)', async () => {
+    // The worst legal corpus: the seed lexicon plus filler out to the cap.
+    // The clip contains none of it, so the boost must flip nothing, and the
+    // per-step rest walk must stay inside the same latency allowance.
+    const clip = loadWav(clipPath)
+    const filler: string[] = []
+    for (let i = BIAS_LEXICON.length; i < 500; i += 1) filler.push(`zqterm ${i}`)
+    const full = createMoonshineTranscriber({
+      encoderPath: join(moonshineDir, 'encoder_model.onnx'),
+      decoderPath: join(moonshineDir, 'decoder_model_merged.onnx'),
+      loadVocab: async () => parseMoonshineTokenizer(readFileSync(join(moonshineDir, 'tokenizer.json'), 'utf8')),
+      biasPhrases: [...BIAS_LEXICON, ...filler],
+    })
+    const unbiased = makeEngine()
+
+    const plain = await unbiased.finish(clip)
+    const plainMs = performance.now()
+    const fullText = await full.finish(clip)
+    const fullMs = performance.now() - plainMs
+
+    expect(fullText).toBe(plain)
+    expect(fullText).toContain('my fellow Americans')
+    console.log(`jfk.wav 500-term union: ${Math.round(fullMs)}ms — "${fullText}"`)
+    expect(fullMs).toBeLessThan(15_000)
+  }, 60_000)
 })
 
 // The opt-in tier (#63): same merged-decoder protocol through the real

@@ -1608,6 +1608,65 @@ describe('command pipeline', () => {
     expect(order.at(-1)).toBe('done')
   })
 
+  it('applies the answer\'s Mishear proposals and observes the transcript (ADR 0022)', async () => {
+    const order: string[] = []
+    const applied: (readonly unknown[])[] = []
+    const transcripts: string[] = []
+    const llm = new ScriptedLlm([
+      { kind: 'answer', speak: 'Found two.', display: 'Pizza choices.', mishearProposals: [
+        { op: 'add', suspect: 'pedal', repair: 'panel' },
+        { op: 'remove', term: 'pannel' },
+      ] },
+    ])
+    const pipeline = createCommandPipeline({
+      llm,
+      tts: new RecordingTts(),
+      clock: new FakeClock(),
+      tools: [],
+      learnedTerms: {
+        applyProposals: (proposals) => {
+          applied.push(proposals)
+          order.push('applied')
+        },
+        observeTranscript: (text) => {
+          transcripts.push(text)
+          order.push('observed')
+        },
+      },
+    })
+
+    const events: PipelineEvent[] = []
+    for await (const event of pipeline.execute('open the pedal please')) events.push(event)
+
+    // The transcript is observed at run start; proposals apply at the same
+    // tail as the Memory Commit — before done.
+    expect(transcripts).toEqual(['open the pedal please'])
+    expect(applied).toEqual([[
+      { op: 'add', suspect: 'pedal', repair: 'panel' },
+      { op: 'remove', term: 'pannel' },
+    ]])
+    expect(order).toEqual(['observed', 'applied'])
+    expect(events.at(-1)).toMatchObject({ type: 'done', outcome: 'done' })
+  })
+
+  it('a failed or malformed-proposal run applies nothing to the lexicon', async () => {
+    const applied: number[] = []
+    const runs: [string, ScriptedLlm][] = [
+      ['boom', new ScriptedLlm([{ kind: 'answer', speak: 'Nope.', display: 'Nope.', mishearProposalsIssue: 'malformed' }])],
+    ]
+    for (const [command, llm] of runs) {
+      const pipeline = createCommandPipeline({
+        llm,
+        tts: new RecordingTts(),
+        clock: new FakeClock(),
+        tools: [],
+        learnedTerms: { applyProposals: () => applied.push(1), observeTranscript: () => {} },
+      })
+      for await (const _event of pipeline.execute(command)) void _event
+    }
+    expect(applied).toEqual([])
+  })
+
   it('preserves the Answer and commits a deterministic fallback when its Run Note is malformed', async () => {
     const degraded: string[] = []
     const commits: string[] = []

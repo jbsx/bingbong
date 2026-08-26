@@ -553,4 +553,29 @@ describe('contextual biasing in the greedy decode loop (#62)', () => {
     expect(biased.encoderFeeds.length).toBe(unbiased.encoderFeeds.length)
     expect(biased.decoderFeeds.length).toBe(unbiased.decoderFeeds.length) // 4 incl. EOS
   })
+
+  it('a live lexicon getter re-arms the bias when the union changes (ADR 0022)', async () => {
+    // The learned-terms union arrives as a getter whose array identity is
+    // stable between ledger changes: same identity reuses the cached
+    // applier, a new identity rebuilds it — a word admitted mid-Session
+    // biases the very next Listen.
+    let live: readonly string[] = ['panel']
+    const rt = fakeRuntime([MISHEAR_SCRIPT, MISHEAR_SCRIPT, MISHEAR_SCRIPT])
+    const transcriber = makeTranscriber(rt, {
+      biasPhrases: () => live,
+      loadVocab: async () => BIAS_VOCAB,
+    })
+
+    // Armed: the near-tie flips to the lexicon phrase.
+    await expect(transcriber.finish(PCM)).resolves.toBe('open the panel')
+
+    // The union changed (panel evicted, nothing biased): same acoustics
+    // transcribe the mishear again.
+    live = []
+    await expect(transcriber.finish(PCM)).resolves.toBe('open the pedal')
+
+    // A re-admitted term biases again.
+    live = ['panel']
+    await expect(transcriber.finish(PCM)).resolves.toBe('open the panel')
+  })
 })

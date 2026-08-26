@@ -4,6 +4,7 @@ import { PIPELINE_IPC } from '../core/pipeline/ipcChannels'
 import { SETTINGS_IPC } from '../core/settings/ipcChannels'
 import { TTS_IPC } from '../core/tts/ipcChannels'
 import { VOICE_IPC } from '../core/voice/ipcChannels'
+import { LEARNED_TERMS_IPC } from '../core/voice/learnedTermsIpcChannels'
 import { SUBAGENT_IPC } from '../core/agent/subagentIpcChannels'
 import { USAGE_IPC } from '../core/settings/usageIpcChannels'
 import { HISTORY_IPC } from '../core/history/ipcChannels'
@@ -131,6 +132,16 @@ contextBridge.exposeInMainWorld('bingbong', {
   },
   tts: {
     listVoices: (): Promise<string[]> => ipcRenderer.invoke(TTS_IPC.listVoices),
+  },
+  learnedTerms: {
+    list: (): Promise<readonly string[]> => ipcRenderer.invoke(LEARNED_TERMS_IPC.list),
+    add: (term: string): Promise<boolean> => ipcRenderer.invoke(LEARNED_TERMS_IPC.add, term),
+    remove: (term: string): Promise<boolean> => ipcRenderer.invoke(LEARNED_TERMS_IPC.remove, term),
+    onChanged: (listener: (terms: readonly string[]) => void): (() => void) => {
+      const wrapped = (_event: unknown, terms: readonly string[]): void => listener(terms)
+      ipcRenderer.on(LEARNED_TERMS_IPC.changed, wrapped)
+      return () => ipcRenderer.removeListener(LEARNED_TERMS_IPC.changed, wrapped)
+    },
   },
   voice: {
     arm: (): Promise<void> => ipcRenderer.invoke(VOICE_IPC.arm),

@@ -82,6 +82,17 @@ export interface BingbongTtsApi {
   listVoices(): Promise<string[]>
 }
 
+export interface BingbongLearnedTermsApi {
+  /** The admitted Learned Terms, admission order (ADR 0022). */
+  list(): Promise<readonly string[]>
+  /** Add one directly; false when invalid or already seed vocabulary. */
+  add(term: string): Promise<boolean>
+  /** Remove one and plant a rejection auto-proposals cannot cross. */
+  remove(term: string): Promise<boolean>
+  /** The admitted list changed (auto-admission or a manual edit). */
+  onChanged(listener: (terms: readonly string[]) => void): () => void
+}
+
 export interface BingbongVoiceApi {
   arm(): Promise<void>
   disarm(): Promise<void>
@@ -134,6 +145,7 @@ export interface BingbongApi {
   subagents: BingbongSubagentsApi
   usage: BingbongUsageApi
   tts: BingbongTtsApi
+  learnedTerms: BingbongLearnedTermsApi
   voice: BingbongVoiceApi
   history: BingbongHistoryApi
   feedPanel: BingbongFeedPanelApi

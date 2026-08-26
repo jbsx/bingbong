@@ -18,7 +18,15 @@ import { createRetriable } from './retriable'
  * STT-model Setting (#63): Small by default (the Hardware Floor), Medium
  * opt-in for capable hardware (~380 MB, its own dir and decoder shape).
  */
-export function createMainMoonshineTranscriber(deps: { modelsDir: string; sttModel: SttModel }): Transcriber {
+export function createMainMoonshineTranscriber(deps: {
+  modelsDir: string
+  sttModel: SttModel
+  /**
+   * Live bias input (ADR 0022): the Seed Lexicon unioned with Learned
+   * Terms. Absent decodes against the seed alone (tests, scripted runs).
+   */
+  getBiasPhrases?: () => readonly string[]
+}): Transcriber {
   const tier = MOONSHINE_TIERS[deps.sttModel]
   // A failed fetch un-memoizes so the next utterance retries a transient
   // network failure (retriable, #41 review).
@@ -36,6 +44,6 @@ export function createMainMoonshineTranscriber(deps: { modelsDir: string; sttMod
     loadVocab: async () => parseMoonshineTokenizer(await readFile(join(await ensureDir(), 'tokenizer.json'), 'utf8')),
     dims: tier.dims,
     frameSamples: tier.frameSamples,
-    biasPhrases: BIAS_LEXICON,
+    biasPhrases: deps.getBiasPhrases ?? (() => BIAS_LEXICON),
   })
 }

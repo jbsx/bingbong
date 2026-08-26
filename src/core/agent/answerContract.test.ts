@@ -116,6 +116,41 @@ describe('parseAssistantAnswer', () => {
     })
   })
 
+  it('validates Mishear proposals from the same final response', () => {
+    expect(parseAssistantAnswer(JSON.stringify({
+      speak: 'Done.',
+      display: 'Useful detail.',
+      mishear_proposals: [
+        { op: 'add', suspect: 'pedal', repair: 'panel' },
+        { op: 'remove', term: 'pannel' },
+      ],
+    }))).toEqual({
+      speak: 'Done.',
+      display: 'Useful detail.',
+      mishearProposals: [
+        { op: 'add', suspect: 'pedal', repair: 'panel' },
+        { op: 'remove', term: 'pannel' },
+      ],
+    })
+  })
+
+  it('preserves a valid Answer while dropping malformed Mishear proposals wholesale', () => {
+    expect(parseAssistantAnswer(JSON.stringify({
+      speak: 'Done.',
+      display: 'Useful detail.',
+      mishear_proposals: [{ op: 'add', repair: 'panel' }],
+    }))).toEqual({
+      speak: 'Done.',
+      display: 'Useful detail.',
+      mishearProposalsIssue: 'malformed',
+    })
+    expect(parseAssistantAnswer(JSON.stringify({
+      speak: 'Done.',
+      display: 'Useful detail.',
+      mishear_proposals: [],
+    }))).toEqual({ speak: 'Done.', display: 'Useful detail.', mishearProposals: [] })
+  })
+
   it.each([null, 42, '', ' '.repeat(2), 'x'.repeat(1_201)])(
     'preserves a valid Answer while marking malformed Run Note %j',
     (runNote) => {

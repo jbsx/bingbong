@@ -82,9 +82,12 @@ export interface MoonshineTranscriberDeps {
   /**
    * Contextual-biasing lexicon (#62): phrases whose pieces get a logit
    * boost at each greedy step when the decoded suffix starts or continues
-   * them. Data only — the decode code never knows the words.
+   * them. Data only — the decode code never knows the words. A getter
+   * (ADR 0022) makes the lexicon live: resolved per pass, the applier
+   * rebuilds when the resolved array's identity changes — the learned
+   * union is stable until the ledger changes it.
    */
-  biasPhrases?: readonly string[]
+  biasPhrases?: readonly string[] | (() => readonly string[])
 }
 
 /** Greedy argmax over the LAST logits row ([1, seq, vocab] → id). */
@@ -129,15 +132,17 @@ export function createMoonshineTranscriber(deps: MoonshineTranscriberDeps): Tran
   const ensureVocab = createRetriable(deps.loadVocab)
 
   /**
-   * The bias applier is built once per loaded vocab (its tries depend only
-   * on vocab + lexicon, both stable between passes); a vocab reload — only
-   * possible after a failed pass un-memoized it — rebuilds lazily.
+   * The bias applier is built once per loaded vocab and lexicon state (its
+   * tries depend only on vocab + phrases, both stable between passes); a
+   * vocab reload — only possible after a failed pass un-memoized it — or a
+   * live lexicon whose union array changed rebuilds lazily.
    */
-  let biasCache: { vocab: MoonshineVocab; applier: BiasApplier } | null = null
+  let biasCache: { vocab: MoonshineVocab; phrases: readonly string[]; applier: BiasApplier } | null = null
   function applierFor(vocab: MoonshineVocab): BiasApplier | null {
-    if (!deps.biasPhrases || deps.biasPhrases.length === 0) return null
-    if (biasCache?.vocab !== vocab) {
-      biasCache = { vocab, applier: createBiasApplier(vocab, deps.biasPhrases) }
+    const phrases = typeof deps.biasPhrases === 'function' ? deps.biasPhrases() : deps.biasPhrases
+    if (!phrases || phrases.length === 0) return null
+    if (biasCache?.vocab !== vocab || biasCache?.phrases !== phrases) {
+      biasCache = { vocab, phrases, applier: createBiasApplier(vocab, phrases) }
     }
     return biasCache.applier
   }

@@ -1,6 +1,7 @@
 import type { RunJournalSnapshot } from '../session/runJournal'
 import type { MemoryPatch, WorkingMemorySnapshot } from '../session/workingMemory'
 import type { SubagentReportFinding } from '../agent/subagentReport'
+import type { MishearProposal } from '../voice/learnedTerms'
 
 export interface ToolCall {
   id: string
@@ -92,6 +93,13 @@ export type AssistantTurn =
       /** Validated hidden Working Memory operations from the same final response. */
       memoryPatch?: MemoryPatch
       memoryPatchIssue?: 'malformed'
+      /**
+       * Validated Mishear proposals (ADR 0022) from the same final
+       * response: confident repairs plus removals of bad Learned Terms.
+       * Malformed drops the whole list — the Answer itself stands.
+       */
+      mishearProposals?: readonly MishearProposal[]
+      mishearProposalsIssue?: 'malformed'
       /**
        * Validated Subagent Report sections (#98): findings with evidence
        * references plus unresolved items. Only subagent answers carry them;

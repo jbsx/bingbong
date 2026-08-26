@@ -124,6 +124,83 @@ function UsageSection() {
   )
 }
 
+/**
+ * Learned Terms (ADR 0022): the lexicon's one human surface. The list
+ * grows itself from repeated mishear repairs; this section is for looking
+ * and the occasional manual fix — removing a word keeps it out (the ledger
+ * remembers the rejection), adding one puts it straight in.
+ */
+function LearnedTermsSection() {
+  const [terms, setTerms] = useState<readonly string[]>([])
+  const [draft, setDraft] = useState('')
+
+  useEffect(() => {
+    let cancelled = false
+    const load = () => {
+      void window.bingbong.learnedTerms
+        .list()
+        .then((list) => {
+          if (!cancelled) setTerms(list)
+        })
+        .catch(() => undefined)
+    }
+    load()
+    const unsubscribe = window.bingbong.learnedTerms.onChanged((list) => setTerms(list))
+    return () => {
+      cancelled = true
+      unsubscribe()
+    }
+  }, [])
+
+  const add = async () => {
+    const term = draft.trim()
+    if (term === '') return
+    const added = await window.bingbong.learnedTerms.add(term).catch(() => false)
+    if (added) setDraft('')
+  }
+
+  return (
+    <section className="settings-section" aria-label="learned terms">
+      <h2>Speech vocabulary</h2>
+      <p className="settings-note">
+        Words the assistant learned to hear better — added automatically when the same corrected
+        mishear shows up twice. Removing one keeps it out.
+      </p>
+      {terms.length === 0 ? (
+        <p className="settings-note">Nothing learned yet.</p>
+      ) : (
+        <ul className="settings-terms">
+          {terms.map((term) => (
+            <li key={term} className="settings-term">
+              <span>{term}</span>
+              <button
+                type="button"
+                className="settings-term-remove"
+                aria-label={`Remove ${term}`}
+                onClick={() => void window.bingbong.learnedTerms.remove(term)}
+              >
+                Remove
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+      <Field label="Add a word">
+        <input
+          type="text"
+          value={draft}
+          placeholder="e.g. linus tech tips"
+          aria-label="Add a learned word"
+          onChange={(event) => setDraft(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter') void add()
+          }}
+        />
+      </Field>
+    </section>
+  )
+}
+
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <label className="settings-field">
@@ -462,6 +539,8 @@ export function SettingsPage({
         </section>
 
         <UsageSection />
+
+        <LearnedTermsSection />
       </div>
 
       <div className="settings-actions">

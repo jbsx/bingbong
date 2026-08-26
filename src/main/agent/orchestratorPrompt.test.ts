@@ -119,3 +119,36 @@ describe('orchestrator prompt runtime context', () => {
     expect(after).toContain('Today is 2026-08-25')
   })
 })
+
+// ADR 0022 pins: the Mishear proposal contract — end-of-message, confident
+// repairs only, removals of visible Learned Terms, and the current list the
+// model must not re-propose. The lexicon grows itself, but only through
+// this vocabulary.
+
+describe('orchestrator prompt Mishear proposals', () => {
+  it('names the mishear_proposals key in the answer contract', () => {
+    expect(ORCHESTRATOR_SYSTEM_PROMPT).toContain('"mishear_proposals": []')
+  })
+
+  it('demands confident repairs and forbids speculative guessing', () => {
+    const line = ORCHESTRATOR_SYSTEM_PROMPT.split('\n').find((candidate) => candidate.includes('mishear_proposals'))
+    expect(line).toBeDefined()
+    expect(ORCHESTRATOR_SYSTEM_PROMPT).toMatch(/only when — you are confident/)
+    expect(ORCHESTRATOR_SYSTEM_PROMPT).toMatch(/never guess/)
+  })
+
+  it('documents both operations: add a repair, remove a wrong Learned Term', () => {
+    expect(ORCHESTRATOR_SYSTEM_PROMPT).toMatch(/"op":"add","suspect"/)
+    expect(ORCHESTRATOR_SYSTEM_PROMPT).toMatch(/"op":"remove","term"/)
+  })
+
+  it('lists the current Learned Terms when any exist, and stays silent otherwise', () => {
+    const clock = new FakeClock(0)
+    const withTerms = orchestratorSystemPrompt(clock, ['linus tech tips', 'nguyen'])
+    expect(withTerms).toContain('Learned vocabulary')
+    expect(withTerms).toContain('linus tech tips, nguyen')
+
+    const without = orchestratorSystemPrompt(clock, [])
+    expect(without).not.toContain('Learned vocabulary')
+  })
+})

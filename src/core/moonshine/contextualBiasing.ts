@@ -120,12 +120,9 @@ function buildPieceTrie(vocab: MoonshineVocab): PieceNode {
  * every whole phrase with a leading space, so only word-starting pieces
  * can take the word-start boost.
  */
-function activeRests(decoded: string, trie: PhraseNode, phrases: readonly string[]): string[] {
+function activeRests(decoded: string, trie: PhraseNode, wordStartRests: readonly string[]): string[] {
   const lower = decoded.toLowerCase()
   const rests: string[] = []
-  const push = (rest: string): void => {
-    if (rest !== '') rests.push(rest)
-  }
 
   for (let i = 0; i < lower.length; i++) {
     if (i !== 0 && lower[i - 1] !== ' ') continue // phrase matches start at word starts
@@ -133,11 +130,14 @@ function activeRests(decoded: string, trie: PhraseNode, phrases: readonly string
     for (let k = i; k < lower.length; k++) {
       node = node.children.get(lower[k])
       if (!node) break
-      for (const rest of node.rests) push(rest)
+      for (const rest of node.rests) if (rest !== '') rests.push(rest)
     }
   }
 
-  for (const phrase of phrases) push(` ${phrase}`)
+  // The word-start rests are a pure function of the phrase set, not the
+  // decoded text — precomputed at construction (ADR 0022: a 500-term
+  // lexicon must not rebuild 500 strings at every greedy step).
+  rests.push(...wordStartRests)
   return rests
 }
 
@@ -146,6 +146,7 @@ export function createBiasApplier(vocab: MoonshineVocab, phrases: readonly strin
   const normalized = normalizePhrases(phrases)
   const phraseTrie = buildPhraseTrie(normalized)
   const pieceTrie = buildPieceTrie(vocab)
+  const wordStartRests = normalized.map((phrase) => ` ${phrase}`)
 
   return {
     nextToken(decoded, logits) {
@@ -164,7 +165,7 @@ export function createBiasApplier(vocab: MoonshineVocab, phrases: readonly strin
       }
 
       const boosted = new Set<number>()
-      for (const rest of activeRests(decoded, phraseTrie, normalized)) {
+      for (const rest of activeRests(decoded, phraseTrie, wordStartRests)) {
         let node: PieceNode | undefined = pieceTrie
         for (let k = 0; k < rest.length; k++) {
           node = node.children.get(rest[k])

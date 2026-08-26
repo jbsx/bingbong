@@ -15,6 +15,7 @@ import { createNewSessionTool } from '../../core/pipeline/sessionTools'
 import { createPanelTools, type PanelControls } from '../../core/pipeline/panelTools'
 import { createAppControlTool, createSetSettingTool, type AppControls, type SettingsControls } from '../../core/pipeline/settingsTools'
 import { resolveModelEndpoint, routingEnvKeys } from '../../core/agent/modelRouting'
+import type { MishearProposal } from '../../core/voice/learnedTerms'
 import type { UsageSink } from '../../core/agent/usageTracking'
 import { withUsageTracking } from '../../core/agent/usageTracking'
 import type { PerfTracer } from '../../core/perf/perfTracer'
@@ -62,6 +63,21 @@ export interface AssistantPipelineDeps {
    */
   panel?: PanelControls
   /**
+   * Live source for the Learned Terms list (ADR 0022): read as each round's
+   * system prompt is built, so the model always sees the current lexicon —
+   * what not to re-propose and what it may remove.
+   */
+  getLearnedTerms?: () => readonly string[]
+  /**
+   * The ledger seam (ADR 0022): done runs' validated Mishear proposals and
+   * the per-run transcript LRU touch, wired by main to the app-global
+   * lexicon store. Absent in tests unless asserted.
+   */
+  learnedTerms?: {
+    applyProposals(proposals: readonly MishearProposal[]): void
+    observeTranscript(text: string): void
+  }
+  /**
    * Settings voice tool (#67, ADR 0006): set_setting writes through the
    * same settings-store seam the settings page drives, so changes apply
    * live. Wired by main to the app's settings store; absent in tests
@@ -102,6 +118,7 @@ function resolveLlm(
   clock: Clock,
   onUsage?: UsageSink,
   tracer?: PerfTracer,
+  getLearnedTerms?: () => readonly string[],
 ): LlmClient {
   let client: LlmClient
   let model: string
@@ -123,8 +140,9 @@ function resolveLlm(
         endpoint,
         // The runtime context getter (#103): the client below is cached
         // across Runs, so the date is re-derived when each round's messages
-        // are built — a Run started after midnight sees the new date.
-        systemPrompt: () => orchestratorSystemPrompt(clock),
+        // are built — a Run started after midnight sees the new date. The
+        // learned-terms getter (ADR 0022) rides the same closure.
+        systemPrompt: () => orchestratorSystemPrompt(clock, getLearnedTerms?.()),
         tools,
         fetchFn,
         // Thinking kill-switch (experiment): BINGBONG_DISABLE_THINKING=1
@@ -167,6 +185,7 @@ function createDynamicLlm(
   clock: Clock,
   onUsage?: UsageSink,
   tracer?: PerfTracer,
+  getLearnedTerms?: () => readonly string[],
 ): LlmClient {
   let signature: string | null = null
   let client: LlmClient | null = null
@@ -175,7 +194,7 @@ function createDynamicLlm(
       const env = getEnv()
       const nextSignature = llmSignature(env)
       if (client === null || nextSignature !== signature) {
-        client = resolveLlm(env, fetchFn, tools, clock, onUsage, tracer)
+        client = resolveLlm(env, fetchFn, tools, clock, onUsage, tracer, getLearnedTerms)
         signature = nextSignature
       }
       return client.complete(request)
@@ -208,7 +227,7 @@ export function createAssistantPipeline(deps: AssistantPipelineDeps): CommandPip
   const clock = deps.clock ?? systemClock
   const configuredAskTimeoutMs = askTimeoutMs(deps.env)
   const pipeline = createCommandPipeline({
-    llm: createDynamicLlm(getEnv, fetchFn, tools, clock, deps.onLlmUsage, deps.tracer),
+    llm: createDynamicLlm(getEnv, fetchFn, tools, clock, deps.onLlmUsage, deps.tracer, deps.getLearnedTerms),
     tts: deps.tts ?? silentTts,
     clock,
     tools,
@@ -221,6 +240,7 @@ export function createAssistantPipeline(deps: AssistantPipelineDeps): CommandPip
     ...(deps.tracer ? { tracer: deps.tracer } : {}),
     ...(deps.browserSubspans ? { browserSubspans: deps.browserSubspans } : {}),
     ...(deps.emitDetail ? { emitDetail: deps.emitDetail } : {}),
+    ...(deps.learnedTerms ? { learnedTerms: deps.learnedTerms } : {}),
     onAbort: () => deps.subagentControl?.cancelAll(),
     onPause: () => deps.subagentControl?.pauseAll(),
     onResume: () => deps.subagentControl?.resumeAll(),

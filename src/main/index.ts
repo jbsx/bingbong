@@ -50,6 +50,8 @@ import { browserSubspansEnabled, createBrowserSubspans } from '../core/perf/brow
 import { createJsonlPerfSink } from './perf/jsonlPerfSink'
 import { resolveVoiceConfig } from './voice/voiceConfig'
 import { createMainVoice } from './voice/createMainVoice'
+import { createLearnedTermsStore, seedLexiconSet } from './voice/learnedTermsStore'
+import { registerLearnedTermsIpc } from './voice/attachLearnedTerms'
 import { attachVoiceToWindow, registerVoiceIpc } from './voice/attachVoice'
 import { attachFeedPanelOverlayToWindow, registerFeedPanelIpc } from './panel/createFeedPanelOverlay'
 import { defaultFeedPanelWidth } from '../core/panel/feedPanelState'
@@ -127,6 +129,13 @@ const envFileValues = loadEnvFile(process.env, app.getAppPath())
 // Daily spend estimate (warn-only): every orchestrator/subagent turn with
 // reported usage lands here and surfaces on the settings page.
 const usageStore = createUsageStore(join(app.getPath('userData'), 'usage.json'))
+
+// Learned Terms ledger (ADR 0022): the Bias Lexicon's runtime-grown half —
+// one app-global lexicon.json beside the settings file. The pipeline's
+// Mishear proposals grow it autonomously (recurrence-gated); the settings
+// page is its one human surface. Fails closed to seed-only on corruption.
+const learnedTermsStore = createLearnedTermsStore(join(app.getPath('userData'), 'lexicon.json'), seedLexiconSet())
+registerLearnedTermsIpc(learnedTermsStore)
 
 // Recorded History (spec #1, Persistence): every live event is recorded for
 // explicit review, but launches never restore it into the Feed or continuity.
@@ -366,7 +375,7 @@ async function createWindow(): Promise<BrowserWindow> {
     subagentRuntimes.delete(win)
   })
 
-  const voice = await createMainVoice(voiceConfig)
+  const voice = await createMainVoice(voiceConfig, () => learnedTermsStore.biasPhrases())
   // Voice before assistant: the pipeline's event tap feeds the session's
   // confirmation window, so the session must exist when events start.
   const voiceSession = attachVoiceToWindow(win, {
@@ -433,6 +442,15 @@ async function createWindow(): Promise<BrowserWindow> {
         await speakingGate.tts.speak(text, turnId).catch(() => {})
       },
     },
+    // Learned Terms (ADR 0022): the run's transcript feeds the LRU order;
+    // done runs' Mishear proposals land in the ledger at the commit tail.
+    learnedTerms: {
+      applyProposals: (proposals) => learnedTermsStore.applyProposals(proposals),
+      observeTranscript: (text) => learnedTermsStore.observeTranscript(text),
+    },
+    // The prompt's learned-vocabulary block reads the live ledger, so the
+    // model never re-proposes a term it can already hear.
+    getLearnedTerms: () => learnedTermsStore.list(),
     onLlmUsage: (record) => usageStore.record(record.role, record.model, record.usage),
     tracer: perfTracer,
     browserSubspans,
