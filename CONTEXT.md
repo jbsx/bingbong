@@ -11,11 +11,12 @@ first-run setup.
 
 **Wake Word**:
 The phrase that opens a Listen. Latches until reset — one wake, one activation.
+During a running Run, the Wake Word pauses that Run and opens the Pause Listen.
 _Avoid_: hotword, trigger phrase
 
 **Listen**:
 An open microphone window in which one Utterance is captured and transcribed.
-One utterance per activation.
+One utterance per activation — the Pause Listen is the one exception.
 _Avoid_: recording session
 
 **Utterance**:
@@ -30,7 +31,25 @@ _Avoid_: silence detection
 
 **Barge-in**:
 Cutting speech in flight by activating (wake word or hotkey), not by arbitrary
-speech.
+speech. The Abort Head is the one bare-speech exception.
+
+**Pause**:
+A live Run parked mid-flight. Entered by the Wake Word or hotkey during a
+running Run; left by speaking "continue" or "resume", by a Steering Directive,
+or by the Pause Listen's timeout. Paused Runs stay steerable and keep their
+Session.
+_Avoid_: hold, suspend
+
+**Pause Listen**:
+The Listen opened by pausing. Ignores non-directive utterances without closing,
+and auto-resumes the Run after five seconds of mic silence.
+_Avoid_: steering window, hold mode
+
+**Abort Head**:
+The always-on recognizer for "stop now" — the one bare-speech activation path.
+Fires only while a Run is live and aborts it outright. Its false-positive risk
+is accepted until observed in practice.
+_Avoid_: cancel word, stop head
 
 **Bias Lexicon**:
 The app's own vocabulary that the STT decoder is biased toward while decoding
@@ -209,7 +228,7 @@ _Avoid_: command box, steer box, input bar, activity bar
 **Steering**:
 Redirecting a live Run mid-flight with one Directive. Paused Runs stay
 steerable; Steering pauses-if-needed and resumes-with-directive as one atomic
-step. The typed path drives the exact seam the spoken "hold on" flow drives.
+step. The typed path drives the exact seam the spoken Pause flow drives.
 _Avoid_: interrupting, mid-flight correction
 
 **Directive**:

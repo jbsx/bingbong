@@ -7,7 +7,7 @@ export interface WakeConfig {
   engine: WakeEngine
   melspecModel: string
   embeddingModel: string
-  /** The three Colab-trained heads: "bing bong" wakes, "abort" cancels, "hold on" pauses. */
+  /** The three Colab-trained heads: "bing bong" wakes, "abort" cancels, "hold on" is scored but unwired (ADR 0024). */
   wakeModel: string
   abortModel: string
   holdOnModel: string

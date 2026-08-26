@@ -4,7 +4,7 @@ import type { TtsIdle, TtsSpeaker } from '../ports/tts'
 import type { Transcriber, VadScorer } from '../ports/stt'
 import type { WakeWordDetector } from '../ports/wake'
 import type { VoiceHeardEvent, VoiceListenReason, VoiceState } from './ipcChannels'
-import { createUtteranceEndpointer, VAD_FRAME_SAMPLES, type UtteranceEnd, type UtteranceEndpointerConfig } from './vadEndpointing'
+import { createUtteranceEndpointer, VAD_FRAME_SAMPLES, vadDefaults, type UtteranceEnd, type UtteranceEndpointerConfig } from './vadEndpointing'
 import type { UtteranceDumper } from './utteranceDump'
 import { createWakeMonitor } from './wakeMonitor'
 import { parseYesNo } from './yesNo'
@@ -15,6 +15,8 @@ import type { SessionGeneration, SessionId } from '../session/sessionIdentity'
 export const CONFIRM_VOICE_WINDOW_MS = 12_000
 /** Free-text ask window: as long as the ask_user timeout, for spoken answers. */
 export const ASK_VOICE_WINDOW_MS = 45_000
+/** Pause Listen mic-silence cap (ADR 0024): a false pause costs seconds, not a wedged kiosk. */
+export const PAUSE_LISTEN_TIMEOUT_MS = 5_000
 
 /**
  * The complete local phrase-routing vocabulary — run control only (abort,
@@ -94,7 +96,7 @@ export interface VoiceSession {
   pushAudio(chunk: Float32Array): Promise<void>
   /** Pipeline events drive the confirmation window. */
   handlePipelineEvent(event: PipelineEvent): void
-  /** Handler surface for the dedicated "abort" / "hold on" wake heads (#22) and the keyword interception (#20). */
+  /** Handler surface for the dedicated abort wake head (#22), the keyword interception (#20), and the wake/hotkey pause seam (ADR 0024). */
   interrupt(kind: 'abort' | 'pause'): boolean
 }
 
@@ -147,6 +149,7 @@ export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
   let activeSessionExpiry: { sessionId: SessionId; generation: SessionGeneration } | null = null
   let cancelWindowTimer: (() => void) | null = null
   let cancelAskTimer: (() => void) | null = null
+  let cancelPauseTimer: (() => void) | null = null
   // Chunks are processed strictly in arrival order; scoring is async.
   let audioChain: Promise<void> = Promise.resolve()
   let monitorChain: Promise<void> = Promise.resolve()
@@ -157,6 +160,12 @@ export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
   const abortPhrases = new Set(LOCAL_CONTROL_PHRASES.abort)
   const pausePhrases = new Set(LOCAL_CONTROL_PHRASES.pause)
   const resumePhrases = new Set(LOCAL_CONTROL_PHRASES.resume)
+
+  /** The endpointer's own speech bar — re-arming uses the same definition of speech. */
+  const defaultSpeechThreshold = vadDefaults().speechThreshold
+  function speechThreshold(): number {
+    return appliedEndpointerConfig?.speechThreshold ?? defaultSpeechThreshold
+  }
 
   function normalizedPhrase(text: string): string {
     return text.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim()
@@ -189,13 +198,11 @@ export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
         getThreshold: deps.wake.getThreshold,
         vadGate: deps.wake.vadGate,
         onWake: activateFromWake,
-        // The dedicated always-on heads (#22) feed the #20 interrupt surface;
+        // The dedicated abort head (#22) feeds the #20 interrupt surface;
         // interrupt() gates on the run state, so idle detections are no-ops.
+        // The "hold on" head is unwired — wake-pauses-run replaced it (ADR 0024).
         onAbort: () => {
           interrupt('abort')
-        },
-        onPause: () => {
-          interrupt('pause')
         },
         onError: (message) => {
           deps.onError(message)
@@ -207,10 +214,28 @@ export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
       })
     : null
 
+  /**
+   * The shared activation-to-pause seam (ADR 0024): barge in, then park the
+   * run. Wake and hotkey both land here — the only intended difference is
+   * the wake path's chime.
+   */
+  function pauseRunningRun(): void {
+    deps.tts.stop()
+    interrupt('pause')
+  }
+
   function activateFromWake(): void {
     // A hotkey/confirmation listen — or an in-flight transcript — owns the
     // mic; nothing to do.
     if (listening || transcribing) return
+    // Wake during a running Run pauses it and opens the Pause Listen — the
+    // bare "hold on" head's replacement (ADR 0024). Barge-in first: speech
+    // dies, then the cue confirms, same as the command activation.
+    if (deps.getRunState() === 'running') {
+      pauseRunningRun()
+      deps.wake?.chime()
+      return
+    }
     startListening('wake')
     // The chime follows the barge-in stop: speech dies first, then the cue
     // confirms activation before the user finishes their sentence.
@@ -239,6 +264,8 @@ export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
     cancelWindowTimer = null
     cancelAskTimer?.()
     cancelAskTimer = null
+    cancelPauseTimer?.()
+    cancelPauseTimer = null
     if (!listening) return
     listening = false
     transcribing = false
@@ -255,6 +282,28 @@ export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
     if (monitoring) monitor?.reset()
   }
 
+  /**
+   * The Pause Listen's mic-silence clock (ADR 0024): five seconds without
+   * speech silently resumes the Run — only the Status Capsule moves. Speech
+   * re-arms it, so a user mid-thought at 4.9 s keeps the listen open.
+   */
+  function armPauseTimeout(): void {
+    cancelPauseTimer?.()
+    cancelPauseTimer = deps.clock.setTimer(PAUSE_LISTEN_TIMEOUT_MS, () => {
+      cancelPauseTimer = null
+      if (!listening || reason !== 'pause') return
+      // The STT window is not mic silence: a slow transcript re-arms the
+      // clock rather than dropping the spoken Directive.
+      if (transcribing) {
+        armPauseTimeout()
+        return
+      }
+      // A run resumed by other means (typed Steering) needs no second resume.
+      if (deps.getRunState() === 'paused') deps.onResume()
+      stopListening()
+    })
+  }
+
   function enterPauseListening(): void {
     cancelWindowTimer?.()
     cancelWindowTimer = null
@@ -268,6 +317,7 @@ export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
     // the pause listen starts a fresh one (#40).
     deps.transcriber.cancel()
     deps.vad.reset()
+    armPauseTimeout()
     emitState()
   }
 
@@ -307,6 +357,9 @@ export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
         return
       }
       if (!listening) return
+      // Pause Listen silence clock (ADR 0024): any speech-probable frame
+      // restarts it — the same threshold the endpointer counts speech with.
+      if (reason === 'pause' && prob >= speechThreshold()) armPauseTimeout()
       const wasIdle = endpointer.isIdle()
       const utterance = endpointer.push(prob, frame)
       if (utterance) {
@@ -538,6 +591,14 @@ export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
 
   return {
     arm() {
+      // The hotkey shares the wake word's pause seam (ADR 0024): pressing it
+      // during a running Run pauses that Run instead of opening a listen.
+      // An open listen still owns the mic — the press falls through to
+      // startListening's no-op (a confirmation keeps serving its prompt).
+      if (!listening && !transcribing && deps.getRunState() === 'running') {
+        pauseRunningRun()
+        return
+      }
       startListening('hotkey')
     },
 
@@ -602,9 +663,9 @@ export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
         if (listening && reason === 'ask') stopListening()
       }
       if (event.type === 'done') {
-        // The run ended outside the voice session (Escape, UI stop). A pause
-        // listen has no timeout by design, so without this it would swallow
-        // every later utterance into the ignored branch forever.
+        // The run ended outside the voice session (Escape, UI stop). The
+        // Pause Listen's silence timeout would linger otherwise — and under
+        // continuous speech it never fires, so close it eagerly here.
         if (listening && reason === 'pause') stopListening()
       }
     },

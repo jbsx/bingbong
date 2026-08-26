@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { PipelineEvent } from '../pipeline/events'
 import { FakeClock, FakeTranscriber, FakeVad, FakeWakeDetector, RecordingTts } from '../testing/doubles'
 import type { VoiceHeardEvent, VoiceState } from './ipcChannels'
-import { createVoiceSession } from './voiceSession'
+import { createVoiceSession, PAUSE_LISTEN_TIMEOUT_MS } from './voiceSession'
 import { mergeFramesFor, vadDefaults, type UtteranceEndpointerConfig } from './vadEndpointing'
 import type { CommandRunState } from '../pipeline/createCommandPipeline'
 import { createPerfTracer, type PerfSpanRecord } from '../perf/perfTracer'
@@ -68,6 +68,8 @@ interface SessionHarness {
   pauses: number[]
   resumes: (string | undefined)[]
   chimes: number[]
+  /** Resolves a parked STT window when the harness runs with deferStt. */
+  settleStt(text: string): void
   speakUtterance(probs?: number[]): Promise<void>
   session: ReturnType<typeof createVoiceSession>
 }
@@ -90,6 +92,8 @@ async function createSession(overrides?: {
   getEndpointerConfig?: () => Partial<UtteranceEndpointerConfig>
   /** Static endpointer overrides — the small-cap seam for truncation tests (#61). */
   endpointerConfig?: Partial<UtteranceEndpointerConfig>
+  /** Parks every finish() until settleStt — the STT-window seam (ADR 0024). */
+  deferStt?: boolean
 }): Promise<SessionHarness> {
   const vad = overrides?.vad ?? new FakeVad()
   const baseTranscriber = overrides?.transcriber ?? new FakeTranscriber()
@@ -126,6 +130,8 @@ async function createSession(overrides?: {
       })
     : undefined
   // Scripted STT latency: the final pass advances the fake clock.
+  // deferStt parks each finish() until settleStt — a slow STT window.
+  const pendingStt: { resolve: (text: string) => void }[] = []
   const transcriber = overrides?.perf
     ? {
         begin: () => baseTranscriber.begin(),
@@ -137,7 +143,18 @@ async function createSession(overrides?: {
           return baseTranscriber.finish(pcm)
         },
       }
-    : baseTranscriber
+    : overrides?.deferStt
+      ? {
+          begin: () => baseTranscriber.begin(),
+          push: (frame: Float32Array) => baseTranscriber.push(frame),
+          onPartial: (listener: (text: string) => void) => baseTranscriber.onPartial(listener),
+          cancel: () => baseTranscriber.cancel(),
+          finish: (pcm: Float32Array) => {
+            void pcm
+            return new Promise<string>((resolve) => pendingStt.push({ resolve }))
+          },
+        }
+      : baseTranscriber
 
   // The real dumper over an in-memory writer, switched by the env flag the
   // way main wires it (#34): flag off — wired but writes nothing.
@@ -207,7 +224,11 @@ async function createSession(overrides?: {
     }
   }
 
-  return { vad, transcriber: baseTranscriber, clock, tts, idle, states, heard, errors, commands, submitted, perf, dumps, resolutions, askResolutions, sessionDecisions, aborts, pauses, resumes, chimes, speakUtterance, session }
+  const settleStt = (text: string): void => {
+    pendingStt.shift()?.resolve(text)
+  }
+
+  return { vad, transcriber: baseTranscriber, clock, tts, idle, states, heard, errors, commands, submitted, perf, dumps, resolutions, askResolutions, sessionDecisions, aborts, pauses, resumes, chimes, settleStt, speakUtterance, session }
 }
 
 function confirmationRequested(id = 'confirm-1'): PipelineEvent {
@@ -309,7 +330,7 @@ describe('voice session', () => {
     expect(harness.commands).toEqual(['stop'])
   })
 
-  it('keeps listening after pause with no timeout, then resumes with spoken steering', async () => {
+  it('the Pause Listen silently auto-resumes the run after five seconds of mic silence (ADR 0024)', async () => {
     const runState = { value: 'running' as CommandRunState }
     const harness = await createSession({
       transcriber: new FakeTranscriber(['hold on', 'use Paris instead']),
@@ -317,19 +338,90 @@ describe('voice session', () => {
     })
     harness.session.arm()
 
-    await harness.speakUtterance()
     expect(harness.pauses).toEqual([1])
-    expect(harness.states.at(-1)).toEqual({ listening: true, reason: 'pause', monitoring: false, transcribing: false })
+    expect(harness.session.getState()).toEqual({ listening: true, reason: 'pause', monitoring: false, transcribing: false })
 
-    harness.clock.advance(24 * 60 * 60 * 1000)
-    expect(harness.states.at(-1)).toEqual({ listening: true, reason: 'pause', monitoring: false, transcribing: false })
-
+    // A spoken "hold on" keeps it paused; the silence clock runs from the
+    // last speech, and the transcript's STT window is not mic silence.
     await harness.speakUtterance()
+    expect(harness.heard).toEqual([{ text: 'hold on', routed: 'pause' }])
+    expect(harness.session.getState().reason).toBe('pause')
+
+    harness.clock.advance(PAUSE_LISTEN_TIMEOUT_MS - 1)
+    expect(harness.session.getState()).toEqual({ listening: true, reason: 'pause', monitoring: false, transcribing: false })
+    harness.clock.advance(1)
+
+    // Silent resume: the run continues, the ear closes, nothing was "heard".
+    expect(harness.resumes).toEqual([undefined])
+    expect(harness.heard).toEqual([{ text: 'hold on', routed: 'pause' }])
+    expect(harness.states.at(-1)).toEqual({ listening: false, reason: null, monitoring: false, transcribing: false })
+
+    // And the steering utterance never lands — the run is already going.
+    await harness.speakUtterance()
+    expect(harness.resumes).toEqual([undefined])
+    expect(harness.commands).toEqual([])
+  })
+
+  it('speech re-arms the Pause Listen silence clock — a user speaking at 4.9 s keeps it open (ADR 0024)', async () => {
+    const runState = { value: 'running' as CommandRunState }
+    const harness = await createSession({ runState })
+    harness.session.arm()
+    expect(harness.pauses).toEqual([1])
+
+    harness.clock.advance(PAUSE_LISTEN_TIMEOUT_MS - 100)
+    // Two speech frames: enough to re-arm the clock, under the 3-frame
+    // utterance-start confirm — no capture, no transcript.
+    for (let i = 0; i < 2; i++) {
+      harness.vad.queue.push(SPEECH)
+      await harness.session.pushAudio(new Float32Array(512))
+    }
+
+    // Past the original deadline: still paused, still listening.
+    harness.clock.advance(200)
+    expect(harness.session.getState()).toEqual({ listening: true, reason: 'pause', monitoring: false, transcribing: false })
+    expect(harness.resumes).toEqual([])
+
+    // Five seconds after the last speech frame, silence wins.
+    harness.clock.advance(PAUSE_LISTEN_TIMEOUT_MS)
+    expect(harness.resumes).toEqual([undefined])
+    expect(harness.session.getState()).toEqual({ listening: false, reason: null, monitoring: false, transcribing: false })
+  })
+
+  it('the Pause Listen timeout only closes the ear when the run resumed by other means', async () => {
+    const runState = { value: 'running' as CommandRunState }
+    const harness = await createSession({ runState })
+    harness.session.arm()
+    expect(harness.pauses).toEqual([1])
+
+    // The typed Steering path resumed the run out from under the listen.
+    runState.value = 'running'
+    harness.clock.advance(PAUSE_LISTEN_TIMEOUT_MS)
+
+    expect(harness.resumes).toEqual([])
+    expect(harness.session.getState()).toEqual({ listening: false, reason: null, monitoring: false, transcribing: false })
+  })
+
+  it('the silence timeout waits out a slow STT window — the spoken Directive is not dropped (ADR 0024)', async () => {
+    const runState = { value: 'running' as CommandRunState }
+    const harness = await createSession({ runState, deferStt: true })
+    harness.session.arm()
+    expect(harness.pauses).toEqual([1])
+
+    // The directive endpoints; its transcript parks in the STT window. The
+    // audio chain serializes frame-by-frame, so drain until it parks.
+    const spoke = harness.speakUtterance()
+    for (let i = 0; i < 1_000 && !harness.session.getState().transcribing; i++) await Promise.resolve()
+    expect(harness.session.getState()).toEqual({ listening: false, reason: 'pause', monitoring: false, transcribing: true })
+
+    // STT slower than the whole silence budget: still parked, not resumed —
+    // the STT window is not mic silence.
+    harness.clock.advance(2 * PAUSE_LISTEN_TIMEOUT_MS)
+    expect(harness.resumes).toEqual([])
+    expect(harness.session.getState().reason).toBe('pause')
+
+    harness.settleStt('use Paris instead')
+    await spoke
     expect(harness.resumes).toEqual(['use Paris instead'])
-    expect(harness.heard).toEqual([
-      { text: 'hold on', routed: 'pause' },
-      { text: 'use Paris instead', routed: 'steering' },
-    ])
     expect(harness.states.at(-1)).toEqual({ listening: false, reason: null, monitoring: false, transcribing: false })
   })
 
@@ -1038,9 +1130,21 @@ describe('voice session — wake word (T10)', () => {
     expect(harness.states.at(-1)).toEqual({ listening: false, reason: null, monitoring: true, transcribing: false })
   })
 
-  it('the hold on head pauses an active run and opens the steering listen', async () => {
+  it('the hold on head is unwired — a hot score never pauses or opens a listen (ADR 0024)', async () => {
     const runState = { value: 'running' as CommandRunState }
-    const detector = new FakeWakeDetector({ holdOn: [0.95] })
+    const detector = new FakeWakeDetector({ holdOn: [0.95, 0.95] })
+    const harness = await createSession({ wake: { detector }, runState })
+    harness.session.enableWakeMonitoring()
+
+    await monitorFrames(harness, [SPEECH, SPEECH, SPEECH, SPEECH, SPEECH])
+
+    expect(harness.pauses).toHaveLength(0)
+    expect(harness.states.at(-1)).toEqual({ listening: false, reason: null, monitoring: true, transcribing: false })
+  })
+
+  it('the wake word during a running run pauses it and opens the Pause Listen (ADR 0024)', async () => {
+    const runState = { value: 'running' as CommandRunState }
+    const detector = new FakeWakeDetector([0.95])
     const harness = await createSession({
       transcriber: new FakeTranscriber(['use Paris instead']),
       wake: { detector },
@@ -1051,23 +1155,66 @@ describe('voice session — wake word (T10)', () => {
     await monitorFrames(harness, [SPEECH, SPEECH, SPEECH])
 
     expect(harness.pauses).toHaveLength(1)
+    // Barge-in plus the activation cue: speech dies, then the chime confirms.
+    expect(harness.tts.stopCalls).toBe(1)
+    expect(harness.chimes).toHaveLength(1)
     expect(harness.states.at(-1)).toEqual({ listening: true, reason: 'pause', monitoring: true, transcribing: false })
 
-    // The steering utterance routes exactly like the keyword path (#20).
+    // The pause listen takes the mic: the steering utterance resumes the run.
     await harness.speakUtterance()
     expect(harness.resumes).toEqual(['use Paris instead'])
     expect(harness.heard).toEqual([{ text: 'use Paris instead', routed: 'steering' }])
+    expect(harness.states.at(-1)).toEqual({ listening: false, reason: null, monitoring: true, transcribing: false })
   })
 
-  it('the hold on head is a no-op while idle', async () => {
-    const detector = new FakeWakeDetector({ holdOn: [0.95, 0.95] })
-    const harness = await createSession({ wake: { detector } })
-    harness.session.enableWakeMonitoring()
+  it('the hotkey during a running run pauses it — same seam, no chime (ADR 0024)', async () => {
+    const runState = { value: 'running' as CommandRunState }
+    const harness = await createSession({ runState })
 
-    await monitorFrames(harness, [SPEECH, SPEECH, SPEECH, SPEECH, SPEECH])
+    harness.session.arm()
+
+    expect(harness.pauses).toEqual([1])
+    expect(harness.chimes).toHaveLength(0)
+    expect(harness.states.at(-1)).toEqual({ listening: true, reason: 'pause', monitoring: false, transcribing: false })
+  })
+
+  it('the hotkey during a confirmation listen keeps serving the prompt — no pause', async () => {
+    const runState = { value: 'running' as CommandRunState }
+    const harness = await createSession({
+      transcriber: new FakeTranscriber(['yes']),
+      runState,
+    })
+    harness.session.handlePipelineEvent(confirmationRequested('confirm-h'))
+    await flush()
+    expect(harness.session.getState().reason).toBe('confirmation')
+
+    harness.session.arm()
 
     expect(harness.pauses).toHaveLength(0)
-    expect(harness.states.at(-1)).toEqual({ listening: false, reason: null, monitoring: true, transcribing: false })
+    expect(harness.session.getState().reason).toBe('confirmation')
+    await harness.speakUtterance()
+    expect(harness.resolutions).toEqual([{ confirmationId: 'confirm-h', approved: true }])
+  })
+
+  it('the wake word while paused (no listen open) opens a wake listen and steers without resuming first', async () => {
+    const runState = { value: 'paused' as CommandRunState }
+    const detector = new FakeWakeDetector([0.95])
+    const harness = await createSession({
+      transcriber: new FakeTranscriber(['use Paris instead']),
+      wake: { detector },
+      runState,
+    })
+    harness.session.enableWakeMonitoring()
+
+    await monitorFrames(harness, [SPEECH, SPEECH, SPEECH])
+
+    expect(harness.pauses).toHaveLength(0)
+    expect(harness.chimes).toHaveLength(1)
+    expect(harness.states.at(-1)).toEqual({ listening: true, reason: 'wake', monitoring: true, transcribing: false })
+
+    await harness.speakUtterance()
+    expect(harness.resumes).toEqual(['use Paris instead'])
+    expect(harness.heard).toEqual([{ text: 'use Paris instead', routed: 'steering' }])
   })
 
   it('without a wake detector, enableWakeMonitoring is a no-op', async () => {
@@ -1301,21 +1448,22 @@ describe('voice session — transcribing state (#38)', () => {
     })
   })
 
-  it('a spoken "hold on" during a run exits transcribing into the pause listen', async () => {
+  it('a spoken "hold on" into the Pause Listen keeps the run paused (ADR 0024)', async () => {
     const runState = { value: 'running' as CommandRunState }
     const harness = await createSession({
       transcriber: new FakeTranscriber(['hold on']),
       runState,
     })
 
+    // The hotkey pauses the run up front; the ear is the Pause Listen.
     harness.session.arm()
     await harness.speakUtterance()
 
     expect(harness.pauses).toEqual([1])
     expect(harness.heard).toEqual([{ text: 'hold on', routed: 'pause' }])
     expect(harness.states).toEqual([
-      { listening: true, reason: 'hotkey', monitoring: false, transcribing: false },
-      { listening: false, reason: 'hotkey', monitoring: false, transcribing: true },
+      { listening: true, reason: 'pause', monitoring: false, transcribing: false },
+      { listening: false, reason: 'pause', monitoring: false, transcribing: true },
       { listening: true, reason: 'pause', monitoring: false, transcribing: false },
     ])
   })
@@ -1380,8 +1528,8 @@ describe('voice session — streaming transcriber port (#40)', () => {
     expect(harness.commands).toEqual([])
   })
 
-  it('cancels the in-flight capture when a pause interrupt reopens the ear mid-utterance', async () => {
-    const runState = { value: 'running' as CommandRunState }
+  it('cancels the in-flight capture when a run starts mid-utterance and the pause interrupt takes the mic', async () => {
+    const runState = { value: 'idle' as CommandRunState }
     const harness = await createSession({ transcriber: new FakeTranscriber(['open youtube']), runState })
 
     harness.session.arm()
@@ -1389,7 +1537,10 @@ describe('voice session — streaming transcriber port (#40)', () => {
       harness.vad.queue.push(SPEECH)
       await harness.session.pushAudio(new Float32Array(512))
     }
-    // "hold on" wake head / keyword mid-speech: the pause listen takes the mic.
+    // A typed command started the run while the user was mid-utterance; the
+    // pause interrupt (ADR 0024 activation seam) reopens the ear for the
+    // Pause Listen.
+    runState.value = 'running'
     harness.session.interrupt('pause')
 
     expect(harness.transcriber.events).toEqual(['begin', 'push', 'push', 'push', 'cancel'])

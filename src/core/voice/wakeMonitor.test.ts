@@ -18,7 +18,6 @@ interface MonitorHarness {
   detector: FakeWakeDetector
   wakes: number
   aborts: number
-  pauses: number
   errors: string[]
   threshold: number
   monitor: ReturnType<typeof createWakeMonitor>
@@ -36,7 +35,6 @@ function createMonitor(overrides?: { vad?: FakeVad; detector?: FakeWakeDetector;
     threshold: overrides?.threshold ?? 0.5,
     wakes: 0,
     aborts: 0,
-    pauses: 0,
     errors,
     monitor: undefined as unknown as MonitorHarness['monitor'],
     async pushFrames(probs) {
@@ -53,9 +51,6 @@ function createMonitor(overrides?: { vad?: FakeVad; detector?: FakeWakeDetector;
     },
     onAbort: () => {
       harness.aborts += 1
-    },
-    onPause: () => {
-      harness.pauses += 1
     },
     onError: (message) => errors.push(message),
   })
@@ -132,14 +127,22 @@ describe('wake monitor', () => {
     expect(harness.wakes).toBe(2)
   })
 
-  it('fires the abort and pause heads above the threshold while speech is present', async () => {
-    const harness = createMonitor({ detector: new FakeWakeDetector({ abort: [0.9, 0.1], holdOn: [0.1, 0.9] }) })
+  it('fires the abort head above the threshold while speech is present', async () => {
+    const harness = createMonitor({ detector: new FakeWakeDetector({ abort: [0.9, 0.1], holdOn: [0.1, 0.99] }) })
 
     await harness.pushFrames([SPEECH, SPEECH, SPEECH, SPEECH, SPEECH])
 
     expect(harness.aborts).toBe(1)
-    expect(harness.pauses).toBe(1)
     expect(harness.wakes).toBe(0)
+  })
+
+  it('ignores the hold on head entirely — it is unwired (ADR 0024)', async () => {
+    const harness = createMonitor({ detector: new FakeWakeDetector({ holdOn: [0.99, 0.99] }) })
+
+    await harness.pushFrames([SPEECH, SPEECH, SPEECH, SPEECH, SPEECH])
+
+    expect(harness.wakes).toBe(0)
+    expect(harness.aborts).toBe(0)
   })
 
   it('gates the interrupt heads on recent speech and the live threshold', async () => {

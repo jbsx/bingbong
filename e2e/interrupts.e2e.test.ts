@@ -227,7 +227,7 @@ describe('run interruption e2e', () => {
     }
   })
 
-  it('pauses spoken work without a timeout and injects steering into the next turn', async () => {
+  it('pauses spoken work and injects steering into the next turn', async () => {
     const steeringAnswer = 'Steering received: $steering'
     const harness = await startHarness({
       fixture,
@@ -335,7 +335,7 @@ describe('run interruption e2e', () => {
     }
   })
 
-  it('the hold on wake head pauses an active run and opens the steering listen', async () => {
+  it('the hotkey during a running run pauses it; a Directive in the Pause Listen resumes it (ADR 0024)', async () => {
     const harness = await startHarness({
       fixture,
       env: {
@@ -343,18 +343,16 @@ describe('run interruption e2e', () => {
           { kind: 'tool_calls', calls: [{ id: 'nav', name: 'navigate', args: { url: fixture.url('/slow') } }] },
           { kind: 'answer', speak: 'Finished after resume.', display: 'Finished after resume.' },
         ]),
-        BINGBONG_WAKE_ENGINE: 'node',
-        // Stuck-hot hold-on head: fires the moment a run is active. Once the
-        // pause listen opens, audio routes to the session instead of the
-        // monitor, so the hot head can't re-fire during the steering window.
-        BINGBONG_WAKE_SCRIPT: JSON.stringify({ wake: [0.01], holdOn: [0.99] }),
-        BINGBONG_VAD_SCRIPT: JSON.stringify(Array.from({ length: 5000 }, () => 0.95)),
+        BINGBONG_VAD_SCRIPT: JSON.stringify(vadUtterance()),
         BINGBONG_STT_SCRIPT: JSON.stringify(['resume']),
       },
     })
     try {
       expect(await harness.submitCommand('load the slow page')).toBe('submitted')
 
+      // The hotkey shares the wake word's pause seam (ADR 0024): pressing it
+      // while a run is live pauses that run and opens the Pause Listen.
+      expect(await harness.dashboardEval<string>(armScript)).toBe('armed')
       await waitFor(
         () => harness.dashboardEval<boolean>(`!!document.querySelector('.status-orb--paused')`),
         { timeoutMs: 20_000, intervalMs: 250 },
@@ -367,15 +365,14 @@ describe('run interruption e2e', () => {
         { timeoutMs: 5_000, intervalMs: 100 },
       )
 
-      // The steering listen endpoints on the 15 s cap under the all-speech
-      // VAD script — 'resume' continues the run.
-      await harness.dashboardEval<string>(`(() => {
-        for (let i = 0; i < 500; i++) window.bingbong.voice.sendAudio(new Float32Array(512))
-        return 'fed'
-      })()`)
+      expect(await harness.dashboardEval<string>(feedAudioScript)).toBe('fed')
       await waitFor(
         async () => (await transcript(harness)).includes('heard "resume" (resumed)') || undefined,
-        { timeoutMs: 25_000, intervalMs: 250 },
+        { timeoutMs: 20_000, intervalMs: 250 },
+      )
+      await waitFor(
+        async () => (await transcript(harness)).includes('Finished after resume.') || undefined,
+        { timeoutMs: 20_000, intervalMs: 250 },
       )
     } finally {
       await harness.quit()

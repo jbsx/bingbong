@@ -191,8 +191,9 @@ const piperConfig = resolvePiperConfig(process.env, app.getPath('userData'))
 // Setting applies at the next start.
 const voiceConfig = resolveVoiceConfig(process.env, app.getPath('userData'), settingsStore.get().sttModel)
 
-// Wake word: "bing bong" plus the "abort" / "hold on" interrupt heads via the
-// openWakeWord ONNX stack; the Python sidecar is the config-only fallback
+// Wake word: "bing bong" plus the "abort" interrupt head via the
+// openWakeWord ONNX stack ("hold on" is scored but unwired, ADR 0024); the
+// Python sidecar is the config-only fallback
 // (BINGBONG_WAKE_ENGINE=python, wake head only).
 const wakeConfig = resolveWakeConfig(process.env, app.getPath('userData'), app.getAppPath())
 const wakeDetector = createMainWake(wakeConfig)
