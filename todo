@@ -19,3 +19,4 @@ Eager wipe. Your rule is "only the current session renders," and the 10-min wind
 
 # metrics
 Decode-time biasing — you own the greedy loop; add a trie of bias phrases and boost the logits of the next token of any phrase whose prefix matches the decoded suffix (classic contextual biasing). Fixes it at the source, helps partials too, no new model, ~100–150 lines.
+LRU eviction for self growing lexicon

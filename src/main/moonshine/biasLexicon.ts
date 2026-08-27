@@ -10,61 +10,64 @@
 import { normalizeLearnedTerm } from '../../core/voice/learnedTerms'
 
 export const BIAS_LEXICON: readonly string[] = [
-  // Feed Panel states and sizing (View Preferences, ADR 0006)
-  'panel',
-  'feed panel',
-  'dock',
-  'docked',
-  'dock mode',
-  'overlay',
-  'overlay mode',
-  'collapsed',
-  'wider',
-  'narrower',
-  'half screen',
-  'panel mode',
-  'panel width',
-  'pop up',
+    // Feed Panel states and sizing (View Preferences, ADR 0006)
+    'panel',
+    'feed panel',
+    'dock',
+    'docked',
+    'dock mode',
+    'overlay',
+    'overlay mode',
+    'collapsed',
+    'wider',
+    'narrower',
+    'half screen',
+    'panel mode',
+    'panel width',
+    'pop up',
 
-  // Navigation and app control
-  'forward',
-  'go forward',
-  'backward',
-  'reload',
-  'quit',
-  'restart',
+    // Navigation and app control
+    'forward',
+    'go forward',
+    'backward',
+    'reload',
+    'quit',
+    'restart',
+    'pause',
+    'resume',
+    'continue',
 
-  // Settings names (voice-settable surface, ADR 0006)
-  'wake word',
-  'wake threshold',
-  'endpoint delay',
-  'tool rounds',
-  'web zoom',
-  'web',
-  'zoom',
-  'voice',
-  'adblock',
-  'ad blocker',
-  'weather city',
-  'celsius',
-  'fahrenheit',
-  'metric',
-  'imperial',
-  'model routing',
-  'orchestrator',
-  'subagent',
+    // Settings names (voice-settable surface, ADR 0006)
+    'wake word',
+    'wake threshold',
+    'endpoint delay',
+    'tool rounds',
+    'web zoom',
+    'web',
+    'zoom',
+    'voice',
+    'adblock',
+    'ad blocker',
+    'weather city',
+    'celsius',
+    'fahrenheit',
+    'metric',
+    'imperial',
+    'model routing',
+    'orchestrator',
+    'subagent',
 
-  // Dashboard vocabulary
-  'dashboard',
-  'idle screen',
-  'feed entry',
+    // Dashboard vocabulary
+    'dashboard',
+    'idle screen',
+    'feed entry',
 ]
 
 /** The Seed Lexicon as the admission gate's reserved set (normalized). */
 export function seedLexiconSet(): ReadonlySet<string> {
-  return new Set(
-    BIAS_LEXICON
-      .map((term) => normalizeLearnedTerm(term))
-      .filter((term): term is string => term !== null),
-  )
+    return new Set(
+        BIAS_LEXICON
+            .map((term) => normalizeLearnedTerm(term))
+            .filter((term): term is string => term !== null),
+    )
 }
