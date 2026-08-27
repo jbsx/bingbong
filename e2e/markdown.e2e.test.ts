@@ -3,7 +3,7 @@ import { startHarness, type Harness } from './harness'
 import { startFixtureServer, type FixtureServer } from './fixtureServer'
 import { waitFor } from './waitFor'
 import type { AssistantTurn } from '../src/core/ports/llm'
-import type { ScriptedAnswerTurn } from '../src/core/testing/doubles'
+import type { ScriptedTurn } from '../src/core/testing/doubles'
 
 // Markdown rendering e2e (#56): answers look structured — react-markdown
 // renders assistant display entries and the live streaming answer inside
@@ -127,7 +127,7 @@ describe('markdown answers e2e (#56)', () => {
     // so the live answer_stream entry holds the orb + typing indicator
     // (ADR 0013: internal JSON never flashes into the view) — then the
     // final display entry renders its markdown and replaces the partial.
-    const script: ScriptedAnswerTurn[] = [
+    const script: ScriptedTurn[] = [
       {
         kind: 'answer',
         speak: 'Streamed.',

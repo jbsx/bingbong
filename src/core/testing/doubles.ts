@@ -87,11 +87,15 @@ export function fakePerfHarness(): {
 }
 
 /**
- * A scripted answer turn may opt into streaming (#56 e2e): `streamChunks`
- * are emitted through the round's onDelta before the final turn resolves.
+ * A scripted turn may opt into streaming (#56 e2e): `streamChunks` are
+ * emitted through the round's onDelta before the final turn resolves.
+ * Answer turns stream text chunks; any turn — tool rounds included — may
+ * stream reasoning chunks, which is how e2e produces thinking blocks.
  */
-export type ScriptedAnswerTurn = Extract<AssistantTurn, { kind: 'answer' }> & {
-  streamChunks?: string[]
+export type ScriptedStreamChunk = string | { kind: 'reasoning'; text: string }
+
+export type ScriptedTurn = AssistantTurn & {
+  streamChunks?: ScriptedStreamChunk[]
 }
 
 /**
@@ -102,9 +106,8 @@ export type ScriptedAnswerTurn = Extract<AssistantTurn, { kind: 'answer' }> & {
 export const SCRIPTED_STREAM_CHUNK_DELAY_MS = 150
 
 /** The turn's streamed chunks when it opted in (and they parse as a list). */
-function scriptedChunks(turn: AssistantTurn): string[] | undefined {
-  if (turn.kind !== 'answer') return undefined
-  const chunks = (turn as ScriptedAnswerTurn).streamChunks
+function scriptedChunks(turn: AssistantTurn): ScriptedStreamChunk[] | undefined {
+  const chunks = (turn as ScriptedTurn).streamChunks
   return Array.isArray(chunks) ? chunks : undefined
 }
 
@@ -116,7 +119,11 @@ async function streamScriptedChunks(
   const chunks = scriptedChunks(turn)
   if (!chunks) return
   for (const chunk of chunks) {
-    if (chunk !== '') onDelta({ kind: 'text', text: chunk })
+    if (typeof chunk === 'string') {
+      if (chunk !== '') onDelta({ kind: 'text', text: chunk })
+    } else {
+      onDelta({ kind: 'reasoning', text: chunk.text })
+    }
     await new Promise((resolve) => setTimeout(resolve, SCRIPTED_STREAM_CHUNK_DELAY_MS))
   }
 }

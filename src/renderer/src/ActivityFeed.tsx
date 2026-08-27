@@ -150,10 +150,20 @@ function foldRuns(entries: FeedEntry[]): FeedItem[] {
  * (the model is still thinking), collapsed the moment the orchestrator
  * starts acting again (any later entry lands after it). The next round's
  * thinking opens its own block. The user's toggle always wins over the
- * trailing default, same contract as the run expander.
+ * trailing default — with one sunset: the run finishing force-collapses
+ * every one of its thinking blocks, manual toggles notwithstanding, so a
+ * feed of finished runs never fills with open thinking. After that moment
+ * the user's toggle wins again — opening an old block is always allowed
+ * and stays open until closed.
  */
 function ReasoningBlock({ entry, live, trailing }: { entry: FeedEntry; live: boolean; trailing: boolean }) {
   const [userOpen, setUserOpen] = useState<boolean | null>(null)
+  // The finish is the one override of the user's toggle: live → finished
+  // clears it once; the block then renders collapsed, and a later manual
+  // open records normally and persists.
+  useEffect(() => {
+    if (!live) setUserOpen(null)
+  }, [live])
   const open = userOpen ?? (live && trailing)
   return (
     <details
@@ -161,7 +171,15 @@ function ReasoningBlock({ entry, live, trailing }: { entry: FeedEntry; live: boo
       open={open}
       onToggle={(event) => {
         if (event.target !== event.currentTarget) return
-        setUserOpen((event.currentTarget as HTMLDetailsElement).open)
+        const el = event.currentTarget as HTMLDetailsElement
+        // Only a user click flips the DOM against React's rendered state.
+        // The toggles React itself applies — the trailing default opening
+        // or closing the block, the finish force-collapse — land with the
+        // DOM matching `open`, and recording them would freeze the block
+        // open past its trailing window (open thinking stacking up the
+        // feed mid-run, the very clutter this surface exists to fold).
+        if (el.open === open) return
+        setUserOpen(el.open)
       }}
     >
       <summary className="feed-reasoning-summary">
