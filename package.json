@@ -16,7 +16,8 @@
     "test:watch": "vitest",
     "cli": "pnpm build && electron . --browser-cli",
     "perf:report": "node scripts/perf-report.ts",
-    "stt:replay": "node scripts/replay-stt.ts"
+    "stt:replay": "node scripts/replay-stt.ts",
+    "shot": "pnpm build && xvfb-run -a -s '-screen 0 1280x800x24' node scripts/screenshot.ts"
   },
   "dependencies": {
     "@ghostery/adblocker-electron": "^2.18.2",
