@@ -1,12 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import type { PipelineEvent } from '../pipeline/events'
-import { PEEK_CARD_LINGER_MS, createPeekCardFold, peekCardVisible } from './peekCardState'
+import { createPeekCardFold, peekCardVisible } from './peekCardState'
 
-// The Peek Card fold (ADR 0021): a command shows the transient Peek Card —
-// never the panel — and the card's life is a pure fold over the same
-// pipeline event seam every observer rides. Live while the run runs,
-// answer-lingering after `done`, hidden on Session end or dismissal.
-// Table-driven like the folds it sits beside.
+// The Peek Card fold (ADR 0021, amended by ADR 0026): a command shows the
+// Peek Card — never the panel — and the card's life is a pure fold over
+// the same pipeline event seam every observer rides. Live while the Run
+// runs, persisting as the Answer after `done` (no time window — only the
+// next Run, a panel open, or the Session's end retires it), hidden on a
+// cancelled Run. Table-driven like the folds it sits beside.
 
 function events(...parts: Array<Partial<PipelineEvent> & { type: PipelineEvent['type'] }>): PipelineEvent[] {
   return parts.map((part, index) => ({ at: index * 1000, runId: 'run-1', ...part }) as PipelineEvent)
@@ -16,22 +17,22 @@ function command(text = 'find a pizza place'): PipelineEvent {
   return { type: 'command', turnId: 't1', runId: 'run-1', text, at: 1_000 } as PipelineEvent
 }
 
-function done(at = 5_000): PipelineEvent {
-  return { type: 'done', turnId: 't1', runId: 'run-1', outcome: 'done', at } as PipelineEvent
+function done(at = 5_000, outcome?: 'done' | 'failed' | 'cancelled' | 'reset'): PipelineEvent {
+  return { type: 'done', turnId: 't1', runId: 'run-1', outcome, at } as PipelineEvent
 }
 
 describe('createPeekCardFold', () => {
   it('boots hidden', () => {
     const fold = createPeekCardFold()
-    expect(fold.state()).toEqual({ phase: 'hidden', runId: null, commandText: null, headline: null, anchoredAt: 0 })
-    expect(peekCardVisible(fold.state(), 0)).toBe(false)
+    expect(fold.state()).toEqual({ phase: 'hidden', runId: null, commandText: null, headline: null })
+    expect(peekCardVisible(fold.state())).toBe(false)
   })
 
   it('a command shows the card live with the command echo and run identity', () => {
     const fold = createPeekCardFold()
     fold.onEvent(command('find a pizza place'))
     expect(fold.state()).toMatchObject({ phase: 'live', runId: 'run-1', commandText: 'find a pizza place', headline: null })
-    expect(peekCardVisible(fold.state(), 2_000)).toBe(true)
+    expect(peekCardVisible(fold.state())).toBe(true)
   })
 
   it('a run headline supersedes the command echo as the live title (ADR 0025)', () => {
@@ -78,25 +79,38 @@ describe('createPeekCardFold', () => {
     expect(fold.state().phase).toBe('live')
   })
 
-  it('done lingers as the answer for the fixed window, then hides', () => {
+  it('a paused run keeps the card live — a Pause is a parked live Run (ADR 0026)', () => {
+    const fold = createPeekCardFold()
+    fold.onEvent(command())
+    fold.onEvent({ type: 'status', turnId: 't1', runId: 'run-1', status: 'paused', at: 3_000 } as PipelineEvent)
+    expect(fold.state().phase).toBe('live')
+    expect(peekCardVisible(fold.state())).toBe(true)
+  })
+
+  it("a foreign run's cancelled status never hides the reported run's answer", () => {
+    const fold = createPeekCardFold()
+    fold.onEvent(command())
+    fold.onEvent({ type: 'status', turnId: 't0', runId: 'run-0', status: 'cancelled', at: 4_000 } as PipelineEvent)
+    fold.onEvent(done(5_000))
+    expect(fold.state().phase).toBe('answer')
+  })
+
+  it('done persists as the answer — the linger window is gone (ADR 0026)', () => {
     const fold = createPeekCardFold()
     fold.onEvent(command())
     fold.onEvent(done(5_000))
     expect(fold.state().phase).toBe('answer')
-    // Inside the window…
-    expect(peekCardVisible(fold.state(), 5_000 + PEEK_CARD_LINGER_MS - 1)).toBe(true)
-    // …and exactly past its edge.
-    expect(peekCardVisible(fold.state(), 5_000 + PEEK_CARD_LINGER_MS)).toBe(false)
+    expect(peekCardVisible(fold.state())).toBe(true)
   })
 
-  it('out-of-turn announcements during the answer reset the linger anchor', () => {
+  it('out-of-turn announcements during the answer leave the card alone', () => {
     const fold = createPeekCardFold()
     fold.onEvent(command())
     fold.onEvent(done(5_000))
     fold.onEvent({ type: 'speak', text: 'one more thing', at: 9_000 } as PipelineEvent)
+    fold.onEvent({ type: 'display', text: 'and this', at: 9_500 } as PipelineEvent)
     expect(fold.state().phase).toBe('answer')
-    expect(peekCardVisible(fold.state(), 9_000 + PEEK_CARD_LINGER_MS - 1)).toBe(true)
-    expect(peekCardVisible(fold.state(), 9_000 + PEEK_CARD_LINGER_MS)).toBe(false)
+    expect(peekCardVisible(fold.state())).toBe(true)
   })
 
   it('session_ended hides the card', () => {
@@ -104,10 +118,10 @@ describe('createPeekCardFold', () => {
     fold.onEvent(command())
     fold.onEvent({ type: 'session_ended', sessionId: 'session-1', sessionGeneration: 0, reason: 'lapsed', at: 6_000 } as PipelineEvent)
     expect(fold.state().phase).toBe('hidden')
-    expect(peekCardVisible(fold.state(), 6_000)).toBe(false)
+    expect(peekCardVisible(fold.state())).toBe(false)
   })
 
-  it('a new command while the answer lingers returns the card to live', () => {
+  it('a new command while the answer shows returns the card to live', () => {
     const fold = createPeekCardFold()
     fold.onEvent(command('first'))
     fold.onEvent(done(5_000))
@@ -115,12 +129,60 @@ describe('createPeekCardFold', () => {
     expect(fold.state()).toMatchObject({ phase: 'live', runId: 'run-2', commandText: 'second' })
   })
 
-  it('dismiss hides the card without waiting for the linger', () => {
+  it('retireAnswer hides the answer', () => {
     const fold = createPeekCardFold()
     fold.onEvent(command())
     fold.onEvent(done(5_000))
-    fold.dismiss()
+    fold.retireAnswer()
     expect(fold.state().phase).toBe('hidden')
-    expect(peekCardVisible(fold.state(), 5_000)).toBe(false)
+    expect(peekCardVisible(fold.state())).toBe(false)
+  })
+
+  it('retireAnswer leaves the live report alive — closing the panel revives it (ADR 0026)', () => {
+    const fold = createPeekCardFold()
+    fold.onEvent(command())
+    fold.retireAnswer()
+    expect(fold.state()).toMatchObject({ phase: 'live', runId: 'run-1' })
+    expect(peekCardVisible(fold.state())).toBe(true)
+  })
+
+  it('a run finished while the panel was open lands its answer on the card (ADR 0026)', () => {
+    const fold = createPeekCardFold()
+    fold.onEvent(command())
+    fold.retireAnswer()
+    fold.onEvent(done(5_000))
+    expect(fold.state().phase).toBe('answer')
+    expect(peekCardVisible(fold.state())).toBe(true)
+  })
+
+  it('a failed run persists on the card — the failure is the outcome (ADR 0026)', () => {
+    const fold = createPeekCardFold()
+    fold.onEvent(command())
+    fold.onEvent({ type: 'done', turnId: 't1', runId: 'run-1', outcome: 'failed', at: 5_000 } as PipelineEvent)
+    expect(fold.state().phase).toBe('answer')
+    expect(peekCardVisible(fold.state())).toBe(true)
+  })
+
+  it('a cancelled run hides the card — the screen goes quiet (ADR 0026)', () => {
+    const fold = createPeekCardFold()
+    fold.onEvent(command())
+    fold.onEvent(done(5_000, 'cancelled'))
+    expect(fold.state().phase).toBe('hidden')
+    expect(peekCardVisible(fold.state())).toBe(false)
+  })
+
+  it('a cancelled status without an explicit outcome hides the card too', () => {
+    const fold = createPeekCardFold()
+    fold.onEvent(command())
+    fold.onEvent({ type: 'status', turnId: 't1', runId: 'run-1', status: 'cancelled', at: 4_000 } as PipelineEvent)
+    fold.onEvent(done(5_000))
+    expect(fold.state().phase).toBe('hidden')
+  })
+
+  it('a reset-interrupted run hides the card — its session_ended follows anyway', () => {
+    const fold = createPeekCardFold()
+    fold.onEvent(command())
+    fold.onEvent(done(5_000, 'reset'))
+    expect(fold.state().phase).toBe('hidden')
   })
 })

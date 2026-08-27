@@ -266,11 +266,15 @@ Collapsed. A View Preference, resizable.
 _Avoid_: activity bar, sidebar, activity sidebar
 
 **Peek Card**:
-The transient, system-pushed surface that reports the live Run and its
-Answer while the Feed Panel is Collapsed. Not a state of the Feed Panel;
-clicking it opens the panel and dismisses it. Voice activity may show it;
-only a human act opens the panel. Its live title is the Run Headline.
-_Avoid_: toast, notification, mini panel, activity card
+The system-pushed surface that reports the live Run and then its Answer
+(or failure) while the Feed Panel is Collapsed. While a Run is live, a
+Pause included, exactly one of the Feed Panel or the Peek Card renders —
+any close of the panel summons the card. The Answer persists until the
+next Run, a panel open, or the Session ends; a cancelled Run hides it
+promptly. Not a state of the Feed Panel; clicking it opens the panel and
+dismisses it. Voice activity may show it; only a human act opens the
+panel. Its live title is the Run Headline.
+_Avoid_: toast, notification, mini panel, activity card, transient card
 
 **Command Echo**:
 The raw transcript of a Run's first Utterance, shown as the live Peek

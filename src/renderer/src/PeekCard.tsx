@@ -3,11 +3,12 @@ import type { RunProgress } from '../../core/pipeline/runProgress'
 import type { PeekCardState } from '../../core/panel/peekCardState'
 import { FeedMarkdown } from './FeedMarkdown'
 
-// The Peek Card (ADR 0021, glossary): the transient, system-pushed report
-// of the live Run and its Answer while the Feed Panel is Collapsed —
-// voice shows it, only a human act opens the panel, and clicking it is
-// that act. It rides the footer band the confirmation cards ride (renderer
-// DOM cannot float above the native pane); it is not a state of the panel.
+// The Peek Card (ADR 0021, amended by ADR 0026; glossary): the
+// system-pushed report of the live Run and its persisting Answer while the
+// Feed Panel is Collapsed — voice shows it, only a human act opens the
+// panel, and clicking it is that act. It rides the footer band the
+// confirmation cards ride (renderer DOM cannot float above the native
+// pane); it is not a state of the panel.
 
 /**
  * The run's Answer — its Card when it has one, else its Spoken Rendering.
@@ -43,13 +44,11 @@ export function PeekCard({
   entries,
   progress,
   onOpen,
-  onPinned,
 }: {
   state: PeekCardState
   entries: FeedEntry[]
   progress: RunProgress | null
   onOpen(): void
-  onPinned(pinned: boolean): void
 }) {
   const answer = state.phase === 'answer' ? runAnswer(entries, state.runId) : null
 
@@ -66,8 +65,6 @@ export function PeekCard({
           onOpen()
         }
       }}
-      onMouseEnter={() => onPinned(true)}
-      onMouseLeave={() => onPinned(false)}
     >
       <span className="peek-orb" aria-hidden="true" />
       {state.phase === 'live' ? (

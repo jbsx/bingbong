@@ -27,8 +27,9 @@ export function App() {
   const panel = useFeedPanel()
   const feedSlotRef = useRef<HTMLDivElement>(null)
   useFeedSlotRect(feedSlotRef, `${panel.mode}-${panel.open}`)
-  // The Peek Card (ADR 0021): voice's report surface while the panel is
-  // Collapsed — shown by activity, dismissed by opening the panel.
+  // The Peek Card (ADR 0021, amended by ADR 0026): voice's report surface
+  // while the panel is Collapsed — shown by activity, retired by opening
+  // the panel, revived by closing it mid-run.
   const peek = usePeekCard(panel.open)
 
   const getMicId = useCallback(() => settings?.micId ?? 'default', [settings])
@@ -216,7 +217,6 @@ export function App() {
               entries={assistant.feed}
               progress={assistant.progress}
               onOpen={() => window.bingbong.feedPanel.toggle()}
-              onPinned={peek.setPinned}
             />
           ) : null}
           <AssistantPanel assistant={assistant} />
