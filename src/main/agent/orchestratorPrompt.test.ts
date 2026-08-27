@@ -101,6 +101,31 @@ describe('orchestrator continuity contract', () => {
 // #103: the per-Run runtime context. The orchestrator prompt is built from
 // the clock port, so a pinned FakeClock pins the date the model sees.
 
+// ADR 0025 pins: the Run Headline contract — the live title the user
+// verifies corrections against, and the Answer that confirms them by ear.
+
+describe('orchestrator prompt Run Headline (ADR 0025)', () => {
+  it('orders report_headline into the first response and every task change', () => {
+    const line = ORCHESTRATOR_SYSTEM_PROMPT.split('\n').find((candidate) => candidate.includes('report_headline'))
+    if (!line) throw new Error('report_headline line missing from the orchestrator prompt')
+    expect(line).toMatch(/first response/)
+    expect(line).toMatch(/whenever the task changes/)
+    expect(line).toMatch(/steering directive/)
+  })
+
+  it('demands the headline in task terms, never a tool name', () => {
+    expect(ORCHESTRATOR_SYSTEM_PROMPT).toMatch(/in task terms/)
+    expect(ORCHESTRATOR_SYSTEM_PROMPT).toMatch(/never a tool name/)
+  })
+
+  it('makes a corrected run\u2019s answer lead with the corrected task, then the result', () => {
+    const line = ORCHESTRATOR_SYSTEM_PROMPT.split('\n').find((candidate) => candidate.includes('steering directive corrected'))
+    if (!line) throw new Error('correction-confirmation line missing from the orchestrator prompt')
+    expect(line).toMatch(/lead both "speak" and "display"/)
+    expect(line).toMatch(/corrected task/)
+  })
+})
+
 describe('orchestrator prompt runtime context', () => {
   it('appends the pinned date from the clock, local timezone', () => {
     const instant = Date.UTC(2026, 7, 25, 12)

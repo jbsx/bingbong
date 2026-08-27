@@ -23,15 +23,46 @@ function done(at = 5_000): PipelineEvent {
 describe('createPeekCardFold', () => {
   it('boots hidden', () => {
     const fold = createPeekCardFold()
-    expect(fold.state()).toEqual({ phase: 'hidden', runId: null, commandText: null, anchoredAt: 0 })
+    expect(fold.state()).toEqual({ phase: 'hidden', runId: null, commandText: null, headline: null, anchoredAt: 0 })
     expect(peekCardVisible(fold.state(), 0)).toBe(false)
   })
 
   it('a command shows the card live with the command echo and run identity', () => {
     const fold = createPeekCardFold()
     fold.onEvent(command('find a pizza place'))
-    expect(fold.state()).toMatchObject({ phase: 'live', runId: 'run-1', commandText: 'find a pizza place' })
+    expect(fold.state()).toMatchObject({ phase: 'live', runId: 'run-1', commandText: 'find a pizza place', headline: null })
     expect(peekCardVisible(fold.state(), 2_000)).toBe(true)
+  })
+
+  it('a run headline supersedes the command echo as the live title (ADR 0025)', () => {
+    const fold = createPeekCardFold()
+    fold.onEvent(command('find a pizza place'))
+    fold.onEvent({ type: 'run_headline', turnId: 't1', runId: 'run-1', text: 'Find a blue mug under $20', at: 2_000 } as PipelineEvent)
+    expect(fold.state()).toMatchObject({ phase: 'live', commandText: 'find a pizza place', headline: 'Find a blue mug under $20' })
+  })
+
+  it('a new command resets the headline — the next run starts on its echo', () => {
+    const fold = createPeekCardFold()
+    fold.onEvent(command('first'))
+    fold.onEvent({ type: 'run_headline', turnId: 't1', runId: 'run-1', text: 'First task', at: 2_000 } as PipelineEvent)
+    fold.onEvent(done(5_000))
+    fold.onEvent({ type: 'command', turnId: 't2', runId: 'run-2', text: 'second', at: 7_000 } as PipelineEvent)
+    expect(fold.state()).toMatchObject({ phase: 'live', runId: 'run-2', commandText: 'second', headline: null })
+  })
+
+  it('a headline outside the live run changes no title — the answer is showing', () => {
+    const fold = createPeekCardFold()
+    fold.onEvent(command())
+    fold.onEvent(done(5_000))
+    fold.onEvent({ type: 'run_headline', turnId: 't1', runId: 'run-1', text: 'late headline', at: 6_000 } as PipelineEvent)
+    expect(fold.state()).toMatchObject({ phase: 'answer', headline: null })
+  })
+
+  it('a straggler headline from another run never retitles the live one', () => {
+    const fold = createPeekCardFold()
+    fold.onEvent(command('second command'))
+    fold.onEvent({ type: 'run_headline', turnId: 't0', runId: 'run-0', text: 'stale run title', at: 2_000 } as PipelineEvent)
+    expect(fold.state()).toMatchObject({ phase: 'live', commandText: 'second command', headline: null })
   })
 
   it('run detail leaves the live card live', () => {

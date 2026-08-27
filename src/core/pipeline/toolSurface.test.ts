@@ -8,6 +8,7 @@ import { createMediaTools } from './mediaTools'
 import { createSubagentTools } from './subagentTools'
 import { createPanelTools } from './panelTools'
 import { createAppControlTool, createSetSettingTool } from './settingsTools'
+import { createReportHeadlineTool } from './headlineTools'
 import { FakeAppControls, FakeBrowser, FakePanel, FakeSettings, FakeVision } from '../testing/doubles'
 
 const unusedVision = new FakeVision()
@@ -27,6 +28,7 @@ function orchestratorToolCatalog(): Tool[] {
     ...createBrowserTools(new FakeBrowser(), unusedVision),
     ...createVisionGroundingTools(new FakeBrowser(), unusedVision),
     ...createMediaTools(new FakeBrowser()),
+    createReportHeadlineTool(),
   ]
 }
 
@@ -88,8 +90,22 @@ describe('orchestrator tool surface', () => {
         'ground_visual',
         'look',
         'media_control',
+        'report_headline',
       ].sort(),
     )
+  })
+
+  it('report_headline is the Run Headline surface (ADR 0025): one string in, ungated, no history needed', async () => {
+    const headline = orchestratorToolCatalog().find((tool) => tool.name === 'report_headline')!
+    expect(Object.keys(headline.parameters ?? {}).sort()).toEqual(['headline'])
+    expect(headline.parameters?.['headline']?.type).toBe('string')
+    // Reporting a title is pure narration — never a risk gate, never
+    // continuity-bound.
+    expect(headline.assessRisk).toBeUndefined()
+    expect(headline.requiresHistory).not.toBe(true)
+    await expect(
+      headline.execute?.({ id: 'c', name: 'report_headline', args: { headline: 'Find a blue mug' } }, { clock: { now: () => 0, setTimer: () => () => {} } }),
+    ).resolves.toBe('Headline noted.')
   })
 
   it('has no off-screen web tool anywhere on the surface (#83, ADR 0009)', () => {

@@ -72,7 +72,9 @@ export function PeekCard({
       <span className="peek-orb" aria-hidden="true" />
       {state.phase === 'live' ? (
         <div className="peek-body">
-          <p className="peek-command">{state.commandText}</p>
+          {/* The Run Headline once the orchestrator reports one; the command
+              echo until then (ADR 0025). */}
+          <p className="peek-command">{state.headline ?? state.commandText}</p>
           <p className="peek-step" role="status">
             {liveStep(progress)}
           </p>

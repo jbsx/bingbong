@@ -17,6 +17,12 @@ export interface PeekCardState {
   runId: string | null
   /** The command echo shown while live. */
   commandText: string | null
+  /**
+   * The Run Headline (ADR 0025): once the orchestrator reports one, it is
+   * the live title and the echo stands down. Null until then and across
+   * runs — each run starts on its own echo.
+   */
+  headline: string | null
   /** Wall-clock anchor of the latest activity — the answer linger counts from it. */
   anchoredAt: number
 }
@@ -24,7 +30,7 @@ export interface PeekCardState {
 /** How long the Answer stays up after `done` (or its latest announcement). */
 export const PEEK_CARD_LINGER_MS = 8_000
 
-const HIDDEN: PeekCardState = { phase: 'hidden', runId: null, commandText: null, anchoredAt: 0 }
+const HIDDEN: PeekCardState = { phase: 'hidden', runId: null, commandText: null, headline: null, anchoredAt: 0 }
 
 /**
  * Folds pipeline events into the card's phase: `command` shows it live,
@@ -48,7 +54,17 @@ export function createPeekCardFold(): {
             phase: 'live',
             runId: event.runId ?? event.turnId,
             commandText: event.text,
+            headline: null,
             anchoredAt: event.at,
+          }
+          return
+        // The Run Headline (ADR 0025) revises the live title — corrections
+        // reach the eye without opening the panel. Only the run the card
+        // reports can retitle it, and outside the live run nothing changes:
+        // the answer is what shows then.
+        case 'run_headline':
+          if (state.phase === 'live' && (event.runId ?? event.turnId) === state.runId) {
+            state = { ...state, headline: event.text }
           }
           return
         case 'done':

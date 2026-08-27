@@ -170,6 +170,14 @@ export type PipelineEvent = SessionEventIdentity & (
    * never enters Session continuity.
    */
   | { type: 'steer'; turnId: string; text: string; at: number }
+  /**
+   * The run's current headline (ADR 0025): the orchestrator's one-line
+   * statement of what the Run is doing now, emitted when a tool round's
+   * report_headline call changes it — never repeated for an unchanged
+   * value. Detail event — maps to no history entry; the Peek Card's live
+   * title is its one consumer.
+   */
+  | { type: 'run_headline'; turnId: string; text: string; at: number }
   /** A subagent's state changed — the dashboard keeps one card per agent id. */
   | { type: 'agent_update'; agent: SubagentCard; at: number }
   | { type: 'done'; turnId: string; outcome?: 'done' | 'failed' | 'cancelled' | 'reset'; at: number }

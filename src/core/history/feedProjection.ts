@@ -324,6 +324,10 @@ export function createFeedProjection(): {
         case 'steer':
           appendDetail(event.at, `steer: ${event.text}`, 'steer', event.turnId)
           return
+        // The Run Headline (ADR 0025) is the Peek Card's alone — a detail
+        // event by design: no Feed Entry, and no stream is disturbed.
+        case 'run_headline':
+          return
         default: {
           const projected = projectPipelineEvent(event)
           if (projected) appendOutcome(projected)

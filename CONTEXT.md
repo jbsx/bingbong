@@ -269,8 +269,22 @@ _Avoid_: activity bar, sidebar, activity sidebar
 The transient, system-pushed surface that reports the live Run and its
 Answer while the Feed Panel is Collapsed. Not a state of the Feed Panel;
 clicking it opens the panel and dismisses it. Voice activity may show it;
-only a human act opens the panel.
+only a human act opens the panel. Its live title is the Run Headline.
 _Avoid_: toast, notification, mini panel, activity card
+
+**Command Echo**:
+The raw transcript of a Run's first Utterance, shown as the live Peek
+Card's title until the Run Headline arrives — the fallback, never the
+description.
+_Avoid_: transcript line, caption
+
+**Run Headline**:
+The Run's current task description — what the Run is doing now, not what
+was first said. Owned by the orchestrator: set when the Run starts and
+revised whenever understanding changes, Directive or otherwise. The
+command echo stands in until the first one arrives; a missing or invalid
+one never fails the Run.
+_Avoid_: command echo, task title, status line
 
 **Idle Screen**:
 What renders when no Active Session exists: clock and weather only. Never shows

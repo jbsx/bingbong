@@ -430,6 +430,9 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
         }
         let rounds = 0
         let steering: string | undefined
+        // The Run Headline (ADR 0025): the last one this run emitted — the
+        // next report lands as an event only when it changes the title.
+        let lastHeadline: string | null = null
         // Re-read per run: a settings change applies to the next command.
         const effectiveMaxToolRounds = deps.getMaxToolRounds?.() ?? maxToolRounds
 
@@ -502,6 +505,19 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
             yield* speakLine(turn.speak, turnId)
             yield* checkpoint(run, 'thinking')
             break
+          }
+
+          // The Run Headline (ADR 0025): a tool round may carry a
+          // report_headline call alongside its work — the Peek Card's live
+          // title takes it the moment the round lands, ahead of the work.
+          // A missing, empty, or unchanged report emits nothing; the echo
+          // or the last good headline stands.
+          const reportedHeadline = turn.calls.find((call) => call.name === 'report_headline')
+          const headlineText =
+            typeof reportedHeadline?.args.headline === 'string' ? reportedHeadline.args.headline.trim() : ''
+          if (headlineText !== '' && headlineText !== lastHeadline) {
+            lastHeadline = headlineText
+            yield { type: 'run_headline', text: headlineText, at: clock.now() }
           }
 
           yield { type: 'status', status: 'acting', at: clock.now() }

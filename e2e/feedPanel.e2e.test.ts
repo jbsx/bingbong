@@ -174,6 +174,41 @@ describe('feed panel layout e2e', () => {
     }
   })
 
+  it('the Run Headline supersedes the command echo on the live Peek Card (ADR 0025)', async () => {
+    // A correction the user cannot see land was the failure ADR 0025 fixes:
+    // the round's report_headline call swaps the live title from the raw
+    // echo to the orchestrator's statement of the task — while the panel
+    // stays collapsed.
+    const script: AssistantTurn[] = [
+      {
+        kind: 'tool_calls',
+        calls: [
+          { id: 'h1', name: 'report_headline', args: { headline: 'Find a blue mug under $20' } },
+          { id: 'c1', name: 'navigate', args: { url: fixture.url('/slow') } },
+        ],
+      },
+      { kind: 'answer', speak: 'Found one.', display: 'Found a blue mug.' },
+    ]
+    const app = await startHarness({ fixture, env: { BINGBONG_LLM_SCRIPT: JSON.stringify(script) } })
+    try {
+      const kicked = await app.overlayEval<string>(`window.bingbong.assistant.submit('find a blue mug'), 'kicked'`)
+      expect(kicked).toBe('kicked')
+
+      // The headline lands with the round — the slow navigate holds the
+      // run live so the revised title is observable in its live phase.
+      await waitFor(
+        () =>
+          app.dashboardEval<string | null>(
+            `document.querySelector('.peek-card.peek-card--live .peek-command')?.textContent ?? null`,
+          ).then((text) => (text === 'Find a blue mug under $20' ? text : undefined)),
+        { timeoutMs: 20000, intervalMs: 100 },
+      )
+      expect(await app.overlayEval<boolean>(COLLAPSED_CHROME)).toBe(true)
+    } finally {
+      await app.quit()
+    }
+  })
+
   it('the Answer lingers on the Peek Card, then the card retires on its own', async () => {
     const app = await startHarness({
       fixture,

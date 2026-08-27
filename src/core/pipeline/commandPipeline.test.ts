@@ -5,6 +5,7 @@ import { hostFromUrl } from './blockerGate'
 import { steerPipeline } from './steering'
 import { createSpeechCoordinator } from '../tts/speechCoordinator'
 import { createAskUserTool } from './askUserTools'
+import { createReportHeadlineTool } from './headlineTools'
 import { createHistoryRecorder } from '../history/historyRecorder'
 import type { HistoryStore, RecordedEntry, RunRecord } from '../history/historyStore'
 import { FailingTts, FakeClock, fakePerfHarness, fakeSubagentManager, memoryEntry, RecordingTts, ScriptedLlm, subagentRecord, withoutTurnId } from '../testing/doubles'
@@ -478,6 +479,65 @@ describe('command pipeline', () => {
       error: 'kaboom',
     })
     expect(events.at(-1)).toMatchObject({ type: 'done' })
+  })
+
+  describe('run headline (ADR 0025)', () => {
+    const noop: Tool = {
+      name: 'noop',
+      async execute() {
+        return 'ok'
+      },
+    }
+
+    it('emits run_headline when a tool round reports one, ahead of the round\u2019s work', async () => {
+      const llm = new ScriptedLlm([
+        {
+          kind: 'tool_calls',
+          calls: [
+            { id: 'h1', name: 'report_headline', args: { headline: 'Find a blue mug under $20' } },
+            { id: 'c1', name: 'noop', args: {} },
+          ],
+        },
+        { kind: 'answer', speak: 'Found one.', display: 'Found a blue mug.' },
+      ])
+      const pipeline = createCommandPipeline({ llm, tts: new RecordingTts(), clock: new FakeClock(), tools: [createReportHeadlineTool(), noop] })
+
+      const events = await collect(pipeline, 'find a blue mug')
+
+      const headlineAt = events.findIndex((event) => event.type === 'run_headline' && event.text === 'Find a blue mug under $20')
+      const workAt = events.findIndex((event) => event.type === 'tool_call' && event.name === 'noop')
+      expect(headlineAt).toBeGreaterThanOrEqual(0)
+      expect(workAt).toBeGreaterThan(headlineAt)
+    })
+
+    it('emits again only when the headline changes — a correction revises the title', async () => {
+      const llm = new ScriptedLlm([
+        { kind: 'tool_calls', calls: [{ id: 'h1', name: 'report_headline', args: { headline: 'Find a blue mug under $20' } }, { id: 'c1', name: 'noop', args: {} }] },
+        { kind: 'tool_calls', calls: [{ id: 'h2', name: 'report_headline', args: { headline: 'Find a blue mug under $10' } }, { id: 'c2', name: 'noop', args: {} }] },
+        { kind: 'tool_calls', calls: [{ id: 'h3', name: 'report_headline', args: { headline: 'Find a blue mug under $10' } }, { id: 'c3', name: 'noop', args: {} }] },
+        { kind: 'answer', speak: 'Found one.', display: 'Found a cheaper blue mug.' },
+      ])
+      const pipeline = createCommandPipeline({ llm, tts: new RecordingTts(), clock: new FakeClock(), tools: [createReportHeadlineTool(), noop] })
+
+      const events = await collect(pipeline, 'find a blue mug')
+
+      const headlines = events.filter((event) => event.type === 'run_headline').map((event) => (event as { text: string }).text)
+      expect(headlines).toEqual(['Find a blue mug under $20', 'Find a blue mug under $10'])
+    })
+
+    it('emits nothing for rounds without the call, and tolerates a malformed headline argument', async () => {
+      const llm = new ScriptedLlm([
+        { kind: 'tool_calls', calls: [{ id: 'c1', name: 'noop', args: {} }] },
+        { kind: 'tool_calls', calls: [{ id: 'h1', name: 'report_headline', args: { headline: '' } }] },
+        { kind: 'tool_calls', calls: [{ id: 'h2', name: 'report_headline', args: { headline: 42 } }] },
+        { kind: 'answer', speak: 'Done.', display: 'Done.' },
+      ])
+      const pipeline = createCommandPipeline({ llm, tts: new RecordingTts(), clock: new FakeClock(), tools: [createReportHeadlineTool(), noop] })
+
+      const events = await collect(pipeline, 'do the thing')
+
+      expect(events.filter((event) => event.type === 'run_headline')).toEqual([])
+    })
   })
 
   describe('risk gate', () => {
