@@ -1,7 +1,7 @@
 import type { PipelineEvent } from '../../src/core/pipeline/events'
 import type { PerfSpanRecord } from '../../src/core/perf/perfTracer'
 import type { FinalizationCause, RunResolution } from '../../src/core/session/runJournal'
-import type { EffortTier } from '../../src/core/pipeline/runPlan'
+import { DEFAULT_EFFORT_TIER, type EffortTier } from '../../src/core/pipeline/runPlan'
 import { nearestRankPercentile } from '../../src/core/report/stats'
 
 // Per-scenario measurement (#109) over the two machine-readable surfaces
@@ -94,7 +94,7 @@ export function extractMetrics(events: RunEvents, perfRecords: readonly PerfSpan
     outcome: done?.outcome ?? null,
     resolution: done?.resolution ?? null,
     finalizationCause: done?.finalizationCause ?? null,
-    effortTier: plans.at(-1)?.effortTier ?? 'lookup',
+    effortTier: plans.at(-1)?.effortTier ?? DEFAULT_EFFORT_TIER,
     rawLimitFailure: rawLimit?.message ?? null,
     actions,
     answerText: displays.length > 0 ? displays[displays.length - 1]!.text : null,

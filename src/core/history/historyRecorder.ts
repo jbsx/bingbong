@@ -1,6 +1,6 @@
 import type { PipelineEvent } from '../pipeline/events'
 import { inferRunOutcome } from '../pipeline/events'
-import type { EffortTier } from '../pipeline/runPlan'
+import { DEFAULT_EFFORT_TIER, type EffortTier } from '../pipeline/runPlan'
 import type { SessionId } from '../session/sessionIdentity'
 import type { VoiceHeardEvent } from '../voice/ipcChannels'
 import { describeHeard } from '../voice/heardDisplay'
@@ -92,12 +92,12 @@ export function createHistoryRecorder(
                 const outcome = inferRunOutcome(event.outcome, lastStatus, failed)
                 // Semantic finalization fields (#110) ride the done event
                 // additively; absent fields stay null columns. The Effort
-                // Tier (#116) defaults to Lookup — the plan a run without
-                // a declaration ran under.
+                // Tier (#116) defaults to the shared default — the plan a
+                // run without a declaration ran under.
                 store.finishRun(runId, outcome, event.at, {
                   resolution: event.resolution ?? null,
                   finalizationCause: event.finalizationCause ?? null,
-                }, effortTier ?? 'lookup')
+                }, effortTier ?? DEFAULT_EFFORT_TIER)
                 removeActiveRun(runId)
                 runId = null
               }

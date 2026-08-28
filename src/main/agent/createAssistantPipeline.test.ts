@@ -393,8 +393,8 @@ describe('createAssistantPipeline', () => {
       result: expect.stringMatching(/^Web zoom set to 90%\./),
     })
     expect(
-      events.find((e) => e.type === 'tool_result' && e.name === 'set_setting' && typeof e.result === 'string')?.result.includes('report_run_plan'),
-    ).toBe(true)
+      (events.find((e) => e.type === 'tool_result' && e.name === 'set_setting') as { result?: unknown })?.result,
+    ).toEqual(expect.stringContaining('report_run_plan'))
     expect(settings.get().webZoomPercent).toBe(90)
     // Silent: nothing spoke besides the model's own answer.
     expect(tts.spoken).toEqual(['Ninety percent.'])

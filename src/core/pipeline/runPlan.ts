@@ -12,7 +12,14 @@ export type EffortTier = 'direct_action' | 'lookup' | 'investigation'
 
 export const EFFORT_TIERS: readonly EffortTier[] = ['direct_action', 'lookup', 'investigation']
 
-export function isEffortTier(value: unknown): value is EffortTier {
+/**
+ * The tier a run without a declared plan runs under (#116): the one place
+ * the default lives, so the pipeline, the history recorder, and telemetry
+ * cannot drift apart.
+ */
+export const DEFAULT_EFFORT_TIER: EffortTier = 'lookup'
+
+function isEffortTier(value: unknown): value is EffortTier {
   return typeof value === 'string' && (EFFORT_TIERS as readonly string[]).includes(value)
 }
 
@@ -38,8 +45,13 @@ export const RUN_PLAN_NUDGE =
   'the run\u2019s live title on screen), and effort_tier (the smallest sufficient of ' +
   'direct_action, lookup, investigation). This run continues under the default Lookup plan.'
 
+/** The per-call validation error once the corrective nudge has been spent. */
+export const RUN_PLAN_INVALID =
+  'Run Plan rejected: objective and headline must be non-empty strings and effort_tier one of ' +
+  'direct_action, lookup, or investigation.'
+
 export function lookupFallbackPlan(command: string): RunPlan {
-  return { objective: command.trim(), headline: null, effortTier: 'lookup' }
+  return { objective: command.trim(), headline: null, effortTier: DEFAULT_EFFORT_TIER }
 }
 
 /** Parses a report_run_plan call; null when any field is missing or malformed. */
@@ -56,24 +68,23 @@ const TIER_LEVELS: Record<EffortTier, number> = { direct_action: 0, lookup: 1, i
 
 /** What a review of one plan report decided. */
 export type PlanReview =
-  | { kind: 'initial'; plan: RunPlan }
-  | { kind: 'update'; plan: RunPlan }
+  | { kind: 'accepted'; plan: RunPlan }
   | { kind: 'escalation'; plan: RunPlan; reason: string }
   | { kind: 'rejected'; reason: string }
 
 /**
  * Reviews a well-formed report against the Run's current plan. The first
- * model declaration is always an initial plan — the fallback Lookup plan
- * is a default, not a declaration, so it constrains nothing. Later reports
+ * model declaration is always accepted — the fallback Lookup plan is a
+ * default, not a declaration, so it constrains nothing. Later reports
  * refresh the headline at the same tier or escalate exactly one level with
  * a reason; downgrades arrive only through a fresh Steering plan, which
  * the pipeline signals by clearing `modelDeclared`.
  */
 export function reviewPlanReport(current: RunPlan | null, modelDeclared: boolean, report: PlanReport): PlanReview {
   const plan: RunPlan = { objective: report.objective, headline: report.headline, effortTier: report.effortTier }
-  if (current === null || !modelDeclared) return { kind: 'initial', plan }
+  if (current === null || !modelDeclared) return { kind: 'accepted', plan }
   const level = TIER_LEVELS[report.effortTier] - TIER_LEVELS[current.effortTier]
-  if (level === 0) return { kind: 'update', plan }
+  if (level === 0) return { kind: 'accepted', plan }
   if (level === 1) {
     if (report.escalationReason === undefined) {
       return { kind: 'rejected', reason: 'Run Plan rejected: escalating effort_tier requires escalation_reason stating the new evidence.' }

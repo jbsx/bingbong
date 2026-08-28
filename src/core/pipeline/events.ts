@@ -173,11 +173,11 @@ export type PipelineEvent = SessionEventIdentity & (
    */
   | { type: 'steer'; turnId: string; text: string; at: number }
   /**
-   * The run's current headline (ADR 0025): the orchestrator's one-line
-   * statement of what the Run is doing now, emitted when a tool round's
-   * report_headline call changes it — never repeated for an unchanged
-   * value. Detail event — maps to no history entry; the Peek Card's live
-   * title is its one consumer.
+   * The run's current headline (ADR 0025, carried by the Run Plan since
+   * #116): the orchestrator's one-line statement of what the Run is doing
+   * now, emitted when a tool round's plan report changes it — never
+   * repeated for an unchanged value. Detail event — maps to no history
+   * entry; the Peek Card's live title is its one consumer.
    */
   | { type: 'run_headline'; turnId: string; text: string; at: number }
   /**

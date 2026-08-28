@@ -26,9 +26,11 @@ import type { BlockerGate } from './blockerGate'
 import { createBlockerGate } from './blockerGate'
 import { MAX_TOOL_ROUNDS_DEFAULT } from '../settings/settings'
 import {
+  DEFAULT_EFFORT_TIER,
   lookupFallbackPlan,
   parsePlanReport,
   reviewPlanReport,
+  RUN_PLAN_INVALID,
   RUN_PLAN_NUDGE,
   type RunPlan,
 } from './runPlan'
@@ -209,6 +211,13 @@ function classifyToolObservation(name: string): ToolObservationClass {
 
 function toErrorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err)
+}
+
+/** Appends an advisory nudge to a successful string tool result (search-loop, Run Plan). */
+function withNudge(outcome: ToolResultOutcome, nudge: string): ToolResultOutcome {
+  return outcome.ok && typeof outcome.result === 'string'
+    ? { ok: true, result: `${outcome.result}\n\n${nudge}` }
+    : outcome
 }
 
 function deterministicRunNote(command: string, outcome: RunJournalEntry['outcome']): string {
@@ -557,11 +566,13 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
         // The Run Plan (#116, ADR 0027): null until the first useful Tool
         // Round establishes one — a valid model report or the fallback
         // Lookup plan. `modelDeclaredPlan` distinguishes the fallback from
-        // a declaration: the first valid report is always an initial plan.
-        // `planNudged` caps the corrective nudge at exactly one per run.
+        // a declaration: the first valid report is always accepted. The
+        // corrective nudge is owed until it actually rides a result, so a
+        // round whose siblings all fail does not swallow it.
         let runPlan: RunPlan | null = null
         let modelDeclaredPlan = false
-        let planNudged = false
+        let planNudgePending = false
+        let planNudgeDelivered = false
         // Re-read per run: a settings change applies to the next command.
         const effectiveMaxToolRounds = deps.getMaxToolRounds?.() ?? maxToolRounds
 
@@ -653,13 +664,14 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
             modelDeclaredPlan = false
           }
           let planResultError: string | null = null
-          let planNudgeOnSibling = false
+          let planCallHandled = false
           // Planning engages only where the model can actually report a
           // plan: a catalog without the tool (tests, lean pipelines) never
           // nudges toward a call it cannot make.
           if (toolsByName.has('report_run_plan')) {
             const planCall = turn.calls.find((call) => call.name === 'report_run_plan')
             const planReport = planCall ? parsePlanReport(planCall) : null
+            if (planCall !== undefined) planCallHandled = true
             if (planReport !== null) {
               const review = reviewPlanReport(runPlan, modelDeclaredPlan, planReport)
               if (review.kind === 'rejected') {
@@ -667,6 +679,8 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
               } else {
                 runPlan = review.plan
                 modelDeclaredPlan = true
+                // A valid plan arrived; any still-owed nudge is moot.
+                planNudgePending = false
                 yield {
                   type: 'run_plan',
                   objective: review.plan.objective,
@@ -677,11 +691,12 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
                   at: clock.now(),
                 }
               }
-            } else if (planCall !== undefined && !planNudged) {
-              // Malformed report: the call answers with the one corrective
-              // nudge; useful sibling work in the round still executes.
-              planResultError = RUN_PLAN_NUDGE
-              planNudged = true
+            } else if (planCall !== undefined) {
+              // Malformed report: the first carries the one corrective
+              // nudge, later ones the plain validation error — useful
+              // sibling work in the round still executes.
+              planResultError = planNudgeDelivered ? RUN_PLAN_INVALID : RUN_PLAN_NUDGE
+              planNudgeDelivered = true
             }
             // The Run Headline (ADR 0025): the plan's headline revises the
             // Peek Card's live title when it changes; the echo or the last
@@ -701,14 +716,11 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
                 type: 'run_plan',
                 objective: runPlan.objective,
                 headline: null,
-                effortTier: 'lookup',
+                effortTier: DEFAULT_EFFORT_TIER,
                 source: 'fallback',
                 at: clock.now(),
               }
-              if (!planNudged) {
-                planNudged = true
-                planNudgeOnSibling = true
-              }
+              if (!planNudgeDelivered) planNudgePending = true
             }
           }
 
@@ -732,12 +744,17 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
               break
             }
             yield { type: 'tool_call', callId: call.id, name: call.name, args: call.args, at: clock.now() }
-            // A rejected or malformed Run Plan report (#116) never reaches
-            // execute: the call answers with the corrective notice directly,
-            // like an unknown tool, while sibling work runs untouched.
+            // A report_run_plan call never reaches execute once the
+            // pipeline handles it (#116): accepted or duplicate calls
+            // answer with the plain acknowledgement, rejected or malformed
+            // ones with the corrective notice — while sibling work runs
+            // untouched. A stray call on a catalog without the tool falls
+            // through to the ordinary unknown-tool error.
             const outcome: ToolResultOutcome =
-              call.name === 'report_run_plan' && planResultError !== null
-                ? { ok: false, error: planResultError }
+              call.name === 'report_run_plan' && planCallHandled
+                ? planResultError !== null
+                  ? { ok: false, error: planResultError }
+                  : { ok: true, result: 'Run Plan noted.' }
                 : yield* runGatedTool(call, turnId, visionBudget, searchLoopRail, blockerGate, toolContext, run, observe)
             // Observation ledger (#111): the raw outcome as the tool
             // produced it, ahead of the advisory nudges appended below —
@@ -761,21 +778,16 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
             // leaves it alone) and let an advisory nudge ride the search
             // result the model sees and the feed shows.
             const searchLoopNudge = await searchLoopRail.observe(call, outcome)
-            let observedOutcome: ToolResultOutcome =
-              searchLoopNudge && outcome.ok && typeof outcome.result === 'string'
-                ? { ok: true, result: `${outcome.result}\n\n${searchLoopNudge}` }
-                : outcome
+            let observedOutcome: ToolResultOutcome = searchLoopNudge ? withNudge(outcome, searchLoopNudge) : outcome
             // The fallback plan's corrective nudge (#116) rides one useful
             // sibling result — the model sees it without a bookkeeping
             // round, and the useful result still reports its own content.
-            if (
-              planNudgeOnSibling &&
-              call.name !== 'report_run_plan' &&
-              observedOutcome.ok &&
-              typeof observedOutcome.result === 'string'
-            ) {
-              planNudgeOnSibling = false
-              observedOutcome = { ok: true, result: `${observedOutcome.result}\n\n${RUN_PLAN_NUDGE}` }
+            // The nudge stays owed until it actually lands, so a round of
+            // failed siblings does not swallow it.
+            if (planNudgePending && call.name !== 'report_run_plan' && observedOutcome.ok && typeof observedOutcome.result === 'string') {
+              planNudgePending = false
+              planNudgeDelivered = true
+              observedOutcome = withNudge(observedOutcome, RUN_PLAN_NUDGE)
             }
             toolResults.push({ call, outcome: observedOutcome })
             yield {

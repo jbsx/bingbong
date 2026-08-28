@@ -512,6 +512,9 @@ describe('command pipeline', () => {
           kind: 'tool_calls',
           calls: [
             plan('p1', 'Find a blue mug under $20', 'Find a blue mug under $20', 'lookup'),
+            // A duplicate report in the same round is idempotent
+            // bookkeeping — acknowledged, never executed.
+            plan('p1b', 'Find a blue mug under $20', 'Find a blue mug under $20', 'lookup'),
             { id: 'c1', name: 'noop', args: {} },
           ],
         },
@@ -528,6 +531,10 @@ describe('command pipeline', () => {
         effortTier: 'lookup',
         source: 'model',
         at: 0,
+      })
+      expect(events.find((event) => event.type === 'tool_result' && event.callId === 'p1b')).toMatchObject({
+        ok: true,
+        result: 'Run Plan noted.',
       })
       const headlineAt = events.findIndex((event) => event.type === 'run_headline' && event.text === 'Find a blue mug under $20')
       const workAt = events.findIndex((event) => event.type === 'tool_call' && event.name === 'noop')
@@ -594,7 +601,14 @@ describe('command pipeline', () => {
 
     it('degrades a malformed plan without stalling, and the next valid report establishes the plan', async () => {
       const llm = new ScriptedLlm([
-        { kind: 'tool_calls', calls: [{ id: 'p1', name: 'report_run_plan', args: { objective: '', headline: 42, effort_tier: 'huge' } }, { id: 'c1', name: 'noop', args: {} }] },
+        {
+          kind: 'tool_calls',
+          calls: [
+            { id: 'p1', name: 'report_run_plan', args: { objective: '', headline: 42, effort_tier: 'huge' } },
+            { id: 'p1b', name: 'report_run_plan', args: { objective: '', headline: 42, effort_tier: 'huge' } },
+            { id: 'c1', name: 'noop', args: {} },
+          ],
+        },
         { kind: 'tool_calls', calls: [plan('p2', 'Do the thing', 'Do the thing', 'direct_action'), { id: 'c2', name: 'noop', args: {} }] },
         { kind: 'answer', speak: 'Done.', display: 'Done.' },
       ])
@@ -602,10 +616,14 @@ describe('command pipeline', () => {
 
       const events = await collect(pipeline, 'do the thing')
 
-      // The malformed round fell back to Lookup and its plan call answered
+      // The malformed round fell back to Lookup and its plan calls answered
       // with the corrective notice; the sibling work ran.
       expect(events.filter((event) => event.type === 'tool_result' && event.name === 'noop' && event.ok)).toHaveLength(2)
       expect(events.find((event) => event.type === 'tool_result' && event.callId === 'p1')).toMatchObject({
+        ok: false,
+        error: expect.stringMatching(/report_run_plan/),
+      })
+      expect(events.find((event) => event.type === 'tool_result' && event.callId === 'p1b')).toMatchObject({
         ok: false,
         error: expect.stringMatching(/report_run_plan/),
       })
@@ -616,6 +634,31 @@ describe('command pipeline', () => {
         'direct_action',
       ])
       expect(events.find((event) => event.type === 'run_headline')).toMatchObject({ text: 'Do the thing' })
+    })
+
+    it('keeps the corrective nudge owed until a useful result can carry it', async () => {
+      const boom: Tool = {
+        name: 'boom',
+        async execute() {
+          throw new Error('kaboom')
+        },
+      }
+      const llm = new ScriptedLlm([
+        { kind: 'tool_calls', calls: [{ id: 'b1', name: 'boom', args: {} }] },
+        { kind: 'tool_calls', calls: [{ id: 'c1', name: 'noop', args: {} }] },
+        { kind: 'answer', speak: 'Done.', display: 'Done.' },
+      ])
+      const pipeline = createCommandPipeline({ llm, tts: new RecordingTts(), clock: new FakeClock(), tools: [createReportRunPlanTool(), boom, noop] })
+
+      const events = await collect(pipeline, 'do the thing')
+
+      // Round 1's failing sibling could not carry the nudge — round 2's
+      // useful result delivers it, once.
+      const nudged = events.filter(
+        (event) => event.type === 'tool_result' && typeof event.result === 'string' && event.result.includes('report_run_plan'),
+      )
+      expect(nudged).toHaveLength(1)
+      expect(nudged[0]).toMatchObject({ callId: 'c1' })
     })
 
     it('reopens the initial-plan slot after a steering directive — a fresh plan may redeclare its tier', async () => {
