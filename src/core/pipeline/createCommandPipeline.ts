@@ -110,6 +110,13 @@ export interface CommandPipelineDeps {
    * main to the subagent rail's cancelAll.
    */
   onSteer?(): void
+  /**
+   * Finalization entry (#120, ADR 0027): fired when a work rail trips the
+   * run into Finalization — unfinished delegated acquisition is cancelled,
+   * while completed reports stay available to the reserved Answer round.
+   * Wired by main to the subagent rail's cancelAll.
+   */
+  onFinalize?(): void
   /** Turn-id source (#28) and span/summary recorder (#29/#30); absent falls back to a local id mint. */
   tracer?: PerfTracer
   /**
@@ -652,6 +659,12 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
           // The turn id rides the context so fan-out tools (spawn_agent)
           // correlate their subagent rounds to this turn (#29).
           turnId,
+          // Bounded delegation (#120): the live tier epoch gates browse
+          // spawns — only Investigation branches delegate — and workers
+          // share this run's active-work deadline as a live predicate, so
+          // a tier escalation re-arm reaches them without a respawn.
+          effortTier: () => epochTier,
+          workDeadlineExpired: () => run.workClock.spent() >= TIER_ACTIVE_WORK_DEADLINES_MS[epochTier],
           // Delegation's memory selection (#98): spawn_agent resolves
           // memory_ids against this Run's immutable snapshot — the same one
           // every model round sees — so a worker can never receive entries
@@ -710,6 +723,12 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
               mechanicalCause ??= 'hard_limit'
             }
             if (finalizing) {
+              // Finalization entry (#120): delegated acquisition is
+              // cancelled once per entry — the run's own work is over,
+              // while completed worker reports stay available to the
+              // reserved Answer round. (A Steering directive can exit
+              // Finalization and re-arm; a re-entry fires again.)
+              deps.onFinalize?.()
               // Finalization supersedes advisory nudges: the directive
               // that rides this phase's results replaces both the plan
               // nudge and any undelivered budget warning.
@@ -1161,6 +1180,10 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
       }
     } finally {
       if (activeRun === run) activeRun = null
+      // Run end: the work clock stops (#120). A worker still running past
+      // its parent Run finalizes against the deadline as it stood at the
+      // end, not one that keeps ticking after the Run is gone.
+      run.workClock.suspend()
       // Run end (#111): the Observation ledger disappears with its Run —
       // records dropped, late writers refused.
       ledger.close()

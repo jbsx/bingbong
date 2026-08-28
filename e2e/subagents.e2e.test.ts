@@ -14,8 +14,19 @@ const SUB_PATH = '/second'
 
 function orchestratorScript(): AssistantTurn[] {
   return [
-    { kind: 'tool_calls', calls: [{ id: 's1', name: 'spawn_agent', args: { kind: 'browse', task: 'compare prices on the fixture page' } }] },
-    { kind: 'tool_calls', calls: [{ id: 's2', name: 'spawn_agent', args: { kind: 'browse', task: 'check stock on the fixture page' } }] },
+    {
+      kind: 'tool_calls',
+      calls: [
+        // #120: browse delegation requires the investigation tier.
+        {
+          id: 'plan',
+          name: 'report_run_plan',
+          args: { objective: 'Compare the fixture pages in parallel', headline: 'Comparing fixture pages', effort_tier: 'investigation' },
+        },
+        { id: 's1', name: 'spawn_agent', args: { kind: 'browse', task: 'compare prices on the fixture page' } },
+        { id: 's2', name: 'spawn_agent', args: { kind: 'browse', task: 'check stock on the fixture page' } },
+      ],
+    },
     { kind: 'tool_calls', calls: [{ id: 's3', name: 'agent_results', args: { wait: true } }] },
     { kind: 'answer', speak: 'Both browsing agents finished.', display: 'Merged both browsing reports.' },
   ]
@@ -162,7 +173,17 @@ describe('subagent vision budget e2e', () => {
       fixture,
       env: {
         BINGBONG_LLM_SCRIPT: JSON.stringify([
-          { kind: 'tool_calls', calls: [{ id: 'spawn', name: 'spawn_agent', args: { kind: 'browse', task: 'inspect the page repeatedly' } }] },
+          {
+            kind: 'tool_calls',
+            calls: [
+              {
+                id: 'plan',
+                name: 'report_run_plan',
+                args: { objective: 'Inspect the page repeatedly', headline: 'Inspecting the page', effort_tier: 'investigation' },
+              },
+              { id: 'spawn', name: 'spawn_agent', args: { kind: 'browse', task: 'inspect the page repeatedly' } },
+            ],
+          },
           { kind: 'tool_calls', calls: [{ id: 'results', name: 'agent_results', args: { wait: true } }] },
           { kind: 'answer', speak: 'Inspection finished.', display: 'Inspection finished.' },
         ]),

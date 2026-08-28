@@ -170,6 +170,70 @@ describe('subagent tools', () => {
     ).rejects.toThrow('subagent limit (4) reached')
   })
 
+  it('refuses browse delegation below the Investigation tier (#120)', async () => {
+    const spawns: unknown[] = []
+    const tools = createSubagentTools(fakeManager({
+      spawn: (...args: unknown[]) => {
+        spawns.push(args)
+        return { ok: true, agent: { id: 'a-1', kind: 'browse', task: 't', status: 'running', startedAt: 0, finishedAt: null, steps: 0, lastAction: null, result: null, error: null } }
+      },
+    }))
+    const spawn = tools.find((tool) => tool.name === 'spawn_agent')!
+    const clock = { now: () => 0, setTimer: () => () => {} }
+
+    // Direct Actions and ordinary Lookups are never delegated.
+    await expect(
+      spawn.execute({ id: 'c1', name: 'spawn_agent', args: { kind: 'browse', task: 'open the site' } }, { clock, effortTier: () => 'direct_action' }),
+    ).rejects.toThrow(/browse subagents are for genuinely independent Investigation branches[\s\S]*Direct Action tier/)
+    await expect(
+      spawn.execute({ id: 'c2', name: 'spawn_agent', args: { kind: 'browse', task: 'find the fact' } }, { clock, effortTier: () => 'lookup' }),
+    ).rejects.toThrow(/Lookup tier[\s\S]*escalate the Run Plan to investigation/)
+    expect(spawns).toEqual([])
+
+    // The Investigation tier delegates — and without a tier source (lean
+    // pipelines) the caller decides.
+    await expect(
+      spawn.execute({ id: 'c3', name: 'spawn_agent', args: { kind: 'browse', task: 'branch work' } }, { clock, effortTier: () => 'investigation' }),
+    ).resolves.toContain('a-1')
+    await expect(
+      spawn.execute({ id: 'c4', name: 'spawn_agent', args: { kind: 'browse', task: 'untiered pipeline' } }, { clock }),
+    ).resolves.toContain('a-1')
+  })
+
+  it('background delegation is not tier-gated — approved file work is not browsing (#120)', async () => {
+    const tools = createSubagentTools(fakeManager())
+    const spawn = tools.find((tool) => tool.name === 'spawn_agent')!
+
+    await expect(
+      spawn.execute(
+        { id: 'c1', name: 'spawn_agent', args: { kind: 'background', task: 'download the report' } },
+        { clock: { now: () => 0, setTimer: () => () => {} }, effortTier: () => 'direct_action' },
+      ),
+    ).resolves.toContain('a-1')
+  })
+
+  it('hands the Run\'s shared active-work deadline to the manager (#120)', async () => {
+    let expired = false
+    let received: { expired(): boolean } | undefined
+    const tools = createSubagentTools(fakeManager({
+      spawn: (_kind, _task, _turnId, _memory, sharedDeadline) => {
+        received = sharedDeadline
+        return { ok: true, agent: { id: 'a-2', kind: 'browse', task: 't', status: 'running', startedAt: 0, finishedAt: null, steps: 0, lastAction: null, result: null, error: null } }
+      },
+    }))
+    const spawn = tools.find((tool) => tool.name === 'spawn_agent')!
+
+    await spawn.execute(
+      { id: 'c1', name: 'spawn_agent', args: { kind: 'browse', task: 'x' } },
+      { clock: { now: () => 0, setTimer: () => () => {} }, effortTier: () => 'investigation', workDeadlineExpired: () => expired },
+    )
+
+    expect(received).toBeDefined()
+    expect(received!.expired()).toBe(false)
+    expired = true
+    expect(received!.expired()).toBe(true)
+  })
+
   it('cancel_agent cancels one id or all running agents', async () => {
     const cancelled: string[] = []
     const tools = createSubagentTools(fakeManager({

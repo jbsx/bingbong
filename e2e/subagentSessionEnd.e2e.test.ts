@@ -14,10 +14,29 @@ import type { AssistantTurn } from '../src/core/ports/llm'
 const SLOW_PATH = '/slow'
 
 function orchestratorScript(): AssistantTurn[] {
+  // #120: browse delegation requires the investigation tier — each fresh
+  // run (the Session reset restarts the command) declares its own plan.
+  const plan = (id: string, objective: string) => ({
+    id,
+    name: 'report_run_plan',
+    args: { objective, headline: 'Researching the slow page', effort_tier: 'investigation' },
+  })
   return [
-    { kind: 'tool_calls', calls: [{ id: 's1', name: 'spawn_agent', args: { kind: 'browse', task: 'research the slow fixture page' } }] },
+    {
+      kind: 'tool_calls',
+      calls: [
+        plan('p1', 'Research the slow fixture page'),
+        { id: 's1', name: 'spawn_agent', args: { kind: 'browse', task: 'research the slow fixture page' } },
+      ],
+    },
     { kind: 'answer', speak: 'Research is running.', display: 'AGENT RUNNING' },
-    { kind: 'tool_calls', calls: [{ id: 's2', name: 'spawn_agent', args: { kind: 'browse', task: 'fresh research in the new session' } }] },
+    {
+      kind: 'tool_calls',
+      calls: [
+        plan('p2', 'Do fresh research in the new session'),
+        { id: 's2', name: 'spawn_agent', args: { kind: 'browse', task: 'fresh research in the new session' } },
+      ],
+    },
     { kind: 'tool_calls', calls: [{ id: 's3', name: 'agent_results', args: { wait: true } }] },
     { kind: 'answer', speak: 'Fresh research merged.', display: 'NEW SESSION DONE' },
   ]

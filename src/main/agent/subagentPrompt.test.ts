@@ -30,6 +30,14 @@ describe('subagent prompt on-screen browsing', () => {
     expect(SUBAGENT_SYSTEM_PROMPT).toMatch(/download_url, list_downloads and move_download/)
     expect(SUBAGENT_SYSTEM_PROMPT).toMatch(/ASK_USER:/)
   })
+
+  it('teaches the bounded leash: decisive work and an immediate final report at the limit (#120)', () => {
+    const line = SUBAGENT_SYSTEM_PROMPT.split('\n').find((candidate) => candidate.includes('Your work is bounded'))
+    if (!line) throw new Error('bounded-work line missing from the subagent prompt')
+    expect(line).toMatch(/dozen tool rounds/)
+    expect(line).toMatch(/active-work deadline/)
+    expect(line).toMatch(/stop calling tools and reply immediately with your final report JSON/)
+  })
 })
 
 // #103: the per-Run runtime context. The subagent prompt is built per spawn

@@ -53,7 +53,18 @@ describe('web zoom e2e', () => {
       userDataDir,
       env: {
         BINGBONG_LLM_SCRIPT: JSON.stringify([
-          { kind: 'tool_calls', calls: [{ id: 's1', name: 'spawn_agent', args: { kind: 'browse', task: 'open the fixture page' } }] },
+          {
+            kind: 'tool_calls',
+            calls: [
+              // #120: browse delegation requires the investigation tier.
+              {
+                id: 'plan',
+                name: 'report_run_plan',
+                args: { objective: 'Open the fixture pages in parallel', headline: 'Opening fixture pages', effort_tier: 'investigation' },
+              },
+              { id: 's1', name: 'spawn_agent', args: { kind: 'browse', task: 'open the fixture page' } },
+            ],
+          },
           { kind: 'tool_calls', calls: [{ id: 's2', name: 'agent_results', args: { wait: true } }] },
           { kind: 'answer', speak: 'Done browsing.', display: 'Done browsing.' },
         ]),

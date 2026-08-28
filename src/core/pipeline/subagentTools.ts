@@ -1,7 +1,8 @@
-import type { SubagentKind, SubagentManager } from '../agent/subagentManager'
+import type { SubagentKind, SubagentManager, SubagentSharedDeadline } from '../agent/subagentManager'
 import type { WorkingMemorySnapshot } from '../session/workingMemory'
 import type { Tool } from './tool'
 import type { ToolCall } from '../ports/llm'
+import type { EffortTier } from './runPlan'
 
 // The orchestrator's delegation tools (issue #13): spawn_agent starts a
 // workhorse subagent (browse = own visible tab, background = approved
@@ -12,10 +13,24 @@ import type { ToolCall } from '../ports/llm'
 // spawn_agent names the Memory Entry ids the task needs, the pipeline
 // validates them against this Run's snapshot, and only that bounded slice
 // reaches the worker — never the whole store.
+//
+// Bounded delegation (#120, ADR 0027): browse workers are for genuinely
+// independent Investigation branches only. The tool refuses a browse spawn
+// while the Run sits on a lower tier — a Direct Action or an ordinary
+// Lookup does its own browsing, and delegation is never a device to gain
+// more budget. Each worker runs on its own 12-round leash and shares the
+// Run's active-work deadline through the context's live predicate.
 
 const KINDS: SubagentKind[] = ['browse', 'background']
 
-const KIND_HINT = 'browse: drives its own visible tab (searches and reads happen on screen); background: approved downloads/file work'
+const KIND_HINT =
+  'browse: drives its own visible tab (searches and reads happen on screen) — Investigations only; background: approved downloads/file work'
+
+const TIER_NAMES: Readonly<Record<EffortTier, string>> = {
+  direct_action: 'Direct Action',
+  lookup: 'Lookup',
+  investigation: 'Investigation',
+}
 
 function stringArg(call: ToolCall, name: string, tool: string): string {
   const value = call.args[name]
@@ -54,7 +69,8 @@ export function createSubagentTools(manager: SubagentManager): Tool[] {
     {
       name: 'spawn_agent',
       acquisition: true,
-      description: `Start a subagent that works in the background while you continue. ${KIND_HINT}. Returns the new agent id.`,
+      description:
+        `Start a subagent that works in the background while you continue. ${KIND_HINT}. Browse subagents are for genuinely independent Investigation branches (distinct sources or hypotheses) — at most three run at once, each with 12 tool rounds, sharing your run's active-work deadline; never delegate to gain more budget. Returns the new agent id.`,
       parameters: {
         kind: { type: 'string', enum: KINDS, description: `Which subagent to start — ${KIND_HINT}` },
         task: { type: 'string', description: 'Complete, self-contained instruction for the subagent, including any URLs' },
@@ -73,6 +89,17 @@ export function createSubagentTools(manager: SubagentManager): Tool[] {
       async execute(call, ctx) {
         const kind = kindArg(call)
         const task = stringArg(call, 'task', 'spawn_agent')
+        // Bounded delegation (#120/AC3): browse workers exist only for
+        // Investigation branches. A Direct Action or an ordinary Lookup
+        // browses on the main pane — delegation must never be a lever for
+        // more budget. Absent tier source (lean pipelines) leaves the
+        // decision to the caller.
+        if (kind === 'browse' && ctx.effortTier !== undefined && ctx.effortTier() !== 'investigation') {
+          throw new Error(
+            `spawn_agent: browse subagents are for genuinely independent Investigation branches — this run is on the ${TIER_NAMES[ctx.effortTier()]} tier. ` +
+              'Do the browsing yourself, or escalate the Run Plan to investigation with the new evidence before delegating.',
+          )
+        }
         const memoryIds = memoryIdsArg(call)
         let memory: WorkingMemorySnapshot | undefined
         if (memoryIds !== undefined) {
@@ -81,9 +108,15 @@ export function createSubagentTools(manager: SubagentManager): Tool[] {
           }
           memory = ctx.selectMemoryEntries(memoryIds)
         }
+        // The parent Run's shared active-work deadline (#120/AC2) rides the
+        // spawn: the worker polls it and finalizes when the parent's work
+        // time is gone.
+        const sharedDeadline: SubagentSharedDeadline | undefined = ctx.workDeadlineExpired
+          ? { expired: () => ctx.workDeadlineExpired!() }
+          : undefined
         // The orchestrator's turn id rides the spawn (#29): the workhorse's
         // LLM rounds key their spans to the turn that started them.
-        const spawned = manager.spawn(kind, task, ctx.turnId, memory)
+        const spawned = manager.spawn(kind, task, ctx.turnId, memory, sharedDeadline)
         if (!spawned.ok) throw new Error(spawned.reason)
         return `spawned ${spawned.agent.id} [${kind}]${memory !== undefined ? ` with ${memory.length} shared memory entr${memory.length === 1 ? 'y' : 'ies'}` : ''} — poll with agent_results (wait: true) or keep working`
       },

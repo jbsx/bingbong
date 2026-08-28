@@ -7,17 +7,20 @@ import { SUBAGENT_LIMITS } from './subagentRails'
 import type { SubagentReport } from './subagentReport'
 import { SubagentCancelledError } from './subagentRunner'
 
-// The subagent supervisor (issue #13). Owns the agent rail (≤4 concurrent),
-// delegates the tab rail to the injected tab allocator (browse agents claim
-// a tab), tracks every agent's lifecycle, and merges results for
-// the orchestrator's agent_results tool. Refusals come back as reasons the
-// orchestrator model can read — a rail hit is a recoverable tool result,
-// never a crash. Sessions own their agents outright (#97): retire() ends
-// every agent with the Session, discards its reports, and gates late
-// settlement so an ended Session can never reach a later one. Delegation
-// carries its own selected Memory Entries (#98): they ride the spec into
-// the workhorse as untrusted context, and completed agents keep their
-// structured Subagent Report for the orchestrator to reconcile.
+// The subagent supervisor (issue #13). Owns the agent rail (≤4 concurrent,
+// of which at most 3 may be browsing agents on independent Investigation
+// branches, #120), delegates the tab rail to the injected tab allocator
+// (browse agents claim a tab), tracks every agent's lifecycle, and merges
+// results for the orchestrator's agent_results tool. Refusals come back as
+// reasons the orchestrator model can read — a rail hit is a recoverable
+// tool result, never a crash. Sessions own their agents outright (#97):
+// retire() ends every agent with the Session, discards its reports, and
+// gates late settlement so an ended Session can never reach a later one.
+// Delegation carries its own selected Memory Entries (#98): they ride the
+// spec into the workhorse as untrusted context, and completed agents keep
+// their structured Subagent Report for the orchestrator to reconcile.
+// Browsing workers also carry their parent Run's shared active-work
+// deadline (#120): the workhorse polls it and finalizes when it passes.
 
 export type SubagentKind = 'browse' | 'background'
 
@@ -73,8 +76,20 @@ export interface SubagentSpec {
   memory?: WorkingMemorySnapshot
 }
 
+/**
+ * The parent Run's shared active-work deadline (#120, ADR 0027): a live
+ * predicate the workhorse polls — true once the spawning Run's active-work
+ * time has passed its tier deadline. Workers share the Investigation's
+ * deadline rather than bringing their own clock.
+ */
+export interface SubagentSharedDeadline {
+  expired(): boolean
+}
+
 export interface SubagentTaskHooks {
   isCancelled(): boolean
+  /** The parent Run's shared active-work deadline (#120); absent when the spawn carries none. */
+  isWorkExpired?(): boolean
   waitIfPaused?(): Promise<void>
   onProgress(step: number, action: string): void
 }
@@ -96,6 +111,8 @@ export interface SubagentManagerDeps {
   clock?: Clock
   onEvent(event: SubagentEvent): void
   maxConcurrent?: number
+  /** Browse-only concurrency (#120/AC1): defaults to SUBAGENT_LIMITS.maxConcurrentBrowseAgents. */
+  maxConcurrentBrowse?: number
   /** How long agent_results(wait) blocks before reporting a snapshot. */
   waitTimeoutMs?: number
   /** The Session that owns each new spawn (#97) — read live at spawn time. */
@@ -107,7 +124,7 @@ export type SpawnResult = { ok: true; agent: SubagentRecord } | { ok: false; rea
 export type CancelResult = { ok: true } | { ok: false; reason: string }
 
 export interface SubagentManager {
-  spawn(kind: SubagentKind, task: string, turnId?: string, memory?: WorkingMemorySnapshot): SpawnResult
+  spawn(kind: SubagentKind, task: string, turnId?: string, memory?: WorkingMemorySnapshot, sharedDeadline?: SubagentSharedDeadline): SpawnResult
   cancel(agentId: string): CancelResult
   cancelAll(): number
   /**
@@ -131,6 +148,7 @@ export function createSubagentManager(deps: SubagentManagerDeps): SubagentManage
   const { taskApi, tabs, onEvent } = deps
   const clock = deps.clock ?? systemClock
   const maxConcurrent = deps.maxConcurrent ?? SUBAGENT_LIMITS.maxConcurrentAgents
+  const maxConcurrentBrowse = deps.maxConcurrentBrowse ?? SUBAGENT_LIMITS.maxConcurrentBrowseAgents
   const waitTimeoutMs = deps.waitTimeoutMs ?? DEFAULT_WAIT_TIMEOUT_MS
 
   const records = new Map<string, SubagentRecord>()
@@ -164,6 +182,12 @@ export function createSubagentManager(deps: SubagentManagerDeps): SubagentManage
     return live
   }
 
+  function liveBrowseCount(): number {
+    let live = 0
+    for (const record of records.values()) if (record.status === 'running' && record.kind === 'browse') live += 1
+    return live
+  }
+
   function finish(record: SubagentRecord, spawnEpoch: number, status: SubagentStatus, report: SubagentReport | null, error: string | null): void {
     if (spawnEpoch !== epoch) return
     record.status = status
@@ -189,11 +213,20 @@ export function createSubagentManager(deps: SubagentManagerDeps): SubagentManage
   }
 
   return {
-    spawn(kind, task, turnId, memory) {
+    spawn(kind, task, turnId, memory, sharedDeadline) {
       if (liveCount() >= maxConcurrent) {
         return {
           ok: false,
           reason: `subagent limit (${maxConcurrent}) reached — wait for a running agent to finish or collect results first`,
+        }
+      }
+      // Browse-only concurrency (#120/AC1): at most three browsing agents
+      // work in parallel, whatever the overall rail allows — the fourth
+      // branch waits or the orchestrator collects first.
+      if (kind === 'browse' && liveBrowseCount() >= maxConcurrentBrowse) {
+        return {
+          ok: false,
+          reason: `browse subagent limit (${maxConcurrentBrowse}) reached — at most three browsing agents run at once; wait for one to finish or collect its results first`,
         }
       }
 
@@ -230,6 +263,10 @@ export function createSubagentManager(deps: SubagentManagerDeps): SubagentManage
         },
         {
           isCancelled: () => cancelled.has(id) || spawnEpoch !== epoch,
+          // The parent Run's shared active-work deadline (#120): the
+          // workhorse polls it alongside cancellation and finalizes with a
+          // bounded report when the parent's work time is gone.
+          ...(sharedDeadline !== undefined ? { isWorkExpired: () => sharedDeadline.expired() } : {}),
           waitIfPaused: () => waitIfPaused(id),
           onProgress: (step, action) => {
             if (spawnEpoch !== epoch) return

@@ -250,20 +250,159 @@ describe('runSubagent', () => {
     expect(llm2.requests).toHaveLength(1)
   })
 
-  it('throws when the workhorse exceeds its tool-round limit', async () => {
-    const spin: Tool = { name: 'spin', async execute() { return 'spun' } }
-    const storms = Array.from({ length: 5 }, (_, i) => ({
+  it('finalizes at its tool-round limit with a reserved answer round — no raw limit failure (#120)', async () => {
+    let executions = 0
+    const spin: Tool = { name: 'spin', async execute() { executions += 1; return 'spun' } }
+    const llm = new ScriptedLlm([
+      { kind: 'tool_calls', calls: [{ id: 'c0', name: 'spin', args: {} }] },
+      { kind: 'tool_calls', calls: [{ id: 'c1', name: 'spin', args: {} }] },
+      // The reserved Answer round consumes this turn.
+      { kind: 'answer', speak: 'partial', display: 'Bounded but useful report.', findings: [{ subject: 'S', detail: 'D.', references: [] }] },
+    ])
+
+    const report = await runSubagent(
+      { llm, tools: [spin], clock: new FakeClock(), maxToolRounds: 2 },
+      { task: 't', isCancelled: () => false },
+    )
+
+    // Exactly two acquisition rounds executed; the third scripted tool
+    // round never ran — the reserved Answer round took its place.
+    expect(executions).toBe(2)
+    expect(llm.requests).toHaveLength(3)
+    expect(report).toEqual({
+      text: 'Bounded but useful report.',
+      findings: [{ subject: 'S', detail: 'D.', references: [] }],
+      unresolved: [],
+    })
+    // The directive rode the last tool result the reserved round saw.
+    const reserved = llm.requests[2]?.toolResults
+    expect(reserved).toHaveLength(2)
+    const lastOutcome = reserved?.[1]?.outcome
+    expect(lastOutcome).toMatchObject({
+      ok: true,
+      result: expect.stringMatching(/delegated work budget \(2 tool rounds\) is spent[\s\S]*final report JSON/),
+    })
+  })
+
+  it('answers deterministically when the reserved round demands tools anyway (#120)', async () => {
+    let executions = 0
+    const spin: Tool = { name: 'spin', async execute() { executions += 1; return 'spun' } }
+    const llm = new ScriptedLlm([
+      { kind: 'tool_calls', calls: [{ id: 'c0', name: 'spin', args: {} }] },
+      { kind: 'tool_calls', calls: [{ id: 'c1', name: 'spin', args: {} }] },
+      { kind: 'tool_calls', calls: [{ id: 'c2', name: 'spin', args: {} }] },
+      { kind: 'answer', speak: 'never', display: 'never' },
+    ])
+
+    const report = await runSubagent(
+      { llm, tools: [spin], clock: new FakeClock(), maxToolRounds: 2 },
+      { task: 't', agentId: 'a-3', isCancelled: () => false },
+    )
+
+    // The refused third round executed nothing and produced no further
+    // model rounds — the bounded report is deterministic.
+    expect(executions).toBe(2)
+    expect(llm.requests).toHaveLength(3)
+    expect(report.agentId).toBe('a-3')
+    expect(report.text).toMatch(/Stopped at the delegated work limit after 2 tool rounds — the delegated work budget \(2 tool rounds\) was spent, and no final report was produced\. The last action was: spin/)
+    expect(report.findings).toEqual([])
+    expect(report.unresolved).toEqual(['Cut short at the delegated work limit — the task is incomplete.'])
+  })
+
+  it('answers deterministically when the reserved round itself fails (#120)', async () => {
+    let executions = 0
+    const spin: Tool = { name: 'spin', async execute() { executions += 1; return 'spun' } }
+    let calls = 0
+    const llm = {
+      async complete() {
+        calls += 1
+        if (calls <= 2) {
+          return { kind: 'tool_calls' as const, calls: [{ id: `c${calls}`, name: 'spin', args: {} }] }
+        }
+        throw new Error('provider exploded')
+      },
+    }
+
+    const report = await runSubagent(
+      { llm, tools: [spin], clock: new FakeClock(), maxToolRounds: 2 },
+      { task: 't', isCancelled: () => false },
+    )
+
+    expect(calls).toBe(3)
+    expect(executions).toBe(2)
+    expect(report.text).toMatch(/Stopped at the delegated work limit after 2 tool rounds/)
+    expect(report.unresolved).toEqual(['Cut short at the delegated work limit — the task is incomplete.'])
+  })
+
+  it('honours the parent\'s shared active-work deadline with a reserved answer round (#120)', async () => {
+    let expired = false
+    const spin: Tool = { name: 'spin', async execute() { expired = true; return 'spun' } }
+    const llm = new ScriptedLlm([
+      { kind: 'tool_calls', calls: [{ id: 'c0', name: 'spin', args: {} }] },
+      { kind: 'answer', speak: 's', display: 'Report under the deadline.' },
+    ])
+
+    const report = await runSubagent(
+      { llm, tools: [spin], clock: new FakeClock(), maxToolRounds: 12 },
+      { task: 't', isCancelled: () => false, isWorkExpired: () => expired },
+    )
+
+    // One acquisition round ran; the deadline — not the worker's own
+    // budget — stopped the second, and the model's reserved answer became
+    // the report.
+    expect(llm.requests).toHaveLength(2)
+    expect(report.text).toBe('Report under the deadline.')
+    const outcome = llm.requests[1]?.toolResults[0]?.outcome
+    expect(outcome).toMatchObject({
+      ok: true,
+      result: expect.stringMatching(/active-work deadline has passed[\s\S]*final report JSON/),
+    })
+  })
+
+  it('shares the parent deadline live — expiry mid-run finalizes instead of executing further rounds (#120)', async () => {
+    let expired = false
+    let executions = 0
+    const spin: Tool = { name: 'spin', async execute() { executions += 1; expired = executions >= 2; return 'spun' } }
+    const llm = new ScriptedLlm([
+      { kind: 'tool_calls', calls: [{ id: 'c0', name: 'spin', args: {} }] },
+      { kind: 'tool_calls', calls: [{ id: 'c1', name: 'spin', args: {} }] },
+      { kind: 'tool_calls', calls: [{ id: 'c2', name: 'spin', args: {} }] },
+      { kind: 'answer', speak: 'never', display: 'never' },
+    ])
+
+    const report = await runSubagent(
+      { llm, tools: [spin], clock: new FakeClock(), maxToolRounds: 12 },
+      { task: 't', isCancelled: () => false, isWorkExpired: () => expired },
+    )
+
+    // Two rounds executed; the third never did — the shared deadline, not
+    // the worker's own budget, stopped acquisition, and the reserved round
+    // (scripted as a tool round) fell through to the bounded report.
+    expect(executions).toBe(2)
+    expect(report.text).toMatch(/parent run reached its active-work deadline/)
+  })
+
+  it('defaults to the twelve-round worker budget (#120)', async () => {
+    let executions = 0
+    const spin: Tool = { name: 'spin', async execute() { executions += 1; return 'spun' } }
+    const storms = Array.from({ length: 12 }, (_, i) => ({
       kind: 'tool_calls' as const,
       calls: [{ id: `c${i}`, name: 'spin', args: {} }],
     }))
-    const llm = new ScriptedLlm(storms)
+    const llm = new ScriptedLlm([
+      ...storms,
+      // The thirteenth turn is the reserved Answer round.
+      { kind: 'answer', speak: 's', display: 'Twelve rounds, then this.' },
+    ])
 
-    await expect(
-      runSubagent(
-        { llm, tools: [spin], clock: new FakeClock(), maxToolRounds: 2 },
-        { task: 't', isCancelled: () => false },
-      ),
-    ).rejects.toThrow('subagent tool round limit (2) reached')
+    const report = await runSubagent(
+      { llm, tools: [spin], clock: new FakeClock() },
+      { task: 't', isCancelled: () => false },
+    )
+
+    expect(executions).toBe(12)
+    expect(llm.requests).toHaveLength(13)
+    expect(report.text).toBe('Twelve rounds, then this.')
   })
 
   it('enforces the fifteen-call vision rail for a subagent task', async () => {

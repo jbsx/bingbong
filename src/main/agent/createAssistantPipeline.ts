@@ -228,9 +228,10 @@ export function createAssistantPipeline(deps: AssistantPipelineDeps): CommandPip
   ]
   const clock = deps.clock ?? systemClock
   const configuredAskTimeoutMs = askTimeoutMs(deps.env)
-  // Stop and Steering both cancel delegated work outright (#119): Stop
-  // ends the run, and a directive supersedes everything spawned under
-  // the corrected-away objective.
+  // Stop, Steering, and Finalization all cancel delegated work (#119/#120):
+  // Stop ends the run, a directive supersedes everything spawned under the
+  // corrected-away objective, and Finalization's entry ends unfinished
+  // delegated acquisition while completed reports stay available.
   const cancelSubagents = (): void => {
     deps.subagentControl?.cancelAll()
   }
@@ -257,6 +258,9 @@ export function createAssistantPipeline(deps: AssistantPipelineDeps): CommandPip
     // A Steering directive corrects the objective (#119): delegated
     // work spawned under the stale one is cancelled, not resumed.
     onSteer: cancelSubagents,
+    // Finalization cancels unfinished delegated acquisition (#120); the
+    // reserved Answer round still uses whatever reports completed.
+    onFinalize: cancelSubagents,
     ...(configuredAskTimeoutMs !== undefined ? { askTimeoutMs: configuredAskTimeoutMs } : {}),
     ...(deps.getMaxToolRounds ? { getMaxToolRounds: deps.getMaxToolRounds } : {}),
   })

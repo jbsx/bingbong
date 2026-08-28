@@ -2,6 +2,7 @@ import type { ToolCall } from '../ports/llm'
 import type { Clock } from '../ports/clock'
 import type { VisionGrant } from '../agent/subagentRails'
 import type { WorkingMemorySnapshot } from '../session/workingMemory'
+import type { EffortTier } from './runPlan'
 
 export interface ToolContext {
   clock: Clock
@@ -13,6 +14,19 @@ export interface ToolContext {
    * model rounds land in the turn's perf spans.
    */
   turnId?: string
+  /**
+   * The Run's live Effort Tier (#120, ADR 0027): the current tier epoch
+   * the pipeline is executing under. Delegation reads it — browse
+   * subagents exist only for Investigation branches.
+   */
+  effortTier?(): EffortTier
+  /**
+   * Whether the Run's active-work deadline has passed (#120): the live
+   * predicate delegated workers share with their parent — they stop
+   * acquiring when the parent's work time is gone, however many of their
+   * own rounds remain.
+   */
+  workDeadlineExpired?(): boolean
   /**
    * Progress detail (#43): a tool that blocks on observable background
    * work (agent_results with wait) reports what the run is waiting on,

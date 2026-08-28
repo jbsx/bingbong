@@ -14,10 +14,12 @@ import { SubagentCancelledError } from './subagentRunner'
 
 // The supervisor (issue #13): spawns workhorse loops, tracks them, cancels
 // them, merges their results for the orchestrator — with the rails enforced
-// here in code: at most 4 concurrent agents, tab kinds bounded by the tab
-// allocator (3 tabs), refusals returned as reasons the orchestrator model
-// can read and act on. Delegation carries its own selected Memory Entries
-// (#98), and completed agents keep their structured Subagent Report.
+// here in code: at most 4 concurrent agents, of which at most 3 browsing
+// (#120), tab kinds bounded by the tab allocator (3 tabs), refusals
+// returned as reasons the orchestrator model can read and act on.
+// Delegation carries its own selected Memory Entries (#98), completed
+// agents keep their structured Subagent Report, and browsing workers carry
+// their parent Run's shared active-work deadline (#120).
 
 interface ManualTask {
   id: string
@@ -25,6 +27,7 @@ interface ManualTask {
   reject(error: Error): void
   progress(step: number, action: string): void
   cancelFlag(): boolean
+  workExpired?(): boolean
   waitIfPaused(): Promise<void>
 }
 
@@ -41,7 +44,7 @@ function manualTaskApi() {
     started,
     tasks,
     api: {
-      start(spec: { id: string; kind: string; task: string; turnId?: string; memory?: WorkingMemorySnapshot }, hooks: { isCancelled(): boolean; waitIfPaused?(): Promise<void>; onProgress(step: number, action: string): void }) {
+      start(spec: { id: string; kind: string; task: string; turnId?: string; memory?: WorkingMemorySnapshot }, hooks: { isCancelled(): boolean; isWorkExpired?(): boolean; waitIfPaused?(): Promise<void>; onProgress(step: number, action: string): void }) {
         started.push({ id: spec.id, kind: spec.kind, task: spec.task, turnId: spec.turnId, ...(spec.memory !== undefined ? { memory: spec.memory } : {}) })
         let settle: ((report: SubagentReport) => void) | null = null
         let fail: ((error: Error) => void) | null = null
@@ -55,6 +58,7 @@ function manualTaskApi() {
           reject: (error) => fail?.(error),
           progress: hooks.onProgress,
           cancelFlag: () => hooks.isCancelled(),
+          ...(hooks.isWorkExpired !== undefined ? { workExpired: () => hooks.isWorkExpired!() } : {}),
           waitIfPaused: () => hooks.waitIfPaused?.() ?? Promise.resolve(),
         })
         return { done }
@@ -199,6 +203,49 @@ describe('subagent manager', () => {
     const fifth = mgr.spawn('background', 'task 5')
     expect(fifth.ok).toBe(false)
     if (!fifth.ok) expect(fifth.reason).toMatch(/4/)
+  })
+
+  it('enforces the browse-only rail: three concurrent browsing agents, a fourth refused (#120)', () => {
+    const { mgr } = manager()
+
+    for (let i = 1; i <= 3; i += 1) {
+      expect(mgr.spawn('browse', `branch ${i}`).ok).toBe(true)
+    }
+    const fourth = mgr.spawn('browse', 'branch 4')
+    expect(fourth.ok).toBe(false)
+    if (!fourth.ok) {
+      expect(fourth.reason).toMatch(/browse subagent limit \(3\) reached/)
+      expect(fourth.reason).toMatch(/wait for one to finish/)
+    }
+    // Refused spawns start nothing.
+    expect(mgr.list()).toHaveLength(3)
+    // The overall rail still has a slot: a non-browsing agent fits.
+    expect(mgr.spawn('background', 'file work').ok).toBe(true)
+  })
+
+  it('frees a browse slot when a browsing agent finishes (#120)', async () => {
+    // Tabs above the browse rail so only the browse rail binds here.
+    const { mgr, api } = manager({ tabsCapacity: 4 })
+
+    for (let i = 1; i <= 3; i += 1) expect(mgr.spawn('browse', `branch ${i}`).ok).toBe(true)
+    api.tasks.get('a-1')!.resolve('done branch 1')
+    await flush()
+
+    expect(mgr.spawn('browse', 'branch 4 now').ok).toBe(true)
+  })
+
+  it('threads the parent Run\'s shared active-work deadline into the workhorse (#120)', () => {
+    const { mgr, api } = manager()
+    let expired = false
+
+    expect(mgr.spawn('browse', 'shared deadline work', undefined, undefined, { expired: () => expired }).ok).toBe(true)
+    // A spawn without a deadline starts a worker that has none.
+    expect(mgr.spawn('background', 'own clock').ok).toBe(true)
+
+    expect(api.tasks.get('a-1')!.workExpired?.()).toBe(false)
+    expired = true
+    expect(api.tasks.get('a-1')!.workExpired?.()).toBe(true)
+    expect(api.tasks.get('a-2')!.workExpired).toBeUndefined()
   })
 
   it('frees an agent slot when an agent finishes — but a lingering tab keeps the tab slot busy', async () => {

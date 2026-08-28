@@ -20,6 +20,12 @@ function orchestratorScript(): AssistantTurn[] {
     {
       kind: 'tool_calls',
       calls: [
+        // #120: browse delegation requires the investigation tier.
+        {
+          id: 'plan',
+          name: 'report_run_plan',
+          args: { objective: 'Visit the fixture pages in parallel', headline: 'Visiting fixture pages', effort_tier: 'investigation' },
+        },
         // Two concurrent browse agents: both views park edge-on at once,
         // exercising the per-view column staggering (an occluded parked
         // view never produces frames).

@@ -125,7 +125,18 @@ describe('subagent ask_user relay e2e', () => {
   beforeAll(async () => {
     fixture = await startFixtureServer()
     const orchestrator: AssistantTurn[] = [
-      { kind: 'tool_calls', calls: [{ id: 'spawn', name: 'spawn_agent', args: { kind: 'browse', task: 'plan the trip' } }] },
+      {
+        kind: 'tool_calls',
+        calls: [
+          // #120: browse delegation requires the investigation tier.
+          {
+            id: 'plan',
+            name: 'report_run_plan',
+            args: { objective: 'Plan the trip across sources', headline: 'Planning the trip', effort_tier: 'investigation' },
+          },
+          { id: 'spawn', name: 'spawn_agent', args: { kind: 'browse', task: 'plan the trip' } },
+        ],
+      },
       { kind: 'tool_calls', calls: [{ id: 'results', name: 'agent_results', args: { wait: true } }] },
       { kind: 'tool_calls', calls: [{ id: 'relay', name: 'ask_user', args: { question: 'Which city should the trip use?' } }] },
       { kind: 'answer', speak: 'The relay worked.', display: 'The subagent clarification was answered.' },

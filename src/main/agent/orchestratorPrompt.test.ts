@@ -232,3 +232,22 @@ describe('orchestrator prompt finalization semantics (#110)', () => {
     expect(ORCHESTRATOR_SYSTEM_PROMPT).toMatch(/Never claim "completed" for work you did not verify/)
   })
 })
+
+// #120 / ADR 0027: bounded parallel delegation. The delegation policy must
+// keep browse subagents tied to genuinely independent Investigation
+// branches — never a budget lever — and state the worker bounds.
+describe('orchestrator prompt bounded delegation (#120)', () => {
+  it('reserves browse subagents for independent Investigation branches', () => {
+    expect(ORCHESTRATOR_SYSTEM_PROMPT).toMatch(/browse kind is for genuinely independent Investigation branches/)
+    expect(ORCHESTRATOR_SYSTEM_PROMPT).toMatch(/never delegate a Direct Action or an ordinary Lookup/i)
+    expect(ORCHESTRATOR_SYSTEM_PROMPT).toMatch(/never delegate merely to gain more budget/)
+    expect(ORCHESTRATOR_SYSTEM_PROMPT).toMatch(/escalate the Run Plan instead/)
+  })
+
+  it('states the worker bounds: three at once, twelve rounds, the shared deadline', () => {
+    expect(ORCHESTRATOR_SYSTEM_PROMPT).toMatch(/At most three browse subagents run at once/)
+    expect(ORCHESTRATOR_SYSTEM_PROMPT).toMatch(/12 tool rounds/)
+    expect(ORCHESTRATOR_SYSTEM_PROMPT).toMatch(/share of your run's active-work deadline/)
+    expect(ORCHESTRATOR_SYSTEM_PROMPT).toMatch(/terminates with a bounded report/)
+  })
+})

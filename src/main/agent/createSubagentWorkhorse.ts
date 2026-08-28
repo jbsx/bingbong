@@ -134,6 +134,9 @@ export function createSubagentTaskApi(deps: SubagentWorkhorseDeps): SubagentTask
           // untrusted, source-attributed context.
           ...(spec.memory !== undefined ? { memory: spec.memory } : {}),
           isCancelled: hooks.isCancelled,
+          // The parent Run's shared active-work deadline (#120): polled
+          // alongside cancellation; the worker finalizes when it passes.
+          ...(hooks.isWorkExpired !== undefined ? { isWorkExpired: hooks.isWorkExpired } : {}),
           waitIfPaused: hooks.waitIfPaused ?? (() => Promise.resolve()),
           onProgress: (progress) => hooks.onProgress(progress.step, progress.action),
         },

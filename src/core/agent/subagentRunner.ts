@@ -1,13 +1,13 @@
 import type { Clock } from '../ports/clock'
 import { systemClock } from '../ports/clock'
-import type { LlmClient, ToolResult, ToolResultOutcome } from '../ports/llm'
+import type { AssistantTurn, LlmClient, ToolResult, ToolResultOutcome } from '../ports/llm'
 import type { Tool, ToolContext } from '../pipeline/tool'
 import type { WorkingMemorySnapshot } from '../session/workingMemory'
 import { VisionDeadlineError, VISION_DEADLINE_NUDGE } from '../ports/vision'
 import { ASK_ESCALATION_PREFIX } from '../pipeline/askUserTools'
 import { createBlockerGate, subagentBlockerEscalation } from '../pipeline/blockerGate'
 import { describeToolAction } from '../pipeline/toolCallDisplay'
-import { createVisionBudget, MAX_SUBAGENT_VISION_CALLS } from './subagentRails'
+import { createVisionBudget, MAX_SUBAGENT_VISION_CALLS, SUBAGENT_LIMITS } from './subagentRails'
 import type { SubagentReport } from './subagentReport'
 
 // The subagent workhorse loop (issue #13): one LLM (deepseek-chat via the
@@ -18,6 +18,13 @@ import type { SubagentReport } from './subagentReport'
 // is structured (#98): the prose answer plus validated findings and
 // unresolved items. Delegated Memory Entries (#98) ride every model round
 // as untrusted data — the worker reads them, never writes them.
+//
+// The loop is bounded (#120, ADR 0027): 12 Tool Rounds of its own plus the
+// parent Run's shared active-work deadline. Exhaustion no longer throws —
+// the worker enters its own Finalization: one reserved Answer-only model
+// round, and a deterministic bounded report if that round fails or demands
+// tools. A worker always terminates with a report, never a raw round-limit
+// failure.
 
 export interface SubagentProgress {
   /** 1-based step number within this agent's run. */
@@ -61,6 +68,12 @@ export interface RunSubagentOptions {
   memory?: WorkingMemorySnapshot
   /** Polled before each model call and each tool call. */
   isCancelled(): boolean
+  /**
+   * The parent Run's shared active-work deadline (#120): returns true once
+   * the spawning Run's active-work time has passed its tier deadline. The
+   * worker stops acquiring and finalizes — a bounded report, never a crash.
+   */
+  isWorkExpired?(): boolean
   /** Resolves immediately while running, or after the shared pause gate opens. */
   waitIfPaused?(): Promise<void>
   onProgress?(progress: SubagentProgress): void
@@ -72,7 +85,70 @@ export class SubagentCancelledError extends Error {
   }
 }
 
-const DEFAULT_MAX_TOOL_ROUNDS = 60
+const DEFAULT_MAX_TOOL_ROUNDS = SUBAGENT_LIMITS.maxToolRoundsPerTask
+
+/** Why a worker's acquisition stopped and its Finalization began (#120). */
+type WorkerStopCause = 'round_limit' | 'shared_deadline'
+
+/**
+ * The Finalization directive for the worker's reserved Answer round
+ * (#120): rides the last tool result the way the orchestrator's directive
+ * rides its Finalization results — the model learns the work budget is
+ * spent and that only the final report JSON is accepted now.
+ */
+function workerFinalizationNotice(cause: WorkerStopCause, maxToolRounds: number): string {
+  const reason =
+    cause === 'round_limit'
+      ? `Your delegated work budget (${maxToolRounds} tool rounds) is spent`
+      : 'The parent run\u2019s active-work deadline has passed'
+  return `${reason}. Tool calls are closed. Reply now with ONLY your final report JSON — state honestly what you found and what remains open.`
+}
+
+/** Appends the directive to the last tool result so the reserved round carries it. */
+function appendFinalizationNotice(toolResults: ToolResult[], notice: string): void {
+  const last = toolResults.at(-1)
+  if (last === undefined) return
+  if (last.outcome.ok) {
+    const payload =
+      typeof last.outcome.result === 'string'
+        ? last.outcome.result
+        : (() => {
+            try {
+              return JSON.stringify(last.outcome.result)
+            } catch {
+              return 'tool result'
+            }
+          })()
+    last.outcome = { ok: true, result: `${payload}\n\n${notice}` }
+  } else {
+    last.outcome = { ok: false, error: `${last.outcome.error}\n\n${notice}` }
+  }
+}
+
+/**
+ * The deterministic bounded report (#120): what the worker answers with
+ * when its reserved Answer round fails or requests tools. Built only from
+ * the stop cause and the run's own progress — it invents no findings.
+ */
+function boundedStopReport(input: {
+  agentId?: string
+  cause: WorkerStopCause
+  maxToolRounds: number
+  rounds: number
+  lastAction: string | null
+}): SubagentReport {
+  const causeSentence =
+    input.cause === 'round_limit'
+      ? `the delegated work budget (${input.maxToolRounds} tool rounds) was spent`
+      : 'the parent run reached its active-work deadline'
+  const lastActionSentence = input.lastAction !== null ? ` The last action was: ${input.lastAction}.` : ''
+  return {
+    ...(input.agentId !== undefined ? { agentId: input.agentId } : {}),
+    text: `Stopped at the delegated work limit after ${input.rounds} tool round${input.rounds === 1 ? '' : 's'} — ${causeSentence}, and no final report was produced.${lastActionSentence}`,
+    findings: [],
+    unresolved: ['Cut short at the delegated work limit — the task is incomplete.'],
+  }
+}
 
 function toErrorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err)
@@ -102,19 +178,53 @@ export async function runSubagent(deps: RunSubagentDeps, options: RunSubagentOpt
   }
   const toolResults: ToolResult[] = []
   let rounds = 0
+  let lastAction: string | null = null
+  // Worker Finalization (#120): null while acquisition continues; set when
+  // the round budget or the parent's shared deadline trips. The next model
+  // round is the reserved Answer round — after it, only a bounded report.
+  let stopCause: WorkerStopCause | null = null
+
+  const requestArgs = () => ({
+    command: options.task,
+    toolResults,
+    ...(options.turnId !== undefined ? { turnId: options.turnId } : {}),
+    ...(options.memory !== undefined && options.memory.length > 0 ? { memory: options.memory } : {}),
+  })
 
   for (;;) {
     await checkpoint(options)
-    if (rounds >= maxToolRounds) {
-      throw new Error(`subagent tool round limit (${maxToolRounds}) reached`)
+    if (stopCause === null) {
+      // The shared deadline is polled first (#120/AC2): when the parent
+      // Run's active-work time is gone, the worker's own remaining rounds
+      // no longer matter.
+      if (options.isWorkExpired?.()) stopCause = 'shared_deadline'
+      else if (rounds >= maxToolRounds) stopCause = 'round_limit'
+    }
+    if (stopCause !== null) {
+      // Worker Finalization (#120): one reserved Answer-only round — the
+      // directive rides the last tool result — then, whatever the model
+      // does with it, a bounded report. Cancellation still wins at the
+      // checkpoint after the round.
+      appendFinalizationNotice(toolResults, workerFinalizationNotice(stopCause, maxToolRounds))
+      let turn: AssistantTurn | null = null
+      try {
+        turn = await llm.complete(requestArgs())
+      } catch {
+        turn = null
+      }
+      await checkpoint(options)
+      if (turn !== null && turn.kind === 'answer') {
+        return {
+          ...(options.agentId !== undefined ? { agentId: options.agentId } : {}),
+          text: turn.display !== '' ? turn.display : turn.speak,
+          findings: turn.findings ?? [],
+          unresolved: turn.unresolved ?? [],
+        }
+      }
+      return boundedStopReport({ ...(options.agentId !== undefined ? { agentId: options.agentId } : {}), cause: stopCause, maxToolRounds, rounds, lastAction })
     }
 
-    const turn = await llm.complete({
-      command: options.task,
-      toolResults,
-      ...(options.turnId !== undefined ? { turnId: options.turnId } : {}),
-      ...(options.memory !== undefined && options.memory.length > 0 ? { memory: options.memory } : {}),
-    })
+    const turn = await llm.complete(requestArgs())
     await checkpoint(options)
     if (turn.kind === 'answer') {
       return {
@@ -128,7 +238,8 @@ export async function runSubagent(deps: RunSubagentDeps, options: RunSubagentOpt
     rounds += 1
     for (const call of turn.calls) {
       await checkpoint(options)
-      options.onProgress?.({ step: rounds, action: describeToolAction(call.name, call.args) })
+      lastAction = describeToolAction(call.name, call.args)
+      options.onProgress?.({ step: rounds, action: lastAction })
 
       let outcome: ToolResultOutcome
       const tool = toolsByName.get(call.name)

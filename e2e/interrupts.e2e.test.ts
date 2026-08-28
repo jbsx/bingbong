@@ -111,7 +111,18 @@ describe('run interruption e2e', () => {
   it('fans abort out to a running subagent', async () => {
     const orchestrator: AssistantTurn[] = [
       { kind: 'tool_calls', calls: [{ id: 'nav', name: 'navigate', args: { url: fixture.url('/risky') } }] },
-      { kind: 'tool_calls', calls: [{ id: 'spawn', name: 'spawn_agent', args: { kind: 'browse', task: 'read the slow fixture' } }] },
+      {
+        kind: 'tool_calls',
+        calls: [
+          // #120: browse delegation requires the investigation tier.
+          {
+            id: 'plan',
+            name: 'report_run_plan',
+            args: { objective: 'Read the slow fixture across sources', headline: 'Reading the slow fixture', effort_tier: 'investigation' },
+          },
+          { id: 'spawn', name: 'spawn_agent', args: { kind: 'browse', task: 'read the slow fixture' } },
+        ],
+      },
       { kind: 'tool_calls', calls: [{ id: 'submit', name: 'click', args: { ref: 7 } }] },
       { kind: 'answer', speak: 'Should not finish.', display: 'Should not finish.' },
     ]

@@ -1840,6 +1840,150 @@ describe('command pipeline', () => {
     })
   })
 
+  describe('bounded parallel delegation (#120, ADR 0027)', () => {
+    const investigationPlan = (id: string): ToolCall => ({
+      id,
+      name: 'report_run_plan',
+      args: { objective: 'Compare vendor finishes', headline: 'Comparing vendors', effort_tier: 'investigation' },
+    })
+
+    it('refuses browse delegation while the run sits below the Investigation tier', async () => {
+      const spawns: unknown[][] = []
+      const manager = fakeSubagentManager([], {
+        spawn: (...args: unknown[]) => {
+          spawns.push(args)
+          return { ok: true as const, agent: { ...subagentRecord('a-1'), kind: 'browse' } }
+        },
+      })
+      const llm = new ScriptedLlm([
+        // A Lookup-tier plan in the same round — an ordinary Lookup is
+        // never delegated, so the spawn still refuses.
+        {
+          kind: 'tool_calls',
+          calls: [
+            { id: 'p1', name: 'report_run_plan', args: { objective: 'Find the fact', headline: 'Finding the fact', effort_tier: 'lookup' } },
+            { id: 's1', name: 'spawn_agent', args: { kind: 'browse', task: 'check the vendor' } },
+          ],
+        },
+        { kind: 'answer', speak: 'Did it myself.', display: 'Did it myself.' },
+      ])
+      const pipeline = createCommandPipeline({
+        llm,
+        tts: new RecordingTts(),
+        clock: new FakeClock(),
+        tools: [createReportRunPlanTool(), ...createSubagentTools(manager)],
+      })
+
+      const events = await collect(pipeline, 'find the fact')
+
+      expect(spawns).toEqual([])
+      expect(events.find((e) => e.type === 'tool_result' && e.callId === 's1')).toMatchObject({
+        ok: false,
+        error: expect.stringMatching(
+          /browse subagents are for genuinely independent Investigation branches[\s\S]*this run is on the Lookup tier/,
+        ),
+      })
+      expect(events.at(-1)).toMatchObject({ type: 'done', outcome: 'done' })
+    })
+
+    it('lets the Investigation tier delegate and carries the shared active-work deadline into the spawn', async () => {
+      let received: { expired(): boolean } | undefined
+      const manager = fakeSubagentManager([], {
+        spawn: (_kind, _task, _turnId, _memory, sharedDeadline) => {
+          received = sharedDeadline
+          return { ok: true as const, agent: subagentRecord('a-1') }
+        },
+      })
+      const llm = new ScriptedLlm([
+        {
+          kind: 'tool_calls',
+          calls: [
+            investigationPlan('p1'),
+            { id: 's1', name: 'spawn_agent', args: { kind: 'browse', task: 'compare the vendor pages' } },
+          ],
+        },
+        { kind: 'answer', speak: 'Delegated.', display: 'Delegated.' },
+      ])
+      const pipeline = createCommandPipeline({
+        llm,
+        tts: new RecordingTts(),
+        clock: new FakeClock(),
+        tools: [createReportRunPlanTool(), ...createSubagentTools(manager)],
+      })
+
+      const events = await collect(pipeline, 'compare the vendor finishes')
+
+      expect(events.find((e) => e.type === 'tool_result' && e.callId === 's1')).toMatchObject({ ok: true })
+      // The deadline is live and shared: under the Investigation deadline
+      // during the run, and frozen (not expired) once the run has ended.
+      expect(received).toBeDefined()
+      expect(received!.expired()).toBe(false)
+    })
+
+    it('cancels unfinished delegated acquisition once at Finalization entry (#120/AC4)', async () => {
+      const work: Tool = { name: 'work', acquisition: true, async execute() { return 'worked' } }
+      const llm = new ScriptedLlm([
+        ...Array.from({ length: 6 }, (_, i) => ({
+          kind: 'tool_calls' as const,
+          calls: [
+            ...(i === 0
+              ? [{ id: 'p0', name: 'report_run_plan', args: { objective: 'Do the thing', headline: 'Doing', effort_tier: 'direct_action' } }]
+              : []),
+            { id: `w${i}`, name: 'work', args: {} },
+          ],
+        })),
+        { kind: 'tool_calls', calls: [{ id: 'w6', name: 'work', args: {} }] },
+        { kind: 'answer', speak: 'Partial.', display: 'Partial.', resolution: 'partial' },
+      ])
+      let finalized = 0
+      const pipeline = createCommandPipeline({
+        llm,
+        tts: new RecordingTts(),
+        clock: new FakeClock(),
+        tools: [createReportRunPlanTool(), work],
+        onFinalize: () => {
+          finalized += 1
+        },
+      })
+
+      const events = await collect(pipeline, 'do the thing')
+
+      // The rail tripped exactly once — the bookkeeping round and the
+      // reserved Answer round never re-fire the entry hook.
+      expect(finalized).toBe(1)
+      expect(events.at(-1)).toMatchObject({ type: 'done', finalizationCause: 'budget_exhausted' })
+    })
+
+    it('never fires Finalization for a run that answers within its budget', async () => {
+      const work: Tool = { name: 'work', acquisition: true, async execute() { return 'worked' } }
+      const llm = new ScriptedLlm([
+        {
+          kind: 'tool_calls',
+          calls: [
+            { id: 'p0', name: 'report_run_plan', args: { objective: 'Do the thing', headline: 'Doing', effort_tier: 'direct_action' } },
+            { id: 'w0', name: 'work', args: {} },
+          ],
+        },
+        { kind: 'answer', speak: 'Done.', display: 'Done.' },
+      ])
+      let finalized = 0
+      const pipeline = createCommandPipeline({
+        llm,
+        tts: new RecordingTts(),
+        clock: new FakeClock(),
+        tools: [createReportRunPlanTool(), work],
+        onFinalize: () => {
+          finalized += 1
+        },
+      })
+
+      const events = await collect(pipeline, 'do the thing')
+
+      expect(finalized).toBe(0)
+      expect(events.at(-1)).toMatchObject({ type: 'done', outcome: 'done' })
+    })
+  })
+
   describe('replan after Steering (#119, ADR 0027)', () => {
     const plan = (
       id: string,
