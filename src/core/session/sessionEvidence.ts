@@ -3,8 +3,10 @@ import {
   boundedString,
   canonicalizeMemoryUrl,
   MAX_MEMORY_DETAIL_CHARS,
-  MAX_MEMORY_REFERENCES,
   MAX_MEMORY_SUBJECT_CHARS,
+  mergeMemoryReferences,
+  normalizeMemoryText,
+  parseMemoryReferences,
   type MemoryEntryId,
   type MemoryProvenance,
   type MemoryReference,
@@ -142,21 +144,6 @@ interface MutableCandidate {
   provenance: MemoryProvenance[]
 }
 
-function parseReferences(value: readonly MemoryReference[] | undefined): MemoryReference[] | null {
-  if (value === undefined) return []
-  if (value.length > MAX_MEMORY_REFERENCES) return null
-  const parsed: MemoryReference[] = []
-  const seen = new Set<string>()
-  for (const reference of value) {
-    const url = canonicalizeMemoryUrl(reference.url)
-    const title = boundedString(reference.title, MAX_MEMORY_SUBJECT_CHARS, true)
-    if (!url || title === null || seen.has(url)) continue
-    seen.add(url)
-    parsed.push({ url, ...(title ? { title } : {}) })
-  }
-  return parsed
-}
-
 function parseProvenance(runId: RunId, subagentId: string | undefined): MemoryProvenance | null {
   if (typeof runId !== 'string' || runId.trim() === '') return null
   const agent = boundedString(subagentId, MAX_PROVENANCE_CHARS, true)
@@ -171,20 +158,12 @@ function appendProvenance(current: MemoryProvenance[], added: MemoryProvenance):
   return merged.has(provenanceKey(added)) ? current : [...current, added]
 }
 
-function mergeReferences(current: readonly MemoryReference[], added: readonly MemoryReference[]): MemoryReference[] {
-  const merged = new Map(current.map((reference) => [reference.url, reference]))
-  for (const reference of added) merged.set(reference.url, reference)
-  return [...merged.values()]
-}
-
-const normalizedText = (text: string): string => text.trim().toLowerCase().replace(/\s+/g, ' ')
-
 /** Exact-duplicate identity: same source kind, same normalized statement, same source URLs. */
 function observationKey(observation: Pick<MutableObservation, 'sourceKind' | 'text' | 'references'>): string {
   return JSON.stringify({
     sourceKind: observation.sourceKind,
-    text: normalizedText(observation.text),
-    urls: observation.references.map((reference) => reference.url).sort(),
+    text: normalizeMemoryText(observation.text.trim()),
+    urls: observation.references.map((reference) => canonicalizeMemoryUrl(reference.url) ?? reference.url).sort(),
   })
 }
 
@@ -235,7 +214,7 @@ export function createSessionEvidence(deps: {
       if (!OBSERVATION_SOURCE_KINDS.includes(input.sourceKind)) return null
       const text = boundedString(input.text, MAX_MEMORY_DETAIL_CHARS)
       const uncertainty = boundedString(input.uncertainty, MAX_UNCERTAINTY_CHARS, true)
-      const references = parseReferences(input.references)
+      const references = parseMemoryReferences(input.references)
       const source = parseProvenance(input.runId, input.subagentId)
       if (!text || uncertainty === null || !references || !source) return null
       const observedAt = input.observedAt ?? deps.now()
@@ -268,7 +247,7 @@ export function createSessionEvidence(deps: {
       if (cleared) return null
       const subject = boundedString(input.subject, MAX_MEMORY_SUBJECT_CHARS)
       const detail = boundedString(input.detail, MAX_MEMORY_DETAIL_CHARS, true)
-      const references = parseReferences(input.references)
+      const references = parseMemoryReferences(input.references)
       const source = parseProvenance(input.runId, input.subagentId)
       if (!subject || detail === null || !references || !source || !supportIsValid(input.supportingObservationIds)) {
         return null
@@ -289,9 +268,11 @@ export function createSessionEvidence(deps: {
     setCandidateStatus(id, change) {
       if (cleared) return null
       const candidate = candidates.find((entry) => entry.id === id)
-      if (!candidate || candidate.status !== 'active') return null
-      if (!TERMINAL_CANDIDATE_STATUSES.includes(change.status)) return null
-      const references = parseReferences(change.references)
+      if (!candidate) return null
+      // Statuses are retained, never replayed: a change must land on a
+      // different terminal status, from whatever the Candidate holds now.
+      if (!TERMINAL_CANDIDATE_STATUSES.includes(change.status) || change.status === candidate.status) return null
+      const references = parseMemoryReferences(change.references)
       const source = parseProvenance(change.runId, change.subagentId)
       if (!references || !source || !supportIsValid(change.supportingObservationIds)) return null
 
@@ -299,7 +280,7 @@ export function createSessionEvidence(deps: {
       const support = new Set(candidate.supportingObservationIds)
       for (const observationId of change.supportingObservationIds) support.add(observationId)
       candidate.supportingObservationIds = [...support]
-      candidate.references = mergeReferences(candidate.references, references)
+      candidate.references = mergeMemoryReferences(candidate.references, references)
       candidate.provenance = appendProvenance(candidate.provenance, source)
       return freezeCandidate(candidate)
     },

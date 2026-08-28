@@ -4,7 +4,7 @@ import type { MemoryEntryId } from './workingMemory'
 import { createSessionEvidence, MAX_UNCERTAINTY_CHARS } from './sessionEvidence'
 import type { SessionEvidenceStore } from './sessionEvidence'
 
-function store(now = (): number => 0): { evidence: SessionEvidenceStore; ids: string[] } {
+function evidenceHarness(now = (): number => 0): { evidence: SessionEvidenceStore; ids: string[] } {
   const minted: string[] = []
   let next = 0
   return {
@@ -30,7 +30,7 @@ function webObservation(text = 'The Acme router costs $39.', runId = 'run-1' as 
 describe('session evidence', () => {
   it('checkpoints grounded Observations with source kind, time, uncertainty, references, and provenance', () => {
     let at = 500
-    const { evidence } = store(() => at)
+    const { evidence } = evidenceHarness(() => at)
     const result = evidence.checkpointObservation({
       sourceKind: 'web',
       text: 'The Acme router costs $39.',
@@ -69,7 +69,7 @@ describe('session evidence', () => {
 
   it('merges exact duplicate Observations into one identity and accumulates provenance', () => {
     let at = 500
-    const { evidence, ids } = store(() => at)
+    const { evidence, ids } = evidenceHarness(() => at)
     const first = evidence.checkpointObservation(webObservation())!
 
     at = 900
@@ -93,7 +93,7 @@ describe('session evidence', () => {
   })
 
   it('keeps contradictory Observations distinct instead of overwriting them', () => {
-    const { evidence } = store()
+    const { evidence } = evidenceHarness()
     const cheaper = evidence.checkpointObservation(webObservation('The Acme router costs $39.'))!
     const pricier = evidence.checkpointObservation(webObservation('The Acme router costs $59.'))!
 
@@ -107,7 +107,7 @@ describe('session evidence', () => {
   })
 
   it('tracks Candidates through active, accepted, rejected, and superseded status with supporting Observations', () => {
-    const { evidence } = store()
+    const { evidence } = evidenceHarness()
     const price = evidence.checkpointObservation(webObservation())!.observation
     const rival = evidence.checkpointObservation(webObservation('The Zeta router costs $45.', 'run-1' as RunId))!.observation
 
@@ -144,7 +144,7 @@ describe('session evidence', () => {
       runId: 'run-2' as RunId,
     })!
     expect(evidence.setCandidateStatus(rivalCandidate.id, { status: 'rejected', supportingObservationIds: [rival.id], runId: 'run-2' as RunId })).toMatchObject({ status: 'rejected' })
-    expect(evidence.setCandidateStatus(rivalCandidate.id, { status: 'superseded', supportingObservationIds: [], runId: 'run-3' as RunId })).toBeNull()
+    expect(evidence.setCandidateStatus(rivalCandidate.id, { status: 'rejected', supportingObservationIds: [rival.id], runId: 'run-3' as RunId })).toBeNull()
     expect(evidence.candidate(rivalCandidate.id)?.status).toBe('rejected')
 
     const third = evidence.addCandidate({
@@ -154,13 +154,23 @@ describe('session evidence', () => {
     })!
     expect(evidence.setCandidateStatus(third.id, { status: 'superseded', supportingObservationIds: [rival.id], runId: 'run-3' as RunId })).toMatchObject({ status: 'superseded' })
 
-    // Terminal statuses are final: accepted candidates do not transition again.
-    expect(evidence.setCandidateStatus(candidate!.id, { status: 'rejected', supportingObservationIds: [rival.id], runId: 'run-4' as RunId })).toBeNull()
-    expect(evidence.snapshot().candidates.map(({ status }) => status)).toEqual(['accepted', 'rejected', 'superseded'])
+    // Retained statuses stay revisable with fresh support: an accepted
+    // Candidate can later be superseded by a better-grounded one.
+    const revised = evidence.setCandidateStatus(candidate!.id, {
+      status: 'superseded',
+      supportingObservationIds: [rival.id],
+      runId: 'run-4' as RunId,
+    })
+    expect(revised).toMatchObject({
+      status: 'superseded',
+      supportingObservationIds: [price.id, rival.id],
+      provenance: [{ runId: 'run-1' }, { runId: 'run-2', subagentId: 'a-1' }, { runId: 'run-4' }],
+    })
+    expect(evidence.snapshot().candidates.map(({ status }) => status)).toEqual(['superseded', 'rejected', 'superseded'])
   })
 
   it('rejects Assessments without valid Observation support', () => {
-    const { evidence } = store()
+    const { evidence } = evidenceHarness()
     const observation = evidence.checkpointObservation(webObservation())!.observation
     const candidate = evidence.addCandidate({
       subject: 'Acme wifi router',
@@ -175,7 +185,7 @@ describe('session evidence', () => {
   })
 
   it('refuses malformed checkpoints and candidates without minting identities', () => {
-    const { evidence, ids } = store()
+    const { evidence, ids } = evidenceHarness()
     expect(evidence.checkpointObservation({ ...webObservation(), sourceKind: 'dream' as never })).toBeNull()
     expect(evidence.checkpointObservation({ ...webObservation(), text: '   ' })).toBeNull()
     expect(evidence.checkpointObservation({ ...webObservation(), uncertainty: 'x'.repeat(MAX_UNCERTAINTY_CHARS + 1) })).toBeNull()
@@ -201,7 +211,7 @@ describe('session evidence', () => {
   })
 
   it('clears and seals: Session Reset and Lapse drop every form and refuse later mutation', () => {
-    const { evidence } = store()
+    const { evidence } = evidenceHarness()
     const observation = evidence.checkpointObservation(webObservation())!.observation
     evidence.addCandidate({ subject: 'Acme wifi router', supportingObservationIds: [observation.id], runId: 'run-1' as RunId })
 
@@ -215,7 +225,7 @@ describe('session evidence', () => {
   })
 
   it('freezes snapshots against mutation', () => {
-    const { evidence } = store()
+    const { evidence } = evidenceHarness()
     evidence.checkpointObservation(webObservation())!
     const snapshot = evidence.snapshot()
     expect(Object.isFrozen(snapshot)).toBe(true)

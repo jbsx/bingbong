@@ -110,6 +110,10 @@ function references(value: unknown): MemoryReference[] | null {
   return parsed
 }
 
+/** Shared Memory-reference parsing (#94, #112): one canonical rule for Memory
+ *  Entries and the Session Evidence forms that cite the same sources. */
+export const parseMemoryReferences = references
+
 function proposedFields(value: unknown): ProposedMemoryFields | null {
   const raw = object(value)
   if (!raw) return null
@@ -189,12 +193,17 @@ export function freezeWorkingMemory(entries: readonly MemoryEntry[]): WorkingMem
   })))
 }
 
+/** Shared whitespace/case normalization (#112) for duplicate comparison. */
+export function normalizeMemoryText(value: string): string {
+  return value.toLowerCase().replace(/\s+/g, ' ')
+}
+
 function entryKey(entry: Pick<MemoryEntry, 'kind' | 'subject'>): string {
   return `${entry.kind}:${entry.subject.toLowerCase().replace(/\s+/g, ' ')}`
 }
 
 function normalizedDetail(entry: Pick<MemoryEntry, 'detail'>): string {
-  return entry.detail.toLowerCase().replace(/\s+/g, ' ')
+  return normalizeMemoryText(entry.detail)
 }
 
 function entriesAreObviousDuplicates(
@@ -260,7 +269,8 @@ function storedEntryIsInvalid(entry: MemoryEntry): boolean {
   )
 }
 
-function mergeReferences(current: readonly MemoryReference[], added: readonly MemoryReference[]): MemoryReference[] {
+/** Shared reference merge (#112): one URL-keyed union for Entries and Session Evidence. */
+export function mergeMemoryReferences(current: readonly MemoryReference[], added: readonly MemoryReference[]): MemoryReference[] {
   const merged = new Map(current.map((reference) => [reference.url, reference]))
   for (const reference of added) merged.set(reference.url, reference)
   return [...merged.values()]
@@ -314,7 +324,7 @@ export function applyMemoryPatch(
         detail: operation.outcome,
         status: 'resolved',
         ...(operation.rationale ? { rationale: operation.rationale } : {}),
-        references: mergeReferences(existing.references, operation.references ?? []),
+        references: mergeMemoryReferences(existing.references, operation.references ?? []),
         provenance: [...existing.provenance, source],
       }
       continue
