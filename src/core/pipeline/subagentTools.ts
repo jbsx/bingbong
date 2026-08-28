@@ -53,6 +53,7 @@ export function createSubagentTools(manager: SubagentManager): Tool[] {
   return [
     {
       name: 'spawn_agent',
+      acquisition: true,
       description: `Start a subagent that works in the background while you continue. ${KIND_HINT}. Returns the new agent id.`,
       parameters: {
         kind: { type: 'string', enum: KINDS, description: `Which subagent to start — ${KIND_HINT}` },
@@ -89,6 +90,7 @@ export function createSubagentTools(manager: SubagentManager): Tool[] {
     },
     {
       name: 'cancel_agent',
+      acquisition: true,
       description: 'Cancel a running subagent by id, or all of them with agent_id "all".',
       parameters: {
         agent_id: { type: 'string', description: 'Agent id (e.g. "a-1") or "all"' },
@@ -105,6 +107,7 @@ export function createSubagentTools(manager: SubagentManager): Tool[] {
     },
     {
       name: 'agent_results',
+      acquisition: true,
       description:
         'Collect subagent reports. Without agent_id: every agent so far. With wait: true: block until the selected agents finish (bounded wait).',
       parameters: {

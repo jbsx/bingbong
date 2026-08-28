@@ -67,6 +67,13 @@ export interface Tool {
   /** Each execution consumes one call from the per-task vision budget. */
   usesVision?: boolean
   /**
+   * An acquisition tool (#117, ADR 0027): browser, vision, media, or
+   * delegation work that gathers evidence or changes external state.
+   * Finalization closes these — only Run Plan bookkeeping (and later
+   * record_evidence) remains available once a Run's work budget is spent.
+   */
+  acquisition?: boolean
+  /**
    * Offer this tool only in LLM rounds that carry prior Session continuity
    * (spec #24). Rounds without continuity keep today's exact catalog — the
    * provider's empty-completion bug scales with prompt size, and the tool

@@ -66,6 +66,7 @@ export function createMediaTools(browser: BrowserController): Tool[] {
   return [
     {
       name: 'media_control',
+      acquisition: true,
       description:
         'Control media playback on the focused page (YouTube etc.), then return actual paused, currentTime, and volume state read from the page. A successful returned state is sufficient verification.',
       parameters,

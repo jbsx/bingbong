@@ -169,6 +169,7 @@ export function createBrowserTools(browser: BrowserController, vision?: VisionDe
   return [
     {
       name: 'navigate',
+      acquisition: true,
       description:
         'Navigate the visible browser to a URL. Accepts full URLs (https://…) or search terms. Returns the settled page state — URL, title, page signature, numbered interactive refs (link refs carry their hrefs), and a text digest — plus a BLOCKER marker when the landing is walled. Continue directly from the returned refs; read_page is for explicit re-inspection, not a required follow-up.',
       parameters: {
@@ -181,6 +182,7 @@ export function createBrowserTools(browser: BrowserController, vision?: VisionDe
     },
     {
       name: 'read_page',
+      acquisition: true,
       description:
         'Return the page URL, title, page signature, scroll state, numbered interactive refs (link refs carry their hrefs — open them with navigate), and a capped text digest. Use refs like [7] with click/type. Walls are reported as a BLOCKER: marker line with what to do. Navigation and page-changing actions already return this state — read only when you need a fresh look.',
       async execute(_call, context) {
@@ -200,6 +202,7 @@ export function createBrowserTools(browser: BrowserController, vision?: VisionDe
     },
     {
       name: 'click',
+      acquisition: true,
       description:
         'Click a ref, then return the URL-change flag, dialog-open flag, clicked state delta, and any coarse page change. When the click meaningfully changes the page (navigation, dialog, state change), the settled page state with fresh refs follows; an inert click returns only the concise no-change line.',
       parameters: {
@@ -217,6 +220,7 @@ export function createBrowserTools(browser: BrowserController, vision?: VisionDe
     },
     {
       name: 'type',
+      acquisition: true,
       description:
         'Focus the target ref and type text; no separate click is needed. Returns the field actual current value. A trailing newline ("\\n") sends Enter and may navigate — a page change returns the settled page state with fresh refs.',
       parameters: {
@@ -231,6 +235,7 @@ export function createBrowserTools(browser: BrowserController, vision?: VisionDe
     },
     {
       name: 'scroll',
+      acquisition: true,
       description: 'Scroll the page up or down by about one screen, then return the new horizontal and vertical scroll position. Refs are re-read on the next action; scrolling itself returns no refs.',
       parameters: {
         direction: { type: 'string', enum: ['up', 'down'], description: 'Direction to scroll' },
@@ -242,6 +247,7 @@ export function createBrowserTools(browser: BrowserController, vision?: VisionDe
     },
     {
       name: 'back',
+      acquisition: true,
       description: 'Go back one step in browser history, then return the settled page state — new URL, title, page signature, refs, and digest — plus a BLOCKER marker when the landing is walled.',
       execute: (_call, context) => {
         resetReads(context)
@@ -250,6 +256,7 @@ export function createBrowserTools(browser: BrowserController, vision?: VisionDe
     },
     {
       name: 'go_forward',
+      acquisition: true,
       description: 'Go forward one step in browser history, then return the settled page state — new URL, title, page signature, refs, and digest — plus a BLOCKER marker when the landing is walled.',
       execute: (_call, context) => {
         resetReads(context)

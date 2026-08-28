@@ -1100,7 +1100,7 @@ describe('command pipeline', () => {
     })
   })
 
-  it('stops with an error when the LLM exceeds the tool-round limit', async () => {
+  it('finalizes with a deterministic Answer when the LLM exceeds the hard tool-round ceiling (#117)', async () => {
     let executions = 0
     const spinner = {
       name: 'spin',
@@ -1109,6 +1109,8 @@ describe('command pipeline', () => {
         return 'spun'
       },
     }
+    // Rounds 1 and 2 spend the ceiling; round 3's tool request is the
+    // reserved Answer round misbehaving — the run answers deterministically.
     const endlessToolCalls = Array.from({ length: 5 }, (_, i) => ({
       kind: 'tool_calls' as const,
       calls: [{ id: `c${i}`, name: 'spin', args: {} }],
@@ -1125,13 +1127,355 @@ describe('command pipeline', () => {
     const events = await collect(pipeline, 'keep going')
 
     expect(executions).toBe(2)
-    expect(events.filter((e) => e.type === 'tool_result')).toHaveLength(2)
-    expect(events.find((e) => e.type === 'error')).toMatchObject({ type: 'error', message: 'tool round limit (2) reached' })
+    expect(events.filter((e) => e.type === 'tool_result' && e.name === 'spin')).toHaveLength(2)
+    // No raw round-limit error: the guaranteed Answer replaces it.
+    expect(events.find((e) => e.type === 'error')).toBeUndefined()
+    expect(events).toContainEqual({
+      type: 'display',
+      text: 'I could not finish \u201Ckeep going\u201D. The run reached its hard work limit.',
+      at: 0,
+    })
     expect(events.find((e) => e.type === 'speak')).toMatchObject({
       type: 'speak',
-      text: 'Something went wrong: tool round limit (2) reached',
+      text: 'I had to stop before finishing that request.',
     })
     expect(events.at(-1)).toMatchObject({ type: 'done', outcome: 'failed', finalizationCause: 'hard_limit' })
+  })
+
+  describe('bounded Direct Actions (#117, ADR 0027)', () => {
+    const directPlan = (id: string, headline = 'Do the thing'): ToolCall => ({
+      id,
+      name: 'report_run_plan',
+      args: { objective: 'Do the thing', headline, effort_tier: 'direct_action' },
+    })
+
+    const work: Tool = {
+      name: 'work',
+      acquisition: true,
+      async execute() {
+        return 'worked'
+      },
+    }
+
+    const workRound = (i: number, withPlan = false) => ({
+      kind: 'tool_calls' as const,
+      calls: [
+        ...(withPlan ? [directPlan(`p${i}`)] : []),
+        { id: `w${i}`, name: 'work', args: {} },
+      ],
+    })
+
+    it('counts one model response with sibling calls as one Tool Round', async () => {
+      const llm = new ScriptedLlm([
+        {
+          kind: 'tool_calls',
+          calls: [
+            directPlan('p1'),
+            { id: 'w1', name: 'work', args: {} },
+            { id: 'w2', name: 'work', args: {} },
+            { id: 'w3', name: 'work', args: {} },
+          ],
+        },
+        { kind: 'answer', speak: 'Done.', display: 'Detail.' },
+      ])
+      const pipeline = createCommandPipeline({ llm, tts: new RecordingTts(), clock: new FakeClock(), tools: [createReportRunPlanTool(), work] })
+
+      const events = await collect(pipeline, 'do the thing')
+
+      // Three sibling executions, two model rounds — and no budget warning
+      // yet: one round of six spent is far from the milestones.
+      expect(llm.requests).toHaveLength(2)
+      expect(events.filter((e) => e.type === 'tool_result' && e.name === 'work' && e.ok)).toHaveLength(3)
+      expect(llm.requests[1].toolResults).toHaveLength(4) // the plan ack + three siblings
+      expect(JSON.stringify(llm.requests[1].toolResults)).not.toMatch(/Work budget:/)
+      expect(events.at(-1)).toMatchObject({ type: 'done', outcome: 'done', finalizationCause: 'model_answered' })
+    })
+
+    it('warns internally near 75% and 90% of the budget without user-facing counters', async () => {
+      const llm = new ScriptedLlm([
+        ...Array.from({ length: 6 }, (_, i) => workRound(i, i === 0)),
+        // Round 7 is Finalization's one bookkeeping round: acquisition is closed.
+        { kind: 'tool_calls', calls: [{ id: 'w6', name: 'work', args: {} }] },
+        // Round 8 is the reserved Answer-only round.
+        { kind: 'answer', speak: 'Partial.', display: 'Partial detail.', resolution: 'partial' },
+      ])
+      const pipeline = createCommandPipeline({ llm, tts: new RecordingTts(), clock: new FakeClock(), tools: [createReportRunPlanTool(), work] })
+
+      const events = await collect(pipeline, 'do the thing')
+
+      // Rounds 4 and 5 crossed the ~75% and ~90% milestones; each warning
+      // rides its crossing round's own result — exactly two, model-facing
+      // (the event stream emits each once; later requests re-carry them).
+      const warned = events.filter(
+        (e) => e.type === 'tool_result' && e.ok && typeof e.result === 'string' && /Work budget: .*tool rounds? remain/.test(e.result),
+      )
+      expect(warned).toHaveLength(2)
+      expect(warned[0]).toMatchObject({ result: expect.stringContaining('2 of 6 tool rounds remain') })
+      expect(warned[1]).toMatchObject({ result: expect.stringContaining('1 of 6 tool round remains') })
+      expect(llm.requests[4].toolResults.some((r) => r.outcome.ok && typeof r.outcome.result === 'string' && r.outcome.result.includes('2 of 6 tool rounds remain'))).toBe(true)
+      // Six Tool Rounds of acquisition ran; the seventh round's call was refused.
+      expect(events.filter((e) => e.type === 'tool_result' && e.name === 'work' && e.ok)).toHaveLength(6)
+      expect(events.find((e) => e.type === 'tool_result' && e.callId === 'w6')).toMatchObject({
+        ok: false,
+        error: expect.stringMatching(/work budget is exhausted/),
+      })
+      // The counters stay internal: no user-facing surface carries them.
+      for (const event of events) {
+        if (event.type === 'speak' || event.type === 'display') {
+          expect(event.text).not.toMatch(/tool rounds? remain/)
+        }
+      }
+      expect(events.at(-1)).toEqual({
+        type: 'done',
+        outcome: 'done',
+        resolution: 'partial',
+        finalizationCause: 'budget_exhausted',
+        at: 0,
+      })
+    })
+
+    it('finalizes with one bookkeeping round: acquisition and ask_user closed, plan bookkeeping open, then an Answer-only round', async () => {
+      const llm = new ScriptedLlm([
+        ...Array.from({ length: 6 }, (_, i) => workRound(i, i === 0)),
+        {
+          kind: 'tool_calls',
+          calls: [
+            { id: 'w6', name: 'work', args: {} },
+            { id: 'ask', name: 'ask_user', args: { question: 'Which one?' } },
+            directPlan('p7', 'Wrapping up'),
+          ],
+        },
+        { kind: 'answer', speak: 'Stopped early.', display: 'Could not finish.', resolution: 'unsuccessful' },
+      ])
+      const pipeline = createCommandPipeline({ llm, tts: new RecordingTts(), clock: new FakeClock(), tools: [createReportRunPlanTool(), createAskUserTool(), work] })
+
+      const events = await collect(pipeline, 'do the thing')
+
+      // Acquisition and ask_user never ran; no ask window ever opened.
+      expect(events.filter((e) => e.type === 'tool_result' && e.name === 'work' && e.ok)).toHaveLength(6)
+      expect(events.some((e) => e.type === 'ask_requested')).toBe(false)
+      expect(events.find((e) => e.type === 'tool_result' && e.callId === 'w6')).toMatchObject({
+        ok: false,
+        error: expect.stringMatching(/ask_user/),
+      })
+      expect(events.find((e) => e.type === 'tool_result' && e.callId === 'ask')).toMatchObject({
+        ok: false,
+        error: expect.stringMatching(/ask_user/),
+      })
+      // The plan bookkeeping call ran and its acknowledgement carries the
+      // finalize directive; the headline revision landed.
+      expect(events.find((e) => e.type === 'tool_result' && e.callId === 'p7')).toMatchObject({
+        ok: true,
+        result: expect.stringMatching(/Run Plan noted\.[\s\S]*final answer JSON/),
+      })
+      expect(events).toContainEqual({ type: 'run_headline', text: 'Wrapping up', at: 0 })
+      // The reserved Answer-only round followed and concluded the run.
+      expect(llm.requests).toHaveLength(8)
+      expect(events.at(-1)).toEqual({
+        type: 'done',
+        outcome: 'done',
+        resolution: 'unsuccessful',
+        finalizationCause: 'budget_exhausted',
+        at: 0,
+      })
+    })
+
+    it('answers deterministically with a failed outcome when the reserved Answer requests tools', async () => {
+      const llm = new ScriptedLlm([
+        ...Array.from({ length: 6 }, (_, i) => workRound(i, i === 0)),
+        { kind: 'tool_calls', calls: [{ id: 'w6', name: 'work', args: {} }] },
+        // The reserved Answer round misbehaves: it asks for tools again.
+        { kind: 'tool_calls', calls: [{ id: 'w7', name: 'work', args: {} }] },
+      ])
+      const pipeline = createCommandPipeline({ llm, tts: new RecordingTts(), clock: new FakeClock(), tools: [createReportRunPlanTool(), work] })
+
+      const events = await collect(pipeline, 'do the thing')
+
+      // The second bookkeeping round never executed its calls, and no raw
+      // error surfaces — the deterministic Answer replaces it.
+      expect(llm.requests).toHaveLength(8)
+      expect(events.filter((e) => e.type === 'tool_result' && e.name === 'work')).toHaveLength(7)
+      expect(events.find((e) => e.type === 'tool_result' && e.callId === 'w7')).toBeUndefined()
+      expect(events.find((e) => e.type === 'error')).toBeUndefined()
+      expect(events).toContainEqual({
+        type: 'display',
+        text: 'I could not finish \u201Cdo the thing\u201D. The run exhausted its planned work budget.',
+        at: 0,
+      })
+      expect(events.find((e) => e.type === 'speak' && e.text !== 'Partial.')).toMatchObject({
+        type: 'speak',
+        text: 'I ran out of work budget before finishing that request.',
+      })
+      expect(events.at(-1)).toEqual({ type: 'done', outcome: 'failed', finalizationCause: 'budget_exhausted', at: 0 })
+    })
+
+    it('answers deterministically when the reserved Answer round itself fails', async () => {
+      // The script ends after the bookkeeping round: the reserved Answer
+      // round's model call rejects (script exhausted) — the run still ends
+      // with the guaranteed deterministic Answer.
+      const llm = new ScriptedLlm([
+        ...Array.from({ length: 6 }, (_, i) => workRound(i, i === 0)),
+        { kind: 'tool_calls', calls: [{ id: 'w6', name: 'work', args: {} }] },
+      ])
+      const pipeline = createCommandPipeline({ llm, tts: new RecordingTts(), clock: new FakeClock(), tools: [createReportRunPlanTool(), work] })
+
+      const events = await collect(pipeline, 'do the thing')
+
+      expect(llm.requests).toHaveLength(8)
+      expect(events.find((e) => e.type === 'error')).toBeUndefined()
+      expect(events).toContainEqual({
+        type: 'display',
+        text: 'I could not finish \u201Cdo the thing\u201D. The run exhausted its planned work budget.',
+        at: 0,
+      })
+      expect(events.at(-1)).toEqual({ type: 'done', outcome: 'failed', finalizationCause: 'budget_exhausted', at: 0 })
+    })
+
+    it('builds the deterministic Answer from verified observations only', async () => {
+      // A page-facing work tool: its observations carry the visible tab's
+      // URL as their source. Round 6 fails — failed observations are not
+      // evidence, and the repeated URL dedupes.
+      const pageWork: Tool = {
+        name: 'navigate',
+        acquisition: true,
+        async execute(call) {
+          return call.id === 'w5' ? Promise.reject(new Error('kaboom')) : Promise.resolve('worked')
+        },
+      }
+      const llm = new ScriptedLlm([
+        ...Array.from({ length: 6 }, (_, i) => ({
+          kind: 'tool_calls' as const,
+          calls: [
+            ...(i === 0 ? [directPlan('p0')] : []),
+            { id: `w${i}`, name: 'navigate', args: {} },
+          ],
+        })),
+        { kind: 'tool_calls', calls: [{ id: 'w6', name: 'navigate', args: {} }] },
+        { kind: 'tool_calls', calls: [{ id: 'w7', name: 'navigate', args: {} }] },
+      ])
+      const pipeline = createCommandPipeline({
+        llm,
+        tts: new RecordingTts(),
+        clock: new FakeClock(),
+        tools: [createReportRunPlanTool(), pageWork],
+        currentPageUrl: () => 'https://example.com/page',
+      })
+
+      const events = await collect(pipeline, 'do the thing')
+
+      const display = events.find((e) => e.type === 'display')
+      expect(display).toMatchObject({
+        type: 'display',
+        text:
+          'I could not finish \u201Cdo the thing\u201D. The run exhausted its planned work budget.\n\n' +
+          'What I managed to observe:\n' +
+          '- https://example.com/page',
+      })
+      // The failed round's tool id (w5) is the sixth zero-indexed round's call.
+      expect(events.find((e) => e.type === 'tool_result' && e.callId === 'w5')).toMatchObject({ ok: false })
+    })
+
+    it('finalizes when the Direct Action active-work deadline passes', async () => {
+      const clock = new FakeClock()
+      const slowWork: Tool = {
+        name: 'work',
+        acquisition: true,
+        async execute() {
+          clock.advance(46_000)
+          return 'worked'
+        },
+      }
+      const llm = new ScriptedLlm([
+        workRound(0, true),
+        { kind: 'tool_calls', calls: [{ id: 'w1', name: 'work', args: {} }] },
+        { kind: 'answer', speak: 'Ran out of time.', display: 'Detail.', resolution: 'partial' },
+      ])
+      const pipeline = createCommandPipeline({ llm, tts: new RecordingTts(), clock, tools: [createReportRunPlanTool(), slowWork] })
+
+      const events = await collect(pipeline, 'do the thing')
+
+      // One round of work (46 s of active work against a 45 s deadline);
+      // the next round is Finalization's bookkeeping round, then the Answer.
+      expect(llm.requests).toHaveLength(3)
+      expect(events.filter((e) => e.type === 'tool_result' && e.name === 'work' && e.ok)).toHaveLength(1)
+      expect(events.find((e) => e.type === 'tool_result' && e.callId === 'w1')).toMatchObject({
+        ok: false,
+        error: expect.stringMatching(/work budget is exhausted/),
+      })
+      expect(events.at(-1)).toEqual({
+        type: 'done',
+        outcome: 'done',
+        resolution: 'partial',
+        finalizationCause: 'deadline_reached',
+        at: 46_000,
+      })
+    })
+
+    it('excludes user-dependent waiting from the active-work deadline', async () => {
+      const clock = new FakeClock()
+      const gatedWork: Tool = {
+        name: 'work',
+        acquisition: true,
+        assessRisk: () => ({ kind: 'confirm', prompt: 'Proceed?' }),
+        async execute() {
+          return 'worked'
+        },
+      }
+      const llm = new ScriptedLlm([
+        workRound(0, true),
+        { kind: 'answer', speak: 'Done.', display: 'Detail.' },
+      ])
+      // Park the run's speech so the test controls when the confirmation
+      // window actually begins, then let the generator park in the
+      // decision race (clock suspended) before advancing the clock.
+      const speech = deferred<void>()
+      const spoken: string[] = []
+      const tts = {
+        async speak(text: string) {
+          spoken.push(text)
+          if (spoken.length === 1) await speech.promise
+          return { ok: true as const }
+        },
+        stop() {},
+      }
+      const pipeline = createCommandPipeline({ llm, tts, clock, tools: [createReportRunPlanTool(), gatedWork] })
+
+      const run = collect(pipeline, 'do the thing')
+      // Round 1 emits several events before the speech parks, so the poll
+      // needs a longer leash than the shared waitUntil.
+      for (let attempt = 0; attempt < 200 && spoken.length < 1; attempt += 1) await flush()
+      expect(spoken.length).toBe(1)
+      speech.resolve()
+      for (let i = 0; i < 10; i += 1) await flush()
+      // Fifty seconds of user thinking — over the 45 s Direct Action
+      // deadline, but user-dependent waiting never counts as work.
+      clock.advance(50_000)
+      pipeline.resolveConfirmation('confirm-1', true)
+      const events = await run
+
+      expect(events.filter((e) => e.type === 'tool_result' && e.name === 'work' && e.ok)).toHaveLength(1)
+      expect(events.at(-1)).toEqual({ type: 'done', outcome: 'done', finalizationCause: 'model_answered', at: 50_000 })
+    })
+
+    it('bounds a plan-less run at the fallback Lookup budget', async () => {
+      // No report_run_plan in the catalog: the run defaults to Lookup and
+      // its 12-round budget — the tier table applies without a declaration.
+      const llm = new ScriptedLlm([
+        ...Array.from({ length: 12 }, (_, i) => workRound(i)),
+        { kind: 'tool_calls', calls: [{ id: 'w12', name: 'work', args: {} }] },
+        { kind: 'answer', speak: 'Done.', display: 'Detail.' },
+      ])
+      const pipeline = createCommandPipeline({ llm, tts: new RecordingTts(), clock: new FakeClock(), tools: [work] })
+
+      const events = await collect(pipeline, 'do the thing')
+
+      expect(events.filter((e) => e.type === 'tool_result' && e.name === 'work' && e.ok)).toHaveLength(12)
+      expect(events.find((e) => e.type === 'tool_result' && e.callId === 'w12')).toMatchObject({
+        ok: false,
+        error: expect.stringMatching(/work budget is exhausted/),
+      })
+      expect(events.at(-1)).toMatchObject({ type: 'done', outcome: 'done', finalizationCause: 'budget_exhausted' })
+    })
   })
 
   describe('run finalization semantics (#110)', () => {
@@ -1248,7 +1592,10 @@ describe('command pipeline', () => {
         return 'spun'
       },
     }
-    const endlessToolCalls = Array.from({ length: 5 }, (_, i) => ({
+    // Each command runs tool rounds up to its ceiling, then the reserved
+    // Answer round (a final tool request) ends the run deterministically:
+    // 2 + 1 scripted turns for the first command, 3 + 1 for the second.
+    const endlessToolCalls = Array.from({ length: 7 }, (_, i) => ({
       kind: 'tool_calls' as const,
       calls: [{ id: `c${i}`, name: 'spin', args: {} }],
     }))
@@ -1267,9 +1614,14 @@ describe('command pipeline', () => {
     currentLimit = 3
     const secondEvents = await collect(pipeline, 'second command')
 
+    // Two executed rounds then a refused reserved round for the first
+    // command; three and a refusal for the second — the ceiling is live
+    // per command, and the deterministic Answer closes each run.
+    expect(firstEvents.filter((e) => e.type === 'tool_result' && e.ok)).toHaveLength(2)
+    expect(secondEvents.filter((e) => e.type === 'tool_result' && e.ok)).toHaveLength(3)
     expect(executions).toBe(5)
-    expect(firstEvents.find((e) => e.type === 'error')).toMatchObject({ type: 'error', message: 'tool round limit (2) reached' })
-    expect(secondEvents.find((e) => e.type === 'error')).toMatchObject({ type: 'error', message: 'tool round limit (3) reached' })
+    expect(firstEvents.at(-1)).toMatchObject({ type: 'done', outcome: 'failed', finalizationCause: 'hard_limit' })
+    expect(secondEvents.at(-1)).toMatchObject({ type: 'done', outcome: 'failed', finalizationCause: 'hard_limit' })
   })
 
   it('appends an advisory nudge when a vision tool misses its deadline', async () => {

@@ -34,6 +34,7 @@ export function createLookTool(browser: BrowserController, vision: VisionDescrib
   return {
     name: 'look',
     usesVision: true,
+    acquisition: true,
     description:
       'Inspect a screenshot of the current browser page and return a text description of visible page state, popups, overlays, and anything blocking progress.',
     async execute() {
@@ -50,6 +51,7 @@ export function createVisionGroundingTools(browser: BrowserController & VisualGr
   return [
     {
       name: 'ground_visual',
+      acquisition: true,
       description:
         'Resolve a visually described target to a numbered ref. It performs its own fresh DOM grounding without requiring read_page, then calls vision only when the DOM cannot identify one target.',
       parameters: {

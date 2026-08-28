@@ -17,9 +17,25 @@ type ToolResultEvent = Extract<PipelineEvent, { type: 'tool_result' }>
 
 function outcomeScript(resultsUrl: string, interactiveUrl: string, engineUrl: string): AssistantTurn[] {
   return [
-    // Visible search by direct navigation (#113): the rendered results
-    // page is the landing — its refs ride the navigate outcome.
-    { kind: 'tool_calls', calls: [{ id: 'results-nav', name: 'navigate', args: { url: resultsUrl } }] },
+    // The tour spans fourteen Tool Rounds — past the fallback Lookup
+    // budget (#117) — so it declares its honest Effort Tier up front.
+    {
+      kind: 'tool_calls',
+      calls: [
+        {
+          id: 'plan',
+          name: 'report_run_plan',
+          args: {
+            objective: 'Exercise every browser Action Outcome class',
+            headline: 'Exercising browser Action Outcomes',
+            effort_tier: 'investigation',
+          },
+        },
+        // Visible search by direct navigation (#113): the rendered results
+        // page is the landing — its refs ride the navigate outcome.
+        { id: 'results-nav', name: 'navigate', args: { url: resultsUrl } },
+      ],
+    },
     // The reduced tool path: open the top result from the
     // navigation-returned refs — no follow-up read_page.
     { kind: 'tool_calls', calls: [{ id: 'open-result', name: 'click', args: { ref: 1 } }] },
@@ -94,6 +110,7 @@ describe('action outcome lines e2e (#113)', () => {
       (event): event is ToolResultEvent => event.type === 'tool_result' && event.ok,
     )
     expect(results.map((event) => event.callId)).toEqual([
+      'plan',
       'results-nav',
       'open-result',
       'back',
