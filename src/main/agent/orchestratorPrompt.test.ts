@@ -21,10 +21,11 @@ describe('orchestrator prompt Blocker policy', () => {
     }
   })
 
-  it('states the full escalation flow: verify with vision, announce, ask_user', () => {
-    expect(blockerLine()).toMatch(/look \(vision\)/)
+  it('treats mechanical markers as authoritative, then announces and escalates', () => {
+    expect(blockerLine()).toMatch(/marker.*authoritative/i)
     expect(blockerLine()).toMatch(/ask_user/)
-    expect(blockerLine()).toMatch(/announce it plainly/)
+    expect(blockerLine()).toMatch(/announce it plainly/i)
+    expect(blockerLine()).not.toMatch(/verify with look/i)
   })
 
   it('forbids clearing, solving or clicking through Blockers', () => {
@@ -58,13 +59,25 @@ describe('orchestrator prompt Blocker policy', () => {
 // spoken in the Challenge/Network Block vocabulary.
 
 describe('orchestrator prompt on-screen browsing', () => {
-  it('steers GUI search: engine box + trailing newline, read results, open by href', () => {
+  it('allows direct visible results navigation or visible search controls without redundant mechanics', () => {
     const line = ORCHESTRATOR_SYSTEM_PROMPT.split('\n').find((candidate) => candidate.includes('GUI search'))
     if (!line) throw new Error('GUI search line missing from the orchestrator prompt')
-    expect(line).toMatch(/search box/)
-    expect(line).toMatch(/\\n/)
-    expect(line).toMatch(/read_page/)
+    expect(line).toMatch(/directly/i)
+    expect(line).toMatch(/visible.*results/i)
+    expect(line).toMatch(/visible search controls/)
     expect(line).toMatch(/href/)
+    expect(line).not.toMatch(/read_page|trailing|separate click/i)
+  })
+
+  it('uses Action Outcomes directly and reserves vision for insufficient structured information', () => {
+    expect(ORCHESTRATOR_SYSTEM_PROMPT).not.toMatch(/After any navigation, call read_page/)
+    expect(ORCHESTRATOR_SYSTEM_PROMPT).toMatch(/Action Outcome.*next observation/i)
+    expect(ORCHESTRATOR_SYSTEM_PROMPT).toMatch(/visual inspection only when structured page information is insufficient/i)
+  })
+
+  it('trusts successful returned media state without a follow-up page read', () => {
+    expect(ORCHESTRATOR_SYSTEM_PROMPT).toMatch(/returned.*media state.*sufficient verification/i)
+    expect(ORCHESTRATOR_SYSTEM_PROMPT).not.toMatch(/follow-up read_page.*video is playing/i)
   })
 
   it('never names the deleted off-screen web tools', () => {

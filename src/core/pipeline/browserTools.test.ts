@@ -238,6 +238,8 @@ describe('browser tools through the pipeline', () => {
     expect(descriptions.click).toMatch(/settled page state/i)
     expect(descriptions.type).toMatch(/actual.*value/i)
     expect(descriptions.type).toMatch(/settled page state/i)
+    expect(descriptions.type).toMatch(/focus/i)
+    expect(descriptions.type).toMatch(/no separate click/i)
     expect(descriptions.scroll).toMatch(/scroll position/i)
     expect(descriptions.back).toMatch(/URL.*title/i)
     expect(descriptions.go_forward).toMatch(/URL.*title/i)
@@ -283,19 +285,10 @@ describe('browser tools through the pipeline', () => {
     })
   })
 
-  it('reports a screenshot as a byte-count summary', async () => {
-    const browser = new FixtureBrowserController()
-    const { pipeline } = pipelineWith(browser, [
-      { kind: 'tool_calls', calls: [{ id: 'c1', name: 'screenshot', args: {} }] },
-      { kind: 'answer', speak: 'Shot.', display: 'Detail.' },
-    ])
+  it('does not expose the byte-count-only screenshot capability to the model', () => {
+    const names = createBrowserTools(new FixtureBrowserController()).map((tool) => tool.name)
 
-    const events = await collect(pipeline, 'take a screenshot')
-
-    expect(events.find((e) => e.type === 'tool_result')).toMatchObject({
-      ok: true,
-      result: 'screenshot captured (3 bytes)',
-    })
+    expect(names).not.toContain('screenshot')
   })
 
   it('reports bad tool arguments as failed results the model can recover from', async () => {
@@ -327,7 +320,7 @@ describe('browser tools through the pipeline', () => {
   })
 
   describe('blocker nudge on navigation (ADR 0007)', () => {
-    it('appends the verify-and-escalate nudge when navigation lands on a challenge', async () => {
+    it('appends the authoritative marker and escalation nudge when navigation lands on a challenge', async () => {
       const browser = new FixtureBrowserController()
       browser.facts = { url: 'https://shop.example.com/', title: 'Just a moment...' }
       const { pipeline } = pipelineWith(browser, [
@@ -339,7 +332,7 @@ describe('browser tools through the pipeline', () => {
 
       expect(events.find((e) => e.type === 'tool_result')).toMatchObject({
         ok: true,
-        result: `navigated outcome\nBLOCKER:challenge shop.example.com\nThis page is a Blocker — a challenge wall (CAPTCHA or human verification). Verify with look (vision) before trusting the page, then say so and ask_user: what helps is the user completing the challenge on screen in the browser tab, or picking a different site. Never attempt to get past it yourself.`,
+        result: `navigated outcome\nBLOCKER:challenge shop.example.com\nThis page is a Blocker — a challenge wall (CAPTCHA or human verification). The marker is authoritative; say so and ask_user: what helps is the user completing the challenge on screen in the browser tab, or picking a different site. Never attempt to get past it yourself.`,
       })
     })
 

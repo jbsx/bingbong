@@ -218,7 +218,7 @@ export function createBrowserTools(browser: BrowserController, vision?: VisionDe
     {
       name: 'type',
       description:
-        'Click a ref and type text, then return the field actual current value. A trailing newline ("\\n") sends Enter and may navigate — a page change returns the settled page state with fresh refs.',
+        'Focus the target ref and type text; no separate click is needed. Returns the field actual current value. A trailing newline ("\\n") sends Enter and may navigate — a page change returns the settled page state with fresh refs.',
       parameters: {
         ref: { type: 'integer', description: 'Element ref number to type into' },
         text: { type: 'string', description: 'Text to type' },
@@ -238,15 +238,6 @@ export function createBrowserTools(browser: BrowserController, vision?: VisionDe
       execute: (call, context) => {
         resetReads(context)
         return browser.scroll(directionArg(call))
-      },
-    },
-    {
-      name: 'screenshot',
-      description: 'Capture a screenshot of the current page (reported as a byte count).',
-      execute: async (_call, context) => {
-        resetReads(context)
-        const bytes = await browser.screenshot()
-        return `screenshot captured (${bytes.byteLength} bytes)`
       },
     },
     {

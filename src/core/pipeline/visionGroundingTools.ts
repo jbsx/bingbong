@@ -51,7 +51,7 @@ export function createVisionGroundingTools(browser: BrowserController & VisualGr
     {
       name: 'ground_visual',
       description:
-        'Resolve a visually described target to a numbered ref. It checks the DOM first and calls vision only when the DOM cannot identify one target.',
+        'Resolve a visually described target to a numbered ref. It performs its own fresh DOM grounding without requiring read_page, then calls vision only when the DOM cannot identify one target.',
       parameters: {
         target: { type: 'string', description: 'Visual description, e.g. "the red play button in the thumbnail"' },
       },

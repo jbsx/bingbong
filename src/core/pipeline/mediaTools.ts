@@ -58,6 +58,7 @@ export function createMediaTools(browser: BrowserController): Tool[] {
     },
     offset: {
       type: 'number',
+      required: false,
       description: 'Seconds to seek, positive (forward) or negative (backward); required for action "seek" (±300s max)',
     },
   }
@@ -66,7 +67,7 @@ export function createMediaTools(browser: BrowserController): Tool[] {
     {
       name: 'media_control',
       description:
-        'Control media playback on the focused page (YouTube etc.), then return actual paused, currentTime, and volume state read from the page.',
+        'Control media playback on the focused page (YouTube etc.), then return actual paused, currentTime, and volume state read from the page. A successful returned state is sufficient verification.',
       parameters,
       execute: async (call) => {
         const action = call.args.action

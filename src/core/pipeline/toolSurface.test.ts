@@ -84,7 +84,6 @@ describe('orchestrator tool surface', () => {
         'click',
         'type',
         'scroll',
-        'screenshot',
         'back',
         'go_forward',
         'ground_visual',

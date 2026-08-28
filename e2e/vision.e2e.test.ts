@@ -8,7 +8,6 @@ import type { PipelineEvent } from '../src/core/pipeline/events'
 function scriptedTurns(url: string): AssistantTurn[] {
   return [
     { kind: 'tool_calls', calls: [{ id: 'n1', name: 'navigate', args: { url } }] },
-    { kind: 'tool_calls', calls: [{ id: 'r1', name: 'read_page', args: {} }] },
     {
       kind: 'tool_calls',
       calls: [{ id: 'g1', name: 'ground_visual', args: { target: 'the play button in the video thumbnail' } }],
@@ -55,6 +54,7 @@ describe('vision grounding e2e', () => {
     )
     expect(tools).toContain('visually locate "the play button in the video thumbnail"')
     expect(tools).toContain('click [1]')
+    expect(tools).not.toContain('read page')
   })
 })
 

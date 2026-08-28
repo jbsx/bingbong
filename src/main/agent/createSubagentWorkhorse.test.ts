@@ -188,7 +188,7 @@ describe('createSubagentTaskApi', () => {
     }
     // The browse catalog is exactly the pane-bound browser verbs plus look.
     const browseNames = toolsForKind('browse', deps, new FakeBrowser()).map((tool) => tool.name)
-    expect(browseNames.sort()).toEqual(['ask_user', 'back', 'click', 'go_forward', 'look', 'navigate', 'read_page', 'screenshot', 'scroll', 'type'].sort())
+    expect(browseNames.sort()).toEqual(['ask_user', 'back', 'click', 'go_forward', 'look', 'navigate', 'read_page', 'scroll', 'type'].sort())
   })
 
   it('passes search submits through the confirm downgrade — browse agents can GUI-search (#102, ADR 0015)', async () => {

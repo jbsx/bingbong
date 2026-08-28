@@ -9,8 +9,8 @@ import { waitFor } from './waitFor'
 type ToolResultEvent = Extract<PipelineEvent, { type: 'tool_result' }>
 
 // ADR 0007 end-to-end: a challenge-shaped page is passively flagged on
-// navigation (nudge in the tool result), the agent verifies with vision
-// (look), escalates through a spoken ask_user, and never attempts to clear
+// navigation (nudge in the tool result), the agent trusts the mechanical
+// marker, escalates through a spoken ask_user, and never attempts to clear
 // the challenge itself. The sign-in wall gets the same passive nudge, and
 // the consent wall keeps auto-clearing — never escalated.
 //
@@ -22,9 +22,6 @@ type ToolResultEvent = Extract<PipelineEvent, { type: 'tool_result' }>
 // stays on the primary site: it must execute while the login-wall gate is
 // armed on the second site, then land on that site's own /challenge.
 
-const VISION_CHALLENGE_DESCRIPTION =
-  'A Cloudflare Turnstile challenge widget sits mid-page with a checkbox; the page says "Just a moment..." and no content is reachable until it is solved.'
-
 /** The second fixture site's hostname (#84) — where the wall pages live. */
 function altHost(fixture: FixtureServer): string {
   return new URL(fixture.altUrl('/')).hostname
@@ -34,9 +31,7 @@ function blockerScript(fixture: FixtureServer): AssistantTurn[] {
   return [
     // Detect: navigate, and the passive nudge rides along on the result.
     { kind: 'tool_calls', calls: [{ id: 'challenge-nav', name: 'navigate', args: { url: fixture.altUrl('/challenge') } }] },
-    // Verify with vision before announcing.
-    { kind: 'tool_calls', calls: [{ id: 'challenge-verify', name: 'look', args: {} }] },
-    // Announce + escalate via spoken ask_user; the run waits for the answer.
+    // Announce + escalate directly from the authoritative marker; the run waits for the answer.
     {
       kind: 'tool_calls',
       calls: [
@@ -68,7 +63,7 @@ function blockerScript(fixture: FixtureServer): AssistantTurn[] {
   ]
 }
 
-describe('blocker detect → verify → escalate e2e', () => {
+describe('blocker detect → escalate e2e', () => {
   let fixture: FixtureServer
   let harness: Harness
 
@@ -78,7 +73,6 @@ describe('blocker detect → verify → escalate e2e', () => {
       fixture,
       env: {
         BINGBONG_LLM_SCRIPT: JSON.stringify(blockerScript(fixture)),
-        BINGBONG_VISION_DESCRIPTION_SCRIPT: JSON.stringify([VISION_CHALLENGE_DESCRIPTION]),
       },
     })
   })
@@ -88,7 +82,7 @@ describe('blocker detect → verify → escalate e2e', () => {
     await fixture?.close()
   })
 
-  it('nudges on a challenge landing, verifies with vision, escalates by spoken ask, never clears', async () => {
+  it('nudges authoritatively on a challenge landing, escalates by spoken ask, never clears', async () => {
     await harness.dashboardEval(`
       window.__blockerEvents = []
       window.bingbong.assistant.onEvent((event) => window.__blockerEvents.push(event))
@@ -139,11 +133,11 @@ describe('blocker detect → verify → escalate e2e', () => {
     expect(byId['challenge-nav']).toContain('navigated: url=')
     expect(byId['challenge-nav']).toContain(`BLOCKER:challenge ${altHost(fixture)}`)
     expect(byId['challenge-nav']).toContain('This page is a Blocker — a challenge wall')
-    expect(byId['challenge-nav']).toContain('look (vision)')
+    expect(byId['challenge-nav']).toContain('marker is authoritative')
     expect(byId['challenge-nav']).toContain('ask_user')
 
-    // Verify: the agent looked before announcing.
-    expect(byId['challenge-verify']).toContain(VISION_CHALLENGE_DESCRIPTION)
+    // The mechanical marker needs no mandatory vision round.
+    expect(events.filter((event) => event.type === 'tool_call' && event.name === 'look')).toEqual([])
 
     // Escalate: the spoken ask resolved with the user's answer.
     expect(events).toContainEqual(expect.objectContaining({

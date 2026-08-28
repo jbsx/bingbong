@@ -13,8 +13,8 @@ import challengeIframeRich from './fixtures/challenge-iframe-rich.json'
 // ADR 0010: the classifier is one pure pattern → decision function over page
 // facts — no browser, no side effects. The navigate-settle choke point feeds
 // it URL/title only; read_page adds body text, dialog text, and refs. The
-// nudge tells the model to verify with vision and escalate — never to clear
-// anything itself.
+// nudge treats the mechanical marker as authoritative and escalates — never
+// clearing anything itself.
 
 function nav(url: string, title: string) {
   return classifyBlockerPage({ url, title })
@@ -62,15 +62,17 @@ describe('classifyBlockerPage on URL/title facts (the navigate-settle choke poin
     expect(nav('about:blank', '')).toBeNull()
   })
 
-  it('returns a nudge that orders verify-with-vision and escalation, never clearing', () => {
+  it('returns an authoritative marker nudge that orders escalation, never mandatory vision or clearing', () => {
     const challenge = nav('https://challenges.cloudflare.com/x', 'Just a moment...')
-    expect(challenge?.nudge).toMatch(/Verify with look \(vision\) before trusting the page/)
+    expect(challenge?.nudge).toMatch(/marker is authoritative/i)
     expect(challenge?.nudge).toMatch(/ask_user/)
+    expect(challenge?.nudge).not.toMatch(/look \(vision\)/i)
     expect(challenge?.nudge).not.toMatch(/\b(click|dismiss|clear|solve|accept)\b/i)
 
     const login = nav('https://accounts.google.com/ServiceLogin', 'Sign in')
-    expect(login?.nudge).toMatch(/Verify with look \(vision\) before trusting the page/)
+    expect(login?.nudge).toMatch(/marker is authoritative/i)
     expect(login?.nudge).toMatch(/ask_user/)
+    expect(login?.nudge).not.toMatch(/look \(vision\)/i)
     expect(login?.nudge).not.toMatch(/\b(click|dismiss|clear|solve|accept)\b/i)
   })
 

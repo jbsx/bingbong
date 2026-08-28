@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { createOpenAiLlmClient, TRUNCATION_NOTE } from './openAiLlmClient'
 import { ORCHESTRATOR_SYSTEM_PROMPT } from './orchestratorPrompt'
 import { createBrowserTools } from '../../core/pipeline/browserTools'
+import { createMediaTools } from '../../core/pipeline/mediaTools'
 import { createNewSessionTool } from '../../core/pipeline/sessionTools'
 import { FakeBrowser, FakeClock } from '../../core/testing/doubles'
 
@@ -159,7 +160,7 @@ describe('openAiLlmClient', () => {
       required: ['url'],
     })
     expect(request.body.tools?.map((t) => t.function.name)).toEqual([
-      'navigate', 'read_page', 'click', 'type', 'scroll', 'screenshot', 'back', 'go_forward',
+      'navigate', 'read_page', 'click', 'type', 'scroll', 'back', 'go_forward',
     ])
     expect(request.body.thinking).toBeUndefined()
   })
@@ -416,6 +417,24 @@ describe('openAiLlmClient', () => {
     })
   })
 
+  it('requires a media action on the wire but leaves its non-seek offset optional', async () => {
+    const fetch = new ScriptedFetch([
+      completionResponse({ content: '{"speak":"Done.","display":"Done."}' }),
+    ])
+    const client = createOpenAiLlmClient({
+      endpoint: ENDPOINT,
+      systemPrompt: ORCHESTRATOR_SYSTEM_PROMPT,
+      fetchFn: fetch.fetchFn,
+      tools: createMediaTools(new FakeBrowser()),
+    })
+
+    await client.complete({ command: 'pause', toolResults: [] })
+
+    expect(fetch.calls[0]?.body.tools?.[0]?.function.parameters).toMatchObject({
+      required: ['action'],
+    })
+  })
+
   it('offers a requiresHistory tool only in rounds that carry Journal continuity', async () => {
     const answers = [
       completionResponse({ content: '{"speak":"Fresh.","display":"Fresh."}' }),
@@ -447,9 +466,9 @@ describe('openAiLlmClient', () => {
     const afterReset = fetch.calls[1].body.tools?.map((t) => t.function.name)
     const freshSession = fetch.calls[2].body.tools?.map((t) => t.function.name)
 
-    expect(withContinuity).toEqual(['navigate', 'read_page', 'click', 'type', 'scroll', 'screenshot', 'back', 'go_forward', 'new_session'])
-    expect(afterReset).toEqual(['navigate', 'read_page', 'click', 'type', 'scroll', 'screenshot', 'back', 'go_forward'])
-    expect(freshSession).toEqual(['navigate', 'read_page', 'click', 'type', 'scroll', 'screenshot', 'back', 'go_forward'])
+    expect(withContinuity).toEqual(['navigate', 'read_page', 'click', 'type', 'scroll', 'back', 'go_forward', 'new_session'])
+    expect(afterReset).toEqual(['navigate', 'read_page', 'click', 'type', 'scroll', 'back', 'go_forward'])
+    expect(freshSession).toEqual(['navigate', 'read_page', 'click', 'type', 'scroll', 'back', 'go_forward'])
   })
 
   it('caps the spoken answer to two sentences', async () => {

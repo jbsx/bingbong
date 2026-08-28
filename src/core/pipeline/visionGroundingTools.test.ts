@@ -55,6 +55,13 @@ async function runGrounding(browser: FakeBrowser, vision: VisionModel, target: s
 }
 
 describe('vision grounding through the command pipeline', () => {
+  it('describes its fresh DOM grounding with no read_page prerequisite', () => {
+    const description = createVisionGroundingTools(new FakeBrowser(), new FakeVision())[0].description
+
+    expect(description).toMatch(/fresh DOM grounding/i)
+    expect(description).toMatch(/without requiring read_page/i)
+  })
+
   it('resolves a DOM-labelled target without calling vision', async () => {
     const browser = new FakeBrowser()
     browser.snapshot = snapshot

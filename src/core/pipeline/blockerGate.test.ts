@@ -72,7 +72,7 @@ describe('createBlockerGate', () => {
     gate.observe(navigate('https://www.reddit.com/search'), ok(WALLED_RESULT))
     // navigate is absent: it targets by its URL argument, not the tab's
     // current host — covered by the same-host-navigate test above.
-    for (const name of ['click', 'type', 'scroll', 'screenshot', 'back', 'go_forward']) {
+    for (const name of ['click', 'type', 'scroll', 'back', 'go_forward']) {
       expect(gate.gate(verb(name)).ok).toBe(false)
     }
     expect(gate.gate(verb('read_page'))).toEqual({ ok: true })

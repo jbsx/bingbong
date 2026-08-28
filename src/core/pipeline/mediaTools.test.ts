@@ -166,4 +166,17 @@ describe('media_control tool surface', () => {
     const tool = createMediaTools(new FakeBrowser())[0]
     expect(tool.assessRisk).toBeUndefined()
   })
+
+  it('requires offset only when the selected action is seek', () => {
+    const tool = createMediaTools(new FakeBrowser())[0]
+
+    expect(tool.parameters?.['action']?.required).not.toBe(false)
+    expect(tool.parameters?.['offset']?.required).toBe(false)
+  })
+
+  it('describes returned playback state as sufficient verification', () => {
+    const tool = createMediaTools(new FakeBrowser())[0]
+
+    expect(tool.description).toMatch(/sufficient verification/i)
+  })
 })

@@ -95,13 +95,13 @@ const LOGIN_HOST_RE = /^accounts\.|^login\./i
 const LOGIN_PATH_RE = /^\/(login|signin|sign-in|servicelogin|sso)(\/|$)/i
 
 const CHALLENGE_NUDGE =
-  'This page is a Blocker — a challenge wall (CAPTCHA or human verification). Verify with look (vision) before trusting the page, then say so and ask_user: what helps is the user completing the challenge on screen in the browser tab, or picking a different site. Never attempt to get past it yourself.'
+  'This page is a Blocker — a challenge wall (CAPTCHA or human verification). The marker is authoritative; say so and ask_user: what helps is the user completing the challenge on screen in the browser tab, or picking a different site. Never attempt to get past it yourself.'
 
 const NETWORK_BLOCK_NUDGE =
-  'This page is a Blocker — a network block: the site refuses this network or session, and no on-screen action can get past it. Verify with look (vision) before trusting the page, then say so and ask_user: what helps is the user signing in to this site once in the browser tab (the session persists), or choosing a different route. Do not keep retrying this host.'
+  'This page is a Blocker — a network block: the site refuses this network or session, and no on-screen action can get past it. The marker is authoritative; say so and ask_user: what helps is the user signing in to this site once in the browser tab (the session persists), or choosing a different route. Do not keep retrying this host.'
 
 const LOGIN_NUDGE =
-  'This page is a Blocker — a login wall: the content needs a signed-in session. Verify with look (vision) before trusting the page, then say so and ask_user: what helps is the user signing in once in the browser tab (the session persists in the app profile) — only the user can sign in.'
+  'This page is a Blocker — a login wall: the content needs a signed-in session. The marker is authoritative; say so and ask_user: what helps is the user signing in once in the browser tab (the session persists in the app profile) — only the user can sign in.'
 
 function isChallengeSrc(src: string): boolean {
   try {
