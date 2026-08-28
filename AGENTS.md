@@ -29,6 +29,15 @@ would pop up on screen. Always use `pnpm test:e2e` (it wraps vitest in
 The launch harness (`e2e/electronApp.ts`) forces the X11/Ozone backend and
 strips `WAYLAND_DISPLAY` so Electron binds to Xvfb even on Wayland sessions.
 
+### Real-model evaluation is opt-in
+
+`pnpm test:eval` (also Xvfb-wrapped) spends real model budget against the
+developer's production routing (repo `.env` / exported env). It never runs in
+CI or `pnpm test:e2e`. Freeze a comparison artifact with
+`BINGBONG_EVAL_REPORT=e2e/eval/baseline.json pnpm test:eval`; scenario
+failures are recorded data, not suite failures — only broken measurement
+(missing routing, a scripted model, a missing run) fails the suite.
+
 ## graphify
 
 This project has a knowledge graph at graphify-out/ with god nodes, community structure, and cross-file relationships.

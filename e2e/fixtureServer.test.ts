@@ -96,4 +96,37 @@ describe('fixtureServer', () => {
     expect(response.ok).toBe(true)
     expect(await response.text()).toContain('Sign in to continue')
   })
+
+  it('serves the eval corpus: catalog with three similar candidates (#109)', async () => {
+    server = await startFixtureServer()
+    const html = await (await fetch(server.url('/catalog'))).text()
+    expect(html).toContain('href="/widgets-anodized"')
+    expect(html).toContain('href="/widgets-polished"')
+    expect(html).toContain('href="/widgets-vintage"')
+    for (const [path, heading] of [
+      ['/widgets-anodized', 'Anodized widgets'],
+      ['/widgets-polished', 'Polished widgets'],
+      ['/widgets-vintage', 'Vintage widgets'],
+    ] as const) {
+      const page = await (await fetch(server.url(path))).text()
+      expect(page).toContain(heading)
+    }
+  })
+
+  it('serves the disagreeing investigation pair with distinct weights (#109)', async () => {
+    server = await startFixtureServer()
+    const specs = await (await fetch(server.url('/widget-specs'))).text()
+    expect(specs).toContain('3.8 kg')
+    const review = await (await fetch(server.altUrl('/widget-review'))).text()
+    expect(review).toContain('4.2 kg')
+  })
+
+  it('serves honest no-results pages for topics the fixture web lacks (#109)', async () => {
+    server = await startFixtureServer()
+    const missing = await (await fetch(server.url('/results?q=mercury+dampeners'))).text()
+    expect(missing).toContain('no results')
+    expect(missing).not.toContain('/widgets-article')
+    const present = await (await fetch(server.url('/results?q=fixture+widgets'))).text()
+    expect(present).toContain('href="/widgets-article"')
+  })
 })

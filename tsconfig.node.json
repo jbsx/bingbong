@@ -22,6 +22,7 @@
     "electron.vite.config.ts",
     "vitest.config.ts",
     "vitest.e2e.config.ts",
+    "vitest.eval.config.ts",
     "src/main/**/*.ts",
     "src/preload/**/*.ts",
     "src/core/**/*.ts",

@@ -207,6 +207,8 @@ Domain language and architectural decisions: `CONTEXT.md`, `docs/adr/`.
 pnpm dev        # launch the app in dev mode
 pnpm test       # run the test suite
 pnpm test:e2e   # e2e suite (wraps vitest in Xvfb — never against a real display)
+pnpm test:eval  # opt-in real-model evaluation (#109) — spends model budget, freezes a
+                # baseline with BINGBONG_EVAL_REPORT=e2e/eval/baseline.json pnpm test:eval
 pnpm typecheck  # tsc over main/preload/core + renderer
 pnpm lint       # eslint
 pnpm build      # production build to out/

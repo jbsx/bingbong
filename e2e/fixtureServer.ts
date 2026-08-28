@@ -417,6 +417,20 @@ function siteSearchPage(): string {
 }
 
 function searchResultsPage(query: string): string {
+  // The real-model evaluator's unresolvable scenario (#109) needs the
+  // fixture web to honestly have nothing about a made-up topic: non-widget
+  // queries get a genuine no-hits page, so "find the page about X" has no
+  // answer to stumble into.
+  if (!/widget/i.test(query)) {
+    return `<!doctype html>
+<html>
+<head><title>${query} — fixture engine results</title></head>
+<body style="background:#222;color:#fff;margin:0">
+  <h1>no results for "${query}"</h1>
+  <p>The fixture web has no pages about that.</p>
+</body>
+</html>`
+  }
   return `<!doctype html>
 <html>
 <head><title>${query} — fixture engine results</title></head>
@@ -434,6 +448,61 @@ function widgetsArticlePage(): string {
 <body style="background:#222;color:#fff;margin:0">
   <h1>Fixture widgets: the complete guide</h1>
   <p>Everything about fixture widgets, found entirely on screen.</p>
+</body>
+</html>`
+}
+
+// Real-model evaluation corpus (#109): three similarly-named catalog pages
+// whose only distinction is one attribute — the ambiguous-Candidate
+// scenario must pick "polished" out of anodized/polished/vintage, not just
+// open the first link.
+function catalogPage(): string {
+  return `<!doctype html>
+<html>
+<head><title>fixture catalog</title></head>
+<body style="background:#222;color:#fff;margin:0">
+  <h1>fixture catalog</h1>
+  <ul>
+    <li><a id="cat-anodized" href="/widgets-anodized">Anodized widgets — the industrial finish guide</a></li>
+    <li><a id="cat-polished" href="/widgets-polished">Polished widgets — the mirror finish guide</a></li>
+    <li><a id="cat-vintage" href="/widgets-vintage">Vintage widgets — the collectible care guide</a></li>
+  </ul>
+</body>
+</html>`
+}
+
+function catalogArticlePage(finish: string, title: string, body: string): string {
+  return `<!doctype html>
+<html>
+<head><title>fixture ${finish} widgets</title></head>
+<body style="background:#222;color:#fff;margin:0">
+  <h1>${title}</h1>
+  <p>${body}</p>
+</body>
+</html>`
+}
+
+// The Investigation pair (#109): two genuinely different hostnames (the
+// fixture server's primary and alt listeners) that disagree about one fact,
+// so a correct answer must read both and disclose the disagreement.
+function widgetSpecsPage(): string {
+  return `<!doctype html>
+<html>
+<head><title>fixture widget specifications</title></head>
+<body style="background:#222;color:#fff;margin:0">
+  <h1>Standard fixture widget specifications</h1>
+  <p>The official spec sheet lists the standard fixture widget weight as 3.8 kg.</p>
+</body>
+</html>`
+}
+
+function widgetReviewPage(): string {
+  return `<!doctype html>
+<html>
+<head><title>independent widget review</title></head>
+<body style="background:#222;color:#fff;margin:0">
+  <h1>Independent fixture widget review</h1>
+  <p>Our review lab measured the standard fixture widget at 4.2 kg on the bench scale.</p>
 </body>
 </html>`
 }
@@ -547,6 +616,48 @@ export async function startFixtureServer(): Promise<FixtureServer> {
     }
     if (req.url === '/widgets-article') {
       res.end(widgetsArticlePage())
+      return
+    }
+    if (req.url === '/catalog') {
+      res.end(catalogPage())
+      return
+    }
+    if (req.url === '/widgets-anodized') {
+      res.end(
+        catalogArticlePage(
+          'anodized',
+          'Anodized widgets: the industrial finish guide',
+          'Anodized fixture widgets get their dull, durable shell from an industrial coating process.',
+        ),
+      )
+      return
+    }
+    if (req.url === '/widgets-polished') {
+      res.end(
+        catalogArticlePage(
+          'polished',
+          'Polished widgets: the mirror finish guide',
+          'Polished fixture widgets are buffed to a mirror finish and inspected under studio light.',
+        ),
+      )
+      return
+    }
+    if (req.url === '/widgets-vintage') {
+      res.end(
+        catalogArticlePage(
+          'vintage',
+          'Vintage widgets: the collectible care guide',
+          'Vintage fixture widgets are collectibles that need oiling twice a year.',
+        ),
+      )
+      return
+    }
+    if (req.url === '/widget-specs') {
+      res.end(widgetSpecsPage())
+      return
+    }
+    if (req.url === '/widget-review') {
+      res.end(widgetReviewPage())
       return
     }
     if (req.url !== undefined && req.url.startsWith('/results?')) {
