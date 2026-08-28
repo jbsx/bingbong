@@ -176,7 +176,6 @@ describe('bounded Direct Action e2e (#117) — exhausted path', () => {
     await harness?.quit()
     await fixture?.close()
   })
-
   it('spends the six-round budget, refuses the seventh round, and still answers', async () => {
     const events = await captureRun(harness, 'work through the widget catalog')
 
@@ -218,6 +217,87 @@ describe('bounded Direct Action e2e (#117) — exhausted path', () => {
     })
     // No raw limit error ever reached the feed — the only error the e2e
     // harness ever shows is its environmental voice failure.
+    expect(
+      events.filter((event) => event.type === 'error' && /budget|round|limit/i.test(event.message)),
+    ).toEqual([])
+  })
+})
+
+describe('bounded Direct Action e2e (#117) — deterministic fallback path', () => {
+  let fixture: FixtureServer
+  let harness: Harness
+
+  beforeAll(async () => {
+    fixture = await startFixtureServer()
+    // The reserved Answer round misbehaves: after the one bookkeeping
+    // round, the model asks for tools again — the application answers
+    // deterministically from what the run verified.
+    const script: AssistantTurn[] = [
+      {
+        kind: 'tool_calls',
+        calls: [
+          {
+            id: 'plan',
+            name: 'report_run_plan',
+            args: {
+              objective: 'Open the widget article',
+              headline: 'Opening the widget article',
+              effort_tier: 'direct_action',
+            },
+          },
+          { id: 'nav-0', name: 'navigate', args: { url: fixture.url('/widgets-article') } },
+        ],
+      },
+      ...['/widgets-anodized', '/widgets-polished', '/widgets-vintage', '/widget-specs', '/widget-review'].map(
+        (page, i) => ({
+          kind: 'tool_calls' as const,
+          calls: [{ id: `nav-${i + 1}`, name: 'navigate', args: { url: fixture.url(page) } }],
+        }),
+      ),
+      // The one bookkeeping round — refused.
+      { kind: 'tool_calls', calls: [{ id: 'nav-6', name: 'navigate', args: { url: fixture.url('/catalog') } }] },
+      // The reserved Answer round requests tools — never executed.
+      { kind: 'tool_calls', calls: [{ id: 'nav-7', name: 'navigate', args: { url: fixture.url('/second') } }] },
+    ]
+    harness = await startHarness({
+      fixture,
+      env: { BINGBONG_LLM_SCRIPT: JSON.stringify(script) },
+    })
+  })
+
+  afterAll(async () => {
+    await harness?.quit()
+    await fixture?.close()
+  })
+
+  it('answers deterministically when the reserved Answer requests tools', async () => {
+    const events = await captureRun(harness, 'open the widget article')
+
+    // Six rounds worked, the seventh refused; the eighth round's calls
+    // never ran at all.
+    const navigations = events.filter(
+      (event): event is ToolResultEvent => event.type === 'tool_result' && event.name === 'navigate',
+    )
+    expect(navigations).toHaveLength(7)
+    expect(events.some((event) => event.type === 'tool_result' && event.callId === 'nav-7')).toBe(false)
+
+    // The guaranteed Answer, built from the run's verified observations:
+    // the six fixture pages it actually observed, deduped, as links.
+    const display = events.find((event) => event.type === 'display')
+    expect(display).toMatchObject({
+      type: 'display',
+      text: expect.stringMatching(
+        /^I could not finish “open the widget article”\. The run exhausted its planned work budget\.\n\nWhat I managed to observe:\n- \S+\/widgets-article\n- \S+\/widgets-anodized[\s\S]*\/widget-review$/,
+      ),
+    })
+    expect(events.filter((event) => event.type === 'speak').map((event) => event.text)).toEqual([
+      'I ran out of work budget before finishing that request.',
+    ])
+
+    // Mechanically failed, honestly caused, no raw limit error.
+    const done = events.find((event): event is DoneEvent => event.type === 'done')
+    expect(done).toMatchObject({ outcome: 'failed', finalizationCause: 'budget_exhausted' })
+    expect(done?.resolution).toBeUndefined()
     expect(
       events.filter((event) => event.type === 'error' && /budget|round|limit/i.test(event.message)),
     ).toEqual([])

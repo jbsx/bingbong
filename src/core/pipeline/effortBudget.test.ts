@@ -26,33 +26,27 @@ describe('effort budget (#117, ADR 0027)', () => {
       // floor(6 × 0.75) = 4, floor(6 × 0.9) = 5 — the closest a 6-round
       // budget comes to both milestones with headroom before exhaustion.
       expect(budgetWarningCrossed(6, 3, none)).toBeNull()
-      expect(budgetWarningCrossed(6, 4, none)).toEqual({ milestone: 'near', roundsRemaining: 2 })
-      expect(budgetWarningCrossed(6, 5, { near: true, imminent: false })).toEqual({
-        milestone: 'imminent',
-        roundsRemaining: 1,
-      })
+      expect(budgetWarningCrossed(6, 4, none)).toBe('near')
+      expect(budgetWarningCrossed(6, 5, { near: true, imminent: false })).toBe('imminent')
       expect(budgetWarningCrossed(6, 6, { near: true, imminent: true })).toBeNull()
     })
 
     it('hits the exact milestones on a divisible budget', () => {
       // floor(12 × 0.75) = 9, floor(12 × 0.9) = 10
-      expect(budgetWarningCrossed(12, 9, none)).toEqual({ milestone: 'near', roundsRemaining: 3 })
-      expect(budgetWarningCrossed(12, 10, { near: true, imminent: false })).toEqual({
-        milestone: 'imminent',
-        roundsRemaining: 2,
-      })
+      expect(budgetWarningCrossed(12, 9, none)).toBe('near')
+      expect(budgetWarningCrossed(12, 10, { near: true, imminent: false })).toBe('imminent')
     })
 
-    it('never re-fires a milestone and never reports negative remaining', () => {
-      expect(budgetWarningCrossed(6, 6, none)).toEqual({ milestone: 'near', roundsRemaining: 0 })
+    it('never re-fires a milestone, even one skipped to exhaustion', () => {
+      expect(budgetWarningCrossed(6, 6, none)).toBe('near')
       expect(budgetWarningCrossed(2, 2, { near: true, imminent: true })).toBeNull()
     })
 
     it('tells the model how much work remains without user-facing counters', () => {
-      expect(budgetWarningMessage({ milestone: 'near', roundsRemaining: 2 }, 6)).toBe(
+      expect(budgetWarningMessage('near', 2, 6)).toBe(
         'Work budget: 2 of 6 tool rounds remain. Prioritize decisive evidence — finalize as soon as the objective is met.',
       )
-      expect(budgetWarningMessage({ milestone: 'imminent', roundsRemaining: 1 }, 6)).toBe(
+      expect(budgetWarningMessage('imminent', 1, 6)).toBe(
         'Work budget: 1 of 6 tool round remains. Complete only decisive work and be ready to finalize with your answer.',
       )
     })

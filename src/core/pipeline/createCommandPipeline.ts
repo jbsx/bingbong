@@ -35,7 +35,6 @@ import {
   TIER_ACTIVE_WORK_DEADLINES_MS,
   TIER_TOOL_ROUND_BUDGETS,
   type ActiveWorkClock,
-  type BudgetWarning,
   type BudgetWarningMilestone,
 } from './effortBudget'
 import {
@@ -838,12 +837,12 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
             // The internal budget warning (#117/AC2): computed as the
             // round consumes its unit, delivered by riding a successful
             // result below — never a user-facing counter.
-            const crossed: BudgetWarning | null = pendingBudgetWarning === null
+            const crossed: BudgetWarningMilestone | null = pendingBudgetWarning === null
               ? budgetWarningCrossed(TIER_TOOL_ROUND_BUDGETS[epochTier], tierRounds, warned)
               : null
             if (crossed !== null) {
-              warned[crossed.milestone] = true
-              pendingBudgetWarning = crossed.milestone
+              warned[crossed] = true
+              pendingBudgetWarning = crossed
             }
           }
           // Finalization's one bookkeeping Tool Round (#117/AC3): every
@@ -912,18 +911,18 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
             // result the model sees and the feed shows.
             const searchLoopNudge = await searchLoopRail.observe(call, outcome)
             let observedOutcome: ToolResultOutcome = searchLoopNudge ? withNudge(outcome, searchLoopNudge) : outcome
+            // The advisory notices below all ride the same rail — one
+            // successful string result can carry the next owed notice — so
+            // they share this one guard. Each clears its own pending flag
+            // the moment its notice actually lands.
+            const ridesNotice = observedOutcome.ok && typeof observedOutcome.result === 'string'
+            const usefulWorkResult = ridesNotice && call.name !== 'report_run_plan' && !finalizing
             // The fallback plan's corrective nudge (#116) rides one useful
             // sibling result — the model sees it without a bookkeeping
             // round, and the useful result still reports its own content.
             // The nudge stays owed until it actually lands, so a round of
             // failed siblings does not swallow it.
-            if (
-              planNudgePending &&
-              !finalizing &&
-              call.name !== 'report_run_plan' &&
-              observedOutcome.ok &&
-              typeof observedOutcome.result === 'string'
-            ) {
+            if (planNudgePending && usefulWorkResult) {
               planNudgePending = false
               planNudgeDelivered = true
               observedOutcome = withNudge(observedOutcome, RUN_PLAN_NUDGE)
@@ -932,27 +931,18 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
             // round's own successful results — the model learns how much
             // work remains as it plans the next round. Internal only: no
             // user-facing counter ever appears outside tool-result text.
-            if (
-              pendingBudgetWarning !== null &&
-              !finalizing &&
-              call.name !== 'report_run_plan' &&
-              observedOutcome.ok &&
-              typeof observedOutcome.result === 'string'
-            ) {
+            if (pendingBudgetWarning !== null && usefulWorkResult) {
               const budget = TIER_TOOL_ROUND_BUDGETS[epochTier]
               observedOutcome = withNudge(
                 observedOutcome,
-                budgetWarningMessage(
-                  { milestone: pendingBudgetWarning, roundsRemaining: Math.max(0, budget - tierRounds) },
-                  budget,
-                ),
+                budgetWarningMessage(pendingBudgetWarning, Math.max(0, budget - tierRounds), budget),
               )
               pendingBudgetWarning = null
             }
             // Finalization's directive (#117/AC3) rides the phase's
             // successful results — including bookkeeping acknowledgements,
             // which are exactly the calls still permitted.
-            if (finalizationNoticePending && finalizing && observedOutcome.ok && typeof observedOutcome.result === 'string') {
+            if (finalizationNoticePending && finalizing && ridesNotice) {
               finalizationNoticePending = false
               observedOutcome = withNudge(observedOutcome, FINALIZATION_ANSWER_DIRECTIVE)
             }

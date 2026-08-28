@@ -32,10 +32,10 @@ export const TIER_ACTIVE_WORK_DEADLINES_MS: Readonly<Record<EffortTier, number>>
 /** The internal warning milestones: ~75% and ~90% of the budget consumed. */
 export type BudgetWarningMilestone = 'near' | 'imminent'
 
-/** What one crossed milestone tells the model. */
-export interface BudgetWarning {
-  readonly milestone: BudgetWarningMilestone
-  readonly roundsRemaining: number
+/** The consumption fraction at which each milestone first fires. */
+const MILESTONE_FRACTIONS: Readonly<Record<BudgetWarningMilestone, number>> = {
+  near: 0.75,
+  imminent: 0.9,
 }
 
 /**
@@ -50,14 +50,10 @@ export function budgetWarningCrossed(
   budget: number,
   used: number,
   alreadyWarned: Readonly<Record<BudgetWarningMilestone, boolean>>,
-): BudgetWarning | null {
-  const milestones: readonly BudgetWarningMilestone[] = ['near', 'imminent']
-  for (const milestone of milestones) {
+): BudgetWarningMilestone | null {
+  for (const milestone of ['near', 'imminent'] as const) {
     if (alreadyWarned[milestone]) continue
-    const fraction = milestone === 'near' ? 0.75 : 0.9
-    if (used >= Math.floor(budget * fraction)) {
-      return { milestone, roundsRemaining: Math.max(0, budget - used) }
-    }
+    if (used >= Math.floor(budget * MILESTONE_FRACTIONS[milestone])) return milestone
   }
   return null
 }
@@ -66,11 +62,11 @@ export function budgetWarningCrossed(
  * The model-facing warning line (#117): tells the model how much work
  * remains and demands decisive evidence. Internal and diagnostic-only —
  * it rides tool results like the Run Plan nudge and never becomes a
- * user-facing counter, headline, or status.
+ * user-facing counter, headline, or status. `remaining` is computed by
+ * the caller at delivery, so a late-delivered warning stays honest.
  */
-export function budgetWarningMessage(warning: BudgetWarning, budget: number): string {
-  const remaining = warning.roundsRemaining
-  if (warning.milestone === 'near') {
+export function budgetWarningMessage(milestone: BudgetWarningMilestone, remaining: number, budget: number): string {
+  if (milestone === 'near') {
     return `Work budget: ${remaining} of ${budget} tool rounds remain. Prioritize decisive evidence — finalize as soon as the objective is met.`
   }
   return `Work budget: ${remaining} of ${budget} tool round${remaining === 1 ? '' : 's'} remain${remaining === 1 ? 's' : ''}. Complete only decisive work and be ready to finalize with your answer.`
