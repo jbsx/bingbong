@@ -21,10 +21,14 @@ design ("research: web_search + read_url, no tab").
 
 - Every web read and write happens in a rendered, visible tab. The
   `web_search` (DDG scraper) and `read_url` tools are deleted.
-- Web search is GUI search: type into a real search engine's box in a tab,
-  read the results page like any other page. The orchestrator may do this in
-  the main tab for simple commands; subagents do it in their own visible
-  tabs. No subagent fetches the web off-screen.
+- Web search is visible search: either type into a real search engine's box or
+  navigate the visible tab directly to rendered search results. The
+  orchestrator may do this in the main tab for simple commands; subagents do
+  it in their own visible tabs. No subagent fetches the web off-screen.
+- First-party JSON, RSS, print, and reader representations are visible pages
+  when rendered in the tab. They may support a concrete accessibility or
+  extraction need, but never bypass authentication, access controls, paywalls,
+  or challenges; the ordinary human page remains preferred.
 - Subagent kinds collapse from three (research/browse/background) to two
   (browse/background): "research" was a tooling distinction (off-screen
   fetch) and dies with the fetcher.
@@ -37,8 +41,10 @@ design ("research: web_search + read_url, no tab").
 
 - A walled search engine surfaces as a Blocker instead of being routed
   around invisibly — which is the point.
-- Search costs seconds (navigate + type + settle + read) instead of
-  ~100ms; accepted as the price of being a real user.
+- Search costs a rendered navigation and observation instead of ~100ms;
+  accepted as the price of being a real user. Physically repeating an engine's
+  home-page, field-focus, and submit steps is not required when the same visible
+  results can be opened directly.
 - The search-loop rail re-targets from the `web_search` tool to the
   observable GUI signature: similar text typed into a search box, or a
   navigate to a search URL carrying a `q=` param, counts as one search

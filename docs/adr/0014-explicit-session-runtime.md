@@ -56,8 +56,13 @@ navigation, media, and transient Subagent tabs should not.
   model rounds, tool observations, and Subagent Reports in private Run Working
   State. A successful Run atomically commits its validated memory patch and Run
   Note immediately before `done`; invalid continuity output degrades without
-  invalidating a useful Answer. Neither structure is persisted or reconstructed
-  from Recorded History.
+  invalidating a useful Answer. ADR 0028 adds the one narrow exception:
+  validated, source-grounded Session Evidence may checkpoint before the Run
+  ends, without committing speculative Assessments. The Run's accepted memory
+  snapshot remains immutable; checkpoint results and their assigned identities
+  join that Run's private Working State, so it can cite and compact against its
+  own evidence without reading a second mutable Session view. Neither structure
+  is persisted or reconstructed from Recorded History.
 - **Reset invalidates stale work.** Explicit reset ends the old Session,
   advances a generation, clears all Session-owned state, and restarts the
   original command as the first accepted Run of a new Session. Late model,

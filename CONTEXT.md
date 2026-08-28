@@ -70,6 +70,20 @@ nothing by itself — the same proposed term must recur across Runs before it
 becomes a Learned Term. The user is never asked; the pipeline handles it.
 _Avoid_: typo, STT error
 
+**Transcription Failure**:
+Any failure between spoken input and the transcript presented to the assistant:
+a Mishear, an empty transcript after valid speech, clipped speech, one command
+split across utterances, or background noise accepted as speech. A correctly
+transcribed command that the assistant misunderstands is not a Transcription
+Failure.
+_Avoid_: recognition bug, STT issue
+
+**Command Accuracy**:
+Whether a transcript preserves the meaning needed to execute the spoken
+command, even when wording, articles, or punctuation differ. The primary
+measure of transcription quality; verbatim word accuracy is diagnostic.
+_Avoid_: exact match, transcript accuracy
+
 **Learned Term**:
 A Bias Lexicon entry admitted at runtime after its proposal recurred across
 Runs. Same decode effect as the Seed Lexicon; capped (default 500,
@@ -139,11 +153,58 @@ pipeline creates the first Session atomically when it accepts that Session's
 first Run. A busy-rejected submission is not a Run and cannot alter Session
 state.
 
+**Run Plan**:
+The orchestrator's current declaration of a Run's objective, Run Headline, and
+Effort Tier. It changes when Steering changes the objective or evidence proves
+that the current tier is insufficient.
+_Avoid_: plan, task plan
+
+**Effort Tier**:
+The bounded class of autonomous work a Run may spend: Direct Action, Lookup, or
+Investigation. The smallest tier sufficient for the objective is preferred.
+_Avoid_: complexity, mode
+
+**Tool Round**:
+One model decision that requests one or more tools. It consumes one unit of a
+Run's effort regardless of how many independent calls travel together.
+_Avoid_: tool call, model round
+
+**Progress**:
+New decision-relevant evidence or a requested state change that moves a Run
+toward its objective. A successful call, changed URL, or fresh screenshot is
+not Progress by itself.
+_Avoid_: activity, successful tool call
+
+**Approach**:
+A coherent method for resolving a Run's objective, distinguished by its source
+route, hypothesis, candidate set, or interaction strategy. Rewording one search
+or changing search engines does not necessarily create a new Approach.
+_Avoid_: attempt, action
+
+**Finalization**:
+The terminal phase in which a Run stops acquiring evidence and acting on pages,
+then produces the best grounded Answer available. Finalization never asks the
+user a new question after the work budget is exhausted.
+_Avoid_: failure, timeout
+
+**Finalization Cause**:
+The reason a Run entered Finalization, such as satisfying the objective,
+exhausting its budget, reaching its deadline, making no Progress, meeting a
+Blocker, or reaching a hard safety limit.
+_Avoid_: Run Resolution, outcome
+
+**Run Resolution**:
+The semantic result delivered to the user: `completed`, `partial`, `blocked`,
+`needs_user`, or `unsuccessful`. It is distinct from both the Run's mechanical
+outcome and its Finalization Cause.
+_Avoid_: outcome, Finalization Cause
+
 **Run Note**:
 A Run's continuity contribution, produced alongside its final Answer without a
 separate model call. It records information later Runs in the same Session may
 need, rather than replaying the Run's transcript. Failed and cancelled Runs
-contribute a deterministic note but no partial Memory Entries.
+contribute a deterministic note but no uncheckpointed Assessments or partial
+Memory Entries.
 _Avoid_: transcript summary
 
 **Run Journal**:
@@ -167,6 +228,13 @@ patch immediately before `done`. A missing or invalid continuity output never
 fails a valid Answer: the application rejects that portion, records a
 deterministic fallback Run Note, and logs the degradation.
 
+**Evidence Checkpoint**:
+The narrow exception to terminal Memory Commit: validated Session Evidence may
+enter Session Working Memory as soon as it is grounded. It preserves verified
+work across later Run failure or cancellation without committing speculative
+Assessments.
+_Avoid_: partial Memory Commit, autosave
+
 **Memory Entry**:
 One item in Session Working Memory. The application owns its stable envelope and
 semantic kind; the model supplies its subject, detail, status, rationale,
@@ -175,6 +243,28 @@ identity to update, resolve, or remove it. Entries retain Run and Subagent
 provenance. Updating an identity replaces its active value; resolving retains
 its outcome; removal is reserved for invalid or duplicate entries. Web-derived
 content is quoted, source-attributed data and can never be an instruction.
+
+**Session Evidence**:
+Source-grounded Session Working Memory that prevents repeated work and supports
+later Assessments and Answers. It may survive a failed or cancelled Run once
+checkpointed, but never survives the Session.
+_Avoid_: browsing history, tool transcript
+
+**Observation**:
+A directly grounded fact from a page, Action Outcome, Look, Subagent Report, or
+the user. It records its source and never presents interpretation as direct
+evidence.
+_Avoid_: finding, conclusion
+
+**Assessment**:
+Bing Bong's interpretation of one or more Observations. It names its supporting
+evidence and remains distinct from what was directly observed.
+_Avoid_: Observation, fact
+
+**Candidate**:
+A possible answer under evaluation, retained with the evidence for and against
+it until accepted, rejected, or superseded.
+_Avoid_: result, guess
 
 **Memory Compaction**:
 An exceptional reduction performed only when Session Working Memory crosses its
@@ -190,18 +280,24 @@ not Run counts.
 The command, model rounds, tool observations, and Subagent Reports used while a
 Run executes. It is private to that Run and discarded when the Run finishes;
 it is not a second durable memory layer. A Run uses the stable Session Working
-Memory snapshot taken when that Run is accepted.
+Memory snapshot taken when that Run is accepted, plus the results and identities
+of Evidence Checkpoints that the Run itself creates.
 _Avoid_: run memory
+
+**Run Context Compaction**:
+The deterministic replacement of older checkpointed tool observations in one
+Run's model context with their Session Evidence references. It is distinct from
+Memory Compaction and never invokes a summarization model.
+_Avoid_: Memory Compaction, compact command
 
 **Search Loop**:
 A run flailing blind — consecutive searches rewording one intent. Reads
 between searches do not break it (reading is inspection, not escape);
 only escape breaks it — opening a result, or any other successful tool
-call. One search observation is the GUI search signature: a navigate to a
-q=-carrying search URL (plain search terms normalize to exactly that) or
-text typed into a search input. A run rail breaks it: an advisory nudge
-rides the 3rd similar result, further similar searches are refused after
-the 5th.
+call that makes Progress. One search observation is the visible search
+signature: a navigate to a q=-carrying search URL (plain search terms
+normalize to exactly that) or text typed into a search input. Similar searches
+remain one Approach and follow the Run's no-progress nudge and refusal policy.
 _Avoid_: search spam, retry storm
 
 **Boot State**:
@@ -346,6 +442,13 @@ _Avoid_: login window, OAuth popup
 The visible page, navigation state, media state, and transient tabs used during
 a Session. It is discarded when the Session ends; the Browser Profile remains.
 _Avoid_: browser context, browser workspace
+
+**Action Outcome**:
+The resulting state returned by a browser, media, application, setting, panel,
+or Session action, including a fresh page snapshot when a browser action
+meaningfully changes the page. It is the next decision's observation, not merely
+confirmation that a call ran.
+_Avoid_: tool result, success flag
 
 **On-Screen Principle**:
 Every web read and write happens in a rendered, visible tab. Off-screen fetching of web content does not exist.
