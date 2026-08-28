@@ -109,6 +109,7 @@ describe('session runtime', () => {
       createsSession: true,
       journal: [],
       memory: [],
+      evidence: { observations: [], candidates: [] },
     })
     expect(identities.minted).toEqual(['submission-1', 'session-1', 'run-1'])
     expect(runtime.state()).toEqual({
@@ -256,6 +257,69 @@ describe('session runtime', () => {
     expect(runtime.state().generation).toBe(1)
     expect(replacement.generation).toBe(1)
     expect(replacement.sessionId).not.toBe(oldRun.sessionId)
+  })
+
+  // #112: grounded Observations and Candidates live beside Memory Entries
+  // under Memory Entry identity and leave only through the existing lifecycle.
+  it('carries Session Evidence across Runs and clears it on Session Reset and Lapse', () => {
+    const { runtime } = harness()
+    expect(runtime.evidenceStore()).toBeNull()
+
+    const first = runtime.accept(runtime.submit().submissionId)
+    const evidence = runtime.evidenceStore()!
+    const observation = evidence.checkpointObservation({
+      sourceKind: 'web',
+      text: 'The Acme router costs $39.',
+      references: [{ url: 'https://shop.example/acme-router' }],
+      runId: first.runId,
+    })!.observation
+    const candidate = evidence.addCandidate({
+      subject: 'Acme wifi router',
+      supportingObservationIds: [observation.id],
+      runId: first.runId,
+    })!
+
+    // Evidence shares the Session's Memory Entry identity space with committed entries.
+    expect(observation.id).toBe('memory-1')
+    runtime.commitRunContinuity(first.runId, 'done', 'Found a candidate.', [{
+      op: 'add',
+      entry: { kind: 'finding', subject: 'Acme router', detail: 'Costs $39.', references: [{ url: 'https://shop.example/acme-router' }] },
+    }])
+    runtime.finish(first.runId)
+
+    const second = runtime.accept(runtime.submit().submissionId)
+    expect(second.memory.map(({ subject }) => subject)).toEqual(['Acme router'])
+    expect(second.evidence.observations.map(({ id }) => id)).toEqual([observation.id])
+    expect(second.evidence.candidates.map(({ id, status }) => ({ id, status }))).toEqual([
+      { id: candidate.id, status: 'active' },
+    ])
+
+    runtime.end('reset')
+    expect(runtime.evidenceStore()).toBeNull()
+
+    const replacement = runtime.accept(runtime.submit().submissionId)
+    expect(replacement.createsSession).toBe(true)
+    expect(replacement.evidence).toEqual({ observations: [], candidates: [] })
+    expect(replacement.memory).toEqual([])
+  })
+
+  it('clears Session Evidence when the Session lapses', () => {
+    const { clock, runtime } = expiringHarness()
+    const admission = runtime.accept(runtime.submit().submissionId)
+    const evidence = runtime.evidenceStore()!
+    evidence.checkpointObservation({
+      sourceKind: 'user',
+      text: 'No, the blue one.',
+      runId: admission.runId,
+    })
+    runtime.finish(admission.runId)
+
+    clock.advance(100)
+
+    expect(runtime.state().phase).toBe('absent')
+    expect(runtime.evidenceStore()).toBeNull()
+    expect(evidence.cleared).toBe(true)
+    expect(evidence.snapshot()).toEqual({ observations: [], candidates: [] })
   })
 
   it('returns snapshots that cannot mutate runtime state', () => {

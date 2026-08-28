@@ -8,6 +8,11 @@ import type {
 } from './sessionIdentity'
 import { MAX_RUN_NOTE_CHARS, type RunJournalEntry, type RunJournalSnapshot } from './runJournal'
 import {
+  createSessionEvidence,
+  type SessionEvidenceSnapshot,
+  type SessionEvidenceStore,
+} from './sessionEvidence'
+import {
   applyMemoryPatch,
   estimateWorkingMemoryTokens,
   freezeWorkingMemory,
@@ -24,6 +29,12 @@ import {
 
 export type { RunJournalEntry, RunJournalSnapshot } from './runJournal'
 export type { MemoryEntry, MemoryPatch, WorkingMemorySnapshot } from './workingMemory'
+export type {
+  SessionCandidate,
+  SessionEvidenceSnapshot,
+  SessionEvidenceStore,
+  SessionObservation,
+} from './sessionEvidence'
 
 export type { SessionGeneration } from './sessionIdentity'
 
@@ -52,6 +63,8 @@ export interface AcceptedRunAdmission {
   createsSession: boolean
   journal: RunJournalSnapshot
   memory: WorkingMemorySnapshot
+  /** Checkpointed Session Evidence the accepted Run starts beside its Memory Entries (#112). */
+  evidence: SessionEvidenceSnapshot
 }
 
 export interface SessionRuntimeState {
@@ -150,6 +163,8 @@ export interface SessionRuntime {
   accept(submissionId: SubmissionId): AcceptedRunAdmission
   reject(submissionId: SubmissionId): boolean
   finish(runId: RunId): boolean
+  /** The live Session's evidence store, or null while no Session exists (#112). */
+  evidenceStore(): SessionEvidenceStore | null
   commitRunContinuity(
     runId: RunId,
     outcome: RunJournalEntry['outcome'],
@@ -260,6 +275,7 @@ export function createSessionRuntime(deps: {
   const pendingSubmissionIds = new Set<SubmissionId>()
   let journal: RunJournalEntry[] = []
   let memory: MemoryEntry[] = []
+  let evidence: SessionEvidenceStore | null = null
   let nextMemoryId = 1
   const committedRunIds = new Set<RunId>()
   let cancelWarning: (() => void) | null = null
@@ -550,6 +566,8 @@ export function createSessionRuntime(deps: {
     pendingSubmissionIds.clear()
     journal = []
     memory = []
+    evidence?.clear()
+    evidence = null
     continuityRevision += 1
     aboveHighWater = false
     compactionEpoch += 1
@@ -613,6 +631,9 @@ export function createSessionRuntime(deps: {
       pendingSubmissionIds.add(submissionId)
       return { submissionId, submittedAt: deps.clock.now() }
     },
+    evidenceStore() {
+      return evidence
+    },
     accept(submissionId) {
       if (!pendingSubmissionIds.has(submissionId)) {
         throw new Error(`Submission is unknown or already admitted: ${submissionId}`)
@@ -634,6 +655,11 @@ export function createSessionRuntime(deps: {
         aboveHighWater = false
         nextMemoryId = 1
         committedRunIds.clear()
+        evidence = createSessionEvidence({
+          sessionId: acceptedSessionId,
+          now: () => deps.clock.now(),
+          mintId: () => `memory-${nextMemoryId++}` as MemoryEntryId,
+        })
       }
       phase = 'active'
       cancelExpiry()
@@ -651,6 +677,7 @@ export function createSessionRuntime(deps: {
         createsSession,
         journal: journalSnapshot(),
         memory: memorySnapshot(),
+        evidence: evidence!.snapshot(),
       }
     },
     reject(submissionId) {

@@ -1,0 +1,329 @@
+import type { RunId, SessionId } from './sessionIdentity'
+import {
+  boundedString,
+  canonicalizeMemoryUrl,
+  MAX_MEMORY_DETAIL_CHARS,
+  MAX_MEMORY_REFERENCES,
+  MAX_MEMORY_SUBJECT_CHARS,
+  type MemoryEntryId,
+  type MemoryProvenance,
+  type MemoryReference,
+} from './workingMemory'
+
+/**
+ * What grounded an Observation (#112, ADR 0028): a web source observed in the
+ * Session, a Look (vision) result, the user's own words, or a structured
+ * Action Outcome confirming a requested state change.
+ */
+export const OBSERVATION_SOURCE_KINDS = [
+  'web',
+  'vision',
+  'user',
+  'action',
+] as const
+export type ObservationSourceKind = (typeof OBSERVATION_SOURCE_KINDS)[number]
+
+/** The lifecycle of a Candidate (#112, ADR 0028): grounded status with no silent overwriting. */
+export const CANDIDATE_STATUSES = [
+  'active',
+  'accepted',
+  'rejected',
+  'superseded',
+] as const
+export type CandidateStatus = (typeof CANDIDATE_STATUSES)[number]
+
+const TERMINAL_CANDIDATE_STATUSES: readonly CandidateStatus[] = ['accepted', 'rejected', 'superseded']
+
+export const MAX_UNCERTAINTY_CHARS = 200
+const MAX_PROVENANCE_CHARS = 200
+
+/** One grounded, checkpointed Observation in Session Working Memory. */
+export interface SessionObservation {
+  readonly id: MemoryEntryId
+  readonly sessionId: SessionId
+  readonly sourceKind: ObservationSourceKind
+  readonly text: string
+  readonly observedAt: number
+  readonly uncertainty?: string
+  readonly references: readonly MemoryReference[]
+  readonly provenance: readonly MemoryProvenance[]
+}
+
+/** One grounded Candidate with its supporting Observation identities. */
+export interface SessionCandidate {
+  readonly id: MemoryEntryId
+  readonly sessionId: SessionId
+  readonly subject: string
+  readonly detail?: string
+  readonly status: CandidateStatus
+  readonly supportingObservationIds: readonly MemoryEntryId[]
+  readonly references: readonly MemoryReference[]
+  readonly provenance: readonly MemoryProvenance[]
+}
+
+export interface SessionEvidenceSnapshot {
+  readonly observations: readonly SessionObservation[]
+  readonly candidates: readonly SessionCandidate[]
+}
+
+export interface ObservationCheckpointInput {
+  readonly sourceKind: ObservationSourceKind
+  readonly text: string
+  readonly observedAt?: number
+  readonly uncertainty?: string
+  readonly references?: readonly MemoryReference[]
+  readonly runId: RunId
+  readonly subagentId?: string
+}
+
+export interface CandidateInput {
+  readonly subject: string
+  readonly detail?: string
+  readonly supportingObservationIds: readonly MemoryEntryId[]
+  readonly references?: readonly MemoryReference[]
+  readonly runId: RunId
+  readonly subagentId?: string
+}
+
+export interface CandidateStatusChange {
+  readonly status: CandidateStatus
+  readonly supportingObservationIds: readonly MemoryEntryId[]
+  readonly references?: readonly MemoryReference[]
+  readonly runId: RunId
+  readonly subagentId?: string
+}
+
+export interface ObservationCheckpointResult {
+  readonly observation: SessionObservation
+  /** True when an exact duplicate already existed and the checkpoint merged into it. */
+  readonly merged: boolean
+}
+
+/**
+ * The Session-side evidence forms of Session Working Memory (#112, ADR 0028):
+ * grounded Observations and Candidates living beside Memory Entries under
+ * Memory Entry identity, with one Session's lifetime. Observations merge only
+ * on exact duplicates and retain contradictions; Assessments must cite valid
+ * Observation support; `clear` is the Session Reset / Lapse boundary.
+ */
+export interface SessionEvidenceStore {
+  checkpointObservation(input: ObservationCheckpointInput): ObservationCheckpointResult | null
+  observation(id: MemoryEntryId): SessionObservation | null
+  addCandidate(input: CandidateInput): SessionCandidate | null
+  setCandidateStatus(id: MemoryEntryId, change: CandidateStatusChange): SessionCandidate | null
+  candidate(id: MemoryEntryId): SessionCandidate | null
+  /** Whether the cited identities are all live Observations — the bar an Assessment must clear. */
+  hasObservationSupport(ids: readonly MemoryEntryId[]): boolean
+  snapshot(): SessionEvidenceSnapshot
+  /** Drops every form and refuses all further work; idempotent. */
+  clear(): void
+  readonly cleared: boolean
+}
+
+interface MutableObservation {
+  id: MemoryEntryId
+  sessionId: SessionId
+  sourceKind: ObservationSourceKind
+  text: string
+  observedAt: number
+  uncertainty?: string
+  references: MemoryReference[]
+  provenance: MemoryProvenance[]
+}
+
+interface MutableCandidate {
+  id: MemoryEntryId
+  sessionId: SessionId
+  subject: string
+  detail?: string
+  status: CandidateStatus
+  supportingObservationIds: MemoryEntryId[]
+  references: MemoryReference[]
+  provenance: MemoryProvenance[]
+}
+
+function parseReferences(value: readonly MemoryReference[] | undefined): MemoryReference[] | null {
+  if (value === undefined) return []
+  if (value.length > MAX_MEMORY_REFERENCES) return null
+  const parsed: MemoryReference[] = []
+  const seen = new Set<string>()
+  for (const reference of value) {
+    const url = canonicalizeMemoryUrl(reference.url)
+    const title = boundedString(reference.title, MAX_MEMORY_SUBJECT_CHARS, true)
+    if (!url || title === null || seen.has(url)) continue
+    seen.add(url)
+    parsed.push({ url, ...(title ? { title } : {}) })
+  }
+  return parsed
+}
+
+function parseProvenance(runId: RunId, subagentId: string | undefined): MemoryProvenance | null {
+  if (typeof runId !== 'string' || runId.trim() === '') return null
+  const agent = boundedString(subagentId, MAX_PROVENANCE_CHARS, true)
+  if (agent === null) return null
+  return { runId, ...(agent ? { subagentId: agent } : {}) }
+}
+
+const provenanceKey = (source: MemoryProvenance): string => `${source.runId}:${source.subagentId ?? ''}`
+
+function appendProvenance(current: MemoryProvenance[], added: MemoryProvenance): MemoryProvenance[] {
+  const merged = new Set(current.map(provenanceKey))
+  return merged.has(provenanceKey(added)) ? current : [...current, added]
+}
+
+function mergeReferences(current: readonly MemoryReference[], added: readonly MemoryReference[]): MemoryReference[] {
+  const merged = new Map(current.map((reference) => [reference.url, reference]))
+  for (const reference of added) merged.set(reference.url, reference)
+  return [...merged.values()]
+}
+
+const normalizedText = (text: string): string => text.trim().toLowerCase().replace(/\s+/g, ' ')
+
+/** Exact-duplicate identity: same source kind, same normalized statement, same source URLs. */
+function observationKey(observation: Pick<MutableObservation, 'sourceKind' | 'text' | 'references'>): string {
+  return JSON.stringify({
+    sourceKind: observation.sourceKind,
+    text: normalizedText(observation.text),
+    urls: observation.references.map((reference) => reference.url).sort(),
+  })
+}
+
+function freezeObservation(observation: MutableObservation): SessionObservation {
+  return Object.freeze({
+    id: observation.id,
+    sessionId: observation.sessionId,
+    sourceKind: observation.sourceKind,
+    text: observation.text,
+    observedAt: observation.observedAt,
+    ...(observation.uncertainty !== undefined ? { uncertainty: observation.uncertainty } : {}),
+    references: Object.freeze(observation.references.map((reference) => Object.freeze({ ...reference }))),
+    provenance: Object.freeze(observation.provenance.map((source) => Object.freeze({ ...source }))),
+  })
+}
+
+function freezeCandidate(candidate: MutableCandidate): SessionCandidate {
+  return Object.freeze({
+    id: candidate.id,
+    sessionId: candidate.sessionId,
+    subject: candidate.subject,
+    ...(candidate.detail !== undefined ? { detail: candidate.detail } : {}),
+    status: candidate.status,
+    supportingObservationIds: Object.freeze([...candidate.supportingObservationIds]),
+    references: Object.freeze(candidate.references.map((reference) => Object.freeze({ ...reference }))),
+    provenance: Object.freeze(candidate.provenance.map((source) => Object.freeze({ ...source }))),
+  })
+}
+
+export function createSessionEvidence(deps: {
+  sessionId: SessionId
+  now(): number
+  mintId(): MemoryEntryId
+}): SessionEvidenceStore {
+  const observations: MutableObservation[] = []
+  const candidates: MutableCandidate[] = []
+  let cleared = false
+
+  const liveObservation = (id: MemoryEntryId): MutableObservation | null =>
+    observations.find((observation) => observation.id === id) ?? null
+
+  const supportIsValid = (ids: readonly MemoryEntryId[]): boolean =>
+    ids.length > 0 && ids.every((id) => liveObservation(id) !== null)
+
+  const store: SessionEvidenceStore = {
+    checkpointObservation(input) {
+      if (cleared) return null
+      if (!OBSERVATION_SOURCE_KINDS.includes(input.sourceKind)) return null
+      const text = boundedString(input.text, MAX_MEMORY_DETAIL_CHARS)
+      const uncertainty = boundedString(input.uncertainty, MAX_UNCERTAINTY_CHARS, true)
+      const references = parseReferences(input.references)
+      const source = parseProvenance(input.runId, input.subagentId)
+      if (!text || uncertainty === null || !references || !source) return null
+      const observedAt = input.observedAt ?? deps.now()
+
+      const duplicateKey = observationKey({ sourceKind: input.sourceKind, text, references })
+      const duplicate = observations.find((observation) => observationKey(observation) === duplicateKey)
+      if (duplicate) {
+        duplicate.provenance = appendProvenance(duplicate.provenance, source)
+        return { observation: freezeObservation(duplicate), merged: true }
+      }
+
+      const observation: MutableObservation = {
+        id: deps.mintId(),
+        sessionId: deps.sessionId,
+        sourceKind: input.sourceKind,
+        text,
+        observedAt,
+        references,
+        provenance: [source],
+        ...(uncertainty !== undefined ? { uncertainty } : {}),
+      }
+      observations.push(observation)
+      return { observation: freezeObservation(observation), merged: false }
+    },
+    observation(id) {
+      const found = liveObservation(id)
+      return found === null ? null : freezeObservation(found)
+    },
+    addCandidate(input) {
+      if (cleared) return null
+      const subject = boundedString(input.subject, MAX_MEMORY_SUBJECT_CHARS)
+      const detail = boundedString(input.detail, MAX_MEMORY_DETAIL_CHARS, true)
+      const references = parseReferences(input.references)
+      const source = parseProvenance(input.runId, input.subagentId)
+      if (!subject || detail === null || !references || !source || !supportIsValid(input.supportingObservationIds)) {
+        return null
+      }
+      const candidate: MutableCandidate = {
+        id: deps.mintId(),
+        sessionId: deps.sessionId,
+        subject,
+        ...(detail !== undefined ? { detail } : {}),
+        status: 'active',
+        supportingObservationIds: [...input.supportingObservationIds],
+        references,
+        provenance: [source],
+      }
+      candidates.push(candidate)
+      return freezeCandidate(candidate)
+    },
+    setCandidateStatus(id, change) {
+      if (cleared) return null
+      const candidate = candidates.find((entry) => entry.id === id)
+      if (!candidate || candidate.status !== 'active') return null
+      if (!TERMINAL_CANDIDATE_STATUSES.includes(change.status)) return null
+      const references = parseReferences(change.references)
+      const source = parseProvenance(change.runId, change.subagentId)
+      if (!references || !source || !supportIsValid(change.supportingObservationIds)) return null
+
+      candidate.status = change.status
+      const support = new Set(candidate.supportingObservationIds)
+      for (const observationId of change.supportingObservationIds) support.add(observationId)
+      candidate.supportingObservationIds = [...support]
+      candidate.references = mergeReferences(candidate.references, references)
+      candidate.provenance = appendProvenance(candidate.provenance, source)
+      return freezeCandidate(candidate)
+    },
+    candidate(id) {
+      const found = candidates.find((candidate) => candidate.id === id)
+      return found ? freezeCandidate(found) : null
+    },
+    hasObservationSupport(ids) {
+      return supportIsValid(ids)
+    },
+    snapshot() {
+      return Object.freeze({
+        observations: Object.freeze(observations.map(freezeObservation)),
+        candidates: Object.freeze(candidates.map(freezeCandidate)),
+      })
+    },
+    clear() {
+      cleared = true
+      observations.length = 0
+      candidates.length = 0
+    },
+    get cleared() {
+      return cleared
+    },
+  }
+  return store
+}

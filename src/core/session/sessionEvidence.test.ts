@@ -1,0 +1,225 @@
+import { describe, expect, it } from 'vitest'
+import type { RunId, SessionId } from './sessionIdentity'
+import type { MemoryEntryId } from './workingMemory'
+import { createSessionEvidence, MAX_UNCERTAINTY_CHARS } from './sessionEvidence'
+import type { SessionEvidenceStore } from './sessionEvidence'
+
+function store(now = (): number => 0): { evidence: SessionEvidenceStore; ids: string[] } {
+  const minted: string[] = []
+  let next = 0
+  return {
+    ids: minted,
+    evidence: createSessionEvidence({
+      sessionId: 'session-1' as SessionId,
+      now,
+      mintId: () => {
+        const id = `memory-${++next}`
+        minted.push(id)
+        return id as MemoryEntryId
+      },
+    }),
+  }
+}
+
+const webReference = { url: 'https://shop.example/acme-router' }
+
+function webObservation(text = 'The Acme router costs $39.', runId = 'run-1' as RunId) {
+  return { sourceKind: 'web' as const, text, references: [webReference], runId }
+}
+
+describe('session evidence', () => {
+  it('checkpoints grounded Observations with source kind, time, uncertainty, references, and provenance', () => {
+    let at = 500
+    const { evidence } = store(() => at)
+    const result = evidence.checkpointObservation({
+      sourceKind: 'web',
+      text: 'The Acme router costs $39.',
+      uncertainty: 'price shown in a cached cart',
+      references: [webReference],
+      runId: 'run-1' as RunId,
+      subagentId: 'a-2',
+    })
+
+    expect(result).toEqual({
+      observation: {
+        id: 'memory-1',
+        sessionId: 'session-1',
+        sourceKind: 'web',
+        text: 'The Acme router costs $39.',
+        observedAt: 500,
+        uncertainty: 'price shown in a cached cart',
+        references: [webReference],
+        provenance: [{ runId: 'run-1', subagentId: 'a-2' }],
+      },
+      merged: false,
+    })
+    expect(Object.isFrozen(result!.observation)).toBe(true)
+
+    at = 900
+    const user = evidence.checkpointObservation({
+      sourceKind: 'user',
+      text: 'No, the blue one.',
+      observedAt: 850,
+      runId: 'run-1' as RunId,
+    })
+    expect(user!.observation.observedAt).toBe(850)
+    expect(user!.observation.references).toEqual([])
+    expect(user!.observation.uncertainty).toBeUndefined()
+  })
+
+  it('merges exact duplicate Observations into one identity and accumulates provenance', () => {
+    let at = 500
+    const { evidence, ids } = store(() => at)
+    const first = evidence.checkpointObservation(webObservation())!
+
+    at = 900
+    const second = evidence.checkpointObservation({
+      sourceKind: 'web',
+      text: 'The Acme router  costs $39. ',
+      references: [{ url: 'https://shop.example/acme-router#specs' }],
+      runId: 'run-2' as RunId,
+    })!
+
+    expect(second.merged).toBe(true)
+    expect(second.observation.id).toBe(first.observation.id)
+    expect(second.observation.observedAt).toBe(500)
+    expect(second.observation.provenance).toEqual([{ runId: 'run-1' }, { runId: 'run-2' }])
+    expect(evidence.snapshot().observations).toHaveLength(1)
+    expect(ids).toEqual(['memory-1'])
+
+    const reobserved = evidence.checkpointObservation(webObservation(undefined, 'run-3' as RunId))!
+    expect(reobserved.observation.provenance).toEqual([{ runId: 'run-1' }, { runId: 'run-2' }, { runId: 'run-3' }])
+    expect(evidence.snapshot().observations).toHaveLength(1)
+  })
+
+  it('keeps contradictory Observations distinct instead of overwriting them', () => {
+    const { evidence } = store()
+    const cheaper = evidence.checkpointObservation(webObservation('The Acme router costs $39.'))!
+    const pricier = evidence.checkpointObservation(webObservation('The Acme router costs $59.'))!
+
+    expect(cheaper.observation.id).not.toBe(pricier.observation.id)
+    const observations = evidence.snapshot().observations
+    expect(observations.map(({ text }) => text)).toEqual([
+      'The Acme router costs $39.',
+      'The Acme router costs $59.',
+    ])
+    expect(evidence.observation(cheaper.observation.id)?.text).toBe('The Acme router costs $39.')
+  })
+
+  it('tracks Candidates through active, accepted, rejected, and superseded status with supporting Observations', () => {
+    const { evidence } = store()
+    const price = evidence.checkpointObservation(webObservation())!.observation
+    const rival = evidence.checkpointObservation(webObservation('The Zeta router costs $45.', 'run-1' as RunId))!.observation
+
+    const candidate = evidence.addCandidate({
+      subject: 'Acme wifi router',
+      detail: 'Cheapest matte-black option.',
+      supportingObservationIds: [price.id],
+      references: [webReference],
+      runId: 'run-1' as RunId,
+    })
+    expect(candidate).toMatchObject({
+      id: 'memory-3',
+      sessionId: 'session-1',
+      status: 'active',
+      supportingObservationIds: [price.id],
+      provenance: [{ runId: 'run-1' }],
+    })
+
+    const accepted = evidence.setCandidateStatus(candidate!.id, {
+      status: 'accepted',
+      supportingObservationIds: [rival.id],
+      runId: 'run-2' as RunId,
+      subagentId: 'a-1',
+    })
+    expect(accepted).toMatchObject({
+      status: 'accepted',
+      supportingObservationIds: [price.id, rival.id],
+      provenance: [{ runId: 'run-1' }, { runId: 'run-2', subagentId: 'a-1' }],
+    })
+
+    const rivalCandidate = evidence.addCandidate({
+      subject: 'Zeta wifi router',
+      supportingObservationIds: [rival.id],
+      runId: 'run-2' as RunId,
+    })!
+    expect(evidence.setCandidateStatus(rivalCandidate.id, { status: 'rejected', supportingObservationIds: [rival.id], runId: 'run-2' as RunId })).toMatchObject({ status: 'rejected' })
+    expect(evidence.setCandidateStatus(rivalCandidate.id, { status: 'superseded', supportingObservationIds: [], runId: 'run-3' as RunId })).toBeNull()
+    expect(evidence.candidate(rivalCandidate.id)?.status).toBe('rejected')
+
+    const third = evidence.addCandidate({
+      subject: 'Used market router',
+      supportingObservationIds: [rival.id],
+      runId: 'run-3' as RunId,
+    })!
+    expect(evidence.setCandidateStatus(third.id, { status: 'superseded', supportingObservationIds: [rival.id], runId: 'run-3' as RunId })).toMatchObject({ status: 'superseded' })
+
+    // Terminal statuses are final: accepted candidates do not transition again.
+    expect(evidence.setCandidateStatus(candidate!.id, { status: 'rejected', supportingObservationIds: [rival.id], runId: 'run-4' as RunId })).toBeNull()
+    expect(evidence.snapshot().candidates.map(({ status }) => status)).toEqual(['accepted', 'rejected', 'superseded'])
+  })
+
+  it('rejects Assessments without valid Observation support', () => {
+    const { evidence } = store()
+    const observation = evidence.checkpointObservation(webObservation())!.observation
+    const candidate = evidence.addCandidate({
+      subject: 'Acme wifi router',
+      supportingObservationIds: [observation.id],
+      runId: 'run-1' as RunId,
+    })!
+
+    expect(evidence.hasObservationSupport([observation.id])).toBe(true)
+    expect(evidence.hasObservationSupport([observation.id, candidate.id])).toBe(false)
+    expect(evidence.hasObservationSupport(['memory-999' as MemoryEntryId])).toBe(false)
+    expect(evidence.hasObservationSupport([])).toBe(false)
+  })
+
+  it('refuses malformed checkpoints and candidates without minting identities', () => {
+    const { evidence, ids } = store()
+    expect(evidence.checkpointObservation({ ...webObservation(), sourceKind: 'dream' as never })).toBeNull()
+    expect(evidence.checkpointObservation({ ...webObservation(), text: '   ' })).toBeNull()
+    expect(evidence.checkpointObservation({ ...webObservation(), uncertainty: 'x'.repeat(MAX_UNCERTAINTY_CHARS + 1) })).toBeNull()
+    expect(evidence.checkpointObservation({ ...webObservation(), references: Array.from({ length: 11 }, () => webReference) })).toBeNull()
+    expect(evidence.checkpointObservation({ ...webObservation(), runId: '' as RunId })).toBeNull()
+
+    const observation = evidence.checkpointObservation(webObservation())!.observation
+    expect(evidence.addCandidate({ subject: '', supportingObservationIds: [observation.id], runId: 'run-1' as RunId })).toBeNull()
+    expect(evidence.addCandidate({ subject: 'No support', supportingObservationIds: [], runId: 'run-1' as RunId })).toBeNull()
+    expect(evidence.addCandidate({
+      subject: 'Ghost support',
+      supportingObservationIds: ['memory-999' as MemoryEntryId],
+      runId: 'run-1' as RunId,
+    })).toBeNull()
+    expect(evidence.setCandidateStatus('memory-999' as MemoryEntryId, {
+      status: 'accepted',
+      supportingObservationIds: [observation.id],
+      runId: 'run-2' as RunId,
+    })).toBeNull()
+
+    expect(ids).toEqual(['memory-1'])
+    expect(evidence.snapshot().candidates).toEqual([])
+  })
+
+  it('clears and seals: Session Reset and Lapse drop every form and refuse later mutation', () => {
+    const { evidence } = store()
+    const observation = evidence.checkpointObservation(webObservation())!.observation
+    evidence.addCandidate({ subject: 'Acme wifi router', supportingObservationIds: [observation.id], runId: 'run-1' as RunId })
+
+    evidence.clear()
+    evidence.clear()
+
+    expect(evidence.cleared).toBe(true)
+    expect(evidence.snapshot()).toEqual({ observations: [], candidates: [] })
+    expect(evidence.checkpointObservation(webObservation(undefined, 'run-2' as RunId))).toBeNull()
+    expect(evidence.observation(observation.id)).toBeNull()
+  })
+
+  it('freezes snapshots against mutation', () => {
+    const { evidence } = store()
+    evidence.checkpointObservation(webObservation())!
+    const snapshot = evidence.snapshot()
+    expect(Object.isFrozen(snapshot)).toBe(true)
+    expect(Object.isFrozen(snapshot.observations)).toBe(true)
+    expect(Object.isFrozen(snapshot.observations[0]!.references)).toBe(true)
+  })
+})
