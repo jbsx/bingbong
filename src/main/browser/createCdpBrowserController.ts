@@ -342,6 +342,23 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
     return lastSnapshot ?? recollection('no-snapshot', () => collectSnapshot())
   }
 
+  /**
+   * ADR 0027 Action Outcomes: append the settled page state — signature,
+   * numbered refs, digest — to a page-changing action's outcome line. The
+   * collected snapshot becomes the latest valid snapshot, so the model can
+   * continue from these refs without a follow-up read_page. A collector
+   * hiccup must not fail an action that succeeded: the outcome degrades to
+   * its concise first line.
+   */
+  async function withSettledState(line: string): Promise<string> {
+    try {
+      const snapshot = await recollection('settled-state', () => collectSnapshot())
+      return `${line}\n${formatPageSnapshot(snapshot)}`
+    } catch {
+      return line
+    }
+  }
+
   const SCROLL_TICKS = 3
   // One wheel-notch worth per tick (~120px in Chromium). Small steps matter:
   // a step larger than element height + viewport height skips past elements
@@ -454,8 +471,11 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
     return `scrolled ${direction}: x=${Math.round(signature.scrollX)} y=${Math.round(signature.scrollY)}`
   }
 
-  function navigationOutcome(): string {
-    return `navigated: url=${page.url()} title=${JSON.stringify(page.title())}`
+  /** Navigation outcome: the settled URL/title line plus the settled page
+   * state (signature, refs, digest), so the next decision continues from
+   * the landing itself (ADR 0027). */
+  async function navigationOutcome(): Promise<string> {
+    return withSettledState(`navigated: url=${page.url()} title=${JSON.stringify(page.title())}`)
   }
 
   /** Wait out a mid-load abort: poll until the tab's landing stops changing
@@ -503,14 +523,14 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
     await page.goBack()
     lastSnapshot = undefined
     await settle('back', pacing.settleMs)
-    return `went back: url=${page.url()} title=${JSON.stringify(page.title())}`
+    return withSettledState(`went back: url=${page.url()} title=${JSON.stringify(page.title())}`)
   }
 
   async function forward(): Promise<string> {
     await page.goForward()
     lastSnapshot = undefined
     await settle('forward', pacing.settleMs)
-    return `went forward: url=${page.url()} title=${JSON.stringify(page.title())}`
+    return withSettledState(`went forward: url=${page.url()} title=${JSON.stringify(page.title())}`)
   }
 
   async function readPage(): Promise<string> {
@@ -624,17 +644,30 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
     // (Tier 2 — dismiss, interact, or ask_user).
     const extras: string[] = []
     if (attempt.direct) extras.push('activated directly (outside viewport)')
+    /** The snapshot whose state rides the outcome (post-dismissal when a
+     * consent wall was cleared, the post-action collect otherwise). */
+    let settled: PageSnapshot | undefined = fresh
     if (dialogNowOpen && fresh) {
       const dismissal = await dismissConsentIfOpen(fresh)
-      if (dismissal !== null) extras.push(dismissal)
-      else {
+      if (dismissal !== null) {
+        extras.push(dismissal)
+        settled = await recollection('post-dismissal', () => collectSnapshot())
+      } else {
         const detail = dialogDetail(fresh)
         if (detail !== null) extras.push(detail)
       }
     }
     extras.push(...drainedReports())
     const suffix = extras.length > 0 ? `; ${extras.join('; ')}` : ''
-    return `${prefix}${changes}${location}${suffix}`
+    const line = `${prefix}${changes}${location}${suffix}`
+
+    // ADR 0027: a meaningful click (navigation, dialog, element state, or
+    // page change) returns the settled page state so the next decision
+    // continues from the result; an inert click stays concise.
+    const meaningful = urlChanged || dialogNowOpen || deltas.length > 0 || pageChanged
+    if (!meaningful) return line
+    if (settled !== undefined) return `${line}\n${formatPageSnapshot(settled)}`
+    return withSettledState(line)
   }
 
   async function dispatchPointClick(point: ViewportPoint): Promise<void> {
@@ -709,9 +742,17 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
     await settle('type', pacing.settleMs)
     const after = await probeAction(clicked.index, clicked.label)
     if (!after.target) {
-      return `typed [${ref}]: field unavailable after page change; url=${after.signature.url} title=${JSON.stringify(after.signature.title)}`
+      // The typing navigated (e.g. a submitted search): the resulting page
+      // state and refs ride the outcome (ADR 0027).
+      const head = `typed [${ref}]: field unavailable after page change; url=${truncateOutcomeText(after.signature.url, 100)} title=${JSON.stringify(truncateOutcomeText(after.signature.title, 50))}`
+      return withSettledState(head)
     }
     const value = after.target.value ?? after.target.selectedOption ?? ''
+    const urlChanged = clicked.signature.url !== after.signature.url
+    const pageChanged = !signaturesEqual(clicked.signature, after.signature)
+    if (urlChanged || pageChanged) {
+      return withSettledState(`typed [${ref}]: value=${JSON.stringify(value)}; page changed`)
+    }
     return `typed [${ref}]: value=${JSON.stringify(value)}`
   }
 

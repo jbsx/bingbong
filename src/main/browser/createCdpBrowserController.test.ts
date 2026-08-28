@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import challengeIframe from '../../core/browser/fixtures/challenge-iframe.json'
 import youtubeHome from '../../core/browser/fixtures/youtube-home.json'
 import type { CollectedElement, CollectedPage } from '../../core/browser/snapshot'
-import { buildPageSnapshot, clickPoint } from '../../core/browser/snapshot'
+import { buildPageSnapshot, clickPoint, formatPageSnapshot } from '../../core/browser/snapshot'
 import type { BrowserSubspans } from '../../core/perf/browserSubspans'
 import { createBrowserSubspans } from '../../core/perf/browserSubspans'
 import type { PerfSpanRecord } from '../../core/perf/perfTracer'
@@ -256,6 +256,11 @@ function makeController(options?: { cdp?: FakeCdp; page?: FakePage; popupBlocks?
   return { cdp, page, controller }
 }
 
+/** The settled-state block an Action Outcome appends for this page. */
+function settledBlock(collected: CollectedPage): string {
+  return formatPageSnapshot(buildPageSnapshot(collected))
+}
+
 describe('createCdpBrowserController readPage', () => {
   it('returns a numbered-ref snapshot built from the collected page', async () => {
     const { controller } = makeController()
@@ -419,12 +424,18 @@ describe('createCdpBrowserController click', () => {
 
     const outcome = await controller.click(1)
 
+    const postClick = {
+      ...changed,
+      url: 'https://www.youtube.com/watch?v=abc',
+      title: 'Playing video',
+      dialogOpen: true,
+    }
     expect(outcome).toBe(
-      'clicked [1]: urlChanged=true dialogOpen=true; aria-pressed="false" -> "true", class="toggle off" -> "toggle on"; url=https://www.youtube.com/watch?v=abc title="Playing video"; dialog open',
+      `clicked [1]: urlChanged=true dialogOpen=true; aria-pressed="false" -> "true", class="toggle off" -> "toggle on"; url=https://www.youtube.com/watch?v=abc title="Playing video"; dialog open\n${settledBlock(postClick)}`,
     )
   })
 
-  it('caps verbose clicked-element deltas', async () => {
+  it('caps verbose clicked-element deltas in the outcome line', async () => {
     const changed = {
       ...youtubeFixture,
       elements: [
@@ -462,8 +473,12 @@ describe('createCdpBrowserController click', () => {
 
     const outcome = await controller.click(1)
 
-    expect(outcome.length).toBeLessThanOrEqual(320)
-    expect(outcome).toMatch(/…$/)
+    // The cap bounds the first line; the meaningful click's settled-state
+    // block follows beneath it.
+    const [line, ...rest] = outcome.split('\n')
+    expect(line.length).toBeLessThanOrEqual(320)
+    expect(line).toMatch(/…$/)
+    expect(rest.join('\n')).toBe(settledBlock(changed))
   })
 
   it('dispatches paced mouse move/press/release at the ref center', async () => {
@@ -700,6 +715,58 @@ describe('createCdpBrowserController type', () => {
 
     await expect(controller.type(999, 'nope')).rejects.toThrow(/ref 999 not found/)
   })
+
+  it('returns the settled page state when the typing navigates (#113)', async () => {
+    const submitted = {
+      ...youtubeFixture,
+      url: 'https://www.youtube.com/results?search_query=keyboards',
+      title: 'keyboards - YouTube',
+    }
+    const cdp = new FakeCdp(youtubeFixture)
+    // resolveRef collect, then the post-navigation collect; the probe runs
+    // on the new document, where the registry (and the field) is gone.
+    cdp.collectValues = [youtubeFixture, submitted]
+    cdp.actionProbe = {
+      target: null,
+      signature: {
+        url: submitted.url,
+        title: submitted.title,
+        scrollX: 0,
+        scrollY: 0,
+        refCount: 0,
+        labels: [],
+        dialogOpen: false,
+      },
+    }
+    const { controller } = makeController({ cdp })
+
+    const outcome = await controller.type(3, 'keyboards\n')
+
+    expect(outcome).toBe(
+      `typed [3]: field unavailable after page change; url=${submitted.url} title=${JSON.stringify(submitted.title)}\n${settledBlock(submitted)}`,
+    )
+  })
+
+  it('returns the settled page state when typing changes the page in place (#113)', async () => {
+    const cdp = new FakeCdp()
+    cdp.actionProbe = {
+      target: { checked: null, selectedOption: null, value: 'hello', ariaPressed: null, className: 'filled' },
+      signature: {
+        url: youtubeFixture.url,
+        title: youtubeFixture.title,
+        scrollX: 0,
+        scrollY: 0,
+        refCount: 20,
+        labels: buildPageSnapshot(youtubeFixture).refs.map((ref) => `${ref.label} `),
+        dialogOpen: false,
+      },
+    }
+    const { controller } = makeController({ cdp })
+
+    const outcome = await controller.type(3, 'hello')
+
+    expect(outcome).toBe(`typed [3]: value="hello"; page changed\n${settledBlock(youtubeFixture)}`)
+  })
 })
 
 describe('createCdpBrowserController ref staleness', () => {
@@ -909,8 +976,10 @@ describe('createCdpBrowserController dialog tiers', () => {
 
     const outcome = await controller.click(3)
 
+    // The consent wall was cleared; the appended block is the re-collected,
+    // dialog-free page (the fixture's base evaluateValue).
     expect(outcome).toBe(
-      'clicked [3]: urlChanged=false dialogOpen=true; page signature changed; dismissed consent dialog: clicked [2] "Reject all"',
+      `clicked [3]: urlChanged=false dialogOpen=true; page signature changed; dismissed consent dialog: clicked [2] "Reject all"\n${settledBlock(youtubeFixture)}`,
     )
   })
 
@@ -934,7 +1003,7 @@ describe('createCdpBrowserController dialog tiers', () => {
     const outcome = await controller.click(3)
 
     expect(outcome).toBe(
-      'clicked [3]: urlChanged=false dialogOpen=true; page signature changed; dialog open: "Opened dialog"; controls: [1] button "Sign in", [2] button "Not now"',
+      `clicked [3]: urlChanged=false dialogOpen=true; page signature changed; dialog open: "Opened dialog"; controls: [1] button "Sign in", [2] button "Not now"\n${settledBlock(signInDialogPage())}`,
     )
   })
 
@@ -1001,27 +1070,47 @@ describe('createCdpBrowserController native dialogs and popups', () => {
 })
 
 describe('createCdpBrowserController navigate and back', () => {
-  it('reports the current URL and title after navigation and history changes', async () => {
+  it('returns the settled page state — signature, refs, digest — with the outcome line', async () => {
     const { controller } = makeController()
 
-    expect(await controller.navigate('youtube.com')).toBe(
-      'navigated: url=https://www.youtube.com/ title="YouTube"',
-    )
-    expect(await controller.back()).toBe('went back: url=https://www.youtube.com/ title="YouTube"')
-    expect(await controller.forward()).toBe('went forward: url=https://www.youtube.com/ title="YouTube"')
+    const navigated = await controller.navigate('youtube.com')
+    expect(navigated).toBe(`navigated: url=https://www.youtube.com/ title="YouTube"\n${settledBlock(youtubeFixture)}`)
+    expect(navigated).toContain('signature ')
+    expect(await controller.back()).toBe(`went back: url=https://www.youtube.com/ title="YouTube"\n${settledBlock(youtubeFixture)}`)
+    expect(await controller.forward()).toBe(`went forward: url=https://www.youtube.com/ title="YouTube"\n${settledBlock(youtubeFixture)}`)
   })
 
-  it('normalizes input, loads the url, and invalidates the ref mapping', async () => {
+  it('collects the landing page it reports, proving the block is the settled state', async () => {
+    const landing = { ...youtubeFixture, title: 'The real landing', textDigest: 'landed here' }
+    const cdp = new FakeCdp(youtubeFixture)
+    cdp.collectValues = [landing]
+    const { controller } = makeController({ cdp })
+
+    const outcome = await controller.navigate('youtube.com')
+
+    expect(outcome).toContain('# The real landing — https://www.youtube.com/')
+    expect(outcome).toContain('landed here')
+  })
+
+  it('normalizes input, loads the url, and refreshes the ref mapping', async () => {
     const { cdp, page, controller } = makeController()
     await controller.readPage()
 
     await controller.navigate('youtube.com')
 
     expect(page.loadedUrls).toEqual(['https://youtube.com'])
-    // Refs are stale after a navigation: the next click must re-collect.
+    // #113: the navigate outcome's refs are the latest valid snapshot —
+    // the following click resolves from them without re-collecting.
     const collectsBefore = cdp.collectCalls().length
     await controller.click(1)
-    expect(cdp.collectCalls().length).toBe(collectsBefore + 1)
+    expect(cdp.collectCalls().length).toBe(collectsBefore)
+  })
+
+  it('degrades to the concise outcome line when the landing cannot be collected', async () => {
+    const cdp = new FakeCdp({ nonsense: true })
+    const { controller } = makeController({ cdp })
+
+    await expect(controller.navigate('youtube.com')).resolves.toBe('navigated: url=https://www.youtube.com/ title="YouTube"')
   })
 
   it('rejects input that is not navigable', async () => {
@@ -1039,7 +1128,7 @@ describe('createCdpBrowserController navigate and back', () => {
     await expect(controller.navigate('https://unresolvable.invalid')).rejects.toThrow(/ERR_NAME_NOT_RESOLVED/)
   })
 
-  it('goes back and invalidates the ref mapping', async () => {
+  it('goes back and refreshes the ref mapping', async () => {
     const { cdp, page, controller } = makeController()
     await controller.readPage()
 
@@ -1048,10 +1137,10 @@ describe('createCdpBrowserController navigate and back', () => {
     expect(page.wentBack).toBe(1)
     const collectsBefore = cdp.collectCalls().length
     await controller.click(1)
-    expect(cdp.collectCalls().length).toBe(collectsBefore + 1)
+    expect(cdp.collectCalls().length).toBe(collectsBefore)
   })
 
-  it('goes forward and invalidates the ref mapping', async () => {
+  it('goes forward and refreshes the ref mapping', async () => {
     const { cdp, page, controller } = makeController()
     await controller.readPage()
 
@@ -1060,7 +1149,7 @@ describe('createCdpBrowserController navigate and back', () => {
     expect(page.wentForward).toBe(1)
     const collectsBefore = cdp.collectCalls().length
     await controller.click(1)
-    expect(cdp.collectCalls().length).toBe(collectsBefore + 1)
+    expect(cdp.collectCalls().length).toBe(collectsBefore)
   })
 
   it('propagates go-forward failures', async () => {
@@ -1095,10 +1184,17 @@ describe('createCdpBrowserController navigate abort recovery (#79)', () => {
         title: 'Unusual traffic from your computer',
       },
     ]
-    const { controller } = makeController({ page })
+    const landing = {
+      ...youtubeFixture,
+      url: 'https://www.google.com/sorry/index?continue=https%3A%2F%2Fwww.google.com%2Fsearch%3Fq%3Dtest',
+      title: 'Unusual traffic from your computer',
+    }
+    const cdp = new FakeCdp(youtubeFixture)
+    cdp.collectValues = [landing]
+    const { controller } = makeController({ cdp, page })
 
     await expect(controller.navigate('https://www.google.com/search?q=test')).resolves.toBe(
-      'navigated: url=https://www.google.com/sorry/index?continue=https%3A%2F%2Fwww.google.com%2Fsearch%3Fq%3Dtest title="Unusual traffic from your computer"',
+      `navigated: url=https://www.google.com/sorry/index?continue=https%3A%2F%2Fwww.google.com%2Fsearch%3Fq%3Dtest title="Unusual traffic from your computer"\n${settledBlock(landing)}`,
     )
     expect(page.loadedUrls).toEqual(['https://www.google.com/search?q=test'])
   })
@@ -1113,9 +1209,9 @@ describe('createCdpBrowserController navigate abort recovery (#79)', () => {
     ]
     const { controller } = makeController({ page })
 
-    await expect(controller.navigate('http://127.0.0.1:1/original')).resolves.toBe(
-      'navigated: url=http://127.0.0.1:1/landed title="Landed page"',
-    )
+    const outcome = await controller.navigate('http://127.0.0.1:1/original')
+
+    expect(outcome.split('\n')[0]).toBe('navigated: url=http://127.0.0.1:1/landed title="Landed page"')
   })
 
   it('reports the current page when an abort leaves the tab where it was', async () => {
@@ -1123,12 +1219,12 @@ describe('createCdpBrowserController navigate abort recovery (#79)', () => {
     page.abortLoad = true
     const { controller } = makeController({ page })
 
-    await expect(controller.navigate('https://www.youtube.com/watch?v=abc')).resolves.toBe(
-      'navigated: url=https://www.youtube.com/ title="YouTube"',
-    )
+    const outcome = await controller.navigate('https://www.youtube.com/watch?v=abc')
+
+    expect(outcome.split('\n')[0]).toBe('navigated: url=https://www.youtube.com/ title="YouTube"')
   })
 
-  it('invalidates the ref mapping after a recovered landing', async () => {
+  it('refreshes the ref mapping after a recovered landing', async () => {
     const { cdp, page, controller } = makeController()
     await controller.readPage()
     page.abortLoad = true
@@ -1136,9 +1232,10 @@ describe('createCdpBrowserController navigate abort recovery (#79)', () => {
 
     await controller.navigate('https://www.google.com/search?q=test')
 
+    // The recovered landing's refs are the latest valid snapshot.
     const collectsBefore = cdp.collectCalls().length
     await controller.click(1)
-    expect(cdp.collectCalls().length).toBe(collectsBefore + 1)
+    expect(cdp.collectCalls().length).toBe(collectsBefore)
   })
 
   it('keeps load timeouts hard errors', async () => {
@@ -1169,6 +1266,7 @@ describe('createCdpBrowserController verbose sub-spans (#32)', () => {
 
     expect(records).toEqual([
       { turnId: 'turn-1', stage: 'browser-settle', durMs: 0, at: 1_700_000_000_000, t: 0, detail: { action: 'navigate', ms: 0 } },
+      { turnId: 'turn-1', stage: 'browser-recollection', durMs: 0, at: 1_700_000_000_000, t: 0, detail: { reason: 'settled-state' } },
     ])
   })
 
@@ -1272,7 +1370,7 @@ describe('createCdpBrowserController verbose sub-spans (#32)', () => {
     const { controller } = makeController()
 
     await expect(controller.navigate('youtube.com')).resolves.toBe(
-      'navigated: url=https://www.youtube.com/ title="YouTube"',
+      `navigated: url=https://www.youtube.com/ title="YouTube"\n${settledBlock(youtubeFixture)}`,
     )
     await expect(controller.click(3)).resolves.toBe('clicked [3]: urlChanged=false dialogOpen=false; no observable change')
   })

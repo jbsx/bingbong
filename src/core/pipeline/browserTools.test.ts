@@ -37,6 +37,8 @@ class FixtureBrowserController implements BrowserController {
   browserState: BrowserState | null = null
   /** ADR 0010 classifier facts override; null falls back to the benign fixture page. */
   facts: BlockerPageFacts | null = null
+  /** When set, pageFacts() rejects — the navigate-settle classification falls back to state(). */
+  pageFactsError: Error | null = null
   private readonly snapshot = buildPageSnapshot(parseCollectedPage(youtubeHome))
   private readonly overrides = new Map<number, SnapshotRef>()
 
@@ -101,6 +103,7 @@ class FixtureBrowserController implements BrowserController {
   }
 
   async pageFacts(): Promise<BlockerPageFacts> {
+    if (this.pageFactsError) throw this.pageFactsError
     return this.facts ?? blockerFactsFromSnapshot(this.snapshot)
   }
 
@@ -227,9 +230,14 @@ describe('browser tools through the pipeline', () => {
   it('describes the outcomes each browser tool actually returns', () => {
     const descriptions = Object.fromEntries(createBrowserTools(new FixtureBrowserController()).map((tool) => [tool.name, tool.description]))
 
+    expect(descriptions.navigate).toMatch(/settled page state/i)
+    expect(descriptions.navigate).toMatch(/refs/i)
+    expect(descriptions.navigate).toMatch(/not a required follow-up/)
     expect(descriptions.read_page).toMatch(/text digest/i)
     expect(descriptions.click).toMatch(/URL-change.*dialog.*state delta/i)
+    expect(descriptions.click).toMatch(/settled page state/i)
     expect(descriptions.type).toMatch(/actual.*value/i)
+    expect(descriptions.type).toMatch(/settled page state/i)
     expect(descriptions.scroll).toMatch(/scroll position/i)
     expect(descriptions.back).toMatch(/URL.*title/i)
     expect(descriptions.go_forward).toMatch(/URL.*title/i)
@@ -321,7 +329,7 @@ describe('browser tools through the pipeline', () => {
   describe('blocker nudge on navigation (ADR 0007)', () => {
     it('appends the verify-and-escalate nudge when navigation lands on a challenge', async () => {
       const browser = new FixtureBrowserController()
-      browser.browserState = { url: 'https://shop.example.com/', title: 'Just a moment...' }
+      browser.facts = { url: 'https://shop.example.com/', title: 'Just a moment...' }
       const { pipeline } = pipelineWith(browser, [
         { kind: 'tool_calls', calls: [{ id: 'c1', name: 'navigate', args: { url: 'https://shop.example.com/' } }] },
         { kind: 'answer', speak: 'Blocked.', display: 'Detail.' },
@@ -335,9 +343,29 @@ describe('browser tools through the pipeline', () => {
       })
     })
 
+    it('classifies the landing from its full page facts — a network-block body nudges on navigate (#113)', async () => {
+      const browser = new FixtureBrowserController()
+      browser.facts = {
+        url: 'https://news.example.com/article',
+        title: 'news',
+        textDigest: 'You are blocked by network security from viewing this page.',
+      }
+      const { pipeline } = pipelineWith(browser, [
+        { kind: 'tool_calls', calls: [{ id: 'c1', name: 'navigate', args: { url: 'https://news.example.com/article' } }] },
+        { kind: 'answer', speak: 'Blocked.', display: 'Detail.' },
+      ])
+
+      const events = await collect(pipeline, 'read the article')
+
+      const result = events.find((e) => e.type === 'tool_result')
+      expect(result?.result).toContain('\nBLOCKER:network-block news.example.com\n')
+      expect(result?.result).toContain('signing in')
+      expect(result?.result).toContain('different route')
+    })
+
     it('nudges on sign-in wall landings through every navigation verb', async () => {
       const browser = new FixtureBrowserController()
-      browser.browserState = { url: 'https://news.example.com/signin?returnUrl=%2Farticle', title: 'Sign in' }
+      browser.facts = { url: 'https://news.example.com/signin?returnUrl=%2Farticle', title: 'Sign in' }
       const { pipeline } = pipelineWith(browser, [
         {
           kind: 'tool_calls',
@@ -361,7 +389,7 @@ describe('browser tools through the pipeline', () => {
 
     it('leaves ordinary navigations — including consent walls — unnudged', async () => {
       const browser = new FixtureBrowserController()
-      browser.browserState = { url: 'https://news.example.com/', title: 'Welcome — choose your cookies' }
+      browser.facts = { url: 'https://news.example.com/', title: 'Welcome — choose your cookies' }
       const { pipeline } = pipelineWith(browser, [
         { kind: 'tool_calls', calls: [{ id: 'c1', name: 'navigate', args: { url: 'https://news.example.com/' } }] },
         { kind: 'answer', speak: 'Read it.', display: 'Detail.' },
@@ -373,8 +401,9 @@ describe('browser tools through the pipeline', () => {
       expect(events.find((e) => e.type === 'tool_result')).toMatchObject({ ok: true, result: 'navigated outcome' })
     })
 
-    it('tolerates null state fields the controller reports mid-navigation', async () => {
+    it('falls back to URL/title classification when the landing facts are unavailable', async () => {
       const browser = new FixtureBrowserController()
+      browser.pageFactsError = new Error('collected page payload malformed')
       browser.browserState = { url: null, title: null }
       const { pipeline } = pipelineWith(browser, [
         { kind: 'tool_calls', calls: [{ id: 'c1', name: 'navigate', args: { url: 'https://x.test/' } }] },
@@ -390,7 +419,7 @@ describe('browser tools through the pipeline', () => {
   describe('blocker marker lines at both choke points (ADR 0010)', () => {
     it('navigate-settle emits the machine marker + flavored nudge for a Google /sorry landing', async () => {
       const browser = new FixtureBrowserController()
-      browser.browserState = {
+      browser.facts = {
         url: 'https://www.google.com/sorry/index?continue=https%3A%2F%2Fwww.google.com%2Fsearch%3Fq%3Dtest&q=test',
         title: 'https://www.google.com/search?q=test',
       }

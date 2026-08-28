@@ -237,9 +237,11 @@ export class FakeBrowser implements BrowserController, VisualGroundingController
   async navigate(url: string): Promise<string> {
     this.navigations.push(url)
     this.pageState = { url, title: `Fake page: ${url}` }
+    // #113: navigation outcomes settle the page, so the fake's snapshot —
+    // and the classifier facts off it — follows the landing.
+    this.snapshot = { ...this.snapshot, url, title: `Fake page: ${url}` }
     return `navigated: url=${url} title=${JSON.stringify(this.pageState.title)}`
   }
-
   async readPage(): Promise<string> {
     return `<page>${this.pageState.url ?? 'blank'}</page>`
   }
@@ -274,11 +276,13 @@ export class FakeBrowser implements BrowserController, VisualGroundingController
 
   async back(): Promise<string> {
     this.pageState = { url: null, title: null }
+    this.snapshot = { ...this.snapshot, url: '', title: '' }
     return 'went back: url= title=""'
   }
 
   async forward(): Promise<string> {
     this.pageState = { url: null, title: null }
+    this.snapshot = { ...this.snapshot, url: '', title: '' }
     return 'went forward: url= title=""'
   }
 

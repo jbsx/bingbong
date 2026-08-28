@@ -28,12 +28,21 @@ function blockerSuffix(verdict: BlockerClassification): string {
 }
 
 // ADR 0007 layer 3 / ADR 0010 choke point 1: after a navigation settles,
-// classify the landing URL/title; a walled page gets the marker + nudge
-// appended to the tool result.
+// classify the landing; a walled page gets the marker + nudge appended to
+// the tool result. Since rich Action Outcomes (#113) the navigation verbs
+// collect a fresh snapshot, so the classifier sees the full page facts —
+// digest, dialog, and refs, like read_page — not just URL and title. A
+// facts failure (the outcome may have degraded to its concise line) falls
+// back to the URL/title classification.
 async function withBlockerNudge(browser: BrowserController, action: () => Promise<string>): Promise<string> {
   const outcome = await action()
-  const { url, title } = browser.state()
-  const verdict = classifyBlockerPage({ url: url ?? '', title: title ?? '' })
+  let verdict: BlockerClassification | null = null
+  try {
+    verdict = classifyBlockerPage(await browser.pageFacts())
+  } catch {
+    const { url, title } = browser.state()
+    verdict = classifyBlockerPage({ url: url ?? '', title: title ?? '' })
+  }
   return verdict ? `${outcome}\n${blockerSuffix(verdict)}` : outcome
 }
 
@@ -161,7 +170,7 @@ export function createBrowserTools(browser: BrowserController, vision?: VisionDe
     {
       name: 'navigate',
       description:
-        'Navigate the visible browser to a URL. Accepts full URLs (https://…) or search terms; returns the final URL and page title.',
+        'Navigate the visible browser to a URL. Accepts full URLs (https://…) or search terms. Returns the settled page state — URL, title, page signature, numbered interactive refs (link refs carry their hrefs), and a text digest — plus a BLOCKER marker when the landing is walled. Continue directly from the returned refs; read_page is for explicit re-inspection, not a required follow-up.',
       parameters: {
         url: { type: 'string', description: 'URL or search terms to open, e.g. "https://youtube.com" or "best mechanical keyboards"' },
       },
@@ -173,7 +182,7 @@ export function createBrowserTools(browser: BrowserController, vision?: VisionDe
     {
       name: 'read_page',
       description:
-        'Return the page URL, title, scroll state, numbered interactive refs (link refs carry their hrefs — open them with navigate), and a capped text digest. Use refs like [7] with click/type. Walls are reported as a BLOCKER: marker line with what to do.',
+        'Return the page URL, title, page signature, scroll state, numbered interactive refs (link refs carry their hrefs — open them with navigate), and a capped text digest. Use refs like [7] with click/type. Walls are reported as a BLOCKER: marker line with what to do. Navigation and page-changing actions already return this state — read only when you need a fresh look.',
       async execute(_call, context) {
         const result = await browser.readPage()
         // ADR 0010 choke point 2: the digest, dialog text, and refs the
@@ -191,7 +200,8 @@ export function createBrowserTools(browser: BrowserController, vision?: VisionDe
     },
     {
       name: 'click',
-      description: 'Click a ref, then return the URL-change flag, dialog-open flag, clicked state delta, and any coarse page change (including no observable change).',
+      description:
+        'Click a ref, then return the URL-change flag, dialog-open flag, clicked state delta, and any coarse page change. When the click meaningfully changes the page (navigation, dialog, state change), the settled page state with fresh refs follows; an inert click returns only the concise no-change line.',
       parameters: {
         ref: { type: 'integer', description: 'Element ref number from the snapshot, e.g. 7 for the element shown as [7]' },
       },
@@ -208,7 +218,7 @@ export function createBrowserTools(browser: BrowserController, vision?: VisionDe
     {
       name: 'type',
       description:
-        'Click a ref and type text, then return the field actual current value. A trailing newline ("\\n") sends Enter and may navigate.',
+        'Click a ref and type text, then return the field actual current value. A trailing newline ("\\n") sends Enter and may navigate — a page change returns the settled page state with fresh refs.',
       parameters: {
         ref: { type: 'integer', description: 'Element ref number to type into' },
         text: { type: 'string', description: 'Text to type' },
@@ -221,7 +231,7 @@ export function createBrowserTools(browser: BrowserController, vision?: VisionDe
     },
     {
       name: 'scroll',
-      description: 'Scroll the page up or down by about one screen, then return the new horizontal and vertical scroll position.',
+      description: 'Scroll the page up or down by about one screen, then return the new horizontal and vertical scroll position. Refs are re-read on the next action; scrolling itself returns no refs.',
       parameters: {
         direction: { type: 'string', enum: ['up', 'down'], description: 'Direction to scroll' },
       },
@@ -241,7 +251,7 @@ export function createBrowserTools(browser: BrowserController, vision?: VisionDe
     },
     {
       name: 'back',
-      description: 'Go back one step in browser history, then return the new URL and page title.',
+      description: 'Go back one step in browser history, then return the settled page state — new URL, title, page signature, refs, and digest — plus a BLOCKER marker when the landing is walled.',
       execute: (_call, context) => {
         resetReads(context)
         return withBlockerNudge(browser, () => browser.back())
@@ -249,7 +259,7 @@ export function createBrowserTools(browser: BrowserController, vision?: VisionDe
     },
     {
       name: 'go_forward',
-      description: 'Go forward one step in browser history, then return the new URL and page title.',
+      description: 'Go forward one step in browser history, then return the settled page state — new URL, title, page signature, refs, and digest — plus a BLOCKER marker when the landing is walled.',
       execute: (_call, context) => {
         resetReads(context)
         return withBlockerNudge(browser, () => browser.forward())

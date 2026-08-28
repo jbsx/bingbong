@@ -292,6 +292,7 @@ export function formatPageSnapshot(snapshot: PageSnapshot): string {
     // Zoomed pages (#53) scroll on fractional CSS pixels; the header line
     // keeps its integer-pixel contract.
     `viewport ${snapshot.viewport.width}x${snapshot.viewport.height} scroll ${Math.round(snapshot.viewport.scrollY)}/${Math.round(snapshot.viewport.scrollHeight)}`,
+    `signature ${pageSignature(snapshot)}`,
   ]
   if (snapshot.dialogOpen) {
     const text = truncateText(snapshot.dialogText, MAX_DIALOG_TEXT)
@@ -320,6 +321,32 @@ export function formatPageSnapshot(snapshot: PageSnapshot): string {
 
 export function findSnapshotRef(snapshot: PageSnapshot, ref: number): SnapshotRef | undefined {
   return snapshot.refs.find((candidate) => candidate.ref === ref)
+}
+
+// ADR 0027 Action Outcomes: a compact fingerprint of one settled page
+// state — url, title, scroll, dialog, and the interactive-ref identity —
+// hashed FNV-1a into 8 hex characters. Identical states hash identically,
+// so the model (and later Progress rails, #125) can compare `signature`
+// lines across tool outcomes instead of re-reading the page to tell "same
+// state" from "new state".
+export function pageSignature(snapshot: PageSnapshot): string {
+  const identity = [
+    snapshot.url,
+    snapshot.title,
+    Math.round(snapshot.viewport.scrollX ?? 0),
+    Math.round(snapshot.viewport.scrollY),
+    snapshot.dialogOpen ? `dialog:${snapshot.dialogText}` : '',
+    snapshot.refs.length,
+    snapshot.totalVisible,
+    ...(snapshot.truncated ? ['+truncated'] : []),
+    ...snapshot.refs.map((ref) => `${ref.kind}\u0000${ref.label}\u0000${ref.href ?? ''}`),
+  ].join('\u0001')
+  let hash = 0x811c9dc5
+  for (let index = 0; index < identity.length; index++) {
+    hash ^= identity.charCodeAt(index)
+    hash = Math.imul(hash, 0x01000193) >>> 0
+  }
+  return hash.toString(16).padStart(8, '0')
 }
 
 // Click coordinates: the element center, clamped into the part of the element

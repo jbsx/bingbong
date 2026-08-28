@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import challengeIframe from './fixtures/challenge-iframe.json'
 import youtubeHome from './fixtures/youtube-home.json'
 import type { CollectedElement, CollectedPage } from './snapshot'
-import { buildPageSnapshot, clickPoint, formatPageSnapshot, parseCollectedPage } from './snapshot'
+import { buildPageSnapshot, clickPoint, formatPageSnapshot, pageSignature, parseCollectedPage } from './snapshot'
 
 const youtubeFixture = youtubeHome as unknown as CollectedPage
 const challengeFixture = challengeIframe as unknown as CollectedPage
@@ -274,6 +274,7 @@ describe('formatPageSnapshot', () => {
 
     expect(text).toBe(`# YouTube — https://www.youtube.com/
 viewport 1280x800 scroll 0/4521
+signature ${pageSignature(buildPageSnapshot(youtubeFixture))}
 [1] button "Guide"
 [2] link "YouTube Home"
 [3] input[search] "Search"
@@ -384,6 +385,42 @@ viewport 1280x800 scroll 0/4521
 
     expect(text).toContain(`dialog open: "${'x'.repeat(199)}…`)
     expect(text).not.toContain('x'.repeat(201))
+  })
+})
+
+describe('pageSignature (ADR 0027 Action Outcomes)', () => {
+  it('is deterministic and stable for one settled state', () => {
+    const first = pageSignature(buildPageSnapshot(youtubeFixture))
+    const second = pageSignature(buildPageSnapshot(youtubeFixture))
+
+    expect(first).toMatch(/^[0-9a-f]{8}$/)
+    expect(second).toBe(first)
+  })
+
+  it('changes with any decision-relevant state change', () => {
+    const base = buildPageSnapshot(youtubeFixture)
+    const scrolled = buildPageSnapshot(page({ ...youtubeFixture, viewport: { ...youtubeFixture.viewport, scrollY: 400 } }))
+    const retitled = buildPageSnapshot(page({ ...youtubeFixture, title: 'Changed' }))
+    const withDialog = buildPageSnapshot(page({ ...youtubeFixture, dialogOpen: true, dialogText: 'Are you sure?' }))
+
+    const signatures = new Set([base, scrolled, retitled, withDialog].map((snapshot) => pageSignature(snapshot)))
+    expect(signatures.size).toBe(4)
+  })
+
+  it('changes when a ref label or href changes, not when only the digest differs', () => {
+    const base = buildPageSnapshot(youtubeFixture)
+    const relabeled = buildPageSnapshot(
+      page({
+        ...youtubeFixture,
+        elements: youtubeFixture.elements.map((entry, index) => (index === 0 ? { ...entry, label: 'Renamed' } : entry)),
+      }),
+    )
+    const redigested = buildPageSnapshot(page({ ...youtubeFixture, textDigest: 'totally different words' }))
+
+    expect(pageSignature(relabeled)).not.toBe(pageSignature(base))
+    // The digest is content, not interaction state: two reads of the same
+    // settled DOM (e.g. with an updated at-rest digest) stay comparable.
+    expect(pageSignature(redigested)).toBe(pageSignature(base))
   })
 })
 

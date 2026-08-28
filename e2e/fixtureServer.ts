@@ -424,7 +424,7 @@ function searchResultsPage(query: string): string {
   if (!/widget/i.test(query)) {
     return `<!doctype html>
 <html>
-<head><title>${query} — fixture engine results</title></head>
+<head><meta charset="utf-8"><title>${query} — fixture engine results</title></head>
 <body style="background:#222;color:#fff;margin:0">
   <h1>no results for "${query}"</h1>
   <p>The fixture web has no pages about that.</p>
@@ -433,7 +433,7 @@ function searchResultsPage(query: string): string {
   }
   return `<!doctype html>
 <html>
-<head><title>${query} — fixture engine results</title></head>
+<head><meta charset="utf-8"><title>${query} — fixture engine results</title></head>
 <body style="background:#222;color:#fff;margin:0">
   <h1>results for "${query}"</h1>
   <a id="result-1" href="/widgets-article">Fixture widgets: the complete guide</a>
