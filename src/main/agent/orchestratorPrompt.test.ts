@@ -117,18 +117,25 @@ describe('orchestrator continuity contract', () => {
 // ADR 0025 pins: the Run Headline contract — the live title the user
 // verifies corrections against, and the Answer that confirms them by ear.
 
-describe('orchestrator prompt Run Headline (ADR 0025)', () => {
-  it('orders report_headline into the first response and every task change', () => {
-    const line = ORCHESTRATOR_SYSTEM_PROMPT.split('\n').find((candidate) => candidate.includes('report_headline'))
-    if (!line) throw new Error('report_headline line missing from the orchestrator prompt')
-    expect(line).toMatch(/first response/)
-    expect(line).toMatch(/whenever the task changes/)
-    expect(line).toMatch(/steering directive/)
+describe('orchestrator prompt Run Plan (ADR 0027)', () => {
+  it('orders report_run_plan into the first useful Tool Round and Steering replanning', () => {
+    const line = ORCHESTRATOR_SYSTEM_PROMPT.split('\n').find((candidate) => candidate.includes('report_run_plan'))
+    if (!line) throw new Error('report_run_plan line missing from the orchestrator prompt')
+    expect(line).toMatch(/first useful Tool Round/)
+    expect(line).toMatch(/Steering/)
+    expect(line).toMatch(/alongside useful work/)
   })
 
-  it('demands the headline in task terms, never a tool name', () => {
+  it('demands the smallest sufficient Effort Tier and a task-term Run Headline', () => {
+    expect(ORCHESTRATOR_SYSTEM_PROMPT).toMatch(/Direct Action.*Lookup.*Investigation/)
+    expect(ORCHESTRATOR_SYSTEM_PROMPT).toMatch(/smallest sufficient/)
     expect(ORCHESTRATOR_SYSTEM_PROMPT).toMatch(/in task terms/)
     expect(ORCHESTRATOR_SYSTEM_PROMPT).toMatch(/never a tool name/)
+  })
+
+  it('limits later reports to headline updates or reasoned one-level escalation', () => {
+    expect(ORCHESTRATOR_SYSTEM_PROMPT).toMatch(/one level at a time/)
+    expect(ORCHESTRATOR_SYSTEM_PROMPT).toMatch(/escalation_reason/)
   })
 
   it('makes a corrected run\u2019s answer lead with the corrected task, then the result', () => {

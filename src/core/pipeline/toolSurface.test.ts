@@ -8,7 +8,7 @@ import { createMediaTools } from './mediaTools'
 import { createSubagentTools } from './subagentTools'
 import { createPanelTools } from './panelTools'
 import { createAppControlTool, createSetSettingTool } from './settingsTools'
-import { createReportHeadlineTool } from './headlineTools'
+import { createReportRunPlanTool } from './runPlanTools'
 import { FakeAppControls, FakeBrowser, FakePanel, FakeSettings, FakeVision } from '../testing/doubles'
 
 const unusedVision = new FakeVision()
@@ -28,7 +28,7 @@ function orchestratorToolCatalog(): Tool[] {
     ...createBrowserTools(new FakeBrowser(), unusedVision),
     ...createVisionGroundingTools(new FakeBrowser(), unusedVision),
     ...createMediaTools(new FakeBrowser()),
-    createReportHeadlineTool(),
+    createReportRunPlanTool(),
   ]
 }
 
@@ -89,22 +89,32 @@ describe('orchestrator tool surface', () => {
         'ground_visual',
         'look',
         'media_control',
-        'report_headline',
+        'report_run_plan',
       ].sort(),
     )
   })
 
-  it('report_headline is the Run Headline surface (ADR 0025): one string in, ungated, no history needed', async () => {
-    const headline = orchestratorToolCatalog().find((tool) => tool.name === 'report_headline')!
-    expect(Object.keys(headline.parameters ?? {}).sort()).toEqual(['headline'])
-    expect(headline.parameters?.['headline']?.type).toBe('string')
-    // Reporting a title is pure narration — never a risk gate, never
+  it('report_run_plan carries the objective, Run Headline, and Effort Tier without a gate', async () => {
+    const runPlan = orchestratorToolCatalog().find((tool) => tool.name === 'report_run_plan')!
+    expect(Object.keys(runPlan.parameters ?? {}).sort()).toEqual([
+      'effort_tier',
+      'escalation_reason',
+      'headline',
+      'objective',
+    ])
+    expect(runPlan.parameters?.['effort_tier']?.enum).toEqual(['direct_action', 'lookup', 'investigation'])
+    expect(runPlan.parameters?.['escalation_reason']?.required).toBe(false)
+    // Reporting a Run Plan is pure narration — never a risk gate, never
     // continuity-bound.
-    expect(headline.assessRisk).toBeUndefined()
-    expect(headline.requiresHistory).not.toBe(true)
+    expect(runPlan.assessRisk).toBeUndefined()
+    expect(runPlan.requiresHistory).not.toBe(true)
     await expect(
-      headline.execute?.({ id: 'c', name: 'report_headline', args: { headline: 'Find a blue mug' } }, { clock: { now: () => 0, setTimer: () => () => {} } }),
-    ).resolves.toBe('Headline noted.')
+      runPlan.execute?.({
+        id: 'c',
+        name: 'report_run_plan',
+        args: { objective: 'Find a blue mug', headline: 'Find a blue mug', effort_tier: 'lookup' },
+      }, { clock: { now: () => 0, setTimer: () => () => {} } }),
+    ).resolves.toBe('Run Plan noted.')
   })
 
   it('has no off-screen web tool anywhere on the surface (#83, ADR 0009)', () => {

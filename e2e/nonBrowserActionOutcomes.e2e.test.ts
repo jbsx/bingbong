@@ -65,7 +65,9 @@ describe('non-browser Action Outcomes e2e (#115)', () => {
     )
 
     expect(results.map((event) => event.name)).toEqual(['set_setting', 'set_panel_width'])
-    expect(results.find((event) => event.name === 'set_setting')?.result).toBe('Appearance set to dark.')
+    // The plan-less round carries its one corrective Run Plan nudge (#116)
+    // on the first useful result; the second stays clean.
+    expect(results.find((event) => event.name === 'set_setting')?.result).toMatch(/^Appearance set to dark\./)
 
     const panelWidth = await harness.dashboardEval<number>(
       'window.bingbong.feedPanel.getState().then((state) => state?.width ?? 0)',

@@ -1,5 +1,6 @@
 import type { PipelineEvent } from '../pipeline/events'
 import { inferRunOutcome } from '../pipeline/events'
+import type { EffortTier } from '../pipeline/runPlan'
 import type { SessionId } from '../session/sessionIdentity'
 import type { VoiceHeardEvent } from '../voice/ipcChannels'
 import { describeHeard } from '../voice/heardDisplay'
@@ -47,6 +48,9 @@ export function createHistoryRecorder(
       let sessionId: SessionId | null = null
       let lastStatus: string | null = null
       let failed = false
+      // The Effort Tier (#116): the latest plan this run reported. A run
+      // that never reported one ran under the default Lookup plan.
+      let effortTier: EffortTier | null = null
 
       return {
         event(event) {
@@ -78,20 +82,28 @@ export function createHistoryRecorder(
             case 'status':
               lastStatus = event.status
               return
+            case 'run_plan':
+              // The Run Plan (#116) records no transcript entry; only its
+              // tier rides the run row.
+              effortTier = event.effortTier
+              return
             case 'done': {
               if (runId !== null) {
                 const outcome = inferRunOutcome(event.outcome, lastStatus, failed)
                 // Semantic finalization fields (#110) ride the done event
-                // additively; absent fields stay null columns.
+                // additively; absent fields stay null columns. The Effort
+                // Tier (#116) defaults to Lookup — the plan a run without
+                // a declaration ran under.
                 store.finishRun(runId, outcome, event.at, {
                   resolution: event.resolution ?? null,
                   finalizationCause: event.finalizationCause ?? null,
-                })
+                }, effortTier ?? 'lookup')
                 removeActiveRun(runId)
                 runId = null
               }
               lastStatus = null
               failed = false
+              effortTier = null
               return
             }
             default: {

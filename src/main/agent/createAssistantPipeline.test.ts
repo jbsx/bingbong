@@ -386,10 +386,15 @@ describe('createAssistantPipeline', () => {
     const events = await collect(pipeline, 'zoom the web to ninety percent')
 
     expect(events.filter((e) => e.type === 'confirmation_requested')).toEqual([])
+    // The plan-less round carries the one corrective Run Plan nudge (#116)
+    // appended to the useful result.
     expect(events.find((e) => e.type === 'tool_result' && e.name === 'set_setting')).toMatchObject({
       ok: true,
-      result: 'Web zoom set to 90%.',
+      result: expect.stringMatching(/^Web zoom set to 90%\./),
     })
+    expect(
+      events.find((e) => e.type === 'tool_result' && e.name === 'set_setting' && typeof e.result === 'string')?.result.includes('report_run_plan'),
+    ).toBe(true)
     expect(settings.get().webZoomPercent).toBe(90)
     // Silent: nothing spoke besides the model's own answer.
     expect(tts.spoken).toEqual(['Ninety percent.'])
@@ -452,7 +457,7 @@ describe('createAssistantPipeline', () => {
 
     expect(events.find((e) => e.type === 'tool_result' && e.name === 'app_control')).toMatchObject({
       ok: true,
-      result: 'application: lifecycle=quitting',
+      result: expect.stringMatching(/^application: lifecycle=quitting/),
     })
     // Order is the policy: the pipeline speaks the confirmation prompt, then
     // the tool speaks its ack, and only then the app quits.

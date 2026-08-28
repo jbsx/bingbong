@@ -5,7 +5,7 @@ import { hostFromUrl } from './blockerGate'
 import { steerPipeline } from './steering'
 import { createSpeechCoordinator } from '../tts/speechCoordinator'
 import { createAskUserTool } from './askUserTools'
-import { createReportHeadlineTool } from './headlineTools'
+import { createReportRunPlanTool } from './runPlanTools'
 import { createHistoryRecorder } from '../history/historyRecorder'
 import type { HistoryStore, RecordedEntry, RunRecord } from '../history/historyStore'
 import { FailingTts, FakeClock, fakePerfHarness, fakeSubagentManager, memoryEntry, RecordingTts, ScriptedLlm, subagentRecord, withoutTurnId } from '../testing/doubles'
@@ -481,7 +481,7 @@ describe('command pipeline', () => {
     expect(events.at(-1)).toMatchObject({ type: 'done' })
   })
 
-  describe('run headline (ADR 0025)', () => {
+  describe('Run Plan and Effort Tier (#116, ADR 0025/0027)', () => {
     const noop: Tool = {
       name: 'noop',
       async execute() {
@@ -489,54 +489,185 @@ describe('command pipeline', () => {
       },
     }
 
-    it('emits run_headline when a tool round reports one, ahead of the round\u2019s work', async () => {
+    const plan = (
+      id: string,
+      objective: string,
+      headline: string,
+      effortTier: 'direct_action' | 'lookup' | 'investigation',
+      escalationReason?: string,
+    ): ToolCall => ({
+      id,
+      name: 'report_run_plan',
+      args: {
+        objective,
+        headline,
+        effort_tier: effortTier,
+        ...(escalationReason ? { escalation_reason: escalationReason } : {}),
+      },
+    })
+
+    it('accepts a Run Plan alongside the first useful Tool Round, ahead of its work', async () => {
       const llm = new ScriptedLlm([
         {
           kind: 'tool_calls',
           calls: [
-            { id: 'h1', name: 'report_headline', args: { headline: 'Find a blue mug under $20' } },
+            plan('p1', 'Find a blue mug under $20', 'Find a blue mug under $20', 'lookup'),
             { id: 'c1', name: 'noop', args: {} },
           ],
         },
         { kind: 'answer', speak: 'Found one.', display: 'Found a blue mug.' },
       ])
-      const pipeline = createCommandPipeline({ llm, tts: new RecordingTts(), clock: new FakeClock(), tools: [createReportHeadlineTool(), noop] })
+      const pipeline = createCommandPipeline({ llm, tts: new RecordingTts(), clock: new FakeClock(), tools: [createReportRunPlanTool(), noop] })
 
       const events = await collect(pipeline, 'find a blue mug')
 
+      expect(events).toContainEqual({
+        type: 'run_plan',
+        objective: 'Find a blue mug under $20',
+        headline: 'Find a blue mug under $20',
+        effortTier: 'lookup',
+        source: 'model',
+        at: 0,
+      })
       const headlineAt = events.findIndex((event) => event.type === 'run_headline' && event.text === 'Find a blue mug under $20')
       const workAt = events.findIndex((event) => event.type === 'tool_call' && event.name === 'noop')
       expect(headlineAt).toBeGreaterThanOrEqual(0)
       expect(workAt).toBeGreaterThan(headlineAt)
     })
 
-    it('emits again only when the headline changes — a correction revises the title', async () => {
+    it('updates the headline at the same tier and gates escalation — one level, with a reason', async () => {
       const llm = new ScriptedLlm([
-        { kind: 'tool_calls', calls: [{ id: 'h1', name: 'report_headline', args: { headline: 'Find a blue mug under $20' } }, { id: 'c1', name: 'noop', args: {} }] },
-        { kind: 'tool_calls', calls: [{ id: 'h2', name: 'report_headline', args: { headline: 'Find a blue mug under $10' } }, { id: 'c2', name: 'noop', args: {} }] },
-        { kind: 'tool_calls', calls: [{ id: 'h3', name: 'report_headline', args: { headline: 'Find a blue mug under $10' } }, { id: 'c3', name: 'noop', args: {} }] },
+        { kind: 'tool_calls', calls: [plan('p1', 'Find a blue mug', 'Find a blue mug under $20', 'direct_action'), { id: 'c1', name: 'noop', args: {} }] },
+        { kind: 'tool_calls', calls: [plan('p2', 'Find a blue mug', 'Compare every blue mug', 'investigation'), { id: 'c2', name: 'noop', args: {} }] },
+        { kind: 'tool_calls', calls: [plan('p3', 'Find a blue mug', 'Find a blue mug under $10', 'lookup'), { id: 'c3', name: 'noop', args: {} }] },
+        { kind: 'tool_calls', calls: [plan('p4', 'Find a blue mug', 'Compare blue mug prices', 'lookup', 'The first store had none in stock.'), { id: 'c4', name: 'noop', args: {} }] },
         { kind: 'answer', speak: 'Found one.', display: 'Found a cheaper blue mug.' },
       ])
-      const pipeline = createCommandPipeline({ llm, tts: new RecordingTts(), clock: new FakeClock(), tools: [createReportHeadlineTool(), noop] })
+      const pipeline = createCommandPipeline({ llm, tts: new RecordingTts(), clock: new FakeClock(), tools: [createReportRunPlanTool(), noop] })
 
       const events = await collect(pipeline, 'find a blue mug')
 
+      const plans = events.filter((event) => event.type === 'run_plan')
+      expect(plans.map((event) => (event as { effortTier: string }).effortTier)).toEqual(['direct_action', 'lookup'])
+      expect(plans.at(-1)).toMatchObject({ escalationReason: 'The first store had none in stock.' })
       const headlines = events.filter((event) => event.type === 'run_headline').map((event) => (event as { text: string }).text)
-      expect(headlines).toEqual(['Find a blue mug under $20', 'Find a blue mug under $10'])
+      expect(headlines).toEqual(['Find a blue mug under $20', 'Compare blue mug prices'])
+      // The two-level jump and the reasonless escalation were refused — the
+      // useful sibling work of those rounds still ran.
+      expect(events.find((event) => event.type === 'tool_result' && event.callId === 'p2')).toMatchObject({
+        ok: false,
+        error: expect.stringMatching(/one level/i),
+      })
+      expect(events.find((event) => event.type === 'tool_result' && event.callId === 'p3')).toMatchObject({
+        ok: false,
+        error: expect.stringMatching(/escalation_reason/i),
+      })
+      expect(events.filter((event) => event.type === 'tool_result' && event.name === 'noop' && event.ok)).toHaveLength(4)
     })
 
-    it('emits nothing for rounds without the call, and tolerates a malformed headline argument', async () => {
+    it('defaults a missing first plan to Lookup, retains the Command Echo, nudges once, and runs useful work', async () => {
       const llm = new ScriptedLlm([
         { kind: 'tool_calls', calls: [{ id: 'c1', name: 'noop', args: {} }] },
-        { kind: 'tool_calls', calls: [{ id: 'h1', name: 'report_headline', args: { headline: '' } }] },
-        { kind: 'tool_calls', calls: [{ id: 'h2', name: 'report_headline', args: { headline: 42 } }] },
+        { kind: 'tool_calls', calls: [{ id: 'c2', name: 'noop', args: {} }] },
         { kind: 'answer', speak: 'Done.', display: 'Done.' },
       ])
-      const pipeline = createCommandPipeline({ llm, tts: new RecordingTts(), clock: new FakeClock(), tools: [createReportHeadlineTool(), noop] })
+      const pipeline = createCommandPipeline({ llm, tts: new RecordingTts(), clock: new FakeClock(), tools: [createReportRunPlanTool(), noop] })
 
       const events = await collect(pipeline, 'do the thing')
 
+      expect(events).toContainEqual({
+        type: 'run_plan',
+        objective: 'do the thing',
+        headline: null,
+        effortTier: 'lookup',
+        source: 'fallback',
+        at: 0,
+      })
       expect(events.filter((event) => event.type === 'run_headline')).toEqual([])
+      // Exactly one corrective nudge rides a useful result; the second
+      // plan-less round stays clean.
+      expect(
+        events.filter((event) => event.type === 'tool_result' && typeof event.result === 'string' && event.result.includes('report_run_plan')),
+      ).toHaveLength(1)
+      expect(events.filter((event) => event.type === 'tool_result' && event.name === 'noop' && event.ok)).toHaveLength(2)
+    })
+
+    it('degrades a malformed plan without stalling, and the next valid report establishes the plan', async () => {
+      const llm = new ScriptedLlm([
+        { kind: 'tool_calls', calls: [{ id: 'p1', name: 'report_run_plan', args: { objective: '', headline: 42, effort_tier: 'huge' } }, { id: 'c1', name: 'noop', args: {} }] },
+        { kind: 'tool_calls', calls: [plan('p2', 'Do the thing', 'Do the thing', 'direct_action'), { id: 'c2', name: 'noop', args: {} }] },
+        { kind: 'answer', speak: 'Done.', display: 'Done.' },
+      ])
+      const pipeline = createCommandPipeline({ llm, tts: new RecordingTts(), clock: new FakeClock(), tools: [createReportRunPlanTool(), noop] })
+
+      const events = await collect(pipeline, 'do the thing')
+
+      // The malformed round fell back to Lookup and its plan call answered
+      // with the corrective notice; the sibling work ran.
+      expect(events.filter((event) => event.type === 'tool_result' && event.name === 'noop' && event.ok)).toHaveLength(2)
+      expect(events.find((event) => event.type === 'tool_result' && event.callId === 'p1')).toMatchObject({
+        ok: false,
+        error: expect.stringMatching(/report_run_plan/),
+      })
+      // The later valid report is an initial plan — the fallback constrains
+      // nothing, so the smaller tier is accepted.
+      expect(events.filter((event) => event.type === 'run_plan').map((event) => (event as { effortTier: string }).effortTier)).toEqual([
+        'lookup',
+        'direct_action',
+      ])
+      expect(events.find((event) => event.type === 'run_headline')).toMatchObject({ text: 'Do the thing' })
+    })
+
+    it('reopens the initial-plan slot after a steering directive — a fresh plan may redeclare its tier', async () => {
+      const secondTurn = deferred<AssistantTurn>()
+      const requests: LlmRequest[] = []
+      const llm: LlmClient = {
+        async complete(request) {
+          requests.push(request)
+          if (requests.length === 1) {
+            return {
+              kind: 'tool_calls',
+              calls: [plan('p1', 'Find a mug', 'Find a mug', 'lookup'), { id: 'c1', name: 'noop', args: {} }],
+            }
+          }
+          if (requests.length === 2) return secondTurn.promise
+          if (requests.length === 3) {
+            return {
+              kind: 'tool_calls',
+              calls: [plan('p2', 'Find a red mug', 'Find a red mug', 'direct_action'), { id: 'c2', name: 'noop', args: {} }],
+            }
+          }
+          return { kind: 'answer', speak: 'Found a red one.', display: 'Found a red mug.' }
+        },
+      }
+      const pipeline = createCommandPipeline({ llm, tts: new RecordingTts(), clock: new FakeClock(), tools: [createReportRunPlanTool(), noop] })
+
+      const run = collect(pipeline, 'find a mug')
+      // Round 1 establishes the lookup plan; steering lands while round 2's
+      // model call is in flight, so round 2's stale work is discarded.
+      // Round 1 emits several events, so the poll needs a longer leash than
+      // the shared waitUntil.
+      for (let attempt = 0; attempt < 200 && requests.length < 2; attempt += 1) await flush()
+      expect(requests.length).toBeGreaterThanOrEqual(2)
+      pipeline.pause()
+      secondTurn.resolve({ kind: 'tool_calls', calls: [{ id: 'stale', name: 'noop', args: {} }] })
+      await waitUntil(() => pipeline.getState() === 'paused')
+      pipeline.resume('Find a red mug instead.')
+
+      const events = await run
+
+      expect(requests[2]?.steering).toBe('Find a red mug instead.')
+      // The corrected objective's report is a fresh initial plan — the
+      // smaller tier is accepted where a mid-run downgrade would be refused.
+      expect(events.filter((event) => event.type === 'run_plan').map((event) => (event as { effortTier: string }).effortTier)).toEqual([
+        'lookup',
+        'direct_action',
+      ])
+      expect(events.filter((event) => event.type === 'run_headline').map((event) => (event as { text: string }).text)).toEqual([
+        'Find a mug',
+        'Find a red mug',
+      ])
+      expect(events.some((event) => event.type === 'tool_result' && event.name === 'report_run_plan' && !event.ok)).toBe(false)
     })
   })
 
@@ -2008,7 +2139,7 @@ describe('command pipeline — turn correlation (#28)', () => {
       finishSession() {},
       startRun(command, at, turnId, sessionId) {
         const id = nextRunId++
-        runs.push({ id, turnId, sessionId, command, startedAt: at, finishedAt: null, outcome: null, resolution: null, finalizationCause: null })
+        runs.push({ id, turnId, sessionId, command, startedAt: at, finishedAt: null, outcome: null, effortTier: null, resolution: null, finalizationCause: null })
         return id
       },
       finishRun(runId, outcome, at, finalization) {

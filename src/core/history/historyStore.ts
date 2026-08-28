@@ -1,6 +1,7 @@
 import type { SessionEndReason } from '../session/sessionRuntime'
 import type { SessionId } from '../session/sessionIdentity'
 import type { FinalizationCause, RunFinalization, RunResolution } from '../session/runJournal'
+import type { EffortTier } from '../pipeline/runPlan'
 
 export type { SessionEndReason } from '../session/sessionRuntime'
 
@@ -44,6 +45,12 @@ export interface RunRecord {
   finishedAt: number | null
   outcome: RunOutcome | null
   /**
+   * The Effort Tier the run ended under (#116): the latest declared or
+   * fallback Lookup plan. Null only on legacy rows recorded before the
+   * Run Plan existed — never inferred for them.
+   */
+  effortTier: EffortTier | null
+  /**
    * Semantic Run Resolution (#110): null on every legacy row and every run
    * that ended without a validated model proposal. Never inferred.
    */
@@ -82,9 +89,10 @@ export interface HistoryStore {
   /**
    * Closes a run with its mechanical outcome; the finalization semantics
    * (#110) ride along when the run finalized — absent means null columns
-   * (legacy callers, interrupted supersession).
+   * (legacy callers, interrupted supersession). The Effort Tier (#116)
+   * is the run's latest plan tier; absent means null (legacy callers).
    */
-  finishRun(runId: number, outcome: RunOutcome, at: number, finalization?: RunFinalization): void
+  finishRun(runId: number, outcome: RunOutcome, at: number, finalization?: RunFinalization, effortTier?: EffortTier | null): void
   appendEntry(entry: HistoryEntryInput): void
   /** Most recent entries, oldest first. */
   recentEntries(limit: number): RecordedEntry[]

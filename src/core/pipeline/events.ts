@@ -4,6 +4,7 @@ import type { SubagentKind, SubagentOwner, SubagentStatus } from '../agent/subag
 import type { SubagentTabPhase } from '../browser/subagentTabs'
 import type { RunId, SessionGeneration, SessionId, SubmissionId } from '../session/sessionIdentity'
 import type { FinalizationCause, RunResolution } from '../session/runJournal'
+import type { EffortTier } from './runPlan'
 
 /**
  * Ownership metadata on Session-scoped events (#86–#100): every published
@@ -179,6 +180,25 @@ export type PipelineEvent = SessionEventIdentity & (
    * title is its one consumer.
    */
   | { type: 'run_headline'; turnId: string; text: string; at: number }
+  /**
+   * The Run's current plan (#116, ADR 0027): objective, Run Headline,
+   * and Effort Tier — emitted when a tool round's report_run_plan call
+   * establishes or changes it, and once for the fallback Lookup plan a
+   * run without a valid first plan runs under. Detail event — maps to
+   * no history entry; runtime policy, telemetry, and the history
+   * recorder are its consumers.
+   */
+  | {
+      type: 'run_plan'
+      turnId: string
+      objective: string
+      /** Null while the Command Echo stands in (the fallback plan). */
+      headline: string | null
+      effortTier: EffortTier
+      source: 'model' | 'fallback'
+      escalationReason?: string
+      at: number
+    }
   /** A subagent's state changed — the dashboard keeps one card per agent id. */
   | { type: 'agent_update'; agent: SubagentCard; at: number }
   /**

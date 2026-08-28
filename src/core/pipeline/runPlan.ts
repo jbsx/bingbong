@@ -1,0 +1,89 @@
+// The Run Plan (#116, ADR 0027): the orchestrator's declaration of a
+// Run's objective, Run Headline, and smallest sufficient Effort Tier.
+// Pure validation only — the pipeline owns the state machine, the tool
+// (runPlanTools) only acknowledges. Missing or malformed plans never
+// fail a Run: the fallback is a Lookup plan that keeps the Command Echo
+// as the Peek Card's title.
+
+import type { ToolCall } from '../ports/llm'
+
+/** The bounded classes of autonomous work a Run may spend (glossary). */
+export type EffortTier = 'direct_action' | 'lookup' | 'investigation'
+
+export const EFFORT_TIERS: readonly EffortTier[] = ['direct_action', 'lookup', 'investigation']
+
+export function isEffortTier(value: unknown): value is EffortTier {
+  return typeof value === 'string' && (EFFORT_TIERS as readonly string[]).includes(value)
+}
+
+/** The Run's current plan — `headline: null` means the Command Echo stands. */
+export interface RunPlan {
+  objective: string
+  headline: string | null
+  effortTier: EffortTier
+}
+
+/** A parsed, well-formed report_run_plan call. */
+export interface PlanReport {
+  objective: string
+  headline: string
+  effortTier: EffortTier
+  escalationReason?: string
+}
+
+/** The one corrective nudge a Run without a valid plan receives (#116). */
+export const RUN_PLAN_NUDGE =
+  'Every run declares a Run Plan: call report_run_plan alongside your useful work with ' +
+  'objective (the task as you now understand it), headline (one short line in task terms — ' +
+  'the run\u2019s live title on screen), and effort_tier (the smallest sufficient of ' +
+  'direct_action, lookup, investigation). This run continues under the default Lookup plan.'
+
+export function lookupFallbackPlan(command: string): RunPlan {
+  return { objective: command.trim(), headline: null, effortTier: 'lookup' }
+}
+
+/** Parses a report_run_plan call; null when any field is missing or malformed. */
+export function parsePlanReport(call: ToolCall): PlanReport | null {
+  const objective = typeof call.args.objective === 'string' ? call.args.objective.trim() : ''
+  const headline = typeof call.args.headline === 'string' ? call.args.headline.trim() : ''
+  const tier = call.args.effort_tier
+  if (objective === '' || headline === '' || !isEffortTier(tier)) return null
+  const reason = typeof call.args.escalation_reason === 'string' ? call.args.escalation_reason.trim() : ''
+  return { objective, headline, effortTier: tier, ...(reason !== '' ? { escalationReason: reason } : {}) }
+}
+
+const TIER_LEVELS: Record<EffortTier, number> = { direct_action: 0, lookup: 1, investigation: 2 }
+
+/** What a review of one plan report decided. */
+export type PlanReview =
+  | { kind: 'initial'; plan: RunPlan }
+  | { kind: 'update'; plan: RunPlan }
+  | { kind: 'escalation'; plan: RunPlan; reason: string }
+  | { kind: 'rejected'; reason: string }
+
+/**
+ * Reviews a well-formed report against the Run's current plan. The first
+ * model declaration is always an initial plan — the fallback Lookup plan
+ * is a default, not a declaration, so it constrains nothing. Later reports
+ * refresh the headline at the same tier or escalate exactly one level with
+ * a reason; downgrades arrive only through a fresh Steering plan, which
+ * the pipeline signals by clearing `modelDeclared`.
+ */
+export function reviewPlanReport(current: RunPlan | null, modelDeclared: boolean, report: PlanReport): PlanReview {
+  const plan: RunPlan = { objective: report.objective, headline: report.headline, effortTier: report.effortTier }
+  if (current === null || !modelDeclared) return { kind: 'initial', plan }
+  const level = TIER_LEVELS[report.effortTier] - TIER_LEVELS[current.effortTier]
+  if (level === 0) return { kind: 'update', plan }
+  if (level === 1) {
+    if (report.escalationReason === undefined) {
+      return { kind: 'rejected', reason: 'Run Plan rejected: escalating effort_tier requires escalation_reason stating the new evidence.' }
+    }
+    return { kind: 'escalation', plan, reason: report.escalationReason }
+  }
+  return {
+    kind: 'rejected',
+    reason:
+      'Run Plan rejected: effort_tier changes one level at a time and never downgrades mid-run — ' +
+      'continue at the current tier, or report a fresh plan after a Steering correction.',
+  }
+}

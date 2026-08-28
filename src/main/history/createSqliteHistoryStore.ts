@@ -17,6 +17,7 @@ import {
   type FinalizationCause,
   type RunResolution,
 } from '../../core/session/runJournal'
+import { EFFORT_TIERS, type EffortTier } from '../../core/pipeline/runPlan'
 
 // SQLite backing for the history port (spec #1, Persistence). Write-through
 // and synchronous: every statement is durable before the event that caused it
@@ -79,6 +80,11 @@ export function createSqliteHistoryStore(
   if (!runColumns.some((column) => column.name === 'finalization_cause')) {
     db.exec('ALTER TABLE runs ADD COLUMN finalization_cause TEXT')
   }
+  // The Effort Tier (#116): same additive discipline — existing rows stay
+  // null; tiers are never inferred for past runs.
+  if (!runColumns.some((column) => column.name === 'effort_tier')) {
+    db.exec('ALTER TABLE runs ADD COLUMN effort_tier TEXT')
+  }
   const entryColumns = db.prepare("PRAGMA table_info('entries')").all() as { name: string }[]
   if (!entryColumns.some((column) => column.name === 'session_id')) {
     db.exec('ALTER TABLE entries ADD COLUMN session_id TEXT')
@@ -108,15 +114,16 @@ export function createSqliteHistoryStore(
     finished_at: number
     resolution: string | null
     finalization_cause: string | null
+    effort_tier: string | null
   }>(
-    'UPDATE runs SET outcome = @outcome, finished_at = @finished_at, resolution = @resolution, finalization_cause = @finalization_cause WHERE id = @id',
+    'UPDATE runs SET outcome = @outcome, finished_at = @finished_at, resolution = @resolution, finalization_cause = @finalization_cause, effort_tier = @effort_tier WHERE id = @id',
   )
   const insertEntry = db.prepare<{ run_id: number | null; kind: string; text: string; at: number; session_id: string | null }>(
     'INSERT INTO entries (run_id, kind, text, at, session_id) VALUES (@run_id, @kind, @text, @at, @session_id)',
   )
   const selectEntries = db.prepare('SELECT id, run_id, kind, text, at, session_id FROM entries ORDER BY id DESC LIMIT ?')
   const selectRuns = db.prepare(
-    'SELECT id, turn_id, session_id, command, started_at, finished_at, outcome, resolution, finalization_cause FROM runs ORDER BY id DESC LIMIT ?',
+    'SELECT id, turn_id, session_id, command, started_at, finished_at, outcome, resolution, finalization_cause, effort_tier FROM runs ORDER BY id DESC LIMIT ?',
   )
   const selectSessions = db.prepare(
     'SELECT id, started_at, ended_at, end_reason FROM sessions ORDER BY rowid DESC LIMIT ?',
@@ -141,6 +148,7 @@ export function createSqliteHistoryStore(
     outcome: string | null
     resolution: string | null
     finalization_cause: string | null
+    effort_tier: string | null
   }
 
   interface SessionRow {
@@ -177,6 +185,12 @@ export function createSqliteHistoryStore(
       row.finalization_cause !== null && (FINALIZATION_CAUSES as readonly string[]).includes(row.finalization_cause)
         ? (row.finalization_cause as FinalizationCause)
         : null,
+    // The Effort Tier (#116) degrades the same way: an unknown stored
+    // value is null, never an unvalidated string.
+    effortTier:
+      row.effort_tier !== null && (EFFORT_TIERS as readonly string[]).includes(row.effort_tier)
+        ? (row.effort_tier as EffortTier)
+        : null,
   })
 
   const toSession = (row: SessionRow): SessionRecord => ({
@@ -204,13 +218,14 @@ export function createSqliteHistoryStore(
       }
       return Number(info.lastInsertRowid)
     },
-    finishRun(runId, outcome, at, finalization) {
+    finishRun(runId, outcome, at, finalization, effortTier) {
       finishRun.run({
         id: runId,
         outcome,
         finished_at: at,
         resolution: finalization?.resolution ?? null,
         finalization_cause: finalization?.finalizationCause ?? null,
+        effort_tier: effortTier ?? null,
       })
     },
     appendEntry(entry) {

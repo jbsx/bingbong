@@ -61,7 +61,8 @@ describe('ask_user typed answer e2e', () => {
       type: 'tool_result',
       callId: 'ask',
       ok: true,
-      result: 'Paris, France',
+      // The plan-less round carries its one corrective Run Plan nudge (#116).
+      result: expect.stringMatching(/^Paris, France/),
     }))
     expect(await harness.dashboardEval<boolean>(`!!document.querySelector('.ask-card')`)).toBe(false)
   })
@@ -108,7 +109,7 @@ describe('ask_user timeout e2e', () => {
       type: 'tool_result',
       callId: 'ask',
       ok: true,
-      result: "user didn't answer",
+      result: expect.stringMatching(/^user didn't answer/),
     }))
     expect(events).toContainEqual(expect.objectContaining({
       type: 'display',

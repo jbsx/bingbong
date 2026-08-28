@@ -114,6 +114,33 @@ describe('extractMetrics', () => {
     expect(metrics.finalizationCause).toBe('model_answered')
   })
 
+  it('records the latest declared Effort Tier, defaulting an undeclared plan to Lookup (#116)', () => {
+    const declared = extractMetrics(
+      [
+        command(0),
+        { type: 'run_plan', turnId: T, objective: 'Find it', headline: 'Find it', effortTier: 'lookup', source: 'model', at: 1 },
+        { type: 'run_plan', turnId: T, objective: 'Compare sources', headline: 'Compare sources', effortTier: 'investigation', source: 'model', escalationReason: 'Sources disagreed.', at: 2 },
+        done(3),
+      ],
+      [],
+      false,
+    )
+    const fallback = extractMetrics([command(0), done(1)], [], false)
+    const fallbackEvent = extractMetrics(
+      [
+        command(0),
+        { type: 'run_plan', turnId: T, objective: 'do it', headline: null, effortTier: 'lookup', source: 'fallback', at: 1 },
+        done(2),
+      ],
+      [],
+      false,
+    )
+
+    expect(declared.effortTier).toBe('investigation')
+    expect(fallback.effortTier).toBe('lookup')
+    expect(fallbackEvent.effortTier).toBe('lookup')
+  })
+
   it('records a hard-limit failure’s mechanical cause with no Resolution (#110)', () => {
     const metrics = extractMetrics(
       [command(0), { type: 'error', turnId: T, message: 'tool round limit (32) reached', at: 1 }, done(2, 'failed', { finalizationCause: 'hard_limit' })],
@@ -143,6 +170,7 @@ describe('aggregateScenarios', () => {
         elapsedMs,
         repeatedActions: 0,
         outcome: 'done' as const,
+        effortTier: 'lookup' as const,
         resolution: null,
         finalizationCause: null,
         rawLimitFailure: null,

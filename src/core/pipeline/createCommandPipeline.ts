@@ -26,6 +26,13 @@ import type { BlockerGate } from './blockerGate'
 import { createBlockerGate } from './blockerGate'
 import { MAX_TOOL_ROUNDS_DEFAULT } from '../settings/settings'
 import {
+  lookupFallbackPlan,
+  parsePlanReport,
+  reviewPlanReport,
+  RUN_PLAN_NUDGE,
+  type RunPlan,
+} from './runPlan'
+import {
   createObservationLedger,
   type ObservationInput,
   type ObservationProducer,
@@ -448,12 +455,18 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
       return record
     }
     // Steering observations (#111): every directive is recorded exactly
-    // once, at the checkpoint that consumes it into the run.
+    // once, at the checkpoint that consumes it into the run. A consumed
+    // directive also invalidates the model-declared Run Plan (#116): the
+    // corrected objective reports a fresh initial plan, not an update.
+    let steeringDirectiveSeen = false
     const consumeSteering = async function* (
       status: 'thinking' | 'acting',
     ): AsyncGenerator<UnstampedEvent, string | undefined> {
       const directive = yield* checkpoint(run, status)
-      if (directive !== undefined) observe({ producer: 'steering', ok: true, payload: directive })
+      if (directive !== undefined) {
+        observe({ producer: 'steering', ok: true, payload: directive })
+        steeringDirectiveSeen = true
+      }
       return directive
     }
     const emitDetail = deps.emitDetail
@@ -541,6 +554,14 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
         // The Run Headline (ADR 0025): the last one this run emitted — the
         // next report lands as an event only when it changes the title.
         let lastHeadline: string | null = null
+        // The Run Plan (#116, ADR 0027): null until the first useful Tool
+        // Round establishes one — a valid model report or the fallback
+        // Lookup plan. `modelDeclaredPlan` distinguishes the fallback from
+        // a declaration: the first valid report is always an initial plan.
+        // `planNudged` caps the corrective nudge at exactly one per run.
+        let runPlan: RunPlan | null = null
+        let modelDeclaredPlan = false
+        let planNudged = false
         // Re-read per run: a settings change applies to the next command.
         const effectiveMaxToolRounds = deps.getMaxToolRounds?.() ?? maxToolRounds
 
@@ -616,17 +637,79 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
             break
           }
 
-          // The Run Headline (ADR 0025): a tool round may carry a
-          // report_headline call alongside its work — the Peek Card's live
-          // title takes it the moment the round lands, ahead of the work.
-          // A missing, empty, or unchanged report emits nothing; the echo
-          // or the last good headline stands.
-          const reportedHeadline = turn.calls.find((call) => call.name === 'report_headline')
-          const headlineText =
-            typeof reportedHeadline?.args.headline === 'string' ? reportedHeadline.args.headline.trim() : ''
-          if (headlineText !== '' && headlineText !== lastHeadline) {
-            lastHeadline = headlineText
-            yield { type: 'run_headline', text: headlineText, at: clock.now() }
+          // The Run Plan (#116, ADR 0027): a tool round may carry a
+          // report_run_plan call alongside its work — the plan lands the
+          // moment the round does, ahead of the work. The first valid
+          // model report establishes objective, Run Headline, and Effort
+          // Tier; later reports update the headline at the same tier or
+          // escalate one level with a reason. A malformed report or a
+          // missing plan on the first useful round defaults the run to
+          // Lookup (Command Echo retained) with exactly one corrective
+          // nudge — never a stall, never a failed round. A Steering
+          // correction reopens the initial-plan slot: the corrected
+          // objective reports a fresh plan, not an update.
+          if (steeringDirectiveSeen) {
+            steeringDirectiveSeen = false
+            modelDeclaredPlan = false
+          }
+          let planResultError: string | null = null
+          let planNudgeOnSibling = false
+          // Planning engages only where the model can actually report a
+          // plan: a catalog without the tool (tests, lean pipelines) never
+          // nudges toward a call it cannot make.
+          if (toolsByName.has('report_run_plan')) {
+            const planCall = turn.calls.find((call) => call.name === 'report_run_plan')
+            const planReport = planCall ? parsePlanReport(planCall) : null
+            if (planReport !== null) {
+              const review = reviewPlanReport(runPlan, modelDeclaredPlan, planReport)
+              if (review.kind === 'rejected') {
+                planResultError = review.reason
+              } else {
+                runPlan = review.plan
+                modelDeclaredPlan = true
+                yield {
+                  type: 'run_plan',
+                  objective: review.plan.objective,
+                  headline: review.plan.headline,
+                  effortTier: review.plan.effortTier,
+                  source: 'model',
+                  ...(review.kind === 'escalation' ? { escalationReason: review.reason } : {}),
+                  at: clock.now(),
+                }
+              }
+            } else if (planCall !== undefined && !planNudged) {
+              // Malformed report: the call answers with the one corrective
+              // nudge; useful sibling work in the round still executes.
+              planResultError = RUN_PLAN_NUDGE
+              planNudged = true
+            }
+            // The Run Headline (ADR 0025): the plan's headline revises the
+            // Peek Card's live title when it changes; the echo or the last
+            // good headline stands otherwise.
+            const headlineText = runPlan?.headline ?? null
+            if (headlineText !== null && headlineText !== lastHeadline) {
+              lastHeadline = headlineText
+              yield { type: 'run_headline', text: headlineText, at: clock.now() }
+            }
+            // The first useful Tool Round without a valid plan runs under
+            // the fallback Lookup plan (#116); its nudge rides one of the
+            // round's own tool results so the model sees it without a
+            // dedicated round.
+            if (runPlan === null && turn.calls.some((call) => call.name !== 'report_run_plan')) {
+              runPlan = lookupFallbackPlan(command)
+              yield {
+                type: 'run_plan',
+                objective: runPlan.objective,
+                headline: null,
+                effortTier: 'lookup',
+                source: 'fallback',
+                at: clock.now(),
+              }
+              if (!planNudged) {
+                planNudged = true
+                planNudgeOnSibling = true
+              }
+            }
           }
 
           yield { type: 'status', status: 'acting', at: clock.now() }
@@ -649,7 +732,13 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
               break
             }
             yield { type: 'tool_call', callId: call.id, name: call.name, args: call.args, at: clock.now() }
-            const outcome = yield* runGatedTool(call, turnId, visionBudget, searchLoopRail, blockerGate, toolContext, run, observe)
+            // A rejected or malformed Run Plan report (#116) never reaches
+            // execute: the call answers with the corrective notice directly,
+            // like an unknown tool, while sibling work runs untouched.
+            const outcome: ToolResultOutcome =
+              call.name === 'report_run_plan' && planResultError !== null
+                ? { ok: false, error: planResultError }
+                : yield* runGatedTool(call, turnId, visionBudget, searchLoopRail, blockerGate, toolContext, run, observe)
             // Observation ledger (#111): the raw outcome as the tool
             // produced it, ahead of the advisory nudges appended below —
             // later checkpoint validation checks excerpts against what the
@@ -672,10 +761,22 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
             // leaves it alone) and let an advisory nudge ride the search
             // result the model sees and the feed shows.
             const searchLoopNudge = await searchLoopRail.observe(call, outcome)
-            const observedOutcome: ToolResultOutcome =
+            let observedOutcome: ToolResultOutcome =
               searchLoopNudge && outcome.ok && typeof outcome.result === 'string'
                 ? { ok: true, result: `${outcome.result}\n\n${searchLoopNudge}` }
                 : outcome
+            // The fallback plan's corrective nudge (#116) rides one useful
+            // sibling result — the model sees it without a bookkeeping
+            // round, and the useful result still reports its own content.
+            if (
+              planNudgeOnSibling &&
+              call.name !== 'report_run_plan' &&
+              observedOutcome.ok &&
+              typeof observedOutcome.result === 'string'
+            ) {
+              planNudgeOnSibling = false
+              observedOutcome = { ok: true, result: `${observedOutcome.result}\n\n${RUN_PLAN_NUDGE}` }
+            }
             toolResults.push({ call, outcome: observedOutcome })
             yield {
               type: 'tool_result',

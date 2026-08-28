@@ -22,14 +22,15 @@ function fakeStore(): HistoryStore & { entries: RecordedEntry[]; runs: RunRecord
     finishSession() {},
     startRun(command, at, turnId, sessionId) {
       const id = nextRunId++
-      runs.push({ id, turnId, sessionId, command, startedAt: at, finishedAt: null, outcome: null, resolution: null, finalizationCause: null })
+      runs.push({ id, turnId, sessionId, command, startedAt: at, finishedAt: null, outcome: null, effortTier: null, resolution: null, finalizationCause: null })
       return id
     },
-    finishRun(runId, outcome, at, finalization: RunFinalization = { resolution: null, finalizationCause: null }) {
+    finishRun(runId, outcome, at, finalization: RunFinalization = { resolution: null, finalizationCause: null }, effortTier = null) {
       const run = runs.find((candidate) => candidate.id === runId)
       if (run) {
         run.finishedAt = at
         run.outcome = outcome
+        run.effortTier = effortTier
         run.resolution = finalization.resolution
         run.finalizationCause = finalization.finalizationCause
       }
@@ -91,6 +92,7 @@ describe('historyRecorder', () => {
         startedAt: 100,
         finishedAt: 106,
         outcome: 'done',
+        effortTier: 'lookup',
         resolution: null,
         finalizationCause: null,
       },
@@ -119,6 +121,7 @@ describe('historyRecorder', () => {
         startedAt: 100,
         finishedAt: 106,
         outcome: 'done',
+        effortTier: 'lookup',
         resolution: null,
         finalizationCause: null,
       },
@@ -142,6 +145,39 @@ describe('historyRecorder', () => {
       resolution: 'partial',
       finalizationCause: 'model_answered',
     })
+  })
+
+  it('persists the latest Effort Tier and defaults an undeclared Run Plan to Lookup (#116)', () => {
+    const store = fakeStore()
+    const declared = recorderWith(store).run()
+
+    declared.event({ type: 'command', turnId: 'turn-plan', text: 'compare options', at: 100, sessionId: 'session-1' as SessionId })
+    declared.event({
+      type: 'run_plan',
+      turnId: 'turn-plan',
+      objective: 'Compare options',
+      headline: 'Compare options',
+      effortTier: 'lookup',
+      source: 'model',
+      at: 101,
+    })
+    declared.event({
+      type: 'run_plan',
+      turnId: 'turn-plan',
+      objective: 'Compare options across sources',
+      headline: 'Compare options across sources',
+      effortTier: 'investigation',
+      source: 'model',
+      escalationReason: 'Single-source answers disagreed.',
+      at: 102,
+    })
+    declared.event({ type: 'done', turnId: 'turn-plan', outcome: 'done', at: 103 })
+    expect(store.recentRuns(1)[0]?.effortTier).toBe('investigation')
+
+    const fallback = recorderWith(store).run()
+    fallback.event({ type: 'command', turnId: 'turn-fallback', text: 'answer directly', at: 200, sessionId: 'session-1' as SessionId })
+    fallback.event({ type: 'done', turnId: 'turn-fallback', outcome: 'done', at: 201 })
+    expect(store.recentRuns(1)[0]?.effortTier).toBe('lookup')
   })
 
   it('records a hard-limit failure’s mechanical cause without a Resolution (#110)', () => {

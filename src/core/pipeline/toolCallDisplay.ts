@@ -37,6 +37,8 @@ export function describeToolAction(name: string, args: Record<string, unknown>):
       return `collect results${args.wait === true ? ' (waiting)' : ''}`
     case 'ask_user':
       return `ask you: ${String(args.question ?? '')}`
+    case 'report_run_plan':
+      return `plan ${String(args.effort_tier ?? '')}: ${String(args.headline ?? args.objective ?? '')}`.trim()
     case 'toggle_panel':
       return 'toggle panel'
     case 'set_panel_mode':
@@ -86,6 +88,8 @@ export function describeToolIntent(name: string, args: string): string {
       return withTarget('visually locating', args, 'target')
     case 'ask_user':
       return withTarget('asking you', args, 'question')
+    case 'report_run_plan':
+      return withTarget('planning', args, 'headline', 'objective')
     case 'spawn_agent': {
       const kind = partialTargetValue(args, 'kind')
       const verb = `spawning${kind && kind.value !== '' && kind.closed ? ` ${kind.value}` : ''} agent:`

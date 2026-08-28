@@ -1,6 +1,7 @@
 import type { PipelineEvent } from '../../src/core/pipeline/events'
 import type { PerfSpanRecord } from '../../src/core/perf/perfTracer'
 import type { FinalizationCause, RunResolution } from '../../src/core/session/runJournal'
+import type { EffortTier } from '../../src/core/pipeline/runPlan'
 import { nearestRankPercentile } from '../../src/core/report/stats'
 
 // Per-scenario measurement (#109) over the two machine-readable surfaces
@@ -33,6 +34,11 @@ export interface ScenarioMetrics {
   resolution: RunResolution | null
   /** Finalization Cause (#110): the recorded cause, null when the run finalized without one. */
   finalizationCause: FinalizationCause | null
+  /**
+   * The Effort Tier the run ended under (#116): the latest declared plan,
+   * defaulting to Lookup — the plan a run without a declaration ran under.
+   */
+  effortTier: EffortTier
   rawLimitFailure: string | null
   actions: RecordedAction[]
   answerText: string | null
@@ -76,6 +82,9 @@ export function extractMetrics(events: RunEvents, perfRecords: readonly PerfSpan
   const rawLimit = events.find(
     (event): event is Extract<PipelineEvent, { type: 'error' }> => event.type === 'error' && RAW_LIMIT_PATTERN.test(event.message),
   )
+  const plans = events.filter(
+    (event): event is Extract<PipelineEvent, { type: 'run_plan' }> => event.type === 'run_plan',
+  )
   return {
     llmRounds: perfRecords.filter((record) => record.stage === 'llm').length,
     attemptedTools: toolCalls.length,
@@ -85,6 +94,7 @@ export function extractMetrics(events: RunEvents, perfRecords: readonly PerfSpan
     outcome: done?.outcome ?? null,
     resolution: done?.resolution ?? null,
     finalizationCause: done?.finalizationCause ?? null,
+    effortTier: plans.at(-1)?.effortTier ?? 'lookup',
     rawLimitFailure: rawLimit?.message ?? null,
     actions,
     answerText: displays.length > 0 ? displays[displays.length - 1]!.text : null,

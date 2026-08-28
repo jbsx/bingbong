@@ -7,7 +7,7 @@ import { createCommandPipeline, type CommandPipeline } from '../../core/pipeline
 import type { PipelineEvent } from '../../core/pipeline/events'
 import type { Tool } from '../../core/pipeline/tool'
 import { createAskUserTool } from '../../core/pipeline/askUserTools'
-import { createReportHeadlineTool } from '../../core/pipeline/headlineTools'
+import { createReportRunPlanTool } from '../../core/pipeline/runPlanTools'
 import { createBrowserTools } from '../../core/pipeline/browserTools'
 import { hostFromUrl } from '../../core/pipeline/blockerGate'
 import { createVisionGroundingTools } from '../../core/pipeline/visionGroundingTools'
@@ -207,9 +207,10 @@ export function createAssistantPipeline(deps: AssistantPipelineDeps): CommandPip
   const vision = deps.vision ?? createZaiVisionApi({ getEnv })
   const tools: Tool[] = [
     createAskUserTool(),
-    // The Run Headline (ADR 0025): the orchestrator reports the live task
-    // title; the pipeline re-emits it for the Peek Card.
-    createReportHeadlineTool(),
+    // The Run Plan (#116, ADR 0025/0027): the orchestrator declares the
+    // objective, Run Headline, and Effort Tier; the pipeline re-emits
+    // them for the Peek Card, policy, and telemetry.
+    createReportRunPlanTool(),
     ...createBrowserTools(deps.controller, vision),
     ...createVisionGroundingTools(deps.controller, vision),
     ...createMediaTools(deps.controller),

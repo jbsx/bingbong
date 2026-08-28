@@ -325,8 +325,12 @@ export function createFeedProjection(): {
           appendDetail(event.at, `steer: ${event.text}`, 'steer', event.turnId)
           return
         // The Run Headline (ADR 0025) is the Peek Card's alone — a detail
-        // event by design: no Feed Entry, and no stream is disturbed.
+        // event by design: no Feed Entry, and no stream is disturbed. The
+        // Run Plan (#116) rides the same discipline: policy, telemetry,
+        // and history see it; the Feed does not.
         case 'run_headline':
+          return
+        case 'run_plan':
           return
         default: {
           const projected = projectPipelineEvent(event)

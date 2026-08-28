@@ -184,14 +184,22 @@ describe('feed panel layout e2e', () => {
 
   it('the Run Headline supersedes the command echo on the live Peek Card (ADR 0025)', async () => {
     // A correction the user cannot see land was the failure ADR 0025 fixes:
-    // the round's report_headline call swaps the live title from the raw
+    // the round's report_run_plan call swaps the live title from the raw
     // echo to the orchestrator's statement of the task — while the panel
     // stays collapsed.
     const script: AssistantTurn[] = [
       {
         kind: 'tool_calls',
         calls: [
-          { id: 'h1', name: 'report_headline', args: { headline: 'Find a blue mug under $20' } },
+          {
+            id: 'p1',
+            name: 'report_run_plan',
+            args: {
+              objective: 'Find a blue mug under $20',
+              headline: 'Find a blue mug under $20',
+              effort_tier: 'lookup',
+            },
+          },
           { id: 'c1', name: 'navigate', args: { url: fixture.url('/slow') } },
         ],
       },

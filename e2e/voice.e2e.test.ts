@@ -191,7 +191,8 @@ describe('voice e2e', () => {
         type: 'tool_result',
         callId: 'a1',
         ok: true,
-        result: 'Paris, France',
+        // The plan-less round carries its one corrective Run Plan nudge (#116).
+        result: expect.stringMatching(/^Paris, France/),
       }))
       // The overlay's projection rides the same broadcasts on its own
       // webContents — it can legitimately lag the dashboard's `done`, so

@@ -49,6 +49,7 @@ describe('createSqliteHistoryStore', () => {
           startedAt: 100,
           finishedAt: 106,
           outcome: 'done',
+          effortTier: null,
           resolution: null,
           finalizationCause: null,
         },
@@ -161,6 +162,7 @@ describe('createSqliteHistoryStore', () => {
           startedAt: 300,
           finishedAt: 310,
           outcome: 'done',
+          effortTier: null,
           resolution: null,
           finalizationCause: null,
         },
@@ -172,6 +174,7 @@ describe('createSqliteHistoryStore', () => {
           startedAt: 320,
           finishedAt: null,
           outcome: 'interrupted',
+          effortTier: null,
           resolution: null,
           finalizationCause: null,
         },
@@ -226,6 +229,7 @@ describe('createSqliteHistoryStore', () => {
           startedAt: 100,
           finishedAt: 110,
           outcome: 'done',
+          effortTier: null,
           resolution: 'partial',
           finalizationCause: 'model_answered',
         },
@@ -237,6 +241,7 @@ describe('createSqliteHistoryStore', () => {
           startedAt: 200,
           finishedAt: 300,
           outcome: 'failed',
+          effortTier: null,
           resolution: null,
           finalizationCause: 'hard_limit',
         },
@@ -248,6 +253,7 @@ describe('createSqliteHistoryStore', () => {
           startedAt: 400,
           finishedAt: 500,
           outcome: 'cancelled',
+          effortTier: null,
           resolution: null,
           finalizationCause: null,
         },
@@ -292,6 +298,7 @@ describe('createSqliteHistoryStore', () => {
           startedAt: 1,
           finishedAt: 2,
           outcome: 'done',
+          effortTier: null,
           resolution: null,
           finalizationCause: null,
         },
@@ -303,12 +310,34 @@ describe('createSqliteHistoryStore', () => {
           startedAt: 300,
           finishedAt: 310,
           outcome: 'done',
+          effortTier: null,
           resolution: 'completed',
           finalizationCause: 'model_answered',
         },
       ])
     } finally {
       migrated.close()
+    }
+  })
+
+  it('round-trips a nullable Effort Tier and degrades unknown stored values to null (#116)', () => {
+    const path = tempStorePath()
+    const store = createSqliteHistoryStore(path)
+    const planned = store.startRun('compare options', 100, 'turn-effort-1', 'session-effort' as SessionId)
+    store.finishRun(planned, 'done', 110, undefined, 'investigation')
+    const legacy = store.startRun('legacy caller', 200, 'turn-effort-2', 'session-effort' as SessionId)
+    store.finishRun(legacy, 'done', 210)
+    store.close()
+
+    const raw = new Database(path)
+    raw.prepare('UPDATE runs SET effort_tier = ? WHERE id = ?').run('enormous', legacy)
+    raw.close()
+
+    const reopened = createSqliteHistoryStore(path)
+    try {
+      expect(reopened.recentRuns(10).map((run) => run.effortTier)).toEqual(['investigation', null])
+    } finally {
+      reopened.close()
     }
   })
 
@@ -361,7 +390,7 @@ describe('createSqliteHistoryStore', () => {
       migrated.startSession(sessionId, 299)
       const newRun = migrated.startRun('new command', 300, 'turn-after-migration', sessionId)
       expect(migrated.recentRuns(10)).toEqual([
-        { id: 1, turnId: null, sessionId: null, command: 'old command', startedAt: 1, finishedAt: 2, outcome: 'done', resolution: null, finalizationCause: null },
+        { id: 1, turnId: null, sessionId: null, command: 'old command', startedAt: 1, finishedAt: 2, outcome: 'done', effortTier: null, resolution: null, finalizationCause: null },
         {
           id: newRun,
           turnId: 'turn-after-migration',
@@ -370,6 +399,7 @@ describe('createSqliteHistoryStore', () => {
           startedAt: 300,
           finishedAt: null,
           outcome: null,
+          effortTier: null,
           resolution: null,
           finalizationCause: null,
         },
