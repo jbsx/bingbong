@@ -7,7 +7,7 @@
 // and answers the call itself with an acceptance or a corrective notice.
 
 import type { Tool } from './tool'
-import { EFFORT_TIERS } from './runPlan'
+import { EFFORT_TIERS, effortTierVocabulary } from './runPlan'
 
 export function createReportRunPlanTool(): Tool {
   return {
@@ -15,9 +15,9 @@ export function createReportRunPlanTool(): Tool {
     description:
       'Report the Run Plan: objective (the task as you now understand it), headline (one short line in task terms ' +
       '("Find a blue mug under $20"), never a tool name — the run\u2019s live title on screen), and effort_tier — the ' +
-      'smallest sufficient tier. Call it alongside useful work in your first useful tool round, and again whenever the ' +
-      'task changes, especially right after a steering directive. Later calls update the headline at the same tier or ' +
-      'escalate exactly one level with escalation_reason naming the new evidence.',
+      `smallest sufficient tier: ${effortTierVocabulary()}. Call it alongside useful work in your first useful tool ` +
+      'round, and again whenever the task changes, especially right after a steering directive. Later calls update the ' +
+      'headline at the same tier or escalate exactly one level with escalation_reason naming the new evidence.',
     parameters: {
       objective: {
         type: 'string',

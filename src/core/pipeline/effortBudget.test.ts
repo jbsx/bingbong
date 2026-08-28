@@ -4,12 +4,14 @@ import {
   budgetWarningMessage,
   createActiveWorkClock,
   deterministicFinalAnswer,
+  effectiveHardCeiling,
   finalizationToolRefusal,
+  HARD_TOOL_ROUND_CEILING,
   TIER_ACTIVE_WORK_DEADLINES_MS,
   TIER_TOOL_ROUND_BUDGETS,
 } from './effortBudget'
 
-describe('effort budget (#117, ADR 0027)', () => {
+describe('effort budget (#117/#118, ADR 0027)', () => {
   it('fixes the initial tier budgets and active-work deadlines', () => {
     expect(TIER_TOOL_ROUND_BUDGETS).toEqual({ direct_action: 6, lookup: 12, investigation: 24 })
     expect(TIER_ACTIVE_WORK_DEADLINES_MS).toEqual({
@@ -17,6 +19,14 @@ describe('effort budget (#117, ADR 0027)', () => {
       lookup: 120_000,
       investigation: 300_000,
     })
+  })
+
+  it('clamps the configured round limit to the 32-Tool-Round product ceiling (#118)', () => {
+    expect(HARD_TOOL_ROUND_CEILING).toBe(32)
+    // The legacy user setting binds only below the product ceiling.
+    expect(effectiveHardCeiling(80)).toBe(32)
+    expect(effectiveHardCeiling(120)).toBe(32)
+    expect(effectiveHardCeiling(10)).toBe(10)
   })
 
   describe('budget warnings', () => {

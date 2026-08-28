@@ -1,8 +1,9 @@
-// Bounded effort for Runs (#117, ADR 0027): per-tier Tool Round budgets,
-// active-work deadlines, internal budget warnings, and the Finalization
-// vocabulary. Pure policy and clocks — the pipeline owns the state machine.
-// A Tool Round is one model response containing one or more tool calls; it
-// consumes one unit of budget regardless of sibling-call count.
+// Bounded effort for Runs (#117/#118, ADR 0027): per-tier Tool Round
+// budgets, active-work deadlines, internal budget warnings, the global
+// hard ceiling, and the Finalization vocabulary. Pure policy and clocks —
+// the pipeline owns the state machine. A Tool Round is one model response
+// containing one or more tool calls; it consumes one unit of budget
+// regardless of sibling-call count.
 
 import type { EffortTier } from './runPlan'
 import type { FinalizationCause } from '../session/runJournal'
@@ -27,6 +28,26 @@ export const TIER_ACTIVE_WORK_DEADLINES_MS: Readonly<Record<EffortTier, number>>
   direct_action: 45_000,
   lookup: 120_000,
   investigation: 300_000,
+}
+
+/**
+ * The orchestrator's product-owned hard work ceiling (#108/#118, ADR
+ * 0027): 32 Tool Rounds per Run, cumulative across tier epochs and
+ * Steering replans. Exactly one terminal bookkeeping Tool Round fits
+ * inside it — ordinary acquisition work stops one round early to
+ * preserve it — and the Answer-only round that follows is not a Tool
+ * Round and always rides outside the ceiling.
+ */
+export const HARD_TOOL_ROUND_CEILING = 32
+
+/**
+ * The live hard ceiling (#118): the smaller of the configured round
+ * limit — the legacy user-facing setting, until #129 retires it — and
+ * the product's 32-Tool-Round ceiling, which binds from above no matter
+ * what the setting says.
+ */
+export function effectiveHardCeiling(configuredMaxToolRounds: number): number {
+  return Math.min(configuredMaxToolRounds, HARD_TOOL_ROUND_CEILING)
 }
 
 /** The internal warning milestones: ~75% and ~90% of the budget consumed. */

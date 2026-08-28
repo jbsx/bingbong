@@ -23,6 +23,48 @@ function isEffortTier(value: unknown): value is EffortTier {
   return typeof value === 'string' && (EFFORT_TIERS as readonly string[]).includes(value)
 }
 
+/**
+ * What `completed` honestly demands per tier (#118, ADR 0027): the
+ * completion standard each tier's final Answer is judged against —
+ * Direct Actions by their returned state, Lookups by an authoritative
+ * page or supported Candidate, Investigations by independent sources
+ * that disclose disagreement.
+ */
+export const TIER_COMPLETION_STANDARDS: Readonly<Record<EffortTier, string>> = {
+  direct_action: 'the action\u2019s returned state confirms the requested change',
+  lookup: 'an authoritative page or a clearly supported best Candidate supports the result',
+  investigation: 'multiple independent relevant sources support the result and any disagreement is disclosed',
+}
+
+/** The glossary label for each tier. */
+const TIER_LABELS: Readonly<Record<EffortTier, string>> = {
+  direct_action: 'Direct Action',
+  lookup: 'Lookup',
+  investigation: 'Investigation',
+}
+
+/** The one-line scope summary for each tier. */
+const TIER_SUMMARIES: Readonly<Record<EffortTier, string>> = {
+  direct_action: 'one immediate action',
+  lookup: 'one page or one search for a fact',
+  investigation: 'comparing multiple sources',
+}
+
+/**
+ * The one tier vocabulary (#118): labels, ids, scopes, and completion
+ * standards in a single string. The Run Plan tool description and the
+ * orchestrator prompt both embed it, so the model-facing contract cannot
+ * drift — and the shared bounded-browsing policy (#127) will source it
+ * the same way.
+ */
+export function effortTierVocabulary(): string {
+  const parts = EFFORT_TIERS.map(
+    (tier) =>
+      `${TIER_LABELS[tier]} (${tier}, ${TIER_SUMMARIES[tier]} — completed only when ${TIER_COMPLETION_STANDARDS[tier]})`,
+  )
+  return `${parts.slice(0, -1).join(', ')}, or ${parts.at(-1)}`
+}
+
 /** The Run's current plan — `headline: null` means the Command Echo stands. */
 export interface RunPlan {
   objective: string

@@ -30,6 +30,7 @@ import {
   budgetWarningMessage,
   createActiveWorkClock,
   deterministicFinalAnswer,
+  effectiveHardCeiling,
   FINALIZATION_ANSWER_DIRECTIVE,
   finalizationToolRefusal,
   TIER_ACTIVE_WORK_DEADLINES_MS,
@@ -67,7 +68,9 @@ export interface CommandPipelineDeps {
   /**
    * Live source for the tool-round ceiling: read at the start of each run,
    * so settings changes apply to the next command without a restart.
-   * Overrides the static `maxToolRounds` when both are provided.
+   * Overrides the static `maxToolRounds` when both are provided. Either
+   * way the effective ceiling is clamped to the product's 32-Tool-Round
+   * hard ceiling (#118).
    */
   getMaxToolRounds?: () => number
   /**
@@ -632,15 +635,19 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
         // reserved Answer round fails or requests tools.
         let deterministicFallback = false
         // Re-read per run: a settings change applies to the next command.
-        const effectiveMaxToolRounds = deps.getMaxToolRounds?.() ?? maxToolRounds
+        // The product's 32-round hard ceiling clamps it from above (#118).
+        const hardCeiling = effectiveHardCeiling(deps.getMaxToolRounds?.() ?? maxToolRounds)
 
         for (;;) {
           if (!finalizing) {
-            // The hard ceiling is checked first (#108): it preserves no
-            // bookkeeping round, so the very next round is Answer-only.
-            if (rounds >= effectiveMaxToolRounds) {
+            // The hard ceiling is checked first (#108/#118): 32 Tool
+            // Rounds, cumulative across tier epochs. One terminal
+            // bookkeeping Tool Round fits inside it, so ordinary
+            // acquisition stops one round early — the next round is
+            // Finalization's bookkeeping round, and the Answer-only round
+            // after it rides outside the ceiling.
+            if (rounds >= hardCeiling - 1) {
               finalizing = true
-              answerOnly = true
               mechanicalCause ??= 'hard_limit'
             } else if (tierRounds >= TIER_TOOL_ROUND_BUDGETS[epochTier]) {
               finalizing = true

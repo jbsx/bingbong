@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { FakeClock } from '../../core/testing/doubles'
+import { effortTierVocabulary } from '../../core/pipeline/runPlan'
+import { createReportRunPlanTool } from '../../core/pipeline/runPlanTools'
 import { ORCHESTRATOR_SYSTEM_PROMPT, orchestratorSystemPrompt } from './orchestratorPrompt'
 
 // ADR 0007 prompt pins. The Blocker vocabulary, the escalation duty, and
@@ -136,6 +138,18 @@ describe('orchestrator prompt Run Plan (ADR 0027)', () => {
   it('limits later reports to headline updates or reasoned one-level escalation', () => {
     expect(ORCHESTRATOR_SYSTEM_PROMPT).toMatch(/one level at a time/)
     expect(ORCHESTRATOR_SYSTEM_PROMPT).toMatch(/escalation_reason/)
+  })
+
+  it('attaches each tier\u2019s completion standard to the tier vocabulary (#118)', () => {
+    expect(ORCHESTRATOR_SYSTEM_PROMPT).toMatch(/the action.s returned state confirms the requested change/)
+    expect(ORCHESTRATOR_SYSTEM_PROMPT).toMatch(/authoritative page or a clearly supported best Candidate/)
+    expect(ORCHESTRATOR_SYSTEM_PROMPT).toMatch(/multiple independent relevant sources/)
+    expect(ORCHESTRATOR_SYSTEM_PROMPT).toMatch(/"completed" is honest only against the declared tier.s standard/)
+  })
+
+  it('sources the tier vocabulary from one definition across the prompt and the Run Plan tool (#118)', () => {
+    expect(ORCHESTRATOR_SYSTEM_PROMPT).toContain(effortTierVocabulary())
+    expect(createReportRunPlanTool().description).toContain(effortTierVocabulary())
   })
 
   it('makes a corrected run\u2019s answer lead with the corrected task, then the result', () => {
