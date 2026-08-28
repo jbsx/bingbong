@@ -41,6 +41,13 @@ export const TIER_ACTIVE_WORK_DEADLINES_MS: Readonly<Record<EffortTier, number>>
 export const HARD_TOOL_ROUND_CEILING = 32
 
 /**
+ * The Tool Rounds at the top of the hard ceiling reserved for terminal
+ * bookkeeping (#118): acquisition stops this many rounds early so the
+ * ceiling's last round can serve as the one bookkeeping round.
+ */
+export const CEILING_RESERVED_BOOKKEEPING_ROUNDS = 1
+
+/**
  * The live hard ceiling (#118): the smaller of the configured round
  * limit — the legacy user-facing setting, until #129 retires it — and
  * the product's 32-Tool-Round ceiling, which binds from above no matter

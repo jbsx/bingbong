@@ -28,6 +28,7 @@ import { MAX_TOOL_ROUNDS_DEFAULT } from '../settings/settings'
 import {
   budgetWarningCrossed,
   budgetWarningMessage,
+  CEILING_RESERVED_BOOKKEEPING_ROUNDS,
   createActiveWorkClock,
   deterministicFinalAnswer,
   effectiveHardCeiling,
@@ -640,21 +641,26 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
 
         for (;;) {
           if (!finalizing) {
-            // The hard ceiling is checked first (#108/#118): 32 Tool
-            // Rounds, cumulative across tier epochs. One terminal
-            // bookkeeping Tool Round fits inside it, so ordinary
-            // acquisition stops one round early — the next round is
-            // Finalization's bookkeeping round, and the Answer-only round
-            // after it rides outside the ceiling.
-            if (rounds >= hardCeiling - 1) {
-              finalizing = true
-              mechanicalCause ??= 'hard_limit'
-            } else if (tierRounds >= TIER_TOOL_ROUND_BUDGETS[epochTier]) {
+            // The tier rails are checked first so a coincidence at the
+            // same loop top records the planned limit, not the safety
+            // net (#118): when the epoch budget or deadline is what
+            // actually binds, budget_exhausted/deadline_reached is the
+            // honest cause; the hard ceiling catches everything else.
+            if (tierRounds >= TIER_TOOL_ROUND_BUDGETS[epochTier]) {
               finalizing = true
               mechanicalCause ??= 'budget_exhausted'
             } else if (run.workClock.spent() >= TIER_ACTIVE_WORK_DEADLINES_MS[epochTier]) {
               finalizing = true
               mechanicalCause ??= 'deadline_reached'
+            } else if (rounds >= hardCeiling - CEILING_RESERVED_BOOKKEEPING_ROUNDS) {
+              // The hard ceiling (#108/#118): 32 Tool Rounds,
+              // cumulative across tier epochs. Exactly one terminal
+              // bookkeeping Tool Round fits inside it — ordinary
+              // acquisition stops one round early to preserve it — and
+              // the Answer-only round that follows is not a Tool Round
+              // and always rides outside the ceiling.
+              finalizing = true
+              mechanicalCause ??= 'hard_limit'
             }
             if (finalizing) {
               // Finalization supersedes advisory nudges: the directive
@@ -782,8 +788,11 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
                 // A tier change starts a fresh effort epoch (#117): budget,
                 // warnings, and the active-work deadline re-arm for the new
                 // tier. Cumulative rounds still count toward the hard
-                // ceiling, and Finalization is never exited.
-                if (review.plan.effortTier !== epochTier) {
+                // ceiling, and Finalization is never exited — an escalation
+                // accepted during Finalization's bookkeeping round is
+                // reported but re-arms nothing (the state could never be
+                // consulted again).
+                if (review.plan.effortTier !== epochTier && !finalizing) {
                   epochTier = review.plan.effortTier
                   tierRounds = 0
                   warned.near = false
