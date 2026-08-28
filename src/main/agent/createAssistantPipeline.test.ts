@@ -277,7 +277,7 @@ describe('createAssistantPipeline', () => {
 
     expect(events.find((e) => e.type === 'tool_result' && e.name === 'new_session')).toMatchObject({
       ok: true,
-      result: expect.stringContaining('Session reset'),
+      result: expect.stringContaining('session: boundary=reset end_reason=reset'),
     })
     // The sibling call from the same response never executes and no later
     // model round happens: the run reports the reset boundary instead.
@@ -452,7 +452,7 @@ describe('createAssistantPipeline', () => {
 
     expect(events.find((e) => e.type === 'tool_result' && e.name === 'app_control')).toMatchObject({
       ok: true,
-      result: 'Quitting.',
+      result: 'application: lifecycle=quitting',
     })
     // Order is the policy: the pipeline speaks the confirmation prompt, then
     // the tool speaks its ack, and only then the app quits.

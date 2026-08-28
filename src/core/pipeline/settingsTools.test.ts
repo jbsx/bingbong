@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { createAppControlTool, createSetSettingTool } from './settingsTools'
+import { createAppControlTool, createSetSettingTool, type AppControls } from './settingsTools'
 import { FakeAppControls, FakeClock, FakeSettings } from '../testing/doubles'
 import type { ToolCall } from '../ports/llm'
 
@@ -262,7 +262,7 @@ describe('createAppControlTool', () => {
     const result = await tool.execute(callOf('app_control', { action: 'quit' }), ctx())
 
     expect(app.calls).toEqual(['ack:Quitting.', 'quit'])
-    expect(result).toBe('Quitting.')
+    expect(result).toBe('application: lifecycle=quitting')
   })
 
   it('speaks the ack before reloading on an approved execute', async () => {
@@ -272,6 +272,22 @@ describe('createAppControlTool', () => {
     const result = await tool.execute(callOf('app_control', { action: 'reload' }), ctx())
 
     expect(app.calls).toEqual(['ack:Reloading.', 'reload'])
-    expect(result).toBe('App window reloaded.')
+    expect(result).toBe('application: lifecycle=reloading')
+  })
+
+  it('reports when reload is no longer observable instead of claiming it happened', async () => {
+    const app: AppControls = {
+      quit: () => 'quitting',
+      reload: () => 'unavailable',
+      speakAck: async () => {},
+    }
+
+    const result = await createAppControlTool(app).execute(callOf('app_control', { action: 'reload' }), ctx())
+
+    expect(result).toBe('application: lifecycle=unavailable')
+  })
+
+  it('describes returned lifecycle state as the action verification', () => {
+    expect(createAppControlTool(new FakeAppControls()).description).toMatch(/returns.*lifecycle state/i)
   })
 })

@@ -525,12 +525,14 @@ export class FakeAppControls implements AppControls {
   /** Ordered ops — 'ack:<line>' entries prove the ack preceded the action. */
   readonly calls: string[] = []
 
-  quit(): void {
+  quit(): 'quitting' {
     this.calls.push('quit')
+    return 'quitting'
   }
 
-  reload(): void {
+  reload(): 'reloading' {
     this.calls.push('reload')
+    return 'reloading'
   }
 
   async speakAck(text: string): Promise<void> {

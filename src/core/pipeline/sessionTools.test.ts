@@ -16,7 +16,7 @@ describe('createNewSessionTool', () => {
 
     const result = await tool.execute(call, { clock: new FakeClock() })
 
-    expect(result).toEqual(expect.stringContaining('Session reset'))
+    expect(result).toBe('session: boundary=reset end_reason=reset; current command will restart in a replacement Session')
   })
 
   it('declares the reset boundary and history gating', () => {
@@ -27,5 +27,6 @@ describe('createNewSessionTool', () => {
     expect(tool.requiresHistory).toBe(true)
     expect(tool.parameters).toBeUndefined()
     expect(`${tool.name} ${tool.description ?? ''}`).toMatch(/forget|fresh|start/i)
+    expect(tool.description).toMatch(/returned Session Reset boundary.*sufficient verification/i)
   })
 })

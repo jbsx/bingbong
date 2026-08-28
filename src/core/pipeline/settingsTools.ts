@@ -30,8 +30,8 @@ export interface SettingsControls {
 
 /** The app-lifecycle seam — wired per window by main. */
 export interface AppControls {
-  quit(): void
-  reload(): void
+  quit(): 'quitting'
+  reload(): 'reloading' | 'unavailable'
   /**
    * Speak the ack for a destructive op; resolves when playback finishes (or
    * fails — a dead speaker never blocks the confirmed action).
@@ -243,7 +243,8 @@ export function createSetSettingTool(settings: SettingsControls): Tool {
       'Change one of the app Settings by voice: wake word threshold, endpoint delay, merge window, TTS voice, adblock, ' +
       'appearance (system, light, or dark), web zoom, weather city/units, STT model, tool-round ceiling, or model routing ' +
       '(model or base URL per role). Applies immediately with no confirmation. Credentials, API keys and microphone ' +
-      'selection are not voice-reachable — the user must type those in the settings page.',
+      'selection are not voice-reachable — the user must type those in the settings page. Returns the resulting ' +
+      'persisted value, which is sufficient verification; do not inspect the browser to confirm it.',
     parameters,
     execute: async (call) => {
       const key = call.args.setting
@@ -273,7 +274,7 @@ export function createAppControlTool(app: AppControls): Tool {
     description:
       'Quit the app or reload its dashboard window. Always gated on a spoken yes/no confirmation; once ' +
       'confirmed, a short acknowledgment is spoken before the action runs. Use it to restart the app from ' +
-      'across the room.',
+      'across the room. Returns the resulting application lifecycle state when execution remains observable.',
     parameters,
     assessRisk: (call) => {
       if (call.args.action !== 'quit' && call.args.action !== 'reload') {
@@ -289,12 +290,8 @@ export function createAppControlTool(app: AppControls): Tool {
       // The ack precedes the action: for quit, nothing speaks after; for
       // reload, the dashboard is about to be replaced mid-run.
       await app.speakAck(action === 'quit' ? 'Quitting.' : 'Reloading.', ctx.turnId)
-      if (action === 'quit') {
-        app.quit()
-        return 'Quitting.'
-      }
-      app.reload()
-      return 'App window reloaded.'
+      const lifecycle = action === 'quit' ? app.quit() : app.reload()
+      return `application: lifecycle=${lifecycle}`
     },
   }
 }

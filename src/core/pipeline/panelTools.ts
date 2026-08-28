@@ -58,7 +58,8 @@ export function createPanelTools(panel: PanelControls): Tool[] {
       name: 'toggle_panel',
       description:
         'Open the feed panel if it is collapsed, or collapse it to its edge tab if it is open. ' +
-        'Fires immediately with no confirmation and no announcement — the panel moving is its own feedback.',
+        'Fires immediately with no confirmation and no announcement — the panel moving is its own feedback. ' +
+        'Returns the resulting open/collapsed state, which is sufficient verification.',
       execute: async () => {
         panel.toggle()
         return panel.state().open ? 'Panel opened.' : 'Panel collapsed.'
@@ -68,7 +69,8 @@ export function createPanelTools(panel: PanelControls): Tool[] {
       name: 'set_panel_mode',
       description:
         'Switch the feed panel between overlay (floating above the page) and docked (side-by-side layout) mode. ' +
-        'Fires immediately with no confirmation and no announcement — the panel moving is its own feedback.',
+        'Fires immediately with no confirmation and no announcement — the panel moving is its own feedback. ' +
+        'Returns the resulting mode, which is sufficient verification.',
       parameters: { mode: modeSpec },
       execute: async (call) => {
         const mode = call.args.mode
@@ -76,7 +78,7 @@ export function createPanelTools(panel: PanelControls): Tool[] {
           throw new Error("set_panel_mode: 'mode' must be one of overlay, docked")
         }
         panel.setMode(mode)
-        return `Panel mode set to ${mode}.`
+        return `Panel mode set to ${panel.state().mode}.`
       },
     },
     {
@@ -84,7 +86,8 @@ export function createPanelTools(panel: PanelControls): Tool[] {
       description:
         'Widen or narrow the feed panel in relative steps (wider or narrower, up to 5 steps per call), or apply a ' +
         'preset (half_screen). There are no absolute sizes — say which way, not how many pixels. ' +
-        'Fires immediately with no confirmation and no announcement — the panel resizing is its own feedback.',
+        'Fires immediately with no confirmation and no announcement — the panel resizing is its own feedback. ' +
+        'Returns the resulting clamped width, which is sufficient verification.',
       parameters: {
         direction: {
           type: 'string',

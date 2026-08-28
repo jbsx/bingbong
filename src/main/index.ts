@@ -434,9 +434,14 @@ async function createWindow(): Promise<BrowserWindow> {
     // App voice tool (#67): quit/reload behind the confirmation gate, acks
     // spoken through the same speaking gate as every other line.
     app: {
-      quit: () => app.quit(),
+      quit: () => {
+        app.quit()
+        return 'quitting'
+      },
       reload: () => {
-        if (!win.isDestroyed()) win.webContents.reload()
+        if (win.isDestroyed()) return 'unavailable'
+        win.webContents.reload()
+        return 'reloading'
       },
       speakAck: async (text, turnId) => {
         // A dead speaker never blocks a confirmed action.

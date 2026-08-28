@@ -64,6 +64,17 @@ describe('createPanelTools', () => {
     expect(result).toEqual('Panel mode set to overlay.')
   })
 
+  it('set_panel_mode reports the state seam read-back, not the requested mode', async () => {
+    const panel = new FakePanel()
+    panel.setMode = () => {}
+    const tool = createPanelTools(panel).find((t) => t.name === 'set_panel_mode')!
+
+    const result = await tool.execute(callOf('set_panel_mode', { mode: 'docked' }), { clock: new FakeClock() })
+
+    expect(panel.state().mode).toBe('overlay')
+    expect(result).toEqual('Panel mode set to overlay.')
+  })
+
   it('set_panel_mode rejects any mode outside overlay/docked', async () => {
     const panel = new FakePanel()
     const tool = createPanelTools(panel).find((t) => t.name === 'set_panel_mode')!

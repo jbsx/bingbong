@@ -17,9 +17,10 @@ export function createNewSessionTool(): Tool {
       'Forget every previous command and answer in this Session and start a fresh Session. ' +
       'Call this once, on its own, when the user clearly abandons the earlier topic ' +
       '("forget all that", "never mind all that", "different question"), then handle ' +
-      'their new request with no reference to what came before.',
+      'their new request with no reference to what came before. The returned Session Reset boundary is sufficient ' +
+      'verification; the pipeline performs the lifecycle transition after this tool succeeds.',
     async execute() {
-      return 'Session reset: previous commands and answers are gone. Treat the current request as the first one.'
+      return 'session: boundary=reset end_reason=reset; current command will restart in a replacement Session'
     },
   }
 }
