@@ -183,17 +183,18 @@ export type PipelineEvent = SessionEventIdentity & (
   | { type: 'agent_update'; agent: SubagentCard; at: number }
   /**
    * The run's boundary (#110): `outcome` stays the mechanical result, and
-   * the semantic fields ride along additively — `resolution` only when a
-   * validated model proposal exists, `finalizationCause` whenever the run
-   * finalized with a known cause (a model Answer or a mechanical stop).
-   * Cancelled, plain-error, and reset runs carry neither.
+   * the semantic fields ride along additively — present only when known
+   * (`resolution` when a validated model proposal exists,
+   * `finalizationCause` whenever the run finalized with a known cause:
+   * a model Answer or a mechanical stop). Cancelled, plain-error, and
+   * reset runs carry neither.
    */
   | {
       type: 'done'
       turnId: string
       outcome?: 'done' | 'failed' | 'cancelled' | 'reset'
-      resolution?: RunResolution | null
-      finalizationCause?: FinalizationCause | null
+      resolution?: RunResolution
+      finalizationCause?: FinalizationCause
       at: number
     }
   /**

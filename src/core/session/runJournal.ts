@@ -44,7 +44,7 @@ export const FINALIZATION_CAUSES = [
 export type FinalizationCause = (typeof FINALIZATION_CAUSES)[number]
 
 /** The one Finalization Cause only the model can attest. */
-const MODEL_FINALIZATION_CAUSES: readonly FinalizationCause[] = ['objective_met']
+const MODEL_FINALIZATION_CAUSE: FinalizationCause = 'objective_met'
 
 /** Parse a proposed Run Resolution; anything but the five values is null. */
 export function parseRunResolution(value: unknown): RunResolution | null {
@@ -72,8 +72,9 @@ export interface RunFinalization {
  * cannot claim a runtime rail stopped it — while the model's semantic
  * `objective_met` claim stands when nothing mechanical applies, and a
  * voluntary conclusion with no surviving proposal is `model_answered`.
- * The proposed Resolution is semantic and rides along whatever the cause;
- * a run that never finalized (cancelled, a plain error) records none.
+ * Resolution is the Answer's semantic claim, so it rides only when a model
+ * Answer proposed one; a mechanical stop alone records its cause and no
+ * Resolution.
  */
 export function finalizeRun(input: {
   /** The runtime's mechanically known cause, when one forced the end. */
@@ -86,13 +87,9 @@ export function finalizeRun(input: {
   const proposedCause = input.proposedCause ?? null
   const finalizationCause =
     input.mechanicalCause ??
-    (proposedCause !== null && MODEL_FINALIZATION_CAUSES.includes(proposedCause)
-      ? proposedCause
-      : input.answered
-        ? 'model_answered'
-        : null)
+    (proposedCause === MODEL_FINALIZATION_CAUSE ? proposedCause : input.answered ? 'model_answered' : null)
   return {
-    resolution: input.answered || input.mechanicalCause !== null ? (input.proposedResolution ?? null) : null,
+    resolution: input.answered ? (input.proposedResolution ?? null) : null,
     finalizationCause,
   }
 }

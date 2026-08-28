@@ -99,6 +99,19 @@ describe('finalizeRun', () => {
     ).toEqual({ resolution: null, finalizationCause: 'hard_limit' })
   })
 
+  it('records no Resolution without a model Answer, even beside a mechanical cause', () => {
+    // A mechanical stop alone finalizes with its cause only — Resolution
+    // is the Answer's claim, never the runtime's.
+    expect(
+      finalizeRun({
+        mechanicalCause: 'hard_limit',
+        answered: false,
+        proposedResolution: 'unsuccessful',
+        proposedCause: 'hard_limit',
+      }),
+    ).toEqual({ resolution: null, finalizationCause: 'hard_limit' })
+  })
+
   it('keeps the model’s Resolution beside a mechanical cause when both exist', () => {
     // The reserved Answer round after a mechanical stop still proposes a
     // Resolution; only the cause is runtime-owned.
