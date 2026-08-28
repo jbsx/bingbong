@@ -238,6 +238,8 @@ export function createAssistantPipeline(deps: AssistantPipelineDeps): CommandPip
     // Search-loop rail's GUI search signature (#82): typed searches are
     // classified from the typed ref's snapshot facts.
     describeRef: (ref) => deps.controller.describeRef(ref),
+    // Observation ledger source URLs (#111): the visible tab's current page.
+    currentPageUrl: () => deps.controller.state().url ?? null,
     ...(deps.tracer ? { tracer: deps.tracer } : {}),
     ...(deps.browserSubspans ? { browserSubspans: deps.browserSubspans } : {}),
     ...(deps.emitDetail ? { emitDetail: deps.emitDetail } : {}),

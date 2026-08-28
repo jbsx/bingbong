@@ -59,6 +59,9 @@ export function createAssistantCommandRunner(deps: {
           for await (const event of deps.pipeline.execute(command, currentTurnId, truncated, {
             snapshot: admission.journal,
             memory: admission.memory,
+            // The Observation ledger's staleness guard (#111): the Session
+            // generation this Run was admitted under.
+            generation: admission.generation,
             commit: (outcome, note, patch) => deps.runtime.commitRunContinuity(admission.runId, outcome, note, patch),
           })) {
             if (event.type === 'done' && event.outcome === 'reset') restartRequested = true

@@ -3290,3 +3290,167 @@ describe('command pipeline — session reset (#99)', () => {
     expect(events.at(-1)).toMatchObject({ type: 'done', outcome: 'done' })
   })
 })
+
+describe('observation ledger (#111)', () => {
+  function pageTool(name: string, result: string | (() => Promise<string>) = 'page state'): Tool {
+    return {
+      name,
+      async execute() {
+        return typeof result === 'function' ? await result() : result
+      },
+    }
+  }
+
+  function continuityWith(generation?: number) {
+    return {
+      snapshot: [] as never[],
+      memory: [] as never[],
+      ...(generation !== undefined ? { generation } : {}),
+      commit: (() => 'committed') as never,
+    }
+  }
+
+  it('gives the command, page reads, looks, action outcomes, and subagent reports stable identities', async () => {
+    const observations: { id: string; producer: string; ok: boolean; payload: unknown; sourceUrl?: string }[] = []
+    const llm = new ScriptedLlm([
+      { kind: 'tool_calls', calls: [
+        { id: 'c1', name: 'read_page', args: {} },
+        { id: 'c2', name: 'look', args: {} },
+      ] },
+      { kind: 'tool_calls', calls: [
+        { id: 'c3', name: 'navigate', args: { url: 'https://example.com/next' } },
+        { id: 'c4', name: 'agent_results', args: { wait: true } },
+        { id: 'c5', name: 'click', args: { ref: 7 } },
+      ] },
+      { kind: 'answer', speak: 'Done.', display: 'Done.' },
+    ])
+    const pipeline = createCommandPipeline({
+      llm,
+      tts: new RecordingTts(),
+      clock: new FakeClock(),
+      tools: [
+        pageTool('read_page', 'url: https://example.com\ntitle: Example\n[1] link'),
+        pageTool('look', 'a search results page'),
+        pageTool('navigate', 'navigated to https://example.com/next'),
+        pageTool('agent_results', 'report for a-1'),
+        { name: 'click', async execute() { throw new Error('ref 7 not found') } },
+      ],
+      currentPageUrl: () => 'https://example.com/live',
+      onObservation: (record) => observations.push(record),
+    })
+
+    await collect(pipeline, 'find pizza near me')
+
+    // Identities are stable and sequential across model rounds: the
+    // command first, then every processed tool result in execution order.
+    expect(observations).toEqual([
+      { id: 'obs-1', at: 0, producer: 'command', ok: true, payload: 'find pizza near me' },
+      { id: 'obs-2', at: 0, producer: 'page_read', ok: true, payload: 'url: https://example.com\ntitle: Example\n[1] link', sourceUrl: 'https://example.com/live' },
+      { id: 'obs-3', at: 0, producer: 'look', ok: true, payload: 'a search results page', sourceUrl: 'https://example.com/live' },
+      { id: 'obs-4', at: 0, producer: 'action_outcome', ok: true, payload: 'navigated to https://example.com/next', sourceUrl: 'https://example.com/live' },
+      { id: 'obs-5', at: 0, producer: 'subagent_report', ok: true, payload: 'report for a-1' },
+      { id: 'obs-6', at: 0, producer: 'action_outcome', ok: false, payload: 'ref 7 not found', sourceUrl: 'https://example.com/live' },
+    ])
+  })
+
+  it('records the ask_user answer as a user observation', async () => {
+    const observations: { producer: string; ok: boolean; payload: unknown }[] = []
+    const pipeline = createCommandPipeline({
+      llm: new ScriptedLlm([
+        { kind: 'tool_calls', calls: [{ id: 'a1', name: 'ask_user', args: { question: 'Which city?' } }] },
+        { kind: 'answer', speak: 'Booking Paris.', display: 'Detail.' },
+      ]),
+      tts: new RecordingTts(),
+      clock: new FakeClock(),
+      tools: [createAskUserTool()],
+      onObservation: (record) => observations.push(record),
+    })
+
+    await collect(pipeline, 'book a hotel', (event, pipe) => {
+      if (event.type === 'ask_requested') pipe.resolveAsk(event.askId, 'Paris, France')
+    })
+
+    expect(observations).toContainEqual({ id: 'obs-2', at: 0, producer: 'ask_user', ok: true, payload: 'Paris, France' })
+  })
+
+  it('records each steering directive once, at the checkpoint that consumes it', async () => {
+    const firstTurn = deferred<AssistantTurn>()
+    const requests: LlmRequest[] = []
+    const llm: LlmClient = {
+      async complete(request) {
+        requests.push(request)
+        if (requests.length === 1) return firstTurn.promise
+        return { kind: 'answer', speak: 'Changed course.', display: 'Using the steering.' }
+      },
+    }
+    const observations: { producer: string; payload: unknown }[] = []
+    const pipeline = createCommandPipeline({
+      llm,
+      tts: new RecordingTts(),
+      clock: new FakeClock(),
+      tools: [pageTool('stale_action')],
+      onObservation: (record) => observations.push(record),
+    })
+
+    const run = collect(pipeline, 'original command')
+    await waitUntil(() => requests.length === 1)
+    expect(steerPipeline(pipeline, '  Use Paris instead.  ')).toBe(true)
+    firstTurn.resolve({ kind: 'answer', speak: 'Redirected.', display: 'Used the steering.' })
+    await run
+
+    expect(observations).toEqual([
+      { id: 'obs-1', at: 0, producer: 'command', ok: true, payload: 'original command' },
+      { id: 'obs-2', at: 0, producer: 'steering', ok: true, payload: 'Use Paris instead.' },
+    ])
+  })
+
+  it('disappears when its Run ends: the next Run mints fresh identities', async () => {
+    const seen: string[][] = []
+    const build = (): CommandPipeline => createCommandPipeline({
+      llm: new ScriptedLlm([{ kind: 'answer', speak: 'Done.', display: 'Done.' }]),
+      tts: new RecordingTts(),
+      clock: new FakeClock(),
+      tools: [],
+      onObservation: (record) => seen.at(-1)!.push(record.id),
+    })
+    const pipeline = build()
+
+    seen.push([])
+    await collect(pipeline, 'first command')
+    seen.push([])
+    await collect(pipeline, 'second command')
+
+    // A per-run ledger: the second run starts from obs-1 again, carrying
+    // nothing over from the first.
+    expect(seen).toEqual([['obs-1'], ['obs-1']])
+  })
+
+  it('refuses to record from a stale Session generation', async () => {
+    const observations: { id: string; producer: string }[] = []
+    const pipeline = createCommandPipeline({
+      llm: new ScriptedLlm([{ kind: 'answer', speak: 'Done.', display: 'Done.' }]),
+      tts: new RecordingTts(),
+      clock: new FakeClock(),
+      tools: [],
+      onObservation: (record) => observations.push(record),
+    })
+
+    const runWithGeneration = async (generation: number | undefined, command: string): Promise<void> => {
+      for await (const event of pipeline.execute(command, undefined, false, continuityWith(generation))) {
+        void event
+      }
+    }
+
+    // A current generation records; after the pipeline has served
+    // generation 1, a run arriving under the superseded generation 0 —
+    // work that predates a Session Reset — records nothing.
+    await runWithGeneration(1, 'current work')
+    expect(observations).toEqual([expect.objectContaining({ id: 'obs-1', producer: 'command', payload: 'current work' })])
+
+    await runWithGeneration(0, 'stale work')
+    expect(observations).toHaveLength(1)
+
+    await runWithGeneration(1, 'current again')
+    expect(observations.map((observation) => observation.id)).toEqual(['obs-1', 'obs-1'])
+  })
+})

@@ -25,6 +25,13 @@ import type { SnapshotRef } from '../browser/snapshot'
 import type { BlockerGate } from './blockerGate'
 import { createBlockerGate } from './blockerGate'
 import { MAX_TOOL_ROUNDS_DEFAULT } from '../settings/settings'
+import {
+  createObservationLedger,
+  type ObservationInput,
+  type ObservationProducer,
+  type ObservationRecord,
+} from '../session/observationLedger'
+import type { SessionGeneration } from '../session/sessionIdentity'
 
 export interface CommandPipelineDeps {
   llm: LlmClient
@@ -55,6 +62,18 @@ export interface CommandPipelineDeps {
    * q= navigations.
    */
   describeRef?: (ref: number) => Promise<SnapshotRef | undefined>
+  /**
+   * Live source for the URL of the page the visible browser tab is on
+   * (#111): the source URL recorded on page-facing observations in the
+   * Run's Observation ledger. Absent, observations carry no source URL.
+   */
+  currentPageUrl?: () => string | null
+  /**
+   * Observation ledger sink (#111): every record the run's ledger accepts
+   * — diagnostic only, the ledger itself is private Run Working State and
+   * never reaches the model. A throwing sink never fails a run.
+   */
+  onObservation?: (record: ObservationRecord) => void
   onAbort?(): void
   onPause?(): void
   onResume?(): void
@@ -141,6 +160,33 @@ const DEFAULT_MAX_TOOL_ROUNDS = MAX_TOOL_ROUNDS_DEFAULT
 
 const STEERED_CANCELLED = 'cancelled by the user\'s steering'
 
+/**
+ * Page-facing tools (#111): their observations record the visible tab's
+ * URL as the source. Everything else (panel, settings, app, session,
+ * delegation, headline bookkeeping) observes app state, not a page.
+ */
+const PAGE_FACING_TOOLS = new Set([
+  'navigate',
+  'read_page',
+  'click',
+  'type',
+  'scroll',
+  'screenshot',
+  'back',
+  'go_forward',
+  'ground_visual',
+  'look',
+  'media_control',
+])
+
+/** Observation producer kind for one tool call (#111). */
+function producerForTool(name: string): ObservationProducer {
+  if (name === 'read_page') return 'page_read'
+  if (name === 'look') return 'look'
+  if (name === 'agent_results') return 'subagent_report'
+  return 'action_outcome'
+}
+
 function toErrorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err)
 }
@@ -208,6 +254,12 @@ export interface CommandPipeline {
 export interface RunContinuityContext {
   readonly snapshot: RunJournalSnapshot
   readonly memory: WorkingMemorySnapshot
+  /**
+   * The Session generation this Run was admitted under (#111): the
+   * Observation ledger's staleness guard. Absent in tests that carry no
+   * runtime; production always passes it from admission.
+   */
+  readonly generation?: SessionGeneration
   commit(
     outcome: RunJournalEntry['outcome'],
     note: string,
@@ -240,6 +292,11 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
   let confirmationCounter = 0
   let askCounter = 0
   let activeRun: ActiveRun | null = null
+  // The newest Session generation this pipeline has served (#111): the
+  // Observation ledger's staleness check — a ledger admitted under a
+  // superseded generation (a Session Reset happened between Runs) can
+  // never record again.
+  let latestSessionGeneration: SessionGeneration = 0
 
   function throwIfAborted(run: ActiveRun): void {
     if (run.aborted) throw new CommandAbortedError()
@@ -354,6 +411,38 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
   ): AsyncIterable<UnstampedEvent> {
     const run: ActiveRun = { turnId, aborted: false, paused: false }
     activeRun = run
+    // The Run Observation ledger (#111): private Run Working State. The
+    // run's Session generation is the guard — recording stops the moment
+    // a newer generation exists, and the ledger dies with the run.
+    const runGeneration = continuity?.generation ?? latestSessionGeneration
+    if (continuity?.generation !== undefined && continuity.generation > latestSessionGeneration) {
+      latestSessionGeneration = continuity.generation
+    }
+    const ledger = createObservationLedger({
+      now: () => clock.now(),
+      generation: runGeneration,
+      isCurrentGeneration: (generation) => generation === latestSessionGeneration,
+    })
+    const observe = (input: ObservationInput): ObservationRecord | null => {
+      const record = ledger.record(input)
+      if (record !== null && deps.onObservation) {
+        try {
+          deps.onObservation(record)
+        } catch {
+          // Diagnostics cannot fail a run.
+        }
+      }
+      return record
+    }
+    // Steering observations (#111): every directive is recorded exactly
+    // once, at the checkpoint that consumes it into the run.
+    const consumeSteering = async function* (
+      status: 'thinking' | 'acting',
+    ): AsyncGenerator<UnstampedEvent, string | undefined> {
+      const directive = yield* checkpoint(run, status)
+      if (directive !== undefined) observe({ producer: 'steering', ok: true, payload: directive })
+      return directive
+    }
     const emitDetail = deps.emitDetail
       ? (event: UnstampedEvent): void => deps.emitDetail!(stampTurn(event, turnId))
       : undefined
@@ -384,6 +473,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
       let resetConsumed = false
       let finalAnswer: Extract<AssistantTurn, { kind: 'answer' }> | undefined
       yield { type: 'command', text: command, at: clock.now() }
+      observe({ producer: 'command', ok: true, payload: command })
       yield { type: 'status', status: 'thinking', at: clock.now() }
       // LRU touch (ADR 0022): the run's input is the transcript an admitted
       // term was heard in — use is the honest "recently biased" signal.
@@ -446,7 +536,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
             mechanicalCause = 'hard_limit'
             throw new Error(`tool round limit (${effectiveMaxToolRounds}) reached`)
           }
-          steering = (yield* checkpoint(run, 'thinking')) ?? steering
+          steering = (yield* consumeSteering('thinking')) ?? steering
           // Stop reaches the in-flight request through this signal (#47):
           // abort() fires it, the client cancels the HTTP request, and the
           // rejection below maps back to a cancelled run — no waiting out
@@ -500,7 +590,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
             batcher?.flush()
           }
           steering = undefined
-          const afterModelSteering = yield* checkpoint(run, 'thinking')
+          const afterModelSteering = yield* consumeSteering('thinking')
           if (afterModelSteering) {
             steering = afterModelSteering
             continue
@@ -539,14 +629,26 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
           let steerAfterTool = false
           for (const [index, call] of turn.calls.entries()) {
             if (resetCallIndex !== -1 && index !== resetCallIndex) continue
-            const beforeToolSteering = yield* checkpoint(run, 'acting')
+            const beforeToolSteering = yield* consumeSteering('acting')
             if (beforeToolSteering) {
               steering = beforeToolSteering
               steerAfterTool = true
               break
             }
             yield { type: 'tool_call', callId: call.id, name: call.name, args: call.args, at: clock.now() }
-            const outcome = yield* runGatedTool(call, turnId, visionBudget, searchLoopRail, blockerGate, toolContext, run)
+            const outcome = yield* runGatedTool(call, turnId, visionBudget, searchLoopRail, blockerGate, toolContext, run, observe)
+            // Observation ledger (#111): the raw outcome as the tool
+            // produced it, ahead of the advisory nudges appended below —
+            // later checkpoint validation checks excerpts against what the
+            // source actually said, not against pipeline-added guidance.
+            observe({
+              producer: producerForTool(call.name),
+              ok: outcome.ok,
+              payload: outcome.ok ? outcome.result : outcome.error,
+              ...(PAGE_FACING_TOOLS.has(call.name) && deps.currentPageUrl
+                ? { sourceUrl: deps.currentPageUrl() ?? undefined }
+                : {}),
+            })
             // Same-wall Blocker gate (#80): marker lines riding successful
             // results arm it; a successful different-host browser
             // interaction disarms it. Sees the raw outcome — advisory
@@ -576,7 +678,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
               resetConsumed = true
               break
             }
-            const afterToolSteering = yield* checkpoint(run, 'acting')
+            const afterToolSteering = yield* consumeSteering('acting')
             if (afterToolSteering) {
               steering = afterToolSteering
               steerAfterTool = true
@@ -682,6 +784,9 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
       }
     } finally {
       if (activeRun === run) activeRun = null
+      // Run end (#111): the Observation ledger disappears with its Run —
+      // records dropped, late writers refused.
+      ledger.close()
       // Run end (#30): close the turn out — one synthetic `summary` event
       // in the log and the same data as a one-line console summary. Turns
       // that recorded nothing (no tracer, an untraced run) degrade to a
@@ -698,6 +803,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
     blockerGate: BlockerGate,
     toolContext: ToolContext,
     run: ActiveRun,
+    observe: (input: ObservationInput) => ObservationRecord | null,
   ): AsyncGenerator<UnstampedEvent, ToolResultOutcome> {
     const tool = toolsByName.get(call.name)
     if (!tool) return { ok: false, error: `unknown tool: '${call.name}'` }
@@ -743,6 +849,13 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
         reason: resolved.reason,
         at: clock.now(),
       }
+      // Observation ledger (#111): the user's answer (or the reason none
+      // arrived) is a user-produced observation the run retains.
+      observe({
+        producer: 'ask_user',
+        ok: resolved.reason === 'user',
+        payload: resolved.reason === 'user' ? resolved.answer : `unanswered (${resolved.reason})`,
+      })
       throwIfAborted(run)
       return {
         ok: true,
