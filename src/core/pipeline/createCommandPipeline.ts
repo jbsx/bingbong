@@ -103,6 +103,13 @@ export interface CommandPipelineDeps {
   onAbort?(): void
   onPause?(): void
   onResume?(): void
+  /**
+   * Steering's stale-work cancellation (#119, ADR 0027): fired when a
+   * resume carries a directive — delegated Subagent work spawned under
+   * the corrected-away objective is cancelled, not resumed. Wired by
+   * main to the subagent rail's cancelAll.
+   */
+  onSteer?(): void
   /** Turn-id source (#28) and span/summary recorder (#29/#30); absent falls back to a local id mint. */
   tracer?: PerfTracer
   /**
@@ -502,17 +509,77 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
       return record
     }
     // Steering observations (#111): every directive is recorded exactly
-    // once, at the checkpoint that consumes it into the run. A consumed
-    // directive also invalidates the model-declared Run Plan (#116): the
-    // corrected objective reports a fresh initial plan, not an update.
-    let steeringDirectiveSeen = false
+    // once, at the checkpoint that consumes it into the run.
+    //
+    // The Run Plan (#116, ADR 0027): null until a useful Tool Round
+    // establishes one — a valid model report or the fallback Lookup
+    // plan. `modelDeclaredPlan` distinguishes the fallback from a
+    // declaration: the first valid report is always accepted. The
+    // corrective nudge is owed until it actually rides a result, so a
+    // round whose siblings all fail does not swallow it.
+    let runPlan: RunPlan | null = null
+    let modelDeclaredPlan = false
+    let planNudgePending = false
+    let planNudgeDelivered = false
+    // Bounded effort (#117, ADR 0027): the tier epoch is the run's
+    // current Effort Tier — the declared plan's, or the default Lookup
+    // before one lands. A tier change (first declaration, escalation,
+    // or a Steering replan) starts a fresh epoch: budget, warnings,
+    // and the active-work deadline re-arm, while cumulative `rounds`
+    // still count toward the hard ceiling.
+    let epochTier: EffortTier = DEFAULT_EFFORT_TIER
+    let tierRounds = 0
+    const warned: Record<BudgetWarningMilestone, boolean> = { near: false, imminent: false }
+    // A crossed budget milestone still owed a ride on a successful
+    // result — delivered on the crossing round's own results when one
+    // can carry it, else on the next round's.
+    let pendingBudgetWarning: BudgetWarningMilestone | null = null
+    // Finalization (#117, ADR 0027): exhaustion no longer throws. The
+    // run enters a terminal phase — one bookkeeping Tool Round at most
+    // (skipped entirely at the hard ceiling), then a reserved
+    // Answer-only round that never counts as a Tool Round. `answerOnly`
+    // marks the rounds after which only an Answer is accepted.
+    let finalizing = false
+    let answerOnly = false
+    // Finalization semantics (#110/#117): the runtime's mechanically
+    // known stop cause — hard ceiling, tier budget, or active-work
+    // deadline. It overrides whatever the final Answer proposes for a
+    // runtime-owned cause, and a deterministic fallback Answer rides it
+    // when the reserved Answer round fails or requests tools.
+    let mechanicalCause: FinalizationCause | null = null
     const consumeSteering = async function* (
       status: 'thinking' | 'acting',
     ): AsyncGenerator<UnstampedEvent, string | undefined> {
       const directive = yield* checkpoint(run, status)
       if (directive !== undefined) {
         observe({ producer: 'steering', ok: true, payload: directive })
-        steeringDirectiveSeen = true
+        // The Steering replan (#119, ADR 0027): the directive corrects
+        // the objective, so everything planned for the stale one is
+        // discarded atomically here, at the one checkpoint every
+        // directive passes through. The plan slot reopens — the
+        // corrected objective reports a fresh initial plan, and a
+        // plan-less round falls back to Lookup with one fresh nudge,
+        // exactly like the run's start. Effort re-arms as a tier
+        // change: fresh budget, warnings, and active-work deadline at
+        // the default tier, while cumulative `rounds` and every
+        // recorded observation remain — telemetry is never rewound.
+        // Finalization set by a tier rail belonged to the stale
+        // objective and is exited; the hard ceiling and an already
+        // spent bookkeeping round are not.
+        runPlan = null
+        modelDeclaredPlan = false
+        planNudgePending = false
+        planNudgeDelivered = false
+        epochTier = DEFAULT_EFFORT_TIER
+        tierRounds = 0
+        warned.near = false
+        warned.imminent = false
+        pendingBudgetWarning = null
+        run.workClock.rearm()
+        if (finalizing && !answerOnly && mechanicalCause !== 'hard_limit') {
+          finalizing = false
+          mechanicalCause = null
+        }
       }
       return directive
     }
@@ -536,12 +603,6 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
 
     try {
       let runOutcome: 'done' | 'failed' | 'cancelled' = 'done'
-      // Finalization semantics (#110/#117): the runtime's mechanically
-      // known stop cause — hard ceiling, tier budget, or active-work
-      // deadline. It overrides whatever the final Answer proposes for a
-      // runtime-owned cause, and a deterministic fallback Answer rides it
-      // when the reserved Answer round fails or requests tools.
-      let mechanicalCause: FinalizationCause | null = null
       // A successful Session Reset tool (#99) discards the rest of the run:
       // siblings never execute, no later round happens, nothing commits.
       let resetConsumed = false
@@ -602,36 +663,9 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
         // The Run Headline (ADR 0025): the last one this run emitted — the
         // next report lands as an event only when it changes the title.
         let lastHeadline: string | null = null
-        // The Run Plan (#116, ADR 0027): null until the first useful Tool
-        // Round establishes one — a valid model report or the fallback
-        // Lookup plan. `modelDeclaredPlan` distinguishes the fallback from
-        // a declaration: the first valid report is always accepted. The
-        // corrective nudge is owed until it actually rides a result, so a
-        // round whose siblings all fail does not swallow it.
-        let runPlan: RunPlan | null = null
-        let modelDeclaredPlan = false
-        let planNudgePending = false
-        let planNudgeDelivered = false
-        // Bounded effort (#117, ADR 0027): the tier epoch is the run's
-        // current Effort Tier — the declared plan's, or the default Lookup
-        // before one lands. A tier change (first declaration, escalation,
-        // later a steering replan) starts a fresh epoch: budget, warnings,
-        // and the active-work deadline re-arm, while cumulative `rounds`
-        // still count toward the hard ceiling.
-        let epochTier: EffortTier = DEFAULT_EFFORT_TIER
-        let tierRounds = 0
-        const warned: Record<BudgetWarningMilestone, boolean> = { near: false, imminent: false }
-        // A crossed budget milestone still owed a ride on a successful
-        // result — delivered on the crossing round's own results when one
-        // can carry it, else on the next round's.
-        let pendingBudgetWarning: BudgetWarningMilestone | null = null
-        // Finalization (#117, ADR 0027): exhaustion no longer throws. The
-        // run enters a terminal phase — one bookkeeping Tool Round at most
-        // (skipped entirely at the hard ceiling), then a reserved
-        // Answer-only round that never counts as a Tool Round. `answerOnly`
-        // marks the rounds after which only an Answer is accepted.
-        let finalizing = false
-        let answerOnly = false
+        // The Run Plan state, the effort epoch, and Finalization live in
+        // the run scope — the Steering replan (see consumeSteering)
+        // resets them at the checkpoint that consumes a directive.
         // The deterministic fallback Answer (#117): produced when the
         // reserved Answer round fails or requests tools.
         let deterministicFallback = false
@@ -761,12 +795,9 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
           // missing plan on the first useful round defaults the run to
           // Lookup (Command Echo retained) with exactly one corrective
           // nudge — never a stall, never a failed round. A Steering
-          // correction reopens the initial-plan slot: the corrected
-          // objective reports a fresh plan, not an update.
-          if (steeringDirectiveSeen) {
-            steeringDirectiveSeen = false
-            modelDeclaredPlan = false
-          }
+          // correction reopens the initial-plan slot in the replan (see
+          // consumeSteering): the corrected objective reports a fresh
+          // plan, not an update.
           let planResultError: string | null = null
           let planCallHandled = false
           // Planning engages only where the model can actually report a
@@ -1021,7 +1052,10 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
             ),
           ]
           const fallback = deterministicFinalAnswer({
-            command,
+            // The objective the stopped run was actually working — the
+            // fresh plan's after a Steering correction (#119), the
+            // command otherwise.
+            command: runPlan?.objective ?? command,
             cause: mechanicalCause ?? 'hard_limit',
             sources,
           })
@@ -1422,7 +1456,11 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
         eachPendingDecision((pending) => pending.resume())
       }
       activeRun.paused = false
-      deps.onResume?.()
+      // A directive supersedes the delegated work the paused run was
+      // waiting on (#119): it is cancelled, not resumed. A plain resume
+      // un-pauses it.
+      if (trimmed) deps.onSteer?.()
+      else deps.onResume?.()
       activeRun.releasePause?.()
       return true
     },

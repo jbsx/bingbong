@@ -1310,7 +1310,7 @@ describe('command pipeline', () => {
       expect(events.find((e) => e.type === 'error')).toBeUndefined()
       expect(events).toContainEqual({
         type: 'display',
-        text: 'I could not finish \u201Cdo the thing\u201D. The run exhausted its planned work budget.',
+        text: 'I could not finish \u201CDo the thing\u201D. The run exhausted its planned work budget.',
         at: 0,
       })
       expect(events.find((e) => e.type === 'speak' && e.text !== 'Partial.')).toMatchObject({
@@ -1336,7 +1336,7 @@ describe('command pipeline', () => {
       expect(events.find((e) => e.type === 'error')).toBeUndefined()
       expect(events).toContainEqual({
         type: 'display',
-        text: 'I could not finish \u201Cdo the thing\u201D. The run exhausted its planned work budget.',
+        text: 'I could not finish \u201CDo the thing\u201D. The run exhausted its planned work budget.',
         at: 0,
       })
       expect(events.at(-1)).toEqual({ type: 'done', outcome: 'failed', finalizationCause: 'budget_exhausted', at: 0 })
@@ -1378,7 +1378,7 @@ describe('command pipeline', () => {
       expect(display).toMatchObject({
         type: 'display',
         text:
-          'I could not finish \u201Cdo the thing\u201D. The run exhausted its planned work budget.\n\n' +
+          'I could not finish \u201CDo the thing\u201D. The run exhausted its planned work budget.\n\n' +
           'What I managed to observe:\n' +
           '- https://example.com/page',
       })
@@ -1836,6 +1836,318 @@ describe('command pipeline', () => {
         'investigation',
       ])
       expect(events.at(-1)).toEqual({ type: 'done', outcome: 'done', resolution: 'partial', finalizationCause: 'hard_limit', at: 0 })
+    })
+  })
+
+  describe('replan after Steering (#119, ADR 0027)', () => {
+    const plan = (
+      id: string,
+      objective: string,
+      headline: string,
+      effortTier: 'direct_action' | 'lookup' | 'investigation',
+    ): ToolCall => ({
+      id,
+      name: 'report_run_plan',
+      args: { objective, headline, effort_tier: effortTier },
+    })
+
+    const work: Tool = {
+      name: 'work',
+      acquisition: true,
+      async execute() {
+        return 'worked'
+      },
+    }
+
+    const workRound = (i: number, planCall?: ToolCall) => ({
+      kind: 'tool_calls' as const,
+      calls: [...(planCall ? [planCall] : []), { id: `w${i}`, name: 'work', args: {} }],
+    })
+
+    /** Steers at the given tool result's yield — the next checkpoint consumes it. */
+    const steerAt = (callId: string, directive: string) => (event: PipelineEvent, active: CommandPipeline) => {
+      if (event.type === 'tool_result' && event.callId === callId) {
+        active.pause()
+        active.resume(directive)
+      }
+    }
+
+    it('discards the stale in-flight round, exits stale tier exhaustion, and works the corrected objective (#119/AC1-3)', async () => {
+      // Six Direct Action rounds exhaust the tier budget; the directive
+      // lands while the would-be bookkeeping round's model call is in
+      // flight, so that round is stale work the run discards. The
+      // corrected objective reports a fresh plan and keeps working — the
+      // exhaustion belonged to the stale objective.
+      const bookkeepingTurn = deferred<AssistantTurn>()
+      const requests: LlmRequest[] = []
+      const llm: LlmClient = {
+        async complete(request) {
+          requests.push(request)
+          if (requests.length <= 6) {
+            return workRound(requests.length, requests.length === 1 ? plan('p1', 'Find a mug', 'Find a mug', 'direct_action') : undefined)
+          }
+          if (requests.length === 7) return bookkeepingTurn.promise
+          if (requests.length === 8) {
+            return workRound(8, plan('p8', 'Find a red mug', 'Find a red mug', 'lookup'))
+          }
+          return { kind: 'answer', speak: 'Found a red one.', display: 'Found a red mug.' }
+        },
+      }
+      let executions = 0
+      const countedWork: Tool = {
+        ...work,
+        async execute() {
+          executions += 1
+          return 'worked'
+        },
+      }
+      const pipeline = createCommandPipeline({ llm, tts: new RecordingTts(), clock: new FakeClock(), tools: [createReportRunPlanTool(), countedWork] })
+
+      const run = collect(pipeline, 'find a mug')
+      for (let attempt = 0; attempt < 200 && requests.length < 7; attempt += 1) await flush()
+      expect(requests.length).toBeGreaterThanOrEqual(7)
+      pipeline.pause()
+      bookkeepingTurn.resolve({ kind: 'tool_calls', calls: [{ id: 'stale', name: 'work', args: {} }] })
+      await waitUntil(() => pipeline.getState() === 'paused')
+      pipeline.resume('Find a red mug instead.')
+
+      const events = await run
+
+      // The stale round's call never executed; the corrected objective
+      // did its one round of work.
+      expect(executions).toBe(7)
+      expect(events.filter((e) => e.type === 'tool_result' && e.callId === 'stale')).toEqual([])
+      // The corrected objective's report is a fresh initial plan.
+      expect(events.filter((e) => e.type === 'run_plan').map((e) => (e as { effortTier: string }).effortTier)).toEqual(['direct_action', 'lookup'])
+      expect(events.filter((e) => e.type === 'run_plan').at(-1)).toMatchObject({ objective: 'Find a red mug', source: 'model' })
+      // The directive rode the corrected objective's first model call.
+      expect(requests[7]?.steering).toBe('Find a red mug instead.')
+      expect(events.at(-1)).toEqual({ type: 'done', outcome: 'done', finalizationCause: 'model_answered', at: 0 })
+    })
+
+    it('re-arms the active-work deadline for the corrected objective (#119/AC3)', async () => {
+      const clock = new FakeClock()
+      const timedWork: Tool = {
+        ...work,
+        async execute() {
+          clock.advance(70_000)
+          return 'worked'
+        },
+      }
+      const llm = new ScriptedLlm([
+        workRound(0, plan('p0', 'Find a mug', 'Find a mug', 'lookup')),
+        workRound(1, plan('p1', 'Find a red mug', 'Find a red mug', 'lookup')),
+        workRound(2),
+        { kind: 'tool_calls', calls: [{ id: 'w3', name: 'work', args: {} }] },
+        { kind: 'answer', speak: 'Found a red one.', display: 'Found a red mug.' },
+      ])
+      const pipeline = createCommandPipeline({ llm, tts: new RecordingTts(), clock, tools: [createReportRunPlanTool(), timedWork] })
+
+      const events = await collect(pipeline, 'find a mug', steerAt('w0', 'The red one instead.'))
+
+      // Without the re-arm, 70 s + 70 s crosses the 2-minute Lookup
+      // deadline before w2; with it, the corrected objective gets its
+      // own two minutes and only w3 is refused.
+      expect(events.filter((e) => e.type === 'tool_result' && e.name === 'work' && e.ok)).toHaveLength(3)
+      expect(events.find((e) => e.type === 'tool_result' && e.callId === 'w3')).toMatchObject({
+        ok: false,
+        error: expect.stringMatching(/work budget is exhausted/),
+      })
+      expect(events.at(-1)).toMatchObject({ type: 'done', finalizationCause: 'deadline_reached' })
+    })
+
+    it('defaults a plan-less corrected objective to the fallback Lookup and owes one fresh nudge (#119/AC2)', async () => {
+      const llm = new ScriptedLlm([
+        { kind: 'tool_calls', calls: [{ id: 'w0', name: 'work', args: {} }] },
+        { kind: 'tool_calls', calls: [{ id: 'w1', name: 'work', args: {} }] },
+        { kind: 'answer', speak: 'Done.', display: 'Done.' },
+      ])
+      const pipeline = createCommandPipeline({ llm, tts: new RecordingTts(), clock: new FakeClock(), tools: [createReportRunPlanTool(), work] })
+
+      const events = await collect(pipeline, 'find a mug', steerAt('w0', 'The red one instead.'))
+
+      // One fallback per plan-slot opening: the run's start and the
+      // corrected objective's plan-less round.
+      expect(events.filter((e) => e.type === 'run_plan')).toEqual([
+        { type: 'run_plan', objective: 'find a mug', headline: null, effortTier: 'lookup', source: 'fallback', at: 0 },
+        { type: 'run_plan', objective: 'find a mug', headline: null, effortTier: 'lookup', source: 'fallback', at: 0 },
+      ])
+      // Exactly one corrective nudge per slot — the corrected objective
+      // gets its own single chance to declare a plan.
+      const nudged = events.filter(
+        (e) => e.type === 'tool_result' && typeof e.result === 'string' && e.result.includes('report_run_plan'),
+      )
+      expect(nudged.map((e) => (e as { callId: string }).callId)).toEqual(['w0', 'w1'])
+      expect(llm.requests[1]?.steering).toBe('The red one instead.')
+    })
+
+    it('bounds repeated Steering at the 32-Tool-Round hard ceiling (#119/AC5)', async () => {
+      // Three corrections, each re-arming the tier budget, still land on
+      // the cumulative hard ceiling: 31 acquisition rounds, the 32nd
+      // preserved for bookkeeping, the Answer riding outside.
+      const llm = new ScriptedLlm([
+        ...Array.from({ length: 31 }, (_, i) => workRound(i, i === 0 ? plan('p0', 'Research the thing', 'Research the thing', 'lookup') : undefined)),
+        { kind: 'tool_calls', calls: [{ id: 'w31', name: 'work', args: {} }] },
+        { kind: 'answer', speak: 'Partial.', display: 'Partial detail.', resolution: 'partial' },
+      ])
+      const pipeline = createCommandPipeline({ llm, tts: new RecordingTts(), clock: new FakeClock(), tools: [createReportRunPlanTool(), work] })
+
+      const events = await collect(pipeline, 'research the thing', (event, active) => {
+        if (event.type === 'tool_result' && (event.callId === 'w4' || event.callId === 'w16' || event.callId === 'w28')) {
+          active.pause()
+          active.resume(event.callId === 'w4' ? 'Correction one.' : event.callId === 'w16' ? 'Correction two.' : 'Correction three.')
+        }
+      })
+
+      expect(events.filter((e) => e.type === 'tool_result' && e.name === 'work' && e.ok)).toHaveLength(31)
+      expect(llm.requests).toHaveLength(33)
+      expect(llm.requests.filter((r) => r.steering !== undefined).map((r) => r.steering)).toEqual([
+        'Correction one.',
+        'Correction two.',
+        'Correction three.',
+      ])
+      expect(events.at(-1)).toEqual({ type: 'done', outcome: 'done', resolution: 'partial', finalizationCause: 'hard_limit', at: 0 })
+    })
+
+    it('carries the corrected objective into the deterministic Answer when the reserved round fails at the ceiling (#119/AC5)', async () => {
+      // An Investigation's 24-round budget plus one mid-run correction
+      // reaches the hard ceiling; the second directive lands on the
+      // round the ceiling preserves for bookkeeping, whose fresh plan
+      // is exactly the bookkeeping it exists for. The reserved Answer
+      // round then requests tools — the deterministic fallback answers
+      // instead, naming the corrected objective.
+      const llm = new ScriptedLlm([
+        ...Array.from({ length: 24 }, (_, i) => workRound(i, i === 0 ? plan('p0', 'Research the thing', 'Research the thing', 'investigation') : undefined)),
+        workRound(24, plan('p24', 'Research the red mugs', 'Research the red mugs', 'investigation')),
+        ...Array.from({ length: 6 }, (_, i) => workRound(i + 25)),
+        { kind: 'tool_calls', calls: [plan('p32', 'Find the red mug', 'Find the red mug', 'lookup')] },
+        { kind: 'tool_calls', calls: [{ id: 'w32', name: 'work', args: {} }] },
+      ])
+      const pipeline = createCommandPipeline({ llm, tts: new RecordingTts(), clock: new FakeClock(), tools: [createReportRunPlanTool(), work] })
+
+      const events = await collect(pipeline, 'research the thing', (event, active) => {
+        if (event.type === 'tool_result' && (event.callId === 'w23' || event.callId === 'w30')) {
+          active.pause()
+          active.resume(event.callId === 'w23' ? 'The red mugs instead.' : 'Just find the red mug.')
+        }
+      })
+
+      // 31 acquisition rounds, bookkeeping, the failed reserved round.
+      expect(llm.requests).toHaveLength(33)
+      expect(events.filter((e) => e.type === 'tool_result' && e.name === 'work' && e.ok)).toHaveLength(31)
+      // Both directives reached the model — the second on the ceiling's
+      // bookkeeping round.
+      expect(llm.requests.filter((r) => r.steering !== undefined).map((r) => r.steering)).toEqual([
+        'The red mugs instead.',
+        'Just find the red mug.',
+      ])
+      expect(llm.requests[31]?.steering).toBe('Just find the red mug.')
+      expect(events.filter((e) => e.type === 'run_plan').map((e) => (e as { objective: string }).objective)).toEqual([
+        'Research the thing',
+        'Research the red mugs',
+        'Find the red mug',
+      ])
+      const display = events.find((e) => e.type === 'display')
+      expect(display).toMatchObject({ text: expect.stringContaining('Find the red mug') })
+      expect((display as { text: string }).text).not.toContain('research the thing')
+      expect(events.at(-1)).toEqual({ type: 'done', outcome: 'failed', finalizationCause: 'hard_limit', at: 0 })
+    })
+
+    it('keeps every post-steering round on the same immutable continuity snapshots (#119/AC4)', async () => {
+      const snapshot = Object.freeze([
+        Object.freeze({ runId: 'run-1' as never, outcome: 'done' as const, text: 'Found the red mug last week.' }),
+      ])
+      const memory = Object.freeze([Object.freeze(memoryEntry('memory-1'))])
+      const observations: string[] = []
+      const llm = new ScriptedLlm([
+        { kind: 'tool_calls', calls: [{ id: 'c1', name: 'spin', args: {} }] },
+        { kind: 'answer', speak: 'The red one.', display: 'The red mug.', runNote: 'Chose the red mug.' },
+      ])
+      const spin: Tool = { name: 'spin', async execute() { return 'spun' } }
+      const pipeline = createCommandPipeline({
+        llm,
+        tts: new RecordingTts(),
+        clock: new FakeClock(),
+        tools: [spin],
+        onObservation: (record) => observations.push(record.producer),
+      })
+      const commits: { outcome: string; note: string }[] = []
+
+      const events: PipelineEvent[] = []
+      for await (const raw of pipeline.execute('which mug?', undefined, undefined, {
+        snapshot,
+        memory,
+        commit: (outcome, note) => {
+          commits.push({ outcome, note })
+          return 'committed'
+        },
+      })) {
+        const event = withoutTurnId(raw)
+        events.push(event)
+        if (event.type === 'tool_result' && event.callId === 'c1') {
+          pipeline.pause()
+          pipeline.resume('the red one')
+        }
+      }
+
+      expect(llm.requests).toHaveLength(2)
+      for (const request of llm.requests) {
+        expect(request.journal).toBe(snapshot)
+        expect(request.memory).toBe(memory)
+      }
+      expect(llm.requests[1]?.steering).toBe('the red one')
+      // Session Evidence's substrate survives the replan: the directive
+      // itself is recorded telemetry, and the Memory Commit still lands.
+      expect(observations).toEqual(['command', 'action_outcome', 'steering'])
+      expect(commits).toEqual([{ outcome: 'done', note: 'Chose the red mug.' }])
+    })
+
+    it('fires onSteer for a steering resume and onResume only for a plain resume (#119/AC1)', async () => {
+      const hookCalls: string[] = []
+      const parks: ReturnType<typeof deferred<AssistantTurn>>[] = []
+      let round = 0
+      const llm: LlmClient = {
+        async complete() {
+          round += 1
+          if (round % 2 === 1) {
+            const park = deferred<AssistantTurn>()
+            parks.push(park)
+            return park.promise
+          }
+          return { kind: 'answer', speak: 'Done.', display: 'Done.' }
+        },
+      }
+      const pipeline = createCommandPipeline({
+        llm,
+        tts: new RecordingTts(),
+        clock: new FakeClock(),
+        tools: [],
+        onPause: () => hookCalls.push('pause'),
+        onResume: () => hookCalls.push('resume'),
+        onSteer: () => hookCalls.push('steer'),
+      })
+
+      const first = collect(pipeline, 'find a mug')
+      await waitUntil(() => parks.length === 1)
+      pipeline.pause()
+      parks[0].resolve({ kind: 'answer', speak: 'Stale.', display: 'Stale.' })
+      await waitUntil(() => pipeline.getState() === 'paused')
+      pipeline.resume('the red one instead')
+      const firstEvents = await first
+
+      const second = collect(pipeline, 'find another mug')
+      await waitUntil(() => parks.length === 2)
+      pipeline.pause()
+      parks[1].resolve({ kind: 'answer', speak: 'Stale.', display: 'Stale.' })
+      await waitUntil(() => pipeline.getState() === 'paused')
+      pipeline.resume()
+      await second
+
+      expect(hookCalls).toEqual(['pause', 'steer', 'pause', 'resume'])
+      // The stale answer the directive superseded never rendered; the
+      // corrected round's answer did.
+      expect(firstEvents.some((e) => e.type === 'display' && e.text === 'Stale.')).toBe(false)
+      expect(firstEvents.some((e) => e.type === 'display' && e.text === 'Done.')).toBe(true)
     })
   })
 

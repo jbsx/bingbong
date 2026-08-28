@@ -248,6 +248,9 @@ export function createAssistantPipeline(deps: AssistantPipelineDeps): CommandPip
     onAbort: () => deps.subagentControl?.cancelAll(),
     onPause: () => deps.subagentControl?.pauseAll(),
     onResume: () => deps.subagentControl?.resumeAll(),
+    // A Steering directive corrects the objective (#119): delegated
+    // work spawned under the stale one is cancelled, not resumed.
+    onSteer: () => deps.subagentControl?.cancelAll(),
     ...(configuredAskTimeoutMs !== undefined ? { askTimeoutMs: configuredAskTimeoutMs } : {}),
     ...(deps.getMaxToolRounds ? { getMaxToolRounds: deps.getMaxToolRounds } : {}),
   })

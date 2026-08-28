@@ -532,6 +532,54 @@ describe('createAssistantPipeline', () => {
     expect(events.some((event) => event.type === 'waiting_on_agents')).toBe(false)
   })
 
+  it('cancels running subagents when a steering directive lands (#119)', async () => {
+    // Delegated work spawned under the corrected-away objective is
+    // stale: the steering resume cancels it through the shared
+    // subagent control instead of un-pausing it.
+    const control: string[] = []
+    let calls = 0
+    let releaseFirst!: () => void
+    const firstRound = new Promise<Response>((resolve) => {
+      releaseFirst = () =>
+        resolve(new Response(JSON.stringify({ choices: [{ message: { content: '{"speak":"Stale.","display":"Stale."}' } }] }), { status: 200 }))
+    })
+    const fetchFn = (async (_url: string | URL, _init?: RequestInit) => {
+      calls += 1
+      if (calls === 1) return firstRound
+      return new Response(JSON.stringify({ choices: [{ message: { content: '{"speak":"Done.","display":"Done."}' } }] }), { status: 200 })
+    }) as typeof fetch
+    const pipeline = createAssistantPipeline({
+      controller: new FakeBrowser(),
+      env: FULL_ENV,
+      fetchFn,
+      clock: new FakeClock(),
+      subagentControl: {
+        cancelAll: () => {
+          control.push('cancelAll')
+          return 0
+        },
+        pauseAll: () => control.push('pauseAll'),
+        resumeAll: () => control.push('resumeAll'),
+      },
+    })
+
+    const events: PipelineEvent[] = []
+    const run = (async () => {
+      for await (const event of pipeline.execute('find a mug')) events.push(event)
+    })()
+    for (let attempt = 0; attempt < 50 && calls < 1; attempt += 1) await Promise.resolve()
+    pipeline.pause()
+    releaseFirst()
+    for (let attempt = 0; attempt < 50 && pipeline.getState() !== 'paused'; attempt += 1) await Promise.resolve()
+    expect(pipeline.getState()).toBe('paused')
+    pipeline.resume('the red one instead')
+    await run
+
+    expect(control).toEqual(['pauseAll', 'cancelAll'])
+    expect(events.some((event) => event.type === 'display' && event.text === 'Stale.')).toBe(false)
+    expect(events.at(-1)).toMatchObject({ type: 'done', outcome: 'done' })
+  })
+
   it('streams a scripted answer through onDelta as llm_delta detail events (#56)', async () => {
     // e2e's markdown-streaming seam: streamChunks on a scripted answer
     // flow through the round's onDelta — the delta batcher derives the
