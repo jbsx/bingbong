@@ -160,31 +160,44 @@ const DEFAULT_MAX_TOOL_ROUNDS = MAX_TOOL_ROUNDS_DEFAULT
 
 const STEERED_CANCELLED = 'cancelled by the user\'s steering'
 
-/**
- * Page-facing tools (#111): their observations record the visible tab's
- * URL as the source. Everything else (panel, settings, app, session,
- * delegation, headline bookkeeping) observes app state, not a page.
- */
-const PAGE_FACING_TOOLS = new Set([
-  'navigate',
-  'read_page',
-  'click',
-  'type',
-  'scroll',
-  'screenshot',
-  'back',
-  'go_forward',
-  'ground_visual',
-  'look',
-  'media_control',
-])
+/** How one tool call lands in the Observation ledger (#111). */
+interface ToolObservationClass {
+  readonly producer: ObservationProducer
+  /**
+   * Whether the observation records the visible tab's URL as its source.
+   * Page-facing tools observe a page; everything else (panel, settings,
+   * app, session, delegation, headline bookkeeping) observes app state.
+   */
+  readonly pageFacing: boolean
+}
 
-/** Observation producer kind for one tool call (#111). */
-function producerForTool(name: string): ObservationProducer {
-  if (name === 'read_page') return 'page_read'
-  if (name === 'look') return 'look'
-  if (name === 'agent_results') return 'subagent_report'
-  return 'action_outcome'
+/** How a tool that observes a page lands in the ledger. */
+const PAGE_OBSERVATION: ToolObservationClass = { producer: 'action_outcome', pageFacing: true }
+
+/**
+ * The one classification table (#111): tools whose observations carry a
+ * producer kind other than the default or no page source. Unlisted tools
+ * fall through to the plain action-outcome class.
+ */
+const TOOL_OBSERVATION_CLASSES: Readonly<Record<string, ToolObservationClass>> = {
+  read_page: { producer: 'page_read', pageFacing: true },
+  look: { producer: 'look', pageFacing: true },
+  agent_results: { producer: 'subagent_report', pageFacing: false },
+  navigate: PAGE_OBSERVATION,
+  click: PAGE_OBSERVATION,
+  type: PAGE_OBSERVATION,
+  scroll: PAGE_OBSERVATION,
+  screenshot: PAGE_OBSERVATION,
+  back: PAGE_OBSERVATION,
+  go_forward: PAGE_OBSERVATION,
+  ground_visual: PAGE_OBSERVATION,
+  media_control: PAGE_OBSERVATION,
+}
+
+const DEFAULT_TOOL_OBSERVATION: ToolObservationClass = { producer: 'action_outcome', pageFacing: false }
+
+function classifyToolObservation(name: string): ToolObservationClass {
+  return TOOL_OBSERVATION_CLASSES[name] ?? DEFAULT_TOOL_OBSERVATION
 }
 
 function toErrorMessage(err: unknown): string {
@@ -641,13 +654,13 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
             // produced it, ahead of the advisory nudges appended below —
             // later checkpoint validation checks excerpts against what the
             // source actually said, not against pipeline-added guidance.
+            const classification = classifyToolObservation(call.name)
+            const sourceUrl = classification.pageFacing ? deps.currentPageUrl?.() : undefined
             observe({
-              producer: producerForTool(call.name),
+              producer: classification.producer,
               ok: outcome.ok,
               payload: outcome.ok ? outcome.result : outcome.error,
-              ...(PAGE_FACING_TOOLS.has(call.name) && deps.currentPageUrl
-                ? { sourceUrl: deps.currentPageUrl() ?? undefined }
-                : {}),
+              ...(sourceUrl ? { sourceUrl } : {}),
             })
             // Same-wall Blocker gate (#80): marker lines riding successful
             // results arm it; a successful different-host browser
