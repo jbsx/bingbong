@@ -81,7 +81,12 @@ export function createHistoryRecorder(
             case 'done': {
               if (runId !== null) {
                 const outcome = inferRunOutcome(event.outcome, lastStatus, failed)
-                store.finishRun(runId, outcome, event.at)
+                // Semantic finalization fields (#110) ride the done event
+                // additively; absent fields stay null columns.
+                store.finishRun(runId, outcome, event.at, {
+                  resolution: event.resolution ?? null,
+                  finalizationCause: event.finalizationCause ?? null,
+                })
                 removeActiveRun(runId)
                 runId = null
               }

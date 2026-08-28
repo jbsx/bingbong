@@ -1,5 +1,6 @@
 import type { SessionEndReason } from '../session/sessionRuntime'
 import type { SessionId } from '../session/sessionIdentity'
+import type { FinalizationCause, RunFinalization, RunResolution } from '../session/runJournal'
 
 export type { SessionEndReason } from '../session/sessionRuntime'
 
@@ -42,6 +43,17 @@ export interface RunRecord {
   startedAt: number
   finishedAt: number | null
   outcome: RunOutcome | null
+  /**
+   * Semantic Run Resolution (#110): null on every legacy row and every run
+   * that ended without a validated model proposal. Never inferred.
+   */
+  resolution: RunResolution | null
+  /**
+   * Finalization Cause (#110): present when the run finalized with a known
+   * cause (a model Answer, or a mechanical stop like the round ceiling);
+   * null otherwise and on every legacy row.
+   */
+  finalizationCause: FinalizationCause | null
 }
 
 export interface SessionRecord {
@@ -67,7 +79,12 @@ export interface HistoryStore {
    * database column stays nullable only for rows predating the cutover.
    */
   startRun(command: string, at: number, turnId: string, sessionId: SessionId): number
-  finishRun(runId: number, outcome: RunOutcome, at: number): void
+  /**
+   * Closes a run with its mechanical outcome; the finalization semantics
+   * (#110) ride along when the run finalized — absent means null columns
+   * (legacy callers, interrupted supersession).
+   */
+  finishRun(runId: number, outcome: RunOutcome, at: number, finalization?: RunFinalization): void
   appendEntry(entry: HistoryEntryInput): void
   /** Most recent entries, oldest first. */
   recentEntries(limit: number): RecordedEntry[]

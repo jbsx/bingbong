@@ -11,6 +11,12 @@ import type {
   TranscriptKind,
 } from '../../core/history/historyStore'
 import type { SessionId } from '../../core/session/sessionIdentity'
+import {
+  FINALIZATION_CAUSES,
+  RUN_RESOLUTIONS,
+  type FinalizationCause,
+  type RunResolution,
+} from '../../core/session/runJournal'
 
 // SQLite backing for the history port (spec #1, Persistence). Write-through
 // and synchronous: every statement is durable before the event that caused it
@@ -65,6 +71,14 @@ export function createSqliteHistoryStore(
   if (!runColumns.some((column) => column.name === 'session_id')) {
     db.exec('ALTER TABLE runs ADD COLUMN session_id TEXT')
   }
+  // Finalization semantics (#110): additive nullable columns; existing rows
+  // stay null — resolutions are never inferred for past runs.
+  if (!runColumns.some((column) => column.name === 'resolution')) {
+    db.exec('ALTER TABLE runs ADD COLUMN resolution TEXT')
+  }
+  if (!runColumns.some((column) => column.name === 'finalization_cause')) {
+    db.exec('ALTER TABLE runs ADD COLUMN finalization_cause TEXT')
+  }
   const entryColumns = db.prepare("PRAGMA table_info('entries')").all() as { name: string }[]
   if (!entryColumns.some((column) => column.name === 'session_id')) {
     db.exec('ALTER TABLE entries ADD COLUMN session_id TEXT')
@@ -88,15 +102,21 @@ export function createSqliteHistoryStore(
   const insertRun = db.prepare<{ command: string; started_at: number; turn_id: string; session_id: string | null }>(
     'INSERT INTO runs (command, started_at, turn_id, session_id) VALUES (@command, @started_at, @turn_id, @session_id)',
   )
-  const finishRun = db.prepare<{ id: number; outcome: RunOutcome; finished_at: number }>(
-    'UPDATE runs SET outcome = @outcome, finished_at = @finished_at WHERE id = @id',
+  const finishRun = db.prepare<{
+    id: number
+    outcome: RunOutcome
+    finished_at: number
+    resolution: string | null
+    finalization_cause: string | null
+  }>(
+    'UPDATE runs SET outcome = @outcome, finished_at = @finished_at, resolution = @resolution, finalization_cause = @finalization_cause WHERE id = @id',
   )
   const insertEntry = db.prepare<{ run_id: number | null; kind: string; text: string; at: number; session_id: string | null }>(
     'INSERT INTO entries (run_id, kind, text, at, session_id) VALUES (@run_id, @kind, @text, @at, @session_id)',
   )
   const selectEntries = db.prepare('SELECT id, run_id, kind, text, at, session_id FROM entries ORDER BY id DESC LIMIT ?')
   const selectRuns = db.prepare(
-    'SELECT id, turn_id, session_id, command, started_at, finished_at, outcome FROM runs ORDER BY id DESC LIMIT ?',
+    'SELECT id, turn_id, session_id, command, started_at, finished_at, outcome, resolution, finalization_cause FROM runs ORDER BY id DESC LIMIT ?',
   )
   const selectSessions = db.prepare(
     'SELECT id, started_at, ended_at, end_reason FROM sessions ORDER BY rowid DESC LIMIT ?',
@@ -119,6 +139,8 @@ export function createSqliteHistoryStore(
     started_at: number
     finished_at: number | null
     outcome: string | null
+    resolution: string | null
+    finalization_cause: string | null
   }
 
   interface SessionRow {
@@ -145,6 +167,16 @@ export function createSqliteHistoryStore(
     startedAt: row.started_at,
     finishedAt: row.finished_at,
     outcome: row.outcome !== null && OUTCOMES.includes(row.outcome as RunOutcome) ? (row.outcome as RunOutcome) : null,
+    // Unknown stored values (a hand-edited database) degrade to null rather
+    // than surfacing an unvalidated string as a Resolution.
+    resolution:
+      row.resolution !== null && (RUN_RESOLUTIONS as readonly string[]).includes(row.resolution)
+        ? (row.resolution as RunResolution)
+        : null,
+    finalizationCause:
+      row.finalization_cause !== null && (FINALIZATION_CAUSES as readonly string[]).includes(row.finalization_cause)
+        ? (row.finalization_cause as FinalizationCause)
+        : null,
   })
 
   const toSession = (row: SessionRow): SessionRecord => ({
@@ -172,8 +204,14 @@ export function createSqliteHistoryStore(
       }
       return Number(info.lastInsertRowid)
     },
-    finishRun(runId, outcome, at) {
-      finishRun.run({ id: runId, outcome, finished_at: at })
+    finishRun(runId, outcome, at, finalization) {
+      finishRun.run({
+        id: runId,
+        outcome,
+        finished_at: at,
+        resolution: finalization?.resolution ?? null,
+        finalization_cause: finalization?.finalizationCause ?? null,
+      })
     },
     appendEntry(entry) {
       insertEntry.run({

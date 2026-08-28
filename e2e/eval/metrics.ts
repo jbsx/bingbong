@@ -1,5 +1,6 @@
 import type { PipelineEvent } from '../../src/core/pipeline/events'
 import type { PerfSpanRecord } from '../../src/core/perf/perfTracer'
+import type { FinalizationCause, RunResolution } from '../../src/core/session/runJournal'
 import { nearestRankPercentile } from '../../src/core/report/stats'
 
 // Per-scenario measurement (#109) over the two machine-readable surfaces
@@ -28,6 +29,10 @@ export interface ScenarioMetrics {
   elapsedMs: number | null
   repeatedActions: number
   outcome: 'done' | 'failed' | 'cancelled' | 'reset' | null
+  /** Semantic Run Resolution (#110): the final Answer's validated proposal, null when none. */
+  resolution: RunResolution | null
+  /** Finalization Cause (#110): the recorded cause, null when the run finalized without one. */
+  finalizationCause: FinalizationCause | null
   rawLimitFailure: string | null
   actions: RecordedAction[]
   answerText: string | null
@@ -78,6 +83,8 @@ export function extractMetrics(events: RunEvents, perfRecords: readonly PerfSpan
     elapsedMs: command && done ? done.at - command.at : null,
     repeatedActions: actions.filter((action) => action.repeated).length,
     outcome: done?.outcome ?? null,
+    resolution: done?.resolution ?? null,
+    finalizationCause: done?.finalizationCause ?? null,
     rawLimitFailure: rawLimit?.message ?? null,
     actions,
     answerText: displays.length > 0 ? displays[displays.length - 1]!.text : null,

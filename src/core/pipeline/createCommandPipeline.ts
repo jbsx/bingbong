@@ -8,7 +8,7 @@ import { createLlmDeltaBatcher } from './deltaBatcher'
 import type { TtsSpeaker } from '../ports/tts'
 import { spokenErrorLine } from '../agent/answerContract'
 import type { LearnedTermsControls } from '../voice/learnedTerms'
-import { MAX_RUN_NOTE_CHARS, type RunJournalEntry, type RunJournalSnapshot } from '../session/runJournal'
+import { MAX_RUN_NOTE_CHARS, finalizeRun, type FinalizationCause, type RunFinalization, type RunJournalEntry, type RunJournalSnapshot } from '../session/runJournal'
 import type { MemoryPatch, WorkingMemorySnapshot } from '../session/workingMemory'
 import type { PerfTracer } from '../perf/perfTracer'
 import { createTurnIdSource } from '../perf/perfTracer'
@@ -374,6 +374,11 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
 
     try {
       let runOutcome: 'done' | 'failed' | 'cancelled' = 'done'
+      // Finalization semantics (#110): the runtime's mechanically known
+      // stop cause — the tool-round ceiling today; budget, deadline, and
+      // progress rails join in later tickets. It overrides whatever the
+      // final Answer proposes for a runtime-owned cause.
+      let mechanicalCause: FinalizationCause | null = null
       // A successful Session Reset tool (#99) discards the rest of the run:
       // siblings never execute, no later round happens, nothing commits.
       let resetConsumed = false
@@ -438,6 +443,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
 
         for (;;) {
           if (rounds >= effectiveMaxToolRounds) {
+            mechanicalCause = 'hard_limit'
             throw new Error(`tool round limit (${effectiveMaxToolRounds}) reached`)
           }
           steering = (yield* checkpoint(run, 'thinking')) ?? steering
@@ -654,7 +660,26 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
           // swallowed — the ledger is advisory
         }
       }
-      yield { type: 'done', outcome: resetConsumed ? 'reset' : runOutcome, at: clock.now() }
+      // The run's boundary carries the mechanical outcome unchanged, with
+      // the semantic fields riding additively (#110): every valid model
+      // Answer completes as `done` whatever Resolution it proposes, and a
+      // cancelled, plain-error, or reset run finalizes nothing. A
+      // reset-consumed run commits nothing and reports nothing (#99).
+      const finalization: RunFinalization | null = resetConsumed
+        ? null
+        : finalizeRun({
+            mechanicalCause,
+            answered: runOutcome === 'done' && finalAnswer !== undefined,
+            proposedResolution: finalAnswer?.resolution ?? null,
+            proposedCause: finalAnswer?.finalizationCause ?? null,
+          })
+      yield {
+        type: 'done',
+        outcome: resetConsumed ? 'reset' : runOutcome,
+        ...(finalization?.resolution ? { resolution: finalization.resolution } : {}),
+        ...(finalization?.finalizationCause ? { finalizationCause: finalization.finalizationCause } : {}),
+        at: clock.now()
+      }
     } finally {
       if (activeRun === run) activeRun = null
       // Run end (#30): close the turn out — one synthetic `summary` event

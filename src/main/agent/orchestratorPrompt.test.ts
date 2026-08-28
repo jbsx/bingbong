@@ -177,3 +177,24 @@ describe('orchestrator prompt Mishear proposals', () => {
     expect(without).not.toContain('Learned Terms')
   })
 })
+
+// #110 pins: the answer contract names the semantic Run Resolution (all
+// five values) and the model-ownable Finalization Cause, while runtime-
+// owned causes stay application-recorded.
+
+describe('orchestrator prompt finalization semantics (#110)', () => {
+  it('names the resolution key with all five values in the answer contract', () => {
+    expect(ORCHESTRATOR_SYSTEM_PROMPT).toContain('"resolution": "completed|partial|blocked|needs_user|unsuccessful"')
+  })
+
+  it('allows the model to propose only objective_met as a Finalization Cause', () => {
+    expect(ORCHESTRATOR_SYSTEM_PROMPT).toContain('"finalization_cause": "objective_met"')
+    expect(ORCHESTRATOR_SYSTEM_PROMPT).toMatch(/Every other cause is recorded by the application itself/)
+  })
+
+  it('demands honest resolutions and ranks useful partial work', () => {
+    expect(ORCHESTRATOR_SYSTEM_PROMPT).toMatch(/states honestly how the request actually ended/)
+    expect(ORCHESTRATOR_SYSTEM_PROMPT).toMatch(/Useful partial work outranks "blocked" and "needs_user"/)
+    expect(ORCHESTRATOR_SYSTEM_PROMPT).toMatch(/Never claim "completed" for work you did not verify/)
+  })
+})

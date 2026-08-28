@@ -160,6 +160,55 @@ describe('parseAssistantAnswer', () => {
     },
   )
 
+  it.each(['completed', 'partial', 'blocked', 'needs_user', 'unsuccessful'] as const)(
+    'accepts the %s Run Resolution without changing the visible Answer (#110)',
+    (resolution) => {
+      const answer = parseAssistantAnswer(
+        JSON.stringify({ speak: 'Done.', display: 'Useful detail.', resolution, finalization_cause: 'objective_met' }),
+      )
+
+      expect(answer).toEqual({
+        speak: 'Done.',
+        display: 'Useful detail.',
+        resolution,
+        finalizationCause: 'objective_met',
+      })
+    },
+  )
+
+  it.each([null, 42, 'finished', 'needs user'] as const)(
+    'drops a malformed %j Run Resolution while keeping the Answer (#110)',
+    (resolution) => {
+      const answer = parseAssistantAnswer(JSON.stringify({ speak: 'Done.', display: 'Useful detail.', resolution }))
+
+      expect(answer).toEqual({ speak: 'Done.', display: 'Useful detail.', resolutionIssue: 'malformed' })
+    },
+  )
+
+  it.each([null, 42, 'objective met', 'gave up'] as const)(
+    'drops a malformed %j Finalization Cause while keeping the Answer (#110)',
+    (cause) => {
+      const answer = parseAssistantAnswer(
+        JSON.stringify({ speak: 'Done.', display: 'Useful detail.', resolution: 'partial', finalization_cause: cause }),
+      )
+
+      expect(answer).toEqual({ speak: 'Done.', display: 'Useful detail.', resolution: 'partial', finalizationCauseIssue: 'malformed' })
+    },
+  )
+
+  it('marks both semantic fields malformed without discarding the Answer or each other’s issues (#110)', () => {
+    const answer = parseAssistantAnswer(
+      JSON.stringify({ speak: 'Done.', display: 'Useful detail.', resolution: 'done-ish', finalization_cause: 9 }),
+    )
+
+    expect(answer).toEqual({
+      speak: 'Done.',
+      display: 'Useful detail.',
+      resolutionIssue: 'malformed',
+      finalizationCauseIssue: 'malformed',
+    })
+  })
+
   it('accepts JSON wrapped in a code fence', () => {
     const answer = parseAssistantAnswer('```json\n{"speak":"Done.","display":"Detail."}\n```')
 

@@ -3,6 +3,7 @@ export type PipelineStatus = 'thinking' | 'acting' | 'speaking' | 'paused' | 'ca
 import type { SubagentKind, SubagentOwner, SubagentStatus } from '../agent/subagentManager'
 import type { SubagentTabPhase } from '../browser/subagentTabs'
 import type { RunId, SessionGeneration, SessionId, SubmissionId } from '../session/sessionIdentity'
+import type { FinalizationCause, RunResolution } from '../session/runJournal'
 
 /**
  * Ownership metadata on Session-scoped events (#86–#100): every published
@@ -180,7 +181,21 @@ export type PipelineEvent = SessionEventIdentity & (
   | { type: 'run_headline'; turnId: string; text: string; at: number }
   /** A subagent's state changed — the dashboard keeps one card per agent id. */
   | { type: 'agent_update'; agent: SubagentCard; at: number }
-  | { type: 'done'; turnId: string; outcome?: 'done' | 'failed' | 'cancelled' | 'reset'; at: number }
+  /**
+   * The run's boundary (#110): `outcome` stays the mechanical result, and
+   * the semantic fields ride along additively — `resolution` only when a
+   * validated model proposal exists, `finalizationCause` whenever the run
+   * finalized with a known cause (a model Answer or a mechanical stop).
+   * Cancelled, plain-error, and reset runs carry neither.
+   */
+  | {
+      type: 'done'
+      turnId: string
+      outcome?: 'done' | 'failed' | 'cancelled' | 'reset'
+      resolution?: RunResolution | null
+      finalizationCause?: FinalizationCause | null
+      at: number
+    }
   /**
    * Identity-bearing Session lifecycle boundaries (#91): emitted by the
    * Session runtime's window wiring, never by the pipeline generator. A

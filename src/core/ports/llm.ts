@@ -1,4 +1,5 @@
 import type { RunJournalSnapshot } from '../session/runJournal'
+import type { FinalizationCause, RunResolution } from '../session/runJournal'
 import type { MemoryPatch, WorkingMemorySnapshot } from '../session/workingMemory'
 import type { SubagentReportFinding } from '../agent/subagentReport'
 import type { MishearProposal } from '../voice/learnedTerms'
@@ -108,6 +109,20 @@ export type AssistantTurn =
        */
       findings?: readonly SubagentReportFinding[]
       unresolved?: readonly string[]
+      /**
+       * Proposed Run Resolution (#110): how the Answer claims the request
+       * ended semantically. Enum-validated at the contract; malformed drops
+       * the field (see resolutionIssue) without touching the Answer.
+       */
+      resolution?: RunResolution
+      resolutionIssue?: 'malformed'
+      /**
+       * Proposed Finalization Cause (#110): enum-validated; runtime-owned
+       * causes are overridden by the pipeline's own record of how the run
+       * ended, so only `objective_met` can survive as a proposal.
+       */
+      finalizationCause?: FinalizationCause
+      finalizationCauseIssue?: 'malformed'
       usage?: TokenUsage
     }
   | { kind: 'tool_calls'; calls: ToolCall[]; usage?: TokenUsage }

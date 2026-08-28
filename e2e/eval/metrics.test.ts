@@ -17,8 +17,19 @@ function toolResult(callId: string, name: string, ok: boolean, at: number): Pipe
   return { type: 'tool_result', turnId: T, callId, name, ok, ...(ok ? { result: 'ok' } : { error: 'nope' }), at }
 }
 
-function done(at: number, outcome: 'done' | 'failed' = 'done'): PipelineEvent {
-  return { type: 'done', turnId: T, outcome, at }
+function done(
+  at: number,
+  outcome: 'done' | 'failed' = 'done',
+  semantics?: { resolution?: 'completed' | 'partial'; finalizationCause?: 'model_answered' | 'hard_limit' },
+): PipelineEvent {
+  return {
+    type: 'done',
+    turnId: T,
+    outcome,
+    ...(semantics?.resolution ? { resolution: semantics.resolution } : {}),
+    ...(semantics?.finalizationCause ? { finalizationCause: semantics.finalizationCause } : {}),
+    at,
+  }
 }
 
 function span(stage: string): PerfSpanRecord {
@@ -89,6 +100,30 @@ describe('extractMetrics', () => {
     expect(metrics.outcome).toBe('failed')
   })
 
+  it('records the run’s semantic Resolution and Finalization Cause from its done event (#110)', () => {
+    const metrics = extractMetrics(
+      [
+        command(0),
+        { type: 'display', turnId: T, text: 'Honest partial answer.', at: 1 },
+        done(2, 'done', { resolution: 'partial', finalizationCause: 'model_answered' }),
+      ],
+      [],
+      false,
+    )
+    expect(metrics.resolution).toBe('partial')
+    expect(metrics.finalizationCause).toBe('model_answered')
+  })
+
+  it('records a hard-limit failure’s mechanical cause with no Resolution (#110)', () => {
+    const metrics = extractMetrics(
+      [command(0), { type: 'error', turnId: T, message: 'tool round limit (32) reached', at: 1 }, done(2, 'failed', { finalizationCause: 'hard_limit' })],
+      [],
+      false,
+    )
+    expect(metrics.resolution).toBeNull()
+    expect(metrics.finalizationCause).toBe('hard_limit')
+  })
+
   it('records a timed-out run with no done event honestly', () => {
     const metrics = extractMetrics([command(0), toolCall('a', 'navigate', { url: 'http://a/' }, 1)], [], true)
     expect(metrics.timedOut).toBe(true)
@@ -108,6 +143,8 @@ describe('aggregateScenarios', () => {
         elapsedMs,
         repeatedActions: 0,
         outcome: 'done' as const,
+        resolution: null,
+        finalizationCause: null,
         rawLimitFailure: null,
         actions: [],
         answerText: 'x',

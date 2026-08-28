@@ -49,6 +49,8 @@ describe('createSqliteHistoryStore', () => {
           startedAt: 100,
           finishedAt: 106,
           outcome: 'done',
+          resolution: null,
+          finalizationCause: null,
         },
       ])
     } finally {
@@ -159,6 +161,8 @@ describe('createSqliteHistoryStore', () => {
           startedAt: 300,
           finishedAt: 310,
           outcome: 'done',
+          resolution: null,
+          finalizationCause: null,
         },
         {
           id: openRun,
@@ -168,6 +172,8 @@ describe('createSqliteHistoryStore', () => {
           startedAt: 320,
           finishedAt: null,
           outcome: 'interrupted',
+          resolution: null,
+          finalizationCause: null,
         },
       ])
     } finally {
@@ -198,9 +204,135 @@ describe('createSqliteHistoryStore', () => {
     }
   })
 
-  it('migrates a pre-Session database in place, leaving legacy Run membership null', () => {
+  it('round-trips finalization semantics beside the mechanical outcome (#110)', () => {
+    const path = tempStorePath()
+    const first = createSqliteHistoryStore(path)
+    const answered = first.startRun('open the fixture page', 100, 'turn-fin-1', 'session-fin' as SessionId)
+    first.finishRun(answered, 'done', 110, { resolution: 'partial', finalizationCause: 'model_answered' })
+    const exhausted = first.startRun('research it', 200, 'turn-fin-2', 'session-fin' as SessionId)
+    first.finishRun(exhausted, 'failed', 300, { resolution: null, finalizationCause: 'hard_limit' })
+    const cancelled = first.startRun('stop me', 400, 'turn-fin-3', 'session-fin' as SessionId)
+    first.finishRun(cancelled, 'cancelled', 500)
+    first.close()
+
+    const reopened = createSqliteHistoryStore(path)
+    try {
+      expect(reopened.recentRuns(10)).toEqual([
+        {
+          id: answered,
+          turnId: 'turn-fin-1',
+          sessionId: 'session-fin',
+          command: 'open the fixture page',
+          startedAt: 100,
+          finishedAt: 110,
+          outcome: 'done',
+          resolution: 'partial',
+          finalizationCause: 'model_answered',
+        },
+        {
+          id: exhausted,
+          turnId: 'turn-fin-2',
+          sessionId: 'session-fin',
+          command: 'research it',
+          startedAt: 200,
+          finishedAt: 300,
+          outcome: 'failed',
+          resolution: null,
+          finalizationCause: 'hard_limit',
+        },
+        {
+          id: cancelled,
+          turnId: 'turn-fin-3',
+          sessionId: 'session-fin',
+          command: 'stop me',
+          startedAt: 400,
+          finishedAt: 500,
+          outcome: 'cancelled',
+          resolution: null,
+          finalizationCause: null,
+        },
+      ])
+    } finally {
+      reopened.close()
+    }
+  })
+
+  it('migrates a pre-finalization database additively, leaving existing rows null (#110)', () => {
     const path = tempStorePath()
 
+    // A database from before #110: runs without resolution columns.
+    const legacy = new Database(path)
+    legacy.exec(`
+      CREATE TABLE runs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        command TEXT NOT NULL,
+        started_at INTEGER NOT NULL,
+        finished_at INTEGER,
+        outcome TEXT,
+        turn_id TEXT,
+        session_id TEXT
+      );
+    `)
+    legacy.prepare('INSERT INTO runs (command, started_at, finished_at, outcome, turn_id, session_id) VALUES (?, ?, ?, ?, ?, ?)').run(
+      'old command', 1, 2, 'done', 'turn-old', 'session-old',
+    )
+    legacy.close()
+
+    const migrated = createSqliteHistoryStore(path)
+    try {
+      const fresh = migrated.startRun('new command', 300, 'turn-new', 'session-old' as SessionId)
+      migrated.finishRun(fresh, 'done', 310, { resolution: 'completed', finalizationCause: 'model_answered' })
+
+      expect(migrated.recentRuns(10)).toEqual([
+        {
+          id: 1,
+          turnId: 'turn-old',
+          sessionId: 'session-old',
+          command: 'old command',
+          startedAt: 1,
+          finishedAt: 2,
+          outcome: 'done',
+          resolution: null,
+          finalizationCause: null,
+        },
+        {
+          id: fresh,
+          turnId: 'turn-new',
+          sessionId: 'session-old',
+          command: 'new command',
+          startedAt: 300,
+          finishedAt: 310,
+          outcome: 'done',
+          resolution: 'completed',
+          finalizationCause: 'model_answered',
+        },
+      ])
+    } finally {
+      migrated.close()
+    }
+  })
+
+  it('degrades an unknown stored resolution or cause to null rather than surfacing it', () => {
+    const path = tempStorePath()
+    const store = createSqliteHistoryStore(path)
+    const runId = store.startRun('tampered', 100, 'turn-tamper', 'session-t' as SessionId)
+    store.finishRun(runId, 'done', 110, { resolution: 'completed', finalizationCause: 'model_answered' })
+    store.close()
+
+    const raw = new Database(path)
+    raw.prepare('UPDATE runs SET resolution = ?, finalization_cause = ? WHERE id = ?').run('finished', 'gave_up', runId)
+    raw.close()
+
+    const reopened = createSqliteHistoryStore(path)
+    try {
+      expect(reopened.recentRuns(1)[0]).toMatchObject({ outcome: 'done', resolution: null, finalizationCause: null })
+    } finally {
+      reopened.close()
+    }
+  })
+
+  it('migrates a pre-Session database in place, leaving legacy Run membership null', () => {
+    const path = tempStorePath()
     // A database from before #28: runs without a turn_id column.
     const legacy = new Database(path)
     legacy.exec(`
@@ -229,7 +361,7 @@ describe('createSqliteHistoryStore', () => {
       migrated.startSession(sessionId, 299)
       const newRun = migrated.startRun('new command', 300, 'turn-after-migration', sessionId)
       expect(migrated.recentRuns(10)).toEqual([
-        { id: 1, turnId: null, sessionId: null, command: 'old command', startedAt: 1, finishedAt: 2, outcome: 'done' },
+        { id: 1, turnId: null, sessionId: null, command: 'old command', startedAt: 1, finishedAt: 2, outcome: 'done', resolution: null, finalizationCause: null },
         {
           id: newRun,
           turnId: 'turn-after-migration',
@@ -238,6 +370,8 @@ describe('createSqliteHistoryStore', () => {
           startedAt: 300,
           finishedAt: null,
           outcome: null,
+          resolution: null,
+          finalizationCause: null,
         },
       ])
       // Legacy entries survive with honest null Session membership.

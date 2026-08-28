@@ -3,6 +3,7 @@ import type { PipelineEvent } from '../pipeline/events'
 import type { VoiceHeardEvent } from '../voice/ipcChannels'
 import { createHistoryRecorder } from './historyRecorder'
 import type { HistoryStore, RecordedEntry, RunRecord } from './historyStore'
+import type { RunFinalization } from '../session/runJournal'
 import type { SessionId } from '../session/sessionIdentity'
 
 // The recorder is the persistence half of the command-pipeline seam: the same
@@ -21,14 +22,16 @@ function fakeStore(): HistoryStore & { entries: RecordedEntry[]; runs: RunRecord
     finishSession() {},
     startRun(command, at, turnId, sessionId) {
       const id = nextRunId++
-      runs.push({ id, turnId, sessionId, command, startedAt: at, finishedAt: null, outcome: null })
+      runs.push({ id, turnId, sessionId, command, startedAt: at, finishedAt: null, outcome: null, resolution: null, finalizationCause: null })
       return id
     },
-    finishRun(runId, outcome, at) {
+    finishRun(runId, outcome, at, finalization: RunFinalization = { resolution: null, finalizationCause: null }) {
       const run = runs.find((candidate) => candidate.id === runId)
       if (run) {
         run.finishedAt = at
         run.outcome = outcome
+        run.resolution = finalization.resolution
+        run.finalizationCause = finalization.finalizationCause
       }
     },
     appendEntry(entry) {
@@ -88,6 +91,8 @@ describe('historyRecorder', () => {
         startedAt: 100,
         finishedAt: 106,
         outcome: 'done',
+        resolution: null,
+        finalizationCause: null,
       },
     ])
   })
@@ -114,8 +119,44 @@ describe('historyRecorder', () => {
         startedAt: 100,
         finishedAt: 106,
         outcome: 'done',
+        resolution: null,
+        finalizationCause: null,
       },
     ])
+  })
+
+  it('persists the done event’s finalization semantics beside the outcome (#110)', () => {
+    const store = fakeStore()
+    const run = recorderWith(store).run()
+
+    for (const event of eventsOf(
+      { type: 'command', turnId: 'turn-fin', text: 'look something up', at: 100, sessionId: 'session-1' as SessionId },
+      { type: 'display', text: 'Partial detail.', at: 101 },
+      { type: 'done', turnId: 'turn-fin', outcome: 'done', resolution: 'partial', finalizationCause: 'model_answered', at: 102 },
+    )) {
+      run.event(event)
+    }
+
+    expect(store.recentRuns(1)[0]).toMatchObject({
+      outcome: 'done',
+      resolution: 'partial',
+      finalizationCause: 'model_answered',
+    })
+  })
+
+  it('records a hard-limit failure’s mechanical cause without a Resolution (#110)', () => {
+    const store = fakeStore()
+    const run = recorderWith(store).run()
+
+    for (const event of eventsOf(
+      { type: 'command', turnId: 'turn-lim', text: 'keep going', at: 100, sessionId: 'session-1' as SessionId },
+      { type: 'error', message: 'tool round limit (80) reached', at: 101 },
+      { type: 'done', turnId: 'turn-lim', outcome: 'failed', finalizationCause: 'hard_limit', at: 102 },
+    )) {
+      run.event(event)
+    }
+
+    expect(store.recentRuns(1)[0]).toMatchObject({ outcome: 'failed', resolution: null, finalizationCause: 'hard_limit' })
   })
 
   it('persists explicit Session membership from an owned command', () => {

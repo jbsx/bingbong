@@ -2,7 +2,7 @@
 // spoken line (≤ SPEAK_SENTENCE_LIMIT sentences) plus full display text, and
 // errors get a spoken one-liner while the dashboard keeps the detail.
 
-import { MAX_RUN_NOTE_CHARS } from '../session/runJournal'
+import { MAX_RUN_NOTE_CHARS, parseFinalizationCause, parseRunResolution, type FinalizationCause, type RunResolution } from '../session/runJournal'
 import { parseMemoryPatch, type MemoryPatch } from '../session/workingMemory'
 import { parseMishearProposals, type MishearProposal } from '../voice/learnedTerms'
 import { parseSubagentReportSections } from './subagentReport'
@@ -116,6 +116,10 @@ export function parseAssistantAnswer(content: string): {
   mishearProposalsIssue?: 'malformed'
   findings?: ReturnType<typeof parseSubagentReportSections>['findings']
   unresolved?: ReturnType<typeof parseSubagentReportSections>['unresolved']
+  resolution?: RunResolution
+  resolutionIssue?: 'malformed'
+  finalizationCause?: FinalizationCause
+  finalizationCauseIssue?: 'malformed'
 } {
   const trimmed = content.trim()
   const candidates = [trimmed, extractFenced(trimmed), extractJsonSlice(trimmed)]
@@ -129,12 +133,22 @@ export function parseAssistantAnswer(content: string): {
         typeof (parsed as { speak?: unknown }).speak === 'string' &&
         typeof (parsed as { display?: unknown }).display === 'string'
       ) {
-        const { speak, display, run_note: rawRunNote, memory_patch: rawMemoryPatch, mishear_proposals: rawMishearProposals } = parsed as {
+        const {
+          speak,
+          display,
+          run_note: rawRunNote,
+          memory_patch: rawMemoryPatch,
+          mishear_proposals: rawMishearProposals,
+          resolution: rawResolution,
+          finalization_cause: rawFinalizationCause,
+        } = parsed as {
           speak: string
           display: string
           run_note?: unknown
           memory_patch?: unknown
           mishear_proposals?: unknown
+          resolution?: unknown
+          finalization_cause?: unknown
         }
         let answer: {
           speak: string
@@ -145,6 +159,10 @@ export function parseAssistantAnswer(content: string): {
           mishearProposalsIssue?: 'malformed'
           findings?: ReturnType<typeof parseSubagentReportSections>['findings']
           unresolved?: ReturnType<typeof parseSubagentReportSections>['unresolved']
+          resolution?: RunResolution
+          resolutionIssue?: 'malformed'
+          finalizationCause?: FinalizationCause
+          finalizationCauseIssue?: 'malformed'
         } = { speak: capSentences(speak, SPEAK_SENTENCE_LIMIT), display }
         // Subagent Report sections (#98): validated independently, absent
         // when invalid — the orchestrator never emits these keys, and a
@@ -162,6 +180,19 @@ export function parseAssistantAnswer(content: string): {
         if (rawMishearProposals !== undefined) {
           const mishearProposals = parseMishearProposals(rawMishearProposals)
           answer = mishearProposals ? { ...answer, mishearProposals } : { ...answer, mishearProposalsIssue: 'malformed' }
+        }
+        // Run Resolution and proposed Finalization Cause (#110): enum
+        // validated independently, and malformed metadata never discards
+        // an otherwise useful Answer — the field drops, the Answer stands.
+        if (rawResolution !== undefined) {
+          const resolution = parseRunResolution(rawResolution)
+          answer = resolution ? { ...answer, resolution } : { ...answer, resolutionIssue: 'malformed' }
+        }
+        if (rawFinalizationCause !== undefined) {
+          const finalizationCause = parseFinalizationCause(rawFinalizationCause)
+          answer = finalizationCause
+            ? { ...answer, finalizationCause }
+            : { ...answer, finalizationCauseIssue: 'malformed' }
         }
         if (rawRunNote === undefined) return answer
         if (typeof rawRunNote !== 'string') return { ...answer, runNoteIssue: 'malformed' }

@@ -330,7 +330,7 @@ describe('command pipeline', () => {
       { type: 'display', text: 'Full detail here.', at: 1000 },
       { type: 'status', status: 'speaking', at: 1000 },
       { type: 'speak', text: 'Done.', at: 1000 },
-      { type: 'done', outcome: 'done', at: 1000 },
+      { type: 'done', outcome: 'done', finalizationCause: 'model_answered', at: 1000 },
     ])
     expect(tts.spoken).toEqual(['Done.'])
   })
@@ -957,7 +957,112 @@ describe('command pipeline', () => {
       type: 'speak',
       text: 'Something went wrong: tool round limit (2) reached',
     })
-    expect(events.at(-1)).toMatchObject({ type: 'done' })
+    expect(events.at(-1)).toMatchObject({ type: 'done', outcome: 'failed', finalizationCause: 'hard_limit' })
+  })
+
+  describe('run finalization semantics (#110)', () => {
+    it.each(['completed', 'partial', 'blocked', 'needs_user', 'unsuccessful'] as const)(
+      'completes mechanically as done for a valid Answer proposing %s',
+      async (resolution) => {
+        const llm = new ScriptedLlm([
+          { kind: 'answer', speak: 'Done.', display: 'Detail.', resolution },
+        ])
+        const pipeline = createCommandPipeline({ llm, tts: new RecordingTts(), clock: new FakeClock(), tools: [] })
+
+        const events = await collect(pipeline, 'do something')
+
+        expect(events).toContainEqual({ type: 'display', text: 'Detail.', at: 0 })
+        expect(events.at(-1)).toEqual({ type: 'done', outcome: 'done', resolution, finalizationCause: 'model_answered', at: 0 })
+      },
+    )
+
+    it('records the model’s objective_met proposal as the Finalization Cause', async () => {
+      const llm = new ScriptedLlm([
+        { kind: 'answer', speak: 'Done.', display: 'Detail.', resolution: 'completed', finalizationCause: 'objective_met' },
+      ])
+      const pipeline = createCommandPipeline({ llm, tts: new RecordingTts(), clock: new FakeClock(), tools: [] })
+
+      const events = await collect(pipeline, 'open the fixture page')
+
+      expect(events.at(-1)).toEqual({ type: 'done', outcome: 'done', resolution: 'completed', finalizationCause: 'objective_met', at: 0 })
+    })
+
+    it('overrides a model-proposed runtime-owned cause with the mechanically known one', async () => {
+      // The Answer claims a budget rail stopped the run — but the runtime
+      // knows it ended because the model answered voluntarily, and a
+      // mechanically knowable cause is runtime-owned.
+      const llm = new ScriptedLlm([
+        { kind: 'answer', speak: 'Ran out of budget.', display: 'Detail.', resolution: 'partial', finalizationCause: 'budget_exhausted' },
+      ])
+      const pipeline = createCommandPipeline({ llm, tts: new RecordingTts(), clock: new FakeClock(), tools: [] })
+
+      const events = await collect(pipeline, 'research it')
+
+      expect(events.at(-1)).toEqual({ type: 'done', outcome: 'done', resolution: 'partial', finalizationCause: 'model_answered', at: 0 })
+    })
+
+    it('drops malformed semantic metadata without discarding the Answer or the run', async () => {
+      const llm = new ScriptedLlm([
+        {
+          kind: 'answer',
+          speak: 'Still useful.',
+          display: 'Still useful detail.',
+          resolutionIssue: 'malformed',
+          finalizationCauseIssue: 'malformed',
+        },
+      ])
+      const pipeline = createCommandPipeline({ llm, tts: new RecordingTts(), clock: new FakeClock(), tools: [] })
+
+      const events = await collect(pipeline, 'look something up')
+
+      expect(events).toContainEqual({ type: 'display', text: 'Still useful detail.', at: 0 })
+      expect(events.at(-1)).toEqual({ type: 'done', outcome: 'done', finalizationCause: 'model_answered', at: 0 })
+    })
+
+    it('carries no semantic fields on a cancelled run', async () => {
+      const turn = deferred<AssistantTurn>()
+      const llm: LlmClient = { complete: () => turn.promise }
+      const pipeline = createCommandPipeline({ llm, tts: new RecordingTts(), clock: new FakeClock(), tools: [] })
+
+      const run = collect(pipeline, 'stop me')
+      await flush()
+      pipeline.abort()
+      turn.resolve({ kind: 'answer', speak: 'Finished.', display: 'Stale answer.' })
+      const events = await run
+
+      expect(events.at(-1)).toEqual({ type: 'done', outcome: 'cancelled', at: 0 })
+    })
+
+    it('records the mechanically known hard_limit cause on a round-limit failure', async () => {
+      const spinner = { name: 'spin', async execute() { return 'spun' } }
+      const endlessToolCalls = Array.from({ length: 5 }, (_, i) => ({
+        kind: 'tool_calls' as const,
+        calls: [{ id: `c${i}`, name: 'spin', args: {} }],
+      }))
+      const pipeline = createCommandPipeline({
+        llm: new ScriptedLlm(endlessToolCalls),
+        tts: new RecordingTts(),
+        clock: new FakeClock(),
+        tools: [spinner],
+        maxToolRounds: 1,
+      })
+
+      const events = await collect(pipeline, 'keep going')
+
+      expect(events.at(-1)).toEqual({ type: 'done', outcome: 'failed', finalizationCause: 'hard_limit', at: 0 })
+    })
+
+    it('carries no semantic fields on a reset-consumed run (#99)', async () => {
+      const resetTool = { name: 'new_session', sessionReset: true, async execute() { return 'Session reset.' } }
+      const llm = new ScriptedLlm([
+        { kind: 'tool_calls', calls: [{ id: 'c1', name: 'new_session', args: {} }] },
+      ])
+      const pipeline = createCommandPipeline({ llm, tts: new RecordingTts(), clock: new FakeClock(), tools: [resetTool] })
+
+      const events = await collect(pipeline, 'forget all that')
+
+      expect(events.at(-1)).toEqual({ type: 'done', outcome: 'reset', at: 0 })
+    })
   })
 
   it('re-reads getMaxToolRounds for each command', async () => {
@@ -1903,14 +2008,16 @@ describe('command pipeline — turn correlation (#28)', () => {
       finishSession() {},
       startRun(command, at, turnId, sessionId) {
         const id = nextRunId++
-        runs.push({ id, turnId, sessionId, command, startedAt: at, finishedAt: null, outcome: null })
+        runs.push({ id, turnId, sessionId, command, startedAt: at, finishedAt: null, outcome: null, resolution: null, finalizationCause: null })
         return id
       },
-      finishRun(runId, outcome, at) {
+      finishRun(runId, outcome, at, finalization) {
         const run = runs.find((candidate) => candidate.id === runId)
         if (run) {
           run.finishedAt = at
           run.outcome = outcome
+          run.resolution = finalization?.resolution ?? null
+          run.finalizationCause = finalization?.finalizationCause ?? null
         }
       },
       appendEntry(entry) {
