@@ -228,6 +228,12 @@ export function createAssistantPipeline(deps: AssistantPipelineDeps): CommandPip
   ]
   const clock = deps.clock ?? systemClock
   const configuredAskTimeoutMs = askTimeoutMs(deps.env)
+  // Stop and Steering both cancel delegated work outright (#119): Stop
+  // ends the run, and a directive supersedes everything spawned under
+  // the corrected-away objective.
+  const cancelSubagents = (): void => {
+    deps.subagentControl?.cancelAll()
+  }
   const pipeline = createCommandPipeline({
     llm: createDynamicLlm(getEnv, fetchFn, tools, clock, deps.onLlmUsage, deps.tracer, deps.getLearnedTerms),
     tts: deps.tts ?? silentTts,
@@ -245,12 +251,12 @@ export function createAssistantPipeline(deps: AssistantPipelineDeps): CommandPip
     ...(deps.browserSubspans ? { browserSubspans: deps.browserSubspans } : {}),
     ...(deps.emitDetail ? { emitDetail: deps.emitDetail } : {}),
     ...(deps.learnedTerms ? { learnedTerms: deps.learnedTerms } : {}),
-    onAbort: () => deps.subagentControl?.cancelAll(),
+    onAbort: cancelSubagents,
     onPause: () => deps.subagentControl?.pauseAll(),
     onResume: () => deps.subagentControl?.resumeAll(),
     // A Steering directive corrects the objective (#119): delegated
     // work spawned under the stale one is cancelled, not resumed.
-    onSteer: () => deps.subagentControl?.cancelAll(),
+    onSteer: cancelSubagents,
     ...(configuredAskTimeoutMs !== undefined ? { askTimeoutMs: configuredAskTimeoutMs } : {}),
     ...(deps.getMaxToolRounds ? { getMaxToolRounds: deps.getMaxToolRounds } : {}),
   })

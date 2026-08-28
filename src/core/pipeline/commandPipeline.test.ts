@@ -6,6 +6,7 @@ import { steerPipeline } from './steering'
 import { createSpeechCoordinator } from '../tts/speechCoordinator'
 import { createAskUserTool } from './askUserTools'
 import { createReportRunPlanTool } from './runPlanTools'
+import type { EffortTier } from './runPlan'
 import { createHistoryRecorder } from '../history/historyRecorder'
 import type { HistoryStore, RecordedEntry, RunRecord } from '../history/historyStore'
 import { FailingTts, FakeClock, fakePerfHarness, fakeSubagentManager, memoryEntry, RecordingTts, ScriptedLlm, subagentRecord, withoutTurnId } from '../testing/doubles'
@@ -1310,7 +1311,7 @@ describe('command pipeline', () => {
       expect(events.find((e) => e.type === 'error')).toBeUndefined()
       expect(events).toContainEqual({
         type: 'display',
-        text: 'I could not finish \u201CDo the thing\u201D. The run exhausted its planned work budget.',
+        text: 'I could not finish \u201Cdo the thing\u201D. The run exhausted its planned work budget.',
         at: 0,
       })
       expect(events.find((e) => e.type === 'speak' && e.text !== 'Partial.')).toMatchObject({
@@ -1336,7 +1337,7 @@ describe('command pipeline', () => {
       expect(events.find((e) => e.type === 'error')).toBeUndefined()
       expect(events).toContainEqual({
         type: 'display',
-        text: 'I could not finish \u201CDo the thing\u201D. The run exhausted its planned work budget.',
+        text: 'I could not finish \u201Cdo the thing\u201D. The run exhausted its planned work budget.',
         at: 0,
       })
       expect(events.at(-1)).toEqual({ type: 'done', outcome: 'failed', finalizationCause: 'budget_exhausted', at: 0 })
@@ -1378,7 +1379,7 @@ describe('command pipeline', () => {
       expect(display).toMatchObject({
         type: 'display',
         text:
-          'I could not finish \u201CDo the thing\u201D. The run exhausted its planned work budget.\n\n' +
+          'I could not finish \u201Cdo the thing\u201D. The run exhausted its planned work budget.\n\n' +
           'What I managed to observe:\n' +
           '- https://example.com/page',
       })
@@ -1844,7 +1845,7 @@ describe('command pipeline', () => {
       id: string,
       objective: string,
       headline: string,
-      effortTier: 'direct_action' | 'lookup' | 'investigation',
+      effortTier: EffortTier,
     ): ToolCall => ({
       id,
       name: 'report_run_plan',
@@ -1867,6 +1868,15 @@ describe('command pipeline', () => {
     /** Steers at the given tool result's yield — the next checkpoint consumes it. */
     const steerAt = (callId: string, directive: string) => (event: PipelineEvent, active: CommandPipeline) => {
       if (event.type === 'tool_result' && event.callId === callId) {
+        active.pause()
+        active.resume(directive)
+      }
+    }
+
+    /** Steers several directives, each at its own tool result's yield. */
+    const steerOns = (directives: Record<string, string>) => (event: PipelineEvent, active: CommandPipeline) => {
+      const directive = event.type === 'tool_result' ? directives[event.callId] : undefined
+      if (directive !== undefined) {
         active.pause()
         active.resume(directive)
       }
@@ -1992,12 +2002,11 @@ describe('command pipeline', () => {
       ])
       const pipeline = createCommandPipeline({ llm, tts: new RecordingTts(), clock: new FakeClock(), tools: [createReportRunPlanTool(), work] })
 
-      const events = await collect(pipeline, 'research the thing', (event, active) => {
-        if (event.type === 'tool_result' && (event.callId === 'w4' || event.callId === 'w16' || event.callId === 'w28')) {
-          active.pause()
-          active.resume(event.callId === 'w4' ? 'Correction one.' : event.callId === 'w16' ? 'Correction two.' : 'Correction three.')
-        }
-      })
+      const events = await collect(pipeline, 'research the thing', steerOns({
+        w4: 'Correction one.',
+        w16: 'Correction two.',
+        w28: 'Correction three.',
+      }))
 
       expect(events.filter((e) => e.type === 'tool_result' && e.name === 'work' && e.ok)).toHaveLength(31)
       expect(llm.requests).toHaveLength(33)
@@ -2025,12 +2034,10 @@ describe('command pipeline', () => {
       ])
       const pipeline = createCommandPipeline({ llm, tts: new RecordingTts(), clock: new FakeClock(), tools: [createReportRunPlanTool(), work] })
 
-      const events = await collect(pipeline, 'research the thing', (event, active) => {
-        if (event.type === 'tool_result' && (event.callId === 'w23' || event.callId === 'w30')) {
-          active.pause()
-          active.resume(event.callId === 'w23' ? 'The red mugs instead.' : 'Just find the red mug.')
-        }
-      })
+      const events = await collect(pipeline, 'research the thing', steerOns({
+        w23: 'The red mugs instead.',
+        w30: 'Just find the red mug.',
+      }))
 
       // 31 acquisition rounds, bookkeeping, the failed reserved round.
       expect(llm.requests).toHaveLength(33)
@@ -2051,6 +2058,49 @@ describe('command pipeline', () => {
       expect(display).toMatchObject({ text: expect.stringContaining('Find the red mug') })
       expect((display as { text: string }).text).not.toContain('research the thing')
       expect(events.at(-1)).toEqual({ type: 'done', outcome: 'failed', finalizationCause: 'hard_limit', at: 0 })
+    })
+
+    it('names the user\u2019s correction in the deterministic Answer when the directive lands during the Answer-only round (#119/AC5)', async () => {
+      // Twelve Lookup rounds exhaust the tier; the bookkeeping round
+      // spends Finalization; the directive then lands while the reserved
+      // Answer round is in flight. It cannot reopen tool work — the
+      // answer that replaces the failing round names the correction, not
+      // the stale command.
+      const answerTurn = deferred<AssistantTurn>()
+      const requests: LlmRequest[] = []
+      const llm: LlmClient = {
+        async complete(request) {
+          requests.push(request)
+          if (requests.length <= 12) {
+            return workRound(requests.length, requests.length === 1 ? plan('p1', 'Find a mug', 'Find a mug', 'lookup') : undefined)
+          }
+          if (requests.length === 13) {
+            return { kind: 'tool_calls', calls: [{ id: 'w13', name: 'work', args: {} }] }
+          }
+          if (requests.length === 14) return answerTurn.promise
+          return { kind: 'tool_calls', calls: [{ id: 'w14', name: 'work', args: {} }] }
+        },
+      }
+      const pipeline = createCommandPipeline({ llm, tts: new RecordingTts(), clock: new FakeClock(), tools: [createReportRunPlanTool(), work] })
+
+      const run = collect(pipeline, 'find a mug')
+      for (let attempt = 0; attempt < 200 && requests.length < 14; attempt += 1) await flush()
+      expect(requests.length).toBeGreaterThanOrEqual(14)
+      pipeline.pause()
+      answerTurn.resolve({ kind: 'answer', speak: 'Stale.', display: 'Stale.' })
+      await waitUntil(() => pipeline.getState() === 'paused')
+      pipeline.resume('the red mug instead')
+
+      const events = await run
+
+      // The directive rode the repeated Answer round, which then
+      // misbehaved — the deterministic Answer confirms the correction.
+      expect(requests[14]?.steering).toBe('the red mug instead')
+      const display = events.find((e) => e.type === 'display')
+      expect(display).toMatchObject({ text: expect.stringContaining('the red mug instead') })
+      expect((display as { text: string }).text).not.toContain('find a mug\u201D')
+      expect(events.some((e) => e.type === 'display' && e.text === 'Stale.')).toBe(false)
+      expect(events.at(-1)).toEqual({ type: 'done', outcome: 'failed', finalizationCause: 'budget_exhausted', at: 0 })
     })
 
     it('keeps every post-steering round on the same immutable continuity snapshots (#119/AC4)', async () => {

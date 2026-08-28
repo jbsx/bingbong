@@ -547,6 +547,23 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
     // runtime-owned cause, and a deterministic fallback Answer rides it
     // when the reserved Answer round fails or requests tools.
     let mechanicalCause: FinalizationCause | null = null
+    // The Steering-corrected objective (#119): the directive's text
+    // once consumed, superseded by the fresh plan's objective when that
+    // declaration lands. Null on a never-steered run — its deterministic
+    // fallback Answer names the command the user actually said.
+    let correctedObjective: string | null = null
+    // One epoch re-arm (#117/#119): a tier change — first declaration,
+    // escalation, or a Steering replan — starts fresh budget, warnings,
+    // and active-work deadline. Cumulative `rounds` and recorded
+    // observations are never rewound; only the epoch state resets.
+    const rearmEpoch = (tier: EffortTier): void => {
+      epochTier = tier
+      tierRounds = 0
+      warned.near = false
+      warned.imminent = false
+      pendingBudgetWarning = null
+      run.workClock.rearm()
+    }
     const consumeSteering = async function* (
       status: 'thinking' | 'acting',
     ): AsyncGenerator<UnstampedEvent, string | undefined> {
@@ -559,23 +576,19 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
         // directive passes through. The plan slot reopens — the
         // corrected objective reports a fresh initial plan, and a
         // plan-less round falls back to Lookup with one fresh nudge,
-        // exactly like the run's start. Effort re-arms as a tier
-        // change: fresh budget, warnings, and active-work deadline at
-        // the default tier, while cumulative `rounds` and every
-        // recorded observation remain — telemetry is never rewound.
-        // Finalization set by a tier rail belonged to the stale
-        // objective and is exited; the hard ceiling and an already
-        // spent bookkeeping round are not.
+        // exactly like the run's start. Effort re-arms at the default
+        // tier while cumulative `rounds` and every recorded observation
+        // remain — telemetry is never rewound. Finalization set by a
+        // tier rail belonged to the stale objective and is exited; the
+        // hard ceiling and an already spent bookkeeping round are not
+        // (the epoch re-arm is inert there — the Answer round that
+        // follows consumes no budget).
         runPlan = null
         modelDeclaredPlan = false
         planNudgePending = false
         planNudgeDelivered = false
-        epochTier = DEFAULT_EFFORT_TIER
-        tierRounds = 0
-        warned.near = false
-        warned.imminent = false
-        pendingBudgetWarning = null
-        run.workClock.rearm()
+        rearmEpoch(DEFAULT_EFFORT_TIER)
+        correctedObjective = directive
         if (finalizing && !answerOnly && mechanicalCause !== 'hard_limit') {
           finalizing = false
           mechanicalCause = null
@@ -816,20 +829,18 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
                 modelDeclaredPlan = true
                 // A valid plan arrived; any still-owed nudge is moot.
                 planNudgePending = false
-                // A tier change starts a fresh effort epoch (#117): budget,
-                // warnings, and the active-work deadline re-arm for the new
-                // tier. Cumulative rounds still count toward the hard
-                // ceiling, and Finalization is never exited — an escalation
-                // accepted during Finalization's bookkeeping round is
-                // reported but re-arms nothing (the state could never be
-                // consulted again).
+                // A tier change starts a fresh effort epoch (#117):
+                // budget, warnings, and the active-work deadline re-arm
+                // for the new tier. Cumulative rounds still count toward
+                // the hard ceiling, and Finalization is never exited —
+                // an escalation accepted during Finalization's
+                // bookkeeping round is reported but re-arms nothing
+                // (the state could never be consulted again). A fresh
+                // post-Steering plan supersedes the directive's words as
+                // the corrected objective (#119).
+                if (correctedObjective !== null) correctedObjective = review.plan.objective
                 if (review.plan.effortTier !== epochTier && !finalizing) {
-                  epochTier = review.plan.effortTier
-                  tierRounds = 0
-                  warned.near = false
-                  warned.imminent = false
-                  pendingBudgetWarning = null
-                  run.workClock.rearm()
+                  rearmEpoch(review.plan.effortTier)
                 }
                 yield {
                   type: 'run_plan',
@@ -1052,10 +1063,12 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
             ),
           ]
           const fallback = deterministicFinalAnswer({
-            // The objective the stopped run was actually working — the
-            // fresh plan's after a Steering correction (#119), the
-            // command otherwise.
-            command: runPlan?.objective ?? command,
+            // The task the stopped run was working on, in words the user
+            // recognizes: their Steering correction once one landed (#119)
+            // — the fresh plan's objective when that declaration made it,
+            // the directive's own words otherwise — and their command on
+            // a never-steered run.
+            command: correctedObjective ?? command,
             cause: mechanicalCause ?? 'hard_limit',
             sources,
           })
