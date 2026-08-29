@@ -323,6 +323,17 @@ export function findSnapshotRef(snapshot: PageSnapshot, ref: number): SnapshotRe
   return snapshot.refs.find((candidate) => candidate.ref === ref)
 }
 
+/** FNV-1a, 8 hex characters: the compact deterministic hash behind page
+ * signatures (#113) and the Progress fingerprints (#125). */
+export function fnv1a32(value: string): string {
+  let hash = 0x811c9dc5
+  for (let index = 0; index < value.length; index++) {
+    hash ^= value.charCodeAt(index)
+    hash = Math.imul(hash, 0x01000193) >>> 0
+  }
+  return hash.toString(16).padStart(8, '0')
+}
+
 // ADR 0027 Action Outcomes: a compact fingerprint of one settled page
 // state — url, title, scroll, dialog, and the interactive-ref identity —
 // hashed FNV-1a into 8 hex characters. Identical states hash identically,
@@ -341,12 +352,7 @@ export function pageSignature(snapshot: PageSnapshot): string {
     ...(snapshot.truncated ? ['+truncated'] : []),
     ...snapshot.refs.map((ref) => `${ref.kind}\u0000${ref.label}\u0000${ref.href ?? ''}`),
   ].join('\u0001')
-  let hash = 0x811c9dc5
-  for (let index = 0; index < identity.length; index++) {
-    hash ^= identity.charCodeAt(index)
-    hash = Math.imul(hash, 0x01000193) >>> 0
-  }
-  return hash.toString(16).padStart(8, '0')
+  return fnv1a32(identity)
 }
 
 // Click coordinates: the element center, clamped into the part of the element

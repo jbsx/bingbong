@@ -1,6 +1,6 @@
 import type { ToolCall, ToolResultOutcome } from '../ports/llm'
 import type { SnapshotRef } from '../browser/snapshot'
-import { normalizeUrlInput } from '../browser/urlInput'
+import { isSearchInputRef, refNumberOf, searchQueryFromUrl, similarQueries, typedQuery } from './progressFingerprints'
 
 // Issue #74, run rails: the 80-round flail's signature is a blind search
 // loop — consecutive searches rewording one query with no intervening
@@ -30,6 +30,13 @@ import { normalizeUrlInput } from '../browser/urlInput'
 // signature alone. Known blind spot, still accepted: synonym rewordings
 // that share no tokens ("best pizza near me" vs "top pizza places nearby")
 // do not chain.
+//
+// #125 moved the pure signature functions (query tokens and similarity,
+// URL → query extraction, search-input ref classification) into
+// progressFingerprints.ts, generalized alongside the URL, action, and
+// page-state fingerprints the no-progress rails (#126) will consume. This
+// rail's behavior is unchanged by the move — same signatures, same
+// thresholds, same refusal set.
 
 /** Consecutive similar searches before the advisory nudge rides the result. */
 export const SEARCH_LOOP_NUDGE_AFTER = 3
@@ -37,8 +44,10 @@ export const SEARCH_LOOP_NUDGE_AFTER = 3
 /** Consecutive similar searches before the gate refuses further ones. */
 export const SEARCH_LOOP_REFUSE_AFTER = 5
 
-/** Token-Jaccard similarity at or above which two queries share one intent. */
-const SIMILARITY_THRESHOLD = 0.45
+// The rail's public signature surface now lives in progressFingerprints.ts;
+// re-exported here so the module's consumers (and its tests) keep one
+// import path.
+export { similarQueries, searchQueryFromUrl, isSearchInputRef }
 
 export type SearchLoopGate = { ok: true } | { ok: false; reason: string }
 
@@ -72,74 +81,6 @@ const NUDGE =
   'The last searches reword one intent (a q= navigate or a search box query) — more searches will not surface new results. Change strategy: open a promising result by its href, read the page (read_page), or answer from what you already have. If you cannot proceed, say so and ask_user.'
 
 const REFUSAL = `Search loop limit (${SEARCH_LOOP_REFUSE_AFTER} consecutive similar searches — q= navigate or typed search box query) reached for this run — the queries repeat one intent. Change strategy or ask_user; only escaping clears the limit (open a result by its href or a click, or any successful tool call other than read_page).`
-
-/** Lowercase, punctuation-free tokens with a light plural fold (keyboard ≈ keyboards). */
-function queryTokens(query: string): Set<string> {
-  return new Set(
-    query
-      .toLowerCase()
-      .replace(/[^a-z0-9\s]/g, ' ')
-      .split(/\s+/)
-      .filter((token) => token !== '')
-      .map((token) => (token.length > 3 && token.endsWith('s') ? token.slice(0, -1) : token)),
-  )
-}
-
-/**
- * Pure same-intent test: token-Jaccard similarity of the two normalized
- * queries at or above the threshold. Empty queries never match.
- */
-export function similarQueries(a: string, b: string): boolean {
-  const left = queryTokens(a)
-  const right = queryTokens(b)
-  if (left.size === 0 || right.size === 0) return false
-  let shared = 0
-  for (const token of left) {
-    if (right.has(token)) shared += 1
-  }
-  return shared / (left.size + right.size - shared) >= SIMILARITY_THRESHOLD
-}
-
-/**
- * The query a navigate URL carries: its q= search param after the same
- * normalization the browser applies (plain search terms normalize to a
- * q= search URL), or null for a plain URL. This is the pure half of the
- * GUI search signature (#82).
- */
-export function searchQueryFromUrl(raw: string): string | null {
-  const normalized = normalizeUrlInput(raw)
-  if (normalized === null) return null
-  try {
-    const q = new URL(normalized).searchParams.get('q')
-    return q !== null && q.trim() !== '' ? q : null
-  } catch {
-    return null
-  }
-}
-
-/**
- * Pure search-input classification from snapshot ref facts (#82): an
- * input-kind ref that is type=search or carries "search" as a word in its
- * label (aria-label, placeholder, or a form label — how Google's,
- * DuckDuckGo's, and Reddit's boxes all present).
- */
-export function isSearchInputRef(ref: SnapshotRef): boolean {
-  if (ref.kind !== 'input') return false
-  if (ref.inputType === 'search') return true
-  return /\bsearch\b/i.test(ref.label)
-}
-
-/** Typed text as a query: the trailing newline submits the search and is not part of it; blank text has nothing to chain on. */
-function typedQuery(text: string): string | null {
-  const stripped = text.replace(/[\r\n]+$/, '').trim()
-  return stripped === '' ? null : stripped
-}
-
-function refNumberOf(call: ToolCall): number | null {
-  const value = call.args.ref
-  const ref = typeof value === 'string' ? Number(value) : value
-  return typeof ref === 'number' && Number.isInteger(ref) && ref >= 1 ? ref : null
-}
 
 /**
  * What a call is to the rail: a search observation with its query, a read
