@@ -3,6 +3,7 @@ import type { Clock } from '../ports/clock'
 import type { SubagentSharedDeadline, VisionGrant } from '../agent/subagentRails'
 import type { WorkingMemorySnapshot } from '../session/workingMemory'
 import type { EffortTier } from './runPlan'
+import type { CandidateCheckpointOutcome } from './candidateCheckpoint'
 import type { EvidenceCheckpointOutcome } from './evidenceCheckpoint'
 
 export interface ToolContext {
@@ -50,6 +51,15 @@ export interface ToolContext {
    * evidence continuity; the tool then fails recoverably.
    */
   checkpointEvidence?(call: ToolCall): EvidenceCheckpointOutcome
+  /**
+   * The Run's Candidate Checkpoint seam (#122, ADR 0028): validates one
+   * record_candidate call against the live Session store — support must
+   * cite live Session Evidence Observations — and creates the Candidate
+   * or records its terminal decision with preserved provenance. Absent
+   * when the run carries no evidence continuity; the tool then fails
+   * recoverably.
+   */
+  checkpointCandidate?(call: ToolCall): CandidateCheckpointOutcome
 }
 
 /** Parameter description for the tool catalog sent to the model. */

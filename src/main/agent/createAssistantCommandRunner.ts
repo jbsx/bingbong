@@ -74,6 +74,14 @@ export function createAssistantCommandRunner(deps: {
             // resolved per call, so a Session that ended (Reset, Lapse)
             // refuses later checkpoints instead of writing into the void.
             checkpointEvidence: webEvidenceCommit(() => deps.runtime.evidenceStore(), admission.runId),
+            // The live evidence Session handle (#122): grounds user
+            // citations, Candidate checkpoints, Answer support, and
+            // derived source links against the live store under this
+            // Run's identity — resolved per call for the same reason.
+            evidenceSession: () => {
+              const store = deps.runtime.evidenceStore()
+              return store === null ? null : { store, runId: admission.runId }
+            },
           })) {
             if (event.type === 'done' && event.outcome === 'reset') restartRequested = true
             if (deps.canPublish && !deps.canPublish()) break

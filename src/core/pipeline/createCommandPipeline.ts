@@ -55,9 +55,17 @@ import {
   type ObservationProducer,
   type ObservationRecord,
 } from '../session/observationLedger'
-import type { SessionEvidenceSnapshot, ObservationCheckpointResult } from '../session/sessionEvidence'
-import type { SessionGeneration } from '../session/sessionIdentity'
-import { evaluateEvidenceCheckpoint, type EvidenceCheckpointOutcome, type EvidenceCommitInput } from './evidenceCheckpoint'
+import type { SessionEvidenceSnapshot, SessionEvidenceStore, ObservationCheckpointResult } from '../session/sessionEvidence'
+import type { RunId, SessionGeneration } from '../session/sessionIdentity'
+import {
+  evaluateEvidenceCheckpoint,
+  userEvidenceCommit,
+  type EvidenceCheckpointOutcome,
+  type EvidenceCommit,
+  type EvidenceCommitInput,
+} from './evidenceCheckpoint'
+import { evaluateCandidateCheckpoint, type CandidateCheckpointOutcome, type EvidenceSessionSource } from './candidateCheckpoint'
+import { deriveAnswerSources, displayedAnswerText } from './answerEvidence'
 
 export interface CommandPipelineDeps {
   llm: LlmClient
@@ -141,7 +149,10 @@ export interface CommandPipelineDeps {
    */
   emitDetail?: (event: PipelineEvent) => void
   /** Diagnostic-only sink; continuity degradation never becomes a user-visible pipeline error. */
-  onContinuityDegraded?: (reason: 'missing' | 'malformed' | 'invalid_memory' | 'commit_rejected', turnId: string) => void
+  onContinuityDegraded?: (
+    reason: 'missing' | 'malformed' | 'invalid_memory' | 'commit_rejected' | 'unsupported_assessment',
+    turnId: string,
+  ) => void
   /**
    * Learned Terms seam (ADR 0022): the run's input text touches the LRU
    * order at run start, and a done run's validated Mishear proposals apply
@@ -266,9 +277,14 @@ function deterministicRunNote(command: string, outcome: RunJournalEntry['outcome
   return `${label} run: ${task}`
 }
 
+/** A Memory Patch addition whose kind must stand on active Session Evidence (#122). */
+function isAssessmentAdd(operation: MemoryPatch[number]): boolean {
+  return operation.op === 'add' && operation.entry.kind === 'assessment'
+}
+
 function logContinuityDegradation(
   sink: CommandPipelineDeps['onContinuityDegraded'],
-  reason: 'missing' | 'malformed' | 'invalid_memory' | 'commit_rejected',
+  reason: 'missing' | 'malformed' | 'invalid_memory' | 'commit_rejected' | 'unsupported_assessment',
   turnId: string,
 ): void {
   try {
@@ -349,6 +365,15 @@ export interface RunContinuityContext {
    * the run carries no evidence continuity.
    */
   checkpointEvidence?(input: EvidenceCommitInput): ObservationCheckpointResult | null
+  /**
+   * The live Session's evidence store under this Run's identity (#122,
+   * ADR 0028): grounds User Observations, Candidate checkpoints, Answer
+   * support, and derived source links against live Session Evidence —
+   * including Observations this Run checkpointed mid-flight. Resolved
+   * per call; null once the Session ended (Reset, Lapse). Absent when
+   * the run carries no evidence continuity.
+   */
+  evidenceSession?(): { store: SessionEvidenceStore; runId: RunId } | null
 }
 
 /**
@@ -576,6 +601,13 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
     // declaration lands. Null on a never-steered run — its deterministic
     // fallback Answer names the command the user actually said.
     let correctedObjective: string | null = null
+    // The live evidence Session handle (#122): resolved per call, so
+    // a Session that ended (Reset, Lapse) refuses later work instead
+    // of writing into the void. Grounds user citations, Candidate
+    // checkpoints, Answer support, and derived source links against
+    // live Observations — including ones this Run checkpointed
+    // mid-flight.
+    const evidenceSession: EvidenceSessionSource | undefined = continuity?.evidenceSession
     // One epoch re-arm (#117/#119): a tier change — first declaration,
     // escalation, or a Steering replan — starts fresh budget, warnings,
     // and active-work deadline. Cumulative `rounds` and recorded
@@ -670,6 +702,27 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
         // pre-execution with the escalation instruction. Fresh per run,
         // like the vision budget and the search-loop rail.
         const blockerGate = createBlockerGate(deps.currentHost)
+        // The user-citation commit (#122): the same seam, stamped like
+        // the web commit — provenance is Session-side, never forged by
+        // the Run layer.
+        const commitUser: EvidenceCommit | undefined = evidenceSession
+          ? (input) => {
+              const session = evidenceSession()
+              return session === null ? null : userEvidenceCommit(() => session.store, session.runId)(input)
+            }
+          : undefined
+        const checkpointEvidenceHandler: ((call: ToolCall) => EvidenceCheckpointOutcome) | undefined =
+          continuity?.checkpointEvidence || commitUser
+            ? (call) =>
+                evaluateEvidenceCheckpoint(call, {
+                  records: ledger.snapshot(),
+                  ...(continuity?.checkpointEvidence ? { commit: continuity.checkpointEvidence } : {}),
+                  ...(commitUser ? { commitUser } : {}),
+                })
+            : undefined
+        const checkpointCandidateHandler: ((call: ToolCall) => CandidateCheckpointOutcome) | undefined = evidenceSession
+          ? (call) => evaluateCandidateCheckpoint(call, { session: evidenceSession })
+          : undefined
         const toolContext: ToolContext = {
           clock,
           acquireVision: () => visionBudget.tryAcquire(),
@@ -695,21 +748,15 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
                   selectDelegatedMemory(continuity.memory, ids),
               }
             : {}),
-          ...(continuity?.checkpointEvidence
-            ? {
-                // The Evidence Checkpoint seam (#121): the Run's Observation
-                // ledger grounds the citation — the cited source must have
-                // been observed this Run, the excerpt must appear in what
-                // that observation retained — before the Session side
-                // stores anything. Invalid citations fail recoverably and
-                // mutate no Session state.
-                checkpointEvidence: (call: ToolCall): EvidenceCheckpointOutcome =>
-                  evaluateEvidenceCheckpoint(call, {
-                    records: ledger.snapshot(),
-                    commit: continuity.checkpointEvidence,
-                  }),
-              }
-            : {}),
+          // The Evidence Checkpoint seam (#121/#122): the Run's Observation
+          // ledger grounds the citation — a web source must have been
+          // observed this Run with a verbatim excerpt, a user citation's
+          // text must be the user's exact recorded words — before the
+          // Session side stores anything. Invalid citations fail
+          // recoverably and mutate no Session state. The Candidate seam
+          // (#122) grounds support ids against the live store.
+          ...(checkpointEvidenceHandler ? { checkpointEvidence: checkpointEvidenceHandler } : {}),
+          ...(checkpointCandidateHandler ? { checkpointCandidate: checkpointCandidateHandler } : {}),
           ...(emitDetail
             ? {
                 // Progress detail (#43): what the run waits on, live.
@@ -842,7 +889,15 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
           }
           if (turn.kind === 'answer') {
             finalAnswer = turn
-            yield { type: 'display', text: turn.display, at: clock.now() }
+            // Displayed Answers are evidence-grounded (#122, ADR 0028):
+            // source links derive from the Session Evidence the Answer
+            // cites, and internal identities never reach the user —
+            // scrubbed deterministically whatever the model wrote.
+            const displayText = displayedAnswerText(
+              turn.display,
+              deriveAnswerSources(turn.evidenceIds, (id) => evidenceSession?.()?.store.observation(id) ?? null),
+            )
+            yield { type: 'display', text: displayText, at: clock.now() }
             yield* speakLine(turn.speak, turnId)
             yield* checkpoint(run, 'thinking')
             break
@@ -1172,6 +1227,21 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
             logContinuityDegradation(deps.onContinuityDegraded, 'invalid_memory', turnId)
           } else {
             patch = finalAnswer?.memoryPatch ?? []
+            // Assessments must stand on active Session Evidence (#122,
+            // ADR 0028): the Answer's evidence_ids must cite live
+            // Observations in the Session store — mid-Run checkpoints
+            // included — or every Assessment add is stripped from the
+            // terminal Memory Commit; the rest of the patch survives.
+            if (patch.some(isAssessmentAdd)) {
+              const session = evidenceSession?.() ?? null
+              const cited = finalAnswer?.evidenceIds
+              const supported =
+                session !== null && cited !== undefined && session.store.hasObservationSupport(cited)
+              if (!supported) {
+                patch = patch.filter((operation) => !isAssessmentAdd(operation))
+                logContinuityDegradation(deps.onContinuityDegraded, 'unsupported_assessment', turnId)
+              }
+            }
           }
         }
         let commit = continuity.commit(runOutcome, note, patch)

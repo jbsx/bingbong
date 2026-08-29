@@ -17,10 +17,11 @@ import type { Tool } from './tool'
 import type { WorkingMemorySnapshot } from '../session/workingMemory'
 import { createSubagentTools } from './subagentTools'
 import { createRecordEvidenceTool } from './evidenceTools'
+import { createRecordCandidateTool } from './candidateTools'
 import { webEvidenceCommit } from './evidenceCheckpoint'
 import type { RunContinuityContext } from './createCommandPipeline'
 import { createSessionEvidence, type SessionEvidenceSnapshot, type SessionEvidenceStore } from '../session/sessionEvidence'
-import type { MemoryEntryId } from '../session/workingMemory'
+import type { MemoryEntryId, MemoryPatch } from '../session/workingMemory'
 import type { RunId } from '../session/sessionIdentity'
 import { createPerfTracer, type PerfTracer } from '../perf/perfTracer'
 import { withPerfTracing } from '../perf/perfTracing'
@@ -5217,5 +5218,320 @@ describe('evidence checkpoints (#121)', () => {
     })
     expect(events.at(-1)).toMatchObject({ type: 'done', outcome: 'done', finalizationCause: 'budget_exhausted' })
     expect(store.snapshot().observations.map(({ id }) => id)).toEqual(['memory-1'])
+  })
+})
+
+describe('grounded Candidates, user corrections, and Answers (#122)', () => {
+  const PAGE_URL = 'https://shop.example/acme-router'
+  const PAGE_TEXT = 'Acme Wi-Fi Router\nPrice: $39 with free shipping over $25.'
+
+  function storeHarness(): SessionEvidenceStore {
+    let next = 0
+    return createSessionEvidence({
+      sessionId: 'session-1' as SessionId,
+      now: () => 0,
+      mintId: () => `memory-${++next}` as MemoryEntryId,
+    })
+  }
+
+  /** Continuity shaped like the command runner's: live store handle plus a commit-capturing seam. */
+  function continuityFor(
+    store: SessionEvidenceStore,
+    options: {
+      runId?: RunId
+      evidence?: SessionEvidenceSnapshot
+      committed?: MemoryPatch[]
+    } = {},
+  ): RunContinuityContext {
+    const runId = options.runId ?? ('run-1' as RunId)
+    return {
+      snapshot: [],
+      memory: [],
+      evidence: options.evidence ?? store.snapshot(),
+      generation: 0,
+      commit: (_outcome, _note, patch) => {
+        options.committed?.push(patch)
+        return 'committed'
+      },
+      checkpointEvidence: webEvidenceCommit(() => store, runId),
+      evidenceSession: () => ({ store, runId }),
+    }
+  }
+
+  const readPage: Tool = { name: 'read_page', acquisition: true, async execute() { return PAGE_TEXT } }
+
+  async function collectWithContinuity(
+    pipeline: CommandPipeline,
+    command: string,
+    continuity: RunContinuityContext,
+    onEvent?: (event: PipelineEvent, pipeline: CommandPipeline) => void,
+  ): Promise<PipelineEvent[]> {
+    const events: PipelineEvent[] = []
+    for await (const raw of pipeline.execute(command, undefined, false, continuity)) {
+      const event = withoutTurnId(raw)
+      events.push(event)
+      onEvent?.(event, pipeline)
+    }
+    return events
+  }
+
+  it('records the user\'s exact words — the command and an ask_user answer — as User Observations (#122)', async () => {
+    const store = storeHarness()
+    const llm = new ScriptedLlm([
+      { kind: 'tool_calls', calls: [{ id: 'a1', name: 'ask_user', args: { question: 'Which color?' } }] },
+      { kind: 'tool_calls', calls: [
+        { id: 'c1', name: 'record_evidence', args: { kind: 'user', observation: 'book a hotel, the blue one' } },
+        { id: 'c2', name: 'record_evidence', args: { kind: 'user', observation: 'No, the blue one.' } },
+      ] },
+      { kind: 'answer', speak: 'The blue one.', display: 'The blue one.' },
+    ])
+    const pipeline = createCommandPipeline({
+      llm,
+      tts: new RecordingTts(),
+      clock: new FakeClock(),
+      tools: [createAskUserTool(), createRecordEvidenceTool()],
+    })
+
+    const events = await collectWithContinuity(pipeline, 'book a hotel, the blue one', continuityFor(store), (event, pipe) => {
+      if (event.type === 'ask_requested') pipe.resolveAsk(event.askId, 'No, the blue one.')
+    })
+
+    // The command itself and the answered question both ground user
+    // citations: exact text, event provenance, the Run's identity.
+    expect(events.find((e) => e.type === 'tool_result' && e.callId === 'c1')).toMatchObject({ ok: true })
+    expect(events.find((e) => e.type === 'tool_result' && e.callId === 'c2')).toMatchObject({ ok: true })
+    expect(store.snapshot().observations).toEqual([
+      expect.objectContaining({
+        sourceKind: 'user',
+        text: 'book a hotel, the blue one',
+        references: [],
+        originEvent: { producer: 'command', observationId: 'obs-1' },
+        provenance: [{ runId: 'run-1' }],
+      }),
+      expect.objectContaining({
+        sourceKind: 'user',
+        text: 'No, the blue one.',
+        originEvent: { producer: 'ask_user', observationId: 'obs-2' },
+        provenance: [{ runId: 'run-1' }],
+      }),
+    ])
+  })
+
+  it('refuses a user citation that paraphrases what the user said (#122)', async () => {
+    const store = storeHarness()
+    const llm = new ScriptedLlm([
+      { kind: 'tool_calls', calls: [
+        { id: 'c1', name: 'record_evidence', args: { kind: 'user', observation: 'the blue one, please' } },
+      ] },
+      { kind: 'answer', speak: 'Recovered.', display: 'Recovered.' },
+    ])
+    const pipeline = createCommandPipeline({
+      llm,
+      tts: new RecordingTts(),
+      clock: new FakeClock(),
+      tools: [createRecordEvidenceTool()],
+    })
+
+    const events = await collectWithContinuity(pipeline, 'book a hotel, the blue one', continuityFor(store))
+
+    expect(events.find((e) => e.type === 'tool_result' && e.callId === 'c1')).toMatchObject({
+      ok: false,
+      error: expect.stringMatching(/exact words/i),
+    })
+    expect(store.snapshot().observations).toEqual([])
+  })
+
+  it('records a Steering Directive as a User Observation with event provenance (#122)', async () => {
+    const store = storeHarness()
+    const llm = new ScriptedLlm([
+      { kind: 'tool_calls', calls: [{ id: 'a1', name: 'ask_user', args: { question: 'Which city?' } }] },
+      { kind: 'tool_calls', calls: [
+        { id: 's1', name: 'record_evidence', args: { kind: 'user', observation: 'Use Paris instead.' } },
+      ] },
+      { kind: 'answer', speak: 'Paris.', display: 'Paris.' },
+    ])
+    const pipeline = createCommandPipeline({
+      llm,
+      tts: new RecordingTts(),
+      clock: new FakeClock(),
+      tools: [createAskUserTool(), createRecordEvidenceTool()],
+    })
+
+    // The directive lands while the ask window is open: the ask settles
+    // steered, and the directive is consumed — observed into the ledger —
+    // at the checkpoint ahead of the next round, where the model
+    // checkpoints the user's exact words.
+    const events = await collectWithContinuity(pipeline, 'find a mug', continuityFor(store), (event, pipe) => {
+      if (event.type === 'ask_requested') {
+        pipe.pause()
+        pipe.resume('Use Paris instead.')
+      }
+    })
+
+    expect(events.find((e) => e.type === 'ask_resolved')).toMatchObject({ reason: 'steered' })
+    expect(events.find((e) => e.type === 'tool_result' && e.callId === 's1')).toMatchObject({ ok: true })
+    expect(store.snapshot().observations).toEqual([
+      expect.objectContaining({
+        sourceKind: 'user',
+        text: 'Use Paris instead.',
+        originEvent: { producer: 'steering', observationId: 'obs-4' },
+        provenance: [{ runId: 'run-1' }],
+      }),
+    ])
+  })
+
+  it('creates and decides Candidates citing live Observations, preserving provenance (#122)', async () => {
+    const store = storeHarness()
+    const llm = new ScriptedLlm([
+      { kind: 'tool_calls', calls: [{ id: 'c1', name: 'read_page', args: {} }] },
+      { kind: 'tool_calls', calls: [
+        { id: 'c2', name: 'record_evidence', args: { observation: 'The Acme router costs $39.', source_url: PAGE_URL, excerpt: 'Price: $39' } },
+      ] },
+      { kind: 'tool_calls', calls: [
+        { id: 'c3', name: 'record_candidate', args: { subject: 'Acme wifi router', detail: 'Cheapest option.', supporting_evidence: ['memory-1'] } },
+      ] },
+      { kind: 'tool_calls', calls: [
+        { id: 'c4', name: 'record_candidate', args: { candidate_id: 'memory-2', status: 'accepted', supporting_evidence: ['memory-1'] } },
+      ] },
+      { kind: 'answer', speak: 'The Acme.', display: 'The Acme router.' },
+    ])
+    const pipeline = createCommandPipeline({
+      llm,
+      tts: new RecordingTts(),
+      clock: new FakeClock(),
+      tools: [readPage, createRecordEvidenceTool(), createRecordCandidateTool()],
+      currentPageUrl: () => PAGE_URL,
+    })
+
+    const events = await collectWithContinuity(pipeline, 'find the cheapest router', continuityFor(store))
+
+    expect(events.find((e) => e.type === 'tool_result' && e.callId === 'c3')).toMatchObject({
+      ok: true,
+      result: expect.stringContaining('memory-2'),
+    })
+    expect(events.find((e) => e.type === 'tool_result' && e.callId === 'c4')).toMatchObject({
+      ok: true,
+      result: expect.stringMatching(/accepted[\s\S]*provenance/i),
+    })
+    expect(store.snapshot().candidates).toEqual([
+      expect.objectContaining({
+        id: 'memory-2',
+        subject: 'Acme wifi router',
+        status: 'accepted',
+        supportingObservationIds: ['memory-1'],
+        // One Run creating and deciding: provenance accumulates per Run
+        // identity, deduplicated — the decision's support union is what
+        // grows, never repeated provenance.
+        provenance: [{ runId: 'run-1' }],
+      }),
+    ])
+  })
+
+  it('refuses a Candidate whose support is not live Session Evidence (#122)', async () => {
+    const store = storeHarness()
+    const llm = new ScriptedLlm([
+      { kind: 'tool_calls', calls: [
+        { id: 'c1', name: 'record_candidate', args: { subject: 'Ghost router', supporting_evidence: ['memory-99'] } },
+      ] },
+      { kind: 'answer', speak: 'Recovered.', display: 'Recovered.' },
+    ])
+    const pipeline = createCommandPipeline({
+      llm,
+      tts: new RecordingTts(),
+      clock: new FakeClock(),
+      tools: [createRecordCandidateTool()],
+    })
+
+    const events = await collectWithContinuity(pipeline, 'find a router', continuityFor(store))
+
+    expect(events.find((e) => e.type === 'tool_result' && e.callId === 'c1')).toMatchObject({
+      ok: false,
+      error: expect.stringMatching(/memory-99/),
+    })
+    expect(store.snapshot().candidates).toEqual([])
+  })
+
+  it('strips Assessments without active evidence support from the terminal Memory Commit (#122)', async () => {
+    const store = storeHarness()
+    const committed: MemoryPatch[] = []
+    const degradations: string[] = []
+    const llm = new ScriptedLlm([
+      { kind: 'answer', speak: 'Done.', display: 'Done.', memoryPatch: [
+        { op: 'add', entry: { kind: 'assessment', subject: 'Acme is cheapest', detail: 'Verified.', references: [{ url: PAGE_URL }] } },
+        { op: 'add', entry: { kind: 'finding', subject: 'Acme price seen', detail: '$39 on the page.', references: [{ url: PAGE_URL }] } },
+      ] },
+    ])
+    const pipeline = createCommandPipeline({
+      llm,
+      tts: new RecordingTts(),
+      clock: new FakeClock(),
+      tools: [],
+      onContinuityDegraded: (reason) => degradations.push(reason),
+    })
+
+    const events = await collectWithContinuity(pipeline, 'compare routers', continuityFor(store, { committed }))
+
+    // No evidence_ids at all: the Assessment never commits; the finding —
+    // not an Assessment — passes through untouched.
+    expect(events.at(-1)).toMatchObject({ type: 'done', outcome: 'done' })
+    expect(committed).toEqual([[
+      { op: 'add', entry: { kind: 'finding', subject: 'Acme price seen', detail: '$39 on the page.', references: [{ url: PAGE_URL }] } },
+    ]])
+    expect(degradations).toContain('unsupported_assessment')
+  })
+
+  it('commits Assessments when the Answer cites active Session Evidence (#122)', async () => {
+    const store = storeHarness()
+    const committed: MemoryPatch[] = []
+    const assessment: MemoryPatch[number] = { op: 'add', entry: { kind: 'assessment', subject: 'Acme is cheapest', detail: 'Verified.', references: [{ url: PAGE_URL }] } }
+    const llm = new ScriptedLlm([
+      { kind: 'tool_calls', calls: [{ id: 'c1', name: 'read_page', args: {} }] },
+      { kind: 'tool_calls', calls: [
+        { id: 'c2', name: 'record_evidence', args: { observation: 'The Acme router costs $39.', source_url: PAGE_URL, excerpt: 'Price: $39' } },
+      ] },
+      { kind: 'answer', speak: 'Done.', display: 'Done.', evidenceIds: ['memory-1' as MemoryEntryId], memoryPatch: [assessment] },
+    ])
+    const pipeline = createCommandPipeline({
+      llm,
+      tts: new RecordingTts(),
+      clock: new FakeClock(),
+      tools: [readPage, createRecordEvidenceTool()],
+      currentPageUrl: () => PAGE_URL,
+    })
+
+    await collectWithContinuity(pipeline, 'compare routers', continuityFor(store, { committed }))
+
+    // The mid-Run checkpoint is citable: live support carries the
+    // Assessment into the terminal Memory Commit whole.
+    expect(committed).toEqual([[assessment]])
+  })
+
+  it('derives display source links from cited evidence and never exposes internal ids (#122)', async () => {
+    const store = storeHarness()
+    const llm = new ScriptedLlm([
+      { kind: 'tool_calls', calls: [{ id: 'c1', name: 'read_page', args: {} }] },
+      { kind: 'tool_calls', calls: [
+        { id: 'c2', name: 'record_evidence', args: { observation: 'The Acme router costs $39.', source_url: PAGE_URL, excerpt: 'Price: $39' } },
+      ] },
+      { kind: 'answer', speak: 'It costs $39.', display: 'Cheapest option found (memory-1, obs-2).', evidenceIds: ['memory-1' as MemoryEntryId] },
+    ])
+    const pipeline = createCommandPipeline({
+      llm,
+      tts: new RecordingTts(),
+      clock: new FakeClock(),
+      tools: [readPage, createRecordEvidenceTool()],
+      currentPageUrl: () => PAGE_URL,
+    })
+
+    const events = await collectWithContinuity(pipeline, 'find the price', continuityFor(store))
+
+    const display = events.find((e) => e.type === 'display')
+    expect(display).toMatchObject({
+      type: 'display',
+      // Internal identities scrubbed (holes tidied with them); the cited
+      // evidence's source link derived underneath — the user never sees
+      // memory-N or obs-N.
+      text: 'Cheapest option found ().\n\nSources:\n- [shop.example](https://shop.example/acme-router)',
+    })
   })
 })

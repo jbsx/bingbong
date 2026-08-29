@@ -209,6 +209,34 @@ describe('parseAssistantAnswer', () => {
     })
   })
 
+  it('accepts the supporting Session Evidence identities, deduplicated in order (#122)', () => {
+    const answer = parseAssistantAnswer(JSON.stringify({
+      speak: 'Done.',
+      display: 'Useful detail.',
+      evidence_ids: ['memory-2', 'memory-1', 'memory-2'],
+    }))
+
+    expect(answer).toEqual({
+      speak: 'Done.',
+      display: 'Useful detail.',
+      evidenceIds: ['memory-2', 'memory-1'],
+    })
+    expect(parseAssistantAnswer(JSON.stringify({ speak: 'Done.', display: 'Useful detail.', evidence_ids: [] }))).toEqual({
+      speak: 'Done.',
+      display: 'Useful detail.',
+      evidenceIds: [],
+    })
+  })
+
+  it.each([null, 42, 'memory-1', ['memory-1', 9], ['memory-1', '  '], Array.from({ length: 11 }, (_, i) => `memory-${i}`)])(
+    'drops malformed evidence_ids %j while keeping the Answer (#122)',
+    (evidenceIds) => {
+      const answer = parseAssistantAnswer(JSON.stringify({ speak: 'Done.', display: 'Useful detail.', evidence_ids: evidenceIds }))
+
+      expect(answer).toEqual({ speak: 'Done.', display: 'Useful detail.', evidenceIssue: 'malformed' })
+    },
+  )
+
   it('accepts JSON wrapped in a code fence', () => {
     const answer = parseAssistantAnswer('```json\n{"speak":"Done.","display":"Detail."}\n```')
 

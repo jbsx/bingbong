@@ -1,6 +1,6 @@
 import type { RunJournalSnapshot } from '../session/runJournal'
 import type { FinalizationCause, RunResolution } from '../session/runJournal'
-import type { MemoryPatch, WorkingMemorySnapshot } from '../session/workingMemory'
+import type { MemoryEntryId, MemoryPatch, WorkingMemorySnapshot } from '../session/workingMemory'
 import type { SessionEvidenceSnapshot } from '../session/sessionEvidence'
 import type { SubagentReportFinding } from '../agent/subagentReport'
 import type { MishearProposal } from '../voice/learnedTerms'
@@ -130,6 +130,15 @@ export type AssistantTurn =
        */
       finalizationCause?: FinalizationCause
       finalizationCauseIssue?: 'malformed'
+      /**
+       * The supporting Session Evidence identities (#122, ADR 0028):
+       * the Memory Entry ids of the Observations this Answer's claims —
+       * and any Assessments in the Memory Patch — stand on. Validated at
+       * the contract; malformed drops the list without touching the
+       * Answer.
+       */
+      evidenceIds?: readonly MemoryEntryId[]
+      evidenceIssue?: 'malformed'
       usage?: TokenUsage
     }
   | { kind: 'tool_calls'; calls: ToolCall[]; usage?: TokenUsage }

@@ -3,11 +3,29 @@
 // errors get a spoken one-liner while the dashboard keeps the detail.
 
 import { MAX_RUN_NOTE_CHARS, parseFinalizationCause, parseRunResolution, type FinalizationCause, type RunResolution } from '../session/runJournal'
-import { parseMemoryPatch, type MemoryPatch } from '../session/workingMemory'
+import { MAX_MEMORY_REFERENCES, parseMemoryPatch, type MemoryEntryId, type MemoryPatch } from '../session/workingMemory'
 import { parseMishearProposals, type MishearProposal } from '../voice/learnedTerms'
 import { parseSubagentReportSections } from './subagentReport'
 
 export const SPEAK_SENTENCE_LIMIT = 2
+
+/**
+ * Parses the answer's supporting Session Evidence identities (#122):
+ * an ordered, deduplicated list of Memory Entry ids, bounded like Memory
+ * references. Anything else is null — malformed drops the whole list.
+ */
+function parseEvidenceIds(value: unknown): MemoryEntryId[] | null {
+  if (!Array.isArray(value) || value.length > MAX_MEMORY_REFERENCES) return null
+  const ids: MemoryEntryId[] = []
+  const seen = new Set<string>()
+  for (const item of value) {
+    if (typeof item !== 'string' || item.trim() === '') return null
+    if (seen.has(item)) continue
+    seen.add(item)
+    ids.push(item as MemoryEntryId)
+  }
+  return ids
+}
 
 /**
  * Keep at most `max` sentences. A sentence ends at a [.!?] run followed by
@@ -120,6 +138,8 @@ export function parseAssistantAnswer(content: string): {
   resolutionIssue?: 'malformed'
   finalizationCause?: FinalizationCause
   finalizationCauseIssue?: 'malformed'
+  evidenceIds?: MemoryEntryId[]
+  evidenceIssue?: 'malformed'
 } {
   const trimmed = content.trim()
   const candidates = [trimmed, extractFenced(trimmed), extractJsonSlice(trimmed)]
@@ -141,6 +161,7 @@ export function parseAssistantAnswer(content: string): {
           mishear_proposals: rawMishearProposals,
           resolution: rawResolution,
           finalization_cause: rawFinalizationCause,
+          evidence_ids: rawEvidenceIds,
         } = parsed as {
           speak: string
           display: string
@@ -149,6 +170,7 @@ export function parseAssistantAnswer(content: string): {
           mishear_proposals?: unknown
           resolution?: unknown
           finalization_cause?: unknown
+          evidence_ids?: unknown
         }
         let answer: {
           speak: string
@@ -163,6 +185,8 @@ export function parseAssistantAnswer(content: string): {
           resolutionIssue?: 'malformed'
           finalizationCause?: FinalizationCause
           finalizationCauseIssue?: 'malformed'
+          evidenceIds?: MemoryEntryId[]
+          evidenceIssue?: 'malformed'
         } = { speak: capSentences(speak, SPEAK_SENTENCE_LIMIT), display }
         // Subagent Report sections (#98): validated independently, absent
         // when invalid — the orchestrator never emits these keys, and a
@@ -193,6 +217,13 @@ export function parseAssistantAnswer(content: string): {
           answer = finalizationCause
             ? { ...answer, finalizationCause }
             : { ...answer, finalizationCauseIssue: 'malformed' }
+        }
+        // Supporting Session Evidence identities (#122): validated like
+        // the other hidden metadata — malformed drops the list, the
+        // Answer stands (and its Assessments lose their support claim).
+        if (rawEvidenceIds !== undefined) {
+          const evidenceIds = parseEvidenceIds(rawEvidenceIds)
+          answer = evidenceIds ? { ...answer, evidenceIds } : { ...answer, evidenceIssue: 'malformed' }
         }
         if (rawRunNote === undefined) return answer
         if (typeof rawRunNote !== 'string') return { ...answer, runNoteIssue: 'malformed' }

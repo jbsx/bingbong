@@ -9,7 +9,9 @@ import {
   evidenceCheckpointMessage,
   excerptSupported,
   findSourceObservation,
+  findUserEventObservation,
   parseEvidenceCitation,
+  userEvidenceCommit,
   webEvidenceCommit,
   type EvidenceCommit,
 } from './evidenceCheckpoint'
@@ -51,18 +53,46 @@ const GROUNDED_ARGS = {
   excerpt: 'costs $39',
 }
 
+/** A user-event-shaped ledger record: the command, an ask_user answer, or a Steering Directive. */
+function userRecord(overrides: Partial<ObservationRecord> = {}): ObservationRecord {
+  return {
+    id: 'obs-2' as ObservationRecord['id'],
+    at: 0,
+    producer: 'ask_user',
+    ok: true,
+    payload: 'No, the blue one.',
+    ...overrides,
+  }
+}
+
+const USER_ARGS = { kind: 'user', observation: 'No, the blue one.' }
+
 describe('parseEvidenceCitation', () => {
   it('accepts the four model-writable fields, normalizing to the citation shape', () => {
     expect(parseEvidenceCitation(GROUNDED_ARGS)).toEqual({
+      kind: 'web',
       observation: 'The Acme router costs $39.',
       sourceUrl: 'https://shop.example/acme-router',
       excerpt: 'costs $39',
     })
     expect(parseEvidenceCitation({ ...GROUNDED_ARGS, uncertainty: 'cached cart price' })).toEqual({
+      kind: 'web',
       observation: 'The Acme router costs $39.',
       sourceUrl: 'https://shop.example/acme-router',
       excerpt: 'costs $39',
       uncertainty: 'cached cart price',
+    })
+  })
+
+  it('parses a user citation: exact user text, no source URL or excerpt (#122)', () => {
+    expect(parseEvidenceCitation(USER_ARGS)).toEqual({
+      kind: 'user',
+      observation: 'No, the blue one.',
+    })
+    expect(parseEvidenceCitation({ ...USER_ARGS, uncertainty: 'answer was terse' })).toEqual({
+      kind: 'user',
+      observation: 'No, the blue one.',
+      uncertainty: 'answer was terse',
     })
   })
 
@@ -72,6 +102,13 @@ describe('parseEvidenceCitation', () => {
     expect(parseEvidenceCitation({ observation: '  ', source_url: 'https://shop.example/x', excerpt: 'y' })).toBeNull()
     expect(parseEvidenceCitation({ observation: 'x', source_url: 'not a url', excerpt: 'y' })).toBeNull()
     expect(parseEvidenceCitation({ observation: 'x', source_url: 'ftp://shop.example/x', excerpt: 'y' })).toBeNull()
+  })
+
+  it('rejects citations that mix user and web fields or carry an unknown kind', () => {
+    expect(parseEvidenceCitation({ ...USER_ARGS, source_url: 'https://shop.example/x' })).toBeNull()
+    expect(parseEvidenceCitation({ observation: 'x', source_url: 'https://shop.example/x', excerpt: 'y', kind: 'user' })).toBeNull()
+    expect(parseEvidenceCitation({ ...USER_ARGS, kind: 'dream' })).toBeNull()
+    expect(parseEvidenceCitation({ kind: 'user' })).toBeNull()
   })
 })
 
@@ -88,6 +125,31 @@ describe('findSourceObservation', () => {
     const appState = webRecord({ sourceUrl: undefined })
     expect(findSourceObservation([failed, appState], 'https://shop.example/acme-router')).toBeNull()
     expect(findSourceObservation([webRecord()], 'https://other.example/page')).toBeNull()
+  })
+})
+
+describe('findUserEventObservation', () => {
+  it('matches the exact user text against command, ask_user, and steering events, freshest first (#122)', () => {
+    const command = userRecord({ id: 'obs-1' as ObservationRecord['id'], producer: 'command', payload: 'Find a blue mug' })
+    const answer = userRecord({ id: 'obs-3' as ObservationRecord['id'], at: 100, payload: 'No, the blue one.' })
+    const repeat = userRecord({ id: 'obs-7' as ObservationRecord['id'], at: 900, producer: 'ask_user', payload: 'No, the blue one.' })
+    const directive = userRecord({ id: 'obs-8' as ObservationRecord['id'], producer: 'steering', payload: 'Use Paris instead.' })
+    const records = [command, answer, repeat, directive]
+
+    expect(findUserEventObservation(records, 'No, the blue one.')?.id).toBe('obs-7')
+    expect(findUserEventObservation(records, 'Find a blue mug')?.id).toBe('obs-1')
+    expect(findUserEventObservation(records, 'Use Paris instead.')?.id).toBe('obs-8')
+    // Trim-tolerant, but the words themselves must be the user's exact ones.
+    expect(findUserEventObservation(records, ' No, the blue one. ')?.id).toBe('obs-7')
+    expect(findUserEventObservation(records, 'no, the blue one')).toBeNull()
+    expect(findUserEventObservation(records, 'the blue one, actually')).toBeNull()
+  })
+
+  it('ignores failed events and non-user producers', () => {
+    const unanswered = userRecord({ ok: false, payload: 'unanswered (timeout)' })
+    const page = webRecord({ producer: 'page_read', payload: 'No, the blue one.' })
+    expect(findUserEventObservation([unanswered, page], 'No, the blue one.')).toBeNull()
+    expect(findUserEventObservation([unanswered, page], 'unanswered (timeout)')).toBeNull()
   })
 })
 
@@ -120,6 +182,7 @@ describe('evaluateEvidenceCheckpoint', () => {
       merged: false,
       sourceObservationId: 'obs-4',
       sourceUrl: 'https://shop.example/acme-router',
+      contradicts: [],
     })
     expect(store.snapshot().observations).toEqual([expect.objectContaining({
       id: 'memory-1',
@@ -128,6 +191,65 @@ describe('evaluateEvidenceCheckpoint', () => {
       references: [{ url: 'https://shop.example/acme-router' }],
       provenance: [{ runId: 'run-1' }],
     })])
+  })
+
+  it('commits a User Observation with exact text and event provenance (#122)', () => {
+    const store = evidenceHarness()
+    const outcome = evaluateEvidenceCheckpoint(callOf(USER_ARGS), {
+      records: [userRecord()],
+      commitUser: userEvidenceCommit(() => store, 'run-1' as RunId),
+    })
+
+    expect(outcome).toEqual({
+      ok: true,
+      entryId: 'memory-1',
+      merged: false,
+      sourceObservationId: 'obs-2',
+      originProducer: 'ask_user',
+      contradicts: [],
+    })
+    expect(store.snapshot().observations).toEqual([expect.objectContaining({
+      id: 'memory-1',
+      sourceKind: 'user',
+      text: 'No, the blue one.',
+      references: [],
+      originEvent: { producer: 'ask_user', observationId: 'obs-2' },
+      provenance: [{ runId: 'run-1' }],
+    })])
+  })
+
+  it('rejects a user citation whose text no observed user event supplied (#122)', () => {
+    const store = evidenceHarness()
+    const outcome = evaluateEvidenceCheckpoint(callOf({ ...USER_ARGS, observation: 'the blue one, actually' }), {
+      records: [userRecord()],
+      commitUser: userEvidenceCommit(() => store, 'run-1' as RunId),
+    })
+
+    expect(outcome).toMatchObject({ ok: false, reason: 'user_text_unverified' })
+    expect(store.snapshot().observations).toEqual([])
+  })
+
+  it('reports a missing user commit seam as no_session (#122)', () => {
+    const outcome = evaluateEvidenceCheckpoint(callOf(USER_ARGS), { records: [userRecord()] })
+    expect(outcome).toMatchObject({ ok: false, reason: 'no_session' })
+  })
+
+  it('discloses a contradiction the commit retained instead of overwriting (#122)', () => {
+    const store = evidenceHarness()
+    const deps = { records: [webRecord()], commit: commitOver(store) }
+    expect(evaluateEvidenceCheckpoint(callOf(GROUNDED_ARGS), deps)).toMatchObject({ ok: true, contradicts: [] })
+
+    // Same source, a different price: retained, and the outcome names
+    // the earlier Observation it contradicts.
+    const contradicted = evaluateEvidenceCheckpoint(callOf({
+      observation: 'The Acme router costs $59.',
+      source_url: 'https://shop.example/acme-router',
+      excerpt: 'costs',
+    }), deps)
+    expect(contradicted).toMatchObject({ ok: true, entryId: 'memory-2', contradicts: ['memory-1'] })
+    expect(store.snapshot().observations).toHaveLength(2)
+    expect(evidenceCheckpointMessage(contradicted)).toMatch(/contradict/i)
+    expect(evidenceCheckpointMessage(contradicted)).toContain('memory-1')
   })
 
   it('merges an exact duplicate citation into the existing identity', () => {
@@ -216,5 +338,17 @@ describe('evidenceCheckpointMessage', () => {
     })
     expect(evidenceCheckpointMessage(unknown)).toMatch(/record_evidence/i)
     expect(evidenceCheckpointMessage(unknown)).toMatch(/observed/i)
+  })
+
+  it('names the user event a User Observation is grounded in (#122)', () => {
+    const store = evidenceHarness()
+    const outcome = evaluateEvidenceCheckpoint(callOf(USER_ARGS), {
+      records: [userRecord()],
+      commitUser: userEvidenceCommit(() => store, 'run-1' as RunId),
+    })
+    const message = evidenceCheckpointMessage(outcome)
+    expect(message).toContain('memory-1')
+    expect(message).toMatch(/ask_user/i)
+    expect(message).toContain('obs-2')
   })
 })

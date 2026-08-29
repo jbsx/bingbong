@@ -9,6 +9,7 @@ import type { Tool } from '../../core/pipeline/tool'
 import { createAskUserTool } from '../../core/pipeline/askUserTools'
 import { createReportRunPlanTool } from '../../core/pipeline/runPlanTools'
 import { createRecordEvidenceTool } from '../../core/pipeline/evidenceTools'
+import { createRecordCandidateTool } from '../../core/pipeline/candidateTools'
 import { createBrowserTools } from '../../core/pipeline/browserTools'
 import { hostFromUrl } from '../../core/pipeline/blockerGate'
 import { createVisionGroundingTools } from '../../core/pipeline/visionGroundingTools'
@@ -217,6 +218,10 @@ export function createAssistantPipeline(deps: AssistantPipelineDeps): CommandPip
     // Orchestrator-only — Subagents report findings; the orchestrator
     // checkpoints them.
     createRecordEvidenceTool(),
+    // The Candidate Checkpoint (#122, ADR 0028): grounded Candidates and
+    // their terminal decisions, citing live supporting Observations.
+    // Orchestrator-only bookkeeping, like record_evidence.
+    createRecordCandidateTool(),
     ...createBrowserTools(deps.controller, vision),
     ...createVisionGroundingTools(deps.controller, vision),
     ...createMediaTools(deps.controller),

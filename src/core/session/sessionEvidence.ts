@@ -1,4 +1,5 @@
 import type { RunId, SessionId } from './sessionIdentity'
+import type { ObservationId } from './observationLedger'
 import {
   boundedString,
   canonicalizeMemoryUrl,
@@ -49,7 +50,26 @@ export interface SessionObservation {
   readonly uncertainty?: string
   readonly references: readonly MemoryReference[]
   readonly provenance: readonly MemoryProvenance[]
+  /**
+   * The user event a User Observation cites (#122): the command,
+   * ask_user answer, or Steering Directive, by its Run ledger identity.
+   * Present only on User Observations.
+   */
+  readonly originEvent?: UserObservationOrigin
 }
+
+/**
+ * Event provenance of a User Observation (#122, ADR 0028): which user
+ * event supplied the exact text and the Run Observation ledger identity
+ * that retained it.
+ */
+export interface UserObservationOrigin {
+  readonly producer: 'command' | 'ask_user' | 'steering'
+  readonly observationId: ObservationId
+}
+
+/** The user events a User Observation can cite (#122): the Run ledger producers that retain user text. */
+export const USER_EVENT_PRODUCERS: readonly UserObservationOrigin['producer'][] = ['command', 'ask_user', 'steering']
 
 /** One grounded Candidate with its supporting Observation identities. */
 export interface SessionCandidate {
@@ -76,6 +96,8 @@ export interface ObservationCheckpointInput {
   readonly references?: readonly MemoryReference[]
   readonly runId: RunId
   readonly subagentId?: string
+  /** Event provenance for User Observations (#122); ignored for other kinds. */
+  readonly originEvent?: UserObservationOrigin
 }
 
 export interface CandidateInput {
@@ -99,6 +121,12 @@ export interface ObservationCheckpointResult {
   readonly observation: SessionObservation
   /** True when an exact duplicate already existed and the checkpoint merged into it. */
   readonly merged: boolean
+  /**
+   * Prior Observations this one mechanically contradicts (#122): the
+   * same source kind citing the same source URL with a different
+   * statement. Both remain stored — disclosed, never overwritten.
+   */
+  readonly contradicts: readonly MemoryEntryId[]
 }
 
 /**
@@ -131,6 +159,7 @@ interface MutableObservation {
   uncertainty?: string
   references: MemoryReference[]
   provenance: MemoryProvenance[]
+  originEvent?: UserObservationOrigin
 }
 
 interface MutableCandidate {
@@ -177,6 +206,7 @@ function freezeObservation(observation: MutableObservation): SessionObservation 
     ...(observation.uncertainty !== undefined ? { uncertainty: observation.uncertainty } : {}),
     references: Object.freeze(observation.references.map((reference) => Object.freeze({ ...reference }))),
     provenance: Object.freeze(observation.provenance.map((source) => Object.freeze({ ...source }))),
+    ...(observation.originEvent !== undefined ? { originEvent: Object.freeze({ ...observation.originEvent }) } : {}),
   })
 }
 
@@ -208,6 +238,38 @@ export function createSessionEvidence(deps: {
   const supportIsValid = (ids: readonly MemoryEntryId[]): boolean =>
     ids.length > 0 && ids.every((id) => liveObservation(id) !== null)
 
+  const validOriginEvent = (input: ObservationCheckpointInput): UserObservationOrigin | null | 'invalid' => {
+    if (input.originEvent === undefined) return null
+    if (input.sourceKind !== 'user') return 'invalid'
+    const { producer, observationId } = input.originEvent
+    if (!USER_EVENT_PRODUCERS.includes(producer)) return 'invalid'
+    if (typeof observationId !== 'string' || observationId.trim() === '') return 'invalid'
+    return { producer, observationId }
+  }
+
+  /**
+   * Prior Observations a new one mechanically contradicts (#122): same
+   * source kind, a shared canonical source URL, and a different
+   * statement. Contradictions are disclosed on the checkpoint result and
+   * retained — never merged, never overwritten. Deliberately narrow:
+   * cross-source disagreement and user corrections contradicting web
+   * findings are semantic, the model's to disclose — only what the
+   * application can see mechanically is named here.
+   */
+  const contradictingObservations = (candidate: MutableObservation): MemoryEntryId[] => {
+    if (candidate.references.length === 0) return []
+    const urls = new Set(candidate.references.map((reference) => canonicalizeMemoryUrl(reference.url) ?? reference.url))
+    return observations
+      .filter((prior) =>
+        prior.id !== candidate.id &&
+        prior.sourceKind === candidate.sourceKind &&
+        prior.references.length > 0 &&
+        normalizeMemoryText(prior.text) !== normalizeMemoryText(candidate.text) &&
+        prior.references.some((reference) => urls.has(canonicalizeMemoryUrl(reference.url) ?? reference.url)),
+      )
+      .map((prior) => prior.id)
+  }
+
   const store: SessionEvidenceStore = {
     checkpointObservation(input) {
       if (cleared) return null
@@ -216,14 +278,15 @@ export function createSessionEvidence(deps: {
       const uncertainty = boundedString(input.uncertainty, MAX_UNCERTAINTY_CHARS, true)
       const references = parseMemoryReferences(input.references)
       const source = parseProvenance(input.runId, input.subagentId)
-      if (!text || uncertainty === null || !references || !source) return null
+      const originEvent = validOriginEvent(input)
+      if (!text || uncertainty === null || !references || !source || originEvent === 'invalid') return null
       const observedAt = input.observedAt ?? deps.now()
 
       const duplicateKey = observationKey({ sourceKind: input.sourceKind, text, references })
       const duplicate = observations.find((observation) => observationKey(observation) === duplicateKey)
       if (duplicate) {
         duplicate.provenance = appendProvenance(duplicate.provenance, source)
-        return { observation: freezeObservation(duplicate), merged: true }
+        return { observation: freezeObservation(duplicate), merged: true, contradicts: [] }
       }
 
       const observation: MutableObservation = {
@@ -234,10 +297,15 @@ export function createSessionEvidence(deps: {
         observedAt,
         references,
         provenance: [source],
+        ...(originEvent !== null ? { originEvent } : {}),
         ...(uncertainty !== undefined ? { uncertainty } : {}),
       }
       observations.push(observation)
-      return { observation: freezeObservation(observation), merged: false }
+      return {
+        observation: freezeObservation(observation),
+        merged: false,
+        contradicts: Object.freeze([...contradictingObservations(observation)]),
+      }
     },
     observation(id) {
       const found = liveObservation(id)

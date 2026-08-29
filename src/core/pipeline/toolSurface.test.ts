@@ -10,6 +10,7 @@ import { createPanelTools } from './panelTools'
 import { createAppControlTool, createSetSettingTool } from './settingsTools'
 import { createReportRunPlanTool } from './runPlanTools'
 import { createRecordEvidenceTool } from './evidenceTools'
+import { createRecordCandidateTool } from './candidateTools'
 import { FakeAppControls, FakeBrowser, FakePanel, FakeSettings, FakeVision } from '../testing/doubles'
 
 const unusedVision = new FakeVision()
@@ -31,6 +32,7 @@ function orchestratorToolCatalog(): Tool[] {
     ...createMediaTools(new FakeBrowser()),
     createReportRunPlanTool(),
     createRecordEvidenceTool(),
+    createRecordCandidateTool(),
   ]
 }
 
@@ -91,6 +93,7 @@ describe('orchestrator tool surface', () => {
         'ground_visual',
         'look',
         'media_control',
+        'record_candidate',
         'record_evidence',
         'report_run_plan',
       ].sort(),
@@ -118,6 +121,19 @@ describe('orchestrator tool surface', () => {
         args: { objective: 'Find a blue mug', headline: 'Find a blue mug', effort_tier: 'lookup' },
       }, { clock: { now: () => 0, setTimer: () => () => {} } }),
     ).resolves.toBe('Run Plan noted.')
+  })
+
+  it('record_evidence and record_candidate are bookkeeping: never acquisition, never gated (#121/#122)', () => {
+    const byName = Object.fromEntries(orchestratorToolCatalog().map((tool) => [tool.name, tool]))
+    for (const name of ['record_evidence', 'record_candidate']) {
+      const tool = byName[name]!
+      expect(tool.acquisition).not.toBe(true)
+      expect(tool.requiresHistory).not.toBe(true)
+      expect(tool.assessRisk).toBeUndefined()
+      expect(tool.askUser).toBeUndefined()
+    }
+    // The Candidate decision vocabulary is terminal-only on the surface.
+    expect(byName.record_candidate!.parameters?.['status']?.enum).toEqual(['accepted', 'rejected', 'superseded'])
   })
 
   it('has no off-screen web tool anywhere on the surface (#83, ADR 0009)', () => {

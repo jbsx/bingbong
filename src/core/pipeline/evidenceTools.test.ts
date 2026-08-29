@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { createRecordEvidenceTool } from './evidenceTools'
-import { evaluateEvidenceCheckpoint, webEvidenceCommit, type EvidenceCommit } from './evidenceCheckpoint'
+import { evaluateEvidenceCheckpoint, userEvidenceCommit, webEvidenceCommit, type EvidenceCommit } from './evidenceCheckpoint'
 import type { ObservationRecord } from '../session/observationLedger'
 import type { RunId, SessionId } from '../session/sessionIdentity'
 import type { MemoryEntryId } from '../session/workingMemory'
@@ -23,19 +23,29 @@ const GROUNDED_ARGS = {
 }
 
 function contextWith(store: SessionEvidenceStore | null) {
-  const records: ObservationRecord[] = [{
-    id: 'obs-2' as ObservationRecord['id'],
-    at: 0,
-    producer: 'page_read',
-    ok: true,
-    payload: 'The Acme router costs $39.',
-    sourceUrl: 'https://shop.example/acme-router',
-  }]
+  const records: ObservationRecord[] = [
+    {
+      id: 'obs-2' as ObservationRecord['id'],
+      at: 0,
+      producer: 'page_read',
+      ok: true,
+      payload: 'The Acme router costs $39.',
+      sourceUrl: 'https://shop.example/acme-router',
+    },
+    {
+      id: 'obs-3' as ObservationRecord['id'],
+      at: 10,
+      producer: 'ask_user',
+      ok: true,
+      payload: 'No, the blue one.',
+    },
+  ]
   const commit: EvidenceCommit | undefined = store === null ? undefined : webEvidenceCommit(() => store, 'run-1' as RunId)
+  const commitUser: EvidenceCommit | undefined = store === null ? undefined : userEvidenceCommit(() => store, 'run-1' as RunId)
   return {
     clock: new FakeClock(),
     checkpointEvidence: (call: Parameters<typeof evaluateEvidenceCheckpoint>[0]) =>
-      evaluateEvidenceCheckpoint(call, { records, commit }),
+      evaluateEvidenceCheckpoint(call, { records, commit, commitUser }),
   }
 }
 
@@ -73,6 +83,32 @@ describe('record_evidence tool', () => {
         contextWith(store),
       ),
     ).rejects.toThrow(/excerpt does not appear/i)
+    expect(store.snapshot().observations).toEqual([])
+  })
+
+  it('checkpoints the user\'s exact words as a User Observation (#122)', async () => {
+    const store = storeHarness()
+    const result = await tool.execute(
+      { id: 'c1', name: 'record_evidence', args: { kind: 'user', observation: 'No, the blue one.' } },
+      contextWith(store),
+    )
+    expect(result).toContain('memory-1')
+    expect(result).toMatch(/ask_user/i)
+    expect(store.snapshot().observations).toEqual([expect.objectContaining({
+      sourceKind: 'user',
+      text: 'No, the blue one.',
+      originEvent: { producer: 'ask_user', observationId: 'obs-3' },
+    })])
+  })
+
+  it('fails recoverably when the user\'s words were never heard this run (#122)', async () => {
+    const store = storeHarness()
+    await expect(
+      tool.execute(
+        { id: 'c1', name: 'record_evidence', args: { kind: 'user', observation: 'the blue one, actually' } },
+        contextWith(store),
+      ),
+    ).rejects.toThrow(/exact words/i)
     expect(store.snapshot().observations).toEqual([])
   })
 })

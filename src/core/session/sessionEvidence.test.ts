@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import type { RunId, SessionId } from './sessionIdentity'
 import type { MemoryEntryId } from './workingMemory'
+import type { ObservationId } from './observationLedger'
 import { createSessionEvidence, MAX_UNCERTAINTY_CHARS } from './sessionEvidence'
 import type { SessionEvidenceStore } from './sessionEvidence'
-
 function evidenceHarness(now = (): number => 0): { evidence: SessionEvidenceStore; ids: string[] } {
   const minted: string[] = []
   let next = 0
@@ -52,6 +52,7 @@ describe('session evidence', () => {
         provenance: [{ runId: 'run-1', subagentId: 'a-2' }],
       },
       merged: false,
+      contradicts: [],
     })
     expect(Object.isFrozen(result!.observation)).toBe(true)
 
@@ -104,6 +105,68 @@ describe('session evidence', () => {
       'The Acme router costs $59.',
     ])
     expect(evidence.observation(cheaper.observation.id)?.text).toBe('The Acme router costs $39.')
+  })
+
+  it('discloses contradictions at commit: same source, different statement (#122)', () => {
+    const { evidence } = evidenceHarness()
+    const cheaper = evidence.checkpointObservation(webObservation('The Acme router costs $39.'))!
+    expect(cheaper.contradicts).toEqual([])
+
+    // Same canonical source, a different statement: the second commit
+    // names the first — both remain stored, neither overwrites.
+    const pricier = evidence.checkpointObservation(webObservation('The Acme router costs $59.'))!
+    expect(pricier.contradicts).toEqual([cheaper.observation.id])
+
+    // An unrelated source never contradicts; an exact duplicate merges
+    // rather than contradicting.
+    const elsewhere = evidence.checkpointObservation({
+      sourceKind: 'web',
+      text: 'The Acme router costs $59.',
+      references: [{ url: 'https://mirror.example/acme' }],
+      runId: 'run-1' as RunId,
+    })!
+    expect(elsewhere.contradicts).toEqual([])
+    const duplicate = evidence.checkpointObservation(webObservation('The Acme router costs $59.', 'run-2' as RunId))!
+    expect(duplicate.merged).toBe(true)
+    expect(duplicate.contradicts).toEqual([])
+    expect(evidence.snapshot().observations).toHaveLength(3)
+  })
+
+  it('retains User Observations with exact text and event provenance (#122)', () => {
+    const { evidence } = evidenceHarness()
+    const result = evidence.checkpointObservation({
+      sourceKind: 'user',
+      text: 'No, the blue one.',
+      runId: 'run-1' as RunId,
+      originEvent: { producer: 'ask_user', observationId: 'obs-3' as ObservationId },
+    })
+
+    expect(result).toMatchObject({
+      observation: {
+        id: 'memory-1',
+        sourceKind: 'user',
+        text: 'No, the blue one.',
+        references: [],
+        originEvent: { producer: 'ask_user', observationId: 'obs-3' },
+        provenance: [{ runId: 'run-1' }],
+      },
+      merged: false,
+      contradicts: [],
+    })
+    // Exact text survives verbatim: user words are never paraphrased.
+    expect(evidence.observation(result!.observation.id)?.text).toBe('No, the blue one.')
+
+    // The same user words again merge into the one identity; the origin
+    // event of the first retention stands.
+    const again = evidence.checkpointObservation({
+      sourceKind: 'user',
+      text: 'No, the blue one.',
+      runId: 'run-2' as RunId,
+      originEvent: { producer: 'ask_user', observationId: 'obs-9' as ObservationId },
+    })
+    expect(again!.merged).toBe(true)
+    expect(again!.observation.id).toBe(result!.observation.id)
+    expect(again!.observation.provenance).toEqual([{ runId: 'run-1' }, { runId: 'run-2' }])
   })
 
   it('tracks Candidates through active, accepted, rejected, and superseded status with supporting Observations', () => {

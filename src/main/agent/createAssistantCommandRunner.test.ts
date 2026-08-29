@@ -3,12 +3,14 @@ import { createCommandPipeline, type CommandPipeline } from '../../core/pipeline
 import type { PipelineEvent } from '../../core/pipeline/events'
 import type { Tool } from '../../core/pipeline/tool'
 import { createRecordEvidenceTool } from '../../core/pipeline/evidenceTools'
+import { createRecordCandidateTool } from '../../core/pipeline/candidateTools'
 import type { SessionEvidenceSnapshot } from '../../core/session/sessionEvidence'
-import type { AssistantTurn, LlmClient } from '../../core/ports/llm'
+import type { AssistantTurn, LlmClient, LlmRequest } from '../../core/ports/llm'
 import { createFeedProjection } from '../../core/history/feedProjection'
 import { createFeedPanelStateFold } from '../../core/panel/feedPanelState'
 import { FakeClock, RecordingTts, ScriptedLlm } from '../../core/testing/doubles'
 import type { RunId, SessionId, SessionIdentitySource, SubmissionId } from '../../core/session/sessionIdentity'
+import type { MemoryEntryId } from '../../core/session/workingMemory'
 import { createSessionRuntime } from '../../core/session/sessionRuntime'
 import type { SubmissionFeedback } from '../../core/session/submissionFeedback'
 import { createAssistantCommandRunner } from './createAssistantCommandRunner'
@@ -544,5 +546,82 @@ describe('assistant command runner', () => {
     await runner.run('the price once more')
     expect(seenEvidence.at(-1)?.observations).toEqual([])
     expect(seenEvidence.at(-1)?.candidates).toEqual([])
+  })
+
+  it('grounds Candidates, user words, and Answer support through the live store (#122)', async () => {
+    const clock = new FakeClock(1_000)
+    const runtime = createSessionRuntime({ clock, identities: new DeterministicIdentities() })
+    const turns: AssistantTurn[] = [
+      { kind: 'tool_calls', calls: [{ id: 'c1', name: 'read_page', args: {} }] },
+      { kind: 'tool_calls', calls: [
+        { id: 'c2', name: 'record_evidence', args: { observation: 'The Acme router costs $39.', source_url: 'https://shop.example/acme-router', excerpt: 'Price: $39' } },
+        { id: 'c3', name: 'record_evidence', args: { kind: 'user', observation: 'what does the acme router cost' } },
+        { id: 'c4', name: 'record_candidate', args: { subject: 'Acme wifi router', supporting_evidence: ['memory-1'] } },
+      ] },
+      { kind: 'tool_calls', calls: [
+        { id: 'c5', name: 'record_candidate', args: { candidate_id: 'memory-3', status: 'accepted', supporting_evidence: ['memory-1', 'memory-2'] } },
+      ] },
+      {
+        kind: 'answer',
+        speak: 'It is $39.',
+        display: 'The Acme router (memory-2).',
+        evidenceIds: ['memory-1' as MemoryEntryId],
+        memoryPatch: [
+          { op: 'add', entry: { kind: 'assessment', subject: 'Acme is cheapest', detail: 'Verified at the shop.', references: [{ url: 'https://shop.example/acme-router' }] } },
+        ],
+      },
+    ]
+    let served = 0
+    const requests: LlmRequest[] = []
+    const llm: LlmClient = {
+      complete(request) {
+        requests.push(request)
+        return Promise.resolve(turns[served++] ?? { kind: 'answer', speak: 'Done.', display: 'Done.' })
+      },
+    }
+    const readPage: Tool = {
+      name: 'read_page',
+      acquisition: true,
+      async execute() {
+        return 'Acme Wi-Fi Router\nPrice: $39 with free shipping over $25.'
+      },
+    }
+    const pipeline = createCommandPipeline({
+      llm,
+      tts: new RecordingTts(),
+      clock,
+      tools: [readPage, createRecordEvidenceTool(), createRecordCandidateTool()],
+      currentPageUrl: () => 'https://shop.example/acme-router',
+    })
+    const runner = createAssistantCommandRunner({
+      pipeline,
+      runtime,
+      clock,
+      onSessionReset: () => {},
+      createRunPublisher: () => ({ publish: () => {} }),
+      publishFeedback: () => {},
+    })
+
+    await runner.run('what does the acme router cost')
+    await runner.run('the price again')
+
+    const store = runtime.evidenceStore()!
+    // The web finding, the user's own command, and the accepted Candidate
+    // all landed in the live store through the runner's seams.
+    expect(store.snapshot().observations.map((observation) => [observation.sourceKind, observation.text])).toEqual([
+      ['web', 'The Acme router costs $39.'],
+      ['user', 'what does the acme router cost'],
+    ])
+    expect(store.candidate('memory-3' as never)).toMatchObject({
+      status: 'accepted',
+      supportingObservationIds: ['memory-1', 'memory-2'],
+      provenance: [{ runId: 'run-1' }],
+    })
+    // The Assessment cleared the support bar — the Answer cited the live
+    // Observation — so it entered the terminal Memory Commit and the
+    // follow-up Run's Working Memory carries it.
+    expect(requests.at(-1)?.memory?.map(({ kind, subject }) => `${kind}: ${subject}`)).toContain(
+      'assessment: Acme is cheapest',
+    )
   })
 })
