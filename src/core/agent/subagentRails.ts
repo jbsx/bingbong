@@ -3,9 +3,10 @@
 // genuinely independent Investigation branches), at most 3 subagent tabs
 // beside the main pane, tabs linger 60 s after their agent finishes before
 // auto-closing. Vision calls share one pool per run: 30 for the orchestrator
-// and 15 for each subagent. Every workhorse runs on a 12-Tool-Round leash
-// (#120) and shares its parent Run's active-work deadline rather than
-// bringing its own. Delegation shares at most 10 Memory Entries per worker
+// and 15 for each subagent. Browse workhorses run on a 12-Tool-Round leash
+// (#120; background kinds resolve a roomier default in the workhorse) and
+// browse workers share their parent Run's active-work deadline rather than
+// bringing their own. Delegation shares at most 10 Memory Entries per worker
 // (#98), so a delegation prompt stays focused and never sees the whole
 // store.
 
