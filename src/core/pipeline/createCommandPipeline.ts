@@ -51,6 +51,7 @@ import {
 } from './runPlan'
 import {
   createObservationLedger,
+  type ObservationId,
   type ObservationInput,
   type ObservationRecord,
 } from '../session/observationLedger'
@@ -68,6 +69,7 @@ import {
 import { completedEvidenceIsFresh } from './evidenceFreshness'
 import { evaluateCandidateCheckpoint, type CandidateCheckpointOutcome, type EvidenceSessionSource } from './candidateCheckpoint'
 import { deriveAnswerSources, displayedAnswerText } from './answerEvidence'
+import { compactRunContext, type RunEvidenceCheckpoint } from './runContextCompaction'
 
 export interface CommandPipelineDeps {
   llm: LlmClient
@@ -162,6 +164,13 @@ export interface CommandPipelineDeps {
     reason: 'missing' | 'malformed' | 'invalid_memory' | 'commit_rejected' | 'unsupported_assessment',
     turnId: string,
   ) => void
+  /**
+   * Run Context Compaction threshold (#124, ADR 0028): compaction
+   * engages once the Run's serialized tool-result context crosses this
+   * many characters. Defaults to RUN_CONTEXT_COMPACTION_THRESHOLD_CHARS;
+   * tests lower it to exercise the seam.
+   */
+  runContextCompactionThresholdChars?: number
   /**
    * Learned Terms seam (ADR 0022): the run's input text touches the LRU
    * order at run start, and a done run's validated Mishear proposals apply
@@ -587,6 +596,12 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
     const admissionEvidenceIds = new Set<MemoryEntryId>(
       (continuity?.evidence?.observations ?? []).map((observation) => observation.id),
     )
+    // One shared live-evidence resolver (#122–#124): read-only lookups of
+    // Session Observations by Memory Entry identity, against the live
+    // store the moment they run — null once the Session ended (Reset,
+    // Lapse). Answer source derivation and Run Context Compaction both
+    // resolve through it.
+    const resolveSessionObservation = (id: MemoryEntryId) => evidenceSession?.()?.store.observation(id) ?? null
     // One epoch re-arm (#117/#119): a tier change — first declaration,
     // escalation, or a Steering replan — starts fresh budget, warnings,
     // and active-work deadline. Cumulative `rounds` and recorded
@@ -668,7 +683,12 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
       }
 
       try {
-        const toolResults: ToolResult[] = []
+        // The Run's model context: one assistant/tool pair per tool call
+        // (#124). `let` because Run Context Compaction swaps the array —
+        // historical request snapshots keep the context they were sent.
+        // The observation ids stay index-aligned with every push.
+        let toolResults: ToolResult[] = []
+        const resultObservationIds: (ObservationId | null)[] = []
         const visionBudget = createVisionBudget(MAX_ORCHESTRATOR_VISION_CALLS)
         // Run rails (#74/#82/#83): per-run streak of consecutive similar
         // GUI searches — q= navigations or text typed into a search input —
@@ -700,16 +720,34 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
               return session === null ? null : subagentEvidenceCommit(() => session.store, session.runId, agentId)(input)
             }
           : undefined
+        // Run Context Compaction (#124, ADR 0028): accepted Evidence
+        // Checkpoints grounded in this Run's ledger, in acceptance order.
+        // Subagent citations ground worker-ledger identities, never this
+        // list — they map to no orchestrator tool result.
+        const acceptedCheckpoints: RunEvidenceCheckpoint[] = []
         const checkpointEvidenceHandler: ((call: ToolCall) => EvidenceCheckpointOutcome) | undefined =
           continuity?.checkpointEvidence || commitUser
-            ? (call) =>
-                evaluateEvidenceCheckpoint(call, {
+            ? (call) => {
+                const outcome = evaluateEvidenceCheckpoint(call, {
                   records: ledger.snapshot(),
                   ...(continuity?.checkpointEvidence ? { commit: continuity.checkpointEvidence } : {}),
                   ...(commitUser ? { commitUser } : {}),
                   ...(commitSubagent ? { commitSubagent } : {}),
                   ...(deps.subagentObservations ? { workerObservations: deps.subagentObservations } : {}),
                 })
+                // Only checkpoints whose grounding record is this Run's
+                // own ledger observation can compact a tool result: the
+                // membership check excludes worker-ledger ids even on an
+                // id collision, and user-event records never align with
+                // a tool result's tracked observation.
+                if (outcome.ok && outcome.agentId === undefined && ledger.get(outcome.sourceObservationId) !== null) {
+                  acceptedCheckpoints.push({
+                    entryId: outcome.entryId,
+                    sourceObservationId: outcome.sourceObservationId,
+                  })
+                }
+                return outcome
+              }
             : undefined
         const checkpointCandidateHandler: ((call: ToolCall) => CandidateCheckpointOutcome) | undefined = evidenceSession
           ? (call) => evaluateCandidateCheckpoint(call, { session: evidenceSession })
@@ -809,6 +847,31 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
             }
           }
           steering = (yield* consumeSteering('thinking')) ?? steering
+          // Run Context Compaction (#124, ADR 0028): before every model
+          // round, past the deterministic size threshold, older tool
+          // results an accepted Evidence Checkpoint represents are
+          // replaced in context by their Session Evidence references —
+          // deterministic, idempotent, no summarization model. The live
+          // Session store is only read; the immutable admission snapshot
+          // is never touched. Advisory notices that once rode a compacted
+          // result retire with it — they were bound to the round they
+          // rode. Any failure falls back to the original context —
+          // compaction can never fail a run.
+          try {
+            const compacted = compactRunContext({
+              toolResults,
+              observationIds: resultObservationIds,
+              records: ledger.snapshot(),
+              checkpoints: acceptedCheckpoints,
+              resolveObservation: resolveSessionObservation,
+              ...(deps.runContextCompactionThresholdChars !== undefined
+                ? { thresholdChars: deps.runContextCompactionThresholdChars }
+                : {}),
+            })
+            if (compacted !== toolResults) toolResults = [...compacted]
+          } catch (err) {
+            console.warn('[run-context-compaction] fell back to the original context:', toErrorMessage(err))
+          }
           // Stop reaches the in-flight request through this signal (#47):
           // abort() fires it, the client cancels the HTTP request, and the
           // rejection below maps back to a cancelled run — no waiting out
@@ -886,7 +949,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
             // scrubbed deterministically whatever the model wrote.
             const displayText = displayedAnswerText(
               turn.display,
-              deriveAnswerSources(turn.evidenceIds, (id) => evidenceSession?.()?.store.observation(id) ?? null),
+              deriveAnswerSources(turn.evidenceIds, resolveSessionObservation),
             )
             yield { type: 'display', text: displayText, at: clock.now() }
             yield* speakLine(turn.speak, turnId)
@@ -1053,9 +1116,11 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
             // produced it, ahead of the advisory nudges appended below —
             // later checkpoint validation checks excerpts against what the
             // source actually said, not against pipeline-added guidance.
+            // The minted identity rides beside the pushed result (#124):
+            // Run Context Compaction grounds eligibility on it later.
             const classification = classifyToolObservation(call.name)
             const sourceUrl = classification.pageFacing ? deps.currentPageUrl?.() : undefined
-            observe({
+            const observedRecord = observe({
               producer: classification.producer,
               ok: outcome.ok,
               payload: outcome.ok ? outcome.result : outcome.error,
@@ -1108,6 +1173,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
               observedOutcome = withNudge(observedOutcome, FINALIZATION_ANSWER_DIRECTIVE)
             }
             toolResults.push({ call, outcome: observedOutcome })
+            resultObservationIds.push(observedRecord?.id ?? null)
             yield {
               type: 'tool_result',
               callId: call.id,
@@ -1142,6 +1208,9 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
               if (index === resetCallIndex) continue
               const error = 'not executed: this response carried a session reset, but it failed'
               toolResults.push({ call, outcome: { ok: false, error } })
+              // Discarded siblings never executed, so they recorded no
+              // observation (#124): null keeps the alignment honest.
+              resultObservationIds.push(null)
               yield { type: 'tool_result', callId: call.id, name: call.name, ok: false, error, at: clock.now() }
             }
           }

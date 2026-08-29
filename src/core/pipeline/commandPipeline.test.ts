@@ -5876,3 +5876,170 @@ describe('checkpointed Subagent evidence and freshness (#123)', () => {
     expect(events.at(-1)).toMatchObject({ type: 'done', outcome: 'done', resolution: 'completed' })
   })
 })
+
+describe('run context compaction (#124)', () => {
+  const PAGE_URL = 'https://shop.example/acme-router'
+  const LONG_PAGE_TEXT = `Acme Wi-Fi Router\nPrice: $39 with free shipping over $25.\n${'spec line. '.repeat(400)}`
+
+  function storeHarness(): SessionEvidenceStore {
+    let next = 0
+    return createSessionEvidence({
+      sessionId: 'session-1' as SessionId,
+      now: () => 0,
+      mintId: () => `memory-${++next}` as MemoryEntryId,
+    })
+  }
+
+  function continuityFor(
+    store: SessionEvidenceStore,
+    options: {
+      runId?: RunId
+      evidence?: SessionEvidenceSnapshot
+      evidenceSession?: RunContinuityContext['evidenceSession']
+    } = {},
+  ): RunContinuityContext {
+    const runId = options.runId ?? ('run-1' as RunId)
+    return {
+      snapshot: [],
+      memory: [],
+      evidence: options.evidence ?? store.snapshot(),
+      generation: 0,
+      commit: () => 'committed',
+      checkpointEvidence: webEvidenceCommit(() => store, runId),
+      evidenceSession: options.evidenceSession ?? (() => ({ store, runId })),
+    }
+  }
+
+  /** c1 reads the long page a checkpoint later grounds; later calls read fresh state. */
+  const readPage: Tool = {
+    name: 'read_page',
+    acquisition: true,
+    async execute(call) {
+      return call.id === 'c1' ? LONG_PAGE_TEXT : `Settled page state after ${call.id}`
+    },
+  }
+
+  async function collectWithContinuity(
+    pipeline: CommandPipeline,
+    command: string,
+    continuity: RunContinuityContext,
+  ): Promise<PipelineEvent[]> {
+    const events: PipelineEvent[] = []
+    for await (const raw of pipeline.execute(command, undefined, false, continuity)) {
+      events.push(withoutTurnId(raw))
+    }
+    return events
+  }
+
+  /** The long-run script: read, checkpoint, read, read, answer. */
+  function longRunScript(): AssistantTurn[] {
+    return [
+      { kind: 'tool_calls', calls: [{ id: 'c1', name: 'read_page', args: {} }] },
+      { kind: 'tool_calls', calls: [{
+        id: 'c2',
+        name: 'record_evidence',
+        args: { observation: 'The Acme router costs $39.', source_url: PAGE_URL, excerpt: 'Price: $39' },
+      }] },
+      { kind: 'tool_calls', calls: [{ id: 'c3', name: 'read_page', args: {} }] },
+      { kind: 'tool_calls', calls: [{ id: 'c4', name: 'read_page', args: {} }] },
+      { kind: 'answer', speak: 'Done.', display: 'Done.' },
+    ]
+  }
+
+  function resultTextOf(entry: { outcome: { ok: boolean; result?: unknown } }): string {
+    return entry.outcome.ok && typeof entry.outcome.result === 'string' ? entry.outcome.result : ''
+  }
+
+  it('replaces an older checkpointed read with its Session Evidence reference past the threshold', async () => {
+    const store = storeHarness()
+    const admission = store.snapshot()
+    const llm = new ScriptedLlm(longRunScript())
+    const pipeline = createCommandPipeline({
+      llm,
+      tts: new RecordingTts(),
+      clock: new FakeClock(),
+      tools: [readPage, createRecordEvidenceTool()],
+      currentPageUrl: () => PAGE_URL,
+      runContextCompactionThresholdChars: 1,
+    })
+
+    const events = await collectWithContinuity(pipeline, 'research the router', continuityFor(store, { evidence: admission }))
+
+    // Before the later read existed, the checkpointed read was still the
+    // latest actionable page state — it stayed verbatim (request 2).
+    expect(resultTextOf(llm.requests[2]!.toolResults[0]!)).toBe(LONG_PAGE_TEXT)
+    // Once a newer page state exists, the older checkpointed read rides
+    // as its concise Session Evidence reference (requests 3 and 4).
+    const compacted = resultTextOf(llm.requests[3]!.toolResults[0]!)
+    expect(compacted).toContain('[compacted] ')
+    expect(compacted).toContain('memory-1')
+    expect(compacted).toContain(PAGE_URL)
+    expect(compacted).toContain('The Acme router costs $39.')
+    // Idempotent across rounds: the next compaction pass changes nothing.
+    expect(resultTextOf(llm.requests[4]!.toolResults[0]!)).toBe(compacted)
+    // The checkpoint result, the uncheckpointed read, and the latest
+    // actionable page state remain verbatim.
+    expect(resultTextOf(llm.requests[4]!.toolResults[1]!)).toContain('Session Evidence recorded')
+    expect(resultTextOf(llm.requests[4]!.toolResults[2]!)).toBe('Settled page state after c3')
+    expect(resultTextOf(llm.requests[4]!.toolResults[3]!)).toBe('Settled page state after c4')
+    // Provider-protocol validity: every assistant call keeps its paired
+    // result, in order, with the call untouched.
+    expect(llm.requests[4]!.toolResults.map(({ call }) => call.id)).toEqual(['c1', 'c2', 'c3', 'c4'])
+    // The feed kept the full result: compaction bounds only model context.
+    expect(events.find((e) => e.type === 'tool_result' && e.callId === 'c1')).toMatchObject({
+      ok: true,
+      result: LONG_PAGE_TEXT,
+    })
+    // The immutable admission snapshot was never mutated — compaction
+    // only read the live store.
+    expect(llm.requests[4]!.evidence).toBe(admission)
+    expect(llm.requests[4]!.evidence?.observations).toEqual([])
+  })
+
+  it('stays verbatim while the context is under the deterministic threshold', async () => {
+    const store = storeHarness()
+    const llm = new ScriptedLlm(longRunScript())
+    const pipeline = createCommandPipeline({
+      llm,
+      tts: new RecordingTts(),
+      clock: new FakeClock(),
+      tools: [readPage, createRecordEvidenceTool()],
+      currentPageUrl: () => PAGE_URL,
+    })
+
+    await collectWithContinuity(pipeline, 'research the router', continuityFor(store))
+
+    expect(resultTextOf(llm.requests[4]!.toolResults[0]!)).toBe(LONG_PAGE_TEXT)
+  })
+
+  it('falls back to the original context once the Session ended', async () => {
+    const store = storeHarness()
+    let sessionLive = true
+    const llm = new ScriptedLlm(longRunScript())
+    const pipeline = createCommandPipeline({
+      llm,
+      tts: new RecordingTts(),
+      clock: new FakeClock(),
+      tools: [readPage, createRecordEvidenceTool()],
+      currentPageUrl: () => PAGE_URL,
+      runContextCompactionThresholdChars: 1,
+      // The Session ends right after the checkpoint stored its
+      // Observation: the live-session seam resolves to nothing for the
+      // rest of the run.
+      onObservation: (record) => {
+        if (typeof record.payload === 'string' && record.payload.includes('memory-1')) sessionLive = false
+      },
+    })
+
+    await collectWithContinuity(
+      pipeline,
+      'research the router',
+      continuityFor(store, { evidenceSession: () => (sessionLive ? { store, runId: 'run-1' as RunId } : null) }),
+    )
+
+    // The checkpoint itself was accepted — but its reference resolves to
+    // no live Session Evidence, so the read stays verbatim.
+    expect(store.snapshot().observations.map(({ id }) => id)).toEqual(['memory-1'])
+    expect(resultTextOf(llm.requests[4]!.toolResults[0]!)).toBe(LONG_PAGE_TEXT)
+  })
+})
