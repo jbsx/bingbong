@@ -136,6 +136,25 @@ describe('orchestrator tool surface', () => {
     expect(byName.record_candidate!.parameters?.['status']?.enum).toEqual(['accepted', 'rejected', 'superseded'])
   })
 
+  it('record_evidence carries the three citation kinds and the volatility declaration (#123)', () => {
+    const evidence = orchestratorToolCatalog().find((tool) => tool.name === 'record_evidence')!
+    expect(Object.keys(evidence.parameters ?? {}).sort()).toEqual([
+      'agent_id',
+      'excerpt',
+      'kind',
+      'observation',
+      'source_url',
+      'uncertainty',
+      'volatile',
+    ])
+    expect(evidence.parameters?.['kind']?.enum).toEqual(['web', 'user', 'subagent'])
+    expect(evidence.parameters?.['volatile']?.type).toBe('boolean')
+    expect(evidence.parameters?.['agent_id']?.required).toBe(false)
+    // Only the orchestrator catalog carries the checkpoint tools —
+    // delegation's surface never does (#123).
+    expect(delegationToolCatalog().map((tool) => tool.name).sort()).toEqual(['agent_results', 'cancel_agent', 'spawn_agent'])
+  })
+
   it('has no off-screen web tool anywhere on the surface (#83, ADR 0009)', () => {
     // web_search and read_url are deleted: every web read and write happens
     // in a rendered, visible tab. The names must never reappear in any

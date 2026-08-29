@@ -425,6 +425,9 @@ async function createWindow(): Promise<BrowserWindow> {
     tts: speakingGate.tts,
     subagentTools: subagentRuntime.tools,
     subagentControl: subagentRuntime,
+    // Worker observations (#123): completed reports' hidden provenance —
+    // what kind "subagent" Evidence Checkpoints ground against.
+    subagentObservations: (agentId) => subagentRuntime.observationsFor(agentId),
     // Panel voice tools (#64): the same overlay seam the dashboard buttons
     // and the shortcut drive.
     panel: feedPanel,

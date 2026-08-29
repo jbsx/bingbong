@@ -190,6 +190,13 @@ describe('createSubagentTaskApi', () => {
     // The browse catalog is exactly the pane-bound browser verbs plus look.
     const browseNames = toolsForKind('browse', deps, new FakeBrowser()).map((tool) => tool.name)
     expect(browseNames.sort()).toEqual(['ask_user', 'back', 'click', 'go_forward', 'look', 'navigate', 'read_page', 'scroll', 'type'].sort())
+    // Only the orchestrator checkpoints Session Evidence (#123, ADR 0028):
+    // no worker catalog carries the bookkeeping tools.
+    for (const kind of ['browse', 'background'] as const) {
+      const names = toolsForKind(kind, deps, kind === 'browse' ? new FakeBrowser() : null).map((tool) => tool.name)
+      expect(names).not.toContain('record_evidence')
+      expect(names).not.toContain('record_candidate')
+    }
   })
 
   it('passes search submits through the confirm downgrade — browse agents can GUI-search (#102, ADR 0015)', async () => {

@@ -3,12 +3,15 @@ import { systemClock } from '../ports/clock'
 import type { AssistantTurn, LlmClient, ToolResult, ToolResultOutcome } from '../ports/llm'
 import type { Tool, ToolContext } from '../pipeline/tool'
 import type { WorkingMemorySnapshot } from '../session/workingMemory'
+import type { ObservationInput, ObservationRecord } from '../session/observationLedger'
+import { createObservationLedger } from '../session/observationLedger'
 import { VisionDeadlineError, VISION_DEADLINE_NUDGE } from '../ports/vision'
 import { ASK_ESCALATION_PREFIX } from '../pipeline/askUserTools'
 import { createBlockerGate, subagentBlockerEscalation } from '../pipeline/blockerGate'
 import { describeToolAction } from '../pipeline/toolCallDisplay'
+import { classifyToolObservation } from '../pipeline/toolObservations'
 import { createVisionBudget, MAX_SUBAGENT_VISION_CALLS } from './subagentRails'
-import type { SubagentReport } from './subagentReport'
+import { droppedFindingsNote, validateReportFindings, type SubagentReport } from './subagentReport'
 
 // The subagent workhorse loop (issue #13): one LLM (deepseek-chat via the
 // model router) driving its own tool set until it produces a final report.
@@ -25,6 +28,13 @@ import type { SubagentReport } from './subagentReport'
 // round, and a deterministic bounded report if that round fails or demands
 // tools. A worker always terminates with a report, never a raw round-limit
 // failure.
+//
+// The worker keeps its own Observation ledger (#123, ADR 0028): every tool
+// outcome is recorded with the source URL it observed, the report's
+// findings are validated against it before the report completes, and the
+// records ride the report as hidden provenance for the orchestrator's
+// Evidence Checkpoint. Workers never checkpoint Session Evidence
+// themselves — only the orchestrator does.
 
 export interface SubagentProgress {
   /** 1-based step number within this agent's run. */
@@ -46,6 +56,13 @@ export interface RunSubagentDeps {
    * matches navigate calls it can classify by URL.
    */
   currentHost?(): string | null
+  /**
+   * The URL of the page this agent's own tab is on (#123): the source
+   * URL recorded on the worker's page-facing Observations — what its
+   * report's findings ground against. Absent, worker observations carry
+   * no source URL (grounding then refuses, like the orchestrator's).
+   */
+  currentPageUrl?(): string | null
 }
 
 export interface RunSubagentOptions {
@@ -139,6 +156,7 @@ function boundedStopReport(input: {
   maxToolRounds: number
   rounds: number
   lastAction: string | null
+  observations?: readonly ObservationRecord[]
 }): SubagentReport {
   const causeSentence =
     input.cause === 'round_limit'
@@ -150,16 +168,28 @@ function boundedStopReport(input: {
     text: `Stopped at the delegated work limit after ${input.rounds} tool round${input.rounds === 1 ? '' : 's'} — ${causeSentence}, and no final report was produced.${lastActionSentence}`,
     findings: [],
     unresolved: ['Cut short at the delegated work limit — the task is incomplete.'],
+    ...(input.observations !== undefined && input.observations.length > 0 ? { observations: input.observations } : {}),
   }
 }
 
 /** One model answer turn becomes the report — both exits share the mapping. */
-function reportFromTurn(turn: Extract<AssistantTurn, { kind: 'answer' }>, agentId?: string): SubagentReport {
+function reportFromTurn(
+  turn: Extract<AssistantTurn, { kind: 'answer' }>,
+  agentId: string | undefined,
+  observations: readonly ObservationRecord[],
+): SubagentReport {
+  // Findings are validated before the report completes (#123, ADR 0028):
+  // each must cite only sources this worker observed, or it is dropped to
+  // the prose report — the orchestrator can checkpoint only grounded work.
+  const validated = validateReportFindings(turn.findings ?? [], observations)
+  const unresolved = [...(turn.unresolved ?? [])]
+  if (validated.dropped > 0) unresolved.push(droppedFindingsNote(validated.dropped))
   return {
     ...(agentId !== undefined ? { agentId } : {}),
     text: turn.display !== '' ? turn.display : turn.speak,
-    findings: turn.findings ?? [],
-    unresolved: turn.unresolved ?? [],
+    findings: validated.findings,
+    unresolved,
+    ...(observations.length > 0 ? { observations } : {}),
   }
 }
 
@@ -185,6 +215,20 @@ export async function runSubagent(deps: RunSubagentDeps, options: RunSubagentOpt
   // budget; without it an ungated workhorse burns its rounds silently
   // against a wall.
   const blockerGate = createBlockerGate(deps.currentHost, subagentBlockerEscalation)
+  // The worker's own Observation ledger (#123, ADR 0028): private Working
+  // State recording what this worker actually saw, so its report's findings
+  // ground against real observations and the orchestrator's Evidence
+  // Checkpoint for a finding has something honest to verify against. Never
+  // shown to the worker's model; dies with the loop — except for the frozen
+  // snapshot that rides the completed report as hidden provenance.
+  const workerLedger = createObservationLedger({
+    now: () => clock.now(),
+    generation: 0,
+    isCurrentGeneration: () => true,
+  })
+  const observe = (input: ObservationInput): void => {
+    workerLedger.record(input)
+  }
   const toolContext: ToolContext = {
     clock,
     acquireVision: () => visionBudget.tryAcquire(),
@@ -220,8 +264,9 @@ export async function runSubagent(deps: RunSubagentDeps, options: RunSubagentOpt
       // (the deadline passed before any work) has nothing to attach the
       // directive to and answers deterministically without the round.
       // Cancellation still wins at the checkpoint after the round.
+      const observations = workerLedger.snapshot()
       if (toolResults.length === 0) {
-        return boundedStopReport({ ...(options.agentId !== undefined ? { agentId: options.agentId } : {}), cause: stopCause, maxToolRounds, rounds, lastAction })
+        return boundedStopReport({ ...(options.agentId !== undefined ? { agentId: options.agentId } : {}), cause: stopCause, maxToolRounds, rounds, lastAction, observations })
       }
       appendFinalizationNotice(toolResults, workerFinalizationNotice(stopCause, maxToolRounds))
       let turn: AssistantTurn | null = null
@@ -232,15 +277,15 @@ export async function runSubagent(deps: RunSubagentDeps, options: RunSubagentOpt
       }
       await checkpoint(options)
       if (turn !== null && turn.kind === 'answer') {
-        return reportFromTurn(turn, options.agentId)
+        return reportFromTurn(turn, options.agentId, observations)
       }
-      return boundedStopReport({ ...(options.agentId !== undefined ? { agentId: options.agentId } : {}), cause: stopCause, maxToolRounds, rounds, lastAction })
+      return boundedStopReport({ ...(options.agentId !== undefined ? { agentId: options.agentId } : {}), cause: stopCause, maxToolRounds, rounds, lastAction, observations })
     }
 
     const turn = await llm.complete(requestArgs())
     await checkpoint(options)
     if (turn.kind === 'answer') {
-      return reportFromTurn(turn, options.agentId)
+      return reportFromTurn(turn, options.agentId, workerLedger.snapshot())
     }
 
     rounds += 1
@@ -286,7 +331,7 @@ export async function runSubagent(deps: RunSubagentDeps, options: RunSubagentOpt
                   // user. Return the directive as its report verbatim so
                   // agent_results reliably routes it upward; do not trust the
                   // workhorse model to preserve it in another round.
-                  return { text: result, findings: [], unresolved: [] }
+                  return { text: result, findings: [], unresolved: [], observations: workerLedger.snapshot() }
                 }
                 outcome = { ok: true, result }
               }
@@ -310,6 +355,18 @@ export async function runSubagent(deps: RunSubagentDeps, options: RunSubagentOpt
       // results arm it; a successful different-host browser interaction
       // disarms it. Sees every processed outcome, like the orchestrator's.
       blockerGate.observe(call, outcome)
+      // Worker Observation ledger (#123): the raw outcome as produced, with
+      // the worker's own tab URL as the source of page-facing calls — the
+      // ground the report's findings and the orchestrator's checkpoint for
+      // them verify against.
+      const classification = classifyToolObservation(call.name)
+      const sourceUrl = classification.pageFacing ? deps.currentPageUrl?.() : undefined
+      observe({
+        producer: classification.producer,
+        ok: outcome.ok,
+        payload: outcome.ok ? outcome.result : outcome.error,
+        ...(sourceUrl ? { sourceUrl } : {}),
+      })
       toolResults.push({ call, outcome })
     }
   }

@@ -7,6 +7,7 @@ import {
   type MemoryReference,
   type WorkingMemorySnapshot,
 } from '../session/workingMemory'
+import type { ObservationRecord } from '../session/observationLedger'
 import { SUBAGENT_LIMITS } from './subagentRails'
 
 // The Subagent Report contract (#98): a delegated worker's validated return
@@ -17,6 +18,12 @@ import { SUBAGENT_LIMITS } from './subagentRails'
 // bounded slice of Session Working Memory for the worker (#98): the snapshot
 // the orchestrator's Run was accepted with, filtered by explicit entry ids,
 // frozen, and delivered as untrusted data — never a writer's handle.
+//
+// The findings are grounded (#123, ADR 0028): every reference must cite a
+// source the worker itself observed, validated before the report completes,
+// and the worker's Observation records ride along as hidden provenance —
+// never shown to any model, exactly what the orchestrator's Evidence
+// Checkpoint for a finding grounds against.
 
 /** One durable result a Subagent established, with the evidence behind it. */
 export interface SubagentReportFinding {
@@ -38,6 +45,14 @@ export interface SubagentReport {
   readonly text: string
   readonly findings: readonly SubagentReportFinding[]
   readonly unresolved: readonly string[]
+  /**
+   * The worker's own Observation records (#123, ADR 0028): hidden
+   * provenance behind the findings. Never rendered into any model-facing
+   * text — the orchestrator's Evidence Checkpoint grounds a subagent
+   * citation against these records. Absent for direct loop users that
+   * retained no observations.
+   */
+  readonly observations?: readonly ObservationRecord[]
 }
 
 export const MAX_SUBAGENT_REPORT_FINDINGS = 10
@@ -141,4 +156,44 @@ export function selectDelegatedMemory(
     )
   }
   return Object.freeze([...selected])
+}
+
+/** The worker-observed canonical URLs a finding's references may cite (#123). */
+function observedUrls(records: readonly ObservationRecord[]): Set<string> {
+  const urls = new Set<string>()
+  for (const record of records) {
+    if (!record.ok || record.sourceUrl === undefined) continue
+    const canonical = canonicalizeMemoryUrl(record.sourceUrl)
+    if (canonical !== null) urls.add(canonical)
+  }
+  return urls
+}
+
+/**
+ * Validates a report's findings against the worker's own Observations
+ * (#123, ADR 0028): a finding is kept only when every one of its
+ * references cites a source the worker itself successfully observed —
+ * the same grounding discipline the orchestrator's Evidence Checkpoints
+ * apply, enforced before the report completes. Dropped findings survive
+ * only in the prose report; the count comes back so the report can say
+ * honestly what was unverified.
+ */
+export function validateReportFindings(
+  findings: readonly SubagentReportFinding[],
+  records: readonly ObservationRecord[],
+): { findings: readonly SubagentReportFinding[]; dropped: number } {
+  const observed = observedUrls(records)
+  const kept = findings.filter((finding) => {
+    if (finding.references.length === 0) return false
+    return finding.references.every((reference) => {
+      const canonical = canonicalizeMemoryUrl(reference.url)
+      return canonical !== null && observed.has(canonical)
+    })
+  })
+  return { findings: kept, dropped: findings.length - kept.length }
+}
+
+/** The unresolved line a report appends when findings were dropped (#123). */
+export function droppedFindingsNote(dropped: number): string {
+  return `${dropped} finding${dropped === 1 ? '' : 's'} dropped — the cited source${dropped === 1 ? ' was' : 's were'} not observed by this worker, so ${dropped === 1 ? 'it stays' : 'they stay'} unverified in the prose report only.`
 }

@@ -251,3 +251,20 @@ describe('orchestrator prompt bounded delegation (#120)', () => {
     expect(ORCHESTRATOR_SYSTEM_PROMPT).toMatch(/terminates with a bounded report/)
   })
 })
+
+// #123 / ADR 0028: Subagent evidence checkpoints and freshness. The
+// orchestrator is the only checkpoint writer, selects which findings
+// survive, and knows volatile evidence must be revalidated before
+// completion.
+describe('orchestrator prompt subagent evidence and freshness (#123)', () => {
+  it('teaches the subagent checkpoint: the orchestrator selects findings, workers cannot checkpoint', () => {
+    expect(ORCHESTRATOR_SYSTEM_PROMPT).toMatch(/kind "subagent", its agent_id/)
+    expect(ORCHESTRATOR_SYSTEM_PROMPT).toMatch(/subagents cannot checkpoint for themselves/)
+  })
+
+  it('teaches volatility: time-sensitive and action-critical facts are revalidated before completion', () => {
+    expect(ORCHESTRATOR_SYSTEM_PROMPT).toMatch(/volatile: true/)
+    expect(ORCHESTRATOR_SYSTEM_PROMPT).toMatch(/later runs must revalidate volatile evidence/)
+    expect(ORCHESTRATOR_SYSTEM_PROMPT).toMatch(/stable facts are reused without rereading/)
+  })
+})

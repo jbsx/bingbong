@@ -12,6 +12,7 @@ import type { HistoryStore, RecordedEntry, RunRecord } from '../history/historyS
 import { FailingTts, FakeClock, fakePerfHarness, fakeSubagentManager, memoryEntry, RecordingTts, ScriptedLlm, subagentRecord, withoutTurnId } from '../testing/doubles'
 import type { PipelineEvent } from './events'
 import type { SessionId } from '../session/sessionIdentity'
+import type { ObservationRecord } from '../session/observationLedger'
 import type { AssistantTurn, LlmClient, LlmRequest, ToolCall } from '../ports/llm'
 import type { Tool } from './tool'
 import type { WorkingMemorySnapshot } from '../session/workingMemory'
@@ -5533,5 +5534,285 @@ describe('grounded Candidates, user corrections, and Answers (#122)', () => {
       // memory-N or obs-N.
       text: 'Cheapest option found ().\n\nSources:\n- [shop.example](https://shop.example/acme-router)',
     })
+  })
+})
+
+describe('checkpointed Subagent evidence and freshness (#123)', () => {
+  const PAGE_URL = 'https://shop.example/acme-router'
+  const WORKER_URL = 'https://rival.example/router'
+  const PAGE_TEXT = 'Acme Wi-Fi Router\nPrice: $39 with free shipping over $25.'
+
+  function storeHarness(): SessionEvidenceStore {
+    let next = 0
+    return createSessionEvidence({
+      sessionId: 'session-1' as SessionId,
+      now: () => 0,
+      mintId: () => `memory-${++next}` as MemoryEntryId,
+    })
+  }
+
+  function continuityFor(
+    store: SessionEvidenceStore,
+    options: { runId?: RunId; evidence?: SessionEvidenceSnapshot } = {},
+  ): RunContinuityContext {
+    const runId = options.runId ?? ('run-1' as RunId)
+    return {
+      snapshot: [],
+      memory: [],
+      evidence: options.evidence ?? store.snapshot(),
+      generation: 0,
+      commit: () => 'committed',
+      checkpointEvidence: webEvidenceCommit(() => store, runId),
+      evidenceSession: () => ({ store, runId }),
+    }
+  }
+
+  /** The hidden provenance a completed worker's report carried (#123). */
+  function workerObservations(): ObservationRecord[] {
+    return [{
+      id: 'wobs-1' as ObservationRecord['id'],
+      at: 0,
+      producer: 'page_read',
+      ok: true,
+      payload: 'The rival router costs $29.',
+      sourceUrl: WORKER_URL,
+    }]
+  }
+
+  const readPage: Tool = { name: 'read_page', acquisition: true, async execute() { return PAGE_TEXT } }
+
+  async function collectWithContinuity(
+    pipeline: CommandPipeline,
+    command: string,
+    continuity: RunContinuityContext,
+  ): Promise<PipelineEvent[]> {
+    const events: PipelineEvent[] = []
+    for await (const raw of pipeline.execute(command, undefined, false, continuity)) {
+      events.push(withoutTurnId(raw))
+    }
+    return events
+  }
+
+  it('checkpoints a selected worker finding with Run and Subagent provenance (#123)', async () => {
+    const store = storeHarness()
+    const llm = new ScriptedLlm([
+      { kind: 'tool_calls', calls: [{
+        id: 'c1',
+        name: 'record_evidence',
+        args: { kind: 'subagent', agent_id: 'a-2', observation: 'The rival router costs $29.', source_url: WORKER_URL },
+      }] },
+      { kind: 'answer', speak: 'Noted.', display: 'The rival costs $29.' },
+    ])
+    const pipeline = createCommandPipeline({
+      llm,
+      tts: new RecordingTts(),
+      clock: new FakeClock(),
+      tools: [createRecordEvidenceTool()],
+      subagentObservations: (agentId) => (agentId === 'a-2' ? workerObservations() : null),
+    })
+
+    const events = await collectWithContinuity(pipeline, 'compare routers', continuityFor(store))
+
+    expect(events.find((e) => e.type === 'tool_result' && e.callId === 'c1')).toMatchObject({
+      ok: true,
+      result: expect.stringMatching(/memory-1[\s\S]*subagent a-2[\s\S]*survives this run/),
+    })
+    expect(store.snapshot().observations).toEqual([expect.objectContaining({
+      sourceKind: 'web',
+      text: 'The rival router costs $29.',
+      references: [{ url: WORKER_URL }],
+      provenance: [{ runId: 'run-1', subagentId: 'a-2' }],
+    })])
+  })
+
+  it('refuses a subagent citation when no worker observations back it (#123)', async () => {
+    const store = storeHarness()
+    const llm = new ScriptedLlm([
+      { kind: 'tool_calls', calls: [{
+        id: 'c1',
+        name: 'record_evidence',
+        args: { kind: 'subagent', agent_id: 'a-9', observation: 'x', source_url: WORKER_URL },
+      }] },
+      { kind: 'answer', speak: 'No.', display: 'No.' },
+    ])
+    const pipeline = createCommandPipeline({
+      llm,
+      tts: new RecordingTts(),
+      clock: new FakeClock(),
+      tools: [createRecordEvidenceTool()],
+    })
+
+    const events = await collectWithContinuity(pipeline, 'compare routers', continuityFor(store))
+
+    expect(events.find((e) => e.type === 'tool_result' && e.callId === 'c1')).toMatchObject({
+      ok: false,
+      error: expect.stringMatching(/unknown_agent[\s\S]*a-9/),
+    })
+    expect(store.snapshot().observations).toEqual([])
+  })
+
+  it('reuses stable admission evidence for a completed Resolution without rereading it (#123/AC5)', async () => {
+    const store = storeHarness()
+    store.checkpointObservation({
+      sourceKind: 'web',
+      text: 'The Acme router costs $39.',
+      references: [{ url: PAGE_URL }],
+      runId: 'run-0' as RunId,
+    })
+    const admission = store.snapshot()
+    const llm = new ScriptedLlm([
+      // Answer-only round: the stable fact is reused from Session Evidence —
+      // no tool call rereads the page.
+      { kind: 'answer', speak: 'Still $39.', display: 'Still $39.', resolution: 'completed', evidenceIds: ['memory-1' as MemoryEntryId] },
+    ])
+    const pipeline = createCommandPipeline({
+      llm,
+      tts: new RecordingTts(),
+      clock: new FakeClock(),
+      tools: [readPage, createRecordEvidenceTool()],
+      currentPageUrl: () => PAGE_URL,
+    })
+
+    const events = await collectWithContinuity(pipeline, 'the price again', continuityFor(store, { evidence: admission, runId: 'run-2' as RunId }))
+
+    expect(events.at(-1)).toMatchObject({ type: 'done', outcome: 'done', resolution: 'completed' })
+  })
+
+  it('degrades a completed Resolution to partial when only stale volatile evidence supports it (#123/AC4)', async () => {
+    const store = storeHarness()
+    store.checkpointObservation({
+      sourceKind: 'web',
+      text: 'Stock is 3 units.',
+      references: [{ url: PAGE_URL }],
+      runId: 'run-0' as RunId,
+      volatile: true,
+    })
+    const admission = store.snapshot()
+    const llm = new ScriptedLlm([
+      { kind: 'answer', speak: 'In stock.', display: 'In stock.', resolution: 'completed', evidenceIds: ['memory-1' as MemoryEntryId] },
+    ])
+    const pipeline = createCommandPipeline({
+      llm,
+      tts: new RecordingTts(),
+      clock: new FakeClock(),
+      tools: [readPage, createRecordEvidenceTool()],
+      currentPageUrl: () => PAGE_URL,
+    })
+
+    const events = await collectWithContinuity(pipeline, 'is it in stock', continuityFor(store, { evidence: admission, runId: 'run-2' as RunId }))
+
+    // Volatile admission evidence, never revalidated: the honest record is
+    // partial, whatever the model proposed.
+    expect(events.at(-1)).toMatchObject({ type: 'done', outcome: 'done', resolution: 'partial' })
+  })
+
+  it('accepts completed on volatile evidence the Run revalidated by re-observing the source (#123/AC5)', async () => {
+    const store = storeHarness()
+    store.checkpointObservation({
+      sourceKind: 'web',
+      text: 'Stock is 3 units.',
+      references: [{ url: PAGE_URL }],
+      runId: 'run-0' as RunId,
+      volatile: true,
+    })
+    const admission = store.snapshot()
+    const llm = new ScriptedLlm([
+      // The follow-up Run re-observes the changing source before relying on it.
+      { kind: 'tool_calls', calls: [{ id: 'c1', name: 'read_page', args: {} }] },
+      { kind: 'answer', speak: 'In stock.', display: 'In stock.', resolution: 'completed', evidenceIds: ['memory-1' as MemoryEntryId] },
+    ])
+    const pipeline = createCommandPipeline({
+      llm,
+      tts: new RecordingTts(),
+      clock: new FakeClock(),
+      tools: [readPage, createRecordEvidenceTool()],
+      currentPageUrl: () => PAGE_URL,
+    })
+
+    const events = await collectWithContinuity(pipeline, 'is it in stock', continuityFor(store, { evidence: admission, runId: 'run-2' as RunId }))
+
+    expect(events.at(-1)).toMatchObject({ type: 'done', outcome: 'done', resolution: 'completed' })
+  })
+
+  it('accepts completed on volatile evidence checkpointed mid-Run, and on a stable companion citation (#123)', async () => {
+    const store = storeHarness()
+    store.checkpointObservation({
+      sourceKind: 'web',
+      text: 'The Acme router exists.',
+      references: [{ url: PAGE_URL }],
+      runId: 'run-0' as RunId,
+    })
+    const admission = store.snapshot()
+
+    // Fresh volatile evidence: checkpointed this Run, cited beside a stale
+    // volatile one — the mid-Run checkpoint makes the support fresh.
+    const first = new ScriptedLlm([
+      { kind: 'tool_calls', calls: [{ id: 'c1', name: 'read_page', args: {} }] },
+      { kind: 'tool_calls', calls: [
+        { id: 'c2', name: 'record_evidence', args: { observation: 'Stock is 3 units.', source_url: PAGE_URL, excerpt: 'Price: $39', volatile: true } },
+      ] },
+      { kind: 'answer', speak: 'In stock.', display: 'In stock.', resolution: 'completed', evidenceIds: ['memory-2' as MemoryEntryId] },
+    ])
+    const pipeline = createCommandPipeline({
+      llm: first,
+      tts: new RecordingTts(),
+      clock: new FakeClock(),
+      tools: [readPage, createRecordEvidenceTool()],
+      currentPageUrl: () => PAGE_URL,
+    })
+    const events = await collectWithContinuity(pipeline, 'stock check', continuityFor(store, { evidence: admission }))
+    expect(events.at(-1)).toMatchObject({ type: 'done', outcome: 'done', resolution: 'completed' })
+
+    // A stable citation beside a stale volatile one carries completion too.
+    const secondStore = storeHarness()
+    secondStore.checkpointObservation({
+      sourceKind: 'web',
+      text: 'Stock is 3 units.',
+      references: [{ url: PAGE_URL }],
+      runId: 'run-0' as RunId,
+      volatile: true,
+    })
+    secondStore.checkpointObservation({
+      sourceKind: 'web',
+      text: 'The Acme router exists.',
+      references: [{ url: PAGE_URL }],
+      runId: 'run-0' as RunId,
+    })
+    const second = new ScriptedLlm([
+      { kind: 'answer', speak: 'Yes.', display: 'Yes.', resolution: 'completed', evidenceIds: ['memory-1' as MemoryEntryId, 'memory-2' as MemoryEntryId] },
+    ])
+    const pipeline2 = createCommandPipeline({
+      llm: second,
+      tts: new RecordingTts(),
+      clock: new FakeClock(),
+      tools: [],
+    })
+    const events2 = await collectWithContinuity(pipeline2, 'stock check', continuityFor(secondStore, { runId: 'run-2' as RunId }))
+    expect(events2.at(-1)).toMatchObject({ type: 'done', outcome: 'done', resolution: 'completed' })
+  })
+
+  it('uncertain admission evidence is volatile too — completed on it alone degrades to partial (#123)', async () => {
+    const store = storeHarness()
+    store.checkpointObservation({
+      sourceKind: 'web',
+      text: 'Price seen in a cached cart.',
+      references: [{ url: PAGE_URL }],
+      runId: 'run-0' as RunId,
+      uncertainty: 'cache may be stale',
+    })
+    const admission = store.snapshot()
+    const llm = new ScriptedLlm([
+      { kind: 'answer', speak: '$39.', display: '$39.', resolution: 'completed', evidenceIds: ['memory-1' as MemoryEntryId] },
+    ])
+    const pipeline = createCommandPipeline({
+      llm,
+      tts: new RecordingTts(),
+      clock: new FakeClock(),
+      tools: [],
+    })
+
+    const events = await collectWithContinuity(pipeline, 'the price', continuityFor(store, { evidence: admission, runId: 'run-2' as RunId }))
+
+    expect(events.at(-1)).toMatchObject({ type: 'done', outcome: 'done', resolution: 'partial' })
   })
 })

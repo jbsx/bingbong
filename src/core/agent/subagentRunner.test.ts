@@ -61,7 +61,14 @@ describe('runSubagent', () => {
   })
 
   it('returns a structured report: prose text plus validated findings and unresolved items (#98)', async () => {
+    const navigate: Tool = {
+      name: 'navigate',
+      async execute() {
+        return 'navigated: url=https://reviews.test/x title="Reviews"'
+      },
+    }
     const llm = new ScriptedLlm([
+      { kind: 'tool_calls', calls: [{ id: 'n1', name: 'navigate', args: { url: 'https://reviews.test/x' } }] },
       {
         kind: 'answer',
         speak: 'Found it.',
@@ -71,12 +78,18 @@ describe('runSubagent', () => {
       },
     ])
 
-    const report = await runSubagent({ llm, tools: [], clock: new FakeClock() }, { task: 't', isCancelled: () => false })
+    const report = await runSubagent(
+      { llm, tools: [navigate], clock: new FakeClock(), currentPageUrl: () => 'https://reviews.test/x' },
+      { task: 't', isCancelled: () => false },
+    )
 
     expect(report).toEqual({
       text: 'Model X leads; stock unknown.',
       findings: [{ subject: 'Winner', detail: 'Model X leads.', references: [{ url: 'https://reviews.test/x' }] }],
       unresolved: ['Stock check pending'],
+      // The worker's own observation of the cited source rides the report
+      // as hidden provenance (#123).
+      observations: [expect.objectContaining({ producer: 'action_outcome', ok: true, sourceUrl: 'https://reviews.test/x' })],
     })
   })
 
@@ -269,11 +282,11 @@ describe('runSubagent', () => {
     // round never ran — the reserved Answer round took its place.
     expect(executions).toBe(2)
     expect(llm.requests).toHaveLength(3)
-    expect(report).toEqual({
-      text: 'Bounded but useful report.',
-      findings: [{ subject: 'S', detail: 'D.', references: [] }],
-      unresolved: [],
-    })
+    expect(report.text).toBe('Bounded but useful report.')
+    // A reference-less finding grounds nothing — it is dropped before the
+    // report completes and the drop is disclosed (#123).
+    expect(report.findings).toEqual([])
+    expect(report.unresolved).toEqual([expect.stringMatching(/^1 finding dropped — the cited source was not observed/)])
     // The directive rode the last tool result the reserved round saw.
     const reserved = llm.requests[2]?.toolResults
     expect(reserved).toHaveLength(2)
@@ -332,6 +345,56 @@ describe('runSubagent', () => {
     expect(executions).toBe(2)
     expect(report.text).toMatch(/Stopped at the delegated work limit after 2 tool rounds/)
     expect(report.unresolved).toEqual(['Cut short at the delegated work limit — the task is incomplete.'])
+  })
+
+  it('records its own Observations with the tab URL as source, classified like the orchestrator\'s (#123)', async () => {
+    const navigate: Tool = { name: 'navigate', async execute() { return 'navigated' } }
+    const boom: Tool = { name: 'boom', async execute() { throw new Error('nope') } }
+    const llm = new ScriptedLlm([
+      {
+        kind: 'tool_calls',
+        calls: [
+          { id: 'n1', name: 'navigate', args: { url: 'https://a.test/1' } },
+          { id: 'b1', name: 'boom', args: {} },
+        ],
+      },
+      { kind: 'answer', speak: 's', display: 'Done.' },
+    ])
+
+    const report = await runSubagent(
+      { llm, tools: [navigate, boom], clock: new FakeClock(), currentPageUrl: () => 'https://a.test/1' },
+      { task: 't', isCancelled: () => false },
+    )
+
+    // Page-facing successes carry the source URL; a non-page tool's
+    // failure is retained as a failure without one; the ledger itself
+    // never reaches any model round.
+    expect(report.observations).toEqual([
+      expect.objectContaining({ producer: 'action_outcome', ok: true, payload: 'navigated', sourceUrl: 'https://a.test/1' }),
+      expect.objectContaining({ producer: 'action_outcome', ok: false, payload: 'nope' }),
+    ])
+    expect(llm.requests[1]?.toolResults).toHaveLength(2)
+  })
+
+  it('carries its observations on the bounded stop report — a cut-off worker\'s work is still checkpointable (#123)', async () => {
+    const spin: Tool = { name: 'navigate', async execute() { return 'spun' } }
+    const llm = new ScriptedLlm([
+      { kind: 'tool_calls', calls: [{ id: 'c0', name: 'navigate', args: {} }] },
+      { kind: 'tool_calls', calls: [{ id: 'c1', name: 'navigate', args: {} }] },
+      // The reserved round demands tools anyway: the bounded report answers.
+      { kind: 'tool_calls', calls: [{ id: 'c2', name: 'navigate', args: {} }] },
+    ])
+
+    const report = await runSubagent(
+      { llm, tools: [spin], clock: new FakeClock(), maxToolRounds: 2, currentPageUrl: () => 'https://seen.test/page' },
+      { task: 't', agentId: 'a-4', isCancelled: () => false },
+    )
+
+    expect(report.findings).toEqual([])
+    expect(report.observations).toEqual([
+      expect.objectContaining({ ok: true, payload: 'spun', sourceUrl: 'https://seen.test/page' }),
+      expect.objectContaining({ ok: true, payload: 'spun', sourceUrl: 'https://seen.test/page' }),
+    ])
   })
 
   it('honours the parent\'s shared active-work deadline with a reserved answer round (#120)', async () => {

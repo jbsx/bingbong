@@ -19,10 +19,10 @@ import {
 } from '../session/workingMemory'
 
 /** The model-writable citation fields, snake_case like the Memory Patch. */
-export const EVIDENCE_CITATION_KEYS = ['kind', 'observation', 'source_url', 'excerpt', 'uncertainty'] as const
+export const EVIDENCE_CITATION_KEYS = ['kind', 'observation', 'source_url', 'excerpt', 'uncertainty', 'agent_id', 'volatile'] as const
 
-/** What a citation grounds against (#122): an observed web source or the user's own words. */
-export type EvidenceCitationKind = 'web' | 'user'
+/** What a citation grounds against (#122/#123): an observed web source, the user's own words, or a delegated worker's observations. */
+export type EvidenceCitationKind = 'web' | 'user' | 'subagent'
 
 /** One parsed record_evidence citation. */
 export type EvidenceCitation =
@@ -32,11 +32,22 @@ export type EvidenceCitation =
       readonly sourceUrl: string
       readonly excerpt?: string
       readonly uncertainty?: string
+      readonly volatile?: boolean
     }
   | {
       readonly kind: 'user'
       readonly observation: string
       readonly uncertainty?: string
+      readonly volatile?: boolean
+    }
+  | {
+      readonly kind: 'subagent'
+      readonly observation: string
+      readonly agentId: string
+      readonly sourceUrl: string
+      readonly excerpt?: string
+      readonly uncertainty?: string
+      readonly volatile?: boolean
     }
 
 /** What the pipeline hands the Session side once Run-side grounding passes. */
@@ -46,6 +57,14 @@ export interface EvidenceCommitInput {
   readonly references: readonly MemoryReference[]
   /** Event provenance for User Observations (#122): the user event that supplied the exact text. */
   readonly originEvent?: UserObservationOrigin
+  /**
+   * Marks time-sensitive, uncertain-of-duration, or action-critical
+   * Observations (#123, ADR 0028): volatile evidence may be reused within
+   * the Session, but cannot alone support a `completed` Resolution in a
+   * later Run until revalidated. The store also derives volatility from
+   * uncertainty.
+   */
+  readonly volatile?: boolean
 }
 
 /** The Session-side commit seam: stores the Observation, or refuses. */
@@ -57,6 +76,7 @@ export type EvidenceCheckpointFailure =
   | { ok: false; reason: 'unknown_source'; error: string }
   | { ok: false; reason: 'excerpt_unsupported'; error: string }
   | { ok: false; reason: 'user_text_unverified'; error: string }
+  | { ok: false; reason: 'unknown_agent'; error: string }
   | { ok: false; reason: 'refused'; error: string }
 
 export type EvidenceCheckpointOutcome =
@@ -72,12 +92,16 @@ export type EvidenceCheckpointOutcome =
       readonly sourceUrl?: string
       /** Which user event supplied a user citation's exact text (#122). */
       readonly originProducer?: UserObservationOrigin['producer']
+      /** Which delegated worker's observations grounded a subagent citation (#123). */
+      readonly agentId?: string
       /** Prior Observations this one contradicts — retained, disclosed, never overwritten (#122). */
       readonly contradicts: readonly MemoryEntryId[]
     }
   | EvidenceCheckpointFailure
 
 const MAX_SOURCE_URL_CHARS = 2_000
+/** Agent-id bound (#123): matches the store's Subagent provenance bound. */
+const MAX_PROVENANCE_AGENT_CHARS = 200
 
 /** Parses only the fixed citation shapes; anything else is malformed. */
 export function parseEvidenceCitation(args: Record<string, unknown>): EvidenceCitation | null {
@@ -86,28 +110,50 @@ export function parseEvidenceCitation(args: Record<string, unknown>): EvidenceCi
   const observation = boundedString(args.observation, MAX_MEMORY_DETAIL_CHARS)
   const uncertainty = boundedString(args.uncertainty, MAX_UNCERTAINTY_CHARS, true)
   if (!observation || uncertainty === null) return null
+  // Volatility (#123) is a declared boolean — anything else is malformed.
+  if (args.volatile !== undefined && typeof args.volatile !== 'boolean') return null
+  const volatile = args.volatile === true ? true : undefined
   const kind = args.kind ?? 'web'
   if (kind === 'user') {
     // A user citation carries only the user's exact words — never a
-    // source URL or excerpt, which belong to web citations.
-    if (args.source_url !== undefined || args.excerpt !== undefined) return null
+    // source URL, excerpt, or agent, which belong to web citations.
+    if (args.source_url !== undefined || args.excerpt !== undefined || args.agent_id !== undefined) return null
     return {
       kind,
       observation,
       ...(uncertainty !== undefined ? { uncertainty } : {}),
+      ...(volatile !== undefined ? { volatile } : {}),
     }
   }
-  if (kind !== 'web') return null
   const sourceUrl = boundedString(args.source_url, MAX_SOURCE_URL_CHARS)
   const excerpt = boundedString(args.excerpt, MAX_MEMORY_DETAIL_CHARS, true)
   if (!sourceUrl || excerpt === null) return null
   if (canonicalizeMemoryUrl(sourceUrl) === null) return null
+  if (kind === 'subagent') {
+    // A subagent citation (#123) grounds in a delegated worker's
+    // observations: the agent id names whose, and no excerpt is demanded
+    // — the citing model saw the worker's report, not its tool results.
+    const agentId = boundedString(args.agent_id, MAX_PROVENANCE_AGENT_CHARS)
+    if (!agentId) return null
+    return {
+      kind,
+      observation,
+      agentId,
+      sourceUrl,
+      ...(excerpt !== undefined ? { excerpt } : {}),
+      ...(uncertainty !== undefined ? { uncertainty } : {}),
+      ...(volatile !== undefined ? { volatile } : {}),
+    }
+  }
+  if (kind !== 'web') return null
+  if (args.agent_id !== undefined) return null
   return {
     kind,
     observation,
     sourceUrl,
     ...(excerpt !== undefined ? { excerpt } : {}),
     ...(uncertainty !== undefined ? { uncertainty } : {}),
+    ...(volatile !== undefined ? { volatile } : {}),
   }
 }
 
@@ -205,6 +251,7 @@ export function webEvidenceCommit(
       text: input.text,
       ...(input.uncertainty !== undefined ? { uncertainty: input.uncertainty } : {}),
       references: [...input.references],
+      ...(input.volatile !== undefined ? { volatile: input.volatile } : {}),
       runId,
     })
   }
@@ -228,7 +275,36 @@ export function userEvidenceCommit(
       ...(input.uncertainty !== undefined ? { uncertainty: input.uncertainty } : {}),
       references: [],
       ...(input.originEvent !== undefined ? { originEvent: input.originEvent } : {}),
+      ...(input.volatile !== undefined ? { volatile: input.volatile } : {}),
       runId,
+    })
+  }
+}
+
+/**
+ * The Subagent-finding commit (#123, ADR 0028): a web Observation the
+ * orchestrator checkpoints from a delegated worker's validated report.
+ * The stored provenance carries both identities — the originating
+ * (orchestrator) Run and the worker — and nothing else differs from a
+ * direct web checkpoint: the same merging, contradiction, and trust
+ * rules apply, whatever agent happened to observe the source.
+ */
+export function subagentEvidenceCommit(
+  getStore: () => SessionEvidenceStore | null | undefined,
+  runId: RunId,
+  agentId: string,
+): EvidenceCommit {
+  return (input) => {
+    const store = getStore()
+    if (store === null || store === undefined) return null
+    return store.checkpointObservation({
+      sourceKind: 'web',
+      text: input.text,
+      ...(input.uncertainty !== undefined ? { uncertainty: input.uncertainty } : {}),
+      references: [...input.references],
+      ...(input.volatile !== undefined ? { volatile: input.volatile } : {}),
+      runId,
+      subagentId: agentId,
     })
   }
 }
@@ -243,7 +319,10 @@ export function userEvidenceCommit(
  * re-checkpoint) or must be re-observed — revalidated — before it can ground
  * new work. A user citation grounds the same way (#122): the exact text
  * must be a command, ask_user answer, or Steering Directive this Run's
- * ledger retained.
+ * ledger retained. A subagent citation (#123) grounds in the named
+ * worker's own retained observations — the hidden provenance its
+ * validated report carried — never a source the orchestrator itself
+ * never saw.
  */
 export function evaluateEvidenceCheckpoint(
   call: ToolCall,
@@ -252,6 +331,10 @@ export function evaluateEvidenceCheckpoint(
     commit?: EvidenceCommit
     /** The user-citation commit seam (#122); required for kind "user". */
     commitUser?: EvidenceCommit
+    /** The subagent-citation commit seam (#123); required for kind "subagent". */
+    commitSubagent?: (agentId: string) => EvidenceCommit
+    /** The delegated workers' retained observations (#123), by agent id. */
+    workerObservations?: (agentId: string) => readonly ObservationRecord[] | null
   },
 ): EvidenceCheckpointOutcome {
   const citation = parseEvidenceCitation(call.args)
@@ -260,7 +343,7 @@ export function evaluateEvidenceCheckpoint(
       ok: false,
       reason: 'malformed',
       error:
-        'the citation is malformed — provide observation and source_url plus the excerpt copied verbatim from what you observed there (a structured action outcome grounds itself without one), or kind "user" with the user\'s exact words as the observation; uncertainty optional',
+        'the citation is malformed — provide observation and source_url plus the excerpt copied verbatim from what you observed there (a structured action outcome grounds itself without one), kind "user" with the user\'s exact words as the observation, or kind "subagent" with agent_id and a source_url that worker observed; uncertainty and volatile optional',
     }
   }
   if (citation.kind === 'user') {
@@ -278,6 +361,7 @@ export function evaluateEvidenceCheckpoint(
     const committed = deps.commitUser({
       text: citation.observation,
       ...(citation.uncertainty !== undefined ? { uncertainty: citation.uncertainty } : {}),
+      ...(citation.volatile !== undefined ? { volatile: citation.volatile } : {}),
       references: [],
       originEvent: { producer, observationId: event.id },
     })
@@ -294,6 +378,59 @@ export function evaluateEvidenceCheckpoint(
       merged: committed.merged,
       sourceObservationId: event.id,
       originProducer: producer,
+      contradicts: committed.contradicts,
+    }
+  }
+  if (citation.kind === 'subagent') {
+    const commit = deps.commitSubagent?.(citation.agentId)
+    if (commit === undefined) return EVIDENCE_NO_SESSION
+    const workerRecords = deps.workerObservations?.(citation.agentId) ?? null
+    if (workerRecords === null) {
+      return {
+        ok: false,
+        reason: 'unknown_agent',
+        error: `no completed subagent '${citation.agentId}' with retained observations — collect its report with agent_results first, and cite a source it actually observed`,
+      }
+    }
+    const source = findSourceObservation(workerRecords, citation.sourceUrl)
+    if (source === null) {
+      return {
+        ok: false,
+        reason: 'unknown_source',
+        error: `subagent '${citation.agentId}' did not observe '${citation.sourceUrl}' — cite one of the evidence URLs its report's findings carry`,
+      }
+    }
+    // The citing model saw the worker's report, not its tool results, so
+    // an excerpt is optional here; one offered must still appear in what
+    // the worker retained — a wrong quote never grounds.
+    if (citation.excerpt !== undefined && !excerptSupported(source, citation.excerpt)) {
+      return {
+        ok: false,
+        reason: 'excerpt_unsupported',
+        error: `the excerpt does not appear in what subagent '${citation.agentId}' retained from '${citation.sourceUrl}' — omit it, or copy it verbatim from the report you are citing`,
+      }
+    }
+    const canonical = canonicalizeMemoryUrl(citation.sourceUrl)!
+    const committed = commit({
+      text: citation.observation,
+      ...(citation.uncertainty !== undefined ? { uncertainty: citation.uncertainty } : {}),
+      ...(citation.volatile !== undefined ? { volatile: citation.volatile } : {}),
+      references: [{ url: canonical }],
+    })
+    if (committed === null) {
+      return {
+        ok: false,
+        reason: 'refused',
+        error: 'the Session refused the checkpoint — it ended (reset or lapse), or a field exceeded its bound',
+      }
+    }
+    return {
+      ok: true,
+      entryId: committed.observation.id,
+      merged: committed.merged,
+      sourceObservationId: source.id,
+      sourceUrl: canonical,
+      agentId: citation.agentId,
       contradicts: committed.contradicts,
     }
   }
@@ -317,6 +454,7 @@ export function evaluateEvidenceCheckpoint(
   const committed = deps.commit({
     text: citation.observation,
     ...(citation.uncertainty !== undefined ? { uncertainty: citation.uncertainty } : {}),
+    ...(citation.volatile !== undefined ? { volatile: citation.volatile } : {}),
     references: [{ url: canonical }],
   })
   if (committed === null) {
@@ -352,6 +490,11 @@ export function evidenceCheckpointMessage(outcome: EvidenceCheckpointOutcome): s
       return outcome.merged
         ? `Session Evidence already held this user Observation: ${outcome.entryId} (provenance recorded).${contradiction}`
         : `Session Evidence recorded the user's words: ${outcome.entryId}, the exact ${event} retained in ${outcome.sourceObservationId}. It survives this run's outcome.${contradiction}`
+    }
+    if (outcome.agentId !== undefined) {
+      return outcome.merged
+        ? `Session Evidence already held this Observation: ${outcome.entryId} (provenance recorded, subagent ${outcome.agentId}).${contradiction}`
+        : `Session Evidence recorded: ${outcome.entryId}, grounded in what subagent ${outcome.agentId} observed at ${outcome.sourceUrl} (${outcome.sourceObservationId}). It survives this run's outcome.${contradiction}`
     }
     return outcome.merged
       ? `Session Evidence already held this Observation: ${outcome.entryId} (provenance recorded).${contradiction}`

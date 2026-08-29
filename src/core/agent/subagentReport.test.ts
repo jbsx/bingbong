@@ -1,7 +1,15 @@
 import { describe, expect, it } from 'vitest'
 import type { MemoryEntry, WorkingMemorySnapshot } from '../session/workingMemory'
+import type { ObservationRecord } from '../session/observationLedger'
 import { memoryEntry } from '../testing/doubles'
-import { MAX_SUBAGENT_REPORT_FINDINGS, MAX_SUBAGENT_REPORT_UNRESOLVED, parseSubagentReportSections, selectDelegatedMemory } from './subagentReport'
+import {
+  droppedFindingsNote,
+  MAX_SUBAGENT_REPORT_FINDINGS,
+  MAX_SUBAGENT_REPORT_UNRESOLVED,
+  parseSubagentReportSections,
+  selectDelegatedMemory,
+  validateReportFindings,
+} from './subagentReport'
 
 // The Subagent Report contract (#98): validated structured sections a
 // workhorse returns alongside its prose, and delegation's explicit,
@@ -131,5 +139,55 @@ describe('selectDelegatedMemory', () => {
     expect(selected).toHaveLength(1)
     // The entry itself is the snapshot's frozen object, not a mutable copy.
     expect(selected[0]).toBe(snapshot[1])
+  })
+})
+
+describe('validateReportFindings (#123)', () => {
+  const observed = (id: string, url: string, ok = true): ObservationRecord => ({
+    id: id as ObservationRecord['id'],
+    at: 0,
+    producer: 'page_read',
+    ok,
+    payload: 'page text',
+    sourceUrl: url,
+  })
+  const finding = (subject: string, ...urls: string[]) => ({
+    subject,
+    detail: `${subject} detail`,
+    references: urls.map((url) => ({ url })),
+  })
+
+  it('keeps findings whose every reference the worker observed, canonically', () => {
+    const records = [observed('w1', 'https://reviews.test/x'), observed('w2', 'https://reviews.test/y')]
+
+    const validated = validateReportFindings(
+      [finding('Winner', 'https://reviews.test/x#details'), finding('Both', 'https://reviews.test/x', 'https://REVIEWS.test/y/')],
+      records,
+    )
+
+    expect(validated).toEqual({ findings: [finding('Winner', 'https://reviews.test/x#details'), finding('Both', 'https://reviews.test/x', 'https://REVIEWS.test/y/')], dropped: 0 })
+  })
+
+  it('drops findings citing unobserved sources, reference-less findings, and failed observations', () => {
+    const records = [observed('w1', 'https://reviews.test/x'), observed('w2', 'https://blocked.test/wall', false)]
+
+    const validated = validateReportFindings(
+      [
+        finding('Grounded', 'https://reviews.test/x'),
+        finding('Guessed', 'https://never-opened.test/a'),
+        finding('Mixed', 'https://reviews.test/x', 'https://never-opened.test/a'),
+        finding('NoRefs'),
+        finding('FailedSource', 'https://blocked.test/wall'),
+      ],
+      records,
+    )
+
+    expect(validated.findings).toEqual([finding('Grounded', 'https://reviews.test/x')])
+    expect(validated.dropped).toBe(4)
+  })
+
+  it('the drop note states the count honestly', () => {
+    expect(droppedFindingsNote(1)).toMatch(/^1 finding dropped — the cited source was not observed/)
+    expect(droppedFindingsNote(2)).toMatch(/^2 findings dropped — the cited sources were not observed/)
   })
 })

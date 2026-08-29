@@ -24,6 +24,7 @@ import { withUsageTracking } from '../../core/agent/usageTracking'
 import type { PerfTracer } from '../../core/perf/perfTracer'
 import { withPerfTracing } from '../../core/perf/perfTracing'
 import type { BrowserSubspans } from '../../core/perf/browserSubspans'
+import type { ObservationRecord } from '../../core/session/observationLedger'
 import { ScriptedLlm, silentTts, UnavailableLlm } from '../../core/testing/doubles'
 import { createOpenAiLlmClient } from './openAiLlmClient'
 import { orchestratorSystemPrompt } from './orchestratorPrompt'
@@ -49,6 +50,13 @@ export interface AssistantPipelineDeps {
   tts?: TtsSpeaker
   /** Delegation tools (spawn/cancel/agent_results) when subagents are on. */
   subagentTools?: Tool[]
+  /**
+   * Delegated workers' retained observations (#123, ADR 0028), by agent
+   * id — the grounding for kind "subagent" Evidence Checkpoints. Wired by
+   * main to the subagent runtime's report lookup; absent in tests unless
+   * asserted.
+   */
+  subagentObservations?: (agentId: string) => readonly ObservationRecord[] | null
   /** Fan-out controls shared with every running subagent. */
   subagentControl?: {
     cancelAll(): number
@@ -259,6 +267,9 @@ export function createAssistantPipeline(deps: AssistantPipelineDeps): CommandPip
     describeRef: (ref) => deps.controller.describeRef(ref),
     // Observation ledger source URLs (#111): the visible tab's current page.
     currentPageUrl: () => deps.controller.state().url ?? null,
+    // Worker observations (#123): completed reports' hidden provenance,
+    // for kind "subagent" Evidence Checkpoint grounding.
+    ...(deps.subagentObservations ? { subagentObservations: deps.subagentObservations } : {}),
     ...(deps.tracer ? { tracer: deps.tracer } : {}),
     ...(deps.browserSubspans ? { browserSubspans: deps.browserSubspans } : {}),
     ...(deps.emitDetail ? { emitDetail: deps.emitDetail } : {}),

@@ -11,6 +11,7 @@ import {
   findSourceObservation,
   findUserEventObservation,
   parseEvidenceCitation,
+  subagentEvidenceCommit,
   userEvidenceCommit,
   webEvidenceCommit,
   type EvidenceCommit,
@@ -350,5 +351,144 @@ describe('evidenceCheckpointMessage', () => {
     expect(message).toContain('memory-1')
     expect(message).toMatch(/ask_user/i)
     expect(message).toContain('obs-2')
+  })
+})
+
+describe('subagent citations (#123)', () => {
+  const SUBAGENT_ARGS = {
+    kind: 'subagent',
+    agent_id: 'a-2',
+    observation: 'The rival router costs $29.',
+    source_url: 'https://rival.example/router',
+  }
+
+  /** A worker-report-shaped record: the hidden provenance a report carried. */
+  function workerRecord(overrides: Partial<ObservationRecord> = {}): ObservationRecord {
+    return {
+      id: 'wobs-3' as ObservationRecord['id'],
+      at: 0,
+      producer: 'page_read',
+      ok: true,
+      payload: 'The rival router costs $29. Ships in 2 days.',
+      sourceUrl: 'https://rival.example/router',
+      ...overrides,
+    }
+  }
+
+  it('parses a subagent citation: agent id plus the source the worker observed', () => {
+    expect(parseEvidenceCitation(SUBAGENT_ARGS)).toEqual({
+      kind: 'subagent',
+      observation: 'The rival router costs $29.',
+      agentId: 'a-2',
+      sourceUrl: 'https://rival.example/router',
+    })
+    expect(parseEvidenceCitation({ ...SUBAGENT_ARGS, excerpt: 'costs $29', uncertainty: 'promo may vary', volatile: true })).toEqual({
+      kind: 'subagent',
+      observation: 'The rival router costs $29.',
+      agentId: 'a-2',
+      sourceUrl: 'https://rival.example/router',
+      excerpt: 'costs $29',
+      uncertainty: 'promo may vary',
+      volatile: true,
+    })
+  })
+
+  it('rejects subagent citations without an agent id, and web/user citations carrying one', () => {
+    expect(parseEvidenceCitation({ ...SUBAGENT_ARGS, agent_id: '' })).toBeNull()
+    expect(parseEvidenceCitation({ ...SUBAGENT_ARGS, agent_id: 7 })).toBeNull()
+    expect(parseEvidenceCitation({ observation: 'The rival router costs $29.', source_url: 'https://rival.example/router', agent_id: 'a-2' })).toBeNull() // a web citation carrying agent_id
+    expect(parseEvidenceCitation({ ...GROUNDED_ARGS, agent_id: 'a-2' })).toBeNull()
+    expect(parseEvidenceCitation({ ...USER_ARGS, agent_id: 'a-2' })).toBeNull()
+    expect(parseEvidenceCitation({ ...SUBAGENT_ARGS, volatile: 'yes' })).toBeNull()
+  })
+
+  it('commits a selected finding with Run and Subagent provenance, trust rules unchanged (#123)', () => {
+    const store = evidenceHarness()
+    const outcome = evaluateEvidenceCheckpoint(callOf(SUBAGENT_ARGS), {
+      records: [],
+      commitSubagent: (agentId) => subagentEvidenceCommit(() => store, 'run-1' as RunId, agentId),
+      workerObservations: (agentId) => (agentId === 'a-2' ? [workerRecord()] : null),
+    })
+
+    expect(outcome).toEqual({
+      ok: true,
+      entryId: 'memory-1',
+      merged: false,
+      sourceObservationId: 'wobs-3',
+      sourceUrl: 'https://rival.example/router',
+      agentId: 'a-2',
+      contradicts: [],
+    })
+    // Stored exactly like a direct web checkpoint — one Observation, web
+    // source kind — except the provenance carries the worker too.
+    expect(store.snapshot().observations).toEqual([expect.objectContaining({
+      id: 'memory-1',
+      sourceKind: 'web',
+      text: 'The rival router costs $29.',
+      references: [{ url: 'https://rival.example/router' }],
+      provenance: [{ runId: 'run-1', subagentId: 'a-2' }],
+    })])
+    const message = evidenceCheckpointMessage(outcome)
+    expect(message).toContain('memory-1')
+    expect(message).toContain('a-2')
+  })
+
+  it('merges a subagent checkpoint into an identical direct one, accumulating both provenance', () => {
+    const store = evidenceHarness()
+    const direct = evaluateEvidenceCheckpoint(callOf({
+      observation: 'The rival router costs $29.',
+      source_url: 'https://rival.example/router',
+      excerpt: 'costs $29',
+    }), { records: [workerRecord()], commit: commitOver(store) })
+    expect(direct).toMatchObject({ ok: true, entryId: 'memory-1' })
+
+    const viaWorker = evaluateEvidenceCheckpoint(callOf(SUBAGENT_ARGS), {
+      records: [],
+      commitSubagent: (agentId) => subagentEvidenceCommit(() => store, 'run-1' as RunId, agentId),
+      workerObservations: () => [workerRecord()],
+    })
+    expect(viaWorker).toMatchObject({ ok: true, entryId: 'memory-1', merged: true })
+    expect(store.snapshot().observations).toHaveLength(1)
+    expect(store.snapshot().observations[0]?.provenance).toEqual([{ runId: 'run-1' }, { runId: 'run-1', subagentId: 'a-2' }])
+  })
+
+  it('rejects an unknown agent and a source that worker never observed', () => {
+    const store = evidenceHarness()
+    const deps = {
+      records: [],
+      commitSubagent: (agentId: string) => subagentEvidenceCommit(() => store, 'run-1' as RunId, agentId),
+      workerObservations: (agentId: string) => (agentId === 'a-2' ? [workerRecord()] : null),
+    }
+
+    expect(evaluateEvidenceCheckpoint(callOf({ ...SUBAGENT_ARGS, agent_id: 'a-9' }), deps)).toMatchObject({ ok: false, reason: 'unknown_agent' })
+    expect(evaluateEvidenceCheckpoint(callOf({ ...SUBAGENT_ARGS, source_url: 'https://other.example/x' }), deps)).toMatchObject({ ok: false, reason: 'unknown_source' })
+    expect(store.snapshot().observations).toEqual([])
+  })
+
+  it('validates an offered excerpt against what the worker retained; omission is allowed', () => {
+    const store = evidenceHarness()
+    const deps = {
+      records: [],
+      commitSubagent: (agentId: string) => subagentEvidenceCommit(() => store, 'run-1' as RunId, agentId),
+      workerObservations: () => [workerRecord()],
+    }
+
+    // The citing model saw the report, not the tool results: no excerpt
+    // demanded, but a wrong one never grounds.
+    expect(evaluateEvidenceCheckpoint(callOf(SUBAGENT_ARGS), deps)).toMatchObject({ ok: true, entryId: 'memory-1' })
+    expect(evaluateEvidenceCheckpoint(callOf({ ...SUBAGENT_ARGS, excerpt: 'costs $59' }), deps)).toMatchObject({ ok: false, reason: 'excerpt_unsupported' })
+    expect(evaluateEvidenceCheckpoint(callOf({ ...SUBAGENT_ARGS, excerpt: 'costs $29' }), deps)).toMatchObject({ ok: true, merged: true })
+    expect(store.snapshot().observations).toHaveLength(1)
+  })
+
+  it('marks declared-volatile subagent findings volatile (#123)', () => {
+    const store = evidenceHarness()
+    const outcome = evaluateEvidenceCheckpoint(callOf({ ...SUBAGENT_ARGS, volatile: true }), {
+      records: [],
+      commitSubagent: (agentId) => subagentEvidenceCommit(() => store, 'run-1' as RunId, agentId),
+      workerObservations: () => [workerRecord()],
+    })
+    expect(outcome).toMatchObject({ ok: true })
+    expect(store.snapshot().observations[0]?.volatile).toBe(true)
   })
 })

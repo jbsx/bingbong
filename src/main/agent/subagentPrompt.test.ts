@@ -38,6 +38,13 @@ describe('subagent prompt on-screen browsing', () => {
     expect(line).toMatch(/active-work deadline/)
     expect(line).toMatch(/stop calling tools and reply immediately with your final report JSON/)
   })
+
+  it('grounds findings in sources the worker itself opened — unobserved citations are dropped (#123)', () => {
+    const line = SUBAGENT_SYSTEM_PROMPT.split('\n').find((candidate) => candidate.includes('"findings" holds'))
+    if (!line) throw new Error('findings line missing from the subagent prompt')
+    expect(line).toMatch(/source URLs you actually opened/)
+    expect(line).toMatch(/finding citing a source you never opened is dropped/)
+  })
 })
 
 // #103: the per-Run runtime context. The subagent prompt is built per spawn

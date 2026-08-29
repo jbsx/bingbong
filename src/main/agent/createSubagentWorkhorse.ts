@@ -130,6 +130,11 @@ export function createSubagentTaskApi(deps: SubagentWorkhorseDeps): SubagentTask
           // gate (#81) classifies non-navigate browser calls by it, the
           // same seam the orchestrator uses for its main pane.
           ...(controller ? { currentHost: () => hostFromUrl(controller.state().url ?? '') } : {}),
+          // The URL this agent's own tab is on (#123): the source URL on
+          // the worker's page-facing Observations — what its report's
+          // findings and the orchestrator's Evidence Checkpoint for them
+          // ground against.
+          ...(controller ? { currentPageUrl: () => controller.state().url ?? null } : {}),
         },
         {
           task: spec.task,

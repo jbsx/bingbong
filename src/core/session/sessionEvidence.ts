@@ -48,6 +48,14 @@ export interface SessionObservation {
   readonly text: string
   readonly observedAt: number
   readonly uncertainty?: string
+  /**
+   * Time-sensitive, duration-uncertain, or action-critical evidence
+   * (#123, ADR 0028): present only when true. Volatile Observations may
+   * be reused within the Session, but a `completed` Resolution cannot
+   * stand on them alone in a later Run until their source is revalidated.
+   * Derived from declared volatility or the presence of uncertainty.
+   */
+  readonly volatile?: boolean
   readonly references: readonly MemoryReference[]
   readonly provenance: readonly MemoryProvenance[]
   /**
@@ -93,6 +101,8 @@ export interface ObservationCheckpointInput {
   readonly text: string
   readonly observedAt?: number
   readonly uncertainty?: string
+  /** Declared volatility (#123): the store also marks uncertain evidence volatile. */
+  readonly volatile?: boolean
   readonly references?: readonly MemoryReference[]
   readonly runId: RunId
   readonly subagentId?: string
@@ -157,6 +167,7 @@ interface MutableObservation {
   text: string
   observedAt: number
   uncertainty?: string
+  volatile?: boolean
   references: MemoryReference[]
   provenance: MemoryProvenance[]
   originEvent?: UserObservationOrigin
@@ -204,6 +215,7 @@ function freezeObservation(observation: MutableObservation): SessionObservation 
     text: observation.text,
     observedAt: observation.observedAt,
     ...(observation.uncertainty !== undefined ? { uncertainty: observation.uncertainty } : {}),
+    ...(observation.volatile === true ? { volatile: true } : {}),
     references: Object.freeze(observation.references.map((reference) => Object.freeze({ ...reference }))),
     provenance: Object.freeze(observation.provenance.map((source) => Object.freeze({ ...source }))),
     ...(observation.originEvent !== undefined ? { originEvent: Object.freeze({ ...observation.originEvent }) } : {}),
@@ -281,11 +293,16 @@ export function createSessionEvidence(deps: {
       const originEvent = validOriginEvent(input)
       if (!text || uncertainty === null || !references || !source || originEvent === 'invalid') return null
       const observedAt = input.observedAt ?? deps.now()
+      // Volatility (#123, ADR 0028): declared time-sensitive or
+      // action-critical, or uncertain — uncertain evidence is exactly the
+      // kind a later Run must revalidate before completing on it.
+      const volatile = input.volatile === true || uncertainty !== undefined
 
       const duplicateKey = observationKey({ sourceKind: input.sourceKind, text, references })
       const duplicate = observations.find((observation) => observationKey(observation) === duplicateKey)
       if (duplicate) {
         duplicate.provenance = appendProvenance(duplicate.provenance, source)
+        if (volatile) duplicate.volatile = true
         return { observation: freezeObservation(duplicate), merged: true, contradicts: [] }
       }
 
@@ -299,6 +316,7 @@ export function createSessionEvidence(deps: {
         provenance: [source],
         ...(originEvent !== null ? { originEvent } : {}),
         ...(uncertainty !== undefined ? { uncertainty } : {}),
+        ...(volatile ? { volatile: true } : {}),
       }
       observations.push(observation)
       return {

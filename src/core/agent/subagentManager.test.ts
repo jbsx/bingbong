@@ -485,6 +485,36 @@ describe('subagent manager', () => {
     const backgroundBlock = merged.split('\n\n').find((block) => block.startsWith('a-2'))!
     expect(backgroundBlock).toBe('a-2 [background] completed — file the receipts\nreport:\nReceipts filed.')
   })
+
+  it('keeps worker observations hidden — agent_results renders findings and prose, never provenance records (#123)', async () => {
+    const { mgr, api } = manager()
+
+    mgr.spawn('browse', 'check the rival page')
+    api.tasks.get('a-1')!.resolve({
+      text: 'Rival report prose.',
+      findings: [{ subject: 'Price', detail: 'The rival router costs $29.', references: [{ url: 'https://rival.example/router' }] }],
+      unresolved: [],
+      observations: [{
+        id: 'wobs-1' as never,
+        at: 0,
+        producer: 'page_read',
+        ok: true,
+        payload: 'SECRET RETAINED PAGE TEXT wobs-1',
+        sourceUrl: 'https://rival.example/router',
+      }],
+    })
+    await flush()
+
+    const merged = await mgr.results({})
+    expect(merged).toContain('findings:\n- Price: The rival router costs $29.')
+    expect(merged).toContain('report:\nRival report prose.')
+    // The retained records are machine provenance for the checkpoint seam
+    // — no observation payload or identity reaches the model-facing text.
+    expect(merged).not.toContain('wobs-1')
+    expect(merged).not.toContain('SECRET RETAINED PAGE TEXT')
+    // The record itself stays available to the runtime's checkpoint seam.
+    expect(mgr.list().find((record) => record.id === 'a-1')?.report?.observations).toHaveLength(1)
+  })
 })
 
 // #97: Sessions own their subagents outright. retire() is the Session-end

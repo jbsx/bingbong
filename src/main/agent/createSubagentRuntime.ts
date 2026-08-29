@@ -6,6 +6,7 @@ import type { PipelineEvent } from '../../core/pipeline/events'
 import type { Tool } from '../../core/pipeline/tool'
 import type { UsageRecord } from '../../core/agent/usageTracking'
 import type { PerfTracer } from '../../core/perf/perfTracer'
+import type { ObservationRecord } from '../../core/session/observationLedger'
 import type { SubagentOwner } from '../../core/agent/subagentManager'
 import { SUBAGENT_LIMITS } from '../../core/agent/subagentRails'
 import { createSubagentManager } from '../../core/agent/subagentManager'
@@ -71,6 +72,13 @@ export interface SubagentRuntime {
   /** Direct card-cancel path (the dashboard button) — no LLM round-trip. */
   cancel(agentId: string): boolean
   cancelAll(): number
+  /**
+   * A completed worker's retained Observations (#123, ADR 0028): the
+   * hidden provenance its report carried — what the orchestrator's
+   * kind "subagent" Evidence Checkpoint grounds against. Null when the
+   * agent is unknown or retained nothing.
+   */
+  observationsFor(agentId: string): readonly ObservationRecord[] | null
   /**
    * Session end (#97): cancel every running agent, discard its pending
    * reports, and close + drop its tabs and panes. The runtime stays
@@ -164,6 +172,7 @@ export function createSubagentRuntime(deps: SubagentRuntimeDeps): SubagentRuntim
     pool,
     cancel: (agentId) => manager.cancel(agentId).ok,
     cancelAll: () => manager.cancelAll(),
+    observationsFor: (agentId) => manager.list().find((record) => record.id === agentId)?.report?.observations ?? null,
     retire: () => {
       // Agents stop initiating work first; their transient tabs close and
       // drop without the linger, which destroys the panes' webContents and

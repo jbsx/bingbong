@@ -48,6 +48,8 @@ describe('session evidence', () => {
         text: 'The Acme router costs $39.',
         observedAt: 500,
         uncertainty: 'price shown in a cached cart',
+        // Uncertain evidence is volatile by derivation (#123).
+        volatile: true,
         references: [webReference],
         provenance: [{ runId: 'run-1', subagentId: 'a-2' }],
       },
@@ -294,5 +296,31 @@ describe('session evidence', () => {
     expect(Object.isFrozen(snapshot)).toBe(true)
     expect(Object.isFrozen(snapshot.observations)).toBe(true)
     expect(Object.isFrozen(snapshot.observations[0]!.references)).toBe(true)
+  })
+
+  it('marks declared-volatile and uncertain Observations volatile; durable ones carry no flag (#123)', () => {
+    const { evidence } = evidenceHarness()
+    const durable = evidence.checkpointObservation(webObservation('Durable fact.'))!.observation
+    const declared = evidence.checkpointObservation({ ...webObservation('Stock is 3 units.'), volatile: true })!.observation
+    const uncertain = evidence.checkpointObservation({
+      ...webObservation('Price may have changed.'),
+      uncertainty: 'seen in a cached cart',
+    })!.observation
+
+    expect(durable.volatile).toBeUndefined()
+    expect(declared.volatile).toBe(true)
+    expect(uncertain.volatile).toBe(true)
+  })
+
+  it('a volatile duplicate merge turns the shared Observation volatile (#123)', () => {
+    const { evidence } = evidenceHarness()
+    const first = evidence.checkpointObservation(webObservation('Stock is 3 units.'))!.observation
+    expect(first.volatile).toBeUndefined()
+
+    const merged = evidence.checkpointObservation({ ...webObservation('Stock is 3 units.'), volatile: true })!
+    expect(merged.merged).toBe(true)
+    expect(merged.observation.id).toBe(first.id)
+    expect(merged.observation.volatile).toBe(true)
+    expect(evidence.snapshot().observations).toHaveLength(1)
   })
 })

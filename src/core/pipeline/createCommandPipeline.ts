@@ -9,7 +9,7 @@ import type { TtsSpeaker } from '../ports/tts'
 import { spokenErrorLine } from '../agent/answerContract'
 import type { LearnedTermsControls } from '../voice/learnedTerms'
 import { MAX_RUN_NOTE_CHARS, finalizeRun, type FinalizationCause, type RunFinalization, type RunJournalEntry, type RunJournalSnapshot } from '../session/runJournal'
-import type { MemoryPatch, WorkingMemorySnapshot } from '../session/workingMemory'
+import type { MemoryEntryId, MemoryPatch, WorkingMemorySnapshot } from '../session/workingMemory'
 import type { PerfTracer } from '../perf/perfTracer'
 import { createTurnIdSource } from '../perf/perfTracer'
 import type { BrowserSubspans } from '../perf/browserSubspans'
@@ -52,18 +52,20 @@ import {
 import {
   createObservationLedger,
   type ObservationInput,
-  type ObservationProducer,
   type ObservationRecord,
 } from '../session/observationLedger'
+import { classifyToolObservation } from './toolObservations'
 import type { SessionEvidenceSnapshot, SessionEvidenceStore, ObservationCheckpointResult } from '../session/sessionEvidence'
 import type { RunId, SessionGeneration } from '../session/sessionIdentity'
 import {
   evaluateEvidenceCheckpoint,
+  subagentEvidenceCommit,
   userEvidenceCommit,
   type EvidenceCheckpointOutcome,
   type EvidenceCommit,
   type EvidenceCommitInput,
 } from './evidenceCheckpoint'
+import { completedEvidenceIsFresh } from './evidenceFreshness'
 import { evaluateCandidateCheckpoint, type CandidateCheckpointOutcome, type EvidenceSessionSource } from './candidateCheckpoint'
 import { deriveAnswerSources, displayedAnswerText } from './answerEvidence'
 
@@ -104,6 +106,13 @@ export interface CommandPipelineDeps {
    * Run's Observation ledger. Absent, observations carry no source URL.
    */
   currentPageUrl?: () => string | null
+  /**
+   * Delegated workers' retained observations (#123, ADR 0028): the hidden
+   * provenance a completed worker's report carried, by agent id — what a
+   * kind "subagent" Evidence Checkpoint grounds its citation against.
+   * Absent, subagent citations fail recoverably (unknown agent).
+   */
+  subagentObservations?: (agentId: string) => readonly ObservationRecord[] | null
   /**
    * Observation ledger sink (#111): every record the run's ledger accepts
    * — diagnostic only, the ledger itself is private Run Working State and
@@ -219,46 +228,6 @@ export const ASK_TIMEOUT_MS = 45_000
 const DEFAULT_MAX_TOOL_ROUNDS = MAX_TOOL_ROUNDS_DEFAULT
 
 const STEERED_CANCELLED = 'cancelled by the user\'s steering'
-
-/** How one tool call lands in the Observation ledger (#111). */
-interface ToolObservationClass {
-  readonly producer: ObservationProducer
-  /**
-   * Whether the observation records the visible tab's URL as its source.
-   * Page-facing tools observe a page; everything else (panel, settings,
-   * app, session, delegation, headline bookkeeping) observes app state.
-   */
-  readonly pageFacing: boolean
-}
-
-/** How a tool that observes a page lands in the ledger. */
-const PAGE_OBSERVATION: ToolObservationClass = { producer: 'action_outcome', pageFacing: true }
-
-/**
- * The one classification table (#111): tools whose observations carry a
- * producer kind other than the default or no page source. Unlisted tools
- * fall through to the plain action-outcome class.
- */
-const TOOL_OBSERVATION_CLASSES: Readonly<Record<string, ToolObservationClass>> = {
-  read_page: { producer: 'page_read', pageFacing: true },
-  look: { producer: 'look', pageFacing: true },
-  agent_results: { producer: 'subagent_report', pageFacing: false },
-  navigate: PAGE_OBSERVATION,
-  click: PAGE_OBSERVATION,
-  type: PAGE_OBSERVATION,
-  scroll: PAGE_OBSERVATION,
-  screenshot: PAGE_OBSERVATION,
-  back: PAGE_OBSERVATION,
-  go_forward: PAGE_OBSERVATION,
-  ground_visual: PAGE_OBSERVATION,
-  media_control: PAGE_OBSERVATION,
-}
-
-const DEFAULT_TOOL_OBSERVATION: ToolObservationClass = { producer: 'action_outcome', pageFacing: false }
-
-function classifyToolObservation(name: string): ToolObservationClass {
-  return TOOL_OBSERVATION_CLASSES[name] ?? DEFAULT_TOOL_OBSERVATION
-}
 
 function toErrorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err)
@@ -608,6 +577,13 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
     // live Observations — including ones this Run checkpointed
     // mid-flight.
     const evidenceSession: EvidenceSessionSource | undefined = continuity?.evidenceSession
+    // Admission evidence identities (#123): which Observations this Run
+    // starts beside — anything else in the live store was checkpointed
+    // mid-Run, so it is fresh by construction. The staleness gate reads
+    // this; the admission snapshot itself stays immutable (#121).
+    const admissionEvidenceIds = new Set<MemoryEntryId>(
+      (continuity?.evidence?.observations ?? []).map((observation) => observation.id),
+    )
     // One epoch re-arm (#117/#119): a tier change — first declaration,
     // escalation, or a Steering replan — starts fresh budget, warnings,
     // and active-work deadline. Cumulative `rounds` and recorded
@@ -711,6 +687,16 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
               return session === null ? null : userEvidenceCommit(() => session.store, session.runId)(input)
             }
           : undefined
+        // The Subagent-finding commit (#123): the same Session seam, plus
+        // the worker's id as Subagent provenance — the store stamps both.
+        // Like the user commit, the store is resolved per call, so a
+        // Session that ended refuses instead of writing into the void.
+        const commitSubagent: ((agentId: string) => EvidenceCommit) | undefined = evidenceSession
+          ? (agentId) => (input) => {
+              const session = evidenceSession()
+              return session === null ? null : subagentEvidenceCommit(() => session.store, session.runId, agentId)(input)
+            }
+          : undefined
         const checkpointEvidenceHandler: ((call: ToolCall) => EvidenceCheckpointOutcome) | undefined =
           continuity?.checkpointEvidence || commitUser
             ? (call) =>
@@ -718,6 +704,8 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
                   records: ledger.snapshot(),
                   ...(continuity?.checkpointEvidence ? { commit: continuity.checkpointEvidence } : {}),
                   ...(commitUser ? { commitUser } : {}),
+                  ...(commitSubagent ? { commitSubagent } : {}),
+                  ...(deps.subagentObservations ? { workerObservations: deps.subagentObservations } : {}),
                 })
             : undefined
         const checkpointCandidateHandler: ((call: ToolCall) => CandidateCheckpointOutcome) | undefined = evidenceSession
@@ -1271,12 +1259,38 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
       // Answer completes as `done` whatever Resolution it proposes, and a
       // cancelled, plain-error, or reset run finalizes nothing. A
       // reset-consumed run commits nothing and reports nothing (#99).
+      //
+      // Freshness (#123, ADR 0028): volatile Observations admitted with
+      // this Run — time-sensitive, action-critical, or checkpointed with
+      // uncertainty — cannot alone support `completed`. When every cited
+      // Observation is volatile and none was revalidated (its source
+      // re-observed this Run) or checkpointed mid-Run, the recorded
+      // Resolution honestly degrades to `partial`; stable evidence and
+      // revalidated evidence complete as proposed.
+      let proposedResolution = finalAnswer?.resolution ?? null
+      if (
+        runOutcome === 'done' &&
+        proposedResolution === 'completed' &&
+        finalAnswer?.evidenceIds !== undefined &&
+        evidenceSession !== undefined
+      ) {
+        const session = evidenceSession()
+        const fresh =
+          session !== null &&
+          completedEvidenceIsFresh({
+            cited: finalAnswer.evidenceIds,
+            resolve: (id) => session.store.observation(id),
+            admissionIds: admissionEvidenceIds,
+            runRecords: ledger.snapshot(),
+          })
+        if (!fresh) proposedResolution = 'partial'
+      }
       const finalization: RunFinalization | null = resetConsumed
         ? null
         : finalizeRun({
             mechanicalCause,
             answered: runOutcome === 'done' && finalAnswer !== undefined,
-            proposedResolution: finalAnswer?.resolution ?? null,
+            proposedResolution,
             proposedCause: finalAnswer?.finalizationCause ?? null,
           })
       yield {

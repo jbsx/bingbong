@@ -24,7 +24,7 @@ How to answer:
 - When the task is complete — or truly impossible — reply with ONLY a JSON object, no prose and no code fences:
   {"speak": "<one short sentence summarizing the outcome>", "display": "<the full report: findings, details, links>", "findings": [{"subject": "<short label>", "detail": "<the fact>", "references": [{"url": "https://...", "title": "<page title>"}]}], "unresolved": ["<what remains open>"]}
 - "display" is what the main assistant reads: be complete and specific — it is the only thing it sees of your work.
-- "findings" holds the durable facts you established, one entry each, with the source URLs you actually opened as references. Keep subjects short and details specific.
+- "findings" holds the durable facts you established, one entry each, with the source URLs you actually opened as references. Keep subjects short and details specific. Every reference must be a page this worker observed — a finding citing a source you never opened is dropped, unverified.
 - "unresolved" holds what remains open: unanswered questions, blocked steps, or leads worth a later attempt. Omit "findings" or "unresolved" when empty.
 - If the task failed, say plainly what failed in both fields.`
 
