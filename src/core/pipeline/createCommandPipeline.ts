@@ -55,7 +55,9 @@ import {
   type ObservationProducer,
   type ObservationRecord,
 } from '../session/observationLedger'
+import type { SessionEvidenceSnapshot, ObservationCheckpointResult } from '../session/sessionEvidence'
 import type { SessionGeneration } from '../session/sessionIdentity'
+import { evaluateEvidenceCheckpoint, type EvidenceCheckpointOutcome, type EvidenceCommitInput } from './evidenceCheckpoint'
 
 export interface CommandPipelineDeps {
   llm: LlmClient
@@ -322,6 +324,13 @@ export interface RunContinuityContext {
   readonly snapshot: RunJournalSnapshot
   readonly memory: WorkingMemorySnapshot
   /**
+   * The Session Evidence snapshot accepted with this Run's admission
+   * (#121, ADR 0028): immutable for the Run's lifetime — mid-Run
+   * checkpoints join the Session store and later admissions, never this
+   * snapshot.
+   */
+  readonly evidence?: SessionEvidenceSnapshot
+  /**
    * The Session generation this Run was admitted under (#111): the
    * Observation ledger's staleness guard. Absent in tests that carry no
    * runtime; production always passes it from admission.
@@ -332,6 +341,14 @@ export interface RunContinuityContext {
     note: string,
     patch: MemoryPatch,
   ): 'committed' | 'invalid_patch' | 'rejected'
+  /**
+   * The Evidence Checkpoint commit seam (#121, ADR 0028): stores one
+   * Run-validated grounded Observation in the live Session's store under
+   * this Run's provenance. Returns the store's verdict — null means the
+   * Session refused (ended, sealed, or out-of-bounds fields). Absent when
+   * the run carries no evidence continuity.
+   */
+  checkpointEvidence?(input: EvidenceCommitInput): ObservationCheckpointResult | null
 }
 
 /**
@@ -678,6 +695,21 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
                   selectDelegatedMemory(continuity.memory, ids),
               }
             : {}),
+          ...(continuity?.checkpointEvidence
+            ? {
+                // The Evidence Checkpoint seam (#121): the Run's Observation
+                // ledger grounds the citation — the cited source must have
+                // been observed this Run, the excerpt must appear in what
+                // that observation retained — before the Session side
+                // stores anything. Invalid citations fail recoverably and
+                // mutate no Session state.
+                checkpointEvidence: (call: ToolCall): EvidenceCheckpointOutcome =>
+                  evaluateEvidenceCheckpoint(call, {
+                    records: ledger.snapshot(),
+                    commit: continuity.checkpointEvidence,
+                  }),
+              }
+            : {}),
           ...(emitDetail
             ? {
                 // Progress detail (#43): what the run waits on, live.
@@ -758,6 +790,10 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
               turnId,
               ...(continuity ? { journal: continuity.snapshot } : {}),
               ...(continuity ? { memory: continuity.memory } : {}),
+              // Checkpointed Session Evidence this Run starts beside (#121):
+              // the immutable admission snapshot — mid-Run checkpoints ride
+              // tool results, later Runs' admissions.
+              ...(continuity?.evidence ? { evidence: continuity.evidence } : {}),
               ...(steering ? { steering } : {}),
               // Retry visibility (#43): each attempt beyond the first is a
               // detail event on the side channel — emitted before the next

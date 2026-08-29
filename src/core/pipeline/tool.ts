@@ -3,6 +3,7 @@ import type { Clock } from '../ports/clock'
 import type { SubagentSharedDeadline, VisionGrant } from '../agent/subagentRails'
 import type { WorkingMemorySnapshot } from '../session/workingMemory'
 import type { EffortTier } from './runPlan'
+import type { EvidenceCheckpointOutcome } from './evidenceCheckpoint'
 
 export interface ToolContext {
   clock: Clock
@@ -40,6 +41,15 @@ export interface ToolContext {
    * by design; the store is never exposed whole).
    */
   selectMemoryEntries?(ids: readonly string[]): WorkingMemorySnapshot
+  /**
+   * The Run's Evidence Checkpoint seam (#121, ADR 0028): validates one
+   * record_evidence call against the Run's Observation ledger — the cited
+   * source must have been observed this Run, the excerpt must appear in
+   * what that observation retained — and commits the grounded Observation
+   * into Session Evidence when it holds. Absent when the run carries no
+   * evidence continuity; the tool then fails recoverably.
+   */
+  checkpointEvidence?(call: ToolCall): EvidenceCheckpointOutcome
 }
 
 /** Parameter description for the tool catalog sent to the model. */
@@ -82,8 +92,8 @@ export interface Tool {
   /**
    * An acquisition tool (#117, ADR 0027): browser, vision, media, or
    * delegation work that gathers evidence or changes external state.
-   * Finalization closes these — only Run Plan bookkeeping (and later
-   * record_evidence) remains available once a Run's work budget is spent.
+   * Finalization closes these — only Run Plan bookkeeping and
+   * record_evidence remain available once a Run's work budget is spent.
    */
   acquisition?: boolean
   /**

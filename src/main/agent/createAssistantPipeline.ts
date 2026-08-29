@@ -8,6 +8,7 @@ import type { PipelineEvent } from '../../core/pipeline/events'
 import type { Tool } from '../../core/pipeline/tool'
 import { createAskUserTool } from '../../core/pipeline/askUserTools'
 import { createReportRunPlanTool } from '../../core/pipeline/runPlanTools'
+import { createRecordEvidenceTool } from '../../core/pipeline/evidenceTools'
 import { createBrowserTools } from '../../core/pipeline/browserTools'
 import { hostFromUrl } from '../../core/pipeline/blockerGate'
 import { createVisionGroundingTools } from '../../core/pipeline/visionGroundingTools'
@@ -211,6 +212,11 @@ export function createAssistantPipeline(deps: AssistantPipelineDeps): CommandPip
     // objective, Run Headline, and Effort Tier; the pipeline re-emits
     // them for the Peek Card, policy, and telemetry.
     createReportRunPlanTool(),
+    // The Evidence Checkpoint (#121, ADR 0028): grounded web Observations
+    // enter Session Evidence mid-Run and survive the Run's outcome.
+    // Orchestrator-only — Subagents report findings; the orchestrator
+    // checkpoints them.
+    createRecordEvidenceTool(),
     ...createBrowserTools(deps.controller, vision),
     ...createVisionGroundingTools(deps.controller, vision),
     ...createMediaTools(deps.controller),

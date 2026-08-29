@@ -16,6 +16,12 @@ import type { AssistantTurn, LlmClient, LlmRequest, ToolCall } from '../ports/ll
 import type { Tool } from './tool'
 import type { WorkingMemorySnapshot } from '../session/workingMemory'
 import { createSubagentTools } from './subagentTools'
+import { createRecordEvidenceTool } from './evidenceTools'
+import { webEvidenceCommit } from './evidenceCheckpoint'
+import type { RunContinuityContext } from './createCommandPipeline'
+import { createSessionEvidence, type SessionEvidenceSnapshot, type SessionEvidenceStore } from '../session/sessionEvidence'
+import type { MemoryEntryId } from '../session/workingMemory'
+import type { RunId } from '../session/sessionIdentity'
 import { createPerfTracer, type PerfTracer } from '../perf/perfTracer'
 import { withPerfTracing } from '../perf/perfTracing'
 import { createBrowserSubspans } from '../perf/browserSubspans'
@@ -4845,5 +4851,371 @@ describe('observation ledger (#111)', () => {
 
     await runWithGeneration(1, 'current again')
     expect(observations.map((observation) => observation.id)).toEqual(['obs-1', 'obs-1'])
+  })
+})
+
+describe('evidence checkpoints (#121)', () => {
+  const PAGE_URL = 'https://shop.example/acme-router'
+  const PAGE_TEXT = 'Acme Wi-Fi Router\nPrice: $39 with free shipping over $25.'
+
+  function storeHarness(): SessionEvidenceStore {
+    let next = 0
+    return createSessionEvidence({
+      sessionId: 'session-1' as SessionId,
+      now: () => 0,
+      mintId: () => `memory-${++next}` as MemoryEntryId,
+    })
+  }
+
+  /** Continuity shaped like the command runner's: admission snapshot plus the live commit seam. */
+  function continuityFor(
+    store: SessionEvidenceStore,
+    evidence: SessionEvidenceSnapshot = store.snapshot(),
+    runId = 'run-1' as RunId,
+  ): RunContinuityContext {
+    return {
+      snapshot: [],
+      memory: [],
+      evidence,
+      generation: 0,
+      commit: () => 'committed',
+      checkpointEvidence: webEvidenceCommit(() => store, runId),
+    }
+  }
+
+  const readPage: Tool = { name: 'read_page', acquisition: true, async execute() { return PAGE_TEXT } }
+
+  async function collectWithContinuity(
+    pipeline: CommandPipeline,
+    command: string,
+    continuity: RunContinuityContext,
+  ): Promise<PipelineEvent[]> {
+    const events: PipelineEvent[] = []
+    for await (const raw of pipeline.execute(command, undefined, false, continuity)) {
+      events.push(withoutTurnId(raw))
+    }
+    return events
+  }
+
+  it('checkpoints a grounded web Observation immediately and returns its Memory Entry identity', async () => {
+    const store = storeHarness()
+    const admission = store.snapshot()
+    const observations: { producer: string; ok: boolean; payload: unknown }[] = []
+    const llm = new ScriptedLlm([
+      { kind: 'tool_calls', calls: [{ id: 'c1', name: 'read_page', args: {} }] },
+      { kind: 'tool_calls', calls: [{
+        id: 'c2',
+        name: 'record_evidence',
+        args: { observation: 'The Acme router costs $39.', source_url: PAGE_URL, excerpt: 'Price: $39' },
+      }] },
+      { kind: 'answer', speak: 'It costs $39.', display: 'The Acme router costs $39.' },
+    ])
+    const pipeline = createCommandPipeline({
+      llm,
+      tts: new RecordingTts(),
+      clock: new FakeClock(),
+      tools: [readPage, createRecordEvidenceTool()],
+      currentPageUrl: () => PAGE_URL,
+      onObservation: (record) => observations.push(record),
+    })
+
+    const events = await collectWithContinuity(pipeline, 'what does the acme router cost', continuityFor(store, admission))
+
+    // The tool result reports the identity; the Session holds the
+    // Observation with the citing source and the Run's provenance.
+    expect(events.find((e) => e.type === 'tool_result' && e.callId === 'c2')).toMatchObject({
+      ok: true,
+      result: expect.stringMatching(/memory-1[\s\S]*survives this run/),
+    })
+    expect(store.snapshot().observations).toEqual([{
+      id: 'memory-1',
+      sessionId: 'session-1',
+      sourceKind: 'web',
+      text: 'The Acme router costs $39.',
+      observedAt: 0,
+      references: [{ url: PAGE_URL }],
+      provenance: [{ runId: 'run-1' }],
+    }])
+    // The checkpoint result joined private Run Working State: its outcome
+    // is an Observation of this Run's ledger.
+    expect(observations.some((observation) =>
+      observation.producer === 'action_outcome' && observation.ok === true &&
+      typeof observation.payload === 'string' && observation.payload.includes('memory-1'),
+    )).toBe(true)
+    // The accepted Session snapshot stayed immutable for the Run's
+    // lifetime: the mid-Run checkpoint never rewrote its own context.
+    expect(llm.requests[2]?.evidence).toBe(admission)
+    expect(llm.requests[2]?.evidence?.observations).toEqual([])
+  })
+
+  it('hands checkpointed evidence to the follow-up Run after the originating Run ends done', async () => {
+    const store = storeHarness()
+    const first = new ScriptedLlm([
+      { kind: 'tool_calls', calls: [{ id: 'c1', name: 'read_page', args: {} }] },
+      { kind: 'tool_calls', calls: [{
+        id: 'c2',
+        name: 'record_evidence',
+        args: { observation: 'The Acme router costs $39.', source_url: PAGE_URL, excerpt: 'Price: $39' },
+      }] },
+      { kind: 'answer', speak: 'Noted.', display: 'Detail.' },
+    ])
+    const pipeline = createCommandPipeline({
+      llm: first,
+      tts: new RecordingTts(),
+      clock: new FakeClock(),
+      tools: [readPage, createRecordEvidenceTool()],
+      currentPageUrl: () => PAGE_URL,
+    })
+    const firstEvents = await collectWithContinuity(pipeline, 'check the price', continuityFor(store))
+    expect(firstEvents.at(-1)).toMatchObject({ type: 'done', outcome: 'done' })
+
+    // The follow-up Run is admitted against the now-updated store.
+    const second = new ScriptedLlm([{ kind: 'answer', speak: 'Still $39.', display: 'Still $39.' }])
+    const pipeline2 = createCommandPipeline({
+      llm: second,
+      tts: new RecordingTts(),
+      clock: new FakeClock(),
+      tools: [readPage, createRecordEvidenceTool()],
+      currentPageUrl: () => PAGE_URL,
+    })
+    await collectWithContinuity(pipeline2, 'the price again', continuityFor(store, store.snapshot(), 'run-2' as RunId))
+
+    expect(second.requests[0]?.evidence?.observations).toEqual([expect.objectContaining({
+      id: 'memory-1',
+      text: 'The Acme router costs $39.',
+      references: [{ url: PAGE_URL }],
+    })])
+  })
+
+  it('keeps checkpointed evidence after the originating Run fails', async () => {
+    const store = storeHarness()
+    // The script ends after the checkpoint round: the next model call
+    // rejects and the run fails — the checkpoint must already be stored.
+    const llm = new ScriptedLlm([
+      { kind: 'tool_calls', calls: [{ id: 'c1', name: 'read_page', args: {} }] },
+      { kind: 'tool_calls', calls: [{
+        id: 'c2',
+        name: 'record_evidence',
+        args: { observation: 'The Acme router costs $39.', source_url: PAGE_URL, excerpt: 'Price: $39' },
+      }] },
+    ])
+    const pipeline = createCommandPipeline({
+      llm,
+      tts: new RecordingTts(),
+      clock: new FakeClock(),
+      tools: [readPage, createRecordEvidenceTool()],
+      currentPageUrl: () => PAGE_URL,
+    })
+
+    const events = await collectWithContinuity(pipeline, 'find the price', continuityFor(store))
+
+    expect(events.at(-1)).toMatchObject({ type: 'done', outcome: 'failed' })
+    expect(events.some((e) => e.type === 'error')).toBe(true)
+    expect(store.snapshot().observations.map(({ id }) => id)).toEqual(['memory-1'])
+  })
+
+  it('keeps checkpointed evidence after the originating Run is cancelled', async () => {
+    const store = storeHarness()
+    const requests: LlmRequest[] = []
+    const parked = deferred<AssistantTurn>()
+    const scripted = [
+      { kind: 'tool_calls', calls: [{ id: 'c1', name: 'read_page', args: {} }] } as AssistantTurn,
+      { kind: 'tool_calls', calls: [{
+        id: 'c2',
+        name: 'record_evidence',
+        args: { observation: 'The Acme router costs $39.', source_url: PAGE_URL, excerpt: 'Price: $39' },
+      }] } as AssistantTurn,
+    ]
+    const llm: LlmClient = {
+      complete(request) {
+        requests.push(request)
+        return requests.length <= scripted.length ? Promise.resolve(scripted[requests.length - 1]!) : parked.promise
+      },
+    }
+    const pipeline = createCommandPipeline({
+      llm,
+      tts: new RecordingTts(),
+      clock: new FakeClock(),
+      tools: [readPage, createRecordEvidenceTool()],
+      currentPageUrl: () => PAGE_URL,
+    })
+
+    const run = collectWithContinuity(pipeline, 'find the price', continuityFor(store))
+    for (let attempt = 0; attempt < 200 && requests.length < 3; attempt += 1) await flush()
+    expect(requests).toHaveLength(3)
+    pipeline.abort()
+    parked.resolve({ kind: 'answer', speak: 'Stale.', display: 'Stale.' })
+    const events = await run
+
+    expect(events.at(-1)).toMatchObject({ type: 'done', outcome: 'cancelled' })
+    expect(store.snapshot().observations.map(({ id }) => id)).toEqual(['memory-1'])
+  })
+
+  it('fails an unobserved source recoverably, mutating no Session state, and the Run continues', async () => {
+    const store = storeHarness()
+    const llm = new ScriptedLlm([
+      { kind: 'tool_calls', calls: [{ id: 'c1', name: 'read_page', args: {} }] },
+      { kind: 'tool_calls', calls: [{
+        id: 'c2',
+        name: 'record_evidence',
+        args: { observation: 'Made up.', source_url: 'https://other.example/never-opened', excerpt: 'Price: $39' },
+      }] },
+      { kind: 'answer', speak: 'Recovered.', display: 'Recovered.' },
+    ])
+    const pipeline = createCommandPipeline({
+      llm,
+      tts: new RecordingTts(),
+      clock: new FakeClock(),
+      tools: [readPage, createRecordEvidenceTool()],
+      currentPageUrl: () => PAGE_URL,
+    })
+
+    const events = await collectWithContinuity(pipeline, 'find the price', continuityFor(store))
+
+    expect(events.find((e) => e.type === 'tool_result' && e.callId === 'c2')).toMatchObject({
+      ok: false,
+      error: expect.stringMatching(/not observed in this run/i),
+    })
+    expect(store.snapshot().observations).toEqual([])
+    // Recoverable: the Run kept going and answered.
+    expect(events.at(-1)).toMatchObject({ type: 'done', outcome: 'done' })
+  })
+
+  it('fails an unsupported excerpt recoverably without mutating Session state', async () => {
+    const store = storeHarness()
+    const llm = new ScriptedLlm([
+      { kind: 'tool_calls', calls: [{ id: 'c1', name: 'read_page', args: {} }] },
+      { kind: 'tool_calls', calls: [{
+        id: 'c2',
+        name: 'record_evidence',
+        args: { observation: 'Invented price.', source_url: PAGE_URL, excerpt: 'Price: $59' },
+      }] },
+      { kind: 'answer', speak: 'Recovered.', display: 'Recovered.' },
+    ])
+    const pipeline = createCommandPipeline({
+      llm,
+      tts: new RecordingTts(),
+      clock: new FakeClock(),
+      tools: [readPage, createRecordEvidenceTool()],
+      currentPageUrl: () => PAGE_URL,
+    })
+
+    const events = await collectWithContinuity(pipeline, 'find the price', continuityFor(store))
+
+    expect(events.find((e) => e.type === 'tool_result' && e.callId === 'c2')).toMatchObject({
+      ok: false,
+      error: expect.stringMatching(/excerpt does not appear/i),
+    })
+    expect(store.snapshot().observations).toEqual([])
+    expect(events.at(-1)).toMatchObject({ type: 'done', outcome: 'done' })
+  })
+
+  it('counts no Progress on failure: an invalid checkpoint never resets the search-loop streak, an accepted one does', async () => {
+    const store = storeHarness()
+    const SEARCH_URL = 'https://search.example/?q=acme+router+price'
+    const navigate: Tool = {
+      name: 'navigate',
+      acquisition: true,
+      async execute() {
+        return 'Results for acme router price\nAcme Wi-Fi Router — Price: $39'
+      },
+    }
+    const searchRound = (id: string): AssistantTurn => ({
+      kind: 'tool_calls',
+      calls: [{ id, name: 'navigate', args: { url: SEARCH_URL } }],
+    })
+    const llm = new ScriptedLlm([
+      searchRound('s1'),
+      searchRound('s2'),
+      searchRound('s3'),
+      searchRound('s4'),
+      searchRound('s5'),
+      // An invalid checkpoint (excerpt unsupported): recoverable, but not
+      // Progress — the search streak must survive it.
+      { kind: 'tool_calls', calls: [{
+        id: 'bad',
+        name: 'record_evidence',
+        args: { observation: 'Invented.', source_url: 'https://shop.example/acme-router', excerpt: 'Price: $59' },
+      }] },
+      // Sixth similar search: refused, because the streak never broke.
+      searchRound('s6'),
+      // An accepted checkpoint is Progress (#108): the streak resets…
+      { kind: 'tool_calls', calls: [{
+        id: 'good',
+        name: 'record_evidence',
+        args: { observation: 'The Acme router costs $39.', source_url: 'https://shop.example/acme-router', excerpt: 'Price: $39' },
+      }] },
+      // …so the same search runs again.
+      searchRound('s7'),
+      { kind: 'answer', speak: 'Done.', display: 'Done.' },
+    ])
+    const pipeline = createCommandPipeline({
+      llm,
+      tts: new RecordingTts(),
+      clock: new FakeClock(),
+      tools: [navigate, createRecordEvidenceTool()],
+      currentPageUrl: () => 'https://shop.example/acme-router',
+    })
+
+    const events = await collectWithContinuity(pipeline, 'find the price', continuityFor(store))
+
+    expect(events.find((e) => e.type === 'tool_result' && e.callId === 'bad')).toMatchObject({ ok: false })
+    expect(events.find((e) => e.type === 'tool_result' && e.callId === 's6')).toMatchObject({
+      ok: false,
+      error: expect.stringMatching(/Search loop limit/),
+    })
+    expect(events.find((e) => e.type === 'tool_result' && e.callId === 'good')).toMatchObject({ ok: true })
+    expect(events.find((e) => e.type === 'tool_result' && e.callId === 's7')).toMatchObject({ ok: true })
+    expect(events.at(-1)).toMatchObject({ type: 'done', outcome: 'done' })
+  })
+
+  it('stays available through Finalization while acquisition closes', async () => {
+    const store = storeHarness()
+    const directPlan = (id: string): ToolCall => ({
+      id,
+      name: 'report_run_plan',
+      args: { objective: 'Get the price', headline: 'Get the price', effort_tier: 'direct_action' },
+    })
+    const llm = new ScriptedLlm([
+      // Six Direct Action work rounds consume the tier budget.
+      ...Array.from({ length: 6 }, (_, i): AssistantTurn => ({
+        kind: 'tool_calls',
+        calls: [
+          ...(i === 0 ? [directPlan(`p${i}`)] : []),
+          { id: `w${i}`, name: 'read_page', args: {} },
+        ],
+      })),
+      // Finalization's one bookkeeping round: acquisition refused,
+      // record_evidence open — grounding predates the phase.
+      { kind: 'tool_calls', calls: [
+        { id: 'w6', name: 'read_page', args: {} },
+        {
+          id: 'c9',
+          name: 'record_evidence',
+          args: { observation: 'The Acme router costs $39.', source_url: PAGE_URL, excerpt: 'Price: $39' },
+        },
+      ] },
+      { kind: 'answer', speak: 'Partial.', display: 'Partial.', resolution: 'partial' },
+    ])
+    const pipeline = createCommandPipeline({
+      llm,
+      tts: new RecordingTts(),
+      clock: new FakeClock(),
+      tools: [createReportRunPlanTool(), readPage, createRecordEvidenceTool()],
+      currentPageUrl: () => PAGE_URL,
+    })
+
+    const events = await collectWithContinuity(pipeline, 'get the price', continuityFor(store))
+
+    expect(events.find((e) => e.type === 'tool_result' && e.callId === 'w6')).toMatchObject({
+      ok: false,
+      error: expect.stringMatching(/final answer JSON/),
+    })
+    expect(events.find((e) => e.type === 'tool_result' && e.callId === 'c9')).toMatchObject({
+      ok: true,
+      result: expect.stringContaining('memory-1'),
+    })
+    expect(events.at(-1)).toMatchObject({ type: 'done', outcome: 'done', finalizationCause: 'budget_exhausted' })
+    expect(store.snapshot().observations.map(({ id }) => id)).toEqual(['memory-1'])
   })
 })

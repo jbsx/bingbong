@@ -1,4 +1,5 @@
 import type { CommandPipeline } from '../../core/pipeline/createCommandPipeline'
+import { webEvidenceCommit } from '../../core/pipeline/evidenceCheckpoint'
 import type { Clock } from '../../core/ports/clock'
 import { createTurnIdSource, type PerfTracer } from '../../core/perf/perfTracer'
 import { emitTurnSummary } from '../../core/perf/turnSummary'
@@ -59,10 +60,20 @@ export function createAssistantCommandRunner(deps: {
           for await (const event of deps.pipeline.execute(command, currentTurnId, truncated, {
             snapshot: admission.journal,
             memory: admission.memory,
+            // Checkpointed Session Evidence this Run starts beside (#121):
+            // the immutable admission snapshot — mid-Run checkpoints join
+            // the Session store and later admissions, never this snapshot.
+            evidence: admission.evidence,
             // The Observation ledger's staleness guard (#111): the Session
             // generation this Run was admitted under.
             generation: admission.generation,
             commit: (outcome, note, patch) => deps.runtime.commitRunContinuity(admission.runId, outcome, note, patch),
+            // The Evidence Checkpoint commit seam (#121, ADR 0028): the one
+            // standard web-Observation commit over the live Session store,
+            // provenance stamped under this Run's identity. The store is
+            // resolved per call, so a Session that ended (Reset, Lapse)
+            // refuses later checkpoints instead of writing into the void.
+            checkpointEvidence: webEvidenceCommit(() => deps.runtime.evidenceStore(), admission.runId),
           })) {
             if (event.type === 'done' && event.outcome === 'reset') restartRequested = true
             if (deps.canPublish && !deps.canPublish()) break

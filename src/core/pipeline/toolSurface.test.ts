@@ -9,6 +9,7 @@ import { createSubagentTools } from './subagentTools'
 import { createPanelTools } from './panelTools'
 import { createAppControlTool, createSetSettingTool } from './settingsTools'
 import { createReportRunPlanTool } from './runPlanTools'
+import { createRecordEvidenceTool } from './evidenceTools'
 import { FakeAppControls, FakeBrowser, FakePanel, FakeSettings, FakeVision } from '../testing/doubles'
 
 const unusedVision = new FakeVision()
@@ -29,6 +30,7 @@ function orchestratorToolCatalog(): Tool[] {
     ...createVisionGroundingTools(new FakeBrowser(), unusedVision),
     ...createMediaTools(new FakeBrowser()),
     createReportRunPlanTool(),
+    createRecordEvidenceTool(),
   ]
 }
 
@@ -89,6 +91,7 @@ describe('orchestrator tool surface', () => {
         'ground_visual',
         'look',
         'media_control',
+        'record_evidence',
         'report_run_plan',
       ].sort(),
     )

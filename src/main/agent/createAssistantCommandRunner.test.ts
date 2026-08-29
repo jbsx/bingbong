@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import { createCommandPipeline, type CommandPipeline } from '../../core/pipeline/createCommandPipeline'
 import type { PipelineEvent } from '../../core/pipeline/events'
+import type { Tool } from '../../core/pipeline/tool'
+import { createRecordEvidenceTool } from '../../core/pipeline/evidenceTools'
+import type { SessionEvidenceSnapshot } from '../../core/session/sessionEvidence'
+import type { AssistantTurn, LlmClient } from '../../core/ports/llm'
 import { createFeedProjection } from '../../core/history/feedProjection'
 import { createFeedPanelStateFold } from '../../core/panel/feedPanelState'
 import { FakeClock, RecordingTts, ScriptedLlm } from '../../core/testing/doubles'
@@ -469,5 +473,76 @@ describe('assistant command runner', () => {
 
       expect(llm.requests[1]?.journal?.map((entry) => entry.text)).toEqual(['Researched keyboards.'])
     })
+  })
+
+  it('flows record_evidence checkpoints into later Runs and drops them at Session Reset (#121)', async () => {
+    const clock = new FakeClock(1_000)
+    const runtime = createSessionRuntime({ clock, identities: new DeterministicIdentities() })
+    const seenEvidence: (SessionEvidenceSnapshot | undefined)[] = []
+    const turns: AssistantTurn[] = [
+      { kind: 'tool_calls', calls: [{ id: 'c1', name: 'read_page', args: {} }] },
+      { kind: 'tool_calls', calls: [{
+        id: 'c2',
+        name: 'record_evidence',
+        args: {
+          observation: 'The Acme router costs $39.',
+          source_url: 'https://shop.example/acme-router',
+          excerpt: 'Price: $39',
+        },
+      }] },
+      { kind: 'answer', speak: 'It is $39.', display: 'It is $39.' },
+      { kind: 'answer', speak: 'Still $39.', display: 'Still $39.' },
+    ]
+    let served = 0
+    const llm: LlmClient = {
+      complete(request) {
+        seenEvidence.push(request.evidence)
+        return Promise.resolve(turns[served++] ?? { kind: 'answer', speak: 'Done.', display: 'Done.' })
+      },
+    }
+    const readPage: Tool = {
+      name: 'read_page',
+      acquisition: true,
+      async execute() {
+        return 'Acme Wi-Fi Router\nPrice: $39 with free shipping over $25.'
+      },
+    }
+    const pipeline = createCommandPipeline({
+      llm,
+      tts: new RecordingTts(),
+      clock,
+      tools: [readPage, createRecordEvidenceTool()],
+      currentPageUrl: () => 'https://shop.example/acme-router',
+    })
+    const runner = createAssistantCommandRunner({
+      pipeline,
+      runtime,
+      clock,
+      onSessionReset: () => {},
+      createRunPublisher: () => ({ publish: () => {} }),
+      publishFeedback: () => {},
+    })
+
+    await runner.run('what does the acme router cost')
+    await runner.run('the price again')
+
+    // Run 1 started beside an empty Session; its checkpoint — made through
+    // the real runtime's store — reached the follow-up Run's context with
+    // the originating Run's provenance.
+    expect(seenEvidence[0]?.observations).toEqual([])
+    expect(seenEvidence.at(-1)?.observations).toEqual([expect.objectContaining({
+      id: 'memory-1',
+      sourceKind: 'web',
+      text: 'The Acme router costs $39.',
+      references: [{ url: 'https://shop.example/acme-router' }],
+      provenance: [{ runId: 'run-1' }],
+    })])
+
+    // Session Reset's existing lifecycle cleanup removes the checkpoint:
+    // the replacement Session's first Run starts beside nothing.
+    runtime.end('reset')
+    await runner.run('the price once more')
+    expect(seenEvidence.at(-1)?.observations).toEqual([])
+    expect(seenEvidence.at(-1)?.candidates).toEqual([])
   })
 })

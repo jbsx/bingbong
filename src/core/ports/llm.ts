@@ -1,6 +1,7 @@
 import type { RunJournalSnapshot } from '../session/runJournal'
 import type { FinalizationCause, RunResolution } from '../session/runJournal'
 import type { MemoryPatch, WorkingMemorySnapshot } from '../session/workingMemory'
+import type { SessionEvidenceSnapshot } from '../session/sessionEvidence'
 import type { SubagentReportFinding } from '../agent/subagentReport'
 import type { MishearProposal } from '../voice/learnedTerms'
 
@@ -35,6 +36,12 @@ export interface LlmRequest {
   journal?: RunJournalSnapshot
   /** One immutable Session Working Memory snapshot captured with the Journal. */
   memory?: WorkingMemorySnapshot
+  /**
+   * Checkpointed Session Evidence this Run starts beside (#121, ADR 0028):
+   * the immutable admission snapshot — grounded Observations earlier Runs
+   * verified, so work is not repeated.
+   */
+  evidence?: SessionEvidenceSnapshot
   /** Turn correlation id (#28); perf spans key on it when present (#29). */
   turnId?: string
   /**

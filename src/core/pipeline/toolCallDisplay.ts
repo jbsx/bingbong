@@ -39,6 +39,8 @@ export function describeToolAction(name: string, args: Record<string, unknown>):
       return `ask you: ${String(args.question ?? '')}`
     case 'report_run_plan':
       return `plan ${String(args.effort_tier ?? '')}: ${String(args.headline ?? args.objective ?? '')}`.trim()
+    case 'record_evidence':
+      return `record evidence: ${String(args.observation ?? '')}`.trim()
     case 'toggle_panel':
       return 'toggle panel'
     case 'set_panel_mode':
@@ -90,6 +92,8 @@ export function describeToolIntent(name: string, args: string): string {
       return withTarget('asking you', args, 'question')
     case 'report_run_plan':
       return withTarget('planning', args, 'headline', 'objective')
+    case 'record_evidence':
+      return withTarget('recording evidence', args, 'observation')
     case 'spawn_agent': {
       const kind = partialTargetValue(args, 'kind')
       const verb = `spawning${kind && kind.value !== '' && kind.closed ? ` ${kind.value}` : ''} agent:`
