@@ -1,6 +1,6 @@
 import type { ToolCall } from '../ports/llm'
 import type { Clock } from '../ports/clock'
-import type { VisionGrant } from '../agent/subagentRails'
+import type { SubagentSharedDeadline, VisionGrant } from '../agent/subagentRails'
 import type { WorkingMemorySnapshot } from '../session/workingMemory'
 import type { EffortTier } from './runPlan'
 
@@ -21,12 +21,11 @@ export interface ToolContext {
    */
   effortTier?(): EffortTier
   /**
-   * Whether the Run's active-work deadline has passed (#120): the live
-   * predicate delegated workers share with their parent — they stop
-   * acquiring when the parent's work time is gone, however many of their
-   * own rounds remain.
+   * The Run's shared active-work deadline (#120): handed to delegated
+   * workers, who stop acquiring when the parent's work time is gone,
+   * however many of their own rounds remain.
    */
-  workDeadlineExpired?(): boolean
+  delegationDeadline?: SubagentSharedDeadline
   /**
    * Progress detail (#43): a tool that blocks on observable background
    * work (agent_results with wait) reports what the run is waiting on,

@@ -382,27 +382,22 @@ describe('runSubagent', () => {
     expect(report.text).toMatch(/parent run reached its active-work deadline/)
   })
 
-  it('defaults to the twelve-round worker budget (#120)', async () => {
-    let executions = 0
-    const spin: Tool = { name: 'spin', async execute() { executions += 1; return 'spun' } }
-    const storms = Array.from({ length: 12 }, (_, i) => ({
-      kind: 'tool_calls' as const,
-      calls: [{ id: `c${i}`, name: 'spin', args: {} }],
-    }))
+  it('answers deterministically without a model round when the deadline passes before any work (#120)', async () => {
     const llm = new ScriptedLlm([
-      ...storms,
-      // The thirteenth turn is the reserved Answer round.
-      { kind: 'answer', speak: 's', display: 'Twelve rounds, then this.' },
+      { kind: 'answer', speak: 'never', display: 'never' },
     ])
 
     const report = await runSubagent(
-      { llm, tools: [spin], clock: new FakeClock() },
-      { task: 't', isCancelled: () => false },
+      { llm, tools: [], clock: new FakeClock(), maxToolRounds: 2 },
+      { task: 't', agentId: 'a-9', isCancelled: () => false, isWorkExpired: () => true },
     )
 
-    expect(executions).toBe(12)
-    expect(llm.requests).toHaveLength(13)
-    expect(report.text).toBe('Twelve rounds, then this.')
+    // No tool result exists to carry the directive, so there is no
+    // reserved round at all — the bounded report is the whole answer.
+    expect(llm.requests).toHaveLength(0)
+    expect(report.agentId).toBe('a-9')
+    expect(report.text).toMatch(/Stopped at the delegated work limit after 0 tool rounds — the parent run reached its active-work deadline/)
+    expect(report.unresolved).toEqual(['Cut short at the delegated work limit — the task is incomplete.'])
   })
 
   it('enforces the fifteen-call vision rail for a subagent task', async () => {

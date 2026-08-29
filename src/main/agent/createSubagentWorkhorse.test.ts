@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { FakeBrowser, FakeClock, FakeVision, fakePerfHarness } from '../../core/testing/doubles'
+import { SUBAGENT_LIMITS } from '../../core/agent/subagentRails'
 import { createSubagentTaskApi, toolsForKind } from './createSubagentWorkhorse'
 import { withAgentActivity } from '../../core/downloads/agentActivity'
 import { createAgentActivityTracker } from '../../core/downloads/agentActivity'
@@ -270,6 +271,64 @@ describe('createSubagentTaskApi', () => {
 
     expect(first.text).toBe('Keyboards compared on screen.')
     expect(second.text).toBe('Keyboards compared on screen.')
+  })
+
+  it('resolves the per-kind round leash: browse workers get 12, background keeps the roomier default (#120)', async () => {
+    // Fifteen scripted tool rounds for each kind: the browse worker is
+    // bounded at twelve and terminates with the bounded report; the
+    // background worker runs its full script under the historical default.
+    const browseScript = JSON.stringify([
+      ...Array.from({ length: 15 }, (_, i) => ({
+        kind: 'tool_calls' as const,
+        calls: [{ id: `n${i}`, name: 'navigate', args: { url: `https://engine.test/${i}` } }],
+      })),
+      { kind: 'answer', speak: 's', display: 'never reached by execution' },
+    ])
+    const backgroundScript = JSON.stringify([
+      ...Array.from({ length: 15 }, (_, i) => ({
+        kind: 'tool_calls' as const,
+        calls: [{ id: `f${i}`, name: 'file_work', args: {} }],
+      })),
+      { kind: 'answer', speak: 's', display: 'All fifteen rounds ran.' },
+    ])
+    let backgroundExecutions = 0
+    const browser = new FakeBrowser()
+    const api = createSubagentTaskApi({
+      getEnv: () => envWith(browseScript),
+      fetchFn: fetch,
+      controllerFor: () => browser,
+      clock: new FakeClock(),
+    })
+
+    const browseReport = await api.start(
+      { id: 'a-1', kind: 'browse', task: 'browse within the leash' },
+      { isCancelled: () => false, onProgress: () => undefined },
+    ).done
+
+    const backgroundApi = createSubagentTaskApi({
+      getEnv: () => envWith(backgroundScript),
+      fetchFn: fetch,
+      backgroundTools: [
+        {
+          name: 'file_work',
+          async execute() {
+            backgroundExecutions += 1
+            return 'done'
+          },
+        },
+      ],
+      clock: new FakeClock(),
+    })
+    const backgroundReport = await backgroundApi.start(
+      { id: 'a-1', kind: 'background', task: 'file work with room' },
+      { isCancelled: () => false, onProgress: () => undefined },
+    ).done
+
+    expect(SUBAGENT_LIMITS.maxToolRoundsPerTask).toBe(12)
+    expect(browser.navigations).toHaveLength(12)
+    expect(browseReport.text).toMatch(/Stopped at the delegated work limit after 12 tool rounds/)
+    expect(backgroundExecutions).toBe(15)
+    expect(backgroundReport.text).toBe('All fifteen rounds ran.')
   })
 
   it('keys subagent-llm spans to the spawning turn when the spec carries one', async () => {

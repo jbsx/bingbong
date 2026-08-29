@@ -7,7 +7,7 @@ import { VisionDeadlineError, VISION_DEADLINE_NUDGE } from '../ports/vision'
 import { ASK_ESCALATION_PREFIX } from '../pipeline/askUserTools'
 import { createBlockerGate, subagentBlockerEscalation } from '../pipeline/blockerGate'
 import { describeToolAction } from '../pipeline/toolCallDisplay'
-import { createVisionBudget, MAX_SUBAGENT_VISION_CALLS, SUBAGENT_LIMITS } from './subagentRails'
+import { createVisionBudget, MAX_SUBAGENT_VISION_CALLS } from './subagentRails'
 import type { SubagentReport } from './subagentReport'
 
 // The subagent workhorse loop (issue #13): one LLM (deepseek-chat via the
@@ -69,8 +69,8 @@ export interface RunSubagentOptions {
   /** Polled before each model call and each tool call. */
   isCancelled(): boolean
   /**
-   * The parent Run's shared active-work deadline (#120): returns true once
-   * the spawning Run's active-work time has passed its tier deadline. The
+   * The parent Run's shared active-work deadline (#120): true once the
+   * spawning Run's active-work time has passed its tier deadline. The
    * worker stops acquiring and finalizes — a bounded report, never a crash.
    */
   isWorkExpired?(): boolean
@@ -85,7 +85,10 @@ export class SubagentCancelledError extends Error {
   }
 }
 
-const DEFAULT_MAX_TOOL_ROUNDS = SUBAGENT_LIMITS.maxToolRoundsPerTask
+// Direct loop users (tests, the CLI harness) keep the historical leash; the
+// workhorse resolves the per-kind budget — browse workers get
+// SUBAGENT_LIMITS.maxToolRoundsPerTask (#120), background kinds this one.
+const DEFAULT_MAX_TOOL_ROUNDS = 60
 
 /** Why a worker's acquisition stopped and its Finalization began (#120). */
 type WorkerStopCause = 'round_limit' | 'shared_deadline'
@@ -150,6 +153,16 @@ function boundedStopReport(input: {
   }
 }
 
+/** One model answer turn becomes the report — both exits share the mapping. */
+function reportFromTurn(turn: Extract<AssistantTurn, { kind: 'answer' }>, agentId?: string): SubagentReport {
+  return {
+    ...(agentId !== undefined ? { agentId } : {}),
+    text: turn.display !== '' ? turn.display : turn.speak,
+    findings: turn.findings ?? [],
+    unresolved: turn.unresolved ?? [],
+  }
+}
+
 function toErrorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err)
 }
@@ -203,8 +216,13 @@ export async function runSubagent(deps: RunSubagentDeps, options: RunSubagentOpt
     if (stopCause !== null) {
       // Worker Finalization (#120): one reserved Answer-only round — the
       // directive rides the last tool result — then, whatever the model
-      // does with it, a bounded report. Cancellation still wins at the
-      // checkpoint after the round.
+      // does with it, a bounded report. A run with no tool results yet
+      // (the deadline passed before any work) has nothing to attach the
+      // directive to and answers deterministically without the round.
+      // Cancellation still wins at the checkpoint after the round.
+      if (toolResults.length === 0) {
+        return boundedStopReport({ ...(options.agentId !== undefined ? { agentId: options.agentId } : {}), cause: stopCause, maxToolRounds, rounds, lastAction })
+      }
       appendFinalizationNotice(toolResults, workerFinalizationNotice(stopCause, maxToolRounds))
       let turn: AssistantTurn | null = null
       try {
@@ -214,12 +232,7 @@ export async function runSubagent(deps: RunSubagentDeps, options: RunSubagentOpt
       }
       await checkpoint(options)
       if (turn !== null && turn.kind === 'answer') {
-        return {
-          ...(options.agentId !== undefined ? { agentId: options.agentId } : {}),
-          text: turn.display !== '' ? turn.display : turn.speak,
-          findings: turn.findings ?? [],
-          unresolved: turn.unresolved ?? [],
-        }
+        return reportFromTurn(turn, options.agentId)
       }
       return boundedStopReport({ ...(options.agentId !== undefined ? { agentId: options.agentId } : {}), cause: stopCause, maxToolRounds, rounds, lastAction })
     }
@@ -227,12 +240,7 @@ export async function runSubagent(deps: RunSubagentDeps, options: RunSubagentOpt
     const turn = await llm.complete(requestArgs())
     await checkpoint(options)
     if (turn.kind === 'answer') {
-      return {
-        ...(options.agentId !== undefined ? { agentId: options.agentId } : {}),
-        text: turn.display !== '' ? turn.display : turn.speak,
-        findings: turn.findings ?? [],
-        unresolved: turn.unresolved ?? [],
-      }
+      return reportFromTurn(turn, options.agentId)
     }
 
     rounds += 1

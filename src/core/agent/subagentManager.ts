@@ -3,7 +3,7 @@ import { systemClock } from '../ports/clock'
 import type { SessionGeneration, SessionId } from '../session/sessionIdentity'
 import type { WorkingMemorySnapshot } from '../session/workingMemory'
 import { capSentences } from '../agent/answerContract'
-import { SUBAGENT_LIMITS } from './subagentRails'
+import { SUBAGENT_LIMITS, type SubagentSharedDeadline } from './subagentRails'
 import type { SubagentReport } from './subagentReport'
 import { SubagentCancelledError } from './subagentRunner'
 
@@ -76,15 +76,7 @@ export interface SubagentSpec {
   memory?: WorkingMemorySnapshot
 }
 
-/**
- * The parent Run's shared active-work deadline (#120, ADR 0027): a live
- * predicate the workhorse polls — true once the spawning Run's active-work
- * time has passed its tier deadline. Workers share the Investigation's
- * deadline rather than bringing their own clock.
- */
-export interface SubagentSharedDeadline {
-  expired(): boolean
-}
+export type { SubagentSharedDeadline }
 
 export interface SubagentTaskHooks {
   isCancelled(): boolean
@@ -176,15 +168,14 @@ export function createSubagentManager(deps: SubagentManagerDeps): SubagentManage
     })
   }
 
-  function liveCount(): number {
+  /** Running agents, optionally narrowed to one kind. */
+  function liveCount(kind?: SubagentKind): number {
     let live = 0
-    for (const record of records.values()) if (record.status === 'running') live += 1
-    return live
-  }
-
-  function liveBrowseCount(): number {
-    let live = 0
-    for (const record of records.values()) if (record.status === 'running' && record.kind === 'browse') live += 1
+    for (const record of records.values()) {
+      if (record.status !== 'running') continue
+      if (kind !== undefined && record.kind !== kind) continue
+      live += 1
+    }
     return live
   }
 
@@ -223,7 +214,7 @@ export function createSubagentManager(deps: SubagentManagerDeps): SubagentManage
       // Browse-only concurrency (#120/AC1): at most three browsing agents
       // work in parallel, whatever the overall rail allows — the fourth
       // branch waits or the orchestrator collects first.
-      if (kind === 'browse' && liveBrowseCount() >= maxConcurrentBrowse) {
+      if (kind === 'browse' && liveCount('browse') >= maxConcurrentBrowse) {
         return {
           ok: false,
           reason: `browse subagent limit (${maxConcurrentBrowse}) reached — at most three browsing agents run at once; wait for one to finish or collect its results first`,

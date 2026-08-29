@@ -664,7 +664,9 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
           // share this run's active-work deadline as a live predicate, so
           // a tier escalation re-arm reaches them without a respawn.
           effortTier: () => epochTier,
-          workDeadlineExpired: () => run.workClock.spent() >= TIER_ACTIVE_WORK_DEADLINES_MS[epochTier],
+          delegationDeadline: {
+            expired: () => run.workClock.spent() >= TIER_ACTIVE_WORK_DEADLINES_MS[epochTier],
+          },
           // Delegation's memory selection (#98): spawn_agent resolves
           // memory_ids against this Run's immutable snapshot — the same one
           // every model round sees — so a worker can never receive entries

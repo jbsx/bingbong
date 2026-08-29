@@ -9,6 +9,7 @@ import { withUsageTracking } from '../../core/agent/usageTracking'
 import type { PerfTracer } from '../../core/perf/perfTracer'
 import { withPerfTracing } from '../../core/perf/perfTracing'
 import { resolveModelEndpoint, routingEnvKeys } from '../../core/agent/modelRouting'
+import { SUBAGENT_LIMITS } from '../../core/agent/subagentRails'
 import { runSubagent } from '../../core/agent/subagentRunner'
 import type { SubagentKind, SubagentSpec, SubagentTaskApi, SubagentTaskHooks } from '../../core/agent/subagentManager'
 import { ScriptedLlm, UnavailableLlm } from '../../core/testing/doubles'
@@ -117,7 +118,14 @@ export function createSubagentTaskApi(deps: SubagentWorkhorseDeps): SubagentTask
           llm,
           tools,
           ...(deps.clock ? { clock: deps.clock } : {}),
-          ...(deps.maxToolRounds !== undefined ? { maxToolRounds: deps.maxToolRounds } : {}),
+          // Per-kind leash (#120/AC2): browse workers run on the coded
+          // 12-round ceiling; background kinds keep the runner's roomier
+          // historical default. An explicit dep overrides both (tests).
+          ...(deps.maxToolRounds !== undefined
+            ? { maxToolRounds: deps.maxToolRounds }
+            : spec.kind === 'browse'
+              ? { maxToolRounds: SUBAGENT_LIMITS.maxToolRoundsPerTask }
+              : {}),
           // The host this agent's own tab is on — the same-wall Blocker
           // gate (#81) classifies non-navigate browser calls by it, the
           // same seam the orchestrator uses for its main pane.

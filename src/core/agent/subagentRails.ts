@@ -20,9 +20,21 @@ export const SUBAGENT_LIMITS = {
   tabLingerMs: 60_000,
   maxVisionCallsPerTask: MAX_SUBAGENT_VISION_CALLS,
   maxDelegatedMemoryEntries: 10,
-  /** Each worker's independent Tool Round ceiling (#120/AC2). */
+  /** Each browse worker's independent Tool Round ceiling (#120/AC2). */
   maxToolRoundsPerTask: 12,
 } as const
+
+/**
+ * The parent Run's shared active-work deadline (#120, ADR 0027): a live
+ * predicate the workhorse polls — true once the spawning Run's active-work
+ * time has passed its tier deadline. One shape across the whole seam: the
+ * pipeline builds it, spawn_agent hands it to the manager, the manager
+ * threads it into the workhorse hooks. Workers share the Investigation's
+ * deadline rather than bringing their own clock.
+ */
+export interface SubagentSharedDeadline {
+  expired(): boolean
+}
 
 export type VisionGrant = { ok: true } | { ok: false; reason: string }
 

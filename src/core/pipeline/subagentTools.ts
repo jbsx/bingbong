@@ -1,4 +1,4 @@
-import type { SubagentKind, SubagentManager, SubagentSharedDeadline } from '../agent/subagentManager'
+import type { SubagentKind, SubagentManager } from '../agent/subagentManager'
 import type { WorkingMemorySnapshot } from '../session/workingMemory'
 import type { Tool } from './tool'
 import type { ToolCall } from '../ports/llm'
@@ -109,14 +109,9 @@ export function createSubagentTools(manager: SubagentManager): Tool[] {
           memory = ctx.selectMemoryEntries(memoryIds)
         }
         // The parent Run's shared active-work deadline (#120/AC2) rides the
-        // spawn: the worker polls it and finalizes when the parent's work
-        // time is gone.
-        const sharedDeadline: SubagentSharedDeadline | undefined = ctx.workDeadlineExpired
-          ? { expired: () => ctx.workDeadlineExpired!() }
-          : undefined
-        // The orchestrator's turn id rides the spawn (#29): the workhorse's
-        // LLM rounds key their spans to the turn that started them.
-        const spawned = manager.spawn(kind, task, ctx.turnId, memory, sharedDeadline)
+        // spawn unchanged: the worker polls it and finalizes when the
+        // parent's work time is gone.
+        const spawned = manager.spawn(kind, task, ctx.turnId, memory, ctx.delegationDeadline)
         if (!spawned.ok) throw new Error(spawned.reason)
         return `spawned ${spawned.agent.id} [${kind}]${memory !== undefined ? ` with ${memory.length} shared memory entr${memory.length === 1 ? 'y' : 'ies'}` : ''} — poll with agent_results (wait: true) or keep working`
       },

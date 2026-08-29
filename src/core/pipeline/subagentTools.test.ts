@@ -225,7 +225,7 @@ describe('subagent tools', () => {
 
     await spawn.execute(
       { id: 'c1', name: 'spawn_agent', args: { kind: 'browse', task: 'x' } },
-      { clock: { now: () => 0, setTimer: () => () => {} }, effortTier: () => 'investigation', workDeadlineExpired: () => expired },
+      { clock: { now: () => 0, setTimer: () => () => {} }, effortTier: () => 'investigation', delegationDeadline: { expired: () => expired } },
     )
 
     expect(received).toBeDefined()
