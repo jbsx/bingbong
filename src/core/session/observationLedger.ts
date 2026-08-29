@@ -1,4 +1,5 @@
 import type { SessionGeneration } from './sessionIdentity'
+import { canonicalizeMemoryUrl } from './workingMemory'
 
 declare const observationIdBrand: unique symbol
 
@@ -110,4 +111,20 @@ export function createObservationLedger(deps: {
     },
   }
   return ledger
+}
+
+/**
+ * The canonical URLs a set of records actually observed (#123): successful
+ * records that carried a source URL, normalized. One shared shape for
+ * worker-findings validation and evidence-revalidation checks — both ask
+ * "was this source genuinely seen here?".
+ */
+export function canonicalObservedUrls(records: readonly ObservationRecord[]): Set<string> {
+  const urls = new Set<string>()
+  for (const record of records) {
+    if (!record.ok || record.sourceUrl === undefined) continue
+    const canonical = canonicalizeMemoryUrl(record.sourceUrl)
+    if (canonical !== null) urls.add(canonical)
+  }
+  return urls
 }

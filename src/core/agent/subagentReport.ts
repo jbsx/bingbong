@@ -8,6 +8,7 @@ import {
   type WorkingMemorySnapshot,
 } from '../session/workingMemory'
 import type { ObservationRecord } from '../session/observationLedger'
+import { canonicalObservedUrls } from '../session/observationLedger'
 import { SUBAGENT_LIMITS } from './subagentRails'
 
 // The Subagent Report contract (#98): a delegated worker's validated return
@@ -158,17 +159,6 @@ export function selectDelegatedMemory(
   return Object.freeze([...selected])
 }
 
-/** The worker-observed canonical URLs a finding's references may cite (#123). */
-function observedUrls(records: readonly ObservationRecord[]): Set<string> {
-  const urls = new Set<string>()
-  for (const record of records) {
-    if (!record.ok || record.sourceUrl === undefined) continue
-    const canonical = canonicalizeMemoryUrl(record.sourceUrl)
-    if (canonical !== null) urls.add(canonical)
-  }
-  return urls
-}
-
 /**
  * Validates a report's findings against the worker's own Observations
  * (#123, ADR 0028): a finding is kept only when every one of its
@@ -182,7 +172,7 @@ export function validateReportFindings(
   findings: readonly SubagentReportFinding[],
   records: readonly ObservationRecord[],
 ): { findings: readonly SubagentReportFinding[]; dropped: number } {
-  const observed = observedUrls(records)
+  const observed = canonicalObservedUrls(records)
   const kept = findings.filter((finding) => {
     if (finding.references.length === 0) return false
     return finding.references.every((reference) => {

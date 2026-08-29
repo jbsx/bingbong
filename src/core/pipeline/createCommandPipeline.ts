@@ -503,6 +503,9 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
   ): AsyncIterable<UnstampedEvent> {
     const run: ActiveRun = { turnId, aborted: false, paused: false, workClock: createActiveWorkClock({ now: () => clock.now() }) }
     activeRun = run
+    // When this Run started (#123): the freshness boundary — evidence
+    // observed before it predates the Run, however it is cited.
+    const runStartedAt = clock.now()
     // The Run Observation ledger (#111): private Run Working State. The
     // run's Session generation is the guard — recording stops the moment
     // a newer generation exists, and the ledger dies with the run.
@@ -1260,13 +1263,14 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
       // cancelled, plain-error, or reset run finalizes nothing. A
       // reset-consumed run commits nothing and reports nothing (#99).
       //
-      // Freshness (#123, ADR 0028): volatile Observations admitted with
-      // this Run — time-sensitive, action-critical, or checkpointed with
-      // uncertainty — cannot alone support `completed`. When every cited
-      // Observation is volatile and none was revalidated (its source
-      // re-observed this Run) or checkpointed mid-Run, the recorded
-      // Resolution honestly degrades to `partial`; stable evidence and
-      // revalidated evidence complete as proposed.
+      // Freshness (#123, ADR 0028): volatile Observations —
+      // time-sensitive, action-critical, or checkpointed with uncertainty —
+      // cannot alone support `completed`. When every cited Observation is
+      // volatile and none was observed during this Run (re-observed by the
+      // Run itself, or checkpointed from an observation made during it —
+      // including a worker that ran during it), the recorded Resolution
+      // honestly degrades to `partial`; stable evidence and revalidated
+      // evidence complete as proposed.
       let proposedResolution = finalAnswer?.resolution ?? null
       if (
         runOutcome === 'done' &&
@@ -1282,6 +1286,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
             resolve: (id) => session.store.observation(id),
             admissionIds: admissionEvidenceIds,
             runRecords: ledger.snapshot(),
+            observedSince: runStartedAt,
           })
         if (!fresh) proposedResolution = 'partial'
       }

@@ -38,7 +38,8 @@ export type CandidateStatus = (typeof CANDIDATE_STATUSES)[number]
 const TERMINAL_CANDIDATE_STATUSES: readonly CandidateStatus[] = ['accepted', 'rejected', 'superseded']
 
 export const MAX_UNCERTAINTY_CHARS = 200
-const MAX_PROVENANCE_CHARS = 200
+/** Bound on a provenance identity — Run ids and Subagent ids alike. */
+export const MAX_PROVENANCE_CHARS = 200
 
 /** One grounded, checkpointed Observation in Session Working Memory. */
 export interface SessionObservation {

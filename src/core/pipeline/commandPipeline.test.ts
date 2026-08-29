@@ -5568,10 +5568,10 @@ describe('checkpointed Subagent evidence and freshness (#123)', () => {
   }
 
   /** The hidden provenance a completed worker's report carried (#123). */
-  function workerObservations(): ObservationRecord[] {
+  function workerObservations(at = 0): ObservationRecord[] {
     return [{
       id: 'wobs-1' as ObservationRecord['id'],
-      at: 0,
+      at,
       producer: 'page_read',
       ok: true,
       payload: 'The rival router costs $29.',
@@ -5814,5 +5814,65 @@ describe('checkpointed Subagent evidence and freshness (#123)', () => {
     const events = await collectWithContinuity(pipeline, 'the price', continuityFor(store, { evidence: admission, runId: 'run-2' as RunId }))
 
     expect(events.at(-1)).toMatchObject({ type: 'done', outcome: 'done', resolution: 'partial' })
+  })
+
+  it('a volatile worker finding predating the Run cannot be laundered fresh by checkpointing it (#123)', async () => {
+    const store = storeHarness()
+    const clock = new FakeClock(2_000)
+    // The worker ran during an earlier Run: its observations are older
+    // than this Run, whatever time the orchestrator commits them at.
+    const staleWorker = workerObservations(1_000)
+    const llm = new ScriptedLlm([
+      { kind: 'tool_calls', calls: [{
+        id: 'c1',
+        name: 'record_evidence',
+        args: { kind: 'subagent', agent_id: 'a-2', observation: 'Stock is 3 units.', source_url: WORKER_URL, volatile: true },
+      }] },
+      { kind: 'answer', speak: 'In stock.', display: 'In stock.', resolution: 'completed', evidenceIds: ['memory-1' as MemoryEntryId] },
+    ])
+    const pipeline = createCommandPipeline({
+      llm,
+      tts: new RecordingTts(),
+      clock,
+      tools: [createRecordEvidenceTool()],
+      subagentObservations: (agentId) => (agentId === 'a-2' ? staleWorker : null),
+    })
+
+    const events = await collectWithContinuity(pipeline, 'is it in stock', continuityFor(store, { runId: 'run-2' as RunId }))
+
+    // The checkpoint itself is valid provenance-wise — it stores, with
+    // the worker's observation time — but completed does not stand on it
+    // alone: nobody observed the source during this Run.
+    expect(events.find((e) => e.type === 'tool_result' && e.callId === 'c1')).toMatchObject({ ok: true })
+    expect(store.snapshot().observations[0]).toMatchObject({ observedAt: 1_000 })
+    expect(events.at(-1)).toMatchObject({ type: 'done', outcome: 'done', resolution: 'partial' })
+  })
+
+  it('a volatile worker finding observed during the Run carries completion (#123)', async () => {
+    const store = storeHarness()
+    const clock = new FakeClock(2_000)
+    // This worker ran while the current Run was alive: its freshest
+    // observation postdates the Run's start.
+    const liveWorker = [...workerObservations(1_500), ...workerObservations(2_500)]
+    const llm = new ScriptedLlm([
+      { kind: 'tool_calls', calls: [{
+        id: 'c1',
+        name: 'record_evidence',
+        args: { kind: 'subagent', agent_id: 'a-2', observation: 'Stock is 3 units.', source_url: WORKER_URL, volatile: true },
+      }] },
+      { kind: 'answer', speak: 'In stock.', display: 'In stock.', resolution: 'completed', evidenceIds: ['memory-1' as MemoryEntryId] },
+    ])
+    const pipeline = createCommandPipeline({
+      llm,
+      tts: new RecordingTts(),
+      clock,
+      tools: [createRecordEvidenceTool()],
+      subagentObservations: () => liveWorker,
+    })
+
+    const events = await collectWithContinuity(pipeline, 'is it in stock', continuityFor(store, { runId: 'run-2' as RunId }))
+
+    expect(events.find((e) => e.type === 'tool_result' && e.callId === 'c1')).toMatchObject({ ok: true })
+    expect(events.at(-1)).toMatchObject({ type: 'done', outcome: 'done', resolution: 'completed' })
   })
 })

@@ -8,7 +8,7 @@
 import type { ToolCall } from '../ports/llm'
 import type { ObservationId, ObservationRecord } from '../session/observationLedger'
 import type { ObservationCheckpointResult, SessionEvidenceStore, UserObservationOrigin } from '../session/sessionEvidence'
-import { MAX_UNCERTAINTY_CHARS, USER_EVENT_PRODUCERS } from '../session/sessionEvidence'
+import { MAX_PROVENANCE_CHARS, MAX_UNCERTAINTY_CHARS, USER_EVENT_PRODUCERS } from '../session/sessionEvidence'
 import type { MemoryEntryId, MemoryReference } from '../session/workingMemory'
 import type { RunId } from '../session/sessionIdentity'
 import {
@@ -65,7 +65,16 @@ export interface EvidenceCommitInput {
    * uncertainty.
    */
   readonly volatile?: boolean
+  /**
+   * When the grounding observation was actually made (#123): defaults to
+   * commit time; a subagent citation stamps the worker's own observation
+   * time, so freshness judges when the evidence was truly seen.
+   */
+  readonly observedAt?: number
 }
+
+/** The shared Session-refusal correction: one message, three commit kinds. */
+const EVIDENCE_REFUSED: string = 'the Session refused the checkpoint — it ended (reset or lapse), or a field exceeded its bound'
 
 /** The Session-side commit seam: stores the Observation, or refuses. */
 export type EvidenceCommit = (input: EvidenceCommitInput) => ObservationCheckpointResult | null
@@ -100,8 +109,6 @@ export type EvidenceCheckpointOutcome =
   | EvidenceCheckpointFailure
 
 const MAX_SOURCE_URL_CHARS = 2_000
-/** Agent-id bound (#123): matches the store's Subagent provenance bound. */
-const MAX_PROVENANCE_AGENT_CHARS = 200
 
 /** Parses only the fixed citation shapes; anything else is malformed. */
 export function parseEvidenceCitation(args: Record<string, unknown>): EvidenceCitation | null {
@@ -133,7 +140,7 @@ export function parseEvidenceCitation(args: Record<string, unknown>): EvidenceCi
     // A subagent citation (#123) grounds in a delegated worker's
     // observations: the agent id names whose, and no excerpt is demanded
     // — the citing model saw the worker's report, not its tool results.
-    const agentId = boundedString(args.agent_id, MAX_PROVENANCE_AGENT_CHARS)
+    const agentId = boundedString(args.agent_id, MAX_PROVENANCE_CHARS)
     if (!agentId) return null
     return {
       kind,
@@ -252,6 +259,7 @@ export function webEvidenceCommit(
       ...(input.uncertainty !== undefined ? { uncertainty: input.uncertainty } : {}),
       references: [...input.references],
       ...(input.volatile !== undefined ? { volatile: input.volatile } : {}),
+      ...(input.observedAt !== undefined ? { observedAt: input.observedAt } : {}),
       runId,
     })
   }
@@ -276,6 +284,7 @@ export function userEvidenceCommit(
       references: [],
       ...(input.originEvent !== undefined ? { originEvent: input.originEvent } : {}),
       ...(input.volatile !== undefined ? { volatile: input.volatile } : {}),
+      ...(input.observedAt !== undefined ? { observedAt: input.observedAt } : {}),
       runId,
     })
   }
@@ -303,6 +312,7 @@ export function subagentEvidenceCommit(
       ...(input.uncertainty !== undefined ? { uncertainty: input.uncertainty } : {}),
       references: [...input.references],
       ...(input.volatile !== undefined ? { volatile: input.volatile } : {}),
+      ...(input.observedAt !== undefined ? { observedAt: input.observedAt } : {}),
       runId,
       subagentId: agentId,
     })
@@ -369,7 +379,7 @@ export function evaluateEvidenceCheckpoint(
       return {
         ok: false,
         reason: 'refused',
-        error: 'the Session refused the checkpoint — it ended (reset or lapse), or a field exceeded its bound',
+        error: EVIDENCE_REFUSED,
       }
     }
     return {
@@ -416,12 +426,16 @@ export function evaluateEvidenceCheckpoint(
       ...(citation.uncertainty !== undefined ? { uncertainty: citation.uncertainty } : {}),
       ...(citation.volatile !== undefined ? { volatile: citation.volatile } : {}),
       references: [{ url: canonical }],
+      // Freshness judges when the evidence was truly seen (#123): the
+      // worker's own observation time, not the orchestrator's commit —
+      // a report collected by a later Run stays as old as its worker.
+      observedAt: source.at,
     })
     if (committed === null) {
       return {
         ok: false,
         reason: 'refused',
-        error: 'the Session refused the checkpoint — it ended (reset or lapse), or a field exceeded its bound',
+        error: EVIDENCE_REFUSED,
       }
     }
     return {
@@ -461,7 +475,7 @@ export function evaluateEvidenceCheckpoint(
     return {
       ok: false,
       reason: 'refused',
-      error: 'the Session refused the checkpoint — it ended (reset or lapse), or a field exceeded its bound',
+      error: EVIDENCE_REFUSED,
     }
   }
   return {
