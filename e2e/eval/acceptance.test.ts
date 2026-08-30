@@ -1,3 +1,6 @@
+import { readdirSync, readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
+import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { finalizationToolRefusal } from '../../src/core/pipeline/effortBudget'
 import {
@@ -671,6 +674,40 @@ describe('structuralViolations', () => {
 
   it('clears the whole corpus-shaped candidate pool — every observation inside its ceiling', () => {
     expect(structuralViolations(candidatePool())).toEqual([])
+  })
+})
+
+describe('the recorded #132 pools (#134: existing-pool compatibility)', () => {
+  const evalDir = fileURLToPath(new URL('.', import.meta.url))
+
+  /** The immutable captures on disk — three finalized reports per side, pass-named. */
+  function recordedPool(side: 'baseline' | 'candidate'): EvalReport[] {
+    const dir = join(evalDir, 'pools', side)
+    return readdirSync(dir)
+      .filter((entry) => entry.endsWith('.json'))
+      .sort()
+      .map((entry) => JSON.parse(readFileSync(join(dir, entry), 'utf8')) as EvalReport)
+  }
+
+  it('regenerates the recorded accept from the six immutable captures, with no structural violation', () => {
+    // The artifacts predate the corpus's expected-Effort metadata (31
+    // scenarios, model-declared tiers, no select-option id) — the gate
+    // must judge them from the corpus of record alone, never new
+    // telemetry, and never by mutating the captures.
+    const decision = decideRelease(recordedPool('candidate'), recordedPool('baseline'), {
+      regressions: 'passed',
+      decidedAt: new Date('2026-08-30T00:00:00.000Z'),
+    })
+    expect(decision.decision).toBe('accept')
+    expect(decision.baseline.pooledLlmRounds).toEqual({ median: 5, p95: 9 })
+    expect(decision.candidate.pooledLlmRounds).toEqual({ median: 3, p95: 7 })
+    expect(decision.baseline.classMedians).toEqual({ directAction: 4, lookupClass: 5 })
+    expect(decision.candidate.classMedians).toEqual({ directAction: 3, lookupClass: 3 })
+    expect(decision.baseline.scenarioObservations).toBe(93)
+    expect(decision.candidate.scenarioObservations).toBe(93)
+    const gate = gateOf(decision, 'llm-rounds')
+    expect(gate.passed).toBe(true)
+    expect(gate.detail).toContain('structural bounds: every observation within its corpus-declared ceiling')
   })
 })
 

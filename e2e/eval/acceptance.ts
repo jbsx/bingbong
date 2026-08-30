@@ -5,7 +5,7 @@ import {
   TIER_TOOL_ROUND_BUDGETS,
 } from '../../src/core/pipeline/effortBudget.ts'
 import type { EffortTier } from '../../src/core/pipeline/runPlan.ts'
-import { evalScenarios } from './scenarios.ts'
+import { evalScenarios, type EvalScenario } from './scenarios.ts'
 import type { EvalReport, ScenarioResult } from './evaluator'
 
 // Issue #128, closing #108's release acceptance; amended by #132 and #134.
@@ -80,12 +80,6 @@ export const DIRECT_ACTION_COMPLETION_MIN = 0.95
 export const LOOKUP_CORRECT_OR_PARTIAL_MIN = 0.9
 
 /**
- * The production-majority class the rounds gate judges separately (#134):
- * deterministic Direct Actions, the corpus kind `direct-action`.
- */
-const DIRECT_ACTION_KIND: ScenarioResult['kind'] = 'direct-action'
-
-/**
  * #132: exactly how many complete captures a side's pool holds. The
  * maintainer decision (2026-08-30) fixed three passes per side — enough
  * for a pooled statistic to absorb single-pass luck, bounded model spend.
@@ -107,6 +101,9 @@ export const BASELINE_PINNED_COMMIT = '2343a3cf56deb57e745cec357e446e0255e58098'
  * `candidate` are its members.
  */
 const LOOKUP_KINDS: ReadonlySet<ScenarioResult['kind']> = new Set(['lookup', 'candidate'])
+
+/** The Direct Action class the rounds gate judges separately (#134). */
+const DIRECT_ACTION_KINDS: ReadonlySet<ScenarioResult['kind']> = new Set(['direct-action'])
 
 export type RegressionsInput = 'passed' | 'failed' | 'not-run'
 
@@ -268,7 +265,7 @@ interface Epoch {
 }
 
 /** The epochs one Run's design grants — the steered epoch carries its marker (#134). */
-function runEpochs(scenario: EvalScenarioLike, run: 'first' | 'followUp'): Epoch[] {
+function runEpochs(scenario: EvalScenario, run: 'first' | 'followUp'): Epoch[] {
   const effort = scenario.expectedEffort
   if (run === 'followUp') return [{ tier: effort.followUpTier ?? effort.tier, label: effort.followUpTier ?? effort.tier }]
   return scenario.steer === undefined
@@ -277,14 +274,6 @@ function runEpochs(scenario: EvalScenarioLike, run: 'first' | 'followUp'): Epoch
         { tier: effort.tier, label: effort.tier },
         { tier: effort.steeredTier ?? effort.tier, label: `steered:${effort.steeredTier ?? effort.tier}` },
       ]
-}
-
-/** The structural shape structuralCeiling reads — EvalScenario minus what the gate never touches. */
-interface EvalScenarioLike {
-  id: string
-  steer?: unknown
-  followUp?: unknown
-  expectedEffort: { tier: EffortTier; steeredTier?: EffortTier; followUpTier?: EffortTier }
 }
 
 /**
@@ -297,7 +286,7 @@ interface EvalScenarioLike {
  * the design grants. Model-declared tiers grant nothing: only the corpus
  * declaration above feeds the arithmetic.
  */
-export function structuralCeiling(scenario: EvalScenarioLike): StructuralCeiling {
+export function structuralCeiling(scenario: EvalScenario): StructuralCeiling {
   const runs: ('first' | 'followUp')[] = scenario.followUp === undefined ? ['first'] : ['first', 'followUp']
   const epochsWithRuns = runs.map((run) => runEpochs(scenario, run))
   return {
@@ -319,13 +308,14 @@ export function corpusCeilings(): Map<string, StructuralCeiling> {
 
 /**
  * Scan a pool for observations beyond their corpus-declared ceiling
- * (#134). Each Run judges against its own allowance — a combined total
- * inside the scenario ceiling cannot hide one Run blowing past its budget
- * (if any run exceeds its allowance, the total must exceed the sum, so
- * per-run judgement subsumes total judgement). An artifact that predates
- * per-run telemetry judges one combined bucket against the full ceiling.
- * A Run with no corresponding design epoch has no legitimate budget and
- * reports allowed 0.
+ * (#134). Each Run judges against its own allowance, which is the
+ * stricter reading: a combined total inside the scenario ceiling can
+ * still hide one Run blowing past its own budget (15 + 1 against 14 +
+ * 14), while any total that exceeds the scenario ceiling must include a
+ * Run over its allowance — so per-run judgement subsumes total judgement.
+ * An artifact that predates per-run telemetry judges one combined bucket
+ * against the full ceiling. A Run with no corresponding design epoch has
+ * no legitimate budget and reports allowed 0.
  */
 export function structuralViolations(
   reports: readonly EvalReport[],
@@ -460,7 +450,7 @@ export function buildPool(role: string, reports: readonly EvalReport[]): Capture
       p95: nearestRankPercentile(sortedRounds, 95),
     },
     classMedians: {
-      directAction: pooledMedianOfClass(scenarios, new Set([DIRECT_ACTION_KIND])),
+      directAction: pooledMedianOfClass(scenarios, DIRECT_ACTION_KINDS),
       lookupClass: pooledMedianOfClass(scenarios, LOOKUP_KINDS),
     },
   }
@@ -507,16 +497,15 @@ export function refusalViolations(pool: readonly EvalReport[]): RefusalViolation
  * nearest-rank over the raw pooled round counts, never averages of pass
  * percentiles.
  */
+/** Strict pooled-median improvement on a class — a side with no observations cannot improve (#134). */
+function strictlyImproves(from: number | null, to: number | null): boolean {
+  return from !== null && to !== null && to < from
+}
+
 function llmRoundsGate(candidate: CapturePool, baseline: CapturePool, violations: readonly StructuralViolation[]): GateResult {
   const globalOk = candidate.pooledRounds.median <= baseline.pooledRounds.median
-  const directActionOk =
-    candidate.classMedians.directAction !== null &&
-    baseline.classMedians.directAction !== null &&
-    candidate.classMedians.directAction < baseline.classMedians.directAction
-  const lookupClassOk =
-    candidate.classMedians.lookupClass !== null &&
-    baseline.classMedians.lookupClass !== null &&
-    candidate.classMedians.lookupClass < baseline.classMedians.lookupClass
+  const directActionOk = strictlyImproves(baseline.classMedians.directAction, candidate.classMedians.directAction)
+  const lookupClassOk = strictlyImproves(baseline.classMedians.lookupClass, candidate.classMedians.lookupClass)
   const classLine = (label: string, from: number | null, to: number | null): string =>
     `; ${label} median ${from ?? 'none'} → ${to ?? 'none'} — must improve`
   return {
