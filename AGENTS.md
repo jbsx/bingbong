@@ -33,10 +33,19 @@ strips `WAYLAND_DISPLAY` so Electron binds to Xvfb even on Wayland sessions.
 
 `pnpm test:eval` (also Xvfb-wrapped) spends real model budget against the
 developer's production routing (repo `.env` / exported env). It never runs in
-CI or `pnpm test:e2e`. Freeze a comparison artifact with
-`BINGBONG_EVAL_REPORT=e2e/eval/baseline.json pnpm test:eval`; scenario
-failures are recorded data, not suite failures — only broken measurement
-(missing routing, a scripted model, a missing run) fails the suite.
+CI or `pnpm test:e2e`. Scenario failures are recorded data, not suite
+failures — only broken measurement (missing routing, a scripted model, a
+missing run) fails the suite.
+
+The release decision (#132) pools exactly three complete captures per side:
+each pass writes its own immutable artifact under `e2e/eval/pools/<side>/`
+via `BINGBONG_EVAL_REPORT=e2e/eval/pools/<side>/pass-<n>-<commit8>.json
+pnpm test:eval` (a finalized capture is never overwritten). The baseline
+pool is captured from the pinned pre-#114 tree (`2343a3c` worktree + eval
+overlay, see #130); all candidate passes come from one candidate commit.
+`pnpm eval:accept --regressions=passed` validates both pools' provenance
+and writes `e2e/eval/decision.json` from pooled nearest-rank statistics —
+pass-level percentiles are never averaged.
 
 ## graphify
 

@@ -4,12 +4,16 @@ import { evalScenarios } from './scenarios'
 
 // The real-model evaluation suite (#109) — opt-in by design:
 //
-//   pnpm test:eval
-//   BINGBONG_EVAL_REPORT=e2e/eval/baseline.json pnpm test:eval   # freeze a baseline
+//   pnpm test:eval                                                       # scratch capture
+//   BINGBONG_EVAL_REPORT=e2e/eval/pools/<side>/pass-<n>-<commit8>.json pnpm test:eval
+//                                                                         # a pool pass (#132)
 //
 // It is deliberately outside `pnpm test:e2e`'s include pattern: it spends
 // real model budget against the developer's production routing, so it runs
-// only when asked, always under Xvfb like every Electron suite here.
+// only when asked, always under Xvfb like every Electron suite here. Every
+// pool pass targets its own artifact — a finalized capture is never
+// overwritten — and the release decision (`pnpm eval:accept`) pools
+// exactly three passes per side (#132).
 //
 // Scenario success is measurement, not assertion — a failing scenario is
 // baseline data for #108, and so is a timed-out one. What DOES fail this

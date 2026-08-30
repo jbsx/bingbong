@@ -1,7 +1,7 @@
 import { execFileSync } from 'node:child_process'
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { PipelineEvent } from '../../src/core/pipeline/events'
 import type { PerfSpanRecord } from '../../src/core/perf/perfTracer'
@@ -115,6 +115,25 @@ export async function startEvaluator(options?: { scenarioTimeoutMs?: number; rep
   const scenarioTimeoutMs = options?.scenarioTimeoutMs ?? DEFAULT_SCENARIO_TIMEOUT_MS
   const reportPath = options?.reportPath ?? join(repoRoot, 'e2e', 'eval', 'report.json')
 
+  // #132: pass artifacts are immutable — a finalized capture at the target
+  // path is refused before any Electron launch or model spend, so a second
+  // pass accidentally aimed at an existing artifact fails fast instead of
+  // silently clobbering it. Partial (per-scenario) writes from an aborted
+  // run are overwritable on purpose: only finality makes an artifact.
+  let existing: unknown
+  try {
+    existing = JSON.parse(await readFile(reportPath, 'utf8'))
+  } catch (error) {
+    // A missing path (nothing to protect) or unparsable leftover from an
+    // aborted run — both fine to overwrite; anything else is real I/O trouble.
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT' && !(error instanceof SyntaxError)) throw error
+  }
+  if ((existing as EvalReport | undefined)?.aggregate !== undefined) {
+    throw new Error(
+      `refusing to overwrite the finalized capture at ${reportPath} — point BINGBONG_EVAL_REPORT at a new pass artifact (pools/<side>/pass-<n>-<commit8>.json)`,
+    )
+  }
+
   // Fail fast — before any Electron launch or model spend — when production
   // routing is absent (resolveProductionRouting throws) or a scripted hook
   // would survive into the composed env.
@@ -164,8 +183,10 @@ export async function startEvaluator(options?: { scenarioTimeoutMs?: number; rep
   })
 
   // Written after every scenario, so a killed capture keeps partial data.
+  // The artifact's own directory is made (pooled passes target
+  // pools/<side>/pass-<n>-<commit8>.json, #132), not just the default one.
   const persist = async (current: EvalReport): Promise<void> => {
-    await mkdir(join(repoRoot, 'e2e', 'eval'), { recursive: true })
+    await mkdir(dirname(reportPath), { recursive: true })
     await writeFile(reportPath, `${JSON.stringify(current, null, 2)}\n`)
   }
 
