@@ -129,4 +129,48 @@ describe('fixtureServer', () => {
     const present = await (await fetch(server.url('/results?q=fixture+widgets'))).text()
     expect(present).toContain('href="/widgets-article"')
   })
+
+  it('serves a ranked widget-results field with the alt-host review and a finish guide (#130)', async () => {
+    server = await startFixtureServer()
+    const results = await (await fetch(server.url('/results?q=widgets'))).text()
+    expect(results).toContain('href="/widgets-polished"')
+    const reviewLink = results.match(/href="(http:\/\/127\.0\.0\.2:\d+\/widget-review)"/)
+    expect(reviewLink).not.toBeNull()
+    const review = await (await fetch(reviewLink![1]!)).text()
+    expect(review).toContain('4.2 kg')
+  })
+
+  it('serves depot-bulletin results for bulletin queries only (#130)', async () => {
+    server = await startFixtureServer()
+    const bulletin = await (await fetch(server.url('/results?q=depot+bulletin'))).text()
+    expect(bulletin).toContain('href="/mirror-alpha"')
+    const other = await (await fetch(server.url('/results?q=tuesday+parade'))).text()
+    expect(other).toContain('no results')
+  })
+
+  it('serves two identical depot-bulletin mirrors and one that differs by a weekday (#130)', async () => {
+    server = await startFixtureServer()
+    const alpha = await (await fetch(server.url('/mirror-alpha'))).text()
+    const beta = await (await fetch(server.url('/mirror-beta'))).text()
+    const gamma = await (await fetch(server.url('/mirror-gamma'))).text()
+    expect(alpha).toBe(beta)
+    expect(gamma).not.toBe(alpha)
+    expect(gamma).toContain('Friday')
+  })
+
+  it('serves the mutable status board at the flipped value (#130)', async () => {
+    server = await startFixtureServer()
+    expect(await (await fetch(server.url('/status-board'))).text()).toContain('north')
+    server.setStatusBoard('south')
+    expect(await (await fetch(server.url('/status-board'))).text()).toContain('south')
+    expect(await (await fetch(server.url('/status-board'))).text()).not.toContain('north')
+  })
+
+  it('serves the #130 fact pages with their one stable fact each', async () => {
+    server = await startFixtureServer()
+    expect(await (await fetch(server.url('/widget-material'))).text()).toContain('titanium')
+    expect(await (await fetch(server.url('/widget-finish'))).text()).toContain('matte black ceramic coat')
+    expect(await (await fetch(server.url('/widget-care'))).text()).toContain('every 6 months')
+    expect(await (await fetch(server.url('/widget-warranty'))).text()).toContain('5 years')
+  })
 })

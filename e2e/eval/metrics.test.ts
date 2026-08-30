@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { PipelineEvent } from '../../src/core/pipeline/events'
 import type { PerfSpanRecord } from '../../src/core/perf/perfTracer'
-import { aggregateScenarios, extractMetrics } from './metrics'
+import { aggregateScenarios, combineRuns, extractMetrics, type ScenarioMetrics } from './metrics'
 
 const T = 'turn-test'
 
@@ -176,6 +176,70 @@ describe('extractMetrics', () => {
     expect(metrics.actions.find((action) => action.ok)?.error).toBeNull()
     expect(metrics.actions.find((action) => !action.ok)?.error).toBe(refusal)
   })
+
+  it('flags an ask_user that timed out unanswered, not one the user answered (#130)', () => {
+    const timedOut = extractMetrics(
+      [
+        command(0),
+        { type: 'ask_requested', turnId: T, askId: 'q1', callId: 'a', question: 'Which one?', expiresAt: 1, at: 1 },
+        { type: 'ask_resolved', turnId: T, askId: 'q1', answer: null, reason: 'timeout', at: 2 },
+        done(3),
+      ],
+      [],
+      false,
+    )
+    const answered = extractMetrics(
+      [
+        command(0),
+        { type: 'ask_requested', turnId: T, askId: 'q2', callId: 'a', question: 'Which one?', expiresAt: 1, at: 1 },
+        { type: 'ask_resolved', turnId: T, askId: 'q2', answer: 'the red one', reason: 'user', at: 2 },
+        done(3),
+      ],
+      [],
+      false,
+    )
+    expect(timedOut.askTimedOut).toBe(true)
+    expect(answered.askTimedOut).toBe(false)
+  })
+})
+
+describe('combineRuns', () => {
+  const run = (overrides: Partial<ScenarioMetrics>): ScenarioMetrics => ({
+    ...extractMetrics([command(0), done(1)], [], false),
+    ...overrides,
+  })
+
+  it('sums work across runs and takes semantics from the final run', () => {
+    const combined = combineRuns([
+      run({ llmRounds: 3, attemptedTools: 4, executedTools: 4, elapsedMs: 10_000, outcome: 'cancelled', answerText: null }),
+      run({ llmRounds: 2, attemptedTools: 1, executedTools: 1, elapsedMs: 5_000, outcome: 'done', resolution: 'completed', answerText: '5 years' }),
+    ])
+    expect(combined.llmRounds).toBe(5)
+    expect(combined.attemptedTools).toBe(5)
+    expect(combined.executedTools).toBe(5)
+    expect(combined.elapsedMs).toBe(15_000)
+    expect(combined.outcome).toBe('done')
+    expect(combined.resolution).toBe('completed')
+    expect(combined.answerText).toBe('5 years')
+  })
+
+  it('carries any run’s raw-limit failure and timeout, and both runs’ actions', () => {
+    const combined = combineRuns([
+      run({
+        actions: [{ name: 'navigate', args: { url: 'http://a/' }, ok: true, repeated: false, error: null }],
+      }),
+      run({
+        elapsedMs: null,
+        rawLimitFailure: 'tool round limit (32) reached',
+        timedOut: true,
+        actions: [{ name: 'read_page', args: {}, ok: false, repeated: false, error: 'nope' }],
+      }),
+    ])
+    expect(combined.rawLimitFailure).toBe('tool round limit (32) reached')
+    expect(combined.timedOut).toBe(true)
+    expect(combined.actions.map((action) => action.name)).toEqual(['navigate', 'read_page'])
+    expect(combined.elapsedMs).toBeNull()
+  })
 })
 
 describe('aggregateScenarios', () => {
@@ -193,6 +257,7 @@ describe('aggregateScenarios', () => {
         resolution: null,
         finalizationCause: null,
         rawLimitFailure: null,
+        askTimedOut: false,
         actions: [],
         answerText: 'x',
         timedOut: false,

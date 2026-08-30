@@ -9,9 +9,9 @@ import { collectPerfRecords } from '../../src/main/perf/collectPerfRecords'
 import { startFixtureServer } from '../fixtureServer'
 import { startHarness, type Harness } from '../harness'
 import { sleep, waitFor } from '../waitFor'
-import { aggregateScenarios, extractMetrics, type EvalAggregate, type ScenarioMetrics } from './metrics'
+import { aggregateScenarios, combineRuns, extractMetrics, type EvalAggregate, type ScenarioMetrics } from './metrics'
 import { loadProductionEnv, resolveProductionRouting, type ProductionRouting } from './routing'
-import type { EvalScenario, ScenarioObservation } from './scenarios'
+import type { EvalScenario, PaneState, ScenarioObservation } from './scenarios'
 
 // The opt-in real-model evaluator (#109): one Electron app, one live
 // Session, the corpus submitted through the Prompt Bar like a user's
@@ -28,13 +28,31 @@ const repoRoot = fileURLToPath(new URL('../..', import.meta.url))
 /** Per-scenario wall budget before the run is aborted and recorded as timed out. */
 export const DEFAULT_SCENARIO_TIMEOUT_MS = 15 * 60_000
 
+/**
+ * Steering's fallback window (#130): submit the directive this long after
+ * the command even without a settled tool call, so a thinking-heavy run is
+ * still corrected mid-flight rather than after it finishes.
+ */
+const STEER_FALLBACK_MS = 3_000
+
+/**
+ * The cancelled-work grace (#130): after the marker page was visited, wait
+ * this long for an evidence checkpoint before aborting anyway — on a path
+ * without checkpoints (the baseline tree) this is the whole window, on the
+ * current path the checkpoint usually lands far sooner.
+ */
+const CANCEL_GRACE_MS = 12_000
+
 export interface ScenarioResult {
   id: string
   kind: EvalScenario['kind']
   command: string
   success: boolean
   failureReason: string | null
+  /** The scenario's combined view: summed work, final-run semantics (see combineRuns). */
   metrics: ScenarioMetrics
+  /** Every executed command of the scenario, in order (#130's multi-run classes). */
+  runs: ScenarioMetrics[]
 }
 
 export interface ModelWitness {
@@ -151,8 +169,31 @@ export async function startEvaluator(options?: { scenarioTimeoutMs?: number; rep
     await writeFile(reportPath, `${JSON.stringify(current, null, 2)}\n`)
   }
 
-  async function runScenario(scenario: EvalScenario): Promise<ScenarioResult> {
-    const command = scenario.command(fixture)
+  // The pane-state probe (#130): one fixed, additive DOM read collected
+  // after every scenario — objective state the direct-action predicates
+  // judge (title mutations, dialog presence, scroll, control values,
+  // injected media keys) without the evaluator changing what it measures.
+  const readPaneState = (): Promise<PaneState | null> =>
+    harness
+      .paneEval<PaneState>(`(() => ({
+        title: document.title,
+        scrollY: Math.round(window.scrollY || 0),
+        dialogPresent: !!document.querySelector('[role="dialog"]'),
+        agreeChecked: (document.querySelector('#agree') || {}).checked ?? null,
+        pressedKeys: window.__pressedKeys ?? null,
+      }))()`)
+      .catch(() => null)
+
+  /**
+   * One submitted command: its turn id, its metrics, and whether it hit the
+   * scenario wall budget. `whileRunning` rides alongside the live run — the
+   * seam the Steering and cancelled-work classes act through, concurrent
+   * with the done-wait so the run never finishes before the hook lands.
+   */
+  async function awaitRun(
+    command: string,
+    whileRunning?: (turnId: string) => Promise<void>,
+  ): Promise<{ turnId: string; metrics: ScenarioMetrics }> {
     const submittedAt = Date.now()
     const submitted = await harness.submitCommand(command)
     if (submitted !== 'submitted') throw new Error(`command was not submitted: ${submitted}`)
@@ -173,25 +214,113 @@ export async function startEvaluator(options?: { scenarioTimeoutMs?: number; rep
 
     // Wait out the run — or abort it at the scenario budget and record the timeout.
     let timedOut = false
-    try {
-      await waitFor(async () => (await doneArrived(turnId)) ? true : undefined, {
-        timeoutMs: scenarioTimeoutMs,
-        intervalMs: 500,
-      })
-    } catch {
-      timedOut = true
-      await harness.dashboardEval('window.bingbong.assistant.abort()')
-      await waitFor(async () => (await doneArrived(turnId)) ? true : undefined, {
-        timeoutMs: 60_000,
-        intervalMs: 500,
-      }).catch(() => {})
-    }
+    const settled = (async () => {
+      try {
+        await waitFor(async () => (await doneArrived(turnId)) ? true : undefined, {
+          timeoutMs: scenarioTimeoutMs,
+          intervalMs: 500,
+        })
+      } catch {
+        timedOut = true
+        await harness.dashboardEval('window.bingbong.assistant.abort()')
+        await waitFor(async () => (await doneArrived(turnId)) ? true : undefined, {
+          timeoutMs: 60_000,
+          intervalMs: 500,
+        }).catch(() => {})
+      }
+    })()
+    if (whileRunning !== undefined) await whileRunning(turnId)
+    await settled
     // Let the run's terminal bookkeeping (summary span, memory commit) land.
     await sleep(500)
 
     // Turn-bearing events only (session lifecycle and agent cards carry none).
     const events = (await readTape()).filter((event): event is PipelineEvent & { turnId: string } => 'turnId' in event && event.turnId === turnId)
-    const metrics = extractMetrics(events, perfRecordsFor(turnId), timedOut)
+    return { turnId, metrics: extractMetrics(events, perfRecordsFor(turnId), timedOut) }
+  }
+
+  /** True once the run's tape shows a successful call with these args-text and result-ok pairings. */
+  const tapeHasOkCall = async (turnId: string, predicate: (name: string, argsText: string) => boolean): Promise<boolean> => {
+    const tape = await readTape()
+    const calls = new Map(
+      tape
+        .filter((event): event is Extract<PipelineEvent, { type: 'tool_call' }> => event.type === 'tool_call' && event.turnId === turnId)
+        .map((call) => [call.callId, call] as const),
+    )
+    return tape.some(
+      (event): event is Extract<PipelineEvent, { type: 'tool_result' }> =>
+        event.type === 'tool_result' &&
+        event.turnId === turnId &&
+        event.ok &&
+        calls.get(event.callId) !== undefined &&
+        predicate(calls.get(event.callId)!.name, JSON.stringify(calls.get(event.callId)!.args)),
+    )
+  }
+
+  async function runScenario(scenario: EvalScenario): Promise<ScenarioResult> {
+    const command = scenario.command(fixture)
+    const runs: ScenarioMetrics[] = []
+
+    // Steering (#130): the directive goes in through the same seam a user's
+    // typed correction does, the moment the run has real work in flight (a
+    // settled tool call) — or after a short fallback window, so a
+    // slow-to-start run still gets corrected before it can finish.
+    const steerWhileRunning =
+      scenario.steer !== undefined
+        ? async (turnId: string): Promise<void> => {
+            const directive = scenario.steer!(fixture)
+            const fallbackAt = Date.now() + STEER_FALLBACK_MS
+            await waitFor(
+              async () => ((await tapeHasOkCall(turnId, () => true)) || Date.now() >= fallbackAt ? true : undefined),
+              { timeoutMs: 30_000, intervalMs: 100 },
+            ).catch(() => {})
+            const taken = await harness.dashboardEval<boolean>(
+              `window.bingbong.assistant.steer(${JSON.stringify(directive)})`,
+            )
+            if (taken !== true) throw new Error(`steering directive was not taken for ${scenario.id}`)
+          }
+        : undefined
+
+    // Cancelled work (#130): abort the first run once its evidence was
+    // checkpointed — or, on a path without checkpoints, once the marker page
+    // was visited and a grace interval produced no checkpoint.
+    const cancelWhileRunning =
+      scenario.cancel !== undefined
+        ? async (turnId: string): Promise<void> => {
+            const marker = scenario.cancel!.urlMarker
+            let firstVisitedAt: number | null = null
+            await waitFor(
+              async () => {
+                // A run that finished before the trigger (a fast honest
+                // answer with no checkpoint) leaves nothing to cancel —
+                // stop waiting rather than blocking the follow-up.
+                if (await doneArrived(turnId)) return true
+                if (await tapeHasOkCall(turnId, (name) => name === 'record_evidence')) return true
+                const visited = await tapeHasOkCall(turnId, (_name, argsText) => argsText.includes(marker))
+                if (visited) {
+                  firstVisitedAt ??= Date.now()
+                  if (Date.now() - firstVisitedAt >= CANCEL_GRACE_MS) return true
+                }
+                return undefined
+              },
+              { timeoutMs: scenarioTimeoutMs, intervalMs: 250 },
+            ).catch(() => {})
+            await harness.dashboardEval('window.bingbong.assistant.abort()')
+          }
+        : undefined
+
+    const whileRunning = [steerWhileRunning, cancelWhileRunning].find((hook) => hook !== undefined)
+    const first = await awaitRun(command, whileRunning)
+    runs.push(first.metrics)
+
+    // The follow-up command (cancelled-work reuse and stale-evidence classes).
+    if (scenario.followUp !== undefined) {
+      scenario.followUp.prepare?.(fixture)
+      const second = await awaitRun(scenario.followUp.command(fixture))
+      runs.push(second.metrics)
+    }
+
+    const finalRun = runs[runs.length - 1]!
     const paneUrl = await harness.paneUrl().catch(() => undefined)
     const paneHeading = await harness
       .paneEval<string | null>('document.querySelector("h1")?.textContent?.trim() ?? null')
@@ -199,10 +328,12 @@ export async function startEvaluator(options?: { scenarioTimeoutMs?: number; rep
     const observation: ScenarioObservation = {
       paneUrl,
       paneHeading,
-      answerText: metrics.answerText,
-      outcome: metrics.outcome,
-      rawLimitFailure: metrics.rawLimitFailure,
-      timedOut,
+      paneState: await readPaneState(),
+      answerText: finalRun.answerText,
+      outcome: finalRun.outcome,
+      rawLimitFailure: runs.find((run) => run.rawLimitFailure !== null)?.rawLimitFailure ?? null,
+      timedOut: runs.some((run) => run.timedOut),
+      runs: runs.map((metrics) => ({ metrics })),
     }
     const success = scenario.success(observation, fixture)
     const result: ScenarioResult = {
@@ -211,7 +342,8 @@ export async function startEvaluator(options?: { scenarioTimeoutMs?: number; rep
       command,
       success,
       failureReason: success ? null : failureReasonOf(observation),
-      metrics,
+      metrics: combineRuns(runs),
+      runs,
     }
     results.push(result)
     await persist(report())

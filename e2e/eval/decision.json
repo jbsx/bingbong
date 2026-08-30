@@ -1,34 +1,34 @@
 {
-  "decidedAt": "2026-08-30T06:01:04.100Z",
-  "decision": "accept",
+  "decidedAt": "2026-08-30T10:48:01.774Z",
+  "decision": "reject",
   "baseline": {
     "commit": "2343a3cf56deb57e745cec357e446e0255e58098",
-    "capturedAt": "2026-08-28T03:27:33.927Z"
+    "capturedAt": "2026-08-30T10:37:45.425Z"
   },
   "candidate": {
-    "commit": "c0f6a224f74e1889728aba61ca9ed9a3b4576f78",
-    "capturedAt": "2026-08-30T04:53:51.320Z"
+    "commit": "298d7468969a0422b6cc6d679d24d39a8aec9aa0",
+    "capturedAt": "2026-08-30T10:42:08.725Z"
   },
   "gates": [
     {
       "gate": "no-raw-limit-error",
       "passed": true,
-      "detail": "0 of 6 scenarios ended with a raw round-limit error"
+      "detail": "0 of 31 scenarios ended with a raw round-limit error"
     },
     {
       "gate": "direct-action-completion",
-      "passed": true,
-      "detail": "1/1 (100%) of deterministic Direct Actions completed — needs ≥95%"
+      "passed": false,
+      "detail": "10/11 (91%) of deterministic Direct Actions completed — needs ≥95%"
     },
     {
       "gate": "lookup-correct-or-partial",
       "passed": true,
-      "detail": "2/2 (100%) of Lookups completed correctly or resolved honest partial — needs ≥90%"
+      "detail": "10/10 (100%) of Lookups completed correctly or resolved honest partial — needs ≥90%"
     },
     {
       "gate": "llm-rounds",
-      "passed": true,
-      "detail": "p95 36 → 14 LLM rounds (61% fall — needs ≥50%); median 5 → 4 — must not regress"
+      "passed": false,
+      "detail": "p95 8 → 10 LLM rounds (-25% fall — needs ≥50%); median 5 → 4 — must not regress"
     },
     {
       "gate": "no-action-after-runtime-refusal",

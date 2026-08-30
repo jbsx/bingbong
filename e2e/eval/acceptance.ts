@@ -1,13 +1,14 @@
 import type { EvalReport, ScenarioResult } from './evaluator'
 
 // Issue #128, closing #108's release acceptance: the frozen real-model
-// baseline (e2e/eval/baseline.json, captured by #109 before any of
-// #114–#127 landed) replayed against the complete bounded progressive
-// browsing path (e2e/eval/report.json, captured by `pnpm test:eval` on
-// the candidate). This module turns the two reports into the release
-// decision — one gate per #108 criterion, each with the numbers it
-// judged, and an overall accept/reject that #129's production switch
-// depends on.
+// baseline replayed against the complete bounded progressive browsing path
+// (e2e/eval/report.json, captured by `pnpm test:eval` on the candidate).
+// Since #130 the baseline is the production-weighted corpus re-captured on
+// the pre-#114 path (git 2343a3c); the six-scenario #109 capture it
+// superseded is versioned alongside as e2e/eval/baseline-109.json. This
+// module turns the two reports into the release decision — one gate per
+// #108 criterion, each with the numbers it judged, and an overall
+// accept/reject that #129's production switch depends on.
 //
 // Gates judge recorded data only; nothing here spends model budget. The
 // mandatory safety/Session regressions run separately (`pnpm test:e2e`)

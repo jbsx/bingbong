@@ -66,6 +66,12 @@ export interface FixtureServer {
   visionEndpointHits(): number
   /** Authorization header of the latest vision call — proves which credentials reached the wire. */
   lastVisionAuthorization(): string | undefined
+  /**
+   * Flip the mutable /status-board reading (#130 stale-evidence corpus): the
+   * page serves whatever the value is at request time, so a later Run in the
+   * same Session must revalidate its checkpointed evidence to stay correct.
+   */
+  setStatusBoard(value: string): void
   close(): Promise<void>
 }
 
@@ -416,11 +422,21 @@ function siteSearchPage(): string {
 </html>`
 }
 
-function searchResultsPage(query: string): string {
+function searchResultsPage(query: string, altReviewUrl: string): string {
   // The real-model evaluator's unresolvable scenario (#109) needs the
   // fixture web to honestly have nothing about a made-up topic: non-widget
   // queries get a genuine no-hits page, so "find the page about X" has no
   // answer to stumble into.
+  if (/depot|bulletin/i.test(query)) {
+    return `<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>${query} — fixture engine results</title></head>
+<body style="background:#222;color:#fff;margin:0">
+  <h1>results for "${query}"</h1>
+  <a id="result-1" href="/mirror-alpha">Regional depot bulletin</a>
+</body>
+</html>`
+  }
   if (!/widget/i.test(query)) {
     return `<!doctype html>
 <html>
@@ -431,12 +447,18 @@ function searchResultsPage(query: string): string {
 </body>
 </html>`
   }
+  // Widget queries carry a small ranked field (#130): the complete guide,
+  // the independent review on a genuinely different host, and one catalog
+  // finish guide — enough for candidate picks and open-web lookups to have
+  // real choices instead of a single link.
   return `<!doctype html>
 <html>
 <head><meta charset="utf-8"><title>${query} — fixture engine results</title></head>
 <body style="background:#222;color:#fff;margin:0">
   <h1>results for "${query}"</h1>
   <a id="result-1" href="/widgets-article">Fixture widgets: the complete guide</a>
+  <a id="result-2" href="${altReviewUrl}">Independent fixture widget review</a>
+  <a id="result-3" href="/widgets-polished">Polished widgets — the mirror finish guide</a>
 </body>
 </html>`
 }
@@ -507,10 +529,56 @@ function widgetReviewPage(): string {
 </html>`
 }
 
+// #130 corpus fact pages: one distinct, stable fact each, on fresh paths no
+// earlier #109 scenario touches — so multi-fact, cancellation, and staleness
+// scenarios start from genuinely absent Session Evidence.
+function widgetFactPage(title: string, fact: string): string {
+  return `<!doctype html>
+<html>
+<head><title>${title}</title></head>
+<body style="background:#222;color:#fff;margin:0">
+  <h1>${title}</h1>
+  <p>${fact}</p>
+</body>
+</html>`
+}
+
+// The #130 near-identical trio: same title, same heading, same sentence —
+// except one token in gamma. Two are true duplicates; distinguishing them
+// requires reading near-identical state without the repetition rails
+// refusing legitimate distinct-URL work.
+function depotBulletinPage(weekday: string): string {
+  return `<!doctype html>
+<html>
+<head><title>regional depot bulletin</title></head>
+<body style="background:#222;color:#fff;margin:0">
+  <h1>regional depot bulletin</h1>
+  <p>Depot 4 ships standard widget orders on ${weekday}.</p>
+</body>
+</html>`
+}
+
+// The #130 mutable page: serves the current status-board value, which only
+// the test's prepare hook flips — deterministic between flips.
+function statusBoardPage(value: string): string {
+  return `<!doctype html>
+<html>
+<head><title>regional status board</title></head>
+<body style="background:#222;color:#fff;margin:0">
+  <h1>regional status board</h1>
+  <p>The current wind gauge reads ${value}.</p>
+</body>
+</html>`
+}
+
 export async function startFixtureServer(): Promise<FixtureServer> {
   let adblockListHits = 0
   let visionEndpointHits = 0
   let lastAuthorization: string | undefined
+  let statusBoardValue = 'north'
+  // Late-bound (the alt listener exists only after listenOn below); the
+  // no-review stand-in keeps the closure out of the alt const's TDZ.
+  let altUrlOf: (path: string) => string = () => 'http://127.0.0.2/alt-not-yet-listening'
   const handle = (req: IncomingMessage, res: ServerResponse): void => {
     // OpenAI-compatible chat completions (#76 e2e): stands in for the vision
     // provider, so the real adapter can be driven with .env-only routing.
@@ -660,9 +728,37 @@ export async function startFixtureServer(): Promise<FixtureServer> {
       res.end(widgetReviewPage())
       return
     }
+    if (req.url === '/widget-material') {
+      res.end(widgetFactPage('Standard fixture widget material', 'The standard fixture widget is milled from a single billet of aerospace titanium.'))
+      return
+    }
+    if (req.url === '/widget-finish') {
+      res.end(widgetFactPage('Standard fixture widget finish', 'Every standard fixture widget ships with a matte black ceramic coat.'))
+      return
+    }
+    if (req.url === '/widget-care') {
+      res.end(widgetFactPage('Standard fixture widget care', 'Standard fixture widgets need cleaning every 6 months.'))
+      return
+    }
+    if (req.url === '/widget-warranty') {
+      res.end(widgetFactPage('Standard fixture widget warranty', 'The standard fixture widget warranty lasts 5 years.'))
+      return
+    }
+    if (req.url === '/mirror-alpha' || req.url === '/mirror-beta') {
+      res.end(depotBulletinPage('Tuesday'))
+      return
+    }
+    if (req.url === '/mirror-gamma') {
+      res.end(depotBulletinPage('Friday'))
+      return
+    }
+    if (req.url === '/status-board') {
+      res.end(statusBoardPage(statusBoardValue))
+      return
+    }
     if (req.url !== undefined && req.url.startsWith('/results?')) {
       const query = new URL(req.url, 'http://fixture.invalid').searchParams.get('q') ?? ''
-      res.end(searchResultsPage(query))
+      res.end(searchResultsPage(query, altUrlOf('/widget-review')))
       return
     }
     if (req.url === '/native-dialog') {
@@ -723,6 +819,7 @@ export async function startFixtureServer(): Promise<FixtureServer> {
     })
 
   const [primary, alt] = await Promise.all([listenOn('127.0.0.1'), listenOn('127.0.0.2')])
+  altUrlOf = alt.url
   const close = (server: Server): Promise<void> =>
     new Promise((resolve, reject) =>
       server.close((error) => (error ? reject(error) : resolve())),
@@ -734,6 +831,9 @@ export async function startFixtureServer(): Promise<FixtureServer> {
     adblockListHits: () => adblockListHits,
     visionEndpointHits: () => visionEndpointHits,
     lastVisionAuthorization: () => lastAuthorization,
+    setStatusBoard: (value: string) => {
+      statusBoardValue = value
+    },
     close: () => Promise.all([close(primary.server), close(alt.server)]).then(() => undefined),
   }
 }

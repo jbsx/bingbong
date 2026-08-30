@@ -56,13 +56,16 @@ afterAll(async () => {
 })
 
 for (const scenario of evalScenarios()) {
-  it(`records the ${scenario.kind} scenario (${scenario.id})`, { timeout: 20 * 60_000 }, async () => {
+  // Two-run scenarios (cancelled-work, stale evidence) get two scenario
+  // budgets plus collection overhead — 35 minutes bounds the worst case.
+  it(`records the ${scenario.kind} scenario (${scenario.id})`, { timeout: 35 * 60_000 }, async () => {
     const result = await evaluator.runScenario(scenario)
     // Success, failure, and timeout are all recorded data — logged, not asserted.
+    const runs = result.runs.length > 1 ? ` over ${result.runs.length} runs` : ''
     console.log(
       `[eval] ${result.success ? 'PASS' : 'FAIL'} ${result.kind} "${result.command}" — ` +
         `${result.metrics.llmRounds} llm rounds, ${result.metrics.attemptedTools} attempted / ${result.metrics.executedTools} executed tools, ` +
-        `${result.metrics.repeatedActions} repeated` +
+        `${result.metrics.repeatedActions} repeated${runs}` +
         (result.failureReason ? ` — ${result.failureReason}` : ''),
     )
   })

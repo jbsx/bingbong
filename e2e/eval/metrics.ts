@@ -1,7 +1,7 @@
 import type { PipelineEvent } from '../../src/core/pipeline/events'
 import type { PerfSpanRecord } from '../../src/core/perf/perfTracer'
 import type { FinalizationCause, RunResolution } from '../../src/core/session/runJournal'
-import { DEFAULT_EFFORT_TIER, type EffortTier } from '../../src/core/pipeline/runPlan'
+import type { EffortTier } from '../../src/core/pipeline/runPlan'
 import { nearestRankPercentile } from '../../src/core/report/stats'
 
 // Per-scenario measurement (#109) over the two machine-readable surfaces
@@ -10,6 +10,12 @@ import { nearestRankPercentile } from '../../src/core/report/stats'
 // outcomes) and the always-on perf log (one `llm` span per orchestrator
 // round, one `tool` span per call that actually reached execute — the
 // attempted/executed distinction gates live upstream of the span).
+//
+// #130: everything here must also RUN against the pre-#114 baseline tree
+// (git 2343a3c) so the corpus can be re-baselined there — so src imports
+// stay type-only (erased at transform time; the old tree lacks runPlan's
+// runtime exports), and the undeclared-plan default is inlined below,
+// mirroring runPlan's DEFAULT_EFFORT_TIER.
 
 /** The run-shape events one scenario contributes, in order. */
 export type RunEvents = readonly PipelineEvent[]
@@ -42,6 +48,8 @@ export interface ScenarioMetrics {
    */
   effortTier: EffortTier
   rawLimitFailure: string | null
+  /** True when the run asked the user and the ask timed out unanswered. */
+  askTimedOut: boolean
   actions: RecordedAction[]
   answerText: string | null
   timedOut: boolean
@@ -49,6 +57,17 @@ export interface ScenarioMetrics {
 
 /** The error message shape the pipeline's round ceiling throws (#108's "raw round-limit error"). */
 const RAW_LIMIT_PATTERN = /tool round limit/i
+
+/** Mirrors runPlan's DEFAULT_EFFORT_TIER — see the header note about the baseline tree. */
+const UNDECLARED_PLAN_TIER: EffortTier = 'lookup'
+
+/** True when the run raised an ask_user that timed out unanswered (#130's unanswered-question corpus). */
+function askTimedOutIn(events: readonly PipelineEvent[]): boolean {
+  return events.some(
+    (event): event is Extract<PipelineEvent, { type: 'ask_resolved' }> =>
+      event.type === 'ask_resolved' && event.reason === 'timeout',
+  )
+}
 
 function actionKey(name: string, args: Record<string, unknown>): string {
   return `${name}:${JSON.stringify(args)}`
@@ -98,11 +117,40 @@ export function extractMetrics(events: RunEvents, perfRecords: readonly PerfSpan
     outcome: done?.outcome ?? null,
     resolution: done?.resolution ?? null,
     finalizationCause: done?.finalizationCause ?? null,
-    effortTier: plans.at(-1)?.effortTier ?? DEFAULT_EFFORT_TIER,
+    effortTier: plans.at(-1)?.effortTier ?? UNDECLARED_PLAN_TIER,
     rawLimitFailure: rawLimit?.message ?? null,
+    askTimedOut: askTimedOutIn(events),
     actions,
     answerText: displays.length > 0 ? displays[displays.length - 1]!.text : null,
     timedOut,
+  }
+}
+
+/**
+ * A scenario's combined view over its executed commands (#130's multi-run
+ * classes): work counters sum across runs; semantics (outcome, resolution,
+ * answer) come from the final run — the one whose Answer the user keeps.
+ */
+export function combineRuns(runs: readonly ScenarioMetrics[]): ScenarioMetrics {
+  if (runs.length === 0) throw new Error('combineRuns needs at least one run')
+  const final = runs[runs.length - 1]!
+  const sum = (pick: (metrics: ScenarioMetrics) => number): number => runs.reduce((total, run) => total + pick(run), 0)
+  const elapsed = runs.map((run) => run.elapsedMs)
+  return {
+    llmRounds: sum((metrics) => metrics.llmRounds),
+    attemptedTools: sum((metrics) => metrics.attemptedTools),
+    executedTools: sum((metrics) => metrics.executedTools),
+    elapsedMs: elapsed.every((value) => value !== null) ? sum((metrics) => metrics.elapsedMs ?? 0) : null,
+    repeatedActions: sum((metrics) => metrics.repeatedActions),
+    outcome: final.outcome,
+    resolution: final.resolution,
+    finalizationCause: final.finalizationCause,
+    effortTier: final.effortTier,
+    rawLimitFailure: runs.find((metrics) => metrics.rawLimitFailure !== null)?.rawLimitFailure ?? null,
+    askTimedOut: runs.some((metrics) => metrics.askTimedOut),
+    actions: runs.flatMap((metrics) => metrics.actions),
+    answerText: final.answerText,
+    timedOut: runs.some((metrics) => metrics.timedOut),
   }
 }
 

@@ -1,0 +1,731 @@
+{
+  "capturedAt": "2026-08-28T03:27:33.927Z",
+  "gitCommit": "2343a3cf56deb57e745cec357e446e0255e58098",
+  "scenarioTimeoutMs": 900000,
+  "routing": {
+    "orchestrator": {
+      "configured": true,
+      "baseUrl": "https://api.z.ai/api/coding/paas/v4",
+      "model": "GLM-5.3-flash",
+      "keyFingerprint": "sha256:496fb3dd2227"
+    },
+    "subagent": {
+      "configured": true,
+      "baseUrl": "https://api.z.ai/api/coding/paas/v4",
+      "model": "GLM-5.3-flash",
+      "keyFingerprint": "sha256:496fb3dd2227"
+    },
+    "vision": {
+      "configured": true,
+      "baseUrl": "https://api.z.ai/api/coding/paas/v4",
+      "model": "GLM-4.6V",
+      "keyFingerprint": "sha256:496fb3dd2227"
+    }
+  },
+  "scriptedModelProvenAbsent": true,
+  "modelWitness": {
+    "orchestratorModel": "GLM-5.3-flash",
+    "orchestratorRequests": 78,
+    "scriptedEntries": []
+  },
+  "scenarios": [
+    {
+      "id": "direct-action-open-page",
+      "kind": "direct-action",
+      "command": "open http://127.0.0.1:44909/second in the browser",
+      "success": true,
+      "failureReason": null,
+      "metrics": {
+        "llmRounds": 3,
+        "attemptedTools": 3,
+        "executedTools": 3,
+        "elapsedMs": 17475,
+        "repeatedActions": 0,
+        "outcome": "done",
+        "rawLimitFailure": null,
+        "actions": [
+          {
+            "name": "report_headline",
+            "args": {
+              "headline": "Opening 127.0.0.1:44909/second"
+            },
+            "ok": true,
+            "repeated": false
+          },
+          {
+            "name": "navigate",
+            "args": {
+              "url": "http://127.0.0.1:44909/second"
+            },
+            "ok": true,
+            "repeated": false
+          },
+          {
+            "name": "read_page",
+            "args": {},
+            "ok": true,
+            "repeated": false
+          }
+        ],
+        "answerText": "Opened http://127.0.0.1:44909/second in the browser. The page loaded fine — its content is a single line of text: \"second fixture page\".",
+        "timedOut": false
+      }
+    },
+    {
+      "id": "lookup-widgets-guide",
+      "kind": "lookup",
+      "command": "search the fixture web for widgets and open the complete guide",
+      "success": false,
+      "failureReason": "objective predicate failed",
+      "metrics": {
+        "llmRounds": 36,
+        "attemptedTools": 36,
+        "executedTools": 35,
+        "elapsedMs": 243434,
+        "repeatedActions": 17,
+        "outcome": "done",
+        "rawLimitFailure": null,
+        "actions": [
+          {
+            "name": "report_headline",
+            "args": {
+              "headline": "Search the fixture site for widgets and open the complete guide"
+            },
+            "ok": true,
+            "repeated": false
+          },
+          {
+            "name": "navigate",
+            "args": {
+              "url": "http://127.0.0.1:44909/"
+            },
+            "ok": true,
+            "repeated": false
+          },
+          {
+            "name": "read_page",
+            "args": {},
+            "ok": true,
+            "repeated": false
+          },
+          {
+            "name": "type",
+            "args": {
+              "ref": 1,
+              "text": "widgets\n"
+            },
+            "ok": true,
+            "repeated": false
+          },
+          {
+            "name": "read_page",
+            "args": {},
+            "ok": true,
+            "repeated": true
+          },
+          {
+            "name": "screenshot",
+            "args": {},
+            "ok": true,
+            "repeated": false
+          },
+          {
+            "name": "look",
+            "args": {},
+            "ok": true,
+            "repeated": false
+          },
+          {
+            "name": "type",
+            "args": {
+              "ref": 1,
+              "text": "\n"
+            },
+            "ok": false,
+            "repeated": false
+          },
+          {
+            "name": "click",
+            "args": {
+              "ref": 1
+            },
+            "ok": true,
+            "repeated": false
+          },
+          {
+            "name": "read_page",
+            "args": {},
+            "ok": true,
+            "repeated": true
+          },
+          {
+            "name": "navigate",
+            "args": {
+              "url": "http://127.0.0.1:44909/search?q=widgets"
+            },
+            "ok": true,
+            "repeated": false
+          },
+          {
+            "name": "read_page",
+            "args": {},
+            "ok": true,
+            "repeated": true
+          },
+          {
+            "name": "navigate",
+            "args": {
+              "url": "http://127.0.0.1:44909/search?query=widgets"
+            },
+            "ok": true,
+            "repeated": false
+          },
+          {
+            "name": "read_page",
+            "args": {},
+            "ok": true,
+            "repeated": true
+          },
+          {
+            "name": "read_page",
+            "args": {},
+            "ok": true,
+            "repeated": true
+          },
+          {
+            "name": "navigate",
+            "args": {
+              "url": "http://127.0.0.1:44909/robots.txt"
+            },
+            "ok": true,
+            "repeated": false
+          },
+          {
+            "name": "read_page",
+            "args": {},
+            "ok": true,
+            "repeated": true
+          },
+          {
+            "name": "navigate",
+            "args": {
+              "url": "http://127.0.0.1:44909/sitemap.xml"
+            },
+            "ok": true,
+            "repeated": false
+          },
+          {
+            "name": "read_page",
+            "args": {},
+            "ok": true,
+            "repeated": true
+          },
+          {
+            "name": "navigate",
+            "args": {
+              "url": "http://127.0.0.1:44909/complete-guide"
+            },
+            "ok": true,
+            "repeated": false
+          },
+          {
+            "name": "read_page",
+            "args": {},
+            "ok": true,
+            "repeated": true
+          },
+          {
+            "name": "navigate",
+            "args": {
+              "url": "http://127.0.0.1:44909/widgets"
+            },
+            "ok": true,
+            "repeated": false
+          },
+          {
+            "name": "read_page",
+            "args": {},
+            "ok": true,
+            "repeated": true
+          },
+          {
+            "name": "navigate",
+            "args": {
+              "url": "http://127.0.0.1:44909/widgets/complete-guide"
+            },
+            "ok": true,
+            "repeated": false
+          },
+          {
+            "name": "read_page",
+            "args": {},
+            "ok": true,
+            "repeated": true
+          },
+          {
+            "name": "navigate",
+            "args": {
+              "url": "http://127.0.0.1:44909/index.html"
+            },
+            "ok": true,
+            "repeated": false
+          },
+          {
+            "name": "read_page",
+            "args": {},
+            "ok": true,
+            "repeated": true
+          },
+          {
+            "name": "navigate",
+            "args": {
+              "url": "http://127.0.0.1:44909/first"
+            },
+            "ok": true,
+            "repeated": false
+          },
+          {
+            "name": "read_page",
+            "args": {},
+            "ok": true,
+            "repeated": true
+          },
+          {
+            "name": "navigate",
+            "args": {
+              "url": "http://127.0.0.1:44909/second"
+            },
+            "ok": true,
+            "repeated": false
+          },
+          {
+            "name": "read_page",
+            "args": {},
+            "ok": true,
+            "repeated": true
+          },
+          {
+            "name": "navigate",
+            "args": {
+              "url": "http://127.0.0.1:44909/first"
+            },
+            "ok": true,
+            "repeated": true
+          },
+          {
+            "name": "look",
+            "args": {},
+            "ok": true,
+            "repeated": true
+          },
+          {
+            "name": "screenshot",
+            "args": {},
+            "ok": true,
+            "repeated": true
+          },
+          {
+            "name": "look",
+            "args": {},
+            "ok": true,
+            "repeated": true
+          },
+          {
+            "name": "ask_user",
+            "args": {
+              "question": "The fixture site (127.0.0.1:44909) has almost nothing on it: a blank \"/\" page with a lone text box (typing \"widgets\" and pressing Enter does nothing), a page that only says \"second fixture page\", and blank /first, /widgets, /widgets/complete-guide, /search pages. Where exactly is the widgets complete guide — what URL or what page title am I looking for?"
+            },
+            "ok": true,
+            "repeated": false
+          }
+        ],
+        "answerText": "Searched the fixture site (127.0.0.1:44909) for widgets and could not find any widgets content or 'complete guide' page.\n\nWhat I checked:\n- `/` — a blank page with only a single text input; typing `widgets` and pressing Enter produced no navigation or results\n- `/second` — the only page with content: \"second fixture page\"\n- `/first` — blank\n- `/search?q=widgets`, `/search?query=widgets`, `/robots.txt`, `/sitemap.xml` — blank\n- Guessed guide paths — all blank: `/widgets`, `/widgets/complete-guide`, `/complete-guide`, `/index.html`\n\nConclusion: the fixture web contains no widgets guide to open. If you can tell me the exact URL or page title, I'll open it right away.",
+        "timedOut": false
+      }
+    },
+    {
+      "id": "candidate-polished-widgets",
+      "kind": "candidate",
+      "command": "starting from the fixture catalog at http://127.0.0.1:44909/catalog, open the page about polished widgets",
+      "success": true,
+      "failureReason": null,
+      "metrics": {
+        "llmRounds": 5,
+        "attemptedTools": 5,
+        "executedTools": 5,
+        "elapsedMs": 18198,
+        "repeatedActions": 1,
+        "outcome": "done",
+        "rawLimitFailure": null,
+        "actions": [
+          {
+            "name": "report_headline",
+            "args": {
+              "headline": "Open the polished widgets page from the fixture catalog"
+            },
+            "ok": true,
+            "repeated": false
+          },
+          {
+            "name": "navigate",
+            "args": {
+              "url": "http://127.0.0.1:44909/catalog"
+            },
+            "ok": true,
+            "repeated": false
+          },
+          {
+            "name": "read_page",
+            "args": {},
+            "ok": true,
+            "repeated": false
+          },
+          {
+            "name": "click",
+            "args": {
+              "ref": 2
+            },
+            "ok": true,
+            "repeated": false
+          },
+          {
+            "name": "read_page",
+            "args": {},
+            "ok": true,
+            "repeated": true
+          }
+        ],
+        "answerText": "Starting from the [fixture catalog](http://127.0.0.1:44909/catalog), I opened **\"Polished widgets — the mirror finish guide\"** at http://127.0.0.1:44909/widgets-polished. The page reads: \"Polished fixture widgets are buffed to a mirror finish and inspected under studio light.\"",
+        "timedOut": false
+      }
+    },
+    {
+      "id": "investigation-widget-weight",
+      "kind": "investigation",
+      "command": "the weight of the standard fixture widget is disputed. read the spec sheet at http://127.0.0.1:44909/widget-specs and the independent review at http://127.0.0.2:45231/widget-review, then tell me both weights",
+      "success": true,
+      "failureReason": null,
+      "metrics": {
+        "llmRounds": 5,
+        "attemptedTools": 5,
+        "executedTools": 5,
+        "elapsedMs": 19533,
+        "repeatedActions": 1,
+        "outcome": "done",
+        "rawLimitFailure": null,
+        "actions": [
+          {
+            "name": "report_headline",
+            "args": {
+              "headline": "Compare widget weight in spec sheet and independent review"
+            },
+            "ok": true,
+            "repeated": false
+          },
+          {
+            "name": "navigate",
+            "args": {
+              "url": "http://127.0.0.1:44909/widget-specs"
+            },
+            "ok": true,
+            "repeated": false
+          },
+          {
+            "name": "read_page",
+            "args": {},
+            "ok": true,
+            "repeated": false
+          },
+          {
+            "name": "navigate",
+            "args": {
+              "url": "http://127.0.0.2:45231/widget-review"
+            },
+            "ok": true,
+            "repeated": false
+          },
+          {
+            "name": "read_page",
+            "args": {},
+            "ok": true,
+            "repeated": true
+          }
+        ],
+        "answerText": "Two conflicting figures for the standard fixture widget:\n\n- **Official spec sheet** ([127.0.0.1:44909/widget-specs](http://127.0.0.1:44909/widget-specs)): **3.8 kg**\n- **Independent review lab** ([127.0.0.2:45231/widget-review](http://127.0.0.2:45231/widget-review)): **4.2 kg** (bench scale measurement)\n\nThe review's figure is 0.4 kg heavier than the official spec.",
+        "timedOut": false
+      }
+    },
+    {
+      "id": "blocker-challenge-page",
+      "kind": "blocker",
+      "command": "open http://127.0.0.1:44909/challenge and tell me what the page says",
+      "success": true,
+      "failureReason": null,
+      "metrics": {
+        "llmRounds": 4,
+        "attemptedTools": 4,
+        "executedTools": 3,
+        "elapsedMs": 71533,
+        "repeatedActions": 0,
+        "outcome": "done",
+        "rawLimitFailure": null,
+        "actions": [
+          {
+            "name": "report_headline",
+            "args": {
+              "headline": "Open 127.0.0.1:44909/challenge and read its contents"
+            },
+            "ok": true,
+            "repeated": false
+          },
+          {
+            "name": "navigate",
+            "args": {
+              "url": "http://127.0.0.1:44909/challenge"
+            },
+            "ok": true,
+            "repeated": false
+          },
+          {
+            "name": "look",
+            "args": {},
+            "ok": true,
+            "repeated": false
+          },
+          {
+            "name": "ask_user",
+            "args": {
+              "question": "The page at 127.0.0.1:44909/challenge shows a human-verification CAPTCHA. Do you want to complete the challenge yourself in the browser tab (then tell me to continue), or should I stop here?"
+            },
+            "ok": true,
+            "repeated": false
+          }
+        ],
+        "answerText": "I opened **http://127.0.0.1:44909/challenge**, but it shows a challenge wall — \"Just a moment… / Verifying you are human\" with a CAPTCHA input and a Continue button. This is a Blocker: I'm not allowed to solve CAPTCHAs myself.\n\n**To proceed:** complete the verification yourself in the browser tab, then ask me to read the page. Alternatively, if there's a different URL for the content, share it and I'll open that instead.",
+        "timedOut": false
+      }
+    },
+    {
+      "id": "unresolvable-mercury-dampeners",
+      "kind": "unresolvable",
+      "command": "search the fixture web for mercury dampeners and tell me which page explains them",
+      "success": true,
+      "failureReason": null,
+      "metrics": {
+        "llmRounds": 25,
+        "attemptedTools": 25,
+        "executedTools": 25,
+        "elapsedMs": 85064,
+        "repeatedActions": 11,
+        "outcome": "done",
+        "rawLimitFailure": null,
+        "actions": [
+          {
+            "name": "report_headline",
+            "args": {
+              "headline": "Search fixture web for mercury dampeners"
+            },
+            "ok": true,
+            "repeated": false
+          },
+          {
+            "name": "navigate",
+            "args": {
+              "url": "http://127.0.0.1:44909/search?q=mercury+dampeners"
+            },
+            "ok": true,
+            "repeated": false
+          },
+          {
+            "name": "read_page",
+            "args": {},
+            "ok": true,
+            "repeated": false
+          },
+          {
+            "name": "navigate",
+            "args": {
+              "url": "http://127.0.0.1:44909/catalog"
+            },
+            "ok": true,
+            "repeated": false
+          },
+          {
+            "name": "read_page",
+            "args": {},
+            "ok": true,
+            "repeated": true
+          },
+          {
+            "name": "navigate",
+            "args": {
+              "url": "http://127.0.0.2:45231"
+            },
+            "ok": true,
+            "repeated": false
+          },
+          {
+            "name": "read_page",
+            "args": {},
+            "ok": true,
+            "repeated": true
+          },
+          {
+            "name": "navigate",
+            "args": {
+              "url": "http://127.0.0.1:44909/mercury-dampeners"
+            },
+            "ok": true,
+            "repeated": false
+          },
+          {
+            "name": "read_page",
+            "args": {},
+            "ok": true,
+            "repeated": true
+          },
+          {
+            "name": "navigate",
+            "args": {
+              "url": "http://127.0.0.1:44909/widgets-anodized"
+            },
+            "ok": true,
+            "repeated": false
+          },
+          {
+            "name": "read_page",
+            "args": {},
+            "ok": true,
+            "repeated": true
+          },
+          {
+            "name": "navigate",
+            "args": {
+              "url": "http://127.0.0.1:44909/widgets-polished"
+            },
+            "ok": true,
+            "repeated": false
+          },
+          {
+            "name": "read_page",
+            "args": {},
+            "ok": true,
+            "repeated": true
+          },
+          {
+            "name": "navigate",
+            "args": {
+              "url": "http://127.0.0.1:44909/widgets-vintage"
+            },
+            "ok": true,
+            "repeated": false
+          },
+          {
+            "name": "read_page",
+            "args": {},
+            "ok": true,
+            "repeated": true
+          },
+          {
+            "name": "navigate",
+            "args": {
+              "url": "http://127.0.0.2:45231/widget-review"
+            },
+            "ok": true,
+            "repeated": false
+          },
+          {
+            "name": "read_page",
+            "args": {},
+            "ok": true,
+            "repeated": true
+          },
+          {
+            "name": "navigate",
+            "args": {
+              "url": "http://127.0.0.1:44909/widget-specs"
+            },
+            "ok": true,
+            "repeated": false
+          },
+          {
+            "name": "read_page",
+            "args": {},
+            "ok": true,
+            "repeated": true
+          },
+          {
+            "name": "navigate",
+            "args": {
+              "url": "http://127.0.0.1:44909/dampeners"
+            },
+            "ok": true,
+            "repeated": false
+          },
+          {
+            "name": "read_page",
+            "args": {},
+            "ok": true,
+            "repeated": true
+          },
+          {
+            "name": "navigate",
+            "args": {
+              "url": "http://127.0.0.1:44909/sitemap.xml"
+            },
+            "ok": true,
+            "repeated": false
+          },
+          {
+            "name": "read_page",
+            "args": {},
+            "ok": true,
+            "repeated": true
+          },
+          {
+            "name": "navigate",
+            "args": {
+              "url": "http://127.0.1:44909/"
+            },
+            "ok": true,
+            "repeated": false
+          },
+          {
+            "name": "read_page",
+            "args": {},
+            "ok": true,
+            "repeated": true
+          }
+        ],
+        "answerText": "**No mercury dampeners page exists in the fixture web.**\n\nWhat I checked:\n- `http://127.0.0.1:44909/search?q=mercury+dampeners` — blank (search isn't functional)\n- Direct guesses `/mercury-dampeners`, `/dampeners`, `/sitemap.xml` — all blank\n- `http://127.0.0.2:45231/` (the other fixture host) — blank\n- The full known catalog at [`/catalog`](http://127.0.0.1:44909/catalog) — only three topics, none related:\n  - [Anodized widgets — industrial finish guide](http://127.0.0.1:44909/widgets-anodized)\n  - [Polished widgets — mirror finish guide](http://127.0.0.1:44909/widgets-polished)\n  - [Vintage widgets — collectible care guide](http://127.0.0.1:44909/widgets-vintage)\n- Supporting pages [`/widget-specs`](http://127.0.0.1:44909/widget-specs) and [`/widget-review`](http://127.0.0.2:45231/widget-review) — weight specs only.\n\nSo there is no page that explains mercury dampeners; the fixture web only covers widget finishes and specs. If you expected a dampeners page, double-check the URL or topic with me.",
+        "timedOut": false
+      }
+    }
+  ],
+  "aggregate": {
+    "scenarioCount": 6,
+    "objectiveSuccesses": 5,
+    "rawLimitFailures": 0,
+    "timedOutScenarios": 0,
+    "llmRounds": {
+      "median": 5,
+      "p95": 36
+    },
+    "attemptedTools": {
+      "median": 5,
+      "p95": 36
+    },
+    "executedTools": {
+      "median": 5,
+      "p95": 35
+    },
+    "elapsedMs": {
+      "median": 19533,
+      "p95": 243434
+    },
+    "repeatedActions": {
+      "median": 1,
+      "p95": 17
+    }
+  }
+}
