@@ -73,6 +73,12 @@ describe('orchestrator prompt Run Plan (ADR 0027)', () => {
     expect(declaration).toMatch(/smallest sufficient tier/)
   })
 
+  it('bans rounds spent on the plan alone, and search objectives declared Direct Action (#131)', () => {
+    const declaration = line('report_run_plan')
+    expect(declaration).toMatch(/never a round spent on the plan alone/)
+    expect(declaration).toMatch(/search for or find content is Lookup work or above/)
+  })
+
   it('demands a task-term Run Headline, never a tool name', () => {
     const declaration = line('report_run_plan')
     expect(declaration).toMatch(/in task terms/)
@@ -209,5 +215,25 @@ describe('orchestrator prompt subagent evidence and freshness (#123)', () => {
     expect(ORCHESTRATOR_SYSTEM_PROMPT).toMatch(/volatile: true/)
     expect(ORCHESTRATOR_SYSTEM_PROMPT).toMatch(/later runs must revalidate volatile evidence/)
     expect(ORCHESTRATOR_SYSTEM_PROMPT).toMatch(/stable facts are reused without rereading/)
+  })
+})
+
+// #131 pins: the round-efficiency teachings from the acceptance-replay
+// tape — verbatim excerpts that survive first-attempt validation, and the
+// Candidate call shapes the tape showed the model inventing around.
+
+describe('orchestrator prompt round-efficiency teachings (#131)', () => {
+  it('teaches verbatim excerpts copied from the observed result, not retyped from memory', () => {
+    const checkpoint = line('record_evidence checkpoints')
+    expect(checkpoint).toMatch(/character-for-character/)
+    expect(checkpoint).toMatch(/never retyped or paraphrased from memory/)
+    expect(checkpoint).toMatch(/re-read the source only when its text is no longer in front of you/)
+  })
+
+  it('teaches the two record_candidate shapes as exclusive', () => {
+    const checkpoint = line('record_evidence checkpoints')
+    expect(checkpoint).toMatch(/two call shapes never mix/)
+    expect(checkpoint).toMatch(/no status on creation/)
+    expect(checkpoint).toMatch(/no subject on a decision/)
   })
 })

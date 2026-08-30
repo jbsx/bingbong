@@ -48,6 +48,7 @@ import {
   reviewPlanReport,
   RUN_PLAN_INVALID,
   RUN_PLAN_NUDGE,
+  RUN_PLAN_STANDALONE_ROUND,
   type EffortTier,
   type RunPlan,
 } from './runPlan'
@@ -988,6 +989,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
           // consumeSteering): the corrected objective reports a fresh
           // plan, not an update.
           let planResultError: string | null = null
+          let planResultNotice: string | null = null
           let planCallHandled = false
           // Planning engages only where the model can actually report a
           // plan: a catalog without the tool (tests, lean pipelines) never
@@ -1003,6 +1005,13 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
               } else {
                 runPlan = review.plan
                 modelDeclaredPlan = true
+                // A discovery objective declared below Lookup (#131) is
+                // flagged, not refused — the advisory rides the plan's
+                // own acknowledgement below, teaching the escalation
+                // before the Direct Action budget runs dry.
+                if (review.kind === 'accepted' && review.advisory !== undefined) {
+                  planResultNotice = review.advisory
+                }
                 // A valid plan arrived; any still-owed nudge is moot.
                 planNudgePending = false
                 // A tier change starts a fresh effort epoch (#117):
@@ -1061,6 +1070,20 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
             }
           }
 
+          // The plan acknowledgement's round-efficiency corrections
+          // (#131): a Tool Round spent on the plan alone is named as the
+          // wasted round it was — the plan still landed, so the
+          // correction rides the acknowledgement rather than failing the
+          // call, and a rejected or malformed lone plan call carries it
+          // after its own corrective error — and a below-Lookup advisory
+          // follows when the accepted declaration earned one.
+          const planOnlyRound = planCallHandled && turn.calls.every((call) => call.name === 'report_run_plan')
+          const planNotices = [
+            ...(planOnlyRound ? [RUN_PLAN_STANDALONE_ROUND] : []),
+            ...(planResultNotice !== null ? [planResultNotice] : []),
+          ]
+          const planAcknowledgement = planNotices.length > 0 ? `Run Plan noted. ${planNotices.join(' ')}` : 'Run Plan noted.'
+
           yield { type: 'status', status: 'acting', at: clock.now() }
           rounds += 1
           // A Tool Round is one model response regardless of sibling-call
@@ -1117,8 +1140,8 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
             const outcome: ToolResultOutcome =
               call.name === 'report_run_plan' && planCallHandled
                 ? planResultError !== null
-                  ? { ok: false, error: planResultError }
-                  : { ok: true, result: 'Run Plan noted.' }
+                  ? { ok: false, error: planOnlyRound ? `${planResultError} ${RUN_PLAN_STANDALONE_ROUND}` : planResultError }
+                  : { ok: true, result: planAcknowledgement }
                 : closedTool !== undefined && (closedTool.acquisition === true || closedTool.askUser !== undefined)
                   ? { ok: false, error: finalizationToolRefusal }
                   : yield* runGatedTool(call, turnId, visionBudget, searchLoopRail, noProgressRail, blockerGate, toolContext, run, observe)

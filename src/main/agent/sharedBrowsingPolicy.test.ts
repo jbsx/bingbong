@@ -106,6 +106,11 @@ describe('shared policy effort invariants (#118)', () => {
   it('demands the smallest sufficient tier', () => {
     expect(bullet('Work is bounded')).toMatch(/smallest sufficient/i)
   })
+
+  it('teaches that search-and-find objectives outrun a Direct Action budget (#131)', () => {
+    expect(bullet('Work is bounded')).toMatch(/search for or find content is Lookup work or above/i)
+    expect(bullet('Work is bounded')).toMatch(/Direct Action bounds one immediate action/i)
+  })
 })
 
 describe('shared policy Blocker/ad/user invariants (ADR 0007)', () => {
@@ -171,5 +176,10 @@ describe('shared policy evidence invariants (ADR 0028)', () => {
     expect(line).toMatch(/survives this run ending/i)
     expect(line).toMatch(/own words are kept verbatim/i)
     expect(line).toMatch(/volatile/i)
+  })
+
+  it('teaches verbatim quoting — copied from the observed result, never paraphrased (#131)', () => {
+    expect(bullet('Ground every claim')).toMatch(/copied verbatim from the observed result/i)
+    expect(bullet('Ground every claim')).toMatch(/never paraphrased from memory/i)
   })
 })

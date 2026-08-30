@@ -20,10 +20,12 @@ export function createRecordCandidateTool(): Tool {
       'Record or decide one Candidate in Session Evidence — a possible answer, item, or option the run is weighing. ' +
       'Create it active with {subject, detail?, supporting_evidence: [Session Evidence observation ids]}; decide it ' +
       'with {candidate_id, status: accepted|rejected|superseded, supporting_evidence} citing fresh Observations that ' +
-      'ground the decision. Record user corrections as rejections with kind "user" record_evidence support so ' +
-      'eliminated Candidates do not reappear later in the Session. Statuses are retained, not replayed; prior ' +
-      'provenance is preserved. Checkpoints apply immediately, survive this run failing or being stopped, and are ' +
-      'erased at Session Reset. Invalid calls are recoverable errors.',
+      'ground the decision. These are the only two shapes and they never mix: no status on creation (creation makes ' +
+      'it active), no subject on a decision, and supporting_evidence always cites memory-N ids that already exist. ' +
+      'Record user corrections as rejections with kind "user" record_evidence support so eliminated Candidates do ' +
+      'not reappear later in the Session. Statuses are retained, not replayed; prior provenance is preserved. ' +
+      'Checkpoints apply immediately, survive this run failing or being stopped, and are erased at Session Reset. ' +
+      'Invalid calls are recoverable errors.',
     parameters: {
       subject: {
         type: 'string',

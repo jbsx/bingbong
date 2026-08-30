@@ -16,8 +16,10 @@ export function createReportRunPlanTool(): Tool {
       'Report the Run Plan: objective (the task as you now understand it), headline (one short line in task terms ' +
       '("Find a blue mug under $20"), never a tool name — the run\u2019s live title on screen), and effort_tier — the ' +
       `smallest sufficient tier: ${effortTierVocabulary()}. Call it alongside useful work in your first useful tool ` +
-      'round, and again whenever the task changes, especially right after a steering directive. Later calls update the ' +
-      'headline at the same tier or escalate exactly one level with escalation_reason naming the new evidence.',
+      'round — never as a tool round of its own, which wastes the round — and again whenever the task changes, ' +
+      'especially right after a steering directive. An objective that must search for or find content is Lookup work ' +
+      'or above: a discover-and-open task on a Direct Action budget runs dry before the honest answer. Later calls ' +
+      'update the headline at the same tier or escalate exactly one level with escalation_reason naming the new evidence.',
     parameters: {
       objective: {
         type: 'string',

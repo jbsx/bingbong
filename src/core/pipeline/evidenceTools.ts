@@ -16,14 +16,15 @@ export function createRecordEvidenceTool(): Tool {
     name: 'record_evidence',
     description:
       'Checkpoint one grounded Observation into Session Evidence. Web (default): cite the source_url of a page this ' +
-      'run opened or read, and copy the excerpt verbatim from what the tool result showed there (a structured action ' +
-      'outcome grounds itself — excerpt then optional). User (kind "user"): checkpoint the user\'s exact words — the ' +
-      'command, an ask_user answer, or a steering directive this run heard, copied verbatim — so corrections and ' +
-      'constraints survive for the whole Session. Subagent (kind "subagent"): checkpoint a finding from a collected ' +
-      'report — cite the agent_id and one of the evidence URLs its findings carry; workers cannot checkpoint for ' +
-      'themselves. Checkpoint only decision-relevant facts: new findings, candidate eliminations, user corrections, ' +
-      'or work later runs must not repeat. Set volatile true for time-sensitive or action-critical observations — ' +
-      'later runs must revalidate those (or any uncertain one) before completing on them; stable facts are reused ' +
+      'run opened or read, and copy the excerpt verbatim — character-for-character copy-paste from what the tool ' +
+      'result showed there; a paraphrase from memory is rejected (a structured action outcome grounds itself — ' +
+      'excerpt then optional). User (kind "user"): checkpoint the user\'s exact words — the command, an ask_user ' +
+      'answer, or a steering directive this run heard, copied verbatim — so corrections and constraints survive for ' +
+      'the whole Session. Subagent (kind "subagent"): checkpoint a finding from a collected report — cite the ' +
+      'agent_id and one of the evidence URLs its findings carry; workers cannot checkpoint for themselves. ' +
+      'Checkpoint only decision-relevant facts: new findings, candidate eliminations, user corrections, or work ' +
+      'later runs must not repeat. Set volatile true for time-sensitive or action-critical observations — later ' +
+      'runs must revalidate those (or any uncertain one) before completing on them; stable facts are reused ' +
       'as-is. Checkpoints apply immediately, survive this run failing or being stopped, and are erased at Session ' +
       'Reset. Invalid citations are recoverable errors.',
     parameters: {
@@ -49,7 +50,10 @@ export function createRecordEvidenceTool(): Tool {
       },
       excerpt: {
         type: 'string',
-        description: 'Verbatim supporting excerpt from the tool result that observed the source. Web citations only.',
+        description:
+          'A contiguous span copied character-for-character from the tool result that observed the source — ' +
+          'copy-paste it; never retype or paraphrase from memory, a near-miss is rejected. If the observed text is ' +
+          'no longer in front of you, re-read the source before citing. Web citations only.',
         required: false,
       },
       agent_id: {

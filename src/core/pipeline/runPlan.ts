@@ -93,6 +93,45 @@ export const RUN_PLAN_INVALID =
   'Run Plan rejected: objective and headline must be non-empty strings and effort_tier one of ' +
   'direct_action, lookup, or investigation.'
 
+/**
+ * The correction a plan-only Tool Round receives (#131): the acceptance
+ * stands, but the round it wasted is named — the tape's standalone
+ * report_run_plan rounds (plan r2 between work rounds) each cost a full
+ * Tool Round the budget then charged for real work.
+ */
+export const RUN_PLAN_STANDALONE_ROUND =
+  'This round carried the plan alone: report_run_plan is declared alongside useful work in the same tool round, ' +
+  'never as a round of its own — do the work now.'
+
+/**
+ * Objective words that name discovery work — searching for, finding, or
+ * identifying content before it can be opened or read (#131). A Direct
+ * Action budget bounds one immediate action, so an objective whose own
+ * words describe discovery runs out of that budget before the honest
+ * answer (the tape's lookup scenario exhausted all 6 Direct Action
+ * rounds, then spent two more finalizing honest-partial). The inflected
+ * verbs only: noun collisions like "findings" or "location" must not
+ * read as discovery.
+ */
+const DISCOVERY_OBJECTIVE_PATTERN =
+  /\b(search\w*|find(s|ing)?|look(s|ing)?\s+up|lookup|discover\w*|locat(e|es|ed|ing)|hunt(s|ing)?\s+for)\b/i
+
+/** True when the objective's own words describe search-and-find work (#131). */
+export function objectiveDemandsDiscovery(objective: string): boolean {
+  return DISCOVERY_OBJECTIVE_PATTERN.test(objective)
+}
+
+/**
+ * The advisory that flags a discovery-shaped objective declared below
+ * Lookup (#131): the plan is accepted — the model keeps control — but
+ * the result it rides teaches the escalation the objective's own words
+ * demand, before the Direct Action budget runs dry.
+ */
+export const RUN_PLAN_TIER_BELOW_LOOKUP =
+  'The objective describes search-and-find work, and a Direct Action budget covers one immediate action only: ' +
+  'discover-and-open objectives run at Lookup or above. Escalate effort_tier to lookup with escalation_reason ' +
+  'alongside your next work — or, if the task truly is one immediate action, keep Direct Action and do it now.'
+
 export function lookupFallbackPlan(command: string): RunPlan {
   return { objective: command.trim(), headline: null, effortTier: DEFAULT_EFFORT_TIER }
 }
@@ -111,9 +150,20 @@ const TIER_LEVELS: Record<EffortTier, number> = { direct_action: 0, lookup: 1, i
 
 /** What a review of one plan report decided. */
 export type PlanReview =
-  | { kind: 'accepted'; plan: RunPlan }
+  | { kind: 'accepted'; plan: RunPlan; advisory?: string }
   | { kind: 'escalation'; plan: RunPlan; reason: string }
   | { kind: 'rejected'; reason: string }
+
+/**
+ * The below-Lookup advisory (#131) an accepted Direct Action declaration
+ * earns when its own objective words discovery work — undefined on every
+ * other shape.
+ */
+function belowLookupAdvisory(report: PlanReport): string | undefined {
+  return report.effortTier === 'direct_action' && objectiveDemandsDiscovery(report.objective)
+    ? RUN_PLAN_TIER_BELOW_LOOKUP
+    : undefined
+}
 
 /**
  * Reviews a well-formed report against the Run's current plan. The first
@@ -121,13 +171,21 @@ export type PlanReview =
  * default, not a declaration, so it constrains nothing. Later reports
  * refresh the headline at the same tier or escalate exactly one level with
  * a reason; downgrades arrive only through a fresh Steering plan, which
- * the pipeline signals by clearing `modelDeclared`.
+ * the pipeline signals by clearing `modelDeclared`. An accepted Direct
+ * Action plan whose objective words discovery carries the below-Lookup
+ * advisory (#131) — a flag, not a rejection.
  */
 export function reviewPlanReport(current: RunPlan | null, modelDeclared: boolean, report: PlanReport): PlanReview {
   const plan: RunPlan = { objective: report.objective, headline: report.headline, effortTier: report.effortTier }
-  if (current === null || !modelDeclared) return { kind: 'accepted', plan }
+  // Computed once: both accepted returns carry it, the others ignore it.
+  const advisory = belowLookupAdvisory(report)
+  if (current === null || !modelDeclared) {
+    return { kind: 'accepted', plan, ...(advisory !== undefined ? { advisory } : {}) }
+  }
   const level = TIER_LEVELS[report.effortTier] - TIER_LEVELS[current.effortTier]
-  if (level === 0) return { kind: 'accepted', plan }
+  if (level === 0) {
+    return { kind: 'accepted', plan, ...(advisory !== undefined ? { advisory } : {}) }
+  }
   if (level === 1) {
     if (report.escalationReason === undefined) {
       return { kind: 'rejected', reason: 'Run Plan rejected: escalating effort_tier requires escalation_reason stating the new evidence.' }

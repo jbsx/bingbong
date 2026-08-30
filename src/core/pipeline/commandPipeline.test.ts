@@ -6,6 +6,7 @@ import { steerPipeline } from './steering'
 import { createSpeechCoordinator } from '../tts/speechCoordinator'
 import { createAskUserTool } from './askUserTools'
 import { createReportRunPlanTool } from './runPlanTools'
+import { RUN_PLAN_NUDGE, RUN_PLAN_STANDALONE_ROUND, RUN_PLAN_TIER_BELOW_LOOKUP } from './runPlan'
 import type { EffortTier } from './runPlan'
 import { createHistoryRecorder } from '../history/historyRecorder'
 import type { HistoryStore, RecordedEntry, RunRecord } from '../history/historyStore'
@@ -670,6 +671,125 @@ describe('command pipeline', () => {
       )
       expect(nudged).toHaveLength(1)
       expect(nudged[0]).toMatchObject({ callId: 'c1' })
+    })
+
+    it('pairs a plan-only round with the plan-with-work correction (#131)', async () => {
+      const llm = new ScriptedLlm([
+        // Round 1 spends a full Tool Round on the plan alone — the tape's
+        // standalone report_run_plan leak.
+        { kind: 'tool_calls', calls: [plan('p1', 'Open the second page', 'Opening the second page', 'direct_action')] },
+        { kind: 'tool_calls', calls: [{ id: 'c1', name: 'noop', args: {} }] },
+        { kind: 'answer', speak: 'Opened.', display: 'Opened the page.' },
+      ])
+      const pipeline = createCommandPipeline({ llm, tts: new RecordingTts(), clock: new FakeClock(), tools: [createReportRunPlanTool(), noop] })
+
+      const events = await collect(pipeline, 'open the second page')
+
+      // The plan still landed and the round still executed its one call —
+      // but the acknowledgement carries the correction, so the model
+      // learns the round was wasted without a failed result.
+      expect(events).toContainEqual({
+        type: 'run_plan',
+        objective: 'Open the second page',
+        headline: 'Opening the second page',
+        effortTier: 'direct_action',
+        source: 'model',
+        at: 0,
+      })
+      expect(events.find((event) => event.type === 'tool_result' && event.callId === 'p1')).toMatchObject({
+        ok: true,
+        result: `Run Plan noted. ${RUN_PLAN_STANDALONE_ROUND}`,
+      })
+    })
+
+    it('carries the plan-with-work correction after a lone rejected or malformed plan call (#131)', async () => {
+      const llm = new ScriptedLlm([
+        // A lone malformed declaration wastes the round exactly the same
+        // way — its corrective error gains the standalone-round teaching.
+        { kind: 'tool_calls', calls: [{ id: 'p1', name: 'report_run_plan', args: { objective: '', headline: 42, effort_tier: 'huge' } }] },
+        { kind: 'tool_calls', calls: [{ id: 'c1', name: 'noop', args: {} }] },
+        { kind: 'answer', speak: 'Done.', display: 'Done.' },
+      ])
+      const pipeline = createCommandPipeline({ llm, tts: new RecordingTts(), clock: new FakeClock(), tools: [createReportRunPlanTool(), noop] })
+
+      const events = await collect(pipeline, 'do the thing')
+
+      // The nudge's own teaching is followed by the standalone-round
+      // correction — the composed error proves the append.
+      expect(events.find((event) => event.type === 'tool_result' && event.callId === 'p1')).toMatchObject({
+        ok: false,
+        error: `${RUN_PLAN_NUDGE} ${RUN_PLAN_STANDALONE_ROUND}`,
+      })
+    })
+
+    it('leaves a plan riding real work acknowledged cleanly', async () => {
+      const llm = new ScriptedLlm([
+        { kind: 'tool_calls', calls: [plan('p1', 'Open the second page', 'Opening the second page', 'direct_action'), { id: 'c1', name: 'noop', args: {} }] },
+        { kind: 'answer', speak: 'Opened.', display: 'Opened the page.' },
+      ])
+      const pipeline = createCommandPipeline({ llm, tts: new RecordingTts(), clock: new FakeClock(), tools: [createReportRunPlanTool(), noop] })
+
+      const events = await collect(pipeline, 'open the second page')
+
+      expect(events.find((event) => event.type === 'tool_result' && event.callId === 'p1')).toMatchObject({
+        ok: true,
+        result: 'Run Plan noted.',
+      })
+    })
+
+    it('flags a discovery objective declared Direct Action, and clears the flag once escalated (#131)', async () => {
+      const llm = new ScriptedLlm([
+        {
+          kind: 'tool_calls',
+          calls: [
+            plan('p1', 'Search the fixture web for widgets and open the guide', 'Finding the widgets guide', 'direct_action'),
+            { id: 'c1', name: 'noop', args: {} },
+          ],
+        },
+        {
+          kind: 'tool_calls',
+          calls: [
+            plan('p2', 'Search the fixture web for widgets and open the guide', 'Finding the widgets guide', 'lookup', 'The objective is search-and-open work.'),
+            { id: 'c2', name: 'noop', args: {} },
+          ],
+        },
+        { kind: 'answer', speak: 'Opened the guide.', display: 'Opened the complete guide.' },
+      ])
+      const pipeline = createCommandPipeline({ llm, tts: new RecordingTts(), clock: new FakeClock(), tools: [createReportRunPlanTool(), noop] })
+
+      const events = await collect(pipeline, 'search the fixture web for widgets and open the guide')
+
+      // The misdeclared plan was accepted — the flag rides its
+      // acknowledgement as teaching, not as a failure.
+      expect(events.find((event) => event.type === 'tool_result' && event.callId === 'p1')).toMatchObject({
+        ok: true,
+        result: `Run Plan noted. ${RUN_PLAN_TIER_BELOW_LOOKUP}`,
+      })
+      // The escalated report is clean, and the run now records Lookup.
+      expect(events.find((event) => event.type === 'tool_result' && event.callId === 'p2')).toMatchObject({
+        ok: true,
+        result: 'Run Plan noted.',
+      })
+      expect(events.filter((event) => event.type === 'run_plan').map((event) => (event as { effortTier: string }).effortTier)).toEqual([
+        'direct_action',
+        'lookup',
+      ])
+    })
+
+    it('stacks the standalone-round correction ahead of the below-Lookup advisory', async () => {
+      const llm = new ScriptedLlm([
+        { kind: 'tool_calls', calls: [plan('p1', 'Search the fixture web for widgets', 'Finding widgets', 'direct_action')] },
+        { kind: 'tool_calls', calls: [{ id: 'c1', name: 'noop', args: {} }] },
+        { kind: 'answer', speak: 'Done.', display: 'Done.' },
+      ])
+      const pipeline = createCommandPipeline({ llm, tts: new RecordingTts(), clock: new FakeClock(), tools: [createReportRunPlanTool(), noop] })
+
+      const events = await collect(pipeline, 'search the fixture web for widgets')
+
+      expect(events.find((event) => event.type === 'tool_result' && event.callId === 'p1')).toMatchObject({
+        ok: true,
+        result: `Run Plan noted. ${RUN_PLAN_STANDALONE_ROUND} ${RUN_PLAN_TIER_BELOW_LOOKUP}`,
+      })
     })
 
     it('reopens the initial-plan slot after a steering directive — a fresh plan may redeclare its tier', async () => {
