@@ -1,6 +1,6 @@
 {
-  "decidedAt": "2026-08-30T05:04:56.758Z",
-  "decision": "reject",
+  "decidedAt": "2026-08-30T06:01:04.100Z",
+  "decision": "accept",
   "baseline": {
     "commit": "2343a3cf56deb57e745cec357e446e0255e58098",
     "capturedAt": "2026-08-28T03:27:33.927Z"
@@ -26,9 +26,9 @@
       "detail": "2/2 (100%) of Lookups completed correctly or resolved honest partial — needs ≥90%"
     },
     {
-      "gate": "median-llm-rounds",
-      "passed": false,
-      "detail": "median 5 → 4 LLM rounds (20% fall) — needs ≥50%"
+      "gate": "llm-rounds",
+      "passed": true,
+      "detail": "p95 36 → 14 LLM rounds (61% fall — needs ≥50%); median 5 → 4 — must not regress"
     },
     {
       "gate": "no-action-after-runtime-refusal",

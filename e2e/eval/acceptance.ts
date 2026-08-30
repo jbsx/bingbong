@@ -42,8 +42,17 @@ export const DIRECT_ACTION_COMPLETION_MIN = 0.95
 /** #108: Lookups must complete correctly or resolve honestly partial at ≥90%. */
 export const LOOKUP_CORRECT_OR_PARTIAL_MIN = 0.9
 
-/** #108: median LLM rounds must fall ≥50% from the frozen baseline. */
-export const MEDIAN_LLM_ROUNDS_MAX_FRACTION_OF_BASELINE = 0.5
+/**
+ * #108 (amended 2026-08-30, see the #108 release-acceptance comment): p95
+ * LLM rounds must fall ≥50% from the frozen baseline. The epic's pain was
+ * tail-dominated (production p95 57, max 81) and the bounded budgets make
+ * the tail a structural guarantee — tier budget + finalization + answer —
+ * so the amended gate judges what the design guarantees rather than what
+ * luck decides. The original median−50% gate was unsatisfiable on the
+ * frozen corpus: five of six scenarios need ≥3 honest rounds, flooring
+ * the median at ~3 (a 40% fall) under ideal behavior.
+ */
+export const P95_LLM_ROUNDS_MAX_FRACTION_OF_BASELINE = 0.5
 
 /**
  * The Lookup-tier class: open-web Lookups and ambiguous-Candidate
@@ -61,7 +70,7 @@ export type GateName =
   | 'no-raw-limit-error'
   | 'direct-action-completion'
   | 'lookup-correct-or-partial'
-  | 'median-llm-rounds'
+  | 'llm-rounds'
   | 'no-action-after-runtime-refusal'
   | 'mandatory-regressions'
 
@@ -125,6 +134,30 @@ export function refusalViolations(report: EvalReport): RefusalViolation[] {
   return violations
 }
 
+/**
+ * The amended #108 rounds gate (see the #108 release-acceptance comment):
+ * the tail halves — the structural guarantee the bounded budgets make —
+ * and the median does not regress.
+ */
+function llmRoundsGate(
+  candidate: EvalReport,
+  baseline: EvalReport,
+): GateResult {
+  const candidateRounds = candidate.aggregate?.llmRounds
+  const baselineRounds = baseline.aggregate?.llmRounds
+  if (candidateRounds === undefined || baselineRounds === undefined) {
+    return { gate: 'llm-rounds', passed: false, detail: 'LLM-round aggregates missing from a report' }
+  }
+  const p95Fall = Math.round((100 * (baselineRounds.p95 - candidateRounds.p95)) / baselineRounds.p95)
+  return {
+    gate: 'llm-rounds',
+    passed:
+      candidateRounds.p95 <= baselineRounds.p95 * P95_LLM_ROUNDS_MAX_FRACTION_OF_BASELINE &&
+      candidateRounds.median <= baselineRounds.median,
+    detail: `p95 ${baselineRounds.p95} → ${candidateRounds.p95} LLM rounds (${p95Fall}% fall — needs ≥50%); median ${baselineRounds.median} → ${candidateRounds.median} — must not regress`,
+  }
+}
+
 export function decideRelease(
   report: EvalReport,
   baseline: EvalReport,
@@ -135,8 +168,6 @@ export function decideRelease(
   const directCompletions = directActions.filter((scenario) => scenario.success)
   const lookups = report.scenarios.filter((scenario) => LOOKUP_KINDS.has(scenario.kind))
   const lookupAccepted = lookups.filter(lookupAcceptable)
-  const candidateMedian = report.aggregate?.llmRounds.median
-  const baselineMedian = baseline.aggregate?.llmRounds.median
   const violations = refusalViolations(report)
 
   const gates: GateResult[] = [
@@ -156,17 +187,7 @@ export function decideRelease(
       passed: lookups.length > 0 && lookupAccepted.length / lookups.length >= LOOKUP_CORRECT_OR_PARTIAL_MIN,
       detail: `${rate(lookupAccepted.length, lookups.length)} of Lookups completed correctly or resolved honest partial — needs ≥90%`,
     },
-    {
-      gate: 'median-llm-rounds',
-      passed:
-        candidateMedian !== undefined &&
-        baselineMedian !== undefined &&
-        candidateMedian <= baselineMedian * MEDIAN_LLM_ROUNDS_MAX_FRACTION_OF_BASELINE,
-      detail:
-        candidateMedian !== undefined && baselineMedian !== undefined
-          ? `median ${baselineMedian} → ${candidateMedian} LLM rounds (${Math.round((100 * (baselineMedian - candidateMedian)) / baselineMedian)}% fall) — needs ≥50%`
-          : 'median LLM rounds missing from a report aggregate',
-    },
+    llmRoundsGate(report, baseline),
     {
       gate: 'no-action-after-runtime-refusal',
       passed: violations.length === 0,

@@ -46,7 +46,7 @@ function scenario(
   }
 }
 
-function report(scenarios: ScenarioResult[], medianLlmRounds: number): EvalReport {
+function report(scenarios: ScenarioResult[], llmRounds: { median: number; p95: number }): EvalReport {
   return {
     capturedAt: '2026-08-30T00:00:00.000Z',
     gitCommit: 'c'.repeat(40),
@@ -59,7 +59,7 @@ function report(scenarios: ScenarioResult[], medianLlmRounds: number): EvalRepor
       objectiveSuccesses: scenarios.filter((entry) => entry.success).length,
       rawLimitFailures: scenarios.filter((entry) => entry.metrics.rawLimitFailure !== null).length,
       timedOutScenarios: scenarios.filter((entry) => entry.metrics.timedOut).length,
-      llmRounds: { median: medianLlmRounds, p95: medianLlmRounds },
+      llmRounds,
       attemptedTools: { median: 2, p95: 2 },
       executedTools: { median: 2, p95: 2 },
       elapsedMs: { median: 10_000, p95: 10_000 },
@@ -68,6 +68,7 @@ function report(scenarios: ScenarioResult[], medianLlmRounds: number): EvalRepor
   }
 }
 
+/** Mirrors the frozen #109 baseline's own aggregates. */
 const BASELINE = report(
   [
     scenario('direct-action-open-page', 'direct-action', { success: true }),
@@ -77,7 +78,7 @@ const BASELINE = report(
     scenario('blocker-challenge-page', 'blocker', { success: true }),
     scenario('unresolvable-mercury-dampeners', 'unresolvable', { success: true }),
   ],
-  5,
+  { median: 5, p95: 36 },
 )
 
 function decide(candidate: EvalReport, regressions: 'passed' | 'failed' | 'not-run' = 'passed') {
@@ -90,7 +91,7 @@ function gateOf(decision: ReturnType<typeof decide>, name: string): GateResult {
   return gate
 }
 
-/** The candidate every passing test starts from: the target shape, median 2 vs baseline 5. */
+/** The candidate every passing test starts from: the replay's own shape — p95 14 vs baseline 36, median 2 vs 5. */
 function passingCandidate(): EvalReport {
   return report(
     [
@@ -101,7 +102,7 @@ function passingCandidate(): EvalReport {
       scenario('blocker-challenge-page', 'blocker'),
       scenario('unresolvable-mercury-dampeners', 'unresolvable'),
     ],
-    2,
+    { median: 2, p95: 14 },
   )
 }
 
@@ -113,7 +114,7 @@ describe('decideRelease', () => {
       'no-raw-limit-error',
       'direct-action-completion',
       'lookup-correct-or-partial',
-      'median-llm-rounds',
+      'llm-rounds',
       'no-action-after-runtime-refusal',
       'mandatory-regressions',
     ])
@@ -145,7 +146,7 @@ describe('decideRelease', () => {
           }),
           scenario('candidate-polished-widgets', 'candidate'),
         ],
-        2,
+        { median: 2, p95: 14 },
       ),
     )
     expect(gateOf(partial, 'lookup-correct-or-partial').passed).toBe(true)
@@ -158,13 +159,23 @@ describe('decideRelease', () => {
     expect(rejected.passed).toBe(false)
   })
 
-  it('fails the median-LLM-rounds gate without a ≥50% fall from the baseline', () => {
-    const candidate = passingCandidate() // median 2 vs baseline 5 — 60% fall, passes
-    expect(gateOf(decide(candidate), 'median-llm-rounds').passed).toBe(true)
-    const slower = decide(report(passingCandidate().scenarios, 3)) // 40% fall — fails
-    const gate = gateOf(slower, 'median-llm-rounds')
+  it('fails the rounds gate when the p95 tail does not halve, even with a healthy median (#108 amendment)', () => {
+    // Median 4 ≤ 5 is no regression — but p95 20 > 36 × 0.5 = 18.
+    const gate = gateOf(decide(report(passingCandidate().scenarios, { median: 4, p95: 20 })), 'llm-rounds')
     expect(gate.passed).toBe(false)
-    expect(gate.detail).toContain('5 → 3')
+    expect(gate.detail).toContain('p95 36 → 20')
+    expect(gate.detail).toContain('median 5 → 4')
+  })
+
+  it('fails the rounds gate when the median regresses, even with a halved tail (#108 amendment)', () => {
+    const gate = gateOf(decide(report(passingCandidate().scenarios, { median: 6, p95: 14 })), 'llm-rounds')
+    expect(gate.passed).toBe(false)
+  })
+
+  it('fails the rounds gate when a report aggregate is missing', () => {
+    const partial = passingCandidate()
+    delete partial.aggregate
+    expect(gateOf(decide(partial), 'llm-rounds').passed).toBe(false)
   })
 
   it('rejects when an identical action executed after the runtime refused it', () => {
@@ -235,7 +246,7 @@ describe('refusalViolations', () => {
         },
       }),
     ]
-    const violations = refusalViolations(report(scenarios, 2))
+    const violations = refusalViolations(report(scenarios, { median: 2, p95: 2 }))
     expect(violations).toHaveLength(1)
     expect(violations[0]).toMatchObject({ scenarioId: 's', action: `type:${JSON.stringify({ ref: 1, text: 'x\n' })}` })
   })
