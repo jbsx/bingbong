@@ -1,9 +1,16 @@
 import { nearestRankPercentile } from '../../src/core/report/stats.ts'
+import {
+  CEILING_RESERVED_BOOKKEEPING_ROUNDS,
+  HARD_TOOL_ROUND_CEILING,
+  TIER_TOOL_ROUND_BUDGETS,
+} from '../../src/core/pipeline/effortBudget.ts'
+import type { EffortTier } from '../../src/core/pipeline/runPlan.ts'
+import { evalScenarios } from './scenarios.ts'
 import type { EvalReport, ScenarioResult } from './evaluator'
 
-// Issue #128, closing #108's release acceptance; amended by #132. The
-// decision judges POOLS of real-model captures — three complete passes per
-// side — never a single pass: on the #130 production-weighted corpus a
+// Issue #128, closing #108's release acceptance; amended by #132 and #134.
+// The decision judges POOLS of real-model captures — three complete passes
+// per side — never a single pass: on the #130 production-weighted corpus a
 // single-pass p95 is noise-dominated on both sides (the frozen old-path
 // capture never exceeded 9 rounds while its sibling passes' lookups and
 // clicks ran 12–20), so a one-vs-one comparison rejects a structurally
@@ -11,14 +18,26 @@ import type { EvalReport, ScenarioResult } from './evaluator'
 // provenance before it can produce a decision: one source commit per side
 // (the baseline side pinned to the pre-#114 tree, git 2343a3c, captured
 // via worktree + eval overlay), identical scenario ids in identical order,
-// one model/routing contract, and the real-model witness on every
-// capture; the candidate pool must all represent one candidate commit.
+// one model/routing contract, and the real-model witness on every capture;
+// the candidate pool must all represent one candidate commit.
 //
 // Pooled statistics are computed from the raw per-scenario round counts —
 // nearest-rank over the pooled scenario population (93 observations at
-// corpus weight), never an average of pass-level percentiles. Everything
-// else #108 gates stays as amended by #128: p95 must halve against the
-// pooled baseline, the median must not regress. Every candidate-side gate
+// corpus weight), never an average of pass-level percentiles. #134
+// replaced the #128 pooled-p95-halving requirement — the re-captured
+// production-weighted pools showed a 22% fall where 50% was demanded, and
+// the maintainer decision (2026-08-30) re-anchored the rounds gate onto
+// what the bounded design structurally guarantees: the global pooled
+// median must not regress, the production-dominant Direct Action and
+// Lookup-class pooled medians must strictly improve, and every candidate
+// observation must stay inside the structural ceiling its corpus-declared
+// expected Effort Tier grants — the tier's work budget plus at most one
+// terminal bookkeeping round and one Answer round per legitimate budget
+// epoch (a Run, or a Steering replan within one), capped by the hard Tool
+// Round ceiling. The model's own tier declaration grants nothing: the
+// ceiling comes from the corpus of record (e2e/eval/scenarios.ts), never
+// from what the run happened to declare. Pooled p95 stays in the artifact
+// as a reported number, never a threshold. Every candidate-side gate
 // judges the pooled population too — there is no single candidate report
 // to fall back on, and per-pass judgement would reintroduce the
 // single-pass noise the pools exist to absorb.
@@ -31,8 +50,11 @@ import type { EvalReport, ScenarioResult } from './evaluator'
 //
 // Runtime imports stay minimal on purpose: node runs this module directly
 // via `pnpm eval:accept` type stripping (#36), so everything it pulls is
-// types plus src/core/report/stats.ts — the repo's single nearest-rank
-// home, a pure dependency-free module — and this file's own logic.
+// types, src/core/report/stats.ts (the repo's single nearest-rank home),
+// src/core/pipeline/effortBudget.ts (pure policy constants — its own
+// imports are type-only, so the runtime graph stays dependency-free),
+// this file's own logic, and the corpus of record, whose imports are
+// type-only too.
 
 /**
  * The deterministic rails' pre-execution refusal shapes — what #108's "no
@@ -58,20 +80,15 @@ export const DIRECT_ACTION_COMPLETION_MIN = 0.95
 export const LOOKUP_CORRECT_OR_PARTIAL_MIN = 0.9
 
 /**
- * #108 (amended 2026-08-30, see the #108 release-acceptance comment): p95
- * LLM rounds must fall ≥50% from the pooled baseline. The epic's pain was
- * tail-dominated (production p95 57, max 81) and the bounded budgets make
- * the tail a structural guarantee — tier budget + finalization + answer —
- * so the amended gate judges what the design guarantees rather than what
- * luck decides. #132 moves the statistic onto three-pass pools so neither
- * side's stochastic tail can decide the release alone.
+ * The production-majority class the rounds gate judges separately (#134):
+ * deterministic Direct Actions, the corpus kind `direct-action`.
  */
-export const P95_LLM_ROUNDS_MAX_FRACTION_OF_BASELINE = 0.5
+const DIRECT_ACTION_KIND: ScenarioResult['kind'] = 'direct-action'
 
 /**
  * #132: exactly how many complete captures a side's pool holds. The
  * maintainer decision (2026-08-30) fixed three passes per side — enough
- * for a pooled p95 to absorb single-pass luck, bounded model spend.
+ * for a pooled statistic to absorb single-pass luck, bounded model spend.
  */
 export const POOL_SIZE = 3
 
@@ -118,6 +135,28 @@ export interface RefusalViolation {
   action: string
 }
 
+/** One candidate observation beyond the structural ceiling its design grants (#134). */
+export interface StructuralViolation {
+  /** The capture within the candidate pool (1-based pass number). */
+  pass: number
+  scenarioId: string
+  /** The offending Run (1-based; artifacts without per-run telemetry judge one combined bucket). */
+  run: number
+  observedRounds: number
+  allowedRounds: number
+  /** The expected epochs the allowance derived from, e.g. `direct_action+steered:direct_action`. */
+  expectedEpochs: string
+}
+
+/** A scenario's corpus-derived structural bound: what its design legitimately permits (#134). */
+export interface StructuralCeiling {
+  scenarioId: string
+  /** Allowed LLM-round maxima per executed Run, in design order. */
+  runAllowances: number[]
+  /** The epochs each Run's allowance derives from, in run order — the violation witness. */
+  runEpochs: string[]
+}
+
 /** One contributing capture's identity and model witness — what the decision artifact records. */
 export interface CaptureProvenance {
   commit: string
@@ -131,6 +170,12 @@ export interface PooledRoundsStats {
   p95: number
 }
 
+/** The class-level pooled medians the #134 rounds gate judges separately. */
+export interface ClassMedians {
+  directAction: number | null
+  lookupClass: number | null
+}
+
 /** One side's validated pool: three captures of one commit, corpus, and routing contract. */
 export interface CapturePool {
   captures: CaptureProvenance[]
@@ -142,6 +187,8 @@ export interface CapturePool {
   scenarioIds: string[]
   /** Nearest-rank LLM-round stats over the pooled population — pass percentiles are never averaged. */
   pooledRounds: PooledRoundsStats
+  /** Nearest-rank class medians over the same pooled population (#134). */
+  classMedians: ClassMedians
 }
 
 /** The per-side summary the decision artifact records — everything validation judged. */
@@ -152,6 +199,8 @@ export interface PoolWitness {
   /** The corpus signature — one capture's scenario ids, in order. */
   scenarioIds: string[]
   pooledLlmRounds: PooledRoundsStats
+  /** The class pooled medians the rounds gate judged (#134). */
+  classMedians: ClassMedians
   /** The pooled scenario population the statistics judged (93 at corpus weight). */
   scenarioObservations: number
 }
@@ -162,6 +211,12 @@ export interface ReleaseDecision {
   baseline: PoolWitness
   candidate: PoolWitness
   gates: GateResult[]
+  /**
+   * The #134 rounds-gate contract this decision judged, stated in the
+   * artifact so the recorded decision names its own rules, not just their
+   * verdicts.
+   */
+  roundsGateContract: string
   /** Live-web canaries: diagnostic-only, reported separately, never a gate. */
   canaries: { status: 'not-run'; note: string }
 }
@@ -193,6 +248,132 @@ function canonicalJson(value: unknown): string {
 
 function shortCommit(commit: string): string {
   return commit.slice(0, 7)
+}
+
+/**
+ * One budget epoch's LLM-round allowance (#134): the tier's Tool Round
+ * work budget, plus the one terminal bookkeeping Tool Round a Finalizing
+ * run may spend, plus the Answer round that rides outside every round
+ * budget. The hard Tool Round ceiling stays authoritative per Run — a
+ * many-epoch design cannot out-grant it (see structuralCeiling).
+ */
+export function epochRoundAllowance(tier: EffortTier): number {
+  return TIER_TOOL_ROUND_BUDGETS[tier] + CEILING_RESERVED_BOOKKEEPING_ROUNDS + 1
+}
+
+/** One budget epoch: its expected tier and its witness label. */
+interface Epoch {
+  tier: EffortTier
+  label: string
+}
+
+/** The epochs one Run's design grants — the steered epoch carries its marker (#134). */
+function runEpochs(scenario: EvalScenarioLike, run: 'first' | 'followUp'): Epoch[] {
+  const effort = scenario.expectedEffort
+  if (run === 'followUp') return [{ tier: effort.followUpTier ?? effort.tier, label: effort.followUpTier ?? effort.tier }]
+  return scenario.steer === undefined
+    ? [{ tier: effort.tier, label: effort.tier }]
+    : [
+        { tier: effort.tier, label: effort.tier },
+        { tier: effort.steeredTier ?? effort.tier, label: `steered:${effort.steeredTier ?? effort.tier}` },
+      ]
+}
+
+/** The structural shape structuralCeiling reads — EvalScenario minus what the gate never touches. */
+interface EvalScenarioLike {
+  id: string
+  steer?: unknown
+  followUp?: unknown
+  expectedEffort: { tier: EffortTier; steeredTier?: EffortTier; followUpTier?: EffortTier }
+}
+
+/**
+ * Derive a scenario's structural ceiling from its corpus declaration
+ * (#134): each executed command is one Run with its own budget, a Steering
+ * directive re-arms the Run's budget as one more epoch, and each epoch
+ * permits its tier's work budget plus one bookkeeping and one Answer
+ * round. A Run's epochs are capped by the hard Tool Round ceiling plus
+ * its Answer round — the ceiling stays authoritative however many epochs
+ * the design grants. Model-declared tiers grant nothing: only the corpus
+ * declaration above feeds the arithmetic.
+ */
+export function structuralCeiling(scenario: EvalScenarioLike): StructuralCeiling {
+  const runs: ('first' | 'followUp')[] = scenario.followUp === undefined ? ['first'] : ['first', 'followUp']
+  const epochsWithRuns = runs.map((run) => runEpochs(scenario, run))
+  return {
+    scenarioId: scenario.id,
+    runAllowances: epochsWithRuns.map((epochs) =>
+      Math.min(
+        epochs.reduce((sum, epoch) => sum + epochRoundAllowance(epoch.tier), 0),
+        HARD_TOOL_ROUND_CEILING + 1,
+      ),
+    ),
+    runEpochs: epochsWithRuns.map((epochs) => epochs.map((epoch) => epoch.label).join('+')),
+  }
+}
+
+/** The corpus of record's ceilings by scenario id — the gate's only ceiling source. */
+export function corpusCeilings(): Map<string, StructuralCeiling> {
+  return new Map(evalScenarios().map((scenario) => [scenario.id, structuralCeiling(scenario)]))
+}
+
+/**
+ * Scan a pool for observations beyond their corpus-declared ceiling
+ * (#134). Each Run judges against its own allowance — a combined total
+ * inside the scenario ceiling cannot hide one Run blowing past its budget
+ * (if any run exceeds its allowance, the total must exceed the sum, so
+ * per-run judgement subsumes total judgement). An artifact that predates
+ * per-run telemetry judges one combined bucket against the full ceiling.
+ * A Run with no corresponding design epoch has no legitimate budget and
+ * reports allowed 0.
+ */
+export function structuralViolations(
+  reports: readonly EvalReport[],
+  ceilings: ReadonlyMap<string, StructuralCeiling> = corpusCeilings(),
+): StructuralViolation[] {
+  const violations: StructuralViolation[] = []
+  reports.forEach((report, passIndex) => {
+    for (const scenario of report.scenarios) {
+      const ceiling = ceilings.get(scenario.id)
+      if (ceiling === undefined) continue
+      const buckets: { observed: number; allowed: number; epochs: string }[] =
+        scenario.runs.length > 0
+          ? scenario.runs.map((run, runIndex) => ({
+              observed: run.llmRounds,
+              allowed: ceiling.runAllowances[runIndex] ?? 0,
+              epochs: ceiling.runEpochs[runIndex] ?? 'no granted epoch',
+            }))
+          : [
+              {
+                observed: scenario.metrics.llmRounds,
+                allowed: ceiling.runAllowances.reduce((sum, allowance) => sum + allowance, 0),
+                epochs: ceiling.runEpochs.join('+'),
+              },
+            ]
+      buckets.forEach((bucket, bucketIndex) => {
+        if (bucket.observed > bucket.allowed) {
+          violations.push({
+            pass: passIndex + 1,
+            scenarioId: scenario.id,
+            run: bucketIndex + 1,
+            observedRounds: bucket.observed,
+            allowedRounds: bucket.allowed,
+            expectedEpochs: bucket.epochs,
+          })
+        }
+      })
+    }
+  })
+  return violations
+}
+
+/** Nearest-rank median over one class's pooled round counts — null when the class is absent. */
+function pooledMedianOfClass(scenarios: readonly ScenarioResult[], kinds: ReadonlySet<ScenarioResult['kind']>): number | null {
+  const sorted = scenarios
+    .filter((scenario) => kinds.has(scenario.kind))
+    .map((scenario) => scenario.metrics.llmRounds)
+    .sort((left, right) => left - right)
+  return sorted.length > 0 ? nearestRankPercentile(sorted, 50) : null
 }
 
 /**
@@ -278,6 +459,10 @@ export function buildPool(role: string, reports: readonly EvalReport[]): Capture
       median: nearestRankPercentile(sortedRounds, 50),
       p95: nearestRankPercentile(sortedRounds, 95),
     },
+    classMedians: {
+      directAction: pooledMedianOfClass(scenarios, new Set([DIRECT_ACTION_KIND])),
+      lookupClass: pooledMedianOfClass(scenarios, LOOKUP_KINDS),
+    },
   }
 }
 
@@ -312,27 +497,45 @@ export function refusalViolations(pool: readonly EvalReport[]): RefusalViolation
 }
 
 /**
- * The amended #108 rounds gate over pooled captures (#132): the pooled
- * tail halves — the structural guarantee the bounded budgets make — and
- * the pooled median does not regress. Both statistics are nearest-rank
- * over the raw pooled round counts, never averages of pass percentiles.
+ * The #134 rounds gate over pooled captures: the global pooled median must
+ * not regress, the Direct Action and Lookup-class pooled medians must
+ * strictly improve (the production-weighted classes with meaningful
+ * sample counts — the rarer classes stay protected by their objective
+ * gates and structural ceilings, not three-observation medians), and every
+ * candidate observation must sit inside its corpus-declared structural
+ * ceiling. Pooled p95 is reported, never gated. All statistics are
+ * nearest-rank over the raw pooled round counts, never averages of pass
+ * percentiles.
  */
-function llmRoundsGate(candidate: CapturePool, baseline: CapturePool): GateResult {
-  if (baseline.pooledRounds.p95 === 0) {
-    return { gate: 'llm-rounds', passed: false, detail: 'baseline pooled p95 is 0 — there is no tail to halve' }
-  }
-  const p95Fall = Math.round(
-    (100 * (baseline.pooledRounds.p95 - candidate.pooledRounds.p95)) / baseline.pooledRounds.p95,
-  )
+function llmRoundsGate(candidate: CapturePool, baseline: CapturePool, violations: readonly StructuralViolation[]): GateResult {
+  const globalOk = candidate.pooledRounds.median <= baseline.pooledRounds.median
+  const directActionOk =
+    candidate.classMedians.directAction !== null &&
+    baseline.classMedians.directAction !== null &&
+    candidate.classMedians.directAction < baseline.classMedians.directAction
+  const lookupClassOk =
+    candidate.classMedians.lookupClass !== null &&
+    baseline.classMedians.lookupClass !== null &&
+    candidate.classMedians.lookupClass < baseline.classMedians.lookupClass
+  const classLine = (label: string, from: number | null, to: number | null): string =>
+    `; ${label} median ${from ?? 'none'} → ${to ?? 'none'} — must improve`
   return {
     gate: 'llm-rounds',
-    passed:
-      candidate.pooledRounds.p95 <= baseline.pooledRounds.p95 * P95_LLM_ROUNDS_MAX_FRACTION_OF_BASELINE &&
-      candidate.pooledRounds.median <= baseline.pooledRounds.median,
+    passed: globalOk && directActionOk && lookupClassOk && violations.length === 0,
     detail:
-      `p95 ${baseline.pooledRounds.p95} → ${candidate.pooledRounds.p95} LLM rounds (${p95Fall}% fall — needs ≥50%) ` +
-      `pooled over ${candidate.scenarios.length} observations per side (${POOL_SIZE} captures each — pass percentiles are never averaged); ` +
-      `median ${baseline.pooledRounds.median} → ${candidate.pooledRounds.median} — must not regress`,
+      `median ${baseline.pooledRounds.median} → ${candidate.pooledRounds.median} pooled over ${candidate.scenarios.length} observations per side ` +
+      `(${POOL_SIZE} captures each — pass percentiles are never averaged) — must not regress` +
+      classLine('Direct Action', baseline.classMedians.directAction, candidate.classMedians.directAction) +
+      classLine('Lookup-class', baseline.classMedians.lookupClass, candidate.classMedians.lookupClass) +
+      `; p95 ${baseline.pooledRounds.p95} → ${candidate.pooledRounds.p95} (reported, never gated #134); ` +
+      (violations.length === 0
+        ? `structural bounds: every observation within its corpus-declared ceiling`
+        : `structural bounds: ${violations
+            .map(
+              (violation) =>
+                `pass ${violation.pass} ${violation.scenarioId} run ${violation.run}: ${violation.observedRounds} rounds exceed the ${violation.allowedRounds} allowed by ${violation.expectedEpochs}`,
+            )
+            .join('; ')}`),
   }
 }
 
@@ -351,6 +554,17 @@ export function decideRelease(
   if (candidate.scenarioIds.join('\n') !== baseline.scenarioIds.join('\n')) {
     throw new Error('candidate and baseline pools cover different corpora — the comparison needs the same scenarios in the same order')
   }
+  // #134: every captured scenario must be one the corpus of record
+  // defines an expected Effort Tier for — an id without a corpus
+  // declaration has no derivable ceiling, so it is broken input, not a
+  // failed gate.
+  const ceilings = corpusCeilings()
+  const outsideCorpus = candidate.scenarioIds.find((id) => !ceilings.has(id))
+  if (outsideCorpus !== undefined) {
+    throw new Error(
+      `the corpus of record does not define ${outsideCorpus} — pools must match e2e/eval/scenarios.ts before a decision can derive ceilings`,
+    )
+  }
 
   const rawLimitScenarios = candidate.scenarios.filter((scenario) => scenario.metrics.rawLimitFailure !== null)
   const directActions = candidate.scenarios.filter((scenario) => scenario.kind === 'direct-action')
@@ -358,6 +572,7 @@ export function decideRelease(
   const lookups = candidate.scenarios.filter((scenario) => LOOKUP_KINDS.has(scenario.kind))
   const lookupAccepted = lookups.filter(lookupAcceptable)
   const violations = refusalViolations(candidateReports)
+  const structural = structuralViolations(candidateReports, ceilings)
 
   const gates: GateResult[] = [
     {
@@ -376,7 +591,7 @@ export function decideRelease(
       passed: lookups.length > 0 && lookupAccepted.length / lookups.length >= LOOKUP_CORRECT_OR_PARTIAL_MIN,
       detail: `${rate(lookupAccepted.length, lookups.length)} of Lookups completed correctly or resolved honest partial across ${candidate.captures.length} captures — needs ≥90%`,
     },
-    llmRoundsGate(candidate, baseline),
+    llmRoundsGate(candidate, baseline, structural),
     {
       gate: 'no-action-after-runtime-refusal',
       passed: violations.length === 0,
@@ -397,6 +612,7 @@ export function decideRelease(
     routing: pool.routing,
     scenarioIds: pool.scenarioIds,
     pooledLlmRounds: pool.pooledRounds,
+    classMedians: pool.classMedians,
     scenarioObservations: pool.scenarios.length,
   })
 
@@ -406,6 +622,10 @@ export function decideRelease(
     baseline: witnessOf(baseline),
     candidate: witnessOf(candidate),
     gates,
+    roundsGateContract:
+      '#134 (maintainer-approved 2026-08-30): the global pooled median must not regress; the Direct Action and Lookup-class pooled medians must strictly improve; ' +
+      'every candidate observation must stay within the structural ceiling its corpus-declared expected Effort Tier grants — the tier work budget plus at most one terminal bookkeeping round and one Answer round per legitimate budget epoch (each Run, and each Steering replan within one), capped by the hard Tool Round ceiling. ' +
+      'The #128 pooled-p95-halving requirement is retired: pooled p95 is reported, never gated.',
     canaries: {
       status: 'not-run',
       note: 'live-web canaries are diagnostic-only by design (#108) and gate nothing; none ship in this repo, so none ran',

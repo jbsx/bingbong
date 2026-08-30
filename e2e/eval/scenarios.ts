@@ -1,4 +1,5 @@
 import type { FixtureServer } from '../fixtureServer'
+import type { EffortTier } from '../../src/core/pipeline/runPlan'
 import type { ScenarioMetrics } from './metrics'
 
 // The real-model corpus — #109's six behavior classes grown to the #130
@@ -86,6 +87,21 @@ export interface EvalScenario {
     prepare?: (fixture: FixtureServer) => void
     command: (fixture: FixtureServer) => string
   }
+  /**
+   * #134: the corpus's effort expectation — the durable inputs the release
+   * gate's structural ceiling derives from, declared by scenario design and
+   * never by whatever tier the model happened to declare. Budget epochs are
+   * structural: each executed command is one Run with a fresh tier budget,
+   * and a Steering directive re-arms the Run's budget as one more epoch.
+   */
+  expectedEffort: {
+    /** The first command's expected tier. */
+    tier: EffortTier
+    /** The Steering epoch's expected tier — present only on steering scenarios; defaults to `tier`. */
+    steeredTier?: EffortTier
+    /** The follow-up command's expected tier — present only with a followUp; defaults to `tier`. */
+    followUpTier?: EffortTier
+  }
   /** Objective success — one boolean, no partial credit. */
   success: (observation: ScenarioObservation, fixture: FixtureServer) => boolean
 }
@@ -132,36 +148,42 @@ export function evalScenarios(): EvalScenario[] {
       id: 'direct-action-open-page',
       kind: 'direct-action',
       command: (fixture) => `open ${fixture.url('/second')} in the browser`,
+      expectedEffort: { tier: 'direct_action' },
       success: (observation, fixture) => observation.paneUrl === fixture.url('/second') && observation.outcome === 'done',
     },
     {
       id: 'direct-action-open-article',
       kind: 'direct-action',
       command: (fixture) => `open ${fixture.url('/widgets-article')} in the browser`,
+      expectedEffort: { tier: 'direct_action' },
       success: (observation, fixture) => observation.paneUrl === fixture.url('/widgets-article') && observation.outcome === 'done',
     },
     {
       id: 'direct-action-open-alt-host',
       kind: 'direct-action',
       command: (fixture) => `open ${fixture.altUrl('/widget-review')} in the browser`,
+      expectedEffort: { tier: 'direct_action' },
       success: (observation, fixture) => observation.paneUrl === fixture.altUrl('/widget-review') && observation.outcome === 'done',
     },
     {
       id: 'direct-action-open-results',
       kind: 'direct-action',
       command: (fixture) => `open the fixture web results for widgets at ${fixture.url('/results?q=widgets')} in the browser`,
+      expectedEffort: { tier: 'direct_action' },
       success: (observation, fixture) => observation.paneUrl === fixture.url('/results?q=widgets') && observation.outcome === 'done',
     },
     {
       id: 'direct-action-click-button',
       kind: 'direct-action',
       command: (fixture) => `open ${fixture.url('/interactive')} and click the Say hello button`,
+      expectedEffort: { tier: 'direct_action' },
       success: (observation) => observation.paneState?.title === 'clicked:btn-hello' && observation.outcome === 'done',
     },
     {
       id: 'direct-action-check-checkbox',
       kind: 'direct-action',
       command: (fixture) => `open ${fixture.url('/interactive')} and tick the Agree checkbox`,
+      expectedEffort: { tier: 'direct_action' },
       success: (observation) => observation.paneState?.agreeChecked === true && observation.outcome === 'done',
     },
     {
@@ -174,6 +196,7 @@ export function evalScenarios(): EvalScenario[] {
       id: 'direct-action-select-option',
       kind: 'direct-action',
       command: (fixture) => `open ${fixture.url('/interactive')} and choose Beta in the Choice select`,
+      expectedEffort: { tier: 'direct_action' },
       success: (observation) => observation.paneState?.choiceSelected === 'b' && observation.outcome === 'done',
     },
     {
@@ -185,18 +208,21 @@ export function evalScenarios(): EvalScenario[] {
       id: 'direct-action-click-link',
       kind: 'direct-action',
       command: (fixture) => `open ${fixture.url('/native-dialog')} and click the Leave page link`,
+      expectedEffort: { tier: 'direct_action' },
       success: (observation, fixture) => observation.paneUrl === fixture.url('/second') && observation.outcome === 'done',
     },
     {
       id: 'direct-action-type-submit',
       kind: 'direct-action',
       command: (fixture) => `open ${fixture.url('/site-search')} and submit a search for widgets`,
+      expectedEffort: { tier: 'direct_action' },
       success: (observation) => observation.paneState?.title === 'submitted:sitesearch' && observation.outcome === 'done',
     },
     {
       id: 'direct-action-dismiss-dialog',
       kind: 'direct-action',
       command: (fixture) => `open ${fixture.url('/dialog-wall')} and dismiss the sign-in wall with Not now`,
+      expectedEffort: { tier: 'direct_action' },
       success: (observation, fixture) =>
         observation.paneUrl === fixture.url('/dialog-wall') &&
         observation.paneState?.dialogPresent === false &&
@@ -211,6 +237,7 @@ export function evalScenarios(): EvalScenario[] {
       id: 'direct-action-scroll-down',
       kind: 'direct-action',
       command: (fixture) => `open ${fixture.url('/interactive')} and scroll down a few screens`,
+      expectedEffort: { tier: 'direct_action' },
       success: (observation, fixture) =>
         observation.paneUrl === fixture.url('/interactive') &&
         (observation.paneState?.scrollY ?? 0) >= 500 &&
@@ -220,6 +247,7 @@ export function evalScenarios(): EvalScenario[] {
       id: 'direct-action-media-pause',
       kind: 'direct-action',
       command: (fixture) => `toggle playback of the video on ${fixture.url('/media')}`,
+      expectedEffort: { tier: 'direct_action' },
       success: (observation) =>
         (observation.paneState?.pressedKeys ?? []).some((key) => key.key === 'k') && observation.outcome === 'done',
     },
@@ -229,6 +257,10 @@ export function evalScenarios(): EvalScenario[] {
       id: 'unanswered-earlier-bulletin',
       kind: 'unanswered',
       command: () => 'open the depot bulletin I mentioned earlier and show me what it says',
+      // The reference cannot resolve from Session Evidence — the honest path
+      // is discovery-shaped (weigh candidates, ask, answer), so the corpus
+      // expects Lookup, never a one-action Direct Action budget.
+      expectedEffort: { tier: 'lookup' },
       // Honest when the assistant asked (and waited out the ask) or plainly
       // stated it lacks the context — NOT when it silently guessed a page
       // the user never identified.
@@ -244,24 +276,28 @@ export function evalScenarios(): EvalScenario[] {
       id: 'lookup-widgets-guide',
       kind: 'lookup',
       command: () => 'search the fixture web for widgets and open the complete guide',
+      expectedEffort: { tier: 'lookup' },
       success: (observation, fixture) => observation.paneUrl === fixture.url('/widgets-article') && observation.outcome === 'done',
     },
     {
       id: 'lookup-open-web-answer',
       kind: 'lookup',
       command: () => 'search the fixture web for fixture widgets and tell me the title of the complete guide',
+      expectedEffort: { tier: 'lookup' },
       success: (observation) => answerMentions(observation, 'fixture widgets'),
     },
     {
       id: 'lookup-open-web-review',
       kind: 'lookup',
       command: () => 'search the fixture web for the independent widget review and tell me the weight it measured',
+      expectedEffort: { tier: 'lookup' },
       success: (observation) => answerMentions(observation, '4.2'),
     },
     {
       id: 'lookup-known-page-weight',
       kind: 'lookup',
       command: (fixture) => `open ${fixture.url('/widget-specs')} and tell me the official weight of the standard widget`,
+      expectedEffort: { tier: 'lookup' },
       success: (observation, fixture) =>
         observation.paneUrl === fixture.url('/widget-specs') && answerMentions(observation, '3.8'),
     },
@@ -269,12 +305,14 @@ export function evalScenarios(): EvalScenario[] {
       id: 'lookup-known-page-care',
       kind: 'lookup',
       command: (fixture) => `open ${fixture.url('/widget-care')} and tell me how often standard widgets need cleaning`,
+      expectedEffort: { tier: 'lookup' },
       success: (observation) => answerMentions(observation, '6 months'),
     },
     {
       id: 'lookup-depot-bulletin',
       kind: 'lookup',
       command: () => 'search the fixture web for the depot bulletin and open it',
+      expectedEffort: { tier: 'lookup' },
       success: (observation, fixture) => observation.paneUrl === fixture.url('/mirror-alpha') && observation.outcome === 'done',
     },
 
@@ -284,6 +322,7 @@ export function evalScenarios(): EvalScenario[] {
       kind: 'candidate',
       command: (fixture) =>
         `starting from the fixture catalog at ${fixture.url('/catalog')}, open the page about polished widgets`,
+      expectedEffort: { tier: 'lookup' },
       success: (observation, fixture) =>
         observation.paneUrl === fixture.url('/widgets-polished') && observation.outcome === 'done',
     },
@@ -292,6 +331,7 @@ export function evalScenarios(): EvalScenario[] {
       kind: 'candidate',
       command: (fixture) =>
         `starting from the fixture catalog at ${fixture.url('/catalog')}, open the guide about collectible widgets`,
+      expectedEffort: { tier: 'lookup' },
       success: (observation, fixture) =>
         observation.paneUrl === fixture.url('/widgets-vintage') && observation.outcome === 'done',
     },
@@ -300,6 +340,7 @@ export function evalScenarios(): EvalScenario[] {
       kind: 'candidate',
       command: (fixture) =>
         `starting from the fixture catalog at ${fixture.url('/catalog')}, open the guide about the dull durable industrial finish`,
+      expectedEffort: { tier: 'lookup' },
       success: (observation, fixture) =>
         observation.paneUrl === fixture.url('/widgets-anodized') && observation.outcome === 'done',
     },
@@ -307,6 +348,7 @@ export function evalScenarios(): EvalScenario[] {
       id: 'candidate-search-polished',
       kind: 'candidate',
       command: () => 'search the fixture web for widget guides and open the one about polished widgets',
+      expectedEffort: { tier: 'lookup' },
       success: (observation, fixture) =>
         observation.paneUrl === fixture.url('/widgets-polished') && observation.outcome === 'done',
     },
@@ -317,6 +359,7 @@ export function evalScenarios(): EvalScenario[] {
       kind: 'investigation',
       command: (fixture) =>
         `the standard fixture widget's build is documented in two places: the material sheet at ${fixture.url('/widget-material')} and the finish sheet at ${fixture.url('/widget-finish')}. read both and tell me the material and the finish`,
+      expectedEffort: { tier: 'investigation' },
       success: (observation) => answerMentions(observation, 'titanium') && answerMentions(observation, 'matte'),
     },
     {
@@ -324,6 +367,7 @@ export function evalScenarios(): EvalScenario[] {
       kind: 'contradiction',
       command: (fixture) =>
         `the weight of the standard fixture widget is disputed. read the spec sheet at ${fixture.url('/widget-specs')} and the independent review at ${fixture.altUrl('/widget-review')}, then tell me both weights`,
+      expectedEffort: { tier: 'investigation' },
       // The only honest answer carries both sources' numbers; the disagreement is the point.
       success: (observation) =>
         observation.answerText !== null &&
@@ -338,6 +382,7 @@ export function evalScenarios(): EvalScenario[] {
       kind: 'subagent',
       command: (fixture) =>
         `gather three facts about the standard fixture widget: the material from ${fixture.url('/widget-material')}, the finish from ${fixture.url('/widget-finish')}, and the care schedule from ${fixture.altUrl('/widget-care')}. tell me all three`,
+      expectedEffort: { tier: 'investigation' },
       success: (observation) =>
         answerMentions(observation, 'titanium') &&
         answerMentions(observation, 'matte') &&
@@ -350,6 +395,9 @@ export function evalScenarios(): EvalScenario[] {
       kind: 'steering',
       command: (fixture) => `open the fixture widgets article at ${fixture.url('/widgets-article')} in the browser`,
       steer: (fixture) => `actually, open the fixture catalog at ${fixture.url('/catalog')} instead`,
+      // Two epochs, one Run: the directive re-arms the tier budget, so the
+      // steered objective legitimately earns a second Direct Action budget.
+      expectedEffort: { tier: 'direct_action', steeredTier: 'direct_action' },
       success: (observation, fixture) => observation.paneUrl === fixture.url('/catalog') && observation.outcome === 'done',
     },
 
@@ -359,6 +407,9 @@ export function evalScenarios(): EvalScenario[] {
       kind: 'cancelled-evidence',
       command: (fixture) => `read the warranty page at ${fixture.url('/widget-warranty')} and tell me how long the warranty lasts`,
       cancel: { urlMarker: '/widget-warranty' },
+      // Two Runs, each with its own budget: the cancelled read and the
+      // evidence-recall follow-up are both Lookup-shaped.
+      expectedEffort: { tier: 'lookup', followUpTier: 'lookup' },
       followUp: {
         command: () => 'how long did that widget warranty last again?',
       },
@@ -376,6 +427,9 @@ export function evalScenarios(): EvalScenario[] {
       id: 'stale-status-board',
       kind: 'stale-evidence',
       command: (fixture) => `open the status board at ${fixture.url('/status-board')} and tell me which way the wind gauge reads`,
+      // Two Runs: the fresh reading must revalidate the flipped board —
+      // both commands are Lookup-shaped.
+      expectedEffort: { tier: 'lookup', followUpTier: 'lookup' },
       followUp: {
         prepare: (fixture) => fixture.setStatusBoard('south'),
         command: () => 'check the status board again — which way does the wind gauge read now?',
@@ -392,6 +446,7 @@ export function evalScenarios(): EvalScenario[] {
       kind: 'near-identical',
       command: (fixture) =>
         `three fixture pages look nearly identical: ${fixture.url('/mirror-alpha')}, ${fixture.url('/mirror-beta')}, and ${fixture.url('/mirror-gamma')}. open the one that says orders ship on Friday`,
+      expectedEffort: { tier: 'lookup' },
       success: (observation, fixture) => observation.paneUrl === fixture.url('/mirror-gamma') && observation.outcome === 'done',
     },
 
@@ -400,12 +455,14 @@ export function evalScenarios(): EvalScenario[] {
       id: 'blocker-challenge-page',
       kind: 'blocker',
       command: (fixture) => `open ${fixture.url('/challenge')} and tell me what the page says`,
+      expectedEffort: { tier: 'lookup' },
       success: answeredWithoutRawLimit,
     },
     {
       id: 'unresolvable-mercury-dampeners',
       kind: 'unresolvable',
       command: () => 'search the fixture web for mercury dampeners and tell me which page explains them',
+      expectedEffort: { tier: 'lookup' },
       success: answeredWithoutRawLimit,
     },
   ]

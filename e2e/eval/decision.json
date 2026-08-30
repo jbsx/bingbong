@@ -1,6 +1,6 @@
 {
-  "decidedAt": "2026-08-30T16:23:23.822Z",
-  "decision": "reject",
+  "decidedAt": "2026-08-30T17:35:21.189Z",
+  "decision": "accept",
   "baseline": {
     "captures": [
       {
@@ -78,6 +78,10 @@
     "pooledLlmRounds": {
       "median": 5,
       "p95": 9
+    },
+    "classMedians": {
+      "directAction": 4,
+      "lookupClass": 5
     },
     "scenarioObservations": 93
   },
@@ -159,6 +163,10 @@
       "median": 3,
       "p95": 7
     },
+    "classMedians": {
+      "directAction": 3,
+      "lookupClass": 3
+    },
     "scenarioObservations": 93
   },
   "gates": [
@@ -179,8 +187,8 @@
     },
     {
       "gate": "llm-rounds",
-      "passed": false,
-      "detail": "p95 9 → 7 LLM rounds (22% fall — needs ≥50%) pooled over 93 observations per side (3 captures each — pass percentiles are never averaged); median 5 → 3 — must not regress"
+      "passed": true,
+      "detail": "median 5 → 3 pooled over 93 observations per side (3 captures each — pass percentiles are never averaged) — must not regress; Direct Action median 4 → 3 — must improve; Lookup-class median 5 → 3 — must improve; p95 9 → 7 (reported, never gated #134); structural bounds: every observation within its corpus-declared ceiling"
     },
     {
       "gate": "no-action-after-runtime-refusal",
@@ -193,6 +201,7 @@
       "detail": "mandatory safety and Session regressions (pnpm test:e2e): passed"
     }
   ],
+  "roundsGateContract": "#134 (maintainer-approved 2026-08-30): the global pooled median must not regress; the Direct Action and Lookup-class pooled medians must strictly improve; every candidate observation must stay within the structural ceiling its corpus-declared expected Effort Tier grants — the tier work budget plus at most one terminal bookkeeping round and one Answer round per legitimate budget epoch (each Run, and each Steering replan within one), capped by the hard Tool Round ceiling. The #128 pooled-p95-halving requirement is retired: pooled p95 is reported, never gated.",
   "canaries": {
     "status": "not-run",
     "note": "live-web canaries are diagnostic-only by design (#108) and gate nothing; none ship in this repo, so none ran"

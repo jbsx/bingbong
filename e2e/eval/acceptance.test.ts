@@ -1,16 +1,27 @@
 import { describe, expect, it } from 'vitest'
 import { finalizationToolRefusal } from '../../src/core/pipeline/effortBudget'
-import { buildPool, decideRelease, isRuntimeRefusal, refusalViolations, type GateResult } from './acceptance'
+import {
+  buildPool,
+  decideRelease,
+  isRuntimeRefusal,
+  refusalViolations,
+  structuralCeiling,
+  structuralViolations,
+  type GateResult,
+} from './acceptance'
 import type { EvalReport, ScenarioResult } from './evaluator'
 import type { ScenarioMetrics } from './metrics'
 import { evalScenarios, type EvalScenario } from './scenarios'
 
-// The #128/#132 release-decision gates over pooled captures: three
+// The #128/#132/#134 release-decision gates over pooled captures: three
 // complete passes per side, pooled nearest-rank statistics from raw
 // scenario round counts (never averages of pass percentiles), provenance
 // refusal for anything but a clean pool, plus the interaction cases that
 // matter (an honest partial Lookup counts; a runtime-refused action never
-// executes again; the regressions input is a gate, not a footnote).
+// executes again; the regressions input is a gate, not a footnote). The
+// #134 rounds gate judges global and class pooled medians plus
+// corpus-declared structural ceilings — pooled p95 is reported, never
+// gated.
 
 /** The pinned pre-#114 old path (#130): every baseline capture's commit. */
 const OLD_COMMIT = '2343a3cf56deb57e745cec357e446e0255e58098'
@@ -206,7 +217,7 @@ function gateOf(decision: ReturnType<typeof decide>, name: string): GateResult {
 }
 
 describe('decideRelease over pooled captures', () => {
-  it('accepts a candidate that meets every #108 gate', () => {
+  it('accepts a candidate that meets every gate, reporting all three judged medians', () => {
     const decision = decide(candidatePool())
     expect(decision.decision).toBe('accept')
     expect(decision.gates.map((gate) => gate.gate)).toEqual([
@@ -218,8 +229,18 @@ describe('decideRelease over pooled captures', () => {
       'mandatory-regressions',
     ])
     // The pooled statistics the rounds gate judged: 96 observations per side.
-    expect(gateOf(decision, 'llm-rounds').detail).toContain('p95 12 → 6')
     expect(gateOf(decision, 'llm-rounds').detail).toContain('median 6 → 3')
+    expect(gateOf(decision, 'llm-rounds').detail).toContain('Direct Action median 4 → 2')
+    expect(gateOf(decision, 'llm-rounds').detail).toContain('Lookup-class median 6 → 3')
+    // p95 rides along as a reported number, never a threshold (#134).
+    expect(gateOf(decision, 'llm-rounds').detail).toContain('p95 12 → 6')
+  })
+
+  it('states the amended rounds-gate contract in the decision artifact', () => {
+    const decision = decide(candidatePool())
+    expect(decision.roundsGateContract).toMatch(/median must not regress/)
+    expect(decision.roundsGateContract).toMatch(/Direct Action and Lookup-class pooled medians must strictly improve/)
+    expect(decision.roundsGateContract).toMatch(/structural ceiling/)
   })
 
   it('witnesses all six capture identities, the shared contract, and the pooled statistics', () => {
@@ -240,6 +261,8 @@ describe('decideRelease over pooled captures', () => {
     expect(decision.baseline.scenarioObservations).toBe(96)
     expect(decision.candidate.pooledLlmRounds).toEqual({ median: 3, p95: 6 })
     expect(decision.baseline.pooledLlmRounds).toEqual({ median: 6, p95: 12 })
+    expect(decision.candidate.classMedians).toEqual({ directAction: 2, lookupClass: 3 })
+    expect(decision.baseline.classMedians).toEqual({ directAction: 4, lookupClass: 6 })
     expect(decision.canaries.status).toBe('not-run')
   })
 
@@ -251,23 +274,21 @@ describe('decideRelease over pooled captures', () => {
     )
   })
 
-  it('passes the rounds gate exactly at the 50% pooled-p95 fall, fails one round above it', () => {
+  it('no longer gates on the pooled p95 — a sub-halving tail with improving medians accepts (#134)', () => {
+    // Uniform pools: baseline p95 12, candidate p95 8 — a 33% fall the old
+    // halving gate rejected. Every median improves, every observation sits
+    // inside its ceiling, so the amended contract accepts.
     const uniform = (commit: string, value: number): EvalReport[] =>
       [1, 2, 3].map((n) => vectorPass(commit, n, [[value, 32]]))
-    const baseline = uniform(OLD_COMMIT, 12)
-
-    const atTheLine = decide(uniform(CANDIDATE_COMMIT, 6), baseline)
-    expect(gateOf(atTheLine, 'llm-rounds').passed).toBe(true)
-    expect(atTheLine.decision).toBe('accept')
-
-    const aboveTheLine = decide(uniform(CANDIDATE_COMMIT, 7), baseline)
-    expect(gateOf(aboveTheLine, 'llm-rounds').passed).toBe(false)
-    expect(gateOf(aboveTheLine, 'llm-rounds').detail).toContain('42% fall')
+    const decision = decide(uniform(CANDIDATE_COMMIT, 8), uniform(OLD_COMMIT, 12))
+    expect(gateOf(decision, 'llm-rounds').passed).toBe(true)
+    expect(decision.decision).toBe('accept')
+    expect(gateOf(decision, 'llm-rounds').detail).toContain('p95 12 → 8')
   })
 
-  it('fails the rounds gate when the pooled median regresses, even with a halved tail', () => {
+  it('fails the rounds gate when the pooled median regresses', () => {
     // Per pass 17 low + 15 high pools to 51 low + 45 high: baseline median 6
-    // p95 14; candidate median 7 (regression) with p95 7 (exactly half).
+    // p95 14; candidate median 7 (regression).
     const perPass = (commit: string, spec: [number, number][]) => [1, 2, 3].map((n) => vectorPass(commit, n, spec))
     const gate = gateOf(
       decide(perPass(CANDIDATE_COMMIT, [[7, 17], [2, 15]]), perPass(OLD_COMMIT, [[6, 17], [14, 15]])),
@@ -277,29 +298,145 @@ describe('decideRelease over pooled captures', () => {
     expect(gate.detail).toContain('median 6 → 7')
   })
 
+  it('fails the rounds gate when the Direct Action pooled median does not improve', () => {
+    // First 12 slots are the Direct Actions: 4 → 4 while the global median
+    // improves 6 → 3 and the Lookup-class median improves 6 → 3.
+    const perPass = (commit: string, spec: [number, number][]) => [1, 2, 3].map((n) => vectorPass(commit, n, spec))
+    const gate = gateOf(
+      decide(perPass(CANDIDATE_COMMIT, [[4, 12], [3, 20]]), perPass(OLD_COMMIT, [[4, 12], [6, 20]])),
+      'llm-rounds',
+    )
+    expect(gate.passed).toBe(false)
+    expect(gate.detail).toContain('Direct Action median 4 → 4')
+  })
+
+  it('fails the rounds gate when the Lookup-class pooled median does not improve', () => {
+    // The Lookup-class slots all sit in the high bucket: 6 → 6 while the
+    // global median holds 6 → 6 (non-regressing) and Direct Action improves.
+    const perPass = (commit: string, spec: [number, number][]) => [1, 2, 3].map((n) => vectorPass(commit, n, spec))
+    const gate = gateOf(
+      decide(perPass(CANDIDATE_COMMIT, [[2, 12], [6, 20]]), perPass(OLD_COMMIT, [[4, 12], [6, 20]])),
+      'llm-rounds',
+    )
+    expect(gate.passed).toBe(false)
+    expect(gate.detail).toContain('Lookup-class median 6 → 6')
+  })
+
   it('judges pooled raw counts, never averages of pass percentiles', () => {
-    // Pass p95s 8, 12, 14 average to ~11.3 (threshold ~5.7); the pooled
-    // population's p95 is 14 (threshold 7). A candidate pooled p95 of 6
-    // passes pooled judgment but would fail averaged judgment.
+    // Pass p95s 8, 12, 14 average to ~11.3; the pooled population's p95 is
+    // 14. The candidate's pooled p95 of 6 is judged (reported) against the
+    // pooled number — and every class median improves pooled: the Direct
+    // Action and Lookup-class slots all sit in the low bucket.
     const baseline = [
       vectorPass(OLD_COMMIT, 1, [[5, 25], [8, 7]]),
       vectorPass(OLD_COMMIT, 2, [[5, 25], [12, 7]]),
       vectorPass(OLD_COMMIT, 3, [[5, 25], [14, 7]]),
     ]
-    const candidate = [1, 2, 3].map((n) => vectorPass(CANDIDATE_COMMIT, n, [[4, 17], [6, 15]]))
+    const candidate = [1, 2, 3].map((n) => vectorPass(CANDIDATE_COMMIT, n, [[4, 23], [6, 9]]))
     const gate = gateOf(decide(candidate, baseline), 'llm-rounds')
     expect(gate.passed).toBe(true)
     expect(gate.detail).toContain('p95 14 → 6')
     expect(gate.detail).toContain('96 observations per side')
   })
 
-  it('fails the rounds gate when the pooled tail does not halve, even with a healthy median', () => {
-    // Baseline pooled: 51×6 + 45×12 → median 6, p95 12. Candidate: median 3,
-    // p95 7 — the median improves but 7 > 12 × 0.5.
-    const perPass = (commit: string, spec: [number, number][]) => [1, 2, 3].map((n) => vectorPass(commit, n, spec))
-    const gate = gateOf(decide(perPass(CANDIDATE_COMMIT, [[3, 17], [7, 15]]), perPass(OLD_COMMIT, [[6, 17], [12, 15]])), 'llm-rounds')
+  it('fails the rounds gate on a structural-bound violation, naming pass, scenario, epochs, and allowance', () => {
+    const pool = candidatePool()
+    const overflow = pool[0]!.scenarios.find((entry) => entry.id === 'direct-action-type-submit')!
+    overflow.metrics.llmRounds = 9
+    overflow.runs[0]!.llmRounds = 9
+    const gate = gateOf(decide(pool), 'llm-rounds')
     expect(gate.passed).toBe(false)
-    expect(gate.detail).toContain('42% fall')
+    expect(gate.detail).toContain('pass 1 direct-action-type-submit run 1: 9 rounds exceed the 8 allowed by direct_action')
+    expect(decide(pool).decision).toBe('reject')
+  })
+
+  it('passes the exact structural boundary — a Direct Action at its full epoch allowance', () => {
+    const pool = candidatePool()
+    for (const pass of pool) {
+      const atTheLine = pass.scenarios.find((entry) => entry.id === 'direct-action-type-submit')!
+      atTheLine.metrics.llmRounds = 8
+      atTheLine.runs[0]!.llmRounds = 8
+    }
+    const decision = decide(pool)
+    expect(gateOf(decision, 'llm-rounds').passed).toBe(true)
+    expect(decision.decision).toBe('accept')
+  })
+
+  it('derives ceilings from the corpus, never the model-declared tier', () => {
+    // A Direct Action that declares investigation earns no headroom…
+    const pool = candidatePool()
+    const misclassified = pool[0]!.scenarios.find((entry) => entry.id === 'direct-action-type-submit')!
+    misclassified.metrics.llmRounds = 9
+    misclassified.metrics.effortTier = 'investigation'
+    misclassified.runs[0]!.llmRounds = 9
+    misclassified.runs[0]!.effortTier = 'investigation'
+    expect(gateOf(decide(pool), 'llm-rounds').passed).toBe(false)
+
+    // …and an Investigation that declares direct_action keeps its full ceiling.
+    const humble = candidatePool()
+    for (const pass of humble) {
+      const investigation = pass.scenarios.find((entry) => entry.id === 'investigation-material-finish')!
+      investigation.metrics.llmRounds = 26
+      investigation.metrics.effortTier = 'direct_action'
+      investigation.runs[0]!.llmRounds = 26
+      investigation.runs[0]!.effortTier = 'direct_action'
+    }
+    expect(gateOf(decide(humble), 'llm-rounds').passed).toBe(true)
+  })
+
+  it('bounds each Run of a multi-command scenario by its own epoch budget, not a shared bucket', () => {
+    // Stale-evidence design: two Lookup Runs, 14 each — [14, 13] fits both.
+    const within = candidatePool()
+    const stale = within[0]!.scenarios.find((entry) => entry.id === 'stale-status-board')!
+    stale.runs = [metrics({ llmRounds: 14 }), metrics({ llmRounds: 13 })]
+    stale.metrics.llmRounds = 27
+    expect(gateOf(decide(within), 'llm-rounds').passed).toBe(true)
+
+    // A combined total inside 28 cannot hide one Run blowing past its own 14.
+    const overflowing = candidatePool()
+    const overRun = overflowing[1]!.scenarios.find((entry) => entry.id === 'stale-status-board')!
+    overRun.runs = [metrics({ llmRounds: 15 }), metrics({ llmRounds: 1 })]
+    overRun.metrics.llmRounds = 16
+    const gate = gateOf(decide(overflowing), 'llm-rounds')
+    expect(gate.passed).toBe(false)
+    expect(gate.detail).toContain('pass 2 stale-status-board run 1: 15 rounds exceed the 14 allowed by lookup')
+  })
+
+  it('grants Steering scenarios the steered epoch’s fresh budget', () => {
+    // The steering design grants two Direct Action epochs: 8 + 8 = 16.
+    const atTheLine = candidatePool()
+    const steering = atTheLine[0]!.scenarios.find((entry) => entry.id === 'steering-correct-objective')!
+    steering.metrics.llmRounds = 16
+    steering.runs[0]!.llmRounds = 16
+    expect(gateOf(decide(atTheLine), 'llm-rounds').passed).toBe(true)
+
+    const overflowing = candidatePool()
+    const overSteer = overflowing[0]!.scenarios.find((entry) => entry.id === 'steering-correct-objective')!
+    overSteer.metrics.llmRounds = 17
+    overSteer.runs[0]!.llmRounds = 17
+    const gate = gateOf(decide(overflowing), 'llm-rounds')
+    expect(gate.passed).toBe(false)
+    expect(gate.detail).toContain(
+      'pass 1 steering-correct-objective run 1: 17 rounds exceed the 16 allowed by direct_action+steered:direct_action',
+    )
+  })
+
+  it('judges artifacts without per-run telemetry by their combined total against the full ceiling', () => {
+    // A capture that predates per-run recording still judges honestly: the
+    // combined 28 of a two-Lookup design fits; 29 does not.
+    const within = candidatePool()
+    const stale = within[0]!.scenarios.find((entry) => entry.id === 'stale-status-board')!
+    stale.runs = []
+    stale.metrics.llmRounds = 28
+    expect(gateOf(decide(within), 'llm-rounds').passed).toBe(true)
+
+    const overflowing = candidatePool()
+    const over = overflowing[0]!.scenarios.find((entry) => entry.id === 'stale-status-board')!
+    over.runs = []
+    over.metrics.llmRounds = 29
+    const gate = gateOf(decide(overflowing), 'llm-rounds')
+    expect(gate.passed).toBe(false)
+    expect(gate.detail).toContain('pass 1 stale-status-board run 1: 29 rounds exceed the 28 allowed by lookup+lookup')
   })
 
   it('fails the raw round-limit gate on a single violation in any pass', () => {
@@ -450,10 +587,90 @@ describe('pool provenance (#132: refusal, not judgement)', () => {
     expect(() => decide(otherCorpus)).toThrow(/candidate and baseline pools cover different corpora/)
   })
 
+  it('refuses pools holding scenarios the corpus of record does not define', () => {
+    // Both sides agree on the unknown id, so the pool and cross-side checks
+    // pass — but no corpus-declared ceiling exists to judge it against.
+    const candidate = candidatePool()
+    const baseline = baselinePool()
+    for (const pass of candidate) pass.scenarios.push(scenario('lookup-extra', 'lookup'))
+    for (const pass of baseline) pass.scenarios.push(scenario('lookup-extra', 'lookup'))
+    expect(() => decide(candidate, baseline)).toThrow(
+      /corpus of record does not define lookup-extra — pools must match e2e\/eval\/scenarios/,
+    )
+  })
+
   it('surfaces the baseline side under its own role name', () => {
     const bad = baselinePool()
     bad[0]!.gitCommit = 'e'.repeat(40)
     expect(() => decide(candidatePool(), bad)).toThrow(/baseline pool must represent exactly one source commit/)
+  })
+})
+
+describe('structural ceilings (#134: corpus-declared, epoch-derived)', () => {
+  const byId = new Map(evalScenarios().map((entry) => [entry.id, entry]))
+
+  it('grants one epoch its tier budget plus one bookkeeping and one Answer round', () => {
+    expect(structuralCeiling(byId.get('direct-action-open-page')!)).toMatchObject({
+      scenarioId: 'direct-action-open-page',
+      runAllowances: [8],
+      runEpochs: ['direct_action'],
+    })
+    expect(structuralCeiling(byId.get('lookup-widgets-guide')!).runAllowances).toEqual([14])
+    expect(structuralCeiling(byId.get('investigation-material-finish')!).runAllowances).toEqual([26])
+  })
+
+  it('sums the epochs a design grants — Steering re-arms, each Run budgets fresh', () => {
+    expect(structuralCeiling(byId.get('steering-correct-objective')!)).toMatchObject({
+      runAllowances: [16],
+      runEpochs: ['direct_action+steered:direct_action'],
+    })
+    expect(structuralCeiling(byId.get('stale-status-board')!)).toMatchObject({
+      runAllowances: [14, 14],
+      runEpochs: ['lookup', 'lookup'],
+    })
+    expect(structuralCeiling(byId.get('cancelled-warranty-reuse')!).runAllowances).toEqual([14, 14])
+  })
+
+  it('caps a Run’s epochs at the hard Tool Round ceiling plus its Answer round', () => {
+    // A hypothetical many-epoch design cannot out-grant the hard ceiling:
+    // 32 Tool Rounds per Run, the Answer round riding outside it. The
+    // first Run would want 8 + 14 + a follow-up epoch it cannot have — 26
+    // from two epochs — while a 24-round Investigation epoch plus steering
+    // re-arm also lands at the 33 cap, never above.
+    const steeredAndFollowed: EvalScenario = {
+      ...byId.get('investigation-material-finish')!,
+      steer: () => 'narrow it down',
+      followUp: undefined,
+      expectedEffort: {
+        tier: 'investigation',
+        steeredTier: 'investigation',
+        followUpTier: 'direct_action',
+      },
+    }
+    expect(structuralCeiling(steeredAndFollowed).runAllowances).toEqual([33])
+  })
+})
+
+describe('structuralViolations', () => {
+  it('reports every offending run with its capture, ceiling inputs, and allowance', () => {
+    const pool = candidatePool()
+    const overflow = pool[2]!.scenarios.find((entry) => entry.id === 'direct-action-click-button')!
+    overflow.runs = [metrics({ llmRounds: 9 })]
+    overflow.metrics.llmRounds = 9
+    const violations = structuralViolations(pool)
+    expect(violations).toHaveLength(1)
+    expect(violations[0]).toMatchObject({
+      pass: 3,
+      scenarioId: 'direct-action-click-button',
+      run: 1,
+      observedRounds: 9,
+      allowedRounds: 8,
+      expectedEpochs: 'direct_action',
+    })
+  })
+
+  it('clears the whole corpus-shaped candidate pool — every observation inside its ceiling', () => {
+    expect(structuralViolations(candidatePool())).toEqual([])
   })
 })
 
@@ -511,6 +728,15 @@ describe('the #130 corpus', () => {
 
   it('carries unique ids', () => {
     expect(new Set(scenarios.map((entry) => entry.id)).size).toBe(scenarios.length)
+  })
+
+  it('declares a durable expected Effort Tier for every scenario (#134)', () => {
+    const tiers = ['direct_action', 'lookup', 'investigation']
+    for (const entry of scenarios) {
+      expect(tiers).toContain(entry.expectedEffort.tier)
+      if (entry.steer === undefined) expect(entry.expectedEffort.steeredTier).toBeUndefined()
+      if (entry.followUp === undefined) expect(entry.expectedEffort.followUpTier).toBeUndefined()
+    }
   })
 })
 

@@ -45,7 +45,11 @@ pool is captured from the pinned pre-#114 tree (`2343a3c` worktree + eval
 overlay, see #130); all candidate passes come from one candidate commit.
 `pnpm eval:accept --regressions=passed` validates both pools' provenance
 and writes `e2e/eval/decision.json` from pooled nearest-rank statistics —
-pass-level percentiles are never averaged.
+pass-level percentiles are never averaged. The rounds gate (#134) judges
+the global pooled median (no regression), the Direct Action and
+Lookup-class pooled medians (strict improvement), and corpus-declared
+structural ceilings per scenario (`expectedEffort` in
+`e2e/eval/scenarios.ts`); pooled p95 is reported, never gated.
 
 ## graphify
 
