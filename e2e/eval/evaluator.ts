@@ -201,6 +201,7 @@ export async function startEvaluator(options?: { scenarioTimeoutMs?: number; rep
         scrollY: Math.round(window.scrollY || 0),
         dialogPresent: !!document.querySelector('[role="dialog"]'),
         agreeChecked: (document.querySelector('#agree') || {}).checked ?? null,
+        choiceSelected: (document.querySelector('#choice') || {}).value ?? null,
         pressedKeys: window.__pressedKeys ?? null,
       }))()`)
       .catch(() => null)

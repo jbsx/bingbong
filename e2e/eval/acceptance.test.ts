@@ -95,6 +95,7 @@ const CORPUS: { id: string; kind: EvalScenario['kind'] }[] = [
   { id: 'direct-action-open-results', kind: 'direct-action' },
   { id: 'direct-action-click-button', kind: 'direct-action' },
   { id: 'direct-action-check-checkbox', kind: 'direct-action' },
+  { id: 'direct-action-select-option', kind: 'direct-action' },
   { id: 'direct-action-click-link', kind: 'direct-action' },
   { id: 'direct-action-type-submit', kind: 'direct-action' },
   { id: 'direct-action-dismiss-dialog', kind: 'direct-action' },
@@ -173,7 +174,7 @@ function corpusPass(
   )
 }
 
-/** A pass whose 31 round counts come from an explicit [value, count] vector. */
+/** A pass whose 32 round counts come from an explicit [value, count] vector. */
 function vectorPass(commit: string, passNumber: number, spec: [number, number][]): EvalReport {
   const values = spec.flatMap(([value, count]) => Array.from({ length: count }, () => value))
   if (values.length !== CORPUS.length) {
@@ -216,7 +217,7 @@ describe('decideRelease over pooled captures', () => {
       'no-action-after-runtime-refusal',
       'mandatory-regressions',
     ])
-    // The pooled statistics the rounds gate judged: 93 observations per side.
+    // The pooled statistics the rounds gate judged: 96 observations per side.
     expect(gateOf(decision, 'llm-rounds').detail).toContain('p95 12 → 6')
     expect(gateOf(decision, 'llm-rounds').detail).toContain('median 6 → 3')
   })
@@ -235,8 +236,8 @@ describe('decideRelease over pooled captures', () => {
     expect(decision.candidate.captures.every((capture) => capture.orchestratorModel === 'GLM-5.3-flash')).toBe(true)
     expect(decision.candidate.routing).toEqual(candidatePool()[0]!.routing)
     expect(decision.candidate.scenarioIds).toEqual(CORPUS.map(({ id }) => id))
-    expect(decision.candidate.scenarioObservations).toBe(93)
-    expect(decision.baseline.scenarioObservations).toBe(93)
+    expect(decision.candidate.scenarioObservations).toBe(96)
+    expect(decision.baseline.scenarioObservations).toBe(96)
     expect(decision.candidate.pooledLlmRounds).toEqual({ median: 3, p95: 6 })
     expect(decision.baseline.pooledLlmRounds).toEqual({ median: 6, p95: 12 })
     expect(decision.canaries.status).toBe('not-run')
@@ -252,7 +253,7 @@ describe('decideRelease over pooled captures', () => {
 
   it('passes the rounds gate exactly at the 50% pooled-p95 fall, fails one round above it', () => {
     const uniform = (commit: string, value: number): EvalReport[] =>
-      [1, 2, 3].map((n) => vectorPass(commit, n, [[value, 31]]))
+      [1, 2, 3].map((n) => vectorPass(commit, n, [[value, 32]]))
     const baseline = uniform(OLD_COMMIT, 12)
 
     const atTheLine = decide(uniform(CANDIDATE_COMMIT, 6), baseline)
@@ -265,11 +266,11 @@ describe('decideRelease over pooled captures', () => {
   })
 
   it('fails the rounds gate when the pooled median regresses, even with a halved tail', () => {
-    // Per pass 16 low + 15 high pools to 48 low + 45 high: baseline median 6
+    // Per pass 17 low + 15 high pools to 51 low + 45 high: baseline median 6
     // p95 14; candidate median 7 (regression) with p95 7 (exactly half).
     const perPass = (commit: string, spec: [number, number][]) => [1, 2, 3].map((n) => vectorPass(commit, n, spec))
     const gate = gateOf(
-      decide(perPass(CANDIDATE_COMMIT, [[7, 16], [2, 15]]), perPass(OLD_COMMIT, [[6, 16], [14, 15]])),
+      decide(perPass(CANDIDATE_COMMIT, [[7, 17], [2, 15]]), perPass(OLD_COMMIT, [[6, 17], [14, 15]])),
       'llm-rounds',
     )
     expect(gate.passed).toBe(false)
@@ -281,22 +282,22 @@ describe('decideRelease over pooled captures', () => {
     // population's p95 is 14 (threshold 7). A candidate pooled p95 of 6
     // passes pooled judgment but would fail averaged judgment.
     const baseline = [
-      vectorPass(OLD_COMMIT, 1, [[5, 24], [8, 7]]),
-      vectorPass(OLD_COMMIT, 2, [[5, 24], [12, 7]]),
-      vectorPass(OLD_COMMIT, 3, [[5, 24], [14, 7]]),
+      vectorPass(OLD_COMMIT, 1, [[5, 25], [8, 7]]),
+      vectorPass(OLD_COMMIT, 2, [[5, 25], [12, 7]]),
+      vectorPass(OLD_COMMIT, 3, [[5, 25], [14, 7]]),
     ]
-    const candidate = [1, 2, 3].map((n) => vectorPass(CANDIDATE_COMMIT, n, [[4, 16], [6, 15]]))
+    const candidate = [1, 2, 3].map((n) => vectorPass(CANDIDATE_COMMIT, n, [[4, 17], [6, 15]]))
     const gate = gateOf(decide(candidate, baseline), 'llm-rounds')
     expect(gate.passed).toBe(true)
     expect(gate.detail).toContain('p95 14 → 6')
-    expect(gate.detail).toContain('93 observations per side')
+    expect(gate.detail).toContain('96 observations per side')
   })
 
   it('fails the rounds gate when the pooled tail does not halve, even with a healthy median', () => {
-    // Baseline pooled: 48×6 + 45×12 → median 6, p95 12. Candidate: median 3,
+    // Baseline pooled: 51×6 + 45×12 → median 6, p95 12. Candidate: median 3,
     // p95 7 — the median improves but 7 > 12 × 0.5.
     const perPass = (commit: string, spec: [number, number][]) => [1, 2, 3].map((n) => vectorPass(commit, n, spec))
-    const gate = gateOf(decide(perPass(CANDIDATE_COMMIT, [[3, 16], [7, 15]]), perPass(OLD_COMMIT, [[6, 16], [12, 15]])), 'llm-rounds')
+    const gate = gateOf(decide(perPass(CANDIDATE_COMMIT, [[3, 17], [7, 15]]), perPass(OLD_COMMIT, [[6, 17], [12, 15]])), 'llm-rounds')
     expect(gate.passed).toBe(false)
     expect(gate.detail).toContain('42% fall')
   })
@@ -307,22 +308,22 @@ describe('decideRelease over pooled captures', () => {
     blocker.metrics.rawLimitFailure = 'tool round limit (32) reached'
     const gate = gateOf(decide(pool), 'no-raw-limit-error')
     expect(gate.passed).toBe(false)
-    expect(gate.detail).toContain('1 of 93')
+    expect(gate.detail).toContain('1 of 96')
   })
 
   it('pools Direct Action completion across passes — one miss in one pass tolerated, two reject', () => {
     const oneMiss = candidatePool()
     oneMiss[0]!.scenarios[0]!.success = false
-    // 32/33 = 97% across the pool; the single-pass gate would have failed 10/11.
+    // 35/36 = 97% across the pool; the single-pass gate would have failed 11/12.
     expect(gateOf(decide(oneMiss), 'direct-action-completion').passed).toBe(true)
-    expect(gateOf(decide(oneMiss), 'direct-action-completion').detail).toContain('32/33')
+    expect(gateOf(decide(oneMiss), 'direct-action-completion').detail).toContain('35/36')
 
     const twoMisses = candidatePool()
     twoMisses[0]!.scenarios[0]!.success = false
     twoMisses[2]!.scenarios[5]!.success = false
     const gate = gateOf(decide(twoMisses), 'direct-action-completion')
     expect(gate.passed).toBe(false)
-    expect(gate.detail).toContain('31/33')
+    expect(gate.detail).toContain('34/36')
   })
 
   it('pools Lookup acceptance — an honest partial counts, four plain failures reject', () => {
@@ -459,17 +460,17 @@ describe('pool provenance (#132: refusal, not judgement)', () => {
 describe('buildPool pooled statistics', () => {
   it('pools nearest-rank median and p95 over all raw scenario round counts', () => {
     const pool = buildPool('candidate', candidatePool())
-    expect(pool.scenarios).toHaveLength(93)
+    expect(pool.scenarios).toHaveLength(96)
     expect(pool.pooledRounds).toEqual({ median: 3, p95: 6 })
     expect(pool.scenarioIds).toEqual(CORPUS.map(({ id }) => id))
   })
 
   it('computes nearest-rank positions over the pooled population, not per pass', () => {
-    // 93 pooled values: 72×5, 7×8, 7×12, 7×14 → median rank 47 = 5, p95 rank 89 = 14.
+    // 96 pooled values: 75×5, 7×8, 7×12, 7×14 → median rank 48 = 5, p95 rank 92 = 14.
     const pool = buildPool('baseline', [
-      vectorPass(OLD_COMMIT, 1, [[5, 24], [8, 7]]),
-      vectorPass(OLD_COMMIT, 2, [[5, 24], [12, 7]]),
-      vectorPass(OLD_COMMIT, 3, [[5, 24], [14, 7]]),
+      vectorPass(OLD_COMMIT, 1, [[5, 25], [8, 7]]),
+      vectorPass(OLD_COMMIT, 2, [[5, 25], [12, 7]]),
+      vectorPass(OLD_COMMIT, 3, [[5, 25], [14, 7]]),
     ])
     expect(pool.pooledRounds).toEqual({ median: 5, p95: 14 })
   })
@@ -479,7 +480,7 @@ describe('the #130 corpus', () => {
   const scenarios = evalScenarios()
 
   it('weights the gated classes like production: ≥10 Direct Actions and ≥10 Lookups', () => {
-    expect(scenarios.filter((entry) => entry.kind === 'direct-action')).toHaveLength(11)
+    expect(scenarios.filter((entry) => entry.kind === 'direct-action')).toHaveLength(12)
     expect(scenarios.filter((entry) => entry.kind === 'lookup' || entry.kind === 'candidate')).toHaveLength(10)
   })
 

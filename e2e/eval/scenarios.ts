@@ -42,6 +42,7 @@ export interface PaneState {
   scrollY: number
   dialogPresent: boolean
   agreeChecked: boolean | null
+  choiceSelected: string | null
   pressedKeys: { key: string; shift: boolean }[] | null
 }
 
@@ -164,11 +165,23 @@ export function evalScenarios(): EvalScenario[] {
       success: (observation) => observation.paneState?.agreeChecked === true && observation.outcome === 'done',
     },
     {
+      // #133: the select-option pick this corpus slot once lost — synthetic
+      // clicks into Chromium's select popup flake, so choosing an option is
+      // now deterministic controller behavior (type the option's label at
+      // the select's ref: focus + keyboard type-ahead, never the popup) with
+      // e2e coverage, which is what lets the scenario sample real-model
+      // behavior again instead of coin-flipping on popup geometry.
+      id: 'direct-action-select-option',
+      kind: 'direct-action',
+      command: (fixture) => `open ${fixture.url('/interactive')} and choose Beta in the Choice select`,
+      success: (observation) => observation.paneState?.choiceSelected === 'b' && observation.outcome === 'done',
+    },
+    {
       // Click-through navigation — the production-shaped "open X and click
       // the link to Y". (A native <select> option-pick scenario lived here
-      // briefly: synthetic clicks into Chromium's select popup flake, which
-      // is controller coverage to prove deterministically, not a coin-flip
-      // sample inside a 95% gate.)
+      // briefly until its popup flake forced it out; #133 made the pick
+      // deterministic and moved it back in as its own scenario,
+      // direct-action-select-option.)
       id: 'direct-action-click-link',
       kind: 'direct-action',
       command: (fixture) => `open ${fixture.url('/native-dialog')} and click the Leave page link`,

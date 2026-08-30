@@ -152,6 +152,15 @@ class FakeCdp implements CdpDebugger {
           },
         } as T
       }
+      if (expression.includes('/* SELECT_FOCUS */')) {
+        // When set, the next focus probe reports a stale registry once
+        // (the re-collect path).
+        if (this.prepStaleOnce) {
+          this.prepStaleOnce = false
+          return { result: { value: false } } as T
+        }
+        return { result: { value: true } } as T
+      }
       if (expression.includes('__bingbongRefs')) {
         if (expression.includes('.click()')) return { result: { value: { clicked: true } } } as T
         if (this.prepStaleOnce) {
@@ -1373,5 +1382,139 @@ describe('createCdpBrowserController verbose sub-spans (#32)', () => {
       `navigated: url=https://www.youtube.com/ title="YouTube"\n${settledBlock(youtubeFixture)}`,
     )
     await expect(controller.click(3)).resolves.toBe('clicked [3]: urlChanged=false dialogOpen=false; no observable change')
+  })
+})
+
+// #133: native controls. A synthetic click on a <select> opens Chromium's
+// select popup, which no DOM click can reach — so the type path focuses a
+// select instead of clicking it and picks the option with real keyboard
+// type-ahead. And a click on a state-bearing control names its post-action
+// state even when unchanged, so an ineffective click is visible.
+function nativeControlsPage(): CollectedPage {
+  return {
+    ...youtubeFixture,
+    elements: [
+      {
+        tag: 'select',
+        role: null,
+        inputType: null,
+        label: 'Choice',
+        rect: { x: 10, y: 10, width: 120, height: 24 },
+        selectedOption: 'Alpha',
+        value: 'a',
+      },
+      {
+        tag: 'input',
+        role: null,
+        inputType: 'checkbox',
+        label: 'Agree',
+        rect: { x: 10, y: 60, width: 13, height: 13 },
+        checked: false,
+      },
+    ],
+  }
+}
+
+/** An ACTION_OUTCOME probe whose signature matches the page, so only the target state varies. */
+function probeFor(page: CollectedPage, target: Record<string, unknown>): unknown {
+  const snapshot = buildPageSnapshot(page)
+  return {
+    target,
+    signature: {
+      url: snapshot.url,
+      title: snapshot.title,
+      scrollX: 0,
+      scrollY: snapshot.viewport.scrollY,
+      refCount: snapshot.refs.length,
+      labels: snapshot.refs.map((ref) => ref.label),
+      dialogOpen: snapshot.dialogOpen,
+    },
+  }
+}
+
+describe('createCdpBrowserController native select typing (#133)', () => {
+  it('focuses the select instead of clicking, then sends letters as real keys', async () => {
+    const cdp = new FakeCdp(nativeControlsPage())
+    cdp.actionProbe = probeFor(nativeControlsPage(), { checked: null, selectedOption: 'Beta', value: 'b', ariaPressed: null, className: '' })
+    const { controller } = makeController({ cdp })
+
+    const outcome = await controller.type(1, 'Beta')
+
+    expect(outcome).toBe('typed [1]: selected="Beta"')
+    // The popup never opens: no mouse input at all, only the letters.
+    expect(cdp.calls.filter((call) => call.method === 'Input.dispatchMouseEvent')).toHaveLength(0)
+    const keys = cdp.calls.filter((call) => call.method === 'Input.dispatchKeyEvent')
+    expect(keys.map((call) => call.params?.key)).toEqual(['B', 'B', 'e', 'e', 't', 't', 'a', 'a'])
+  })
+
+  it('strips newlines so Enter never opens the select popup', async () => {
+    const cdp = new FakeCdp(nativeControlsPage())
+    cdp.actionProbe = probeFor(nativeControlsPage(), { checked: null, selectedOption: 'Beta', value: 'b', ariaPressed: null, className: '' })
+    const { controller } = makeController({ cdp })
+
+    await controller.type(1, 'Beta\n')
+
+    const keys = cdp.calls.filter((call) => call.method === 'Input.dispatchKeyEvent')
+    expect(keys.map((call) => call.params?.key)).toEqual(['B', 'B', 'e', 'e', 't', 't', 'a', 'a'])
+  })
+
+  it('reports the unchanged selection when no option matches the typed text', async () => {
+    const cdp = new FakeCdp(nativeControlsPage())
+    cdp.actionProbe = probeFor(nativeControlsPage(), { checked: null, selectedOption: 'Alpha', value: 'a', ariaPressed: null, className: '' })
+    const { controller } = makeController({ cdp })
+
+    const outcome = await controller.type(1, 'Zeta')
+
+    expect(outcome).toBe('typed [1]: selected="Alpha"')
+  })
+
+  it('re-collects once when the registry went stale, then types', async () => {
+    const cdp = new FakeCdp(nativeControlsPage())
+    cdp.prepStaleOnce = true
+    cdp.actionProbe = probeFor(nativeControlsPage(), { checked: null, selectedOption: 'Beta', value: 'b', ariaPressed: null, className: '' })
+    const { controller } = makeController({ cdp })
+
+    const outcome = await controller.type(1, 'Beta')
+
+    expect(cdp.collectCalls()).toHaveLength(2)
+    expect(outcome).toBe('typed [1]: selected="Beta"')
+  })
+
+  it('rejects for an unknown ref like the click path', async () => {
+    const { controller } = makeController({ cdp: new FakeCdp(nativeControlsPage()) })
+
+    await expect(controller.type(999, 'Beta')).rejects.toThrow(/ref 999 not found/)
+  })
+})
+
+describe('createCdpBrowserController control-state honesty (#133)', () => {
+  it('names the post-action checked state when a checkbox click does not change it', async () => {
+    const cdp = new FakeCdp(nativeControlsPage())
+    cdp.actionProbe = probeFor(nativeControlsPage(), { checked: false, selectedOption: null, value: null, ariaPressed: null, className: '' })
+    const { controller } = makeController({ cdp })
+
+    const outcome = await controller.click(2)
+
+    expect(outcome).toBe('clicked [2]: urlChanged=false dialogOpen=false; checked=false')
+  })
+
+  it('names the post-action selected option when a select click does not change it', async () => {
+    const cdp = new FakeCdp(nativeControlsPage())
+    cdp.actionProbe = probeFor(nativeControlsPage(), { checked: null, selectedOption: 'Alpha', value: 'a', ariaPressed: null, className: '' })
+    const { controller } = makeController({ cdp })
+
+    const outcome = await controller.click(1)
+
+    expect(outcome).toBe('clicked [1]: urlChanged=false dialogOpen=false; selected="Alpha"')
+  })
+
+  it('keeps the delta-only clause when the checked state actually changes', async () => {
+    const cdp = new FakeCdp(nativeControlsPage())
+    cdp.actionProbe = probeFor(nativeControlsPage(), { checked: true, selectedOption: null, value: null, ariaPressed: null, className: '' })
+    const { controller } = makeController({ cdp })
+
+    const outcome = await controller.click(2)
+
+    expect(outcome.split('\n')[0]).toBe('clicked [2]: urlChanged=false dialogOpen=false; checked=false -> true')
   })
 })

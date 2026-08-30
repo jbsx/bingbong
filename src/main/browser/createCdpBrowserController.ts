@@ -452,6 +452,26 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
       : [`${label}=${JSON.stringify(before[key])} -> ${JSON.stringify(after[key])}`])
   }
 
+  /** #133 honest verification: a click on a state-bearing control (checkbox,
+   * radio, select) names the control's post-action state even when the click
+   * did not change it — a wrong-element or ineffective click must surface as
+   * `checked=false`, never as a bare "no observable change". Deltas already
+   * carry changed fields, so only unchanged ones get the absolute clause. */
+  function unchangedControlState(before: ElementState, after: ElementState | null): string[] {
+    if (!after) return []
+    const clauses: string[] = []
+    if (before.checked === after.checked && (before.checked !== null || after.checked !== null)) {
+      clauses.push(`checked=${after.checked}`)
+    }
+    if (
+      before.selectedOption === after.selectedOption &&
+      (before.selectedOption !== null || after.selectedOption !== null)
+    ) {
+      clauses.push(`selected=${JSON.stringify(after.selectedOption)}`)
+    }
+    return clauses
+  }
+
   function truncateOutcomeText(text: string, maxLength: number): string {
     return text.length <= maxLength ? text : `${text.slice(0, maxLength - 1)}…`
   }
@@ -639,8 +659,11 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
     if (urlChanged || dialogNowOpen) fresh = await recollection('post-action', () => collectSnapshot())
     if (urlChanged && fresh) after.signature = signatureOf(fresh)
     const deltas = stateDeltas(attempt.before, after.target)
+    const controls = unchangedControlState(attempt.before, after.target)
     const pageChanged = !signaturesEqual(attempt.signature, after.signature)
-    const rawChanges = deltas.length > 0 ? deltas.join(', ') : pageChanged ? 'page signature changed' : 'no observable change'
+    const rawChanges = deltas.length > 0 || controls.length > 0
+      ? [...deltas, ...controls].join(', ')
+      : pageChanged ? 'page signature changed' : 'no observable change'
     const location = urlChanged ? `; ${urlTitleSuffix(after.signature)}` : ''
     const prefix = `clicked [${ref}]: urlChanged=${urlChanged} dialogOpen=${after.signature.dialogOpen}; `
     const changes = truncateOutcomeText(rawChanges, Math.min(240, Math.max(30, 300 - prefix.length - location.length)))
@@ -721,12 +744,22 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
     })()`)
   }
 
-  async function type(ref: number, text: string): Promise<string> {
-    const clicked = await performClick(ref)
-    if (clicked.kind === 'blocked') {
-      return `typed [${ref}]: not typed — blocked by overlay${dialogSuffix(clicked.snapshot)}${reportsSuffix(drainedReports())}`
-    }
-    await settle('type', pacing.settleMs)
+  /** Focus the registry element for keyboard selection. #133: a synthetic
+   * click on a <select> opens Chromium's select popup, which no DOM click
+   * can reach — the type path focuses the element instead (focus scrolls it
+   * into view) and never opens the popup. */
+  async function focusSelect(index: number): Promise<boolean> {
+    return evaluateInPage<boolean>(`(() => {
+      /* SELECT_FOCUS */
+      const el = (window.__bingbongRefs || [])[${index}]
+      if (!el || !el.isConnected) return false
+      if (typeof el.focus === 'function') el.focus()
+      return true
+    })()`)
+  }
+
+  /** Send text as paced real key events, one keyDown/keyUp pair per char. */
+  async function dispatchText(text: string): Promise<void> {
     for (const ch of text) {
       const key = keyEventFor(ch)
       await cdp.send('Input.dispatchKeyEvent', {
@@ -744,6 +777,68 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
       })
       await settle('keystroke', pacing.keystrokeMs)
     }
+  }
+
+  /** #133: choose a native select option by typing its label at the focused
+   * select — closed-select type-ahead commits the matching option through
+   * the real keyboard path. The outcome reports the now-selected option,
+   * changed or not, so a non-matching pick is visible to the model. */
+  async function typeIntoSelect(
+    ref: number,
+    target: SnapshotRef,
+    before: PageSignature,
+    text: string,
+  ): Promise<string> {
+    let index = target.ref - 1
+    let focused = await safety('select-focus', () => focusSelect(index))
+    if (!focused) {
+      // The element registry died with the page (navigation); re-collect.
+      const fresh = await recollection('stale-registry', () => collectSnapshot())
+      const freshTarget = findSnapshotRef(fresh, ref)
+      if (!freshTarget) {
+        throw new Error(`ref ${ref} not found — the page may have changed, run read_page to refresh refs`)
+      }
+      index = freshTarget.ref - 1
+      focused = await safety('select-focus', () => focusSelect(index))
+      if (!focused) {
+        throw new Error(`ref ${ref} not found — the page may have changed, run read_page to refresh refs`)
+      }
+    }
+    // Synthetic keys only land on the focused webContents (pressKey's
+    // rule): the click path buys focus with its opening click, the select
+    // path claims it here — DOM focus() moved element focus only.
+    page.focus()
+    lastSnapshot = undefined
+    await settle('type', pacing.settleMs)
+    // Newlines would send Enter, which opens the select popup — a dead end
+    // for synthetic input. Letters carry the whole choice.
+    await dispatchText(text.replace(/[\r\n]+/g, ''))
+    await settle('type', pacing.settleMs)
+    const after = await probeAction(index, target.label)
+    if (!after.target) {
+      const head = `typed [${ref}]: field unavailable after page change; ${urlTitleSuffix(after.signature)}`
+      return withSettledState(head)
+    }
+    const selected = after.target.selectedOption ?? after.target.value ?? ''
+    const urlChanged = before.url !== after.signature.url
+    const pageChanged = !signaturesEqual(before, after.signature)
+    if (urlChanged || pageChanged) {
+      return withSettledState(`typed [${ref}]: selected=${JSON.stringify(selected)}; page changed`)
+    }
+    return `typed [${ref}]: selected=${JSON.stringify(selected)}`
+  }
+
+  async function type(ref: number, text: string): Promise<string> {
+    const { snapshot, target } = await resolveRef(ref)
+    if (target.selectedOption != null) {
+      return typeIntoSelect(ref, target, signatureOf(snapshot), text)
+    }
+    const clicked = await performClick(ref)
+    if (clicked.kind === 'blocked') {
+      return `typed [${ref}]: not typed — blocked by overlay${dialogSuffix(clicked.snapshot)}${reportsSuffix(drainedReports())}`
+    }
+    await settle('type', pacing.settleMs)
+    await dispatchText(text)
     await settle('type', pacing.settleMs)
     const after = await probeAction(clicked.index, clicked.label)
     if (!after.target) {

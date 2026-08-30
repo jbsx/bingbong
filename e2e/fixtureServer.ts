@@ -99,7 +99,7 @@ function interactivePage(): string {
   <a id="link-second" href="/second">Second page</a>
   <input id="q" placeholder="Type here" style="font-size:24px;width:320px">
   <textarea id="notes" placeholder="Notes"></textarea>
-  <select id="choice"><option value="a">Alpha</option><option value="b">Beta</option></select>
+  <select id="choice" aria-label="Choice"><option value="a">Alpha</option><option value="b">Beta</option></select>
   <input type="checkbox" id="agree">
   <video id="player" controls width="320" height="180" title="Fixture player"></video>
   <button id="btn-below" style="position:absolute;top:1600px" onclick="document.title='clicked:btn-below'">Below the fold</button>

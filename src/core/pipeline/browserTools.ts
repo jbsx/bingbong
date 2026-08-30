@@ -222,7 +222,7 @@ export function createBrowserTools(browser: BrowserController, vision?: VisionDe
       name: 'type',
       acquisition: true,
       description:
-        'Focus the target ref and type text; no separate click is needed. Returns the field actual current value. A trailing newline ("\\n") sends Enter and may navigate — a page change returns the settled page state with fresh refs.',
+        'Focus the target ref and type text; no separate click is needed. Returns the field actual current value. For a select ref, type the visible label of the option to choose — keyboard selection; newlines are ignored (a select never submits), and the outcome reports the now-selected option, so a pick that did not land is visible. In other fields a trailing newline ("\\n") sends Enter and may navigate — a page change returns the settled page state with fresh refs.',
       parameters: {
         ref: { type: 'integer', description: 'Element ref number to type into' },
         text: { type: 'string', description: 'Text to type' },
