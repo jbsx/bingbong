@@ -56,9 +56,18 @@ const LOOKUP_KINDS: ReadonlySet<ScenarioResult['kind']> = new Set(['lookup', 'ca
 
 export type RegressionsInput = 'passed' | 'failed' | 'not-run'
 
+/** The #108 release-acceptance criteria, kebab-cased — the decision's gate ids. */
+export type GateName =
+  | 'no-raw-limit-error'
+  | 'direct-action-completion'
+  | 'lookup-correct-or-partial'
+  | 'median-llm-rounds'
+  | 'no-action-after-runtime-refusal'
+  | 'mandatory-regressions'
+
 export interface GateResult {
-  /** The #108 criterion this gate decides, kebab-cased. */
-  gate: string
+  /** The #108 criterion this gate decides. */
+  gate: GateName
   passed: boolean
   /** The numbers the gate judged, already human-readable. */
   detail: string
@@ -100,7 +109,10 @@ export function refusalViolations(report: EvalReport): RefusalViolation[] {
   for (const scenario of report.scenarios) {
     const refusedKeys = new Set<string>()
     // Artifacts predate fields (the frozen baseline's actions carry no
-    // error text); the scan reads what is there and never assumes.
+    // error text); the scan reads what is there and never assumes. The
+    // key mirrors metrics.ts's actionKey deliberately — acceptance must
+    // not import metrics at runtime, or the node-run eval:accept graph
+    // would drag metrics' src imports behind it (#36 type stripping).
     for (const action of scenario.metrics.actions ?? []) {
       const key = `${action.name}:${JSON.stringify(action.args)}`
       if (!action.ok && isRuntimeRefusal(action.error)) refusedKeys.add(key)

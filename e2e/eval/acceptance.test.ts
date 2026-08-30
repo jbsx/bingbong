@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { finalizationToolRefusal } from '../../src/core/pipeline/effortBudget'
 import { decideRelease, isRuntimeRefusal, refusalViolations, type GateResult } from './acceptance'
 import type { EvalReport, ScenarioResult } from './evaluator'
 import type { ScenarioMetrics } from './metrics'
@@ -210,7 +211,8 @@ describe('decideRelease', () => {
 describe('isRuntimeRefusal', () => {
   it('recognizes the rails’ pre-execution refusals and rejects ordinary errors', () => {
     expect(isRuntimeRefusal('Not executed — this action repeats an equivalent action against unchanged page state.')).toBe(true)
-    expect(isRuntimeRefusal('Not executed — The run\u2019s work budget is exhausted — acquisition tools are closed.')).toBe(true)
+    // Pinned against the real Finalization closure refusal, so wording drift in src fails here.
+    expect(isRuntimeRefusal(finalizationToolRefusal)).toBe(true)
     expect(isRuntimeRefusal('Search loop limit (5 consecutive similar searches — q= navigate) reached for this run.')).toBe(true)
     // The Blocker gate's refusal is recoverable by design — not a violation to retry after.
     expect(isRuntimeRefusal('navigate refused before execution: example.com is walled for this run')).toBe(false)
