@@ -486,6 +486,11 @@ export function refusalViolations(pool: readonly EvalReport[]): RefusalViolation
   return violations
 }
 
+/** Strict pooled-median improvement on a class — a side with no observations cannot improve (#134). */
+function strictlyImproves(from: number | null, to: number | null): boolean {
+  return from !== null && to !== null && to < from
+}
+
 /**
  * The #134 rounds gate over pooled captures: the global pooled median must
  * not regress, the Direct Action and Lookup-class pooled medians must
@@ -497,11 +502,6 @@ export function refusalViolations(pool: readonly EvalReport[]): RefusalViolation
  * nearest-rank over the raw pooled round counts, never averages of pass
  * percentiles.
  */
-/** Strict pooled-median improvement on a class — a side with no observations cannot improve (#134). */
-function strictlyImproves(from: number | null, to: number | null): boolean {
-  return from !== null && to !== null && to < from
-}
-
 function llmRoundsGate(candidate: CapturePool, baseline: CapturePool, violations: readonly StructuralViolation[]): GateResult {
   const globalOk = candidate.pooledRounds.median <= baseline.pooledRounds.median
   const directActionOk = strictlyImproves(baseline.classMedians.directAction, candidate.classMedians.directAction)
