@@ -283,13 +283,12 @@ describe('bounded Direct Action e2e (#117) — deterministic fallback path', () 
 
     // The guaranteed Answer, built from the run's verified observations:
     // the six fixture pages it actually observed, deduped, as links. The
-    // task line names the declared plan's objective (#119) — what the
-    // run was actually working on.
+    // task line stays the user's own words — the command they said.
     const display = events.find((event) => event.type === 'display')
     expect(display).toMatchObject({
       type: 'display',
       text: expect.stringMatching(
-        /^I could not finish “Open the widget article”\. The run exhausted its planned work budget\.\n\nWhat I managed to observe:\n- \S+\/widgets-article\n- \S+\/widgets-anodized[\s\S]*\/widget-review$/,
+        /^I could not finish “open the widget article”\. The run exhausted its planned work budget\.\n\nWhat I managed to observe:\n- \S+\/widgets-article\n- \S+\/widgets-anodized[\s\S]*\/widget-review$/,
       ),
     })
     expect(events.filter((event) => event.type === 'speak').map((event) => event.text)).toEqual([

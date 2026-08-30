@@ -21,6 +21,8 @@ export interface RecordedAction {
   ok: boolean
   /** True when an identical name+args call already happened in this run. */
   repeated: boolean
+  /** The failed call's error text, null on success — what the runtime refusal scan reads. */
+  error: string | null
 }
 
 export interface ScenarioMetrics {
@@ -67,11 +69,13 @@ export function extractMetrics(events: RunEvents, perfRecords: readonly PerfSpan
     const key = actionKey(call.name, call.args)
     const repeated = seenKeys.has(key)
     seenKeys.add(key)
+    const result = toolResults.find((result) => result.callId === call.callId)
     return {
       name: call.name,
       args: call.args,
-      ok: toolResults.find((result) => result.callId === call.callId)?.ok ?? false,
+      ok: result?.ok ?? false,
       repeated,
+      error: result?.error ?? null,
     }
   })
   const done = events.find((event): event is Extract<PipelineEvent, { type: 'done' }> => event.type === 'done')

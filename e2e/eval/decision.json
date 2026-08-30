@@ -1,0 +1,48 @@
+{
+  "decidedAt": "2026-08-30T04:59:50.950Z",
+  "decision": "reject",
+  "baseline": {
+    "commit": "2343a3cf56deb57e745cec357e446e0255e58098",
+    "capturedAt": "2026-08-28T03:27:33.927Z"
+  },
+  "candidate": {
+    "commit": "c0f6a224f74e1889728aba61ca9ed9a3b4576f78",
+    "capturedAt": "2026-08-30T04:53:51.320Z"
+  },
+  "gates": [
+    {
+      "gate": "no-raw-limit-error",
+      "passed": true,
+      "detail": "0 of 6 scenarios ended with a raw round-limit error"
+    },
+    {
+      "gate": "direct-action-completion",
+      "passed": true,
+      "detail": "1/1 (100%) of deterministic Direct Actions completed — needs ≥95%"
+    },
+    {
+      "gate": "lookup-correct-or-partial",
+      "passed": true,
+      "detail": "2/2 (100%) of Lookups completed correctly or resolved honest partial — needs ≥90%"
+    },
+    {
+      "gate": "median-llm-rounds",
+      "passed": false,
+      "detail": "median 5 → 4 LLM rounds (20% fall) — needs ≥50%"
+    },
+    {
+      "gate": "no-action-after-runtime-refusal",
+      "passed": true,
+      "detail": "no action executed after a runtime refusal of the same action"
+    },
+    {
+      "gate": "mandatory-regressions",
+      "passed": true,
+      "detail": "mandatory safety and Session regressions (pnpm test:e2e): passed"
+    }
+  ],
+  "canaries": {
+    "status": "not-run",
+    "note": "live-web canaries are diagnostic-only by design (#108) and gate nothing; none ship in this repo, so none ran"
+  }
+}

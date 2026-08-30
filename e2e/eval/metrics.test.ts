@@ -157,6 +157,25 @@ describe('extractMetrics', () => {
     expect(metrics.outcome).toBeNull()
     expect(metrics.elapsedMs).toBeNull()
   })
+
+  it('captures the failed call’s error text so runtime refusals stay scannable (#128)', () => {
+    const refusal =
+      'Not executed — this action repeats an equivalent action against unchanged page state. Change strategy.'
+    const metrics = extractMetrics(
+      [
+        command(0),
+        toolCall('a', 'navigate', { url: 'http://a/' }, 1),
+        toolResult('a', 'navigate', true, 2),
+        toolCall('b', 'navigate', { url: 'http://a/' }, 3),
+        { type: 'tool_result', turnId: T, callId: 'b', name: 'navigate', ok: false, error: refusal, at: 4 },
+        done(5),
+      ],
+      [],
+      false,
+    )
+    expect(metrics.actions.find((action) => action.ok)?.error).toBeNull()
+    expect(metrics.actions.find((action) => !action.ok)?.error).toBe(refusal)
+  })
 })
 
 describe('aggregateScenarios', () => {
