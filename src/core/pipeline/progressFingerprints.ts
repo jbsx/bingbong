@@ -1,6 +1,6 @@
 import type { ToolCall } from '../ports/llm'
-import type { MediaState } from '../ports/browser'
-import type { SnapshotRef } from '../browser/snapshot'
+import type { MediaState, SettledPageState } from '../ports/browser'
+import type { PageSnapshot, SnapshotRef } from '../browser/snapshot'
 import { fnv1a32 } from '../browser/snapshot'
 import { normalizeUrlInput } from '../browser/urlInput'
 import { coercedNumber } from './tool'
@@ -311,16 +311,29 @@ export function actionFingerprint(call: ToolCall): string {
 // ---------------------------------------------------------------------------
 
 /** The settled page state one Action Outcome reports (#113) — the input the Progress rails compare. */
-export interface SettledPageState {
-  url: string
-  title?: string
-  scrollX?: number
-  scrollY?: number
-  dialogOpen?: boolean
-  dialogText?: string
-  textDigest?: string
-  /** The focused page's media state, when one was read; null when the page has no media element. */
-  media?: MediaState | null
+export type { SettledPageState } from '../ports/browser'
+
+/**
+ * The settled state of one collected snapshot (#126): the ports-level
+ * SettledPageState every controller and double derives the same way —
+ * page facts plus the interactive digest plus a separately read media
+ * state.
+ */
+export function settledStateFromSnapshot(
+  snapshot: PageSnapshot,
+  media: MediaState | null,
+): SettledPageState {
+  return {
+    url: snapshot.url,
+    title: snapshot.title,
+    scrollX: snapshot.viewport.scrollX ?? 0,
+    scrollY: snapshot.viewport.scrollY,
+    dialogOpen: snapshot.dialogOpen,
+    dialogText: snapshot.dialogText,
+    textDigest: snapshot.textDigest,
+    interactiveDigest: interactiveDigestOfRefs(snapshot.refs),
+    media,
+  }
 }
 
 export interface PageFingerprint {
@@ -379,6 +392,7 @@ export function pageFingerprint(state: SettledPageState): PageFingerprint {
       state.title ?? '',
       state.textDigest ?? '',
       state.dialogOpen ? `dialog:${state.dialogText ?? ''}` : '',
+      state.interactiveDigest ?? '',
     ].join('\u0001'),
   )}`
   const settled = `s:${fnv1a32(
@@ -395,6 +409,30 @@ export function pageFingerprint(state: SettledPageState): PageFingerprint {
 // ---------------------------------------------------------------------------
 // Snapshot-ref search classification (moved from the search-loop rail)
 // ---------------------------------------------------------------------------
+
+/**
+ * The interactive-element digest of one snapshot (#126): the form-bearing
+ * refs' checked/value/selection/pressed facts, keyed by kind and label
+ * (ref numbers are snapshot-local) and sorted, so the same fields in the
+ * same states digest identically and any requested element state change
+ * differs. Refs carrying no element state contribute nothing.
+ */
+export function interactiveDigestOfRefs(refs: readonly SnapshotRef[]): string | undefined {
+  const facts = refs
+    .map((ref) => {
+      if (ref.checked === null || ref.checked === undefined) {
+        if (ref.value === null || ref.value === undefined) {
+          if (ref.selectedOption === null || ref.selectedOption === undefined) {
+            if (ref.ariaPressed === null || ref.ariaPressed === undefined) return null
+          }
+        }
+      }
+      return `${ref.kind}|${ref.label}|${ref.checked ?? ''}|${ref.selectedOption ?? ''}|${ref.value ?? ''}|${ref.ariaPressed ?? ''}`
+    })
+    .filter((entry): entry is string => entry !== null)
+    .sort()
+  return facts.length === 0 ? undefined : facts.join('\u0001')
+}
 
 /**
  * Pure search-input classification from snapshot ref facts (#82): an

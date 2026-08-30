@@ -1,4 +1,5 @@
 import type { BrowserController, BrowserState, KeyPress, MediaState, ViewportPoint, VisualGroundingController } from '../../core/ports/browser'
+import { settledStateFromSnapshot, type SettledPageState } from '../../core/pipeline/progressFingerprints'
 import { blockerFactsFromSnapshot } from '../../core/browser/blockerNudge'
 import type { BrowserSubspans } from '../../core/perf/browserSubspans'
 import { normalizeUrlInput } from '../../core/browser/urlInput'
@@ -786,8 +787,7 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
     }
   }
 
-  async function mediaState(): Promise<MediaState | null> {
-    await settle('media-state', pacing.settleMs)
+  function readMediaState(): Promise<MediaState | null> {
     return evaluateInPage<MediaState | null>(`(() => {
       /* MEDIA_STATE */
       const media = Array.from(document.querySelectorAll('video, audio'))
@@ -795,6 +795,11 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
       if (!active) return null
       return { paused: active.paused, currentTime: active.currentTime, volume: active.volume }
     })()`)
+  }
+
+  async function mediaState(): Promise<MediaState | null> {
+    await settle('media-state', pacing.settleMs)
+    return readMediaState()
   }
 
   async function describeRef(ref: number): Promise<SnapshotRef | undefined> {
@@ -865,6 +870,27 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
     return blockerFactsFromSnapshot(await currentSnapshot())
   }
 
+  // The Progress rails' comparison input (#126, ADR 0027): the settled
+  // page state off the freshest collected snapshot plus a settle-free
+  // media read — the rails fingerprint whole-second playback buckets, so
+  // the media tools' own settle already covered precision by the time
+  // this runs after an action. A page that cannot be read is null, never
+  // an error: the rails stay inert for that action.
+  async function settledState(): Promise<SettledPageState | null> {
+    try {
+      const snapshot = await currentSnapshot()
+      let media: MediaState | null = null
+      try {
+        media = await readMediaState()
+      } catch {
+        media = null
+      }
+      return settledStateFromSnapshot(snapshot, media)
+    } catch {
+      return null
+    }
+  }
+
   return {
     navigate,
     readPage,
@@ -878,6 +904,7 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
     mediaState,
     state,
     pageFacts,
+    settledState,
     describeRef,
     groundingSnapshot,
     refAtPoint,

@@ -21,6 +21,9 @@ import {
 } from '../agent/subagentRails'
 import type { SearchLoopRail } from './searchLoopRail'
 import { createSearchLoopRail } from './searchLoopRail'
+import type { NoProgressRail } from './noProgressRail'
+import { createNoProgressRail } from './noProgressRail'
+import type { SettledPageState } from './progressFingerprints'
 import type { SnapshotRef } from '../browser/snapshot'
 import type { BlockerGate } from './blockerGate'
 import { createBlockerGate } from './blockerGate'
@@ -108,6 +111,14 @@ export interface CommandPipelineDeps {
    * Run's Observation ledger. Absent, observations carry no source URL.
    */
   currentPageUrl?: () => string | null
+  /**
+   * The visible tab's settled page state (#126, ADR 0027): the no-progress
+   * rails' comparison input — read at gate time (the state an attempt
+   * starts from) and after each successful page-facing action (the state
+   * it left). Absent, the rails are inert: they never judge actions they
+   * cannot observe.
+   */
+  settledPageState?: () => Promise<SettledPageState | null> | SettledPageState | null
   /**
    * Delegated workers' retained observations (#123, ADR 0028): the hidden
    * provenance a completed worker's report carried, by agent id — what a
@@ -614,6 +625,34 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
       pendingBudgetWarning = null
       run.workClock.rearm()
     }
+    // The no-progress rails (#126, ADR 0027): objective repetition and
+    // approach exhaustion over the #125 fingerprints, against the run's
+    // settled-state source. Fresh per run, like every rail; a Steering
+    // replan resets it (see consumeSteering).
+    const noProgressRail: NoProgressRail = createNoProgressRail(
+      deps.settledPageState ? { settledState: deps.settledPageState } : {},
+    )
+    // Finalization entry (#117/#126, ADR 0027): the one door every work
+    // rail — tier budget, active-work deadline, hard ceiling, and the
+    // no-progress trip — enters the terminal phase through. Cancels
+    // delegated acquisition once, supersedes advisory nudges, and records
+    // the mechanically known cause.
+    const enterFinalization = (cause: FinalizationCause): void => {
+      if (finalizing) return
+      finalizing = true
+      mechanicalCause ??= cause
+      // Finalization entry (#120): delegated acquisition is cancelled
+      // once per entry — the run's own work is over, while completed
+      // worker reports stay available to the reserved Answer round. (A
+      // Steering directive can exit Finalization and re-arm; a re-entry
+      // fires again.)
+      deps.onFinalize?.()
+      // Finalization supersedes advisory nudges: the directive that rides
+      // this phase's results replaces both the plan nudge and any
+      // undelivered budget warning.
+      planNudgePending = false
+      pendingBudgetWarning = null
+    }
     const consumeSteering = async function* (
       status: 'thinking' | 'acting',
     ): AsyncGenerator<UnstampedEvent, string | undefined> {
@@ -632,11 +671,14 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
         // tier rail belonged to the stale objective and is exited; the
         // hard ceiling and an already spent bookkeeping round are not
         // (the epoch re-arm is inert there — the Answer round that
-        // follows consumes no budget).
+        // follows consumes no budget). The no-progress rails reopen the
+        // same way (#126): the corrected objective gets fresh approach
+        // accounting, and a no_progress trip it caused is un-latched.
         runPlan = null
         modelDeclaredPlan = false
         planNudgePending = false
         planNudgeDelivered = false
+        noProgressRail.reset()
         rearmEpoch(DEFAULT_EFFORT_TIER)
         correctedObjective = directive
         if (finalizing && !answerOnly && mechanicalCause !== 'hard_limit') {
@@ -817,11 +859,9 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
             // actually binds, budget_exhausted/deadline_reached is the
             // honest cause; the hard ceiling catches everything else.
             if (tierRounds >= TIER_TOOL_ROUND_BUDGETS[epochTier]) {
-              finalizing = true
-              mechanicalCause ??= 'budget_exhausted'
+              enterFinalization('budget_exhausted')
             } else if (run.workClock.spent() >= TIER_ACTIVE_WORK_DEADLINES_MS[epochTier]) {
-              finalizing = true
-              mechanicalCause ??= 'deadline_reached'
+              enterFinalization('deadline_reached')
             } else if (rounds >= hardCeiling - CEILING_RESERVED_BOOKKEEPING_ROUNDS) {
               // The hard ceiling (#108/#118): 32 Tool Rounds,
               // cumulative across tier epochs. Exactly one terminal
@@ -829,21 +869,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
               // acquisition stops one round early to preserve it — and
               // the Answer-only round that follows is not a Tool Round
               // and always rides outside the ceiling.
-              finalizing = true
-              mechanicalCause ??= 'hard_limit'
-            }
-            if (finalizing) {
-              // Finalization entry (#120): delegated acquisition is
-              // cancelled once per entry — the run's own work is over,
-              // while completed worker reports stay available to the
-              // reserved Answer round. (A Steering directive can exit
-              // Finalization and re-arm; a re-entry fires again.)
-              deps.onFinalize?.()
-              // Finalization supersedes advisory nudges: the directive
-              // that rides this phase's results replaces both the plan
-              // nudge and any undelivered budget warning.
-              planNudgePending = false
-              pendingBudgetWarning = null
+              enterFinalization('hard_limit')
             }
           }
           steering = (yield* consumeSteering('thinking')) ?? steering
@@ -1111,7 +1137,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
                   : { ok: true, result: 'Run Plan noted.' }
                 : closedTool !== undefined && (closedTool.acquisition === true || closedTool.askUser !== undefined)
                   ? { ok: false, error: finalizationToolRefusal }
-                  : yield* runGatedTool(call, turnId, visionBudget, searchLoopRail, blockerGate, toolContext, run, observe)
+                  : yield* runGatedTool(call, turnId, visionBudget, searchLoopRail, noProgressRail, blockerGate, toolContext, run, observe)
             // Observation ledger (#111): the raw outcome as the tool
             // produced it, ahead of the advisory nudges appended below —
             // later checkpoint validation checks excerpts against what the
@@ -1137,6 +1163,19 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
             // result the model sees and the feed shows.
             const searchLoopNudge = await searchLoopRail.observe(call, outcome)
             let observedOutcome: ToolResultOutcome = searchLoopNudge ? withNudge(outcome, searchLoopNudge) : outcome
+            // No-progress rails (#126, ADR 0027): the redundancy nudge and
+            // the Approach instructions ride the no-progress result the
+            // model sees; two exhausted Approaches trip the run into
+            // Finalization mid-round — remaining acquisition siblings of
+            // this round are then refused by the closed-tool check below,
+            // each carrying the finalize directive.
+            const noProgressNudge = await noProgressRail.observe(call, outcome)
+            if (noProgressNudge !== null) {
+              observedOutcome = withNudge(observedOutcome, noProgressNudge)
+            }
+            if (noProgressRail.finalizationDue()) {
+              enterFinalization('no_progress')
+            }
             // The advisory notices below all ride the same rail — one
             // successful string result can carry the next owed notice — so
             // they share this one guard. Each clears its own pending flag
@@ -1396,6 +1435,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
     turnId: string,
     visionBudget: VisionBudget,
     searchLoopRail: SearchLoopRail,
+    noProgressRail: NoProgressRail,
     blockerGate: BlockerGate,
     toolContext: ToolContext,
     run: ActiveRun,
@@ -1469,6 +1509,14 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
     // must never reach a user-facing confirmation.
     const blockerGateVerdict = blockerGate.gate(call)
     if (!blockerGateVerdict.ok) return { ok: false, error: blockerGateVerdict.reason }
+
+    // No-progress rails (#126, ADR 0027): an objectively redundant action —
+    // the same fingerprint against the state its previous attempt already
+    // faced — is nudged first and refused next, before it executes and
+    // like the Blocker gate, ahead of the risk tiers: a call this run will
+    // not perform must never reach a user-facing confirmation.
+    const noProgressGate = await noProgressRail.gate(call)
+    if (!noProgressGate.ok) return { ok: false, error: noProgressGate.reason }
 
     // Hard policy lives here, in code: a denied call never reaches execute,
     // even if the user would have approved it.

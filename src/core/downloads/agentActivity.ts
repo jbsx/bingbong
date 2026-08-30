@@ -60,6 +60,7 @@ export function withAgentActivity(
     mediaState: () => controller.mediaState(),
     state: () => controller.state(),
     pageFacts: () => controller.pageFacts(),
+    settledState: () => controller.settledState(),
     describeRef: (ref) => controller.describeRef(ref),
     groundingSnapshot: () => controller.groundingSnapshot(),
     refAtPoint: (point) => controller.refAtPoint(point),

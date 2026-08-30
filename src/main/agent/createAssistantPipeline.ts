@@ -267,6 +267,10 @@ export function createAssistantPipeline(deps: AssistantPipelineDeps): CommandPip
     describeRef: (ref) => deps.controller.describeRef(ref),
     // Observation ledger source URLs (#111): the visible tab's current page.
     currentPageUrl: () => deps.controller.state().url ?? null,
+    // No-progress rails (#126, ADR 0027): the visible tab's settled page
+    // state — the Progress fingerprints' comparison input, read at gate
+    // time and after each successful page-facing action.
+    settledPageState: () => deps.controller.settledState(),
     // Worker observations (#123): completed reports' hidden provenance,
     // for kind "subagent" Evidence Checkpoint grounding.
     ...(deps.subagentObservations ? { subagentObservations: deps.subagentObservations } : {}),

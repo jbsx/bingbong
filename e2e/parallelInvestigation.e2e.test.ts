@@ -179,13 +179,16 @@ describe('parallel Investigation e2e (#120) — Finalization cancels unfinished 
   beforeAll(async () => {
     fixture = await startFixtureServer()
     const slowUrl = fixture.url(SLOW_PATH)
-    const fastUrl = fixture.url(FAST_PATH)
 
     // The parent declares an Investigation, delegates one branch, then
     // spends its full 24-round tier budget on its own navigations: round 1
     // (plan + spawn + nav) plus twenty-three more nav rounds. Round 25 is
     // Finalization's refused bookkeeping round; round 26 is the Answer.
-    const nav = (i: number) => ({ id: `nav-${i}`, name: 'navigate', args: { url: fastUrl } })
+    // The filler alternates two fixture pages — real movement each round,
+    // since #126's rails (correctly) refuse a repeated navigation of one
+    // static page as objectively redundant.
+    const flipUrl = (i: number) => fixture.url(i % 2 === 0 ? FAST_PATH : '/widgets-article')
+    const nav = (i: number) => ({ id: `nav-${i}`, name: 'navigate', args: { url: flipUrl(i) } })
     const orchestrator: AssistantTurn[] = [
       {
         kind: 'tool_calls',
@@ -277,8 +280,10 @@ describe('parallel Investigation e2e (#120) — Finalization still uses a comple
     // while working, then spends its 24-round Investigation budget on its
     // own navigations. Finalization closes further acquisition — but the
     // collected report is already in context, and the reserved Answer
-    // round builds on it.
-    const nav = (i: number) => ({ id: `nav-${i}`, name: 'navigate', args: { url: fastUrl } })
+    // round builds on it. The filler alternates two fixture pages so each
+    // navigation is real movement — #126's rails refuse literal repeats.
+    const flipUrl = (i: number) => fixture.url(i % 2 === 0 ? FAST_PATH : '/widgets-article')
+    const nav = (i: number) => ({ id: `nav-${i}`, name: 'navigate', args: { url: flipUrl(i) } })
     const orchestrator: AssistantTurn[] = [
       {
         kind: 'tool_calls',

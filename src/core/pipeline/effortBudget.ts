@@ -163,6 +163,7 @@ export function createActiveWorkClock(deps: { now(): number }): ActiveWorkClock 
 const CAUSE_SENTENCES: Readonly<Record<string, string>> = {
   budget_exhausted: 'The run exhausted its planned work budget.',
   deadline_reached: 'The run passed its active-work deadline.',
+  no_progress: 'The run stopped making progress — repeated actions stopped producing anything new.',
   hard_limit: 'The run reached its hard work limit.',
 }
 
@@ -182,6 +183,7 @@ export function deterministicFinalAnswer(input: {
   const spokenByCause: Readonly<Record<string, string>> = {
     budget_exhausted: 'I ran out of work budget before finishing that request.',
     deadline_reached: 'I ran out of working time before finishing that request.',
+    no_progress: 'I stopped making progress on that request.',
   }
   const speak = spokenByCause[input.cause] ?? 'I had to stop before finishing that request.'
   const causeSentence = CAUSE_SENTENCES[input.cause] ?? 'The run stopped at its work limit.'

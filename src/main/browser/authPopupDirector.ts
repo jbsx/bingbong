@@ -88,6 +88,7 @@ export function createAuthPopupDirector(
         pressKey: (press, times) => target(base).pressKey(press, times),
         mediaState: () => target(base).mediaState(),
         pageFacts: () => target(base).pageFacts(),
+        settledState: () => target(base).settledState(),
         describeRef: (ref) => target(base).describeRef(ref),
         groundingSnapshot: () => target(base).groundingSnapshot(),
         refAtPoint: (point) => target(base).refAtPoint(point),

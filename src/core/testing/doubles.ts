@@ -4,6 +4,7 @@ import type { TtsSpeaker } from '../ports/tts'
 import type { Transcriber, VadScorer } from '../ports/stt'
 import { WAKE_HEADS, type WakeScores, type WakeWordDetector } from '../ports/wake'
 import type { BrowserController, BrowserState, KeyPress, MediaState, ViewportPoint, VisualGroundingController } from '../ports/browser'
+import { settledStateFromSnapshot } from '../pipeline/progressFingerprints'
 import { blockerFactsFromSnapshot } from '../browser/blockerNudge'
 import type { PageSnapshot, SnapshotRef } from '../browser/snapshot'
 import type {
@@ -293,6 +294,12 @@ export class FakeBrowser implements BrowserController, VisualGroundingController
   // ADR 0010 classifier facts, off the overridable snapshot.
   async pageFacts() {
     return blockerFactsFromSnapshot(this.snapshot)
+  }
+
+  // The Progress rails' comparison input (#126): the overridable snapshot
+  // plus the fake's media state.
+  async settledState() {
+    return settledStateFromSnapshot(this.snapshot, this.media)
   }
 
   async describeRef(ref: number): Promise<SnapshotRef | undefined> {

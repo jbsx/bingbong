@@ -45,7 +45,10 @@ function dialogScript(fixture: FixtureServer): AssistantTurn[] {
       kind: 'tool_calls',
       calls: [
         { id: 'overlay-nav', name: 'navigate', args: { url: fixture.url('/overlay') } },
-        { id: 'overlay-read', name: 'read_page', args: {} },
+        // No filler read between: the navigation outcome already returned
+        // the settled state (#113), and a no-progress read + the blocked
+        // click would be two consecutive no-progress actions — #126's
+        // rails instruct an Approach change on the click's result.
         { id: 'overlay-click', name: 'click', args: { ref: 1 } },
       ],
     },

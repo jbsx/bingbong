@@ -59,20 +59,32 @@ describe('vision grounding e2e', () => {
 })
 
 function autoVisionTurns(url: string): AssistantTurn[] {
-  const lookCalls = Array.from({ length: 29 }, (_, index) => ({
-    id: `budget-look-${index}`,
-    name: 'look',
-    args: {},
-  }))
+  // #106's budget exhaustion needs many vision calls in one run, but
+  // #126's rails (correctly) refuse a third identical look against
+  // unchanged state long before the budget binds. Each look is therefore
+  // preceded by a checkbox toggle that changes the page's interactive
+  // state — every look then faces a state different from the previous
+  // look's attempt, and only the vision budget bounds the run.
+  const lookPairs = Array.from({ length: 29 }, (_, index) => [
+    { id: `budget-toggle-${index}`, name: 'click', args: { ref: 8 } },
+    { id: `budget-look-${index}`, name: 'look', args: {} },
+  ]).flat()
   return [
     { kind: 'tool_calls', calls: [{ id: 'navigate', name: 'navigate', args: { url } }] },
-    { kind: 'tool_calls', calls: [{ id: 'read-for-click', name: 'read_page', args: {} }] },
-    { kind: 'tool_calls', calls: [{ id: 'no-change', name: 'click', args: { ref: 2 } }] },
+    // Two consecutive reads of the unmoved page: the second still
+    // executes — carrying the near-identical-read cooldown skip and the
+    // no-progress rails' redundancy nudge — and the third is refused
+    // before it runs (#126).
     { kind: 'tool_calls', calls: [{ id: 'read-one', name: 'read_page', args: {} }] },
     { kind: 'tool_calls', calls: [{ id: 'read-two', name: 'read_page', args: {} }] },
+    { kind: 'tool_calls', calls: [{ id: 'read-three', name: 'read_page', args: {} }] },
+    { kind: 'tool_calls', calls: [{ id: 'no-change', name: 'click', args: { ref: 2 } }] },
     { kind: 'tool_calls', calls: [{ id: 'stale', name: 'click', args: { ref: 999 } }] },
+    // A real state change between: the checkbox toggle is Progress, so
+    // the on-demand look's result stays the clean description.
+    { kind: 'tool_calls', calls: [{ id: 'toggle', name: 'click', args: { ref: 8 } }] },
     { kind: 'tool_calls', calls: [{ id: 'on-demand', name: 'look', args: {} }] },
-    { kind: 'tool_calls', calls: lookCalls },
+    { kind: 'tool_calls', calls: lookPairs },
     { kind: 'answer', speak: 'Vision checked.', display: 'Vision anomaly checks completed.' },
   ]
 }
@@ -119,10 +131,19 @@ describe('automatic page vision e2e', () => {
     )
 
     // The first anomaly in the run fires auto-vision; the ones that follow
-    // during the cooldown (#106) degrade to a one-line skip note.
-    expect(byId['no-change']).toContain('Auto-vision (no observable change): Visible page description 1.')
-    expect(byId['read-two']).toContain('Auto-vision (repeated near-identical page reads) skipped')
+    // during the cooldown (#106) degrade to a one-line skip note. The
+    // first repeated read carries the cooldown skip (and the redundancy
+    // nudge); the second consecutive repeat never executes — #126's rails
+    // refuse it before the tool runs.
+    // The second consecutive read's near-identical check is the first
+    // real vision call; the cooldown it sets makes the later no-change
+    // click's auto-vision degrade to the one-line skip.
+    expect(byId['read-two']).toContain('Auto-vision (repeated near-identical page reads): Visible page description 1.')
+    expect(byId['no-change']).toContain('Auto-vision (no observable change) skipped: vision is cooling down')
+    expect(byId['read-two']).toMatch(/unchanged page state/)
+    expect(byId['read-three']).toMatch(/^Not executed — this action repeats an equivalent action/)
     expect(byId.stale).toContain('Auto-vision (stale ref) skipped')
+    expect(byId.toggle).toContain('checked=')
     // A model-requested Look is not auto-vision: no cooldown, full budget share.
     expect(byId['on-demand']).toBe('Visible page description 2.')
     expect(byId['budget-look-27']).toBe('Visible page description 30.')

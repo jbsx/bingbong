@@ -87,8 +87,15 @@ export function createBrowserPane(deps?: {
 
   // The reconstructed page menu (the appliance input pass): right-click on a page
   // behaves like a browser's — nav verbs, honest link items, clipboard,
-  // image copies — on the pane and on every auth popup it opens.
+  // image copies — on the pane and every auth popup it opens.
   attachPageContextMenu(wc)
+
+  // A fresh WebContentsView carries no committed document, and a CDP
+  // Runtime.evaluate against that not-yet-committed initial page never
+  // resolves — it waits for an execution context that does not exist.
+  // Committing about:blank gives every early read (the Progress rails'
+  // pre-action state, a read_page-first run) a real page to evaluate on.
+  void wc.loadURL('about:blank').catch(() => {})
 
   // window.open popups are auto-closed: denied at open (they steal OS focus
   // and hide agent-driven state) and their URL is reported to the model via

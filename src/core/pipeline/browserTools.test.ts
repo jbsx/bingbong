@@ -12,6 +12,7 @@ import {
   type SnapshotRef,
 } from '../browser/snapshot'
 import type { BrowserController, BrowserState, KeyPress, MediaState } from '../ports/browser'
+import { settledStateFromSnapshot } from './progressFingerprints'
 import { createCommandPipeline, type CommandPipeline } from './createCommandPipeline'
 import { createBrowserTools } from './browserTools'
 import { FakeClock, RecordingTts, ScriptedLlm, withoutTurnId } from '../testing/doubles'
@@ -105,6 +106,10 @@ class FixtureBrowserController implements BrowserController {
   async pageFacts(): Promise<BlockerPageFacts> {
     if (this.pageFactsError) throw this.pageFactsError
     return this.facts ?? blockerFactsFromSnapshot(this.snapshot)
+  }
+
+  async settledState() {
+    return settledStateFromSnapshot(this.snapshot, await this.mediaState())
   }
 
   async describeRef(ref: number): Promise<SnapshotRef | undefined> {

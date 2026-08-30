@@ -20,6 +20,7 @@ import { createSubagentTools } from './subagentTools'
 import { createRecordEvidenceTool } from './evidenceTools'
 import { createRecordCandidateTool } from './candidateTools'
 import { webEvidenceCommit } from './evidenceCheckpoint'
+import type { SettledPageState } from './progressFingerprints'
 import type { RunContinuityContext } from './createCommandPipeline'
 import { createSessionEvidence, type SessionEvidenceSnapshot, type SessionEvidenceStore } from '../session/sessionEvidence'
 import type { MemoryEntryId, MemoryPatch } from '../session/workingMemory'
@@ -2236,7 +2237,10 @@ describe('command pipeline', () => {
       const pipeline = createCommandPipeline({ llm, tts: new RecordingTts(), clock: new FakeClock(), tools: [createReportRunPlanTool(), work] })
 
       const run = collect(pipeline, 'find a mug')
-      for (let attempt = 0; attempt < 200 && requests.length < 14; attempt += 1) await flush()
+      // The bound is generous: the no-progress rails' observe adds an
+      // await per tool call (#126), so reaching the reserved Answer round
+      // takes more microtask flushes than it once did.
+      for (let attempt = 0; attempt < 1000 && requests.length < 14; attempt += 1) await flush()
       expect(requests.length).toBeGreaterThanOrEqual(14)
       pipeline.pause()
       answerTurn.resolve({ kind: 'answer', speak: 'Stale.', display: 'Stale.' })
@@ -2350,6 +2354,332 @@ describe('command pipeline', () => {
       // corrected round's answer did.
       expect(firstEvents.some((e) => e.type === 'display' && e.text === 'Stale.')).toBe(false)
       expect(firstEvents.some((e) => e.type === 'display' && e.text === 'Done.')).toBe(true)
+    })
+  })
+
+  describe('no-progress rails (#126, ADR 0027)', () => {
+    // The rails' comparison input is the settled page state source the
+    // pipeline wires (#125's SettledPageState). These tests script it
+    // directly; the browser tools are fakes whose names match the real
+    // page-facing vocabulary so the classification table applies.
+    type NoProgressToolResult = Extract<PipelineEvent, { type: 'tool_result' }>
+    const NP_PAGE_URL = 'https://shop.example/acme-router'
+    const NP_PAGE_TEXT = 'Acme Wi-Fi Router\nPrice: $39 with free shipping over $25.'
+    const BASE_STATE: SettledPageState = {
+      url: 'https://example.com/article',
+      title: 'The article',
+      textDigest: 'Intro paragraph.\nSecond paragraph.',
+      scrollX: 0,
+      scrollY: 0,
+      dialogOpen: false,
+      dialogText: '',
+    }
+
+    const lookupPlan = (id: string, objective: string): ToolCall => ({
+      id,
+      name: 'report_run_plan',
+      args: { objective, headline: objective, effort_tier: 'lookup' },
+    })
+
+    it('nudges then refuses an equivalent action against equivalent state, never executing the third (#126/AC1)', async () => {
+      let executions = 0
+      const navigate: Tool = {
+        name: 'navigate',
+        acquisition: true,
+        async execute() {
+          executions += 1
+          return 'navigated'
+        },
+      }
+      const llm = new ScriptedLlm([
+        { kind: 'tool_calls', calls: [lookupPlan('p1', 'Open the article'), { id: 'n1', name: 'navigate', args: { url: 'https://example.com/article' } }] },
+        { kind: 'tool_calls', calls: [{ id: 'n2', name: 'navigate', args: { url: 'https://EXAMPLE.com/article/' } }] },
+        { kind: 'tool_calls', calls: [{ id: 'n3', name: 'navigate', args: { url: 'https://example.com/article' } }] },
+        { kind: 'answer', speak: 'Done.', display: 'Done.' },
+      ])
+      const pipeline = createCommandPipeline({
+        llm,
+        tts: new RecordingTts(),
+        clock: new FakeClock(),
+        tools: [createReportRunPlanTool(), navigate],
+        settledPageState: () => BASE_STATE,
+      })
+
+      const events = await collect(pipeline, 'open the article')
+
+      // The first attempt is the baseline; the second — equivalent URL
+      // against equivalent state — executes once more with the nudge
+      // riding its result; the third never reaches the tool.
+      expect(executions).toBe(2)
+      const results = events.filter((e): e is NoProgressToolResult => e.type === 'tool_result' && e.name === 'navigate')
+      expect(results).toHaveLength(3)
+      expect(results[0]).toMatchObject({ ok: true })
+      expect(results[1]).toMatchObject({ ok: true, result: expect.stringMatching(/unchanged page state/) })
+      expect(results[2]).toMatchObject({ ok: false, error: expect.stringMatching(/^Not executed — this action repeats/) })
+      expect(events.at(-1)).toEqual({ type: 'done', outcome: 'done', finalizationCause: 'model_answered', at: 0 })
+    })
+
+    it('never refuses repeated actions while the settled state keeps progressing (#126/AC2)', async () => {
+      let current: SettledPageState = BASE_STATE
+      let executions = 0
+      const navigate: Tool = {
+        name: 'navigate',
+        acquisition: true,
+        async execute() {
+          executions += 1
+          // The page genuinely moves with every navigation.
+          current = { ...current, textDigest: `Fresh content, visit ${executions}.` }
+          return 'navigated'
+        },
+      }
+      const llm = new ScriptedLlm([
+        { kind: 'tool_calls', calls: [lookupPlan('p1', 'Watch the page'), { id: 'n1', name: 'navigate', args: { url: 'https://example.com/article' } }] },
+        ...[2, 3, 4, 5].map((i) => ({
+          kind: 'tool_calls' as const,
+          calls: [{ id: `n${i}`, name: 'navigate', args: { url: 'https://example.com/article' } }],
+        })),
+        { kind: 'answer', speak: 'Done.', display: 'Done.' },
+      ])
+      const pipeline = createCommandPipeline({
+        llm,
+        tts: new RecordingTts(),
+        clock: new FakeClock(),
+        tools: [createReportRunPlanTool(), navigate],
+        settledPageState: () => current,
+      })
+
+      const events = await collect(pipeline, 'watch the page')
+
+      expect(executions).toBe(5)
+      expect(events.filter((e) => e.type === 'tool_result' && !e.ok)).toEqual([])
+      expect(events.at(-1)).toEqual({ type: 'done', outcome: 'done', finalizationCause: 'model_answered', at: 0 })
+    })
+
+    it('instructs an Approach change after two no-progress actions and finalizes after two exhausted Approaches (#126/AC4)', async () => {
+      const readPage: Tool = { name: 'read_page', acquisition: true, async execute() { return 'read' } }
+      const look: Tool = { name: 'look', acquisition: true, usesVision: true, async execute() { return 'seen' } }
+      const navigate: Tool = { name: 'navigate', acquisition: true, async execute() { return 'navigated' } }
+      const scroll: Tool = { name: 'scroll', acquisition: true, async execute() { return 'scrolled' } }
+      const llm = new ScriptedLlm([
+        { kind: 'tool_calls', calls: [lookupPlan('p1', 'Study the article'), { id: 'n1', name: 'navigate', args: { url: 'https://example.com/article' } }] },
+        { kind: 'tool_calls', calls: [{ id: 'r1', name: 'read_page', args: {} }] },
+        { kind: 'tool_calls', calls: [{ id: 'l1', name: 'look', args: {} }] },
+        { kind: 'tool_calls', calls: [{ id: 's1', name: 'scroll', args: { direction: 'down' } }] },
+        // The fourth no-progress action exhausts the second Approach — the
+        // trip's directive rides its result, and the sibling ask_user is
+        // already inside Finalization: refused, no window ever opens.
+        { kind: 'tool_calls', calls: [{ id: 'r2', name: 'read_page', args: {} }, { id: 'a1', name: 'ask_user', args: { question: 'Which part?' } }] },
+        { kind: 'answer', speak: 'I stopped.', display: 'No new material arrived.', resolution: 'unsuccessful' },
+      ])
+      const pipeline = createCommandPipeline({
+        llm,
+        tts: new RecordingTts(),
+        clock: new FakeClock(),
+        tools: [createReportRunPlanTool(), createAskUserTool(), navigate, readPage, look, scroll],
+        settledPageState: () => BASE_STATE,
+      })
+
+      const events = await collect(pipeline, 'study the article')
+
+      // Approach 1 exhausted on the look result; approach 2 on the second
+      // read, which carries the Finalization directive.
+      expect(events.find((e) => e.type === 'tool_result' && e.callId === 'l1')).toMatchObject({
+        ok: true,
+        result: expect.stringMatching(/Change your Approach/),
+      })
+      expect(events.find((e) => e.type === 'tool_result' && e.callId === 'r2')).toMatchObject({
+        ok: true,
+        result: expect.stringMatching(/final answer JSON/),
+      })
+      // The exhausted run cannot invoke ask_user — the sibling was refused
+      // without opening a window.
+      expect(events.some((e) => e.type === 'ask_requested')).toBe(false)
+      expect(events.find((e) => e.type === 'tool_result' && e.callId === 'a1')).toMatchObject({
+        ok: false,
+        error: expect.stringMatching(/ask_user/),
+      })
+      expect(events.at(-1)).toEqual({
+        type: 'done',
+        outcome: 'done',
+        resolution: 'unsuccessful',
+        finalizationCause: 'no_progress',
+        at: 0,
+      })
+    })
+
+    it('answers deterministically with the no_progress cause when the reserved Answer misbehaves (#126/AC4-5)', async () => {
+      const readPage: Tool = { name: 'read_page', acquisition: true, async execute() { return 'read' } }
+      const look: Tool = { name: 'look', acquisition: true, usesVision: true, async execute() { return 'seen' } }
+      const scroll: Tool = { name: 'scroll', acquisition: true, async execute() { return 'scrolled' } }
+      const back: Tool = { name: 'back', acquisition: true, async execute() { return 'went back' } }
+      const llm = new ScriptedLlm([
+        { kind: 'tool_calls', calls: [lookupPlan('p1', 'Study the article'), { id: 'r0', name: 'read_page', args: {} }] },
+        { kind: 'tool_calls', calls: [{ id: 'l1', name: 'look', args: {} }] },
+        { kind: 'tool_calls', calls: [{ id: 's1', name: 'scroll', args: { direction: 'down' } }] },
+        { kind: 'tool_calls', calls: [{ id: 'b1', name: 'back', args: {} }] },
+        // The second Approach exhausts here; the script ends, so the
+        // reserved Answer round fails — the deterministic Answer replaces
+        // it with the no_progress cause.
+        { kind: 'tool_calls', calls: [{ id: 'r2', name: 'read_page', args: {} }] },
+      ])
+      const pipeline = createCommandPipeline({
+        llm,
+        tts: new RecordingTts(),
+        clock: new FakeClock(),
+        tools: [createReportRunPlanTool(), readPage, look, scroll, back],
+        settledPageState: () => BASE_STATE,
+      })
+
+      const events = await collect(pipeline, 'study the article')
+
+      expect(events.find((e) => e.type === 'display')).toMatchObject({
+        text: expect.stringMatching(/stopped making progress/i),
+      })
+      expect(events.filter((e) => e.type === 'speak').map((e) => e.text)).toEqual([
+        'I stopped making progress on that request.',
+      ])
+      expect(events.find((e) => e.type === 'error')).toBeUndefined()
+      expect(events.at(-1)).toEqual({ type: 'done', outcome: 'failed', finalizationCause: 'no_progress', at: 0 })
+    })
+
+    it('resets the rails on a requested state change and on an accepted Evidence Checkpoint, not on URL-only jumps (#126/AC3)', async () => {
+      let current: SettledPageState = BASE_STATE
+      const readPage: Tool = { name: 'read_page', acquisition: true, async execute() { return 'read' } }
+      // A first-party alternate representation: same material, different URL.
+      const navigate: Tool = {
+        name: 'navigate',
+        acquisition: true,
+        async execute(call) {
+          current = { ...BASE_STATE, url: String(call.args.url) }
+          return 'navigated'
+        },
+      }
+      const setSetting: Tool = { name: 'set_setting', async execute() { return 'Appearance set to dark.' } }
+      const lookTool: Tool = { name: 'look', acquisition: true, usesVision: true, async execute() { return 'seen' } }
+      const llm = new ScriptedLlm([
+        { kind: 'tool_calls', calls: [lookupPlan('p1', 'Read the article'), { id: 'n1', name: 'navigate', args: { url: 'https://example.com/article' } }] },
+        // Alternate representation: URL-only change — no Progress.
+        { kind: 'tool_calls', calls: [{ id: 'n2', name: 'navigate', args: { url: 'https://example.com/article?print=1' } }] },
+        { kind: 'tool_calls', calls: [{ id: 'r1', name: 'read_page', args: {} }] },
+        // A requested state change resets the rails mid-approach.
+        { kind: 'tool_calls', calls: [{ id: 's1', name: 'set_setting', args: { setting: 'appearance', string_value: 'dark' } }] },
+        { kind: 'tool_calls', calls: [{ id: 'r2', name: 'read_page', args: {} }] },
+        { kind: 'tool_calls', calls: [{ id: 'l1', name: 'look', args: {} }] },
+        { kind: 'answer', speak: 'Done.', display: 'Done.' },
+      ])
+      const pipeline = createCommandPipeline({
+        llm,
+        tts: new RecordingTts(),
+        clock: new FakeClock(),
+        tools: [createReportRunPlanTool(), navigate, readPage, setSetting, lookTool],
+        settledPageState: () => current,
+      })
+
+      const events = await collect(pipeline, 'read the article')
+
+      // The URL-only jump counted as no-progress: it reset nothing, so
+      // with the following read it exhausted the first Approach (r1
+      // instructs). The setting change then reset the count — without it,
+      // the r2/l1 pair would exhaust the second Approach and finalize
+      // instead of instructing again on l1.
+      const instructions = events.filter(
+        (e): e is NoProgressToolResult => e.type === 'tool_result' && e.ok && typeof e.result === 'string' && /Change your Approach/.test(e.result),
+      )
+      expect(instructions.map((e) => e.callId)).toEqual(['r1', 'l1'])
+      expect(events.filter((e) => e.type === 'tool_result' && !e.ok)).toEqual([])
+      expect(events.at(-1)).toEqual({ type: 'done', outcome: 'done', finalizationCause: 'model_answered', at: 0 })
+    })
+
+    it('an accepted Evidence Checkpoint resets the exhausted-approach count (#126/AC3)', async () => {
+      const store = createSessionEvidence({
+        sessionId: 'session-1' as SessionId,
+        now: () => 0,
+        mintId: () => 'memory-1' as MemoryEntryId,
+      })
+      const readPage: Tool = { name: 'read_page', acquisition: true, async execute() { return NP_PAGE_TEXT } }
+      // The look is the freshest observation of the URL when the
+      // checkpoint lands, so it must retain the cited excerpt verbatim.
+      const look: Tool = {
+        name: 'look',
+        acquisition: true,
+        usesVision: true,
+        async execute() { return 'The page shows: Acme Wi-Fi Router Price: $39 with free shipping over $25.' },
+      }
+      const llm = new ScriptedLlm([
+        { kind: 'tool_calls', calls: [lookupPlan('p1', 'Check the price'), { id: 'r1', name: 'read_page', args: {} }] },
+        { kind: 'tool_calls', calls: [{ id: 'l1', name: 'look', args: {} }] },
+        // The checkpoint lands — decision-relevant evidence resets both rails.
+        { kind: 'tool_calls', calls: [{
+          id: 'e1',
+          name: 'record_evidence',
+          args: { observation: 'The Acme router costs $39.', source_url: NP_PAGE_URL, excerpt: 'Price: $39' },
+        }] },
+        { kind: 'tool_calls', calls: [{ id: 'r2', name: 'read_page', args: {} }] },
+        { kind: 'tool_calls', calls: [{ id: 'l2', name: 'look', args: {} }] },
+        { kind: 'answer', speak: 'Done.', display: 'Done.' },
+      ])
+      const pipeline = createCommandPipeline({
+        llm,
+        tts: new RecordingTts(),
+        clock: new FakeClock(),
+        tools: [createReportRunPlanTool(), createRecordEvidenceTool(), readPage, look],
+        settledPageState: () => BASE_STATE,
+        currentPageUrl: () => NP_PAGE_URL,
+      })
+
+      const events: PipelineEvent[] = []
+      for await (const raw of pipeline.execute('check the price', undefined, false, {
+        snapshot: [],
+        memory: [],
+        generation: 0,
+        commit: () => 'committed',
+        checkpointEvidence: webEvidenceCommit(() => store, 'run-1' as RunId),
+      })) {
+        events.push(withoutTurnId(raw))
+      }
+
+      // The checkpoint succeeded and reset the count: the second look
+      // instructs again instead of finalizing the run.
+      expect(events.find((e) => e.type === 'tool_result' && e.callId === 'e1')).toMatchObject({ ok: true })
+      expect(events.find((e) => e.type === 'tool_result' && e.callId === 'l2')).toMatchObject({
+        ok: true,
+        result: expect.stringMatching(/Change your Approach/),
+      })
+      expect(events.at(-1)).toEqual({ type: 'done', outcome: 'done', finalizationCause: 'model_answered', at: 0 })
+    })
+
+    it('reopens approach accounting after a Steering replan (#126/AC4)', async () => {
+      const readPage: Tool = { name: 'read_page', acquisition: true, async execute() { return 'read' } }
+      const look: Tool = { name: 'look', acquisition: true, usesVision: true, async execute() { return 'seen' } }
+      const llm = new ScriptedLlm([
+        { kind: 'tool_calls', calls: [lookupPlan('p1', 'Study the article'), { id: 'r1', name: 'read_page', args: {} }] },
+        { kind: 'tool_calls', calls: [{ id: 'l1', name: 'look', args: {} }] },
+        // The directive lands; the corrected objective works two more
+        // no-progress actions — instruct, not finalize.
+        { kind: 'tool_calls', calls: [lookupPlan('p2', 'Study the print view'), { id: 'r2', name: 'read_page', args: {} }] },
+        { kind: 'tool_calls', calls: [{ id: 'l2', name: 'look', args: {} }] },
+        { kind: 'answer', speak: 'Done.', display: 'Done.' },
+      ])
+      const pipeline = createCommandPipeline({
+        llm,
+        tts: new RecordingTts(),
+        clock: new FakeClock(),
+        tools: [createReportRunPlanTool(), readPage, look],
+        settledPageState: () => BASE_STATE,
+      })
+
+      const events = await collect(pipeline, 'study the article', (event, active) => {
+        if (event.type === 'tool_result' && event.callId === 'l1') {
+          active.pause()
+          active.resume('the print view instead')
+        }
+      })
+
+      expect(events.find((e) => e.type === 'tool_result' && e.callId === 'l2')).toMatchObject({
+        ok: true,
+        result: expect.stringMatching(/Change your Approach/),
+      })
+      expect(events.at(-1)).toEqual({ type: 'done', outcome: 'done', finalizationCause: 'model_answered', at: 0 })
     })
   })
 
