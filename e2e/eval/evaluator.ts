@@ -310,6 +310,9 @@ export async function startEvaluator(options?: { scenarioTimeoutMs?: number; rep
         : undefined
 
     const whileRunning = [steerWhileRunning, cancelWhileRunning].find((hook) => hook !== undefined)
+    if (steerWhileRunning !== undefined && cancelWhileRunning !== undefined) {
+      throw new Error(`${scenario.id} declares both steer and cancel — the eval models them as exclusive`)
+    }
     const first = await awaitRun(command, whileRunning)
     runs.push(first.metrics)
 
@@ -320,7 +323,9 @@ export async function startEvaluator(options?: { scenarioTimeoutMs?: number; rep
       runs.push(second.metrics)
     }
 
-    const finalRun = runs[runs.length - 1]!
+    // One combined view feeds both the predicate's observation and the
+    // recorded result — the multi-run semantics exist once, in combineRuns.
+    const combined = combineRuns(runs)
     const paneUrl = await harness.paneUrl().catch(() => undefined)
     const paneHeading = await harness
       .paneEval<string | null>('document.querySelector("h1")?.textContent?.trim() ?? null')
@@ -329,10 +334,10 @@ export async function startEvaluator(options?: { scenarioTimeoutMs?: number; rep
       paneUrl,
       paneHeading,
       paneState: await readPaneState(),
-      answerText: finalRun.answerText,
-      outcome: finalRun.outcome,
-      rawLimitFailure: runs.find((run) => run.rawLimitFailure !== null)?.rawLimitFailure ?? null,
-      timedOut: runs.some((run) => run.timedOut),
+      answerText: combined.answerText,
+      outcome: combined.outcome,
+      rawLimitFailure: combined.rawLimitFailure,
+      timedOut: combined.timedOut,
       runs: runs.map((metrics) => ({ metrics })),
     }
     const success = scenario.success(observation, fixture)
@@ -342,7 +347,7 @@ export async function startEvaluator(options?: { scenarioTimeoutMs?: number; rep
       command,
       success,
       failureReason: success ? null : failureReasonOf(observation),
-      metrics: combineRuns(runs),
+      metrics: combined,
       runs,
     }
     results.push(result)

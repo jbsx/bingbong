@@ -94,6 +94,11 @@ function answeredWithoutRawLimit(observation: ScenarioObservation): boolean {
   return observation.outcome === 'done' && observation.answerText !== null && observation.rawLimitFailure === null
 }
 
+/** An honest answer whose text mentions the phrase (case-insensitive). */
+function answerMentions(observation: ScenarioObservation, phrase: string): boolean {
+  return answeredWithoutRawLimit(observation) && observation.answerText!.toLowerCase().includes(phrase)
+}
+
 /** True when any of the scenario's runs asked the user and the ask timed out unanswered. */
 function askedAndWaitedOut(observation: ScenarioObservation): boolean {
   return observation.runs.some((run) => run.metrics.askTimedOut)
@@ -232,28 +237,26 @@ export function evalScenarios(): EvalScenario[] {
       id: 'lookup-open-web-answer',
       kind: 'lookup',
       command: () => 'search the fixture web for fixture widgets and tell me the title of the complete guide',
-      success: (observation) => answeredWithoutRawLimit(observation) && observation.answerText!.toLowerCase().includes('fixture widgets'),
+      success: (observation) => answerMentions(observation, 'fixture widgets'),
     },
     {
       id: 'lookup-open-web-review',
       kind: 'lookup',
       command: () => 'search the fixture web for the independent widget review and tell me the weight it measured',
-      success: (observation) => answeredWithoutRawLimit(observation) && observation.answerText!.includes('4.2'),
+      success: (observation) => answerMentions(observation, '4.2'),
     },
     {
       id: 'lookup-known-page-weight',
       kind: 'lookup',
       command: (fixture) => `open ${fixture.url('/widget-specs')} and tell me the official weight of the standard widget`,
       success: (observation, fixture) =>
-        observation.paneUrl === fixture.url('/widget-specs') &&
-        answeredWithoutRawLimit(observation) &&
-        observation.answerText!.includes('3.8'),
+        observation.paneUrl === fixture.url('/widget-specs') && answerMentions(observation, '3.8'),
     },
     {
       id: 'lookup-known-page-care',
       kind: 'lookup',
       command: (fixture) => `open ${fixture.url('/widget-care')} and tell me how often standard widgets need cleaning`,
-      success: (observation) => answeredWithoutRawLimit(observation) && observation.answerText!.toLowerCase().includes('6 months'),
+      success: (observation) => answerMentions(observation, '6 months'),
     },
     {
       id: 'lookup-depot-bulletin',
@@ -301,10 +304,7 @@ export function evalScenarios(): EvalScenario[] {
       kind: 'investigation',
       command: (fixture) =>
         `the standard fixture widget's build is documented in two places: the material sheet at ${fixture.url('/widget-material')} and the finish sheet at ${fixture.url('/widget-finish')}. read both and tell me the material and the finish`,
-      success: (observation) =>
-        answeredWithoutRawLimit(observation) &&
-        observation.answerText!.toLowerCase().includes('titanium') &&
-        observation.answerText!.toLowerCase().includes('matte'),
+      success: (observation) => answerMentions(observation, 'titanium') && answerMentions(observation, 'matte'),
     },
     {
       id: 'contradiction-widget-weight',
@@ -326,10 +326,9 @@ export function evalScenarios(): EvalScenario[] {
       command: (fixture) =>
         `gather three facts about the standard fixture widget: the material from ${fixture.url('/widget-material')}, the finish from ${fixture.url('/widget-finish')}, and the care schedule from ${fixture.altUrl('/widget-care')}. tell me all three`,
       success: (observation) =>
-        answeredWithoutRawLimit(observation) &&
-        observation.answerText!.toLowerCase().includes('titanium') &&
-        observation.answerText!.toLowerCase().includes('matte') &&
-        observation.answerText!.toLowerCase().includes('6 months'),
+        answerMentions(observation, 'titanium') &&
+        answerMentions(observation, 'matte') &&
+        answerMentions(observation, '6 months'),
     },
 
     // ---- Steering mid-run ----
@@ -355,8 +354,7 @@ export function evalScenarios(): EvalScenario[] {
       // re-executing any browsing of the page it already read.
       success: (observation) =>
         observation.runs[0]?.metrics.outcome === 'cancelled' &&
-        answeredWithoutRawLimit(observation) &&
-        observation.answerText!.includes('5 year') &&
+        answerMentions(observation, '5 year') &&
         !finalRunRetouched(observation, '/widget-warranty'),
     },
 
@@ -371,10 +369,8 @@ export function evalScenarios(): EvalScenario[] {
       },
       success: (observation) =>
         allRunsDone(observation) &&
-        observation.runs[0]!.metrics.answerText !== null &&
-        observation.runs[0]!.metrics.answerText!.toLowerCase().includes('north') &&
-        observation.answerText !== null &&
-        observation.answerText!.toLowerCase().includes('south'),
+        (observation.runs[0]!.metrics.answerText ?? '').toLowerCase().includes('north') &&
+        (observation.answerText ?? '').toLowerCase().includes('south'),
     },
 
     // ---- Near-identical pages: two true duplicates and one that differs by a token ----
