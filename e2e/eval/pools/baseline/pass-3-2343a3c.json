@@ -1,0 +1,4197 @@
+{
+  "capturedAt": "2026-08-30T15:07:21.266Z",
+  "gitCommit": "2343a3cf56deb57e745cec357e446e0255e58098",
+  "scenarioTimeoutMs": 900000,
+  "routing": {
+    "orchestrator": {
+      "configured": true,
+      "baseUrl": "https://api.z.ai/api/coding/paas/v4",
+      "model": "GLM-5.3-flash",
+      "keyFingerprint": "sha256:496fb3dd2227"
+    },
+    "subagent": {
+      "configured": true,
+      "baseUrl": "https://api.z.ai/api/coding/paas/v4",
+      "model": "GLM-5.3-flash",
+      "keyFingerprint": "sha256:496fb3dd2227"
+    },
+    "vision": {
+      "configured": true,
+      "baseUrl": "https://api.z.ai/api/coding/paas/v4",
+      "model": "GLM-4.6V",
+      "keyFingerprint": "sha256:496fb3dd2227"
+    }
+  },
+  "modelWitness": {
+    "orchestratorModel": "GLM-5.3-flash",
+    "orchestratorRequests": 167,
+    "scriptedEntries": []
+  },
+  "scenarios": [
+    {
+      "id": "direct-action-open-page",
+      "kind": "direct-action",
+      "command": "open http://127.0.0.1:40241/second in the browser",
+      "success": true,
+      "failureReason": null,
+      "metrics": {
+        "llmRounds": 4,
+        "attemptedTools": 3,
+        "executedTools": 3,
+        "elapsedMs": 22416,
+        "repeatedActions": 0,
+        "outcome": "done",
+        "resolution": null,
+        "finalizationCause": null,
+        "effortTier": "lookup",
+        "rawLimitFailure": null,
+        "askTimedOut": false,
+        "actions": [
+          {
+            "name": "navigate",
+            "args": {
+              "url": "http://127.0.0.1:40241/second"
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "read_page",
+            "args": {},
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "report_headline",
+            "args": {
+              "headline": "Open localhost fixture page /second"
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          }
+        ],
+        "answerText": "Opened http://127.0.0.1:40241/second — the page loaded successfully and contains only the text: **second fixture page**. Nothing else on the page, no links or dialogs.",
+        "timedOut": false
+      },
+      "runs": [
+        {
+          "llmRounds": 4,
+          "attemptedTools": 3,
+          "executedTools": 3,
+          "elapsedMs": 22416,
+          "repeatedActions": 0,
+          "outcome": "done",
+          "resolution": null,
+          "finalizationCause": null,
+          "effortTier": "lookup",
+          "rawLimitFailure": null,
+          "askTimedOut": false,
+          "actions": [
+            {
+              "name": "navigate",
+              "args": {
+                "url": "http://127.0.0.1:40241/second"
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "read_page",
+              "args": {},
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "report_headline",
+              "args": {
+                "headline": "Open localhost fixture page /second"
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            }
+          ],
+          "answerText": "Opened http://127.0.0.1:40241/second — the page loaded successfully and contains only the text: **second fixture page**. Nothing else on the page, no links or dialogs.",
+          "timedOut": false
+        }
+      ]
+    },
+    {
+      "id": "direct-action-open-article",
+      "kind": "direct-action",
+      "command": "open http://127.0.0.1:40241/widgets-article in the browser",
+      "success": true,
+      "failureReason": null,
+      "metrics": {
+        "llmRounds": 3,
+        "attemptedTools": 3,
+        "executedTools": 3,
+        "elapsedMs": 24909,
+        "repeatedActions": 0,
+        "outcome": "done",
+        "resolution": null,
+        "finalizationCause": null,
+        "effortTier": "lookup",
+        "rawLimitFailure": null,
+        "askTimedOut": false,
+        "actions": [
+          {
+            "name": "report_headline",
+            "args": {
+              "headline": "Opening the widgets-article page"
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "navigate",
+            "args": {
+              "url": "http://127.0.0.1:40241/widgets-article"
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "read_page",
+            "args": {},
+            "ok": true,
+            "repeated": false,
+            "error": null
+          }
+        ],
+        "answerText": "Opened http://127.0.0.1:40241/widgets-article — title \"fixture widgets article\". The page reads: \"Fixture widgets: the complete guide — Everything about fixture widgets, found entirely on screen.\"",
+        "timedOut": false
+      },
+      "runs": [
+        {
+          "llmRounds": 3,
+          "attemptedTools": 3,
+          "executedTools": 3,
+          "elapsedMs": 24909,
+          "repeatedActions": 0,
+          "outcome": "done",
+          "resolution": null,
+          "finalizationCause": null,
+          "effortTier": "lookup",
+          "rawLimitFailure": null,
+          "askTimedOut": false,
+          "actions": [
+            {
+              "name": "report_headline",
+              "args": {
+                "headline": "Opening the widgets-article page"
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "navigate",
+              "args": {
+                "url": "http://127.0.0.1:40241/widgets-article"
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "read_page",
+              "args": {},
+              "ok": true,
+              "repeated": false,
+              "error": null
+            }
+          ],
+          "answerText": "Opened http://127.0.0.1:40241/widgets-article — title \"fixture widgets article\". The page reads: \"Fixture widgets: the complete guide — Everything about fixture widgets, found entirely on screen.\"",
+          "timedOut": false
+        }
+      ]
+    },
+    {
+      "id": "direct-action-open-alt-host",
+      "kind": "direct-action",
+      "command": "open http://127.0.0.2:34353/widget-review in the browser",
+      "success": true,
+      "failureReason": null,
+      "metrics": {
+        "llmRounds": 3,
+        "attemptedTools": 3,
+        "executedTools": 3,
+        "elapsedMs": 10347,
+        "repeatedActions": 0,
+        "outcome": "done",
+        "resolution": null,
+        "finalizationCause": null,
+        "effortTier": "lookup",
+        "rawLimitFailure": null,
+        "askTimedOut": false,
+        "actions": [
+          {
+            "name": "report_headline",
+            "args": {
+              "headline": "Open widget-review page"
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "navigate",
+            "args": {
+              "url": "http://127.0.0.2:34353/widget-review"
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "read_page",
+            "args": {},
+            "ok": true,
+            "repeated": false,
+            "error": null
+          }
+        ],
+        "answerText": "Opened **http://127.0.0.2:34353/widget-review** — page title: *independent widget review*.\n\nPage content: \"Independent fixture widget review — Our review lab measured the standard fixture widget at 4.2 kg on the bench scale.\"",
+        "timedOut": false
+      },
+      "runs": [
+        {
+          "llmRounds": 3,
+          "attemptedTools": 3,
+          "executedTools": 3,
+          "elapsedMs": 10347,
+          "repeatedActions": 0,
+          "outcome": "done",
+          "resolution": null,
+          "finalizationCause": null,
+          "effortTier": "lookup",
+          "rawLimitFailure": null,
+          "askTimedOut": false,
+          "actions": [
+            {
+              "name": "report_headline",
+              "args": {
+                "headline": "Open widget-review page"
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "navigate",
+              "args": {
+                "url": "http://127.0.0.2:34353/widget-review"
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "read_page",
+              "args": {},
+              "ok": true,
+              "repeated": false,
+              "error": null
+            }
+          ],
+          "answerText": "Opened **http://127.0.0.2:34353/widget-review** — page title: *independent widget review*.\n\nPage content: \"Independent fixture widget review — Our review lab measured the standard fixture widget at 4.2 kg on the bench scale.\"",
+          "timedOut": false
+        }
+      ]
+    },
+    {
+      "id": "direct-action-open-results",
+      "kind": "direct-action",
+      "command": "open the fixture web results for widgets at http://127.0.0.1:40241/results?q=widgets in the browser",
+      "success": true,
+      "failureReason": null,
+      "metrics": {
+        "llmRounds": 3,
+        "attemptedTools": 3,
+        "executedTools": 3,
+        "elapsedMs": 15642,
+        "repeatedActions": 0,
+        "outcome": "done",
+        "resolution": null,
+        "finalizationCause": null,
+        "effortTier": "lookup",
+        "rawLimitFailure": null,
+        "askTimedOut": false,
+        "actions": [
+          {
+            "name": "report_headline",
+            "args": {
+              "headline": "Opening fixture web results for \"widgets\""
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "navigate",
+            "args": {
+              "url": "http://127.0.0.1:40241/results?q=widgets"
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "read_page",
+            "args": {},
+            "ok": true,
+            "repeated": false,
+            "error": null
+          }
+        ],
+        "answerText": "Opened **[widgets — fixture engine results](http://127.0.0.1:40241/results?q=widgets)**. It lists three results:\n\n1. [Fixture widgets: the complete guide](http://127.0.0.1:40241/widgets-article)\n2. [Independent fixture widget review](http://127.0.0.2:34353/widget-review)\n3. [Polished widgets — the mirror finish guide](http://127.0.0.1:40241/widgets-polished)\n\nSay the word if you'd like me to open any of them.",
+        "timedOut": false
+      },
+      "runs": [
+        {
+          "llmRounds": 3,
+          "attemptedTools": 3,
+          "executedTools": 3,
+          "elapsedMs": 15642,
+          "repeatedActions": 0,
+          "outcome": "done",
+          "resolution": null,
+          "finalizationCause": null,
+          "effortTier": "lookup",
+          "rawLimitFailure": null,
+          "askTimedOut": false,
+          "actions": [
+            {
+              "name": "report_headline",
+              "args": {
+                "headline": "Opening fixture web results for \"widgets\""
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "navigate",
+              "args": {
+                "url": "http://127.0.0.1:40241/results?q=widgets"
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "read_page",
+              "args": {},
+              "ok": true,
+              "repeated": false,
+              "error": null
+            }
+          ],
+          "answerText": "Opened **[widgets — fixture engine results](http://127.0.0.1:40241/results?q=widgets)**. It lists three results:\n\n1. [Fixture widgets: the complete guide](http://127.0.0.1:40241/widgets-article)\n2. [Independent fixture widget review](http://127.0.0.2:34353/widget-review)\n3. [Polished widgets — the mirror finish guide](http://127.0.0.1:40241/widgets-polished)\n\nSay the word if you'd like me to open any of them.",
+          "timedOut": false
+        }
+      ]
+    },
+    {
+      "id": "direct-action-click-button",
+      "kind": "direct-action",
+      "command": "open http://127.0.0.1:40241/interactive and click the Say hello button",
+      "success": true,
+      "failureReason": null,
+      "metrics": {
+        "llmRounds": 6,
+        "attemptedTools": 6,
+        "executedTools": 6,
+        "elapsedMs": 27757,
+        "repeatedActions": 1,
+        "outcome": "done",
+        "resolution": null,
+        "finalizationCause": null,
+        "effortTier": "lookup",
+        "rawLimitFailure": null,
+        "askTimedOut": false,
+        "actions": [
+          {
+            "name": "report_headline",
+            "args": {
+              "headline": "Open interactive page and click the Say hello button"
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "navigate",
+            "args": {
+              "url": "http://127.0.0.1:40241/interactive"
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "read_page",
+            "args": {},
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "click",
+            "args": {
+              "ref": 1
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "read_page",
+            "args": {},
+            "ok": true,
+            "repeated": true,
+            "error": null
+          },
+          {
+            "name": "look",
+            "args": {},
+            "ok": true,
+            "repeated": false,
+            "error": null
+          }
+        ],
+        "answerText": "Opened http://127.0.0.1:40241/interactive and clicked the **Say hello** button (ref [1]). The click went through — the tool reported a page signature change — and the page remains on /interactive with no dialogs or errors. Other controls on the page: \"Do nothing\", \"Open dialog\", a \"Second page\" link, text inputs, a dropdown, a checkbox, and a media player.",
+        "timedOut": false
+      },
+      "runs": [
+        {
+          "llmRounds": 6,
+          "attemptedTools": 6,
+          "executedTools": 6,
+          "elapsedMs": 27757,
+          "repeatedActions": 1,
+          "outcome": "done",
+          "resolution": null,
+          "finalizationCause": null,
+          "effortTier": "lookup",
+          "rawLimitFailure": null,
+          "askTimedOut": false,
+          "actions": [
+            {
+              "name": "report_headline",
+              "args": {
+                "headline": "Open interactive page and click the Say hello button"
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "navigate",
+              "args": {
+                "url": "http://127.0.0.1:40241/interactive"
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "read_page",
+              "args": {},
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "click",
+              "args": {
+                "ref": 1
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "read_page",
+              "args": {},
+              "ok": true,
+              "repeated": true,
+              "error": null
+            },
+            {
+              "name": "look",
+              "args": {},
+              "ok": true,
+              "repeated": false,
+              "error": null
+            }
+          ],
+          "answerText": "Opened http://127.0.0.1:40241/interactive and clicked the **Say hello** button (ref [1]). The click went through — the tool reported a page signature change — and the page remains on /interactive with no dialogs or errors. Other controls on the page: \"Do nothing\", \"Open dialog\", a \"Second page\" link, text inputs, a dropdown, a checkbox, and a media player.",
+          "timedOut": false
+        }
+      ]
+    },
+    {
+      "id": "direct-action-check-checkbox",
+      "kind": "direct-action",
+      "command": "open http://127.0.0.1:40241/interactive and tick the Agree checkbox",
+      "success": true,
+      "failureReason": null,
+      "metrics": {
+        "llmRounds": 5,
+        "attemptedTools": 5,
+        "executedTools": 5,
+        "elapsedMs": 22886,
+        "repeatedActions": 1,
+        "outcome": "done",
+        "resolution": null,
+        "finalizationCause": null,
+        "effortTier": "lookup",
+        "rawLimitFailure": null,
+        "askTimedOut": false,
+        "actions": [
+          {
+            "name": "report_headline",
+            "args": {
+              "headline": "Tick the Agree checkbox on the interactive fixture page"
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "navigate",
+            "args": {
+              "url": "http://127.0.0.1:40241/interactive"
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "read_page",
+            "args": {},
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "click",
+            "args": {
+              "ref": 8
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "read_page",
+            "args": {},
+            "ok": true,
+            "repeated": true,
+            "error": null
+          }
+        ],
+        "answerText": "Opened http://127.0.0.1:40241/interactive and clicked the checkbox (ref [8]). Verified with a fresh page read: the checkbox state is now `checked=true`. No dialogs or navigation occurred.",
+        "timedOut": false
+      },
+      "runs": [
+        {
+          "llmRounds": 5,
+          "attemptedTools": 5,
+          "executedTools": 5,
+          "elapsedMs": 22886,
+          "repeatedActions": 1,
+          "outcome": "done",
+          "resolution": null,
+          "finalizationCause": null,
+          "effortTier": "lookup",
+          "rawLimitFailure": null,
+          "askTimedOut": false,
+          "actions": [
+            {
+              "name": "report_headline",
+              "args": {
+                "headline": "Tick the Agree checkbox on the interactive fixture page"
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "navigate",
+              "args": {
+                "url": "http://127.0.0.1:40241/interactive"
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "read_page",
+              "args": {},
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "click",
+              "args": {
+                "ref": 8
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "read_page",
+              "args": {},
+              "ok": true,
+              "repeated": true,
+              "error": null
+            }
+          ],
+          "answerText": "Opened http://127.0.0.1:40241/interactive and clicked the checkbox (ref [8]). Verified with a fresh page read: the checkbox state is now `checked=true`. No dialogs or navigation occurred.",
+          "timedOut": false
+        }
+      ]
+    },
+    {
+      "id": "direct-action-click-link",
+      "kind": "direct-action",
+      "command": "open http://127.0.0.1:40241/native-dialog and click the Leave page link",
+      "success": true,
+      "failureReason": null,
+      "metrics": {
+        "llmRounds": 5,
+        "attemptedTools": 5,
+        "executedTools": 5,
+        "elapsedMs": 25588,
+        "repeatedActions": 1,
+        "outcome": "done",
+        "resolution": null,
+        "finalizationCause": null,
+        "effortTier": "lookup",
+        "rawLimitFailure": null,
+        "askTimedOut": false,
+        "actions": [
+          {
+            "name": "report_headline",
+            "args": {
+              "headline": "Open native-dialog fixture page and click the Leave page link"
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "navigate",
+            "args": {
+              "url": "http://127.0.0.1:40241/native-dialog"
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "read_page",
+            "args": {},
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "click",
+            "args": {
+              "ref": 3
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "read_page",
+            "args": {},
+            "ok": true,
+            "repeated": true,
+            "error": null
+          }
+        ],
+        "answerText": "Opened `http://127.0.0.1:40241/native-dialog` and clicked the **Leave page** link (ref 3, href `http://127.0.0.1:40241/second`). The click triggered a normal navigation: no native alert/confirm/beforeunload dialog appeared (dialogOpen=false), and the browser is now on `http://127.0.0.1:40241/second`, which shows the text \"second fixture page\".",
+        "timedOut": false
+      },
+      "runs": [
+        {
+          "llmRounds": 5,
+          "attemptedTools": 5,
+          "executedTools": 5,
+          "elapsedMs": 25588,
+          "repeatedActions": 1,
+          "outcome": "done",
+          "resolution": null,
+          "finalizationCause": null,
+          "effortTier": "lookup",
+          "rawLimitFailure": null,
+          "askTimedOut": false,
+          "actions": [
+            {
+              "name": "report_headline",
+              "args": {
+                "headline": "Open native-dialog fixture page and click the Leave page link"
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "navigate",
+              "args": {
+                "url": "http://127.0.0.1:40241/native-dialog"
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "read_page",
+              "args": {},
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "click",
+              "args": {
+                "ref": 3
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "read_page",
+              "args": {},
+              "ok": true,
+              "repeated": true,
+              "error": null
+            }
+          ],
+          "answerText": "Opened `http://127.0.0.1:40241/native-dialog` and clicked the **Leave page** link (ref 3, href `http://127.0.0.1:40241/second`). The click triggered a normal navigation: no native alert/confirm/beforeunload dialog appeared (dialogOpen=false), and the browser is now on `http://127.0.0.1:40241/second`, which shows the text \"second fixture page\".",
+          "timedOut": false
+        }
+      ]
+    },
+    {
+      "id": "direct-action-type-submit",
+      "kind": "direct-action",
+      "command": "open http://127.0.0.1:40241/site-search and submit a search for widgets",
+      "success": true,
+      "failureReason": null,
+      "metrics": {
+        "llmRounds": 8,
+        "attemptedTools": 8,
+        "executedTools": 8,
+        "elapsedMs": 93310,
+        "repeatedActions": 3,
+        "outcome": "done",
+        "resolution": null,
+        "finalizationCause": null,
+        "effortTier": "lookup",
+        "rawLimitFailure": null,
+        "askTimedOut": false,
+        "actions": [
+          {
+            "name": "report_headline",
+            "args": {
+              "headline": "Search the site-search fixture page for \"widgets\""
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "navigate",
+            "args": {
+              "url": "http://127.0.0.1:40241/site-search"
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "read_page",
+            "args": {},
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "type",
+            "args": {
+              "ref": 1,
+              "text": "widgets\n"
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "read_page",
+            "args": {},
+            "ok": true,
+            "repeated": true,
+            "error": null
+          },
+          {
+            "name": "click",
+            "args": {
+              "ref": 2
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "read_page",
+            "args": {},
+            "ok": true,
+            "repeated": true,
+            "error": null
+          },
+          {
+            "name": "click",
+            "args": {
+              "ref": 2
+            },
+            "ok": true,
+            "repeated": true,
+            "error": null
+          }
+        ],
+        "answerText": "Opened http://127.0.0.1:40241/site-search, typed \"widgets\" into the search box and pressed Enter, which submitted the form (page title changed to \"submitted:sitesearch\", search box echoing \"widgets\"). Clicking the Go button re-submitted the same query with no further change. This fixture page shows no results list — just the confirmation state.",
+        "timedOut": false
+      },
+      "runs": [
+        {
+          "llmRounds": 8,
+          "attemptedTools": 8,
+          "executedTools": 8,
+          "elapsedMs": 93310,
+          "repeatedActions": 3,
+          "outcome": "done",
+          "resolution": null,
+          "finalizationCause": null,
+          "effortTier": "lookup",
+          "rawLimitFailure": null,
+          "askTimedOut": false,
+          "actions": [
+            {
+              "name": "report_headline",
+              "args": {
+                "headline": "Search the site-search fixture page for \"widgets\""
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "navigate",
+              "args": {
+                "url": "http://127.0.0.1:40241/site-search"
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "read_page",
+              "args": {},
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "type",
+              "args": {
+                "ref": 1,
+                "text": "widgets\n"
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "read_page",
+              "args": {},
+              "ok": true,
+              "repeated": true,
+              "error": null
+            },
+            {
+              "name": "click",
+              "args": {
+                "ref": 2
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "read_page",
+              "args": {},
+              "ok": true,
+              "repeated": true,
+              "error": null
+            },
+            {
+              "name": "click",
+              "args": {
+                "ref": 2
+              },
+              "ok": true,
+              "repeated": true,
+              "error": null
+            }
+          ],
+          "answerText": "Opened http://127.0.0.1:40241/site-search, typed \"widgets\" into the search box and pressed Enter, which submitted the form (page title changed to \"submitted:sitesearch\", search box echoing \"widgets\"). Clicking the Go button re-submitted the same query with no further change. This fixture page shows no results list — just the confirmation state.",
+          "timedOut": false
+        }
+      ]
+    },
+    {
+      "id": "direct-action-dismiss-dialog",
+      "kind": "direct-action",
+      "command": "open http://127.0.0.1:40241/dialog-wall and dismiss the sign-in wall with Not now",
+      "success": true,
+      "failureReason": null,
+      "metrics": {
+        "llmRounds": 5,
+        "attemptedTools": 5,
+        "executedTools": 5,
+        "elapsedMs": 18522,
+        "repeatedActions": 1,
+        "outcome": "done",
+        "resolution": null,
+        "finalizationCause": null,
+        "effortTier": "lookup",
+        "rawLimitFailure": null,
+        "askTimedOut": false,
+        "actions": [
+          {
+            "name": "report_headline",
+            "args": {
+              "headline": "Dismiss the sign-in wall on the dialog-wall fixture page"
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "navigate",
+            "args": {
+              "url": "http://127.0.0.1:40241/dialog-wall"
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "read_page",
+            "args": {},
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "click",
+            "args": {
+              "ref": 2
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "read_page",
+            "args": {},
+            "ok": true,
+            "repeated": true,
+            "error": null
+          }
+        ],
+        "answerText": "Opened http://127.0.0.1:40241/dialog-wall and clicked **Not now** on the \"Sign in to continue to this fixture\" dialog. The wall is dismissed — the page behind it (\"page behind a sign-in wall\", with its Background button) is now accessible. Page title after dismissal: `clicked:notnow`.",
+        "timedOut": false
+      },
+      "runs": [
+        {
+          "llmRounds": 5,
+          "attemptedTools": 5,
+          "executedTools": 5,
+          "elapsedMs": 18522,
+          "repeatedActions": 1,
+          "outcome": "done",
+          "resolution": null,
+          "finalizationCause": null,
+          "effortTier": "lookup",
+          "rawLimitFailure": null,
+          "askTimedOut": false,
+          "actions": [
+            {
+              "name": "report_headline",
+              "args": {
+                "headline": "Dismiss the sign-in wall on the dialog-wall fixture page"
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "navigate",
+              "args": {
+                "url": "http://127.0.0.1:40241/dialog-wall"
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "read_page",
+              "args": {},
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "click",
+              "args": {
+                "ref": 2
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "read_page",
+              "args": {},
+              "ok": true,
+              "repeated": true,
+              "error": null
+            }
+          ],
+          "answerText": "Opened http://127.0.0.1:40241/dialog-wall and clicked **Not now** on the \"Sign in to continue to this fixture\" dialog. The wall is dismissed — the page behind it (\"page behind a sign-in wall\", with its Background button) is now accessible. Page title after dismissal: `clicked:notnow`.",
+          "timedOut": false
+        }
+      ]
+    },
+    {
+      "id": "direct-action-scroll-down",
+      "kind": "direct-action",
+      "command": "open http://127.0.0.1:40241/interactive and scroll down a few screens",
+      "success": true,
+      "failureReason": null,
+      "metrics": {
+        "llmRounds": 6,
+        "attemptedTools": 6,
+        "executedTools": 6,
+        "elapsedMs": 18657,
+        "repeatedActions": 2,
+        "outcome": "done",
+        "resolution": null,
+        "finalizationCause": null,
+        "effortTier": "lookup",
+        "rawLimitFailure": null,
+        "askTimedOut": false,
+        "actions": [
+          {
+            "name": "report_headline",
+            "args": {
+              "headline": "Opening the interactive fixture page and scrolling down"
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "navigate",
+            "args": {
+              "url": "http://127.0.0.1:40241/interactive"
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "scroll",
+            "args": {
+              "direction": "down"
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "scroll",
+            "args": {
+              "direction": "down"
+            },
+            "ok": true,
+            "repeated": true,
+            "error": null
+          },
+          {
+            "name": "scroll",
+            "args": {
+              "direction": "down"
+            },
+            "ok": true,
+            "repeated": true,
+            "error": null
+          },
+          {
+            "name": "read_page",
+            "args": {},
+            "ok": true,
+            "repeated": false,
+            "error": null
+          }
+        ],
+        "answerText": "Opened http://127.0.0.1:40241/interactive and scrolled down 3 screens. The page is now at scroll position 831 out of 3021 pixels; visible content is the interactive fixture page (controls like the Agree checkbox and 'Say hello' button are further down the page).",
+        "timedOut": false
+      },
+      "runs": [
+        {
+          "llmRounds": 6,
+          "attemptedTools": 6,
+          "executedTools": 6,
+          "elapsedMs": 18657,
+          "repeatedActions": 2,
+          "outcome": "done",
+          "resolution": null,
+          "finalizationCause": null,
+          "effortTier": "lookup",
+          "rawLimitFailure": null,
+          "askTimedOut": false,
+          "actions": [
+            {
+              "name": "report_headline",
+              "args": {
+                "headline": "Opening the interactive fixture page and scrolling down"
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "navigate",
+              "args": {
+                "url": "http://127.0.0.1:40241/interactive"
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "scroll",
+              "args": {
+                "direction": "down"
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "scroll",
+              "args": {
+                "direction": "down"
+              },
+              "ok": true,
+              "repeated": true,
+              "error": null
+            },
+            {
+              "name": "scroll",
+              "args": {
+                "direction": "down"
+              },
+              "ok": true,
+              "repeated": true,
+              "error": null
+            },
+            {
+              "name": "read_page",
+              "args": {},
+              "ok": true,
+              "repeated": false,
+              "error": null
+            }
+          ],
+          "answerText": "Opened http://127.0.0.1:40241/interactive and scrolled down 3 screens. The page is now at scroll position 831 out of 3021 pixels; visible content is the interactive fixture page (controls like the Agree checkbox and 'Say hello' button are further down the page).",
+          "timedOut": false
+        }
+      ]
+    },
+    {
+      "id": "direct-action-media-pause",
+      "kind": "direct-action",
+      "command": "toggle playback of the video on http://127.0.0.1:40241/media",
+      "success": true,
+      "failureReason": null,
+      "metrics": {
+        "llmRounds": 3,
+        "attemptedTools": 3,
+        "executedTools": 3,
+        "elapsedMs": 16867,
+        "repeatedActions": 0,
+        "outcome": "done",
+        "resolution": null,
+        "finalizationCause": null,
+        "effortTier": "lookup",
+        "rawLimitFailure": null,
+        "askTimedOut": false,
+        "actions": [
+          {
+            "name": "report_headline",
+            "args": {
+              "headline": "Toggling playback of the video on the media page"
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "navigate",
+            "args": {
+              "url": "http://127.0.0.1:40241/media"
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "media_control",
+            "args": {
+              "action": "play_pause",
+              "offset": 0
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          }
+        ],
+        "answerText": "Opened http://127.0.0.1:40241/media and toggled playback. The page reports the video state as: paused = true, currentTime = 0s, volume = 100%.",
+        "timedOut": false
+      },
+      "runs": [
+        {
+          "llmRounds": 3,
+          "attemptedTools": 3,
+          "executedTools": 3,
+          "elapsedMs": 16867,
+          "repeatedActions": 0,
+          "outcome": "done",
+          "resolution": null,
+          "finalizationCause": null,
+          "effortTier": "lookup",
+          "rawLimitFailure": null,
+          "askTimedOut": false,
+          "actions": [
+            {
+              "name": "report_headline",
+              "args": {
+                "headline": "Toggling playback of the video on the media page"
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "navigate",
+              "args": {
+                "url": "http://127.0.0.1:40241/media"
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "media_control",
+              "args": {
+                "action": "play_pause",
+                "offset": 0
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            }
+          ],
+          "answerText": "Opened http://127.0.0.1:40241/media and toggled playback. The page reports the video state as: paused = true, currentTime = 0s, volume = 100%.",
+          "timedOut": false
+        }
+      ]
+    },
+    {
+      "id": "unanswered-earlier-bulletin",
+      "kind": "unanswered",
+      "command": "open the depot bulletin I mentioned earlier and show me what it says",
+      "success": true,
+      "failureReason": null,
+      "metrics": {
+        "llmRounds": 2,
+        "attemptedTools": 2,
+        "executedTools": 1,
+        "elapsedMs": 75306,
+        "repeatedActions": 0,
+        "outcome": "done",
+        "resolution": null,
+        "finalizationCause": null,
+        "effortTier": "lookup",
+        "rawLimitFailure": null,
+        "askTimedOut": true,
+        "actions": [
+          {
+            "name": "report_headline",
+            "args": {
+              "headline": "Find the depot bulletin mentioned earlier"
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "ask_user",
+            "args": {
+              "question": "I don't see a \"depot bulletin\" in this session's history — the pages I opened earlier were fixture pages about widgets (a widget review, a widgets article, etc.). Which one do you mean, or what's its URL?"
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          }
+        ],
+        "answerText": "I couldn't find a \"depot bulletin\" to open. This session's earlier pages were:\n\n- [second fixture page](http://127.0.0.1:40241/second)\n- [Fixture widgets: the complete guide](http://127.0.0.1:40241/widgets-article)\n- [widget-review](http://127.0.0.2:34353/widget-review) — states the standard fixture widget measures 4.2 kg\n- [widgets search results](http://127.0.0.1:40241/results?q=widgets)\n- [interactive fixture page](http://127.0.0.1:40241/interactive)\n- [site-search fixture](http://127.0.0.1:40241/site-search)\n- [media fixture](http://127.0.0.1:40241/media)\n\nNone of these is or mentions a depot bulletin. If you can give me the bulletin's title, source, or URL, I'll pull it up and read it to you.",
+        "timedOut": false
+      },
+      "runs": [
+        {
+          "llmRounds": 2,
+          "attemptedTools": 2,
+          "executedTools": 1,
+          "elapsedMs": 75306,
+          "repeatedActions": 0,
+          "outcome": "done",
+          "resolution": null,
+          "finalizationCause": null,
+          "effortTier": "lookup",
+          "rawLimitFailure": null,
+          "askTimedOut": true,
+          "actions": [
+            {
+              "name": "report_headline",
+              "args": {
+                "headline": "Find the depot bulletin mentioned earlier"
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "ask_user",
+              "args": {
+                "question": "I don't see a \"depot bulletin\" in this session's history — the pages I opened earlier were fixture pages about widgets (a widget review, a widgets article, etc.). Which one do you mean, or what's its URL?"
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            }
+          ],
+          "answerText": "I couldn't find a \"depot bulletin\" to open. This session's earlier pages were:\n\n- [second fixture page](http://127.0.0.1:40241/second)\n- [Fixture widgets: the complete guide](http://127.0.0.1:40241/widgets-article)\n- [widget-review](http://127.0.0.2:34353/widget-review) — states the standard fixture widget measures 4.2 kg\n- [widgets search results](http://127.0.0.1:40241/results?q=widgets)\n- [interactive fixture page](http://127.0.0.1:40241/interactive)\n- [site-search fixture](http://127.0.0.1:40241/site-search)\n- [media fixture](http://127.0.0.1:40241/media)\n\nNone of these is or mentions a depot bulletin. If you can give me the bulletin's title, source, or URL, I'll pull it up and read it to you.",
+          "timedOut": false
+        }
+      ]
+    },
+    {
+      "id": "lookup-widgets-guide",
+      "kind": "lookup",
+      "command": "search the fixture web for widgets and open the complete guide",
+      "success": true,
+      "failureReason": null,
+      "metrics": {
+        "llmRounds": 9,
+        "attemptedTools": 9,
+        "executedTools": 9,
+        "elapsedMs": 33944,
+        "repeatedActions": 3,
+        "outcome": "done",
+        "resolution": null,
+        "finalizationCause": null,
+        "effortTier": "lookup",
+        "rawLimitFailure": null,
+        "askTimedOut": false,
+        "actions": [
+          {
+            "name": "report_headline",
+            "args": {
+              "headline": "Search fixture web for widgets and open the complete guide"
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "navigate",
+            "args": {
+              "url": "http://127.0.0.1:40241/site-search"
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "read_page",
+            "args": {},
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "type",
+            "args": {
+              "ref": 1,
+              "text": "widgets\n"
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "read_page",
+            "args": {},
+            "ok": true,
+            "repeated": true,
+            "error": null
+          },
+          {
+            "name": "navigate",
+            "args": {
+              "url": "http://127.0.0.1:40241/results?q=widgets"
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "read_page",
+            "args": {},
+            "ok": true,
+            "repeated": true,
+            "error": null
+          },
+          {
+            "name": "click",
+            "args": {
+              "ref": 1
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "read_page",
+            "args": {},
+            "ok": true,
+            "repeated": true,
+            "error": null
+          }
+        ],
+        "answerText": "Searched the fixture results page for \"widgets\" (http://127.0.0.1:40241/results?q=widgets) and opened the top result:\n\n- **Fixture widgets: the complete guide** — http://127.0.0.1:40241/widgets-article\n\nPage text: \"Fixture widgets: the complete guide — Everything about fixture widgets, found entirely on screen.\"\n\nOther results not opened: \"Independent fixture widget review\" (127.0.0.2:34353/widget-review) and \"Polished widgets — the mirror finish guide\" (127.0.0.1:40241/widgets-polished).",
+        "timedOut": false
+      },
+      "runs": [
+        {
+          "llmRounds": 9,
+          "attemptedTools": 9,
+          "executedTools": 9,
+          "elapsedMs": 33944,
+          "repeatedActions": 3,
+          "outcome": "done",
+          "resolution": null,
+          "finalizationCause": null,
+          "effortTier": "lookup",
+          "rawLimitFailure": null,
+          "askTimedOut": false,
+          "actions": [
+            {
+              "name": "report_headline",
+              "args": {
+                "headline": "Search fixture web for widgets and open the complete guide"
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "navigate",
+              "args": {
+                "url": "http://127.0.0.1:40241/site-search"
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "read_page",
+              "args": {},
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "type",
+              "args": {
+                "ref": 1,
+                "text": "widgets\n"
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "read_page",
+              "args": {},
+              "ok": true,
+              "repeated": true,
+              "error": null
+            },
+            {
+              "name": "navigate",
+              "args": {
+                "url": "http://127.0.0.1:40241/results?q=widgets"
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "read_page",
+              "args": {},
+              "ok": true,
+              "repeated": true,
+              "error": null
+            },
+            {
+              "name": "click",
+              "args": {
+                "ref": 1
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "read_page",
+              "args": {},
+              "ok": true,
+              "repeated": true,
+              "error": null
+            }
+          ],
+          "answerText": "Searched the fixture results page for \"widgets\" (http://127.0.0.1:40241/results?q=widgets) and opened the top result:\n\n- **Fixture widgets: the complete guide** — http://127.0.0.1:40241/widgets-article\n\nPage text: \"Fixture widgets: the complete guide — Everything about fixture widgets, found entirely on screen.\"\n\nOther results not opened: \"Independent fixture widget review\" (127.0.0.2:34353/widget-review) and \"Polished widgets — the mirror finish guide\" (127.0.0.1:40241/widgets-polished).",
+          "timedOut": false
+        }
+      ]
+    },
+    {
+      "id": "lookup-open-web-answer",
+      "kind": "lookup",
+      "command": "search the fixture web for fixture widgets and tell me the title of the complete guide",
+      "success": true,
+      "failureReason": null,
+      "metrics": {
+        "llmRounds": 14,
+        "attemptedTools": 14,
+        "executedTools": 14,
+        "elapsedMs": 92151,
+        "repeatedActions": 3,
+        "outcome": "done",
+        "resolution": null,
+        "finalizationCause": null,
+        "effortTier": "lookup",
+        "rawLimitFailure": null,
+        "askTimedOut": false,
+        "actions": [
+          {
+            "name": "report_headline",
+            "args": {
+              "headline": "Search the fixture web for fixture widgets"
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "navigate",
+            "args": {
+              "url": "http://127.0.0.1:40241/"
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "read_page",
+            "args": {},
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "type",
+            "args": {
+              "ref": 1,
+              "text": "fixture widgets\n"
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "read_page",
+            "args": {},
+            "ok": true,
+            "repeated": true,
+            "error": null
+          },
+          {
+            "name": "scroll",
+            "args": {
+              "direction": "down"
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "screenshot",
+            "args": {},
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "look",
+            "args": {},
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "type",
+            "args": {
+              "ref": 1,
+              "text": "\n"
+            },
+            "ok": false,
+            "repeated": false,
+            "error": "type: 'text' must be a non-empty string"
+          },
+          {
+            "name": "click",
+            "args": {
+              "ref": 1
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "navigate",
+            "args": {
+              "url": "http://127.0.0.1:40241/results?q=fixture%20widgets"
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "read_page",
+            "args": {},
+            "ok": true,
+            "repeated": true,
+            "error": null
+          },
+          {
+            "name": "navigate",
+            "args": {
+              "url": "http://127.0.0.1:40241/widgets-article"
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "read_page",
+            "args": {},
+            "ok": true,
+            "repeated": true,
+            "error": null
+          }
+        ],
+        "answerText": "I searched the fixture web (http://127.0.0.1:40241) for \"fixture widgets\". The results page (http://127.0.0.1:40241/results?q=fixture%20widgets) listed 3 links, and I opened the first one:\n\n**Title: \"Fixture widgets: the complete guide\"** — http://127.0.0.1:40241/widgets-article\n\nThe other results were \"Independent fixture widget review\" and \"Polished widgets — the mirror finish guide\".",
+        "timedOut": false
+      },
+      "runs": [
+        {
+          "llmRounds": 14,
+          "attemptedTools": 14,
+          "executedTools": 14,
+          "elapsedMs": 92151,
+          "repeatedActions": 3,
+          "outcome": "done",
+          "resolution": null,
+          "finalizationCause": null,
+          "effortTier": "lookup",
+          "rawLimitFailure": null,
+          "askTimedOut": false,
+          "actions": [
+            {
+              "name": "report_headline",
+              "args": {
+                "headline": "Search the fixture web for fixture widgets"
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "navigate",
+              "args": {
+                "url": "http://127.0.0.1:40241/"
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "read_page",
+              "args": {},
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "type",
+              "args": {
+                "ref": 1,
+                "text": "fixture widgets\n"
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "read_page",
+              "args": {},
+              "ok": true,
+              "repeated": true,
+              "error": null
+            },
+            {
+              "name": "scroll",
+              "args": {
+                "direction": "down"
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "screenshot",
+              "args": {},
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "look",
+              "args": {},
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "type",
+              "args": {
+                "ref": 1,
+                "text": "\n"
+              },
+              "ok": false,
+              "repeated": false,
+              "error": "type: 'text' must be a non-empty string"
+            },
+            {
+              "name": "click",
+              "args": {
+                "ref": 1
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "navigate",
+              "args": {
+                "url": "http://127.0.0.1:40241/results?q=fixture%20widgets"
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "read_page",
+              "args": {},
+              "ok": true,
+              "repeated": true,
+              "error": null
+            },
+            {
+              "name": "navigate",
+              "args": {
+                "url": "http://127.0.0.1:40241/widgets-article"
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "read_page",
+              "args": {},
+              "ok": true,
+              "repeated": true,
+              "error": null
+            }
+          ],
+          "answerText": "I searched the fixture web (http://127.0.0.1:40241) for \"fixture widgets\". The results page (http://127.0.0.1:40241/results?q=fixture%20widgets) listed 3 links, and I opened the first one:\n\n**Title: \"Fixture widgets: the complete guide\"** — http://127.0.0.1:40241/widgets-article\n\nThe other results were \"Independent fixture widget review\" and \"Polished widgets — the mirror finish guide\".",
+          "timedOut": false
+        }
+      ]
+    },
+    {
+      "id": "lookup-open-web-review",
+      "kind": "lookup",
+      "command": "search the fixture web for the independent widget review and tell me the weight it measured",
+      "success": true,
+      "failureReason": null,
+      "metrics": {
+        "llmRounds": 5,
+        "attemptedTools": 5,
+        "executedTools": 5,
+        "elapsedMs": 26206,
+        "repeatedActions": 1,
+        "outcome": "done",
+        "resolution": null,
+        "finalizationCause": null,
+        "effortTier": "lookup",
+        "rawLimitFailure": null,
+        "askTimedOut": false,
+        "actions": [
+          {
+            "name": "report_headline",
+            "args": {
+              "headline": "Find the independent widget review's measured weight on the fixture web"
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "navigate",
+            "args": {
+              "url": "http://127.0.0.1:40241/results?q=widgets"
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "read_page",
+            "args": {},
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "click",
+            "args": {
+              "ref": 2
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "read_page",
+            "args": {},
+            "ok": true,
+            "repeated": true,
+            "error": null
+          }
+        ],
+        "answerText": "Opened the fixture search results for \"widgets\" and clicked the **Independent fixture widget review** (http://127.0.0.2:34353/widget-review). The review states its lab measured the standard fixture widget at **4.2 kg** on the bench scale.",
+        "timedOut": false
+      },
+      "runs": [
+        {
+          "llmRounds": 5,
+          "attemptedTools": 5,
+          "executedTools": 5,
+          "elapsedMs": 26206,
+          "repeatedActions": 1,
+          "outcome": "done",
+          "resolution": null,
+          "finalizationCause": null,
+          "effortTier": "lookup",
+          "rawLimitFailure": null,
+          "askTimedOut": false,
+          "actions": [
+            {
+              "name": "report_headline",
+              "args": {
+                "headline": "Find the independent widget review's measured weight on the fixture web"
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "navigate",
+              "args": {
+                "url": "http://127.0.0.1:40241/results?q=widgets"
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "read_page",
+              "args": {},
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "click",
+              "args": {
+                "ref": 2
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "read_page",
+              "args": {},
+              "ok": true,
+              "repeated": true,
+              "error": null
+            }
+          ],
+          "answerText": "Opened the fixture search results for \"widgets\" and clicked the **Independent fixture widget review** (http://127.0.0.2:34353/widget-review). The review states its lab measured the standard fixture widget at **4.2 kg** on the bench scale.",
+          "timedOut": false
+        }
+      ]
+    },
+    {
+      "id": "lookup-known-page-weight",
+      "kind": "lookup",
+      "command": "open http://127.0.0.1:40241/widget-specs and tell me the official weight of the standard widget",
+      "success": true,
+      "failureReason": null,
+      "metrics": {
+        "llmRounds": 3,
+        "attemptedTools": 3,
+        "executedTools": 3,
+        "elapsedMs": 13750,
+        "repeatedActions": 0,
+        "outcome": "done",
+        "resolution": null,
+        "finalizationCause": null,
+        "effortTier": "lookup",
+        "rawLimitFailure": null,
+        "askTimedOut": false,
+        "actions": [
+          {
+            "name": "report_headline",
+            "args": {
+              "headline": "Look up official standard widget weight on widget-specs page"
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "navigate",
+            "args": {
+              "url": "http://127.0.0.1:40241/widget-specs"
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "read_page",
+            "args": {},
+            "ok": true,
+            "repeated": false,
+            "error": null
+          }
+        ],
+        "answerText": "Opened http://127.0.0.1:40241/widget-specs — the official spec sheet states the **standard fixture widget weighs 3.8 kg**.\n\nNote: a different fixture page (the independent widget review at 127.0.0.2:34353/widget-review) reports 4.2 kg, but the specs page you asked for says 3.8 kg.",
+        "timedOut": false
+      },
+      "runs": [
+        {
+          "llmRounds": 3,
+          "attemptedTools": 3,
+          "executedTools": 3,
+          "elapsedMs": 13750,
+          "repeatedActions": 0,
+          "outcome": "done",
+          "resolution": null,
+          "finalizationCause": null,
+          "effortTier": "lookup",
+          "rawLimitFailure": null,
+          "askTimedOut": false,
+          "actions": [
+            {
+              "name": "report_headline",
+              "args": {
+                "headline": "Look up official standard widget weight on widget-specs page"
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "navigate",
+              "args": {
+                "url": "http://127.0.0.1:40241/widget-specs"
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "read_page",
+              "args": {},
+              "ok": true,
+              "repeated": false,
+              "error": null
+            }
+          ],
+          "answerText": "Opened http://127.0.0.1:40241/widget-specs — the official spec sheet states the **standard fixture widget weighs 3.8 kg**.\n\nNote: a different fixture page (the independent widget review at 127.0.0.2:34353/widget-review) reports 4.2 kg, but the specs page you asked for says 3.8 kg.",
+          "timedOut": false
+        }
+      ]
+    },
+    {
+      "id": "lookup-known-page-care",
+      "kind": "lookup",
+      "command": "open http://127.0.0.1:40241/widget-care and tell me how often standard widgets need cleaning",
+      "success": true,
+      "failureReason": null,
+      "metrics": {
+        "llmRounds": 3,
+        "attemptedTools": 3,
+        "executedTools": 3,
+        "elapsedMs": 7544,
+        "repeatedActions": 0,
+        "outcome": "done",
+        "resolution": null,
+        "finalizationCause": null,
+        "effortTier": "lookup",
+        "rawLimitFailure": null,
+        "askTimedOut": false,
+        "actions": [
+          {
+            "name": "report_headline",
+            "args": {
+              "headline": "Check widget cleaning frequency on widget-care page"
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "navigate",
+            "args": {
+              "url": "http://127.0.0.1:40241/widget-care"
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "read_page",
+            "args": {},
+            "ok": true,
+            "repeated": false,
+            "error": null
+          }
+        ],
+        "answerText": "Opened [Standard fixture widget care](http://127.0.0.1:40241/widget-care). It states: **standard fixture widgets need cleaning every 6 months.**",
+        "timedOut": false
+      },
+      "runs": [
+        {
+          "llmRounds": 3,
+          "attemptedTools": 3,
+          "executedTools": 3,
+          "elapsedMs": 7544,
+          "repeatedActions": 0,
+          "outcome": "done",
+          "resolution": null,
+          "finalizationCause": null,
+          "effortTier": "lookup",
+          "rawLimitFailure": null,
+          "askTimedOut": false,
+          "actions": [
+            {
+              "name": "report_headline",
+              "args": {
+                "headline": "Check widget cleaning frequency on widget-care page"
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "navigate",
+              "args": {
+                "url": "http://127.0.0.1:40241/widget-care"
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "read_page",
+              "args": {},
+              "ok": true,
+              "repeated": false,
+              "error": null
+            }
+          ],
+          "answerText": "Opened [Standard fixture widget care](http://127.0.0.1:40241/widget-care). It states: **standard fixture widgets need cleaning every 6 months.**",
+          "timedOut": false
+        }
+      ]
+    },
+    {
+      "id": "lookup-depot-bulletin",
+      "kind": "lookup",
+      "command": "search the fixture web for the depot bulletin and open it",
+      "success": true,
+      "failureReason": null,
+      "metrics": {
+        "llmRounds": 6,
+        "attemptedTools": 6,
+        "executedTools": 6,
+        "elapsedMs": 24438,
+        "repeatedActions": 1,
+        "outcome": "done",
+        "resolution": null,
+        "finalizationCause": null,
+        "effortTier": "lookup",
+        "rawLimitFailure": null,
+        "askTimedOut": false,
+        "actions": [
+          {
+            "name": "report_headline",
+            "args": {
+              "headline": "Searching fixture web for the depot bulletin"
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "navigate",
+            "args": {
+              "url": "http://127.0.0.1:40241/results?q=depot+bulletin"
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "read_page",
+            "args": {},
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "navigate",
+            "args": {
+              "url": "http://127.0.0.1:40241/mirror-alpha"
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "read_page",
+            "args": {},
+            "ok": true,
+            "repeated": true,
+            "error": null
+          },
+          {
+            "name": "report_headline",
+            "args": {
+              "headline": "Depot bulletin found and opened"
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          }
+        ],
+        "answerText": "Searched the fixture web for \"depot bulletin\" and opened the one result: the **Regional depot bulletin** at http://127.0.0.1:40241/mirror-alpha. Page text: \"Depot 4 ships standard widget orders on Tuesday.\"",
+        "timedOut": false
+      },
+      "runs": [
+        {
+          "llmRounds": 6,
+          "attemptedTools": 6,
+          "executedTools": 6,
+          "elapsedMs": 24438,
+          "repeatedActions": 1,
+          "outcome": "done",
+          "resolution": null,
+          "finalizationCause": null,
+          "effortTier": "lookup",
+          "rawLimitFailure": null,
+          "askTimedOut": false,
+          "actions": [
+            {
+              "name": "report_headline",
+              "args": {
+                "headline": "Searching fixture web for the depot bulletin"
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "navigate",
+              "args": {
+                "url": "http://127.0.0.1:40241/results?q=depot+bulletin"
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "read_page",
+              "args": {},
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "navigate",
+              "args": {
+                "url": "http://127.0.0.1:40241/mirror-alpha"
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "read_page",
+              "args": {},
+              "ok": true,
+              "repeated": true,
+              "error": null
+            },
+            {
+              "name": "report_headline",
+              "args": {
+                "headline": "Depot bulletin found and opened"
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            }
+          ],
+          "answerText": "Searched the fixture web for \"depot bulletin\" and opened the one result: the **Regional depot bulletin** at http://127.0.0.1:40241/mirror-alpha. Page text: \"Depot 4 ships standard widget orders on Tuesday.\"",
+          "timedOut": false
+        }
+      ]
+    },
+    {
+      "id": "candidate-polished-widgets",
+      "kind": "candidate",
+      "command": "starting from the fixture catalog at http://127.0.0.1:40241/catalog, open the page about polished widgets",
+      "success": true,
+      "failureReason": null,
+      "metrics": {
+        "llmRounds": 5,
+        "attemptedTools": 5,
+        "executedTools": 5,
+        "elapsedMs": 9950,
+        "repeatedActions": 1,
+        "outcome": "done",
+        "resolution": null,
+        "finalizationCause": null,
+        "effortTier": "lookup",
+        "rawLimitFailure": null,
+        "askTimedOut": false,
+        "actions": [
+          {
+            "name": "report_headline",
+            "args": {
+              "headline": "Open the polished widgets page from the fixture catalog"
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "navigate",
+            "args": {
+              "url": "http://127.0.0.1:40241/catalog"
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "read_page",
+            "args": {},
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "click",
+            "args": {
+              "ref": 2
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "read_page",
+            "args": {},
+            "ok": true,
+            "repeated": true,
+            "error": null
+          }
+        ],
+        "answerText": "From the catalog at http://127.0.0.1:40241/catalog I clicked the \"Polished widgets — the mirror finish guide\" entry and it opened at http://127.0.0.1:40241/widgets-polished. The page reads: *\"Polished widgets: the mirror finish guide — Polished fixture widgets are buffed to a mirror finish and inspected under studio light.\"*",
+        "timedOut": false
+      },
+      "runs": [
+        {
+          "llmRounds": 5,
+          "attemptedTools": 5,
+          "executedTools": 5,
+          "elapsedMs": 9950,
+          "repeatedActions": 1,
+          "outcome": "done",
+          "resolution": null,
+          "finalizationCause": null,
+          "effortTier": "lookup",
+          "rawLimitFailure": null,
+          "askTimedOut": false,
+          "actions": [
+            {
+              "name": "report_headline",
+              "args": {
+                "headline": "Open the polished widgets page from the fixture catalog"
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "navigate",
+              "args": {
+                "url": "http://127.0.0.1:40241/catalog"
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "read_page",
+              "args": {},
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "click",
+              "args": {
+                "ref": 2
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "read_page",
+              "args": {},
+              "ok": true,
+              "repeated": true,
+              "error": null
+            }
+          ],
+          "answerText": "From the catalog at http://127.0.0.1:40241/catalog I clicked the \"Polished widgets — the mirror finish guide\" entry and it opened at http://127.0.0.1:40241/widgets-polished. The page reads: *\"Polished widgets: the mirror finish guide — Polished fixture widgets are buffed to a mirror finish and inspected under studio light.\"*",
+          "timedOut": false
+        }
+      ]
+    },
+    {
+      "id": "candidate-vintage-synonym",
+      "kind": "candidate",
+      "command": "starting from the fixture catalog at http://127.0.0.1:40241/catalog, open the guide about collectible widgets",
+      "success": true,
+      "failureReason": null,
+      "metrics": {
+        "llmRounds": 6,
+        "attemptedTools": 6,
+        "executedTools": 6,
+        "elapsedMs": 38774,
+        "repeatedActions": 1,
+        "outcome": "done",
+        "resolution": null,
+        "finalizationCause": null,
+        "effortTier": "lookup",
+        "rawLimitFailure": null,
+        "askTimedOut": false,
+        "actions": [
+          {
+            "name": "report_headline",
+            "args": {
+              "headline": "Find the collectible widgets guide from the fixture catalog"
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "navigate",
+            "args": {
+              "url": "http://127.0.0.1:40241/catalog"
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "read_page",
+            "args": {},
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "navigate",
+            "args": {
+              "url": "http://127.0.0.1:40241/widgets-vintage"
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "read_page",
+            "args": {},
+            "ok": true,
+            "repeated": true,
+            "error": null
+          },
+          {
+            "name": "report_headline",
+            "args": {
+              "headline": "Collectible widgets guide opened"
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          }
+        ],
+        "answerText": "From the [fixture catalog](http://127.0.0.1:40241/catalog), the collectible guide is **Vintage widgets — the collectible care guide**, now open at http://127.0.0.1:40241/widgets-vintage.\n\nIts content: *Vintage widgets: the collectible care guide — Vintage fixture widgets are collectibles that need oiling twice a year.*\n\n(The catalog's other guides: Anodized widgets — the industrial finish guide, and Polished widgets — the mirror finish guide.)",
+        "timedOut": false
+      },
+      "runs": [
+        {
+          "llmRounds": 6,
+          "attemptedTools": 6,
+          "executedTools": 6,
+          "elapsedMs": 38774,
+          "repeatedActions": 1,
+          "outcome": "done",
+          "resolution": null,
+          "finalizationCause": null,
+          "effortTier": "lookup",
+          "rawLimitFailure": null,
+          "askTimedOut": false,
+          "actions": [
+            {
+              "name": "report_headline",
+              "args": {
+                "headline": "Find the collectible widgets guide from the fixture catalog"
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "navigate",
+              "args": {
+                "url": "http://127.0.0.1:40241/catalog"
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "read_page",
+              "args": {},
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "navigate",
+              "args": {
+                "url": "http://127.0.0.1:40241/widgets-vintage"
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "read_page",
+              "args": {},
+              "ok": true,
+              "repeated": true,
+              "error": null
+            },
+            {
+              "name": "report_headline",
+              "args": {
+                "headline": "Collectible widgets guide opened"
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            }
+          ],
+          "answerText": "From the [fixture catalog](http://127.0.0.1:40241/catalog), the collectible guide is **Vintage widgets — the collectible care guide**, now open at http://127.0.0.1:40241/widgets-vintage.\n\nIts content: *Vintage widgets: the collectible care guide — Vintage fixture widgets are collectibles that need oiling twice a year.*\n\n(The catalog's other guides: Anodized widgets — the industrial finish guide, and Polished widgets — the mirror finish guide.)",
+          "timedOut": false
+        }
+      ]
+    },
+    {
+      "id": "candidate-anodized-synonym",
+      "kind": "candidate",
+      "command": "starting from the fixture catalog at http://127.0.0.1:40241/catalog, open the guide about the dull durable industrial finish",
+      "success": true,
+      "failureReason": null,
+      "metrics": {
+        "llmRounds": 5,
+        "attemptedTools": 5,
+        "executedTools": 5,
+        "elapsedMs": 15898,
+        "repeatedActions": 1,
+        "outcome": "done",
+        "resolution": null,
+        "finalizationCause": null,
+        "effortTier": "lookup",
+        "rawLimitFailure": null,
+        "askTimedOut": false,
+        "actions": [
+          {
+            "name": "report_headline",
+            "args": {
+              "headline": "Open the anodized (industrial finish) widget guide from the fixture catalog"
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "navigate",
+            "args": {
+              "url": "http://127.0.0.1:40241/catalog"
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "read_page",
+            "args": {},
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "click",
+            "args": {
+              "ref": 1
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "read_page",
+            "args": {},
+            "ok": true,
+            "repeated": true,
+            "error": null
+          }
+        ],
+        "answerText": "Opened **Anodized widgets: the industrial finish guide** from the [fixture catalog](http://127.0.0.1:40241/catalog).\n\n- Guide URL: http://127.0.0.1:40241/widgets-anodized\n- Page text: \"Anodized fixture widgets get their dull, durable shell from an industrial coating process.\"\n\nAnodized is the dull, durable industrial finish (the other catalog entries were polished/mirror and vintage/collectible).",
+        "timedOut": false
+      },
+      "runs": [
+        {
+          "llmRounds": 5,
+          "attemptedTools": 5,
+          "executedTools": 5,
+          "elapsedMs": 15898,
+          "repeatedActions": 1,
+          "outcome": "done",
+          "resolution": null,
+          "finalizationCause": null,
+          "effortTier": "lookup",
+          "rawLimitFailure": null,
+          "askTimedOut": false,
+          "actions": [
+            {
+              "name": "report_headline",
+              "args": {
+                "headline": "Open the anodized (industrial finish) widget guide from the fixture catalog"
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "navigate",
+              "args": {
+                "url": "http://127.0.0.1:40241/catalog"
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "read_page",
+              "args": {},
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "click",
+              "args": {
+                "ref": 1
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "read_page",
+              "args": {},
+              "ok": true,
+              "repeated": true,
+              "error": null
+            }
+          ],
+          "answerText": "Opened **Anodized widgets: the industrial finish guide** from the [fixture catalog](http://127.0.0.1:40241/catalog).\n\n- Guide URL: http://127.0.0.1:40241/widgets-anodized\n- Page text: \"Anodized fixture widgets get their dull, durable shell from an industrial coating process.\"\n\nAnodized is the dull, durable industrial finish (the other catalog entries were polished/mirror and vintage/collectible).",
+          "timedOut": false
+        }
+      ]
+    },
+    {
+      "id": "candidate-search-polished",
+      "kind": "candidate",
+      "command": "search the fixture web for widget guides and open the one about polished widgets",
+      "success": true,
+      "failureReason": null,
+      "metrics": {
+        "llmRounds": 5,
+        "attemptedTools": 5,
+        "executedTools": 5,
+        "elapsedMs": 22218,
+        "repeatedActions": 1,
+        "outcome": "done",
+        "resolution": null,
+        "finalizationCause": null,
+        "effortTier": "lookup",
+        "rawLimitFailure": null,
+        "askTimedOut": false,
+        "actions": [
+          {
+            "name": "report_headline",
+            "args": {
+              "headline": "Searching fixture web for widget guides"
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "navigate",
+            "args": {
+              "url": "http://127.0.0.1:40241/results?q=widget+guides"
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "read_page",
+            "args": {},
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "click",
+            "args": {
+              "ref": 3
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "read_page",
+            "args": {},
+            "ok": true,
+            "repeated": true,
+            "error": null
+          }
+        ],
+        "answerText": "Searched the fixture engine for \"widget guides\" — 3 results came back, and I opened the third: **Polished widgets — the mirror finish guide** (http://127.0.0.1:40241/widgets-polished). The page says polished fixture widgets are buffed to a mirror finish and inspected under studio light. The other results were the complete guide and an independent review.",
+        "timedOut": false
+      },
+      "runs": [
+        {
+          "llmRounds": 5,
+          "attemptedTools": 5,
+          "executedTools": 5,
+          "elapsedMs": 22218,
+          "repeatedActions": 1,
+          "outcome": "done",
+          "resolution": null,
+          "finalizationCause": null,
+          "effortTier": "lookup",
+          "rawLimitFailure": null,
+          "askTimedOut": false,
+          "actions": [
+            {
+              "name": "report_headline",
+              "args": {
+                "headline": "Searching fixture web for widget guides"
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "navigate",
+              "args": {
+                "url": "http://127.0.0.1:40241/results?q=widget+guides"
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "read_page",
+              "args": {},
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "click",
+              "args": {
+                "ref": 3
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "read_page",
+              "args": {},
+              "ok": true,
+              "repeated": true,
+              "error": null
+            }
+          ],
+          "answerText": "Searched the fixture engine for \"widget guides\" — 3 results came back, and I opened the third: **Polished widgets — the mirror finish guide** (http://127.0.0.1:40241/widgets-polished). The page says polished fixture widgets are buffed to a mirror finish and inspected under studio light. The other results were the complete guide and an independent review.",
+          "timedOut": false
+        }
+      ]
+    },
+    {
+      "id": "investigation-material-finish",
+      "kind": "investigation",
+      "command": "the standard fixture widget's build is documented in two places: the material sheet at http://127.0.0.1:40241/widget-material and the finish sheet at http://127.0.0.1:40241/widget-finish. read both and tell me the material and the finish",
+      "success": true,
+      "failureReason": null,
+      "metrics": {
+        "llmRounds": 5,
+        "attemptedTools": 5,
+        "executedTools": 5,
+        "elapsedMs": 20953,
+        "repeatedActions": 1,
+        "outcome": "done",
+        "resolution": null,
+        "finalizationCause": null,
+        "effortTier": "lookup",
+        "rawLimitFailure": null,
+        "askTimedOut": false,
+        "actions": [
+          {
+            "name": "report_headline",
+            "args": {
+              "headline": "Read widget material and finish sheets"
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "navigate",
+            "args": {
+              "url": "http://127.0.0.1:40241/widget-material"
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "read_page",
+            "args": {},
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "navigate",
+            "args": {
+              "url": "http://127.0.0.1:40241/widget-finish"
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "read_page",
+            "args": {},
+            "ok": true,
+            "repeated": true,
+            "error": null
+          }
+        ],
+        "answerText": "Read both sheets:\n\n- **Material** — [Standard fixture widget material](http://127.0.0.1:40241/widget-material): milled from a single billet of **aerospace titanium**.\n- **Finish** — [Standard fixture widget finish](http://127.0.0.1:40241/widget-finish): ships with a **matte black ceramic coat**.",
+        "timedOut": false
+      },
+      "runs": [
+        {
+          "llmRounds": 5,
+          "attemptedTools": 5,
+          "executedTools": 5,
+          "elapsedMs": 20953,
+          "repeatedActions": 1,
+          "outcome": "done",
+          "resolution": null,
+          "finalizationCause": null,
+          "effortTier": "lookup",
+          "rawLimitFailure": null,
+          "askTimedOut": false,
+          "actions": [
+            {
+              "name": "report_headline",
+              "args": {
+                "headline": "Read widget material and finish sheets"
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "navigate",
+              "args": {
+                "url": "http://127.0.0.1:40241/widget-material"
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "read_page",
+              "args": {},
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "navigate",
+              "args": {
+                "url": "http://127.0.0.1:40241/widget-finish"
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "read_page",
+              "args": {},
+              "ok": true,
+              "repeated": true,
+              "error": null
+            }
+          ],
+          "answerText": "Read both sheets:\n\n- **Material** — [Standard fixture widget material](http://127.0.0.1:40241/widget-material): milled from a single billet of **aerospace titanium**.\n- **Finish** — [Standard fixture widget finish](http://127.0.0.1:40241/widget-finish): ships with a **matte black ceramic coat**.",
+          "timedOut": false
+        }
+      ]
+    },
+    {
+      "id": "contradiction-widget-weight",
+      "kind": "contradiction",
+      "command": "the weight of the standard fixture widget is disputed. read the spec sheet at http://127.0.0.1:40241/widget-specs and the independent review at http://127.0.0.2:34353/widget-review, then tell me both weights",
+      "success": true,
+      "failureReason": null,
+      "metrics": {
+        "llmRounds": 5,
+        "attemptedTools": 5,
+        "executedTools": 5,
+        "elapsedMs": 27078,
+        "repeatedActions": 1,
+        "outcome": "done",
+        "resolution": null,
+        "finalizationCause": null,
+        "effortTier": "lookup",
+        "rawLimitFailure": null,
+        "askTimedOut": false,
+        "actions": [
+          {
+            "name": "report_headline",
+            "args": {
+              "headline": "Compare widget weight: spec sheet vs independent review"
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "navigate",
+            "args": {
+              "url": "http://127.0.0.1:40241/widget-specs"
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "read_page",
+            "args": {},
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "navigate",
+            "args": {
+              "url": "http://127.0.0.2:34353/widget-review"
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "read_page",
+            "args": {},
+            "ok": true,
+            "repeated": true,
+            "error": null
+          }
+        ],
+        "answerText": "Both pages re-read fresh on screen — the weight dispute is confirmed:\n\n- **Official spec sheet** ([fixture widget specifications](http://127.0.0.1:40241/widget-specs)): **3.8 kg**\n- **Independent review** ([independent widget review](http://127.0.0.2:34353/widget-review)): **4.2 kg** (measured on their bench scale)\n\nThat's a 0.4 kg gap between the manufacturer figure and the review lab's measurement.",
+        "timedOut": false
+      },
+      "runs": [
+        {
+          "llmRounds": 5,
+          "attemptedTools": 5,
+          "executedTools": 5,
+          "elapsedMs": 27078,
+          "repeatedActions": 1,
+          "outcome": "done",
+          "resolution": null,
+          "finalizationCause": null,
+          "effortTier": "lookup",
+          "rawLimitFailure": null,
+          "askTimedOut": false,
+          "actions": [
+            {
+              "name": "report_headline",
+              "args": {
+                "headline": "Compare widget weight: spec sheet vs independent review"
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "navigate",
+              "args": {
+                "url": "http://127.0.0.1:40241/widget-specs"
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "read_page",
+              "args": {},
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "navigate",
+              "args": {
+                "url": "http://127.0.0.2:34353/widget-review"
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "read_page",
+              "args": {},
+              "ok": true,
+              "repeated": true,
+              "error": null
+            }
+          ],
+          "answerText": "Both pages re-read fresh on screen — the weight dispute is confirmed:\n\n- **Official spec sheet** ([fixture widget specifications](http://127.0.0.1:40241/widget-specs)): **3.8 kg**\n- **Independent review** ([independent widget review](http://127.0.0.2:34353/widget-review)): **4.2 kg** (measured on their bench scale)\n\nThat's a 0.4 kg gap between the manufacturer figure and the review lab's measurement.",
+          "timedOut": false
+        }
+      ]
+    },
+    {
+      "id": "subagent-widget-facts",
+      "kind": "subagent",
+      "command": "gather three facts about the standard fixture widget: the material from http://127.0.0.1:40241/widget-material, the finish from http://127.0.0.1:40241/widget-finish, and the care schedule from http://127.0.0.2:34353/widget-care. tell me all three",
+      "success": true,
+      "failureReason": null,
+      "metrics": {
+        "llmRounds": 7,
+        "attemptedTools": 7,
+        "executedTools": 7,
+        "elapsedMs": 30864,
+        "repeatedActions": 2,
+        "outcome": "done",
+        "resolution": null,
+        "finalizationCause": null,
+        "effortTier": "lookup",
+        "rawLimitFailure": null,
+        "askTimedOut": false,
+        "actions": [
+          {
+            "name": "report_headline",
+            "args": {
+              "headline": "Gathering material, finish, and care facts for the standard fixture widget"
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "navigate",
+            "args": {
+              "url": "http://127.0.0.1:40241/widget-material"
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "read_page",
+            "args": {},
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "navigate",
+            "args": {
+              "url": "http://127.0.0.1:40241/widget-finish"
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "read_page",
+            "args": {},
+            "ok": true,
+            "repeated": true,
+            "error": null
+          },
+          {
+            "name": "navigate",
+            "args": {
+              "url": "http://127.0.0.2:34353/widget-care"
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "read_page",
+            "args": {},
+            "ok": true,
+            "repeated": true,
+            "error": null
+          }
+        ],
+        "answerText": "Three facts about the standard fixture widget, all read directly on screen:\n\n1. **Material** — milled from a single billet of aerospace titanium ([widget-material](http://127.0.0.1:40241/widget-material))\n2. **Finish** — ships with a matte black ceramic coat ([widget-finish](http://127.0.0.1:40241/widget-finish))\n3. **Care schedule** — needs cleaning every 6 months ([widget-care](http://127.0.0.2:34353/widget-care))",
+        "timedOut": false
+      },
+      "runs": [
+        {
+          "llmRounds": 7,
+          "attemptedTools": 7,
+          "executedTools": 7,
+          "elapsedMs": 30864,
+          "repeatedActions": 2,
+          "outcome": "done",
+          "resolution": null,
+          "finalizationCause": null,
+          "effortTier": "lookup",
+          "rawLimitFailure": null,
+          "askTimedOut": false,
+          "actions": [
+            {
+              "name": "report_headline",
+              "args": {
+                "headline": "Gathering material, finish, and care facts for the standard fixture widget"
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "navigate",
+              "args": {
+                "url": "http://127.0.0.1:40241/widget-material"
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "read_page",
+              "args": {},
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "navigate",
+              "args": {
+                "url": "http://127.0.0.1:40241/widget-finish"
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "read_page",
+              "args": {},
+              "ok": true,
+              "repeated": true,
+              "error": null
+            },
+            {
+              "name": "navigate",
+              "args": {
+                "url": "http://127.0.0.2:34353/widget-care"
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "read_page",
+              "args": {},
+              "ok": true,
+              "repeated": true,
+              "error": null
+            }
+          ],
+          "answerText": "Three facts about the standard fixture widget, all read directly on screen:\n\n1. **Material** — milled from a single billet of aerospace titanium ([widget-material](http://127.0.0.1:40241/widget-material))\n2. **Finish** — ships with a matte black ceramic coat ([widget-finish](http://127.0.0.1:40241/widget-finish))\n3. **Care schedule** — needs cleaning every 6 months ([widget-care](http://127.0.0.2:34353/widget-care))",
+          "timedOut": false
+        }
+      ]
+    },
+    {
+      "id": "steering-correct-objective",
+      "kind": "steering",
+      "command": "open the fixture widgets article at http://127.0.0.1:40241/widgets-article in the browser",
+      "success": false,
+      "failureReason": "objective predicate failed",
+      "metrics": {
+        "llmRounds": 6,
+        "attemptedTools": 8,
+        "executedTools": 8,
+        "elapsedMs": 22608,
+        "repeatedActions": 3,
+        "outcome": "done",
+        "resolution": null,
+        "finalizationCause": null,
+        "effortTier": "lookup",
+        "rawLimitFailure": null,
+        "askTimedOut": false,
+        "actions": [
+          {
+            "name": "report_headline",
+            "args": {
+              "headline": "Opening the fixture widgets article"
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "navigate",
+            "args": {
+              "url": "http://127.0.0.1:40241/widgets-article"
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "report_headline",
+            "args": {
+              "headline": "Opening the fixture catalog"
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "navigate",
+            "args": {
+              "url": "http://127.0.0.1:40241/catalog"
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "read_page",
+            "args": {},
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "navigate",
+            "args": {
+              "url": "http://127.0.0.1:40241/widgets-article"
+            },
+            "ok": true,
+            "repeated": true,
+            "error": null
+          },
+          {
+            "name": "report_headline",
+            "args": {
+              "headline": "Opening the fixture widgets article"
+            },
+            "ok": true,
+            "repeated": true,
+            "error": null
+          },
+          {
+            "name": "read_page",
+            "args": {},
+            "ok": true,
+            "repeated": true,
+            "error": null
+          }
+        ],
+        "answerText": "Opened the fixture widgets article: [Fixture widgets: the complete guide](http://127.0.0.1:40241/widgets-article). Page text: \"Everything about fixture widgets, found entirely on screen.\"",
+        "timedOut": false
+      },
+      "runs": [
+        {
+          "llmRounds": 6,
+          "attemptedTools": 8,
+          "executedTools": 8,
+          "elapsedMs": 22608,
+          "repeatedActions": 3,
+          "outcome": "done",
+          "resolution": null,
+          "finalizationCause": null,
+          "effortTier": "lookup",
+          "rawLimitFailure": null,
+          "askTimedOut": false,
+          "actions": [
+            {
+              "name": "report_headline",
+              "args": {
+                "headline": "Opening the fixture widgets article"
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "navigate",
+              "args": {
+                "url": "http://127.0.0.1:40241/widgets-article"
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "report_headline",
+              "args": {
+                "headline": "Opening the fixture catalog"
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "navigate",
+              "args": {
+                "url": "http://127.0.0.1:40241/catalog"
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "read_page",
+              "args": {},
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "navigate",
+              "args": {
+                "url": "http://127.0.0.1:40241/widgets-article"
+              },
+              "ok": true,
+              "repeated": true,
+              "error": null
+            },
+            {
+              "name": "report_headline",
+              "args": {
+                "headline": "Opening the fixture widgets article"
+              },
+              "ok": true,
+              "repeated": true,
+              "error": null
+            },
+            {
+              "name": "read_page",
+              "args": {},
+              "ok": true,
+              "repeated": true,
+              "error": null
+            }
+          ],
+          "answerText": "Opened the fixture widgets article: [Fixture widgets: the complete guide](http://127.0.0.1:40241/widgets-article). Page text: \"Everything about fixture widgets, found entirely on screen.\"",
+          "timedOut": false
+        }
+      ]
+    },
+    {
+      "id": "cancelled-warranty-reuse",
+      "kind": "cancelled-evidence",
+      "command": "read the warranty page at http://127.0.0.1:40241/widget-warranty and tell me how long the warranty lasts",
+      "success": false,
+      "failureReason": "objective predicate failed",
+      "metrics": {
+        "llmRounds": 4,
+        "attemptedTools": 3,
+        "executedTools": 3,
+        "elapsedMs": 23434,
+        "repeatedActions": 0,
+        "outcome": "done",
+        "resolution": null,
+        "finalizationCause": null,
+        "effortTier": "lookup",
+        "rawLimitFailure": null,
+        "askTimedOut": false,
+        "actions": [
+          {
+            "name": "report_headline",
+            "args": {
+              "headline": "Reading the widget warranty page for coverage length"
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "navigate",
+            "args": {
+              "url": "http://127.0.0.1:40241/widget-warranty"
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "read_page",
+            "args": {},
+            "ok": true,
+            "repeated": false,
+            "error": null
+          }
+        ],
+        "answerText": "The standard fixture widget comes with a **5-year warranty**.\n\nSource: the warranty fixture page read earlier this session — http://127.0.0.1:40241/widget-warranty — which states it plainly as a single sentence.",
+        "timedOut": false
+      },
+      "runs": [
+        {
+          "llmRounds": 3,
+          "attemptedTools": 3,
+          "executedTools": 3,
+          "elapsedMs": 11199,
+          "repeatedActions": 0,
+          "outcome": "done",
+          "resolution": null,
+          "finalizationCause": null,
+          "effortTier": "lookup",
+          "rawLimitFailure": null,
+          "askTimedOut": false,
+          "actions": [
+            {
+              "name": "report_headline",
+              "args": {
+                "headline": "Reading the widget warranty page for coverage length"
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "navigate",
+              "args": {
+                "url": "http://127.0.0.1:40241/widget-warranty"
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "read_page",
+              "args": {},
+              "ok": true,
+              "repeated": false,
+              "error": null
+            }
+          ],
+          "answerText": "Read http://127.0.0.1:40241/widget-warranty on screen. It states plainly: \"The standard fixture widget warranty lasts 5 years.\"",
+          "timedOut": false
+        },
+        {
+          "llmRounds": 1,
+          "attemptedTools": 0,
+          "executedTools": 0,
+          "elapsedMs": 12235,
+          "repeatedActions": 0,
+          "outcome": "done",
+          "resolution": null,
+          "finalizationCause": null,
+          "effortTier": "lookup",
+          "rawLimitFailure": null,
+          "askTimedOut": false,
+          "actions": [],
+          "answerText": "The standard fixture widget comes with a **5-year warranty**.\n\nSource: the warranty fixture page read earlier this session — http://127.0.0.1:40241/widget-warranty — which states it plainly as a single sentence.",
+          "timedOut": false
+        }
+      ]
+    },
+    {
+      "id": "stale-status-board",
+      "kind": "stale-evidence",
+      "command": "open the status board at http://127.0.0.1:40241/status-board and tell me which way the wind gauge reads",
+      "success": true,
+      "failureReason": null,
+      "metrics": {
+        "llmRounds": 6,
+        "attemptedTools": 6,
+        "executedTools": 6,
+        "elapsedMs": 21386,
+        "repeatedActions": 0,
+        "outcome": "done",
+        "resolution": null,
+        "finalizationCause": null,
+        "effortTier": "lookup",
+        "rawLimitFailure": null,
+        "askTimedOut": false,
+        "actions": [
+          {
+            "name": "report_headline",
+            "args": {
+              "headline": "Read the wind gauge on the status board"
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "navigate",
+            "args": {
+              "url": "http://127.0.0.1:40241/status-board"
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "read_page",
+            "args": {},
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "report_headline",
+            "args": {
+              "headline": "Checking the status board wind gauge"
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "navigate",
+            "args": {
+              "url": "http://127.0.0.1:40241/status-board"
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "read_page",
+            "args": {},
+            "ok": true,
+            "repeated": false,
+            "error": null
+          }
+        ],
+        "answerText": "Checked the status board again (http://127.0.0.1:40241/status-board): **the wind gauge reads south**.\n\nThat's a change from the earlier check today, when it read north.",
+        "timedOut": false
+      },
+      "runs": [
+        {
+          "llmRounds": 3,
+          "attemptedTools": 3,
+          "executedTools": 3,
+          "elapsedMs": 9813,
+          "repeatedActions": 0,
+          "outcome": "done",
+          "resolution": null,
+          "finalizationCause": null,
+          "effortTier": "lookup",
+          "rawLimitFailure": null,
+          "askTimedOut": false,
+          "actions": [
+            {
+              "name": "report_headline",
+              "args": {
+                "headline": "Read the wind gauge on the status board"
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "navigate",
+              "args": {
+                "url": "http://127.0.0.1:40241/status-board"
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "read_page",
+              "args": {},
+              "ok": true,
+              "repeated": false,
+              "error": null
+            }
+          ],
+          "answerText": "Opened the [regional status board](http://127.0.0.1:40241/status-board). Its current reading: **the wind gauge reads north**.",
+          "timedOut": false
+        },
+        {
+          "llmRounds": 3,
+          "attemptedTools": 3,
+          "executedTools": 3,
+          "elapsedMs": 11573,
+          "repeatedActions": 0,
+          "outcome": "done",
+          "resolution": null,
+          "finalizationCause": null,
+          "effortTier": "lookup",
+          "rawLimitFailure": null,
+          "askTimedOut": false,
+          "actions": [
+            {
+              "name": "report_headline",
+              "args": {
+                "headline": "Checking the status board wind gauge"
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "navigate",
+              "args": {
+                "url": "http://127.0.0.1:40241/status-board"
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "read_page",
+              "args": {},
+              "ok": true,
+              "repeated": false,
+              "error": null
+            }
+          ],
+          "answerText": "Checked the status board again (http://127.0.0.1:40241/status-board): **the wind gauge reads south**.\n\nThat's a change from the earlier check today, when it read north.",
+          "timedOut": false
+        }
+      ]
+    },
+    {
+      "id": "near-identical-depot-bulletins",
+      "kind": "near-identical",
+      "command": "three fixture pages look nearly identical: http://127.0.0.1:40241/mirror-alpha, http://127.0.0.1:40241/mirror-beta, and http://127.0.0.1:40241/mirror-gamma. open the one that says orders ship on Friday",
+      "success": true,
+      "failureReason": null,
+      "metrics": {
+        "llmRounds": 7,
+        "attemptedTools": 7,
+        "executedTools": 7,
+        "elapsedMs": 29510,
+        "repeatedActions": 2,
+        "outcome": "done",
+        "resolution": null,
+        "finalizationCause": null,
+        "effortTier": "lookup",
+        "rawLimitFailure": null,
+        "askTimedOut": false,
+        "actions": [
+          {
+            "name": "report_headline",
+            "args": {
+              "headline": "Find the mirror fixture page that says orders ship Friday"
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "navigate",
+            "args": {
+              "url": "http://127.0.0.1:40241/mirror-alpha"
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "read_page",
+            "args": {},
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "navigate",
+            "args": {
+              "url": "http://127.0.0.1:40241/mirror-beta"
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "read_page",
+            "args": {},
+            "ok": true,
+            "repeated": true,
+            "error": null
+          },
+          {
+            "name": "navigate",
+            "args": {
+              "url": "http://127.0.0.1:40241/mirror-gamma"
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "read_page",
+            "args": {},
+            "ok": true,
+            "repeated": true,
+            "error": null
+          }
+        ],
+        "answerText": "Checked all three near-identical \"regional depot bulletin\" pages:\n\n- **http://127.0.0.1:40241/mirror-alpha** — ships on **Tuesday**\n- **http://127.0.0.1:40241/mirror-beta** — ships on **Tuesday**\n- **http://127.0.0.1:40241/mirror-gamma** — ships on **Friday** ✅ (open on screen)",
+        "timedOut": false
+      },
+      "runs": [
+        {
+          "llmRounds": 7,
+          "attemptedTools": 7,
+          "executedTools": 7,
+          "elapsedMs": 29510,
+          "repeatedActions": 2,
+          "outcome": "done",
+          "resolution": null,
+          "finalizationCause": null,
+          "effortTier": "lookup",
+          "rawLimitFailure": null,
+          "askTimedOut": false,
+          "actions": [
+            {
+              "name": "report_headline",
+              "args": {
+                "headline": "Find the mirror fixture page that says orders ship Friday"
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "navigate",
+              "args": {
+                "url": "http://127.0.0.1:40241/mirror-alpha"
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "read_page",
+              "args": {},
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "navigate",
+              "args": {
+                "url": "http://127.0.0.1:40241/mirror-beta"
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "read_page",
+              "args": {},
+              "ok": true,
+              "repeated": true,
+              "error": null
+            },
+            {
+              "name": "navigate",
+              "args": {
+                "url": "http://127.0.0.1:40241/mirror-gamma"
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "read_page",
+              "args": {},
+              "ok": true,
+              "repeated": true,
+              "error": null
+            }
+          ],
+          "answerText": "Checked all three near-identical \"regional depot bulletin\" pages:\n\n- **http://127.0.0.1:40241/mirror-alpha** — ships on **Tuesday**\n- **http://127.0.0.1:40241/mirror-beta** — ships on **Tuesday**\n- **http://127.0.0.1:40241/mirror-gamma** — ships on **Friday** ✅ (open on screen)",
+          "timedOut": false
+        }
+      ]
+    },
+    {
+      "id": "blocker-challenge-page",
+      "kind": "blocker",
+      "command": "open http://127.0.0.1:40241/challenge and tell me what the page says",
+      "success": true,
+      "failureReason": null,
+      "metrics": {
+        "llmRounds": 4,
+        "attemptedTools": 4,
+        "executedTools": 3,
+        "elapsedMs": 71074,
+        "repeatedActions": 0,
+        "outcome": "done",
+        "resolution": null,
+        "finalizationCause": null,
+        "effortTier": "lookup",
+        "rawLimitFailure": null,
+        "askTimedOut": true,
+        "actions": [
+          {
+            "name": "report_headline",
+            "args": {
+              "headline": "Opening the challenge page and reading its contents"
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "navigate",
+            "args": {
+              "url": "http://127.0.0.1:40241/challenge"
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "look",
+            "args": {},
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "ask_user",
+            "args": {
+              "question": "The page http://127.0.0.1:40241/challenge is showing a human-verification (CAPTCHA) wall. Could you complete the verification on screen in the browser tab? Once it passes, I'll read the page and tell you what it says — or would you rather I skip it?"
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          }
+        ],
+        "answerText": "**Blocked by a challenge wall** — http://127.0.0.1:40241/challenge loads an interstitial titled \"Just a moment...\" that says \"Verifying you are human. This may take a few seconds.\", with a verification control and a Continue button. The actual page content is behind it, so I can't tell you what the page says yet.\n\n- I won't attempt to get past the verification myself — it needs a human on screen.\n- **What helps:** complete the CAPTCHA/verification in the browser tab, then ask me to open the page again and I'll read its contents.",
+        "timedOut": false
+      },
+      "runs": [
+        {
+          "llmRounds": 4,
+          "attemptedTools": 4,
+          "executedTools": 3,
+          "elapsedMs": 71074,
+          "repeatedActions": 0,
+          "outcome": "done",
+          "resolution": null,
+          "finalizationCause": null,
+          "effortTier": "lookup",
+          "rawLimitFailure": null,
+          "askTimedOut": true,
+          "actions": [
+            {
+              "name": "report_headline",
+              "args": {
+                "headline": "Opening the challenge page and reading its contents"
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "navigate",
+              "args": {
+                "url": "http://127.0.0.1:40241/challenge"
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "look",
+              "args": {},
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "ask_user",
+              "args": {
+                "question": "The page http://127.0.0.1:40241/challenge is showing a human-verification (CAPTCHA) wall. Could you complete the verification on screen in the browser tab? Once it passes, I'll read the page and tell you what it says — or would you rather I skip it?"
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            }
+          ],
+          "answerText": "**Blocked by a challenge wall** — http://127.0.0.1:40241/challenge loads an interstitial titled \"Just a moment...\" that says \"Verifying you are human. This may take a few seconds.\", with a verification control and a Continue button. The actual page content is behind it, so I can't tell you what the page says yet.\n\n- I won't attempt to get past the verification myself — it needs a human on screen.\n- **What helps:** complete the CAPTCHA/verification in the browser tab, then ask me to open the page again and I'll read its contents.",
+          "timedOut": false
+        }
+      ]
+    },
+    {
+      "id": "unresolvable-mercury-dampeners",
+      "kind": "unresolvable",
+      "command": "search the fixture web for mercury dampeners and tell me which page explains them",
+      "success": true,
+      "failureReason": null,
+      "metrics": {
+        "llmRounds": 9,
+        "attemptedTools": 9,
+        "executedTools": 9,
+        "elapsedMs": 48283,
+        "repeatedActions": 3,
+        "outcome": "done",
+        "resolution": null,
+        "finalizationCause": null,
+        "effortTier": "lookup",
+        "rawLimitFailure": null,
+        "askTimedOut": false,
+        "actions": [
+          {
+            "name": "report_headline",
+            "args": {
+              "headline": "Search fixture web for mercury dampeners"
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "navigate",
+            "args": {
+              "url": "http://127.0.0.1:40241/results?q=mercury+dampeners"
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "read_page",
+            "args": {},
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "navigate",
+            "args": {
+              "url": "http://127.0.0.2:34353/results?q=mercury+dampeners"
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "read_page",
+            "args": {},
+            "ok": true,
+            "repeated": true,
+            "error": null
+          },
+          {
+            "name": "navigate",
+            "args": {
+              "url": "http://127.0.0.1:40241/results?q=mercury"
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "read_page",
+            "args": {},
+            "ok": true,
+            "repeated": true,
+            "error": null
+          },
+          {
+            "name": "navigate",
+            "args": {
+              "url": "http://127.0.0.1:40241/results?q=dampeners"
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "read_page",
+            "args": {},
+            "ok": true,
+            "repeated": true,
+            "error": null
+          }
+        ],
+        "answerText": "Searched the fixture web for **mercury dampeners** — no results.\n\nTried on both fixture hosts:\n- `127.0.0.1:40241/results?q=mercury+dampeners` → no results\n- `127.0.0.2:34353/results?q=mercury+dampeners` → no results\n- Broader queries `mercury` and `dampeners` → also no results\n\nThe fixture web simply has no page explaining mercury dampeners — the only indexed content is about fixture widgets (spec sheets, care/finish/material pages, depot bulletins, etc.). If \"mercury dampeners\" was a mishearing or you meant a related term, let me know and I'll run that search.",
+        "timedOut": false
+      },
+      "runs": [
+        {
+          "llmRounds": 9,
+          "attemptedTools": 9,
+          "executedTools": 9,
+          "elapsedMs": 48283,
+          "repeatedActions": 3,
+          "outcome": "done",
+          "resolution": null,
+          "finalizationCause": null,
+          "effortTier": "lookup",
+          "rawLimitFailure": null,
+          "askTimedOut": false,
+          "actions": [
+            {
+              "name": "report_headline",
+              "args": {
+                "headline": "Search fixture web for mercury dampeners"
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "navigate",
+              "args": {
+                "url": "http://127.0.0.1:40241/results?q=mercury+dampeners"
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "read_page",
+              "args": {},
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "navigate",
+              "args": {
+                "url": "http://127.0.0.2:34353/results?q=mercury+dampeners"
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "read_page",
+              "args": {},
+              "ok": true,
+              "repeated": true,
+              "error": null
+            },
+            {
+              "name": "navigate",
+              "args": {
+                "url": "http://127.0.0.1:40241/results?q=mercury"
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "read_page",
+              "args": {},
+              "ok": true,
+              "repeated": true,
+              "error": null
+            },
+            {
+              "name": "navigate",
+              "args": {
+                "url": "http://127.0.0.1:40241/results?q=dampeners"
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "read_page",
+              "args": {},
+              "ok": true,
+              "repeated": true,
+              "error": null
+            }
+          ],
+          "answerText": "Searched the fixture web for **mercury dampeners** — no results.\n\nTried on both fixture hosts:\n- `127.0.0.1:40241/results?q=mercury+dampeners` → no results\n- `127.0.0.2:34353/results?q=mercury+dampeners` → no results\n- Broader queries `mercury` and `dampeners` → also no results\n\nThe fixture web simply has no page explaining mercury dampeners — the only indexed content is about fixture widgets (spec sheets, care/finish/material pages, depot bulletins, etc.). If \"mercury dampeners\" was a mishearing or you meant a related term, let me know and I'll run that search.",
+          "timedOut": false
+        }
+      ]
+    }
+  ],
+  "scriptedModelProvenAbsent": true,
+  "aggregate": {
+    "scenarioCount": 31,
+    "objectiveSuccesses": 29,
+    "rawLimitFailures": 0,
+    "timedOutScenarios": 0,
+    "llmRounds": {
+      "median": 5,
+      "p95": 9
+    },
+    "attemptedTools": {
+      "median": 5,
+      "p95": 9
+    },
+    "executedTools": {
+      "median": 5,
+      "p95": 9
+    },
+    "elapsedMs": {
+      "median": 23434,
+      "p95": 92151
+    },
+    "repeatedActions": {
+      "median": 1,
+      "p95": 3
+    }
+  }
+}

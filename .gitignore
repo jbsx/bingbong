@@ -6,8 +6,8 @@ graphify-out/
 .DS_Store
 *.tsbuildinfo
 .env
-# Latest real-model eval run (#109); the frozen comparison artifact is the
-# committed e2e/eval/baseline.json, never this file.
+# Latest scratch real-model eval run (#109); the release pools under
+# e2e/eval/pools/ are the committed comparison artifacts (#132), never this file.
 e2e/eval/report.json
 
 # Kiosk deployment runtime state + secrets (ADR 0023).
