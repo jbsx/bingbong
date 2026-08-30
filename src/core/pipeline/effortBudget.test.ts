@@ -4,7 +4,6 @@ import {
   budgetWarningMessage,
   createActiveWorkClock,
   deterministicFinalAnswer,
-  effectiveHardCeiling,
   finalizationToolRefusal,
   HARD_TOOL_ROUND_CEILING,
   TIER_ACTIVE_WORK_DEADLINES_MS,
@@ -21,12 +20,10 @@ describe('effort budget (#117/#118, ADR 0027)', () => {
     })
   })
 
-  it('clamps the configured round limit to the 32-Tool-Round product ceiling (#118)', () => {
+  it('makes the 32-Tool-Round product ceiling the only round limit (#129)', () => {
+    // No user-facing maximum-round setting remains: tier budgets and this
+    // ceiling — both product-owned — are the only limits a Run answers to.
     expect(HARD_TOOL_ROUND_CEILING).toBe(32)
-    // The legacy user setting binds only below the product ceiling.
-    expect(effectiveHardCeiling(80)).toBe(32)
-    expect(effectiveHardCeiling(120)).toBe(32)
-    expect(effectiveHardCeiling(10)).toBe(10)
   })
 
   describe('budget warnings', () => {

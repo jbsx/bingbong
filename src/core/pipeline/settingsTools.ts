@@ -40,6 +40,9 @@ export interface AppControls {
 }
 
 /** The voice-reachable settings — credentials, keys, and mic stay keyboard-only. */
+// No tool-round entry (#129): round limits are the product-owned Effort
+// Tier budgets, deliberately not a Setting — voice cannot re-enable
+// unbounded Runs.
 const SETTING_KEYS = [
   'wake_word_threshold',
   'endpoint_delay_ms',
@@ -51,7 +54,6 @@ const SETTING_KEYS = [
   'weather_city',
   'weather_units',
   'stt_model',
-  'max_tool_rounds',
   'model_routing_model',
   'model_routing_base_url',
 ] as const
@@ -134,12 +136,6 @@ const SETTING_SPECS: Record<SettingKey, SettingSpec> = {
     patch: (value) => ({ sttModel: value }),
     describe: (s) => `STT model set to ${s.sttModel}; it loads at the next restart.`,
   },
-  max_tool_rounds: {
-    kind: 'number',
-    // Applies to the next command, no restart.
-    patch: (value) => ({ maxToolRounds: value }),
-    describe: (s) => `Max tool rounds set to ${s.maxToolRounds}.`,
-  },
   model_routing_model: {
     kind: 'string',
     routing: true,
@@ -209,13 +205,13 @@ export function createSetSettingTool(settings: SettingsControls): Tool {
         'The Setting to change: wake_word_threshold (0–1), endpoint_delay_ms (200–1500 silence that submits an utterance), ' +
         'resumption_merge_ms (0–3000 silence held for resumed speech before submitting, 0 off), tts_voice (Piper voice id), ' +
         'adblock_enabled, appearance (system|light|dark), web_zoom_percent (75–200), weather_city, weather_units ' +
-        '(metric|imperial), stt_model (base|small|medium), max_tool_rounds, model_routing_model or model_routing_base_url ' +
+        '(metric|imperial), stt_model (base|small|medium), model_routing_model or model_routing_base_url ' +
         '(with role). Credentials, API keys and microphone are keyboard-only.',
     },
     number_value: {
       type: 'number',
       description:
-        'The new value for numeric settings (wake_word_threshold, endpoint_delay_ms, resumption_merge_ms, web_zoom_percent, max_tool_rounds)',
+        'The new value for numeric settings (wake_word_threshold, endpoint_delay_ms, resumption_merge_ms, web_zoom_percent)',
       required: false,
     },
     string_value: {
@@ -241,7 +237,7 @@ export function createSetSettingTool(settings: SettingsControls): Tool {
     name: 'set_setting',
     description:
       'Change one of the app Settings by voice: wake word threshold, endpoint delay, merge window, TTS voice, adblock, ' +
-      'appearance (system, light, or dark), web zoom, weather city/units, STT model, tool-round ceiling, or model routing ' +
+      'appearance (system, light, or dark), web zoom, weather city/units, STT model, or model routing ' +
       '(model or base URL per role). Applies immediately with no confirmation. Credentials, API keys and microphone ' +
       'selection are not voice-reachable — the user must type those in the settings page. Returns the resulting ' +
       'persisted value, which is sufficient verification; do not inspect the browser to confirm it.',

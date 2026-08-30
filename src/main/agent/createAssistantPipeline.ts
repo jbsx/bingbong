@@ -39,12 +39,6 @@ export interface AssistantPipelineDeps {
    * so dashboard settings apply without a restart.
    */
   getEnv?: () => Record<string, string | undefined>
-  /**
-   * Live source for the orchestrator tool-round ceiling (the settings
-   * slider): read at the start of each run, so changes apply to the next
-   * command without a restart.
-   */
-  getMaxToolRounds?: () => number
   fetchFn?: typeof fetch
   clock?: Clock
   tts?: TtsSpeaker
@@ -288,7 +282,6 @@ export function createAssistantPipeline(deps: AssistantPipelineDeps): CommandPip
     // reserved Answer round still uses whatever reports completed.
     onFinalize: cancelSubagents,
     ...(configuredAskTimeoutMs !== undefined ? { askTimeoutMs: configuredAskTimeoutMs } : {}),
-    ...(deps.getMaxToolRounds ? { getMaxToolRounds: deps.getMaxToolRounds } : {}),
   })
   return pipeline
 }

@@ -5,8 +5,6 @@ import {
   settingsToEnv,
   ENDPOINT_DELAY_MS_MAX,
   ENDPOINT_DELAY_MS_MIN,
-  MAX_TOOL_ROUNDS_MAX,
-  MAX_TOOL_ROUNDS_MIN,
   RESUMPTION_MERGE_MS_MAX,
   RESUMPTION_MERGE_MS_MIN,
   WEB_ZOOM_PERCENT_MAX,
@@ -24,7 +22,6 @@ describe('defaultSettings', () => {
     expect(settings.wakeWordThreshold).toBeLessThanOrEqual(1)
     expect(settings.endpointDelayMs).toBe(900)
     expect(settings.resumptionMergeMs).toBe(1500)
-    expect(settings.maxToolRounds).toBe(80)
     expect(settings.webZoomPercent).toBe(130)
     expect(settings.ttsVoice).toBe('')
     expect(settings.sttModel).toBe('small')
@@ -97,14 +94,23 @@ describe('sanitizeSettings', () => {
     expect(sanitizeSettings({ endpointDelayMs: null }).endpointDelayMs).toBe(defaultSettings().endpointDelayMs)
   })
 
-  it('clamps the max tool rounds into its slider range', () => {
-    expect(sanitizeSettings({ maxToolRounds: 1 }).maxToolRounds).toBe(MAX_TOOL_ROUNDS_MIN)
-    expect(sanitizeSettings({ maxToolRounds: 100_000 }).maxToolRounds).toBe(MAX_TOOL_ROUNDS_MAX)
-    expect(sanitizeSettings({ maxToolRounds: 55.4 }).maxToolRounds).toBe(55)
-    // Missing and garbage values fall back to the default ceiling.
-    expect(sanitizeSettings({}).maxToolRounds).toBe(defaultSettings().maxToolRounds)
-    expect(sanitizeSettings({ maxToolRounds: 'lots' }).maxToolRounds).toBe(defaultSettings().maxToolRounds)
-    expect(sanitizeSettings({ maxToolRounds: null }).maxToolRounds).toBe(defaultSettings().maxToolRounds)
+  it('drops the retired maximum-round key from a migrated profile — no round limit lives in settings (#129)', () => {
+    // A settings.json persisted before #129 carries maxToolRounds; the
+    // sanitize fold ignores the unknown key and keeps everything else.
+    // Round limits are product-owned Effort Tier budgets and the 32-round
+    // hard ceiling (effortBudget.ts) — never a user setting.
+    const settings = sanitizeSettings({
+      maxToolRounds: 120,
+      endpointDelayMs: 650,
+      webZoomPercent: 100,
+      weather: { city: 'Berlin', units: 'metric' },
+    })
+    expect('maxToolRounds' in settings).toBe(false)
+    expect(settings.endpointDelayMs).toBe(650)
+    expect(settings.webZoomPercent).toBe(100)
+    expect(settings.weather).toEqual({ city: 'Berlin', units: 'metric' })
+    // A clean profile never sees the key at all.
+    expect('maxToolRounds' in defaultSettings()).toBe(false)
   })
 
   it('clamps the web zoom into its slider range', () => {

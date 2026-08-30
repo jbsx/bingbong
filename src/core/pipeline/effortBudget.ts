@@ -33,8 +33,9 @@ export const TIER_ACTIVE_WORK_DEADLINES_MS: Readonly<Record<EffortTier, number>>
 /**
  * The orchestrator's product-owned hard work ceiling (#108/#118, ADR
  * 0027): 32 Tool Rounds per Run, cumulative across tier epochs and
- * Steering replans. Exactly one terminal bookkeeping Tool Round fits
- * inside it — ordinary acquisition work stops one round early to
+ * Steering replans — the only round limit; the user-facing maximum-round
+ * setting is gone (#129). Exactly one terminal bookkeeping Tool Round
+ * fits inside it — ordinary acquisition work stops one round early to
  * preserve it — and the Answer-only round that follows is not a Tool
  * Round and always rides outside the ceiling.
  */
@@ -46,16 +47,6 @@ export const HARD_TOOL_ROUND_CEILING = 32
  * ceiling's last round can serve as the one bookkeeping round.
  */
 export const CEILING_RESERVED_BOOKKEEPING_ROUNDS = 1
-
-/**
- * The live hard ceiling (#118): the smaller of the configured round
- * limit — the legacy user-facing setting, until #129 retires it — and
- * the product's 32-Tool-Round ceiling, which binds from above no matter
- * what the setting says.
- */
-export function effectiveHardCeiling(configuredMaxToolRounds: number): number {
-  return Math.min(configuredMaxToolRounds, HARD_TOOL_ROUND_CEILING)
-}
 
 /** The internal warning milestones: ~75% and ~90% of the budget consumed. */
 export type BudgetWarningMilestone = 'near' | 'imminent'

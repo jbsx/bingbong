@@ -21,17 +21,6 @@ function setWeatherCityScript(city: string): string {
   })()`
 }
 
-function setMaxToolRoundsScript(rounds: number): string {
-  return `(() => {
-    const input = document.querySelector('input[aria-label="Max tool rounds"]')
-    if (!input) return 'no-tool-rounds-input'
-    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set
-    setter.call(input, ${rounds})
-    input.dispatchEvent(new Event('input', { bubbles: true }))
-    return 'edited'
-  })()`
-}
-
 describe('settings page e2e', () => {
   let harness: Harness
   let userDataDir: string
@@ -59,8 +48,6 @@ describe('settings page e2e', () => {
     // The city field is addressed by its aria-label.
     const edited = await harness.dashboardEval<string>(setWeatherCityScript('Berlin'))
     expect(edited).toBe('edited')
-    const roundsEdited = await harness.dashboardEval<string>(setMaxToolRoundsScript(120))
-    expect(roundsEdited).toBe('edited')
 
     await harness.clickDashboardElement('.settings-button--primary')
 
@@ -69,7 +56,11 @@ describe('settings page e2e', () => {
         const raw = await readFile(join(userDataDir, 'settings.json'), 'utf8').catch(() => undefined)
         if (!raw) return undefined
         const settings = JSON.parse(raw)
-        return settings.weather?.city === 'Berlin' && settings.maxToolRounds === 120 ? true : undefined
+        if (settings.weather?.city !== 'Berlin') return undefined
+        // The retired maximum-round setting never persists (#129) — round
+        // limits are the product-owned Effort Tier budgets, never a
+        // setting. A lingering legacy key keeps the poll unresolved.
+        return 'maxToolRounds' in settings ? undefined : true
       },
       { timeoutMs: 10000, intervalMs: 250 },
     )

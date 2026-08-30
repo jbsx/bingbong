@@ -136,12 +136,6 @@ describe('createSetSettingTool', () => {
     expect(invalid.updates).toEqual([])
   })
 
-  it('sets the tool-round ceiling, clamped by the fold', async () => {
-    const { settings, result } = await executeSetting({ setting: 'max_tool_rounds', number_value: 5 })
-    expect(settings.get().maxToolRounds).toBe(10)
-    expect(result).toBe('Max tool rounds set to 10.')
-  })
-
   it('merges the patch onto the current settings — unrelated values survive a set', async () => {
     const settings = new FakeSettings()
     settings.update({ ...settings.get(), ttsVoice: 'en_US-amy-medium', weather: { city: 'Oslo', units: 'metric' } })
@@ -214,7 +208,6 @@ describe('createSetSettingTool', () => {
       'weather_city',
       'weather_units',
       'stt_model',
-      'max_tool_rounds',
       'model_routing_model',
       'model_routing_base_url',
     ])

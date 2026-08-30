@@ -27,16 +27,15 @@ import type { SettledPageState } from './progressFingerprints'
 import type { SnapshotRef } from '../browser/snapshot'
 import type { BlockerGate } from './blockerGate'
 import { createBlockerGate } from './blockerGate'
-import { MAX_TOOL_ROUNDS_DEFAULT } from '../settings/settings'
 import {
   budgetWarningCrossed,
   budgetWarningMessage,
   CEILING_RESERVED_BOOKKEEPING_ROUNDS,
   createActiveWorkClock,
   deterministicFinalAnswer,
-  effectiveHardCeiling,
   FINALIZATION_ANSWER_DIRECTIVE,
   finalizationToolRefusal,
+  HARD_TOOL_ROUND_CEILING,
   TIER_ACTIVE_WORK_DEADLINES_MS,
   TIER_TOOL_ROUND_BUDGETS,
   type ActiveWorkClock,
@@ -82,15 +81,6 @@ export interface CommandPipelineDeps {
   confirmTimeoutMs?: number
   /** How long an ask_user window stays open (voice + typed answers). */
   askTimeoutMs?: number
-  maxToolRounds?: number
-  /**
-   * Live source for the tool-round ceiling: read at the start of each run,
-   * so settings changes apply to the next command without a restart.
-   * Overrides the static `maxToolRounds` when both are provided. Either
-   * way the effective ceiling is clamped to the product's 32-Tool-Round
-   * hard ceiling (#118).
-   */
-  getMaxToolRounds?: () => number
   /**
    * Hostname of the page the browser tab is currently on (#80, ADR 0010) —
    * what current-page browser verbs (click/type/scroll/…) target for the
@@ -244,9 +234,6 @@ class CommandAbortedError extends Error {
 /** Default ask_user window: ~45s for a spoken or typed free-text answer. */
 export const ASK_TIMEOUT_MS = 45_000
 
-/** Default orchestrator tool-round ceiling — the settings store's default, so the pipeline and the settings page agree. */
-const DEFAULT_MAX_TOOL_ROUNDS = MAX_TOOL_ROUNDS_DEFAULT
-
 const STEERED_CANCELLED = 'cancelled by the user\'s steering'
 
 function toErrorMessage(err: unknown): string {
@@ -383,7 +370,6 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
   const mintTurnId = createTurnIdSource(deps.tracer)
   const confirmTimeoutMs = deps.confirmTimeoutMs ?? 60_000
   const askTimeoutMs = deps.askTimeoutMs ?? ASK_TIMEOUT_MS
-  const maxToolRounds = deps.maxToolRounds ?? DEFAULT_MAX_TOOL_ROUNDS
   const toolsByName = new Map(tools.map((tool) => [tool.name, tool]))
   const pendingConfirmations = new Map<string, PendingDecision<ConfirmationDecision>>()
   const pendingAsks = new Map<string, PendingDecision<AskDecision>>()
@@ -847,9 +833,6 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
         // The deterministic fallback Answer (#117): produced when the
         // reserved Answer round fails or requests tools.
         let deterministicFallback = false
-        // Re-read per run: a settings change applies to the next command.
-        // The product's 32-round hard ceiling clamps it from above (#118).
-        const hardCeiling = effectiveHardCeiling(deps.getMaxToolRounds?.() ?? maxToolRounds)
 
         for (;;) {
           if (!finalizing) {
@@ -862,13 +845,14 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
               enterFinalization('budget_exhausted')
             } else if (run.workClock.spent() >= TIER_ACTIVE_WORK_DEADLINES_MS[epochTier]) {
               enterFinalization('deadline_reached')
-            } else if (rounds >= hardCeiling - CEILING_RESERVED_BOOKKEEPING_ROUNDS) {
-              // The hard ceiling (#108/#118): 32 Tool Rounds,
-              // cumulative across tier epochs. Exactly one terminal
-              // bookkeeping Tool Round fits inside it — ordinary
-              // acquisition stops one round early to preserve it — and
-              // the Answer-only round that follows is not a Tool Round
-              // and always rides outside the ceiling.
+            } else if (rounds >= HARD_TOOL_ROUND_CEILING - CEILING_RESERVED_BOOKKEEPING_ROUNDS) {
+              // The hard ceiling (#108/#118, #129): the product-owned
+              // 32-Tool-Round ceiling — the only round limit, no
+              // user-facing setting — cumulative across tier epochs.
+              // Exactly one terminal bookkeeping Tool Round fits inside
+              // it — ordinary acquisition stops one round early to
+              // preserve it — and the Answer-only round that follows is
+              // not a Tool Round and always rides outside the ceiling.
               enterFinalization('hard_limit')
             }
           }

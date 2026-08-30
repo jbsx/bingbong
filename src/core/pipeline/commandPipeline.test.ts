@@ -29,6 +29,7 @@ import { createPerfTracer, type PerfTracer } from '../perf/perfTracer'
 import { withPerfTracing } from '../perf/perfTracing'
 import { createBrowserSubspans } from '../perf/browserSubspans'
 import { DELTA_FLUSH_MS } from './deltaBatcher'
+import { HARD_TOOL_ROUND_CEILING, TIER_TOOL_ROUND_BUDGETS } from './effortBudget'
 
 async function collect(
   pipeline: CommandPipeline,
@@ -1110,7 +1111,7 @@ describe('command pipeline', () => {
     })
   })
 
-  it('finalizes with a deterministic Answer when the LLM exceeds the hard tool-round ceiling (#117/#118)', async () => {
+  it('finalizes with a deterministic Answer when the LLM exceeds the hard tool-round ceiling (#117/#118/#129)', async () => {
     let executions = 0
     const spinner = {
       name: 'spin',
@@ -1120,35 +1121,66 @@ describe('command pipeline', () => {
         return 'spun'
       },
     }
-    // Round 1 spends the ceiling; round 2 is Finalization's preserved
-    // bookkeeping round (acquisition refused); round 3's tool request is
-    // the reserved Answer round misbehaving — the run answers
-    // deterministically.
-    const endlessToolCalls = Array.from({ length: 5 }, (_, i) => ({
+    const spin = (i: number): ToolCall => ({ id: `c${i}`, name: 'spin', args: {} })
+    const spinRound = (i: number) => ({ kind: 'tool_calls' as const, calls: [spin(i)] })
+    const planRound = (i: number, tier: 'lookup' | 'investigation', escalationReason?: string) => ({
       kind: 'tool_calls' as const,
-      calls: [{ id: `c${i}`, name: 'spin', args: {} }],
-    }))
-    const llm = new ScriptedLlm(endlessToolCalls)
+      calls: [
+        {
+          id: `p${i}`,
+          name: 'report_run_plan',
+          args: {
+            objective: 'Keep going forever',
+            headline: 'Keeping going',
+            effort_tier: tier,
+            ...(escalationReason ? { escalation_reason: escalationReason } : {}),
+          },
+        },
+        spin(i),
+      ],
+    })
+    // The ceiling is product-owned (#129) — no setting shrinks it — so the
+    // script spends the Lookup budget, escalates one level with a reason
+    // (the epoch re-arms while cumulative rounds keep counting), and
+    // crosses the hard ceiling mid-Investigation. Counts derive from the
+    // coded budgets: rounds 1..lookup declare and spend Lookup, the last
+    // of them escalating; rounds lookup+1..ceiling−1 spend Investigation
+    // (its budget still unspent — the cumulative ceiling binds first);
+    // the ceiling's preserved round is the bookkeeping round (acquisition
+    // refused); the round after it is the reserved Answer round
+    // misbehaving by requesting tools — the run answers deterministically.
+    const lookupRounds = TIER_TOOL_ROUND_BUDGETS.lookup
+    const ceiling = HARD_TOOL_ROUND_CEILING
+    const midLookupSpins = lookupRounds - 2 // rounds 2..lookup−1
+    const investigationSpins = ceiling - 1 - lookupRounds // rounds lookup+1..ceiling−1
+    const turns = [
+      planRound(1, 'lookup'),
+      ...Array.from({ length: midLookupSpins }, (_, k) => spinRound(k + 2)),
+      planRound(lookupRounds, 'investigation', 'The only source found contradicts itself; more sources are needed.'),
+      ...Array.from({ length: investigationSpins }, (_, k) => spinRound(lookupRounds + 1 + k)),
+      spinRound(ceiling),
+      spinRound(ceiling + 1),
+    ]
+    const llm = new ScriptedLlm(turns)
     const pipeline = createCommandPipeline({
       llm,
       tts: new RecordingTts(),
       clock: new FakeClock(),
-      tools: [spinner],
-      maxToolRounds: 2,
+      tools: [createReportRunPlanTool(), spinner],
     })
 
     const events = await collect(pipeline, 'keep going')
 
-    // The ceiling preserved its one bookkeeping round: acquisition ran
-    // once, was refused inside the ceiling's second round, and the
-    // misbehaving reserved Answer never executed a tool.
-    expect(executions).toBe(1)
-    expect(events.filter((e) => e.type === 'tool_result' && e.name === 'spin')).toHaveLength(2)
-    expect(events.find((e) => e.type === 'tool_result' && e.callId === 'c1')).toMatchObject({
+    // Rounds 1..ceiling−1 executed their acquisition; the ceiling's round
+    // was the preserved bookkeeping round — refused, never executed — and
+    // the misbehaving reserved Answer never executed a tool either.
+    expect(executions).toBe(ceiling - 1)
+    expect(events.filter((e) => e.type === 'tool_result' && e.name === 'spin')).toHaveLength(ceiling)
+    expect(events.find((e) => e.type === 'tool_result' && e.callId === `c${ceiling}`)).toMatchObject({
       ok: false,
       error: expect.stringMatching(/work budget is exhausted/),
     })
-    expect(llm.requests).toHaveLength(3)
+    expect(llm.requests).toHaveLength(ceiling + 1)
     // No raw round-limit error: the guaranteed Answer replaces it.
     expect(events.find((e) => e.type === 'error')).toBeUndefined()
     expect(events).toContainEqual({
@@ -2756,9 +2788,12 @@ describe('command pipeline', () => {
       expect(events.at(-1)).toEqual({ type: 'done', outcome: 'cancelled', at: 0 })
     })
 
-    it('records the mechanically known hard_limit cause on a round-limit failure', async () => {
+    it('records the mechanically known stop cause on a limit failure', async () => {
+      // No plan tool in the catalog: the run stays on the fallback Lookup
+      // plan and its 12-round tier budget is what stops it (#129 — the
+      // product-owned budgets are the only limits).
       const spinner = { name: 'spin', async execute() { return 'spun' } }
-      const endlessToolCalls = Array.from({ length: 5 }, (_, i) => ({
+      const endlessToolCalls = Array.from({ length: 16 }, (_, i) => ({
         kind: 'tool_calls' as const,
         calls: [{ id: `c${i}`, name: 'spin', args: {} }],
       }))
@@ -2767,12 +2802,11 @@ describe('command pipeline', () => {
         tts: new RecordingTts(),
         clock: new FakeClock(),
         tools: [spinner],
-        maxToolRounds: 1,
       })
 
       const events = await collect(pipeline, 'keep going')
 
-      expect(events.at(-1)).toEqual({ type: 'done', outcome: 'failed', finalizationCause: 'hard_limit', at: 0 })
+      expect(events.at(-1)).toEqual({ type: 'done', outcome: 'failed', finalizationCause: 'budget_exhausted', at: 0 })
     })
 
     it('carries no semantic fields on a reset-consumed run (#99)', async () => {
@@ -2786,47 +2820,6 @@ describe('command pipeline', () => {
 
       expect(events.at(-1)).toEqual({ type: 'done', outcome: 'reset', at: 0 })
     })
-  })
-
-  it('re-reads getMaxToolRounds for each command', async () => {
-    let executions = 0
-    const spinner = {
-      name: 'spin',
-      async execute() {
-        executions += 1
-        return 'spun'
-      },
-    }
-    // Each command runs tool rounds up to its ceiling, then the reserved
-    // Answer round (a final tool request) ends the run deterministically:
-    // 2 + 1 scripted turns for the first command, 3 + 1 for the second.
-    const endlessToolCalls = Array.from({ length: 7 }, (_, i) => ({
-      kind: 'tool_calls' as const,
-      calls: [{ id: `c${i}`, name: 'spin', args: {} }],
-    }))
-    const llm = new ScriptedLlm(endlessToolCalls)
-    let currentLimit = 2
-    const pipeline = createCommandPipeline({
-      llm,
-      tts: new RecordingTts(),
-      clock: new FakeClock(),
-      tools: [spinner],
-      maxToolRounds: 1,
-      getMaxToolRounds: () => currentLimit,
-    })
-
-    const firstEvents = await collect(pipeline, 'first command')
-    currentLimit = 3
-    const secondEvents = await collect(pipeline, 'second command')
-
-    // Two executed rounds then a refused reserved round for the first
-    // command; three and a refusal for the second — the ceiling is live
-    // per command, and the deterministic Answer closes each run.
-    expect(firstEvents.filter((e) => e.type === 'tool_result' && e.ok)).toHaveLength(2)
-    expect(secondEvents.filter((e) => e.type === 'tool_result' && e.ok)).toHaveLength(3)
-    expect(executions).toBe(5)
-    expect(firstEvents.at(-1)).toMatchObject({ type: 'done', outcome: 'failed', finalizationCause: 'hard_limit' })
-    expect(secondEvents.at(-1)).toMatchObject({ type: 'done', outcome: 'failed', finalizationCause: 'hard_limit' })
   })
 
   it('appends an advisory nudge when a vision tool misses its deadline', async () => {

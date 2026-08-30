@@ -43,7 +43,6 @@ export interface SubagentWorkhorseDeps {
   controllerFor?(agentId: string): BrowserController | null
   backgroundTools?: Tool[]
   clock?: Clock
-  maxToolRounds?: number
   onUsage?(record: UsageRecord): void
   vision?: VisionDescriber
   /**
@@ -120,12 +119,8 @@ export function createSubagentTaskApi(deps: SubagentWorkhorseDeps): SubagentTask
           ...(deps.clock ? { clock: deps.clock } : {}),
           // Per-kind leash (#120/AC2): browse workers run on the coded
           // 12-round ceiling; background kinds keep the runner's roomier
-          // historical default. An explicit dep overrides both (tests).
-          ...(deps.maxToolRounds !== undefined
-            ? { maxToolRounds: deps.maxToolRounds }
-            : spec.kind === 'browse'
-              ? { maxToolRounds: SUBAGENT_LIMITS.maxToolRoundsPerTask }
-              : {}),
+          // historical default. Product-owned (#129) — no override seam.
+          ...(spec.kind === 'browse' ? { maxToolRounds: SUBAGENT_LIMITS.maxToolRoundsPerTask } : {}),
           // The host this agent's own tab is on — the same-wall Blocker
           // gate (#81) classifies non-navigate browser calls by it, the
           // same seam the orchestrator uses for its main pane.

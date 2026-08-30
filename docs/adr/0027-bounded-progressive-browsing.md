@@ -68,6 +68,12 @@ mechanics and encourage redundant reads, clicks, screenshots, and vision calls.
 - The user-facing maximum-round setting is removed; product defaults are tuned
   through evaluation rather than allowing configurations that re-enable
   unbounded Runs.
+- After release acceptance (#128), the legacy surfaces — the `report_headline`
+  tool's remaining compatibility path and the maximum-round setting with its
+  dynamic limit wiring — were removed outright (#129). There is no feature
+  flag and no old/new behavior branch: production runs exactly one browsing
+  behavior, and rollback is reverting the release commit in version control,
+  never a runtime switch.
 - Independent calls may share one model round, but browser actions that depend
   on resulting refs or state remain sequential. Run Headline updates ride
   useful work and never consume a standalone round.

@@ -20,10 +20,6 @@ export const ENDPOINT_DELAY_MS_DEFAULT = 900
 export const RESUMPTION_MERGE_MS_MIN = 0
 export const RESUMPTION_MERGE_MS_MAX = 3_000
 export const RESUMPTION_MERGE_MS_DEFAULT = 1_500
-/** Orchestrator tool-round ceiling — a runaway rail, not a budget. */
-export const MAX_TOOL_ROUNDS_MIN = 10
-export const MAX_TOOL_ROUNDS_MAX = 200
-export const MAX_TOOL_ROUNDS_DEFAULT = 80
 /** Web-zoom slider bounds (#53): readable-from-the-couch page zoom. */
 export const WEB_ZOOM_PERCENT_MIN = 75
 export const WEB_ZOOM_PERCENT_MAX = 200
@@ -66,8 +62,6 @@ export interface AppSettings {
    * resuming inside the window rejoins the utterance. 0 disables the hold.
    */
   resumptionMergeMs: number
-  /** Orchestrator tool-round ceiling; applies to the next command, no restart. */
-  maxToolRounds: number
   /** Page zoom for the main pane and subagent panes, in percent (#53). */
   webZoomPercent: number
   /** Piper voice id; '' follows BINGBONG_PIPER_VOICE / the default voice. */
@@ -89,7 +83,6 @@ export function defaultSettings(): AppSettings {
     wakeWordThreshold: 0.5,
     endpointDelayMs: ENDPOINT_DELAY_MS_DEFAULT,
     resumptionMergeMs: RESUMPTION_MERGE_MS_DEFAULT,
-    maxToolRounds: MAX_TOOL_ROUNDS_DEFAULT,
     webZoomPercent: WEB_ZOOM_PERCENT_DEFAULT,
     ttsVoice: '',
     sttModel: 'small',
@@ -125,11 +118,6 @@ function asEndpointDelay(value: unknown, fallback: number): number {
 function asResumptionMerge(value: unknown, fallback: number): number {
   if (typeof value !== 'number' || Number.isNaN(value)) return fallback
   return Math.min(RESUMPTION_MERGE_MS_MAX, Math.max(RESUMPTION_MERGE_MS_MIN, Math.round(value)))
-}
-
-function asMaxToolRounds(value: unknown, fallback: number): number {
-  if (typeof value !== 'number' || Number.isNaN(value)) return fallback
-  return Math.min(MAX_TOOL_ROUNDS_MAX, Math.max(MAX_TOOL_ROUNDS_MIN, Math.round(value)))
 }
 
 function asWebZoomPercent(value: unknown, fallback: number): number {
@@ -175,7 +163,6 @@ export function sanitizeSettings(raw: unknown): AppSettings {
     wakeWordThreshold: asThreshold(record.wakeWordThreshold, defaults.wakeWordThreshold),
     endpointDelayMs: asEndpointDelay(record.endpointDelayMs, defaults.endpointDelayMs),
     resumptionMergeMs: asResumptionMerge(record.resumptionMergeMs, defaults.resumptionMergeMs),
-    maxToolRounds: asMaxToolRounds(record.maxToolRounds, defaults.maxToolRounds),
     webZoomPercent: asWebZoomPercent(record.webZoomPercent, defaults.webZoomPercent),
     ttsVoice: asString(record.ttsVoice, defaults.ttsVoice),
     sttModel: asSttModel(record.sttModel),

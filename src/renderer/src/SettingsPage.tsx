@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { AppSettings, RoleRoutingSettings } from '../../core/settings/settings'
 import type { AgentRole } from '../../core/agent/modelRouting'
-import { ENDPOINT_DELAY_MS_MAX, ENDPOINT_DELAY_MS_MIN, MAX_TOOL_ROUNDS_MAX, MAX_TOOL_ROUNDS_MIN, RESUMPTION_MERGE_MS_MAX, RESUMPTION_MERGE_MS_MIN, WEB_ZOOM_PERCENT_MAX, WEB_ZOOM_PERCENT_MIN, WAKE_WORD_THRESHOLD_MAX, WAKE_WORD_THRESHOLD_MIN, asAppearance, asSttModel } from '../../core/settings/settings'
+import { ENDPOINT_DELAY_MS_MAX, ENDPOINT_DELAY_MS_MIN, RESUMPTION_MERGE_MS_MAX, RESUMPTION_MERGE_MS_MIN, WEB_ZOOM_PERCENT_MAX, WEB_ZOOM_PERCENT_MIN, WAKE_WORD_THRESHOLD_MAX, WAKE_WORD_THRESHOLD_MIN, asAppearance, asSttModel } from '../../core/settings/settings'
 import type { UsageSummary } from '../../core/agent/spendEstimate'
 import { DEFAULT_PIPER_VOICE } from '../../core/tts/piperVoices'
 import { useRoutingStatus } from './useSettings'
@@ -426,25 +426,6 @@ export function SettingsPage({
               )}
             </select>
           </Field>
-        </section>
-
-        <section className="settings-section">
-          <h2>Agent</h2>
-          <Field label={`Max tool rounds — ${draft.maxToolRounds}`}>
-            <input
-              type="range"
-              min={MAX_TOOL_ROUNDS_MIN}
-              max={MAX_TOOL_ROUNDS_MAX}
-              step={10}
-              value={draft.maxToolRounds}
-              aria-label="Max tool rounds"
-              onChange={(event) => setDraft({ ...draft, maxToolRounds: Number(event.target.value) })}
-            />
-          </Field>
-          <p className="settings-note">
-            How many tool rounds the assistant may chain per command — raise this if long browsing
-            tasks hit the round limit. Applies to the next command, no restart.
-          </p>
         </section>
 
         <section className="settings-section">
