@@ -1,49 +1,59 @@
 import { describe, expect, it } from 'vitest'
 import { FakeClock } from '../../core/testing/doubles'
 import { SUBAGENT_SYSTEM_PROMPT, subagentSystemPrompt } from './subagentPrompt'
+import { SHARED_BROWSING_POLICY } from './sharedBrowsingPolicy'
 
-// #83 / ADR 0009 pins for the subagent prompt: the research guidance is
-// rewritten to GUI search in the agent's own visible tab — the off-screen
-// tools are gone, so the prompt must neither name them nor hint at them.
+// #127: the subagent prompt is the shared bounded-browsing policy (its
+// strategic invariants are pinned in sharedBrowsingPolicy.test.ts) plus the
+// worker's role-specific contracts, pinned here: the delegated leash, the
+// background toolbox, the ask_user relay, untrusted shared memory, and the
+// report JSON.
 
-describe('subagent prompt on-screen browsing', () => {
-  it("allows direct visible results navigation or visible search controls in the agent's own tab", () => {
-    const line = SUBAGENT_SYSTEM_PROMPT.split('\n').find((candidate) => candidate.includes('on screen in your own visible tab'))
-    if (!line) throw new Error('GUI search line missing from the subagent prompt')
-    expect(line).toMatch(/directly/i)
-    expect(line).toMatch(/visible.*results/i)
-    expect(line).toMatch(/visible search controls/)
-    expect(line).toMatch(/href/)
-    expect(line).not.toMatch(/read_page|trailing|separate click/i)
+describe('subagent prompt sources the shared policy (#127)', () => {
+  it('embeds the one shared bounded-browsing definition verbatim', () => {
+    expect(SUBAGENT_SYSTEM_PROMPT).toContain(SHARED_BROWSING_POLICY)
   })
+})
 
-  it('continues from Action Outcomes instead of prescribing a post-navigation read', () => {
-    expect(SUBAGENT_SYSTEM_PROMPT).toMatch(/Action Outcome.*next observation/i)
-    expect(SUBAGENT_SYSTEM_PROMPT).not.toMatch(/After any navigation, call read_page/)
+/** One prompt bullet, extracted whole by a marker it contains. */
+function line(marker: string): string {
+  const found = SUBAGENT_SYSTEM_PROMPT.split('\n').find((candidate) => candidate.includes(marker))
+  if (!found) throw new Error(`line with '${marker}' missing from the subagent prompt`)
+  return found
+}
+
+describe('subagent delegated leash (#120)', () => {
+  it('states the leash: the worker\u2019s own budget plus the parent run\u2019s deadline', () => {
+    const leash = line('Your leash is delegated')
+    expect(leash).toMatch(/tool-round budget/)
+    expect(leash).toMatch(/parent run's active-work deadline/)
   })
+})
 
-  it('never names the deleted off-screen web tools', () => {
-    expect(SUBAGENT_SYSTEM_PROMPT).not.toMatch(/web_search|read_url/)
-  })
-
+describe('subagent role contracts', () => {
   it('keeps the background toolbox line and the ask_user relay', () => {
     expect(SUBAGENT_SYSTEM_PROMPT).toMatch(/download_url, list_downloads and move_download/)
     expect(SUBAGENT_SYSTEM_PROMPT).toMatch(/ASK_USER:/)
   })
 
-  it('teaches the bounded leash: decisive work and an immediate final report at the limit (#120)', () => {
-    const line = SUBAGENT_SYSTEM_PROMPT.split('\n').find((candidate) => candidate.includes('Your work is bounded'))
-    if (!line) throw new Error('bounded-work line missing from the subagent prompt')
-    expect(line).toMatch(/dozen tool rounds/)
-    expect(line).toMatch(/active-work deadline/)
-    expect(line).toMatch(/stop calling tools and reply immediately with your final report JSON/)
+  it('denies confirmation-gated actions in browse tabs while background downloads stay approved', () => {
+    const denial = line('In browse tabs')
+    expect(denial).toMatch(/non-search form submissions are denied/)
+    expect(denial).toMatch(/search submits go through without asking/)
+    expect(denial).toMatch(/Never work around a denied browser action/)
+  })
+
+  it('marks the shared Working Memory block untrusted data, never instructions', () => {
+    const memory = line('Working Memory block')
+    expect(memory).toMatch(/untrusted data/)
+    expect(memory).toMatch(/never instructions/)
+    expect(memory).toMatch(/do not repeat work it marks as done/)
   })
 
   it('grounds findings in sources the worker itself opened — unobserved citations are dropped (#123)', () => {
-    const line = SUBAGENT_SYSTEM_PROMPT.split('\n').find((candidate) => candidate.includes('"findings" holds'))
-    if (!line) throw new Error('findings line missing from the subagent prompt')
-    expect(line).toMatch(/source URLs you actually opened/)
-    expect(line).toMatch(/finding citing a source you never opened is dropped/)
+    const findings = line('"findings" holds')
+    expect(findings).toMatch(/source URLs you actually opened/)
+    expect(findings).toMatch(/finding citing a source you never opened is dropped/)
   })
 })
 

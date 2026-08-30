@@ -204,7 +204,7 @@ export function createBrowserTools(browser: BrowserController, vision?: VisionDe
       name: 'click',
       acquisition: true,
       description:
-        'Click a ref, then return the URL-change flag, dialog-open flag, clicked state delta, and any coarse page change. When the click meaningfully changes the page (navigation, dialog, state change), the settled page state with fresh refs follows; an inert click returns only the concise no-change line.',
+        'Click a ref, then return the URL-change flag, dialog-open flag, clicked state delta, and any coarse page change. When the click meaningfully changes the page (navigation, dialog, state change), the settled page state with fresh refs follows; an inert click returns only the concise no-change line. A "blocked by overlay" result means something (usually a dialog) covers the target: read the page, handle the dialog, then retry.',
       parameters: {
         ref: { type: 'integer', description: 'Element ref number from the snapshot, e.g. 7 for the element shown as [7]' },
       },

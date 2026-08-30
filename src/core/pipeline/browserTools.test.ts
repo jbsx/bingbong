@@ -241,6 +241,10 @@ describe('browser tools through the pipeline', () => {
     expect(descriptions.read_page).toMatch(/text digest/i)
     expect(descriptions.click).toMatch(/URL-change.*dialog.*state delta/i)
     expect(descriptions.click).toMatch(/settled page state/i)
+    // The overlay retry sequence lives here, not in the shared prompt
+    // policy (#127/AC2): mechanical call sequences are tool-description
+    // guidance.
+    expect(descriptions.click).toMatch(/blocked by overlay.*read the page, handle the dialog, then retry/i)
     expect(descriptions.type).toMatch(/actual.*value/i)
     expect(descriptions.type).toMatch(/settled page state/i)
     expect(descriptions.type).toMatch(/focus/i)
