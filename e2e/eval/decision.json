@@ -1,20 +1,79 @@
 {
-  "decidedAt": "2026-08-30T16:16:32.284Z",
+  "decidedAt": "2026-08-30T16:23:23.822Z",
   "decision": "reject",
   "baseline": {
     "captures": [
       {
         "commit": "2343a3cf56deb57e745cec357e446e0255e58098",
-        "capturedAt": "2026-08-30T10:37:45.425Z"
+        "capturedAt": "2026-08-30T10:37:45.425Z",
+        "orchestratorModel": "GLM-5.3-flash",
+        "orchestratorRequests": 156
       },
       {
         "commit": "2343a3cf56deb57e745cec357e446e0255e58098",
-        "capturedAt": "2026-08-30T14:50:49.840Z"
+        "capturedAt": "2026-08-30T14:50:49.840Z",
+        "orchestratorModel": "GLM-5.3-flash",
+        "orchestratorRequests": 162
       },
       {
         "commit": "2343a3cf56deb57e745cec357e446e0255e58098",
-        "capturedAt": "2026-08-30T15:07:21.266Z"
+        "capturedAt": "2026-08-30T15:07:21.266Z",
+        "orchestratorModel": "GLM-5.3-flash",
+        "orchestratorRequests": 167
       }
+    ],
+    "routing": {
+      "orchestrator": {
+        "configured": true,
+        "baseUrl": "https://api.z.ai/api/coding/paas/v4",
+        "model": "GLM-5.3-flash",
+        "keyFingerprint": "sha256:496fb3dd2227"
+      },
+      "subagent": {
+        "configured": true,
+        "baseUrl": "https://api.z.ai/api/coding/paas/v4",
+        "model": "GLM-5.3-flash",
+        "keyFingerprint": "sha256:496fb3dd2227"
+      },
+      "vision": {
+        "configured": true,
+        "baseUrl": "https://api.z.ai/api/coding/paas/v4",
+        "model": "GLM-4.6V",
+        "keyFingerprint": "sha256:496fb3dd2227"
+      }
+    },
+    "scenarioIds": [
+      "direct-action-open-page",
+      "direct-action-open-article",
+      "direct-action-open-alt-host",
+      "direct-action-open-results",
+      "direct-action-click-button",
+      "direct-action-check-checkbox",
+      "direct-action-click-link",
+      "direct-action-type-submit",
+      "direct-action-dismiss-dialog",
+      "direct-action-scroll-down",
+      "direct-action-media-pause",
+      "unanswered-earlier-bulletin",
+      "lookup-widgets-guide",
+      "lookup-open-web-answer",
+      "lookup-open-web-review",
+      "lookup-known-page-weight",
+      "lookup-known-page-care",
+      "lookup-depot-bulletin",
+      "candidate-polished-widgets",
+      "candidate-vintage-synonym",
+      "candidate-anodized-synonym",
+      "candidate-search-polished",
+      "investigation-material-finish",
+      "contradiction-widget-weight",
+      "subagent-widget-facts",
+      "steering-correct-objective",
+      "cancelled-warranty-reuse",
+      "stale-status-board",
+      "near-identical-depot-bulletins",
+      "blocker-challenge-page",
+      "unresolvable-mercury-dampeners"
     ],
     "pooledLlmRounds": {
       "median": 5,
@@ -26,16 +85,75 @@
     "captures": [
       {
         "commit": "1235913d900a1b7c4b611b1790c70c48abe235cf",
-        "capturedAt": "2026-08-30T15:25:21.075Z"
+        "capturedAt": "2026-08-30T15:25:21.075Z",
+        "orchestratorModel": "GLM-5.3-flash",
+        "orchestratorRequests": 119
       },
       {
         "commit": "1235913d900a1b7c4b611b1790c70c48abe235cf",
-        "capturedAt": "2026-08-30T15:43:20.257Z"
+        "capturedAt": "2026-08-30T15:43:20.257Z",
+        "orchestratorModel": "GLM-5.3-flash",
+        "orchestratorRequests": 131
       },
       {
         "commit": "1235913d900a1b7c4b611b1790c70c48abe235cf",
-        "capturedAt": "2026-08-30T15:57:10.580Z"
+        "capturedAt": "2026-08-30T15:57:10.580Z",
+        "orchestratorModel": "GLM-5.3-flash",
+        "orchestratorRequests": 110
       }
+    ],
+    "routing": {
+      "orchestrator": {
+        "configured": true,
+        "baseUrl": "https://api.z.ai/api/coding/paas/v4",
+        "model": "GLM-5.3-flash",
+        "keyFingerprint": "sha256:496fb3dd2227"
+      },
+      "subagent": {
+        "configured": true,
+        "baseUrl": "https://api.z.ai/api/coding/paas/v4",
+        "model": "GLM-5.3-flash",
+        "keyFingerprint": "sha256:496fb3dd2227"
+      },
+      "vision": {
+        "configured": true,
+        "baseUrl": "https://api.z.ai/api/coding/paas/v4",
+        "model": "GLM-4.6V",
+        "keyFingerprint": "sha256:496fb3dd2227"
+      }
+    },
+    "scenarioIds": [
+      "direct-action-open-page",
+      "direct-action-open-article",
+      "direct-action-open-alt-host",
+      "direct-action-open-results",
+      "direct-action-click-button",
+      "direct-action-check-checkbox",
+      "direct-action-click-link",
+      "direct-action-type-submit",
+      "direct-action-dismiss-dialog",
+      "direct-action-scroll-down",
+      "direct-action-media-pause",
+      "unanswered-earlier-bulletin",
+      "lookup-widgets-guide",
+      "lookup-open-web-answer",
+      "lookup-open-web-review",
+      "lookup-known-page-weight",
+      "lookup-known-page-care",
+      "lookup-depot-bulletin",
+      "candidate-polished-widgets",
+      "candidate-vintage-synonym",
+      "candidate-anodized-synonym",
+      "candidate-search-polished",
+      "investigation-material-finish",
+      "contradiction-widget-weight",
+      "subagent-widget-facts",
+      "steering-correct-objective",
+      "cancelled-warranty-reuse",
+      "stale-status-board",
+      "near-identical-depot-bulletins",
+      "blocker-challenge-page",
+      "unresolvable-mercury-dampeners"
     ],
     "pooledLlmRounds": {
       "median": 3,

@@ -5,20 +5,23 @@ import type { EvalReport, ScenarioResult } from './evaluator'
 // decision judges POOLS of real-model captures — three complete passes per
 // side — never a single pass: on the #130 production-weighted corpus a
 // single-pass p95 is noise-dominated on both sides (the frozen old-path
-// capture happened to record p95 8 while sibling passes ranged 16–20), so
-// a one-vs-one comparison rejects a structurally bounded candidate against
-// a lucky baseline. Each pool is validated for provenance before it can
-// produce a decision: one source commit per side, identical scenario ids
-// in identical order, one model/routing contract, and the real-model
-// witness on every capture. The old-path pool stays pinned to the pre-#114
-// tree (git 2343a3c, captured via worktree + eval overlay); the candidate
-// pool must all represent one candidate commit.
+// capture never exceeded 9 rounds while its sibling passes' lookups and
+// clicks ran 12–20), so a one-vs-one comparison rejects a structurally
+// bounded candidate against a lucky baseline. Each pool is validated for
+// provenance before it can produce a decision: one source commit per side
+// (the baseline side pinned to the pre-#114 tree, git 2343a3c, captured
+// via worktree + eval overlay), identical scenario ids in identical order,
+// one model/routing contract, and the real-model witness on every
+// capture; the candidate pool must all represent one candidate commit.
 //
 // Pooled statistics are computed from the raw per-scenario round counts —
 // nearest-rank over the pooled scenario population (93 observations at
 // corpus weight), never an average of pass-level percentiles. Everything
 // else #108 gates stays as amended by #128: p95 must halve against the
-// pooled baseline, the median must not regress.
+// pooled baseline, the median must not regress. Every candidate-side gate
+// judges the pooled population too — there is no single candidate report
+// to fall back on, and per-pass judgement would reintroduce the
+// single-pass noise the pools exist to absorb.
 //
 // Gates judge recorded data only; nothing here spends model budget. The
 // mandatory safety/Session regressions run separately (`pnpm test:e2e`)
@@ -73,6 +76,13 @@ export const P95_LLM_ROUNDS_MAX_FRACTION_OF_BASELINE = 0.5
 export const POOL_SIZE = 3
 
 /**
+ * The old path the baseline pool is pinned to (#130's re-baseline tree).
+ * A baseline pool captured from any other commit cannot produce a
+ * decision — the comparison is against this path by definition.
+ */
+export const BASELINE_PINNED_COMMIT = '2343a3cf56deb57e745cec357e446e0255e58098'
+
+/**
  * The Lookup-tier class: open-web Lookups and ambiguous-Candidate
  * identification. #108's completion standard for Lookups explicitly
  * includes "a clearly supported best Candidate", and both run as
@@ -102,16 +112,18 @@ export interface GateResult {
 
 export interface RefusalViolation {
   /** The capture within the candidate pool (1-based pass number). */
-  capture: number
+  pass: number
   scenarioId: string
   /** The repeated action as name+args, the key the refusal was recorded under. */
   action: string
 }
 
-/** One contributing capture's identity — what the decision artifact witnesses. */
+/** One contributing capture's identity and model witness — what the decision artifact records. */
 export interface CaptureProvenance {
   commit: string
   capturedAt: string
+  orchestratorModel: string
+  orchestratorRequests: number
 }
 
 export interface PooledRoundsStats {
@@ -122,6 +134,8 @@ export interface PooledRoundsStats {
 /** One side's validated pool: three captures of one commit, corpus, and routing contract. */
 export interface CapturePool {
   captures: CaptureProvenance[]
+  /** The one model/routing contract every capture on this side shared. */
+  routing: EvalReport['routing']
   /** The pooled scenario population — every scenario from every capture, in pass order. */
   scenarios: ScenarioResult[]
   /** One capture's scenario ids, in order — the corpus signature both sides must share. */
@@ -130,9 +144,13 @@ export interface CapturePool {
   pooledRounds: PooledRoundsStats
 }
 
-/** The per-side summary the decision artifact records. */
+/** The per-side summary the decision artifact records — everything validation judged. */
 export interface PoolWitness {
   captures: CaptureProvenance[]
+  /** The one model/routing contract every capture on this side shared. */
+  routing: EvalReport['routing']
+  /** The corpus signature — one capture's scenario ids, in order. */
+  scenarioIds: string[]
   pooledLlmRounds: PooledRoundsStats
   /** The pooled scenario population the statistics judged (93 at corpus weight). */
   scenarioObservations: number
@@ -157,7 +175,13 @@ function lookupAcceptable(scenario: ScenarioResult): boolean {
   return scenario.success || (scenario.metrics.outcome === 'done' && scenario.metrics.resolution === 'partial')
 }
 
-/** Key-order-independent deep equality witness — routing contracts must match exactly, not textually. */
+/**
+ * Key-order-independent deep equality witness — routing contracts must
+ * match exactly, not textually. Mirrors progressFingerprints'
+ * stableStringify deliberately rather than importing it: that module
+ * rides the pipeline's runtime import graph, which the node-run
+ * eval:accept script must not drag behind it (#36 type stripping).
+ */
 function canonicalJson(value: unknown): string {
   if (value === null || typeof value !== 'object') return JSON.stringify(value) ?? 'null'
   if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`
@@ -241,7 +265,13 @@ export function buildPool(role: string, reports: readonly EvalReport[]): Capture
   const scenarios = reports.flatMap((report) => report.scenarios)
   const sortedRounds = [...scenarios.map((scenario) => scenario.metrics.llmRounds)].sort((left, right) => left - right)
   return {
-    captures: reports.map((report) => ({ commit: report.gitCommit, capturedAt: report.capturedAt })),
+    captures: reports.map((report) => ({
+      commit: report.gitCommit,
+      capturedAt: report.capturedAt,
+      orchestratorModel: report.modelWitness.orchestratorModel!,
+      orchestratorRequests: report.modelWitness.orchestratorRequests,
+    })),
+    routing: reports[0]!.routing,
     scenarios,
     scenarioIds: referenceIds,
     pooledRounds: {
@@ -260,7 +290,7 @@ export function buildPool(role: string, reports: readonly EvalReport[]): Capture
  */
 export function refusalViolations(pool: readonly EvalReport[]): RefusalViolation[] {
   const violations: RefusalViolation[] = []
-  pool.forEach((report, captureIndex) => {
+  pool.forEach((report, passIndex) => {
     for (const scenario of report.scenarios) {
       const refusedKeys = new Set<string>()
       // Artifacts predate fields (the frozen baseline's actions carry no
@@ -273,7 +303,7 @@ export function refusalViolations(pool: readonly EvalReport[]): RefusalViolation
         if (!action.ok && isRuntimeRefusal(action.error)) refusedKeys.add(key)
         else if (action.ok && refusedKeys.has(key)) {
           refusedKeys.delete(key)
-          violations.push({ capture: captureIndex + 1, scenarioId: scenario.id, action: key })
+          violations.push({ pass: passIndex + 1, scenarioId: scenario.id, action: key })
         }
       }
     }
@@ -313,6 +343,11 @@ export function decideRelease(
 ): ReleaseDecision {
   const candidate = buildPool('candidate', candidateReports)
   const baseline = buildPool('baseline', baselineReports)
+  if (baseline.captures[0]!.commit !== BASELINE_PINNED_COMMIT) {
+    throw new Error(
+      `baseline pool must be pinned to ${shortCommit(BASELINE_PINNED_COMMIT)} (found ${shortCommit(baseline.captures[0]!.commit)}) — capture the old path from the pinned worktree`,
+    )
+  }
   if (candidate.scenarioIds.join('\n') !== baseline.scenarioIds.join('\n')) {
     throw new Error('candidate and baseline pools cover different corpora — the comparison needs the same scenarios in the same order')
   }
@@ -348,7 +383,7 @@ export function decideRelease(
       detail:
         violations.length === 0
           ? 'no action executed after a runtime refusal of the same action'
-          : violations.map((violation) => `pass ${violation.capture} ${violation.scenarioId}: ${violation.action}`).join('; '),
+          : violations.map((violation) => `pass ${violation.pass} ${violation.scenarioId}: ${violation.action}`).join('; '),
     },
     {
       gate: 'mandatory-regressions',
@@ -359,6 +394,8 @@ export function decideRelease(
 
   const witnessOf = (pool: CapturePool): PoolWitness => ({
     captures: pool.captures,
+    routing: pool.routing,
+    scenarioIds: pool.scenarioIds,
     pooledLlmRounds: pool.pooledRounds,
     scenarioObservations: pool.scenarios.length,
   })

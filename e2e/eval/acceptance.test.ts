@@ -13,7 +13,7 @@ import { evalScenarios, type EvalScenario } from './scenarios'
 // executes again; the regressions input is a gate, not a footnote).
 
 /** The pinned pre-#114 old path (#130): every baseline capture's commit. */
-const OLD_COMMIT = `2343a3c${'f'.repeat(33)}`
+const OLD_COMMIT = '2343a3cf56deb57e745cec357e446e0255e58098'
 const CANDIDATE_COMMIT = 'c'.repeat(40)
 
 function metrics(overrides: Partial<ScenarioMetrics> = {}): ScenarioMetrics {
@@ -221,7 +221,7 @@ describe('decideRelease over pooled captures', () => {
     expect(gateOf(decision, 'llm-rounds').detail).toContain('median 6 → 3')
   })
 
-  it('witnesses all six capture identities and the pooled statistics', () => {
+  it('witnesses all six capture identities, the shared contract, and the pooled statistics', () => {
     const decision = decide(candidatePool())
     expect(decision.baseline.captures).toHaveLength(3)
     expect(decision.candidate.captures).toHaveLength(3)
@@ -232,11 +232,22 @@ describe('decideRelease over pooled captures', () => {
       '2026-08-30T02:00:00.000Z',
       '2026-08-30T03:00:00.000Z',
     ])
+    expect(decision.candidate.captures.every((capture) => capture.orchestratorModel === 'GLM-5.3-flash')).toBe(true)
+    expect(decision.candidate.routing).toEqual(candidatePool()[0]!.routing)
+    expect(decision.candidate.scenarioIds).toEqual(CORPUS.map(({ id }) => id))
     expect(decision.candidate.scenarioObservations).toBe(93)
     expect(decision.baseline.scenarioObservations).toBe(93)
     expect(decision.candidate.pooledLlmRounds).toEqual({ median: 3, p95: 6 })
     expect(decision.baseline.pooledLlmRounds).toEqual({ median: 6, p95: 12 })
     expect(decision.canaries.status).toBe('not-run')
+  })
+
+  it('refuses a baseline pool captured from a commit other than the pinned old path', () => {
+    const unpinned = baselinePool()
+    for (const pass of unpinned) pass.gitCommit = 'e'.repeat(40)
+    expect(() => decide(candidatePool(), unpinned)).toThrow(
+      /baseline pool must be pinned to 2343a3c \(found eeeeeee\)/,
+    )
   })
 
   it('passes the rounds gate exactly at the 50% pooled-p95 fall, fails one round above it', () => {
@@ -533,6 +544,6 @@ describe('refusalViolations', () => {
       passReport(CANDIDATE_COMMIT, '2026-08-30T02:00:00.000Z', [flailing]),
     ])
     expect(violations).toHaveLength(1)
-    expect(violations[0]).toMatchObject({ capture: 2, scenarioId: 's', action: `type:${JSON.stringify({ ref: 1, text: 'x\n' })}` })
+    expect(violations[0]).toMatchObject({ pass: 2, scenarioId: 's', action: `type:${JSON.stringify({ ref: 1, text: 'x\n' })}` })
   })
 })

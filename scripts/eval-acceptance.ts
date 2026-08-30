@@ -51,6 +51,9 @@ function readPoolDir(dir: string, role: string): EvalReport[] {
       throw new Error(`${role} capture is not JSON at ${path}: ${String(error)}`)
     }
     const report = parsed as EvalReport
+    // Finality is re-checked here (with the file path) even though
+    // buildPool owns the invariant — the script's copy names the artifact
+    // on disk, the pool's copy names the capture index; keep both in sync.
     if (!Array.isArray(report.scenarios) || report.scenarios.length === 0 || report.aggregate === undefined) {
       throw new Error(`${role} capture at ${path} carries no finalized scenarios — capture it to completion before deciding`)
     }
