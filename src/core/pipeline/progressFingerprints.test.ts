@@ -131,6 +131,15 @@ describe('urlFingerprint source identity (#125 AC3: alternate representations ar
     expect(urlFingerprint('https://mirror.example.org/a').source).not.toBe(urlFingerprint('https://example.com/a').source)
   })
 
+  it('states the restored Mirror rule whole: first-party representations one source, a third-party mirror distinct (#140, ADR 0009)', () => {
+    const original = urlFingerprint('https://example.com/news/keyboard-guide')
+    // First-party alternate representations of the page are the same source…
+    expect(urlFingerprint('https://example.com/news/keyboard-guide.json').source).toBe(original.source)
+    expect(urlFingerprint('https://example.com/news/keyboard-guide?print=1').source).toBe(original.source)
+    // …while a third-party mirror of the same material is a distinct source.
+    expect(urlFingerprint('https://mirror.example.org/news/keyboard-guide').source).not.toBe(original.source)
+  })
+
   it('keeps different articles and paginated views of one listing distinct sources of content', () => {
     expect(urlFingerprint('https://example.com/news/a').source).not.toBe(urlFingerprint('https://example.com/news/b').source)
     expect(urlFingerprint('https://example.com/list?page=2').source).not.toBe(urlFingerprint('https://example.com/list?page=3').source)

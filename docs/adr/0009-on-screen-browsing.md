@@ -29,6 +29,10 @@ design ("research: web_search + read_url, no tab").
   when rendered in the tab. They may support a concrete accessibility or
   extraction need, but never bypass authentication, access controls, paywalls,
   or challenges; the ordinary human page remains preferred.
+- A third-party mirror is a distinct visible source and may be visited like any
+  other site, including when the original host is blocked. No mirror-specific
+  policy applies: the ordinary Blocker, risk, repetition, and no-progress rules
+  govern it. A Blocker on the original host does not extend to the mirror host.
 - Subagent kinds collapse from three (research/browse/background) to two
   (browse/background): "research" was a tooling distinction (off-screen
   fetch) and dies with the fetcher.
@@ -49,3 +53,6 @@ design ("research: web_search + read_url, no tab").
   observable GUI signature: similar text typed into a search box, or a
   navigate to a search URL carrying a `q=` param, counts as one search
   observation.
+- First-party alternate representations remain the same source for Progress
+  and corroboration; a third-party mirror is a distinct source whose content
+  may still require corroboration on its merits.

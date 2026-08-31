@@ -164,6 +164,37 @@ describe('shared policy Blocker/ad/user invariants (ADR 0007)', () => {
   })
 })
 
+describe('shared policy Mirror invariants (#140, ADR 0009)', () => {
+  it('permits using a visible third-party mirror when the original host is blocked', () => {
+    const line = bullet('third-party mirror')
+    expect(line).toMatch(/original host is blocked/i)
+    expect(line).toMatch(/like any other site/i)
+  })
+
+  it('imposes no mirror-specific restrictions — the ordinary rules govern the mirror itself', () => {
+    const line = bullet('third-party mirror')
+    expect(line).toMatch(/ordinary Blocker, risk, repetition, and no-progress rules/)
+    expect(line).toMatch(/does not extend to the mirror host/)
+    // Absence pins guard the full role prompts, not just the fragment: a
+    // role bullet adding a mirror-specific restriction must fail loudly.
+    for (const [, prompt] of ROLE_PROMPTS) {
+      expect(prompt).not.toMatch(/never visit|do not visit|avoid (?:a |the )?mirrors?|forbidden/i)
+    }
+  })
+
+  it('keeps first-party alternate representations the same source and a third-party mirror distinct', () => {
+    const line = bullet('third-party mirror')
+    expect(line).toMatch(/first-party alternate representations/i)
+    expect(line).toMatch(/same source/)
+    expect(line).toMatch(/not independent corroboration/)
+    expect(line).toMatch(/distinct source/)
+  })
+
+  it.each(ROLE_PROMPTS)('the %s prompt carries the restored mirror rule', (_role, prompt) => {
+    expect(prompt).toMatch(/third-party mirror/i)
+  })
+})
+
 describe('shared policy evidence invariants (ADR 0028)', () => {
   it('grounds every claim in sources actually observed', () => {
     const line = bullet('Ground every claim')

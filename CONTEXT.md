@@ -454,6 +454,13 @@ _Avoid_: tool result, success flag
 Every web read and write happens in a rendered, visible tab. Off-screen fetching of web content does not exist.
 _Avoid_: background fetch, scraping, headless lookup
 
+**Mirror**:
+A third-party site that visibly renders material originating elsewhere. It is
+an ordinary accessible source even when the original host is blocked, and a
+distinct source from the original; a first-party alternate representation of a
+page is the same source, not a Mirror.
+_Avoid_: proxy, cache, clone
+
 **Consent Dialog**:
 A cookie/consent wall auto-dismissed on read, privacy-preferring controls
 first.

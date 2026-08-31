@@ -92,6 +92,24 @@ describe('createBlockerGate', () => {
     expect(gate.gate(navigate('https://old.reddit.com/other'))).toEqual({ ok: true })
   })
 
+  it('passes a navigate to a third-party mirror host while the original host is walled (#140, ADR 0009)', () => {
+    const gate = createBlockerGate(() => 'www.reddit.com')
+    gate.observe(navigate('https://www.reddit.com/search'), ok(WALLED_RESULT))
+    // A Blocker arms on one host only: the mirror is a different host and an
+    // ordinary distinct source — the gate never extends the wall to it.
+    expect(gate.gate(navigate('https://mirror.example.net/same-material'))).toEqual({ ok: true })
+  })
+
+  it('arms ordinarily on a walled mirror host — no mirror exemption from the Blocker rules (#140)', () => {
+    const gate = createBlockerGate()
+    const walledMirror = 'title: Just a moment\nBLOCKER:challenge mirror.example.net\nThis page is a Blocker — a challenge wall.'
+    gate.observe(navigate('https://mirror.example.net/same-material'), ok(walledMirror))
+    // The mirror is judged like any other site: its own wall arms the gate
+    // against the mirror host, exactly as it would for the original.
+    expect(gate.gate(navigate('https://mirror.example.net/other-material')).ok).toBe(false)
+    expect(gate.gate(navigate('https://www.reddit.com/search'))).toEqual({ ok: true })
+  })
+
   it('disarms after a successful interaction with a different host', () => {
     const gate = createBlockerGate(() => 'www.reddit.com')
     gate.observe(navigate('https://www.reddit.com/search'), ok(WALLED_RESULT))
