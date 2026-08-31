@@ -48,6 +48,18 @@ mechanics and encourage redundant reads, clicks, screenshots, and vision calls.
 - User-dependent waits pause active-work time. Steering creates a fresh Run Plan
   and tier budget for the corrected objective while retaining telemetry and
   Session Evidence; repeated Steering remains subject to the hard ceiling.
+- The active-work deadline is a cancellation boundary, not a value polled only
+  between rounds (#135). Expiry aborts the in-flight acquisition model request
+  through its abort signal and enters Finalization as `deadline_reached` without
+  surfacing a provider, abort, or round-limit error; no acquisition action that
+  has not started may begin afterwards, while an already-executing
+  non-interruptible browser action settles once and is never followed by a
+  sibling. An in-flight request remains active work while it is live: a Pause
+  that lands mid-round suspends deadline consumption only from the next parked
+  checkpoint, so the deadline may abort the round during the pause. A tier
+  escalation or Steering replan cancels the old deadline and arms the complete
+  fresh epoch deadline; Finalization's own rounds — bookkeeping and the reserved
+  Answer — are never deadline-aborted.
 - Completion standards depend on the tier: Direct Actions require the returned
   state to confirm the requested change; Lookups require an authoritative page
   or a supported best Candidate; Investigations require multiple independent

@@ -36,7 +36,7 @@ import {
   FINALIZATION_ANSWER_DIRECTIVE,
   finalizationToolRefusal,
   HARD_TOOL_ROUND_CEILING,
-  TIER_ACTIVE_WORK_DEADLINES_MS,
+  resolveActiveWorkDeadlineMs,
   TIER_TOOL_ROUND_BUDGETS,
   type ActiveWorkClock,
   type BudgetWarningMilestone,
@@ -82,6 +82,13 @@ export interface CommandPipelineDeps {
   confirmTimeoutMs?: number
   /** How long an ask_user window stays open (voice + typed answers). */
   askTimeoutMs?: number
+  /**
+   * Test/e2e override for every tier's active-work deadline (#135):
+   * `BINGBONG_ACTIVE_WORK_DEADLINE_MS` threaded by the assistant
+   * pipeline — time-based coverage reproduces a deadline crossing in
+   * seconds. Production never sets it; the tier table applies.
+   */
+  activeWorkDeadlineMs?: number
   /**
    * Hostname of the page the browser tab is currently on (#80, ADR 0010) —
    * what current-page browser verbs (click/type/scroll/…) target for the
@@ -371,6 +378,12 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
   const mintTurnId = createTurnIdSource(deps.tracer)
   const confirmTimeoutMs = deps.confirmTimeoutMs ?? 60_000
   const askTimeoutMs = deps.askTimeoutMs ?? ASK_TIMEOUT_MS
+  // The live per-tier active-work deadlines (#135): the tier table, or
+  // the single test/e2e override when one is wired. Every boundary —
+  // the loop-top rail, the mid-round call gate, the in-flight round
+  // abort, and the shared delegation predicate — reads this resolver,
+  // so the whole run is bounded by one value.
+  const deadlineMs = (tier: EffortTier): number => resolveActiveWorkDeadlineMs(deps.activeWorkDeadlineMs, tier)
   const toolsByName = new Map(tools.map((tool) => [tool.name, tool]))
   const pendingConfirmations = new Map<string, PendingDecision<ConfirmationDecision>>()
   const pendingAsks = new Map<string, PendingDecision<AskDecision>>()
@@ -612,6 +625,11 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
       pendingBudgetWarning = null
       run.workClock.rearm()
     }
+    // The deadline boundary's one expiry predicate (#135): the loop-top
+    // rail, the delegation predicate below, and the mid-round call gate
+    // all ask it, so every site bounds the run by the same live value —
+    // the current epoch's deadline against the work clock's spent time.
+    const deadlineExpired = (): boolean => run.workClock.spent() >= deadlineMs(epochTier)
     // The no-progress rails (#126, ADR 0027): objective repetition and
     // approach exhaustion over the #125 fingerprints, against the run's
     // settled-state source. Fresh per run, like every rail; a Steering
@@ -793,7 +811,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
           // a tier escalation re-arm reaches them without a respawn.
           effortTier: () => epochTier,
           delegationDeadline: {
-            expired: () => run.workClock.spent() >= TIER_ACTIVE_WORK_DEADLINES_MS[epochTier],
+            expired: deadlineExpired,
           },
           // Delegation's memory selection (#98): spawn_agent resolves
           // memory_ids against this Run's immutable snapshot — the same one
@@ -844,7 +862,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
             // honest cause; the hard ceiling catches everything else.
             if (tierRounds >= TIER_TOOL_ROUND_BUDGETS[epochTier]) {
               enterFinalization('budget_exhausted')
-            } else if (run.workClock.spent() >= TIER_ACTIVE_WORK_DEADLINES_MS[epochTier]) {
+            } else if (deadlineExpired()) {
               enterFinalization('deadline_reached')
             } else if (rounds >= HARD_TOOL_ROUND_CEILING - CEILING_RESERVED_BOOKKEEPING_ROUNDS) {
               // The hard ceiling (#108/#118, #129): the product-owned
@@ -889,6 +907,31 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
           // the request timeout.
           const roundAbort = new AbortController()
           run.abortLlm = () => roundAbort.abort()
+          // The deadline as a live cancellation boundary (#135, ADR 0027):
+          // during acquisition rounds the remaining active-work time arms
+          // a watcher on the same signal — when it expires, the in-flight
+          // model request is aborted immediately instead of running past
+          // the deadline. Finalization's own rounds (bookkeeping, the
+          // reserved Answer) never arm it: the Answer stays available
+          // after the deadline stopped the work. A tier re-arm between
+          // rounds replaces the watcher naturally — the next round arms
+          // against the fresh epoch's remaining time.
+          let deadlineAborted = false
+          let cancelDeadlineWatch: () => void = () => {}
+          if (!finalizing) {
+            const remainingMs = deadlineMs(epochTier) - run.workClock.spent()
+            if (remainingMs > 0) {
+              cancelDeadlineWatch = clock.setTimer(remainingMs, () => {
+                deadlineAborted = true
+                roundAbort.abort()
+              })
+            } else {
+              // Expired at round start (the loop-top rail normally catches
+              // this first): the boundary holds anyway.
+              deadlineAborted = true
+              roundAbort.abort()
+            }
+          }
           let turn: AssistantTurn
           try {
             turn = await llm.complete({
@@ -931,6 +974,17 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
             // The aborted signal rejects the request; the run was stopped,
             // so this is a cancellation whatever the rejection looks like.
             if (run.aborted) throw new CommandAbortedError()
+            // The deadline aborted the in-flight round (#135): acquisition
+            // work stops here — no provider or abort error is surfaced.
+            // The run enters Finalization like every work rail and picks
+            // up at its normal phase: a pending Steering directive is
+            // consumed at the loop-top checkpoint (where a replan can
+            // still exit a tier-rail Finalization), then bookkeeping and
+            // the reserved Answer round follow as always.
+            if (deadlineAborted) {
+              enterFinalization('deadline_reached')
+              continue
+            }
             // The reserved Answer round failed (#117): the run still ends
             // with a guaranteed Answer — the deterministic fallback — not
             // a raw provider error.
@@ -940,12 +994,20 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
             }
             throw err
           } finally {
+            cancelDeadlineWatch()
             run.abortLlm = undefined
             // Round end (#47): drain the streamed tail (and reset the
             // batcher) before the round's events continue — the feed gets
             // every fragment ahead of the answer's display entry.
             batcher?.flush()
           }
+          // The round resolved despite the deadline abort (a client that
+          // ignored the signal, or the response landing in the race
+          // window): the rail still tripped — record it. An Answer turn
+          // still concludes the run, honestly stamped deadline_reached; a
+          // tool round flows into the per-call deadline gate below, which
+          // refuses its acquisition work.
+          if (deadlineAborted) enterFinalization('deadline_reached')
           steering = undefined
           const afterModelSteering = yield* consumeSteering('thinking')
           if (afterModelSteering) {
@@ -1136,6 +1198,16 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
             // refused before any gate or execution — the run's work is
             // over; only bookkeeping remains, and the refusal itself
             // carries the finalize directive.
+            //
+            // The deadline gate (#135): expiry is checked before every
+            // call begins, so no browser, vision, media, delegation, or
+            // user-question action starts past the boundary. An
+            // already-executing non-interruptible action settles once —
+            // this check runs between calls — but every later acquisition
+            // sibling in the response is refused.
+            if (!finalizing && deadlineExpired()) {
+              enterFinalization('deadline_reached')
+            }
             const closedTool = finalizing ? toolsByName.get(call.name) : undefined
             const outcome: ToolResultOutcome =
               call.name === 'report_run_plan' && planCallHandled

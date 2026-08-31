@@ -31,6 +31,21 @@ export const TIER_ACTIVE_WORK_DEADLINES_MS: Readonly<Record<EffortTier, number>>
 }
 
 /**
+ * The tier's live active-work deadline (#135): the table value, or the
+ * single test/e2e override (`BINGBONG_ACTIVE_WORK_DEADLINE_MS`) when one
+ * is set — coverage must reproduce deadline crossings in seconds, not
+ * wall-clock minutes. Production never sets an override.
+ */
+export function resolveActiveWorkDeadlineMs(
+  overrideMs: number | undefined,
+  tier: EffortTier,
+): number {
+  return overrideMs !== undefined && Number.isFinite(overrideMs) && overrideMs > 0
+    ? overrideMs
+    : TIER_ACTIVE_WORK_DEADLINES_MS[tier]
+}
+
+/**
  * The orchestrator's product-owned hard work ceiling (#108/#118, ADR
  * 0027): 32 Tool Rounds per Run, cumulative across tier epochs and
  * Steering replans — the only round limit; the user-facing maximum-round

@@ -176,6 +176,16 @@ function askTimeoutMs(env: Record<string, string | undefined>): number | undefin
 }
 
 /**
+ * Test/e2e override for every tier's active-work deadline (#135):
+ * `BINGBONG_ACTIVE_WORK_DEADLINE_MS` lets time-based coverage reproduce
+ * a deadline crossing in seconds. Production never sets it.
+ */
+function activeWorkDeadlineMs(env: Record<string, string | undefined>): number | undefined {
+  const value = Number(env.BINGBONG_ACTIVE_WORK_DEADLINE_MS)
+  return Number.isFinite(value) && value > 0 ? value : undefined
+}
+
+/**
  * Re-resolves the underlying client whenever the routing env changes between
  * commands. Resolution failures degrade to UnavailableLlm, so a half-edited
  * settings page never crashes the pipeline.
@@ -241,6 +251,7 @@ export function createAssistantPipeline(deps: AssistantPipelineDeps): CommandPip
   ]
   const clock = deps.clock ?? systemClock
   const configuredAskTimeoutMs = askTimeoutMs(deps.env)
+  const configuredActiveWorkDeadlineMs = activeWorkDeadlineMs(deps.env)
   // Stop, Steering, and Finalization all cancel delegated work (#119/#120):
   // Stop ends the run, a directive supersedes everything spawned under the
   // corrected-away objective, and Finalization's entry ends unfinished
@@ -282,6 +293,7 @@ export function createAssistantPipeline(deps: AssistantPipelineDeps): CommandPip
     // reserved Answer round still uses whatever reports completed.
     onFinalize: cancelSubagents,
     ...(configuredAskTimeoutMs !== undefined ? { askTimeoutMs: configuredAskTimeoutMs } : {}),
+    ...(configuredActiveWorkDeadlineMs !== undefined ? { activeWorkDeadlineMs: configuredActiveWorkDeadlineMs } : {}),
   })
   return pipeline
 }

@@ -115,11 +115,17 @@ function scriptedChunks(turn: AssistantTurn): ScriptedStreamChunk[] | undefined 
 async function streamScriptedChunks(
   turn: AssistantTurn,
   onDelta: ((delta: LlmStreamDelta) => void) | undefined,
+  signal?: AbortSignal,
 ): Promise<void> {
   if (!onDelta) return
   const chunks = scriptedChunks(turn)
   if (!chunks) return
   for (const chunk of chunks) {
+    // The scripted client honors the round's abort signal (#135) the way
+    // the production client does — its fetch rejects — so deadline and
+    // Stop cancellations reach the pipeline as rejections, never as a
+    // turn that resolves after the round was cancelled.
+    if (signal?.aborted) throw new Error('scripted round aborted')
     if (typeof chunk === 'string') {
       if (chunk !== '') onDelta({ kind: 'text', text: chunk })
     } else {
@@ -141,7 +147,10 @@ export class ScriptedLlm implements LlmClient {
     this.requests.push(request)
     const next = this.script.shift()
     if (!next) throw new Error('ScriptedLlm ran out of scripted turns')
-    await streamScriptedChunks(next, request.onDelta)
+    // An already-aborted round never begins (#135): the production client
+    // would have cancelled the request before dispatch.
+    if (request.signal?.aborted) throw new Error('scripted round aborted')
+    await streamScriptedChunks(next, request.onDelta, request.signal)
     // Renders continuity fields into scripted text so E2E can prove what the
     // current Run received without exposing private request objects.
     const substitutions: [string, string][] = [

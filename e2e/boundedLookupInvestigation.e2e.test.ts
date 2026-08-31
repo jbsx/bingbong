@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import type { AssistantTurn } from '../src/core/ports/llm'
+import type { ScriptedTurn } from '../src/core/testing/doubles'
 import type { PipelineEvent } from '../src/core/pipeline/events'
 import { startFixtureServer, type FixtureServer } from './fixtureServer'
 import { startHarness, type Harness } from './harness'
@@ -150,6 +151,95 @@ describe('bounded Lookup e2e (#118) — exhausted path', () => {
     // harness ever shows is its environmental voice failure.
     expect(
       events.filter((event) => event.type === 'error' && /budget|round|limit/i.test(event.message)),
+    ).toEqual([])
+  })
+})
+
+describe('bounded Lookup e2e (#135) — deadline as a cancellation boundary', () => {
+  let fixture: FixtureServer
+  let harness: Harness
+
+  beforeAll(async () => {
+    fixture = await startFixtureServer()
+    // The observed failure timing, scaled: round 1 works under the
+    // deadline; round 2 — proposing another navigation — is still in
+    // flight when the deadline crosses, so the request itself is
+    // aborted and the navigation never executes. The reserved Answer
+    // round follows as always.
+    const slowStream = { kind: 'reasoning' as const, text: 'still deciding' }
+    const script: ScriptedTurn[] = [
+      {
+        kind: 'tool_calls',
+        calls: [
+          {
+            id: 'plan',
+            name: 'report_run_plan',
+            args: {
+              objective: 'Find the widget finish guide',
+              headline: 'Finding the widget finish guide',
+              effort_tier: 'lookup',
+            },
+          },
+          { id: 'nav-0', name: 'navigate', args: { url: fixture.url('/widgets-article') } },
+        ],
+      },
+      {
+        kind: 'tool_calls',
+        // 80 streamed chunks × 150 ms ≈ 12 s of in-flight model work —
+        // the 8 s deadline crosses it mid-round.
+        streamChunks: Array.from({ length: 80 }, () => slowStream),
+        calls: [{ id: 'nav-1', name: 'navigate', args: { url: fixture.url('/widget-specs') } }],
+      },
+      {
+        kind: 'answer',
+        speak: 'I ran out of working time.',
+        display: 'Only the first guide page was opened.',
+        resolution: 'partial',
+      },
+    ]
+    harness = await startHarness({
+      fixture,
+      env: {
+        BINGBONG_LLM_SCRIPT: JSON.stringify(script),
+        BINGBONG_ACTIVE_WORK_DEADLINE_MS: '8000',
+      },
+    })
+  })
+
+  afterAll(async () => {
+    await harness?.quit()
+    await fixture?.close()
+  })
+
+  it('aborts the model round that crosses the deadline — its navigation never executes, and the Answer still comes', async () => {
+    const events = await captureRun(harness, 'find the widget finish guide', 60_000)
+
+    // Round 1's navigation executed; the aborted round's proposed
+    // navigation never began — not even a tool_call event for it.
+    const navigations = navigateResults(events)
+    expect(navigations).toHaveLength(1)
+    expect(navigations[0]).toMatchObject({ ok: true, callId: 'nav-0' })
+    expect(events.filter((event) => event.type === 'tool_call' && event.callId === 'nav-1')).toEqual([])
+
+    // The reserved Answer round stayed available past the deadline.
+    expect(events.filter((event) => event.type === 'speak').map((event) => event.text)).toEqual([
+      'I ran out of working time.',
+    ])
+    expect(events).toContainEqual(
+      expect.objectContaining({ type: 'display', text: 'Only the first guide page was opened.' }),
+    )
+
+    const done = events.find((event): event is DoneEvent => event.type === 'done')
+    expect(done).toMatchObject({
+      outcome: 'done',
+      resolution: 'partial',
+      finalizationCause: 'deadline_reached',
+    })
+    // No provider, abort, or raw round-limit error ever reached the feed.
+    expect(
+      events.filter(
+        (event) => event.type === 'error' && /abort|budget|round|limit|deadline/i.test(event.message),
+      ),
     ).toEqual([])
   })
 })
