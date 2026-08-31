@@ -5871,6 +5871,119 @@ describe('evidence checkpoints (#121)', () => {
     expect(events.at(-1)).toMatchObject({ type: 'done', outcome: 'done', finalizationCause: 'budget_exhausted' })
     expect(store.snapshot().observations.map(({ id }) => id)).toEqual(['memory-1'])
   })
+
+  /** One Lookup work round over the page; round 0 declares the plan (#136). */
+  const lookupWorkRound = (i: number): AssistantTurn => ({
+    kind: 'tool_calls',
+    calls: [
+      ...(i === 0
+        ? [{
+            id: `p${i}`,
+            name: 'report_run_plan',
+            args: { objective: 'Find the price', headline: 'Find the price', effort_tier: 'lookup' },
+          }]
+        : []),
+      { id: `w${i}`, name: 'read_page', args: {} },
+    ],
+  })
+
+  it('sends the reserved Answer round tool-free after a rejected terminal Evidence Checkpoint (#136)', async () => {
+    // The observed failure sequence: Lookup work exhausts, the terminal
+    // bookkeeping round's record_evidence is rejected (excerpt the run
+    // never retained), and the model — still advertised the tool —
+    // selected it again, needlessly tripping the deterministic
+    // hard-failure path. The reserved Answer request is now flagged
+    // answerOnly through the request contract, so the boundary holds even
+    // though record_evidence survives Finalization's own tool surface.
+    const store = storeHarness()
+    const lookupRounds = TIER_TOOL_ROUND_BUDGETS.lookup
+    const rejectedCitation = {
+      observation: 'The Acme router costs $59.',
+      source_url: PAGE_URL,
+      excerpt: 'Price: $59',
+    }
+    const llm = new ScriptedLlm([
+      ...Array.from({ length: lookupRounds }, (_, i) => lookupWorkRound(i)),
+      // Finalization's one bookkeeping round: the citation's excerpt was
+      // never retained — rejected, recoverable, no Progress.
+      { kind: 'tool_calls', calls: [{ id: 'bad', name: 'record_evidence', args: rejectedCitation }] },
+      // The reserved Answer round misbehaves exactly like the observed
+      // model: despite the tool-free request, it selects record_evidence
+      // again.
+      { kind: 'tool_calls', calls: [{ id: 'bad2', name: 'record_evidence', args: rejectedCitation }] },
+    ])
+    const pipeline = createCommandPipeline({
+      llm,
+      tts: new RecordingTts(),
+      clock: new FakeClock(),
+      tools: [createReportRunPlanTool(), readPage, createRecordEvidenceTool()],
+      currentPageUrl: () => PAGE_URL,
+    })
+
+    const events = await collectWithContinuity(pipeline, 'find the price of the acme router', continuityFor(store))
+
+    // Lookup work exhausted; the terminal checkpoint was rejected.
+    expect(events.filter((e) => e.type === 'tool_result' && e.name === 'read_page' && e.ok)).toHaveLength(lookupRounds)
+    expect(events.find((e) => e.type === 'tool_result' && e.callId === 'bad')).toMatchObject({
+      ok: false,
+      error: expect.stringMatching(/record_evidence rejected/),
+    })
+    // The reserved Answer request is explicitly Answer-only through the
+    // contract; every earlier round — work and bookkeeping alike — kept
+    // its permitted tool surface.
+    expect(llm.requests.at(-1)?.answerOnly).toBe(true)
+    expect(llm.requests.slice(0, -1).every((request) => request.answerOnly === undefined)).toBe(true)
+    expect(llm.requests).toHaveLength(lookupRounds + 2)
+    // The misbehaving double's call never executed; the deterministic
+    // fallback concluded the run — no hard failure, nothing checkpointed.
+    expect(events.find((e) => e.type === 'tool_result' && e.callId === 'bad2')).toBeUndefined()
+    expect(events.find((e) => e.type === 'error')).toBeUndefined()
+    expect(events.find((e) => e.type === 'display')).toMatchObject({
+      type: 'display',
+      text: expect.stringContaining('The run exhausted its planned work budget.'),
+    })
+    expect(events.at(-1)).toEqual({ type: 'done', outcome: 'failed', finalizationCause: 'budget_exhausted', at: 0 })
+    expect(store.snapshot().observations).toEqual([])
+  })
+
+  it('completes mechanically from a valid reserved Answer round with the proposed Resolution (#136)', async () => {
+    const store = storeHarness()
+    const lookupRounds = TIER_TOOL_ROUND_BUDGETS.lookup
+    const llm = new ScriptedLlm([
+      ...Array.from({ length: lookupRounds }, (_, i) => lookupWorkRound(i)),
+      // The bookkeeping round checkpoints grounded evidence, as bookkeeping may.
+      { kind: 'tool_calls', calls: [{
+        id: 'good',
+        name: 'record_evidence',
+        args: { observation: 'The Acme router costs $39.', source_url: PAGE_URL, excerpt: 'Price: $39' },
+      }] },
+      // The reserved Answer round behaves: a valid Answer contract.
+      { kind: 'answer', speak: 'Partial.', display: 'Partial: $39.', resolution: 'partial' },
+    ])
+    const pipeline = createCommandPipeline({
+      llm,
+      tts: new RecordingTts(),
+      clock: new FakeClock(),
+      tools: [createReportRunPlanTool(), readPage, createRecordEvidenceTool()],
+      currentPageUrl: () => PAGE_URL,
+    })
+
+    const events = await collectWithContinuity(pipeline, 'find the price of the acme router', continuityFor(store))
+
+    expect(events.find((e) => e.type === 'tool_result' && e.callId === 'good')).toMatchObject({ ok: true })
+    // The Answer rode the tool-free reserved round; the run completed
+    // mechanically done with the mechanical cause and the proposed
+    // Resolution, and the checkpoint survived.
+    expect(llm.requests.at(-1)?.answerOnly).toBe(true)
+    expect(events.at(-1)).toEqual({
+      type: 'done',
+      outcome: 'done',
+      resolution: 'partial',
+      finalizationCause: 'budget_exhausted',
+      at: 0,
+    })
+    expect(store.snapshot().observations.map(({ id }) => id)).toEqual(['memory-1'])
+  })
 })
 
 describe('grounded Candidates, user corrections, and Answers (#122)', () => {

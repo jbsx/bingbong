@@ -88,9 +88,13 @@ function toToolCall(call: WireToolCall): ToolCall {
 /**
  * The catalog for one round: continuity-gated tools ride along only when the
  * request carries prior Journal entries, so fresh Sessions keep the
- * lean tool list.
+ * lean tool list. The reserved Finalization Answer round (#136) gets no
+ * catalog at all — the wire request carries no tool definitions and no
+ * automatic tool choice, so the model boundary is asked for the final
+ * Answer contract only.
  */
 function offeredTools(tools: Tool[], request: LlmRequest): Tool[] {
+  if (request.answerOnly === true) return []
   if ((request.journal ?? []).length > 0 || (request.memory ?? []).length > 0) return tools
   return tools.filter((tool) => !tool.requiresHistory)
 }
@@ -210,7 +214,17 @@ export function createOpenAiLlmClient(deps: OpenAiLlmClientDeps): LlmClient {
       if (attempt > 1) request.onRetryAttempt?.(attempt, MAX_ATTEMPTS)
       const outgoing =
         attempt === MAX_ATTEMPTS
-          ? [...messages, { role: 'user' as const, content: 'Your previous reply was empty. Respond with tool calls or the final JSON answer.' }]
+          ? [
+              ...messages,
+              {
+                role: 'user' as const,
+                // The reserved Answer round (#136) has no selectable tools,
+                // so its last-ditch nudge asks for the Answer contract only.
+                content: request.answerOnly
+                  ? 'Your previous reply was empty. Respond with the final JSON answer.'
+                  : 'Your previous reply was empty. Respond with tool calls or the final JSON answer.',
+              },
+            ]
           : messages
       const { payload, requestId, raw } = await requestOnce(outgoing, catalog, {
         streaming,

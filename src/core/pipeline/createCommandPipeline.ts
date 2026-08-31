@@ -579,7 +579,9 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
     // run enters a terminal phase — one bookkeeping Tool Round at most
     // (skipped entirely at the hard ceiling), then a reserved
     // Answer-only round that never counts as a Tool Round. `answerOnly`
-    // marks the rounds after which only an Answer is accepted.
+    // marks the rounds after which only an Answer is accepted, and the
+    // reserved round's request carries the same flag (#136) so the
+    // model boundary sees no tool catalog — only the Answer contract.
     let finalizing = false
     let answerOnly = false
     // Finalization semantics (#110/#117): the runtime's mechanically
@@ -943,6 +945,11 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
               // The turn id rides the request so the perf wrapper keys each
               // llm span to this turn (#29).
               turnId,
+              // The reserved Answer round (#136): this request is the
+              // tool-free one — the flag rides the contract so the
+              // adapter sends no tool definitions and no automatic tool
+              // choice, whatever the catalog still holds for bookkeeping.
+              ...(answerOnly ? { answerOnly: true } : {}),
               ...(continuity ? { journal: continuity.snapshot } : {}),
               ...(continuity ? { memory: continuity.memory } : {}),
               // Checkpointed Session Evidence this Run starts beside (#121):

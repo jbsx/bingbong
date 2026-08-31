@@ -59,6 +59,17 @@ export interface LlmRequest {
    */
   onDelta?: (delta: LlmStreamDelta) => void
   /**
+   * The reserved Finalization Answer round (#136, ADR 0027): the one
+   * model request after the terminal bookkeeping Tool Round is spent.
+   * Sent with no tool catalog and no automatic tool choice — the model
+   * boundary is asked for the final Answer contract only, so a model
+   * fresh off a rejected Evidence Checkpoint cannot select
+   * `record_evidence` again and trip the deterministic hard-failure
+   * path. The pipeline's deterministic fallback still concludes the run
+   * when this round fails, stays empty, or violates the contract.
+   */
+  answerOnly?: boolean
+  /**
    * Aborts the in-flight HTTP request immediately (#47): the pipeline
    * wires Stop to this signal so aborting a run no longer waits out the
    * request timeout. Clients that ignore it keep the old contract.

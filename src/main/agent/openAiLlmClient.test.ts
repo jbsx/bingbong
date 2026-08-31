@@ -24,6 +24,7 @@ interface CompletionBody {
   model: string
   messages: WireMessage[]
   tools?: { type: 'function'; function: Record<string, unknown> }[]
+  tool_choice?: string
   stream?: boolean
   stream_options?: { include_usage: boolean }
   thinking?: { type: string }
@@ -496,6 +497,50 @@ describe('openAiLlmClient', () => {
     expect(fetch.calls[0]?.body.tools?.[0]?.function.parameters).toMatchObject({
       required: ['action'],
     })
+  })
+
+  it('sends the reserved Answer round with no tools and no tool_choice, while ordinary rounds keep both (#136)', async () => {
+    const fetch = new ScriptedFetch([
+      completionResponse({ tool_calls: [{ id: 'call-1', function: { name: 'navigate', arguments: '{"url":"https://example.com"}' } }] }),
+      completionResponse({ content: '{"speak":"Partial.","display":"Partial."}' }),
+    ])
+    const client = makeClient(fetch)
+
+    await client.complete({ command: 'open example', toolResults: [] })
+    await client.complete({ command: 'open example', toolResults: [], answerOnly: true })
+
+    // The ordinary round advertises the catalog with automatic choice…
+    expect(fetch.calls[0].body.tools?.map((t) => t.function.name)).toContain('navigate')
+    expect(fetch.calls[0].body.tool_choice).toBe('auto')
+    // …the reserved Answer round is genuinely tool-free at the wire: no
+    // tool definitions, no automatic tool choice — only the Answer
+    // contract is selectable.
+    expect(fetch.calls[1].body.tools).toBeUndefined()
+    expect(fetch.calls[1].body.tool_choice).toBeUndefined()
+  })
+
+  it('nudges an empty reserved Answer round toward the final JSON answer only (#136)', async () => {
+    const fetch = new ScriptedFetch([
+      completionResponse({ content: null }),
+      completionResponse({ content: null }),
+      completionResponse({ content: '{"speak":"Done.","display":"Done."}' }),
+    ])
+    const client = makeClient(fetch)
+
+    await client.complete({ command: 'finish up', toolResults: [], answerOnly: true })
+
+    const lastMessages = fetch.calls[2].body.messages
+    expect(lastMessages.at(-1)).toMatchObject({
+      role: 'user',
+      content: expect.stringContaining('final JSON answer'),
+    })
+    // A round that cannot select tools is never told to respond with them.
+    expect(lastMessages.at(-1)?.content).not.toMatch(/tool call/i)
+    // Every attempt of the answer-only round stays tool-free.
+    for (const call of fetch.calls) {
+      expect(call.body.tools).toBeUndefined()
+      expect(call.body.tool_choice).toBeUndefined()
+    }
   })
 
   it('offers a requiresHistory tool only in rounds that carry Journal continuity', async () => {
