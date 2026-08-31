@@ -116,7 +116,7 @@ describe('effort budget (#117/#118, ADR 0027)', () => {
       const answer = deterministicFinalAnswer({
         command: 'open example.com and click the first link',
         cause: 'budget_exhausted',
-        sources: ['https://example.com/', 'https://example.com/nav'],
+        sources: [{ url: 'https://example.com/' }, { url: 'https://example.com/nav' }],
       })
       expect(answer.speak).toBe('I ran out of work budget before finishing that request.')
       expect(answer.display).toBe(
@@ -125,6 +125,55 @@ describe('effort budget (#117/#118, ADR 0027)', () => {
           'What I managed to observe:\n' +
           '- https://example.com/\n' +
           '- https://example.com/nav',
+      )
+    })
+
+    it('carries the strongest source\u2019s inspectable detail as quoted source data (#137)', () => {
+      const answer = deterministicFinalAnswer({
+        command: 'which horizon chapter introduces the boxer',
+        cause: 'budget_exhausted',
+        sources: [
+          {
+            url: 'https://www.reddit.com/r/manhwa/comments/z8sfnn/',
+            title: 'r/manhwa \u2014 Horizon ch. 45 discussion',
+            excerpt: 'Chapter 45 discussion: the boxer appears in the final panels.',
+            excerptKind: 'page',
+          },
+          { url: 'https://www.google.com/search?q=reddit+manhwa+horizon+boxer' },
+        ],
+      })
+      expect(answer.display).toBe(
+        'I could not finish \u201Cwhich horizon chapter introduces the boxer\u201D. ' +
+          'The run exhausted its planned work budget.\n\n' +
+          'What I managed to observe:\n' +
+          '- https://www.reddit.com/r/manhwa/comments/z8sfnn/\n' +
+          '  \u201Cr/manhwa \u2014 Horizon ch. 45 discussion\u201D\n' +
+          '  Quoted from the page as observed:\n' +
+          '  > Chapter 45 discussion: the boxer appears in the final panels.\n' +
+          '- https://www.google.com/search?q=reddit+manhwa+horizon+boxer',
+      )
+    })
+
+    it('discloses accepted evidence\u2019s uncertainty and labels a look\u2019s text (#137)', () => {
+      const answer = deterministicFinalAnswer({
+        command: 'check the page',
+        cause: 'no_progress',
+        sources: [
+          {
+            url: 'https://shop.example/router',
+            uncertainty: 'price may vary by region',
+            excerpt: 'A screenshot described: a login wall covers the article.',
+            excerptKind: 'look',
+          },
+        ],
+      })
+      expect(answer.display).toBe(
+        'I could not finish \u201Ccheck the page\u201D. The run stopped making progress \u2014 repeated actions stopped producing anything new.\n\n' +
+          'What I managed to observe:\n' +
+          '- https://shop.example/router\n' +
+          '  Uncertainty: price may vary by region\n' +
+          '  What the run\u2019s look described:\n' +
+          '  > A screenshot described: a login wall covers the article.',
       )
     })
 

@@ -72,6 +72,7 @@ import {
 import { completedEvidenceIsFresh } from './evidenceFreshness'
 import { evaluateCandidateCheckpoint, type CandidateCheckpointOutcome, type EvidenceSessionSource } from './candidateCheckpoint'
 import { deriveAnswerSources, displayedAnswerText } from './answerEvidence'
+import { deriveFallbackSources } from './fallbackAnswer'
 import { compactRunContext, type RunEvidenceCheckpoint } from './runContextCompaction'
 
 export interface CommandPipelineDeps {
@@ -1343,22 +1344,17 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
           yield { type: 'status', status: 'thinking', at: clock.now() }
         }
 
-        // The deterministic fallback Answer (#117/AC4): displayed and
+        // The deterministic fallback Answer (#117/#137/AC4): displayed and
         // spoken like any Answer, but the run completes mechanically
         // failed — no model Assessment, no memory patch, only the
         // deterministic Run Note the commit below records. Built solely
-        // from the command, the mechanical stop cause, and the verified
-        // observations the ledger retained.
+        // from the command, the mechanical stop cause, and the retained
+        // sources derived from the run's verified Observations and its
+        // accepted Evidence Checkpoints — bounded inspectable detail for
+        // the strongest source, never a bare URL list and never an
+        // unverified model claim.
         if (deterministicFallback) {
           runOutcome = 'failed'
-          const sources = [
-            ...new Set(
-              ledger
-                .snapshot()
-                .filter((record) => record.ok && record.sourceUrl !== undefined)
-                .map((record) => record.sourceUrl as string),
-            ),
-          ]
           const fallback = deterministicFinalAnswer({
             // The task the stopped run was working on, in words the user
             // recognizes: their Steering correction once one landed (#119)
@@ -1367,7 +1363,11 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
             // a never-steered run.
             command: correctedObjective ?? command,
             cause: mechanicalCause ?? 'hard_limit',
-            sources,
+            sources: deriveFallbackSources({
+              records: ledger.snapshot(),
+              checkpoints: acceptedCheckpoints,
+              resolveObservation: resolveSessionObservation,
+            }),
           })
           yield { type: 'display', text: fallback.display, at: clock.now() }
           yield* speakLine(fallback.speak, turnId)

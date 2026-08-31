@@ -281,16 +281,24 @@ describe('bounded Direct Action e2e (#117) — deterministic fallback path', () 
     expect(navigations).toHaveLength(7)
     expect(events.some((event) => event.type === 'tool_result' && event.callId === 'nav-7')).toBe(false)
 
-    // The guaranteed Answer, built from the run's verified observations:
-    // the six fixture pages it actually observed, deduped, as links. The
+    // The guaranteed Answer, built from the run's verified observations
+    // (#137): the six fixture pages it actually observed, deduped, as
+    // canonical URLs — led by the strongest retained source carrying its
+    // inspectable detail: the settled title and verbatim quoted page
+    // content, indented under its own URL as quoted source data. The
     // task line stays the user's own words — the command they said.
     const display = events.find((event) => event.type === 'display')
-    expect(display).toMatchObject({
-      type: 'display',
-      text: expect.stringMatching(
-        /^I could not finish “open the widget article”\. The run exhausted its planned work budget\.\n\nWhat I managed to observe:\n- \S+\/widgets-article\n- \S+\/widgets-anodized[\s\S]*\/widget-review$/,
-      ),
-    })
+    const text = (display as { text: string } | undefined)?.text ?? ''
+    expect(text.startsWith('I could not finish \u201Copen the widget article\u201D. The run exhausted its planned work budget.\n\nWhat I managed to observe:\n- ')).toBe(true)
+    const bullets = text.split('\n- ').slice(1).map((chunk) => chunk.split('\n')[0])
+    expect(bullets).toHaveLength(6)
+    for (const path of ['/widgets-article', '/widgets-anodized', '/widgets-polished', '/widgets-vintage', '/widget-specs', '/widget-review']) {
+      expect(bullets.some((url) => url.endsWith(path))).toBe(true)
+    }
+    // The strongest source leads and carries its detail directly under
+    // its own bullet.
+    expect(text).toContain(`\n- ${bullets[0]}\n  \u201C`)
+    expect(text).toContain('\n  Quoted from the page as observed:\n  > ')
     expect(events.filter((event) => event.type === 'speak').map((event) => event.text)).toEqual([
       'I ran out of work budget before finishing that request.',
     ])

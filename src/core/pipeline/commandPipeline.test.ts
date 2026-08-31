@@ -1662,6 +1662,190 @@ describe('command pipeline', () => {
     })
   })
 
+  describe('deterministic fallback Answers (#137, ADR 0027)', () => {
+    const SERP_URL = 'https://www.google.com/search?q=reddit+manhwa+horizon+boxer'
+    const REDDIT_URL = 'https://www.reddit.com/r/manhwa/comments/z8sfnn'
+    const GUIDE_URL = 'https://fan-guide.example/horizon'
+    const PAGES: Record<string, { title: string; digest: string }> = {
+      [REDDIT_URL]: {
+        title: 'r/manhwa \u2014 Horizon ch. 45 discussion',
+        digest: 'Chapter 45 discussion: the boxer appears in the final panels, setting up the confrontation with Horizon.',
+      },
+      [GUIDE_URL]: {
+        title: 'Horizon fan guide',
+        digest: 'Fan guide: character appearances are listed per chapter, with fan corrections.',
+      },
+    }
+
+    function evidenceStore(): SessionEvidenceStore {
+      let next = 0
+      return createSessionEvidence({
+        sessionId: 'session-1' as SessionId,
+        now: () => 0,
+        mintId: () => `memory-${++next}` as MemoryEntryId,
+      })
+    }
+
+    /** Browser-shaped fakes: a navigation settles a URL, a read returns the real payload shape. */
+    function browserPages(): { tools: Tool[]; currentUrl: () => string | null } {
+      let current: string | null = null
+      const navigate: Tool = {
+        name: 'navigate',
+        acquisition: true,
+        async execute(call) {
+          current = String(call.args.url)
+          const page = PAGES[current]
+          return (
+            `navigated: url=${current} title=${JSON.stringify(page?.title ?? current)}\n` +
+            `# ${page?.title ?? current} \u2014 ${current}\nviewport 1280x800 scroll 0/900${page ? `\npage text:\n${page.digest}` : ''}`
+          )
+        },
+      }
+      const readPage: Tool = {
+        name: 'read_page',
+        acquisition: true,
+        async execute() {
+          const url = current ?? ''
+          const page = PAGES[url]
+          return `# ${page?.title ?? 'Untitled'} \u2014 ${url}\nviewport 1280x800 scroll 0/900${page ? `\npage text:\n${page.digest}` : ''}`
+        },
+      }
+      return { tools: [navigate, readPage], currentUrl: () => current }
+    }
+
+    const plan = (id: string): ToolCall => ({
+      id,
+      name: 'report_run_plan',
+      args: { objective: 'Find the boxer chapter', headline: 'Finding the boxer chapter', effort_tier: 'direct_action' },
+    })
+
+    async function collectWithEvidence(pipeline: CommandPipeline, command: string, store: SessionEvidenceStore): Promise<PipelineEvent[]> {
+      const events: PipelineEvent[] = []
+      for await (const raw of pipeline.execute(command, undefined, false, {
+        snapshot: [],
+        memory: [],
+        generation: 0,
+        commit: () => 'committed',
+        checkpointEvidence: webEvidenceCommit(() => store, 'run-1' as RunId),
+        evidenceSession: () => ({ store, runId: 'run-1' as RunId }),
+      })) {
+        events.push(withoutTurnId(raw))
+      }
+      return events
+    }
+
+    it('names the inspected Candidate page and its uncertainty instead of bare URLs when checkpoints were rejected', async () => {
+      // The latest failed Run shape (#137/AC6): a run searches, opens and
+      // inspects a Reddit Candidate page, its Evidence Checkpoints are
+      // rejected (a wrong excerpt, then a paraphrase), and the reserved
+      // Answer round misbehaves — the deterministic fallback names the
+      // inspected page with quoted page content and states what remained
+      // unfinished, instead of reducing the work to source URLs.
+      const store = evidenceStore()
+      const { tools, currentUrl } = browserPages()
+      const llm = new ScriptedLlm([
+        { kind: 'tool_calls', calls: [plan('p1'), { id: 'n1', name: 'navigate', args: { url: SERP_URL } }] },
+        { kind: 'tool_calls', calls: [{ id: 'n2', name: 'navigate', args: { url: REDDIT_URL } }] },
+        { kind: 'tool_calls', calls: [{ id: 'r1', name: 'read_page', args: {} }] },
+        { kind: 'tool_calls', calls: [{ id: 'e1', name: 'record_evidence', args: { observation: 'The boxer first appears in chapter 44, according to fans.', source_url: REDDIT_URL, excerpt: 'chapter 44 as everyone knows' } }] },
+        { kind: 'tool_calls', calls: [{ id: 'e2', name: 'record_evidence', args: { observation: 'The boxer is in chapter 45 for sure.', source_url: REDDIT_URL, excerpt: 'boxer shows up around chapter forty-five' } }] },
+        { kind: 'tool_calls', calls: [{ id: 'r2', name: 'read_page', args: {} }] },
+        // Finalization's one bookkeeping round — the acquisition call is refused.
+        { kind: 'tool_calls', calls: [{ id: 'n3', name: 'navigate', args: { url: REDDIT_URL } }] },
+        // The reserved Answer round misbehaves: it requests tools.
+        { kind: 'tool_calls', calls: [{ id: 'n4', name: 'navigate', args: { url: REDDIT_URL } }] },
+      ])
+      const pipeline = createCommandPipeline({
+        llm,
+        tts: new RecordingTts(),
+        clock: new FakeClock(),
+        tools: [createReportRunPlanTool(), createRecordEvidenceTool(), ...tools],
+        currentPageUrl: currentUrl,
+      })
+
+      const events = await collectWithEvidence(pipeline, 'which horizon chapter introduces the boxer', store)
+
+      // Both checkpoints were rejected — nothing entered Session Evidence.
+      expect(events.find((e) => e.type === 'tool_result' && e.callId === 'e1')).toMatchObject({ ok: false })
+      expect(events.find((e) => e.type === 'tool_result' && e.callId === 'e2')).toMatchObject({ ok: false })
+      expect(store.snapshot().observations).toEqual([])
+      // The deterministic fallback names the inspected page — title,
+      // canonical URL, and verbatim quoted page content — then the SERP,
+      // and states the unfinished objective.
+      const display = events.find((e) => e.type === 'display')
+      expect(display).toMatchObject({
+        type: 'display',
+        text:
+          'I could not finish \u201Cwhich horizon chapter introduces the boxer\u201D. The run exhausted its planned work budget.\n\n' +
+          'What I managed to observe:\n' +
+          `- ${REDDIT_URL}\n` +
+          `  \u201C${PAGES[REDDIT_URL]!.title}\u201D\n` +
+          '  Quoted from the page as observed:\n' +
+          `  > ${PAGES[REDDIT_URL]!.digest}\n` +
+          `- ${SERP_URL}`,
+      })
+      // The rejected checkpoints' model-authored claims never appear.
+      expect((display as { text: string }).text).not.toContain('chapter 44')
+      expect((display as { text: string }).text).not.toContain('for sure')
+      expect(events.filter((e) => e.type === 'speak').map((e) => e.text)).toEqual([
+        'I ran out of work budget before finishing that request.',
+      ])
+      expect(events.at(-1)).toEqual({ type: 'done', outcome: 'failed', finalizationCause: 'budget_exhausted', at: 0 })
+    })
+
+    it('prefers accepted Session Evidence for the strongest source and discloses its uncertainty', async () => {
+      // Two inspected pages, the evidence-less one inspected most
+      // recently: the accepted checkpoint still names the strongest
+      // source, and its declared uncertainty rides the detail (#137/AC3).
+      // The reserved Answer round's script is exhausted — it fails, and
+      // the deterministic fallback answers.
+      const store = evidenceStore()
+      const { tools, currentUrl } = browserPages()
+      const llm = new ScriptedLlm([
+        { kind: 'tool_calls', calls: [plan('p1'), { id: 'n1', name: 'navigate', args: { url: GUIDE_URL } }] },
+        { kind: 'tool_calls', calls: [{ id: 'r1', name: 'read_page', args: {} }] },
+        { kind: 'tool_calls', calls: [{ id: 'r2', name: 'read_page', args: {} }] },
+        {
+          kind: 'tool_calls',
+          calls: [{
+            id: 'e1',
+            name: 'record_evidence',
+            args: { observation: 'The boxer appears in chapter 45.', source_url: GUIDE_URL, excerpt: 'listed per chapter', uncertainty: 'chapter numbering differs between editions' },
+          }],
+        },
+        { kind: 'tool_calls', calls: [{ id: 'n2', name: 'navigate', args: { url: REDDIT_URL } }] },
+        { kind: 'tool_calls', calls: [{ id: 'r3', name: 'read_page', args: {} }] },
+        // Finalization's one bookkeeping round — the acquisition call is refused.
+        { kind: 'tool_calls', calls: [{ id: 'n3', name: 'navigate', args: { url: REDDIT_URL } }] },
+      ])
+      const pipeline = createCommandPipeline({
+        llm,
+        tts: new RecordingTts(),
+        clock: new FakeClock(),
+        tools: [createReportRunPlanTool(), createRecordEvidenceTool(), ...tools],
+        currentPageUrl: currentUrl,
+      })
+
+      const events = await collectWithEvidence(pipeline, 'which horizon chapter introduces the boxer', store)
+
+      expect(events.find((e) => e.type === 'tool_result' && e.callId === 'e1')).toMatchObject({ ok: true })
+      const display = events.find((e) => e.type === 'display')
+      expect(display).toMatchObject({
+        type: 'display',
+        text:
+          'I could not finish \u201Cwhich horizon chapter introduces the boxer\u201D. The run exhausted its planned work budget.\n\n' +
+          'What I managed to observe:\n' +
+          `- ${GUIDE_URL}\n` +
+          `  \u201C${PAGES[GUIDE_URL]!.title}\u201D\n` +
+          '  Uncertainty: chapter numbering differs between editions\n' +
+          '  Quoted from the page as observed:\n' +
+          `  > ${PAGES[GUIDE_URL]!.digest}\n` +
+          `- ${REDDIT_URL}`,
+      })
+      expect(events.at(-1)).toEqual({ type: 'done', outcome: 'failed', finalizationCause: 'budget_exhausted', at: 0 })
+    })
+  })
+
   describe('bounded Lookups and Investigations (#118, ADR 0027)', () => {
     const plan = (
       id: string,

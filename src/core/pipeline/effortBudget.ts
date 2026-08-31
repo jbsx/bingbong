@@ -7,6 +7,7 @@
 
 import type { EffortTier } from './runPlan'
 import type { FinalizationCause } from '../session/runJournal'
+import type { FallbackSource } from './fallbackAnswer'
 
 /**
  * The initial per-tier Tool Round budgets (#108/#117): hypotheses that
@@ -174,16 +175,38 @@ const CAUSE_SENTENCES: Readonly<Record<string, string>> = {
 }
 
 /**
- * The deterministic Answer (#117, ADR 0027): what the application replies
+ * The strongest retained source's inspectable detail (#137): the settled
+ * title, the uncertainty accepted evidence declared, and the verbatim
+ * retained content — quoted source data, indented under the source's own
+ * bullet so untrusted page text can never read as the assistant's prose
+ * or an instruction. A Look's text renders labelled: it is what the
+ * vision model reported, not page text.
+ */
+function fallbackDetailLines(source: FallbackSource): string[] {
+  const lines: string[] = []
+  if (source.title !== undefined) lines.push(`  \u201C${source.title}\u201D`)
+  if (source.uncertainty !== undefined) lines.push(`  Uncertainty: ${source.uncertainty}`)
+  if (source.excerpt !== undefined) {
+    lines.push(source.excerptKind === 'look' ? '  What the run\u2019s look described:' : '  Quoted from the page as observed:')
+    for (const line of source.excerpt.split('\n')) lines.push(`  > ${line}`.trimEnd())
+  }
+  return lines
+}
+
+/**
+ * The deterministic Answer (#117/#137, ADR 0027): what the application replies
  * with when the reserved model Answer round fails or requests tools.
- * Built only from the command, the mechanical stop cause, and verified
- * observations — it invents no Assessment and exposes no counters.
+ * Built only from the command, the mechanical stop cause, and the run's
+ * retained sources — bounded successful Observation content merged by
+ * canonical URL, strongest first (#137) — it invents no Assessment,
+ * exposes no counters, and repeats no unverified model claim: detail is
+ * quoted verbatim from what the run mechanically observed.
  */
 export function deterministicFinalAnswer(input: {
   command: string
   cause: FinalizationCause
-  /** Source URLs the run's observations verified, in first-seen order. */
-  sources: readonly string[]
+  /** The run's retained sources (#137), strongest first — bounded, merged by canonical URL. */
+  sources: readonly FallbackSource[]
 }): { speak: string; display: string } {
   const task = input.command.trim().replace(/\s+/g, ' ').slice(0, 200) || 'the request'
   const spokenByCause: Readonly<Record<string, string>> = {
@@ -193,10 +216,15 @@ export function deterministicFinalAnswer(input: {
   }
   const speak = spokenByCause[input.cause] ?? 'I had to stop before finishing that request.'
   const causeSentence = CAUSE_SENTENCES[input.cause] ?? 'The run stopped at its work limit.'
+  const sourceLines: string[] = []
+  input.sources.forEach((source, index) => {
+    sourceLines.push(`- ${source.url}`)
+    // The strongest retained source carries the inspectable detail
+    // (#137/AC2); every other source stays the honest bare canonical URL.
+    if (index === 0) sourceLines.push(...fallbackDetailLines(source))
+  })
   const sourceList =
-    input.sources.length > 0
-      ? `\n\nWhat I managed to observe:\n${input.sources.map((url) => `- ${url}`).join('\n')}`
-      : ''
+    sourceLines.length > 0 ? `\n\nWhat I managed to observe:\n${sourceLines.join('\n')}` : ''
   return {
     speak,
     display: `I could not finish \u201C${task}\u201D. ${causeSentence}${sourceList}`,
