@@ -10,6 +10,7 @@ import { useAssistant } from './useAssistant'
 import { useFeedPanel, useFeedSlotRect } from './useFeedPanel'
 import { useIdle } from './useIdle'
 import { usePeekCard } from './usePeekCard'
+import { useSessionEvidence } from './useSessionEvidence'
 import { useSettings } from './useSettings'
 import { useSessionExpiry } from './useSessionExpiry'
 import { useVoice } from './useVoice'
@@ -27,6 +28,12 @@ export function App() {
   const panel = useFeedPanel()
   const feedSlotRef = useRef<HTMLDivElement>(null)
   useFeedSlotRect(feedSlotRef, `${panel.mode}-${panel.open}`)
+  // The Evidence Browser's dashboard half (#139): the second Session-bearing
+  // renderer answers the same change notifications with the same
+  // authoritative read — the slot carries the live count so the read is
+  // observable, exactly like the slot carries the folded layout.
+  const evidence = useSessionEvidence()
+  const evidenceCount = evidence.observations.length
   // The Peek Card (ADR 0021, amended by ADR 0026): voice's report surface
   // while the panel is Collapsed — shown by activity, retired by opening
   // the panel, revived by closing it mid-run.
@@ -194,10 +201,13 @@ export function App() {
             </div>
           )}
           {/* The slot always carries the mode — collapsed or not — so the
-              persisted layout is observable (and assertable) at boot. */}
+              persisted layout is observable (and assertable) at boot. The
+              data attribute mirrors the dashboard's authoritative evidence
+              read (#139) the same way. */}
           <div
             ref={feedSlotRef}
             className={`feed-slot feed-slot--${panel.mode}${panel.open ? '' : ' feed-slot--collapsed'}`}
+            data-evidence-count={evidenceCount}
             aria-hidden="true"
           />
         </div>

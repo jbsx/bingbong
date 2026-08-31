@@ -9,6 +9,7 @@ import type { RecordedEntry, RunRecord, SessionRecord } from '../core/history/hi
 import type { FeedPanelMode, FeedPanelState } from '../core/panel/feedPanelState'
 import type { SubmissionFeedback } from '../core/session/submissionFeedback'
 import type { SessionAdoptionPayload, SessionDecisionRequest } from '../core/session/ipcChannels'
+import type { SessionEvidenceChangePayload, SessionEvidencePayload } from '../core/session/evidenceIpcChannels'
 
 export type { BrowserPaneState, PaneRect }
 export type { PipelineEvent }
@@ -19,6 +20,7 @@ export type { LaunchConfig }
 export type { UsageSummary }
 export type { RecordedEntry, RunRecord, SessionRecord }
 export type { SubmissionFeedback }
+export type { SessionEvidenceChangePayload, SessionEvidencePayload }
 export interface BingbongBrowserApi {
   navigate(input: string): Promise<boolean>
   goBack(): Promise<void>
@@ -61,6 +63,21 @@ export interface BingbongSessionApi {
   current(): Promise<SessionAdoptionPayload | null>
   /** Main's re-send of the live Session identity on a late page load (ADR 0017). */
   onReadopt(listener: (identity: SessionAdoptionPayload) => void): () => void
+}
+
+export interface BingbongEvidenceApi {
+  /**
+   * The live Session's complete Evidence snapshot — observations and
+   * candidates — stamped with Session identity and generation; null when
+   * no Session is open (#139). The authoritative read the Evidence
+   * Browser renders and re-reads on every change notification.
+   */
+  get(): Promise<SessionEvidencePayload | null>
+  /**
+   * An accepted Observation change: identity and generation only — the
+   * response is to re-read `get()` (#139).
+   */
+  onChanged(listener: (change: SessionEvidenceChangePayload) => void): () => void
 }
 
 export interface BingbongSubagentsApi {
@@ -141,6 +158,7 @@ export interface BingbongApi {
   browser: BingbongBrowserApi
   assistant: BingbongAssistantApi
   session: BingbongSessionApi
+  evidence: BingbongEvidenceApi
   settings: BingbongSettingsApi
   subagents: BingbongSubagentsApi
   usage: BingbongUsageApi

@@ -69,6 +69,7 @@ import { VOICE_IPC } from '../core/voice/ipcChannels'
 import { createWindowEventPublisher } from './session/windowEventPublisher'
 import { createPipelineAcceptanceGate } from './session/pipelineAcceptance'
 import { attachSessionToWindow, registerSessionIpc } from './session/attachSession'
+import { EVIDENCE_IPC } from '../core/session/evidenceIpcChannels'
 
 // Appliance mode (T11): --kiosk goes fullscreen; the idle timeout reaches the
 // renderer through the preload's launch-config snapshot.
@@ -515,6 +516,16 @@ async function createWindow(): Promise<BrowserWindow> {
           sessionGeneration: ended.generation,
         },
       })
+    },
+    // The Evidence Browser's change signal (#139): an accepted Observation
+    // notifies both Session-bearing renderers — dashboard and feed panel
+    // overlay — with identity only; each responds by reading the complete
+    // authoritative snapshot, so notifications can never diverge from it.
+    onEvidenceChanged: (change) => {
+      if (win.isDestroyed()) return
+      if (!win.webContents.isDestroyed()) win.webContents.send(EVIDENCE_IPC.changed, change)
+      const overlayContents = feedPanel.contents()
+      if (overlayContents !== null && !overlayContents.isDestroyed()) overlayContents.send(EVIDENCE_IPC.changed, change)
     },
   })
   // Renderer session re-adoption (ADR 0017): both session-bearing pages —

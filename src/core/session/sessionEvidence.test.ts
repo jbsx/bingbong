@@ -323,4 +323,31 @@ describe('session evidence', () => {
     expect(merged.observation.volatile).toBe(true)
     expect(evidence.snapshot().observations).toHaveLength(1)
   })
+
+  // #139: accepted Observations — new or exact-duplicate merged — are the
+  // one change signal the Evidence Browser rides; refused checkpoints stay
+  // invisible, and a cleared (Session-ended) store never fires again.
+  it('notifies accepted Observations, merged or new, but never refused or post-clear ones', () => {
+    const accepted: Array<{ id: string; merged: boolean }> = []
+    let next = 0
+    const evidence = createSessionEvidence({
+      sessionId: 'session-1' as SessionId,
+      now: () => 0,
+      mintId: () => `memory-${++next}` as MemoryEntryId,
+      onObservationAccepted: (result) => accepted.push({ id: result.observation.id, merged: result.merged }),
+    })
+
+    evidence.checkpointObservation(webObservation())
+    evidence.checkpointObservation(webObservation(undefined, 'run-2' as RunId))
+    // Refused: an unknown source kind and an empty statement never notify.
+    evidence.checkpointObservation({ ...webObservation(), sourceKind: 'dream' as never })
+    evidence.checkpointObservation({ ...webObservation('') })
+    evidence.clear()
+    evidence.checkpointObservation(webObservation(undefined, 'run-3' as RunId))
+
+    expect(accepted).toEqual([
+      { id: 'memory-1', merged: false },
+      { id: 'memory-1', merged: true },
+    ])
+  })
 })

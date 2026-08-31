@@ -1,4 +1,5 @@
 import { BrowserWindow, ipcMain } from 'electron'
+import { EVIDENCE_IPC, type SessionEvidencePayload } from '../../core/session/evidenceIpcChannels'
 import { SESSION_IPC, type SessionAdoptionPayload, type SessionDecisionRequest } from '../../core/session/ipcChannels'
 import type { SessionRuntime } from '../../core/session/sessionRuntime'
 
@@ -23,6 +24,22 @@ function isSessionDecision(request: unknown): request is SessionDecisionRequest 
 function adoptionOf(runtime: SessionRuntime): SessionAdoptionPayload | null {
   const { sessionId, generation } = runtime.state()
   return sessionId === null ? null : { sessionId, generation }
+}
+
+/**
+ * The authoritative Evidence Browser read (#139): the live Session's
+ * complete snapshot, stamped with the identity and generation the reader
+ * must match. Null means no Session — evidence is Session-ephemeral.
+ */
+function evidencePayloadOf(runtime: SessionRuntime): SessionEvidencePayload | null {
+  const { sessionId, generation } = runtime.state()
+  if (sessionId === null) return null
+  const store = runtime.evidenceStore()
+  return {
+    sessionId,
+    generation,
+    snapshot: store === null ? { observations: [], candidates: [] } : store.snapshot(),
+  }
 }
 
 /**
@@ -58,6 +75,13 @@ export function registerSessionIpc(): void {
   ipcMain.handle(SESSION_IPC.current, (event) => {
     const runtime = runtimeFor(event)
     return runtime !== undefined ? adoptionOf(runtime) : null
+  })
+  // The Evidence Browser's one read (#139): both Session-bearing renderers
+  // pull the complete authoritative snapshot — at mount (recovery) and in
+  // response to every accepted-Observation notification.
+  ipcMain.handle(EVIDENCE_IPC.get, (event) => {
+    const runtime = runtimeFor(event)
+    return runtime !== undefined ? evidencePayloadOf(runtime) : null
   })
 }
 

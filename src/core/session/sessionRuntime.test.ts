@@ -1006,4 +1006,39 @@ describe('session runtime', () => {
     expect(event.turnId).toBe('turn-1')
     expect(event.runId).toBe(admission.runId)
   })
+
+  // #139: the runtime is the Evidence Browser's authority — an accepted
+  // Observation reports the live Session's identity and generation, so
+  // renderers can discard work of a foreign or superseded Session.
+  it('reports accepted Session Evidence Observations with the live Session identity', () => {
+    const changes: Array<{ sessionId: string; generation: number }> = []
+    const clock = new FakeClock(1_000)
+    const runtime = createSessionRuntime({
+      clock,
+      identities: new DeterministicIdentities(),
+      onEvidenceChanged: (change) => changes.push({ ...change }),
+    })
+
+    const admission = runtime.accept(runtime.submit().submissionId)
+    const store = runtime.evidenceStore()!
+    store.checkpointObservation({
+      sourceKind: 'web',
+      text: 'The Acme router costs $39.',
+      references: [{ url: 'https://shop.example/acme-router' }],
+      runId: admission.runId,
+    })
+    // Refused (empty statement): never reported.
+    store.checkpointObservation({ sourceKind: 'web', text: '', references: [], runId: admission.runId })
+
+    runtime.end('reset')
+    // A cleared store refuses the checkpoint, so nothing more reports.
+    store.checkpointObservation({
+      sourceKind: 'web',
+      text: 'Post-end checkpoint.',
+      references: [{ url: 'https://shop.example/acme-router' }],
+      runId: admission.runId,
+    })
+
+    expect(changes).toEqual([{ sessionId: 'session-1', generation: 0 }])
+  })
 })

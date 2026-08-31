@@ -20,6 +20,11 @@ import type { VoiceErrorEvent, VoiceHeardEvent, VoiceState } from '../core/voice
 import type { RecordedEntry, RunRecord, SessionRecord } from '../core/history/historyStore'
 import type { SubmissionFeedback } from '../core/session/submissionFeedback'
 import { SESSION_IPC, type SessionAdoptionPayload, type SessionDecisionRequest } from '../core/session/ipcChannels'
+import {
+  EVIDENCE_IPC,
+  type SessionEvidenceChangePayload,
+  type SessionEvidencePayload,
+} from '../core/session/evidenceIpcChannels'
 
 // Launch config is a snapshot: the flags and env can't change after start.
 const launch = resolveLaunchConfig(process.argv, process.env)
@@ -70,6 +75,16 @@ contextBridge.exposeInMainWorld('bingbong', {
       const wrapped = (_event: unknown, identity: SessionAdoptionPayload): void => listener(identity)
       ipcRenderer.on(SESSION_IPC.readopt, wrapped)
       return () => ipcRenderer.removeListener(SESSION_IPC.readopt, wrapped)
+    },
+  },
+  evidence: {
+    /** The live Session's complete Evidence snapshot with identity and generation, or null (#139). */
+    get: (): Promise<SessionEvidencePayload | null> => ipcRenderer.invoke(EVIDENCE_IPC.get),
+    /** An accepted Observation changed the evidence — re-read the snapshot (#139). */
+    onChanged: (listener: (change: SessionEvidenceChangePayload) => void): (() => void) => {
+      const wrapped = (_event: unknown, change: SessionEvidenceChangePayload): void => listener(change)
+      ipcRenderer.on(EVIDENCE_IPC.changed, wrapped)
+      return () => ipcRenderer.removeListener(EVIDENCE_IPC.changed, wrapped)
     },
   },
   settings: {

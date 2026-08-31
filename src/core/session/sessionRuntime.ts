@@ -100,6 +100,16 @@ export interface SessionDecision {
   generation: SessionGeneration
 }
 
+/**
+ * An accepted Observation change in the live Session's evidence (#139):
+ * the identity renderers must match before they read the authoritative
+ * snapshot — work of a foreign or superseded Session is discardable.
+ */
+export interface SessionEvidenceChange {
+  sessionId: SessionId
+  generation: SessionGeneration
+}
+
 export interface ContinuityTokenThresholds {
   high: number
   reserve: number
@@ -185,6 +195,13 @@ export function createSessionRuntime(deps: {
   onExpiring?: (session: ExpiringSession) => void
   onExtended?: (session: ExtendedSession) => void
   onEnded?: (session: EndedSession) => void
+  /**
+   * An Observation was checkpointed into the live Session's evidence —
+   * accepted or exact-duplicate merged (#139). Fired with the Session's
+   * identity and generation so Session-bearing renderers can re-read the
+   * authoritative snapshot and discard foreign work.
+   */
+  onEvidenceChanged?: (change: SessionEvidenceChange) => void
   continuityModel?: string | (() => string)
   continuityBudgets?: Readonly<Record<string, SessionContinuityBudgets>>
   compactContinuity?: (request: ContinuityCompactionRequest) => Promise<ContinuityCompaction>
@@ -271,6 +288,7 @@ export function createSessionRuntime(deps: {
   let generation = 0
   let startedAt: number | null = null
   let acceptedRunIds: RunId[] = []
+  const reportEvidence = deps.onEvidenceChanged
   const liveRunIds = new Set<RunId>()
   const pendingSubmissionIds = new Set<SubmissionId>()
   let journal: RunJournalEntry[] = []
@@ -659,6 +677,13 @@ export function createSessionRuntime(deps: {
           sessionId: acceptedSessionId,
           now: () => deps.clock.now(),
           mintId: () => `memory-${nextMemoryId++}` as MemoryEntryId,
+          // The Evidence Browser's change signal (#139): reads the live
+          // generation at fire time — the store is cleared before a reset
+          // bumps it, so a report can never carry a stale generation.
+          // (Local const so the observer closure needs no non-null claim.)
+          ...(reportEvidence !== undefined
+            ? { onObservationAccepted: () => reportEvidence({ sessionId: acceptedSessionId, generation }) }
+            : {}),
         })
       }
       phase = 'active'

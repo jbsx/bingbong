@@ -22,7 +22,7 @@ import { FeedMarkdown } from './FeedMarkdown'
  * the feed panel's overlay webContents (#45).
  */
 
-function formatFeedTime(at: number): string {
+export function formatFeedTime(at: number): string {
   return new Date(at).toLocaleTimeString([], { hour: '2-digit', hour12: false, minute: '2-digit', second: '2-digit' })
 }
 

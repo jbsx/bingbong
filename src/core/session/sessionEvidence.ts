@@ -240,6 +240,13 @@ export function createSessionEvidence(deps: {
   sessionId: SessionId
   now(): number
   mintId(): MemoryEntryId
+  /**
+   * Fired after every accepted Observation checkpoint — a new Observation
+   * or an exact-duplicate merge (#139). Refused checkpoints (validation,
+   * cleared store) never fire: the Evidence Browser's visible state
+   * changes only through what the Session actually retained.
+   */
+  onObservationAccepted?(result: ObservationCheckpointResult): void
 }): SessionEvidenceStore {
   const observations: MutableObservation[] = []
   const candidates: MutableCandidate[] = []
@@ -283,6 +290,25 @@ export function createSessionEvidence(deps: {
       .map((prior) => prior.id)
   }
 
+  /**
+   * The accepted-checkpoint notification (#139): observers (the Evidence
+   * Browser broadcast) hear every Observation the Session retained —
+   * merged duplicates included, since provenance moved. A throwing
+   * observer cannot fail the checkpoint: the store's own state already
+   * stands, and notification is presentation, not storage.
+   */
+  const notifyAccepted = (result: ObservationCheckpointResult): void => {
+    if (deps.onObservationAccepted === undefined) return
+    try {
+      deps.onObservationAccepted(result)
+    } catch (err) {
+      // Presentation cannot fail storage — but it is not silent either.
+      console.warn(
+        `[evidence] accepted-observation observer failed for ${result.observation.id}: ${err instanceof Error ? err.message : String(err)}`,
+      )
+    }
+  }
+
   const store: SessionEvidenceStore = {
     checkpointObservation(input) {
       if (cleared) return null
@@ -304,7 +330,9 @@ export function createSessionEvidence(deps: {
       if (duplicate) {
         duplicate.provenance = appendProvenance(duplicate.provenance, source)
         if (volatile) duplicate.volatile = true
-        return { observation: freezeObservation(duplicate), merged: true, contradicts: [] }
+        const merged: ObservationCheckpointResult = { observation: freezeObservation(duplicate), merged: true, contradicts: [] }
+        notifyAccepted(merged)
+        return merged
       }
 
       const observation: MutableObservation = {
@@ -320,11 +348,13 @@ export function createSessionEvidence(deps: {
         ...(volatile ? { volatile: true } : {}),
       }
       observations.push(observation)
-      return {
+      const accepted: ObservationCheckpointResult = {
         observation: freezeObservation(observation),
         merged: false,
         contradicts: Object.freeze([...contradictingObservations(observation)]),
       }
+      notifyAccepted(accepted)
+      return accepted
     },
     observation(id) {
       const found = liveObservation(id)

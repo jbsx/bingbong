@@ -152,6 +152,91 @@ body,
   background: color-mix(in srgb, var(--text) 8%, transparent);
 }
 
+/* The view tabs (#139): the header's `Evidence N` control (and the
+   evidence view's back-to-activity twin) — text pills, wider than the
+   icon buttons. The count badge shows only when evidence exists; at zero
+   the control still opens the (empty) browser. */
+.feed-tab {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 12px;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-weight: 600;
+  line-height: 1;
+  cursor: pointer;
+  transition: background 120ms ease, color 120ms ease;
+}
+
+.feed-tab:hover {
+  color: var(--text);
+  background: color-mix(in srgb, var(--text) 8%, transparent);
+}
+
+.feed-tab--stocked {
+  color: var(--text);
+}
+
+.feed-tab-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  color: var(--accent);
+  font-size: 0.7rem;
+  font-weight: 700;
+}
+
+/* The Evidence Browser's Observation cards (#139): one grounded fact per
+   card — source kind, time, statement. Newest first. */
+.evidence-card {
+  margin: 0 0 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--edge);
+  border-radius: 10px;
+  background: var(--bg);
+}
+
+.evidence-card-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+
+.evidence-kind {
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  color: var(--accent);
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.evidence-card .feed-time {
+  margin-left: auto;
+}
+
+.evidence-text {
+  margin: 0;
+  color: var(--text);
+  font-size: 0.85rem;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
 /* The prompt bar: the panel's footer and the one typed-input surface.
    The verb button names the current action (run / steer); the bar is
    never disabled — a rejected submit restores the draft. */
