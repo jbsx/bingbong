@@ -37,6 +37,9 @@ export function AnswerEvidenceSummary({
   if (cited.length === 0) return null
   const warnings = answerEvidenceContradictions(evidenceIds, contradictions)
   const contradicted = new Set(warnings.flatMap((pair) => [pair.earlierObservationId, pair.laterObservationId]))
+  // One cited Observation contradicted twice still counts once: the
+  // warning names the support that fell, not the pile of disagreements.
+  const contradictedSupport = new Set(warnings.map((pair) => pair.earlierObservationId)).size
   return (
     <details className="answer-evidence">
       <summary className="answer-evidence-summary">
@@ -48,7 +51,7 @@ export function AnswerEvidenceSummary({
         {warnings.length > 0 ? (
           <p className="answer-evidence-warning" role="note">
             {`Later evidence from the same source contradicts ${
-              warnings.length === 1 ? 'a supporting observation' : `${warnings.length} supporting observations`
+              contradictedSupport === 1 ? 'a supporting observation' : `${contradictedSupport} supporting observations`
             } below. Every version is retained — the answer above is unchanged.`}
           </p>
         ) : null}

@@ -49,24 +49,34 @@ export function candidateMatchesFilter(candidate: SessionCandidate, filter: Cand
 }
 
 /**
- * Newest first, deterministically (#142): the Session-bound timestamp
+ * The shared newest-first key (#142): the Session-bound timestamp
  * descending, with equal timestamps broken by reverse insertion order —
  * a burst of records minted within one clock tick still renders the
- * latest-created first. Creation order is the snapshot's own order, so
+ * latest-created first. Creation order is the caller's own order, so
  * the tie-break needs no extra state.
  */
+interface NewestFirstEntry<T> {
+  readonly value: T
+  readonly observedAt: number
+  readonly index: number
+}
+
+const byNewestFirst = <T>(a: NewestFirstEntry<T>, b: NewestFirstEntry<T>): number =>
+  b.observedAt - a.observedAt || b.index - a.index
+
+const sortedNewestFirst = <T>(entries: readonly NewestFirstEntry<T>[]): readonly T[] =>
+  [...entries].sort(byNewestFirst).map(({ value }) => value)
+
 export function newestFirstObservations(observations: readonly SessionObservation[]): readonly SessionObservation[] {
-  return observations
-    .map((observation, index) => ({ observation, index }))
-    .sort((a, b) => b.observation.observedAt - a.observation.observedAt || b.index - a.index)
-    .map(({ observation }) => observation)
+  return sortedNewestFirst(
+    observations.map((observation, index) => ({ value: observation, observedAt: observation.observedAt, index })),
+  )
 }
 
 export function newestFirstCandidates(candidates: readonly SessionCandidate[]): readonly SessionCandidate[] {
-  return candidates
-    .map((candidate, index) => ({ candidate, index }))
-    .sort((a, b) => b.candidate.recordedAt - a.candidate.recordedAt || b.index - a.index)
-    .map(({ candidate }) => candidate)
+  return sortedNewestFirst(
+    candidates.map((candidate, index) => ({ value: candidate, observedAt: candidate.recordedAt, index })),
+  )
 }
 
 /**
@@ -114,31 +124,32 @@ export function layoutObservationCards(
 
   // Every card keeps its snapshot insertion index, so the newest-first
   // tie-break stays "latest creation first" wherever a cluster re-sorts.
-  const byId = new Map(observations.map((observation, index) => [observation.id, { observation, index }]))
-  const newestFirst = (members: { observation: SessionObservation; index: number }[]): readonly SessionObservation[] =>
-    [...members]
-      .sort((a, b) => b.observation.observedAt - a.observation.observedAt || b.index - a.index)
-      .map(({ observation }) => observation)
+  const byId = new Map(
+    observations.map((observation, index) => [
+      observation.id,
+      { value: observation, observedAt: observation.observedAt, index } as NewestFirstEntry<SessionObservation>,
+    ]),
+  )
 
   const groups: (readonly SessionObservation[])[] = []
   const grouped = new Set<MemoryEntryId>()
-  for (const observation of newestFirst([...byId.values()])) {
+  for (const observation of sortedNewestFirst([...byId.values()])) {
     if (grouped.has(observation.id)) continue
     // Flood the whole connected cluster from its newest member — the
     // newest-first walk guarantees the first member met is the
     // cluster's newest, so the group takes the position that member
     // already owned.
-    const cluster: { observation: SessionObservation; index: number }[] = [byId.get(observation.id)!]
+    const cluster: NewestFirstEntry<SessionObservation>[] = [byId.get(observation.id)!]
     grouped.add(observation.id)
     for (let at = 0; at < cluster.length; at += 1) {
-      for (const partnerId of partners.get(cluster[at]!.observation.id) ?? []) {
+      for (const partnerId of partners.get(cluster[at]!.value.id) ?? []) {
         if (grouped.has(partnerId)) continue
         grouped.add(partnerId)
         const partner = byId.get(partnerId)
         if (partner !== undefined) cluster.push(partner)
       }
     }
-    groups.push(newestFirst(cluster))
+    groups.push(sortedNewestFirst(cluster))
   }
   return { groups, contradictedIds }
 }
