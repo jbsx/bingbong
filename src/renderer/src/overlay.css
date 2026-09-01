@@ -321,6 +321,61 @@ body,
   font-style: italic;
 }
 
+/* The shared evidence source control (#144): one line per source — the
+   human label (page title, else hostname), the URL as selectable text,
+   and the `Copy source` button with its status beside it. Copying never
+   navigates; a failed copy leaves the URL selectable below it. */
+.evidence-source-control {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.evidence-source-label {
+  color: var(--text);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.evidence-source-url {
+  user-select: text;
+  overflow-wrap: anywhere;
+}
+
+.evidence-copy {
+  flex: none;
+  padding: 1px 8px;
+  border: 1px solid color-mix(in srgb, var(--text) 16%, transparent);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 600;
+  line-height: 1.4;
+  cursor: pointer;
+  transition: background 120ms ease, color 120ms ease, border-color 120ms ease;
+}
+
+.evidence-copy:hover {
+  color: var(--text);
+  background: color-mix(in srgb, var(--text) 8%, transparent);
+}
+
+.evidence-copy-status {
+  flex: none;
+  font-size: 0.68rem;
+  font-weight: 600;
+}
+
+.evidence-copy-status--copied {
+  color: var(--accent);
+}
+
+.evidence-copy-status--failed {
+  color: #9d0006;
+}
+
 /* Presentation chips beside the kind: delegated provenance (#142) and
    revalidation need — both derived, never new grounding kinds. */
 .evidence-chip {
@@ -440,8 +495,7 @@ body,
    the Observations a displayed Answer declared, inside its card. Plain
    native details/summary — collapsed by default, keyboard accessible by
    construction. The cards reuse the Evidence Browser's own card styles;
-   the source line stays selectable text, never a link (#144 owns the
-   copy control). */
+   each source line is the shared #144 copy control, never a link. */
 .answer-evidence {
   margin-top: 8px;
   border-top: 1px solid var(--edge);
@@ -502,9 +556,10 @@ body,
   color: var(--muted);
   font-size: 0.75rem;
   line-height: 1.4;
-  white-space: pre-line;
-  overflow-wrap: anywhere;
-  user-select: text;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  align-items: flex-start;
 }
 
 /* Contradiction warnings (#143): a later Run's contradictory evidence

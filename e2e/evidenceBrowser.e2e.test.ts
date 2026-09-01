@@ -433,7 +433,9 @@ describe('evidence browser e2e', () => {
         ),
       ).toBe(2)
       // Full Observation cards (#142): uncertainty, revalidation need, the
-      // source's fallback label (hostname — no title was recorded), and
+      // source label — the title the checkpoint retained from the page
+      // state it observed (#144; the title-less fixture carries the
+      // browser's URL-shaped display title, which names the host) — and
       // human-readable provenance.
       expect(observationCards[1]).toContain('uncertainty: layout may change')
       expect(observationCards[1]).toContain('needs revalidation')

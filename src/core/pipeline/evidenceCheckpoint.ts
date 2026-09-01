@@ -17,6 +17,7 @@ import {
   MAX_MEMORY_DETAIL_CHARS,
   normalizeMemoryText,
 } from '../session/workingMemory'
+import { observedPageTitle } from './fallbackAnswer'
 
 /** The model-writable citation fields, snake_case like the Memory Patch. */
 export const EVIDENCE_CITATION_KEYS = ['kind', 'observation', 'source_url', 'excerpt', 'uncertainty', 'agent_id', 'volatile'] as const
@@ -181,6 +182,30 @@ export function findSourceObservation(
     if (!record.ok || record.sourceUrl === undefined) continue
     if (canonicalizeMemoryUrl(record.sourceUrl) !== canonical) continue
     if (found === null || record.at >= found.at) found = record
+  }
+  return found
+}
+
+/**
+ * The newest settled title the ledger's own observations of one source
+ * already named (#144): still only state the observing agent saw — no
+ * browser action, no model round. The grounding record decides excerpt
+ * support, but a later Look of the same page must not discard the title
+ * its earlier navigation named, so every successful record for the
+ * canonical URL contributes, latest observation winning.
+ */
+export function observedSourceTitle(
+  records: readonly ObservationRecord[],
+  sourceUrl: string,
+): string | undefined {
+  const canonical = canonicalizeMemoryUrl(sourceUrl)
+  if (canonical === null) return undefined
+  let found: string | undefined
+  for (const record of records) {
+    if (!record.ok || record.sourceUrl === undefined) continue
+    if (canonicalizeMemoryUrl(record.sourceUrl) !== canonical) continue
+    const title = observedPageTitle(record)
+    if (title !== undefined) found = title
   }
   return found
 }
@@ -421,11 +446,16 @@ export function evaluateEvidenceCheckpoint(
       }
     }
     const canonical = canonicalizeMemoryUrl(citation.sourceUrl)!
+    // The retained page title (#144): already named by the worker's own
+    // observations of the source — never a second browser read or model
+    // round. Absent titles stay absent; the label falls back to the
+    // hostname.
+    const title = observedSourceTitle(workerRecords, citation.sourceUrl)
     const committed = commit({
       text: citation.observation,
       ...(citation.uncertainty !== undefined ? { uncertainty: citation.uncertainty } : {}),
       ...(citation.volatile !== undefined ? { volatile: citation.volatile } : {}),
-      references: [{ url: canonical }],
+      references: [{ url: canonical, ...(title !== undefined ? { title } : {}) }],
       // Freshness judges when the evidence was truly seen (#123): the
       // worker's own observation time, not the orchestrator's commit —
       // a report collected by a later Run stays as old as its worker.
@@ -465,11 +495,16 @@ export function evaluateEvidenceCheckpoint(
     }
   }
   const canonical = canonicalizeMemoryUrl(citation.sourceUrl)!
+  // The retained page title (#144): already named by this Run's own
+  // observations of the source — never a second browser read or model
+  // round. Absent titles stay absent; the label falls back to the
+  // hostname.
+  const title = observedSourceTitle(deps.records, citation.sourceUrl)
   const committed = deps.commit({
     text: citation.observation,
     ...(citation.uncertainty !== undefined ? { uncertainty: citation.uncertainty } : {}),
     ...(citation.volatile !== undefined ? { volatile: citation.volatile } : {}),
-    references: [{ url: canonical }],
+    references: [{ url: canonical, ...(title !== undefined ? { title } : {}) }],
   })
   if (committed === null) {
     return {

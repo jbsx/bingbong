@@ -95,6 +95,28 @@ describe('session evidence', () => {
     expect(evidence.snapshot().observations).toHaveLength(1)
   })
 
+  it('enriches a merged duplicate with a later-observed title, never erases one (#144)', () => {
+    const { evidence } = evidenceHarness()
+
+    // The first checkpoint carried no title (a Look-grounded citation).
+    const first = evidence.checkpointObservation(webObservation())!
+    expect(first.observation.references).toEqual([webReference])
+
+    // A later duplicate of the same Observation names the settled title:
+    // the merge enriches the retained reference with it.
+    const titled = evidence.checkpointObservation({
+      ...webObservation(undefined, 'run-2' as RunId),
+      references: [{ url: 'https://shop.example/acme-router', title: 'Acme Router Store' }],
+    })!
+    expect(titled.merged).toBe(true)
+    expect(titled.observation.references).toEqual([{ url: 'https://shop.example/acme-router', title: 'Acme Router Store' }])
+
+    // A title-less duplicate cannot strip the title the source earned.
+    const plain = evidence.checkpointObservation(webObservation(undefined, 'run-3' as RunId))!
+    expect(plain.merged).toBe(true)
+    expect(plain.observation.references).toEqual([{ url: 'https://shop.example/acme-router', title: 'Acme Router Store' }])
+  })
+
   it('keeps contradictory Observations distinct instead of overwriting them', () => {
     const { evidence } = evidenceHarness()
     const cheaper = evidence.checkpointObservation(webObservation('The Acme router costs $39.'))!

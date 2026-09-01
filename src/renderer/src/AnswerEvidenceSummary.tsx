@@ -1,6 +1,7 @@
 import type { ObservationContradiction, SessionObservation } from '../../core/session/sessionEvidence'
 import { answerEvidenceContradictions, answerEvidenceObservations } from '../../core/session/answerEvidenceSummary'
 import type { MemoryEntryId } from '../../core/session/workingMemory'
+import { EvidenceSourceControl } from './EvidenceSourceControl'
 import { formatFeedTime } from './ActivityFeed'
 
 /**
@@ -66,11 +67,14 @@ export function AnswerEvidenceSummary({
             </header>
             <p className="evidence-text">{observation.text}</p>
             {observation.references.length > 0 ? (
-              // Plain selectable text (#141): evidence sources never
-              // navigate the browser — the copy control arrives (#144).
-              <p className="answer-evidence-source">
-                {observation.references.map((reference) => reference.url).join('\n')}
-              </p>
+              // The shared source control (#144): exactly the Evidence
+              // Browser's own — label, selectable URL, `Copy source` —
+              // never a link that could navigate the pane.
+              <div className="answer-evidence-source">
+                {observation.references.map((reference) => (
+                  <EvidenceSourceControl key={reference.url} reference={reference} />
+                ))}
+              </div>
             ) : null}
           </article>
         ))}

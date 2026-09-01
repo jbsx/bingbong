@@ -380,6 +380,12 @@ export function createSessionEvidence(deps: {
       if (duplicate) {
         duplicate.provenance = appendProvenance(duplicate.provenance, source)
         if (volatile) duplicate.volatile = true
+        // A later duplicate may carry the title an earlier checkpoint
+        // lacked (#144) — enrich the retained reference, never erase one:
+        // only titled references overwrite, so a Look-grounded repeat
+        // cannot strip a title the source already earned.
+        const titled = references.filter((reference) => reference.title !== undefined)
+        if (titled.length > 0) duplicate.references = mergeMemoryReferences(duplicate.references, titled)
         const merged: ObservationCheckpointResult = { observation: freezeObservation(duplicate), merged: true, contradicts: [] }
         notifyAccepted(merged)
         return merged

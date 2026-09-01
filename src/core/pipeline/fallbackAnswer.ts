@@ -111,12 +111,30 @@ function retainedDetail(
     // title-shaped text is a model-authored claim, not the settled title.
     return { excerpt: boundedText(record.payload, MAX_FALLBACK_EXCERPT_CHARS), excerptKind: 'look' as const }
   }
-  const title = pageTitleFromOutcome(record.payload)
+  const title = observedPageTitle(record)
   const excerpt = pageTextExcerpt(record.payload)
   return {
     ...(title !== undefined ? { title } : {}),
     ...(excerpt !== undefined ? { excerpt, excerptKind: 'page' as const } : {}),
   }
+}
+
+/**
+ * The settled page title one retained observation already names (#137,
+ * #144): the product-owned outcome shapes — never a browser action or
+ * model round beyond the observation that grounded the citation. A
+ * Look's payload is the vision model's report, so it is never parsed;
+ * only page reads and Action Outcomes carry the settled title. The
+ * browser's URL-shaped stand-in for a title-less page is not a title —
+ * it names the source's address, not the source, so the label falls
+ * back to the hostname instead of duplicating the URL beside itself.
+ */
+export function observedPageTitle(record: ObservationRecord): string | undefined {
+  if (record.producer === 'look' || typeof record.payload !== 'string') return undefined
+  const title = pageTitleFromOutcome(record.payload)
+  if (title === undefined || record.sourceUrl === undefined) return title
+  const bare = record.sourceUrl.replace(/^https?:\/\//i, '')
+  return title === record.sourceUrl || title === bare ? undefined : title
 }
 
 /** The producers that directly inspect a page (#137): an explicit re-read or a Look. */

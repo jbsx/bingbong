@@ -16,10 +16,10 @@ import {
   newestFirstCandidates,
   newestFirstObservations,
   observationMatchesFilter,
-  sourceLabel,
   type CandidateFilter,
   type ObservationFilter,
 } from '../../../core/session/evidenceBrowser'
+import { EvidenceSourceControl } from '../EvidenceSourceControl'
 import { formatFeedTime } from '../ActivityFeed'
 
 /** One shared empty default — props stay optional without allocating per render. */
@@ -143,7 +143,14 @@ export function EvidenceView({
         <p className="evidence-uncertainty">uncertainty: {observation.uncertainty}</p>
       ) : null}
       {observation.references.length > 0 ? (
-        <p className="evidence-source">{observation.references.map(sourceLabel).join(' · ')}</p>
+        // The shared source control (#144): label (title, else hostname),
+        // selectable URL, and `Copy source` — copying never navigates
+        // the browser pane.
+        <div className="evidence-source">
+          {observation.references.map((reference) => (
+            <EvidenceSourceControl key={reference.url} reference={reference} />
+          ))}
+        </div>
       ) : null}
       <p className="evidence-provenance">{describeObservationProvenance(observation)}</p>
     </article>

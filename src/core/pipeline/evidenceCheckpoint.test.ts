@@ -492,3 +492,136 @@ describe('subagent citations (#123)', () => {
     expect(store.snapshot().observations[0]?.volatile).toBe(true)
   })
 })
+
+describe('retained page titles (#144)', () => {
+  /** A page_read-shaped payload carrying the snapshot header (#144): `# Title — url` above the digest. */
+  const SNAPSHOT_PAYLOAD = [
+    '# Acme Router Store — https://shop.example/acme-router',
+    'viewport 800x600 scroll 0/0',
+    'signature 1a2b3c4d',
+    'page text:',
+    'The Acme router costs $39. Free shipping on orders over $25.',
+  ].join('\n')
+
+  it('retains the settled title the grounding observation already named — no extra round', () => {
+    const store = evidenceHarness()
+    const outcome = evaluateEvidenceCheckpoint(callOf(GROUNDED_ARGS), {
+      records: [webRecord({ payload: SNAPSHOT_PAYLOAD })],
+      commit: commitOver(store),
+    })
+    expect(outcome).toMatchObject({ ok: true })
+    expect(store.snapshot().observations[0]?.references).toEqual([
+      { url: 'https://shop.example/acme-router', title: 'Acme Router Store' },
+    ])
+  })
+
+  it('retains the navigation outcome title shape too', () => {
+    const store = evidenceHarness()
+    const outcome = evaluateEvidenceCheckpoint(callOf(GROUNDED_ARGS), {
+      records: [webRecord({
+        producer: 'action_outcome',
+        payload: `navigated: url=https://shop.example/acme-router title=${JSON.stringify('Acme Router Store')}\n${SNAPSHOT_PAYLOAD}`,
+      })],
+      commit: commitOver(store),
+    })
+    expect(outcome).toMatchObject({ ok: true })
+    expect(store.snapshot().observations[0]?.references).toEqual([
+      { url: 'https://shop.example/acme-router', title: 'Acme Router Store' },
+    ])
+  })
+
+  it('never parses a Look for a title — vision text is a model-authored claim', () => {
+    const store = evidenceHarness()
+    const outcome = evaluateEvidenceCheckpoint(callOf(GROUNDED_ARGS), {
+      records: [webRecord({
+        producer: 'look',
+        payload: 'The page reads title="Not The Title" and the Acme router costs $39.',
+      })],
+      commit: commitOver(store),
+    })
+    expect(outcome).toMatchObject({ ok: true })
+    expect(store.snapshot().observations[0]?.references).toEqual([{ url: 'https://shop.example/acme-router' }])
+  })
+
+  it('recovers the title an earlier observation of the source named when the latest is a Look', () => {
+    const store = evidenceHarness()
+    const outcome = evaluateEvidenceCheckpoint(callOf(GROUNDED_ARGS), {
+      records: [
+        webRecord({
+          id: 'obs-2' as ObservationRecord['id'],
+          at: 0,
+          producer: 'action_outcome',
+          payload: `navigated: url=https://shop.example/acme-router title=${JSON.stringify('Acme Router Store')}\n# Acme Router Store — https://shop.example/acme-router\npage text:\nThe Acme router costs $39.`,
+        }),
+        webRecord({
+          id: 'obs-9' as ObservationRecord['id'],
+          at: 500,
+          producer: 'look',
+          payload: 'A router listing. The Acme router costs $39.',
+        }),
+      ],
+      commit: commitOver(store),
+    })
+    expect(outcome).toMatchObject({ ok: true, sourceObservationId: 'obs-9' })
+    expect(store.snapshot().observations[0]?.references).toEqual([
+      { url: 'https://shop.example/acme-router', title: 'Acme Router Store' },
+    ])
+  })
+
+  it('treats the browser\'s URL-shaped stand-in as no title — the label falls back to the hostname', () => {
+    const store = evidenceHarness()
+    const url = 'https://shop.example/acme-router'
+    const outcome = evaluateEvidenceCheckpoint(callOf(GROUNDED_ARGS), {
+      records: [webRecord({
+        payload: `# ${url} — ${url}\nviewport 800x600 scroll 0/0\nsignature 1a2b3c4d\npage text:\nThe Acme router costs $39.`,
+      })],
+      commit: commitOver(store),
+    })
+    expect(outcome).toMatchObject({ ok: true })
+    expect(store.snapshot().observations[0]?.references).toEqual([{ url }])
+
+    const withScheme = evaluateEvidenceCheckpoint(callOf(GROUNDED_ARGS), {
+      records: [webRecord({
+        payload: `navigated: url=${url} title=${JSON.stringify(url)}\n# ${url} — ${url}\npage text:\nThe Acme router costs $39.`,
+      })],
+      commit: commitOver(store),
+    })
+    expect(withScheme).toMatchObject({ ok: true, merged: true })
+    expect(store.snapshot().observations[0]?.references).toEqual([{ url }])
+  })
+
+  it('omits the title when no observed state named one', () => {
+    const store = evidenceHarness()
+    const outcome = evaluateEvidenceCheckpoint(callOf(GROUNDED_ARGS), {
+      records: [webRecord()],
+      commit: commitOver(store),
+    })
+    expect(outcome).toMatchObject({ ok: true })
+    expect(store.snapshot().observations[0]?.references).toEqual([{ url: 'https://shop.example/acme-router' }])
+  })
+
+  it('follows the same no-extra-round path for delegated evidence: the worker\'s observed title', () => {
+    const store = evidenceHarness()
+    const outcome = evaluateEvidenceCheckpoint(callOf({
+      kind: 'subagent',
+      agent_id: 'a-2',
+      observation: 'The rival router costs $29.',
+      source_url: 'https://rival.example/router',
+    }), {
+      records: [],
+      commitSubagent: (agentId) => subagentEvidenceCommit(() => store, 'run-1' as RunId, agentId),
+      workerObservations: () => [{
+        id: 'wobs-3' as ObservationRecord['id'],
+        at: 0,
+        producer: 'page_read',
+        ok: true,
+        payload: '# Rival Router Review — https://rival.example/router\npage text:\nThe rival router costs $29. Ships in 2 days.',
+        sourceUrl: 'https://rival.example/router',
+      }],
+    })
+    expect(outcome).toMatchObject({ ok: true })
+    expect(store.snapshot().observations[0]?.references).toEqual([
+      { url: 'https://rival.example/router', title: 'Rival Router Review' },
+    ])
+  })
+})
