@@ -250,6 +250,16 @@ later Assessments and Answers. It may survive a failed or cancelled Run once
 checkpointed, but never survives the Session.
 _Avoid_: browsing history, tool transcript
 
+**Evidence Browser**:
+The read-only, live view of the current Session's Observations and Candidates.
+It is not Recorded History and disappears at the Session boundary.
+_Avoid_: evidence manager, evidence history
+
+**Answer Evidence Summary**:
+The read-only view of the Observations an Answer declares as its support. It may
+reflect later contradictions without rewriting the original Answer.
+_Avoid_: sources list, answer history
+
 **Observation**:
 A directly grounded fact from a page, Action Outcome, Look, Subagent Report, or
 the user. It records its source and never presents interpretation as direct
@@ -318,7 +328,9 @@ _Avoid_: session memory
 The single typed-input surface, living in the Feed Panel's footer. Carries one
 of two verbs depending on run state: _submit_ starts a Run when none is live;
 _steer_ directs the live Run. The verb is chosen by the same run-live signal,
-never by which surface you typed in. The draft survives verb flips.
+never by which surface you typed in. The draft survives verb flips; a
+delivered draft clears on Enter, and a rejected one is restored — never
+silently dropped.
 _Avoid_: command box, steer box, input bar, activity bar
 
 **Steering**:
@@ -369,7 +381,11 @@ any close of the panel summons the card. The Answer persists until the
 next Run, a panel open, or the Session ends; a cancelled Run hides it
 promptly. Not a state of the Feed Panel; clicking it opens the panel and
 dismisses it. Voice activity may show it; only a human act opens the
-panel. Its live title is the Run Headline.
+panel. Its live title is the Run Headline. It floats translucently over
+the browsing pane without resizing it, stands in for the Collapsed
+panel's edge tab while visible, and never covers the same page region as
+the panel — switching between card and panel reveals the page beneath
+the other.
 _Avoid_: toast, notification, mini panel, activity card, transient card
 
 **Command Echo**:

@@ -122,3 +122,18 @@ export function createPeekCardFold(): {
 export function peekCardVisible(state: PeekCardState): boolean {
   return state.phase !== 'hidden'
 }
+
+/**
+ * The overlay slot's one element (ADR 0029): a native view intercepts
+ * input across its whole bounds, so the overlay shows exactly one of the
+ * expanded panel, the Peek Card, or the collapsed edge tab — the card
+ * replaces the tab while visible, and an open panel outranks both. Both
+ * renderers derive from this one rule: the dashboard sizes the slot by
+ * it, the overlay renders by it, so geometry and content cannot diverge.
+ */
+export type OverlaySlotContent = 'panel' | 'card' | 'tab'
+
+export function overlaySlotContent(panelOpen: boolean, peek: PeekCardState): OverlaySlotContent {
+  if (panelOpen) return 'panel'
+  return peekCardVisible(peek) ? 'card' : 'tab'
+}

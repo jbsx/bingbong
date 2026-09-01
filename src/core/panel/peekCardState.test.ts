@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { PipelineEvent } from '../pipeline/events'
-import { createPeekCardFold, peekCardVisible } from './peekCardState'
+import { createPeekCardFold, overlaySlotContent, peekCardVisible } from './peekCardState'
 
 // The Peek Card fold (ADR 0021, amended by ADR 0026): a command shows the
 // Peek Card — never the panel — and the card's life is a pure fold over
@@ -184,5 +184,30 @@ describe('createPeekCardFold', () => {
     fold.onEvent(command())
     fold.onEvent(done(5_000, 'reset'))
     expect(fold.state().phase).toBe('hidden')
+  })
+})
+
+describe('overlaySlotContent', () => {
+  // ADR 0029: the overlay view shows exactly one element at a time —
+  // expanded panel, Peek Card, or edge tab — because a native view
+  // intercepts input across its whole bounds. The card replaces the tab
+  // while visible; an open panel outranks both.
+  const hidden = { phase: 'hidden', runId: null, commandText: null, headline: null } as const
+  const live = { phase: 'live', runId: 'run-1', commandText: 'find a mug', headline: null } as const
+  const answer = { phase: 'answer', runId: 'run-1', commandText: 'find a mug', headline: null } as const
+
+  it('an open panel shows the panel, whatever the card phase says', () => {
+    expect(overlaySlotContent(true, hidden)).toBe('panel')
+    expect(overlaySlotContent(true, live)).toBe('panel')
+    expect(overlaySlotContent(true, answer)).toBe('panel')
+  })
+
+  it('collapsed with a visible card shows the card — it replaces the edge tab', () => {
+    expect(overlaySlotContent(false, live)).toBe('card')
+    expect(overlaySlotContent(false, answer)).toBe('card')
+  })
+
+  it('collapsed with no card shows the edge tab', () => {
+    expect(overlaySlotContent(false, hidden)).toBe('tab')
   })
 })

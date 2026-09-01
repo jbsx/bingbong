@@ -532,7 +532,11 @@ describe('evidence browser e2e', () => {
       await waitFor(
         async () => {
           await app.ensurePanelOpen()
-          if ((await app.overlayEval<number>('innerWidth')) < 100) return undefined
+          // Full-panel bounds, not the collapsed faces: the edge tab is
+          // 36px wide and the Peek Card slot only ~116px tall (ADR 0029) —
+          // a click dispatched against either's stale bounds is dropped.
+          if ((await app.overlayEval<number>('innerWidth')) < 320) return undefined
+          if ((await app.overlayEval<number>('innerHeight')) < 300) return undefined
           return (await app.overlayEval<string | null>(EVIDENCE_BADGE)) === '6' ? true : undefined
         },
         { timeoutMs: 15_000, intervalMs: 250 },

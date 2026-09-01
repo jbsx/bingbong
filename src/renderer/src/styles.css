@@ -31,6 +31,7 @@
   --bg: #f5f5f7; /* canvas */
   --panel: #ffffff; /* raised surfaces */
   --panel-overlay: rgba(255, 255, 255, 0.97); /* the feed panel's near-opaque skin (ADR 0012) */
+  --panel-peek: rgba(255, 255, 255, 0.92); /* the Peek Card's translucent skin (ADR 0029) — glanceable, so slightly clearer than the panel */
   --edge: #d2d2d7; /* hairlines on canvas and panels */
   --bubble: #e9e9ee; /* your words, as fills */
   --text: #1d1d1f; /* ink */
@@ -66,6 +67,7 @@
     --bg: #1e1e20; /* canvas */
     --panel: #2a2a2c; /* raised surfaces */
     --panel-overlay: rgba(29, 29, 31, 0.97);
+    --panel-peek: rgba(42, 42, 44, 0.92);
     --edge: #3a3a3c;
     --bubble: #3a3a3f;
     --text: #f5f5f7;
@@ -312,7 +314,7 @@ body {
 
 /* Docked takes real layout space — unless collapsed, where every mode
    shrinks to the edge tab. */
-.feed-slot--docked:not(.feed-slot--collapsed) {
+.feed-slot--docked:not(.feed-slot--collapsed):not(.feed-slot--peek) {
   flex: none;
   min-height: 0;
   width: clamp(320px, var(--feed-panel-width, 880px), 75%);
@@ -325,6 +327,20 @@ body {
   transform: translateY(-50%);
   width: 36px;
   height: 180px;
+}
+
+/* The Peek Card's slot (ADR 0029): while the card shows, the collapsed
+   slot floats bottom-center over the pane — away from the panel's
+   right-edge footprint, so switching card <-> panel reveals the page
+   beneath the other. The native view's bounds shrink-wrap this rect and
+   intercept input across all of it, so the card fills it exactly. */
+.feed-slot--peek {
+  position: absolute;
+  bottom: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(560px, 80%);
+  height: 116px;
 }
 
 .feed {

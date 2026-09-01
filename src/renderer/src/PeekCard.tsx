@@ -3,12 +3,13 @@ import type { RunProgress } from '../../core/pipeline/runProgress'
 import type { PeekCardState } from '../../core/panel/peekCardState'
 import { FeedMarkdown } from './FeedMarkdown'
 
-// The Peek Card (ADR 0021, amended by ADR 0026; glossary): the
-// system-pushed report of the live Run and its persisting Answer while the
-// Feed Panel is Collapsed — voice shows it, only a human act opens the
-// panel, and clicking it is that act. It rides the footer band the
-// confirmation cards ride (renderer DOM cannot float above the native
-// pane); it is not a state of the panel.
+// The Peek Card (ADR 0021, 0026, 0029; glossary): the system-pushed
+// report of the live Run and its persisting Answer while the Feed Panel
+// is Collapsed — voice shows it, only a human act opens the panel, and
+// clicking it is that act. It renders from the panel's overlay view
+// (ADR 0029) — the one surface that floats above the native pane —
+// translucent over the page, bottom-center, replacing the collapsed edge
+// tab; it is not a state of the panel.
 
 /**
  * The run's Answer — its Card when it has one, else its Spoken Rendering.

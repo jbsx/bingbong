@@ -59,6 +59,10 @@ describe('prompt bar e2e', () => {
         intervalMs: 100,
       })
 
+      // Enter cleared the field at once — the run is still live, so the
+      // old wait-for-the-run's-end clear would still show the text here.
+      expect(await harness.overlayEval<string>(`document.querySelector('.prompt-input')?.value ?? 'missing'`)).toBe('')
+
       // Live run: the verb flips to steer, and the stop button rides the row.
       await waitFor(async () => ((await verb(harness)) === 'steer' || undefined), { timeoutMs: 10_000, intervalMs: 100 })
       expect(await harness.overlayEval<boolean>(`!!document.querySelector('.panel-stop')`)).toBe(true)

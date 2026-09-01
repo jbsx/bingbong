@@ -2,12 +2,12 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { BrowserNav, BrowserPane } from './BrowserPane'
 import { AssistantPanel, RunHint, SessionExpiryControls, StatusOrb, StatusPill } from './AssistantPanel'
 import { IdleScreen } from './IdleScreen'
-import { PeekCard } from './PeekCard'
 import { SettingsPage } from './SettingsPage'
 import { SubagentCards } from './SubagentCards'
 import { evidenceTotal } from '../../core/session/evidenceBrowser'
 import { useActiveSession } from './useActiveSession'
 import { useAssistant } from './useAssistant'
+import { overlaySlotContent } from '../../core/panel/peekCardState'
 import { useFeedPanel, useFeedSlotRect } from './useFeedPanel'
 import { useIdle } from './useIdle'
 import { usePeekCard } from './usePeekCard'
@@ -28,7 +28,6 @@ export function App() {
   // follow (overlay floats out-of-flow; docked takes real layout space).
   const panel = useFeedPanel()
   const feedSlotRef = useRef<HTMLDivElement>(null)
-  useFeedSlotRect(feedSlotRef, `${panel.mode}-${panel.open}`)
   // The Evidence Browser's dashboard half (#139): the second Session-bearing
   // renderer answers the same change notifications with the same
   // authoritative read — the slot carries the live count so the read is
@@ -37,10 +36,16 @@ export function App() {
   // (#142).
   const evidence = useSessionEvidence()
   const evidenceCount = evidenceTotal(evidence.observations, evidence.candidates)
-  // The Peek Card (ADR 0021, amended by ADR 0026): voice's report surface
-  // while the panel is Collapsed — shown by activity, retired by opening
-  // the panel, revived by closing it mid-run.
+  // The Peek Card (ADR 0021, 0026, 0029): voice's report surface while
+  // the panel is Collapsed — shown by activity, retired by opening the
+  // panel, revived by closing it mid-run. It renders in the panel's
+  // overlay view now (ADR 0029); the dashboard folds the same events only
+  // to size the slot rect the card floats in — bottom-center, away from
+  // the panel's right edge, so switching card ↔ panel reveals the page
+  // beneath the other.
   const peek = usePeekCard(panel.open)
+  const slotContent = overlaySlotContent(panel.open, peek.state)
+  useFeedSlotRect(feedSlotRef, `${panel.mode}-${slotContent}`)
 
   const getMicId = useCallback(() => settings?.micId ?? 'default', [settings])
   const voice = useVoice({
@@ -209,7 +214,9 @@ export function App() {
               read (#139) the same way. */}
           <div
             ref={feedSlotRef}
-            className={`feed-slot feed-slot--${panel.mode}${panel.open ? '' : ' feed-slot--collapsed'}`}
+            className={`feed-slot feed-slot--${panel.mode}${
+              slotContent === 'card' ? ' feed-slot--peek' : slotContent === 'tab' ? ' feed-slot--collapsed' : ''
+            }`}
             data-evidence-count={evidenceCount}
             aria-hidden="true"
           />
@@ -220,18 +227,9 @@ export function App() {
           prompt bar (ADR 0011), and the band renders only while a card is
           pending. The card floats centered on canvas (ADR 0012); it cannot
           overlay the native pane, so it keeps this in-flow band. The Peek
-          Card rides the same band (ADR 0021) — and clicking it is the one
-          human act that opens the panel from it. */}
-      {peek.visible || assistant.pendingConfirmation || assistant.pendingAsk ? (
+          Card left this band for the panel's overlay view (ADR 0029). */}
+      {assistant.pendingConfirmation || assistant.pendingAsk ? (
         <footer className="dashboard-footer">
-          {peek.visible ? (
-            <PeekCard
-              state={peek.state}
-              entries={assistant.feed}
-              progress={assistant.progress}
-              onOpen={() => window.bingbong.feedPanel.toggle()}
-            />
-          ) : null}
           <AssistantPanel assistant={assistant} />
         </footer>
       ) : null}

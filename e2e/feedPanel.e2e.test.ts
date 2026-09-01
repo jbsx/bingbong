@@ -12,13 +12,17 @@ import type { AssistantTurn } from '../src/core/ports/llm'
 // reflow beneath it), docks to take real layout space via a toggle,
 // persists the choice across restarts (localStorage), and collapses to an
 // edge tab when idle, with a header button and Ctrl+Shift+F to toggle
-// manually. A command never opens it — voice's report is the Peek Card in
-// the dashboard's footer band, persisting past the run and revived by
-// closing the panel mid-run; only human acts open the panel. Identical in
-// kiosk mode; the pane stays interactive.
+// manually. A command never opens it — voice's report is the Peek Card,
+// floating translucent bottom-center over the pane from the panel's own
+// overlay view (ADR 0029), replacing the edge tab while visible,
+// persisting past the run and revived by closing the panel mid-run; only
+// human acts open the panel. Identical in kiosk mode; the pane stays
+// interactive.
 
 const OPEN_CHROME = `!!document.querySelector('.overlay-chrome--open .feed-surface')`
 const COLLAPSED_CHROME = `!!document.querySelector('.overlay-chrome--collapsed .feed-edge-tab')`
+/** The collapsed chrome's second face (ADR 0029): the Peek Card replacing the edge tab. */
+const PEEK_CHROME = `!!document.querySelector('.overlay-chrome--peek .peek-card')`
 
 function slowThenAnswer(slowUrl: string): AssistantTurn[] {
   return [
@@ -31,17 +35,17 @@ function slowThenAnswer(slowUrl: string): AssistantTurn[] {
 async function waitForLiveCardTitle(app: Awaited<ReturnType<typeof startHarness>>, text: string): Promise<string> {
   return waitFor(
     () =>
-      app.dashboardEval<string | null>(
+      app.overlayEval<string | null>(
         `document.querySelector('.peek-card.peek-card--live .peek-command')?.textContent ?? null`,
       ).then((title) => (title && title.includes(text) ? title : undefined)),
     { timeoutMs: 5000, intervalMs: 100 },
   )
 }
 
-/** Waits for the Peek Card to leave the dashboard entirely. */
+/** Waits for the Peek Card to leave the overlay entirely. */
 async function waitForCardGone(app: Awaited<ReturnType<typeof startHarness>>): Promise<void> {
   await waitFor(
-    () => app.dashboardEval<boolean>(`!document.querySelector('.peek-card')`).then((gone) => (gone ? true : undefined)),
+    () => app.overlayEval<boolean>(`!document.querySelector('.peek-card')`).then((gone) => (gone ? true : undefined)),
     { timeoutMs: 5000, intervalMs: 100 },
   )
 }
@@ -167,14 +171,15 @@ describe('feed panel layout e2e', () => {
       expect(kicked).toBe('kicked')
 
       // While the run is active the panel STAYS collapsed (ADR 0021) and
-      // the Peek Card reports live from the dashboard's footer band.
+      // the Peek Card reports live from the overlay's bottom-center slot,
+      // replacing the edge tab (ADR 0029).
       const echo = await waitForLiveCardTitle(app, 'open the slow page')
       expect(echo).toContain('open the slow page')
-      expect(await app.overlayEval<boolean>(COLLAPSED_CHROME)).toBe(true)
+      expect(await app.overlayEval<boolean>(PEEK_CHROME)).toBe(true)
 
       // Clicking the card is the human act that opens the panel — and it
       // dismisses the card with it.
-      await app.clickDashboardElement('.peek-card')
+      await app.clickOverlayElement('.peek-card')
       await waitFor(() => app.overlayEval<boolean>(OPEN_CHROME), { timeoutMs: 5000, intervalMs: 100 })
       await waitForCardGone(app)
     } finally {
@@ -214,12 +219,12 @@ describe('feed panel layout e2e', () => {
       // run live so the revised title is observable in its live phase.
       await waitFor(
         () =>
-          app.dashboardEval<string | null>(
+          app.overlayEval<string | null>(
             `document.querySelector('.peek-card.peek-card--live .peek-command')?.textContent ?? null`,
           ).then((text) => (text === 'Find a blue mug under $20' ? text : undefined)),
         { timeoutMs: 20000, intervalMs: 100 },
       )
-      expect(await app.overlayEval<boolean>(COLLAPSED_CHROME)).toBe(true)
+      expect(await app.overlayEval<boolean>(PEEK_CHROME)).toBe(true)
     } finally {
       await app.quit()
     }
@@ -241,7 +246,7 @@ describe('feed panel layout e2e', () => {
       // into the feed behind the collapsed panel).
       await waitFor(
         () =>
-          app.dashboardEval<boolean>(
+          app.overlayEval<boolean>(
             `!!(document.querySelector('.peek-card.peek-card--answer') && document.querySelector('.peek-card')?.textContent?.includes('The slow page opened.'))`,
           ),
         { timeoutMs: 20000, intervalMs: 250 },
@@ -250,8 +255,8 @@ describe('feed panel layout e2e', () => {
       // Persistence, not a linger: the card still shows the answer well
       // past the retired 8s window, and the panel never opened.
       await new Promise((resolve) => setTimeout(resolve, 9_500))
-      expect(await app.dashboardEval<boolean>(`!!document.querySelector('.peek-card.peek-card--answer')`)).toBe(true)
-      expect(await app.overlayEval<boolean>(COLLAPSED_CHROME)).toBe(true)
+      expect(await app.overlayEval<boolean>(`!!document.querySelector('.peek-card.peek-card--answer')`)).toBe(true)
+      expect(await app.overlayEval<boolean>(PEEK_CHROME)).toBe(true)
 
       // Opening the panel retires the card…
       await app.clickDashboardElement('.feed-panel-toggle')
@@ -263,7 +268,7 @@ describe('feed panel layout e2e', () => {
       await app.clickDashboardElement('.feed-panel-toggle')
       await waitFor(() => app.overlayEval<boolean>(COLLAPSED_CHROME), { timeoutMs: 5000, intervalMs: 100 })
       await new Promise((resolve) => setTimeout(resolve, 500))
-      expect(await app.dashboardEval<boolean>(`!document.querySelector('.peek-card')`)).toBe(true)
+      expect(await app.overlayEval<boolean>(`!document.querySelector('.peek-card')`)).toBe(true)
     } finally {
       await app.quit()
     }
@@ -290,7 +295,7 @@ describe('feed panel layout e2e', () => {
       // always covered.
       await app.clickDashboardElement('.feed-panel-toggle')
       await waitForLiveCardTitle(app, 'open the slow page')
-      expect(await app.overlayEval<boolean>(COLLAPSED_CHROME)).toBe(true)
+      expect(await app.overlayEval<boolean>(PEEK_CHROME)).toBe(true)
     } finally {
       await app.quit()
     }
@@ -316,9 +321,9 @@ describe('feed panel layout e2e', () => {
       // surface showing the outcome.
       await waitFor(
         () =>
-          app.overlayEval<boolean>(COLLAPSED_CHROME).then(async (collapsed) =>
-            collapsed &&
-            (await app.dashboardEval<boolean>(
+          app.overlayEval<boolean>(PEEK_CHROME).then(async (peeked) =>
+            peeked &&
+            (await app.overlayEval<boolean>(
               `!!(document.querySelector('.peek-card.peek-card--answer') && document.querySelector('.peek-card')?.textContent?.includes('The slow page opened.'))`,
             ))
               ? true

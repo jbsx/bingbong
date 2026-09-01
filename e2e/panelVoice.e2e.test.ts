@@ -18,6 +18,9 @@ import type { AssistantTurn } from '../src/core/ports/llm'
 
 const OPEN_CHROME = `!!document.querySelector('.overlay-chrome--open .feed-surface')`
 const COLLAPSED_CHROME = `!!document.querySelector('.overlay-chrome--collapsed .feed-edge-tab')`
+// While a Run is live or its Answer persists, the Peek Card replaces the
+// collapsed edge tab (ADR 0029) — collapsing mid-run shows the card.
+const PEEK_CHROME = `!!document.querySelector('.overlay-chrome--peek .peek-card')`
 const ANSWER_MARKER = 'The panel is docked now.'
 const OVERLAY_MARKER = 'The panel floats again.'
 
@@ -70,7 +73,7 @@ describe('panel voice tools e2e', () => {
       // event that also collapses comes strictly after the answer.
       await waitFor(
         async () =>
-          (await app.overlayEval<boolean>(COLLAPSED_CHROME)) && !(await feedText(app)).includes(ANSWER_MARKER)
+          (await app.overlayEval<boolean>(PEEK_CHROME)) && !(await feedText(app)).includes(ANSWER_MARKER)
             ? true
             : undefined,
         { timeoutMs: 10000, intervalMs: 100 },
@@ -82,8 +85,10 @@ describe('panel voice tools e2e', () => {
       // The run finishes: set_panel_mode docked the panel. Done collapses
       // it, but the mode persists — the docked slot renders collapsed.
       await waitForDisplay(app, ANSWER_MARKER)
+      // The Answer persists on the Peek Card, so the collapsed slot is the
+      // card's bottom-center rect (ADR 0029), still carrying the docked mode.
       await waitFor(
-        () => app.dashboardEval<boolean>(`!!document.querySelector('.feed-slot--docked.feed-slot--collapsed')`),
+        () => app.dashboardEval<boolean>(`!!document.querySelector('.feed-slot--docked.feed-slot--peek')`),
         { timeoutMs: 5000, intervalMs: 100 },
       )
 
@@ -112,7 +117,7 @@ describe('panel voice tools e2e', () => {
       expect(await app.submitCommand('float the panel')).toBe('submitted')
       await waitForDisplay(app, OVERLAY_MARKER)
       await waitFor(
-        () => app.overlayEval<boolean>(COLLAPSED_CHROME),
+        () => app.overlayEval<boolean>(PEEK_CHROME),
         { timeoutMs: 10000, intervalMs: 250 },
       )
       // The overlay-direction tool call also ran through the orchestrator.

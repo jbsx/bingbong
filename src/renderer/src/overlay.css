@@ -38,6 +38,25 @@ body,
   display: none;
 }
 
+/* The Peek Card in the overlay (ADR 0029): the collapsed chrome's second
+   face — the card replaces the edge tab while visible, filling the
+   bottom-center slot the dashboard reports, translucent over the live
+   page (alpha only: true frost is impossible across native view
+   boundaries, the ADR 0012 finding). Content centers vertically because
+   the card fills a fixed slot whatever its line count. */
+.overlay-chrome--peek .peek-card {
+  width: 100%;
+  max-width: none;
+  height: 100%;
+  align-items: center;
+  background: var(--panel-peek);
+  overflow: hidden;
+}
+
+.overlay-chrome--peek .peek-orb {
+  margin-top: 0;
+}
+
 /* The panel surface paints at the folded width, right-anchored: in
    steady state the view bounds equal that width, so min(100%, var)
    changes nothing — but during a resize drag main cloaks the view wider

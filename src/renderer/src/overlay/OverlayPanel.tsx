@@ -1,12 +1,15 @@
 import { useEffect, useRef } from 'react'
 import { ActivityFeed } from '../ActivityFeed'
 import { evidenceTotal } from '../../../core/session/evidenceBrowser'
+import { overlaySlotContent } from '../../../core/panel/peekCardState'
+import { PeekCard } from '../PeekCard'
 import { useEvidenceBrowserView } from '../useEvidenceBrowserView'
+import { usePeekCard } from '../usePeekCard'
 import { useSessionEvidence } from '../useSessionEvidence'
 import { EvidenceView } from './EvidenceView'
 import { PromptBar } from './PromptBar'
 import { useOverlayFeed, usePanelState } from './useOverlayFeed'
-import { useRunActive } from './useRunActive'
+import { useRunProgress } from './useRunProgress'
 
 /**
  * The feed panel surface (#45), rendered inside its own transparent
@@ -36,7 +39,15 @@ import { useRunActive } from './useRunActive'
 export function OverlayPanel() {
   const { feed, liveRunId } = useOverlayFeed()
   const { mode, open, width } = usePanelState()
-  const runActive = useRunActive()
+  const progress = useRunProgress()
+  const runActive = progress !== null
+  // The Peek Card (ADR 0029): now rendered from this overlay page — the
+  // one surface that floats above the native pane — instead of the
+  // dashboard's in-flow footer band. The slot rule decides which single
+  // element shows (panel, card, or edge tab); the dashboard sizes the
+  // slot rect from the same rule.
+  const peek = usePeekCard(open)
+  const slotContent = overlaySlotContent(open, peek.state)
   const evidence = useSessionEvidence()
   // The `Evidence N` total (#142): every current Observation and
   // Candidate, independently of the browser's active filters.
@@ -144,7 +155,11 @@ export function OverlayPanel() {
   )
 
   return (
-    <div className={`overlay-chrome overlay-chrome--${open ? 'open' : 'collapsed'}`}>
+    <div
+      className={`overlay-chrome overlay-chrome--${open ? 'open' : 'collapsed'}${
+        slotContent === 'card' ? ' overlay-chrome--peek' : ''
+      }`}
+    >
       <div
         ref={surfaceRef}
         className={`feed-surface feed-surface--${mode}`}
@@ -213,14 +228,27 @@ export function OverlayPanel() {
           />
         )}
       </div>
-      <button
-        type="button"
-        className="feed-edge-tab"
-        aria-label="Open activity feed"
-        onClick={() => window.bingbong.feedPanel.toggle()}
-      >
-        <span className="feed-edge-tab-label">activity</span>
-      </button>
+      {/* Exactly one collapsed affordance renders (ADR 0029): the Peek
+          Card replaces the edge tab while it is visible — both are the
+          same human act (clicking opens the panel), and the native view's
+          bounds shrink-wrap whichever one shows. */}
+      {slotContent === 'card' ? (
+        <PeekCard
+          state={peek.state}
+          entries={feed}
+          progress={progress}
+          onOpen={() => window.bingbong.feedPanel.toggle()}
+        />
+      ) : slotContent === 'tab' ? (
+        <button
+          type="button"
+          className="feed-edge-tab"
+          aria-label="Open activity feed"
+          onClick={() => window.bingbong.feedPanel.toggle()}
+        >
+          <span className="feed-edge-tab-label">activity</span>
+        </button>
+      ) : null}
     </div>
   )
 }
