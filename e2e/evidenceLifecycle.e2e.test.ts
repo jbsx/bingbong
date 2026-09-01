@@ -62,6 +62,17 @@ async function submitAndRecord(app: Harness, command: string, marker: string): P
   )
 }
 
+/** Waits until the header badge reads exactly `text` (or is gone for null). */
+async function waitForEvidenceBadge(app: Harness, text: string | null): Promise<void> {
+  await waitFor(
+    async () => {
+      await app.ensurePanelOpen()
+      return (await app.overlayEval<string | null>(EVIDENCE_BADGE)) === text ? true : undefined
+    },
+    { timeoutMs: 20_000, intervalMs: 100 },
+  )
+}
+
 /** Waits until the overlay shows the Evidence view holding exactly `count` cards. */
 async function waitForEvidenceCards(app: Harness, count: number): Promise<string[]> {
   return waitFor(
@@ -96,10 +107,7 @@ describe('evidence browser lifecycle e2e', () => {
     const app = await startHarness({ fixture, env: { BINGBONG_LLM_SCRIPT: JSON.stringify(script) } })
     try {
       await submitAndRecord(app, 'note what the second page says', 'SESSION A DONE.')
-      await waitFor(
-        async () => ((await app.overlayEval<string | null>(EVIDENCE_BADGE)) === '1' ? true : undefined),
-        { timeoutMs: 10_000, intervalMs: 100 },
-      )
+      await waitForEvidenceBadge(app, '1')
 
       // Select Evidence — the selection this whole test carries around.
       await app.ensurePanelOpen()
@@ -143,6 +151,17 @@ describe('evidence browser lifecycle e2e', () => {
       expect(await app.overlayEval<string>(PANEL_VIEW)).toBe('session evidence')
       expect(await app.dashboardEval<string | null>(SLOT_EVIDENCE_COUNT)).toBe('1')
 
+      // The dashboard is the other Session-bearing renderer: its crash
+      // recovers the same way — the live count restores on its slot, and
+      // the panel (never crashed) keeps the selected view and snapshot.
+      await app.crashRenderer('dashboard')
+      await waitFor(
+        async () => ((await app.dashboardEval<string | null>(SLOT_EVIDENCE_COUNT)) === '1' ? true : undefined),
+        { timeoutMs: 20_000, intervalMs: 250 },
+      )
+      expect(await app.overlayEval<string>(PANEL_VIEW)).toBe('session evidence')
+      expect((await waitForEvidenceCards(app, 1))[0]).toContain('The second fixture page carries the heading.')
+
       // Main's fold is the authority both pages read: the dashboard pulls
       // the same selected view.
       expect(await app.dashboardEval<string>(VIEW_PULL)).toBe('evidence')
@@ -178,10 +197,7 @@ describe('evidence browser lifecycle e2e', () => {
         })
       `)
       await submitAndRecord(app, 'note what the second page says', 'SESSION A DONE.')
-      await waitFor(
-        async () => ((await app.overlayEval<string | null>(EVIDENCE_BADGE)) === '1' ? true : undefined),
-        { timeoutMs: 10_000, intervalMs: 100 },
-      )
+      await waitForEvidenceBadge(app, '1')
       await app.ensurePanelOpen()
       await app.clickOverlayElement('.feed-tab--evidence')
       expect((await waitForEvidenceCards(app, 1))[0]).toContain('Session A saw the heading.')
@@ -215,18 +231,27 @@ describe('evidence browser lifecycle e2e', () => {
       )
       await app.clickOverlayElement('.feed-tab:not(.feed-tab--evidence)')
 
+      // The lifecycle transition left no structured evidence in any
+      // History record shape — the APIs expose text and lifecycle fields
+      // only, whatever crossed the boundary.
+      const postResetRaw = await app.dashboardEval<string>(
+        `(async () => JSON.stringify({
+          entries: await window.bingbong.history.recentEntries(),
+          runs: await window.bingbong.history.recentRuns(),
+          sessions: await window.bingbong.history.recentSessions(),
+        }))()`,
+      )
+      expect(postResetRaw).not.toMatch(/observation/i)
+      expect(postResetRaw).not.toMatch(/candidate/i)
+      expect(postResetRaw).not.toMatch(/contradiction/i)
+      expect(postResetRaw).not.toContain('evidenceIds')
+
       // Stale-generation isolation (#145): Session B checkpoints its own
       // evidence and the browser shows exactly it — the replacement
       // Session never inherits a card, a count, or a notification from the
       // identity it superseded.
       await submitAndRecord(app, 'note it once more', 'SESSION B DONE.')
-      await waitFor(
-        async () => {
-          await app.ensurePanelOpen()
-          return (await app.overlayEval<string | null>(EVIDENCE_BADGE)) === '1' ? true : undefined
-        },
-        { timeoutMs: 20_000, intervalMs: 250 },
-      )
+      await waitForEvidenceBadge(app, '1')
       await app.clickOverlayElement('.feed-tab--evidence')
       const cards = await waitForEvidenceCards(app, 1)
       expect(cards.join('\n')).toContain('Session B saw the heading too.')
@@ -258,10 +283,7 @@ describe('evidence browser lifecycle e2e', () => {
         })
       `)
       await submitAndRecord(app, 'note what the second page says', 'SESSION A DONE.')
-      await waitFor(
-        async () => ((await app.overlayEval<string | null>(EVIDENCE_BADGE)) === '1' ? true : undefined),
-        { timeoutMs: 10_000, intervalMs: 100 },
-      )
+      await waitForEvidenceBadge(app, '1')
       await app.ensurePanelOpen()
       await app.clickOverlayElement('.feed-tab--evidence')
       expect((await waitForEvidenceCards(app, 1))[0]).toContain('The soon-lapsed Session saw the heading.')
@@ -270,7 +292,11 @@ describe('evidence browser lifecycle e2e', () => {
       // pull lands in the old Session's window, then the Session lapses
       // underneath it. Everything the recovered page could hold from the
       // ended identity must be gone: the asynchronous old-Session response
-      // is discarded, not applied back.
+      // is discarded, not applied back. (The evidence channels are
+      // main→renderer — a page cannot inject onto them — so stale
+      // payloads are covered synthetically at the view fold
+      // (evidenceView.test.ts) and here through the deterministic
+      // recovered-across-the-end race.)
       await app.crashRenderer('overlay')
       await waitFor(
         async () => ((await app.dashboardEval<number>(`globalThis.__lapseEnds.length`)) === 1 ? true : undefined),
@@ -293,6 +319,17 @@ describe('evidence browser lifecycle e2e', () => {
       )
       expect(await app.overlayEval<string | null>(EVIDENCE_BADGE)).toBeNull()
       expect(await app.dashboardEval<string>(VIEW_PULL)).toBe('activity')
+
+      // The recovered page's own view: the old Session's card it briefly
+      // held is gone from its rendered Evidence Browser too — opening the
+      // (empty) browser shows nothing resurrected.
+      await app.clickOverlayElement('.feed-tab--evidence')
+      expect(await app.overlayEval<string>(`document.querySelector('.feed-empty')?.textContent ?? ''`)).toContain(
+        'Nothing has been checkpointed',
+      )
+      expect(await app.overlayEval<string>(`document.body.textContent`)).not.toContain(
+        'The soon-lapsed Session saw the heading.',
+      )
     } finally {
       await app.quit()
     }
@@ -314,10 +351,7 @@ describe('evidence browser lifecycle e2e', () => {
     const app = await startHarness({ fixture, env: { BINGBONG_LLM_SCRIPT: JSON.stringify(script) } })
     try {
       await submitAndRecord(app, 'note what the second page says', 'SESSION A DONE.')
-      await waitFor(
-        async () => ((await app.overlayEval<string | null>(EVIDENCE_BADGE)) === '1' ? true : undefined),
-        { timeoutMs: 10_000, intervalMs: 100 },
-      )
+      await waitForEvidenceBadge(app, '1')
 
       // A second Run goes live and is cancelled by the panel's Stop — a
       // Run boundary, not a Session one.
@@ -347,13 +381,7 @@ describe('evidence browser lifecycle e2e', () => {
       // The Session interruption is the boundary that clears: the same
       // evidence-clearing path as Reset and Lapse, not the Stop's cancel.
       await submitAndRecord(app, 'forget all that — different question', 'SESSION B STARTED.')
-      await waitFor(
-        async () => {
-          await app.ensurePanelOpen()
-          return (await app.overlayEval<string | null>(EVIDENCE_BADGE)) === null ? true : undefined
-        },
-        { timeoutMs: 10_000, intervalMs: 100 },
-      )
+      await waitForEvidenceBadge(app, null)
       expect(await app.dashboardEval<unknown>(EVIDENCE_PULL)).toMatchObject({
         snapshot: { observations: [], candidates: [], contradictions: [] },
       })
@@ -383,10 +411,7 @@ describe('evidence browser lifecycle e2e', () => {
       })
       try {
         await submitAndRecord(first, 'note what the second page says', 'SESSION A DONE.')
-        await waitFor(
-          async () => ((await first.overlayEval<string | null>(EVIDENCE_BADGE)) === '1' ? true : undefined),
-          { timeoutMs: 10_000, intervalMs: 100 },
-        )
+        await waitForEvidenceBadge(first, '1')
         // The Answer declared its evidence, so Recorded History keeps the
         // permitted rendering: Answer text plus the flattened source URL.
         await waitFor(

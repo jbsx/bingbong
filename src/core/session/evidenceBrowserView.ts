@@ -23,6 +23,14 @@ export function isEvidenceBrowserView(value: unknown): value is EvidenceBrowserV
  * lifecycle boundaries move it back to Activity; a human selection sticks
  * until the next boundary, whatever happens around it (runs start and end
  * within a Session without touching the selected view).
+ *
+ * Two deliberate simplifications, both the panel fold's precedent: the
+ * boundaries are not identity-matched (a window's overlay hears exactly
+ * its own runtime's lifecycle events, one Session stream per window), and
+ * a selection is presentation chrome, not evidence — a `setView` racing a
+ * boundary can outlive it by one IPC hop, but the replacement Session's
+ * `session_started` re-defaults the view before any of its work exists,
+ * so a new Session still always opens on Activity.
  */
 export function createEvidenceBrowserViewFold(): {
   onEvent(event: PipelineEvent): void

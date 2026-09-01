@@ -2,12 +2,12 @@ import type { SessionEvidenceChange } from './sessionRuntime'
 import type { SessionEvidenceSnapshot } from './sessionEvidence'
 import { isEvidenceBrowserView, type EvidenceBrowserView } from './evidenceBrowserView'
 
-// The Evidence Browser's session-scoped IPC (#139): one pull channel and
-// one change notification, both Session-stamped. Notifications carry
-// identity only — a notified renderer responds by reading the complete
-// authoritative snapshot, so the visible record can never diverge from
-// what the Session runtime actually holds (and duplicate merges can never
-// double-render).
+// The Evidence Browser's session-scoped IPC (#139): one evidence pull
+// channel and one change notification, both Session-stamped. Evidence
+// notifications carry identity only — a notified renderer responds by
+// reading the complete authoritative snapshot, so the visible record can
+// never diverge from what the Session runtime actually holds (and
+// duplicate merges can never double-render).
 
 export const EVIDENCE_IPC = {
   /** Either renderer → main: the live Session's Evidence snapshot (identity + generation + snapshot), or null with no Session. */

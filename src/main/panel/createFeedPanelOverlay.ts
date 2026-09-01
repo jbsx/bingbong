@@ -181,10 +181,12 @@ export function attachFeedPanelOverlayToWindow(
     if (!wc.isDestroyed()) wc.send(PANEL_IPC.state, state)
   }
 
+  // The selected view's audience is the overlay page alone (#145) — only
+  // it renders the Activity/Evidence tabs. The pull stays open to every
+  // page, but nothing else consumes the broadcast, so none else gets it.
   function broadcastEvidenceView(): void {
     if (win.isDestroyed()) return
     const payload: EvidenceBrowserViewPayload = { view: viewFold.state() }
-    if (!win.webContents.isDestroyed()) win.webContents.send(EVIDENCE_VIEW_IPC.changed, payload)
     if (!wc.isDestroyed()) wc.send(EVIDENCE_VIEW_IPC.changed, payload)
   }
 
