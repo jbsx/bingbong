@@ -1,6 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
 import type { MemoryEntryId } from '../../../core/session/workingMemory'
-import type { SessionCandidate, SessionObservation } from '../../../core/session/sessionEvidence'
+import type {
+  ObservationContradiction,
+  SessionCandidate,
+  SessionObservation,
+} from '../../../core/session/sessionEvidence'
 import {
   CANDIDATE_FILTERS,
   OBSERVATION_FILTERS,
@@ -8,6 +12,7 @@ import {
   describeObservationProvenance,
   describeProvenance,
   isDelegatedObservation,
+  layoutObservationCards,
   newestFirstCandidates,
   newestFirstObservations,
   observationMatchesFilter,
@@ -16,6 +21,9 @@ import {
   type ObservationFilter,
 } from '../../../core/session/evidenceBrowser'
 import { formatFeedTime } from '../ActivityFeed'
+
+/** One shared empty default — props stay optional without allocating per render. */
+const NO_CONTRADICTIONS: readonly ObservationContradiction[] = []
 
 /**
  * The complete Session Evidence Browser (#142, ADR 0028): the current
@@ -32,17 +40,22 @@ import { formatFeedTime } from '../ActivityFeed'
  * not Evidence (the store never holds them as Observations). Filtering is
  * renderer-local and moves no browser or Run state, and the header's
  * `Evidence N` total (owned by the panel chrome) counts everything
- * regardless of the active filters. Switching to this view stays
- * renderer-local exactly as in #139.
+ * regardless of the active filters. Contradictory Observations (#143)
+ * render as one visible group — side by side, neither silently
+ * preferred — and each carries its `contradicted` chip wherever it
+ * shows. Switching to this view stays renderer-local exactly as in #139.
  */
 export function EvidenceView({
   observations,
   candidates,
+  contradictions = NO_CONTRADICTIONS,
   headerActions,
   footer,
 }: {
   observations: readonly SessionObservation[]
   candidates: readonly SessionCandidate[]
+  /** The snapshot's retained contradictions (#143) — contradictory Observations group on them. */
+  contradictions?: readonly ObservationContradiction[]
   headerActions?: React.ReactNode
   /** Below the list — the panel's prompt row, same as Activity. */
   footer?: React.ReactNode
@@ -82,13 +95,18 @@ export function EvidenceView({
       card.classList.remove('evidence-card--focused')
       flashTimer.current = null
     }, 1_600)
-  }, [pendingFocus, observations, candidates, observationFilter])
+  }, [pendingFocus, observations, candidates, contradictions, observationFilter])
 
   const byId = new Map(observations.map((observation) => [observation.id, observation]))
   const visibleObservations = newestFirstObservations(observations)
     .filter((observation) => observationMatchesFilter(observation, observationFilter))
   const visibleCandidates = newestFirstCandidates(candidates)
     .filter((candidate) => candidateMatchesFilter(candidate, candidateFilter))
+  // The contradiction grouping (#143): clusters of mechanically
+  // contradictory Observations render as one visible group; the chip
+  // truth comes from every retained pair, resolved from either member —
+  // a filter that hides a partner never hides the disagreement.
+  const cardLayout = layoutObservationCards(visibleObservations, contradictions)
 
   /** A Candidate's support: reference the existing card — never copy it. */
   const focusObservation = (id: MemoryEntryId): void => {
@@ -99,6 +117,37 @@ export function EvidenceView({
     if (!observationMatchesFilter(observation, observationFilter)) setObservationFilter('all')
     setPendingFocus(id)
   }
+
+  const observationCard = (observation: SessionObservation): React.ReactElement => (
+    <article
+      key={observation.id}
+      className={`evidence-card${observation.volatile === true ? ' evidence-card--volatile' : ''}`}
+      data-evidence-id={observation.id}
+      data-contradicted={cardLayout.contradictedIds.has(observation.id) ? 'true' : undefined}
+    >
+      <header className="evidence-card-head">
+        <span className="evidence-kind">{observation.sourceKind}</span>
+        {isDelegatedObservation(observation) ? (
+          <span className="evidence-chip evidence-chip--delegated">delegated</span>
+        ) : null}
+        {cardLayout.contradictedIds.has(observation.id) ? (
+          <span className="evidence-chip evidence-chip--contradicted">contradicted</span>
+        ) : null}
+        {observation.volatile === true ? (
+          <span className="evidence-chip evidence-chip--volatile">needs revalidation</span>
+        ) : null}
+        <time className="feed-time">{formatFeedTime(observation.observedAt)}</time>
+      </header>
+      <p className="evidence-text">{observation.text}</p>
+      {observation.uncertainty !== undefined ? (
+        <p className="evidence-uncertainty">uncertainty: {observation.uncertainty}</p>
+      ) : null}
+      {observation.references.length > 0 ? (
+        <p className="evidence-source">{observation.references.map(sourceLabel).join(' · ')}</p>
+      ) : null}
+      <p className="evidence-provenance">{describeObservationProvenance(observation)}</p>
+    </article>
+  )
 
   return (
     <div className="feed" aria-label="session evidence">
@@ -137,32 +186,18 @@ export function EvidenceView({
               {observations.length === 0 ? 'No observations yet.' : 'No observations match this filter.'}
             </p>
           ) : (
-            visibleObservations.map((observation) => (
-              <article
-                key={observation.id}
-                className={`evidence-card${observation.volatile === true ? ' evidence-card--volatile' : ''}`}
-                data-evidence-id={observation.id}
-              >
-                <header className="evidence-card-head">
-                  <span className="evidence-kind">{observation.sourceKind}</span>
-                  {isDelegatedObservation(observation) ? (
-                    <span className="evidence-chip evidence-chip--delegated">delegated</span>
-                  ) : null}
-                  {observation.volatile === true ? (
-                    <span className="evidence-chip evidence-chip--volatile">needs revalidation</span>
-                  ) : null}
-                  <time className="feed-time">{formatFeedTime(observation.observedAt)}</time>
-                </header>
-                <p className="evidence-text">{observation.text}</p>
-                {observation.uncertainty !== undefined ? (
-                  <p className="evidence-uncertainty">uncertainty: {observation.uncertainty}</p>
-                ) : null}
-                {observation.references.length > 0 ? (
-                  <p className="evidence-source">{observation.references.map(sourceLabel).join(' · ')}</p>
-                ) : null}
-                <p className="evidence-provenance">{describeObservationProvenance(observation)}</p>
-              </article>
-            ))
+            cardLayout.groups.map((group) =>
+              group.length > 1 ? (
+                // The contradiction group (#143, ADR 0028): side by
+                // side, visibly one disagreement, neither preferred.
+                <div key={group[0]!.id} className="evidence-contradiction" data-contradiction-group="">
+                  <p className="evidence-contradiction-label">contradictory observations — both retained</p>
+                  {group.map(observationCard)}
+                </div>
+              ) : (
+                observationCard(group[0]!)
+              ),
+            )
           )}
         </section>
         <section className="evidence-section" aria-label="candidates">

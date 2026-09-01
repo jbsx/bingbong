@@ -134,6 +134,33 @@ describe('session evidence', () => {
     expect(evidence.snapshot().observations).toHaveLength(3)
   })
 
+  it('retains contradiction relationships in the snapshot, resolvable from either Observation (#143)', () => {
+    const { evidence } = evidenceHarness()
+    const cheaper = evidence.checkpointObservation(webObservation('The Acme router costs $39.'))!
+    const pricier = evidence.checkpointObservation(webObservation('The Acme router costs $59.'))!
+
+    // Durable Session state, not just a checkpoint disclosure: the pair
+    // names both members, so the relationship resolves from whichever
+    // side a reader holds — an earlier cited Observation is recognized
+    // as contradicted by a later one.
+    expect(evidence.snapshot().contradictions).toEqual([
+      { earlierObservationId: cheaper.observation.id, laterObservationId: pricier.observation.id },
+    ])
+
+    // A third statement from the same source contradicts every retained
+    // version before it — one pair per grounded disagreement.
+    const costliest = evidence.checkpointObservation(webObservation('The Acme router costs $79.'))!
+    expect(evidence.snapshot().contradictions).toEqual([
+      { earlierObservationId: cheaper.observation.id, laterObservationId: pricier.observation.id },
+      { earlierObservationId: cheaper.observation.id, laterObservationId: costliest.observation.id },
+      { earlierObservationId: pricier.observation.id, laterObservationId: costliest.observation.id },
+    ])
+
+    // Contradictions are Session Evidence: they vanish with the Session.
+    evidence.clear()
+    expect(evidence.snapshot().contradictions).toEqual([])
+  })
+
   it('retains User Observations with exact text and event provenance (#122)', () => {
     const { evidence } = evidenceHarness()
     const result = evidence.checkpointObservation({
@@ -284,7 +311,7 @@ describe('session evidence', () => {
     evidence.clear()
 
     expect(evidence.cleared).toBe(true)
-    expect(evidence.snapshot()).toEqual({ observations: [], candidates: [] })
+    expect(evidence.snapshot()).toEqual({ observations: [], candidates: [], contradictions: [] })
     expect(evidence.checkpointObservation(webObservation(undefined, 'run-2' as RunId))).toBeNull()
     expect(evidence.observation(observation.id)).toBeNull()
   })
@@ -292,10 +319,13 @@ describe('session evidence', () => {
   it('freezes snapshots against mutation', () => {
     const { evidence } = evidenceHarness()
     evidence.checkpointObservation(webObservation())!
+    evidence.checkpointObservation(webObservation('The Acme router costs $59.'))!
     const snapshot = evidence.snapshot()
     expect(Object.isFrozen(snapshot)).toBe(true)
     expect(Object.isFrozen(snapshot.observations)).toBe(true)
     expect(Object.isFrozen(snapshot.observations[0]!.references)).toBe(true)
+    expect(Object.isFrozen(snapshot.contradictions)).toBe(true)
+    expect(Object.isFrozen(snapshot.contradictions[0])).toBe(true)
   })
 
   it('marks declared-volatile and uncertain Observations volatile; durable ones carry no flag (#123)', () => {

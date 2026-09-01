@@ -1,5 +1,10 @@
-import type { SessionCandidate, SessionObservation, UserObservationOrigin } from './sessionEvidence'
-import type { MemoryProvenance, MemoryReference } from './workingMemory'
+import type {
+  ObservationContradiction,
+  SessionCandidate,
+  SessionObservation,
+  UserObservationOrigin,
+} from './sessionEvidence'
+import type { MemoryEntryId, MemoryProvenance, MemoryReference } from './workingMemory'
 
 // The complete Evidence Browser's pure projection (#142, ADR 0028):
 // everything the renderer shows — filter matching, newest-first ordering,
@@ -62,6 +67,80 @@ export function newestFirstCandidates(candidates: readonly SessionCandidate[]): 
     .map((candidate, index) => ({ candidate, index }))
     .sort((a, b) => b.candidate.recordedAt - a.candidate.recordedAt || b.index - a.index)
     .map(({ candidate }) => candidate)
+}
+
+/**
+ * The Observation cards' contradiction layout (#143, ADR 0028):
+ * mechanically contradictory Observations render as one visible group —
+ * side by side, neither silently preferred — placed at the newest
+ * member's newest-first position with the group itself newest-first
+ * within, so the established ordering law keeps holding at every scale.
+ * Chains cluster whole: A contradicted by B and B by C is one group of
+ * three, not two overlapping pairs. Uncontradicted Observations stay
+ * singleton groups in place.
+ */
+export interface ObservationCardLayout {
+  /** Newest-first card groups: one entry per card, or per contradiction cluster. */
+  readonly groups: readonly (readonly SessionObservation[])[]
+  /**
+   * Every Observation the snapshot's contradictions touch, from either
+   * side — the chip truth, independent of grouping: a filter that hides
+   * a partner never hides the disagreement.
+   */
+  readonly contradictedIds: ReadonlySet<MemoryEntryId>
+}
+
+export function layoutObservationCards(
+  observations: readonly SessionObservation[],
+  contradictions: readonly ObservationContradiction[],
+): ObservationCardLayout {
+  const present = new Set(observations.map((observation) => observation.id))
+  const partners = new Map<MemoryEntryId, MemoryEntryId[]>()
+  const link = (a: MemoryEntryId, b: MemoryEntryId): void => {
+    // Pairs naming Observations the caller did not pass (a filter hid
+    // them, or a foreign list) shape no group — but the chip truth below
+    // still comes from every pair, resolved from either member.
+    if (!present.has(a) || !present.has(b)) return
+    partners.set(a, [...(partners.get(a) ?? []), b])
+    partners.set(b, [...(partners.get(b) ?? []), a])
+  }
+  for (const pair of contradictions) link(pair.earlierObservationId, pair.laterObservationId)
+
+  const contradictedIds = new Set<MemoryEntryId>()
+  for (const pair of contradictions) {
+    contradictedIds.add(pair.earlierObservationId)
+    contradictedIds.add(pair.laterObservationId)
+  }
+
+  // Every card keeps its snapshot insertion index, so the newest-first
+  // tie-break stays "latest creation first" wherever a cluster re-sorts.
+  const byId = new Map(observations.map((observation, index) => [observation.id, { observation, index }]))
+  const newestFirst = (members: { observation: SessionObservation; index: number }[]): readonly SessionObservation[] =>
+    [...members]
+      .sort((a, b) => b.observation.observedAt - a.observation.observedAt || b.index - a.index)
+      .map(({ observation }) => observation)
+
+  const groups: (readonly SessionObservation[])[] = []
+  const grouped = new Set<MemoryEntryId>()
+  for (const observation of newestFirst([...byId.values()])) {
+    if (grouped.has(observation.id)) continue
+    // Flood the whole connected cluster from its newest member — the
+    // newest-first walk guarantees the first member met is the
+    // cluster's newest, so the group takes the position that member
+    // already owned.
+    const cluster: { observation: SessionObservation; index: number }[] = [byId.get(observation.id)!]
+    grouped.add(observation.id)
+    for (let at = 0; at < cluster.length; at += 1) {
+      for (const partnerId of partners.get(cluster[at]!.observation.id) ?? []) {
+        if (grouped.has(partnerId)) continue
+        grouped.add(partnerId)
+        const partner = byId.get(partnerId)
+        if (partner !== undefined) cluster.push(partner)
+      }
+    }
+    groups.push(newestFirst(cluster))
+  }
+  return { groups, contradictedIds }
 }
 
 /**

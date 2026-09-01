@@ -162,6 +162,7 @@ export function OverlayPanel() {
           <EvidenceView
             observations={evidence.observations}
             candidates={evidence.candidates}
+            contradictions={evidence.contradictions}
             footer={panelFooter}
             headerActions={
               <>
@@ -182,6 +183,7 @@ export function OverlayPanel() {
             entries={feed}
             liveRunId={liveRunId}
             observations={evidence.observations}
+            contradictions={evidence.contradictions}
             footer={panelFooter}
             headerActions={
               <>

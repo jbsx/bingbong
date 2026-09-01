@@ -1,4 +1,4 @@
-import type { SessionObservation } from './sessionEvidence'
+import type { ObservationContradiction, SessionObservation } from './sessionEvidence'
 import type { MemoryEntryId } from './workingMemory'
 
 // The Answer Evidence Summary's association (#141, ADR 0028): the pure
@@ -32,4 +32,22 @@ export function answerEvidenceObservations(
     cited.push(observation)
   }
   return cited
+}
+
+/**
+ * The contradiction warnings an Answer's summary carries (#143): exactly
+ * the retained mechanical contradictions whose earlier member the Answer
+ * cited — later evidence from the same source disagreed with that
+ * support. Resolved against the current snapshot, so a warning minted by
+ * a later Run reaches already-rendered Answers on the next read, and it
+ * never touches the Answer's own text: the record of what was said stays
+ * byte-for-byte what was said. An Answer citing only the later member of
+ * a pair carries no warning — nothing later contradicted its support.
+ */
+export function answerEvidenceContradictions(
+  evidenceIds: readonly MemoryEntryId[],
+  contradictions: readonly ObservationContradiction[],
+): readonly ObservationContradiction[] {
+  const cited = new Set(evidenceIds)
+  return contradictions.filter((pair) => cited.has(pair.earlierObservationId))
 }

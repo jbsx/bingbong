@@ -342,6 +342,35 @@ body,
   color: #b57614;
 }
 
+.evidence-chip--contradicted {
+  background: color-mix(in srgb, #9d0006 10%, transparent);
+  color: #9d0006;
+}
+
+/* The contradiction group (#143, ADR 0028): mechanically contradictory
+   Observations render side by side as one visible disagreement — a
+   bordered cluster at the newest member's newest-first position,
+   neither member preferred over the other. */
+.evidence-contradiction {
+  margin: 0 0 8px;
+  padding: 8px;
+  border: 1px dashed color-mix(in srgb, #9d0006 45%, transparent);
+  border-radius: 12px;
+}
+
+.evidence-contradiction-label {
+  margin: 0 0 6px;
+  color: #9d0006;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.evidence-contradiction .evidence-card:last-child {
+  margin-bottom: 0;
+}
+
 /* The support flash: a Candidate's reference lands on the Observation
    card it cites — focused, briefly highlighted, never copied. */
 .evidence-card--focused {
@@ -476,6 +505,31 @@ body,
   white-space: pre-line;
   overflow-wrap: anywhere;
   user-select: text;
+}
+
+/* Contradiction warnings (#143): a later Run's contradictory evidence
+   flags the collapsed row and explains itself inside — the Answer's own
+   text above is never rewritten. */
+.answer-evidence-warning-chip {
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: color-mix(in srgb, #9d0006 10%, transparent);
+  color: #9d0006;
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.answer-evidence-warning {
+  margin: 6px 0;
+  padding: 6px 9px;
+  border-left: 2px solid #9d0006;
+  border-radius: 4px;
+  background: color-mix(in srgb, #9d0006 7%, transparent);
+  color: var(--text);
+  font-size: 0.75rem;
+  line-height: 1.45;
 }
 
 /* The prompt bar: the panel's footer and the one typed-input surface.

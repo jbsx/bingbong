@@ -31,6 +31,6 @@ export function isSessionEvidencePayload(value: unknown): value is SessionEviden
   if (!isSessionEvidenceChangePayload(value)) return false
   const snapshot = (value as { snapshot?: unknown }).snapshot
   if (typeof snapshot !== 'object' || snapshot === null) return false
-  const { observations, candidates } = snapshot as Record<string, unknown>
-  return Array.isArray(observations) && Array.isArray(candidates)
+  const { observations, candidates, contradictions } = snapshot as Record<string, unknown>
+  return Array.isArray(observations) && Array.isArray(candidates) && Array.isArray(contradictions)
 }

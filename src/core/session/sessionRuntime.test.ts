@@ -109,7 +109,7 @@ describe('session runtime', () => {
       createsSession: true,
       journal: [],
       memory: [],
-      evidence: { observations: [], candidates: [] },
+      evidence: { observations: [], candidates: [], contradictions: [] },
     })
     expect(identities.minted).toEqual(['submission-1', 'session-1', 'run-1'])
     expect(runtime.state()).toEqual({
@@ -299,7 +299,7 @@ describe('session runtime', () => {
 
     const replacement = runtime.accept(runtime.submit().submissionId)
     expect(replacement.createsSession).toBe(true)
-    expect(replacement.evidence).toEqual({ observations: [], candidates: [] })
+    expect(replacement.evidence).toEqual({ observations: [], candidates: [], contradictions: [] })
     expect(replacement.memory).toEqual([])
   })
 
@@ -319,7 +319,7 @@ describe('session runtime', () => {
     expect(runtime.state().phase).toBe('absent')
     expect(runtime.evidenceStore()).toBeNull()
     expect(evidence.cleared).toBe(true)
-    expect(evidence.snapshot()).toEqual({ observations: [], candidates: [] })
+    expect(evidence.snapshot()).toEqual({ observations: [], candidates: [], contradictions: [] })
   })
 
   it('returns snapshots that cannot mutate runtime state', () => {

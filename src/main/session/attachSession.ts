@@ -38,7 +38,7 @@ function evidencePayloadOf(runtime: SessionRuntime): SessionEvidencePayload | nu
   return {
     sessionId,
     generation,
-    snapshot: store === null ? { observations: [], candidates: [] } : store.snapshot(),
+    snapshot: store === null ? { observations: [], candidates: [], contradictions: [] } : store.snapshot(),
   }
 }
 

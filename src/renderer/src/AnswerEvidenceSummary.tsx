@@ -1,5 +1,5 @@
-import type { SessionObservation } from '../../core/session/sessionEvidence'
-import { answerEvidenceObservations } from '../../core/session/answerEvidenceSummary'
+import type { ObservationContradiction, SessionObservation } from '../../core/session/sessionEvidence'
+import { answerEvidenceContradictions, answerEvidenceObservations } from '../../core/session/answerEvidenceSummary'
 import type { MemoryEntryId } from '../../core/session/workingMemory'
 import { formatFeedTime } from './ActivityFeed'
 
@@ -12,27 +12,53 @@ import { formatFeedTime } from './ActivityFeed'
  * immutable. Replaces the generated Markdown Sources list in the live
  * Feed, so the cited evidence reads as one structured record instead of
  * a duplicate link dump; Recorded History keeps the plain URLs.
+ *
+ * Contradiction warnings (#143): when the current snapshot retains a
+ * mechanical contradiction whose earlier member this Answer cited, the
+ * summary gains a warning — flagged on the collapsed row, explained
+ * inside — recomputed on every snapshot read, so a later Run warns an
+ * already-rendered Answer. The Answer's own text never changes: what
+ * was said stays exactly what was said.
  */
+
+/** One shared empty default — props stay optional without allocating per render. */
+const NO_CONTRADICTIONS: readonly ObservationContradiction[] = []
+
 export function AnswerEvidenceSummary({
   evidenceIds,
   observations,
+  contradictions = NO_CONTRADICTIONS,
 }: {
   evidenceIds: readonly MemoryEntryId[]
   observations: readonly SessionObservation[]
+  contradictions?: readonly ObservationContradiction[]
 }) {
   const cited = answerEvidenceObservations(evidenceIds, observations)
   if (cited.length === 0) return null
+  const warnings = answerEvidenceContradictions(evidenceIds, contradictions)
+  const contradicted = new Set(warnings.flatMap((pair) => [pair.earlierObservationId, pair.laterObservationId]))
   return (
     <details className="answer-evidence">
       <summary className="answer-evidence-summary">
         <span className="answer-evidence-title">evidence</span>
+        {warnings.length > 0 ? <span className="answer-evidence-warning-chip">contradicted</span> : null}
         <span className="answer-evidence-count">{cited.length}</span>
       </summary>
       <div className="answer-evidence-entries">
+        {warnings.length > 0 ? (
+          <p className="answer-evidence-warning" role="note">
+            {`Later evidence from the same source contradicts ${
+              warnings.length === 1 ? 'a supporting observation' : `${warnings.length} supporting observations`
+            } below. Every version is retained — the answer above is unchanged.`}
+          </p>
+        ) : null}
         {cited.map((observation) => (
           <article key={observation.id} className="evidence-card answer-evidence-card" data-evidence-id={observation.id}>
             <header className="evidence-card-head">
               <span className="evidence-kind">{observation.sourceKind}</span>
+              {contradicted.has(observation.id) ? (
+                <span className="evidence-chip evidence-chip--contradicted">contradicted</span>
+              ) : null}
               <time className="feed-time">{formatFeedTime(observation.observedAt)}</time>
             </header>
             <p className="evidence-text">{observation.text}</p>

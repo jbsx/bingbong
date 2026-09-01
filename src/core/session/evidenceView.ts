@@ -1,5 +1,9 @@
 import type { SessionGeneration, SessionId } from './sessionIdentity'
-import type { SessionCandidate, SessionObservation } from './sessionEvidence'
+import type {
+  ObservationContradiction,
+  SessionCandidate,
+  SessionObservation,
+} from './sessionEvidence'
 import type { SessionEvidenceChangePayload, SessionEvidencePayload } from './evidenceIpcChannels'
 
 // The Evidence Browser's view model (#139): a pure fold over the Session
@@ -20,9 +24,16 @@ export interface EvidenceViewState {
   readonly identity: EvidenceViewIdentity | null
   readonly observations: readonly SessionObservation[]
   readonly candidates: readonly SessionCandidate[]
+  /** The snapshot's retained contradictions (#143) — grouping and Answer warnings derive from them. */
+  readonly contradictions: readonly ObservationContradiction[]
 }
 
-const EMPTY_STATE: EvidenceViewState = Object.freeze({ identity: null, observations: Object.freeze([]), candidates: Object.freeze([]) })
+const EMPTY_STATE: EvidenceViewState = Object.freeze({
+  identity: null,
+  observations: Object.freeze([]),
+  candidates: Object.freeze([]),
+  contradictions: Object.freeze([]),
+})
 
 export function createEvidenceView(): {
   /**
@@ -105,6 +116,7 @@ export function createEvidenceView(): {
         identity: { sessionId: payload.sessionId, generation: payload.generation },
         observations: payload.snapshot.observations,
         candidates: payload.snapshot.candidates,
+        contradictions: payload.snapshot.contradictions,
       }
     },
     state: () => state,

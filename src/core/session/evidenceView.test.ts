@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { SessionId } from './sessionIdentity'
 import type { MemoryEntryId } from './workingMemory'
-import type { SessionCandidate, SessionObservation } from './sessionEvidence'
+import type { ObservationContradiction, SessionCandidate, SessionObservation } from './sessionEvidence'
 import { createEvidenceView } from './evidenceView'
 import type { SessionEvidencePayload } from './evidenceIpcChannels'
 
@@ -22,7 +22,8 @@ const payload = (
   generation: number,
   observations: SessionObservation[] = [],
   candidates: SessionCandidate[] = [],
-): SessionEvidencePayload => ({ sessionId: sessionId as SessionId, generation, snapshot: { observations, candidates } })
+  contradictions: ObservationContradiction[] = [],
+): SessionEvidencePayload => ({ sessionId: sessionId as SessionId, generation, snapshot: { observations, candidates, contradictions } })
 
 describe('evidence view', () => {
   it('applies the authoritative snapshot whole, with the Session identity and generation', () => {
@@ -33,6 +34,7 @@ describe('evidence view', () => {
       identity: { sessionId: 'session-a', generation: 0 },
       observations: [observation('memory-1', 'The Acme router costs $39.')],
       candidates: [candidate('memory-2')],
+      contradictions: [],
     })
   })
 
@@ -41,7 +43,7 @@ describe('evidence view', () => {
     view.applyResponse(payload('session-a', 0, [observation('memory-1', 'Seen.')]))
     view.onSessionEnded({ sessionId: 'session-a' as SessionId, generation: 0 })
 
-    expect(view.state()).toEqual({ identity: null, observations: [], candidates: [] })
+    expect(view.state()).toEqual({ identity: null, observations: [], candidates: [], contradictions: [] })
 
     // A foreign or stale end never clears another Session's evidence.
     view.applyResponse(payload('session-b', 0, [observation('memory-9', 'Other session.')]))
@@ -76,7 +78,7 @@ describe('evidence view', () => {
     view.applyResponse(payload('session-a', 0, [observation('memory-1', 'Seen.')]))
     view.applyResponse(null)
 
-    expect(view.state()).toEqual({ identity: null, observations: [], candidates: [] })
+    expect(view.state()).toEqual({ identity: null, observations: [], candidates: [], contradictions: [] })
     // With no Session known, a change notification is read again — it may
     // prove a Session went live between the response and now.
     expect(view.shouldRead({ sessionId: 'session-b' as SessionId, generation: 0 })).toBe(true)
@@ -91,7 +93,7 @@ describe('evidence view', () => {
     const staleRead = view.beginRead()
     view.onSessionEnded({ sessionId: 'session-a' as SessionId, generation: 0 })
     view.applyResponse(payload('session-a', 0, [observation('memory-1', 'Seen.')]), staleRead)
-    expect(view.state()).toEqual({ identity: null, observations: [], candidates: [] })
+    expect(view.state()).toEqual({ identity: null, observations: [], candidates: [], contradictions: [] })
 
     // A read issued after the clear applies normally.
     const freshRead = view.beginRead()
@@ -114,7 +116,7 @@ describe('evidence view', () => {
     // replaces the held one, and its stale evidence drops with it — the
     // following read fills the new Session's state from the authority.
     view.onAdopted({ sessionId: 'session-b' as SessionId, generation: 0 })
-    expect(view.state()).toEqual({ identity: { sessionId: 'session-b', generation: 0 }, observations: [], candidates: [] })
+    expect(view.state()).toEqual({ identity: { sessionId: 'session-b', generation: 0 }, observations: [], candidates: [], contradictions: [] })
 
     // The same identity (a reloaded renderer's re-adoption) keeps the
     // applied snapshot…
@@ -145,6 +147,32 @@ describe('evidence view', () => {
     // An unheld view opens on its Session's start, empty.
     view.onSessionEnded({ sessionId: 'session-b' as SessionId, generation: 0 })
     view.onSessionStarted({ sessionId: 'session-c' as SessionId, generation: 0 })
-    expect(view.state()).toEqual({ identity: { sessionId: 'session-c', generation: 0 }, observations: [], candidates: [] })
+    expect(view.state()).toEqual({ identity: { sessionId: 'session-c', generation: 0 }, observations: [], candidates: [], contradictions: [] })
+  })
+
+  it("carries the snapshot’s retained contradictions — grouping and Answer warnings derive from them (#143)", () => {
+    const view = createEvidenceView()
+    view.applyResponse(
+      payload('session-a', 0, [observation('memory-1', 'The Acme router costs $39.')], [], [
+        { earlierObservationId: 'memory-1' as MemoryEntryId, laterObservationId: 'memory-2' as MemoryEntryId },
+      ]),
+    )
+
+    expect(view.state().contradictions).toEqual([
+      { earlierObservationId: 'memory-1', laterObservationId: 'memory-2' },
+    ])
+
+    // A later read replaces them whole — the fold never patches.
+    view.applyResponse(payload('session-a', 0, [observation('memory-1', 'The Acme router costs $39.')]))
+    expect(view.state().contradictions).toEqual([])
+
+    // And the Session boundary clears them with everything else.
+    view.applyResponse(
+      payload('session-a', 0, [observation('memory-1', 'The Acme router costs $39.')], [], [
+        { earlierObservationId: 'memory-1' as MemoryEntryId, laterObservationId: 'memory-2' as MemoryEntryId },
+      ]),
+    )
+    view.onSessionEnded({ sessionId: 'session-a' as SessionId, generation: 0 })
+    expect(view.state().contradictions).toEqual([])
   })
 })

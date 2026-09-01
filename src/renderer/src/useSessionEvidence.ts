@@ -14,7 +14,12 @@ import { useSessionAdoption } from './useSessionAdoption'
 // read, and the view fold discards anything of a foreign Session.
 
 export function useSessionEvidence(): EvidenceViewState {
-  const [state, setState] = useState<EvidenceViewState>(() => ({ identity: null, observations: [], candidates: [] }))
+  const [state, setState] = useState<EvidenceViewState>(() => ({
+    identity: null,
+    observations: [],
+    candidates: [],
+    contradictions: [],
+  }))
   const view = useRef(createEvidenceView())
   // One sync point, like the feed projection: mutators close over stable
   // things only, so the first-render closures subscribers capture stay live.

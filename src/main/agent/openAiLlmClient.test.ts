@@ -333,6 +333,7 @@ describe('openAiLlmClient', () => {
           provenance: Object.freeze([{ runId: 'run-1' as never }]),
         })],
         candidates: [],
+        contradictions: [],
       },
       journal: [{ runId: 'run-1' as never, outcome: 'done', text: 'Checked the price.' }],
     })
@@ -361,7 +362,7 @@ describe('openAiLlmClient', () => {
     const client = makeClient(fetch)
 
     await client.complete({ command: 'open youtube', toolResults: [] })
-    await client.complete({ command: 'open youtube', toolResults: [], evidence: { observations: [], candidates: [] } })
+    await client.complete({ command: 'open youtube', toolResults: [], evidence: { observations: [], candidates: [], contradictions: [] } })
 
     const [withoutEvidence, withEmptyEvidence] = fetch.calls.map((call) => call.body.messages)
     expect(withEmptyEvidence).toEqual(withoutEvidence)

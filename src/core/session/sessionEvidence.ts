@@ -98,9 +98,25 @@ export interface SessionCandidate {
   readonly provenance: readonly MemoryProvenance[]
 }
 
+/**
+ * One retained mechanical contradiction (#143, ADR 0028): the later
+ * Observation's grounded disagreement with an earlier one — same source
+ * kind, a shared canonical source URL, a different statement. Retained in
+ * the authoritative snapshot as an unordered relationship: either member
+ * resolves it, so an earlier cited Observation is recognized as
+ * contradicted by a later one however it is looked up. Both Observations
+ * stay stored — disclosed, never overwritten, neither preferred.
+ */
+export interface ObservationContradiction {
+  readonly earlierObservationId: MemoryEntryId
+  readonly laterObservationId: MemoryEntryId
+}
+
 export interface SessionEvidenceSnapshot {
   readonly observations: readonly SessionObservation[]
   readonly candidates: readonly SessionCandidate[]
+  /** Every mechanical contradiction the Session's Observations carry (#143). */
+  readonly contradictions: readonly ObservationContradiction[]
 }
 
 export interface ObservationCheckpointInput {
@@ -266,6 +282,7 @@ export function createSessionEvidence(deps: {
 }): SessionEvidenceStore {
   const observations: MutableObservation[] = []
   const candidates: MutableCandidate[] = []
+  const contradictions: ObservationContradiction[] = []
   let cleared = false
 
   const liveObservation = (id: MemoryEntryId): MutableObservation | null =>
@@ -381,10 +398,18 @@ export function createSessionEvidence(deps: {
         ...(volatile ? { volatile: true } : {}),
       }
       observations.push(observation)
+      // Retained, not just disclosed (#143): every mechanical
+      // contradiction the checkpoint found becomes durable Session
+      // state — the snapshot, not the checkpoint result, is what the
+      // Evidence Browser groups on and Answer warnings derive from.
+      const contradicts = contradictingObservations(observation)
+      for (const priorId of contradicts) {
+        contradictions.push({ earlierObservationId: priorId, laterObservationId: observation.id })
+      }
       const accepted: ObservationCheckpointResult = {
         observation: freezeObservation(observation),
         merged: false,
-        contradicts: Object.freeze([...contradictingObservations(observation)]),
+        contradicts: Object.freeze([...contradicts]),
       }
       notifyAccepted(accepted)
       return accepted
@@ -450,12 +475,14 @@ export function createSessionEvidence(deps: {
       return Object.freeze({
         observations: Object.freeze(observations.map(freezeObservation)),
         candidates: Object.freeze(candidates.map(freezeCandidate)),
+        contradictions: Object.freeze(contradictions.map((pair) => Object.freeze({ ...pair }))),
       })
     },
     clear() {
       cleared = true
       observations.length = 0
       candidates.length = 0
+      contradictions.length = 0
     },
     get cleared() {
       return cleared

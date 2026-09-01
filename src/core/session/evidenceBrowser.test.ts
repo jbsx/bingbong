@@ -1,12 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import type { RunId, SessionId } from './sessionIdentity'
 import type { MemoryEntryId, MemoryProvenance } from './workingMemory'
-import type { SessionCandidate, SessionObservation } from './sessionEvidence'
+import type { ObservationContradiction, SessionCandidate, SessionObservation } from './sessionEvidence'
 import {
   candidateMatchesFilter,
   describeObservationProvenance,
   evidenceTotal,
   isDelegatedObservation,
+  layoutObservationCards,
   newestFirstCandidates,
   newestFirstObservations,
   observationMatchesFilter,
@@ -160,5 +161,66 @@ describe('evidence browser projection (#142)', () => {
     })
     expect(describeObservationProvenance(steering)).toBe("the user's steering directive")
     expect(describeObservationProvenance(steering)).not.toContain('obs-7')
+  })
+})
+
+describe('contradiction grouping (#143)', () => {
+  const pair = (earlier: string, later: string): ObservationContradiction => ({
+    earlierObservationId: earlier as MemoryEntryId,
+    laterObservationId: later as MemoryEntryId,
+  })
+
+  const groupIds = (groups: readonly (readonly SessionObservation[])[]): string[][] =>
+    groups.map((group) => group.map(({ id }) => id))
+
+  it('groups contradictory Observations side by side at the newest member position — neither preferred', () => {
+    const older = observation({ id: 'memory-1' as MemoryEntryId, text: 'The Acme router costs $39.', observedAt: 100 })
+    const newer = observation({ id: 'memory-2' as MemoryEntryId, text: 'The Acme router costs $59.', observedAt: 200 })
+    const unrelated = observation({
+      id: 'memory-3' as MemoryEntryId,
+      text: 'Shipping is free.',
+      observedAt: 300,
+      references: [{ url: 'https://shop.example/shipping' }],
+    })
+
+    const { groups, contradictedIds } = layoutObservationCards([older, newer, unrelated], [pair('memory-1', 'memory-2')])
+    // The disagreement renders as one group at the newest member's
+    // position, members newest-first inside it; the untouched
+    // Observation stays a singleton in its own place.
+    expect(groupIds(groups)).toEqual([['memory-3'], ['memory-2', 'memory-1']])
+    // Chip truth resolved from either member of every pair.
+    expect([...contradictedIds].sort()).toEqual(['memory-1', 'memory-2'])
+  })
+
+  it('clusters whole chains: A contradicted by B and B by C is one group of three', () => {
+    const a = observation({ id: 'memory-1' as MemoryEntryId, observedAt: 100 })
+    const b = observation({ id: 'memory-2' as MemoryEntryId, observedAt: 200 })
+    const c = observation({ id: 'memory-3' as MemoryEntryId, observedAt: 300 })
+    const { groups } = layoutObservationCards([a, b, c], [pair('memory-1', 'memory-2'), pair('memory-2', 'memory-3')])
+    expect(groupIds(groups)).toEqual([['memory-3', 'memory-2', 'memory-1']])
+  })
+
+  it('keeps the chip truth when a filter hides a partner — a hidden card never hides the disagreement', () => {
+    const newer = observation({ id: 'memory-2' as MemoryEntryId, observedAt: 200 })
+    // Only the later member passed the filter: it renders alone, but it
+    // still carries its contradicted state.
+    const { groups, contradictedIds } = layoutObservationCards([newer], [pair('memory-1', 'memory-2')])
+    expect(groupIds(groups)).toEqual([['memory-2']])
+    expect(contradictedIds.has('memory-2' as MemoryEntryId)).toBe(true)
+  })
+
+  it('with no contradictions every Observation is its own group and nothing is flagged', () => {
+    const first = observation({ id: 'memory-1' as MemoryEntryId, observedAt: 100 })
+    const second = observation({ id: 'memory-2' as MemoryEntryId, observedAt: 200 })
+    const { groups, contradictedIds } = layoutObservationCards([first, second], [])
+    expect(groupIds(groups)).toEqual([['memory-2'], ['memory-1']])
+    expect(contradictedIds.size).toBe(0)
+  })
+
+  it('breaks newest-first ties inside a group by the same later-creation rule', () => {
+    const tieEarly = observation({ id: 'memory-1' as MemoryEntryId, observedAt: 500 })
+    const tieLate = observation({ id: 'memory-2' as MemoryEntryId, observedAt: 500 })
+    const { groups } = layoutObservationCards([tieEarly, tieLate], [pair('memory-1', 'memory-2')])
+    expect(groupIds(groups)).toEqual([['memory-2', 'memory-1']])
   })
 })
