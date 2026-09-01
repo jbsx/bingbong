@@ -55,6 +55,10 @@ export function EvidenceView({
   // The Observation a support reference focused: resolved after render,
   // so a filter widened for the focus has already committed.
   const [pendingFocus, setPendingFocus] = useState<MemoryEntryId | null>(null)
+  // The live flash timer, ref-held: clearing the focus state re-renders,
+  // and an effect cleanup tied to that render would cancel the very
+  // removal it scheduled — the flash must outlive the state reset.
+  const flashTimer = useRef<number | null>(null)
 
   // Newest evidence stays visible, same contract as the feed list.
   useEffect(() => {
@@ -67,10 +71,17 @@ export function EvidenceView({
     const card = listRef.current?.querySelector(`[data-evidence-id="${CSS.escape(pendingFocus)}"]`)
     if (!(card instanceof HTMLElement)) return
     card.scrollIntoView({ block: 'center' })
+    // One focus at a time: a stale flash never stacks highlighted cards.
+    listRef.current?.querySelectorAll('.evidence-card--focused').forEach((focused) => {
+      focused.classList.remove('evidence-card--focused')
+    })
     card.classList.add('evidence-card--focused')
     setPendingFocus(null)
-    const flash = window.setTimeout(() => card.classList.remove('evidence-card--focused'), 1_600)
-    return () => window.clearTimeout(flash)
+    if (flashTimer.current !== null) window.clearTimeout(flashTimer.current)
+    flashTimer.current = window.setTimeout(() => {
+      card.classList.remove('evidence-card--focused')
+      flashTimer.current = null
+    }, 1_600)
   }, [pendingFocus, observations, candidates, observationFilter])
 
   const byId = new Map(observations.map((observation) => [observation.id, observation]))

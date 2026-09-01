@@ -44,16 +44,24 @@ export function candidateMatchesFilter(candidate: SessionCandidate, filter: Cand
 }
 
 /**
- * Newest first, deterministically (#142): equal timestamps keep snapshot
- * (insertion) order under the stable sort, so the order is fixed whatever
- * the Session clock's resolution.
+ * Newest first, deterministically (#142): the Session-bound timestamp
+ * descending, with equal timestamps broken by reverse insertion order —
+ * a burst of records minted within one clock tick still renders the
+ * latest-created first. Creation order is the snapshot's own order, so
+ * the tie-break needs no extra state.
  */
 export function newestFirstObservations(observations: readonly SessionObservation[]): readonly SessionObservation[] {
-  return [...observations].sort((a, b) => b.observedAt - a.observedAt)
+  return observations
+    .map((observation, index) => ({ observation, index }))
+    .sort((a, b) => b.observation.observedAt - a.observation.observedAt || b.index - a.index)
+    .map(({ observation }) => observation)
 }
 
 export function newestFirstCandidates(candidates: readonly SessionCandidate[]): readonly SessionCandidate[] {
-  return [...candidates].sort((a, b) => b.recordedAt - a.recordedAt)
+  return candidates
+    .map((candidate, index) => ({ candidate, index }))
+    .sort((a, b) => b.candidate.recordedAt - a.candidate.recordedAt || b.index - a.index)
+    .map(({ candidate }) => candidate)
 }
 
 /**

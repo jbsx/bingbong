@@ -39,9 +39,9 @@ const observationFilter = (filter: 'all' | 'web' | 'user' | 'delegated'): string
   })`
 
 /** The Candidate filter chips in vocabulary order: all, active, accepted, rejected, superseded. */
-const candidateFilter = (filter: 'all' | 'active' | 'accepted'): string =>
+const candidateFilter = (filter: 'all' | 'active' | 'accepted' | 'rejected' | 'superseded'): string =>
   `.evidence-section[aria-label="candidates"] .evidence-filter:nth-child(${
-    { all: 1, active: 2, accepted: 3 }[filter]
+    { all: 1, active: 2, accepted: 3, rejected: 4, superseded: 5 }[filter]
   })`
 
 function checkpointRun(page: string, observation: string, answer: string): AssistantTurn[] {
@@ -66,6 +66,16 @@ function recordedHistoryText(app: Harness): Promise<string> {
   return app.dashboardEval<string>(
     `(async () => (await window.bingbong.history.recentEntries()).map((entry) => entry.text).join('\\n'))()`,
   )
+}
+
+/**
+ * Scroll an overlay element into view, then click it: synthetic CDP clicks
+ * land on viewport coordinates only, so a card below the fold (the browser
+ * scrolls its own list) must be brought up first.
+ */
+async function clickScrolledOverlayElement(app: Harness, selector: string): Promise<void> {
+  await app.overlayEval(`document.querySelector(${JSON.stringify(selector)})?.scrollIntoView({ block: 'center' })`)
+  await app.clickOverlayElement(selector)
 }
 
 describe('evidence browser e2e', () => {
@@ -326,6 +336,16 @@ describe('evidence browser e2e', () => {
             name: 'record_candidate',
             args: { subject: 'The page carries the heading', detail: 'Seen directly and by the worker.', supporting_evidence: ['memory-1'] },
           },
+          {
+            id: 'c2',
+            name: 'record_candidate',
+            args: { subject: 'The heading is elsewhere', supporting_evidence: ['memory-2'] },
+          },
+          {
+            id: 'c3',
+            name: 'record_candidate',
+            args: { subject: 'Ask the user which heading', supporting_evidence: ['memory-2'] },
+          },
         ],
       },
       { kind: 'answer', speak: 'Collected.', display: 'Collected every kind.' },
@@ -335,9 +355,19 @@ describe('evidence browser e2e', () => {
         kind: 'tool_calls',
         calls: [
           {
-            id: 'c2',
+            id: 'd1',
             name: 'record_candidate',
             args: { candidate_id: 'memory-4', status: 'accepted', supporting_evidence: ['memory-1'] },
+          },
+          {
+            id: 'd2',
+            name: 'record_candidate',
+            args: { candidate_id: 'memory-5', status: 'rejected', supporting_evidence: ['memory-1'] },
+          },
+          {
+            id: 'd3',
+            name: 'record_candidate',
+            args: { candidate_id: 'memory-6', status: 'superseded', supporting_evidence: ['memory-1'] },
           },
         ],
       },
@@ -363,15 +393,15 @@ describe('evidence browser e2e', () => {
         { timeoutMs: 30_000, intervalMs: 250 },
       )
 
-      // `Evidence 4`: three Observations (the duplicate merged) plus one
-      // Candidate — the total the header and the dashboard slot both carry.
+      // `Evidence 6`: three Observations (the duplicate merged) plus three
+      // Candidates — the total the header and the dashboard slot both carry.
       await waitFor(
-        async () => ((await app.overlayEval<string | null>(EVIDENCE_BADGE)) === '4' ? true : undefined),
+        async () => ((await app.overlayEval<string | null>(EVIDENCE_BADGE)) === '6' ? true : undefined),
         { timeoutMs: 10_000, intervalMs: 100 },
       )
       expect(
         await app.dashboardEval<string | null>(`document.querySelector('.feed-slot')?.dataset.evidenceCount ?? null`),
-      ).toBe('4')
+      ).toBe('6')
 
       // The complete browser: Observation cards newest first — delegated
       // (the worker saw the page after this run's own reads), user, web —
@@ -404,24 +434,30 @@ describe('evidence browser e2e', () => {
       )
       expect(delegatedKinds).toEqual(['web'])
 
-      // One Candidate, active, with one support reference — a reference,
-      // not a copy: the cited Observation's statement appears once, in the
-      // Observation section alone.
+      // Three Candidates, all active, each with a support reference — a
+      // reference, not a copy: the cited Observation's statement appears
+      // once, in the Observation section alone.
+      expect(
+        await app.overlayEval<string[]>(
+          `[...document.querySelectorAll('.evidence-card--candidate')].map((el) => el.dataset.candidateStatus)`,
+        ),
+      ).toEqual(['active', 'active', 'active'])
       const candidateCard = await app.overlayEval<string>(
-        `document.querySelector('.evidence-card--candidate')?.textContent ?? ''`,
+        `document.querySelector('.evidence-card--candidate[data-candidate-id="memory-4"]')?.textContent ?? ''`,
       )
       expect(candidateCard).toContain('The page carries the heading')
       expect(candidateCard).toContain('active')
-      expect(await app.overlayEval<number>(`document.querySelectorAll('.evidence-support-ref').length`)).toBe(1)
+      expect(await app.overlayEval<number>(`document.querySelectorAll('.evidence-support-ref').length`)).toBe(3)
+      expect(await app.overlayEval<number>(`document.querySelectorAll('.evidence-card--candidate[data-candidate-id="memory-4"] .evidence-support-ref').length`)).toBe(1)
       expect(candidateCard).not.toContain('Web fact: the second page carries the heading.')
 
       // Observation filters hide cards, never evidence: the user filter
-      // shows one card while the dashboard's honest total still reads 4.
+      // shows one card while the dashboard's honest total still reads 6.
       await app.clickOverlayElement(observationFilter('user'))
       expect(await app.overlayEval<number>(`document.querySelectorAll('.evidence-section[aria-label="observations"] .evidence-card').length`)).toBe(1)
       expect(
         await app.dashboardEval<string | null>(`document.querySelector('.feed-slot')?.dataset.evidenceCount ?? null`),
-      ).toBe('4')
+      ).toBe('6')
 
       // The delegated filter shows the worker's evidence; its grounding
       // kind stays web.
@@ -440,7 +476,10 @@ describe('evidence browser e2e', () => {
       // with the user filter hiding it, the reference still reaches — the
       // filter widens and the card is focused, its contents never copied.
       await app.clickOverlayElement(observationFilter('user'))
-      await app.clickOverlayElement('.evidence-support-ref')
+      await clickScrolledOverlayElement(
+        app,
+        '.evidence-card--candidate[data-candidate-id="memory-4"] .evidence-support-ref',
+      )
       await waitFor(
         async () => {
           const focused = await app.overlayEval<boolean>(`!!document.querySelector('.evidence-card--focused')`)
@@ -452,11 +491,18 @@ describe('evidence browser e2e', () => {
       expect(
         await app.overlayEval<string | null>(`document.querySelector('.evidence-card--focused')?.dataset.evidenceId ?? null`),
       ).toBe('memory-1')
+      // The flash is a flash: the highlight clears on its own timer, and
+      // one focused card never stacks into two.
+      await waitFor(
+        async () => ((await app.overlayEval<boolean>(`!document.querySelector('.evidence-card--focused')`)) ? true : undefined),
+        { timeoutMs: 5_000, intervalMs: 200 },
+      )
 
-      // A second Run decides the Candidate: the change broadcasts and the
-      // live card updates — no reload, no duplicate card, count unchanged.
+      // A second Run decides every Candidate: the changes broadcast and
+      // the live cards update — no reload, no duplicate cards, count
+      // unchanged.
       await app.clickOverlayElement('.feed-tab:not(.feed-tab--evidence)')
-      const decided = await app.submitCommand('decide the candidate')
+      const decided = await app.submitCommand('decide the candidates')
       expect(decided).toBe('submitted')
       await waitFor(
         async () => (((await recordedHistoryText(app)).includes('Accepted the candidate.')) ? true : undefined),
@@ -471,29 +517,49 @@ describe('evidence browser e2e', () => {
         async () => {
           await app.ensurePanelOpen()
           if ((await app.overlayEval<number>('innerWidth')) < 100) return undefined
-          return (await app.overlayEval<string | null>(EVIDENCE_BADGE)) === '4' ? true : undefined
+          return (await app.overlayEval<string | null>(EVIDENCE_BADGE)) === '6' ? true : undefined
         },
         { timeoutMs: 15_000, intervalMs: 250 },
       )
       await app.clickOverlayElement('.feed-tab--evidence')
+      // Newest first: the latest-created Candidate (superseded) renders on
+      // top, the first-created (accepted) last — every decision landed,
+      // with clock-tick ties broken toward the later creation.
       await waitFor(
         async () => {
-          const status = await app.overlayEval<string | null>(`document.querySelector('.evidence-card--candidate')?.dataset.candidateStatus ?? null`)
-          return status === 'accepted' ? status : undefined
+          const statuses = await app.overlayEval<string[]>(
+            `[...document.querySelectorAll('.evidence-card--candidate')].map((el) => el.dataset.candidateStatus)`,
+          )
+          return statuses.length === 3 && statuses.join(',') === 'superseded,rejected,accepted' ? statuses : undefined
         },
         { timeoutMs: 10_000, intervalMs: 100 },
       )
-      expect(await app.overlayEval<number>(`document.querySelectorAll('.evidence-card--candidate').length`)).toBe(1)
 
-      // Candidate filters follow the live status: active matches nothing
-      // now, accepted matches the one decided Candidate.
-      await app.clickOverlayElement(candidateFilter('active'))
+      // Candidate filters follow the live statuses: active matches
+      // nothing now; each terminal status matches exactly its one card.
+      await clickScrolledOverlayElement(app, candidateFilter('active'))
       expect(await app.overlayEval<number>(`document.querySelectorAll('.evidence-card--candidate').length`)).toBe(0)
       expect(
         await app.overlayEval<string>(`document.querySelector('.evidence-section[aria-label="candidates"] .evidence-section-empty')?.textContent ?? ''`),
       ).toContain('No candidates match this filter.')
-      await app.clickOverlayElement(candidateFilter('accepted'))
-      expect(await app.overlayEval<number>(`document.querySelectorAll('.evidence-card--candidate').length`)).toBe(1)
+      await clickScrolledOverlayElement(app, candidateFilter('accepted'))
+      expect(
+        await app.overlayEval<string[]>(
+          `[...document.querySelectorAll('.evidence-card--candidate')].map((el) => el.dataset.candidateStatus)`,
+        ),
+      ).toEqual(['accepted'])
+      await clickScrolledOverlayElement(app, candidateFilter('rejected'))
+      expect(
+        await app.overlayEval<string[]>(
+          `[...document.querySelectorAll('.evidence-card--candidate')].map((el) => el.dataset.candidateStatus)`,
+        ),
+      ).toEqual(['rejected'])
+      await clickScrolledOverlayElement(app, candidateFilter('superseded'))
+      expect(
+        await app.overlayEval<string[]>(
+          `[...document.querySelectorAll('.evidence-card--candidate')].map((el) => el.dataset.candidateStatus)`,
+        ),
+      ).toEqual(['superseded'])
 
       // Internal identities never surface as visible text — not Memory
       // Entry, Run, Observation, or Subagent ids.

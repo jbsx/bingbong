@@ -41,15 +41,18 @@ function candidate(overrides: Partial<SessionCandidate> = {}): SessionCandidate 
 }
 
 describe('evidence browser projection (#142)', () => {
-  it('orders Observations and Candidates newest first, deterministically on ties', () => {
+  it('orders Observations and Candidates newest first — ties broken by latest creation', () => {
     const older = observation({ id: 'memory-1' as MemoryEntryId, observedAt: 100 })
     const tieA = observation({ id: 'memory-2' as MemoryEntryId, observedAt: 500 })
     const tieB = observation({ id: 'memory-3' as MemoryEntryId, observedAt: 500 })
-    expect(newestFirstObservations([older, tieA, tieB]).map(({ id }) => id)).toEqual(['memory-2', 'memory-3', 'memory-1'])
+    // Same clock tick: the later-created record still renders first.
+    expect(newestFirstObservations([older, tieA, tieB]).map(({ id }) => id)).toEqual(['memory-3', 'memory-2', 'memory-1'])
 
     const early = candidate({ id: 'memory-4' as MemoryEntryId, recordedAt: 100 })
-    const late = candidate({ id: 'memory-5' as MemoryEntryId, recordedAt: 900 })
-    expect(newestFirstCandidates([early, late]).map(({ id }) => id)).toEqual(['memory-5', 'memory-4'])
+    const tieEarly = candidate({ id: 'memory-5' as MemoryEntryId, recordedAt: 900 })
+    const tieLate = candidate({ id: 'memory-6' as MemoryEntryId, recordedAt: 900 })
+    // memory-6 was created after memory-5 within the same tick: it leads.
+    expect(newestFirstCandidates([early, tieEarly, tieLate]).map(({ id }) => id)).toEqual(['memory-6', 'memory-5', 'memory-4'])
   })
 
   it('filters Observations by source kind; delegated is provenance-derived presentation', () => {
