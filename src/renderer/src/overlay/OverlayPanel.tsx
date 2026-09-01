@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef } from 'react'
 import { ActivityFeed } from '../ActivityFeed'
 import { evidenceTotal } from '../../../core/session/evidenceBrowser'
+import { useEvidenceBrowserView } from '../useEvidenceBrowserView'
 import { useSessionEvidence } from '../useSessionEvidence'
 import { EvidenceView } from './EvidenceView'
 import { PromptBar } from './PromptBar'
@@ -40,9 +41,11 @@ export function OverlayPanel() {
   // The `Evidence N` total (#142): every current Observation and
   // Candidate, independently of the browser's active filters.
   const evidenceCount = evidenceTotal(evidence.observations, evidence.candidates)
-  // The Activity/Evidence view switch (#139): local to this page — one
-  // CSS-level swap, no browser or Run state involved.
-  const [view, setView] = useState<'activity' | 'evidence'>('activity')
+  // The Activity/Evidence view switch (#139, #145): Session-owned state
+  // folded in main — the selection survives docking, reload, and renderer
+  // crash within the Session, and every Session boundary returns it to
+  // Activity. Still a pure view swap: no browser or Run state involved.
+  const { view, setView } = useEvidenceBrowserView()
   const surfaceRef = useRef<HTMLDivElement>(null)
   // Drag bookkeeping: the surface's fixed right edge (the panel hugs it
   // for the whole drag). Null when no drag is live.

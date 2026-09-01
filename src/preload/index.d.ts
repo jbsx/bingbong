@@ -10,6 +10,7 @@ import type { FeedPanelMode, FeedPanelState } from '../core/panel/feedPanelState
 import type { SubmissionFeedback } from '../core/session/submissionFeedback'
 import type { SessionAdoptionPayload, SessionDecisionRequest } from '../core/session/ipcChannels'
 import type { SessionEvidenceChangePayload, SessionEvidencePayload } from '../core/session/evidenceIpcChannels'
+import type { EvidenceBrowserView } from '../core/session/evidenceBrowserView'
 
 export type { BrowserPaneState, PaneRect }
 export type { PipelineEvent }
@@ -21,6 +22,7 @@ export type { UsageSummary }
 export type { RecordedEntry, RunRecord, SessionRecord }
 export type { SubmissionFeedback }
 export type { SessionEvidenceChangePayload, SessionEvidencePayload }
+export type { EvidenceBrowserView }
 export interface BingbongBrowserApi {
   navigate(input: string): Promise<boolean>
   goBack(): Promise<void>
@@ -78,6 +80,12 @@ export interface BingbongEvidenceApi {
    * response is to re-read `get()` (#139).
    */
   onChanged(listener: (change: SessionEvidenceChangePayload) => void): () => void
+  /** The Session-owned selected Activity/Evidence view (#145). */
+  getView(): Promise<EvidenceBrowserView | null>
+  /** Select the Activity/Evidence view (#145) — Session-ephemeral, never persisted. */
+  setView(view: EvidenceBrowserView): void
+  /** The selected view changed — Session boundaries return it to Activity (#145). */
+  onViewChanged(listener: (payload: { view: EvidenceBrowserView }) => void): () => void
 }
 
 export interface BingbongSubagentsApi {

@@ -22,9 +22,12 @@ import type { SubmissionFeedback } from '../core/session/submissionFeedback'
 import { SESSION_IPC, type SessionAdoptionPayload, type SessionDecisionRequest } from '../core/session/ipcChannels'
 import {
   EVIDENCE_IPC,
+  EVIDENCE_VIEW_IPC,
+  type EvidenceBrowserViewPayload,
   type SessionEvidenceChangePayload,
   type SessionEvidencePayload,
 } from '../core/session/evidenceIpcChannels'
+import type { EvidenceBrowserView } from '../core/session/evidenceBrowserView'
 
 // Launch config is a snapshot: the flags and env can't change after start.
 const launch = resolveLaunchConfig(process.argv, process.env)
@@ -85,6 +88,18 @@ contextBridge.exposeInMainWorld('bingbong', {
       const wrapped = (_event: unknown, change: SessionEvidenceChangePayload): void => listener(change)
       ipcRenderer.on(EVIDENCE_IPC.changed, wrapped)
       return () => ipcRenderer.removeListener(EVIDENCE_IPC.changed, wrapped)
+    },
+    /** The Session-owned selected Activity/Evidence view (#145). */
+    getView: (): Promise<EvidenceBrowserView | null> => ipcRenderer.invoke(EVIDENCE_VIEW_IPC.get),
+    /** Select the Activity/Evidence view (#145) — Session-ephemeral, never persisted. */
+    setView: (view: EvidenceBrowserView): void => {
+      ipcRenderer.send(EVIDENCE_VIEW_IPC.set, { view })
+    },
+    /** The selected view changed — Session boundaries return it to Activity (#145). */
+    onViewChanged: (listener: (payload: EvidenceBrowserViewPayload) => void): (() => void) => {
+      const wrapped = (_event: unknown, payload: EvidenceBrowserViewPayload): void => listener(payload)
+      ipcRenderer.on(EVIDENCE_VIEW_IPC.changed, wrapped)
+      return () => ipcRenderer.removeListener(EVIDENCE_VIEW_IPC.changed, wrapped)
     },
   },
   settings: {
