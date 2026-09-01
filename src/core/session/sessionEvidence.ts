@@ -87,6 +87,12 @@ export interface SessionCandidate {
   readonly subject: string
   readonly detail?: string
   readonly status: CandidateStatus
+  /**
+   * Session-bound recording time (#142): stamped by the Session's clock
+   * at creation and never rewritten by later decisions — the complete
+   * Evidence Browser's deterministic newest-first ordering key.
+   */
+  readonly recordedAt: number
   readonly supportingObservationIds: readonly MemoryEntryId[]
   readonly references: readonly MemoryReference[]
   readonly provenance: readonly MemoryProvenance[]
@@ -180,6 +186,7 @@ interface MutableCandidate {
   subject: string
   detail?: string
   status: CandidateStatus
+  recordedAt: number
   supportingObservationIds: MemoryEntryId[]
   references: MemoryReference[]
   provenance: MemoryProvenance[]
@@ -230,6 +237,7 @@ function freezeCandidate(candidate: MutableCandidate): SessionCandidate {
     subject: candidate.subject,
     ...(candidate.detail !== undefined ? { detail: candidate.detail } : {}),
     status: candidate.status,
+    recordedAt: candidate.recordedAt,
     supportingObservationIds: Object.freeze([...candidate.supportingObservationIds]),
     references: Object.freeze(candidate.references.map((reference) => Object.freeze({ ...reference }))),
     provenance: Object.freeze(candidate.provenance.map((source) => Object.freeze({ ...source }))),
@@ -247,6 +255,14 @@ export function createSessionEvidence(deps: {
    * changes only through what the Session actually retained.
    */
   onObservationAccepted?(result: ObservationCheckpointResult): void
+  /**
+   * Fired after every retained Candidate change — creation or a terminal
+   * decision (#142). Refused calls never fire, for the same law: only
+   * what the Session actually retained is ever visible. A throwing
+   * observer cannot fail the retained change — presentation is not
+   * storage.
+   */
+  onCandidateChanged?(candidate: SessionCandidate): void
 }): SessionEvidenceStore {
   const observations: MutableObservation[] = []
   const candidates: MutableCandidate[] = []
@@ -305,6 +321,23 @@ export function createSessionEvidence(deps: {
       // Presentation cannot fail storage — but it is not silent either.
       console.warn(
         `[evidence] accepted-observation observer failed for ${result.observation.id}: ${err instanceof Error ? err.message : String(err)}`,
+      )
+    }
+  }
+
+  /**
+   * The retained-Candidate notification (#142): the same change signal
+   * accepted Observations ride — creation and decision alike, since a
+   * status change is a live visible update. Guarded by the same law:
+   * presentation cannot fail storage.
+   */
+  const notifyCandidateChanged = (candidate: SessionCandidate): void => {
+    if (deps.onCandidateChanged === undefined) return
+    try {
+      deps.onCandidateChanged(candidate)
+    } catch (err) {
+      console.warn(
+        `[evidence] candidate-change observer failed for ${candidate.id}: ${err instanceof Error ? err.message : String(err)}`,
       )
     }
   }
@@ -375,12 +408,15 @@ export function createSessionEvidence(deps: {
         subject,
         ...(detail !== undefined ? { detail } : {}),
         status: 'active',
+        recordedAt: deps.now(),
         supportingObservationIds: [...input.supportingObservationIds],
         references,
         provenance: [source],
       }
       candidates.push(candidate)
-      return freezeCandidate(candidate)
+      const frozen = freezeCandidate(candidate)
+      notifyCandidateChanged(frozen)
+      return frozen
     },
     setCandidateStatus(id, change) {
       if (cleared) return null
@@ -399,7 +435,9 @@ export function createSessionEvidence(deps: {
       candidate.supportingObservationIds = [...support]
       candidate.references = mergeMemoryReferences(candidate.references, references)
       candidate.provenance = appendProvenance(candidate.provenance, source)
-      return freezeCandidate(candidate)
+      const frozen = freezeCandidate(candidate)
+      notifyCandidateChanged(frozen)
+      return frozen
     },
     candidate(id) {
       const found = candidates.find((candidate) => candidate.id === id)

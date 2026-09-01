@@ -1041,4 +1041,45 @@ describe('session runtime', () => {
 
     expect(changes).toEqual([{ sessionId: 'session-1', generation: 0 }])
   })
+
+  // #142: retained Candidate changes ride the same change signal — the
+  // complete Evidence Browser's Candidate cards must update live, exactly
+  // like Observation cards do.
+  it('reports retained Candidate changes with the live Session identity (#142)', () => {
+    const changes: Array<{ sessionId: string; generation: number }> = []
+    const clock = new FakeClock(1_000)
+    const runtime = createSessionRuntime({
+      clock,
+      identities: new DeterministicIdentities(),
+      onEvidenceChanged: (change) => changes.push({ ...change }),
+    })
+
+    const admission = runtime.accept(runtime.submit().submissionId)
+    const store = runtime.evidenceStore()!
+    const observation = store.checkpointObservation({
+      sourceKind: 'web',
+      text: 'The Acme router costs $39.',
+      references: [{ url: 'https://shop.example/acme-router' }],
+      runId: admission.runId,
+    })!.observation
+
+    changes.length = 0
+    const candidate = store.addCandidate({
+      subject: 'Acme wifi router',
+      supportingObservationIds: [observation.id],
+      runId: admission.runId,
+    })!
+    // Refused creation (ghost support): never reported.
+    store.addCandidate({ subject: 'Ghost', supportingObservationIds: ['memory-99' as never], runId: admission.runId })
+    store.setCandidateStatus(candidate.id, {
+      status: 'accepted',
+      supportingObservationIds: [observation.id],
+      runId: admission.runId,
+    })
+
+    expect(changes).toEqual([
+      { sessionId: 'session-1', generation: 0 },
+      { sessionId: 'session-1', generation: 0 },
+    ])
+  })
 })

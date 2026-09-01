@@ -324,6 +324,91 @@ describe('session evidence', () => {
     expect(evidence.snapshot().observations).toHaveLength(1)
   })
 
+  // #142: Candidates carry Session-bound recording time — the complete
+  // Evidence Browser's deterministic newest-first ordering key — and every
+  // retained Candidate change (creation or decision) is the same change
+  // signal the Evidence Browser rides as accepted Observations.
+  it('stamps Candidates with Session-clock recording time at creation', () => {
+    let at = 1_000
+    const { evidence } = evidenceHarness(() => at)
+    const observation = evidence.checkpointObservation(webObservation())!.observation
+
+    at = 1_500
+    const candidate = evidence.addCandidate({
+      subject: 'Acme wifi router',
+      supportingObservationIds: [observation.id],
+      runId: 'run-1' as RunId,
+    })!
+    expect(candidate.recordedAt).toBe(1_500)
+
+    // A later decision moves the status but never rewrites the record's
+    // creation time — ordering stays deterministic under live updates.
+    at = 2_000
+    const decided = evidence.setCandidateStatus(candidate.id, {
+      status: 'accepted',
+      supportingObservationIds: [observation.id],
+      runId: 'run-2' as RunId,
+    })!
+    expect(decided.recordedAt).toBe(1_500)
+  })
+
+  it('notifies retained Candidate changes — creation and decision — but never refused or post-clear ones', () => {
+    const changed: Array<{ id: string; status: string }> = []
+    let next = 0
+    const evidence = createSessionEvidence({
+      sessionId: 'session-1' as SessionId,
+      now: () => 0,
+      mintId: () => `memory-${++next}` as MemoryEntryId,
+      onCandidateChanged: (candidate) => changed.push({ id: candidate.id, status: candidate.status }),
+    })
+
+    const observation = evidence.checkpointObservation(webObservation())!.observation
+    const candidate = evidence.addCandidate({
+      subject: 'Acme wifi router',
+      supportingObservationIds: [observation.id],
+      runId: 'run-1' as RunId,
+    })!
+    // Refused creations and unknown-target decisions never notify.
+    evidence.addCandidate({ subject: 'Ghost support', supportingObservationIds: ['memory-99' as MemoryEntryId], runId: 'run-1' as RunId })
+    evidence.setCandidateStatus('memory-99' as MemoryEntryId, {
+      status: 'accepted',
+      supportingObservationIds: [observation.id],
+      runId: 'run-1' as RunId,
+    })
+    evidence.setCandidateStatus(candidate.id, {
+      status: 'accepted',
+      supportingObservationIds: ['memory-99' as MemoryEntryId],
+      runId: 'run-1' as RunId,
+    })
+    evidence.setCandidateStatus(candidate.id, {
+      status: 'accepted',
+      supportingObservationIds: [observation.id],
+      runId: 'run-2' as RunId,
+    })!
+    evidence.clear()
+    evidence.addCandidate({ subject: 'Post-clear', supportingObservationIds: [observation.id], runId: 'run-2' as RunId })
+
+    expect(changed).toEqual([
+      { id: 'memory-2', status: 'active' },
+      { id: 'memory-2', status: 'accepted' },
+    ])
+  })
+
+  it('a throwing Candidate observer cannot fail the retained change (#142)', () => {
+    let next = 0
+    const evidence = createSessionEvidence({
+      sessionId: 'session-1' as SessionId,
+      now: () => 0,
+      mintId: () => `memory-${++next}` as MemoryEntryId,
+      onCandidateChanged: () => {
+        throw new Error('observer exploded')
+      },
+    })
+    const observation = evidence.checkpointObservation(webObservation())!.observation
+    expect(evidence.addCandidate({ subject: 'Acme wifi router', supportingObservationIds: [observation.id], runId: 'run-1' as RunId })).not.toBeNull()
+    expect(evidence.snapshot().candidates).toHaveLength(1)
+  })
+
   // #139: accepted Observations — new or exact-duplicate merged — are the
   // one change signal the Evidence Browser rides; refused checkpoints stay
   // invisible, and a cleared (Session-ended) store never fires again.

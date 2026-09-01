@@ -681,8 +681,13 @@ export function createSessionRuntime(deps: {
           // generation at fire time — the store is cleared before a reset
           // bumps it, so a report can never carry a stale generation.
           // (Local const so the observer closure needs no non-null claim.)
+          // Candidate changes ride the same signal (#142): a creation or
+          // a decision is as visible a change as an accepted Observation.
           ...(reportEvidence !== undefined
-            ? { onObservationAccepted: () => reportEvidence({ sessionId: acceptedSessionId, generation }) }
+            ? {
+              onObservationAccepted: () => reportEvidence({ sessionId: acceptedSessionId, generation }),
+              onCandidateChanged: () => reportEvidence({ sessionId: acceptedSessionId, generation }),
+            }
             : {}),
         })
       }

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { ActivityFeed } from '../ActivityFeed'
+import { evidenceTotal } from '../../../core/session/evidenceBrowser'
 import { useSessionEvidence } from '../useSessionEvidence'
 import { EvidenceView } from './EvidenceView'
 import { PromptBar } from './PromptBar'
@@ -36,6 +37,9 @@ export function OverlayPanel() {
   const { mode, open, width } = usePanelState()
   const runActive = useRunActive()
   const evidence = useSessionEvidence()
+  // The `Evidence N` total (#142): every current Observation and
+  // Candidate, independently of the browser's active filters.
+  const evidenceCount = evidenceTotal(evidence.observations, evidence.candidates)
   // The Activity/Evidence view switch (#139): local to this page — one
   // CSS-level swap, no browser or Run state involved.
   const [view, setView] = useState<'activity' | 'evidence'>('activity')
@@ -157,6 +161,7 @@ export function OverlayPanel() {
         {view === 'evidence' ? (
           <EvidenceView
             observations={evidence.observations}
+            candidates={evidence.candidates}
             footer={panelFooter}
             headerActions={
               <>
@@ -182,18 +187,18 @@ export function OverlayPanel() {
               <>
                 <button
                   type="button"
-                  className={`feed-tab feed-tab--evidence${evidence.observations.length > 0 ? ' feed-tab--stocked' : ''}`}
+                  className={`feed-tab feed-tab--evidence${evidenceCount > 0 ? ' feed-tab--stocked' : ''}`}
                   aria-label={
-                    evidence.observations.length > 0
-                      ? `Open the evidence browser (${evidence.observations.length} observations)`
+                    evidenceCount > 0
+                      ? `Open the evidence browser (${evidence.observations.length} observations, ${evidence.candidates.length} candidates)`
                       : 'Open the evidence browser (no evidence yet)'
                   }
                   onClick={() => setView('evidence')}
                 >
                   Evidence
-                  {evidence.observations.length > 0 ? (
+                  {evidenceCount > 0 ? (
                     <span className="feed-tab-count" aria-hidden="true">
-                      {evidence.observations.length}
+                      {evidenceCount}
                     </span>
                   ) : null}
                 </button>

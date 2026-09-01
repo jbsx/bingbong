@@ -15,7 +15,7 @@ const observation = (id: string, text: string, observedAt = 0): SessionObservati
   ({ id: id as MemoryEntryId, sessionId: 'session-a' as SessionId, sourceKind: 'web', text, observedAt, references: [], provenance: [] }) as SessionObservation
 
 const candidate = (id: string): SessionCandidate =>
-  ({ id: id as MemoryEntryId, sessionId: 'session-a' as SessionId, subject: 'Acme router', status: 'active', supportingObservationIds: [], references: [], provenance: [] }) as SessionCandidate
+  ({ id: id as MemoryEntryId, sessionId: 'session-a' as SessionId, subject: 'Acme router', status: 'active', recordedAt: 0, supportingObservationIds: [], references: [], provenance: [] }) as SessionCandidate
 
 const payload = (
   sessionId: string,

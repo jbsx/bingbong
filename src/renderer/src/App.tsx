@@ -5,6 +5,7 @@ import { IdleScreen } from './IdleScreen'
 import { PeekCard } from './PeekCard'
 import { SettingsPage } from './SettingsPage'
 import { SubagentCards } from './SubagentCards'
+import { evidenceTotal } from '../../core/session/evidenceBrowser'
 import { useActiveSession } from './useActiveSession'
 import { useAssistant } from './useAssistant'
 import { useFeedPanel, useFeedSlotRect } from './useFeedPanel'
@@ -31,9 +32,11 @@ export function App() {
   // The Evidence Browser's dashboard half (#139): the second Session-bearing
   // renderer answers the same change notifications with the same
   // authoritative read — the slot carries the live count so the read is
-  // observable, exactly like the slot carries the folded layout.
+  // observable, exactly like the slot carries the folded layout. The count
+  // is the filter-independent total: Observations and Candidates together
+  // (#142).
   const evidence = useSessionEvidence()
-  const evidenceCount = evidence.observations.length
+  const evidenceCount = evidenceTotal(evidence.observations, evidence.candidates)
   // The Peek Card (ADR 0021, amended by ADR 0026): voice's report surface
   // while the panel is Collapsed — shown by activity, retired by opening
   // the panel, revived by closing it mid-run.

@@ -12,12 +12,37 @@ import type { AssistantTurn } from '../src/core/ports/llm'
 // no browser or Run state, and the notification path crosses the real
 // main/preload/renderer boundary — scripted orchestrator, real CDP
 // browser, real Electron IPC.
+//
+// The complete browser (#142): mixed Observation kinds (web, user, and a
+// delegated worker's web evidence), full Observation cards with
+// uncertainty, revalidation need, source labels, and human-readable
+// provenance; Candidate creation and a live decision; per-section filters
+// that hide cards without touching the filter-independent `Evidence N`
+// total; exact-duplicate merging beside live Candidate updates; support
+// that focuses the existing Observation card instead of copying it; and
+// internal identities (Memory Entry, Run, Observation, Subagent) that
+// never surface as visible text.
 
 /** The `Evidence N` control's badge text, or null when no badge shows. */
 const EVIDENCE_BADGE = `document.querySelector('.feed-tab--evidence .feed-tab-count')?.textContent ?? null`
 
 /** One Evidence card's statement per card, in document order. */
 const EVIDENCE_CARD_TEXTS = `[...document.querySelectorAll('.evidence-card .evidence-text')].map((el) => el.textContent)`
+
+/** The Observation section's cards, newest first. */
+const OBSERVATION_CARDS = `[...document.querySelectorAll('.evidence-section[aria-label="observations"] .evidence-card')]`
+
+/** The Observation filter chips in vocabulary order: all, web, vision, action, user, delegated. */
+const observationFilter = (filter: 'all' | 'web' | 'user' | 'delegated'): string =>
+  `.evidence-section[aria-label="observations"] .evidence-filter:nth-child(${
+    { all: 1, web: 2, user: 5, delegated: 6 }[filter]
+  })`
+
+/** The Candidate filter chips in vocabulary order: all, active, accepted, rejected, superseded. */
+const candidateFilter = (filter: 'all' | 'active' | 'accepted'): string =>
+  `.evidence-section[aria-label="candidates"] .evidence-filter:nth-child(${
+    { all: 1, active: 2, accepted: 3 }[filter]
+  })`
 
 function checkpointRun(page: string, observation: string, answer: string): AssistantTurn[] {
   return [
@@ -233,6 +258,252 @@ describe('evidence browser e2e', () => {
 
       // The Session's evidence outlived both Runs (ADR 0028) and the pane
       // never moved for any of it.
+      expect(await app.paneUrl()).toBe(page)
+    } finally {
+      await app.quit()
+    }
+  })
+
+  it('the complete browser: mixed kinds, Candidate lifecycle, filters, honest counts, merges, and support focus (#142)', async () => {
+    const page = fixture.url('/second')
+    const COMMAND = 'collect every kind of evidence'
+    // A fresh app's first Session mints evidence deterministically:
+    // memory-1 web, memory-2 user (the duplicate merges into memory-1),
+    // memory-3 the delegated worker's web fact, memory-4 the Candidate.
+    const script: AssistantTurn[] = [
+      {
+        kind: 'tool_calls',
+        calls: [
+          // Delegation needs the investigation tier (#120).
+          {
+            id: 'plan',
+            name: 'report_run_plan',
+            args: { objective: 'Collect every evidence kind', headline: 'Collecting evidence', effort_tier: 'investigation' },
+          },
+          { id: 'n1', name: 'navigate', args: { url: page } },
+          {
+            id: 'e1',
+            name: 'record_evidence',
+            args: {
+              observation: 'Web fact: the second page carries the heading.',
+              source_url: page,
+              excerpt: 'second fixture page',
+              uncertainty: 'layout may change',
+              volatile: true,
+            },
+          },
+          // Exact duplicate of e1: merges — no second card.
+          {
+            id: 'e2',
+            name: 'record_evidence',
+            args: {
+              observation: 'Web fact: the second page carries the heading.',
+              source_url: page,
+              excerpt: 'second fixture page',
+            },
+          },
+          // User kind: this Run's own command, verbatim.
+          { id: 'e3', name: 'record_evidence', args: { kind: 'user', observation: COMMAND } },
+          { id: 's1', name: 'spawn_agent', args: { kind: 'browse', task: 'look at the second page' } },
+        ],
+      },
+      {
+        kind: 'tool_calls',
+        calls: [
+          { id: 'r1', name: 'agent_results', args: { wait: true } },
+          {
+            id: 'e4',
+            name: 'record_evidence',
+            args: {
+              kind: 'subagent',
+              agent_id: 'a-1',
+              observation: 'Delegated fact: the worker also saw the heading.',
+              source_url: page,
+            },
+          },
+          {
+            id: 'c1',
+            name: 'record_candidate',
+            args: { subject: 'The page carries the heading', detail: 'Seen directly and by the worker.', supporting_evidence: ['memory-1'] },
+          },
+        ],
+      },
+      { kind: 'answer', speak: 'Collected.', display: 'Collected every kind.' },
+    ]
+    const decision: AssistantTurn[] = [
+      {
+        kind: 'tool_calls',
+        calls: [
+          {
+            id: 'c2',
+            name: 'record_candidate',
+            args: { candidate_id: 'memory-4', status: 'accepted', supporting_evidence: ['memory-1'] },
+          },
+        ],
+      },
+      { kind: 'answer', speak: 'Decided.', display: 'Accepted the candidate.' },
+    ]
+    const worker: AssistantTurn[] = [
+      { kind: 'tool_calls', calls: [{ id: 'w1', name: 'navigate', args: { url: page } }] },
+      { kind: 'answer', speak: 'done', display: 'Saw the second page.' },
+    ]
+    const app = await startHarness({
+      fixture,
+      env: {
+        BINGBONG_LLM_SCRIPT: JSON.stringify([...script, ...decision]),
+        BINGBONG_SUBAGENT_LLM_SCRIPT: JSON.stringify(worker),
+      },
+    })
+    try {
+      await app.ensurePanelOpen()
+      const submitted = await app.submitCommand(COMMAND)
+      expect(submitted).toBe('submitted')
+      await waitFor(
+        async () => (((await recordedHistoryText(app)).includes('Collected every kind.')) ? true : undefined),
+        { timeoutMs: 30_000, intervalMs: 250 },
+      )
+
+      // `Evidence 4`: three Observations (the duplicate merged) plus one
+      // Candidate — the total the header and the dashboard slot both carry.
+      await waitFor(
+        async () => ((await app.overlayEval<string | null>(EVIDENCE_BADGE)) === '4' ? true : undefined),
+        { timeoutMs: 10_000, intervalMs: 100 },
+      )
+      expect(
+        await app.dashboardEval<string | null>(`document.querySelector('.feed-slot')?.dataset.evidenceCount ?? null`),
+      ).toBe('4')
+
+      // The complete browser: Observation cards newest first — delegated
+      // (the worker saw the page after this run's own reads), user, web —
+      // each carrying its full record, and one Candidate below them.
+      await app.ensurePanelOpen()
+      await app.clickOverlayElement('.feed-tab--evidence')
+      const observationCards = await waitFor(
+        async () => {
+          const cards = await app.overlayEval<string[]>(`${OBSERVATION_CARDS}.map((el) => el.textContent)`)
+          return cards.length === 3 ? cards : undefined
+        },
+        { timeoutMs: 10_000, intervalMs: 100 },
+      )
+      expect(observationCards[0]).toContain('Delegated fact: the worker also saw the heading.')
+      expect(observationCards[1]).toContain(COMMAND)
+      expect(observationCards[2]).toContain('Web fact: the second page carries the heading.')
+      // Full Observation cards (#142): uncertainty, revalidation need, the
+      // source's fallback label (hostname — no title was recorded), and
+      // human-readable provenance.
+      expect(observationCards[2]).toContain('uncertainty: layout may change')
+      expect(observationCards[2]).toContain('needs revalidation')
+      expect(observationCards[2]).toContain('127.0.0.1')
+      expect(observationCards[0]).toContain('via a delegated subagent')
+      expect(observationCards[1]).toContain("the user's command")
+
+      // The delegated card presents delegation without changing its
+      // grounding source kind: kind chip stays web, plus the delegated chip.
+      const delegatedKinds = await app.overlayEval<string[]>(
+        `${OBSERVATION_CARDS}.filter((el) => el.querySelector('.evidence-chip--delegated')).map((el) => el.querySelector('.evidence-kind')?.textContent)`,
+      )
+      expect(delegatedKinds).toEqual(['web'])
+
+      // One Candidate, active, with one support reference — a reference,
+      // not a copy: the cited Observation's statement appears once, in the
+      // Observation section alone.
+      const candidateCard = await app.overlayEval<string>(
+        `document.querySelector('.evidence-card--candidate')?.textContent ?? ''`,
+      )
+      expect(candidateCard).toContain('The page carries the heading')
+      expect(candidateCard).toContain('active')
+      expect(await app.overlayEval<number>(`document.querySelectorAll('.evidence-support-ref').length`)).toBe(1)
+      expect(candidateCard).not.toContain('Web fact: the second page carries the heading.')
+
+      // Observation filters hide cards, never evidence: the user filter
+      // shows one card while the dashboard's honest total still reads 4.
+      await app.clickOverlayElement(observationFilter('user'))
+      expect(await app.overlayEval<number>(`document.querySelectorAll('.evidence-section[aria-label="observations"] .evidence-card').length`)).toBe(1)
+      expect(
+        await app.dashboardEval<string | null>(`document.querySelector('.feed-slot')?.dataset.evidenceCount ?? null`),
+      ).toBe('4')
+
+      // The delegated filter shows the worker's evidence; its grounding
+      // kind stays web.
+      await app.clickOverlayElement(observationFilter('delegated'))
+      const delegatedFilterKinds = await app.overlayEval<string[]>(
+        `${OBSERVATION_CARDS}.map((el) => el.querySelector('.evidence-kind')?.textContent)`,
+      )
+      expect(delegatedFilterKinds).toEqual(['web'])
+
+      // The web filter covers every web-grounded Observation — the
+      // delegated one included (presentation never rewrites grounding).
+      await app.clickOverlayElement(observationFilter('web'))
+      expect(await app.overlayEval<number>(`document.querySelectorAll('.evidence-section[aria-label="observations"] .evidence-card').length`)).toBe(2)
+
+      // A Candidate's support references the existing Observation card:
+      // with the user filter hiding it, the reference still reaches — the
+      // filter widens and the card is focused, its contents never copied.
+      await app.clickOverlayElement(observationFilter('user'))
+      await app.clickOverlayElement('.evidence-support-ref')
+      await waitFor(
+        async () => {
+          const focused = await app.overlayEval<boolean>(`!!document.querySelector('.evidence-card--focused')`)
+          const visible = await app.overlayEval<number>(`document.querySelectorAll('.evidence-section[aria-label="observations"] .evidence-card').length`)
+          return focused && visible === 3 ? true : undefined
+        },
+        { timeoutMs: 10_000, intervalMs: 100 },
+      )
+      expect(
+        await app.overlayEval<string | null>(`document.querySelector('.evidence-card--focused')?.dataset.evidenceId ?? null`),
+      ).toBe('memory-1')
+
+      // A second Run decides the Candidate: the change broadcasts and the
+      // live card updates — no reload, no duplicate card, count unchanged.
+      await app.clickOverlayElement('.feed-tab:not(.feed-tab--evidence)')
+      const decided = await app.submitCommand('decide the candidate')
+      expect(decided).toBe('submitted')
+      await waitFor(
+        async () => (((await recordedHistoryText(app)).includes('Accepted the candidate.')) ? true : undefined),
+        { timeoutMs: 30_000, intervalMs: 250 },
+      )
+      // The done boundary may collapse the panel after the run — re-open
+      // it inside the wait (the #139 recovery pattern) and only proceed
+      // once the overlay's view bounds have actually expanded (a freshly
+      // re-opened panel resizes its view asynchronously; clicks before
+      // the settle land on stale coordinates).
+      await waitFor(
+        async () => {
+          await app.ensurePanelOpen()
+          if ((await app.overlayEval<number>('innerWidth')) < 100) return undefined
+          return (await app.overlayEval<string | null>(EVIDENCE_BADGE)) === '4' ? true : undefined
+        },
+        { timeoutMs: 15_000, intervalMs: 250 },
+      )
+      await app.clickOverlayElement('.feed-tab--evidence')
+      await waitFor(
+        async () => {
+          const status = await app.overlayEval<string | null>(`document.querySelector('.evidence-card--candidate')?.dataset.candidateStatus ?? null`)
+          return status === 'accepted' ? status : undefined
+        },
+        { timeoutMs: 10_000, intervalMs: 100 },
+      )
+      expect(await app.overlayEval<number>(`document.querySelectorAll('.evidence-card--candidate').length`)).toBe(1)
+
+      // Candidate filters follow the live status: active matches nothing
+      // now, accepted matches the one decided Candidate.
+      await app.clickOverlayElement(candidateFilter('active'))
+      expect(await app.overlayEval<number>(`document.querySelectorAll('.evidence-card--candidate').length`)).toBe(0)
+      expect(
+        await app.overlayEval<string>(`document.querySelector('.evidence-section[aria-label="candidates"] .evidence-section-empty')?.textContent ?? ''`),
+      ).toContain('No candidates match this filter.')
+      await app.clickOverlayElement(candidateFilter('accepted'))
+      expect(await app.overlayEval<number>(`document.querySelectorAll('.evidence-card--candidate').length`)).toBe(1)
+
+      // Internal identities never surface as visible text — not Memory
+      // Entry, Run, Observation, or Subagent ids.
+      const evidenceText = await app.overlayEval<string>(`document.querySelector('.feed-list')?.textContent ?? ''`)
+      expect(evidenceText).not.toMatch(/memory-\d/)
+      expect(evidenceText).not.toMatch(/run-\d/)
+      expect(evidenceText).not.toMatch(/obs-\d/)
+      expect(evidenceText).not.toMatch(/\ba-1\b/)
+
+      // The pane never moved for any of it — the browser is read-only.
       expect(await app.paneUrl()).toBe(page)
     } finally {
       await app.quit()

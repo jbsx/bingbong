@@ -237,6 +237,176 @@ body,
   overflow-wrap: anywhere;
 }
 
+/* The complete Evidence Browser (#142): two distinct newest-first sections
+   — Observations and Candidates — each with its own filter row. Filters
+   are presentation only: they hide cards, never evidence, and the
+   header's `Evidence N` badge counts everything regardless of them. */
+.evidence-section {
+  margin: 0 0 14px;
+}
+
+.evidence-section-head {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  margin: 10px 0 6px;
+}
+
+.evidence-section-title {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.evidence-section-count {
+  color: var(--muted);
+  font-size: 0.7rem;
+}
+
+.evidence-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-bottom: 8px;
+}
+
+.evidence-filter {
+  height: 22px;
+  padding: 0 9px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 0.7rem;
+  font-weight: 600;
+  line-height: 1;
+  text-transform: capitalize;
+  cursor: pointer;
+  transition: background 120ms ease, color 120ms ease, border-color 120ms ease;
+}
+
+.evidence-filter:hover {
+  color: var(--text);
+  background: color-mix(in srgb, var(--text) 8%, transparent);
+}
+
+.evidence-filter--active {
+  border-color: color-mix(in srgb, var(--accent) 40%, transparent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  color: var(--accent);
+}
+
+.evidence-section-empty {
+  margin: 0 0 8px;
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+/* Card meta rows: uncertainty, source labels, provenance — quiet lines
+   under the statement, never competing with it. */
+.evidence-uncertainty,
+.evidence-source,
+.evidence-provenance {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 0.72rem;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.evidence-uncertainty {
+  font-style: italic;
+}
+
+/* Presentation chips beside the kind: delegated provenance (#142) and
+   revalidation need — both derived, never new grounding kinds. */
+.evidence-chip {
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.evidence-chip--delegated {
+  background: color-mix(in srgb, var(--text) 10%, transparent);
+  color: var(--muted);
+}
+
+.evidence-chip--volatile {
+  background: color-mix(in srgb, #b57614 14%, transparent);
+  color: #b57614;
+}
+
+/* The support flash: a Candidate's reference lands on the Observation
+   card it cites — focused, briefly highlighted, never copied. */
+.evidence-card--focused {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 25%, transparent);
+  transition: box-shadow 200ms ease, border-color 200ms ease;
+}
+
+/* Candidate cards: status-led, with support references as small chips
+   that focus the cited Observation card. */
+.evidence-status {
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  color: var(--accent);
+}
+
+.evidence-status--rejected {
+  background: color-mix(in srgb, #9d0006 10%, transparent);
+  color: #9d0006;
+}
+
+.evidence-status--superseded {
+  background: color-mix(in srgb, var(--text) 10%, transparent);
+  color: var(--muted);
+}
+
+.evidence-detail {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 0.8rem;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.evidence-support {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 6px;
+}
+
+.evidence-support-ref {
+  height: 20px;
+  padding: 0 8px;
+  border: 1px dashed color-mix(in srgb, var(--text) 25%, transparent);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 0.65rem;
+  font-weight: 600;
+  line-height: 1;
+  cursor: pointer;
+  transition: color 120ms ease, border-color 120ms ease;
+}
+
+.evidence-support-ref:hover {
+  color: var(--text);
+  border-color: var(--accent);
+}
+
 /* The Answer Evidence Summary (#141): the collapsed record of exactly
    the Observations a displayed Answer declared, inside its card. Plain
    native details/summary — collapsed by default, keyboard accessible by
