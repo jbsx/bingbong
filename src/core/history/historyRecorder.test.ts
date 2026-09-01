@@ -5,6 +5,7 @@ import { createHistoryRecorder } from './historyRecorder'
 import type { HistoryStore, RecordedEntry, RunRecord } from './historyStore'
 import type { RunFinalization } from '../session/runJournal'
 import type { SessionId } from '../session/sessionIdentity'
+import type { MemoryEntryId } from '../session/workingMemory'
 
 // The recorder is the persistence half of the command-pipeline seam: the same
 // event stream the dashboard renders is projected onto the history store, so
@@ -60,6 +61,51 @@ function eventsOf(...events: PipelineEvent[]): PipelineEvent[] {
 }
 
 describe('historyRecorder', () => {
+  it('flattens a displayed Answer\'s derived sources into its recorded text — and nothing structured (#141)', () => {
+    const store = fakeStore()
+    const recorder = recorderWith(store)
+    const run = recorder.run()
+
+    for (const event of eventsOf(
+      { type: 'command', turnId: 'turn-r1', text: 'find the price', at: 100, sessionId: 'session-1' as SessionId },
+      {
+        type: 'display',
+        turnId: 'turn-r1',
+        text: 'The Acme router costs $39.',
+        at: 101,
+        evidenceIds: ['memory-1' as MemoryEntryId],
+        sources: [{ url: 'https://shop.example/acme-router', title: 'Shop' }],
+      },
+      { type: 'done', turnId: 'turn-r1', at: 102 },
+    )) {
+      run.event(event)
+    }
+
+    const display = store.recentEntries(10).find((entry) => entry.kind === 'display')
+    expect(display?.text).toBe(
+      'The Acme router costs $39.\n\nSources:\n- [Shop](https://shop.example/acme-router)',
+    )
+    // URL-only Recorded History: no evidence identities, no structured
+    // association — the entry is the text, exactly as before (#141).
+    expect(display && 'evidenceIds' in display).toBe(false)
+    expect(JSON.stringify(store.recentEntries(10))).not.toMatch(/memory-1|evidenceIds/)
+  })
+
+  it('records a display event without sources unchanged — no invented links (#141)', () => {
+    const store = fakeStore()
+    const recorder = recorderWith(store)
+    recorder.event({
+      type: 'display',
+      turnId: 'turn-r1',
+      text: 'Nothing supports this.',
+      at: 100,
+      evidenceIds: [],
+      sessionId: 'session-1' as SessionId,
+    })
+
+    expect(store.recentEntries(1)[0]?.text).toBe('Nothing supports this.')
+  })
+
   it('records a complete run: entries linked to the run, outcome done', () => {
     const store = fakeStore()
     const recorder = recorderWith(store)

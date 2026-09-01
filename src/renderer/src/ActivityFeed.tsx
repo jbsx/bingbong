@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { FeedEntry } from '../../core/history/feedProjection'
+import type { SessionObservation } from '../../core/session/sessionEvidence'
+import { AnswerEvidenceSummary } from './AnswerEvidenceSummary'
 import { FeedMarkdown } from './FeedMarkdown'
 
 /**
@@ -26,7 +28,10 @@ export function formatFeedTime(at: number): string {
   return new Date(at).toLocaleTimeString([], { hour: '2-digit', hour12: false, minute: '2-digit', second: '2-digit' })
 }
 
-export function FeedLine({ entry }: { entry: FeedEntry }) {
+/** One shared empty default — props stay optional without allocating per render. */
+const NO_OBSERVATIONS: readonly SessionObservation[] = []
+
+export function FeedLine({ entry, observations = NO_OBSERVATIONS }: { entry: FeedEntry; observations?: readonly SessionObservation[] }) {
   const time = <time className="feed-time">{formatFeedTime(entry.at)}</time>
   if (entry.role === 'user') {
     // Your words (#54): commands and heard transcriptions, right-aligned
@@ -72,9 +77,18 @@ export function FeedLine({ entry }: { entry: FeedEntry }) {
         <div className="feed-card">
           <span className="feed-sr">Bing Bong</span>
           {entry.kind === 'display' ? (
-            <div className="feed-text feed-text--markdown">
-              <FeedMarkdown text={entry.text} />
-            </div>
+            <>
+              <div className="feed-text feed-text--markdown">
+                <FeedMarkdown text={entry.text} />
+              </div>
+              {/* The Answer Evidence Summary (#141): the collapsed view
+                  of exactly the Observations this Answer declared —
+                  resolved live from the authoritative Session snapshot,
+                  never recorded. */}
+              {entry.evidenceIds !== undefined && entry.evidenceIds.length > 0 ? (
+                <AnswerEvidenceSummary evidenceIds={entry.evidenceIds} observations={observations} />
+              ) : null}
+            </>
           ) : (
             <span className="feed-text feed-text--spoken">{entry.text}</span>
           )}
@@ -197,7 +211,17 @@ function ReasoningBlock({ entry, live, trailing }: { entry: FeedEntry; live: boo
  * collapsed live run stays collapsed; a finished run collapses when it
  * ends (the toggle React applies fires onToggle, recording the choice).
  */
-function RunDetails({ runId, entries, live }: { runId: string; entries: FeedEntry[]; live: boolean }) {
+function RunDetails({
+  runId,
+  entries,
+  live,
+  observations,
+}: {
+  runId: string
+  entries: FeedEntry[]
+  live: boolean
+  observations?: readonly SessionObservation[]
+}) {
   const [userOpen, setUserOpen] = useState<boolean | null>(null)
   const open = userOpen ?? live
   const lastId = entries[entries.length - 1]?.id
@@ -232,7 +256,7 @@ function RunDetails({ runId, entries, live }: { runId: string; entries: FeedEntr
           entry.kind === 'reasoning' ? (
             <ReasoningBlock key={entry.id} entry={entry} live={live} trailing={entry.id === lastId} />
           ) : (
-            <FeedLine key={entry.id} entry={entry} />
+            <FeedLine key={entry.id} entry={entry} observations={observations} />
           ),
         )}
       </div>
@@ -243,12 +267,19 @@ function RunDetails({ runId, entries, live }: { runId: string; entries: FeedEntr
 export function ActivityFeed({
   entries,
   liveRunId,
+  observations = NO_OBSERVATIONS,
   headerActions,
   footer,
 }: {
   entries: FeedEntry[]
   /** The run currently in flight (#55) — its expander auto-opens. */
   liveRunId?: string | null
+  /**
+   * The current Session's Observations, read from the authoritative
+   * snapshot (#141) — what displayed Answers' declared evidence
+   * resolves against for their Evidence Summaries.
+   */
+  observations?: readonly SessionObservation[]
   headerActions?: React.ReactNode
   /** Below the list — the panel's steer box (#46). */
   footer?: React.ReactNode
@@ -270,9 +301,15 @@ export function ActivityFeed({
         {entries.length === 0 ? <p className="feed-empty">Say or type a command to begin.</p> : null}
         {foldRuns(entries).map((item) =>
           item.item === 'run' ? (
-            <RunDetails key={`run-${item.runId}`} runId={item.runId} entries={item.entries} live={item.runId === liveRunId} />
+            <RunDetails
+              key={`run-${item.runId}`}
+              runId={item.runId}
+              entries={item.entries}
+              live={item.runId === liveRunId}
+              observations={observations}
+            />
           ) : (
-            <FeedLine key={item.entry.id} entry={item.entry} />
+            <FeedLine key={item.entry.id} entry={item.entry} observations={observations} />
           ),
         )}
       </div>

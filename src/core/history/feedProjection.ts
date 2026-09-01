@@ -2,6 +2,7 @@ import type { PipelineEvent } from '../pipeline/events'
 import { describeToolIntent } from '../pipeline/toolCallDisplay'
 import { formatRetryLine } from '../pipeline/runProgress'
 import type { SessionId } from '../session/sessionIdentity'
+import type { MemoryEntryId } from '../session/workingMemory'
 import type { SessionAdoptionPayload } from '../session/ipcChannels'
 import { projectPipelineEvent } from './transcriptProjection'
 import type { TranscriptEvent } from './historyStore'
@@ -70,6 +71,14 @@ export interface FeedEntry {
    * pipeline errors) and on unstamped announcements.
    */
   runId?: string
+  /**
+   * The Session Evidence identities a displayed Answer declared (#141):
+   * Session-only metadata the renderer resolves against the current
+   * authoritative snapshot to render the collapsed Answer Evidence
+   * Summary. Never recorded, and wiped with the feed at the Session
+   * boundary — it lives exactly as long as the entry does.
+   */
+  evidenceIds?: readonly MemoryEntryId[]
 }
 
 /** Detail entries are trimmed beyond this (~500, spec #42). */
@@ -149,10 +158,17 @@ export function createFeedProjection(): {
     feed = feed.filter((entry) => entry.id !== id)
   }
 
-  const appendOutcome = (entry: TranscriptEvent, runId?: string): number => {
+  const appendOutcome = (
+    entry: TranscriptEvent,
+    runId?: string,
+    evidenceIds?: readonly MemoryEntryId[],
+  ): number => {
     closeStreaming()
     const id = nextId++
-    feed = [...feed, { ...entry, id, role: feedRoleForKind(entry.kind), detail: false, runId }]
+    feed = [
+      ...feed,
+      { ...entry, id, role: feedRoleForKind(entry.kind), detail: false, runId, ...(evidenceIds !== undefined ? { evidenceIds } : {}) },
+    ]
     return id
   }
 
@@ -290,9 +306,13 @@ export function createFeedProjection(): {
         }
         case 'display': {
           // The answer's final display entry supersedes its streamed
-          // partial — never both on screen.
+          // partial — never both on screen. Its declared evidence
+          // identities ride along as Session-only metadata (#141): the
+          // renderer resolves them into the collapsed Answer Evidence
+          // Summary against the authoritative snapshot; nothing here is
+          // ever recorded.
           dropOpenText()
-          appendOutcome(projectPipelineEvent(event)!)
+          appendOutcome(projectPipelineEvent(event)!, undefined, event.evidenceIds)
           if (event.turnId !== undefined) {
             // And its Spoken Rendering (#54): the Card renders, so the
             // turn's speak entry stays out of the view — the pipeline

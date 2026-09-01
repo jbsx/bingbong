@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { createFeedProjection, MAX_DETAIL_ENTRIES } from './feedProjection'
 import type { PipelineEvent } from '../pipeline/events'
 import type { SessionId } from '../session/sessionIdentity'
+import type { MemoryEntryId } from '../session/workingMemory'
 
 // Feed projection (#44): the right-edge activity feed's entries as a pure
 // function over the pipeline event stream — timestamped outcome lines
@@ -830,8 +831,59 @@ describe('feed projection', () => {
         feed.onEvent(command('second', 2_000, 'turn-b'))
         expect(feed.liveRunId()).toBe('turn-b')
       })
+
+    })
+  })
+
+  // The Answer Evidence Summary's feed half (#141): a displayed Answer
+  // carries its declared evidence identities as Session-only metadata —
+  // present exactly when declared, wiped with the feed at the Session
+  // boundary, and never present on any other entry kind.
+  describe('answer evidence metadata (#141)', () => {
+    it('carries a display event declared evidence identities onto its entry', () => {
+      const feed = openFeed()
+      feed.onEvent({
+        type: 'display',
+        turnId: T,
+        text: 'It costs $39.',
+        at: 1_000,
+        evidenceIds: ['memory-1' as MemoryEntryId, 'memory-2' as MemoryEntryId],
+      })
+
+      const entries = feed.entries()
+      expect(entries).toHaveLength(1)
+      expect(entries[0]!.evidenceIds).toEqual(['memory-1', 'memory-2'])
     })
 
+    it('declares no evidence: the metadata stays absent on undeclared entries, empty when declared empty', () => {
+      const feed = openFeed()
+      feed.onEvent({ type: 'display', turnId: T, text: 'Nothing supports this.', at: 1_000, evidenceIds: [] })
+      feed.onEvent({ type: 'display', turnId: T, text: 'Plain display.', at: 2_000 })
+      feed.onEvent({ type: 'speak', turnId: 'turn-other', text: 'Opened it.', at: 3_000 })
+
+      const [declaredEmpty, plainDisplay, spoken] = feed.entries()
+      expect(declaredEmpty!.evidenceIds).toEqual([])
+      expect('evidenceIds' in plainDisplay!).toBe(false)
+      expect(spoken).toBeDefined()
+      expect('evidenceIds' in spoken!).toBe(false)
+    })
+
+    it('wipes the identities with the feed at the Session boundary', () => {
+      const feed = createFeedProjection()
+      const owned = { sessionId: 'session-1' as SessionId, sessionGeneration: 0 }
+      feed.onEvent({ type: 'session_started', at: 0, ...owned })
+      feed.onEvent({
+        type: 'display',
+        turnId: T,
+        text: 'It costs $39.',
+        at: 1_000,
+        ...owned,
+        evidenceIds: ['memory-1' as MemoryEntryId],
+      })
+      feed.onEvent({ type: 'session_ended', reason: 'reset', at: 2_000, ...owned })
+
+      expect(feed.entries()).toEqual([])
+    })
   })
 })
 

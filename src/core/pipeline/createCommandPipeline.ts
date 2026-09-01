@@ -71,7 +71,7 @@ import {
 } from './evidenceCheckpoint'
 import { completedEvidenceIsFresh } from './evidenceFreshness'
 import { evaluateCandidateCheckpoint, type CandidateCheckpointOutcome, type EvidenceSessionSource } from './candidateCheckpoint'
-import { deriveAnswerSources, displayedAnswerText } from './answerEvidence'
+import { deriveAnswerSources, scrubAnswerText } from './answerEvidence'
 import { deriveFallbackSources } from './fallbackAnswer'
 import { compactRunContext, type RunEvidenceCheckpoint } from './runContextCompaction'
 
@@ -1024,15 +1024,23 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
           }
           if (turn.kind === 'answer') {
             finalAnswer = turn
-            // Displayed Answers are evidence-grounded (#122, ADR 0028):
-            // source links derive from the Session Evidence the Answer
-            // cites, and internal identities never reach the user —
-            // scrubbed deterministically whatever the model wrote.
-            const displayText = displayedAnswerText(
-              turn.display,
-              deriveAnswerSources(turn.evidenceIds, resolveSessionObservation),
-            )
-            yield { type: 'display', text: displayText, at: clock.now() }
+            // Displayed Answers are evidence-grounded (#122, ADR 0028;
+            // #141): the live text is the model's own wording with
+            // internal identities scrubbed — nothing else. The declared
+            // evidence identities ride the event as Session-only
+            // metadata for the live Answer Evidence Summary, and the
+            // derived source links travel beside them for Recorded
+            // History to flatten back into the recorded text; the live
+            // Feed renders the structured summary instead of a
+            // generated Sources list.
+            const answerSources = deriveAnswerSources(turn.evidenceIds, resolveSessionObservation)
+            yield {
+              type: 'display',
+              text: scrubAnswerText(turn.display),
+              at: clock.now(),
+              ...(turn.evidenceIds !== undefined ? { evidenceIds: turn.evidenceIds } : {}),
+              ...(answerSources.length > 0 ? { sources: answerSources } : {}),
+            }
             yield* speakLine(turn.speak, turnId)
             yield* checkpoint(run, 'thinking')
             break

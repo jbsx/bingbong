@@ -176,6 +176,7 @@ export function OverlayPanel() {
           <ActivityFeed
             entries={feed}
             liveRunId={liveRunId}
+            observations={evidence.observations}
             footer={panelFooter}
             headerActions={
               <>

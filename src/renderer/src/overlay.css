@@ -237,6 +237,77 @@ body,
   overflow-wrap: anywhere;
 }
 
+/* The Answer Evidence Summary (#141): the collapsed record of exactly
+   the Observations a displayed Answer declared, inside its card. Plain
+   native details/summary — collapsed by default, keyboard accessible by
+   construction. The cards reuse the Evidence Browser's own card styles;
+   the source line stays selectable text, never a link (#144 owns the
+   copy control). */
+.answer-evidence {
+  margin-top: 8px;
+  border-top: 1px solid var(--edge);
+  padding-top: 6px;
+}
+
+.answer-evidence-summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-weight: 600;
+  line-height: 1;
+  list-style: none;
+  user-select: none;
+}
+
+.answer-evidence-summary::-webkit-details-marker {
+  display: none;
+}
+
+.answer-evidence-summary::before {
+  content: '▸';
+  font-size: 0.7rem;
+  transition: transform 120ms ease;
+}
+
+.answer-evidence[open] > .answer-evidence-summary::before {
+  transform: rotate(90deg);
+}
+
+.answer-evidence-summary:hover {
+  color: var(--text);
+}
+
+.answer-evidence-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  color: var(--accent);
+  font-size: 0.7rem;
+  font-weight: 700;
+}
+
+.answer-evidence-entries {
+  margin-top: 6px;
+}
+
+.answer-evidence-source {
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-size: 0.75rem;
+  line-height: 1.4;
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+
 /* The prompt bar: the panel's footer and the one typed-input surface.
    The verb button names the current action (run / steer); the bar is
    never disabled — a rejected submit restores the draft. */

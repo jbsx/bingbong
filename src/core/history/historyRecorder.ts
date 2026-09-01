@@ -1,5 +1,6 @@
 import type { PipelineEvent } from '../pipeline/events'
 import { inferRunOutcome } from '../pipeline/events'
+import { appendAnswerSources } from '../pipeline/answerEvidence'
 import { DEFAULT_EFFORT_TIER, type EffortTier } from '../pipeline/runPlan'
 import type { SessionId } from '../session/sessionIdentity'
 import type { VoiceHeardEvent } from '../voice/ipcChannels'
@@ -10,6 +11,18 @@ import { projectPipelineEvent } from './transcriptProjection'
 // Projects the dashboard's own event streams (pipeline events, heard voice,
 // voice errors) onto the history store, mirroring the renderer's transcript
 // word-for-word for explicit Recorded History review.
+
+/**
+ * The text one projected event records (#141): a displayed Answer's
+ * derived sources flatten back into its recorded text as ordinary
+ * Markdown — Recorded History keeps the URLs but never the structured
+ * evidence, identities, or Answer-to-evidence association the live
+ * Feed's summary carries. Every other event records its projected text
+ * unchanged.
+ */
+function recordedText(event: PipelineEvent, text: string): string {
+  return event.type === 'display' && event.sources !== undefined ? appendAnswerSources(text, event.sources) : text
+}
 
 export interface HistoryRecorder {
   /** One independent command execution; concurrent attempts cannot collide. */
@@ -110,7 +123,13 @@ export function createHistoryRecorder(
               if (event.type === 'error') failed = true
               const projected = projectPipelineEvent(event)
               if (projected) {
-                append(projected.kind, projected.text, projected.at, sessionId ?? event.sessionId ?? null, runId ?? undefined)
+                append(
+                  projected.kind,
+                  recordedText(event, projected.text),
+                  projected.at,
+                  sessionId ?? event.sessionId ?? null,
+                  runId ?? undefined,
+                )
               }
             }
           }
@@ -119,7 +138,7 @@ export function createHistoryRecorder(
     },
     event(event) {
       const projected = projectPipelineEvent(event)
-      if (projected) append(projected.kind, projected.text, projected.at, event.sessionId ?? null)
+      if (projected) append(projected.kind, recordedText(event, projected.text), projected.at, event.sessionId ?? null)
     },
     heard(heard, sessionId = null) {
       // Commands are echoed by the pipeline itself; only answers and

@@ -6477,10 +6477,15 @@ describe('grounded Candidates, user corrections, and Answers (#122)', () => {
     const display = events.find((e) => e.type === 'display')
     expect(display).toMatchObject({
       type: 'display',
-      // Internal identities scrubbed (holes tidied with them); the cited
-      // evidence's source link derived underneath — the user never sees
-      // memory-N or obs-N.
-      text: 'Cheapest option found ().\n\nSources:\n- [shop.example](https://shop.example/acme-router)',
+      // Internal identities scrubbed (holes tidied with them) — and the
+      // live text carries no generated Sources block: the structured
+      // Answer Evidence Summary replaces it (#141).
+      text: 'Cheapest option found ().',
+      // The declared identities ride as Session-only metadata (#141)…
+      evidenceIds: ['memory-1'],
+      // …with the derived links beside them for Recorded History to
+      // flatten back into the recorded text.
+      sources: [{ url: PAGE_URL }],
     })
   })
 })

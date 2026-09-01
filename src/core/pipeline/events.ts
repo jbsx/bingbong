@@ -2,6 +2,7 @@ export type PipelineStatus = 'thinking' | 'acting' | 'speaking' | 'paused' | 'ca
 
 import type { SubagentKind, SubagentOwner, SubagentStatus } from '../agent/subagentManager'
 import type { SubagentTabPhase } from '../browser/subagentTabs'
+import type { MemoryEntryId, MemoryReference } from '../session/workingMemory'
 import type { RunId, SessionGeneration, SessionId, SubmissionId } from '../session/sessionIdentity'
 import type { FinalizationCause, RunResolution } from '../session/runJournal'
 import type { EffortTier } from './runPlan'
@@ -131,7 +132,22 @@ export type PipelineEvent = SessionEventIdentity & (
       at: number
     }
   | { type: 'speak'; turnId?: string; text: string; at: number }
-  | { type: 'display'; turnId?: string; text: string; at: number }
+  /**
+   * A final Answer's display (#141) may carry its evidence grounding as
+   * Session-only metadata, added at the display boundary: the declared
+   * `evidenceIds` feed the live Answer Evidence Summary (never
+   * Recorded History), and the derived `sources` are what Recorded
+   * History flattens back into ordinary Markdown links — the live Feed
+   * ignores them. Non-Answer displays carry neither.
+   */
+  | {
+      type: 'display'
+      turnId?: string
+      text: string
+      at: number
+      evidenceIds?: readonly MemoryEntryId[]
+      sources?: readonly MemoryReference[]
+    }
   | { type: 'error'; turnId?: string; message: string; at: number }
   /**
    * An empty-completion retry by the orchestrator client (#43): fired by
