@@ -23,6 +23,44 @@ describe('fixtureServer', () => {
     expect(first).not.toEqual(second)
   })
 
+  it('serves the delegation probe’s three hub branches across both hostnames', async () => {
+    server = await startFixtureServer()
+    const index = await (await fetch(server.url('/hub-index'))).text()
+    for (const slug of ['aurora', 'borealis', 'cascade']) {
+      expect(index).toContain(`href="/hub-${slug}"`)
+    }
+
+    const aurora = await (await fetch(server.url('/hub-aurora'))).text()
+    expect(aurora).toContain('dispatches standard fixture widget orders on Tuesday')
+    // The audit is a genuinely different host, so a branch cannot be
+    // finished on the page that starts it.
+    expect(aurora).toContain(`href="${server.altUrl('/audit-aurora')}"`)
+    expect(aurora).not.toContain('4.1%')
+
+    const audit = await (await fetch(server.altUrl('/audit-aurora'))).text()
+    expect(audit).toContain('defect rate of 4.1%')
+    expect(await (await fetch(server.altUrl('/audit-borealis'))).text()).toContain('0.9%')
+    expect(await (await fetch(server.altUrl('/audit-cascade'))).text()).toContain('2.7%')
+  })
+
+  it('serves the delegation probe’s three recall theories, only one supported', async () => {
+    server = await startFixtureServer()
+    const brief = await (await fetch(server.url('/recall-brief'))).text()
+    for (const slug of ['coating', 'bearing', 'packaging']) {
+      expect(brief).toContain(`href="/theory-${slug}"`)
+    }
+
+    const bearing = await (await fetch(server.url('/theory-bearing'))).text()
+    // The dossier states the hypothesis; only the lab report on the other
+    // host states the verdict.
+    expect(bearing).not.toContain('SUPPORTED')
+    expect(bearing).toContain(`href="${server.altUrl('/lab-bearing')}"`)
+
+    expect(await (await fetch(server.altUrl('/lab-bearing'))).text()).toContain('0.4 mm undersize. This theory is SUPPORTED.')
+    expect(await (await fetch(server.altUrl('/lab-coating'))).text()).toContain('NOT supported')
+    expect(await (await fetch(server.altUrl('/lab-packaging'))).text()).toContain('NOT supported')
+  })
+
   it('serves /dl as an attachment download', async () => {
     server = await startFixtureServer()
     const response = await fetch(server.url('/dl'))

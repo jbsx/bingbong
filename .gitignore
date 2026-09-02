@@ -10,6 +10,10 @@ graphify-out/
 # e2e/eval/pools/ are the committed comparison artifacts (#132), never this file.
 e2e/eval/report.json
 
+# Latest scratch delegation probe run (#163); named pass artifacts under
+# e2e/eval/delegation/pass-*.json are the committed evidence, never this file.
+e2e/eval/delegation/probe.json
+
 # Kiosk deployment runtime state + secrets (ADR 0023).
 config/
 data/

@@ -603,6 +603,20 @@ describe('pool provenance (#132: refusal, not judgement)', () => {
     )
   })
 
+  it('refuses a pool that pooled a #163 delegation probe capture', () => {
+    // The delegation corpus is captured separately on purpose (#163): the
+    // baseline is pinned to a tree with no Effort Tier and so no delegation
+    // gate at all. This is the structural backstop for a probe artifact
+    // mistakenly dropped into e2e/eval/pools/.
+    const candidate = candidatePool()
+    const baseline = baselinePool()
+    for (const pass of candidate) pass.scenarios.push(scenario('delegation-hub-audit-sweep', 'subagent'))
+    for (const pass of baseline) pass.scenarios.push(scenario('delegation-hub-audit-sweep', 'subagent'))
+    expect(() => decide(candidate, baseline)).toThrow(
+      /corpus of record does not define delegation-hub-audit-sweep/,
+    )
+  })
+
   it('surfaces the baseline side under its own role name', () => {
     const bad = baselinePool()
     bad[0]!.gitCommit = 'e'.repeat(40)

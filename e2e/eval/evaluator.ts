@@ -111,9 +111,20 @@ async function readUsageLedger(userDataDir: string): Promise<UsageLedger> {
   }
 }
 
-export async function startEvaluator(options?: { scenarioTimeoutMs?: number; reportPath?: string }): Promise<Evaluator> {
+export async function startEvaluator(options?: {
+  scenarioTimeoutMs?: number
+  reportPath?: string
+  /**
+   * How the caller's own capture flow names a fresh artifact — quoted in
+   * the immutability refusal below so a probe with its own env var and its
+   * own directory (#163) is not told to write into the release pools.
+   */
+  freshArtifactHint?: string
+}): Promise<Evaluator> {
   const scenarioTimeoutMs = options?.scenarioTimeoutMs ?? DEFAULT_SCENARIO_TIMEOUT_MS
   const reportPath = options?.reportPath ?? join(repoRoot, 'e2e', 'eval', 'report.json')
+  const freshArtifactHint =
+    options?.freshArtifactHint ?? 'point BINGBONG_EVAL_REPORT at a new pass artifact (pools/<side>/pass-<n>-<commit8>.json)'
 
   // #132: pass artifacts are immutable — a finalized capture at the target
   // path is refused before any Electron launch or model spend, so a second
@@ -130,7 +141,7 @@ export async function startEvaluator(options?: { scenarioTimeoutMs?: number; rep
   }
   if ((existing as EvalReport | undefined)?.aggregate !== undefined) {
     throw new Error(
-      `refusing to overwrite the finalized capture at ${reportPath} — point BINGBONG_EVAL_REPORT at a new pass artifact (pools/<side>/pass-<n>-<commit8>.json)`,
+      `refusing to overwrite the finalized capture at ${reportPath} — ${freshArtifactHint}`,
     )
   }
 

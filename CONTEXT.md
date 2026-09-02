@@ -552,6 +552,15 @@ A Subagent's structured return to its orchestrator, carrying findings, evidence,
 and unresolved items. A Subagent may read only the Memory Entries selected for
 its task and cannot mutate Session Working Memory directly.
 
+**Delegation Probe**:
+The separate real-model capture (#163) whose corpus exists to provoke
+delegation — three genuinely independent branches per objective, each
+spanning two hosts — so a Subagent's Finalization Cause has a subject to be
+recorded against. It is never pooled into the release decision: the pinned
+baseline tree has no Effort Tier, so it cannot delegate at all. Delegation
+is measured there, never asserted.
+_Avoid_: delegation test, subagent eval
+
 ### Autonomy
 
 **Confirmation**:

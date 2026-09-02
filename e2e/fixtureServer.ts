@@ -571,6 +571,124 @@ function statusBoardPage(value: string): string {
 </html>`
 }
 
+// The #163 delegation probe's fixture web: two shapes of genuinely
+// parallel Investigation work, each three independent branches wide, each
+// branch spanning both hostnames — the hub's own claim on the primary
+// site, the independent audit or lab report on the alt site. Serial
+// reading costs three page-fetch pairs plus the index; the branches share
+// nothing, which is exactly the condition the orchestrator prompt names
+// for a browse subagent. Facts are one-token distinct so a scenario
+// predicate can prove every branch was actually read.
+
+const HUBS = [
+  { slug: 'aurora', name: 'Aurora', day: 'Tuesday', defectRate: '4.1%' },
+  { slug: 'borealis', name: 'Borealis', day: 'Friday', defectRate: '0.9%' },
+  { slug: 'cascade', name: 'Cascade', day: 'Wednesday', defectRate: '2.7%' },
+] as const
+
+const RECALL_THEORIES = [
+  {
+    slug: 'coating',
+    name: 'ceramic coating cure',
+    claim: 'The recalled widgets may have had their matte ceramic coat cured too fast on the line.',
+    finding: 'Coating cure times were within tolerance on every recalled batch. This theory is NOT supported.',
+  },
+  {
+    slug: 'bearing',
+    name: 'bearing seat machining',
+    claim: 'The recalled widgets may have had their bearing seats machined out of tolerance.',
+    finding: 'Bearing seats on every recalled batch were machined 0.4 mm undersize. This theory is SUPPORTED.',
+  },
+  {
+    slug: 'packaging',
+    name: 'packaging compression',
+    claim: 'The recalled widgets may have been compressed in transit by undersized packaging.',
+    finding: 'Packaging matched spec on every recalled batch. This theory is NOT supported.',
+  },
+] as const
+
+function hubIndexPage(): string {
+  const items = HUBS.map(
+    (hub) => `    <li><a id="hub-${hub.slug}" href="/hub-${hub.slug}">Regional hub ${hub.name}</a></li>`,
+  ).join('\n')
+  return `<!doctype html>
+<html>
+<head><title>regional hub index</title></head>
+<body style="background:#222;color:#fff;margin:0">
+  <h1>Regional hub index</h1>
+  <p>Three regional hubs dispatch standard fixture widgets. Each hub publishes its own dispatch schedule; each hub's defect rate is published separately by the independent audit office.</p>
+  <ul>
+${items}
+  </ul>
+</body>
+</html>`
+}
+
+function hubPage(hub: (typeof HUBS)[number], auditUrl: string): string {
+  return `<!doctype html>
+<html>
+<head><title>regional hub ${hub.name}</title></head>
+<body style="background:#222;color:#fff;margin:0">
+  <h1>Regional hub ${hub.name}</h1>
+  <p>Hub ${hub.name} dispatches standard fixture widget orders on ${hub.day}.</p>
+  <p>Hub ${hub.name} does not publish its own defect rate. The independent audit office does:
+    <a id="audit-${hub.slug}" href="${auditUrl}">independent audit for hub ${hub.name}</a>.</p>
+</body>
+</html>`
+}
+
+function hubAuditPage(hub: (typeof HUBS)[number]): string {
+  return `<!doctype html>
+<html>
+<head><title>independent audit — hub ${hub.name}</title></head>
+<body style="background:#222;color:#fff;margin:0">
+  <h1>Independent audit office: hub ${hub.name}</h1>
+  <p>Hub ${hub.name} returned a defect rate of ${hub.defectRate} over the audited quarter.</p>
+</body>
+</html>`
+}
+
+function recallBriefPage(): string {
+  const items = RECALL_THEORIES.map(
+    (theory) => `    <li><a id="theory-${theory.slug}" href="/theory-${theory.slug}">Theory: ${theory.name}</a></li>`,
+  ).join('\n')
+  return `<!doctype html>
+<html>
+<head><title>Q3 widget recall brief</title></head>
+<body style="background:#222;color:#fff;margin:0">
+  <h1>Q3 fixture widget recall brief</h1>
+  <p>Three competing explanations for the Q3 fixture widget recall are on file. Each has its own dossier, and each dossier links the independent lab report that tested it. Exactly one is supported by the lab evidence.</p>
+  <ul>
+${items}
+  </ul>
+</body>
+</html>`
+}
+
+function recallTheoryPage(theory: (typeof RECALL_THEORIES)[number], labUrl: string): string {
+  return `<!doctype html>
+<html>
+<head><title>recall theory — ${theory.name}</title></head>
+<body style="background:#222;color:#fff;margin:0">
+  <h1>Recall theory: ${theory.name}</h1>
+  <p>${theory.claim}</p>
+  <p>This dossier states no verdict. The independent lab tested it:
+    <a id="lab-${theory.slug}" href="${labUrl}">lab report for the ${theory.name} theory</a>.</p>
+</body>
+</html>`
+}
+
+function recallLabPage(theory: (typeof RECALL_THEORIES)[number]): string {
+  return `<!doctype html>
+<html>
+<head><title>lab report — ${theory.name}</title></head>
+<body style="background:#222;color:#fff;margin:0">
+  <h1>Independent lab report: ${theory.name}</h1>
+  <p>${theory.finding}</p>
+</body>
+</html>`
+}
+
 export async function startFixtureServer(): Promise<FixtureServer> {
   let adblockListHits = 0
   let visionEndpointHits = 0
@@ -750,6 +868,34 @@ export async function startFixtureServer(): Promise<FixtureServer> {
     }
     if (req.url === '/mirror-gamma') {
       res.end(depotBulletinPage('Friday'))
+      return
+    }
+    if (req.url === '/hub-index') {
+      res.end(hubIndexPage())
+      return
+    }
+    const hub = HUBS.find((candidate) => req.url === `/hub-${candidate.slug}`)
+    if (hub !== undefined) {
+      res.end(hubPage(hub, altUrlOf(`/audit-${hub.slug}`)))
+      return
+    }
+    const audited = HUBS.find((candidate) => req.url === `/audit-${candidate.slug}`)
+    if (audited !== undefined) {
+      res.end(hubAuditPage(audited))
+      return
+    }
+    if (req.url === '/recall-brief') {
+      res.end(recallBriefPage())
+      return
+    }
+    const theory = RECALL_THEORIES.find((candidate) => req.url === `/theory-${candidate.slug}`)
+    if (theory !== undefined) {
+      res.end(recallTheoryPage(theory, altUrlOf(`/lab-${theory.slug}`)))
+      return
+    }
+    const tested = RECALL_THEORIES.find((candidate) => req.url === `/lab-${candidate.slug}`)
+    if (tested !== undefined) {
+      res.end(recallLabPage(tested))
       return
     }
     if (req.url === '/status-board') {

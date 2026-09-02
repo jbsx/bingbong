@@ -21,6 +21,15 @@ import type { EffortTier } from './runPlan'
 // more budget. Each worker runs on its own 12-round leash and shares the
 // Run's active-work deadline through the context's live predicate.
 
+/**
+ * The #120 tier gate's refusal, verbatim — a browse spawn attempted off the
+ * Investigation tier. Exported so measurement can tell "the model never
+ * reached for delegation" apart from "the model reached and was refused"
+ * (#163's delegation probe) without re-typing the message.
+ */
+export const OFF_TIER_BROWSE_SPAWN_REFUSAL =
+  'browse subagents are for genuinely independent Investigation branches'
+
 const KINDS: SubagentKind[] = ['browse', 'background']
 
 const KIND_HINT =
@@ -96,7 +105,7 @@ export function createSubagentTools(manager: SubagentManager): Tool[] {
         // decision to the caller.
         if (kind === 'browse' && ctx.effortTier !== undefined && ctx.effortTier() !== 'investigation') {
           throw new Error(
-            `spawn_agent: browse subagents are for genuinely independent Investigation branches — this run is on the ${TIER_NAMES[ctx.effortTier()]} tier. ` +
+            `spawn_agent: ${OFF_TIER_BROWSE_SPAWN_REFUSAL} — this run is on the ${TIER_NAMES[ctx.effortTier()]} tier. ` +
               'Do the browsing yourself, or escalate the Run Plan to investigation with the new evidence before delegating.',
           )
         }

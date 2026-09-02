@@ -51,6 +51,29 @@ Lookup-class pooled medians (strict improvement), and corpus-declared
 structural ceilings per scenario (`expectedEffort` in
 `e2e/eval/scenarios.ts`); pooled p95 is reported, never gated.
 
+### Delegation is measured by its own probe, not by the release corpus
+
+`pnpm test:delegation` (Xvfb-wrapped, real model budget, opt-in) runs the
+#163 delegation corpus — `e2e/eval/delegationScenarios.ts` — and captures to
+`e2e/eval/delegation/`, never `e2e/eval/pools/`. It exists because the
+release corpus never delegates: the #132 decision pools identical scenario
+ids against a baseline pinned to the pre-#114 tree, which has no Effort Tier
+and so no #120 delegation gate, so a delegation scenario cannot live in the
+corpus of record without invalidating three captured baseline passes to
+measure something the baseline cannot do. `pnpm eval:accept` refuses any
+pool carrying an id `e2e/eval/scenarios.ts` does not declare.
+
+Each pass writes its own artifact
+(`BINGBONG_DELEGATION_REPORT=e2e/eval/delegation/pass-<n>.json`);
+`pnpm delegation:summary` pools every capture in the directory and reports
+spawn attempts, off-tier refusals, and the worker stop-cause breakdown.
+Delegation is recorded, never asserted — a probe that answers correctly
+without delegating is the finding, not a suite failure. An empty
+`no_progress` column is read by the rule of three over the workers that
+reached a Finalization Cause of their own (a cancelled or failed worker
+never had the chance to stop for no Progress): zero events in N such
+workers bounds the rate below 3/N, so bounding it under 10% needs 30.
+
 ## graphify
 
 This project has a knowledge graph at graphify-out/ with god nodes, community structure, and cross-file relationships.
