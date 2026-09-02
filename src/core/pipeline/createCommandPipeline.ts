@@ -43,6 +43,7 @@ import {
   RUN_PLAN_STANDALONE_ROUND,
   type RunPlan,
 } from './runPlan'
+import { createNotices } from './notices'
 import {
   createObservationLedger,
   type ObservationId,
@@ -233,13 +234,6 @@ const STEERED_CANCELLED = 'cancelled by the user\'s steering'
 
 function toErrorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err)
-}
-
-/** Appends an advisory nudge to a successful string tool result (search-loop, Run Plan). */
-function withNudge(outcome: ToolResultOutcome, nudge: string): ToolResultOutcome {
-  return outcome.ok && typeof outcome.result === 'string'
-    ? { ok: true, result: `${outcome.result}\n\n${nudge}` }
-    : outcome
 }
 
 function deterministicRunNote(command: string, outcome: RunJournalEntry['outcome']): string {
@@ -505,13 +499,16 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
     // The Run Plan (#116, ADR 0027): null until a useful Tool Round
     // establishes one — a valid model report or the fallback Lookup
     // plan. `modelDeclaredPlan` distinguishes the fallback from a
-    // declaration: the first valid report is always accepted. The
-    // corrective nudge is owed until it actually rides a result, so a
-    // round whose siblings all fail does not swallow it.
+    // declaration: the first valid report is always accepted.
     let runPlan: RunPlan | null = null
     let modelDeclaredPlan = false
-    let planNudgePending = false
-    let planNudgeDelivered = false
+    // The Run's Notices (#154): every advisory line a tool result carries
+    // — rail verdicts, the plan's corrective nudge, the epoch's budget
+    // warning and Finalization directive — is owed to and delivered by
+    // this one module, in its one precedence. The plan nudge is owed
+    // until it actually rides a useful result, so a round whose siblings
+    // all fail does not swallow it.
+    const notices = createNotices()
     const run: ActiveRun = {
       turnId,
       aborted: false,
@@ -530,11 +527,16 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
         // clears its own owed budget warning.
         onFinalizationEntered: () => {
           deps.onFinalize?.()
-          planNudgePending = false
+          notices.clear('run_plan')
         },
       }),
     }
     activeRun = run
+    // The epoch owes its two Notices itself (#117): worded at delivery,
+    // superseded by its own Finalization entry and re-armed by its own
+    // replan — Notices only asks when a result can carry them.
+    notices.supply('budget', () => run.effortEpoch.takeBudgetWarning())
+    notices.supply('finalization', () => run.effortEpoch.takeFinalizationNotice())
     // When this Run started (#123): the freshness boundary — evidence
     // observed before it predates the Run, however it is cited.
     const runStartedAt = clock.now()
@@ -619,8 +621,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
         // but cannot reopen a Run whose no_progress cause already latched.
         runPlan = null
         modelDeclaredPlan = false
-        planNudgePending = false
-        planNudgeDelivered = false
+        notices.replan()
         noProgressRail.reset()
         effortEpoch.replan(DEFAULT_EFFORT_TIER)
         correctedObjective = directive
@@ -976,7 +977,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
                   planResultNotice = review.advisory
                 }
                 // A valid plan arrived; any still-owed nudge is moot.
-                planNudgePending = false
+                notices.clear('run_plan')
                 // A tier change starts a fresh effort epoch (#117):
                 // budget, warnings, and the active-work deadline re-arm
                 // for the new tier. Cumulative rounds still count toward
@@ -1002,8 +1003,8 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
               // Malformed report: the first carries the one corrective
               // nudge, later ones the plain validation error — useful
               // sibling work in the round still executes.
-              planResultError = planNudgeDelivered ? RUN_PLAN_INVALID : RUN_PLAN_NUDGE
-              planNudgeDelivered = true
+              planResultError = notices.delivered('run_plan') ? RUN_PLAN_INVALID : RUN_PLAN_NUDGE
+              notices.markDelivered('run_plan')
             }
             // The Run Headline (ADR 0025): the plan's headline revises the
             // Peek Card's live title when it changes; the echo or the last
@@ -1027,7 +1028,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
                 source: 'fallback',
                 at: clock.now(),
               }
-              if (!planNudgeDelivered) planNudgePending = true
+              if (!notices.delivered('run_plan')) notices.owe('run_plan', RUN_PLAN_NUDGE)
             }
           }
 
@@ -1118,52 +1119,29 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
             blockerGate.observe(call, outcome)
             // Search-loop rail (#74/#82): observe every processed call (this is
             // what tracks and resets the streak — a failed intervening tool
-            // leaves it alone) and let an advisory nudge ride the search
-            // result the model sees and the feed shows.
-            const searchLoopNudge = await searchLoopRail.observe(call, outcome)
-            let observedOutcome: ToolResultOutcome = searchLoopNudge ? withNudge(outcome, searchLoopNudge) : outcome
+            // leaves it alone); its advisory verdict is an immediate Notice.
+            notices.owe('search_loop', await searchLoopRail.observe(call, outcome))
             // No-progress rails (#126, ADR 0027): the redundancy nudge and
-            // the Approach instructions ride the no-progress result the
-            // model sees; two exhausted Approaches trip the run into
-            // Finalization mid-round — remaining acquisition siblings of
-            // this round are then refused by the closed-tool check below,
-            // each carrying the finalize directive.
-            const noProgressNudge = await noProgressRail.observe(call, outcome)
-            if (noProgressNudge !== null) {
-              observedOutcome = withNudge(observedOutcome, noProgressNudge)
-            }
+            // the Approach instructions are immediate Notices too; two
+            // exhausted Approaches trip the run into Finalization mid-round
+            // — remaining acquisition siblings of this round are then
+            // refused by the closed-tool check below, each carrying the
+            // finalize directive.
+            notices.owe('no_progress', await noProgressRail.observe(call, outcome))
             if (noProgressRail.finalizationDue()) effortEpoch.tripNoProgress()
-            // The advisory notices below all ride the same rail — one
-            // successful string result can carry the next owed notice — so
-            // they share this one guard. Each clears its own pending flag
-            // the moment its notice actually lands.
-            const ridesNotice = observedOutcome.ok && typeof observedOutcome.result === 'string'
-            const usefulWorkResult = ridesNotice && call.name !== 'report_run_plan' && !isInFinalization()
-            // The fallback plan's corrective nudge (#116) rides one useful
-            // sibling result — the model sees it without a bookkeeping
-            // round, and the useful result still reports its own content.
-            // The nudge stays owed until it actually lands, so a round of
-            // failed siblings does not swallow it.
-            if (planNudgePending && usefulWorkResult) {
-              planNudgePending = false
-              planNudgeDelivered = true
-              observedOutcome = withNudge(observedOutcome, RUN_PLAN_NUDGE)
-            }
-            // The crossed budget warning (#117/AC2) rides the crossing
-            // round's own successful results — the model learns how much
-            // work remains as it plans the next round. Internal only: no
-            // user-facing counter ever appears outside tool-result text.
-            if (usefulWorkResult) {
-              const warning = effortEpoch.takeBudgetWarning()
-              if (warning !== null) observedOutcome = withNudge(observedOutcome, warning)
-            }
-            // Finalization's directive (#117/AC3) rides the phase's
-            // successful results — including bookkeeping acknowledgements,
-            // which are exactly the calls still permitted.
-            if (ridesNotice) {
-              const directive = effortEpoch.takeFinalizationNotice()
-              if (directive !== null) observedOutcome = withNudge(observedOutcome, directive)
-            }
+            // The one delivery site (#154): every Notice this result can
+            // carry rides it in precedence order — the rails' verdicts,
+            // then the owed plan nudge (#116) and the crossed budget
+            // warning (#117/AC2) on useful work only, then Finalization's
+            // directive (#117/AC3) on any successful result, bookkeeping
+            // acknowledgements included. Useful work is a successful
+            // string result that is neither the plan call itself nor a
+            // result of a round whose work is already over — judged after
+            // the no-Progress trip above, so the tripping result never
+            // carries a plan nudge or budget warning.
+            const usefulWork =
+              outcome.ok && typeof outcome.result === 'string' && call.name !== 'report_run_plan' && !isInFinalization()
+            const observedOutcome = notices.attach(outcome, { usefulWork })
             toolResults.push({ call, outcome: observedOutcome })
             resultObservationIds.push(observedRecord?.id ?? null)
             yield {
