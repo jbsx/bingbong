@@ -3,6 +3,7 @@ import { startHarness, type Harness } from './harness'
 import { startFixtureServer, type FixtureServer } from './fixtureServer'
 import { waitFor } from './waitFor'
 import type { AssistantTurn } from '../src/core/ports/llm'
+import type { PipelineEvent } from '../src/core/pipeline/events'
 
 // Subagent smoke (issue #13) through the real app: a scripted orchestrator
 // spawns two browsing agents (scripted workhorse loops), each drives its own
@@ -63,6 +64,12 @@ describe('subagents e2e', () => {
 
   it('spawns parallel browsing agents, merges results, announces, lingers, and reopens', async () => {
     const subUrl = fixture.url(SUB_PATH)
+
+    // #162: tape the dashboard's own event stream, so the worker
+    // Finalization diagnostics can be read where the eval harness reads
+    // them — through the real IPC path, not the bridge in isolation.
+    await harness.dashboardEval('window.__subagentEvents = []')
+    await harness.dashboardEval('window.bingbong.assistant.onEvent((event) => window.__subagentEvents.push(event))')
 
     const submitted = await harness.submitCommand('compare the fixture pages in parallel')
     expect(submitted).toBe('submitted')
@@ -127,6 +134,33 @@ describe('subagents e2e', () => {
     )
     const cardCount = await harness.dashboardEval<number>(`document.querySelectorAll('.subagent-card').length`)
     expect(cardCount).toBeGreaterThanOrEqual(2)
+
+    // #162: both workers reported how they stopped, on the turn that
+    // spawned them — a voluntary conclusion each. The cards they share the
+    // stream with carry neither the cause nor the spawning turn.
+    const taped = await waitFor(
+      async () => {
+        const events = await harness.dashboardEval<PipelineEvent[]>('window.__subagentEvents || []')
+        return events.filter((event) => event.type === 'subagent_finalized').length >= 2 ? events : undefined
+      },
+      { timeoutMs: 20000, intervalMs: 250 },
+    )
+    const commandTurn = taped.find((event) => event.type === 'command')?.turnId
+    expect(commandTurn).toBeDefined()
+    const finalized = taped.filter(
+      (event): event is Extract<PipelineEvent, { type: 'subagent_finalized' }> => event.type === 'subagent_finalized',
+    )
+    expect(finalized).toHaveLength(2)
+    for (const event of finalized) {
+      expect(event).toMatchObject({ turnId: commandTurn, kind: 'browse', status: 'completed', cause: 'model_answered' })
+    }
+    expect(finalized.map((event) => event.agentId).sort()).toEqual(['a-1', 'a-2'])
+    for (const event of taped) {
+      if (event.type !== 'agent_update') continue
+      expect(event.agent).not.toHaveProperty('turnId')
+      expect(event.agent).not.toHaveProperty('finalizationCause')
+      expect(event.agent).not.toHaveProperty('report')
+    }
 
     // A reopened tab is active again — it navigates back to the last page
     // and stays (no agent attached, nothing to linger out on).
