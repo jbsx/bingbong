@@ -182,8 +182,18 @@ _Avoid_: tier window, budget window
 
 **Tool Round**:
 One model decision that requests one or more tools. It consumes one unit of a
-Run's effort regardless of how many independent calls travel together.
+Run's effort regardless of how many independent calls travel together. Its
+execution — the gate order every call passes, sibling suppression around a
+terminal result, and the Notices its results carry — has one implementation
+with two adapters: the Run loop and the Browse Subagent loop.
 _Avoid_: tool call, model round
+
+**Notice**:
+An advisory line the runtime appends to a tool result for the model, never
+shown or spoken to the user. An immediate Notice rides the result that
+triggered it or is dropped; an owed Notice persists until a later result can
+carry it. Notices ride only successful text results, in one fixed precedence.
+_Avoid_: nudge, warning text, hint
 
 **Progress**:
 New decision-relevant evidence or a requested state change that moves a Run
@@ -323,7 +333,7 @@ only escape breaks it — opening a result, or any other successful tool
 call that makes Progress. One search observation is the visible search
 signature: a navigate to a q=-carrying search URL (plain search terms
 normalize to exactly that) or text typed into a search input. Similar searches
-remain one Approach and follow the Run's no-progress nudge and refusal policy.
+remain one Approach and follow the Run's no-progress Notice and refusal policy.
 _Avoid_: search spam, retry storm
 
 **Boot State**:
@@ -558,7 +568,7 @@ _Avoid_: screenshot analysis, image check
 A Look the pipeline fires itself when an anomaly is suspected (stale ref, click
 with no observable change) — not requested by the model. Advisory: shorter
 deadline than a Look, a per-run cooldown between attempts, and failure is a
-one-line note in the tool result — never a nudge.
+one-line note in the tool result — never a Notice.
 
 **Describe / Locate**:
 The two Look capabilities. Describe answers "what does the page show" (fast,
@@ -574,7 +584,7 @@ The maximum number of Looks one run may spend, orchestrator and subagents alike.
 The maximum time one Look may wait before the model starts answering, per
 capability; once answering has begun, a separate cap bounds the whole Look. A
 safety net against silent endpoint hangs, not a latency target. Breach
-surfaces as a failure plus a nudge, never a silent blind browse.
+surfaces as a failure plus a Notice, never a silent blind browse.
 
 ### Hardware
 
