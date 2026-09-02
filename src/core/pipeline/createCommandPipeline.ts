@@ -1,7 +1,7 @@
-import { VisionDeadlineError, VISION_DEADLINE_NUDGE } from '../ports/vision'
 import type { PipelineEvent, UnstampedEvent } from './events'
-import type { RiskVerdict, Tool, ToolContext } from './tool'
+import type { Tool, ToolContext } from './tool'
 import type { Clock } from '../ports/clock'
+import { toErrorMessage } from '../errors'
 import type { AssistantTurn, LlmClient, LlmStreamDelta, ToolCall, ToolResult, ToolResultOutcome } from '../ports/llm'
 import { selectDelegatedMemory } from '../agent/subagentReport'
 import { createLlmDeltaBatcher } from './deltaBatcher'
@@ -14,23 +14,12 @@ import type { PerfTracer } from '../perf/perfTracer'
 import { createTurnIdSource } from '../perf/perfTracer'
 import type { BrowserSubspans } from '../perf/browserSubspans'
 import { emitTurnSummary } from '../perf/turnSummary'
-import {
-  createVisionBudget,
-  MAX_ORCHESTRATOR_VISION_CALLS,
-  type VisionBudget,
-} from '../agent/subagentRails'
-import type { SearchLoopRail } from './searchLoopRail'
-import { createSearchLoopRail } from './searchLoopRail'
-import type { NoProgressRail } from './noProgressRail'
-import { createNoProgressRail } from './noProgressRail'
 import type { SettledPageState } from './progressFingerprints'
 import type { SnapshotRef } from '../browser/snapshot'
-import type { BlockerGate } from './blockerGate'
-import { createBlockerGate } from './blockerGate'
+import { createToolRoundExecutor, type ToolRoundExecutor } from './toolRound'
 import {
   createEffortEpoch,
   deterministicFinalAnswer,
-  finalizationToolRefusal,
   type EffortEpoch,
 } from './effortEpoch'
 import {
@@ -45,14 +34,13 @@ import {
 } from './runPlan'
 import { createNotices } from './notices'
 import type { ConfirmDecision, RunDecisions } from './decisions'
-import type { RunInterrupts } from './interrupts'
+import { CommandAbortedError, STEERED_CANCELLED, type RunInterrupts } from './interrupts'
 import {
   createObservationLedger,
   type ObservationId,
   type ObservationInput,
   type ObservationRecord,
 } from '../session/observationLedger'
-import { classifyToolObservation } from './toolObservations'
 import type { SessionEvidenceSnapshot, SessionEvidenceStore, ObservationCheckpointResult } from '../session/sessionEvidence'
 import type { RunId, SessionGeneration } from '../session/sessionIdentity'
 import {
@@ -222,21 +210,8 @@ interface ActiveRun {
   abortLlm?: () => void
 }
 
-class CommandAbortedError extends Error {
-  constructor() {
-    super('command aborted')
-    this.name = 'CommandAbortedError'
-  }
-}
-
 /** Default ask_user window: ~45s for a spoken or typed free-text answer. */
 export const ASK_TIMEOUT_MS = 45_000
-
-const STEERED_CANCELLED = 'cancelled by the user\'s steering'
-
-function toErrorMessage(err: unknown): string {
-  return err instanceof Error ? err.message : String(err)
-}
 
 function deterministicRunNote(command: string, outcome: RunJournalEntry['outcome']): string {
   const task = command.trim().replace(/\s+/g, ' ').slice(0, 500) || '(empty command)'
@@ -258,25 +233,6 @@ function logContinuityDegradation(
     ;(sink ?? ((why, id) => console.warn(`[run-journal] ${why} Run Note for ${id}`)))(reason, turnId)
   } catch {
     // Diagnostics cannot suppress a valid Answer or its done boundary.
-  }
-}
-
-/**
- * Advisory bookkeeping (#29/#30): the perf log must never fail a command,
- * so a throwing sink/tracer is swallowed at the recording call sites.
- */
-function recordSpan(
-  tracer: PerfTracer | undefined,
-  turnId: string,
-  stage: string,
-  durMs: number,
-  detail?: Record<string, unknown>,
-): void {
-  if (!tracer) return
-  try {
-    tracer.span(turnId, stage, durMs, detail)
-  } catch {
-    // swallowed — see above
   }
 }
 
@@ -561,7 +517,6 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
     // this one adapter — the ask window and the Confirmation window.
     const decisions = createDecisions(turnId, run, observe)
     const effortEpoch = run.effortEpoch
-    const isInFinalization = (): boolean => effortEpoch.phase.kind !== 'working'
     const isAnswerOnly = (): boolean => effortEpoch.phase.kind === 'answer_only'
     // The Steering-corrected objective (#119): the directive's text
     // once consumed, superseded by the fresh plan's objective when that
@@ -588,13 +543,10 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
     // Lapse). Answer source derivation and Run Context Compaction both
     // resolve through it.
     const resolveSessionObservation = (id: MemoryEntryId) => evidenceSession?.()?.store.observation(id) ?? null
-    // The no-progress rails (#126, ADR 0027): objective repetition and
-    // approach exhaustion over the #125 fingerprints, against the run's
-    // settled-state source. Fresh per run, like every rail; a Steering
-    // replan resets it (see interrupts.check).
-    const noProgressRail: NoProgressRail = createNoProgressRail(
-      deps.settledPageState ? { settledState: deps.settledPageState } : {},
-    )
+    // This Run's Tool Round executor (#157): created below, once the tool
+    // context it executes against exists. Named here because the Steering
+    // replan reaches its no-progress accounting (see interrupts.check).
+    let toolRound: ToolRoundExecutor | null = null
     // The Run's interrupts (#156): one door for Pause, Steering, and Stop
     // between the loop's calls and around its model rounds. Steering
     // observations (#111): every directive is recorded exactly once, here,
@@ -622,12 +574,19 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
           runPlan = null
           modelDeclaredPlan = false
           notices.replan()
-          noProgressRail.reset()
+          toolRound?.replan()
           effortEpoch.replan(DEFAULT_EFFORT_TIER)
           correctedObjective = directive
         }
         return directive
       },
+      peek: async function* (status) {
+        // The mid-gate peek (#157): park like `check`, but leave the
+        // Directive for the loop's own check to consume into the replan.
+        yield* checkpoint(run, status, false)
+        return Boolean(run.steering)
+      },
+      throwIfStopped: () => throwIfAborted(run),
     }
     const emitDetail = deps.emitDetail
       ? (event: UnstampedEvent): void => deps.emitDetail!(stampTurn(event, turnId))
@@ -672,18 +631,6 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
         // The observation ids stay index-aligned with every push.
         let toolResults: ToolResult[] = []
         const resultObservationIds: (ObservationId | null)[] = []
-        const visionBudget = createVisionBudget(MAX_ORCHESTRATOR_VISION_CALLS)
-        // Run rails (#74/#82/#83): per-run streak of consecutive similar
-        // GUI searches — q= navigations or text typed into a search input —
-        // nudges first, refuses at the cap, resets on a successful other
-        // tool call. Created fresh per run, like the vision budget.
-        const searchLoopRail = createSearchLoopRail({ describeRef: deps.describeRef })
-        // Same-wall Blocker gate (#80, ADR 0010): arms when a tool result
-        // carries a BLOCKER marker; while armed, browser calls targeting
-        // that host (other than read_page/look/ask_user) are refused
-        // pre-execution with the escalation instruction. Fresh per run,
-        // like the vision budget and the search-loop rail.
-        const blockerGate = createBlockerGate(deps.currentHost)
         // The user-citation commit (#122): the same seam, stamped like
         // the web commit — provenance is Session-side, never forged by
         // the Run layer.
@@ -737,7 +684,6 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
           : undefined
         const toolContext: ToolContext = {
           clock,
-          acquireVision: () => visionBudget.tryAcquire(),
           // The turn id rides the context so fan-out tools (spawn_agent)
           // correlate their subagent rounds to this turn (#29).
           turnId,
@@ -775,6 +721,46 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
               }
             : {}),
         }
+        // What the round hands back to the pipeline (#116/#157): the Run
+        // Plan's own report call, answered here rather than executed.
+        // Rewritten once per round, just before the round runs.
+        let interceptCall: (call: ToolCall) => ToolResultOutcome | null = () => null
+        // The Tool Round executor (#157): gated execution, observation,
+        // both rails, the Vision Budget, Notice attachment, the sole-call
+        // boundary and the epoch's round protocol live in the one module
+        // that owns their order. The Run runs every capability.
+        toolRound = createToolRoundExecutor({
+          clock,
+          tools,
+          effortEpoch,
+          notices,
+          observe,
+          toolContext,
+          decisions,
+          interrupts,
+          capabilities: { searchLoopRail: true, noProgressRail: true, deadlineGate: true },
+          intercept: (call) => interceptCall(call),
+          // A successful Session Reset (#99) discards the rest of the run.
+          terminalResult: (call, outcome) => outcome.ok && toolsByName.get(call.name)?.sessionReset === true,
+          // Session Reset boundary (#99): the reset call runs alone, and
+          // its discarded siblings answer only if it failed anyway.
+          soleCall: {
+            select: (call) => toolsByName.get(call.name)?.sessionReset === true,
+            notExecuted: 'not executed: this response carried a session reset, but it failed',
+          },
+          ...(deps.currentHost ? { currentHost: deps.currentHost } : {}),
+          ...(deps.currentPageUrl ? { currentPageUrl: deps.currentPageUrl } : {}),
+          ...(deps.describeRef ? { describeRef: deps.describeRef } : {}),
+          ...(deps.settledPageState ? { settledPageState: deps.settledPageState } : {}),
+          ...(deps.tracer !== undefined || deps.browserSubspans !== undefined
+            ? {
+                diagnostics: {
+                  ...(deps.tracer ? { tracer: deps.tracer } : {}),
+                  ...(deps.browserSubspans ? { browserSubspans: deps.browserSubspans } : {}),
+                },
+              }
+            : {}),
+        })
         let steering: string | undefined
         // The Run Headline (ADR 0025): the last one this run emitted — the
         // next report lands as an event only when it changes the title.
@@ -1048,144 +1034,43 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
           const planAcknowledgement = planNotices.length > 0 ? `Run Plan noted. ${planNotices.join(' ')}` : 'Run Plan noted.'
 
           yield { type: 'status', status: 'acting', at: clock.now() }
-          // Finalization's one bookkeeping Tool Round (#117/AC3): every
-          // result it produces must teach the model that the Answer round
-          // is next — refusals carry it directly; successful bookkeeping
-          // results carry the epoch's owed directive as the advisory below.
-          effortEpoch.beginToolRound()
-          // Session Reset boundary (#99): the whole response is known
-          // before any of it executes, so when it carries a reset call,
-          // every other call in it — before or after — is a discarded
-          // sibling: none executes, emits, or observes. Only the reset
-          // call itself runs; if it fails anyway, its suppressed siblings
-          // answer with a uniform not-executed notice so the next round
-          // stays protocol-consistent.
-          const resetCallIndex = turn.calls.findIndex((candidate) => toolsByName.get(candidate.name)?.sessionReset)
-          let steerAfterTool = false
-          for (const [index, call] of turn.calls.entries()) {
-            if (resetCallIndex !== -1 && index !== resetCallIndex) continue
-            const beforeToolSteering = yield* interrupts.check('acting')
-            if (beforeToolSteering) {
-              steering = beforeToolSteering
-              steerAfterTool = true
-              break
-            }
-            yield { type: 'tool_call', callId: call.id, name: call.name, args: call.args, at: clock.now() }
-            // A report_run_plan call never reaches execute once the
-            // pipeline handles it (#116): accepted or duplicate calls
-            // answer with the plain acknowledgement, rejected or malformed
-            // ones with the corrective notice — while sibling work runs
-            // untouched. A stray call on a catalog without the tool falls
-            // through to the ordinary unknown-tool error.
-            //
-            // Finalization (#117/AC3): acquisition and ask_user calls are
-            // refused before any gate or execution — the run's work is
-            // over; only bookkeeping remains, and the refusal itself
-            // carries the finalize directive.
-            //
-            // The deadline gate (#135): expiry is checked before every
-            // call begins, so no browser, vision, media, delegation, or
-            // user-question action starts past the boundary. An
-            // already-executing non-interruptible action settles once —
-            // this check runs between calls — but every later acquisition
-            // sibling in the response is refused.
-            effortEpoch.tripDeadline()
-            const closedTool = isInFinalization() ? toolsByName.get(call.name) : undefined
-            const outcome: ToolResultOutcome =
-              call.name === 'report_run_plan' && planCallHandled
-                ? planResultError !== null
-                  ? { ok: false, error: planOnlyRound ? `${planResultError} ${RUN_PLAN_STANDALONE_ROUND}` : planResultError }
-                  : { ok: true, result: planAcknowledgement }
-                : closedTool !== undefined && (closedTool.acquisition === true || closedTool.askUser !== undefined)
-                  ? { ok: false, error: finalizationToolRefusal }
-                  : yield* runGatedTool(call, turnId, visionBudget, searchLoopRail, noProgressRail, blockerGate, toolContext, run, decisions)
-            // Observation ledger (#111): the raw outcome as the tool
-            // produced it, ahead of the advisory nudges appended below —
-            // later checkpoint validation checks excerpts against what the
-            // source actually said, not against pipeline-added guidance.
-            // The minted identity rides beside the pushed result (#124):
-            // Run Context Compaction grounds eligibility on it later.
-            const classification = classifyToolObservation(call.name)
-            const sourceUrl = classification.pageFacing ? deps.currentPageUrl?.() : undefined
-            const observedRecord = observe({
-              producer: classification.producer,
-              ok: outcome.ok,
-              payload: outcome.ok ? outcome.result : outcome.error,
-              ...(sourceUrl ? { sourceUrl } : {}),
-            })
-            // Same-wall Blocker gate (#80): marker lines riding successful
-            // results arm it; a successful different-host browser
-            // interaction disarms it. Sees the raw outcome — advisory
-            // nudges appended below change nothing it consumes.
-            blockerGate.observe(call, outcome)
-            // Search-loop rail (#74/#82): observe every processed call (this is
-            // what tracks and resets the streak — a failed intervening tool
-            // leaves it alone); its advisory verdict is an immediate Notice.
-            notices.owe('search_loop', await searchLoopRail.observe(call, outcome))
-            // No-progress rails (#126, ADR 0027): the redundancy nudge and
-            // the Approach instructions are immediate Notices too; two
-            // exhausted Approaches trip the run into Finalization mid-round
-            // — remaining acquisition siblings of this round are then
-            // refused by the closed-tool check below, each carrying the
-            // finalize directive.
-            notices.owe('no_progress', await noProgressRail.observe(call, outcome))
-            if (noProgressRail.finalizationDue()) effortEpoch.tripNoProgress()
-            // The one delivery site (#154): every Notice this result can
-            // carry rides it in precedence order — the rails' verdicts,
-            // then the owed plan nudge (#116) and the crossed budget
-            // warning (#117/AC2) on useful work only, then Finalization's
-            // directive (#117/AC3) on any successful result, bookkeeping
-            // acknowledgements included. Useful work is a successful
-            // string result that is neither the plan call itself nor a
-            // result of a round whose work is already over — judged after
-            // the no-Progress trip above, so the tripping result never
-            // carries a plan nudge or budget warning.
-            const usefulWork =
-              outcome.ok && typeof outcome.result === 'string' && call.name !== 'report_run_plan' && !isInFinalization()
-            const observedOutcome = notices.attach(outcome, { usefulWork })
-            toolResults.push({ call, outcome: observedOutcome })
-            resultObservationIds.push(observedRecord?.id ?? null)
-            yield {
-              type: 'tool_result',
-              callId: call.id,
-              name: call.name,
-              ok: observedOutcome.ok,
-              ...(observedOutcome.ok ? { result: observedOutcome.result } : { error: observedOutcome.error }),
-              at: clock.now(),
-            }
-            // The reset call succeeded: this run ends here — its result is
-            // the last thing it ever emits.
-            if (observedOutcome.ok && toolsByName.get(call.name)?.sessionReset) {
-              resetConsumed = true
-              break
-            }
-            const afterToolSteering = yield* interrupts.check('acting')
-            if (afterToolSteering) {
-              steering = afterToolSteering
-              steerAfterTool = true
-              break
-            }
+          // The round's one interception (#116/#157): a report_run_plan
+          // call never reaches a gate or an execution once the pipeline
+          // handled it — accepted or duplicate calls answer with the plain
+          // acknowledgement, rejected or malformed ones with the corrective
+          // notice, while sibling work runs untouched. A stray call on a
+          // catalog without the tool is not intercepted and falls through
+          // to the ordinary unknown-tool error.
+          interceptCall = (call) =>
+            call.name === 'report_run_plan' && planCallHandled
+              ? planResultError !== null
+                ? { ok: false, error: planOnlyRound ? `${planResultError} ${RUN_PLAN_STANDALONE_ROUND}` : planResultError }
+                : { ok: true, result: planAcknowledgement }
+              : null
+          // One round call (#157): the gate order, the `gate → observe`
+          // pairing, the mid-round no-Progress trip, the deadline gate,
+          // Notices and the Session Reset boundary are all inside it. The
+          // results come back aligned with the Observation identities they
+          // minted, so the Run's model context and its ledger stay in step
+          // without two arrays maintained by hand.
+          const round = yield* toolRound.run(turn, turnId)
+          for (const result of round.results) {
+            toolResults.push({ call: result.call, outcome: result.outcome })
+            resultObservationIds.push(result.observationId)
           }
-          // A finalization Tool Round is spent (#117/AC3) — however it
-          // ended, only an Answer is accepted from here. Ahead of the
-          // steering continue on purpose: a steering directive during the
-          // bookkeeping round must not reopen tool work.
-          effortEpoch.completeToolRound()
-          if (steerAfterTool) continue
-          // The reset call ran and failed: its discarded siblings still
-          // need answers for the following round to be protocol-consistent.
-          if (resetCallIndex !== -1 && !resetConsumed) {
-            for (const [index, call] of turn.calls.entries()) {
-              if (index === resetCallIndex) continue
-              const error = 'not executed: this response carried a session reset, but it failed'
-              toolResults.push({ call, outcome: { ok: false, error } })
-              // Discarded siblings never executed, so they recorded no
-              // observation (#124): null keeps the alignment honest.
-              resultObservationIds.push(null)
-              yield { type: 'tool_result', callId: call.id, name: call.name, ok: false, error, at: clock.now() }
-            }
+          // The reset call succeeded: this run ends at the boundary — no
+          // later round happens and nothing commits.
+          if (round.end.kind === 'terminal') {
+            resetConsumed = true
+            break
           }
-          if (resetConsumed) break
+          // A Directive landed between two of the round's calls: it is
+          // already consumed (and its replan already done) — the next
+          // model round carries it.
+          if (round.end.kind === 'steered') {
+            steering = round.end.directive
+            continue
+          }
           yield { type: 'status', status: 'thinking', at: clock.now() }
         }
 
@@ -1420,7 +1305,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
           ok: true,
           result:
             resolved.reason === 'steered'
-              ? 'cancelled by the user\'s steering'
+              ? STEERED_CANCELLED
               : resolved.answer ?? "user didn't answer",
         }
       },
@@ -1465,127 +1350,6 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
         }
         return { approved: true }
       },
-    }
-  }
-
-  async function* runGatedTool(
-    call: ToolCall,
-    turnId: string,
-    visionBudget: VisionBudget,
-    searchLoopRail: SearchLoopRail,
-    noProgressRail: NoProgressRail,
-    blockerGate: BlockerGate,
-    toolContext: ToolContext,
-    run: ActiveRun,
-    decisions: RunDecisions,
-  ): AsyncGenerator<UnstampedEvent, ToolResultOutcome> {
-    const tool = toolsByName.get(call.name)
-    if (!tool) return { ok: false, error: `unknown tool: '${call.name}'` }
-
-    // ask_user (Tier 3): the pipeline owns the ask — the tool only names
-    // the question; the decisions seam (#156) puts it to the user and
-    // hands back the result the model reads.
-    if (tool.askUser) {
-      let question: string
-      try {
-        question = tool.askUser(call)
-      } catch (err) {
-        return { ok: false, error: toErrorMessage(err) }
-      }
-      return yield* decisions.ask(question, call)
-    }
-
-    // Same-wall Blocker gate (#80, ADR 0010): while armed, browser calls
-    // targeting the walled host — other than read_page, look, and ask_user
-    // — are refused before it executes, with the escalation instruction.
-    // Ahead of the risk tiers on purpose: a call this run will not perform
-    // must never reach a user-facing confirmation.
-    const blockerGateVerdict = blockerGate.gate(call)
-    if (!blockerGateVerdict.ok) return { ok: false, error: blockerGateVerdict.reason }
-
-    // No-progress rails (#126, ADR 0027): an objectively redundant action —
-    // the same fingerprint against the state its previous attempt already
-    // faced — is nudged first and refused next, before it executes and
-    // like the Blocker gate, ahead of the risk tiers: a call this run will
-    // not perform must never reach a user-facing confirmation.
-    const noProgressGate = await noProgressRail.gate(call)
-    if (!noProgressGate.ok) return { ok: false, error: noProgressGate.reason }
-
-    // Hard policy lives here, in code: a denied call never reaches execute,
-    // even if the user would have approved it.
-    const verdict = await assessCall(tool, call)
-    throwIfAborted(run)
-    yield* checkpoint(run, 'acting', false)
-    if (run.steering) {
-      return { ok: false, error: `${STEERED_CANCELLED}; do not retry this action` }
-    }
-    if (verdict.kind === 'deny') {
-      return { ok: false, error: verdict.reason }
-    }
-    if (verdict.kind === 'confirm') {
-      // The Confirmation window (#156) is the decisions seam's second
-      // question: approval passes through to the execution below, a denial
-      // is already worded as the outcome the model reads.
-      const confirmation = yield* decisions.confirm(verdict.prompt, call)
-      if (!confirmation.approved) return confirmation.outcome
-    }
-
-    if (tool.usesVision) {
-      const grant = visionBudget.tryAcquire()
-      if (!grant.ok) return { ok: false, error: grant.reason }
-    }
-
-    // Run rails (#74/#82/#83): a blind search loop — consecutive similar
-    // GUI searches (q= navigations, typed search box queries) with
-    // nothing in between — is refused before it executes, like the vision
-    // budget. Any other tool call clears the cap.
-    const searchLoopGate = await searchLoopRail.gate(call)
-    if (!searchLoopGate.ok) return { ok: false, error: searchLoopGate.reason }
-
-    try {
-      throwIfAborted(run)
-      // The tool span (#30): one span per gated execution, tool name in
-      // detail, so "navigate cost 4.1s p95" is answerable. Confirmation
-      // waits above are user time and stay out of it; a call that never
-      // reaches execute records nothing. Recorded even when the tool
-      // fails — the time was spent either way.
-      const tracer = deps.tracer
-      const toolStart = tracer?.now()
-      let result: unknown
-      try {
-        // The sub-span turn scope (#32): emissions inside the tool (browser
-        // controller internals) key to this turn while it is open. Absent
-        // channel — the call runs untouched.
-        result = deps.browserSubspans
-          ? await deps.browserSubspans.runInTurn(turnId, () => tool.execute(call, toolContext))
-          : await tool.execute(call, toolContext)
-      } finally {
-        if (tracer && toolStart !== undefined) {
-          recordSpan(tracer, turnId, 'tool', tracer.now() - toolStart, { tool: call.name })
-        }
-      }
-      throwIfAborted(run)
-      return { ok: true, result }
-    } catch (err) {
-      if (err instanceof CommandAbortedError) throw err
-      // A missed Vision Deadline must not become a blind browse (ADR 0008;
-      // ADR 0016 keeps the nudge): the failure carries an advisory nudge to
-      // fall back to the DOM or escalate, mirroring the Blocker nudge
-      // pattern. Subagent Looks get the same nudge in their runner.
-      if (err instanceof VisionDeadlineError) {
-        return { ok: false, error: `${err.message}\n${VISION_DEADLINE_NUDGE}` }
-      }
-      return { ok: false, error: toErrorMessage(err) }
-    }
-  }
-
-  async function assessCall(tool: Tool, call: ToolCall): Promise<RiskVerdict> {
-    if (!tool.assessRisk) return { kind: 'allow' }
-    try {
-      return await tool.assessRisk(call)
-    } catch {
-      // Fail closed: when risk can't be assessed, ask the user.
-      return { kind: 'confirm', prompt: `Run ${call.name}?` }
     }
   }
 

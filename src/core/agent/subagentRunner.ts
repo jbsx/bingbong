@@ -1,4 +1,5 @@
 import type { Clock } from '../ports/clock'
+import { toErrorMessage } from '../errors'
 import { systemClock } from '../ports/clock'
 import type { AssistantTurn, LlmClient, ToolResult, ToolResultOutcome } from '../ports/llm'
 import type { Tool, ToolContext } from '../pipeline/tool'
@@ -193,10 +194,6 @@ function reportFromTurn(
     unresolved,
     ...(observations.length > 0 ? { observations } : {}),
   }
-}
-
-function toErrorMessage(err: unknown): string {
-  return err instanceof Error ? err.message : String(err)
 }
 
 async function checkpoint(options: RunSubagentOptions): Promise<void> {

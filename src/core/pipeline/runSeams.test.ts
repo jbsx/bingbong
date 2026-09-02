@@ -37,6 +37,13 @@ function cancelOnlyInterrupts(cancelled: () => boolean): RunInterrupts {
       if (cancelled()) throw new WorkerCancelled()
       return undefined
     },
+    async *peek() {
+      if (cancelled()) throw new WorkerCancelled()
+      return false
+    },
+    throwIfStopped() {
+      if (cancelled()) throw new WorkerCancelled()
+    },
   }
 }
 

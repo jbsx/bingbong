@@ -20,8 +20,29 @@ import type { UnstampedEvent } from './events'
 // step 2) satisfies the same shape with a cancel-only hook — it yields
 // nothing, never returns a Directive, and throws when its parent cancels it.
 
+/**
+ * Stop, as every seam of a Run raises it (CONTEXT.md, Stop): the Abort
+ * Head ends the Run by throwing this out of whatever it was doing —
+ * between two tool calls, inside a gated execution, or while parked on a
+ * decision window. It lives beside the interrupts seam because Stop is
+ * one of the three things that reach a live Run from outside it.
+ */
+export class CommandAbortedError extends Error {
+  constructor() {
+    super('command aborted')
+    this.name = 'CommandAbortedError'
+  }
+}
+
 /** One Steering Directive, as the Run loop consumes it (CONTEXT.md, Directive). */
 export type Directive = string
+
+/**
+ * What a Directive cancels, in the one wording every site uses: the tool
+ * result a call abandoned mid-gate reads, the answer an open ask_user
+ * window returns, and the Confirmation denial a landed Directive produces.
+ */
+export const STEERED_CANCELLED = 'cancelled by the user\'s steering'
 
 /** The status a parked Run resumes into: the phase the caller was in. */
 export type InterruptStatus = 'thinking' | 'acting'
@@ -36,4 +57,21 @@ export interface RunInterrupts {
    * before parking, on waking, and on entry.
    */
   check(status: InterruptStatus): AsyncGenerator<UnstampedEvent, Directive | undefined>
+  /**
+   * The mid-execution peek (#157). Parks while the Run is paused exactly
+   * like `check`, but leaves any Directive that landed for the next
+   * `check` to consume — it reports only whether one is waiting. The
+   * gated execution seam asks between risk assessment and the
+   * Confirmation window: a call the user has just steered away from is
+   * cancelled rather than put to them for approval. Throws the run's
+   * abort error when the run is stopped.
+   */
+  peek(status: InterruptStatus): AsyncGenerator<UnstampedEvent, boolean>
+  /**
+   * Stop, checked at a point that yields nothing: around a tool's own
+   * execution, where a parked or steered Run has nothing to emit but a
+   * stopped one must not return a result. Throws the run's abort error
+   * when the run is stopped; returns otherwise.
+   */
+  throwIfStopped(): void
 }
