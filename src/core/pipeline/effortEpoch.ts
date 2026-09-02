@@ -63,6 +63,24 @@ export const HARD_TOOL_ROUND_CEILING = 32
  */
 export const CEILING_RESERVED_BOOKKEEPING_ROUNDS = 1
 
+/**
+ * The Effort Epoch's Subagent configuration (#149, ADR 0027): the Browse
+ * Subagent's adapter onto the same module. A Subagent epoch carries no
+ * Effort Tier — its budget is the Subagent's own independent Tool Round
+ * ceiling and its deadline is the parent Run's shared active-work
+ * deadline, a live predicate the epoch polls rather than a duration its
+ * own clock measures. Tier declarations, Steering replans, and the
+ * orchestrator's hard ceiling belong to the Run and never apply to a
+ * Subagent; a Subagent epoch stops for two Finalization Causes only,
+ * `budget_exhausted` and `deadline_reached`.
+ */
+export interface SubagentEpochConfig {
+  /** The Subagent's independent Tool Round budget (SUBAGENT_LIMITS.maxToolRoundsPerTask). */
+  readonly toolRoundBudget: number
+  /** The parent Run's shared active-work deadline, as this epoch's deadline. */
+  readonly deadline: SubagentSharedDeadline
+}
+
 export type EffortPhase =
   | { readonly kind: 'working' }
   | { readonly kind: 'finalizing'; readonly cause: FinalizationCause }
@@ -263,6 +281,12 @@ export function createEffortEpoch(deps: {
   activeWorkDeadlineMs?: number
   initialTier?: EffortTier
   /**
+   * The Subagent configuration (#149): present, the epoch is a Browse
+   * Subagent's rather than a Run's — its own budget and the parent's
+   * shared deadline in place of the tier's table values.
+   */
+  subagent?: SubagentEpochConfig
+  /**
    * Finalization entry (#120/#148, ADR 0027): fired once per entry,
    * whichever rail opened the door — unfinished delegated acquisition is
    * cancelled and the caller's own advisory notices are superseded, while
@@ -271,6 +295,7 @@ export function createEffortEpoch(deps: {
   onFinalizationEntered?: (cause: FinalizationCause) => void
 }): EffortEpoch {
   const workClock = createActiveWorkClock(deps.clock)
+  const subagent = deps.subagent
   let tier = deps.initialTier ?? DEFAULT_EFFORT_TIER
   let tierRounds = 0
   let cumulativeRounds = 0
@@ -284,7 +309,16 @@ export function createEffortEpoch(deps: {
   let armedRound: { rewatch(): void } | null = null
 
   const deadlineMs = (): number => resolveActiveWorkDeadlineMs(deps.activeWorkDeadlineMs, tier)
-  const remainingActiveWorkMs = (): number => deadlineMs() - workClock.spent()
+  /** This epoch's Tool Round budget: the Subagent's own, or the tier's. */
+  const roundBudget = (): number => subagent?.toolRoundBudget ?? TIER_TOOL_ROUND_BUDGETS[tier]
+  // A Subagent's deadline is the parent Run's, so it is polled rather than
+  // measured: it has no remaining duration of its own to report.
+  const remainingActiveWorkMs = (): number =>
+    subagent !== undefined
+      ? subagent.deadline.expired()
+        ? 0
+        : Number.POSITIVE_INFINITY
+      : deadlineMs() - workClock.spent()
   const deadlineExpired = (): boolean => remainingActiveWorkMs() <= 0
   const rearm = (nextTier: EffortTier): void => {
     tier = nextTier
@@ -311,14 +345,29 @@ export function createEffortEpoch(deps: {
   }
   const decideLoopTop = (): EffortLoopDecision => {
     if (phase.kind !== 'working') return { kind: 'finalize', cause: phase.cause }
-    const cause =
-      tierRounds >= TIER_TOOL_ROUND_BUDGETS[tier]
-        ? 'budget_exhausted'
-        : deadlineExpired()
+    const budgetExhausted = tierRounds >= roundBudget()
+    const deadlinePassed = deadlineExpired()
+    // Precedence at a coincidence differs by configuration. A Run answers
+    // to its own tier budget first, then its deadline, then the hard
+    // ceiling that bounds cumulative work across tier epochs and replans.
+    // A Subagent has no hard ceiling of its own, and its shared deadline
+    // outranks its remaining rounds (#149/AC2): once the parent Run has
+    // stopped working, that deadline — not the Subagent's spent budget —
+    // is why it stops.
+    const cause: FinalizationCause | null =
+      subagent !== undefined
+        ? deadlinePassed
           ? 'deadline_reached'
-          : cumulativeRounds >= HARD_TOOL_ROUND_CEILING - CEILING_RESERVED_BOOKKEEPING_ROUNDS
-            ? 'hard_limit'
+          : budgetExhausted
+            ? 'budget_exhausted'
             : null
+        : budgetExhausted
+          ? 'budget_exhausted'
+          : deadlinePassed
+            ? 'deadline_reached'
+            : cumulativeRounds >= HARD_TOOL_ROUND_CEILING - CEILING_RESERVED_BOOKKEEPING_ROUNDS
+              ? 'hard_limit'
+              : null
     if (cause === null) return { kind: 'work' }
     enterFinalization(cause)
     return { kind: 'finalize', cause }
@@ -344,7 +393,7 @@ export function createEffortEpoch(deps: {
     beginToolRound() {
       const spendable =
         phase.kind !== 'answer_only' &&
-        cumulativeRounds < HARD_TOOL_ROUND_CEILING &&
+        (subagent !== undefined || cumulativeRounds < HARD_TOOL_ROUND_CEILING) &&
         !(phase.kind === 'working' && decideLoopTop().kind === 'finalize')
       // Whatever the guards decided, the round meets this phase: a
       // Finalization one owes the directive, a working one owes nothing.
@@ -357,7 +406,7 @@ export function createEffortEpoch(deps: {
       }
       tierRounds += 1
       if (pendingWarning !== null) return true
-      const crossed = budgetWarningCrossed(TIER_TOOL_ROUND_BUDGETS[tier], tierRounds, warned)
+      const crossed = budgetWarningCrossed(roundBudget(), tierRounds, warned)
       if (crossed !== null) {
         warned[crossed] = true
         pendingWarning = crossed
@@ -368,11 +417,14 @@ export function createEffortEpoch(deps: {
       if (phase.kind === 'finalizing') phase = { kind: 'answer_only', cause: phase.cause }
     },
     declareTier(nextTier, initialDeclaration = false) {
+      // A Subagent has no Effort Tier to declare and no Steering to replan for.
+      if (subagent !== undefined) return false
       if (phase.kind !== 'working' || (!initialDeclaration && nextTier === tier)) return false
       rearm(nextTier)
       return true
     },
     replan(nextTier = DEFAULT_EFFORT_TIER) {
+      if (subagent !== undefined) return false
       if (
         phase.kind === 'answer_only' ||
         (phase.kind === 'finalizing' && phase.cause !== 'budget_exhausted' && phase.cause !== 'deadline_reached')
@@ -396,8 +448,10 @@ export function createEffortEpoch(deps: {
         controller.abort()
       }
       const watch = (): void => {
-        // Finalization's rounds are never deadline-aborted.
-        if (phase.kind !== 'working') return
+        // Finalization's rounds are never deadline-aborted, and a
+        // Subagent's shared deadline is polled at its loop top, never
+        // watched here.
+        if (phase.kind !== 'working' || subagent !== undefined) return
         const remainingMs = remainingActiveWorkMs()
         // Already expired at round start (the loop-top rail normally
         // catches this first): the boundary holds anyway.
@@ -436,7 +490,7 @@ export function createEffortEpoch(deps: {
       if (pendingWarning === null || phase.kind !== 'working') return null
       const milestone = pendingWarning
       pendingWarning = null
-      const budget = TIER_TOOL_ROUND_BUDGETS[tier]
+      const budget = roundBudget()
       return budgetWarningMessage(milestone, Math.max(0, budget - tierRounds), budget)
     },
     takeFinalizationNotice() {

@@ -165,7 +165,7 @@ Investigation. The smallest tier sufficient for the objective is preferred.
 _Avoid_: complexity, mode
 
 **Effort Epoch**:
-The Run's current bounded-effort window: one Effort Tier's Tool Round budget,
+The current bounded-effort window: one Effort Tier's Tool Round budget,
 warnings, and active-work deadline. It counts the Run's Tool Rounds, owes the
 internal budget warnings, and arms each acquisition round against the deadline
 as a cancellation boundary. A tier change or Steering replan re-arms it while
@@ -173,6 +173,11 @@ cumulative Tool Rounds keep counting toward the hard ceiling. It is also
 Finalization's one door: every mechanically known Finalization Cause — budget,
 deadline, hard limit, no Progress — is decided there, and entry cancels
 unfinished delegated work once and supersedes the Run's owed advisory notices.
+A Browse Subagent's loop is the module's second adapter (#149): the same
+epoch in Subagent configuration — that Subagent's own 12-round budget, the
+parent Run's shared deadline ahead of its remaining rounds, no Effort Tier —
+so both loops stop for the same reasons in the same Finalization Cause
+vocabulary.
 _Avoid_: tier window, budget window
 
 **Tool Round**:

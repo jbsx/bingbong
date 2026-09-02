@@ -445,6 +445,30 @@ describe('runSubagent', () => {
     expect(report.text).toMatch(/parent run reached its active-work deadline/)
   })
 
+  it('reports the parent deadline, not its spent budget, when both end the run (#149)', async () => {
+    let expired = false
+    const spin: Tool = { name: 'spin', async execute() { expired = true; return 'spun' } }
+    const llm = new ScriptedLlm([
+      { kind: 'tool_calls', calls: [{ id: 'c0', name: 'spin', args: {} }] },
+      { kind: 'tool_calls', calls: [{ id: 'c1', name: 'spin', args: {} }] },
+    ])
+
+    const report = await runSubagent(
+      { llm, tools: [spin], clock: new FakeClock(), maxToolRounds: 1 },
+      { task: 't', isCancelled: () => false, isWorkExpired: () => expired },
+    )
+
+    // The single round spent the budget and the parent's deadline passed
+    // in the same round: the report and the reserved round's directive
+    // both name the deadline.
+    const outcome = llm.requests[1]?.toolResults[0]?.outcome
+    expect(outcome).toMatchObject({
+      ok: true,
+      result: expect.stringMatching(/active-work deadline has passed/),
+    })
+    expect(report.text).toMatch(/parent run reached its active-work deadline/)
+  })
+
   it('answers deterministically without a model round when the deadline passes before any work (#120)', async () => {
     const llm = new ScriptedLlm([
       { kind: 'answer', speak: 'never', display: 'never' },

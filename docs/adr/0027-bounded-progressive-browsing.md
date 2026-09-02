@@ -43,8 +43,13 @@ mechanics and encourage redundant reads, clicks, screenshots, and vision calls.
   product policy, and compact answer contracts.
 - Browse Subagents are reserved for genuinely parallel work, at most three at
   once, with independent 12-round budgets and the same Progress and
-  Finalization discipline. The orchestrator has a 32-round hard ceiling;
-  aggregate work is bounded by concurrency and the shared active-work deadline.
+  Finalization discipline — a Subagent's loop runs the same bounded-effort
+  module as the Run, in a Subagent configuration whose budget is that
+  Subagent's own, whose deadline is the parent Run's shared active-work
+  deadline taken ahead of its remaining rounds, and which carries no Effort
+  Tier; its stop causes are Finalization Causes. The
+  orchestrator has a 32-round hard ceiling; aggregate work is bounded by
+  concurrency and the shared active-work deadline.
 - User-dependent waits pause active-work time. Steering creates a fresh Run Plan
   and tier budget for the corrected objective while retaining telemetry and
   Session Evidence; repeated Steering remains subject to the hard ceiling.

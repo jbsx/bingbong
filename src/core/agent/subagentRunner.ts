@@ -8,6 +8,8 @@ import { createObservationLedger } from '../session/observationLedger'
 import { VisionDeadlineError, VISION_DEADLINE_NUDGE } from '../ports/vision'
 import { ASK_ESCALATION_PREFIX } from '../pipeline/askUserTools'
 import { createBlockerGate, subagentBlockerEscalation } from '../pipeline/blockerGate'
+import { createEffortEpoch } from '../pipeline/effortEpoch'
+import type { FinalizationCause } from '../session/runJournal'
 import { describeToolAction } from '../pipeline/toolCallDisplay'
 import { classifyToolObservation } from '../pipeline/toolObservations'
 import { createVisionBudget, MAX_SUBAGENT_VISION_CALLS } from './subagentRails'
@@ -22,12 +24,14 @@ import { droppedFindingsNote, validateReportFindings, type SubagentReport } from
 // unresolved items. Delegated Memory Entries (#98) ride every model round
 // as untrusted data — the worker reads them, never writes them.
 //
-// The loop is bounded (#120, ADR 0027): 12 Tool Rounds of its own plus the
-// parent Run's shared active-work deadline. Exhaustion no longer throws —
-// the worker enters its own Finalization: one reserved Answer-only model
-// round, and a deterministic bounded report if that round fails or demands
-// tools. A worker always terminates with a report, never a raw round-limit
-// failure.
+// The loop is bounded by the Effort Epoch in Subagent configuration (#149,
+// ADR 0027): 12 Tool Rounds of its own plus the parent Run's shared
+// active-work deadline, decided by the same module the orchestrator runs
+// on and reported in the same Finalization Cause vocabulary. Exhaustion
+// never throws — the worker enters its own Finalization: one reserved
+// Answer-only model round, and a deterministic bounded report if that
+// round fails or demands tools. A worker always terminates with a report,
+// never a raw round-limit failure.
 //
 // The worker keeps its own Observation ledger (#123, ADR 0028): every tool
 // outcome is recorded with the source URL it observed, the report's
@@ -107,20 +111,18 @@ export class SubagentCancelledError extends Error {
 // SUBAGENT_LIMITS.maxToolRoundsPerTask (#120), background kinds this one.
 const DEFAULT_MAX_TOOL_ROUNDS = 60
 
-/** Why a worker's acquisition stopped and its Finalization began (#120). */
-type WorkerStopCause = 'round_limit' | 'shared_deadline'
-
 /**
  * The Finalization directive for the worker's reserved Answer round
  * (#120): rides the last tool result the way the orchestrator's directive
  * rides its Finalization results — the model learns the work budget is
  * spent and that only the final report JSON is accepted now.
  */
-function workerFinalizationNotice(cause: WorkerStopCause, maxToolRounds: number): string {
+// A Subagent epoch reports only these two of the Finalization Causes.
+function workerFinalizationNotice(cause: FinalizationCause, maxToolRounds: number): string {
   const reason =
-    cause === 'round_limit'
-      ? `Your delegated work budget (${maxToolRounds} tool rounds) is spent`
-      : 'The parent run\u2019s active-work deadline has passed'
+    cause === 'deadline_reached'
+      ? 'The parent run\u2019s active-work deadline has passed'
+      : `Your delegated work budget (${maxToolRounds} tool rounds) is spent`
   return `${reason}. Tool calls are closed. Reply now with ONLY your final report JSON — state honestly what you found and what remains open.`
 }
 
@@ -152,16 +154,16 @@ function appendFinalizationNotice(toolResults: ToolResult[], notice: string): vo
  */
 function boundedStopReport(input: {
   agentId?: string
-  cause: WorkerStopCause
+  cause: FinalizationCause
   maxToolRounds: number
   rounds: number
   lastAction: string | null
   observations?: readonly ObservationRecord[]
 }): SubagentReport {
   const causeSentence =
-    input.cause === 'round_limit'
-      ? `the delegated work budget (${input.maxToolRounds} tool rounds) was spent`
-      : 'the parent run reached its active-work deadline'
+    input.cause === 'deadline_reached'
+      ? 'the parent run reached its active-work deadline'
+      : `the delegated work budget (${input.maxToolRounds} tool rounds) was spent`
   const lastActionSentence = input.lastAction !== null ? ` The last action was: ${input.lastAction}.` : ''
   return {
     ...(input.agentId !== undefined ? { agentId: input.agentId } : {}),
@@ -234,12 +236,21 @@ export async function runSubagent(deps: RunSubagentDeps, options: RunSubagentOpt
     acquireVision: () => visionBudget.tryAcquire(),
   }
   const toolResults: ToolResult[] = []
-  let rounds = 0
   let lastAction: string | null = null
-  // Worker Finalization (#120): null while acquisition continues; set when
-  // the round budget or the parent's shared deadline trips. The next model
-  // round is the reserved Answer round — after it, only a bounded report.
-  let stopCause: WorkerStopCause | null = null
+  // This Subagent's Effort Epoch (#149, ADR 0027): the Run's bounded-effort
+  // module in Subagent configuration — this worker's independent Tool
+  // Round budget, the parent Run's shared active-work deadline as its
+  // deadline, and no Effort Tier of its own. It decides when and why
+  // acquisition stops — the shared deadline ahead of the worker's own
+  // remaining rounds — while the worker keeps its own loop, reserved
+  // Answer round, and bounded report.
+  const epoch = createEffortEpoch({
+    clock,
+    subagent: {
+      toolRoundBudget: maxToolRounds,
+      deadline: { expired: () => options.isWorkExpired?.() ?? false },
+    },
+  })
 
   const requestArgs = () => ({
     command: options.task,
@@ -250,25 +261,20 @@ export async function runSubagent(deps: RunSubagentDeps, options: RunSubagentOpt
 
   for (;;) {
     await checkpoint(options)
-    if (stopCause === null) {
-      // The shared deadline is polled first (#120/AC2): when the parent
-      // Run's active-work time is gone, the worker's own remaining rounds
-      // no longer matter.
-      if (options.isWorkExpired?.()) stopCause = 'shared_deadline'
-      else if (rounds >= maxToolRounds) stopCause = 'round_limit'
-    }
-    if (stopCause !== null) {
-      // Worker Finalization (#120): one reserved Answer-only round — the
-      // directive rides the last tool result — then, whatever the model
-      // does with it, a bounded report. A run with no tool results yet
-      // (the deadline passed before any work) has nothing to attach the
-      // directive to and answers deterministically without the round.
+    const decision = epoch.decideLoopTop()
+    if (decision.kind === 'finalize') {
+      // Worker Finalization (#120/#149): one reserved Answer-only round —
+      // the directive rides the last tool result — then, whatever the
+      // model does with it, a bounded report. A run with no tool results
+      // yet (the deadline passed before any work) has nothing to attach
+      // the directive to and answers deterministically without the round.
       // Cancellation still wins at the checkpoint after the round.
+      const rounds = epoch.tierRounds
       const observations = workerLedger.snapshot()
       if (toolResults.length === 0) {
-        return boundedStopReport({ ...(options.agentId !== undefined ? { agentId: options.agentId } : {}), cause: stopCause, maxToolRounds, rounds, lastAction, observations })
+        return boundedStopReport({ ...(options.agentId !== undefined ? { agentId: options.agentId } : {}), cause: decision.cause, maxToolRounds, rounds, lastAction, observations })
       }
-      appendFinalizationNotice(toolResults, workerFinalizationNotice(stopCause, maxToolRounds))
+      appendFinalizationNotice(toolResults, workerFinalizationNotice(decision.cause, maxToolRounds))
       let turn: AssistantTurn | null = null
       try {
         turn = await llm.complete(requestArgs())
@@ -279,7 +285,7 @@ export async function runSubagent(deps: RunSubagentDeps, options: RunSubagentOpt
       if (turn !== null && turn.kind === 'answer') {
         return reportFromTurn(turn, options.agentId, observations)
       }
-      return boundedStopReport({ ...(options.agentId !== undefined ? { agentId: options.agentId } : {}), cause: stopCause, maxToolRounds, rounds, lastAction, observations })
+      return boundedStopReport({ ...(options.agentId !== undefined ? { agentId: options.agentId } : {}), cause: decision.cause, maxToolRounds, rounds, lastAction, observations })
     }
 
     const turn = await llm.complete(requestArgs())
@@ -288,11 +294,11 @@ export async function runSubagent(deps: RunSubagentDeps, options: RunSubagentOpt
       return reportFromTurn(turn, options.agentId, workerLedger.snapshot())
     }
 
-    rounds += 1
+    epoch.beginToolRound()
     for (const call of turn.calls) {
       await checkpoint(options)
       lastAction = describeToolAction(call.name, call.args)
-      options.onProgress?.({ step: rounds, action: lastAction })
+      options.onProgress?.({ step: epoch.tierRounds, action: lastAction })
 
       let outcome: ToolResultOutcome
       const tool = toolsByName.get(call.name)

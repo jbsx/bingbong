@@ -14,6 +14,7 @@ import {
 } from './effortEpoch'
 import { DEFAULT_EFFORT_TIER } from './runPlan'
 import type { FinalizationCause } from '../session/runJournal'
+import { SUBAGENT_LIMITS } from '../agent/subagentRails'
 
 describe('Effort Epoch (#146, ADR 0027)', () => {
   it('fixes the initial tier budgets and active-work deadlines', () => {
@@ -530,6 +531,108 @@ describe('Effort Epoch (#146, ADR 0027)', () => {
       epoch.replan()
       clock.advance(1_000)
       expect(epoch.remainingActiveWorkMs()).toBe(119_000)
+    })
+  })
+
+  describe('Subagent configuration (#149, ADR 0027)', () => {
+    const workerEpoch = (deadline = { expired: () => false }, budget: number = SUBAGENT_LIMITS.maxToolRoundsPerTask) =>
+      createEffortEpoch({ clock: new FakeClock(), subagent: { toolRoundBudget: budget, deadline } })
+
+    it('spends the Subagent’s own budget and finalizes as budget_exhausted', () => {
+      const epoch = workerEpoch()
+      for (let round = 0; round < SUBAGENT_LIMITS.maxToolRoundsPerTask; round += 1) {
+        expect(epoch.decideLoopTop()).toEqual({ kind: 'work' })
+        expect(epoch.beginToolRound()).toBe(true)
+      }
+
+      expect(epoch.tierRounds).toBe(12)
+      expect(epoch.decideLoopTop()).toEqual({ kind: 'finalize', cause: 'budget_exhausted' })
+      expect(epoch.phase).toEqual({ kind: 'finalizing', cause: 'budget_exhausted' })
+    })
+
+    it('takes the parent Run’s shared deadline ahead of its own remaining rounds', () => {
+      let expired = false
+      const epoch = workerEpoch({ expired: () => expired })
+      expect(epoch.beginToolRound()).toBe(true)
+      expect(epoch.decideLoopTop()).toEqual({ kind: 'work' })
+
+      expired = true
+
+      expect(epoch.deadlineExpired()).toBe(true)
+      expect(epoch.decideLoopTop()).toEqual({ kind: 'finalize', cause: 'deadline_reached' })
+      // Eleven of its twelve rounds were still unspent.
+      expect(epoch.tierRounds).toBe(1)
+    })
+
+    it('takes the shared deadline over its own spent budget at a coincidence', () => {
+      // The commonest ending: the Subagent that spends its whole budget is
+      // the one likeliest to outlast the parent Run's deadline. The parent
+      // stopped working, so that — not the spent budget — is why it stops.
+      const epoch = workerEpoch({ expired: () => true }, 2)
+      epoch.beginToolRound()
+      epoch.beginToolRound()
+
+      expect(epoch.decideLoopTop()).toEqual({ kind: 'finalize', cause: 'deadline_reached' })
+    })
+
+    it('never lets its own clock decide the deadline — only the shared predicate does', () => {
+      const clock = new FakeClock()
+      const epoch = createEffortEpoch({
+        clock,
+        subagent: { toolRoundBudget: 12, deadline: { expired: () => false } },
+      })
+      clock.advance(TIER_ACTIVE_WORK_DEADLINES_MS.investigation * 10)
+
+      expect(epoch.deadlineExpired()).toBe(false)
+      expect(epoch.decideLoopTop()).toEqual({ kind: 'work' })
+      // The parent's deadline is polled, never watched: a Subagent round
+      // arms no timer of its own.
+      const armed = epoch.armRound()
+      clock.advance(TIER_ACTIVE_WORK_DEADLINES_MS.investigation)
+      expect(armed.deadlineAborted).toBe(false)
+      expect(armed.signal.aborted).toBe(false)
+      armed.disarm()
+    })
+
+    it('reserves exactly one Answer round after Finalization', () => {
+      const epoch = workerEpoch({ expired: () => true })
+      expect(epoch.decideLoopTop()).toEqual({ kind: 'finalize', cause: 'deadline_reached' })
+
+      // The reserved round is spendable once and latches Answer-only.
+      expect(epoch.beginToolRound()).toBe(true)
+      expect(epoch.phase).toEqual({ kind: 'answer_only', cause: 'deadline_reached' })
+      expect(epoch.beginToolRound()).toBe(false)
+    })
+
+    it('answers to its budget alone — no Effort Tier, no hard ceiling', () => {
+      const epoch = createEffortEpoch({
+        clock: new FakeClock(),
+        subagent: { toolRoundBudget: HARD_TOOL_ROUND_CEILING + 4, deadline: { expired: () => false } },
+      })
+      for (let round = 0; round < HARD_TOOL_ROUND_CEILING + 4; round += 1) {
+        expect(epoch.decideLoopTop()).toEqual({ kind: 'work' })
+        epoch.beginToolRound()
+      }
+
+      expect(epoch.decideLoopTop()).toEqual({ kind: 'finalize', cause: 'budget_exhausted' })
+      // A Subagent has no tier to declare and no Steering replan to make.
+      expect(epoch.declareTier('investigation')).toBe(false)
+      expect(epoch.replan()).toBe(false)
+      expect(epoch.tier).toBe(DEFAULT_EFFORT_TIER)
+    })
+
+    it('fires the Finalization entry hook once, whichever rail opened the door', () => {
+      const entered: FinalizationCause[] = []
+      const epoch = createEffortEpoch({
+        clock: new FakeClock(),
+        subagent: { toolRoundBudget: 1, deadline: { expired: () => false } },
+        onFinalizationEntered: (cause) => entered.push(cause),
+      })
+      epoch.beginToolRound()
+      epoch.decideLoopTop()
+      epoch.decideLoopTop()
+
+      expect(entered).toEqual(['budget_exhausted'])
     })
   })
 
