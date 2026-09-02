@@ -98,7 +98,7 @@ describe('sanitizeSettings', () => {
     // A settings.json persisted before #129 carries maxToolRounds; the
     // sanitize fold ignores the unknown key and keeps everything else.
     // Round limits are product-owned Effort Tier budgets and the 32-round
-    // hard ceiling (effortBudget.ts) — never a user setting.
+    // hard ceiling (effortEpoch.ts) — never a user setting.
     const settings = sanitizeSettings({
       maxToolRounds: 120,
       endpointDelayMs: 650,

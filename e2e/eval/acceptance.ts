@@ -3,7 +3,7 @@ import {
   CEILING_RESERVED_BOOKKEEPING_ROUNDS,
   HARD_TOOL_ROUND_CEILING,
   TIER_TOOL_ROUND_BUDGETS,
-} from '../../src/core/pipeline/effortBudget.ts'
+} from '../../src/core/pipeline/effortEpoch.ts'
 import type { EffortTier } from '../../src/core/pipeline/runPlan.ts'
 import { evalScenarios, type EvalScenario } from './scenarios.ts'
 import type { EvalReport, ScenarioResult } from './evaluator'
@@ -51,8 +51,8 @@ import type { EvalReport, ScenarioResult } from './evaluator'
 // Runtime imports stay minimal on purpose: node runs this module directly
 // via `pnpm eval:accept` type stripping (#36), so everything it pulls is
 // types, src/core/report/stats.ts (the repo's single nearest-rank home),
-// src/core/pipeline/effortBudget.ts (pure policy constants — its own
-// imports are type-only, so the runtime graph stays dependency-free),
+// src/core/pipeline/effortEpoch.ts (the canonical bounded-effort policy; its
+// only runtime dependency is runPlan.ts's canonical default tier),
 // this file's own logic, and the corpus of record, whose imports are
 // type-only too.
 

@@ -2,7 +2,7 @@ import { readdirSync, readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { finalizationToolRefusal } from '../../src/core/pipeline/effortBudget'
+import { finalizationToolRefusal } from '../../src/core/pipeline/effortEpoch'
 import {
   buildPool,
   decideRelease,

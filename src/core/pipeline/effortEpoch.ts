@@ -1,11 +1,8 @@
-// Bounded effort for Runs (#117/#118, ADR 0027): per-tier Tool Round
-// budgets, active-work deadlines, internal budget warnings, the global
-// hard ceiling, and the Finalization vocabulary. Pure policy and clocks —
-// the pipeline owns the state machine. A Tool Round is one model response
-// containing one or more tool calls; it consumes one unit of budget
-// regardless of sibling-call count.
+// The Effort Epoch (#146, ADR 0027): one Run's bounded-effort policy and
+// state machine. A Tool Round is one model response containing one or more
+// tool calls; it consumes one unit regardless of sibling-call count.
 
-import type { EffortTier } from './runPlan'
+import { DEFAULT_EFFORT_TIER, type EffortTier } from './runPlan.ts'
 import type { FinalizationCause } from '../session/runJournal'
 import type { FallbackSource } from './fallbackAnswer'
 
@@ -63,6 +60,15 @@ export const HARD_TOOL_ROUND_CEILING = 32
  * ceiling's last round can serve as the one bookkeeping round.
  */
 export const CEILING_RESERVED_BOOKKEEPING_ROUNDS = 1
+
+export type EffortPhase =
+  | { readonly kind: 'working' }
+  | { readonly kind: 'finalizing'; readonly cause: FinalizationCause }
+  | { readonly kind: 'answer_only'; readonly cause: FinalizationCause }
+
+export type EffortLoopDecision =
+  | { readonly kind: 'work' }
+  | { readonly kind: 'finalize'; readonly cause: FinalizationCause; readonly entered: boolean }
 
 /** The internal warning milestones: ~75% and ~90% of the budget consumed. */
 export type BudgetWarningMilestone = 'near' | 'imminent'
@@ -127,7 +133,7 @@ export const finalizationToolRefusal = `Not executed — ${FINALIZATION_ANSWER_D
  * Pause, and Steering — which suspends it. Fresh per Run; a tier change
  * re-arms it for the new tier's deadline.
  */
-export interface ActiveWorkClock {
+interface ActiveWorkClock {
   /** Starts (or resumes) an active span; pairs with suspend(). */
   resume(): void
   /** Suspends accumulation — the run is waiting on the user. */
@@ -138,7 +144,7 @@ export interface ActiveWorkClock {
   rearm(): void
 }
 
-export function createActiveWorkClock(deps: { now(): number }): ActiveWorkClock {
+function createActiveWorkClock(deps: { now(): number }): ActiveWorkClock {
   let accumulatedMs = 0
   let activeSince: number | null = deps.now()
   let suspendDepth = 0
@@ -162,6 +168,145 @@ export function createActiveWorkClock(deps: { now(): number }): ActiveWorkClock 
     rearm() {
       accumulatedMs = 0
       activeSince = suspendDepth === 0 ? deps.now() : null
+    },
+  }
+}
+
+export interface EffortEpoch {
+  readonly tier: EffortTier
+  readonly tierRounds: number
+  readonly cumulativeRounds: number
+  readonly phase: EffortPhase
+  decideLoopTop(): EffortLoopDecision
+  enterFinalization(cause: FinalizationCause): boolean
+  /** Counts a returned tool-bearing decision and latches a pending Finalization round as Answer-only. */
+  beginToolRound(): boolean
+  /** Latches Finalization entered while executing the round as Answer-only. */
+  completeToolRound(): void
+  declareTier(tier: EffortTier, initialDeclaration?: boolean): boolean
+  replan(tier?: EffortTier): boolean
+  deadlineExpired(): boolean
+  remainingActiveWorkMs(): number
+  suspend(): void
+  resume(): void
+  stop(): void
+  takeBudgetWarning(): string | null
+}
+
+/**
+ * Creates the Run's current Effort Epoch. Tier changes and Steering replans
+ * re-arm its tier-local budget, warnings, and deadline; cumulative rounds
+ * never rewind and remain bounded by the hard ceiling.
+ */
+export function createEffortEpoch(deps: {
+  now(): number
+  activeWorkDeadlineMs?: number
+  initialTier?: EffortTier
+}): EffortEpoch {
+  const workClock = createActiveWorkClock(deps)
+  let tier = deps.initialTier ?? DEFAULT_EFFORT_TIER
+  let tierRounds = 0
+  let cumulativeRounds = 0
+  let phase: EffortPhase = { kind: 'working' }
+  const warned: Record<BudgetWarningMilestone, boolean> = { near: false, imminent: false }
+  let pendingWarning: BudgetWarningMilestone | null = null
+
+  const deadlineMs = (): number => resolveActiveWorkDeadlineMs(deps.activeWorkDeadlineMs, tier)
+  const rearm = (nextTier: EffortTier): void => {
+    tier = nextTier
+    tierRounds = 0
+    warned.near = false
+    warned.imminent = false
+    pendingWarning = null
+    workClock.rearm()
+  }
+  const enterFinalization = (cause: FinalizationCause): boolean => {
+    if (phase.kind !== 'working') return false
+    phase = { kind: 'finalizing', cause }
+    pendingWarning = null
+    return true
+  }
+  const decideLoopTop = (): EffortLoopDecision => {
+    if (phase.kind !== 'working') return { kind: 'finalize', cause: phase.cause, entered: false }
+    const cause =
+      tierRounds >= TIER_TOOL_ROUND_BUDGETS[tier]
+        ? 'budget_exhausted'
+        : workClock.spent() >= deadlineMs()
+          ? 'deadline_reached'
+          : cumulativeRounds >= HARD_TOOL_ROUND_CEILING - CEILING_RESERVED_BOOKKEEPING_ROUNDS
+            ? 'hard_limit'
+            : null
+    if (cause === null) return { kind: 'work' }
+    enterFinalization(cause)
+    return { kind: 'finalize', cause, entered: true }
+  }
+
+  return {
+    get tier() {
+      return tier
+    },
+    get tierRounds() {
+      return tierRounds
+    },
+    get cumulativeRounds() {
+      return cumulativeRounds
+    },
+    get phase() {
+      return phase
+    },
+    decideLoopTop,
+    enterFinalization,
+    beginToolRound() {
+      if (phase.kind === 'answer_only' || cumulativeRounds >= HARD_TOOL_ROUND_CEILING) return false
+      if (phase.kind === 'working' && decideLoopTop().kind === 'finalize') return false
+      cumulativeRounds += 1
+      if (phase.kind === 'finalizing') {
+        phase = { kind: 'answer_only', cause: phase.cause }
+        return true
+      }
+      tierRounds += 1
+      if (pendingWarning !== null) return true
+      const crossed = budgetWarningCrossed(TIER_TOOL_ROUND_BUDGETS[tier], tierRounds, warned)
+      if (crossed !== null) {
+        warned[crossed] = true
+        pendingWarning = crossed
+      }
+      return true
+    },
+    completeToolRound() {
+      if (phase.kind === 'finalizing') phase = { kind: 'answer_only', cause: phase.cause }
+    },
+    declareTier(nextTier, initialDeclaration = false) {
+      if (phase.kind !== 'working' || (!initialDeclaration && nextTier === tier)) return false
+      rearm(nextTier)
+      return true
+    },
+    replan(nextTier = DEFAULT_EFFORT_TIER) {
+      if (
+        phase.kind === 'answer_only' ||
+        (phase.kind === 'finalizing' && phase.cause !== 'budget_exhausted' && phase.cause !== 'deadline_reached')
+      ) {
+        return false
+      }
+      phase = { kind: 'working' }
+      rearm(nextTier)
+      return true
+    },
+    deadlineExpired() {
+      return workClock.spent() >= deadlineMs()
+    },
+    remainingActiveWorkMs() {
+      return deadlineMs() - workClock.spent()
+    },
+    suspend: () => workClock.suspend(),
+    resume: () => workClock.resume(),
+    stop: () => workClock.suspend(),
+    takeBudgetWarning() {
+      if (pendingWarning === null || phase.kind !== 'working') return null
+      const milestone = pendingWarning
+      pendingWarning = null
+      const budget = TIER_TOOL_ROUND_BUDGETS[tier]
+      return budgetWarningMessage(milestone, Math.max(0, budget - tierRounds), budget)
     },
   }
 }

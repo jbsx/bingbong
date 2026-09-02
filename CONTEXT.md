@@ -164,6 +164,12 @@ The bounded class of autonomous work a Run may spend: Direct Action, Lookup, or
 Investigation. The smallest tier sufficient for the objective is preferred.
 _Avoid_: complexity, mode
 
+**Effort Epoch**:
+The Run's current bounded-effort window: one Effort Tier's Tool Round budget,
+warnings, and active-work deadline. A tier change or Steering replan re-arms it
+while cumulative Tool Rounds keep counting toward the hard ceiling.
+_Avoid_: tier window, budget window
+
 **Tool Round**:
 One model decision that requests one or more tools. It consumes one unit of a
 Run's effort regardless of how many independent calls travel together.

@@ -1,8 +1,8 @@
 // The Run Plan (#116/#118, ADR 0027): the orchestrator's declaration of a
 // Run's objective, Run Headline, and smallest sufficient Effort Tier —
 // plus the tier completion standards (#118) every model-facing surface
-// sources. Pure validation and vocabulary only — the pipeline owns the
-// state machine, the tool (runPlanTools) only acknowledges. Missing or
+// sources. Pure validation and vocabulary only — Effort Epoch owns bounded
+// effort state, and the tool (runPlanTools) only acknowledges. Missing or
 // malformed plans never fail a Run: the fallback is a Lookup plan that
 // keeps the Command Echo as the Peek Card's title.
 

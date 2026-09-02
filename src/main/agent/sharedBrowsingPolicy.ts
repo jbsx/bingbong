@@ -8,7 +8,7 @@
 // live in the tool descriptions, never here; role-specific contracts
 // (delegation, answer/report JSON, checkpoint rights) stay in the role
 // prompts. The wording deliberately echoes the runtime's own notices
-// (noProgressRail, effortBudget, the subagent leash) so a model recognizes
+// (noProgressRail, effortEpoch, the subagent leash) so a model recognizes
 // them when they ride a tool result.
 
 import { effortTierVocabulary } from '../../core/pipeline/runPlan'

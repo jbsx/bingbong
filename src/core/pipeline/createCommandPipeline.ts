@@ -28,19 +28,12 @@ import type { SnapshotRef } from '../browser/snapshot'
 import type { BlockerGate } from './blockerGate'
 import { createBlockerGate } from './blockerGate'
 import {
-  budgetWarningCrossed,
-  budgetWarningMessage,
-  CEILING_RESERVED_BOOKKEEPING_ROUNDS,
-  createActiveWorkClock,
+  createEffortEpoch,
   deterministicFinalAnswer,
   FINALIZATION_ANSWER_DIRECTIVE,
   finalizationToolRefusal,
-  HARD_TOOL_ROUND_CEILING,
-  resolveActiveWorkDeadlineMs,
-  TIER_TOOL_ROUND_BUDGETS,
-  type ActiveWorkClock,
-  type BudgetWarningMilestone,
-} from './effortBudget'
+  type EffortEpoch,
+} from './effortEpoch'
 import {
   DEFAULT_EFFORT_TIER,
   lookupFallbackPlan,
@@ -49,7 +42,6 @@ import {
   RUN_PLAN_INVALID,
   RUN_PLAN_NUDGE,
   RUN_PLAN_STANDALONE_ROUND,
-  type EffortTier,
   type RunPlan,
 } from './runPlan'
 import {
@@ -218,13 +210,8 @@ interface ActiveRun {
   steering?: string
   releasePause?: () => void
   releaseControl?: () => void
-  /**
-   * The run's active-work clock (#117, ADR 0027): accumulates working
-   * time, suspended through user-dependent waits (Confirmation, ask_user,
-   * Pause, Steering). Lives on the run so checkpoint/awaitDecision can
-   * suspend it wherever the generator parks.
-   */
-  workClock: ActiveWorkClock
+  /** The Run's bounded-effort window, including its suspendable active-work clock. */
+  effortEpoch: EffortEpoch
   /**
    * Aborts the in-flight LLM round's HTTP request (#47): set while the
    * round is awaiting, fired by abort() so Stop cancels the request
@@ -379,12 +366,6 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
   const mintTurnId = createTurnIdSource(deps.tracer)
   const confirmTimeoutMs = deps.confirmTimeoutMs ?? 60_000
   const askTimeoutMs = deps.askTimeoutMs ?? ASK_TIMEOUT_MS
-  // The live per-tier active-work deadlines (#135): the tier table, or
-  // the single test/e2e override when one is wired. Every boundary —
-  // the loop-top rail, the mid-round call gate, the in-flight round
-  // abort, and the shared delegation predicate — reads this resolver,
-  // so the whole run is bounded by one value.
-  const deadlineMs = (tier: EffortTier): number => resolveActiveWorkDeadlineMs(deps.activeWorkDeadlineMs, tier)
   const toolsByName = new Map(tools.map((tool) => [tool.name, tool]))
   const pendingConfirmations = new Map<string, PendingDecision<ConfirmationDecision>>()
   const pendingAsks = new Map<string, PendingDecision<AskDecision>>()
@@ -426,13 +407,13 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
       if (run.paused) {
         // Paused time is user-dependent (#117): it never counts toward
         // the run's active-work deadline.
-        run.workClock.suspend()
+        run.effortEpoch.suspend()
         try {
           await new Promise<void>((resolve) => {
             run.releasePause = resolve
           })
         } finally {
-          run.workClock.resume()
+          run.effortEpoch.resume()
         }
       }
       run.releasePause = undefined
@@ -451,7 +432,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
   ): AsyncGenerator<UnstampedEvent, T> {
     // The whole wait is user-dependent (#117): Confirmation and ask_user
     // windows pause the active-work clock, however the decision resolves.
-    run.workClock.suspend()
+    run.effortEpoch.suspend()
     try {
       for (;;) {
         if (run.aborted) return await decision.promise
@@ -470,7 +451,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
         if (outcome.kind === 'decision') return outcome.value
       }
     } finally {
-      run.workClock.resume()
+      run.effortEpoch.resume()
     }
   }
 
@@ -522,7 +503,12 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
     truncated?: boolean,
     continuity?: RunContinuityContext,
   ): AsyncIterable<UnstampedEvent> {
-    const run: ActiveRun = { turnId, aborted: false, paused: false, workClock: createActiveWorkClock({ now: () => clock.now() }) }
+    const run: ActiveRun = {
+      turnId,
+      aborted: false,
+      paused: false,
+      effortEpoch: createEffortEpoch({ now: () => clock.now(), activeWorkDeadlineMs: deps.activeWorkDeadlineMs }),
+    }
     activeRun = run
     // When this Run started (#123): the freshness boundary — evidence
     // observed before it predates the Run, however it is cited.
@@ -563,34 +549,9 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
     let modelDeclaredPlan = false
     let planNudgePending = false
     let planNudgeDelivered = false
-    // Bounded effort (#117, ADR 0027): the tier epoch is the run's
-    // current Effort Tier — the declared plan's, or the default Lookup
-    // before one lands. A tier change (first declaration, escalation,
-    // or a Steering replan) starts a fresh epoch: budget, warnings,
-    // and the active-work deadline re-arm, while cumulative `rounds`
-    // still count toward the hard ceiling.
-    let epochTier: EffortTier = DEFAULT_EFFORT_TIER
-    let tierRounds = 0
-    const warned: Record<BudgetWarningMilestone, boolean> = { near: false, imminent: false }
-    // A crossed budget milestone still owed a ride on a successful
-    // result — delivered on the crossing round's own results when one
-    // can carry it, else on the next round's.
-    let pendingBudgetWarning: BudgetWarningMilestone | null = null
-    // Finalization (#117, ADR 0027): exhaustion no longer throws. The
-    // run enters a terminal phase — one bookkeeping Tool Round at most
-    // (skipped entirely at the hard ceiling), then a reserved
-    // Answer-only round that never counts as a Tool Round. `answerOnly`
-    // marks the rounds after which only an Answer is accepted, and the
-    // reserved round's request carries the same flag (#136) so the
-    // model boundary sees no tool catalog — only the Answer contract.
-    let finalizing = false
-    let answerOnly = false
-    // Finalization semantics (#110/#117): the runtime's mechanically
-    // known stop cause — hard ceiling, tier budget, or active-work
-    // deadline. It overrides whatever the final Answer proposes for a
-    // runtime-owned cause, and a deterministic fallback Answer rides it
-    // when the reserved Answer round fails or requests tools.
-    let mechanicalCause: FinalizationCause | null = null
+    const effortEpoch = run.effortEpoch
+    const isInFinalization = (): boolean => effortEpoch.phase.kind !== 'working'
+    const isAnswerOnly = (): boolean => effortEpoch.phase.kind === 'answer_only'
     // The Steering-corrected objective (#119): the directive's text
     // once consumed, superseded by the fresh plan's objective when that
     // declaration lands. Null on a never-steered run — its deterministic
@@ -616,23 +577,6 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
     // Lapse). Answer source derivation and Run Context Compaction both
     // resolve through it.
     const resolveSessionObservation = (id: MemoryEntryId) => evidenceSession?.()?.store.observation(id) ?? null
-    // One epoch re-arm (#117/#119): a tier change — first declaration,
-    // escalation, or a Steering replan — starts fresh budget, warnings,
-    // and active-work deadline. Cumulative `rounds` and recorded
-    // observations are never rewound; only the epoch state resets.
-    const rearmEpoch = (tier: EffortTier): void => {
-      epochTier = tier
-      tierRounds = 0
-      warned.near = false
-      warned.imminent = false
-      pendingBudgetWarning = null
-      run.workClock.rearm()
-    }
-    // The deadline boundary's one expiry predicate (#135): the loop-top
-    // rail, the delegation predicate below, and the mid-round call gate
-    // all ask it, so every site bounds the run by the same live value —
-    // the current epoch's deadline against the work clock's spent time.
-    const deadlineExpired = (): boolean => run.workClock.spent() >= deadlineMs(epochTier)
     // The no-progress rails (#126, ADR 0027): objective repetition and
     // approach exhaustion over the #125 fingerprints, against the run's
     // settled-state source. Fresh per run, like every rail; a Steering
@@ -645,21 +589,20 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
     // no-progress trip — enters the terminal phase through. Cancels
     // delegated acquisition once, supersedes advisory nudges, and records
     // the mechanically known cause.
-    const enterFinalization = (cause: FinalizationCause): void => {
-      if (finalizing) return
-      finalizing = true
-      mechanicalCause ??= cause
+    const onFinalizationEntered = (): void => {
       // Finalization entry (#120): delegated acquisition is cancelled
       // once per entry — the run's own work is over, while completed
-      // worker reports stay available to the reserved Answer round. (A
-      // Steering directive can exit Finalization and re-arm; a re-entry
-      // fires again.)
+      // worker reports stay available to the reserved Answer round. A
+      // Steering directive can exit tier-rail Finalization and re-arm;
+      // a later re-entry fires again.
       deps.onFinalize?.()
       // Finalization supersedes advisory nudges: the directive that rides
       // this phase's results replaces both the plan nudge and any
       // undelivered budget warning.
       planNudgePending = false
-      pendingBudgetWarning = null
+    }
+    const enterFinalization = (cause: FinalizationCause): void => {
+      if (effortEpoch.enterFinalization(cause)) onFinalizationEntered()
     }
     const consumeSteering = async function* (
       status: 'thinking' | 'acting',
@@ -673,26 +616,19 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
         // directive passes through. The plan slot reopens — the
         // corrected objective reports a fresh initial plan, and a
         // plan-less round falls back to Lookup with one fresh nudge,
-        // exactly like the run's start. Effort re-arms at the default
-        // tier while cumulative `rounds` and every recorded observation
-        // remain — telemetry is never rewound. Finalization set by a
-        // tier rail belonged to the stale objective and is exited; the
-        // hard ceiling and an already spent bookkeeping round are not
-        // (the epoch re-arm is inert there — the Answer round that
-        // follows consumes no budget). The no-progress rails reopen the
-        // same way (#126): the corrected objective gets fresh approach
-        // accounting, and a no_progress trip it caused is un-latched.
+        // exactly like the run's start. While working, or when a tier rail
+        // caused Finalization, Effort re-arms at the default tier without
+        // rewinding cumulative rounds or observations. Other Finalization
+        // causes and an already spent bookkeeping round stay terminal. The
+        // no-progress accounting resets for a working corrected objective,
+        // but cannot reopen a Run whose no_progress cause already latched.
         runPlan = null
         modelDeclaredPlan = false
         planNudgePending = false
         planNudgeDelivered = false
         noProgressRail.reset()
-        rearmEpoch(DEFAULT_EFFORT_TIER)
+        effortEpoch.replan(DEFAULT_EFFORT_TIER)
         correctedObjective = directive
-        if (finalizing && !answerOnly && mechanicalCause !== 'hard_limit') {
-          finalizing = false
-          mechanicalCause = null
-        }
       }
       return directive
     }
@@ -812,9 +748,9 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
           // spawns — only Investigation branches delegate — and workers
           // share this run's active-work deadline as a live predicate, so
           // a tier escalation re-arm reaches them without a respawn.
-          effortTier: () => epochTier,
+          effortTier: () => effortEpoch.tier,
           delegationDeadline: {
-            expired: deadlineExpired,
+            expired: () => effortEpoch.deadlineExpired(),
           },
           // Delegation's memory selection (#98): spawn_agent resolves
           // memory_ids against this Run's immutable snapshot — the same one
@@ -844,7 +780,6 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
               }
             : {}),
         }
-        let rounds = 0
         let steering: string | undefined
         // The Run Headline (ADR 0025): the last one this run emitted — the
         // next report lands as an event only when it changes the title.
@@ -857,27 +792,8 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
         let deterministicFallback = false
 
         for (;;) {
-          if (!finalizing) {
-            // The tier rails are checked first so a coincidence at the
-            // same loop top records the planned limit, not the safety
-            // net (#118): when the epoch budget or deadline is what
-            // actually binds, budget_exhausted/deadline_reached is the
-            // honest cause; the hard ceiling catches everything else.
-            if (tierRounds >= TIER_TOOL_ROUND_BUDGETS[epochTier]) {
-              enterFinalization('budget_exhausted')
-            } else if (deadlineExpired()) {
-              enterFinalization('deadline_reached')
-            } else if (rounds >= HARD_TOOL_ROUND_CEILING - CEILING_RESERVED_BOOKKEEPING_ROUNDS) {
-              // The hard ceiling (#108/#118, #129): the product-owned
-              // 32-Tool-Round ceiling — the only round limit, no
-              // user-facing setting — cumulative across tier epochs.
-              // Exactly one terminal bookkeeping Tool Round fits inside
-              // it — ordinary acquisition stops one round early to
-              // preserve it — and the Answer-only round that follows is
-              // not a Tool Round and always rides outside the ceiling.
-              enterFinalization('hard_limit')
-            }
-          }
+          const effortDecision = effortEpoch.decideLoopTop()
+          if (effortDecision.kind === 'finalize' && effortDecision.entered) onFinalizationEntered()
           steering = (yield* consumeSteering('thinking')) ?? steering
           // Run Context Compaction (#124, ADR 0028): before every model
           // round, past the deterministic size threshold, older tool
@@ -921,8 +837,8 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
           // against the fresh epoch's remaining time.
           let deadlineAborted = false
           let cancelDeadlineWatch: () => void = () => {}
-          if (!finalizing) {
-            const remainingMs = deadlineMs(epochTier) - run.workClock.spent()
+          if (!isInFinalization()) {
+            const remainingMs = effortEpoch.remainingActiveWorkMs()
             if (remainingMs > 0) {
               cancelDeadlineWatch = clock.setTimer(remainingMs, () => {
                 deadlineAborted = true
@@ -950,7 +866,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
               // tool-free one — the flag rides the contract so the
               // adapter sends no tool definitions and no automatic tool
               // choice, whatever the catalog still holds for bookkeeping.
-              ...(answerOnly ? { answerOnly: true } : {}),
+              ...(isAnswerOnly() ? { answerOnly: true } : {}),
               ...(continuity ? { journal: continuity.snapshot } : {}),
               ...(continuity ? { memory: continuity.memory } : {}),
               // Checkpointed Session Evidence this Run starts beside (#121):
@@ -996,7 +912,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
             // The reserved Answer round failed (#117): the run still ends
             // with a guaranteed Answer — the deterministic fallback — not
             // a raw provider error.
-            if (answerOnly) {
+            if (isAnswerOnly()) {
               deterministicFallback = true
               break
             }
@@ -1049,7 +965,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
           // The reserved Answer round requested tools (#117): Finalization
           // granted its one bookkeeping Tool Round already — the run now
           // answers deterministically instead of working further.
-          if (answerOnly) {
+          if (isAnswerOnly()) {
             deterministicFallback = true
             break
           }
@@ -1081,6 +997,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
               if (review.kind === 'rejected') {
                 planResultError = review.reason
               } else {
+                const initialDeclaration = !modelDeclaredPlan
                 runPlan = review.plan
                 modelDeclaredPlan = true
                 // A discovery objective declared below Lookup (#131) is
@@ -1102,9 +1019,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
                 // post-Steering plan supersedes the directive's words as
                 // the corrected objective (#119).
                 if (correctedObjective !== null) correctedObjective = review.plan.objective
-                if (review.plan.effortTier !== epochTier && !finalizing) {
-                  rearmEpoch(review.plan.effortTier)
-                }
+                effortEpoch.declareTier(review.plan.effortTier, initialDeclaration)
                 yield {
                   type: 'run_plan',
                   objective: review.plan.objective,
@@ -1163,28 +1078,12 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
           const planAcknowledgement = planNotices.length > 0 ? `Run Plan noted. ${planNotices.join(' ')}` : 'Run Plan noted.'
 
           yield { type: 'status', status: 'acting', at: clock.now() }
-          rounds += 1
-          // A Tool Round is one model response regardless of sibling-call
-          // count (#117/AC1): the tier epoch consumes one unit here, and
-          // the hard ceiling counts the same unit through `rounds`.
-          if (!finalizing) {
-            tierRounds += 1
-            // The internal budget warning (#117/AC2): computed as the
-            // round consumes its unit, delivered by riding a successful
-            // result below — never a user-facing counter.
-            const crossed: BudgetWarningMilestone | null = pendingBudgetWarning === null
-              ? budgetWarningCrossed(TIER_TOOL_ROUND_BUDGETS[epochTier], tierRounds, warned)
-              : null
-            if (crossed !== null) {
-              warned[crossed] = true
-              pendingBudgetWarning = crossed
-            }
-          }
+          effortEpoch.beginToolRound()
           // Finalization's one bookkeeping Tool Round (#117/AC3): every
           // result it produces must teach the model that the Answer round
           // is next — refusals carry it directly; successful bookkeeping
           // results carry it as the advisory below.
-          let finalizationNoticePending = finalizing
+          let finalizationNoticePending = isInFinalization()
           // Session Reset boundary (#99): the whole response is known
           // before any of it executes, so when it carries a reset call,
           // every other call in it — before or after — is a discarded
@@ -1221,10 +1120,10 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
             // already-executing non-interruptible action settles once —
             // this check runs between calls — but every later acquisition
             // sibling in the response is refused.
-            if (!finalizing && deadlineExpired()) {
+            if (!isInFinalization() && effortEpoch.deadlineExpired()) {
               enterFinalization('deadline_reached')
             }
-            const closedTool = finalizing ? toolsByName.get(call.name) : undefined
+            const closedTool = isInFinalization() ? toolsByName.get(call.name) : undefined
             const outcome: ToolResultOutcome =
               call.name === 'report_run_plan' && planCallHandled
                 ? planResultError !== null
@@ -1276,7 +1175,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
             // they share this one guard. Each clears its own pending flag
             // the moment its notice actually lands.
             const ridesNotice = observedOutcome.ok && typeof observedOutcome.result === 'string'
-            const usefulWorkResult = ridesNotice && call.name !== 'report_run_plan' && !finalizing
+            const usefulWorkResult = ridesNotice && call.name !== 'report_run_plan' && !isInFinalization()
             // The fallback plan's corrective nudge (#116) rides one useful
             // sibling result — the model sees it without a bookkeeping
             // round, and the useful result still reports its own content.
@@ -1291,18 +1190,14 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
             // round's own successful results — the model learns how much
             // work remains as it plans the next round. Internal only: no
             // user-facing counter ever appears outside tool-result text.
-            if (pendingBudgetWarning !== null && usefulWorkResult) {
-              const budget = TIER_TOOL_ROUND_BUDGETS[epochTier]
-              observedOutcome = withNudge(
-                observedOutcome,
-                budgetWarningMessage(pendingBudgetWarning, Math.max(0, budget - tierRounds), budget),
-              )
-              pendingBudgetWarning = null
+            if (usefulWorkResult) {
+              const warning = effortEpoch.takeBudgetWarning()
+              if (warning !== null) observedOutcome = withNudge(observedOutcome, warning)
             }
             // Finalization's directive (#117/AC3) rides the phase's
             // successful results — including bookkeeping acknowledgements,
             // which are exactly the calls still permitted.
-            if (finalizationNoticePending && finalizing && ridesNotice) {
+            if (finalizationNoticePending && isInFinalization() && ridesNotice) {
               finalizationNoticePending = false
               observedOutcome = withNudge(observedOutcome, FINALIZATION_ANSWER_DIRECTIVE)
             }
@@ -1333,7 +1228,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
           // ended, only an Answer is accepted from here. Ahead of the
           // steering continue on purpose: a steering directive during the
           // bookkeeping round must not reopen tool work.
-          if (finalizing) answerOnly = true
+          effortEpoch.completeToolRound()
           if (steerAfterTool) continue
           // The reset call ran and failed: its discarded siblings still
           // need answers for the following round to be protocol-consistent.
@@ -1370,7 +1265,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
             // the directive's own words otherwise — and their command on
             // a never-steered run.
             command: correctedObjective ?? command,
-            cause: mechanicalCause ?? 'hard_limit',
+            cause: effortEpoch.phase.kind === 'working' ? 'hard_limit' : effortEpoch.phase.cause,
             sources: deriveFallbackSources({
               records: ledger.snapshot(),
               checkpoints: acceptedCheckpoints,
@@ -1495,7 +1390,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
       const finalization: RunFinalization | null = resetConsumed
         ? null
         : finalizeRun({
-            mechanicalCause,
+            mechanicalCause: effortEpoch.phase.kind === 'working' ? null : effortEpoch.phase.cause,
             answered: runOutcome === 'done' && finalAnswer !== undefined,
             proposedResolution,
             proposedCause: finalAnswer?.finalizationCause ?? null,
@@ -1512,7 +1407,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
       // Run end: the work clock stops (#120). A worker still running past
       // its parent Run finalizes against the deadline as it stood at the
       // end, not one that keeps ticking after the Run is gone.
-      run.workClock.suspend()
+      run.effortEpoch.stop()
       // Run end (#111): the Observation ledger disappears with its Run —
       // records dropped, late writers refused.
       ledger.close()
