@@ -1,5 +1,5 @@
 import { VisionDeadlineError, VISION_DEADLINE_NUDGE } from '../ports/vision'
-import type { PipelineEvent } from './events'
+import type { PipelineEvent, UnstampedEvent } from './events'
 import type { RiskVerdict, Tool, ToolContext } from './tool'
 import type { Clock } from '../ports/clock'
 import type { AssistantTurn, LlmClient, LlmStreamDelta, ToolCall, ToolResult, ToolResultOutcome } from '../ports/llm'
@@ -44,6 +44,8 @@ import {
   type RunPlan,
 } from './runPlan'
 import { createNotices } from './notices'
+import type { ConfirmDecision, RunDecisions } from './decisions'
+import type { RunInterrupts } from './interrupts'
 import {
   createObservationLedger,
   type ObservationId,
@@ -341,14 +343,6 @@ export interface RunContinuityContext {
   evidenceSession?(): { store: SessionEvidenceStore; runId: RunId } | null
 }
 
-/**
- * A pipeline event before turn stamping (#28): the run body constructs
- * events without knowing the turn id; `execute` stamps every one of them on
- * the way out, which is the single place a stamp can be missed.
- */
-type WithoutTurnId<T> = T extends unknown ? Omit<T, 'turnId'> : never
-type UnstampedEvent = WithoutTurnId<PipelineEvent>
-
 /** Stamps one run-body event with the turn's id. */
 function stampTurn(event: UnstampedEvent, turnId: string): PipelineEvent {
   return { ...event, turnId } as PipelineEvent
@@ -563,9 +557,9 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
       }
       return record
     }
-    // Steering observations (#111): every directive is recorded exactly
-    // once, at the checkpoint that consumes it into the run.
-    //
+    // The Run's decisions (#156): gated execution reaches the user through
+    // this one adapter — the ask window and the Confirmation window.
+    const decisions = createDecisions(turnId, run, observe)
     const effortEpoch = run.effortEpoch
     const isInFinalization = (): boolean => effortEpoch.phase.kind !== 'working'
     const isAnswerOnly = (): boolean => effortEpoch.phase.kind === 'answer_only'
@@ -597,36 +591,43 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
     // The no-progress rails (#126, ADR 0027): objective repetition and
     // approach exhaustion over the #125 fingerprints, against the run's
     // settled-state source. Fresh per run, like every rail; a Steering
-    // replan resets it (see consumeSteering).
+    // replan resets it (see interrupts.check).
     const noProgressRail: NoProgressRail = createNoProgressRail(
       deps.settledPageState ? { settledState: deps.settledPageState } : {},
     )
-    const consumeSteering = async function* (
-      status: 'thinking' | 'acting',
-    ): AsyncGenerator<UnstampedEvent, string | undefined> {
-      const directive = yield* checkpoint(run, status)
-      if (directive !== undefined) {
-        observe({ producer: 'steering', ok: true, payload: directive })
-        // The Steering replan (#119, ADR 0027): the directive corrects
-        // the objective, so everything planned for the stale one is
-        // discarded atomically here, at the one checkpoint every
-        // directive passes through. The plan slot reopens — the
-        // corrected objective reports a fresh initial plan, and a
-        // plan-less round falls back to Lookup with one fresh nudge,
-        // exactly like the run's start. While working, or when a tier rail
-        // caused Finalization, Effort re-arms at the default tier without
-        // rewinding cumulative rounds or observations. Other Finalization
-        // causes and an already spent bookkeeping round stay terminal. The
-        // no-progress accounting resets for a working corrected objective,
-        // but cannot reopen a Run whose no_progress cause already latched.
-        runPlan = null
-        modelDeclaredPlan = false
-        notices.replan()
-        noProgressRail.reset()
-        effortEpoch.replan(DEFAULT_EFFORT_TIER)
-        correctedObjective = directive
-      }
-      return directive
+    // The Run's interrupts (#156): one door for Pause, Steering, and Stop
+    // between the loop's calls and around its model rounds. Steering
+    // observations (#111): every directive is recorded exactly once, here,
+    // at the checkpoint that consumes it into the run. The Run's own
+    // hook is the pause-aware steering checkpoint together with everything
+    // a consumed Directive resets below; a delegated worker satisfies the
+    // same shape with a cancel-only hook.
+    const interrupts: RunInterrupts = {
+      check: async function* (status) {
+        const directive = yield* checkpoint(run, status)
+        if (directive !== undefined) {
+          observe({ producer: 'steering', ok: true, payload: directive })
+          // The Steering replan (#119, ADR 0027): the directive corrects
+          // the objective, so everything planned for the stale one is
+          // discarded atomically here, at the one checkpoint every
+          // directive passes through. The plan slot reopens — the
+          // corrected objective reports a fresh initial plan, and a
+          // plan-less round falls back to Lookup with one fresh nudge,
+          // exactly like the run's start. While working, or when a tier rail
+          // caused Finalization, Effort re-arms at the default tier without
+          // rewinding cumulative rounds or observations. Other Finalization
+          // causes and an already spent bookkeeping round stay terminal. The
+          // no-progress accounting resets for a working corrected objective,
+          // but cannot reopen a Run whose no_progress cause already latched.
+          runPlan = null
+          modelDeclaredPlan = false
+          notices.replan()
+          noProgressRail.reset()
+          effortEpoch.replan(DEFAULT_EFFORT_TIER)
+          correctedObjective = directive
+        }
+        return directive
+      },
     }
     const emitDetail = deps.emitDetail
       ? (event: UnstampedEvent): void => deps.emitDetail!(stampTurn(event, turnId))
@@ -779,7 +780,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
         // next report lands as an event only when it changes the title.
         let lastHeadline: string | null = null
         // The Run Plan state, the effort epoch, and Finalization live in
-        // the run scope — the Steering replan (see consumeSteering)
+        // the run scope — the Steering replan (see interrupts.check)
         // resets them at the checkpoint that consumes a directive.
         // The deterministic fallback Answer (#117): produced when the
         // reserved Answer round fails or requests tools.
@@ -790,7 +791,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
           // enters Finalization there — the phase this round runs under is
           // read from the epoch below, so the answer needs no unpacking.
           effortEpoch.decideLoopTop()
-          steering = (yield* consumeSteering('thinking')) ?? steering
+          steering = (yield* interrupts.check('thinking')) ?? steering
           // Run Context Compaction (#124, ADR 0028): before every model
           // round, past the deterministic size threshold, older tool
           // results an accepted Evidence Checkpoint represents are
@@ -902,7 +903,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
           // stamped deadline_reached, and a tool round meets the closed
           // tools below.
           steering = undefined
-          const afterModelSteering = yield* consumeSteering('thinking')
+          const afterModelSteering = yield* interrupts.check('thinking')
           if (afterModelSteering) {
             steering = afterModelSteering
             continue
@@ -949,7 +950,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
           // Lookup (Command Echo retained) with exactly one corrective
           // nudge — never a stall, never a failed round. A Steering
           // correction reopens the initial-plan slot in the replan (see
-          // consumeSteering): the corrected objective reports a fresh
+          // interrupts.check): the corrected objective reports a fresh
           // plan, not an update.
           let planResultError: string | null = null
           let planResultNotice: string | null = null
@@ -1063,7 +1064,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
           let steerAfterTool = false
           for (const [index, call] of turn.calls.entries()) {
             if (resetCallIndex !== -1 && index !== resetCallIndex) continue
-            const beforeToolSteering = yield* consumeSteering('acting')
+            const beforeToolSteering = yield* interrupts.check('acting')
             if (beforeToolSteering) {
               steering = beforeToolSteering
               steerAfterTool = true
@@ -1097,7 +1098,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
                   : { ok: true, result: planAcknowledgement }
                 : closedTool !== undefined && (closedTool.acquisition === true || closedTool.askUser !== undefined)
                   ? { ok: false, error: finalizationToolRefusal }
-                  : yield* runGatedTool(call, turnId, visionBudget, searchLoopRail, noProgressRail, blockerGate, toolContext, run, observe)
+                  : yield* runGatedTool(call, turnId, visionBudget, searchLoopRail, noProgressRail, blockerGate, toolContext, run, decisions)
             // Observation ledger (#111): the raw outcome as the tool
             // produced it, ahead of the advisory nudges appended below —
             // later checkpoint validation checks excerpts against what the
@@ -1158,7 +1159,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
               resetConsumed = true
               break
             }
-            const afterToolSteering = yield* consumeSteering('acting')
+            const afterToolSteering = yield* interrupts.check('acting')
             if (afterToolSteering) {
               steering = afterToolSteering
               steerAfterTool = true
@@ -1360,6 +1361,113 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
     }
   }
 
+  /**
+   * The Run's decisions adapter (#156): the one seam through which gated
+   * execution reaches the user — today's pipeline choreography, named.
+   * The ask window and the Confirmation window both mint an id, emit their
+   * request event, speak their line, wait on the pause-aware timed decision
+   * window, emit their resolution, and word what the model reads. A
+   * delegated worker satisfies the same interface by refusing.
+   */
+  function createDecisions(
+    turnId: string,
+    run: ActiveRun,
+    observe: (input: ObservationInput) => ObservationRecord | null,
+  ): RunDecisions {
+    return {
+      async *ask(question: string, call: ToolCall): AsyncGenerator<UnstampedEvent, ToolResultOutcome> {
+        // Finish the spoken question before the answer window begins. This
+        // prevents the mic from transcribing the assistant and gives the user
+        // the full timeout after they can first respond.
+        yield* speakLine(question, turnId)
+        throwIfAborted(run)
+        yield* checkpoint(run, 'acting', false)
+        if (run.steering) {
+          return { ok: true, result: STEERED_CANCELLED }
+        }
+        const askId = `ask-${++askCounter}`
+        const decision = waitForAsk(askId)
+        yield {
+          type: 'ask_requested',
+          askId,
+          callId: call.id,
+          question,
+          expiresAt: decision.expiresAt()!,
+          at: clock.now(),
+        }
+        const resolved = yield* awaitDecision(decision, run, (expiresAt) => ({
+          type: 'ask_deadline',
+          askId,
+          expiresAt,
+          at: clock.now(),
+        }))
+        yield {
+          type: 'ask_resolved',
+          askId,
+          answer: resolved.answer,
+          reason: resolved.reason,
+          at: clock.now(),
+        }
+        // Observation ledger (#111): the user's answer (or the reason none
+        // arrived) is a user-produced observation the run retains.
+        observe({
+          producer: 'ask_user',
+          ok: resolved.reason === 'user',
+          payload: resolved.reason === 'user' ? resolved.answer : `unanswered (${resolved.reason})`,
+        })
+        throwIfAborted(run)
+        return {
+          ok: true,
+          result:
+            resolved.reason === 'steered'
+              ? 'cancelled by the user\'s steering'
+              : resolved.answer ?? "user didn't answer",
+        }
+      },
+      async *confirm(prompt: string, call: ToolCall): AsyncGenerator<UnstampedEvent, ConfirmDecision> {
+        const confirmationId = `confirm-${++confirmationCounter}`
+        const pending = waitForConfirmation(confirmationId)
+        yield {
+          type: 'confirmation_requested',
+          confirmationId,
+          callId: call.id,
+          toolName: call.name,
+          prompt,
+          expiresAt: pending.expiresAt()!,
+          at: clock.now(),
+        }
+        // The prompt is both shown (dialog) and spoken; voice yes/no lands in T9.
+        const deadlineEvent = (expiresAt: number | null): UnstampedEvent => ({
+          type: 'confirmation_deadline',
+          confirmationId,
+          expiresAt,
+          at: clock.now(),
+        })
+        while (run.paused) yield* waitThroughPause(pending, run, deadlineEvent)
+        if (!run.aborted && !run.steering) yield* speakLine(prompt, turnId)
+        const resolved = yield* awaitDecision(pending, run, deadlineEvent)
+        yield {
+          type: 'confirmation_resolved',
+          confirmationId,
+          approved: resolved.approved,
+          reason: resolved.reason,
+          at: clock.now(),
+        }
+        throwIfAborted(run)
+        if (!resolved.approved) {
+          const detail =
+            resolved.reason === 'timeout'
+              ? 'denied — the user did not respond in time; do not retry this action'
+              : resolved.reason === 'steered'
+                ? `${STEERED_CANCELLED}; do not retry this action`
+              : 'denied by the user; do not retry this action'
+          return { approved: false, outcome: { ok: false, error: detail } }
+        }
+        return { approved: true }
+      },
+    }
+  }
+
   async function* runGatedTool(
     call: ToolCall,
     turnId: string,
@@ -1369,13 +1477,14 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
     blockerGate: BlockerGate,
     toolContext: ToolContext,
     run: ActiveRun,
-    observe: (input: ObservationInput) => ObservationRecord | null,
+    decisions: RunDecisions,
   ): AsyncGenerator<UnstampedEvent, ToolResultOutcome> {
     const tool = toolsByName.get(call.name)
     if (!tool) return { ok: false, error: `unknown tool: '${call.name}'` }
 
-    // ask_user (Tier 3): the pipeline owns the ask — render + speak the
-    // question, wait for a voice or typed answer, hand it back as the result.
+    // ask_user (Tier 3): the pipeline owns the ask — the tool only names
+    // the question; the decisions seam (#156) puts it to the user and
+    // hands back the result the model reads.
     if (tool.askUser) {
       let question: string
       try {
@@ -1383,53 +1492,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
       } catch (err) {
         return { ok: false, error: toErrorMessage(err) }
       }
-      // Finish the spoken question before the answer window begins. This
-      // prevents the mic from transcribing the assistant and gives the user
-      // the full timeout after they can first respond.
-      yield* speakLine(question, turnId)
-      throwIfAborted(run)
-      yield* checkpoint(run, 'acting', false)
-      if (run.steering) {
-        return { ok: true, result: STEERED_CANCELLED }
-      }
-      const askId = `ask-${++askCounter}`
-      const decision = waitForAsk(askId)
-      yield {
-        type: 'ask_requested',
-        askId,
-        callId: call.id,
-        question,
-        expiresAt: decision.expiresAt()!,
-        at: clock.now(),
-      }
-      const resolved = yield* awaitDecision(decision, run, (expiresAt) => ({
-        type: 'ask_deadline',
-        askId,
-        expiresAt,
-        at: clock.now(),
-      }))
-      yield {
-        type: 'ask_resolved',
-        askId,
-        answer: resolved.answer,
-        reason: resolved.reason,
-        at: clock.now(),
-      }
-      // Observation ledger (#111): the user's answer (or the reason none
-      // arrived) is a user-produced observation the run retains.
-      observe({
-        producer: 'ask_user',
-        ok: resolved.reason === 'user',
-        payload: resolved.reason === 'user' ? resolved.answer : `unanswered (${resolved.reason})`,
-      })
-      throwIfAborted(run)
-      return {
-        ok: true,
-        result:
-          resolved.reason === 'steered'
-            ? 'cancelled by the user\'s steering'
-            : resolved.answer ?? "user didn't answer",
-      }
+      return yield* decisions.ask(question, call)
     }
 
     // Same-wall Blocker gate (#80, ADR 0010): while armed, browser calls
@@ -1460,44 +1523,11 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
       return { ok: false, error: verdict.reason }
     }
     if (verdict.kind === 'confirm') {
-      const confirmationId = `confirm-${++confirmationCounter}`
-      const decision = waitForConfirmation(confirmationId)
-      yield {
-        type: 'confirmation_requested',
-        confirmationId,
-        callId: call.id,
-        toolName: call.name,
-        prompt: verdict.prompt,
-        expiresAt: decision.expiresAt()!,
-        at: clock.now(),
-      }
-      // The prompt is both shown (dialog) and spoken; voice yes/no lands in T9.
-      const deadlineEvent = (expiresAt: number | null): UnstampedEvent => ({
-        type: 'confirmation_deadline',
-        confirmationId,
-        expiresAt,
-        at: clock.now(),
-      })
-      while (run.paused) yield* waitThroughPause(decision, run, deadlineEvent)
-      if (!run.aborted && !run.steering) yield* speakLine(verdict.prompt, turnId)
-      const resolved = yield* awaitDecision(decision, run, deadlineEvent)
-      yield {
-        type: 'confirmation_resolved',
-        confirmationId,
-        approved: resolved.approved,
-        reason: resolved.reason,
-        at: clock.now(),
-      }
-      throwIfAborted(run)
-      if (!resolved.approved) {
-        const detail =
-          resolved.reason === 'timeout'
-            ? 'denied — the user did not respond in time; do not retry this action'
-            : resolved.reason === 'steered'
-              ? `${STEERED_CANCELLED}; do not retry this action`
-            : 'denied by the user; do not retry this action'
-        return { ok: false, error: detail }
-      }
+      // The Confirmation window (#156) is the decisions seam's second
+      // question: approval passes through to the execution below, a denial
+      // is already worded as the outcome the model reads.
+      const confirmation = yield* decisions.confirm(verdict.prompt, call)
+      if (!confirmation.approved) return confirmation.outcome
     }
 
     if (tool.usesVision) {

@@ -263,3 +263,12 @@ export function inferRunOutcome(
 
 /** The outcome shapes every run observer understands. */
 export type RunOutcomeSummary = 'done' | 'failed' | 'cancelled' | 'interrupted'
+
+/**
+ * A pipeline event before turn stamping (#28): the run body constructs
+ * events without knowing the turn id; `execute` stamps every one of them on
+ * the way out, which is the single place a stamp can be missed. Named here
+ * so the Run's seams (#156) can declare what they yield.
+ */
+type WithoutTurnId<T> = T extends unknown ? Omit<T, 'turnId'> : never
+export type UnstampedEvent = WithoutTurnId<PipelineEvent>
