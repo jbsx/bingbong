@@ -5,6 +5,8 @@ import type { Tool } from '../pipeline/tool'
 import type { WorkingMemorySnapshot } from '../session/workingMemory'
 import { VisionDeadlineError } from '../ports/vision'
 import { ASK_ESCALATION_PREFIX, createAskUserTool, createSubagentAskTool } from '../pipeline/askUserTools'
+import { SEARCH_LOOP_NUDGE_AFTER, SEARCH_LOOP_REFUSE_AFTER } from '../pipeline/searchLoopRail'
+import type { SettledPageState } from '../pipeline/progressFingerprints'
 import { hostFromUrl } from '../pipeline/blockerGate'
 
 // The workhorse loop behind every subagent (issue #13): a deepseek-chat LLM
@@ -813,13 +815,27 @@ describe('runSubagent', () => {
     ])
   })
 
-  // #158: the Tool Round executor runs in a worker with all three
-  // capability flags off — one test per flag pins that nothing the Run's
-  // rails do can reach a delegated worker.
-  it('runs no search-loop rail — repeated similar searches are never nudged or refused (#158)', async () => {
+  // #159: the Tool Round executor runs in a worker with all three
+  // capability flags on — the ADR 0027 promise that a Browse Subagent runs
+  // the Run's Progress and Finalization discipline. One test per rail,
+  // plus the deadline gate; the rails observe the worker's own tab.
+
+  /** The worker's tab, settled and never moving — the rails' worst case. */
+  const STUCK: SettledPageState = {
+    url: 'https://example.com/',
+    title: 'Example',
+    textDigest: 'Nothing new here.',
+    scrollX: 0,
+    scrollY: 0,
+    dialogOpen: false,
+    dialogText: '',
+  }
+
+  it('refuses a search that rewords one intent past the cap (#159)', async () => {
     let executions = 0
     const navigate: Tool = {
       name: 'navigate',
+      acquisition: true,
       async execute() {
         executions += 1
         return 'search results'
@@ -839,20 +855,27 @@ describe('runSubagent', () => {
 
     await runSubagent({ llm, tools: [navigate], clock: new FakeClock() }, { task: 't', isCancelled: () => false })
 
-    // Six consecutive identical q= searches — past both the Run rail's
-    // nudge and its refusal thresholds — all executed, none annotated.
-    expect(executions).toBe(6)
+    // Five consecutive q= searches reach the cap; the sixth is refused
+    // before it executes, exactly as it would be in a Run.
+    expect(executions).toBe(SEARCH_LOOP_REFUSE_AFTER)
     const results = llm.requests[1]?.toolResults ?? []
     expect(results).toHaveLength(6)
-    for (const result of results) {
-      expect(result.outcome).toEqual({ ok: true, result: 'search results' })
-    }
+    expect(results[5]?.outcome).toMatchObject({
+      ok: false,
+      error: expect.stringContaining('Search loop limit'),
+    })
+    // The advisory nudge rides the result that reached the nudge tier.
+    expect(results[SEARCH_LOOP_NUDGE_AFTER - 1]?.outcome).toMatchObject({
+      ok: true,
+      result: expect.stringContaining('reword one intent'),
+    })
   })
 
-  it('runs no no-progress rail — repeated identical actions are never nudged or refused (#158)', async () => {
+  it('nudges then refuses an objectively redundant action (#159)', async () => {
     let executions = 0
     const click: Tool = {
       name: 'click',
+      acquisition: true,
       async execute() {
         executions += 1
         return 'clicked'
@@ -861,29 +884,96 @@ describe('runSubagent', () => {
     const llm = new ScriptedLlm([
       {
         kind: 'tool_calls',
-        calls: Array.from({ length: 6 }, (_, index) => ({ id: `c${index}`, name: 'click', args: { ref: 4 } })),
+        calls: Array.from({ length: 3 }, (_, index) => ({ id: `c${index}`, name: 'click', args: { ref: 4 } })),
       },
       { kind: 'answer', speak: 's', display: 'Clicked.' },
     ])
 
-    await runSubagent({ llm, tools: [click], clock: new FakeClock() }, { task: 't', isCancelled: () => false })
+    await runSubagent(
+      { llm, tools: [click], clock: new FakeClock(), settledPageState: () => STUCK },
+      { task: 't', isCancelled: () => false },
+    )
 
-    // Six identical clicks against an unchanging page would exhaust two
-    // Approaches in a Run and trip it into Finalization mid-round; a
-    // worker executes them all and finalizes for nothing.
-    expect(executions).toBe(6)
+    // The repeat against unchanged state is nudged and still runs; the one
+    // after it is refused pre-execution.
+    expect(executions).toBe(2)
     const results = llm.requests[1]?.toolResults ?? []
-    expect(results).toHaveLength(6)
-    for (const result of results) {
-      expect(result.outcome).toEqual({ ok: true, result: 'clicked' })
-    }
+    expect(results[1]?.outcome).toMatchObject({
+      ok: true,
+      result: expect.stringContaining('repeats an equivalent action against unchanged page state'),
+    })
+    expect(results[2]?.outcome).toMatchObject({
+      ok: false,
+      error: expect.stringContaining('Not executed — this action repeats an equivalent action'),
+    })
   })
 
-  it('runs no per-call deadline gate — a round that outlives the parent deadline still finishes (#158)', async () => {
+  it('finalizes for no_progress after two exhausted Approaches, with a bounded report (#159)', async () => {
+    let executions = 0
+    const click: Tool = {
+      name: 'click',
+      acquisition: true,
+      async execute() {
+        executions += 1
+        return 'clicked'
+      },
+    }
+    // Six distinct targets, so the redundancy gate never fires — every
+    // action is new, and none of them moves the page.
+    const llm = new ScriptedLlm([
+      {
+        kind: 'tool_calls',
+        calls: Array.from({ length: 6 }, (_, index) => ({ id: `c${index}`, name: 'click', args: { ref: index + 1 } })),
+      },
+      // The reserved Answer round demands tools anyway: the report is the
+      // worker's own deterministic bounded one.
+      { kind: 'tool_calls', calls: [{ id: 'c9', name: 'click', args: { ref: 9 } }] },
+      { kind: 'answer', speak: 'never', display: 'never' },
+    ])
+
+    const report = await runSubagent(
+      { llm, tools: [click], clock: new FakeClock(), settledPageState: () => STUCK, maxToolRounds: 12 },
+      { task: 't', agentId: 'a-159', isCancelled: () => false },
+    )
+
+    // Baseline plus four no-progress actions exhaust two Approaches and
+    // trip Finalization mid-round; the sixth sibling is an acquisition
+    // call in Finalization, so it is refused with the finalize directive.
+    expect(executions).toBe(5)
+    const results = llm.requests[1]?.toolResults ?? []
+    expect(results).toHaveLength(6)
+    // The refusal is the worker's own (#159), not the Run's: no spent
+    // budget, no Run Plan bookkeeping, and a report rather than an answer.
+    expect(results[5]?.outcome).toMatchObject({
+      ok: false,
+      error: expect.stringContaining('Not executed — The delegated work is over'),
+    })
+    expect(results[5]?.outcome).toMatchObject({
+      ok: false,
+      error: expect.stringContaining('ONLY your final report JSON'),
+    })
+    expect(results[5]?.outcome.ok === false ? results[5].outcome.error : '').not.toContain('Run Plan')
+    // The action that exhausted the second Approach is told the same
+    // thing, so the trip round carries one instruction, not three.
+    expect(results[4]?.outcome).toMatchObject({
+      ok: true,
+      result: expect.stringContaining('A second Approach has made no progress. The delegated work is over'),
+    })
+    // Budget was never the reason: the worker had 11 of its 12 rounds left.
+    expect(llm.requests).toHaveLength(2)
+    expect(report.agentId).toBe('a-159')
+    expect(report.text).toMatch(
+      /Stopped without progress after 1 tool round — two Approaches in a row made no progress, and no final report was produced\./,
+    )
+    expect(report.unresolved).toEqual(['Cut short with no progress left to make — the task is incomplete.'])
+  })
+
+  it('runs the per-call deadline gate — no sibling executes past the shared deadline (#159)', async () => {
     let expired = false
     let executions = 0
     const spin: Tool = {
       name: 'spin',
+      acquisition: true,
       async execute() {
         executions += 1
         expired = true
@@ -907,19 +997,21 @@ describe('runSubagent', () => {
       { task: 't', isCancelled: () => false, isWorkExpired: () => expired },
     )
 
-    // The parent deadline passed inside the round: a Run would refuse the
-    // two remaining calls before they began. The worker runs the round out
-    // and stops at its loop top instead — the reserved Answer round's
-    // directive is the only thing the deadline changes.
-    expect(executions).toBe(3)
+    // The first call crossed the deadline; the two siblings behind it never
+    // begin — the gate trips Finalization and the closed-tool check refuses
+    // them, each carrying the finalize directive.
+    expect(executions).toBe(1)
     const results = llm.requests[1]?.toolResults ?? []
     expect(results).toHaveLength(3)
-    expect(results.filter((entry) => !entry.outcome.ok)).toHaveLength(0)
-    expect(report.text).toBe('Bounded report.')
-    expect(results[2]?.outcome).toMatchObject({
-      ok: true,
-      result: expect.stringMatching(/active-work deadline has passed[\s\S]*final report JSON/),
+    expect(results[1]?.outcome).toMatchObject({
+      ok: false,
+      error: expect.stringContaining('Not executed — The delegated work is over'),
     })
+    expect(results[2]?.outcome).toMatchObject({
+      ok: false,
+      error: expect.stringMatching(/active-work deadline has passed[\s\S]*final report JSON/),
+    })
+    expect(report.text).toBe('Bounded report.')
   })
 
   it('answers an interactive ask_user as an unknown tool — a worker has no user to ask (#158)', async () => {

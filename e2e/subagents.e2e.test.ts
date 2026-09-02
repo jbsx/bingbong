@@ -164,11 +164,21 @@ describe('subagent vision budget e2e', () => {
 
   beforeAll(async () => {
     fixture = await startFixtureServer()
-    const lookCalls = Array.from({ length: 16 }, (_, index) => ({
-      id: `look-${index}`,
-      name: 'look',
-      args: {},
-    }))
+    // #159: a worker now runs the Run's no-progress rails, and sixteen
+    // Looks at a page that never moves are exactly what they refuse — the
+    // second is nudged, the third refused, long before the vision budget
+    // is reached. So each Look follows a navigation to a genuinely
+    // different page: every Look observes new material, the rails see
+    // Progress throughout, and the only thing that can stop this worker is
+    // the shared vision budget under test.
+    const roundCalls = Array.from({ length: 16 }, (_, index) => [
+      {
+        id: `nav-${index}`,
+        name: 'navigate',
+        args: { url: fixture.url(index % 2 === 0 ? '/second' : '/cookie-echo') },
+      },
+      { id: `look-${index}`, name: 'look', args: {} },
+    ]).flat()
     harness = await startHarness({
       fixture,
       env: {
@@ -188,7 +198,7 @@ describe('subagent vision budget e2e', () => {
           { kind: 'answer', speak: 'Inspection finished.', display: 'Inspection finished.' },
         ]),
         BINGBONG_SUBAGENT_LLM_SCRIPT: JSON.stringify([
-          { kind: 'tool_calls', calls: lookCalls },
+          { kind: 'tool_calls', calls: roundCalls },
           { kind: 'answer', speak: '$last_tool_error', display: '$last_tool_error' },
         ]),
         BINGBONG_VISION_DESCRIPTION_SCRIPT: JSON.stringify(
@@ -214,7 +224,9 @@ describe('subagent vision budget e2e', () => {
         )
         return text.includes('vision call limit') ? text : undefined
       },
-      { timeoutMs: 20_000, intervalMs: 250 },
+      // Thirty-two calls now, not sixteen: the interleaved navigations are
+      // what keep the vision budget reachable (#159).
+      { timeoutMs: 45_000, intervalMs: 250 },
     )
     expect(result).toContain('vision call limit (15) reached for this run')
   })

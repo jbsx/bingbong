@@ -178,7 +178,9 @@ epoch in Subagent configuration — that Subagent's own 12-round budget, the
 parent Run's shared deadline ahead of its remaining rounds, no Effort Tier —
 so both loops stop for the same reasons in the same Finalization Cause
 vocabulary. It is the same pairing the Tool Round has (#158): both loops
-count the same rounds because both execute the same round.
+count the same rounds because both execute the same round — and, from #159,
+with the same rails and deadline gate, so a worker also stops for
+`no_progress`.
 _Avoid_: tier window, budget window
 
 **Tool Round**:

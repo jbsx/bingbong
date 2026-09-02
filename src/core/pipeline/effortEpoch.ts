@@ -71,8 +71,9 @@ export const CEILING_RESERVED_BOOKKEEPING_ROUNDS = 1
  * deadline, a live predicate the epoch polls rather than a duration its
  * own clock measures. Tier declarations, Steering replans, and the
  * orchestrator's hard ceiling belong to the Run and never apply to a
- * Subagent; a Subagent epoch stops for two Finalization Causes only,
- * `budget_exhausted` and `deadline_reached`.
+ * Subagent; a Subagent epoch stops for three Finalization Causes only —
+ * `budget_exhausted`, `deadline_reached`, and, since the worker adopted
+ * the Run's no-progress rails (#159), `no_progress`.
  */
 export interface SubagentEpochConfig {
   /** The Subagent's independent Tool Round budget (SUBAGENT_LIMITS.maxToolRoundsPerTask). */

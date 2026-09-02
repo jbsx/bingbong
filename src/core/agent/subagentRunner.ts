@@ -2,6 +2,8 @@ import type { Clock } from '../ports/clock'
 import { systemClock } from '../ports/clock'
 import type { AssistantTurn, LlmClient, ToolResult, ToolResultOutcome } from '../ports/llm'
 import type { Tool, ToolContext } from '../pipeline/tool'
+import type { SettledPageState } from '../pipeline/progressFingerprints'
+import type { SnapshotRef } from '../browser/snapshot'
 import type { WorkingMemorySnapshot } from '../session/workingMemory'
 import type { ObservationRecord } from '../session/observationLedger'
 import { createObservationLedger } from '../session/observationLedger'
@@ -11,7 +13,7 @@ import { createEffortEpoch } from '../pipeline/effortEpoch'
 import { createNotices } from '../pipeline/notices'
 import type { RunDecisions } from '../pipeline/decisions'
 import type { RunInterrupts } from '../pipeline/interrupts'
-import { createToolRoundExecutor, unknownToolError } from '../pipeline/toolRound'
+import { createToolRoundExecutor, unknownToolError, type FinalizationWording } from '../pipeline/toolRound'
 import type { FinalizationCause } from '../session/runJournal'
 import { describeToolAction } from '../pipeline/toolCallDisplay'
 import { MAX_SUBAGENT_VISION_CALLS } from './subagentRails'
@@ -32,12 +34,19 @@ import { droppedFindingsNote, validateReportFindings, type SubagentReport } from
 // its own Observation ledger and Notices, the Subagent Blocker escalation
 // (the ASK_USER relay), a decisions adapter that refuses every Confirmation
 // and cannot ask, interrupts that only poll cancellation, the ASK_USER
-// relay as its terminal result, the Subagent vision budget, and all three
-// capability flags off, so no search-loop, no-progress, or per-call
-// deadline refusal can reach a worker — and drains its generator. What
-// stays the worker's own is what has no counterpart in a Run: the reserved
-// Answer round, the deterministic bounded report, and the escalation early
-// return.
+// relay as its terminal result, the Subagent vision budget, and — from
+// #159 — all three capability flags on, so the worker's round runs the
+// Run's search-loop rail, its no-progress rails, and its per-call deadline
+// gate — and drains its generator. What stays the worker's own is what has
+// no counterpart in a Run: the reserved Answer round, the deterministic
+// bounded report, and the escalation early return.
+//
+// The rails need what they observe (#159): the worker's own tab is the
+// page they judge, so `settledPageState` and `describeRef` come in beside
+// `currentHost` and `currentPageUrl`. Without them the rails are inert by
+// construction — the no-progress rails never judge an action they cannot
+// observe, and a typed search box query cannot be classified — which is
+// how a background worker with no tab keeps running unrailed.
 //
 // Two things converge on the shared gate chain rather than staying as the
 // worker wrote them, and both are refusals either way: an `assessRisk`
@@ -90,6 +99,18 @@ export interface RunSubagentDeps {
    * no source URL (grounding then refuses, like the orchestrator's).
    */
   currentPageUrl?(): string | null
+  /**
+   * The settled state of this agent's own tab (#159): what the
+   * no-progress rails compare an action against. Absent — a background
+   * worker with no tab — the rails observe nothing and stay inert.
+   */
+  settledPageState?(): Promise<SettledPageState | null> | SettledPageState | null
+  /**
+   * Snapshot ref facts for this agent's own tab (#159): how the
+   * search-loop rail recognizes text typed into a search input. Absent,
+   * only q= navigations count as searches.
+   */
+  describeRef?(ref: number): Promise<SnapshotRef | undefined>
 }
 
 export interface RunSubagentOptions {
@@ -142,6 +163,25 @@ const DEFAULT_MAX_TOOL_ROUNDS = 60
 const CONFIRMATION_REFUSAL = 'subagents cannot ask the user for confirmation — skip this action and report it back'
 
 /**
+ * How Finalization reads to a worker's model (#159). The Run's own
+ * wording is wrong here in three ways at once — a tripped worker's budget
+ * is not spent, a worker's catalog has no Run Plan bookkeeping to fall
+ * back on, and a worker finalizes into a report rather than an answer —
+ * so the round's closed-tool refusal and the no-progress rail's
+ * second-Approach directive both say what a worker must actually do. It
+ * is the same sentence `workerFinalizationNotice` ends on, so the trip
+ * round reads as one instruction rather than three contradictory ones.
+ */
+const WORKER_FINALIZE_INSTRUCTION =
+  'The delegated work is over \u2014 browsing, vision, and ask_user tools are closed. Reply now with ONLY ' +
+  'your final report JSON \u2014 state honestly what you found and what remains open.'
+
+const workerFinalizationWording: FinalizationWording = {
+  toolRefusal: `Not executed \u2014 ${WORKER_FINALIZE_INSTRUCTION}`,
+  approachExhausted: `A second Approach has made no progress. ${WORKER_FINALIZE_INSTRUCTION}`,
+}
+
+/**
  * The ASK_USER relay (#18): the escalation directive the Subagent's
  * ask_user tool returns. It ends the round and becomes the report verbatim
  * — the workhorse model is never trusted to carry it through another round.
@@ -158,12 +198,16 @@ function askEscalation(outcome: ToolResultOutcome): string | null {
  * rides its Finalization results — the model learns the work budget is
  * spent and that only the final report JSON is accepted now.
  */
-// A Subagent epoch reports only these two of the Finalization Causes.
+// A Subagent epoch reports these three of the Finalization Causes (#159:
+// `no_progress` joined the two budget causes when the worker adopted the
+// Run's no-progress rails).
 function workerFinalizationNotice(cause: FinalizationCause, maxToolRounds: number): string {
   const reason =
     cause === 'deadline_reached'
       ? 'The parent run\u2019s active-work deadline has passed'
-      : `Your delegated work budget (${maxToolRounds} tool rounds) is spent`
+      : cause === 'no_progress'
+        ? 'Two Approaches in a row made no progress \u2014 repeated actions stopped producing anything new'
+        : `Your delegated work budget (${maxToolRounds} tool rounds) is spent`
   return `${reason}. Tool calls are closed. Reply now with ONLY your final report JSON — state honestly what you found and what remains open.`
 }
 
@@ -180,16 +224,26 @@ function boundedStopReport(input: {
   lastAction: string | null
   observations?: readonly ObservationRecord[]
 }): SubagentReport {
-  const causeSentence =
-    input.cause === 'deadline_reached'
+  // The no-progress stop (#159) is not a spent limit: the worker had
+  // budget left and stopped because repetition stopped paying, so it says
+  // so rather than borrowing the budget wording.
+  const noProgress = input.cause === 'no_progress'
+  const causeSentence = noProgress
+    ? 'two Approaches in a row made no progress'
+    : input.cause === 'deadline_reached'
       ? 'the parent run reached its active-work deadline'
       : `the delegated work budget (${input.maxToolRounds} tool rounds) was spent`
+  const leadIn = noProgress ? 'Stopped without progress' : 'Stopped at the delegated work limit'
   const lastActionSentence = input.lastAction !== null ? ` The last action was: ${input.lastAction}.` : ''
   return {
     ...(input.agentId !== undefined ? { agentId: input.agentId } : {}),
-    text: `Stopped at the delegated work limit after ${input.rounds} tool round${input.rounds === 1 ? '' : 's'} — ${causeSentence}, and no final report was produced.${lastActionSentence}`,
+    text: `${leadIn} after ${input.rounds} tool round${input.rounds === 1 ? '' : 's'} — ${causeSentence}, and no final report was produced.${lastActionSentence}`,
     findings: [],
-    unresolved: ['Cut short at the delegated work limit — the task is incomplete.'],
+    unresolved: [
+      noProgress
+        ? 'Cut short with no progress left to make — the task is incomplete.'
+        : 'Cut short at the delegated work limit — the task is incomplete.',
+    ],
     ...(input.observations !== undefined && input.observations.length > 0 ? { observations: input.observations } : {}),
   }
 }
@@ -285,12 +339,14 @@ export async function runSubagent(deps: RunSubagentDeps, options: RunSubagentOpt
       if (options.isCancelled()) throw new SubagentCancelledError()
     },
   }
-  // The Tool Round executor in Subagent configuration (#158): the gate
-  // order, the Blocker gate with the ASK_USER relay escalation, the
+  // The Tool Round executor in Subagent configuration (#158/#159): the
+  // gate order, the Blocker gate with the ASK_USER relay escalation, the
   // Subagent vision budget, the Observation ledger sink, and the Notices
-  // delivery site are all inside it. Every capability flag is off, which is
-  // how this adoption stays behaviour-preserving: a worker runs no
-  // search-loop rail, no no-progress rail, and no per-call deadline gate.
+  // delivery site are all inside it. Every capability flag is on (#159):
+  // the worker's round runs the Run's search-loop rail, its no-progress
+  // rails, and its per-call deadline gate, so the ADR 0027 promise that a
+  // Browse Subagent runs the Run's Progress and Finalization discipline
+  // is the executor's configuration rather than a second implementation.
   const toolRound = createToolRoundExecutor({
     clock,
     tools,
@@ -300,12 +356,15 @@ export async function runSubagent(deps: RunSubagentDeps, options: RunSubagentOpt
     toolContext,
     decisions,
     interrupts,
-    capabilities: { searchLoopRail: false, noProgressRail: false, deadlineGate: false },
+    capabilities: { searchLoopRail: true, noProgressRail: true, deadlineGate: true },
     terminalResult: (_call, outcome) => askEscalation(outcome) !== null,
     blockerEscalation: subagentBlockerEscalation,
+    finalizationWording: workerFinalizationWording,
     visionCalls: MAX_SUBAGENT_VISION_CALLS,
     ...(deps.currentHost ? { currentHost: deps.currentHost } : {}),
     ...(deps.currentPageUrl ? { currentPageUrl: deps.currentPageUrl } : {}),
+    ...(deps.settledPageState ? { settledPageState: deps.settledPageState } : {}),
+    ...(deps.describeRef ? { describeRef: deps.describeRef } : {}),
   })
 
   const requestArgs = () => ({

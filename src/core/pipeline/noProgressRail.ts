@@ -65,14 +65,22 @@ const APPROACH_CHANGE_INSTRUCTION =
 /**
  * The Finalization directive riding the action that exhausts the second
  * Approach — parallel to FINALIZATION_ANSWER_DIRECTIVE's vocabulary, for
- * the no_progress cause.
+ * the no_progress cause. The Run's wording; a caller whose Finalization
+ * reads differently injects its own (#159: a Browse Subagent finalizes
+ * into a report, not an answer, and has no bookkeeping to do).
  */
-const APPROACH_EXHAUSTED_DIRECTIVE =
+export const ORCHESTRATOR_APPROACH_EXHAUSTED_DIRECTIVE =
   'A second Approach has made no progress — the run is finalizing. Acquisition, vision, media, delegation, and ' +
   'ask_user tools are closed. Finalize now: reply with your final answer JSON and state honestly what was and ' +
   'was not completed.'
 
 export interface NoProgressRailDeps {
+  /**
+   * What the action exhausting the second Approach tells the model
+   * (#159). Defaults to the Run's; a Browse Subagent injects its own, the
+   * way the Blocker gate's escalation already is.
+   */
+  approachExhaustedDirective?: string
   /**
    * The visible tab's settled page state (#125's SettledPageState): read
    * at gate time (the state an attempt starts from) and after each
@@ -110,6 +118,7 @@ interface AttemptRecord {
 
 export function createNoProgressRail(deps: NoProgressRailDeps = {}): NoProgressRail {
   const settledState = deps.settledState
+  const approachExhaustedDirective = deps.approachExhaustedDirective ?? ORCHESTRATOR_APPROACH_EXHAUSTED_DIRECTIVE
   // The settled state as of the last successful page-facing read — the
   // Progress baseline. Null before the first read: the baseline cannot
   // itself be no-progress.
@@ -151,7 +160,7 @@ export function createNoProgressRail(deps: NoProgressRailDeps = {}): NoProgressR
     noProgress = 0
     if (exhaustedApproaches >= EXHAUSTED_APPROACHES_BEFORE_FINALIZATION) {
       tripped = true
-      return APPROACH_EXHAUSTED_DIRECTIVE
+      return approachExhaustedDirective
     }
     return APPROACH_CHANGE_INSTRUCTION
   }

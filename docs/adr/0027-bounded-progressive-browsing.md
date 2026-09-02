@@ -47,7 +47,14 @@ mechanics and encourage redundant reads, clicks, screenshots, and vision calls.
   module as the Run, in a Subagent configuration whose budget is that
   Subagent's own, whose deadline is the parent Run's shared active-work
   deadline taken ahead of its remaining rounds, and which carries no Effort
-  Tier; its stop causes are Finalization Causes. The
+  Tier; its stop causes are Finalization Causes. Its Tool Round is the Run's
+  too — the same executor, the same gate order — and it runs with the Run's
+  rails and deadline gate: the search-loop rail, the no-progress rails, and
+  the per-call deadline gate all apply to a Browse Subagent, so a worker
+  that reaches the search cap is refused, a worker whose second Approach
+  makes no progress finalizes for `no_progress`, and no sibling call in a
+  worker's round begins after the shared deadline has passed. A worker with
+  no tab of its own observes nothing, so its rails are inert. The
   orchestrator has a 32-round hard ceiling; aggregate work is bounded by
   concurrency and the shared active-work deadline.
 - User-dependent waits pause active-work time. Steering creates a fresh Run Plan

@@ -130,6 +130,13 @@ export function createSubagentTaskApi(deps: SubagentWorkhorseDeps): SubagentTask
           // findings and the orchestrator's Evidence Checkpoint for them
           // ground against.
           ...(controller ? { currentPageUrl: () => controller.state().url ?? null } : {}),
+          // What the worker's rails observe (#159): its own tab's settled
+          // state for the no-progress rails, and its snapshot ref facts
+          // for the search-loop rail's typed-query signature — the same
+          // two seams the orchestrator's pipeline reads from its pane.
+          // A background worker has no tab, so its rails stay inert.
+          ...(controller ? { settledPageState: () => controller.settledState() } : {}),
+          ...(controller ? { describeRef: (ref: number) => controller.describeRef(ref) } : {}),
         },
         {
           task: spec.task,

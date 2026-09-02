@@ -62,6 +62,21 @@ export interface ToolRoundCapabilities {
 }
 
 /**
+ * How this caller's Finalization reads to its model (#159): the refusal a
+ * closed tool answers with once the round's work is over, and what the
+ * action exhausting a second Approach is told. The Run's own wording by
+ * default — a Browse Subagent finalizes into a report rather than an
+ * answer and has no Run Plan bookkeeping left to do, so it injects its
+ * own, the way it already injects the Blocker escalation.
+ */
+export interface FinalizationWording {
+  /** What a closed acquisition or ask_user call answers with in Finalization. */
+  readonly toolRefusal: string
+  /** What the action exhausting the second Approach is told (#126). */
+  readonly approachExhausted: string
+}
+
+/**
  * One executed call and the Observation it minted. The pair is the point:
  * the caller's model context and its ledger identities stay aligned by
  * construction rather than by two arrays pushed by hand.
@@ -143,6 +158,8 @@ export interface ToolRoundConfig {
   currentHost?(): string | null
   /** The escalation sentence a Blocker refusal carries: the Run's route, or a worker's relay (#81). */
   readonly blockerEscalation?: BlockerEscalation
+  /** How Finalization reads to this caller's model (#159). Defaults to the Run's. */
+  readonly finalizationWording?: FinalizationWording
   /** The visible tab's URL: the source recorded on page-facing Observations (#111). */
   currentPageUrl?(): string | null
   /** Snapshot ref facts: how the search-loop rail recognizes a typed GUI search (#82). */
@@ -215,8 +232,14 @@ export function createToolRoundExecutor(config: ToolRoundConfig): ToolRoundExecu
     ? createSearchLoopRail(config.describeRef ? { describeRef: config.describeRef } : {})
     : null
   const noProgressRail = capabilities.noProgressRail
-    ? createNoProgressRail(config.settledPageState ? { settledState: config.settledPageState } : {})
+    ? createNoProgressRail({
+        ...(config.settledPageState ? { settledState: config.settledPageState } : {}),
+        ...(config.finalizationWording
+          ? { approachExhaustedDirective: config.finalizationWording.approachExhausted }
+          : {}),
+      })
     : null
+  const closedToolRefusal = config.finalizationWording?.toolRefusal ?? finalizationToolRefusal
   // The Vision Budget is the round's, so the context tools execute against
   // acquires from it — a caller can never hand a tool a different one.
   const toolContext: ToolContext = { ...config.toolContext, acquireVision: () => visionBudget.tryAcquire() }
@@ -389,7 +412,7 @@ export function createToolRoundExecutor(config: ToolRoundConfig): ToolRoundExecu
         intercepted !== null
           ? intercepted
           : closedTool !== undefined && (closedTool.acquisition === true || closedTool.askUser !== undefined)
-            ? { ok: false, error: finalizationToolRefusal }
+            ? { ok: false, error: closedToolRefusal }
             : yield* runGatedTool(call, turnId)
 
       // Observation ledger (#111): the raw outcome as the tool produced
