@@ -595,6 +595,10 @@ describe('command pipeline', () => {
       expect(events.filter((event) => event.type === 'tool_result' && event.name === 'noop' && event.ok)).toHaveLength(4)
     })
 
+    // This is the plan nudge's one pipeline-level test (#160): the nudge is
+    // owed at the missing first plan and lands on a real result. That it
+    // waits for a result that can carry it is the Notices module's rule,
+    // pinned by notices.test.ts's owed-across-uncarriable-results case.
     it('defaults a missing first plan to Lookup, retains the Command Echo, nudges once, and runs useful work', async () => {
       const llm = new ScriptedLlm([
         { kind: 'tool_calls', calls: [{ id: 'c1', name: 'noop', args: {} }] },
@@ -657,31 +661,6 @@ describe('command pipeline', () => {
         'direct_action',
       ])
       expect(events.find((event) => event.type === 'run_headline')).toMatchObject({ text: 'Do the thing' })
-    })
-
-    it('keeps the corrective nudge owed until a useful result can carry it', async () => {
-      const boom: Tool = {
-        name: 'boom',
-        async execute() {
-          throw new Error('kaboom')
-        },
-      }
-      const llm = new ScriptedLlm([
-        { kind: 'tool_calls', calls: [{ id: 'b1', name: 'boom', args: {} }] },
-        { kind: 'tool_calls', calls: [{ id: 'c1', name: 'noop', args: {} }] },
-        { kind: 'answer', speak: 'Done.', display: 'Done.' },
-      ])
-      const pipeline = createCommandPipeline({ llm, tts: new RecordingTts(), clock: new FakeClock(), tools: [createReportRunPlanTool(), boom, noop] })
-
-      const events = await collect(pipeline, 'do the thing')
-
-      // Round 1's failing sibling could not carry the nudge — round 2's
-      // useful result delivers it, once.
-      const nudged = events.filter(
-        (event) => event.type === 'tool_result' && typeof event.result === 'string' && event.result.includes('report_run_plan'),
-      )
-      expect(nudged).toHaveLength(1)
-      expect(nudged[0]).toMatchObject({ callId: 'c1' })
     })
 
     it('pairs a plan-only round with the plan-with-work correction (#131)', async () => {
@@ -2637,6 +2616,12 @@ describe('command pipeline', () => {
       args: { objective, headline: objective, effort_tier: 'lookup' },
     })
 
+    // The one no-progress wiring test (#160): the rail's gate and its
+    // immediate Notice reach the model through the pipeline. The rail's own
+    // semantics — a moving settled state never refusing, action-identity
+    // folding, the resets — live in noProgressRail.test.ts, and the gate's
+    // place ahead of the Confirmation window in toolRound.test.ts's gate
+    // order suite.
     it('nudges then refuses an equivalent action against equivalent state, never executing the third (#126/AC1)', async () => {
       let executions = 0
       const navigate: Tool = {
@@ -2672,42 +2657,6 @@ describe('command pipeline', () => {
       expect(results[0]).toMatchObject({ ok: true })
       expect(results[1]).toMatchObject({ ok: true, result: expect.stringMatching(/unchanged page state/) })
       expect(results[2]).toMatchObject({ ok: false, error: expect.stringMatching(/^Not executed — this action repeats/) })
-      expect(events.at(-1)).toEqual({ type: 'done', outcome: 'done', finalizationCause: 'model_answered', at: 0 })
-    })
-
-    it('never refuses repeated actions while the settled state keeps progressing (#126/AC2)', async () => {
-      let current: SettledPageState = BASE_STATE
-      let executions = 0
-      const navigate: Tool = {
-        name: 'navigate',
-        acquisition: true,
-        async execute() {
-          executions += 1
-          // The page genuinely moves with every navigation.
-          current = { ...current, textDigest: `Fresh content, visit ${executions}.` }
-          return 'navigated'
-        },
-      }
-      const llm = new ScriptedLlm([
-        { kind: 'tool_calls', calls: [lookupPlan('p1', 'Watch the page'), { id: 'n1', name: 'navigate', args: { url: 'https://example.com/article' } }] },
-        ...[2, 3, 4, 5].map((i) => ({
-          kind: 'tool_calls' as const,
-          calls: [{ id: `n${i}`, name: 'navigate', args: { url: 'https://example.com/article' } }],
-        })),
-        { kind: 'answer', speak: 'Done.', display: 'Done.' },
-      ])
-      const pipeline = createCommandPipeline({
-        llm,
-        tts: new RecordingTts(),
-        clock: new FakeClock(),
-        tools: [createReportRunPlanTool(), navigate],
-        settledPageState: () => current,
-      })
-
-      const events = await collect(pipeline, 'watch the page')
-
-      expect(executions).toBe(5)
-      expect(events.filter((e) => e.type === 'tool_result' && !e.ok)).toEqual([])
       expect(events.at(-1)).toEqual({ type: 'done', outcome: 'done', finalizationCause: 'model_answered', at: 0 })
     })
 
@@ -3130,6 +3079,13 @@ describe('command pipeline', () => {
     formHasSearch: false,
   })
 
+  // The one search-loop wiring test (#160): the rail's verdict reaches the
+  // model on the very result it observed, and rides into the next round.
+  // Streak resets, the failed-intervening-tool case, the pre-execution cap
+  // and the q=/typed-search signatures live in searchLoopRail.test.ts, and
+  // the gate's place after the Vision Budget in toolRound.test.ts's gate
+  // order suite. That a gate refusal redirects rather than failing the run
+  // is pinned once here, by the Blocker test below.
   it('appends the search-loop nudge to the third consecutive similar typed search result (#74/#83)', async () => {
     let executions = 0
     const type = {
@@ -3166,192 +3122,12 @@ describe('command pipeline', () => {
     expect(lastResult?.outcome).toMatchObject({ ok: true, result: expect.stringMatching(/ask_user/) })
   })
 
-  it('resets the search-loop streak when another tool intervenes (#74)', async () => {
-    const type = {
-      name: 'type',
-      async execute() {
-        return 'typed [7]: value="…"'
-      },
-    }
-    const navigate = {
-      name: 'navigate',
-      async execute() {
-        return 'navigated'
-      },
-    }
-    const llm = new ScriptedLlm([
-      { kind: 'tool_calls', calls: [{ id: 't1', name: 'type', args: { ref: 7, text: 'best mechanical keyboards 2026\n' } }] },
-      { kind: 'tool_calls', calls: [{ id: 't2', name: 'type', args: { ref: 7, text: 'best mechanical keyboards 2026 reddit\n' } }] },
-      { kind: 'tool_calls', calls: [{ id: 'n1', name: 'navigate', args: { url: 'https://example.com/a' } }] },
-      { kind: 'tool_calls', calls: [{ id: 't3', name: 'type', args: { ref: 7, text: 'best mechanical keyboards 2026 guide\n' } }] },
-      { kind: 'answer', speak: 'Done.', display: 'Done.' },
-    ])
-    const pipeline = createCommandPipeline({
-      llm,
-      tts: new RecordingTts(),
-      clock: new FakeClock(),
-      tools: [type, navigate],
-      describeRef: searchBoxDescribeRef,
-    })
-
-    const events = await collect(pipeline, 'find keyboards')
-
-    expect(
-      events.filter((event) => event.type === 'tool_result' && event.ok && typeof event.result === 'string' && event.result.includes('ask_user')),
-    ).toHaveLength(0)
-  })
-
-  it('keeps the search-loop streak across a failed intervening tool call (#74)', async () => {
-    const type = {
-      name: 'type',
-      async execute() {
-        return 'typed [7]: value="…"'
-      },
-    }
-    const failingNavigate = {
-      name: 'navigate',
-      async execute() {
-        throw new Error('navigation failed')
-      },
-    }
-    const llm = new ScriptedLlm([
-      { kind: 'tool_calls', calls: [{ id: 't1', name: 'type', args: { ref: 7, text: 'best mechanical keyboards 2026\n' } }] },
-      { kind: 'tool_calls', calls: [{ id: 'n1', name: 'navigate', args: { url: 'https://example.com/a' } }] },
-      { kind: 'tool_calls', calls: [{ id: 't2', name: 'type', args: { ref: 7, text: 'best mechanical keyboard 2026 reddit\n' } }] },
-      { kind: 'tool_calls', calls: [{ id: 't3', name: 'type', args: { ref: 7, text: 'best mechanical keyboards 2026 guide\n' } }] },
-      { kind: 'answer', speak: 'Recovered.', display: 'Recovered.' },
-    ])
-    const pipeline = createCommandPipeline({
-      llm,
-      tts: new RecordingTts(),
-      clock: new FakeClock(),
-      tools: [type, failingNavigate],
-      describeRef: searchBoxDescribeRef,
-    })
-
-    const events = await collect(pipeline, 'find keyboards')
-
-    // The failed navigate consumed nothing — the third similar search still
-    // nudges (run 46: failing tools + endless reworded searches).
-    const nudged = events.filter(
-      (event) => event.type === 'tool_result' && event.ok && event.name === 'type' && typeof event.result === 'string' && event.result.includes('ask_user'),
-    )
-    expect(nudged).toHaveLength(1)
-    expect(nudged[0]).toMatchObject({ callId: 't3' })
-  })
-
-  it('refuses the search loop at the cap without executing, and the run continues (#74)', async () => {
-    let executions = 0
-    const type = {
-      name: 'type',
-      async execute() {
-        executions += 1
-        return 'typed [7]: value="best mechanical keyboards 2026"'
-      },
-    }
-    const searchRound = (i: number) => ({
-      kind: 'tool_calls' as const,
-      calls: [{ id: `t${i}`, name: 'type', args: { ref: 7, text: 'best mechanical keyboards 2026\n' } }],
-    })
-    const llm = new ScriptedLlm([
-      ...Array.from({ length: 6 }, (_, i) => searchRound(i)),
-      { kind: 'answer', speak: 'Recovered.', display: 'Recovered.' },
-    ])
-    const pipeline = createCommandPipeline({
-      llm,
-      tts: new RecordingTts(),
-      clock: new FakeClock(),
-      tools: [type],
-      describeRef: searchBoxDescribeRef,
-    })
-
-    const events = await collect(pipeline, 'find keyboards')
-
-    // Five similar searches ran; the sixth was refused before execution.
-    expect(executions).toBe(5)
-    const refusals = events.filter((event) => event.type === 'tool_result' && !event.ok)
-    expect(refusals).toHaveLength(1)
-    expect(refusals[0]).toMatchObject({
-      error: expect.stringMatching(/[Ss]earch loop limit \(5 consecutive similar searches/),
-    })
-    // A refusal redirects, it never fails the run.
-    expect(events.find((event) => event.type === 'error')).toBeUndefined()
-    expect(events.at(-1)).toMatchObject({ type: 'done', outcome: 'done' })
-  })
-
-  it('chains a q=-carrying navigate into the search streak instead of resetting it (#82)', async () => {
-    const type = {
-      name: 'type',
-      async execute() {
-        return 'typed [7]: value="…"'
-      },
-    }
-    const navigate = {
-      name: 'navigate',
-      async execute() {
-        return 'navigated: url=https://www.google.com/search?q=… title="Google Search"'
-      },
-    }
-    const llm = new ScriptedLlm([
-      { kind: 'tool_calls', calls: [{ id: 't1', name: 'type', args: { ref: 7, text: 'best mechanical keyboards 2026\n' } }] },
-      { kind: 'tool_calls', calls: [{ id: 't2', name: 'type', args: { ref: 7, text: 'best mechanical keyboard 2026 reddit\n' } }] },
-      {
-        kind: 'tool_calls',
-        calls: [{ id: 'n1', name: 'navigate', args: { url: 'https://www.google.com/search?q=best+mechanical+keyboards+2026+guide' } }],
-      },
-      { kind: 'answer', speak: 'Recovered.', display: 'Recovered.' },
-    ])
-    const pipeline = createCommandPipeline({
-      llm,
-      tts: new RecordingTts(),
-      clock: new FakeClock(),
-      tools: [type, navigate],
-      describeRef: searchBoxDescribeRef,
-    })
-
-    const events = await collect(pipeline, 'find keyboards')
-
-    // The third similar search — via navigate — chains (run 47's invisible
-    // reset) and carries the advisory nudge on its result.
-    const results = events.filter((event) => event.type === 'tool_result' && event.ok)
-    expect(results[0]).toMatchObject({ result: expect.not.stringMatching(/ask_user/) })
-    expect(results[2]).toMatchObject({
-      callId: 'n1',
-      result: expect.stringMatching(/navigated[\s\S]*reword[\s\S]*ask_user/),
-    })
-  })
-
-  it('chains text typed into a search input into the search streak (#82)', async () => {
-    const type = {
-      name: 'type',
-      async execute() {
-        return 'typed [7]: value="…"'
-      },
-    }
-    const llm = new ScriptedLlm([
-      { kind: 'tool_calls', calls: [{ id: 't1', name: 'type', args: { ref: 7, text: 'reddit manhwa tier list horizon\n' } }] },
-      { kind: 'tool_calls', calls: [{ id: 't2', name: 'type', args: { ref: 7, text: 'reddit manhwa tier list horizon boxer\n' } }] },
-      { kind: 'tool_calls', calls: [{ id: 't3', name: 'type', args: { ref: 7, text: 'reddit manhwa tier list 2023\n' } }] },
-      { kind: 'answer', speak: 'Recovered.', display: 'Recovered.' },
-    ])
-    const pipeline = createCommandPipeline({
-      llm,
-      tts: new RecordingTts(),
-      clock: new FakeClock(),
-      tools: [type],
-      describeRef: searchBoxDescribeRef,
-    })
-
-    const events = await collect(pipeline, 'find the post')
-
-    const results = events.filter((event) => event.type === 'tool_result' && event.ok)
-    expect(results[0]).toMatchObject({ result: expect.not.stringMatching(/ask_user/) })
-    expect(results[2]).toMatchObject({
-      callId: 't3',
-      result: expect.stringMatching(/typed[\s\S]*reword[\s\S]*ask_user/),
-    })
-  })
-
+  // The two Blocker tests the pipeline keeps (#160): this one for the
+  // wiring — refusals reach the model, and a refusal redirects rather than
+  // failing the run — and the lifetime test below, which no module test
+  // can reach. The exemptions, the different-host disarm and the arming
+  // rules live in blockerGate.test.ts, and the gate's place ahead of risk
+  // assessment in toolRound.test.ts's gate order suite.
   it('refuses same-wall browser calls after a marker rides a result, and the run continues (#80)', async () => {
     const WALLED = 'navigated to https://www.reddit.com/search\nBLOCKER:challenge www.reddit.com\nThis page is a Blocker — a challenge wall.'
     let current: string | null = null
@@ -3414,100 +3190,6 @@ describe('command pipeline', () => {
     expect(llm.requests[3].toolResults.map((entry) => entry.outcome.ok)).toEqual([true, false, false])
   })
 
-  it('never refuses read_page, look, or ask_user on the walled host (#80)', async () => {
-    const WALLED = 'page\nBLOCKER:challenge www.reddit.com\nThis page is a Blocker — a challenge wall.'
-    const current = 'www.reddit.com'
-    let readRuns = 0
-    let lookRuns = 0
-    const navigate = {
-      name: 'navigate',
-      async execute() {
-        return WALLED
-      },
-    }
-    const readPage = {
-      name: 'read_page',
-      async execute() {
-        readRuns += 1
-        return WALLED
-      },
-    }
-    const look = {
-      name: 'look',
-      usesVision: true,
-      async execute() {
-        lookRuns += 1
-        return 'a challenge wall fills the page'
-      },
-    }
-    const llm = new ScriptedLlm([
-      { kind: 'tool_calls', calls: [{ id: 'n1', name: 'navigate', args: { url: 'https://www.reddit.com/search' } }] },
-      { kind: 'tool_calls', calls: [{ id: 'r1', name: 'read_page', args: {} }] },
-      { kind: 'tool_calls', calls: [{ id: 'l1', name: 'look', args: {} }] },
-      { kind: 'tool_calls', calls: [{ id: 'a1', name: 'ask_user', args: { question: 'Can you complete the challenge in the browser tab?' } }] },
-      { kind: 'answer', speak: 'Asking for help.', display: 'Asking for help.' },
-    ])
-    const pipeline = createCommandPipeline({
-      llm,
-      tts: new RecordingTts(),
-      clock: new FakeClock(),
-      tools: [navigate, readPage, look, createAskUserTool()],
-      currentHost: () => current,
-    })
-
-    const events = await collect(pipeline, 'find the post', (event, activePipeline) => {
-      if (event.type === 'ask_requested') activePipeline.resolveAsk(event.askId, 'Done, I solved it.')
-    })
-
-    expect(readRuns).toBe(1)
-    expect(lookRuns).toBe(1)
-    expect(events.filter((event) => event.type === 'tool_result' && !event.ok)).toHaveLength(0)
-    const askResult = events.find((event) => event.type === 'tool_result' && event.name === 'ask_user')
-    expect(askResult).toMatchObject({ ok: true, result: 'Done, I solved it.' })
-    expect(events.at(-1)).toMatchObject({ type: 'done', outcome: 'done' })
-  })
-
-  it('disarms the same-wall gate after a successful different-host interaction (#80)', async () => {
-    const WALLED = 'navigated to https://www.reddit.com/search\nBLOCKER:challenge www.reddit.com\nThis page is a Blocker — a challenge wall.'
-    let current: string | null = null
-    let clickRuns = 0
-    const navigate = {
-      name: 'navigate',
-      async execute(call: ToolCall) {
-        const url = typeof call.args.url === 'string' ? call.args.url : ''
-        current = hostFromUrl(url) ?? current
-        return url.includes('reddit.com') ? WALLED : `navigated to ${url}`
-      },
-    }
-    const click = {
-      name: 'click',
-      async execute() {
-        clickRuns += 1
-        return 'clicked'
-      },
-    }
-    const llm = new ScriptedLlm([
-      { kind: 'tool_calls', calls: [{ id: 'n1', name: 'navigate', args: { url: 'https://www.reddit.com/search' } }] },
-      { kind: 'tool_calls', calls: [{ id: 'n2', name: 'navigate', args: { url: 'https://example.com/article' } }] },
-      { kind: 'tool_calls', calls: [{ id: 'c1', name: 'click', args: { ref: 3 } }] },
-      { kind: 'answer', speak: 'Read it elsewhere.', display: 'Read it elsewhere.' },
-    ])
-    const pipeline = createCommandPipeline({
-      llm,
-      tts: new RecordingTts(),
-      clock: new FakeClock(),
-      tools: [navigate, click],
-      currentHost: () => current,
-    })
-
-    const events = await collect(pipeline, 'find the post')
-
-    // Moving on and interacting elsewhere lifts the refusal.
-    expect(clickRuns).toBe(1)
-    expect(events.filter((event) => event.type === 'tool_result' && !event.ok)).toHaveLength(0)
-    expect(events.at(-1)).toMatchObject({ type: 'done', outcome: 'done' })
-  })
-
   it('creates the same-wall gate fresh per run (#80)', async () => {
     const WALLED = 'navigated to https://www.reddit.com/search\nBLOCKER:challenge www.reddit.com\nThis page is a Blocker — a challenge wall.'
     const current = 'www.reddit.com'
@@ -3550,46 +3232,6 @@ describe('command pipeline', () => {
     expect(clickRuns).toBe(1)
     expect(firstEvents.filter((event) => event.type === 'tool_result' && !event.ok)).toHaveLength(1)
     expect(events.filter((event) => event.type === 'tool_result' && !event.ok)).toHaveLength(0)
-  })
-
-  it('refuses a walled-host confirm-tier call before any user-facing confirmation opens (#80)', async () => {
-    const WALLED = 'navigated to https://www.reddit.com/search\nBLOCKER:challenge www.reddit.com\nThis page is a Blocker — a challenge wall.'
-    const current = 'www.reddit.com'
-    let executions = 0
-    const navigate = {
-      name: 'navigate',
-      async execute() {
-        return WALLED
-      },
-    }
-    const submitClick = {
-      name: 'click',
-      assessRisk: () => ({ kind: 'confirm' as const, prompt: 'Click this submit button?' }),
-      async execute() {
-        executions += 1
-        return 'clicked'
-      },
-    }
-    const llm = new ScriptedLlm([
-      { kind: 'tool_calls', calls: [{ id: 'n1', name: 'navigate', args: { url: 'https://www.reddit.com/search' } }] },
-      { kind: 'tool_calls', calls: [{ id: 'c1', name: 'click', args: { ref: 9 } }] },
-      { kind: 'answer', speak: 'Escalated instead.', display: 'Escalated instead.' },
-    ])
-    const pipeline = createCommandPipeline({
-      llm,
-      tts: new RecordingTts(),
-      clock: new FakeClock(),
-      tools: [navigate, submitClick],
-      currentHost: () => current,
-    })
-
-    const events = await collect(pipeline, 'post the comment')
-
-    expect(executions).toBe(0)
-    expect(events.some((event) => event.type === 'confirmation_requested')).toBe(false)
-    expect(events.find((event) => event.type === 'tool_result' && !event.ok)).toMatchObject({
-      error: expect.stringMatching(/www\.reddit\.com is walled for this run/),
-    })
   })
 
   it('gives every model round the same immutable Journal and Working Memory snapshots', async () => {
@@ -5148,6 +4790,12 @@ describe('command pipeline — session reset (#99)', () => {
     })
   }
 
+  // Sibling suppression itself — before the sole call as well as after it
+  // — belongs to the executor (#160): toolRound.test.ts's round-end suite
+  // runs a response of spin, new_session, spin and keeps only the reset.
+  // What stays here is the replay boundary the module cannot reach: a
+  // successful reset consuming the run, and a failed one leaving the run
+  // to finish.
   it('consumes the rest of the run when the Session Reset tool succeeds', async () => {
     executions = 0
     const pipeline = resetPipeline([
@@ -5183,24 +4831,6 @@ describe('command pipeline — session reset (#99)', () => {
     // pre-reset work is discarded wholesale.
     expect(events.some((event) => event.type === 'display' || event.type === 'speak')).toBe(false)
     expect(commits).toEqual([])
-    expect(events.at(-1)).toMatchObject({ type: 'done', outcome: 'reset' })
-  })
-
-  it('suppresses siblings listed before the Session Reset call too', async () => {
-    executions = 0
-    const pipeline = resetPipeline([
-      { kind: 'tool_calls', calls: [
-        { id: 'c1', name: 'spin', args: {} },
-        { id: 'c2', name: 'new_session', args: {} },
-        { id: 'c3', name: 'spin', args: {} },
-      ] },
-      { kind: 'answer', speak: 'Fresh start.', display: 'Never reached.' },
-    ])
-
-    const events = await collect(pipeline, 'forget all that — different question')
-
-    expect(executions).toBe(0)
-    expect(events.filter((event) => event.type === 'tool_call').map((event) => event.name)).toEqual(['new_session'])
     expect(events.at(-1)).toMatchObject({ type: 'done', outcome: 'reset' })
   })
 

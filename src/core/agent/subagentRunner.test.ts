@@ -537,6 +537,12 @@ describe('runSubagent', () => {
     })
   })
 
+  // The two Blocker tests the runner keeps (#160): this one for the wiring
+  // — the worker's own escalation wording reaching its model — and the
+  // lifetime test below. The exemptions and the different-host disarm live
+  // in blockerGate.test.ts, which pins the ASK_USER relay wording too, and
+  // the gate's place ahead of the risk tiers in toolRound.test.ts's gate
+  // order suite.
   it('refuses the second same-host browser call with the ASK_USER relay (#81)', async () => {
     const WALLED = 'navigated to https://www.reddit.com/search\nBLOCKER:challenge www.reddit.com\nThis page is a Blocker — a challenge wall.'
     let current: string | null = null
@@ -592,127 +598,6 @@ describe('runSubagent', () => {
       result: expect.stringMatching(/BLOCKER:challenge www\.reddit\.com/),
     })
     expect(report.text).toBe('Escalated in the report.')
-  })
-
-  it('never refuses read_page, look, or ask_user on the walled host (#81)', async () => {
-    const WALLED = 'page\nBLOCKER:challenge www.reddit.com\nThis page is a Blocker — a challenge wall.'
-    const current = 'www.reddit.com'
-    let readRuns = 0
-    let lookRuns = 0
-    const navigate: Tool = {
-      name: 'navigate',
-      async execute() {
-        return WALLED
-      },
-    }
-    const readPage: Tool = {
-      name: 'read_page',
-      async execute() {
-        readRuns += 1
-        return WALLED
-      },
-    }
-    const look: Tool = {
-      name: 'look',
-      usesVision: true,
-      async execute() {
-        lookRuns += 1
-        return 'a challenge wall fills the page'
-      },
-    }
-    const llm = new ScriptedLlm([
-      { kind: 'tool_calls', calls: [{ id: 'n1', name: 'navigate', args: { url: 'https://www.reddit.com/search' } }] },
-      { kind: 'tool_calls', calls: [{ id: 'r1', name: 'read_page', args: {} }] },
-      { kind: 'tool_calls', calls: [{ id: 'l1', name: 'look', args: {} }] },
-      { kind: 'tool_calls', calls: [{ id: 'a1', name: 'ask_user', args: { question: 'Can you complete the challenge in the browser tab?' } }] },
-    ])
-
-    const report = await runSubagent(
-      { llm, tools: [navigate, readPage, look, createSubagentAskTool()], clock: new FakeClock(), currentHost: () => current },
-      { task: 'find the post', isCancelled: () => false },
-    )
-
-    expect(readRuns).toBe(1)
-    expect(lookRuns).toBe(1)
-    expect(llm.requests.filter((request) => request.toolResults.some((entry) => !entry.outcome.ok))).toHaveLength(0)
-    // The ask directive ends the run and becomes the report the
-    // orchestrator relays — the escalation itself, untouched by the gate.
-    expect(report.text).toContain(`${ASK_ESCALATION_PREFIX} Can you complete the challenge in the browser tab?`)
-  })
-
-  it('disarms the same-wall gate after a successful different-host interaction (#81)', async () => {
-    const WALLED = 'navigated to https://www.reddit.com/search\nBLOCKER:challenge www.reddit.com\nThis page is a Blocker — a challenge wall.'
-    let current: string | null = null
-    let clickRuns = 0
-    const navigate: Tool = {
-      name: 'navigate',
-      async execute(call) {
-        const url = typeof call.args.url === 'string' ? call.args.url : ''
-        current = hostFromUrl(url) ?? current
-        return url.includes('reddit.com') ? WALLED : `navigated to ${url}`
-      },
-    }
-    const click: Tool = {
-      name: 'click',
-      async execute() {
-        clickRuns += 1
-        return 'clicked'
-      },
-    }
-    const llm = new ScriptedLlm([
-      { kind: 'tool_calls', calls: [{ id: 'n1', name: 'navigate', args: { url: 'https://www.reddit.com/search' } }] },
-      { kind: 'tool_calls', calls: [{ id: 'n2', name: 'navigate', args: { url: 'https://example.com/article' } }] },
-      { kind: 'tool_calls', calls: [{ id: 'c1', name: 'click', args: { ref: 3 } }] },
-      { kind: 'answer', speak: 's', display: 'Read it elsewhere.' },
-    ])
-
-    const report = await runSubagent(
-      { llm, tools: [navigate, click], clock: new FakeClock(), currentHost: () => current },
-      { task: 'find the post', isCancelled: () => false },
-    )
-
-    // Moving on and interacting elsewhere lifts the refusal.
-    expect(clickRuns).toBe(1)
-    expect(llm.requests.filter((request) => request.toolResults.some((entry) => !entry.outcome.ok))).toHaveLength(0)
-    expect(report.text).toBe('Read it elsewhere.')
-  })
-
-  it('refuses a walled-host call ahead of the risk tiers — before the confirm downgrade (#81)', async () => {
-    const WALLED = 'navigated to https://www.reddit.com/search\nBLOCKER:challenge www.reddit.com\nThis page is a Blocker — a challenge wall.'
-    const current = 'www.reddit.com'
-    let executions = 0
-    const navigate: Tool = {
-      name: 'navigate',
-      async execute() {
-        return WALLED
-      },
-    }
-    const submitClick: Tool = {
-      name: 'click',
-      assessRisk: () => ({ kind: 'confirm', prompt: 'Click this submit button?' }),
-      async execute() {
-        executions += 1
-        return 'clicked'
-      },
-    }
-    const llm = new ScriptedLlm([
-      { kind: 'tool_calls', calls: [{ id: 'n1', name: 'navigate', args: { url: 'https://www.reddit.com/search' } }] },
-      { kind: 'tool_calls', calls: [{ id: 'c1', name: 'click', args: { ref: 9 } }] },
-      { kind: 'answer', speak: 's', display: 'Escalated instead.' },
-    ])
-
-    await runSubagent(
-      { llm, tools: [navigate, submitClick], clock: new FakeClock(), currentHost: () => current },
-      { task: 'post the comment', isCancelled: () => false },
-    )
-
-    // The gate refusal, not the confirmation downgrade, is what the model
-    // sees — same ordering as the orchestrator pipeline.
-    expect(executions).toBe(0)
-    expect(llm.requests[2]?.toolResults[1]?.outcome).toMatchObject({
-      ok: false,
-      error: expect.stringMatching(/www\.reddit\.com is walled for this run/),
-    })
   })
 
   it('creates the same-wall gate fresh per run (#81)', async () => {
