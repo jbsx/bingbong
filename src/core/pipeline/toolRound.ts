@@ -164,8 +164,10 @@ export interface ToolRoundExecutor {
    * `tool_call` and `tool_result` events plus whatever the injected
    * decision and interrupt seams yield; returns the results and how the
    * round ended. Throws the caller's abort error when the run is stopped.
+   * The turn id is the diagnostics channels' key: a caller that traces
+   * nothing passes none.
    */
-  run(turn: { readonly calls: readonly ToolCall[] }, turnId: string): AsyncGenerator<UnstampedEvent, ToolRoundOutcome>
+  run(turn: { readonly calls: readonly ToolCall[] }, turnId?: string): AsyncGenerator<UnstampedEvent, ToolRoundOutcome>
   /**
    * A Steering replan (#119): the corrected objective faces the
    * no-progress accounting fresh. Everything else the executor owns is
@@ -177,11 +179,21 @@ export interface ToolRoundExecutor {
 }
 
 /**
- * Advisory bookkeeping (#29/#30): the perf log must never fail a round,
- * so a throwing tracer is swallowed here.
+ * What a call names no tool in the catalog answers with. Exported because
+ * an adapter can answer for the round (#158: a Subagent has no user, so
+ * its decisions seam answers an interactive ask as the tool it is not).
  */
-function recordSpan(tracer: PerfTracer | undefined, turnId: string, durMs: number, tool: string): void {
-  if (!tracer) return
+export function unknownToolError(name: string): ToolResultOutcome {
+  return { ok: false, error: `unknown tool: '${name}'` }
+}
+
+/**
+ * Advisory bookkeeping (#29/#30): the perf log must never fail a round,
+ * so a throwing tracer is swallowed here. Absent turn id — a caller that
+ * traces nothing — records nothing.
+ */
+function recordSpan(tracer: PerfTracer | undefined, turnId: string | undefined, durMs: number, tool: string): void {
+  if (!tracer || turnId === undefined) return
   try {
     tracer.span(turnId, 'tool', durMs, { tool })
   } catch {
@@ -221,9 +233,9 @@ export function createToolRoundExecutor(config: ToolRoundConfig): ToolRoundExecu
     }
   }
 
-  async function* runGatedTool(call: ToolCall, turnId: string): AsyncGenerator<UnstampedEvent, ToolResultOutcome> {
+  async function* runGatedTool(call: ToolCall, turnId: string | undefined): AsyncGenerator<UnstampedEvent, ToolResultOutcome> {
     const tool = toolsByName.get(call.name)
-    if (!tool) return { ok: false, error: `unknown tool: '${call.name}'` }
+    if (!tool) return unknownToolError(call.name)
 
     // ask_user (Tier 3): the round owns the ask — the tool only names the
     // question; the decisions seam (#156) puts it to the user and hands
@@ -306,9 +318,10 @@ export function createToolRoundExecutor(config: ToolRoundConfig): ToolRoundExecu
         // controller internals) key to this turn while it is open. Absent
         // channel — the call runs untouched.
         const subspans = config.diagnostics?.browserSubspans
-        result = subspans
-          ? await subspans.runInTurn(turnId, () => tool.execute(call, toolContext))
-          : await tool.execute(call, toolContext)
+        result =
+          subspans !== undefined && turnId !== undefined
+            ? await subspans.runInTurn(turnId, () => tool.execute(call, toolContext))
+            : await tool.execute(call, toolContext)
       } finally {
         if (tracer && toolStart !== undefined) {
           recordSpan(tracer, turnId, tracer.now() - toolStart, call.name)
@@ -335,7 +348,7 @@ export function createToolRoundExecutor(config: ToolRoundConfig): ToolRoundExecu
 
   async function* run(
     turn: { readonly calls: readonly ToolCall[] },
-    turnId: string,
+    turnId?: string,
   ): AsyncGenerator<UnstampedEvent, ToolRoundOutcome> {
     const results: ToolRoundResult[] = []
     // Finalization's one bookkeeping Tool Round (#117/AC3): every result

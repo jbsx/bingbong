@@ -4,7 +4,7 @@ import { runSubagent, SubagentCancelledError } from './subagentRunner'
 import type { Tool } from '../pipeline/tool'
 import type { WorkingMemorySnapshot } from '../session/workingMemory'
 import { VisionDeadlineError } from '../ports/vision'
-import { ASK_ESCALATION_PREFIX, createSubagentAskTool } from '../pipeline/askUserTools'
+import { ASK_ESCALATION_PREFIX, createAskUserTool, createSubagentAskTool } from '../pipeline/askUserTools'
 import { hostFromUrl } from '../pipeline/blockerGate'
 
 // The workhorse loop behind every subagent (issue #13): a deepseek-chat LLM
@@ -810,6 +810,133 @@ describe('runSubagent', () => {
     expect(result.text).toBe('Finished with context.')
     expect(llm.requests[1]?.toolResults).toMatchObject([
       { call: { id: 'one' }, outcome: { ok: true, result: 'first result' } },
+    ])
+  })
+
+  // #158: the Tool Round executor runs in a worker with all three
+  // capability flags off — one test per flag pins that nothing the Run's
+  // rails do can reach a delegated worker.
+  it('runs no search-loop rail — repeated similar searches are never nudged or refused (#158)', async () => {
+    let executions = 0
+    const navigate: Tool = {
+      name: 'navigate',
+      async execute() {
+        executions += 1
+        return 'search results'
+      },
+    }
+    const llm = new ScriptedLlm([
+      {
+        kind: 'tool_calls',
+        calls: Array.from({ length: 6 }, (_, index) => ({
+          id: `q${index}`,
+          name: 'navigate',
+          args: { url: 'https://example.com/search?q=best+noise+cancelling+headphones' },
+        })),
+      },
+      { kind: 'answer', speak: 's', display: 'Searched.' },
+    ])
+
+    await runSubagent({ llm, tools: [navigate], clock: new FakeClock() }, { task: 't', isCancelled: () => false })
+
+    // Six consecutive identical q= searches — past both the Run rail's
+    // nudge and its refusal thresholds — all executed, none annotated.
+    expect(executions).toBe(6)
+    const results = llm.requests[1]?.toolResults ?? []
+    expect(results).toHaveLength(6)
+    for (const result of results) {
+      expect(result.outcome).toEqual({ ok: true, result: 'search results' })
+    }
+  })
+
+  it('runs no no-progress rail — repeated identical actions are never nudged or refused (#158)', async () => {
+    let executions = 0
+    const click: Tool = {
+      name: 'click',
+      async execute() {
+        executions += 1
+        return 'clicked'
+      },
+    }
+    const llm = new ScriptedLlm([
+      {
+        kind: 'tool_calls',
+        calls: Array.from({ length: 6 }, (_, index) => ({ id: `c${index}`, name: 'click', args: { ref: 4 } })),
+      },
+      { kind: 'answer', speak: 's', display: 'Clicked.' },
+    ])
+
+    await runSubagent({ llm, tools: [click], clock: new FakeClock() }, { task: 't', isCancelled: () => false })
+
+    // Six identical clicks against an unchanging page would exhaust two
+    // Approaches in a Run and trip it into Finalization mid-round; a
+    // worker executes them all and finalizes for nothing.
+    expect(executions).toBe(6)
+    const results = llm.requests[1]?.toolResults ?? []
+    expect(results).toHaveLength(6)
+    for (const result of results) {
+      expect(result.outcome).toEqual({ ok: true, result: 'clicked' })
+    }
+  })
+
+  it('runs no per-call deadline gate — a round that outlives the parent deadline still finishes (#158)', async () => {
+    let expired = false
+    let executions = 0
+    const spin: Tool = {
+      name: 'spin',
+      async execute() {
+        executions += 1
+        expired = true
+        return 'spun'
+      },
+    }
+    const llm = new ScriptedLlm([
+      {
+        kind: 'tool_calls',
+        calls: [
+          { id: 'a', name: 'spin', args: {} },
+          { id: 'b', name: 'spin', args: {} },
+          { id: 'c', name: 'spin', args: {} },
+        ],
+      },
+      { kind: 'answer', speak: 's', display: 'Bounded report.' },
+    ])
+
+    const report = await runSubagent(
+      { llm, tools: [spin], clock: new FakeClock(), maxToolRounds: 12 },
+      { task: 't', isCancelled: () => false, isWorkExpired: () => expired },
+    )
+
+    // The parent deadline passed inside the round: a Run would refuse the
+    // two remaining calls before they began. The worker runs the round out
+    // and stops at its loop top instead — the reserved Answer round's
+    // directive is the only thing the deadline changes.
+    expect(executions).toBe(3)
+    const results = llm.requests[1]?.toolResults ?? []
+    expect(results).toHaveLength(3)
+    expect(results.filter((entry) => !entry.outcome.ok)).toHaveLength(0)
+    expect(report.text).toBe('Bounded report.')
+    expect(results[2]?.outcome).toMatchObject({
+      ok: true,
+      result: expect.stringMatching(/active-work deadline has passed[\s\S]*final report JSON/),
+    })
+  })
+
+  it('answers an interactive ask_user as an unknown tool — a worker has no user to ask (#158)', async () => {
+    const llm = new ScriptedLlm([
+      { kind: 'tool_calls', calls: [{ id: 'q1', name: 'ask_user', args: { question: 'Which city?' } }] },
+      { kind: 'answer', speak: 's', display: 'Reported instead.' },
+    ])
+
+    // The orchestrator's ask_user, handed to a worker by mistake: the
+    // decisions seam cannot open a window nobody can close.
+    await runSubagent(
+      { llm, tools: [createAskUserTool()], clock: new FakeClock() },
+      { task: 't', isCancelled: () => false },
+    )
+
+    expect(llm.requests[1]?.toolResults).toMatchObject([
+      { outcome: { ok: false, error: "unknown tool: 'ask_user'" } },
     ])
   })
 })

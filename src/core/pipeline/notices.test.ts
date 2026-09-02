@@ -25,11 +25,39 @@ describe('Notices', () => {
     notices.supply('budget', () => 'BUDGET')
     notices.owe('no_progress', 'NO PROGRESS')
     notices.owe('search_loop', 'SEARCH LOOP')
+    notices.owe('subagent_finalization', 'SUBAGENT FINALIZE')
 
     expect(text(notices.attach(ok, useful))).toBe(
-      ['page read', 'SEARCH LOOP', 'NO PROGRESS', 'PLAN', 'BUDGET', 'FINALIZE'].join('\n\n'),
+      ['page read', 'SEARCH LOOP', 'NO PROGRESS', 'PLAN', 'BUDGET', 'FINALIZE', 'SUBAGENT FINALIZE'].join('\n\n'),
     )
-    expect(NOTICE_PRECEDENCE).toEqual(['search_loop', 'no_progress', 'run_plan', 'budget', 'finalization'])
+    expect(NOTICE_PRECEDENCE).toEqual([
+      'search_loop',
+      'no_progress',
+      'run_plan',
+      'budget',
+      'finalization',
+      'subagent_finalization',
+    ])
+  })
+
+  // #158: the one kind that must reach the model however the result it
+  // rides read — a Subagent's reserved Answer round is its last, so a
+  // failed or structured final tool result cannot be allowed to swallow
+  // the instruction that closes the loop.
+  it('rides an always-riding directive on an error or a structured result too', () => {
+    const errored = createNotices()
+    errored.owe('subagent_finalization', 'FINALIZE NOW')
+    errored.owe('search_loop', 'DROPPED')
+    expect(errored.attach(fail, bookkeeping)).toEqual({ ok: false, error: 'boom\n\nFINALIZE NOW' })
+    // The immediate kind that could not ride died with the call, as ever.
+    expect(errored.delivered('search_loop')).toBe(false)
+
+    const jsonResult = createNotices()
+    jsonResult.owe('subagent_finalization', 'FINALIZE NOW')
+    expect(jsonResult.attach(structured, bookkeeping)).toEqual({
+      ok: true,
+      result: '{"paused":false}\n\nFINALIZE NOW',
+    })
   })
 
   it('returns the outcome untouched when nothing is owed', () => {

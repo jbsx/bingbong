@@ -1,19 +1,20 @@
 import type { Clock } from '../ports/clock'
-import { toErrorMessage } from '../errors'
 import { systemClock } from '../ports/clock'
 import type { AssistantTurn, LlmClient, ToolResult, ToolResultOutcome } from '../ports/llm'
 import type { Tool, ToolContext } from '../pipeline/tool'
 import type { WorkingMemorySnapshot } from '../session/workingMemory'
-import type { ObservationInput, ObservationRecord } from '../session/observationLedger'
+import type { ObservationRecord } from '../session/observationLedger'
 import { createObservationLedger } from '../session/observationLedger'
-import { VisionDeadlineError, VISION_DEADLINE_NUDGE } from '../ports/vision'
 import { ASK_ESCALATION_PREFIX } from '../pipeline/askUserTools'
-import { createBlockerGate, subagentBlockerEscalation } from '../pipeline/blockerGate'
+import { subagentBlockerEscalation } from '../pipeline/blockerGate'
 import { createEffortEpoch } from '../pipeline/effortEpoch'
+import { createNotices } from '../pipeline/notices'
+import type { RunDecisions } from '../pipeline/decisions'
+import type { RunInterrupts } from '../pipeline/interrupts'
+import { createToolRoundExecutor, unknownToolError } from '../pipeline/toolRound'
 import type { FinalizationCause } from '../session/runJournal'
 import { describeToolAction } from '../pipeline/toolCallDisplay'
-import { classifyToolObservation } from '../pipeline/toolObservations'
-import { createVisionBudget, MAX_SUBAGENT_VISION_CALLS } from './subagentRails'
+import { MAX_SUBAGENT_VISION_CALLS } from './subagentRails'
 import { droppedFindingsNote, validateReportFindings, type SubagentReport } from './subagentReport'
 
 // The subagent workhorse loop (issue #13): one LLM (deepseek-chat via the
@@ -24,6 +25,27 @@ import { droppedFindingsNote, validateReportFindings, type SubagentReport } from
 // is structured (#98): the prose answer plus validated findings and
 // unresolved items. Delegated Memory Entries (#98) ride every model round
 // as untrusted data — the worker reads them, never writes them.
+//
+// The round itself is not this module's (#158, issue #154 step 3): a Tool
+// Round is one implementation with two adapters, and this is the second.
+// The worker constructs the Tool Round executor in Subagent configuration —
+// its own Observation ledger and Notices, the Subagent Blocker escalation
+// (the ASK_USER relay), a decisions adapter that refuses every Confirmation
+// and cannot ask, interrupts that only poll cancellation, the ASK_USER
+// relay as its terminal result, the Subagent vision budget, and all three
+// capability flags off, so no search-loop, no-progress, or per-call
+// deadline refusal can reach a worker — and drains its generator. What
+// stays the worker's own is what has no counterpart in a Run: the reserved
+// Answer round, the deterministic bounded report, and the escalation early
+// return.
+//
+// Two things converge on the shared gate chain rather than staying as the
+// worker wrote them, and both are refusals either way: an `assessRisk`
+// that throws now fails closed to a Confirmation — refused, in the wording
+// below — instead of surfacing its own error, and the ASK_USER relay is
+// recorded in the worker's Observation ledger before it ends the round
+// (an escalation report carries no findings, so nothing grounds against
+// it). Everything the eval corpus measures is untouched.
 //
 // The loop is bounded by the Effort Epoch in Subagent configuration (#149,
 // ADR 0027): 12 Tool Rounds of its own plus the parent Run's shared
@@ -113,6 +135,24 @@ export class SubagentCancelledError extends Error {
 const DEFAULT_MAX_TOOL_ROUNDS = 60
 
 /**
+ * What a Confirmation verdict answers with inside a worker (#158): a
+ * Subagent has no user to approve anything, so the decisions seam denies
+ * every Confirmation with the wording the model has always read here.
+ */
+const CONFIRMATION_REFUSAL = 'subagents cannot ask the user for confirmation — skip this action and report it back'
+
+/**
+ * The ASK_USER relay (#18): the escalation directive the Subagent's
+ * ask_user tool returns. It ends the round and becomes the report verbatim
+ * — the workhorse model is never trusted to carry it through another round.
+ */
+function askEscalation(outcome: ToolResultOutcome): string | null {
+  return outcome.ok && typeof outcome.result === 'string' && outcome.result.startsWith(`${ASK_ESCALATION_PREFIX} `)
+    ? outcome.result
+    : null
+}
+
+/**
  * The Finalization directive for the worker's reserved Answer round
  * (#120): rides the last tool result the way the orchestrator's directive
  * rides its Finalization results — the model learns the work budget is
@@ -125,27 +165,6 @@ function workerFinalizationNotice(cause: FinalizationCause, maxToolRounds: numbe
       ? 'The parent run\u2019s active-work deadline has passed'
       : `Your delegated work budget (${maxToolRounds} tool rounds) is spent`
   return `${reason}. Tool calls are closed. Reply now with ONLY your final report JSON — state honestly what you found and what remains open.`
-}
-
-/** Appends the directive to the last tool result so the reserved round carries it. */
-function appendFinalizationNotice(toolResults: ToolResult[], notice: string): void {
-  const last = toolResults.at(-1)
-  if (last === undefined) return
-  if (last.outcome.ok) {
-    const payload =
-      typeof last.outcome.result === 'string'
-        ? last.outcome.result
-        : (() => {
-            try {
-              return JSON.stringify(last.outcome.result)
-            } catch {
-              return 'tool result'
-            }
-          })()
-    last.outcome = { ok: true, result: `${payload}\n\n${notice}` }
-  } else {
-    last.outcome = { ok: false, error: `${last.outcome.error}\n\n${notice}` }
-  }
 }
 
 /**
@@ -206,14 +225,6 @@ export async function runSubagent(deps: RunSubagentDeps, options: RunSubagentOpt
   const { llm, tools } = deps
   const clock = deps.clock ?? systemClock
   const maxToolRounds = deps.maxToolRounds ?? DEFAULT_MAX_TOOL_ROUNDS
-  const toolsByName = new Map(tools.map((tool) => [tool.name, tool]))
-  const visionBudget = createVisionBudget(MAX_SUBAGENT_VISION_CALLS)
-  // Same-wall Blocker gate (#81, ADR 0010): the orchestrator's gate with
-  // one difference — subagents cannot ask the user directly, so the
-  // refusal names the ASK_USER relay. Fresh per run, like the vision
-  // budget; without it an ungated workhorse burns its rounds silently
-  // against a wall.
-  const blockerGate = createBlockerGate(deps.currentHost, subagentBlockerEscalation)
   // The worker's own Observation ledger (#123, ADR 0028): private Working
   // State recording what this worker actually saw, so its report's findings
   // ground against real observations and the orchestrator's Evidence
@@ -225,13 +236,7 @@ export async function runSubagent(deps: RunSubagentDeps, options: RunSubagentOpt
     generation: 0,
     isCurrentGeneration: () => true,
   })
-  const observe = (input: ObservationInput): void => {
-    workerLedger.record(input)
-  }
-  const toolContext: ToolContext = {
-    clock,
-    acquireVision: () => visionBudget.tryAcquire(),
-  }
+  const toolContext: ToolContext = { clock }
   const toolResults: ToolResult[] = []
   let lastAction: string | null = null
   // This Subagent's Effort Epoch (#149, ADR 0027): the Run's bounded-effort
@@ -247,6 +252,60 @@ export async function runSubagent(deps: RunSubagentDeps, options: RunSubagentOpt
       toolRoundBudget: maxToolRounds,
       deadline: { expired: () => options.isWorkExpired?.() ?? false },
     },
+  })
+  // The worker's owed-Notice queue (#154): with every rail off, the only
+  // Notice a worker ever owes is its own Finalization directive below.
+  const notices = createNotices()
+  // A worker has no user (#158): every Confirmation verdict is denied with
+  // the wording the model has always read, and a stray interactive ask_user
+  // — the orchestrator's tool, never the Subagent's escalation one — is
+  // answered as the unknown tool it is rather than opening a window nobody
+  // can close.
+  const decisions: RunDecisions = {
+    async *ask(_question, call) {
+      return unknownToolError(call.name)
+    },
+    async *confirm() {
+      return { approved: false, outcome: { ok: false, error: CONFIRMATION_REFUSAL } }
+    },
+  }
+  // Cancellation is a worker's only interrupt (#158): the parent's Pause
+  // gate parks it and its cancel flag ends it. Nothing steers a worker, so
+  // `check` never returns a Directive and a round never ends steered.
+  const interrupts: RunInterrupts = {
+    async *check() {
+      await checkpoint(options)
+      return undefined
+    },
+    async *peek() {
+      await checkpoint(options)
+      return false
+    },
+    throwIfStopped() {
+      if (options.isCancelled()) throw new SubagentCancelledError()
+    },
+  }
+  // The Tool Round executor in Subagent configuration (#158): the gate
+  // order, the Blocker gate with the ASK_USER relay escalation, the
+  // Subagent vision budget, the Observation ledger sink, and the Notices
+  // delivery site are all inside it. Every capability flag is off, which is
+  // how this adoption stays behaviour-preserving: a worker runs no
+  // search-loop rail, no no-progress rail, and no per-call deadline gate.
+  const toolRound = createToolRoundExecutor({
+    clock,
+    tools,
+    effortEpoch: epoch,
+    notices,
+    observe: (input) => workerLedger.record(input),
+    toolContext,
+    decisions,
+    interrupts,
+    capabilities: { searchLoopRail: false, noProgressRail: false, deadlineGate: false },
+    terminalResult: (_call, outcome) => askEscalation(outcome) !== null,
+    blockerEscalation: subagentBlockerEscalation,
+    visionCalls: MAX_SUBAGENT_VISION_CALLS,
+    ...(deps.currentHost ? { currentHost: deps.currentHost } : {}),
+    ...(deps.currentPageUrl ? { currentPageUrl: deps.currentPageUrl } : {}),
   })
 
   const requestArgs = () => ({
@@ -271,7 +330,15 @@ export async function runSubagent(deps: RunSubagentDeps, options: RunSubagentOpt
       if (toolResults.length === 0) {
         return boundedStopReport({ ...(options.agentId !== undefined ? { agentId: options.agentId } : {}), cause: decision.cause, maxToolRounds, rounds, lastAction, observations })
       }
-      appendFinalizationNotice(toolResults, workerFinalizationNotice(decision.cause, maxToolRounds))
+      // The directive rides through Notices (#154/#158) like every other
+      // model-facing advisory line — as a must-ride kind, because the
+      // reserved round is the model's last and a failed or structured last
+      // result must not swallow the one instruction it needs.
+      const last = toolResults[toolResults.length - 1]
+      if (last !== undefined) {
+        notices.owe('subagent_finalization', workerFinalizationNotice(decision.cause, maxToolRounds))
+        last.outcome = notices.attach(last.outcome, { usefulWork: false })
+      }
       let turn: AssistantTurn | null = null
       try {
         turn = await llm.complete(requestArgs())
@@ -291,86 +358,29 @@ export async function runSubagent(deps: RunSubagentDeps, options: RunSubagentOpt
       return reportFromTurn(turn, options.agentId, workerLedger.snapshot())
     }
 
-    epoch.beginToolRound()
-    for (const call of turn.calls) {
-      await checkpoint(options)
-      lastAction = describeToolAction(call.name, call.args)
-      options.onProgress?.({ step: epoch.tierRounds, action: lastAction })
-
-      let outcome: ToolResultOutcome
-      const tool = toolsByName.get(call.name)
-      if (!tool) {
-        outcome = { ok: false, error: `unknown tool: '${call.name}'` }
-      } else {
-        // Same-wall Blocker gate (#81), ahead of the risk tiers on
-        // purpose — a call this run will not perform must never reach a
-        // (downgraded) confirmation verdict.
-        const gateVerdict = blockerGate.gate(call)
-        if (!gateVerdict.ok) {
-          outcome = { ok: false, error: gateVerdict.reason }
-        } else {
-          try {
-            const verdict = tool.assessRisk ? await tool.assessRisk(call) : { kind: 'allow' as const }
-            if (verdict.kind === 'deny') {
-              outcome = { ok: false, error: verdict.reason }
-            } else if (verdict.kind === 'confirm') {
-              outcome = {
-                ok: false,
-                error: 'subagents cannot ask the user for confirmation — skip this action and report it back',
-              }
-            } else {
-              let visionRefusal: string | null = null
-              if (tool.usesVision) {
-                const grant = visionBudget.tryAcquire()
-                if (!grant.ok) visionRefusal = grant.reason
-              }
-              if (visionRefusal !== null) {
-                outcome = { ok: false, error: visionRefusal }
-              } else {
-                const result = await tool.execute(call, toolContext)
-                await checkpoint(options)
-                if (typeof result === 'string' && result.startsWith(`${ASK_ESCALATION_PREFIX} `)) {
-                  // A subagent cannot continue until the orchestrator asks the
-                  // user. Return the directive as its report verbatim so
-                  // agent_results reliably routes it upward; do not trust the
-                  // workhorse model to preserve it in another round.
-                  return { text: result, findings: [], unresolved: [], observations: workerLedger.snapshot() }
-                }
-                outcome = { ok: true, result }
-              }
-            }
-          } catch (err) {
-            if (err instanceof SubagentCancelledError) throw err
-            // ADR 0016: a Subagent Look that missed the Vision Deadline gets
-            // the same nudge the orchestrator's look gets — fall back to the
-            // DOM or escalate; never keep retrying look blind.
-            outcome = {
-              ok: false,
-              error:
-                err instanceof VisionDeadlineError
-                  ? `${err.message}\n${VISION_DEADLINE_NUDGE}`
-                  : toErrorMessage(err),
-            }
-          }
-        }
+    // One round call (#158): the executor drains as a generator, and the
+    // worker's only business inside it is progress reporting — one step per
+    // call it announced, numbered by the round the epoch is counting.
+    const round = toolRound.run(turn, options.turnId)
+    let step = await round.next()
+    while (step.done !== true) {
+      const event = step.value
+      if (event.type === 'tool_call') {
+        lastAction = describeToolAction(event.name, event.args)
+        options.onProgress?.({ step: epoch.tierRounds, action: lastAction })
       }
-      // Same-wall Blocker gate (#81): marker lines riding successful
-      // results arm it; a successful different-host browser interaction
-      // disarms it. Sees every processed outcome, like the orchestrator's.
-      blockerGate.observe(call, outcome)
-      // Worker Observation ledger (#123): the raw outcome as produced, with
-      // the worker's own tab URL as the source of page-facing calls — the
-      // ground the report's findings and the orchestrator's checkpoint for
-      // them verify against.
-      const classification = classifyToolObservation(call.name)
-      const sourceUrl = classification.pageFacing ? deps.currentPageUrl?.() : undefined
-      observe({
-        producer: classification.producer,
-        ok: outcome.ok,
-        payload: outcome.ok ? outcome.result : outcome.error,
-        ...(sourceUrl ? { sourceUrl } : {}),
-      })
-      toolResults.push({ call, outcome })
+      step = await round.next()
+    }
+    for (const result of step.value.results) {
+      toolResults.push({ call: result.call, outcome: result.outcome })
+    }
+    // The ASK_USER relay ended the round (#18): a subagent cannot continue
+    // until the orchestrator asks the user, so the directive is returned as
+    // this worker's report verbatim — agent_results routes it upward.
+    const end = step.value.end
+    const relay = end.kind === 'terminal' ? askEscalation(end.outcome) : null
+    if (relay !== null) {
+      return { text: relay, findings: [], unresolved: [], observations: workerLedger.snapshot() }
     }
   }
 }

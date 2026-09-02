@@ -1,9 +1,10 @@
 import type { ToolResultOutcome } from '../ports/llm'
 
-// Issue #154, step 1: the Notices module. Five model-facing advisory
+// Issue #154, step 1: the Notices module. Six model-facing advisory
 // lines ride tool results — the search-loop nudge, the no-progress nudge,
-// the Run Plan's corrective nudge, the Effort Epoch's budget warning, and
-// its Finalization directive. Their precedence used to be the order of
+// the Run Plan's corrective nudge, the Effort Epoch's budget warning, its
+// Finalization directive, and (#158) the Browse Subagent's own
+// Finalization directive. Their precedence used to be the order of
 // five `if` statements in the Run loop, and the Run Plan nudge's "owed
 // until it actually lands" rule was one boolean set and cleared from five
 // places. This module owns all of that as data: one precedence table, one
@@ -11,28 +12,46 @@ import type { ToolResultOutcome } from '../ports/llm'
 //
 // Vocabulary (CONTEXT.md, Notice): a Notice rides only a successful
 // string result — an error already tells the model what happened, and a
-// structured result cannot carry prose. An immediate Notice is the rail's
-// verdict on this very call: it rides this result or is dropped. An owed
-// Notice persists until some later result can carry it. Two kinds — the
-// budget warning and the Finalization directive — are owed by the Effort
-// Epoch itself, which keeps their state and supersession (#117/#148); the
-// module reaches them through a standing supplier consulted only when the
-// kind's guard passes, so a warning is worded at delivery, never earlier.
+// structured result cannot carry prose. The one exception is a directive
+// that closes the loop rather than advising inside it (#158, a Browse
+// Subagent's Finalization directive): its next round is its last, so the
+// directive must reach it however the result it rides read. An immediate
+// Notice is the rail's verdict on this very call: it rides this result or
+// is dropped. An owed Notice persists until some later result can carry
+// it. Two kinds — the budget warning and the Run's Finalization directive
+// — are owed by the Effort Epoch itself, which keeps their state and
+// supersession (#117/#148); the module reaches them through a standing
+// supplier consulted only when the kind's guard passes, so a warning is
+// worded at delivery, never earlier.
 //
 // Deterministic and side-effect free apart from consulting suppliers; no
 // clock, no tool names — "useful work" is the caller's judgement, passed
 // in per result.
 
-/** The five Notice kinds, named by their source. */
-export type NoticeKind = 'search_loop' | 'no_progress' | 'run_plan' | 'budget' | 'finalization'
+/** The six Notice kinds, named by their source. */
+export type NoticeKind =
+  | 'search_loop'
+  | 'no_progress'
+  | 'run_plan'
+  | 'budget'
+  | 'finalization'
+  | 'subagent_finalization'
 
 /**
  * Delivery order when several Notices ride one result (#74/#126/#116/#117):
  * rail verdicts first, the plan correction next, the epoch's warning and
  * directive last — the model reads what this call did before what the
- * run as a whole owes it.
+ * run as a whole owes it. A worker's Finalization directive (#158) is
+ * last of all: it is the only one that ends the loop.
  */
-export const NOTICE_PRECEDENCE: readonly NoticeKind[] = ['search_loop', 'no_progress', 'run_plan', 'budget', 'finalization']
+export const NOTICE_PRECEDENCE: readonly NoticeKind[] = [
+  'search_loop',
+  'no_progress',
+  'run_plan',
+  'budget',
+  'finalization',
+  'subagent_finalization',
+]
 
 interface NoticeRule {
   /** Immediate: rides this result or is dropped. Owed: persists until a result can carry it. */
@@ -41,9 +60,11 @@ interface NoticeRule {
    * Success: any successful string result. Useful work: additionally not
    * bookkeeping and not a Finalization-phase result — the plan nudge and
    * the budget warning never ride a `report_run_plan` acknowledgement or
-   * a result of a round whose work is already over.
+   * a result of a round whose work is already over. Always: whatever the
+   * result read, error and structured results included — reserved for a
+   * directive the model's last round must not miss (#158).
    */
-  readonly rides: 'success' | 'useful_work'
+  readonly rides: 'success' | 'useful_work' | 'always'
 }
 
 const RULES: Readonly<Record<NoticeKind, NoticeRule>> = {
@@ -52,6 +73,7 @@ const RULES: Readonly<Record<NoticeKind, NoticeRule>> = {
   run_plan: { persistence: 'owed', rides: 'useful_work' },
   budget: { persistence: 'owed', rides: 'useful_work' },
   finalization: { persistence: 'owed', rides: 'success' },
+  subagent_finalization: { persistence: 'owed', rides: 'always' },
 }
 
 export interface NoticeAttachContext {
@@ -97,6 +119,15 @@ export interface Notices {
   replan(): void
 }
 
+/** A structured result as prose, so a must-ride directive can join it. */
+function renderResult(result: unknown): string {
+  try {
+    return JSON.stringify(result) ?? 'tool result'
+  } catch {
+    return 'tool result'
+  }
+}
+
 export function createNotices(): Notices {
   const owed = new Map<NoticeKind, string>()
   const suppliers = new Map<NoticeKind, () => string | null>()
@@ -120,21 +151,31 @@ export function createNotices(): Notices {
       suppliers.set(kind, supplier)
     },
     attach(outcome, context) {
-      if (!outcome.ok || typeof outcome.result !== 'string') {
-        // Nothing rides an error or a structured result: immediate Notices
-        // are this call's verdict and die with it; owed ones wait.
-        for (const kind of NOTICE_PRECEDENCE) if (RULES[kind].persistence === 'immediate') owed.delete(kind)
-        return outcome
-      }
+      // An error or a structured result carries only the kinds whose rule
+      // says they ride always: everything else is dropped when it was this
+      // call's own verdict, and waits when it was owed.
+      const prose = outcome.ok && typeof outcome.result === 'string'
       const carried: string[] = []
       for (const kind of NOTICE_PRECEDENCE) {
-        if (RULES[kind].rides === 'useful_work' && !context.usefulWork) continue
+        const rule = RULES[kind]
+        if (!prose && rule.rides !== 'always') {
+          if (rule.persistence === 'immediate') owed.delete(kind)
+          continue
+        }
+        if (rule.rides === 'useful_work' && !context.usefulWork) continue
         const text = take(kind)
         if (text === null) continue
         deliveredKinds.add(kind)
         carried.push(text)
       }
-      return carried.length === 0 ? outcome : { ok: true, result: [outcome.result, ...carried].join('\n\n') }
+      if (carried.length === 0) return outcome
+      if (outcome.ok) {
+        // A structured result cannot carry prose on its own, so it is
+        // rendered before the directive joins it — the model reads both.
+        const payload = typeof outcome.result === 'string' ? outcome.result : renderResult(outcome.result)
+        return { ok: true, result: [payload, ...carried].join('\n\n') }
+      }
+      return { ok: false, error: [outcome.error, ...carried].join('\n\n') }
     },
     clear(kind) {
       owed.delete(kind)

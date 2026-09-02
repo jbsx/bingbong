@@ -177,7 +177,8 @@ A Browse Subagent's loop is the module's second adapter (#149): the same
 epoch in Subagent configuration — that Subagent's own 12-round budget, the
 parent Run's shared deadline ahead of its remaining rounds, no Effort Tier —
 so both loops stop for the same reasons in the same Finalization Cause
-vocabulary.
+vocabulary. It is the same pairing the Tool Round has (#158): both loops
+count the same rounds because both execute the same round.
 _Avoid_: tier window, budget window
 
 **Tool Round**:
@@ -192,7 +193,9 @@ _Avoid_: tool call, model round
 An advisory line the runtime appends to a tool result for the model, never
 shown or spoken to the user. An immediate Notice rides the result that
 triggered it or is dropped; an owed Notice persists until a later result can
-carry it. Notices ride only successful text results, in one fixed precedence.
+carry it. Notices ride only successful text results, in one fixed
+precedence — except a directive that closes the loop rather than advising
+inside it, which rides whatever the result it lands on read.
 _Avoid_: nudge, warning text, hint
 
 **Progress**:
@@ -533,7 +536,13 @@ when no automatic path exists.
 **Subagent**:
 A delegated worker spawned mid-run. Browse kinds work in their own visible
 tab; background kinds do approved non-web file work. No subagent fetches the
-web off-screen.
+web off-screen. A Subagent executes the shared Tool Round (#158) as its
+second adapter, in Subagent configuration: its own Observation ledger and
+Notices, the ASK_USER relay as both its Blocker escalation and the result
+that ends a round, every Confirmation refused because it has no user to ask,
+and the Run's search-loop, no-progress, and per-call deadline rails all off.
+What stays its own is what a Run has no counterpart for: the reserved Answer
+round and the deterministic bounded Subagent Report behind it.
 _Avoid_: research agent, worker, task runner
 
 **Subagent Report**:
