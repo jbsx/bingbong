@@ -201,6 +201,44 @@ describe('extractMetrics', () => {
     expect(timedOut.askTimedOut).toBe(true)
     expect(answered.askTimedOut).toBe(false)
   })
+
+  it('counts delegated workers by how they stopped, and records none when nothing was delegated (#162)', () => {
+    const worker = (agentId: string, cause: 'no_progress' | 'model_answered' | 'deadline_reached', at: number): PipelineEvent => ({
+      type: 'subagent_finalized',
+      turnId: T,
+      agentId,
+      kind: 'browse',
+      status: 'completed',
+      cause,
+      at,
+    })
+    const delegated = extractMetrics(
+      [command(0), worker('a-1', 'model_answered', 1), worker('a-2', 'no_progress', 2), worker('a-3', 'no_progress', 3), done(4)],
+      [],
+      false,
+    )
+    expect(delegated.subagentFinalizations).toEqual({ model_answered: 1, no_progress: 2 })
+    expect(extractMetrics([command(0), done(1)], [], false).subagentFinalizations).toEqual({})
+  })
+
+  it('counts a worker the parent run cancelled, and a failed one, under the status they ended on (#162)', () => {
+    const ended = (agentId: string, status: 'cancelled' | 'failed', at: number): PipelineEvent => ({
+      type: 'subagent_finalized',
+      turnId: T,
+      agentId,
+      kind: 'browse',
+      status,
+      at,
+    })
+    // The parent Run's Finalization cancels unfinished workers: three
+    // delegated and killed must never read as none delegated.
+    const metrics = extractMetrics(
+      [command(0), ended('a-1', 'cancelled', 1), ended('a-2', 'cancelled', 2), ended('a-3', 'failed', 3), done(4)],
+      [],
+      false,
+    )
+    expect(metrics.subagentFinalizations).toEqual({ cancelled: 2, failed: 1 })
+  })
 })
 
 describe('combineRuns', () => {
@@ -240,6 +278,14 @@ describe('combineRuns', () => {
     expect(combined.actions.map((action) => action.name)).toEqual(['navigate', 'read_page'])
     expect(combined.elapsedMs).toBeNull()
   })
+
+  it('sums the delegated-worker breakdown across a scenario\u2019s runs (#162)', () => {
+    const combined = combineRuns([
+      run({ subagentFinalizations: { model_answered: 1, no_progress: 1 } }),
+      run({ subagentFinalizations: { no_progress: 2, deadline_reached: 1 } }),
+    ])
+    expect(combined.subagentFinalizations).toEqual({ model_answered: 1, no_progress: 3, deadline_reached: 1 })
+  })
 })
 
 describe('aggregateScenarios', () => {
@@ -258,6 +304,7 @@ describe('aggregateScenarios', () => {
         finalizationCause: null,
         rawLimitFailure: null,
         askTimedOut: false,
+        subagentFinalizations: {},
         actions: [],
         answerText: 'x',
         timedOut: false,

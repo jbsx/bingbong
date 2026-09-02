@@ -39,6 +39,13 @@ export interface SubagentRecord {
   id: string
   kind: SubagentKind
   task: string
+  /**
+   * The orchestrator turn that spawned this agent (#29): kept on the
+   * record so a worker's outcome can be reported against the turn that
+   * delegated it (#162). Absent for spawns outside any turn, and stripped
+   * from the user-facing card.
+   */
+  turnId?: string
   status: SubagentStatus
   startedAt: number
   finishedAt: number | null
@@ -233,6 +240,7 @@ export function createSubagentManager(deps: SubagentManagerDeps): SubagentManage
         id,
         kind,
         task,
+        ...(turnId !== undefined ? { turnId } : {}),
         status: 'running',
         startedAt: clock.now(),
         finishedAt: null,

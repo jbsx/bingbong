@@ -17,6 +17,12 @@ import { nearestRankPercentile } from '../../src/core/report/stats'
 // runtime exports), and the undeclared-plan default is inlined below,
 // mirroring runPlan's DEFAULT_EFFORT_TIER.
 
+/**
+ * How one delegated worker stopped (#162): its own Finalization Cause, or
+ * the terminal status it reached without one.
+ */
+export type WorkerStop = FinalizationCause | 'cancelled' | 'failed'
+
 /** The run-shape events one scenario contributes, in order. */
 export type RunEvents = readonly PipelineEvent[]
 
@@ -50,6 +56,17 @@ export interface ScenarioMetrics {
   rawLimitFailure: string | null
   /** True when the run asked the user and the ask timed out unanswered. */
   askTimedOut: boolean
+  /**
+   * Delegated workers this run stopped, counted by how they stopped (#162)
+   * — the only per-run view of why a Browse Subagent ended. A worker that
+   * finalized itself counts under its Finalization Cause; one the parent
+   * Run's Finalization cancelled, or one that failed, counts under that
+   * status, so a run that delegated three and killed all three never reads
+   * as a run that delegated none. A run that delegated nothing records an
+   * empty breakdown. Reported, never gated: a worker outcome is not a Run
+   * outcome, and #132's pooled statistics keep their shape.
+   */
+  subagentFinalizations: Partial<Record<WorkerStop, number>>
   actions: RecordedAction[]
   answerText: string | null
   timedOut: boolean
@@ -67,6 +84,26 @@ function askTimedOutIn(events: readonly PipelineEvent[]): boolean {
     (event): event is Extract<PipelineEvent, { type: 'ask_resolved' }> =>
       event.type === 'ask_resolved' && event.reason === 'timeout',
   )
+}
+
+/** One breakdown from a run's worker stops. */
+function countStops(stops: readonly WorkerStop[]): Partial<Record<WorkerStop, number>> {
+  const counts: Partial<Record<WorkerStop, number>> = {}
+  for (const stop of stops) counts[stop] = (counts[stop] ?? 0) + 1
+  return counts
+}
+
+/** Sums per-run worker breakdowns into one (#162) — combineRuns' adder. */
+function mergeStopCounts(
+  breakdowns: readonly Partial<Record<WorkerStop, number>>[],
+): Partial<Record<WorkerStop, number>> {
+  const merged: Partial<Record<WorkerStop, number>> = {}
+  for (const breakdown of breakdowns) {
+    for (const [stop, count] of Object.entries(breakdown) as [WorkerStop, number][]) {
+      merged[stop] = (merged[stop] ?? 0) + count
+    }
+  }
+  return merged
 }
 
 function actionKey(name: string, args: Record<string, unknown>): string {
@@ -108,6 +145,15 @@ export function extractMetrics(events: RunEvents, perfRecords: readonly PerfSpan
   const plans = events.filter(
     (event): event is Extract<PipelineEvent, { type: 'run_plan' }> => event.type === 'run_plan',
   )
+  const subagentFinalizations = countStops(
+    events
+      .filter(
+        (event): event is Extract<PipelineEvent, { type: 'subagent_finalized' }> => event.type === 'subagent_finalized',
+      )
+      // A cancelled or failed worker reached no cause of its own — the
+      // status it ended on is what it stopped for.
+      .map((event): WorkerStop => event.cause ?? (event.status === 'failed' ? 'failed' : 'cancelled')),
+  )
   return {
     llmRounds: perfRecords.filter((record) => record.stage === 'llm').length,
     attemptedTools: toolCalls.length,
@@ -120,6 +166,7 @@ export function extractMetrics(events: RunEvents, perfRecords: readonly PerfSpan
     effortTier: plans.at(-1)?.effortTier ?? UNDECLARED_PLAN_TIER,
     rawLimitFailure: rawLimit?.message ?? null,
     askTimedOut: askTimedOutIn(events),
+    subagentFinalizations,
     actions,
     answerText: displays.length > 0 ? displays[displays.length - 1]!.text : null,
     timedOut,
@@ -148,6 +195,9 @@ export function combineRuns(runs: readonly ScenarioMetrics[]): ScenarioMetrics {
     effortTier: final.effortTier,
     rawLimitFailure: runs.find((metrics) => metrics.rawLimitFailure !== null)?.rawLimitFailure ?? null,
     askTimedOut: runs.some((metrics) => metrics.askTimedOut),
+    // Work counters sum across a scenario's runs, and delegated workers are
+    // work (#162): every run's breakdown adds into the scenario's.
+    subagentFinalizations: mergeStopCounts(runs.map((metrics) => metrics.subagentFinalizations)),
     actions: runs.flatMap((metrics) => metrics.actions),
     answerText: final.answerText,
     timedOut: runs.some((metrics) => metrics.timedOut),

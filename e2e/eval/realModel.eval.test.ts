@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, expect, it } from 'vitest'
 import { startEvaluator, type Evaluator } from './evaluator'
 import { evalScenarios } from './scenarios'
+import type { WorkerStop } from './metrics'
 
 // The real-model evaluation suite (#109) — opt-in by design:
 //
@@ -43,6 +44,17 @@ afterAll(async () => {
       report.routing.orchestrator.configured ? report.routing.orchestrator.model : null,
     )
     expect(report.modelWitness.orchestratorRequests).toBeGreaterThan(0)
+    // Delegated-worker stops (#162): summed over every scenario's runs and
+    // printed, never gated — the measurement #161 asks for.
+    const workerStops: Partial<Record<WorkerStop, number>> = {}
+    for (const scenario of report.scenarios) {
+      for (const [stop, count] of Object.entries(scenario.metrics.subagentFinalizations ?? {}) as [WorkerStop, number][]) {
+        workerStops[stop] = (workerStops[stop] ?? 0) + count
+      }
+    }
+    const workerLine = Object.entries(workerStops)
+      .map(([stop, count]) => `${stop} ${count}`)
+      .join('  ')
     console.log(
       [
         '',
@@ -50,6 +62,7 @@ afterAll(async () => {
         `  llm rounds     median ${agg.llmRounds.median}  p95 ${agg.llmRounds.p95}`,
         `  elapsed      ${Math.round(agg.elapsedMs.median / 1000)}s median  ${Math.round(agg.elapsedMs.p95 / 1000)}s p95`,
         `  raw-limit failures: ${agg.rawLimitFailures}   timed out: ${agg.timedOutScenarios}`,
+        `  delegated workers: ${workerLine === '' ? 'none delegated' : workerLine}`,
         `  model: ${report.modelWitness.orchestratorModel} (${report.modelWitness.orchestratorRequests} rounds witnessed)`,
         '',
       ].join('\n'),

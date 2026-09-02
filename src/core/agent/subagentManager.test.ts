@@ -515,6 +515,31 @@ describe('subagent manager', () => {
     // The record itself stays available to the runtime's checkpoint seam.
     expect(mgr.list().find((record) => record.id === 'a-1')?.report?.observations).toHaveLength(1)
   })
+
+  it('keeps the worker\u2019s Finalization Cause off agent_results \u2014 the orchestrator\u2019s model cannot read it (#162)', async () => {
+    const { mgr, api } = manager()
+
+    mgr.spawn('browse', 'compare keyboards', 'turn-3')
+    api.tasks.get('a-1')!.resolve({
+      text: 'Cut short prose.',
+      findings: [],
+      unresolved: ['Cut short at the delegated work limit — the task is incomplete.'],
+      finalizationCause: 'no_progress',
+    })
+    await flush()
+
+    const merged = await mgr.results({})
+    // Mechanical stop causes stay out of model context (ADR 0027): no
+    // cause value, and no vocabulary from it, in what the model reads.
+    for (const cause of ['no_progress', 'budget_exhausted', 'deadline_reached', 'model_answered', 'user_unavailable']) {
+      expect(merged).not.toContain(cause)
+    }
+    expect(merged).not.toContain('finalizationCause')
+    // The manager's record keeps it, with the turn that delegated the work.
+    const record = mgr.list().find((candidate) => candidate.id === 'a-1')
+    expect(record?.report?.finalizationCause).toBe('no_progress')
+    expect(record?.turnId).toBe('turn-3')
+  })
 })
 
 // #97: Sessions own their subagents outright. retire() is the Session-end

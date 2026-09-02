@@ -218,6 +218,28 @@ export type PipelineEvent = SessionEventIdentity & (
   /** A subagent's state changed — the dashboard keeps one card per agent id. */
   | { type: 'agent_update'; agent: SubagentCard; at: number }
   /**
+   * A delegated worker stopped (#162): why one Subagent's loop ended, in
+   * the same Finalization Cause vocabulary a Run's `done` carries.
+   * Diagnostic — it maps to no history entry and no user-facing surface;
+   * it exists so a worker's outcome is measurable, and it is stamped with
+   * the spawning turn because turn-scoped extraction is the only thing the
+   * eval corpus can see. One per finished agent, whatever ended it: a
+   * worker the parent Run's own Finalization cancelled reached no cause of
+   * its own, and `status` — not a missing event — is how that reads, so a
+   * run that delegated three workers and killed all three never measures
+   * as a run that delegated none.
+   */
+  | {
+      type: 'subagent_finalized'
+      turnId: string
+      agentId: string
+      kind: SubagentKind
+      status: SubagentStatus
+      /** Absent unless the worker finalized itself into a report. */
+      cause?: FinalizationCause
+      at: number
+    }
+  /**
    * The run's boundary (#110): `outcome` stays the mechanical result, and
    * the semantic fields ride along additively — present only when known
    * (`resolution` when a validated model proposal exists,

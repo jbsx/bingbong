@@ -166,6 +166,18 @@ export async function startEvaluator(options?: { scenarioTimeoutMs?: number; rep
   const perfRecordsFor = (turnId: string): PerfSpanRecord[] =>
     collectPerfRecords(join(userDataDir, 'logs')).records.filter((record) => record.turnId === turnId)
 
+  /** True once no Subagent card on the tape is still running (#162). */
+  const agentsIdle = (): Promise<boolean> =>
+    harness.dashboardEval<boolean>(`
+      (() => {
+        const live = new Map()
+        for (const event of window.__evalTape ?? []) {
+          if (event.type === 'agent_update') live.set(event.agent.id, event.agent.status)
+        }
+        return [...live.values()].every((status) => status !== 'running')
+      })()
+    `)
+
   const doneArrived = (turnId: string): Promise<boolean> =>
     harness.dashboardEval<boolean>(
       `(window.__evalTape ?? []).some((event) => event.type === 'done' && event.turnId === ${JSON.stringify(turnId)})`,
@@ -255,6 +267,13 @@ export async function startEvaluator(options?: { scenarioTimeoutMs?: number; rep
     await settled
     // Let the run's terminal bookkeeping (summary span, memory commit) land.
     await sleep(500)
+    // A delegated worker settles outside the turn's generator, so its stop
+    // (#162) can land after `done` — the Run's Finalization cancels
+    // unfinished workers, but the cancellation still has to travel. Wait,
+    // bounded, until no card is still running; scenarios run one at a time,
+    // so any running card belongs to this run. A worker that outlasts the
+    // wait is simply uncounted rather than fatal.
+    await waitFor(async () => ((await agentsIdle()) ? true : undefined), { timeoutMs: 15_000, intervalMs: 250 }).catch(() => {})
 
     // Turn-bearing events only (session lifecycle and agent cards carry none).
     const events = (await readTape()).filter((event): event is PipelineEvent & { turnId: string } => 'turnId' in event && event.turnId === turnId)

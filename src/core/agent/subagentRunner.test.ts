@@ -92,6 +92,8 @@ describe('runSubagent', () => {
       // The worker's own observation of the cited source rides the report
       // as hidden provenance (#123).
       observations: [expect.objectContaining({ producer: 'action_outcome', ok: true, sourceUrl: 'https://reviews.test/x' })],
+      // Why the worker stopped rides along too (#162): it concluded on its own.
+      finalizationCause: 'model_answered',
     })
   })
 
@@ -111,7 +113,7 @@ describe('runSubagent', () => {
 
     const report = await runSubagent({ llm, tools: [], clock: new FakeClock() }, { task: 't', isCancelled: () => false })
 
-    expect(report).toEqual({ text: 'Plain prose report.', findings: [], unresolved: [] })
+    expect(report).toEqual({ text: 'Plain prose report.', findings: [], unresolved: [], finalizationCause: 'model_answered' })
   })
 
   it('runs tool calls, reports progress per step, and returns the final report', async () => {
@@ -915,5 +917,102 @@ describe('runSubagent', () => {
     expect(llm.requests[1]?.toolResults).toMatchObject([
       { outcome: { ok: false, error: "unknown tool: 'ask_user'" } },
     ])
+  })
+
+  // #162: every report says why the worker stopped, in the Run's own
+  // Finalization Cause vocabulary — hidden provenance beside the
+  // Observations, never a model-facing surface.
+
+  it('stamps model_answered on a voluntary conclusion (#162)', async () => {
+    const llm = new ScriptedLlm([{ kind: 'answer', speak: 's', display: 'All done.' }])
+
+    const report = await runSubagent(
+      { llm, tools: noopTools(), clock: new FakeClock() },
+      { task: 't', agentId: 'a-1', isCancelled: () => false },
+    )
+
+    expect(report.finalizationCause).toBe('model_answered')
+  })
+
+  it('stamps budget_exhausted on both Finalization exits when the worker spends its rounds (#162)', async () => {
+    const spin: Tool = { name: 'spin', async execute() { return 'spun' } }
+    // The reserved Answer round answers: the model's report, the epoch's cause.
+    const answered = await runSubagent(
+      {
+        llm: new ScriptedLlm([
+          { kind: 'tool_calls', calls: [{ id: 'c0', name: 'spin', args: {} }] },
+          { kind: 'answer', speak: 's', display: 'Partial findings.' },
+        ]),
+        tools: [spin],
+        clock: new FakeClock(),
+        maxToolRounds: 1,
+      },
+      { task: 't', agentId: 'a-1', isCancelled: () => false },
+    )
+    expect(answered.text).toBe('Partial findings.')
+    // The mechanical cause wins over the model's own conclusion.
+    expect(answered.finalizationCause).toBe('budget_exhausted')
+
+    // The reserved round demands tools anyway: the bounded report says the same.
+    const bounded = await runSubagent(
+      {
+        llm: new ScriptedLlm([
+          { kind: 'tool_calls', calls: [{ id: 'c0', name: 'spin', args: {} }] },
+          { kind: 'tool_calls', calls: [{ id: 'c1', name: 'spin', args: {} }] },
+        ]),
+        tools: [spin],
+        clock: new FakeClock(),
+        maxToolRounds: 1,
+      },
+      { task: 't', agentId: 'a-2', isCancelled: () => false },
+    )
+    expect(bounded.finalizationCause).toBe('budget_exhausted')
+  })
+
+  it('stamps deadline_reached when the parent run\u2019s deadline stops the worker (#162)', async () => {
+    const llm = new ScriptedLlm([{ kind: 'answer', speak: 'never', display: 'never' }])
+
+    const report = await runSubagent(
+      { llm, tools: [], clock: new FakeClock(), maxToolRounds: 2 },
+      { task: 't', agentId: 'a-9', isCancelled: () => false, isWorkExpired: () => true },
+    )
+
+    // No tool result to carry a directive: the bounded report is the whole
+    // answer, and it names the deadline rather than the untouched budget.
+    expect(llm.requests).toHaveLength(0)
+    expect(report.finalizationCause).toBe('deadline_reached')
+  })
+
+  it('stamps no_progress when two Approaches in a row make no progress (#162)', async () => {
+    const click: Tool = { name: 'click', acquisition: true, async execute() { return 'clicked' } }
+    const llm = new ScriptedLlm([
+      {
+        kind: 'tool_calls',
+        calls: Array.from({ length: 6 }, (_, index) => ({ id: `c${index}`, name: 'click', args: { ref: index + 1 } })),
+      },
+      { kind: 'tool_calls', calls: [{ id: 'c9', name: 'click', args: { ref: 9 } }] },
+    ])
+
+    const report = await runSubagent(
+      { llm, tools: [click], clock: new FakeClock(), settledPageState: () => STUCK, maxToolRounds: 12 },
+      { task: 't', agentId: 'a-162', isCancelled: () => false },
+    )
+
+    // The budget was never spent — the rail stopped it, and the cause says so.
+    expect(report.finalizationCause).toBe('no_progress')
+  })
+
+  it('stamps user_unavailable on the ASK_USER relay \u2014 only the user can unblock it (#162)', async () => {
+    const llm = new ScriptedLlm([
+      { kind: 'tool_calls', calls: [{ id: 'q1', name: 'ask_user', args: { question: 'Which city?' } }] },
+    ])
+
+    const report = await runSubagent(
+      { llm, tools: [createSubagentAskTool()], clock: new FakeClock() },
+      { task: 'plan the trip', isCancelled: () => false },
+    )
+
+    expect(report.text).toContain(`${ASK_ESCALATION_PREFIX} Which city?`)
+    expect(report.finalizationCause).toBe('user_unavailable')
   })
 })

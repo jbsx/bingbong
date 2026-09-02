@@ -9,6 +9,11 @@ import type { SubagentTab, SubagentTabs } from '../browser/subagentTabs'
 // keeps a card per agent id) plus a speak event when an agent completes or
 // fails (the runtime also routes the line to TTS). Cancelled agents change
 // the card but stay unannounced — the user asked for the cancellation.
+// Every finished worker also emits one diagnostic `subagent_finalized`
+// (#162) carrying how it ended and, when it finalized itself, its
+// Finalization Cause — stamped with the turn that spawned it. The card
+// stays what it has always been, the user-facing surface, and a mechanical
+// stop cause is not user-facing vocabulary.
 // Every event carries the spawning Session's identity (#97), so the window
 // gate rejects late progress or completion from an ended or foreign Session.
 
@@ -47,9 +52,11 @@ export function createSubagentCardBridge(deps: SubagentCardBridgeDeps): Subagent
     const tab = tabs.snapshot().find((candidate) => candidate.agentId === agentId)
     // The card is the user-facing surface: it keeps the report's prose
     // (result) but not the structured sections (#98) — those reconcile
-    // through agent_results, not the dashboard.
-    const card: SubagentCard & { report?: unknown } = { ...record }
+    // through agent_results, not the dashboard — and not the spawning
+    // turn id (#162), which is bookkeeping for the diagnostic event below.
+    const card: SubagentCard & { report?: unknown; turnId?: unknown } = { ...record }
     delete card.report
+    delete card.turnId
     return { ...card, ...(tab ? { tab: tabCard(tab) } : {}) }
   }
 
@@ -62,6 +69,29 @@ export function createSubagentCardBridge(deps: SubagentCardBridgeDeps): Subagent
     onManagerEvent(event) {
       emitCard(event.record.id)
       if (event.type === 'finished') {
+        // How this worker ended (#162), on the one surface the eval's
+        // turn-scoped extraction can see. Every finished worker reports,
+        // cause or no cause: the parent Run's own Finalization cancels
+        // unfinished workers, so the cut-short case the measurement exists
+        // for is exactly the one with no report to read a cause from. A
+        // worker spawned outside any turn has nothing turn-scoped to say.
+        const { turnId, report } = event.record
+        if (turnId !== undefined) {
+          emit(
+            withOwner(
+              {
+                type: 'subagent_finalized',
+                turnId,
+                agentId: event.record.id,
+                kind: event.record.kind,
+                status: event.record.status,
+                ...(report?.finalizationCause !== undefined ? { cause: report.finalizationCause } : {}),
+                at: clock.now(),
+              },
+              event.record.owner,
+            ),
+          )
+        }
         const announcement = subagentAnnouncement(event.record)
         if (announcement) emit(withOwner({ type: 'speak', text: announcement, at: clock.now() }, event.record.owner))
       }

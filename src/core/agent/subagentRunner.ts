@@ -65,6 +65,16 @@ import { droppedFindingsNote, validateReportFindings, type SubagentReport } from
 // round fails or demands tools. A worker always terminates with a report,
 // never a raw round-limit failure.
 //
+// Every report carries why the worker stopped (#162): the Finalization
+// Cause rides the report beside the Observations, as hidden provenance the
+// orchestrator's model never reads — `model_answered` for a voluntary
+// conclusion, the epoch's mechanical cause when a rail forced Finalization
+// (that cause wins over the model's own conclusion, the same precedence a
+// Run's `finalizeRun` applies), and `user_unavailable` for the ASK_USER
+// relay, which stops because only the user can unblock it. Without it a
+// corpus pass cannot tell a worker that was cut short from one that
+// finished cleanly.
+//
 // The worker keeps its own Observation ledger (#123, ADR 0028): every tool
 // outcome is recorded with the source URL it observed, the report's
 // findings are validated against it before the report completes, and the
@@ -245,6 +255,7 @@ function boundedStopReport(input: {
         : 'Cut short at the delegated work limit — the task is incomplete.',
     ],
     ...(input.observations !== undefined && input.observations.length > 0 ? { observations: input.observations } : {}),
+    finalizationCause: input.cause,
   }
 }
 
@@ -253,6 +264,7 @@ function reportFromTurn(
   turn: Extract<AssistantTurn, { kind: 'answer' }>,
   agentId: string | undefined,
   observations: readonly ObservationRecord[],
+  cause: FinalizationCause,
 ): SubagentReport {
   // Findings are validated before the report completes (#123, ADR 0028):
   // each must cite only sources this worker observed, or it is dropped to
@@ -266,6 +278,7 @@ function reportFromTurn(
     findings: validated.findings,
     unresolved,
     ...(observations.length > 0 ? { observations } : {}),
+    finalizationCause: cause,
   }
 }
 
@@ -406,7 +419,10 @@ export async function runSubagent(deps: RunSubagentDeps, options: RunSubagentOpt
       }
       await checkpoint(options)
       if (turn !== null && turn.kind === 'answer') {
-        return reportFromTurn(turn, options.agentId, observations)
+        // The mechanical cause wins over the model's own conclusion, the
+        // same precedence `finalizeRun` applies to a Run (#110/#162): the
+        // worker answered because a rail told it to, not because it chose to.
+        return reportFromTurn(turn, options.agentId, observations, decision.cause)
       }
       return boundedStopReport({ ...(options.agentId !== undefined ? { agentId: options.agentId } : {}), cause: decision.cause, maxToolRounds, rounds, lastAction, observations })
     }
@@ -414,7 +430,8 @@ export async function runSubagent(deps: RunSubagentDeps, options: RunSubagentOpt
     const turn = await llm.complete(requestArgs())
     await checkpoint(options)
     if (turn.kind === 'answer') {
-      return reportFromTurn(turn, options.agentId, workerLedger.snapshot())
+      // A voluntary conclusion — no rail forced it (#162).
+      return reportFromTurn(turn, options.agentId, workerLedger.snapshot(), 'model_answered')
     }
 
     // One round call (#158): the executor drains as a generator, and the
@@ -439,7 +456,16 @@ export async function runSubagent(deps: RunSubagentDeps, options: RunSubagentOpt
     const end = step.value.end
     const relay = end.kind === 'terminal' ? askEscalation(end.outcome) : null
     if (relay !== null) {
-      return { text: relay, findings: [], unresolved: [], observations: workerLedger.snapshot() }
+      // The relay stops the worker because only the user can unblock it,
+      // and a worker can never reach one (#18/#162) — `user_unavailable`
+      // in the shared vocabulary.
+      return {
+        text: relay,
+        findings: [],
+        unresolved: [],
+        observations: workerLedger.snapshot(),
+        finalizationCause: 'user_unavailable',
+      }
     }
   }
 }

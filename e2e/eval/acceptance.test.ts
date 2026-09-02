@@ -43,6 +43,7 @@ function metrics(overrides: Partial<ScenarioMetrics> = {}): ScenarioMetrics {
     effortTier: 'lookup',
     rawLimitFailure: null,
     askTimedOut: false,
+    subagentFinalizations: {},
     actions: [],
     answerText: 'answer',
     timedOut: false,

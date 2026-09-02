@@ -54,7 +54,12 @@ mechanics and encourage redundant reads, clicks, screenshots, and vision calls.
   that reaches the search cap is refused, a worker whose second Approach
   makes no progress finalizes for `no_progress`, and no sibling call in a
   worker's round begins after the shared deadline has passed. A worker with
-  no tab of its own observes nothing, so its rails are inert. The
+  no tab of its own observes nothing, so its rails are inert. How a worker
+  ended is recorded like every other mechanical counter — its Finalization
+  Cause as hidden provenance on its report, and a turn-stamped diagnostic
+  event for every finished worker, including one the Run's own Finalization
+  cancelled before it reached a cause. Neither is model-facing text and
+  neither reaches the user-facing Subagent card. The
   orchestrator has a 32-round hard ceiling; aggregate work is bounded by
   concurrency and the shared active-work deadline.
 - User-dependent waits pause active-work time. Steering creates a fresh Run Plan

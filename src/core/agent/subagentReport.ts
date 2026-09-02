@@ -9,6 +9,7 @@ import {
 } from '../session/workingMemory'
 import type { ObservationRecord } from '../session/observationLedger'
 import { canonicalObservedUrls } from '../session/observationLedger'
+import type { FinalizationCause } from '../session/runJournal'
 import { SUBAGENT_LIMITS } from './subagentRails'
 
 // The Subagent Report contract (#98): a delegated worker's validated return
@@ -54,6 +55,16 @@ export interface SubagentReport {
    * retained no observations.
    */
   readonly observations?: readonly ObservationRecord[]
+  /**
+   * Why this worker stopped (#162): the same Finalization Cause vocabulary
+   * the Run records, decided by the worker's own Effort Epoch. Hidden
+   * provenance like `observations` — the orchestrator's model never reads
+   * it (ADR 0027 keeps mechanical counters out of model context), and
+   * `formatAgentResults` renders neither. It reaches the manager's record
+   * on the report, and the eval tape through the worker's turn-stamped
+   * diagnostic event; the user-facing Subagent card carries neither.
+   */
+  readonly finalizationCause?: FinalizationCause
 }
 
 export const MAX_SUBAGENT_REPORT_FINDINGS = 10
