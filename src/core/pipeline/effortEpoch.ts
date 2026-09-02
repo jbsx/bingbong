@@ -70,7 +70,7 @@ export type EffortPhase =
 
 export type EffortLoopDecision =
   | { readonly kind: 'work' }
-  | { readonly kind: 'finalize'; readonly cause: FinalizationCause; readonly entered: boolean }
+  | { readonly kind: 'finalize'; readonly cause: FinalizationCause }
 
 /** The internal warning milestones: ~75% and ~90% of the budget consumed. */
 export type BudgetWarningMilestone = 'near' | 'imminent'
@@ -200,7 +200,27 @@ export interface EffortEpoch {
   readonly cumulativeRounds: number
   readonly phase: EffortPhase
   decideLoopTop(): EffortLoopDecision
+  /**
+   * Finalization's one door (#148, ADR 0027): every mechanically known
+   * cause — budget, deadline, hard limit, no Progress — enters through
+   * it. Fires the entry hook exactly once per entry (a Steering replan
+   * that exits and a later re-entry fire it again) and supersedes any
+   * owed budget warning. False when the phase is already terminal.
+   */
   enterFinalization(cause: FinalizationCause): boolean
+  /**
+   * The no-Progress trip (#126/#148): the rail reports two exhausted
+   * Approaches mid-round; the run enters Finalization with the
+   * `no_progress` cause, so the round's remaining acquisition siblings
+   * are refused with the finalize directive.
+   */
+  tripNoProgress(): boolean
+  /**
+   * The per-call deadline gate (#135/#148): expiry checked before each
+   * call in a round begins, so no acquisition, vision, media,
+   * delegation, or user-question action starts past the boundary.
+   */
+  tripDeadline(): boolean
   /** Counts a returned tool-bearing decision and latches a pending Finalization round as Answer-only. */
   beginToolRound(): boolean
   /** Latches Finalization entered while executing the round as Answer-only. */
@@ -223,6 +243,14 @@ export interface EffortEpoch {
   resume(): void
   stop(): void
   takeBudgetWarning(): string | null
+  /**
+   * Finalization's directive (#117/#148/AC3), owed once per Finalization
+   * Tool Round: the round's first successful string result carries it, so
+   * a bookkeeping acknowledgement teaches the model that the Answer round
+   * is next. A round the run entered working owes nothing — the mid-round
+   * trip's own refusals carry the directive.
+   */
+  takeFinalizationNotice(): string | null
 }
 
 /**
@@ -234,6 +262,13 @@ export function createEffortEpoch(deps: {
   clock: Clock
   activeWorkDeadlineMs?: number
   initialTier?: EffortTier
+  /**
+   * Finalization entry (#120/#148, ADR 0027): fired once per entry,
+   * whichever rail opened the door — unfinished delegated acquisition is
+   * cancelled and the caller's own advisory notices are superseded, while
+   * completed worker reports stay available to the reserved Answer round.
+   */
+  onFinalizationEntered?: (cause: FinalizationCause) => void
 }): EffortEpoch {
   const workClock = createActiveWorkClock(deps.clock)
   let tier = deps.initialTier ?? DEFAULT_EFFORT_TIER
@@ -242,6 +277,7 @@ export function createEffortEpoch(deps: {
   let phase: EffortPhase = { kind: 'working' }
   const warned: Record<BudgetWarningMilestone, boolean> = { near: false, imminent: false }
   let pendingWarning: BudgetWarningMilestone | null = null
+  let pendingFinalizationNotice = false
 
   // The round currently armed against the deadline, if any: a tier re-arm
   // replaces its watcher rather than leaving it on the spent deadline.
@@ -263,10 +299,18 @@ export function createEffortEpoch(deps: {
     if (phase.kind !== 'working') return false
     phase = { kind: 'finalizing', cause }
     pendingWarning = null
+    try {
+      deps.onFinalizationEntered?.(cause)
+    } catch (err) {
+      // The door is a state transition, not the hook's errand: the entry
+      // stands whatever the consumer does. It also fires from the
+      // deadline timer, where a throw would escape the run entirely.
+      console.warn('[effort-epoch] the Finalization entry hook threw:', err)
+    }
     return true
   }
   const decideLoopTop = (): EffortLoopDecision => {
-    if (phase.kind !== 'working') return { kind: 'finalize', cause: phase.cause, entered: false }
+    if (phase.kind !== 'working') return { kind: 'finalize', cause: phase.cause }
     const cause =
       tierRounds >= TIER_TOOL_ROUND_BUDGETS[tier]
         ? 'budget_exhausted'
@@ -277,7 +321,7 @@ export function createEffortEpoch(deps: {
             : null
     if (cause === null) return { kind: 'work' }
     enterFinalization(cause)
-    return { kind: 'finalize', cause, entered: true }
+    return { kind: 'finalize', cause }
   }
 
   return {
@@ -295,9 +339,17 @@ export function createEffortEpoch(deps: {
     },
     decideLoopTop,
     enterFinalization,
+    tripNoProgress: () => enterFinalization('no_progress'),
+    tripDeadline: () => (phase.kind === 'working' && deadlineExpired() ? enterFinalization('deadline_reached') : false),
     beginToolRound() {
-      if (phase.kind === 'answer_only' || cumulativeRounds >= HARD_TOOL_ROUND_CEILING) return false
-      if (phase.kind === 'working' && decideLoopTop().kind === 'finalize') return false
+      const spendable =
+        phase.kind !== 'answer_only' &&
+        cumulativeRounds < HARD_TOOL_ROUND_CEILING &&
+        !(phase.kind === 'working' && decideLoopTop().kind === 'finalize')
+      // Whatever the guards decided, the round meets this phase: a
+      // Finalization one owes the directive, a working one owes nothing.
+      pendingFinalizationNotice = phase.kind !== 'working'
+      if (!spendable) return false
       cumulativeRounds += 1
       if (phase.kind === 'finalizing') {
         phase = { kind: 'answer_only', cause: phase.cause }
@@ -337,6 +389,10 @@ export function createEffortEpoch(deps: {
       let cancelWatch: () => void = () => {}
       const expire = (): void => {
         deadlineAborted = true
+        // The crossing is a Finalization entry like any other rail's
+        // (#147/#148): the door opens here, so the aborted round's caller
+        // only has to pick the run up at its Finalization phase.
+        enterFinalization('deadline_reached')
         controller.abort()
       }
       const watch = (): void => {
@@ -382,6 +438,11 @@ export function createEffortEpoch(deps: {
       pendingWarning = null
       const budget = TIER_TOOL_ROUND_BUDGETS[tier]
       return budgetWarningMessage(milestone, Math.max(0, budget - tierRounds), budget)
+    },
+    takeFinalizationNotice() {
+      if (!pendingFinalizationNotice || phase.kind === 'working') return null
+      pendingFinalizationNotice = false
+      return FINALIZATION_ANSWER_DIRECTIVE
     },
   }
 }

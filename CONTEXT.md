@@ -169,7 +169,10 @@ The Run's current bounded-effort window: one Effort Tier's Tool Round budget,
 warnings, and active-work deadline. It counts the Run's Tool Rounds, owes the
 internal budget warnings, and arms each acquisition round against the deadline
 as a cancellation boundary. A tier change or Steering replan re-arms it while
-cumulative Tool Rounds keep counting toward the hard ceiling.
+cumulative Tool Rounds keep counting toward the hard ceiling. It is also
+Finalization's one door: every mechanically known Finalization Cause — budget,
+deadline, hard limit, no Progress — is decided there, and entry cancels
+unfinished delegated work once and supersedes the Run's owed advisory notices.
 _Avoid_: tier window, budget window
 
 **Tool Round**:

@@ -1,15 +1,19 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { FakeClock } from '../testing/doubles'
 import {
   budgetWarningCrossed,
   budgetWarningMessage,
   createEffortEpoch,
   deterministicFinalAnswer,
+  FINALIZATION_ANSWER_DIRECTIVE,
   finalizationToolRefusal,
   HARD_TOOL_ROUND_CEILING,
   TIER_ACTIVE_WORK_DEADLINES_MS,
   TIER_TOOL_ROUND_BUDGETS,
+  type EffortEpoch,
 } from './effortEpoch'
+import { DEFAULT_EFFORT_TIER } from './runPlan'
+import type { FinalizationCause } from '../session/runJournal'
 
 describe('Effort Epoch (#146, ADR 0027)', () => {
   it('fixes the initial tier budgets and active-work deadlines', () => {
@@ -37,7 +41,7 @@ describe('Effort Epoch (#146, ADR 0027)', () => {
       clock.advance(TIER_ACTIVE_WORK_DEADLINES_MS.investigation)
 
       expect(epoch.cumulativeRounds).toBe(31)
-      expect(epoch.decideLoopTop()).toEqual({ kind: 'finalize', cause: 'budget_exhausted', entered: true })
+      expect(epoch.decideLoopTop()).toEqual({ kind: 'finalize', cause: 'budget_exhausted' })
       expect(epoch.phase).toEqual({ kind: 'finalizing', cause: 'budget_exhausted' })
     })
 
@@ -49,7 +53,7 @@ describe('Effort Epoch (#146, ADR 0027)', () => {
       for (let round = 0; round < 23; round += 1) epoch.beginToolRound()
       clock.advance(TIER_ACTIVE_WORK_DEADLINES_MS.investigation)
 
-      expect(epoch.decideLoopTop()).toEqual({ kind: 'finalize', cause: 'deadline_reached', entered: true })
+      expect(epoch.decideLoopTop()).toEqual({ kind: 'finalize', cause: 'deadline_reached' })
     })
 
     it('reserves round 32 for bookkeeping and leaves Answer-only outside the ceiling', () => {
@@ -59,7 +63,7 @@ describe('Effort Epoch (#146, ADR 0027)', () => {
       epoch.replan('investigation')
       for (let round = 0; round < 15; round += 1) epoch.beginToolRound()
 
-      expect(epoch.decideLoopTop()).toEqual({ kind: 'finalize', cause: 'hard_limit', entered: true })
+      expect(epoch.decideLoopTop()).toEqual({ kind: 'finalize', cause: 'hard_limit' })
       expect(epoch.beginToolRound()).toBe(true)
       expect(epoch.cumulativeRounds).toBe(HARD_TOOL_ROUND_CEILING)
       expect(epoch.phase).toEqual({ kind: 'answer_only', cause: 'hard_limit' })
@@ -121,27 +125,158 @@ describe('Effort Epoch (#146, ADR 0027)', () => {
       expect(epoch.tierRounds).toBe(1)
     })
 
-    it('allows Steering out of tier-rail Finalization only', () => {
+    it('re-arms the Steering replan at the default tier and keeps cumulative rounds (#148/AC1)', () => {
       const clock = new FakeClock()
-      const tierEpoch = createEffortEpoch({ clock })
-      tierEpoch.enterFinalization('budget_exhausted')
-      expect(tierEpoch.replan()).toBe(true)
-      expect(tierEpoch.phase).toEqual({ kind: 'working' })
+      const epoch = createEffortEpoch({ clock, initialTier: 'investigation' })
+      for (let round = 0; round < 4; round += 1) epoch.beginToolRound()
+      clock.advance(200_000)
 
-      const deadlineEpoch = createEffortEpoch({ clock })
-      deadlineEpoch.enterFinalization('deadline_reached')
-      expect(deadlineEpoch.replan()).toBe(true)
+      expect(epoch.replan()).toBe(true)
+      expect(epoch.tier).toBe(DEFAULT_EFFORT_TIER)
+      expect(epoch.tierRounds).toBe(0)
+      expect(epoch.cumulativeRounds).toBe(4)
+      expect(epoch.remainingActiveWorkMs()).toBe(TIER_ACTIVE_WORK_DEADLINES_MS[DEFAULT_EFFORT_TIER])
+      expect(epoch.phase).toEqual({ kind: 'working' })
+    })
 
-      const noProgressEpoch = createEffortEpoch({ clock })
-      noProgressEpoch.enterFinalization('no_progress')
-      expect(noProgressEpoch.replan()).toBe(false)
+    // The un-latch matrix (#119/#148/AC2): which Finalizations a Steering
+    // directive may exit, and which stay terminal.
+    it.each([
+      { when: 'while working', latch: undefined as FinalizationCause | undefined, spent: false, exits: true },
+      { when: 'during a budget-caused Finalization', latch: 'budget_exhausted' as const, spent: false, exits: true },
+      { when: 'during a deadline-caused Finalization', latch: 'deadline_reached' as const, spent: false, exits: true },
+      { when: 'during a no-progress Finalization', latch: 'no_progress' as const, spent: false, exits: false },
+      { when: 'during a hard-limit Finalization', latch: 'hard_limit' as const, spent: false, exits: false },
+      { when: 'after the bookkeeping round is spent', latch: 'budget_exhausted' as const, spent: true, exits: false },
+    ])('steering $when leaves the run working: $exits', ({ latch, spent, exits }) => {
+      const epoch = createEffortEpoch({ clock: new FakeClock(), initialTier: 'investigation' })
+      epoch.beginToolRound()
+      if (latch !== undefined) epoch.enterFinalization(latch)
+      if (spent) epoch.completeToolRound()
 
-      const hardEpoch = createEffortEpoch({ clock })
-      hardEpoch.enterFinalization('hard_limit')
-      expect(hardEpoch.replan()).toBe(false)
-      hardEpoch.completeToolRound()
-      expect(hardEpoch.replan()).toBe(false)
-      expect(hardEpoch.phase).toEqual({ kind: 'answer_only', cause: 'hard_limit' })
+      expect(epoch.replan()).toBe(exits)
+      expect(epoch.phase).toEqual(
+        exits
+          ? { kind: 'working' }
+          : spent
+            ? { kind: 'answer_only', cause: latch }
+            : { kind: 'finalizing', cause: latch },
+      )
+      // An exit clears the stale objective's cause and re-arms the tier;
+      // a terminal phase keeps both.
+      expect(epoch.tier).toBe(exits ? DEFAULT_EFFORT_TIER : 'investigation')
+      expect(epoch.cumulativeRounds).toBe(1)
+    })
+  })
+
+  describe('Finalization\u2019s one door (#148, ADR 0027)', () => {
+    const entriesOf = (): { causes: FinalizationCause[]; epoch: EffortEpoch } => {
+      const causes: FinalizationCause[] = []
+      const epoch = createEffortEpoch({
+        clock: new FakeClock(),
+        initialTier: 'direct_action',
+        onFinalizationEntered: (cause) => causes.push(cause),
+      })
+      return { causes, epoch }
+    }
+
+    it('fires the entry hook once per entry, whichever rail opened the door', () => {
+      const { causes, epoch } = entriesOf()
+      for (let round = 0; round < 6; round += 1) epoch.beginToolRound()
+
+      expect(epoch.decideLoopTop()).toEqual({ kind: 'finalize', cause: 'budget_exhausted' })
+      // The bookkeeping round and the reserved Answer round re-ask the
+      // same question; the door only opened once.
+      expect(epoch.decideLoopTop()).toEqual({ kind: 'finalize', cause: 'budget_exhausted' })
+      epoch.beginToolRound()
+      expect(epoch.decideLoopTop()).toEqual({ kind: 'finalize', cause: 'budget_exhausted' })
+      expect(causes).toEqual(['budget_exhausted'])
+    })
+
+    it('fires again for the re-entry that follows a Steering replan', () => {
+      const { causes, epoch } = entriesOf()
+      for (let round = 0; round < 6; round += 1) epoch.beginToolRound()
+      epoch.decideLoopTop()
+      expect(epoch.replan()).toBe(true)
+      for (let round = 0; round < TIER_TOOL_ROUND_BUDGETS[DEFAULT_EFFORT_TIER]; round += 1) epoch.beginToolRound()
+
+      epoch.decideLoopTop()
+      expect(causes).toEqual(['budget_exhausted', 'budget_exhausted'])
+    })
+
+    it('enters as no_progress when two Approaches are exhausted (#148/AC3)', () => {
+      const { causes, epoch } = entriesOf()
+      epoch.beginToolRound()
+
+      expect(epoch.tripNoProgress()).toBe(true)
+      expect(epoch.phase).toEqual({ kind: 'finalizing', cause: 'no_progress' })
+      // The trip is mid-round: the round's remaining acquisition siblings
+      // meet a Finalization phase, and a second report re-opens nothing.
+      expect(epoch.tripNoProgress()).toBe(false)
+      expect(causes).toEqual(['no_progress'])
+    })
+
+    it('trips the per-call deadline gate only while working past the boundary', () => {
+      const clock = new FakeClock()
+      const causes: FinalizationCause[] = []
+      const epoch = createEffortEpoch({
+        clock,
+        initialTier: 'direct_action',
+        onFinalizationEntered: (cause) => causes.push(cause),
+      })
+      epoch.beginToolRound()
+
+      expect(epoch.tripDeadline()).toBe(false)
+      clock.advance(TIER_ACTIVE_WORK_DEADLINES_MS.direct_action)
+      expect(epoch.tripDeadline()).toBe(true)
+      expect(epoch.tripDeadline()).toBe(false)
+      expect(causes).toEqual(['deadline_reached'])
+    })
+
+    it('owes the finalize directive once per Finalization Tool Round (#148/AC4)', () => {
+      const { epoch } = entriesOf()
+      for (let round = 0; round < 6; round += 1) epoch.beginToolRound()
+
+      // A working round owes nothing — the trip's own refusals carry it.
+      expect(epoch.takeFinalizationNotice()).toBeNull()
+      epoch.decideLoopTop()
+      epoch.beginToolRound()
+      expect(epoch.takeFinalizationNotice()).toBe(FINALIZATION_ANSWER_DIRECTIVE)
+      expect(epoch.takeFinalizationNotice()).toBeNull()
+    })
+
+    it('holds the entry when the hook throws — it also fires from the deadline timer', () => {
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+      const epoch = createEffortEpoch({
+        clock: new FakeClock(),
+        initialTier: 'direct_action',
+        onFinalizationEntered: () => {
+          throw new Error('cancelling the workers failed')
+        },
+      })
+      epoch.beginToolRound()
+
+      expect(() => epoch.tripNoProgress()).not.toThrow()
+      expect(epoch.phase).toEqual({ kind: 'finalizing', cause: 'no_progress' })
+      expect(warn).toHaveBeenCalled()
+      warn.mockRestore()
+    })
+
+    it('enters through the door when the deadline aborts the in-flight round', () => {
+      const clock = new FakeClock()
+      const causes: FinalizationCause[] = []
+      const epoch = createEffortEpoch({
+        clock,
+        initialTier: 'direct_action',
+        onFinalizationEntered: (cause) => causes.push(cause),
+      })
+      const round = epoch.armRound()
+      clock.advance(TIER_ACTIVE_WORK_DEADLINES_MS.direct_action)
+
+      expect(round.deadlineAborted).toBe(true)
+      expect(epoch.phase).toEqual({ kind: 'finalizing', cause: 'deadline_reached' })
+      expect(causes).toEqual(['deadline_reached'])
+      round.disarm()
     })
   })
 
