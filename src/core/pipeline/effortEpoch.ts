@@ -3,6 +3,8 @@
 // tool calls; it consumes one unit regardless of sibling-call count.
 
 import { DEFAULT_EFFORT_TIER, type EffortTier } from './runPlan.ts'
+import type { Clock } from '../ports/clock'
+import type { SubagentSharedDeadline } from '../agent/subagentRails'
 import type { FinalizationCause } from '../session/runJournal'
 import type { FallbackSource } from './fallbackAnswer'
 
@@ -144,32 +146,52 @@ interface ActiveWorkClock {
   rearm(): void
 }
 
-function createActiveWorkClock(deps: { now(): number }): ActiveWorkClock {
+function createActiveWorkClock(clock: Clock): ActiveWorkClock {
   let accumulatedMs = 0
-  let activeSince: number | null = deps.now()
+  let activeSince: number | null = clock.now()
   let suspendDepth = 0
   return {
     resume() {
       if (suspendDepth > 0) {
         suspendDepth -= 1
-        if (suspendDepth === 0) activeSince = deps.now()
+        if (suspendDepth === 0) activeSince = clock.now()
       }
     },
     suspend() {
       if (suspendDepth === 0 && activeSince !== null) {
-        accumulatedMs += deps.now() - activeSince
+        accumulatedMs += clock.now() - activeSince
         activeSince = null
       }
       suspendDepth += 1
     },
     spent() {
-      return activeSince === null ? accumulatedMs : accumulatedMs + (deps.now() - activeSince)
+      return activeSince === null ? accumulatedMs : accumulatedMs + (clock.now() - activeSince)
     },
     rearm() {
       accumulatedMs = 0
-      activeSince = suspendDepth === 0 ? deps.now() : null
+      activeSince = suspendDepth === 0 ? clock.now() : null
     },
   }
+}
+
+/**
+ * One model round armed against the epoch's active-work deadline (#135/#147,
+ * ADR 0027). The deadline is a live cancellation boundary, not a value polled
+ * between rounds: while the round is in flight the epoch's remaining time
+ * holds a watcher on the round's signal, and crossing it aborts the request
+ * immediately instead of letting the round run past the boundary.
+ * Finalization's own rounds — bookkeeping and the reserved Answer — arm
+ * nothing: the Answer stays available after the deadline stopped the work.
+ */
+export interface ArmedRound {
+  /** The signal the round's model request runs under. */
+  readonly signal: AbortSignal
+  /** True once the deadline — not Stop — aborted this round. */
+  readonly deadlineAborted: boolean
+  /** Stop's path to the in-flight request (#47). */
+  abort(): void
+  /** Round end: drops the watcher. Idempotent. */
+  disarm(): void
 }
 
 export interface EffortEpoch {
@@ -185,8 +207,18 @@ export interface EffortEpoch {
   completeToolRound(): void
   declareTier(tier: EffortTier, initialDeclaration?: boolean): boolean
   replan(tier?: EffortTier): boolean
+  /**
+   * Arms the next model round against the deadline. A tier re-arm while the
+   * round is in flight replaces its watcher with the fresh epoch's deadline.
+   */
+  armRound(): ArmedRound
   deadlineExpired(): boolean
   remainingActiveWorkMs(): number
+  /**
+   * The expiry predicate delegated Subagents share (#120): live, so a tier
+   * escalation's re-arm reaches running workers without a respawn.
+   */
+  readonly delegationDeadline: SubagentSharedDeadline
   suspend(): void
   resume(): void
   stop(): void
@@ -199,11 +231,11 @@ export interface EffortEpoch {
  * never rewind and remain bounded by the hard ceiling.
  */
 export function createEffortEpoch(deps: {
-  now(): number
+  clock: Clock
   activeWorkDeadlineMs?: number
   initialTier?: EffortTier
 }): EffortEpoch {
-  const workClock = createActiveWorkClock(deps)
+  const workClock = createActiveWorkClock(deps.clock)
   let tier = deps.initialTier ?? DEFAULT_EFFORT_TIER
   let tierRounds = 0
   let cumulativeRounds = 0
@@ -211,7 +243,13 @@ export function createEffortEpoch(deps: {
   const warned: Record<BudgetWarningMilestone, boolean> = { near: false, imminent: false }
   let pendingWarning: BudgetWarningMilestone | null = null
 
+  // The round currently armed against the deadline, if any: a tier re-arm
+  // replaces its watcher rather than leaving it on the spent deadline.
+  let armedRound: { rewatch(): void } | null = null
+
   const deadlineMs = (): number => resolveActiveWorkDeadlineMs(deps.activeWorkDeadlineMs, tier)
+  const remainingActiveWorkMs = (): number => deadlineMs() - workClock.spent()
+  const deadlineExpired = (): boolean => remainingActiveWorkMs() <= 0
   const rearm = (nextTier: EffortTier): void => {
     tier = nextTier
     tierRounds = 0
@@ -219,6 +257,7 @@ export function createEffortEpoch(deps: {
     warned.imminent = false
     pendingWarning = null
     workClock.rearm()
+    armedRound?.rewatch()
   }
   const enterFinalization = (cause: FinalizationCause): boolean => {
     if (phase.kind !== 'working') return false
@@ -231,7 +270,7 @@ export function createEffortEpoch(deps: {
     const cause =
       tierRounds >= TIER_TOOL_ROUND_BUDGETS[tier]
         ? 'budget_exhausted'
-        : workClock.spent() >= deadlineMs()
+        : deadlineExpired()
           ? 'deadline_reached'
           : cumulativeRounds >= HARD_TOOL_ROUND_CEILING - CEILING_RESERVED_BOOKKEEPING_ROUNDS
             ? 'hard_limit'
@@ -292,12 +331,48 @@ export function createEffortEpoch(deps: {
       rearm(nextTier)
       return true
     },
-    deadlineExpired() {
-      return workClock.spent() >= deadlineMs()
+    armRound() {
+      const controller = new AbortController()
+      let deadlineAborted = false
+      let cancelWatch: () => void = () => {}
+      const expire = (): void => {
+        deadlineAborted = true
+        controller.abort()
+      }
+      const watch = (): void => {
+        // Finalization's rounds are never deadline-aborted.
+        if (phase.kind !== 'working') return
+        const remainingMs = remainingActiveWorkMs()
+        // Already expired at round start (the loop-top rail normally
+        // catches this first): the boundary holds anyway.
+        if (remainingMs > 0) cancelWatch = deps.clock.setTimer(remainingMs, expire)
+        else expire()
+      }
+      const round = {
+        signal: controller.signal,
+        get deadlineAborted() {
+          return deadlineAborted
+        },
+        abort: () => controller.abort(),
+        disarm() {
+          cancelWatch()
+          cancelWatch = () => {}
+          if (armedRound === round) armedRound = null
+        },
+        rewatch() {
+          if (deadlineAborted) return
+          cancelWatch()
+          cancelWatch = () => {}
+          watch()
+        },
+      }
+      armedRound = round
+      watch()
+      return round
     },
-    remainingActiveWorkMs() {
-      return deadlineMs() - workClock.spent()
-    },
+    deadlineExpired,
+    delegationDeadline: { expired: deadlineExpired },
+    remainingActiveWorkMs,
     suspend: () => workClock.suspend(),
     resume: () => workClock.resume(),
     stop: () => workClock.suspend(),

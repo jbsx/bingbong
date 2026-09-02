@@ -1559,88 +1559,6 @@ describe('command pipeline', () => {
       expect(events.find((e) => e.type === 'tool_result' && e.callId === 'w5')).toMatchObject({ ok: false })
     })
 
-    it('finalizes when the Direct Action active-work deadline passes', async () => {
-      const clock = new FakeClock()
-      const slowWork: Tool = {
-        name: 'work',
-        acquisition: true,
-        async execute() {
-          clock.advance(46_000)
-          return 'worked'
-        },
-      }
-      const llm = new ScriptedLlm([
-        workRound(0, true),
-        { kind: 'tool_calls', calls: [{ id: 'w1', name: 'work', args: {} }] },
-        { kind: 'answer', speak: 'Ran out of time.', display: 'Detail.', resolution: 'partial' },
-      ])
-      const pipeline = createCommandPipeline({ llm, tts: new RecordingTts(), clock, tools: [createReportRunPlanTool(), slowWork] })
-
-      const events = await collect(pipeline, 'do the thing')
-
-      // One round of work (46 s of active work against a 45 s deadline);
-      // the next round is Finalization's bookkeeping round, then the Answer.
-      expect(llm.requests).toHaveLength(3)
-      expect(events.filter((e) => e.type === 'tool_result' && e.name === 'work' && e.ok)).toHaveLength(1)
-      expect(events.find((e) => e.type === 'tool_result' && e.callId === 'w1')).toMatchObject({
-        ok: false,
-        error: expect.stringMatching(/work budget is exhausted/),
-      })
-      expect(events.at(-1)).toEqual({
-        type: 'done',
-        outcome: 'done',
-        resolution: 'partial',
-        finalizationCause: 'deadline_reached',
-        at: 46_000,
-      })
-    })
-
-    it('excludes user-dependent waiting from the active-work deadline', async () => {
-      const clock = new FakeClock()
-      const gatedWork: Tool = {
-        name: 'work',
-        acquisition: true,
-        assessRisk: () => ({ kind: 'confirm', prompt: 'Proceed?' }),
-        async execute() {
-          return 'worked'
-        },
-      }
-      const llm = new ScriptedLlm([
-        workRound(0, true),
-        { kind: 'answer', speak: 'Done.', display: 'Detail.' },
-      ])
-      // Park the run's speech so the test controls when the confirmation
-      // window actually begins, then let the generator park in the
-      // decision race (clock suspended) before advancing the clock.
-      const speech = deferred<void>()
-      const spoken: string[] = []
-      const tts = {
-        async speak(text: string) {
-          spoken.push(text)
-          if (spoken.length === 1) await speech.promise
-          return { ok: true as const }
-        },
-        stop() {},
-      }
-      const pipeline = createCommandPipeline({ llm, tts, clock, tools: [createReportRunPlanTool(), gatedWork] })
-
-      const run = collect(pipeline, 'do the thing')
-      // Round 1 emits several events before the speech parks, so the poll
-      // needs a longer leash than the shared waitUntil.
-      for (let attempt = 0; attempt < 200 && spoken.length < 1; attempt += 1) await flush()
-      expect(spoken.length).toBe(1)
-      speech.resolve()
-      for (let i = 0; i < 10; i += 1) await flush()
-      // Fifty seconds of user thinking — over the 45 s Direct Action
-      // deadline, but user-dependent waiting never counts as work.
-      clock.advance(50_000)
-      pipeline.resolveConfirmation('confirm-1', true)
-      const events = await run
-
-      expect(events.filter((e) => e.type === 'tool_result' && e.name === 'work' && e.ok)).toHaveLength(1)
-      expect(events.at(-1)).toEqual({ type: 'done', outcome: 'done', finalizationCause: 'model_answered', at: 50_000 })
-    })
-
     it('bounds a plan-less run at the fallback Lookup budget', async () => {
       // No report_run_plan in the catalog: the run defaults to Lookup and
       // its 12-round budget — the tier table applies without a declaration.
@@ -1876,65 +1794,6 @@ describe('command pipeline', () => {
       calls: [...(planCall ? [planCall] : []), { id: `w${i}`, name: 'work', args: {} }],
     })
 
-    const budgetWarnings = (events: PipelineEvent[]) =>
-      events.filter(
-        (e) => e.type === 'tool_result' && e.ok && typeof e.result === 'string' && /Work budget: .*tool rounds? remain/.test(e.result),
-      )
-
-    it('bounds a Lookup at its 12-Tool-Round budget, warning near 75% and 90%', async () => {
-      const llm = new ScriptedLlm([
-        ...Array.from({ length: 12 }, (_, i) => workRound(i, i === 0 ? plan('p0', 'lookup') : undefined)),
-        { kind: 'tool_calls', calls: [{ id: 'w12', name: 'work', args: {} }] },
-        { kind: 'answer', speak: 'Partial.', display: 'Partial detail.', resolution: 'partial' },
-      ])
-      const pipeline = createCommandPipeline({ llm, tts: new RecordingTts(), clock: new FakeClock(), tools: [createReportRunPlanTool(), work] })
-
-      const events = await collect(pipeline, 'look up the widget finish guide')
-
-      expect(events.filter((e) => e.type === 'tool_result' && e.name === 'work' && e.ok)).toHaveLength(12)
-      expect(events.find((e) => e.type === 'tool_result' && e.callId === 'w12')).toMatchObject({
-        ok: false,
-        error: expect.stringMatching(/work budget is exhausted/),
-      })
-      // Milestones crossed after rounds 9 and 10 ride those rounds' own
-      // results — 3 and 2 of 12 remaining.
-      const warned = budgetWarnings(events)
-      expect(warned.map((e) => (e as { callId: string }).callId)).toEqual(['w8', 'w9'])
-      expect(warned[0]).toMatchObject({ result: expect.stringContaining('3 of 12 tool rounds remain') })
-      expect(warned[1]).toMatchObject({ result: expect.stringContaining('2 of 12 tool rounds remain') })
-      expect(events.at(-1)).toEqual({ type: 'done', outcome: 'done', resolution: 'partial', finalizationCause: 'budget_exhausted', at: 0 })
-    })
-
-    it('finalizes when the Lookup active-work deadline passes', async () => {
-      const clock = new FakeClock()
-      const slowWork: Tool = {
-        name: 'work',
-        acquisition: true,
-        async execute() {
-          clock.advance(121_000)
-          return 'worked'
-        },
-      }
-      const llm = new ScriptedLlm([
-        workRound(0, plan('p0', 'lookup')),
-        { kind: 'tool_calls', calls: [{ id: 'w1', name: 'work', args: {} }] },
-        { kind: 'answer', speak: 'Ran out of time.', display: 'Detail.', resolution: 'partial' },
-      ])
-      const pipeline = createCommandPipeline({ llm, tts: new RecordingTts(), clock, tools: [createReportRunPlanTool(), slowWork] })
-
-      const events = await collect(pipeline, 'look up the widget finish guide')
-
-      // One round of work — 121 s of active work against the 2-minute
-      // Lookup deadline; then bookkeeping, then the Answer.
-      expect(llm.requests).toHaveLength(3)
-      expect(events.filter((e) => e.type === 'tool_result' && e.name === 'work' && e.ok)).toHaveLength(1)
-      expect(events.find((e) => e.type === 'tool_result' && e.callId === 'w1')).toMatchObject({
-        ok: false,
-        error: expect.stringMatching(/work budget is exhausted/),
-      })
-      expect(events.at(-1)).toEqual({ type: 'done', outcome: 'done', resolution: 'partial', finalizationCause: 'deadline_reached', at: 121_000 })
-    })
-
     // #135: the deadline is a real cancellation boundary, not a value
     // polled only between model rounds. The observed Lookup failure — a
     // round that begins just before the two-minute deadline, crosses it
@@ -2087,49 +1946,6 @@ describe('command pipeline', () => {
       expect(requests[2]?.steering).toBe('Search the catalog instead.')
       expect(events.filter((e) => e.type === 'error')).toEqual([])
       expect(events.at(-1)).toEqual({ type: 'done', outcome: 'done', finalizationCause: 'model_answered', at: 520_000 })
-    })
-
-    it('arms the deadline watcher against the test override (#135)', async () => {
-      // The e2e-style override shortens every tier's deadline: the same
-      // mid-flight abort must fire against it, proving the override
-      // threads through the live boundary and not just the loop-top rail.
-      const clock = new FakeClock()
-      let executions = 0
-      const work: Tool = {
-        name: 'work',
-        acquisition: true,
-        async execute() {
-          executions += 1
-          clock.advance(300)
-          return 'worked'
-        },
-      }
-      const requests: LlmRequest[] = []
-      const llm: LlmClient = {
-        complete(request) {
-          requests.push(request)
-          if (requests.length === 1) return Promise.resolve(workRound(0, plan('p0', 'lookup')))
-          if (requests.length === 2) return abortableRound(request)
-          return Promise.resolve({ kind: 'answer', speak: 'Ran out of time.', display: 'Detail.', resolution: 'partial' })
-        },
-      }
-      const pipeline = createCommandPipeline({
-        llm,
-        tts: new RecordingTts(),
-        clock,
-        tools: [createReportRunPlanTool(), work],
-        activeWorkDeadlineMs: 1_000,
-      })
-
-      const run = collect(pipeline, 'look up the widget finish guide')
-      for (let attempt = 0; attempt < 200 && requests.length < 2; attempt += 1) await flush()
-      expect(requests).toHaveLength(2)
-      clock.advance(2_000)
-      const events = await run
-
-      expect(executions).toBe(1)
-      expect(events.filter((e) => e.type === 'error')).toEqual([])
-      expect(events.at(-1)).toMatchObject({ type: 'done', finalizationCause: 'deadline_reached' })
     })
 
     it('grants an escalated tier its full fresh Tool-Round budget (#118/AC2)', async () => {

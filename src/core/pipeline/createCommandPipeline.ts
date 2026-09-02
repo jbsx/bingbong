@@ -507,7 +507,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
       turnId,
       aborted: false,
       paused: false,
-      effortEpoch: createEffortEpoch({ now: () => clock.now(), activeWorkDeadlineMs: deps.activeWorkDeadlineMs }),
+      effortEpoch: createEffortEpoch({ clock, activeWorkDeadlineMs: deps.activeWorkDeadlineMs }),
     }
     activeRun = run
     // When this Run started (#123): the freshness boundary — evidence
@@ -749,9 +749,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
           // share this run's active-work deadline as a live predicate, so
           // a tier escalation re-arm reaches them without a respawn.
           effortTier: () => effortEpoch.tier,
-          delegationDeadline: {
-            expired: () => effortEpoch.deadlineExpired(),
-          },
+          delegationDeadline: effortEpoch.delegationDeadline,
           // Delegation's memory selection (#98): spawn_agent resolves
           // memory_ids against this Run's immutable snapshot — the same one
           // every model round sees — so a worker can never receive entries
@@ -820,37 +818,14 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
           } catch (err) {
             console.warn('[run-context-compaction] fell back to the original context:', toErrorMessage(err))
           }
-          // Stop reaches the in-flight request through this signal (#47):
-          // abort() fires it, the client cancels the HTTP request, and the
-          // rejection below maps back to a cancelled run — no waiting out
-          // the request timeout.
-          const roundAbort = new AbortController()
-          run.abortLlm = () => roundAbort.abort()
-          // The deadline as a live cancellation boundary (#135, ADR 0027):
-          // during acquisition rounds the remaining active-work time arms
-          // a watcher on the same signal — when it expires, the in-flight
-          // model request is aborted immediately instead of running past
-          // the deadline. Finalization's own rounds (bookkeeping, the
-          // reserved Answer) never arm it: the Answer stays available
-          // after the deadline stopped the work. A tier re-arm between
-          // rounds replaces the watcher naturally — the next round arms
-          // against the fresh epoch's remaining time.
-          let deadlineAborted = false
-          let cancelDeadlineWatch: () => void = () => {}
-          if (!isInFinalization()) {
-            const remainingMs = effortEpoch.remainingActiveWorkMs()
-            if (remainingMs > 0) {
-              cancelDeadlineWatch = clock.setTimer(remainingMs, () => {
-                deadlineAborted = true
-                roundAbort.abort()
-              })
-            } else {
-              // Expired at round start (the loop-top rail normally catches
-              // this first): the boundary holds anyway.
-              deadlineAborted = true
-              roundAbort.abort()
-            }
-          }
+          // The round's cancellation boundary (#47/#135, ADR 0027): the
+          // epoch arms it, so the active-work deadline aborts an in-flight
+          // acquisition round the moment it expires. Stop reaches the same
+          // signal — abort() fires it, the client cancels the HTTP
+          // request, and the rejection below maps back to a cancelled run
+          // rather than waiting out the request timeout.
+          const armedRound = effortEpoch.armRound()
+          run.abortLlm = () => armedRound.abort()
           let turn: AssistantTurn
           try {
             turn = await llm.complete({
@@ -892,7 +867,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
               // Streaming (#47): the round streams only when the detail
               // channel is wired (absent → the non-streaming fallback).
               ...(batcher ? { onDelta: (delta: LlmStreamDelta): void => batcher.onDelta(delta) } : {}),
-              signal: roundAbort.signal,
+              signal: armedRound.signal,
             })
           } catch (err) {
             // The aborted signal rejects the request; the run was stopped,
@@ -905,7 +880,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
             // consumed at the loop-top checkpoint (where a replan can
             // still exit a tier-rail Finalization), then bookkeeping and
             // the reserved Answer round follow as always.
-            if (deadlineAborted) {
+            if (armedRound.deadlineAborted) {
               enterFinalization('deadline_reached')
               continue
             }
@@ -918,7 +893,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
             }
             throw err
           } finally {
-            cancelDeadlineWatch()
+            armedRound.disarm()
             run.abortLlm = undefined
             // Round end (#47): drain the streamed tail (and reset the
             // batcher) before the round's events continue — the feed gets
@@ -931,7 +906,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
           // still concludes the run, honestly stamped deadline_reached; a
           // tool round flows into the per-call deadline gate below, which
           // refuses its acquisition work.
-          if (deadlineAborted) enterFinalization('deadline_reached')
+          if (armedRound.deadlineAborted) enterFinalization('deadline_reached')
           steering = undefined
           const afterModelSteering = yield* consumeSteering('thinking')
           if (afterModelSteering) {

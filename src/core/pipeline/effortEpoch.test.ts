@@ -30,7 +30,7 @@ describe('Effort Epoch (#146, ADR 0027)', () => {
   describe('loop-top decision', () => {
     it('preserves budget, deadline, then hard-ceiling precedence at a coincidence', () => {
       const clock = new FakeClock()
-      const epoch = createEffortEpoch({ now: () => clock.now(), initialTier: 'lookup' })
+      const epoch = createEffortEpoch({ clock, initialTier: 'lookup' })
       for (let round = 0; round < 7; round += 1) epoch.beginToolRound()
       epoch.declareTier('investigation')
       for (let round = 0; round < 24; round += 1) epoch.beginToolRound()
@@ -43,7 +43,7 @@ describe('Effort Epoch (#146, ADR 0027)', () => {
 
     it('chooses deadline before the hard ceiling when the tier budget remains', () => {
       const clock = new FakeClock()
-      const epoch = createEffortEpoch({ now: () => clock.now(), initialTier: 'investigation' })
+      const epoch = createEffortEpoch({ clock, initialTier: 'investigation' })
       for (let round = 0; round < 8; round += 1) epoch.beginToolRound()
       epoch.replan('investigation')
       for (let round = 0; round < 23; round += 1) epoch.beginToolRound()
@@ -54,7 +54,7 @@ describe('Effort Epoch (#146, ADR 0027)', () => {
 
     it('reserves round 32 for bookkeeping and leaves Answer-only outside the ceiling', () => {
       const clock = new FakeClock()
-      const epoch = createEffortEpoch({ now: () => clock.now(), initialTier: 'investigation' })
+      const epoch = createEffortEpoch({ clock, initialTier: 'investigation' })
       for (let round = 0; round < 16; round += 1) epoch.beginToolRound()
       epoch.replan('investigation')
       for (let round = 0; round < 15; round += 1) epoch.beginToolRound()
@@ -69,7 +69,7 @@ describe('Effort Epoch (#146, ADR 0027)', () => {
 
     it('cannot bypass the loop-top decision to spend the reserved round as work', () => {
       const clock = new FakeClock()
-      const epoch = createEffortEpoch({ now: () => clock.now(), initialTier: 'investigation' })
+      const epoch = createEffortEpoch({ clock, initialTier: 'investigation' })
       for (let round = 0; round < 16; round += 1) epoch.beginToolRound()
       epoch.replan('investigation')
       for (let round = 0; round < 15; round += 1) epoch.beginToolRound()
@@ -86,7 +86,7 @@ describe('Effort Epoch (#146, ADR 0027)', () => {
   describe('re-arm', () => {
     it('re-arms tier budget, warnings, and deadline without rewinding cumulative rounds', () => {
       const clock = new FakeClock()
-      const epoch = createEffortEpoch({ now: () => clock.now(), initialTier: 'direct_action' })
+      const epoch = createEffortEpoch({ clock, initialTier: 'direct_action' })
       for (let round = 0; round < 5; round += 1) epoch.beginToolRound()
       clock.advance(40_000)
 
@@ -100,7 +100,7 @@ describe('Effort Epoch (#146, ADR 0027)', () => {
 
     it('re-arms the first declaration even when it declares the default tier', () => {
       const clock = new FakeClock()
-      const epoch = createEffortEpoch({ now: () => clock.now() })
+      const epoch = createEffortEpoch({ clock })
       epoch.beginToolRound()
       clock.advance(60_000)
 
@@ -112,7 +112,7 @@ describe('Effort Epoch (#146, ADR 0027)', () => {
 
     it('does not re-arm an escalation accepted during Finalization', () => {
       const clock = new FakeClock()
-      const epoch = createEffortEpoch({ now: () => clock.now(), initialTier: 'lookup' })
+      const epoch = createEffortEpoch({ clock, initialTier: 'lookup' })
       epoch.beginToolRound()
       epoch.enterFinalization('budget_exhausted')
 
@@ -123,20 +123,20 @@ describe('Effort Epoch (#146, ADR 0027)', () => {
 
     it('allows Steering out of tier-rail Finalization only', () => {
       const clock = new FakeClock()
-      const tierEpoch = createEffortEpoch({ now: () => clock.now() })
+      const tierEpoch = createEffortEpoch({ clock })
       tierEpoch.enterFinalization('budget_exhausted')
       expect(tierEpoch.replan()).toBe(true)
       expect(tierEpoch.phase).toEqual({ kind: 'working' })
 
-      const deadlineEpoch = createEffortEpoch({ now: () => clock.now() })
+      const deadlineEpoch = createEffortEpoch({ clock })
       deadlineEpoch.enterFinalization('deadline_reached')
       expect(deadlineEpoch.replan()).toBe(true)
 
-      const noProgressEpoch = createEffortEpoch({ now: () => clock.now() })
+      const noProgressEpoch = createEffortEpoch({ clock })
       noProgressEpoch.enterFinalization('no_progress')
       expect(noProgressEpoch.replan()).toBe(false)
 
-      const hardEpoch = createEffortEpoch({ now: () => clock.now() })
+      const hardEpoch = createEffortEpoch({ clock })
       hardEpoch.enterFinalization('hard_limit')
       expect(hardEpoch.replan()).toBe(false)
       hardEpoch.completeToolRound()
@@ -180,55 +180,221 @@ describe('Effort Epoch (#146, ADR 0027)', () => {
     })
   })
 
+  describe('owed budget warnings', () => {
+    const workRounds = (epoch: ReturnType<typeof createEffortEpoch>, count: number): (string | null)[] =>
+      Array.from({ length: count }, () => {
+        epoch.beginToolRound()
+        return epoch.takeBudgetWarning()
+      })
+
+    it('owes one warning after rounds 4 and 5 of the Direct Action budget of 6', () => {
+      const epoch = createEffortEpoch({ clock: new FakeClock(), initialTier: 'direct_action' })
+
+      const warnings = workRounds(epoch, 6)
+      expect(warnings.map((warning) => warning !== null)).toEqual([false, false, false, true, true, false])
+      expect(warnings[3]).toContain('2 of 6 tool rounds remain')
+      expect(warnings[4]).toContain('1 of 6 tool round remains')
+    })
+
+    it('owes the Lookup budget\u2019s milestones after rounds 9 and 10 of 12', () => {
+      const epoch = createEffortEpoch({ clock: new FakeClock(), initialTier: 'lookup' })
+
+      const warnings = workRounds(epoch, 12)
+      expect(warnings.map((warning, index) => (warning === null ? null : index))).toEqual([
+        ...Array.from({ length: 8 }, () => null),
+        8,
+        9,
+        null,
+        null,
+      ])
+      expect(warnings[8]).toContain('3 of 12 tool rounds remain')
+      expect(warnings[9]).toContain('2 of 12 tool rounds remain')
+    })
+
+    it('stays owed until it is taken, and the honest remaining count is computed at delivery', () => {
+      // A round whose siblings all failed delivers nothing, so the crossed
+      // warning rides the next useful result — one round later, with the
+      // remaining count as it stands then, not as it stood at the crossing.
+      const epoch = createEffortEpoch({ clock: new FakeClock(), initialTier: 'direct_action' })
+      for (let round = 0; round < 4; round += 1) epoch.beginToolRound() // near crosses, undelivered
+
+      epoch.beginToolRound()
+      expect(epoch.takeBudgetWarning()).toContain('1 of 6 tool rounds remain')
+      expect(epoch.takeBudgetWarning()).toBeNull()
+    })
+
+    it('never re-owes a milestone once it has been delivered', () => {
+      const epoch = createEffortEpoch({ clock: new FakeClock(), initialTier: 'direct_action' })
+      for (let round = 0; round < 4; round += 1) epoch.beginToolRound()
+
+      expect(epoch.takeBudgetWarning()).not.toBeNull()
+      expect(epoch.takeBudgetWarning()).toBeNull()
+    })
+
+    it('clears an owed warning at Finalization entry and at a re-arm', () => {
+      const finalizing = createEffortEpoch({ clock: new FakeClock(), initialTier: 'direct_action' })
+      for (let round = 0; round < 4; round += 1) finalizing.beginToolRound()
+      finalizing.enterFinalization('no_progress')
+      expect(finalizing.takeBudgetWarning()).toBeNull()
+
+      const rearmed = createEffortEpoch({ clock: new FakeClock(), initialTier: 'direct_action' })
+      for (let round = 0; round < 4; round += 1) rearmed.beginToolRound()
+      rearmed.declareTier('lookup')
+      expect(rearmed.takeBudgetWarning()).toBeNull()
+    })
+  })
+
+  describe('the deadline as a cancellation boundary (#135/#147)', () => {
+    it('aborts the in-flight round the moment the remaining active-work time expires', () => {
+      const clock = new FakeClock()
+      const epoch = createEffortEpoch({ clock, initialTier: 'lookup' })
+      clock.advance(110_000)
+
+      const round = epoch.armRound()
+      expect(round.signal.aborted).toBe(false)
+      expect(round.deadlineAborted).toBe(false)
+
+      clock.advance(9_000)
+      expect(round.signal.aborted).toBe(false)
+
+      clock.advance(1_000) // the two-minute Lookup deadline
+      expect(round.signal.aborted).toBe(true)
+      expect(round.deadlineAborted).toBe(true)
+    })
+
+    it('holds the boundary for a round armed after expiry', () => {
+      const clock = new FakeClock()
+      const epoch = createEffortEpoch({ clock, initialTier: 'direct_action' })
+      clock.advance(TIER_ACTIVE_WORK_DEADLINES_MS.direct_action)
+
+      const round = epoch.armRound()
+      expect(round.deadlineAborted).toBe(true)
+      expect(round.signal.aborted).toBe(true)
+    })
+
+    it('arms against the test override rather than the tier table', () => {
+      const clock = new FakeClock()
+      const epoch = createEffortEpoch({ clock, activeWorkDeadlineMs: 1_000, initialTier: 'lookup' })
+
+      const round = epoch.armRound()
+      clock.advance(2_000)
+      expect(round.deadlineAborted).toBe(true)
+    })
+
+    it('never arms Finalization\u2019s bookkeeping or reserved Answer rounds', () => {
+      const clock = new FakeClock()
+      const epoch = createEffortEpoch({ clock, initialTier: 'direct_action' })
+      epoch.enterFinalization('deadline_reached')
+
+      const bookkeeping = epoch.armRound()
+      clock.advance(TIER_ACTIVE_WORK_DEADLINES_MS.direct_action * 10)
+      expect(bookkeeping.deadlineAborted).toBe(false)
+      expect(bookkeeping.signal.aborted).toBe(false)
+      bookkeeping.disarm()
+
+      epoch.beginToolRound()
+      expect(epoch.phase).toEqual({ kind: 'answer_only', cause: 'deadline_reached' })
+      const answer = epoch.armRound()
+      clock.advance(TIER_ACTIVE_WORK_DEADLINES_MS.direct_action)
+      expect(answer.signal.aborted).toBe(false)
+    })
+
+    it('leaves Stop\u2019s own abort unmarked as a deadline abort', () => {
+      const epoch = createEffortEpoch({ clock: new FakeClock(), initialTier: 'lookup' })
+
+      const round = epoch.armRound()
+      round.abort()
+      expect(round.signal.aborted).toBe(true)
+      expect(round.deadlineAborted).toBe(false)
+    })
+
+    it('drops the watcher at round end so a later crossing cannot abort it', () => {
+      const clock = new FakeClock()
+      const epoch = createEffortEpoch({ clock, initialTier: 'direct_action' })
+
+      const round = epoch.armRound()
+      round.disarm()
+      clock.advance(TIER_ACTIVE_WORK_DEADLINES_MS.direct_action * 2)
+      expect(round.signal.aborted).toBe(false)
+    })
+
+    it('replaces an armed round\u2019s watcher with the fresh epoch\u2019s deadline on a re-arm', () => {
+      const clock = new FakeClock()
+      const epoch = createEffortEpoch({ clock, initialTier: 'direct_action' })
+      clock.advance(40_000) // 5 s left of the 45 s Direct Action deadline
+
+      const round = epoch.armRound()
+      epoch.declareTier('lookup')
+
+      clock.advance(10_000) // past the spent deadline the round armed against
+      expect(round.deadlineAborted).toBe(false)
+      clock.advance(110_000) // the fresh Lookup deadline, from the re-arm
+      expect(round.deadlineAborted).toBe(true)
+    })
+
+    it('keeps an in-flight round active work through a Pause (ADR 0027)', () => {
+      // A Pause that lands mid-round suspends deadline consumption only
+      // from the next parked checkpoint, so the live request stays active
+      // work and the deadline may abort the round during the pause.
+      const clock = new FakeClock()
+      const epoch = createEffortEpoch({ clock, initialTier: 'direct_action' })
+
+      const round = epoch.armRound()
+      clock.advance(TIER_ACTIVE_WORK_DEADLINES_MS.direct_action)
+
+      expect(round.deadlineAborted).toBe(true)
+    })
+  })
+
   describe('active-work clock', () => {
     it('accumulates working time and excludes suspended user-dependent waits', () => {
-      let now = 1_000
-      const clock = createEffortEpoch({ now: () => now })
-      now = 5_000
-      expect(clock.remainingActiveWorkMs()).toBe(116_000)
+      const clock = new FakeClock(1_000)
+      const epoch = createEffortEpoch({ clock })
+      clock.advance(4_000)
+      expect(epoch.remainingActiveWorkMs()).toBe(116_000)
 
-      clock.suspend()
-      now = 65_000 // a minute of user-dependent waiting
-      expect(clock.remainingActiveWorkMs()).toBe(116_000)
+      epoch.suspend()
+      clock.advance(60_000) // a minute of user-dependent waiting
+      expect(epoch.remainingActiveWorkMs()).toBe(116_000)
 
-      clock.resume()
-      now = 66_000
-      expect(clock.remainingActiveWorkMs()).toBe(115_000) // 4s before the wait + 1s after it
+      epoch.resume()
+      clock.advance(1_000)
+      expect(epoch.remainingActiveWorkMs()).toBe(115_000) // 4s before the wait + 1s after it
     })
 
     it('resumes accumulation from the resume moment, not the suspend moment', () => {
-      let now = 0
-      const clock = createEffortEpoch({ now: () => now })
-      now = 10_000
-      clock.suspend()
-      now = 100_000
-      clock.resume()
-      now = 101_000
-      expect(clock.remainingActiveWorkMs()).toBe(109_000) // 10s before + 1s after the wait
+      const clock = new FakeClock()
+      const epoch = createEffortEpoch({ clock })
+      clock.advance(10_000)
+      epoch.suspend()
+      clock.advance(90_000)
+      epoch.resume()
+      clock.advance(1_000)
+      expect(epoch.remainingActiveWorkMs()).toBe(109_000) // 10s before + 1s after the wait
     })
 
     it('nests suspends and resumes without leaking active time', () => {
-      let now = 0
-      const clock = createEffortEpoch({ now: () => now })
-      clock.suspend() // the outer wait (ask_user window)
-      now = 50_000
-      clock.suspend() // a nested pause inside the wait
-      now = 60_000
-      clock.resume() // unpause — still inside the ask window
-      now = 61_000
-      expect(clock.remainingActiveWorkMs()).toBe(120_000)
-      clock.resume() // the ask resolves
-      now = 62_000
-      expect(clock.remainingActiveWorkMs()).toBe(119_000)
+      const clock = new FakeClock()
+      const epoch = createEffortEpoch({ clock })
+      epoch.suspend() // the outer wait (ask_user window)
+      clock.advance(50_000)
+      epoch.suspend() // a nested pause inside the wait
+      clock.advance(10_000)
+      epoch.resume() // unpause — still inside the ask window
+      clock.advance(1_000)
+      expect(epoch.remainingActiveWorkMs()).toBe(120_000)
+      epoch.resume() // the ask resolves
+      clock.advance(1_000)
+      expect(epoch.remainingActiveWorkMs()).toBe(119_000)
     })
 
     it('re-arms to a fresh deadline without leaking the old accumulation', () => {
-      let now = 0
-      const clock = createEffortEpoch({ now: () => now })
-      now = 30_000
-      clock.replan()
-      now = 31_000
-      expect(clock.remainingActiveWorkMs()).toBe(119_000)
+      const clock = new FakeClock()
+      const epoch = createEffortEpoch({ clock })
+      clock.advance(30_000)
+      epoch.replan()
+      clock.advance(1_000)
+      expect(epoch.remainingActiveWorkMs()).toBe(119_000)
     })
   })
 
