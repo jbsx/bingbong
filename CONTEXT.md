@@ -163,8 +163,11 @@ _Avoid_: plan, task plan
 The bounded class of autonomous work a Run may spend: Direct Action, Lookup, or
 Investigation. The smallest tier sufficient for the objective is preferred. The
 tier also fixes how hard the model thinks per round (#166): Direct Action and
-Lookup run at the `low` reasoning rung, an Investigation at `max`, and a Browse
-Subagent — which has no tier — always at `low`. The rung is read from the
+Lookup run at the `high` reasoning rung, an Investigation at `max`, and a Browse
+Subagent — which has no tier — always at `low`. The cheap tiers ran at `low`
+until the corpus measured it: a Run steered mid-flight then declared its fresh
+plan against the original objective, losing the correction, and Lookups wandered
+to budget exhaustion — while `high` cost nothing in rounds or wall time. The rung is read from the
 Effort Epoch as each request is built, so an escalation or a Steering replan
 carries it with everything else.
 _Avoid_: complexity, mode

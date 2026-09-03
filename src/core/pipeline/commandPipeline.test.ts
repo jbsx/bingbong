@@ -284,7 +284,7 @@ describe('command pipeline', () => {
       turnId: expect.any(String),
       // Every round carries its abort signal (#47) and its rung (#166).
       signal: expect.any(AbortSignal),
-      reasoningEffort: 'low',
+      reasoningEffort: 'high',
     })
     expect(executions).toBe(0)
     expect(events).toContainEqual({ type: 'status', status: 'paused', at: 0 })
@@ -337,7 +337,7 @@ describe('command pipeline', () => {
       }],
       turnId: expect.any(String),
       signal: expect.any(AbortSignal),
-      reasoningEffort: 'low',
+      reasoningEffort: 'high',
     })
   })
 
@@ -1931,7 +1931,7 @@ describe('command pipeline', () => {
 
     it('runs every round at the tier\u2019s reasoning-effort rung, escalation included (#166)', async () => {
       // Round one carries a rung with no plan yet declared: the epoch's
-      // default tier is Lookup, so it is low. The escalation to
+      // default tier is Lookup, so it is that tier's rung. The escalation to
       // Investigation raises the rung from the very next round.
       const llm = new ScriptedLlm([
         workRound(0),
@@ -1943,7 +1943,7 @@ describe('command pipeline', () => {
 
       await collect(pipeline, 'research the thing')
 
-      expect(llm.requests.map((request) => request.reasoningEffort)).toEqual(['low', 'low', 'max', 'max'])
+      expect(llm.requests.map((request) => request.reasoningEffort)).toEqual(['high', 'high', 'max', 'max'])
     })
 
     it('grants an escalated tier its full fresh Tool-Round budget (#118/AC2)', async () => {

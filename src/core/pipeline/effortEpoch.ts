@@ -33,14 +33,22 @@ export const TIER_ACTIVE_WORK_DEADLINES_MS: Readonly<Record<EffortTier, number>>
 
 /**
  * The reasoning-effort rung each tier runs its model rounds at (#166):
- * the cheap tiers think briefly, an Investigation thinks as hard as the
- * provider allows. `high` is deliberately unmapped — no measurement has
- * earned it a tier yet. A Browse Subagent has no tier and runs at
+ * the cheap tiers think less than an Investigation, which thinks as hard
+ * as the provider allows. A Browse Subagent has no tier and runs at
  * SUBAGENT_REASONING_EFFORT instead.
+ *
+ * The cheap tiers were `low` until the corpus measured it (#166): at
+ * `low` a Run that receives a mid-run Steering directive declares its
+ * fresh Run Plan against the *original* objective, so the correction
+ * never reaches the one durable surface and the Run reverts — three
+ * passes, three losses, against twelve pre-change passes that never lost
+ * one. Lookups also wandered to budget exhaustion. `high` costs nothing
+ * measurable against `low` (same median rounds, same corpus wall time)
+ * and holds what `low` dropped, so it is the rung the measurement earned.
  */
 export const TIER_REASONING_EFFORT: Readonly<Record<EffortTier, ReasoningEffort>> = {
-  direct_action: 'low',
-  lookup: 'low',
+  direct_action: 'high',
+  lookup: 'high',
   investigation: 'max',
 }
 

@@ -28,8 +28,8 @@ describe('Effort Epoch (#146, ADR 0027)', () => {
   })
 
   describe('reasoning effort rung (#166)', () => {
-    it('maps the cheap tiers to low and Investigation to max', () => {
-      expect(TIER_REASONING_EFFORT).toEqual({ direct_action: 'low', lookup: 'low', investigation: 'max' })
+    it('maps the cheap tiers to high and Investigation to max', () => {
+      expect(TIER_REASONING_EFFORT).toEqual({ direct_action: 'high', lookup: 'high', investigation: 'max' })
     })
 
     it('runs an undeclared Run\u2019s first round at the default tier\u2019s rung', () => {
@@ -38,12 +38,12 @@ describe('Effort Epoch (#146, ADR 0027)', () => {
       const epoch = createEffortEpoch({ clock: new FakeClock() })
 
       expect(epoch.reasoningEffort).toBe(TIER_REASONING_EFFORT[DEFAULT_EFFORT_TIER])
-      expect(epoch.reasoningEffort).toBe('low')
+      expect(epoch.reasoningEffort).toBe('high')
     })
 
     it('raises the rung from the round after a tier escalation', () => {
       const epoch = createEffortEpoch({ clock: new FakeClock(), initialTier: 'lookup' })
-      expect(epoch.reasoningEffort).toBe('low')
+      expect(epoch.reasoningEffort).toBe('high')
 
       epoch.declareTier('investigation')
 
@@ -56,7 +56,7 @@ describe('Effort Epoch (#146, ADR 0027)', () => {
 
       epoch.replan('direct_action')
 
-      expect(epoch.reasoningEffort).toBe('low')
+      expect(epoch.reasoningEffort).toBe('high')
     })
   })
 
