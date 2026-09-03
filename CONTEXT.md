@@ -429,6 +429,22 @@ The view-facing half of an Answer: markdown shown in the Feed. Replaces the
 live answer stream and the Spoken rendering.
 _Avoid_: display text, answer card
 
+**Exhibit**:
+The optional third rendering of an Answer: an interactable HTML page for the
+eye, laid out after the Answer lands and shown in place of its Card while
+the Session lives. Only an Investigation whose question benefits from a
+visual carries one; the model decides the benefit, the app enforces the
+tier. It is self-contained — its links open in the browsing pane and nothing
+else crosses back. Never authored by a Subagent; at most one per Answer.
+_Avoid_: artifact, visual, report, HTML card
+
+**Exhibit Brief**:
+The Answer's declaration that an Exhibit is warranted and what it should
+show, naming the Session Evidence it draws on. The Exhibit is authored from
+the Brief after the Answer is delivered; a malformed or out-of-tier Brief is
+dropped and the Card stands.
+_Avoid_: exhibit spec, render request
+
 **Feed Panel**:
 The activity panel over the browser pane. Three states: Overlay, Docked,
 Collapsed. A View Preference, resizable.
