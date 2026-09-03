@@ -12,6 +12,7 @@ import { sleep, waitFor } from '../waitFor'
 import { aggregateScenarios, combineRuns, extractMetrics, type EvalAggregate, type ScenarioMetrics } from './metrics'
 import { loadProductionEnv, resolveProductionRouting, type ProductionRouting } from './routing'
 import type { EvalScenario, PaneState, ScenarioObservation } from './scenarios'
+import { runningAgentsSinceSource } from './tape'
 
 // The opt-in real-model evaluator (#109): one Electron app, one live
 // Session, the corpus submitted through the Prompt Bar like a user's
@@ -42,6 +43,14 @@ const STEER_FALLBACK_MS = 3_000
  * current path the checkpoint usually lands far sooner.
  */
 const CANCEL_GRACE_MS = 12_000
+
+/**
+ * How long a run waits for its delegated workers to reach a terminal card
+ * (#162). Scoped to the run's own slice of the tape (#165), so a worker
+ * leaked by an earlier scenario costs that scenario this budget once
+ * instead of costing every later scenario the same again.
+ */
+const AGENT_IDLE_WAIT_MS = 15_000
 
 export interface ScenarioResult {
   id: string
@@ -159,7 +168,9 @@ export async function startEvaluator(options?: {
   })
 
   // The tape: the dashboard's own event subscription, captured verbatim.
-  // Installed once; every later read filters by turn id.
+  // Installed once and never cleared; every later read scopes itself — by
+  // turn id where the events carry one, by the run's start index where they
+  // do not (agent cards, #165).
   await harness.dashboardEval(`
     (() => {
       if (!window.__evalTapeInstalled) {
@@ -177,17 +188,18 @@ export async function startEvaluator(options?: {
   const perfRecordsFor = (turnId: string): PerfSpanRecord[] =>
     collectPerfRecords(join(userDataDir, 'logs')).records.filter((record) => record.turnId === turnId)
 
-  /** True once no Subagent card on the tape is still running (#162). */
-  const agentsIdle = (): Promise<boolean> =>
-    harness.dashboardEval<boolean>(`
-      (() => {
-        const live = new Map()
-        for (const event of window.__evalTape ?? []) {
-          if (event.type === 'agent_update') live.set(event.agent.id, event.agent.status)
-        }
-        return [...live.values()].every((status) => status !== 'running')
-      })()
-    `)
+  /**
+   * The Subagent cards still running in the tape from `fromIndex` on — the
+   * events of the current run (#162, scoped by #165). The predicate is
+   * folded in the renderer, where the tape lives, from the same source the
+   * unit test exercises.
+   */
+  const runningAgentsSince = (fromIndex: number): Promise<string[]> =>
+    harness.dashboardEval<string[]>(
+      `(${runningAgentsSinceSource()})(window.__evalTape ?? [], ${fromIndex})`,
+    )
+
+  const tapeLength = (): Promise<number> => harness.dashboardEval<number>('(window.__evalTape ?? []).length')
 
   const doneArrived = (turnId: string): Promise<boolean> =>
     harness.dashboardEval<boolean>(
@@ -240,6 +252,9 @@ export async function startEvaluator(options?: {
     whileRunning?: (turnId: string) => Promise<void>,
   ): Promise<{ turnId: string; metrics: ScenarioMetrics }> {
     const submittedAt = Date.now()
+    // Where this run's events begin — agent cards carry no turn id, so
+    // position on the tape is the only thing that scopes them to this run.
+    const runStartIndex = await tapeLength()
     const submitted = await harness.submitCommand(command)
     if (submitted !== 'submitted') throw new Error(`command was not submitted: ${submitted}`)
 
@@ -281,10 +296,37 @@ export async function startEvaluator(options?: {
     // A delegated worker settles outside the turn's generator, so its stop
     // (#162) can land after `done` — the Run's Finalization cancels
     // unfinished workers, but the cancellation still has to travel. Wait,
-    // bounded, until no card is still running; scenarios run one at a time,
-    // so any running card belongs to this run. A worker that outlasts the
-    // wait is simply uncounted rather than fatal.
-    await waitFor(async () => ((await agentsIdle()) ? true : undefined), { timeoutMs: 15_000, intervalMs: 250 }).catch(() => {})
+    // bounded, until no card spawned by this run is still running. A worker
+    // that outlasts the wait is simply uncounted rather than fatal — but it
+    // is announced, because a silent leak is what made this cost every
+    // later scenario the same wait (#165).
+    let lastPoll: { running: string[] } | { failed: string } | null = null
+    await waitFor(
+      async () => {
+        try {
+          const running = await runningAgentsSince(runStartIndex)
+          lastPoll = { running }
+          return running.length === 0 ? true : undefined
+        } catch (error) {
+          // waitFor swallows a thrown predicate; keep the reason so the
+          // timeout below never reads as a benign empty leak.
+          lastPoll = { failed: error instanceof Error ? error.message : String(error) }
+          return undefined
+        }
+      },
+      { timeoutMs: AGENT_IDLE_WAIT_MS, intervalMs: 250 },
+    ).catch(() => {
+      const poll: { running: string[] } | { failed: string } | null = lastPoll
+      const detail =
+        poll === null
+          ? 'the tape was never polled'
+          : 'failed' in poll
+            ? `the tape could not be read (${poll.failed})`
+            : `${poll.running.length} card(s) still running — ${poll.running.join(', ')}`
+      console.warn(
+        `[eval] turn ${turnId}: subagent cards did not settle within ${AGENT_IDLE_WAIT_MS}ms: ${detail}; their stop events go uncounted`,
+      )
+    })
 
     // Turn-bearing events only (session lifecycle and agent cards carry none).
     const events = (await readTape()).filter((event): event is PipelineEvent & { turnId: string } => 'turnId' in event && event.turnId === turnId)
