@@ -1,0 +1,141 @@
+{
+  "capturedAt": "2026-09-03T23:28:08.376Z",
+  "gitCommit": "18bcaf546b59d5d169bad4953998985f6c780853",
+  "scenarioTimeoutMs": 900000,
+  "routing": {
+    "orchestrator": {
+      "configured": true,
+      "baseUrl": "https://api.z.ai/api/coding/paas/v4",
+      "model": "GLM-5.3-flash",
+      "keyFingerprint": "sha256:496fb3dd2227"
+    },
+    "subagent": {
+      "configured": true,
+      "baseUrl": "https://api.z.ai/api/coding/paas/v4",
+      "model": "GLM-5.3-flash",
+      "keyFingerprint": "sha256:496fb3dd2227"
+    },
+    "vision": {
+      "configured": true,
+      "baseUrl": "https://api.z.ai/api/coding/paas/v4",
+      "model": "GLM-4.6V",
+      "keyFingerprint": "sha256:496fb3dd2227"
+    }
+  },
+  "modelWitness": {
+    "reasoningEffort": "low",
+    "orchestratorModel": "GLM-5.3-flash",
+    "orchestratorRequests": 4,
+    "scriptedEntries": []
+  },
+  "scenarios": [
+    {
+      "id": "steering-correct-objective",
+      "kind": "steering",
+      "command": "open the fixture widgets article at http://127.0.0.1:44537/widgets-article in the browser",
+      "success": true,
+      "failureReason": null,
+      "metrics": {
+        "llmRounds": 4,
+        "attemptedTools": 2,
+        "executedTools": 2,
+        "elapsedMs": 22045,
+        "repeatedActions": 0,
+        "outcome": "done",
+        "resolution": "completed",
+        "finalizationCause": "objective_met",
+        "effortTier": "lookup",
+        "rawLimitFailure": null,
+        "askTimedOut": false,
+        "subagentFinalizations": {},
+        "actions": [
+          {
+            "name": "navigate",
+            "args": {
+              "url": "http://127.0.0.1:44537/widgets-article"
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "navigate",
+            "args": {
+              "url": "http://127.0.0.1:44537/catalog"
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          }
+        ],
+        "answerText": "Opened http://127.0.0.1:44537/catalog per your correction. The catalog lists three articles:\n- [Anodized widgets — the industrial finish guide](http://127.0.0.1:44537/widgets-anodized)\n- [Polished widgets — the mirror finish guide](http://127.0.0.1:44537/widgets-polished)\n- [Vintage widgets — the collectible care guide](http://127.0.0.1:44537/widgets-vintage)",
+        "timedOut": false
+      },
+      "runs": [
+        {
+          "llmRounds": 4,
+          "attemptedTools": 2,
+          "executedTools": 2,
+          "elapsedMs": 22045,
+          "repeatedActions": 0,
+          "outcome": "done",
+          "resolution": "completed",
+          "finalizationCause": "objective_met",
+          "effortTier": "lookup",
+          "rawLimitFailure": null,
+          "askTimedOut": false,
+          "subagentFinalizations": {},
+          "actions": [
+            {
+              "name": "navigate",
+              "args": {
+                "url": "http://127.0.0.1:44537/widgets-article"
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "navigate",
+              "args": {
+                "url": "http://127.0.0.1:44537/catalog"
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            }
+          ],
+          "answerText": "Opened http://127.0.0.1:44537/catalog per your correction. The catalog lists three articles:\n- [Anodized widgets — the industrial finish guide](http://127.0.0.1:44537/widgets-anodized)\n- [Polished widgets — the mirror finish guide](http://127.0.0.1:44537/widgets-polished)\n- [Vintage widgets — the collectible care guide](http://127.0.0.1:44537/widgets-vintage)",
+          "timedOut": false
+        }
+      ]
+    }
+  ],
+  "scriptedModelProvenAbsent": true,
+  "aggregate": {
+    "scenarioCount": 1,
+    "objectiveSuccesses": 1,
+    "rawLimitFailures": 0,
+    "timedOutScenarios": 0,
+    "llmRounds": {
+      "median": 4,
+      "p95": 4
+    },
+    "attemptedTools": {
+      "median": 2,
+      "p95": 2
+    },
+    "executedTools": {
+      "median": 2,
+      "p95": 2
+    },
+    "elapsedMs": {
+      "median": 22045,
+      "p95": 22045
+    },
+    "repeatedActions": {
+      "median": 0,
+      "p95": 0
+    }
+  }
+}

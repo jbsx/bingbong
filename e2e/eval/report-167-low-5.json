@@ -1,0 +1,145 @@
+{
+  "capturedAt": "2026-09-03T23:29:12.476Z",
+  "gitCommit": "18bcaf546b59d5d169bad4953998985f6c780853",
+  "scenarioTimeoutMs": 900000,
+  "routing": {
+    "orchestrator": {
+      "configured": true,
+      "baseUrl": "https://api.z.ai/api/coding/paas/v4",
+      "model": "GLM-5.3-flash",
+      "keyFingerprint": "sha256:496fb3dd2227"
+    },
+    "subagent": {
+      "configured": true,
+      "baseUrl": "https://api.z.ai/api/coding/paas/v4",
+      "model": "GLM-5.3-flash",
+      "keyFingerprint": "sha256:496fb3dd2227"
+    },
+    "vision": {
+      "configured": true,
+      "baseUrl": "https://api.z.ai/api/coding/paas/v4",
+      "model": "GLM-4.6V",
+      "keyFingerprint": "sha256:496fb3dd2227"
+    }
+  },
+  "modelWitness": {
+    "reasoningEffort": "low",
+    "orchestratorModel": "GLM-5.3-flash",
+    "orchestratorRequests": 3,
+    "scriptedEntries": []
+  },
+  "scenarios": [
+    {
+      "id": "steering-correct-objective",
+      "kind": "steering",
+      "command": "open the fixture widgets article at http://127.0.0.1:39827/widgets-article in the browser",
+      "success": true,
+      "failureReason": null,
+      "metrics": {
+        "llmRounds": 3,
+        "attemptedTools": 2,
+        "executedTools": 1,
+        "elapsedMs": 17498,
+        "repeatedActions": 0,
+        "outcome": "done",
+        "resolution": "completed",
+        "finalizationCause": "objective_met",
+        "effortTier": "direct_action",
+        "rawLimitFailure": null,
+        "askTimedOut": false,
+        "subagentFinalizations": {},
+        "actions": [
+          {
+            "name": "report_run_plan",
+            "args": {
+              "objective": "Open the fixture catalog page at http://127.0.0.1:39827/catalog",
+              "headline": "Opening the fixture catalog page",
+              "effort_tier": "direct_action"
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "navigate",
+            "args": {
+              "url": "http://127.0.0.1:39827/catalog"
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          }
+        ],
+        "answerText": "Opened **http://127.0.0.1:39827/catalog** — page titled \"fixture catalog\". It lists three articles:\n- [Anodized widgets — the industrial finish guide](http://127.0.0.1:39827/widgets-anodized)\n- [Polished widgets — the mirror finish guide](http://127.0.0.1:39827/widgets-polished)\n- [Vintage widgets — the collectible care guide](http://127.0.0.1:39827/widgets-vintage)",
+        "timedOut": false
+      },
+      "runs": [
+        {
+          "llmRounds": 3,
+          "attemptedTools": 2,
+          "executedTools": 1,
+          "elapsedMs": 17498,
+          "repeatedActions": 0,
+          "outcome": "done",
+          "resolution": "completed",
+          "finalizationCause": "objective_met",
+          "effortTier": "direct_action",
+          "rawLimitFailure": null,
+          "askTimedOut": false,
+          "subagentFinalizations": {},
+          "actions": [
+            {
+              "name": "report_run_plan",
+              "args": {
+                "objective": "Open the fixture catalog page at http://127.0.0.1:39827/catalog",
+                "headline": "Opening the fixture catalog page",
+                "effort_tier": "direct_action"
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "navigate",
+              "args": {
+                "url": "http://127.0.0.1:39827/catalog"
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            }
+          ],
+          "answerText": "Opened **http://127.0.0.1:39827/catalog** — page titled \"fixture catalog\". It lists three articles:\n- [Anodized widgets — the industrial finish guide](http://127.0.0.1:39827/widgets-anodized)\n- [Polished widgets — the mirror finish guide](http://127.0.0.1:39827/widgets-polished)\n- [Vintage widgets — the collectible care guide](http://127.0.0.1:39827/widgets-vintage)",
+          "timedOut": false
+        }
+      ]
+    }
+  ],
+  "scriptedModelProvenAbsent": true,
+  "aggregate": {
+    "scenarioCount": 1,
+    "objectiveSuccesses": 1,
+    "rawLimitFailures": 0,
+    "timedOutScenarios": 0,
+    "llmRounds": {
+      "median": 3,
+      "p95": 3
+    },
+    "attemptedTools": {
+      "median": 2,
+      "p95": 2
+    },
+    "executedTools": {
+      "median": 1,
+      "p95": 1
+    },
+    "elapsedMs": {
+      "median": 17498,
+      "p95": 17498
+    },
+    "repeatedActions": {
+      "median": 0,
+      "p95": 0
+    }
+  }
+}
