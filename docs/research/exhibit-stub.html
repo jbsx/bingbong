@@ -1,0 +1,392 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <!--
+      Exhibit stub (research #171). Demonstrates the proposed fixed design
+      sheet, the bundled Mermaid, and the two Pocock report shapes (candidate
+      card with a before/after pair, comparison table). In the app the sheet
+      and the runtime ship as exhibit://lib/exhibit.css and
+      exhibit://lib/exhibit.js; they are inlined here so the stub is one file.
+      Mermaid is referenced by its placeholder path — not vendored.
+
+      Served by the app with this header (the probe in
+      docs/research/exhibit-bundle.md rendered under exactly this policy):
+        Content-Security-Policy: default-src 'none'; script-src exhibit:;
+          style-src exhibit: 'unsafe-inline'; img-src data: exhibit:;
+          font-src exhibit:; connect-src 'none'; frame-src 'none';
+          form-action 'none'; base-uri 'none'
+    -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; script-src exhibit: 'unsafe-inline'; style-src exhibit: 'unsafe-inline'; img-src data: exhibit:; font-src exhibit:; connect-src 'none'; frame-src 'none'; form-action 'none'; base-uri 'none'"
+    />
+    <title>Exhibit: which panel replaces the couch TV</title>
+
+    <!-- ===== exhibit.css (proposed; ~6 KB minified) ===================== -->
+    <style>
+      /* Tokens: the same names and values as src/renderer/src/styles.css
+         (ADR 0012 light / ADR 0020 dark). The isolated view inherits
+         prefers-color-scheme from nativeTheme.themeSource, so this @media
+         block *is* the system|light|dark mechanism — no JS, no attribute. */
+      :root {
+        color-scheme: light;
+        --bg: #f5f5f7;
+        --panel: #ffffff;
+        --edge: #d2d2d7;
+        --bubble: #e9e9ee;
+        --text: #1d1d1f;
+        --muted: #6e6e73;
+        --accent: #0071e3;
+        --status-blue: #0071e3;
+        --status-purple: #af52de;
+        --status-yellow: #ff9500;
+        --status-green: #34c759;
+        --status-red: #ff3b30;
+        --code-bg: #1d1d1f;
+        --code-text: #f5f5f7;
+        --font-scale: 1;
+        /* Exhibit-only derived tones (tints of the tokens above). */
+        --tint-green: color-mix(in srgb, var(--status-green) 14%, var(--panel));
+        --tint-yellow: color-mix(in srgb, var(--status-yellow) 16%, var(--panel));
+        --tint-red: color-mix(in srgb, var(--status-red) 12%, var(--panel));
+        --tint-accent: color-mix(in srgb, var(--accent) 12%, var(--panel));
+        --radius: 12px;
+        --radius-sm: 8px;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          color-scheme: dark;
+          --bg: #1e1e20;
+          --panel: #2a2a2c;
+          --edge: #3a3a3c;
+          --bubble: #3a3a3f;
+          --text: #f5f5f7;
+          --muted: #a1a1a6;
+          --accent: #0a84ff;
+          --status-blue: #0a84ff;
+          --status-purple: #bf5af2;
+          --status-yellow: #ff9f0a;
+          --status-green: #30d158;
+          --status-red: #ff453a;
+          --code-bg: #111113;
+          --code-text: #f5f5f7;
+        }
+      }
+
+      /* Base */
+      html { font-size: calc(17px * var(--font-scale)); }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--text);
+        font-family: InterVariable, system-ui, sans-serif;
+        line-height: 1.45;
+        -webkit-font-smoothing: antialiased;
+      }
+      main { max-width: 64rem; margin: 0 auto; padding: 2.5rem 1.5rem 4rem; }
+      h1, h2, h3 { margin: 0 0 0.4em; font-weight: 600; letter-spacing: -0.01em; line-height: 1.2; }
+      h1 { font-size: 1.7rem; }
+      h2 { font-size: 1.25rem; }
+      h3 { font-size: 1rem; }
+      p { margin: 0 0 0.6em; }
+      a { color: var(--accent); text-decoration: underline; text-underline-offset: 2px; }
+      code, pre, .mono { font-family: ui-monospace, monospace; }
+      code { font-size: 0.85em; background: var(--bg); border: 1px solid var(--edge); border-radius: var(--radius-sm); padding: 0 6px; }
+      pre { background: var(--code-bg); color: var(--code-text); border-radius: var(--radius); padding: 12px 14px; white-space: pre-wrap; overflow-wrap: anywhere; }
+      pre code { background: none; border: 0; padding: 0; font-size: 0.85rem; }
+      hr { border: 0; border-top: 1px solid var(--edge); margin: 2rem 0; }
+
+      /* Layout utilities — the Tailwind subset the report format leans on */
+      .stack > * + * { margin-top: 1rem; }
+      .stack-lg > * + * { margin-top: 2.5rem; }
+      .row { display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center; }
+      .cols-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+      @media (max-width: 720px) { .cols-2 { grid-template-columns: 1fr; } }
+      .grow { flex: 1; }
+      .center { text-align: center; }
+      .muted { color: var(--muted); }
+      .small { font-size: 0.85rem; }
+      .label { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); }
+
+      /* Components */
+      .card { background: var(--panel); border: 1px solid var(--edge); border-radius: var(--radius); padding: 1rem 1.25rem; }
+      .card--deep { border-width: 2px; border-color: var(--text); }
+      .badge { display: inline-block; font-size: 0.72rem; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; border-radius: 999px; padding: 2px 10px; border: 1px solid var(--edge); background: var(--bg); color: var(--muted); }
+      .badge--strong { background: var(--tint-green); color: var(--status-green); border-color: transparent; }
+      .badge--worth { background: var(--tint-yellow); color: var(--status-yellow); border-color: transparent; }
+      .badge--speculative { background: var(--bubble); color: var(--muted); border-color: transparent; }
+      .callout { border-left: 3px solid var(--status-yellow); background: var(--tint-yellow); border-radius: var(--radius-sm); padding: 0.5rem 0.9rem; }
+      .callout--info { border-color: var(--accent); background: var(--tint-accent); }
+      .callout--danger { border-color: var(--status-red); background: var(--tint-red); }
+      .files { list-style: none; margin: 0; padding: 0; font-family: ui-monospace, monospace; font-size: 0.85rem; color: var(--muted); }
+      .wins { margin: 0; padding-left: 1.1rem; }
+      .wins li::marker { color: var(--status-green); }
+      .diagram { background: var(--panel); border: 1px solid var(--edge); border-radius: var(--radius); padding: 0.75rem; min-height: 200px; display: grid; place-items: center; overflow: auto; }
+      .diagram svg { max-width: 100%; height: auto; }
+      /* Diagram sources are not code blocks: no dark surface, and the raw
+         source stays invisible until Mermaid has swapped in the SVG. */
+      pre.mermaid { background: none; color: inherit; padding: 0; margin: 0; white-space: pre; }
+      pre.mermaid:not([data-processed]) { visibility: hidden; }
+      .band { height: 3rem; border-left: 4px solid var(--edge); background: var(--bg); display: flex; align-items: center; padding-left: 0.75rem; }
+      .band--thin { height: 1.5rem; }
+      .band--deep { border-left-color: var(--text); background: var(--panel); height: 6rem; }
+      .box { border: 1px solid var(--edge); border-radius: var(--radius-sm); padding: 0.4rem 0.6rem; background: var(--panel); }
+      .box--deep { border: 2px solid var(--text); }
+      .box--faded { opacity: 0.45; }
+      .seam { border-style: dashed; }
+      .leak { color: var(--status-red); border-color: var(--status-red); }
+
+      /* Table: sortable via exhibit.js when it carries data-sortable */
+      table { width: 100%; border-collapse: collapse; background: var(--panel); border: 1px solid var(--edge); border-radius: var(--radius); overflow: hidden; }
+      th, td { text-align: left; padding: 0.55rem 0.8rem; border-bottom: 1px solid var(--edge); vertical-align: top; }
+      th { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); font-weight: 600; background: var(--bg); }
+      tr:last-child td { border-bottom: 0; }
+      td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+      [data-sortable] th { cursor: pointer; user-select: none; }
+      [data-sortable] th[aria-sort="ascending"]::after { content: " ▲"; }
+      [data-sortable] th[aria-sort="descending"]::after { content: " ▼"; }
+      .pick td { background: var(--tint-green); }
+
+      /* Bars: the v1 chart primitive (no chart library) */
+      .bars { display: grid; gap: 0.4rem; }
+      .bar-row { display: grid; grid-template-columns: 8rem 1fr 4rem; gap: 0.6rem; align-items: center; font-size: 0.85rem; }
+      .bar { height: 0.8rem; border-radius: 999px; background: var(--edge); overflow: hidden; }
+      .bar > i { display: block; height: 100%; background: var(--accent); border-radius: inherit; }
+      .bar--good > i { background: var(--status-green); }
+      .bar--warn > i { background: var(--status-yellow); }
+
+      /* Interactivity hooks (behaviour lives in exhibit.js, not in model JS) */
+      .tabs [role="tablist"] { display: flex; gap: 0.25rem; border-bottom: 1px solid var(--edge); margin-bottom: 0.75rem; }
+      .tabs [role="tab"] { background: none; border: 0; border-bottom: 2px solid transparent; padding: 0.4rem 0.8rem; font: inherit; color: var(--muted); cursor: pointer; }
+      .tabs [role="tab"][aria-selected="true"] { color: var(--text); border-bottom-color: var(--accent); }
+      .tabs [role="tabpanel"][hidden] { display: none; }
+      details { border: 1px solid var(--edge); border-radius: var(--radius-sm); padding: 0.4rem 0.8rem; background: var(--panel); }
+      summary { cursor: pointer; font-weight: 600; }
+      @media (prefers-reduced-motion: no-preference) { .card, .diagram { transition: border-color 200ms ease; } }
+    </style>
+
+    <!-- Bundled Mermaid, UMD/IIFE single file (placeholder path; served by the app) -->
+    <script src="exhibit://lib/mermaid.min.js"></script>
+
+    <!-- ===== exhibit.js (proposed; ~2.5 KB minified) ==================== -->
+    <script>
+      // Runtime behaviours the model never has to write: theme-following
+      // Mermaid init, tabs, sortable tables. Collapsibles are <details>.
+      (() => {
+        const cssVar = (n) => getComputedStyle(document.documentElement).getPropertyValue(n).trim()
+        const dark = matchMedia('(prefers-color-scheme: dark)')
+
+        const mermaidConfig = () => ({
+          startOnLoad: false,
+          securityLevel: 'strict',
+          theme: 'base',
+          themeVariables: {
+            darkMode: dark.matches,
+            background: cssVar('--panel'),
+            primaryColor: cssVar('--bg'),
+            primaryTextColor: cssVar('--text'),
+            primaryBorderColor: cssVar('--edge'),
+            secondaryColor: cssVar('--bubble'),
+            tertiaryColor: cssVar('--panel'),
+            lineColor: cssVar('--muted'),
+            textColor: cssVar('--text'),
+            fontFamily: 'InterVariable, system-ui, sans-serif',
+            fontSize: '15px',
+          },
+          flowchart: { htmlLabels: false, curve: 'basis' },
+          sequence: { useMaxWidth: true },
+        })
+
+        const renderDiagrams = async () => {
+          if (typeof mermaid === 'undefined') return
+          const nodes = [...document.querySelectorAll('pre.mermaid')]
+          for (const n of nodes) {
+            if (!n.dataset.src) n.dataset.src = n.textContent
+            n.removeAttribute('data-processed')
+            n.textContent = n.dataset.src
+          }
+          mermaid.initialize(mermaidConfig())
+          try {
+            await mermaid.run({ nodes })
+          } catch (e) {
+            console.warn('mermaid', e)
+          }
+        }
+
+        const wireTabs = () => {
+          for (const tabs of document.querySelectorAll('.tabs')) {
+            const buttons = [...tabs.querySelectorAll('[role="tab"]')]
+            const panels = [...tabs.querySelectorAll('[role="tabpanel"]')]
+            const select = (i) => {
+              buttons.forEach((b, j) => b.setAttribute('aria-selected', String(i === j)))
+              panels.forEach((p, j) => (p.hidden = i !== j))
+            }
+            buttons.forEach((b, i) => b.addEventListener('click', () => select(i)))
+            select(Math.max(0, buttons.findIndex((b) => b.getAttribute('aria-selected') === 'true')))
+          }
+        }
+
+        const wireSortable = () => {
+          for (const table of document.querySelectorAll('table[data-sortable]')) {
+            const ths = [...table.querySelectorAll('thead th')]
+            ths.forEach((th, col) =>
+              th.addEventListener('click', () => {
+                const asc = th.getAttribute('aria-sort') !== 'ascending'
+                ths.forEach((h) => h.removeAttribute('aria-sort'))
+                th.setAttribute('aria-sort', asc ? 'ascending' : 'descending')
+                const body = table.tBodies[0]
+                const rows = [...body.rows]
+                const key = (r) => {
+                  const t = r.cells[col]?.textContent.trim() ?? ''
+                  const n = parseFloat(t.replace(/[^0-9.-]/g, ''))
+                  return Number.isFinite(n) && /\d/.test(t) ? n : t.toLowerCase()
+                }
+                rows.sort((a, b) => {
+                  const ka = key(a), kb = key(b)
+                  const c = typeof ka === 'number' && typeof kb === 'number' ? ka - kb : String(ka).localeCompare(String(kb))
+                  return asc ? c : -c
+                })
+                rows.forEach((r) => body.appendChild(r))
+              }),
+            )
+          }
+        }
+
+        addEventListener('DOMContentLoaded', () => {
+          wireTabs()
+          wireSortable()
+          renderDiagrams()
+        })
+        dark.addEventListener('change', renderDiagrams)
+      })()
+    </script>
+  </head>
+
+  <body>
+    <main class="stack-lg">
+      <header class="stack">
+        <p class="label">Investigation · 3 sources · 2026-09-03</p>
+        <h1>Which 27-inch panel replaces the couch TV</h1>
+        <div class="row small muted">
+          <span><span class="box" style="display:inline-block;padding:0 6px">solid</span> candidate</span>
+          <span><span class="box seam" style="display:inline-block;padding:0 6px">dashed</span> trade-off</span>
+          <span class="leak">red = deal-breaker</span>
+          <span><span class="box box--deep" style="display:inline-block;padding:0 6px">thick</span> pick</span>
+        </div>
+      </header>
+
+      <!-- Candidate card: the Pocock shape — badge row, files, before/after, one-sentence problem/solution, wins, callout -->
+      <article class="card card--deep stack" id="pick">
+        <div class="row">
+          <h2 class="grow">Pick: the LG 27GR93U</h2>
+          <span class="badge badge--strong">Strong</span>
+          <span class="badge">in stock</span>
+        </div>
+        <ul class="files">
+          <li>rtings.com/monitor/reviews/lg/27gr93u-b</li>
+          <li>displayninja.com/lg-27gr93u-review</li>
+          <li>bhphotovideo.com — $499</li>
+        </ul>
+
+        <div class="cols-2">
+          <div class="stack">
+            <p class="label">Before: the couch TV</p>
+            <div class="diagram">
+              <pre class="mermaid">
+flowchart LR
+  TV[42in 1080p TV] -->|HDMI 1.4| Box[Set-top box]
+  TV -.-> Lag[60 ms input lag]
+  TV -.-> Glare[glossy panel]
+  classDef leak stroke:#ff3b30,stroke-width:2px;
+  class Lag,Glare leak
+              </pre>
+            </div>
+          </div>
+          <div class="stack">
+            <p class="label">After: one desk panel</p>
+            <div class="diagram">
+              <pre class="mermaid">
+flowchart LR
+  M[27in 4K 144 Hz] -->|DP 1.4| PC[Desk PC]
+  M -->|HDMI 2.1| Box[Set-top box]
+  M -->|USB-C 90 W| Laptop
+              </pre>
+            </div>
+          </div>
+        </div>
+
+        <p><strong>Problem.</strong> The TV's input lag and glare make it a poor desk display.</p>
+        <p><strong>Solution.</strong> One 4K 144 Hz IPS panel with HDMI 2.1 for the box and DisplayPort for the PC.</p>
+        <ul class="wins">
+          <li>Input lag 60 ms → 4 ms</li>
+          <li>Matte panel, no glare</li>
+          <li>One cable to the laptop</li>
+        </ul>
+        <p class="callout small">Price watch: $549 two weeks ago; today's $499 is the lowest in 90 days.</p>
+      </article>
+
+      <!-- Comparison table: sortable via exhibit.js -->
+      <section class="stack">
+        <h2>Shortlist</h2>
+        <table data-sortable>
+          <thead>
+            <tr>
+              <th>Model</th>
+              <th>Panel</th>
+              <th class="num">Refresh</th>
+              <th class="num">Input lag</th>
+              <th class="num">Price</th>
+              <th>Verdict</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr class="pick"><td>LG 27GR93U</td><td>IPS 4K</td><td class="num">144 Hz</td><td class="num">4 ms</td><td class="num">$499</td><td><span class="badge badge--strong">Strong</span></td></tr>
+            <tr><td>Dell G2724D</td><td>IPS 1440p</td><td class="num">165 Hz</td><td class="num">3 ms</td><td class="num">$279</td><td><span class="badge badge--worth">Worth it</span></td></tr>
+            <tr><td>Samsung Odyssey G7</td><td>VA 1440p</td><td class="num">240 Hz</td><td class="num">5 ms</td><td class="num">$449</td><td><span class="badge badge--speculative">Curved</span></td></tr>
+            <tr><td>ASUS PG27AQDM</td><td>OLED 1440p</td><td class="num">240 Hz</td><td class="num">1 ms</td><td class="num">$899</td><td><span class="leak small">over budget</span></td></tr>
+          </tbody>
+        </table>
+      </section>
+
+      <!-- Hand-written chart: the v1 primitive -->
+      <section class="stack">
+        <h2>Price against the $600 budget</h2>
+        <div class="bars card">
+          <div class="bar-row"><span>LG 27GR93U</span><div class="bar bar--good"><i style="width:83%"></i></div><span class="num">$499</span></div>
+          <div class="bar-row"><span>Dell G2724D</span><div class="bar bar--good"><i style="width:46%"></i></div><span class="num">$279</span></div>
+          <div class="bar-row"><span>Odyssey G7</span><div class="bar"><i style="width:75%"></i></div><span class="num">$449</span></div>
+          <div class="bar-row"><span>PG27AQDM</span><div class="bar bar--warn"><i style="width:100%"></i></div><span class="num">$899</span></div>
+        </div>
+      </section>
+
+      <!-- Tabs + collapsible: the self-contained interactivity -->
+      <section class="tabs card">
+        <div role="tablist">
+          <button role="tab" aria-selected="true">Sources</button>
+          <button role="tab">Cross-section</button>
+          <button role="tab">Notes</button>
+        </div>
+        <div role="tabpanel">
+          <ul class="files">
+            <li><a href="https://www.rtings.com/monitor/reviews/lg/27gr93u-b">rtings.com — LG 27GR93U review</a></li>
+            <li><a href="https://www.displayninja.com/lg-27gr93u-review/">displayninja.com — review</a></li>
+          </ul>
+        </div>
+        <div role="tabpanel" hidden>
+          <div class="stack">
+            <div class="band band--thin"><span class="label">HDMI 1.4 · 30 Hz at 4K</span></div>
+            <div class="band band--thin leak"><span class="label">TV scaler · +40 ms</span></div>
+            <div class="band band--deep"><span class="label">DP 1.4 · 4K 144 Hz · 4 ms</span></div>
+          </div>
+        </div>
+        <div role="tabpanel" hidden>
+          <details>
+            <summary>Why not OLED</summary>
+            <p class="small">Burn-in on static desk UI; $899 is $299 over the budget you gave.</p>
+          </details>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>
