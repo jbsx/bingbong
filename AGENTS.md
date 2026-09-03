@@ -40,7 +40,10 @@ missing run) fails the suite.
 The release decision (#132) pools exactly three complete captures per side:
 each pass writes its own immutable artifact under `e2e/eval/pools/<side>/`
 via `BINGBONG_EVAL_REPORT=e2e/eval/pools/<side>/pass-<n>-<commit8>.json
-pnpm test:eval` (a finalized capture is never overwritten). The baseline
+pnpm test:eval` (a finalized capture is never overwritten). A capture taken
+to answer one issue rather than the release decision lives beside the pools
+as `e2e/eval/report-<issue>[-<tag>].json`; it is evidence on that issue, and
+`pnpm eval:accept` never reads it. The baseline
 pool is captured from the pinned pre-#114 tree (`2343a3c` worktree + eval
 overlay, see #130); all candidate passes come from one candidate commit.
 `pnpm eval:accept --regressions=passed` validates both pools' provenance

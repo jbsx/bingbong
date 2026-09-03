@@ -19,12 +19,16 @@ mechanics and encourage redundant reads, clicks, screenshots, and vision calls.
   budgets are 6, 12, and 24, with active-work deadlines of 45 seconds, 2
   minutes, and 5 minutes. Evaluation may tune these defaults.
 - Progress means new decision-relevant evidence or a requested state change,
-  not merely a successful call. New evidence is the settled page state moving,
-  an accepted Evidence Checkpoint, or the first observation of the state the
-  page sits in by an Observation Producer that has not yet observed it. That
-  last clause is what Progress means for a loop whose catalog holds no
-  checkpoint or state-change tool — a Browse Subagent has neither, so the page
-  moving would otherwise be its only Progress signal.
+  not merely a successful call. New evidence is the settled page state moving
+  or an accepted Evidence Checkpoint. The first observation of the state the
+  page sits in by an Observation Producer that has not yet observed it — the
+  first page read of a state, the first Look at it — is neutral: new material,
+  so not a no-progress action, but not Progress, so it resets nothing. Only a
+  Producer repeating itself against a state it already observed is a
+  no-progress action. For a loop whose catalog holds no checkpoint or
+  state-change tool — a Browse Subagent has neither — Progress is the page
+  moving and nothing else, and the neutral first observation is what lets it
+  read and look at one source without exhausting an Approach on the spot.
   Two no-progress actions require a different Approach; two exhausted
   Approaches require an Answer or, before exhaustion, one high-information
   question.

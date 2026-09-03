@@ -176,7 +176,7 @@ describe('no-progress rail — resets (#126/AC3)', () => {
   it('an accepted Evidence Checkpoint resets the no-progress count and approach exhaustion', async () => {
     const rail = createNoProgressRail({ settledState: () => BASE })
     await rail.observe(call('navigate', { url: 'https://example.com/a' }), ok()) // baseline
-    expect(await rail.observe(call('read_page'), ok())).toBeNull() // the first read: material (#161)
+    expect(await rail.observe(call('read_page'), ok())).toBeNull() // the first read: neutral (#161)
     expect(await rail.observe(call('read_page'), ok())).toBeNull() // no-progress 1
     expect(await rail.observe(call('read_page'), ok())).toMatch(/change your approach/i) // approach 1 exhausted
     await rail.observe(call('read_page'), ok()) // no-progress 1 under the new approach
@@ -207,7 +207,7 @@ describe('no-progress rail — resets (#126/AC3)', () => {
   it('a Steering replan resets approach accounting but keeps page reality', async () => {
     const rail = createNoProgressRail({ settledState: () => BASE })
     await rail.observe(call('navigate', { url: 'https://example.com/a' }), ok()) // baseline
-    expect(await rail.observe(call('read_page'), ok())).toBeNull() // the first read: material (#161)
+    expect(await rail.observe(call('read_page'), ok())).toBeNull() // the first read: neutral (#161)
     expect(await rail.observe(call('read_page'), ok())).toBeNull()
     expect(await rail.observe(call('read_page'), ok())).toMatch(/change your approach/i) // approach 1 exhausted
     rail.reset()
@@ -232,7 +232,7 @@ describe('no-progress rail — approach exhaustion and Finalization (#126/AC4)',
   it('instructs an Approach change after two no-progress actions, twice, then trips Finalization', async () => {
     const rail = createNoProgressRail({ settledState: () => BASE })
     await rail.observe(call('navigate', { url: 'https://example.com/a' }), ok()) // baseline
-    expect(await rail.observe(call('read_page'), ok())).toBeNull() // the first read: material (#161)
+    expect(await rail.observe(call('read_page'), ok())).toBeNull() // the first read: neutral (#161)
     expect(await rail.observe(call('read_page'), ok())).toBeNull()
     expect(await rail.observe(call('read_page'), ok())).toMatch(/change your approach/i)
     expect(rail.finalizationDue()).toBe(false)
@@ -289,7 +289,7 @@ describe('no-progress rail — first observation by a new producer (#161)', () =
     expect(await rail.observe(navigate, ok())).toBeNull() // baseline
 
     // The first read of this state, and the first look at it, are each new
-    // decision-relevant material: neither escalates.
+    // material: neither escalates, and neither is Progress.
     expect(await rail.gate(read)).toEqual({ ok: true })
     expect(await rail.observe(read, ok())).toBeNull()
     expect(await rail.gate(look)).toEqual({ ok: true })
@@ -311,7 +311,7 @@ describe('no-progress rail — first observation by a new producer (#161)', () =
   it('counts a repeat by the same producer against the same state as no Progress', async () => {
     const rail = createNoProgressRail({ settledState: () => BASE })
     await rail.observe(call('navigate', { url: 'https://example.com/a' }), ok()) // baseline
-    expect(await rail.observe(call('read_page'), ok())).toBeNull() // first read: material
+    expect(await rail.observe(call('read_page'), ok())).toBeNull() // first read: neutral
     expect(await rail.observe(call('read_page'), ok())).toBeNull() // no-progress 1
     expect(await rail.observe(call('read_page'), ok())).toMatch(/change your approach/i)
   })
@@ -321,7 +321,7 @@ describe('no-progress rail — first observation by a new producer (#161)', () =
     const other = state({ url: 'https://example.com/other', textDigest: 'Something else.' })
     const rail = createNoProgressRail({ settledState: () => current })
     await rail.observe(call('navigate', { url: 'https://example.com/article' }), ok()) // baseline at BASE
-    expect(await rail.observe(call('read_page'), ok())).toBeNull() // first read of BASE: material
+    expect(await rail.observe(call('read_page'), ok())).toBeNull() // first read of BASE: neutral
 
     // Away and back: the page moving is Progress in its own right.
     current = other
@@ -330,19 +330,48 @@ describe('no-progress rail — first observation by a new producer (#161)', () =
     expect(await rail.observe(call('back'), ok())).toBeNull()
 
     // BASE has been read before, so re-reading it is not new material —
-    // but nothing has looked at it yet, and that still is.
+    // but nothing has looked at it yet, and that still is. Neutral, not
+    // Progress: the no-progress count survives the first look, so the
+    // next repeat exhausts the Approach.
     expect(await rail.observe(call('read_page'), ok())).toBeNull() // no-progress 1
-    expect(await rail.observe(call('look'), ok())).toBeNull() // first look at BASE: material
-    expect(await rail.observe(call('read_page'), ok())).toBeNull() // no-progress 1 again
-    expect(await rail.observe(call('look'), ok())).toMatch(/change your approach/i)
+    expect(await rail.observe(call('look'), ok())).toBeNull() // first look at BASE: neutral
+    expect(await rail.observe(call('read_page'), ok())).toMatch(/change your approach/i)
+    expect(await rail.observe(call('look'), ok())).toBeNull() // no-progress 1 under the new approach
     expect(rail.finalizationDue()).toBe(false)
+  })
+
+  it('a first observation is neutral — it does not reset the no-progress count', async () => {
+    const rail = createNoProgressRail({ settledState: () => BASE })
+    await rail.observe(call('navigate', { url: 'https://example.com/a' }), ok()) // baseline
+    expect(await rail.observe(call('click', { ref: 7 }), ok())).toBeNull() // no-progress 1
+    // The first read of this state is new material, so it is not a second
+    // no-progress action — but the page did not move, so the run is
+    // exactly as stuck as before it: the count stands at one.
+    expect(await rail.observe(call('read_page'), ok())).toBeNull()
+    expect(await rail.observe(call('click', { ref: 8 }), ok())).toMatch(/change your approach/i)
+  })
+
+  it('a first observation is neutral — it does not un-exhaust an Approach', async () => {
+    const rail = createNoProgressRail({ settledState: () => BASE })
+    await rail.observe(call('navigate', { url: 'https://example.com/a' }), ok()) // baseline
+    expect(await rail.observe(call('read_page'), ok())).toBeNull() // first read: neutral
+    expect(await rail.observe(call('read_page'), ok())).toBeNull() // no-progress 1
+    expect(await rail.observe(call('read_page'), ok())).toMatch(/change your approach/i) // approach 1 exhausted
+    // A first look now would restart the accounting if it were Progress.
+    // It is not: the exhausted Approach stays exhausted, and the second
+    // Approach's two repeats trip Finalization.
+    expect(await rail.observe(call('look'), ok())).toBeNull()
+    expect(await rail.observe(call('read_page'), ok())).toBeNull()
+    expect(await rail.observe(call('read_page'), ok())).toMatch(/final answer JSON/)
+    expect(rail.finalizationDue()).toBe(true)
   })
 
   it('keeps every page-moving tool one producer — distinct actions that move nothing still escalate', async () => {
     const rail = createNoProgressRail({ settledState: () => BASE })
     await rail.observe(call('navigate', { url: 'https://example.com/a' }), ok()) // baseline
     // click, scroll, and back all produce action outcomes: a different
-    // action is not a different observer, so an unmoving page escalates.
+    // action is not a different Observation Producer, so an unmoving page
+    // escalates.
     expect(await rail.observe(call('click', { ref: 7 }), ok())).toBeNull()
     expect(await rail.observe(call('scroll', { direction: 'down' }), ok())).toMatch(/change your approach/i)
   })

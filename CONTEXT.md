@@ -205,12 +205,16 @@ _Avoid_: nudge, warning text, hint
 
 **Progress**:
 New decision-relevant evidence or a requested state change that moves a Run
-toward its objective. The settled page state moving is Progress, and so is the
-first observation of the state a page sits in by an Observation Producer that
-has not yet observed it — a page read and a Look are different observers of one
-page. A successful call, changed URL, fresh screenshot, or a repeat by an
-Observation Producer that already observed this state is not Progress by
-itself.
+toward its objective. The settled page state moving is Progress; an accepted
+Evidence Checkpoint and a requested state change are Progress. A successful
+call, changed URL, or fresh screenshot is not Progress by itself. The first
+observation of the state a page sits in by an Observation Producer that has not
+yet observed it is neutral: new material, so not a no-Progress action, but not
+Progress either, so it resets no accounting. A repeat by an Observation
+Producer that already observed this state is a no-Progress action. For a loop
+whose catalog holds no checkpoint or state-change tool, Progress is therefore
+the page moving and nothing else; the neutral first observation is what lets it
+study one page without an Approach exhausting on the spot.
 _Avoid_: activity, successful tool call
 
 **Approach**:
@@ -218,7 +222,8 @@ A coherent method for resolving a Run's objective, distinguished by its source
 route, hypothesis, candidate set, or interaction strategy. Rewording one search
 or changing search engines does not necessarily create a new Approach, and
 neither does turning a second Observation Producer on the page an Approach
-already reached — that is Progress within the Approach, not a new one.
+already reached — that first observation is neutral within the Approach:
+neither a step toward exhausting it nor a reset of it.
 _Avoid_: attempt, action
 
 **Finalization**:
@@ -350,8 +355,9 @@ _Avoid_: Memory Compaction, compact command
 A run flailing blind — consecutive searches rewording one intent. Reads
 between searches do not break it (reading is inspection, not escape);
 only escape breaks it — opening a result, or any successful tool call other
-than a page read. That rule is this rail's own, and narrower than Progress:
-a first page read of a search result page is Progress, and still no escape. One search observation is the visible search
+than a page read. That rule is this rail's own and independent of Progress:
+a first page read of a search result page is neutral to the Approach
+accounting, and still no escape. One search observation is the visible search
 signature: a navigate to a q=-carrying search URL (plain search terms
 normalize to exactly that) or text typed into a search input. Similar searches
 remain one Approach and follow the Run's no-progress Notice and refusal policy.

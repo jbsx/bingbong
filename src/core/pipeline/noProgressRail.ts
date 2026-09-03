@@ -17,21 +17,27 @@ import { classifyToolObservation } from './toolObservations'
 //   URL-only jump is not Progress.
 //
 // — Approach exhaustion: Progress means new decision-relevant material
-//   arrived — the settled state moved, or a producer that had not yet
-//   observed the state it sits in observed it (#161) — or the run made a
-//   requested state change, or an Evidence Checkpoint was accepted. Two
-//   consecutive successful actions with none of those exhaust an
-//   Approach; the model is instructed to change it. A second exhausted
-//   Approach trips Finalization (mechanical cause `no_progress`) — the pipeline
-//   enters the same terminal phase budget exhaustion does.
+//   arrived — the settled state moved — or the run made a requested state
+//   change, or an Evidence Checkpoint was accepted. Two consecutive
+//   successful actions with none of those exhaust an Approach; the model
+//   is instructed to change it. A second exhausted Approach trips
+//   Finalization (mechanical cause `no_progress`) — the pipeline enters
+//   the same terminal phase budget exhaustion does.
 //
-//   The producer clause (#161) is Progress in full, not a weaker tier:
-//   material is material, and the accounting starts over the way a moved
-//   page starts it over. What bounds it is the ledger — one settled
-//   state grants each Observation Producer exactly one first
-//   observation, so a run that never moves the page can restart the
-//   accounting at most as many times as it has page-facing producers,
-//   and a run that does move it made Progress anyway.
+//   One kind of action is neither (#161): the first observation of the
+//   state the page sits in by an Observation Producer that has not yet
+//   observed it — the first page read of a state, or the first Look at
+//   it. That is new material, so it is not a no-progress action; it is
+//   not Progress either, so it resets nothing. It sits outside the
+//   accounting the way a failed call does. Only a Producer repeating
+//   itself against a state it already observed is inspection, and only
+//   inspection escalates. This matters most to a Browse Subagent, whose
+//   catalog holds no checkpoint or state-change tool: without the clause
+//   the page moving was the only signal it had, and reading a source and
+//   looking at it exhausted an Approach on the spot. The rail's own
+//   observed-by record (per settled state, which Producers have observed
+//   it) bounds the clause: each Producer gets exactly one first
+//   observation per state.
 //
 // The rail is deterministic and side-effect free apart from reading the
 // settled state through the injected source; without one (tests, lean
@@ -134,11 +140,12 @@ export function createNoProgressRail(deps: NoProgressRailDeps = {}): NoProgressR
   // itself be no-progress.
   let lastState: string | null = null
   const attempts = new Map<string, AttemptRecord>()
-  // Which Observation Producers have already observed each settled state
-  // (#161). A state a Producer has not observed yet still holds material
-  // for it — the first read_page of a page and the first look at it are
-  // different evidence; the second of either is inspection. Keyed by
-  // state, so returning to a page already studied re-earns nothing.
+  // The observed-by record (#161): which Observation Producers have
+  // already observed each settled state. A state a Producer has not
+  // observed yet still holds material for it — the first read_page of a
+  // page and the first look at it are different evidence; the second of
+  // either is inspection. Keyed by state, so returning to a page already
+  // studied re-earns nothing. Not the Run's Observation ledger.
   const observedBy = new Map<string, Set<ObservationProducer>>()
   // The gate's nudge rides the observed result of the call it nudged —
   // single-slot between one call's gate and observe, like the search-loop
@@ -159,7 +166,8 @@ export function createNoProgressRail(deps: NoProgressRailDeps = {}): NoProgressR
   /**
    * Records that `producer` has now observed `fingerprint`; true when it
    * had not before — the first observation of that state by that
-   * producer, which is new decision-relevant material (#161).
+   * producer, which is new material and so not a no-progress action
+   * (#161).
    */
   function markObserved(fingerprint: string, producer: ObservationProducer): boolean {
     const producers = observedBy.get(fingerprint)
@@ -282,9 +290,10 @@ export function createNoProgressRail(deps: NoProgressRailDeps = {}): NoProgressR
         // The page sits where it was, but this Observation Producer had
         // not observed it: reading a page that has only been looked at,
         // or looking at one that has only been read, is new material
-        // rather than a repeat (#161). A loop whose catalog holds no
-        // checkpoint or state-change tool has no other way to say so.
-        progress()
+        // rather than a repeat (#161). Neutral, not Progress: it neither
+        // counts against the Approach nor restarts the accounting — the
+        // page did not move, and a run stuck before the read is exactly
+        // as stuck after it. Repetition is caught one Approach later.
         return nudge
       }
       const escalated = escalate()
