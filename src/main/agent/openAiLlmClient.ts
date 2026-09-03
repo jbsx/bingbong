@@ -164,6 +164,35 @@ export const TRUNCATION_NOTE =
   '[This spoken request hit the recording time limit and may be cut off mid-sentence. ' +
   'The end of the request may be missing — do not guess it; ask the user to finish their request.]'
 
+/** The arriving Directive's wire message: the correction, as it lands. */
+export function steeringDirectiveMessage(directive: string): string {
+  return `Steering directive: ${directive}`
+}
+
+/**
+ * The Standing Directive's wire message (#167): the same correction, in the
+ * user's own words, on every later round. Worded as the standing correction
+ * it is rather than as a fresh arrival — the round that carried it as
+ * `steering` already happened, and repeating that framing would read as a
+ * second correction. It states precedence without claiming replacement: a
+ * Directive that adds to the task is as common as one that redirects it.
+ *
+ * The directive keeps the arriving form's shape — a short label, then the
+ * user's words, on one line — deliberately. A first wording narrated the
+ * correction in prose ("The user corrected this run mid-flight: …"); across
+ * six low-rung passes the model copied that narration into `record_evidence`
+ * as the user's own text, where the verbatim check rejected it twelve times
+ * over. Words the model must be able to quote exactly are never wrapped in
+ * a sentence of ours.
+ */
+export function standingDirectiveMessage(directive: string): string {
+  return (
+    `Standing steering directive (still in force): ${directive}\n\n` +
+    'It takes precedence over the original request above wherever the two differ: your Run Plan, ' +
+    'the work you do from here, and your final Answer are about the corrected task.'
+  )
+}
+
 export function createOpenAiLlmClient(deps: OpenAiLlmClientDeps): LlmClient {
   const { endpoint, systemPrompt, tools, fetchFn } = deps
   const timeoutMs = deps.requestTimeoutMs ?? 120_000
@@ -193,7 +222,12 @@ export function createOpenAiLlmClient(deps: OpenAiLlmClientDeps): LlmClient {
       messages.push({ role: 'tool', tool_call_id: call.id, content: toolResultContent(outcome) })
     }
     if (request.steering) {
-      messages.push({ role: 'user', content: `Steering directive: ${request.steering}` })
+      messages.push({ role: 'user', content: steeringDirectiveMessage(request.steering) })
+    } else if (request.standingDirective) {
+      // The Standing Directive (#167) rides last, where the arriving
+      // directive rode: the original command above it is superseded
+      // wherever the two differ, for every round left in the Run.
+      messages.push({ role: 'user', content: standingDirectiveMessage(request.standingDirective) })
     }
     return messages
   }

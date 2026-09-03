@@ -546,6 +546,15 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
     // declaration lands. Null on a never-steered run — its deterministic
     // fallback Answer names the command the user actually said.
     let correctedObjective: string | null = null
+    // The Standing Directive (#167): the user's own words from the last
+    // correction, in force for the rest of the Run. `correctedObjective`
+    // above is the model's restatement once a fresh plan lands — useful
+    // for the deterministic Answer, but it cannot be the thing that keeps
+    // the correction alive, because a model that misremembered the
+    // correction is exactly what overwrites it. The user's words are
+    // never overwritten and are never cleared: a Run only stops needing
+    // the correction when it ends.
+    let standingDirective: string | null = null
     // The live evidence Session handle (#122): resolved per call, so
     // a Session that ended (Reset, Lapse) refuses later work instead
     // of writing into the void. Grounds user citations, Candidate
@@ -600,6 +609,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
           toolRound?.replan()
           effortEpoch.replan(DEFAULT_EFFORT_TIER)
           correctedObjective = directive
+          standingDirective = directive
         }
         return directive
       },
@@ -924,7 +934,16 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
               // the immutable admission snapshot — mid-Run checkpoints ride
               // tool results, later Runs' admissions.
               ...(continuity?.evidence ? { evidence: continuity.evidence } : {}),
-              ...(steering ? { steering } : {}),
+              // The arriving directive rides the round that consumed it;
+              // every round after that carries the same words as the
+              // Standing Directive (#167), the reserved Answer round
+              // included — so the correction outlives the model's memory
+              // of it however little the rung deliberates.
+              ...(steering !== undefined
+                ? { steering }
+                : standingDirective !== null
+                  ? { standingDirective }
+                  : {}),
               // Retry visibility (#43): each attempt beyond the first is a
               // detail event on the side channel — emitted before the next
               // attempt starts, while this round is still in flight.
@@ -1118,7 +1137,11 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
             // round's own tool results so the model sees it without a
             // dedicated round.
             if (runPlan === null && turn.calls.some((call) => call.name !== 'report_run_plan')) {
-              runPlan = lookupFallbackPlan(command)
+              // The plan slot a correction reopened falls back to the
+              // corrected objective (#167), never back to the command the
+              // user superseded — a plan-less post-Steering round used to
+              // re-declare the original task as the Run's objective.
+              runPlan = lookupFallbackPlan(correctedObjective ?? command)
               yield {
                 type: 'run_plan',
                 objective: runPlan.objective,

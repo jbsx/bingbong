@@ -2382,10 +2382,11 @@ describe('command pipeline', () => {
       const events = await collect(pipeline, 'find a mug', steerAt('w0', 'The red one instead.'))
 
       // One fallback per plan-slot opening: the run's start and the
-      // corrected objective's plan-less round.
+      // corrected objective's plan-less round. The second names the
+      // correction, never the command it superseded (#167).
       expect(events.filter((e) => e.type === 'run_plan')).toEqual([
         { type: 'run_plan', objective: 'find a mug', headline: null, effortTier: 'lookup', source: 'fallback', at: 0 },
-        { type: 'run_plan', objective: 'find a mug', headline: null, effortTier: 'lookup', source: 'fallback', at: 0 },
+        { type: 'run_plan', objective: 'The red one instead.', headline: null, effortTier: 'lookup', source: 'fallback', at: 0 },
       ])
       // Exactly one corrective nudge per slot — the corrected objective
       // gets its own single chance to declare a plan.
@@ -2394,6 +2395,76 @@ describe('command pipeline', () => {
       )
       expect(nudged.map((e) => (e as { callId: string }).callId)).toEqual(['w0', 'w1'])
       expect(llm.requests[1]?.steering).toBe('The red one instead.')
+    })
+
+    it('stands the directive on every later round, the reserved Answer round included (#167)', async () => {
+      // The seam #167 names: the directive rode exactly one request and
+      // the original command rode every one of them, so a model that did
+      // not restate the correction never saw it again. It now stands —
+      // the same words, as the correction still in force — until the Run
+      // ends.
+      const llm = new ScriptedLlm([
+        workRound(0, plan('p0', 'Find a mug', 'Find a mug', 'lookup')),
+        workRound(1, plan('p1', 'Find a red mug', 'Find a red mug', 'lookup')),
+        workRound(2),
+        { kind: 'answer', speak: 'Found a red one.', display: 'Found a red mug.' },
+      ])
+      const pipeline = createCommandPipeline({ llm, tts: new RecordingTts(), clock: new FakeClock(), tools: [createReportRunPlanTool(), work] })
+
+      await collect(pipeline, 'find a mug', steerAt('w0', 'The red one instead.'))
+
+      expect(llm.requests).toHaveLength(4)
+      // Round 0 predates the correction; round 1 carries its arrival;
+      // rounds 2 and 3 carry it standing — never both channels at once.
+      expect(llm.requests.map((r) => [r.steering, r.standingDirective])).toEqual([
+        [undefined, undefined],
+        ['The red one instead.', undefined],
+        [undefined, 'The red one instead.'],
+        [undefined, 'The red one instead.'],
+      ])
+    })
+
+    it('keeps the standing directive when the fresh plan restates the original objective (#167)', async () => {
+      // The measured low-rung failure: the model does declare a fresh
+      // plan after the correction, but declares it against the objective
+      // the user superseded. A directive cleared by "the model declared
+      // something" would vanish exactly here — the user's own words
+      // outlive the model's restatement of them.
+      const llm = new ScriptedLlm([
+        workRound(0, plan('p0', 'Find a mug', 'Find a mug', 'lookup')),
+        workRound(1, plan('p1', 'Find a mug', 'Find a mug', 'lookup')),
+        workRound(2),
+        { kind: 'answer', speak: 'Found one.', display: 'Found a mug.' },
+      ])
+      const pipeline = createCommandPipeline({ llm, tts: new RecordingTts(), clock: new FakeClock(), tools: [createReportRunPlanTool(), work] })
+
+      await collect(pipeline, 'find a mug', steerAt('w0', 'The red one instead.'))
+
+      expect(llm.requests.slice(2).map((r) => r.standingDirective)).toEqual([
+        'The red one instead.',
+        'The red one instead.',
+      ])
+    })
+
+    it('stands the latest directive only — a second correction replaces the first (#167)', async () => {
+      const llm = new ScriptedLlm([
+        workRound(0, plan('p0', 'Find a mug', 'Find a mug', 'lookup')),
+        workRound(1, plan('p1', 'Find a red mug', 'Find a red mug', 'lookup')),
+        workRound(2, plan('p2', 'Find a blue mug', 'Find a blue mug', 'lookup')),
+        workRound(3),
+        { kind: 'answer', speak: 'Found a blue one.', display: 'Found a blue mug.' },
+      ])
+      const pipeline = createCommandPipeline({ llm, tts: new RecordingTts(), clock: new FakeClock(), tools: [createReportRunPlanTool(), work] })
+
+      await collect(pipeline, 'find a mug', steerOns({ w0: 'The red one instead.', w1: 'The blue one instead.' }))
+
+      expect(llm.requests.map((r) => r.steering ?? r.standingDirective)).toEqual([
+        undefined,
+        'The red one instead.',
+        'The blue one instead.',
+        'The blue one instead.',
+        'The blue one instead.',
+      ])
     })
 
     it('bounds repeated Steering at the 32-Tool-Round hard ceiling (#119/AC5)', async () => {

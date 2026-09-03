@@ -415,6 +415,16 @@ One instruction aimed at a live Run via Steering. Distinct from a command: a
 command starts a Run; a Directive bends one that already exists.
 _Avoid_: steer command, follow-up prompt
 
+**Standing Directive**:
+The last Directive a Run consumed, in the user's own words, sent on every
+later round of that Run — the original command never leaves the request, so
+without it a correction survives only while the model keeps restating it. It
+takes precedence over the command wherever the two differ, and is never
+cleared by anything the model says: only the Run ending retires it. Distinct
+from the corrected objective, which is the model's restatement of the same
+correction.
+_Avoid_: sticky steering, persistent correction
+
 **Feed**:
 The session-scoped projection of pipeline events. One projection feeds the
 dashboard, the overlay panel, and (formerly) the idle digest.

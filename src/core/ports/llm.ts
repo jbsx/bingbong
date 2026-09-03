@@ -46,6 +46,17 @@ export interface LlmRequest {
   truncated?: boolean
   /** A user correction captured while the current run was paused. */
   steering?: string
+  /**
+   * The Standing Directive (#167): the user's own words from the last
+   * Steering correction, on every round after the one that carried it as
+   * `steering`. The original command stays in context for the whole Run,
+   * so without this the corrected objective survives only if the model
+   * restates it — at a low reasoning rung it did not, and the Run finished
+   * on the page the user had just corrected away from. Never sent on the
+   * same round as `steering`: the two are the same words, once as the
+   * arriving directive and after that as the correction still in force.
+   */
+  standingDirective?: string
   /** One immutable Session Journal snapshot, captured when this Run was accepted. */
   journal?: RunJournalSnapshot
   /** One immutable Session Working Memory snapshot captured with the Journal. */

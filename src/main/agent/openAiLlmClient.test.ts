@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { createOpenAiLlmClient, TRUNCATION_NOTE } from './openAiLlmClient'
+import { createOpenAiLlmClient, standingDirectiveMessage, TRUNCATION_NOTE } from './openAiLlmClient'
 import { ORCHESTRATOR_SYSTEM_PROMPT } from './orchestratorPrompt'
 import { createBrowserTools } from '../../core/pipeline/browserTools'
 import { createMediaTools } from '../../core/pipeline/mediaTools'
@@ -440,6 +440,49 @@ describe('openAiLlmClient', () => {
       role: 'user',
       content: 'Steering directive: Use Paris instead.',
     })
+  })
+
+  it('stands a consumed directive last, worded as the correction still in force (#167)', async () => {
+    const fetch = new ScriptedFetch([
+      completionResponse({ content: '{"speak":"Changed.","display":"Changed course."}' }),
+    ])
+    const client = makeClient(fetch)
+
+    await client.complete({
+      command: 'book the trip',
+      toolResults: [{
+        call: { id: 'c1', name: 'navigate', args: { url: 'example.test' } },
+        outcome: { ok: true, result: 'navigated' },
+      }],
+      standingDirective: 'Use Paris instead.',
+    })
+
+    // Last message, past the retained tool context and the original
+    // command it supersedes — the position the arriving directive held.
+    const last = fetch.calls[0].body.messages.at(-1)
+    expect(last).toEqual({ role: 'user', content: standingDirectiveMessage('Use Paris instead.') })
+    expect((last as { content: string }).content).toContain('Use Paris instead.')
+    expect((last as { content: string }).content).not.toContain('Steering directive:')
+  })
+
+  it('sends the arriving directive alone when both channels carry words (#167)', async () => {
+    const fetch = new ScriptedFetch([
+      completionResponse({ content: '{"speak":"Changed.","display":"Changed course."}' }),
+    ])
+    const client = makeClient(fetch)
+
+    await client.complete({
+      command: 'book the trip',
+      toolResults: [],
+      steering: 'Use Paris instead.',
+      standingDirective: 'Use Paris instead.',
+    })
+
+    // The same words twice would read as two corrections; the arriving
+    // one wins on the round that carries it.
+    expect(fetch.calls[0].body.messages.filter((m) => m.content?.includes('Use Paris instead.'))).toEqual([
+      { role: 'user', content: 'Steering directive: Use Paris instead.' },
+    ])
   })
 
   it('appends the in-band truncation note to a capped utterance\'s command (#61)', async () => {
