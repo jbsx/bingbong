@@ -108,6 +108,14 @@ describe('runSubagent', () => {
     expect(report.agentId).toBe('a-7')
   })
 
+  it('runs its rounds at the low reasoning-effort rung (#166)', async () => {
+    const llm = new ScriptedLlm([{ kind: 'answer', speak: 's', display: 'Done.' }])
+
+    await runSubagent({ llm, tools: [], clock: new FakeClock() }, { task: 't', isCancelled: () => false })
+
+    expect(llm.requests[0]?.reasoningEffort).toBe('low')
+  })
+
   it('keeps the report structured-but-empty when the answer carries no sections (#98)', async () => {
     const llm = new ScriptedLlm([{ kind: 'answer', speak: 'short', display: 'Plain prose report.' }])
 

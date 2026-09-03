@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { noScriptedModelActive, resolveProductionRouting, SCRIPTED_MODEL_HOOKS } from './routing'
+import { REASONING_EFFORT_ENV_KEY } from '../../src/core/agent/modelRouting'
 
 const ORCHESTRATOR_ENV = {
   BINGBONG_ORCHESTRATOR_BASE_URL: 'https://orchestrator.example/v4',
@@ -60,5 +61,24 @@ describe('resolveProductionRouting', () => {
     expect(routing.identity.vision.configured).toBe(true)
     expect(routing.env.BINGBONG_SUBAGENT_API_KEY).toBe('sk-deepseek-key')
     expect(routing.env.BINGBONG_VISION_API_KEY).toBe('sk-zai-key')
+  })
+})
+
+describe('reasoning-effort provenance (#166)', () => {
+  it('records the tier map when no override is set, and forwards nothing', () => {
+    const routing = resolveProductionRouting(ORCHESTRATOR_ENV)
+
+    expect(routing.reasoningEffort).toBeNull()
+    expect(routing.env[REASONING_EFFORT_ENV_KEY]).toBeUndefined()
+  })
+
+  it('forwards a set override to the launched app and pins it for the report', () => {
+    // A probe pass is only readable beside another if the report says which
+    // rung it ran at: the developer's env alone never reaches the app,
+    // because the harness composes routing explicitly.
+    const routing = resolveProductionRouting({ ...ORCHESTRATOR_ENV, [REASONING_EFFORT_ENV_KEY]: 'low' })
+
+    expect(routing.reasoningEffort).toBe('low')
+    expect(routing.env[REASONING_EFFORT_ENV_KEY]).toBe('low')
   })
 })

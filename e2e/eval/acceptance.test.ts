@@ -726,6 +726,38 @@ describe('the recorded #132 pools (#134: existing-pool compatibility)', () => {
   })
 })
 
+describe('one reasoning-effort rung per pool (#166)', () => {
+  const withEffort = (report: EvalReport, effort: 'low' | 'max' | null | undefined): EvalReport => ({
+    ...report,
+    modelWitness: {
+      ...report.modelWitness,
+      ...(effort === undefined ? {} : { reasoningEffort: effort }),
+    },
+  })
+
+  it('refuses a pool whose captures ran at different rungs', () => {
+    // A probe pass at `low` beside two at `max` would otherwise pool and
+    // decide silently, averaging over the one variable under test.
+    const [one, two, three] = candidatePool()
+    expect(() =>
+      buildPool('candidate', [withEffort(one!, 'low'), withEffort(two!, 'max'), withEffort(three!, 'max')]),
+    ).toThrow(/reasoning-effort/i)
+  })
+
+  it('pools captures that share a rung and records it', () => {
+    const pool = buildPool('candidate', candidatePool().map((report) => withEffort(report, null)))
+
+    expect(pool.reasoningEffort).toBe('per-tier')
+    expect(pool.captures.every((capture) => capture.reasoningEffort === 'per-tier')).toBe(true)
+  })
+
+  it('reads a pre-#166 capture as the provider default it ran at', () => {
+    const pool = buildPool('candidate', candidatePool())
+
+    expect(pool.reasoningEffort).toBe('pre-166-default')
+  })
+})
+
 describe('buildPool pooled statistics', () => {
   it('pools nearest-rank median and p95 over all raw scenario round counts', () => {
     const pool = buildPool('candidate', candidatePool())

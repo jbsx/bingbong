@@ -31,6 +31,31 @@ class FakeLlm implements LlmClient {
 }
 
 describe('withPerfTracing', () => {
+  it('stamps the round\u2019s reasoning-effort rung on its span (#166)', async () => {
+    // The probe reads model time per rung straight out of the perf log, so
+    // the rung has to sit on the span rather than be inferred from a tier.
+    const { records, state, tracer } = fakePerfHarness()
+    const client = new FakeLlm(state, () => ANSWER)
+
+    await withPerfTracing(client, tracer).complete({
+      command: 'c',
+      toolResults: [],
+      turnId: 't-1',
+      reasoningEffort: 'low',
+    })
+
+    expect(records.find((record) => record.stage === 'llm')?.detail).toEqual({ effort: 'low' })
+  })
+
+  it('leaves the span undetailed when the round names no rung (#166)', async () => {
+    const { records, state, tracer } = fakePerfHarness()
+    const client = new FakeLlm(state, () => ANSWER)
+
+    await withPerfTracing(client, tracer).complete({ command: 'c', toolResults: [], turnId: 't-1' })
+
+    expect(records.find((record) => record.stage === 'llm')?.detail).toBeUndefined()
+  })
+
   it('records one llm span per successful round, keyed by the request turn id', async () => {
     const { records, state, tracer } = fakePerfHarness()
     state.monotonicMs = 1_000

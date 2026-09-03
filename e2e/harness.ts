@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { CdpClient } from './cdpClient'
-import { AGENT_ROLES, routingEnvKeys } from '../src/core/agent/modelRouting'
+import { AGENT_ROLES, REASONING_EFFORT_ENV_KEY, routingEnvKeys } from '../src/core/agent/modelRouting'
 import { launchApp, pickFreeDebugPort, type LaunchedApp } from './electronApp'
 import { startFixtureServer, type FixtureServer } from './fixtureServer'
 import { promptBarScript, urlBarNavigationScript } from './scripts'
@@ -185,6 +185,11 @@ export async function startHarness(
       BINGBONG_VISION_SCRIPT: '[]',
       BINGBONG_VISION_DESCRIPTION_SCRIPT: '[]',
       BINGBONG_ENV_FILE: join(userDataDir, 'env-file-not-set'),
+      // The reasoning-effort override (#166) is unset for the same reason
+      // routing is: the launched app must never inherit an exported
+      // experiment rung from the developer's shell. The real-model
+      // evaluator passes its own value explicitly and overrides this.
+      [REASONING_EFFORT_ENV_KEY]: undefined,
       ...ROUTING_ENV_UNSET,
       ...options?.env,
     },

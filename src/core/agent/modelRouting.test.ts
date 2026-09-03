@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import { resolveModelEndpoint, resolveRoutingStatus, roleConfigured, type AgentRole } from './modelRouting'
+import {
+  REASONING_EFFORT_ENV_KEY,
+  resolveModelEndpoint,
+  resolveReasoningEffortOverride,
+  resolveRoutingStatus,
+  roleConfigured,
+  type AgentRole,
+} from './modelRouting'
 
 const GLM_CODING_PLAN_URL = 'https://ai.z.ai/api/coding/paas/v4'
 
@@ -103,5 +110,23 @@ describe('routing status', () => {
 
   it('reports nothing configured from an empty env', () => {
     expect(resolveRoutingStatus({})).toEqual({ orchestrator: false, subagent: false, vision: false })
+  })
+})
+
+describe('reasoning effort override (#166)', () => {
+  it('names one env key both roles read', () => {
+    expect(REASONING_EFFORT_ENV_KEY).toBe('BINGBONG_REASONING_EFFORT')
+  })
+
+  it('accepts the three rungs the provider defines, case and padding aside', () => {
+    expect(resolveReasoningEffortOverride({ [REASONING_EFFORT_ENV_KEY]: 'low' })).toBe('low')
+    expect(resolveReasoningEffortOverride({ [REASONING_EFFORT_ENV_KEY]: ' HIGH ' })).toBe('high')
+    expect(resolveReasoningEffortOverride({ [REASONING_EFFORT_ENV_KEY]: 'Max' })).toBe('max')
+  })
+
+  it('is absent when unset, empty, or not a rung — the tier map then decides', () => {
+    expect(resolveReasoningEffortOverride({})).toBeUndefined()
+    expect(resolveReasoningEffortOverride({ [REASONING_EFFORT_ENV_KEY]: '   ' })).toBeUndefined()
+    expect(resolveReasoningEffortOverride({ [REASONING_EFFORT_ENV_KEY]: 'medium' })).toBeUndefined()
   })
 })

@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, expect, it } from 'vitest'
+import { reasoningEffortLabel } from './evaluator'
 import { startEvaluator, type Evaluator } from './evaluator'
 import { evalScenarios } from './scenarios'
 import type { WorkerStop } from './metrics'
@@ -64,6 +65,7 @@ afterAll(async () => {
         `  raw-limit failures: ${agg.rawLimitFailures}   timed out: ${agg.timedOutScenarios}`,
         `  delegated workers: ${workerLine === '' ? 'none delegated' : workerLine}`,
         `  model: ${report.modelWitness.orchestratorModel} (${report.modelWitness.orchestratorRequests} rounds witnessed)`,
+        `  reasoning effort: ${reasoningEffortLabel(report.modelWitness).replace('effort:', '')}`,
         '',
       ].join('\n'),
     )

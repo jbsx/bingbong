@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, expect, it } from 'vitest'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { reasoningEffortLabel } from './evaluator'
 import { startEvaluator, type Evaluator, type ScenarioResult } from './evaluator'
 import { delegationScenarios } from './delegationScenarios'
 import { summarizeDelegation, workersNeededForCeiling } from './delegationProbe'
@@ -77,6 +78,7 @@ afterAll(async () => {
         `  worker stops   ${stops === '' ? 'none' : stops}`,
         `  no_progress    ${reading}`,
         `  model: ${report.modelWitness.orchestratorModel} (${report.modelWitness.orchestratorRequests} rounds witnessed)`,
+        `  reasoning effort: ${reasoningEffortLabel(report.modelWitness).replace('effort:', '')}`,
         '',
       ].join('\n'),
     )

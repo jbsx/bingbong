@@ -383,6 +383,9 @@ export async function runSubagent(deps: RunSubagentDeps, options: RunSubagentOpt
   const requestArgs = () => ({
     command: options.task,
     toolResults,
+    // A worker carries no Effort Tier, so its epoch answers with the
+    // Subagent rung (#166) — brief deliberation for execution work.
+    reasoningEffort: epoch.reasoningEffort,
     ...(options.turnId !== undefined ? { turnId: options.turnId } : {}),
     ...(options.memory !== undefined && options.memory.length > 0 ? { memory: options.memory } : {}),
   })

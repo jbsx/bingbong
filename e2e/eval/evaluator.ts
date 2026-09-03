@@ -11,6 +11,9 @@ import { startHarness, type Harness } from '../harness'
 import { sleep, waitFor } from '../waitFor'
 import { aggregateScenarios, combineRuns, extractMetrics, type EvalAggregate, type ScenarioMetrics } from './metrics'
 import { loadProductionEnv, resolveProductionRouting, type ProductionRouting } from './routing'
+import { type ModelWitness } from './modelWitness'
+
+export { reasoningEffortLabel, type ModelWitness } from './modelWitness'
 import type { EvalScenario, PaneState, ScenarioObservation } from './scenarios'
 import { runningAgentsSinceSource } from './tape'
 
@@ -62,13 +65,6 @@ export interface ScenarioResult {
   metrics: ScenarioMetrics
   /** Every executed command of the scenario, in order (#130's multi-run classes). */
   runs: ScenarioMetrics[]
-}
-
-export interface ModelWitness {
-  orchestratorModel: string | null
-  orchestratorRequests: number
-  /** Non-empty means a scripted model served something — fails the suite. */
-  scriptedEntries: { role: string; model: string }[]
 }
 
 export interface EvalReport {
@@ -213,7 +209,12 @@ export async function startEvaluator(options?: {
     gitCommit: gitCommit(),
     scenarioTimeoutMs,
     routing: routing.identity,
-    modelWitness: { orchestratorModel: null, orchestratorRequests: 0, scriptedEntries: [] },
+    modelWitness: {
+      orchestratorModel: null,
+      orchestratorRequests: 0,
+      reasoningEffort: routing.reasoningEffort,
+      scriptedEntries: [],
+    },
     scenarios: results,
   })
 
@@ -458,6 +459,7 @@ export async function startEvaluator(options?: {
     const orchestratorEntries = entries.filter((entry) => entry.role === 'orchestrator')
     const distinctModels = [...new Set(orchestratorEntries.map((entry) => entry.model))]
     const witness: ModelWitness = {
+      reasoningEffort: routing.reasoningEffort,
       // A single orchestrator model must have served; a ledger that ever
       // disagrees with itself is surfaced instead of silently pinning one.
       orchestratorModel:

@@ -816,6 +816,10 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
             turn = await llm.complete({
               command,
               toolResults,
+              // How hard this round thinks (#166): a pure function of the
+              // Effort Epoch, read here so an escalation or a Steering
+              // replan reaches the very next round with everything else.
+              reasoningEffort: effortEpoch.reasoningEffort,
               // The truncation flag (#61) rides every round: the model sees
               // the possibly-cut-off note for as long as the turn runs.
               ...(truncated ? { truncated: true } : {}),

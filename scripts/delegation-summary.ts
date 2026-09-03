@@ -19,6 +19,7 @@ import { readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { summarizeDelegation, workersNeededForCeiling } from '../e2e/eval/delegationProbe.ts'
+import { reasoningEffortLabel } from '../e2e/eval/modelWitness.ts'
 import type { EvalReport, ScenarioResult } from '../e2e/eval/evaluator'
 
 const repoRoot = fileURLToPath(new URL('..', import.meta.url))
@@ -79,7 +80,10 @@ const lines = [
   ...captures.map(
     (capture) =>
       `  ${capture.file}  ${capture.report.gitCommit.slice(0, 7)}  ` +
-      `${capture.report.modelWitness.orchestratorModel ?? '(unwitnessed)'}  ${capture.report.capturedAt}`,
+      `${capture.report.modelWitness.orchestratorModel ?? '(unwitnessed)'}  ` +
+      // The rung belongs beside the model for the same reason (#166): it is
+      // a variable that decides the outcome, not a detail of the run.
+      `${reasoningEffortLabel(capture.report.modelWitness)}  ${capture.report.capturedAt}`,
   ),
   '',
   `scenarios that delegated : ${summary.delegatingScenarios}/${summary.scenarios.length}`,
@@ -119,7 +123,10 @@ if (summary.noProgress.kind === 'none') {
 // under different models, and a flat list of repeated ids cannot say so.
 lines.push('', 'per scenario observation:')
 for (const capture of captures) {
-  lines.push(`  ${capture.file} — ${capture.report.modelWitness.orchestratorModel ?? '(unwitnessed)'}`)
+  lines.push(
+    `  ${capture.file} — ${capture.report.modelWitness.orchestratorModel ?? '(unwitnessed)'}` +
+      `  ${reasoningEffortLabel(capture.report.modelWitness)}`,
+  )
   for (const row of summarizeDelegation(capture.report.scenarios).scenarios) {
     lines.push(
       `    ${row.id.padEnd(30)} ${row.success ? 'PASS' : 'FAIL'}  tier ${row.effortTier.padEnd(14)} ` +

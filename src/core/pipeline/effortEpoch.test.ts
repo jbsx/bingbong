@@ -9,6 +9,7 @@ import {
   finalizationToolRefusal,
   HARD_TOOL_ROUND_CEILING,
   TIER_ACTIVE_WORK_DEADLINES_MS,
+  TIER_REASONING_EFFORT,
   TIER_TOOL_ROUND_BUDGETS,
   type EffortEpoch,
 } from './effortEpoch'
@@ -23,6 +24,39 @@ describe('Effort Epoch (#146, ADR 0027)', () => {
       direct_action: 45_000,
       lookup: 120_000,
       investigation: 300_000,
+    })
+  })
+
+  describe('reasoning effort rung (#166)', () => {
+    it('maps the cheap tiers to low and Investigation to max', () => {
+      expect(TIER_REASONING_EFFORT).toEqual({ direct_action: 'low', lookup: 'low', investigation: 'max' })
+    })
+
+    it('runs an undeclared Run\u2019s first round at the default tier\u2019s rung', () => {
+      // No new rule for round one: a Run with no declared plan already runs
+      // under DEFAULT_EFFORT_TIER, so its rung follows from that alone.
+      const epoch = createEffortEpoch({ clock: new FakeClock() })
+
+      expect(epoch.reasoningEffort).toBe(TIER_REASONING_EFFORT[DEFAULT_EFFORT_TIER])
+      expect(epoch.reasoningEffort).toBe('low')
+    })
+
+    it('raises the rung from the round after a tier escalation', () => {
+      const epoch = createEffortEpoch({ clock: new FakeClock(), initialTier: 'lookup' })
+      expect(epoch.reasoningEffort).toBe('low')
+
+      epoch.declareTier('investigation')
+
+      expect(epoch.reasoningEffort).toBe('max')
+    })
+
+    it('re-derives the rung from a Steering replan\u2019s tier', () => {
+      const epoch = createEffortEpoch({ clock: new FakeClock(), initialTier: 'investigation' })
+      expect(epoch.reasoningEffort).toBe('max')
+
+      epoch.replan('direct_action')
+
+      expect(epoch.reasoningEffort).toBe('low')
     })
   })
 
@@ -602,6 +636,12 @@ describe('Effort Epoch (#146, ADR 0027)', () => {
       expect(epoch.beginToolRound()).toBe(true)
       expect(epoch.phase).toEqual({ kind: 'answer_only', cause: 'deadline_reached' })
       expect(epoch.beginToolRound()).toBe(false)
+    })
+
+    it('runs at the low rung whatever the parent\u2019s tier is (#166)', () => {
+      // A worker's epoch carries no tier: walking a delegated branch is
+      // execution, not planning, so the rung is its own constant.
+      expect(workerEpoch().reasoningEffort).toBe('low')
     })
 
     it('answers to its budget alone — no Effort Tier, no hard ceiling', () => {

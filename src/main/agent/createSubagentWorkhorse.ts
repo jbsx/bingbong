@@ -8,7 +8,12 @@ import type { UsageRecord } from '../../core/agent/usageTracking'
 import { withUsageTracking } from '../../core/agent/usageTracking'
 import type { PerfTracer } from '../../core/perf/perfTracer'
 import { withPerfTracing } from '../../core/perf/perfTracing'
-import { resolveModelEndpoint, routingEnvKeys } from '../../core/agent/modelRouting'
+import {
+  REASONING_EFFORT_ENV_KEY,
+  resolveModelEndpoint,
+  resolveReasoningEffortOverride,
+  routingEnvKeys,
+} from '../../core/agent/modelRouting'
 import { SUBAGENT_LIMITS } from '../../core/agent/subagentRails'
 import { runSubagent } from '../../core/agent/subagentRunner'
 import type { SubagentKind, SubagentSpec, SubagentTaskApi, SubagentTaskHooks } from '../../core/agent/subagentManager'
@@ -34,7 +39,7 @@ import { subagentSystemPrompt } from './subagentPrompt'
 const SUBAGENT_SCRIPT_ENV = 'BINGBONG_SUBAGENT_LLM_SCRIPT'
 
 /** Env keys that decide the subagent LLM (mirrors the orchestrator's LLM_ENV_KEYS). */
-export const SUBAGENT_LLM_ENV_KEYS = [SUBAGENT_SCRIPT_ENV, ...routingEnvKeys('subagent')]
+export const SUBAGENT_LLM_ENV_KEYS = [SUBAGENT_SCRIPT_ENV, REASONING_EFFORT_ENV_KEY, ...routingEnvKeys('subagent')]
 
 export interface SubagentWorkhorseDeps {
   getEnv(): Record<string, string | undefined>
@@ -82,6 +87,7 @@ function resolveSubagentLlm(deps: SubagentWorkhorseDeps, tools: Tool[]): LlmClie
   }
   try {
     const endpoint = resolveModelEndpoint(env, 'subagent')
+    const effortOverride = resolveReasoningEffortOverride(env)
     const client = createOpenAiLlmClient({
       endpoint,
       // The runtime context (#103) is built here, once per spawn — one
@@ -89,6 +95,9 @@ function resolveSubagentLlm(deps: SubagentWorkhorseDeps, tools: Tool[]): LlmClie
       systemPrompt: subagentSystemPrompt(deps.clock ?? systemClock),
       tools,
       fetchFn: deps.fetchFn,
+      // The experiment override (#166) reaches workers too, so a probe
+      // moves every round of a Run — delegated ones included — at once.
+      ...(effortOverride !== undefined ? { reasoningEffort: effortOverride } : {}),
     })
     return deps.onUsage
       ? withUsageTracking(client, 'subagent', () => endpoint.model, deps.onUsage)

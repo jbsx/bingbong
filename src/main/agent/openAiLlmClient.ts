@@ -1,4 +1,13 @@
-import type { AssistantTurn, LlmClient, LlmRequest, LlmStreamDelta, TokenUsage, ToolCall, ToolResult } from '../../core/ports/llm'
+import type {
+  AssistantTurn,
+  LlmClient,
+  LlmRequest,
+  LlmStreamDelta,
+  ReasoningEffort,
+  TokenUsage,
+  ToolCall,
+  ToolResult,
+} from '../../core/ports/llm'
 import type { Tool, ToolParameterSpec } from '../../core/pipeline/tool'
 import type { ModelEndpointConfig } from '../../core/agent/modelRouting'
 import { parseAssistantAnswer } from '../../core/agent/answerContract'
@@ -33,12 +42,11 @@ export interface OpenAiLlmClientDeps {
   fetchFn: typeof fetch
   requestTimeoutMs?: number
   /**
-   * Experiment switch (BINGBONG_DISABLE_THINKING=1): sends the GLM
-   * `thinking: {type: "disabled"}` field so rounds answer without a
-   * reasoning phase. Temporary — a live experiment on whether thinking
-   * hurts long runs, not a product setting.
+   * The experiment override (BINGBONG_REASONING_EFFORT, #166): forces
+   * every round to one rung, outranking the rung the round itself
+   * carries. Absent, each round's own rung — the Effort Tier's — is sent.
    */
-  disableThinking?: boolean
+  reasoningEffort?: ReasoningEffort
 }
 
 function toolResultContent(outcome: ToolResult['outcome']): string {
@@ -157,7 +165,7 @@ export const TRUNCATION_NOTE =
 export function createOpenAiLlmClient(deps: OpenAiLlmClientDeps): LlmClient {
   const { endpoint, systemPrompt, tools, fetchFn } = deps
   const timeoutMs = deps.requestTimeoutMs ?? 120_000
-  const disableThinking = deps.disableThinking === true
+  const effortOverride = deps.reasoningEffort
 
   function buildMessages(request: LlmRequest): WireMessage[] {
     const messages: WireMessage[] = [
@@ -230,6 +238,8 @@ export function createOpenAiLlmClient(deps: OpenAiLlmClientDeps): LlmClient {
         streaming,
         onDelta: request.onDelta,
         signal: request.signal,
+        // The experiment override outranks the round's own rung (#166).
+        effort: effortOverride ?? request.reasoningEffort,
       })
       const turn = toTurn(payload)
       if (turn) return turn
@@ -282,15 +292,21 @@ export function createOpenAiLlmClient(deps: OpenAiLlmClientDeps): LlmClient {
   async function requestOnce(
     messages: WireMessage[],
     catalog: Tool[],
-    options: { streaming: boolean; onDelta?: (delta: LlmStreamDelta) => void; signal?: AbortSignal },
+    options: {
+      streaming: boolean
+      onDelta?: (delta: LlmStreamDelta) => void
+      signal?: AbortSignal
+      effort?: ReasoningEffort
+    },
   ): Promise<AttemptResult> {
     const body: Record<string, unknown> = {
       model: endpoint.model,
       messages,
       stream: options.streaming,
-      // The GLM thinking kill-switch (experiment): one field, provider-
-      // specific, honored only when the env flag set it.
-      ...(disableThinking ? { thinking: { type: 'disabled' } } : {}),
+      // How hard this round thinks (#166): the Effort Tier's rung, or the
+      // experiment override. Absent — a scripted or tier-less caller — the
+      // provider's own default decides, as it always did.
+      ...(options.effort !== undefined ? { reasoning_effort: options.effort } : {}),
     }
     if (options.streaming) {
       // The include_usage convention (OpenAI-compatible): a final,

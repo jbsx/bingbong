@@ -282,8 +282,9 @@ describe('command pipeline', () => {
       toolResults: [],
       steering: 'Use Paris instead.',
       turnId: expect.any(String),
-      // Every round carries its abort signal (#47).
+      // Every round carries its abort signal (#47) and its rung (#166).
       signal: expect.any(AbortSignal),
+      reasoningEffort: 'low',
     })
     expect(executions).toBe(0)
     expect(events).toContainEqual({ type: 'status', status: 'paused', at: 0 })
@@ -336,6 +337,7 @@ describe('command pipeline', () => {
       }],
       turnId: expect.any(String),
       signal: expect.any(AbortSignal),
+      reasoningEffort: 'low',
     })
   })
 
@@ -1925,6 +1927,23 @@ describe('command pipeline', () => {
       expect(requests[2]?.steering).toBe('Search the catalog instead.')
       expect(events.filter((e) => e.type === 'error')).toEqual([])
       expect(events.at(-1)).toEqual({ type: 'done', outcome: 'done', finalizationCause: 'model_answered', at: 520_000 })
+    })
+
+    it('runs every round at the tier\u2019s reasoning-effort rung, escalation included (#166)', async () => {
+      // Round one carries a rung with no plan yet declared: the epoch's
+      // default tier is Lookup, so it is low. The escalation to
+      // Investigation raises the rung from the very next round.
+      const llm = new ScriptedLlm([
+        workRound(0),
+        workRound(1, plan('p1', 'investigation')),
+        workRound(2),
+        { kind: 'answer', speak: 'Done.', display: 'Detail.' },
+      ])
+      const pipeline = createCommandPipeline({ llm, tts: new RecordingTts(), clock: new FakeClock(), tools: [createReportRunPlanTool(), work] })
+
+      await collect(pipeline, 'research the thing')
+
+      expect(llm.requests.map((request) => request.reasoningEffort)).toEqual(['low', 'low', 'max', 'max'])
     })
 
     it('grants an escalated tier its full fresh Tool-Round budget (#118/AC2)', async () => {

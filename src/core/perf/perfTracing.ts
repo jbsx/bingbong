@@ -37,7 +37,10 @@ export function withPerfTracing(client: LlmClient, tracer: PerfTracer, stage = '
           },
         })
       } finally {
-        record(stage, tracer.now() - start)
+        // The rung rides the span (#166): a probe comparing model time at
+        // `low` against `max` reads it here, and a pooled reading of two
+        // passes cannot silently average over the variable that moved.
+        record(stage, tracer.now() - start, request.reasoningEffort !== undefined ? { effort: request.reasoningEffort } : undefined)
       }
     },
   }

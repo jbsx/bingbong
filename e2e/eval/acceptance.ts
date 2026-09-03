@@ -7,6 +7,7 @@ import {
 import type { EffortTier } from '../../src/core/pipeline/runPlan.ts'
 import { evalScenarios, type EvalScenario } from './scenarios.ts'
 import type { EvalReport, ScenarioResult } from './evaluator'
+import { pooledEffortContract } from './modelWitness.ts'
 
 // Issue #128, closing #108's release acceptance; amended by #132 and #134.
 // The decision judges POOLS of real-model captures — three complete passes
@@ -160,6 +161,8 @@ export interface CaptureProvenance {
   capturedAt: string
   orchestratorModel: string
   orchestratorRequests: number
+  /** The reasoning-effort contract this capture ran under (#166). */
+  reasoningEffort: string
 }
 
 export interface PooledRoundsStats {
@@ -186,6 +189,8 @@ export interface CapturePool {
   pooledRounds: PooledRoundsStats
   /** Nearest-rank class medians over the same pooled population (#134). */
   classMedians: ClassMedians
+  /** The one reasoning-effort contract every capture on this side shared (#166). */
+  reasoningEffort: string
 }
 
 /** The per-side summary the decision artifact records — everything validation judged. */
@@ -420,6 +425,15 @@ export function buildPool(role: string, reports: readonly EvalReport[]): Capture
   if (routingContracts.length > 1) {
     throw new Error(`${role} pool mixes model/routing contracts — every capture must share one contract`)
   }
+  // The rung is a routing contract of its own (#166): a pass forced to one
+  // rung says nothing beside a pass at another, so refuse the mix here
+  // rather than leaving it to whoever reads the printed label.
+  const effortContracts = [...new Set(reports.map((report) => pooledEffortContract(report.modelWitness)))]
+  if (effortContracts.length > 1) {
+    throw new Error(
+      `${role} pool mixes reasoning-effort contracts (${effortContracts.join(', ')}) — every capture must share one rung`,
+    )
+  }
   const referenceIds = reports[0]!.scenarios.map((scenario) => scenario.id)
   reports.forEach((report, index) => {
     if (index === 0) return
@@ -441,8 +455,10 @@ export function buildPool(role: string, reports: readonly EvalReport[]): Capture
       capturedAt: report.capturedAt,
       orchestratorModel: report.modelWitness.orchestratorModel!,
       orchestratorRequests: report.modelWitness.orchestratorRequests,
+      reasoningEffort: pooledEffortContract(report.modelWitness),
     })),
     routing: reports[0]!.routing,
+    reasoningEffort: effortContracts[0]!,
     scenarios,
     scenarioIds: referenceIds,
     pooledRounds: {

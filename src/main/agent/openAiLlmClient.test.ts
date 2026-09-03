@@ -27,7 +27,7 @@ interface CompletionBody {
   tool_choice?: string
   stream?: boolean
   stream_options?: { include_usage: boolean }
-  thinking?: { type: string }
+  reasoning_effort?: string
 }
 
 function completionResponse(message: { content?: string | null; tool_calls?: WireToolCall[] }): Response {
@@ -116,19 +116,37 @@ function makeClient(fetch: ScriptedFetch) {
 }
 
 describe('openAiLlmClient', () => {
-  it('sends thinking disabled when the kill-switch dep sets it', async () => {
+  it('sends the round\u2019s reasoning effort as reasoning_effort (#166)', async () => {
+    const fetch = new ScriptedFetch([completionResponse({ content: '{"speak":"OK.","display":"OK."}' })])
+    const client = makeClient(fetch)
+
+    await client.complete({ command: 'open youtube', toolResults: [], reasoningEffort: 'low' })
+
+    expect(fetch.calls[0]!.body.reasoning_effort).toBe('low')
+  })
+
+  it('sends no reasoning_effort when the round names none (#166)', async () => {
+    const fetch = new ScriptedFetch([completionResponse({ content: '{"speak":"OK.","display":"OK."}' })])
+    const client = makeClient(fetch)
+
+    await client.complete({ command: 'open youtube', toolResults: [] })
+
+    expect(fetch.calls[0]!.body.reasoning_effort).toBeUndefined()
+  })
+
+  it('the experiment override outranks the round\u2019s own rung (#166)', async () => {
     const fetch = new ScriptedFetch([completionResponse({ content: '{"speak":"OK.","display":"OK."}' })])
     const client = createOpenAiLlmClient({
       endpoint: ENDPOINT,
       systemPrompt: ORCHESTRATOR_SYSTEM_PROMPT,
       tools: createBrowserTools(new FakeBrowser()),
       fetchFn: fetch.fetchFn,
-      disableThinking: true,
+      reasoningEffort: 'max',
     })
 
-    await client.complete({ command: 'open youtube', toolResults: [] })
+    await client.complete({ command: 'open youtube', toolResults: [], reasoningEffort: 'low' })
 
-    expect(fetch.calls[0]!.body.thinking).toEqual({ type: 'disabled' })
+    expect(fetch.calls[0]!.body.reasoning_effort).toBe('max')
   })
 
   it('posts the catalog and command, and maps tool_calls back', async () => {
@@ -163,7 +181,6 @@ describe('openAiLlmClient', () => {
     expect(request.body.tools?.map((t) => t.function.name)).toEqual([
       'navigate', 'read_page', 'click', 'type', 'scroll', 'back', 'go_forward',
     ])
-    expect(request.body.thinking).toBeUndefined()
   })
 
   it('replays the tool round-trip as messages on the next round', async () => {

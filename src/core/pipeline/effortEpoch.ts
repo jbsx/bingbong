@@ -4,6 +4,7 @@
 
 import { DEFAULT_EFFORT_TIER, type EffortTier } from './runPlan.ts'
 import type { Clock } from '../ports/clock'
+import type { ReasoningEffort } from '../ports/llm'
 import type { SubagentSharedDeadline } from '../agent/subagentRails'
 import type { FinalizationCause } from '../session/runJournal'
 import type { FallbackSource } from './fallbackAnswer'
@@ -29,6 +30,26 @@ export const TIER_ACTIVE_WORK_DEADLINES_MS: Readonly<Record<EffortTier, number>>
   lookup: 120_000,
   investigation: 300_000,
 }
+
+/**
+ * The reasoning-effort rung each tier runs its model rounds at (#166):
+ * the cheap tiers think briefly, an Investigation thinks as hard as the
+ * provider allows. `high` is deliberately unmapped — no measurement has
+ * earned it a tier yet. A Browse Subagent has no tier and runs at
+ * SUBAGENT_REASONING_EFFORT instead.
+ */
+export const TIER_REASONING_EFFORT: Readonly<Record<EffortTier, ReasoningEffort>> = {
+  direct_action: 'low',
+  lookup: 'low',
+  investigation: 'max',
+}
+
+/**
+ * The rung a Browse Subagent's rounds run at (#166): walking a delegated
+ * branch is execution, not planning, so a worker thinks briefly whatever
+ * the parent Run's tier is.
+ */
+export const SUBAGENT_REASONING_EFFORT: ReasoningEffort = 'low'
 
 /**
  * The tier's live active-work deadline (#135): the table value, or the
@@ -215,6 +236,13 @@ export interface ArmedRound {
 
 export interface EffortEpoch {
   readonly tier: EffortTier
+  /**
+   * The rung this epoch's next model round runs at (#166). A pure
+   * function of the epoch: an escalation or a Steering replan re-derives
+   * it with everything else, and the reserved Answer round is no special
+   * case.
+   */
+  readonly reasoningEffort: ReasoningEffort
   readonly tierRounds: number
   readonly cumulativeRounds: number
   readonly phase: EffortPhase
@@ -377,6 +405,9 @@ export function createEffortEpoch(deps: {
   return {
     get tier() {
       return tier
+    },
+    get reasoningEffort() {
+      return subagent !== undefined ? SUBAGENT_REASONING_EFFORT : TIER_REASONING_EFFORT[tier]
     },
     get tierRounds() {
       return tierRounds

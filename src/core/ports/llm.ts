@@ -20,9 +20,23 @@ export interface ToolResult {
   outcome: ToolResultOutcome
 }
 
+/**
+ * How hard the provider should think on one round (#166): the rungs GLM
+ * exposes as `reasoning_effort`. A Run's rung is a pure function of its
+ * Effort Epoch — see TIER_REASONING_EFFORT — so deliberation is bounded
+ * by the same declaration that bounds rounds and wall time.
+ */
+export type ReasoningEffort = 'low' | 'high' | 'max'
+
 export interface LlmRequest {
   command: string
   toolResults: ToolResult[]
+  /**
+   * The rung this round runs at (#166), read from the Effort Epoch as the
+   * request is built. Absent, the client sends no field and the provider's
+   * own default decides — the shape scripted doubles and older clients keep.
+   */
+  reasoningEffort?: ReasoningEffort
   /**
    * The spoken utterance hit the 30 s hard cap (#61): the command may be
    * cut off mid-sentence. Clients flag it in-band (a note appended to the

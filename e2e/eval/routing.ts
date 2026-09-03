@@ -2,7 +2,15 @@ import { createHash } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { AGENT_ROLES, resolveModelEndpoint, type AgentRole, type ModelEndpointConfig } from '../../src/core/agent/modelRouting'
+import {
+  AGENT_ROLES,
+  REASONING_EFFORT_ENV_KEY,
+  resolveModelEndpoint,
+  resolveReasoningEffortOverride,
+  type AgentRole,
+  type ModelEndpointConfig,
+} from '../../src/core/agent/modelRouting'
+import type { ReasoningEffort } from '../../src/core/ports/llm'
 import { layerEnv, parseDotEnv } from '../../src/core/settings/dotEnv'
 
 // Real-model evaluation routing (#109): the evaluator must never inherit
@@ -26,6 +34,13 @@ export interface ProductionRouting {
   env: Record<string, string | undefined>
   /** Per-role identity for the report — fingerprints only, never keys. */
   identity: Record<AgentRole, RoleRouting>
+  /**
+   * The reasoning-effort override in force (#166), or null when the Effort
+   * Tier map decides. Pinned into the report because `buildPool` refuses a
+   * pool whose captures disagree about it, the way it refuses mixed commits
+   * and mixed routing contracts.
+   */
+  reasoningEffort: ReasoningEffort | null
 }
 
 function fingerprint(apiKey: string): string {
@@ -85,12 +100,17 @@ export function resolveProductionRouting(env: Record<string, string | undefined>
     }),
   ) as Record<AgentRole, RoleRouting>
 
+  // The developer's env never reaches the launched app on its own — this
+  // module composes the whole routing surface — so the effort override is
+  // forwarded explicitly or not at all (#166).
+  const reasoningEffort = resolveReasoningEffortOverride(env) ?? null
   const harnessEnv: Record<string, string | undefined> = {
     // Kill every scripted hook the ordinary harness template sets; the
     // invariant below proves the composed env cannot script a model.
     BINGBONG_LLM_SCRIPT: undefined,
     BINGBONG_VISION_SCRIPT: undefined,
     BINGBONG_VISION_DESCRIPTION_SCRIPT: undefined,
+    ...(reasoningEffort !== null ? { [REASONING_EFFORT_ENV_KEY]: reasoningEffort } : {}),
   }
   for (const [role, endpoint] of endpoints) {
     const prefix = envPrefixOf(role)
@@ -103,7 +123,7 @@ export function resolveProductionRouting(env: Record<string, string | undefined>
   if (!noScriptedModelActive(harnessEnv)) {
     throw new Error('composed app env still carries a scripted-model hook')
   }
-  return { env: harnessEnv, identity }
+  return { env: harnessEnv, identity, reasoningEffort }
 }
 
 /** True when no scripted-model hook remains in the composed app env. */

@@ -2,6 +2,8 @@
 // role. Everything is config (environment); no model id or provider is baked
 // into code, so swapping providers is a config change.
 
+import type { ReasoningEffort } from '../ports/llm'
+
 export type AgentRole = 'orchestrator' | 'subagent' | 'vision'
 
 export interface ModelEndpointConfig {
@@ -104,4 +106,26 @@ export function resolveRoutingStatus(env: Record<string, string | undefined>): R
     subagent: roleConfigured(env, 'subagent'),
     vision: roleConfigured(env, 'vision'),
   }
+}
+
+/**
+ * The experiment lever that forces every round's reasoning-effort rung
+ * (#166), orchestrator and Browse Subagent alike. Unset, each round's own
+ * rung — the Effort Tier's — decides. This is how a probe runs the same
+ * command at `low` and at `max` on one commit.
+ */
+export const REASONING_EFFORT_ENV_KEY = 'BINGBONG_REASONING_EFFORT'
+
+const REASONING_EFFORTS: readonly ReasoningEffort[] = ['low', 'high', 'max']
+
+/**
+ * The override in force, or undefined when none is: an unset, blank, or
+ * unrecognized value leaves the tier map in charge rather than failing a
+ * Run over a typo in an experiment variable.
+ */
+export function resolveReasoningEffortOverride(
+  env: Record<string, string | undefined>,
+): ReasoningEffort | undefined {
+  const raw = readEnv(env, REASONING_EFFORT_ENV_KEY)?.toLowerCase()
+  return REASONING_EFFORTS.find((effort) => effort === raw)
 }

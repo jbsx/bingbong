@@ -17,7 +17,12 @@ import { createMediaTools } from '../../core/pipeline/mediaTools'
 import { createNewSessionTool } from '../../core/pipeline/sessionTools'
 import { createPanelTools, type PanelControls } from '../../core/pipeline/panelTools'
 import { createAppControlTool, createSetSettingTool, type AppControls, type SettingsControls } from '../../core/pipeline/settingsTools'
-import { resolveModelEndpoint, routingEnvKeys } from '../../core/agent/modelRouting'
+import {
+  REASONING_EFFORT_ENV_KEY,
+  resolveModelEndpoint,
+  resolveReasoningEffortOverride,
+  routingEnvKeys,
+} from '../../core/agent/modelRouting'
 import type { LearnedTermsControls } from '../../core/voice/learnedTerms'
 import type { UsageSink } from '../../core/agent/usageTracking'
 import { withUsageTracking } from '../../core/agent/usageTracking'
@@ -138,6 +143,7 @@ function resolveLlm(
   } else {
     try {
       const endpoint = resolveModelEndpoint(env, 'orchestrator')
+      const effortOverride = resolveReasoningEffortOverride(env)
       client = createOpenAiLlmClient({
         endpoint,
         // The runtime context getter (#103): the client below is cached
@@ -147,9 +153,9 @@ function resolveLlm(
         systemPrompt: () => orchestratorSystemPrompt(clock, getLearnedTerms?.()),
         tools,
         fetchFn,
-        // Thinking kill-switch (experiment): BINGBONG_DISABLE_THINKING=1
-        // drops the orchestrator's reasoning phase entirely.
-        ...(env.BINGBONG_DISABLE_THINKING === '1' ? { disableThinking: true } : {}),
+        // The experiment override (#166): set, it forces every round to
+        // one rung. Unset, each round carries the Effort Tier's own.
+        ...(effortOverride !== undefined ? { reasoningEffort: effortOverride } : {}),
       })
       model = endpoint.model
     } catch (err) {
@@ -164,7 +170,7 @@ function resolveLlm(
 }
 
 /** Env keys that decide which LLM client serves the orchestrator. */
-const LLM_ENV_KEYS = ['BINGBONG_LLM_SCRIPT', 'BINGBONG_DISABLE_THINKING', ...routingEnvKeys('orchestrator')]
+const LLM_ENV_KEYS = ['BINGBONG_LLM_SCRIPT', REASONING_EFFORT_ENV_KEY, ...routingEnvKeys('orchestrator')]
 
 function llmSignature(env: Record<string, string | undefined>): string {
   return JSON.stringify(LLM_ENV_KEYS.map((key) => env[key] ?? ''))
