@@ -1,0 +1,969 @@
+{
+  "capturedAt": "2026-09-03T20:26:51.539Z",
+  "gitCommit": "f7cdbc3aa33f9ec6546eaf2dc5a890f05f23200f",
+  "scenarioTimeoutMs": 900000,
+  "routing": {
+    "orchestrator": {
+      "configured": true,
+      "baseUrl": "https://api.z.ai/api/coding/paas/v4",
+      "model": "GLM-5.3-flash",
+      "keyFingerprint": "sha256:496fb3dd2227"
+    },
+    "subagent": {
+      "configured": true,
+      "baseUrl": "https://api.z.ai/api/coding/paas/v4",
+      "model": "GLM-5.3-flash",
+      "keyFingerprint": "sha256:496fb3dd2227"
+    },
+    "vision": {
+      "configured": true,
+      "baseUrl": "https://api.z.ai/api/coding/paas/v4",
+      "model": "GLM-4.6V",
+      "keyFingerprint": "sha256:496fb3dd2227"
+    }
+  },
+  "modelWitness": {
+    "reasoningEffort": null,
+    "orchestratorModel": "GLM-5.3-flash",
+    "orchestratorRequests": 33,
+    "scriptedEntries": []
+  },
+  "scenarios": [
+    {
+      "id": "delegation-hub-audit-sweep",
+      "kind": "subagent",
+      "command": "the three regional hubs are listed at http://127.0.0.1:35857/hub-index. for every hub, get its dispatch day from the hub's own page and its defect rate from the independent audit office page that the hub page links to, then tell me all three dispatch days, all three defect rates, and which hub has the lowest defect rate",
+      "success": true,
+      "failureReason": null,
+      "metrics": {
+        "llmRounds": 14,
+        "attemptedTools": 14,
+        "executedTools": 13,
+        "elapsedMs": 90945,
+        "repeatedActions": 0,
+        "outcome": "done",
+        "resolution": "completed",
+        "finalizationCause": "budget_exhausted",
+        "effortTier": "lookup",
+        "rawLimitFailure": null,
+        "askTimedOut": false,
+        "subagentFinalizations": {},
+        "actions": [
+          {
+            "name": "report_run_plan",
+            "args": {
+              "headline": "Collect dispatch days and defect rates for the three regional hubs",
+              "objective": "For each of the three regional hubs listed at http://127.0.0.1:35857/hub-index, get its dispatch day from the hub's own page and its defect rate from the independent audit office page the hub page links to, then report all three of each and identify the lowest defect rate.",
+              "effort_tier": "lookup"
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "navigate",
+            "args": {
+              "url": "http://127.0.0.1:35857/hub-index"
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "navigate",
+            "args": {
+              "url": "http://127.0.0.1:35857/hub-aurora"
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "record_evidence",
+            "args": {
+              "excerpt": "Hub Aurora dispatches standard fixture widget orders on Tuesday.",
+              "observation": "Hub Aurora's own page states its dispatch day is Tuesday.",
+              "source_url": "http://127.0.0.1:35857/hub-aurora"
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "navigate",
+            "args": {
+              "url": "http://127.0.0.2:41353/audit-aurora"
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "record_evidence",
+            "args": {
+              "excerpt": "Hub Aurora returned a defect rate of 4.1% over the audited quarter.",
+              "observation": "Independent audit office reports Hub Aurora's defect rate is 4.1% over the audited quarter.",
+              "source_url": "http://127.0.0.2:41353/audit-aurora"
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "navigate",
+            "args": {
+              "url": "http://127.0.0.1:35857/hub-borealis"
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "record_evidence",
+            "args": {
+              "excerpt": "Hub Borealis dispatches standard fixture widget orders on Friday.",
+              "observation": "Hub Borealis's own page states its dispatch day is Friday.",
+              "source_url": "http://127.0.0.1:35857/hub-borealis"
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "navigate",
+            "args": {
+              "url": "http://127.0.0.2:41353/audit-borealis"
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "record_evidence",
+            "args": {
+              "excerpt": "Hub Borealis returned a defect rate of 0.9% over the audited quarter.",
+              "observation": "Independent audit office reports Hub Borealis's defect rate is 0.9% over the audited quarter.",
+              "source_url": "http://127.0.0.2:41353/audit-borealis"
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "navigate",
+            "args": {
+              "url": "http://127.0.0.1:35857/hub-cascade"
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "record_evidence",
+            "args": {
+              "excerpt": "Hub Cascade dispatches standard fixture widget orders on Wednesday.",
+              "observation": "Hub Cascade's own page states its dispatch day is Wednesday.",
+              "source_url": "http://127.0.0.1:35857/hub-cascade"
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "navigate",
+            "args": {
+              "url": "http://127.0.0.2:41353/audit-cascade"
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "record_evidence",
+            "args": {
+              "excerpt": "Hub Cascade returned a defect rate of 2.7% over the audited quarter.",
+              "observation": "Independent audit office reports Hub Cascade's defect rate is 2.7% over the audited quarter.",
+              "source_url": "http://127.0.0.2:41353/audit-cascade"
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          }
+        ],
+        "answerText": "All three hubs checked, each dispatch day from its own hub page and each defect rate from the independent audit office page that hub page links to:\n\n| Hub | Dispatch day | Defect rate (audit office) |\n|---|---|---|\n| Aurora | Tuesday | 4.1% |\n| Borealis | Friday | 0.9% |\n| Cascade | Wednesday | 2.7% |\n\n**Borealis has the lowest defect rate at 0.9%.**\n\nSources: hub pages at [hub-aurora](http://127.0.0.1:35857/hub-aurora), [hub-borealis](http://127.0.0.1:35857/hub-borealis), [hub-cascade](http://127.0.0.1:35857/hub-cascade); audits at [audit-aurora](http://127.0.0.2:41353/audit-aurora), [audit-borealis](http://127.0.0.2:41353/audit-borealis), [audit-cascade](http://127.0.0.2:41353/audit-cascade).",
+        "timedOut": false
+      },
+      "runs": [
+        {
+          "llmRounds": 14,
+          "attemptedTools": 14,
+          "executedTools": 13,
+          "elapsedMs": 90945,
+          "repeatedActions": 0,
+          "outcome": "done",
+          "resolution": "completed",
+          "finalizationCause": "budget_exhausted",
+          "effortTier": "lookup",
+          "rawLimitFailure": null,
+          "askTimedOut": false,
+          "subagentFinalizations": {},
+          "actions": [
+            {
+              "name": "report_run_plan",
+              "args": {
+                "headline": "Collect dispatch days and defect rates for the three regional hubs",
+                "objective": "For each of the three regional hubs listed at http://127.0.0.1:35857/hub-index, get its dispatch day from the hub's own page and its defect rate from the independent audit office page the hub page links to, then report all three of each and identify the lowest defect rate.",
+                "effort_tier": "lookup"
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "navigate",
+              "args": {
+                "url": "http://127.0.0.1:35857/hub-index"
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "navigate",
+              "args": {
+                "url": "http://127.0.0.1:35857/hub-aurora"
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "record_evidence",
+              "args": {
+                "excerpt": "Hub Aurora dispatches standard fixture widget orders on Tuesday.",
+                "observation": "Hub Aurora's own page states its dispatch day is Tuesday.",
+                "source_url": "http://127.0.0.1:35857/hub-aurora"
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "navigate",
+              "args": {
+                "url": "http://127.0.0.2:41353/audit-aurora"
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "record_evidence",
+              "args": {
+                "excerpt": "Hub Aurora returned a defect rate of 4.1% over the audited quarter.",
+                "observation": "Independent audit office reports Hub Aurora's defect rate is 4.1% over the audited quarter.",
+                "source_url": "http://127.0.0.2:41353/audit-aurora"
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "navigate",
+              "args": {
+                "url": "http://127.0.0.1:35857/hub-borealis"
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "record_evidence",
+              "args": {
+                "excerpt": "Hub Borealis dispatches standard fixture widget orders on Friday.",
+                "observation": "Hub Borealis's own page states its dispatch day is Friday.",
+                "source_url": "http://127.0.0.1:35857/hub-borealis"
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "navigate",
+              "args": {
+                "url": "http://127.0.0.2:41353/audit-borealis"
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "record_evidence",
+              "args": {
+                "excerpt": "Hub Borealis returned a defect rate of 0.9% over the audited quarter.",
+                "observation": "Independent audit office reports Hub Borealis's defect rate is 0.9% over the audited quarter.",
+                "source_url": "http://127.0.0.2:41353/audit-borealis"
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "navigate",
+              "args": {
+                "url": "http://127.0.0.1:35857/hub-cascade"
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "record_evidence",
+              "args": {
+                "excerpt": "Hub Cascade dispatches standard fixture widget orders on Wednesday.",
+                "observation": "Hub Cascade's own page states its dispatch day is Wednesday.",
+                "source_url": "http://127.0.0.1:35857/hub-cascade"
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "navigate",
+              "args": {
+                "url": "http://127.0.0.2:41353/audit-cascade"
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "record_evidence",
+              "args": {
+                "excerpt": "Hub Cascade returned a defect rate of 2.7% over the audited quarter.",
+                "observation": "Independent audit office reports Hub Cascade's defect rate is 2.7% over the audited quarter.",
+                "source_url": "http://127.0.0.2:41353/audit-cascade"
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            }
+          ],
+          "answerText": "All three hubs checked, each dispatch day from its own hub page and each defect rate from the independent audit office page that hub page links to:\n\n| Hub | Dispatch day | Defect rate (audit office) |\n|---|---|---|\n| Aurora | Tuesday | 4.1% |\n| Borealis | Friday | 0.9% |\n| Cascade | Wednesday | 2.7% |\n\n**Borealis has the lowest defect rate at 0.9%.**\n\nSources: hub pages at [hub-aurora](http://127.0.0.1:35857/hub-aurora), [hub-borealis](http://127.0.0.1:35857/hub-borealis), [hub-cascade](http://127.0.0.1:35857/hub-cascade); audits at [audit-aurora](http://127.0.0.2:41353/audit-aurora), [audit-borealis](http://127.0.0.2:41353/audit-borealis), [audit-cascade](http://127.0.0.2:41353/audit-cascade).",
+          "timedOut": false
+        }
+      ]
+    },
+    {
+      "id": "delegation-recall-theories",
+      "kind": "subagent",
+      "command": "three competing explanations for the Q3 fixture widget recall are filed at http://127.0.0.1:35857/recall-brief. for each explanation, read its dossier and the independent lab report it links, then tell me which explanation the lab evidence supports, with the measurement it rests on, and say what ruled out each of the other two",
+      "success": true,
+      "failureReason": null,
+      "metrics": {
+        "llmRounds": 11,
+        "attemptedTools": 11,
+        "executedTools": 10,
+        "elapsedMs": 40459,
+        "repeatedActions": 0,
+        "outcome": "done",
+        "resolution": "completed",
+        "finalizationCause": "objective_met",
+        "effortTier": "investigation",
+        "rawLimitFailure": null,
+        "askTimedOut": false,
+        "subagentFinalizations": {},
+        "actions": [
+          {
+            "name": "report_run_plan",
+            "args": {
+              "objective": "Read the three competing explanations at http://127.0.0.1:35857/recall-brief, for each open its dossier and the independent lab report it links, and determine which explanation the lab evidence supports, the measurement it rests on, and what ruled out the other two.",
+              "headline": "Compare three recall explanations against independent lab reports",
+              "effort_tier": "investigation"
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "navigate",
+            "args": {
+              "url": "http://127.0.0.1:35857/recall-brief"
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "navigate",
+            "args": {
+              "url": "http://127.0.0.1:35857/theory-coating"
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "navigate",
+            "args": {
+              "url": "http://127.0.0.2:41353/lab-coating"
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "record_evidence",
+            "args": {
+              "observation": "Coating-cure theory: independent lab report states \"Coating cure times were within tolerance on every recalled batch. This theory is NOT supported.\"",
+              "source_url": "http://127.0.0.2:41353/lab-coating",
+              "excerpt": "Coating cure times were within tolerance on every recalled batch. This theory is NOT supported."
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "navigate",
+            "args": {
+              "url": "http://127.0.0.1:35857/theory-bearing"
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "navigate",
+            "args": {
+              "url": "http://127.0.0.2:41353/lab-bearing"
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "record_evidence",
+            "args": {
+              "excerpt": "Bearing seats on every recalled batch were machined 0.4 mm undersize. This theory is SUPPORTED.",
+              "observation": "Bearing-seat machining theory: independent lab report states bearing seats on every recalled batch were machined 0.4 mm undersize and the theory is SUPPORTED.",
+              "source_url": "http://127.0.0.2:41353/lab-bearing"
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "navigate",
+            "args": {
+              "url": "http://127.0.0.1:35857/theory-packaging"
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "navigate",
+            "args": {
+              "url": "http://127.0.0.2:41353/lab-packaging"
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "record_evidence",
+            "args": {
+              "excerpt": "Packaging matched spec on every recalled batch. This theory is NOT supported.",
+              "observation": "Packaging-compression theory: independent lab report states packaging matched spec on every recalled batch and the theory is NOT supported.",
+              "source_url": "http://127.0.0.2:41353/lab-packaging"
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          }
+        ],
+        "answerText": "**Supported: bearing seat machining.** Its independent lab report found bearing seats on every recalled batch were machined **0.4 mm undersize** — the measurement the explanation rests on (http://127.0.0.2:41353/lab-bearing).\n\n**Ruled out:**\n- **Ceramic coating cure** — the lab found \"Coating cure times were within tolerance on every recalled batch. This theory is NOT supported.\" (http://127.0.0.2:41353/lab-coating)\n- **Packaging compression** — the lab found \"Packaging matched spec on every recalled batch. This theory is NOT supported.\" (http://127.0.0.2:41353/lab-packaging)\n\nEach dossier itself states no verdict; the verdicts come solely from the independent lab reports linked from the recall brief.",
+        "timedOut": false
+      },
+      "runs": [
+        {
+          "llmRounds": 11,
+          "attemptedTools": 11,
+          "executedTools": 10,
+          "elapsedMs": 40459,
+          "repeatedActions": 0,
+          "outcome": "done",
+          "resolution": "completed",
+          "finalizationCause": "objective_met",
+          "effortTier": "investigation",
+          "rawLimitFailure": null,
+          "askTimedOut": false,
+          "subagentFinalizations": {},
+          "actions": [
+            {
+              "name": "report_run_plan",
+              "args": {
+                "objective": "Read the three competing explanations at http://127.0.0.1:35857/recall-brief, for each open its dossier and the independent lab report it links, and determine which explanation the lab evidence supports, the measurement it rests on, and what ruled out the other two.",
+                "headline": "Compare three recall explanations against independent lab reports",
+                "effort_tier": "investigation"
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "navigate",
+              "args": {
+                "url": "http://127.0.0.1:35857/recall-brief"
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "navigate",
+              "args": {
+                "url": "http://127.0.0.1:35857/theory-coating"
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "navigate",
+              "args": {
+                "url": "http://127.0.0.2:41353/lab-coating"
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "record_evidence",
+              "args": {
+                "observation": "Coating-cure theory: independent lab report states \"Coating cure times were within tolerance on every recalled batch. This theory is NOT supported.\"",
+                "source_url": "http://127.0.0.2:41353/lab-coating",
+                "excerpt": "Coating cure times were within tolerance on every recalled batch. This theory is NOT supported."
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "navigate",
+              "args": {
+                "url": "http://127.0.0.1:35857/theory-bearing"
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "navigate",
+              "args": {
+                "url": "http://127.0.0.2:41353/lab-bearing"
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "record_evidence",
+              "args": {
+                "excerpt": "Bearing seats on every recalled batch were machined 0.4 mm undersize. This theory is SUPPORTED.",
+                "observation": "Bearing-seat machining theory: independent lab report states bearing seats on every recalled batch were machined 0.4 mm undersize and the theory is SUPPORTED.",
+                "source_url": "http://127.0.0.2:41353/lab-bearing"
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "navigate",
+              "args": {
+                "url": "http://127.0.0.1:35857/theory-packaging"
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "navigate",
+              "args": {
+                "url": "http://127.0.0.2:41353/lab-packaging"
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "record_evidence",
+              "args": {
+                "excerpt": "Packaging matched spec on every recalled batch. This theory is NOT supported.",
+                "observation": "Packaging-compression theory: independent lab report states packaging matched spec on every recalled batch and the theory is NOT supported.",
+                "source_url": "http://127.0.0.2:41353/lab-packaging"
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            }
+          ],
+          "answerText": "**Supported: bearing seat machining.** Its independent lab report found bearing seats on every recalled batch were machined **0.4 mm undersize** — the measurement the explanation rests on (http://127.0.0.2:41353/lab-bearing).\n\n**Ruled out:**\n- **Ceramic coating cure** — the lab found \"Coating cure times were within tolerance on every recalled batch. This theory is NOT supported.\" (http://127.0.0.2:41353/lab-coating)\n- **Packaging compression** — the lab found \"Packaging matched spec on every recalled batch. This theory is NOT supported.\" (http://127.0.0.2:41353/lab-packaging)\n\nEach dossier itself states no verdict; the verdicts come solely from the independent lab reports linked from the recall brief.",
+          "timedOut": false
+        }
+      ]
+    },
+    {
+      "id": "delegation-consignment-chains",
+      "kind": "subagent",
+      "command": "three consignments are listed at http://127.0.0.1:35857/consignment-index. each one's custody record is a chain of eight legs, and every leg links only the next one, so the seal number is on the last leg of each chain. for all three consignments, follow the whole chain and tell me the port it departed from and its container seal number",
+      "success": true,
+      "failureReason": null,
+      "metrics": {
+        "llmRounds": 8,
+        "attemptedTools": 13,
+        "executedTools": 12,
+        "elapsedMs": 193658,
+        "repeatedActions": 0,
+        "outcome": "done",
+        "resolution": "completed",
+        "finalizationCause": "objective_met",
+        "effortTier": "investigation",
+        "rawLimitFailure": null,
+        "askTimedOut": false,
+        "subagentFinalizations": {
+          "model_answered": 3
+        },
+        "actions": [
+          {
+            "name": "report_run_plan",
+            "args": {
+              "objective": "Follow each of the three consignment custody chains (8 legs each) linked from the consignment index and report each consignment's departure port and container seal number (seal on the last leg).",
+              "headline": "Trace three custody chains for departure ports and seal numbers",
+              "effort_tier": "investigation"
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "navigate",
+            "args": {
+              "url": "http://127.0.0.1:35857/consignment-index"
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "navigate",
+            "args": {
+              "url": "http://127.0.0.1:35857/consign-falcon"
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "record_evidence",
+            "args": {
+              "kind": "web",
+              "observation": "Consignment Falcon departed Valdez on the first leg of its custody chain.",
+              "source_url": "http://127.0.0.1:35857/consign-falcon",
+              "excerpt": "Consignment Falcon departed Valdez on the first leg of its custody chain.",
+              "volatile": false
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "spawn_agent",
+            "args": {
+              "kind": "browse",
+              "task": "Trace the custody chain of Consignment Falcon. Start at http://127.0.0.1:35857/consign-falcon (leg 1 of 8). Each leg page links only the next leg (e.g. leg 1 links to http://127.0.0.2:41353/custody-q7wm). Follow every link through leg 8 of 8, opening each page. Only the last leg carries the container's seal number. Report: (a) the port Consignment Falcon departed from, exactly as leg 1 states it, and (b) the container seal number exactly as the leg-8 page states it. Include the URL of each leg page you opened in your findings as evidence URLs. Do not skip legs."
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "spawn_agent",
+            "args": {
+              "kind": "browse",
+              "task": "Trace the custody chain of Consignment Marlin. Start at http://127.0.0.1:35857/consign-marlin (leg 1 of 8). Each leg page links only the next leg of the chain. Follow every link through leg 8 of 8, opening each page. Only the last leg carries the container's seal number. Report: (a) the port Consignment Marlin departed from, exactly as leg 1 states it, and (b) the container seal number exactly as the leg-8 page states it. Include the URL of each leg page you opened in your findings as evidence URLs. Do not skip legs."
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "spawn_agent",
+            "args": {
+              "kind": "browse",
+              "task": "Trace the custody chain of Consignment Ibex. Start at http://127.0.0.1:35857/consign-ibex (leg 1 of 8). Each leg page links only the next leg of the chain. Follow every link through leg 8 of 8, opening each page. Only the last leg carries the container's seal number. Report: (a) the port Consignment Ibex departed from, exactly as leg 1 states it, and (b) the container seal number exactly as the leg-8 page states it. Include the URL of each leg page you opened in your findings as evidence URLs. Do not skip legs."
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "agent_results",
+            "args": {
+              "agent_id": "a-1",
+              "wait": true
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "agent_results",
+            "args": {
+              "agent_id": "a-2",
+              "wait": true
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "agent_results",
+            "args": {
+              "agent_id": "a-3",
+              "wait": true
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "record_evidence",
+            "args": {
+              "agent_id": "a-1",
+              "kind": "subagent",
+              "observation": "Consignment Falcon: departed Valdez (leg 1); after 8 custody legs its container seal is SEAL-8123 (stated on leg 8 at 127.0.0.2:41353/custody-c8sy). All 8 legs were opened in order.",
+              "source_url": "http://127.0.0.2:41353/custody-c8sy"
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "record_evidence",
+            "args": {
+              "agent_id": "a-2",
+              "kind": "subagent",
+              "observation": "Consignment Marlin: departed Ostend (leg 1: \"Consignment Marlin departed Ostend on the first leg of its custody chain.\"); container seal SEAL-4470 (leg 8 at 127.0.0.2:41353/custody-a5dw). All 8 legs were opened in order.",
+              "source_url": "http://127.0.0.2:41353/custody-a5dw"
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "record_evidence",
+            "args": {
+              "agent_id": "a-3",
+              "kind": "subagent",
+              "observation": "Consignment Ibex: departed Trieste (leg 1: \"Consignment Ibex departed Trieste on the first leg of its custody chain.\"); container seal SEAL-9056 (leg 8 at 127.0.0.2:41353/custody-u3pk). All 8 legs were opened in order.",
+              "source_url": "http://127.0.0.2:41353/custody-u3pk"
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          }
+        ],
+        "answerText": "Followed all 8 legs of each consignment's custody chain (24 leg pages in total):\n\n| Consignment | Departed from | Container seal |\n|---|---|---|\n| Falcon | Valdez | SEAL-8123 |\n| Marlin | Ostend | SEAL-4470 |\n| Ibex | Trieste | SEAL-9056 |\n\nEach departure port comes from the consignment's leg-1 page (e.g. \"Consignment Falcon departed Valdez on the first leg of its custody chain\"), and each seal number from the final leg of its chain (e.g. \"arrived on the final leg under container seal SEAL-8123\"). Chain endpoints: [Falcon leg 8](http://127.0.0.2:41353/custody-c8sy), [Marlin leg 8](http://127.0.0.2:41353/custody-a5dw), [Ibex leg 8](http://127.0.0.2:41353/custody-u3pk).",
+        "timedOut": false
+      },
+      "runs": [
+        {
+          "llmRounds": 8,
+          "attemptedTools": 13,
+          "executedTools": 12,
+          "elapsedMs": 193658,
+          "repeatedActions": 0,
+          "outcome": "done",
+          "resolution": "completed",
+          "finalizationCause": "objective_met",
+          "effortTier": "investigation",
+          "rawLimitFailure": null,
+          "askTimedOut": false,
+          "subagentFinalizations": {
+            "model_answered": 3
+          },
+          "actions": [
+            {
+              "name": "report_run_plan",
+              "args": {
+                "objective": "Follow each of the three consignment custody chains (8 legs each) linked from the consignment index and report each consignment's departure port and container seal number (seal on the last leg).",
+                "headline": "Trace three custody chains for departure ports and seal numbers",
+                "effort_tier": "investigation"
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "navigate",
+              "args": {
+                "url": "http://127.0.0.1:35857/consignment-index"
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "navigate",
+              "args": {
+                "url": "http://127.0.0.1:35857/consign-falcon"
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "record_evidence",
+              "args": {
+                "kind": "web",
+                "observation": "Consignment Falcon departed Valdez on the first leg of its custody chain.",
+                "source_url": "http://127.0.0.1:35857/consign-falcon",
+                "excerpt": "Consignment Falcon departed Valdez on the first leg of its custody chain.",
+                "volatile": false
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "spawn_agent",
+              "args": {
+                "kind": "browse",
+                "task": "Trace the custody chain of Consignment Falcon. Start at http://127.0.0.1:35857/consign-falcon (leg 1 of 8). Each leg page links only the next leg (e.g. leg 1 links to http://127.0.0.2:41353/custody-q7wm). Follow every link through leg 8 of 8, opening each page. Only the last leg carries the container's seal number. Report: (a) the port Consignment Falcon departed from, exactly as leg 1 states it, and (b) the container seal number exactly as the leg-8 page states it. Include the URL of each leg page you opened in your findings as evidence URLs. Do not skip legs."
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "spawn_agent",
+              "args": {
+                "kind": "browse",
+                "task": "Trace the custody chain of Consignment Marlin. Start at http://127.0.0.1:35857/consign-marlin (leg 1 of 8). Each leg page links only the next leg of the chain. Follow every link through leg 8 of 8, opening each page. Only the last leg carries the container's seal number. Report: (a) the port Consignment Marlin departed from, exactly as leg 1 states it, and (b) the container seal number exactly as the leg-8 page states it. Include the URL of each leg page you opened in your findings as evidence URLs. Do not skip legs."
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "spawn_agent",
+              "args": {
+                "kind": "browse",
+                "task": "Trace the custody chain of Consignment Ibex. Start at http://127.0.0.1:35857/consign-ibex (leg 1 of 8). Each leg page links only the next leg of the chain. Follow every link through leg 8 of 8, opening each page. Only the last leg carries the container's seal number. Report: (a) the port Consignment Ibex departed from, exactly as leg 1 states it, and (b) the container seal number exactly as the leg-8 page states it. Include the URL of each leg page you opened in your findings as evidence URLs. Do not skip legs."
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "agent_results",
+              "args": {
+                "agent_id": "a-1",
+                "wait": true
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "agent_results",
+              "args": {
+                "agent_id": "a-2",
+                "wait": true
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "agent_results",
+              "args": {
+                "agent_id": "a-3",
+                "wait": true
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "record_evidence",
+              "args": {
+                "agent_id": "a-1",
+                "kind": "subagent",
+                "observation": "Consignment Falcon: departed Valdez (leg 1); after 8 custody legs its container seal is SEAL-8123 (stated on leg 8 at 127.0.0.2:41353/custody-c8sy). All 8 legs were opened in order.",
+                "source_url": "http://127.0.0.2:41353/custody-c8sy"
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "record_evidence",
+              "args": {
+                "agent_id": "a-2",
+                "kind": "subagent",
+                "observation": "Consignment Marlin: departed Ostend (leg 1: \"Consignment Marlin departed Ostend on the first leg of its custody chain.\"); container seal SEAL-4470 (leg 8 at 127.0.0.2:41353/custody-a5dw). All 8 legs were opened in order.",
+                "source_url": "http://127.0.0.2:41353/custody-a5dw"
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "record_evidence",
+              "args": {
+                "agent_id": "a-3",
+                "kind": "subagent",
+                "observation": "Consignment Ibex: departed Trieste (leg 1: \"Consignment Ibex departed Trieste on the first leg of its custody chain.\"); container seal SEAL-9056 (leg 8 at 127.0.0.2:41353/custody-u3pk). All 8 legs were opened in order.",
+                "source_url": "http://127.0.0.2:41353/custody-u3pk"
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            }
+          ],
+          "answerText": "Followed all 8 legs of each consignment's custody chain (24 leg pages in total):\n\n| Consignment | Departed from | Container seal |\n|---|---|---|\n| Falcon | Valdez | SEAL-8123 |\n| Marlin | Ostend | SEAL-4470 |\n| Ibex | Trieste | SEAL-9056 |\n\nEach departure port comes from the consignment's leg-1 page (e.g. \"Consignment Falcon departed Valdez on the first leg of its custody chain\"), and each seal number from the final leg of its chain (e.g. \"arrived on the final leg under container seal SEAL-8123\"). Chain endpoints: [Falcon leg 8](http://127.0.0.2:41353/custody-c8sy), [Marlin leg 8](http://127.0.0.2:41353/custody-a5dw), [Ibex leg 8](http://127.0.0.2:41353/custody-u3pk).",
+          "timedOut": false
+        }
+      ]
+    }
+  ],
+  "scriptedModelProvenAbsent": true,
+  "aggregate": {
+    "scenarioCount": 3,
+    "objectiveSuccesses": 3,
+    "rawLimitFailures": 0,
+    "timedOutScenarios": 0,
+    "llmRounds": {
+      "median": 11,
+      "p95": 14
+    },
+    "attemptedTools": {
+      "median": 13,
+      "p95": 14
+    },
+    "executedTools": {
+      "median": 12,
+      "p95": 13
+    },
+    "elapsedMs": {
+      "median": 90945,
+      "p95": 193658
+    },
+    "repeatedActions": {
+      "median": 0,
+      "p95": 0
+    }
+  }
+}
