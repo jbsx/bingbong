@@ -31,6 +31,41 @@ describe('delegationScenarios', () => {
     }
   })
 
+  it('carries a chain-depth scenario no serial reading fits — what the shallow captures ruled out', () => {
+    const deep = delegationScenarios().find((scenario) => scenario.id === 'delegation-consignment-chains')
+    expect(deep).toBeDefined()
+    const fixture = { url: (path: string) => `http://a${path}`, altUrl: (path: string) => `http://b${path}` } as never
+    // The command hands over the index only: every leg past it is an
+    // opaque hop the model can reach solely by walking the chain.
+    expect(deep!.command(fixture)).toContain('http://a/consignment-index')
+    expect(deep!.command(fixture)).not.toContain('custody-')
+  })
+
+  it('fails the deep scenario on a partial sweep — every chain must be walked to its end', () => {
+    const deep = delegationScenarios().find((scenario) => scenario.id === 'delegation-consignment-chains')!
+    const fixture = { url: (path: string) => `http://a${path}`, altUrl: (path: string) => `http://b${path}` } as never
+    const answered = (answerText: string) =>
+      deep.success({
+        outcome: 'done',
+        answerText,
+        rawLimitFailure: null,
+        timedOut: false,
+        paneUrl: undefined,
+        paneHeading: null,
+        paneState: null,
+        runs: [],
+      } as never, fixture)
+
+    const whole =
+      'Falcon departed Valdez, seal SEAL-8123. Marlin departed Ostend, seal SEAL-4470. ' +
+      'Ibex departed Trieste, seal SEAL-9056.'
+    expect(answered(whole)).toBe(true)
+    // A chain walked to leg 1 only — port known, seal unknown — is not an answer.
+    expect(answered(whole.replace('SEAL-9056', 'not established'))).toBe(false)
+    // Nor is a chain skipped outright.
+    expect(answered(whole.replace('Ibex departed Trieste, seal SEAL-9056.', ''))).toBe(false)
+  })
+
   it('asks for independent branches rather than for delegation — a scripted spawn measures the harness', () => {
     for (const scenario of delegationScenarios()) {
       const command = scenario.command({ url: (path: string) => `http://a${path}`, altUrl: (path: string) => `http://b${path}` } as never)

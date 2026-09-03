@@ -61,6 +61,64 @@ describe('fixtureServer', () => {
     expect(await (await fetch(server.altUrl('/lab-packaging'))).text()).toContain('NOT supported')
   })
 
+  it('serves the delegation probe’s deep custody chains — eight legs, alternating hosts, opaque hops', async () => {
+    server = await startFixtureServer()
+    const index = await (await fetch(server.url('/consignment-index'))).text()
+    for (const slug of ['falcon', 'marlin', 'ibex']) {
+      expect(index).toContain(`href="/consign-${slug}"`)
+    }
+
+    // Leg 1 states the departure port and nothing later in the chain. The
+    // next hop is an opaque code on the other host: the chain cannot be
+    // skipped, guessed from the slug, or read off the index.
+    const leg1 = await (await fetch(server.url('/consign-falcon'))).text()
+    expect(leg1).toContain('departed Valdez')
+    expect(leg1).not.toContain('SEAL-8123')
+    const hop2 = /href="([^"]+)"/.exec(leg1)?.[1]
+    expect(hop2).toBeDefined()
+    expect(hop2!.startsWith(server.altUrl('/custody-'))).toBe(true)
+    expect(hop2).not.toContain('falcon')
+    expect(index).not.toContain(hop2!)
+
+    // Hosts alternate leg by leg, so no two consecutive legs can be read
+    // from the same site.
+    const leg2 = await (await fetch(hop2!)).text()
+    expect(leg2).toContain('Northline Freight')
+    const hop3 = /href="([^"]+)"/.exec(leg2)?.[1]
+    expect(hop3!.startsWith(server.url('/custody-'))).toBe(true)
+
+    const leg3 = await (await fetch(hop3!)).text()
+    expect(leg3).toContain('Depot 12')
+    const hop4 = /href="([^"]+)"/.exec(leg3)?.[1]
+    expect(hop4!.startsWith(server.altUrl('/custody-'))).toBe(true)
+  })
+
+  it('gives each delegation consignment its own eight-leg chain, sharing no leg with another', async () => {
+    server = await startFixtureServer()
+    const seals = { falcon: 'SEAL-8123', marlin: 'SEAL-4470', ibex: 'SEAL-9056' }
+    const ports = { falcon: 'Valdez', marlin: 'Ostend', ibex: 'Trieste' }
+    const visited = new Set<string>()
+    for (const slug of ['falcon', 'marlin', 'ibex'] as const) {
+      let body = await (await fetch(server.url(`/consign-${slug}`))).text()
+      expect(body).toContain(`departed ${ports[slug]}`)
+      // Depth is the probe's whole variable: exactly eight legs, and no
+      // leg but the last discloses the seal.
+      for (let leg = 2; leg <= 8; leg += 1) {
+        expect(body).not.toContain(seals[slug])
+        const next = /href="([^"]+)"/.exec(body)?.[1]
+        expect(next, `${slug} leg ${leg}`).toBeDefined()
+        // No two branches share a leg, so no worker's reading helps another.
+        expect(visited.has(next!)).toBe(false)
+        visited.add(next!)
+        body = await (await fetch(next!)).text()
+      }
+      expect(body).toContain(seals[slug])
+      expect(body).not.toContain('href="')
+    }
+    // 3 chains x 7 hops: every leg past the first is its own page.
+    expect(visited.size).toBe(21)
+  })
+
   it('serves /dl as an attachment download', async () => {
     server = await startFixtureServer()
     const response = await fetch(server.url('/dl'))

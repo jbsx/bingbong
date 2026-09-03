@@ -67,16 +67,22 @@ export interface DelegationSummary {
   /**
    * Workers that reached a Finalization Cause of their own — the honest
    * denominator for a cause-specific reading. A worker the parent Run's
-   * Finalization cancelled, or one that failed, never got the chance to
-   * finalize for no Progress, so counting it would claim a tighter bound
-   * than the evidence supports.
+   * Finalization cancelled, one that failed, or one whose cause never
+   * reached the tape never got the chance to finalize for no Progress,
+   * so counting it would claim a tighter bound than the evidence
+   * supports.
    */
   selfFinalizedWorkers: number
   noProgress: NoProgressReading
 }
 
-/** The stops that are a terminal status rather than the worker's own cause (#162). */
-const NON_FINALIZING_STOPS: readonly WorkerStop[] = ['cancelled', 'failed']
+/**
+ * The stops that are not the worker's own cause (#162): the two terminal
+ * statuses it was ended on, plus `uncaused` — a worker that ran to
+ * completion with no cause on the tape, which testifies to nothing about
+ * why it stopped.
+ */
+const NON_FINALIZING_STOPS: readonly WorkerStop[] = ['cancelled', 'failed', 'uncaused']
 
 const EMPTY_TALLY: SpawnTally = { attempted: 0, accepted: 0, refusedOffTier: 0, refusedOther: 0, unanswered: 0 }
 

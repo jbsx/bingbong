@@ -72,7 +72,15 @@ const stops = Object.entries(summary.workerStops)
 
 const lines = [
   `delegation probe — ${captures.length} capture(s) from ${dir}`,
-  ...captures.map((capture) => `  ${capture.file}  ${capture.report.gitCommit.slice(0, 7)}  ${capture.report.capturedAt}`),
+  // The orchestrator model belongs on every line: pass-3 and pass-4 ran
+  // the same corpus at the same commit and disagreed about whether to
+  // delegate at all, so a reading that pools them without naming the
+  // model would average over the one variable that decided the outcome.
+  ...captures.map(
+    (capture) =>
+      `  ${capture.file}  ${capture.report.gitCommit.slice(0, 7)}  ` +
+      `${capture.report.modelWitness.orchestratorModel ?? '(unwitnessed)'}  ${capture.report.capturedAt}`,
+  ),
   '',
   `scenarios that delegated : ${summary.delegatingScenarios}/${summary.scenarios.length}`,
   `spawn_agent              : ${summary.spawns.attempted} attempted, ${summary.spawns.accepted} accepted, ` +
@@ -107,14 +115,19 @@ if (summary.noProgress.kind === 'none') {
   )
 }
 
+// Per capture, not pooled: the same scenario id behaves differently
+// under different models, and a flat list of repeated ids cannot say so.
 lines.push('', 'per scenario observation:')
-for (const row of summary.scenarios) {
-  lines.push(
-    `  ${row.id.padEnd(30)} ${row.success ? 'PASS' : 'FAIL'}  tier ${row.effortTier.padEnd(14)} ` +
-      `spawns ${row.spawns.attempted}/${row.spawns.accepted} accepted` +
-      (row.spawns.refusedOffTier > 0 ? ` (${row.spawns.refusedOffTier} off-tier)` : '') +
-      `  workers ${JSON.stringify(row.workerStops)}`,
-  )
+for (const capture of captures) {
+  lines.push(`  ${capture.file} — ${capture.report.modelWitness.orchestratorModel ?? '(unwitnessed)'}`)
+  for (const row of summarizeDelegation(capture.report.scenarios).scenarios) {
+    lines.push(
+      `    ${row.id.padEnd(30)} ${row.success ? 'PASS' : 'FAIL'}  tier ${row.effortTier.padEnd(14)} ` +
+        `spawns ${row.spawns.attempted}/${row.spawns.accepted} accepted` +
+        (row.spawns.refusedOffTier > 0 ? ` (${row.spawns.refusedOffTier} off-tier)` : '') +
+        `  workers ${JSON.stringify(row.workerStops)}`,
+    )
+  }
 }
 
 console.log(lines.join('\n'))

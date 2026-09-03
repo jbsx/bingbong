@@ -19,9 +19,15 @@ import { nearestRankPercentile } from '../../src/core/report/stats'
 
 /**
  * How one delegated worker stopped (#162): its own Finalization Cause, or
- * the terminal status it reached without one.
+ * the terminal status it reached without one. `uncaused` is the fourth
+ * case and not a status at all — a worker that ran to completion but
+ * whose cause never reached the tape. It gets its own bucket rather than
+ * borrowing `cancelled`, because a worker nobody killed is precisely
+ * what #162 exists to tell apart from one the parent Run cut short, and
+ * because the delegation probe's rule-of-three denominator counts only
+ * workers that reached a cause of their own.
  */
-export type WorkerStop = FinalizationCause | 'cancelled' | 'failed'
+export type WorkerStop = FinalizationCause | 'cancelled' | 'failed' | 'uncaused'
 
 /** The run-shape events one scenario contributes, in order. */
 export type RunEvents = readonly PipelineEvent[]
@@ -151,8 +157,14 @@ export function extractMetrics(events: RunEvents, perfRecords: readonly PerfSpan
         (event): event is Extract<PipelineEvent, { type: 'subagent_finalized' }> => event.type === 'subagent_finalized',
       )
       // A cancelled or failed worker reached no cause of its own — the
-      // status it ended on is what it stopped for.
-      .map((event): WorkerStop => event.cause ?? (event.status === 'failed' ? 'failed' : 'cancelled')),
+      // status it ended on is what it stopped for. Any other status
+      // without a cause is `uncaused`: it says the cause is missing,
+      // never that the worker was killed.
+      .map((event): WorkerStop => {
+        if (event.cause !== undefined) return event.cause
+        if (event.status === 'failed') return 'failed'
+        return event.status === 'cancelled' ? 'cancelled' : 'uncaused'
+      }),
   )
   return {
     llmRounds: perfRecords.filter((record) => record.stage === 'llm').length,

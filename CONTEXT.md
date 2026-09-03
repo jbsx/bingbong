@@ -558,7 +558,12 @@ delegation — three genuinely independent branches per objective, each
 spanning two hosts — so a Subagent's Finalization Cause has a subject to be
 recorded against. It is never pooled into the release decision: the pinned
 baseline tree has no Effort Tier, so it cannot delegate at all. Delegation
-is measured there, never asserted.
+is measured there, never asserted. Its corpus separates two variables: a
+shallow control the orchestrator absorbs serially, and a deep treatment
+(three eight-leg custody chains) whose serial cost exceeds the
+Investigation budget. Both are needed to read a capture — depth decides
+whether delegation is worth anything, and the orchestrator model decides
+whether it happens at all.
 _Avoid_: delegation test, subagent eval
 
 ### Autonomy

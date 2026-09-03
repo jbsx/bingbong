@@ -689,6 +689,142 @@ function recallLabPage(theory: (typeof RECALL_THEORIES)[number]): string {
 </html>`
 }
 
+// The #163 probe's DEEP shape: three custody chains, eight legs each,
+// hosts alternating leg by leg. Breadth was never the variable — the first
+// capture answered both shallow objectives serially — and neither was
+// four-leg depth: the second capture (pass-2.json) walked all three
+// four-leg chains serially in 15 Tool Rounds, because this model spends
+// about ONE round per page, not the two the shallow pair suggested. That
+// measured constant sets the depth here:
+//
+//   serial   1 index + 3 chains x 8 legs = 25 navigations, so ~26 Tool
+//            Rounds — past the 24-round Investigation budget, and into
+//            the 32-round hard ceiling whose top rounds are reserved for
+//            terminal bookkeeping.
+//   branched one chain is 8 navigations (~9 rounds), inside a browse
+//            worker's own 12-round leash (#120), three at once inside
+//            the 5-minute active-work deadline they share.
+//
+// That window is deliberately narrow: any shallower and one Run absorbs
+// it (measured at four legs, pass-2), any deeper and a worker cannot
+// finish its own branch either. Each hop is an opaque code, not the
+// consignment slug, so a leg cannot be guessed, skipped, or read off the
+// index; no two chains share a leg, so no branch's reading helps another.
+
+/**
+ * The handovers legs 2 through 7 each disclose, one per leg — a chain is
+ * walked, never summarised in one place. Leg 1 carries the departure port
+ * and leg 8 the seal, which is what the scenario predicate reads.
+ */
+const CUSTODY_HANDOVERS = [
+  (name: string, detail: string) => `Consignment ${name} was carried on this leg by ${detail}.`,
+  (name: string, detail: string) => `Consignment ${name} was transferred on this leg at ${detail}.`,
+  (name: string, detail: string) => `Consignment ${name} cleared customs on this leg at ${detail}.`,
+  (name: string, detail: string) => `Consignment ${name} was weighed on this leg at ${detail}.`,
+  (name: string, detail: string) => `Consignment ${name} was inspected on this leg by ${detail}.`,
+  (name: string, detail: string) => `Consignment ${name} was staged on this leg at ${detail}.`,
+] as const
+
+const CONSIGNMENTS = [
+  {
+    slug: 'falcon',
+    name: 'Falcon',
+    port: 'Valdez',
+    seal: 'SEAL-8123',
+    details: ['Northline Freight', 'Depot 12', 'Kettle Point', 'Weighbridge 3', 'Harrow Surveying', 'Bay 18'],
+    hops: ['q7wm', 'b3kd', 'x9tr', 'n2ej', 'p6ad', 'w4hv', 'c8sy'],
+  },
+  {
+    slug: 'marlin',
+    name: 'Marlin',
+    port: 'Ostend',
+    seal: 'SEAL-4470',
+    details: ['Cormorant Haulage', 'Depot 27', 'Ravensgate', 'Weighbridge 9', 'Lyle Marine Survey', 'Bay 4'],
+    hops: ['h2ns', 'v6pz', 'j4gc', 'k9bt', 'e3ru', 'y7mf', 'a5dw'],
+  },
+  {
+    slug: 'ibex',
+    name: 'Ibex',
+    port: 'Trieste',
+    seal: 'SEAL-9056',
+    details: ['Sablefish Lines', 'Depot 41', 'Marrow Crossing', 'Weighbridge 6', 'Osprey Inspectorate', 'Bay 31'],
+    hops: ['z5ly', 'r8fq', 'd1um', 'g2xn', 't6ov', 'm9ib', 'u3pk'],
+  },
+] as const
+
+type Consignment = (typeof CONSIGNMENTS)[number]
+
+/**
+ * Legs per custody chain — leg 1 plus one page per opaque hop. Derived,
+ * not declared: the depth is the probe's variable, so the pages must
+ * always say the number the data actually has.
+ */
+const CHAIN_LEGS = CONSIGNMENTS[0].hops.length + 1
+
+/** Where one hop code sits: which consignment, and which leg it serves (2 through 8). */
+const CUSTODY_LEGS = new Map<string, { consignment: Consignment; leg: number }>(
+  CONSIGNMENTS.flatMap((consignment) =>
+    consignment.hops.map((hop, index) => [hop, { consignment, leg: index + 2 }] as const),
+  ),
+)
+
+function consignmentIndexPage(): string {
+  const items = CONSIGNMENTS.map(
+    (consignment) =>
+      `    <li><a id="consign-${consignment.slug}" href="/consign-${consignment.slug}">Consignment ${consignment.name}</a></li>`,
+  ).join('\n')
+  return `<!doctype html>
+<html>
+<head><title>consignment index</title></head>
+<body style="background:#222;color:#fff;margin:0">
+  <h1>Consignment index</h1>
+  <p>Three consignments are in transit. Each one's custody record is a chain of ${CHAIN_LEGS} legs: every leg names only its own handover and links the next leg, and only the last leg of a chain carries the container's seal number.</p>
+  <ul>
+${items}
+  </ul>
+</body>
+</html>`
+}
+
+/** Leg 1 (the consignment's own page): the departure port, and the first opaque hop. */
+function consignmentLegOnePage(consignment: Consignment, nextUrl: string): string {
+  return `<!doctype html>
+<html>
+<head><title>consignment ${consignment.name} — leg 1</title></head>
+<body style="background:#222;color:#fff;margin:0">
+  <h1>Consignment ${consignment.name}: leg 1 of ${CHAIN_LEGS}</h1>
+  <p>Consignment ${consignment.name} departed ${consignment.port} on the first leg of its custody chain.</p>
+  <p>This record does not carry the seal number. The next leg does not either — follow the chain:
+    <a id="leg-2" href="${nextUrl}">custody leg 2 of consignment ${consignment.name}</a>.</p>
+</body>
+</html>`
+}
+
+/**
+ * Legs 2 to 8. Every leg but the last carries one handover fact and the
+ * next opaque hop; the last carries the seal and ends the chain with no
+ * link at all, so a branch is finished only by walking the whole of it.
+ */
+function custodyLegPage(consignment: Consignment, leg: number, nextUrl: string | null): string {
+  const handover = CUSTODY_HANDOVERS[leg - 2]
+  const body =
+    handover === undefined
+      ? `<p>Consignment ${consignment.name} arrived on the final leg under container seal ${consignment.seal}. This is the end of the chain.</p>`
+      : `<p>${handover(consignment.name, consignment.details[leg - 2] ?? 'an unnamed handler')}</p>`
+  const link =
+    nextUrl === null
+      ? ''
+      : `\n  <p>The chain continues: <a id="leg-${leg + 1}" href="${nextUrl}">custody leg ${leg + 1} of consignment ${consignment.name}</a>.</p>`
+  return `<!doctype html>
+<html>
+<head><title>consignment ${consignment.name} — leg ${leg}</title></head>
+<body style="background:#222;color:#fff;margin:0">
+  <h1>Consignment ${consignment.name}: leg ${leg} of ${CHAIN_LEGS}</h1>
+  ${body}${link}
+</body>
+</html>`
+}
+
 export async function startFixtureServer(): Promise<FixtureServer> {
   let adblockListHits = 0
   let visionEndpointHits = 0
@@ -697,6 +833,10 @@ export async function startFixtureServer(): Promise<FixtureServer> {
   // Late-bound (the alt listener exists only after listenOn below); the
   // no-review stand-in keeps the closure out of the alt const's TDZ.
   let altUrlOf: (path: string) => string = () => 'http://127.0.0.2/alt-not-yet-listening'
+  // Same late binding for the primary site: the #163 custody chains
+  // alternate hosts leg by leg, so a page served here has to be able to
+  // link back to the primary listener by absolute URL.
+  let urlOf: (path: string) => string = () => 'http://127.0.0.1/primary-not-yet-listening'
   const handle = (req: IncomingMessage, res: ServerResponse): void => {
     // OpenAI-compatible chat completions (#76 e2e): stands in for the vision
     // provider, so the real adapter can be driven with .env-only routing.
@@ -884,6 +1024,25 @@ export async function startFixtureServer(): Promise<FixtureServer> {
       res.end(hubAuditPage(audited))
       return
     }
+    if (req.url === '/consignment-index') {
+      res.end(consignmentIndexPage())
+      return
+    }
+    const consigned = CONSIGNMENTS.find((candidate) => req.url === `/consign-${candidate.slug}`)
+    if (consigned !== undefined) {
+      // Legs alternate hosts, leg by leg: leg 1 is primary, so leg 2 is alt.
+      res.end(consignmentLegOnePage(consigned, altUrlOf(`/custody-${consigned.hops[0]}`)))
+      return
+    }
+    const custody = req.url?.startsWith('/custody-') === true ? CUSTODY_LEGS.get(req.url.slice('/custody-'.length)) : undefined
+    if (custody !== undefined) {
+      const { consignment, leg } = custody
+      const nextHop = consignment.hops[leg - 1]
+      // Leg 2 lives on alt, so leg 3 is primary, and leg 4 alt again.
+      const nextUrl = nextHop === undefined ? null : leg % 2 === 0 ? urlOf(`/custody-${nextHop}`) : altUrlOf(`/custody-${nextHop}`)
+      res.end(custodyLegPage(consignment, leg, nextUrl))
+      return
+    }
     if (req.url === '/recall-brief') {
       res.end(recallBriefPage())
       return
@@ -966,6 +1125,7 @@ export async function startFixtureServer(): Promise<FixtureServer> {
 
   const [primary, alt] = await Promise.all([listenOn('127.0.0.1'), listenOn('127.0.0.2')])
   altUrlOf = alt.url
+  urlOf = primary.url
   const close = (server: Server): Promise<void> =>
     new Promise((resolve, reject) =>
       server.close((error) => (error ? reject(error) : resolve())),

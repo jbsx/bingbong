@@ -208,6 +208,28 @@ describe('summarizeDelegation', () => {
     expect(summary.noProgress).toEqual({ kind: 'unseen', workers: 2, rateCeiling: 1.5 })
   })
 
+  it('keeps a worker whose cause never arrived out of the denominator too', () => {
+    // `uncaused` is a worker that ran to completion with no Finalization
+    // Cause on the tape. It says nothing about whether that worker would
+    // have stopped for no Progress, so it cannot be one of the
+    // observations the rule-of-three bound rests on — while still
+    // counting as a worker that was observed at all.
+    const summary = summarizeDelegation([
+      result({
+        id: 'delegation-hub-audit-sweep',
+        runs: [
+          metrics({
+            actions: [action({ name: 'spawn_agent' })],
+            subagentFinalizations: { objective_met: 3, uncaused: 2 },
+          }),
+        ],
+      }),
+    ])
+    expect(summary.workersObserved).toBe(5)
+    expect(summary.selfFinalizedWorkers).toBe(3)
+    expect(summary.noProgress).toEqual({ kind: 'unseen', workers: 3, rateCeiling: 1 })
+  })
+
   it('reads a capture whose every worker was cancelled as nothing to read', () => {
     const summary = summarizeDelegation([
       result({

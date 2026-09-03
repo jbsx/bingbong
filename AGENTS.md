@@ -68,7 +68,33 @@ Each pass writes its own artifact
 `pnpm delegation:summary` pools every capture in the directory and reports
 spawn attempts, off-tier refusals, and the worker stop-cause breakdown.
 Delegation is recorded, never asserted — a probe that answers correctly
-without delegating is the finding, not a suite failure. An empty
+without delegating is the finding, not a suite failure, and neither is one
+that fails. Change the corpus's depth, never its ask: a command that names
+delegation measures the harness, not the model.
+
+The corpus is a control and a treatment separated by branch *depth* alone.
+Breadth was never the variable — the first capture answered both shallow
+objectives serially in 13 and 16 rounds against a 24-round Investigation
+budget — and neither is depth on its own. Set depth from the measured
+round-per-page rate rather than a guess: pass-2 walked three four-leg
+chains serially in 15 rounds, about one round per page, so the treatment
+(`delegation-consignment-chains`) is three eight-leg chains behind opaque
+hops — 25 navigations, ~26 rounds serially, against 8 navigations per
+branch inside a browse worker's own 12-round leash.
+
+Two variables decide whether a spawn happens and the probe has separated
+them. Depth is necessary: the four-leg treatment was absorbed serially
+(pass-2; the stronger model was never asked to walk that version). It is not sufficient: at eight legs GLM-5.3-flash spent the
+whole Investigation budget across 25 navigations and finalized
+`budget_exhausted` rather than delegate (pass-3), while glm-5.3 on the
+identical corpus and commit spawned two browse workers and met the
+objective in 13 rounds (pass-4) — the first accepted spawn, and the first
+non-empty `subagentFinalizations`, this eval has recorded. So a capture is
+unreadable without its orchestrator model (`pnpm delegation:summary`
+prints it per capture and never pools across models silently), and the
+deep scenario is expected to fail under a flash-class orchestrator.
+
+An empty
 `no_progress` column is read by the rule of three over the workers that
 reached a Finalization Cause of their own (a cancelled or failed worker
 never had the chance to stop for no Progress): zero events in N such

@@ -239,6 +239,23 @@ describe('extractMetrics', () => {
     )
     expect(metrics.subagentFinalizations).toEqual({ cancelled: 2, failed: 1 })
   })
+
+  it('never reads a completed worker without a cause as a kill (#162)', () => {
+    // A worker that finished but whose report reached the tape with no
+    // Finalization Cause is not a worker the parent killed. Calling it
+    // 'cancelled' would erase the one distinction #162 exists to make,
+    // and would inflate the kill column the delegation probe reads.
+    const completedUncaused: PipelineEvent = {
+      type: 'subagent_finalized',
+      turnId: T,
+      agentId: 'a-1',
+      kind: 'browse',
+      status: 'completed',
+      at: 1,
+    }
+    const metrics = extractMetrics([command(0), completedUncaused, done(2)], [], false)
+    expect(metrics.subagentFinalizations).toEqual({ uncaused: 1 })
+  })
 })
 
 describe('combineRuns', () => {
