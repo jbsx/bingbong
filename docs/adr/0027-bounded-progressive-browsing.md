@@ -19,9 +19,15 @@ mechanics and encourage redundant reads, clicks, screenshots, and vision calls.
   budgets are 6, 12, and 24, with active-work deadlines of 45 seconds, 2
   minutes, and 5 minutes. Evaluation may tune these defaults.
 - Progress means new decision-relevant evidence or a requested state change,
-  not merely a successful call. Two no-progress actions require a different
-  Approach; two exhausted Approaches require an Answer or, before exhaustion,
-  one high-information question.
+  not merely a successful call. New evidence is the settled page state moving,
+  an accepted Evidence Checkpoint, or the first observation of the state the
+  page sits in by an Observation Producer that has not yet observed it. That
+  last clause is what Progress means for a loop whose catalog holds no
+  checkpoint or state-change tool — a Browse Subagent has neither, so the page
+  moving would otherwise be its only Progress signal.
+  Two no-progress actions require a different Approach; two exhausted
+  Approaches require an Answer or, before exhaustion, one high-information
+  question.
 - The runtime mechanically nudges and eventually refuses repeated actions
   against equivalent state. Changed content, scroll position, pagination, or
   media state prevents false refusal.

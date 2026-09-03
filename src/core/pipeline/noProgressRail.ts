@@ -1,4 +1,5 @@
 import type { ToolCall, ToolResultOutcome } from '../ports/llm'
+import type { ObservationProducer } from '../session/observationLedger'
 import { actionFingerprint, pageFingerprint, type SettledPageState } from './progressFingerprints'
 import { classifyToolObservation } from './toolObservations'
 
@@ -15,13 +16,22 @@ import { classifyToolObservation } from './toolObservations'
 //   (its print/JSON/AMP rendering) folds to the same state, so a
 //   URL-only jump is not Progress.
 //
-// — Approach exhaustion: Progress means the settled state moved — new
-//   decision-relevant material — or the run made a requested state
-//   change, or an Evidence Checkpoint was accepted. Two consecutive
-//   successful actions with none of those exhaust an Approach; the
-//   model is instructed to change it. A second exhausted Approach
-//   trips Finalization (mechanical cause `no_progress`) — the pipeline
+// — Approach exhaustion: Progress means new decision-relevant material
+//   arrived — the settled state moved, or a producer that had not yet
+//   observed the state it sits in observed it (#161) — or the run made a
+//   requested state change, or an Evidence Checkpoint was accepted. Two
+//   consecutive successful actions with none of those exhaust an
+//   Approach; the model is instructed to change it. A second exhausted
+//   Approach trips Finalization (mechanical cause `no_progress`) — the pipeline
 //   enters the same terminal phase budget exhaustion does.
+//
+//   The producer clause (#161) is Progress in full, not a weaker tier:
+//   material is material, and the accounting starts over the way a moved
+//   page starts it over. What bounds it is the ledger — one settled
+//   state grants each Observation Producer exactly one first
+//   observation, so a run that never moves the page can restart the
+//   accounting at most as many times as it has page-facing producers,
+//   and a run that does move it made Progress anyway.
 //
 // The rail is deterministic and side-effect free apart from reading the
 // settled state through the injected source; without one (tests, lean
@@ -124,6 +134,12 @@ export function createNoProgressRail(deps: NoProgressRailDeps = {}): NoProgressR
   // itself be no-progress.
   let lastState: string | null = null
   const attempts = new Map<string, AttemptRecord>()
+  // Which Observation Producers have already observed each settled state
+  // (#161). A state a Producer has not observed yet still holds material
+  // for it — the first read_page of a page and the first look at it are
+  // different evidence; the second of either is inspection. Keyed by
+  // state, so returning to a page already studied re-earns nothing.
+  const observedBy = new Map<string, Set<ObservationProducer>>()
   // The gate's nudge rides the observed result of the call it nudged —
   // single-slot between one call's gate and observe, like the search-loop
   // rail's type memo.
@@ -134,6 +150,26 @@ export function createNoProgressRail(deps: NoProgressRailDeps = {}): NoProgressR
 
   function isPageFacing(name: string): boolean {
     return classifyToolObservation(name).pageFacing
+  }
+
+  function producerOf(name: string): ObservationProducer {
+    return classifyToolObservation(name).producer
+  }
+
+  /**
+   * Records that `producer` has now observed `fingerprint`; true when it
+   * had not before — the first observation of that state by that
+   * producer, which is new decision-relevant material (#161).
+   */
+  function markObserved(fingerprint: string, producer: ObservationProducer): boolean {
+    const producers = observedBy.get(fingerprint)
+    if (producers === undefined) {
+      observedBy.set(fingerprint, new Set([producer]))
+      return true
+    }
+    if (producers.has(producer)) return false
+    producers.add(producer)
+    return true
   }
 
   async function currentStateFingerprint(): Promise<string | null> {
@@ -226,6 +262,7 @@ export function createNoProgressRail(deps: NoProgressRailDeps = {}): NoProgressR
         // media toggles continue instead of reading as repeats.
         attempts.delete(key)
       }
+      const firstByThisProducer = markObserved(fingerprint, producerOf(call.name))
       if (lastState === null) {
         // The baseline read: the state Progress is measured from, not
         // itself an action that failed to make it (#126/AC1 — the first
@@ -241,18 +278,30 @@ export function createNoProgressRail(deps: NoProgressRailDeps = {}): NoProgressR
         return nudge
       }
       lastState = fingerprint
+      if (firstByThisProducer) {
+        // The page sits where it was, but this Observation Producer had
+        // not observed it: reading a page that has only been looked at,
+        // or looking at one that has only been read, is new material
+        // rather than a repeat (#161). A loop whose catalog holds no
+        // checkpoint or state-change tool has no other way to say so.
+        progress()
+        return nudge
+      }
       const escalated = escalate()
       return escalated === null ? nudge : nudge === null ? escalated : `${nudge}\n\n${escalated}`
     },
 
     reset() {
       attempts.clear()
+      observedBy.clear()
       pendingNudge = null
       noProgress = 0
       exhaustedApproaches = 0
       // A corrected objective reopens work (#119): the no_progress trip
-      // belonged to the stale one. The page state survives — it is where
-      // it is, whatever the run now plans to do there.
+      // belonged to the stale one, and so did what each producer had
+      // already learned — the same page read against a new question is
+      // material again. The page state survives — it is where it is,
+      // whatever the run now plans to do there.
       tripped = false
     },
 

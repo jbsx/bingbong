@@ -1002,6 +1002,46 @@ describe('runSubagent', () => {
     expect(report.finalizationCause).toBe('no_progress')
   })
 
+  it('studies one page without stopping for no_progress — read, look, re-read, look again (#161)', async () => {
+    // The issue's worked example, through the real worker loop: a browse
+    // worker's catalog holds no checkpoint and no state-change tool, so
+    // before #161 the page moving was the only Progress signal it had and
+    // this canonical \u201copen a source and study it\u201d workload finalized it
+    // five calls in, with eleven of its twelve rounds unspent.
+    const navigate: Tool = { name: 'navigate', acquisition: true, async execute() { return 'navigated' } }
+    const readPage: Tool = { name: 'read_page', acquisition: true, async execute() { return 'read' } }
+    const look: Tool = { name: 'look', acquisition: true, usesVision: true, async execute() { return 'seen' } }
+    const llm = new ScriptedLlm([
+      { kind: 'tool_calls', calls: [{ id: 'n1', name: 'navigate', args: { url: 'https://example.com/article' } }] },
+      { kind: 'tool_calls', calls: [{ id: 'r1', name: 'read_page', args: {} }] },
+      { kind: 'tool_calls', calls: [{ id: 'l1', name: 'look', args: {} }] },
+      { kind: 'tool_calls', calls: [{ id: 'r2', name: 'read_page', args: {} }] },
+      { kind: 'tool_calls', calls: [{ id: 'l2', name: 'look', args: {} }] },
+      { kind: 'answer', speak: 'The article says X.', display: 'The article says X.' },
+    ])
+
+    const report = await runSubagent(
+      { llm, tools: [navigate, readPage, look], clock: new FakeClock(), settledPageState: () => STUCK, maxToolRounds: 12 },
+      { task: 'study the article', agentId: 'a-161', isCancelled: () => false },
+    )
+
+    // The worker answered on its own terms: no trip, and the repeats that
+    // followed the first read and the first look only exhausted one
+    // Approach, so the loop never entered Finalization.
+    expect(report.finalizationCause).toBe('model_answered')
+    // One notice per call that carried one — the scripted requests repeat
+    // the running result history, so they are keyed by call id.
+    const notices = new Map(
+      llm.requests
+        .flatMap((request) => request.toolResults ?? [])
+        .map((result) => [result.call.id, result.outcome.ok ? String(result.outcome.result) : String(result.outcome.error)]),
+    )
+    expect([...notices.values()].filter((notice) => /A second Approach/.test(notice))).toEqual([])
+    // One Approach did exhaust: the repeats are still repeats.
+    expect([...notices].filter(([, notice]) => /Change your Approach/.test(notice)).map(([id]) => id)).toEqual(['l2'])
+    expect(report.text).toContain('The article says X.')
+  })
+
   it('stamps user_unavailable on the ASK_USER relay \u2014 only the user can unblock it (#162)', async () => {
     const llm = new ScriptedLlm([
       { kind: 'tool_calls', calls: [{ id: 'q1', name: 'ask_user', args: { question: 'Which city?' } }] },

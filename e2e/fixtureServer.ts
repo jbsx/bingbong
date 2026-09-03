@@ -940,7 +940,11 @@ export async function startFixtureServer(): Promise<FixtureServer> {
       res.end(siteSearchPage())
       return
     }
-    if (req.url === '/widgets-article') {
+    // The article and its print rendering: one source, two URLs. The
+    // no-progress rails fold a first-party alternate representation to the
+    // same settled state, so a jump between these two is no Progress (#126)
+    // while still being a distinct action (#161).
+    if (req.url === '/widgets-article' || req.url === '/widgets-article?print=1') {
       res.end(widgetsArticlePage())
       return
     }

@@ -137,14 +137,18 @@ describe('no-progress rails e2e (#126) — approach exhaustion finalization', ()
           { id: 'nav', name: 'navigate', args: { url: article } },
         ],
       },
-      // Four no-progress actions against an unmoving page: read (1), a
-      // clamped scroll at the top (2 — Approach 1 exhausted, instructed),
-      // a second read (3), a second clamped scroll (4 — Approach 2
-      // exhausted: Finalization), with the ask_user sibling already
-      // inside Finalization — refused without ever opening a window.
+      // The first read of this state is new material — a producer that had
+      // not observed it (#161) — and then four no-progress actions against
+      // an unmoving page: a clamped scroll at the top (1), a second read
+      // (2 — Approach 1 exhausted, instructed), a jump to the article's
+      // print rendering, which is the same source in a different URL (3),
+      // and a second clamped scroll (4 — Approach 2 exhausted:
+      // Finalization), with the ask_user sibling already inside
+      // Finalization — refused without ever opening a window.
       { kind: 'tool_calls', calls: [{ id: 'read-1', name: 'read_page', args: {} }] },
       { kind: 'tool_calls', calls: [{ id: 'scroll-1', name: 'scroll', args: { direction: 'up' } }] },
       { kind: 'tool_calls', calls: [{ id: 'read-2', name: 'read_page', args: {} }] },
+      { kind: 'tool_calls', calls: [{ id: 'print', name: 'navigate', args: { url: `${article}?print=1` } }] },
       {
         kind: 'tool_calls',
         calls: [
@@ -173,9 +177,9 @@ describe('no-progress rails e2e (#126) — approach exhaustion finalization', ()
   it('instructs after two no-progress actions, finalizes after two exhausted Approaches, and never opens ask_user', async () => {
     const events = await captureRun(harness, 'study the widget article')
 
-    // Approach 1 exhausted on the first clamped scroll; the instruction
-    // rode its result.
-    expect(events.find((event) => event.type === 'tool_result' && event.callId === 'scroll-1')).toMatchObject({
+    // Approach 1 exhausted on the second read; the instruction rode its
+    // result.
+    expect(events.find((event) => event.type === 'tool_result' && event.callId === 'read-2')).toMatchObject({
       ok: true,
       result: expect.stringMatching(/Change your Approach/),
     })

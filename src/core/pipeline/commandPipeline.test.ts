@@ -2667,13 +2667,17 @@ describe('command pipeline', () => {
       const scroll: Tool = { name: 'scroll', acquisition: true, async execute() { return 'scrolled' } }
       const llm = new ScriptedLlm([
         { kind: 'tool_calls', calls: [lookupPlan('p1', 'Study the article'), { id: 'n1', name: 'navigate', args: { url: 'https://example.com/article' } }] },
+        // The first read of this state and the first look at it each bring
+        // new material (#161); the repeats that follow bring none.
         { kind: 'tool_calls', calls: [{ id: 'r1', name: 'read_page', args: {} }] },
         { kind: 'tool_calls', calls: [{ id: 'l1', name: 'look', args: {} }] },
         { kind: 'tool_calls', calls: [{ id: 's1', name: 'scroll', args: { direction: 'down' } }] },
+        { kind: 'tool_calls', calls: [{ id: 'r2', name: 'read_page', args: {} }] },
+        { kind: 'tool_calls', calls: [{ id: 'l2', name: 'look', args: {} }] },
         // The fourth no-progress action exhausts the second Approach — the
         // trip's directive rides its result, and the sibling ask_user is
         // already inside Finalization: refused, no window ever opens.
-        { kind: 'tool_calls', calls: [{ id: 'r2', name: 'read_page', args: {} }, { id: 'a1', name: 'ask_user', args: { question: 'Which part?' } }] },
+        { kind: 'tool_calls', calls: [{ id: 's2', name: 'scroll', args: { direction: 'up' } }, { id: 'a1', name: 'ask_user', args: { question: 'Which part?' } }] },
         { kind: 'answer', speak: 'I stopped.', display: 'No new material arrived.', resolution: 'unsuccessful' },
       ])
       const pipeline = createCommandPipeline({
@@ -2686,13 +2690,13 @@ describe('command pipeline', () => {
 
       const events = await collect(pipeline, 'study the article')
 
-      // Approach 1 exhausted on the look result; approach 2 on the second
-      // read, which carries the Finalization directive.
-      expect(events.find((e) => e.type === 'tool_result' && e.callId === 'l1')).toMatchObject({
+      // Approach 1 exhausted on the second read; approach 2 on the second
+      // scroll, which carries the Finalization directive.
+      expect(events.find((e) => e.type === 'tool_result' && e.callId === 'r2')).toMatchObject({
         ok: true,
         result: expect.stringMatching(/Change your Approach/),
       })
-      expect(events.find((e) => e.type === 'tool_result' && e.callId === 'r2')).toMatchObject({
+      expect(events.find((e) => e.type === 'tool_result' && e.callId === 's2')).toMatchObject({
         ok: true,
         result: expect.stringMatching(/final answer JSON/),
       })
@@ -2722,10 +2726,12 @@ describe('command pipeline', () => {
         { kind: 'tool_calls', calls: [{ id: 'l1', name: 'look', args: {} }] },
         { kind: 'tool_calls', calls: [{ id: 's1', name: 'scroll', args: { direction: 'down' } }] },
         { kind: 'tool_calls', calls: [{ id: 'b1', name: 'back', args: {} }] },
+        { kind: 'tool_calls', calls: [{ id: 'r2', name: 'read_page', args: {} }] },
+        { kind: 'tool_calls', calls: [{ id: 'l2', name: 'look', args: {} }] },
         // The second Approach exhausts here; the script ends, so the
         // reserved Answer round fails — the deterministic Answer replaces
         // it with the no_progress cause.
-        { kind: 'tool_calls', calls: [{ id: 'r2', name: 'read_page', args: {} }] },
+        { kind: 'tool_calls', calls: [{ id: 's2', name: 'scroll', args: { direction: 'up' } }] },
       ])
       const pipeline = createCommandPipeline({
         llm,
@@ -2763,13 +2769,16 @@ describe('command pipeline', () => {
       const lookTool: Tool = { name: 'look', acquisition: true, usesVision: true, async execute() { return 'seen' } }
       const llm = new ScriptedLlm([
         { kind: 'tool_calls', calls: [lookupPlan('p1', 'Read the article'), { id: 'n1', name: 'navigate', args: { url: 'https://example.com/article' } }] },
-        // Alternate representation: URL-only change — no Progress.
+        // Alternate representations: URL-only changes — no Progress. Every
+        // one of them is an action outcome against a state an action
+        // outcome has already observed, so the producer clause (#161)
+        // spares none of them.
         { kind: 'tool_calls', calls: [{ id: 'n2', name: 'navigate', args: { url: 'https://example.com/article?print=1' } }] },
-        { kind: 'tool_calls', calls: [{ id: 'r1', name: 'read_page', args: {} }] },
+        { kind: 'tool_calls', calls: [{ id: 'n3', name: 'navigate', args: { url: 'https://example.com/article?amp=1' } }] },
         // A requested state change resets the rails mid-approach.
         { kind: 'tool_calls', calls: [{ id: 's1', name: 'set_setting', args: { setting: 'appearance', string_value: 'dark' } }] },
-        { kind: 'tool_calls', calls: [{ id: 'r2', name: 'read_page', args: {} }] },
-        { kind: 'tool_calls', calls: [{ id: 'l1', name: 'look', args: {} }] },
+        { kind: 'tool_calls', calls: [{ id: 'n4', name: 'navigate', args: { url: 'https://example.com/article?reader=1' } }] },
+        { kind: 'tool_calls', calls: [{ id: 'n5', name: 'navigate', args: { url: 'https://example.com/article?output=json' } }] },
         { kind: 'answer', speak: 'Done.', display: 'Done.' },
       ])
       const pipeline = createCommandPipeline({
@@ -2782,15 +2791,15 @@ describe('command pipeline', () => {
 
       const events = await collect(pipeline, 'read the article')
 
-      // The URL-only jump counted as no-progress: it reset nothing, so
-      // with the following read it exhausted the first Approach (r1
-      // instructs). The setting change then reset the count — without it,
-      // the r2/l1 pair would exhaust the second Approach and finalize
-      // instead of instructing again on l1.
+      // The URL-only jumps counted as no-progress: they reset nothing, so
+      // the second of them exhausted the first Approach (n3 instructs).
+      // The setting change then reset the count — without it, the n4/n5
+      // pair would exhaust the second Approach and finalize instead of
+      // instructing again on n5.
       const instructions = events.filter(
         (e): e is NoProgressToolResult => e.type === 'tool_result' && e.ok && typeof e.result === 'string' && /Change your Approach/.test(e.result),
       )
-      expect(instructions.map((e) => e.callId)).toEqual(['r1', 'l1'])
+      expect(instructions.map((e) => e.callId)).toEqual(['n3', 'n5'])
       expect(events.filter((e) => e.type === 'tool_result' && !e.ok)).toEqual([])
       expect(events.at(-1)).toEqual({ type: 'done', outcome: 'done', finalizationCause: 'model_answered', at: 0 })
     })
@@ -2859,10 +2868,16 @@ describe('command pipeline', () => {
       const llm = new ScriptedLlm([
         { kind: 'tool_calls', calls: [lookupPlan('p1', 'Study the article'), { id: 'r1', name: 'read_page', args: {} }] },
         { kind: 'tool_calls', calls: [{ id: 'l1', name: 'look', args: {} }] },
-        // The directive lands; the corrected objective works two more
-        // no-progress actions — instruct, not finalize.
-        { kind: 'tool_calls', calls: [lookupPlan('p2', 'Study the print view'), { id: 'r2', name: 'read_page', args: {} }] },
+        { kind: 'tool_calls', calls: [{ id: 'r2', name: 'read_page', args: {} }] },
         { kind: 'tool_calls', calls: [{ id: 'l2', name: 'look', args: {} }] },
+        // The directive lands; the corrected objective reads and looks
+        // afresh — a page answering a new question is material again
+        // (#161) — then works two more no-progress actions, which
+        // instruct rather than finalize.
+        { kind: 'tool_calls', calls: [lookupPlan('p2', 'Study the print view'), { id: 'r3', name: 'read_page', args: {} }] },
+        { kind: 'tool_calls', calls: [{ id: 'l3', name: 'look', args: {} }] },
+        { kind: 'tool_calls', calls: [{ id: 'r4', name: 'read_page', args: {} }] },
+        { kind: 'tool_calls', calls: [{ id: 'l4', name: 'look', args: {} }] },
         { kind: 'answer', speak: 'Done.', display: 'Done.' },
       ])
       const pipeline = createCommandPipeline({
@@ -2874,13 +2889,13 @@ describe('command pipeline', () => {
       })
 
       const events = await collect(pipeline, 'study the article', (event, active) => {
-        if (event.type === 'tool_result' && event.callId === 'l1') {
+        if (event.type === 'tool_result' && event.callId === 'l2') {
           active.pause()
           active.resume('the print view instead')
         }
       })
 
-      expect(events.find((e) => e.type === 'tool_result' && e.callId === 'l2')).toMatchObject({
+      expect(events.find((e) => e.type === 'tool_result' && e.callId === 'l4')).toMatchObject({
         ok: true,
         result: expect.stringMatching(/Change your Approach/),
       })
