@@ -1015,4 +1015,29 @@ describe('runSubagent', () => {
     expect(report.text).toContain(`${ASK_ESCALATION_PREFIX} Which city?`)
     expect(report.finalizationCause).toBe('user_unavailable')
   })
+
+  it('relays the ASK_USER directive with nothing welded to it (#164)', async () => {
+    const llm = new ScriptedLlm([
+      { kind: 'tool_calls', calls: [{ id: 'q1', name: 'ask_user', args: { question: 'Which city?' } }] },
+    ])
+
+    const report = await runSubagent(
+      { llm, tools: [createSubagentAskTool()], clock: new FakeClock() },
+      { task: 'plan the trip', agentId: 'a-164', isCancelled: () => false },
+    )
+
+    // The relay is the tool's own directive and nothing else, because the
+    // orchestrator routes it to the user as the worker's question and has
+    // no way to tell a welded-on Notice from the question itself. What
+    // keeps it clean is the round's terminal end carrying the raw outcome
+    // (#164) — pinned at that seam in toolRound.test.ts, since no Notice a
+    // worker can currently owe rides an ask_user result: its rails are
+    // immediate and page-facing, and a worker registers no suppliers. This
+    // case pins the wording the orchestrator relays.
+    expect(report.text).toBe(
+      `${ASK_ESCALATION_PREFIX} Which city? \u2014 you cannot ask the user directly. ` +
+        'End your task now and include this directive verbatim in your final report; ' +
+        'the orchestrator will ask the user and may re-dispatch you with the answer.',
+    )
+  })
 })

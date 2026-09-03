@@ -20,7 +20,12 @@ function questionArg(call: ToolCall): string {
   return value.trim()
 }
 
-/** The orchestrator's interactive ask — handled by the command pipeline. */
+/**
+ * The orchestrator's interactive ask — handled by the command pipeline.
+ * Its question comes from the call's own arguments, never from a tool
+ * result, so the Notice corruption a worker's relay was open to (#164) has
+ * no analogue here: there is no result for a Notice to ride into the ask.
+ */
 export function createAskUserTool(): Tool {
   return {
     name: 'ask_user',

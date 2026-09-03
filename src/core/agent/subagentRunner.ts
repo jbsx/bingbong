@@ -452,7 +452,10 @@ export async function runSubagent(deps: RunSubagentDeps, options: RunSubagentOpt
     }
     // The ASK_USER relay ended the round (#18): a subagent cannot continue
     // until the orchestrator asks the user, so the directive is returned as
-    // this worker's report verbatim — agent_results routes it upward.
+    // this worker's report verbatim — agent_results routes it upward. The
+    // terminal end carries the tool's raw result (#164), so a Notice that
+    // rode the escalation in-round never reaches the user welded to the
+    // question.
     const end = step.value.end
     const relay = end.kind === 'terminal' ? askEscalation(end.outcome) : null
     if (relay !== null) {

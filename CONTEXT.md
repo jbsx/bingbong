@@ -197,7 +197,10 @@ shown or spoken to the user. An immediate Notice rides the result that
 triggered it or is dropped; an owed Notice persists until a later result can
 carry it. Notices ride only successful text results, in one fixed
 precedence — except a directive that closes the loop rather than advising
-inside it, which rides whatever the result it lands on read.
+inside it, which rides whatever the result it lands on read. A Notice is
+model-facing only: the copy of a terminal result the round hands its caller to
+route onward carries none, while the model-facing copy among the round's
+results still does.
 _Avoid_: nudge, warning text, hint
 
 **Progress**:

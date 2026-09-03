@@ -385,6 +385,33 @@ describe('how a round ends (#157/AC2)', () => {
     expect(trace).toEqual(['execute:new_session', 'observe:action_outcome:ok'])
   })
 
+  // #164: the terminal end is the caller's structural signal, not the
+  // model's view of the result. A Notice riding the result belongs in the
+  // round (the model reads it); it must never reach the caller welded to
+  // the payload the caller routes onward.
+  it('carries the raw result on the terminal end while the round still shows the model its Notices', async () => {
+    const seen: ToolResultOutcome[] = []
+    const h = harness([scripted('new_session', [], { result: 'reset done' })], {
+      soleCall: sessionReset,
+      terminalResult: (candidate, outcome) => {
+        seen.push(outcome)
+        return outcome.ok && candidate.name === 'new_session'
+      },
+    })
+    h.notices.owe('run_plan', 'Change your approach.')
+
+    const { events, outcome } = await h.round([call('new_session', {}, 'c2')])
+
+    // The predicate judges the tool's own result, undisturbed.
+    expect(seen.map(resultOf)).toEqual(['reset done'])
+    expect(outcome.end).toMatchObject({ kind: 'terminal', outcome: { ok: true, result: 'reset done' } })
+    // The model-facing views keep the Notice.
+    expect(resultOf(outcome.results[0]!.outcome)).toEqual('reset done\n\nChange your approach.')
+    expect(events.filter((event) => event.type === 'tool_result')).toMatchObject([
+      { result: 'reset done\n\nChange your approach.' },
+    ])
+  })
+
   it('answers the suppressed siblings with the uniform notice when the terminal call failed', async () => {
     const failing: Tool = {
       name: 'new_session',

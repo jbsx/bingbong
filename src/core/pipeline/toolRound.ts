@@ -99,6 +99,14 @@ export interface ToolRoundResult {
 export type RoundEnd =
   | { readonly kind: 'continue' }
   | { readonly kind: 'steered'; readonly directive: Directive }
+  /**
+   * The terminal end's `outcome` is the raw result the tool produced,
+   * before any Notice attached to it (#164) — the caller's copy, which it
+   * may route onward verbatim (the worker's ASK_USER relay becomes its
+   * report, and a rail instruction addressed to the model must not ride
+   * into the question the user hears). The model-facing copy, Notices
+   * included, is this call's entry in `results`.
+   */
   | { readonly kind: 'terminal'; readonly call: ToolCall; readonly outcome: ToolResultOutcome }
 
 export interface ToolRoundOutcome {
@@ -150,7 +158,8 @@ export interface ToolRoundConfig {
   /**
    * Whether this result ended the round (#99): a successful Session Reset
    * for a Run, the ASK_USER relay for a worker. Later siblings never
-   * execute.
+   * execute. Judged on the raw outcome the tool produced, ahead of any
+   * Notice attached to it (#164).
    */
   terminalResult?(call: ToolCall, outcome: ToolResultOutcome): boolean
   readonly soleCall?: SoleCallBoundary
@@ -452,19 +461,21 @@ export function createToolRoundExecutor(config: ToolRoundConfig): ToolRoundExecu
       // not already over — judged after the no-Progress trip above, so the
       // tripping result never carries a plan nudge or budget warning.
       const usefulWork = outcome.ok && typeof outcome.result === 'string' && intercepted === null && !isInFinalization()
-      const observedOutcome = notices.attach(outcome, { usefulWork })
-      results.push({ call, outcome: observedOutcome, observationId: observedRecord?.id ?? null })
+      const modelFacingOutcome = notices.attach(outcome, { usefulWork })
+      results.push({ call, outcome: modelFacingOutcome, observationId: observedRecord?.id ?? null })
       yield {
         type: 'tool_result',
         callId: call.id,
         name: call.name,
-        ok: observedOutcome.ok,
-        ...(observedOutcome.ok ? { result: observedOutcome.result } : { error: observedOutcome.error }),
+        ok: modelFacingOutcome.ok,
+        ...(modelFacingOutcome.ok ? { result: modelFacingOutcome.result } : { error: modelFacingOutcome.error }),
         at: clock.now(),
       }
       // The result ended the round: it is the last thing the round emits.
-      if (config.terminalResult?.(call, observedOutcome) === true) {
-        end = { kind: 'terminal', call, outcome: observedOutcome }
+      // Both the verdict and the end read the raw outcome, never the
+      // Notice-bearing copy above (#164 — see `RoundEnd`).
+      if (config.terminalResult?.(call, outcome) === true) {
+        end = { kind: 'terminal', call, outcome }
         break
       }
       const afterToolDirective = yield* interrupts.check('acting')
