@@ -1,0 +1,1122 @@
+{
+  "capturedAt": "2026-09-03T14:25:19.646Z",
+  "gitCommit": "95128cad84a29b9eb2f29f587596d80a6b4b2ab9",
+  "scenarioTimeoutMs": 900000,
+  "routing": {
+    "orchestrator": {
+      "configured": true,
+      "baseUrl": "https://api.z.ai/api/coding/paas/v4",
+      "model": "glm-5.3",
+      "keyFingerprint": "sha256:496fb3dd2227"
+    },
+    "subagent": {
+      "configured": true,
+      "baseUrl": "https://api.z.ai/api/coding/paas/v4",
+      "model": "GLM-5.3-flash",
+      "keyFingerprint": "sha256:496fb3dd2227"
+    },
+    "vision": {
+      "configured": true,
+      "baseUrl": "https://api.z.ai/api/coding/paas/v4",
+      "model": "GLM-4.6V",
+      "keyFingerprint": "sha256:496fb3dd2227"
+    }
+  },
+  "modelWitness": {
+    "orchestratorModel": "glm-5.3",
+    "orchestratorRequests": 38,
+    "scriptedEntries": []
+  },
+  "scenarios": [
+    {
+      "id": "delegation-hub-audit-sweep",
+      "kind": "subagent",
+      "command": "the three regional hubs are listed at http://127.0.0.1:42279/hub-index. for every hub, get its dispatch day from the hub's own page and its defect rate from the independent audit office page that the hub page links to, then tell me all three dispatch days, all three defect rates, and which hub has the lowest defect rate",
+      "success": true,
+      "failureReason": null,
+      "metrics": {
+        "llmRounds": 12,
+        "attemptedTools": 17,
+        "executedTools": 16,
+        "elapsedMs": 72636,
+        "repeatedActions": 0,
+        "outcome": "done",
+        "resolution": "completed",
+        "finalizationCause": "objective_met",
+        "effortTier": "lookup",
+        "rawLimitFailure": null,
+        "askTimedOut": false,
+        "subagentFinalizations": {},
+        "actions": [
+          {
+            "name": "navigate",
+            "args": {
+              "url": "http://127.0.0.1:42279/hub-index"
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "report_run_plan",
+            "args": {
+              "effort_tier": "lookup",
+              "headline": "Collect dispatch days and defect rates for all three regional hubs",
+              "objective": "Visit each hub's page (Aurora, Borealis, Cascade) to read its dispatch day, follow each hub page's link to the independent audit office page for its defect rate, then report all three dispatch days, all three defect rates, and identify the hub with the lowest defect rate."
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "navigate",
+            "args": {
+              "url": "http://127.0.0.1:42279/hub-aurora"
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "navigate",
+            "args": {
+              "url": "http://127.0.0.2:33881/audit-aurora"
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "navigate",
+            "args": {
+              "url": "http://127.0.0.1:42279/hub-borealis"
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "navigate",
+            "args": {
+              "url": "http://127.0.0.2:33881/audit-borealis"
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "navigate",
+            "args": {
+              "url": "http://127.0.0.1:42279/hub-cascade"
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "navigate",
+            "args": {
+              "url": "http://127.0.0.2:33881/audit-cascade"
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "record_evidence",
+            "args": {
+              "excerpt": "Hub Aurora dispatches standard fixture widget orders on Tuesday.",
+              "observation": "Hub Aurora dispatches on Tuesday (from its own hub page).",
+              "source_url": "http://127.0.0.1:42279/hub-aurora"
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "record_evidence",
+            "args": {
+              "excerpt": "Hub Aurora returned a defect rate of 4.1% over the audited quarter.",
+              "observation": "Hub Aurora's independent audit defect rate is 4.1% over the audited quarter.",
+              "source_url": "http://127.0.0.2:33881/audit-aurora"
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "record_evidence",
+            "args": {
+              "excerpt": "Hub Borealis dispatches standard fixture widget orders on Friday.",
+              "observation": "Hub Borealis dispatches on Friday (from its own hub page).",
+              "source_url": "http://127.0.0.1:42279/hub-borealis"
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "record_evidence",
+            "args": {
+              "excerpt": "Hub Borealis returned a defect rate of 0.9% over the audited quarter.",
+              "observation": "Hub Borealis's independent audit defect rate is 0.9% over the audited quarter.",
+              "source_url": "http://127.0.0.2:33881/audit-borealis"
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "record_evidence",
+            "args": {
+              "excerpt": "Hub Cascade dispatches standard fixture widget orders on Wednesday.",
+              "observation": "Hub Cascade dispatches on Wednesday (from its own hub page).",
+              "source_url": "http://127.0.0.1:42279/hub-cascade"
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "record_evidence",
+            "args": {
+              "excerpt": "Hub Cascade returned a defect rate of 2.7% over the audited quarter.",
+              "observation": "Hub Cascade's independent audit defect rate is 2.7% over the audited quarter.",
+              "source_url": "http://127.0.0.2:33881/audit-cascade"
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "record_candidate",
+            "args": {
+              "candidate_id": "memory-7",
+              "status": "accepted",
+              "subject": "Hub Borealis has the lowest defect rate of the three hubs",
+              "supporting_evidence": [
+                "memory-2",
+                "memory-4",
+                "memory-6"
+              ]
+            },
+            "ok": false,
+            "repeated": false,
+            "error": "record_candidate rejected (malformed): the call is malformed — create a Candidate with {subject, detail?, supporting_evidence: [Session Evidence observation ids]}, or decide one with {candidate_id, status: accepted|rejected|superseded, supporting_evidence}."
+          },
+          {
+            "name": "record_candidate",
+            "args": {
+              "subject": "Hub Borealis has the lowest defect rate of the three hubs",
+              "supporting_evidence": [
+                "memory-2",
+                "memory-4",
+                "memory-6"
+              ]
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "record_candidate",
+            "args": {
+              "candidate_id": "memory-7",
+              "status": "accepted",
+              "supporting_evidence": [
+                "memory-2",
+                "memory-4",
+                "memory-6"
+              ]
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          }
+        ],
+        "answerText": "## Regional hub summary\n\n| Hub | Dispatch day | Defect rate (audited quarter) |\n|---|---|---|\n| Aurora | Tuesday | 4.1% |\n| Borealis | Friday | **0.9%** |\n| Cascade | Wednesday | 2.7% |\n\n**Lowest defect rate: Hub Borealis (0.9%)**\n\nSources: each hub's own page ([Aurora](http://127.0.0.1:42279/hub-aurora), [Borealis](http://127.0.0.1:42279/hub-borealis), [Cascade](http://127.0.0.1:42279/hub-cascade)) for dispatch days, and the independent audit office pages they link to ([Aurora](http://127.0.0.2:33881/audit-aurora), [Borealis](http://127.0.0.2:33881/audit-borealis), [Cascade](http://127.0.0.2:33881/audit-cascade)) for defect rates.",
+        "timedOut": false
+      },
+      "runs": [
+        {
+          "llmRounds": 12,
+          "attemptedTools": 17,
+          "executedTools": 16,
+          "elapsedMs": 72636,
+          "repeatedActions": 0,
+          "outcome": "done",
+          "resolution": "completed",
+          "finalizationCause": "objective_met",
+          "effortTier": "lookup",
+          "rawLimitFailure": null,
+          "askTimedOut": false,
+          "subagentFinalizations": {},
+          "actions": [
+            {
+              "name": "navigate",
+              "args": {
+                "url": "http://127.0.0.1:42279/hub-index"
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "report_run_plan",
+              "args": {
+                "effort_tier": "lookup",
+                "headline": "Collect dispatch days and defect rates for all three regional hubs",
+                "objective": "Visit each hub's page (Aurora, Borealis, Cascade) to read its dispatch day, follow each hub page's link to the independent audit office page for its defect rate, then report all three dispatch days, all three defect rates, and identify the hub with the lowest defect rate."
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "navigate",
+              "args": {
+                "url": "http://127.0.0.1:42279/hub-aurora"
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "navigate",
+              "args": {
+                "url": "http://127.0.0.2:33881/audit-aurora"
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "navigate",
+              "args": {
+                "url": "http://127.0.0.1:42279/hub-borealis"
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "navigate",
+              "args": {
+                "url": "http://127.0.0.2:33881/audit-borealis"
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "navigate",
+              "args": {
+                "url": "http://127.0.0.1:42279/hub-cascade"
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "navigate",
+              "args": {
+                "url": "http://127.0.0.2:33881/audit-cascade"
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "record_evidence",
+              "args": {
+                "excerpt": "Hub Aurora dispatches standard fixture widget orders on Tuesday.",
+                "observation": "Hub Aurora dispatches on Tuesday (from its own hub page).",
+                "source_url": "http://127.0.0.1:42279/hub-aurora"
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "record_evidence",
+              "args": {
+                "excerpt": "Hub Aurora returned a defect rate of 4.1% over the audited quarter.",
+                "observation": "Hub Aurora's independent audit defect rate is 4.1% over the audited quarter.",
+                "source_url": "http://127.0.0.2:33881/audit-aurora"
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "record_evidence",
+              "args": {
+                "excerpt": "Hub Borealis dispatches standard fixture widget orders on Friday.",
+                "observation": "Hub Borealis dispatches on Friday (from its own hub page).",
+                "source_url": "http://127.0.0.1:42279/hub-borealis"
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "record_evidence",
+              "args": {
+                "excerpt": "Hub Borealis returned a defect rate of 0.9% over the audited quarter.",
+                "observation": "Hub Borealis's independent audit defect rate is 0.9% over the audited quarter.",
+                "source_url": "http://127.0.0.2:33881/audit-borealis"
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "record_evidence",
+              "args": {
+                "excerpt": "Hub Cascade dispatches standard fixture widget orders on Wednesday.",
+                "observation": "Hub Cascade dispatches on Wednesday (from its own hub page).",
+                "source_url": "http://127.0.0.1:42279/hub-cascade"
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "record_evidence",
+              "args": {
+                "excerpt": "Hub Cascade returned a defect rate of 2.7% over the audited quarter.",
+                "observation": "Hub Cascade's independent audit defect rate is 2.7% over the audited quarter.",
+                "source_url": "http://127.0.0.2:33881/audit-cascade"
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "record_candidate",
+              "args": {
+                "candidate_id": "memory-7",
+                "status": "accepted",
+                "subject": "Hub Borealis has the lowest defect rate of the three hubs",
+                "supporting_evidence": [
+                  "memory-2",
+                  "memory-4",
+                  "memory-6"
+                ]
+              },
+              "ok": false,
+              "repeated": false,
+              "error": "record_candidate rejected (malformed): the call is malformed — create a Candidate with {subject, detail?, supporting_evidence: [Session Evidence observation ids]}, or decide one with {candidate_id, status: accepted|rejected|superseded, supporting_evidence}."
+            },
+            {
+              "name": "record_candidate",
+              "args": {
+                "subject": "Hub Borealis has the lowest defect rate of the three hubs",
+                "supporting_evidence": [
+                  "memory-2",
+                  "memory-4",
+                  "memory-6"
+                ]
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "record_candidate",
+              "args": {
+                "candidate_id": "memory-7",
+                "status": "accepted",
+                "supporting_evidence": [
+                  "memory-2",
+                  "memory-4",
+                  "memory-6"
+                ]
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            }
+          ],
+          "answerText": "## Regional hub summary\n\n| Hub | Dispatch day | Defect rate (audited quarter) |\n|---|---|---|\n| Aurora | Tuesday | 4.1% |\n| Borealis | Friday | **0.9%** |\n| Cascade | Wednesday | 2.7% |\n\n**Lowest defect rate: Hub Borealis (0.9%)**\n\nSources: each hub's own page ([Aurora](http://127.0.0.1:42279/hub-aurora), [Borealis](http://127.0.0.1:42279/hub-borealis), [Cascade](http://127.0.0.1:42279/hub-cascade)) for dispatch days, and the independent audit office pages they link to ([Aurora](http://127.0.0.2:33881/audit-aurora), [Borealis](http://127.0.0.2:33881/audit-borealis), [Cascade](http://127.0.0.2:33881/audit-cascade)) for defect rates.",
+          "timedOut": false
+        }
+      ]
+    },
+    {
+      "id": "delegation-recall-theories",
+      "kind": "subagent",
+      "command": "three competing explanations for the Q3 fixture widget recall are filed at http://127.0.0.1:42279/recall-brief. for each explanation, read its dossier and the independent lab report it links, then tell me which explanation the lab evidence supports, with the measurement it rests on, and say what ruled out each of the other two",
+      "success": true,
+      "failureReason": null,
+      "metrics": {
+        "llmRounds": 12,
+        "attemptedTools": 14,
+        "executedTools": 13,
+        "elapsedMs": 53340,
+        "repeatedActions": 0,
+        "outcome": "done",
+        "resolution": "completed",
+        "finalizationCause": "objective_met",
+        "effortTier": "investigation",
+        "rawLimitFailure": null,
+        "askTimedOut": false,
+        "subagentFinalizations": {},
+        "actions": [
+          {
+            "name": "report_run_plan",
+            "args": {
+              "objective": "Read the three competing explanations for the Q3 fixture widget recall at the recall brief, follow each to its dossier and its linked independent lab report, and determine which explanation the lab measurements support and what rules out the other two.",
+              "headline": "Compare three recall explanations via their lab reports",
+              "effort_tier": "investigation"
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "navigate",
+            "args": {
+              "url": "http://127.0.0.1:42279/recall-brief"
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "navigate",
+            "args": {
+              "url": "http://127.0.0.1:42279/theory-coating"
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "navigate",
+            "args": {
+              "url": "http://127.0.0.2:33881/lab-coating"
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "navigate",
+            "args": {
+              "url": "http://127.0.0.1:42279/theory-bearing"
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "navigate",
+            "args": {
+              "url": "http://127.0.0.2:33881/lab-bearing"
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "navigate",
+            "args": {
+              "url": "http://127.0.0.1:42279/theory-packaging"
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "navigate",
+            "args": {
+              "url": "http://127.0.0.2:33881/lab-packaging"
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "record_evidence",
+            "args": {
+              "kind": "web",
+              "observation": "Lab report for the ceramic coating cure theory: cure times were within tolerance on every recalled batch; theory NOT supported.",
+              "source_url": "http://127.0.0.2:33881/lab-coating",
+              "excerpt": "Coating cure times were within tolerance on every recalled batch. This theory is NOT supported."
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "record_evidence",
+            "args": {
+              "kind": "web",
+              "observation": "Lab report for the bearing seat machining theory: bearing seats on every recalled batch were machined 0.4 mm undersize; theory SUPPORTED.",
+              "source_url": "http://127.0.0.2:33881/lab-bearing",
+              "excerpt": "Bearing seats on every recalled batch were machined 0.4 mm undersize. This theory is SUPPORTED."
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "record_evidence",
+            "args": {
+              "kind": "web",
+              "observation": "Lab report for the packaging compression theory: packaging matched spec on every recalled batch; theory NOT supported.",
+              "source_url": "http://127.0.0.2:33881/lab-packaging",
+              "excerpt": "Packaging matched spec on every recalled batch. This theory is NOT supported."
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "record_candidate",
+            "args": {
+              "candidate_id": "memory-7",
+              "status": "rejected",
+              "supporting_evidence": []
+            },
+            "ok": false,
+            "repeated": false,
+            "error": "record_candidate rejected (malformed): the call is malformed — create a Candidate with {subject, detail?, supporting_evidence: [Session Evidence observation ids]}, or decide one with {candidate_id, status: accepted|rejected|superseded, supporting_evidence}."
+          },
+          {
+            "name": "record_candidate",
+            "args": {
+              "subject": "Bearing seat machining is the supported explanation for the Q3 fixture widget recall",
+              "detail": "Lab measured bearing seats machined 0.4 mm undersize on every recalled batch; coating cure and packaging theories ruled out by within-tolerance measurements.",
+              "supporting_evidence": [
+                "memory-9",
+                "memory-10",
+                "memory-11"
+              ]
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "record_candidate",
+            "args": {
+              "candidate_id": "memory-12",
+              "status": "accepted",
+              "supporting_evidence": [
+                "memory-9",
+                "memory-10",
+                "memory-11"
+              ]
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          }
+        ],
+        "answerText": "**Q3 fixture widget recall — verdict from the independent lab reports**\n\nI read the recall brief, all three dossiers, and each dossier's linked independent lab report.\n\n**Supported: bearing seat machining.** The lab measured bearing seats on **every recalled batch machined 0.4 mm undersize** — \"This theory is SUPPORTED.\" ([lab report](http://127.0.0.2:33881/lab-bearing))\n\n**Ruled out: ceramic coating cure.** Coating cure times were **within tolerance on every recalled batch** — \"This theory is NOT supported.\" ([lab report](http://127.0.0.2:33881/lab-coating))\n\n**Ruled out: packaging compression.** Packaging **matched spec on every recalled batch** — \"This theory is NOT supported.\" ([lab report](http://127.0.0.2:33881/lab-packaging))\n\nSources: [recall brief](http://127.0.0.1:42279/recall-brief) · dossiers: [coating](http://127.0.0.1:42279/theory-coating), [bearing](http://127.0.0.1:42279/theory-bearing), [packaging](http://127.0.0.1:42279/theory-packaging)",
+        "timedOut": false
+      },
+      "runs": [
+        {
+          "llmRounds": 12,
+          "attemptedTools": 14,
+          "executedTools": 13,
+          "elapsedMs": 53340,
+          "repeatedActions": 0,
+          "outcome": "done",
+          "resolution": "completed",
+          "finalizationCause": "objective_met",
+          "effortTier": "investigation",
+          "rawLimitFailure": null,
+          "askTimedOut": false,
+          "subagentFinalizations": {},
+          "actions": [
+            {
+              "name": "report_run_plan",
+              "args": {
+                "objective": "Read the three competing explanations for the Q3 fixture widget recall at the recall brief, follow each to its dossier and its linked independent lab report, and determine which explanation the lab measurements support and what rules out the other two.",
+                "headline": "Compare three recall explanations via their lab reports",
+                "effort_tier": "investigation"
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "navigate",
+              "args": {
+                "url": "http://127.0.0.1:42279/recall-brief"
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "navigate",
+              "args": {
+                "url": "http://127.0.0.1:42279/theory-coating"
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "navigate",
+              "args": {
+                "url": "http://127.0.0.2:33881/lab-coating"
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "navigate",
+              "args": {
+                "url": "http://127.0.0.1:42279/theory-bearing"
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "navigate",
+              "args": {
+                "url": "http://127.0.0.2:33881/lab-bearing"
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "navigate",
+              "args": {
+                "url": "http://127.0.0.1:42279/theory-packaging"
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "navigate",
+              "args": {
+                "url": "http://127.0.0.2:33881/lab-packaging"
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "record_evidence",
+              "args": {
+                "kind": "web",
+                "observation": "Lab report for the ceramic coating cure theory: cure times were within tolerance on every recalled batch; theory NOT supported.",
+                "source_url": "http://127.0.0.2:33881/lab-coating",
+                "excerpt": "Coating cure times were within tolerance on every recalled batch. This theory is NOT supported."
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "record_evidence",
+              "args": {
+                "kind": "web",
+                "observation": "Lab report for the bearing seat machining theory: bearing seats on every recalled batch were machined 0.4 mm undersize; theory SUPPORTED.",
+                "source_url": "http://127.0.0.2:33881/lab-bearing",
+                "excerpt": "Bearing seats on every recalled batch were machined 0.4 mm undersize. This theory is SUPPORTED."
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "record_evidence",
+              "args": {
+                "kind": "web",
+                "observation": "Lab report for the packaging compression theory: packaging matched spec on every recalled batch; theory NOT supported.",
+                "source_url": "http://127.0.0.2:33881/lab-packaging",
+                "excerpt": "Packaging matched spec on every recalled batch. This theory is NOT supported."
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "record_candidate",
+              "args": {
+                "candidate_id": "memory-7",
+                "status": "rejected",
+                "supporting_evidence": []
+              },
+              "ok": false,
+              "repeated": false,
+              "error": "record_candidate rejected (malformed): the call is malformed — create a Candidate with {subject, detail?, supporting_evidence: [Session Evidence observation ids]}, or decide one with {candidate_id, status: accepted|rejected|superseded, supporting_evidence}."
+            },
+            {
+              "name": "record_candidate",
+              "args": {
+                "subject": "Bearing seat machining is the supported explanation for the Q3 fixture widget recall",
+                "detail": "Lab measured bearing seats machined 0.4 mm undersize on every recalled batch; coating cure and packaging theories ruled out by within-tolerance measurements.",
+                "supporting_evidence": [
+                  "memory-9",
+                  "memory-10",
+                  "memory-11"
+                ]
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "record_candidate",
+              "args": {
+                "candidate_id": "memory-12",
+                "status": "accepted",
+                "supporting_evidence": [
+                  "memory-9",
+                  "memory-10",
+                  "memory-11"
+                ]
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            }
+          ],
+          "answerText": "**Q3 fixture widget recall — verdict from the independent lab reports**\n\nI read the recall brief, all three dossiers, and each dossier's linked independent lab report.\n\n**Supported: bearing seat machining.** The lab measured bearing seats on **every recalled batch machined 0.4 mm undersize** — \"This theory is SUPPORTED.\" ([lab report](http://127.0.0.2:33881/lab-bearing))\n\n**Ruled out: ceramic coating cure.** Coating cure times were **within tolerance on every recalled batch** — \"This theory is NOT supported.\" ([lab report](http://127.0.0.2:33881/lab-coating))\n\n**Ruled out: packaging compression.** Packaging **matched spec on every recalled batch** — \"This theory is NOT supported.\" ([lab report](http://127.0.0.2:33881/lab-packaging))\n\nSources: [recall brief](http://127.0.0.1:42279/recall-brief) · dossiers: [coating](http://127.0.0.1:42279/theory-coating), [bearing](http://127.0.0.1:42279/theory-bearing), [packaging](http://127.0.0.1:42279/theory-packaging)",
+          "timedOut": false
+        }
+      ]
+    },
+    {
+      "id": "delegation-consignment-chains",
+      "kind": "subagent",
+      "command": "three consignments are listed at http://127.0.0.1:42279/consignment-index. each one's custody record is a chain of eight legs, and every leg links only the next one, so the seal number is on the last leg of each chain. for all three consignments, follow the whole chain and tell me the port it departed from and its container seal number",
+      "success": false,
+      "failureReason": "objective predicate failed",
+      "metrics": {
+        "llmRounds": 14,
+        "attemptedTools": 14,
+        "executedTools": 12,
+        "elapsedMs": 118854,
+        "repeatedActions": 0,
+        "outcome": "done",
+        "resolution": "partial",
+        "finalizationCause": "budget_exhausted",
+        "effortTier": "lookup",
+        "rawLimitFailure": null,
+        "askTimedOut": false,
+        "subagentFinalizations": {},
+        "actions": [
+          {
+            "name": "report_run_plan",
+            "args": {
+              "effort_tier": "lookup",
+              "headline": "Trace three consignment custody chains to departure ports and seal numbers",
+              "objective": "From http://127.0.0.1:42279/consignment-index, follow each consignment's eight-leg custody chain (each leg links only the next leg), and report for all three consignments the departure port and the container seal number found on the last leg."
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "navigate",
+            "args": {
+              "url": "http://127.0.0.1:42279/consignment-index"
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "navigate",
+            "args": {
+              "url": "http://127.0.0.1:42279/consign-falcon"
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "navigate",
+            "args": {
+              "url": "http://127.0.0.2:33881/custody-q7wm"
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "navigate",
+            "args": {
+              "url": "http://127.0.0.1:42279/custody-b3kd"
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "navigate",
+            "args": {
+              "url": "http://127.0.0.2:33881/custody-x9tr"
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "navigate",
+            "args": {
+              "url": "http://127.0.0.1:42279/custody-n2ej"
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "navigate",
+            "args": {
+              "url": "http://127.0.0.2:33881/custody-p6ad"
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "navigate",
+            "args": {
+              "url": "http://127.0.0.1:42279/custody-w4hv"
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "navigate",
+            "args": {
+              "url": "http://127.0.0.2:33881/custody-c8sy"
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "navigate",
+            "args": {
+              "url": "http://127.0.0.1:42279/consign-marlin"
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "navigate",
+            "args": {
+              "url": "http://127.0.0.2:33881/custody-h2ns"
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "navigate",
+            "args": {
+              "url": "http://127.0.0.1:42279/custody-v6pz"
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "navigate",
+            "args": {
+              "url": "http://127.0.0.2:33881/custody-j4gc"
+            },
+            "ok": false,
+            "repeated": false,
+            "error": "Not executed — The run’s work budget is exhausted — acquisition, vision, media, delegation, and ask_user tools are closed; only Run Plan bookkeeping remains. Finalize now: reply with your final answer JSON and state honestly what was and was not completed."
+          }
+        ],
+        "answerText": "## Consignment chain tracing — partial results\n\nThe run's work budget ran out before all three chains could be followed.\n\n### ✅ Consignment Falcon — complete\n- **Departed:** Valdez (leg 1: \"Consignment Falcon departed Valdez on the first leg of its custody chain.\")\n- **Seal number:** `SEAL-8123` (leg 8: \"arrived on the final leg under container seal SEAL-8123\")\n\n### ⏸️ Consignment Marlin — partially traced\n- **Departed:** Ostend (leg 1: \"Consignment Marlin departed Ostend on the first leg of its custody chain.\")\n- **Seal number:** not found — I traced legs 1–3 (Cormorant Haulage, Depot 27); legs 4–8 remain. Next leg to open: [custody leg 4](http://127.0.0.2:33881/custody-j4gc)\n\n### ❌ Consignment Ibex — not started\n- Entry point not yet opened: [Consignment Ibex](http://127.0.0.1:42279/consign-ibex)",
+        "timedOut": false
+      },
+      "runs": [
+        {
+          "llmRounds": 14,
+          "attemptedTools": 14,
+          "executedTools": 12,
+          "elapsedMs": 118854,
+          "repeatedActions": 0,
+          "outcome": "done",
+          "resolution": "partial",
+          "finalizationCause": "budget_exhausted",
+          "effortTier": "lookup",
+          "rawLimitFailure": null,
+          "askTimedOut": false,
+          "subagentFinalizations": {},
+          "actions": [
+            {
+              "name": "report_run_plan",
+              "args": {
+                "effort_tier": "lookup",
+                "headline": "Trace three consignment custody chains to departure ports and seal numbers",
+                "objective": "From http://127.0.0.1:42279/consignment-index, follow each consignment's eight-leg custody chain (each leg links only the next leg), and report for all three consignments the departure port and the container seal number found on the last leg."
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "navigate",
+              "args": {
+                "url": "http://127.0.0.1:42279/consignment-index"
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "navigate",
+              "args": {
+                "url": "http://127.0.0.1:42279/consign-falcon"
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "navigate",
+              "args": {
+                "url": "http://127.0.0.2:33881/custody-q7wm"
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "navigate",
+              "args": {
+                "url": "http://127.0.0.1:42279/custody-b3kd"
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "navigate",
+              "args": {
+                "url": "http://127.0.0.2:33881/custody-x9tr"
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "navigate",
+              "args": {
+                "url": "http://127.0.0.1:42279/custody-n2ej"
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "navigate",
+              "args": {
+                "url": "http://127.0.0.2:33881/custody-p6ad"
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "navigate",
+              "args": {
+                "url": "http://127.0.0.1:42279/custody-w4hv"
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "navigate",
+              "args": {
+                "url": "http://127.0.0.2:33881/custody-c8sy"
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "navigate",
+              "args": {
+                "url": "http://127.0.0.1:42279/consign-marlin"
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "navigate",
+              "args": {
+                "url": "http://127.0.0.2:33881/custody-h2ns"
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "navigate",
+              "args": {
+                "url": "http://127.0.0.1:42279/custody-v6pz"
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "navigate",
+              "args": {
+                "url": "http://127.0.0.2:33881/custody-j4gc"
+              },
+              "ok": false,
+              "repeated": false,
+              "error": "Not executed — The run’s work budget is exhausted — acquisition, vision, media, delegation, and ask_user tools are closed; only Run Plan bookkeeping remains. Finalize now: reply with your final answer JSON and state honestly what was and was not completed."
+            }
+          ],
+          "answerText": "## Consignment chain tracing — partial results\n\nThe run's work budget ran out before all three chains could be followed.\n\n### ✅ Consignment Falcon — complete\n- **Departed:** Valdez (leg 1: \"Consignment Falcon departed Valdez on the first leg of its custody chain.\")\n- **Seal number:** `SEAL-8123` (leg 8: \"arrived on the final leg under container seal SEAL-8123\")\n\n### ⏸️ Consignment Marlin — partially traced\n- **Departed:** Ostend (leg 1: \"Consignment Marlin departed Ostend on the first leg of its custody chain.\")\n- **Seal number:** not found — I traced legs 1–3 (Cormorant Haulage, Depot 27); legs 4–8 remain. Next leg to open: [custody leg 4](http://127.0.0.2:33881/custody-j4gc)\n\n### ❌ Consignment Ibex — not started\n- Entry point not yet opened: [Consignment Ibex](http://127.0.0.1:42279/consign-ibex)",
+          "timedOut": false
+        }
+      ]
+    }
+  ],
+  "scriptedModelProvenAbsent": true,
+  "aggregate": {
+    "scenarioCount": 3,
+    "objectiveSuccesses": 2,
+    "rawLimitFailures": 0,
+    "timedOutScenarios": 0,
+    "llmRounds": {
+      "median": 12,
+      "p95": 14
+    },
+    "attemptedTools": {
+      "median": 14,
+      "p95": 17
+    },
+    "executedTools": {
+      "median": 13,
+      "p95": 16
+    },
+    "elapsedMs": {
+      "median": 72636,
+      "p95": 118854
+    },
+    "repeatedActions": {
+      "median": 0,
+      "p95": 0
+    }
+  }
+}
