@@ -1,9 +1,10 @@
 {
-  "decidedAt": "2026-09-04T00:02:04.734Z",
+  "decidedAt": "2026-09-04T00:07:24.631Z",
   "decision": "reject",
   "sharedCorpus": {
     "baselineCommit": "2343a3cf56deb57e745cec357e446e0255e58098",
     "size": 31,
+    "corpusOfRecordSize": 32,
     "scenarioIds": [
       "direct-action-open-page",
       "direct-action-open-article",
@@ -211,6 +212,11 @@
     "comparedObservations": 93
   },
   "gates": [
+    {
+      "gate": "candidate-covers-corpus",
+      "passed": false,
+      "detail": "the candidate pool is missing 1 of 32 scenarios of record (direct-action-select-option) — recapture the candidate from the current corpus"
+    },
     {
       "gate": "no-raw-limit-error",
       "passed": true,

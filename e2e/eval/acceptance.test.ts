@@ -226,6 +226,7 @@ describe('decideRelease over pooled captures', () => {
     const decision = decide(candidatePool())
     expect(decision.decision).toBe('accept')
     expect(decision.gates.map((gate) => gate.gate)).toEqual([
+      'candidate-covers-corpus',
       'no-raw-limit-error',
       'direct-action-completion',
       'lookup-correct-or-partial',
@@ -716,6 +717,9 @@ describe('a corpus that has grown past the pinned baseline (#168)', () => {
   it('records which baseline the verdict rests on and how much corpus both sides shared', () => {
     const decision = decide(candidatePool(), baselineMissingGained())
     expect(decision.sharedCorpus.baselineCommit).toBe(OLD_COMMIT)
+    // The corpus of record rides along, so a reader can see how much of it
+    // the comparison actually covered without re-deriving it.
+    expect(decision.sharedCorpus.corpusOfRecordSize).toBe(CORPUS.length)
     // Full side populations stay on the witness; the compared population is
     // the shared corpus, three captures deep on each side.
     expect(decision.candidate.scenarioObservations).toBe(3 * CORPUS.length)
@@ -723,6 +727,21 @@ describe('a corpus that has grown past the pinned baseline (#168)', () => {
     expect(decision.candidate.comparedObservations).toBe(3 * (CORPUS.length - 1))
     expect(decision.baseline.comparedObservations).toBe(3 * (CORPUS.length - 1))
     expect(formatDecision(decision)).toContain(`shared corpus ${CORPUS.length - 1}`)
+  })
+
+  it('fails the coverage gate when it is the candidate, not the baseline, that predates a scenario', () => {
+    // The baseline may lag the corpus; the candidate may not. A pool that
+    // skipped a scenario of record cannot decide a release on it, and the
+    // gate says which id to recapture rather than shrinking in silence.
+    const behind = candidatePool()
+    for (const pass of behind) pass.scenarios = pass.scenarios.filter((entry) => entry.id !== GAINED_ID)
+    const decision = decide(behind, baselineMissingGained())
+    expect(decision.decision).toBe('reject')
+    const gate = gateOf(decision, 'candidate-covers-corpus')
+    expect(gate.passed).toBe(false)
+    expect(gate.detail).toContain(GAINED_ID)
+    // Everything comparable still decided honestly on what both sides ran.
+    expect(gateOf(decision, 'llm-rounds').passed).toBe(true)
   })
 
   it('still judges the candidate-only scenario with the absolute gates', () => {
@@ -760,16 +779,22 @@ describe('the recorded #132 pools (#134: existing-pool compatibility)', () => {
       .map((entry) => JSON.parse(readFileSync(join(dir, entry), 'utf8')) as EvalReport)
   }
 
-  it('regenerates the recorded accept from the six immutable captures, with no structural violation', () => {
+  it('regenerates every pooled gate from the six immutable captures, with no structural violation', () => {
     // The artifacts predate the corpus's expected-Effort metadata (31
     // scenarios, model-declared tiers, no select-option id) — the gate
     // must judge them from the corpus of record alone, never new
-    // telemetry, and never by mutating the captures.
+    // telemetry, and never by mutating the captures. Both sides predate
+    // #133, so the pair still decides (#168) and every pooled gate still
+    // clears; only the coverage gate objects, and it names why: this
+    // candidate never ran the scenario the corpus has since gained.
     const decision = decideRelease(recordedPool('candidate'), recordedPool('baseline'), {
       regressions: 'passed',
       decidedAt: new Date('2026-08-30T00:00:00.000Z'),
     })
-    expect(decision.decision).toBe('accept')
+    expect(decision.sharedCorpus.size).toBe(31)
+    expect(decision.sharedCorpus.corpusOfRecordSize).toBe(CORPUS.length)
+    expect(decision.gates.filter((gate) => !gate.passed).map((gate) => gate.gate)).toEqual(['candidate-covers-corpus'])
+    expect(gateOf(decision, 'candidate-covers-corpus').detail).toContain('direct-action-select-option')
     expect(decision.baseline.pooledLlmRounds).toEqual({ median: 5, p95: 9 })
     expect(decision.candidate.pooledLlmRounds).toEqual({ median: 3, p95: 7 })
     expect(decision.baseline.classMedians).toEqual({ directAction: 4, lookupClass: 5 })

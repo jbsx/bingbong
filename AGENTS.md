@@ -61,14 +61,16 @@ comparison runs on the corpus both pools cover (#168), and
 shared corpus size, and the ids each side holds alone. The new scenario is
 still judged — every absolute gate and its structural ceiling see it — it
 just cannot appear in a before/after median no baseline observed. Two
-things stay your job: add the scenario to `e2e/eval/scenarios.ts` *and* to
+thing stays your job: add the scenario to `e2e/eval/scenarios.ts` *and* to
 the `CORPUS` mirror in `e2e/eval/acceptance.test.ts` (a test pins them
-equal), and read `sharedCorpus` in the verdict — a shared corpus far below
-the corpus of record means the comparison has thinned, and the baseline
-should be recaptured from the pinned tree (`2343a3c` worktree + eval
-overlay, #130) before it is trusted for a release. A decision is refused
-outright only when the two sides share no scenario, or when their shared
-ids run in a different order.
+equal). Then recapture the candidate — the `candidate-covers-corpus` gate
+fails any candidate pool missing a scenario of record and names the ids to
+recapture, so a stale candidate cannot ride a shrinking comparison to an
+accept. The baseline is allowed to lag; recapture it from the pinned tree
+(`2343a3c` worktree + eval overlay, #130) when `sharedCorpus.size` has
+drifted far enough below `corpusOfRecordSize` that the comparison no
+longer says much. A decision is refused outright only when the two sides
+share no scenario, or when their shared ids run in a different order.
 
 ### Delegation is measured by its own probe, not by the release corpus
 

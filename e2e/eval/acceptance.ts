@@ -117,6 +117,7 @@ export type RegressionsInput = 'passed' | 'failed' | 'not-run'
 
 /** The #108 release-acceptance criteria, kebab-cased — the decision's gate ids. */
 export type GateName =
+  | 'candidate-covers-corpus'
   | 'no-raw-limit-error'
   | 'direct-action-completion'
   | 'lookup-correct-or-partial'
@@ -216,6 +217,8 @@ export interface SharedCorpus {
   baselineCommit: string
   /** How many scenarios both sides covered — the compared corpus size. */
   size: number
+  /** How many the corpus of record declares — `size` far below it means the comparison has thinned. */
+  corpusOfRecordSize: number
   /** The compared scenario ids, in baseline order. */
   scenarioIds: string[]
   /** Scenarios the candidate covers that the baseline predates — gated, never compared. */
@@ -549,17 +552,23 @@ function sharedCorpusOf(candidate: CapturePool, baseline: CapturePool): SharedCo
   return {
     baselineCommit: baseline.captures[0]!.commit,
     size: scenarioIds.length,
+    corpusOfRecordSize: evalScenarios().length,
     scenarioIds,
     candidateOnly: candidate.scenarioIds.filter((id) => !baselineIds.has(id)),
     baselineOnly: baseline.scenarioIds.filter((id) => !candidateIds.has(id)),
   }
 }
 
+/** One side's statistics over the shared corpus alone — the only population a comparison may judge (#168). */
+export interface ComparedStats {
+  pooledRounds: PooledRoundsStats
+  classMedians: ClassMedians
+  /** How many of this side's observations fell inside the shared corpus. */
+  observations: number
+}
+
 /** One side's pooled statistics restricted to the shared corpus — what the rounds gate compares. */
-function comparedStats(
-  pool: CapturePool,
-  shared: SharedCorpus,
-): { pooledRounds: PooledRoundsStats; classMedians: ClassMedians; observations: number } {
+function comparedStats(pool: CapturePool, shared: SharedCorpus): ComparedStats {
   const ids = new Set(shared.scenarioIds)
   const scenarios = pool.scenarios.filter((scenario) => ids.has(scenario.id))
   return { ...poolStatsOver(scenarios), observations: scenarios.length }
@@ -612,8 +621,8 @@ function strictlyImproves(from: number | null, to: number | null): boolean {
  * percentiles.
  */
 function llmRoundsGate(
-  candidate: ReturnType<typeof comparedStats>,
-  baseline: ReturnType<typeof comparedStats>,
+  candidate: ComparedStats,
+  baseline: ComparedStats,
   shared: SharedCorpus,
   violations: readonly StructuralViolation[],
 ): GateResult {
@@ -677,7 +686,23 @@ export function decideRelease(
   const candidateCompared = comparedStats(candidate, shared)
   const baselineCompared = comparedStats(baseline, shared)
 
+  // #168: the shared corpus keeps a decision runnable when the pinned
+  // baseline predates a scenario, but it must never quietly excuse a
+  // candidate that skipped one. The candidate side is measured against the
+  // corpus of record itself — a release is judged on today's corpus, so a
+  // capture missing an id it declares fails loudly here instead of
+  // shrinking the comparison in silence.
+  const uncovered = [...ceilings.keys()].filter((id) => !candidate.scenarioIds.includes(id))
+
   const gates: GateResult[] = [
+    {
+      gate: 'candidate-covers-corpus',
+      passed: uncovered.length === 0,
+      detail:
+        uncovered.length === 0
+          ? `the candidate pool covers all ${shared.corpusOfRecordSize} scenarios of record; ${shared.size} of them are shared with the baseline`
+          : `the candidate pool is missing ${uncovered.length} of ${shared.corpusOfRecordSize} scenarios of record (${uncovered.join(', ')}) — recapture the candidate from the current corpus`,
+    },
     {
       gate: 'no-raw-limit-error',
       passed: rawLimitScenarios.length === 0,
@@ -710,7 +735,7 @@ export function decideRelease(
     },
   ]
 
-  const witnessOf = (pool: CapturePool, compared: ReturnType<typeof comparedStats>): PoolWitness => ({
+  const witnessOf = (pool: CapturePool, compared: ComparedStats): PoolWitness => ({
     captures: pool.captures,
     routing: pool.routing,
     scenarioIds: pool.scenarioIds,
@@ -743,8 +768,10 @@ export function formatDecision(decision: ReleaseDecision): string {
   const lines = [
     `release decision: ${decision.decision.toUpperCase()} ` +
       `(candidate ${shortCommit(decision.candidate.captures[0]!.commit)} vs baseline ${shortCommit(decision.baseline.captures[0]!.commit)} — ` +
-      `${decision.candidate.captures.length} captures per side, ${decision.candidate.scenarioObservations} pooled scenarios each)`,
-    `  shared corpus ${decision.sharedCorpus.size} scenarios` +
+      `${decision.candidate.captures.length} captures per side, ` +
+      `${decision.candidate.scenarioObservations} candidate / ${decision.baseline.scenarioObservations} baseline pooled scenarios)`,
+    `  shared corpus ${decision.sharedCorpus.size} of ${decision.sharedCorpus.corpusOfRecordSize} scenarios of record, ` +
+      `${decision.candidate.comparedObservations} observations compared per side` +
       (decision.sharedCorpus.candidateOnly.length === 0
         ? ''
         : ` — candidate-only (gated, never compared): ${decision.sharedCorpus.candidateOnly.join(', ')}`) +
