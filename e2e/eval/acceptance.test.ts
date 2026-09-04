@@ -796,27 +796,31 @@ describe('the recorded #132 pools (#134: existing-pool compatibility)', () => {
   }
 
   it('regenerates every pooled gate from the six immutable captures, with no structural violation', () => {
-    // The artifacts predate the corpus's expected-Effort metadata (31
-    // scenarios, model-declared tiers, no select-option id) — the gate
-    // must judge them from the corpus of record alone, never new
-    // telemetry, and never by mutating the captures. Both sides predate
-    // #133, so the pair still decides (#168) and every pooled gate still
-    // clears; only the coverage gate objects, and it names why: this
-    // candidate never ran the scenario the corpus has since gained.
+    // The baseline artifacts predate the corpus's expected-Effort metadata
+    // (31 scenarios, model-declared tiers, no select-option id); the
+    // candidate pool was captured from the 32-scenario corpus of record
+    // (#168). The gate must judge both from the corpus of record alone,
+    // never new telemetry, and never by mutating the captures: the pair
+    // decides on the 31 scenarios both sides ran, the candidate-only id is
+    // gated but never compared, and every gate clears.
     const decision = decideRelease(recordedPool('candidate'), recordedPool('baseline'), {
       regressions: 'passed',
-      decidedAt: new Date('2026-08-30T00:00:00.000Z'),
+      decidedAt: new Date('2026-09-04T00:00:00.000Z'),
     })
+    expect(decision.decision).toBe('accept')
     expect(decision.sharedCorpus.size).toBe(31)
     expect(decision.sharedCorpus.corpusOfRecordSize).toBe(CORPUS.length)
-    expect(decision.gates.filter((gate) => !gate.passed).map((gate) => gate.gate)).toEqual(['candidate-covers-corpus'])
-    expect(gateOf(decision, 'candidate-covers-corpus').detail).toContain('direct-action-select-option')
+    expect(decision.sharedCorpus.candidateOnly).toEqual(['direct-action-select-option'])
+    expect(decision.sharedCorpus.baselineOnly).toEqual([])
     expect(decision.baseline.pooledLlmRounds).toEqual({ median: 5, p95: 9 })
-    expect(decision.candidate.pooledLlmRounds).toEqual({ median: 3, p95: 7 })
+    expect(decision.candidate.pooledLlmRounds).toEqual({ median: 4, p95: 11 })
     expect(decision.baseline.classMedians).toEqual({ directAction: 4, lookupClass: 5 })
-    expect(decision.candidate.classMedians).toEqual({ directAction: 3, lookupClass: 3 })
+    expect(decision.candidate.classMedians).toEqual({ directAction: 3, lookupClass: 4 })
+    // Whole pools on the witness; the compared population is 3 × 31 on both sides.
     expect(decision.baseline.scenarioObservations).toBe(93)
-    expect(decision.candidate.scenarioObservations).toBe(93)
+    expect(decision.candidate.scenarioObservations).toBe(96)
+    expect(decision.baseline.comparedObservations).toBe(93)
+    expect(decision.candidate.comparedObservations).toBe(93)
     const gate = gateOf(decision, 'llm-rounds')
     expect(gate.passed).toBe(true)
     expect(gate.detail).toContain('structural bounds: every observation within its corpus-declared ceiling')
