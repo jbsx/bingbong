@@ -61,7 +61,7 @@ comparison runs on the corpus both pools cover (#168), and
 shared corpus size, and the ids each side holds alone. The new scenario is
 still judged — every absolute gate and its structural ceiling see it — it
 just cannot appear in a before/after median no baseline observed. Two
-thing stays your job: add the scenario to `e2e/eval/scenarios.ts` *and* to
+things stay your job: add the scenario to `e2e/eval/scenarios.ts` *and* to
 the `CORPUS` mirror in `e2e/eval/acceptance.test.ts` (a test pins them
 equal). Then recapture the candidate — the `candidate-covers-corpus` gate
 fails any candidate pool missing a scenario of record and names the ids to
