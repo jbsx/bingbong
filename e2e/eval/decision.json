@@ -1,6 +1,6 @@
 {
-  "decidedAt": "2026-09-04T00:07:24.631Z",
-  "decision": "reject",
+  "decidedAt": "2026-09-04T12:05:45.519Z",
+  "decision": "accept",
   "sharedCorpus": {
     "baselineCommit": "2343a3cf56deb57e745cec357e446e0255e58098",
     "size": 31,
@@ -38,7 +38,9 @@
       "blocker-challenge-page",
       "unresolvable-mercury-dampeners"
     ],
-    "candidateOnly": [],
+    "candidateOnly": [
+      "direct-action-select-option"
+    ],
     "baselineOnly": []
   },
   "baseline": {
@@ -47,19 +49,22 @@
         "commit": "2343a3cf56deb57e745cec357e446e0255e58098",
         "capturedAt": "2026-08-30T10:37:45.425Z",
         "orchestratorModel": "GLM-5.3-flash",
-        "orchestratorRequests": 156
+        "orchestratorRequests": 156,
+        "reasoningEffort": "pre-166-default"
       },
       {
         "commit": "2343a3cf56deb57e745cec357e446e0255e58098",
         "capturedAt": "2026-08-30T14:50:49.840Z",
         "orchestratorModel": "GLM-5.3-flash",
-        "orchestratorRequests": 162
+        "orchestratorRequests": 162,
+        "reasoningEffort": "pre-166-default"
       },
       {
         "commit": "2343a3cf56deb57e745cec357e446e0255e58098",
         "capturedAt": "2026-08-30T15:07:21.266Z",
         "orchestratorModel": "GLM-5.3-flash",
-        "orchestratorRequests": 167
+        "orchestratorRequests": 167,
+        "reasoningEffort": "pre-166-default"
       }
     ],
     "routing": {
@@ -129,22 +134,25 @@
   "candidate": {
     "captures": [
       {
-        "commit": "1235913d900a1b7c4b611b1790c70c48abe235cf",
-        "capturedAt": "2026-08-30T15:25:21.075Z",
+        "commit": "a4f31684b0ce544694987743a2dbad005b37c666",
+        "capturedAt": "2026-09-04T11:08:45.220Z",
         "orchestratorModel": "GLM-5.3-flash",
-        "orchestratorRequests": 119
+        "orchestratorRequests": 131,
+        "reasoningEffort": "per-tier"
       },
       {
-        "commit": "1235913d900a1b7c4b611b1790c70c48abe235cf",
-        "capturedAt": "2026-08-30T15:43:20.257Z",
+        "commit": "a4f31684b0ce544694987743a2dbad005b37c666",
+        "capturedAt": "2026-09-04T11:31:25.182Z",
         "orchestratorModel": "GLM-5.3-flash",
-        "orchestratorRequests": 131
+        "orchestratorRequests": 138,
+        "reasoningEffort": "per-tier"
       },
       {
-        "commit": "1235913d900a1b7c4b611b1790c70c48abe235cf",
-        "capturedAt": "2026-08-30T15:57:10.580Z",
+        "commit": "a4f31684b0ce544694987743a2dbad005b37c666",
+        "capturedAt": "2026-09-04T11:51:37.785Z",
         "orchestratorModel": "GLM-5.3-flash",
-        "orchestratorRequests": 110
+        "orchestratorRequests": 133,
+        "reasoningEffort": "per-tier"
       }
     ],
     "routing": {
@@ -174,6 +182,7 @@
       "direct-action-open-results",
       "direct-action-click-button",
       "direct-action-check-checkbox",
+      "direct-action-select-option",
       "direct-action-click-link",
       "direct-action-type-submit",
       "direct-action-dismiss-dialog",
@@ -201,41 +210,41 @@
       "unresolvable-mercury-dampeners"
     ],
     "pooledLlmRounds": {
-      "median": 3,
-      "p95": 7
+      "median": 4,
+      "p95": 11
     },
     "classMedians": {
       "directAction": 3,
-      "lookupClass": 3
+      "lookupClass": 4
     },
-    "scenarioObservations": 93,
+    "scenarioObservations": 96,
     "comparedObservations": 93
   },
   "gates": [
     {
       "gate": "candidate-covers-corpus",
-      "passed": false,
-      "detail": "the candidate pool is missing 1 of 32 scenarios of record (direct-action-select-option) — recapture the candidate from the current corpus"
+      "passed": true,
+      "detail": "the candidate pool covers all 32 scenarios of record; 31 of them are shared with the baseline"
     },
     {
       "gate": "no-raw-limit-error",
       "passed": true,
-      "detail": "0 of 93 scenario observations across 3 captures ended with a raw round-limit error"
+      "detail": "0 of 96 scenario observations across 3 captures ended with a raw round-limit error"
     },
     {
       "gate": "direct-action-completion",
       "passed": true,
-      "detail": "32/33 (97%) of deterministic Direct Actions completed across 3 captures — needs ≥95%"
+      "detail": "35/36 (97%) of deterministic Direct Actions completed across 3 captures — needs ≥95%"
     },
     {
       "gate": "lookup-correct-or-partial",
       "passed": true,
-      "detail": "29/30 (97%) of Lookups completed correctly or resolved honest partial across 3 captures — needs ≥90%"
+      "detail": "30/30 (100%) of Lookups completed correctly or resolved honest partial across 3 captures — needs ≥90%"
     },
     {
       "gate": "llm-rounds",
       "passed": true,
-      "detail": "median 5 → 3 pooled over 93 observations per side (3 captures each over the 31-scenario shared corpus — pass percentiles are never averaged) — must not regress; Direct Action median 4 → 3 — must improve; Lookup-class median 5 → 3 — must improve; p95 9 → 7 (reported, never gated #134); structural bounds: every observation within its corpus-declared ceiling"
+      "detail": "median 5 → 4 pooled over 93 observations per side (3 captures each over the 31-scenario shared corpus — pass percentiles are never averaged) — must not regress; Direct Action median 4 → 3 — must improve; Lookup-class median 5 → 4 — must improve; p95 9 → 11 (reported, never gated #134); structural bounds: every observation within its corpus-declared ceiling"
     },
     {
       "gate": "no-action-after-runtime-refusal",
@@ -244,8 +253,8 @@
     },
     {
       "gate": "mandatory-regressions",
-      "passed": false,
-      "detail": "mandatory safety and Session regressions (pnpm test:e2e): not-run"
+      "passed": true,
+      "detail": "mandatory safety and Session regressions (pnpm test:e2e): passed"
     }
   ],
   "roundsGateContract": "#134 (maintainer-approved 2026-08-30): the global pooled median must not regress; the Direct Action and Lookup-class pooled medians must strictly improve; every candidate observation must stay within the structural ceiling its corpus-declared expected Effort Tier grants — the tier work budget plus at most one terminal bookkeeping round and one Answer round per legitimate budget epoch (each Run, and each Steering replan within one), capped by the hard Tool Round ceiling. The #128 pooled-p95-halving requirement is retired: pooled p95 is reported, never gated.",
