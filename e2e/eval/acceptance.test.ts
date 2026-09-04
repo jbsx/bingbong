@@ -756,6 +756,22 @@ describe('a corpus that has grown past the pinned baseline (#168)', () => {
     expect(gateOf(decision, 'no-raw-limit-error').detail).toContain('3 of 96')
   })
 
+  it('tolerates a baseline scenario the corpus has since dropped, names it, and never compares it', () => {
+    // The frozen baseline can lag in the other direction too: an id the
+    // corpus of record no longer declares. It has no ceiling and enters no
+    // median — it is recorded as baseline-only so the drift stays visible.
+    const retired = baselinePool()
+    for (const pass of retired) pass.scenarios.push(scenario('lookup-retired', 'lookup'))
+    const decision = decide(candidatePool(), retired)
+    expect(decision.decision).toBe('accept')
+    expect(decision.sharedCorpus.size).toBe(CORPUS.length)
+    expect(decision.sharedCorpus.baselineOnly).toEqual(['lookup-retired'])
+    expect(decision.sharedCorpus.candidateOnly).toEqual([])
+    expect(decision.baseline.scenarioObservations).toBe(3 * (CORPUS.length + 1))
+    expect(decision.baseline.comparedObservations).toBe(3 * CORPUS.length)
+    expect(formatDecision(decision)).toContain('baseline-only (dropped from the corpus): lookup-retired')
+  })
+
   it('refuses a pair whose shared scenarios run in a different order', () => {
     const reordered = baselineMissingGained()
     for (const pass of reordered) {

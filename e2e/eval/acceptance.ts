@@ -184,19 +184,27 @@ export interface ClassMedians {
   lookupClass: number | null
 }
 
+/**
+ * Nearest-rank statistics over one population of scenario observations —
+ * a whole side's pool, or the shared-corpus subset a comparison judges
+ * (#168). Pass percentiles are never averaged.
+ */
+export interface PooledStats {
+  /** Nearest-rank LLM-round stats over the population. */
+  pooledRounds: PooledRoundsStats
+  /** Nearest-rank class medians over the same population (#134). */
+  classMedians: ClassMedians
+}
+
 /** One side's validated pool: three captures of one commit, corpus, and routing contract. */
-export interface CapturePool {
+export interface CapturePool extends PooledStats {
   captures: CaptureProvenance[]
   /** The one model/routing contract every capture on this side shared. */
   routing: EvalReport['routing']
   /** The pooled scenario population — every scenario from every capture, in pass order. */
   scenarios: ScenarioResult[]
-  /** One capture's scenario ids, in order — the corpus signature both sides must share. */
+  /** One capture's scenario ids, in order — this side's corpus signature; the two sides are compared on what they share (#168). */
   scenarioIds: string[]
-  /** Nearest-rank LLM-round stats over the pooled population — pass percentiles are never averaged. */
-  pooledRounds: PooledRoundsStats
-  /** Nearest-rank class medians over the same pooled population (#134). */
-  classMedians: ClassMedians
   /** The one reasoning-effort contract every capture on this side shared (#166). */
   reasoningEffort: string
 }
@@ -416,10 +424,7 @@ function pooledMedianOfClass(scenarios: readonly ScenarioResult[], kinds: Readon
  * percentiles. The same arithmetic serves a whole side's pool and the
  * shared-corpus subset a comparison judges (#168).
  */
-function poolStatsOver(scenarios: readonly ScenarioResult[]): {
-  pooledRounds: PooledRoundsStats
-  classMedians: ClassMedians
-} {
+function poolStatsOver(scenarios: readonly ScenarioResult[]): PooledStats {
   const sorted = [...scenarios.map((scenario) => scenario.metrics.llmRounds)].sort((left, right) => left - right)
   return {
     pooledRounds: {
@@ -534,7 +539,11 @@ export function buildPool(role: string, reports: readonly EvalReport[]): Capture
  * share). A baseline that merely predates a scenario the corpus has since
  * gained still decides — over what both sides saw.
  */
-function sharedCorpusOf(candidate: CapturePool, baseline: CapturePool): SharedCorpus {
+function sharedCorpusOf(
+  candidate: CapturePool,
+  baseline: CapturePool,
+  corpusOfRecord: ReadonlyMap<string, StructuralCeiling>,
+): SharedCorpus {
   const candidateIds = new Set(candidate.scenarioIds)
   const baselineIds = new Set(baseline.scenarioIds)
   const scenarioIds = baseline.scenarioIds.filter((id) => candidateIds.has(id))
@@ -552,7 +561,7 @@ function sharedCorpusOf(candidate: CapturePool, baseline: CapturePool): SharedCo
   return {
     baselineCommit: baseline.captures[0]!.commit,
     size: scenarioIds.length,
-    corpusOfRecordSize: evalScenarios().length,
+    corpusOfRecordSize: corpusOfRecord.size,
     scenarioIds,
     candidateOnly: candidate.scenarioIds.filter((id) => !baselineIds.has(id)),
     baselineOnly: baseline.scenarioIds.filter((id) => !candidateIds.has(id)),
@@ -560,9 +569,7 @@ function sharedCorpusOf(candidate: CapturePool, baseline: CapturePool): SharedCo
 }
 
 /** One side's statistics over the shared corpus alone — the only population a comparison may judge (#168). */
-export interface ComparedStats {
-  pooledRounds: PooledRoundsStats
-  classMedians: ClassMedians
+export interface ComparedStats extends PooledStats {
   /** How many of this side's observations fell inside the shared corpus. */
   observations: number
 }
@@ -663,12 +670,15 @@ export function decideRelease(
       `baseline pool must be pinned to ${shortCommit(BASELINE_PINNED_COMMIT)} (found ${shortCommit(baseline.captures[0]!.commit)}) — capture the old path from the pinned worktree`,
     )
   }
-  const shared = sharedCorpusOf(candidate, baseline)
-  // #134: every captured scenario must be one the corpus of record
-  // defines an expected Effort Tier for — an id without a corpus
-  // declaration has no derivable ceiling, so it is broken input, not a
-  // failed gate.
   const ceilings = corpusCeilings()
+  const shared = sharedCorpusOf(candidate, baseline, ceilings)
+  // #134: every captured candidate scenario must be one the corpus of
+  // record defines an expected Effort Tier for — an id without a corpus
+  // declaration has no derivable ceiling, so it is broken input, not a
+  // failed gate. The baseline side is deliberately exempt (#168): it is a
+  // frozen capture, so an id the corpus has since dropped may still sit in
+  // it; such an id is listed as `baselineOnly`, never compared, and needs
+  // no ceiling because ceilings only ever judge the candidate.
   const outsideCorpus = candidate.scenarioIds.find((id) => !ceilings.has(id))
   if (outsideCorpus !== undefined) {
     throw new Error(

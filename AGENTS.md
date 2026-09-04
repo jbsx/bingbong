@@ -82,7 +82,9 @@ ids against a baseline pinned to the pre-#114 tree, which has no Effort Tier
 and so no #120 delegation gate, so a delegation scenario cannot live in the
 corpus of record without invalidating three captured baseline passes to
 measure something the baseline cannot do. `pnpm eval:accept` refuses any
-pool carrying an id `e2e/eval/scenarios.ts` does not declare.
+candidate pool carrying an id `e2e/eval/scenarios.ts` does not declare; a
+baseline id the corpus has since dropped is tolerated, listed as
+`baselineOnly`, and never compared (#168).
 
 Each pass writes its own artifact
 (`BINGBONG_DELEGATION_REPORT=e2e/eval/delegation/pass-<n>.json`);
