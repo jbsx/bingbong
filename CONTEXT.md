@@ -445,6 +445,24 @@ the Brief after the Answer is delivered; a malformed or out-of-tier Brief is
 dropped and the Card stands.
 _Avoid_: exhibit spec, render request
 
+**Exhibit Shape**:
+The closed vocabulary an Exhibit Brief must name to opt into an Exhibit:
+Comparison (Candidates set against the same attributes), Structure
+(relationships, hierarchy, or a branching flow), Timeline (ordered events
+whose spacing carries meaning), or Quantities (numbers across items that want
+a chart). Naming a shape is the opt-in; a Brief that names none carries no
+Exhibit. The test behind every shape is that the Card cannot carry it.
+_Avoid_: visual type, chart kind, exhibit category
+
+**Exhibit Gate**:
+The mechanical check the app runs on an Exhibit Brief before anything is
+rendered: the Run's Effort Tier is Investigation, its Run Resolution is
+completed or partial, and the Answer cites at least three distinct Session
+Evidence Observations. A Brief that fails it is dropped and the Card stands.
+The Gate is the app's judgement; whether the visual is warranted stays the
+model's.
+_Avoid_: exhibit validation, tier check
+
 **Feed Panel**:
 The activity panel over the browser pane. Three states: Overlay, Docked,
 Collapsed. A View Preference, resizable.
