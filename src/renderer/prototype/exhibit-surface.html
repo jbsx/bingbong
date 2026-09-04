@@ -1,0 +1,568 @@
+<!doctype html>
+<!--
+  PROTOTYPE — throwaway. Wayfinder ticket #173 "Prototype: where the Exhibit renders" (map #169).
+
+  Question: where does an Exhibit sit on the dashboard? Four structurally different
+  placements on one mock 1280×800 dashboard, switchable with ?variant=A|B|C|D (or ← →),
+  crossed with the Feed Panel state (?panel=overlay|docked|collapsed) and the Exhibit's
+  phase (?phase=layout|ready|dismissed|nextrun). Double-click to open; nothing persists.
+
+  The chrome imitates src/renderer/src/styles.css + overlay.css (same tokens, same
+  geometry: overlay panel floats at the right, docked takes layout space, collapsed is an
+  edge tab or the Peek Card bottom-center). The Exhibit content and its sheet come from
+  docs/research/exhibit-stub.html on branch research/exhibit-bundle. Mermaid is loaded
+  from a CDN here only because this is a prototype; the app bundles it (#171).
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Exhibit Surface Prototype</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" />
+<style>
+  /* ===== Tokens: copied from styles.css (ADR 0012 light, ADR 0020 dark) ===== */
+  :root {
+    color-scheme: light;
+    --bg: #f5f5f7; --panel: #ffffff;
+    --panel-overlay: rgba(255,255,255,0.97); --panel-peek: rgba(255,255,255,0.92);
+    --edge: #d2d2d7; --bubble: #e9e9ee; --text: #1d1d1f; --muted: #6e6e73; --accent: #0071e3;
+    --status-blue: #0071e3; --status-purple: #af52de; --status-yellow: #ff9500; --status-green: #34c759; --status-red: #ff3b30;
+    --code-bg: #1d1d1f; --code-text: #f5f5f7;
+    --tint-green: color-mix(in srgb, var(--status-green) 14%, var(--panel));
+    --tint-yellow: color-mix(in srgb, var(--status-yellow) 16%, var(--panel));
+    --tint-red: color-mix(in srgb, var(--status-red) 12%, var(--panel));
+    --tint-accent: color-mix(in srgb, var(--accent) 12%, var(--panel));
+    /* the prototype's own chrome (deliberately foreign to the design under review) */
+    --proto-ink: #16161a; --proto-ink-text: #f2f2f4; --proto-mark: #ffb340;
+    --proto-ground: #e4e4e9;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      color-scheme: dark;
+      --bg: #1e1e20; --panel: #2a2a2c;
+      --panel-overlay: rgba(29,29,31,0.97); --panel-peek: rgba(42,42,44,0.92);
+      --edge: #3a3a3c; --bubble: #3a3a3f; --text: #f5f5f7; --muted: #a1a1a6; --accent: #0a84ff;
+      --status-blue: #0a84ff; --status-purple: #bf5af2; --status-yellow: #ff9f0a; --status-green: #30d158; --status-red: #ff453a;
+      --code-bg: #111113; --code-text: #f5f5f7;
+      --proto-ground: #0d0d10;
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --bg: #1e1e20; --panel: #2a2a2c;
+    --panel-overlay: rgba(29,29,31,0.97); --panel-peek: rgba(42,42,44,0.92);
+    --edge: #3a3a3c; --bubble: #3a3a3f; --text: #f5f5f7; --muted: #a1a1a6; --accent: #0a84ff;
+    --status-blue: #0a84ff; --status-purple: #bf5af2; --status-yellow: #ff9f0a; --status-green: #30d158; --status-red: #ff453a;
+    --code-bg: #111113; --code-text: #f5f5f7;
+    --proto-ground: #0d0d10;
+  }
+
+  * { box-sizing: border-box; }
+  html { font-size: 17px; }
+  body {
+    margin: 0; min-height: 100vh; background: var(--proto-ground); color: var(--text);
+    font-family: Inter, InterVariable, system-ui, sans-serif; -webkit-font-smoothing: antialiased;
+    display: flex; flex-direction: column; align-items: center; gap: 14px; padding: 18px 16px 170px;
+  }
+  @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
+
+  /* ===== The stage: a 1280×800 window, scaled to fit ===== */
+  .stage-wrap { position: relative; width: 1280px; height: 800px; transform-origin: top left; }
+  .stage {
+    position: absolute; inset: 0; width: 1280px; height: 800px; overflow: hidden;
+    background: var(--bg); color: var(--text); border-radius: 10px;
+    box-shadow: 0 30px 80px rgba(0,0,0,0.35); display: flex; flex-direction: column;
+  }
+
+  /* Toolbar (styles.css .toolbar / .status-capsule / .chrome-button) */
+  .toolbar { display: grid; grid-template-columns: minmax(0,1fr) auto minmax(0,1fr); align-items: center; gap: 12px; padding: 8px 14px; height: 52px; flex: none; }
+  .status-capsule { justify-self: start; display: flex; align-items: center; gap: 10px; padding: 7px 16px; border: 1px solid var(--edge); border-radius: 999px; background: var(--panel); box-shadow: 0 1px 3px rgba(0,0,0,0.06); font-size: 0.95rem; }
+  .status-orb { width: 10px; height: 10px; border-radius: 50%; background: var(--muted); }
+  .status-orb--speaking { background: var(--status-green); }
+  .status-orb--acting { background: var(--status-yellow); }
+  .voice-hint { color: var(--muted); font-size: 0.9rem; white-space: nowrap; }
+  .browser-nav { display: flex; align-items: center; gap: 10px; }
+  .chrome-button { width: 34px; height: 34px; border-radius: 999px; border: 0; background: transparent; color: var(--muted); font-size: 1rem; display: grid; place-items: center; }
+  .address { width: 480px; height: 36px; border: 1px solid var(--edge); border-radius: 999px; background: var(--panel); color: var(--text); font-size: 0.9rem; display: flex; align-items: center; padding: 0 16px; }
+  .toolbar-actions { justify-self: end; display: flex; gap: 8px; }
+
+  /* Workspace: the pane region + the panel slot */
+  .workspace { position: relative; flex: 1; min-height: 0; display: flex; }
+  .pane { position: relative; flex: 1; min-width: 0; height: 100%; overflow: hidden; background: #fff; }
+  .stage[data-panel="docked"] .panel-slot { flex: none; width: var(--panel-w); height: 100%; position: relative; }
+  .stage[data-panel="overlay"] .panel-slot { position: absolute; top: 0; right: 0; height: 100%; width: var(--panel-w); }
+  .stage[data-panel="collapsed"] .panel-slot--edge { position: absolute; top: 50%; right: 0; transform: translateY(-50%); width: 36px; height: 180px; }
+  .stage[data-panel="collapsed"] .panel-slot--peek { position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); width: 560px; }
+
+  /* The Feed Panel (overlay.css .feed-surface etc.) */
+  .feed-surface { display: flex; flex-direction: column; height: 100%; border: 1px solid var(--edge); border-right: 0; overflow: hidden; background: var(--panel-overlay); box-shadow: -12px 0 32px rgba(0,0,0,0.12); }
+  .stage[data-panel="docked"] .feed-surface { background: var(--panel); box-shadow: -12px 0 32px rgba(0,0,0,0.08); }
+  .feed-header { display: flex; align-items: center; justify-content: space-between; padding: 14px 18px; border-bottom: 1px solid var(--edge); }
+  .feed-header-title { font-size: 0.8rem; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); }
+  .feed-header-actions { display: flex; gap: 8px; color: var(--muted); font-size: 0.9rem; }
+  .feed-list { flex: 1; min-height: 0; overflow: auto; padding: 16px 18px; display: flex; flex-direction: column; gap: 14px; }
+  .prompt-row { display: flex; gap: 10px; padding: 12px 14px; border-top: 1px solid var(--edge); }
+  .prompt-input { flex: 1; height: 40px; border: 1px solid var(--edge); border-radius: 999px; background: var(--bg); color: var(--muted); font-size: 0.95rem; display: flex; align-items: center; padding: 0 16px; }
+  .prompt-verb { height: 40px; padding: 0 16px; border: 1px solid var(--edge); border-radius: 999px; background: var(--panel); color: var(--muted); display: grid; place-items: center; font-size: 0.9rem; }
+  .feed-edge-tab { width: 100%; height: 100%; border: 1px solid var(--edge); border-right: 0; background: var(--panel); box-shadow: -8px 0 24px rgba(0,0,0,0.1); color: var(--muted); display: grid; place-items: center; }
+  .feed-edge-tab span { writing-mode: vertical-rl; font-size: 0.85rem; font-weight: 650; text-transform: uppercase; letter-spacing: 0.08em; }
+
+  /* Feed entries (styles.css .feed-entry / .feed-card / .feed-bubble) */
+  .feed-entry { display: flex; gap: 12px; align-items: flex-start; line-height: 1.45; }
+  .feed-entry--user { justify-content: flex-end; }
+  .feed-time { flex: none; color: var(--muted); opacity: 0.7; font-size: 0.85rem; font-variant-numeric: tabular-nums; padding-top: 2px; }
+  .feed-bubble { max-width: 70%; background: var(--bubble); border-radius: 16px 16px 5px 16px; padding: 10px 16px; font-size: 1.2rem; }
+  .feed-orb { flex: none; width: 10px; height: 10px; margin-top: 10px; border-radius: 50%; background: var(--status-green); }
+  .feed-card { min-width: 0; max-width: 78%; background: var(--panel); border: 1px solid var(--edge); border-left: 4px solid var(--status-green); border-radius: 5px 16px 16px 5px; box-shadow: 0 1px 3px rgba(0,0,0,0.06); padding: 10px 16px; font-size: 1.05rem; }
+  .feed-card--wide { max-width: 100%; flex: 1; }
+  .feed-card p { margin: 0 0 6px; }
+  .feed-card p:last-child { margin-bottom: 0; }
+  .feed-run { border-left: 2px solid var(--edge); padding: 4px 0 4px 14px; margin-left: 0; color: var(--muted); font-size: 0.85rem; }
+  .feed-run-title { font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text); font-size: 0.8rem; }
+  .feed-run--live .feed-run-title { color: var(--status-yellow); }
+  .feed-run-line { font-family: ui-monospace, monospace; display: flex; gap: 10px; }
+  .feed-run-line em { color: var(--muted); }
+  .feed-typing { display: inline-flex; gap: 5px; padding: 6px 2px; vertical-align: middle; }
+  .feed-typing i { width: 6px; height: 6px; border-radius: 50%; background: var(--muted); animation: fade 1.2s ease-in-out infinite; }
+  .feed-typing i:nth-child(2) { animation-delay: .2s; } .feed-typing i:nth-child(3) { animation-delay: .4s; }
+  @keyframes fade { 0%,60%,100% { opacity: .25 } 30% { opacity: 1 } }
+
+  /* The Exhibit handle inside a Feed Entry: the re-open affordance */
+  .exhibit-handle { display: flex; align-items: center; gap: 10px; margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--edge); font-size: 0.9rem; color: var(--muted); }
+  .exhibit-handle b { color: var(--text); font-weight: 600; }
+  .exhibit-handle .go { margin-left: auto; color: var(--accent); white-space: nowrap; }
+  .exhibit-glyph { width: 18px; height: 18px; border-radius: 4px; border: 1.5px solid currentColor; display: inline-grid; place-items: center; font-size: 10px; flex: none; }
+  .exhibit-glyph--on { background: var(--accent); border-color: var(--accent); color: #fff; }
+
+  /* Peek Card (styles.css .peek-card) */
+  .peek-card { display: flex; gap: 14px; align-items: flex-start; padding: 14px 20px; border: 1px solid var(--edge); border-radius: 16px; background: var(--panel-peek); box-shadow: 0 8px 24px rgba(0,0,0,0.1); }
+  .peek-orb { width: 12px; height: 12px; margin-top: 6px; border-radius: 50%; background: var(--status-green); flex: none; }
+  .peek-card--live .peek-orb { background: var(--status-yellow); }
+  .peek-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+  .peek-command { margin: 0; font-size: 1.1rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .peek-step, .peek-sub { margin: 0; color: var(--muted); font-size: 0.9rem; }
+  .peek-text { margin: 0; font-size: 1.05rem; }
+  .peek-open-hint { color: var(--muted); font-size: 0.85rem; white-space: nowrap; margin-top: 4px; }
+
+  /* Fake web pages in the pane */
+  .page { height: 100%; overflow: hidden; background: #fbfbfc; color: #222; font-family: Georgia, 'Times New Roman', serif; padding: 34px 48px; }
+  .page-brand { font-family: Inter, system-ui, sans-serif; font-weight: 800; font-size: 20px; letter-spacing: -0.02em; color: #c0392b; }
+  .page h1 { font-size: 34px; line-height: 1.15; margin: 14px 0 6px; max-width: 32ch; }
+  .page .byline { font-family: Inter, system-ui, sans-serif; color: #777; font-size: 13px; margin-bottom: 18px; }
+  .page p { max-width: 62ch; font-size: 17px; line-height: 1.55; margin: 0 0 12px; }
+  .page .scores { display: flex; gap: 14px; margin: 18px 0 22px; font-family: Inter, system-ui, sans-serif; }
+  .page .score { width: 120px; padding: 12px; background: #fff; border: 1px solid #e3e3e3; border-radius: 6px; }
+  .page .score b { display: block; font-size: 26px; color: #1a7f4b; }
+  .page .score span { font-size: 11px; color: #888; text-transform: uppercase; letter-spacing: .06em; }
+  .page--shop { font-family: Inter, system-ui, sans-serif; }
+  .page--shop .page-brand { color: #b71c1c; }
+  .page--shop .price { font-size: 30px; font-weight: 700; margin: 8px 0; }
+  .page--shop .buy { display: inline-block; padding: 12px 26px; background: #b71c1c; color: #fff; border-radius: 4px; font-weight: 600; margin-top: 8px; }
+  .page--loading { position: absolute; inset: 0; display: grid; place-items: start; padding: 34px 48px; }
+  .page-progress { position: absolute; top: 0; left: 0; height: 3px; width: 46%; background: var(--accent); }
+
+  /* ===== Variant-specific surfaces ===== */
+  /* A: the stage — the Exhibit takes the browsing region */
+  .exhibit-stage { position: absolute; inset: 0; display: flex; flex-direction: column; background: var(--bg); }
+  .exhibit-bar { flex: none; height: 44px; display: flex; align-items: center; gap: 12px; padding: 0 16px; border-bottom: 1px solid var(--edge); background: var(--panel); font-size: 0.9rem; }
+  .exhibit-bar .title { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .exhibit-bar .meta { color: var(--muted); }
+  .exhibit-bar .close { margin-left: auto; padding: 6px 12px; border: 1px solid var(--edge); border-radius: 999px; background: var(--panel); color: var(--text); font-size: 0.85rem; }
+  .exhibit-scroll { flex: 1; min-height: 0; overflow: auto; }
+
+  /* C: the split — Exhibit column beside the page */
+  .split { position: absolute; inset: 0; display: flex; }
+  .split-exhibit { width: 50%; flex: none; display: flex; flex-direction: column; border-right: 1px solid var(--edge); background: var(--bg); }
+  .split-page { flex: 1; min-width: 0; position: relative; }
+
+  /* D: the sheet — rises from the Peek Card's position */
+  .sheet { position: absolute; left: 12px; right: 12px; bottom: 0; height: 74%; display: flex; flex-direction: column; background: var(--bg); border: 1px solid var(--edge); border-bottom: 0; border-radius: 18px 18px 0 0; box-shadow: 0 -12px 40px rgba(0,0,0,0.18); overflow: hidden; }
+  .sheet-head { flex: none; display: flex; align-items: center; gap: 12px; padding: 8px 18px 10px; background: var(--panel); border-bottom: 1px solid var(--edge); font-size: 0.9rem; position: relative; }
+  .sheet-grip { position: absolute; top: 5px; left: 50%; width: 42px; height: 4px; margin-left: -21px; border-radius: 999px; background: var(--edge); }
+  .sheet-head .title { font-weight: 600; margin-top: 8px; }
+  .sheet-head .meta { color: var(--muted); margin-top: 8px; }
+  .sheet-head .right { margin-left: auto; margin-top: 8px; display: flex; gap: 10px; align-items: center; color: var(--muted); }
+  .sheet-head .close { padding: 5px 12px; border: 1px solid var(--edge); border-radius: 999px; background: var(--panel); color: var(--text); font-size: 0.85rem; }
+  .sheet-strip { position: absolute; left: 50%; transform: translateX(-50%); bottom: 0; width: 560px; display: flex; align-items: center; gap: 12px; padding: 10px 18px 12px; background: var(--panel-peek); border: 1px solid var(--edge); border-bottom: 0; border-radius: 16px 16px 0 0; box-shadow: 0 -8px 24px rgba(0,0,0,0.12); font-size: 0.9rem; }
+  .sheet-strip .title { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .sheet-strip .go { margin-left: auto; color: var(--accent); white-space: nowrap; }
+  .sheet-strip .muted { color: var(--muted); }
+
+  /* B: inline in the Feed Entry */
+  .exhibit-inline { margin-top: 10px; border: 1px solid var(--edge); border-radius: 12px; overflow: hidden; background: var(--bg); }
+  .exhibit-inline-head { display: flex; align-items: center; gap: 10px; padding: 8px 12px; background: var(--panel); border-bottom: 1px solid var(--edge); font-size: 0.85rem; color: var(--muted); }
+  .exhibit-inline-head b { color: var(--text); font-weight: 600; }
+  .exhibit-inline-head .chev { margin-left: auto; }
+  .exhibit-inline-body { max-height: 420px; overflow: auto; }
+
+  /* laying-out skeleton */
+  .exhibit-skeleton { display: flex; align-items: center; gap: 12px; padding: 14px 16px; color: var(--muted); font-size: 0.9rem; }
+  .exhibit-skeleton .blocks { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; flex: 1; }
+  .exhibit-skeleton .blocks i { display: block; height: 14px; border-radius: 4px; background: var(--edge); opacity: .6; animation: fade 1.6s ease-in-out infinite; }
+  .exhibit-skeleton .blocks i:nth-child(2) { animation-delay: .3s; } .exhibit-skeleton .blocks i:nth-child(3) { animation-delay: .6s; } .exhibit-skeleton .blocks i:nth-child(4) { animation-delay: .9s; }
+  .exhibit-stage--layout { display: grid; place-items: center; background: color-mix(in srgb, var(--bg) 70%, transparent); }
+
+  /* ===== The Exhibit itself: exhibit.css from the research stub, scoped ===== */
+  .exhibit-frame { container-type: inline-size; height: 100%; }
+  .exhibit { color: var(--text); font-family: Inter, InterVariable, system-ui, sans-serif; line-height: 1.45; font-size: 1rem; }
+  .exhibit main { max-width: 64rem; margin: 0 auto; padding: 2rem 1.5rem 3rem; }
+  .exhibit h1, .exhibit h2, .exhibit h3 { margin: 0 0 0.4em; font-weight: 600; letter-spacing: -0.01em; line-height: 1.2; text-wrap: balance; }
+  .exhibit h1 { font-size: 1.7rem; } .exhibit h2 { font-size: 1.25rem; } .exhibit h3 { font-size: 1rem; }
+  .exhibit p { margin: 0 0 0.6em; }
+  .exhibit a { color: var(--accent); text-decoration: underline; text-underline-offset: 2px; }
+  .exhibit .stack > * + * { margin-top: 1rem; } .exhibit .stack-lg > * + * { margin-top: 2.2rem; }
+  .exhibit .row { display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center; }
+  .exhibit .cols-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+  @container (max-width: 720px) { .exhibit .cols-2 { grid-template-columns: 1fr; } .exhibit main { padding: 1.2rem 1rem 2rem; } }
+  .exhibit .grow { flex: 1; } .exhibit .muted { color: var(--muted); } .exhibit .small { font-size: 0.85rem; }
+  .exhibit .label { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); }
+  .exhibit .card { background: var(--panel); border: 1px solid var(--edge); border-radius: 12px; padding: 1rem 1.25rem; }
+  .exhibit .card--deep { border-width: 2px; border-color: var(--text); }
+  .exhibit .badge { display: inline-block; font-size: 0.72rem; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; border-radius: 999px; padding: 2px 10px; border: 1px solid var(--edge); background: var(--bg); color: var(--muted); }
+  .exhibit .badge--strong { background: var(--tint-green); color: var(--status-green); border-color: transparent; }
+  .exhibit .badge--worth { background: var(--tint-yellow); color: var(--status-yellow); border-color: transparent; }
+  .exhibit .badge--speculative { background: var(--bubble); color: var(--muted); border-color: transparent; }
+  .exhibit .callout { border-left: 3px solid var(--status-yellow); background: var(--tint-yellow); border-radius: 8px; padding: 0.5rem 0.9rem; }
+  .exhibit .files { list-style: none; margin: 0; padding: 0; font-family: ui-monospace, monospace; font-size: 0.85rem; color: var(--muted); }
+  .exhibit .wins { margin: 0; padding-left: 1.1rem; } .exhibit .wins li::marker { color: var(--status-green); }
+  .exhibit .diagram { background: var(--panel); border: 1px solid var(--edge); border-radius: 12px; padding: 0.75rem; min-height: 160px; display: grid; place-items: center; overflow: auto; }
+  .exhibit .diagram svg { max-width: 100%; height: auto; }
+  .exhibit pre.exhibit-mermaid { background: none; color: inherit; padding: 0; margin: 0; white-space: pre; font-family: ui-monospace, monospace; font-size: 0.8rem; }
+  .exhibit pre.exhibit-mermaid:not([data-processed]) { visibility: hidden; }
+  .exhibit .band { height: 3rem; border-left: 4px solid var(--edge); background: var(--bg); display: flex; align-items: center; padding-left: 0.75rem; }
+  .exhibit .band--thin { height: 1.5rem; } .exhibit .band--deep { border-left-color: var(--text); background: var(--panel); height: 6rem; }
+  .exhibit .box { border: 1px solid var(--edge); border-radius: 8px; padding: 0 6px; background: var(--panel); display: inline-block; }
+  .exhibit .box--deep { border: 2px solid var(--text); } .exhibit .seam { border-style: dashed; } .exhibit .leak { color: var(--status-red); border-color: var(--status-red); }
+  .exhibit table { width: 100%; border-collapse: collapse; background: var(--panel); border: 1px solid var(--edge); border-radius: 12px; overflow: hidden; }
+  .exhibit th, .exhibit td { text-align: left; padding: 0.55rem 0.8rem; border-bottom: 1px solid var(--edge); vertical-align: top; }
+  .exhibit th { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); font-weight: 600; background: var(--bg); cursor: pointer; user-select: none; }
+  .exhibit tr:last-child td { border-bottom: 0; }
+  .exhibit td.num, .exhibit th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  .exhibit th[aria-sort="ascending"]::after { content: " ▲"; } .exhibit th[aria-sort="descending"]::after { content: " ▼"; }
+  .exhibit .pick td { background: var(--tint-green); }
+  .exhibit .table-scroll { overflow-x: auto; }
+  .exhibit .bars { display: grid; gap: 0.4rem; }
+  .exhibit .bar-row { display: grid; grid-template-columns: 8rem 1fr 4rem; gap: 0.6rem; align-items: center; font-size: 0.85rem; }
+  .exhibit .bar { height: 0.8rem; border-radius: 999px; background: var(--edge); overflow: hidden; }
+  .exhibit .bar > i { display: block; height: 100%; background: var(--accent); border-radius: inherit; }
+  .exhibit .bar--good > i { background: var(--status-green); } .exhibit .bar--warn > i { background: var(--status-yellow); }
+  .exhibit .tabs [role="tablist"] { display: flex; gap: 0.25rem; border-bottom: 1px solid var(--edge); margin-bottom: 0.75rem; }
+  .exhibit .tabs [role="tab"] { background: none; border: 0; border-bottom: 2px solid transparent; padding: 0.4rem 0.8rem; font: inherit; color: var(--muted); cursor: pointer; }
+  .exhibit .tabs [role="tab"][aria-selected="true"] { color: var(--text); border-bottom-color: var(--accent); }
+  .exhibit .tabs [role="tabpanel"][hidden] { display: none; }
+  .exhibit details { border: 1px solid var(--edge); border-radius: 8px; padding: 0.4rem 0.8rem; background: var(--panel); }
+  .exhibit summary { cursor: pointer; font-weight: 600; }
+  #exhibit-park { position: absolute; left: -5000px; top: 0; width: 900px; }
+
+  /* ===== Prototype chrome: the switcher bar and the caption ===== */
+  .caption { width: 1280px; max-width: 100%; display: grid; grid-template-columns: 1.1fr 1fr; gap: 24px; padding: 18px 22px; background: var(--panel); color: var(--text); border: 1px solid var(--edge); border-radius: 12px; font-size: 0.92rem; line-height: 1.5; }
+  .caption h2 { margin: 0 0 6px; font-size: 1.05rem; }
+  .caption h3 { margin: 0 0 6px; font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); }
+  .caption p { margin: 0 0 8px; }
+  .caption ul { margin: 0; padding-left: 18px; } .caption li { margin-bottom: 4px; }
+  .caption .state { color: var(--muted); }
+  .proto-bar { position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%); display: flex; align-items: center; gap: 8px; padding: 8px 10px; background: var(--proto-ink); color: var(--proto-ink-text); border-radius: 999px; box-shadow: 0 10px 30px rgba(0,0,0,0.4); font-size: 13px; font-family: ui-monospace, Menlo, monospace; z-index: 50; flex-wrap: wrap; justify-content: center; max-width: calc(100vw - 24px); }
+  .proto-bar button { font: inherit; color: inherit; background: transparent; border: 1px solid rgba(255,255,255,0.18); border-radius: 999px; padding: 5px 10px; cursor: pointer; }
+  .proto-bar button:hover { background: rgba(255,255,255,0.08); }
+  .proto-bar button:focus-visible { outline: 2px solid var(--proto-mark); outline-offset: 1px; }
+  .proto-bar button[aria-pressed="true"] { background: var(--proto-mark); color: var(--proto-ink); border-color: var(--proto-mark); font-weight: 700; }
+  .proto-bar .variant-label { min-width: 240px; text-align: center; color: var(--proto-mark); font-weight: 700; }
+  .proto-bar .group { display: flex; gap: 4px; align-items: center; padding-left: 8px; margin-left: 4px; border-left: 1px solid rgba(255,255,255,0.15); }
+  .proto-bar .group span { opacity: .55; margin-right: 2px; }
+</style>
+</head>
+<body>
+
+<div class="stage-wrap" id="stage-wrap"><div class="stage" id="stage"></div></div>
+<section class="caption" id="caption"></section>
+
+<nav class="proto-bar" id="bar" aria-label="Prototype controls">
+  <button id="prev" aria-label="Previous variant">←</button>
+  <span class="variant-label" id="variant-label"></span>
+  <button id="next" aria-label="Next variant">→</button>
+  <div class="group" data-key="panel"><span>panel</span>
+    <button data-val="overlay">overlay</button><button data-val="docked">docked</button><button data-val="collapsed">collapsed</button>
+  </div>
+  <div class="group" data-key="phase"><span>phase</span>
+    <button data-val="layout">laying out</button><button data-val="ready">ready</button><button data-val="dismissed">dismissed</button><button data-val="nextrun">next run</button>
+  </div>
+  <div class="group" data-key="theme"><span>theme</span>
+    <button data-val="light">light</button><button data-val="dark">dark</button>
+  </div>
+</nav>
+
+<!-- The one Exhibit instance: rendered once, then moved into whichever slot the variant uses -->
+<div id="exhibit-park"><div class="exhibit-frame" id="exhibit-frame"><div class="exhibit" id="exhibit">
+<main class="stack-lg">
+  <header class="stack">
+    <p class="label">Investigation · 3 sources · 21:26</p>
+    <h1>Which 27-inch panel replaces the couch TV</h1>
+    <div class="row small muted">
+      <span><span class="box">solid</span> candidate</span>
+      <span><span class="box seam">dashed</span> trade-off</span>
+      <span class="leak">red = deal-breaker</span>
+      <span><span class="box box--deep">thick</span> pick</span>
+    </div>
+  </header>
+  <article class="card card--deep stack">
+    <div class="row"><h2 class="grow">Pick: the LG 27GR93U</h2><span class="badge badge--strong">Strong</span><span class="badge">in stock</span></div>
+    <ul class="files"><li>rtings.com/monitor/reviews/lg/27gr93u-b</li><li>displayninja.com/lg-27gr93u-review</li><li>bhphotovideo.com — $499</li></ul>
+    <div class="cols-2">
+      <div class="stack"><p class="label">Before: the couch TV</p><div class="diagram"><pre class="exhibit-mermaid">
+flowchart LR
+  TV[42in 1080p TV] -->|HDMI 1.4| Box[Set-top box]
+  TV -.-> Lag[60 ms input lag]
+  TV -.-> Glare[glossy panel]
+  classDef leak stroke:#ff3b30,stroke-width:2px;
+  class Lag,Glare leak
+</pre></div></div>
+      <div class="stack"><p class="label">After: one desk panel</p><div class="diagram"><pre class="exhibit-mermaid">
+flowchart LR
+  M[27in 4K 144 Hz] -->|DP 1.4| PC[Desk PC]
+  M -->|HDMI 2.1| Box[Set-top box]
+  M -->|USB-C 90 W| Laptop
+</pre></div></div>
+    </div>
+    <p><strong>Problem.</strong> The TV's input lag and glare make it a poor desk display.</p>
+    <p><strong>Solution.</strong> One 4K 144 Hz IPS panel with HDMI 2.1 for the box and DisplayPort for the PC.</p>
+    <ul class="wins"><li>Input lag 60 ms → 4 ms</li><li>Matte panel, no glare</li><li>One cable to the laptop</li></ul>
+    <p class="callout small">Price watch: $549 two weeks ago; today's $499 is the lowest in 90 days.</p>
+  </article>
+  <section class="stack"><h2>Shortlist</h2><div class="table-scroll">
+    <table data-sortable><thead><tr><th>Model</th><th>Panel</th><th class="num">Refresh</th><th class="num">Input lag</th><th class="num">Price</th><th>Verdict</th></tr></thead>
+    <tbody>
+      <tr class="pick"><td>LG 27GR93U</td><td>IPS 4K</td><td class="num">144 Hz</td><td class="num">4 ms</td><td class="num">$499</td><td><span class="badge badge--strong">Strong</span></td></tr>
+      <tr><td>Dell G2724D</td><td>IPS 1440p</td><td class="num">165 Hz</td><td class="num">3 ms</td><td class="num">$279</td><td><span class="badge badge--worth">Worth it</span></td></tr>
+      <tr><td>Samsung Odyssey G7</td><td>VA 1440p</td><td class="num">240 Hz</td><td class="num">5 ms</td><td class="num">$449</td><td><span class="badge badge--speculative">Curved</span></td></tr>
+      <tr><td>ASUS PG27AQDM</td><td>OLED 1440p</td><td class="num">240 Hz</td><td class="num">1 ms</td><td class="num">$899</td><td><span class="leak small">over budget</span></td></tr>
+    </tbody></table></div>
+  </section>
+  <section class="stack"><h2>Price against the $600 budget</h2><div class="bars card">
+    <div class="bar-row"><span>LG 27GR93U</span><div class="bar bar--good"><i style="width:83%"></i></div><span class="num">$499</span></div>
+    <div class="bar-row"><span>Dell G2724D</span><div class="bar bar--good"><i style="width:46%"></i></div><span class="num">$279</span></div>
+    <div class="bar-row"><span>Odyssey G7</span><div class="bar"><i style="width:75%"></i></div><span class="num">$449</span></div>
+    <div class="bar-row"><span>PG27AQDM</span><div class="bar bar--warn"><i style="width:100%"></i></div><span class="num">$899</span></div>
+  </div></section>
+  <section class="tabs card">
+    <div role="tablist"><button role="tab" aria-selected="true">Sources</button><button role="tab">Cross-section</button><button role="tab">Notes</button></div>
+    <div role="tabpanel"><ul class="files"><li><a href="#" onclick="return false">rtings.com — LG 27GR93U review</a></li><li><a href="#" onclick="return false">displayninja.com — review</a></li></ul></div>
+    <div role="tabpanel" hidden><div class="stack"><div class="band band--thin"><span class="label">HDMI 1.4 · 30 Hz at 4K</span></div><div class="band band--thin leak"><span class="label">TV scaler · +40 ms</span></div><div class="band band--deep"><span class="label">DP 1.4 · 4K 144 Hz · 4 ms</span></div></div></div>
+    <div role="tabpanel" hidden><details><summary>Why not OLED</summary><p class="small">Burn-in on static desk UI; $899 is $299 over the budget you gave.</p></details></div>
+  </section>
+</main>
+</div></div></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mermaid/11.12.0/mermaid.min.js"></script>
+<script>
+(() => {
+  // ---------- state, from the URL ----------
+  const VARIANTS = ['A','B','C','D']
+  const NAMES = { A: 'Stage over the pane', B: 'Inline in the Feed Entry', C: 'Split beside the page', D: 'Sheet from the Peek Card' }
+  const PANELS = ['overlay','docked','collapsed'], PHASES = ['layout','ready','dismissed','nextrun']
+  const q = new URLSearchParams(location.search)
+  const pick = (k, list, d) => list.includes(q.get(k)) ? q.get(k) : d
+  const state = { variant: pick('variant', VARIANTS, 'A'), panel: pick('panel', PANELS, 'overlay'), phase: pick('phase', PHASES, 'ready'), theme: pick('theme', ['light','dark','system'], 'system') }
+  const PANEL_W = { overlay: 520, docked: 680 }
+  const TITLE = 'Which 27-inch panel replaces the couch TV'
+
+  const exhibitFrame = document.getElementById('exhibit-frame')
+  const park = document.getElementById('exhibit-park')
+
+  // ---------- shared pieces ----------
+  const typing = () => `<span class="feed-typing"><i></i><i></i><i></i></span>`
+  const glyph = (on) => `<span class="exhibit-glyph${on ? ' exhibit-glyph--on' : ''}">◈</span>`
+  const skeleton = () => `<div class="exhibit-skeleton">${typing()}<span>laying out the exhibit…</span><div class="blocks"><i></i><i></i><i></i><i></i></div></div>`
+
+  const reviewPage = () => `<div class="page">
+    <div class="page-brand">RTINGS.com</div>
+    <h1>LG 27GR93U-B Monitor Review</h1>
+    <div class="byline">Tested with the latest firmware · Updated Aug 2026</div>
+    <div class="scores"><div class="score"><b>8.4</b><span>PC gaming</span></div><div class="score"><b>7.9</b><span>Office</span></div><div class="score"><b>8.1</b><span>Console</span></div><div class="score"><b>6.8</b><span>Media</span></div></div>
+    <p>The LG 27GR93U-B is a 27-inch 4k gaming monitor with a 144Hz refresh rate. It's a step up from the 27GP950-B, trading the local dimming for a brighter panel and a full HDMI 2.1 bandwidth on both ports.</p>
+    <p>Input lag is excellent at 4.1 ms at the native refresh rate, and the matte coating handles a bright room well, though reflections are still visible against dark content.</p>
+    <p>It has a USB-C port with 90 W of power delivery, so a laptop can run off a single cable alongside a desktop on DisplayPort.</p></div>`
+
+  const shopPage = (loading) => `<div class="page page--shop">
+    <div class="page-brand">B&amp;H Photo Video</div>
+    <h1>LG UltraGear 27GR93U-B 27" 4K HDR 144 Hz Gaming Monitor</h1>
+    <div class="byline">B&amp;H # LG27GR93UB · MFR # 27GR93U-B</div>
+    <div class="price">$499.00 <span style="font-size:14px;color:#777;font-weight:400">was $549.00</span></div>
+    <p>In stock · Free expedited shipping</p><span class="buy">Add to cart</span>
+    ${loading ? '<div class="page-progress"></div>' : ''}</div>`
+
+  const pagePlain = () => state.phase === 'nextrun' ? shopPage(true) : reviewPage()
+  const address = () => state.phase === 'nextrun' ? 'https://www.bhphotovideo.com/c/product/LG27GR93UB' : 'https://www.rtings.com/monitor/reviews/lg/27gr93u-b'
+
+  // Exhibit bar shared by A and C (a chrome strip main paints; not part of the model's HTML)
+  const exhibitBar = (extra = '') => `<div class="exhibit-bar">${glyph(true)}<span class="title">${TITLE}</span><span class="meta">3 sources</span>${extra}<button class="close">✕ back to the page</button></div>`
+
+  // ---------- the Feed Panel ----------
+  function answerCard(handle) {
+    return `<div class="feed-entry"><span class="feed-time">21:26:07</span><span class="feed-orb"></span><div class="feed-card${state.variant === 'B' ? ' feed-card--wide' : ''}">
+      <p><strong>LG 27GR93U</strong> at $499 — 4K 144 Hz IPS, HDMI 2.1 for the set-top box, one USB-C cable to the laptop. The Dell G2724D is the budget pick at $279.</p>${handle}</div></div>`
+  }
+  function runDetail(live, n) {
+    return `<div class="feed-run${live ? ' feed-run--live' : ''}"><div class="feed-run-title">${live ? 'working' : 'run detail'} <span style="font-weight:400;opacity:.6">${n}</span></div>
+      <div class="feed-run-line"><span>21:26:0${live ? 9 : 1}</span><em>thinking</em></div>
+      <div class="feed-run-line"><span>21:26:0${live ? 9 : 2}</span><span>→ ${live ? 'https://www.bhphotovideo.com/…' : 'https://www.rtings.com/…'}</span></div>
+      ${live ? '' : '<div class="feed-run-line"><span>21:26:04</span><em>2 subagents · rtings, displayninja</em></div><div class="feed-run-line"><span>21:26:07</span><em>speaking</em></div>'}</div>`
+  }
+  function feedEntries() {
+    const v = state.variant, ph = state.phase
+    let handle = ''
+    if (v === 'A' || v === 'C' || v === 'D') {
+      const where = v === 'A' ? 'over the page' : v === 'C' ? 'beside the page' : 'below'
+      handle = ph === 'layout' ? `<div class="exhibit-handle">${typing()}<span>laying out the exhibit…</span></div>`
+        : ph === 'ready' ? `<div class="exhibit-handle">${glyph(true)}<b>Exhibit</b><span>showing ${where}</span><span class="go">hide</span></div>`
+        : `<div class="exhibit-handle">${glyph(false)}<b>Exhibit</b><span>${TITLE}</span><span class="go">show ▸</span></div>`
+    } else {
+      handle = ph === 'layout' ? `<div class="exhibit-inline">${skeleton()}</div>`
+        : ph === 'ready' ? `<div class="exhibit-inline"><div class="exhibit-inline-head">${glyph(true)}<b>Exhibit</b><span>3 sources</span><span class="chev">▾ collapse</span></div><div class="exhibit-inline-body" data-exhibit-slot></div></div>`
+        : `<div class="exhibit-inline"><div class="exhibit-inline-head">${glyph(false)}<b>Exhibit</b><span>${TITLE}</span><span class="chev">▸ expand</span></div></div>`
+    }
+    const next = ph === 'nextrun' ? `<div class="feed-entry feed-entry--user"><span class="feed-bubble">ok open the LG on b and h</span><span class="feed-time">21:26:09</span></div>${runDetail(true, 3)}` : ''
+    return `<div class="feed-entry feed-entry--user"><span class="feed-bubble">which 27 inch monitor should replace the tv on the couch, under 600</span><span class="feed-time">21:26:01</span></div>
+      ${runDetail(false, 14)}${answerCard(handle)}${next}`
+  }
+  function feedPanel() {
+    return `<div class="feed-surface"><div class="feed-header"><span class="feed-header-title">Activity</span><span class="feed-header-actions"><span>⇥</span><span>›</span></span></div>
+      <div class="feed-list" id="feed-list">${feedEntries()}</div>
+      <div class="prompt-row"><span class="prompt-input">${state.phase === 'nextrun' ? 'steer the run…' : 'say or type a command…'}</span><span class="prompt-verb">${state.phase === 'nextrun' ? 'steer' : 'run'}</span></div></div>`
+  }
+
+  // ---------- the Peek Card (collapsed panel) ----------
+  function peekCard() {
+    const v = state.variant, ph = state.phase
+    if (ph === 'nextrun') return `<div class="peek-card peek-card--live"><span class="peek-orb"></span><div class="peek-body"><p class="peek-command">Opening the LG 27GR93U on B&amp;H</p><p class="peek-step">navigating</p></div><span class="peek-open-hint">open ▸</span></div>`
+    const sub = v === 'B'
+      ? (ph === 'layout' ? `<p class="peek-sub">${typing()} laying out an exhibit — open the panel to see it</p>` : ph === 'ready' ? `<p class="peek-sub">${glyph(true)} exhibit ready — open the panel to see it</p>` : `<p class="peek-sub">${glyph(false)} exhibit collapsed in the feed</p>`)
+      : (ph === 'layout' ? `<p class="peek-sub">${typing()} laying out the exhibit…</p>` : ph === 'ready' ? `<p class="peek-sub">${glyph(true)} exhibit showing · say “close that”</p>` : `<p class="peek-sub">${glyph(false)} exhibit hidden · say “show it again”</p>`)
+    return `<div class="peek-card peek-card--answer"><span class="peek-orb"></span><div class="peek-body"><p class="peek-text"><strong>LG 27GR93U</strong> at $499 — 4K 144 Hz IPS, HDMI 2.1 for the box. Dell G2724D is the budget pick at $279.</p>${sub}</div><span class="peek-open-hint">open ▸</span></div>`
+  }
+
+  // ---------- the pane region, per variant ----------
+  function paneA() {
+    if (state.phase === 'ready') return `${reviewPage()}<div class="exhibit-stage">${exhibitBar()}<div class="exhibit-scroll" data-exhibit-slot></div></div>`
+    if (state.phase === 'layout') return `${reviewPage()}<div class="exhibit-stage exhibit-stage--layout"><div style="width:420px;background:var(--panel);border:1px solid var(--edge);border-radius:14px;box-shadow:0 8px 24px rgba(0,0,0,.12)">${skeleton()}</div></div>`
+    return pagePlain()
+  }
+  function paneB() { return pagePlain() }
+  function paneC() {
+    if (state.phase === 'ready' || state.phase === 'nextrun') return `<div class="split"><div class="split-exhibit">${exhibitBar()}<div class="exhibit-scroll" data-exhibit-slot></div></div><div class="split-page">${pagePlain()}</div></div>`
+    if (state.phase === 'layout') return `${reviewPage()}<div class="split" style="pointer-events:none"><div class="split-exhibit" style="background:color-mix(in srgb,var(--bg) 92%,transparent)">${skeleton()}</div></div>`
+    return pagePlain()
+  }
+  function paneD() {
+    const strip = (label, go) => `<div class="sheet-strip">${glyph(state.phase === 'layout')}<span class="title">${TITLE}</span><span class="muted">${label}</span><span class="go">${go}</span></div>`
+    if (state.phase === 'ready') {
+      const peekInHead = state.panel === 'collapsed' ? `<span class="right"><span>open activity ▸</span><button class="close">✕</button></span>` : `<span class="right"><button class="close">✕</button></span>`
+      return `${reviewPage()}<div class="sheet"><div class="sheet-head"><span class="sheet-grip"></span>${glyph(true)}<span class="title">${TITLE}</span><span class="meta">3 sources</span>${peekInHead}</div><div class="exhibit-scroll" data-exhibit-slot></div></div>`
+    }
+    if (state.phase === 'layout') return `${reviewPage()}${strip('laying out…', '')}`
+    if (state.phase === 'dismissed') return `${reviewPage()}${strip('', 'show ▴')}`
+    return `${shopPage(true)}${strip('', 'show ▴')}`
+  }
+
+  // ---------- assemble the stage ----------
+  function render() {
+    const s = document.getElementById('stage')
+    const v = state.variant
+    s.dataset.variant = v; s.dataset.panel = state.panel; s.dataset.phase = state.phase
+    s.style.setProperty('--panel-w', `${PANEL_W[state.panel] ?? 0}px`)
+    const pane = { A: paneA, B: paneB, C: paneC, D: paneD }[v]()
+    // Collapsed: the edge tab, or the Peek Card while an Answer/live Run has one to show.
+    // Variant D absorbs the Peek Card into the sheet's head while the sheet is up.
+    let slot = ''
+    if (state.panel === 'collapsed') {
+      const sheetUp = v === 'D' && state.phase === 'ready'
+      slot = sheetUp ? `<div class="panel-slot panel-slot--edge"><div class="feed-edge-tab"><span>activity</span></div></div>` : `<div class="panel-slot panel-slot--peek">${peekCard()}</div>`
+    } else slot = `<div class="panel-slot">${feedPanel()}</div>`
+    const status = state.phase === 'nextrun' ? ['acting', 'acting · 0:04'] : state.phase === 'layout' ? ['speaking', 'speaking'] : ['', 'idle']
+    s.innerHTML = `<header class="toolbar"><div class="status-capsule"><span class="status-orb ${status[0] ? 'status-orb--' + status[0] : ''}"></span><span>${status[1]}</span><span class="voice-hint">say “bing bong” or press Ctrl+Space</span></div>
+      <div class="browser-nav"><span class="chrome-button">←</span><span class="chrome-button">→</span><span class="address">${address()}</span></div>
+      <div class="toolbar-actions"><span class="chrome-button">▤</span><span class="chrome-button">⚙</span></div></header>
+      <main class="workspace"><div class="pane">${pane}</div>${slot}</main>`
+    const dest = s.querySelector('[data-exhibit-slot]')
+    ;(dest ?? park).appendChild(exhibitFrame)
+    if (dest) dest.scrollTop = 0
+    const list = document.getElementById('feed-list'); if (list) list.scrollTop = list.scrollHeight
+    renderCaption(); renderBar()
+    const u = new URL(location.href); for (const k of ['variant','panel','phase']) u.searchParams.set(k, state[k]); if (state.theme !== 'system') u.searchParams.set('theme', state.theme); else u.searchParams.delete('theme'); history.replaceState(null, '', u)
+  }
+
+  // ---------- captions: what to react to ----------
+  const CAPTIONS = {
+    A: { what: `The Exhibit takes the whole browsing region, like a page would. A chrome strip main paints on top names it and closes it; the page it covers is untouched beneath. The Feed Entry keeps a one-line handle to re-open it.`,
+         look: [`Overlay panel covers the Exhibit's right 40% exactly as it covers a page — and hides the close button with it. Acceptable, or does the Exhibit deserve the panel auto-collapsing?`, `Collapsed is the widest view; the Peek Card floats over the Exhibit's bottom edge.`, `Laying out: the page dims under a small card so the swap-in is expected, not a surprise.`, `Next run: the live Run's navigation takes the region back and the Exhibit steps aside — should it, or should the Run wait behind it?`] },
+    B: { what: `The Exhibit renders inside its Answer's Feed Entry, at the panel's width — no new surface, the Feed is the record and the re-open handle is the entry itself. Collapse chevron in its header; a container query folds the diagram pair to one column below 720 px.`,
+         look: [`Overlay at 520 px: the comparison table scrolls sideways and the diagrams stack; Docked at 680 px is better but still one column.`, `Collapsed: the Exhibit is invisible until the panel is opened, and voice never opens the panel (ADR 0021) — the hands-free case has no Exhibit at all.`, `Next run: the entry scrolls up under the new Run's lines like any other Feed Entry.`, `Nothing covers the page; the Exhibit is part of the conversation, not a view.`] },
+    C: { what: `The browsing region splits once, on arrival: the Exhibit takes the left half, the live page keeps the right. The split persists across Runs — the next Run drives the page beside the Exhibit — until the close in the Exhibit's strip widens the page back.`,
+         look: [`This is a real reflow of the pane (ADR 0004 forbids per-Run reflow; this is per-Exhibit — once). Does that read as a new layout or as a broken one?`, `Overlay: the panel covers the page half, leaving the Exhibit fully visible — the reverse of A.`, `Docked: three columns at 340 / 340 / 680 — is anything readable?`, `Next run: coexistence is the whole point — the shortlist stays while the shop page loads beside it.`] },
+    D: { what: `The Exhibit rises as a sheet from where the Peek Card lives: bottom-anchored, the page peeking above, a grip and close in its head. Dismissed or displaced by a Run, it drops to a strip at the bottom edge that stays as the re-open handle on the pane itself, not only in the Feed.`,
+         look: [`Collapsed: the sheet absorbs the Peek Card — the Answer's one visible surface (ADR 0026) is the sheet's head; the edge tab returns on the right.`, `Laying out: the strip appears first, so the sheet's arrival has a place to come from.`, `Next run: the sheet minimises to the strip and the page is free; the strip survives the Run.`, `Sheet width follows the uncovered pane in Overlay and Docked; the panel never covers it.`] },
+  }
+  function renderCaption() {
+    const c = CAPTIONS[state.variant]
+    document.getElementById('caption').innerHTML = `<div><h2>${state.variant} · ${NAMES[state.variant]}</h2><p>${c.what}</p><p class="state">Showing: panel <b>${state.panel}</b>, phase <b>${({layout:'laying out',ready:'ready',dismissed:'dismissed',nextrun:'next Run live'})[state.phase]}</b>. Flip every panel × phase pair before judging.</p></div>
+      <div><h3>React to</h3><ul>${c.look.map((l) => `<li>${l}</li>`).join('')}</ul></div>`
+  }
+  function renderBar() {
+    document.getElementById('variant-label').textContent = `${state.variant} · ${NAMES[state.variant]}`
+    for (const g of document.querySelectorAll('.proto-bar .group')) for (const b of g.querySelectorAll('button')) b.setAttribute('aria-pressed', String(state[g.dataset.key] === b.dataset.val))
+  }
+  function applyTheme() {
+    if (state.theme === 'system') delete document.documentElement.dataset.theme
+    else document.documentElement.dataset.theme = state.theme
+    renderDiagrams()
+  }
+
+  // ---------- controls ----------
+  const step = (d) => { state.variant = VARIANTS[(VARIANTS.indexOf(state.variant) + d + VARIANTS.length) % VARIANTS.length]; render() }
+  document.getElementById('prev').addEventListener('click', () => step(-1))
+  document.getElementById('next').addEventListener('click', () => step(1))
+  for (const g of document.querySelectorAll('.proto-bar .group')) for (const b of g.querySelectorAll('button')) b.addEventListener('click', () => {
+    const k = g.dataset.key
+    state[k] = k === 'theme' && state[k] === b.dataset.val ? 'system' : b.dataset.val
+    if (k === 'theme') applyTheme(); render()
+  })
+  addEventListener('keydown', (e) => {
+    if (e.target.closest('input,textarea,[contenteditable]')) return
+    if (e.key === 'ArrowLeft') step(-1); if (e.key === 'ArrowRight') step(1)
+  })
+  // Clicks inside the mock cycle the obvious things: close → dismissed, show → ready, chevron toggles.
+  document.getElementById('stage').addEventListener('click', (e) => {
+    if (e.target.closest('.close')) { state.phase = 'dismissed'; render(); return }
+    if (e.target.closest('.exhibit-handle .go, .sheet-strip .go, .exhibit-inline-head .chev')) { state.phase = state.phase === 'ready' ? 'dismissed' : 'ready'; render(); return }
+    if (e.target.closest('.feed-edge-tab, .peek-card')) { state.panel = 'overlay'; render(); return }
+    const tab = e.target.closest('.exhibit [role="tab"]')
+    if (tab) { const tabs = tab.closest('.tabs'); const bs = [...tabs.querySelectorAll('[role="tab"]')], ps = [...tabs.querySelectorAll('[role="tabpanel"]')]; const i = bs.indexOf(tab); bs.forEach((b, j) => b.setAttribute('aria-selected', String(i === j))); ps.forEach((p, j) => (p.hidden = i !== j)) }
+    const th = e.target.closest('.exhibit table[data-sortable] thead th')
+    if (th) { const table = th.closest('table'), ths = [...table.querySelectorAll('thead th')], col = ths.indexOf(th), asc = th.getAttribute('aria-sort') !== 'ascending'; ths.forEach((h) => h.removeAttribute('aria-sort')); th.setAttribute('aria-sort', asc ? 'ascending' : 'descending'); const body = table.tBodies[0]; const key = (r) => { const t = r.cells[col]?.textContent.trim() ?? ''; const n = parseFloat(t.replace(/[^0-9.-]/g, '')); return Number.isFinite(n) && /\d/.test(t) ? n : t.toLowerCase() }; [...body.rows].sort((a, b) => { const ka = key(a), kb = key(b); const c = typeof ka === 'number' && typeof kb === 'number' ? ka - kb : String(ka).localeCompare(String(kb)); return asc ? c : -c }).forEach((r) => body.appendChild(r)) }
+  })
+
+  // ---------- scale the 1280×800 stage to the viewport ----------
+  function fit() {
+    const w = Math.max(320, innerWidth - 32), scale = Math.min(1, w / 1280)
+    const wrap = document.getElementById('stage-wrap')
+    wrap.style.transform = `scale(${scale})`; wrap.style.marginBottom = `${-(800 - 800 * scale)}px`; wrap.style.marginRight = `${-(1280 - 1280 * scale)}px`
+    document.getElementById('caption').style.width = `${1280 * scale}px`
+  }
+  addEventListener('resize', fit)
+
+  // ---------- Mermaid: rendered once into the parked Exhibit, re-rendered on theme change ----------
+  const cssVar = (n) => getComputedStyle(document.documentElement).getPropertyValue(n).trim()
+  async function renderDiagrams() {
+    if (typeof mermaid === 'undefined') return
+    const dark = document.documentElement.dataset.theme === 'dark' || (!document.documentElement.dataset.theme && matchMedia('(prefers-color-scheme: dark)').matches)
+    const nodes = [...document.querySelectorAll('pre.exhibit-mermaid')]
+    for (const n of nodes) { if (!n.dataset.src) n.dataset.src = n.textContent; n.removeAttribute('data-processed'); n.textContent = n.dataset.src }
+    mermaid.initialize({ startOnLoad: false, securityLevel: 'strict', theme: 'base', themeVariables: { darkMode: dark, background: cssVar('--panel'), primaryColor: cssVar('--bg'), primaryTextColor: cssVar('--text'), primaryBorderColor: cssVar('--edge'), secondaryColor: cssVar('--bubble'), tertiaryColor: cssVar('--panel'), lineColor: cssVar('--muted'), textColor: cssVar('--text'), fontFamily: 'Inter, system-ui, sans-serif', fontSize: '15px' }, flowchart: { htmlLabels: false, curve: 'basis' } })
+    try { await mermaid.run({ nodes }) } catch (e) { console.warn('mermaid', e) }
+  }
+  matchMedia('(prefers-color-scheme: dark)').addEventListener('change', renderDiagrams)
+
+  applyTheme(); fit(); render()
+})()
+</script>
+</body>
+</html>
