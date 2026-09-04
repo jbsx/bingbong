@@ -18,9 +18,16 @@ import { pooledEffortContract } from './modelWitness.ts'
 // bounded candidate against a lucky baseline. Each pool is validated for
 // provenance before it can produce a decision: one source commit per side
 // (the baseline side pinned to the pre-#114 tree, git 2343a3c, captured
-// via worktree + eval overlay), identical scenario ids in identical order,
-// one model/routing contract, and the real-model witness on every capture;
-// the candidate pool must all represent one candidate commit.
+// via worktree + eval overlay), identical scenario ids in identical order
+// within a side, one model/routing contract, and the real-model witness on
+// every capture; the candidate pool must all represent one candidate
+// commit. Across the two sides the comparison runs on the corpus both
+// pools cover (#168) — the pinned baseline cannot grow new scenarios, so
+// demanding identical corpora made the gate unrunnable the moment
+// scenarios.ts gained an id. Candidate-only scenarios still face every
+// absolute gate and their structural ceilings; only the before/after
+// medians are restricted to the shared corpus, and the decision artifact
+// records exactly which scenarios that was.
 //
 // Pooled statistics are computed from the raw per-scenario round counts —
 // nearest-rank over the pooled scenario population (93 observations at
@@ -193,6 +200,30 @@ export interface CapturePool {
   reasoningEffort: string
 }
 
+/**
+ * The corpus both pools actually cover, in baseline order (#168). The
+ * pinned baseline predates every scenario the corpus has gained since it
+ * was captured, so demanding identical id lists made the release gate
+ * unrunnable the moment `e2e/eval/scenarios.ts` grew. A comparison is
+ * honest over the scenarios both sides observed; the candidate-only
+ * scenarios are still judged by every absolute gate and by their
+ * corpus-declared structural ceilings, they simply cannot appear in a
+ * before/after median. The artifact records the drift so a stale baseline
+ * is visible in the verdict rather than silent.
+ */
+export interface SharedCorpus {
+  /** The baseline commit this verdict rests on. */
+  baselineCommit: string
+  /** How many scenarios both sides covered — the compared corpus size. */
+  size: number
+  /** The compared scenario ids, in baseline order. */
+  scenarioIds: string[]
+  /** Scenarios the candidate covers that the baseline predates — gated, never compared. */
+  candidateOnly: string[]
+  /** Scenarios the baseline covers that the candidate no longer runs. */
+  baselineOnly: string[]
+}
+
 /** The per-side summary the decision artifact records — everything validation judged. */
 export interface PoolWitness {
   captures: CaptureProvenance[]
@@ -200,16 +231,21 @@ export interface PoolWitness {
   routing: EvalReport['routing']
   /** The corpus signature — one capture's scenario ids, in order. */
   scenarioIds: string[]
+  /** Pooled rounds over the shared corpus — the population the rounds gate compared (#168). */
   pooledLlmRounds: PooledRoundsStats
-  /** The class pooled medians the rounds gate judged (#134). */
+  /** The class pooled medians the rounds gate judged, over the same shared corpus (#134). */
   classMedians: ClassMedians
-  /** The pooled scenario population the statistics judged (93 at corpus weight). */
+  /** This side's whole pooled scenario population, shared corpus or not. */
   scenarioObservations: number
+  /** The shared-corpus subset the statistics above were computed from (#168). */
+  comparedObservations: number
 }
 
 export interface ReleaseDecision {
   decidedAt: string
   decision: 'accept' | 'reject'
+  /** Which baseline the verdict rests on, and the corpus both sides shared (#168). */
+  sharedCorpus: SharedCorpus
   baseline: PoolWitness
   candidate: PoolWitness
   gates: GateResult[]
@@ -372,6 +408,29 @@ function pooledMedianOfClass(scenarios: readonly ScenarioResult[], kinds: Readon
 }
 
 /**
+ * Nearest-rank pooled statistics over one population of scenario
+ * observations — the raw round counts, never an average of pass
+ * percentiles. The same arithmetic serves a whole side's pool and the
+ * shared-corpus subset a comparison judges (#168).
+ */
+function poolStatsOver(scenarios: readonly ScenarioResult[]): {
+  pooledRounds: PooledRoundsStats
+  classMedians: ClassMedians
+} {
+  const sorted = [...scenarios.map((scenario) => scenario.metrics.llmRounds)].sort((left, right) => left - right)
+  return {
+    pooledRounds: {
+      median: nearestRankPercentile(sorted, 50),
+      p95: nearestRankPercentile(sorted, 95),
+    },
+    classMedians: {
+      directAction: pooledMedianOfClass(scenarios, DIRECT_ACTION_KINDS),
+      lookupClass: pooledMedianOfClass(scenarios, LOOKUP_KINDS),
+    },
+  }
+}
+
+/**
  * The real-model witness every capture must carry (#109): the usage-ledger
  * proof that the resolved model — not any scripted double — served the
  * rounds. `scriptedModelProvenAbsent` is the frozen proof; the witness
@@ -448,7 +507,6 @@ export function buildPool(role: string, reports: readonly EvalReport[]): Capture
   })
 
   const scenarios = reports.flatMap((report) => report.scenarios)
-  const sortedRounds = [...scenarios.map((scenario) => scenario.metrics.llmRounds)].sort((left, right) => left - right)
   return {
     captures: reports.map((report) => ({
       commit: report.gitCommit,
@@ -461,15 +519,50 @@ export function buildPool(role: string, reports: readonly EvalReport[]): Capture
     reasoningEffort: effortContracts[0]!,
     scenarios,
     scenarioIds: referenceIds,
-    pooledRounds: {
-      median: nearestRankPercentile(sortedRounds, 50),
-      p95: nearestRankPercentile(sortedRounds, 95),
-    },
-    classMedians: {
-      directAction: pooledMedianOfClass(scenarios, DIRECT_ACTION_KINDS),
-      lookupClass: pooledMedianOfClass(scenarios, LOOKUP_KINDS),
-    },
+    ...poolStatsOver(scenarios),
   }
+}
+
+/**
+ * The corpus both sides observed, in baseline order (#168). Refuses only
+ * what a comparison genuinely cannot survive: no overlap at all, or shared
+ * scenarios that run in a different relative order on the two sides (which
+ * means the pools are not the same corpus lineage, whatever ids they
+ * share). A baseline that merely predates a scenario the corpus has since
+ * gained still decides — over what both sides saw.
+ */
+function sharedCorpusOf(candidate: CapturePool, baseline: CapturePool): SharedCorpus {
+  const candidateIds = new Set(candidate.scenarioIds)
+  const baselineIds = new Set(baseline.scenarioIds)
+  const scenarioIds = baseline.scenarioIds.filter((id) => candidateIds.has(id))
+  const inCandidateOrder = candidate.scenarioIds.filter((id) => baselineIds.has(id))
+  if (scenarioIds.length === 0) {
+    throw new Error(
+      'candidate and baseline pools share no scenarios — a comparison needs a corpus both sides observed',
+    )
+  }
+  if (scenarioIds.join('\n') !== inCandidateOrder.join('\n')) {
+    throw new Error(
+      'the shared scenarios appear in a different order on the two sides — the pools are not the same corpus lineage',
+    )
+  }
+  return {
+    baselineCommit: baseline.captures[0]!.commit,
+    size: scenarioIds.length,
+    scenarioIds,
+    candidateOnly: candidate.scenarioIds.filter((id) => !baselineIds.has(id)),
+    baselineOnly: baseline.scenarioIds.filter((id) => !candidateIds.has(id)),
+  }
+}
+
+/** One side's pooled statistics restricted to the shared corpus — what the rounds gate compares. */
+function comparedStats(
+  pool: CapturePool,
+  shared: SharedCorpus,
+): { pooledRounds: PooledRoundsStats; classMedians: ClassMedians; observations: number } {
+  const ids = new Set(shared.scenarioIds)
+  const scenarios = pool.scenarios.filter((scenario) => ids.has(scenario.id))
+  return { ...poolStatsOver(scenarios), observations: scenarios.length }
 }
 
 /**
@@ -518,7 +611,12 @@ function strictlyImproves(from: number | null, to: number | null): boolean {
  * nearest-rank over the raw pooled round counts, never averages of pass
  * percentiles.
  */
-function llmRoundsGate(candidate: CapturePool, baseline: CapturePool, violations: readonly StructuralViolation[]): GateResult {
+function llmRoundsGate(
+  candidate: ReturnType<typeof comparedStats>,
+  baseline: ReturnType<typeof comparedStats>,
+  shared: SharedCorpus,
+  violations: readonly StructuralViolation[],
+): GateResult {
   const globalOk = candidate.pooledRounds.median <= baseline.pooledRounds.median
   const directActionOk = strictlyImproves(baseline.classMedians.directAction, candidate.classMedians.directAction)
   const lookupClassOk = strictlyImproves(baseline.classMedians.lookupClass, candidate.classMedians.lookupClass)
@@ -528,8 +626,8 @@ function llmRoundsGate(candidate: CapturePool, baseline: CapturePool, violations
     gate: 'llm-rounds',
     passed: globalOk && directActionOk && lookupClassOk && violations.length === 0,
     detail:
-      `median ${baseline.pooledRounds.median} → ${candidate.pooledRounds.median} pooled over ${candidate.scenarios.length} observations per side ` +
-      `(${POOL_SIZE} captures each — pass percentiles are never averaged) — must not regress` +
+      `median ${baseline.pooledRounds.median} → ${candidate.pooledRounds.median} pooled over ${candidate.observations} observations per side ` +
+      `(${POOL_SIZE} captures each over the ${shared.size}-scenario shared corpus — pass percentiles are never averaged) — must not regress` +
       classLine('Direct Action', baseline.classMedians.directAction, candidate.classMedians.directAction) +
       classLine('Lookup-class', baseline.classMedians.lookupClass, candidate.classMedians.lookupClass) +
       `; p95 ${baseline.pooledRounds.p95} → ${candidate.pooledRounds.p95} (reported, never gated #134); ` +
@@ -556,9 +654,7 @@ export function decideRelease(
       `baseline pool must be pinned to ${shortCommit(BASELINE_PINNED_COMMIT)} (found ${shortCommit(baseline.captures[0]!.commit)}) — capture the old path from the pinned worktree`,
     )
   }
-  if (candidate.scenarioIds.join('\n') !== baseline.scenarioIds.join('\n')) {
-    throw new Error('candidate and baseline pools cover different corpora — the comparison needs the same scenarios in the same order')
-  }
+  const shared = sharedCorpusOf(candidate, baseline)
   // #134: every captured scenario must be one the corpus of record
   // defines an expected Effort Tier for — an id without a corpus
   // declaration has no derivable ceiling, so it is broken input, not a
@@ -578,6 +674,8 @@ export function decideRelease(
   const lookupAccepted = lookups.filter(lookupAcceptable)
   const violations = refusalViolations(candidateReports)
   const structural = structuralViolations(candidateReports, ceilings)
+  const candidateCompared = comparedStats(candidate, shared)
+  const baselineCompared = comparedStats(baseline, shared)
 
   const gates: GateResult[] = [
     {
@@ -596,7 +694,7 @@ export function decideRelease(
       passed: lookups.length > 0 && lookupAccepted.length / lookups.length >= LOOKUP_CORRECT_OR_PARTIAL_MIN,
       detail: `${rate(lookupAccepted.length, lookups.length)} of Lookups completed correctly or resolved honest partial across ${candidate.captures.length} captures — needs ≥90%`,
     },
-    llmRoundsGate(candidate, baseline, structural),
+    llmRoundsGate(candidateCompared, baselineCompared, shared, structural),
     {
       gate: 'no-action-after-runtime-refusal',
       passed: violations.length === 0,
@@ -612,20 +710,22 @@ export function decideRelease(
     },
   ]
 
-  const witnessOf = (pool: CapturePool): PoolWitness => ({
+  const witnessOf = (pool: CapturePool, compared: ReturnType<typeof comparedStats>): PoolWitness => ({
     captures: pool.captures,
     routing: pool.routing,
     scenarioIds: pool.scenarioIds,
-    pooledLlmRounds: pool.pooledRounds,
-    classMedians: pool.classMedians,
+    pooledLlmRounds: compared.pooledRounds,
+    classMedians: compared.classMedians,
     scenarioObservations: pool.scenarios.length,
+    comparedObservations: compared.observations,
   })
 
   return {
     decidedAt: (input.decidedAt ?? new Date()).toISOString(),
     decision: gates.every((gate) => gate.passed) ? 'accept' : 'reject',
-    baseline: witnessOf(baseline),
-    candidate: witnessOf(candidate),
+    sharedCorpus: shared,
+    baseline: witnessOf(baseline, baselineCompared),
+    candidate: witnessOf(candidate, candidateCompared),
     gates,
     roundsGateContract:
       '#134 (maintainer-approved 2026-08-30): the global pooled median must not regress; the Direct Action and Lookup-class pooled medians must strictly improve; ' +
@@ -644,6 +744,13 @@ export function formatDecision(decision: ReleaseDecision): string {
     `release decision: ${decision.decision.toUpperCase()} ` +
       `(candidate ${shortCommit(decision.candidate.captures[0]!.commit)} vs baseline ${shortCommit(decision.baseline.captures[0]!.commit)} — ` +
       `${decision.candidate.captures.length} captures per side, ${decision.candidate.scenarioObservations} pooled scenarios each)`,
+    `  shared corpus ${decision.sharedCorpus.size} scenarios` +
+      (decision.sharedCorpus.candidateOnly.length === 0
+        ? ''
+        : ` — candidate-only (gated, never compared): ${decision.sharedCorpus.candidateOnly.join(', ')}`) +
+      (decision.sharedCorpus.baselineOnly.length === 0
+        ? ''
+        : ` — baseline-only (dropped from the corpus): ${decision.sharedCorpus.baselineOnly.join(', ')}`),
   ]
   for (const gate of decision.gates) lines.push(`  ${gate.passed ? 'PASS' : 'FAIL'} ${gate.gate} — ${gate.detail}`)
   lines.push(`  canaries: ${decision.canaries.status} — ${decision.canaries.note}`)

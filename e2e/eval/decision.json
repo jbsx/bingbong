@@ -1,6 +1,45 @@
 {
-  "decidedAt": "2026-08-30T17:41:50.304Z",
-  "decision": "accept",
+  "decidedAt": "2026-09-04T00:02:04.734Z",
+  "decision": "reject",
+  "sharedCorpus": {
+    "baselineCommit": "2343a3cf56deb57e745cec357e446e0255e58098",
+    "size": 31,
+    "scenarioIds": [
+      "direct-action-open-page",
+      "direct-action-open-article",
+      "direct-action-open-alt-host",
+      "direct-action-open-results",
+      "direct-action-click-button",
+      "direct-action-check-checkbox",
+      "direct-action-click-link",
+      "direct-action-type-submit",
+      "direct-action-dismiss-dialog",
+      "direct-action-scroll-down",
+      "direct-action-media-pause",
+      "unanswered-earlier-bulletin",
+      "lookup-widgets-guide",
+      "lookup-open-web-answer",
+      "lookup-open-web-review",
+      "lookup-known-page-weight",
+      "lookup-known-page-care",
+      "lookup-depot-bulletin",
+      "candidate-polished-widgets",
+      "candidate-vintage-synonym",
+      "candidate-anodized-synonym",
+      "candidate-search-polished",
+      "investigation-material-finish",
+      "contradiction-widget-weight",
+      "subagent-widget-facts",
+      "steering-correct-objective",
+      "cancelled-warranty-reuse",
+      "stale-status-board",
+      "near-identical-depot-bulletins",
+      "blocker-challenge-page",
+      "unresolvable-mercury-dampeners"
+    ],
+    "candidateOnly": [],
+    "baselineOnly": []
+  },
   "baseline": {
     "captures": [
       {
@@ -83,7 +122,8 @@
       "directAction": 4,
       "lookupClass": 5
     },
-    "scenarioObservations": 93
+    "scenarioObservations": 93,
+    "comparedObservations": 93
   },
   "candidate": {
     "captures": [
@@ -167,7 +207,8 @@
       "directAction": 3,
       "lookupClass": 3
     },
-    "scenarioObservations": 93
+    "scenarioObservations": 93,
+    "comparedObservations": 93
   },
   "gates": [
     {
@@ -188,7 +229,7 @@
     {
       "gate": "llm-rounds",
       "passed": true,
-      "detail": "median 5 → 3 pooled over 93 observations per side (3 captures each — pass percentiles are never averaged) — must not regress; Direct Action median 4 → 3 — must improve; Lookup-class median 5 → 3 — must improve; p95 9 → 7 (reported, never gated #134); structural bounds: every observation within its corpus-declared ceiling"
+      "detail": "median 5 → 3 pooled over 93 observations per side (3 captures each over the 31-scenario shared corpus — pass percentiles are never averaged) — must not regress; Direct Action median 4 → 3 — must improve; Lookup-class median 5 → 3 — must improve; p95 9 → 7 (reported, never gated #134); structural bounds: every observation within its corpus-declared ceiling"
     },
     {
       "gate": "no-action-after-runtime-refusal",
@@ -197,8 +238,8 @@
     },
     {
       "gate": "mandatory-regressions",
-      "passed": true,
-      "detail": "mandatory safety and Session regressions (pnpm test:e2e): passed"
+      "passed": false,
+      "detail": "mandatory safety and Session regressions (pnpm test:e2e): not-run"
     }
   ],
   "roundsGateContract": "#134 (maintainer-approved 2026-08-30): the global pooled median must not regress; the Direct Action and Lookup-class pooled medians must strictly improve; every candidate observation must stay within the structural ceiling its corpus-declared expected Effort Tier grants — the tier work budget plus at most one terminal bookkeeping round and one Answer round per legitimate budget epoch (each Run, and each Steering replan within one), capped by the hard Tool Round ceiling. The #128 pooled-p95-halving requirement is retired: pooled p95 is reported, never gated.",

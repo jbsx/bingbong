@@ -54,6 +54,22 @@ Lookup-class pooled medians (strict improvement), and corpus-declared
 structural ceilings per scenario (`expectedEffort` in
 `e2e/eval/scenarios.ts`); pooled p95 is reported, never gated.
 
+When the corpus gains a scenario, the pinned baseline cannot grow with it —
+it is a frozen capture of an old tree. Nothing needs re-pinning: the
+comparison runs on the corpus both pools cover (#168), and
+`decision.json`'s `sharedCorpus` records the baseline it rests on, the
+shared corpus size, and the ids each side holds alone. The new scenario is
+still judged — every absolute gate and its structural ceiling see it — it
+just cannot appear in a before/after median no baseline observed. Two
+things stay your job: add the scenario to `e2e/eval/scenarios.ts` *and* to
+the `CORPUS` mirror in `e2e/eval/acceptance.test.ts` (a test pins them
+equal), and read `sharedCorpus` in the verdict — a shared corpus far below
+the corpus of record means the comparison has thinned, and the baseline
+should be recaptured from the pinned tree (`2343a3c` worktree + eval
+overlay, #130) before it is trusted for a release. A decision is refused
+outright only when the two sides share no scenario, or when their shared
+ids run in a different order.
+
 ### Delegation is measured by its own probe, not by the release corpus
 
 `pnpm test:delegation` (Xvfb-wrapped, real model budget, opt-in) runs the

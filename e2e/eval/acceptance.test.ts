@@ -6,6 +6,7 @@ import { finalizationToolRefusal } from '../../src/core/pipeline/effortEpoch'
 import {
   buildPool,
   decideRelease,
+  formatDecision,
   isRuntimeRefusal,
   refusalViolations,
   structuralCeiling,
@@ -585,10 +586,10 @@ describe('pool provenance (#132: refusal, not judgement)', () => {
     expect(() => decide(reordered)).toThrow(/capture 2 covers a different corpus.*index 0/)
   })
 
-  it('refuses a decision over different corpora on the two sides', () => {
-    const otherCorpus = candidatePool()
-    for (const pass of otherCorpus) pass.scenarios.push(scenario('lookup-extra', 'lookup'))
-    expect(() => decide(otherCorpus)).toThrow(/candidate and baseline pools cover different corpora/)
+  it('refuses a decision when the two sides share no scenario at all (#168)', () => {
+    const disjoint = baselinePool()
+    for (const pass of disjoint) for (const entry of pass.scenarios) entry.id = `${entry.id}-old`
+    expect(() => decide(candidatePool(), disjoint)).toThrow(/share no scenarios/)
   })
 
   it('refuses pools holding scenarios the corpus of record does not define', () => {
@@ -689,6 +690,61 @@ describe('structuralViolations', () => {
 
   it('clears the whole corpus-shaped candidate pool — every observation inside its ceiling', () => {
     expect(structuralViolations(candidatePool())).toEqual([])
+  })
+})
+
+describe('a corpus that has grown past the pinned baseline (#168)', () => {
+  /** The id #133 added after the baseline pool was captured — the real drift. */
+  const GAINED_ID = 'direct-action-select-option'
+
+  /** The pinned baseline as it exists: captured before the corpus gained a scenario. */
+  function baselineMissingGained(): EvalReport[] {
+    const pool = baselinePool()
+    for (const pass of pool) pass.scenarios = pass.scenarios.filter((entry) => entry.id !== GAINED_ID)
+    return pool
+  }
+
+  it('decides on the corpus both sides share instead of refusing the pair', () => {
+    const decision = decide(candidatePool(), baselineMissingGained())
+    expect(decision.decision).toBe('accept')
+    expect(decision.sharedCorpus.size).toBe(CORPUS.length - 1)
+    expect(decision.sharedCorpus.scenarioIds).not.toContain(GAINED_ID)
+    expect(decision.sharedCorpus.candidateOnly).toEqual([GAINED_ID])
+    expect(decision.sharedCorpus.baselineOnly).toEqual([])
+  })
+
+  it('records which baseline the verdict rests on and how much corpus both sides shared', () => {
+    const decision = decide(candidatePool(), baselineMissingGained())
+    expect(decision.sharedCorpus.baselineCommit).toBe(OLD_COMMIT)
+    // Full side populations stay on the witness; the compared population is
+    // the shared corpus, three captures deep on each side.
+    expect(decision.candidate.scenarioObservations).toBe(3 * CORPUS.length)
+    expect(decision.baseline.scenarioObservations).toBe(3 * (CORPUS.length - 1))
+    expect(decision.candidate.comparedObservations).toBe(3 * (CORPUS.length - 1))
+    expect(decision.baseline.comparedObservations).toBe(3 * (CORPUS.length - 1))
+    expect(formatDecision(decision)).toContain(`shared corpus ${CORPUS.length - 1}`)
+  })
+
+  it('still judges the candidate-only scenario with the absolute gates', () => {
+    const candidate = candidatePool()
+    for (const pass of candidate) {
+      const gained = pass.scenarios.find((entry) => entry.id === GAINED_ID)!
+      gained.metrics.rawLimitFailure = 'round limit reached'
+    }
+    const decision = decide(candidate, baselineMissingGained())
+    expect(decision.decision).toBe('reject')
+    expect(gateOf(decision, 'no-raw-limit-error').passed).toBe(false)
+    expect(gateOf(decision, 'no-raw-limit-error').detail).toContain('3 of 96')
+  })
+
+  it('refuses a pair whose shared scenarios run in a different order', () => {
+    const reordered = baselineMissingGained()
+    for (const pass of reordered) {
+      const first = pass.scenarios[0]!
+      pass.scenarios[0] = pass.scenarios[1]!
+      pass.scenarios[1] = first
+    }
+    expect(() => decide(candidatePool(), reordered)).toThrow(/shared scenarios .* different order/)
   })
 })
 
