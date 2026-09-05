@@ -119,6 +119,17 @@ export interface SessionEvidenceSnapshot {
   readonly contradictions: readonly ObservationContradiction[]
 }
 
+/**
+ * How many of each form the store holds (#181): the count the Run Trace
+ * records on every store and view decision, read without freezing a whole
+ * snapshot to do it.
+ */
+export interface SessionEvidenceCounts {
+  readonly observations: number
+  readonly candidates: number
+  readonly contradictions: number
+}
+
 export interface ObservationCheckpointInput {
   readonly sourceKind: ObservationSourceKind
   readonly text: string
@@ -178,6 +189,8 @@ export interface SessionEvidenceStore {
   /** Whether the cited identities are all live Observations — the bar an Assessment must clear. */
   hasObservationSupport(ids: readonly MemoryEntryId[]): boolean
   snapshot(): SessionEvidenceSnapshot
+  /** How many of each form the store holds right now (#181) — no copy, no freeze. */
+  counts(): SessionEvidenceCounts
   /** Drops every form and refuses all further work; idempotent. */
   clear(): void
   readonly cleared: boolean
@@ -483,6 +496,13 @@ export function createSessionEvidence(deps: {
         candidates: Object.freeze(candidates.map(freezeCandidate)),
         contradictions: Object.freeze(contradictions.map((pair) => Object.freeze({ ...pair }))),
       })
+    },
+    counts() {
+      return {
+        observations: observations.length,
+        candidates: candidates.length,
+        contradictions: contradictions.length,
+      }
     },
     clear() {
       cleared = true

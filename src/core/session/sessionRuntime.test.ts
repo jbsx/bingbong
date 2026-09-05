@@ -8,7 +8,11 @@ import type {
   SubmissionId,
 } from './sessionIdentity'
 import { createSessionRuntime, parseSessionContinuityBudgets } from './sessionRuntime'
-import type { SessionContinuityBudgets } from './sessionRuntime'
+import type {
+  SessionContinuityBudgets,
+  SessionEvidenceAcceptance,
+  SessionEvidenceChange,
+} from './sessionRuntime'
 
 class DeterministicIdentities implements SessionIdentitySource {
   readonly minted: string[] = []
@@ -206,6 +210,7 @@ describe('session runtime', () => {
       endedAt: 1_050,
       acceptedRunIds: [admission.runId],
       liveRunIds: [],
+      evidence: { observations: 0, candidates: 0, contradictions: 0 },
     })
     expect(runtime.end('lapsed')).toBeNull()
     expect(runtime.state()).toEqual({
@@ -1081,5 +1086,90 @@ describe('session runtime', () => {
       { sessionId: 'session-1', generation: 0 },
       { sessionId: 'session-1', generation: 0 },
     ])
+  })
+})
+
+// The Run Trace's store records (#181): the same retained changes the
+// Evidence Browser is signalled about, carrying the detail no view is
+// given — what the store held, whether the checkpoint merged, and what it
+// contradicts — plus the final counts, read before the end clears them.
+
+describe('session evidence acceptance reporting', () => {
+  const webObservation = (text: string) => ({
+    sourceKind: 'web' as const,
+    text,
+    references: [{ url: 'https://shop.example/acme-router' }],
+  })
+
+  function acceptingRuntime() {
+    const accepted: SessionEvidenceAcceptance[] = []
+    const changes: SessionEvidenceChange[] = []
+    const runtime = createSessionRuntime({
+      clock: new FakeClock(1_000),
+      identities: new DeterministicIdentities(),
+      onEvidenceChanged: (change) => changes.push({ ...change }),
+      onEvidenceAccepted: (acceptance) => accepted.push({ ...acceptance, contradicted: [...acceptance.contradicted] }),
+    })
+    return { runtime, accepted, changes }
+  }
+
+  it('reports the store counts, the merge, and the contradictions of every retained change', () => {
+    const { runtime, accepted, changes } = acceptingRuntime()
+    const admission = runtime.accept(runtime.submit().submissionId)
+    const store = runtime.evidenceStore()!
+
+    const first = store.checkpointObservation({ ...webObservation('The Acme router costs $39.'), runId: admission.runId })!
+    // An exact duplicate merges rather than adding a second Observation.
+    store.checkpointObservation({ ...webObservation('The Acme router costs $39.'), runId: admission.runId })
+    // A grounded disagreement on the same source is retained as a contradiction.
+    store.checkpointObservation({ ...webObservation('The Acme router costs $49.'), runId: admission.runId })
+    store.addCandidate({
+      subject: 'Acme wifi router',
+      supportingObservationIds: [first.observation.id],
+      runId: admission.runId,
+    })
+    // Refused: neither the trace nor the signal ever hears about it.
+    store.checkpointObservation({ sourceKind: 'web', text: '', references: [], runId: admission.runId })
+
+    expect(accepted.map((a) => [a.change, a.entryId, a.merged, a.contradicted, a.counts])).toEqual([
+      ['observation', 'memory-1', false, [], { observations: 1, candidates: 0, contradictions: 0 }],
+      ['observation', 'memory-1', true, [], { observations: 1, candidates: 0, contradictions: 0 }],
+      ['observation', 'memory-2', false, ['memory-1'], { observations: 2, candidates: 0, contradictions: 1 }],
+      ['candidate', 'memory-3', false, [], { observations: 2, candidates: 1, contradictions: 1 }],
+    ])
+    // The trace and the broadcast see exactly the same retained changes.
+    expect(changes).toHaveLength(accepted.length)
+    for (const acceptance of accepted) {
+      expect(acceptance.sessionId).toBe('session-1')
+      expect(acceptance.generation).toBe(0)
+    }
+  })
+
+  it('carries the final evidence counts on the ended Session, read before the store is cleared', () => {
+    const { runtime } = acceptingRuntime()
+    const admission = runtime.accept(runtime.submit().submissionId)
+    const store = runtime.evidenceStore()!
+    const observation = store.checkpointObservation({
+      ...webObservation('The Acme router costs $39.'),
+      runId: admission.runId,
+    })!.observation
+    store.addCandidate({
+      subject: 'Acme wifi router',
+      supportingObservationIds: [observation.id],
+      runId: admission.runId,
+    })
+
+    const ended = runtime.end('reset')!
+
+    expect(ended.reason).toBe('reset')
+    expect(ended.evidence).toEqual({ observations: 1, candidates: 1, contradictions: 0 })
+    expect(store.cleared).toBe(true)
+  })
+
+  it('ends a Session that checkpointed nothing with zero counts', () => {
+    const { runtime } = acceptingRuntime()
+    runtime.accept(runtime.submit().submissionId)
+
+    expect(runtime.end('app_closed')!.evidence).toEqual({ observations: 0, candidates: 0, contradictions: 0 })
   })
 })

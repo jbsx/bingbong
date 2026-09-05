@@ -7,6 +7,8 @@
 // join it to Recorded History and to the eval tape.
 
 import type { ObservationProducer } from '../session/observationLedger'
+import type { SessionEvidenceCounts } from '../session/sessionEvidence'
+import type { SessionEndReason } from '../session/sessionRuntime'
 import type { RunId, SessionGeneration, SessionId } from '../session/sessionIdentity'
 
 /** The record-shape version every line carries; bump it when a field's meaning changes. */
@@ -73,7 +75,7 @@ export interface EvidenceCheckpointEvent {
 /** What a Run hands the writer: one event, stamped with the turn it happened in. */
 export type RunTraceEvent = { readonly turnId: string } & EvidenceCheckpointEvent
 
-/** One line of a trace file. */
+/** One line of a trace file written by a Run. */
 export type RunTraceRecord = RunTraceEvent &
   RunTraceIdentity & {
     readonly v: number
@@ -81,8 +83,97 @@ export type RunTraceRecord = RunTraceEvent &
     readonly at: number
   }
 
+// The store and view records (#181). A Run's checkpoint is only half the
+// question: the other half is whether the accepted checkpoint reached the
+// store, and what each view was told about it. These four kinds are
+// written main-side, outside any Run — so they name the Session rather
+// than a turn, and a pull answered with no Session names neither.
+
+/** The Session-bearing renderers evidence is answered to and broadcast at (#139). */
+export const EVIDENCE_REQUESTERS = ['dashboard', 'feed_panel'] as const
+export type EvidenceRequester = (typeof EVIDENCE_REQUESTERS)[number]
+
+/**
+ * What the store held after one retained change (#181): the counts an
+ * empty panel is diagnosed against, plus the two facts a count alone
+ * hides — whether the checkpoint merged into an existing Observation
+ * rather than adding one, and which earlier Observations it contradicts.
+ */
+export interface EvidenceAcceptedEvent {
+  readonly kind: 'evidence_accepted'
+  /** Which retained change fired it: an Observation checkpoint or a Candidate change. */
+  readonly change: 'observation' | 'candidate'
+  /** The Memory Entry the change landed on. */
+  readonly entryId: string
+  readonly counts: SessionEvidenceCounts
+  /** True when the checkpoint merged into an exact duplicate; never true for a Candidate. */
+  readonly merged: boolean
+  /** Prior Observations the accepted one mechanically contradicts (#143). */
+  readonly contradicted: readonly string[]
+}
+
+/**
+ * What main returned to one evidence pull (#181): who asked, and what
+ * they were told. `no_session` is the answer a renderer reads as an empty
+ * panel, so the record must distinguish it from a Session answered with
+ * nothing in it.
+ */
+export interface EvidenceAnsweredEvent {
+  readonly kind: 'evidence_answered'
+  readonly requester: EvidenceRequester
+  /** 'session' when a snapshot was returned, 'no_session' when the answer was null. */
+  readonly answered: 'session' | 'no_session'
+  /** The counts in the answered snapshot; absent on a `no_session` answer. */
+  readonly counts?: SessionEvidenceCounts
+}
+
+/**
+ * One change signal as it was sent (#181): the renderers alive to receive
+ * it. An empty list is a change nobody was told about — the shape of a
+ * correct store beside a stale view.
+ */
+export interface EvidenceBroadcastEvent {
+  readonly kind: 'evidence_broadcast'
+  readonly renderers: readonly EvidenceRequester[]
+}
+
+/** What the store held when the Session ended, and why it ended (#181). */
+export interface SessionEvidenceEndEvent {
+  readonly kind: 'session_evidence_end'
+  readonly counts: SessionEvidenceCounts
+  readonly reason: SessionEndReason
+}
+
+export type SessionTraceEvent =
+  | EvidenceAcceptedEvent
+  | EvidenceAnsweredEvent
+  | EvidenceBroadcastEvent
+  | SessionEvidenceEndEvent
+
+/**
+ * The Session a store-or-view record joins on. Both are absent only where
+ * there was no Session to name — an evidence pull answered `no_session`.
+ */
+export interface SessionTraceIdentity {
+  readonly sessionId?: SessionId
+  readonly generation?: SessionGeneration
+}
+
+/** What a store-or-view decision hands the writer: the event and the Session it happened in. */
+export type SessionTraceEntry = SessionTraceIdentity & SessionTraceEvent
+
+/** One line of a trace file written outside a Run. */
+export type SessionTraceRecord = SessionTraceEntry & {
+  readonly v: number
+  /** Wall-clock epoch ms when the record was written. */
+  readonly at: number
+}
+
+/** One line of a trace file, whoever wrote it. */
+export type TraceRecord = RunTraceRecord | SessionTraceRecord
+
 export interface RunTraceSink {
-  write(record: RunTraceRecord): void
+  write(record: TraceRecord): void
 }
 
 /**
@@ -114,6 +205,29 @@ export function createRunTraceWriter(deps: {
         generation: deps.identity.generation,
         ...event(),
       })
+    } catch {
+      // A failed trace must never break the decision it is recording.
+    }
+  }
+}
+
+/**
+ * What a store or view decision calls to trace itself; absent when nothing
+ * is tracing. Same guard as the Run writer: building the record happens
+ * inside it, so no diagnosis can break the decision it records.
+ */
+export type SessionTraceWriter = (entry: () => SessionTraceEntry) => void
+
+/**
+ * Binds a sink to the Session-scoped records. These are written by main —
+ * the store's own acceptance, the IPC answer, the broadcast, the end — so
+ * there is no Run identity to bind up front; each entry names the Session
+ * it saw at the moment it happened, and a pull with no Session names none.
+ */
+export function createSessionTraceWriter(deps: { sink: RunTraceSink; now(): number }): SessionTraceWriter {
+  return (entry) => {
+    try {
+      deps.sink.write({ v: RUN_TRACE_VERSION, at: deps.now(), ...entry() })
     } catch {
       // A failed trace must never break the decision it is recording.
     }

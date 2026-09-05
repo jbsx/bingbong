@@ -9,6 +9,7 @@ import type {
 import { MAX_RUN_NOTE_CHARS, type RunJournalEntry, type RunJournalSnapshot } from './runJournal'
 import {
   createSessionEvidence,
+  type SessionEvidenceCounts,
   type SessionEvidenceSnapshot,
   type SessionEvidenceStore,
 } from './sessionEvidence'
@@ -31,6 +32,7 @@ export type { RunJournalEntry, RunJournalSnapshot } from './runJournal'
 export type { MemoryEntry, MemoryPatch, WorkingMemorySnapshot } from './workingMemory'
 export type {
   SessionCandidate,
+  SessionEvidenceCounts,
   SessionEvidenceSnapshot,
   SessionEvidenceStore,
   SessionObservation,
@@ -84,6 +86,12 @@ export interface EndedSession {
   endedAt: number
   acceptedRunIds: readonly RunId[]
   liveRunIds: readonly RunId[]
+  /**
+   * What Session Evidence held at the end (#181), read before the store
+   * is cleared — `onEnded` fires after the clear, so this is the only
+   * place the final counts still exist.
+   */
+  evidence: SessionEvidenceCounts
 }
 
 export interface ExpiringSession {
@@ -108,6 +116,22 @@ export interface SessionDecision {
 export interface SessionEvidenceChange {
   sessionId: SessionId
   generation: SessionGeneration
+}
+
+/**
+ * A retained evidence change with the detail the renderers are
+ * deliberately not told (#181): what the store held afterwards, whether
+ * the checkpoint merged rather than added, and what it contradicts. The
+ * change signal stays identity-only — this rides beside it, for the Run
+ * Trace alone, and is never sent to a view.
+ */
+export interface SessionEvidenceAcceptance extends SessionEvidenceChange {
+  /** Which retained change fired it: an Observation checkpoint or a Candidate change. */
+  change: 'observation' | 'candidate'
+  entryId: MemoryEntryId
+  counts: SessionEvidenceCounts
+  merged: boolean
+  contradicted: readonly MemoryEntryId[]
 }
 
 export interface ContinuityTokenThresholds {
@@ -202,6 +226,14 @@ export function createSessionRuntime(deps: {
    * authoritative snapshot and discard foreign work.
    */
   onEvidenceChanged?: (change: SessionEvidenceChange) => void
+  /**
+   * The same retained change, with the store detail no view is given
+   * (#181): the Run Trace's record of what actually reached the store.
+   * Fired for every retained Observation or Candidate change, from the
+   * same observers as the change signal, so the trace and the broadcast
+   * can never disagree about which changes happened.
+   */
+  onEvidenceAccepted?: (acceptance: SessionEvidenceAcceptance) => void
   continuityModel?: string | (() => string)
   continuityBudgets?: Readonly<Record<string, SessionContinuityBudgets>>
   compactContinuity?: (request: ContinuityCompactionRequest) => Promise<ContinuityCompaction>
@@ -289,6 +321,8 @@ export function createSessionRuntime(deps: {
   let startedAt: number | null = null
   let acceptedRunIds: RunId[] = []
   const reportEvidence = deps.onEvidenceChanged
+  const reportAcceptance = deps.onEvidenceAccepted
+  const noEvidenceObservers = reportEvidence === undefined && reportAcceptance === undefined
   const liveRunIds = new Set<RunId>()
   const pendingSubmissionIds = new Set<SubmissionId>()
   let journal: RunJournalEntry[] = []
@@ -561,6 +595,10 @@ export function createSessionRuntime(deps: {
     deadlineAt = null
   }
 
+  /** What the live store holds, or nothing where no Session has one. */
+  const evidenceCounts = (): SessionEvidenceCounts =>
+    evidence?.counts() ?? { observations: 0, candidates: 0, contradictions: 0 }
+
   const endSession = (reason: SessionEndReason): EndedSession | null => {
     if (phase === 'absent' || sessionId === null || startedAt === null) return null
     if (reason === 'lapsed' && (phase !== 'expiring' || liveRunIds.size > 0)) return null
@@ -574,6 +612,9 @@ export function createSessionRuntime(deps: {
       endedAt: deps.clock.now(),
       acceptedRunIds: [...acceptedRunIds],
       liveRunIds: [...liveRunIds],
+      // Read before the clear below: onEnded fires after it, and these
+      // counts do not exist anywhere else by then (#181).
+      evidence: evidenceCounts(),
     }
 
     phase = 'absent'
@@ -683,12 +724,43 @@ export function createSessionRuntime(deps: {
           // (Local const so the observer closure needs no non-null claim.)
           // Candidate changes ride the same signal (#142): a creation or
           // a decision is as visible a change as an accepted Observation.
-          ...(reportEvidence !== undefined
-            ? {
-              onObservationAccepted: () => reportEvidence({ sessionId: acceptedSessionId, generation }),
-              onCandidateChanged: () => reportEvidence({ sessionId: acceptedSessionId, generation }),
-            }
-            : {}),
+          // The Run Trace rides the same observers as the change signal
+          // (#181), so the file can never record a store change no view
+          // was told about, or the reverse. The trace gets the store
+          // detail; the signal stays identity-only.
+          ...(noEvidenceObservers
+            ? {}
+            : {
+              onObservationAccepted: (result) => {
+                // Traced before the signal goes out, so the file reads in
+                // the order things happened: the store changed, then the
+                // views were told.
+                reportAcceptance?.({
+                  sessionId: acceptedSessionId,
+                  generation,
+                  change: 'observation',
+                  entryId: result.observation.id,
+                  counts: evidenceCounts(),
+                  merged: result.merged,
+                  contradicted: result.contradicts,
+                })
+                reportEvidence?.({ sessionId: acceptedSessionId, generation })
+              },
+              onCandidateChanged: (candidate) => {
+                reportAcceptance?.({
+                  sessionId: acceptedSessionId,
+                  generation,
+                  change: 'candidate',
+                  entryId: candidate.id,
+                  counts: evidenceCounts(),
+                  // A Candidate never merges and never contradicts: both
+                  // are Observation-checkpoint facts (#139, #143).
+                  merged: false,
+                  contradicted: [],
+                })
+                reportEvidence?.({ sessionId: acceptedSessionId, generation })
+              },
+            }),
         })
       }
       phase = 'active'

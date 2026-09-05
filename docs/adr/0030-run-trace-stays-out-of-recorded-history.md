@@ -32,6 +32,17 @@ Recorded History's database.
   ~5 MB roll, same 7-day purge, same swallow-every-failure rule — diagnosis
   must never become the Run's problem. Each family purges only its own prefix,
   and the perf report, which owns `perf-*.jsonl`, ignores trace files by name.
+- **Records outside a Run name the Session, not a turn.** The checkpoint
+  record is written by a Run and carries its run id and turn id. The store and
+  view records (#181) — what reached the store, what each view was answered,
+  which renderers heard a change signal, and what the store held at the end —
+  are written by main, outside any Run, so there is no run id or turn id to
+  forge. They carry the version, the write time, and the Session identity and
+  generation, which is what joins them to the checkpoint records around them.
+  A reader keys on `kind` and treats the Run fields as present only on
+  Run-written kinds. The one record that can name no Session at all is an
+  evidence pull answered `no_session` — there was none to name, and that is
+  the fact the record exists to state.
 - **Rejections are traced as fully as acceptances.** The first record kind is
   the Evidence Checkpoint attempt: the tool, the arguments verbatim, every
   retention the citation was graded against with its Producer, observation

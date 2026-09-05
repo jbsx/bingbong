@@ -2,12 +2,27 @@ import { BrowserWindow, ipcMain } from 'electron'
 import { EVIDENCE_IPC, type SessionEvidencePayload } from '../../core/session/evidenceIpcChannels'
 import { SESSION_IPC, type SessionAdoptionPayload, type SessionDecisionRequest } from '../../core/session/ipcChannels'
 import type { SessionRuntime } from '../../core/session/sessionRuntime'
+import { evidenceAnsweredEntry, evidenceRequesterOf } from '../../core/trace/evidenceStoreTrace'
+import type { SessionTraceWriter } from '../../core/trace/runTrace'
 
-const runtimes = new WeakMap<BrowserWindow, SessionRuntime>()
+/** What a window's Session-bearing pages are answered from (#181 adds the trace). */
+interface AttachedSession {
+  readonly runtime: SessionRuntime
+  /** The feed panel overlay's webContents, for telling the two requesters apart. */
+  overlayContents(): Electron.WebContents | null
+  /** The Run Trace's store-and-view writer, when anything is tracing. */
+  readonly trace?: SessionTraceWriter
+}
+
+const attached = new WeakMap<BrowserWindow, AttachedSession>()
+
+function attachedFor(event: Electron.IpcMainInvokeEvent): AttachedSession | undefined {
+  const win = BrowserWindow.fromWebContents(event.sender)
+  return win ? attached.get(win) : undefined
+}
 
 function runtimeFor(event: Electron.IpcMainInvokeEvent): SessionRuntime | undefined {
-  const win = BrowserWindow.fromWebContents(event.sender)
-  return win ? runtimes.get(win) : undefined
+  return attachedFor(event)?.runtime
 }
 
 function isSessionDecision(request: unknown): request is SessionDecisionRequest {
@@ -79,9 +94,21 @@ export function registerSessionIpc(): void {
   // The Evidence Browser's one read (#139): both Session-bearing renderers
   // pull the complete authoritative snapshot — at mount (recovery) and in
   // response to every accepted-Observation notification.
+  // Every answer is traced (#181): the file says which view asked, which
+  // Session it was answered from, and how much it was given — so a
+  // correct store beside an empty panel is diagnosable from disk without
+  // re-running the Session.
   ipcMain.handle(EVIDENCE_IPC.get, (event) => {
-    const runtime = runtimeFor(event)
-    return runtime !== undefined ? evidencePayloadOf(runtime) : null
+    const session = attachedFor(event)
+    const payload = session !== undefined ? evidencePayloadOf(session.runtime) : null
+    session?.trace?.(() => {
+      const overlay = session.overlayContents()
+      return evidenceAnsweredEntry({
+        requester: evidenceRequesterOf(event.sender.id, overlay === null || overlay.isDestroyed() ? null : overlay.id),
+        payload,
+      })
+    })
+    return payload
   })
 }
 
@@ -91,11 +118,14 @@ export function attachSessionToWindow(
   deps?: {
     /** The feed panel overlay's webContents — recovers alongside the dashboard (ADR 0017). */
     overlayContents?(): Electron.WebContents | null
+    /** The Run Trace's store-and-view writer (#181); omitted when nothing is tracing. */
+    trace?: SessionTraceWriter
   },
 ): void {
-  runtimes.set(win, runtime)
+  const overlayContents = deps?.overlayContents ?? ((): Electron.WebContents | null => null)
+  attached.set(win, { runtime, overlayContents, ...(deps?.trace !== undefined ? { trace: deps.trace } : {}) })
   attachRecovery(win.webContents, runtime)
-  const overlay = deps?.overlayContents?.()
+  const overlay = overlayContents()
   if (overlay) attachRecovery(overlay, runtime)
-  win.on('closed', () => runtimes.delete(win))
+  win.on('closed', () => attached.delete(win))
 }

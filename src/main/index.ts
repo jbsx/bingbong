@@ -49,6 +49,12 @@ import { createPerfTracer } from '../core/perf/perfTracer'
 import { browserSubspansEnabled, createBrowserSubspans } from '../core/perf/browserSubspans'
 import { createJsonlPerfSink } from './perf/jsonlPerfSink'
 import { createJsonlRunTraceSink } from './trace/jsonlRunTraceSink'
+import {
+  evidenceAcceptedEntry,
+  evidenceBroadcastEntry,
+  sessionEvidenceEndEntry,
+} from '../core/trace/evidenceStoreTrace'
+import { createSessionTraceWriter, type EvidenceRequester } from '../core/trace/runTrace'
 import { resolveVoiceConfig } from './voice/voiceConfig'
 import { createMainVoice } from './voice/createMainVoice'
 import { createLearnedTermsStore, seedLexiconSet } from './voice/learnedTermsStore'
@@ -156,6 +162,10 @@ const perfTracer = createPerfTracer({ sink: createJsonlPerfSink(logsDir) })
 // never in Recorded History — Session Evidence must not be recoverable
 // from the history database.
 const runTraceSink = createJsonlRunTraceSink(logsDir)
+// The store and view records (#181): written outside any Run — the
+// store's own acceptance, the answer to each view, the broadcast, and the
+// Session's end — so they are bound to the sink, not to a Run identity.
+const traceSession = createSessionTraceWriter({ sink: runTraceSink, now: systemClock.now })
 
 // Verbose browser sub-spans (#32), opt-in behind the established env-flag
 // pattern: one shared channel between the pipeline's tool gate (which opens
@@ -508,6 +518,10 @@ async function createWindow(): Promise<BrowserWindow> {
     },
     onEnded: (ended) => {
       lastEndedSession = ended
+      // What Session Evidence held when it ended, and why (#181): the
+      // store is already cleared, so the ended Session's own counts are
+      // the last place the answer exists.
+      traceSession(() => sessionEvidenceEndEntry(ended))
       historyStore.finishSession(ended.sessionId, ended.reason, ended.endedAt)
       // Every end reason discards Browser State through the same reusable
       // cleanup (#96); the runtime fires onEnded exactly once per Session.
@@ -528,16 +542,34 @@ async function createWindow(): Promise<BrowserWindow> {
     // overlay — with identity only; each responds by reading the complete
     // authoritative snapshot, so notifications can never diverge from it.
     onEvidenceChanged: (change) => {
-      if (win.isDestroyed()) return
-      if (!win.webContents.isDestroyed()) win.webContents.send(EVIDENCE_IPC.changed, change)
-      const overlayContents = feedPanel.contents()
-      if (overlayContents !== null && !overlayContents.isDestroyed()) overlayContents.send(EVIDENCE_IPC.changed, change)
+      // Which renderers were alive to receive it (#181): a store that
+      // changed and a view that never heard about it is the failure this
+      // record exists to name, so the list is built from the same checks
+      // that decide whether to send — and a signal into a dead window is
+      // recorded as the empty list it was, not left out of the file.
+      const reached: EvidenceRequester[] = []
+      if (!win.isDestroyed()) {
+        if (!win.webContents.isDestroyed()) {
+          win.webContents.send(EVIDENCE_IPC.changed, change)
+          reached.push('dashboard')
+        }
+        const overlayContents = feedPanel.contents()
+        if (overlayContents !== null && !overlayContents.isDestroyed()) {
+          overlayContents.send(EVIDENCE_IPC.changed, change)
+          reached.push('feed_panel')
+        }
+      }
+      traceSession(() => evidenceBroadcastEntry({ change, renderers: reached }))
     },
+    // What actually reached the store (#181): counts, the merge, and the
+    // contradictions — the detail the change signal deliberately withholds
+    // from the views, kept for diagnosis only.
+    onEvidenceAccepted: (acceptance) => traceSession(() => evidenceAcceptedEntry(acceptance)),
   })
   // Renderer session re-adoption (ADR 0017): both session-bearing pages —
   // dashboard and feed panel overlay — re-adopt the live Session on any
   // finished load, and a gone render process reloads into recovery.
-  attachSessionToWindow(win, sessionRuntime, { overlayContents: feedPanel.contents })
+  attachSessionToWindow(win, sessionRuntime, { overlayContents: feedPanel.contents, trace: traceSession })
   activeSessionRuntime = sessionRuntime
   const commandRunner = createAssistantCommandRunner({
     pipeline,

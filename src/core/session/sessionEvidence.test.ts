@@ -27,6 +27,38 @@ function webObservation(text = 'The Acme router costs $39.', runId = 'run-1' as 
   return { sourceKind: 'web' as const, text, references: [webReference], runId }
 }
 
+describe('session evidence counts', () => {
+  it('counts what the store holds, without freezing a snapshot to do it (#181)', () => {
+    const { evidence } = evidenceHarness()
+    expect(evidence.counts()).toEqual({ observations: 0, candidates: 0, contradictions: 0 })
+
+    const observation = evidence.checkpointObservation(webObservation())!.observation
+    evidence.addCandidate({
+      subject: 'Acme wifi router',
+      supportingObservationIds: [observation.id],
+      runId: 'run-1' as RunId,
+    })
+    // A grounded disagreement on the same source: retained, not overwritten.
+    evidence.checkpointObservation(webObservation('The Acme router costs $49.'))
+
+    expect(evidence.counts()).toEqual({ observations: 2, candidates: 1, contradictions: 1 })
+    expect(evidence.counts()).toEqual({
+      observations: evidence.snapshot().observations.length,
+      candidates: evidence.snapshot().candidates.length,
+      contradictions: evidence.snapshot().contradictions.length,
+    })
+  })
+
+  it('counts nothing once the store is cleared', () => {
+    const { evidence } = evidenceHarness()
+    evidence.checkpointObservation(webObservation())
+
+    evidence.clear()
+
+    expect(evidence.counts()).toEqual({ observations: 0, candidates: 0, contradictions: 0 })
+  })
+})
+
 describe('session evidence', () => {
   it('checkpoints grounded Observations with source kind, time, uncertainty, references, and provenance', () => {
     let at = 500
