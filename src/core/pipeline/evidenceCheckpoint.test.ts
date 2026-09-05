@@ -656,18 +656,24 @@ describe('evidence grading faults (#179)', () => {
       expect(findGroundingObservation([PAGE_READ, LATER_LOOK], 'https://shop.example/acme-router', undefined)).toEqual({
         ok: false,
         reason: 'excerpt_required',
-        producers: ['page read', 'look'],
+        producers: ['page_read', 'look'],
       })
       expect(findGroundingObservation([PAGE_READ, LATER_LOOK], 'https://shop.example/acme-router', 'costs $59')).toEqual({
         ok: false,
         reason: 'excerpt_unsupported',
-        producers: ['page read', 'look'],
+        producers: ['page_read', 'look'],
       })
     })
 
-    it('grounds a structured Action Outcome without an excerpt', () => {
+    it('grounds a structured Action Outcome without an excerpt, even behind a newer text record', () => {
       const outcome = webRecord({ producer: 'action_outcome', payload: { paused: true } })
       expect(findGroundingObservation([outcome], 'https://shop.example/acme-router', undefined)).toEqual({ ok: true, record: outcome })
+      // The rule is the newest record that supports the citation, not the
+      // newest record: a Look cannot shadow the outcome that grounds itself.
+      expect(findGroundingObservation([outcome, LATER_LOOK], 'https://shop.example/acme-router', undefined)).toEqual({
+        ok: true,
+        record: outcome,
+      })
     })
   })
 

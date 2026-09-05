@@ -188,7 +188,7 @@ export function findSourceObservation(
   return found
 }
 
-/** How a rejection names what it checked (#179): producer vocabulary, in prose. */
+/** The Observation Producers named in prose, for a rejection's correction (#179). */
 const PRODUCER_LABELS: Record<ObservationProducer, string> = {
   command: 'command',
   page_read: 'page read',
@@ -206,9 +206,14 @@ export type GroundingOutcome =
   | {
       readonly ok: false
       readonly reason: 'excerpt_required' | 'excerpt_unsupported'
-      /** The producers whose retention was checked, named for the correction. */
-      readonly producers: readonly string[]
+      /** The producers whose retention was checked, for the correction to name. */
+      readonly producers: readonly ObservationProducer[]
     }
+
+/** The one phrasing of "what was checked" every grading refusal shares. */
+export function producerList(producers: readonly ObservationProducer[]): string {
+  return producers.map((producer) => PRODUCER_LABELS[producer]).join(', ')
+}
 
 /**
  * The Run Observation that grounds a citation (#179): the newest retained
@@ -226,13 +231,12 @@ export function findGroundingObservation(
   excerpt: string | undefined,
 ): GroundingOutcome {
   const canonical = canonicalizeMemoryUrl(sourceUrl)
-  const producers: string[] = []
+  const producers: ObservationProducer[] = []
   let found: ObservationRecord | null = null
   for (const record of canonical === null ? [] : records) {
     if (!record.ok || record.sourceUrl === undefined) continue
     if (canonicalizeMemoryUrl(record.sourceUrl) !== canonical) continue
-    const label = PRODUCER_LABELS[record.producer]
-    if (!producers.includes(label)) producers.push(label)
+    if (!producers.includes(record.producer)) producers.push(record.producer)
     if (!excerptSupported(record, excerpt)) continue
     if (found === null || record.at >= found.at) found = record
   }
@@ -482,28 +486,26 @@ export function evaluateEvidenceCheckpoint(
         error: `no completed subagent '${citation.agentId}' with retained observations — collect its report with agent_results first, and cite a source it actually observed`,
       }
     }
-    const source = findSourceObservation(workerRecords, citation.sourceUrl)
+    // The citing model saw the worker's report, not its tool results, so
+    // an excerpt is optional here; one offered must still appear in what
+    // the worker retained — a wrong quote never grounds.
+    const grounding = findGroundingObservation(workerRecords, citation.sourceUrl, citation.excerpt)
+    if (!grounding.ok && grounding.reason === 'excerpt_unsupported') {
+      return {
+        ok: false,
+        reason: 'excerpt_unsupported',
+        error: `the excerpt does not appear in anything subagent '${citation.agentId}' retained from '${citation.sourceUrl}' — checked its ${producerList(grounding.producers)} — omit it, or copy it verbatim from the report you are citing`,
+      }
+    }
+    // No excerpt offered: the worker's freshest retention of the source
+    // grounds the citation, text or structured alike.
+    const source = grounding.ok ? grounding.record : findSourceObservation(workerRecords, citation.sourceUrl)
     if (source === null) {
       return {
         ok: false,
         reason: 'unknown_source',
         error: `subagent '${citation.agentId}' did not observe '${citation.sourceUrl}' — cite one of the evidence URLs its report's findings carry`,
       }
-    }
-    // The citing model saw the worker's report, not its tool results, so
-    // an excerpt is optional here; one offered must still appear in what
-    // the worker retained — a wrong quote never grounds.
-    let grounded = source
-    if (citation.excerpt !== undefined) {
-      const grounding = findGroundingObservation(workerRecords, citation.sourceUrl, citation.excerpt)
-      if (!grounding.ok) {
-        return {
-          ok: false,
-          reason: 'excerpt_unsupported',
-          error: `the excerpt does not appear in what subagent '${citation.agentId}' retained from '${citation.sourceUrl}' (checked its ${grounding.reason === 'unknown_source' ? 'observations' : grounding.producers.join(', ')}) — omit it, or copy it verbatim from the report you are citing`,
-        }
-      }
-      grounded = grounding.record
     }
     const canonical = canonicalizeMemoryUrl(citation.sourceUrl)!
     // The retained page title (#144): already named by the worker's own
@@ -518,8 +520,10 @@ export function evaluateEvidenceCheckpoint(
       references: [{ url: canonical, ...(title !== undefined ? { title } : {}) }],
       // Freshness judges when the evidence was truly seen (#123): the
       // worker's own observation time, not the orchestrator's commit —
-      // a report collected by a later Run stays as old as its worker.
-      observedAt: grounded.at,
+      // a report collected by a later Run stays as old as its worker. An
+      // excerpt that matches an older read behind a newer Look stamps that
+      // read: the cited fact was seen when its text was.
+      observedAt: source.at,
     })
     if (committed === null) {
       return {
@@ -532,7 +536,7 @@ export function evaluateEvidenceCheckpoint(
       ok: true,
       entryId: committed.observation.id,
       merged: committed.merged,
-      sourceObservationId: grounded.id,
+      sourceObservationId: source.id,
       sourceUrl: canonical,
       agentId: citation.agentId,
       contradicts: committed.contradicts,
@@ -548,18 +552,17 @@ export function evaluateEvidenceCheckpoint(
         error: `source '${citation.sourceUrl}' was not observed in this run — cite the URL of a page this run opened or read`,
       }
     }
-    const checked = grounding.producers.join(', ')
     if (grounding.reason === 'excerpt_required') {
       return {
         ok: false,
         reason: 'excerpt_required',
-        error: `the citation carries no excerpt, and this run retained '${citation.sourceUrl}' as text (${checked}) — copy a contiguous span verbatim from the tool result you are citing; only a structured action outcome grounds without one`,
+        error: `the citation carries no excerpt, and nothing this run retained from '${citation.sourceUrl}' grounds one without it — copy a contiguous span verbatim from the tool result you are citing; only a structured action outcome grounds excerptless`,
       }
     }
     return {
       ok: false,
       reason: 'excerpt_unsupported',
-      error: `the excerpt does not appear in anything this run retained from '${citation.sourceUrl}' — checked its ${checked} — copy it verbatim from the tool result you are citing, or cite the observation's structured outcome`,
+      error: `the excerpt does not appear in anything this run retained from '${citation.sourceUrl}' — checked its ${producerList(grounding.producers)} — copy it verbatim from the tool result you are citing, or cite the observation's structured outcome`,
     }
   }
   const source = grounding.record
