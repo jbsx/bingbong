@@ -205,9 +205,14 @@ incidental — nothing is written unless a developer asked for it.
   nothing at all (#188). What replaced it is not a smaller history: it is two
   files nobody writes unless they ask.
 - **A trace reader is a developer tool, never an in-app view.** These files are
-  read with `jq`, or one day by a script that ships beside `pnpm perf:report`.
-  Nothing in the app reads them back, and no view renders them — the property
-  that lets them hold the user's own words in the first place.
+  read with `jq`, or with the Trace UI (#189): `pnpm trace:ui`, a script beside
+  `pnpm perf:report` that serves one loopback-only page joining the perf log
+  and both traces on the ids each line carries — one timeline per turn, a lane
+  per Session for what was written outside one — and tails the logs dir. It
+  has no IPC because the files are the contract, and it is reachable from
+  nothing electron-vite bundles and nothing the Kiosk image copies. Nothing in
+  the app reads the files back, and no view renders them — the property that
+  lets them hold the user's own words in the first place.
 
 **A Session Reset still does not purge trace files**, and ADR 0030's discussion
 of that trade stands unchanged, narrowed only by the flags: the text is on disk
