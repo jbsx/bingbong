@@ -47,6 +47,8 @@ import { createPerfTracer } from '../core/perf/perfTracer'
 import { browserSubspansEnabled, createBrowserSubspans } from '../core/perf/browserSubspans'
 import { createJsonlPerfSink } from './perf/jsonlPerfSink'
 import { createJsonlRunTraceSink } from './trace/jsonlRunTraceSink'
+import { createFailureScreenshotCapture } from './trace/failureScreenshotFile'
+import { resolveRoleModels } from './agent/roleModels'
 import { createJsonlHostTraceSink } from './trace/jsonlHostTraceSink'
 import { registerDiagnosticsIpc } from './trace/registerDiagnosticsIpc'
 import { purgeLegacyTraceFiles } from './trace/purgeLegacyTraceFiles'
@@ -185,7 +187,15 @@ const traceSession =
 // publisher sees Session boundaries and download announcements as well as
 // a Run's own stream, and each record names only what its event carried.
 const tracePipelineEvent =
-  runTraceSink === null ? null : createPipelineEventTraceWriter({ sink: runTraceSink, now: systemClock.now })
+  runTraceSink === null
+    ? null
+    : createPipelineEventTraceWriter({
+        sink: runTraceSink,
+        now: systemClock.now,
+        // Which model each role runs under (#191), read as each Run Plan
+        // is published so a routing change between Runs shows in the file.
+        models: () => resolveRoleModels(currentEnv()),
+      })
 // The Host Trace writer (#184): stamps the Active Session on each record,
 // read at the moment of writing — there is no Session to bind up front.
 const traceHost =
@@ -661,7 +671,17 @@ async function createWindow(): Promise<BrowserWindow> {
     publishFeedback: (feedback) => eventPublisher.publish({ source: 'submission-feedback', feedback }),
     canPublish: () => !win.isDestroyed(),
     tracer: perfTracer,
-    ...(runTraceSink !== null ? { runTrace: runTraceSink } : {}),
+    ...(runTraceSink !== null
+      ? {
+          runTrace: runTraceSink,
+          // The failure screenshot (#191): the visible tab, beside the
+          // trace, only where there is a trace for the record to join.
+          captureFailureScreenshot: createFailureScreenshotCapture({
+            logsDir,
+            screenshot: () => controller.screenshot(),
+          }),
+        }
+      : {}),
   })
   attachAssistantToWindow(pipeline, win, commandRunner)
   win.on('close', () => sessionRuntime?.end('app_closed'))

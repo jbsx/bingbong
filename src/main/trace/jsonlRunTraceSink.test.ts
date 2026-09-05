@@ -93,6 +93,20 @@ describe('createJsonlRunTraceSink', () => {
     expect(names(dir, /^perf-.*\.jsonl$/)).toEqual([`perf-${NOW - 30 * DAY_MS}-1.jsonl`])
   })
 
+  it('purges a stale failure screenshot with its family, and keeps a fresh one (#191)', () => {
+    const stalePng = join(dir, 'run-trace-run-1-turn-old.png')
+    const freshPng = join(dir, 'run-trace-run-2-turn-new.png')
+    for (const [path, age] of [[stalePng, 8 * DAY_MS], [freshPng, DAY_MS]] as const) {
+      writeFileSync(path, Buffer.from([0x89, 0x50, 0x4e, 0x47]))
+      const seconds = (NOW - age) / 1000
+      utimesSync(path, seconds, seconds)
+    }
+
+    createJsonlRunTraceSink(dir, { now: () => NOW }).write(traceRecord('turn-a'))
+
+    expect(names(dir, /^run-trace-.*\.png$/)).toEqual(['run-trace-run-2-turn-new.png'])
+  })
+
   it('is invisible to the perf report — trace records are never collected as spans', () => {
     createJsonlRunTraceSink(dir, { now: () => NOW }).write(traceRecord('turn-a'))
     createJsonlPerfSink(dir, { now: () => NOW }).write({ turnId: 'turn-a', stage: 'llm', durMs: 5, at: NOW, t: 1 })

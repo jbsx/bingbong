@@ -15,8 +15,10 @@ import type { PipelineEvent, UnstampedEvent } from '../pipeline/events'
 import {
   RUN_TRACE_VERSION,
   TRACE_TOOL_RESULT_MAX_CHARS,
+  TRACE_WHOLE_RESULT_TOOLS,
   type PipelineEventTraceEvent,
   type PipelineEventTraceRecord,
+  type RunPlanModels,
   type RunTraceSink,
 } from './runTrace'
 
@@ -41,18 +43,24 @@ export function tracesPipelineEvent(event: { readonly type: PipelineEvent['type'
 /**
  * One event as its record body keeps it: verbatim, but for a
  * `tool_result` whose text is cut at {@link TRACE_TOOL_RESULT_MAX_CHARS}
- * with the full length beside it. A result that is not text is left
- * alone — structured results are the small ones, and rewriting a shape
- * the file is meant to record faithfully would cost more than it saves.
+ * with the full length beside it — unless the tool is a page read
+ * ({@link TRACE_WHOLE_RESULT_TOOLS}, #191), whose snapshot is kept whole
+ * because the ref the model clicked is what a post mortem reads, and it
+ * is usually past the cut. `chars` rides every text result, so a reader
+ * tells a cut record by `chars` exceeding the text it holds. A result
+ * that is not text is left alone — structured results are the small
+ * ones, and rewriting a shape the file is meant to record faithfully
+ * would cost more than it saves.
  */
 export function pipelineEventTraceBody(event: PipelineEvent, agentId?: string): PipelineEventTraceEvent {
   const stamped = agentId !== undefined ? { agentId } : {}
   if (event.type !== 'tool_result' || typeof event.result !== 'string') {
     return { kind: 'pipeline_event', event, ...stamped }
   }
+  const whole = TRACE_WHOLE_RESULT_TOOLS.has(event.name)
   return {
     kind: 'pipeline_event',
-    event: { ...event, result: event.result.slice(0, TRACE_TOOL_RESULT_MAX_CHARS) },
+    event: whole ? event : { ...event, result: event.result.slice(0, TRACE_TOOL_RESULT_MAX_CHARS) },
     chars: event.result.length,
     ...stamped,
   }
@@ -88,6 +96,13 @@ export type PipelineEventTraceWriter = (event: PipelineEvent) => void
 export function createPipelineEventTraceWriter(deps: {
   sink: RunTraceSink
   now(): number
+  /**
+   * Which model each role is routed to (#191), read as a `run_plan` is
+   * published so the record names the models the Run actually ran under
+   * — a switch between two Runs is then visible from the file alone.
+   * Absent, `run_plan` records carry no models.
+   */
+  models?(): RunPlanModels
 }): PipelineEventTraceWriter {
   return (event) => {
     try {
@@ -100,6 +115,7 @@ export function createPipelineEventTraceWriter(deps: {
         ...(event.sessionId !== undefined ? { sessionId: event.sessionId } : {}),
         ...(event.sessionGeneration !== undefined ? { generation: event.sessionGeneration } : {}),
         ...pipelineEventTraceBody(event),
+        ...(event.type === 'run_plan' && deps.models !== undefined ? { models: deps.models() } : {}),
       }
       deps.sink.write(record)
     // eslint-disable-next-line no-restricted-syntax -- a trace writer's own guard: reporting here would re-enter the write that failed

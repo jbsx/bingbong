@@ -26,7 +26,9 @@ import { readFileSync, watch, type FSWatcher } from 'node:fs'
 import { createServer, type ServerResponse } from 'node:http'
 import { fileURLToPath } from 'node:url'
 import { buildTraceTimeline } from '../src/core/trace/traceTimeline.ts'
+import { join } from 'node:path'
 import { createTraceTail, resolveTraceLogsDir } from '../src/main/trace/traceTail.ts'
+import { RUN_TRACE_SCREENSHOT_PATTERN } from '../src/main/trace/traceFiles.ts'
 
 const DEFAULT_PORT = 4189
 /** How long after the last fs event the page is told; a Run writes many lines in a burst. */
@@ -147,10 +149,34 @@ const server = createServer((request, response) => {
       })
       return
     }
-    default:
+    default: {
+      // A failure screenshot (#191), served by name from the logs dir and
+      // only when the name is one the family owns — never a path.
+      const screenshot = screenshotNameOf(url.pathname)
+      if (screenshot !== null) {
+        let png: Buffer
+        try {
+          png = readFileSync(join(logsDir, screenshot))
+        } catch (error) {
+          response.writeHead(404, { 'content-type': 'text/plain; charset=utf-8' }).end(`no screenshot ${screenshot} (${String(error)})`)
+          return
+        }
+        response.writeHead(200, { 'content-type': 'image/png', 'cache-control': 'no-store' })
+        response.end(png)
+        return
+      }
       response.writeHead(404, { 'content-type': 'text/plain; charset=utf-8' }).end('not found')
+    }
   }
 })
+
+/** The file name under `/api/screenshot/`, when it is one of the family's PNGs and nothing else. */
+function screenshotNameOf(pathname: string): string | null {
+  const prefix = '/api/screenshot/'
+  if (!pathname.startsWith(prefix)) return null
+  const name = decodeURIComponent(pathname.slice(prefix.length))
+  return RUN_TRACE_SCREENSHOT_PATTERN.test(name) && !name.includes('/') && !name.includes('\\') ? name : null
+}
 
 server.listen(port, '127.0.0.1', () => {
   const address = server.address()

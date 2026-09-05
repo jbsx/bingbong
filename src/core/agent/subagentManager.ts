@@ -5,6 +5,7 @@ import type { WorkingMemorySnapshot } from '../session/workingMemory'
 import { capSentences } from '../agent/answerContract'
 import { SUBAGENT_LIMITS, type SubagentSharedDeadline } from './subagentRails'
 import type { SubagentReasoningTrace } from '../trace/reasoningTrace'
+import type { SubagentLlmRoundTrace } from '../trace/llmRoundTrace'
 import type { SubagentPipelineEventTrace } from '../trace/pipelineEventTrace'
 import type { VisionTraceReporter } from '../trace/visionTrace'
 import type { SubagentReport } from './subagentReport'
@@ -102,6 +103,12 @@ export interface SubagentTaskHooks {
    */
   traceReasoning?: SubagentReasoningTrace
   /**
+   * The llm_round records for this worker's attempts (#191): the spawning
+   * Run's own writer, closed over its identity and turn. Absent unless the
+   * developer opted in with `BINGBONG_RUN_TRACE` (#184).
+   */
+  traceLlmRound?: SubagentLlmRoundTrace
+  /**
    * The pipeline_event records for this worker's Tool Rounds (#185): the
    * spawning Run's own writer, closed over its identity and turn. Absent
    * unless the developer opted in with `BINGBONG_RUN_TRACE` (#184) — and
@@ -157,6 +164,7 @@ export interface SpawnContext {
   memory?: WorkingMemorySnapshot
   sharedDeadline?: SubagentSharedDeadline
   traceReasoning?: SubagentReasoningTrace
+  traceLlmRound?: SubagentLlmRoundTrace
   tracePipelineEvent?: SubagentPipelineEventTrace
   traceVision?: VisionTraceReporter
 }
@@ -251,7 +259,7 @@ export function createSubagentManager(deps: SubagentManagerDeps): SubagentManage
 
   return {
     spawn(kind, task, context = {}) {
-      const { turnId, memory, sharedDeadline, traceReasoning, tracePipelineEvent, traceVision } = context
+      const { turnId, memory, sharedDeadline, traceReasoning, traceLlmRound, tracePipelineEvent, traceVision } = context
       if (liveCount() >= maxConcurrent) {
         return {
           ok: false,
@@ -310,6 +318,8 @@ export function createSubagentManager(deps: SubagentManagerDeps): SubagentManage
           // the Run is tracing them, so an unasked-for worker collects
           // nothing — the same invariant the Run path holds.
           ...(traceReasoning !== undefined ? { traceReasoning } : {}),
+          // And its llm_round records (#191), on the same terms.
+          ...(traceLlmRound !== undefined ? { traceLlmRound } : {}),
           // And the worker's own Tool Round events (#185), on the same
           // terms: they reach no view, so the Run's trace is the only
           // place they can be kept — and only when it asked for them.

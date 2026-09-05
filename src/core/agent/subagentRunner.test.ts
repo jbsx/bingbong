@@ -9,6 +9,8 @@ import { SEARCH_LOOP_NUDGE_AFTER, SEARCH_LOOP_REFUSE_AFTER } from '../pipeline/s
 import type { SettledPageState } from '../pipeline/progressFingerprints'
 import { hostFromUrl } from '../pipeline/blockerGate'
 import type { TracedReasoningRound } from '../trace/reasoningTrace'
+import type { TracedLlmRound } from '../trace/llmRoundTrace'
+import type { LlmRequest } from '../ports/llm'
 
 // The workhorse loop behind every subagent (issue #13): a deepseek-chat LLM
 // with its own tool set, no confirmations (the policy wrapper already
@@ -1183,6 +1185,53 @@ describe("a delegated worker's reasoning records (#183)", () => {
       { round: 1, attempt: 1, text: 'the provider hung up', agentId: 'a-8' },
       { round: 1, attempt: 2, text: 'second time lucky', agentId: 'a-8' },
     ])
+  })
+
+  it("numbers a retried round's llm_round records exactly as its reasoning records, with what each attempt was sent under (#191)", async () => {
+    const thought: TracedReasoningRound[] = []
+    const rounds: TracedLlmRound[] = []
+    let round = 0
+    const llm = {
+      complete: (request: LlmRequest) => {
+        round += 1
+        request.onAttempt?.({ model: 'deepseek-chat', promptHash: 'abc123', reasoningEffort: 'low' })
+        if (round === 1) {
+          request.onDelta?.({ kind: 'reasoning', text: 'the provider hung up' })
+          request.onRetryAttempt?.(2, 3)
+          request.onAttempt?.({ model: 'deepseek-chat', promptHash: 'abc123', reasoningEffort: 'low' })
+        }
+        request.onDelta?.({ kind: 'reasoning', text: 'second time lucky' })
+        return Promise.resolve({ kind: 'answer' as const, speak: 's', display: 'Done.', usage: { promptTokens: 40, completionTokens: 4 } })
+      },
+    }
+
+    await runSubagent(
+      { llm, tools: [], clock: new FakeClock() },
+      {
+        task: 'check the page',
+        agentId: 'a-8',
+        isCancelled: () => false,
+        traceReasoning: (r) => thought.push(r),
+        traceLlmRound: (r) => rounds.push(r),
+      },
+    )
+
+    expect(rounds.map((r) => [r.round, r.attempt])).toEqual(thought.map((r) => [r.round, r.attempt]))
+    expect(rounds).toEqual([
+      { round: 1, attempt: 1, role: 'subagent', sent: { model: 'deepseek-chat', promptHash: 'abc123', reasoningEffort: 'low' }, reasoningEffort: 'low', request: { toolResults: 0, chars: expect.any(Number) }, agentId: 'a-8' },
+      { round: 1, attempt: 2, role: 'subagent', sent: { model: 'deepseek-chat', promptHash: 'abc123', reasoningEffort: 'low' }, usage: { promptTokens: 40, completionTokens: 4 }, reasoningEffort: 'low', request: { toolResults: 0, chars: expect.any(Number) }, agentId: 'a-8' },
+    ])
+  })
+
+  it('counts nothing and reports nothing when the Run handed no llm_round trace down (#191)', async () => {
+    const llm = new ScriptedLlm(thinkingScript())
+
+    await runSubagent(
+      { llm, tools: [noop], clock: new FakeClock() },
+      { task: 'check the page', agentId: 'a-7', isCancelled: () => false },
+    )
+
+    expect(llm.requests.map((request) => request.onAttempt)).toEqual([undefined, undefined])
   })
 
   it("keeps a failed round's thinking — the round a diagnosis wants most", async () => {

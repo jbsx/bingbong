@@ -1,6 +1,15 @@
 import type { Clock } from '../ports/clock'
 import { systemClock } from '../ports/clock'
-import type { AssistantTurn, LlmClient, LlmStreamDelta, ToolResult, ToolResultOutcome } from '../ports/llm'
+import type {
+  AssistantTurn,
+  LlmAttemptSent,
+  LlmClient,
+  LlmRequest,
+  LlmStreamDelta,
+  TokenUsage,
+  ToolResult,
+  ToolResultOutcome,
+} from '../ports/llm'
 import type { Tool, ToolContext } from '../pipeline/tool'
 import type { SettledPageState } from '../pipeline/progressFingerprints'
 import type { SnapshotRef } from '../browser/snapshot'
@@ -19,6 +28,7 @@ import { describeToolAction } from '../pipeline/toolCallDisplay'
 import { MAX_SUBAGENT_VISION_CALLS } from './subagentRails'
 import { droppedFindingsNote, validateReportFindings, type SubagentReport } from './subagentReport'
 import { createReasoningRounds, type ReasoningRound, type SubagentReasoningTrace } from '../trace/reasoningTrace'
+import { createLlmRounds, llmRequestShape, type LlmRound, type SubagentLlmRoundTrace } from '../trace/llmRoundTrace'
 import type { SubagentPipelineEventTrace } from '../trace/pipelineEventTrace'
 import type { VisionTraceReporter } from '../trace/visionTrace'
 import { reportFault } from '../trace/fault'
@@ -179,6 +189,15 @@ export interface RunSubagentOptions {
    * stream, which is the path's historical behaviour.
    */
   traceReasoning?: SubagentReasoningTrace
+  /**
+   * The llm_round records for this worker's attempts (#191, ADR 0031):
+   * built by the spawning Run over its own writer, like the reasoning
+   * trace — one record per attempt, numbered as the reasoning records
+   * are, carrying the model and prompt the client reported, the rung,
+   * the request's shape and the usage. Absent unless the developer set
+   * `BINGBONG_RUN_TRACE` (#184); absent, nothing is counted.
+   */
+  traceLlmRound?: SubagentLlmRoundTrace
   /**
    * The pipeline_event records for this worker's Tool Rounds (#185, ADR
    * 0031): built by the spawning Run the same way, over the same writer.
@@ -444,28 +463,58 @@ export async function runSubagent(deps: RunSubagentDeps, options: RunSubagentOpt
     traceReasoning({ ...round, ...(options.agentId !== undefined ? { agentId: options.agentId } : {}) })
   }
 
-  const requestArgs = () => ({
-    command: options.task,
-    toolResults,
-    // A worker carries no Effort Tier, so its epoch answers with the
-    // Subagent rung (#166) — brief deliberation for execution work.
-    reasoningEffort: epoch.reasoningEffort,
-    ...(options.turnId !== undefined ? { turnId: options.turnId } : {}),
-    ...(options.memory !== undefined && options.memory.length > 0 ? { memory: options.memory } : {}),
-    // Streaming, only for the reasoning records (#183): a worker's rounds
-    // have never streamed, and nothing here listens to a delta but the
-    // collector — so the opt-in is what turns streaming on, and the round
-    // stays non-streaming without it.
-    ...(reasoningRounds
-      ? {
-          onDelta: (delta: LlmStreamDelta): void => reasoningRounds.onDelta(delta),
-          // A retried round leaves one record per attempt (#182): the
-          // abandoned attempt's thinking stands on its own rather than
-          // being concatenated into the attempt that survived.
-          onRetryAttempt: (): void => traceThinking(reasoningRounds.takeAttempt()),
-        }
-      : {}),
-  })
+  // The worker's llm_round collector (#191): one per worker, only when the
+  // spawning Run handed the trace down. Numbered as the reasoning
+  // collector beside it, so the two records of one attempt join.
+  const traceLlmRound = options.traceLlmRound
+  const llmRounds = traceLlmRound ? createLlmRounds() : undefined
+  /** Closes one attempt — abandoned or the round's last — and records what it was sent under. */
+  const traceAttempt = (closed: LlmRound | undefined, request: LlmRequest): void => {
+    if (closed === undefined || traceLlmRound === undefined) return
+    traceLlmRound({
+      ...closed,
+      role: 'subagent',
+      ...(request.reasoningEffort !== undefined ? { reasoningEffort: request.reasoningEffort } : {}),
+      request: llmRequestShape(request),
+      ...(options.agentId !== undefined ? { agentId: options.agentId } : {}),
+    })
+  }
+
+  const requestArgs = (): LlmRequest => {
+    const request: LlmRequest = {
+      command: options.task,
+      toolResults,
+      // A worker carries no Effort Tier, so its epoch answers with the
+      // Subagent rung (#166) — brief deliberation for execution work.
+      reasoningEffort: epoch.reasoningEffort,
+      ...(options.turnId !== undefined ? { turnId: options.turnId } : {}),
+      ...(options.memory !== undefined && options.memory.length > 0 ? { memory: options.memory } : {}),
+      // Streaming, only for the reasoning records (#183): a worker's rounds
+      // have never streamed, and nothing here listens to a delta but the
+      // collector — so the opt-in is what turns streaming on, and the round
+      // stays non-streaming without it.
+      ...(reasoningRounds
+        ? {
+            onDelta: (delta: LlmStreamDelta): void => reasoningRounds.onDelta(delta),
+          }
+        : {}),
+      // A retried round leaves one record per attempt (#182, #191): the
+      // abandoned attempt's thinking, and what it was sent under, stand on
+      // their own rather than being folded into the attempt that survived.
+      ...(reasoningRounds || llmRounds
+        ? {
+            onRetryAttempt: (): void => {
+              if (reasoningRounds) traceThinking(reasoningRounds.takeAttempt())
+              if (llmRounds) traceAttempt(llmRounds.takeAttempt(), request)
+            },
+          }
+        : {}),
+      // Attempt identity (#191): what the client reports each attempt is
+      // sent under; the next take carries it into the record.
+      ...(llmRounds ? { onAttempt: (sent: LlmAttemptSent): void => llmRounds.onAttempt(sent) } : {}),
+    }
+    return request
+  }
 
   for (;;) {
     await checkpoint(options)
@@ -492,16 +541,19 @@ export async function runSubagent(deps: RunSubagentDeps, options: RunSubagentOpt
         last.outcome = notices.attach(last.outcome, { usefulWork: false })
       }
       let turn: AssistantTurn | null = null
+      const answerRequest = requestArgs()
       try {
-        turn = await llm.complete(requestArgs())
+        turn = await llm.complete(answerRequest)
       } catch (error) {
         reportFault('agent.subagentRunner.answerRound', error, { ...(options.turnId !== undefined ? { turnId: options.turnId } : {}) })
         turn = null
       } finally {
         // The reserved Answer round thinks too, and a round that failed is
         // the one a diagnosis wants most (#183) — so its record is written
-        // here, whatever the round did.
+        // here, whatever the round did. Its llm_round record (#191) on the
+        // same terms: usage only when the round returned.
         traceThinking(reasoningRounds?.takeRound())
+        traceAttempt(llmRounds?.takeRound(turn?.usage), answerRequest)
       }
       await checkpoint(options)
       if (turn !== null && turn.kind === 'answer') {
@@ -514,12 +566,17 @@ export async function runSubagent(deps: RunSubagentDeps, options: RunSubagentOpt
     }
 
     let turn: AssistantTurn
+    const request = requestArgs()
+    let usage: TokenUsage | undefined
     try {
-      turn = await llm.complete(requestArgs())
+      turn = await llm.complete(request)
+      usage = turn.usage
     } finally {
       // One record per model round, written in a finally so a round that
-      // threw leaves its thinking behind like one that returned (#183).
+      // threw leaves its thinking behind like one that returned (#183) —
+      // and its llm_round record (#191) says what it was sent under.
       traceThinking(reasoningRounds?.takeRound())
+      traceAttempt(llmRounds?.takeRound(usage), request)
     }
     await checkpoint(options)
     if (turn.kind === 'answer') {

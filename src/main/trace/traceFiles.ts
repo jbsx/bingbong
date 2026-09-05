@@ -11,7 +11,16 @@ import { PERF_FILE_PATTERN } from '../perf/perfFiles.ts'
 import type { TraceFamily } from '../../core/trace/traceTimeline.ts'
 
 export const RUN_TRACE_FILE_PREFIX = 'run-trace'
+/** The Run Trace's record files — what the reader tails. */
 export const RUN_TRACE_FILE_PATTERN = /^run-trace-.*\.jsonl$/
+/** A failure screenshot (#191): `run-trace-<runId>-<turnId>.png`, a sibling the reader serves but never parses. */
+export const RUN_TRACE_SCREENSHOT_PATTERN = /^run-trace-.*\.png$/
+/**
+ * Everything the family's purge owns (#191): the record files and the
+ * screenshots beside them, so a PNG leaves with its Run under the same
+ * 7-day rule and never outlives the records that name it.
+ */
+export const RUN_TRACE_FAMILY_PATTERN = /^run-trace-.*\.(jsonl|png)$/
 
 export const HOST_TRACE_FILE_PREFIX = 'host-trace'
 export const HOST_TRACE_FILE_PATTERN = /^host-trace-.*\.jsonl$/

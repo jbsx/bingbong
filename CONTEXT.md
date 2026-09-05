@@ -379,10 +379,14 @@ _Avoid_: hydration, restore, session replay
 **Run Trace**:
 A durable, machine-readable record of a Run's internal decisions — every event
 the Run published, its Tool Rounds and those of its Subagents, evidence
-grading, the model's per-round reasoning, the vision calls it made and what
-they cost — written for diagnosis only. It is
-never rendered in any view and never provides continuity to a Session. It is
-written only when a developer opts in; a deployed Kiosk writes none of it.
+grading, the model's per-round reasoning, each LLM attempt's model, prompt
+hash, rung, request shape and usage (`llm_round`), the models the Run Plan
+was declared under, the vision calls it made and what they cost, and a
+screenshot of the visible tab when the Run finalized failed or on a work rail
+(`failure_screenshot`, a PNG beside the file) — written for diagnosis only.
+It is never rendered in any view and never provides continuity to a Session.
+It is written only when a developer opts in; a deployed Kiosk writes none of
+it.
 _Avoid_: debug log, audit log, perf log, history
 
 **Host Trace**:

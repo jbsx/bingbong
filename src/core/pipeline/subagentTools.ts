@@ -128,6 +128,7 @@ export function createSubagentTools(manager: SubagentManager): Tool[] {
           ...(memory !== undefined ? { memory } : {}),
           ...(ctx.delegationDeadline !== undefined ? { sharedDeadline: ctx.delegationDeadline } : {}),
           ...(ctx.traceSubagentReasoning !== undefined ? { traceReasoning: ctx.traceSubagentReasoning } : {}),
+          ...(ctx.traceSubagentLlmRound !== undefined ? { traceLlmRound: ctx.traceSubagentLlmRound } : {}),
           ...(ctx.traceSubagentPipelineEvent !== undefined
             ? { tracePipelineEvent: ctx.traceSubagentPipelineEvent }
             : {}),

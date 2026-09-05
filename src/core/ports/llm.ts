@@ -76,6 +76,13 @@ export interface LlmRequest {
    */
   onRetryAttempt?: (attempt: number, maxAttempts: number) => void
   /**
+   * Attempt identity (#191): a client reports each attempt it dispatches —
+   * the first and every retry — with the model and prompt it is sent
+   * under, before the attempt starts. The Run Trace's `llm_round` record
+   * reads it; nothing else does. Absent, the client reports nothing.
+   */
+  onAttempt?: (sent: LlmAttemptSent) => void
+  /**
    * Streaming (#47): when present, a streaming-capable client streams this
    * round and invokes the listener as SSE chunks arrive — mirroring the
    * transcriber's partial-transcript idiom (`Transcriber.onPartial`).
@@ -124,6 +131,30 @@ export type LlmStreamDelta =
 export interface TokenUsage {
   promptTokens: number
   completionTokens: number
+}
+
+/**
+ * What one attempt was sent under (#191): the identity a client reports
+ * through {@link LlmRequest.onAttempt} as it dispatches. The pipeline
+ * never sees a model id or a system prompt — the client resolves the one
+ * and builds the other — so this is how a Run Trace record can say which
+ * model served a round and under which prompt text, without the request
+ * text itself leaving the client.
+ */
+export interface LlmAttemptSent {
+  /** The model id the attempt went to — `scripted` for the test double. */
+  model: string
+  /**
+   * A stable hash of the system prompt text sent, never the text itself;
+   * absent for a client that sends none. Two rounds with different hashes
+   * ran under different prompts (a Learned Terms change, a date rollover).
+   */
+  promptHash?: string
+  /**
+   * The rung actually sent, when one was: the request's own unless the
+   * experiment override (#166) outranked it.
+   */
+  reasoningEffort?: ReasoningEffort
 }
 
 export type AssistantTurn =

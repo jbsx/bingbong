@@ -204,6 +204,38 @@ incidental — nothing is written unless a developer asked for it.
   scenarios. So the answer to "what should Recorded History record now" is
   nothing at all (#188). What replaced it is not a smaller history: it is two
   files nobody writes unless they ask.
+- **A failed Run's post mortem reads five more things (#191).** A survey of
+  the trace against "why did it click [55]", "why did it run out of rounds"
+  and "which model was this" found the file said how a Run ended and not what
+  the model read or who it was. So: an `llm_round` record per LLM attempt,
+  written where the pipeline calls `llm.complete` and numbered exactly as
+  the `reasoning` record for the same attempt — `role`, the `model` and
+  `promptHash` the client reports it dispatched under (a stable hash of the
+  system prompt text, never the text), the `reasoningEffort` actually sent,
+  the provider's `usage` when it reported one, and the request's shape as
+  counts (`toolResults` and `chars`) — never the request text, which the
+  `command`, `tool_call` and `tool_result` records already hold. A worker's
+  attempts take the same road as its reasoning, stamped with its `agentId`.
+  The `run_plan` record is stamped with `models`, the three role models from
+  the routing config as the plan was published, so a Run across a model
+  switch is told apart without joining its rounds. And the `tool_result` cut
+  is lifted for the page reads — `read_page` and `ground_visual` — because a
+  snapshot is ~40 KB and the ref the model clicked was usually past the
+  8,000-char cut, which made the one record a browser post mortem reads most
+  the one it could not read; every other result keeps the cut, `chars` rides
+  every text result, and if the roll proves too small the answer is a bigger
+  roll for the family, never a cut snapshot.
+- **The failure screenshot is the one record whose payload is not in the file
+  (#191).** When a `done` finalized `failed`, or on `no_progress`,
+  `deadline_reached` or `budget_exhausted`, the runner captures the visible
+  tab once and writes it as `run-trace-<runId>-<turnId>.png` beside the
+  jsonl, with a `failure_screenshot` record naming the path. A PNG in a jsonl
+  line would blow the roll; a sibling file under the family's prefix purges
+  under the same 7-day rule, and the reader serves it by name and never
+  parses it. A capture that throws is a `reportFault` under the Run's turn,
+  never a Run error — the `done` is already out when it runs. A Run that met
+  its objective, was cancelled, or reset leaves no capture: the file is about
+  failures, and a happy path must never accumulate pixels.
 - **A trace reader is a developer tool, never an in-app view.** These files are
   read with `jq`, or with the Trace UI (#189): `pnpm trace:ui`, a script beside
   `pnpm perf:report` that serves one loopback-only page joining the perf log
@@ -217,7 +249,10 @@ incidental — nothing is written unless a developer asked for it.
 **A Session Reset still does not purge trace files**, and ADR 0030's discussion
 of that trade stands unchanged, narrowed only by the flags: the text is on disk
 for the developer who turned the flag on, on their own machine, until the
-7-day purge.
+7-day purge. Since #191 that includes page pixels — the failure screenshot is
+a new class of on-disk data, an image of whatever the visible tab showed when
+a Run gave up, and it rides the same flag, the same machine and the same purge
+as the words beside it.
 
 Considered and rejected: one flag for both families (the Kiosk case wants
 host-side faults with no Run text on disk, and the two files answer different

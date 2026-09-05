@@ -8,6 +8,7 @@ import type {
   ToolCall,
   ToolResult,
 } from '../../core/ports/llm'
+import { createHash } from 'node:crypto'
 import type { Tool, ToolParameterSpec } from '../../core/pipeline/tool'
 import type { ModelEndpointConfig } from '../../core/agent/modelRouting'
 import { parseAssistantAnswer } from '../../core/agent/answerContract'
@@ -48,6 +49,16 @@ export interface OpenAiLlmClientDeps {
    * carries. Absent, each round's own rung — the Effort Tier's — is sent.
    */
   reasoningEffort?: ReasoningEffort
+}
+
+/**
+ * The prompt hash an attempt reports (#191): the first 16 hex characters
+ * of the SHA-256 of the system prompt text as sent. Stable across rounds
+ * under the same prompt, different the moment the text differs — a date
+ * rollover, a Learned Terms change — and never invertible to the text.
+ */
+export function promptHashOf(systemPrompt: string): string {
+  return createHash('sha256').update(systemPrompt, 'utf8').digest('hex').slice(0, 16)
 }
 
 function toolResultContent(outcome: ToolResult['outcome']): string {
@@ -235,6 +246,15 @@ export function createOpenAiLlmClient(deps: OpenAiLlmClientDeps): LlmClient {
   async function complete(request: LlmRequest): Promise<AssistantTurn> {
     const messages = buildMessages(request)
     const catalog = offeredTools(tools, request)
+    // The experiment override outranks the round's own rung (#166).
+    const effort = effortOverride ?? request.reasoningEffort
+    // What every attempt of this round is sent under (#191): the messages
+    // are built once per round, so the prompt hash is too.
+    const sent = {
+      model: endpoint.model,
+      promptHash: promptHashOf(messages[0]?.content ?? ''),
+      ...(effort !== undefined ? { reasoningEffort: effort } : {}),
+    }
     // Streaming (#47): a round streams only when the caller subscribed a
     // delta listener (the orchestrator pipeline does; subagent clients
     // never do and keep the non-streaming contract).
@@ -256,6 +276,10 @@ export function createOpenAiLlmClient(deps: OpenAiLlmClientDeps): LlmClient {
       // before the attempt starts, and the perf log shows a tripled
       // round-trip as separate events.
       if (attempt > 1) request.onRetryAttempt?.(attempt, MAX_ATTEMPTS)
+      // Attempt identity (#191): reported before the attempt starts, the
+      // retry hook's own rhythm, so the record for an abandoned attempt
+      // still says what it was sent under.
+      request.onAttempt?.(sent)
       const outgoing =
         attempt === MAX_ATTEMPTS
           ? [
@@ -274,8 +298,7 @@ export function createOpenAiLlmClient(deps: OpenAiLlmClientDeps): LlmClient {
         streaming,
         onDelta: request.onDelta,
         signal: request.signal,
-        // The experiment override outranks the round's own rung (#166).
-        effort: effortOverride ?? request.reasoningEffort,
+        effort,
       })
       const turn = toTurn(payload)
       if (turn) return turn

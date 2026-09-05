@@ -9,6 +9,7 @@ import { pipelineEventRecords, runTraceTranscript } from './runTrace'
 import { sleep, waitFor } from './waitFor'
 import { waitForDisplay } from './feed'
 import type { AssistantTurn } from '../src/core/ports/llm'
+import type { TraceRecord } from '../src/core/trace/runTrace'
 
 // What a Run durably records (#188). Recorded History is retired — nothing
 // rendered it, and it held Session text no view could read — so the
@@ -99,6 +100,23 @@ describe('Run Trace persistence e2e', () => {
         (record) => record.event.type === 'done' && record.turnId === command?.turnId,
       )
       expect(finished?.event).toMatchObject({ type: 'done', at: expect.any(Number) })
+
+      // What each round was sent under (#191): one llm_round per attempt,
+      // numbered from 1, naming the scripted double the way the usage
+      // ledger does — and the Run Plan names the models the Run ran under.
+      const rounds = second
+        .readRunTrace()
+        .filter((record): record is Extract<TraceRecord, { kind: 'llm_round' }> => record.kind === 'llm_round')
+        .filter((record) => record.turnId === command?.turnId)
+      expect(rounds.map((record) => [record.round, record.attempt, record.role, record.model])).toEqual([
+        [1, 1, 'orchestrator', 'scripted'],
+        [2, 1, 'orchestrator', 'scripted'],
+      ])
+      expect(rounds.map((record) => record.request.toolResults)).toEqual([0, 1])
+      const plan = events.find((record) => record.event.type === 'run_plan' && record.turnId === command?.turnId)
+      expect(plan?.models).toMatchObject({ orchestrator: 'scripted' })
+      // A Run that met its objective leaves no screenshot beside the file.
+      expect(second.readRunTrace().some((record) => record.kind === 'failure_screenshot')).toBe(false)
 
       // The Session's own boundaries ride the same stream, so the trace
       // says which Session the Run belonged to and how it ended.

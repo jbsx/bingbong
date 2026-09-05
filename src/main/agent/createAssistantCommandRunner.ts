@@ -5,6 +5,8 @@ import { createTurnIdSource, type PerfTracer } from '../../core/perf/perfTracer'
 import { emitTurnSummary } from '../../core/perf/turnSummary'
 import type { SessionRuntime } from '../../core/session/sessionRuntime'
 import { createRunTraceWriter, type RunTraceSink } from '../../core/trace/runTrace'
+import { failureScreenshotCause, failureScreenshotEvent, type FailureScreenshotCapture } from '../../core/trace/failureScreenshot'
+import { reportFault } from '../../core/trace/fault'
 import type { SubmissionFeedback } from '../../core/session/submissionFeedback'
 import type { AcceptedRunOwnership, WindowRunPublisher } from '../session/windowEventPublisher'
 
@@ -34,6 +36,13 @@ export function createAssistantCommandRunner(deps: {
    * the Run then simply leaves no trace, reasoning records included.
    */
   runTrace?: RunTraceSink
+  /**
+   * The failure screenshot (#191, ADR 0031): captures the visible tab and
+   * puts the PNG beside the trace when a Run finalizes failed or on a
+   * work rail. Wired by main only beside the sink — with no sink there is
+   * no record to name the file, so nothing is captured.
+   */
+  captureFailureScreenshot?: FailureScreenshotCapture
   printSummary?: (line: string) => void
 }): AssistantCommandRunner {
   const mintTurnId = createTurnIdSource(deps.tracer)
@@ -65,6 +74,21 @@ export function createAssistantCommandRunner(deps: {
         try {
           if (admission.createsSession) deps.onSessionStarted?.(admission)
           const publisher = deps.createRunPublisher(admission)
+          // The Run Trace seam (#180, ADR 0030): this Run's decisions,
+          // stamped with the identities that join the file to Recorded
+          // History and the eval tape. Identity is bound here because
+          // admission is what owns it — the Run layer never forges one.
+          const traceRun = deps.runTrace
+            ? createRunTraceWriter({
+                sink: deps.runTrace,
+                now: () => deps.clock.now(),
+                identity: {
+                  runId: admission.runId,
+                  sessionId: admission.sessionId,
+                  generation: admission.generation,
+                },
+              })
+            : undefined
           for await (const event of deps.pipeline.execute(command, currentTurnId, truncated, {
             snapshot: admission.journal,
             memory: admission.memory,
@@ -90,27 +114,25 @@ export function createAssistantCommandRunner(deps: {
               const store = deps.runtime.evidenceStore()
               return store === null ? null : { store, runId: admission.runId }
             },
-            // The Run Trace seam (#180, ADR 0030): this Run's decisions,
-            // stamped with the identities that join the file to Recorded
-            // History and the eval tape. Identity is bound here because
-            // admission is what owns it — the Run layer never forges one.
-            ...(deps.runTrace
-              ? {
-                  traceRun: createRunTraceWriter({
-                    sink: deps.runTrace,
-                    now: () => deps.clock.now(),
-                    identity: {
-                      runId: admission.runId,
-                      sessionId: admission.sessionId,
-                      generation: admission.generation,
-                    },
-                  }),
-                }
-              : {}),
+            ...(traceRun ? { traceRun } : {}),
           })) {
             if (event.type === 'done' && event.outcome === 'reset') restartRequested = true
             if (deps.canPublish && !deps.canPublish()) break
             publisher.publish(event)
+            // The failure screenshot (#191): after the `done` is published
+            // and before the Run is finished — the page still shows what
+            // it showed when the Run gave up. A capture that throws is a
+            // fault under this turn; the Run's outcome is already out.
+            const cause = failureScreenshotCause(event)
+            if (event.type === 'done' && cause !== null && traceRun !== undefined && deps.captureFailureScreenshot !== undefined) {
+              const turnId = event.turnId
+              try {
+                const captured = await deps.captureFailureScreenshot({ runId: admission.runId, turnId })
+                traceRun(() => ({ turnId, ...failureScreenshotEvent(cause, captured) }))
+              } catch (error) {
+                reportFault('agent.createAssistantCommandRunner.failureScreenshot', error, { turnId })
+              }
+            }
           }
         } finally {
           deps.runtime.finish(admission.runId)

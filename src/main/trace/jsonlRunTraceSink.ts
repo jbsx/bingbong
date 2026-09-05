@@ -1,6 +1,6 @@
 import type { RunTraceSink, TraceRecord } from '../../core/trace/runTrace'
 import { createJsonlSink, LOG_MAX_AGE_MS, LOG_ROLL_BYTES, type JsonlSinkOptions } from '../logs/jsonlSink'
-import { RUN_TRACE_FILE_PATTERN, RUN_TRACE_FILE_PREFIX } from './traceFiles'
+import { RUN_TRACE_FAMILY_PATTERN, RUN_TRACE_FILE_PATTERN, RUN_TRACE_FILE_PREFIX } from './traceFiles'
 
 // The Run Trace's file family (#180, #184, ADR 0031): run-trace-*.jsonl
 // beside the perf logs, written by the same rotating sink under the same
@@ -24,7 +24,9 @@ export const TRACE_MAX_AGE_MS = LOG_MAX_AGE_MS
 export function createJsonlRunTraceSink(logsDir: string, options: JsonlSinkOptions = {}): RunTraceSink {
   return createJsonlSink<TraceRecord>(
     logsDir,
-    { prefix: RUN_TRACE_FILE_PREFIX, pattern: RUN_TRACE_FILE_PATTERN },
+    // The purge owns the whole family (#191): the failure screenshots
+    // beside the records go with them, never the perf files.
+    { prefix: RUN_TRACE_FILE_PREFIX, pattern: RUN_TRACE_FAMILY_PATTERN },
     options,
   )
 }

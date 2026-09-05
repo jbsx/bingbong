@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { createOpenAiLlmClient, standingDirectiveMessage, TRUNCATION_NOTE } from './openAiLlmClient'
+import { createOpenAiLlmClient, promptHashOf, standingDirectiveMessage, TRUNCATION_NOTE } from './openAiLlmClient'
 import { ORCHESTRATOR_SYSTEM_PROMPT } from './orchestratorPrompt'
 import { createBrowserTools } from '../../core/pipeline/browserTools'
 import { createMediaTools } from '../../core/pipeline/mediaTools'
@@ -738,6 +738,44 @@ describe('openAiLlmClient', () => {
       [2, 3],
       [3, 3],
     ])
+  })
+
+  it('reports every attempt it dispatches with the model, a prompt hash and the rung sent (#191)', async () => {
+    const fetch = new ScriptedFetch([
+      completionResponse({ content: null }),
+      completionResponse({ content: '{"speak":"hi","display":"hi"}' }),
+    ])
+    const client = createOpenAiLlmClient({
+      endpoint: ENDPOINT,
+      systemPrompt: ORCHESTRATOR_SYSTEM_PROMPT,
+      tools: createBrowserTools(new FakeBrowser()),
+      fetchFn: fetch.fetchFn,
+      reasoningEffort: 'max',
+    })
+    const sent: unknown[] = []
+
+    await client.complete({ command: 'x', toolResults: [], reasoningEffort: 'low', onAttempt: (attempt) => sent.push(attempt) })
+
+    // One report per attempt, the retry included; the override's rung is
+    // the one on the wire, so it is the one reported.
+    expect(sent).toEqual([
+      { model: 'glm-5.3', promptHash: expect.stringMatching(/^[0-9a-f]{16}$/), reasoningEffort: 'max' },
+      { model: 'glm-5.3', promptHash: expect.stringMatching(/^[0-9a-f]{16}$/), reasoningEffort: 'max' },
+    ])
+    expect(promptHashOf(ORCHESTRATOR_SYSTEM_PROMPT)).toEqual((sent[0] as { promptHash: string }).promptHash)
+  })
+
+  it('hashes the prompt text it will send, so a changed prompt changes the hash and nothing else does (#191)', async () => {
+    const hashes: string[] = []
+    for (const prompt of ['prompt A', 'prompt B', 'prompt A']) {
+      const fetch = new ScriptedFetch([completionResponse({ content: '{"speak":"hi","display":"hi"}' })])
+      const client = createOpenAiLlmClient({ endpoint: ENDPOINT, systemPrompt: prompt, tools: [], fetchFn: fetch.fetchFn })
+      await client.complete({ command: 'x', toolResults: [], onAttempt: (attempt) => hashes.push(attempt.promptHash ?? '') })
+    }
+
+    expect(hashes[0]).toEqual(hashes[2])
+    expect(hashes[0]).not.toEqual(hashes[1])
+    expect(hashes).toEqual([promptHashOf('prompt A'), promptHashOf('prompt B'), promptHashOf('prompt A')])
   })
 
   it('reports no retry attempt when the first try succeeds', async () => {

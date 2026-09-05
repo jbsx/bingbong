@@ -150,6 +150,13 @@ export class ScriptedLlm implements LlmClient {
     // An already-aborted round never begins (#135): the production client
     // would have cancelled the request before dispatch.
     if (request.signal?.aborted) throw new Error('scripted round aborted')
+    // Attempt identity (#191): the double reports itself the way the usage
+    // ledger already names it, so a scripted Run's `llm_round` records say
+    // which "model" served them.
+    request.onAttempt?.({
+      model: 'scripted',
+      ...(request.reasoningEffort !== undefined ? { reasoningEffort: request.reasoningEffort } : {}),
+    })
     await streamScriptedChunks(next, request.onDelta, request.signal)
     // Renders continuity fields into scripted text so E2E can prove what the
     // current Run received without exposing private request objects.

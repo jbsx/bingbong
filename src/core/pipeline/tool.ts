@@ -3,6 +3,7 @@ import type { Clock } from '../ports/clock'
 import type { SubagentSharedDeadline, VisionGrant } from '../agent/subagentRails'
 import type { WorkingMemorySnapshot } from '../session/workingMemory'
 import type { SubagentReasoningTrace } from '../trace/reasoningTrace'
+import type { SubagentLlmRoundTrace } from '../trace/llmRoundTrace'
 import type { SubagentPipelineEventTrace } from '../trace/pipelineEventTrace'
 import type { VisionTraceReporter } from '../trace/visionTrace'
 import type { EffortTier } from './runPlan'
@@ -40,6 +41,15 @@ export interface ToolContext {
    * no worker reasoning is collected.
    */
   traceSubagentReasoning?: SubagentReasoningTrace
+  /**
+   * The llm_round records for delegated workers (#191, ADR 0031): which
+   * model each worker attempt went to, under which prompt, at which rung,
+   * with what request shape and usage — written through this, already
+   * closed over the spawning Run's trace writer and turn. Absent unless
+   * the developer opted in with `BINGBONG_RUN_TRACE` (#184), exactly like
+   * the reasoning trace beside it.
+   */
+  traceSubagentLlmRound?: SubagentLlmRoundTrace
   /**
    * The pipeline_event records for delegated workers (#185, ADR 0031): a
    * worker's Tool Rounds never reach the main stream — only its

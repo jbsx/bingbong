@@ -185,4 +185,32 @@ describe.skipIf(!stripsTypes)('trace:ui script', () => {
     const empty = await timeline(started.url)
     expect(empty.timeline.lanes).toEqual([])
   })
+
+  it("serves a failure screenshot by the name the done entry links, and nothing else from the dir (#191)", async () => {
+    const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
+    writeFileSync(join(dir, 'run-trace-run-a-turn-1.png'), png)
+    writeFileSync(join(dir, 'secret.txt'), 'not for serving')
+    writeFileSync(
+      join(dir, `run-trace-${T0}-1.jsonl`),
+      line({ v: 1, at: T0 + 1, turnId: 'turn-1', runId: 'run-a', kind: 'pipeline_event', event: { type: 'done', turnId: 'turn-1', outcome: 'failed', at: T0 + 1 } }) +
+        line({ v: 1, at: T0 + 2, turnId: 'turn-1', runId: 'run-a', kind: 'failure_screenshot', cause: 'failed', path: join(dir, 'run-trace-run-a-turn-1.png'), bytes: png.length }),
+    )
+    started = await start(dir)
+
+    const data = await timeline(started.url)
+    const done = data.timeline.lanes[0].entries.find((entry) => entry.label === 'done')
+    expect(done?.screenshot).toBe('run-trace-run-a-turn-1.png')
+
+    const served = await fetch(new URL(`/api/screenshot/${done!.screenshot}`, started.url))
+    expect(served.status).toBe(200)
+    expect(served.headers.get('content-type')).toBe('image/png')
+    expect(Buffer.from(await served.arrayBuffer())).toEqual(png)
+
+    // Only the family's PNGs, only by name: a record file, another file
+    // in the dir, and a path that climbs out are all refused.
+    for (const name of ['secret.txt', `run-trace-${T0}-1.jsonl`, '..%2Fsecret.txt', 'run-trace-missing.png']) {
+      const refused = await fetch(new URL(`/api/screenshot/${name}`, started.url))
+      expect(refused.status).toBe(404)
+    }
+  })
 })

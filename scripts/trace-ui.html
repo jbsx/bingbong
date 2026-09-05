@@ -53,6 +53,7 @@
   .chip.run { background: var(--run); }
   .chip.host { background: var(--host); }
   .chip.agent { background: var(--muted); font-family: var(--mono); font-weight: 500; margin-left: 6px; }
+  td.sum a.shot { margin-left: 6px; font-size: 12px; color: var(--host); text-decoration: underline; }
   tr.detail td { padding: 0 8px 8px; }
   tr.detail pre { margin: 0; padding: 8px 10px; background: var(--bg); border: 1px solid var(--edge); border-radius: 6px; font: 12px/1.4 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; max-height: 60vh; overflow: auto; }
   tr.fault td.label, tr.error td.label { color: var(--bad); }
@@ -136,7 +137,9 @@
         html.push('<tr class="' + cls + '" data-id="' + esc(id) + '"><td class="t">' + rel(entry.at - lane.startAt) + '</td><td class="abs">' + clock(entry.at) + '</td>'
           + '<td class="fam"><span class="chip ' + entry.family + '">' + entry.family + '</span></td>'
           + '<td class="label">' + highlight(entry.label) + (entry.agentId ? '<span class="chip agent">' + highlight(entry.agentId) + '</span>' : '') + '</td>'
-          + '<td class="sum">' + highlight(entry.summary) + '</td></tr>')
+          + '<td class="sum">' + highlight(entry.summary)
+          + (entry.screenshot ? ' <a class="shot" href="/api/screenshot/' + encodeURIComponent(entry.screenshot) + '" target="_blank" rel="noopener">screenshot</a>' : '')
+          + '</td></tr>')
         if (state.expanded.has(id)) {
           html.push('<tr class="detail"><td colspan="5"><pre>' + esc(JSON.stringify(entry.record, null, 2)) + '</pre></td></tr>')
         }
@@ -162,6 +165,8 @@
   }
 
   lanesEl.addEventListener('click', (event) => {
+    // The screenshot link opens the PNG; it must not also toggle the row.
+    if (event.target.closest('a.shot')) return
     const row = event.target.closest('tr.row')
     if (!row) return
     const id = row.dataset.id

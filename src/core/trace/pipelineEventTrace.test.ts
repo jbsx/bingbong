@@ -52,12 +52,42 @@ describe('the pipeline_event tap (#185)', () => {
     expect(tracesPipelineEvent({ type: 'tool_result' })).toBe(true)
   })
 
-  it('cuts a tool_result at the cap and says how long the result really was', () => {
+  it('stamps a run_plan record with the models each role is routed to (#191), and nothing else', () => {
+    const { records, sink } = collector()
+    const trace = createPipelineEventTraceWriter({
+      sink,
+      now: () => 0,
+      models: () => ({ orchestrator: 'glm-5.3', vision: 'glm-4.6v', subagent: 'deepseek-chat' }),
+    })
+
+    trace(owned({ type: 'run_plan', turnId: 't-1', objective: 'find the fare', headline: null, effortTier: 'direct_action', source: 'fallback', at: 5 }))
+    trace(owned({ type: 'status', turnId: 't-1', status: 'acting', at: 6 }))
+
+    expect(records[0]).toMatchObject({ kind: 'pipeline_event', models: { orchestrator: 'glm-5.3', vision: 'glm-4.6v', subagent: 'deepseek-chat' } })
+    expect(records[1]).not.toHaveProperty('models')
+  })
+
+  it('keeps a page read whole — the ref the model clicked is usually past the cut (#191)', () => {
     const { records, sink } = collector()
     const trace = createPipelineEventTraceWriter({ sink, now: () => 0 })
     const page = 'p'.repeat(TRACE_TOOL_RESULT_MAX_CHARS + 4_000)
 
     trace({ type: 'tool_result', turnId: 't-1', callId: 'c-1', name: 'read_page', ok: true, result: page, at: 9 })
+    trace({ type: 'tool_result', turnId: 't-1', callId: 'c-2', name: 'ground_visual', ok: true, result: page, at: 10 })
+
+    for (const record of records) {
+      if (!('event' in record) || record.event.type !== 'tool_result') throw new Error('not a tool_result record')
+      expect(record.event.result).toBe(page)
+      expect(record.chars).toBe(page.length)
+    }
+  })
+
+  it('cuts every other tool_result at the cap and says how long the result really was', () => {
+    const { records, sink } = collector()
+    const trace = createPipelineEventTraceWriter({ sink, now: () => 0 })
+    const page = 'p'.repeat(TRACE_TOOL_RESULT_MAX_CHARS + 4_000)
+
+    trace({ type: 'tool_result', turnId: 't-1', callId: 'c-1', name: 'look', ok: true, result: page, at: 9 })
 
     const [record] = records
     if (record === undefined || !('event' in record) || record.event.type !== 'tool_result') throw new Error('no record')

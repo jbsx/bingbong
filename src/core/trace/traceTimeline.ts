@@ -45,6 +45,12 @@ export interface TimelineEntry {
   readonly summary: string
   /** The delegated worker the record came from, when it did (#183, #185). */
   readonly agentId?: string
+  /**
+   * The failure screenshot's file name (#191), on the `failure_screenshot`
+   * entry and on the `done` entry of the same lane — the file is served by
+   * name from the logs dir, never by the absolute path the record holds.
+   */
+  readonly screenshot?: string
   /** The line as parsed, for the expander. */
   readonly record: unknown
 }
@@ -118,7 +124,14 @@ export function buildTraceTimeline(records: readonly TaggedTraceRecord[]): Trace
   const built: TimelineLane[] = []
   for (const lane of lanes.values()) {
     // A stable sort: two records at the same millisecond keep write order.
-    const entries = [...lane.entries].sort((a, b) => a.at - b.at)
+    const sorted = [...lane.entries].sort((a, b) => a.at - b.at)
+    // The failure screenshot joins the `done` it was taken for (#191): the
+    // record is written after the `done`, so the link lives on both.
+    const screenshot = sorted.find((entry) => entry.label === 'failure_screenshot')?.screenshot
+    const entries =
+      screenshot === undefined
+        ? sorted
+        : sorted.map((entry) => (entry.label === 'done' && entry.screenshot === undefined ? { ...entry, screenshot } : entry))
     const startAt = entries[0].at
     const endAt = entries[entries.length - 1].at
     built.push(
@@ -140,6 +153,7 @@ function entryOf(tagged: TaggedTraceRecord): TimelineEntry {
   const agentId = stringOrNull(raw.agentId) ?? undefined
   const kind = typeof raw.kind === 'string' ? raw.kind : 'unknown'
   const label = kind === 'pipeline_event' ? eventTypeOf(raw.event) : kind
+  const screenshot = kind === 'failure_screenshot' ? fileNameOf(raw.path) : null
   return {
     at,
     family: tagged.family,
@@ -147,7 +161,30 @@ function entryOf(tagged: TaggedTraceRecord): TimelineEntry {
     summary: cut(summarizeTrace(kind, raw)),
     record: raw,
     ...(agentId ? { agentId } : {}),
+    ...(screenshot !== null ? { screenshot } : {}),
   }
+}
+
+/** The last segment of a path, whichever separator wrote it; null for anything that is not a path. */
+function fileNameOf(path: unknown): string | null {
+  if (typeof path !== 'string' || path === '') return null
+  const name = path.split(/[\\/]/).pop() ?? ''
+  return name === '' ? null : name
+}
+
+function usageOf(value: unknown): string {
+  if (typeof value !== 'object' || value === null) return ''
+  const usage = value as Record<string, unknown>
+  return `${str(usage.promptTokens)} in / ${str(usage.completionTokens)} out`
+}
+
+function modelsOf(value: unknown): string {
+  if (typeof value !== 'object' || value === null) return ''
+  const models = value as Record<string, unknown>
+  return ['orchestrator', 'subagent', 'vision']
+    .filter((role) => typeof models[role] === 'string')
+    .map((role) => `${role} ${str(models[role])}`)
+    .join(', ')
 }
 
 function eventTypeOf(event: unknown): string {
@@ -189,10 +226,28 @@ function countsOf(value: unknown): string {
 /** The one line per kind, in the words its ADR uses for the record. */
 function summarizeTrace(kind: string, record: Record<string, unknown>): string {
   switch (kind) {
-    case 'pipeline_event':
-      return summarizeEvent(record.event)
+    case 'pipeline_event': {
+      // A run_plan record names the models the Run ran under (#191).
+      const models = modelsOf(record.models)
+      return models === '' ? summarizeEvent(record.event) : `${summarizeEvent(record.event)} [${models}]`
+    }
     case 'reasoning':
       return `round ${str(record.round)} attempt ${str(record.attempt)}: ${str(record.text)}`
+    case 'llm_round': {
+      const request = typeof record.request === 'object' && record.request !== null ? (record.request as Record<string, unknown>) : {}
+      return [
+        `round ${str(record.round)} attempt ${str(record.attempt)} ${str(record.role)}`,
+        record.model !== undefined ? str(record.model) : '',
+        record.reasoningEffort !== undefined ? `@${str(record.reasoningEffort)}` : '',
+        `${str(request.toolResults)} results / ${str(request.chars)} chars`,
+        record.usage !== undefined ? `→ ${usageOf(record.usage)}` : '',
+        record.promptHash !== undefined ? `prompt ${str(record.promptHash)}` : '',
+      ]
+        .filter((part) => part !== '')
+        .join(' ')
+    }
+    case 'failure_screenshot':
+      return `${str(record.cause)}: ${str(fileNameOf(record.path))} (${str(record.bytes)} bytes)`
     case 'evidence_checkpoint':
       return `${str(record.tool)} ${str(record.outcome)}`
     case 'evidence_accepted':

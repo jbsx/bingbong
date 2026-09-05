@@ -13,6 +13,7 @@ import { createSessionRuntime } from '../../core/session/sessionRuntime'
 import { FakeBrowser, FakeClock, RecordingTts } from '../../core/testing/doubles'
 import type {
   EvidenceCheckpointEvent,
+  LlmRoundEvent,
   PipelineEventTraceEvent,
   ReasoningEvent,
   RunTraceRecord,
@@ -76,6 +77,11 @@ function reasoning(records: readonly RunTraceRecord[]): (RunTraceRecord & Reason
   return records.filter((record): record is RunTraceRecord & ReasoningEvent => record.kind === 'reasoning')
 }
 
+/** The llm_round records (#191), in the order the attempts were sent. */
+function llmRounds(records: readonly RunTraceRecord[]): (RunTraceRecord & LlmRoundEvent)[] {
+  return records.filter((record): record is RunTraceRecord & LlmRoundEvent => record.kind === 'llm_round')
+}
+
 /** The pipeline_event records (#185), in publication order. */
 function pipelineEvents(records: readonly RunTraceRecord[]): (RunTraceRecord & PipelineEventTraceEvent)[] {
   return records.filter((record): record is RunTraceRecord & PipelineEventTraceEvent => record.kind === 'pipeline_event')
@@ -92,17 +98,23 @@ async function runSession(
   const llm: LlmClient = {
     complete: (request) => {
       const round = served + 1
+      // The attempt identity a client reports (#191): before each attempt
+      // starts, the retried one included, like the production client.
+      const sent = { model: 'stub-model', promptHash: 'hash-1' }
+      request.onAttempt?.(sent)
       // The reasoning stream as a provider emits it: deltas, then the turn.
       // A first attempt that thought, then failed: the client retries it,
       // and the abandoned thinking must not join the attempt that survives.
       if (options.retriesFirstRound && round === 1 && request.onDelta) {
         request.onDelta({ kind: 'reasoning', text: 'the provider hung up' })
         request.onRetryAttempt?.(2, 3)
+        request.onAttempt?.(sent)
       }
       if (options.thinks && request.onDelta) {
         for (const chunk of options.thinks(round)) request.onDelta({ kind: 'reasoning', text: chunk })
       }
-      return Promise.resolve(turns[served++] ?? { kind: 'answer', speak: 'Done.', display: 'Done.' })
+      const turn = turns[served++] ?? { kind: 'answer', speak: 'Done.', display: 'Done.' }
+      return Promise.resolve({ ...turn, usage: { promptTokens: 100 * round, completionTokens: 10 } })
     },
   }
   const pipeline = createCommandPipeline({
@@ -444,7 +456,7 @@ describe('the Run Trace file', () => {
     }
   })
 
-  it("cuts a worker's overlong tool_result at the cap, and keeps the true length", async () => {
+  it("keeps a worker's overlong page read whole, with its length beside it (#191)", async () => {
     const page = 'p'.repeat(TRACE_TOOL_RESULT_MAX_CHARS + 2_500)
     const all = await runDelegatingSession(dir, { workerThinks: [], workerReads: page })
 
@@ -453,8 +465,70 @@ describe('the Run Trace file', () => {
     )
     const event = result!.event
     if (event.type !== 'tool_result') throw new Error('not a tool_result')
-    expect(event.result).toBe('p'.repeat(TRACE_TOOL_RESULT_MAX_CHARS))
+    expect(event.result).toBe(page)
     expect(result!.chars).toBe(page.length)
+  })
+
+  // The llm_round records (#191): what each attempt was sent under and
+  // what it cost, numbered exactly as the reasoning record beside it.
+  it('writes one llm_round line per attempt, numbered as the reasoning record for the same attempt', async () => {
+    const all = await runSession(dir, [
+      { kind: 'tool_calls', calls: [{ id: 'c1', name: 'read_page', args: {} }] },
+      { kind: 'answer', speak: 'It is $39.', display: 'It is $39.' },
+    ], { retriesFirstRound: true, thinks: (round) => [`round ${round}`] })
+
+    const rounds = llmRounds(all)
+    // Three attempts: round 1 retried once, then round 2 — the reasoning
+    // records number them the same way, attempt for attempt.
+    expect(rounds.map((record) => [record.round, record.attempt])).toEqual([[1, 1], [1, 2], [2, 1]])
+    expect(reasoning(all).map((record) => [record.round, record.attempt])).toEqual([[1, 1], [1, 2], [2, 1]])
+    // Every attempt says what it was sent under; only the ones that
+    // returned carry usage — the abandoned attempt never did.
+    expect(rounds.map((record) => [record.role, record.model, record.promptHash, record.reasoningEffort])).toEqual([
+      ['orchestrator', 'stub-model', 'hash-1', 'high'],
+      ['orchestrator', 'stub-model', 'hash-1', 'high'],
+      ['orchestrator', 'stub-model', 'hash-1', 'high'],
+    ])
+    expect(rounds.map((record) => record.usage)).toEqual([
+      undefined,
+      { promptTokens: 100, completionTokens: 10 },
+      { promptTokens: 200, completionTokens: 10 },
+    ])
+    // The request's shape grows with the context: round 2 carries the
+    // page read, so it is one pair deeper and longer than round 1.
+    expect(rounds.map((record) => record.request.toolResults)).toEqual([0, 0, 1])
+    expect(rounds[2]!.request.chars).toBeGreaterThan(rounds[0]!.request.chars)
+    for (const record of rounds) {
+      expect(record.v).toBe(RUN_TRACE_VERSION)
+      expect(record.runId).toBe('run-1')
+      expect(record.sessionId).toBe('session-1')
+      expect(record.turnId).toMatch(/^turn-/)
+      expect(record.agentId).toBeUndefined()
+    }
+  })
+
+  it("writes a delegated worker's llm_round lines under the parent Run, stamped with its agentId (#191)", async () => {
+    const all = await runDelegatingSession(dir, {
+      workerThinks: ['reading the page'],
+      workerReads: 'Acme Wi-Fi Router\nPrice: $39.',
+    })
+
+    const worker = llmRounds(all).filter((record) => record.agentId !== undefined)
+    // Two worker rounds — the read and the answer — served by the
+    // scripted double, which names itself the way the usage ledger does.
+    expect(worker.map((record) => [record.agentId, record.role, record.round, record.attempt, record.model, record.request.toolResults])).toEqual([
+      ['a-1', 'subagent', 1, 1, 'scripted', 0],
+      ['a-1', 'subagent', 2, 1, 'scripted', 1],
+    ])
+    // A worker runs at the Subagent rung (#166), and the record says so.
+    expect(worker.map((record) => record.reasoningEffort)).toEqual(['low', 'low'])
+    for (const record of worker) {
+      expect(record.runId).toBe('run-1')
+      expect(record.sessionId).toBe('session-1')
+      expect(record.turnId).toMatch(/^turn-/)
+    }
+    // The orchestrator's own rounds are there too, unstamped.
+    expect(llmRounds(all).filter((record) => record.agentId === undefined).map((record) => record.round)).toEqual([1, 2, 3])
   })
 
   it("writes no worker events at all when the Run Trace is off", async () => {

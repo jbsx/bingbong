@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
 import { createCommandPipeline, type CommandPipeline } from '../../core/pipeline/createCommandPipeline'
 import type { PipelineEvent } from '../../core/pipeline/events'
 import type { Tool } from '../../core/pipeline/tool'
@@ -14,6 +14,8 @@ import type { MemoryEntryId } from '../../core/session/workingMemory'
 import { createSessionRuntime } from '../../core/session/sessionRuntime'
 import type { SubmissionFeedback } from '../../core/session/submissionFeedback'
 import { createAssistantCommandRunner } from './createAssistantCommandRunner'
+import { setFaultSink, type FaultReport } from '../../core/trace/fault'
+import type { TraceRecord } from '../../core/trace/runTrace'
 
 class DeterministicIdentities implements SessionIdentitySource {
   readonly minted: string[] = []
@@ -260,6 +262,115 @@ describe('assistant command runner', () => {
     release()
     await accepted
     expect(runtime.state().liveRunIds).toEqual([])
+  })
+
+  // The failure screenshot (#191): one capture per Run that finalized
+  // failed or on a work rail, recorded through the Run's own writer, and
+  // a capture that throws is a fault — never the Run's problem.
+  describe('failure screenshot (#191)', () => {
+    afterEach(() => setFaultSink(null))
+
+    function harness(done: PipelineEvent, options: { traced?: boolean; capture?: 'ok' | 'throws' | 'absent' } = {}) {
+      const clock = new FakeClock(1_000)
+      const runtime = createSessionRuntime({ clock, identities: new DeterministicIdentities() })
+      const records: TraceRecord[] = []
+      const captures: { runId: string; turnId: string }[] = []
+      const published: PipelineEvent['type'][] = []
+      const pipeline: CommandPipeline = {
+        async *execute(command) {
+          yield { type: 'command', text: command, turnId: 'turn-1', at: clock.now() }
+          yield done
+        },
+        resolveConfirmation: () => {},
+        resolveAsk: () => {},
+        abort: () => {},
+        pause: () => {},
+        resume: () => false,
+        getState: () => 'idle',
+      }
+      const runner = createAssistantCommandRunner({
+        pipeline,
+        runtime,
+        clock,
+        onSessionReset: () => {},
+        createRunPublisher: () => ({ publish: (event) => void published.push(event.type) }),
+        publishFeedback: () => {},
+        ...(options.traced === false ? {} : { runTrace: { write: (record) => void records.push(record) } }),
+        ...(options.capture === 'absent'
+          ? {}
+          : {
+              captureFailureScreenshot: async (identity) => {
+                captures.push(identity)
+                if (options.capture === 'throws') throw new Error('page is gone')
+                return { path: `/logs/run-trace-${identity.runId}-${identity.turnId}.png`, bytes: 512 }
+              },
+            }),
+      })
+      return { runner, records, captures, published }
+    }
+
+    it('captures once for a failed Run and records where the PNG went, under the Run identity', async () => {
+      const { runner, records, captures, published } = harness({ type: 'done', outcome: 'failed', turnId: 'turn-1', at: 5 })
+
+      expect(await runner.run('find the fare')).toBe(true)
+
+      expect(captures).toEqual([{ runId: 'run-1', turnId: 'turn-1' }])
+      expect(records).toEqual([
+        {
+          v: 1,
+          at: 1_000,
+          runId: 'run-1',
+          sessionId: 'session-1',
+          generation: 0,
+          turnId: 'turn-1',
+          kind: 'failure_screenshot',
+          cause: 'failed',
+          path: '/logs/run-trace-run-1-turn-1.png',
+          bytes: 512,
+        },
+      ])
+      // The `done` was already out when the capture ran.
+      expect(published).toEqual(['command', 'done'])
+    })
+
+    it('captures for a rail-caused finalization and names the rail', async () => {
+      const { runner, records } = harness({ type: 'done', outcome: 'done', finalizationCause: 'no_progress', turnId: 'turn-1', at: 5 })
+
+      await runner.run('find the fare')
+
+      expect(records.map((record) => record.kind === 'failure_screenshot' && record.cause)).toEqual(['no_progress'])
+    })
+
+    it('captures nothing for a Run that met its objective', async () => {
+      const { runner, records, captures } = harness({ type: 'done', outcome: 'done', finalizationCause: 'objective_met', turnId: 'turn-1', at: 5 })
+
+      await runner.run('find the fare')
+
+      expect(captures).toEqual([])
+      expect(records).toEqual([])
+    })
+
+    it('captures nothing when the Run Trace is off — there is no record for the file to join', async () => {
+      const { runner, captures } = harness({ type: 'done', outcome: 'failed', turnId: 'turn-1', at: 5 }, { traced: false })
+
+      await runner.run('find the fare')
+
+      expect(captures).toEqual([])
+    })
+
+    it("leaves a fault and the Run's outcome unchanged when the capture throws", async () => {
+      const faults: FaultReport[] = []
+      setFaultSink((report) => faults.push(report))
+      const { runner, records, published } = harness({ type: 'done', outcome: 'failed', turnId: 'turn-1', at: 5 }, { capture: 'throws' })
+
+      expect(await runner.run('find the fare')).toBe(true)
+
+      expect(records).toEqual([])
+      expect(published).toEqual(['command', 'done'])
+      expect(faults).toEqual([
+        expect.objectContaining({ site: 'agent.createAssistantCommandRunner.failureScreenshot', message: 'page is gone', turnId: 'turn-1' }),
+      ])
+    })
   })
 
   describe('session reset restart (#99)', () => {

@@ -2,7 +2,16 @@ import type { PipelineEvent, UnstampedEvent } from './events'
 import type { Tool, ToolContext } from './tool'
 import type { Clock } from '../ports/clock'
 import { toErrorMessage } from '../errors'
-import type { AssistantTurn, LlmClient, LlmStreamDelta, ToolCall, ToolResult, ToolResultOutcome } from '../ports/llm'
+import type {
+  AssistantTurn,
+  LlmAttemptSent,
+  LlmClient,
+  LlmRequest,
+  LlmStreamDelta,
+  ToolCall,
+  ToolResult,
+  ToolResultOutcome,
+} from '../ports/llm'
 import { selectDelegatedMemory } from '../agent/subagentReport'
 import { createLlmDeltaBatcher } from './deltaBatcher'
 import type { TtsSpeaker } from '../ports/tts'
@@ -55,6 +64,7 @@ import { candidateCheckpointEvent, evidenceCheckpointEvent } from '../trace/evid
 import type { RunTraceWriter } from '../trace/runTrace'
 import type { VisionTraceReporter } from '../trace/visionTrace'
 import { createReasoningRounds, reasoningEvent, type TracedReasoningRound } from '../trace/reasoningTrace'
+import { createLlmRounds, llmRequestShape, llmRoundEvent, type LlmRound, type TracedLlmRound } from '../trace/llmRoundTrace'
 import { pipelineEventTraceBody, tracesPipelineEvent } from '../trace/pipelineEventTrace'
 import { completedEvidenceIsFresh } from './evidenceFreshness'
 import { evaluateCandidateCheckpoint, type CandidateCheckpointOutcome, type EvidenceSessionSource } from './candidateCheckpoint'
@@ -656,6 +666,16 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
       traceRun && reasoningRounds
         ? (round: TracedReasoningRound): void => traceRun(() => ({ turnId, ...reasoningEvent(round) }))
         : undefined
+    // The llm_round records (#191): one per attempt, numbered as the
+    // reasoning records are, carrying what the client reported it sent —
+    // model, prompt hash, rung — with the request's shape and the
+    // provider's usage. The same one write serves the Run's own rounds and
+    // a delegated worker's (handed down as `traceSubagentLlmRound`).
+    const llmRounds = traceRun ? createLlmRounds() : undefined
+    const writeLlmRound =
+      traceRun && llmRounds
+        ? (round: TracedLlmRound): void => traceRun(() => ({ turnId, ...llmRoundEvent(round) }))
+        : undefined
     // A delegated worker's Tool Rounds (#185): the same one write, for the
     // events a worker's rounds publish to nobody. Its events arrive
     // unstamped — a worker knows no turn — so the Run stamps its own,
@@ -786,6 +806,8 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
           // the writer as well as the flag, so nothing is collected in a
           // worker that has nowhere to write.
           ...(writeReasoning ? { traceSubagentReasoning: writeReasoning } : {}),
+          // And its llm_round records (#191), through the same hand-down.
+          ...(writeLlmRound ? { traceSubagentLlmRound: writeLlmRound } : {}),
           // And what those rounds called (#185), through the same writer:
           // a worker's stream reaches no view at all, so this is the only
           // record of it there will ever be.
@@ -909,8 +931,21 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
           const armedRound = effortEpoch.armRound()
           run.abortLlm = () => armedRound.abort()
           let turn: AssistantTurn
+          // What this round's llm_round records carry (#191): the request's
+          // shape, counted once the request is built, and the usage of the
+          // attempt that returned. Both read inside the writer's guard.
+          let roundShape: ReturnType<typeof llmRequestShape> | undefined
+          let roundUsage: AssistantTurn['usage']
+          const closeLlmAttempt = (closed: LlmRound): void => {
+            writeLlmRound?.({
+              ...closed,
+              role: 'orchestrator',
+              reasoningEffort: effortEpoch.reasoningEffort,
+              request: roundShape ?? { toolResults: toolResults.length, chars: 0 },
+            })
+          }
           try {
-            turn = await llm.complete({
+            const request: LlmRequest = {
               command,
               toolResults,
               // How hard this round thinks (#166): a pure function of the
@@ -961,10 +996,16 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
                       // it, as its own record: concatenating it into the
                       // attempt that survives would hide that two happened.
                       if (reasoningRounds) writeReasoning?.(reasoningRounds.takeAttempt())
+                      // And its llm_round record (#191), numbered alike:
+                      // an abandoned attempt carries no usage.
+                      if (llmRounds) closeLlmAttempt(llmRounds.takeAttempt())
                       emitDetail?.({ type: 'llm_retry', attempt, maxAttempts, at: clock.now() })
                     },
                   }
                 : {}),
+              // Attempt identity (#191): the client reports what each attempt
+              // is sent under; the next take carries it into the record.
+              ...(llmRounds ? { onAttempt: (sent: LlmAttemptSent): void => llmRounds.onAttempt(sent) } : {}),
               // Streaming (#47): the round streams only when the detail
               // channel is wired (absent → the non-streaming fallback).
               // Streaming is also what the reasoning records read (#182):
@@ -979,7 +1020,10 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
                   }
                 : {}),
               signal: armedRound.signal,
-            })
+            }
+            if (llmRounds) roundShape = llmRequestShape(request)
+            turn = await llm.complete(request)
+            roundUsage = turn.usage
           } catch (err) {
             // The aborted signal rejects the request; the run was stopped,
             // so this is a cancellation whatever the rejection looks like.
@@ -1012,6 +1056,10 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
             // leaves its thinking behind exactly like a round that
             // returned. Truncation happens inside the writer's guard.
             if (reasoningRounds) writeReasoning?.(reasoningRounds.takeRound())
+            // The round's llm_round record (#191), on the same terms: an
+            // aborted or failed round leaves what it was sent under, and
+            // only a round that returned carries usage.
+            if (llmRounds) closeLlmAttempt(llmRounds.takeRound(roundUsage))
           }
           // The round can resolve despite the deadline abort (a client that
           // ignored the signal, or the response landing in the race

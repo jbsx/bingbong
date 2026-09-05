@@ -163,6 +163,63 @@ describe('buildTraceTimeline', () => {
     expect(entries[1].agentId).toBeUndefined()
   })
 
+  it('summarizes the round identity and the failure screenshot, and names the models on a run_plan (#191)', () => {
+    const timeline = buildTraceTimeline([
+      run({
+        at: T0 + 1,
+        turnId: 'turn-1',
+        kind: 'pipeline_event',
+        models: { orchestrator: 'glm-5.3', subagent: 'deepseek-chat', vision: 'glm-4.6v' },
+        event: { type: 'run_plan', turnId: 'turn-1', objective: 'find the fare', headline: 'Fares', effortTier: 'investigation', source: 'model', at: T0 + 1 },
+      }),
+      run({
+        at: T0 + 2,
+        turnId: 'turn-1',
+        kind: 'llm_round',
+        round: 3,
+        attempt: 2,
+        role: 'orchestrator',
+        model: 'glm-5.3',
+        reasoningEffort: 'high',
+        usage: { promptTokens: 12_345, completionTokens: 210 },
+        promptHash: 'deadbeefcafef00d',
+        request: { toolResults: 4, chars: 38_000 },
+      }),
+      run({
+        at: T0 + 3,
+        turnId: 'turn-1',
+        kind: 'llm_round',
+        round: 1,
+        attempt: 1,
+        role: 'subagent',
+        agentId: 'agent-7',
+        request: { toolResults: 0, chars: 900 },
+      }),
+      run({
+        at: T0 + 4,
+        turnId: 'turn-1',
+        kind: 'pipeline_event',
+        event: { type: 'done', turnId: 'turn-1', outcome: 'done', finalizationCause: 'no_progress', at: T0 + 4 },
+      }),
+      run({ at: T0 + 5, turnId: 'turn-1', kind: 'failure_screenshot', cause: 'no_progress', path: '/home/dev/logs/run-trace-run-a-turn-1.png', bytes: 51_200 }),
+    ])
+
+    const entries = timeline.lanes[0].entries
+    expect(entries.map((entry) => entry.summary)).toEqual([
+      'investigation (model): find the fare [orchestrator glm-5.3, subagent deepseek-chat, vision glm-4.6v]',
+      'round 3 attempt 2 orchestrator glm-5.3 @high 4 results / 38000 chars → 12345 in / 210 out prompt deadbeefcafef00d',
+      'round 1 attempt 1 subagent 0 results / 900 chars',
+      'done (no_progress)',
+      'no_progress: run-trace-run-a-turn-1.png (51200 bytes)',
+    ])
+    expect(entries[2].agentId).toBe('agent-7')
+    // The screenshot links from the `done` it was taken for as well as
+    // from its own entry — by file name, never by the absolute path.
+    expect(entries[3].screenshot).toBe('run-trace-run-a-turn-1.png')
+    expect(entries[4].screenshot).toBe('run-trace-run-a-turn-1.png')
+    expect(entries[0].screenshot).toBeUndefined()
+  })
+
   it('cuts a long summary and keeps the whole record for the expander', () => {
     const text = 'x'.repeat(500)
     const timeline = buildTraceTimeline([

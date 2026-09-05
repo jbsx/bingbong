@@ -13,6 +13,8 @@
 // (#182), and a fault reported with a turn id in hand (#184).
 
 import type { PipelineEvent } from '../pipeline/events'
+import type { AgentRole } from '../agent/modelRouting'
+import type { ReasoningEffort, TokenUsage } from '../ports/llm'
 import type { ObservationProducer } from '../session/observationLedger'
 import type { SessionEvidenceCounts } from '../session/sessionEvidence'
 import type { SessionEndReason } from '../session/sessionRuntime'
@@ -31,11 +33,22 @@ export const TRACE_REASONING_MAX_CHARS = 8_000
 
 /**
  * How much of a `tool_result` event's text a `pipeline_event` record keeps
- * (#185). One page read is 40 KB; a 5 MB roll and a 7-day purge stop
- * meaning anything if every read is kept whole, so the result text is the
- * one field the tap cuts — with `chars` beside it, so the cut is visible.
+ * (#185). A 5 MB roll and a 7-day purge stop meaning anything if every
+ * result is kept whole, so the result text is the one field the tap cuts
+ * — with `chars` beside it, so the cut is visible. The page-read tools in
+ * {@link TRACE_WHOLE_RESULT_TOOLS} are exempt (#191).
  */
 export const TRACE_TOOL_RESULT_MAX_CHARS = 8_000
+
+/**
+ * The tools whose result a `pipeline_event` record keeps whole (#191): a
+ * page snapshot is ~40 KB and the ref the model clicked is usually past
+ * the 8 000-char cut, which made the one record a browser post mortem
+ * reads most the one it could not read. Twenty reads are ~800 KB against
+ * the roll, which the purge already bounds; if the roll proves too small
+ * the answer is a bigger roll for the family, never a cut snapshot.
+ */
+export const TRACE_WHOLE_RESULT_TOOLS: ReadonlySet<string> = new Set(['read_page', 'ground_visual'])
 
 /** The Run whose decisions a trace file's records describe. */
 export interface RunTraceIdentity {
@@ -130,6 +143,69 @@ export interface ReasoningEvent {
   readonly agentId?: string
 }
 
+/** Which loop sent a round: the Run's own, or a delegated worker's (#191). */
+export type LlmRoundRole = 'orchestrator' | 'subagent'
+
+/** The request's shape as counts, never its text (#191). */
+export interface LlmRequestShape {
+  /** How many assistant/tool pairs the round carried — the Run's context depth. */
+  readonly toolResults: number
+  /** The request's content in characters: command, tool results, directives, continuity. */
+  readonly chars: number
+}
+
+/**
+ * One LLM attempt as it was sent (#191): the record that answers "why did
+ * the model choose what it chose" alongside `reasoning`. The `command`,
+ * `tool_call` and `tool_result` records already hold the request's text,
+ * so this holds only what they cannot: which model served the attempt,
+ * under which prompt, at which rung, how big the request was, and what
+ * it cost — the numbers a "ran out of rounds" post mortem reads round by
+ * round. Numbered exactly as the `reasoning` record for the same attempt,
+ * so the two join on `round` and `attempt`.
+ */
+export interface LlmRoundEvent {
+  readonly kind: 'llm_round'
+  /** Which LLM round of the Run, counting from 1 — the `reasoning` record's numbering. */
+  readonly round: number
+  /** Which attempt within that round, counting from 1 — the `reasoning` record's numbering. */
+  readonly attempt: number
+  readonly role: LlmRoundRole
+  /** The model the attempt went to; absent when the client reported none (it threw before dispatch). */
+  readonly model?: string
+  /** The rung sent: the client's word when it reported one, else the request's. */
+  readonly reasoningEffort?: ReasoningEffort
+  /** Token usage, when the provider reported it — only an attempt that returned has one. */
+  readonly usage?: TokenUsage
+  /** A stable hash of the system prompt text sent, never the text. */
+  readonly promptHash?: string
+  readonly request: LlmRequestShape
+  /** The delegated worker whose round this was (#183); absent on the Run's own rounds. */
+  readonly agentId?: string
+}
+
+/** Which model each role was routed to when the Run declared its plan (#191). */
+export type RunPlanModels = Partial<Record<AgentRole, string>>
+
+/**
+ * A capture of the visible tab at a failed finalization (#191): the one
+ * record whose payload is not in the file. The PNG is a sibling file
+ * beside the jsonl, named after the Run and turn and purged under the
+ * same 7-day rule; the record names it. Written only for a `done` that
+ * finalized failed or on a work rail — the rounds a post mortem reads.
+ */
+export interface FailureScreenshotEvent {
+  readonly kind: 'failure_screenshot'
+  /** `failed`, or the rail's Finalization Cause that made the Run end. */
+  readonly cause: FailureScreenshotCause
+  /** The PNG's absolute path. */
+  readonly path: string
+  readonly bytes: number
+}
+
+/** What earns a failure screenshot: a failed outcome, or a rail-caused finalization. */
+export type FailureScreenshotCause = 'failed' | 'no_progress' | 'deadline_reached' | 'budget_exhausted'
+
 /**
  * One PipelineEvent as it was published (#185): the event object itself,
  * owner stamps included, under `event`. The stream is what every view —
@@ -154,6 +230,13 @@ export interface PipelineEventTraceEvent {
    */
   readonly chars?: number
   /**
+   * Which model each role was routed to, stamped on a `run_plan` record
+   * only (#191) — read from the routing config as the plan is published,
+   * so runs across a model switch are told apart from the file without
+   * joining every round. Absent on every other event.
+   */
+  readonly models?: RunPlanModels
+  /**
    * The delegated worker whose Tool Round published this (#185); absent on
    * the Run's own stream. A worker's rounds never reach the main stream —
    * only its `agent_update` cards and `subagent_finalized` do — so they are
@@ -164,7 +247,12 @@ export interface PipelineEventTraceEvent {
 }
 
 /** One decision a Run traces, whatever kind it is. */
-export type RunTraceEventBody = EvidenceCheckpointEvent | ReasoningEvent | PipelineEventTraceEvent
+export type RunTraceEventBody =
+  | EvidenceCheckpointEvent
+  | ReasoningEvent
+  | PipelineEventTraceEvent
+  | LlmRoundEvent
+  | FailureScreenshotEvent
 
 /** What a Run hands the writer: one event, stamped with the turn it happened in. */
 export type RunTraceEvent = { readonly turnId: string } & RunTraceEventBody
