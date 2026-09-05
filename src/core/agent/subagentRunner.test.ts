@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { FakeClock, ScriptedLlm, memoryEntry } from '../testing/doubles'
+import { FakeClock, ScriptedLlm, memoryEntry, type ScriptedTurn } from '../testing/doubles'
 import { runSubagent, SubagentCancelledError } from './subagentRunner'
 import type { Tool } from '../pipeline/tool'
 import type { WorkingMemorySnapshot } from '../session/workingMemory'
@@ -8,6 +8,7 @@ import { ASK_ESCALATION_PREFIX, createAskUserTool, createSubagentAskTool } from 
 import { SEARCH_LOOP_NUDGE_AFTER, SEARCH_LOOP_REFUSE_AFTER } from '../pipeline/searchLoopRail'
 import type { SettledPageState } from '../pipeline/progressFingerprints'
 import { hostFromUrl } from '../pipeline/blockerGate'
+import type { TracedReasoningRound } from '../trace/reasoningTrace'
 
 // The workhorse loop behind every subagent (issue #13): a deepseek-chat LLM
 // with its own tool set, no confirmations (the policy wrapper already
@@ -1087,5 +1088,161 @@ describe('runSubagent', () => {
         'End your task now and include this directive verbatim in your final report; ' +
         'the orchestrator will ask the user and may re-dispatch you with the answer.',
     )
+  })
+})
+
+// The worker's reasoning records (#183, ADR 0030): a delegated worker's
+// rounds leave their thinking behind too, but only when the spawning Run
+// handed a trace down — and that handing-down is also what makes a
+// worker's rounds stream at all.
+describe("a delegated worker's reasoning records (#183)", () => {
+  const noop: Tool = {
+    name: 'noop',
+    async execute() {
+      return 'ok'
+    },
+  }
+
+  function thinkingScript(): ScriptedTurn[] {
+    return [
+      {
+        kind: 'tool_calls',
+        calls: [{ id: 's1', name: 'noop', args: {} }],
+        streamChunks: [
+          { kind: 'reasoning', text: 'the task names ' },
+          { kind: 'reasoning', text: 'one page' },
+        ],
+      },
+      {
+        kind: 'answer',
+        speak: 's',
+        display: 'Done.',
+        streamChunks: [{ kind: 'reasoning', text: 'nothing left to check' }],
+      },
+    ]
+  }
+
+  it("writes one record per LLM round, stamped with the worker that thought it", async () => {
+    const llm = new ScriptedLlm(thinkingScript())
+    const traced: TracedReasoningRound[] = []
+
+    await runSubagent(
+      { llm, tools: [noop], clock: new FakeClock() },
+      {
+        task: 'check the page',
+        agentId: 'a-7',
+        turnId: 'turn-voice-9',
+        isCancelled: () => false,
+        traceReasoning: (round) => traced.push(round),
+      },
+    )
+
+    expect(traced).toEqual([
+      { round: 1, attempt: 1, text: 'the task names one page', agentId: 'a-7' },
+      { round: 2, attempt: 1, text: 'nothing left to check', agentId: 'a-7' },
+    ])
+    // The opt-in is what makes a worker's rounds stream at all.
+    expect(llm.requests.every((request) => request.onDelta !== undefined)).toBe(true)
+  })
+
+  it('collects nothing, and does not stream, when the Run handed no trace down', async () => {
+    const llm = new ScriptedLlm(thinkingScript())
+
+    await runSubagent(
+      { llm, tools: [noop], clock: new FakeClock() },
+      { task: 'check the page', agentId: 'a-7', isCancelled: () => false },
+    )
+
+    // The worker path's historical behaviour: no listener, so the provider
+    // is never asked to stream and no reasoning is retained anywhere.
+    expect(llm.requests.map((request) => request.onDelta)).toEqual([undefined, undefined])
+    expect(llm.requests.map((request) => request.onRetryAttempt)).toEqual([undefined, undefined])
+  })
+
+  it("closes a retried round once per attempt, so an abandoned attempt's thinking stands alone", async () => {
+    const traced: TracedReasoningRound[] = []
+    let round = 0
+    const llm = {
+      complete: (request: { onDelta?: (delta: { kind: 'reasoning'; text: string }) => void; onRetryAttempt?: (attempt: number, max: number) => void }) => {
+        round += 1
+        if (round === 1) {
+          request.onDelta?.({ kind: 'reasoning', text: 'the provider hung up' })
+          request.onRetryAttempt?.(2, 3)
+        }
+        request.onDelta?.({ kind: 'reasoning', text: 'second time lucky' })
+        return Promise.resolve({ kind: 'answer' as const, speak: 's', display: 'Done.' })
+      },
+    }
+
+    await runSubagent(
+      { llm, tools: [], clock: new FakeClock() },
+      { task: 'check the page', agentId: 'a-8', isCancelled: () => false, traceReasoning: (r) => traced.push(r) },
+    )
+
+    expect(traced).toEqual([
+      { round: 1, attempt: 1, text: 'the provider hung up', agentId: 'a-8' },
+      { round: 1, attempt: 2, text: 'second time lucky', agentId: 'a-8' },
+    ])
+  })
+
+  it("keeps a failed round's thinking — the round a diagnosis wants most", async () => {
+    const traced: TracedReasoningRound[] = []
+    const llm = {
+      complete: (request: { onDelta?: (delta: { kind: 'reasoning'; text: string }) => void }) => {
+        request.onDelta?.({ kind: 'reasoning', text: 'halfway through the plan' })
+        return Promise.reject(new Error('provider down'))
+      },
+    }
+
+    await expect(
+      runSubagent(
+        { llm, tools: [], clock: new FakeClock() },
+        { task: 'check the page', agentId: 'a-9', isCancelled: () => false, traceReasoning: (r) => traced.push(r) },
+      ),
+    ).rejects.toThrow('provider down')
+
+    expect(traced).toEqual([{ round: 1, attempt: 1, text: 'halfway through the plan', agentId: 'a-9' }])
+  })
+
+  it("records the reserved Answer round's thinking too (#120/#183)", async () => {
+    const traced: TracedReasoningRound[] = []
+    const llm = new ScriptedLlm([
+      {
+        kind: 'tool_calls',
+        calls: [{ id: 's1', name: 'noop', args: {} }],
+        streamChunks: [{ kind: 'reasoning', text: 'one acquisition round' }],
+      },
+      {
+        kind: 'answer',
+        speak: 's',
+        display: 'Wrapping up.',
+        streamChunks: [{ kind: 'reasoning', text: 'the budget is spent' }],
+      },
+    ] as ScriptedTurn[])
+
+    // One tool round of budget: the second round is the reserved Answer.
+    await runSubagent(
+      { llm, tools: [noop], clock: new FakeClock(), maxToolRounds: 1 },
+      { task: 'check the page', agentId: 'a-10', isCancelled: () => false, traceReasoning: (r) => traced.push(r) },
+    )
+
+    expect(traced.map((round) => [round.round, round.text])).toEqual([
+      [1, 'one acquisition round'],
+      [2, 'the budget is spent'],
+    ])
+  })
+
+  it('leaves the worker anonymous when the spawn carried no agent id', async () => {
+    const traced: TracedReasoningRound[] = []
+    const llm = new ScriptedLlm([
+      { kind: 'answer', speak: 's', display: 'Done.', streamChunks: [{ kind: 'reasoning', text: 'no id here' }] },
+    ] as ScriptedTurn[])
+
+    await runSubagent(
+      { llm, tools: [], clock: new FakeClock() },
+      { task: 'check the page', isCancelled: () => false, traceReasoning: (r) => traced.push(r) },
+    )
+
+    expect(traced).toEqual([{ round: 1, attempt: 1, text: 'no id here' }])
   })
 })

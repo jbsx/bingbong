@@ -387,8 +387,8 @@ _Avoid_: session memory, diagnostic record, Run Trace
 A durable, machine-readable record of a Run's internal decisions — timings,
 evidence grading, what each view was answered — written for diagnosis only. It
 is never rendered in any view and never provides continuity to a Session. The
-model's own per-round reasoning joins it only behind an opt-in env flag, and
-is not retained at all without one.
+model's own per-round reasoning — the Run's and its delegated workers' alike —
+joins it only behind an opt-in env flag, and is not retained at all without one.
 _Avoid_: debug log, audit log, perf log
 
 ### Views

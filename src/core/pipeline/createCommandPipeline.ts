@@ -53,7 +53,7 @@ import {
 } from './evidenceCheckpoint'
 import { candidateCheckpointEvent, evidenceCheckpointEvent } from '../trace/evidenceCheckpointTrace'
 import type { RunTraceWriter } from '../trace/runTrace'
-import { createReasoningRounds, reasoningEvent } from '../trace/reasoningTrace'
+import { createReasoningRounds, reasoningEvent, type TracedReasoningRound } from '../trace/reasoningTrace'
 import { completedEvidenceIsFresh } from './evidenceFreshness'
 import { evaluateCandidateCheckpoint, type CandidateCheckpointOutcome, type EvidenceSessionSource } from './candidateCheckpoint'
 import { deriveAnswerSources, scrubAnswerText } from './answerEvidence'
@@ -312,7 +312,8 @@ export interface RunContinuityContext {
    * and trace it. Off unless the developer set `BINGBONG_TRACE_REASONING`
    * in their own Env File — with it unset nothing is collected, so no
    * reasoning is retained for the file at all. Turning it on makes every
-   * round stream, because the reasoning only exists in the stream.
+   * round stream, because the reasoning only exists in the stream — the
+   * Run's own rounds and, through delegation (#183), its workers' too.
    */
   traceReasoning?: boolean
 }
@@ -737,6 +738,18 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
           // a tier escalation re-arm reaches them without a respawn.
           effortTier: () => effortEpoch.tier,
           delegationDeadline: effortEpoch.delegationDeadline,
+          // A delegated worker's reasoning records (#183): the Run's own
+          // writer and turn, closed over here so the worker never sees
+          // either — its thinking lands already joined to the Run that
+          // delegated it, stamped with the worker's own agentId. Gated on
+          // the writer as well as the flag, so nothing is collected in a
+          // worker that has nowhere to write.
+          ...(continuity?.traceReasoning && traceRun
+            ? {
+                traceWorkerReasoning: (round: TracedReasoningRound): void =>
+                  traceRun(() => ({ turnId, ...reasoningEvent(round) })),
+              }
+            : {}),
           // Delegation's memory selection (#98): spawn_agent resolves
           // memory_ids against this Run's immutable snapshot — the same one
           // every model round sees — so a worker can never receive entries

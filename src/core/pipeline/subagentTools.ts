@@ -120,7 +120,9 @@ export function createSubagentTools(manager: SubagentManager): Tool[] {
         // The parent Run's shared active-work deadline (#120/AC2) rides the
         // spawn unchanged: the worker polls it and finalizes when the
         // parent's work time is gone.
-        const spawned = manager.spawn(kind, task, ctx.turnId, memory, ctx.delegationDeadline)
+        // A worker's own reasoning records (#183) ride the spawn the same
+        // way: present only when the Run is tracing them.
+        const spawned = manager.spawn(kind, task, ctx.turnId, memory, ctx.delegationDeadline, ctx.traceWorkerReasoning)
         if (!spawned.ok) throw new Error(spawned.reason)
         return `spawned ${spawned.agent.id} [${kind}]${memory !== undefined ? ` with ${memory.length} shared memory entr${memory.length === 1 ? 'y' : 'ies'}` : ''} — poll with agent_results (wait: true) or keep working`
       },

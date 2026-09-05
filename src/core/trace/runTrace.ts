@@ -103,6 +103,14 @@ export interface ReasoningEvent {
   readonly text: string
   /** Full length in characters before the cut, so truncation is visible. */
   readonly chars: number
+  /**
+   * The delegated worker whose round thought this (#183); absent on the
+   * Run's own rounds. The record still carries the parent Run's identity,
+   * so a worker's thinking joins the Run that delegated it — and joins the
+   * checkpoint records, which stamp the same `agentId` on the citations a
+   * worker's observations grounded (#123, #180).
+   */
+  readonly agentId?: string
 }
 
 /** One decision a Run traces, whatever kind it is. */

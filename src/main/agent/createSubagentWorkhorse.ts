@@ -161,6 +161,10 @@ export function createSubagentTaskApi(deps: SubagentWorkhorseDeps): SubagentTask
           // The parent Run's shared active-work deadline (#120): polled
           // alongside cancellation; the worker finalizes when it passes.
           ...(hooks.isWorkExpired !== undefined ? { isWorkExpired: hooks.isWorkExpired } : {}),
+          // The worker's reasoning records (#183): the spawning Run's own
+          // trace, handed down only when the developer opted in. Absent,
+          // the worker's rounds do not stream and nothing is collected.
+          ...(hooks.traceReasoning !== undefined ? { traceReasoning: hooks.traceReasoning } : {}),
           waitIfPaused: hooks.waitIfPaused ?? (() => Promise.resolve()),
           onProgress: (progress) => hooks.onProgress(progress.step, progress.action),
         },

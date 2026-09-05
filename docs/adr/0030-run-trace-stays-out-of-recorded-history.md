@@ -68,6 +68,22 @@ Recorded History's database.
   deadline-aborted ones included — so it is not the Tool Round count a Run
   budgets against. Turning the flag on makes every round stream, because
   reasoning exists only as stream deltas.
+- **A delegated worker's rounds are traced under the same flag (#183), and
+  the flag is what makes them stream.** A Browse Subagent's rounds run through
+  the workhorse loop, which has never streamed: nothing on that path listens
+  to a delta, so the provider was never asked for one. With
+  `BINGBONG_TRACE_REASONING` set, every worker round streams — the reasoning
+  collector is the only listener, and the opt-in is the only thing that wires
+  it — and with the flag unset the worker path is exactly what it was:
+  non-streaming, collecting nothing. There is no second knob. Each worker
+  record carries the worker's `agentId` beside `round` and `attempt`, and the
+  parent Run's identity and turn like every Run-written kind, so a worker's
+  thinking joins the Run that delegated it and the checkpoint records that
+  already stamp the same `agentId` on the citations its observations graded.
+  The 8,000-character cap and the one-record-per-attempt rule are the same;
+  the worker's reserved Answer round and a round that failed leave a record
+  like any other, since a worker's abandoned retry or a citation that failed
+  its Evidence Checkpoint is the case this half of the record exists for.
 
 **A Session Reset does not purge trace files, deliberately.** This is the
 uncomfortable consequence and it is stated here rather than left implicit: the

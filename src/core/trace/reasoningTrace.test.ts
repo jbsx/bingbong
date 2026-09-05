@@ -91,4 +91,17 @@ describe('the reasoning record', () => {
     const exact = 'y'.repeat(TRACE_REASONING_MAX_CHARS)
     expect(reasoningEvent({ round: 1, attempt: 1, text: exact }).text).toBe(exact)
   })
+
+  it("stamps the delegated worker that thought it, and nothing on the Run's own rounds (#183)", () => {
+    expect(reasoningEvent({ round: 2, attempt: 1, text: 'the spec page listed two', agentId: 'a-3' })).toEqual({
+      kind: 'reasoning',
+      round: 2,
+      attempt: 1,
+      text: 'the spec page listed two',
+      chars: 'the spec page listed two'.length,
+      agentId: 'a-3',
+    })
+    // The Run's own rounds carry no agent, and must not carry an empty key.
+    expect(Object.hasOwn(reasoningEvent({ round: 1, attempt: 1, text: 'mine' }), 'agentId')).toBe(false)
+  })
 })

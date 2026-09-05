@@ -1,6 +1,6 @@
 import type { Clock } from '../ports/clock'
 import { systemClock } from '../ports/clock'
-import type { AssistantTurn, LlmClient, ToolResult, ToolResultOutcome } from '../ports/llm'
+import type { AssistantTurn, LlmClient, LlmStreamDelta, ToolResult, ToolResultOutcome } from '../ports/llm'
 import type { Tool, ToolContext } from '../pipeline/tool'
 import type { SettledPageState } from '../pipeline/progressFingerprints'
 import type { SnapshotRef } from '../browser/snapshot'
@@ -18,6 +18,7 @@ import type { FinalizationCause } from '../session/runJournal'
 import { describeToolAction } from '../pipeline/toolCallDisplay'
 import { MAX_SUBAGENT_VISION_CALLS } from './subagentRails'
 import { droppedFindingsNote, validateReportFindings, type SubagentReport } from './subagentReport'
+import { createReasoningRounds, type ReasoningRound, type WorkerReasoningTrace } from '../trace/reasoningTrace'
 
 // The subagent workhorse loop (issue #13): one LLM (deepseek-chat via the
 // model router) driving its own tool set until it produces a final report.
@@ -74,6 +75,13 @@ import { droppedFindingsNote, validateReportFindings, type SubagentReport } from
 // relay, which stops because only the user can unblock it. Without it a
 // corpus pass cannot tell a worker that was cut short from one that
 // finished cleanly.
+//
+// A worker's rounds leave their reasoning behind too (#183, ADR 0030),
+// but only when the developer opted in: the spawning Run hands down a
+// `traceReasoning` closure over its own trace writer, and with nothing
+// handed down nothing is collected. Its presence is also what makes a
+// worker's rounds stream at all — the worker path has never streamed,
+// because reasoning is the only thing here that lives in the stream.
 //
 // The worker keeps its own Observation ledger (#123, ADR 0028): every tool
 // outcome is recorded with the source URL it observed, the report's
@@ -152,6 +160,15 @@ export interface RunSubagentOptions {
   /** Resolves immediately while running, or after the shared pause gate opens. */
   waitIfPaused?(): Promise<void>
   onProgress?(progress: SubagentProgress): void
+  /**
+   * The reasoning records for this worker's rounds (#183, ADR 0030):
+   * built by the spawning Run over its own Run Trace writer, so each
+   * record carries the parent Run's correlation keys and this worker's
+   * `agentId`. Absent unless the developer set `BINGBONG_TRACE_REASONING`
+   * — and with it absent the worker collects no reasoning and does not
+   * stream, which is the path's historical behaviour.
+   */
+  traceReasoning?: WorkerReasoningTrace
 }
 
 export class SubagentCancelledError extends Error {
@@ -380,6 +397,17 @@ export async function runSubagent(deps: RunSubagentDeps, options: RunSubagentOpt
     ...(deps.describeRef ? { describeRef: deps.describeRef } : {}),
   })
 
+  // The worker's reasoning collector (#183): one per worker, only when the
+  // spawning Run handed a trace down. Absent by default — with nothing
+  // here the rounds do not stream and no reasoning is retained at all.
+  const traceReasoning = options.traceReasoning
+  const reasoningRounds = traceReasoning ? createReasoningRounds() : undefined
+  /** Closes one round — or one abandoned attempt — and records its thinking. */
+  const traceThinking = (round: ReasoningRound | undefined): void => {
+    if (round === undefined || traceReasoning === undefined) return
+    traceReasoning({ ...round, ...(options.agentId !== undefined ? { agentId: options.agentId } : {}) })
+  }
+
   const requestArgs = () => ({
     command: options.task,
     toolResults,
@@ -388,6 +416,19 @@ export async function runSubagent(deps: RunSubagentDeps, options: RunSubagentOpt
     reasoningEffort: epoch.reasoningEffort,
     ...(options.turnId !== undefined ? { turnId: options.turnId } : {}),
     ...(options.memory !== undefined && options.memory.length > 0 ? { memory: options.memory } : {}),
+    // Streaming, only for the reasoning records (#183): a worker's rounds
+    // have never streamed, and nothing here listens to a delta but the
+    // collector — so the opt-in is what turns streaming on, and the round
+    // stays non-streaming without it.
+    ...(reasoningRounds
+      ? {
+          onDelta: (delta: LlmStreamDelta): void => reasoningRounds.onDelta(delta),
+          // A retried round leaves one record per attempt (#182): the
+          // abandoned attempt's thinking stands on its own rather than
+          // being concatenated into the attempt that survived.
+          onRetryAttempt: (): void => traceThinking(reasoningRounds.takeAttempt()),
+        }
+      : {}),
   })
 
   for (;;) {
@@ -419,6 +460,11 @@ export async function runSubagent(deps: RunSubagentDeps, options: RunSubagentOpt
         turn = await llm.complete(requestArgs())
       } catch {
         turn = null
+      } finally {
+        // The reserved Answer round thinks too, and a round that failed is
+        // the one a diagnosis wants most (#183) — so its record is written
+        // here, whatever the round did.
+        traceThinking(reasoningRounds?.takeRound())
       }
       await checkpoint(options)
       if (turn !== null && turn.kind === 'answer') {
@@ -430,7 +476,14 @@ export async function runSubagent(deps: RunSubagentDeps, options: RunSubagentOpt
       return boundedStopReport({ ...(options.agentId !== undefined ? { agentId: options.agentId } : {}), cause: decision.cause, maxToolRounds, rounds, lastAction, observations })
     }
 
-    const turn = await llm.complete(requestArgs())
+    let turn: AssistantTurn
+    try {
+      turn = await llm.complete(requestArgs())
+    } finally {
+      // One record per model round, written in a finally so a round that
+      // threw leaves its thinking behind like one that returned (#183).
+      traceThinking(reasoningRounds?.takeRound())
+    }
     await checkpoint(options)
     if (turn.kind === 'answer') {
       // A voluntary conclusion — no rail forced it (#162).

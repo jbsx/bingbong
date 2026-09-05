@@ -4,6 +4,7 @@ import type { SessionGeneration, SessionId } from '../session/sessionIdentity'
 import type { WorkingMemorySnapshot } from '../session/workingMemory'
 import { capSentences } from '../agent/answerContract'
 import { SUBAGENT_LIMITS, type SubagentSharedDeadline } from './subagentRails'
+import type { WorkerReasoningTrace } from '../trace/reasoningTrace'
 import type { SubagentReport } from './subagentReport'
 import { SubagentCancelledError } from './subagentRunner'
 
@@ -91,6 +92,13 @@ export interface SubagentTaskHooks {
   isWorkExpired?(): boolean
   waitIfPaused?(): Promise<void>
   onProgress(step: number, action: string): void
+  /**
+   * The reasoning records for this worker's rounds (#183): the spawning
+   * Run's own trace writer, closed over its identity and turn. Absent
+   * unless the developer opted in with `BINGBONG_TRACE_REASONING` — and
+   * absent, the worker collects no reasoning and does not stream.
+   */
+  traceReasoning?: WorkerReasoningTrace
 }
 
 /** Port: starts one workhorse loop (runSubagent in production). */
@@ -123,7 +131,14 @@ export type SpawnResult = { ok: true; agent: SubagentRecord } | { ok: false; rea
 export type CancelResult = { ok: true } | { ok: false; reason: string }
 
 export interface SubagentManager {
-  spawn(kind: SubagentKind, task: string, turnId?: string, memory?: WorkingMemorySnapshot, sharedDeadline?: SubagentSharedDeadline): SpawnResult
+  spawn(
+    kind: SubagentKind,
+    task: string,
+    turnId?: string,
+    memory?: WorkingMemorySnapshot,
+    sharedDeadline?: SubagentSharedDeadline,
+    traceReasoning?: WorkerReasoningTrace,
+  ): SpawnResult
   cancel(agentId: string): CancelResult
   cancelAll(): number
   /**
@@ -211,7 +226,7 @@ export function createSubagentManager(deps: SubagentManagerDeps): SubagentManage
   }
 
   return {
-    spawn(kind, task, turnId, memory, sharedDeadline) {
+    spawn(kind, task, turnId, memory, sharedDeadline, traceReasoning) {
       if (liveCount() >= maxConcurrent) {
         return {
           ok: false,
@@ -266,6 +281,10 @@ export function createSubagentManager(deps: SubagentManagerDeps): SubagentManage
           // workhorse polls it alongside cancellation and finalizes with a
           // bounded report when the parent's work time is gone.
           ...(sharedDeadline !== undefined ? { isWorkExpired: () => sharedDeadline.expired() } : {}),
+          // The worker's reasoning records (#183): handed down only when
+          // the Run is tracing them, so an unasked-for worker collects
+          // nothing — the same invariant the Run path holds.
+          ...(traceReasoning !== undefined ? { traceReasoning } : {}),
           waitIfPaused: () => waitIfPaused(id),
           onProgress: (step, action) => {
             if (spawnEpoch !== epoch) return

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { FakeClock, memoryEntry } from '../testing/doubles'
 import type { SessionId } from '../session/sessionIdentity'
 import type { WorkingMemorySnapshot } from '../session/workingMemory'
+import type { TracedReasoningRound, WorkerReasoningTrace } from '../trace/reasoningTrace'
 import type { SubagentReport } from './subagentReport'
 import {
   createSubagentManager,
@@ -40,12 +41,15 @@ function proseReport(text: string): SubagentReport {
 function manualTaskApi() {
   const tasks = new Map<string, ManualTask>()
   const started: { id: string; kind: string; task: string; turnId?: string; memory?: WorkingMemorySnapshot }[] = []
+  const hooksSeen = new Map<string, { traceReasoning?: WorkerReasoningTrace }>()
   return {
     started,
     tasks,
+    hooksSeen,
     api: {
-      start(spec: { id: string; kind: string; task: string; turnId?: string; memory?: WorkingMemorySnapshot }, hooks: { isCancelled(): boolean; isWorkExpired?(): boolean; waitIfPaused?(): Promise<void>; onProgress(step: number, action: string): void }) {
+      start(spec: { id: string; kind: string; task: string; turnId?: string; memory?: WorkingMemorySnapshot }, hooks: { isCancelled(): boolean; isWorkExpired?(): boolean; waitIfPaused?(): Promise<void>; onProgress(step: number, action: string): void; traceReasoning?: WorkerReasoningTrace }) {
         started.push({ id: spec.id, kind: spec.kind, task: spec.task, turnId: spec.turnId, ...(spec.memory !== undefined ? { memory: spec.memory } : {}) })
+        hooksSeen.set(spec.id, hooks)
         let settle: ((report: SubagentReport) => void) | null = null
         let fail: ((error: Error) => void) | null = null
         const done = new Promise<SubagentReport>((resolve, reject) => {
@@ -246,6 +250,20 @@ describe('subagent manager', () => {
     expired = true
     expect(api.tasks.get('a-1')!.workExpired?.()).toBe(true)
     expect(api.tasks.get('a-2')!.workExpired).toBeUndefined()
+  })
+
+  it("threads the parent Run's reasoning trace into the workhorse, and only when it was handed one (#183)", () => {
+    const { mgr, api } = manager()
+    const traced: TracedReasoningRound[] = []
+    const trace: WorkerReasoningTrace = (round) => traced.push(round)
+
+    expect(mgr.spawn('browse', 'traced work', 'turn-1', undefined, undefined, trace).ok).toBe(true)
+    // A spawn without a trace starts a worker that collects nothing.
+    expect(mgr.spawn('background', 'untraced work').ok).toBe(true)
+
+    api.hooksSeen.get('a-1')!.traceReasoning?.({ round: 1, attempt: 1, text: 'thought', agentId: 'a-1' })
+    expect(traced).toEqual([{ round: 1, attempt: 1, text: 'thought', agentId: 'a-1' }])
+    expect(api.hooksSeen.get('a-2')!.traceReasoning).toBeUndefined()
   })
 
   it('frees an agent slot when an agent finishes — but a lingering tab keeps the tab slot busy', async () => {
