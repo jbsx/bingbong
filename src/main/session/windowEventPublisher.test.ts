@@ -44,15 +44,18 @@ function setup(acceptPipelineEvent?: (event: PipelineEvent) => boolean): {
   heardSessions: (string | null)[]
   voiceErrorSessions: (string | null)[]
   traced: PipelineEvent[]
+  order: string[]
 } {
   const calls: string[] = []
   const traced: PipelineEvent[] = []
+  const order: string[] = []
   const pipelineEvents: PipelineEvent[] = []
   const heardSessions: (string | null)[] = []
   const voiceErrorSessions: (string | null)[] = []
   const record = (sink: string) => () => calls.push(sink)
   const recordPipeline = (sink: string) => (event: PipelineEvent) => {
     calls.push(sink)
+    order.push(sink)
     pipelineEvents.push(event)
   }
   const deps: WindowEventPublisherDeps = {
@@ -61,7 +64,10 @@ function setup(acceptPipelineEvent?: (event: PipelineEvent) => boolean): {
     historyEvent: recordPipeline('history-event'),
     // The Run Trace's tap (#185) — deliberately not in `calls`: it must
     // not change the order the other sinks are already pinned to.
-    tracePipelineEvent: (event) => void traced.push(event),
+    tracePipelineEvent: (event) => {
+      order.push('run-trace')
+      traced.push(event)
+    },
     historyHeard: (_heard, sessionId) => {
       calls.push('history-heard')
       heardSessions.push(sessionId)
@@ -82,7 +88,7 @@ function setup(acceptPipelineEvent?: (event: PipelineEvent) => boolean): {
     overlayVoiceError: record('overlay-voice-error'),
     overlaySubmissionFeedback: record('overlay-submission-feedback'),
   }
-  return { publisher: createWindowEventPublisher(deps), calls, pipelineEvents, heardSessions, voiceErrorSessions, traced }
+  return { publisher: createWindowEventPublisher(deps), calls, pipelineEvents, heardSessions, voiceErrorSessions, traced, order }
 }
 
 describe('window event publisher', () => {
@@ -301,6 +307,18 @@ describe('the Run Trace tap on the published stream', () => {
     publisher.publish({ source: 'subagent', event: { type: 'agent_update', agent: agentCard, at: 2 } })
 
     expect(traced.map((event) => event.type)).toEqual(['session_started', 'agent_update'])
+  })
+
+  // The trace writes synchronously, once per event: it must never sit
+  // between a Run and the frame it produced, or it perturbs the timing a
+  // developer turned it on to see.
+  it('writes only after every view has been handed the event', () => {
+    const { publisher, order } = setup()
+
+    publisher.run(ownership).publish({ type: 'status', turnId: 't-1', status: 'thinking', at: 1 })
+
+    expect(order[order.length - 1]).toBe('run-trace')
+    expect(order).toContain('renderer-pipeline')
   })
 
   it('records nothing a consumer never saw — a rejected event leaves no line', () => {

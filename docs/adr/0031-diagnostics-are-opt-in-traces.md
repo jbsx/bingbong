@@ -64,6 +64,24 @@ incidental — nothing is written unless a developer asked for it.
   7-day purge, every fs failure swallowed. Each family's purge matches only its
   own prefix, so the three cannot delete each other, and the perf report —
   which collects only `perf-*.jsonl` — ignores both traces by name.
+- **The published stream is recorded where the views read it (#185).** The
+  Run Trace's third record kind, `pipeline_event`, is one record per published
+  PipelineEvent, tapped at the publisher — where the history recorder attaches
+  — and holding the event object as published, owner stamps included. That
+  placement is the point: the record is not a paraphrase of what the Run
+  decided, it is the thing every view was told, so a Feed that showed the
+  wrong headline and a file that says which headline was published answer the
+  same question. Two kinds never land: `llm_delta` and `llm_tool_intent` are
+  streaming chunks whose assembled result the `reasoning` record and the
+  `display`/`done` events already carry. A `tool_result`'s text is cut at
+  8,000 characters with the true length beside it, the shape `reasoning` uses
+  — one page read is 40 KB, and the roll and purge below stop meaning anything
+  if every read is kept whole. Everything else is verbatim. A delegated
+  worker's Tool Rounds never reach the main stream at all — a worker publishes
+  only its `agent_update` cards and its `subagent_finalized` — so they are
+  tapped inside the worker and land under the parent Run's identity and turn,
+  stamped with its `agentId`: the road the reasoning (#183) and checkpoint
+  (#123) records already take.
 - **Recorded History is retired rather than widened.** The obvious way to widen
   diagnostics was to record more into the store that already writes by default.
   Nothing read it: no view opens it, no Session restores from it, and every
