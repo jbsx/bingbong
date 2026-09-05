@@ -33,6 +33,12 @@ export function createAssistantCommandRunner(deps: {
    * Run then simply leaves no trace.
    */
   runTrace?: RunTraceSink
+  /**
+   * The reasoning records' opt-in (#182): true only when the developer set
+   * `BINGBONG_TRACE_REASONING`. Parsed at the app edge, like every other
+   * BINGBONG_* flag, so the Run layer is handed a decision, not an env.
+   */
+  traceReasoning?: boolean
   printSummary?: (line: string) => void
 }): AssistantCommandRunner {
   const mintTurnId = createTurnIdSource(deps.tracer)
@@ -106,6 +112,9 @@ export function createAssistantCommandRunner(deps: {
                   }),
                 }
               : {}),
+            // The reasoning records (#182): opt-in, and only meaningful
+            // where something is tracing at all.
+            ...(deps.runTrace && deps.traceReasoning ? { traceReasoning: true } : {}),
           })) {
             if (event.type === 'done' && event.outcome === 'reset') restartRequested = true
             if (deps.canPublish && !deps.canPublish()) break

@@ -17,6 +17,9 @@ export const RUN_TRACE_VERSION = 1
 /** How much of a graded observation's retained text a record keeps. */
 export const TRACE_PAYLOAD_HEAD_CHARS = 500
 
+/** How much of a round's reasoning a `reasoning` record keeps (#182). */
+export const TRACE_REASONING_MAX_CHARS = 8_000
+
 /** The Run whose decisions a trace file's records describe. */
 export interface RunTraceIdentity {
   readonly runId: RunId
@@ -72,8 +75,29 @@ export interface EvidenceCheckpointEvent {
   readonly agentId?: string
 }
 
+/**
+ * The model's own reasoning for one LLM round (#182), written only behind
+ * `BINGBONG_TRACE_REASONING`. Reasoning deltas stream to the Feed as
+ * ephemeral detail and are kept nowhere else, so a rejected checkpoint's
+ * or an abandoned retry's private trace cannot be read back after the
+ * fact. This is the record that keeps it — for the developer who opted
+ * in, on their own machine, and nowhere else.
+ */
+export interface ReasoningEvent {
+  readonly kind: 'reasoning'
+  /** Which round of the Run thought this, counting from 1. */
+  readonly round: number
+  /** The round's assembled reasoning, cut at {@link TRACE_REASONING_MAX_CHARS}. */
+  readonly text: string
+  /** Full length in characters before the cut, so truncation is visible. */
+  readonly chars: number
+}
+
+/** One decision a Run traces, whatever kind it is. */
+export type RunTraceEventBody = EvidenceCheckpointEvent | ReasoningEvent
+
 /** What a Run hands the writer: one event, stamped with the turn it happened in. */
-export type RunTraceEvent = { readonly turnId: string } & EvidenceCheckpointEvent
+export type RunTraceEvent = { readonly turnId: string } & RunTraceEventBody
 
 /** One line of a trace file written by a Run. */
 export type RunTraceRecord = RunTraceEvent &

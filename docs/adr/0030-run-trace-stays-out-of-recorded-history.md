@@ -49,6 +49,21 @@ Recorded History's database.
   time, payload length and head, and which one matched. A Look shadowing a page
   read — the #179 fault — is visible from the file alone.
 
+- **The reasoning records are opt-in; everything else is not.** Every other
+  record kind is bounded — arguments the model wrote, counts, 500-character
+  heads. A round's reasoning is none of those: it is the model restating the
+  user's words and its own private read of them, at whatever length it thought
+  for, and it is the one thing the file would hold that the user never chose
+  to put anywhere. So `reasoning` (#182) is written only when a developer sets
+  `BINGBONG_TRACE_REASONING` in their own Env File, and with the flag unset no
+  reasoning is retained for the file at all — not collected and dropped,
+  never collected. A shared Kiosk cannot accumulate it by default, which is
+  the whole point of making this the one kind that has to be asked for. The
+  8,000-character cap bounds what an opted-in file holds; the record keeps the
+  true length beside the cut text so a truncation is never mistaken for a
+  short thought. Turning the flag on makes every round stream, because
+  reasoning exists only as stream deltas.
+
 **A Session Reset does not purge trace files, deliberately.** This is the
 uncomfortable consequence and it is stated here rather than left implicit: the
 trace holds a checkpoint's arguments verbatim and 500-character heads of the

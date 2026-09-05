@@ -53,6 +53,7 @@ import {
 } from './evidenceCheckpoint'
 import { candidateCheckpointEvent, evidenceCheckpointEvent } from '../trace/evidenceCheckpointTrace'
 import type { RunTraceWriter } from '../trace/runTrace'
+import { createReasoningRounds, reasoningEvent } from '../trace/reasoningTrace'
 import { completedEvidenceIsFresh } from './evidenceFreshness'
 import { evaluateCandidateCheckpoint, type CandidateCheckpointOutcome, type EvidenceSessionSource } from './candidateCheckpoint'
 import { deriveAnswerSources, scrubAnswerText } from './answerEvidence'
@@ -306,6 +307,14 @@ export interface RunContinuityContext {
    * Session reads it back. Absent when nothing is tracing.
    */
   traceRun?: RunTraceWriter
+  /**
+   * The reasoning records' opt-in (#182): retain each round's reasoning
+   * and trace it. Off unless the developer set `BINGBONG_TRACE_REASONING`
+   * in their own Env File — with it unset nothing is collected, so no
+   * reasoning is retained for the file at all. Turning it on makes every
+   * round stream, because the reasoning only exists in the stream.
+   */
+  traceReasoning?: boolean
 }
 
 /** Stamps one run-body event with the turn's id. */
@@ -614,6 +623,10 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
             ),
         })
       : undefined
+    // The reasoning records (#182): one collector per run when the
+    // developer opted in, assembling each round's reasoning deltas. Absent
+    // by default — with nothing here, no reasoning is retained at all.
+    const reasoningRounds = continuity?.traceReasoning ? createReasoningRounds() : undefined
 
     try {
       let runOutcome: 'done' | 'failed' | 'cancelled' = 'done'
@@ -881,7 +894,17 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
                 : {}),
               // Streaming (#47): the round streams only when the detail
               // channel is wired (absent → the non-streaming fallback).
-              ...(batcher ? { onDelta: (delta: LlmStreamDelta): void => batcher.onDelta(delta) } : {}),
+              // Streaming is also what the reasoning records read (#182):
+              // reasoning exists only as deltas, so the opt-in wires the
+              // round to stream even where no detail channel is listening.
+              ...(batcher || reasoningRounds
+                ? {
+                    onDelta: (delta: LlmStreamDelta): void => {
+                      batcher?.onDelta(delta)
+                      reasoningRounds?.onDelta(delta)
+                    },
+                  }
+                : {}),
               signal: armedRound.signal,
             })
           } catch (err) {
@@ -911,6 +934,14 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
             // batcher) before the round's events continue — the feed gets
             // every fragment ahead of the answer's display entry.
             batcher?.flush()
+            // The round's reasoning record (#182): written here, so a round
+            // that aborted or failed — the one a diagnosis wants most —
+            // leaves its thinking behind exactly like a round that
+            // returned. Truncation happens inside the writer's guard.
+            if (reasoningRounds) {
+              const ended = reasoningRounds.takeRound()
+              continuity?.traceRun?.(() => ({ turnId, ...reasoningEvent(ended) }))
+            }
           }
           // The round can resolve despite the deadline abort (a client that
           // ignored the signal, or the response landing in the race

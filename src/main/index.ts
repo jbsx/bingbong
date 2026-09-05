@@ -55,6 +55,7 @@ import {
   sessionEvidenceEndEntry,
 } from '../core/trace/evidenceStoreTrace'
 import { createSessionTraceWriter, type EvidenceRequester } from '../core/trace/runTrace'
+import { reasoningTraceEnabled } from '../core/trace/reasoningTrace'
 import { resolveVoiceConfig } from './voice/voiceConfig'
 import { createMainVoice } from './voice/createMainVoice'
 import { createLearnedTermsStore, seedLexiconSet } from './voice/learnedTermsStore'
@@ -166,6 +167,10 @@ const runTraceSink = createJsonlRunTraceSink(logsDir)
 // store's own acceptance, the answer to each view, the broadcast, and the
 // Session's end — so they are bound to the sink, not to a Run identity.
 const traceSession = createSessionTraceWriter({ sink: runTraceSink, now: systemClock.now })
+// The reasoning records (#182), opt-in behind the same env-flag pattern:
+// off everywhere unless a developer sets it in their own Env File, so a
+// shared Kiosk never accumulates the model's trace of the user's words.
+const traceReasoning = reasoningTraceEnabled(currentEnv())
 
 // Verbose browser sub-spans (#32), opt-in behind the established env-flag
 // pattern: one shared channel between the pipeline's tool gate (which opens
@@ -598,6 +603,7 @@ async function createWindow(): Promise<BrowserWindow> {
     canPublish: () => !win.isDestroyed(),
     tracer: perfTracer,
     runTrace: runTraceSink,
+    traceReasoning,
   })
   attachAssistantToWindow(pipeline, win, commandRunner)
   win.on('close', () => sessionRuntime?.end('app_closed'))

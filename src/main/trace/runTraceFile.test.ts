@@ -10,8 +10,8 @@ import type { AssistantTurn, LlmClient } from '../../core/ports/llm'
 import type { RunId, SessionId, SessionIdentitySource, SubmissionId } from '../../core/session/sessionIdentity'
 import { createSessionRuntime } from '../../core/session/sessionRuntime'
 import { FakeClock, RecordingTts } from '../../core/testing/doubles'
-import type { RunTraceRecord } from '../../core/trace/runTrace'
-import { RUN_TRACE_VERSION } from '../../core/trace/runTrace'
+import type { EvidenceCheckpointEvent, ReasoningEvent, RunTraceRecord } from '../../core/trace/runTrace'
+import { RUN_TRACE_VERSION, TRACE_REASONING_MAX_CHARS } from '../../core/trace/runTrace'
 import { createAssistantCommandRunner } from '../agent/createAssistantCommandRunner'
 import { createJsonlRunTraceSink } from './jsonlRunTraceSink'
 
@@ -50,12 +50,33 @@ function traceRecords(dir: string): RunTraceRecord[] {
     )
 }
 
-async function runSession(dir: string, turns: AssistantTurn[]): Promise<RunTraceRecord[]> {
+/** The checkpoint records, narrowed away from the reasoning ones beside them. */
+function checkpoints(records: readonly RunTraceRecord[]): (RunTraceRecord & EvidenceCheckpointEvent)[] {
+  return records.filter((record): record is RunTraceRecord & EvidenceCheckpointEvent => record.kind === 'evidence_checkpoint')
+}
+
+/** The reasoning records (#182), in the order the rounds happened. */
+function reasoning(records: readonly RunTraceRecord[]): (RunTraceRecord & ReasoningEvent)[] {
+  return records.filter((record): record is RunTraceRecord & ReasoningEvent => record.kind === 'reasoning')
+}
+
+async function runSession(
+  dir: string,
+  turns: AssistantTurn[],
+  options: { traceReasoning?: boolean; thinks?: (round: number) => string } = {},
+): Promise<RunTraceRecord[]> {
   const clock = new FakeClock(1_000)
   const runtime = createSessionRuntime({ clock, identities: new DeterministicIdentities() })
   let served = 0
   const llm: LlmClient = {
-    complete: () => Promise.resolve(turns[served++] ?? { kind: 'answer', speak: 'Done.', display: 'Done.' }),
+    complete: (request) => {
+      const round = served + 1
+      // The reasoning stream as a provider emits it: deltas, then the turn.
+      if (options.thinks && request.onDelta) {
+        for (const chunk of [options.thinks(round)]) request.onDelta({ kind: 'reasoning', text: chunk })
+      }
+      return Promise.resolve(turns[served++] ?? { kind: 'answer', speak: 'Done.', display: 'Done.' })
+    },
   }
   const pipeline = createCommandPipeline({
     llm,
@@ -72,6 +93,7 @@ async function runSession(dir: string, turns: AssistantTurn[]): Promise<RunTrace
     createRunPublisher: () => ({ publish: () => {} }),
     publishFeedback: () => {},
     runTrace: createJsonlRunTraceSink(dir),
+    ...(options.traceReasoning ? { traceReasoning: true } : {}),
   })
 
   await runner.run('what does the acme router cost')
@@ -90,7 +112,7 @@ describe('the Run Trace file', () => {
   })
 
   it('writes one evidence_checkpoint line per record_evidence call, accepted and rejected alike', async () => {
-    const records = await runSession(dir, [
+    const records = checkpoints(await runSession(dir, [
       { kind: 'tool_calls', calls: [{ id: 'c1', name: 'read_page', args: {} }] },
       {
         kind: 'tool_calls',
@@ -113,7 +135,7 @@ describe('the Run Trace file', () => {
         ],
       },
       { kind: 'answer', speak: 'It is $39.', display: 'It is $39.' },
-    ])
+    ]))
 
     expect(records.map((record) => [record.tool, record.outcome, record.matched])).toEqual([
       ['record_evidence', 'accepted', true],
@@ -145,7 +167,7 @@ describe('the Run Trace file', () => {
   })
 
   it('traces record_candidate calls the same way, invalid_support included', async () => {
-    const records = await runSession(dir, [
+    const records = checkpoints(await runSession(dir, [
       { kind: 'tool_calls', calls: [{ id: 'c1', name: 'read_page', args: {} }] },
       {
         kind: 'tool_calls',
@@ -178,7 +200,7 @@ describe('the Run Trace file', () => {
         ],
       },
       { kind: 'answer', speak: 'It is $39.', display: 'It is $39.' },
-    ])
+    ]))
 
     expect(records.map((record) => [record.tool, record.outcome])).toEqual([
       ['record_evidence', 'accepted'],
@@ -188,5 +210,59 @@ describe('the Run Trace file', () => {
     expect(records[1]!.entryId).toBe('memory-2')
     expect(records[2]!.args).toEqual({ subject: 'Some other router', supporting_evidence: ['memory-404'] })
     expect(records[2]!.graded).toEqual([])
+  })
+
+  // The reasoning records (#182): opt-in, one per round, and never
+  // written — nor retained — with the flag off.
+  it('writes one reasoning line per LLM round when the developer opted in', async () => {
+    const all = await runSession(
+      dir,
+      [
+        { kind: 'tool_calls', calls: [{ id: 'c1', name: 'read_page', args: {} }] },
+        { kind: 'answer', speak: 'It is $39.', display: 'It is $39.' },
+      ],
+      { traceReasoning: true, thinks: (round) => `round ${round}: what does it cost` },
+    )
+
+    expect(reasoning(all).map((record) => [record.round, record.text])).toEqual([
+      [1, 'round 1: what does it cost'],
+      [2, 'round 2: what does it cost'],
+    ])
+    // They join to Recorded History and the eval tape like every other record.
+    for (const record of reasoning(all)) {
+      expect(record.v).toBe(RUN_TRACE_VERSION)
+      expect(record.runId).toBe('run-1')
+      expect(record.sessionId).toBe('session-1')
+      expect(record.generation).toBe(0)
+      expect(record.turnId).toMatch(/^turn-/)
+      expect(record.chars).toBe(record.text.length)
+    }
+    // The checkpoint records are unchanged beside them.
+    expect(checkpoints(all)).toEqual([])
+  })
+
+  it('truncates a round that thought past the cap, and keeps the true length', async () => {
+    const long = 'z'.repeat(TRACE_REASONING_MAX_CHARS + 1_000)
+    const all = await runSession(dir, [{ kind: 'answer', speak: 'Done.', display: 'Done.' }], {
+      traceReasoning: true,
+      thinks: () => long,
+    })
+
+    const [record] = reasoning(all)
+    expect(record!.text).toBe(long.slice(0, TRACE_REASONING_MAX_CHARS))
+    expect(record!.chars).toBe(long.length)
+  })
+
+  it('writes no reasoning record with the flag unset, however much the model thinks', async () => {
+    const all = await runSession(
+      dir,
+      [
+        { kind: 'tool_calls', calls: [{ id: 'c1', name: 'read_page', args: {} }] },
+        { kind: 'answer', speak: 'It is $39.', display: 'It is $39.' },
+      ],
+      { thinks: () => 'the user asked about their own shopping' },
+    )
+
+    expect(reasoning(all)).toEqual([])
   })
 })
