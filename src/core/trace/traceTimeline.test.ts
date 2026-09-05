@@ -41,7 +41,7 @@ describe('buildTraceTimeline', () => {
 
     expect(timeline.lanes).toHaveLength(1)
     const lane = timeline.lanes[0]
-    expect(lane).toMatchObject({ scope: 'turn', turnId: 'turn-1', sessionId: 'sess-1', runId: 'run-a' })
+    expect(lane).toMatchObject({ scope: 'turn', key: 'turn:turn-1', turnId: 'turn-1', sessionId: 'sess-1', runId: 'run-a' })
     expect(lane.startAt).toBe(T0 + 50)
     expect(lane.endAt).toBe(T0 + 950)
     expect(lane.entries.map((entry) => [entry.at - T0, entry.family, entry.label])).toEqual([
@@ -68,13 +68,20 @@ describe('buildTraceTimeline', () => {
         contradicted: [],
       }),
       run({ at: T0 + 40, kind: 'evidence_answered', requester: 'dashboard', answered: 'no_session' }),
+      run({
+        at: T0 + 50,
+        sessionId: 'sess-1',
+        kind: 'pipeline_event',
+        event: { type: 'session_ended', sessionId: 'sess-1', sessionGeneration: 1, reason: 'lapsed', at: T0 + 50 },
+      }),
     ])
 
-    expect(timeline.lanes.map((lane) => [lane.scope, lane.sessionId, lane.entries.length])).toEqual([
-      ['session', null, 2],
-      ['session', 'sess-1', 2],
+    expect(timeline.lanes.map((lane) => [lane.scope, lane.key, lane.sessionId, lane.entries.length])).toEqual([
+      ['session', 'session:', null, 2],
+      ['session', 'session:sess-1', 'sess-1', 3],
     ])
     expect(timeline.lanes[0].entries.map((entry) => entry.label)).toEqual(['fault', 'evidence_answered'])
+    expect(timeline.lanes[1].entries[2]).toMatchObject({ label: 'session_ended', summary: 'sess-1 lapsed' })
   })
 
   it('orders lanes by their first record and counts every family it was handed', () => {
@@ -130,6 +137,13 @@ describe('buildTraceTimeline', () => {
         outcome: 'deadline',
       }),
       host({ at: T0 + 8, sessionId: 'sess-1', turnId: 'turn-1', kind: 'tts_dropped', text: 'never mind', chars: 10, stage: 'queued' }),
+      run({
+        at: T0 + 9,
+        turnId: 'turn-1',
+        kind: 'pipeline_event',
+        event: { type: 'done', turnId: 'turn-1', outcome: 'done', resolution: 'answered', finalizationCause: 'objective_met', at: T0 + 9 },
+      }),
+      host({ at: T0 + 10, sessionId: 'sess-1', turnId: 'turn-1', kind: 'learned_term', source: 'proposals', admitted: ['pop up', 'panel'], removed: [] }),
     ])
 
     const entries = timeline.lanes[0].entries
@@ -142,6 +156,8 @@ describe('buildTraceTimeline', () => {
       'record_evidence rejected:no_match',
       'describe (look) deadline in 800 ms',
       'queued: never mind',
+      'done answered (objective_met)',
+      'proposals: +[pop up, panel] -[]',
     ])
     expect(entries[2].agentId).toBe('agent-7')
     expect(entries[1].agentId).toBeUndefined()

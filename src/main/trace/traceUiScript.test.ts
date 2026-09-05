@@ -1,5 +1,5 @@
 import { spawn, type ChildProcess } from 'node:child_process'
-import { appendFileSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { appendFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -156,6 +156,26 @@ describe.skipIf(!stripsTypes)('trace:ui script', () => {
 
     expect((await timeline(started.url)).timeline.lanes[0].entries).toHaveLength(2)
   })
+
+  it('tails a logs dir that does not exist at launch once it appears', async () => {
+    const logsDir = join(dir, 'logs')
+    started = await start(logsDir)
+    expect((await timeline(started.url)).timeline.lanes).toEqual([])
+
+    const controller = new AbortController()
+    const stream = await fetch(new URL('/api/events', started.url), { signal: controller.signal })
+    const reader = (stream.body as ReadableStream<Uint8Array>).getReader()
+    const decoder = new TextDecoder()
+    let seen = ''
+    while (!seen.includes('\n')) seen += decoder.decode((await reader.read()).value)
+
+    mkdirSync(logsDir)
+    writeFileSync(join(logsDir, 'host-trace-1-1.jsonl'), line({ v: 1, at: T0, sessionId: null, kind: 'fault', site: 'a', message: '1' }))
+
+    while (!seen.includes('data: changed')) seen += decoder.decode((await reader.read()).value)
+    controller.abort()
+    expect((await timeline(started.url)).timeline.lanes.map((lane) => lane.scope)).toEqual(['session'])
+  }, 20_000)
 
   it('serves nothing but the page and its two endpoints, and only on loopback', async () => {
     started = await start(dir)

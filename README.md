@@ -181,7 +181,7 @@ and no view in the app renders either. A deployed Kiosk sets neither.
 
 Read them with `jq`, or with the Trace UI: `pnpm trace:ui [logs-dir]` serves a
 local page (loopback only, `--port N`, `--no-open`) that joins the perf log and
-both traces on `turnId` — one timeline per turn across the three files, a lane
+both traces on `turnId` — one timeline per `turnId` across the three files, a lane
 per Session for everything written outside a turn (`null` for records with no
 Session live) — and tails the dir as the app writes. It is a script beside
 `pnpm perf:report`, nothing electron-vite bundles or the Kiosk image copies.
@@ -244,7 +244,7 @@ pnpm typecheck  # tsc over main/preload/core + renderer
 pnpm lint       # eslint
 pnpm build      # production build to out/
 pnpm perf:report  # per-stage latency percentiles from the rotating perf log
-pnpm trace:ui     # the Trace UI: one timeline per turn over the perf log and both traces
+pnpm trace:ui     # the Trace UI: one timeline per turnId over the perf log and both traces
 pnpm stt:replay   # replay utterance dumps through the shipped STT engine
 pnpm shot         # regenerate docs/screenshot.png (launches the app under Xvfb)
 ```

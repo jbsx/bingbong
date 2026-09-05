@@ -2,11 +2,7 @@ import { appendFileSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { createTraceTail, resolveTraceLogsDir } from './collectTraceRecords.ts'
-import { TRACE_FILE_FAMILIES } from './traceFiles.ts'
-import { PERF_FILE_PATTERN } from '../perf/perfFiles.ts'
-import { HOST_TRACE_FILE_PATTERN } from './jsonlHostTraceSink'
-import { RUN_TRACE_FILE_PATTERN } from './jsonlRunTraceSink'
+import { createTraceTail, resolveTraceLogsDir } from './traceTail.ts'
 
 // The Trace UI's file half (#189): every perf-*.jsonl, run-trace-*.jsonl
 // and host-trace-*.jsonl under one logs dir, read once and then tailed —
@@ -105,17 +101,6 @@ describe('createTraceTail', () => {
   it('answers an empty collection for a logs dir that does not exist yet', () => {
     const tail = createTraceTail(join(dir, 'missing'))
     expect(tail.poll()).toEqual({ records: [], filePaths: [], skippedLines: 0 })
-  })
-})
-
-describe('trace file families', () => {
-  it('match exactly the names the three sinks write', () => {
-    const bySource = Object.fromEntries(TRACE_FILE_FAMILIES.map((family) => [family.family, family.pattern.source]))
-    expect(bySource).toEqual({
-      perf: PERF_FILE_PATTERN.source,
-      run: RUN_TRACE_FILE_PATTERN.source,
-      host: HOST_TRACE_FILE_PATTERN.source,
-    })
   })
 })
 

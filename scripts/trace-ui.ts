@@ -26,7 +26,7 @@ import { readFileSync, watch, type FSWatcher } from 'node:fs'
 import { createServer, type ServerResponse } from 'node:http'
 import { fileURLToPath } from 'node:url'
 import { buildTraceTimeline } from '../src/core/trace/traceTimeline.ts'
-import { createTraceTail, resolveTraceLogsDir } from '../src/main/trace/collectTraceRecords.ts'
+import { createTraceTail, resolveTraceLogsDir } from '../src/main/trace/traceTail.ts'
 
 const DEFAULT_PORT = 4189
 /** How long after the last fs event the page is told; a Run writes many lines in a burst. */
@@ -72,8 +72,9 @@ function noteChange(): void {
 
 let watcher: FSWatcher | null = null
 let fallback: NodeJS.Timeout | null = null
-let lastShape = ''
-function watchLogsDir(): void {
+let lastFingerprint = ''
+/** Watches the logs dir; false when it cannot be watched (it does not exist yet, or the platform refuses). */
+function watchLogsDir(): boolean {
   try {
     watcher = watch(logsDir, { persistent: false }, noteChange)
     watcher.on('error', () => {
@@ -81,19 +82,26 @@ function watchLogsDir(): void {
       watcher = null
       pollLogsDir()
     })
+    return true
   } catch (error) {
-    // The dir may not exist yet (no flag has ever been set): poll until it does.
-    console.log(`trace:ui cannot watch ${logsDir} (${String(error)}); polling instead`)
-    pollLogsDir()
+    if (fallback === null) console.log(`trace:ui cannot watch ${logsDir} yet (${String(error)}); polling instead`)
+    return false
   }
 }
+/** The fallback: poll until the dir can be watched, telling the page about any change meanwhile. */
 function pollLogsDir(): void {
   if (fallback !== null) return
   fallback = setInterval(() => {
+    if (watchLogsDir()) {
+      clearInterval(fallback as NodeJS.Timeout)
+      fallback = null
+      noteChange()
+      return
+    }
     const collection = tail.poll()
-    const shape = `${collection.filePaths.join('|')}#${collection.records.length}#${collection.skippedLines}`
-    if (shape !== lastShape) {
-      lastShape = shape
+    const fingerprint = `${collection.filePaths.join('|')}#${collection.records.length}#${collection.skippedLines}`
+    if (fingerprint !== lastFingerprint) {
+      lastFingerprint = fingerprint
       noteChange()
     }
   }, POLL_FALLBACK_MS)
@@ -150,7 +158,7 @@ server.listen(port, '127.0.0.1', () => {
   const url = `http://127.0.0.1:${bound}/`
   console.log(`trace:ui reading ${logsDir}`)
   console.log(`trace:ui at ${url}`)
-  watchLogsDir()
+  if (!watchLogsDir()) pollLogsDir()
   if (open) openInBrowser(url)
 })
 

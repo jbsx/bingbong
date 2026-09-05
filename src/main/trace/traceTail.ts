@@ -53,7 +53,7 @@ function parseLine(line: string): TraceLine | null {
   try {
     parsed = JSON.parse(line)
   } catch (error) {
-    reportFault('trace.collectTraceRecords.parseLine', error)
+    reportFault('trace.traceTail.parseLine', error)
     return null
   }
   if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return null
@@ -75,7 +75,7 @@ function readFrom(path: string, offset: number, length: number): Buffer | null {
     }
     return read === length ? buffer : buffer.subarray(0, read)
   } catch (error) {
-    reportFault('trace.collectTraceRecords.readFrom', error)
+    reportFault('trace.traceTail.readFrom', error)
     return null
   } finally {
     if (fd !== null) closeSync(fd)
@@ -107,7 +107,7 @@ export function createTraceTail(logsDir: string): TraceTail {
     try {
       size = statSync(path).size
     } catch (error) {
-      reportFault('trace.collectTraceRecords.stat', error)
+      reportFault('trace.traceTail.stat', error)
       files.delete(name)
       return
     }
@@ -131,7 +131,7 @@ export function createTraceTail(logsDir: string): TraceTail {
       try {
         names = readdirSync(logsDir)
       } catch (error) {
-        reportFault('trace.collectTraceRecords.listFiles', error)
+        reportFault('trace.traceTail.listFiles', error)
         // Missing or unreadable dir — nothing has been written, which is an answer.
         files.clear()
         return { records: [], filePaths: [], skippedLines: 0 }
@@ -158,11 +158,6 @@ export function createTraceTail(logsDir: string): TraceTail {
       return { records, filePaths, skippedLines }
     },
   }
-}
-
-/** One read of everything on disk — the tail's first poll, for callers that never tail. */
-export function collectTraceRecords(logsDir: string): TraceLogCollection {
-  return createTraceTail(logsDir).poll()
 }
 
 /** The flags `pnpm trace:ui` takes; each value flag consumes the argument after it. */

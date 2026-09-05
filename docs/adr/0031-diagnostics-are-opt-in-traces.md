@@ -207,7 +207,7 @@ incidental — nothing is written unless a developer asked for it.
 - **A trace reader is a developer tool, never an in-app view.** These files are
   read with `jq`, or with the Trace UI (#189): `pnpm trace:ui`, a script beside
   `pnpm perf:report` that serves one loopback-only page joining the perf log
-  and both traces on the ids each line carries — one timeline per turn, a lane
+  and both traces on the ids each line carries — one timeline per `turnId`, a lane
   per Session for what was written outside one — and tails the logs dir. It
   has no IPC because the files are the contract, and it is reachable from
   nothing electron-vite bundles and nothing the Kiosk image copies. Nothing in

@@ -51,6 +51,8 @@ export interface TimelineEntry {
 
 export interface TurnLane {
   readonly scope: 'turn'
+  /** Unique across the timeline: `turn:<turnId>`; the page keys its state on it. */
+  readonly key: string
   readonly turnId: string
   /** The first Session and Run the lane's records named, or null when none did. */
   readonly sessionId: string | null
@@ -62,6 +64,8 @@ export interface TurnLane {
 
 export interface SessionLane {
   readonly scope: 'session'
+  /** Unique across the timeline: `session:<sessionId>`, `session:` for null. */
+  readonly key: string
   /** `null` is the lane for records written with no Session live. */
   readonly sessionId: string | null
   readonly startAt: number
@@ -78,13 +82,9 @@ export interface TraceTimeline {
   readonly counts: Readonly<Record<TraceFamily, number>>
 }
 
-interface MutableLane {
-  scope: 'turn' | 'session'
-  turnId: string | null
-  sessionId: string | null
-  runId: string | null
-  entries: TimelineEntry[]
-}
+type MutableLane =
+  | { scope: 'turn'; key: string; turnId: string; sessionId: string | null; runId: string | null; entries: TimelineEntry[] }
+  | { scope: 'session'; key: string; sessionId: string | null; entries: TimelineEntry[] }
 
 function stringOrNull(value: unknown): string | null {
   return typeof value === 'string' && value !== '' ? value : null
@@ -102,11 +102,16 @@ export function buildTraceTimeline(records: readonly TaggedTraceRecord[]): Trace
     const key = turnId !== null ? `turn:${turnId}` : `session:${sessionId ?? ''}`
     let lane = lanes.get(key)
     if (lane === undefined) {
-      lane = { scope: turnId !== null ? 'turn' : 'session', turnId, sessionId, runId: null, entries: [] }
+      lane =
+        turnId !== null
+          ? { scope: 'turn', key, turnId, sessionId, runId: null, entries: [] }
+          : { scope: 'session', key, sessionId, entries: [] }
       lanes.set(key, lane)
     }
-    if (lane.sessionId === null) lane.sessionId = sessionId
-    if (lane.runId === null) lane.runId = stringOrNull(raw.runId)
+    if (lane.scope === 'turn') {
+      if (lane.sessionId === null) lane.sessionId = sessionId
+      if (lane.runId === null) lane.runId = stringOrNull(raw.runId)
+    }
     lane.entries.push(entryOf(tagged))
   }
 
@@ -118,8 +123,8 @@ export function buildTraceTimeline(records: readonly TaggedTraceRecord[]): Trace
     const endAt = entries[entries.length - 1].at
     built.push(
       lane.scope === 'turn'
-        ? { scope: 'turn', turnId: lane.turnId as string, sessionId: lane.sessionId, runId: lane.runId, startAt, endAt, entries }
-        : { scope: 'session', sessionId: lane.sessionId, startAt, endAt, entries },
+        ? { scope: 'turn', key: lane.key, turnId: lane.turnId, sessionId: lane.sessionId, runId: lane.runId, startAt, endAt, entries }
+        : { scope: 'session', key: lane.key, sessionId: lane.sessionId, startAt, endAt, entries },
     )
   }
   built.sort((a, b) => a.startAt - b.startAt)
@@ -129,11 +134,10 @@ export function buildTraceTimeline(records: readonly TaggedTraceRecord[]): Trace
 function entryOf(tagged: TaggedTraceRecord): TimelineEntry {
   const raw = tagged.record
   const at = raw.at
-  const agentId = stringOrNull(raw.agentId) ?? undefined
   if (tagged.family === 'perf') {
-    const stage = String(raw.stage)
-    return { at, family: 'perf', label: stage, summary: summarizePerf(raw), record: raw, ...(agentId ? { agentId } : {}) }
+    return { at, family: 'perf', label: String(raw.stage), summary: summarizePerf(raw), record: raw }
   }
+  const agentId = stringOrNull(raw.agentId) ?? undefined
   const kind = typeof raw.kind === 'string' ? raw.kind : 'unknown'
   const label = kind === 'pipeline_event' ? eventTypeOf(raw.event) : kind
   return {
@@ -172,55 +176,59 @@ function str(value: unknown): string {
   return typeof value === 'string' ? value : JSON.stringify(value)
 }
 
+function list(value: unknown): string {
+  return Array.isArray(value) ? value.map(str).join(', ') : str(value)
+}
+
 function countsOf(value: unknown): string {
   if (typeof value !== 'object' || value === null) return ''
-  const c = value as Record<string, unknown>
-  return `${str(c.observations)} obs / ${str(c.candidates)} cand / ${str(c.contradictions)} contra`
+  const counts = value as Record<string, unknown>
+  return `${str(counts.observations)} obs / ${str(counts.candidates)} cand / ${str(counts.contradictions)} contra`
 }
 
 /** The one line per kind, in the words its ADR uses for the record. */
-function summarizeTrace(kind: string, r: Record<string, unknown>): string {
+function summarizeTrace(kind: string, record: Record<string, unknown>): string {
   switch (kind) {
     case 'pipeline_event':
-      return summarizeEvent(r.event)
+      return summarizeEvent(record.event)
     case 'reasoning':
-      return `round ${str(r.round)} attempt ${str(r.attempt)}: ${str(r.text)}`
+      return `round ${str(record.round)} attempt ${str(record.attempt)}: ${str(record.text)}`
     case 'evidence_checkpoint':
-      return `${str(r.tool)} ${str(r.outcome)}`
+      return `${str(record.tool)} ${str(record.outcome)}`
     case 'evidence_accepted':
-      return `${str(r.change)} ${str(r.entryId)}${r.merged === true ? ' (merged)' : ''}: ${countsOf(r.counts)}`
+      return `${str(record.change)} ${str(record.entryId)}${record.merged === true ? ' (merged)' : ''}: ${countsOf(record.counts)}`
     case 'evidence_answered':
-      return `${str(r.requester)} ${str(r.answered)}${r.counts !== undefined ? `: ${countsOf(r.counts)}` : ''}`
+      return `${str(record.requester)} ${str(record.answered)}${record.counts !== undefined ? `: ${countsOf(record.counts)}` : ''}`
     case 'evidence_broadcast':
-      return `to ${Array.isArray(r.renderers) ? r.renderers.join(', ') || 'nobody' : ''}`
+      return `to ${Array.isArray(record.renderers) ? record.renderers.join(', ') || 'nobody' : ''}`
     case 'session_evidence_end':
-      return `${str(r.reason)}: ${countsOf(r.counts)}`
+      return `${str(record.reason)}: ${countsOf(record.counts)}`
     case 'fault':
-      return `${str(r.site)}: ${str(r.message)}`
+      return `${str(record.site)}: ${str(record.message)}`
     case 'vision_request':
-      return `${str(r.capability)} (${str(r.reason)}) ${str(r.outcome)} in ${str(r.durationMs)} ms${r.message !== undefined ? `: ${str(r.message)}` : ''}`
+      return `${str(record.capability)} (${str(record.reason)}) ${str(record.outcome)} in ${str(record.durationMs)} ms${record.message !== undefined ? `: ${str(record.message)}` : ''}`
     case 'vision_budget':
-      return `${str(r.reason)} ${r.granted === true ? 'granted' : `refused: ${str(r.refusal)}`}`
+      return `${str(record.reason)} ${record.granted === true ? 'granted' : `refused: ${str(record.refusal)}`}`
     case 'voice_wake':
-      return `${str(r.head)} score ${str(r.score)} ≥ ${str(r.threshold)}, gate ${str(r.gateMax)} ≥ ${str(r.gate)}`
+      return `${str(record.head)} score ${str(record.score)} ≥ ${str(record.threshold)}, gate ${str(record.gateMax)} ≥ ${str(record.gate)}`
     case 'voice_endpoint':
-      return `${str(r.speechMs)} ms speech of ${str(r.totalMs)} ms${r.truncated === true ? ', capped' : ''}${r.reason ? ` (${str(r.reason)})` : ''}`
+      return `${str(record.speechMs)} ms speech of ${str(record.totalMs)} ms${record.truncated === true ? ', capped' : ''}${record.reason ? ` (${str(record.reason)})` : ''}`
     case 'voice_stt':
-      return r.error !== undefined ? `failed: ${str(r.error)}` : `${str(r.text)} (${str(r.durationMs)} ms)`
+      return record.error !== undefined ? `failed: ${str(record.error)}` : `${str(record.text)} (${str(record.durationMs)} ms)`
     case 'learned_term':
-      return `${str(r.source)}: +${str(r.admitted)} -${str(r.removed)}`
+      return `${str(record.source)}: +[${list(record.admitted)}] -[${list(record.removed)}]`
     case 'tts_line':
-      return str(r.text)
+      return str(record.text)
     case 'tts_dropped':
-      return `${str(r.stage)}: ${str(r.text)}`
+      return `${str(record.stage)}: ${str(record.text)}`
     case 'feed_cleared':
-      return `${str(r.surface)} ${str(r.cause)} (${str(r.entries)} entries)`
+      return `${str(record.surface)} ${str(record.cause)} (${str(record.entries)} entries)`
     case 'feed_panel':
-      return `${str(r.surface)} ${r.open === true ? 'open' : 'closed'} ${str(r.mode)}`
+      return `${str(record.surface)} ${record.open === true ? 'open' : 'closed'} ${str(record.mode)}`
     case 'evidence_rendered':
-      return `${str(r.surface)} ${str(r.answered)}: rendered ${countsOf(r.rendered)}${r.received !== undefined ? `, received ${countsOf(r.received)}` : ''}`
+      return `${str(record.surface)} ${str(record.answered)}: rendered ${countsOf(record.rendered)}${record.received !== undefined ? `, received ${countsOf(record.received)}` : ''}`
     case 'session_readopt':
-      return `${str(r.surface)} ${str(r.source)} ${r.adopted === true ? `adopted ${str(r.adoptedSessionId)}` : 'nothing to adopt'}`
+      return `${str(record.surface)} ${str(record.source)} ${record.adopted === true ? `adopted ${str(record.adoptedSessionId)}` : 'nothing to adopt'}`
     default:
       return ''
   }
@@ -228,44 +236,60 @@ function summarizeTrace(kind: string, r: Record<string, unknown>): string {
 
 function summarizeEvent(event: unknown): string {
   if (typeof event !== 'object' || event === null) return ''
-  const e = event as Record<string, unknown>
-  switch (e.type) {
+  const published = event as Record<string, unknown>
+  switch (published.type) {
     case 'command':
     case 'speak':
     case 'display':
     case 'steer':
     case 'run_headline':
-      return str(e.text)
+      return str(published.text)
     case 'status':
-      return str(e.status)
+      return str(published.status)
     case 'tool_call':
-      return `${str(e.name)} ${str(e.args)}`
+      return `${str(published.name)} ${str(published.args)}`
     case 'tool_result':
-      return e.ok === true ? `${str(e.name)} ok ${str(e.result)}` : `${str(e.name)} failed: ${str(e.error)}`
+      return published.ok === true ? `${str(published.name)} ok ${str(published.result)}` : `${str(published.name)} failed: ${str(published.error)}`
     case 'error':
-      return str(e.message)
+      return str(published.message)
     case 'llm_retry':
-      return `attempt ${str(e.attempt)} of ${str(e.maxAttempts)}`
+      return `attempt ${str(published.attempt)} of ${str(published.maxAttempts)}`
     case 'waiting_on_agents':
-      return `${str(e.running)} running`
+      return `${str(published.running)} running`
     case 'run_plan':
-      return `${str(e.effortTier)} (${str(e.source)}): ${str(e.objective)}`
+      return `${str(published.effortTier)} (${str(published.source)}): ${str(published.objective)}`
     case 'confirmation_requested':
-      return `${str(e.toolName)}: ${str(e.prompt)}`
+      return `${str(published.toolName)}: ${str(published.prompt)}`
     case 'confirmation_resolved':
-      return `${e.approved === true ? 'approved' : 'declined'} (${str(e.reason)})`
+      return `${published.approved === true ? 'approved' : 'declined'} (${str(published.reason)})`
     case 'ask_requested':
-      return str(e.question)
+      return str(published.question)
     case 'ask_resolved':
-      return `${str(e.answer) || 'no answer'} (${str(e.reason)})`
+      return `${str(published.answer) || 'no answer'} (${str(published.reason)})`
     case 'agent_update': {
-      const agent = typeof e.agent === 'object' && e.agent !== null ? (e.agent as Record<string, unknown>) : {}
+      const agent = typeof published.agent === 'object' && published.agent !== null ? (published.agent as Record<string, unknown>) : {}
       return `${str(agent.kind)} ${str(agent.status)}: ${str(agent.lastAction) || str(agent.task)}`
     }
     case 'subagent_finalized':
-      return `${str(e.agentId)} ${str(e.kind)} ${str(e.status)}${e.cause !== undefined ? ` (${str(e.cause)})` : ''}`
+      return `${str(published.agentId)} ${str(published.kind)} ${str(published.status)}${published.cause !== undefined ? ` (${str(published.cause)})` : ''}`
+    case 'done':
+      return [
+        str(published.outcome),
+        str(published.resolution),
+        published.finalizationCause !== undefined ? `(${str(published.finalizationCause)})` : '',
+      ]
+        .filter((part) => part !== '')
+        .join(' ')
+    case 'confirmation_deadline':
+    case 'ask_deadline':
+      return published.expiresAt === null ? 'deadline cleared' : `expires ${str(published.expiresAt)}`
+    case 'session_started':
+      return `${str(published.sessionId)} generation ${str(published.sessionGeneration)}`
+    case 'session_expiring':
+    case 'session_extended':
+      return `${str(published.sessionId)} until ${str(published.expiresAt)}`
     case 'session_ended':
-      return str(e.reason)
+      return `${str(published.sessionId)} ${str(published.reason)}`
     default:
       return ''
   }
