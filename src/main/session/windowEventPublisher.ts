@@ -24,6 +24,14 @@ export interface WindowEventPublisherDeps {
   acceptPipelineEvent?(event: PipelineEvent): boolean
   createHistoryRunObserver(): (event: PipelineEvent) => void
   historyEvent(event: PipelineEvent): void
+  /**
+   * The pipeline_event records (#185): the tap sits exactly where the
+   * history recorder attaches, so the record is the event object as
+   * published — owner stamps included — and is written for every
+   * publication the acceptance gate let through, and only those. Absent
+   * unless the developer set `BINGBONG_RUN_TRACE` (#184).
+   */
+  tracePipelineEvent?(event: PipelineEvent): void
   /** `sessionId` attributes run-less voice records to their Session (#85). */
   historyHeard(heard: VoiceHeardEvent, sessionId: SessionId | null): void
   historyVoiceError(error: VoiceErrorEvent, sessionId: SessionId | null): void
@@ -82,6 +90,7 @@ export function createWindowEventPublisher(deps: WindowEventPublisherDeps): Wind
         publish(event) {
           const ownedEvent = withOwnership(event, ownership)
           if (!accepted(ownedEvent)) return
+          deps.tracePipelineEvent?.(ownedEvent)
           historyRun(ownedEvent)
           deps.sendPipelineEvent(ownedEvent)
           deps.observeVoicePipelineEvent(ownedEvent)
@@ -103,6 +112,7 @@ export function createWindowEventPublisher(deps: WindowEventPublisherDeps): Wind
           // acceptance gate rejects it when it is not Session-scoped.
           const event = ownership ? withOwnership(publication.event, ownership) : publication.event
           if (!accepted(event)) return
+          deps.tracePipelineEvent?.(event)
           deps.historyEvent(event)
           deps.sendPipelineEvent(event)
           if (publication.source === 'lifecycle') deps.observeVoicePipelineEvent(event)

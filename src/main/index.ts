@@ -57,6 +57,7 @@ import {
   sessionEvidenceEndEntry,
 } from '../core/trace/evidenceStoreTrace'
 import { createSessionTraceWriter, type EvidenceRequester } from '../core/trace/runTrace'
+import { createPipelineEventTraceWriter } from '../core/trace/pipelineEventTrace'
 import { createHostTraceWriter } from '../core/trace/hostTrace'
 import { setFaultSink } from '../core/trace/fault'
 import { createFaultRouter } from '../core/trace/faultRouter'
@@ -184,6 +185,12 @@ const hostTraceSink = hostTraceEnabled(currentEnv()) ? createJsonlHostTraceSink(
 // accepted checkpoint became, which is the file it has to be read beside.
 const traceSession =
   runTraceSink === null ? () => {} : createSessionTraceWriter({ sink: runTraceSink, now: systemClock.now })
+// The published stream (#185): one record per PipelineEvent the window
+// publisher lets through, bound to the sink rather than to a Run — the
+// publisher sees Session boundaries and download announcements as well as
+// a Run's own stream, and each record names only what its event carried.
+const tracePipelineEvent =
+  runTraceSink === null ? null : createPipelineEventTraceWriter({ sink: runTraceSink, now: systemClock.now })
 // The Host Trace writer (#184): stamps the Active Session on each record,
 // read at the moment of writing — there is no Session to bind up front.
 const traceHost =
@@ -338,6 +345,7 @@ async function createWindow(): Promise<BrowserWindow> {
       return (event) => run.event(event)
     },
     historyEvent: (event) => historyRecorder.event(event),
+    ...(tracePipelineEvent !== null ? { tracePipelineEvent } : {}),
     historyHeard: (heard, sessionId) => historyRecorder.heard(heard, sessionId),
     historyVoiceError: (error, sessionId) => historyRecorder.voiceError(error.message, error.at, sessionId),
     sendPipelineEvent: (event) => sendToRenderer(PIPELINE_IPC.event, event),

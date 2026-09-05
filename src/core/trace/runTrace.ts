@@ -12,6 +12,7 @@
 // rides that one flag — the grading records here, the reasoning records
 // (#182), and a fault reported with a turn id in hand (#184).
 
+import type { PipelineEvent } from '../pipeline/events'
 import type { ObservationProducer } from '../session/observationLedger'
 import type { SessionEvidenceCounts } from '../session/sessionEvidence'
 import type { SessionEndReason } from '../session/sessionRuntime'
@@ -26,6 +27,14 @@ export const TRACE_PAYLOAD_HEAD_CHARS = 500
 
 /** How much of a round's reasoning a `reasoning` record keeps (#182). */
 export const TRACE_REASONING_MAX_CHARS = 8_000
+
+/**
+ * How much of a `tool_result` event's text a `pipeline_event` record keeps
+ * (#185). One page read is 40 KB; a 5 MB roll and a 7-day purge stop
+ * meaning anything if every read is kept whole, so the result text is the
+ * one field the tap cuts — with `chars` beside it, so the cut is visible.
+ */
+export const TRACE_TOOL_RESULT_MAX_CHARS = 8_000
 
 /** The Run whose decisions a trace file's records describe. */
 export interface RunTraceIdentity {
@@ -120,8 +129,41 @@ export interface ReasoningEvent {
   readonly agentId?: string
 }
 
+/**
+ * One PipelineEvent as it was published (#185): the event object itself,
+ * owner stamps included, under `event`. The stream is what every view —
+ * the dashboard, the Feed, Recorded History, the voice session — is told,
+ * so recording it verbatim records exactly what they saw: the Run Plan,
+ * each Tool Round's call and result, status, errors, asks, confirmations,
+ * and the Session boundaries.
+ *
+ * Two kinds never land here: `llm_delta` and `llm_tool_intent`, which are
+ * streaming chunks whose assembled result the `reasoning` record and the
+ * `display`/`done` events already carry.
+ */
+export interface PipelineEventTraceEvent {
+  readonly kind: 'pipeline_event'
+  /** The event as published — verbatim, but for a cut `tool_result` text. */
+  readonly event: PipelineEvent
+  /**
+   * The full length of a `tool_result`'s text before the cut at
+   * {@link TRACE_TOOL_RESULT_MAX_CHARS}, so a truncated record still says
+   * how much result it stands for. Absent on every other kind, and on a
+   * result whose value is not text.
+   */
+  readonly chars?: number
+  /**
+   * The delegated worker whose Tool Round published this (#185); absent on
+   * the Run's own stream. A worker's rounds never reach the main stream —
+   * only its `agent_update` cards and `subagent_finalized` do — so they are
+   * tapped inside the worker and land under the parent Run's identity,
+   * the pattern `reasoning` (#183) and the checkpoint records (#123) use.
+   */
+  readonly agentId?: string
+}
+
 /** One decision a Run traces, whatever kind it is. */
-export type RunTraceEventBody = EvidenceCheckpointEvent | ReasoningEvent
+export type RunTraceEventBody = EvidenceCheckpointEvent | ReasoningEvent | PipelineEventTraceEvent
 
 /** What a Run hands the writer: one event, stamped with the turn it happened in. */
 export type RunTraceEvent = { readonly turnId: string } & RunTraceEventBody
@@ -237,8 +279,36 @@ export type FaultRunTraceRecord = FaultEvent & {
   readonly sessionId?: SessionId
 }
 
+/**
+ * One published PipelineEvent as the main-side tap recorded it (#185).
+ * The tap sits at the publisher, where the history recorder attaches, so
+ * it sees events the Run never bound an identity for — a Session
+ * lifecycle boundary, a download announcement, a subagent card. Each
+ * record therefore carries the identities the event itself was stamped
+ * with, and nothing it was not: a `session_started` names its Session and
+ * no turn, and that is the honest record of what was published.
+ *
+ * A worker's Tool Rounds take the other road — the parent Run's writer,
+ * which binds the full identity — and land as {@link RunTraceRecord}s of
+ * the same kind. Both shapes serialize to one line shape; only which
+ * identities are present differs, and that difference is the fact.
+ */
+export type PipelineEventTraceRecord = PipelineEventTraceEvent & {
+  readonly v: number
+  /** Wall-clock epoch ms when the record was written. */
+  readonly at: number
+  readonly turnId?: string
+  readonly runId?: RunId
+  readonly sessionId?: SessionId
+  readonly generation?: SessionGeneration
+}
+
 /** One line of a trace file, whoever wrote it. */
-export type TraceRecord = RunTraceRecord | SessionTraceRecord | FaultRunTraceRecord
+export type TraceRecord =
+  | RunTraceRecord
+  | SessionTraceRecord
+  | FaultRunTraceRecord
+  | PipelineEventTraceRecord
 
 export interface RunTraceSink {
   write(record: TraceRecord): void

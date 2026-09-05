@@ -120,13 +120,17 @@ export function createSubagentTools(manager: SubagentManager): Tool[] {
         // The parent Run's shared active-work deadline (#120/AC2) rides the
         // spawn unchanged: the worker polls it and finalizes when the
         // parent's work time is gone.
-        // The Subagent's own reasoning records (#183) ride the spawn the
-        // same way: present only when the Run is tracing them.
+        // The Subagent's own reasoning records (#183) and the events its
+        // Tool Rounds publish to nobody (#185) ride the spawn the same
+        // way: present only when the Run is tracing them.
         const spawned = manager.spawn(kind, task, {
           ...(ctx.turnId !== undefined ? { turnId: ctx.turnId } : {}),
           ...(memory !== undefined ? { memory } : {}),
           ...(ctx.delegationDeadline !== undefined ? { sharedDeadline: ctx.delegationDeadline } : {}),
           ...(ctx.traceSubagentReasoning !== undefined ? { traceReasoning: ctx.traceSubagentReasoning } : {}),
+          ...(ctx.traceSubagentPipelineEvent !== undefined
+            ? { tracePipelineEvent: ctx.traceSubagentPipelineEvent }
+            : {}),
         })
         if (!spawned.ok) throw new Error(spawned.reason)
         return `spawned ${spawned.agent.id} [${kind}]${memory !== undefined ? ` with ${memory.length} shared memory entr${memory.length === 1 ? 'y' : 'ies'}` : ''} — poll with agent_results (wait: true) or keep working`

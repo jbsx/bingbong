@@ -3,6 +3,7 @@ import type { Clock } from '../ports/clock'
 import type { SubagentSharedDeadline, VisionGrant } from '../agent/subagentRails'
 import type { WorkingMemorySnapshot } from '../session/workingMemory'
 import type { SubagentReasoningTrace } from '../trace/reasoningTrace'
+import type { SubagentPipelineEventTrace } from '../trace/pipelineEventTrace'
 import type { EffortTier } from './runPlan'
 import type { CandidateCheckpointOutcome } from './candidateCheckpoint'
 import type { EvidenceCheckpointOutcome } from './evidenceCheckpoint'
@@ -38,6 +39,16 @@ export interface ToolContext {
    * no worker reasoning is collected.
    */
   traceSubagentReasoning?: SubagentReasoningTrace
+  /**
+   * The pipeline_event records for delegated workers (#185, ADR 0031): a
+   * worker's Tool Rounds never reach the main stream — only its
+   * `agent_update` cards and `subagent_finalized` do — so what it called
+   * and what came back is recorded through this, already closed over the
+   * spawning Run's trace writer and turn. Absent unless the developer
+   * opted in with `BINGBONG_RUN_TRACE` (#184), exactly like the reasoning
+   * trace beside it.
+   */
+  traceSubagentPipelineEvent?: SubagentPipelineEventTrace
   /**
    * Progress detail (#43): a tool that blocks on observable background
    * work (agent_results with wait) reports what the run is waiting on,

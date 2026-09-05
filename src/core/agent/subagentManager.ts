@@ -5,6 +5,7 @@ import type { WorkingMemorySnapshot } from '../session/workingMemory'
 import { capSentences } from '../agent/answerContract'
 import { SUBAGENT_LIMITS, type SubagentSharedDeadline } from './subagentRails'
 import type { SubagentReasoningTrace } from '../trace/reasoningTrace'
+import type { SubagentPipelineEventTrace } from '../trace/pipelineEventTrace'
 import type { SubagentReport } from './subagentReport'
 import { SubagentCancelledError } from './subagentRunner'
 
@@ -99,6 +100,13 @@ export interface SubagentTaskHooks {
    * absent, the worker collects no reasoning and does not stream.
    */
   traceReasoning?: SubagentReasoningTrace
+  /**
+   * The pipeline_event records for this worker's Tool Rounds (#185): the
+   * spawning Run's own writer, closed over its identity and turn. Absent
+   * unless the developer opted in with `BINGBONG_RUN_TRACE` (#184) — and
+   * absent, the worker's events are recorded nowhere at all.
+   */
+  tracePipelineEvent?: SubagentPipelineEventTrace
 }
 
 /** Port: starts one workhorse loop (runSubagent in production). */
@@ -133,14 +141,16 @@ export type CancelResult = { ok: true } | { ok: false; reason: string }
 /**
  * What rides a spawn from the Run that delegates: the turn it happened in
  * (#29), the Memory Entries it selected (#98), its shared active-work
- * deadline (#120), and its reasoning trace (#183). All optional — a spawn
- * outside any Run (tests, the CLI harness) carries none of them.
+ * deadline (#120), its reasoning trace (#183) and its pipeline_event
+ * trace (#185). All optional — a spawn outside any Run (tests, the CLI
+ * harness) carries none of them.
  */
 export interface SpawnContext {
   turnId?: string
   memory?: WorkingMemorySnapshot
   sharedDeadline?: SubagentSharedDeadline
   traceReasoning?: SubagentReasoningTrace
+  tracePipelineEvent?: SubagentPipelineEventTrace
 }
 
 export interface SubagentManager {
@@ -233,7 +243,7 @@ export function createSubagentManager(deps: SubagentManagerDeps): SubagentManage
 
   return {
     spawn(kind, task, context = {}) {
-      const { turnId, memory, sharedDeadline, traceReasoning } = context
+      const { turnId, memory, sharedDeadline, traceReasoning, tracePipelineEvent } = context
       if (liveCount() >= maxConcurrent) {
         return {
           ok: false,
@@ -292,6 +302,10 @@ export function createSubagentManager(deps: SubagentManagerDeps): SubagentManage
           // the Run is tracing them, so an unasked-for worker collects
           // nothing — the same invariant the Run path holds.
           ...(traceReasoning !== undefined ? { traceReasoning } : {}),
+          // And the worker's own Tool Round events (#185), on the same
+          // terms: they reach no view, so the Run's trace is the only
+          // place they can be kept — and only when it asked for them.
+          ...(tracePipelineEvent !== undefined ? { tracePipelineEvent } : {}),
           waitIfPaused: () => waitIfPaused(id),
           onProgress: (step, action) => {
             if (spawnEpoch !== epoch) return

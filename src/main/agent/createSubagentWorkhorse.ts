@@ -165,6 +165,9 @@ export function createSubagentTaskApi(deps: SubagentWorkhorseDeps): SubagentTask
           // trace, handed down only when the developer opted in. Absent,
           // the worker's rounds do not stream and nothing is collected.
           ...(hooks.traceReasoning !== undefined ? { traceReasoning: hooks.traceReasoning } : {}),
+          // The worker's Tool Round events (#185): the same hand-down, for
+          // the calls and results a worker's rounds publish to no view.
+          ...(hooks.tracePipelineEvent !== undefined ? { tracePipelineEvent: hooks.tracePipelineEvent } : {}),
           waitIfPaused: hooks.waitIfPaused ?? (() => Promise.resolve()),
           onProgress: (progress) => hooks.onProgress(progress.step, progress.action),
         },

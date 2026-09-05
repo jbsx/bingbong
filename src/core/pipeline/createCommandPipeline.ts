@@ -54,6 +54,7 @@ import {
 import { candidateCheckpointEvent, evidenceCheckpointEvent } from '../trace/evidenceCheckpointTrace'
 import type { RunTraceWriter } from '../trace/runTrace'
 import { createReasoningRounds, reasoningEvent, type TracedReasoningRound } from '../trace/reasoningTrace'
+import { pipelineEventTraceBody, tracesPipelineEvent } from '../trace/pipelineEventTrace'
 import { completedEvidenceIsFresh } from './evidenceFreshness'
 import { evaluateCandidateCheckpoint, type CandidateCheckpointOutcome, type EvidenceSessionSource } from './candidateCheckpoint'
 import { deriveAnswerSources, scrubAnswerText } from './answerEvidence'
@@ -633,6 +634,19 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
       traceRun && reasoningRounds
         ? (round: TracedReasoningRound): void => traceRun(() => ({ turnId, ...reasoningEvent(round) }))
         : undefined
+    // A delegated worker's Tool Rounds (#185): the same one write, for the
+    // events a worker's rounds publish to nobody. Its events arrive
+    // unstamped — a worker knows no turn — so the Run stamps its own,
+    // which is the turn a diagnosis joins the worker's calls to the
+    // delegation that made them.
+    const writeSubagentPipelineEvent = traceRun
+      ? (event: UnstampedEvent, agentId: string | undefined): void => {
+          // The one decision made outside the writer's guard, because it
+          // reads nothing but the event's type: whether to write at all.
+          if (!tracesPipelineEvent(event)) return
+          traceRun(() => ({ turnId, ...pipelineEventTraceBody(stampTurn(event, turnId), agentId) }))
+        }
+      : undefined
 
     try {
       let runOutcome: 'done' | 'failed' | 'cancelled' = 'done'
@@ -745,6 +759,10 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
           // the writer as well as the flag, so nothing is collected in a
           // worker that has nowhere to write.
           ...(writeReasoning ? { traceSubagentReasoning: writeReasoning } : {}),
+          // And what those rounds called (#185), through the same writer:
+          // a worker's stream reaches no view at all, so this is the only
+          // record of it there will ever be.
+          ...(writeSubagentPipelineEvent ? { traceSubagentPipelineEvent: writeSubagentPipelineEvent } : {}),
           // Delegation's memory selection (#98): spawn_agent resolves
           // memory_ids against this Run's immutable snapshot — the same one
           // every model round sees — so a worker can never receive entries

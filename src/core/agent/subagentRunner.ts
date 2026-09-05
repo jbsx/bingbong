@@ -19,6 +19,7 @@ import { describeToolAction } from '../pipeline/toolCallDisplay'
 import { MAX_SUBAGENT_VISION_CALLS } from './subagentRails'
 import { droppedFindingsNote, validateReportFindings, type SubagentReport } from './subagentReport'
 import { createReasoningRounds, type ReasoningRound, type SubagentReasoningTrace } from '../trace/reasoningTrace'
+import type { SubagentPipelineEventTrace } from '../trace/pipelineEventTrace'
 
 // The subagent workhorse loop (issue #13): one LLM (deepseek-chat via the
 // model router) driving its own tool set until it produces a final report.
@@ -75,6 +76,13 @@ import { createReasoningRounds, type ReasoningRound, type SubagentReasoningTrace
 // relay, which stops because only the user can unblock it. Without it a
 // corpus pass cannot tell a worker that was cut short from one that
 // finished cleanly.
+//
+// A worker's Tool Rounds leave their events behind on the same terms
+// (#185): every event a round yields — its `tool_call`s, its
+// `tool_result`s, and whatever the decision seams yield — goes to a
+// `tracePipelineEvent` closure the spawning Run built, or nowhere. The
+// main stream never sees them: a worker publishes only its card updates
+// and its `subagent_finalized`.
 //
 // A worker's rounds leave their reasoning behind too (#183, ADR 0030),
 // but only when the developer opted in: the spawning Run hands down a
@@ -169,6 +177,15 @@ export interface RunSubagentOptions {
    * stream, which is the path's historical behaviour.
    */
   traceReasoning?: SubagentReasoningTrace
+  /**
+   * The pipeline_event records for this worker's Tool Rounds (#185, ADR
+   * 0031): built by the spawning Run the same way, over the same writer.
+   * A worker's rounds publish to nobody — only its cards and its
+   * `subagent_finalized` reach the main stream — so what it called and
+   * what came back is kept here or nowhere. Absent unless the developer
+   * set `BINGBONG_RUN_TRACE` (#184).
+   */
+  tracePipelineEvent?: SubagentPipelineEventTrace
 }
 
 export class SubagentCancelledError extends Error {
@@ -497,6 +514,9 @@ export async function runSubagent(deps: RunSubagentDeps, options: RunSubagentOpt
     let step = await round.next()
     while (step.done !== true) {
       const event = step.value
+      // The worker's own record of the round (#185): every event, before
+      // anything else reads it — the tap is what this stream is for.
+      options.tracePipelineEvent?.(event, options.agentId)
       if (event.type === 'tool_call') {
         lastAction = describeToolAction(event.name, event.args)
         options.onProgress?.({ step: epoch.tierRounds, action: lastAction })

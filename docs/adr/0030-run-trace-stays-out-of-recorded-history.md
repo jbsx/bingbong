@@ -92,6 +92,24 @@ Recorded History's database.
   the worker's reserved Answer round and a round that failed leave a record
   like any other, since a worker's abandoned retry or a citation that failed
   its Evidence Checkpoint is the case this half of the record exists for.
+- **The published stream is recorded where the views read it (#185).** The
+  third kind, `pipeline_event`, is one record per published PipelineEvent,
+  tapped at the publisher — where the history recorder attaches — and holding
+  the event object as published, owner stamps included. That placement is the
+  point: the record is not a paraphrase of what the Run decided, it is the
+  thing every view was told, so a Feed that showed the wrong headline and a
+  file that says which headline was published are the same question. Two
+  kinds never land: `llm_delta` and `llm_tool_intent` are streaming chunks
+  whose assembled result the `reasoning` record and the `display`/`done`
+  events already carry. A `tool_result`'s text is cut at 8,000 characters
+  with the true length beside it, the same shape `reasoning` uses — one page
+  read is 40 KB, and a 5 MB roll and a 7-day purge stop meaning anything if
+  every read is kept whole. Everything else is verbatim. A delegated worker's
+  Tool Rounds take the other road, because they reach the main stream at all:
+  a worker publishes only its `agent_update` cards and its
+  `subagent_finalized`, so its rounds are tapped inside the worker and land
+  under the parent Run's identity and turn, stamped with its `agentId` — the
+  pattern the reasoning (#183) and checkpoint (#123) records already use.
 
 **A Session Reset does not purge trace files, deliberately.** This is the
 uncomfortable consequence and it is stated here rather than left implicit: the

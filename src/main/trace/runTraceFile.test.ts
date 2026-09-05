@@ -10,9 +10,14 @@ import type { Tool } from '../../core/pipeline/tool'
 import type { AssistantTurn, LlmClient } from '../../core/ports/llm'
 import type { RunId, SessionId, SessionIdentitySource, SubmissionId } from '../../core/session/sessionIdentity'
 import { createSessionRuntime } from '../../core/session/sessionRuntime'
-import { FakeClock, RecordingTts } from '../../core/testing/doubles'
-import type { EvidenceCheckpointEvent, ReasoningEvent, RunTraceRecord } from '../../core/trace/runTrace'
-import { RUN_TRACE_VERSION, TRACE_REASONING_MAX_CHARS } from '../../core/trace/runTrace'
+import { FakeBrowser, FakeClock, RecordingTts } from '../../core/testing/doubles'
+import type {
+  EvidenceCheckpointEvent,
+  PipelineEventTraceEvent,
+  ReasoningEvent,
+  RunTraceRecord,
+} from '../../core/trace/runTrace'
+import { RUN_TRACE_VERSION, TRACE_REASONING_MAX_CHARS, TRACE_TOOL_RESULT_MAX_CHARS } from '../../core/trace/runTrace'
 import { createAssistantCommandRunner } from '../agent/createAssistantCommandRunner'
 import { createSubagentManager } from '../../core/agent/subagentManager'
 import { createSubagentTools } from '../../core/pipeline/subagentTools'
@@ -32,6 +37,13 @@ class DeterministicIdentities implements SessionIdentitySource {
   mintSubmissionId = (): SubmissionId => `submission-${++this.submissions}` as SubmissionId
   mintRunId = (): RunId => `run-${++this.runs}` as RunId
   mintSessionId = (): SessionId => `session-${++this.sessions}` as SessionId
+}
+
+/** A worker's tab, serving one page — the round is real, the pane is not. */
+function workerBrowser(page: string): FakeBrowser {
+  const browser = new FakeBrowser()
+  browser.readPage = async () => page
+  return browser
 }
 
 const readPage: Tool = {
@@ -62,6 +74,11 @@ function checkpoints(records: readonly RunTraceRecord[]): (RunTraceRecord & Evid
 /** The reasoning records (#182), in the order the rounds happened. */
 function reasoning(records: readonly RunTraceRecord[]): (RunTraceRecord & ReasoningEvent)[] {
   return records.filter((record): record is RunTraceRecord & ReasoningEvent => record.kind === 'reasoning')
+}
+
+/** The pipeline_event records (#185), in publication order. */
+function pipelineEvents(records: readonly RunTraceRecord[]): (RunTraceRecord & PipelineEventTraceEvent)[] {
+  return records.filter((record): record is RunTraceRecord & PipelineEventTraceEvent => record.kind === 'pipeline_event')
 }
 
 async function runSession(
@@ -119,13 +136,20 @@ async function runSession(
  */
 async function runDelegatingSession(
   dir: string,
-  options: { traced?: boolean; workerThinks: string[] },
+  options: { traced?: boolean; workerThinks: string[]; workerReads?: string },
 ): Promise<RunTraceRecord[]> {
   const clock = new FakeClock(1_000)
   const runtime = createSessionRuntime({ clock, identities: new DeterministicIdentities() })
+  // A worker that reads a page first (#185): its Tool Round reaches no
+  // view at all, so the only place its call and result can be read back
+  // is the parent Run's file.
+  const workerPage = options.workerReads
   const taskApi = createSubagentTaskApi({
     getEnv: () => ({
       BINGBONG_SUBAGENT_LLM_SCRIPT: JSON.stringify([
+        ...(workerPage !== undefined
+          ? [{ kind: 'tool_calls', calls: [{ id: 'w1', name: 'read_page', args: {} }] }]
+          : []),
         {
           kind: 'answer',
           speak: 'Checked.',
@@ -136,6 +160,9 @@ async function runDelegatingSession(
     }),
     fetchFn: (async () => new Response('{}')) as typeof fetch,
     clock,
+    // The worker's own tab, when the case is about its Tool Round: a
+    // browse worker's tools exist only behind a controller.
+    ...(workerPage !== undefined ? { controllerFor: () => workerBrowser(workerPage) } : {}),
   })
   const manager = createSubagentManager({
     taskApi,
@@ -385,6 +412,59 @@ describe('the Run Trace file', () => {
     const [record] = reasoning(all).filter((entry) => entry.agentId !== undefined)
     expect(record!.text).toBe(long.slice(0, TRACE_REASONING_MAX_CHARS))
     expect(record!.chars).toBe(long.length)
+  })
+
+  // The worker's Tool Rounds (#185): a delegated worker publishes only
+  // its cards and its `subagent_finalized` to the main stream, so what it
+  // called and what came back is kept here or nowhere. The records stamp
+  // the worker's `agentId` under the parent Run's identity — the same
+  // pattern the reasoning and checkpoint records use (#123, #183).
+  it("keeps a worker's Tool Round under the parent Run, stamped with its agentId", async () => {
+    const all = await runDelegatingSession(dir, {
+      workerThinks: ['reading the page'],
+      workerReads: 'Acme Wi-Fi Router\nPrice: $39.',
+    })
+
+    const worker = pipelineEvents(all).filter((record) => record.agentId !== undefined)
+    expect(worker.map((record) => [record.agentId, record.event.type])).toEqual([
+      ['a-1', 'tool_call'],
+      ['a-1', 'tool_result'],
+    ])
+    const [call, result] = worker
+    expect(call!.event).toMatchObject({ type: 'tool_call', name: 'read_page', turnId: call!.turnId })
+    expect(result!.event).toMatchObject({ type: 'tool_result', name: 'read_page', ok: true })
+    // The parent Run's identity, so a worker's calls join the delegation
+    // that made them — and the turn is the parent's, never the worker's.
+    for (const record of worker) {
+      expect(record.v).toBe(RUN_TRACE_VERSION)
+      expect(record.runId).toBe('run-1')
+      expect(record.sessionId).toBe('session-1')
+      expect(record.generation).toBe(0)
+      expect(record.turnId).toMatch(/^turn-/)
+    }
+  })
+
+  it("cuts a worker's overlong tool_result at the cap, and keeps the true length", async () => {
+    const page = 'p'.repeat(TRACE_TOOL_RESULT_MAX_CHARS + 2_500)
+    const all = await runDelegatingSession(dir, { workerThinks: [], workerReads: page })
+
+    const [result] = pipelineEvents(all).filter(
+      (record) => record.agentId !== undefined && record.event.type === 'tool_result',
+    )
+    const event = result!.event
+    if (event.type !== 'tool_result') throw new Error('not a tool_result')
+    expect(event.result).toBe('p'.repeat(TRACE_TOOL_RESULT_MAX_CHARS))
+    expect(result!.chars).toBe(page.length)
+  })
+
+  it("writes no worker events at all when the Run Trace is off", async () => {
+    const all = await runDelegatingSession(dir, {
+      traced: false,
+      workerThinks: ['reading the page'],
+      workerReads: 'Acme Wi-Fi Router\nPrice: $39.',
+    })
+
+    expect(all).toEqual([])
   })
 
   it('writes nothing at all when the Run Trace is off, however much the worker thinks', async () => {

@@ -18,6 +18,18 @@ const browserState: BrowserPaneState = {
   canGoBack: false,
   canGoForward: false,
 }
+const agentCard = {
+  id: 'a-1',
+  kind: 'browse' as const,
+  task: 'check the price page',
+  status: 'running' as const,
+  startedAt: 5,
+  finishedAt: null,
+  steps: 1,
+  lastAction: 'read_page',
+  result: null,
+  error: null,
+}
 const ownership = {
   submissionId: 'submission-1' as SubmissionId,
   runId: 'run-1' as RunId,
@@ -31,8 +43,10 @@ function setup(acceptPipelineEvent?: (event: PipelineEvent) => boolean): {
   pipelineEvents: PipelineEvent[]
   heardSessions: (string | null)[]
   voiceErrorSessions: (string | null)[]
+  traced: PipelineEvent[]
 } {
   const calls: string[] = []
+  const traced: PipelineEvent[] = []
   const pipelineEvents: PipelineEvent[] = []
   const heardSessions: (string | null)[] = []
   const voiceErrorSessions: (string | null)[] = []
@@ -45,6 +59,9 @@ function setup(acceptPipelineEvent?: (event: PipelineEvent) => boolean): {
     acceptPipelineEvent,
     createHistoryRunObserver: () => recordPipeline('history-run'),
     historyEvent: recordPipeline('history-event'),
+    // The Run Trace's tap (#185) — deliberately not in `calls`: it must
+    // not change the order the other sinks are already pinned to.
+    tracePipelineEvent: (event) => void traced.push(event),
     historyHeard: (_heard, sessionId) => {
       calls.push('history-heard')
       heardSessions.push(sessionId)
@@ -65,7 +82,7 @@ function setup(acceptPipelineEvent?: (event: PipelineEvent) => boolean): {
     overlayVoiceError: record('overlay-voice-error'),
     overlaySubmissionFeedback: record('overlay-submission-feedback'),
   }
-  return { publisher: createWindowEventPublisher(deps), calls, pipelineEvents, heardSessions, voiceErrorSessions }
+  return { publisher: createWindowEventPublisher(deps), calls, pipelineEvents, heardSessions, voiceErrorSessions, traced }
 }
 
 describe('window event publisher', () => {
@@ -254,5 +271,44 @@ describe('window event publisher', () => {
 
     expect(calls).toEqual(['history-run', 'renderer-pipeline', 'voice-observer', 'overlay-pipeline'])
     expect(pipelineEvents.every((event) => event.sessionId === 'session-live')).toBe(true)
+  })
+})
+
+// The pipeline_event tap (#185): one record per *published* event, on
+// both roads out of the publisher — a Run's own stream and the auxiliary
+// sources (Session boundaries, download announcements, subagent cards).
+// It sits behind the acceptance gate on purpose: the file records what
+// the views were told, and a rejected event was told to nobody.
+describe('the Run Trace tap on the published stream', () => {
+  it('records a Run\'s events with the ownership the publisher stamped', () => {
+    const { publisher, traced } = setup()
+
+    const run = publisher.run(ownership)
+    run.publish({ type: 'status', turnId: 't-1', status: 'thinking', at: 1 })
+    run.publish({ type: 'done', turnId: 't-1', outcome: 'done', at: 2 })
+
+    expect(traced.map((event) => event.type)).toEqual(['status', 'done'])
+    expect(traced.every((event) => event.runId === 'run-1' && event.sessionId === 'session-1')).toBe(true)
+  })
+
+  it('records auxiliary publications too — lifecycle boundaries included', () => {
+    const { publisher, traced } = setup()
+
+    publisher.publish({
+      source: 'lifecycle',
+      event: { type: 'session_started', sessionId: 'session-1' as SessionId, sessionGeneration: 3, at: 1 },
+    })
+    publisher.publish({ source: 'subagent', event: { type: 'agent_update', agent: agentCard, at: 2 } })
+
+    expect(traced.map((event) => event.type)).toEqual(['session_started', 'agent_update'])
+  })
+
+  it('records nothing a consumer never saw — a rejected event leaves no line', () => {
+    const { publisher, traced } = setup(() => false)
+
+    publisher.run(ownership).publish({ type: 'status', turnId: 't-1', status: 'thinking', at: 1 })
+    publisher.publish({ source: 'detail', event: { type: 'steer', turnId: 't-1', text: 'use Paris', at: 2 } })
+
+    expect(traced).toEqual([])
   })
 })
