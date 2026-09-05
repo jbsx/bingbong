@@ -6,7 +6,7 @@
 // observation retained (a structured Action Outcome grounds itself).
 
 import type { ToolCall } from '../ports/llm'
-import type { ObservationId, ObservationRecord } from '../session/observationLedger'
+import type { ObservationId, ObservationProducer, ObservationRecord } from '../session/observationLedger'
 import type { ObservationCheckpointResult, SessionEvidenceStore, UserObservationOrigin } from '../session/sessionEvidence'
 import { MAX_PROVENANCE_CHARS, MAX_UNCERTAINTY_CHARS, USER_EVENT_PRODUCERS } from '../session/sessionEvidence'
 import type { MemoryEntryId, MemoryReference } from '../session/workingMemory'
@@ -84,6 +84,7 @@ export type EvidenceCheckpointFailure =
   | { ok: false; reason: 'no_session'; error: string }
   | { ok: false; reason: 'malformed'; error: string }
   | { ok: false; reason: 'unknown_source'; error: string }
+  | { ok: false; reason: 'excerpt_required'; error: string }
   | { ok: false; reason: 'excerpt_unsupported'; error: string }
   | { ok: false; reason: 'user_text_unverified'; error: string }
   | { ok: false; reason: 'unknown_agent'; error: string }
@@ -168,8 +169,9 @@ export function parseEvidenceCitation(args: Record<string, unknown>): EvidenceCi
 /**
  * The Run Observation that retained the cited source: canonical URL match
  * against successful page-facing records. When several retained the source,
- * the one observed last wins — the excerpt validates against what the Run
- * most recently saw there, not a stale read.
+ * the one observed last wins. This answers only "was it observed, and when
+ * last" — whether a citation's excerpt holds is
+ * `findGroundingObservation`'s question (#179).
  */
 export function findSourceObservation(
   records: readonly ObservationRecord[],
@@ -184,6 +186,59 @@ export function findSourceObservation(
     if (found === null || record.at >= found.at) found = record
   }
   return found
+}
+
+/** How a rejection names what it checked (#179): producer vocabulary, in prose. */
+const PRODUCER_LABELS: Record<ObservationProducer, string> = {
+  command: 'command',
+  page_read: 'page read',
+  action_outcome: 'action outcome',
+  look: 'look',
+  ask_user: 'ask_user answer',
+  steering: 'steering directive',
+  subagent_report: 'subagent report',
+}
+
+/** What grounding a citation against one source found, or why it did not. */
+export type GroundingOutcome =
+  | { readonly ok: true; readonly record: ObservationRecord }
+  | { readonly ok: false; readonly reason: 'unknown_source' }
+  | {
+      readonly ok: false
+      readonly reason: 'excerpt_required' | 'excerpt_unsupported'
+      /** The producers whose retention was checked, named for the correction. */
+      readonly producers: readonly string[]
+    }
+
+/**
+ * The Run Observation that grounds a citation (#179): the newest retained
+ * record for the canonical source whose retention actually supports the
+ * citation — not merely the newest record for that source. A Look of a page
+ * already read retains only its vision description, and shadowing the read
+ * with it rejected excerpts copied verbatim from the page. Freshness still
+ * decides between records that do support the citation, so a re-read wins
+ * over the stale text it replaced. When none supports it, the refusal
+ * separates a missing excerpt from a wrong one and names what was checked.
+ */
+export function findGroundingObservation(
+  records: readonly ObservationRecord[],
+  sourceUrl: string,
+  excerpt: string | undefined,
+): GroundingOutcome {
+  const canonical = canonicalizeMemoryUrl(sourceUrl)
+  const producers: string[] = []
+  let found: ObservationRecord | null = null
+  for (const record of canonical === null ? [] : records) {
+    if (!record.ok || record.sourceUrl === undefined) continue
+    if (canonicalizeMemoryUrl(record.sourceUrl) !== canonical) continue
+    const label = PRODUCER_LABELS[record.producer]
+    if (!producers.includes(label)) producers.push(label)
+    if (!excerptSupported(record, excerpt)) continue
+    if (found === null || record.at >= found.at) found = record
+  }
+  if (found !== null) return { ok: true, record: found }
+  if (producers.length === 0) return { ok: false, reason: 'unknown_source' }
+  return { ok: false, reason: excerpt === undefined ? 'excerpt_required' : 'excerpt_unsupported', producers }
 }
 
 /**
@@ -438,12 +493,17 @@ export function evaluateEvidenceCheckpoint(
     // The citing model saw the worker's report, not its tool results, so
     // an excerpt is optional here; one offered must still appear in what
     // the worker retained — a wrong quote never grounds.
-    if (citation.excerpt !== undefined && !excerptSupported(source, citation.excerpt)) {
-      return {
-        ok: false,
-        reason: 'excerpt_unsupported',
-        error: `the excerpt does not appear in what subagent '${citation.agentId}' retained from '${citation.sourceUrl}' — omit it, or copy it verbatim from the report you are citing`,
+    let grounded = source
+    if (citation.excerpt !== undefined) {
+      const grounding = findGroundingObservation(workerRecords, citation.sourceUrl, citation.excerpt)
+      if (!grounding.ok) {
+        return {
+          ok: false,
+          reason: 'excerpt_unsupported',
+          error: `the excerpt does not appear in what subagent '${citation.agentId}' retained from '${citation.sourceUrl}' (checked its ${grounding.reason === 'unknown_source' ? 'observations' : grounding.producers.join(', ')}) — omit it, or copy it verbatim from the report you are citing`,
+        }
       }
+      grounded = grounding.record
     }
     const canonical = canonicalizeMemoryUrl(citation.sourceUrl)!
     // The retained page title (#144): already named by the worker's own
@@ -459,7 +519,7 @@ export function evaluateEvidenceCheckpoint(
       // Freshness judges when the evidence was truly seen (#123): the
       // worker's own observation time, not the orchestrator's commit —
       // a report collected by a later Run stays as old as its worker.
-      observedAt: source.at,
+      observedAt: grounded.at,
     })
     if (committed === null) {
       return {
@@ -472,28 +532,37 @@ export function evaluateEvidenceCheckpoint(
       ok: true,
       entryId: committed.observation.id,
       merged: committed.merged,
-      sourceObservationId: source.id,
+      sourceObservationId: grounded.id,
       sourceUrl: canonical,
       agentId: citation.agentId,
       contradicts: committed.contradicts,
     }
   }
   if (deps.commit === undefined) return EVIDENCE_NO_SESSION
-  const source = findSourceObservation(deps.records, citation.sourceUrl)
-  if (source === null) {
-    return {
-      ok: false,
-      reason: 'unknown_source',
-      error: `source '${citation.sourceUrl}' was not observed in this run — cite the URL of a page this run opened or read`,
+  const grounding = findGroundingObservation(deps.records, citation.sourceUrl, citation.excerpt)
+  if (!grounding.ok) {
+    if (grounding.reason === 'unknown_source') {
+      return {
+        ok: false,
+        reason: 'unknown_source',
+        error: `source '${citation.sourceUrl}' was not observed in this run — cite the URL of a page this run opened or read`,
+      }
     }
-  }
-  if (!excerptSupported(source, citation.excerpt)) {
+    const checked = grounding.producers.join(', ')
+    if (grounding.reason === 'excerpt_required') {
+      return {
+        ok: false,
+        reason: 'excerpt_required',
+        error: `the citation carries no excerpt, and this run retained '${citation.sourceUrl}' as text (${checked}) — copy a contiguous span verbatim from the tool result you are citing; only a structured action outcome grounds without one`,
+      }
+    }
     return {
       ok: false,
       reason: 'excerpt_unsupported',
-      error: `the excerpt does not appear in what this run retained from '${citation.sourceUrl}' — copy it verbatim from the tool result you are citing, or cite the observation's structured outcome`,
+      error: `the excerpt does not appear in anything this run retained from '${citation.sourceUrl}' — checked its ${checked} — copy it verbatim from the tool result you are citing, or cite the observation's structured outcome`,
     }
   }
+  const source = grounding.record
   const canonical = canonicalizeMemoryUrl(citation.sourceUrl)!
   // The retained page title (#144): already named by this Run's own
   // observations of the source — never a second browser read or model

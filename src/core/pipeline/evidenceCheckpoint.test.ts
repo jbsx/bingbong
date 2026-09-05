@@ -8,6 +8,7 @@ import {
   evaluateEvidenceCheckpoint,
   evidenceCheckpointMessage,
   excerptSupported,
+  findGroundingObservation,
   findSourceObservation,
   findUserEventObservation,
   parseEvidenceCitation,
@@ -293,7 +294,7 @@ describe('evaluateEvidenceCheckpoint', () => {
       records: [webRecord()],
       commit: commitOver(store),
     })
-    expect(missing).toMatchObject({ ok: false, reason: 'excerpt_unsupported' })
+    expect(missing).toMatchObject({ ok: false, reason: 'excerpt_required' })
     expect(store.snapshot().observations).toEqual([])
   })
 
@@ -623,5 +624,127 @@ describe('retained page titles (#144)', () => {
     expect(store.snapshot().observations[0]?.references).toEqual([
       { url: 'https://rival.example/router', title: 'Rival Router Review' },
     ])
+  })
+})
+
+describe('evidence grading faults (#179)', () => {
+  /** The page read, then a Look of the same page that retains only vision text. */
+  const PAGE_READ = webRecord({ id: 'obs-2' as ObservationRecord['id'], at: 0 })
+  const LATER_LOOK = webRecord({
+    id: 'obs-9' as ObservationRecord['id'],
+    at: 500,
+    producer: 'look',
+    payload: 'A router listing page with a large product photo.',
+  })
+
+  describe('findGroundingObservation', () => {
+    it('takes the newest retained record for the source whose text carries the excerpt', () => {
+      expect(findGroundingObservation([PAGE_READ, LATER_LOOK], 'https://shop.example/acme-router', 'costs $39')).toEqual({
+        ok: true,
+        record: PAGE_READ,
+      })
+      // Still freshest-wins among the records that do support it.
+      const reread = webRecord({ id: 'obs-11' as ObservationRecord['id'], at: 900 })
+      expect(findGroundingObservation([PAGE_READ, LATER_LOOK, reread], 'https://shop.example/acme-router', 'costs $39')).toEqual({
+        ok: true,
+        record: reread,
+      })
+    })
+
+    it('separates an unobserved source, a missing excerpt, and an unsupported one', () => {
+      expect(findGroundingObservation([PAGE_READ], 'https://other.example/x', 'costs $39')).toEqual({ ok: false, reason: 'unknown_source' })
+      expect(findGroundingObservation([PAGE_READ, LATER_LOOK], 'https://shop.example/acme-router', undefined)).toEqual({
+        ok: false,
+        reason: 'excerpt_required',
+        producers: ['page read', 'look'],
+      })
+      expect(findGroundingObservation([PAGE_READ, LATER_LOOK], 'https://shop.example/acme-router', 'costs $59')).toEqual({
+        ok: false,
+        reason: 'excerpt_unsupported',
+        producers: ['page read', 'look'],
+      })
+    })
+
+    it('grounds a structured Action Outcome without an excerpt', () => {
+      const outcome = webRecord({ producer: 'action_outcome', payload: { paused: true } })
+      expect(findGroundingObservation([outcome], 'https://shop.example/acme-router', undefined)).toEqual({ ok: true, record: outcome })
+    })
+  })
+
+  it('rejects a missing excerpt as excerpt_required, saying it is missing rather than wrong', () => {
+    const store = evidenceHarness()
+    const outcome = evaluateEvidenceCheckpoint(callOf({ observation: 'x', source_url: GROUNDED_ARGS.source_url }), {
+      records: [webRecord()],
+      commit: commitOver(store),
+    })
+
+    expect(outcome).toMatchObject({ ok: false, reason: 'excerpt_required' })
+    expect(outcome.ok ? '' : outcome.error).toContain('no excerpt')
+    expect(outcome.ok ? '' : outcome.error).not.toContain('does not appear')
+    expect(evidenceCheckpointMessage(outcome)).toContain('record_evidence rejected (excerpt_required)')
+    expect(store.snapshot().observations).toEqual([])
+  })
+
+  it('grounds a web citation with no excerpt against a structured Action Outcome', () => {
+    const store = evidenceHarness()
+    const outcome = evaluateEvidenceCheckpoint(callOf({ observation: 'The video is paused.', source_url: GROUNDED_ARGS.source_url }), {
+      records: [webRecord({ producer: 'action_outcome', payload: { paused: true, currentTime: 42 } })],
+      commit: commitOver(store),
+    })
+    expect(outcome).toMatchObject({ ok: true, sourceObservationId: 'obs-4' })
+  })
+
+  it('grounds an excerpt copied from the page read after a later Look of the same URL', () => {
+    const store = evidenceHarness()
+    const outcome = evaluateEvidenceCheckpoint(callOf(GROUNDED_ARGS), {
+      records: [PAGE_READ, LATER_LOOK],
+      commit: commitOver(store),
+    })
+
+    expect(outcome).toMatchObject({ ok: true, sourceObservationId: 'obs-2' })
+    expect(store.snapshot().observations).toHaveLength(1)
+  })
+
+  it('names the producers checked when no retained record carries the excerpt', () => {
+    const store = evidenceHarness()
+    const outcome = evaluateEvidenceCheckpoint(callOf({ ...GROUNDED_ARGS, excerpt: 'costs $59' }), {
+      records: [PAGE_READ, LATER_LOOK],
+      commit: commitOver(store),
+    })
+
+    expect(outcome).toMatchObject({ ok: false, reason: 'excerpt_unsupported' })
+    expect(outcome.ok ? '' : outcome.error).toContain('page read, look')
+    expect(store.snapshot().observations).toEqual([])
+  })
+
+  it('lets a subagent citation with no excerpt ground, and un-shadows one that has an excerpt', () => {
+    const store = evidenceHarness()
+    const workerRead: ObservationRecord = {
+      id: 'wobs-3' as ObservationRecord['id'],
+      at: 0,
+      producer: 'page_read',
+      ok: true,
+      payload: 'The rival router costs $29. Ships in 2 days.',
+      sourceUrl: 'https://rival.example/router',
+    }
+    const workerLook: ObservationRecord = {
+      ...workerRead,
+      id: 'wobs-8' as ObservationRecord['id'],
+      at: 500,
+      producer: 'look',
+      payload: 'A product page with a router photo.',
+    }
+    const deps = {
+      records: [],
+      commitSubagent: (agentId: string) => subagentEvidenceCommit(() => store, 'run-1' as RunId, agentId),
+      workerObservations: () => [workerRead, workerLook],
+    }
+    const args = { kind: 'subagent', agent_id: 'a-2', observation: 'The rival router costs $29.', source_url: 'https://rival.example/router' }
+
+    expect(evaluateEvidenceCheckpoint(callOf(args), deps)).toMatchObject({ ok: true, sourceObservationId: 'wobs-8' })
+    expect(evaluateEvidenceCheckpoint(callOf({ ...args, excerpt: 'costs $29' }), deps)).toMatchObject({ ok: true, sourceObservationId: 'wobs-3' })
+    const wrong = evaluateEvidenceCheckpoint(callOf({ ...args, excerpt: 'costs $59' }), deps)
+    expect(wrong).toMatchObject({ ok: false, reason: 'excerpt_unsupported' })
+    expect(wrong.ok ? '' : wrong.error).toContain('page read, look')
   })
 })
