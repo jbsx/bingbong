@@ -199,6 +199,25 @@ terminal result, and the Notices its results carry — has one implementation
 with two adapters: the Run loop and the Browse Subagent loop.
 _Avoid_: tool call, model round
 
+**Acquisition**:
+Tool work that brings new material into a Run — fetching or acting on a page,
+a Look, media, or delegating to a Subagent. Finalization closes every
+Acquisition tool; nothing else is closed by it.
+_Avoid_: work tools, browsing tools
+
+**Collection**:
+Reading something the Run already holds — a finished Subagent Report or
+existing Session Evidence. Collection spends no budget beyond its Tool Round
+and stays open through Finalization, so a report that arrived in time reaches
+the Answer.
+_Avoid_: acquisition, polling
+
+**Bookkeeping**:
+Recording what a Run has decided or observed — its Run Plan, an Evidence
+Checkpoint, a Candidate decision. Bookkeeping brings nothing new in and stays
+open through Finalization so the Answer can be grounded.
+_Avoid_: metadata tools, housekeeping
+
 **Notice**:
 An advisory line the runtime appends to a tool result for the model, never
 shown or spoken to the user. An immediate Notice rides the result that
