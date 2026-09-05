@@ -8,6 +8,24 @@ const VAD_GATE_WINDOW_FRAMES = 16
 /** Minimum recent speech probability for a detection to count. */
 const DEFAULT_VAD_GATE = 0.5
 
+/**
+ * What one detection cleared, handed to the callback that fires on it
+ * (#186). The Host Trace's `voice_wake` record is built from exactly
+ * this: a wake that should have fired and did not is diagnosed by the
+ * score against the live threshold and the VAD maximum against the gate,
+ * and neither is knowable after the fact from anywhere else.
+ */
+export interface WakeDetection {
+  /** The head's score on the chunk that fired it. */
+  readonly score: number
+  /** The live threshold from settings it was judged against. */
+  readonly threshold: number
+  /** Highest VAD probability in the recent window. */
+  readonly gateMax: number
+  /** The music/noise gate that maximum had to clear. */
+  readonly gate: number
+}
+
 export interface WakeMonitorDeps {
   vad: VadScorer
   detector: WakeWordDetector
@@ -15,9 +33,9 @@ export interface WakeMonitorDeps {
   getThreshold(): number
   /** Music/noise gate: a detection only counts when speech was heard recently. */
   vadGate?: number
-  onWake(): void
+  onWake(detection: WakeDetection): void
   /** The "abort" interrupt head; the session gates it by run state. */
-  onAbort?(): void
+  onAbort?(detection: WakeDetection): void
   onError(message: string): void
 }
 
@@ -71,16 +89,19 @@ export function createWakeMonitor(deps: WakeMonitorDeps): WakeMonitor {
       wakeCarry = wakeCarry.slice(WAKE_CHUNK_SAMPLES)
       const scores = await deps.detector.score(chunk)
       const gateMax = recentVad.length > 0 ? Math.max(...recentVad) : 0
-      const cleared = scores.wake >= deps.getThreshold() && gateMax >= vadGate
+      const threshold = deps.getThreshold()
+      const cleared = scores.wake >= threshold && gateMax >= vadGate
       if (cleared) {
         latched = 'fired'
-        deps.onWake()
+        deps.onWake({ score: scores.wake, threshold, gateMax, gate: vadGate })
         continue
       }
       // Interrupt head: same gate, no latch — the session's interrupt
       // handler no-ops it while idle, so a hot head can't wedge the ear.
       // The "hold on" head is scored but unwired (ADR 0024).
-      if (scores.abort >= deps.getThreshold() && gateMax >= vadGate) deps.onAbort?.()
+      if (scores.abort >= threshold && gateMax >= vadGate) {
+        deps.onAbort?.({ score: scores.abort, threshold, gateMax, gate: vadGate })
+      }
     }
   }
 

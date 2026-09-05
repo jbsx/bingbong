@@ -2,7 +2,9 @@ import type { SnapshotRef } from '../browser/snapshot'
 import type { BrowserController, VisualGroundingController } from '../ports/browser'
 import type { VisionDescriber, VisionModel } from '../ports/vision'
 import type { ToolCall } from '../ports/llm'
-import type { Tool } from './tool'
+import type { Tool, ToolContext } from './tool'
+import { tracedVisionRequest } from '../trace/visionTrace'
+import { traceVisionBudget, visionAgentStamp, visionSeam } from './visionTracing'
 
 const IGNORED_WORDS = new Set(['a', 'an', 'the', 'on', 'in', 'at', 'of'])
 
@@ -37,12 +39,20 @@ export function createLookTool(browser: BrowserController, vision: VisionDescrib
     acquisition: true,
     description:
       'Inspect a screenshot of the current browser page and return a text description of visible page state, popups, overlays, and anything blocking progress.',
-    async execute() {
-      return vision.describe({
-        image: await browser.screenshot(),
-        prompt:
-          'Describe the current browser page. Focus on page state, popups, dialogs, overlays, consent prompts, errors, and anything that could block the requested task.',
-      })
+    async execute(_call, context: ToolContext) {
+      // The Look's own record (#186): the Vision Budget was already spent
+      // by the round (`usesVision`), so this covers the request alone.
+      return tracedVisionRequest(
+        visionSeam(context),
+        { capability: 'describe', reason: 'look', ...visionAgentStamp(context) },
+        async () =>
+          vision.describe({
+            image: await browser.screenshot(),
+            prompt:
+              'Describe the current browser page. Focus on page state, popups, dialogs, overlays, consent prompts, errors, and anything that could block the requested task.',
+          }),
+        (answer) => answer,
+      )
     },
   }
 }
@@ -64,13 +74,20 @@ export function createVisionGroundingTools(browser: BrowserController & VisualGr
         if (matched) return `DOM match: use ref ${matched.ref}`
 
         const grant = context.acquireVision?.()
+        traceVisionBudget(context, 'ground_visual', grant)
         if (!grant) throw new Error('vision budget is unavailable')
         if (!grant.ok) throw new Error(grant.reason)
-        const location = await vision.locate({
-          image: await browser.screenshot(),
-          target,
-          viewport: snapshot.viewport,
-        })
+        const location = await tracedVisionRequest(
+          visionSeam(context),
+          { capability: 'locate', reason: 'ground_visual', target, ...visionAgentStamp(context) },
+          async () =>
+            vision.locate({
+              image: await browser.screenshot(),
+              target,
+              viewport: snapshot.viewport,
+            }),
+          (point) => `${point.x},${point.y}`,
+        )
         const ref = await browser.refAtPoint(location)
         return `Vision match: use ref ${ref}`
       },

@@ -1,5 +1,6 @@
 import type { PerfTracer } from './perfTracer'
 import { envFlagEnabled } from './envFlag'
+import { reportFault } from '../trace/fault'
 
 // Verbose browser sub-spans (#32): browser actions already appear as whole
 // `tool` spans at the pipeline's gated-execution choke point (#30). Behind an
@@ -57,7 +58,8 @@ export function createBrowserSubspans(deps: { tracer: PerfTracer; enabled?: bool
       // (the same guard every other perf call site gives its tracer).
       try {
         deps.tracer.span(currentTurn, stage, durMs, detail)
-      } catch {
+      } catch (error) {
+        reportFault('perf.browserSubspans.emit', error, { turnId: currentTurn })
         // swallowed — see above
       }
     },

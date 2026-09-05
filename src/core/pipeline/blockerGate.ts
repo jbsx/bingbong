@@ -1,6 +1,7 @@
 import type { ToolCall, ToolResultOutcome } from '../ports/llm'
 import type { BlockerSignal } from '../browser/blockerNudge'
 import { parseBlockerMarker, UNKNOWN_BLOCKER_HOST } from '../browser/blockerNudge'
+import { reportFault } from '../trace/fault'
 
 // Issue #80, ADR 0010: the same-wall Blocker gate. Detection (#78) puts a
 // machine-readable marker line (`BLOCKER:<signal> <host>`) on the tool
@@ -55,7 +56,8 @@ export function hostFromUrl(value: string): string | null {
   try {
     const host = new URL(value).hostname.toLowerCase()
     return host === '' ? null : host
-  } catch {
+  } catch (error) {
+    reportFault('pipeline.blockerGate.hostFromUrl', error)
     return null
   }
 }

@@ -11,6 +11,7 @@ import { createPaneBrowserController } from './createPaneBrowserController'
 import { attachPageContextMenu } from './attachPageContextMenu'
 import { trackPaneBackground } from './paneBackgrounds'
 import { applyPaneZoom } from './paneZoom'
+import { reportFault } from '../../core/trace/fault'
 
 // Electron glue for subagent tabs (issue #13): one WebContentsView per
 // active/lingering tab on the window's content view, sharing the main
@@ -237,7 +238,8 @@ export function createSubagentPanePool(
       if (lastFrames.get(agentId) === dataUrl) return // static page — nothing new to ship
       lastFrames.set(agentId, dataUrl)
       deps.onThumbnail?.(agentId, dataUrl)
-    } catch {
+    } catch (error) {
+      reportFault('subagent.panePool.thumbnail', error)
       // A renderer dying between capture and encode is not card news.
     }
   }

@@ -1,6 +1,7 @@
 import { resolveModelEndpoint } from '../../core/agent/modelRouting'
 import { VisionDeadlineError } from '../../core/ports/vision'
 import type { VisionLocation, VisionModel } from '../../core/ports/vision'
+import { reportFault } from '../../core/trace/fault'
 
 /**
  * Direct chat-completions adapter for the vision role (ADR 0008). The Z.ai
@@ -68,7 +69,8 @@ function parsePoint(answer: string, width: number, height: number): VisionLocati
   let parsed: unknown
   try {
     parsed = object ? JSON.parse(object) : undefined
-  } catch {
+  } catch (error) {
+    reportFault('vision.zai.parsePoint', error)
     parsed = undefined
   }
   if (typeof parsed !== 'object' || parsed === null) {
@@ -141,7 +143,8 @@ async function readSseStream(response: Response, onFirstToken: () => void): Prom
     let parsed: unknown
     try {
       parsed = JSON.parse(payload)
-    } catch {
+    } catch (error) {
+      reportFault('vision.zai.readSseStream', error)
       return
     }
     const delta = (parsed as { choices?: { delta?: { content?: unknown; reasoning_content?: unknown } }[] })

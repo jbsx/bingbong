@@ -1,5 +1,6 @@
 import type { AgentRole } from './modelRouting'
 import type { AssistantTurn, LlmClient, LlmRequest } from '../ports/llm'
+import { reportFault } from '../trace/fault'
 
 // Funnel per-turn usage (when the provider reports it) into a sink — the
 // daily spend ledger in production. Turns pass through untouched; recording
@@ -24,7 +25,8 @@ export function withUsageTracking(
       const turn = await client.complete(request)
       try {
         sink({ role, model: getModel(), usage: turn.usage })
-      } catch {
+      } catch (error) {
+        reportFault('agent.usageTracking.record', error)
         // The ledger is advisory; never fail a command over bookkeeping.
       }
       return turn

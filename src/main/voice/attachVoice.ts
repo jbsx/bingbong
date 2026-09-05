@@ -4,6 +4,7 @@ import type { TtsIdle, TtsSpeaker } from '../../core/ports/tts'
 import type { Transcriber, VadScorer } from '../../core/ports/stt'
 import type { PerfTracer } from '../../core/perf/perfTracer'
 import type { UtteranceDumper } from '../../core/voice/utteranceDump'
+import type { HostTraceWriter } from '../../core/trace/hostTrace'
 import type { UtteranceEndpointerConfig } from '../../core/voice/vadEndpointing'
 import { VOICE_IPC, type VoiceState } from '../../core/voice/ipcChannels'
 import { createVoiceSession, type VoiceSession, type VoiceWakeDeps } from '../../core/voice/voiceSession'
@@ -54,6 +55,8 @@ export function attachVoiceToWindow(win: BrowserWindow, deps: AttachVoiceDeps): 
     getEndpointerConfig: deps.getEndpointerConfig,
     tracer: deps.tracer,
     dumper: deps.dumper,
+    hostTrace: deps.hostTrace,
+    biasPhrases: deps.biasPhrases,
     onSubmitCommand: (text, turnId, truncated) => {
       void runAssistantCommand(win, text, turnId, truncated)
     },
@@ -105,6 +108,10 @@ export interface AttachVoiceDeps {
   tracer?: PerfTracer
   /** Opt-in utterance audio dumps (#34); absent keeps the session dump-free. */
   dumper?: UtteranceDumper
+  /** The Host Trace writer (#186); absent keeps the ear's records unwritten. */
+  hostTrace?: HostTraceWriter
+  /** The live bias set a transcript's hits are read against (#186). */
+  biasPhrases?(): readonly string[]
   onExtendSession(sessionId: SessionId, generation: SessionGeneration): void
   onDeclineSession(sessionId: SessionId, generation: SessionGeneration): void
   publisher: Pick<WindowEventPublisher, 'publish'>

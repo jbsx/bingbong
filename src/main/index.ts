@@ -61,6 +61,7 @@ import { createPipelineEventTraceWriter } from '../core/trace/pipelineEventTrace
 import { createHostTraceWriter } from '../core/trace/hostTrace'
 import { setFaultSink } from '../core/trace/fault'
 import { createFaultRouter } from '../core/trace/faultRouter'
+import { createVisionTraceRouter } from '../core/trace/visionTrace'
 import { hostTraceEnabled, runTraceEnabled } from '../core/trace/traceFlags'
 import { resolveVoiceConfig } from './voice/voiceConfig'
 import { createMainVoice } from './voice/createMainVoice'
@@ -145,13 +146,6 @@ const envFileValues = loadEnvFile(process.env, app.getAppPath())
 // reported usage lands here and surfaces on the settings page.
 const usageStore = createUsageStore(join(app.getPath('userData'), 'usage.json'))
 
-// Learned Terms ledger (ADR 0022): the Bias Lexicon's runtime-grown half —
-// one app-global lexicon.json beside the settings file. The pipeline's
-// Mishear proposals grow it autonomously (recurrence-gated); the settings
-// page is its one human surface. Fails closed to seed-only on corruption.
-const learnedTermsStore = createLearnedTermsStore(join(app.getPath('userData'), 'lexicon.json'), seedLexiconSet())
-registerLearnedTermsIpc(learnedTermsStore)
-
 // Recorded History (spec #1, Persistence): every live event is recorded for
 // explicit review, but launches never restore it into the Feed or continuity.
 const historyStore = createSqliteHistoryStore(join(app.getPath('userData'), 'history.db'))
@@ -210,6 +204,28 @@ const traceHost =
 if (runTraceSink !== null || traceHost !== null) {
   setFaultSink(createFaultRouter({ runTrace: runTraceSink, hostTrace: traceHost, now: systemClock.now }))
 }
+// The vision records (#186): the fault route again, for the seam that is
+// not a family of its own — a Look inside a Run joins that Run's
+// decisions, a vision call outside one lands in the Host Trace. Threaded
+// as a dependency rather than installed globally: every vision call site
+// is a tool with a ToolContext already in hand.
+const traceVision =
+  runTraceSink === null && traceHost === null
+    ? null
+    : createVisionTraceRouter({ runTrace: runTraceSink, hostTrace: traceHost, now: systemClock.now })
+
+// Learned Terms ledger (ADR 0022): the Bias Lexicon's runtime-grown half —
+// one app-global lexicon.json beside the settings file. The pipeline's
+// Mishear proposals grow it autonomously (recurrence-gated); the settings
+// page is its one human surface. Fails closed to seed-only on corruption.
+// Created after the traces so a change to the lexicon can be recorded
+// (#186) instead of printed — the two `console.log` lines it used to
+// leave were the only account anyone had of the lexicon growing.
+const learnedTermsStore = createLearnedTermsStore(join(app.getPath('userData'), 'lexicon.json'), seedLexiconSet(), {
+  ...(traceHost !== null ? { hostTrace: traceHost } : {}),
+})
+registerLearnedTermsIpc(learnedTermsStore)
+
 
 // Verbose browser sub-spans (#32), opt-in behind the established env-flag
 // pattern: one shared channel between the pipeline's tool gate (which opens
@@ -384,6 +400,9 @@ async function createWindow(): Promise<BrowserWindow> {
       pane: pane.view.webContents,
       getVoiceId: () => settingsStore.get().ttsVoice.trim() || piperConfig.voiceId,
       tracer: perfTracer,
+      // The spoken-line records (#186): the exact text piper is given, and
+      // every line a barge-in dropped.
+      ...(traceHost !== null ? { hostTrace: traceHost } : {}),
     }),
   )
   attachDownloadRouter(pane.session, {
@@ -467,6 +486,11 @@ async function createWindow(): Promise<BrowserWindow> {
     publisher: eventPublisher,
     tracer: perfTracer,
     dumper: utteranceDumper,
+    // The ear's records (#186): wake detections, utterance endpoints and
+    // transcripts, with the live bias set the decode was given so a
+    // mishearing can be read against it.
+    ...(traceHost !== null ? { hostTrace: traceHost } : {}),
+    biasPhrases: () => learnedTermsStore.biasPhrases(),
     onExtendSession: (sessionId, generation) => {
       sessionRuntime?.extend({ sessionId, generation })
     },
@@ -522,6 +546,9 @@ async function createWindow(): Promise<BrowserWindow> {
     getLearnedTerms: () => learnedTermsStore.list(),
     onLlmUsage: (record) => usageStore.record(record.role, record.model, record.usage),
     tracer: perfTracer,
+    // The vision records (#186): a Look, an auto-vision Describe or a
+    // ground_visual Locate, routed by the ids the tool had in hand.
+    ...(traceVision !== null ? { traceVision } : {}),
     browserSubspans,
     // Progress detail (#43): mid-await signals ride the same channel; the
     // history projection maps them to no entry, so recording is unchanged.

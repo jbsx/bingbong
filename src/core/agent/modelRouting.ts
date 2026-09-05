@@ -3,6 +3,7 @@
 // into code, so swapping providers is a config change.
 
 import type { ReasoningEffort } from '../ports/llm'
+import { reportFault } from '../trace/fault'
 
 export type AgentRole = 'orchestrator' | 'subagent' | 'vision'
 
@@ -95,7 +96,8 @@ export function roleConfigured(env: Record<string, string | undefined>, role: Ag
   try {
     resolveModelEndpoint(env, role)
     return true
-  } catch {
+  } catch (error) {
+    reportFault('agent.modelRouting.roleConfigured', error)
     return false
   }
 }

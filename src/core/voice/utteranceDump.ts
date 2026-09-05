@@ -7,6 +7,7 @@
 // become the voice pipeline's problem — every write failure is swallowed.
 
 import { envFlagEnabled } from '../perf/envFlag.ts'
+import { reportFault } from '../trace/fault.ts'
 
 /** Env opt-in for utterance audio dumps (#34): `BINGBONG_AUDIO_DUMP=1`. */
 export const AUDIO_DUMP_ENV = 'BINGBONG_AUDIO_DUMP'
@@ -90,7 +91,8 @@ export function createUtteranceDumper(deps: {
           dirReady = true
         }
         deps.writer.writeFile(`${deps.dir}/utterance-${now()}-${String(sequence).padStart(4, '0')}.wav`, encodeUtteranceWav(pcm))
-      } catch {
+      } catch (error) {
+        reportFault('voice.utteranceDump.write', error)
         // A failed dump must never break the turn it records. A dir that
         // could not be created stays dead for the whole boot (a dead dumps
         // dir degrades to a no-op, like the perf sink's dead logs dir);

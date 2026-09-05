@@ -9,6 +9,7 @@ import {
   type AdblockEngine,
 } from '../../core/adblock/adblockController'
 import type { SettingsStore } from '../settings/settingsStore'
+import { reportFault } from '../../core/trace/fault'
 
 // Electron glue for the embedder-level adblocker (issue #21): maps the
 // unit-tested controller onto @ghostery/adblocker-electron and the persistent
@@ -58,7 +59,8 @@ export function attachAdblock(deps: {
     readCachedText: (url) => {
       try {
         return readFileSync(listTextPath(url), 'utf8')
-      } catch {
+      } catch (error) {
+        reportFault('adblock.cache.readText', error)
         return null
       }
     },
@@ -81,7 +83,8 @@ export function attachAdblock(deps: {
         const meta = JSON.parse(readFileSync(paths.meta, 'utf8')) as AdblockCacheMeta
         const engine = new Uint8Array(readFileSync(paths.engine))
         return { engine, meta }
-      } catch {
+      } catch (error) {
+        reportFault('adblock.cache.read', error)
         return null
       }
     },

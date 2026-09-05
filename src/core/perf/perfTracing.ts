@@ -1,5 +1,6 @@
 import type { AssistantTurn, LlmClient, LlmRequest } from '../ports/llm'
 import type { PerfTracer } from './perfTracer'
+import { reportFault } from '../trace/fault'
 
 // LLM-round perf visibility (#29) at the client-wrapper seam — the same
 // wrapping pattern as usage tracking. Each round becomes one `llm` span
@@ -20,7 +21,8 @@ export function withPerfTracing(client: LlmClient, tracer: PerfTracer, stage = '
       const record = (retryStage: string, durMs: number, detail?: Record<string, unknown>): void => {
         try {
           tracer.span(turnId, retryStage, durMs, detail)
-        } catch {
+        } catch (error) {
+          reportFault('perf.tracing.span', error, { turnId })
           // swallowed — see above
         }
       }

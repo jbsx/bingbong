@@ -5,6 +5,7 @@ import type {
   UserObservationOrigin,
 } from './sessionEvidence'
 import type { MemoryEntryId, MemoryProvenance, MemoryReference } from './workingMemory'
+import { reportFault } from '../trace/fault'
 
 // The complete Evidence Browser's pure projection (#142, ADR 0028):
 // everything the renderer shows — filter matching, newest-first ordering,
@@ -174,7 +175,8 @@ export function sourceLabel(reference: MemoryReference): string {
   if (reference.title !== undefined && reference.title !== '') return reference.title
   try {
     return new URL(reference.url).hostname
-  } catch {
+  } catch (error) {
+    reportFault('session.evidenceBrowser.sourceLabel', error)
     return reference.url
   }
 }

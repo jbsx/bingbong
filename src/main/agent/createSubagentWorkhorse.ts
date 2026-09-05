@@ -168,6 +168,9 @@ export function createSubagentTaskApi(deps: SubagentWorkhorseDeps): SubagentTask
           // The worker's Tool Round events (#185): the same hand-down, for
           // the calls and results a worker's rounds publish to no view.
           ...(hooks.tracePipelineEvent !== undefined ? { tracePipelineEvent: hooks.tracePipelineEvent } : {}),
+          // The worker's Looks (#186): the same hand-down, so a delegated
+          // Look joins the Run that delegated it.
+          ...(hooks.traceVision !== undefined ? { traceVision: hooks.traceVision } : {}),
           waitIfPaused: hooks.waitIfPaused ?? (() => Promise.resolve()),
           onProgress: (progress) => hooks.onProgress(progress.step, progress.action),
         },

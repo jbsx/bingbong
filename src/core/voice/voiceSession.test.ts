@@ -8,6 +8,7 @@ import type { CommandRunState } from '../pipeline/createCommandPipeline'
 import { createPerfTracer, type PerfSpanRecord } from '../perf/perfTracer'
 import { audioDumpEnabled, createUtteranceDumper, type UtteranceDumpWriter } from './utteranceDump'
 import type { SessionId } from '../session/sessionIdentity'
+import type { HostTraceEvent } from '../trace/hostTrace'
 
 // The voice session is T9's coordinator: mic audio in (through the VadScorer
 // and utterance endpointing), transcripts out to the same command pipeline as
@@ -61,6 +62,8 @@ interface SessionHarness {
   perf: PerfSpanRecord[]
   /** WAV writes when the audio-dump flag is on (#34). */
   dumps: { path: string; bytes: Uint8Array }[]
+  /** The Host Trace records the ear wrote (#186). */
+  traced: HostTraceEvent[]
   resolutions: { confirmationId: string; approved: boolean }[]
   askResolutions: { askId: string; answer: string }[]
   sessionDecisions: ('extend' | 'decline')[]
@@ -94,6 +97,8 @@ async function createSession(overrides?: {
   endpointerConfig?: Partial<UtteranceEndpointerConfig>
   /** Parks every finish() until settleStt — the STT-window seam (ADR 0024). */
   deferStt?: boolean
+  /** The live bias set a transcript's hits are read against (#186). */
+  biasPhrases?: string[]
 }): Promise<SessionHarness> {
   const vad = overrides?.vad ?? new FakeVad()
   const baseTranscriber = overrides?.transcriber ?? new FakeTranscriber()
@@ -114,6 +119,7 @@ async function createSession(overrides?: {
   const pauses: number[] = []
   const resumes: (string | undefined)[] = []
   const chimes: number[] = []
+  const traced: HostTraceEvent[] = []
   const threshold = overrides?.wake?.threshold ?? 0.5
 
   // The real tracer over an in-memory sink, on the same FakeClock the session
@@ -184,6 +190,10 @@ async function createSession(overrides?: {
     getEndpointerConfig: overrides?.getEndpointerConfig,
     tracer,
     dumper,
+    // The Host Trace writer as main wires it (#186): the ear's records,
+    // built lazily inside the writer's own guard.
+    hostTrace: (event) => traced.push(event()),
+    ...(overrides?.biasPhrases ? { biasPhrases: () => overrides.biasPhrases ?? [] } : {}),
     wake: overrides?.wake
       ? {
           detector: overrides.wake.detector,
@@ -228,7 +238,7 @@ async function createSession(overrides?: {
     pendingStt.shift()?.resolve(text)
   }
 
-  return { vad, transcriber: baseTranscriber, clock, tts, idle, states, heard, errors, commands, submitted, perf, dumps, resolutions, askResolutions, sessionDecisions, aborts, pauses, resumes, chimes, settleStt, speakUtterance, session }
+  return { vad, transcriber: baseTranscriber, clock, tts, idle, states, heard, errors, commands, submitted, perf, dumps, resolutions, askResolutions, sessionDecisions, aborts, pauses, resumes, chimes, traced, settleStt, speakUtterance, session }
 }
 
 function confirmationRequested(id = 'confirm-1'): PipelineEvent {
@@ -1619,5 +1629,73 @@ describe('voice session — utterance audio dumps (#34)', () => {
 
     expect(harness.dumps).toHaveLength(1)
     expect(harness.errors).toEqual(['stt model missing'])
+  })
+})
+
+// The ear's Host Trace records (#186, ADR 0031). Host-scoped by the
+// boundary rule: a listen runs outside every Run — it is what starts one —
+// so nothing here names a turn.
+describe('voice records', () => {
+  it('records the wake detection that fired, with the scores it cleared', async () => {
+    const detector = new FakeWakeDetector([0.9])
+    const harness = await createSession({ transcriber: new FakeTranscriber(['open youtube']), wake: { detector } })
+    harness.session.enableWakeMonitoring()
+    // Two and a half 512-sample frames complete the first 1280-sample wake chunk.
+    for (const prob of [SPEECH, SPEECH, SPEECH]) {
+      harness.vad.queue.push(prob)
+      await harness.session.pushAudio(new Float32Array(512))
+    }
+    expect(harness.traced.filter((event) => event.kind === 'voice_wake')).toEqual([
+      { kind: 'voice_wake', head: 'wake', score: 0.9, threshold: 0.5, gateMax: SPEECH, gate: 0.5 },
+    ])
+  })
+
+  it('records the utterance endpoint with the listen reason that was open', async () => {
+    const harness = await createSession({ transcriber: new FakeTranscriber(['open youtube']) })
+    harness.session.arm()
+    await harness.speakUtterance()
+    expect(harness.traced.find((event) => event.kind === 'voice_endpoint')).toMatchObject({
+      kind: 'voice_endpoint',
+      truncated: false,
+      reason: 'hotkey',
+    })
+  })
+
+  it('records the transcript with the bias phrases it actually contains', async () => {
+    const harness = await createSession({
+      transcriber: new FakeTranscriber(['open sonarr please']),
+      biasPhrases: ['sonarr', 'radarr'],
+    })
+    harness.session.arm()
+    await harness.speakUtterance()
+    expect(harness.traced.find((event) => event.kind === 'voice_stt')).toMatchObject({
+      kind: 'voice_stt',
+      text: 'open sonarr please',
+      chars: 18,
+      biasCount: 2,
+      biasHits: ['sonarr'],
+    })
+  })
+
+  it('records a failed STT pass with the engine error and no transcript', async () => {
+    const transcriber = new FakeTranscriber()
+    transcriber.rejectWith = new Error('decoder crashed')
+    const harness = await createSession({ transcriber })
+    harness.session.arm()
+    await harness.speakUtterance()
+    expect(harness.traced.find((event) => event.kind === 'voice_stt')).toMatchObject({
+      kind: 'voice_stt',
+      text: '',
+      chars: 0,
+      error: 'decoder crashed',
+    })
+  })
+
+  it('names no turn on any of them — the ear runs outside every Run', async () => {
+    const harness = await createSession({ transcriber: new FakeTranscriber(['open youtube']) })
+    harness.session.arm()
+    await harness.speakUtterance()
+    expect(harness.traced.length).toBeGreaterThan(0)
+    for (const event of harness.traced) expect(event).not.toHaveProperty('turnId')
   })
 })

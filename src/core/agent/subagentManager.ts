@@ -6,6 +6,7 @@ import { capSentences } from '../agent/answerContract'
 import { SUBAGENT_LIMITS, type SubagentSharedDeadline } from './subagentRails'
 import type { SubagentReasoningTrace } from '../trace/reasoningTrace'
 import type { SubagentPipelineEventTrace } from '../trace/pipelineEventTrace'
+import type { VisionTraceReporter } from '../trace/visionTrace'
 import type { SubagentReport } from './subagentReport'
 import { SubagentCancelledError } from './subagentRunner'
 
@@ -107,6 +108,12 @@ export interface SubagentTaskHooks {
    * absent, the worker's events are recorded nowhere at all.
    */
   tracePipelineEvent?: SubagentPipelineEventTrace
+  /**
+   * The vision records for this worker's Looks (#186): the spawning Run's
+   * reporter, so a worker's Look joins the Run that delegated it rather
+   * than landing in the Host Trace as something the app did on its own.
+   */
+  traceVision?: VisionTraceReporter
 }
 
 /** Port: starts one workhorse loop (runSubagent in production). */
@@ -151,6 +158,7 @@ export interface SpawnContext {
   sharedDeadline?: SubagentSharedDeadline
   traceReasoning?: SubagentReasoningTrace
   tracePipelineEvent?: SubagentPipelineEventTrace
+  traceVision?: VisionTraceReporter
 }
 
 export interface SubagentManager {
@@ -243,7 +251,7 @@ export function createSubagentManager(deps: SubagentManagerDeps): SubagentManage
 
   return {
     spawn(kind, task, context = {}) {
-      const { turnId, memory, sharedDeadline, traceReasoning, tracePipelineEvent } = context
+      const { turnId, memory, sharedDeadline, traceReasoning, tracePipelineEvent, traceVision } = context
       if (liveCount() >= maxConcurrent) {
         return {
           ok: false,
@@ -306,6 +314,10 @@ export function createSubagentManager(deps: SubagentManagerDeps): SubagentManage
           // terms: they reach no view, so the Run's trace is the only
           // place they can be kept — and only when it asked for them.
           ...(tracePipelineEvent !== undefined ? { tracePipelineEvent } : {}),
+          // And its Looks (#186), through the same hand-down: the reporter
+          // routes on the parent's turn, so a worker's vision spend is
+          // countable in the Run Trace beside the Run's own.
+          ...(traceVision !== undefined ? { traceVision } : {}),
           waitIfPaused: () => waitIfPaused(id),
           onProgress: (step, action) => {
             if (spawnEpoch !== epoch) return

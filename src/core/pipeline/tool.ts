@@ -4,6 +4,7 @@ import type { SubagentSharedDeadline, VisionGrant } from '../agent/subagentRails
 import type { WorkingMemorySnapshot } from '../session/workingMemory'
 import type { SubagentReasoningTrace } from '../trace/reasoningTrace'
 import type { SubagentPipelineEventTrace } from '../trace/pipelineEventTrace'
+import type { VisionTraceReporter } from '../trace/visionTrace'
 import type { EffortTier } from './runPlan'
 import type { CandidateCheckpointOutcome } from './candidateCheckpoint'
 import type { EvidenceCheckpointOutcome } from './evidenceCheckpoint'
@@ -49,6 +50,21 @@ export interface ToolContext {
    * trace beside it.
    */
   traceSubagentPipelineEvent?: SubagentPipelineEventTrace
+  /**
+   * The vision records (#186, ADR 0031): what a Look, an auto-vision
+   * Describe or a ground_visual Locate asked the adapter, what the Vision
+   * Budget decided, and how each request settled. Routed by identity like
+   * a fault — the reporter reads the ids the call site hands it, so a Run's
+   * requests join its decisions and anything outside a Run lands in the
+   * Host Trace. Absent unless the developer opted in to a family.
+   */
+  traceVision?: VisionTraceReporter
+  /**
+   * The delegated worker whose tool call this is (#186); absent on the
+   * Run's own. Stamped on the records a worker's tools write, the way
+   * reasoning and pipeline_event records already carry it.
+   */
+  agentId?: string
   /**
    * Progress detail (#43): a tool that blocks on observable background
    * work (agent_results with wait) reports what the run is waiting on,

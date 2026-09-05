@@ -1,5 +1,6 @@
 import { readdirSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
+import { reportFault } from '../../core/trace/fault'
 
 // The rename's loose end (#184): until this slice the Run Trace was
 // `trace-*.jsonl` and was written unconditionally, so any machine that ran
@@ -28,13 +29,15 @@ export function purgeLegacyTraceFiles(logsDir: string): void {
   let names: string[]
   try {
     names = readdirSync(logsDir).filter((name) => LEGACY_TRACE_FILE_PATTERN.test(name))
-  } catch {
+  } catch (error) {
+    reportFault('trace.purgeLegacy.list', error)
     return
   }
   for (const name of names) {
     try {
       rmSync(join(logsDir, name))
-    } catch {
+    } catch (error) {
+      reportFault('trace.purgeLegacy.remove', error)
       // A racing deletion or an unreadable entry: nothing to recover.
     }
   }

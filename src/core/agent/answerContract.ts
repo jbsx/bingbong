@@ -6,6 +6,7 @@ import { MAX_RUN_NOTE_CHARS, parseFinalizationCause, parseRunResolution, type Fi
 import { MAX_MEMORY_REFERENCES, parseMemoryPatch, type MemoryEntryId, type MemoryPatch } from '../session/workingMemory'
 import { parseMishearProposals, type MishearProposal } from '../voice/learnedTerms'
 import { parseSubagentReportSections } from './subagentReport'
+import { reportFault } from '../trace/fault'
 
 export const SPEAK_SENTENCE_LIMIT = 2
 
@@ -232,7 +233,8 @@ export function parseAssistantAnswer(content: string): {
           ? { ...answer, runNote }
           : { ...answer, runNoteIssue: 'malformed' }
       }
-    } catch {
+    } catch (error) {
+      reportFault('agent.answerContract.parse', error)
       // try the next candidate
     }
   }

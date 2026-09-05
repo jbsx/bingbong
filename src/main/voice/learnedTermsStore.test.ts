@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { seedLexiconSet } from '../moonshine/biasLexicon'
 import { createLearnedTermsStore } from './learnedTermsStore'
+import type { HostTraceEvent } from '../../core/trace/hostTrace'
 
 // ADR 0022: the ledger's persistence — lexicon.json in userData. The store
 // owns the file and the clock; the recurrence gate and the rejection marks
@@ -126,5 +127,68 @@ describe('learned terms store', () => {
     store.manualRemove('nguyen')
 
     expect(lists).toEqual([['nguyen'], []])
+  })
+})
+
+// The Learned Term records (#186, ADR 0031): the two `console.log` lines
+// this store used to leave, in a file that can be read after the fact.
+describe('learned term records', () => {
+  async function tracingStore(now: () => number) {
+    const dir = await tempDir()
+    const traced: HostTraceEvent[] = []
+    const store = createLearnedTermsStore(join(dir, 'lexicon.json'), SEED, {
+      now,
+      hostTrace: (event) => traced.push(event()),
+    })
+    return { store, traced }
+  }
+
+  it('records an admission when a proposal recurs, and nothing on the first miss', async () => {
+    let now = 1_000
+    const { store, traced } = await tracingStore(() => now)
+
+    store.applyProposals([{ op: 'add', suspect: 'garbled', repair: 'linus tech tips' }])
+    expect(traced).toEqual([])
+
+    now = 2_000
+    store.applyProposals([{ op: 'add', suspect: 'garbled', repair: 'linus tech tips' }])
+    expect(traced).toEqual([{ kind: 'learned_term', source: 'proposals', admitted: ['linus tech tips'], removed: [] }])
+  })
+
+  it('records a removal a proposal made', async () => {
+    let now = 1_000
+    const { store, traced } = await tracingStore(() => now)
+    store.applyProposals([{ op: 'add', suspect: 'garbled', repair: 'sonarr' }])
+    now = 2_000
+    store.applyProposals([{ op: 'add', suspect: 'garbled', repair: 'sonarr' }])
+    store.applyProposals([{ op: 'remove', term: 'sonarr' }])
+    expect(traced.at(-1)).toEqual({ kind: 'learned_term', source: 'proposals', admitted: [], removed: ['sonarr'] })
+  })
+
+  it('records the settings surface as a manual change', async () => {
+    const { store, traced } = await tracingStore(() => 1_000)
+    store.manualAdd('radarr')
+    store.manualRemove('radarr')
+    expect(traced).toEqual([
+      { kind: 'learned_term', source: 'manual', admitted: ['radarr'], removed: [] },
+      { kind: 'learned_term', source: 'manual', admitted: [], removed: ['radarr'] },
+    ])
+  })
+
+
+  it('records nothing when a manual change alters no vocabulary', async () => {
+    const { store, traced } = await tracingStore(() => 1_000)
+    store.manualAdd('radarr')
+    // Re-adding clears a rejection mark and admits nothing; removing a term
+    // that was never admitted plants a mark and removes nothing.
+    store.manualAdd('radarr')
+    store.manualRemove('lidarr')
+    expect(traced).toEqual([{ kind: 'learned_term', source: 'manual', admitted: ['radarr'], removed: [] }])
+  })
+
+  it('records nothing for a rejected manual term', async () => {
+    const { store, traced } = await tracingStore(() => 1_000)
+    expect(store.manualAdd('   ')).toBe(false)
+    expect(traced).toEqual([])
   })
 })

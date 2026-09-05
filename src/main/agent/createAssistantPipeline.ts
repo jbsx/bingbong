@@ -13,6 +13,7 @@ import { createRecordCandidateTool } from '../../core/pipeline/candidateTools'
 import { createBrowserTools } from '../../core/pipeline/browserTools'
 import { hostFromUrl } from '../../core/pipeline/blockerGate'
 import { createVisionGroundingTools } from '../../core/pipeline/visionGroundingTools'
+import type { VisionTraceReporter } from '../../core/trace/visionTrace'
 import { createMediaTools } from '../../core/pipeline/mediaTools'
 import { createNewSessionTool } from '../../core/pipeline/sessionTools'
 import { createPanelTools, type PanelControls } from '../../core/pipeline/panelTools'
@@ -103,6 +104,12 @@ export interface AssistantPipelineDeps {
    * the history run rows share one id per turn.
    */
   tracer?: PerfTracer
+  /**
+   * The vision seam's reporter (#186, ADR 0031): what a Look, an
+   * auto-vision Describe or a ground_visual Locate records through, routed
+   * by the ids the tool had. Absent when neither trace family is on.
+   */
+  traceVision?: VisionTraceReporter
   /**
    * Verbose browser sub-spans (#32): the same channel instance the browser
    * controller holds, so its internal delays and extra round-trips key to
@@ -286,6 +293,7 @@ export function createAssistantPipeline(deps: AssistantPipelineDeps): CommandPip
     // for kind "subagent" Evidence Checkpoint grounding.
     ...(deps.subagentObservations ? { subagentObservations: deps.subagentObservations } : {}),
     ...(deps.tracer ? { tracer: deps.tracer } : {}),
+    ...(deps.traceVision ? { traceVision: deps.traceVision } : {}),
     ...(deps.browserSubspans ? { browserSubspans: deps.browserSubspans } : {}),
     ...(deps.emitDetail ? { emitDetail: deps.emitDetail } : {}),
     ...(deps.learnedTerms ? { learnedTerms: deps.learnedTerms } : {}),

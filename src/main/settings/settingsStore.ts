@@ -1,6 +1,7 @@
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { defaultSettings, sanitizeSettings, type AppSettings } from '../../core/settings/settings'
+import { reportFault } from '../../core/trace/fault'
 
 // Settings live in a JSON file under userData. The file is the source of
 // truth across restarts; the store keeps the parsed copy and broadcasts
@@ -20,7 +21,8 @@ export function createSettingsStore(path: string): SettingsStore {
   function load(filePath: string): AppSettings {
     try {
       return sanitizeSettings(JSON.parse(readFileSync(filePath, 'utf8')))
-    } catch {
+    } catch (error) {
+      reportFault('settings.store.load', error)
       return defaultSettings()
     }
   }

@@ -1,4 +1,5 @@
 import type { RunId, SessionId } from './sessionIdentity'
+import { reportFault } from '../trace/fault'
 
 declare const memoryEntryIdBrand: unique symbol
 
@@ -87,7 +88,8 @@ export function canonicalizeMemoryUrl(value: string): string | null {
     if (url.pathname !== '/') url.pathname = url.pathname.replace(/\/+$/, '')
     url.searchParams.sort()
     return url.toString()
-  } catch {
+  } catch (error) {
+    reportFault('session.workingMemory.canonicalizeUrl', error)
     return null
   }
 }

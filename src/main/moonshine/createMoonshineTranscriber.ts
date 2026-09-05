@@ -4,6 +4,7 @@ import { decodeMoonshineTokens } from '../../core/moonshine/bpeTokenizer.ts'
 import { createBiasApplier, type BiasApplier, type LogitsTensor } from '../../core/moonshine/contextualBiasing.ts'
 import { WAV_SAMPLE_RATE } from '../../core/voice/utteranceDump.ts'
 import { createRetriable } from './retriable.ts'
+import { reportFault } from '../../core/trace/fault.ts'
 
 // The shipped STT engine (#41): greedy decode over the official merged ONNX
 // export on the app's onnxruntime-node stack, driven as the streaming
@@ -288,7 +289,8 @@ export function createMoonshineTranscriber(deps: MoonshineTranscriberDeps): Tran
       try {
         const text = await decodePass(pcm)
         if (gen === generation) for (const listener of partialListeners) listener(text)
-      } catch {
+      } catch (error) {
+        reportFault('voice.stt.partialPass', error)
         // Partials are advisory: a failed pass must never break the capture
         // or the final — the same failure surfaces there if it is real.
       }

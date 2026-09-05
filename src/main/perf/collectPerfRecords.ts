@@ -3,6 +3,7 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 import type { PerfSpanRecord } from '../../core/perf/perfTracer'
 import { PERF_FILE_PATTERN } from './perfFiles.ts'
+import { reportFault } from '../../core/trace/fault.ts'
 
 // The #33 report's file half: every perf-*.jsonl under the logs dir, parsed
 // in file-name (creation) order. Malformed lines — a torn final line after a
@@ -29,7 +30,8 @@ function parseRecord(line: string): PerfSpanRecord | null {
   let parsed: unknown
   try {
     parsed = JSON.parse(line)
-  } catch {
+  } catch (error) {
+    reportFault('perf.collect.parseRecord', error)
     return null
   }
   if (typeof parsed !== 'object' || parsed === null) return null
@@ -45,7 +47,8 @@ export function collectPerfRecords(logsDir: string): PerfLogCollection {
   let names: string[]
   try {
     names = readdirSync(logsDir).filter((name) => PERF_FILE_PATTERN.test(name)).sort()
-  } catch {
+  } catch (error) {
+    reportFault('perf.collect.listFiles', error)
     // Missing or unreadable dir — nothing to aggregate.
     return collection
   }
@@ -54,7 +57,8 @@ export function collectPerfRecords(logsDir: string): PerfLogCollection {
     let content: string
     try {
       content = readFileSync(path, 'utf8')
-    } catch {
+    } catch (error) {
+      reportFault('perf.collect.readFile', error)
       continue
     }
     collection.filePaths.push(path)

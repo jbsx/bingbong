@@ -53,6 +53,7 @@ import {
 } from './evidenceCheckpoint'
 import { candidateCheckpointEvent, evidenceCheckpointEvent } from '../trace/evidenceCheckpointTrace'
 import type { RunTraceWriter } from '../trace/runTrace'
+import type { VisionTraceReporter } from '../trace/visionTrace'
 import { createReasoningRounds, reasoningEvent, type TracedReasoningRound } from '../trace/reasoningTrace'
 import { pipelineEventTraceBody, tracesPipelineEvent } from '../trace/pipelineEventTrace'
 import { completedEvidenceIsFresh } from './evidenceFreshness'
@@ -60,6 +61,7 @@ import { evaluateCandidateCheckpoint, type CandidateCheckpointOutcome, type Evid
 import { deriveAnswerSources, scrubAnswerText } from './answerEvidence'
 import { deriveFallbackSources } from './fallbackAnswer'
 import { compactRunContext, type RunEvidenceCheckpoint } from './runContextCompaction'
+import { reportFault } from '../trace/fault'
 
 export interface CommandPipelineDeps {
   llm: LlmClient
@@ -174,6 +176,14 @@ export interface CommandPipelineDeps {
    * tests unless asserted; a throwing implementation never fails a run.
    */
   learnedTerms?: LearnedTermsControls
+  /**
+   * The vision seam's reporter (#186, ADR 0031): what a Look, an
+   * auto-vision Describe or a ground_visual Locate records through. Unlike
+   * `traceRun` it binds no identity — it takes the ids the call site had,
+   * so the same reporter serves a Run's tools and anything that calls
+   * vision outside one. Absent when nothing is tracing.
+   */
+  traceVision?: VisionTraceReporter
 }
 
 interface ConfirmationDecision {
@@ -235,7 +245,8 @@ function logContinuityDegradation(
 ): void {
   try {
     ;(sink ?? ((why, id) => console.warn(`[run-journal] ${why} Run Note for ${id}`)))(reason, turnId)
-  } catch {
+  } catch (error) {
+    reportFault('pipeline.run.continuityDegraded', error, { turnId })
     // Diagnostics cannot suppress a valid Answer or its done boundary.
   }
 }
@@ -518,7 +529,8 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
       if (record !== null && deps.onObservation) {
         try {
           deps.onObservation(record)
-        } catch {
+        } catch (error) {
+          reportFault('pipeline.run.observe', error, { turnId })
           // Diagnostics cannot fail a run.
         }
       }
@@ -662,7 +674,8 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
       // Bookkeeping can never fail the run.
       try {
         deps.learnedTerms?.observeTranscript(command)
-      } catch {
+      } catch (error) {
+        reportFault('pipeline.learnedTerms.observeTranscript', error, { turnId })
         // swallowed — the ledger is advisory
       }
 
@@ -744,8 +757,12 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
         const toolContext: ToolContext = {
           clock,
           // The turn id rides the context so fan-out tools (spawn_agent)
-          // correlate their subagent rounds to this turn (#29).
+          // correlate their subagent rounds to this turn (#29) — and so
+          // the vision records name the turn that made them (#186).
           turnId,
+          // The vision records (#186): the reporter routes by the ids the
+          // tool hands it, so a Look inside this Run joins its decisions.
+          ...(deps.traceVision ? { traceVision: deps.traceVision } : {}),
           // Bounded delegation (#120): the live tier epoch gates browse
           // spawns — only Investigation branches delegate — and workers
           // share this run's active-work deadline as a live predicate, so
@@ -1272,7 +1289,8 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
       if (runOutcome === 'done' && !resetConsumed && finalAnswer?.mishearProposals?.length) {
         try {
           deps.learnedTerms?.applyProposals(finalAnswer.mishearProposals)
-        } catch {
+        } catch (error) {
+          reportFault('pipeline.learnedTerms.applyProposals', error, { turnId })
           // swallowed — the ledger is advisory
         }
       }

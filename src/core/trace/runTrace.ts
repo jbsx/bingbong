@@ -18,6 +18,7 @@ import type { SessionEvidenceCounts } from '../session/sessionEvidence'
 import type { SessionEndReason } from '../session/sessionRuntime'
 import type { RunId, SessionGeneration, SessionId } from '../session/sessionIdentity'
 import type { FaultEvent } from './fault'
+import type { VisionRunTraceRecord } from './visionTrace'
 
 /** The record-shape version every line carries; bump it when a field's meaning changes. */
 export const RUN_TRACE_VERSION = 1
@@ -309,6 +310,7 @@ export type TraceRecord =
   | SessionTraceRecord
   | FaultRunTraceRecord
   | PipelineEventTraceRecord
+  | VisionRunTraceRecord
 
 export interface RunTraceSink {
   write(record: TraceRecord): void

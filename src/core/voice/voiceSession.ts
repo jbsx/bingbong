@@ -6,11 +6,14 @@ import type { WakeWordDetector } from '../ports/wake'
 import type { VoiceHeardEvent, VoiceListenReason, VoiceState } from './ipcChannels'
 import { createUtteranceEndpointer, VAD_FRAME_SAMPLES, vadDefaults, type UtteranceEnd, type UtteranceEndpointerConfig } from './vadEndpointing'
 import type { UtteranceDumper } from './utteranceDump'
-import { createWakeMonitor } from './wakeMonitor'
+import { createWakeMonitor, type WakeDetection } from './wakeMonitor'
 import { parseYesNo } from './yesNo'
 import type { CommandRunState } from '../pipeline/createCommandPipeline'
 import type { PerfTracer } from '../perf/perfTracer'
 import type { SessionGeneration, SessionId } from '../session/sessionIdentity'
+import type { HostTraceWriter } from '../trace/hostTrace'
+import { biasHits, tracedText, TRACE_TRANSCRIPT_MAX_CHARS } from '../trace/voiceTrace'
+import { reportFault } from '../trace/fault'
 
 export const CONFIRM_VOICE_WINDOW_MS = 12_000
 /** Free-text ask window: as long as the ask_user timeout, for spoken answers. */
@@ -63,6 +66,21 @@ export interface VoiceSessionDeps {
   tracer?: PerfTracer
   /** Opt-in utterance audio dumps (#34); absent keeps the session dump-free. */
   dumper?: UtteranceDumper
+  /**
+   * The Host Trace writer (#186, ADR 0031): where the ear's records go.
+   * Host-scoped by the boundary rule — a listen runs outside any Run, it
+   * is what starts one — so each record names the Active Session and no
+   * turn. Absent unless the developer set `BINGBONG_HOST_TRACE`, and with
+   * it absent the pipeline records nothing at all.
+   */
+  hostTrace?: HostTraceWriter
+  /**
+   * The Learned Terms the decode was biased toward (#186), read at the
+   * moment a transcript lands so the record names the live set. Only the
+   * `voice_stt` record reads it; absent, the record says the bias set was
+   * empty rather than guessing.
+   */
+  biasPhrases?(): readonly string[]
   /**
    * Where recognized commands go — the exact path the text box takes. The
    * truncation flag (#61) is true when the utterance hit the hard cap: the
@@ -197,11 +215,15 @@ export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
         detector: deps.wake.detector,
         getThreshold: deps.wake.getThreshold,
         vadGate: deps.wake.vadGate,
-        onWake: activateFromWake,
+        onWake: (detection) => {
+          traceWake('wake', detection)
+          activateFromWake()
+        },
         // The dedicated abort head (#22) feeds the #20 interrupt surface;
         // interrupt() gates on the run state, so idle detections are no-ops.
         // The "hold on" head is unwired — wake-pauses-run replaced it (ADR 0024).
-        onAbort: () => {
+        onAbort: (detection) => {
+          traceWake('abort', detection)
           interrupt('abort')
         },
         onError: (message) => {
@@ -213,6 +235,16 @@ export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
         },
       })
     : null
+
+  /**
+   * One wake detection as the Host Trace keeps it (#186). Written for the
+   * detection that fired and never for the chunks that did not: the ear
+   * scores every 80 ms, and a record per chunk would be a file about
+   * nothing.
+   */
+  function traceWake(head: 'wake' | 'abort', detection: WakeDetection): void {
+    deps.hostTrace?.(() => ({ kind: 'voice_wake', head, ...detection }))
+  }
 
   /**
    * The shared activation-to-pause seam (ADR 0024): barge in, then park the
@@ -385,6 +417,17 @@ export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
     transcribing = true
     emitState()
 
+    // The endpoint record (#186): the durations the perf span already
+    // carries, kept here so a truncated command and the endpoint that cut
+    // it read as one line of the same file as its transcript.
+    deps.hostTrace?.(() => ({
+      kind: 'voice_endpoint',
+      speechMs: utterance.speechMs,
+      totalMs: utterance.totalMs,
+      truncated: utterance.truncated,
+      reason,
+    }))
+
     // The dump rides detection, not transcription (#34): the WAV exists for
     // A/B-ing STT offline, so it must survive — and precede — any STT outcome.
     // The dumper itself never throws and writes nothing with the flag off.
@@ -406,9 +449,28 @@ export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
           truncated: utterance.truncated,
           ...extra,
         })
-      } catch {
+      } catch (error) {
+        reportFault('voice.session.sttSpan', error)
         // swallowed — see above
       }
+    }
+
+    // The STT record's own clock (#186): the perf tracer is advisory and
+    // may be absent, and a transcript with no duration beside it answers
+    // half the question it was written for.
+    const sttWallStart = deps.clock.now()
+    const traceStt = (result: { text: string; error?: string }): void => {
+      deps.hostTrace?.(() => {
+        const phrases = deps.biasPhrases?.() ?? []
+        return {
+          kind: 'voice_stt',
+          ...tracedText(result.text, TRACE_TRANSCRIPT_MAX_CHARS),
+          durationMs: deps.clock.now() - sttWallStart,
+          biasCount: phrases.length,
+          biasHits: biasHits(result.text, phrases),
+          ...(result.error !== undefined ? { error: result.error } : {}),
+        }
+      })
     }
 
     let text: string
@@ -417,10 +479,12 @@ export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
       recordStt({ error: message })
+      traceStt({ text: '', error: message })
       fail(message)
       return
     }
     recordStt()
+    traceStt({ text })
     if (!listening) {
       // The listen closed under the STT window (disarm, window timeout) —
       // stopListening emitted the terminal state; drop the transcript.
@@ -438,7 +502,8 @@ export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
       // (only a non-empty transcript may consume it), so it clears either way.
       try {
         tracer.span(turnId, 'wake-to-transcript', tracer.now() - commandListenStart, { reason })
-      } catch {
+      } catch (error) {
+        reportFault('voice.session.wakeToTranscriptSpan', error)
         // swallowed — see recordStt above
       }
       commandListenStart = null

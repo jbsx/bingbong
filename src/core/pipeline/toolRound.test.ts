@@ -10,6 +10,7 @@ import { createEffortEpoch, finalizationToolRefusal } from './effortEpoch'
 import { createNotices } from './notices'
 import { createObservationLedger, type ObservationInput } from '../session/observationLedger'
 import { createToolRoundExecutor, type ToolRoundCapabilities, type ToolRoundConfig, type ToolRoundOutcome } from './toolRound'
+import type { VisionTraceEvent, VisionTraceReporter } from '../trace/visionTrace'
 
 // Issue #157: the Tool Round executor's own invariants — the order its
 // nine seams run in, and the four ways a round can end. Everything here is
@@ -64,6 +65,8 @@ function harness(
     settledPageState?: () => SettledPageState | null
     activeWorkDeadlineMs?: number
     visionCalls?: number
+    /** The vision seam (#186): what the round's Vision Budget records through. */
+    traceVision?: VisionTraceReporter
     intercept?: ToolRoundConfig['intercept']
     terminalResult?: ToolRoundConfig['terminalResult']
     soleCall?: ToolRoundConfig['soleCall']
@@ -121,7 +124,7 @@ function harness(
       observed.push(input)
       return ledger.record(input)
     },
-    toolContext: { clock },
+    toolContext: { clock, ...(options.traceVision ? { traceVision: options.traceVision } : {}) },
     decisions,
     interrupts,
     capabilities: options.capabilities ?? ALL_RAILS,
@@ -529,5 +532,35 @@ describe('interception and Notice eligibility (#157/AC1)', () => {
     expect(outcome.results).toHaveLength(2)
     for (const result of outcome.results) expect(result.observationId).not.toBeNull()
     expect(outcome.results[0]!.observationId).not.toBe(outcome.results[1]!.observationId)
+  })
+})
+
+// The Look's Vision Budget record (#186, ADR 0031). The round spends the
+// budget for a `usesVision` tool, so the round records it — the tool only
+// ever sees the refusal as a failed call.
+describe('vision budget records', () => {
+  function reporter(): { traceVision: VisionTraceReporter; reported: VisionTraceEvent[] } {
+    const reported: VisionTraceEvent[] = []
+    return { traceVision: (event) => reported.push(event), reported }
+  }
+
+  it('records the grant the round spent on a Look', async () => {
+    const { traceVision, reported } = reporter()
+    const h = harness([scripted('look', [], { usesVision: true })], { traceVision, visionCalls: 2 })
+    await h.round([{ id: 'c1', name: 'look', args: {} }])
+    expect(reported).toEqual([{ kind: 'vision_budget', reason: 'look', granted: true }])
+  })
+
+  it('records the refusal that stopped a Look, with the reason the model was given', async () => {
+    const { traceVision, reported } = reporter()
+    const h = harness([scripted('look', [], { usesVision: true })], { traceVision, visionCalls: 1 })
+    await h.round([
+      { id: 'c1', name: 'look', args: {} },
+      { id: 'c2', name: 'look', args: {} },
+    ])
+    expect(reported).toEqual([
+      { kind: 'vision_budget', reason: 'look', granted: true },
+      { kind: 'vision_budget', reason: 'look', granted: false, refusal: expect.stringMatching(/vision call limit/) },
+    ])
   })
 })

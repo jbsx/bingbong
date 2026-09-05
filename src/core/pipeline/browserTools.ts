@@ -5,6 +5,9 @@ import type { VisionDescriber } from '../ports/vision'
 import { AUTO_VISION_DESCRIBE_MS } from '../ports/vision'
 import { assessBrowserAction } from './riskGate'
 import { classifyBlockerPage, type BlockerClassification } from '../browser/blockerNudge'
+import { tracedVisionRequest } from '../trace/visionTrace'
+import { traceVisionBudget, visionAgentStamp, visionSeam } from './visionTracing'
+import { reportFault } from '../trace/fault'
 
 const STALE_REF_RE = /ref \d+ not found.*page may have changed/i
 const AUTO_VISION_PROMPT =
@@ -39,7 +42,8 @@ async function withBlockerNudge(browser: BrowserController, action: () => Promis
   let verdict: BlockerClassification | null = null
   try {
     verdict = classifyBlockerPage(await browser.pageFacts())
-  } catch {
+  } catch (error) {
+    reportFault('pipeline.browserTools.blockerFacts', error)
     const { url, title } = browser.state()
     verdict = classifyBlockerPage({ url: url ?? '', title: title ?? '' })
   }
@@ -76,16 +80,23 @@ async function autoDescribe(
     return `Auto-vision (${reason}) skipped: vision is cooling down after a recent attempt`
   }
   const grant = context.acquireVision?.()
+  traceVisionBudget(context, 'auto_vision', grant)
   if (!grant) return 'Auto-vision refused: vision budget is unavailable'
   if (!grant.ok) return `Auto-vision refused: ${grant.reason}`
   try {
-    const description = await vision.describe({
-      image: await browser.screenshot(),
-      prompt: `${AUTO_VISION_PROMPT}\nTrigger: ${reason}.`,
-      // Advisory budget (#106, ADR 0016): auto-vision waits less than a
-      // model-requested Look; the adapter clamps this against the Look cap.
-      lookCapMs: AUTO_VISION_DESCRIBE_MS,
-    })
+    const description = await tracedVisionRequest(
+      visionSeam(context),
+      { capability: 'describe', reason: 'auto_vision', capMs: AUTO_VISION_DESCRIBE_MS, ...visionAgentStamp(context) },
+      async () =>
+        vision.describe({
+          image: await browser.screenshot(),
+          prompt: `${AUTO_VISION_PROMPT}\nTrigger: ${reason}.`,
+          // Advisory budget (#106, ADR 0016): auto-vision waits less than a
+          // model-requested Look; the adapter clamps this against the Look cap.
+          lookCapMs: AUTO_VISION_DESCRIBE_MS,
+        }),
+      (answer) => answer,
+    )
     return `Auto-vision (${reason}): ${description}`
   } catch (error) {
     // Advisory (#106): a missed Vision Deadline (or any failure) stays a
@@ -145,7 +156,8 @@ async function assessRefAction(browser: BrowserController, call: ToolCall, tool:
   let ref: number
   try {
     ref = refArg(call, tool)
-  } catch {
+  } catch (error) {
+    reportFault('pipeline.browserTools.refArg', error)
     return { kind: 'allow' }
   }
   return assessBrowserAction(call, await browser.describeRef(ref))

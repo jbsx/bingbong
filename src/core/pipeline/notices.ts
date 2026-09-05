@@ -1,4 +1,5 @@
 import type { ToolResultOutcome } from '../ports/llm'
+import { reportFault } from '../trace/fault'
 
 // Issue #154, step 1: the Notices module. Six model-facing advisory
 // lines ride tool results — the search-loop nudge, the no-progress nudge,
@@ -123,7 +124,8 @@ export interface Notices {
 function renderResult(result: unknown): string {
   try {
     return JSON.stringify(result) ?? 'tool result'
-  } catch {
+  } catch (error) {
+    reportFault('pipeline.notices.renderResult', error)
     return 'tool result'
   }
 }

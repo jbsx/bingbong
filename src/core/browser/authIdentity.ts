@@ -11,6 +11,8 @@
 // serve a basic sign-in flow that never runs the embedded-framework checks.
 
 /** Hosts whose sign-in flows get the simplified identity. */
+import { reportFault } from '../trace/fault'
+
 export const DEFAULT_AUTH_HOSTS = ['accounts.google.com', 'accounts.youtube.com']
 
 /** The simplified UA for auth hosts — deliberately not a real browser's
@@ -56,7 +58,8 @@ export function isAuthUrl(url: string, hosts: string[]): boolean {
     const parsed = new URL(url)
     if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return false
     return isAuthHost(parsed.hostname, hosts)
-  } catch {
+  } catch (error) {
+    reportFault('browser.authIdentity.isAuthUrl', error)
     return false
   }
 }

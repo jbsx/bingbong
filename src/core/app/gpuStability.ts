@@ -10,6 +10,8 @@
 // machine tries hardware again on the next manual start.
 
 /** Chromium switch name (no dashes) as `appendSwitch` wants it. */
+import { reportFault } from '../trace/fault'
+
 export const GPU_DISABLE_SWITCH = 'disable-gpu'
 /** Env knob: `BINGBONG_DISABLE_GPU=1` boots with the GPU process off. */
 export const GPU_DISABLE_ENV = 'BINGBONG_DISABLE_GPU'
@@ -34,7 +36,8 @@ export function parseGpuCrashRecord(raw: string | null): GpuCrashRecord | null {
     const { deaths, firstAt } = parsed as { deaths?: unknown; firstAt?: unknown }
     if (!Number.isInteger(deaths) || (deaths as number) < 0 || !Number.isFinite(firstAt)) return null
     return { deaths: deaths as number, firstAt: firstAt as number }
-  } catch {
+  } catch (error) {
+    reportFault('app.gpuStability.parseRecord', error)
     return null
   }
 }

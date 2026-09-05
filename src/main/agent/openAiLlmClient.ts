@@ -11,6 +11,7 @@ import type {
 import type { Tool, ToolParameterSpec } from '../../core/pipeline/tool'
 import type { ModelEndpointConfig } from '../../core/agent/modelRouting'
 import { parseAssistantAnswer } from '../../core/agent/answerContract'
+import { reportFault } from '../../core/trace/fault'
 
 // OpenAI-compatible chat-completions adapter for the LlmClient seam. One
 // client serves any provider (GLM coding plan, DeepSeek, …) — the endpoint
@@ -87,7 +88,8 @@ function toToolCall(call: WireToolCall): ToolCall {
   try {
     const parsed: unknown = JSON.parse(call.function.arguments)
     if (typeof parsed === 'object' && parsed !== null) args = parsed as Record<string, unknown>
-  } catch {
+  } catch (error) {
+    reportFault('llm.openai.toolCallArgs', error)
     // Malformed arguments surface as a failed tool result the model can see.
   }
   return { id: call.id, name: call.function.name, args }
@@ -388,7 +390,8 @@ export function createOpenAiLlmClient(deps: OpenAiLlmClientDeps): LlmClient {
       }
       try {
         chunk = JSON.parse(data)
-      } catch {
+      } catch (error) {
+        reportFault('llm.openai.streamChunk', error)
         return // A malformed chunk never fails the round.
       }
       if (typeof chunk.request_id === 'string' && chunk.request_id !== '') bodyRequestId = chunk.request_id

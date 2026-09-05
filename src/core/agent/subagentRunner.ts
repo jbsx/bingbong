@@ -20,6 +20,8 @@ import { MAX_SUBAGENT_VISION_CALLS } from './subagentRails'
 import { droppedFindingsNote, validateReportFindings, type SubagentReport } from './subagentReport'
 import { createReasoningRounds, type ReasoningRound, type SubagentReasoningTrace } from '../trace/reasoningTrace'
 import type { SubagentPipelineEventTrace } from '../trace/pipelineEventTrace'
+import type { VisionTraceReporter } from '../trace/visionTrace'
+import { reportFault } from '../trace/fault'
 
 // The subagent workhorse loop (issue #13): one LLM (deepseek-chat via the
 // model router) driving its own tool set until it produces a final report.
@@ -186,6 +188,14 @@ export interface RunSubagentOptions {
    * set `BINGBONG_RUN_TRACE` (#184).
    */
   tracePipelineEvent?: SubagentPipelineEventTrace
+  /**
+   * The vision records for this worker's Looks (#186, ADR 0031): the
+   * spawning Run's reporter. The worker's own tool context carries the
+   * parent's turn and this worker's `agentId`, so a delegated Look lands
+   * in the Run Trace beside the Run's own rather than in the Host Trace.
+   * Absent unless the developer opted in with a family.
+   */
+  traceVision?: VisionTraceReporter
 }
 
 export class SubagentCancelledError extends Error {
@@ -337,7 +347,16 @@ export async function runSubagent(deps: RunSubagentDeps, options: RunSubagentOpt
     generation: 0,
     isCurrentGeneration: () => true,
   })
-  const toolContext: ToolContext = { clock }
+  // The worker's tool context (#186): the parent Run's turn and this
+  // worker's own id, so what its tools record joins the Run that
+  // delegated it — the pattern the reasoning and pipeline_event records
+  // already follow.
+  const toolContext: ToolContext = {
+    clock,
+    ...(options.turnId !== undefined ? { turnId: options.turnId } : {}),
+    ...(options.agentId !== undefined ? { agentId: options.agentId } : {}),
+    ...(options.traceVision !== undefined ? { traceVision: options.traceVision } : {}),
+  }
   const toolResults: ToolResult[] = []
   let lastAction: string | null = null
   // This Subagent's Effort Epoch (#149, ADR 0027): the Run's bounded-effort
@@ -475,7 +494,8 @@ export async function runSubagent(deps: RunSubagentDeps, options: RunSubagentOpt
       let turn: AssistantTurn | null = null
       try {
         turn = await llm.complete(requestArgs())
-      } catch {
+      } catch (error) {
+        reportFault('agent.subagent.answerRound', error, { ...(options.turnId !== undefined ? { turnId: options.turnId } : {}) })
         turn = null
       } finally {
         // The reserved Answer round thinks too, and a round that failed is

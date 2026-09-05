@@ -10,6 +10,8 @@ import {
   type LearnedTermsState,
 } from '../../core/voice/learnedTerms'
 import { BIAS_LEXICON, seedLexiconSet } from '../moonshine/biasLexicon'
+import type { HostTraceWriter } from '../../core/trace/hostTrace'
+import { reportFault } from '../../core/trace/fault'
 
 export { seedLexiconSet }
 
@@ -45,13 +47,29 @@ function persist(path: string, state: LearnedTermsState): void {
 export function createLearnedTermsStore(
   path: string,
   reserved: ReadonlySet<string>,
-  deps?: { now?: () => number },
+  deps?: {
+    now?: () => number
+    /**
+     * The Host Trace writer (#186, ADR 0031): where a change to the
+     * lexicon is recorded. It replaces the two `console.log` lines this
+     * store used to leave — the growth of the lexicon is ADR 0022's whole
+     * story, and it belongs in a file that can be read after the fact,
+     * beside the transcripts the admissions came from. Absent unless the
+     * developer set `BINGBONG_HOST_TRACE`.
+     */
+    hostTrace?: HostTraceWriter
+  },
 ): LearnedTermsStore {
   const now = deps?.now ?? (() => Date.now())
+  const traceChange = (source: 'proposals' | 'manual', admitted: readonly string[], removed: readonly string[]): void => {
+    if (admitted.length === 0 && removed.length === 0) return
+    deps?.hostTrace?.(() => ({ kind: 'learned_term', source, admitted, removed }))
+  }
   let state: LearnedTermsState
   try {
     state = sanitizeLearnedTermsState(JSON.parse(readFileSync(path, 'utf8')))
-  } catch {
+  } catch (error) {
+    reportFault('voice.learnedTerms.load', error)
     state = emptyLearnedTermsState()
   }
 
@@ -70,7 +88,8 @@ export function createLearnedTermsStore(
       for (const listener of listeners) {
         try {
           listener(after)
-        } catch {
+        } catch (error) {
+          reportFault('voice.learnedTerms.notify', error)
           // A throwing subscriber never breaks the ledger.
         }
       }
@@ -81,10 +100,9 @@ export function createLearnedTermsStore(
     applyProposals(proposals) {
       const { state: next, effects } = applyMishearProposals(state, proposals, now(), reserved)
       if (next !== state) commit(next)
-      // One line per admission/removal — the growth of the lexicon is the
-      // ADR's whole story; the log is how you watch it happen.
-      if (effects.admitted.length > 0) console.log(`[learned-terms] admitted: ${effects.admitted.join(', ')}`)
-      if (effects.removed.length > 0) console.log(`[learned-terms] removed: ${effects.removed.join(', ')}`)
+      // One record per admission/removal — the growth of the lexicon is
+      // the ADR's whole story; the Host Trace is how you watch it happen.
+      traceChange('proposals', effects.admitted, effects.removed)
     },
     observeTranscript(text) {
       const next = touchLearnedTerms(state, text, now())
@@ -100,25 +118,31 @@ export function createLearnedTermsStore(
     manualAdd(raw) {
       const term = normalizeLearnedTerm(raw)
       if (term === null || reserved.has(term)) return false
+      const alreadyAdmitted = state.admitted.some((t) => t.term === term)
       const next: LearnedTermsState = {
         pending: state.pending.filter((p) => p.term !== term),
-        admitted: state.admitted.some((t) => t.term === term)
+        admitted: alreadyAdmitted
           ? state.admitted
           : [...state.admitted, { term, admittedAt: now(), lastTouched: now() }],
         rejected: state.rejected.filter((rejected) => rejected !== term),
       }
       commit(next)
+      // Only a vocabulary change is a record: re-adding a term already in
+      // the lexicon clears a rejection mark and admits nothing.
+      if (!alreadyAdmitted) traceChange('manual', [term], [])
       return true
     },
     manualRemove(raw) {
       const term = normalizeLearnedTerm(raw)
       if (term === null) return false
+      const wasAdmitted = state.admitted.some((t) => t.term === term)
       const next: LearnedTermsState = {
         pending: state.pending.filter((p) => p.term !== term),
         admitted: state.admitted.filter((t) => t.term !== term),
         rejected: state.rejected.includes(term) ? state.rejected : [...state.rejected, term],
       }
       commit(next)
+      if (wasAdmitted) traceChange('manual', [], [term])
       return true
     },
     onChange(listener) {

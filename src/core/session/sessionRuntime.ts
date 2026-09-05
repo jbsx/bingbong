@@ -38,6 +38,7 @@ export type {
   SessionEvidenceStore,
   SessionObservation,
 } from './sessionEvidence'
+import { reportFault } from '../trace/fault'
 
 export type { SessionGeneration } from './sessionIdentity'
 
@@ -290,7 +291,8 @@ export function createSessionRuntime(deps: {
         model,
         at: deps.clock.now(),
       })
-    } catch {
+    } catch (error) {
+      reportFault('session.continuity.degrade', error)
       // Continuity diagnostics are maintenance-only and cannot fail a Run.
     }
   }
@@ -299,7 +301,8 @@ export function createSessionRuntime(deps: {
   try {
     model = resolveModel()
     continuityBudgets = resolveBudgets(model)
-  } catch {
+  } catch (error) {
+    reportFault('session.continuity.resolveProfile', error)
     model = 'default'
     continuityBudgets = fallbackBudgets
     degrade('budget_profile_invalid')
@@ -346,7 +349,8 @@ export function createSessionRuntime(deps: {
       selectedModel = resolveModel()
       if (selectedModel === model) return
       selectedBudgets = resolveBudgets(selectedModel)
-    } catch {
+    } catch (error) {
+      reportFault('session.continuity.refreshProfile', error)
       degrade('budget_profile_invalid')
       return
     }
@@ -538,7 +542,8 @@ export function createSessionRuntime(deps: {
         cancelCompactionTimeout = null
         degrade('compaction_timeout')
       })
-    } catch {
+    } catch (error) {
+      reportFault('session.compaction.schedule', error)
       degrade('compaction_failed')
       return
     }
@@ -553,7 +558,8 @@ export function createSessionRuntime(deps: {
           memory: requestBudgets.memory.high,
         }),
       }))
-    } catch {
+    } catch (error) {
+      reportFault('session.compaction.start', error)
       finishCompaction()
       degrade('compaction_failed')
       return

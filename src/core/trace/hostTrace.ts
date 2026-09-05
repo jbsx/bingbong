@@ -6,19 +6,23 @@
 // decide that", the Host Trace answers "what was the app doing" — and it
 // is why a host record names the Active Session rather than a turn.
 //
-// Slice 1 carries only the fault records. The voice pipeline's events
-// (#185), the vision adapter's calls and the swallowed catches (#186) and
-// the renderer's signals (#187) widen `HostTraceEvent` from here; the
-// record shape, the writer and the file family are already theirs.
+// Slice 1 carried only the fault records. #186 widens the family to the
+// voice pipeline — the whole ear runs outside any Run, so every one of
+// its records is host-scoped by the boundary rule — and to the vision
+// records, which land here only when no turn named them. The renderer's
+// signals (#187) widen it again from here; the record shape, the writer
+// and the file family are already theirs.
 
 import type { SessionId } from '../session/sessionIdentity'
 import type { FaultEvent } from './fault'
+import type { VisionTraceEvent } from './visionTrace'
+import type { VoiceTraceEvent } from './voiceTrace'
 
 /** The record-shape version every host line carries; bump it when a field's meaning changes. */
 export const HOST_TRACE_VERSION = 1
 
 /** One thing the app did outside a Run. Widened by the later slices. */
-export type HostTraceEvent = FaultEvent
+export type HostTraceEvent = FaultEvent | VoiceTraceEvent | VisionTraceEvent
 
 /** One line of a Host Trace file. */
 export type HostTraceRecord = HostTraceEvent & {

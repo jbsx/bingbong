@@ -1,6 +1,7 @@
 import type { ToolCall, ToolResultOutcome } from '../ports/llm'
 import type { SnapshotRef } from '../browser/snapshot'
 import { isSearchInputRef, refNumberOf, searchQueryFromUrl, similarQueries, typedQuery } from './progressFingerprints'
+import { reportFault } from '../trace/fault'
 
 // Issue #74, run rails: the 80-round flail's signature is a blind search
 // loop — consecutive searches rewording one query with no intervening
@@ -121,7 +122,8 @@ export function createSearchLoopRail(deps: SearchLoopRailDeps = {}): SearchLoopR
       let facts: SnapshotRef | undefined
       try {
         facts = await deps.describeRef(ref)
-      } catch {
+      } catch (error) {
+        reportFault('pipeline.searchLoopRail.describeRef', error)
         facts = undefined
       }
       const text = call.args.text

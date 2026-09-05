@@ -12,6 +12,7 @@ import {
   type PageSnapshot,
   type SnapshotRef,
 } from '../../core/browser/snapshot'
+import { reportFault } from '../../core/trace/fault'
 
 // Minimal CDP surface the controller needs, so tests can drive it with a fake
 // and the Electron glue (webContents.debugger) stays a thin adapter.
@@ -356,7 +357,8 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
     try {
       const snapshot = collected ?? (await recollection('settled-state', () => collectSnapshot()))
       return `${line}\n${formatPageSnapshot(snapshot)}`
-    } catch {
+    } catch (error) {
+      reportFault('browser.cdp.withSettledState', error)
       return line
     }
   }
@@ -901,7 +903,8 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
     try {
       const { target } = await resolveRef(ref)
       return target
-    } catch {
+    } catch (error) {
+      reportFault('browser.cdp.describeRef', error)
       return undefined
     }
   }
@@ -977,11 +980,13 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
       let media: MediaState | null = null
       try {
         media = await readMediaState()
-      } catch {
+      } catch (error) {
+        reportFault('browser.cdp.readMediaState', error)
         media = null
       }
       return settledStateFromSnapshot(snapshot, media)
-    } catch {
+    } catch (error) {
+      reportFault('browser.cdp.settledState', error)
       return null
     }
   }

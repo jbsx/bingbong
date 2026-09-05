@@ -5,7 +5,8 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { collectPerfRecords } from '../perf/collectPerfRecords'
 import { createJsonlPerfSink } from '../perf/jsonlPerfSink'
 import type { SessionId } from '../../core/session/sessionIdentity'
-import { HOST_TRACE_VERSION, type HostTraceRecord } from '../../core/trace/hostTrace'
+import { createHostTraceWriter, HOST_TRACE_VERSION, type HostTraceRecord } from '../../core/trace/hostTrace'
+import type { VoiceTraceEvent } from '../../core/trace/voiceTrace'
 import { createJsonlHostTraceSink } from './jsonlHostTraceSink'
 import { createJsonlRunTraceSink } from './jsonlRunTraceSink'
 
@@ -80,5 +81,65 @@ describe('createJsonlHostTraceSink', () => {
     const collected = collectPerfRecords(dir)
 
     expect(collected.records.map((record) => record.stage)).toEqual(['llm'])
+  })
+})
+
+// The voice records on disk (#186): the six kinds the voice pipeline
+// writes, through the same writer main installs, landing as lines of a
+// host-trace file with the Active Session named on each.
+describe('the voice records in a Host Trace file', () => {
+  let dir: string
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), 'bingbong-voice-trace-'))
+  })
+
+  afterEach(() => {
+    rmSync(dir, { recursive: true, force: true })
+  })
+
+  const VOICE_EVENTS: VoiceTraceEvent[] = [
+    { kind: 'voice_wake', head: 'wake', score: 0.82, threshold: 0.6, gateMax: 0.91, gate: 0.5 },
+    { kind: 'voice_endpoint', speechMs: 1_800, totalMs: 2_400, truncated: false, reason: 'wake' },
+    { kind: 'voice_stt', text: 'open sonarr', chars: 11, durationMs: 320, biasCount: 12, biasHits: ['sonarr'] },
+    { kind: 'learned_term', source: 'proposals', admitted: ['sonarr'], removed: [] },
+    { kind: 'tts_line', text: 'Opening sonarr.', chars: 15, turnId: 'turn-3' },
+    { kind: 'tts_dropped', text: 'Here is what I found', chars: 20, stage: 'queued' },
+  ]
+
+  it('writes all six kinds as lines, each naming the Active Session', () => {
+    const write = createHostTraceWriter({
+      sink: createJsonlHostTraceSink(dir, { now: () => NOW }),
+      now: () => NOW,
+      activeSessionId: () => 'session-1' as SessionId,
+    })
+
+    for (const event of VOICE_EVENTS) write(() => event)
+
+    const files = names(dir, /^host-trace-.*\.jsonl$/)
+    expect(files).toHaveLength(1)
+    const lines = readLines(join(dir, files[0]!)).map((line) => JSON.parse(line) as HostTraceRecord)
+    expect(lines.map((line) => line.kind)).toEqual([
+      'voice_wake',
+      'voice_endpoint',
+      'voice_stt',
+      'learned_term',
+      'tts_line',
+      'tts_dropped',
+    ])
+    for (const line of lines) expect(line).toMatchObject({ v: HOST_TRACE_VERSION, at: NOW, sessionId: 'session-1' })
+  })
+
+  it('names a null Session on a record written with none live', () => {
+    const write = createHostTraceWriter({
+      sink: createJsonlHostTraceSink(dir, { now: () => NOW }),
+      now: () => NOW,
+      activeSessionId: () => null,
+    })
+
+    write(() => VOICE_EVENTS[0]!)
+
+    const files = names(dir, /^host-trace-.*\.jsonl$/)
+    expect((JSON.parse(readLines(join(dir, files[0]!))[0]!) as HostTraceRecord).sessionId).toBeNull()
   })
 })

@@ -4,6 +4,7 @@ import type { PageSnapshot, SnapshotRef } from '../browser/snapshot'
 import { fnv1a32 } from '../browser/snapshot'
 import { normalizeUrlInput } from '../browser/urlInput'
 import { coercedNumber } from './tool'
+import { reportFault } from '../trace/fault'
 
 // Issue #125, ADR 0027 prefactor: the search-loop signatures (#74/#82/#83)
 // generalized into one deterministic fingerprint module covering the four
@@ -177,7 +178,8 @@ export function urlFingerprint(raw: string): UrlFingerprint {
   let url: URL
   try {
     url = new URL(normalizeUrlInput(input) ?? input)
-  } catch {
+  } catch (error) {
+    reportFault('pipeline.fingerprints.url', error)
     return { url: input, source: input, alternate: false }
   }
   url.hash = ''
@@ -211,7 +213,8 @@ export function searchQueryFromUrl(raw: string): string | null {
   try {
     const q = new URL(normalized).searchParams.get('q')
     return q !== null && q.trim() !== '' ? q : null
-  } catch {
+  } catch (error) {
+    reportFault('pipeline.fingerprints.searchQuery', error)
     return null
   }
 }

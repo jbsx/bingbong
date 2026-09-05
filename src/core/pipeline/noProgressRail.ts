@@ -2,6 +2,7 @@ import type { ToolCall, ToolResultOutcome } from '../ports/llm'
 import type { ObservationProducer } from '../session/observationLedger'
 import { actionFingerprint, pageFingerprint, type SettledPageState } from './progressFingerprints'
 import { classifyToolObservation } from './toolObservations'
+import { reportFault } from '../trace/fault'
 
 // Issue #126, ADR 0027: the no-progress rails. The #125 fingerprints
 // (query intent, URL, targeted action, settled page state) become
@@ -185,7 +186,8 @@ export function createNoProgressRail(deps: NoProgressRailDeps = {}): NoProgressR
     try {
       const state = await settledState()
       return state === null ? null : pageFingerprint(state).state
-    } catch {
+    } catch (error) {
+      reportFault('pipeline.noProgressRail.stateFingerprint', error)
       return null
     }
   }

@@ -1,4 +1,5 @@
 import type { PerfTracer, TurnSummary } from './perfTracer'
+import { reportFault } from '../trace/fault'
 
 // The per-turn console line (#30): "stt 6.9s | llm 3.2s | tool(n=5) 8.1s |
 // total 21.3s" — every stage kind the turn recorded, in first-recorded
@@ -26,7 +27,8 @@ export function emitTurnSummary(tracer: PerfTracer | undefined, turnId: string, 
   try {
     const summary = tracer.summarize(turnId)
     if (summary) print(formatTurnSummary(summary))
-  } catch {
+  } catch (error) {
+    reportFault('perf.turnSummary.emit', error, { turnId })
     // swallowed — see above
   }
 }

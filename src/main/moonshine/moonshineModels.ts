@@ -4,6 +4,7 @@ import type { SttModel } from '../../core/settings/settings'
 // .ts extension: this module sits on scripts/replay-stt's type-stripping
 // runtime graph, where Node resolves no extensionless imports.
 import { MOONSHINE_BASE_DIMS } from './createMoonshineTranscriber.ts'
+import { reportFault } from '../../core/trace/fault.ts'
 
 // Where Moonshine Base lives (#41): the model-dir convention puts engine
 // files under <userData>/models (README), one subdir per engine (the wake
@@ -137,7 +138,8 @@ export const fsMoonshineStore: MoonshineModelStore = {
   size(path) {
     try {
       return statSync(path).size
-    } catch {
+    } catch (error) {
+      reportFault('voice.stt.modelSize', error)
       return 0
     }
   },

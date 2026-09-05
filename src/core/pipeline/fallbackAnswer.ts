@@ -13,6 +13,7 @@ import type { MemoryEntryId } from '../session/workingMemory'
 import { canonicalizeMemoryUrl } from '../session/workingMemory'
 import type { SessionObservation } from '../session/sessionEvidence'
 import type { RunEvidenceCheckpoint } from './runContextCompaction'
+import { reportFault } from '../trace/fault'
 
 /** How many sources the fallback Answer may list, strongest first (#137). */
 export const MAX_FALLBACK_SOURCES = 8
@@ -91,7 +92,8 @@ function pageTitleFromOutcome(payload: string): string | undefined {
       try {
         const title = JSON.parse(navigation[1]!)
         if (typeof title === 'string' && title.trim() !== '') return boundedText(title, MAX_FALLBACK_TITLE_CHARS)
-      } catch {
+      } catch (error) {
+        reportFault('pipeline.fallbackAnswer.navigationTitle', error)
         // not a JSON title clause — keep scanning
       }
     }

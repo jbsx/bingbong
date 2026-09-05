@@ -11,6 +11,7 @@ import {
   type DailyUsage,
   type UsageSummary,
 } from '../../core/agent/spendEstimate'
+import { reportFault } from '../../core/trace/fault'
 
 // The daily usage ledger, persisted as JSON beside the settings file so the
 // day's estimate survives restarts and rolls over at midnight (local time).
@@ -32,7 +33,8 @@ export function createUsageStore(path: string, deps?: { now?: () => number }): U
   let state: DailyUsage
   try {
     state = sanitizeDailyUsage(JSON.parse(readFileSync(path, 'utf8')))
-  } catch {
+  } catch (error) {
+    reportFault('settings.usageStore.load', error)
     state = emptyDailyUsage(dayKeyOf(now()))
   }
 

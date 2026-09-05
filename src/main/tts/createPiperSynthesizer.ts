@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import type { SpeechSynthesizer } from '../../core/ports/tts'
 import { DEFAULT_PIPER_SAMPLE_RATE, resolveVoiceFile, sampleRateFromVoiceConfig } from '../../core/tts/piperVoices'
 import { wrapRawPcmAsWav } from '../../core/tts/wav'
+import { reportFault } from '../../core/trace/fault'
 
 export interface PiperSynthesizerDeps {
   bin: string
@@ -50,7 +51,8 @@ export function createPiperSynthesizer(deps: PiperSynthesizerDeps): SpeechSynthe
     let sampleRate = DEFAULT_PIPER_SAMPLE_RATE
     try {
       sampleRate = sampleRateFromVoiceConfig(JSON.parse(await readFileFn(configPath)))
-    } catch {
+    } catch (error) {
+      reportFault('tts.piper.voiceConfig', error)
       // Missing/malformed config — the voice default still plays correctly.
     }
 

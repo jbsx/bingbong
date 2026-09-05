@@ -13,6 +13,7 @@ import {
   type AdblockCacheEntry,
   type AdblockCacheMeta,
 } from './adblockConfig'
+import { reportFault } from '../trace/fault'
 
 /** After a failed fetch, retry in an hour instead of waiting a full day. */
 export const ADBLOCK_RETRY_MS = 60 * 60 * 1000
@@ -145,7 +146,8 @@ export function createAdblockController(deps: AdblockControllerDeps): AdblockCon
     if (cached !== null && cacheIsUsable(cached.meta, deps.lists, deps.resourcesUrl, deps.now())) {
       try {
         return { engine: deps.deserializeEngine(cached.engine), meta: cached.meta }
-      } catch {
+      } catch (error) {
+        reportFault('adblock.controller.deserializeCache', error)
         // Corrupt cache (or a serialized engine from another library
         // version): fall through and rebuild — offline from cached texts if
         // every artifact is still fresh.

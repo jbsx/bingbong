@@ -14,6 +14,7 @@
 // (dialogPolicy.ts), never Blockers.
 
 import type { PageSnapshot, RefKind } from './snapshot'
+import { reportFault } from '../trace/fault'
 
 /** Which kind of Blocker the page smells like (ADR 0010 flavors). */
 export type BlockerSignal = 'challenge' | 'network-block' | 'login-wall'
@@ -107,7 +108,8 @@ function isChallengeSrc(src: string): boolean {
   try {
     const parsed = new URL(src)
     return CHALLENGE_HOST_RE.test(parsed.hostname) || /^\/recaptcha(\/|$)/i.test(parsed.pathname)
-  } catch {
+  } catch (error) {
+    reportFault('browser.blockerNudge.challengeSrc', error)
     return false
   }
 }
@@ -119,7 +121,8 @@ function verdict(signal: BlockerSignal, url: string): BlockerClassification {
   let host = ''
   try {
     host = new URL(url).hostname
-  } catch {
+  } catch (error) {
+    reportFault('browser.blockerNudge.verdictHost', error)
     host = ''
   }
   const nudge =
@@ -183,7 +186,8 @@ export function classifyBlockerPage(facts: BlockerPageFacts): BlockerClassificat
     hostname = parsed.hostname
     pathname = parsed.pathname
     queryParams = [...parsed.searchParams.keys()]
-  } catch {
+  } catch (error) {
+    reportFault('browser.blockerNudge.classify', error)
     return null
   }
 

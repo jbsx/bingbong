@@ -131,6 +131,10 @@ export function createSubagentTools(manager: SubagentManager): Tool[] {
           ...(ctx.traceSubagentPipelineEvent !== undefined
             ? { tracePipelineEvent: ctx.traceSubagentPipelineEvent }
             : {}),
+          // The worker's Looks (#186) ride the same spawn: the reporter is
+          // identity-agnostic, so the worker's records route on this Run's
+          // turn without the worker ever seeing it.
+          ...(ctx.traceVision !== undefined ? { traceVision: ctx.traceVision } : {}),
         })
         if (!spawned.ok) throw new Error(spawned.reason)
         return `spawned ${spawned.agent.id} [${kind}]${memory !== undefined ? ` with ${memory.length} shared memory entr${memory.length === 1 ? 'y' : 'ies'}` : ''} — poll with agent_results (wait: true) or keep working`

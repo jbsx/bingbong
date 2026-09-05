@@ -10,6 +10,7 @@
 
 import type { MemoryEntryId, MemoryReference } from '../session/workingMemory'
 import type { SessionObservation } from '../session/sessionEvidence'
+import { reportFault } from '../trace/fault'
 
 /**
  * The source links an Answer's cited evidence carries (#122): each
@@ -46,7 +47,8 @@ function sourceLabel(url: string, title: string | undefined): string {
   if (title !== undefined && title.trim() !== '') return title
   try {
     return new URL(url).hostname
-  } catch {
+  } catch (error) {
+    reportFault('pipeline.answerEvidence.sourceLabel', error)
     return url
   }
 }

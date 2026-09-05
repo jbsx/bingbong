@@ -9,6 +9,7 @@ import {
   recordGpuDeath,
   resolveGpuLaunchDecision,
 } from '../core/app/gpuStability'
+import { reportFault } from '../core/trace/fault'
 
 // GPU crash-loop recovery, main wiring (policy in core/app/gpuStability):
 // boots with the GPU process disabled when asked or when the previous run's
@@ -36,7 +37,8 @@ export function gpuCrashRecordPath(userDataDir: string): string {
 function readRecord(path: string): string | null {
   try {
     return readFileSync(path, 'utf8')
-  } catch {
+  } catch (error) {
+    reportFault('app.gpu.readRecord', error)
     return null
   }
 }
@@ -57,7 +59,8 @@ export function attachGpuStability(deps: GpuStabilityDeps): void {
   // relaunch it caused, and a healthy launch leaves nothing behind.
   try {
     unlinkSync(deps.recordPath)
-  } catch {
+  } catch (error) {
+    reportFault('app.gpu.clearRecord', error)
     // absent is the common case
   }
 
@@ -70,7 +73,8 @@ export function attachGpuStability(deps: GpuStabilityDeps): void {
     // running to write anything after the fact.
     try {
       writeFileSync(deps.recordPath, `${JSON.stringify(current)}\n`)
-    } catch {
+    } catch (error) {
+      reportFault('app.gpu.persistRecord', error)
       // A record that cannot persist just loses the next-boot fallback.
     }
     log(`[gpu] GPU process gone (${details.reason}), ${current.deaths} in the window`)

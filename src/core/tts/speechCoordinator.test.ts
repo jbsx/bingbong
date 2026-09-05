@@ -3,6 +3,7 @@ import { createSpeechCoordinator } from './speechCoordinator'
 import type { AudioPlayback, AudioPlayer, SpeechSynthesizer } from '../ports/tts'
 import { createPerfTracer } from '../perf/perfTracer'
 import { fakePerfHarness } from '../testing/doubles'
+import type { HostTraceEvent } from '../trace/hostTrace'
 
 class FakeSynth implements SpeechSynthesizer {
   readonly texts: string[] = []
@@ -346,5 +347,83 @@ describe('speech coordinator — synthesis/playback span split (#31)', () => {
     player.playbacks[0]!.finish()
 
     expect(await outcome).toEqual({ ok: true })
+  })
+})
+
+// The spoken-line records (#186, ADR 0031): the exact text piper was
+// given, and every line barge-in dropped — with where the stop reached it.
+describe('spoken-line records', () => {
+  function tracingCoordinator() {
+    const traced: HostTraceEvent[] = []
+    const synth = new FakeSynth()
+    const player = new FakePlayer()
+    const tts = createSpeechCoordinator({ synth, player, hostTrace: (event) => traced.push(event()) })
+    return { traced, synth, player, tts }
+  }
+
+  it('records the exact text handed to the synthesizer, with the turn when it had one', async () => {
+    const { traced, synth, player, tts } = tracingCoordinator()
+    const outcome = tts.speak('Here is what I found.', 'turn-3')
+    await flush()
+    expect(traced).toEqual([{ kind: 'tts_line', text: 'Here is what I found.', chars: 21, turnId: 'turn-3' }])
+    synth.finishNext()
+    await flush()
+    player.playbacks[0]!.finish()
+    await outcome
+  })
+
+  it('records a line with no turn — a download announcement — without inventing one', async () => {
+    const { traced, tts } = tracingCoordinator()
+    void tts.speak('Download finished.')
+    await flush()
+    expect(traced[0]).not.toHaveProperty('turnId')
+  })
+
+  it('records a queued line the barge-in dropped before it was ever synthesized', async () => {
+    const { traced, tts } = tracingCoordinator()
+    void tts.speak('first')
+    void tts.speak('second', 'turn-3')
+    await flush()
+    tts.stop()
+    expect(traced.filter((event) => event.kind === 'tts_dropped')).toEqual([
+      { kind: 'tts_dropped', text: 'second', chars: 6, stage: 'queued', turnId: 'turn-3' },
+    ])
+  })
+
+  it('records a line stopped while piper was still rendering it', async () => {
+    const { traced, synth, tts } = tracingCoordinator()
+    const outcome = tts.speak('first')
+    await flush()
+    tts.stop()
+    synth.finishNext()
+    await outcome
+    expect(traced.filter((event) => event.kind === 'tts_dropped')).toEqual([
+      { kind: 'tts_dropped', text: 'first', chars: 5, stage: 'synthesized' },
+    ])
+  })
+
+  it('records the line a barge-in cut off mid-playback', async () => {
+    const { traced, synth, player, tts } = tracingCoordinator()
+    const outcome = tts.speak('a long answer', 'turn-3')
+    await flush()
+    synth.finishNext()
+    await flush()
+    expect(player.playbacks).toHaveLength(1)
+    tts.stop()
+    await outcome
+    expect(traced.filter((event) => event.kind === 'tts_dropped')).toEqual([
+      { kind: 'tts_dropped', text: 'a long answer', chars: 13, stage: 'speaking', turnId: 'turn-3' },
+    ])
+  })
+
+  it('records nothing but the ask when a line finishes normally', async () => {
+    const { traced, synth, player, tts } = tracingCoordinator()
+    const outcome = tts.speak('done')
+    await flush()
+    synth.finishNext()
+    await flush()
+    player.playbacks[0]!.finish()
+    await outcome
+    expect(traced.map((event) => event.kind)).toEqual(['tts_line'])
   })
 })

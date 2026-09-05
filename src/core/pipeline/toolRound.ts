@@ -7,6 +7,7 @@ import type { RiskVerdict, Tool, ToolContext } from './tool'
 import type { PerfTracer } from '../perf/perfTracer'
 import type { BrowserSubspans } from '../perf/browserSubspans'
 import { createVisionBudget, MAX_ORCHESTRATOR_VISION_CALLS } from '../agent/subagentRails'
+import { traceVisionBudget } from './visionTracing'
 import { createBlockerGate, orchestratorBlockerEscalation, type BlockerEscalation } from './blockerGate'
 import { createSearchLoopRail } from './searchLoopRail'
 import { createNoProgressRail } from './noProgressRail'
@@ -18,6 +19,7 @@ import type { ConfirmDecision, RunDecisions } from './decisions'
 import { STEERED_CANCELLED, type Directive, type RunInterrupts } from './interrupts'
 import { classifyToolObservation } from './toolObservations'
 import type { ObservationId, ObservationInput, ObservationRecord } from '../session/observationLedger'
+import { reportFault } from '../trace/fault'
 
 // Issue #154, step 2 (#157): the Tool Round executor.
 //
@@ -222,7 +224,8 @@ function recordSpan(tracer: PerfTracer | undefined, turnId: string | undefined, 
   if (!tracer || turnId === undefined) return
   try {
     tracer.span(turnId, 'tool', durMs, { tool })
-  } catch {
+  } catch (error) {
+    reportFault('pipeline.toolRound.toolSpan', error, { turnId })
     // swallowed — see above
   }
 }
@@ -255,11 +258,12 @@ export function createToolRoundExecutor(config: ToolRoundConfig): ToolRoundExecu
 
   const isInFinalization = (): boolean => effortEpoch.phase.kind !== 'working'
 
-  async function assessCall(tool: Tool, call: ToolCall): Promise<RiskVerdict> {
+  async function assessCall(tool: Tool, call: ToolCall, turnId: string | undefined): Promise<RiskVerdict> {
     if (!tool.assessRisk) return { kind: 'allow' }
     try {
       return await tool.assessRisk(call)
-    } catch {
+    } catch (error) {
+      reportFault('pipeline.toolRound.assessRisk', error, { ...(turnId !== undefined ? { turnId } : {}) })
       // Fail closed: when risk can't be assessed, ask the user.
       return { kind: 'confirm', prompt: `Run ${call.name}?` }
     }
@@ -302,7 +306,7 @@ export function createToolRoundExecutor(config: ToolRoundConfig): ToolRoundExecu
 
     // Hard policy lives here, in code: a denied call never reaches execute,
     // even if the user would have approved it.
-    const verdict = await assessCall(tool, call)
+    const verdict = await assessCall(tool, call, turnId)
     interrupts.throwIfStopped()
     // The mid-gate peek (#119): a Directive that landed while risk was
     // assessed cancels this call, and stays unconsumed for the round's own
@@ -323,6 +327,9 @@ export function createToolRoundExecutor(config: ToolRoundConfig): ToolRoundExecu
 
     if (tool.usesVision) {
       const grant = visionBudget.tryAcquire()
+      // The Look's budget record (#186): the round spends it, so the round
+      // records it — the tool only ever sees the refusal as a failed call.
+      traceVisionBudget(toolContext, 'look', grant)
       if (!grant.ok) return { ok: false, error: grant.reason }
     }
 

@@ -82,6 +82,61 @@ incidental — nothing is written unless a developer asked for it.
   tapped inside the worker and land under the parent Run's identity and turn,
   stamped with its `agentId`: the road the reasoning (#183) and checkpoint
   (#123) records already take.
+- **Every swallowed `catch` binds its error and reports it (#186).** About
+  seventy `catch {}` sites in `src/main` and `src/core` were each a decision
+  that the work must survive a failure, and none of them was a decision that
+  nobody should ever learn the failure happened. Each is now
+  `catch (error) { reportFault('module.fn', error) }` under a stable dotted
+  site name, and an ESLint rule — `CatchClause[param=null]` — keeps it that
+  way, so the convention is enforced by `pnpm lint` rather than by review.
+  Three kinds of site are exempt and say why in the config: the rotating sink
+  and each trace writer's own guard (a fault reported from inside the write
+  that failed would re-enter the same failing write), the reporter itself, and
+  the renderer, whose catches join when its signals land (#187). The rule is
+  deliberately about the binding, not about the call: a catch that already
+  handles its error — rethrows, returns it, wraps it — binds one and passes
+  untouched. The cost is real and accepted: predicates that swallow by
+  design, like a URL parse behind `hostFromUrl`, now report a fault every time
+  they refuse. With both flags off that is a call that does nothing, and with
+  the Host Trace on it is the truth about how often that path is taken.
+- **A fault carries the turn only where the caller genuinely had one.** Most
+  swept sites report no ids, so they route to the Host Trace — which is the
+  honest answer, because most of them are reached from places that have no
+  Run identity in hand. The handful that do (the perf spans keyed to a turn,
+  the Run's own ledger and Learned Terms calls, a worker's reserved Answer
+  round) pass it, and their faults join that Run's decisions in the Run Trace.
+  The two spans the ear records stay host-scoped even though a turn id has
+  been minted by then: the ear runs outside every Run, its other records name
+  the Active Session, and a fault about the ear belongs beside them.
+- **The voice pipeline's six record kinds are the Host Trace's first real
+  content (#186).** `voice_wake` (the detection that fired, with the score and
+  VAD maximum against the threshold and gate it cleared), `voice_endpoint`
+  (the utterance's durations, the cap flag, and which listen was open),
+  `voice_stt` (the transcript, its duration, the size of the bias set and the
+  Learned Terms the text actually contains), `learned_term` (admissions and
+  removals, with whether proposals or the settings page made them),
+  `tts_line` (the exact text handed to piper, per line) and `tts_dropped`
+  (every line a barge-in dropped, and whether it was still queued, already
+  rendered, or speaking). Two `console.log` lines in the Learned Terms ledger
+  are gone: the growth of the lexicon is ADR 0022's whole story, and it now
+  lands in a file that can be read after the fact beside the transcripts the
+  admissions came from. A wake record is written for the detection that
+  fired and never for the chunks that did not — the ear scores every 80 ms,
+  and a record per chunk would be a file about nothing.
+- **The vision records take the fault route rather than a family (#186).** A
+  Look happens inside a Run and belongs beside that Run's decisions, so
+  `vision_request` and `vision_budget` are routed by identity exactly as a
+  fault is: the Run Trace with a turn in hand, the Host Trace without one.
+  The reporter is threaded as a dependency rather than installed as a global —
+  vision has three call sites (the model's `look`, the pipeline's auto-vision
+  Describe, `ground_visual`'s Locate) and every one of them already holds a
+  ToolContext, so the argument that justified the global for `reportFault`
+  does not apply. A request is recorded when it settles, not when it starts,
+  because the Vision Deadline guarantees settlement: one line per request
+  holds the ask and its outcome — `ok`, `deadline` or `error` — together, and
+  a Run's vision spend is countable by reading them. A worker's Look rides
+  the spawn like its reasoning (#183) and its Tool Round events (#185), so it
+  lands under the parent Run's turn stamped with the worker's `agentId`.
 - **Recorded History is retired rather than widened.** The obvious way to widen
   diagnostics was to record more into the store that already writes by default.
   Nothing read it: no view opens it, no Session restores from it, and every
@@ -105,6 +160,10 @@ questions); a level or category knob per family (a matrix of flags is a file
 you cannot read at face value, and the level you need is always the one you
 did not set); keeping the evidence kinds always-on while gating reasoning
 (leaves Session Evidence in an always-on store, which is the invariant above);
-and threading a fault reporter through every call site instead of the global
+threading a fault reporter through every call site instead of the global
 (the change lands in every seam it touches, for a call that is allowed to do
-nothing).
+nothing); a vision *family* of its own beside the two (a Look is a Run's
+decision, and a third file would split a Run's records across two of them);
+and recording a vision request at its start as well as its settlement (the
+Vision Deadline guarantees settlement, so the second record would only ever
+restate the first).
