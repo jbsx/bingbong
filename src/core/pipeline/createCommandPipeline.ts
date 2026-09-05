@@ -633,6 +633,14 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
     // is never collected in the first place.
     const traceRun = continuity?.traceRun
     const reasoningRounds = continuity?.traceReasoning && traceRun ? createReasoningRounds() : undefined
+    // The one write every reasoning record goes through — the Run's own
+    // rounds, an abandoned attempt, and a delegated Subagent's rounds
+    // (#183) alike — stamped with this turn. Truncation happens inside the
+    // writer's guard. Absent with the collector, since both need the writer.
+    const writeReasoning =
+      traceRun && reasoningRounds
+        ? (round: TracedReasoningRound): void => traceRun(() => ({ turnId, ...reasoningEvent(round) }))
+        : undefined
 
     try {
       let runOutcome: 'done' | 'failed' | 'cancelled' = 'done'
@@ -744,12 +752,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
           // delegated it, stamped with the worker's own agentId. Gated on
           // the writer as well as the flag, so nothing is collected in a
           // worker that has nowhere to write.
-          ...(continuity?.traceReasoning && traceRun
-            ? {
-                traceWorkerReasoning: (round: TracedReasoningRound): void =>
-                  traceRun(() => ({ turnId, ...reasoningEvent(round) })),
-              }
-            : {}),
+          ...(writeReasoning ? { traceSubagentReasoning: writeReasoning } : {}),
           // Delegation's memory selection (#98): spawn_agent resolves
           // memory_ids against this Run's immutable snapshot — the same one
           // every model round sees — so a worker can never receive entries
@@ -911,10 +914,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
                       // The abandoned attempt's thinking (#182) closes with
                       // it, as its own record: concatenating it into the
                       // attempt that survives would hide that two happened.
-                      if (reasoningRounds) {
-                        const abandoned = reasoningRounds.takeAttempt()
-                        traceRun?.(() => ({ turnId, ...reasoningEvent(abandoned) }))
-                      }
+                      if (reasoningRounds) writeReasoning?.(reasoningRounds.takeAttempt())
                       emitDetail?.({ type: 'llm_retry', attempt, maxAttempts, at: clock.now() })
                     },
                   }
@@ -965,10 +965,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
             // that aborted or failed — the one a diagnosis wants most —
             // leaves its thinking behind exactly like a round that
             // returned. Truncation happens inside the writer's guard.
-            if (reasoningRounds) {
-              const ended = reasoningRounds.takeRound()
-              traceRun?.(() => ({ turnId, ...reasoningEvent(ended) }))
-            }
+            if (reasoningRounds) writeReasoning?.(reasoningRounds.takeRound())
           }
           // The round can resolve despite the deadline abort (a client that
           // ignored the signal, or the response landing in the race

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { FakeClock, memoryEntry } from '../testing/doubles'
 import type { SessionId } from '../session/sessionIdentity'
 import type { WorkingMemorySnapshot } from '../session/workingMemory'
-import type { TracedReasoningRound, WorkerReasoningTrace } from '../trace/reasoningTrace'
+import type { TracedReasoningRound, SubagentReasoningTrace } from '../trace/reasoningTrace'
 import type { SubagentReport } from './subagentReport'
 import {
   createSubagentManager,
@@ -10,6 +10,7 @@ import {
   type SubagentEvent,
   type SubagentOwner,
   type SubagentRecord,
+  type SubagentTaskHooks,
 } from './subagentManager'
 import { SubagentCancelledError } from './subagentRunner'
 
@@ -41,13 +42,13 @@ function proseReport(text: string): SubagentReport {
 function manualTaskApi() {
   const tasks = new Map<string, ManualTask>()
   const started: { id: string; kind: string; task: string; turnId?: string; memory?: WorkingMemorySnapshot }[] = []
-  const hooksSeen = new Map<string, { traceReasoning?: WorkerReasoningTrace }>()
+  const hooksSeen = new Map<string, SubagentTaskHooks>()
   return {
     started,
     tasks,
     hooksSeen,
     api: {
-      start(spec: { id: string; kind: string; task: string; turnId?: string; memory?: WorkingMemorySnapshot }, hooks: { isCancelled(): boolean; isWorkExpired?(): boolean; waitIfPaused?(): Promise<void>; onProgress(step: number, action: string): void; traceReasoning?: WorkerReasoningTrace }) {
+      start(spec: { id: string; kind: string; task: string; turnId?: string; memory?: WorkingMemorySnapshot }, hooks: SubagentTaskHooks) {
         started.push({ id: spec.id, kind: spec.kind, task: spec.task, turnId: spec.turnId, ...(spec.memory !== undefined ? { memory: spec.memory } : {}) })
         hooksSeen.set(spec.id, hooks)
         let settle: ((report: SubagentReport) => void) | null = null
@@ -157,7 +158,7 @@ describe('subagent manager', () => {
   it('threads the spawning turn id into the task spec', () => {
     const { mgr, api } = manager()
 
-    expect(mgr.spawn('background', 'compare keyboards', 'turn-voice-4').ok).toBe(true)
+    expect(mgr.spawn('background', 'compare keyboards', { turnId: 'turn-voice-4' }).ok).toBe(true)
 
     expect(api.started[0]).toMatchObject({ id: 'a-1', kind: 'background', task: 'compare keyboards', turnId: 'turn-voice-4' })
   })
@@ -166,7 +167,7 @@ describe('subagent manager', () => {
     const { mgr, api } = manager()
     const selection: WorkingMemorySnapshot = Object.freeze([Object.freeze(memoryEntry('memory-1'))])
 
-    expect(mgr.spawn('browse', 'compare keyboards', 'turn-voice-4', selection).ok).toBe(true)
+    expect(mgr.spawn('browse', 'compare keyboards', { turnId: 'turn-voice-4', memory: selection }).ok).toBe(true)
     expect(mgr.spawn('browse', 'no memory shared').ok).toBe(true)
 
     // Only an explicit selection rides the spec — and it is the same frozen
@@ -242,7 +243,7 @@ describe('subagent manager', () => {
     const { mgr, api } = manager()
     let expired = false
 
-    expect(mgr.spawn('browse', 'shared deadline work', undefined, undefined, { expired: () => expired }).ok).toBe(true)
+    expect(mgr.spawn('browse', 'shared deadline work', { sharedDeadline: { expired: () => expired } }).ok).toBe(true)
     // A spawn without a deadline starts a worker that has none.
     expect(mgr.spawn('background', 'own clock').ok).toBe(true)
 
@@ -255,9 +256,9 @@ describe('subagent manager', () => {
   it("threads the parent Run's reasoning trace into the workhorse, and only when it was handed one (#183)", () => {
     const { mgr, api } = manager()
     const traced: TracedReasoningRound[] = []
-    const trace: WorkerReasoningTrace = (round) => traced.push(round)
+    const trace: SubagentReasoningTrace = (round) => traced.push(round)
 
-    expect(mgr.spawn('browse', 'traced work', 'turn-1', undefined, undefined, trace).ok).toBe(true)
+    expect(mgr.spawn('browse', 'traced work', { turnId: 'turn-1', traceReasoning: trace }).ok).toBe(true)
     // A spawn without a trace starts a worker that collects nothing.
     expect(mgr.spawn('background', 'untraced work').ok).toBe(true)
 
@@ -537,7 +538,7 @@ describe('subagent manager', () => {
   it('keeps the worker\u2019s Finalization Cause off agent_results \u2014 the orchestrator\u2019s model cannot read it (#162)', async () => {
     const { mgr, api } = manager()
 
-    mgr.spawn('browse', 'compare keyboards', 'turn-3')
+    mgr.spawn('browse', 'compare keyboards', { turnId: 'turn-3' })
     api.tasks.get('a-1')!.resolve({
       text: 'Cut short prose.',
       findings: [],

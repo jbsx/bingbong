@@ -103,4 +103,4 @@ export function reasoningEvent(input: TracedReasoningRound): ReasoningEvent {
  * it. Its presence is the whole opt-in on the worker path — absent, no
  * worker reasoning is collected at all, exactly as on the Run path.
  */
-export type WorkerReasoningTrace = (round: TracedReasoningRound) => void
+export type SubagentReasoningTrace = (round: TracedReasoningRound) => void

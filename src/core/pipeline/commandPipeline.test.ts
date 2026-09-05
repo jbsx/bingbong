@@ -2152,8 +2152,8 @@ describe('command pipeline', () => {
     it('lets the Investigation tier delegate and carries the shared active-work deadline into the spawn', async () => {
       let received: { expired(): boolean } | undefined
       const manager = fakeSubagentManager([], {
-        spawn: (_kind, _task, _turnId, _memory, sharedDeadline) => {
-          received = sharedDeadline
+        spawn: (_kind, _task, context) => {
+          received = context?.sharedDeadline
           return { ok: true as const, agent: subagentRecord('a-1') }
         },
       })

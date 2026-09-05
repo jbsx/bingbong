@@ -2,7 +2,7 @@ import type { ToolCall } from '../ports/llm'
 import type { Clock } from '../ports/clock'
 import type { SubagentSharedDeadline, VisionGrant } from '../agent/subagentRails'
 import type { WorkingMemorySnapshot } from '../session/workingMemory'
-import type { WorkerReasoningTrace } from '../trace/reasoningTrace'
+import type { SubagentReasoningTrace } from '../trace/reasoningTrace'
 import type { EffortTier } from './runPlan'
 import type { CandidateCheckpointOutcome } from './candidateCheckpoint'
 import type { EvidenceCheckpointOutcome } from './evidenceCheckpoint'
@@ -37,7 +37,7 @@ export interface ToolContext {
    * `BINGBONG_TRACE_REASONING`; delegation then hands workers nothing and
    * no worker reasoning is collected.
    */
-  traceWorkerReasoning?: WorkerReasoningTrace
+  traceSubagentReasoning?: SubagentReasoningTrace
   /**
    * Progress detail (#43): a tool that blocks on observable background
    * work (agent_results with wait) reports what the run is waiting on,

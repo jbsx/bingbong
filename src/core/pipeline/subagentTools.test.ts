@@ -52,8 +52,8 @@ describe('subagent tools', () => {
   it('spawn_agent hands the orchestrator turn id to the manager', async () => {
     const seenTurnIds: (string | undefined)[] = []
     const tools = createSubagentTools(fakeManager({
-      spawn: (kind, task, turnId) => {
-        seenTurnIds.push(turnId)
+      spawn: (kind, task, context) => {
+        seenTurnIds.push(context?.turnId)
         return { ok: true, agent: { id: 'a-1', kind, task, status: 'running', startedAt: 0, finishedAt: null, steps: 0, lastAction: null, result: null, error: null } }
       },
     }))
@@ -72,8 +72,8 @@ describe('subagent tools', () => {
     let received: WorkingMemorySnapshot | undefined
     let requested: readonly string[] | undefined
     const tools = createSubagentTools(fakeManager({
-      spawn: (_kind, _task, _turnId, memory) => {
-        received = memory
+      spawn: (_kind, _task, context) => {
+        received = context?.memory
         return { ok: true, agent: { id: 'a-2', kind: _kind, task: _task, status: 'running', startedAt: 0, finishedAt: null, steps: 0, lastAction: null, result: null, error: null } }
       },
     }))
@@ -216,8 +216,8 @@ describe('subagent tools', () => {
     let expired = false
     let received: { expired(): boolean } | undefined
     const tools = createSubagentTools(fakeManager({
-      spawn: (_kind, _task, _turnId, _memory, sharedDeadline) => {
-        received = sharedDeadline
+      spawn: (_kind, _task, context) => {
+        received = context?.sharedDeadline
         return { ok: true, agent: { id: 'a-2', kind: 'browse', task: 't', status: 'running', startedAt: 0, finishedAt: null, steps: 0, lastAction: null, result: null, error: null } }
       },
     }))

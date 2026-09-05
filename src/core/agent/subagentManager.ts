@@ -4,7 +4,7 @@ import type { SessionGeneration, SessionId } from '../session/sessionIdentity'
 import type { WorkingMemorySnapshot } from '../session/workingMemory'
 import { capSentences } from '../agent/answerContract'
 import { SUBAGENT_LIMITS, type SubagentSharedDeadline } from './subagentRails'
-import type { WorkerReasoningTrace } from '../trace/reasoningTrace'
+import type { SubagentReasoningTrace } from '../trace/reasoningTrace'
 import type { SubagentReport } from './subagentReport'
 import { SubagentCancelledError } from './subagentRunner'
 
@@ -98,7 +98,7 @@ export interface SubagentTaskHooks {
    * unless the developer opted in with `BINGBONG_TRACE_REASONING` — and
    * absent, the worker collects no reasoning and does not stream.
    */
-  traceReasoning?: WorkerReasoningTrace
+  traceReasoning?: SubagentReasoningTrace
 }
 
 /** Port: starts one workhorse loop (runSubagent in production). */
@@ -130,15 +130,21 @@ export type SpawnResult = { ok: true; agent: SubagentRecord } | { ok: false; rea
 
 export type CancelResult = { ok: true } | { ok: false; reason: string }
 
+/**
+ * What rides a spawn from the Run that delegates: the turn it happened in
+ * (#29), the Memory Entries it selected (#98), its shared active-work
+ * deadline (#120), and its reasoning trace (#183). All optional — a spawn
+ * outside any Run (tests, the CLI harness) carries none of them.
+ */
+export interface SpawnContext {
+  turnId?: string
+  memory?: WorkingMemorySnapshot
+  sharedDeadline?: SubagentSharedDeadline
+  traceReasoning?: SubagentReasoningTrace
+}
+
 export interface SubagentManager {
-  spawn(
-    kind: SubagentKind,
-    task: string,
-    turnId?: string,
-    memory?: WorkingMemorySnapshot,
-    sharedDeadline?: SubagentSharedDeadline,
-    traceReasoning?: WorkerReasoningTrace,
-  ): SpawnResult
+  spawn(kind: SubagentKind, task: string, context?: SpawnContext): SpawnResult
   cancel(agentId: string): CancelResult
   cancelAll(): number
   /**
@@ -226,7 +232,8 @@ export function createSubagentManager(deps: SubagentManagerDeps): SubagentManage
   }
 
   return {
-    spawn(kind, task, turnId, memory, sharedDeadline, traceReasoning) {
+    spawn(kind, task, context = {}) {
+      const { turnId, memory, sharedDeadline, traceReasoning } = context
       if (liveCount() >= maxConcurrent) {
         return {
           ok: false,

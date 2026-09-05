@@ -18,7 +18,7 @@ import type { FinalizationCause } from '../session/runJournal'
 import { describeToolAction } from '../pipeline/toolCallDisplay'
 import { MAX_SUBAGENT_VISION_CALLS } from './subagentRails'
 import { droppedFindingsNote, validateReportFindings, type SubagentReport } from './subagentReport'
-import { createReasoningRounds, type ReasoningRound, type WorkerReasoningTrace } from '../trace/reasoningTrace'
+import { createReasoningRounds, type ReasoningRound, type SubagentReasoningTrace } from '../trace/reasoningTrace'
 
 // The subagent workhorse loop (issue #13): one LLM (deepseek-chat via the
 // model router) driving its own tool set until it produces a final report.
@@ -168,7 +168,7 @@ export interface RunSubagentOptions {
    * — and with it absent the worker collects no reasoning and does not
    * stream, which is the path's historical behaviour.
    */
-  traceReasoning?: WorkerReasoningTrace
+  traceReasoning?: SubagentReasoningTrace
 }
 
 export class SubagentCancelledError extends Error {

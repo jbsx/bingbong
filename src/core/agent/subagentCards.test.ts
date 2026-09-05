@@ -209,7 +209,7 @@ describe('subagent card bridge', () => {
 
   it('emits the worker’s Finalization Cause as a turn-stamped diagnostic, and keeps it off the card (#162)', async () => {
     const w = ownedWiring({ sessionId: 'session-4' as SessionId, generation: 3 })
-    w.manager.spawn('browse', 'compare prices', 'turn-77')
+    w.manager.spawn('browse', 'compare prices', { turnId: 'turn-77' })
     w.settle('a-1', 'resolve', {
       text: 'Cut short.',
       findings: [],
@@ -244,7 +244,7 @@ describe('subagent card bridge', () => {
     const w = wiring()
     // The Run's own Finalization cancels unfinished workers: the worker
     // never reached a cause, and the event says so rather than vanishing.
-    w.manager.spawn('browse', 'still browsing', 'turn-12')
+    w.manager.spawn('browse', 'still browsing', { turnId: 'turn-12' })
     w.manager.cancelAll()
     w.settle('a-1', 'reject', 'subagent cancelled by the user')
     await flush()
