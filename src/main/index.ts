@@ -569,7 +569,7 @@ async function createWindow(): Promise<BrowserWindow> {
   // Renderer session re-adoption (ADR 0017): both session-bearing pages —
   // dashboard and feed panel overlay — re-adopt the live Session on any
   // finished load, and a gone render process reloads into recovery.
-  attachSessionToWindow(win, sessionRuntime, { overlayContents: feedPanel.contents, trace: traceSession })
+  attachSessionToWindow(win, sessionRuntime, { overlayContents: feedPanel.contents })
   activeSessionRuntime = sessionRuntime
   const commandRunner = createAssistantCommandRunner({
     pipeline,
@@ -640,7 +640,7 @@ app.whenReady().then(async () => {
   })
   registerTtsIpc({ voicesDir: () => piperConfig.voicesDir })
   registerVoiceIpc()
-  registerSessionIpc()
+  registerSessionIpc({ trace: traceSession })
 
   // Auth-host identity rewrite (ADR 0018): before the adblocker so both own
   // webRequest listeners from the first request. Disabling the adblocker

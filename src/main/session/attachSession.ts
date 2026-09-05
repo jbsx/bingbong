@@ -5,14 +5,20 @@ import type { SessionRuntime } from '../../core/session/sessionRuntime'
 import { evidenceAnsweredEntry, evidenceRequesterOf } from '../../core/trace/evidenceStoreTrace'
 import type { SessionTraceWriter } from '../../core/trace/runTrace'
 
-/** What a window's Session-bearing pages are answered from (#181 adds the trace). */
+/** What a window's Session-bearing pages are answered from. */
 interface AttachedSession {
   readonly runtime: SessionRuntime
   /** The feed panel overlay's webContents, for telling the two requesters apart. */
-  overlayContents(): Electron.WebContents | null
-  /** The Run Trace's store-and-view writer, when anything is tracing. */
-  readonly trace?: SessionTraceWriter
+  readonly overlayContents: () => Electron.WebContents | null
 }
+
+/**
+ * The Run Trace's store-and-view writer (#181), held by the registration
+ * rather than by a window: a pull from a window with no Session attached
+ * — one already closed — is exactly the answer worth recording, so the
+ * writer must outlive the attachment.
+ */
+let traceEvidence: SessionTraceWriter | undefined
 
 const attached = new WeakMap<BrowserWindow, AttachedSession>()
 
@@ -75,7 +81,11 @@ function attachRecovery(contents: Electron.WebContents, runtime: SessionRuntime)
   })
 }
 
-export function registerSessionIpc(): void {
+export function registerSessionIpc(deps?: {
+  /** The Run Trace's store-and-view writer (#181); omitted when nothing is tracing. */
+  trace?: SessionTraceWriter
+}): void {
+  traceEvidence = deps?.trace
   ipcMain.handle(SESSION_IPC.extend, (event, request: unknown) => {
     const runtime = runtimeFor(event)
     return runtime !== undefined && isSessionDecision(request) && runtime.extend(request)
@@ -101,8 +111,8 @@ export function registerSessionIpc(): void {
   ipcMain.handle(EVIDENCE_IPC.get, (event) => {
     const session = attachedFor(event)
     const payload = session !== undefined ? evidencePayloadOf(session.runtime) : null
-    session?.trace?.(() => {
-      const overlay = session.overlayContents()
+    traceEvidence?.(() => {
+      const overlay = session?.overlayContents() ?? null
       return evidenceAnsweredEntry({
         requester: evidenceRequesterOf(event.sender.id, overlay === null || overlay.isDestroyed() ? null : overlay.id),
         payload,
@@ -118,12 +128,10 @@ export function attachSessionToWindow(
   deps?: {
     /** The feed panel overlay's webContents — recovers alongside the dashboard (ADR 0017). */
     overlayContents?(): Electron.WebContents | null
-    /** The Run Trace's store-and-view writer (#181); omitted when nothing is tracing. */
-    trace?: SessionTraceWriter
   },
 ): void {
   const overlayContents = deps?.overlayContents ?? ((): Electron.WebContents | null => null)
-  attached.set(win, { runtime, overlayContents, ...(deps?.trace !== undefined ? { trace: deps.trace } : {}) })
+  attached.set(win, { runtime, overlayContents })
   attachRecovery(win.webContents, runtime)
   const overlay = overlayContents()
   if (overlay) attachRecovery(overlay, runtime)

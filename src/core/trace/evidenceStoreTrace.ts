@@ -13,7 +13,7 @@ import type { EndedSession, SessionEvidenceAcceptance, SessionEvidenceChange } f
 import type { EvidenceRequester, SessionTraceEntry } from './runTrace'
 
 /** Counts of a snapshot main is about to hand a view. */
-export function snapshotCounts(snapshot: SessionEvidencePayload['snapshot']): SessionEvidenceCounts {
+function snapshotCounts(snapshot: SessionEvidencePayload['snapshot']): SessionEvidenceCounts {
   return {
     observations: snapshot.observations.length,
     candidates: snapshot.candidates.length,

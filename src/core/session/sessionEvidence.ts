@@ -130,6 +130,13 @@ export interface SessionEvidenceCounts {
   readonly contradictions: number
 }
 
+/** What a Session with no store yet — or a cleared one — holds. */
+export const EMPTY_EVIDENCE_COUNTS: SessionEvidenceCounts = Object.freeze({
+  observations: 0,
+  candidates: 0,
+  contradictions: 0,
+})
+
 export interface ObservationCheckpointInput {
   readonly sourceKind: ObservationSourceKind
   readonly text: string

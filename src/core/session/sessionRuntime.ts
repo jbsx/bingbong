@@ -9,6 +9,7 @@ import type {
 import { MAX_RUN_NOTE_CHARS, type RunJournalEntry, type RunJournalSnapshot } from './runJournal'
 import {
   createSessionEvidence,
+  EMPTY_EVIDENCE_COUNTS,
   type SessionEvidenceCounts,
   type SessionEvidenceSnapshot,
   type SessionEvidenceStore,
@@ -597,7 +598,7 @@ export function createSessionRuntime(deps: {
 
   /** What the live store holds, or nothing where no Session has one. */
   const evidenceCounts = (): SessionEvidenceCounts =>
-    evidence?.counts() ?? { observations: 0, candidates: 0, contradictions: 0 }
+    evidence?.counts() ?? EMPTY_EVIDENCE_COUNTS
 
   const endSession = (reason: SessionEndReason): EndedSession | null => {
     if (phase === 'absent' || sessionId === null || startedAt === null) return null
