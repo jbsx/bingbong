@@ -59,7 +59,7 @@ export function createSpeechCoordinator(deps: SpeechCoordinatorDeps): TtsSpeaker
     try {
       tracer.span(turnId, stage, durMs)
     } catch (error) {
-      reportFault('tts.speech.span', error, { turnId })
+      reportFault('tts.speechCoordinator.recordSpan', error, { turnId })
       // swallowed — see above
     }
   }
@@ -88,7 +88,7 @@ export function createSpeechCoordinator(deps: SpeechCoordinatorDeps): TtsSpeaker
       traceDropped(item.text, 'queued', item.turnId)
       item.resolve({ ok: true })
     }
-    if (current !== null && speaking !== null) traceDropped(speaking.text, 'speaking', speaking.turnId)
+    if (speaking !== null) traceDropped(speaking.text, 'speaking', speaking.turnId)
     current?.stop()
   }
 

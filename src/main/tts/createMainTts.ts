@@ -2,6 +2,7 @@ import type { WebContents } from 'electron'
 import type { TtsSpeaker } from '../../core/ports/tts'
 import type { PerfTracer } from '../../core/perf/perfTracer'
 import { createSpeechCoordinator } from '../../core/tts/speechCoordinator'
+import type { HostTraceWriter } from '../../core/trace/hostTrace'
 import type { PiperConfig } from './piperConfig'
 import { createPiperSynthesizer } from './createPiperSynthesizer'
 import { createAplayPlayer } from './createAplayPlayer'
@@ -15,6 +16,12 @@ export interface MainTtsDeps {
   getVoiceId(): string
   /** Always-on perf tracer (#31): keys the per-line synthesis/playback spans. */
   tracer?: PerfTracer
+  /**
+   * The Host Trace writer (#186): the exact text handed to piper per line,
+   * and every line barge-in dropped. Absent unless the developer set
+   * `BINGBONG_HOST_TRACE`.
+   */
+  hostTrace?: HostTraceWriter
 }
 
 /** Composition root for spoken output (T8): piper → aplay, ducking the pane. */
@@ -28,5 +35,6 @@ export function createMainTts(deps: MainTtsDeps): TtsSpeaker {
     player: createAplayPlayer(),
     ducker: createPaneAudioDucker(deps.pane),
     ...(deps.tracer ? { tracer: deps.tracer } : {}),
+    ...(deps.hostTrace ? { hostTrace: deps.hostTrace } : {}),
   })
 }

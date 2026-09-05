@@ -89,7 +89,7 @@ function toToolCall(call: WireToolCall): ToolCall {
     const parsed: unknown = JSON.parse(call.function.arguments)
     if (typeof parsed === 'object' && parsed !== null) args = parsed as Record<string, unknown>
   } catch (error) {
-    reportFault('llm.openai.toolCallArgs', error)
+    reportFault('llm.openAiLlmClient.toToolCall', error)
     // Malformed arguments surface as a failed tool result the model can see.
   }
   return { id: call.id, name: call.function.name, args }
@@ -248,9 +248,11 @@ export function createOpenAiLlmClient(deps: OpenAiLlmClientDeps): LlmClient {
       lastRequestId = requestId
       lastRaw = raw
     }
-    console.warn(
-      `[llm] empty completion after ${MAX_ATTEMPTS} attempts (request_id: ${lastRequestId ?? 'unknown'}): ${lastRaw.slice(0, 1000)}`,
-    )
+    const emptyCompletion = `empty completion after ${MAX_ATTEMPTS} attempts (request_id: ${lastRequestId ?? 'unknown'}): ${lastRaw.slice(0, 1000)}`
+    // The console line stays for a developer watching the run; the record
+    // is for the one reading the file afterwards (#186).
+    console.warn(`[llm] ${emptyCompletion}`)
+    reportFault('llm.openAiLlmClient.emptyCompletion', emptyCompletion)
     throw new Error(`orchestrator returned an empty completion (request_id: ${lastRequestId ?? 'unknown'})`)
   }
 
@@ -391,7 +393,7 @@ export function createOpenAiLlmClient(deps: OpenAiLlmClientDeps): LlmClient {
       try {
         chunk = JSON.parse(data)
       } catch (error) {
-        reportFault('llm.openai.streamChunk', error)
+        reportFault('llm.openAiLlmClient.streamChunk', error)
         return // A malformed chunk never fails the round.
       }
       if (typeof chunk.request_id === 'string' && chunk.request_id !== '') bodyRequestId = chunk.request_id

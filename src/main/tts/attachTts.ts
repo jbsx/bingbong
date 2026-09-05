@@ -10,7 +10,7 @@ export function registerTtsIpc(deps: { voicesDir: () => string }): void {
     try {
       return voiceIdsFromFiles(await readdir(deps.voicesDir()))
     } catch (error) {
-      reportFault('tts.ipc.listVoices', error)
+      reportFault('tts.attachTts.listVoices', error)
       return []
     }
   })

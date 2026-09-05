@@ -139,7 +139,7 @@ export const fsMoonshineStore: MoonshineModelStore = {
     try {
       return statSync(path).size
     } catch (error) {
-      reportFault('voice.stt.modelSize', error)
+      reportFault('voice.moonshineModels.size', error)
       return 0
     }
   },

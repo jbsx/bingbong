@@ -179,7 +179,7 @@ export function urlFingerprint(raw: string): UrlFingerprint {
   try {
     url = new URL(normalizeUrlInput(input) ?? input)
   } catch (error) {
-    reportFault('pipeline.fingerprints.url', error)
+    reportFault('pipeline.progressFingerprints.urlFingerprint', error)
     return { url: input, source: input, alternate: false }
   }
   url.hash = ''
@@ -214,7 +214,7 @@ export function searchQueryFromUrl(raw: string): string | null {
     const q = new URL(normalized).searchParams.get('q')
     return q !== null && q.trim() !== '' ? q : null
   } catch (error) {
-    reportFault('pipeline.fingerprints.searchQuery', error)
+    reportFault('pipeline.progressFingerprints.searchQueryFromUrl', error)
     return null
   }
 }

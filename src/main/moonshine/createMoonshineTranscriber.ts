@@ -290,7 +290,7 @@ export function createMoonshineTranscriber(deps: MoonshineTranscriberDeps): Tran
         const text = await decodePass(pcm)
         if (gen === generation) for (const listener of partialListeners) listener(text)
       } catch (error) {
-        reportFault('voice.stt.partialPass', error)
+        reportFault('voice.createMoonshineTranscriber.partialPass', error)
         // Partials are advisory: a failed pass must never break the capture
         // or the final — the same failure surfaces there if it is real.
       }

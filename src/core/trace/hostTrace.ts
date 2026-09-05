@@ -65,6 +65,7 @@ export function createHostTraceWriter(deps: {
   return (event) => {
     try {
       deps.sink.write({ v: HOST_TRACE_VERSION, at: deps.now(), sessionId: deps.activeSessionId(), ...event() })
+    // eslint-disable-next-line no-restricted-syntax -- a trace writer's own guard: reporting here would re-enter the write that failed
     } catch {
       // A failed trace must never break the work it is recording.
     }

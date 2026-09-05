@@ -6,28 +6,21 @@
 // own and the routing rule stays in the router.
 
 import type { VisionGrant } from '../agent/subagentRails'
-import type { VisionReason, VisionTraceIds, VisionTraceReporter } from '../trace/visionTrace'
+import type { VisionReason, VisionTraceSeam } from '../trace/visionTrace'
 import type { ToolContext } from './tool'
 
-/** What {@link tracedVisionRequest} needs from the context it runs under. */
-export interface VisionTraceSeam {
-  trace?: VisionTraceReporter | undefined
-  ids?: VisionTraceIds | undefined
-  now(): number
-}
-
-/** The reporter, the identities and the clock one tool call records with. */
+/**
+ * The reporter, the identities, the clock and the worker stamp one tool
+ * call records with. The only place a ToolContext is read for the vision
+ * seam, so no call site assembles ids of its own.
+ */
 export function visionSeam(context: ToolContext): VisionTraceSeam {
   return {
     trace: context.traceVision,
     ids: context.turnId !== undefined ? { turnId: context.turnId } : {},
+    ...(context.agentId !== undefined ? { agentId: context.agentId } : {}),
     now: () => context.clock.now(),
   }
-}
-
-/** The worker stamp a record carries, or nothing on the Run's own call. */
-export function visionAgentStamp(context: ToolContext): { agentId?: string } {
-  return context.agentId !== undefined ? { agentId: context.agentId } : {}
 }
 
 /**
@@ -46,7 +39,7 @@ export function traceVisionBudget(context: ToolContext, reason: VisionReason, gr
       reason,
       granted: grant.ok,
       ...(grant.ok ? {} : { refusal: grant.reason }),
-      ...visionAgentStamp(context),
+      ...(seam.agentId !== undefined ? { agentId: seam.agentId } : {}),
     },
     seam.ids,
   )

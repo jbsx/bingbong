@@ -50,6 +50,7 @@ export function createJsonlSink<T>(
 
   try {
     mkdirSync(logsDir, { recursive: true })
+  // eslint-disable-next-line no-restricted-syntax -- the sink itself: a fault reported here would re-enter the write that just failed
   } catch {
     return { write: () => {} }
   }
@@ -58,6 +59,7 @@ export function createJsonlSink<T>(
     let names: string[]
     try {
       names = readdirSync(logsDir).filter((name) => family.pattern.test(name))
+    // eslint-disable-next-line no-restricted-syntax -- the sink itself: a fault reported here would re-enter the write that just failed
     } catch {
       return
     }
@@ -66,6 +68,7 @@ export function createJsonlSink<T>(
       if (path === activePath) continue
       try {
         if (now() - statSync(path).mtimeMs > maxAgeMs) rmSync(path)
+      // eslint-disable-next-line no-restricted-syntax -- the sink itself: a fault reported here would re-enter the write that just failed
       } catch {
         // Unreadable meta or a racing deletion: not logging's problem.
       }
@@ -95,6 +98,7 @@ export function createJsonlSink<T>(
         activeBytes += Buffer.byteLength(line)
         if (activeBytes >= rollBytes) activePath = null
         purge()
+      // eslint-disable-next-line no-restricted-syntax -- the sink itself: a fault reported here would re-enter the write that just failed
       } catch {
         // A failed append must never break the work it is recording.
       }

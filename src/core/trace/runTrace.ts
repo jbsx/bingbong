@@ -345,6 +345,7 @@ export function createRunTraceWriter(deps: {
         generation: deps.identity.generation,
         ...event(),
       })
+    // eslint-disable-next-line no-restricted-syntax -- a trace writer's own guard: reporting here would re-enter the write that failed
     } catch {
       // A failed trace must never break the decision it is recording.
     }
@@ -368,6 +369,7 @@ export function createSessionTraceWriter(deps: { sink: RunTraceSink; now(): numb
   return (entry) => {
     try {
       deps.sink.write({ v: RUN_TRACE_VERSION, at: deps.now(), ...entry() })
+    // eslint-disable-next-line no-restricted-syntax -- a trace writer's own guard: reporting here would re-enter the write that failed
     } catch {
       // A failed trace must never break the decision it is recording.
     }

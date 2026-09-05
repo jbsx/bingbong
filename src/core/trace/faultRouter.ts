@@ -1,23 +1,14 @@
-// The fault route (#184, ADR 0031): the boundary rule, made executable.
-// A fault reported with a turn id in hand belongs beside the decisions of
-// the Run it happened in, so it goes to the Run Trace; every other fault
-// is something the app did outside any Run, so it goes to the Host Trace
-// and names the Active Session instead.
-//
-// The rule is identity, never which flag happens to be on. A turn-scoped
-// fault with the Run Trace off is dropped rather than smuggled into the
-// Host Trace: a Host Trace that quietly held Run-scoped records would be
-// a file nobody could read at face value, and the developer who wants
-// that fault is one flag away from having it.
+// The fault route (#184, ADR 0031): the boundary rule applied to the
+// fault seam. A fault reported with a turn id in hand belongs beside the
+// decisions of the Run it happened in; every other fault is something the
+// app did outside any Run. The rule itself lives in `traceRoute` — the
+// vision seam (#186) routes by the same one — and all this module does is
+// separate a report's event from the identities it was reported with.
 
-import type { FaultReport, FaultSink } from './fault'
+import type { FaultSink } from './fault'
 import type { HostTraceWriter } from './hostTrace'
-import { RUN_TRACE_VERSION, type FaultRunTraceRecord, type RunTraceSink } from './runTrace'
-
-/** One reported fault as the Run Trace records it. */
-function faultRecord(report: FaultReport, turnId: string, at: number): FaultRunTraceRecord {
-  return { ...report, v: RUN_TRACE_VERSION, at, turnId }
-}
+import type { RunTraceSink } from './runTrace'
+import { routeByTurn } from './traceRoute'
 
 /**
  * Builds the sink main installs with {@link setFaultSink}. Either family
@@ -31,16 +22,9 @@ export function createFaultRouter(deps: {
   now(): number
 }): FaultSink {
   return (report) => {
-    const turnId = report.turnId
-    if (turnId !== undefined) {
-      deps.runTrace?.write(faultRecord(report, turnId, deps.now()))
-      return
-    }
-    // No turn: the Host Trace writer stamps the clock and the Active
-    // Session itself, which is the only Session a fault reported outside
-    // a Run can honestly name — so the report's own ids, if it somehow
-    // carries any, do not travel with it here.
-    const { kind, site, message, stack } = report
-    deps.hostTrace?.(() => ({ kind, site, message, ...(stack !== undefined ? { stack } : {}) }))
+    // The report carries its ids inline; the record must not, so they are
+    // split off here and only the event travels.
+    const { kind, site, message, stack, turnId, runId, sessionId } = report
+    routeByTurn(deps, { kind, site, message, ...(stack !== undefined ? { stack } : {}) }, { turnId, runId, sessionId })
   }
 }

@@ -89,7 +89,7 @@ export function canonicalizeMemoryUrl(value: string): string | null {
     url.searchParams.sort()
     return url.toString()
   } catch (error) {
-    reportFault('session.workingMemory.canonicalizeUrl', error)
+    reportFault('session.workingMemory.canonicalizeMemoryUrl', error)
     return null
   }
 }

@@ -22,7 +22,7 @@ export function withPerfTracing(client: LlmClient, tracer: PerfTracer, stage = '
         try {
           tracer.span(turnId, retryStage, durMs, detail)
         } catch (error) {
-          reportFault('perf.tracing.span', error, { turnId })
+          reportFault('perf.perfTracing.span', error, { turnId })
           // swallowed — see above
         }
       }

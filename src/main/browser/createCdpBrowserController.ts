@@ -358,7 +358,7 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
       const snapshot = collected ?? (await recollection('settled-state', () => collectSnapshot()))
       return `${line}\n${formatPageSnapshot(snapshot)}`
     } catch (error) {
-      reportFault('browser.cdp.withSettledState', error)
+      reportFault('browser.createCdpBrowserController.withSettledState', error)
       return line
     }
   }
@@ -904,7 +904,7 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
       const { target } = await resolveRef(ref)
       return target
     } catch (error) {
-      reportFault('browser.cdp.describeRef', error)
+      reportFault('browser.createCdpBrowserController.describeRef', error)
       return undefined
     }
   }
@@ -981,12 +981,12 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
       try {
         media = await readMediaState()
       } catch (error) {
-        reportFault('browser.cdp.readMediaState', error)
+        reportFault('browser.createCdpBrowserController.readMediaState', error)
         media = null
       }
       return settledStateFromSnapshot(snapshot, media)
     } catch (error) {
-      reportFault('browser.cdp.settledState', error)
+      reportFault('browser.createCdpBrowserController.settledState', error)
       return null
     }
   }

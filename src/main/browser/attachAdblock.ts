@@ -60,7 +60,7 @@ export function attachAdblock(deps: {
       try {
         return readFileSync(listTextPath(url), 'utf8')
       } catch (error) {
-        reportFault('adblock.cache.readText', error)
+        reportFault('adblock.attachAdblock.readCachedText', error)
         return null
       }
     },
@@ -84,7 +84,7 @@ export function attachAdblock(deps: {
         const engine = new Uint8Array(readFileSync(paths.engine))
         return { engine, meta }
       } catch (error) {
-        reportFault('adblock.cache.read', error)
+        reportFault('adblock.attachAdblock.readCache', error)
         return null
       }
     },
@@ -119,7 +119,10 @@ export function attachAdblock(deps: {
       timer.unref?.()
       return () => clearTimeout(timer)
     },
-    onWarning: (message) => process.stderr.write(`adblock: ${message}\n`),
+    onWarning: (message) => {
+      process.stderr.write(`adblock: ${message}\n`)
+      reportFault('adblock.attachAdblock.warning', message)
+    },
   }
 
   const controller = createAdblockController(controllerDeps)

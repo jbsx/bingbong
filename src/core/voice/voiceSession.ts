@@ -450,7 +450,7 @@ export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
           ...extra,
         })
       } catch (error) {
-        reportFault('voice.session.sttSpan', error)
+        reportFault('voice.voiceSession.sttSpan', error)
         // swallowed — see above
       }
     }
@@ -460,12 +460,15 @@ export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
     // half the question it was written for.
     const sttWallStart = deps.clock.now()
     const traceStt = (result: { text: string; error?: string }): void => {
+      // Read before the writer's thunk: the duration is how long the pass
+      // took, not how long until the record happened to be assembled.
+      const durationMs = deps.clock.now() - sttWallStart
       deps.hostTrace?.(() => {
         const phrases = deps.biasPhrases?.() ?? []
         return {
           kind: 'voice_stt',
           ...tracedText(result.text, TRACE_TRANSCRIPT_MAX_CHARS),
-          durationMs: deps.clock.now() - sttWallStart,
+          durationMs,
           biasCount: phrases.length,
           biasHits: biasHits(result.text, phrases),
           ...(result.error !== undefined ? { error: result.error } : {}),
@@ -503,7 +506,7 @@ export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
       try {
         tracer.span(turnId, 'wake-to-transcript', tracer.now() - commandListenStart, { reason })
       } catch (error) {
-        reportFault('voice.session.wakeToTranscriptSpan', error)
+        reportFault('voice.voiceSession.wakeToTranscriptSpan', error)
         // swallowed — see recordStt above
       }
       commandListenStart = null

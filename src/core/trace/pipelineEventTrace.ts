@@ -102,6 +102,7 @@ export function createPipelineEventTraceWriter(deps: {
         ...pipelineEventTraceBody(event),
       }
       deps.sink.write(record)
+    // eslint-disable-next-line no-restricted-syntax -- a trace writer's own guard: reporting here would re-enter the write that failed
     } catch {
       // A failed trace must never break the event it is recording.
     }

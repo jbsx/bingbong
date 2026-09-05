@@ -31,7 +31,7 @@ function parseRecord(line: string): PerfSpanRecord | null {
   try {
     parsed = JSON.parse(line)
   } catch (error) {
-    reportFault('perf.collect.parseRecord', error)
+    reportFault('perf.collectPerfRecords.parseRecord', error)
     return null
   }
   if (typeof parsed !== 'object' || parsed === null) return null
@@ -48,7 +48,7 @@ export function collectPerfRecords(logsDir: string): PerfLogCollection {
   try {
     names = readdirSync(logsDir).filter((name) => PERF_FILE_PATTERN.test(name)).sort()
   } catch (error) {
-    reportFault('perf.collect.listFiles', error)
+    reportFault('perf.collectPerfRecords.listFiles', error)
     // Missing or unreadable dir — nothing to aggregate.
     return collection
   }
@@ -58,7 +58,7 @@ export function collectPerfRecords(logsDir: string): PerfLogCollection {
     try {
       content = readFileSync(path, 'utf8')
     } catch (error) {
-      reportFault('perf.collect.readFile', error)
+      reportFault('perf.collectPerfRecords.readFile', error)
       continue
     }
     collection.filePaths.push(path)

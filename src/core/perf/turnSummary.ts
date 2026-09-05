@@ -28,7 +28,7 @@ export function emitTurnSummary(tracer: PerfTracer | undefined, turnId: string, 
     const summary = tracer.summarize(turnId)
     if (summary) print(formatTurnSummary(summary))
   } catch (error) {
-    reportFault('perf.turnSummary.emit', error, { turnId })
+    reportFault('perf.turnSummary.emitTurnSummary', error, { turnId })
     // swallowed — see above
   }
 }

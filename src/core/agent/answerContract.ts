@@ -234,7 +234,7 @@ export function parseAssistantAnswer(content: string): {
           : { ...answer, runNoteIssue: 'malformed' }
       }
     } catch (error) {
-      reportFault('agent.answerContract.parse', error)
+      reportFault('agent.answerContract.parseAssistantAnswer', error)
       // try the next candidate
     }
   }

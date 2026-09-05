@@ -187,7 +187,7 @@ export function createNoProgressRail(deps: NoProgressRailDeps = {}): NoProgressR
       const state = await settledState()
       return state === null ? null : pageFingerprint(state).state
     } catch (error) {
-      reportFault('pipeline.noProgressRail.stateFingerprint', error)
+      reportFault('pipeline.noProgressRail.currentStateFingerprint', error)
       return null
     }
   }

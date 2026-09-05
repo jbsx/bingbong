@@ -69,7 +69,7 @@ export function createLearnedTermsStore(
   try {
     state = sanitizeLearnedTermsState(JSON.parse(readFileSync(path, 'utf8')))
   } catch (error) {
-    reportFault('voice.learnedTerms.load', error)
+    reportFault('voice.learnedTermsStore.load', error)
     state = emptyLearnedTermsState()
   }
 
@@ -89,7 +89,7 @@ export function createLearnedTermsStore(
         try {
           listener(after)
         } catch (error) {
-          reportFault('voice.learnedTerms.notify', error)
+          reportFault('voice.learnedTermsStore.notify', error)
           // A throwing subscriber never breaks the ledger.
         }
       }

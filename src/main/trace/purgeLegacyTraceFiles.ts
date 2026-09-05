@@ -30,14 +30,14 @@ export function purgeLegacyTraceFiles(logsDir: string): void {
   try {
     names = readdirSync(logsDir).filter((name) => LEGACY_TRACE_FILE_PATTERN.test(name))
   } catch (error) {
-    reportFault('trace.purgeLegacy.list', error)
+    reportFault('trace.purgeLegacyTraceFiles.list', error)
     return
   }
   for (const name of names) {
     try {
       rmSync(join(logsDir, name))
     } catch (error) {
-      reportFault('trace.purgeLegacy.remove', error)
+      reportFault('trace.purgeLegacyTraceFiles.remove', error)
       // A racing deletion or an unreadable entry: nothing to recover.
     }
   }

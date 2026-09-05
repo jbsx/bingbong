@@ -147,7 +147,7 @@ export function createAdblockController(deps: AdblockControllerDeps): AdblockCon
       try {
         return { engine: deps.deserializeEngine(cached.engine), meta: cached.meta }
       } catch (error) {
-        reportFault('adblock.controller.deserializeCache', error)
+        reportFault('adblock.adblockController.loadEngine', error)
         // Corrupt cache (or a serialized engine from another library
         // version): fall through and rebuild — offline from cached texts if
         // every artifact is still fresh.

@@ -226,7 +226,6 @@ const learnedTermsStore = createLearnedTermsStore(join(app.getPath('userData'), 
 })
 registerLearnedTermsIpc(learnedTermsStore)
 
-
 // Verbose browser sub-spans (#32), opt-in behind the established env-flag
 // pattern: one shared channel between the pipeline's tool gate (which opens
 // the turn scope) and the main pane's controller (which emits). Flag off —

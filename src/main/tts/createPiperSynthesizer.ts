@@ -52,7 +52,7 @@ export function createPiperSynthesizer(deps: PiperSynthesizerDeps): SpeechSynthe
     try {
       sampleRate = sampleRateFromVoiceConfig(JSON.parse(await readFileFn(configPath)))
     } catch (error) {
-      reportFault('tts.piper.voiceConfig', error)
+      reportFault('tts.createPiperSynthesizer.voiceConfig', error)
       // Missing/malformed config — the voice default still plays correctly.
     }
 

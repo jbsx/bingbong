@@ -105,6 +105,10 @@ incidental — nothing is written unless a developer asked for it.
   Run identity in hand. The handful that do (the perf spans keyed to a turn,
   the Run's own ledger and Learned Terms calls, a worker's reserved Answer
   round) pass it, and their faults join that Run's decisions in the Run Trace.
+  The four ad-hoc lines the app already printed — `[llm] empty completion`,
+  the `[gpu]` lines, the adblock warning, the unreadable Env File — report a
+  fault as well and keep printing: the console line serves whoever is watching
+  the run, the record serves whoever reads the file afterwards.
   The two spans the ear records stay host-scoped even though a turn id has
   been minted by then: the ear runs outside every Run, its other records name
   the Active Session, and a fault about the ear belongs beside them.
@@ -131,7 +135,11 @@ incidental — nothing is written unless a developer asked for it.
   vision has three call sites (the model's `look`, the pipeline's auto-vision
   Describe, `ground_visual`'s Locate) and every one of them already holds a
   ToolContext, so the argument that justified the global for `reportFault`
-  does not apply. A request is recorded when it settles, not when it starts,
+  does not apply. Both reporters share one `routeByTurn`: the rule is a single
+  decision, and a second copy of it is a second place for it to drift. A
+  vision record names only the turn — a tool knows the turn it is executing
+  in and nothing else about the Run — because a record naming ids the caller
+  never held would be a joinable-looking lie. A request is recorded when it settles, not when it starts,
   because the Vision Deadline guarantees settlement: one line per request
   holds the ask and its outcome — `ok`, `deadline` or `error` — together, and
   a Run's vision spend is countable by reading them. A worker's Look rides

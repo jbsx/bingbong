@@ -16,29 +16,23 @@ export default defineConfig(
     // `reportFault`. The rule reads the binding, not the call — a catch
     // that handles the error meaningfully (rethrows, returns it, wraps it)
     // already binds one and passes.
+    //
     // Scoped to the two trees #186 swept; the renderer's own catches join
     // when its signals land (#187), and a test's catch reports to a sink
-    // that is never installed, so neither is in scope here.
+    // that is never installed, so neither is in scope here. The handful of
+    // genuinely exempt catches — the sink, the reporter, each trace
+    // writer's own guard — carry a disable comment at the site saying why,
+    // rather than an ignored file, so a new bare catch added anywhere in
+    // those same files is still caught.
     files: ['src/main/**/*.ts', 'src/core/**/*.ts'],
-    ignores: [
-      '**/*.test.ts',
-      // The sink itself and the reporter: a fault reported from inside the
-      // write that failed would re-enter the same failing write.
-      'src/main/logs/jsonlSink.ts',
-      'src/core/trace/fault.ts',
-      // Each trace writer's own guard, for the same reason.
-      'src/core/trace/hostTrace.ts',
-      'src/core/trace/runTrace.ts',
-      'src/core/trace/pipelineEventTrace.ts',
-      'src/core/trace/visionTrace.ts',
-    ],
+    ignores: ['**/*.test.ts'],
     rules: {
       'no-restricted-syntax': [
         'error',
         {
           selector: 'CatchClause[param=null]',
           message:
-            'A swallowed failure must still be recorded: write `catch (error) { reportFault(\'module.fn\', error) }` (#186, ADR 0031).',
+            'A swallowed failure must still be recorded: write `catch (error) { reportFault(\'area.module.fn\', error) }` (#186, ADR 0031).',
         },
       ],
     },

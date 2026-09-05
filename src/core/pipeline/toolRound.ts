@@ -7,7 +7,7 @@ import type { RiskVerdict, Tool, ToolContext } from './tool'
 import type { PerfTracer } from '../perf/perfTracer'
 import type { BrowserSubspans } from '../perf/browserSubspans'
 import { createVisionBudget, MAX_ORCHESTRATOR_VISION_CALLS } from '../agent/subagentRails'
-import { traceVisionBudget } from './visionTracing'
+import { traceVisionBudget } from './visionSeam'
 import { createBlockerGate, orchestratorBlockerEscalation, type BlockerEscalation } from './blockerGate'
 import { createSearchLoopRail } from './searchLoopRail'
 import { createNoProgressRail } from './noProgressRail'
@@ -225,7 +225,7 @@ function recordSpan(tracer: PerfTracer | undefined, turnId: string | undefined, 
   try {
     tracer.span(turnId, 'tool', durMs, { tool })
   } catch (error) {
-    reportFault('pipeline.toolRound.toolSpan', error, { turnId })
+    reportFault('pipeline.toolRound.recordSpan', error, { turnId })
     // swallowed — see above
   }
 }
@@ -263,7 +263,7 @@ export function createToolRoundExecutor(config: ToolRoundConfig): ToolRoundExecu
     try {
       return await tool.assessRisk(call)
     } catch (error) {
-      reportFault('pipeline.toolRound.assessRisk', error, { ...(turnId !== undefined ? { turnId } : {}) })
+      reportFault('pipeline.toolRound.assessCall', error, { ...(turnId !== undefined ? { turnId } : {}) })
       // Fail closed: when risk can't be assessed, ask the user.
       return { kind: 'confirm', prompt: `Run ${call.name}?` }
     }

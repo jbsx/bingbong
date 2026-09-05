@@ -73,6 +73,7 @@ export function reportFault(site: string, error: unknown, ids: FaultIds = {}): v
   if (sink === null) return
   try {
     sink({ kind: 'fault', site, ...describe(error), ...ids })
+  // eslint-disable-next-line no-restricted-syntax -- the reporter itself
   } catch {
     // A fault report that fails is not the caller's problem — it is the
     // failure this seam exists to keep from spreading.

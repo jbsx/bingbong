@@ -292,7 +292,7 @@ export function createSessionRuntime(deps: {
         at: deps.clock.now(),
       })
     } catch (error) {
-      reportFault('session.continuity.degrade', error)
+      reportFault('session.sessionRuntime.degrade', error)
       // Continuity diagnostics are maintenance-only and cannot fail a Run.
     }
   }
@@ -302,7 +302,7 @@ export function createSessionRuntime(deps: {
     model = resolveModel()
     continuityBudgets = resolveBudgets(model)
   } catch (error) {
-    reportFault('session.continuity.resolveProfile', error)
+    reportFault('session.sessionRuntime.resolveProfile', error)
     model = 'default'
     continuityBudgets = fallbackBudgets
     degrade('budget_profile_invalid')
@@ -350,7 +350,7 @@ export function createSessionRuntime(deps: {
       if (selectedModel === model) return
       selectedBudgets = resolveBudgets(selectedModel)
     } catch (error) {
-      reportFault('session.continuity.refreshProfile', error)
+      reportFault('session.sessionRuntime.refreshContinuityProfile', error)
       degrade('budget_profile_invalid')
       return
     }
@@ -543,7 +543,7 @@ export function createSessionRuntime(deps: {
         degrade('compaction_timeout')
       })
     } catch (error) {
-      reportFault('session.compaction.schedule', error)
+      reportFault('session.sessionRuntime.scheduleCompaction', error)
       degrade('compaction_failed')
       return
     }
@@ -559,7 +559,7 @@ export function createSessionRuntime(deps: {
         }),
       }))
     } catch (error) {
-      reportFault('session.compaction.start', error)
+      reportFault('session.sessionRuntime.startCompaction', error)
       finishCompaction()
       degrade('compaction_failed')
       return

@@ -4,7 +4,7 @@ import type { VisionDescriber, VisionModel } from '../ports/vision'
 import type { ToolCall } from '../ports/llm'
 import type { Tool, ToolContext } from './tool'
 import { tracedVisionRequest } from '../trace/visionTrace'
-import { traceVisionBudget, visionAgentStamp, visionSeam } from './visionTracing'
+import { traceVisionBudget, visionSeam } from './visionSeam'
 
 const IGNORED_WORDS = new Set(['a', 'an', 'the', 'on', 'in', 'at', 'of'])
 
@@ -44,7 +44,7 @@ export function createLookTool(browser: BrowserController, vision: VisionDescrib
       // by the round (`usesVision`), so this covers the request alone.
       return tracedVisionRequest(
         visionSeam(context),
-        { capability: 'describe', reason: 'look', ...visionAgentStamp(context) },
+        { capability: 'describe', reason: 'look' },
         async () =>
           vision.describe({
             image: await browser.screenshot(),
@@ -79,7 +79,7 @@ export function createVisionGroundingTools(browser: BrowserController & VisualGr
         if (!grant.ok) throw new Error(grant.reason)
         const location = await tracedVisionRequest(
           visionSeam(context),
-          { capability: 'locate', reason: 'ground_visual', target, ...visionAgentStamp(context) },
+          { capability: 'locate', reason: 'ground_visual', target },
           async () =>
             vision.locate({
               image: await browser.screenshot(),

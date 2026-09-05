@@ -109,7 +109,7 @@ function isChallengeSrc(src: string): boolean {
     const parsed = new URL(src)
     return CHALLENGE_HOST_RE.test(parsed.hostname) || /^\/recaptcha(\/|$)/i.test(parsed.pathname)
   } catch (error) {
-    reportFault('browser.blockerNudge.challengeSrc', error)
+    reportFault('browser.blockerNudge.isChallengeSrc', error)
     return false
   }
 }
@@ -122,7 +122,7 @@ function verdict(signal: BlockerSignal, url: string): BlockerClassification {
   try {
     host = new URL(url).hostname
   } catch (error) {
-    reportFault('browser.blockerNudge.verdictHost', error)
+    reportFault('browser.blockerNudge.verdict', error)
     host = ''
   }
   const nudge =
@@ -187,7 +187,7 @@ export function classifyBlockerPage(facts: BlockerPageFacts): BlockerClassificat
     pathname = parsed.pathname
     queryParams = [...parsed.searchParams.keys()]
   } catch (error) {
-    reportFault('browser.blockerNudge.classify', error)
+    reportFault('browser.blockerNudge.classifyBlockerPage', error)
     return null
   }
 

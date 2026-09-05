@@ -26,7 +26,7 @@ export function withUsageTracking(
       try {
         sink({ role, model: getModel(), usage: turn.usage })
       } catch (error) {
-        reportFault('agent.usageTracking.record', error)
+        reportFault('agent.usageTracking.withUsageTracking', error)
         // The ledger is advisory; never fail a command over bookkeeping.
       }
       return turn

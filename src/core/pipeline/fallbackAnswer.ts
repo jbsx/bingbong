@@ -93,7 +93,7 @@ function pageTitleFromOutcome(payload: string): string | undefined {
         const title = JSON.parse(navigation[1]!)
         if (typeof title === 'string' && title.trim() !== '') return boundedText(title, MAX_FALLBACK_TITLE_CHARS)
       } catch (error) {
-        reportFault('pipeline.fallbackAnswer.navigationTitle', error)
+        reportFault('pipeline.fallbackAnswer.pageTitleFromOutcome', error)
         // not a JSON title clause — keep scanning
       }
     }

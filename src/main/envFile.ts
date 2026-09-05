@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { parseDotEnv } from '../core/settings/dotEnv'
+import { reportFault } from '../core/trace/fault'
 
 // Where the app's `.env` lives (#76): next to the app, unless
 // BINGBONG_ENV_FILE points somewhere else — the seam e2e uses to stay
@@ -19,6 +20,9 @@ export function loadEnvFile(env: Record<string, string | undefined>, appPath: st
     // "debug a config that was never wrong" trap this loader exists to end.
     if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
       process.stderr.write(`bingbong: could not read ${resolveEnvFilePath(env, appPath)}: ${String(error)}\n`)
+      // Read at startup, long before any sink exists — the record is a
+      // no-op today and correct the moment the loader is called again.
+      reportFault('app.envFile.load', error)
     }
     return {}
   }

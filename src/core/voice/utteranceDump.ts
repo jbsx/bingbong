@@ -92,7 +92,7 @@ export function createUtteranceDumper(deps: {
         }
         deps.writer.writeFile(`${deps.dir}/utterance-${now()}-${String(sequence).padStart(4, '0')}.wav`, encodeUtteranceWav(pcm))
       } catch (error) {
-        reportFault('voice.utteranceDump.write', error)
+        reportFault('voice.utteranceDump.dump', error)
         // A failed dump must never break the turn it records. A dir that
         // could not be created stays dead for the whole boot (a dead dumps
         // dir degrades to a no-op, like the perf sink's dead logs dir);

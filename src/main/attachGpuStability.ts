@@ -38,7 +38,7 @@ function readRecord(path: string): string | null {
   try {
     return readFileSync(path, 'utf8')
   } catch (error) {
-    reportFault('app.gpu.readRecord', error)
+    reportFault('app.attachGpuStability.readRecord', error)
     return null
   }
 }
@@ -54,13 +54,14 @@ export function attachGpuStability(deps: GpuStabilityDeps): void {
     // Must precede app ready; module top in main/index.ts guarantees that.
     deps.app.commandLine.appendSwitch(GPU_DISABLE_SWITCH)
     log('[gpu] hardware acceleration disabled for this launch (crash-loop recovery)')
+    reportFault('app.attachGpuStability.gpuDisabled', 'hardware acceleration disabled for this launch (crash-loop recovery)')
   }
   // Each launch starts a fresh window: yesterday's loop must not outlive the
   // relaunch it caused, and a healthy launch leaves nothing behind.
   try {
     unlinkSync(deps.recordPath)
   } catch (error) {
-    reportFault('app.gpu.clearRecord', error)
+    reportFault('app.attachGpuStability.clearRecord', error)
     // absent is the common case
   }
 
@@ -74,13 +75,18 @@ export function attachGpuStability(deps: GpuStabilityDeps): void {
     try {
       writeFileSync(deps.recordPath, `${JSON.stringify(current)}\n`)
     } catch (error) {
-      reportFault('app.gpu.persistRecord', error)
+      reportFault('app.attachGpuStability.persistRecord', error)
       // A record that cannot persist just loses the next-boot fallback.
     }
-    log(`[gpu] GPU process gone (${details.reason}), ${current.deaths} in the window`)
+    const gone = `GPU process gone (${details.reason}), ${current.deaths} in the window`
+    log(`[gpu] ${gone}`)
+    // The death that takes the whole app with it leaves nothing else
+    // behind; the record outlives the console (#186).
+    reportFault('app.attachGpuStability.gpuProcessGone', gone)
     if (!disableGpu && !relaunched && isGpuCrashLoop(current)) {
       relaunched = true
       log('[gpu] GPU crash loop — relaunching with hardware acceleration disabled')
+      reportFault('app.attachGpuStability.crashLoopRelaunch', 'GPU crash loop — relaunching with hardware acceleration disabled')
       deps.app.relaunch({ args: gpuDisableRelaunchArgs(deps.argv) })
       deps.app.quit()
     }

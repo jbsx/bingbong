@@ -239,7 +239,7 @@ export function createSubagentPanePool(
       lastFrames.set(agentId, dataUrl)
       deps.onThumbnail?.(agentId, dataUrl)
     } catch (error) {
-      reportFault('subagent.panePool.thumbnail', error)
+      reportFault('subagent.subagentPanePool.thumbnail', error)
       // A renderer dying between capture and encode is not card news.
     }
   }

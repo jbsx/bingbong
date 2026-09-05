@@ -70,7 +70,7 @@ function parsePoint(answer: string, width: number, height: number): VisionLocati
   try {
     parsed = object ? JSON.parse(object) : undefined
   } catch (error) {
-    reportFault('vision.zai.parsePoint', error)
+    reportFault('vision.createZaiVisionApi.parsePoint', error)
     parsed = undefined
   }
   if (typeof parsed !== 'object' || parsed === null) {
@@ -144,7 +144,7 @@ async function readSseStream(response: Response, onFirstToken: () => void): Prom
     try {
       parsed = JSON.parse(payload)
     } catch (error) {
-      reportFault('vision.zai.readSseStream', error)
+      reportFault('vision.createZaiVisionApi.readSseStream', error)
       return
     }
     const delta = (parsed as { choices?: { delta?: { content?: unknown; reasoning_content?: unknown } }[] })

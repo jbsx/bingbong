@@ -495,7 +495,7 @@ export async function runSubagent(deps: RunSubagentDeps, options: RunSubagentOpt
       try {
         turn = await llm.complete(requestArgs())
       } catch (error) {
-        reportFault('agent.subagent.answerRound', error, { ...(options.turnId !== undefined ? { turnId: options.turnId } : {}) })
+        reportFault('agent.subagentRunner.answerRound', error, { ...(options.turnId !== undefined ? { turnId: options.turnId } : {}) })
         turn = null
       } finally {
         // The reserved Answer round thinks too, and a round that failed is

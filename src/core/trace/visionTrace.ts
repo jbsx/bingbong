@@ -16,9 +16,8 @@
 // justified by reaching every `catch {}` in the codebase.
 
 import { VisionDeadlineError } from '../ports/vision'
+import { routeByTurn, type TraceRouteDeps } from './traceRoute'
 import type { RunId, SessionId } from '../session/sessionIdentity'
-import type { HostTraceWriter } from './hostTrace'
-import { RUN_TRACE_VERSION, type RunTraceSink } from './runTrace'
 
 /** How much of a vision answer a settled record keeps. */
 export const TRACE_VISION_ANSWER_MAX_CHARS = 2_000
@@ -87,11 +86,14 @@ export interface VisionBudgetEvent {
 /** What the vision seam records, whichever family it lands in. */
 export type VisionTraceEvent = VisionRequestEvent | VisionBudgetEvent
 
-/** The identities the caller had in hand; a turn id is what routes to the Run Trace. */
+/**
+ * The identities a vision call site has in hand. Only the turn: a tool
+ * knows the turn it is executing in and nothing else about the Run, and a
+ * record naming ids the caller never held would be a joinable-looking
+ * lie. The turn is what the file joins on anyway.
+ */
 export interface VisionTraceIds {
   readonly turnId?: string
-  readonly runId?: RunId
-  readonly sessionId?: SessionId
 }
 
 /**
@@ -101,7 +103,13 @@ export interface VisionTraceIds {
  */
 export type VisionTraceReporter = (event: VisionTraceEvent, ids?: VisionTraceIds) => void
 
-/** One vision record as the Run Trace keeps it. */
+/**
+ * One vision record as the Run Trace keeps it. The Run and Session ids
+ * are the shared route's, not the seam's: a vision call site only ever
+ * hands over a turn ({@link VisionTraceIds}), so in practice they are
+ * absent — the shape says what the file may hold, not what this seam
+ * fills in.
+ */
 export type VisionRunTraceRecord = VisionTraceEvent & {
   readonly v: number
   readonly at: number
@@ -119,30 +127,11 @@ export type VisionRunTraceRecord = VisionTraceEvent & {
  * Trace off is dropped rather than smuggled into the Host Trace, for the
  * same reason a fault is.
  */
-export function createVisionTraceRouter(deps: {
-  runTrace?: RunTraceSink | null
-  hostTrace?: HostTraceWriter | null
-  now(): number
-}): VisionTraceReporter {
+export function createVisionTraceRouter(deps: TraceRouteDeps): VisionTraceReporter {
   return (event, ids) => {
     try {
-      const turnId = ids?.turnId
-      if (turnId !== undefined) {
-        const record: VisionRunTraceRecord = {
-          ...event,
-          v: RUN_TRACE_VERSION,
-          at: deps.now(),
-          turnId,
-          ...(ids?.runId !== undefined ? { runId: ids.runId } : {}),
-          ...(ids?.sessionId !== undefined ? { sessionId: ids.sessionId } : {}),
-        }
-        deps.runTrace?.write(record)
-        return
-      }
-      // No turn: the Host Trace writer stamps the clock and the Active
-      // Session itself, the only Session a record made outside a Run can
-      // honestly name.
-      deps.hostTrace?.(() => event)
+      routeByTurn(deps, event, ids ?? {})
+    // eslint-disable-next-line no-restricted-syntax -- a trace writer's own guard: reporting here would re-enter the write that failed
     } catch {
       // A failed trace must never break the request it is recording.
     }
@@ -155,7 +144,21 @@ export function tracedAnswer(answer: string): { answer: string; answerChars: num
 }
 
 /** What a request record says about the ask, before it settled. */
-export type VisionRequestDescriptor = Pick<VisionRequestEvent, 'capability' | 'reason' | 'target' | 'capMs' | 'agentId'>
+export type VisionRequestDescriptor = Pick<VisionRequestEvent, 'capability' | 'reason' | 'target' | 'capMs'>
+
+/**
+ * The reporter, the identities and the clock one vision call site records
+ * with, plus the delegated worker it belongs to when there is one. Built
+ * from a ToolContext by `visionSeam`, which is the only place that reads
+ * the context — a call site never assembles ids of its own.
+ */
+export interface VisionTraceSeam {
+  readonly trace?: VisionTraceReporter | undefined
+  readonly ids?: VisionTraceIds | undefined
+  /** The delegated worker whose call this is; absent on the Run's own. */
+  readonly agentId?: string | undefined
+  now(): number
+}
 
 /**
  * Runs one vision request and records how it settled — the one place the
@@ -164,7 +167,7 @@ export type VisionRequestDescriptor = Pick<VisionRequestEvent, 'capability' | 'r
  * record is a byproduct, never a handler.
  */
 export async function tracedVisionRequest<T>(
-  seam: { trace?: VisionTraceReporter | undefined; ids?: VisionTraceIds | undefined; now(): number },
+  seam: VisionTraceSeam,
   descriptor: VisionRequestDescriptor,
   run: () => Promise<T>,
   answerOf: (value: T) => string,
@@ -173,7 +176,16 @@ export async function tracedVisionRequest<T>(
   if (trace === undefined) return run()
   const started = seam.now()
   const settle = (settled: Pick<VisionRequestEvent, 'outcome' | 'answer' | 'answerChars' | 'message'>): void => {
-    trace({ kind: 'vision_request', ...descriptor, durationMs: seam.now() - started, ...settled }, seam.ids)
+    trace(
+      {
+        kind: 'vision_request',
+        ...descriptor,
+        ...(seam.agentId !== undefined ? { agentId: seam.agentId } : {}),
+        durationMs: seam.now() - started,
+        ...settled,
+      },
+      seam.ids,
+    )
   }
   try {
     const value = await run()

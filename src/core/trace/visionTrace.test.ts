@@ -9,10 +9,9 @@ import { describe, expect, it } from 'vitest'
 import { createHostTraceWriter, HOST_TRACE_VERSION, type HostTraceRecord } from './hostTrace'
 import { RUN_TRACE_VERSION, type TraceRecord } from './runTrace'
 import { createVisionTraceRouter, tracedAnswer, TRACE_VISION_ANSWER_MAX_CHARS, type VisionRequestEvent } from './visionTrace'
-import type { RunId, SessionId } from '../session/sessionIdentity'
+import type { SessionId } from '../session/sessionIdentity'
 
 const SESSION = 'session-1' as SessionId
-const RUN = 'run-1' as RunId
 const NOW = 1_700_000_000_000
 
 const LOOK: VisionRequestEvent = {
@@ -44,13 +43,11 @@ function harness(options: { runTrace?: boolean; hostTrace?: boolean; sessionId?:
 }
 
 describe('createVisionTraceRouter', () => {
-  it('routes a request made in a turn to the Run Trace with the ids it was given', () => {
+  it('routes a request made in a turn to the Run Trace, stamped with that turn', () => {
     const { report, runRecords, hostRecords } = harness({ runTrace: true, hostTrace: true })
-    report(LOOK, { turnId: 'turn-3', runId: RUN, sessionId: SESSION })
+    report(LOOK, { turnId: 'turn-3' })
     expect(hostRecords).toEqual([])
-    expect(runRecords).toEqual([
-      { ...LOOK, v: RUN_TRACE_VERSION, at: NOW, turnId: 'turn-3', runId: RUN, sessionId: SESSION },
-    ])
+    expect(runRecords).toEqual([{ ...LOOK, v: RUN_TRACE_VERSION, at: NOW, turnId: 'turn-3' }])
   })
 
   it('routes a request made outside any Run to the Host Trace, naming the Active Session', () => {

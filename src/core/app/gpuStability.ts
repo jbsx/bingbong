@@ -9,9 +9,9 @@
 // with the GPU disabled. Each launch starts a fresh window, so a recovered
 // machine tries hardware again on the next manual start.
 
-/** Chromium switch name (no dashes) as `appendSwitch` wants it. */
 import { reportFault } from '../trace/fault'
 
+/** Chromium switch name (no dashes) as `appendSwitch` wants it. */
 export const GPU_DISABLE_SWITCH = 'disable-gpu'
 /** Env knob: `BINGBONG_DISABLE_GPU=1` boots with the GPU process off. */
 export const GPU_DISABLE_ENV = 'BINGBONG_DISABLE_GPU'

@@ -6,7 +6,7 @@ import { AUTO_VISION_DESCRIBE_MS } from '../ports/vision'
 import { assessBrowserAction } from './riskGate'
 import { classifyBlockerPage, type BlockerClassification } from '../browser/blockerNudge'
 import { tracedVisionRequest } from '../trace/visionTrace'
-import { traceVisionBudget, visionAgentStamp, visionSeam } from './visionTracing'
+import { traceVisionBudget, visionSeam } from './visionSeam'
 import { reportFault } from '../trace/fault'
 
 const STALE_REF_RE = /ref \d+ not found.*page may have changed/i
@@ -43,7 +43,7 @@ async function withBlockerNudge(browser: BrowserController, action: () => Promis
   try {
     verdict = classifyBlockerPage(await browser.pageFacts())
   } catch (error) {
-    reportFault('pipeline.browserTools.blockerFacts', error)
+    reportFault('pipeline.browserTools.withBlockerNudge', error)
     const { url, title } = browser.state()
     verdict = classifyBlockerPage({ url: url ?? '', title: title ?? '' })
   }
@@ -86,7 +86,7 @@ async function autoDescribe(
   try {
     const description = await tracedVisionRequest(
       visionSeam(context),
-      { capability: 'describe', reason: 'auto_vision', capMs: AUTO_VISION_DESCRIBE_MS, ...visionAgentStamp(context) },
+      { capability: 'describe', reason: 'auto_vision', capMs: AUTO_VISION_DESCRIBE_MS },
       async () =>
         vision.describe({
           image: await browser.screenshot(),
@@ -157,7 +157,7 @@ async function assessRefAction(browser: BrowserController, call: ToolCall, tool:
   try {
     ref = refArg(call, tool)
   } catch (error) {
-    reportFault('pipeline.browserTools.refArg', error)
+    reportFault('pipeline.browserTools.assessRefAction', error)
     return { kind: 'allow' }
   }
   return assessBrowserAction(call, await browser.describeRef(ref))

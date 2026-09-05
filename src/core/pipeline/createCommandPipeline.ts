@@ -246,7 +246,7 @@ function logContinuityDegradation(
   try {
     ;(sink ?? ((why, id) => console.warn(`[run-journal] ${why} Run Note for ${id}`)))(reason, turnId)
   } catch (error) {
-    reportFault('pipeline.run.continuityDegraded', error, { turnId })
+    reportFault('pipeline.createCommandPipeline.continuityDegraded', error, { turnId })
     // Diagnostics cannot suppress a valid Answer or its done boundary.
   }
 }
@@ -530,7 +530,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
         try {
           deps.onObservation(record)
         } catch (error) {
-          reportFault('pipeline.run.observe', error, { turnId })
+          reportFault('pipeline.createCommandPipeline.observe', error, { turnId })
           // Diagnostics cannot fail a run.
         }
       }
@@ -675,7 +675,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
       try {
         deps.learnedTerms?.observeTranscript(command)
       } catch (error) {
-        reportFault('pipeline.learnedTerms.observeTranscript', error, { turnId })
+        reportFault('pipeline.createCommandPipeline.observeTranscript', error, { turnId })
         // swallowed — the ledger is advisory
       }
 
@@ -1290,7 +1290,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
         try {
           deps.learnedTerms?.applyProposals(finalAnswer.mishearProposals)
         } catch (error) {
-          reportFault('pipeline.learnedTerms.applyProposals', error, { turnId })
+          reportFault('pipeline.createCommandPipeline.applyProposals', error, { turnId })
           // swallowed — the ledger is advisory
         }
       }

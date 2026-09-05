@@ -22,7 +22,7 @@ export function createSettingsStore(path: string): SettingsStore {
     try {
       return sanitizeSettings(JSON.parse(readFileSync(filePath, 'utf8')))
     } catch (error) {
-      reportFault('settings.store.load', error)
+      reportFault('settings.settingsStore.load', error)
       return defaultSettings()
     }
   }
