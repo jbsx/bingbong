@@ -174,7 +174,14 @@ const server = createServer((request, response) => {
 function screenshotNameOf(pathname: string): string | null {
   const prefix = '/api/screenshot/'
   if (!pathname.startsWith(prefix)) return null
-  const name = decodeURIComponent(pathname.slice(prefix.length))
+  let name: string
+  try {
+    name = decodeURIComponent(pathname.slice(prefix.length))
+  } catch (error) {
+    // A malformed escape is a bad request, not a reason for the reader to die.
+    console.log(`trace:ui refused a screenshot name it could not decode (${String(error)})`)
+    return null
+  }
   return RUN_TRACE_SCREENSHOT_PATTERN.test(name) && !name.includes('/') && !name.includes('\\') ? name : null
 }
 

@@ -208,7 +208,7 @@ describe.skipIf(!stripsTypes)('trace:ui script', () => {
 
     // Only the family's PNGs, only by name: a record file, another file
     // in the dir, and a path that climbs out are all refused.
-    for (const name of ['secret.txt', `run-trace-${T0}-1.jsonl`, '..%2Fsecret.txt', 'run-trace-missing.png']) {
+    for (const name of ['secret.txt', `run-trace-${T0}-1.jsonl`, '..%2Fsecret.txt', 'run-trace-missing.png', '%E0']) {
       const refused = await fetch(new URL(`/api/screenshot/${name}`, started.url))
       expect(refused.status).toBe(404)
     }

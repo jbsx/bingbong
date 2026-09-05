@@ -16,7 +16,7 @@ const SCRIPT_ENVS: Record<(typeof AGENT_ROLES)[number], readonly string[]> = {
   vision: ['BINGBONG_VISION_SCRIPT', 'BINGBONG_VISION_DESCRIPTION_SCRIPT'],
 }
 
-function setEnv(env: Record<string, string | undefined>, name: string): string | undefined {
+function configuredEnv(env: Record<string, string | undefined>, name: string): string | undefined {
   const raw = env[name]
   return typeof raw === 'string' && raw.trim() !== '' ? raw.trim() : undefined
 }
@@ -24,8 +24,8 @@ function setEnv(env: Record<string, string | undefined>, name: string): string |
 export function resolveRoleModels(env: Record<string, string | undefined>): RunPlanModels {
   const models: Partial<Record<(typeof AGENT_ROLES)[number], string>> = {}
   for (const role of AGENT_ROLES) {
-    const scripted = SCRIPT_ENVS[role].some((name) => setEnv(env, name) !== undefined)
-    const model = scripted ? 'scripted' : setEnv(env, `${routingEnvPrefix(role)}_MODEL`)
+    const scripted = SCRIPT_ENVS[role].some((name) => configuredEnv(env, name) !== undefined)
+    const model = scripted ? 'scripted' : configuredEnv(env, `${routingEnvPrefix(role)}_MODEL`)
     if (model !== undefined) models[role] = model
   }
   return models

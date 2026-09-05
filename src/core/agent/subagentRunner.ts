@@ -469,7 +469,7 @@ export async function runSubagent(deps: RunSubagentDeps, options: RunSubagentOpt
   const traceLlmRound = options.traceLlmRound
   const llmRounds = traceLlmRound ? createLlmRounds() : undefined
   /** Closes one attempt — abandoned or the round's last — and records what it was sent under. */
-  const traceAttempt = (closed: LlmRound | undefined, request: LlmRequest): void => {
+  const closeLlmAttempt = (closed: LlmRound | undefined, request: LlmRequest): void => {
     if (closed === undefined || traceLlmRound === undefined) return
     traceLlmRound({
       ...closed,
@@ -505,7 +505,7 @@ export async function runSubagent(deps: RunSubagentDeps, options: RunSubagentOpt
         ? {
             onRetryAttempt: (): void => {
               if (reasoningRounds) traceThinking(reasoningRounds.takeAttempt())
-              if (llmRounds) traceAttempt(llmRounds.takeAttempt(), request)
+              if (llmRounds) closeLlmAttempt(llmRounds.takeAttempt(), request)
             },
           }
         : {}),
@@ -553,7 +553,7 @@ export async function runSubagent(deps: RunSubagentDeps, options: RunSubagentOpt
         // here, whatever the round did. Its llm_round record (#191) on the
         // same terms: usage only when the round returned.
         traceThinking(reasoningRounds?.takeRound())
-        traceAttempt(llmRounds?.takeRound(turn?.usage), answerRequest)
+        closeLlmAttempt(llmRounds?.takeRound(turn?.usage), answerRequest)
       }
       await checkpoint(options)
       if (turn !== null && turn.kind === 'answer') {
@@ -576,7 +576,7 @@ export async function runSubagent(deps: RunSubagentDeps, options: RunSubagentOpt
       // threw leaves its thinking behind like one that returned (#183) —
       // and its llm_round record (#191) says what it was sent under.
       traceThinking(reasoningRounds?.takeRound())
-      traceAttempt(llmRounds?.takeRound(usage), request)
+      closeLlmAttempt(llmRounds?.takeRound(usage), request)
     }
     await checkpoint(options)
     if (turn.kind === 'answer') {

@@ -8,6 +8,7 @@ import type {
   LlmClient,
   LlmRequest,
   LlmStreamDelta,
+  ReasoningEffort,
   ToolCall,
   ToolResult,
   ToolResultOutcome,
@@ -61,7 +62,7 @@ import {
   type EvidenceCommitInput,
 } from './evidenceCheckpoint'
 import { candidateCheckpointEvent, evidenceCheckpointEvent } from '../trace/evidenceCheckpointTrace'
-import type { RunTraceWriter } from '../trace/runTrace'
+import type { LlmRequestShape, RunTraceWriter } from '../trace/runTrace'
 import type { VisionTraceReporter } from '../trace/visionTrace'
 import { createReasoningRounds, reasoningEvent, type TracedReasoningRound } from '../trace/reasoningTrace'
 import { createLlmRounds, llmRequestShape, llmRoundEvent, type LlmRound, type TracedLlmRound } from '../trace/llmRoundTrace'
@@ -932,17 +933,16 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
           run.abortLlm = () => armedRound.abort()
           let turn: AssistantTurn
           // What this round's llm_round records carry (#191): the request's
-          // shape, counted once the request is built, and the usage of the
-          // attempt that returned. Both read inside the writer's guard.
-          let roundShape: ReturnType<typeof llmRequestShape> | undefined
+          // shape and rung as it was sent — captured once the request is
+          // built, so an attempt closed after an escalation still says what
+          // it went out under — and the usage of the attempt that returned.
+          let sentRound: { readonly request: LlmRequestShape; readonly reasoningEffort: ReasoningEffort } | undefined
           let roundUsage: AssistantTurn['usage']
           const closeLlmAttempt = (closed: LlmRound): void => {
-            writeLlmRound?.({
-              ...closed,
-              role: 'orchestrator',
-              reasoningEffort: effortEpoch.reasoningEffort,
-              request: roundShape ?? { toolResults: toolResults.length, chars: 0 },
-            })
+            // The request is built before any attempt can close, so this
+            // is the llmRounds gate restated, never a missing shape.
+            if (sentRound === undefined) return
+            writeLlmRound?.({ ...closed, role: 'orchestrator', ...sentRound })
           }
           try {
             const request: LlmRequest = {
@@ -1021,7 +1021,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
                 : {}),
               signal: armedRound.signal,
             }
-            if (llmRounds) roundShape = llmRequestShape(request)
+            if (llmRounds) sentRound = { request: llmRequestShape(request), reasoningEffort: request.reasoningEffort ?? effortEpoch.reasoningEffort }
             turn = await llm.complete(request)
             roundUsage = turn.usage
           } catch (err) {

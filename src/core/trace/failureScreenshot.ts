@@ -13,10 +13,11 @@
 
 import type { PipelineEvent } from '../pipeline/events'
 import type { RunId } from '../session/sessionIdentity'
-import type { FailureScreenshotCause, FailureScreenshotEvent } from './runTrace'
+import { FAILURE_SCREENSHOT_RAIL_CAUSES, type FailureScreenshotCause, type FailureScreenshotEvent } from './runTrace'
 
-/** The Finalization Causes that earn a screenshot: the rails a post mortem reads. */
-export const FAILURE_SCREENSHOT_CAUSES = ['no_progress', 'deadline_reached', 'budget_exhausted'] as const
+function isRailCause(cause: string): cause is (typeof FAILURE_SCREENSHOT_RAIL_CAUSES)[number] {
+  return (FAILURE_SCREENSHOT_RAIL_CAUSES as readonly string[]).includes(cause)
+}
 
 /**
  * Whether one `done` earns a screenshot, and under which cause: a failed
@@ -28,9 +29,7 @@ export function failureScreenshotCause(event: PipelineEvent): FailureScreenshotC
   if (event.type !== 'done') return null
   if (event.outcome === 'failed') return 'failed'
   const cause = event.finalizationCause
-  return cause !== undefined && (FAILURE_SCREENSHOT_CAUSES as readonly string[]).includes(cause)
-    ? (cause as FailureScreenshotCause)
-    : null
+  return cause !== undefined && isRailCause(cause) ? cause : null
 }
 
 /** What the file the capture wrote is: where, and how big. */

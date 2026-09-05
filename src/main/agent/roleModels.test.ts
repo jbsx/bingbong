@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { resolveRoleModels } from './roleModels'
 
-describe('resolveRoleModels (#191)', () => {
+describe('the models a run_plan record names (#191)', () => {
   it('names the model each role is routed to, from the routing config', () => {
     expect(
       resolveRoleModels({

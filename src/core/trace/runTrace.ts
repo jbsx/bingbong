@@ -42,11 +42,14 @@ export const TRACE_TOOL_RESULT_MAX_CHARS = 8_000
 
 /**
  * The tools whose result a `pipeline_event` record keeps whole (#191): a
- * page snapshot is ~40 KB and the ref the model clicked is usually past
- * the 8 000-char cut, which made the one record a browser post mortem
+ * `read_page` snapshot is ~40 KB and the ref the model clicked is usually
+ * past the 8 000-char cut, which made the one record a browser post mortem
  * reads most the one it could not read. Twenty reads are ~800 KB against
  * the roll, which the purge already bounds; if the roll proves too small
  * the answer is a bigger roll for the family, never a cut snapshot.
+ * `ground_visual` is listed because the issue names it; its result today
+ * is one "use ref N" line, so the exemption costs nothing and holds if it
+ * ever returns the snapshot it grounded against.
  */
 export const TRACE_WHOLE_RESULT_TOOLS: ReadonlySet<string> = new Set(['read_page', 'ground_visual'])
 
@@ -203,8 +206,11 @@ export interface FailureScreenshotEvent {
   readonly bytes: number
 }
 
-/** What earns a failure screenshot: a failed outcome, or a rail-caused finalization. */
-export type FailureScreenshotCause = 'failed' | 'no_progress' | 'deadline_reached' | 'budget_exhausted'
+/** The Finalization Causes that earn a screenshot (#191): the rails a post mortem reads. */
+export const FAILURE_SCREENSHOT_RAIL_CAUSES = ['no_progress', 'deadline_reached', 'budget_exhausted'] as const
+
+/** What earns a failure screenshot: a failed outcome, or a finalization on one of those rails. */
+export type FailureScreenshotCause = 'failed' | (typeof FAILURE_SCREENSHOT_RAIL_CAUSES)[number]
 
 /**
  * One PipelineEvent as it was published (#185): the event object itself,
