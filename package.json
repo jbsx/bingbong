@@ -26,14 +26,12 @@
   "dependencies": {
     "@ghostery/adblocker-electron": "^2.18.2",
     "@modelcontextprotocol/sdk": "1.26.0",
-    "better-sqlite3": "^13.0.3",
     "onnxruntime-node": "^1.27.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "react-markdown": "^10.1.0"
   },
   "devDependencies": {
-    "@types/better-sqlite3": "^9.6.0",
     "@types/node": "^26.2.0",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.4",
@@ -48,7 +46,6 @@
   },
   "pnpm": {
     "onlyBuiltDependencies": [
-      "better-sqlite3",
       "onnxruntime-node"
     ]
   }
