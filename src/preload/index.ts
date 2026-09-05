@@ -8,6 +8,8 @@ import { LEARNED_TERMS_IPC } from '../core/voice/learnedTermsIpcChannels'
 import { SUBAGENT_IPC } from '../core/agent/subagentIpcChannels'
 import { USAGE_IPC } from '../core/settings/usageIpcChannels'
 import { HISTORY_IPC } from '../core/history/ipcChannels'
+import { DIAGNOSTICS_IPC } from '../core/trace/diagnosticsIpcChannels'
+import type { RendererReport } from '../core/trace/rendererTrace'
 import { PANEL_IPC } from '../core/panel/ipcChannels'
 import type { FeedPanelMode, FeedPanelState } from '../core/panel/feedPanelState'
 import { resolveLaunchConfig } from '../core/app/launchConfig'
@@ -133,6 +135,12 @@ contextBridge.exposeInMainWorld('bingbong', {
     recentSessions: (): Promise<SessionRecord[]> => ipcRenderer.invoke(HISTORY_IPC.recentSessions),
     recordVoiceError: (message: string): Promise<number | null> =>
       ipcRenderer.invoke(HISTORY_IPC.recordVoiceError, message),
+  },
+  diagnostics: {
+    /** One renderer record for the Host Trace (#187) — dropped unless a developer opted in. */
+    report: (event: RendererReport): void => {
+      ipcRenderer.send(DIAGNOSTICS_IPC.report, event)
+    },
   },
   feedPanel: {
     getState: (): Promise<FeedPanelState | null> => ipcRenderer.invoke(PANEL_IPC.get),

@@ -162,6 +162,23 @@ describe('feed projection', () => {
     expect(outline(feed.entries())).toEqual([{ kind: 'command', role: USER, text: 'new session', detail: false }])
   })
 
+  it('reports how many entries the wipe dropped, and only for a wipe (#187)', () => {
+    const cleared: number[] = []
+    const feed = createFeedProjection({ onCleared: (entries) => cleared.push(entries) })
+    const first = { sessionId: 'session-1', sessionGeneration: 0 } as const
+    const foreign = { sessionId: 'session-2', sessionGeneration: 1 } as const
+    feed.onEvent({ type: 'session_started', at: 500, ...first } as PipelineEvent)
+    feed.onEvent({ ...command('one', 1_000), ...first } as PipelineEvent)
+    feed.onEvent({ ...retry(2, 2_000), ...first } as PipelineEvent)
+    // A foreign end is ignored, so it wipes nothing and reports nothing.
+    feed.onEvent({ type: 'session_ended', reason: 'reset', at: 3_000, ...foreign } as PipelineEvent)
+    expect(cleared).toEqual([])
+
+    feed.onEvent({ type: 'session_ended', reason: 'reset', at: 4_000, ...first } as PipelineEvent)
+    expect(cleared).toEqual([2])
+    expect(feed.entries()).toEqual([])
+  })
+
   it('renders nothing before the first Session opens — boot has no Session', () => {
     const feed = createFeedProjection()
     feed.onEvent(command('pre-session work', 1_000))

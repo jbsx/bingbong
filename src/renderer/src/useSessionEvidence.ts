@@ -6,6 +6,7 @@ import {
 } from '../../core/session/evidenceIpcChannels'
 import { createEvidenceView, type EvidenceViewState } from '../../core/session/evidenceView'
 import { useSessionAdoption } from './useSessionAdoption'
+import { reportEvidenceRendered, reportRendererFault } from './diagnostics'
 
 // The Evidence Browser's renderer wiring (#139), shared by both
 // Session-bearing pages: the dashboard keeps the live count honest and
@@ -28,10 +29,18 @@ export function useSessionEvidence(): EvidenceViewState {
     // Stamp the read at issue time: a response landing after a Session
     // boundary crossed the view's clear and is discarded there.
     const stamp = view.current.beginRead()
-    void window.bingbong.evidence.get().then((payload) => {
-      view.current.applyResponse(isSessionEvidencePayload(payload) ? payload : null, stamp)
-      sync()
-    })
+    void window.bingbong.evidence
+      .get()
+      .then((payload) => {
+        const answer = isSessionEvidencePayload(payload) ? payload : null
+        view.current.applyResponse(answer, stamp)
+        sync()
+        // The renderer half of #181's record: main says what it answered
+        // with, this says what survived the fold. A correct store beside
+        // an empty panel is the gap between the two counts.
+        reportEvidenceRendered(answer, view.current.state())
+      })
+      .catch((error: unknown) => reportRendererFault('evidence.read', error))
   }
 
   useEffect(() => {

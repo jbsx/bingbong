@@ -11,6 +11,7 @@ import type { SubmissionFeedback } from '../core/session/submissionFeedback'
 import type { SessionAdoptionPayload, SessionDecisionRequest } from '../core/session/ipcChannels'
 import type { SessionEvidenceChangePayload, SessionEvidencePayload } from '../core/session/evidenceIpcChannels'
 import type { EvidenceBrowserView } from '../core/session/evidenceBrowserView'
+import type { RendererReport } from '../core/trace/rendererTrace'
 
 export type { BrowserPaneState, PaneRect }
 export type { PipelineEvent }
@@ -23,6 +24,7 @@ export type { RecordedEntry, RunRecord, SessionRecord }
 export type { SubmissionFeedback }
 export type { SessionEvidenceChangePayload, SessionEvidencePayload }
 export type { EvidenceBrowserView }
+export type { RendererReport }
 export interface BingbongBrowserApi {
   navigate(input: string): Promise<boolean>
   goBack(): Promise<void>
@@ -141,6 +143,16 @@ export interface BingbongHistoryApi {
   recordVoiceError(message: string): Promise<number | null>
 }
 
+export interface BingbongDiagnosticsApi {
+  /**
+   * Report one thing this page did, for the Host Trace (#187, ADR 0031).
+   * Fire-and-forget by design: main rebuilds the record from declared
+   * fields and drops it entirely unless `BINGBONG_HOST_TRACE=1`, so a
+   * page must never wait on — or branch on — its own diagnostics.
+   */
+  report(event: RendererReport): void
+}
+
 export interface BingbongFeedPanelApi {
   /** The current folded state — pulled on mount; changes arrive via onState. */
   getState(): Promise<FeedPanelState | null>
@@ -174,6 +186,7 @@ export interface BingbongApi {
   learnedTerms: BingbongLearnedTermsApi
   voice: BingbongVoiceApi
   history: BingbongHistoryApi
+  diagnostics: BingbongDiagnosticsApi
   feedPanel: BingbongFeedPanelApi
 }
 

@@ -9,12 +9,14 @@
 // Slice 1 carried only the fault records. #186 widens the family to the
 // voice pipeline — the whole ear runs outside any Run, so every one of
 // its records is host-scoped by the boundary rule — and to the vision
-// records, which land here only when no turn named them. The renderer's
-// signals (#187) widen it again from here; the record shape, the writer
-// and the file family are already theirs.
+// records, which land here only when no turn named them. #187 widens it
+// once more to the renderer's own signals, which arrive over an IPC
+// channel rather than from a call in this process: a page holds no turn
+// identity, so every one of them is host-scoped too.
 
 import type { SessionId } from '../session/sessionIdentity'
 import type { FaultEvent } from './fault'
+import type { RendererTraceEvent } from './rendererTrace'
 import type { VisionTraceEvent } from './visionTrace'
 import type { VoiceTraceEvent } from './voiceTrace'
 
@@ -22,7 +24,7 @@ import type { VoiceTraceEvent } from './voiceTrace'
 export const HOST_TRACE_VERSION = 1
 
 /** One thing the app did outside a Run. Widened by the later slices. */
-export type HostTraceEvent = FaultEvent | VoiceTraceEvent | VisionTraceEvent
+export type HostTraceEvent = FaultEvent | VoiceTraceEvent | VisionTraceEvent | RendererTraceEvent
 
 /** One line of a Host Trace file. */
 export type HostTraceRecord = HostTraceEvent & {

@@ -9,6 +9,7 @@ import {
   readStoredFeedWidth,
   type FeedPanelState,
 } from '../../core/panel/feedPanelState'
+import { reportFeedPanelView, reportRendererFault } from './diagnostics'
 
 // The dashboard half of the feed panel (#45): the panel itself renders in
 // its own overlay webContents; the dashboard owns the layout slot its rect
@@ -39,17 +40,25 @@ export function useFeedPanel(): FeedPanelState {
     window.bingbong.feedPanel.setWidth(storedWidth())
     let cancelled = false
     void window.bingbong.feedPanel.getState().then((pulled) => {
-      if (!cancelled && pulled) setState(pulled)
+      if (!cancelled && pulled) {
+        setState(pulled)
+        reportFeedPanelView(pulled)
+      }
     })
     const unsubscribe = window.bingbong.feedPanel.onState((next) => {
       setState(next)
+      // Open/close and mode changes are recorded (#187); the width is
+      // not — a drag broadcasts per frame, and the record is about the
+      // panel being there, not about a pointer.
+      reportFeedPanelView(next)
       // Mirror every layout change back to storage, whoever made it
       // (header button, shortcut, drag handle, or a set_panel tool).
       try {
         window.localStorage.setItem(FEED_MODE_STORAGE_KEY, next.mode)
         window.localStorage.setItem(FEED_WIDTH_STORAGE_KEY, String(next.width))
-      } catch {
+      } catch (error) {
         // Private-browsing-style storage failures just lose persistence.
+        reportRendererFault('feedPanel.persistLayout', error)
       }
     })
     return () => {

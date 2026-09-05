@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { VoiceHeardEvent, VoiceListenReason, VoiceState } from '../../core/voice/ipcChannels'
 import { VAD_FRAME_SAMPLES } from '../../core/voice/vadEndpointing'
+import { reportRendererFault } from './diagnostics'
 
 const TARGET_RATE = 16000
 const FRAME = VAD_FRAME_SAMPLES
@@ -33,7 +34,8 @@ async function preferC920(micId: string): Promise<string> {
     const devices = await navigator.mediaDevices.enumerateDevices()
     const c920 = devices.find((device) => device.kind === 'audioinput' && /c920/i.test(device.label))
     return c920?.deviceId ?? micId
-  } catch {
+  } catch (error) {
+    reportRendererFault('voice.enumerateDevices', error)
     return micId
   }
 }
@@ -83,7 +85,8 @@ export function useVoice(deps: UseVoiceDeps): VoiceApi {
       const context = new AudioContext({ sampleRate: TARGET_RATE })
       try {
         await context.audioWorklet.addModule(new URL('./micCaptureWorklet.js', import.meta.url))
-      } catch {
+      } catch (error) {
+        reportRendererFault('voice.audioWorklet.addModule', error)
         stream.getTracks().forEach((track) => track.stop())
         await context.close()
         throw new Error('mic capture worklet failed to load')
@@ -118,9 +121,13 @@ export function useVoice(deps: UseVoiceDeps): VoiceApi {
         },
       }
     } catch (err) {
+      // The one renderer→history call the app had (#187): a mic failure
+      // is a swallowed failure like any other, so it now takes the
+      // diagnostics channel and the Feed line stamps its own clock —
+      // the shared timestamp only ever existed to join the two.
+      reportRendererFault('voice.startCapture', err)
       const message = err instanceof Error ? err.message : String(err)
-      const at = await window.bingbong.history.recordVoiceError(message).catch(() => null)
-      depsRef.current.onError(message, at ?? Date.now())
+      depsRef.current.onError(message, Date.now())
       await window.bingbong.voice.disarm()
     } finally {
       startingRef.current = false

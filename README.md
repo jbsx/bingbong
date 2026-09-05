@@ -129,7 +129,8 @@ BINGBONG_WAKE_HOLD_ON_MODEL=…          # override the "hold on" head path
 BINGBONG_RUN_TRACE=1                   # write the Run Trace (run-trace-*.jsonl): a Run's
                                        # decisions, evidence grading, per-round reasoning
 BINGBONG_HOST_TRACE=1                  # write the Host Trace (host-trace-*.jsonl): what the
-                                       # app does outside any Run (producers land in #185-#187)
+                                       # app does outside any Run — the voice pipeline, the
+                                       # renderer's own signals, every swallowed failure
 BINGBONG_BROWSER_SUBSPANS=1            # verbose sub-spans inside browser actions (perf log)
 BINGBONG_AUDIO_DUMP=1                  # dump each utterance as a WAV for offline STT A/B
 
@@ -179,9 +180,14 @@ one. Both land in the same `logs/` dir on the same 5 MB roll and 7-day purge,
 both are read with `jq`, and no view in the app renders either. A deployed
 Kiosk sets neither.
 
-The Host Trace is wired but has no producers yet: the voice and vision events
-and the swallowed failures it is meant to hold are routed into it by #185–#187,
-so today the flag is on and the file stays absent.
+The Host Trace holds what happens outside a Run: the voice pipeline end to end
+(the wake detection that fired, the utterance's endpoint, the transcript and
+the Learned Terms it hit, every spoken and every barge-in-dropped line), the
+renderer's own signals (unhandled page errors, what cleared the Feed, the panel
+opening and closing, how much evidence each view rendered of what it was
+given, and each page's Session re-adoption), and every failure the app
+swallows. Renderer records carry ids and counts only — the page never writes
+Feed or evidence text into the file.
 
 `BINGBONG_AUDIO_DUMP=1` writes every detected utterance to `audio-dumps/`
 under the profile as a 16 kHz mono WAV — the artifact shape offline STT

@@ -4,6 +4,7 @@ import type { VoiceErrorEvent, VoiceHeardEvent } from '../../../core/voice/ipcCh
 import { defaultFeedPanelWidth, type FeedPanelState } from '../../../core/panel/feedPanelState'
 import { useFeedProjection } from '../useFeedProjection'
 import { useSessionAdoption } from '../useSessionAdoption'
+import { reportFeedPanelView } from '../diagnostics'
 
 // The overlay half of the feed panel (#45): the shared feed projection
 // (same as the dashboard's) fed from the panel's own webContents
@@ -51,9 +52,18 @@ export function usePanelState(): FeedPanelState {
   useEffect(() => {
     let cancelled = false
     void window.bingbong.feedPanel.getState().then((pulled) => {
-      if (!cancelled && pulled) setState(pulled)
+      if (!cancelled && pulled) {
+        setState(pulled)
+        reportFeedPanelView(pulled)
+      }
     })
-    const unsubscribe = window.bingbong.feedPanel.onState(setState)
+    // The panel page records what it saw of its own open state (#187):
+    // the two pages hear the same fold, and a panel that is open to main
+    // while its page believes otherwise is the bug this separates.
+    const unsubscribe = window.bingbong.feedPanel.onState((next) => {
+      setState(next)
+      reportFeedPanelView(next)
+    })
     return () => {
       cancelled = true
       unsubscribe()

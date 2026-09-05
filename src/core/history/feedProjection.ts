@@ -84,7 +84,17 @@ export interface FeedEntry {
 /** Detail entries are trimmed beyond this (~500, spec #42). */
 export const MAX_DETAIL_ENTRIES = 500
 
-export function createFeedProjection(): {
+export function createFeedProjection(deps?: {
+  /**
+   * Called with how many entries a wipe dropped (#187). "Something
+   * cleared the activity feed" is a bug report no file could answer, and
+   * the wipe is invisible from outside the projection — only it knows a
+   * matching session_ended landed and how much went with it. Counts
+   * only: the entries themselves are already in the published stream's
+   * record (#185), and this is a diagnostic, not a second copy.
+   */
+  onCleared?(entries: number): void
+}): {
   onEvent(event: PipelineEvent): void
   /**
    * Re-adopts the live Session by identity (ADR 0017): a page that lost
@@ -236,6 +246,7 @@ export function createFeedProjection(): {
   }
 
   const clearSession = (): void => {
+    deps?.onCleared?.(feed.length)
     feed = []
     liveRunId = null
     displayedTurns.clear()

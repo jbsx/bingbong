@@ -50,6 +50,7 @@ import { browserSubspansEnabled, createBrowserSubspans } from '../core/perf/brow
 import { createJsonlPerfSink } from './perf/jsonlPerfSink'
 import { createJsonlRunTraceSink } from './trace/jsonlRunTraceSink'
 import { createJsonlHostTraceSink } from './trace/jsonlHostTraceSink'
+import { registerDiagnosticsIpc } from './trace/registerDiagnosticsIpc'
 import { purgeLegacyTraceFiles } from './trace/purgeLegacyTraceFiles'
 import {
   evidenceAcceptedEntry,
@@ -711,6 +712,11 @@ app.whenReady().then(async () => {
   })
   registerTtsIpc({ voicesDir: () => piperConfig.voicesDir })
   registerVoiceIpc()
+  // The renderer's own signals (#187): registered whatever the flag says,
+  // because the preload always exposes the call — with the Host Trace off
+  // the handler drops every report instead of the page discovering there
+  // is nothing at the other end.
+  registerDiagnosticsIpc({ hostTrace: traceHost })
   registerSessionIpc({ trace: traceSession })
 
   // Auth-host identity rewrite (ADR 0018): before the adblocker so both own

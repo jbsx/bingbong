@@ -17,14 +17,16 @@ export default defineConfig(
     // that handles the error meaningfully (rethrows, returns it, wraps it)
     // already binds one and passes.
     //
-    // Scoped to the two trees #186 swept; the renderer's own catches join
-    // when its signals land (#187), and a test's catch reports to a sink
-    // that is never installed, so neither is in scope here. The handful of
-    // genuinely exempt catches — the sink, the reporter, each trace
-    // writer's own guard — carry a disable comment at the site saying why,
-    // rather than an ignored file, so a new bare catch added anywhere in
-    // those same files is still caught.
-    files: ['src/main/**/*.ts', 'src/core/**/*.ts'],
+    // #186 swept main and core; the renderer joins here (#187), now that
+    // it has a channel of its own to report down — `reportRendererFault`
+    // is the page's `reportFault`, and with no diagnostics installed it
+    // does nothing in exactly the same way. A test's catch reports to a
+    // sink that is never installed, so tests stay out of scope. The
+    // handful of genuinely exempt catches — the sink, the reporter, each
+    // trace writer's own guard — carry a disable comment at the site
+    // saying why, rather than an ignored file, so a new bare catch added
+    // anywhere in those same files is still caught.
+    files: ['src/main/**/*.ts', 'src/core/**/*.ts', 'src/renderer/**/*.ts', 'src/renderer/**/*.tsx'],
     ignores: ['**/*.test.ts'],
     rules: {
       'no-restricted-syntax': [

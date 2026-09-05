@@ -1,9 +1,10 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { PipelineEvent } from '../../core/pipeline/events'
 import type { VoiceHeardEvent } from '../../core/voice/ipcChannels'
 import { describeHeard } from '../../core/voice/heardDisplay'
 import { createFeedProjection, type FeedEntry } from '../../core/history/feedProjection'
 import type { SessionAdoptionPayload } from '../../core/session/ipcChannels'
+import { reportFeedCleared } from './diagnostics'
 
 // The feed projection's renderer wiring (#44, #45): one launch-local
 // projection instance plus the voice-half appends. Shared by the dashboard
@@ -26,7 +27,18 @@ export interface FeedProjection {
 
 export function useFeedProjection(): FeedProjection {
   const [state, setState] = useState<{ feed: FeedEntry[]; liveRunId: string | null }>({ feed: [], liveRunId: null })
-  const projection = useRef(createFeedProjection())
+  // The Session boundary's wipe is recorded where it happens (#187); the
+  // fresh projection itself is recorded below, because a reloaded page
+  // and a wiped one look identical to whoever is looking at the feed.
+  const projection = useRef(createFeedProjection({ onCleared: (entries) => reportFeedCleared('session_ended', entries) }))
+  const reportedLoad = useRef(false)
+  useEffect(() => {
+    // Once per page, not once per effect run: the projection outlives a
+    // StrictMode remount, so a second record would describe nothing.
+    if (reportedLoad.current) return
+    reportedLoad.current = true
+    reportFeedCleared('page_load', projection.current.entries().length)
+  }, [])
   // One sync point for every mutator: entries + the live run (#55) move
   // together, and each mutator closes over only stable things (the ref,
   // setState) so the first-render closures subscribers capture stay live.

@@ -89,10 +89,11 @@ incidental — nothing is written unless a developer asked for it.
   `catch (error) { reportFault('module.fn', error) }` under a stable dotted
   site name, and an ESLint rule — `CatchClause[param=null]` — keeps it that
   way, so the convention is enforced by `pnpm lint` rather than by review.
-  Three kinds of site are exempt and say why in the config: the rotating sink
+  Two kinds of site are exempt and say why at the site: the rotating sink
   and each trace writer's own guard (a fault reported from inside the write
-  that failed would re-enter the same failing write), the reporter itself, and
-  the renderer, whose catches join when its signals land (#187). The rule is
+  that failed would re-enter the same failing write), and each reporter
+  itself. The renderer was exempt until it had somewhere to report to; #187
+  gave it one, and the rule covers it now. The rule is
   deliberately about the binding, not about the call: a catch that already
   handles its error — rethrows, returns it, wraps it — binds one and passes
   untouched. The cost is real and accepted: predicates that swallow by
@@ -145,6 +146,57 @@ incidental — nothing is written unless a developer asked for it.
   a Run's vision spend is countable by reading them. A worker's Look rides
   the spawn like its reasoning (#183) and its Tool Round events (#185), so it
   lands under the parent Run's turn stamped with the worker's `agentId`.
+- **The renderer gets a channel of its own, and five records on it (#187).**
+  `window.bingbong.diagnostics.report(event)` → one IPC send → the Host Trace,
+  stamped main-side with the Active Session. Every renderer record is
+  host-scoped by the boundary rule for a structural reason rather than a
+  circumstantial one: a page holds no turn identity at all, so there is never
+  a Run for one of its records to join. The five are the renderer's unhandled
+  errors and rejections (as `fault`, under a `renderer.<surface>.<seam>` site),
+  `feed_cleared` with its cause, `feed_panel` open/close, `evidence_rendered`,
+  and `session_readopt`. They name the page they came from — `dashboard` or
+  `feed_panel`, the same two words the Run Trace's `requester` already uses —
+  because the two pages fail, clear and re-adopt independently and a record
+  that could not tell them apart would answer neither.
+- **A renderer record carries ids and counts, and main rebuilds it.** The
+  published stream's tap (#185) already holds every Feed Entry's text and the
+  store (#181) already holds every Observation's, so a renderer record that
+  repeated either would be a second copy of the user's own words written from
+  the least trusted side of the app. That is enforced structurally rather than
+  by convention: `rendererReportOf` *rebuilds* each record main-side out of
+  the declared fields, so a field a future renderer bug adds cannot ride into
+  the file, and a fault whose site does not start with `renderer.` is refused
+  outright — a page may say a page failed, not that the voice pipeline did.
+  A malformed report is dropped in silence, because a report that fails to
+  parse must never become a second failure.
+- **`evidence_rendered` is the other half of `evidence_answered`.** #181
+  records what main handed each view; this records what the view kept, as the
+  same three counts. The pair is the diagnosis "evidence is either not saved
+  or not rendered" was missing: equal counts mean a correct store reached a
+  correct view; `received` above `rendered` means the fold discarded the
+  answer — a foreign Session, or a read that crossed a clear — rather than the
+  store having lost anything. They land in different files, which the boundary
+  rule requires and the shared `requester`/`surface` vocabulary makes joinable.
+- **The Feed's wipe is recorded where only the projection can see it.** The
+  projection takes an `onCleared` callback rather than the renderer inferring
+  a wipe from an empty list, because a Session boundary's wipe and a reloaded
+  page's fresh projection are indistinguishable from outside — and both are
+  the bug report "something cleared the activity feed", which is why
+  `page_load` is a cause beside `session_ended`. The panel record is written
+  on a change to open/mode only: the fold broadcasts every frame of a width
+  drag, and a record per frame would be a file about a mouse.
+- **`recordVoiceError` becomes a fault (#187).** It was the one renderer→history
+  IPC in the app, and a mic failure is a swallowed failure like every other one
+  #186 swept. The Feed line it produced now stamps its own clock — the shared
+  timestamp existed only to join the line to a history row nobody read. The
+  history API keeps the dead method until the retirement slice (#188) deletes it.
+- **The renderer joins the swallowed-catch rule.** With a reporter of its own —
+  `reportRendererFault`, the page's `reportFault`, no-op until the page installs
+  diagnostics at its entry point — the ESLint `CatchClause[param=null]` rule now
+  covers `src/renderer` as well, and the exemption this ADR granted it is spent.
+  The surface is a module-level binding installed once at the page edge for the
+  same reason the fault sink is: the seams most worth hearing from are the ones
+  nobody would remember to wire.
 - **Recorded History is retired rather than widened.** The obvious way to widen
   diagnostics was to record more into the store that already writes by default.
   Nothing read it: no view opens it, no Session restores from it, and every
@@ -172,6 +224,13 @@ threading a fault reporter through every call site instead of the global
 (the change lands in every seam it touches, for a call that is allowed to do
 nothing); a vision *family* of its own beside the two (a Look is a Run's
 decision, and a third file would split a Run's records across two of them);
-and recording a vision request at its start as well as its settlement (the
+recording a vision request at its start as well as its settlement (the
 Vision Deadline guarantees settlement, so the second record would only ever
-restate the first).
+restate the first); forwarding the renderer's reported object to the sink
+instead of rebuilding it main-side (the page is the least trusted writer in
+the app and the closest to the user's own words, and a forwarded object is a
+promise kept by convention); a `renderer_*` prefix on every kind (the record
+already names its surface, and `feed_cleared` says its subject the way
+`voice_wake` does); and a second record per re-adoption subscriber rather than
+one per page (both Session-bearing hooks adopt through the same hook, and the
+record is about the page).

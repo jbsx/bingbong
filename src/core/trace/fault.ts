@@ -54,8 +54,14 @@ export function setFaultSink(sink: FaultSink | null): void {
   installed = sink
 }
 
-/** What a thrown value says about itself, whatever kind of value it is. */
-function describe(error: unknown): { message: string; stack?: string } {
+/**
+ * What a thrown value says about itself, whatever kind of value it is.
+ * Exported because the renderer describes its own faults the same way
+ * (#187) before sending them over the diagnostics channel — a second
+ * copy of this would be a second answer to "what does a non-Error throw
+ * look like in the file".
+ */
+export function describeFault(error: unknown): { message: string; stack?: string } {
   if (error instanceof Error) {
     return { message: error.message, ...(error.stack !== undefined ? { stack: error.stack } : {}) }
   }
@@ -72,7 +78,7 @@ export function reportFault(site: string, error: unknown, ids: FaultIds = {}): v
   const sink = installed
   if (sink === null) return
   try {
-    sink({ kind: 'fault', site, ...describe(error), ...ids })
+    sink({ kind: 'fault', site, ...describeFault(error), ...ids })
   // eslint-disable-next-line no-restricted-syntax -- the reporter itself
   } catch {
     // A fault report that fails is not the caller's problem — it is the

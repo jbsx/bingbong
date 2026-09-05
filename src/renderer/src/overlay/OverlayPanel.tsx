@@ -3,6 +3,7 @@ import { ActivityFeed } from '../ActivityFeed'
 import { evidenceTotal } from '../../../core/session/evidenceBrowser'
 import { overlaySlotContent } from '../../../core/panel/peekCardState'
 import { PeekCard } from '../PeekCard'
+import { reportRendererFault } from '../diagnostics'
 import { useEvidenceBrowserView } from '../useEvidenceBrowserView'
 import { usePeekCard } from '../usePeekCard'
 import { useSessionEvidence } from '../useSessionEvidence'
@@ -107,8 +108,9 @@ export function OverlayPanel() {
       // Best-effort for input paths that honor capture; the window
       // listeners above are the ones doing the work.
       event.currentTarget.setPointerCapture(event.pointerId)
-    } catch {
+    } catch (error) {
       // Synthetic pointers may not be capturable — the drag rides on.
+      reportRendererFault('panel.setPointerCapture', error)
     }
     dragBaseRef.current = surface.getBoundingClientRect().right
     window.bingbong.feedPanel.beginResize()
