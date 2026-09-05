@@ -1,0 +1,189 @@
+<!doctype html>
+<!--
+  The Trace UI's one page (#189). Served by scripts/trace-ui.ts and by
+  nothing else: it is a developer tool, never an app view (ADR 0031). It
+  fetches /api/timeline, renders one lane per turn and one per Session,
+  and re-fetches whenever /api/events says the logs dir changed. No
+  build, no dependencies, no network beyond the loopback server.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Bing Bong Trace UI</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #f5f5f7; --panel: #ffffff; --edge: #d2d2d7; --text: #1d1d1f; --muted: #6e6e73;
+    --accent: #0071e3; --perf: #34c759; --run: #0071e3; --host: #af52de; --bad: #ff3b30;
+    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #161618; --panel: #1f1f22; --edge: #3a3a3f; --text: #f5f5f7; --muted: #a1a1a6; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 13px/1.45 -apple-system, BlinkMacSystemFont, Inter, "Segoe UI", sans-serif; }
+  header { position: sticky; top: 0; z-index: 2; display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; padding: 10px 16px; background: var(--panel); border-bottom: 1px solid var(--edge); }
+  header h1 { font-size: 14px; margin: 0 8px 0 0; font-weight: 600; }
+  header label { display: inline-flex; align-items: center; gap: 4px; color: var(--muted); }
+  header input[type=search] { width: 260px; padding: 4px 8px; border: 1px solid var(--edge); border-radius: 6px; background: var(--bg); color: var(--text); font: inherit; }
+  #status { margin-left: auto; color: var(--muted); font-family: var(--mono); font-size: 12px; }
+  #status.stale { color: var(--bad); }
+  main { padding: 12px 16px 40px; display: grid; gap: 12px; }
+  .empty { color: var(--muted); padding: 40px; text-align: center; }
+  .lane { background: var(--panel); border: 1px solid var(--edge); border-radius: 10px; overflow: hidden; }
+  .lane > summary { list-style: none; cursor: pointer; display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: baseline; padding: 8px 12px; border-bottom: 1px solid transparent; }
+  .lane[open] > summary { border-bottom-color: var(--edge); }
+  .lane > summary::-webkit-details-marker { display: none; }
+  .lane > summary .scope { font-weight: 600; }
+  .lane > summary .id { font-family: var(--mono); }
+  .lane > summary .meta { color: var(--muted); font-size: 12px; }
+  .lane.session > summary .scope { color: var(--host); }
+  table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  tbody tr.row { cursor: pointer; }
+  tbody tr.row:hover { background: color-mix(in srgb, var(--accent) 6%, transparent); }
+  td { padding: 3px 8px; vertical-align: top; border-top: 1px solid color-mix(in srgb, var(--edge) 50%, transparent); }
+  td.t { font-family: var(--mono); color: var(--muted); white-space: nowrap; width: 1%; text-align: right; }
+  td.abs { font-family: var(--mono); color: var(--muted); white-space: nowrap; width: 1%; }
+  td.fam { width: 1%; white-space: nowrap; }
+  td.label { font-family: var(--mono); white-space: nowrap; width: 1%; }
+  td.sum { overflow-wrap: anywhere; }
+  .chip { display: inline-block; padding: 0 6px; border-radius: 999px; font-size: 11px; font-weight: 600; line-height: 16px; color: #fff; }
+  .chip.perf { background: var(--perf); }
+  .chip.run { background: var(--run); }
+  .chip.host { background: var(--host); }
+  .chip.agent { background: var(--muted); font-family: var(--mono); font-weight: 500; margin-left: 6px; }
+  tr.detail td { padding: 0 8px 8px; }
+  tr.detail pre { margin: 0; padding: 8px 10px; background: var(--bg); border: 1px solid var(--edge); border-radius: 6px; font: 12px/1.4 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; max-height: 60vh; overflow: auto; }
+  tr.fault td.label, tr.error td.label { color: var(--bad); }
+  mark { background: color-mix(in srgb, #ff9500 40%, transparent); color: inherit; border-radius: 2px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Trace UI</h1>
+  <label><input type="checkbox" data-family="perf" checked /> <span class="chip perf">perf</span></label>
+  <label><input type="checkbox" data-family="run" checked /> <span class="chip run">run</span></label>
+  <label><input type="checkbox" data-family="host" checked /> <span class="chip host">host</span></label>
+  <input id="filter" type="search" placeholder="filter: label, summary, turn, session, agent" />
+  <label><input id="follow" type="checkbox" checked /> follow</label>
+  <span id="status">connecting…</span>
+</header>
+<main id="lanes"><div class="empty">Loading…</div></main>
+<script>
+  const state = {
+    families: { perf: true, run: true, host: true },
+    filter: '',
+    follow: true,
+    expanded: new Set(),   // "<laneKey>#<entryIndex>"
+    collapsed: new Set(),  // laneKey
+    data: null,
+  }
+  const lanesEl = document.getElementById('lanes')
+  const statusEl = document.getElementById('status')
+
+  function pad(n, w) { return String(n).padStart(w, '0') }
+  function clock(ms) {
+    const d = new Date(ms)
+    return pad(d.getHours(), 2) + ':' + pad(d.getMinutes(), 2) + ':' + pad(d.getSeconds(), 2) + '.' + pad(d.getMilliseconds(), 3)
+  }
+  function rel(ms) { return (ms >= 0 ? '+' : '−') + (Math.abs(ms) / 1000).toFixed(3) + 's' }
+  function esc(text) { return String(text).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])) }
+  function highlight(text) {
+    const safe = esc(text)
+    if (!state.filter) return safe
+    const needle = esc(state.filter)
+    const at = safe.toLowerCase().indexOf(needle.toLowerCase())
+    if (at === -1) return safe
+    return safe.slice(0, at) + '<mark>' + safe.slice(at, at + needle.length) + '</mark>' + safe.slice(at + needle.length)
+  }
+
+  function laneMatches(lane) {
+    if (!state.filter) return true
+    const q = state.filter.toLowerCase()
+    const ids = [lane.turnId, lane.sessionId, lane.runId].filter(Boolean).join(' ').toLowerCase()
+    return ids.includes(q)
+  }
+  function entryMatches(entry) {
+    if (!state.families[entry.family]) return false
+    if (!state.filter) return true
+    const q = state.filter.toLowerCase()
+    return entry.label.toLowerCase().includes(q) || entry.summary.toLowerCase().includes(q) || (entry.agentId ?? '').toLowerCase().includes(q)
+  }
+
+  function render() {
+    const data = state.data
+    if (!data) return
+    const lanes = data.timeline.lanes
+    const html = []
+    for (const lane of lanes) {
+      const key = lane.key
+      const whole = laneMatches(lane)
+      const entries = lane.entries.map((entry, index) => ({ entry, index })).filter(({ entry }) => whole ? state.families[entry.family] : entryMatches(entry))
+      if (entries.length === 0) continue
+      const open = state.collapsed.has(key) ? '' : ' open'
+      const head = lane.scope === 'turn'
+        ? '<span class="scope">turnId</span> <span class="id">' + highlight(lane.turnId) + '</span>'
+          + (lane.sessionId ? '<span class="meta">Session <span class="id">' + highlight(lane.sessionId) + '</span></span>' : '<span class="meta">no Session named</span>')
+          + (lane.runId ? '<span class="meta">Run <span class="id">' + highlight(lane.runId) + '</span></span>' : '')
+        : '<span class="scope">Session</span> <span class="id">' + (lane.sessionId ? highlight(lane.sessionId) : '<em>none live</em>') + '</span>'
+      const span = lane.endAt - lane.startAt
+      html.push('<details class="lane ' + lane.scope + '" data-key="' + esc(key) + '"' + open + '><summary>' + head
+        + '<span class="meta">' + clock(lane.startAt) + ' · ' + (span / 1000).toFixed(2) + 's · ' + entries.length + (entries.length === lane.entries.length ? '' : ' of ' + lane.entries.length) + ' records</span></summary><table><tbody>')
+      for (const { entry, index } of entries) {
+        const id = key + '#' + index
+        const cls = 'row' + (entry.label === 'fault' || entry.label === 'error' ? ' ' + entry.label : '')
+        html.push('<tr class="' + cls + '" data-id="' + esc(id) + '"><td class="t">' + rel(entry.at - lane.startAt) + '</td><td class="abs">' + clock(entry.at) + '</td>'
+          + '<td class="fam"><span class="chip ' + entry.family + '">' + entry.family + '</span></td>'
+          + '<td class="label">' + highlight(entry.label) + (entry.agentId ? '<span class="chip agent">' + highlight(entry.agentId) + '</span>' : '') + '</td>'
+          + '<td class="sum">' + highlight(entry.summary) + '</td></tr>')
+        if (state.expanded.has(id)) {
+          html.push('<tr class="detail"><td colspan="5"><pre>' + esc(JSON.stringify(entry.record, null, 2)) + '</pre></td></tr>')
+        }
+      }
+      html.push('</tbody></table></details>')
+    }
+    lanesEl.innerHTML = html.length ? html.join('') : '<div class="empty">No records' + (lanes.length ? ' match' : ' in ' + esc(data.logsDir) + ' — set BINGBONG_RUN_TRACE=1 / BINGBONG_HOST_TRACE=1 and run the app') + '.</div>'
+    const c = data.timeline.counts
+    statusEl.textContent = data.filePaths.length + ' files · perf ' + c.perf + ' · run ' + c.run + ' · host ' + c.host + (data.skippedLines ? ' · ' + data.skippedLines + ' skipped' : '') + ' · ' + data.logsDir
+    statusEl.classList.remove('stale')
+    if (state.follow) window.scrollTo(0, document.body.scrollHeight)
+  }
+
+  async function refresh() {
+    try {
+      const response = await fetch('/api/timeline', { cache: 'no-store' })
+      state.data = await response.json()
+      render()
+    } catch (error) {
+      statusEl.textContent = 'server gone: ' + error
+      statusEl.classList.add('stale')
+    }
+  }
+
+  lanesEl.addEventListener('click', (event) => {
+    const row = event.target.closest('tr.row')
+    if (!row) return
+    const id = row.dataset.id
+    if (state.expanded.has(id)) state.expanded.delete(id); else state.expanded.add(id)
+    render()
+  })
+  lanesEl.addEventListener('toggle', (event) => {
+    const lane = event.target
+    if (!lane.classList || !lane.classList.contains('lane')) return
+    if (lane.open) state.collapsed.delete(lane.dataset.key); else state.collapsed.add(lane.dataset.key)
+  }, true)
+  for (const box of document.querySelectorAll('input[data-family]')) {
+    box.addEventListener('change', () => { state.families[box.dataset.family] = box.checked; render() })
+  }
+  document.getElementById('filter').addEventListener('input', (event) => { state.filter = event.target.value.trim(); render() })
+  document.getElementById('follow').addEventListener('change', (event) => { state.follow = event.target.checked })
+
+  const events = new EventSource('/api/events')
+  events.onmessage = () => refresh()
+  events.onerror = () => { statusEl.textContent = 'live tail disconnected — reconnecting'; statusEl.classList.add('stale') }
+  events.onopen = () => refresh()
+  refresh()
+</script>
+</body>
+</html>

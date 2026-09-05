@@ -393,6 +393,14 @@ there is one. It is never rendered in any view and, like the Run Trace, is
 written only when a developer opts in.
 _Avoid_: app log, error log, crash log
 
+**Trace UI**:
+The developer-only reader for the perf log, the Run Trace and the Host Trace:
+a local page opened with `pnpm trace:ui` that joins the three files on the ids
+each record carries — one timeline per `turnId`, a lane per Session for records
+written outside one — and tails the logs dir live. A script, never an app
+view; nothing about it ships in the packaged app or the Kiosk image.
+_Avoid_: log viewer, diagnostics panel, debug view
+
 ### Views
 
 **Prompt Bar**:

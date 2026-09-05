@@ -1,5 +1,6 @@
 import type { RunTraceSink, TraceRecord } from '../../core/trace/runTrace'
 import { createJsonlSink, LOG_MAX_AGE_MS, LOG_ROLL_BYTES, type JsonlSinkOptions } from '../logs/jsonlSink'
+import { RUN_TRACE_FILE_PATTERN, RUN_TRACE_FILE_PREFIX } from './traceFiles'
 
 // The Run Trace's file family (#180, #184, ADR 0031): run-trace-*.jsonl
 // beside the perf logs, written by the same rotating sink under the same
@@ -13,8 +14,9 @@ import { createJsonlSink, LOG_MAX_AGE_MS, LOG_ROLL_BYTES, type JsonlSinkOptions 
 // sink only behind the flag, so with it unset not even the logs dir is
 // touched on this family's behalf.
 
-export const RUN_TRACE_FILE_PREFIX = 'run-trace'
-export const RUN_TRACE_FILE_PATTERN = /^run-trace-.*\.jsonl$/
+// The name and pattern live in traceFiles, shared with the Trace UI's
+// reader (#189); re-exported here so the family's writer still names them.
+export { RUN_TRACE_FILE_PATTERN, RUN_TRACE_FILE_PREFIX }
 
 export const TRACE_ROLL_BYTES = LOG_ROLL_BYTES
 export const TRACE_MAX_AGE_MS = LOG_MAX_AGE_MS
