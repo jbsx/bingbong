@@ -5,8 +5,10 @@ import type { EvidenceViewState } from '../../core/session/evidenceView'
 import type { FeedPanelState } from '../../core/panel/feedPanelState'
 import {
   evidenceRenderedEvent,
+  sameFeedPanelView,
   RENDERER_FAULT_SITE_PREFIX,
   type FeedClearCause,
+  type FeedPanelView,
   type RendererReport,
   type RendererSurface,
 } from '../../core/trace/rendererTrace'
@@ -59,18 +61,28 @@ export function reportFeedCleared(cause: FeedClearCause, entries: number): void 
   send({ kind: 'feed_cleared', surface, cause, entries })
 }
 
-// The last panel state reported by this page. The fold broadcasts on
-// every frame of a width drag, and this record is about the panel being
-// open or docked — so a broadcast that changes neither is not news.
-let lastPanelView: string | null = null
+// The last panel view reported by this page — a broadcast that changes
+// neither the open state nor the mode is not news.
+let lastPanelView: FeedPanelView | null = null
 
 /** One Feed Panel open/close or mode change, as this page saw it. */
 export function reportFeedPanelView(state: FeedPanelState): void {
   if (surface === null) return
-  const view = `${state.open}:${state.mode}`
-  if (view === lastPanelView) return
+  const view: FeedPanelView = { open: state.open, mode: state.mode }
+  if (sameFeedPanelView(lastPanelView, view)) return
   lastPanelView = view
-  send({ kind: 'feed_panel', surface, open: state.open, mode: state.mode })
+  send({ kind: 'feed_panel', surface, ...view })
+}
+
+/**
+ * The page's first sight of the panel, from its mount pull. Silent once
+ * anything has been reported: the pull can resolve after a broadcast has
+ * already landed, and a stale answer arriving late would otherwise read
+ * as the panel having changed back.
+ */
+export function reportFirstFeedPanelView(state: FeedPanelState): void {
+  if (lastPanelView !== null) return
+  reportFeedPanelView(state)
 }
 
 /** One authoritative evidence read: what main answered, what the view kept. */
@@ -108,17 +120,26 @@ function reportSessionReadopt(source: 'page_load' | 'resend', identity: SessionA
  */
 export function installRendererDiagnostics(page: RendererSurface): void {
   surface = page
-  window.addEventListener('error', (event) => {
-    // `error` is absent when the failure crossed an origin the page
-    // cannot read; the message is all there is, and it is still a fault.
-    reportRendererFault('window.error', event.error ?? event.message)
-  })
-  window.addEventListener('unhandledrejection', (event) => {
-    reportRendererFault('window.unhandledrejection', event.reason)
-  })
-  void window.bingbong.session
-    .current()
-    .then((identity) => reportSessionReadopt('page_load', identity))
-    .catch((error: unknown) => reportRendererFault('session.current', error))
-  window.bingbong.session.onReadopt((identity) => reportSessionReadopt('resend', identity))
+  // Guarded whole, and for the reason the whole module exists: this runs
+  // at the page's entry point, before the first render, so an install
+  // that threw would take the page down with it. Diagnostics that can
+  // break the page they diagnose are worse than none.
+  try {
+    window.addEventListener('error', (event) => {
+      // `error` is absent when the failure crossed an origin the page
+      // cannot read; the message is all there is, and it is still a fault.
+      reportRendererFault('window.error', event.error ?? event.message)
+    })
+    window.addEventListener('unhandledrejection', (event) => {
+      reportRendererFault('window.unhandledrejection', event.reason)
+    })
+    void window.bingbong.session
+      .current()
+      .then((identity) => reportSessionReadopt('page_load', identity))
+      .catch((error: unknown) => reportRendererFault('session.current', error))
+    window.bingbong.session.onReadopt((identity) => reportSessionReadopt('resend', identity))
+  // eslint-disable-next-line no-restricted-syntax -- the reporter's own install: there is nowhere left to report to
+  } catch {
+    // The page renders without diagnostics rather than not at all.
+  }
 }

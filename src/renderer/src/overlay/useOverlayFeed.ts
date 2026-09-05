@@ -4,7 +4,7 @@ import type { VoiceErrorEvent, VoiceHeardEvent } from '../../../core/voice/ipcCh
 import { defaultFeedPanelWidth, type FeedPanelState } from '../../../core/panel/feedPanelState'
 import { useFeedProjection } from '../useFeedProjection'
 import { useSessionAdoption } from '../useSessionAdoption'
-import { reportFeedPanelView } from '../diagnostics'
+import { reportFeedPanelView, reportFirstFeedPanelView } from '../diagnostics'
 
 // The overlay half of the feed panel (#45): the shared feed projection
 // (same as the dashboard's) fed from the panel's own webContents
@@ -54,7 +54,7 @@ export function usePanelState(): FeedPanelState {
     void window.bingbong.feedPanel.getState().then((pulled) => {
       if (!cancelled && pulled) {
         setState(pulled)
-        reportFeedPanelView(pulled)
+        reportFirstFeedPanelView(pulled)
       }
     })
     // The panel page records what it saw of its own open state (#187):

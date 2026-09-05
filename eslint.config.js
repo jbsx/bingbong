@@ -26,7 +26,7 @@ export default defineConfig(
     // trace writer's own guard — carry a disable comment at the site
     // saying why, rather than an ignored file, so a new bare catch added
     // anywhere in those same files is still caught.
-    files: ['src/main/**/*.ts', 'src/core/**/*.ts', 'src/renderer/**/*.ts', 'src/renderer/**/*.tsx'],
+    files: ['src/main/**/*.ts', 'src/core/**/*.ts'],
     ignores: ['**/*.test.ts'],
     rules: {
       'no-restricted-syntax': [
@@ -35,6 +35,25 @@ export default defineConfig(
           selector: 'CatchClause[param=null]',
           message:
             'A swallowed failure must still be recorded: write `catch (error) { reportFault(\'area.module.fn\', error) }` (#186, ADR 0031).',
+        },
+      ],
+    },
+  },
+  {
+    // The same rule for the renderer (#187), with the call it actually
+    // has. `reportFault`'s sink is installed in main and is absent in a
+    // renderer process, so a page that reported through it would report
+    // into nothing — and the message, not the selector, is what a
+    // developer reads when the rule fires.
+    files: ['src/renderer/**/*.ts', 'src/renderer/**/*.tsx'],
+    ignores: ['**/*.test.ts', '**/*.test.tsx'],
+    rules: {
+      'no-restricted-syntax': [
+        'error',
+        {
+          selector: 'CatchClause[param=null]',
+          message:
+            'A swallowed failure must still be recorded: write `catch (error) { reportRendererFault(\'module.fn\', error) }` — the page\'s reporter, not main\'s `reportFault` (#187, ADR 0031).',
         },
       ],
     },

@@ -9,7 +9,7 @@ import {
   readStoredFeedWidth,
   type FeedPanelState,
 } from '../../core/panel/feedPanelState'
-import { reportFeedPanelView, reportRendererFault } from './diagnostics'
+import { reportFeedPanelView, reportFirstFeedPanelView, reportRendererFault } from './diagnostics'
 
 // The dashboard half of the feed panel (#45): the panel itself renders in
 // its own overlay webContents; the dashboard owns the layout slot its rect
@@ -42,7 +42,7 @@ export function useFeedPanel(): FeedPanelState {
     void window.bingbong.feedPanel.getState().then((pulled) => {
       if (!cancelled && pulled) {
         setState(pulled)
-        reportFeedPanelView(pulled)
+        reportFirstFeedPanelView(pulled)
       }
     })
     const unsubscribe = window.bingbong.feedPanel.onState((next) => {

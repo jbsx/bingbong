@@ -130,6 +130,26 @@ export interface SessionEvidenceCounts {
   readonly contradictions: number
 }
 
+/**
+ * Counts one snapshot — or anything shaped like one, a rendered view
+ * included. The single answer to "how much evidence is this", shared by
+ * both halves of the store/render pair (#181, #187): `evidence_answered`
+ * and `evidence_rendered` are read against each other, so a second way to
+ * count would be a second way for them to disagree on paper while the
+ * app was fine.
+ */
+export function evidenceCountsOf(held: {
+  observations: readonly unknown[]
+  candidates: readonly unknown[]
+  contradictions: readonly unknown[]
+}): SessionEvidenceCounts {
+  return {
+    observations: held.observations.length,
+    candidates: held.candidates.length,
+    contradictions: held.contradictions.length,
+  }
+}
+
 /** What a Session with no store yet — or a cleared one — holds. */
 export const EMPTY_EVIDENCE_COUNTS: SessionEvidenceCounts = Object.freeze({
   observations: 0,

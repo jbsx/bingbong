@@ -8,18 +8,9 @@
 // actually make.
 
 import type { SessionEvidencePayload } from '../session/evidenceIpcChannels'
-import type { SessionEvidenceCounts } from '../session/sessionEvidence'
+import { evidenceCountsOf } from '../session/sessionEvidence'
 import type { EndedSession, SessionEvidenceAcceptance, SessionEvidenceChange } from '../session/sessionRuntime'
 import type { EvidenceRequester, SessionTraceEntry } from './runTrace'
-
-/** Counts of a snapshot main is about to hand a view. */
-function snapshotCounts(snapshot: SessionEvidencePayload['snapshot']): SessionEvidenceCounts {
-  return {
-    observations: snapshot.observations.length,
-    candidates: snapshot.candidates.length,
-    contradictions: snapshot.contradictions.length,
-  }
-}
 
 /**
  * One retained evidence change as the store saw it: the counts it left
@@ -68,7 +59,7 @@ export function evidenceAnsweredEntry(input: {
     generation: payload.generation,
     requester,
     answered: 'session',
-    counts: snapshotCounts(payload.snapshot),
+    counts: evidenceCountsOf(payload.snapshot),
   }
 }
 

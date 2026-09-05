@@ -5,6 +5,7 @@ import type { SessionId } from '../session/sessionIdentity'
 import {
   evidenceRenderedEvent,
   rendererReportOf,
+  sameFeedPanelView,
   RENDERER_FAULT_SITE_PREFIX,
   TRACE_RENDERER_MESSAGE_MAX_CHARS,
   TRACE_RENDERER_STACK_MAX_CHARS,
@@ -139,6 +140,19 @@ describe('the report main is willing to write', () => {
     expect(rendererReportOf({ kind: 'voice_wake', head: 'wake' })).toBeNull()
     expect(rendererReportOf(null)).toBeNull()
     expect(rendererReportOf('feed_cleared')).toBeNull()
+  })
+})
+
+describe('what counts as a panel change', () => {
+  it('is the open state and the mode, and never the width', () => {
+    // A width drag broadcasts per frame; none of those frames is news.
+    expect(sameFeedPanelView({ open: true, mode: 'overlay' }, { open: true, mode: 'overlay' })).toBe(true)
+    expect(sameFeedPanelView({ open: true, mode: 'overlay' }, { open: false, mode: 'overlay' })).toBe(false)
+    expect(sameFeedPanelView({ open: true, mode: 'overlay' }, { open: true, mode: 'docked' })).toBe(false)
+  })
+
+  it('treats a page that has reported nothing yet as a change', () => {
+    expect(sameFeedPanelView(null, { open: false, mode: 'overlay' })).toBe(false)
   })
 })
 

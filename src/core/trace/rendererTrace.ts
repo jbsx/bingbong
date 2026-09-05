@@ -21,7 +21,7 @@
 import { isFeedPanelMode, type FeedPanelMode } from '../panel/feedPanelState'
 import type { SessionEvidencePayload } from '../session/evidenceIpcChannels'
 import type { EvidenceViewState } from '../session/evidenceView'
-import type { SessionEvidenceCounts } from '../session/sessionEvidence'
+import { evidenceCountsOf, type SessionEvidenceCounts } from '../session/sessionEvidence'
 import type { SessionGeneration, SessionId } from '../session/sessionIdentity'
 import type { FaultEvent } from './fault'
 import { EVIDENCE_REQUESTERS, type EvidenceRequester } from './runTrace'
@@ -135,17 +135,18 @@ export type RendererTraceEvent =
  */
 export type RendererReport = FaultEvent | RendererTraceEvent
 
-/** One evidence snapshot's counts, whichever side of the wire it is on. */
-function countsOf(input: {
-  observations: readonly unknown[]
-  candidates: readonly unknown[]
-  contradictions: readonly unknown[]
-}): SessionEvidenceCounts {
-  return {
-    observations: input.observations.length,
-    candidates: input.candidates.length,
-    contradictions: input.contradictions.length,
-  }
+/**
+ * What of the panel's folded state this family records. The width is
+ * deliberately not here: the fold broadcasts on every frame of a width
+ * drag, and a record per frame would be a file about a mouse. The mode
+ * is, because docking and overlaying are the same kind of fact as being
+ * open — where the panel is, not how wide.
+ */
+export type FeedPanelView = Pick<FeedPanelViewEvent, 'open' | 'mode'>
+
+/** Whether two broadcasts say the same thing about where the panel is. */
+export function sameFeedPanelView(before: FeedPanelView | null, after: FeedPanelView): boolean {
+  return before !== null && before.open === after.open && before.mode === after.mode
 }
 
 /**
@@ -163,7 +164,9 @@ export function evidenceRenderedEvent(input: {
   /** The view after `applyResponse` — what the page will render. */
   view: EvidenceViewState
 }): EvidenceRenderedEvent {
-  const rendered = countsOf(input.view)
+  // Both sides counted the one way (`evidenceCountsOf`), which is what
+  // lets this record be read against #181's `evidence_answered` at all.
+  const rendered = evidenceCountsOf(input.view)
   if (input.payload === null) {
     return { kind: 'evidence_rendered', surface: input.surface, answered: 'no_session', rendered }
   }
@@ -171,7 +174,7 @@ export function evidenceRenderedEvent(input: {
     kind: 'evidence_rendered',
     surface: input.surface,
     answered: 'session',
-    received: countsOf(input.payload.snapshot),
+    received: evidenceCountsOf(input.payload.snapshot),
     rendered,
   }
 }
