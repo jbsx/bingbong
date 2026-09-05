@@ -126,6 +126,10 @@ BINGBONG_WAKE_ABORT_MODEL=…            # override the "abort" head path
 BINGBONG_WAKE_HOLD_ON_MODEL=…          # override the "hold on" head path
 
 # Diagnostics
+BINGBONG_RUN_TRACE=1                   # write the Run Trace (run-trace-*.jsonl): a Run's
+                                       # decisions, evidence grading, per-round reasoning
+BINGBONG_HOST_TRACE=1                  # write the Host Trace (host-trace-*.jsonl): what the
+                                       # app does outside any Run (producers land in #185-#187)
 BINGBONG_BROWSER_SUBSPANS=1            # verbose sub-spans inside browser actions (perf log)
 BINGBONG_AUDIO_DUMP=1                  # dump each utterance as a WAV for offline STT A/B
 
@@ -165,6 +169,19 @@ the event stream and history, written to a rotating `logs/` dir under the
 profile. `pnpm perf:report` aggregates per-stage latency percentiles;
 `BINGBONG_BROWSER_SUBSPANS=1` drills into browser actions; see
 `docs/stt-latency.md` and `docs/moonshine-ab.md` for measured results.
+
+The two traces are diagnostic files, off unless you ask for them (ADR 0031).
+`BINGBONG_RUN_TRACE=1` writes `run-trace-*.jsonl` — what each Run decided, how
+every Evidence Checkpoint was graded, and the model's own per-round reasoning,
+its Subagents' included. `BINGBONG_HOST_TRACE=1` writes `host-trace-*.jsonl` —
+what the app did outside any Run, named with the Active Session when there was
+one. Both land in the same `logs/` dir on the same 5 MB roll and 7-day purge,
+both are read with `jq`, and no view in the app renders either. A deployed
+Kiosk sets neither.
+
+The Host Trace is wired but has no producers yet: the voice and vision events
+and the swallowed failures it is meant to hold are routed into it by #185–#187,
+so today the flag is on and the file stays absent.
 
 `BINGBONG_AUDIO_DUMP=1` writes every detected utterance to `audio-dumps/`
 under the profile as a 16 kHz mono WAV — the artifact shape offline STT

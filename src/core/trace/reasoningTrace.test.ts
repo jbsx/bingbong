@@ -1,33 +1,13 @@
 import { describe, expect, it } from 'vitest'
-import {
-  createReasoningRounds,
-  reasoningEvent,
-  reasoningTraceEnabled,
-  TRACE_REASONING_ENV,
-} from './reasoningTrace'
+import { createReasoningRounds, reasoningEvent } from './reasoningTrace'
 import { TRACE_REASONING_MAX_CHARS } from './runTrace'
 
-// The reasoning records (#182): the opt-in, the per-round assembly, and
-// the cut. The Run's end of it — one record per round, with the turn and
-// the Run identity — is proved against the real file in
+// The reasoning records (#182): the per-round assembly and the cut. The
+// opt-in is no longer their own (#184) — they ride `BINGBONG_RUN_TRACE`
+// with everything else a Run records, proved in trace/traceFlags.test.ts.
+// The Run's end of it — one record per round, with the turn and the Run
+// identity — is proved against the real file in
 // src/main/trace/runTraceFile.test.ts.
-
-describe('the reasoning trace opt-in', () => {
-  it('is off unless the developer set the flag', () => {
-    expect(reasoningTraceEnabled({})).toBe(false)
-    expect(reasoningTraceEnabled({ [TRACE_REASONING_ENV]: '' })).toBe(false)
-    expect(reasoningTraceEnabled({ [TRACE_REASONING_ENV]: '0' })).toBe(false)
-    expect(reasoningTraceEnabled({ [TRACE_REASONING_ENV]: 'off' })).toBe(false)
-    // A near-miss is not an opt-in: this must never turn on by accident.
-    expect(reasoningTraceEnabled({ [TRACE_REASONING_ENV]: 'please' })).toBe(false)
-  })
-
-  it('follows the shared BINGBONG_* truthy vocabulary', () => {
-    for (const value of ['1', 'true', 'yes', 'on', ' ON ', 'True']) {
-      expect(reasoningTraceEnabled({ [TRACE_REASONING_ENV]: value })).toBe(true)
-    }
-  })
-})
 
 describe("assembling a round's reasoning", () => {
   it("joins the round's deltas and starts the next round empty", () => {

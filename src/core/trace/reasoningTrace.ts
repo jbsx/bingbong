@@ -1,24 +1,21 @@
-// The reasoning records (#182, ADR 0030): the model's own reasoning
-// stream, one record per LLM round, written only when the developer opts
-// in. Reasoning deltas already stream to the Feed as ephemeral detail and
-// are written nowhere — so the model's private trace of a rejected
-// checkpoint or an abandoned retry cannot be read back once the round is
-// over. This keeps it, behind a flag that is off everywhere unless set:
-// the reasoning stream carries the user's own words back at us, and a
-// shared Kiosk must never accumulate that on disk. A delegated worker's
-// rounds are kept under the same flag (#183): the Run hands its workers a
-// closure over its own writer, so their records join the Run's.
+// The reasoning records (#182, ADR 0031): the model's own reasoning
+// stream, one record per LLM round. Reasoning deltas already stream to
+// the Feed as ephemeral detail and are written nowhere — so the model's
+// private trace of a rejected checkpoint or an abandoned retry cannot be
+// read back once the round is over. This keeps it, for the developer who
+// asked for a Run Trace at all: the reasoning stream carries the user's
+// own words back at us, and a shared Kiosk must never accumulate that on
+// disk. A delegated worker's rounds are kept the same way (#183): the Run
+// hands its workers a closure over its own writer, so their records join
+// the Run's.
+//
+// These had their own flag until #184. They no longer do: everything a
+// Run records rides `BINGBONG_RUN_TRACE`, so the collector exists exactly
+// when a Run Trace writer does, and with the flag unset no reasoning is
+// retained anywhere at all.
 
-import { envFlagEnabled } from '../perf/envFlag'
 import type { LlmStreamDelta } from '../ports/llm'
 import { TRACE_REASONING_MAX_CHARS, type ReasoningEvent } from './runTrace'
-
-/** Env opt-in for the Run Trace's reasoning records (#182): `BINGBONG_TRACE_REASONING=1`. */
-export const TRACE_REASONING_ENV = 'BINGBONG_TRACE_REASONING'
-
-export function reasoningTraceEnabled(env: Record<string, string | undefined>): boolean {
-  return envFlagEnabled(env, TRACE_REASONING_ENV)
-}
 
 /** One attempt's reasoning as the collector assembled it. */
 export interface ReasoningRound {
@@ -29,10 +26,10 @@ export interface ReasoningRound {
 
 /**
  * Assembles the reasoning deltas of one LLM round. The pipeline creates
- * one per Run when the flag is on and takes the round at each round's
+ * one per Run when the Run is tracing and takes the round at each round's
  * end — including a round that aborted or failed, which is exactly the
- * round whose reasoning a diagnosis wants. Nothing exists at all when the
- * flag is off, so no reasoning is retained for the file.
+ * round whose reasoning a diagnosis wants. Nothing exists at all when it
+ * is not, so no reasoning is retained for the file.
  *
  * The delta batcher keeps a reasoning buffer too, and cannot serve this
  * one: it flushes — and clears — every ~120ms so the Feed stays live, so

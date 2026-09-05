@@ -44,7 +44,7 @@ const readPage: Tool = {
 
 function traceRecords(dir: string): RunTraceRecord[] {
   return readdirSync(dir)
-    .filter((name) => /^trace-.*\.jsonl$/.test(name))
+    .filter((name) => /^run-trace-.*\.jsonl$/.test(name))
     .sort()
     .flatMap((name) =>
       readFileSync(join(dir, name), 'utf8')
@@ -67,7 +67,7 @@ function reasoning(records: readonly RunTraceRecord[]): (RunTraceRecord & Reason
 async function runSession(
   dir: string,
   turns: AssistantTurn[],
-  options: { traceReasoning?: boolean; thinks?: (round: number) => string[]; retriesFirstRound?: boolean } = {},
+  options: { traced?: boolean; thinks?: (round: number) => string[]; retriesFirstRound?: boolean } = {},
 ): Promise<RunTraceRecord[]> {
   const clock = new FakeClock(1_000)
   const runtime = createSessionRuntime({ clock, identities: new DeterministicIdentities() })
@@ -102,8 +102,9 @@ async function runSession(
     onSessionReset: () => {},
     createRunPublisher: () => ({ publish: () => {} }),
     publishFeedback: () => {},
-    runTrace: createJsonlRunTraceSink(dir),
-    ...(options.traceReasoning ? { traceReasoning: true } : {}),
+    // The Run Trace's one opt-in (#184): the sink main builds only behind
+    // `BINGBONG_RUN_TRACE`. Absent, the Run traces nothing whatsoever.
+    ...(options.traced === false ? {} : { runTrace: createJsonlRunTraceSink(dir) }),
   })
 
   await runner.run('what does the acme router cost')
@@ -118,7 +119,7 @@ async function runSession(
  */
 async function runDelegatingSession(
   dir: string,
-  options: { traceReasoning?: boolean; workerThinks: string[] },
+  options: { traced?: boolean; workerThinks: string[] },
 ): Promise<RunTraceRecord[]> {
   const clock = new FakeClock(1_000)
   const runtime = createSessionRuntime({ clock, identities: new DeterministicIdentities() })
@@ -178,8 +179,9 @@ async function runDelegatingSession(
     onSessionReset: () => {},
     createRunPublisher: () => ({ publish: () => {} }),
     publishFeedback: () => {},
-    runTrace: createJsonlRunTraceSink(dir),
-    ...(options.traceReasoning ? { traceReasoning: true } : {}),
+    // The Run Trace's one opt-in (#184): the sink main builds only behind
+    // `BINGBONG_RUN_TRACE`. Absent, the Run traces nothing whatsoever.
+    ...(options.traced === false ? {} : { runTrace: createJsonlRunTraceSink(dir) }),
   })
 
   await runner.run('what does the acme router cost')
@@ -308,7 +310,7 @@ describe('the Run Trace file', () => {
         { kind: 'answer', speak: 'It is $39.', display: 'It is $39.' },
       ],
       // Several deltas per round, so the record proves the assembly.
-      { traceReasoning: true, thinks: (round) => [`round ${round}: `, 'what does', ' it cost'] },
+      { thinks: (round) => [`round ${round}: `, 'what does', ' it cost'] },
     )
 
     expect(reasoning(all).map((record) => [record.round, record.text])).toEqual([
@@ -333,7 +335,6 @@ describe('the Run Trace file', () => {
   it('truncates a round that thought past the cap, and keeps the true length', async () => {
     const long = 'z'.repeat(TRACE_REASONING_MAX_CHARS + 1_000)
     const all = await runSession(dir, [{ kind: 'answer', speak: 'Done.', display: 'Done.' }], {
-      traceReasoning: true,
       thinks: () => [long],
     })
 
@@ -344,7 +345,6 @@ describe('the Run Trace file', () => {
 
   it('closes a retried round once per attempt, so the abandoned thinking stands alone', async () => {
     const all = await runSession(dir, [{ kind: 'answer', speak: 'Done.', display: 'Done.' }], {
-      traceReasoning: true,
       retriesFirstRound: true,
       thinks: () => ['second time lucky'],
     })
@@ -359,7 +359,6 @@ describe('the Run Trace file', () => {
   // that runs through the workhorse loop rather than the pipeline's.
   it("writes one reasoning line per delegated worker round, stamped with the worker's agentId", async () => {
     const all = await runDelegatingSession(dir, {
-      traceReasoning: true,
       workerThinks: ['the task names ', 'one page'],
     })
 
@@ -381,29 +380,47 @@ describe('the Run Trace file', () => {
 
   it("cuts a worker's overlong thinking at the same cap, and keeps the true length", async () => {
     const long = 'w'.repeat(TRACE_REASONING_MAX_CHARS + 750)
-    const all = await runDelegatingSession(dir, { traceReasoning: true, workerThinks: [long] })
+    const all = await runDelegatingSession(dir, { workerThinks: [long] })
 
     const [record] = reasoning(all).filter((entry) => entry.agentId !== undefined)
     expect(record!.text).toBe(long.slice(0, TRACE_REASONING_MAX_CHARS))
     expect(record!.chars).toBe(long.length)
   })
 
-  it('writes no worker reasoning record with the flag unset, however much the worker thinks', async () => {
-    const all = await runDelegatingSession(dir, { workerThinks: ['the user asked about their own shopping'] })
+  it('writes nothing at all when the Run Trace is off, however much the worker thinks', async () => {
+    const all = await runDelegatingSession(dir, {
+      traced: false,
+      workerThinks: ['the user asked about their own shopping'],
+    })
 
-    expect(reasoning(all)).toEqual([])
+    expect(all).toEqual([])
   })
 
-  it('writes no reasoning record with the flag unset, however much the model thinks', async () => {
+  // The whole opt-in, end to end (#184): with `BINGBONG_RUN_TRACE` unset
+  // main builds no sink, so a Run that reads a page, thinks out loud and
+  // records evidence leaves no file behind — not a reasoning record, not
+  // an evidence one.
+  it('writes nothing at all when the Run Trace is off, however much the model thinks', async () => {
     const all = await runSession(
       dir,
       [
         { kind: 'tool_calls', calls: [{ id: 'c1', name: 'read_page', args: {} }] },
+        {
+          kind: 'tool_calls',
+          calls: [
+            {
+              id: 'c2',
+              name: 'record_evidence',
+              args: { observation: 'The Acme router costs $39.', source_url: SOURCE, excerpt: 'Price: $39' },
+            },
+          ],
+        },
         { kind: 'answer', speak: 'It is $39.', display: 'It is $39.' },
       ],
-      { thinks: () => ['the user asked about their own shopping'] },
+      { traced: false, thinks: () => ['the user asked about their own shopping'] },
     )
 
-    expect(reasoning(all)).toEqual([])
+    expect(all).toEqual([])
+    expect(readdirSync(dir)).toEqual([])
   })
 })

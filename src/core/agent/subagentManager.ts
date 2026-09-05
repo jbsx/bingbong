@@ -95,7 +95,7 @@ export interface SubagentTaskHooks {
   /**
    * The reasoning records for this worker's rounds (#183): the spawning
    * Run's own trace writer, closed over its identity and turn. Absent
-   * unless the developer opted in with `BINGBONG_TRACE_REASONING` — and
+   * unless the developer opted in with `BINGBONG_RUN_TRACE` (#184) — and
    * absent, the worker collects no reasoning and does not stream.
    */
   traceReasoning?: SubagentReasoningTrace

@@ -1,15 +1,22 @@
-// The Run Trace (#180, ADR 0030): a durable, machine-readable record of a
+// The Run Trace (#180, ADR 0031): a durable, machine-readable record of a
 // Run's internal decisions, written for diagnosis only. It is never
 // rendered in any view and never provides continuity to a Session — it
 // lives beside the perf logs, not in Recorded History, because Session
-// Evidence must never be recoverable from the history database. The file
-// is a contract: every record carries a version and the identities that
-// join it to Recorded History and to the eval tape.
+// Evidence must never be recoverable from an always-on store. The file is
+// a contract: every record carries a version and the identities that join
+// it to the eval tape.
+//
+// None of it is written unless a developer opts in with
+// `BINGBONG_RUN_TRACE` (#184): with the flag unset there is no sink, so a
+// deployed Kiosk leaves no Run Trace at all. Everything a Run records
+// rides that one flag — the grading records here, the reasoning records
+// (#182), and a fault reported with a turn id in hand (#184).
 
 import type { ObservationProducer } from '../session/observationLedger'
 import type { SessionEvidenceCounts } from '../session/sessionEvidence'
 import type { SessionEndReason } from '../session/sessionRuntime'
 import type { RunId, SessionGeneration, SessionId } from '../session/sessionIdentity'
+import type { FaultEvent } from './fault'
 
 /** The record-shape version every line carries; bump it when a field's meaning changes. */
 export const RUN_TRACE_VERSION = 1
@@ -76,8 +83,8 @@ export interface EvidenceCheckpointEvent {
 }
 
 /**
- * The model's own reasoning for one LLM round (#182), written only behind
- * `BINGBONG_TRACE_REASONING`. Reasoning deltas stream to the Feed as
+ * The model's own reasoning for one LLM round (#182), written whenever
+ * the Run is tracing at all (#184). Reasoning deltas stream to the Feed as
  * ephemeral detail and are kept nowhere else, so a rejected checkpoint's
  * or an abandoned retry's private trace cannot be read back after the
  * fact. This is the record that keeps it — for the developer who opted
@@ -213,8 +220,25 @@ export type SessionTraceRecord = SessionTraceEntry & {
   readonly at: number
 }
 
+/**
+ * One fault reported with a turn id in hand (#184). It rides the Run
+ * Trace because the turn is what a diagnosis joins it on — the failure
+ * belongs beside the decisions of the Run it happened in. Unlike the
+ * records a Run writes through {@link createRunTraceWriter}, a fault is
+ * reported from wherever it was caught, so it carries only the identities
+ * the caller actually had: the turn id always, the rest when known.
+ */
+export type FaultRunTraceRecord = FaultEvent & {
+  readonly v: number
+  /** Wall-clock epoch ms when the record was written. */
+  readonly at: number
+  readonly turnId: string
+  readonly runId?: RunId
+  readonly sessionId?: SessionId
+}
+
 /** One line of a trace file, whoever wrote it. */
-export type TraceRecord = RunTraceRecord | SessionTraceRecord
+export type TraceRecord = RunTraceRecord | SessionTraceRecord | FaultRunTraceRecord
 
 export interface RunTraceSink {
   write(record: TraceRecord): void

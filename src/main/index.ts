@@ -49,13 +49,18 @@ import { createPerfTracer } from '../core/perf/perfTracer'
 import { browserSubspansEnabled, createBrowserSubspans } from '../core/perf/browserSubspans'
 import { createJsonlPerfSink } from './perf/jsonlPerfSink'
 import { createJsonlRunTraceSink } from './trace/jsonlRunTraceSink'
+import { createJsonlHostTraceSink } from './trace/jsonlHostTraceSink'
+import { purgeLegacyTraceFiles } from './trace/purgeLegacyTraceFiles'
 import {
   evidenceAcceptedEntry,
   evidenceBroadcastEntry,
   sessionEvidenceEndEntry,
 } from '../core/trace/evidenceStoreTrace'
 import { createSessionTraceWriter, type EvidenceRequester } from '../core/trace/runTrace'
-import { reasoningTraceEnabled } from '../core/trace/reasoningTrace'
+import { createHostTraceWriter } from '../core/trace/hostTrace'
+import { setFaultSink } from '../core/trace/fault'
+import { createFaultRouter } from '../core/trace/faultRouter'
+import { hostTraceEnabled, runTraceEnabled } from '../core/trace/traceFlags'
 import { resolveVoiceConfig } from './voice/voiceConfig'
 import { createMainVoice } from './voice/createMainVoice'
 import { createLearnedTermsStore, seedLexiconSet } from './voice/learnedTermsStore'
@@ -159,18 +164,45 @@ let activeSessionRuntime: SessionRuntime | null = null
 // purge ride startup and writes.
 const logsDir = join(app.getPath('userData'), 'logs')
 const perfTracer = createPerfTracer({ sink: createJsonlPerfSink(logsDir) })
-// The Run Trace (#180, ADR 0030): diagnosis lives beside the perf logs,
-// never in Recorded History — Session Evidence must not be recoverable
-// from the history database.
-const runTraceSink = createJsonlRunTraceSink(logsDir)
+// The two diagnostic traces (#184, ADR 0031), each behind the flag named
+// for it: diagnosis lives beside the perf logs, and only when a developer
+// asked for it. With a flag unset its sink is never created, so nothing —
+// not a file, not a purge — happens on that family's behalf, and a
+// deployed Kiosk writes neither. The Run Trace holds everything written
+// where a Run identity is in hand (#180–#183); the Host Trace holds
+// everything else.
+// The retired `trace-*.jsonl` family (#184): written unconditionally by
+// the #180–#183 builds and matched by no family's purge since the rename,
+// so it is deleted here rather than left to sit past its window.
+purgeLegacyTraceFiles(logsDir)
+const runTraceSink = runTraceEnabled(currentEnv()) ? createJsonlRunTraceSink(logsDir) : null
+const hostTraceSink = hostTraceEnabled(currentEnv()) ? createJsonlHostTraceSink(logsDir) : null
 // The store and view records (#181): written outside any Run — the
 // store's own acceptance, the answer to each view, the broadcast, and the
 // Session's end — so they are bound to the sink, not to a Run identity.
-const traceSession = createSessionTraceWriter({ sink: runTraceSink, now: systemClock.now })
-// The reasoning records (#182), opt-in behind the same env-flag pattern:
-// off everywhere unless a developer sets it in their own Env File, so a
-// shared Kiosk never accumulates the model's trace of the user's words.
-const traceReasoning = reasoningTraceEnabled(currentEnv())
+// They stay in the Run Trace all the same: each one is about what a Run's
+// accepted checkpoint became, which is the file it has to be read beside.
+const traceSession =
+  runTraceSink === null ? () => {} : createSessionTraceWriter({ sink: runTraceSink, now: systemClock.now })
+// The Host Trace writer (#184): stamps the Active Session on each record,
+// read at the moment of writing — there is no Session to bind up front.
+const traceHost =
+  hostTraceSink === null
+    ? null
+    : createHostTraceWriter({
+        sink: hostTraceSink,
+        now: systemClock.now,
+        activeSessionId: () => activeSessionRuntime?.state().sessionId ?? null,
+      })
+// The fault seam (#184): the one global in core, installed here, at the
+// app edge, once both families are known. Turn id in hand → the Run
+// Trace; otherwise the Host Trace. With both flags off no sink is
+// installed at all — `reportFault` then does not even describe the error
+// it was handed, which is what lets #186 route every swallowed failure in
+// the app through it without a deployed Kiosk paying for one.
+if (runTraceSink !== null || traceHost !== null) {
+  setFaultSink(createFaultRouter({ runTrace: runTraceSink, hostTrace: traceHost, now: systemClock.now }))
+}
 
 // Verbose browser sub-spans (#32), opt-in behind the established env-flag
 // pattern: one shared channel between the pipeline's tool gate (which opens
@@ -602,8 +634,7 @@ async function createWindow(): Promise<BrowserWindow> {
     publishFeedback: (feedback) => eventPublisher.publish({ source: 'submission-feedback', feedback }),
     canPublish: () => !win.isDestroyed(),
     tracer: perfTracer,
-    runTrace: runTraceSink,
-    traceReasoning,
+    ...(runTraceSink !== null ? { runTrace: runTraceSink } : {}),
   })
   attachAssistantToWindow(pipeline, win, commandRunner)
   win.on('close', () => sessionRuntime?.end('app_closed'))

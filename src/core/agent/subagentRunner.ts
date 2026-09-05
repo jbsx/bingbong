@@ -161,10 +161,10 @@ export interface RunSubagentOptions {
   waitIfPaused?(): Promise<void>
   onProgress?(progress: SubagentProgress): void
   /**
-   * The reasoning records for this worker's rounds (#183, ADR 0030):
+   * The reasoning records for this worker's rounds (#183, ADR 0031):
    * built by the spawning Run over its own Run Trace writer, so each
    * record carries the parent Run's correlation keys and this worker's
-   * `agentId`. Absent unless the developer set `BINGBONG_TRACE_REASONING`
+   * `agentId`. Absent unless the developer set `BINGBONG_RUN_TRACE` (#184)
    * — and with it absent the worker collects no reasoning and does not
    * stream, which is the path's historical behaviour.
    */

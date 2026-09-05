@@ -32,7 +32,7 @@ class DeterministicIdentities implements SessionIdentitySource {
 
 function traceRecords(dir: string): TraceRecord[] {
   return readdirSync(dir)
-    .filter((name) => /^trace-.*\.jsonl$/.test(name))
+    .filter((name) => /^run-trace-.*\.jsonl$/.test(name))
     .sort()
     .flatMap((name) =>
       readFileSync(join(dir, name), 'utf8')
@@ -93,7 +93,7 @@ describe('the store and view records on disk', () => {
     for (const record of records) {
       expect(record.v).toBe(RUN_TRACE_VERSION)
       expect(record.sessionId).toBe('session-1')
-      expect(record.generation).toBe(0)
+      expect((record as { generation?: number }).generation).toBe(0)
       expect(record.at).toBe(1_000)
     }
     expect(records[0]).toMatchObject({

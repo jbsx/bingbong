@@ -307,15 +307,6 @@ export interface RunContinuityContext {
    * Session reads it back. Absent when nothing is tracing.
    */
   traceRun?: RunTraceWriter
-  /**
-   * The reasoning records' opt-in (#182): retain each round's reasoning
-   * and trace it. Off unless the developer set `BINGBONG_TRACE_REASONING`
-   * in their own Env File — with it unset nothing is collected, so no
-   * reasoning is retained for the file at all. Turning it on makes every
-   * round stream, because the reasoning only exists in the stream — the
-   * Run's own rounds and, through delegation (#183), its workers' too.
-   */
-  traceReasoning?: boolean
 }
 
 /** Stamps one run-body event with the turn's id. */
@@ -624,15 +615,16 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
             ),
         })
       : undefined
-    // The reasoning records (#182): one collector per run when the
-    // developer opted in, assembling each round's reasoning deltas. Absent
-    // by default — with nothing here, no reasoning is retained at all.
-    // Gated on the writer too, not just the flag: with nothing to write to,
-    // collecting would retain the model's reasoning in memory only to drop
-    // it — and the whole point of the opt-in is that unasked-for reasoning
-    // is never collected in the first place.
+    // The reasoning records (#182): one collector per run when the Run is
+    // tracing at all, assembling each round's reasoning deltas. Absent by
+    // default — with nothing here, no reasoning is retained anywhere. The
+    // writer's presence is the whole opt-in since #184: with nothing to
+    // write to, collecting would retain the model's reasoning in memory
+    // only to drop it, and the point of the opt-in is that unasked-for
+    // reasoning is never collected in the first place. Turning it on makes
+    // every round stream, because the reasoning only exists in the stream.
     const traceRun = continuity?.traceRun
-    const reasoningRounds = continuity?.traceReasoning && traceRun ? createReasoningRounds() : undefined
+    const reasoningRounds = traceRun ? createReasoningRounds() : undefined
     // The one write every reasoning record goes through — the Run's own
     // rounds, an abandoned attempt, and a delegated Subagent's rounds
     // (#183) alike — stamped with this turn. Truncation happens inside the

@@ -384,12 +384,20 @@ reason, and Run membership.
 _Avoid_: session memory, diagnostic record, Run Trace
 
 **Run Trace**:
-A durable, machine-readable record of a Run's internal decisions — timings,
-evidence grading, what each view was answered — written for diagnosis only. It
-is never rendered in any view and never provides continuity to a Session. The
-model's own per-round reasoning — the Run's and its Subagents' alike — joins it
-only behind an opt-in env flag, and is not retained at all without one.
-_Avoid_: debug log, audit log, perf log
+A durable, machine-readable record of a Run's internal decisions — every event
+the Run published, its Tool Rounds and those of its Subagents, evidence
+grading, the model's per-round reasoning — written for diagnosis only. It is
+never rendered in any view and never provides continuity to a Session. It is
+written only when a developer opts in; a deployed Kiosk writes none of it.
+_Avoid_: debug log, audit log, perf log, history
+
+**Host Trace**:
+A durable, machine-readable record of what the app does outside any Run — voice
+pipeline events, vision adapter calls, renderer signals, and every failure the
+app swallows — written for diagnosis only. It names the Active Session when
+there is one. It is never rendered in any view and, like the Run Trace, is
+written only when a developer opts in.
+_Avoid_: app log, error log, crash log
 
 ### Views
 

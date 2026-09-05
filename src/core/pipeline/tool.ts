@@ -30,11 +30,11 @@ export interface ToolContext {
    */
   delegationDeadline?: SubagentSharedDeadline
   /**
-   * The reasoning records for delegated workers (#183, ADR 0030): what a
+   * The reasoning records for delegated workers (#183, ADR 0031): what a
    * spawned worker's rounds write their thinking through, already closed
    * over this Run's trace writer and turn — so a worker's reasoning joins
    * the Run that delegated it. Absent unless the developer opted in with
-   * `BINGBONG_TRACE_REASONING`; delegation then hands workers nothing and
+   * `BINGBONG_RUN_TRACE` (#184); delegation then hands workers nothing and
    * no worker reasoning is collected.
    */
   traceSubagentReasoning?: SubagentReasoningTrace

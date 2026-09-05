@@ -8,7 +8,7 @@ import type { RunId, SessionId } from '../../core/session/sessionIdentity'
 import { RUN_TRACE_VERSION, type RunTraceRecord } from '../../core/trace/runTrace'
 import { createJsonlRunTraceSink } from './jsonlRunTraceSink'
 
-// The Run Trace file family (#180, ADR 0030): trace-*.jsonl beside the perf
+// The Run Trace file family (#180, #184, ADR 0031): run-trace-*.jsonl beside the perf
 // logs, on the perf sink's rolling and purge policy — and invisible to the
 // perf report, which owns only perf-*.jsonl. Real tmp dir, fake wall clock;
 // mtimes are placed with utimesSync so the purge window is deterministic.
@@ -52,14 +52,14 @@ describe('createJsonlRunTraceSink', () => {
     rmSync(dir, { recursive: true, force: true })
   })
 
-  it('writes one JSON line per record to a trace-*.jsonl file under the logs dir', () => {
+  it('writes one JSON line per record to a run-trace-*.jsonl file under the logs dir', () => {
     const sink = createJsonlRunTraceSink(dir, { now: () => NOW })
 
     sink.write(traceRecord('turn-a'))
     sink.write(traceRecord('turn-b'))
 
-    const files = names(dir, /^trace-.*\.jsonl$/)
-    expect(files).toEqual([`trace-${NOW}-1.jsonl`])
+    const files = names(dir, /^run-trace-.*\.jsonl$/)
+    expect(files).toEqual([`run-trace-${NOW}-1.jsonl`])
     expect(readLines(join(dir, files[0]!)).map((line) => JSON.parse(line))).toEqual([
       traceRecord('turn-a'),
       traceRecord('turn-b'),
@@ -75,11 +75,11 @@ describe('createJsonlRunTraceSink', () => {
     sink.write(traceRecord('turn-b'))
     sink.write(traceRecord('turn-c'))
 
-    expect(names(dir, /^trace-.*\.jsonl$/)).toEqual([`trace-${NOW}-1.jsonl`, `trace-${NOW}-2.jsonl`])
+    expect(names(dir, /^run-trace-.*\.jsonl$/)).toEqual([`run-trace-${NOW}-1.jsonl`, `run-trace-${NOW}-2.jsonl`])
   })
 
-  it('purges trace files older than the max age, and never the perf files beside them', () => {
-    const stale = join(dir, `trace-${NOW - 30 * DAY_MS}-1.jsonl`)
+  it('purges run trace files older than the max age, and never the perf files beside them', () => {
+    const stale = join(dir, `run-trace-${NOW - 30 * DAY_MS}-1.jsonl`)
     const stalePerf = join(dir, `perf-${NOW - 30 * DAY_MS}-1.jsonl`)
     for (const path of [stale, stalePerf]) {
       writeFileSync(path, '{}\n')
@@ -89,7 +89,7 @@ describe('createJsonlRunTraceSink', () => {
 
     createJsonlRunTraceSink(dir, { now: () => NOW }).write(traceRecord('turn-a'))
 
-    expect(names(dir, /^trace-.*\.jsonl$/)).toEqual([`trace-${NOW}-1.jsonl`])
+    expect(names(dir, /^run-trace-.*\.jsonl$/)).toEqual([`run-trace-${NOW}-1.jsonl`])
     expect(names(dir, /^perf-.*\.jsonl$/)).toEqual([`perf-${NOW - 30 * DAY_MS}-1.jsonl`])
   })
 

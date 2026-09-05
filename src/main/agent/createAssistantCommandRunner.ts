@@ -28,17 +28,12 @@ export function createAssistantCommandRunner(deps: {
   canPublish?: () => boolean
   tracer?: PerfTracer
   /**
-   * The Run Trace sink (#180, ADR 0030): the diagnostic file family beside
-   * the perf logs. Absent in tests and wherever nothing is tracing — the
-   * Run then simply leaves no trace.
+   * The Run Trace sink (#180, #184, ADR 0031): the diagnostic file family
+   * beside the perf logs, present only when the developer set
+   * `BINGBONG_RUN_TRACE`. Absent in tests and wherever nothing is tracing —
+   * the Run then simply leaves no trace, reasoning records included.
    */
   runTrace?: RunTraceSink
-  /**
-   * The reasoning records' opt-in (#182): true only when the developer set
-   * `BINGBONG_TRACE_REASONING`. Parsed at the app edge, like every other
-   * BINGBONG_* flag, so the Run layer is handed a decision, not an env.
-   */
-  traceReasoning?: boolean
   printSummary?: (line: string) => void
 }): AssistantCommandRunner {
   const mintTurnId = createTurnIdSource(deps.tracer)
@@ -112,9 +107,6 @@ export function createAssistantCommandRunner(deps: {
                   }),
                 }
               : {}),
-            // The reasoning records (#182): opt-in, and only meaningful
-            // where something is tracing at all.
-            ...(deps.runTrace && deps.traceReasoning ? { traceReasoning: true } : {}),
           })) {
             if (event.type === 'done' && event.outcome === 'reset') restartRequested = true
             if (deps.canPublish && !deps.canPublish()) break
