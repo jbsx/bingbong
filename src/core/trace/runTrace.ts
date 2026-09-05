@@ -85,8 +85,20 @@ export interface EvidenceCheckpointEvent {
  */
 export interface ReasoningEvent {
   readonly kind: 'reasoning'
-  /** Which round of the Run thought this, counting from 1. */
+  /**
+   * Which LLM round of the Run thought this, counting from 1. Not the
+   * Tool Round count the Effort Epoch budgets: this numbers every model
+   * round, bookkeeping, reserved Answer and deadline-aborted ones
+   * included, so it must not be read against a Run's round budget.
+   */
   readonly round: number
+  /**
+   * Which attempt within that round, counting from 1. A round retried by
+   * the client leaves one record per attempt — an abandoned retry's
+   * thinking is exactly what this file exists to keep, and concatenating
+   * it into the surviving attempt would hide that two of them happened.
+   */
+  readonly attempt: number
   /** The round's assembled reasoning, cut at {@link TRACE_REASONING_MAX_CHARS}. */
   readonly text: string
   /** Full length in characters before the cut, so truncation is visible. */

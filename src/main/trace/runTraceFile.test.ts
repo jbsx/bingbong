@@ -63,7 +63,7 @@ function reasoning(records: readonly RunTraceRecord[]): (RunTraceRecord & Reason
 async function runSession(
   dir: string,
   turns: AssistantTurn[],
-  options: { traceReasoning?: boolean; thinks?: (round: number) => string } = {},
+  options: { traceReasoning?: boolean; thinks?: (round: number) => string[]; retriesFirstRound?: boolean } = {},
 ): Promise<RunTraceRecord[]> {
   const clock = new FakeClock(1_000)
   const runtime = createSessionRuntime({ clock, identities: new DeterministicIdentities() })
@@ -72,8 +72,14 @@ async function runSession(
     complete: (request) => {
       const round = served + 1
       // The reasoning stream as a provider emits it: deltas, then the turn.
+      // A first attempt that thought, then failed: the client retries it,
+      // and the abandoned thinking must not join the attempt that survives.
+      if (options.retriesFirstRound && round === 1 && request.onDelta) {
+        request.onDelta({ kind: 'reasoning', text: 'the provider hung up' })
+        request.onRetryAttempt?.(2, 3)
+      }
       if (options.thinks && request.onDelta) {
-        for (const chunk of [options.thinks(round)]) request.onDelta({ kind: 'reasoning', text: chunk })
+        for (const chunk of options.thinks(round)) request.onDelta({ kind: 'reasoning', text: chunk })
       }
       return Promise.resolve(turns[served++] ?? { kind: 'answer', speak: 'Done.', display: 'Done.' })
     },
@@ -221,7 +227,8 @@ describe('the Run Trace file', () => {
         { kind: 'tool_calls', calls: [{ id: 'c1', name: 'read_page', args: {} }] },
         { kind: 'answer', speak: 'It is $39.', display: 'It is $39.' },
       ],
-      { traceReasoning: true, thinks: (round) => `round ${round}: what does it cost` },
+      // Several deltas per round, so the record proves the assembly.
+      { traceReasoning: true, thinks: (round) => [`round ${round}: `, 'what does', ' it cost'] },
     )
 
     expect(reasoning(all).map((record) => [record.round, record.text])).toEqual([
@@ -236,8 +243,10 @@ describe('the Run Trace file', () => {
       expect(record.generation).toBe(0)
       expect(record.turnId).toMatch(/^turn-/)
       expect(record.chars).toBe(record.text.length)
+      // One attempt each: nothing here retried.
+      expect(record.attempt).toBe(1)
     }
-    // The checkpoint records are unchanged beside them.
+    // This Run checkpointed nothing, so reasoning is all the file holds.
     expect(checkpoints(all)).toEqual([])
   })
 
@@ -245,12 +254,25 @@ describe('the Run Trace file', () => {
     const long = 'z'.repeat(TRACE_REASONING_MAX_CHARS + 1_000)
     const all = await runSession(dir, [{ kind: 'answer', speak: 'Done.', display: 'Done.' }], {
       traceReasoning: true,
-      thinks: () => long,
+      thinks: () => [long],
     })
 
     const [record] = reasoning(all)
     expect(record!.text).toBe(long.slice(0, TRACE_REASONING_MAX_CHARS))
     expect(record!.chars).toBe(long.length)
+  })
+
+  it('closes a retried round once per attempt, so the abandoned thinking stands alone', async () => {
+    const all = await runSession(dir, [{ kind: 'answer', speak: 'Done.', display: 'Done.' }], {
+      traceReasoning: true,
+      retriesFirstRound: true,
+      thinks: () => ['second time lucky'],
+    })
+
+    expect(reasoning(all).map((record) => [record.round, record.attempt, record.text])).toEqual([
+      [1, 1, 'the provider hung up'],
+      [1, 2, 'second time lucky'],
+    ])
   })
 
   it('writes no reasoning record with the flag unset, however much the model thinks', async () => {
@@ -260,7 +282,7 @@ describe('the Run Trace file', () => {
         { kind: 'tool_calls', calls: [{ id: 'c1', name: 'read_page', args: {} }] },
         { kind: 'answer', speak: 'It is $39.', display: 'It is $39.' },
       ],
-      { thinks: () => 'the user asked about their own shopping' },
+      { thinks: () => ['the user asked about their own shopping'] },
     )
 
     expect(reasoning(all)).toEqual([])

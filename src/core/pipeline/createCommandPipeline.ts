@@ -626,7 +626,12 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
     // The reasoning records (#182): one collector per run when the
     // developer opted in, assembling each round's reasoning deltas. Absent
     // by default — with nothing here, no reasoning is retained at all.
-    const reasoningRounds = continuity?.traceReasoning ? createReasoningRounds() : undefined
+    // Gated on the writer too, not just the flag: with nothing to write to,
+    // collecting would retain the model's reasoning in memory only to drop
+    // it — and the whole point of the opt-in is that unasked-for reasoning
+    // is never collected in the first place.
+    const traceRun = continuity?.traceRun
+    const reasoningRounds = continuity?.traceReasoning && traceRun ? createReasoningRounds() : undefined
 
     try {
       let runOutcome: 'done' | 'failed' | 'cancelled' = 'done'
@@ -880,7 +885,9 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
               // Retry visibility (#43): each attempt beyond the first is a
               // detail event on the side channel — emitted before the next
               // attempt starts, while this round is still in flight.
-              ...(emitDetail
+              // Wired for the reasoning records too (#182), so a retry
+              // splits its attempts even where no detail channel listens.
+              ...(emitDetail || reasoningRounds
                 ? {
                     onRetryAttempt: (attempt: number, maxAttempts: number): void => {
                       // Drain the failed attempt's partial stream first (#47):
@@ -888,7 +895,14 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
                       // next attempt streams fresh instead of concatenating
                       // onto stale buffer.
                       batcher?.flush()
-                      emitDetail({ type: 'llm_retry', attempt, maxAttempts, at: clock.now() })
+                      // The abandoned attempt's thinking (#182) closes with
+                      // it, as its own record: concatenating it into the
+                      // attempt that survives would hide that two happened.
+                      if (reasoningRounds) {
+                        const abandoned = reasoningRounds.takeAttempt()
+                        traceRun?.(() => ({ turnId, ...reasoningEvent(abandoned) }))
+                      }
+                      emitDetail?.({ type: 'llm_retry', attempt, maxAttempts, at: clock.now() })
                     },
                   }
                 : {}),
@@ -940,7 +954,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
             // returned. Truncation happens inside the writer's guard.
             if (reasoningRounds) {
               const ended = reasoningRounds.takeRound()
-              continuity?.traceRun?.(() => ({ turnId, ...reasoningEvent(ended) }))
+              traceRun?.(() => ({ turnId, ...reasoningEvent(ended) }))
             }
           }
           // The round can resolve despite the deadline abort (a client that

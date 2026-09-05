@@ -18,9 +18,10 @@ export function reasoningTraceEnabled(env: Record<string, string | undefined>): 
   return envFlagEnabled(env, TRACE_REASONING_ENV)
 }
 
-/** One round's reasoning as the collector assembled it. */
+/** One attempt's reasoning as the collector assembled it. */
 export interface ReasoningRound {
   readonly round: number
+  readonly attempt: number
   readonly text: string
 }
 
@@ -30,26 +31,45 @@ export interface ReasoningRound {
  * end — including a round that aborted or failed, which is exactly the
  * round whose reasoning a diagnosis wants. Nothing exists at all when the
  * flag is off, so no reasoning is retained for the file.
+ *
+ * The delta batcher keeps a reasoning buffer too, and cannot serve this
+ * one: it flushes — and clears — every ~120ms so the Feed stays live, so
+ * what it holds at any moment is the tail since the last flush, never the
+ * round. These lifetimes are different on purpose.
  */
 export interface ReasoningRounds {
   /** One streamed fragment; everything but reasoning is ignored. */
   onDelta(delta: LlmStreamDelta): void
-  /** Closes the round: its assembled reasoning, and the next round starts empty. */
+  /**
+   * Closes one attempt of the current round, leaving the round open: the
+   * client is about to retry it, and the abandoned attempt's thinking is
+   * one of the two cases this file exists to keep.
+   */
+  takeAttempt(): ReasoningRound
+  /** Closes the round: its last attempt, and the next round starts empty. */
   takeRound(): ReasoningRound
 }
 
 export function createReasoningRounds(): ReasoningRounds {
-  let round = 0
+  let rounds = 0
+  let attempts = 0
   let text = ''
+  const take = (): ReasoningRound => {
+    attempts += 1
+    const assembled = text
+    text = ''
+    return { round: rounds + 1, attempt: attempts, text: assembled }
+  }
   return {
     onDelta(delta) {
       if (delta.kind === 'reasoning') text += delta.text
     },
+    takeAttempt: take,
     takeRound() {
-      round += 1
-      const assembled = text
-      text = ''
-      return { round, text: assembled }
+      const closed = take()
+      rounds += 1
+      attempts = 0
+      return closed
     },
   }
 }
@@ -63,6 +83,7 @@ export function reasoningEvent(input: ReasoningRound): ReasoningEvent {
   return {
     kind: 'reasoning',
     round: input.round,
+    attempt: input.attempt,
     text: input.text.slice(0, TRACE_REASONING_MAX_CHARS),
     chars: input.text.length,
   }

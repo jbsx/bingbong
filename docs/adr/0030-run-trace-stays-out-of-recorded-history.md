@@ -61,7 +61,12 @@ Recorded History's database.
   the whole point of making this the one kind that has to be asked for. The
   8,000-character cap bounds what an opted-in file holds; the record keeps the
   true length beside the cut text so a truncation is never mistaken for a
-  short thought. Turning the flag on makes every round stream, because
+  short thought. A retried round leaves one record per attempt rather than one
+  concatenation: an abandoned retry is one of the two cases the record exists
+  for, and merging it into the attempt that survived would hide that two
+  happened. `round` counts model rounds — bookkeeping, reserved Answer and
+  deadline-aborted ones included — so it is not the Tool Round count a Run
+  budgets against. Turning the flag on makes every round stream, because
   reasoning exists only as stream deltas.
 
 **A Session Reset does not purge trace files, deliberately.** This is the
