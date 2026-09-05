@@ -17,13 +17,6 @@ import type { MemoryEntryId } from '../src/core/session/workingMemory'
 // main/preload/renderer boundary, scripted orchestrator, real CDP
 // browser, real clipboard.
 
-/** Everything Recorded History holds, one line per entry. */
-function recordedHistoryText(app: Harness): Promise<string> {
-  return app.dashboardEval<string>(
-    `(async () => (await window.bingbong.history.recentEntries()).map((entry) => entry.text).join('\\n'))()`,
-  )
-}
-
 /**
  * Scroll an overlay element into view, then click it: synthetic CDP clicks
  * land on viewport coordinates only, so an element below a list fold must
@@ -103,7 +96,7 @@ describe('evidence source controls e2e', () => {
       await app.ensurePanelOpen()
       expect(await app.submitCommand('collect the two sources')).toBe('submitted')
       await waitFor(
-        async () => (((await recordedHistoryText(app)).includes('Collected both sources.')) ? true : undefined),
+        async () => ((app.runTraceTranscript().includes('Collected both sources.')) ? true : undefined),
         { timeoutMs: 20_000, intervalMs: 250 },
       )
 
@@ -208,7 +201,7 @@ describe('evidence source controls e2e', () => {
     try {
       expect(await app.submitCommand('note the titled source')).toBe('submitted')
       await waitFor(
-        async () => (((await recordedHistoryText(app)).includes('Noted the titled source.')) ? true : undefined),
+        async () => ((app.runTraceTranscript().includes('Noted the titled source.')) ? true : undefined),
         { timeoutMs: 20_000, intervalMs: 250 },
       )
       await app.ensurePanelOpen()
@@ -290,7 +283,7 @@ describe('evidence source controls e2e', () => {
       // Answering completes the Run normally.
       expect(await app.dashboardEval<string>(answerAskScript('yes'))).toBe('answered')
       await waitFor(
-        async () => (((await recordedHistoryText(app)).includes('Finished with the guide.')) ? true : undefined),
+        async () => ((app.runTraceTranscript().includes('Finished with the guide.')) ? true : undefined),
         { timeoutMs: 20_000, intervalMs: 250 },
       )
     } finally {
@@ -345,7 +338,7 @@ describe('evidence source controls e2e', () => {
     try {
       expect(await app.submitCommand('collect the delegated source')).toBe('submitted')
       await waitFor(
-        async () => (((await recordedHistoryText(app)).includes('Collected the delegated source.')) ? true : undefined),
+        async () => ((app.runTraceTranscript().includes('Collected the delegated source.')) ? true : undefined),
         { timeoutMs: 30_000, intervalMs: 250 },
       )
 

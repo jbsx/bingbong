@@ -7,11 +7,25 @@ import { AGENT_ROLES, REASONING_EFFORT_ENV_KEY, routingEnvKeys } from '../src/co
 import { launchApp, pickFreeDebugPort, type LaunchedApp } from './electronApp'
 import { startFixtureServer, type FixtureServer } from './fixtureServer'
 import { promptBarScript, urlBarNavigationScript } from './scripts'
+import { readRunTrace, runTraceTranscript } from './runTrace'
+import type { TraceRecord } from '../src/core/trace/runTrace'
+import { RUN_TRACE_ENV } from '../src/core/trace/traceFlags'
 import { sleep, waitFor } from './waitFor'
 
 export interface Harness {
   cdp: CdpClient
   fixture: FixtureServer
+  /** The launched app's profile directory — where the Run Trace lands. */
+  userDataDir: string
+  /**
+   * Every Run Trace record the app has written so far (#188). This is
+   * what a Run durably recorded now that Recorded History is retired: the
+   * sink appends synchronously, so a record written before the call is
+   * already on disk.
+   */
+  readRunTrace(): TraceRecord[]
+  /** The Run Trace's transcript text, one line per event that projects to one. */
+  runTraceTranscript(): string
   paneSessionId(): string | undefined
   paneTargetId(): string | undefined
   dashboardTargetId(): string | undefined
@@ -180,6 +194,10 @@ export async function startHarness(
     // BINGBONG_ENV_FILE and override this.
     env: {
       BINGBONG_WAKE_ENGINE: 'off',
+      // The Run Trace is the e2e suite's record of what a Run did (#188):
+      // Recorded History is retired, so every launch opts in and the
+      // suites read `run-trace-*.jsonl` out of the profile's logs dir.
+      [RUN_TRACE_ENV]: '1',
       BINGBONG_ADBLOCK_LISTS: fixture.url('/adblock-list'),
       BINGBONG_ADBLOCK_RESOURCES: '',
       BINGBONG_VISION_SCRIPT: '[]',
@@ -203,7 +221,7 @@ export async function startHarness(
     }
   }
   try {
-    return await buildHarness(app, fixture, teardown, options?.wakeFromBootIdle ?? true)
+    return await buildHarness(app, fixture, userDataDir, teardown, options?.wakeFromBootIdle ?? true)
   } catch (error) {
     await teardown().catch(() => {})
     throw error
@@ -213,6 +231,7 @@ export async function startHarness(
 async function buildHarness(
   app: LaunchedApp,
   fixture: FixtureServer,
+  userDataDir: string,
   teardown: () => Promise<void>,
   wakeFromBootIdle: boolean,
 ): Promise<Harness> {
@@ -284,6 +303,10 @@ async function buildHarness(
   const harness: Harness = {
     cdp,
     fixture,
+    userDataDir,
+
+    readRunTrace: () => readRunTrace(userDataDir),
+    runTraceTranscript: () => runTraceTranscript(readRunTrace(userDataDir)),
 
     paneSessionId: paneSid,
     paneTargetId: () => findTarget('pane')?.targetId,

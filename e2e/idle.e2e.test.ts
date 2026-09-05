@@ -153,11 +153,11 @@ describe('active-session idle gating e2e (#70)', () => {
 })
 
 describe('restart Boot State e2e (#88)', () => {
-  it('boots the Idle Screen even when Recorded History is inside the old Session Window', async () => {
+  it('boots the Idle Screen even when the previous Run is inside the old Session Window', async () => {
     const fixture = await startFixtureServer()
     const userDataDir = await mkdtemp(join(tmpdir(), 'bingbong-e2e-idle-gate-'))
     // The old timestamp remains inside this wide window during relaunch;
-    // Recorded History must still have no ownership of the new launch.
+    // The previous launch must still have no ownership of the new one.
     const env = {
       BINGBONG_LLM_SCRIPT: JSON.stringify([{ kind: 'answer', speak: 'Recorded.', display: 'ANSWER ONE' }]),
       BINGBONG_IDLE_TIMEOUT_MS: '1500',
@@ -173,7 +173,7 @@ describe('restart Boot State e2e (#88)', () => {
       }
 
       // Restart inside the old window without waking input: Boot State owns
-      // the screen immediately and remains independent of Recorded History.
+      // the screen immediately and remains independent of any prior launch.
       const second = await startHarness({ fixture, userDataDir, env, wakeFromBootIdle: false })
       try {
         await waitFor(

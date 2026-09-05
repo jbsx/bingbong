@@ -7,7 +7,6 @@ import { VOICE_IPC } from '../core/voice/ipcChannels'
 import { LEARNED_TERMS_IPC } from '../core/voice/learnedTermsIpcChannels'
 import { SUBAGENT_IPC } from '../core/agent/subagentIpcChannels'
 import { USAGE_IPC } from '../core/settings/usageIpcChannels'
-import { HISTORY_IPC } from '../core/history/ipcChannels'
 import { DIAGNOSTICS_IPC } from '../core/trace/diagnosticsIpcChannels'
 import type { RendererReport } from '../core/trace/rendererTrace'
 import { PANEL_IPC } from '../core/panel/ipcChannels'
@@ -19,7 +18,6 @@ import type { AppSettings } from '../core/settings/settings'
 import type { RoutingStatus } from '../core/agent/modelRouting'
 import type { UsageSummary } from '../core/agent/spendEstimate'
 import type { VoiceErrorEvent, VoiceHeardEvent, VoiceState } from '../core/voice/ipcChannels'
-import type { RecordedEntry, RunRecord, SessionRecord } from '../core/history/historyStore'
 import type { SubmissionFeedback } from '../core/session/submissionFeedback'
 import { SESSION_IPC, type SessionAdoptionPayload, type SessionDecisionRequest } from '../core/session/ipcChannels'
 import {
@@ -128,13 +126,6 @@ contextBridge.exposeInMainWorld('bingbong', {
   },
   usage: {
     getToday: (): Promise<UsageSummary> => ipcRenderer.invoke(USAGE_IPC.getToday),
-  },
-  history: {
-    recentEntries: (): Promise<RecordedEntry[]> => ipcRenderer.invoke(HISTORY_IPC.recentEntries),
-    recentRuns: (): Promise<RunRecord[]> => ipcRenderer.invoke(HISTORY_IPC.recentRuns),
-    recentSessions: (): Promise<SessionRecord[]> => ipcRenderer.invoke(HISTORY_IPC.recentSessions),
-    recordVoiceError: (message: string): Promise<number | null> =>
-      ipcRenderer.invoke(HISTORY_IPC.recordVoiceError, message),
   },
   diagnostics: {
     /** One renderer record for the Host Trace (#187) — dropped unless a developer opted in. */

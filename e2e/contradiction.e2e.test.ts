@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { startHarness, type Harness } from './harness'
+import { startHarness } from './harness'
 import { startFixtureServer, type FixtureServer } from './fixtureServer'
 import { waitFor } from './waitFor'
 import type { AssistantTurn } from '../src/core/ports/llm'
@@ -18,13 +18,6 @@ import type { MemoryEntryId } from '../src/core/session/workingMemory'
 
 /** The `Evidence N` control's badge text, or null when no badge shows. */
 const EVIDENCE_BADGE = `document.querySelector('.feed-tab--evidence .feed-tab-count')?.textContent ?? null`
-
-/** Everything Recorded History holds, one line per entry. */
-function recordedHistoryText(app: Harness): Promise<string> {
-  return app.dashboardEval<string>(
-    `(async () => (await window.bingbong.history.recentEntries()).map((entry) => entry.text).join('\\n'))()`,
-  )
-}
 
 /** The Answer Evidence Summaries in feed order, as [chip, open] pairs. */
 const SUMMARY_WARNING_CHIPS =
@@ -76,7 +69,7 @@ describe('contradiction e2e (#143)', () => {
       const first = await app.submitCommand('what does the second page say the widget costs')
       expect(first).toBe('submitted')
       await waitFor(
-        async () => (((await recordedHistoryText(app)).includes('The widget costs $39.')) ? true : undefined),
+        async () => ((app.runTraceTranscript().includes('The widget costs $39.')) ? true : undefined),
         { timeoutMs: 20_000, intervalMs: 250 },
       )
       await app.ensurePanelOpen()
@@ -92,7 +85,7 @@ describe('contradiction e2e (#143)', () => {
       const second = await app.submitCommand('check the price again')
       expect(second).toBe('submitted')
       await waitFor(
-        async () => (((await recordedHistoryText(app)).includes('The widget now costs $59.')) ? true : undefined),
+        async () => ((app.runTraceTranscript().includes('The widget now costs $59.')) ? true : undefined),
         { timeoutMs: 20_000, intervalMs: 250 },
       )
 

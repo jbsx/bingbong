@@ -1,9 +1,11 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { existsSync } from 'node:fs'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { startHarness, type Harness } from './harness'
 import { startFixtureServer, type FixtureServer } from './fixtureServer'
+import { tracedEvents } from './runTrace'
 import { waitFor } from './waitFor'
 import type { AssistantTurn } from '../src/core/ports/llm'
 import type { MemoryEntryId } from '../src/core/session/workingMemory'
@@ -15,10 +17,11 @@ import type { MemoryEntryId } from '../src/core/session/workingMemory'
 // ended Session's snapshot unavailable, and returns the panel to Activity,
 // the default view of every newly created Session. Run cancellation is not
 // Session interruption: Stop keeps the Session's evidence. Application
-// relaunch restores no Evidence Browser data while Recorded History keeps
-// only the permitted Answer text and URLs. Real main/preload/renderer
-// boundary, real Electron lifecycle, scripted orchestrator, real CDP
-// browser.
+// relaunch restores no Evidence Browser data, and with Recorded History
+// retired (#188) there is no always-on store left for it to be recovered
+// from at all — the Run and its evidence survive only in the opt-in Run
+// Trace this suite enables. Real main/preload/renderer boundary, real
+// Electron lifecycle, scripted orchestrator, real CDP browser.
 
 /** The `Evidence N` control's badge text, or null when no badge shows. */
 const EVIDENCE_BADGE = `document.querySelector('.feed-tab--evidence .feed-tab-count')?.textContent ?? null`
@@ -35,13 +38,6 @@ const EVIDENCE_PULL = `(async () => await window.bingbong.evidence.get())()`
 /** The Session-owned selected view, straight from main's fold. */
 const VIEW_PULL = `(async () => await window.bingbong.evidence.getView())()`
 
-/** Everything Recorded History holds, one line per entry. */
-function recordedHistoryText(app: Harness): Promise<string> {
-  return app.dashboardEval<string>(
-    `(async () => (await window.bingbong.history.recentEntries()).map((entry) => entry.text).join('\\n'))()`,
-  )
-}
-
 function checkpointTurn(page: string, observation: string): AssistantTurn {
   return {
     kind: 'tool_calls',
@@ -52,12 +48,12 @@ function checkpointTurn(page: string, observation: string): AssistantTurn {
   }
 }
 
-/** Runs the command and waits until its answer landed in Recorded History. */
+/** Runs the command and waits until its answer landed in the Run Trace. */
 async function submitAndRecord(app: Harness, command: string, marker: string): Promise<void> {
   const submitted = await app.submitCommand(command)
   expect(submitted).toBe('submitted')
   await waitFor(
-    async () => (((await recordedHistoryText(app)).includes(marker)) ? true : undefined),
+    async () => ((app.runTraceTranscript().includes(marker)) ? true : undefined),
     { timeoutMs: 30_000, intervalMs: 250 },
   )
 }
@@ -231,20 +227,12 @@ describe('evidence browser lifecycle e2e', () => {
       )
       await app.clickOverlayElement('.feed-tab:not(.feed-tab--evidence)')
 
-      // The lifecycle transition left no structured evidence in any
-      // History record shape — the APIs expose text and lifecycle fields
-      // only, whatever crossed the boundary.
-      const postResetRaw = await app.dashboardEval<string>(
-        `(async () => JSON.stringify({
-          entries: await window.bingbong.history.recentEntries(),
-          runs: await window.bingbong.history.recentRuns(),
-          sessions: await window.bingbong.history.recentSessions(),
-        }))()`,
-      )
-      expect(postResetRaw).not.toMatch(/observation/i)
-      expect(postResetRaw).not.toMatch(/candidate/i)
-      expect(postResetRaw).not.toMatch(/contradiction/i)
-      expect(postResetRaw).not.toContain('evidenceIds')
+      // The lifecycle transition left the evidence nowhere a renderer can
+      // reach it. Recorded History was the store that question used to be
+      // asked of; it is retired (#188), so the preload surface offers no
+      // history API at all and the profile keeps no database.
+      expect(await app.dashboardEval<boolean>(`'history' in window.bingbong`)).toBe(false)
+      expect(existsSync(join(app.userDataDir, 'history.db'))).toBe(false)
 
       // Stale-generation isolation (#145): Session B checkpoints its own
       // evidence and the browser shows exactly it — the replacement
@@ -391,7 +379,7 @@ describe('evidence browser lifecycle e2e', () => {
     }
   })
 
-  it('application relaunch restores no Evidence Browser data — Recorded History keeps only the permitted Answer text and URLs', async () => {
+  it('application relaunch restores no Evidence Browser data — only the opt-in Run Trace outlives the Session', async () => {
     const page = fixture.url('/second')
     const script: AssistantTurn[] = [
       checkpointTurn(page, 'The heading was checkpointed before the close.'),
@@ -412,13 +400,13 @@ describe('evidence browser lifecycle e2e', () => {
       try {
         await submitAndRecord(first, 'note what the second page says', 'SESSION A DONE.')
         await waitForEvidenceBadge(first, '1')
-        // The Answer declared its evidence, so Recorded History keeps the
-        // permitted rendering: Answer text plus the flattened source URL.
+        // The Answer declared its evidence, so the Run Trace holds the
+        // `display` event as published — its text and its derived source.
         await waitFor(
-          async () => {
-            const text = await recordedHistoryText(first)
-            return text.includes('Sources:') && text.includes(page) ? true : undefined
-          },
+          async () =>
+            tracedEvents(first.readRunTrace(), 'display').some(
+              (event) => event.text.includes('SESSION A DONE.') && (event.sources ?? []).some((source) => source.url === page),
+            ) || undefined,
           { timeoutMs: 10_000, intervalMs: 250 },
         )
       } finally {
@@ -443,25 +431,15 @@ describe('evidence browser lifecycle e2e', () => {
         expect(await second.overlayEval<string>(PANEL_VIEW)).toBe('activity feed')
         expect(await second.overlayEval<string | null>(EVIDENCE_BADGE)).toBeNull()
 
-        // Recorded History kept exactly what it is permitted to keep: the
-        // Answer text and its URLs — and no structured evidence field
-        // survives any lifecycle transition in any record shape.
-        const recorded = await recordedHistoryText(second)
+        // The closed Session's Answer survives in one place only: the Run
+        // Trace file the developer opted into, which the relaunched app
+        // appends to rather than reads. Nothing renderer-reachable holds
+        // it — the history API is gone and no database came back.
+        const recorded = second.runTraceTranscript()
         expect(recorded).toContain('SESSION A DONE.')
-        expect(recorded).toContain('Sources:')
-        expect(recorded).toContain(page)
-        expect(recorded).not.toMatch(/memory-\d/)
-        const raw = await second.dashboardEval<string>(
-          `(async () => JSON.stringify({
-            entries: await window.bingbong.history.recentEntries(),
-            runs: await window.bingbong.history.recentRuns(),
-            sessions: await window.bingbong.history.recentSessions(),
-          }))()`,
-        )
-        expect(raw).not.toMatch(/observation/i)
-        expect(raw).not.toMatch(/candidate/i)
-        expect(raw).not.toMatch(/contradiction/i)
-        expect(raw).not.toContain('evidenceIds')
+        expect(recorded).toContain('The heading was checkpointed before the close.')
+        expect(await second.dashboardEval<boolean>(`'history' in window.bingbong`)).toBe(false)
+        expect(existsSync(join(userDataDir, 'history.db'))).toBe(false)
       } finally {
         await second.quit()
       }

@@ -99,7 +99,7 @@ Window. It begins with its first accepted Run and ends at Lapse or explicit
 reset, or when Bing Bong closes. Runs within it share continuity; no model
 context crosses its boundary, and entries from ended Sessions never render.
 Each Session has one explicit identity carried by its Runs, Memory Entries,
-Feed events, and Recorded History.
+and Feed events. Nothing durable stores it: no Session survives the app.
 _Avoid_: conversation, thread (the thread is what the model retains)
 
 **Session Lifecycle**:
@@ -272,7 +272,7 @@ The bounded, structured state shared with Runs in one Session. It holds what is
 currently known, decided, assessed, constrained, produced, or still open. The
 orchestrator updates it through validated patches; it is destroyed when the
 Session ends and never crosses into another Session. It and the Run Journal live
-only in memory and are never recoverable from Recorded History.
+only in memory; there is no durable store to recover them from.
 _Avoid_: transcript, conversation history, cross-session memory
 
 **Memory Commit**:
@@ -305,7 +305,7 @@ _Avoid_: browsing history, tool transcript
 
 **Evidence Browser**:
 The read-only, live view of the current Session's Observations and Candidates.
-It is not Recorded History and disappears at the Session boundary.
+It is backed by no durable store and disappears at the Session boundary.
 _Avoid_: evidence manager, evidence history
 
 **Answer Evidence Summary**:
@@ -372,16 +372,9 @@ remain one Approach and follow the Run's no-progress Notice and refusal policy.
 _Avoid_: search spam, retry storm
 
 **Boot State**:
-Bing Bong starts with no Session and renders no entries from recorded history.
-Recorded history remains available outside the live Session experience.
+Bing Bong starts with no Session and renders no entries from any earlier launch.
+There is no durable store for it to render from.
 _Avoid_: hydration, restore, session replay
-
-**Recorded History**:
-The durable review record of past Runs. It may render only when the user
-explicitly opens a history view; it never hydrates the live Feed or provides
-continuity to a Session. It records each Session's identity, start, end, end
-reason, and Run membership.
-_Avoid_: session memory, diagnostic record, Run Trace
 
 **Run Trace**:
 A durable, machine-readable record of a Run's internal decisions — every event

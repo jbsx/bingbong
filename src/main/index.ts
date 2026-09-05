@@ -29,8 +29,6 @@ import { resolveRoutingStatus } from '../core/agent/modelRouting'
 import { loadEnvFile } from './envFile'
 import { createUsageStore } from './settings/usageStore'
 import { USAGE_IPC } from '../core/settings/usageIpcChannels'
-import { HISTORY_IPC, HISTORY_QUERY_LIMIT } from '../core/history/ipcChannels'
-import { createHistoryRecorder } from '../core/history/historyRecorder'
 import { systemClock } from '../core/ports/clock'
 import {
   createSessionRuntime,
@@ -39,7 +37,7 @@ import {
   type SessionRuntime,
 } from '../core/session/sessionRuntime'
 import { createSessionIdentitySource } from './session/sessionIdentitySource'
-import { createSqliteHistoryStore } from './history/createSqliteHistoryStore'
+import { removeRecordedHistory } from './removeRecordedHistory'
 import { DEFAULT_DAILY_SPEND_WARN_USD } from '../core/agent/spendEstimate'
 import { resolvePiperConfig } from './tts/piperConfig'
 import { createMainTts } from './tts/createMainTts'
@@ -147,12 +145,14 @@ const envFileValues = loadEnvFile(process.env, app.getAppPath())
 // reported usage lands here and surfaces on the settings page.
 const usageStore = createUsageStore(join(app.getPath('userData'), 'usage.json'))
 
-// Recorded History (spec #1, Persistence): every live event is recorded for
-// explicit review, but launches never restore it into the Feed or continuity.
-const historyStore = createSqliteHistoryStore(join(app.getPath('userData'), 'history.db'))
-const historyRecorder = createHistoryRecorder(historyStore, { now: () => Date.now() })
-// The window owns the Session runtime; module-level handle for the few IPC
-// paths that need the live Session identity for history attribution (#85).
+// Recorded History is retired (#188, ADR 0031): nothing rendered it, and
+// everything it held the Run Trace holds with more fidelity. The store it
+// leaves behind is Session text nothing can read, so an earlier build's
+// `history.db` is deleted here rather than left in the profile.
+removeRecordedHistory(app.getPath('userData'))
+// The window owns the Session runtime; module-level handle for the paths
+// that need the live Session identity outside a window — the Host Trace
+// stamps it on every record it writes (#184).
 let activeSessionRuntime: SessionRuntime | null = null
 
 // Always-on perf logging (#27): one JSONL span per finished stage under the
@@ -356,14 +356,7 @@ async function createWindow(): Promise<BrowserWindow> {
   })
   const eventPublisher = createWindowEventPublisher({
     acceptPipelineEvent,
-    createHistoryRunObserver: () => {
-      const run = historyRecorder.run()
-      return (event) => run.event(event)
-    },
-    historyEvent: (event) => historyRecorder.event(event),
     ...(tracePipelineEvent !== null ? { tracePipelineEvent } : {}),
-    historyHeard: (heard, sessionId) => historyRecorder.heard(heard, sessionId),
-    historyVoiceError: (error, sessionId) => historyRecorder.voiceError(error.message, error.at, sessionId),
     sendPipelineEvent: (event) => sendToRenderer(PIPELINE_IPC.event, event),
     sendVoiceState: (state) => sendToRenderer(VOICE_IPC.stateChanged, state),
     sendVoiceHeard: (heard) => sendToRenderer(VOICE_IPC.heard, heard),
@@ -500,8 +493,9 @@ async function createWindow(): Promise<BrowserWindow> {
   })
   // Model-invoked Session Reset (#99): the pipeline consumes the resetting
   // run at the new_session boundary; this seam ends the live Session —
-  // history end record, Browser State, Subagents, Feed cleanup — before the
-  // command runner admits the original command as fresh work.
+  // the Session evidence end record, Browser State, Subagents, Feed
+  // cleanup — before the command runner admits the original command as
+  // fresh work.
   const pipeline = createAssistantPipeline({
     controller,
     env: currentEnv(),
@@ -551,7 +545,7 @@ async function createWindow(): Promise<BrowserWindow> {
     ...(traceVision !== null ? { traceVision } : {}),
     browserSubspans,
     // Progress detail (#43): mid-await signals ride the same channel; the
-    // history projection maps them to no entry, so recording is unchanged.
+    // transcript projection maps them to no Feed entry.
     emitDetail: (event) => eventPublisher.publish({ source: 'detail', event }),
   })
   sessionRuntime = createSessionRuntime({
@@ -594,7 +588,6 @@ async function createWindow(): Promise<BrowserWindow> {
       // store is already cleared, so the ended Session's own counts are
       // the last place the answer exists.
       traceSession(() => sessionEvidenceEndEntry(ended))
-      historyStore.finishSession(ended.sessionId, ended.reason, ended.endedAt)
       // Every end reason discards Browser State through the same reusable
       // cleanup (#96); the runtime fires onEnded exactly once per Session.
       resetBrowserState(pane, subagentRuntime)
@@ -653,7 +646,6 @@ async function createWindow(): Promise<BrowserWindow> {
       sessionRuntime?.end('reset')
     },
     onSessionStarted: (admission) => {
-      historyStore.startSession(admission.sessionId, admission.acceptedAt)
       lastEndedSession = null
       eventPublisher.publish({
         source: 'lifecycle',
@@ -701,15 +693,6 @@ app.whenReady().then(async () => {
   registerSettingsIpc(settingsStore, () => resolveRoutingStatus(currentEnv()))
   registerFeedPanelIpc()
   ipcMain.handle(USAGE_IPC.getToday, () => usageStore.summary(dailySpendWarnUsd()))
-  ipcMain.handle(HISTORY_IPC.recentEntries, () => historyStore.recentEntries(HISTORY_QUERY_LIMIT))
-  ipcMain.handle(HISTORY_IPC.recentRuns, () => historyStore.recentRuns(50))
-  ipcMain.handle(HISTORY_IPC.recentSessions, () => historyStore.recentSessions(50))
-  ipcMain.handle(HISTORY_IPC.recordVoiceError, (_event, message: unknown) => {
-    if (typeof message !== 'string' || message.trim() === '') return null
-    const at = Date.now()
-    historyRecorder.voiceError(message, at, activeSessionRuntime?.state().sessionId ?? null)
-    return at
-  })
   registerTtsIpc({ voicesDir: () => piperConfig.voicesDir })
   registerVoiceIpc()
   // The renderer's own signals (#187): registered whatever the flag says,
@@ -749,7 +732,6 @@ app.whenReady().then(async () => {
   app.on('will-quit', () => {
     adblock.dispose()
     detachAppearance()
-    historyStore.close()
   })
   await adblock.ready()
   // Enabling the blocker re-registers its listeners; re-assert ours so the

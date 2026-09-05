@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { startHarness, type Harness } from './harness'
+import { startHarness } from './harness'
 import { startFixtureServer, type FixtureServer } from './fixtureServer'
+import { tracedEvents } from './runTrace'
 import { waitFor } from './waitFor'
 import type { AssistantTurn } from '../src/core/ports/llm'
 import type { MemoryEntryId } from '../src/core/session/workingMemory'
@@ -10,24 +11,12 @@ import type { MemoryEntryId } from '../src/core/session/workingMemory'
 // and resolve, live, into a collapsed summary of exactly those
 // Observations — no second model round decides relevance. The generated
 // Markdown Sources list is gone from the live Feed (the summary replaces
-// it; the model's own links stay put), while Recorded History keeps the
-// plain URLs flattened into the recorded text and nothing structured.
-// Real main/preload/renderer boundary, scripted orchestrator, real CDP
-// browser, real Electron IPC.
-
-/** Everything Recorded History holds, one line per entry. */
-function recordedHistoryText(app: Harness): Promise<string> {
-  return app.dashboardEval<string>(
-    `(async () => (await window.bingbong.history.recentEntries()).map((entry) => entry.text).join('\\n'))()`,
-  )
-}
-
-/** Recorded History's raw rows, as the renderer sees them. */
-function recordedHistoryRaw(app: Harness): Promise<string> {
-  return app.dashboardEval<string>(
-    `(async () => JSON.stringify(await window.bingbong.history.recentEntries()))()`,
-  )
-}
+// it; the model's own links stay put). Nothing durable renders it: with
+// Recorded History retired (#188) the Answer survives only in the Run
+// Trace, which — being opt-in diagnostics on the developer's own machine
+// — keeps the event exactly as published, derived sources and declared
+// identities included. Real main/preload/renderer boundary, scripted
+// orchestrator, real CDP browser, real Electron IPC.
 
 describe('answer evidence summary e2e', () => {
   let fixture: FixtureServer
@@ -40,7 +29,7 @@ describe('answer evidence summary e2e', () => {
     await fixture?.close()
   })
 
-  it('attaches the declared Observations as a collapsed summary — no second round, no duplicate sources, URL-only history', async () => {
+  it('attaches the declared Observations as a collapsed summary — no second round, no duplicate sources, and the Run Trace keeps the Answer verbatim', async () => {
     const page = fixture.url('/second')
     const linked = fixture.url('/cookie-echo')
     const script: AssistantTurn[] = [
@@ -76,10 +65,10 @@ describe('answer evidence summary e2e', () => {
       const submitted = await app.submitCommand('note what the second page says')
       expect(submitted).toBe('submitted')
 
-      // The run completed — the scripted answer reached Recorded History
+      // The run completed — the scripted answer reached the Run Trace
       // (and with it every live surface: the same event feeds both).
       await waitFor(
-        async () => (((await recordedHistoryText(app)).includes('The second page carries the heading.')) ? true : undefined),
+        async () => ((app.runTraceTranscript().includes('The second page carries the heading.')) ? true : undefined),
         { timeoutMs: 20_000, intervalMs: 250 },
       )
 
@@ -139,19 +128,22 @@ describe('answer evidence summary e2e', () => {
         await app.overlayEval<number>(`document.querySelectorAll('.feed-entry--display details.answer-evidence a').length`),
       ).toBe(0)
 
-      // Recorded History: URL-only — the derived sources flattened back
-      // into the recorded text as ordinary Markdown, and no identity or
-      // structured field anywhere in the store.
-      const recorded = await waitFor(
-        async () => {
-          const text = await recordedHistoryText(app)
-          return text.includes('Sources:') && text.includes(page) ? text : undefined
-        },
+      // The Run Trace: the `display` event exactly as it was published —
+      // the model's own text with its Markdown link, the derived sources
+      // as structured references, and the identities the Answer declared.
+      // Recorded History was allowed none of that; an opt-in diagnostic
+      // is (ADR 0030), which is why the store was retired rather than
+      // widened (#188).
+      const answer = await waitFor(
+        async () =>
+          tracedEvents(app.readRunTrace(), 'display').find((event) =>
+            event.text.includes('The second page carries the heading.'),
+          ),
         { timeoutMs: 10_000, intervalMs: 250 },
       )
-      expect(recorded).toContain(`[twin](${linked})`)
-      expect(recorded).not.toMatch(/memory-\d/)
-      expect(await recordedHistoryRaw(app)).not.toContain('evidenceIds')
+      expect(answer.text).toContain(`[twin](${linked})`)
+      expect(answer.sources?.map((source) => source.url)).toEqual([page])
+      expect(answer.evidenceIds).toEqual(['memory-1'])
 
       // Inspecting evidence moved no browser state: the pane stayed on
       // the page the run opened.
@@ -190,14 +182,14 @@ describe('answer evidence summary e2e', () => {
       const first = await app.submitCommand('note what the second page says')
       expect(first).toBe('submitted')
       await waitFor(
-        async () => (((await recordedHistoryText(app)).includes('First: the heading is on the second page.')) ? true : undefined),
+        async () => ((app.runTraceTranscript().includes('First: the heading is on the second page.')) ? true : undefined),
         { timeoutMs: 20_000, intervalMs: 250 },
       )
 
       const second = await app.submitCommand('is it still the heading')
       expect(second).toBe('submitted')
       await waitFor(
-        async () => (((await recordedHistoryText(app)).includes('Still the heading, per the record.')) ? true : undefined),
+        async () => ((app.runTraceTranscript().includes('Still the heading, per the record.')) ? true : undefined),
         { timeoutMs: 20_000, intervalMs: 250 },
       )
 

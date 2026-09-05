@@ -4,14 +4,13 @@ import { formatRetryLine } from '../pipeline/runProgress'
 import type { SessionId } from '../session/sessionIdentity'
 import type { MemoryEntryId } from '../session/workingMemory'
 import type { SessionAdoptionPayload } from '../session/ipcChannels'
-import { projectPipelineEvent } from './transcriptProjection'
-import type { TranscriptEvent } from './historyStore'
+import { projectPipelineEvent, type TranscriptEvent } from './transcriptProjection'
 
 // Feed projection (#44): the right-edge activity feed as a pure function —
 // pipeline events in, ordered feed entries out. Outcome lines reuse the
-// shared transcript projection word-for-word, so what the feed shows as
-// outcomes is exactly what Recorded History stores; retry lines are
-// ephemeral detail (never recorded, trimmed beyond the cap). Streamed
+// shared transcript projection word-for-word, so the dashboard and the
+// panel overlay show the same outcome line; retry lines are ephemeral
+// detail (never a Feed entry, trimmed beyond the cap). Streamed
 // deltas (#47) grow live answer/reasoning runs — also ephemeral detail —
 // with the answer's display entry replacing its partial at round end.
 // Tool-intent lines (#48) grow the same way while call arguments stream,
@@ -358,7 +357,7 @@ export function createFeedProjection(deps?: {
         // The Run Headline (ADR 0025) is the Peek Card's alone — a detail
         // event by design: no Feed Entry, and no stream is disturbed. The
         // Run Plan (#116) rides the same discipline: policy, telemetry,
-        // and history see it; the Feed does not.
+        // and the Run Trace see it; the Feed does not.
         case 'run_headline':
           return
         case 'run_plan':

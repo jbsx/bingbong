@@ -1,8 +1,23 @@
 import type { PipelineEvent } from '../pipeline/events'
 import { describeToolAction } from '../pipeline/toolCallDisplay'
-import type { TranscriptEvent } from './historyStore'
 
-/** The single projection shared by the live dashboard and persisted history. */
+// The projection every transcript-shaped view shares: one published
+// PipelineEvent in, at most one displayable line out. It was written so
+// the live dashboard and Recorded History would agree word for word;
+// #188 retired the latter, leaving the Feed projection its only caller —
+// the Run Trace records the events themselves, not their text.
+
+/** The transcript entry kinds a Feed line can be. */
+export type TranscriptKind = 'command' | 'tool' | 'display' | 'speak' | 'error' | 'voice'
+
+/** One transcript-visible event, before Feed identity is attached. */
+export interface TranscriptEvent {
+  kind: TranscriptKind
+  text: string
+  at: number
+}
+
+/** The single projection the dashboard and the Feed panel overlay share. */
 export function projectPipelineEvent(event: PipelineEvent): TranscriptEvent | null {
   switch (event.type) {
     case 'command':

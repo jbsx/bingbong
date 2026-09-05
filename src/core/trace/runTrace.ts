@@ -1,8 +1,8 @@
 // The Run Trace (#180, ADR 0031): a durable, machine-readable record of a
 // Run's internal decisions, written for diagnosis only. It is never
 // rendered in any view and never provides continuity to a Session — it
-// lives beside the perf logs, not in Recorded History, because Session
-// Evidence must never be recoverable from an always-on store. The file is
+// lives beside the perf logs, behind a flag, because Session Evidence
+// must never be recoverable from an always-on store. The file is
 // a contract: every record carries a version and the identities that join
 // it to the eval tape.
 //
@@ -66,8 +66,8 @@ export interface TracedObservation {
 /**
  * What happened to one Evidence Checkpoint attempt (#180): the raw call as
  * the model wrote it, every retention it was graded against, and the
- * verdict. Recorded History keeps only the display line and the error
- * text; this is where a rejected or vanished checkpoint is diagnosed.
+ * verdict. The Feed shows only the display line and the error text;
+ * this is where a rejected or vanished checkpoint is diagnosed.
  */
 export interface EvidenceCheckpointEvent {
   readonly kind: 'evidence_checkpoint'
@@ -133,8 +133,8 @@ export interface ReasoningEvent {
 /**
  * One PipelineEvent as it was published (#185): the event object itself,
  * owner stamps included, under `event`. The stream is what every view —
- * the dashboard, the Feed, Recorded History, the voice session — is told,
- * so recording it verbatim records exactly what they saw: the Run Plan,
+ * the dashboard, the Feed, the panel overlay, the voice session — is
+ * told, so recording it verbatim records exactly what they saw: the Run Plan,
  * each Tool Round's call and result, status, errors, asks, confirmations,
  * and the Session boundaries.
  *

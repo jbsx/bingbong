@@ -1,7 +1,6 @@
 import type { BrowserPaneState } from '../../core/browser/paneState'
 import type { PipelineEvent } from '../../core/pipeline/events'
 import type { AcceptedRunAdmission } from '../../core/session/sessionRuntime'
-import type { SessionId } from '../../core/session/sessionIdentity'
 import type { SubmissionFeedback } from '../../core/session/submissionFeedback'
 import type { VoiceErrorEvent, VoiceHeardEvent, VoiceState } from '../../core/voice/ipcChannels'
 
@@ -22,21 +21,16 @@ export type WindowEventPublication =
 
 export interface WindowEventPublisherDeps {
   acceptPipelineEvent?(event: PipelineEvent): boolean
-  createHistoryRunObserver(): (event: PipelineEvent) => void
-  historyEvent(event: PipelineEvent): void
   /**
-   * The pipeline_event records (#185): the tap sits with the history
-   * recorder, so the record is the event object as published — owner
-   * stamps included — and is written for every publication the acceptance
-   * gate let through, and only those. It runs after the views have been
-   * handed the event, so a synchronous write never sits between a Run and
-   * the frame it produced. Absent unless the developer set
-   * `BINGBONG_RUN_TRACE` (#184).
+   * The pipeline_event records (#185): the tap sits where the history
+   * recorder used to (#188), so the record is the event object as
+   * published — owner stamps included — and is written for every
+   * publication the acceptance gate let through, and only those. It runs
+   * after the views have been handed the event, so a synchronous write
+   * never sits between a Run and the frame it produced. Absent unless the
+   * developer set `BINGBONG_RUN_TRACE` (#184).
    */
   tracePipelineEvent?(event: PipelineEvent): void
-  /** `sessionId` attributes run-less voice records to their Session (#85). */
-  historyHeard(heard: VoiceHeardEvent, sessionId: SessionId | null): void
-  historyVoiceError(error: VoiceErrorEvent, sessionId: SessionId | null): void
   sendPipelineEvent(event: PipelineEvent): void
   sendVoiceState(state: VoiceState): void
   sendVoiceHeard(heard: VoiceHeardEvent): void
@@ -85,14 +79,12 @@ export function createWindowEventPublisher(deps: WindowEventPublisherDeps): Wind
 
   return {
     run(ownership) {
-      const historyRun = deps.createHistoryRunObserver()
       activeRunOwnership = ownership
       activeSessionOwnership = ownership
       return {
         publish(event) {
           const ownedEvent = withOwnership(event, ownership)
           if (!accepted(ownedEvent)) return
-          historyRun(ownedEvent)
           deps.sendPipelineEvent(ownedEvent)
           deps.observeVoicePipelineEvent(ownedEvent)
           deps.overlayPipelineEvent(ownedEvent)
@@ -120,7 +112,6 @@ export function createWindowEventPublisher(deps: WindowEventPublisherDeps): Wind
           // acceptance gate rejects it when it is not Session-scoped.
           const event = ownership ? withOwnership(publication.event, ownership) : publication.event
           if (!accepted(event)) return
-          deps.historyEvent(event)
           deps.sendPipelineEvent(event)
           if (publication.source === 'lifecycle') deps.observeVoicePipelineEvent(event)
           deps.overlayPipelineEvent(event)
@@ -135,23 +126,14 @@ export function createWindowEventPublisher(deps: WindowEventPublisherDeps): Wind
         case 'voice-state':
           deps.sendVoiceState(publication.state)
           return
-        case 'voice-heard': {
-          // Run-less voice records still belong to a Session when one is
-          // active (#85); after session_ended the ownerships are cleared
-          // and the record lands honestly Session-less.
-          const ownership = activeRunOwnership ?? activeSessionOwnership
-          deps.historyHeard(publication.heard, ownership?.sessionId ?? null)
+        case 'voice-heard':
           deps.overlayVoiceHeard(publication.heard)
           deps.sendVoiceHeard(publication.heard)
           return
-        }
-        case 'voice-error': {
-          const ownership = activeRunOwnership ?? activeSessionOwnership
-          deps.historyVoiceError(publication.error, ownership?.sessionId ?? null)
+        case 'voice-error':
           deps.overlayVoiceError(publication.error)
           deps.sendVoiceError(publication.error)
           return
-        }
         case 'browser':
           deps.sendBrowserState(publication.state)
           return

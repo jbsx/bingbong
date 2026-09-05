@@ -8,8 +8,6 @@ import { createAskUserTool } from './askUserTools'
 import { createReportRunPlanTool } from './runPlanTools'
 import { RUN_PLAN_NUDGE, RUN_PLAN_STANDALONE_ROUND, RUN_PLAN_TIER_BELOW_LOOKUP } from './runPlan'
 import type { EffortTier } from './runPlan'
-import { createHistoryRecorder } from '../history/historyRecorder'
-import type { HistoryStore, RecordedEntry, RunRecord } from '../history/historyStore'
 import { FailingTts, FakeClock, fakePerfHarness, fakeSubagentManager, memoryEntry, RecordingTts, ScriptedLlm, subagentRecord, withoutTurnId } from '../testing/doubles'
 import type { PipelineEvent } from './events'
 import type { SessionId } from '../session/sessionIdentity'
@@ -3620,46 +3618,6 @@ describe('command pipeline', () => {
 describe('command pipeline — turn correlation (#28)', () => {
   const spinner = { name: 'spin', async execute() { return 'spun' } }
 
-  function inMemoryHistoryStore(): HistoryStore & { entries: RecordedEntry[]; runs: RunRecord[] } {
-    const entries: RecordedEntry[] = []
-    const runs: RunRecord[] = []
-    let nextEntryId = 1
-    let nextRunId = 1
-    return {
-      entries,
-      runs,
-      startSession() {},
-      finishSession() {},
-      startRun(command, at, turnId, sessionId) {
-        const id = nextRunId++
-        runs.push({ id, turnId, sessionId, command, startedAt: at, finishedAt: null, outcome: null, effortTier: null, resolution: null, finalizationCause: null })
-        return id
-      },
-      finishRun(runId, outcome, at, finalization) {
-        const run = runs.find((candidate) => candidate.id === runId)
-        if (run) {
-          run.finishedAt = at
-          run.outcome = outcome
-          run.resolution = finalization?.resolution ?? null
-          run.finalizationCause = finalization?.finalizationCause ?? null
-        }
-      },
-      appendEntry(entry) {
-        entries.push({ id: nextEntryId++, ...entry })
-      },
-      recentEntries(limit) {
-        return [...entries].slice(-limit)
-      },
-      recentRuns(limit) {
-        return [...runs].slice(-limit)
-      },
-      recentSessions() {
-        return []
-      },
-      close() {},
-    }
-  }
-
   function fullTurnPipeline(): CommandPipeline {
     return createCommandPipeline({
       llm: new ScriptedLlm([
@@ -3678,24 +3636,14 @@ describe('command pipeline — turn correlation (#28)', () => {
   }
 
   it('stamps the adopted voice turn id on every event of a full turn', async () => {
-    const store = inMemoryHistoryStore()
-    const recorder = createHistoryRecorder(store, { now: () => 0 })
-    const historyRun = recorder.run()
     const events = await collectStamped(fullTurnPipeline(), 'spin it', 'turn-voice-1')
 
-    // The same events the renderer relays and history records — every one
-    // of them carries the turn's id, and (as the publisher stamps in
-    // production) the Run's Session identity.
-    for (const event of events) {
-      historyRun.event({ ...event, sessionId: 'session-1' as SessionId })
-    }
-
+    // Every event the renderer relays and the Run Trace records carries
+    // the turn's id — the join a diagnosis reads the turn back on.
     expect(events.map((event) => event.type)).toEqual([
       'command', 'status', 'status', 'tool_call', 'tool_result', 'status', 'display', 'status', 'speak', 'done',
     ])
     expect(turnIdsOf(events)).toEqual(Array.from({ length: events.length }, () => 'turn-voice-1'))
-    // The history run row adopts the id.
-    expect(store.runs[0]).toMatchObject({ turnId: 'turn-voice-1', command: 'spin it', outcome: 'done' })
   })
 
   it('stamps the turn id on every LLM request of the turn (#29)', async () => {
@@ -3766,7 +3714,7 @@ describe('command pipeline — turn correlation (#28)', () => {
   })
 })
 
-// Tool spans + the run-end summary (#30), observed at the seam the history
+// Tool spans + the run-end summary (#30), observed at the seam the Run Trace
 // recorder, session memory, and renderer relay use: the test runs a turn
 // through the pipeline with a real tracer over an in-memory sink, consumes
 // the stamped event stream, then asserts the sink holds one `tool` span per
@@ -5859,7 +5807,7 @@ describe('grounded Candidates, user corrections, and Answers (#122)', () => {
       text: 'Cheapest option found ().',
       // The declared identities ride as Session-only metadata (#141)…
       evidenceIds: ['memory-1'],
-      // …with the derived links beside them for Recorded History to
+      // …with the derived links beside them for a text-only reader to
       // flatten back into the recorded text.
       sources: [{ url: PAGE_URL }],
     })

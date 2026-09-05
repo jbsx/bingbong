@@ -3,14 +3,14 @@
 // derived from the Session Evidence the Answer cites, and the split
 // between the two surfaces that show them. The live Feed renders the
 // structured Answer Evidence Summary from the declared evidence
-// identities (#141) — no generated Sources block rides the live text —
-// while Recorded History flattens the derived links back into the
-// recorded Answer text as ordinary Markdown. The spoken line and the
-// model's own wording are untouched; this is the display boundary.
+// identities (#141) — no generated Sources block rides the live text.
+// The derived links ride the `display` event beside it, where the Run
+// Trace records them; since Recorded History was retired (#188) nothing
+// renders them. The spoken line and the model's own wording are
+// untouched; this is the display boundary.
 
 import type { MemoryEntryId, MemoryReference } from '../session/workingMemory'
 import type { SessionObservation } from '../session/sessionEvidence'
-import { reportFault } from '../trace/fault'
 
 /**
  * The source links an Answer's cited evidence carries (#122): each
@@ -42,17 +42,6 @@ export function deriveAnswerSources(
  */
 const INTERNAL_ID_RE = /(?<![/=\w])(?:memory|obs)-\d+\b/gi
 
-/** The markdown label for one derived source: its title, else its host. */
-function sourceLabel(url: string, title: string | undefined): string {
-  if (title !== undefined && title.trim() !== '') return title
-  try {
-    return new URL(url).hostname
-  } catch (error) {
-    reportFault('pipeline.answerEvidence.sourceLabel', error)
-    return url
-  }
-}
-
 /**
  * The text the live Feed shows (#122, #141): the model's display with
  * internal identity tokens scrubbed — holes tidied — and nothing else.
@@ -68,17 +57,4 @@ export function scrubAnswerText(display: string): string {
     .replace(/(?:[ \t]*,[ \t]*){2,}/g, ', ')
     .replace(/\([ \t]*,[ \t]*\)/g, '()')
     .replace(/\[[ \t]*,[ \t]*\]/g, '[]')
-}
-
-/**
- * The Sources block Recorded History appends (#122, #141): the derived
- * links the text does not already include, as ordinary Markdown — the
- * deterministic durable rendering of an Answer's cited evidence. Clean
- * text over no sources passes through unchanged.
- */
-export function appendAnswerSources(text: string, sources: readonly MemoryReference[]): string {
-  const missing = sources.filter((source) => !text.includes(source.url))
-  if (missing.length === 0) return text
-  const lines = missing.map((source) => `- [${sourceLabel(source.url, source.title)}](${source.url})`)
-  return `${text}\n\nSources:\n${lines.join('\n')}`
 }

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import type { FeedEntry } from '../../core/history/feedProjection'
+import type { FeedEntry } from '../../core/feed/feedProjection'
 import type { ObservationContradiction, SessionObservation } from '../../core/session/sessionEvidence'
 import { AnswerEvidenceSummary } from './AnswerEvidenceSummary'
 import { FeedMarkdown } from './FeedMarkdown'

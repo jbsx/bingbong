@@ -4,6 +4,7 @@ import { promptBarScript } from './scripts'
 import { feedText } from './feed'
 import { startHarness } from './harness'
 import { startFixtureServer, type FixtureServer } from './fixtureServer'
+import { tracedCommands } from './runTrace'
 import { waitFor } from './waitFor'
 
 // The Prompt Bar (#46 consolidated): one typed-input surface in the feed
@@ -147,8 +148,9 @@ describe('prompt bar e2e', () => {
       expect(await feedText(harness)).not.toContain('rejected second command')
       expect(await verb(harness)).toBe('steer')
       expect(await harness.overlayEval<boolean>(`!!document.querySelector('.panel-stop')`)).toBe(true)
-      const runs = await harness.overlayEval<Array<{ command: string }>>(`window.bingbong.history.recentRuns()`)
-      expect(runs.map((run) => run.command)).toEqual(['browse the slow page'])
+      // The rejected command started no Run — the Run Trace (#188) holds
+      // one `command` event, the accepted one.
+      expect(tracedCommands(harness.readRunTrace())).toEqual(['browse the slow page'])
     } finally {
       await harness.quit()
     }

@@ -61,13 +61,6 @@ function checkpointRun(page: string, observation: string, answer: string): Assis
   ]
 }
 
-/** Everything Recorded History holds, one line per entry. */
-function recordedHistoryText(app: Harness): Promise<string> {
-  return app.dashboardEval<string>(
-    `(async () => (await window.bingbong.history.recentEntries()).map((entry) => entry.text).join('\\n'))()`,
-  )
-}
-
 /**
  * Scroll an overlay element into view, then click it: synthetic CDP clicks
  * land on viewport coordinates only, so a card below the fold (the browser
@@ -153,10 +146,10 @@ describe('evidence browser e2e', () => {
       const submitted = await app.submitCommand('note what the second page says')
       expect(submitted).toBe('submitted')
 
-      // The run finishes (Recorded History is UI-independent; the done
+      // The run finishes (the Run Trace is UI-independent; the done
       // boundary collapses the open panel as ever).
       await waitFor(
-        async () => (((await recordedHistoryText(app)).includes('Checkpointed the heading.')) ? true : undefined),
+        async () => ((app.runTraceTranscript().includes('Checkpointed the heading.')) ? true : undefined),
         { timeoutMs: 20_000, intervalMs: 250 },
       )
 
@@ -210,7 +203,7 @@ describe('evidence browser e2e', () => {
       const first = await app.submitCommand('first look at the second page')
       expect(first).toBe('submitted')
       await waitFor(
-        async () => (((await recordedHistoryText(app)).includes('First checkpointed.')) ? true : undefined),
+        async () => ((app.runTraceTranscript().includes('First checkpointed.')) ? true : undefined),
         { timeoutMs: 20_000, intervalMs: 250 },
       )
       await waitFor(
@@ -245,7 +238,7 @@ describe('evidence browser e2e', () => {
       const second = await app.submitCommand('look once more')
       expect(second).toBe('submitted')
       await waitFor(
-        async () => (((await recordedHistoryText(app)).includes('Second checkpointed.')) ? true : undefined),
+        async () => ((app.runTraceTranscript().includes('Second checkpointed.')) ? true : undefined),
         { timeoutMs: 20_000, intervalMs: 250 },
       )
       await app.ensurePanelOpen()
@@ -389,7 +382,7 @@ describe('evidence browser e2e', () => {
       const submitted = await app.submitCommand(COMMAND)
       expect(submitted).toBe('submitted')
       await waitFor(
-        async () => (((await recordedHistoryText(app)).includes('Collected every kind.')) ? true : undefined),
+        async () => ((app.runTraceTranscript().includes('Collected every kind.')) ? true : undefined),
         { timeoutMs: 30_000, intervalMs: 250 },
       )
 
@@ -521,7 +514,7 @@ describe('evidence browser e2e', () => {
       const decided = await app.submitCommand('decide the candidates')
       expect(decided).toBe('submitted')
       await waitFor(
-        async () => (((await recordedHistoryText(app)).includes('Accepted the candidate.')) ? true : undefined),
+        async () => ((app.runTraceTranscript().includes('Accepted the candidate.')) ? true : undefined),
         { timeoutMs: 30_000, intervalMs: 250 },
       )
       // The done boundary may collapse the panel after the run — re-open

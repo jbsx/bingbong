@@ -12,7 +12,7 @@ import { formatFeedTime } from './ActivityFeed'
  * identities simply stay absent, and the Answer's own text above it is
  * immutable. Replaces the generated Markdown Sources list in the live
  * Feed, so the cited evidence reads as one structured record instead of
- * a duplicate link dump; Recorded History keeps the plain URLs.
+ * a duplicate link dump.
  *
  * Contradiction warnings (#143): when the current snapshot retains a
  * mechanical contradiction whose earlier member this Answer cited, the

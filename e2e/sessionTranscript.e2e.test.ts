@@ -12,7 +12,7 @@ import type { AssistantTurn } from '../src/core/ports/llm'
 // clear): the dashboard shows only the current session, and the clear is
 // eager — the lapse timer wipes the view the moment the window expires
 // while idle, without waiting for the next command. Every restart boots
-// blank regardless of Recorded History age. A tiny
+// blank regardless of how recently the profile was last used. A tiny
 // BINGBONG_SESSION_WINDOW_MS stands in for the 30-minute window (real
 // minutes can't be waited out in a test).
 
@@ -110,7 +110,7 @@ describe('blank restart Feed e2e', () => {
     if (userDataDir) await rm(userDataDir, { recursive: true, force: true })
   })
 
-  it('boots with an empty Feed after Recorded History has lapsed', async () => {
+  it('boots with an empty Feed after the previous Session has lapsed', async () => {
     const env = {
       BINGBONG_LLM_SCRIPT: JSON.stringify([SCRIPT[0]]),
       BINGBONG_SESSION_WINDOW_MS: String(WINDOW_MS),
@@ -126,7 +126,7 @@ describe('blank restart Feed e2e', () => {
     // Wait out the tiny live-session window before relaunching.
     await sleep(WINDOW_MS + 500)
 
-    // Recorded History remains durable, but never seeds this launch's Feed.
+    // The prior launch left a durable Run Trace, but nothing seeds this launch's Feed.
     const second = await startHarness({ fixture, userDataDir, env })
     try {
       await sleep(1_500)

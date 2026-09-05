@@ -4,6 +4,7 @@ import { silenceFramesForMs, vadDefaults } from '../src/core/voice/vadEndpointin
 import { feedText, submitAndAwaitAnswer } from './feed'
 import { startFixtureServer, type FixtureServer } from './fixtureServer'
 import { startHarness } from './harness'
+import { tracedCommands } from './runTrace'
 import { sleep, waitFor } from './waitFor'
 
 const SUBMIT_SILENCE = vadDefaults().endFrames + silenceFramesForMs(vadDefaults().resumptionMergeMs)
@@ -50,7 +51,9 @@ describe('Session expiry warning e2e', () => {
         })
       `)
       await submitAndAwaitAnswer(harness, 'start session', 'SESSION READY')
-      const runsBefore = await harness.dashboardEval<number>(`window.bingbong.history.recentRuns().then((runs) => runs.length)`)
+      // How many Runs the profile has actually started, read off the Run
+      // Trace (#188) — extending a Session must start none.
+      const runsBefore = tracedCommands(harness.readRunTrace()).length
 
       await waitFor(
         async () => (await harness.dashboardEval<boolean>(`!!document.querySelector('.session-expiry-countdown')`)) || undefined,
@@ -66,8 +69,7 @@ describe('Session expiry warning e2e', () => {
         )) === 1 || undefined,
         { timeoutMs: 5_000, intervalMs: 100 },
       )
-      expect(await harness.dashboardEval<number>(`window.bingbong.history.recentRuns().then((runs) => runs.length)`))
-        .toBe(runsBefore)
+      expect(tracedCommands(harness.readRunTrace())).toHaveLength(runsBefore)
       expect(await feedText(harness)).toContain('SESSION READY')
 
       await sleep(1_300)

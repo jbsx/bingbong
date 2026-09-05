@@ -1,4 +1,4 @@
-import type { FeedEntry } from '../../core/history/feedProjection'
+import type { FeedEntry } from '../../core/feed/feedProjection'
 import type { RunProgress } from '../../core/pipeline/runProgress'
 import type { PeekCardState } from '../../core/panel/peekCardState'
 import { FeedMarkdown } from './FeedMarkdown'

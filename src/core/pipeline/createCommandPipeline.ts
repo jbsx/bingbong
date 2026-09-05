@@ -722,8 +722,8 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
                 })
                 // The Run Trace (#180): what was cited, what it was graded
                 // against, and the verdict — accepted or rejected alike.
-                // Recorded History keeps only the display line, so a
-                // rejected or vanished checkpoint is diagnosed from here.
+                // The Feed shows only the display line, so a rejected
+                // or vanished checkpoint is diagnosed from here.
                 continuity?.traceRun?.(() => ({
                   turnId,
                   ...evidenceCheckpointEvent({

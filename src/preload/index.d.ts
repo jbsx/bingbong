@@ -5,7 +5,6 @@ import type { RoutingStatus } from '../core/agent/modelRouting'
 import type { VoiceErrorEvent, VoiceHeardEvent, VoiceState } from '../core/voice/ipcChannels'
 import type { LaunchConfig } from '../core/app/launchConfig'
 import type { UsageSummary } from '../core/agent/spendEstimate'
-import type { RecordedEntry, RunRecord, SessionRecord } from '../core/history/historyStore'
 import type { FeedPanelMode, FeedPanelState } from '../core/panel/feedPanelState'
 import type { SubmissionFeedback } from '../core/session/submissionFeedback'
 import type { SessionAdoptionPayload, SessionDecisionRequest } from '../core/session/ipcChannels'
@@ -132,17 +131,6 @@ export interface BingbongVoiceApi {
   onError(listener: (error: VoiceErrorEvent) => void): () => void
 }
 
-export interface BingbongHistoryApi {
-  /** Persisted Feed entries for an explicitly opened history surface. */
-  recentEntries(): Promise<RecordedEntry[]>
-  /** Persisted run records, oldest first. */
-  recentRuns(): Promise<RunRecord[]>
-  /** Persisted Session lifecycle records, oldest first. */
-  recentSessions(): Promise<SessionRecord[]>
-  /** Persist a renderer-side mic/capture error and return its shared timestamp. */
-  recordVoiceError(message: string): Promise<number | null>
-}
-
 export interface BingbongDiagnosticsApi {
   /**
    * Report one thing this page did, for the Host Trace (#187, ADR 0031).
@@ -185,7 +173,6 @@ export interface BingbongApi {
   tts: BingbongTtsApi
   learnedTerms: BingbongLearnedTermsApi
   voice: BingbongVoiceApi
-  history: BingbongHistoryApi
   diagnostics: BingbongDiagnosticsApi
   feedPanel: BingbongFeedPanelApi
 }

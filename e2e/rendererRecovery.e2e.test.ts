@@ -49,13 +49,6 @@ async function expectDashboardVisible(app: Harness): Promise<void> {
   expect(await app.dashboardEval<boolean>(`!!document.querySelector('.dashboard')`)).toBe(true)
 }
 
-/** Everything Recorded History holds, one line per entry. */
-function recordedHistoryText(app: Harness): Promise<string> {
-  return app.dashboardEval<string>(
-    `(async () => (await window.bingbong.history.recentEntries()).map((entry) => entry.text).join('\\n'))()`,
-  )
-}
-
 describe('renderer session re-adoption e2e', () => {
   let fixture: FixtureServer
 
@@ -89,11 +82,11 @@ describe('renderer session re-adoption e2e', () => {
       await waitForDisplay(app, 'The slow page opened.')
 
       // Forward-only: the command echo lost with the page never replays —
-      // it stays reviewable in Recorded History, not in the live Feed.
+      // it survives in the Run Trace (#188), not in the live Feed.
       const text = await feedText(app)
       expect(text).not.toContain('open the slow page')
       expect(text).toContain('The slow page opened.')
-      const recorded = await recordedHistoryText(app)
+      const recorded = app.runTraceTranscript()
       expect(recorded).toContain('open the slow page')
       expect(recorded).toContain('The slow page opened.')
     } finally {
@@ -162,11 +155,11 @@ describe('renderer session re-adoption e2e', () => {
       await waitForDisplay(app, 'The slow page opened.')
 
       // Forward-only, same as a reload: the command echo lost with the
-      // process never replays — it stays reviewable in Recorded History.
+      // process never replays — it survives in the Run Trace (#188).
       const text = await feedText(app)
       expect(text).not.toContain('open the slow page')
       expect(text).toContain('The slow page opened.')
-      const recorded = await recordedHistoryText(app)
+      const recorded = app.runTraceTranscript()
       expect(recorded).toContain('open the slow page')
       expect(recorded).toContain('The slow page opened.')
     } finally {

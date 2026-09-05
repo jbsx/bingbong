@@ -256,7 +256,7 @@ describe('the Run Trace file', () => {
       ['record_evidence', 'accepted', true],
       ['record_evidence', 'excerpt_unsupported', false],
     ])
-    // Every record joins to Recorded History and the eval tape.
+    // Every record joins the Run's own identity and the eval tape.
     for (const record of records) {
       expect(record.v).toBe(RUN_TRACE_VERSION)
       expect(record.runId).toBe('run-1')
@@ -344,7 +344,7 @@ describe('the Run Trace file', () => {
       [1, 'round 1: what does it cost'],
       [2, 'round 2: what does it cost'],
     ])
-    // They join to Recorded History and the eval tape like every other record.
+    // They join the Session identity and the eval tape like every other record.
     for (const record of reasoning(all)) {
       expect(record.v).toBe(RUN_TRACE_VERSION)
       expect(record.runId).toBe('run-1')

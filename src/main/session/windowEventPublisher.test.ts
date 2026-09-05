@@ -41,8 +41,6 @@ function setup(acceptPipelineEvent?: (event: PipelineEvent) => boolean): {
   publisher: ReturnType<typeof createWindowEventPublisher>
   calls: string[]
   pipelineEvents: PipelineEvent[]
-  heardSessions: (string | null)[]
-  voiceErrorSessions: (string | null)[]
   traced: PipelineEvent[]
   order: string[]
 } {
@@ -50,8 +48,6 @@ function setup(acceptPipelineEvent?: (event: PipelineEvent) => boolean): {
   const traced: PipelineEvent[] = []
   const order: string[] = []
   const pipelineEvents: PipelineEvent[] = []
-  const heardSessions: (string | null)[] = []
-  const voiceErrorSessions: (string | null)[] = []
   const record = (sink: string) => () => calls.push(sink)
   const recordPipeline = (sink: string) => (event: PipelineEvent) => {
     calls.push(sink)
@@ -60,21 +56,11 @@ function setup(acceptPipelineEvent?: (event: PipelineEvent) => boolean): {
   }
   const deps: WindowEventPublisherDeps = {
     acceptPipelineEvent,
-    createHistoryRunObserver: () => recordPipeline('history-run'),
-    historyEvent: recordPipeline('history-event'),
     // The Run Trace's tap (#185) — deliberately not in `calls`: it must
     // not change the order the other sinks are already pinned to.
     tracePipelineEvent: (event) => {
       order.push('run-trace')
       traced.push(event)
-    },
-    historyHeard: (_heard, sessionId) => {
-      calls.push('history-heard')
-      heardSessions.push(sessionId)
-    },
-    historyVoiceError: (_error, sessionId) => {
-      calls.push('history-voice-error')
-      voiceErrorSessions.push(sessionId)
     },
     sendPipelineEvent: recordPipeline('renderer-pipeline'),
     sendVoiceState: record('renderer-voice-state'),
@@ -88,17 +74,17 @@ function setup(acceptPipelineEvent?: (event: PipelineEvent) => boolean): {
     overlayVoiceError: record('overlay-voice-error'),
     overlaySubmissionFeedback: record('overlay-submission-feedback'),
   }
-  return { publisher: createWindowEventPublisher(deps), calls, pipelineEvents, heardSessions, voiceErrorSessions, traced, order }
+  return { publisher: createWindowEventPublisher(deps), calls, pipelineEvents, traced, order }
 }
 
 describe('window event publisher', () => {
-  it('publishes Run events in observer, renderer, voice, and overlay order with accepted ownership', () => {
+  it('publishes Run events in renderer, voice, and overlay order with accepted ownership', () => {
     const { publisher, calls, pipelineEvents } = setup()
     const run = publisher.run(ownership)
     run.publish({ type: 'command', turnId: 'turn-1', text: 'hello', at: 10 })
 
-    expect(calls).toEqual(['history-run', 'renderer-pipeline', 'voice-observer', 'overlay-pipeline'])
-    expect(pipelineEvents).toHaveLength(4)
+    expect(calls).toEqual(['renderer-pipeline', 'voice-observer', 'overlay-pipeline'])
+    expect(pipelineEvents).toHaveLength(3)
     expect(pipelineEvents.every((event) => event === pipelineEvents[0])).toBe(true)
     expect(pipelineEvents[0]).toMatchObject({
       submissionId: 'submission-1',
@@ -109,16 +95,16 @@ describe('window event publisher', () => {
   })
 
   it.each(['detail', 'lifecycle', 'download', 'subagent'] as const)(
-    'publishes %s pipeline events through auxiliary history, renderer, and overlay in order',
+    'publishes %s pipeline events through the renderer, voice, and overlay in order',
     (source) => {
       const { publisher, calls, pipelineEvents } = setup()
 
       publisher.publish({ source, event: pipelineEvent, ownership })
 
       expect(calls).toEqual(source === 'lifecycle'
-        ? ['history-event', 'renderer-pipeline', 'voice-observer', 'overlay-pipeline']
-        : ['history-event', 'renderer-pipeline', 'overlay-pipeline'])
-      expect(pipelineEvents).toHaveLength(source === 'lifecycle' ? 4 : 3)
+        ? ['renderer-pipeline', 'voice-observer', 'overlay-pipeline']
+        : ['renderer-pipeline', 'overlay-pipeline'])
+      expect(pipelineEvents).toHaveLength(source === 'lifecycle' ? 3 : 2)
       expect(pipelineEvents[0]).toMatchObject({
         submissionId: 'submission-1',
         runId: 'run-1',
@@ -157,15 +143,18 @@ describe('window event publisher', () => {
       },
     })
 
-    expect(pipelineEvents).toHaveLength(4)
+    expect(pipelineEvents).toHaveLength(3)
     expect(pipelineEvents.every((event) => event === pipelineEvents[0])).toBe(true)
     expect(pipelineEvents[0]).toMatchObject({ sessionId: 'session-9', sessionGeneration: 1 })
     expect(pipelineEvents[0].submissionId).toBeUndefined()
     expect(pipelineEvents[0].runId).toBeUndefined()
   })
 
+  // Voice records were the last thing the retired history recorder was
+  // told about (#188); what a heard utterance and a capture error reach
+  // now is the overlay and the renderer, and nothing else.
   it('publishes voice events through their existing source-specific sinks', () => {
-    const { publisher, calls, heardSessions, voiceErrorSessions } = setup()
+    const { publisher, calls, pipelineEvents } = setup()
 
     publisher.publish({ source: 'voice-state', state: voiceState })
     publisher.publish({ source: 'voice-heard', heard })
@@ -173,36 +162,14 @@ describe('window event publisher', () => {
 
     expect(calls).toEqual([
       'renderer-voice-state',
-      'history-heard',
       'overlay-voice-heard',
       'renderer-voice-heard',
-      'history-voice-error',
       'overlay-voice-error',
       'renderer-voice-error',
     ])
-    // No Session exists yet: run-less voice records land honestly Session-less.
-    expect(heardSessions).toEqual([null])
-    expect(voiceErrorSessions).toEqual([null])
-  })
-
-  it('attributes run-less voice records to the active Session, and to none after it ends (#85)', () => {
-    const { publisher, heardSessions, voiceErrorSessions } = setup()
-    const run = publisher.run(ownership)
-    run.publish({ type: 'command', turnId: 'turn-1', text: 'hello', at: 10 })
-
-    publisher.publish({ source: 'voice-heard', heard })
-    publisher.publish({ source: 'voice-error', error: voiceError })
-    run.publish({ type: 'done', turnId: 'turn-1', at: 11 })
-    publisher.publish({ source: 'voice-heard', heard })
-
-    publisher.publish({
-      source: 'lifecycle',
-      event: { type: 'session_ended', sessionId: ownership.sessionId, sessionGeneration: ownership.generation, reason: 'lapsed', at: 20 },
-    })
-    publisher.publish({ source: 'voice-heard', heard })
-
-    expect(heardSessions).toEqual(['session-1', 'session-1', null])
-    expect(voiceErrorSessions).toEqual(['session-1'])
+    // Voice publications are not pipeline events: none of them reaches the
+    // pipeline sinks, and none of them earns a Run Trace record.
+    expect(pipelineEvents).toEqual([])
   })
 
   it('publishes browser state only to the renderer', () => {
@@ -275,7 +242,7 @@ describe('window event publisher', () => {
     publisher.publish({ source: 'subagent', event: lateAgentUpdate })
     run.publish({ type: 'command', turnId: 'turn-2', text: 'new work', at: 41 })
 
-    expect(calls).toEqual(['history-run', 'renderer-pipeline', 'voice-observer', 'overlay-pipeline'])
+    expect(calls).toEqual(['renderer-pipeline', 'voice-observer', 'overlay-pipeline'])
     expect(pipelineEvents.every((event) => event.sessionId === 'session-live')).toBe(true)
   })
 })

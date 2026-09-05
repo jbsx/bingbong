@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { MemoryEntryId } from '../session/workingMemory'
 import type { SessionObservation } from '../session/sessionEvidence'
-import { appendAnswerSources, deriveAnswerSources, scrubAnswerText } from './answerEvidence'
+import { deriveAnswerSources, scrubAnswerText } from './answerEvidence'
 
 const entryId = (id: string): MemoryEntryId => id as MemoryEntryId
 
@@ -59,31 +59,5 @@ describe('scrubAnswerText', () => {
   it('is the live text alone: no Sources block rides it (#141)', () => {
     expect(scrubAnswerText('Plain answer.')).toBe('Plain answer.')
     expect(scrubAnswerText('Found it.')).not.toContain('Sources:')
-  })
-})
-
-describe('appendAnswerSources', () => {
-  it('appends only the derived source links the text does not already carry', () => {
-    const recorded = appendAnswerSources('The Acme router costs $39 at [the shop](https://shop.example/a).', [
-      { url: 'https://shop.example/a' },
-      { url: 'https://reviews.example/x', title: 'Reviews' },
-    ])
-    expect(recorded).toContain('[the shop](https://shop.example/a)')
-    expect(recorded.match(/shop\.example\/a\)/g)).toHaveLength(1)
-    expect(recorded.endsWith('Sources:\n- [Reviews](https://reviews.example/x)')).toBe(true)
-  })
-
-  it('adds nothing when every derived link is already present', () => {
-    const text = 'See [Reviews](https://reviews.example/x).'
-    expect(appendAnswerSources(text, [{ url: 'https://reviews.example/x' }])).toBe(text)
-  })
-
-  it('uses the page title as the link label when one exists', () => {
-    expect(appendAnswerSources('Found it.', [{ url: 'https://reviews.example/x', title: 'Reviews' }]).endsWith(
-      'Sources:\n- [Reviews](https://reviews.example/x)',
-    )).toBe(true)
-    expect(appendAnswerSources('Found it.', [{ url: 'https://reviews.example/x' }]).endsWith(
-      'Sources:\n- [reviews.example](https://reviews.example/x)',
-    )).toBe(true)
   })
 })

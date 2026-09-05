@@ -135,10 +135,11 @@ export type PipelineEvent = SessionEventIdentity & (
   /**
    * A final Answer's display (#141) may carry its evidence grounding as
    * Session-only metadata, added at the display boundary: the declared
-   * `evidenceIds` feed the live Answer Evidence Summary (never
-   * Recorded History), and the derived `sources` are what Recorded
-   * History flattens back into ordinary Markdown links — the live Feed
-   * ignores them. Non-Answer displays carry neither.
+   * `evidenceIds` feed the live Answer Evidence Summary, and the derived
+   * `sources` name the pages behind it. The live Feed ignores `sources`;
+   * since Recorded History was retired (#188) they are read only by the
+   * Run Trace, which records the event as published. Non-Answer displays
+   * carry neither.
    */
   | {
       type: 'display'
@@ -272,7 +273,7 @@ export type PipelineEvent = SessionEventIdentity & (
  * status wins, else any error means failed, else the run succeeded. A
  * model-invoked Session Reset (#99) is recorded as interrupted — the
  * discarded run never finished its own work. Shared by every observer of
- * the run event seam (the history recorder).
+ * the run event seam.
  */
 export function inferRunOutcome(
   explicit: 'done' | 'failed' | 'cancelled' | 'reset' | undefined,

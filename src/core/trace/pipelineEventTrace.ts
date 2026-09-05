@@ -1,9 +1,9 @@
 // The pipeline_event records (#185, ADR 0031): one record per published
-// PipelineEvent. Recorded History keeps only the projected *text* of a
-// Run and the Run Trace kept only its evidence grading — what the Run
-// actually decided (its Run Plan, each Tool Round's call and result,
-// status, errors, asks and confirmations, the Session boundaries) is
-// published on the event stream and was kept nowhere. This is the tap on
+// PipelineEvent. The views render only the projected *text* of a Run and
+// the Run Trace kept only its evidence grading — what the Run actually
+// decided (its Run Plan, each Tool Round's call and result, status,
+// errors, asks and confirmations, the Session boundaries) is published on
+// the event stream and was kept nowhere. This is the tap on
 // that stream, and because it records the event object as published,
 // owner stamps included, it records exactly what every view was told.
 //

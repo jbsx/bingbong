@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import type { PipelineEvent, PipelineStatus, SubagentCard } from '../../core/pipeline/events'
 import type { VoiceHeardEvent } from '../../core/voice/ipcChannels'
 import { useSessionAdoption } from './useSessionAdoption'
-import type { FeedEntry } from '../../core/history/feedProjection'
+import type { FeedEntry } from '../../core/feed/feedProjection'
 import { useFeedProjection } from './useFeedProjection'
 import { createRunProgressTracker, type RunProgress } from '../../core/pipeline/runProgress'
 
@@ -28,7 +28,7 @@ export interface Assistant {
    * The right-edge activity feed (#44): timestamped outcome lines plus
    * ephemeral detail (retries), folded from the event stream by the pure
     * feed projection. Session-scoped boundaries wipe eagerly; every launch
-    * starts with an empty projection and Recorded History is review-only.
+    * starts with an empty projection, restored from nothing.
    */
   feed: FeedEntry[]
   /** The run currently in flight (#55) — its expander auto-opens. */

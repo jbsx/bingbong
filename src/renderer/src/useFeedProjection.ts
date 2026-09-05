@@ -2,14 +2,14 @@ import { useEffect, useRef, useState } from 'react'
 import type { PipelineEvent } from '../../core/pipeline/events'
 import type { VoiceHeardEvent } from '../../core/voice/ipcChannels'
 import { describeHeard } from '../../core/voice/heardDisplay'
-import { createFeedProjection, type FeedEntry } from '../../core/history/feedProjection'
+import { createFeedProjection, type FeedEntry } from '../../core/feed/feedProjection'
 import type { SessionAdoptionPayload } from '../../core/session/ipcChannels'
 import { reportFeedCleared } from './diagnostics'
 
 // The feed projection's renderer wiring (#44, #45): one launch-local
 // projection instance plus the voice-half appends. Shared by the dashboard
 // (useAssistant) and the panel's overlay page (useOverlayFeed) — both render
-// the same live feed from the same events; Recorded History is review-only.
+// the same live feed from the same events, and nothing durable renders it.
 
 export interface FeedProjection {
   feed: FeedEntry[]

@@ -5,8 +5,8 @@ import { createJsonlSink, LOG_MAX_AGE_MS, LOG_ROLL_BYTES, type JsonlSinkOptions 
 // beside the perf logs, written by the same rotating sink under the same
 // roll size and purge age. The name is the glossary term and the env flag
 // that gates it, so the three cannot drift apart. Deliberately not
-// Recorded History — Session Evidence must never be recoverable from an
-// always-on store — and the perf report, which reads only perf-*.jsonl,
+// an always-on store — Session Evidence must never be recoverable from
+// one — and the perf report, which reads only perf-*.jsonl,
 // ignores these files by name.
 //
 // Nothing calls this unless `BINGBONG_RUN_TRACE` is set: main creates the
