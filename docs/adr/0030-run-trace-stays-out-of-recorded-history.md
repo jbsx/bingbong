@@ -1,0 +1,62 @@
+# Run Trace stays out of Recorded History
+
+Recorded History keeps a Run's *display* line for a `record_evidence` call and,
+on failure, the error text the model saw. The raw arguments, the ledger record
+the citation was graded against, and every successful checkpoint leave no trace
+at all. #179 was diagnosed by re-running scenarios and reading tool results off
+the wire, because a rejected or vanished checkpoint could not be diagnosed from
+disk. The obvious fix — widen the history record — is the one we rejected.
+
+The Run Trace is a separate, durable, machine-readable record of a Run's
+internal decisions, written to `trace-*.jsonl` beside the perf logs, never into
+Recorded History's database.
+
+- **Diagnostics must not be recoverable from Recorded History.** Session
+  Evidence disappears at Lapse and at Session Reset, and Recorded History is
+  the one durable store a user can open. A checkpoint's raw arguments and the
+  observation payload it was graded against are exactly the Session Evidence
+  that must not outlive its Session in a readable view. Putting them in the
+  history database would make Evidence reconstructable from disk, which ADR
+  0028's lifetime rules forbid. The perf logs already hold Run-internal detail
+  under a purge policy and no view; the Run Trace joins them.
+- **Recorded History is a review record, not a diagnostic one.** It answers
+  "what did this Session do" for a person. The Run Trace answers "why did this
+  decision go that way" for a diagnosis, and is never rendered in any view. One
+  store per audience keeps the history schema from growing fields no view
+  reads.
+- **The file is the contract.** Every record carries `v`, the turn id, run id,
+  session id, and Session generation, so a trace joins to Recorded History and
+  to the eval tape without either of them knowing the trace exists. The eval
+  harness reads these files; nothing in the app reads them back.
+- **It rides the perf sink's policy exactly.** Same rotating JSONL sink, same
+  ~5 MB roll, same 7-day purge, same swallow-every-failure rule — diagnosis
+  must never become the Run's problem. Each family purges only its own prefix,
+  and the perf report, which owns `perf-*.jsonl`, ignores trace files by name.
+- **Rejections are traced as fully as acceptances.** The first record kind is
+  the Evidence Checkpoint attempt: the tool, the arguments verbatim, every
+  retention the citation was graded against with its Producer, observation
+  time, payload length and head, and which one matched. A Look shadowing a page
+  read — the #179 fault — is visible from the file alone.
+
+**A Session Reset does not purge trace files, deliberately.** This is the
+uncomfortable consequence and it is stated here rather than left implicit: the
+trace holds a checkpoint's arguments verbatim and 500-character heads of the
+observations it was graded against — page text, ask_user answers, Steering
+Directives — so a user who resets a Session to discard what they were looking
+at leaves that text readable under `userData/logs/` until the 7-day purge. Perf
+spans carry no user text, so this is a new class of on-disk data, not more of
+what was already there. We accept it because the file exists to diagnose Runs
+that went wrong, and a Reset is often exactly how a user reacts to one —
+purging on Reset would erase the traces most worth reading. The mitigations are
+the ones already in the file contract: no view renders it, nothing in the app
+reads it back, it is bounded to a head rather than the full payload, and it
+purges on the perf sink's 7-day window. If the trade turns out wrong, the lever
+is a shorter purge age for the trace family, not a move into Recorded History.
+
+Considered and rejected: widening Recorded History's tool records (makes
+Session Evidence durable and readable, the exact thing ADR 0028 forbids);
+folding trace records into `perf-*.jsonl` as a new stage (the perf report
+recomputes totals from every span it collects, and these are not stages with
+durations); and tracing only rejections (the vanished-checkpoint case — an
+accepted call whose Observation nobody can find later — is precisely the one
+that leaves no error text to read).

@@ -48,6 +48,7 @@ import { createSpeakingGate } from '../core/tts/speakingGate'
 import { createPerfTracer } from '../core/perf/perfTracer'
 import { browserSubspansEnabled, createBrowserSubspans } from '../core/perf/browserSubspans'
 import { createJsonlPerfSink } from './perf/jsonlPerfSink'
+import { createJsonlRunTraceSink } from './trace/jsonlRunTraceSink'
 import { resolveVoiceConfig } from './voice/voiceConfig'
 import { createMainVoice } from './voice/createMainVoice'
 import { createLearnedTermsStore, seedLexiconSet } from './voice/learnedTermsStore'
@@ -149,7 +150,12 @@ let activeSessionRuntime: SessionRuntime | null = null
 // Always-on perf logging (#27): one JSONL span per finished stage under the
 // profile's logs dir — zero configuration, no timers; rolling and the 7-day
 // purge ride startup and writes.
-const perfTracer = createPerfTracer({ sink: createJsonlPerfSink(join(app.getPath('userData'), 'logs')) })
+const logsDir = join(app.getPath('userData'), 'logs')
+const perfTracer = createPerfTracer({ sink: createJsonlPerfSink(logsDir) })
+// The Run Trace (#180, ADR 0030): diagnosis lives beside the perf logs,
+// never in Recorded History — Session Evidence must not be recoverable
+// from the history database.
+const runTraceSink = createJsonlRunTraceSink(logsDir)
 
 // Verbose browser sub-spans (#32), opt-in behind the established env-flag
 // pattern: one shared channel between the pipeline's tool gate (which opens
@@ -559,6 +565,7 @@ async function createWindow(): Promise<BrowserWindow> {
     publishFeedback: (feedback) => eventPublisher.publish({ source: 'submission-feedback', feedback }),
     canPublish: () => !win.isDestroyed(),
     tracer: perfTracer,
+    runTrace: runTraceSink,
   })
   attachAssistantToWindow(pipeline, win, commandRunner)
   win.on('close', () => sessionRuntime?.end('app_closed'))

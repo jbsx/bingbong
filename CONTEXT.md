@@ -377,11 +377,17 @@ Recorded history remains available outside the live Session experience.
 _Avoid_: hydration, restore, session replay
 
 **Recorded History**:
-The durable review and diagnostic record of past Runs. It may render only when
-the user explicitly opens a history view; it never hydrates the live Feed or
-provides continuity to a Session. It records each Session's identity, start,
-end, end reason, and Run membership.
-_Avoid_: session memory
+The durable review record of past Runs. It may render only when the user
+explicitly opens a history view; it never hydrates the live Feed or provides
+continuity to a Session. It records each Session's identity, start, end, end
+reason, and Run membership.
+_Avoid_: session memory, diagnostic record, Run Trace
+
+**Run Trace**:
+A durable, machine-readable record of a Run's internal decisions — timings,
+evidence grading, what each view was answered — written for diagnosis only. It
+is never rendered in any view and never provides continuity to a Session.
+_Avoid_: debug log, audit log, perf log
 
 ### Views
 

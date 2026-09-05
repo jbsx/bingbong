@@ -177,14 +177,30 @@ export function findSourceObservation(
   records: readonly ObservationRecord[],
   sourceUrl: string,
 ): ObservationRecord | null {
+  return latest(sourceObservations(records, sourceUrl))
+}
+
+/**
+ * Every successful Run Observation that retained one canonical source, in
+ * ledger order (#180). The one candidate set grading, title recovery, and
+ * the Run Trace all judge, so what the file says was checked is what was
+ * checked.
+ */
+export function sourceObservations(
+  records: readonly ObservationRecord[],
+  sourceUrl: string,
+): readonly ObservationRecord[] {
   const canonical = canonicalizeMemoryUrl(sourceUrl)
-  if (canonical === null) return null
+  if (canonical === null) return []
+  return records.filter(
+    (record) => record.ok && record.sourceUrl !== undefined && canonicalizeMemoryUrl(record.sourceUrl) === canonical,
+  )
+}
+
+/** The last-observed record of a candidate set; ties go to the later entry. */
+function latest(records: readonly ObservationRecord[]): ObservationRecord | null {
   let found: ObservationRecord | null = null
-  for (const record of records) {
-    if (!record.ok || record.sourceUrl === undefined) continue
-    if (canonicalizeMemoryUrl(record.sourceUrl) !== canonical) continue
-    if (found === null || record.at >= found.at) found = record
-  }
+  for (const record of records) if (found === null || record.at >= found.at) found = record
   return found
 }
 
@@ -230,18 +246,12 @@ export function findGroundingObservation(
   sourceUrl: string,
   excerpt: string | undefined,
 ): GroundingOutcome {
-  const canonical = canonicalizeMemoryUrl(sourceUrl)
-  const producers: ObservationProducer[] = []
-  let found: ObservationRecord | null = null
-  for (const record of canonical === null ? [] : records) {
-    if (!record.ok || record.sourceUrl === undefined) continue
-    if (canonicalizeMemoryUrl(record.sourceUrl) !== canonical) continue
-    if (!producers.includes(record.producer)) producers.push(record.producer)
-    if (!excerptSupported(record, excerpt)) continue
-    if (found === null || record.at >= found.at) found = record
-  }
+  const candidates = sourceObservations(records, sourceUrl)
+  const found = latest(candidates.filter((record) => excerptSupported(record, excerpt)))
   if (found !== null) return { ok: true, record: found }
-  if (producers.length === 0) return { ok: false, reason: 'unknown_source' }
+  if (candidates.length === 0) return { ok: false, reason: 'unknown_source' }
+  const producers: ObservationProducer[] = []
+  for (const record of candidates) if (!producers.includes(record.producer)) producers.push(record.producer)
   return { ok: false, reason: excerpt === undefined ? 'excerpt_required' : 'excerpt_unsupported', producers }
 }
 
@@ -257,12 +267,8 @@ export function observedSourceTitle(
   records: readonly ObservationRecord[],
   sourceUrl: string,
 ): string | undefined {
-  const canonical = canonicalizeMemoryUrl(sourceUrl)
-  if (canonical === null) return undefined
   let found: string | undefined
-  for (const record of records) {
-    if (!record.ok || record.sourceUrl === undefined) continue
-    if (canonicalizeMemoryUrl(record.sourceUrl) !== canonical) continue
+  for (const record of sourceObservations(records, sourceUrl)) {
     const title = observedPageTitle(record)
     if (title !== undefined) found = title
   }
@@ -270,7 +276,7 @@ export function observedSourceTitle(
 }
 
 /** The text a retained observation carries, whatever shape its payload holds. */
-function retainedText(record: ObservationRecord): string {
+export function retainedText(record: ObservationRecord): string {
   return typeof record.payload === 'string' ? record.payload : JSON.stringify(record.payload)
 }
 
@@ -297,13 +303,20 @@ export function findUserEventObservation(
   text: string,
 ): ObservationRecord | null {
   const wanted = text.trim()
-  let found: ObservationRecord | null = null
-  for (const record of records) {
-    if (!record.ok || userProducer(record) === null) continue
-    if (typeof record.payload !== 'string' || record.payload.trim() !== wanted) continue
-    if (found === null || record.at >= found.at) found = record
-  }
-  return found
+  return latest(
+    userEventObservations(records).filter(
+      (record) => typeof record.payload === 'string' && record.payload.trim() === wanted,
+    ),
+  )
+}
+
+/**
+ * Every successful user event this Run's ledger retained, in ledger order
+ * (#180): the candidate set a user citation is graded against, and what
+ * the Run Trace names when one fails to verify.
+ */
+export function userEventObservations(records: readonly ObservationRecord[]): readonly ObservationRecord[] {
+  return records.filter((record) => record.ok && userProducer(record) !== null)
 }
 
 /**

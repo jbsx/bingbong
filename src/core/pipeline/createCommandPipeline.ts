@@ -51,6 +51,8 @@ import {
   type EvidenceCommit,
   type EvidenceCommitInput,
 } from './evidenceCheckpoint'
+import { candidateCheckpointEvent, evidenceCheckpointEvent } from '../trace/evidenceCheckpointTrace'
+import type { RunTraceWriter } from '../trace/runTrace'
 import { completedEvidenceIsFresh } from './evidenceFreshness'
 import { evaluateCandidateCheckpoint, type CandidateCheckpointOutcome, type EvidenceSessionSource } from './candidateCheckpoint'
 import { deriveAnswerSources, scrubAnswerText } from './answerEvidence'
@@ -297,6 +299,13 @@ export interface RunContinuityContext {
    * the run carries no evidence continuity.
    */
   evidenceSession?(): { store: SessionEvidenceStore; runId: RunId } | null
+  /**
+   * The Run Trace seam (#180, ADR 0030): records one of this Run's
+   * internal decisions for diagnosis, already bound to the Run's
+   * identity. Diagnosis only — nothing here is ever rendered, and no
+   * Session reads it back. Absent when nothing is tracing.
+   */
+  traceRun?: RunTraceWriter
 }
 
 /** Stamps one run-body event with the turn's id. */
@@ -665,6 +674,19 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
                   ...(commitSubagent ? { commitSubagent } : {}),
                   ...(deps.subagentObservations ? { workerObservations: deps.subagentObservations } : {}),
                 })
+                // The Run Trace (#180): what was cited, what it was graded
+                // against, and the verdict — accepted or rejected alike.
+                // Recorded History keeps only the display line, so a
+                // rejected or vanished checkpoint is diagnosed from here.
+                continuity?.traceRun?.(() => ({
+                  turnId,
+                  ...evidenceCheckpointEvent({
+                    call,
+                    outcome,
+                    records: ledger.snapshot(),
+                    ...(deps.subagentObservations ? { workerObservations: deps.subagentObservations } : {}),
+                  }),
+                }))
                 // Only checkpoints whose grounding record is this Run's
                 // own ledger observation can compact a tool result: the
                 // membership check excludes worker-ledger ids even on an
@@ -680,7 +702,11 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
               }
             : undefined
         const checkpointCandidateHandler: ((call: ToolCall) => CandidateCheckpointOutcome) | undefined = evidenceSession
-          ? (call) => evaluateCandidateCheckpoint(call, { session: evidenceSession })
+          ? (call) => {
+              const outcome = evaluateCandidateCheckpoint(call, { session: evidenceSession })
+              continuity?.traceRun?.(() => ({ turnId, ...candidateCheckpointEvent({ call, outcome }) }))
+              return outcome
+            }
           : undefined
         const toolContext: ToolContext = {
           clock,
