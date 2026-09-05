@@ -4,9 +4,9 @@
 > decision here — a Run's diagnostic records live in their own file family,
 > never in the history store — stands. Its premise does not: Recorded History
 > is being retired (#188), the file family is now `run-trace-*.jsonl` behind
-> `BINGBONG_RUN_TRACE`, and the per-kind opt-in described below
-> (`BINGBONG_TRACE_REASONING`) is gone — every kind rides the one flag. Read
-> 0031 for the current rules.
+> `BINGBONG_RUN_TRACE`, and the per-kind reasoning opt-in described below is
+> gone — every kind rides that one flag, and the flag it named no longer
+> exists. Read 0031 for the current rules.
 
 Recorded History keeps a Run's *display* line for a `record_evidence` call and,
 on failure, the error text the model saw. The raw arguments, the ledger record
@@ -62,11 +62,11 @@ Recorded History's database.
   heads. A round's reasoning is none of those: it is the model restating the
   user's words and its own private read of them, at whatever length it thought
   for, and it is the one thing the file would hold that the user never chose
-  to put anywhere. So `reasoning` (#182) is written only when a developer sets
-  `BINGBONG_TRACE_REASONING` in their own Env File, and with the flag unset no
-  reasoning is retained for the file at all — not collected and dropped,
-  never collected. A shared Kiosk cannot accumulate it by default, which is
-  the whole point of making this the one kind that has to be asked for. The
+  to put anywhere. So `reasoning` (#182) is written only when a developer opts
+  in through their own Env File, and unasked-for, no reasoning is retained for
+  the file at all — not collected and dropped, never collected. A shared
+  Kiosk cannot accumulate it by default, which is the whole point of making
+  this the one kind that has to be asked for. The
   8,000-character cap bounds what an opted-in file holds; the record keeps the
   true length beside the cut text so a truncation is never mistaken for a
   short thought. A retried round leaves one record per attempt rather than one
@@ -79,11 +79,11 @@ Recorded History's database.
 - **A delegated worker's rounds are traced under the same flag (#183), and
   the flag is what makes them stream.** A Browse Subagent's rounds run through
   the workhorse loop, which has never streamed: nothing on that path listens
-  to a delta, so the provider was never asked for one. With
-  `BINGBONG_TRACE_REASONING` set, every worker round streams — the reasoning
-  collector is the only listener, and the opt-in is the only thing that wires
-  it — and with the flag unset the worker path is exactly what it was:
-  non-streaming, collecting nothing. There is no second knob. Each worker
+  to a delta, so the provider was never asked for one. With the opt-in set,
+  every worker round streams — the reasoning collector is the only listener,
+  and the opt-in is the only thing that wires it — and without it the worker
+  path is exactly what it was: non-streaming, collecting nothing. There is no
+  second knob. Each worker
   record carries the worker's `agentId` beside `round` and `attempt`, and the
   parent Run's identity and turn like every Run-written kind, so a worker's
   thinking joins the Run that delegated it and the checkpoint records that
