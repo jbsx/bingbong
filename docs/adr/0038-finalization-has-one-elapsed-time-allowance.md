@@ -9,9 +9,12 @@ Allowance; bounded acquisition and worker report semantics stand.
 
 The outcome-first stopping decision — the last of the Decisions below, with
 the Stop Record that makes an explicit "why did you stop?" answerable —
-shipped on 2026-09-06 (#203). The Finalization Allowance itself, its Pause
-interaction, bookkeeping recovery, and the unsettled-action boundary remain
-pending in #205, #207, and #209.
+shipped on 2026-09-06 (#203). The unsettled-action boundary — a Stop that ends
+the Run's wait while the action's browser resource stays withheld until it is
+observed to end — shipped on 2026-09-06 (#205); Answer-side disclosure of an
+uncertain outcome arrives with the allowance that needs it. The Finalization
+Allowance itself, its Pause interaction, and bookkeeping recovery remain
+pending in #207 and #209.
 
 ## Context
 
