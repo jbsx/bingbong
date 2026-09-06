@@ -62,11 +62,12 @@ describe('formatNewInView', () => {
     expect(formatNewInView(before, after)).toBe('new in view:\n[3] button "Subscribe"')
   })
 
-  it('caps the refs it lists at the read_page ref cap', () => {
+  it('caps the refs it lists at the read_page ref cap and says how many it withheld', () => {
     const many = Array.from({ length: 90 }, (_, index) => element({ label: `Item ${index}` }))
     const block = formatNewInView(snapshot(), snapshot({ elements: many }))
 
     expect(block?.split('\n').filter((line) => line.startsWith('[')).length).toBe(75)
+    expect(block).toContain('(+15 more not listed)')
   })
 
   it('caps the text it lists at the read_page digest cap', () => {

@@ -60,7 +60,10 @@ export const EXHAUSTED_APPROACHES_BEFORE_FINALIZATION = 2
  */
 function isEndOfPageScroll(call: ToolCall, outcome: ToolResultOutcome): boolean {
   if (call.name !== 'scroll' || !outcome.ok || typeof outcome.result !== 'string') return false
-  return outcome.result.split('\n').includes(SCROLL_END_OF_PAGE)
+  // The note is the whole block after the position line, never a line
+  // inside one — page text a scroll brought in may itself read "end of
+  // page", and that is the page talking, not the browser.
+  return outcome.result.split('\n')[1] === SCROLL_END_OF_PAGE
 }
 
 /** Bookkeeping whose acceptance is decision-relevant evidence (#126/AC3). */
@@ -286,7 +289,10 @@ export function createNoProgressRail(deps: NoProgressRailDeps = {}): NoProgressR
       if (endOfPage) {
         // Nothing entered the viewport, so the pair is not spent — and the
         // note the model just read is the nudge: the next identical scroll
-        // is refused pre-execution instead of costing another round.
+        // is refused pre-execution instead of costing another round. The
+        // state recorded is the one this scroll left (its position moved
+        // even though the page did not), because that is the live state
+        // the next attempt's gate will compare against.
         attempts.set(key, { preState: fingerprint, nudged: true })
       } else if (entry !== undefined && entry.preState !== fingerprint) {
         // The action moved the page, so its pair is spent: the next

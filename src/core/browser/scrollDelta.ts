@@ -52,11 +52,17 @@ function refsEnteringView(before: PageSnapshot, after: PageSnapshot): SnapshotRe
  * `end of page` instead.
  */
 export function formatNewInView(before: PageSnapshot, after: PageSnapshot): string | null {
+  // The snapshot already holds at most MAX_SNAPSHOT_REFS refs, so the delta
+  // is bounded by construction; the slice states that bound rather than
+  // relying on it.
   const refs = refsEnteringView(before, after).slice(0, MAX_SNAPSHOT_REFS)
   const seen = new Set(before.viewportText)
   const text = after.viewportText.filter((block) => !seen.has(block))
   if (refs.length === 0 && text.length === 0) return null
   const lines = [NEW_IN_VIEW, ...refs.map(formatRefLine)]
+  // A page read says how many refs the cap withheld; so does the delta, or
+  // the model would read the listed refs as everything the viewport holds.
+  if (after.truncated) lines.push(`(+${after.totalVisible - after.refs.length} more not listed)`)
   if (text.length > 0) lines.push('page text:', truncateText(text.join('\n'), MAX_SNAPSHOT_TEXT))
   return lines.join('\n')
 }

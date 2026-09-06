@@ -234,7 +234,10 @@ _Avoid_: nudge, warning text, hint
 New decision-relevant evidence or a requested state change that moves a Run
 toward its objective. The settled page state moving is Progress; an accepted
 Evidence Checkpoint and a requested state change are Progress. A successful
-call, changed URL, or fresh screenshot is not Progress by itself. The first
+call, changed URL, or fresh screenshot is not Progress by itself, and neither
+is a scroll that answered End of Page: the window moved without bringing
+anything into view, so the settled state moving by scroll position alone is
+not new material. The first
 observation of the state a page sits in by an Observation Producer that has not
 yet observed it is neutral: new material, so not a no-Progress action, but not
 Progress either, so it resets no accounting. A repeat by an Observation
@@ -611,6 +614,18 @@ or Session action, including a fresh page snapshot when a browser action
 meaningfully changes the page. It is the next decision's observation, not merely
 confirmation that a call ran.
 _Avoid_: tool result, success flag
+
+**New In View**:
+What a scroll's Action Outcome reports: the refs and page text that entered the
+viewport, formatted and capped as a page read formats and caps them. A scroll
+that moved the window without bringing anything in answers End of Page instead.
+_Avoid_: scroll delta, diff, what changed
+
+**End of Page**:
+The one-line answer a scroll gives in place of New In View when nothing entered
+the viewport. It is a fact about the page, not advice: the repeat rail reads it
+as the page not moving, so the next identical scroll is refused.
+_Avoid_: bottom reached, nothing new, no-op scroll
 
 **On-Screen Principle**:
 Every web read and write happens in a rendered, visible tab. Off-screen fetching of web content does not exist.

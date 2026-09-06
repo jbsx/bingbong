@@ -1,3 +1,11 @@
+import { MAX_SNAPSHOT_TEXT } from '../../core/browser/snapshot'
+
+/** Viewport text blocks collected for the scroll delta (#194), and the length
+ * each is held to. Bounds on a model-facing result, so they are named here
+ * rather than buried as literals in the page script. */
+const MAX_VIEWPORT_TEXT_BLOCKS = 60
+const MAX_VIEWPORT_TEXT_BLOCK_LENGTH = 300
+
 // Runs inside the pane's page via Runtime.evaluate. Returns the CollectedPage
 // shape consumed by core/browser/snapshot.ts — DOM-specific work (labeling,
 // rects, visibility) happens here; numbering/kinds/formatting happen in core.
@@ -197,10 +205,12 @@ export const COLLECT_PAGE_SCRIPT = `(() => {
   // and running getComputedStyle over every paragraph would cost every
   // collect, not just a scroll.
   const noteInView = (el, text) => {
-    if (viewportText.length >= 60 || viewportText.includes(text)) return
+    if (viewportText.length >= ${MAX_VIEWPORT_TEXT_BLOCKS} || viewportText.includes(text)) return
     const rect = el.getBoundingClientRect()
     if (rect.width < 1 || rect.height < 1) return
-    if (rect.bottom > 0 && rect.right > 0 && rect.top < vh && rect.left < vw) viewportText.push(text.slice(0, 300))
+    if (rect.bottom > 0 && rect.right > 0 && rect.top < vh && rect.left < vw) {
+      viewportText.push(text.slice(0, ${MAX_VIEWPORT_TEXT_BLOCK_LENGTH}))
+    }
   }
   const headingText = heading ? textOf(heading) : ''
   if (headingText) {
@@ -215,7 +225,7 @@ export const COLLECT_PAGE_SCRIPT = `(() => {
       noteInView(block, text)
     }
   }
-  const textDigest = digestParts.join('\\n').slice(0, 1800)
+  const textDigest = digestParts.join('\\n').slice(0, ${MAX_SNAPSHOT_TEXT})
 
   const describeElement = (el, dialogRoot) => {
     const rect = el.getBoundingClientRect()

@@ -255,6 +255,9 @@ describe('browser tools through the pipeline', () => {
     expect(descriptions.scroll).toMatch(/new in view/i)
     expect(descriptions.scroll).toMatch(/end of page/i)
     expect(descriptions.scroll).toMatch(/no read_page/i)
+    // A scroll renumbers refs, and the delta lists only the new ones — the
+    // description must say so, or a pre-scroll number silently retargets.
+    expect(descriptions.scroll).toMatch(/renumbers every ref/i)
     expect(descriptions.click).toMatch(/no read_page/i)
     expect(descriptions.back).toMatch(/URL.*title/i)
     expect(descriptions.go_forward).toMatch(/URL.*title/i)

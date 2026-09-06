@@ -249,7 +249,7 @@ export function createBrowserTools(browser: BrowserController, vision?: VisionDe
       name: 'scroll',
       acquisition: true,
       description:
-        'Scroll the page up or down by about one screen, then return the new scroll position followed by what the scroll brought into the viewport: a "new in view:" block of the refs and page text that were not visible before, numbered for click/type. When nothing new came into view the block is the single line "end of page" — scrolling further in that direction is refused as a repeat. Continue from what is returned; no read_page after a scroll.',
+        'Scroll the page up or down by about one screen, then return the new scroll position followed by what the scroll brought into the viewport: a "new in view:" block of the refs and page text that were not visible before, numbered for click/type — continue straight from those, no read_page after a scroll. Scrolling renumbers every ref, so a ref number from before this scroll no longer names the same element; read_page only when you need one of those instead. When nothing new came into view the block is the single line "end of page" — scrolling further that way is refused as a repeat.',
       parameters: {
         direction: { type: 'string', enum: ['up', 'down'], description: 'Direction to scroll' },
       },

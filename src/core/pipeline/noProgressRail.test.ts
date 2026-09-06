@@ -118,6 +118,22 @@ describe('no-progress rail — objective repetition (#126/AC1)', () => {
     expect(refusal.ok ? undefined : refusal.reason).toMatch(/Not executed/i)
   })
 
+  it('reads the note as the browser, not as page text that happens to say it (#194)', async () => {
+    let current = BASE
+    const rail = createNoProgressRail({ settledState: () => current })
+    const scrollDown = call('scroll', { direction: 'down' })
+    await rail.observe(call('read_page'), ok('the page')) // baseline
+
+    // The scroll brought in a paragraph whose own text reads "end of page".
+    expect(await rail.gate(scrollDown)).toEqual({ ok: true })
+    current = state({ scrollY: 3800 })
+    const brought = 'scrolled down: x=0 y=3800\nnew in view:\npage text:\nend of page'
+    expect(await rail.observe(scrollDown, ok(brought))).toBeNull()
+
+    // Material arrived, so the scroll is Progress and repeats stay open.
+    expect(await rail.gate(scrollDown)).toEqual({ ok: true })
+  })
+
   it('counts an end-of-page scroll as no progress even though the position moved (#194)', async () => {
     let current = BASE
     const rail = createNoProgressRail({ settledState: () => current })
