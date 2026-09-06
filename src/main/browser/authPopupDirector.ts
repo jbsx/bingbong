@@ -84,7 +84,7 @@ export function createAuthPopupDirector(
         click: (ref) => target(base).click(ref),
         type: (ref, text) => target(base).type(ref, text),
         scroll: (direction) => target(base).scroll(direction),
-        screenshot: () => target(base).screenshot(),
+        screenshot: (options) => target(base).screenshot(options),
         pressKey: (press, times) => target(base).pressKey(press, times),
         mediaState: () => target(base).mediaState(),
         pageFacts: () => target(base).pageFacts(),

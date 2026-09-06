@@ -304,7 +304,12 @@ export function actionFingerprint(call: ToolCall): string {
       return call.name
     case 'look': {
       const question = typeof args.question === 'string' ? args.question.trim() : ''
-      return question === '' ? 'look' : `look:${stableStringify({ question: typedTextFingerprint(question) })}`
+      if (question === '') return 'look'
+      // A region (#195) is part of the ask: the same question over a
+      // different part of the page is a new inspection, the same region
+      // written differently ("0, 0, 100, 20") is the same one.
+      const region = typeof args.region === 'string' ? args.region.replace(/[\s%]+/g, '') : ''
+      return `look:${stableStringify({ question: typedTextFingerprint(question), ...(region !== '' ? { region } : {}) })}`
     }
     default:
       break

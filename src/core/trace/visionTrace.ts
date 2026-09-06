@@ -49,6 +49,14 @@ export interface VisionRequestEvent {
   readonly target?: string
   /** The question a model-requested Describe was asked to answer. */
   readonly question?: string
+  /**
+   * The part of the viewport a questioned Look was bounded to (#195), as
+   * the model wrote it — `left,top,width,height` in percent; absent on a
+   * whole-viewport capture.
+   */
+  readonly region?: string
+  /** How much that region was magnified when captured; absent without a region. */
+  readonly zoom?: number
   /** The caller's advisory whole-Look cap (#106); absent means the Look's own. */
   readonly capMs?: number
   /** How long the request took, in milliseconds, however it ended. */
@@ -146,7 +154,10 @@ export function tracedAnswer(answer: string): { answer: string; answerChars: num
 }
 
 /** What a request record says about the ask, before it settled. */
-export type VisionRequestDescriptor = Pick<VisionRequestEvent, 'capability' | 'reason' | 'target' | 'question' | 'capMs'>
+export type VisionRequestDescriptor = Pick<
+  VisionRequestEvent,
+  'capability' | 'reason' | 'target' | 'question' | 'region' | 'zoom' | 'capMs'
+>
 
 /**
  * The reporter, the identities and the clock one vision call site records

@@ -216,6 +216,88 @@ describe('vision grounding through the command pipeline', () => {
     ])
   })
 
+  it('magnifies a requested region of the viewport for a questioned Look (#195)', async () => {
+    const browser = new FakeBrowser()
+    browser.screenshotBytes = new Uint8Array([7, 8, 9])
+    const vision = new FakeVision()
+    vision.descriptions = ['Solo Leveling, Omniscient Reader.']
+    const trace: VisionTraceEvent[] = []
+    const tools = createVisionGroundingTools(browser, vision)
+    const look = tools.find((candidate) => candidate.name === 'look')
+    if (!look) throw new Error('look tool is missing')
+
+    const answer = await look.execute(
+      { id: 'l1', name: 'look', args: { question: 'Which titles are in the S tier row?', region: '0, 0, 100, 20' } },
+      { clock: new FakeClock(), traceVision: (event) => trace.push(event) },
+    )
+
+    // The answer ends with the region and the zoom it got, and — below the
+    // cap — that a smaller region is magnified more; the trace keeps the
+    // vision answer alone.
+    expect(answer).toBe(
+      'Solo Leveling, Omniscient Reader.\n\n[region 0,0,100,20 shown at 3x; a smaller region is magnified more, up to 4x]',
+    )
+    expect(look.parameters?.region).toMatchObject({ type: 'string', required: false })
+    expect(look.parameters?.region?.description).toMatch(/left,top,width,height/)
+    expect(look.description).toMatch(/region/i)
+    expect(browser.screenshotRequests).toEqual([{ region: { left: 0, top: 0, width: 1, height: 0.2 }, scale: 3 }])
+    expect(vision.describeRequests).toEqual([
+      {
+        image: new Uint8Array([7, 8, 9]),
+        prompt: expect.stringMatching(
+          /^Answer only from the screenshot[\s\S]*say "not legible"[\s\S]*magnified[\s\S]*0% to 100%[\s\S]*0% to 20%[\s\S]*3x[\s\S]*Question: Which titles are in the S tier row\?$/i,
+        ),
+        maxTokens: 512,
+      },
+    ])
+    expect(trace).toEqual([
+      expect.objectContaining({
+        kind: 'vision_request',
+        capability: 'describe',
+        reason: 'look',
+        question: 'Which titles are in the S tier row?',
+        region: '0,0,100,20',
+        zoom: 3,
+        outcome: 'ok',
+        answer: 'Solo Leveling, Omniscient Reader.',
+      }),
+    ])
+  })
+
+  it('states a region at the zoom cap without inviting a smaller one (#195)', async () => {
+    const browser = new FakeBrowser()
+    const vision = new FakeVision()
+    vision.descriptions = ['The Boxer, The Greatest E.']
+    const look = createVisionGroundingTools(browser, vision).find((candidate) => candidate.name === 'look')
+    if (!look) throw new Error('look tool is missing')
+
+    const answer = await look.execute(
+      { id: 'l1', name: 'look', args: { question: 'Which titles are in the S tier row?', region: '26,0,20,10' } },
+      { clock: new FakeClock() },
+    )
+
+    expect(browser.screenshotRequests[0]?.scale).toBe(4)
+    expect(answer).toBe('The Boxer, The Greatest E.\n\n[region 26,0,20,10 shown at 4x]')
+  })
+
+  it('refuses a region without a question, and a malformed region, before any capture (#195)', async () => {
+    const browser = new FakeBrowser()
+    const vision = new FakeVision()
+    const look = createVisionGroundingTools(browser, vision).find((candidate) => candidate.name === 'look')
+    if (!look) throw new Error('look tool is missing')
+    const context = { clock: new FakeClock() }
+
+    await expect(look.execute({ id: 'l1', name: 'look', args: { region: '0,0,100,20' } }, context)).rejects.toThrow(
+      /question/,
+    )
+    await expect(
+      look.execute({ id: 'l2', name: 'look', args: { question: 'What is in the top row?', region: 'top' } }, context),
+    ).rejects.toThrow(/left,top,width,height/)
+
+    expect(browser.screenshotCalls).toBe(0)
+    expect(vision.describeRequests).toEqual([])
+  })
+
   it('charges questioned and unasked Looks equally to the Vision Budget', async () => {
     const vision = new FakeVision()
     vision.descriptions = ['Page state.', 'Top-row titles.']

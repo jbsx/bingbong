@@ -1,12 +1,13 @@
 import { describe, expect, it } from 'vitest'
-import type { BrowserController, VisualGroundingController } from '../../core/ports/browser'
+import type { BrowserController, ScreenshotOptions, VisualGroundingController } from '../../core/ports/browser'
 import { createAuthPopupDirector, type AuthPopupSource } from './authPopupDirector'
 
 type DrivenController = BrowserController & VisualGroundingController
 
 /** Records every call; returns canned results. */
-function fakeController(name: string): DrivenController & { calls: string[] } {
+function fakeController(name: string): DrivenController & { calls: string[]; screenshotOptions: unknown[] } {
   const calls: string[] = []
+  const screenshotOptions: unknown[] = []
   const record = <T>(method: string, result: T) => {
     return async (..._args: unknown[]) => {
       calls.push(method)
@@ -15,12 +16,17 @@ function fakeController(name: string): DrivenController & { calls: string[] } {
   }
   return {
     calls,
+    screenshotOptions,
     navigate: record('navigate', `navigated by ${name}`),
     readPage: record('readPage', `page of ${name}`),
     click: record('click', `clicked by ${name}`),
     type: record('type', `typed by ${name}`),
     scroll: record('scroll', `scrolled by ${name}`),
-    screenshot: record('screenshot', new Uint8Array()),
+    screenshot: async (options?: ScreenshotOptions) => {
+      calls.push('screenshot')
+      screenshotOptions.push(options)
+      return new Uint8Array()
+    },
     back: record('back', `back by ${name}`),
     forward: record('forward', `forward by ${name}`),
     pressKey: record('pressKey', undefined),
@@ -30,7 +36,7 @@ function fakeController(name: string): DrivenController & { calls: string[] } {
     describeRef: record('describeRef', undefined),
     groundingSnapshot: record('groundingSnapshot', { refs: [], url: `https://${name}.example/` }),
     refAtPoint: record('refAtPoint', 1),
-  } as unknown as DrivenController & { calls: string[] }
+  } as unknown as DrivenController & { calls: string[]; screenshotOptions: unknown[] }
 }
 
 /** Minimal BrowserWindow stand-in driving the director's lifecycle hooks. */
@@ -111,6 +117,19 @@ describe('createAuthPopupDirector', () => {
     expect(await routed.navigate('https://x.example/')).toBe('navigated by pane')
     expect(routed.state().url).toBe('https://pane.example/')
     expect(pane.calls).toContain('navigate')
+  })
+
+  it('forwards a region screenshot request to whichever page it routes to (#195)', async () => {
+    const { pane, popup, director, openPopup } = harness()
+    const routed = director.route(pane)
+    const options = { region: { left: 0, top: 0, width: 1, height: 0.2 }, scale: 3 }
+
+    await routed.screenshot(options)
+    await openPopup('https://accounts.google.com/signin')
+    await routed.screenshot(options)
+
+    expect(pane.screenshotOptions).toEqual([options])
+    expect(popup.screenshotOptions).toEqual([options])
   })
 
   it('restores the pane when the popup closes', async () => {

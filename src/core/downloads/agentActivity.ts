@@ -53,7 +53,7 @@ export function withAgentActivity(
     click: (ref) => run(() => controller.click(ref)),
     type: (ref, text) => run(() => controller.type(ref, text)),
     scroll: (direction) => controller.scroll(direction),
-    screenshot: () => controller.screenshot(),
+    screenshot: (options) => controller.screenshot(options),
     back: () => controller.back(),
     forward: () => controller.forward(),
     pressKey: (press, times) => controller.pressKey(press, times),

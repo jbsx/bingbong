@@ -130,6 +130,27 @@ describe('no-progress rail — objective repetition (#126/AC1)', () => {
       ok: false,
     })
   })
+
+  it('treats the same question over a different region as a new Look, and the same region twice as a repeat (#195)', async () => {
+    const rail = createNoProgressRail({ settledState: () => BASE })
+    const whole = call('look', { question: 'Which titles are in the top row?' })
+    const topBand = call('look', { question: 'Which titles are in the top row?', region: '0,0,100,20' })
+    const leftHalf = call('look', { question: 'Which titles are in the top row?', region: '0,0,50,20' })
+
+    expect(await rail.gate(whole)).toEqual({ ok: true })
+    expect(await rail.observe(whole, ok())).toBeNull()
+    expect(await rail.gate(topBand)).toEqual({ ok: true })
+    expect(await rail.observe(topBand, ok())).toBeNull()
+    // A third inspection of unchanged state is new material to the
+    // repetition rail (gated through) even though the sustained-no-progress
+    // rail may nudge for an Approach change on observing it.
+    expect(await rail.gate(leftHalf)).toEqual({ ok: true })
+    await rail.observe(leftHalf, ok())
+    // The same region written with spaces is the same region.
+    expect(await rail.gate(call('look', { question: 'Which titles are in the top row?', region: ' 0, 0, 100, 20 ' }))).toMatchObject({
+      ok: false,
+    })
+  })
 })
 
 describe('no-progress rail — meaningful progression (#126/AC2)', () => {

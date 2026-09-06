@@ -53,13 +53,38 @@ export interface KeyPress {
   shift?: boolean
 }
 
+/**
+ * A part of the viewport as fractions of its size (#195): every value in
+ * [0, 1], `left + width` and `top + height` at most 1. Fractions rather
+ * than pixels because the caller (a Look) never holds the viewport size —
+ * the browser resolves them against the live one.
+ */
+export interface ViewportRegion {
+  left: number
+  top: number
+  width: number
+  height: number
+}
+
+/**
+ * A bounded, magnified capture (#195): the region is re-rendered at
+ * `scale` device pixels per CSS pixel, so text the screen shows too small
+ * to read is rasterized larger from the page itself — never upscaled from
+ * the full screenshot's bitmap.
+ */
+export interface ScreenshotOptions {
+  region: ViewportRegion
+  scale: number
+}
+
 export interface BrowserController {
   navigate(url: string): Promise<string>
   readPage(): Promise<string>
   click(ref: number): Promise<string>
   type(ref: number, text: string): Promise<string>
   scroll(direction: 'up' | 'down'): Promise<string>
-  screenshot(): Promise<Uint8Array>
+  /** The visible viewport as a JPEG; with options, one magnified region of it. */
+  screenshot(options?: ScreenshotOptions): Promise<Uint8Array>
   back(): Promise<string>
   forward(): Promise<string>
   /** Inject a shortcut key (times consecutive presses) on the focused page. */

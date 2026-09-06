@@ -72,6 +72,8 @@ class FakeCdp implements CdpDebugger {
   actionProbe: unknown = undefined
   mediaProbe: unknown = { paused: true, currentTime: 12.5, volume: 0.4 }
   collectValues: unknown[] = []
+  /** What Page.getLayoutMetrics reports as the visual viewport (a region screenshot's frame, #195). */
+  layoutMetrics = { pageX: 0, pageY: 0, clientWidth: 1280, clientHeight: 800 }
   private readonly handlers = new Map<string, ((params: unknown) => void)[]>()
 
   constructor(private evaluateValue: unknown = youtubeFixture) {}
@@ -183,6 +185,7 @@ class FakeCdp implements CdpDebugger {
       return { result: { value: this.evaluateValue } } as T
     }
     if (method === 'Page.captureScreenshot') return { data: Buffer.from('fake-jpeg-bytes').toString('base64') } as T
+    if (method === 'Page.getLayoutMetrics') return { visualViewport: { ...this.layoutMetrics, scale: 1, zoom: 1 } } as T
     if (method.startsWith('Input.')) return {} as T
     throw new Error(`unexpected CDP method: ${method}`)
   }
@@ -867,6 +870,20 @@ describe('createCdpBrowserController screenshot', () => {
     expect(cdp.calls.find((call) => call.method === 'Page.captureScreenshot')?.params).toMatchObject({
       format: 'jpeg',
       quality: 60,
+    })
+    expect(bytes).toEqual(new Uint8Array(Buffer.from('fake-jpeg-bytes')))
+  })
+
+  it('captures one magnified region of the viewport as a clip in page coordinates (#195)', async () => {
+    const { cdp, controller } = makeController()
+    cdp.layoutMetrics = { pageX: 0, pageY: 300, clientWidth: 1000, clientHeight: 700 }
+
+    const bytes = await controller.screenshot({ region: { left: 0.1, top: 0, width: 0.8, height: 0.2 }, scale: 3 })
+
+    expect(cdp.calls.find((call) => call.method === 'Page.captureScreenshot')?.params).toEqual({
+      format: 'jpeg',
+      quality: 60,
+      clip: { x: 100, y: 300, width: 800, height: 140, scale: 3 },
     })
     expect(bytes).toEqual(new Uint8Array(Buffer.from('fake-jpeg-bytes')))
   })

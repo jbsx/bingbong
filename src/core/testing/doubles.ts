@@ -3,7 +3,15 @@ import type { AssistantTurn, LlmClient, LlmRequest, LlmStreamDelta } from '../po
 import type { TtsSpeaker } from '../ports/tts'
 import type { Transcriber, VadScorer } from '../ports/stt'
 import { WAKE_HEADS, type WakeScores, type WakeWordDetector } from '../ports/wake'
-import type { BrowserController, BrowserState, KeyPress, MediaState, ViewportPoint, VisualGroundingController } from '../ports/browser'
+import type {
+  BrowserController,
+  BrowserState,
+  KeyPress,
+  MediaState,
+  ScreenshotOptions,
+  ViewportPoint,
+  VisualGroundingController,
+} from '../ports/browser'
 import { settledStateFromSnapshot } from '../pipeline/progressFingerprints'
 import { blockerFactsFromSnapshot } from '../browser/blockerNudge'
 import type { PageSnapshot, SnapshotRef } from '../browser/snapshot'
@@ -247,6 +255,8 @@ export class FakeBrowser implements BrowserController, VisualGroundingController
   }
   screenshotBytes = new Uint8Array()
   screenshotCalls = 0
+  /** Every capture's options as requested; undefined for a whole-viewport screenshot. */
+  readonly screenshotRequests: (ScreenshotOptions | undefined)[] = []
   pointRef = 1
   readonly refPoints: { x: number; y: number }[] = []
   media: MediaState | null = { paused: true, currentTime: 0, volume: 1 }
@@ -286,8 +296,9 @@ export class FakeBrowser implements BrowserController, VisualGroundingController
     return this.media
   }
 
-  async screenshot(): Promise<Uint8Array> {
+  async screenshot(options?: ScreenshotOptions): Promise<Uint8Array> {
     this.screenshotCalls += 1
+    this.screenshotRequests.push(options)
     return this.screenshotBytes
   }
 

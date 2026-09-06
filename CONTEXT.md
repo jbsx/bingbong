@@ -701,7 +701,9 @@ _Avoid_: risky action, dangerous action
 
 **Look**:
 A vision-model inspection of the current page screenshot, returned as text.
-The tool named `look` is one Look; Auto-vision is another.
+The tool named `look` is one Look; Auto-vision is another. A questioned Look
+may name a region of the viewport: the crop is re-rendered larger from the
+page itself (ADR 0032), and it is still one Look.
 _Avoid_: screenshot analysis, image check
 
 **Auto-vision**:

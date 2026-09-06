@@ -89,6 +89,16 @@ describe('withAgentActivity', () => {
     expect(tracker.isActive()).toBe(false)
   })
 
+  it('forwards a region screenshot request to the wrapped controller (#195)', async () => {
+    const browser = new FakeBrowser()
+    const tracked = withAgentActivity(browser, trackerWithClock().tracker)
+    const options = { region: { left: 0, top: 0, width: 1, height: 0.2 }, scale: 3 }
+
+    await tracked.screenshot(options)
+
+    expect(browser.screenshotRequests).toEqual([options])
+  })
+
   it('keeps the controller surface intact', () => {
     const tracked = withAgentActivity(new FakeBrowser(), trackerWithClock().tracker)
     const verbs: Array<keyof (BrowserController & VisualGroundingController)> = [

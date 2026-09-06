@@ -1,4 +1,12 @@
-import type { BrowserController, BrowserState, KeyPress, MediaState, ViewportPoint, VisualGroundingController } from '../../core/ports/browser'
+import type {
+  BrowserController,
+  BrowserState,
+  KeyPress,
+  MediaState,
+  ScreenshotOptions,
+  ViewportPoint,
+  VisualGroundingController,
+} from '../../core/ports/browser'
 import { settledStateFromSnapshot, type SettledPageState } from '../../core/pipeline/progressFingerprints'
 import { blockerFactsFromSnapshot } from '../../core/browser/blockerNudge'
 import type { BrowserSubspans } from '../../core/perf/browserSubspans'
@@ -79,6 +87,11 @@ interface EvaluateResponse {
 
 interface ScreenshotResponse {
   data: string
+}
+
+/** The one viewport of Page.getLayoutMetrics a region clip needs: position on the page and size, in device-independent pixels. */
+interface LayoutMetricsResponse {
+  visualViewport: { pageX: number; pageY: number; clientWidth: number; clientHeight: number }
 }
 
 /** Result of the in-page click-preparation probe. */
@@ -542,10 +555,30 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
     return navigationOutcome()
   }
 
-  async function screenshot(): Promise<Uint8Array> {
+  /**
+   * A region Look's clip (#195): the fractions resolved against the visual
+   * viewport, offset by its page position because a capture clip is in
+   * page coordinates — both in the same device-independent pixels, so page
+   * zoom cannot skew one against the other. The scale re-rasterizes the
+   * region from the page at that many pixels per CSS pixel.
+   */
+  async function regionClip(options: ScreenshotOptions): Promise<Record<string, number>> {
+    const { visualViewport } = await cdp.send<LayoutMetricsResponse>('Page.getLayoutMetrics')
+    const { region, scale } = options
+    return {
+      x: Math.round(visualViewport.pageX + region.left * visualViewport.clientWidth),
+      y: Math.round(visualViewport.pageY + region.top * visualViewport.clientHeight),
+      width: Math.max(1, Math.round(region.width * visualViewport.clientWidth)),
+      height: Math.max(1, Math.round(region.height * visualViewport.clientHeight)),
+      scale,
+    }
+  }
+
+  async function screenshot(options?: ScreenshotOptions): Promise<Uint8Array> {
     // q60 keeps the upload ~4x smaller for the vision model; full width is
     // retained so Locate points map cleanly to viewport coordinates (ADR 0008).
-    const response = await cdp.send<ScreenshotResponse>('Page.captureScreenshot', { format: 'jpeg', quality: 60 })
+    const clip = options === undefined ? {} : { clip: await regionClip(options) }
+    const response = await cdp.send<ScreenshotResponse>('Page.captureScreenshot', { format: 'jpeg', quality: 60, ...clip })
     return new Uint8Array(Buffer.from(response.data, 'base64'))
   }
 
