@@ -261,14 +261,34 @@ _Avoid_: attempt, action
 **Finalization**:
 The terminal phase in which a Run stops acquiring evidence and acting on pages,
 then produces the best grounded Answer available. Finalization never asks the
-user a new question after the work budget is exhausted.
+user a new question after the work budget is exhausted. Entering it does not
+cancel a live Subagent: the Run waits the Report Grace for each one's Subagent
+Report before its bookkeeping Tool Round.
 _Avoid_: failure, timeout
 
 **Finalization Cause**:
 The reason a Run entered Finalization, such as satisfying the objective,
 exhausting its budget, reaching its deadline, making no Progress, meeting a
-Blocker, or reaching a hard safety limit.
+Blocker, or reaching a hard safety limit — or, for a Subagent only, its parent
+Run entering Finalization. A Run never carries that last cause.
 _Avoid_: Run Resolution, outcome
+
+**Report Grace**:
+The bounded wait, measured from the moment a Run enters Finalization for any
+cause, in which each live Subagent is told the parent is finalizing and given
+its reserved Answer round. A Subagent that reports within it returns a
+Subagent Report; one that does not returns the bounded Subagent Report
+instead. A Subagent is cancelled only by a decision — the user's Stop, the
+orchestrator's cancel, a Session Reset — never by Finalization.
+_Avoid_: timeout, cleanup window
+
+**Off-contract Reply**:
+A reserved Answer round's reply, from a Run or a Subagent, that is not an
+Answer or a Subagent Report in the contract's shape — prose, or JSON of the
+wrong shape. It is a failed round, never rendered and never a Subagent
+Report's findings: the Run's deterministic Answer or the bounded Subagent
+Report stands in. Outside a reserved round a prose reply is still an Answer.
+_Avoid_: malformed answer, hallucinated answer, narration
 
 **Run Resolution**:
 The semantic result delivered to the user: `completed`, `partial`, `blocked`,
@@ -682,7 +702,8 @@ web off-screen. A Subagent executes the shared Tool Round (#158) as its
 second adapter, in Subagent configuration: its own Observation ledger and
 Notices, the ASK_USER relay as both its Blocker escalation and the result
 that ends a round, every Confirmation refused because it has no user to ask,
-and the Run's search-loop, no-progress, and per-call deadline rails all off.
+and the Run's search-loop, no-progress, and per-call deadline rails all on
+(#159), inert only for a Subagent with no tab to observe.
 What stays its own is what a Run has no counterpart for: the reserved Answer
 round and the deterministic bounded Subagent Report behind it.
 _Avoid_: research agent, worker, task runner

@@ -50,7 +50,8 @@ mechanics and encourage redundant reads, clicks, screenshots, and vision calls.
   ceiling includes bookkeeping but not the Answer-only round; ordinary work
   stops early enough to leave bookkeeping capacity when needed. A failed or
   tool-requesting reserved Answer produces a deterministic Answer from verified
-  evidence rather than a raw limit error.
+  evidence rather than a raw limit error — and so does an off-contract one
+  (ADR 0034, which superseded the two-member list this sentence first had).
 - Navigation and meaningful browser actions return Action Outcomes containing
   the settled page state needed for the next decision. `read_page` remains an
   explicit inspection tool, but is not a mandatory follow-up to every action.
@@ -80,8 +81,10 @@ mechanics and encourage redundant reads, clicks, screenshots, and vision calls.
   no tab of its own observes nothing, so its rails are inert. How a worker
   ended is recorded like every other mechanical counter — its Finalization
   Cause as hidden provenance on its report, and a turn-stamped diagnostic
-  event for every finished worker, including one the Run's own Finalization
-  cancelled before it reached a cause. Neither is model-facing text and
+  event for every finished worker. (This ADR first let the Run's own
+  Finalization cancel a worker before it reached a cause; ADR 0035 superseded
+  that with the Report Grace, so every worker now ends with a cause.)
+  Neither is model-facing text and
   neither reaches the user-facing Subagent card. The
   orchestrator has a 32-round hard ceiling; aggregate work is bounded by
   concurrency and the shared active-work deadline.
