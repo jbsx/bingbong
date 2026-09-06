@@ -223,12 +223,20 @@ An advisory line the runtime appends to a tool result for the model, never
 shown or spoken to the user. An immediate Notice rides the result that
 triggered it or is dropped; an owed Notice persists until a later result can
 carry it. Notices ride only successful text results, in one fixed
-precedence — except a directive that closes the loop rather than advising
-inside it, which rides whatever the result it lands on read. A Notice is
+precedence — except a Finalize Instruction, which closes the loop rather than
+advising inside it and rides whatever the result it lands on read. A Notice is
 model-facing only: the copy of a terminal result the round hands its caller to
 route onward carries none, while the model-facing copy among the round's
 results still does.
 _Avoid_: nudge, warning text, hint
+
+**Finalize Instruction**:
+The model-facing instruction that Finalization has been entered: the reason —
+the Finalization Cause the Run or Subagent actually stopped for — which tools
+are closed, and what reply is wanted. It is carried by a closed tool's
+refusal, by a Notice on a bookkeeping result, and by an injected Subagent
+Report, and it names one reason wherever it appears in a round.
+_Avoid_: Finalization directive, finalize directive
 
 **Progress**:
 New decision-relevant evidence or a requested state change that moves a Run
@@ -261,7 +269,7 @@ _Avoid_: attempt, action
 **Finalization**:
 The terminal phase in which a Run stops acquiring evidence and acting on pages,
 then produces the best grounded Answer available. Finalization never asks the
-user a new question after the work budget is exhausted. Entering it does not
+user a new question once it has been entered. Entering it does not
 cancel a live Subagent: the Run waits the Report Grace for each one's Subagent
 Report before its bookkeeping Tool Round — which is always the first Tool
 Round to begin in Finalization; the round Finalization is entered during is
@@ -270,9 +278,10 @@ _Avoid_: failure, timeout
 
 **Finalization Cause**:
 The reason a Run entered Finalization, such as satisfying the objective,
-exhausting its budget, reaching its deadline, making no Progress, meeting a
-Blocker, or reaching a hard safety limit — or, for a Subagent only, its parent
-Run entering Finalization. A Run never carries that last cause.
+exhausting its budget, reaching its deadline, making no Progress, or reaching
+a hard safety limit — or, for a Subagent only, its parent Run entering
+Finalization or the user being unreachable through it. A Run never carries
+those last two.
 _Avoid_: Run Resolution, outcome
 
 **Report Grace**:
