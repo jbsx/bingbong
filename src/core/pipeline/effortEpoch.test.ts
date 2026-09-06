@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { FakeClock } from '../testing/doubles'
+import { FORBIDDEN_ENDINGS, RESOURCE_ACCOUNTING } from '../testing/stoppingPolicy'
 import {
   ANSWER_ONLY_REPORT_DIRECTIVE,
   budgetWarningCrossed,
@@ -952,19 +953,19 @@ describe('Effort Epoch (#146, ADR 0027)', () => {
   })
 
   describe('deterministic final Answer', () => {
-    it('answers budget exhaustion from the command and verified sources only', () => {
+    it('leads with the state of the task, never the limit that stopped the run (#203)', () => {
       const answer = deterministicFinalAnswer({
         command: 'open example.com and click the first link',
         cause: 'budget_exhausted',
         sources: [{ url: 'https://example.com/' }, { url: 'https://example.com/nav' }],
       })
-      expect(answer.speak).toBe('I ran out of work budget before finishing that request.')
+      expect(answer.speak).toBe('Here is what I found so far, though I have not confirmed an answer yet.')
       expect(answer.display).toBe(
-        'I could not finish \u201Copen example.com and click the first link\u201D. ' +
-          'The run exhausted its planned work budget.\n\n' +
-          'What I managed to observe:\n' +
+        'I have not confirmed an answer for \u201Copen example.com and click the first link\u201D yet.\n\n' +
+          'What I have so far:\n' +
           '- https://example.com/\n' +
-          '- https://example.com/nav',
+          '- https://example.com/nav\n\n' +
+          'I have not verified that any of these answers the request.',
       )
     })
 
@@ -983,14 +984,14 @@ describe('Effort Epoch (#146, ADR 0027)', () => {
         ],
       })
       expect(answer.display).toBe(
-        'I could not finish \u201Cwhich horizon chapter introduces the boxer\u201D. ' +
-          'The run exhausted its planned work budget.\n\n' +
-          'What I managed to observe:\n' +
+        'I have not confirmed an answer for \u201Cwhich horizon chapter introduces the boxer\u201D yet.\n\n' +
+          'What I have so far:\n' +
           '- https://www.reddit.com/r/manhwa/comments/z8sfnn/\n' +
           '  \u201Cr/manhwa \u2014 Horizon ch. 45 discussion\u201D\n' +
           '  Quoted from the page as observed:\n' +
           '  > Chapter 45 discussion: the boxer appears in the final panels.\n' +
-          '- https://www.google.com/search?q=reddit+manhwa+horizon+boxer',
+          '- https://www.google.com/search?q=reddit+manhwa+horizon+boxer\n\n' +
+          'I have not verified that any of these answers the request.',
       )
     })
 
@@ -1008,28 +1009,71 @@ describe('Effort Epoch (#146, ADR 0027)', () => {
         ],
       })
       expect(answer.display).toBe(
-        'I could not finish \u201Ccheck the page\u201D. The run stopped making progress \u2014 repeated actions stopped producing anything new.\n\n' +
-          'What I managed to observe:\n' +
+        'I have not confirmed an answer for \u201Ccheck the page\u201D yet.\n\n' +
+          'What I have so far:\n' +
           '- https://shop.example/router\n' +
           '  Uncertainty: price may vary by region\n' +
           '  What the run\u2019s look described:\n' +
-          '  > A screenshot described: a login wall covers the article.',
+          '  > A screenshot described: a login wall covers the article.\n\n' +
+          'I have not verified that any of these answers the request.',
       )
     })
 
-    it('phrases the deadline and hard-limit causes honestly', () => {
-      expect(
-        deterministicFinalAnswer({ command: 'pause the video', cause: 'deadline_reached', sources: [] }).speak,
-      ).toBe('I ran out of working time before finishing that request.')
-      expect(
-        deterministicFinalAnswer({ command: 'pause the video', cause: 'hard_limit', sources: [] }).display,
-      ).not.toContain('What I managed to observe')
-      // The hard ceiling speaks its own line rather than the catch-all (#201).
-      expect(deterministicFinalAnswer({ command: 'pause the video', cause: 'hard_limit', sources: [] }).speak).toBe(
-        'I reached my work limit before finishing that request.',
-      )
-      expect(deterministicFinalAnswer({ command: 'pause the video', cause: 'no_progress', sources: [] }).speak).toBe(
-        'I stopped making progress on that request.',
+    it('is brief when the run retained nothing to show (#203)', () => {
+      const answer = deterministicFinalAnswer({ command: 'pause the video', cause: 'hard_limit', sources: [] })
+      expect(answer.speak).toBe('I do not have anything to show for that request yet.')
+      expect(answer.display).toBe('I have not made progress I can show on \u201Cpause the video\u201D yet.')
+      expect(answer.display).not.toContain('What I have so far')
+    })
+
+    it('words every non-Blocker cause the same way \u2014 the cause is not the user\u2019s business (#203)', () => {
+      // The four mechanical stops a Run can reach used to speak four
+      // different resource sentences. They are one task-state sentence
+      // now: the difference between them is diagnostics, retained in the
+      // Run's stop record for an explicit "why did you stop?".
+      const causes = ['budget_exhausted', 'deadline_reached', 'no_progress', 'hard_limit'] as const
+      const worded = causes.map((cause) => deterministicFinalAnswer({ command: 'find the post', cause, sources: [] }))
+      expect(new Set(worded.map((answer) => `${answer.speak}|${answer.display}`)).size).toBe(1)
+    })
+
+    it('never announces a budget, a deadline, a round count, or a provider error (#203/AC1)', () => {
+      const causes = ['budget_exhausted', 'deadline_reached', 'no_progress', 'hard_limit', 'blocker'] as const
+      for (const cause of causes) {
+        const answer = deterministicFinalAnswer({
+          command: 'find the tier list post',
+          cause,
+          ...(cause === 'blocker' ? { detail: { host: 'reddit.com', signal: 'login-wall' as const } } : {}),
+          sources: [{ url: 'https://www.reddit.com/r/manhwa/' }],
+        })
+        expect(answer.speak).not.toMatch(RESOURCE_ACCOUNTING)
+        expect(answer.display).not.toMatch(RESOURCE_ACCOUNTING)
+      }
+    })
+
+    it('never implies an exhaustive search, background work, or asks the user to keep looking (#203/AC3)', () => {
+      const answer = deterministicFinalAnswer({
+        command: 'find the tier list post',
+        cause: 'deadline_reached',
+        sources: [{ url: 'https://www.reddit.com/r/manhwa/' }],
+      })
+      expect(answer.speak).not.toMatch(FORBIDDEN_ENDINGS)
+      expect(answer.display).not.toMatch(FORBIDDEN_ENDINGS)
+    })
+
+    it('keeps an actionable external blocker visible, with what was observed behind it (#202/#203)', () => {
+      const answer = deterministicFinalAnswer({
+        command: 'find the tier list post',
+        cause: 'blocker',
+        detail: { host: 'reddit.com', signal: 'login-wall' },
+        sources: [{ url: 'https://www.reddit.com/r/manhwa/' }],
+      })
+      expect(answer.speak).toBe('I could not get past the sign-in wall on reddit.com.')
+      expect(answer.display).toBe(
+        'The run kept at a sign-in wall it cannot pass. To get past it, sign in to reddit.com once in the ' +
+          'browser tab and ask again.\n\n' +
+          'What I have so far:\n' +
+          '- https://www.reddit.com/r/manhwa/\n\n' +
+          'I have not verified that any of these answers the request.',
       )
     })
   })

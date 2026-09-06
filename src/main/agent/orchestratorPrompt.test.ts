@@ -48,6 +48,50 @@ describe('orchestrator media strategy', () => {
   })
 })
 
+describe('orchestrator outcome-first stopping policy (#203, ADR 0038)', () => {
+  it('bans resource accounting from both user-facing halves of the Answer', () => {
+    const policy = line('End on the state of the task')
+    expect(policy).toMatch(/"speak" and "display" never mention time limits, work budgets, tool-round counts/)
+    expect(policy).toMatch(/retries, or provider and tool errors/)
+    expect(policy).toMatch(/the application records those itself/)
+  })
+
+  it('asks for grounded progress, remaining uncertainty, and clearable blockers instead', () => {
+    const policy = line('End on the state of the task')
+    expect(policy).toMatch(/Say what you established, what is still unverified/)
+    expect(policy).toMatch(/external blocker the user can actually clear/)
+    // An unreadable image is an unresolved check, not a limits explanation.
+    expect(policy).toMatch(/An image you could not read is an unresolved check to name/)
+    expect(policy).toContain('have not verified that both titles are in the 10/10 tier')
+  })
+
+  it('forbids implied exhaustive search, implied background work, and offloaded verification', () => {
+    const endings = line('Never imply you searched exhaustively')
+    expect(endings).toMatch(/never imply work continues after you answer/)
+    expect(endings).toMatch(/Do not routinely close with "say keep looking"/)
+    expect(endings).toMatch(/hand your own verification back to the user/)
+    expect(endings).toMatch(/offer a next step only when it is specific and useful/)
+    // Nothing changed since the last answer: brief, not the shortlist again.
+    expect(endings).toMatch(/say that briefly instead of repeating the shortlist/)
+  })
+
+  it('claims a Candidate was ruled out only for a decision actually recorded', () => {
+    const ruledOut = line('Say a Candidate was ruled out')
+    expect(ruledOut).toMatch(/only when that decision was actually recorded/)
+    expect(ruledOut).toMatch(/A user correction you have not resolved is not yet a rejection/)
+  })
+
+  it('answers "why did you stop?" from the retained stop record, and only then', () => {
+    const explain = line('why you stopped')
+    expect(explain).toMatch(/Run Journal's "stop" field for that Run/)
+    // The three fields stay distinct — a later failure is not the cause.
+    expect(explain).toMatch(/"cause" is what actually ended the Run/)
+    expect(explain).toMatch(/"failure" is a later failure that did not cause the stop/)
+    expect(explain).toMatch(/the only time internal causes belong in an answer/)
+    expect(explain).toMatch(/on any other request, work the request and leave them out/)
+  })
+})
+
 describe('orchestrator continuity contract', () => {
   it('requires application-owned Working Memory operations and web attribution', () => {
     expect(ORCHESTRATOR_SYSTEM_PROMPT).toContain('"memory_patch": []')

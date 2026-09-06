@@ -422,6 +422,65 @@ describe('session runtime', () => {
     expect(attempts).toEqual(['small-model:2:0'])
   })
 
+  it('retains a Run\u2019s stop record and lets no compaction rewrite or drop it (#203)', async () => {
+    let model = 'large-model'
+    const clock = new FakeClock()
+    const runtime = createSessionRuntime({
+      clock,
+      identities: new DeterministicIdentities(),
+      continuityModel: () => model,
+      continuityBudgets: {
+        'large-model': {
+          journal: { high: 100, reserve: 110, hard: 120 },
+          memory: { high: 200, reserve: 210, hard: 220 },
+        },
+        'small-model': {
+          journal: { high: 10, reserve: 20, hard: 100 },
+          memory: { high: 100, reserve: 110, hard: 120 },
+        },
+      },
+      // A compactor that condenses the oldest Run Note — all it is asked
+      // to do — and, given the chance, would also invent a friendlier
+      // reason every Run stopped.
+      compactContinuity: async ({ journal, memory }) => ({
+        journal: journal.map((entry, index) => ({
+          ...entry,
+          ...(index === 0 ? { text: 'condensed' } : {}),
+          stop: { cause: 'objective_met' as const },
+        })),
+        memory,
+      }),
+    })
+
+    // A Run stopped by its budget that still answered: `done`, with the
+    // mechanical cause retained beside the outcome.
+    const first = runtime.accept(runtime.submit().submissionId)
+    runtime.commitRunContinuity(first.runId, 'done', 'j'.repeat(40), [], { cause: 'budget_exhausted' })
+    runtime.finish(first.runId)
+
+    // Committed as given: the Journal is where "why did you stop?" is
+    // answered from, so the record rides the snapshot the next Run reads.
+    const second = runtime.accept(runtime.submit().submissionId)
+    expect(second.journal[0]!.stop).toEqual({ cause: 'budget_exhausted' })
+
+    runtime.commitRunContinuity(second.runId, 'done', 'k'.repeat(6), [])
+    runtime.finish(second.runId)
+    const third = runtime.accept(runtime.submit().submissionId)
+    model = 'small-model'
+    runtime.commitRunContinuity(third.runId, 'done', 'l'.repeat(6), [])
+    runtime.finish(third.runId)
+    await settleMaintenance()
+
+    // The compaction landed on the oldest Run Note and nowhere near the
+    // stop: the runtime owns that field, so a rewritten cause is
+    // discarded and an untouched one stays exactly as the Run left it.
+    const fourth = runtime.accept(runtime.submit().submissionId)
+    expect(fourth.journal.map(({ text }) => text)).toEqual(['condensed', 'k'.repeat(6), 'l'.repeat(6)])
+    expect(fourth.journal[0]!.stop).toEqual({ cause: 'budget_exhausted' })
+    expect(fourth.journal[1]!.stop).toBeUndefined()
+    expect(fourth.journal[2]!.stop).toBeUndefined()
+  })
+
   it('parses model-specific continuity budgets from configuration', () => {
     expect(parseSessionContinuityBudgets(JSON.stringify({
       model: {

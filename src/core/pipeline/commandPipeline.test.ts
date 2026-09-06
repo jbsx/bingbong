@@ -24,6 +24,7 @@ import { createRecordCandidateTool } from './candidateTools'
 import { webEvidenceCommit } from './evidenceCheckpoint'
 import type { SettledPageState } from './progressFingerprints'
 import type { RunContinuityContext } from './createCommandPipeline'
+import type { RunStopRecord } from '../session/runJournal'
 import { createSessionEvidence, type SessionEvidenceSnapshot, type SessionEvidenceStore } from '../session/sessionEvidence'
 import type { MemoryEntryId, MemoryPatch } from '../session/workingMemory'
 import type { RunId } from '../session/sessionIdentity'
@@ -400,13 +401,42 @@ describe('command pipeline', () => {
     const events = await collect(pipeline, 'hello')
 
     expect(events.map((e) => e.type)).toEqual(['command', 'status', 'error', 'status', 'speak', 'done'])
+    // The provider's own words reach the dashboard in full…
     const error = events.find((e) => e.type === 'error')
     expect(error).toMatchObject({ type: 'error', message: 'ScriptedLlm ran out of scripted turns' })
+    // …and never the Spoken Rendering (#203/AC1): a raw exception read
+    // aloud tells the user nothing they can act on.
     expect(events.find((e) => e.type === 'speak')).toMatchObject({
       type: 'speak',
-      text: 'Something went wrong: ScriptedLlm ran out of scripted turns',
+      text: 'I could not finish that request.',
     })
-    expect(tts.spoken).toEqual(['Something went wrong: ScriptedLlm ran out of scripted turns'])
+    expect(tts.spoken).toEqual(['I could not finish that request.'])
+  })
+
+  it('retains a hard run failure as a stop record with no invented cause (#203/AC5-6)', async () => {
+    // The run never entered Finalization, so it stopped for no cause at
+    // all. The failure is retained on its own — naming a cause here would
+    // be the substitution ADR 0038 rules out.
+    const llm = new ScriptedLlm([])
+    const committed: { stop: RunStopRecord | null | undefined }[] = []
+    const pipeline = createCommandPipeline({ llm, tts: new RecordingTts(), clock: new FakeClock(), tools: [] })
+
+    for await (const event of pipeline.execute('hello', 'turn-fail', false, {
+      snapshot: [],
+      memory: [],
+      commit: (_outcome, _note, _patch, stop) => {
+        committed.push({ stop })
+        return 'committed'
+      },
+    })) {
+      void event
+    }
+
+    expect(committed).toHaveLength(1)
+    expect(committed[0]!.stop).toEqual({
+      failure: 'the run failed outside Finalization: ScriptedLlm ran out of scripted turns',
+    })
+    expect(committed[0]!.stop).not.toHaveProperty('cause')
   })
 
   it('degrades to display-only with a one-liner when TTS fails', async () => {
@@ -1302,14 +1332,16 @@ describe('command pipeline', () => {
     expect(llm.requests).toHaveLength(ceiling + 1)
     // No raw round-limit error: the guaranteed Answer replaces it.
     expect(events.find((e) => e.type === 'error')).toBeUndefined()
+    // The Answer says where the task stands, not which limit ended it
+    // (#203): the hard ceiling is retained in the Run's stop record.
     expect(events).toContainEqual({
       type: 'display',
-      text: 'I could not finish \u201Ckeep going\u201D. The run reached its hard work limit.',
+      text: 'I have not made progress I can show on \u201Ckeep going\u201D yet.',
       at: 0,
     })
     expect(events.find((e) => e.type === 'speak')).toMatchObject({
       type: 'speak',
-      text: 'I reached my work limit before finishing that request.',
+      text: 'I do not have anything to show for that request yet.',
     })
     expect(events.at(-1)).toMatchObject({ type: 'done', outcome: 'failed', finalizationCause: 'hard_limit' })
   })
@@ -1616,12 +1648,12 @@ describe('command pipeline', () => {
       expect(events.find((e) => e.type === 'error')).toBeUndefined()
       expect(events).toContainEqual({
         type: 'display',
-        text: 'I could not finish \u201Cdo the thing\u201D. The run exhausted its planned work budget.',
+        text: 'I have not made progress I can show on \u201Cdo the thing\u201D yet.',
         at: 0,
       })
       expect(events.find((e) => e.type === 'speak' && e.text !== 'Partial.')).toMatchObject({
         type: 'speak',
-        text: 'I ran out of work budget before finishing that request.',
+        text: 'I do not have anything to show for that request yet.',
       })
       expect(events.at(-1)).toEqual({ type: 'done', outcome: 'failed', finalizationCause: 'budget_exhausted', at: 0 })
     })
@@ -1642,7 +1674,7 @@ describe('command pipeline', () => {
       expect(events.find((e) => e.type === 'error')).toBeUndefined()
       expect(events).toContainEqual({
         type: 'display',
-        text: 'I could not finish \u201Cdo the thing\u201D. The run exhausted its planned work budget.',
+        text: 'I have not made progress I can show on \u201Cdo the thing\u201D yet.',
         at: 0,
       })
       expect(events.at(-1)).toEqual({ type: 'done', outcome: 'failed', finalizationCause: 'budget_exhausted', at: 0 })
@@ -1684,9 +1716,10 @@ describe('command pipeline', () => {
       expect(display).toMatchObject({
         type: 'display',
         text:
-          'I could not finish \u201Cdo the thing\u201D. The run exhausted its planned work budget.\n\n' +
-          'What I managed to observe:\n' +
-          '- https://example.com/page',
+          'I have not confirmed an answer for \u201Cdo the thing\u201D yet.\n\n' +
+          'What I have so far:\n' +
+          '- https://example.com/page\n\n' +
+          'I have not verified that any of these answers the request.',
       })
       // The failed round's tool id (w5) is the sixth zero-indexed round's call.
       expect(events.find((e) => e.type === 'tool_result' && e.callId === 'w5')).toMatchObject({ ok: false })
@@ -1827,19 +1860,20 @@ describe('command pipeline', () => {
       expect(display).toMatchObject({
         type: 'display',
         text:
-          'I could not finish \u201Cwhich horizon chapter introduces the boxer\u201D. The run exhausted its planned work budget.\n\n' +
-          'What I managed to observe:\n' +
+          'I have not confirmed an answer for \u201Cwhich horizon chapter introduces the boxer\u201D yet.\n\n' +
+          'What I have so far:\n' +
           `- ${REDDIT_URL}\n` +
           `  \u201C${PAGES[REDDIT_URL]!.title}\u201D\n` +
           '  Quoted from the page as observed:\n' +
           `  > ${PAGES[REDDIT_URL]!.digest}\n` +
-          `- ${SERP_URL}`,
+          `- ${SERP_URL}\n\n` +
+          'I have not verified that any of these answers the request.',
       })
       // The rejected checkpoints' model-authored claims never appear.
       expect((display as { text: string }).text).not.toContain('chapter 44')
       expect((display as { text: string }).text).not.toContain('for sure')
       expect(events.filter((e) => e.type === 'speak').map((e) => e.text)).toEqual([
-        'I ran out of work budget before finishing that request.',
+        'Here is what I found so far, though I have not confirmed an answer yet.',
       ])
       expect(events.at(-1)).toEqual({ type: 'done', outcome: 'failed', finalizationCause: 'budget_exhausted', at: 0 })
     })
@@ -1884,14 +1918,15 @@ describe('command pipeline', () => {
       expect(display).toMatchObject({
         type: 'display',
         text:
-          'I could not finish \u201Cwhich horizon chapter introduces the boxer\u201D. The run exhausted its planned work budget.\n\n' +
-          'What I managed to observe:\n' +
+          'I have not confirmed an answer for \u201Cwhich horizon chapter introduces the boxer\u201D yet.\n\n' +
+          'What I have so far:\n' +
           `- ${GUIDE_URL}\n` +
           `  \u201C${PAGES[GUIDE_URL]!.title}\u201D\n` +
           '  Uncertainty: chapter numbering differs between editions\n' +
           '  Quoted from the page as observed:\n' +
           `  > ${PAGES[GUIDE_URL]!.digest}\n` +
-          `- ${REDDIT_URL}`,
+          `- ${REDDIT_URL}\n\n` +
+          'I have not verified that any of these answers the request.',
       })
       expect(events.at(-1)).toEqual({ type: 'done', outcome: 'failed', finalizationCause: 'budget_exhausted', at: 0 })
     })
@@ -2016,8 +2051,10 @@ describe('command pipeline', () => {
       // Two lost rounds still leave exactly one terminal contribution.
       expect(commits).toEqual(['failed'])
       expect(events.filter((e) => e.type === 'error')).toEqual([])
+      // The deadline that ended the run is diagnostics, not the ending
+      // the user hears (#203): it survives on the Run's stop record.
       expect(events.some((e) => e.type === 'display' && e.text ===
-        'I could not finish “find the tier list”. The run passed its active-work deadline.')).toBe(true)
+        'I have not made progress I can show on “find the tier list” yet.')).toBe(true)
       expect(events.filter((e) => e.type === 'done')).toHaveLength(1)
       expect(events.at(-1)).toEqual({ type: 'done', outcome: 'failed', finalizationCause: 'deadline_reached', at: DEADLINE_MS })
       // Two lost rounds, named apart: the diagnosis says which failed.
@@ -3287,10 +3324,10 @@ describe('command pipeline', () => {
       const events = await collect(pipeline, 'study the article')
 
       expect(events.find((e) => e.type === 'display')).toMatchObject({
-        text: expect.stringMatching(/stopped making progress/i),
+        text: 'I have not made progress I can show on \u201Cstudy the article\u201D yet.',
       })
       expect(events.filter((e) => e.type === 'speak').map((e) => e.text)).toEqual([
-        'I stopped making progress on that request.',
+        'I do not have anything to show for that request yet.',
       ])
       expect(events.find((e) => e.type === 'error')).toBeUndefined()
       expect(events.at(-1)).toEqual({ type: 'done', outcome: 'failed', finalizationCause: 'no_progress', at: 0 })
@@ -3393,10 +3430,10 @@ describe('command pipeline', () => {
       // The run answers deterministically, with the phase's own cause —
       // the same Answer the thrown and tool-requesting cases produce.
       expect(events.find((e) => e.type === 'display')).toMatchObject({
-        text: expect.stringMatching(/stopped making progress/i),
+        text: 'I have not made progress I can show on \u201Cstudy the article\u201D yet.',
       })
       expect(events.filter((e) => e.type === 'speak').map((e) => e.text)).toEqual([
-        'I stopped making progress on that request.',
+        'I do not have anything to show for that request yet.',
       ])
       expect(events.at(-1)).toEqual({ type: 'done', outcome: 'failed', finalizationCause: 'no_progress', at: 0 })
       // Outcome and Run Resolution match the existing fallback's exactly:
@@ -6125,7 +6162,7 @@ describe('evidence checkpoints (#121)', () => {
     expect(events.find((e) => e.type === 'error')).toBeUndefined()
     expect(events.find((e) => e.type === 'display')).toMatchObject({
       type: 'display',
-      text: expect.stringContaining('The run exhausted its planned work budget.'),
+      text: expect.stringContaining('I have not confirmed an answer for'),
     })
     expect(events.at(-1)).toEqual({ type: 'done', outcome: 'failed', finalizationCause: 'budget_exhausted', at: 0 })
     expect(store.snapshot().observations).toEqual([])

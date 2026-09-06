@@ -139,6 +139,19 @@ export function observedPageTitle(record: ObservationRecord): string | undefined
   return title === record.sourceUrl || title === bare ? undefined : title
 }
 
+/**
+ * Whether the Run tried to look at something and could not (#203/AC2).
+ * A failed Look is a check the Run could not complete — an unreadable
+ * tier-list image, a vision route that timed out — and the deterministic
+ * Answer names it as the unresolved check it is, rather than reporting
+ * the provider failure behind it or letting it pass as one more
+ * unverified lead. Only failure counts: a Look that succeeded resolved
+ * its own check, whatever it found.
+ */
+export function hasUnresolvedImageCheck(records: readonly ObservationRecord[]): boolean {
+  return records.some((record) => !record.ok && record.producer === 'look')
+}
+
 /** The producers that directly inspect a page (#137): an explicit re-read or a Look. */
 const INSPECTION_PRODUCERS: readonly ObservationProducer[] = ['page_read', 'look']
 

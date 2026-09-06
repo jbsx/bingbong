@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import type { AssistantTurn } from '../src/core/ports/llm'
 import type { PipelineEvent } from '../src/core/pipeline/events'
+import { RESOURCE_ACCOUNTING } from '../src/core/testing/stoppingPolicy'
 import { startFixtureServer, type FixtureServer } from './fixtureServer'
 import { startHarness, type Harness } from './harness'
 import { waitFor } from './waitFor'
@@ -289,7 +290,10 @@ describe('bounded Direct Action e2e (#117) — deterministic fallback path', () 
     // task line stays the user's own words — the command they said.
     const display = events.find((event) => event.type === 'display')
     const text = (display as { text: string } | undefined)?.text ?? ''
-    expect(text.startsWith('I could not finish \u201Copen the widget article\u201D. The run exhausted its planned work budget.\n\nWhat I managed to observe:\n- ')).toBe(true)
+    // The ending is the state of the task, not the limit that stopped
+    // the run (#203, ADR 0038): the budget is retained in the Run's Stop
+    // Record, and nothing about it reaches either half of the Answer.
+    expect(text.startsWith('I have not confirmed an answer for \u201Copen the widget article\u201D yet.\n\nWhat I have so far:\n- ')).toBe(true)
     const bullets = text.split('\n- ').slice(1).map((chunk) => chunk.split('\n')[0])
     expect(bullets).toHaveLength(6)
     for (const path of ['/widgets-article', '/widgets-anodized', '/widgets-polished', '/widgets-vintage', '/widget-specs', '/widget-review']) {
@@ -299,9 +303,15 @@ describe('bounded Direct Action e2e (#117) — deterministic fallback path', () 
     // its own bullet.
     expect(text).toContain(`\n- ${bullets[0]}\n  \u201C`)
     expect(text).toContain('\n  Quoted from the page as observed:\n  > ')
+    // The unresolved check is stated; the deterministic Answer holds no
+    // model Assessment, so every source it lists is an unverified lead.
+    expect(text.endsWith('\n\nI have not verified that any of these answers the request.')).toBe(true)
     expect(events.filter((event) => event.type === 'speak').map((event) => event.text)).toEqual([
-      'I ran out of work budget before finishing that request.',
+      'Here is what I found so far, though I have not confirmed an answer yet.',
     ])
+    for (const rendered of [text, ...events.filter((event) => event.type === 'speak').map((event) => event.text)]) {
+      expect(rendered).not.toMatch(RESOURCE_ACCOUNTING)
+    }
 
     // Mechanically failed, honestly caused, no raw limit error.
     const done = events.find((event): event is DoneEvent => event.type === 'done')

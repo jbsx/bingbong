@@ -6,7 +6,7 @@ import type {
   SessionIdentitySource,
   SubmissionId,
 } from './sessionIdentity'
-import { MAX_RUN_NOTE_CHARS, type RunJournalEntry, type RunJournalSnapshot } from './runJournal'
+import { MAX_RUN_NOTE_CHARS, runStopChars, type RunJournalEntry, type RunJournalSnapshot, type RunStopRecord } from './runJournal'
 import {
   createSessionEvidence,
   EMPTY_EVIDENCE_COUNTS,
@@ -29,7 +29,7 @@ import {
   type WorkingMemorySnapshot,
 } from './workingMemory'
 
-export type { RunJournalEntry, RunJournalSnapshot } from './runJournal'
+export type { RunJournalEntry, RunJournalSnapshot, RunStopRecord } from './runJournal'
 export type { MemoryEntry, MemoryPatch, WorkingMemorySnapshot } from './workingMemory'
 export type {
   SessionCandidate,
@@ -206,6 +206,8 @@ export interface SessionRuntime {
     outcome: RunJournalEntry['outcome'],
     text: string,
     patch: MemoryPatch,
+    /** Why this Run stopped (#203), when it retained something worth explaining later. */
+    stop?: RunStopRecord | null,
   ): 'committed' | 'invalid_patch' | 'rejected'
   extend(decision: SessionDecision): boolean
   decline(decision: SessionDecision): EndedSession | null
@@ -359,8 +361,11 @@ export function createSessionRuntime(deps: {
     aboveHighWater = false
   }
 
+  // The Run Note plus the stop record that rides beside it (#203): the
+  // wire client serializes whole entries, so anything this measure omits
+  // reaches the model outside the Journal's own watermarks.
   const journalTokens = (entries: readonly RunJournalEntry[]): number =>
-    Math.ceil(entries.reduce((total, entry) => total + entry.text.length, 0) / 4)
+    Math.ceil(entries.reduce((total, entry) => total + entry.text.length + runStopChars(entry.stop), 0) / 4)
 
   const isAboveHighWater = (): boolean =>
     journalTokens(journal) > continuityBudgets.journal.high ||
@@ -407,11 +412,28 @@ export function createSessionRuntime(deps: {
     requestBudgets: SessionContinuityBudgets,
   ): boolean => {
     if (!Array.isArray(candidate.journal) || !Array.isArray(candidate.memory)) return false
+    const journalByRunId = new Map(originalJournal.map((entry) => [entry.runId, entry]))
+    // The retained stop record is the runtime's, not the compactor's
+    // (#203): a compaction condenses Run Notes, and whether it echoes,
+    // drops, or invents a `stop` changes nothing — the field is stripped
+    // for every structural check here and restored from the original when
+    // the compaction lands. So the model can neither lose nor rewrite why
+    // a Run stopped. The budget below is measured on what will actually
+    // be stored — the candidate's Run Notes carrying the original stops —
+    // rather than on a `stop` the runtime is about to discard.
+    const withoutStop = (entries: RunJournalSnapshot): readonly Omit<RunJournalEntry, 'stop'>[] =>
+      entries.map(({ stop: _stop, ...rest }) => rest)
+    const originalJournalEntries = withoutStop(originalJournal)
+    const candidateJournalEntries = withoutStop(candidate.journal)
+    const asStored = (entries: readonly Omit<RunJournalEntry, 'stop'>[]): readonly RunJournalEntry[] =>
+      entries.map((entry) => {
+        const retained = journalByRunId.get(entry.runId)?.stop
+        return { ...entry, ...(retained !== undefined ? { stop: retained } : {}) }
+      })
     if (
-      journalTokens(candidate.journal) > requestBudgets.journal.high ||
+      journalTokens(asStored(candidateJournalEntries)) > requestBudgets.journal.high ||
       !isValidWorkingMemory(candidate.memory, expectedSessionId, requestBudgets.memory.high)
     ) return false
-    const journalByRunId = new Map(originalJournal.map((entry) => [entry.runId, entry]))
     const memoryIds = new Set(originalMemory.map(({ id }) => id))
     if (candidate.journal.some((entry) => (
       typeof entry.runId !== 'string' ||
@@ -422,24 +444,24 @@ export function createSessionRuntime(deps: {
     ))) return false
     if (candidate.memory.some(({ id }) => !memoryIds.has(id))) return false
     if (
-      !preservesIdentityOrder(originalJournal, candidate.journal, ({ runId }) => runId) ||
+      !preservesIdentityOrder(originalJournalEntries, candidateJournalEntries, ({ runId }) => runId) ||
       !preservesIdentityOrder(originalMemory, candidate.memory, ({ id }) => id)
     ) return false
 
-    const protectedJournal = originalJournal.filter((entry, index) =>
-      entry.outcome === 'failed' || index >= originalJournal.length - recentJournalEntries,
+    const protectedJournal = originalJournalEntries.filter((entry, index) =>
+      entry.outcome === 'failed' || index >= originalJournalEntries.length - recentJournalEntries,
     )
     const protectedMemory = originalMemory.filter((entry, index) =>
       index >= originalMemory.length - recentMemoryEntries || entry.kind !== 'finding',
     )
     if (
-      protectedJournal.some((entry) => !includesEntry(candidate.journal, entry)) ||
+      protectedJournal.some((entry) => !includesEntry(candidateJournalEntries, entry)) ||
       protectedMemory.some((entry) => !includesEntry(candidate.memory, entry))
     ) return false
     if (!compactsOldestFirst(
-      originalJournal,
-      candidate.journal,
-      (entry, index) => entry.outcome !== 'failed' && index < originalJournal.length - recentJournalEntries,
+      originalJournalEntries,
+      candidateJournalEntries,
+      (entry, index) => entry.outcome !== 'failed' && index < originalJournalEntries.length - recentJournalEntries,
     )) return false
     if (!compactsOldestFirst(
       originalMemory,
@@ -576,7 +598,13 @@ export function createSessionRuntime(deps: {
         degrade('compaction_invalid')
         return
       }
-      const compactedJournal = candidate.journal.map((entry) => ({ ...entry }))
+      const retainedStops = new Map(requestJournal.map((entry) => [entry.runId, entry.stop]))
+      // The compactor rewrites the Run Note; the stop record is restored
+      // from the Run that recorded it (#203).
+      const compactedJournal = candidate.journal.map(({ stop: _stop, ...entry }) => {
+        const retained = retainedStops.get(entry.runId)
+        return { ...entry, ...(retained !== undefined ? { stop: retained } : {}) }
+      })
       const compactedMemory = candidate.memory.map((entry) => ({
         ...entry,
         references: [...entry.references],
@@ -797,7 +825,7 @@ export function createSessionRuntime(deps: {
       if (finished && liveRunIds.size === 0) armInactivity()
       return finished
     },
-    commitRunContinuity(runId, outcome, text, patch) {
+    commitRunContinuity(runId, outcome, text, patch, stop) {
       refreshContinuityProfile()
       const normalized = text.trim()
       if (!liveRunIds.has(runId) || committedRunIds.has(runId) || normalized === '' || normalized.length > MAX_RUN_NOTE_CHARS) {
@@ -870,7 +898,7 @@ export function createSessionRuntime(deps: {
       } else if (patch.length > 0) {
         return 'invalid_patch'
       }
-      journal.push({ runId, outcome, text: normalized })
+      journal.push({ runId, outcome, text: normalized, ...(stop ? { stop } : {}) })
       memory = proposedMemory
       nextMemoryId = proposedNextMemoryId
       committedRunIds.add(runId)

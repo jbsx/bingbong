@@ -283,6 +283,38 @@ describe('openAiLlmClient', () => {
     expect(messages[2]).toEqual({ role: 'user', content: 'what about the second one?' })
   })
 
+  it('carries a Run\u2019s stop record and marks it internal to the model (#203)', async () => {
+    const fetch = new ScriptedFetch([
+      completionResponse({ content: '{"speak":"Because I stalled.","display":"Detail.","run_note":"Explained the stop."}' }),
+    ])
+    const client = makeClient(fetch)
+
+    await client.complete({
+      command: 'why did you stop?',
+      toolResults: [],
+      journal: Object.freeze([
+        Object.freeze({
+          runId: 'run-1' as never,
+          outcome: 'failed' as const,
+          text: 'Looked for the tier list post.',
+          stop: Object.freeze({
+            cause: 'no_progress' as const,
+            failure: 'the reserved Answer round replied off contract instead of answering',
+          }),
+        }),
+      ]),
+    })
+
+    const content = fetch.calls[0].body.messages[1]?.content
+    // The record travels with the continuity the model already reads —
+    // there is no second diagnostic channel to keep in step.
+    expect(content).toContain('"cause":"no_progress"')
+    expect(content).toContain('the reserved Answer round replied off contract instead of answering')
+    // And it is labelled as what it is: internal, and off-limits until
+    // the user explicitly asks why work stopped.
+    expect(content).toMatch(/"stop" field is internal[\s\S]*only when the user explicitly asks why work stopped/)
+  })
+
   it('places source-attributed Working Memory in a separately delimited untrusted section', async () => {
     const fetch = new ScriptedFetch([
       completionResponse({ content: '{"speak":"Done.","display":"Done.","run_note":"Done.","memory_patch":[]}' }),

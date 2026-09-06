@@ -18,7 +18,7 @@ import { createLlmDeltaBatcher } from './deltaBatcher'
 import type { TtsSpeaker } from '../ports/tts'
 import { answerText, spokenErrorLine } from '../agent/answerContract'
 import type { LearnedTermsControls } from '../voice/learnedTerms'
-import { MAX_RUN_NOTE_CHARS, finalizeRun, type FinalizationCause, type RunFinalization, type RunJournalEntry, type RunJournalSnapshot } from '../session/runJournal'
+import { MAX_RUN_NOTE_CHARS, finalizeRun, runStopRecord, type FinalizationCause, type RunFinalization, type RunJournalEntry, type RunJournalSnapshot, type RunStopRecord } from '../session/runJournal'
 import type { MemoryEntryId, MemoryPatch, WorkingMemorySnapshot } from '../session/workingMemory'
 import type { PerfTracer } from '../perf/perfTracer'
 import { createTurnIdSource } from '../perf/perfTracer'
@@ -29,6 +29,7 @@ import type { SnapshotRef } from '../browser/snapshot'
 import { createToolRoundExecutor, type ToolRoundExecutor } from './toolRound'
 import {
   createEffortEpoch,
+  finalizationDetailSentence,
   deterministicFinalAnswer,
   injectedReportDirective,
   requestFinalizeInstruction,
@@ -75,7 +76,7 @@ import { offContractReplyEvent, recordOffContractReply, type TracedOffContractRe
 import { completedEvidenceIsFresh } from './evidenceFreshness'
 import { evaluateCandidateCheckpoint, type CandidateCheckpointOutcome, type EvidenceSessionSource } from './candidateCheckpoint'
 import { deriveAnswerSources, scrubAnswerText } from './answerEvidence'
-import { deriveFallbackSources } from './fallbackAnswer'
+import { deriveFallbackSources, hasUnresolvedImageCheck } from './fallbackAnswer'
 import { compactRunContext, type RunEvidenceCheckpoint } from './runContextCompaction'
 import { reportFault } from '../trace/fault'
 import type { CollectedSubagentReport } from '../agent/subagentManager'
@@ -271,6 +272,13 @@ interface ActiveRun {
 /** Default ask_user window: ~45s for a spoken or typed free-text answer. */
 export const ASK_TIMEOUT_MS = 45_000
 
+/**
+ * What a hard run failure says out loud (#203/AC1): the state of the
+ * task, with the provider's own words left to the error event and the
+ * Run's stop record. The user cannot act on an exception message.
+ */
+const RUN_FAILED_SPOKEN = 'I could not finish that request.'
+
 function deterministicRunNote(command: string, outcome: RunJournalEntry['outcome']): string {
   const task = command.trim().replace(/\s+/g, ' ').slice(0, 500) || '(empty command)'
   const label = outcome === 'done' ? 'Completed' : outcome === 'failed' ? 'Failed' : 'Cancelled'
@@ -338,6 +346,14 @@ export interface RunContinuityContext {
     outcome: RunJournalEntry['outcome'],
     note: string,
     patch: MemoryPatch,
+    /**
+     * Why this Run stopped (#203, ADR 0038): the authoritative
+     * Finalization Cause and any execution failure recorded after it,
+     * retained in bounded Session continuity so a later explicit "why did
+     * you stop?" is answered from the Run rather than guessed. Null when
+     * the Run simply answered.
+     */
+    stop?: RunStopRecord | null,
   ): 'committed' | 'invalid_patch' | 'rejected'
   /**
    * The Evidence Checkpoint commit seam (#121, ADR 0028): stores one
@@ -747,6 +763,16 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
 
     try {
       let runOutcome: 'done' | 'failed' | 'cancelled' = 'done'
+      // The execution failure Finalization recorded, if any (#203, ADR
+      // 0038): kept beside the entry cause, never in place of it. A
+      // reserved Answer round that threw, narrated, or asked for tools
+      // failed *after* the run had already stopped for its own reason —
+      // so it is additional information about the stop, and letting it
+      // overwrite the entry cause would lose the only true answer to
+      // "why did you stop?". It is declared out here, beside the run's
+      // outcome, because the Memory Commit that retains it runs past the
+      // catch that the failing round lands in.
+      let finalizationFailure: string | null = null
       // A successful Session Reset tool (#99) discards the rest of the run:
       // siblings never execute, no later round happens, nothing commits.
       let resetConsumed = false
@@ -1222,6 +1248,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
             // its stack, and joined to the Run's own cause by the turn id.
             if (reservedRound) {
               reportFault('pipeline.createCommandPipeline.reservedAnswerRequestFailed', err, { turnId })
+              finalizationFailure = `the reserved Answer round failed: ${toErrorMessage(err)}`
               deterministicFallback = true
               break
             }
@@ -1234,6 +1261,13 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
             // otherwise hear instead of an Answer.
             if (effortEpoch.spendBookkeepingOpportunity()) {
               reportFault('pipeline.createCommandPipeline.bookkeepingRequestFailed', err, { turnId })
+              // Retained for a later "why did you stop?" (#203) on the
+              // same terms as the round's own record: a Finalization
+              // failure beside the entry cause, never in place of it. The
+              // reserved Answer round is still to come, and if that fails
+              // too its failure supersedes this one — it is the more
+              // proximate answer to what the user actually got.
+              finalizationFailure = `the Finalization bookkeeping round failed: ${toErrorMessage(err)}`
               continue
             }
             throw err
@@ -1287,6 +1321,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
               ...(writeOffContractReply ? { trace: writeOffContractReply } : {}),
               turnId,
             })
+            finalizationFailure = 'the reserved Answer round replied off contract instead of answering'
             deterministicFallback = true
             break
           }
@@ -1327,6 +1362,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
               `reserved Answer round requested tools (${fallbackCause()}): ${turn.calls.map((call) => call.name).join(', ')}`,
               { turnId },
             )
+            finalizationFailure = 'the reserved Answer round asked for tools instead of answering'
             deterministicFallback = true
             break
           }
@@ -1495,6 +1531,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
         if (deterministicFallback) {
           runOutcome = 'failed'
           const fallbackWall = fallbackDetail()
+          const fallbackRecords = ledger.snapshot()
           const fallback = deterministicFinalAnswer({
             // The task the stopped run was working on, in words the user
             // recognizes: their Steering correction once one landed (#119)
@@ -1505,10 +1542,14 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
             cause: fallbackCause(),
             ...(fallbackWall !== undefined ? { detail: fallbackWall } : {}),
             sources: deriveFallbackSources({
-              records: ledger.snapshot(),
+              records: fallbackRecords,
               checkpoints: acceptedCheckpoints,
               resolveObservation: resolveSessionObservation,
             }),
+            // A Look the run could not complete is the one unresolved
+            // check it actually established (#203/AC2) — named as that,
+            // never as the vision failure behind it.
+            ...(hasUnresolvedImageCheck(fallbackRecords) ? { imageUnverified: true } : {}),
           })
           yield { type: 'display', text: fallback.display, at: clock.now() }
           yield* speakLine(fallback.speak, turnId)
@@ -1525,14 +1566,35 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
           }
         } else {
           runOutcome = 'failed'
-          // Errors are spoken as one-liners; the full detail reaches the
-          // dashboard via the error event.
+          // The full detail reaches the dashboard on the error event and
+          // the Run's stop record; what the user hears names no provider
+          // (#203/AC1). A raw exception read aloud tells them nothing
+          // they can act on, and it is the same leak the stopping policy
+          // closes everywhere else.
           const message = toErrorMessage(err)
-          const spoken = spokenErrorLine(message)
+          finalizationFailure = `the run failed outside Finalization: ${message}`
           yield { type: 'error', message, at: clock.now() }
-          yield* speakLine(spoken, turnId)
+          yield* speakLine(RUN_FAILED_SPOKEN, turnId)
         }
       }
+      // The cause the Run actually entered Finalization under (#110/#203):
+      // read once, so the stop the Journal retains and the cause the
+      // boundary reports are the same answer to the same question. A
+      // Finalization failure recorded after it never moves it.
+      const stopPhase = effortEpoch.phase
+      const mechanicalCause: FinalizationCause | null = stopPhase.kind === 'working' ? null : stopPhase.cause
+      // What a later explicit "why did you stop?" is answered from (#203,
+      // ADR 0038): the entry cause, that cause's own specifics — which
+      // the epoch words, since the vocabulary is its — and any execution
+      // failure recorded afterwards. All of it rides the Journal the next
+      // Run already receives, never a second diagnostic store, and never
+      // the Answer the user just heard.
+      const stopDetail = finalizationDetailSentence(stopPhase)
+      const stop: RunStopRecord | null = runStopRecord({
+        cause: mechanicalCause,
+        ...(stopDetail !== undefined ? { detail: stopDetail } : {}),
+        ...(finalizationFailure !== null ? { failure: finalizationFailure } : {}),
+      })
       // A reset-consumed run commits nothing (#99): its observations and
       // Subagent Reports belong to the Session that just ended.
       if (continuity && !resetConsumed) {
@@ -1570,11 +1632,11 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
             }
           }
         }
-        let commit = continuity.commit(runOutcome, note, patch)
+        let commit = continuity.commit(runOutcome, note, patch, stop)
         if (commit === 'invalid_patch') {
           patch = []
           logContinuityDegradation(deps.onContinuityDegraded, 'invalid_memory', turnId)
-          commit = continuity.commit(runOutcome, note, patch)
+          commit = continuity.commit(runOutcome, note, patch, stop)
         }
         if (commit !== 'committed') {
           logContinuityDegradation(deps.onContinuityDegraded, 'commit_rejected', turnId)
@@ -1629,7 +1691,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
       const finalization: RunFinalization | null = resetConsumed
         ? null
         : finalizeRun({
-            mechanicalCause: effortEpoch.phase.kind === 'working' ? null : effortEpoch.phase.cause,
+            mechanicalCause,
             answered: runOutcome === 'done' && finalAnswer !== undefined,
             proposedResolution,
             proposedCause: finalAnswer?.finalizationCause ?? null,

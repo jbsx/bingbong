@@ -779,18 +779,44 @@ export function createEffortEpoch(deps: {
 }
 
 /**
- * Why the deterministic Answer says the run stopped, keyed by cause. The
- * near-twin of RUN_FINALIZATION_REASONS, and deliberately not shared with
- * it (#201): that one is what the model is told, this is what the user
- * hears, and a rewording of the instruction must not move the user's
- * sentence. `spokenByCause` below is the same table for the spoken half.
+ * The outcome-first stopping policy for the user (#203, ADR 0038): a
+ * default Answer describes where the task stands, never how the run was
+ * bounded. Budgets, deadlines, round counts, and provider errors are
+ * diagnostics — they are retained in the Run's stop record for an
+ * explicit "why did you stop?", and they never reach the Card or the
+ * Spoken Rendering on their own.
+ *
+ * So there is no cause table here any more. The deterministic Answer
+ * asks one question the run can actually answer from what it retained —
+ * is there observed work to show? — and words the two states. The one
+ * cause that still speaks for itself is `blocker`: a wall the user can
+ * clear is an actionable external blocker, not resource accounting, and
+ * suppressing it would cost the user the only next step there is.
  */
-const CAUSE_SENTENCES: Readonly<Record<string, string>> = {
-  budget_exhausted: 'The run exhausted its planned work budget.',
-  deadline_reached: 'The run passed its active-work deadline.',
-  no_progress: 'The run stopped making progress — repeated actions stopped producing anything new.',
-  hard_limit: 'The run reached its hard work limit.',
-}
+
+/** What a stop with retained sources says: leads with the state, not the bound. */
+const UNCONFIRMED_SPOKEN = 'Here is what I found so far, though I have not confirmed an answer yet.'
+
+/** What a stop with nothing observed says. Brief, because there is nothing to repeat. */
+const NOTHING_TO_SHOW_SPOKEN = 'I do not have anything to show for that request yet.'
+
+/**
+ * The unresolved check the deterministic Answer names (#203/AC2). With
+ * sources but nothing else known, the fallback holds no model Assessment,
+ * so every source it lists is an unverified lead and it says so. When a
+ * Look actually failed, the Answer names *that* check instead: an
+ * unreadable image is a specific thing the run could not confirm, and
+ * collapsing it into the generic line would lose the one piece of
+ * uncertainty the run actually established. Either way this is a
+ * disclosure, never a request that the user go and verify it.
+ */
+const UNVERIFIED_SOURCES_LINE = 'I have not verified that any of these answers the request.'
+
+/** The displayed unresolved check when a Look could not be completed (#203/AC2). */
+const IMAGE_CHECK_LINE = 'I could not read the image I needed to check, so that is still unverified.'
+
+/** Its spoken half, for a stop whose one honest finding is the check it could not make. */
+const IMAGE_CHECK_SPOKEN = 'I could not read the image I needed, so I have not confirmed that.'
 
 /**
  * How each Blocker flavor reaches the *user* (#202): what it is called out
@@ -799,12 +825,12 @@ const CAUSE_SENTENCES: Readonly<Record<string, string>> = {
  * the host it is on.
  *
  * The sibling of BLOCKER_HELP_BY_SIGNAL, which is what the *model* is
- * told, and separate for the same reason CAUSE_SENTENCES is separate from
- * RUN_FINALIZATION_REASONS (#201): the model's instruction and the user's
- * next step are two sentences with two audiences, and rewording one must
- * not move the other. It is also the whole point of the cause — a user who
- * hears "the run stopped" learns nothing they can act on, so this table is
- * imperative where the model's is a noun phrase.
+ * told, and deliberately not shared with it (#201): the model's
+ * instruction and the user's next step are two sentences with two
+ * audiences, and rewording one must not move the other. It is also why
+ * this is the one cause the outcome-first policy still lets through
+ * (#203) — a user who hears "the run stopped" learns nothing they can act
+ * on, so this table is imperative where the model's is a noun phrase.
  */
 const BLOCKER_FOR_THE_USER: Readonly<Record<BlockerSignal, { label: string; help: (host: string) => string }>> = {
   challenge: {
@@ -821,7 +847,7 @@ const BLOCKER_FOR_THE_USER: Readonly<Record<BlockerSignal, { label: string; help
   },
 }
 
-/** The displayed sentence a Blocker stop replaces CAUSE_SENTENCES with (#202). */
+/** The displayed sentence a Blocker stop opens on instead of the task's state (#202). */
 function blockerCauseSentence(wall: FinalizationDetail): string {
   const flavor = BLOCKER_FOR_THE_USER[wall.signal]
   return `The run kept at a ${flavor.label} it cannot pass. To get past it, ${flavor.help(wall.host)}.`
@@ -830,6 +856,19 @@ function blockerCauseSentence(wall: FinalizationDetail): string {
 /** The spoken half of the same stop (#202): the wall, named, in one breath. */
 function blockerSpokenSentence(wall: FinalizationDetail): string {
   return `I could not get past the ${BLOCKER_FOR_THE_USER[wall.signal].label} on ${wall.host}.`
+}
+
+/**
+ * The cause's own worded specifics, or undefined for a cause that has
+ * none (#203). `blocker` is the only cause carrying anything beyond its
+ * name, and the vocabulary for it lives here — so a caller retaining a
+ * stop record asks this instead of testing for `blocker` and reaching
+ * into the wall itself. A `blocker` phase that somehow arrived without
+ * its wall has nothing to say, exactly as its model-facing sibling does.
+ */
+export function finalizationDetailSentence(phase: EffortPhase): string | undefined {
+  if (phase.kind === 'working' || phase.cause !== 'blocker' || phase.detail === undefined) return undefined
+  return blockerFinalizationReason(phase.detail)
 }
 
 /**
@@ -852,13 +891,15 @@ function fallbackDetailLines(source: FallbackSource): string[] {
 }
 
 /**
- * The deterministic Answer (#117/#137, ADR 0027): what the application replies
- * with when the reserved model Answer round fails or requests tools.
- * Built only from the command, the mechanical stop cause, and the run's
- * retained sources — bounded successful Observation content merged by
- * canonical URL, strongest first (#137) — it invents no Assessment,
- * exposes no counters, and repeats no unverified model claim: detail is
- * quoted verbatim from what the run mechanically observed.
+ * The deterministic Answer (#117/#137/#203, ADR 0027, ADR 0038): what the
+ * application replies with when the reserved model Answer round fails or
+ * requests tools. Built only from the command, the run's retained sources
+ * — bounded successful Observation content merged by canonical URL,
+ * strongest first (#137) — and, for a Blocker, the wall the user can
+ * clear. It invents no Assessment, repeats no unverified model claim, and
+ * names no budget, deadline, round count, or provider error: what it says
+ * is where the task stands, and detail is quoted verbatim from what the
+ * run mechanically observed.
  */
 export function deterministicFinalAnswer(input: {
   command: string
@@ -867,25 +908,15 @@ export function deterministicFinalAnswer(input: {
   detail?: FinalizationDetail
   /** The run's retained sources (#137), strongest first — bounded, merged by canonical URL. */
   sources: readonly FallbackSource[]
+  /** A Look the run could not complete (#203/AC2): the check the Answer names as unresolved. */
+  imageUnverified?: boolean
 }): { speak: string; display: string } {
   const task = input.command.trim().replace(/\s+/g, ' ').slice(0, 200) || 'the request'
-  const spokenByCause: Readonly<Record<string, string>> = {
-    budget_exhausted: 'I ran out of work budget before finishing that request.',
-    deadline_reached: 'I ran out of working time before finishing that request.',
-    no_progress: 'I stopped making progress on that request.',
-    hard_limit: 'I reached my work limit before finishing that request.',
-  }
   // A Blocker stop's two sentences are built rather than looked up
   // (#202): both name the wall. Without the detail there is no wall to
-  // name and the generic fallbacks stand — the same rule the model-facing
-  // reason follows.
+  // name and the outcome-first wording stands — the same rule the
+  // model-facing reason follows.
   const wall = input.cause === 'blocker' ? input.detail : undefined
-  const speak =
-    wall !== undefined
-      ? blockerSpokenSentence(wall)
-      : (spokenByCause[input.cause] ?? 'I had to stop before finishing that request.')
-  const causeSentence =
-    wall !== undefined ? blockerCauseSentence(wall) : (CAUSE_SENTENCES[input.cause] ?? 'The run stopped at its work limit.')
   const sourceLines: string[] = []
   input.sources.forEach((source, index) => {
     sourceLines.push(`- ${source.url}`)
@@ -893,10 +924,28 @@ export function deterministicFinalAnswer(input: {
     // (#137/AC2); every other source stays the honest bare canonical URL.
     if (index === 0) sourceLines.push(...fallbackDetailLines(source))
   })
-  const sourceList =
-    sourceLines.length > 0 ? `\n\nWhat I managed to observe:\n${sourceLines.join('\n')}` : ''
-  return {
-    speak,
-    display: `I could not finish \u201C${task}\u201D. ${causeSentence}${sourceList}`,
-  }
+  const observed = sourceLines.length > 0
+  const imageUnverified = input.imageUnverified === true
+  const observations = observed ? `\n\nWhat I have so far:\n${sourceLines.join('\n')}` : ''
+  // The unresolved check closes the display whenever there is one to
+  // name: a failed Look names itself, and otherwise a listed source is
+  // an unverified lead. With neither there is nothing honest to add.
+  const check = imageUnverified ? IMAGE_CHECK_LINE : observed ? UNVERIFIED_SOURCES_LINE : ''
+  // The state of the task, first (#203). A Blocker replaces only the
+  // opening sentence — what was observed still follows it, because a run
+  // that got somewhere before the wall has something to show.
+  const lead = wall !== undefined
+    ? blockerCauseSentence(wall)
+    : observed || imageUnverified
+      ? `I have not confirmed an answer for \u201C${task}\u201D yet.`
+      : `I have not made progress I can show on \u201C${task}\u201D yet.`
+  const speak =
+    wall !== undefined
+      ? blockerSpokenSentence(wall)
+      : imageUnverified
+        ? IMAGE_CHECK_SPOKEN
+        : observed
+          ? UNCONFIRMED_SPOKEN
+          : NOTHING_TO_SHOW_SPOKEN
+  return { speak, display: `${lead}${observations}${check === '' ? '' : `\n\n${check}`}` }
 }

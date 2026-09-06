@@ -99,7 +99,11 @@ export function createAssistantCommandRunner(deps: {
             // The Observation ledger's staleness guard (#111): the Session
             // generation this Run was admitted under.
             generation: admission.generation,
-            commit: (outcome, note, patch) => deps.runtime.commitRunContinuity(admission.runId, outcome, note, patch),
+            // The Run's stop record rides the Memory Commit (#203): bounded
+            // Session continuity is where "why did you stop?" is answered
+            // from, so there is no second store to keep in step.
+            commit: (outcome, note, patch, stop) =>
+              deps.runtime.commitRunContinuity(admission.runId, outcome, note, patch, stop),
             // The Evidence Checkpoint commit seam (#121, ADR 0028): the one
             // standard web-Observation commit over the live Session store,
             // provenance stamped under this Run's identity. The store is
