@@ -103,6 +103,17 @@ export interface LlmRequest {
    */
   answerOnly?: boolean
   /**
+   * The Finalization Instruction this round is sent under (#207, ADR
+   * 0038): the standalone message that tells the model the run's
+   * acquisition has ended and what the round it is about to run may still
+   * do. Present on every Finalization request — the bookkeeping round and
+   * the reserved Answer round — because a Run that stopped before it
+   * executed anything has no tool result for the instruction to ride, and
+   * a model that was never told acquisition closed answers as if it had
+   * not. Absent while the run is working.
+   */
+  finalization?: string
+  /**
    * Aborts the in-flight HTTP request immediately (#47): the pipeline
    * wires Stop to this signal so aborting a run no longer waits out the
    * request timeout. Clients that ignore it keep the old contract.

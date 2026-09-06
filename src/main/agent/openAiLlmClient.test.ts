@@ -472,6 +472,39 @@ describe('openAiLlmClient', () => {
     expect((last as { content: string }).content).not.toContain('Steering directive:')
   })
 
+  it('states Finalization on the wire, with no tool-result history to ride (#207, ADR 0038)', async () => {
+    const fetch = new ScriptedFetch([
+      completionResponse({ content: '{"speak":"Out of time.","display":"Out of time."}' }),
+    ])
+    const client = makeClient(fetch)
+
+    await client.complete({
+      command: 'find the tier list',
+      // The captured failure's shape: a Run whose first request ended at
+      // the active-work deadline has executed nothing at all.
+      toolResults: [],
+      finalization: 'The run\u2019s active-work deadline has passed \u2014 Finalize now.',
+    })
+
+    // Last of all, past the command and any correction: the operational
+    // fact about the round being sent, as written.
+    expect(fetch.calls[0].body.messages.at(-1)).toEqual({
+      role: 'user',
+      content: 'The run\u2019s active-work deadline has passed \u2014 Finalize now.',
+    })
+  })
+
+  it('sends no Finalization message while the run is working (#207)', async () => {
+    const fetch = new ScriptedFetch([
+      completionResponse({ content: '{"speak":"Done.","display":"Done."}' }),
+    ])
+    const client = makeClient(fetch)
+
+    await client.complete({ command: 'find the tier list', toolResults: [] })
+
+    expect(fetch.calls[0].body.messages.at(-1)).toEqual({ role: 'user', content: 'find the tier list' })
+  })
+
   it('sends the arriving directive alone when both channels carry words (#167)', async () => {
     const fetch = new ScriptedFetch([
       completionResponse({ content: '{"speak":"Changed.","display":"Changed course."}' }),

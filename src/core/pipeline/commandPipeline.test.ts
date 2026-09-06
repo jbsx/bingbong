@@ -10,7 +10,7 @@ import { createSpeechCoordinator } from '../tts/speechCoordinator'
 import { createAskUserTool } from './askUserTools'
 import { createReportRunPlanTool } from './runPlanTools'
 import { RUN_PLAN_NUDGE, RUN_PLAN_STANDALONE_ROUND, RUN_PLAN_TIER_BELOW_LOOKUP } from './runPlan'
-import type { EffortTier } from './runPlan'
+import { DEFAULT_EFFORT_TIER, type EffortTier } from './runPlan'
 import { FailingTts, FakeClock, fakePerfHarness, fakeSubagentManager, memoryEntry, RecordingTts, ScriptedLlm, subagentRecord, withoutTurnId, type ScriptedTurn } from '../testing/doubles'
 import type { PipelineEvent } from './events'
 import type { SessionId } from '../session/sessionIdentity'
@@ -31,7 +31,7 @@ import { createPerfTracer, type PerfTracer } from '../perf/perfTracer'
 import { withPerfTracing } from '../perf/perfTracing'
 import { createBrowserSubspans } from '../perf/browserSubspans'
 import { DELTA_FLUSH_MS } from './deltaBatcher'
-import { ANSWER_ONLY_REPORT_DIRECTIVE, FINALIZATION_REPORT_CHECKPOINT_DIRECTIVE, HARD_TOOL_ROUND_CEILING, TIER_TOOL_ROUND_BUDGETS } from './effortEpoch'
+import { ANSWER_ONLY_REPORT_DIRECTIVE, FINALIZATION_REPORT_CHECKPOINT_DIRECTIVE, finalizeInstruction, HARD_TOOL_ROUND_CEILING, TIER_ACTIVE_WORK_DEADLINES_MS, TIER_TOOL_ROUND_BUDGETS } from './effortEpoch'
 import { createSubagentManager, type SubagentTaskHooks } from '../agent/subagentManager'
 import type { SubagentReport } from '../agent/subagentReport'
 
@@ -1883,6 +1883,285 @@ describe('command pipeline', () => {
           `- ${REDDIT_URL}`,
       })
       expect(events.at(-1)).toEqual({ type: 'done', outcome: 'failed', finalizationCause: 'budget_exhausted', at: 0 })
+    })
+  })
+
+  // Issue #207, ADR 0038. The captured failure: the Run's first request
+  // ended at the active-work deadline, and the bookkeeping request that
+  // followed failed too — a full second request, before the reserved
+  // Answer's fallback protection could apply. With no tool result ever
+  // produced, the model was never told acquisition had ended, and the
+  // bookkeeping exception escaped as the run's terminal user experience.
+  describe('recovering from a failed Finalization bookkeeping request (#207, ADR 0038)', () => {
+    const work: Tool = { name: 'work', acquisition: true, async execute() { return 'worked' } }
+    const DEADLINE_MS = TIER_ACTIVE_WORK_DEADLINES_MS[DEFAULT_EFFORT_TIER]
+
+    it('reproduces the zero-tool-history sequence and still delivers the model’s Answer', async () => {
+      const clock = new FakeClock()
+      const requests: LlmRequest[] = []
+      const llm: LlmClient = {
+        complete(request) {
+          requests.push(request)
+          // The Run's very first request is still in flight when the
+          // active-work deadline crosses. Finalization is entered having
+          // executed nothing: no tool call, no tool result, nothing for
+          // the Finalize Instruction to ride.
+          if (requests.length === 1) return abortableRound(request)
+          // The bookkeeping request then fails outright.
+          if (requests.length === 2) return Promise.reject(new Error('provider timed out'))
+          return Promise.resolve({
+            kind: 'answer',
+            speak: 'I could not get there.',
+            display: 'I found nothing before the time ran out.',
+            resolution: 'unsuccessful',
+          })
+        },
+      }
+      const faults: FaultReport[] = []
+      setFaultSink((report) => faults.push(report))
+      const pipeline = createCommandPipeline({ llm, tts: new RecordingTts(), clock, tools: [createReportRunPlanTool(), work] })
+
+      const run = collect(pipeline, 'find the tier list')
+      await waitUntil(() => requests.length === 1)
+      clock.advance(DEADLINE_MS)
+      const events = await run
+
+      // Three requests: the one the deadline aborted, the bookkeeping one
+      // that failed, and the reserved Answer round that answered.
+      expect(requests).toHaveLength(3)
+      // The bookkeeping request carried no tool-result history at all —
+      // and said outright that acquisition had ended, rather than
+      // depending on a refusal or an acknowledgement that never existed.
+      expect(requests[1].toolResults).toEqual([])
+      expect(requests[1].finalization).toBe(finalizeInstruction('deadline_reached'))
+      expect(requests[1].answerOnly).toBeUndefined()
+      // The reserved Answer round is told the phase it actually runs in.
+      expect(requests[2].answerOnly).toBe(true)
+      expect(requests[2].finalization).toBe(
+        `The run’s active-work deadline has passed. ${ANSWER_ONLY_REPORT_DIRECTIVE}`,
+      )
+      // Acquisition never reopened: no tool call was ever made.
+      expect(events.some((e) => e.type === 'tool_call')).toBe(false)
+      // The bookkeeping exception never became the user's answer.
+      expect(events.filter((e) => e.type === 'error')).toEqual([])
+      expect(events.some((e) => e.type === 'display' && e.text === 'I found nothing before the time ran out.')).toBe(true)
+      // Exactly one terminal outcome, under the cause the run stopped for.
+      expect(events.filter((e) => e.type === 'done')).toHaveLength(1)
+      expect(events.at(-1)).toEqual({
+        type: 'done',
+        outcome: 'done',
+        resolution: 'unsuccessful',
+        finalizationCause: 'deadline_reached',
+        at: DEADLINE_MS,
+      })
+      // The lost round is recorded beside the Finalization Cause, never
+      // in its place.
+      expect(faults).toHaveLength(1)
+      expect(faults[0]).toMatchObject({
+        site: 'pipeline.createCommandPipeline.bookkeepingRequestFailed',
+        message: expect.stringMatching(/bookkeeping request failed during Finalization \(deadline_reached\)[\s\S]*provider timed out/),
+      })
+    })
+
+    it('takes the deterministic grounded Answer when the reserved Answer round fails too', async () => {
+      const clock = new FakeClock()
+      const requests: LlmRequest[] = []
+      const llm: LlmClient = {
+        complete(request) {
+          requests.push(request)
+          if (requests.length === 1) return abortableRound(request)
+          return Promise.reject(new Error('provider timed out'))
+        },
+      }
+      const faults: FaultReport[] = []
+      setFaultSink((report) => faults.push(report))
+      const pipeline = createCommandPipeline({ llm, tts: new RecordingTts(), clock, tools: [createReportRunPlanTool(), work] })
+
+      const run = collect(pipeline, 'find the tier list')
+      await waitUntil(() => requests.length === 1)
+      clock.advance(DEADLINE_MS)
+      const events = await run
+
+      // Bookkeeping is not retried: one failed opportunity, then the
+      // reserved Answer, then the deterministic Answer. Never a fourth.
+      expect(requests).toHaveLength(3)
+      expect(events.filter((e) => e.type === 'error')).toEqual([])
+      expect(events.some((e) => e.type === 'display' && e.text ===
+        'I could not finish “find the tier list”. The run passed its active-work deadline.')).toBe(true)
+      expect(events.filter((e) => e.type === 'done')).toHaveLength(1)
+      expect(events.at(-1)).toEqual({ type: 'done', outcome: 'failed', finalizationCause: 'deadline_reached', at: DEADLINE_MS })
+      // Two lost rounds, named apart: the diagnosis says which failed.
+      expect(faults.map((fault) => fault.site)).toEqual([
+        'pipeline.createCommandPipeline.bookkeepingRequestFailed',
+        'pipeline.createCommandPipeline.reservedAnswerRequestFailed',
+      ])
+    })
+
+    it('leaves a valid Answer returned during the bookkeeping round valid', async () => {
+      // Bookkeeping is optional work, not mandatory: a model that answers
+      // where it could have checkpointed has finished the run.
+      const clock = new FakeClock()
+      const requests: LlmRequest[] = []
+      const llm: LlmClient = {
+        complete(request) {
+          requests.push(request)
+          if (requests.length === 1) return abortableRound(request)
+          return Promise.resolve({ kind: 'answer', speak: 'Nothing found.', display: 'Nothing found in time.', resolution: 'partial' })
+        },
+      }
+      const pipeline = createCommandPipeline({ llm, tts: new RecordingTts(), clock, tools: [createReportRunPlanTool(), work] })
+
+      const run = collect(pipeline, 'find the tier list')
+      await waitUntil(() => requests.length === 1)
+      clock.advance(DEADLINE_MS)
+      const events = await run
+
+      expect(requests).toHaveLength(2)
+      expect(events.some((e) => e.type === 'display' && e.text === 'Nothing found in time.')).toBe(true)
+      expect(events.at(-1)).toEqual({
+        type: 'done',
+        outcome: 'done',
+        resolution: 'partial',
+        finalizationCause: 'deadline_reached',
+        at: DEADLINE_MS,
+      })
+    })
+
+    it('keeps a Stop’s cancellation precedence over the recovery', async () => {
+      const clock = new FakeClock()
+      const requests: LlmRequest[] = []
+      const llm: LlmClient = {
+        complete(request) {
+          // Both the aborted first request and the bookkeeping one park
+          // in flight; the deadline ends the first, the user's Stop the
+          // second.
+          requests.push(request)
+          return abortableRound(request)
+        },
+      }
+      const faults: FaultReport[] = []
+      setFaultSink((report) => faults.push(report))
+      const pipeline = createCommandPipeline({ llm, tts: new RecordingTts(), clock, tools: [createReportRunPlanTool(), work] })
+
+      const run = collect(pipeline, 'find the tier list')
+      await waitUntil(() => requests.length === 1)
+      clock.advance(DEADLINE_MS)
+      await waitUntil(() => requests.length === 2)
+      pipeline.abort()
+      const events = await run
+
+      // The Stop ends the run where it stands: no reserved Answer round,
+      // no deterministic Answer, and nothing reported as a lost round. The
+      // run still records the cause it had entered Finalization under.
+      expect(requests).toHaveLength(2)
+      expect(faults).toEqual([])
+      expect(events.some((e) => e.type === 'display')).toBe(false)
+      expect(events.at(-1)).toEqual({
+        type: 'done',
+        outcome: 'cancelled',
+        finalizationCause: 'deadline_reached',
+        at: DEADLINE_MS,
+      })
+    })
+
+    it('keeps accepted Evidence Checkpoints and commits one outcome (#121, ADR 0028)', async () => {
+      const PAGE_URL = 'https://shop.example/acme-router'
+      let minted = 0
+      const store = createSessionEvidence({
+        sessionId: 'session-1' as SessionId,
+        now: () => 0,
+        mintId: () => `memory-${++minted}` as MemoryEntryId,
+      })
+      const commits: string[] = []
+      const continuity: RunContinuityContext = {
+        snapshot: [],
+        memory: [],
+        evidence: store.snapshot(),
+        generation: 0,
+        commit: (outcome) => {
+          commits.push(outcome)
+          return 'committed'
+        },
+        checkpointEvidence: webEvidenceCommit(() => store, 'run-1' as RunId),
+      }
+      const readPage: Tool = { name: 'read_page', acquisition: true, async execute() { return 'Acme Wi-Fi Router\nPrice: $39' } }
+      const clock = new FakeClock()
+      const requests: LlmRequest[] = []
+      const llm: LlmClient = {
+        complete(request) {
+          requests.push(request)
+          if (requests.length === 1) return Promise.resolve({ kind: 'tool_calls', calls: [{ id: 'c1', name: 'read_page', args: {} }] })
+          if (requests.length === 2) {
+            return Promise.resolve({
+              kind: 'tool_calls',
+              calls: [{
+                id: 'c2',
+                name: 'record_evidence',
+                args: { observation: 'The Acme router costs $39.', source_url: PAGE_URL, excerpt: 'Price: $39' },
+              }],
+            })
+          }
+          // The deadline ends the third request; the bookkeeping one fails.
+          if (requests.length === 3) return abortableRound(request)
+          if (requests.length === 4) return Promise.reject(new Error('provider timed out'))
+          return Promise.resolve({ kind: 'answer', speak: 'It costs $39.', display: 'The Acme router costs $39.', resolution: 'partial' })
+        },
+      }
+      const pipeline = createCommandPipeline({
+        llm,
+        tts: new RecordingTts(),
+        clock,
+        tools: [readPage, createRecordEvidenceTool()],
+        currentPageUrl: () => PAGE_URL,
+      })
+
+      const events: PipelineEvent[] = []
+      const run = (async () => {
+        for await (const raw of pipeline.execute('what does the acme router cost', undefined, false, continuity)) {
+          events.push(withoutTurnId(raw))
+        }
+      })()
+      for (let attempt = 0; attempt < 200 && requests.length < 3; attempt += 1) await flush()
+      expect(requests).toHaveLength(3)
+      clock.advance(DEADLINE_MS)
+      await run
+
+      // The checkpoint accepted before Finalization is still in the
+      // Session, and the run contributed exactly one commit.
+      expect(store.snapshot().observations).toMatchObject([{ id: 'memory-1', text: 'The Acme router costs $39.' }])
+      expect(commits).toEqual(['done'])
+      expect(requests).toHaveLength(5)
+      expect(requests[3].finalization).toBe(finalizeInstruction('deadline_reached'))
+      expect(events.filter((e) => e.type === 'error')).toEqual([])
+      expect(events.filter((e) => e.type === 'done')).toHaveLength(1)
+      expect(events.at(-1)).toMatchObject({ type: 'done', outcome: 'done', finalizationCause: 'deadline_reached' })
+    })
+
+    it('states the phase on an ordinary bookkeeping round too', async () => {
+      // Not only the zero-history path: every Finalization request says
+      // outright what phase it runs in, whatever tool history it carries.
+      const directPlan: ToolCall = {
+        id: 'p0',
+        name: 'report_run_plan',
+        args: { objective: 'Do the thing', headline: 'Do the thing', effort_tier: 'direct_action' },
+      }
+      const llm = new ScriptedLlm([
+        { kind: 'tool_calls', calls: [directPlan, { id: 'w0', name: 'work', args: {} }] },
+        ...Array.from({ length: 5 }, (_, i) => ({ kind: 'tool_calls' as const, calls: [{ id: `w${i + 1}`, name: 'work', args: {} }] })),
+        { kind: 'tool_calls', calls: [{ id: 'w6', name: 'work', args: {} }] },
+        { kind: 'answer', speak: 'Partial.', display: 'Partial detail.', resolution: 'partial' },
+      ])
+      const pipeline = createCommandPipeline({ llm, tts: new RecordingTts(), clock: new FakeClock(), tools: [createReportRunPlanTool(), work] })
+
+      await collect(pipeline, 'do the thing')
+
+      // Six working requests carry nothing; the bookkeeping request and
+      // the reserved Answer round each carry their own phase's words.
+      expect(llm.requests.slice(0, 6).map((request) => request.finalization)).toEqual(Array(6).fill(undefined))
+      expect(llm.requests[6].finalization).toBe(finalizeInstruction('budget_exhausted'))
+      expect(llm.requests[7].finalization).toBe(
+        `The run’s work budget is exhausted. ${ANSWER_ONLY_REPORT_DIRECTIVE}`,
+      )
     })
   })
 

@@ -240,6 +240,14 @@ export function createOpenAiLlmClient(deps: OpenAiLlmClientDeps): LlmClient {
       // wherever the two differ, for every round left in the Run.
       messages.push({ role: 'user', content: standingDirectiveMessage(request.standingDirective) })
     }
+    // The Finalization Instruction (#207, ADR 0038) rides last of all: it
+    // is the operational fact about the round being sent — acquisition is
+    // over — and it holds whatever the correction above it asked for. It
+    // is already a whole directive, so it goes on the wire as written
+    // rather than wrapped in a sentence of ours.
+    if (request.finalization) {
+      messages.push({ role: 'user', content: request.finalization })
+    }
     return messages
   }
 

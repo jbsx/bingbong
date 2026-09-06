@@ -341,6 +341,27 @@ export function injectedReportDirective(phase: EffortPhase): string {
 }
 
 /**
+ * The Finalization Instruction the model *request* carries (#207, ADR
+ * 0038): the standalone message that tells the model acquisition has
+ * ended, on every request a Finalization round sends. Its sibling
+ * `injectedReportDirective` chooses the same two demands for a worker
+ * report; this one chooses them for the request itself, because a Run
+ * that stopped before it executed anything has no tool result for the
+ * Finalize Instruction to ride — and inventing a call and a result to
+ * carry it would put a tool round in the transcript that never happened.
+ * Null while the run is working: only a Finalization round says this.
+ */
+export function finalizationRequestInstruction(phase: EffortPhase): string | null {
+  if (phase.kind === 'working') return null
+  if (phase.kind === 'finalizing') return finalizeInstruction(phase.cause, phase.detail)
+  // The reserved Answer round: the bookkeeping opportunity is behind it,
+  // so it is told what the injected report tells it there — a tool call
+  // from here is a failed round, not a checkpoint.
+  const reason = runFinalizationReason(phase.cause, phase.detail)
+  return reason === undefined ? ANSWER_ONLY_REPORT_DIRECTIVE : `${reason}. ${ANSWER_ONLY_REPORT_DIRECTIVE}`
+}
+
+/**
  * The active-work clock (#117, ADR 0027): accumulates wall time the Run
  * spends working, excluding user-dependent waiting — Confirmation, ask_user,
  * Pause, and Steering — which suspends it. Fresh per Run; a tier change
@@ -451,6 +472,17 @@ export interface EffortEpoch {
    * nothing latches at a round's end.
    */
   beginToolRound(): boolean
+  /**
+   * The bookkeeping opportunity, spent without a round (#207, ADR 0038):
+   * the Finalization model request failed before it could return a single
+   * call, so no Tool Round executed and none is counted — but bookkeeping
+   * is one *optional* opportunity, and a request that failed has used it.
+   * The run advances to its reserved Answer under the cause it entered
+   * Finalization with; it neither reopens Acquisition nor asks for
+   * bookkeeping again. False when the phase is not `finalizing` — there is
+   * no opportunity to spend before the door opens or after it is gone.
+   */
+  spendBookkeepingOpportunity(): boolean
   declareTier(tier: EffortTier, initialDeclaration?: boolean): boolean
   replan(tier?: EffortTier): boolean
   /**
@@ -640,6 +672,15 @@ export function createEffortEpoch(deps: {
         warned[crossed] = true
         pendingWarning = crossed
       }
+      return true
+    },
+    spendBookkeepingOpportunity() {
+      if (phase.kind !== 'finalizing') return false
+      phase = { kind: 'answer_only', cause: phase.cause, ...(phase.detail !== undefined ? { detail: phase.detail } : {}) }
+      // No round began, so nothing is owed to one: the instruction the
+      // failed request carried is the last thing the model was told about
+      // this phase, and the reserved Answer round carries its own.
+      pendingFinalizationNotice = false
       return true
     },
     declareTier(nextTier, initialDeclaration = false) {

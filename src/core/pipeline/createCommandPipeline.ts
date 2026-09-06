@@ -30,6 +30,7 @@ import { createToolRoundExecutor, type ToolRoundExecutor } from './toolRound'
 import {
   createEffortEpoch,
   deterministicFinalAnswer,
+  finalizationRequestInstruction,
   injectedReportDirective,
   resolveReportGraceMs,
   type EffortEpoch,
@@ -961,6 +962,19 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
         // spoken Answer but not the displayed one would be two stories.
         const fallbackDetail = (): FinalizationDetail | undefined =>
           effortEpoch.phase.kind === 'working' ? undefined : effortEpoch.phase.detail
+        // What a failed Finalization model request leaves behind (#207,
+        // ADR 0038). The run is not stopping *because* the request failed
+        // — it stopped for its own cause a round ago, and that cause is
+        // what the Answer and the record say. So the failure is additional
+        // diagnostic information, named by the round it lost, and the
+        // Finalization Cause rides along to join the two.
+        const reportFinalizationRequestFailure = (site: string, round: string, error: unknown): void => {
+          reportFault(
+            `pipeline.createCommandPipeline.${site}`,
+            `the ${round} request failed during Finalization (${fallbackCause()}): ${toErrorMessage(error)}`,
+            { turnId },
+          )
+        }
 
         for (;;) {
           // The loop top asks the epoch's rails (#146–#148): a tripped rail
@@ -1096,6 +1110,11 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
           // in flight, and the streaming and off-contract branches below
           // both ask the same question.
           const reservedRound = isAnswerOnly()
+          // The phase's own instruction, read from the same place and at
+          // the same moment (#207): the bookkeeping round is told
+          // Bookkeeping is still open, the reserved Answer round that no
+          // tool round remains.
+          const finalizationInstruction = finalizationRequestInstruction(effortEpoch.phase)
           try {
             const request: LlmRequest = {
               command,
@@ -1115,6 +1134,14 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
               // adapter sends no tool definitions and no automatic tool
               // choice, whatever the catalog still holds for bookkeeping.
               ...(reservedRound ? { answerOnly: true } : {}),
+              // The Finalization Instruction (#207, ADR 0038): every
+              // Finalization request states outright that acquisition has
+              // ended and what this round may still do. The captured
+              // failure was a Run whose first request was aborted at the
+              // active-work deadline — no tool call, no tool result, so
+              // nothing for the Finalize Instruction to ride, and a
+              // bookkeeping round that read as ordinary work.
+              ...(finalizationInstruction !== null ? { finalization: finalizationInstruction } : {}),
               ...(continuity ? { journal: continuity.snapshot } : {}),
               ...(continuity ? { memory: continuity.memory } : {}),
               // Checkpointed Session Evidence this Run starts beside (#121):
@@ -1199,10 +1226,24 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
             if (armedRound.deadlineAborted) continue
             // The reserved Answer round failed (#117): the run still ends
             // with a guaranteed Answer — the deterministic fallback — not
-            // a raw provider error.
+            // a raw provider error. The failure is diagnostics (#207, ADR
+            // 0038), recorded beside the Finalization Cause it kept rather
+            // than replacing it.
             if (reservedRound) {
+              reportFinalizationRequestFailure('reservedAnswerRequestFailed', 'reserved Answer', err)
               deterministicFallback = true
               break
+            }
+            // The bookkeeping request failed (#207, ADR 0038). Bookkeeping
+            // is one *optional* opportunity: a request that failed has
+            // used it, so the run advances to its reserved Answer under
+            // the cause it entered Finalization with. It does not reopen
+            // Acquisition, does not ask for bookkeeping again, and does
+            // not escape as the raw provider error the user would
+            // otherwise hear instead of an Answer.
+            if (effortEpoch.spendBookkeepingOpportunity()) {
+              reportFinalizationRequestFailure('bookkeepingRequestFailed', 'bookkeeping', err)
+              continue
             }
             throw err
           } finally {

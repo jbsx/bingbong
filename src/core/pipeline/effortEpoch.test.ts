@@ -7,6 +7,7 @@ import {
   createEffortEpoch,
   deterministicFinalAnswer,
   FINALIZATION_REPORT_CHECKPOINT_DIRECTIVE,
+  finalizationRequestInstruction,
   finalizationToolRefusal,
   finalizeInstruction,
   HARD_TOOL_ROUND_CEILING,
@@ -386,6 +387,104 @@ describe('Effort Epoch (#146, ADR 0027)', () => {
 
       expect(epoch.replan()).toBe(true)
       expect(epoch.phase).toEqual({ kind: 'working' })
+    })
+  })
+
+  // Issue #207, ADR 0038: the instruction that must not depend on a tool
+  // result to arrive. A Run whose first request is aborted at the
+  // active-work deadline has no tool call and no tool result — so the
+  // Finalize Instruction, which rides refusals and bookkeeping
+  // acknowledgements, reaches a model that executed nothing never at all.
+  describe('the Finalization Instruction the request carries (#207, ADR 0038)', () => {
+    it('says nothing while the run is working', () => {
+      expect(finalizationRequestInstruction({ kind: 'working' })).toBeNull()
+    })
+
+    it('gives the bookkeeping round the Finalize Instruction, cause and all', () => {
+      expect(finalizationRequestInstruction({ kind: 'finalizing', cause: 'deadline_reached' })).toBe(
+        finalizeInstruction('deadline_reached'),
+      )
+      expect(finalizationRequestInstruction({ kind: 'finalizing', cause: 'no_progress' })).toBe(
+        finalizeInstruction('no_progress'),
+      )
+    })
+
+    it('tells the reserved Answer round that no tool round remains', () => {
+      expect(finalizationRequestInstruction({ kind: 'answer_only', cause: 'deadline_reached' })).toBe(
+        `The run\u2019s active-work deadline has passed. ${ANSWER_ONLY_REPORT_DIRECTIVE}`,
+      )
+    })
+
+    it('names the wall a `blocker` stop kept at, in both phases (#202)', () => {
+      const wall = { signal: 'login-wall', host: 'shop.example' } as const
+      expect(finalizationRequestInstruction({ kind: 'finalizing', cause: 'blocker', detail: wall })).toBe(
+        finalizeInstruction('blocker', wall),
+      )
+      expect(finalizationRequestInstruction({ kind: 'answer_only', cause: 'blocker', detail: wall })).toContain(
+        'shop.example',
+      )
+    })
+
+    it('invents no reason for a cause a Run never finalizes under', () => {
+      expect(finalizationRequestInstruction({ kind: 'answer_only', cause: 'parent_finalized' })).toBe(
+        ANSWER_ONLY_REPORT_DIRECTIVE,
+      )
+    })
+  })
+
+  describe('a failed bookkeeping request spends its one opportunity (#207, ADR 0038)', () => {
+    it('advances to the reserved Answer without counting a Tool Round', () => {
+      const epoch = createEffortEpoch({ clock: new FakeClock(), initialTier: 'direct_action' })
+      epoch.beginToolRound()
+      epoch.enterFinalization('deadline_reached')
+      const rounds = epoch.cumulativeRounds
+
+      expect(epoch.spendBookkeepingOpportunity()).toBe(true)
+      expect(epoch.phase).toEqual({ kind: 'answer_only', cause: 'deadline_reached' })
+      // The request returned no calls, so no round executed and none is
+      // counted — but the opportunity is gone, and no second one opens.
+      expect(epoch.cumulativeRounds).toBe(rounds)
+      expect(epoch.beginToolRound()).toBe(false)
+    })
+
+    it('keeps the cause it entered Finalization with, and its wall', () => {
+      const wall = { signal: 'challenge', host: 'www.reddit.com' } as const
+      const epoch = createEffortEpoch({ clock: new FakeClock() })
+      epoch.enterFinalization('blocker', wall)
+
+      expect(epoch.spendBookkeepingOpportunity()).toBe(true)
+      expect(epoch.phase).toEqual({ kind: 'answer_only', cause: 'blocker', detail: wall })
+    })
+
+    it('spends nothing in a working epoch, and nothing twice', () => {
+      const epoch = createEffortEpoch({ clock: new FakeClock() })
+      expect(epoch.spendBookkeepingOpportunity()).toBe(false)
+
+      epoch.enterFinalization('no_progress')
+      expect(epoch.spendBookkeepingOpportunity()).toBe(true)
+      expect(epoch.spendBookkeepingOpportunity()).toBe(false)
+      expect(epoch.phase).toEqual({ kind: 'answer_only', cause: 'no_progress' })
+    })
+
+    it('does not reopen Acquisition for a Steering replan afterwards', () => {
+      // The spent opportunity is the same latch the bookkeeping round's
+      // beginning is (#200): Answer-only is terminal for a replan too.
+      const epoch = createEffortEpoch({ clock: new FakeClock() })
+      epoch.enterFinalization('deadline_reached')
+      epoch.spendBookkeepingOpportunity()
+
+      expect(epoch.replan()).toBe(false)
+      expect(epoch.phase).toEqual({ kind: 'answer_only', cause: 'deadline_reached' })
+    })
+
+    it('owes the reserved Answer round no leftover Finalization notice', () => {
+      // Nothing rode the failed request's results — there were none — so
+      // the notice that would have ridden them is not owed onward.
+      const epoch = createEffortEpoch({ clock: new FakeClock() })
+      epoch.enterFinalization('deadline_reached')
+      epoch.spendBookkeepingOpportunity()
+
+      expect(epoch.takeFinalizationNotice()).toBeNull()
     })
   })
 
