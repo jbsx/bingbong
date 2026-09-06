@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { FakeBrowser, FakeClock, FakeVision, fakePerfHarness } from '../../core/testing/doubles'
+import { FakeBrowser, FakeClock, FakeVision, StallingBrowser, fakePerfHarness } from '../../core/testing/doubles'
 import { SUBAGENT_LIMITS } from '../../core/agent/subagentRails'
+import { SubagentCancelledError } from '../../core/agent/subagentRunner'
 import { createSubagentTaskApi, toolsForKind } from './createSubagentWorkhorse'
 import { withAgentActivity } from '../../core/downloads/agentActivity'
 import { createAgentActivityTracker } from '../../core/downloads/agentActivity'
@@ -38,6 +39,94 @@ describe('createSubagentTaskApi', () => {
 
     expect(browser.navigations).toEqual(['https://engine.test'])
     expect(report.text).toBe('Keyboards compared on screen.')
+  })
+
+  // #205 / ADR 0038: a worker-owned tab gets the same two boundaries the
+  // shared pane gets. The double does not cooperate — nothing outside can
+  // make its `navigate` settle — so what is proved is the worker ending,
+  // not a fake agreeing to be cancelled.
+  describe('a worker cancelled while its tab action is still unsettled', () => {
+    const STALLED_SCRIPT = JSON.stringify([
+      { kind: 'tool_calls', calls: [{ id: 'n1', name: 'navigate', args: { url: 'https://slow.example' } }] },
+      { kind: 'answer', speak: 'Done.', display: 'Should never be reached.' },
+    ])
+
+    const flush = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0))
+
+    async function until(condition: () => boolean): Promise<void> {
+      for (let attempt = 0; attempt < 200 && !condition(); attempt++) await flush()
+      if (!condition()) throw new Error('condition never held')
+    }
+
+    async function cancelledMidNavigation() {
+      const browser = new StallingBrowser(['navigate'])
+      const stop = new AbortController()
+      let cancelled = false
+      const api = createSubagentTaskApi({
+        getEnv: () => envWith(STALLED_SCRIPT),
+        fetchFn: (async () => new Response('{}')) as typeof fetch,
+        controllerFor: () => browser,
+        clock: new FakeClock(),
+      })
+      const { done } = api.start(
+        { id: 'a-1', kind: 'browse', task: 'open the slow page' },
+        { isCancelled: () => cancelled, onProgress: () => undefined, stopBrowsing: stop.signal },
+      )
+      const settled = done.then(
+        (report) => ({ kind: 'report' as const, report }),
+        (error: Error) => ({ kind: 'error' as const, error }),
+      )
+      await until(() => browser.reached.includes('navigate'))
+      cancelled = true
+      stop.abort()
+      return { browser, outcome: await settled }
+    }
+
+    it('ends the worker instead of waiting the tab action out', async () => {
+      const { browser, outcome } = await cancelledMidNavigation()
+
+      expect(outcome.kind).toBe('error')
+      expect(outcome.kind === 'error' && outcome.error).toBeInstanceOf(SubagentCancelledError)
+      // The worker is over; its tab never said it stopped.
+      expect(browser.outstanding).toBe(1)
+      expect(browser.reached).toEqual(['navigate'])
+    })
+
+    it('withholds the worker-owned tab from any further work until the action settles', async () => {
+      const { browser } = await cancelledMidNavigation()
+      const before = [...browser.reached]
+
+      // Late old work — anything still holding the worker's controller — is
+      // refused, not queued behind the unsettled navigation.
+      browser.settleLate()
+      await flush()
+      expect(browser.reached).toEqual(before)
+    })
+
+    it('never abandons the browsing of a parent that is merely finalizing', async () => {
+      const browser = new FakeBrowser()
+      const api = createSubagentTaskApi({
+        getEnv: () => envWith(BROWSE_SCRIPT),
+        fetchFn: (async () => new Response('{}')) as typeof fetch,
+        controllerFor: () => browser,
+        clock: new FakeClock(),
+      })
+
+      const { done } = api.start(
+        { id: 'a-1', kind: 'browse', task: 'search keyboards' },
+        {
+          isCancelled: () => false,
+          onProgress: () => undefined,
+          isParentFinalizing: () => true,
+          stopBrowsing: new AbortController().signal,
+        },
+      )
+      const report = await done
+
+      // Finalization is told, not cancelled: the tab still worked.
+      expect(browser.navigations).toEqual(['https://engine.test'])
+      expect(report.text).toBe('Keyboards compared on screen.')
+    })
   })
 
   it('binds browse agents to their own pane controller, confirm actions denied', async () => {

@@ -107,6 +107,14 @@ export interface SubagentTaskHooks {
   isParentFinalizing?(): boolean
   /** Aborted when the Report Grace ends with this worker still running (#199). */
   abandonReport?: AbortSignal
+  /**
+   * Abandon this worker's browsing (#205, ADR 0038): aborted when a
+   * decision ends the worker — Stop, the orchestrator's cancel, a Session
+   * Reset. The worker's wait on an unsettled tab action ends here; the tab
+   * itself stays withheld until that action is observed to end. Finalization
+   * never fires it — a bounded report is not a cancellation.
+   */
+  stopBrowsing?: AbortSignal
   waitIfPaused?(): Promise<void>
   onProgress(step: number, action: string): void
   /**
@@ -254,6 +262,12 @@ export function createSubagentManager(deps: SubagentManagerDeps): SubagentManage
   // round it is still running.
   const parentFinalized = new Set<string>()
   const abandonReports = new Map<string, AbortController>()
+  // The worker's own browser resource, per worker (#205, ADR 0038): fired by
+  // a decision — the user's Stop, the orchestrator's cancel, a Session Reset
+  // — so the worker's wait on an uncooperative tab action ends with the
+  // worker. Never fired by Finalization: a bounded report is not a
+  // cancellation, and its tab is still the worker's to finish in.
+  const stopBrowsing = new Map<string, AbortController>()
   const settled = new Map<string, Promise<void>>()
   const pauseWaiters = new Map<string, Set<() => void>>()
   let paused = false
@@ -304,6 +318,7 @@ export function createSubagentManager(deps: SubagentManagerDeps): SubagentManage
     for (const record of records.values()) {
       if (record.status !== 'running') continue
       cancelled.add(record.id)
+      stopBrowsing.get(record.id)?.abort()
       releasePause(record.id)
       count += 1
     }
@@ -355,6 +370,8 @@ export function createSubagentManager(deps: SubagentManagerDeps): SubagentManage
       // grace can never abandon the round that replaced it.
       const abandonReport = new AbortController()
       abandonReports.set(id, abandonReport)
+      const stopThisBrowsing = new AbortController()
+      stopBrowsing.set(id, stopThisBrowsing)
       const owner = deps.owner?.() ?? undefined
       const record: SubagentRecord = {
         id,
@@ -392,6 +409,10 @@ export function createSubagentManager(deps: SubagentManagerDeps): SubagentManage
           // aborts the worker's round with.
           isParentFinalizing: () => parentFinalized.has(id),
           abandonReport: abandonReport.signal,
+          // The worker's browser custody (#205): abandoning its tab action
+          // is a decision's doing, so this rides the cancel path, not the
+          // Finalization one beside it.
+          stopBrowsing: stopThisBrowsing.signal,
           // The worker's reasoning records (#183): handed down only when
           // the Run is tracing them, so an unasked-for worker collects
           // nothing — the same invariant the Run path holds.
@@ -446,6 +467,7 @@ export function createSubagentManager(deps: SubagentManagerDeps): SubagentManage
       if (!record) return { ok: false, reason: `no such subagent: '${agentId}'` }
       if (record.status !== 'running') return { ok: false, reason: `subagent ${agentId} already ${record.status}` }
       cancelled.add(agentId)
+      stopBrowsing.get(agentId)?.abort()
       releasePause(agentId)
       return { ok: true }
     },
@@ -490,6 +512,7 @@ export function createSubagentManager(deps: SubagentManagerDeps): SubagentManage
       cancelled.clear()
       parentFinalized.clear()
       abandonReports.clear()
+      stopBrowsing.clear()
       settled.clear()
       return running
     },

@@ -350,6 +350,73 @@ export class FakeBrowser implements BrowserController, VisualGroundingController
   }
 }
 
+/**
+ * A browser that will not answer (#205): the named actions return promises
+ * only `settleLate`/`failLate` can settle. Deliberately not an aborting
+ * double — an Unsettled Action is precisely one that does not cooperate, so
+ * a fake that quietly resolves when cancelled would prove the opposite.
+ */
+export class StallingBrowser extends FakeBrowser {
+  /** Which actions hang; the rest behave like FakeBrowser's. */
+  readonly stalls: Set<string>
+  /** Set to answer `navigate` the way an adapter that gave up its own wait does. */
+  navigateRejectsWith: Error | null = null
+  readonly reached: string[] = []
+  private readonly releases: ((outcome: { ok: true } | { ok: false; error: Error }) => void)[] = []
+
+  constructor(stalls: readonly string[] = ['navigate']) {
+    super()
+    this.stalls = new Set(stalls)
+  }
+
+  /** How many stalled actions are still waiting on the page. */
+  get outstanding(): number {
+    return this.releases.length
+  }
+
+  private hang<T>(value: T): Promise<T> {
+    return new Promise<T>((resolve, reject) => {
+      this.releases.push((outcome) => (outcome.ok ? resolve(value) : reject(outcome.error)))
+    })
+  }
+
+  private act<T>(action: string, value: T, real: () => Promise<T>): Promise<T> {
+    this.reached.push(action)
+    if (!this.stalls.has(action)) return real()
+    return this.hang(value)
+  }
+
+  override navigate(url: string): Promise<string> {
+    if (this.navigateRejectsWith) {
+      this.reached.push('navigate')
+      return Promise.reject(this.navigateRejectsWith)
+    }
+    return this.act('navigate', `navigated: url=${url}`, () => super.navigate(url))
+  }
+
+  override readPage(): Promise<string> {
+    return this.act('readPage', '<page>stalled</page>', () => super.readPage())
+  }
+
+  override click(ref: number): Promise<string> {
+    return this.act('click', `clicked [${ref}]`, () => super.click(ref))
+  }
+
+  override scroll(direction: 'up' | 'down'): Promise<string> {
+    return this.act('scroll', `scrolled ${direction}`, () => super.scroll(direction))
+  }
+
+  /** Every stalled action finally lands, long after anyone waited for it. */
+  settleLate(): void {
+    for (const release of this.releases.splice(0)) release({ ok: true })
+  }
+
+  /** Every stalled action finally fails — an end, just not a happy one. */
+  failLate(error = new Error('net::ERR_ABORTED')): void {
+    for (const release of this.releases.splice(0)) release({ ok: false, error })
+  }
+}
+
 export class FakeVision implements VisionModel {
   readonly locateRequests: VisionLocateRequest[] = []
   readonly describeRequests: VisionDescribeRequest[] = []

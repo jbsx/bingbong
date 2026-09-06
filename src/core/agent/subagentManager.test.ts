@@ -848,6 +848,38 @@ describe('the parent Run’s Finalization (#199)', () => {
     expect(mgr.list()[0]).not.toHaveProperty('report')
   })
 
+  // #205 / ADR 0038: abandoning a worker's browsing is a decision's doing.
+  // The signal rides the cancel path so an uncooperative tab action cannot
+  // outlive the decision that ended the worker — and stays unfired for
+  // Finalization, whose bounded report is not a cancellation.
+  it('abandons a cancelled worker\'s browsing, and a retired Session\'s too', () => {
+    const { mgr, api } = manager()
+    mgr.spawn('browse', 'compare vendors')
+    mgr.spawn('browse', 'compare couriers')
+    expect(api.hooksSeen.get('a-1')!.stopBrowsing?.aborted).toBe(false)
+
+    mgr.cancel('a-1')
+    expect(api.hooksSeen.get('a-1')!.stopBrowsing?.aborted).toBe(true)
+    expect(api.hooksSeen.get('a-2')!.stopBrowsing?.aborted).toBe(false)
+
+    // A Session Reset retires the rest: their tabs go with the Session, so
+    // no late old work can reach one through a controller it still holds.
+    mgr.retire()
+    expect(api.hooksSeen.get('a-2')!.stopBrowsing?.aborted).toBe(true)
+  })
+
+  it('never abandons a worker\'s browsing for Finalization alone', () => {
+    const { mgr, api } = manager()
+    mgr.spawn('browse', 'compare vendors')
+
+    mgr.tellParentFinalizing()
+    mgr.endReportGrace()
+
+    // The round was abandoned; the tab it is reporting from was not.
+    expect(api.hooksSeen.get('a-1')!.abandonReport?.aborted).toBe(true)
+    expect(api.hooksSeen.get('a-1')!.stopBrowsing?.aborted).toBe(false)
+  })
+
   it('gives a worker spawned after a spent grace its own signal', () => {
     const { mgr, api } = manager()
     mgr.spawn('browse', 'compare vendors')

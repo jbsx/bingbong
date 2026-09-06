@@ -19,6 +19,7 @@ import { runSubagent } from '../../core/agent/subagentRunner'
 import type { SubagentKind, SubagentSpec, SubagentTaskApi, SubagentTaskHooks } from '../../core/agent/subagentManager'
 import { ScriptedLlm, UnavailableLlm } from '../../core/testing/doubles'
 import { createBrowserTools } from '../../core/pipeline/browserTools'
+import { holdBrowserCustody } from '../../core/browser/unsettledAction'
 import { hostFromUrl } from '../../core/pipeline/blockerGate'
 import { createLookTool } from '../../core/pipeline/visionGroundingTools'
 import { createSubagentAskTool } from '../../core/pipeline/askUserTools'
@@ -114,7 +115,19 @@ export function createSubagentTaskApi(deps: SubagentWorkhorseDeps): SubagentTask
       // background agents must not grab a tab (looking one up would). The
       // kind structure mirrors toolsForKind's: whatever isn't background is
       // a browser kind.
-      const controller = spec.kind !== 'background' ? deps.controllerFor?.(spec.id) ?? null : null
+      const pane = spec.kind !== 'background' ? deps.controllerFor?.(spec.id) ?? null : null
+      // The worker-owned resource's custody (#205, ADR 0038): one per spawn,
+      // because the resource is this worker's own tab — retired with it, never
+      // handed to the next Run. A decision ending the worker abandons whatever
+      // its tab is doing, so an uncooperative action cannot outlive the
+      // cancellation; the tab stays withheld until that action is observed to
+      // end, which is all a retiring pool needs before it drops the view.
+      const custody = pane ? holdBrowserCustody(pane) : null
+      const controller = custody?.controller ?? null
+      if (custody && hooks.stopBrowsing) {
+        if (hooks.stopBrowsing.aborted) custody.abandon()
+        else hooks.stopBrowsing.addEventListener('abort', () => custody.abandon(), { once: true })
+      }
       const tools = toolsForKind(spec.kind, deps, controller)
       // Perf outermost, the same order as the orchestrator's client: the
       // span times the whole round including usage bookkeeping.

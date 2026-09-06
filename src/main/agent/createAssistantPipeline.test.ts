@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { createAssistantPipeline } from './createAssistantPipeline'
-import { FakeAppControls, FakeBrowser, FakeClock, FakePanel, FakeSettings, RecordingTts, fakeSubagentManager, subagentRecord } from '../../core/testing/doubles'
+import { FakeAppControls, FakeBrowser, FakeClock, FakePanel, FakeSettings, RecordingTts, StallingBrowser, fakeSubagentManager, subagentRecord } from '../../core/testing/doubles'
 import type { CommandPipeline } from '../../core/pipeline/createCommandPipeline'
 import type { PipelineEvent } from '../../core/pipeline/events'
 import { createSubagentTools } from '../../core/pipeline/subagentTools'
@@ -578,6 +578,119 @@ describe('createAssistantPipeline', () => {
     expect(control).toEqual(['pauseAll', 'cancelAll'])
     expect(events.some((event) => event.type === 'display' && event.text === 'Stale.')).toBe(false)
     expect(events.at(-1)).toMatchObject({ type: 'done', outcome: 'done' })
+  })
+
+  // #205 / ADR 0038: Stop and safe reuse are two boundaries. The double
+  // does not cooperate — nothing here can make `navigate` settle from
+  // outside — so the Run's terminal completion is the thing being proved,
+  // not a fake's willingness to be cancelled.
+  describe('a Stop while a browser action is still unsettled', () => {
+    const UNSETTLED_SCRIPT = JSON.stringify([
+      // Run 1: a navigation that will not answer, with a sibling behind it.
+      { kind: 'tool_calls', calls: [
+        { id: 'c1', name: 'navigate', args: { url: 'https://slow.example' } },
+        { id: 'c2', name: 'read_page', args: {} },
+      ] },
+      // Run 2, in the same Session: tries the pane again, then answers with
+      // whatever the refusal told it.
+      { kind: 'tool_calls', calls: [{ id: 'c3', name: 'navigate', args: { url: 'https://next.example' } }] },
+      { kind: 'answer', speak: 'Could not browse.', display: 'The browser said: $last_tool_error' },
+      // Run 3, after the abandoned navigation finally lands.
+      { kind: 'tool_calls', calls: [{ id: 'c4', name: 'navigate', args: { url: 'https://after.example' } }] },
+      { kind: 'answer', speak: 'Opened it.', display: 'Navigated after the pane came back.' },
+    ])
+
+    const flush = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0))
+
+    async function until(condition: () => boolean): Promise<void> {
+      for (let attempt = 0; attempt < 200 && !condition(); attempt++) await flush()
+      if (!condition()) throw new Error('condition never held')
+    }
+
+    async function stoppedMidNavigation(script = UNSETTLED_SCRIPT) {
+      const browser = new StallingBrowser(['navigate'])
+      const pipeline = createAssistantPipeline({
+        controller: browser,
+        env: { BINGBONG_LLM_SCRIPT: script },
+        clock: new FakeClock(),
+      })
+      const events: PipelineEvent[] = []
+      const run = (async () => {
+        for await (const event of pipeline.execute('open the slow page')) events.push(event)
+      })()
+      await until(() => browser.reached.includes('navigate'))
+      pipeline.abort()
+      await run
+      return { browser, pipeline, events }
+    }
+
+    it('completes the Run terminally instead of waiting the action out', async () => {
+      const { browser, events } = await stoppedMidNavigation()
+
+      expect(events.some((event) => event.type === 'status' && event.status === 'cancelled')).toBe(true)
+      expect(events.at(-1)).toMatchObject({ type: 'done' })
+      // Still unsettled: the Run stopped waiting, the page never stopped.
+      expect(browser.outstanding).toBe(1)
+    })
+
+    it('executes no sibling of the abandoned call', async () => {
+      const { browser } = await stoppedMidNavigation()
+
+      expect(browser.reached).toEqual(['navigate'])
+    })
+
+    it('refuses the next Run in the same Session the pane, rather than queueing its work', async () => {
+      const { browser, pipeline } = await stoppedMidNavigation()
+
+      const second = await collect(pipeline, 'try that again')
+
+      expect(browser.reached).toEqual(['navigate'])
+      expect(second.find((event) => event.type === 'display')).toMatchObject({
+        text: expect.stringContaining('unavailable until an abandoned action settles'),
+      })
+      expect(second.at(-1)).toMatchObject({ type: 'done' })
+    })
+
+    it('goes on withholding the pane across a Session Reset', async () => {
+      // The Session ends; the pane's unsettled action does not. A fresh
+      // Session must not inherit a resource nothing has vouched for.
+      const RESET_SCRIPT = JSON.stringify([
+        { kind: 'tool_calls', calls: [{ id: 'c1', name: 'navigate', args: { url: 'https://slow.example' } }] },
+        { kind: 'tool_calls', calls: [{ id: 'c2', name: 'new_session', args: {} }] },
+        { kind: 'tool_calls', calls: [{ id: 'c3', name: 'navigate', args: { url: 'https://fresh.example' } }] },
+        { kind: 'answer', speak: 'Could not browse.', display: 'The browser said: $last_tool_error' },
+      ])
+      const { browser, pipeline } = await stoppedMidNavigation(RESET_SCRIPT)
+
+      const reset = await collect(pipeline, 'forget all that')
+      expect(reset.at(-1)).toMatchObject({ type: 'done', outcome: 'reset' })
+
+      const fresh = await collect(pipeline, 'now open something else')
+      expect(browser.reached).toEqual(['navigate'])
+      expect(fresh.find((event) => event.type === 'display')).toMatchObject({
+        text: expect.stringContaining('unavailable until an abandoned action settles'),
+      })
+    })
+
+    it('leaves the stopped Run untouched when its action finally lands, and only then reuses the pane', async () => {
+      const { browser, pipeline, events } = await stoppedMidNavigation()
+      await collect(pipeline, 'try that again')
+      const finalized = [...events]
+
+      // The page finally lands, and stops stalling the next navigation.
+      browser.settleLate()
+      browser.stalls.clear()
+      await flush()
+
+      // The late landing changes nothing about the Run that let it go.
+      expect(events).toEqual(finalized)
+
+      const third = await collect(pipeline, 'open it now')
+      expect(browser.navigations).toEqual(['https://after.example'])
+      expect(third.find((event) => event.type === 'display')).toMatchObject({
+        text: 'Navigated after the pane came back.',
+      })
+    })
   })
 
   it('streams a scripted answer through onDelta as llm_delta detail events (#56)', async () => {

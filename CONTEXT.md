@@ -704,6 +704,23 @@ meaningfully changes the page. It is the next decision's observation, not merely
 confirmation that a call ran.
 _Avoid_: tool result, success flag
 
+**Unsettled Action**:
+A started browser action whose underlying operation has not been observed to
+end. Neither ending the Run's wait on one nor a bounded adapter wait expiring
+is that observation — only the operation's own resolution, or the destruction
+of the surface it was acting on. An abandoned action is reported as uncertain,
+never as undone, and its late result reaches nobody: no Action Outcome, no
+Observation, no Evidence Checkpoint, no finalized Answer or Run Note.
+_Avoid_: hung action, timed-out navigation, cancelled action
+
+**Withheld Resource**:
+The browser resource an Unsettled Action holds. Every later action on it is
+refused outright rather than queued — a later Run's and a new Session's
+included — and it reports no page at all in place of the stale one. Reuse
+resumes on settlement or safe isolation, so Answer availability and safe reuse
+are separate boundaries: a Run can finish while its resource stays withheld.
+_Avoid_: locked tab, busy browser, browser lock
+
 **Ref**:
 A numbered handle in a page read naming one element in the viewport at the
 moment of that read, for click, type, and Look to act on. A number names the

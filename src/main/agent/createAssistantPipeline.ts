@@ -11,6 +11,7 @@ import { createReportRunPlanTool } from '../../core/pipeline/runPlanTools'
 import { createRecordEvidenceTool } from '../../core/pipeline/evidenceTools'
 import { createRecordCandidateTool } from '../../core/pipeline/candidateTools'
 import { createBrowserTools } from '../../core/pipeline/browserTools'
+import { holdBrowserCustody } from '../../core/browser/unsettledAction'
 import { hostFromUrl } from '../../core/pipeline/blockerGate'
 import { createVisionGroundingTools } from '../../core/pipeline/visionGroundingTools'
 import type { VisionTraceReporter } from '../../core/trace/visionTrace'
@@ -251,6 +252,13 @@ function createDynamicLlm(
 /** The text-driven assistant: browser and media tools + model-routed LLM behind the command pipeline. */
 export function createAssistantPipeline(deps: AssistantPipelineDeps): CommandPipeline {
   const fetchFn = deps.fetchFn ?? fetch
+  // The shared browsing resource's custody (#205, ADR 0038). Held here,
+  // once, for the pipeline's whole life — so it outlives the Run that
+  // abandoned an action and refuses the *next* Run's calls too. Every tool,
+  // gate, and rail below reaches the pane through it; nothing keeps a
+  // reference to the raw controller, which is the point.
+  const custody = holdBrowserCustody(deps.controller)
+  const controller = custody.controller
   const getEnv = deps.getEnv ?? (() => deps.env)
   const vision = deps.vision ?? createZaiVisionApi({ getEnv })
   const tools: Tool[] = [
@@ -268,9 +276,9 @@ export function createAssistantPipeline(deps: AssistantPipelineDeps): CommandPip
     // their terminal decisions, citing live supporting Observations.
     // Orchestrator-only bookkeeping, like record_evidence.
     createRecordCandidateTool(),
-    ...createBrowserTools(deps.controller, vision),
-    ...createVisionGroundingTools(deps.controller, vision),
-    ...createMediaTools(deps.controller),
+    ...createBrowserTools(controller, vision),
+    ...createVisionGroundingTools(controller, vision),
+    ...createMediaTools(controller),
     ...(deps.subagentTools ?? []),
     // Panel voice tools (#64): silent, unconfirmed, model-invoked.
     ...(deps.panel ? createPanelTools(deps.panel) : []),
@@ -294,6 +302,14 @@ export function createAssistantPipeline(deps: AssistantPipelineDeps): CommandPip
   const cancelSubagents = (): void => {
     deps.subagentControl?.cancelAll()
   }
+  // Stop also lets go of whatever the pane is doing (#205, ADR 0038): the
+  // Run's wait ends now, the pane stays withheld until that action is
+  // observed to end. Two boundaries, not one — nothing here claims the
+  // action was undone.
+  const stopBrowsing = (): void => {
+    custody.abandon()
+    cancelSubagents()
+  }
   const pipeline = createCommandPipeline({
     llm: createDynamicLlm(getEnv, fetchFn, tools, clock, deps.onLlmUsage, deps.tracer, deps.getLearnedTerms),
     tts: deps.tts ?? silentTts,
@@ -301,16 +317,16 @@ export function createAssistantPipeline(deps: AssistantPipelineDeps): CommandPip
     tools,
     // Same-wall Blocker gate (#80, ADR 0010): the host current-page browser
     // verbs (click/type/scroll/…) target — the main tab's page.
-    currentHost: () => hostFromUrl(deps.controller.state().url ?? ''),
+    currentHost: () => hostFromUrl(controller.state().url ?? ''),
     // Search-loop rail's GUI search signature (#82): typed searches are
     // classified from the typed ref's snapshot facts.
-    describeRef: (ref) => deps.controller.describeRef(ref),
+    describeRef: (ref) => controller.describeRef(ref),
     // Observation ledger source URLs (#111): the visible tab's current page.
-    currentPageUrl: () => deps.controller.state().url ?? null,
+    currentPageUrl: () => controller.state().url ?? null,
     // No-progress rails (#126, ADR 0027): the visible tab's settled page
     // state — the Progress fingerprints' comparison input, read at gate
     // time and after each successful page-facing action.
-    settledPageState: () => deps.controller.settledState(),
+    settledPageState: () => controller.settledState(),
     // Worker observations (#123): completed reports' hidden provenance,
     // for kind "subagent" Evidence Checkpoint grounding.
     ...(deps.subagentObservations ? { subagentObservations: deps.subagentObservations } : {}),
@@ -319,7 +335,7 @@ export function createAssistantPipeline(deps: AssistantPipelineDeps): CommandPip
     ...(deps.browserSubspans ? { browserSubspans: deps.browserSubspans } : {}),
     ...(deps.emitDetail ? { emitDetail: deps.emitDetail } : {}),
     ...(deps.learnedTerms ? { learnedTerms: deps.learnedTerms } : {}),
-    onAbort: cancelSubagents,
+    onAbort: stopBrowsing,
     onPause: () => deps.subagentControl?.pauseAll(),
     onResume: () => deps.subagentControl?.resumeAll(),
     // A Steering directive corrects the objective (#119): delegated
