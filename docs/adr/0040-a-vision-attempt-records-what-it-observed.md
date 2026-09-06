@@ -47,6 +47,12 @@ cannot yet describe. Diagnosis comes first.
   first-token window exactly as it always has; the record says which kind of
   delta satisfied it and counts reasoning characters separately from content.
   Which stream events satisfy the deadline is unchanged.
+- **An attempt is the exchange, not the use made of it.** A Locate answer
+  that will not parse still ends `answered`: the endpoint answered, and the
+  parse failure is the surrounding request's outcome, recorded beside the
+  attempt rather than folded into it. The pair — `outcome: 'error'` over
+  `ending: 'answered'` — is the diagnosis that the model replied with
+  something unusable, which no single field could say.
 - **The record rides the existing seam.** It lands on the `vision_request`
   event, so it inherits the Run Trace's opt-in, the fault route's boundary
   (ADR 0031), and its retention. No second store, no second flag.
@@ -70,6 +76,10 @@ cannot yet describe. Diagnosis comes first.
   in the captured failures, and they are not evidence that live vision has
   recovered. That remains unverified until a separately approved live probe
   provides evidence.
+- The trace line puts the failure sentence before the milestones: the line
+  is cut for display, and a full set of milestones outruns that cut, so what
+  a cut costs is a trailing count rather than the words someone grepped for.
+  The limits in force stay in the record for the expander.
 - The record grows the `vision_request` line. It stays free of credentials,
   prompts, images, and reasoning text — reasoning is counted, never quoted.
 - Models, request caps and deadline semantics are unchanged by this

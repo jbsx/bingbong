@@ -657,6 +657,11 @@ describe('createZaiVisionApi: vision attempt records', () => {
     const attempt = only(httpError.observations)
     expect(attempt.ending).toBe('http_error')
     expect(attempt.responseStatus).toBe(429)
+    // The error body is read off the stream, so its bytes are counted: an
+    // absent first byte has to keep meaning "the body stayed silent".
+    expect(attempt.bytesRead).toBeGreaterThan(0)
+    expect(typeof attempt.firstByteAtMs).toBe('number')
+    expect(attempt.streamEvents).toBe(0)
   })
 
   it('a stream that settles after the deadline cannot rewrite the record of the attempt that failed', async () => {
@@ -733,6 +738,24 @@ describe('createZaiVisionApi: vision attempt records', () => {
     const attempt = only(observations)
     expect(attempt).toMatchObject({ ending: 'answered', thinking: 'enabled', maxTokens: LOCATE_MAX_TOKENS, wholeLookLimitMs: 60_000 })
     expect(attempt).not.toHaveProperty('requestedCapMs')
+  })
+
+  it('records an unusable Locate answer as answered: the exchange answered, the caller could not use it', async () => {
+    const { observations, observe } = observer()
+    const vision = createZaiVisionApi({
+      getEnv: () => ({ ...configuredEnv }),
+      fetch: async () => okResponse('somewhere near the middle'),
+    })
+
+    // The attempt is the exchange with the endpoint. Parsing the answer is
+    // the caller's, and its failure is the caller's outcome — recorded on the
+    // vision_request event beside this record, not folded into it.
+    await expect(vision.locate({ ...locateRequest, observe })).rejects.toThrow(/valid JSON point/)
+
+    const attempt = only(observations)
+    expect(attempt.ending).toBe('answered')
+    expect(attempt.contentChars).toBe('somewhere near the middle'.length)
+    expect(attempt).not.toHaveProperty('message')
   })
 
   it('never lets a throwing observer fail the Look it describes', async () => {

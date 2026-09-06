@@ -220,22 +220,26 @@ function list(value: unknown): string {
 /**
  * One vision attempt's milestones (#204), in the order they happen. A
  * milestone that never happened is left out rather than printed as a zero —
- * the gap between `resp` and `first-byte`, or the absence of both, is what
+ * the gap between `resp` and `byte`, or the absence of both, is what
  * separates a queued provider from a silent one.
+ *
+ * Only what a glance needs: the line is cut at SUMMARY_MAX_CHARS, so the
+ * limits in force and an unremarkable 200 stay in the record for the
+ * expander rather than crowding out the milestones and the count.
  */
 function attemptOf(value: unknown): string {
   if (typeof value !== 'object' || value === null) return ''
   const attempt = value as Record<string, unknown>
   const at = (label: string, ms: unknown): string => (typeof ms === 'number' ? `${label} ${Math.round(ms)}ms` : '')
+  const status = attempt.responseStatus
   return [
     str(attempt.ending),
     at('resp', attempt.responseAtMs),
-    typeof attempt.responseStatus === 'number' ? `http ${str(attempt.responseStatus)}` : '',
+    typeof status === 'number' && status !== 200 ? `http ${str(status)}` : '',
     at('byte', attempt.firstByteAtMs),
     at('reasoning', attempt.firstReasoningAtMs),
     at('content', attempt.firstContentAtMs),
     at('end', attempt.streamEndAtMs),
-    `limits ${str(attempt.firstTokenLimitMs)}/${str(attempt.wholeLookLimitMs)} ms`,
     `${str(attempt.progressEvents)}/${str(attempt.streamEvents)} events`,
     typeof attempt.malformedEvents === 'number' && attempt.malformedEvents > 0 ? `${str(attempt.malformedEvents)} malformed` : '',
   ]
@@ -291,8 +295,11 @@ function summarizeTrace(kind: string, record: Record<string, unknown>): string {
     case 'vision_request': {
       // The attempt's milestones read beside the outcome (#204): an eight-second
       // failure says which deadline fired and how far the exchange actually got.
+      // They go last, after the failure sentence, because this line is cut at
+      // SUMMARY_MAX_CHARS and a full set of milestones outruns it: what a cut
+      // costs is then a trailing count, never the message someone grepped for.
       const attempt = attemptOf(record.attempt)
-      return `${str(record.capability)} (${str(record.reason)}) ${str(record.outcome)} in ${str(record.durationMs)} ms${attempt === '' ? '' : ` [${attempt}]`}${record.message !== undefined ? `: ${str(record.message)}` : ''}`
+      return `${str(record.capability)} (${str(record.reason)}) ${str(record.outcome)} in ${str(record.durationMs)} ms${record.message !== undefined ? `: ${str(record.message)}` : ''}${attempt === '' ? '' : ` [${attempt}]`}`
     }
     case 'vision_budget':
       return `${str(record.reason)} ${record.granted === true ? 'granted' : `refused: ${str(record.refusal)}`}`

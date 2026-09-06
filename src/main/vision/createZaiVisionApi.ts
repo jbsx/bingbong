@@ -92,10 +92,20 @@ function parsePoint(answer: string, width: number, height: number): VisionLocati
   return { x: Math.round(x), y: Math.round(y) }
 }
 
-async function readError(response: Response): Promise<string> {
+/**
+ * The failure line for a non-2xx response, and how many bytes its body cost.
+ * The count matters because this path reads the body itself rather than
+ * through the instrumented stream (#204): without it the attempt would
+ * record no bytes at all, and an absent first byte means "the body stayed
+ * silent" — which would be a guess, and a wrong one.
+ */
+async function readError(response: Response): Promise<{ line: string; bytes: number }> {
   const body = await response.text().catch(() => '')
   const excerpt = body.slice(0, 200).replace(/\s+/g, ' ').trim()
-  return excerpt ? `${response.status}: ${excerpt}` : String(response.status)
+  return {
+    line: excerpt ? `${response.status}: ${excerpt}` : String(response.status),
+    bytes: Buffer.byteLength(body),
+  }
 }
 
 /** One scripted env hook (e2e harness): parse and validate the script, keep the
@@ -442,7 +452,13 @@ export function createZaiVisionApi(deps: ZaiVisionApiDeps): VisionModel {
         signal: controller.signal,
       })
       attempt.response(response.status)
-      if (!response.ok) throw new VisionHttpError(`Vision request failed (HTTP ${await readError(response)})`)
+      if (!response.ok) {
+        // Read in one call, not streamed: the first byte this records is the
+        // moment the body became observable, which is what was observed.
+        const failure = await readError(response)
+        if (failure.bytes > 0) attempt.signal({ kind: 'bytes', bytes: failure.bytes })
+        throw new VisionHttpError(`Vision request failed (HTTP ${failure.line})`)
+      }
       const content = await readSseStream(response, (signal) => {
         attempt.signal(signal)
         if (signal.kind === 'delta') clearTimeout(firstTokenTimer)

@@ -80,7 +80,12 @@ export const VISION_DEADLINE_NUDGE =
  * same. Recorded as observed — never inferred from the duration.
  */
 export type VisionAttemptEnding =
-  /** Content came back. */
+  /**
+   * Content came back. An attempt is the exchange with the endpoint, not
+   * the caller's use of what it said: a Locate answer that will not parse
+   * still `answered` here, and the parse failure is the surrounding
+   * request's outcome, recorded beside it.
+   */
   | 'answered'
   /** The first-token window elapsed with no recognized generation progress. */
   | 'first_token_deadline'
