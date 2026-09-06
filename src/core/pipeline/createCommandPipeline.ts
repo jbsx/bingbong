@@ -57,6 +57,7 @@ import {
   type ObservationRecord,
 } from '../session/observationLedger'
 import type { SessionEvidenceSnapshot, SessionEvidenceStore, ObservationCheckpointResult } from '../session/sessionEvidence'
+import { retainedUserObjective } from '../session/objectiveContinuity'
 import type { RunId, SessionGeneration } from '../session/sessionIdentity'
 import {
   evaluateEvidenceCheckpoint,
@@ -635,6 +636,17 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
     // live Observations — including ones this Run checkpointed
     // mid-flight.
     const evidenceSession: EvidenceSessionSource | undefined = continuity?.evidenceSession
+    /**
+     * The user's standing objective (#206, ADR 0039), read once from the
+     * same admission snapshot the Working Memory block rides — immutable
+     * for the Run, like the snapshot it comes from. Every round carries
+     * it, the reserved Answer round included: a Run that started as
+     * "keep looking" must still be answering the user's task at the end,
+     * and by then its own Run Notes are the loudest thing in context.
+     */
+    const retainedObjective = continuity
+      ? retainedUserObjective(continuity.memory, continuity.evidence)
+      : null
     // Admission evidence identities (#123): which Observations this Run
     // starts beside — anything else in the live store was checkpointed
     // mid-Run, so it is fresh by construction. The staleness gate reads
@@ -1157,6 +1169,9 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
               ...(roundFinalizeInstruction !== null ? { finalizeInstruction: roundFinalizeInstruction } : {}),
               ...(continuity ? { journal: continuity.snapshot } : {}),
               ...(continuity ? { memory: continuity.memory } : {}),
+              // The user's own objective (#206), beside the memory it was
+              // projected from — never in place of it.
+              ...(retainedObjective ? { objective: retainedObjective } : {}),
               // Checkpointed Session Evidence this Run starts beside (#121):
               // the immutable admission snapshot — mid-Run checkpoints ride
               // tool results, later Runs' admissions.

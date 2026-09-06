@@ -73,7 +73,7 @@ export function createLlmRounds(): LlmRounds {
 /** The request fields whose text the shape counts; callbacks, ids and flags are not content. */
 type LlmRequestContent = Pick<
   LlmRequest,
-  'command' | 'toolResults' | 'steering' | 'standingDirective' | 'finalizeInstruction' | 'journal' | 'memory' | 'evidence'
+  'command' | 'toolResults' | 'steering' | 'standingDirective' | 'finalizeInstruction' | 'objective' | 'journal' | 'memory' | 'evidence'
 >
 
 /**
@@ -90,6 +90,7 @@ export function llmRequestShape(request: LlmRequestContent): LlmRequestShape {
     ...(request.steering !== undefined ? { steering: request.steering } : {}),
     ...(request.standingDirective !== undefined ? { standingDirective: request.standingDirective } : {}),
     ...(request.finalizeInstruction !== undefined ? { finalizeInstruction: request.finalizeInstruction } : {}),
+    ...(request.objective !== undefined ? { objective: request.objective } : {}),
     ...(request.journal !== undefined ? { journal: request.journal } : {}),
     ...(request.memory !== undefined ? { memory: request.memory } : {}),
     ...(request.evidence !== undefined ? { evidence: request.evidence } : {}),

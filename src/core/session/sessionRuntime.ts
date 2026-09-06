@@ -26,6 +26,7 @@ import {
   type MemoryEntry,
   type MemoryEntryId,
   type MemoryPatch,
+  type MemoryPatchGrounding,
   type WorkingMemorySnapshot,
 } from './workingMemory'
 
@@ -827,6 +828,15 @@ export function createSessionRuntime(deps: {
     },
     commitRunContinuity(runId, outcome, text, patch, stop) {
       refreshContinuityProfile()
+      /**
+       * What a claimed user citation is checked against (#206, ADR 0039):
+       * the live store, at commit time. A Session that ended between the
+       * Answer and its Memory Commit grounds nothing — and a patch that
+       * needed grounding it cannot get is refused, not downgraded.
+       */
+      const grounding: MemoryPatchGrounding = {
+        isUserObservation: (id) => evidence?.observation(id)?.sourceKind === 'user',
+      }
       const normalized = text.trim()
       if (!liveRunIds.has(runId) || committedRunIds.has(runId) || normalized === '' || normalized.length > MAX_RUN_NOTE_CHARS) {
         return 'rejected'
@@ -843,6 +853,7 @@ export function createSessionRuntime(deps: {
           sessionId!,
           () => `memory-${projectionNextMemoryId++}` as MemoryEntryId,
           Number.MAX_SAFE_INTEGER,
+          grounding,
         )
         const reservePressure =
           estimateWorkingMemoryTokens(memory) >= continuityBudgets.memory.reserve ||
@@ -863,6 +874,7 @@ export function createSessionRuntime(deps: {
               sessionId!,
               () => `reserve-check-${++comparisonId}` as MemoryEntryId,
               Number.MAX_SAFE_INTEGER,
+              grounding,
             )
             if (compared !== null) comparisonMemory = compared
           }
@@ -878,6 +890,7 @@ export function createSessionRuntime(deps: {
           sessionId!,
           () => `memory-${proposedNextMemoryId++}` as MemoryEntryId,
           continuityBudgets.memory.hard * 4,
+          grounding,
         )
         if (applied === null) {
           let validationNextMemoryId = nextMemoryId
@@ -888,6 +901,7 @@ export function createSessionRuntime(deps: {
             sessionId!,
             () => `memory-${validationNextMemoryId++}` as MemoryEntryId,
             Number.MAX_SAFE_INTEGER,
+            grounding,
           )
           if (validWithoutHardLimit !== null) {
             degrade('hard_memory_rejection')

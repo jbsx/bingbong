@@ -2,6 +2,7 @@ import type { RunJournalSnapshot } from '../session/runJournal'
 import type { FinalizationCause, RunResolution } from '../session/runJournal'
 import type { MemoryEntryId, MemoryPatch, WorkingMemorySnapshot } from '../session/workingMemory'
 import type { SessionEvidenceSnapshot } from '../session/sessionEvidence'
+import type { RetainedUserObjective } from '../session/objectiveContinuity'
 import type { AnswerShape } from '../agent/answerContract'
 import type { SubagentReportFinding } from '../agent/subagentReport'
 import type { MishearProposal } from '../voice/learnedTerms'
@@ -58,6 +59,18 @@ export interface LlmRequest {
    * arriving directive and after that as the correction still in force.
    */
   standingDirective?: string
+  /**
+   * The user's standing objective (#206, ADR 0039): the objective and
+   * constraints the user's own words set, quoted from the User
+   * Observations that grounded them and projected from the same
+   * admission snapshot `memory` carries. A continuation command — "keep
+   * looking" — names no task, and the model's own Run Notes and
+   * Assessments are exactly the wrong place to recover one from: a
+   * summary that quietly rewrote "a post I found" into "a post I
+   * authored" reads as fluently as the truth. Absent when the Session
+   * holds no user-set objective it can still quote.
+   */
+  objective?: RetainedUserObjective
   /** One immutable Session Journal snapshot, captured when this Run was accepted. */
   journal?: RunJournalSnapshot
   /** One immutable Session Working Memory snapshot captured with the Journal. */

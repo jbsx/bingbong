@@ -12,7 +12,9 @@ import type {
   SessionContinuityBudgets,
   SessionEvidenceAcceptance,
   SessionEvidenceChange,
+  SessionRuntime,
 } from './sessionRuntime'
+import { parseMemoryPatch } from './workingMemory'
 
 class DeterministicIdentities implements SessionIdentitySource {
   readonly minted: string[] = []
@@ -1230,5 +1232,222 @@ describe('session evidence acceptance reporting', () => {
     runtime.accept(runtime.submit().submissionId)
 
     expect(runtime.end('app_closed')!.evidence).toEqual({ observations: 0, candidates: 0, contradictions: 0 })
+  })
+})
+
+// #206, ADR 0039: the objective and constraints the user set survive later
+// Runs, model summaries, and compaction — and end with the Session.
+describe('user objective continuity', () => {
+  /**
+   * A first Run that hears the user, grounds their exact words as a User
+   * Observation, and commits the objective and constraint those words
+   * establish — the state every continuation below starts from.
+   */
+  function establishObjective(runtime: SessionRuntime) {
+    const first = runtime.accept(runtime.submit().submissionId)
+    const words = runtime.evidenceStore()!.checkpointObservation({
+      sourceKind: 'user',
+      text: 'find that tier list post I found last week',
+      runId: first.runId,
+      originEvent: { producer: 'command', observationId: 'obs-1' as never },
+    })!.observation
+    const verdict = runtime.commitRunContinuity(first.runId, 'done', 'Searched two subreddits; no match yet.', parseMemoryPatch([
+      {
+        op: 'add',
+        entry: {
+          kind: 'objective',
+          subject: 'Find the tier list post',
+          detail: 'A post the user found last week.',
+          user_evidence: [words.id],
+        },
+      },
+      {
+        op: 'add',
+        entry: {
+          kind: 'constraint',
+          subject: 'Authorship',
+          detail: 'The user found the post; they did not write it.',
+          user_evidence: [words.id],
+        },
+      },
+    ])!)
+    runtime.finish(first.runId)
+    return { first, words, verdict }
+  }
+
+  it('admits the objective only on the user words the Session actually grounded', () => {
+    const { runtime } = harness()
+    const { verdict } = establishObjective(runtime)
+    expect(verdict).toBe('committed')
+
+    const second = runtime.accept(runtime.submit().submissionId)
+    expect(second.memory.map(({ id, kind, userEvidenceIds, objectiveId }) => ({ id, kind, userEvidenceIds, objectiveId }))).toEqual([
+      { id: 'memory-2', kind: 'objective', userEvidenceIds: ['memory-1'], objectiveId: undefined },
+      { id: 'memory-3', kind: 'constraint', userEvidenceIds: ['memory-1'], objectiveId: 'memory-2' },
+    ])
+
+    // An objective citing an identity that is not a User Observation has
+    // no authority to admit — a web finding is not the user.
+    const finding = runtime.evidenceStore()!.checkpointObservation({
+      sourceKind: 'web',
+      text: 'The post was written by u/someone.',
+      references: [{ url: 'https://old.reddit.com/r/x/comments/1' }],
+      runId: second.runId,
+    })!.observation
+    expect(runtime.commitRunContinuity(second.runId, 'done', 'Tried to promote a finding.', parseMemoryPatch([{
+      op: 'add',
+      entry: { kind: 'objective', subject: 'Find the post the user wrote', detail: 'Authored by the user.', user_evidence: [finding.id] },
+    }])!)).toBe('invalid_patch')
+  })
+
+  it('refuses a model summary that rewrites what the user set, and keeps the entry it aimed at', () => {
+    const { runtime } = harness()
+    establishObjective(runtime)
+
+    const second = runtime.accept(runtime.submit().submissionId)
+    expect(runtime.commitRunContinuity(second.runId, 'done', 'Assumed the user wrote it.', parseMemoryPatch([{
+      op: 'update',
+      id: 'memory-3',
+      entry: { kind: 'constraint', subject: 'Authorship', detail: 'The user authored the post.' },
+    }])!)).toBe('invalid_patch')
+    // The whole patch is refused, so the Run Note never lands either —
+    // the next Run's continuity is exactly what the user left.
+    runtime.finish(second.runId)
+
+    const third = runtime.accept(runtime.submit().submissionId)
+    expect(third.memory.map(({ id, detail }) => [id, detail])).toEqual([
+      ['memory-2', 'A post the user found last week.'],
+      ['memory-3', 'The user found the post; they did not write it.'],
+    ])
+  })
+
+  it('refuses a compaction that strips the objective of its user grounding', async () => {
+    const degraded: string[] = []
+    const runtime = createSessionRuntime({
+      clock: new FakeClock(),
+      identities: new DeterministicIdentities(),
+      continuityModel: 'test-model',
+      // High water sits above the objective and constraint alone and below
+      // them plus one bulky finding, so the finding is what crosses it.
+      continuityBudgets: budgets(roomyMemoryBudget, { high: 180, reserve: 900, hard: 1_000 }),
+      recentJournalEntries: 1,
+      recentMemoryEntries: 1,
+      onContinuityDegraded: ({ reason }) => degraded.push(reason),
+      // Compaction is the one seam that rewrites retained entries in
+      // bulk (#206): a condensed objective that quietly loses the
+      // citations behind it would launder the user's authority into the
+      // model's, so the replacement is refused whole.
+      compactContinuity: async ({ journal, memory }) => ({
+        journal,
+        memory: memory.map((entry) => (
+          entry.kind === 'objective' ? { ...entry, userEvidenceIds: undefined } : entry
+        )),
+      }),
+    })
+    establishObjective(runtime)
+
+    const second = runtime.accept(runtime.submit().submissionId)
+    runtime.evidenceStore()!.checkpointObservation({
+      sourceKind: 'web',
+      text: 'A tier list post from March.',
+      references: [{ url: 'https://old.reddit.com/r/x/comments/1' }],
+      runId: second.runId,
+    })
+    runtime.commitRunContinuity(second.runId, 'done', 'checked more pages'.repeat(6), parseMemoryPatch([{
+      op: 'add',
+      entry: { kind: 'finding', subject: 'March post', detail: 'x'.repeat(400), references: [{ url: 'https://old.reddit.com/r/x/comments/1' }] },
+    }])!)
+    await settleMaintenance()
+    runtime.finish(second.runId)
+
+    expect(degraded).toEqual(['compaction_invalid'])
+    const third = runtime.accept(runtime.submit().submissionId)
+    // Rejection leaves memory untouched, so the user's objective and
+    // constraint reach the continuation with their grounding intact.
+    expect(third.memory.filter(({ kind }) => kind !== 'finding').map(({ id, userEvidenceIds }) => [id, userEvidenceIds])).toEqual([
+      ['memory-2', ['memory-1']],
+      ['memory-3', ['memory-1']],
+    ])
+  })
+
+  it('preserves the objective through a compaction that condenses findings', async () => {
+    const degraded: string[] = []
+    const runtime = createSessionRuntime({
+      clock: new FakeClock(),
+      identities: new DeterministicIdentities(),
+      continuityModel: 'test-model',
+      // High water sits above the objective and constraint alone and below
+      // them plus the findings, so the findings are what crosses it.
+      continuityBudgets: budgets(roomyMemoryBudget, { high: 250, reserve: 900, hard: 1_000 }),
+      recentJournalEntries: 1,
+      // No finding is held back as recent, so both are genuinely eligible.
+      recentMemoryEntries: 0,
+      onContinuityDegraded: ({ reason }) => degraded.push(reason),
+      // What compaction is for: the expendable findings condense into one
+      // that still carries their sources, and nothing else is touched.
+      compactContinuity: async ({ journal, memory }) => {
+        const findings = memory.filter((entry) => entry.kind === 'finding')
+        return {
+          journal,
+          memory: [...memory.filter((entry) => entry.kind !== 'finding'), {
+            ...findings[0]!,
+            subject: 'Compacted findings',
+            detail: findings.map((entry) => entry.subject).join('; '),
+            references: findings.flatMap((entry) => entry.references),
+            provenance: findings[0]!.provenance,
+          }],
+        }
+      },
+    })
+    establishObjective(runtime)
+
+    const second = runtime.accept(runtime.submit().submissionId)
+    for (const path of ['1', '2']) {
+      runtime.evidenceStore()!.checkpointObservation({
+        sourceKind: 'web',
+        text: `A tier list post at ${path}.`,
+        references: [{ url: `https://old.reddit.com/r/x/comments/${path}` }],
+        runId: second.runId,
+      })
+    }
+    runtime.commitRunContinuity(second.runId, 'done', 'checked more pages', parseMemoryPatch([
+      {
+        op: 'add',
+        entry: { kind: 'finding', subject: 'March post', detail: 'x'.repeat(300), references: [{ url: 'https://old.reddit.com/r/x/comments/1' }] },
+      },
+      {
+        op: 'add',
+        entry: { kind: 'finding', subject: 'April post', detail: 'y'.repeat(300), references: [{ url: 'https://old.reddit.com/r/x/comments/2' }] },
+      },
+    ])!)
+    await settleMaintenance()
+    runtime.finish(second.runId)
+
+    expect(degraded).toEqual([])
+    const third = runtime.accept(runtime.submit().submissionId)
+    // The findings condensed into one — compaction did real work — while
+    // the user's objective and constraint came through untouched.
+    expect(third.memory.map(({ id, kind, subject, userEvidenceIds, objectiveId }) => ({ id, kind, subject, userEvidenceIds, objectiveId }))).toEqual([
+      { id: 'memory-2', kind: 'objective', subject: 'Find the tier list post', userEvidenceIds: ['memory-1'], objectiveId: undefined },
+      { id: 'memory-3', kind: 'constraint', subject: 'Authorship', userEvidenceIds: ['memory-1'], objectiveId: 'memory-2' },
+      { id: 'memory-6', kind: 'finding', subject: 'Compacted findings', userEvidenceIds: undefined, objectiveId: undefined },
+    ])
+  })
+
+  it('ends the objective with the Session, leaving nothing for the next one to inherit', () => {
+    const { runtime } = harness()
+    establishObjective(runtime)
+
+    runtime.end('reset')
+    const replacement = runtime.accept(runtime.submit().submissionId)
+
+    expect(replacement.memory).toEqual([])
+    expect(replacement.evidence.observations).toEqual([])
+    // And with the Session's store gone, a patch that cites the old user
+    // words grounds against nothing.
+    expect(runtime.commitRunContinuity(replacement.runId, 'done', 'Tried to resurrect the objective.', parseMemoryPatch([{
+      op: 'add',
+      entry: { kind: 'objective', subject: 'Find the tier list post', detail: 'A post the user found.', user_evidence: ['memory-1'] },
+    }])!)).toBe('invalid_patch')
   })
 })

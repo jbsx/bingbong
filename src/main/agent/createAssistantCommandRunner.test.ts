@@ -10,7 +10,7 @@ import { createFeedProjection } from '../../core/feed/feedProjection'
 import { createFeedPanelStateFold } from '../../core/panel/feedPanelState'
 import { FakeClock, RecordingTts, ScriptedLlm } from '../../core/testing/doubles'
 import type { RunId, SessionId, SessionIdentitySource, SubmissionId } from '../../core/session/sessionIdentity'
-import type { MemoryEntryId } from '../../core/session/workingMemory'
+import { parseMemoryPatch, type MemoryEntryId } from '../../core/session/workingMemory'
 import { createSessionRuntime } from '../../core/session/sessionRuntime'
 import type { SubmissionFeedback } from '../../core/session/submissionFeedback'
 import { createAssistantCommandRunner } from './createAssistantCommandRunner'
@@ -734,5 +734,295 @@ describe('assistant command runner', () => {
     expect(requests.at(-1)?.memory?.map(({ kind, subject }) => `${kind}: ${subject}`)).toContain(
       'assessment: Acme is cheapest',
     )
+  })
+
+  // #206, ADR 0039: the tier-list regression. A continuation Run must be
+  // given the objective the user actually set, not the one the model's own
+  // Run Notes and Assessments drifted into — "a post I found" stayed "a
+  // post I found" across every continuation below, or these fail.
+  describe('user objective across continuations (#206)', () => {
+    const FOUND = 'find that tier list post i found last week'
+    const REVISION = 'it was on a forum, not reddit'
+    const REPLACEMENT = 'forget that, book me a table for two tonight'
+
+    /** One record_evidence round citing the user's exact words. */
+    function citeUser(callId: string, words: string): AssistantTurn {
+      return { kind: 'tool_calls', calls: [{ id: callId, name: 'record_evidence', args: { kind: 'user', observation: words } }] }
+    }
+
+    function harness() {
+      const clock = new FakeClock(1_000)
+      const runtime = createSessionRuntime({ clock, identities: new DeterministicIdentities() })
+      const requests: LlmRequest[] = []
+      const queue: AssistantTurn[] = []
+      const degraded: string[] = []
+      const llm: LlmClient = {
+        complete(request) {
+          requests.push(request)
+          return Promise.resolve(queue.shift() ?? { kind: 'answer', speak: 'Nothing yet.', display: 'Nothing yet.' })
+        },
+      }
+      const pipeline = createCommandPipeline({
+        llm,
+        tts: new RecordingTts(),
+        clock,
+        tools: [createRecordEvidenceTool()],
+        currentPageUrl: () => 'https://old.reddit.com/r/tierlists',
+        onContinuityDegraded: (reason) => degraded.push(reason),
+      })
+      const runner = createAssistantCommandRunner({
+        pipeline,
+        runtime,
+        clock,
+        onSessionReset: () => {},
+        createRunPublisher: () => ({ publish: () => {} }),
+        publishFeedback: () => {},
+      })
+      return { runtime, runner, requests, queue, degraded }
+    }
+
+    /**
+     * The Run that establishes the objective: the model quotes the user's
+     * command as a User Observation, then records the objective and the
+     * constraint those words set. Leaves memory-1 (the user's words),
+     * memory-2 (the objective), memory-3 (the constraint).
+     */
+    async function establish(h: ReturnType<typeof harness>): Promise<void> {
+      h.queue.push(citeUser('c1', FOUND))
+      h.queue.push({
+        kind: 'answer',
+        speak: 'No match yet.',
+        display: 'Searched two subreddits.',
+        runNote: 'Searched two subreddits for the post the user found.',
+        memoryPatch: parseMemoryPatch([
+          {
+            op: 'add',
+            entry: {
+              kind: 'objective',
+              subject: 'Find the tier list post',
+              detail: 'A post the user found last week.',
+              user_evidence: ['memory-1'],
+            },
+          },
+          {
+            op: 'add',
+            entry: {
+              kind: 'constraint',
+              subject: 'Authorship',
+              detail: 'The user found the post; they did not write it.',
+              user_evidence: ['memory-1'],
+            },
+          },
+        ])!,
+      })
+      await h.runner.run(FOUND)
+    }
+
+    it('preserves the objective a model summary drifted away from', async () => {
+      const h = harness()
+      await establish(h)
+
+      // The drift, exactly as it happened: a Run Note and an Assessment
+      // that quietly promote the user from finder to author.
+      h.queue.push({
+        kind: 'answer',
+        speak: 'Still looking.',
+        display: 'No luck yet.',
+        runNote: 'Still hunting for the tier list post the user wrote last week.',
+        evidenceIds: ['memory-1' as MemoryEntryId],
+        memoryPatch: parseMemoryPatch([{
+          op: 'add',
+          entry: {
+            kind: 'assessment',
+            subject: 'Authorship',
+            detail: 'The user authored the post.',
+            references: [{ url: 'https://old.reddit.com/r/tierlists' }],
+          },
+        }])!,
+      })
+      await h.runner.run('keep looking')
+      await h.runner.run('keep looking')
+
+      const request = h.requests.at(-1)!
+      expect(request.command).toBe('keep looking')
+      expect(request.objective).toEqual({
+        id: 'memory-2',
+        userText: [FOUND],
+        constraints: [{ id: 'memory-3', userText: [FOUND] }],
+      })
+      // The drift really is in this Run's context — the objective is
+      // preserved beside it, not by its absence.
+      expect(request.journal?.map(({ text }) => text)).toContain(
+        'Still hunting for the tier list post the user wrote last week.',
+      )
+      expect(request.memory?.some(({ kind, detail }) => kind === 'assessment' && detail.includes('authored'))).toBe(true)
+    })
+
+    it('continues the same objective when the user revises a constraint', async () => {
+      const h = harness()
+      await establish(h)
+
+      h.queue.push(citeUser('c2', REVISION))
+      h.queue.push({
+        kind: 'answer',
+        speak: 'Understood.',
+        display: 'Searching forums instead.',
+        runNote: 'Narrowed the search to forums.',
+        memoryPatch: parseMemoryPatch([{
+          op: 'update',
+          id: 'memory-3',
+          entry: {
+            kind: 'constraint',
+            subject: 'Authorship',
+            detail: 'The user found it on a forum, not on Reddit.',
+            user_evidence: ['memory-4'],
+          },
+        }])!,
+      })
+      await h.runner.run(REVISION)
+      await h.runner.run('keep looking')
+
+      // Same objective identity, same constraint identity: a revision
+      // continues the task rather than starting a parallel one. The
+      // constraint now quotes both the words that set it and the words
+      // that changed it — a revision adds grounding, it does not swap it.
+      expect(h.requests.at(-1)?.objective).toEqual({
+        id: 'memory-2',
+        userText: [FOUND],
+        constraints: [{ id: 'memory-3', userText: [FOUND, REVISION] }],
+      })
+      // The revision was admitted, not refused and swallowed.
+      expect(h.degraded).not.toContain('invalid_memory')
+    })
+
+    it('hands a replacement objective none of the old constraints', async () => {
+      const h = harness()
+      await establish(h)
+
+      h.queue.push(citeUser('c2', REPLACEMENT))
+      h.queue.push({
+        kind: 'answer',
+        speak: 'On it.',
+        display: 'Looking for tables.',
+        runNote: 'Switched to booking a table.',
+        memoryPatch: parseMemoryPatch([{
+          op: 'add',
+          entry: {
+            kind: 'objective',
+            subject: 'Book a table',
+            detail: 'A table for two tonight.',
+            user_evidence: ['memory-4'],
+          },
+        }])!,
+      })
+      await h.runner.run(REPLACEMENT)
+      await h.runner.run('keep looking')
+
+      expect(h.requests.at(-1)?.objective).toEqual({
+        id: 'memory-5',
+        userText: [REPLACEMENT],
+        constraints: [],
+      })
+      // The retired objective is still on the record, marked as retired
+      // rather than deleted.
+      expect(h.requests.at(-1)?.memory?.map(({ id, kind, status }) => [id, kind, status])).toContainEqual([
+        'memory-2', 'objective', 'superseded',
+      ])
+    })
+
+    it('leaves the objective standing when the model cannot quote the user for a change', async () => {
+      const h = harness()
+      await establish(h)
+
+      // Two ambiguous readings the model might act on alone: rewrite the
+      // user's constraint, or declare a new objective from its own
+      // reading. Neither carries the user's words, so neither lands.
+      h.queue.push({
+        kind: 'answer',
+        speak: 'Rewriting the task.',
+        display: 'Rewriting the task.',
+        runNote: 'Decided the user wrote the post.',
+        memoryPatch: parseMemoryPatch([{
+          op: 'update',
+          id: 'memory-3',
+          entry: { kind: 'constraint', subject: 'Authorship', detail: 'The user authored the post.' },
+        }])!,
+      })
+      await h.runner.run('keep looking')
+      h.queue.push({
+        kind: 'answer',
+        speak: 'Trying a new angle.',
+        display: 'Trying a new angle.',
+        runNote: 'Reframed the task.',
+        memoryPatch: parseMemoryPatch([{
+          op: 'add',
+          entry: { kind: 'objective', subject: 'Find the post the user wrote', detail: 'Authored by the user.' },
+        }])!,
+      })
+      await h.runner.run('keep looking')
+      await h.runner.run('keep looking')
+
+      // The rewrite was refused outright; the model's own objective was
+      // admitted as the model's, and neither displaced the user's.
+      expect(h.degraded).toContain('invalid_memory')
+      expect(h.requests.at(-1)?.objective).toEqual({
+        id: 'memory-2',
+        userText: [FOUND],
+        constraints: [{ id: 'memory-3', userText: [FOUND] }],
+      })
+      expect(h.requests.at(-1)?.memory?.map(({ id, subject }) => [id, subject])).toContainEqual([
+        'memory-4', 'Find the post the user wrote',
+      ])
+    })
+
+    it('will not retire the objective on a rewording of the same task', async () => {
+      const h = harness()
+      await establish(h)
+
+      // The ambiguous transition, resolved the wrong way: the model reads
+      // "keep looking" as a new task and declares one, grounding it in the
+      // only user words it has — the ones the objective already stands on.
+      // Admitting that would drop every constraint silently, so it is
+      // refused and the model is left to ask the user which they meant.
+      h.queue.push({
+        kind: 'answer',
+        speak: 'Starting over.',
+        display: 'Starting over.',
+        runNote: 'Treated this as a new task.',
+        memoryPatch: parseMemoryPatch([{
+          op: 'add',
+          entry: {
+            kind: 'objective',
+            subject: 'Locate the tier list post',
+            detail: 'The same task, said differently.',
+            user_evidence: ['memory-1'],
+          },
+        }])!,
+      })
+      await h.runner.run('keep looking')
+      await h.runner.run('keep looking')
+
+      expect(h.degraded).toContain('invalid_memory')
+      expect(h.requests.at(-1)?.objective).toEqual({
+        id: 'memory-2',
+        userText: [FOUND],
+        constraints: [{ id: 'memory-3', userText: [FOUND] }],
+      })
+      expect(h.requests.at(-1)?.memory?.map(({ id, status }) => [id, status])).toEqual([
+        ['memory-2', undefined],
+        ['memory-3', undefined],
+      ])
+    })
+
+    it('carries no objective into the Session that replaces this one', async () => {
+      const h = harness()
+      await establish(h)
+
+      h.runtime.end('reset')
+      await h.runner.run('keep looking')
+
+      expect(h.requests.at(-1)?.objective).toBeUndefined()
+      expect(h.requests.at(-1)?.memory).toEqual([])
+    })
   })
 })

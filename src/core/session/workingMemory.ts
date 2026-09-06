@@ -20,6 +20,26 @@ export const MAX_MEMORY_DETAIL_CHARS = 2_000
 export const MAX_MEMORY_RATIONALE_CHARS = 1_000
 export const MAX_MEMORY_STATUS_CHARS = 100
 export const MAX_MEMORY_REFERENCES = 10
+/**
+ * How many User Observations one objective or constraint may stand on
+ * (#206): the words that established it plus the words that later revised
+ * it, since a revision adds to its grounding rather than replacing it.
+ */
+export const MAX_USER_EVIDENCE = 10
+
+/**
+ * The kinds that can carry User Authority (#206, ADR 0039): the task the
+ * user set and the bounds they set on it. Every other kind is the model's
+ * own record of its work, and carries no user authority to protect.
+ */
+export const USER_AUTHORITY_KINDS: readonly MemoryKind[] = Object.freeze(['objective', 'constraint'])
+
+/**
+ * The status the application stamps on an objective a later objective
+ * replaced (#206). Application-owned: the model asks for a replacement by
+ * recording a new user-grounded objective, never by writing this itself.
+ */
+export const SUPERSEDED_OBJECTIVE_STATUS = 'superseded'
 
 export interface MemoryReference {
   readonly url: string
@@ -41,6 +61,55 @@ export interface MemoryEntry {
   readonly rationale?: string
   readonly references: readonly Readonly<MemoryReference>[]
   readonly provenance: readonly Readonly<MemoryProvenance>[]
+  /**
+   * The User Observation identities this entry's authority stands on
+   * (#206, ADR 0039). An operation earns them only by citing Observations
+   * the Session already grounded in the user's own words, so a Run Note,
+   * an Assessment, or any other model summary can never make itself a
+   * user fact. Present only on an objective or constraint the user set.
+   */
+  readonly userEvidenceIds?: readonly MemoryEntryId[]
+  /**
+   * Which objective a constraint belongs to (#206): the objective Memory
+   * Entry's identity, bound by the application when the constraint is
+   * admitted. A revision under the same identity keeps every constraint;
+   * a replacement objective therefore inherits none of them.
+   */
+  readonly objectiveId?: MemoryEntryId
+}
+
+/**
+ * Whether this entry carries User Authority (#206): the user's own words,
+ * not the model's reading of them, set it. Named for what grounds the
+ * entry rather than for who typed its prose — the model still writes the
+ * subject and detail of an entry the user's words establish.
+ */
+export function hasUserAuthority(entry: Pick<MemoryEntry, 'kind' | 'userEvidenceIds'>): boolean {
+  return USER_AUTHORITY_KINDS.includes(entry.kind) && (entry.userEvidenceIds?.length ?? 0) > 0
+}
+
+/**
+ * The objective the Session is currently working (#206): the newest one
+ * the user set that no later objective replaced. Model-authored
+ * objectives are the model's own framing of the work and never stand in
+ * for the user's — the whole point of the retained objective is that a
+ * continuation reads the user's task, not a summary of it.
+ */
+export function currentUserObjective(memory: readonly MemoryEntry[]): MemoryEntry | null {
+  for (let index = memory.length - 1; index >= 0; index -= 1) {
+    const entry = memory[index]!
+    if (entry.kind === 'objective' && hasUserAuthority(entry) && entry.status !== SUPERSEDED_OBJECTIVE_STATUS) {
+      return entry
+    }
+  }
+  return null
+}
+
+/** The user's own constraints scoped to one objective, in the order they were set (#206). */
+export function userConstraintsFor(memory: readonly MemoryEntry[], objectiveId: MemoryEntryId): MemoryEntry[] {
+  return memory.filter((entry) =>
+    entry.kind === 'constraint' && hasUserAuthority(entry) && entry.objectiveId === objectiveId,
+  )
 }
 
 export type WorkingMemorySnapshot = readonly Readonly<MemoryEntry>[]
@@ -53,6 +122,20 @@ interface ProposedMemoryFields {
   rationale?: string
   references?: MemoryReference[]
   subagentId?: string
+  /** Cited User Observation identities (#206); grounded before they become authority. */
+  userEvidence?: MemoryEntryId[]
+  /** The objective a constraint is set on (#206); the current objective when omitted. */
+  objectiveId?: MemoryEntryId
+}
+
+/**
+ * What the patch checks a claimed user citation against (#206): the live
+ * Session Evidence store, asked one identity at a time. Absent, no
+ * operation can claim user authority at all — an unverifiable claim is
+ * not a weaker claim, it is no claim.
+ */
+export interface MemoryPatchGrounding {
+  isUserObservation(id: MemoryEntryId): boolean
 }
 
 export type MemoryPatchOperation =
@@ -116,10 +199,23 @@ function references(value: unknown): MemoryReference[] | null {
  *  Entries and the Session Evidence forms that cite the same sources. */
 export const parseMemoryReferences = references
 
+/** Parses the cited User Observation identities (#206): a bounded, deduplicated id list. */
+function userEvidence(value: unknown): MemoryEntryId[] | undefined | null {
+  if (value === undefined) return undefined
+  if (!Array.isArray(value) || value.length === 0 || value.length > MAX_USER_EVIDENCE) return null
+  const parsed: MemoryEntryId[] = []
+  for (const item of value) {
+    if (typeof item !== 'string' || item.trim() === '') return null
+    const id = item.trim() as MemoryEntryId
+    if (!parsed.includes(id)) parsed.push(id)
+  }
+  return parsed
+}
+
 function proposedFields(value: unknown): ProposedMemoryFields | null {
   const raw = object(value)
   if (!raw) return null
-  const allowed = new Set(['kind', 'subject', 'detail', 'status', 'rationale', 'references', 'subagent_id'])
+  const allowed = new Set(['kind', 'subject', 'detail', 'status', 'rationale', 'references', 'subagent_id', 'user_evidence', 'objective_id'])
   if (Object.keys(raw).some((key) => !allowed.has(key))) return null
   const kind = raw.kind
   const subject = boundedString(raw.subject, MAX_MEMORY_SUBJECT_CHARS)
@@ -128,9 +224,22 @@ function proposedFields(value: unknown): ProposedMemoryFields | null {
   const rationale = boundedString(raw.rationale, MAX_MEMORY_RATIONALE_CHARS, true)
   const refs = references(raw.references)
   const agent = boundedString(raw.subagent_id, 200, true)
+  const cited = userEvidence(raw.user_evidence)
+  const objectiveId = boundedString(raw.objective_id, MAX_MEMORY_SUBJECT_CHARS, true)
   if (!MEMORY_KINDS.includes(kind as MemoryKind) || !subject || !detail || status === null || rationale === null || !refs || agent === null) {
     return null
   }
+  if (cited === null || objectiveId === null) return null
+  // `superseded` is how the application records that a later objective
+  // replaced this one (#206). A model that could simply write the word
+  // would retire the user's objective by assertion — the one thing the
+  // scoping fields exist to stop — so on these kinds the word is reserved.
+  if (USER_AUTHORITY_KINDS.includes(kind as MemoryKind) && status === SUPERSEDED_OBJECTIVE_STATUS) return null
+  // The scoping fields belong to the objective pair alone (#206): offered
+  // on any other kind they are a claim the shape does not make, not a
+  // field to ignore.
+  if (!USER_AUTHORITY_KINDS.includes(kind as MemoryKind) && (cited !== undefined || objectiveId !== undefined)) return null
+  if (kind === 'objective' && objectiveId !== undefined) return null
   if ((kind === 'finding' || kind === 'assessment') && refs.length === 0) return null
   return {
     kind: kind as MemoryKind,
@@ -140,6 +249,8 @@ function proposedFields(value: unknown): ProposedMemoryFields | null {
     ...(rationale ? { rationale } : {}),
     ...(refs.length > 0 ? { references: refs } : {}),
     ...(agent ? { subagentId: agent } : {}),
+    ...(cited !== undefined ? { userEvidence: cited } : {}),
+    ...(objectiveId !== undefined ? { objectiveId: objectiveId as MemoryEntryId } : {}),
   }
 }
 
@@ -260,6 +371,17 @@ function storedEntryIsInvalid(entry: MemoryEntry): boolean {
   if (boundedString(entry.status, MAX_MEMORY_STATUS_CHARS, true) === null) return true
   if (boundedString(entry.rationale, MAX_MEMORY_RATIONALE_CHARS, true) === null) return true
   if (entry.provenance.length === 0 || entry.references.length > MAX_MEMORY_REFERENCES) return true
+  // The scoping fields are the application's own (#206): stored state that
+  // carries them on the wrong kind, unbounded, or empty is not authority
+  // to honour — it is a claim nothing minted.
+  if (entry.userEvidenceIds !== undefined) {
+    if (!USER_AUTHORITY_KINDS.includes(entry.kind)) return true
+    if (!Array.isArray(entry.userEvidenceIds) || entry.userEvidenceIds.length === 0 || entry.userEvidenceIds.length > MAX_USER_EVIDENCE) return true
+    if (entry.userEvidenceIds.some((id) => typeof id !== 'string' || id.trim() === '')) return true
+  }
+  if (entry.objectiveId !== undefined && (entry.kind !== 'constraint' || typeof entry.objectiveId !== 'string' || entry.objectiveId.trim() === '')) {
+    return true
+  }
   if (entry.provenance.some((source) =>
     typeof source.runId !== 'string' || source.runId === '' ||
     boundedString(source.subagentId, 200, true) === null
@@ -285,15 +407,88 @@ export function applyMemoryPatch(
   sessionId: SessionId,
   mintId: () => MemoryEntryId,
   maxChars: number,
+  grounding?: MemoryPatchGrounding,
 ): MemoryEntry[] | null {
   const draft = current.map((entry) => ({
     ...entry,
     references: [...entry.references],
     provenance: [...entry.provenance],
   }))
+  /**
+   * User authority is earned, never asserted (#206, ADR 0039): every
+   * cited identity must be a User Observation this Session grounded in
+   * the user's own words. Nothing to check against refuses the claim.
+   */
+  const citationsHold = (cited: readonly MemoryEntryId[] | undefined): boolean =>
+    cited === undefined || (grounding !== undefined && cited.every((id) => grounding.isUserObservation(id)))
+  const objectiveExists = (id: MemoryEntryId): boolean =>
+    draft.some((entry) => entry.id === id && entry.kind === 'objective')
+  /**
+   * Which objective a constraint lands on when it names none: the one in
+   * force. Only a constraint the user set is scoped — the model's own
+   * constraints are its working notes, and nothing reads their scope.
+   */
+  const scopedObjectiveId = (fields: ProposedMemoryFields, fallback?: MemoryEntryId): MemoryEntryId | undefined => {
+    if (fields.kind !== 'constraint' || fields.userEvidence === undefined) return undefined
+    return fields.objectiveId ?? fallback ?? currentUserObjective(draft)?.id
+  }
+  /**
+   * A revision adds to an entry's grounding, it does not swap it (#206):
+   * the words that established the entry stay cited beside the words that
+   * changed it, so a "revision" can never quietly detach a constraint
+   * from what the user originally said. Past the bound, the establishing
+   * citation and the most recent ones are the two ends that matter.
+   */
+  const retainedCitations = (
+    existing: readonly MemoryEntryId[] | undefined,
+    added: readonly MemoryEntryId[],
+  ): MemoryEntryId[] => {
+    const merged = [...(existing ?? [])]
+    for (const id of added) if (!merged.includes(id)) merged.push(id)
+    return merged.length <= MAX_USER_EVIDENCE
+      ? merged
+      : [merged[0]!, ...merged.slice(merged.length - (MAX_USER_EVIDENCE - 1))]
+  }
+  /**
+   * Constraints admitted before the objective they belong to (#206): a
+   * patch may list them in either order, so binding to an objective the
+   * same patch adds later is settled once the whole patch has been read.
+   */
+  const unboundConstraints: number[] = []
   for (const operation of patch) {
     if (operation.op === 'add') {
       if (hasCanonicalDuplicate(operation.entry, draft)) return null
+      if (!citationsHold(operation.entry.userEvidence)) return null
+      const objectiveId = scopedObjectiveId(operation.entry)
+      if (objectiveId !== undefined && !objectiveExists(objectiveId)) return null
+      // An explicitly replacing objective retires the one it replaces
+      // (#206): the retired objective and its constraints stay stored
+      // under their own identities, and the new objective inherits
+      // neither. Only the user can do this — a model-authored objective
+      // is the model's framing of the work, not a new task.
+      if (operation.entry.kind === 'objective' && operation.entry.userEvidence !== undefined) {
+        const replaced = currentUserObjective(draft)
+        // And only new words can do it. Re-citing the words the current
+        // objective already stands on is a rewording of the same task,
+        // not a request for a different one — admitting it would retire
+        // the user's objective and drop every constraint on the model's
+        // say-so, which is the drift this whole seam exists to stop. The
+        // model asks the user which they meant instead.
+        if (replaced !== null) {
+          const alreadyCited = new Set(replaced.userEvidenceIds ?? [])
+          if (operation.entry.userEvidence.every((id) => alreadyCited.has(id))) return null
+          const replacedIndex = draft.findIndex((entry) => entry.id === replaced.id)
+          draft[replacedIndex] = { ...draft[replacedIndex]!, status: SUPERSEDED_OBJECTIVE_STATUS }
+        }
+      }
+      // A constraint the user set has to be a constraint *on something*:
+      // without an objective to scope it, "does not inherit" and "keeps
+      // every one" are the same outcome, and the distinction ADR 0039
+      // draws would exist only on paper. An objective later in this same
+      // patch still counts, so the decision waits for the whole patch.
+      if (operation.entry.kind === 'constraint' && operation.entry.userEvidence !== undefined && objectiveId === undefined) {
+        unboundConstraints.push(draft.length)
+      }
       draft.push({
         id: mintId(),
         sessionId,
@@ -304,12 +499,25 @@ export function applyMemoryPatch(
         ...(operation.entry.rationale ? { rationale: operation.entry.rationale } : {}),
         references: operation.entry.references ?? [],
         provenance: [{ runId, ...(operation.entry.subagentId ? { subagentId: operation.entry.subagentId } : {}) }],
+        ...(operation.entry.userEvidence ? { userEvidenceIds: operation.entry.userEvidence } : {}),
+        ...(objectiveId !== undefined ? { objectiveId } : {}),
       })
       continue
     }
     const index = draft.findIndex((entry) => entry.id === operation.id)
     if (index === -1) return null
     const existing = draft[index]!
+    // What the user set, only the user unsets (#206): a Run Note or an
+    // Assessment cannot rewrite or delete the objective and constraints
+    // the user's own words established. An update stands only when it
+    // carries the user's words itself — the words are still in Session
+    // Evidence, so re-citing them costs a lookup, not a guess.
+    if (hasUserAuthority(existing)) {
+      if (operation.op === 'remove') return null
+      if (operation.op === 'update' && (operation.entry.userEvidence === undefined || operation.entry.kind !== existing.kind)) {
+        return null
+      }
+    }
     if (operation.op === 'remove') {
       const permitted = operation.reason === 'invalid'
         ? storedEntryIsInvalid(existing)
@@ -332,6 +540,15 @@ export function applyMemoryPatch(
       continue
     }
     if (hasCanonicalDuplicate(operation.entry, draft, existing.id)) return null
+    if (!citationsHold(operation.entry.userEvidence)) return null
+    // A revision continues the same objective (#206): the constraint keeps
+    // the identity it was set on unless the operation names another live
+    // one, so correcting a constraint never re-parents it by omission.
+    const objectiveId = scopedObjectiveId(operation.entry, existing.objectiveId)
+    if (objectiveId !== undefined && !objectiveExists(objectiveId)) return null
+    const userEvidenceIds = operation.entry.userEvidence === undefined
+      ? undefined
+      : retainedCitations(hasUserAuthority(existing) ? existing.userEvidenceIds : undefined, operation.entry.userEvidence)
     const source = { runId, ...(operation.entry.subagentId ? { subagentId: operation.entry.subagentId } : {}) }
     draft[index] = {
       id: existing.id,
@@ -343,7 +560,16 @@ export function applyMemoryPatch(
       ...(operation.entry.rationale ? { rationale: operation.entry.rationale } : {}),
       references: operation.entry.references ?? [],
       provenance: [...existing.provenance, source],
+      ...(userEvidenceIds ? { userEvidenceIds } : {}),
+      ...(objectiveId !== undefined ? { objectiveId } : {}),
     }
+  }
+  // Bind what the patch left unscoped to the objective the finished patch
+  // leaves in force; a user constraint with none is still refused.
+  for (const index of unboundConstraints) {
+    const objectiveId = currentUserObjective(draft)?.id
+    if (objectiveId === undefined) return null
+    draft[index] = { ...draft[index]!, objectiveId }
   }
   return JSON.stringify(draft).length <= maxChars ? draft : null
 }

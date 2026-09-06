@@ -11,6 +11,7 @@ import type {
 import { createHash } from 'node:crypto'
 import type { Tool, ToolParameterSpec } from '../../core/pipeline/tool'
 import type { ModelEndpointConfig } from '../../core/agent/modelRouting'
+import type { RetainedUserObjective } from '../../core/session/objectiveContinuity'
 import { parseAssistantAnswer } from '../../core/agent/answerContract'
 import { reportFault } from '../../core/trace/fault'
 
@@ -183,6 +184,42 @@ export function steeringDirectiveMessage(directive: string): string {
 }
 
 /**
+ * The retained objective's wire message (#206, ADR 0039): the user's own
+ * words for the task, on their own lines behind a label — the Standing
+ * Directive's shape, for the Standing Directive's reason. Words the model
+ * must be able to quote exactly are never wrapped in a sentence of ours,
+ * and the objective is precisely what a later Run has to quote back when
+ * it revises the entry the user set.
+ *
+ * Nothing here restates the model's own subject or detail for the
+ * objective: those already ride in the Working Memory block, where they
+ * are legible as one reading of the task. Putting them here too would
+ * make our paraphrase indistinguishable from the user's words, which is
+ * the failure this message exists to prevent.
+ *
+ * The closing line says only what has to ride every round — whose words
+ * these are, and that this request continues them. How a Run records a
+ * revision or a replacement belongs to the orchestrator prompt, which
+ * owns the memory_patch contract; stating it twice would be two copies
+ * of one policy, drifting apart a round at a time.
+ */
+export function retainedObjectiveMessage(objective: RetainedUserObjective): string {
+  const lines = [
+    `Standing objective (${objective.id}) — the user's own words:`,
+    ...objective.userText,
+  ]
+  for (const constraint of objective.constraints) {
+    lines.push('', `Constraint the user set (${constraint.id}), in their own words:`, ...constraint.userText)
+  }
+  lines.push(
+    '',
+    'These are the user\'s words, not your notes or your summary of them. This request continues that ' +
+      'objective: work it as the user stated it, whatever your own earlier notes now say.',
+  )
+  return lines.join('\n')
+}
+
+/**
  * The Standing Directive's wire message (#167): the same correction, in the
  * user's own words, on every later round. Worded as the standing correction
  * it is rather than as a fresh arrival — the round that carried it as
@@ -219,6 +256,10 @@ export function createOpenAiLlmClient(deps: OpenAiLlmClientDeps): LlmClient {
       ...memoryMessages(request.memory ?? []),
       ...evidenceMessages(request.evidence),
       ...journalMessages(request.journal ?? []),
+      // The user's objective rides immediately above the command (#206):
+      // "keep looking" is only readable against the task it continues,
+      // and a continuation command has nowhere else to find one.
+      ...(request.objective ? [{ role: 'user' as const, content: retainedObjectiveMessage(request.objective) }] : []),
       {
         role: 'user',
         // The truncation note rides the command itself (#61): one user

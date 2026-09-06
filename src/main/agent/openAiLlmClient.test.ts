@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { createOpenAiLlmClient, promptHashOf, standingDirectiveMessage, TRUNCATION_NOTE } from './openAiLlmClient'
+import { createOpenAiLlmClient, promptHashOf, retainedObjectiveMessage, standingDirectiveMessage, TRUNCATION_NOTE } from './openAiLlmClient'
 import { ORCHESTRATOR_SYSTEM_PROMPT } from './orchestratorPrompt'
 import { createBrowserTools } from '../../core/pipeline/browserTools'
 import { createMediaTools } from '../../core/pipeline/mediaTools'
@@ -313,6 +313,56 @@ describe('openAiLlmClient', () => {
     // And it is labelled as what it is: internal, and off-limits until
     // the user explicitly asks why work stopped.
     expect(content).toMatch(/"stop" field is internal[\s\S]*only when the user explicitly asks why work stopped/)
+  })
+
+  it("puts the user's own objective directly above the continuation command (#206)", async () => {
+    const fetch = new ScriptedFetch([
+      completionResponse({ content: '{"speak":"Still looking.","display":"Still looking.","run_note":"Kept looking."}' }),
+    ])
+    const client = makeClient(fetch)
+
+    await client.complete({
+      command: 'keep looking',
+      toolResults: [],
+      objective: {
+        id: 'memory-2' as never,
+        userText: ['find that tier list post i found last week'],
+        constraints: [{ id: 'memory-3' as never, userText: ['it was on a forum, not reddit'] }],
+      },
+    })
+
+    const messages = fetch.calls[0].body.messages
+    // "keep looking" is only readable against the task it continues, so
+    // the user's words sit immediately above it.
+    expect(messages[1]).toEqual({
+      role: 'user',
+      content: retainedObjectiveMessage({
+        id: 'memory-2' as never,
+        userText: ['find that tier list post i found last week'],
+        constraints: [{ id: 'memory-3' as never, userText: ['it was on a forum, not reddit'] }],
+      }),
+    })
+    expect(messages[2]).toEqual({ role: 'user', content: 'keep looking' })
+    // The user's words are quoted on their own lines behind a label, not
+    // wrapped in a sentence of ours — the same rule the Standing
+    // Directive earned (#167), for the same reason: these are the words
+    // the model has to be able to quote back verbatim.
+    const content = messages[1].content as string
+    expect(content).toContain('\nfind that tier list post i found last week\n')
+    expect(content).toContain('\nit was on a forum, not reddit\n')
+    expect(content).toContain('memory-2')
+    expect(content).toContain('memory-3')
+  })
+
+  it('sends no objective message when the Session holds no user objective (#206)', async () => {
+    const fetch = new ScriptedFetch([
+      completionResponse({ content: '{"speak":"Done.","display":"Done.","run_note":"Done."}' }),
+    ])
+    const client = makeClient(fetch)
+
+    await client.complete({ command: 'keep looking', toolResults: [] })
+
+    expect(fetch.calls[0].body.messages[1]).toEqual({ role: 'user', content: 'keep looking' })
   })
 
   it('places source-attributed Working Memory in a separately delimited untrusted section', async () => {

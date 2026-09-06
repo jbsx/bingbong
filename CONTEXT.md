@@ -380,6 +380,24 @@ provenance. Updating an identity replaces its active value; resolving retains
 its outcome; removal is reserved for invalid or duplicate entries. Web-derived
 content is quoted, source-attributed data and can never be an instruction.
 
+**User Authority**:
+The property of an objective or constraint Memory Entry that the user's own
+words set. It is earned by citing User Observations, never asserted: a Run
+Note, an Assessment, or any other model summary cannot manufacture it, and an
+entry that holds it can only be changed by an operation the user's words
+ground. Every other Memory Entry kind is the model's own record of its work.
+_Avoid_: user flag, trusted entry
+
+**Retained Objective**:
+The objective and constraints a continuation Run is given, projected from the
+Memory Entries User Authority established and quoted from the User
+Observations behind them. A continuation command names no task of its own, so
+this is what one is read against. A revised constraint continues the same
+objective identity; a replacement objective retires the previous one and
+inherits none of its constraints; an ambiguous transition is clarified with the
+user rather than resolved silently. It ends with the Session.
+_Avoid_: standing objective store, remembered task
+
 **Session Evidence**:
 Source-grounded Session Working Memory that prevents repeated work and supports
 later Assessments and Answers. It may survive a failed or cancelled Run once
