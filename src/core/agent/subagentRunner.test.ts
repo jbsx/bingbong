@@ -683,11 +683,18 @@ describe('runSubagent', () => {
         ok: false,
         error: expect.stringMatching(/www\.reddit\.com is walled for this run \(Blocker: challenge\)/),
       })
-      // Subagents cannot ask the user directly: the refusal names the
-      // ASK_USER relay, not the orchestrator's direct ask.
-      expect((refusal.outcome as { error: string }).error).toMatch(/ASK_USER: <question>/)
-      expect((refusal.outcome as { error: string }).error).toMatch(/genuinely different site/)
     }
+    const [nudged, tripped] = refusals.map((refusal) => (refusal.outcome as { error: string }).error)
+    // Subagents cannot ask the user directly: the recoverable refusal
+    // names the ASK_USER relay, not the orchestrator's direct ask.
+    expect(nudged).toMatch(/ASK_USER: <question>/)
+    expect(nudged).toMatch(/genuinely different site/)
+    // The second refused round ends the worker for `blocker` (#202), and
+    // the demand is the worker's own — a report, never an answer.
+    expect(tripped).toMatch(/^Not executed — /)
+    expect(tripped).toContain('The run kept interacting with www.reddit.com after it was walled (Blocker: challenge)')
+    expect(tripped).toContain('final report JSON')
+    expect(tripped).not.toMatch(/final answer JSON/)
     // The marker line still rides the wall-detecting tool result the model sees.
     expect(llm.requests[1]?.toolResults[0]?.outcome).toMatchObject({
       ok: true,
@@ -947,6 +954,79 @@ describe('runSubagent', () => {
       /Stopped without progress after 1 tool round — two Approaches in a row made no progress, and no final report was produced\./,
     )
     expect(report.unresolved).toEqual(['Cut short with no progress left to make — the task is incomplete.'])
+  })
+
+  // Issue #202, ADR 0037: the worker shares the executor, so its Blocker
+  // gate trips the same way — and every sentence the stop produces names
+  // the wall, because the orchestrator reading the report is the one that
+  // can ask the user about it.
+  describe('finalizes for `blocker` when it keeps at a wall (#202)', () => {
+    const FLAVORS = [
+      { signal: 'challenge', host: 'www.reddit.com', help: 'the user completing the challenge on screen in the browser tab' },
+      { signal: 'network-block', host: 'news.example.com', help: 'the user signing in to this site once in the browser tab, or picking a different route' },
+      { signal: 'login-wall', host: 'accounts.example.com', help: 'the user signing in once in the browser tab' },
+    ] as const
+
+    for (const flavor of FLAVORS) {
+      it(`names the ${flavor.signal} wall in its report and its Finalization notice`, async () => {
+        const walled = `navigated to https://${flavor.host}/\nBLOCKER:${flavor.signal} ${flavor.host}\nThis page is a Blocker.`
+        let clicks = 0
+        const navigate: Tool = {
+          name: 'navigate',
+          acquisition: true,
+          async execute() {
+            return walled
+          },
+        }
+        const click: Tool = {
+          name: 'click',
+          acquisition: true,
+          async execute() {
+            clicks += 1
+            return 'clicked'
+          },
+        }
+        const llm = new ScriptedLlm([
+          { kind: 'tool_calls', calls: [{ id: 'n1', name: 'navigate', args: { url: `https://${flavor.host}/` } }] },
+          // Refused, recoverable: the first round the gate says no in.
+          { kind: 'tool_calls', calls: [{ id: 'c1', name: 'click', args: { ref: 1 } }] },
+          // Refused again, a round later: this is the stop.
+          { kind: 'tool_calls', calls: [{ id: 'c2', name: 'click', args: { ref: 2 } }] },
+          // The reserved report round demands tools anyway: the bounded
+          // report is the answer.
+          { kind: 'tool_calls', calls: [{ id: 'c3', name: 'click', args: { ref: 3 } }] },
+          { kind: 'answer', speak: 'never', display: 'never' },
+        ])
+
+        const report = await runSubagent(
+          { llm, tools: [navigate, click], clock: new FakeClock(), currentHost: () => flavor.host, maxToolRounds: 12 },
+          { task: 'read the post', agentId: 'a-202', isCancelled: () => false },
+        )
+
+        // Nothing on the wall ever executed past the detection itself.
+        expect(clicks).toBe(0)
+        // The reserved round's last result carries the worker's own
+        // Finalization notice, and it names the wall.
+        const reserved = llm.requests[3]?.toolResults ?? []
+        const notice = reserved.at(-1)?.outcome
+        const noticeText = notice?.ok === true ? String(notice.result) : (notice as { error: string } | undefined)?.error
+        expect(noticeText).toContain(`The run kept interacting with ${flavor.host} after it was walled (Blocker: ${flavor.signal})`)
+        expect(noticeText).toContain(flavor.help)
+        expect(noticeText).toContain('final report JSON')
+        // Budget was never the reason: the worker had rounds to spare.
+        expect(noticeText).not.toContain('work budget')
+
+        expect(report.finalizationCause).toBe('blocker')
+        expect(report.bounded).toBe(true)
+        expect(report.text).toContain(`Stopped at a wall on ${flavor.host}`)
+        expect(report.text).toContain(`${flavor.host} is walled (Blocker: ${flavor.signal}) and this task kept at it`)
+        expect(report.text).toContain(flavor.help)
+        expect(report.text).not.toContain('work budget')
+        expect(report.unresolved).toEqual([
+          `Cut short at a wall on ${flavor.host} that only the user can clear — the task is incomplete.`,
+        ])
+      })
+    }
   })
 
   it('runs the per-call deadline gate — no sibling executes past the shared deadline (#159)', async () => {

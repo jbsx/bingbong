@@ -19,6 +19,32 @@ import { reportFault } from '../trace/fault'
 /** Which kind of Blocker the page smells like (ADR 0010 flavors). */
 export type BlockerSignal = 'challenge' | 'network-block' | 'login-wall'
 
+/**
+ * One wall: its flavor and the host it belongs to. What a marker line
+ * parses to, what the same-wall gate arms on, and — since a Run can stop
+ * for keeping at one (#202, ADR 0037) — the detail a `blocker`
+ * Finalization Cause carries into every sentence about it.
+ */
+export interface BlockerWall {
+  readonly signal: BlockerSignal
+  readonly host: string
+}
+
+/**
+ * What actually helps, per flavor — the phrase every model-facing
+ * sentence about a wall completes: the gate's escalation ("what helps is
+ * …"), the Run's and the worker's `blocker` Finalize Instruction, and
+ * the worker's bounded report. It lives here, beside the nudges whose
+ * prose it echoes, so the flavor knowledge has one home; what the *user*
+ * hears is a separate table (effortEpoch.ts), on #201's rule that a
+ * rewording of an instruction must never move the user's sentence.
+ */
+export const BLOCKER_HELP_BY_SIGNAL: Readonly<Record<BlockerSignal, string>> = {
+  challenge: 'the user completing the challenge on screen in the browser tab',
+  'network-block': 'the user signing in to this site once in the browser tab, or picking a different route',
+  'login-wall': 'the user signing in once in the browser tab',
+}
+
 /** The ref facts the classifier consumes: kind and, for iframes, the src. */
 export interface BlockerRefFacts {
   kind: RefKind
@@ -142,8 +168,8 @@ const MARKER_LINE_RE = /^BLOCKER:(challenge|network-block|login-wall) (\S+)$/gm
  * arming signal. Last line wins: the most recent choke point's verdict is
  * the wall the run is facing now.
  */
-export function parseBlockerMarker(text: string): { signal: BlockerSignal; host: string } | null {
-  let last: { signal: BlockerSignal; host: string } | null = null
+export function parseBlockerMarker(text: string): BlockerWall | null {
+  let last: BlockerWall | null = null
   for (const match of text.matchAll(MARKER_LINE_RE)) {
     last = { signal: match[1] as BlockerSignal, host: match[2] }
   }

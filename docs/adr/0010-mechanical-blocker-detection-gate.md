@@ -51,7 +51,10 @@ times is not detection.
 ## Consequences
 
 - Detection no longer depends on the model cooperating with a nudge; the
-  worst case is one wasted same-wall interaction, not forty.
+  worst case is one wasted same-wall interaction, not forty. Corrected by
+  ADR 0037: the worst case was one wasted *execution* and a budget of
+  wasted rounds — refusing a call still costs the round that proposed it.
+  Keeping at the wall now ends the Run for `blocker`.
 - The signal table is fixture-tested against captured walls (Google
   `/sorry`, Reddit challenge/humanity/block pages) and negatives (pages
   that merely mention captchas).

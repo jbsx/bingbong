@@ -13,7 +13,7 @@ import { createSearchLoopRail } from './searchLoopRail'
 import { createNoProgressRail } from './noProgressRail'
 import type { SettledPageState } from './progressFingerprints'
 import type { SnapshotRef } from '../browser/snapshot'
-import { finalizationToolRefusal, type EffortEpoch } from './effortEpoch'
+import { finalizeInstruction, type EffortEpoch, type FinalizationDetail } from './effortEpoch'
 import type { Notices } from './notices'
 import type { ConfirmDecision, RunDecisions } from './decisions'
 import { STEERED_CANCELLED, type Directive, type RunInterrupts } from './interrupts'
@@ -28,11 +28,11 @@ import type { FinalizationCause } from '../session/runJournal'
 // executed in order. Every round crosses nine seams in a fixed order —
 // Blocker gate, no-progress gate, risk assessment and Confirmation, the
 // Vision Budget, the search-loop gate, execution, then classify →
-// Observation ledger → Blocker observe → search-loop observe →
-// no-progress observe → the no-Progress trip → Notices. That order is an
-// ADR 0010 / ADR 0027 requirement, and it used to live as comments in a
-// nine-parameter generator plus a loop body in the Run pipeline, with the
-// steering variable threaded through six exits.
+// Observation ledger → Blocker observe → the Blocker trip → search-loop
+// observe → no-progress observe → the no-Progress trip → Notices. That
+// order is an ADR 0010 / ADR 0027 / ADR 0037 requirement, and it used to
+// live as comments in a nine-parameter generator plus a loop body in the
+// Run pipeline, with the steering variable threaded through six exits.
 //
 // The seam is the round, not the call: one executor per Run (and, from
 // #158, per Browse Subagent) owns its Blocker gate, both no-progress and
@@ -78,14 +78,16 @@ export interface ToolRoundCapabilities {
  */
 export interface FinalizationWording {
   /**
-   * What a closed acquisition or ask_user call answers with in
-   * Finalization, worded for the cause (#199/#201): a worker told its
-   * parent is finalizing must not read that its own delegated budget is
-   * spent, and a Run stopped by its deadline must not read that either.
-   * `null` is the phase that names no cause — unreachable, since the
-   * closed-tool check is gated on Finalization.
+   * This caller's Finalize Instruction, worded for the cause (#199/#201)
+   * and its detail (#202): a worker told its parent is finalizing must
+   * not read that its own delegated budget is spent, a Run stopped by its
+   * deadline must not read that either, and a run stopped at a wall must
+   * read which wall. `null` is the phase that names no cause —
+   * unreachable, since the closed-tool check is gated on Finalization.
+   * The round's closed-tool refusals are this under the `Not executed — `
+   * prefix, and the Blocker gate's tripping refusal ends on it.
    */
-  readonly toolRefusal: (cause: FinalizationCause | null) => string
+  readonly finalizeInstruction: (cause: FinalizationCause | null, detail?: FinalizationDetail) => string
   /** What the action exhausting the second Approach is told (#126). */
   readonly approachExhausted: string
 }
@@ -212,8 +214,8 @@ export interface ToolRoundExecutor {
    * A Steering replan (#119): the corrected objective faces the
    * no-progress accounting fresh. Everything else the executor owns is
    * either already per-run state the replan keeps (the Vision Budget, the
-   * search-loop streak, the Blocker gate's armed wall) or the Effort
-   * Epoch's own.
+   * search-loop streak, the Blocker gate's armed wall — its refused-round
+   * count goes, the arm stays, #202) or the Effort Epoch's own.
    */
   replan(): void
 }
@@ -248,9 +250,15 @@ export function createToolRoundExecutor(config: ToolRoundConfig): ToolRoundExecu
   // The round's own rails and budget (#154): created here, reachable from
   // nowhere else. Each is fresh per executor, which is fresh per Run.
   const visionBudget = createVisionBudget(config.visionCalls ?? MAX_ORCHESTRATOR_VISION_CALLS)
+  /** This caller's Finalize Instruction (#159/#201/#202): its own, or the Run's. */
+  const finalizeWording = config.finalizationWording?.finalizeInstruction ?? finalizeInstruction
   const blockerGate = createBlockerGate(
     config.currentHost ?? (() => null),
     config.blockerEscalation ?? orchestratorBlockerEscalation,
+    // The tripping refusal's instruction (#202) is the same one the
+    // round's closed-tool refusals carry, so the trip round reads as one
+    // reason rather than two.
+    (wall) => finalizeWording('blocker', wall),
   )
   const searchLoopRail = capabilities.searchLoopRail
     ? createSearchLoopRail(config.describeRef ? { describeRef: config.describeRef } : {})
@@ -270,8 +278,9 @@ export function createToolRoundExecutor(config: ToolRoundConfig): ToolRoundExecu
    */
   const closedToolRefusal = (): string => {
     const phase = effortEpoch.phase
-    const wording = config.finalizationWording?.toolRefusal ?? finalizationToolRefusal
-    return wording(phase.kind === 'working' ? null : phase.cause)
+    return phase.kind === 'working'
+      ? `Not executed — ${finalizeWording(null)}`
+      : `Not executed — ${finalizeWording(phase.cause, phase.detail)}`
   }
   // The Vision Budget is the round's, so the context tools execute against
   // acquires from it — a caller can never hand a tool a different one.
@@ -422,8 +431,10 @@ export function createToolRoundExecutor(config: ToolRoundConfig): ToolRoundExecu
     effortEpoch.beginToolRound()
     // The round boundary the no-progress rail needs (#197): its rejected
     // Evidence Checkpoints count once per round, and only the executor
-    // knows where a round begins.
+    // knows where a round begins. The Blocker gate counts its same-wall
+    // refusals the same way (#202).
     noProgressRail?.beginRound()
+    blockerGate.beginRound()
     // The sole-call boundary (#99): the whole response is known before any
     // of it executes, so when it carries one, every other call in it —
     // before or after — is a discarded sibling.
@@ -480,6 +491,13 @@ export function createToolRoundExecutor(config: ToolRoundConfig): ToolRoundExecu
       // disarms it. Sees the raw outcome — the Notices attached below
       // change nothing it consumes.
       blockerGate.observe(call, outcome)
+      // The Blocker trip (#202, ADR 0037): a second Tool Round in which
+      // this run kept at the same wall ends it. The refusal that tripped
+      // already carries the Finalize Instruction; entering here — before
+      // this round's next call is gated — is what closes the remaining
+      // acquisition siblings, exactly as the no-Progress trip below does.
+      const wall = blockerGate.finalizationDue()
+      if (wall !== null) effortEpoch.enterFinalization('blocker', wall)
       // Search-loop rail (#74/#82): observe every processed call (this is
       // what tracks and resets the streak — a failed intervening tool
       // leaves it alone); its advisory verdict is an immediate Notice.
@@ -543,6 +561,7 @@ export function createToolRoundExecutor(config: ToolRoundConfig): ToolRoundExecu
     run,
     replan() {
       noProgressRail?.reset()
+      blockerGate.replan()
     },
   }
 }

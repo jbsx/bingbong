@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import type { ToolCall, ToolResultOutcome } from '../ports/llm'
-import { createBlockerGate, hostFromUrl, subagentBlockerEscalation } from './blockerGate'
+import {
+  createBlockerGate,
+  hostFromUrl,
+  REFUSED_ROUNDS_BEFORE_FINALIZATION,
+  subagentBlockerEscalation,
+} from './blockerGate'
 
 // Issue #80, ADR 0010: the same-wall Blocker gate — a marker line on a
 // tool result arms it (flavor + host); while armed, browser calls
@@ -181,6 +186,174 @@ describe('createBlockerGate', () => {
       expect(refusal.reason).toMatch(/challenge/)
       expect(refusal.reason).toMatch(/genuinely different site/)
       expect(refusal.reason).toMatch(/read_page and look still work/)
+    }
+  })
+})
+
+// Issue #202, ADR 0037: keeping at the wall ends the run. The gate counts
+// the Tool Rounds in which it refused a same-wall call — once per round,
+// #197's rule — and the second such round in one armed episode trips
+// Finalization for `blocker`. Reset is arm-scoped.
+describe('the Blocker gate trips Finalization for `blocker` (#202)', () => {
+  const LOGIN_WALL = 'title: Sign in\nBLOCKER:login-wall accounts.example.com\nThis page is a Blocker — a login wall.'
+
+  /** An armed gate that has been told where its rounds begin. */
+  function armedGate(host = 'www.reddit.com'): ReturnType<typeof createBlockerGate> {
+    const gate = createBlockerGate(() => host)
+    gate.beginRound()
+    gate.observe(navigate(`https://${host}/search`), ok(WALLED_RESULT))
+    return gate
+  }
+
+  it('takes two refused rounds — the count is the trip, and it is two', () => {
+    expect(REFUSED_ROUNDS_BEFORE_FINALIZATION).toBe(2)
+  })
+
+  it('does not trip on one round of three refused same-wall calls (#197: one round, one count)', () => {
+    const gate = armedGate()
+    gate.beginRound()
+    for (const call of [verb('click'), verb('type'), verb('scroll')]) {
+      const refusal = gate.gate(call)
+      expect(refusal.ok).toBe(false)
+      // Each one is the recoverable refusal, not the stop.
+      if (!refusal.ok) expect(refusal.reason).not.toMatch(/^Not executed — /)
+    }
+    expect(gate.finalizationDue()).toBeNull()
+  })
+
+  it('trips on a refusal in each of two rounds, and the tripping refusal carries the Finalize Instruction', () => {
+    const gate = armedGate()
+    gate.beginRound()
+    expect(gate.gate(verb('click')).ok).toBe(false)
+    expect(gate.finalizationDue()).toBeNull()
+    gate.beginRound()
+    const tripping = gate.gate(verb('click'))
+    expect(tripping.ok).toBe(false)
+    if (!tripping.ok) {
+      // The wall sentence stands; the escalation and the lifting clause
+      // are gone, because neither is true once the run is finalizing.
+      expect(tripping.reason).toMatch(/^Not executed — /)
+      expect(tripping.reason).toContain('www.reddit.com is walled for this run (Blocker: challenge)')
+      expect(tripping.reason).toContain('The run kept interacting with www.reddit.com after it was walled')
+      expect(tripping.reason).toContain('the user completing the challenge on screen in the browser tab')
+      expect(tripping.reason).toMatch(/Finalize now/)
+      expect(tripping.reason).not.toMatch(/genuinely different site/)
+      expect(tripping.reason).not.toMatch(/lifts the refusal/)
+    }
+    expect(gate.finalizationDue()).toEqual({ signal: 'challenge', host: 'www.reddit.com' })
+  })
+
+  it('leaves the round after the trip to the closed-tool check — the gate refuses no more', () => {
+    const gate = armedGate()
+    gate.beginRound()
+    gate.gate(verb('click'))
+    gate.beginRound()
+    gate.gate(verb('click'))
+    // Siblings after the trip pass this gate: the run is finalizing, and
+    // one round must read one reason (#201).
+    expect(gate.gate(verb('type'))).toEqual({ ok: true })
+  })
+
+  it('resets when a successful different-host interaction lands between the two rounds', () => {
+    const gate = armedGate()
+    gate.beginRound()
+    expect(gate.gate(verb('click')).ok).toBe(false)
+    // The model demonstrably moved on: the episode is over.
+    gate.observe(navigate('https://example.com/article'), ok('read example'))
+    gate.beginRound()
+    expect(gate.gate(verb('click'))).toEqual({ ok: true })
+    // Returning to the wall re-arms, and its patience starts again.
+    gate.observe(navigate('https://www.reddit.com/search'), ok(WALLED_RESULT))
+    gate.beginRound()
+    expect(gate.gate(verb('click')).ok).toBe(false)
+    expect(gate.finalizationDue()).toBeNull()
+  })
+
+  it('starts a re-arm on a different wall at zero', () => {
+    const gate = createBlockerGate(() => 'accounts.example.com')
+    gate.beginRound()
+    gate.observe(navigate('https://www.reddit.com/search'), ok(WALLED_RESULT))
+    gate.beginRound()
+    // The tab is on accounts.example.com, so nothing here targets the
+    // reddit wall — no refusal, no count.
+    expect(gate.gate(verb('click'))).toEqual({ ok: true })
+    gate.observe(navigate('https://accounts.example.com/login'), ok(LOGIN_WALL))
+    gate.beginRound()
+    const refusal = gate.gate(verb('click'))
+    expect(refusal.ok).toBe(false)
+    if (!refusal.ok) expect(refusal.reason).not.toMatch(/^Not executed — /)
+    expect(gate.finalizationDue()).toBeNull()
+  })
+
+  it('never lets re-reading the wall buy another round — a same-host re-arm keeps the count', () => {
+    const gate = armedGate()
+    gate.beginRound()
+    expect(gate.gate(verb('click')).ok).toBe(false)
+    // read_page re-shows the marker. That is inspection, not a new
+    // episode: the next refused round still trips.
+    gate.observe(verb('read_page'), ok(WALLED_RESULT))
+    gate.beginRound()
+    const tripping = gate.gate(verb('click'))
+    expect(tripping.ok).toBe(false)
+    if (!tripping.ok) expect(tripping.reason).toMatch(/^Not executed — /)
+  })
+
+  it('never counts read_page on the wall — it is never refused, so it never escalates', () => {
+    const gate = armedGate()
+    for (let round = 0; round < 5; round += 1) {
+      gate.beginRound()
+      expect(gate.gate(verb('read_page'))).toEqual({ ok: true })
+    }
+    expect(gate.finalizationDue()).toBeNull()
+  })
+
+  it('replan() clears the count and keeps the arm — a new objective earns fresh patience (#119)', () => {
+    const gate = armedGate()
+    gate.beginRound()
+    expect(gate.gate(verb('click')).ok).toBe(false)
+    gate.replan()
+    gate.beginRound()
+    const refusal = gate.gate(verb('click'))
+    // Still armed — the wall is still there — but nudged rather than tripped.
+    expect(refusal.ok).toBe(false)
+    if (!refusal.ok) expect(refusal.reason).not.toMatch(/^Not executed — /)
+    expect(gate.finalizationDue()).toBeNull()
+  })
+
+  it('never trips on a wall that never armed — the (unknown) sentinel host', () => {
+    const gate = createBlockerGate(() => 'wherever.test')
+    for (let round = 0; round < 4; round += 1) {
+      gate.beginRound()
+      gate.observe(navigate('https://wherever.test/'), ok('BLOCKER:challenge (unknown)\nnudge text'))
+      expect(gate.gate(verb('click'))).toEqual({ ok: true })
+    }
+    expect(gate.finalizationDue()).toBeNull()
+  })
+
+  it('never trips a gate that is not told about rounds — one refusal in all', () => {
+    const gate = createBlockerGate(() => 'www.reddit.com')
+    gate.observe(navigate('https://www.reddit.com/search'), ok(WALLED_RESULT))
+    for (let call = 0; call < 5; call += 1) expect(gate.gate(verb('click')).ok).toBe(false)
+    expect(gate.finalizationDue()).toBeNull()
+  })
+
+  it('carries the caller’s own Finalize Instruction when one is injected (#159/#202)', () => {
+    const gate = createBlockerGate(
+      () => 'www.reddit.com',
+      subagentBlockerEscalation,
+      (wall) => `Stopped at ${wall.host}. Reply now with ONLY your final report JSON.`,
+    )
+    gate.beginRound()
+    gate.observe(navigate('https://www.reddit.com/search'), ok(WALLED_RESULT))
+    gate.beginRound()
+    gate.gate(verb('click'))
+    gate.beginRound()
+    const tripping = gate.gate(verb('click'))
+    expect(tripping.ok).toBe(false)
+    if (!tripping.ok) {
+      expect(tripping.reason).toMatch(/^Not executed — /)
+      expect(tripping.reason).toContain('Reply now with ONLY your final report JSON.')
+      expect(tripping.reason).not.toMatch(/final answer JSON/)
     }
   })
 })

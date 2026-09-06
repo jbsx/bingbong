@@ -33,6 +33,7 @@ import {
   injectedReportDirective,
   resolveReportGraceMs,
   type EffortEpoch,
+  type FinalizationDetail,
 } from './effortEpoch'
 import {
   DEFAULT_EFFORT_TIER,
@@ -955,6 +956,11 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
         // hard round ceiling when the loop broke while still working.
         const fallbackCause = (): FinalizationCause =>
           effortEpoch.phase.kind === 'working' ? 'hard_limit' : effortEpoch.phase.cause
+        // The cause's own detail, asked from the same place (#202): a
+        // `blocker` stop's Answer names the wall, and a wall named in the
+        // spoken Answer but not the displayed one would be two stories.
+        const fallbackDetail = (): FinalizationDetail | undefined =>
+          effortEpoch.phase.kind === 'working' ? undefined : effortEpoch.phase.detail
 
         for (;;) {
           // The loop top asks the epoch's rails (#146–#148): a tripped rail
@@ -1456,6 +1462,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
             // a never-steered run.
             command: correctedObjective ?? command,
             cause: fallbackCause(),
+            ...(fallbackDetail() !== undefined ? { detail: fallbackDetail()! } : {}),
             sources: deriveFallbackSources({
               records: ledger.snapshot(),
               checkpoints: acceptedCheckpoints,

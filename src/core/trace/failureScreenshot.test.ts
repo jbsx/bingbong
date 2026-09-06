@@ -8,6 +8,9 @@ describe('what earns a failure screenshot (#191)', () => {
     expect(failureScreenshotCause({ type: 'done', turnId: 't', outcome: 'done', finalizationCause: 'no_progress', at })).toBe('no_progress')
     expect(failureScreenshotCause({ type: 'done', turnId: 't', outcome: 'done', finalizationCause: 'deadline_reached', at })).toBe('deadline_reached')
     expect(failureScreenshotCause({ type: 'done', turnId: 't', outcome: 'done', finalizationCause: 'budget_exhausted', at })).toBe('budget_exhausted')
+    // A wall stop is the case the screenshot answers outright (#202): the
+    // picture is what the run kept trying to get past.
+    expect(failureScreenshotCause({ type: 'done', turnId: 't', outcome: 'done', finalizationCause: 'blocker', at })).toBe('blocker')
 
     // A Run that met its objective, was cancelled, or reset leaves no
     // capture: the file is about failures, and a Kiosk's happy path must

@@ -935,8 +935,12 @@ describe('isRuntimeRefusal', () => {
     for (const cause of ['budget_exhausted', 'deadline_reached', 'no_progress', 'hard_limit'] as const) {
       expect(isRuntimeRefusal(finalizationToolRefusal(cause))).toBe(true)
     }
+    expect(isRuntimeRefusal(finalizationToolRefusal('blocker', { signal: 'challenge', host: 'example.com' }))).toBe(true)
     expect(isRuntimeRefusal('Search loop limit (5 consecutive similar searches — q= navigate) reached for this run.')).toBe(true)
-    // The Blocker gate's refusal is recoverable by design — not a violation to retry after.
+    // The Blocker gate's nudging refusal is recoverable by design — not a
+    // violation to retry after. Only the refusal that *stops* the run for
+    // `blocker` (#202) takes the prefix, which is why it reads as a stop
+    // and this one still does not.
     expect(isRuntimeRefusal('navigate refused before execution: example.com is walled for this run')).toBe(false)
     expect(isRuntimeRefusal('navigation timed out')).toBe(false)
     expect(isRuntimeRefusal(null)).toBe(false)

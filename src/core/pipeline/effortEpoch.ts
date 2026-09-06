@@ -7,6 +7,7 @@ import type { Clock } from '../ports/clock'
 import type { ReasoningEffort } from '../ports/llm'
 import type { SubagentSharedDeadline } from '../agent/subagentRails'
 import type { FinalizationCause } from '../session/runJournal'
+import { BLOCKER_HELP_BY_SIGNAL, type BlockerSignal, type BlockerWall } from '../browser/blockerNudge'
 import type { FallbackSource } from './fallbackAnswer'
 
 /**
@@ -124,10 +125,12 @@ export const CEILING_RESERVED_BOOKKEEPING_ROUNDS = 1
  * deadline, a live predicate the epoch polls rather than a duration its
  * own clock measures. Tier declarations, Steering replans, and the
  * orchestrator's hard ceiling belong to the Run and never apply to a
- * Subagent; a Subagent epoch stops for four Finalization Causes only —
+ * Subagent; a Subagent epoch stops for five Finalization Causes only —
  * `budget_exhausted`, `deadline_reached`, since the worker adopted the
- * Run's no-progress rails (#159) `no_progress`, and, since Finalization
- * stopped cancelling workers (#199, ADR 0035), `parent_finalized`.
+ * Run's no-progress rails (#159) `no_progress`, since Finalization
+ * stopped cancelling workers (#199, ADR 0035) `parent_finalized`, and,
+ * since the worker's Blocker gate trips like the Run's (#202, ADR 0037),
+ * `blocker`.
  */
 export interface SubagentEpochConfig {
   /** The Subagent's independent Tool Round budget (SUBAGENT_LIMITS.maxToolRoundsPerTask). */
@@ -144,14 +147,23 @@ export interface SubagentEpochConfig {
   readonly parentFinalizing?: () => boolean
 }
 
+/**
+ * What a Finalization Cause knows beyond its name (#202, ADR 0037).
+ * `blocker` is the only cause with anything to add and the wall is all of
+ * it: every sentence about that stop — the model's Finalize Instruction,
+ * the worker's report, the user's spoken Answer — names the host and the
+ * flavor, because "the run stopped" tells nobody what to do about it.
+ */
+export type FinalizationDetail = BlockerWall
+
 export type EffortPhase =
   | { readonly kind: 'working' }
-  | { readonly kind: 'finalizing'; readonly cause: FinalizationCause }
-  | { readonly kind: 'answer_only'; readonly cause: FinalizationCause }
+  | { readonly kind: 'finalizing'; readonly cause: FinalizationCause; readonly detail?: FinalizationDetail }
+  | { readonly kind: 'answer_only'; readonly cause: FinalizationCause; readonly detail?: FinalizationDetail }
 
 export type EffortLoopDecision =
   | { readonly kind: 'work' }
-  | { readonly kind: 'finalize'; readonly cause: FinalizationCause }
+  | { readonly kind: 'finalize'; readonly cause: FinalizationCause; readonly detail?: FinalizationDetail }
 
 /** The internal warning milestones: ~75% and ~90% of the budget consumed. */
 export type BudgetWarningMilestone = 'near' | 'imminent'
@@ -208,9 +220,11 @@ export const NO_PROGRESS_FINALIZATION_REASON =
 
 /**
  * Why the Run is finalizing, as its own model reads it (#201). Only these
- * four mechanical stops reach a Run's model: `objective_met` is the
- * model's own attestation, and `blocker`, `user_unavailable` and
- * `parent_finalized` are reached by nothing a Run does.
+ * five mechanical stops reach a Run's model: `objective_met` is the
+ * model's own attestation, and `user_unavailable` and `parent_finalized`
+ * are reached by nothing a Run does. `blocker` is not in the table
+ * because its sentence is not a constant — it names the wall the run kept
+ * at (#202), so it is built from the detail below.
  */
 const RUN_FINALIZATION_REASONS: Partial<Record<FinalizationCause, string>> = {
   budget_exhausted: 'The run\u2019s work budget is exhausted',
@@ -220,14 +234,33 @@ const RUN_FINALIZATION_REASONS: Partial<Record<FinalizationCause, string>> = {
 }
 
 /**
+ * The reason a Blocker stop opens on, in the one role-independent wording
+ * (#202, ADR 0037) — a worker's gate and the Run's trip on the same thing
+ * and say so identically, the way NO_PROGRESS_FINALIZATION_REASON already
+ * does. It names the host, the flavor, and what would actually help,
+ * because a stop the model cannot act on is the least useful thing to
+ * tell it.
+ */
+export function blockerFinalizationReason(wall: FinalizationDetail): string {
+  return (
+    `The run kept interacting with ${wall.host} after it was walled (Blocker: ${wall.signal}), ` +
+    `and what helps is ${BLOCKER_HELP_BY_SIGNAL[wall.signal]}`
+  )
+}
+
+/**
  * The reason a Run's model-facing Finalization text opens on, or
  * undefined for a cause with no Run sentence — and for `null`, the phase
  * that names no cause at all. Nothing reaches either: a site with no
  * reason says only what it demands, because inventing one for a stop the
- * run did not make is this bug all over again.
+ * run did not make is this bug all over again. A `blocker` that arrived
+ * without its wall is one of those sites: the cause is only ever entered
+ * with the detail, and a sentence naming no host would be the invention.
  */
-function runFinalizationReason(cause: FinalizationCause | null): string | undefined {
-  return cause === null ? undefined : RUN_FINALIZATION_REASONS[cause]
+function runFinalizationReason(cause: FinalizationCause | null, detail?: FinalizationDetail): string | undefined {
+  if (cause === null) return undefined
+  if (cause === 'blocker') return detail === undefined ? undefined : blockerFinalizationReason(detail)
+  return RUN_FINALIZATION_REASONS[cause]
 }
 
 /** What every Finalize Instruction demands, whatever stopped the run. */
@@ -244,8 +277,8 @@ const FINALIZE_INSTRUCTION_DEMAND =
  * what it completed, which it can only do from a true premise about why
  * it was stopped.
  */
-export function finalizeInstruction(cause: FinalizationCause | null): string {
-  const reason = runFinalizationReason(cause)
+export function finalizeInstruction(cause: FinalizationCause | null, detail?: FinalizationDetail): string {
+  const reason = runFinalizationReason(cause, detail)
   return reason === undefined ? FINALIZE_INSTRUCTION_DEMAND : `${reason} — ${FINALIZE_INSTRUCTION_DEMAND}`
 }
 
@@ -254,8 +287,8 @@ export function finalizeInstruction(cause: FinalizationCause | null): string {
  * `Not executed — ` prefix is an eval contract rather than a style: the
  * acceptance harness classifies runtime refusals by it.
  */
-export function finalizationToolRefusal(cause: FinalizationCause | null): string {
-  return `Not executed — ${finalizeInstruction(cause)}`
+export function finalizationToolRefusal(cause: FinalizationCause | null, detail?: FinalizationDetail): string {
+  return `Not executed — ${finalizeInstruction(cause, detail)}`
 }
 
 /**
@@ -290,7 +323,8 @@ export const ANSWER_ONLY_REPORT_DIRECTIVE =
  */
 export function injectedReportDirective(phase: EffortPhase): string {
   const demand = phase.kind === 'finalizing' ? FINALIZATION_REPORT_CHECKPOINT_DIRECTIVE : ANSWER_ONLY_REPORT_DIRECTIVE
-  const reason = runFinalizationReason(phase.kind === 'working' ? null : phase.cause)
+  const reason =
+    phase.kind === 'working' ? undefined : runFinalizationReason(phase.cause, phase.detail)
   // A sentence break rather than the Instruction's em dash: both demands
   // here are whole sentences, and the Answer-only one carries a dash of
   // its own — chaining a third would read as one long clause.
@@ -377,12 +411,14 @@ export interface EffortEpoch {
   decideLoopTop(): EffortLoopDecision
   /**
    * Finalization's one door (#148, ADR 0027): every mechanically known
-   * cause — budget, deadline, hard limit, no Progress — enters through
-   * it. Fires the entry hook exactly once per entry (a Steering replan
-   * that exits and a later re-entry fire it again) and supersedes any
-   * owed budget warning. False when the phase is already terminal.
+   * cause — budget, deadline, hard limit, no Progress, a wall the run
+   * kept at — enters through it. Fires the entry hook exactly once per
+   * entry (a Steering replan that exits and a later re-entry fire it
+   * again) and supersedes any owed budget warning. False when the phase
+   * is already terminal. The detail is the cause's, and only `blocker`
+   * has one (#202): the wall every sentence about that stop must name.
    */
-  enterFinalization(cause: FinalizationCause): boolean
+  enterFinalization(cause: FinalizationCause, detail?: FinalizationDetail): boolean
   /**
    * The no-Progress trip (#126/#148): the rail reports two exhausted
    * Approaches mid-round; the run enters Finalization with the
@@ -455,7 +491,7 @@ export function createEffortEpoch(deps: {
    * cancelled and the caller's own advisory notices are superseded, while
    * completed worker reports stay available to the reserved Answer round.
    */
-  onFinalizationEntered?: (cause: FinalizationCause) => void
+  onFinalizationEntered?: (cause: FinalizationCause, detail?: FinalizationDetail) => void
 }): EffortEpoch {
   const workClock = createActiveWorkClock(deps.clock)
   const subagent = deps.subagent
@@ -492,12 +528,12 @@ export function createEffortEpoch(deps: {
     workClock.rearm()
     armedRound?.rewatch()
   }
-  const enterFinalization = (cause: FinalizationCause): boolean => {
+  const enterFinalization = (cause: FinalizationCause, detail?: FinalizationDetail): boolean => {
     if (phase.kind !== 'working') return false
-    phase = { kind: 'finalizing', cause }
+    phase = { kind: 'finalizing', cause, ...(detail !== undefined ? { detail } : {}) }
     pendingWarning = null
     try {
-      deps.onFinalizationEntered?.(cause)
+      deps.onFinalizationEntered?.(cause, detail)
     } catch (err) {
       // The door is a state transition, not the hook's errand: the entry
       // stands whatever the consumer does. It also fires from the
@@ -507,7 +543,12 @@ export function createEffortEpoch(deps: {
     return true
   }
   const decideLoopTop = (): EffortLoopDecision => {
-    if (phase.kind !== 'working') return { kind: 'finalize', cause: phase.cause }
+    if (phase.kind !== 'working') {
+      // A mid-round trip's cause reaches the loop top through the phase,
+      // and so must its detail (#202): a `blocker` stop the caller reads
+      // here has to name the same wall the tripping refusal did.
+      return { kind: 'finalize', cause: phase.cause, ...(phase.detail !== undefined ? { detail: phase.detail } : {}) }
+    }
     const budgetExhausted = tierRounds >= roundBudget()
     const deadlinePassed = deadlineExpired()
     // Precedence at a coincidence differs by configuration. A Run answers
@@ -580,7 +621,7 @@ export function createEffortEpoch(deps: {
       if (!spendable) return false
       cumulativeRounds += 1
       if (phase.kind === 'finalizing') {
-        phase = { kind: 'answer_only', cause: phase.cause }
+        phase = { kind: 'answer_only', cause: phase.cause, ...(phase.detail !== undefined ? { detail: phase.detail } : {}) }
         return true
       }
       tierRounds += 1
@@ -673,9 +714,10 @@ export function createEffortEpoch(deps: {
       const current = phase
       if (!pendingFinalizationNotice || current.kind === 'working') return null
       pendingFinalizationNotice = false
-      // The cause this epoch entered under, not a stock one (#201): the
+      // The cause this epoch entered under, not a stock one (#201) — and
+      // the wall it entered with, when the cause carries one (#202): the
       // notice and the round's refusals must give the model one reason.
-      return finalizeInstruction(current.cause)
+      return finalizeInstruction(current.cause, current.detail)
     },
   }
 }
@@ -692,6 +734,45 @@ const CAUSE_SENTENCES: Readonly<Record<string, string>> = {
   deadline_reached: 'The run passed its active-work deadline.',
   no_progress: 'The run stopped making progress — repeated actions stopped producing anything new.',
   hard_limit: 'The run reached its hard work limit.',
+}
+
+/**
+ * What each Blocker flavor is called where the user hears it (#202): the
+ * gate's own vocabulary ("network-block") is a marker token, not a noun
+ * anyone says out loud.
+ */
+const BLOCKER_LABELS: Readonly<Record<BlockerSignal, string>> = {
+  challenge: 'challenge',
+  'network-block': 'network block',
+  'login-wall': 'sign-in wall',
+}
+
+/**
+ * What the *user* is asked to do about each flavor, naming the host —
+ * the sibling of BLOCKER_HELP_BY_SIGNAL, which is what the model is told.
+ * Separate for the same reason CAUSE_SENTENCES is separate from
+ * RUN_FINALIZATION_REASONS (#201): the model's instruction and the user's
+ * next step are two sentences with two audiences, and rewording one must
+ * not move the other. This is the whole point of the cause — a user who
+ * hears "the run stopped" learns nothing they can act on.
+ */
+const BLOCKER_USER_HELP: Readonly<Record<BlockerSignal, (host: string) => string>> = {
+  challenge: (host) => `complete the challenge on ${host} in the browser tab and ask again`,
+  'network-block': (host) => `sign in to ${host} once in the browser tab, or ask me to try a different route`,
+  'login-wall': (host) => `sign in to ${host} once in the browser tab and ask again`,
+}
+
+/** The displayed sentence a Blocker stop replaces CAUSE_SENTENCES with (#202). */
+function blockerCauseSentence(wall: FinalizationDetail): string {
+  return (
+    `The run kept at a ${BLOCKER_LABELS[wall.signal]} it cannot pass. ` +
+    `To get past it, ${BLOCKER_USER_HELP[wall.signal](wall.host)}.`
+  )
+}
+
+/** The spoken half of the same stop (#202): the wall, named, in one breath. */
+function blockerSpokenSentence(wall: FinalizationDetail): string {
+  return `I could not get past the ${BLOCKER_LABELS[wall.signal]} on ${wall.host}.`
 }
 
 /**
@@ -725,6 +806,8 @@ function fallbackDetailLines(source: FallbackSource): string[] {
 export function deterministicFinalAnswer(input: {
   command: string
   cause: FinalizationCause
+  /** The cause's own detail (#202): the wall a `blocker` stop kept at, which both halves name. */
+  detail?: FinalizationDetail
   /** The run's retained sources (#137), strongest first — bounded, merged by canonical URL. */
   sources: readonly FallbackSource[]
 }): { speak: string; display: string } {
@@ -735,8 +818,17 @@ export function deterministicFinalAnswer(input: {
     no_progress: 'I stopped making progress on that request.',
     hard_limit: 'I reached my work limit before finishing that request.',
   }
-  const speak = spokenByCause[input.cause] ?? 'I had to stop before finishing that request.'
-  const causeSentence = CAUSE_SENTENCES[input.cause] ?? 'The run stopped at its work limit.'
+  // A Blocker stop's two sentences are built rather than looked up
+  // (#202): both name the wall. Without the detail there is no wall to
+  // name and the generic fallbacks stand — the same rule the model-facing
+  // reason follows.
+  const wall = input.cause === 'blocker' ? input.detail : undefined
+  const speak =
+    wall !== undefined
+      ? blockerSpokenSentence(wall)
+      : (spokenByCause[input.cause] ?? 'I had to stop before finishing that request.')
+  const causeSentence =
+    wall !== undefined ? blockerCauseSentence(wall) : (CAUSE_SENTENCES[input.cause] ?? 'The run stopped at its work limit.')
   const sourceLines: string[] = []
   input.sources.forEach((source, index) => {
     sourceLines.push(`- ${source.url}`)

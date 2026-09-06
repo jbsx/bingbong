@@ -322,6 +322,52 @@ describe('mid-round trips close the round’s remaining siblings (#157/AC2)', ()
     expect(trace.filter((entry) => entry === 'execute:navigate')).toHaveLength(5)
   })
 
+  it('refuses the acquisition siblings after the Blocker trip, on the same wall (#202, ADR 0037)', async () => {
+    const trace: string[] = []
+    const tools = [
+      scripted('read_page', trace, { result: 'BLOCKER:challenge www.reddit.com\nThis page is a Blocker.', acquisition: true }),
+      scripted('click', trace, { acquisition: true }),
+      scripted('type', trace, { acquisition: true }),
+    ]
+    const h = harness(tools, {
+      currentHost: () => 'www.reddit.com',
+      capabilities: { searchLoopRail: true, noProgressRail: false, perCallGate: true },
+      trace,
+    })
+
+    // Round one: the read arms the gate and the click is refused —
+    // recoverable, so the round is only the first of the two the trip
+    // needs.
+    const first = await h.round([call('read_page'), call('click', { ref: 3 })])
+    expect(h.epoch.phase).toEqual({ kind: 'working' })
+    expect(errorOf(first.outcome.results[1]!.outcome)).not.toMatch(/^Not executed — /)
+
+    // Round two: the same wall again. The first refusal trips.
+    const { outcome } = await h.round([call('click', { ref: 3 }), call('type', { text: 'x' })])
+
+    expect(h.epoch.phase).toEqual({
+      kind: 'finalizing',
+      cause: 'blocker',
+      detail: { signal: 'challenge', host: 'www.reddit.com' },
+    })
+    const tripping = errorOf(outcome.results[0]!.outcome)
+    // The tripping refusal is under the eval's runtime-refusal prefix, and
+    // names host, flavor, and the Finalize Instruction.
+    expect(tripping).toMatch(/^Not executed — /)
+    expect(tripping).toContain('www.reddit.com is walled for this run (Blocker: challenge)')
+    expect(tripping).toContain('The run kept interacting with www.reddit.com after it was walled')
+    expect(tripping).toMatch(/Finalize now/)
+    // The sibling after the trip met the closed-tool refusal, and one
+    // round reads one reason (#201): it names the same wall.
+    const sibling = errorOf(outcome.results[1]!.outcome)
+    expect(sibling).toBe(finalizationToolRefusal('blocker', { signal: 'challenge', host: 'www.reddit.com' }))
+    expect(sibling).toContain('www.reddit.com')
+    expect(sibling).not.toContain('work budget is exhausted')
+    expect(sibling).not.toContain('made no progress')
+    // Only the wall-detecting read ever executed.
+    expect(trace.filter((entry) => entry.startsWith('execute:'))).toEqual(['execute:read_page'])
+  })
+
   it('counts a round of rejected Evidence Checkpoints once — the trip needs a rejection per round (#197)', async () => {
     const trace: string[] = []
     const rejecting: Tool = {

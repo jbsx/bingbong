@@ -247,8 +247,12 @@ export interface FailureScreenshotEvent {
   readonly bytes: number
 }
 
-/** The Finalization Causes that earn a screenshot (#191): the rails a post mortem reads. */
-export const FAILURE_SCREENSHOT_RAIL_CAUSES = ['no_progress', 'deadline_reached', 'budget_exhausted'] as const
+/**
+ * The Finalization Causes that earn a screenshot (#191): the rails a post
+ * mortem reads. `blocker` is the case the screenshot answers outright
+ * (#202) — what the wall actually looked like when the run kept at it.
+ */
+export const FAILURE_SCREENSHOT_RAIL_CAUSES = ['no_progress', 'deadline_reached', 'budget_exhausted', 'blocker'] as const
 
 /** What earns a failure screenshot: a failed outcome, or a finalization on one of those rails. */
 export type FailureScreenshotCause = 'failed' | (typeof FAILURE_SCREENSHOT_RAIL_CAUSES)[number]

@@ -30,6 +30,12 @@ export type RunResolution = (typeof RUN_RESOLUTIONS)[number]
  * supply one; `objective_met` is the model's own claim that the
  * objective's standard is met, and `model_answered` is the fallback when
  * the model voluntarily concludes with no other cause applying.
+ *
+ * `blocker` is the same-wall Blocker gate's own stop (#202, ADR 0037):
+ * the run kept interacting with a wall it was told it cannot pass, and
+ * the gate — not the model — attests it. It is a runtime cause like any
+ * other, so a model that proposes it is still dropped below; what
+ * changed is that the runtime now reaches it.
  */
 export const FINALIZATION_CAUSES = [
   'objective_met',

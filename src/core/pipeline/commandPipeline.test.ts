@@ -2987,6 +2987,43 @@ describe('command pipeline', () => {
       expect(events.at(-1)).toEqual({ type: 'done', outcome: 'failed', finalizationCause: 'no_progress', at: 0 })
     })
 
+    it('answers deterministically with the wall when the run kept at a Blocker (#202, ADR 0037)', async () => {
+      const WALLED = 'navigated to https://www.reddit.com/\nBLOCKER:challenge www.reddit.com\nThis page is a Blocker.'
+      const navigate: Tool = { name: 'navigate', acquisition: true, async execute() { return WALLED } }
+      const click: Tool = { name: 'click', acquisition: true, async execute() { return 'clicked' } }
+      const llm = new ScriptedLlm([
+        { kind: 'tool_calls', calls: [lookupPlan('p1', 'Read the post'), { id: 'n1', name: 'navigate', args: { url: 'https://www.reddit.com/' } }] },
+        // One refused round: recoverable, and the model reads the escalation.
+        { kind: 'tool_calls', calls: [{ id: 'c1', name: 'click', args: { ref: 1 } }] },
+        // A second refused round ends the run. The bookkeeping round
+        // follows (#200), and then the script runs out — so the reserved
+        // Answer round fails and the deterministic Answer stands in.
+        { kind: 'tool_calls', calls: [{ id: 'c2', name: 'click', args: { ref: 2 } }] },
+        { kind: 'tool_calls', calls: [{ id: 'c3', name: 'click', args: { ref: 3 } }] },
+      ])
+      const pipeline = createCommandPipeline({
+        llm,
+        tts: new RecordingTts(),
+        clock: new FakeClock(),
+        tools: [createReportRunPlanTool(), navigate, click],
+        currentHost: () => 'www.reddit.com',
+      })
+
+      const events = await collect(pipeline, 'read the top post')
+
+      // The user hears what to do about the wall, not that a run stopped.
+      expect(events.filter((e) => e.type === 'speak').map((e) => e.text)).toEqual([
+        'I could not get past the challenge on www.reddit.com.',
+      ])
+      expect(events.find((e) => e.type === 'display')).toMatchObject({
+        text: expect.stringContaining('complete the challenge on www.reddit.com in the browser tab and ask again'),
+      })
+      expect(events.find((e) => e.type === 'display')).toMatchObject({
+        text: expect.not.stringContaining('work budget'),
+      })
+      expect(events.at(-1)).toEqual({ type: 'done', outcome: 'failed', finalizationCause: 'blocker', at: 0 })
+    })
+
     it('routes an Off-contract Reply in the reserved Answer round to the fallback, unstreamed and unrendered (#198)', async () => {
       // The 2026-09-06 session: after the no-progress trip the reserved
       // round returned a note to itself — a retry count nothing in the
@@ -3527,13 +3564,24 @@ describe('command pipeline', () => {
       expect(refusal).toMatchObject({
         error: expect.stringMatching(/www\.reddit\.com is walled for this run \(Blocker: challenge\)/),
       })
-      expect((refusal as { error: string }).error).toMatch(/ask_user/)
-      expect((refusal as { error: string }).error).toMatch(/genuinely different site/)
     }
+    // The first refused round is the nudge: still recoverable, so it names
+    // the two real options and stays out of the eval's runtime-refusal
+    // scan (#202).
+    const [nudged, tripped] = refusals.map((refusal) => (refusal as { error: string }).error)
+    expect(nudged).toMatch(/ask_user/)
+    expect(nudged).toMatch(/genuinely different site/)
+    expect(nudged).not.toMatch(/^Not executed — /)
+    // The second one ends the run for `blocker` (#202, ADR 0037): the
+    // Finalize Instruction stands where the escalation was.
+    expect(tripped).toMatch(/^Not executed — /)
+    expect(tripped).toContain('The run kept interacting with www.reddit.com after it was walled (Blocker: challenge)')
+    expect(tripped).toContain('the user completing the challenge on screen in the browser tab')
+    expect(tripped).toMatch(/Finalize now/)
     // The refusal is a redirect, never a failed run — and the marker line
     // still rides the tool result the model sees.
     expect(events.find((event) => event.type === 'error')).toBeUndefined()
-    expect(events.at(-1)).toMatchObject({ type: 'done', outcome: 'done' })
+    expect(events.at(-1)).toMatchObject({ type: 'done', outcome: 'done', finalizationCause: 'blocker' })
     expect(llm.requests[1].toolResults[0]?.outcome).toMatchObject({
       ok: true,
       result: expect.stringMatching(/BLOCKER:challenge www\.reddit\.com/),

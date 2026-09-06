@@ -18,7 +18,13 @@ import type { ObservationRecord } from '../session/observationLedger'
 import { createObservationLedger } from '../session/observationLedger'
 import { ASK_ESCALATION_PREFIX } from '../pipeline/askUserTools'
 import { subagentBlockerEscalation } from '../pipeline/blockerGate'
-import { createEffortEpoch, NO_PROGRESS_FINALIZATION_REASON } from '../pipeline/effortEpoch'
+import { BLOCKER_HELP_BY_SIGNAL } from '../browser/blockerNudge'
+import {
+  blockerFinalizationReason,
+  createEffortEpoch,
+  NO_PROGRESS_FINALIZATION_REASON,
+  type FinalizationDetail,
+} from '../pipeline/effortEpoch'
 import { createNotices } from '../pipeline/notices'
 import type { RunDecisions } from '../pipeline/decisions'
 import type { RunInterrupts } from '../pipeline/interrupts'
@@ -296,13 +302,25 @@ const WORKER_PARENT_FINALIZING_INSTRUCTION =
   'The parent run is finalizing. Tool calls are closed. Reply now with ONLY your final report JSON ' +
   '\u2014 state honestly what you found and what remains open.'
 
+/**
+ * And how it reads when a wall closed the work (#202, ADR 0037). The
+ * worker's Blocker gate trips like the Run's, so the same reason sentence
+ * the Run's model reads opens the worker's instruction — the wall is the
+ * wall whoever is looking at it — and the demand stays the worker's.
+ */
+function workerBlockerInstruction(wall: FinalizationDetail): string {
+  return `${blockerFinalizationReason(wall)}. ${WORKER_FINALIZE_INSTRUCTION}`
+}
+
 /** The instruction this Finalization's refusals and its Notice share. */
-function workerFinalizeInstruction(cause: FinalizationCause | null): string {
-  return cause === 'parent_finalized' ? WORKER_PARENT_FINALIZING_INSTRUCTION : WORKER_FINALIZE_INSTRUCTION
+function workerFinalizeInstruction(cause: FinalizationCause | null, detail?: FinalizationDetail): string {
+  if (cause === 'parent_finalized') return WORKER_PARENT_FINALIZING_INSTRUCTION
+  if (cause === 'blocker' && detail !== undefined) return workerBlockerInstruction(detail)
+  return WORKER_FINALIZE_INSTRUCTION
 }
 
 const workerFinalizationWording: FinalizationWording = {
-  toolRefusal: (cause) => `Not executed \u2014 ${workerFinalizeInstruction(cause)}`,
+  finalizeInstruction: workerFinalizeInstruction,
   approachExhausted: `A second Approach has made no progress. ${WORKER_FINALIZE_INSTRUCTION}`,
 }
 
@@ -325,18 +343,21 @@ function askEscalation(outcome: ToolResultOutcome): string | null {
  * the Run's own constant (#201): that one stop reads identically in both
  * roles, so the two tables agree by sharing rather than by copying.
  */
-// A Subagent epoch reports these four of the Finalization Causes (#159:
+// A Subagent epoch reports these five of the Finalization Causes (#159:
 // `no_progress` joined the two budget causes when the worker adopted the
 // Run's no-progress rails; #199: `parent_finalized` joined them when
-// Finalization stopped cancelling live workers).
-function workerFinalizationNotice(cause: FinalizationCause, maxToolRounds: number): string {
+// Finalization stopped cancelling live workers; #202: `blocker` joined
+// them when keeping at a wall became a stop).
+function workerFinalizationNotice(cause: FinalizationCause, maxToolRounds: number, detail?: FinalizationDetail): string {
   if (cause === 'parent_finalized') return WORKER_PARENT_FINALIZING_INSTRUCTION
   const reason =
     cause === 'deadline_reached'
       ? 'The parent run\u2019s active-work deadline has passed'
       : cause === 'no_progress'
         ? NO_PROGRESS_FINALIZATION_REASON
-        : `Your delegated work budget (${maxToolRounds} tool rounds) is spent`
+        : cause === 'blocker' && detail !== undefined
+          ? blockerFinalizationReason(detail)
+          : `Your delegated work budget (${maxToolRounds} tool rounds) is spent`
   return `${reason}. Tool calls are closed. Reply now with ONLY your final report JSON — state honestly what you found and what remains open.`
 }
 
@@ -348,6 +369,8 @@ function workerFinalizationNotice(cause: FinalizationCause, maxToolRounds: numbe
 function boundedStopReport(input: {
   agentId?: string
   cause: FinalizationCause
+  /** The wall a `blocker` stop kept at (#202) — the report names it, so the orchestrator can act on it. */
+  detail?: FinalizationDetail
   maxToolRounds: number
   rounds: number
   lastAction: string | null
@@ -355,21 +378,28 @@ function boundedStopReport(input: {
 }): SubagentReport {
   // The no-progress stop (#159) is not a spent limit: the worker had
   // budget left and stopped because repetition stopped paying, so it says
-  // so rather than borrowing the budget wording.
+  // so rather than borrowing the budget wording. Nor is the Blocker stop
+  // (#202): it names the wall, because the orchestrator reading this
+  // report is the one that can ask the user about it.
   const noProgress = input.cause === 'no_progress'
   const parentFinalized = input.cause === 'parent_finalized'
+  const wall = input.cause === 'blocker' ? input.detail : undefined
   const causeSentence = noProgress
     ? 'two Approaches in a row made no progress'
     : input.cause === 'deadline_reached'
       ? 'the parent run reached its active-work deadline'
       : parentFinalized
         ? 'the parent run finalized before this report was written'
-        : `the delegated work budget (${input.maxToolRounds} tool rounds) was spent`
+        : wall !== undefined
+          ? `${wall.host} is walled (Blocker: ${wall.signal}) and this task kept at it — what helps is ${BLOCKER_HELP_BY_SIGNAL[wall.signal]}`
+          : `the delegated work budget (${input.maxToolRounds} tool rounds) was spent`
   const leadIn = noProgress
     ? 'Stopped without progress'
     : parentFinalized
       ? 'Stopped when the parent run finalized'
-      : 'Stopped at the delegated work limit'
+      : wall !== undefined
+        ? `Stopped at a wall on ${wall.host}`
+        : 'Stopped at the delegated work limit'
   const lastActionSentence = input.lastAction !== null ? ` The last action was: ${input.lastAction}.` : ''
   return {
     ...(input.agentId !== undefined ? { agentId: input.agentId } : {}),
@@ -380,7 +410,9 @@ function boundedStopReport(input: {
         ? 'Cut short with no progress left to make — the task is incomplete.'
         : parentFinalized
           ? 'Cut short by the parent run\u2019s finalization — the task is incomplete.'
-          : 'Cut short at the delegated work limit — the task is incomplete.',
+          : wall !== undefined
+            ? `Cut short at a wall on ${wall.host} that only the user can clear — the task is incomplete.`
+            : 'Cut short at the delegated work limit — the task is incomplete.',
     ],
     ...(input.observations !== undefined && input.observations.length > 0 ? { observations: input.observations } : {}),
     finalizationCause: input.cause,
@@ -473,6 +505,7 @@ export async function runSubagent(deps: RunSubagentDeps, options: RunSubagentOpt
     boundedStopReport({
       ...(options.agentId !== undefined ? { agentId: options.agentId } : {}),
       cause: epoch.phase.kind === 'working' ? 'parent_finalized' : epoch.phase.cause,
+      ...(epoch.phase.kind !== 'working' && epoch.phase.detail !== undefined ? { detail: epoch.phase.detail } : {}),
       maxToolRounds,
       rounds: epoch.tierRounds,
       lastAction,
@@ -620,7 +653,7 @@ export async function runSubagent(deps: RunSubagentDeps, options: RunSubagentOpt
       const rounds = epoch.tierRounds
       const observations = workerLedger.snapshot()
       if (toolResults.length === 0) {
-        return boundedStopReport({ ...(options.agentId !== undefined ? { agentId: options.agentId } : {}), cause: decision.cause, maxToolRounds, rounds, lastAction, observations })
+        return boundedStopReport({ ...(options.agentId !== undefined ? { agentId: options.agentId } : {}), cause: decision.cause, ...(decision.detail !== undefined ? { detail: decision.detail } : {}), maxToolRounds, rounds, lastAction, observations })
       }
       // The directive rides through Notices (#154/#158) like every other
       // model-facing advisory line — as a must-ride kind, because the
@@ -628,7 +661,7 @@ export async function runSubagent(deps: RunSubagentDeps, options: RunSubagentOpt
       // result must not swallow the one instruction it needs.
       const last = toolResults[toolResults.length - 1]
       if (last !== undefined) {
-        notices.owe('subagent_finalization', workerFinalizationNotice(decision.cause, maxToolRounds))
+        notices.owe('subagent_finalization', workerFinalizationNotice(decision.cause, maxToolRounds, decision.detail))
         last.outcome = notices.attach(last.outcome, { usefulWork: false })
       }
       let turn: AssistantTurn | null = null
@@ -677,7 +710,7 @@ export async function runSubagent(deps: RunSubagentDeps, options: RunSubagentOpt
         // worker answered because a rail told it to, not because it chose to.
         return reportFromTurn(turn, options.agentId, observations, decision.cause)
       }
-      return boundedStopReport({ ...(options.agentId !== undefined ? { agentId: options.agentId } : {}), cause: decision.cause, maxToolRounds, rounds, lastAction, observations })
+      return boundedStopReport({ ...(options.agentId !== undefined ? { agentId: options.agentId } : {}), cause: decision.cause, ...(decision.detail !== undefined ? { detail: decision.detail } : {}), maxToolRounds, rounds, lastAction, observations })
     }
 
     let turn: AssistantTurn | null = null

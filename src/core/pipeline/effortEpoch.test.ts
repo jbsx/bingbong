@@ -1016,4 +1016,102 @@ describe('Effort Epoch (#146, ADR 0027)', () => {
       expect(injectedReportDirective({ kind: 'working' })).toBe(ANSWER_ONLY_REPORT_DIRECTIVE)
     })
   })
+
+  // Issue #202, ADR 0037: the fifth mechanical stop a Run reaches. Its
+  // reason is not a constant — it names the wall — so every sentence about
+  // it is built from the detail the cause carries.
+  describe('the `blocker` cause carries the wall (#202)', () => {
+    const WALL = { signal: 'challenge', host: 'www.reddit.com' } as const
+
+    it('names host, flavor, and what helps in the Finalize Instruction', () => {
+      const instruction = finalizeInstruction('blocker', WALL)
+      expect(instruction).toContain('The run kept interacting with www.reddit.com after it was walled (Blocker: challenge)')
+      expect(instruction).toContain('what helps is the user completing the challenge on screen in the browser tab')
+      expect(instruction).toMatch(/Finalize now/)
+      expect(finalizationToolRefusal('blocker', WALL)).toBe(`Not executed — ${instruction}`)
+    })
+
+    it('claims no other run’s stop — one reason per round (#201)', () => {
+      const instruction = finalizeInstruction('blocker', WALL)
+      expect(instruction).not.toContain('work budget is exhausted')
+      expect(instruction).not.toContain('made no progress')
+      expect(instruction).not.toContain('active-work deadline')
+    })
+
+    it('invents no wall when the cause arrives without one', () => {
+      // The gate only ever enters the cause with its detail; a detail-less
+      // `blocker` reads as the demand alone rather than a host-less
+      // sentence about a wall nobody can name.
+      expect(finalizeInstruction('blocker')).toBe(finalizeInstruction(null))
+    })
+
+    it('carries the wall through the phase into the notice and the injected report', () => {
+      const epoch = createEffortEpoch({ clock: new FakeClock(), initialTier: 'direct_action' })
+      epoch.beginToolRound()
+      expect(epoch.enterFinalization('blocker', WALL)).toBe(true)
+      expect(epoch.phase).toEqual({ kind: 'finalizing', cause: 'blocker', detail: WALL })
+      expect(injectedReportDirective(epoch.phase)).toContain('www.reddit.com')
+      epoch.beginToolRound()
+      // The Answer-only latch keeps the detail: the reserved round's
+      // sentences must still name the wall.
+      expect(epoch.phase).toEqual({ kind: 'answer_only', cause: 'blocker', detail: WALL })
+      expect(epoch.takeFinalizationNotice()).toBe(finalizeInstruction('blocker', WALL))
+    })
+
+    it('reports the detail at the loop top, so a worker’s report names the same wall', () => {
+      const epoch = createEffortEpoch({ clock: new FakeClock(), initialTier: 'direct_action' })
+      epoch.enterFinalization('blocker', WALL)
+      expect(epoch.decideLoopTop()).toEqual({ kind: 'finalize', cause: 'blocker', detail: WALL })
+    })
+
+    it('hands the wall to the entry hook', () => {
+      const entered: { cause: FinalizationCause; detail?: unknown }[] = []
+      const epoch = createEffortEpoch({
+        clock: new FakeClock(),
+        onFinalizationEntered: (cause, detail) => entered.push({ cause, detail }),
+      })
+      epoch.enterFinalization('blocker', WALL)
+      expect(entered).toEqual([{ cause: 'blocker', detail: WALL }])
+    })
+  })
+
+  // The user's half of the same stop (#202). Deliberately not the model's
+  // sentence (#201): what the user hears is what they can do next.
+  describe('the deterministic Answer names the wall (#202)', () => {
+    const answerFor = (signal: 'challenge' | 'network-block' | 'login-wall', host: string) =>
+      deterministicFinalAnswer({
+        command: 'find the top post',
+        cause: 'blocker',
+        detail: { signal, host },
+        sources: [],
+      })
+
+    it('tells the user to complete a challenge, on the host it is on', () => {
+      const answer = answerFor('challenge', 'www.reddit.com')
+      expect(answer.speak).toBe('I could not get past the challenge on www.reddit.com.')
+      expect(answer.display).toContain('The run kept at a challenge it cannot pass.')
+      expect(answer.display).toContain('complete the challenge on www.reddit.com in the browser tab and ask again')
+      expect(answer.display).not.toContain('work limit')
+    })
+
+    it('tells the user to sign in or reroute past a network block', () => {
+      const answer = answerFor('network-block', 'news.example.com')
+      expect(answer.speak).toBe('I could not get past the network block on news.example.com.')
+      expect(answer.display).toContain('The run kept at a network block it cannot pass.')
+      expect(answer.display).toContain('sign in to news.example.com once in the browser tab, or ask me to try a different route')
+    })
+
+    it('tells the user to sign in past a login wall', () => {
+      const answer = answerFor('login-wall', 'accounts.example.com')
+      expect(answer.speak).toBe('I could not get past the sign-in wall on accounts.example.com.')
+      expect(answer.display).toContain('The run kept at a sign-in wall it cannot pass.')
+      expect(answer.display).toContain('sign in to accounts.example.com once in the browser tab and ask again')
+    })
+
+    it('never says “the run stopped” when it knows which wall stopped it', () => {
+      const answer = answerFor('challenge', 'www.reddit.com')
+      expect(answer.speak).not.toContain('had to stop before finishing')
+      expect(answer.display).not.toContain('The run stopped at its work limit.')
+    })
+  })
 })
