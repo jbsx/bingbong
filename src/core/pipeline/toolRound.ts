@@ -395,6 +395,10 @@ export function createToolRoundExecutor(config: ToolRoundConfig): ToolRoundExecu
     // refusals carry it directly; successful bookkeeping results carry
     // the epoch's owed directive as a Notice.
     effortEpoch.beginToolRound()
+    // The round boundary the no-progress rail needs (#197): its rejected
+    // Evidence Checkpoints count once per round, and only the executor
+    // knows where a round begins.
+    noProgressRail?.beginRound()
     // The sole-call boundary (#99): the whole response is known before any
     // of it executes, so when it carries one, every other call in it —
     // before or after — is a discarded sibling.

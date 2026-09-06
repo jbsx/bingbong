@@ -41,6 +41,16 @@ import { reportFault } from '../trace/fault'
 //   it) bounds the clause: each Producer gets exactly one first
 //   observation per state.
 //
+//   A rejected Evidence Checkpoint is a no-progress action too — but a
+//   Tool Round's rejected checkpoints count once (#197). The calls of one
+//   round are all made before the model can read any of their results, so
+//   four checkpoints rejected for the same missing field are one mistake
+//   made four times, not four actions that stopped paying. The executor
+//   marks the round boundary; the first rejection in a round escalates
+//   and the rest of that round's rejections are silent. The next round's
+//   first rejection counts again, so a model that keeps mis-shaping its
+//   bookkeeping still exhausts its Approaches — one step per round.
+//
 // The rail is deterministic and side-effect free apart from reading the
 // settled state through the injected source; without one (tests, lean
 // pipelines) it is inert. It never judges prose, only fingerprints.
@@ -137,6 +147,12 @@ export interface NoProgressRail {
    * the advisory for this call's result, null for none.
    */
   observe(call: ToolCall, outcome: ToolResultOutcome): Promise<string | null>
+  /**
+   * A Tool Round begins (#197): the round's rejected-checkpoint allowance
+   * renews. Called by the executor ahead of the round's first call; a
+   * rail never told about rounds counts one rejection in all.
+   */
+  beginRound(): void
   /** A Steering replan: fresh objective, fresh approach accounting. */
   reset(): void
   /** True once two Approaches exhausted — the run must finalize for `no_progress`. */
@@ -171,6 +187,9 @@ export function createNoProgressRail(deps: NoProgressRailDeps = {}): NoProgressR
   let noProgress = 0
   let exhaustedApproaches = 0
   let tripped = false
+  // Whether a rejected checkpoint has already escalated in the current
+  // Tool Round (#197): the round's later rejections are the same mistake.
+  let checkpointRejectedThisRound = false
 
   function isPageFacing(name: string): boolean {
     return classifyToolObservation(name).pageFacing
@@ -255,9 +274,15 @@ export function createNoProgressRail(deps: NoProgressRailDeps = {}): NoProgressR
     async observe(call, outcome) {
       if (settledState === undefined || tripped) return null
       // Accepted Evidence Checkpoints are decision-relevant evidence;
-      // rejected ones contribute to no-progress handling (#121/#126/AC3).
+      // rejected ones contribute to no-progress handling (#121/#126/AC3)
+      // — once per Tool Round (#197): the round's sibling rejections were
+      // made blind to the first and are not separate actions.
       if (CHECKPOINT_TOOLS.has(call.name)) {
-        if (!outcome.ok) return escalate()
+        if (!outcome.ok) {
+          if (checkpointRejectedThisRound) return null
+          checkpointRejectedThisRound = true
+          return escalate()
+        }
         progress()
         return null
       }
@@ -333,12 +358,17 @@ export function createNoProgressRail(deps: NoProgressRailDeps = {}): NoProgressR
       return escalated === null ? nudge : nudge === null ? escalated : `${nudge}\n\n${escalated}`
     },
 
+    beginRound() {
+      checkpointRejectedThisRound = false
+    },
+
     reset() {
       attempts.clear()
       observedBy.clear()
       pendingNudge = null
       noProgress = 0
       exhaustedApproaches = 0
+      checkpointRejectedThisRound = false
       // A corrected objective reopens work (#119): the no_progress trip
       // belonged to the stale one, and so did what each producer had
       // already learned — the same page read against a new question is

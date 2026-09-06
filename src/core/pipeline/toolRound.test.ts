@@ -315,6 +315,44 @@ describe('mid-round trips close the round’s remaining siblings (#157/AC2)', ()
     expect(trace.filter((entry) => entry === 'execute:navigate')).toHaveLength(5)
   })
 
+  it('counts a round of rejected Evidence Checkpoints once — the trip needs a rejection per round (#197)', async () => {
+    const trace: string[] = []
+    const rejecting: Tool = {
+      name: 'record_candidate',
+      async execute(callArg) {
+        trace.push(`execute:${callArg.name}`)
+        throw new Error('record_candidate rejected (malformed): the call is malformed')
+      },
+    }
+    const h = harness([scripted('navigate', trace, { acquisition: true }), rejecting], {
+      settledPageState: () => STUCK,
+      trace,
+    })
+    const candidates = (n: number): ToolCall[] =>
+      Array.from({ length: n }, (_, index) => call('record_candidate', { subject: `option ${index}` }))
+
+    // The Progress baseline, then four candidates rejected in one round:
+    // one no-progress action, not two exhausted Approaches — the run keeps
+    // working, and none of the rejections carries an Approach instruction.
+    const first = await h.round([call('navigate', { url: 'https://example.com/a' }), ...candidates(4)])
+    expect(h.epoch.phase).toEqual({ kind: 'working' })
+    for (const result of first.outcome.results.slice(1)) {
+      expect(errorOf(result.outcome)).not.toMatch(/approach/i)
+    }
+    // A rejection per round is what the accounting counts: the second
+    // round's exhausts the first Approach, the third's starts the second,
+    // and the fourth's trips Finalization. (The rail's instructions ride
+    // the next successful result, never the rejection itself — the phase
+    // is the mechanical record here.)
+    await h.round(candidates(1))
+    expect(h.epoch.phase).toEqual({ kind: 'working' })
+    await h.round(candidates(1))
+    expect(h.epoch.phase).toEqual({ kind: 'working' })
+    await h.round(candidates(1))
+    expect(h.epoch.phase).toEqual({ kind: 'answer_only', cause: 'no_progress' })
+    expect(trace.filter((entry) => entry === 'execute:record_candidate')).toHaveLength(7)
+  })
+
   it('refuses the siblings that begin after the active-work deadline expires', async () => {
     const trace: string[] = []
     // The tool spends the run's whole work budget while it runs — the

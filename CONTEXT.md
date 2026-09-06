@@ -241,7 +241,9 @@ not new material. The first
 observation of the state a page sits in by an Observation Producer that has not
 yet observed it is neutral: new material, so not a no-Progress action, but not
 Progress either, so it resets no accounting. A repeat by an Observation
-Producer that already observed this state is a no-Progress action. For a loop
+Producer that already observed this state is a no-Progress action. So is a
+rejected Evidence Checkpoint, counted once per Tool Round: the round's sibling
+calls were made before the model could read the first rejection. For a loop
 whose catalog holds no checkpoint or state-change tool, Progress is therefore
 the page moving and nothing else; the neutral first observation is what lets it
 study one page without an Approach exhausting on the spot.

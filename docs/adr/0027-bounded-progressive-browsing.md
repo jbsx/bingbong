@@ -31,7 +31,11 @@ mechanics and encourage redundant reads, clicks, screenshots, and vision calls.
   read and look at one source without exhausting an Approach on the spot.
   Two no-progress actions require a different Approach; two exhausted
   Approaches require an Answer or, before exhaustion, one high-information
-  question.
+  question. A rejected Evidence Checkpoint is a no-progress action, and a
+  Tool Round's rejected checkpoints count once (#197): the calls of one round
+  are made before the model can read any of their results, so a burst of one
+  mis-shaped bookkeeping call is one mistake, not one exhausted Approach per
+  sibling. The next round's first rejection counts again.
 - The runtime mechanically nudges and eventually refuses repeated actions
   against equivalent state. Changed content, scroll position, pagination, or
   media state prevents false refusal. One exception, from the scroll delta

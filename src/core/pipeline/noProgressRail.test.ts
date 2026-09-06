@@ -284,6 +284,67 @@ describe('no-progress rail — resets (#126/AC3)', () => {
     expect(await rail.observe(call('scroll', { direction: 'down' }), ok())).toMatch(/change your approach/i)
   })
 
+  it('counts a round of rejected Evidence Checkpoints once — the siblings were made blind to the first (#197)', async () => {
+    const rail = createNoProgressRail({ settledState: () => BASE })
+    rail.beginRound()
+    await rail.observe(call('navigate', { url: 'https://example.com/a' }), ok()) // baseline
+    rail.beginRound()
+    // Four candidates recorded in one response, every one missing its
+    // support: the model could not have read the first rejection before
+    // making the other three, so the round spends one no-progress action.
+    for (let sibling = 0; sibling < 4; sibling += 1) {
+      expect(await rail.observe(call('record_candidate', { subject: `option ${sibling}` }), failed('malformed'))).toBeNull()
+    }
+    expect(rail.finalizationDue()).toBe(false)
+    // Exactly one was counted: the next no-progress action exhausts the
+    // Approach rather than finalizing the run.
+    rail.beginRound()
+    expect(await rail.observe(call('scroll', { direction: 'down' }), ok())).toMatch(/change your approach/i)
+    expect(rail.finalizationDue()).toBe(false)
+  })
+
+  it('counts a rejected Evidence Checkpoint in each round — a model that keeps mis-shaping its bookkeeping still exhausts its Approaches (#197)', async () => {
+    const rail = createNoProgressRail({ settledState: () => BASE })
+    rail.beginRound()
+    await rail.observe(call('navigate', { url: 'https://example.com/a' }), ok()) // baseline
+    const rejected = (): Promise<string | null> =>
+      rail.observe(call('record_evidence', { observation: 'fact' }), failed('citation not observed'))
+    rail.beginRound()
+    expect(await rejected()).toBeNull() // no-progress 1
+    rail.beginRound()
+    expect(await rejected()).toMatch(/change your approach/i) // approach 1 exhausted
+    rail.beginRound()
+    expect(await rejected()).toBeNull() // no-progress 1 under the new approach
+    rail.beginRound()
+    expect(await rejected()).toMatch(/final answer JSON/) // approach 2 exhausted: the trip
+    expect(rail.finalizationDue()).toBe(true)
+  })
+
+  it('a rail never told about rounds counts one rejected checkpoint in all', async () => {
+    const rail = createNoProgressRail({ settledState: () => BASE })
+    await rail.observe(call('navigate', { url: 'https://example.com/a' }), ok()) // baseline
+    const rejected = (): Promise<string | null> =>
+      rail.observe(call('record_candidate', { subject: 'option' }), failed('malformed'))
+    // Without a round boundary the allowance never renews: the first
+    // rejection counts and every later one is its silent sibling.
+    expect(await rejected()).toBeNull()
+    expect(await rejected()).toBeNull()
+    expect(await rejected()).toBeNull()
+    expect(rail.finalizationDue()).toBe(false)
+  })
+
+  it('an accepted checkpoint after a rejected sibling still resets the round (#197)', async () => {
+    const rail = createNoProgressRail({ settledState: () => BASE })
+    rail.beginRound()
+    await rail.observe(call('navigate', { url: 'https://example.com/a' }), ok()) // baseline
+    rail.beginRound()
+    expect(await rail.observe(call('record_candidate', { subject: 'option' }), failed('malformed'))).toBeNull()
+    await rail.observe(call('record_evidence', { observation: 'fact', source_url: 'https://example.com/a' }), ok())
+    // The counter restarted: one no-progress action no longer reaches the instruction.
+    rail.beginRound()
+    expect(await rail.observe(call('scroll', { direction: 'down' }), ok())).toBeNull()
+  })
+
   it('a requested state change resets the rails', async () => {
     const rail = createNoProgressRail({ settledState: () => BASE })
     await rail.observe(call('navigate', { url: 'https://example.com/a' }), ok()) // baseline
