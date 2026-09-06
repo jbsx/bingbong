@@ -353,7 +353,7 @@ describe('bounded Investigation e2e (#118) — escalation to the 32-round hard c
     expect(navigations.slice(0, 31).every((event) => event.ok)).toBe(true)
     expect(navigations[31]).toMatchObject({
       ok: false,
-      error: expect.stringMatching(/work budget is exhausted[\s\S]*final answer JSON/),
+      error: expect.stringMatching(/has reached its hard work limit[\s\S]*final answer JSON/),
     })
     // The last executed page stays visible.
     expect(navigations[30].result).toMatch(/navigated: url=\S*\/header-echo/)

@@ -311,8 +311,14 @@ describe('mid-round trips close the round’s remaining siblings (#157/AC2)', ()
     expect(h.epoch.phase).toEqual({ kind: 'finalizing', cause: 'no_progress' })
     expect(resultOf(outcome.results[4]!.outcome)).toMatch(/second Approach has made no progress/)
     // The sibling after the trip never executed: it met the closed-tool
-    // refusal, which carries the finalize directive itself.
-    expect(errorOf(outcome.results[5]!.outcome)).toBe(finalizationToolRefusal)
+    // refusal, which carries the Finalize Instruction itself.
+    expect(errorOf(outcome.results[5]!.outcome)).toBe(finalizationToolRefusal('no_progress'))
+    // One reason per round (#201): the tripping call's rail sentence and
+    // every sibling refused after it name the same stop — no sibling
+    // claims a spent work budget the run never spent.
+    expect(resultOf(outcome.results[4]!.outcome)).not.toContain('work budget is exhausted')
+    expect(errorOf(outcome.results[5]!.outcome)).not.toContain('work budget is exhausted')
+    expect(errorOf(outcome.results[5]!.outcome)).toContain('made no progress')
     expect(trace.filter((entry) => entry === 'execute:navigate')).toHaveLength(5)
   })
 
@@ -376,7 +382,7 @@ describe('mid-round trips close the round’s remaining siblings (#157/AC2)', ()
     // The in-flight call settled once — the gate runs between calls — but
     // the sibling that begins past the boundary never starts.
     expect(resultOf(outcome.results[0]!.outcome)).toMatch(/^done/)
-    expect(errorOf(outcome.results[1]!.outcome)).toBe(finalizationToolRefusal)
+    expect(errorOf(outcome.results[1]!.outcome)).toBe(finalizationToolRefusal('deadline_reached'))
     // Finalizing, not Answer-only: a crossing during tool execution gets
     // the same bookkeeping round a crossing during the model call does
     // (#200, ADR 0036).

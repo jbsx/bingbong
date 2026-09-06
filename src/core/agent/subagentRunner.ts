@@ -18,7 +18,7 @@ import type { ObservationRecord } from '../session/observationLedger'
 import { createObservationLedger } from '../session/observationLedger'
 import { ASK_ESCALATION_PREFIX } from '../pipeline/askUserTools'
 import { subagentBlockerEscalation } from '../pipeline/blockerGate'
-import { createEffortEpoch } from '../pipeline/effortEpoch'
+import { createEffortEpoch, NO_PROGRESS_FINALIZATION_REASON } from '../pipeline/effortEpoch'
 import { createNotices } from '../pipeline/notices'
 import type { RunDecisions } from '../pipeline/decisions'
 import type { RunInterrupts } from '../pipeline/interrupts'
@@ -296,8 +296,8 @@ const WORKER_PARENT_FINALIZING_INSTRUCTION =
   'The parent run is finalizing. Tool calls are closed. Reply now with ONLY your final report JSON ' +
   '\u2014 state honestly what you found and what remains open.'
 
-/** The instruction this Finalization's refusals and its directive share. */
-function workerFinalizeInstruction(cause: FinalizationCause): string {
+/** The instruction this Finalization's refusals and its Notice share. */
+function workerFinalizeInstruction(cause: FinalizationCause | null): string {
   return cause === 'parent_finalized' ? WORKER_PARENT_FINALIZING_INSTRUCTION : WORKER_FINALIZE_INSTRUCTION
 }
 
@@ -318,10 +318,12 @@ function askEscalation(outcome: ToolResultOutcome): string | null {
 }
 
 /**
- * The Finalization directive for the worker's reserved Answer round
- * (#120): rides the last tool result the way the orchestrator's directive
- * rides its Finalization results — the model learns the work budget is
- * spent and that only the final report JSON is accepted now.
+ * The Finalize Instruction for the worker's reserved Answer round
+ * (#120): rides the last tool result the way the orchestrator's rides its
+ * Finalization results — the model learns why the work stopped and that
+ * only the final report JSON is accepted now. Its `no_progress` reason is
+ * the Run's own constant (#201): that one stop reads identically in both
+ * roles, so the two tables agree by sharing rather than by copying.
  */
 // A Subagent epoch reports these four of the Finalization Causes (#159:
 // `no_progress` joined the two budget causes when the worker adopted the
@@ -333,7 +335,7 @@ function workerFinalizationNotice(cause: FinalizationCause, maxToolRounds: numbe
     cause === 'deadline_reached'
       ? 'The parent run\u2019s active-work deadline has passed'
       : cause === 'no_progress'
-        ? 'Two Approaches in a row made no progress \u2014 repeated actions stopped producing anything new'
+        ? NO_PROGRESS_FINALIZATION_REASON
         : `Your delegated work budget (${maxToolRounds} tool rounds) is spent`
   return `${reason}. Tool calls are closed. Reply now with ONLY your final report JSON — state honestly what you found and what remains open.`
 }
@@ -477,7 +479,7 @@ export async function runSubagent(deps: RunSubagentDeps, options: RunSubagentOpt
       observations: workerLedger.snapshot(),
     })
   // The worker's owed-Notice queue (#154): with every rail off, the only
-  // Notice a worker ever owes is its own Finalization directive below.
+  // Notice a worker ever owes is its own Finalize Instruction below.
   const notices = createNotices()
   // A worker has no user (#158): every Confirmation verdict is denied with
   // the wording the model has always read, and a stray interactive ask_user

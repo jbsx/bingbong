@@ -1,13 +1,16 @@
 import { describe, expect, it, vi } from 'vitest'
 import { FakeClock } from '../testing/doubles'
 import {
+  ANSWER_ONLY_REPORT_DIRECTIVE,
   budgetWarningCrossed,
   budgetWarningMessage,
   createEffortEpoch,
   deterministicFinalAnswer,
-  FINALIZATION_ANSWER_DIRECTIVE,
+  FINALIZATION_REPORT_CHECKPOINT_DIRECTIVE,
   finalizationToolRefusal,
+  finalizeInstruction,
   HARD_TOOL_ROUND_CEILING,
+  injectedReportDirective,
   REPORT_GRACE_MS,
   resolveReportGraceMs,
   TIER_ACTIVE_WORK_DEADLINES_MS,
@@ -279,7 +282,7 @@ describe('Effort Epoch (#146, ADR 0027)', () => {
       expect(epoch.takeFinalizationNotice()).toBeNull()
       epoch.decideLoopTop()
       epoch.beginToolRound()
-      expect(epoch.takeFinalizationNotice()).toBe(FINALIZATION_ANSWER_DIRECTIVE)
+      expect(epoch.takeFinalizationNotice()).toBe(finalizeInstruction('budget_exhausted'))
       expect(epoch.takeFinalizationNotice()).toBeNull()
     })
 
@@ -922,14 +925,95 @@ describe('Effort Epoch (#146, ADR 0027)', () => {
       expect(
         deterministicFinalAnswer({ command: 'pause the video', cause: 'hard_limit', sources: [] }).display,
       ).not.toContain('What I managed to observe')
+      // The hard ceiling speaks its own line rather than the catch-all (#201).
+      expect(deterministicFinalAnswer({ command: 'pause the video', cause: 'hard_limit', sources: [] }).speak).toBe(
+        'I reached my work limit before finishing that request.',
+      )
+      expect(deterministicFinalAnswer({ command: 'pause the video', cause: 'no_progress', sources: [] }).speak).toBe(
+        'I stopped making progress on that request.',
+      )
     })
   })
 
   it('words the finalization refusal as a directive, not a raw error', () => {
-    expect(finalizationToolRefusal).toMatch(/^Not executed — /)
-    expect(finalizationToolRefusal).toContain('final answer JSON')
-    expect(finalizationToolRefusal).toContain('ask_user')
-    expect(finalizationToolRefusal).toMatch(/Acquisition.*closed/)
-    expect(finalizationToolRefusal).toMatch(/Collection and Bookkeeping remain open/)
+    const refusal = finalizationToolRefusal('budget_exhausted')
+    expect(refusal).toMatch(/^Not executed — /)
+    expect(refusal).toContain('final answer JSON')
+    expect(refusal).toContain('ask_user')
+    expect(refusal).toMatch(/Acquisition.*closed/)
+    expect(refusal).toMatch(/Collection and Bookkeeping remain open/)
+  })
+
+  describe('the Finalize Instruction names the cause (#201)', () => {
+    // The four mechanical stops a Run finalizes under. `objective_met` is
+    // the model's own attestation, and `blocker`, `user_unavailable` and
+    // `parent_finalized` are reached by nothing a Run does.
+    const RUN_CAUSES: readonly FinalizationCause[] = [
+      'budget_exhausted',
+      'deadline_reached',
+      'no_progress',
+      'hard_limit',
+    ]
+    const REASON: Readonly<Record<string, string>> = {
+      budget_exhausted: 'The run’s work budget is exhausted',
+      deadline_reached: 'The run’s active-work deadline has passed',
+      no_progress: 'Two Approaches in a row made no progress — repeated actions stopped producing anything new',
+      hard_limit: 'The run has reached its hard work limit',
+    }
+    const CLOSING =
+      'Acquisition tools (browser, vision, media, and delegation) and ask_user are closed; Collection and ' +
+      'Bookkeeping remain open. Finalize now: reply with your final answer JSON and state honestly what was and ' +
+      'was not completed.'
+
+    it('opens on the true reason and closes on the unchanged demand', () => {
+      for (const cause of RUN_CAUSES) {
+        expect(finalizeInstruction(cause)).toBe(`${REASON[cause]} — ${CLOSING}`)
+      }
+    })
+
+    it('words every closed-tool refusal by cause, behind the eval’s prefix', () => {
+      for (const cause of RUN_CAUSES) {
+        expect(finalizationToolRefusal(cause)).toBe(`Not executed — ${finalizeInstruction(cause)}`)
+      }
+      // Exactly one cause may claim a spent budget.
+      expect(RUN_CAUSES.filter((c) => finalizationToolRefusal(c).includes('work budget is exhausted'))).toEqual([
+        'budget_exhausted',
+      ])
+    })
+
+    it('words the Finalization notice by the cause the epoch entered under', () => {
+      for (const cause of RUN_CAUSES) {
+        const epoch = createEffortEpoch({ clock: new FakeClock(), initialTier: 'direct_action' })
+        epoch.beginToolRound()
+        expect(epoch.enterFinalization(cause)).toBe(true)
+        epoch.beginToolRound()
+        expect(epoch.takeFinalizationNotice()).toBe(finalizeInstruction(cause))
+      }
+    })
+
+    it('words an injected worker report by the cause, in both Finalization phases', () => {
+      for (const cause of RUN_CAUSES) {
+        // A sentence break here, not the Instruction's dash: the demands
+        // are whole sentences and the Answer-only one already has a dash.
+        expect(injectedReportDirective({ kind: 'finalizing', cause })).toBe(
+          `${REASON[cause]}. ${FINALIZATION_REPORT_CHECKPOINT_DIRECTIVE}`,
+        )
+        expect(injectedReportDirective({ kind: 'answer_only', cause })).toBe(
+          `${REASON[cause]}. ${ANSWER_ONLY_REPORT_DIRECTIVE}`,
+        )
+      }
+      expect(injectedReportDirective({ kind: 'answer_only', cause: 'hard_limit' })).toBe(
+        'The run has reached its hard work limit. No tool round remains — every tool is closed. Reply with your ' +
+          'final answer JSON and state honestly what was and was not completed.',
+      )
+    })
+
+    it('invents no reason for a cause a Run never finalizes under', () => {
+      // Unreachable by construction. If it ever is reached the model reads
+      // the demand alone rather than a stop it did not make.
+      expect(finalizeInstruction('parent_finalized')).toBe(CLOSING)
+      expect(finalizeInstruction(null)).toBe(CLOSING)
+      expect(injectedReportDirective({ kind: 'working' })).toBe(ANSWER_ONLY_REPORT_DIRECTIVE)
+    })
   })
 })

@@ -4,8 +4,8 @@ import { reportFault } from '../trace/fault'
 // Issue #154, step 1: the Notices module. Six model-facing advisory
 // lines ride tool results — the search-loop nudge, the no-progress nudge,
 // the Run Plan's corrective nudge, the Effort Epoch's budget warning, its
-// Finalization directive, and (#158) the Browse Subagent's own
-// Finalization directive. Their precedence used to be the order of
+// Finalize Instruction, and (#158) the Browse Subagent's own
+// Finalize Instruction. Their precedence used to be the order of
 // five `if` statements in the Run loop, and the Run Plan nudge's "owed
 // until it actually lands" rule was one boolean set and cleared from five
 // places. This module owns all of that as data: one precedence table, one
@@ -13,13 +13,13 @@ import { reportFault } from '../trace/fault'
 //
 // Vocabulary (CONTEXT.md, Notice): a Notice rides only a successful
 // string result — an error already tells the model what happened, and a
-// structured result cannot carry prose. The one exception is a directive
-// that closes the loop rather than advising inside it (#158, a Browse
-// Subagent's Finalization directive): its next round is its last, so the
-// directive must reach it however the result it rides read. An immediate
+// structured result cannot carry prose. The one exception is an
+// instruction that closes the loop rather than advising inside it (#158,
+// a Browse Subagent's Finalize Instruction): its next round is its last,
+// so it must reach that round however the result it rides read. An immediate
 // Notice is the rail's verdict on this very call: it rides this result or
 // is dropped. An owed Notice persists until some later result can carry
-// it. Two kinds — the budget warning and the Run's Finalization directive
+// it. Two kinds — the budget warning and the Run's Finalize Instruction
 // — are owed by the Effort Epoch itself, which keeps their state and
 // supersession (#117/#148); the module reaches them through a standing
 // supplier consulted only when the kind's guard passes, so a warning is
@@ -41,8 +41,8 @@ export type NoticeKind =
 /**
  * Delivery order when several Notices ride one result (#74/#126/#116/#117):
  * rail verdicts first, the plan correction next, the epoch's warning and
- * directive last — the model reads what this call did before what the
- * run as a whole owes it. A worker's Finalization directive (#158) is
+ * Finalize Instruction last — the model reads what this call did before what the
+ * run as a whole owes it. A worker's Finalize Instruction (#158) is
  * last of all: it is the only one that ends the loop.
  */
 export const NOTICE_PRECEDENCE: readonly NoticeKind[] = [

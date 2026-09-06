@@ -521,7 +521,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
     let modelDeclaredPlan = false
     // The Run's Notices (#154): every advisory line a tool result carries
     // — rail verdicts, the plan's corrective nudge, the epoch's budget
-    // warning and Finalization directive — is owed to and delivered by
+    // warning and Finalize Instruction — is owed to and delivered by
     // this one module, in its one precedence. The plan nudge is owed
     // until it actually rides a useful result, so a round whose siblings
     // all fail does not swallow it.
@@ -1230,7 +1230,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
           }
           // An Off-contract Reply in the reserved Answer round (#198, ADR
           // 0034): prose, or JSON of the wrong shape, where the round's one
-          // job was the Answer contract the finalize directive stated a
+          // job was the Answer contract the Finalize Instruction stated a
           // message earlier and the model held no tools. It is a failed
           // round beside the thrown and tool-requesting cases — the model
           // narrating, not answering — so it takes the same deterministic

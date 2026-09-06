@@ -1297,7 +1297,7 @@ describe('command pipeline', () => {
     expect(events.filter((e) => e.type === 'tool_result' && e.name === 'spin')).toHaveLength(ceiling)
     expect(events.find((e) => e.type === 'tool_result' && e.callId === `c${ceiling}`)).toMatchObject({
       ok: false,
-      error: expect.stringMatching(/work budget is exhausted/),
+      error: expect.stringMatching(/has reached its hard work limit/),
     })
     expect(llm.requests).toHaveLength(ceiling + 1)
     // No raw round-limit error: the guaranteed Answer replaces it.
@@ -1309,7 +1309,7 @@ describe('command pipeline', () => {
     })
     expect(events.find((e) => e.type === 'speak')).toMatchObject({
       type: 'speak',
-      text: 'I had to stop before finishing that request.',
+      text: 'I reached my work limit before finishing that request.',
     })
     expect(events.at(-1)).toMatchObject({ type: 'done', outcome: 'failed', finalizationCause: 'hard_limit' })
   })
@@ -2009,11 +2009,11 @@ describe('command pipeline', () => {
       expect(events.find((e) => e.type === 'tool_result' && e.callId === 'w1')).toMatchObject({ ok: true })
       expect(events.find((e) => e.type === 'tool_result' && e.callId === 'w2')).toMatchObject({
         ok: false,
-        error: expect.stringMatching(/work budget is exhausted[\s\S]*final answer JSON/),
+        error: expect.stringMatching(/active-work deadline has passed[\s\S]*final answer JSON/),
       })
       expect(events.find((e) => e.type === 'tool_result' && e.callId === 'ask1')).toMatchObject({
         ok: false,
-        error: expect.stringMatching(/work budget is exhausted[\s\S]*final answer JSON/),
+        error: expect.stringMatching(/active-work deadline has passed[\s\S]*final answer JSON/),
       })
       expect(events.some((e) => e.type === 'ask_requested')).toBe(false)
       expect(llm.requests).toHaveLength(3)
@@ -2149,7 +2149,7 @@ describe('command pipeline', () => {
       expect(events.filter((e) => e.type === 'tool_result' && e.name === 'work' && e.ok)).toHaveLength(3)
       expect(events.find((e) => e.type === 'tool_result' && e.callId === 'w3')).toMatchObject({
         ok: false,
-        error: expect.stringMatching(/work budget is exhausted/),
+        error: expect.stringMatching(/active-work deadline has passed/),
       })
       expect(events.at(-1)).toEqual({ type: 'done', outcome: 'done', resolution: 'partial', finalizationCause: 'deadline_reached', at: 411_000 })
     })
@@ -2230,7 +2230,7 @@ describe('command pipeline', () => {
       expect(events.filter((e) => e.type === 'tool_result' && e.name === 'work' && e.ok)).toHaveLength(31)
       expect(events.find((e) => e.type === 'tool_result' && e.callId === 'w31')).toMatchObject({
         ok: false,
-        error: expect.stringMatching(/work budget is exhausted[\s\S]*final answer JSON/),
+        error: expect.stringMatching(/has reached its hard work limit[\s\S]*final answer JSON/),
       })
       // 32 Tool Rounds inside the ceiling plus the Answer-only round
       // outside it.
@@ -2509,7 +2509,7 @@ describe('command pipeline', () => {
       expect(events.filter((e) => e.type === 'tool_result' && e.name === 'work' && e.ok)).toHaveLength(3)
       expect(events.find((e) => e.type === 'tool_result' && e.callId === 'w3')).toMatchObject({
         ok: false,
-        error: expect.stringMatching(/work budget is exhausted/),
+        error: expect.stringMatching(/active-work deadline has passed/),
       })
       expect(events.at(-1)).toMatchObject({ type: 'done', finalizationCause: 'deadline_reached' })
     })

@@ -79,11 +79,13 @@ export interface ToolRoundCapabilities {
 export interface FinalizationWording {
   /**
    * What a closed acquisition or ask_user call answers with in
-   * Finalization. A function when the phase's cause changes the wording
-   * (#199): a worker told its parent is finalizing must not read that its
-   * own delegated budget is spent.
+   * Finalization, worded for the cause (#199/#201): a worker told its
+   * parent is finalizing must not read that its own delegated budget is
+   * spent, and a Run stopped by its deadline must not read that either.
+   * `null` is the phase that names no cause — unreachable, since the
+   * closed-tool check is gated on Finalization.
    */
-  readonly toolRefusal: string | ((cause: FinalizationCause) => string)
+  readonly toolRefusal: (cause: FinalizationCause | null) => string
   /** What the action exhausting the second Approach is told (#126). */
   readonly approachExhausted: string
 }
@@ -267,11 +269,9 @@ export function createToolRoundExecutor(config: ToolRoundConfig): ToolRoundExecu
    * the closed-tool check that reaches it is gated on the phase.
    */
   const closedToolRefusal = (): string => {
-    const wording = config.finalizationWording?.toolRefusal
-    if (wording === undefined) return finalizationToolRefusal
-    if (typeof wording === 'string') return wording
     const phase = effortEpoch.phase
-    return phase.kind === 'working' ? finalizationToolRefusal : wording(phase.cause)
+    const wording = config.finalizationWording?.toolRefusal ?? finalizationToolRefusal
+    return wording(phase.kind === 'working' ? null : phase.cause)
   }
   // The Vision Budget is the round's, so the context tools execute against
   // acquires from it — a caller can never hand a tool a different one.
@@ -488,7 +488,7 @@ export function createToolRoundExecutor(config: ToolRoundConfig): ToolRoundExecu
       // Approach instructions are immediate Notices too; two exhausted
       // Approaches trip the run into Finalization mid-round — remaining
       // acquisition siblings of this round are then refused by the
-      // closed-tool check above, each carrying the finalize directive.
+      // closed-tool check above, each carrying the Finalize Instruction.
       if (noProgressRail !== null) {
         notices.owe('no_progress', await noProgressRail.observe(call, outcome))
         if (noProgressRail.finalizationDue()) effortEpoch.tripNoProgress()

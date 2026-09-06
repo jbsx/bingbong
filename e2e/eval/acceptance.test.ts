@@ -929,8 +929,12 @@ describe('the #130 corpus', () => {
 describe('isRuntimeRefusal', () => {
   it('recognizes the rails’ pre-execution refusals and rejects ordinary errors', () => {
     expect(isRuntimeRefusal('Not executed — this action repeats an equivalent action against unchanged page state.')).toBe(true)
-    // Pinned against the real Finalization closure refusal, so wording drift in src fails here.
-    expect(isRuntimeRefusal(finalizationToolRefusal)).toBe(true)
+    // Pinned against the real Finalization closure refusal, so wording drift
+    // in src fails here — every cause it can be worded for (#201), since the
+    // `Not executed — ` prefix is what classifies it, not the reason.
+    for (const cause of ['budget_exhausted', 'deadline_reached', 'no_progress', 'hard_limit'] as const) {
+      expect(isRuntimeRefusal(finalizationToolRefusal(cause))).toBe(true)
+    }
     expect(isRuntimeRefusal('Search loop limit (5 consecutive similar searches — q= navigate) reached for this run.')).toBe(true)
     // The Blocker gate's refusal is recoverable by design — not a violation to retry after.
     expect(isRuntimeRefusal('navigate refused before execution: example.com is walled for this run')).toBe(false)

@@ -106,11 +106,13 @@ const APPROACH_CHANGE_INSTRUCTION =
   'If you cannot proceed differently, answer with what you have.'
 
 /**
- * The Finalization directive riding the action that exhausts the second
- * Approach — parallel to FINALIZATION_ANSWER_DIRECTIVE's vocabulary, for
- * the no_progress cause. The Run's wording; a caller whose Finalization
- * reads differently injects its own (#159: a Browse Subagent finalizes
- * into a report, not an answer, and has no bookkeeping to do).
+ * The Finalize Instruction riding the action that exhausts the second
+ * Approach — parallel to `finalizeInstruction`'s vocabulary, and already
+ * cause-worded, which is why #201 left it alone: it was the sibling
+ * refusals that named the wrong reason after it. The Run's wording; a
+ * caller whose Finalization reads differently injects its own (#159: a
+ * Browse Subagent finalizes into a report, not an answer, and has no
+ * bookkeeping to do).
  */
 export const ORCHESTRATOR_APPROACH_EXHAUSTED_DIRECTIVE =
   'A second Approach has made no progress — the run is finalizing. Acquisition, vision, media, delegation, and ' +

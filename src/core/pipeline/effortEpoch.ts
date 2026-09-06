@@ -197,18 +197,66 @@ export function budgetWarningMessage(milestone: BudgetWarningMilestone, remainin
 }
 
 /**
- * The Finalization directive (#117, ADR 0027): rides every tool result of
- * a Finalization Tool Round — the refusal a closed tool answers with, and
- * the advisory a successful bookkeeping result carries, so the model
- * always learns that the Answer round is next.
+ * The reason sentence a no-progress Finalization opens with, in the one
+ * role-independent wording (#201): a worker's rails and the Run's trip on
+ * the same thing and say so identically, so the constant is shared rather
+ * than copied. Every other reason names whose run stopped — "the run's",
+ * "the parent run's", "your delegated" — and stays in a per-role table.
  */
-export const FINALIZATION_ANSWER_DIRECTIVE =
-  'The run\u2019s work budget is exhausted — Acquisition tools (browser, vision, media, and delegation) and ask_user are ' +
-  'closed; Collection and Bookkeeping remain open. Finalize now: reply with your final answer JSON and state ' +
-  'honestly what was and was not completed.'
+export const NO_PROGRESS_FINALIZATION_REASON =
+  'Two Approaches in a row made no progress — repeated actions stopped producing anything new'
 
-/** The refusal a closed tool call answers with in Finalization. */
-export const finalizationToolRefusal = `Not executed — ${FINALIZATION_ANSWER_DIRECTIVE}`
+/**
+ * Why the Run is finalizing, as its own model reads it (#201). Only these
+ * four mechanical stops reach a Run's model: `objective_met` is the
+ * model's own attestation, and `blocker`, `user_unavailable` and
+ * `parent_finalized` are reached by nothing a Run does.
+ */
+const RUN_FINALIZATION_REASONS: Partial<Record<FinalizationCause, string>> = {
+  budget_exhausted: 'The run\u2019s work budget is exhausted',
+  deadline_reached: 'The run\u2019s active-work deadline has passed',
+  no_progress: NO_PROGRESS_FINALIZATION_REASON,
+  hard_limit: 'The run has reached its hard work limit',
+}
+
+/**
+ * The reason a Run's model-facing Finalization text opens on, or
+ * undefined for a cause with no Run sentence — and for `null`, the phase
+ * that names no cause at all. Nothing reaches either: a site with no
+ * reason says only what it demands, because inventing one for a stop the
+ * run did not make is this bug all over again.
+ */
+function runFinalizationReason(cause: FinalizationCause | null): string | undefined {
+  return cause === null ? undefined : RUN_FINALIZATION_REASONS[cause]
+}
+
+/** What every Finalize Instruction demands, whatever stopped the run. */
+const FINALIZE_INSTRUCTION_DEMAND =
+  'Acquisition tools (browser, vision, media, and delegation) and ask_user are closed; Collection and Bookkeeping ' +
+  'remain open. Finalize now: reply with your final answer JSON and state honestly what was and was not completed.'
+
+/**
+ * The Finalize Instruction (#117/#201, ADR 0027): rides every tool result
+ * of a Finalization Tool Round — the refusal a closed tool answers with,
+ * and the advisory a successful bookkeeping result carries, so the model
+ * always learns that the Answer round is next. It opens on the cause the
+ * run actually stopped for: the closing asks the model to state honestly
+ * what it completed, which it can only do from a true premise about why
+ * it was stopped.
+ */
+export function finalizeInstruction(cause: FinalizationCause | null): string {
+  const reason = runFinalizationReason(cause)
+  return reason === undefined ? FINALIZE_INSTRUCTION_DEMAND : `${reason} — ${FINALIZE_INSTRUCTION_DEMAND}`
+}
+
+/**
+ * The refusal a closed tool call answers with in Finalization. The
+ * `Not executed — ` prefix is an eval contract rather than a style: the
+ * acceptance harness classifies runtime refusals by it.
+ */
+export function finalizationToolRefusal(cause: FinalizationCause | null): string {
+  return `Not executed — ${finalizeInstruction(cause)}`
+}
 
 /**
  * What a worker report injected at a Finalization loop top says while a
@@ -237,9 +285,16 @@ export const ANSWER_ONLY_REPORT_DIRECTIVE =
  * only ask for what that round will honour. Only Finalization injects
  * reports, so `finalizing` — a bookkeeping round is next — is the
  * positive case; every other phase a report can reach is Answer-only.
+ * It opens on the phase's cause (#201), so a report injected mid-round
+ * gives the same reason the round's refusals already gave.
  */
 export function injectedReportDirective(phase: EffortPhase): string {
-  return phase.kind === 'finalizing' ? FINALIZATION_REPORT_CHECKPOINT_DIRECTIVE : ANSWER_ONLY_REPORT_DIRECTIVE
+  const demand = phase.kind === 'finalizing' ? FINALIZATION_REPORT_CHECKPOINT_DIRECTIVE : ANSWER_ONLY_REPORT_DIRECTIVE
+  const reason = runFinalizationReason(phase.kind === 'working' ? null : phase.cause)
+  // A sentence break rather than the Instruction's em dash: both demands
+  // here are whole sentences, and the Answer-only one carries a dash of
+  // its own — chaining a third would read as one long clause.
+  return reason === undefined ? demand : `${reason}. ${demand}`
 }
 
 /**
@@ -332,7 +387,7 @@ export interface EffortEpoch {
    * The no-Progress trip (#126/#148): the rail reports two exhausted
    * Approaches mid-round; the run enters Finalization with the
    * `no_progress` cause, so the round's remaining acquisition siblings
-   * are refused with the finalize directive.
+   * are refused with the Finalize Instruction.
    */
   tripNoProgress(): boolean
   /**
@@ -615,14 +670,23 @@ export function createEffortEpoch(deps: {
       return budgetWarningMessage(milestone, Math.max(0, budget - tierRounds), budget)
     },
     takeFinalizationNotice() {
-      if (!pendingFinalizationNotice || phase.kind === 'working') return null
+      const current = phase
+      if (!pendingFinalizationNotice || current.kind === 'working') return null
       pendingFinalizationNotice = false
-      return FINALIZATION_ANSWER_DIRECTIVE
+      // The cause this epoch entered under, not a stock one (#201): the
+      // notice and the round's refusals must give the model one reason.
+      return finalizeInstruction(current.cause)
     },
   }
 }
 
-/** Why the deterministic Answer says the run stopped, keyed by cause. */
+/**
+ * Why the deterministic Answer says the run stopped, keyed by cause. The
+ * near-twin of RUN_FINALIZATION_REASONS, and deliberately not shared with
+ * it (#201): that one is what the model is told, this is what the user
+ * hears, and a rewording of the instruction must not move the user's
+ * sentence. `spokenByCause` below is the same table for the spoken half.
+ */
 const CAUSE_SENTENCES: Readonly<Record<string, string>> = {
   budget_exhausted: 'The run exhausted its planned work budget.',
   deadline_reached: 'The run passed its active-work deadline.',
@@ -669,6 +733,7 @@ export function deterministicFinalAnswer(input: {
     budget_exhausted: 'I ran out of work budget before finishing that request.',
     deadline_reached: 'I ran out of working time before finishing that request.',
     no_progress: 'I stopped making progress on that request.',
+    hard_limit: 'I reached my work limit before finishing that request.',
   }
   const speak = spokenByCause[input.cause] ?? 'I had to stop before finishing that request.'
   const causeSentence = CAUSE_SENTENCES[input.cause] ?? 'The run stopped at its work limit.'
