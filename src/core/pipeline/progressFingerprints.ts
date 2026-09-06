@@ -4,6 +4,7 @@ import type { PageSnapshot, SnapshotRef } from '../browser/snapshot'
 import { fnv1a32 } from '../browser/snapshot'
 import { normalizeUrlInput } from '../browser/urlInput'
 import { coercedNumber } from './tool'
+import { lookRegionFingerprint } from './lookRegion'
 import { reportFault } from '../trace/fault'
 
 // Issue #125, ADR 0027 prefactor: the search-loop signatures (#74/#82/#83)
@@ -308,8 +309,8 @@ export function actionFingerprint(call: ToolCall): string {
       // A region (#195) is part of the ask: the same question over a
       // different part of the page is a new inspection, the same region
       // written differently ("0, 0, 100, 20") is the same one.
-      const region = typeof args.region === 'string' ? args.region.replace(/[\s%]+/g, '') : ''
-      return `look:${stableStringify({ question: typedTextFingerprint(question), ...(region !== '' ? { region } : {}) })}`
+      const region = lookRegionFingerprint(args.region)
+      return `look:${stableStringify({ question: typedTextFingerprint(question), ...(region !== undefined ? { region } : {}) })}`
     }
     default:
       break

@@ -55,8 +55,8 @@ export interface VisionRequestEvent {
    * whole-viewport capture.
    */
   readonly region?: string
-  /** How much that region was magnified when captured; absent without a region. */
-  readonly zoom?: number
+  /** The device pixels per CSS pixel that region was captured at; absent without a region. */
+  readonly scale?: number
   /** The caller's advisory whole-Look cap (#106); absent means the Look's own. */
   readonly capMs?: number
   /** How long the request took, in milliseconds, however it ended. */
@@ -156,7 +156,7 @@ export function tracedAnswer(answer: string): { answer: string; answerChars: num
 /** What a request record says about the ask, before it settled. */
 export type VisionRequestDescriptor = Pick<
   VisionRequestEvent,
-  'capability' | 'reason' | 'target' | 'question' | 'region' | 'zoom' | 'capMs'
+  'capability' | 'reason' | 'target' | 'question' | 'region' | 'scale' | 'capMs'
 >
 
 /**

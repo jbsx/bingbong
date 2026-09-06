@@ -33,9 +33,13 @@ Three ways to give the model a closer look were on the table:
 - **A region Look is a compositor re-render.** `look` takes an optional
   `region` beside `question`; the browser port's `screenshot` accepts a
   region and a scale and passes them to the capture as a clip in page
-  coordinates (the visual viewport's page offset plus the fraction of its
-  size, both in device-independent pixels so page zoom cannot skew one
-  against the other). No image library, no bitmap upscaling.
+  coordinates: the visual viewport's page offset plus the fraction of its
+  size, read from the layout metrics' deprecated `visualViewport` on
+  purpose — it and the clip share device-independent pixels, where the
+  `cssVisualViewport` the protocol points to differs by the page zoom
+  factor. The probe that settled this ran with the pane at zoom 1.3 and
+  the clip landed exactly where the math said. No image library, no
+  bitmap upscaling.
 - **The grammar is percentages of the viewport**, `left,top,width,height`,
   written as one string. The model never knows the viewport's pixel size and
   never needs to: the top fifth is `0,0,100,20` on every screen. A malformed
@@ -44,8 +48,8 @@ Three ways to give the model a closer look were on the table:
   Describe prompt has nothing to bound.
 - **A region covers at most a quarter of the viewport, and zoom is decided
   in code, from the area.** The scale is the square root of the area
-  ratio, rounded up, clamped to 3x–4x: a quarter renders at 3x, a ninth or
-  less at 4x. A larger region is refused with the cap and the reason in the
+  ratio, rounded up, clamped to 3x–4x: a quarter renders at 3x, less than
+  a ninth at 4x. A larger region is refused with the cap and the reason in the
   message rather than shown at 2x — on the #195 page the vision model read
   titles that were not there from half-viewport bands at 2x, three runs in
   a row, and read the row exactly at 3x and 4x. The cap keeps the capture
@@ -57,9 +61,10 @@ Three ways to give the model a closer look were on the table:
   scale are stated after it, before the question), keeps the 512-token
   questioned cap and the Describe Vision Deadline, and the screenshot stays
   the only evidence source. The `vision_request` record carries the region
-  as the model wrote it and the zoom. The repeat-action guard keys on the
-  region too: the same question over a new region is a new inspection, the
-  same region twice is refused.
+  as the model wrote it and the scale. The no-progress rail keys on the
+  region too, normalized the way the tool reads it: the same question over
+  a new region is a new inspection, the same region twice — however it is
+  written — is refused.
 - **The result says what magnification the region got.** Every region
   Look's answer ends with one bracketed line — the region and its zoom,
   and, below the cap, that a smaller region is magnified more. The first

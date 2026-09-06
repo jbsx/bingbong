@@ -146,8 +146,12 @@ describe('no-progress rail — objective repetition (#126/AC1)', () => {
     // rail may nudge for an Approach change on observing it.
     expect(await rail.gate(leftHalf)).toEqual({ ok: true })
     await rail.observe(leftHalf, ok())
-    // The same region written with spaces is the same region.
+    // The same region written with spaces, or with a decimal that rounds
+    // to it, is the same region.
     expect(await rail.gate(call('look', { question: 'Which titles are in the top row?', region: ' 0, 0, 100, 20 ' }))).toMatchObject({
+      ok: false,
+    })
+    expect(await rail.gate(call('look', { question: 'Which titles are in the top row?', region: '0,0,100,20.4' }))).toMatchObject({
       ok: false,
     })
   })

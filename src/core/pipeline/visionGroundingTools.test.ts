@@ -257,7 +257,7 @@ describe('vision grounding through the command pipeline', () => {
         reason: 'look',
         question: 'Which titles are in the S tier row?',
         region: '0,0,100,20',
-        zoom: 3,
+        scale: 3,
         outcome: 'ok',
         answer: 'Solo Leveling, Omniscient Reader.',
       }),

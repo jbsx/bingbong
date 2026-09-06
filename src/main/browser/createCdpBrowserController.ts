@@ -89,9 +89,26 @@ interface ScreenshotResponse {
   data: string
 }
 
-/** The one viewport of Page.getLayoutMetrics a region clip needs: position on the page and size, in device-independent pixels. */
+/**
+ * The one viewport of Page.getLayoutMetrics a region clip needs: position
+ * on the page and size. The protocol marks `visualViewport` deprecated in
+ * favour of `cssVisualViewport`, but the two differ by the page zoom
+ * factor, and a capture clip is in the deprecated field's units
+ * (device-independent pixels): the #195 probe ran with the pane at zoom
+ * 1.3 and the clip computed from this field landed exactly where the
+ * math said, which the CSS-pixel field would have missed by 30%.
+ */
 interface LayoutMetricsResponse {
   visualViewport: { pageX: number; pageY: number; clientWidth: number; clientHeight: number }
+}
+
+/** A Page.captureScreenshot clip: a page-coordinate rectangle and the scale it is rasterized at. */
+interface ScreenshotClip {
+  x: number
+  y: number
+  width: number
+  height: number
+  scale: number
 }
 
 /** Result of the in-page click-preparation probe. */
@@ -562,7 +579,7 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
    * zoom cannot skew one against the other. The scale re-rasterizes the
    * region from the page at that many pixels per CSS pixel.
    */
-  async function regionClip(options: ScreenshotOptions): Promise<Record<string, number>> {
+  async function regionClip(options: ScreenshotOptions): Promise<ScreenshotClip> {
     const { visualViewport } = await cdp.send<LayoutMetricsResponse>('Page.getLayoutMetrics')
     const { region, scale } = options
     return {

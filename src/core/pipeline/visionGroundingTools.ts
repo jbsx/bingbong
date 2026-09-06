@@ -7,11 +7,11 @@ import { tracedVisionRequest } from '../trace/visionTrace'
 import {
   formatLookRegion,
   LOOK_REGION_FORMAT,
-  LOOK_REGION_MAX_ZOOM,
-  lookRegionZoom,
+  LOOK_REGION_MAX_SCALE,
+  lookCropOf,
   parseLookRegion,
-  viewportRegionOf,
-  type LookRegion,
+  screenshotOptionsOf,
+  type LookCrop,
 } from './lookRegion'
 import { traceVisionBudget, visionSeam } from './visionSeam'
 
@@ -22,10 +22,21 @@ const QUESTIONED_LOOK_PREAMBLE =
   'Answer only from the screenshot. Transcribe text exactly as it appears. Say "not legible" for anything you cannot read rather than guessing.'
 const QUESTIONED_LOOK_MAX_TOKENS = 512
 
-/** What a region Look (#195) tells the model about the crop it is answering from, after the fixed preamble. */
-function regionPrompt(question: string, region: LookRegion, zoom: number): string {
-  const crop = `The screenshot is a magnified crop of the page: from ${region.left}% to ${region.left + region.width}% of the viewport width and from ${region.top}% to ${region.top + region.height}% of its height, shown at ${zoom}x.`
-  return `${QUESTIONED_LOOK_PREAMBLE}\n\n${crop}\n\nQuestion: ${question}`
+/**
+ * The questioned Look's prompt (#193): the fixed anti-guessing preamble
+ * verbatim, then the question. A region Look (#195) states the crop it is
+ * answering from between the two, so the preamble never changes.
+ */
+function questionedPrompt(question: string, crop: LookCrop | undefined): string {
+  const lines = [QUESTIONED_LOOK_PREAMBLE]
+  if (crop !== undefined) {
+    const { region, scale } = crop
+    lines.push(
+      `The screenshot is a magnified crop of the page: from ${region.left}% to ${region.left + region.width}% of the viewport width and from ${region.top}% to ${region.top + region.height}% of its height, shown at ${scale}x.`,
+    )
+  }
+  lines.push(`Question: ${question}`)
+  return lines.join('\n\n')
 }
 
 /**
@@ -33,12 +44,12 @@ function regionPrompt(question: string, region: LookRegion, zoom: number): strin
  * magnification it got, and — while there is magnification left — that a
  * smaller region gets more. The #195 recapture chose bands of half the
  * viewport and more, which magnify 2x and read wrong; the probe read the
- * same row correctly at 3x. The model cannot know the zoom it got unless
+ * same row correctly at 3x. The model cannot know the scale it got unless
  * told, and this is the moment it decides whether to narrow.
  */
-function regionFooter(region: LookRegion, zoom: number): string {
-  const more = zoom < LOOK_REGION_MAX_ZOOM ? `; a smaller region is magnified more, up to ${LOOK_REGION_MAX_ZOOM}x` : ''
-  return `[region ${formatLookRegion(region)} shown at ${zoom}x${more}]`
+function regionFooter(crop: LookCrop): string {
+  const more = crop.scale < LOOK_REGION_MAX_SCALE ? `; a smaller region is magnified more, up to ${LOOK_REGION_MAX_SCALE}x` : ''
+  return `[region ${formatLookRegion(crop.region)} shown at ${crop.scale}x${more}]`
 }
 
 function targetArg(call: ToolCall): string {
@@ -87,35 +98,28 @@ export function createLookTool(browser: BrowserController, vision: VisionDescrib
       if (region !== undefined && question === undefined) {
         throw new Error("look: 'region' needs a 'question' to answer about that part of the page")
       }
-      const crop = region === undefined ? undefined : { region, zoom: lookRegionZoom(region) }
+      const crop = region === undefined ? undefined : lookCropOf(region)
       // The Look's own record (#186): the Vision Budget was already spent
       // by the round (`usesVision`), so this covers the request alone. A
       // region Look (#195) is the same one Look, bounded and magnified —
-      // the record keeps the region as the model wrote it and the zoom.
+      // the record keeps the region as the model wrote it and the scale.
       const answer = await tracedVisionRequest(
         visionSeam(context),
         {
           capability: 'describe',
           reason: 'look',
           ...(question !== undefined ? { question } : {}),
-          ...(crop !== undefined ? { region: formatLookRegion(crop.region), zoom: crop.zoom } : {}),
+          ...(crop !== undefined ? { region: formatLookRegion(crop.region), scale: crop.scale } : {}),
         },
         async () =>
           vision.describe({
-            image: await browser.screenshot(
-              crop === undefined ? undefined : { region: viewportRegionOf(crop.region), scale: crop.zoom },
-            ),
-            prompt:
-              question === undefined
-                ? LOOK_PROMPT
-                : crop === undefined
-                  ? `${QUESTIONED_LOOK_PREAMBLE}\n\nQuestion: ${question}`
-                  : regionPrompt(question, crop.region, crop.zoom),
+            image: await browser.screenshot(crop === undefined ? undefined : screenshotOptionsOf(crop)),
+            prompt: question === undefined ? LOOK_PROMPT : questionedPrompt(question, crop),
             ...(question !== undefined ? { maxTokens: QUESTIONED_LOOK_MAX_TOKENS } : {}),
           }),
         (answer) => answer,
       )
-      return crop === undefined ? answer : `${answer}\n\n${regionFooter(crop.region, crop.zoom)}`
+      return crop === undefined ? answer : `${answer}\n\n${regionFooter(crop)}`
     },
   }
 }
