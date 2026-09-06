@@ -280,12 +280,47 @@ export const COLLECT_PAGE_SCRIPT = `(() => {
       }
     }
   }
+  // ADR 0033: a ref number names the node the model was shown, not the
+  // position. Two registries live on the page — the current collect below,
+  // and the *shown* registry, the node behind each number the model was
+  // last handed. The collect never touches the shown registry; only these
+  // helpers do, and the controller calls them exactly where it returns
+  // numbers to the model.
+  window.__bingbongMarkShown = (count) => {
+    window.__bingbongShownRefs = (window.__bingbongRefs || []).slice(0, count)
+    return true
+  }
+  window.__bingbongOverlayShown = (indices) => {
+    const refs = window.__bingbongRefs || []
+    const shown = window.__bingbongShownRefs || []
+    for (const index of indices) shown[index] = refs[index]
+    window.__bingbongShownRefs = shown
+    return true
+  }
+  window.__bingbongRefShown = (index) => {
+    const node = (window.__bingbongShownRefs || [])[index]
+    if (!node || !node.isConnected) return false
+    return node === (window.__bingbongRefs || [])[index]
+  }
   const dialogRoot = currentDialogRoot()
+  // Where each element sat in the collect before this one, so the scroll
+  // delta can tell a ref that entered the viewport from one that was
+  // already there — DOM node identity, not a label that two unlabeled
+  // buttons share. -1 for an element this collect is the first to see.
+  const priorIndex = new Map()
+  const prior = window.__bingbongRefs || []
+  for (let index = 0; index < prior.length; index++) {
+    if (!priorIndex.has(prior[index])) priorIndex.set(prior[index], index)
+  }
   // Dialog controls come first so they survive the collection cap; the order
   // here is exactly what the controller's element registry is keyed by.
   const collected = collectElements(dialogRoot)
   window.__bingbongRefs = collected
-  const elements = collected.map((el) => describeElement(el, dialogRoot))
+  const elements = collected.map((el) => {
+    const described = describeElement(el, dialogRoot)
+    described.previousIndex = priorIndex.has(el) ? priorIndex.get(el) : -1
+    return described
+  })
   return {
     url: location.href,
     title: document.title,
@@ -306,3 +341,32 @@ export const COLLECT_PAGE_SCRIPT = `(() => {
     elements
   }
 })()`
+
+/**
+ * Replace the shown registry with the first `count` numbers of the current
+ * collect — what a page read, or the settled page an Action Outcome
+ * carries, hands the model (ADR 0033). False when the page has moved on
+ * from the collect that defined the helpers, which refuses the next ref
+ * rather than aiming it at whatever now holds the number.
+ */
+export function markShownRefsScript(count: number): string {
+  return `(() => typeof window.__bingbongMarkShown === 'function' ? window.__bingbongMarkShown(${count}) : false)()`
+}
+
+/**
+ * Overlay the shown registry at these zero-based positions only: a scroll's
+ * `new in view` block shows just the numbers it printed, so every other
+ * number keeps the node it was shown as.
+ */
+export function overlayShownRefsScript(indices: number[]): string {
+  return `(() => typeof window.__bingbongOverlayShown === 'function' ? window.__bingbongOverlayShown(${JSON.stringify(indices)}) : false)()`
+}
+
+/**
+ * Is the node at this zero-based position still the node the model was
+ * shown there? The one comparison every ref-taking path runs — a number
+ * with no shown node, or one whose node died with the page, answers false.
+ */
+export function refIsShownScript(index: number): string {
+  return `(() => typeof window.__bingbongRefShown === 'function' ? window.__bingbongRefShown(${index}) : false)()`
+}

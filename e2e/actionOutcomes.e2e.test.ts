@@ -50,6 +50,10 @@ function outcomeScript(resultsUrl: string, interactiveUrl: string, engineUrl: st
     { kind: 'tool_calls', calls: [{ id: 'check', name: 'click', args: { ref: 8 } }] },
     { kind: 'tool_calls', calls: [{ id: 'type', name: 'type', args: { ref: 5, text: 'hello' } }] },
     { kind: 'tool_calls', calls: [{ id: 'scroll', name: 'scroll', args: { direction: 'down' } }] },
+    // ADR 0033: [5] was the field the previous round typed into. The scroll
+    // carried it out of the viewport, so the number no longer names it and
+    // the click is refused rather than aimed at whatever now holds it.
+    { kind: 'tool_calls', calls: [{ id: 'stale-click', name: 'click', args: { ref: 5 } }] },
     { kind: 'tool_calls', calls: [{ id: 'media', name: 'media_control', args: { action: 'play_pause' } }] },
     // GUI search on the engine: the submitted typing navigates, so the
     // results page state rides the type outcome.
@@ -104,8 +108,10 @@ describe('action outcome lines e2e (#113)', () => {
       },
       { timeoutMs: 60000, intervalMs: 250 },
     )
-    const failures = events.filter((event) => event.type === 'tool_result' && !event.ok)
-    expect(failures).toEqual([])
+    const failures = events.filter(
+      (event): event is ToolResultEvent => event.type === 'tool_result' && !event.ok,
+    )
+    expect(failures.map((event) => event.callId)).toEqual(['stale-click'])
     const results = events.filter(
       (event): event is ToolResultEvent => event.type === 'tool_result' && event.ok,
     )
@@ -182,6 +188,19 @@ describe('action outcome lines e2e (#113)', () => {
     expect(scrolled[1]).toBe('new in view:')
     expect(byId.scroll).toMatch(/^\[\d+\] link "Deep link" href=/m)
     expect(byId.scroll).toContain('Only visible after scrolling down.')
+
+    // ADR 0033: the refused pre-scroll number is answered with the stale-ref
+    // line and the current page in the navigate shape — no click reached the
+    // page, and no auto-vision, because the page state is the answer vision
+    // used to stand in for. The carried header is the objective proof: still
+    // the interactive fixture, still its own title, so nothing was activated.
+    const refused = failures[0]?.error ?? ''
+    expect(refused.split('\n')[0]).toBe(
+      'ref 5 refused: it no longer names the element you were shown. Continue from the page below',
+    )
+    expect(refused).toContain(`# interactive fixture — ${fixture.url('/interactive')}`)
+    expect(refused).toMatch(/^signature [0-9a-f]{8}$/m)
+    expect(refused).not.toContain('Auto-vision')
 
     // GUI search: the navigate outcome exposes the engine's search box,
     // and the submitted typing returns the settled results page state.

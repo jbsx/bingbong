@@ -115,4 +115,11 @@ export interface VisualGroundingController {
   groundingSnapshot(): Promise<PageSnapshot>
   /** Register the live element at viewport coordinates as a normal, risk-described ref. */
   refAtPoint(point: ViewportPoint): Promise<number>
+  /**
+   * Record that this number was handed to the model (ADR 0033). A grounding
+   * round answers with one ref out of a collect the model never read as a
+   * page, so that number has to become a shown number or the click after it
+   * would be refused. `refAtPoint` records its own.
+   */
+  showRef(ref: number): Promise<void>
 }

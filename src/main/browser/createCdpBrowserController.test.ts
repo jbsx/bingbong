@@ -14,6 +14,15 @@ const youtubeFixture = youtubeHome as unknown as CollectedPage
 const challengeFixture = challengeIframe as unknown as CollectedPage
 const COLLECT_EXPRESSION = '/* COLLECT */'
 
+/** What the in-page collector keeps: dialog controls, and anything whose
+ * rect meets the viewport. Exactly the elements a ref number can name, so
+ * the fake's registry is indexed by ref - 1 like the page's. */
+function refable(element: CollectedElement, viewport: CollectedPage['viewport']): boolean {
+  if (element.layer === 'dialog') return true
+  const { x, y, width, height } = element.rect
+  return width >= 1 && height >= 1 && y + height > 0 && x + width > 0 && y < viewport.height && x < viewport.width
+}
+
 function dialogButton(label: string): Partial<CollectedElement> {
   return {
     tag: 'button',
@@ -74,6 +83,18 @@ class FakeCdp implements CdpDebugger {
   actionProbe: unknown = undefined
   mediaProbe: unknown = { paused: true, currentTime: 12.5, volume: 0.4 }
   collectValues: unknown[] = []
+  /**
+   * The page's two registries (ADR 0033), modelled by object identity over
+   * the fixture's elements: what the last collect left in the page, and the
+   * nodes behind the numbers the controller last marked shown. A fixture
+   * collected twice is the same page — the same element objects — so every
+   * shown number still names its element; `reRender()` makes it a different
+   * page wearing the same labels.
+   */
+  private collectedElements: unknown[] = []
+  private shownElements: unknown[] = []
+  private nodes = new Map<unknown, unknown>()
+  private reRendered = false
   /** What Page.getLayoutMetrics reports as the visual viewport (a region screenshot's frame, #195). */
   layoutMetrics = { pageX: 0, pageY: 0, clientWidth: 1280, clientHeight: 800 }
   private readonly handlers = new Map<string, ((params: unknown) => void)[]>()
@@ -100,8 +121,9 @@ class FakeCdp implements CdpDebugger {
       if (expression === COLLECT_EXPRESSION && this.collectException) {
         return { exceptionDetails: { text: this.collectException } } as T
       }
-      if (expression === COLLECT_EXPRESSION && this.collectValues.length > 0) {
-        return { result: { value: this.collectValues.shift() } } as T
+      if (expression === COLLECT_EXPRESSION) {
+        const collected = this.collectValues.length > 0 ? this.collectValues.shift() : this.evaluateValue
+        return { result: { value: this.collect(collected as CollectedPage) } } as T
       }
       if (expression.includes('/* ACTION_OUTCOME */')) {
         if (this.actionProbe !== undefined) return { result: { value: this.actionProbe } } as T
@@ -133,8 +155,24 @@ class FakeCdp implements CdpDebugger {
           },
         } as T
       }
+      if (expression.includes('__bingbongMarkShown')) {
+        const count = Number(/__bingbongMarkShown\((\d+)\)/.exec(expression)?.[1] ?? 0)
+        this.shownElements = this.collectedElements.slice(0, count)
+        return { result: { value: true } } as T
+      }
+      if (expression.includes('__bingbongOverlayShown')) {
+        const indices = JSON.parse(/__bingbongOverlayShown\((\[[^)]*\])\)/.exec(expression)?.[1] ?? '[]') as number[]
+        for (const index of indices) this.shownElements[index] = this.collectedElements[index]
+        return { result: { value: true } } as T
+      }
+      if (expression.includes('__bingbongRefShown')) {
+        const index = Number(/__bingbongRefShown\((\d+)\)/.exec(expression)?.[1] ?? -1)
+        const shown = this.shownElements[index]
+        return { result: { value: shown !== undefined && shown === this.collectedElements[index] } } as T
+      }
       if (expression.includes('/* MEDIA_STATE */')) return { result: { value: this.mediaProbe } } as T
       if (expression.includes('const hit = document.elementFromPoint')) {
+        this.collectedElements[20] = this.collectedElements[20] ?? { groundedNode: true }
         return {
           result: {
             value: {
@@ -193,6 +231,45 @@ class FakeCdp implements CdpDebugger {
     if (method === 'Page.getLayoutMetrics') return { visualViewport: { ...this.layoutMetrics, scale: 1, zoom: 1 } } as T
     if (method.startsWith('Input.')) return {} as T
     throw new Error(`unexpected CDP method: ${method}`)
+  }
+
+  /**
+   * One collect. The page's registry holds exactly the elements a ref
+   * number can name, in ref order, and each of them reports where it sat in
+   * the registry before — the previous-index mapping the real collector
+   * returns.
+   */
+  private collect(page: CollectedPage): CollectedPage {
+    // A malformed payload is the parser's business, not the registry's.
+    if (page === null || typeof page !== 'object' || !Array.isArray(page.elements)) return page
+    const prior = new Map(this.collectedElements.map((node, index) => [node, index]))
+    const registry: unknown[] = []
+    const elements = page.elements.map((element) => {
+      if (!refable(element, page.viewport)) return { ...element, previousIndex: -1 }
+      const node = this.nodeFor(element)
+      registry.push(node)
+      return { ...element, previousIndex: prior.get(node) ?? -1 }
+    })
+    this.collectedElements = registry
+    return { ...page, elements }
+  }
+
+  /** The node this fixture element stands for: itself, or the stand-in a
+   * re-render replaced it with. */
+  private nodeFor(element: unknown): unknown {
+    if (!this.reRendered) return element
+    const existing = this.nodes.get(element)
+    if (existing) return existing
+    const node = { ...(element as object) }
+    this.nodes.set(element, node)
+    return node
+  }
+
+  /** Test helper: the page re-renders under the model — same fixture, same
+   * labels, every element a different node from here on. */
+  reRender(): void {
+    this.reRendered = true
+    this.nodes = new Map()
   }
 
   inputCalls(): { method: string; params?: Record<string, unknown> }[] {
@@ -273,6 +350,28 @@ function makeController(options?: { cdp?: FakeCdp; page?: FakePage; popupBlocks?
   return { cdp, page, controller }
 }
 
+/** A distinct link element — a distinct DOM node, which is what a ref
+ * number names (ADR 0033). */
+function link(label: string): CollectedElement {
+  return {
+    tag: 'a',
+    role: null,
+    inputType: null,
+    label,
+    href: `https://example.com/${label}`,
+    rect: { x: 10, y: 10, width: 100, height: 40 },
+  }
+}
+
+/**
+ * Show the model this page's numbers, the way every run does before it acts
+ * on a ref (ADR 0033). A navigate rather than a read, so a page carrying a
+ * consent wall keeps it — read_page dismisses one deterministically.
+ */
+async function showRefs(controller: { navigate(url: string): Promise<string> }): Promise<void> {
+  await controller.navigate('https://www.youtube.com/')
+}
+
 /** The settled-state block an Action Outcome appends for this page. */
 function settledBlock(collected: CollectedPage): string {
   return formatPageSnapshot(buildPageSnapshot(collected))
@@ -335,10 +434,15 @@ describe('createCdpBrowserController iframe refs', () => {
 
 describe('createCdpBrowserController describeRef', () => {
   it('returns the snapshot facts for a ref, collecting on demand', async () => {
-    const { controller } = makeController()
+    const { cdp, controller } = makeController()
+    await showRefs(controller)
+    // An action invalidates the snapshot without changing the page.
+    await controller.click(1)
+    const collectsBefore = cdp.collectCalls().length
 
     const target = await controller.describeRef(3)
 
+    expect(cdp.collectCalls()).toHaveLength(collectsBefore + 1)
     expect(target).toMatchObject({ ref: 3, kind: 'input', inputType: 'search', label: 'Search' })
   })
 
@@ -388,6 +492,7 @@ describe('createCdpBrowserController visual point mapping', () => {
 describe('createCdpBrowserController click', () => {
   it('reports flags and no observable change when the click changes nothing', async () => {
     const { controller } = makeController()
+    await showRefs(controller)
 
     const outcome = await controller.click(3)
 
@@ -438,6 +543,7 @@ describe('createCdpBrowserController click', () => {
       },
     }
     const { controller } = makeController({ cdp })
+    await showRefs(controller)
 
     const outcome = await controller.click(1)
 
@@ -487,6 +593,7 @@ describe('createCdpBrowserController click', () => {
       },
     }
     const { controller } = makeController({ cdp })
+    await showRefs(controller)
 
     const outcome = await controller.click(1)
 
@@ -530,19 +637,37 @@ describe('createCdpBrowserController click', () => {
     })
   })
 
-  it('refreshes the snapshot when no ref mapping exists yet', async () => {
+  it('refreshes the snapshot the last action invalidated, without costing the model a round', async () => {
     const { cdp, controller } = makeController()
+    await showRefs(controller)
+    await controller.click(1)
+    const collectsBefore = cdp.collectCalls().length
 
     await controller.click(1)
 
-    expect(cdp.collectCalls()).toHaveLength(1)
-    expect(cdp.inputCalls()[1]?.params).toMatchObject({ type: 'mousePressed', x: 36, y: 32 })
+    expect(cdp.collectCalls()).toHaveLength(collectsBefore + 1)
+    expect(cdp.inputCalls().at(-2)?.params).toMatchObject({ type: 'mousePressed', x: 36, y: 32 })
   })
 
-  it('rejects with a refresh hint for an unknown ref', async () => {
-    const { controller } = makeController()
+  it('refuses a number the model was never shown, and answers with the page (ADR 0033)', async () => {
+    const { cdp, controller } = makeController()
+    await showRefs(controller)
 
-    await expect(controller.click(999)).rejects.toThrow(/ref 999 not found/)
+    await expect(controller.click(999)).rejects.toThrow(
+      `ref 999 refused: it no longer names the element you were shown. Continue from the page below\n${settledBlock(youtubeFixture)}`,
+    )
+    expect(cdp.inputCalls()).toHaveLength(0)
+  })
+
+  it('refuses a number whose element the page replaced, rather than clicking its successor', async () => {
+    const { cdp, controller } = makeController()
+    await showRefs(controller)
+    // The page re-renders: same labels, every element a different node.
+    await controller.click(1)
+    cdp.reRender()
+
+    await expect(controller.click(3)).rejects.toThrow(/ref 3 refused/)
+    expect(cdp.inputCalls()).toHaveLength(3)
   })
 
   it('clicks the visible part of an element crossing the viewport edge', async () => {
@@ -559,6 +684,7 @@ describe('createCdpBrowserController click', () => {
       ],
     }
     const { cdp, controller } = makeController({ cdp: new FakeCdp(crossing) })
+    await showRefs(controller)
 
     await controller.click(1)
 
@@ -589,6 +715,7 @@ describe('createCdpBrowserController click', () => {
     const cdp = new FakeCdp(wall)
     cdp.prepCovered = true
     const { controller } = makeController({ cdp })
+    await showRefs(controller)
 
     // The covered target is the page-level button behind the wall.
     const outcome = await controller.click(3)
@@ -615,49 +742,31 @@ describe('createCdpBrowserController click', () => {
     expect(domClick?.params?.expression).toContain('__bingbongRefs')
   })
 
-  it('re-collects once when the element registry went stale, then clicks', async () => {
+  it('refuses instead of re-collecting and retrying when the registry died with the page', async () => {
     const cdp = new FakeCdp()
     cdp.prepStaleOnce = true
     const { controller } = makeController({ cdp })
+    await showRefs(controller)
 
-    // The first prep reports a stale registry (the page navigated without
-    // the snapshot being invalidated); re-collecting rebuilds it and the
-    // retried prep succeeds.
-    await controller.click(3)
-
-    expect(cdp.collectCalls()).toHaveLength(2)
-    expect(cdp.inputCalls()[0]?.params).toMatchObject({ type: 'mouseMoved', x: 654, y: 32 })
+    // The prep reports a registry that died with a navigation. Retrying
+    // against the rebuilt one would aim [3] at whoever now holds the
+    // number, so the click is refused (ADR 0033).
+    await expect(controller.click(3)).rejects.toThrow(/ref 3 refused/)
+    expect(cdp.inputCalls()).toHaveLength(0)
   })
 
-  it('uses the refreshed page as click before-state when the registry went stale', async () => {
+  it('answers a refusal with the page as it stands, not the one the number came from', async () => {
     const stale = { ...youtubeFixture, url: 'https://stale.example/' }
     const fresh = { ...youtubeFixture, url: 'https://fresh.example/' }
     const cdp = new FakeCdp(fresh)
     cdp.collectValues = [stale, fresh]
     cdp.prepStaleOnce = true
-    cdp.actionProbe = {
-      target: {
-        checked: null,
-        selectedOption: null,
-        value: null,
-        ariaPressed: null,
-        className: '',
-      },
-      signature: {
-        url: fresh.url,
-        title: fresh.title,
-        scrollX: 0,
-        scrollY: 0,
-        refCount: 20,
-        labels: buildPageSnapshot(fresh).refs.map((candidate) => candidate.label),
-        dialogOpen: false,
-      },
-    }
     const { controller } = makeController({ cdp })
+    await showRefs(controller)
 
-    const outcome = await controller.click(3)
-
-    expect(outcome).toBe('clicked [3]: urlChanged=false dialogOpen=false; no observable change')
+    await expect(controller.click(3)).rejects.toThrow(
+      `ref 3 refused: it no longer names the element you were shown. Continue from the page below\n${settledBlock(fresh)}`,
+    )
   })
 })
 
@@ -677,6 +786,7 @@ describe('createCdpBrowserController type', () => {
       },
     }
     const { controller } = makeController({ cdp })
+    await showRefs(controller)
 
     const outcome = await controller.type(3, 'hello')
 
@@ -685,6 +795,7 @@ describe('createCdpBrowserController type', () => {
 
   it('focuses the ref with a click, then sends keyDown/keyUp per character', async () => {
     const { cdp, controller } = makeController()
+    await showRefs(controller)
 
     await controller.type(3, 'hi')
 
@@ -699,6 +810,7 @@ describe('createCdpBrowserController type', () => {
 
   it('focuses the target before typing', async () => {
     const { cdp, controller } = makeController()
+    await showRefs(controller)
 
     await controller.type(3, 'hi')
 
@@ -714,6 +826,7 @@ describe('createCdpBrowserController type', () => {
 
   it('maps newline to Enter with the Enter key code', async () => {
     const { cdp, controller } = makeController()
+    await showRefs(controller)
 
     await controller.type(3, 'a\n')
 
@@ -727,10 +840,11 @@ describe('createCdpBrowserController type', () => {
     })
   })
 
-  it('rejects for an unknown ref', async () => {
+  it('refuses a number the model was never shown', async () => {
     const { controller } = makeController()
+    await showRefs(controller)
 
-    await expect(controller.type(999, 'nope')).rejects.toThrow(/ref 999 not found/)
+    await expect(controller.type(999, 'nope')).rejects.toThrow(/ref 999 refused/)
   })
 
   it('returns the settled page state when the typing navigates (#113)', async () => {
@@ -756,6 +870,7 @@ describe('createCdpBrowserController type', () => {
       },
     }
     const { controller } = makeController({ cdp })
+    await showRefs(controller)
 
     const outcome = await controller.type(3, 'keyboards\n')
 
@@ -779,6 +894,7 @@ describe('createCdpBrowserController type', () => {
       },
     }
     const { controller } = makeController({ cdp })
+    await showRefs(controller)
 
     const outcome = await controller.type(3, 'hello')
 
@@ -811,6 +927,59 @@ describe('createCdpBrowserController ref staleness', () => {
     expect(collects()).toBe(4)
     await controller.click(4)
     expect(collects()).toBe(5)
+  })
+})
+
+describe('createCdpBrowserController ref identity (ADR 0033)', () => {
+  it('resolves a number the scroll printed, and refuses a pre-scroll number the scroll moved', async () => {
+    // [1] leaves the viewport, [2] survives it as [1], and a new element
+    // arrives as [2] — the only number the delta printed.
+    const leaving = link('Leaving')
+    const kept = link('Kept')
+    const entered = link('Entered')
+    const after = { ...youtubeFixture, elements: [kept, entered] }
+    const cdp = new FakeCdp(after)
+    cdp.collectValues = [{ ...youtubeFixture, elements: [leaving, kept] }, after]
+    const { controller } = makeController({ cdp })
+    await showRefs(controller)
+
+    expect(await controller.scroll('down')).toContain('new in view:\n[2] link "Entered"')
+
+    await expect(controller.click(2)).resolves.toContain('clicked [2]')
+    // [1] was shown as "Leaving"; it now names "Kept".
+    await expect(controller.click(1)).rejects.toThrow(/ref 1 refused/)
+  })
+
+  it('resolves a pre-scroll number whose element kept it', async () => {
+    const kept = link('Kept')
+    const after = { ...youtubeFixture, elements: [kept, link('Entered')] }
+    const cdp = new FakeCdp(after)
+    cdp.collectValues = [{ ...youtubeFixture, elements: [kept, link('Leaving')] }, after]
+    const { controller } = makeController({ cdp })
+    await showRefs(controller)
+
+    await controller.scroll('down')
+
+    await expect(controller.click(1)).resolves.toContain('clicked [1]')
+  })
+
+  it('describes nothing for a replaced element, so the risk gate never assesses a stand-in', async () => {
+    const { cdp, controller } = makeController()
+    await showRefs(controller)
+    await controller.click(1)
+    cdp.reRender()
+
+    expect(await controller.describeRef(3)).toBeUndefined()
+  })
+
+  it('shows the numbers a refusal carried, so the model continues in the same round', async () => {
+    const { cdp, controller } = makeController()
+    await showRefs(controller)
+    await controller.click(1)
+    cdp.reRender()
+
+    await expect(controller.click(3)).rejects.toThrow(/ref 3 refused/)
+    await expect(controller.click(3)).resolves.toContain('clicked [3]')
   })
 })
 
@@ -1075,6 +1244,7 @@ describe('createCdpBrowserController dialog tiers', () => {
       },
     }
     const { controller } = makeController({ cdp })
+    await showRefs(controller)
 
     const outcome = await controller.click(3)
 
@@ -1101,6 +1271,7 @@ describe('createCdpBrowserController dialog tiers', () => {
       },
     }
     const { controller } = makeController({ cdp })
+    await showRefs(controller)
 
     const outcome = await controller.click(3)
 
@@ -1153,6 +1324,7 @@ describe('createCdpBrowserController native dialogs and popups', () => {
   it('reports blocked window.open popups with their URL on the next outcome', async () => {
     const cdp = new FakeCdp()
     const { controller } = makeController({ cdp, popupBlocks: ['http://x.test/popup'] })
+    await showRefs(controller)
 
     const outcome = await controller.click(3)
 
@@ -1375,6 +1547,11 @@ describe('createCdpBrowserController verbose sub-spans (#32)', () => {
   it('emits recollection, safety, and settle sub-spans in order for a cold click', async () => {
     const { records, subspans } = subspanHarness(true)
     const { controller } = makeController({ subspans })
+    // Outside the turn scope, so nothing they emit lands in the records:
+    // the page the model was shown, and an action that leaves its numbers
+    // valid but its snapshot cold.
+    await showRefs(controller)
+    await controller.click(1)
 
     await subspans.runInTurn('turn-1', () => controller.click(3))
 
@@ -1390,6 +1567,7 @@ describe('createCdpBrowserController verbose sub-spans (#32)', () => {
   it('emits a keystroke settle per typed character plus the focus/settle waits', async () => {
     const { records, subspans } = subspanHarness(true)
     const { controller } = makeController({ subspans })
+    await showRefs(controller)
 
     await subspans.runInTurn('turn-1', () => controller.type(3, 'hi'))
 
@@ -1414,17 +1592,19 @@ describe('createCdpBrowserController verbose sub-spans (#32)', () => {
     ])
   })
 
-  it('emits the stale-registry recollection when a click must re-collect', async () => {
+  it('emits the stale-ref recollection when a click is refused', async () => {
     const { records, subspans } = subspanHarness(true)
     const cdp = new FakeCdp()
     cdp.prepStaleOnce = true
     const { controller } = makeController({ cdp, subspans })
+    await showRefs(controller)
 
-    await subspans.runInTurn('turn-1', () => controller.click(3))
+    await subspans.runInTurn('turn-1', async () => {
+      await expect(controller.click(3)).rejects.toThrow(/ref 3 refused/)
+    })
 
     expect(records.filter((record) => record.stage === 'browser-recollection').map((record) => record.detail)).toEqual([
-      { reason: 'resolve-ref' },
-      { reason: 'stale-registry' },
+      { reason: 'stale-ref' },
     ])
   })
 
@@ -1531,6 +1711,7 @@ describe('createCdpBrowserController native select typing (#133)', () => {
     const cdp = new FakeCdp(nativeControlsPage())
     cdp.actionProbe = probeFor(nativeControlsPage(), { checked: null, selectedOption: 'Beta', value: 'b', ariaPressed: null, className: '' })
     const { controller } = makeController({ cdp })
+    await showRefs(controller)
 
     const outcome = await controller.type(1, 'Beta')
 
@@ -1545,6 +1726,7 @@ describe('createCdpBrowserController native select typing (#133)', () => {
     const cdp = new FakeCdp(nativeControlsPage())
     cdp.actionProbe = probeFor(nativeControlsPage(), { checked: null, selectedOption: 'Beta', value: 'b', ariaPressed: null, className: '' })
     const { controller } = makeController({ cdp })
+    await showRefs(controller)
 
     await controller.type(1, 'Beta\n')
 
@@ -1556,28 +1738,28 @@ describe('createCdpBrowserController native select typing (#133)', () => {
     const cdp = new FakeCdp(nativeControlsPage())
     cdp.actionProbe = probeFor(nativeControlsPage(), { checked: null, selectedOption: 'Alpha', value: 'a', ariaPressed: null, className: '' })
     const { controller } = makeController({ cdp })
+    await showRefs(controller)
 
     const outcome = await controller.type(1, 'Zeta')
 
     expect(outcome).toBe('typed [1]: selected="Alpha"')
   })
 
-  it('re-collects once when the registry went stale, then types', async () => {
+  it('refuses instead of retrying when the registry died between the check and the focus', async () => {
     const cdp = new FakeCdp(nativeControlsPage())
     cdp.prepStaleOnce = true
-    cdp.actionProbe = probeFor(nativeControlsPage(), { checked: null, selectedOption: 'Beta', value: 'b', ariaPressed: null, className: '' })
     const { controller } = makeController({ cdp })
+    await showRefs(controller)
 
-    const outcome = await controller.type(1, 'Beta')
-
-    expect(cdp.collectCalls()).toHaveLength(2)
-    expect(outcome).toBe('typed [1]: selected="Beta"')
+    await expect(controller.type(1, 'Beta')).rejects.toThrow(/ref 1 refused/)
+    expect(cdp.calls.filter((call) => call.method === 'Input.dispatchKeyEvent')).toHaveLength(0)
   })
 
-  it('rejects for an unknown ref like the click path', async () => {
+  it('refuses an unshown number like the click path', async () => {
     const { controller } = makeController({ cdp: new FakeCdp(nativeControlsPage()) })
+    await showRefs(controller)
 
-    await expect(controller.type(999, 'Beta')).rejects.toThrow(/ref 999 not found/)
+    await expect(controller.type(999, 'Beta')).rejects.toThrow(/ref 999 refused/)
   })
 })
 
@@ -1586,6 +1768,7 @@ describe('createCdpBrowserController control-state honesty (#133)', () => {
     const cdp = new FakeCdp(nativeControlsPage())
     cdp.actionProbe = probeFor(nativeControlsPage(), { checked: false, selectedOption: null, value: null, ariaPressed: null, className: '' })
     const { controller } = makeController({ cdp })
+    await showRefs(controller)
 
     const outcome = await controller.click(2)
 
@@ -1596,6 +1779,7 @@ describe('createCdpBrowserController control-state honesty (#133)', () => {
     const cdp = new FakeCdp(nativeControlsPage())
     cdp.actionProbe = probeFor(nativeControlsPage(), { checked: null, selectedOption: 'Alpha', value: 'a', ariaPressed: null, className: '' })
     const { controller } = makeController({ cdp })
+    await showRefs(controller)
 
     const outcome = await controller.click(1)
 
@@ -1606,6 +1790,7 @@ describe('createCdpBrowserController control-state honesty (#133)', () => {
     const cdp = new FakeCdp(nativeControlsPage())
     cdp.actionProbe = probeFor(nativeControlsPage(), { checked: true, selectedOption: null, value: null, ariaPressed: null, className: '' })
     const { controller } = makeController({ cdp })
+    await showRefs(controller)
 
     const outcome = await controller.click(2)
 

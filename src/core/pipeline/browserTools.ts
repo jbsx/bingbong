@@ -9,7 +9,6 @@ import { tracedVisionRequest } from '../trace/visionTrace'
 import { traceVisionBudget, visionSeam } from './visionSeam'
 import { reportFault } from '../trace/fault'
 
-const STALE_REF_RE = /ref \d+ not found.*page may have changed/i
 const AUTO_VISION_PROMPT =
   'Describe the current browser screenshot, focusing on page state, popups, dialogs, overlays, errors, and anything blocking the requested task.'
 
@@ -108,21 +107,10 @@ async function autoDescribe(
   }
 }
 
-function withStaleRefVision<T extends unknown[]>(
-  autoVision: AutoVision | undefined,
-  action: (...args: T) => Promise<string>,
-): (...args: [...T, ToolContext]) => Promise<string> {
-  return async (...args) => {
-    const context = args.at(-1) as ToolContext
-    try {
-      return await action(...args.slice(0, -1) as T)
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error)
-      if (!autoVision || !STALE_REF_RE.test(message)) throw error
-      throw new Error(`${message}\n${await autoVision(context, 'stale ref')}`)
-    }
-  }
-}
+// A stale ref used to fire auto-vision, because the model had no idea what
+// the page had become. Since ADR 0033 the refusal carries the settled page
+// itself — the answer vision was standing in for — so there is nothing left
+// for a screenshot to add, and no stale-ref trigger here.
 
 function stringArg(call: ToolCall, name: string, tool: string): string {
   const value = call.args[name]
@@ -176,8 +164,6 @@ export function createBrowserTools(browser: BrowserController, vision?: VisionDe
   const autoVision: AutoVision | undefined = vision
     ? (context, reason) => autoDescribe(browser, vision, context, reason, autoVisionCooldown)
     : undefined
-  const click = withStaleRefVision(autoVision, (ref: number) => browser.click(ref))
-  const type = withStaleRefVision(autoVision, (ref: number, text: string) => browser.type(ref, text))
   return [
     {
       name: 'navigate',
@@ -223,7 +209,7 @@ export function createBrowserTools(browser: BrowserController, vision?: VisionDe
       assessRisk: (call) => assessRefAction(browser, call, 'click'),
       async execute(call, context) {
         resetReads(context)
-        const result = await click(refArg(call, 'click'), context)
+        const result = await browser.click(refArg(call, 'click'))
         if (autoVision && /\bno observable change\b/i.test(result)) {
           return `${result}\n${await autoVision(context, 'no observable change')}`
         }
@@ -242,14 +228,14 @@ export function createBrowserTools(browser: BrowserController, vision?: VisionDe
       assessRisk: (call) => assessRefAction(browser, call, 'type'),
       execute(call, context) {
         resetReads(context)
-        return type(refArg(call, 'type'), stringArg(call, 'text', 'type'), context)
+        return browser.type(refArg(call, 'type'), stringArg(call, 'text', 'type'))
       },
     },
     {
       name: 'scroll',
       acquisition: true,
       description:
-        'Scroll the page up or down by about one screen, then return the new scroll position followed by what the scroll brought into the viewport: a "new in view:" block of the refs and page text that were not visible before, numbered for click/type — continue straight from those, no read_page after a scroll. Scrolling renumbers every ref, so a ref number from before this scroll no longer names the same element; read_page only when you need one of those instead. When nothing new came into view the block is the single line "end of page" — scrolling further that way is refused as a repeat.',
+        'Scroll the page up or down by about one screen, then return the new scroll position followed by what the scroll brought into the viewport: a "new in view:" block of the refs and page text that were not visible before, numbered for click/type — continue straight from those, no read_page after a scroll. A ref number from before this scroll still works only while it names the same element it did: if the scroll moved that element to another number, click/type refuse the number and return the current page to continue from. When nothing new came into view the block is the single line "end of page" — scrolling further that way is refused as a repeat.',
       parameters: {
         direction: { type: 'string', enum: ['up', 'down'], description: 'Direction to scroll' },
       },

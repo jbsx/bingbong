@@ -64,5 +64,6 @@ export function withAgentActivity(
     describeRef: (ref) => controller.describeRef(ref),
     groundingSnapshot: () => controller.groundingSnapshot(),
     refAtPoint: (point) => controller.refAtPoint(point),
+    showRef: (ref) => controller.showRef(ref),
   }
 }

@@ -92,6 +92,7 @@ export function createAuthPopupDirector(
         describeRef: (ref) => target(base).describeRef(ref),
         groundingSnapshot: () => target(base).groundingSnapshot(),
         refAtPoint: (point) => target(base).refAtPoint(point),
+        showRef: (ref) => target(base).showRef(ref),
       }
     },
   }

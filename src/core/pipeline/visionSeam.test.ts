@@ -229,17 +229,17 @@ describe('ground_visual records', () => {
 describe('auto-vision records', () => {
   it('records the Look the pipeline fired itself, with the advisory cap it waited', async () => {
     const browser = new FakeBrowser()
-    browser.click = async () => {
-      throw new Error('ref 4 not found — the page may have changed, run read_page to refresh refs')
-    }
+    browser.click = async () => 'clicked [4]: urlChanged=false dialogOpen=false; no observable change'
     const vision = new FakeVision()
     vision.description = 'A consent dialog is open.'
     const tools = createBrowserTools(browser, vision)
     const { ctx, reported } = context({ turnId: 'turn-3' })
 
-    // The stale-ref path rethrows with the auto-vision note attached; the
-    // records are written either way, which is what this pins.
-    await expect(tool(tools, 'click').execute(call('click', { ref: 4 }), ctx)).rejects.toThrow('Auto-vision (stale ref)')
+    // A click that changed nothing is the anomaly the pipeline looks at
+    // itself; the records it writes are what this pins.
+    await expect(tool(tools, 'click').execute(call('click', { ref: 4 }), ctx)).resolves.toContain(
+      'Auto-vision (no observable change): A consent dialog is open.',
+    )
 
     expect(reported.map((entry) => entry.event)).toEqual([
       { kind: 'vision_budget', reason: 'auto_vision', granted: true },

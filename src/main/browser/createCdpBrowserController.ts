@@ -21,6 +21,7 @@ import {
   type SnapshotRef,
 } from '../../core/browser/snapshot'
 import { SCROLL_END_OF_PAGE, formatNewInView } from '../../core/browser/scrollDelta'
+import { markShownRefsScript, overlayShownRefsScript, refIsShownScript } from './collectPageScript'
 import { reportFault } from '../../core/trace/fault'
 
 // Minimal CDP surface the controller needs, so tests can drive it with a fake
@@ -237,6 +238,24 @@ function isAbortedLoad(error: unknown): boolean {
   return error instanceof Error && error.message.includes(ABORT_ERROR_CODE)
 }
 
+/**
+ * ADR 0033: the number no longer names the element the model was shown, so
+ * the action is refused rather than aimed at whatever now sits there.
+ * `page` is the page as it stood at the moment of refusal — the caller that
+ * hands the refusal to the model hands these numbers over with it, so the
+ * next decision happens in the same round. Null only when even that collect
+ * failed.
+ */
+class StaleRefError extends Error {
+  constructor(readonly ref: number, readonly page: PageSnapshot | null) {
+    super(
+      `ref ${ref} refused: it no longer names the element you were shown` +
+        (page === null ? '; the page could not be re-read' : '. Continue from the page below'),
+    )
+    this.name = 'StaleRefError'
+  }
+}
+
 export function createCdpBrowserController(deps: CdpBrowserControllerDeps): BrowserController & VisualGroundingController {
   const { cdp, page, collectScript } = deps
   const pacing: ControllerPacing = { ...HUMAN_PACING, ...deps.pacing }
@@ -376,6 +395,43 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
   }
 
   /**
+   * The shown registry (ADR 0033): the node behind each number the model was
+   * last shown. Replaced wherever a whole numbering goes to the model — a
+   * page read, the settled page an Action Outcome carries, the page a
+   * refusal carries. A marking that fails leaves the previous registry
+   * standing, which refuses the next ref instead of mis-aiming it.
+   */
+  async function markShown(count: number): Promise<void> {
+    try {
+      await evaluateInPage(markShownRefsScript(count))
+    } catch (error) {
+      reportFault('browser.createCdpBrowserController.markShown', error)
+    }
+  }
+
+  /** Overlay just these numbers: a scroll prints only the refs that entered
+   * view, so every other number keeps the node it was shown as. */
+  async function overlayShown(refs: number[]): Promise<void> {
+    if (refs.length === 0) return
+    try {
+      await evaluateInPage(overlayShownRefsScript(refs.map((ref) => ref - 1)))
+    } catch (error) {
+      reportFault('browser.createCdpBrowserController.overlayShown', error)
+    }
+  }
+
+  /** Is this number still the element it was shown as? A number with no
+   * shown node — past what a read printed, or a guess — answers false. */
+  async function refIsShown(ref: number): Promise<boolean> {
+    try {
+      return (await evaluateInPage<boolean>(refIsShownScript(ref - 1))) === true
+    } catch (error) {
+      reportFault('browser.createCdpBrowserController.refIsShown', error)
+      return false
+    }
+  }
+
+  /**
    * ADR 0027 Action Outcomes: append the settled page state — signature,
    * numbered refs, digest — to a page-changing action's outcome line. The
    * collected snapshot becomes the latest valid snapshot, so the model can
@@ -387,7 +443,10 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
   async function withSettledState(line: string, collected?: PageSnapshot): Promise<string> {
     try {
       const snapshot = collected ?? (await recollection('settled-state', () => collectSnapshot()))
-      return `${line}\n${formatPageSnapshot(snapshot)}`
+      const formatted = formatPageSnapshot(snapshot)
+      // These numbers are now the ones the model holds (ADR 0033).
+      await markShown(snapshot.refs.length)
+      return `${line}\n${formatted}`
     } catch (error) {
       reportFault('browser.createCdpBrowserController.withSettledState', error)
       return line
@@ -541,7 +600,12 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
     try {
       const after = await recollection('scroll-delta', () => collectSnapshot())
       const header = scrollHeader(direction, after.viewport.scrollX ?? 0, after.viewport.scrollY)
-      return `${header}\n${formatNewInView(before, after) ?? SCROLL_END_OF_PAGE}`
+      const delta = formatNewInView(before, after)
+      // Only the delta's numbers were shown; the rest keep the nodes the
+      // last full read gave them, so a ref the scroll shifted is refused
+      // rather than silently retargeted (ADR 0033).
+      if (delta) await overlayShown(delta.shownRefs)
+      return `${header}\n${delta?.block ?? SCROLL_END_OF_PAGE}`
     } catch (error) {
       // A collector hiccup must not fail a scroll that happened: the
       // outcome degrades to the position line, the way withSettledState
@@ -641,20 +705,56 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
     const snapshot = dismissal !== null ? await recollection('post-dismissal', () => collectSnapshot()) : first
     const header = dismissal !== null ? `${dismissal}\n` : ''
     const footer = reports.length > 0 ? `\n${reports.join('\n')}` : ''
-    return `${header}${formatPageSnapshot(snapshot)}${footer}`
+    const formatted = formatPageSnapshot(snapshot)
+    await markShown(snapshot.refs.length)
+    return `${header}${formatted}${footer}`
   }
 
-  async function resolveRef(ref: number): Promise<{ snapshot: PageSnapshot; target: SnapshotRef }> {
-    if (lastSnapshot) {
-      const target = findSnapshotRef(lastSnapshot, ref)
-      if (target) return { snapshot: lastSnapshot, target }
-    }
-    const snapshot = await recollection('resolve-ref', () => collectSnapshot())
+  /**
+   * The one resolver every ref-taking path goes through — click, type, the
+   * risk gate's describe, visual grounding (ADR 0033). A number resolves
+   * only when the node it was shown as is the node at that number now;
+   * a renumbering the model did not see, a number past what a read printed,
+   * and a guess all land in the same refusal. Nothing the model read
+   * correctly costs a round: an unchanged page answers from the registry
+   * it was already shown.
+   */
+  async function resolveRef(
+    ref: number,
+    options?: { carryPage?: boolean },
+  ): Promise<{ snapshot: PageSnapshot; target: SnapshotRef }> {
+    const snapshot = lastSnapshot ?? (await recollection('resolve-ref', () => collectSnapshot()))
     const target = findSnapshotRef(snapshot, ref)
-    if (!target) {
-      throw new Error(`ref ${ref} not found — the page may have changed, run read_page to refresh refs`)
+    if (target && (await refIsShown(ref))) return { snapshot, target }
+    throw await staleRef(ref, options?.carryPage !== false)
+  }
+
+  /** The refusal, holding the page as it stands at this moment — the model
+   * reads the stale-ref line and continues from these numbers. The risk
+   * gate asks for no page: its refusal is discarded, and a page collected
+   * for it would never reach the model to be shown. */
+  async function staleRef(ref: number, carryPage: boolean): Promise<StaleRefError> {
+    if (!carryPage) return new StaleRefError(ref, null)
+    try {
+      return new StaleRefError(ref, await recollection('stale-ref', () => collectSnapshot()))
+    } catch (error) {
+      reportFault('browser.createCdpBrowserController.staleRef', error)
+      return new StaleRefError(ref, null)
     }
-    return { snapshot, target }
+  }
+
+  /** A refusal carries the page: the stale-ref line, then the settled page
+   * in the `navigate` shape, and those numbers become the shown ones. */
+  async function withRefusedStaleRef<T>(run: () => Promise<T>): Promise<T> {
+    try {
+      return await run()
+    } catch (error) {
+      if (!(error instanceof StaleRefError)) throw error
+      if (error.page === null) throw new Error(error.message)
+      const formatted = formatPageSnapshot(error.page)
+      await markShown(error.page.refs.length)
+      throw new Error(`${error.message}\n${formatted}`)
+    }
   }
 
   /** What performClick did: a real (or direct) activation, or a blocked attempt. */
@@ -663,7 +763,7 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
     | { kind: 'blocked'; signature: PageSignature; snapshot: PageSnapshot }
 
   async function performClick(ref: number): Promise<ClickAttempt> {
-    let { snapshot, target } = await resolveRef(ref)
+    const { snapshot, target } = await resolveRef(ref)
     const visualPoint = visualPoints.get(ref)
     if (visualPoint) {
       const index = target.ref - 1
@@ -679,22 +779,14 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
       lastSnapshot = undefined
       return { kind: 'acted', direct: false, index, label: target.label, before: elementState(target), signature: signatureOf(snapshot) }
     }
-    let index = target.ref - 1
-    let prep = await safety('click-prep', () => prepClick(index))
+    const index = target.ref - 1
+    const prep = await safety('click-prep', () => prepClick(index))
     if (!prep.ok) {
-      // The element registry died with the page (navigation); re-collect.
-      const fresh = await recollection('stale-registry', () => collectSnapshot())
-      const freshTarget = findSnapshotRef(fresh, ref)
-      if (!freshTarget) {
-        throw new Error(`ref ${ref} not found — the page may have changed, run read_page to refresh refs`)
-      }
-      snapshot = fresh
-      target = freshTarget
-      index = freshTarget.ref - 1
-      prep = await safety('click-prep', () => prepClick(index))
-      if (!prep.ok) {
-        throw new Error(`ref ${ref} not found — the page may have changed, run read_page to refresh refs`)
-      }
+      // The node the identity check just matched died between the two
+      // probes — the registry went with a navigation. Refuse (ADR 0033):
+      // re-collecting and retrying would aim the number at whoever now
+      // holds it.
+      throw await staleRef(ref, true)
     }
 
     if (prep.clickable && typeof prep.x === 'number' && typeof prep.y === 'number') {
@@ -719,7 +811,7 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
     return { kind: 'acted', direct: !(prep.clickable), index, label: target.label, before: elementState(target), signature: signatureOf(snapshot) }
   }
 
-  async function click(ref: number): Promise<string> {
+  async function clickRef(ref: number): Promise<string> {
     const attempt = await performClick(ref)
     if (attempt.kind === 'blocked') {
       return `clicked [${ref}]: not clicked — blocked by overlay${dialogSuffix(attempt.snapshot)}${reportsSuffix(drainedReports())}`
@@ -862,21 +954,11 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
     before: PageSignature,
     text: string,
   ): Promise<string> {
-    let index = target.ref - 1
-    let focused = await safety('select-focus', () => focusSelect(index))
-    if (!focused) {
-      // The element registry died with the page (navigation); re-collect.
-      const fresh = await recollection('stale-registry', () => collectSnapshot())
-      const freshTarget = findSnapshotRef(fresh, ref)
-      if (!freshTarget) {
-        throw new Error(`ref ${ref} not found — the page may have changed, run read_page to refresh refs`)
-      }
-      index = freshTarget.ref - 1
-      focused = await safety('select-focus', () => focusSelect(index))
-      if (!focused) {
-        throw new Error(`ref ${ref} not found — the page may have changed, run read_page to refresh refs`)
-      }
-    }
+    const index = target.ref - 1
+    const focused = await safety('select-focus', () => focusSelect(index))
+    // The registry died with the page between the identity check and the
+    // focus: refuse rather than re-collect and retry (ADR 0033).
+    if (!focused) throw await staleRef(ref, true)
     // Synthetic keys only land on the focused webContents (pressKey's
     // rule): the click path buys focus with its opening click, the select
     // path claims it here — DOM focus() moved element focus only.
@@ -901,7 +983,7 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
     return `typed [${ref}]: selected=${JSON.stringify(selected)}`
   }
 
-  async function type(ref: number, text: string): Promise<string> {
+  async function typeIntoRef(ref: number, text: string): Promise<string> {
     const { snapshot, target } = await resolveRef(ref)
     if (target.selectedOption != null) {
       return typeIntoSelect(ref, target, signatureOf(snapshot), text)
@@ -972,7 +1054,7 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
 
   async function describeRef(ref: number): Promise<SnapshotRef | undefined> {
     try {
-      const { target } = await resolveRef(ref)
+      const { target } = await resolveRef(ref, { carryPage: false })
       return target
     } catch (error) {
       reportFault('browser.createCdpBrowserController.describeRef', error)
@@ -1026,7 +1108,16 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
       totalVisible: Math.max(snapshot.totalVisible, ref),
     }
     visualPoints.set(ref, point)
+    // The one number this round hands the model (ADR 0033).
+    await overlayShown([ref])
     return ref
+  }
+
+  /** A number handed to the model outside a page read — the DOM match
+   * `ground_visual` answers with — is a shown number too, or the click that
+   * follows it would be refused (ADR 0033). */
+  async function showRef(ref: number): Promise<void> {
+    await overlayShown([ref])
   }
 
   function state(): BrowserState {
@@ -1062,6 +1153,9 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
     }
   }
 
+  const click = (ref: number) => withRefusedStaleRef(() => clickRef(ref))
+  const type = (ref: number, text: string) => withRefusedStaleRef(() => typeIntoRef(ref, text))
+
   return {
     navigate,
     readPage,
@@ -1079,5 +1173,6 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
     describeRef,
     groundingSnapshot,
     refAtPoint,
+    showRef,
   }
 }

@@ -138,7 +138,13 @@ export function createVisionGroundingTools(browser: BrowserController & VisualGr
         const target = targetArg(call)
         const snapshot = await browser.groundingSnapshot()
         const matched = domMatch(target, snapshot.refs)
-        if (matched) return `DOM match: use ref ${matched.ref}`
+        if (matched) {
+          // The grounding collect is not a page read: this one number is
+          // all the model is shown of it, so this one number is what the
+          // shown registry records (ADR 0033).
+          await browser.showRef(matched.ref)
+          return `DOM match: use ref ${matched.ref}`
+        }
 
         const grant = context.acquireVision?.()
         traceVisionBudget(context, 'ground_visual', grant)

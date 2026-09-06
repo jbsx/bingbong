@@ -57,25 +57,24 @@ describe('automatic page vision through the command pipeline', () => {
     })
   })
 
-  it('describes the screenshot when a browser action fails with a stale ref', async () => {
+  it('fires no screenshot for a refused ref: the refusal already carries the page (ADR 0033)', async () => {
     const browser = new FakeBrowser()
+    const refusal =
+      'ref 99 refused: it no longer names the element you were shown. Continue from the page below\n' +
+      '# Example — https://example.com/\n[1] button "Play"'
     browser.click = async () => {
-      throw new Error('ref 99 not found — the page may have changed, run read_page to refresh refs')
+      throw new Error(refusal)
     }
     const vision = new FakeVision()
-    vision.description = 'A transparent consent overlay is blocking the controls.'
     const { llm } = await run(browser, vision, [
       { kind: 'tool_calls', calls: [{ id: 'c1', name: 'click', args: { ref: 99 } }] },
       { kind: 'answer', speak: 'Done.', display: 'Done.' },
     ])
 
-    expect(vision.describeRequests).toHaveLength(1)
-    expect(llm.requests[1]?.toolResults[0]?.outcome).toEqual({
-      ok: false,
-      error:
-        'ref 99 not found — the page may have changed, run read_page to refresh refs\n' +
-        'Auto-vision (stale ref): A transparent consent overlay is blocking the controls.',
-    })
+    // The page state is the answer a screenshot was standing in for, and
+    // the refusal already holds it: the model reads the refusal verbatim.
+    expect(vision.describeRequests).toHaveLength(0)
+    expect(llm.requests[1]?.toolResults[0]?.outcome).toEqual({ ok: false, error: refusal })
   })
 
   it('shares thirty calls between automatic vision and look, and refusals consume nothing', async () => {

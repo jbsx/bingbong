@@ -79,6 +79,8 @@ function autoVisionTurns(url: string): AssistantTurn[] {
     { kind: 'tool_calls', calls: [{ id: 'read-two', name: 'read_page', args: {} }] },
     { kind: 'tool_calls', calls: [{ id: 'read-three', name: 'read_page', args: {} }] },
     { kind: 'tool_calls', calls: [{ id: 'no-change', name: 'click', args: { ref: 2 } }] },
+    // A number no read ever printed: refused with the current page (ADR
+    // 0033), and no auto-vision — the page state is the answer.
     { kind: 'tool_calls', calls: [{ id: 'stale', name: 'click', args: { ref: 999 } }] },
     // A real state change between: the checkbox toggle is Progress, so
     // the on-demand look's result stays the clean description.
@@ -142,7 +144,9 @@ describe('automatic page vision e2e', () => {
     expect(byId['no-change']).toContain('Auto-vision (no observable change) skipped: vision is cooling down')
     expect(byId['read-two']).toMatch(/unchanged page state/)
     expect(byId['read-three']).toMatch(/^Not executed — this action repeats an equivalent action/)
-    expect(byId.stale).toContain('Auto-vision (stale ref) skipped')
+    expect(byId.stale).toContain('ref 999 refused: it no longer names the element you were shown')
+    expect(byId.stale).toContain('# interactive fixture — ')
+    expect(byId.stale).not.toContain('Auto-vision')
     expect(byId.toggle).toContain('checked=')
     // A model-requested Look is not auto-vision: no cooldown, full budget share.
     expect(byId['on-demand']).toBe('Visible page description 2.')

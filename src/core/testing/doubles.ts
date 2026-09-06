@@ -260,6 +260,8 @@ export class FakeBrowser implements BrowserController, VisualGroundingController
   readonly screenshotRequests: (ScreenshotOptions | undefined)[] = []
   pointRef = 1
   readonly refPoints: { x: number; y: number }[] = []
+  /** Ref numbers recorded as shown to the model (ADR 0033). */
+  readonly shownRefs: number[] = []
   media: MediaState | null = { paused: true, currentTime: 0, volume: 1 }
 
   async navigate(url: string): Promise<string> {
@@ -341,6 +343,10 @@ export class FakeBrowser implements BrowserController, VisualGroundingController
   async refAtPoint(point: ViewportPoint): Promise<number> {
     this.refPoints.push(point)
     return this.pointRef
+  }
+
+  async showRef(ref: number): Promise<void> {
+    this.shownRefs.push(ref)
   }
 }
 

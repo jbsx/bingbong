@@ -35,6 +35,13 @@ export interface CollectedElement {
   value?: string | null
   ariaPressed?: string | null
   className?: string
+  /**
+   * Where this element sat in the collect before this one, or -1 when this
+   * collect is the first to see it (ADR 0033). DOM node identity across a
+   * renumbering, reported by the collector because only the page holds the
+   * nodes; absent in older payloads, read as -1.
+   */
+  previousIndex?: number
 }
 
 export interface CollectedViewport {
@@ -100,6 +107,9 @@ export interface SnapshotRef {
   className?: string
   /** 'dialog' marks a control of the topmost open dialog; 'page' otherwise. */
   layer?: 'dialog' | 'page'
+  /** The element's position in the previous collect, -1 when it is new to
+   * this one (ADR 0033). The scroll delta's identity. */
+  previousIndex?: number
 }
 
 export interface PageSnapshot {
@@ -207,6 +217,7 @@ export function parseCollectedPage(raw: unknown): CollectedPage {
       value: typeof el.value === 'string' ? el.value : null,
       ariaPressed: optionalString(el.ariaPressed),
       className: typeof el.className === 'string' ? el.className : '',
+      previousIndex: isFiniteNumber(el.previousIndex) ? el.previousIndex : -1,
     }
   })
 
@@ -295,6 +306,7 @@ export function buildPageSnapshot(page: CollectedPage, options?: { maxRefs?: num
       ariaPressed: element.ariaPressed ?? null,
       className: element.className ?? '',
       layer: element.layer ?? 'page',
+      previousIndex: element.previousIndex ?? -1,
     })),
     totalVisible: visible.length,
     truncated: visible.length > taken.length,
