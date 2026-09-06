@@ -139,20 +139,25 @@ describe('no-progress rails e2e (#126) — approach exhaustion finalization', ()
       },
       // The first read of this state is new material — a producer that had
       // not observed it (#161) — and then four no-progress actions against
-      // an unmoving page: a clamped scroll at the top (1), a second read
-      // (2 — Approach 1 exhausted, instructed), a jump to the article's
-      // print rendering, which is the same source in a different URL (3),
-      // and a second clamped scroll (4 — Approach 2 exhausted:
-      // Finalization), with the ask_user sibling already inside
-      // Finalization — refused without ever opening a window.
+      // an unmoving page: a clamped scroll at the top, which brings nothing
+      // into view (1), a second read (2 — Approach 1 exhausted,
+      // instructed), a jump to the article's print rendering, which is the
+      // same source in a different URL (3), and a scroll down the article
+      // that fits in one viewport, so it too ends on `end of page` (4 —
+      // Approach 2 exhausted: Finalization), with the ask_user sibling
+      // already inside Finalization — refused without ever opening a
+      // window. Between them, a repeat of the clamped scroll up: the
+      // `end of page` note said there is nothing above, so the repeat
+      // guard refuses it before it runs (#194).
       { kind: 'tool_calls', calls: [{ id: 'read-1', name: 'read_page', args: {} }] },
       { kind: 'tool_calls', calls: [{ id: 'scroll-1', name: 'scroll', args: { direction: 'up' } }] },
       { kind: 'tool_calls', calls: [{ id: 'read-2', name: 'read_page', args: {} }] },
       { kind: 'tool_calls', calls: [{ id: 'print', name: 'navigate', args: { url: `${article}?print=1` } }] },
+      { kind: 'tool_calls', calls: [{ id: 'scroll-2', name: 'scroll', args: { direction: 'up' } }] },
       {
         kind: 'tool_calls',
         calls: [
-          { id: 'scroll-2', name: 'scroll', args: { direction: 'up' } },
+          { id: 'scroll-3', name: 'scroll', args: { direction: 'down' } },
           { id: 'ask', name: 'ask_user', args: { question: 'Which part matters?' } },
         ],
       },
@@ -183,10 +188,21 @@ describe('no-progress rails e2e (#126) — approach exhaustion finalization', ()
       ok: true,
       result: expect.stringMatching(/Change your Approach/),
     })
-    // Approach 2 exhausted on the second scroll: the Finalization
-    // directive rode its result, and the exhausted run's ask_user was
-    // refused — no window ever opened.
+    // The clamped scroll reported the end of the page, so its repeat is
+    // refused before it runs (#194) — the model is not charged a round to
+    // learn there is still nothing above.
+    expect(events.find((event) => event.type === 'tool_result' && event.callId === 'scroll-1')).toMatchObject({
+      ok: true,
+      result: expect.stringMatching(/^scrolled up: x=\d+ y=\d+\nend of page/),
+    })
     expect(events.find((event) => event.type === 'tool_result' && event.callId === 'scroll-2')).toMatchObject({
+      ok: false,
+      error: expect.stringMatching(/Not executed/),
+    })
+    // Approach 2 exhausted on the scroll that also brought nothing into
+    // view: the Finalization directive rode its result, and the exhausted
+    // run's ask_user was refused — no window ever opened.
+    expect(events.find((event) => event.type === 'tool_result' && event.callId === 'scroll-3')).toMatchObject({
       ok: true,
       result: expect.stringMatching(/final answer JSON/),
     })

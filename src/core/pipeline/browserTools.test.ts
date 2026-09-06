@@ -250,6 +250,12 @@ describe('browser tools through the pipeline', () => {
     expect(descriptions.type).toMatch(/focus/i)
     expect(descriptions.type).toMatch(/no separate click/i)
     expect(descriptions.scroll).toMatch(/scroll position/i)
+    // #194: scroll and click say they return what changed, so the model
+    // has no reason to spend a round on read_page after either.
+    expect(descriptions.scroll).toMatch(/new in view/i)
+    expect(descriptions.scroll).toMatch(/end of page/i)
+    expect(descriptions.scroll).toMatch(/no read_page/i)
+    expect(descriptions.click).toMatch(/no read_page/i)
     expect(descriptions.back).toMatch(/URL.*title/i)
     expect(descriptions.go_forward).toMatch(/URL.*title/i)
   })

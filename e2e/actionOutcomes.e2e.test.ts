@@ -171,10 +171,17 @@ describe('action outcome lines e2e (#113)', () => {
     expect(byId.check.split('\n')[0]).toBe('clicked [8]: urlChanged=false dialogOpen=false; checked=false -> true')
     expect(byId.check).toContain('# interactive fixture — ')
 
-    // Concise outcomes: value-only typing, scrolling, media state.
+    // Concise outcomes: value-only typing, media state.
     expect(byId.type).toBe('typed [5]: value="hello"')
-    expect(byId.scroll).toMatch(/^scrolled down: x=0 y=[1-9]\d*$/)
     expect(byId.media).toMatch(/^media: paused=(true|false) currentTime=\d+(?:\.\d+)?s volume=\d+%$/)
+
+    // A scroll returns what it brought into view (#194): the position line,
+    // then the refs and text that were below the fold — no read_page round.
+    const scrolled = byId.scroll.split('\n')
+    expect(scrolled[0]).toMatch(/^scrolled down: x=0 y=[1-9]\d*$/)
+    expect(scrolled[1]).toBe('new in view:')
+    expect(byId.scroll).toMatch(/^\[\d+\] link "Deep link" href=/m)
+    expect(byId.scroll).toContain('Only visible after scrolling down.')
 
     // GUI search: the navigate outcome exposes the engine's search box,
     // and the submitted typing returns the settled results page state.

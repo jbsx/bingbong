@@ -100,6 +100,40 @@ describe('no-progress rail — objective repetition (#126/AC1)', () => {
     expect(rail.finalizationDue()).toBe(false)
   })
 
+  it('refuses the scroll after one that reported the end of the page (#194)', async () => {
+    let current = BASE
+    const rail = createNoProgressRail({ settledState: () => current })
+    const scrollDown = call('scroll', { direction: 'down' })
+    await rail.observe(call('read_page'), ok('the page')) // baseline
+
+    // The window moved — the page did not: nothing new entered the viewport.
+    expect(await rail.gate(scrollDown)).toEqual({ ok: true })
+    current = state({ scrollY: 3800 })
+    expect(await rail.observe(scrollDown, ok('scrolled down: x=0 y=3800\nend of page'))).toBeNull()
+
+    // The note already said there is nothing below; the repeat is refused
+    // before it runs, without waiting for a nudge round.
+    const refusal = await rail.gate(scrollDown)
+    expect(refusal).toMatchObject({ ok: false })
+    expect(refusal.ok ? undefined : refusal.reason).toMatch(/Not executed/i)
+  })
+
+  it('counts an end-of-page scroll as no progress even though the position moved (#194)', async () => {
+    let current = BASE
+    const rail = createNoProgressRail({ settledState: () => current })
+    const scrollDown = call('scroll', { direction: 'down' })
+    await rail.observe(call('read_page'), ok('the page')) // baseline
+
+    await rail.gate(scrollDown)
+    current = state({ scrollY: 3800 })
+    expect(await rail.observe(scrollDown, ok('scrolled down: x=0 y=3800\nend of page'))).toBeNull()
+    // One more action against the page that did not move exhausts the
+    // Approach: the scroll position moving was never new material.
+    const click = call('click', { ref: 5 })
+    await rail.gate(click)
+    expect(await rail.observe(click, ok('clicked [5]: no observable change'))).toMatch(/change your approach/i)
+  })
+
   it('keeps distinct actions against the same state independent', async () => {
     const rail = createNoProgressRail({ settledState: () => BASE })
     expect(await rail.gate(call('click', { ref: 7 }))).toEqual({ ok: true })

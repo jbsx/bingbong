@@ -56,6 +56,13 @@ export interface CollectedPage {
   /** Text of the topmost open dialog (Tier 2 facts for the model). */
   dialogText?: string
   textDigest?: string
+  /**
+   * The page's text blocks that currently intersect the viewport, in
+   * document order (#194). The digest above is the whole page's text,
+   * capped from the top, so it barely moves when the page scrolls; this
+   * is what a scroll actually brought into view.
+   */
+  viewportText?: string[]
   elements: CollectedElement[]
 }
 
@@ -103,12 +110,18 @@ export interface PageSnapshot {
   /** Text of the topmost open dialog, capped; '' when no dialog is open. */
   dialogText: string
   textDigest: string
+  /** Text blocks intersecting the viewport when this snapshot was taken (#194). */
+  viewportText: string[]
   refs: SnapshotRef[]
   totalVisible: number
   truncated: boolean
 }
 
 export const MAX_SNAPSHOT_REFS = 75
+
+/** The text cap read_page's digest is collected under — the size any other
+ * page text a tool result carries is held to as well (#194). */
+export const MAX_SNAPSHOT_TEXT = 1800
 const MAX_LABEL_LENGTH = 80
 const MAX_HREF_LENGTH = 80
 
@@ -212,6 +225,9 @@ export function parseCollectedPage(raw: unknown): CollectedPage {
     dialogOpen: candidate.dialogOpen === true,
     dialogText: typeof candidate.dialogText === 'string' ? candidate.dialogText : '',
     textDigest: typeof candidate.textDigest === 'string' ? candidate.textDigest : '',
+    viewportText: Array.isArray(candidate.viewportText)
+      ? candidate.viewportText.filter((entry): entry is string => typeof entry === 'string' && entry !== '')
+      : [],
     elements,
   }
 }
@@ -222,7 +238,7 @@ function intersectsViewport(element: CollectedElement, viewport: CollectedViewpo
   return y + height > 0 && x + width > 0 && y < viewport.height && x < viewport.width
 }
 
-function truncateText(text: string, maxLength: number): string {
+export function truncateText(text: string, maxLength: number): string {
   if (text.length <= maxLength) return text
   return `${text.slice(0, maxLength - 1)}…`
 }
@@ -255,6 +271,7 @@ export function buildPageSnapshot(page: CollectedPage, options?: { maxRefs?: num
     dialogOpen: page.dialogOpen ?? false,
     dialogText: page.dialogText ?? '',
     textDigest: page.textDigest ?? '',
+    viewportText: page.viewportText ?? [],
     refs: taken.map((element, index) => ({
       ref: index + 1,
       kind: refKindOf(element),
@@ -286,6 +303,23 @@ export function buildPageSnapshot(page: CollectedPage, options?: { maxRefs?: num
 
 const MAX_DIALOG_TEXT = 200
 
+/** One numbered ref as the model reads it — the same line whether it arrives
+ * in a whole page read or in a scroll's `new in view` block (#194). */
+export function formatRefLine(ref: SnapshotRef): string {
+  const subtype = ref.kind === 'input' && ref.inputType ? `[${ref.inputType}]` : ''
+  const label = ref.label ? ` "${ref.label}"` : ''
+  const src = ref.src ? ` src=${JSON.stringify(ref.src)}` : ''
+  const href = ref.href ? ` href=${JSON.stringify(truncateHref(ref.href))}` : ''
+  const state = [
+    ...(typeof ref.checked === 'boolean' ? [`checked=${ref.checked}`] : []),
+    ...(ref.selectedOption ? [`selected=${JSON.stringify(ref.selectedOption)}`] : []),
+    ...(ref.value ? [`value=${JSON.stringify(ref.value)}`] : []),
+    ...(ref.ariaPressed ? [`aria-pressed=${JSON.stringify(ref.ariaPressed)}`] : []),
+  ]
+  const dialogMarker = ref.layer === 'dialog' ? ' (dialog)' : ''
+  return `[${ref.ref}] ${ref.kind}${subtype}${label}${src}${href}${state.length > 0 ? ` ${state.join(' ')}` : ''}${dialogMarker}`
+}
+
 export function formatPageSnapshot(snapshot: PageSnapshot): string {
   const lines = [
     `# ${snapshot.title} — ${snapshot.url}`,
@@ -298,20 +332,7 @@ export function formatPageSnapshot(snapshot: PageSnapshot): string {
     const text = truncateText(snapshot.dialogText, MAX_DIALOG_TEXT)
     lines.push(`dialog open: ${JSON.stringify(text)}`)
   }
-  for (const ref of snapshot.refs) {
-    const subtype = ref.kind === 'input' && ref.inputType ? `[${ref.inputType}]` : ''
-    const label = ref.label ? ` "${ref.label}"` : ''
-    const src = ref.src ? ` src=${JSON.stringify(ref.src)}` : ''
-    const href = ref.href ? ` href=${JSON.stringify(truncateHref(ref.href))}` : ''
-    const state = [
-      ...(typeof ref.checked === 'boolean' ? [`checked=${ref.checked}`] : []),
-      ...(ref.selectedOption ? [`selected=${JSON.stringify(ref.selectedOption)}`] : []),
-      ...(ref.value ? [`value=${JSON.stringify(ref.value)}`] : []),
-      ...(ref.ariaPressed ? [`aria-pressed=${JSON.stringify(ref.ariaPressed)}`] : []),
-    ]
-    const dialogMarker = ref.layer === 'dialog' ? ' (dialog)' : ''
-    lines.push(`[${ref.ref}] ${ref.kind}${subtype}${label}${src}${href}${state.length > 0 ? ` ${state.join(' ')}` : ''}${dialogMarker}`)
-  }
+  for (const ref of snapshot.refs) lines.push(formatRefLine(ref))
   if (snapshot.truncated) {
     lines.push(`(+${snapshot.totalVisible - snapshot.refs.length} more not listed)`)
   }

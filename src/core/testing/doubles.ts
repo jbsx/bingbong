@@ -249,6 +249,7 @@ export class FakeBrowser implements BrowserController, VisualGroundingController
     dialogOpen: false,
     dialogText: '',
     textDigest: '',
+    viewportText: [],
     refs: [],
     totalVisible: 0,
     truncated: false,

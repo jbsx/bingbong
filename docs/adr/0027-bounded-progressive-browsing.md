@@ -34,7 +34,11 @@ mechanics and encourage redundant reads, clicks, screenshots, and vision calls.
   question.
 - The runtime mechanically nudges and eventually refuses repeated actions
   against equivalent state. Changed content, scroll position, pagination, or
-  media state prevents false refusal.
+  media state prevents false refusal. One exception, from the scroll delta
+  (#194): a scroll whose outcome ends on `end of page` brought nothing into
+  the viewport, so its position moving is not a change — the pair survives,
+  and because the note itself already said there is nothing further, the next
+  identical scroll is refused rather than nudged again.
 - Work budgets warn internally near exhaustion. Exhaustion disables browser,
   vision, media, delegation, and user-question tools. Finalization still permits
   at most one Run Plan/Run Headline and Evidence Checkpoint bookkeeping Tool
@@ -46,6 +50,9 @@ mechanics and encourage redundant reads, clicks, screenshots, and vision calls.
 - Navigation and meaningful browser actions return Action Outcomes containing
   the settled page state needed for the next decision. `read_page` remains an
   explicit inspection tool, but is not a mandatory follow-up to every action.
+  A scroll is one of those actions (#194): it returns what entered the
+  viewport — the refs and page text that were not visible before, under the
+  same caps `read_page` uses — or `end of page` when nothing did.
   The model-facing byte-count-only screenshot tool is removed; Look and visual
   grounding capture images internally.
 - Mechanical tool usage belongs in tool descriptions. The shared orchestrator

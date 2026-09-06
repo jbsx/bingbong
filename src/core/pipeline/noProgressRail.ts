@@ -1,5 +1,6 @@
 import type { ToolCall, ToolResultOutcome } from '../ports/llm'
 import type { ObservationProducer } from '../session/observationLedger'
+import { SCROLL_END_OF_PAGE } from '../browser/scrollDelta'
 import { actionFingerprint, pageFingerprint, type SettledPageState } from './progressFingerprints'
 import { classifyToolObservation } from './toolObservations'
 import { reportFault } from '../trace/fault'
@@ -49,6 +50,18 @@ export const NO_PROGRESS_ACTIONS_PER_APPROACH = 2
 
 /** Exhausted Approaches after which the run finalizes for `no_progress` (#126/AC4). */
 export const EXHAUSTED_APPROACHES_BEFORE_FINALIZATION = 2
+
+/**
+ * A scroll that brought nothing into the viewport (#194). The window moved,
+ * the page did not: the scroll position alone is never new material, so the
+ * rail reads the note the way it reads an unchanged page — and the note
+ * itself is the nudge, so the next identical scroll is refused rather than
+ * nudged again.
+ */
+function isEndOfPageScroll(call: ToolCall, outcome: ToolResultOutcome): boolean {
+  if (call.name !== 'scroll' || !outcome.ok || typeof outcome.result !== 'string') return false
+  return outcome.result.split('\n').includes(SCROLL_END_OF_PAGE)
+}
 
 /** Bookkeeping whose acceptance is decision-relevant evidence (#126/AC3). */
 const CHECKPOINT_TOOLS: ReadonlySet<string> = new Set(['record_evidence', 'record_candidate'])
@@ -269,14 +282,20 @@ export function createNoProgressRail(deps: NoProgressRailDeps = {}): NoProgressR
       if (fingerprint === null) return nudge
       const key = actionFingerprint(call)
       const entry = attempts.get(key)
-      if (entry !== undefined && entry.preState !== fingerprint) {
+      const endOfPage = isEndOfPageScroll(call, outcome)
+      if (endOfPage) {
+        // Nothing entered the viewport, so the pair is not spent — and the
+        // note the model just read is the nudge: the next identical scroll
+        // is refused pre-execution instead of costing another round.
+        attempts.set(key, { preState: fingerprint, nudged: true })
+      } else if (entry !== undefined && entry.preState !== fingerprint) {
         // The action moved the page, so its pair is spent: the next
         // attempt of this same fingerprint starts from the state this
         // one produced — a fresh equivalence. Scrolling, pagination, and
         // media toggles continue instead of reading as repeats.
         attempts.delete(key)
       }
-      const firstByThisProducer = markObserved(fingerprint, producerOf(call.name))
+      const firstByThisProducer = markObserved(fingerprint, producerOf(call.name)) && !endOfPage
       if (lastState === null) {
         // The baseline read: the state Progress is measured from, not
         // itself an action that failed to make it (#126/AC1 — the first
@@ -284,9 +303,11 @@ export function createNoProgressRail(deps: NoProgressRailDeps = {}): NoProgressR
         lastState = fingerprint
         return nudge
       }
-      if (fingerprint !== lastState) {
+      if (fingerprint !== lastState && !endOfPage) {
         // The action moved the page — or observed it move: either way new
-        // material arrived.
+        // material arrived. A scroll that landed on `end of page` is the
+        // exception: its state moved by scroll position alone, and nothing
+        // came into view with it (#194).
         lastState = fingerprint
         progress()
         return nudge

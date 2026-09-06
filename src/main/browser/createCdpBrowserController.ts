@@ -20,6 +20,7 @@ import {
   type PageSnapshot,
   type SnapshotRef,
 } from '../../core/browser/snapshot'
+import { SCROLL_END_OF_PAGE, formatNewInView } from '../../core/browser/scrollDelta'
 import { reportFault } from '../../core/trace/fault'
 
 // Minimal CDP surface the controller needs, so tests can drive it with a fake
@@ -514,21 +515,41 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
     return `url=${truncateOutcomeText(signature.url, 100)} title=${JSON.stringify(truncateOutcomeText(signature.title, 50))}`
   }
 
+  /** Zoomed pages (#53) scroll on fractional CSS pixels; the outcome line
+   * keeps its integer-pixel contract. */
+  function scrollHeader(direction: 'up' | 'down', scrollX: number, scrollY: number): string {
+    return `scrolled ${direction}: x=${Math.round(scrollX)} y=${Math.round(scrollY)}`
+  }
+
+  /**
+   * Scroll, then say what scrolled in (#194). The position alone left the
+   * model blind — it had to spend a whole round on read_page to see the
+   * new viewport — so the outcome carries the refs and text that entered
+   * it, and `end of page` when nothing did.
+   */
   async function scroll(direction: 'up' | 'down'): Promise<string> {
-    const { viewport } = await currentSnapshot()
+    const before = await currentSnapshot()
     const deltaY = direction === 'down' ? SCROLL_STEP_PX : -SCROLL_STEP_PX
-    const x = Math.floor(viewport.width / 2)
-    const y = Math.floor(viewport.height / 2)
+    const x = Math.floor(before.viewport.width / 2)
+    const y = Math.floor(before.viewport.height / 2)
     for (let tick = 0; tick < SCROLL_TICKS; tick++) {
       await cdp.send('Input.dispatchMouseEvent', { type: 'mouseWheel', x, y, deltaX: 0, deltaY })
       await settle('scroll', pacing.scrollTickMs)
     }
     // Viewport-relative rects shift with the scroll; refs must be re-read.
     lastSnapshot = undefined
-    const { signature } = await probeAction(-1)
-    // Zoomed pages (#53) scroll on fractional CSS pixels; the outcome line
-    // keeps its integer-pixel contract.
-    return `scrolled ${direction}: x=${Math.round(signature.scrollX)} y=${Math.round(signature.scrollY)}`
+    try {
+      const after = await recollection('scroll-delta', () => collectSnapshot())
+      const header = scrollHeader(direction, after.viewport.scrollX ?? 0, after.viewport.scrollY)
+      return `${header}\n${formatNewInView(before, after) ?? SCROLL_END_OF_PAGE}`
+    } catch (error) {
+      // A collector hiccup must not fail a scroll that happened: the
+      // outcome degrades to the position line, the way withSettledState
+      // degrades a navigation.
+      reportFault('browser.createCdpBrowserController.scroll', error)
+      const { signature } = await probeAction(-1)
+      return scrollHeader(direction, signature.scrollX, signature.scrollY)
+    }
   }
 
   /** Navigation outcome: the settled URL/title line plus the settled page

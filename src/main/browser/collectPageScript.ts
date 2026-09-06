@@ -188,12 +188,31 @@ export const COLLECT_PAGE_SCRIPT = `(() => {
   const heading = document.querySelector('h1, [role="heading"][aria-level="1"]')
   const textRoot = document.querySelector('main, article') || document.body
   const digestParts = []
+  // What the viewport shows right now, so a scroll can report what it
+  // brought in (#194). The digest is the whole page capped from the top and
+  // barely moves when the page scrolls; this tracks the window.
+  const viewportText = []
+  // Rect-only intersection: a text block is not a click target, so it does
+  // not need the style pass rectVisible does — a hidden block has no rect,
+  // and running getComputedStyle over every paragraph would cost every
+  // collect, not just a scroll.
+  const noteInView = (el, text) => {
+    if (viewportText.length >= 60 || viewportText.includes(text)) return
+    const rect = el.getBoundingClientRect()
+    if (rect.width < 1 || rect.height < 1) return
+    if (rect.bottom > 0 && rect.right > 0 && rect.top < vh && rect.left < vw) viewportText.push(text.slice(0, 300))
+  }
   const headingText = heading ? textOf(heading) : ''
-  if (headingText) digestParts.push(headingText)
+  if (headingText) {
+    digestParts.push(headingText)
+    noteInView(heading, headingText)
+  }
   if (textRoot) {
     for (const block of textRoot.querySelectorAll('p, li, h2, h3')) {
       const text = textOf(block)
-      if (text && text !== headingText && !digestParts.includes(text)) digestParts.push(text)
+      if (!text) continue
+      if (text !== headingText && !digestParts.includes(text)) digestParts.push(text)
+      noteInView(block, text)
     }
   }
   const textDigest = digestParts.join('\\n').slice(0, 1800)
@@ -273,6 +292,7 @@ export const COLLECT_PAGE_SCRIPT = `(() => {
     dialogOpen: dialogRoot !== null,
     dialogText: dialogRoot !== null ? textOf(dialogRoot).slice(0, 400) : '',
     textDigest,
+    viewportText,
     elements
   }
 })()`

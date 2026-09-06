@@ -63,6 +63,8 @@ function signInDialogPage(): CollectedPage {
 class FakeCdp implements CdpDebugger {
   readonly calls: { method: string; params?: Record<string, unknown> }[] = []
   evaluateException: string | null = null
+  /** When set, only the collector script fails — probes still answer. */
+  collectException: string | null = null
   /** When set, click-prep reports the element as covered (blocked path). */
   prepCovered = false
   /** When set, click-prep reports the element as offscreen (no coordinates). */
@@ -95,6 +97,9 @@ class FakeCdp implements CdpDebugger {
     if (method === 'Runtime.evaluate') {
       if (this.evaluateException) return { exceptionDetails: { text: this.evaluateException } } as T
       const expression = typeof params?.expression === 'string' ? params.expression : ''
+      if (expression === COLLECT_EXPRESSION && this.collectException) {
+        return { exceptionDetails: { text: this.collectException } } as T
+      }
       if (expression === COLLECT_EXPRESSION && this.collectValues.length > 0) {
         return { result: { value: this.collectValues.shift() } } as T
       }
@@ -794,9 +799,12 @@ describe('createCdpBrowserController ref staleness', () => {
     expect(collects()).toBe(1)
 
     // ...but acting invalidates them: a click may navigate, and scrolling
-    // shifts every viewport-relative rect.
+    // shifts every viewport-relative rect. A scroll re-reads the page it
+    // scrolled off and the one it landed on — the second is what it reports
+    // as newly in view (#194) — so the refs it hands back are already fresh
+    // and the click after it spends no collect of its own.
     await controller.scroll('down')
-    expect(collects()).toBe(2)
+    expect(collects()).toBe(3)
     await controller.click(2)
     expect(collects()).toBe(3)
     await controller.type(3, 'query\n')
@@ -807,7 +815,75 @@ describe('createCdpBrowserController ref staleness', () => {
 })
 
 describe('createCdpBrowserController scroll', () => {
-  it('reports the new horizontal and vertical scroll position', async () => {
+  /** A page whose viewport holds `text`, with the given elements in view. */
+  function scrolledPage(
+    overrides: { scrollX?: number; scrollY?: number; viewportText?: string[]; elements?: CollectedElement[] } = {},
+  ): CollectedPage {
+    return {
+      url: 'https://example.com/article',
+      title: 'Article',
+      viewport: {
+        width: 1280,
+        height: 800,
+        scrollX: overrides.scrollX ?? 0,
+        scrollY: overrides.scrollY ?? 0,
+        scrollHeight: 4000,
+      },
+      dialogOpen: false,
+      textDigest: 'Article heading',
+      viewportText: overrides.viewportText ?? [],
+      elements: overrides.elements ?? [],
+    }
+  }
+
+  function paragraph(label: string): CollectedElement {
+    return {
+      tag: 'a',
+      role: null,
+      inputType: null,
+      label,
+      href: `https://example.com/${label}`,
+      rect: { x: 10, y: 10, width: 100, height: 40 },
+    }
+  }
+
+  it('reports the new scroll position and what the scroll brought into view', async () => {
+    const before = scrolledPage({ viewportText: ['The opening paragraph.'], elements: [paragraph('top')] })
+    const after = scrolledPage({
+      scrollX: 12,
+      scrollY: 360,
+      viewportText: ['The second paragraph.'],
+      elements: [paragraph('next')],
+    })
+    const cdp = new FakeCdp(before)
+    cdp.collectValues = [before, after]
+    const { controller } = makeController({ cdp })
+    await controller.readPage()
+
+    const outcome = await controller.scroll('down')
+
+    expect(outcome).toBe(
+      [
+        'scrolled down: x=12 y=360',
+        'new in view:',
+        '[1] link "next" href="https://example.com/next"',
+        'page text:',
+        'The second paragraph.',
+      ].join('\n'),
+    )
+  })
+
+  it('says end of page when the scroll brought nothing new in', async () => {
+    const stuck = scrolledPage({ scrollY: 3200, viewportText: ['The last paragraph.'], elements: [paragraph('footer')] })
+    const cdp = new FakeCdp(stuck)
+    cdp.collectValues = [stuck, stuck]
+    const { controller } = makeController({ cdp })
+    await controller.readPage()
+
+    expect(await controller.scroll('down')).toBe('scrolled down: x=0 y=3200\nend of page')
+  })
+
+  it('falls back to the probed position when the settled collect fails', async () => {
     const cdp = new FakeCdp()
     cdp.actionProbe = {
       target: null,
@@ -822,10 +898,10 @@ describe('createCdpBrowserController scroll', () => {
       },
     }
     const { controller } = makeController({ cdp })
+    await controller.readPage()
+    cdp.collectException = 'collector blew up'
 
-    const outcome = await controller.scroll('down')
-
-    expect(outcome).toBe('scrolled down: x=12 y=360')
+    expect(await controller.scroll('down')).toBe('scrolled down: x=12 y=360')
   })
 
   it('sends paced wheel ticks downward from the viewport center', async () => {
@@ -851,12 +927,12 @@ describe('createCdpBrowserController scroll', () => {
     expect(cdp.inputCalls()[0]?.params).toMatchObject({ deltaY: -120 })
   })
 
-  it('collects a snapshot first when none exists yet', async () => {
+  it('collects a snapshot first when none exists yet, then again for the delta', async () => {
     const { cdp, controller } = makeController()
 
     await controller.scroll('down')
 
-    expect(cdp.collectCalls()).toHaveLength(1)
+    expect(cdp.collectCalls()).toHaveLength(2)
     expect(cdp.inputCalls()[0]?.params).toMatchObject({ type: 'mouseWheel' })
   })
 })
@@ -1321,7 +1397,7 @@ describe('createCdpBrowserController verbose sub-spans (#32)', () => {
     expect(settles).toEqual(['pointer', 'pointer', 'type', 'keystroke', 'keystroke', 'type'])
   })
 
-  it('emits a recollection per scroll tick settle and the missing-snapshot collect', async () => {
+  it('emits a settle per scroll tick, the missing-snapshot collect, and the delta collect', async () => {
     const { records, subspans } = subspanHarness(true)
     const { controller } = makeController({ subspans })
 
@@ -1329,6 +1405,7 @@ describe('createCdpBrowserController verbose sub-spans (#32)', () => {
 
     expect(records.filter((record) => record.stage === 'browser-recollection').map((record) => record.detail)).toEqual([
       { reason: 'no-snapshot' },
+      { reason: 'scroll-delta' },
     ])
     expect(records.filter((record) => record.stage === 'browser-settle').map((record) => record.detail?.action)).toEqual([
       'scroll',

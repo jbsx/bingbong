@@ -103,6 +103,10 @@ function interactivePage(): string {
   <input type="checkbox" id="agree">
   <video id="player" controls width="320" height="180" title="Fixture player"></video>
   <button id="btn-below" style="position:absolute;top:1600px" onclick="document.title='clicked:btn-below'">Below the fold</button>
+  <!-- Just below the fold, so one scroll (3 wheel ticks, 360px) brings them
+       into view — what a scroll's "new in view" block reports (#194). -->
+  <p id="deep-text" style="position:absolute;top:820px">Only visible after scrolling down.</p>
+  <a id="link-deep" href="/second" style="position:absolute;top:790px">Deep link</a>
 </body>
 </html>`
 }

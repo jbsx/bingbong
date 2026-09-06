@@ -15,6 +15,7 @@ const snapshot: PageSnapshot = {
   dialogOpen: false,
   dialogText: '',
   textDigest: '',
+  viewportText: [],
   refs: [
     {
       ref: 1,
