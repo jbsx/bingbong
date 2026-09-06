@@ -5,11 +5,13 @@ Issues and specs for this repo live as GitHub issues. Use the `gh` CLI for all o
 ## Conventions
 
 - **Create an issue**: `gh issue create --title "..." --body "..."`. Use a heredoc for multi-line bodies.
-- **Read an issue**: `gh issue view <number> --comments`, filtering comments by `jq` and also fetching labels.
+- **Read an issue**: `gh api repos/:owner/:repo/issues/<number> --jq '"TITLE: \(.title)\n\n\(.body)"'`, and `gh api repos/:owner/:repo/issues/<number>/comments --jq '.[].body'` for the thread.
+
+  `gh issue view` does **not** work against this repo: it prints only `GraphQL: Projects (classic) is being deprecated ... (repository.issue.projectCards)` — and **exits 0**, so a script that trusts the exit status reads an empty issue and carries on. `gh issue list` is unaffected; only the single-issue view is.
 - **List issues**: `gh issue list --state open --json number,title,body,labels,comments --jq '[.[] | {number, title, body, labels: [.labels[].name], comments: [.comments[].body]}]'` with appropriate `--label` and `--state` filters.
 - **Comment on an issue**: `gh issue comment <number> --body "..."`
 - **Apply / remove labels**: `gh issue edit <number> --add-label "..."` / `--remove-label "..."`
-- **Close**: `gh issue close <number> --comment "..."`
+- **Close**: `gh issue close <number> --comment "..."`. For a long closing comment, `--comment` takes no file: post it first with `gh api repos/:owner/:repo/issues/<number>/comments -F body=@<file>`, then `gh api --method PATCH repos/:owner/:repo/issues/<number> -f state=closed -f state_reason=completed`.
 
 Infer the repo from `git remote -v` — `gh` does this automatically when run inside a clone.
 
