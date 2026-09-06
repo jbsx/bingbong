@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { UnsettledActionError } from '../../core/browser/unsettledAction'
+import { FakeClock, flushMicrotasks } from '../../core/testing/doubles'
 import { HISTORY_STEP_TIMEOUT_MS, LOAD_TIMEOUT_MS, createPaneNavigation, type PaneNavigationTarget } from './paneNavigation'
 
 /**
@@ -39,43 +40,23 @@ function fakeWebContents(overrides: Partial<PaneNavigationTarget> = {}) {
   }
 }
 
-function manualTimers() {
-  const fired: (() => void)[] = []
-  let cancelled = 0
-  return {
-    setTimer: (_ms: number, fn: () => void) => {
-      fired.push(fn)
-      return () => {
-        cancelled += 1
-      }
-    },
-    fire: (index = 0) => fired[index]!(),
-    get scheduled() {
-      return fired.length
-    },
-    get cancelled() {
-      return cancelled
-    },
-  }
-}
-
 describe('createPaneNavigation', () => {
   it('reports a navigation that outlives its bounded wait as unsettled, not as an ended one', async () => {
     const wc = fakeWebContents()
-    const timers = manualTimers()
-    const page = createPaneNavigation(wc.target, { setTimer: timers.setTimer })
+    const clock = new FakeClock()
+    const page = createPaneNavigation(wc.target, clock)
 
     const load = page.loadUrl('https://slow.example')
-    timers.fire()
+    clock.advance(LOAD_TIMEOUT_MS)
 
     const error = await load.catch((err: unknown) => err)
     expect(error).toBeInstanceOf(UnsettledActionError)
-    expect((error as Error).message).toBe(`timed out loading https://slow.example after ${LOAD_TIMEOUT_MS}ms`)
+    expect((error as Error).message).toBe('stopped waiting for https://slow.example to load; it may still be loading')
 
     // The wrapper is done; Chromium is not. Only the real landing settles it.
     let settled = false
     void (error as UnsettledActionError).settlement.then(() => (settled = true))
-    await new Promise((resolve) => setTimeout(resolve, 0))
+    await flushMicrotasks()
     expect(settled).toBe(false)
 
     wc.landLate()
@@ -85,19 +66,21 @@ describe('createPaneNavigation', () => {
 
   it('resolves a load that lands in time and drops its timer', async () => {
     const wc = fakeWebContents()
-    const timers = manualTimers()
-    const page = createPaneNavigation(wc.target, { setTimer: timers.setTimer })
+    const clock = new FakeClock()
+    const page = createPaneNavigation(wc.target, clock)
 
     const load = page.loadUrl('https://example.com')
     wc.landLate()
     await expect(load).resolves.toBeUndefined()
-    expect(timers.cancelled).toBe(1)
+
+    // The wait is over; advancing past it must not raise a late rejection.
+    clock.advance(LOAD_TIMEOUT_MS * 2)
+    await flushMicrotasks()
   })
 
   it('passes a real load failure through as the ended action it is', async () => {
     const wc = fakeWebContents()
-    const timers = manualTimers()
-    const page = createPaneNavigation(wc.target, { setTimer: timers.setTimer })
+    const page = createPaneNavigation(wc.target, new FakeClock())
 
     const load = page.loadUrl('https://gone.example')
     wc.failLate(new Error('net::ERR_NAME_NOT_RESOLVED'))
@@ -108,18 +91,18 @@ describe('createPaneNavigation', () => {
 
   it('reports a history step that outlives its bounded wait as unsettled too', async () => {
     const wc = fakeWebContents()
-    const timers = manualTimers()
-    const page = createPaneNavigation(wc.target, { setTimer: timers.setTimer })
+    const clock = new FakeClock()
+    const page = createPaneNavigation(wc.target, clock)
 
     const back = page.goBack()
-    timers.fire()
+    clock.advance(HISTORY_STEP_TIMEOUT_MS)
     const error = await back.catch((err: unknown) => err)
     expect(error).toBeInstanceOf(UnsettledActionError)
-    expect((error as Error).message).toBe(`timed out going back after ${HISTORY_STEP_TIMEOUT_MS}ms`)
+    expect((error as Error).message).toBe('stopped waiting for the page to go back; it may still be navigating')
 
     let settled = false
     void (error as UnsettledActionError).settlement.then(() => (settled = true))
-    await new Promise((resolve) => setTimeout(resolve, 0))
+    await flushMicrotasks()
     expect(settled).toBe(false)
 
     wc.fireDidNavigate()
@@ -131,11 +114,13 @@ describe('createPaneNavigation', () => {
     const wc = fakeWebContents({
       navigationHistory: { canGoBack: () => false, canGoForward: () => true, goBack: () => {}, goForward: () => {} },
     })
-    const timers = manualTimers()
-    const page = createPaneNavigation(wc.target, { setTimer: timers.setTimer })
+    const clock = new FakeClock()
+    const page = createPaneNavigation(wc.target, clock)
 
     await expect(page.goBack()).rejects.toThrow('cannot go back: no history')
-    expect(timers.scheduled).toBe(0)
+    // Nothing was armed, so nothing can expire: a refusal is an ended action.
+    clock.advance(HISTORY_STEP_TIMEOUT_MS * 2)
+    await flushMicrotasks()
   })
 
   it('reads url and title straight from the surface and never focuses a destroyed one', () => {

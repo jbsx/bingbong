@@ -6,6 +6,7 @@ import { isPaneRect, HIDDEN_PANE_RECT, parkedDesktopPaneRect, samePaneRect } fro
 import { toPaneBounds } from '../../core/browser/paneGeometry'
 import type { SubagentTab, SubagentTabs } from '../../core/browser/subagentTabs'
 import type { BrowserController } from '../../core/ports/browser'
+import { holdBrowserCustody, type BrowserCustody } from '../../core/browser/unsettledAction'
 import { SUBAGENT_IPC } from '../../core/agent/subagentIpcChannels'
 import { createPaneBrowserController } from './createPaneBrowserController'
 import { attachPageContextMenu } from './attachPageContextMenu'
@@ -49,7 +50,13 @@ const INITIAL_PAINT_URL = 'data:text/html,<html><body style="background:%23ebdbb
 
 interface PooledView {
   view: Electron.WebContentsView
-  controller: BrowserController
+  /**
+   * The tab in custody (#205, ADR 0038): held here because this pool is
+   * what creates and destroys the view. A worker abandoning an unsettled
+   * tab action leaves the tab withheld, and dropping the view releases the
+   * custody with it — nothing outlives the surface it was holding.
+   */
+  custody: BrowserCustody<BrowserController>
   /** The card's reported rect (CSS px); null while the card is not visible. */
   cardRect: PaneRect | null
   /** True once Reopen moved this view into the main browsing area (#57). */
@@ -65,6 +72,8 @@ export interface MainPaneRectSource {
 export interface SubagentPanePool {
   /** The pane controller behind a browsing agent's tab (created on demand). */
   controllerFor(agentId: string): BrowserController | null
+  /** That tab's custody (#205) — what a decision ending the worker abandons. */
+  custodyFor(agentId: string): BrowserCustody<BrowserController> | null
   /** Move a tab's pane into the main browsing area — the card's Reopen control (#57). */
   reopen(agentId: string): boolean
   /** The card reports its own rect: visibility gates capture, width sizes frames. */
@@ -102,6 +111,13 @@ export function createSubagentPanePool(
    * occludes everything to the right of its own column, so this view parks
    * that many slots further left — see parkedDesktopPaneRect.
    */
+  /** The tab's custody, minting the view on first ask; null once it is closed. */
+  function custodyFor(agentId: string): BrowserCustody<BrowserController> | null {
+    const tab = tabs.snapshot().find((candidate) => candidate.agentId === agentId)
+    if (!tab || tab.phase === 'closed') return null
+    return ensureView(tab).custody
+  }
+
   function parkedBoundsFor(agentId: string): Electron.Rectangle {
     let later = 0
     let seen = false
@@ -170,7 +186,7 @@ export function createSubagentPanePool(
 
     const pooled: PooledView = {
       view,
-      controller: createPaneBrowserController({ view, consumePopupBlocks: () => popupBlocks.splice(0) }),
+      custody: holdBrowserCustody(createPaneBrowserController({ view, consumePopupBlocks: () => popupBlocks.splice(0) })),
       cardRect: null,
       inMainArea: false,
     }
@@ -295,10 +311,10 @@ export function createSubagentPanePool(
 
   return {
     controllerFor(agentId) {
-      const tab = tabs.snapshot().find((candidate) => candidate.agentId === agentId)
-      if (!tab || tab.phase === 'closed') return null
-      return ensureView(tab).controller
+      return custodyFor(agentId)?.controller ?? null
     },
+
+    custodyFor,
 
     reopen(agentId) {
       const tab = tabs.snapshot().find((candidate) => candidate.agentId === agentId)

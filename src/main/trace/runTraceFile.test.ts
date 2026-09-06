@@ -7,6 +7,7 @@ import { createRecordCandidateTool } from '../../core/pipeline/candidateTools'
 import { createRecordEvidenceTool } from '../../core/pipeline/evidenceTools'
 import { createReportRunPlanTool } from '../../core/pipeline/runPlanTools'
 import type { Tool } from '../../core/pipeline/tool'
+import { holdBrowserCustody } from '../../core/browser/unsettledAction'
 import type { AssistantTurn, LlmClient } from '../../core/ports/llm'
 import type { RunId, SessionId, SessionIdentitySource, SubmissionId } from '../../core/session/sessionIdentity'
 import { createSessionRuntime } from '../../core/session/sessionRuntime'
@@ -174,7 +175,7 @@ async function runDelegatingSession(
     clock,
     // The worker's own tab, when the case is about its Tool Round: a
     // browse worker's tools exist only behind a controller.
-    ...(workerPage !== undefined ? { controllerFor: () => workerBrowser(workerPage) } : {}),
+    ...(workerPage !== undefined ? { browserFor: () => holdBrowserCustody(workerBrowser(workerPage)) } : {}),
   })
   const manager = createSubagentManager({
     taskApi,

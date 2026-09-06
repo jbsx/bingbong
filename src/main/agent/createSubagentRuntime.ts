@@ -137,7 +137,7 @@ export function createSubagentRuntime(deps: SubagentRuntimeDeps): SubagentRuntim
     taskApi: createSubagentTaskApi({
       getEnv: deps.getEnv,
       fetchFn,
-      controllerFor: (agentId) => pool.controllerFor(agentId),
+      browserFor: (agentId) => pool.custodyFor(agentId),
       backgroundTools: createBackgroundTools({ downloadsDir: deps.downloadsDir, fetchFn }),
       clock,
       vision,

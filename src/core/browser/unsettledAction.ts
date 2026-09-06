@@ -1,6 +1,6 @@
 import type { Clock } from '../ports/clock'
 import { systemClock } from '../ports/clock'
-import type { BrowserController } from '../ports/browser'
+import type { BrowserController, VisualGroundingController } from '../ports/browser'
 
 // Issue #205, ADR 0038: an Unsettled Action and the custody it holds.
 //
@@ -15,7 +15,12 @@ import type { BrowserController } from '../ports/browser'
 // that says the outcome is uncertain rather than undone. The resource's
 // side is conservative: the browser it was acting on is *withheld* — every
 // later call is refused outright, never queued — until the action is
-// observed to end, or the surface it was acting on is provably gone.
+// observed to end. Observed settlement is the only release: ADR 0038 also
+// allows safe isolation, but nothing here can establish that a surface is
+// gone without the action ending anyway (a destroyed webContents rejects
+// what it was running, and a worker's custody dies with its spawn), so the
+// conservative arm the ADR permits — continued unavailability — is what a
+// never-settling action gets.
 //
 // Two things are deliberately not treated as an ending:
 //   - a bounded adapter wait expiring (UnsettledActionError), which is the
@@ -76,16 +81,14 @@ export class WithheldResourceError extends Error {
  * the operation ended: the rejection carries the operation's own eventual
  * settlement so a holder of the resource knows when it is genuinely free.
  * A value, and an ordinary failure, pass through unchanged.
+ *
+ * `withDeadline` (core/ports/clock) races the same way but for a caller who
+ * can shrug the work off — it answers null and drops the result. Use this
+ * one where the work touched something that has to be reclaimed.
  */
-export function boundedWait<T>(
-  operation: Promise<T>,
-  ms: number,
-  message: string,
-  deps: { clock?: Clock; setTimer?: Clock['setTimer'] } = {},
-): Promise<T> {
-  const setTimer = deps.setTimer ?? (deps.clock ?? systemClock).setTimer
+export function boundedWait<T>(operation: Promise<T>, ms: number, message: string, clock: Clock = systemClock): Promise<T> {
   return new Promise<T>((resolve, reject) => {
-    const cancel = setTimer(ms, () => reject(new UnsettledActionError(message, settlementOf(operation))))
+    const cancel = clock.setTimer(ms, () => reject(new UnsettledActionError(message, settlementOf(operation))))
     operation.then(
       (value) => {
         cancel()
@@ -123,18 +126,10 @@ export interface BrowserCustody<T extends BrowserController> {
   /**
    * End the Run's wait on everything in flight (Stop, or the Finalization
    * Allowance running out). Each waiting caller rejects with an
-   * {@link AbandonedActionError} now; the resource is withheld until those
-   * actions settle or the surface is isolated. Abandoning nothing withholds
-   * nothing.
+   * {@link AbandonedActionError} now; the resource stays withheld until
+   * those actions are observed to end. Abandoning nothing withholds nothing.
    */
   abandon(): void
-  /**
-   * The surface these actions were acting on is provably gone — a destroyed
-   * pane, a closed tab. Nothing outstanding can touch anything any more, so
-   * the custody is released without waiting for a settlement that will
-   * never arrive.
-   */
-  isolate(): void
   state(): CustodyState
   /** Resolves once nothing abandoned is outstanding — the state's own edge. */
   settled(): Promise<void>
@@ -158,7 +153,24 @@ interface Outstanding {
  * reaches every caller the way a failed action does, including the seams
  * that hand a bare `() => controller.settledState()` to a rail.
  */
-const SYNCHRONOUS_READER = 'state'
+const SYNCHRONOUS_READERS = ['state'] as const
+
+/** The members of a port that answer something other than a promise. */
+type NotPromising<T> = { [K in keyof T]-?: T[K] extends (...args: never[]) => Promise<unknown> ? never : K }[keyof T]
+
+/**
+ * The hand-written half of the Proxy, pinned. A port method that does not
+ * answer a promise has to be named above, or custody would hand its caller
+ * a promise where a value was expected — and a refusal it could not read.
+ * Growing the port without listing such a method is a type error here
+ * rather than a hole discovered at runtime.
+ */
+type PinnedSynchronousReaders = NotPromising<BrowserController & VisualGroundingController> extends
+  (typeof SYNCHRONOUS_READERS)[number]
+  ? true
+  : never
+const _synchronousReadersArePinned: PinnedSynchronousReaders = true
+void _synchronousReadersArePinned
 
 /**
  * Hold custody of a browser resource. The returned controller is the one to
@@ -207,12 +219,15 @@ export function holdBrowserCustody<T extends BrowserController>(controller: T): 
   const guarded = new Proxy(controller, {
     // A Proxy rather than a hand-written façade: the port grows, and a
     // method that forgot to ask custody is exactly the hole #205 is about.
-    get(target, property, receiver) {
-      const value = Reflect.get(target, property, receiver) as unknown
+    get(target, property) {
+      // Read against the target, not the proxy: a receiver of the proxy
+      // would send any accessor that calls its own methods back through
+      // this guard.
+      const value = Reflect.get(target, property) as unknown
       if (typeof value !== 'function' || typeof property !== 'string') return value
       const action = property
       const method = value as (...args: unknown[]) => unknown
-      if (action === SYNCHRONOUS_READER) {
+      if ((SYNCHRONOUS_READERS as readonly string[]).includes(action)) {
         return (...args: unknown[]): unknown =>
           // No stale page while withheld: a later Run must not read, or act
           // through, the state an abandoned action left behind.
@@ -239,10 +254,6 @@ export function holdBrowserCustody<T extends BrowserController>(controller: T): 
         entry.holding = true
         entry.reject(new AbandonedActionError(entry.action))
       }
-    },
-    isolate() {
-      outstanding.clear()
-      drainWaiters()
     },
     state: () => (withheld() ? 'withheld' : 'available'),
     settled: () =>

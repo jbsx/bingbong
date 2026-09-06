@@ -1,10 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import { createAssistantPipeline } from './createAssistantPipeline'
-import { FakeAppControls, FakeBrowser, FakeClock, FakePanel, FakeSettings, RecordingTts, StallingBrowser, fakeSubagentManager, subagentRecord } from '../../core/testing/doubles'
+import { FakeAppControls, FakeBrowser, FakeClock, FakePanel, FakeSettings, RecordingTts, StallingBrowser, fakeSubagentManager, flushMicrotasks as flush, subagentRecord, until } from '../../core/testing/doubles'
 import type { CommandPipeline } from '../../core/pipeline/createCommandPipeline'
 import type { PipelineEvent } from '../../core/pipeline/events'
 import { createSubagentTools } from '../../core/pipeline/subagentTools'
 import type { PerfTracer } from '../../core/perf/perfTracer'
+import { holdBrowserCustody } from '../../core/browser/unsettledAction'
+import { createCdpBrowserController } from '../browser/createCdpBrowserController'
+import { createPaneNavigation, type PaneNavigationTarget } from '../browser/paneNavigation'
 
 const FULL_ENV = {
   BINGBONG_ORCHESTRATOR_BASE_URL: 'https://ai.z.ai/api/coding/paas/v4',
@@ -26,7 +29,7 @@ async function collect(pipeline: CommandPipeline, command: string): Promise<Pipe
 describe('createAssistantPipeline', () => {
   it('errors with a spoken one-liner when model routing is unconfigured', async () => {
     const browser = new FakeBrowser()
-    const pipeline = createAssistantPipeline({ controller: browser, env: {} })
+    const pipeline = createAssistantPipeline({ browser: holdBrowserCustody(browser), env: {} })
 
     const events = await collect(pipeline, 'open youtube')
 
@@ -39,7 +42,7 @@ describe('createAssistantPipeline', () => {
   it('runs the loop from a scripted LLM override and drives the browser', async () => {
     const browser = new FakeBrowser()
     const pipeline = createAssistantPipeline({
-      controller: browser,
+      browser: holdBrowserCustody(browser),
       env: { BINGBONG_LLM_SCRIPT: SCRIPT },
       clock: new FakeClock(),
     })
@@ -56,7 +59,7 @@ describe('createAssistantPipeline', () => {
   it('uses the configured ask timeout for dashboard and voice test windows', async () => {
     const clock = new FakeClock()
     const pipeline = createAssistantPipeline({
-      controller: new FakeBrowser(),
+      browser: holdBrowserCustody(new FakeBrowser()),
       env: {
         BINGBONG_ASK_TIMEOUT_MS: '1500',
         BINGBONG_LLM_SCRIPT: JSON.stringify([
@@ -95,7 +98,7 @@ describe('createAssistantPipeline', () => {
       summarize: () => null,
     }
     const pipeline = createAssistantPipeline({
-      controller: new FakeBrowser(),
+      browser: holdBrowserCustody(new FakeBrowser()),
       env: { BINGBONG_LLM_SCRIPT: SCRIPT },
       clock: new FakeClock(),
       tracer,
@@ -122,7 +125,7 @@ describe('createAssistantPipeline', () => {
       summarize: () => null,
     }
     const pipeline = createAssistantPipeline({
-      controller: new FakeBrowser(),
+      browser: holdBrowserCustody(new FakeBrowser()),
       env: { BINGBONG_LLM_SCRIPT: SCRIPT },
       clock: new FakeClock(),
       tracer,
@@ -138,7 +141,7 @@ describe('createAssistantPipeline', () => {
 
   it('rejects a malformed LLM script override loudly', async () => {
     const pipeline = createAssistantPipeline({
-      controller: new FakeBrowser(),
+      browser: holdBrowserCustody(new FakeBrowser()),
       env: { BINGBONG_LLM_SCRIPT: '{not json' },
     })
 
@@ -155,7 +158,7 @@ describe('createAssistantPipeline', () => {
     }) as typeof fetch
 
     const pipeline = createAssistantPipeline({
-      controller: new FakeBrowser(),
+      browser: holdBrowserCustody(new FakeBrowser()),
       env: FULL_ENV,
       fetchFn,
       tts: new RecordingTts(),
@@ -180,7 +183,7 @@ describe('createAssistantPipeline', () => {
     // rolls over — the long-lived pipeline sees the new date next Run.
     const clock = new FakeClock(new Date(2026, 7, 24, 23, 59).getTime())
     const pipeline = createAssistantPipeline({
-      controller: new FakeBrowser(),
+      browser: holdBrowserCustody(new FakeBrowser()),
       env: FULL_ENV,
       fetchFn,
       tts: new RecordingTts(),
@@ -206,7 +209,7 @@ describe('createAssistantPipeline', () => {
 
     let env: Record<string, string | undefined> = {}
     const pipeline = createAssistantPipeline({
-      controller: new FakeBrowser(),
+      browser: holdBrowserCustody(new FakeBrowser()),
       env: {},
       getEnv: () => env,
       fetchFn,
@@ -228,7 +231,7 @@ describe('createAssistantPipeline', () => {
   it('exposes media tools alongside the browser verbs, and no off-screen web tool (#83)', async () => {
     const browser = new FakeBrowser()
     const pipeline = createAssistantPipeline({
-      controller: browser,
+      browser: holdBrowserCustody(browser),
       env: {
         BINGBONG_LLM_SCRIPT: JSON.stringify([
           {
@@ -257,7 +260,7 @@ describe('createAssistantPipeline', () => {
 
   it('registers new_session, and its success consumes the resetting run (#99)', async () => {
     const pipeline = createAssistantPipeline({
-      controller: new FakeBrowser(),
+      browser: holdBrowserCustody(new FakeBrowser()),
       env: {
         BINGBONG_LLM_SCRIPT: JSON.stringify([
           {
@@ -289,7 +292,7 @@ describe('createAssistantPipeline', () => {
     const panel = new FakePanel()
     const tts = new RecordingTts()
     const pipeline = createAssistantPipeline({
-      controller: new FakeBrowser(),
+      browser: holdBrowserCustody(new FakeBrowser()),
       env: {
         BINGBONG_LLM_SCRIPT: JSON.stringify([
           {
@@ -329,7 +332,7 @@ describe('createAssistantPipeline', () => {
     }) as typeof fetch
 
     const pipeline = createAssistantPipeline({
-      controller: new FakeBrowser(),
+      browser: holdBrowserCustody(new FakeBrowser()),
       env: FULL_ENV,
       fetchFn,
       tts: new RecordingTts(),
@@ -351,7 +354,7 @@ describe('createAssistantPipeline', () => {
     }) as typeof fetch
 
     const pipeline = createAssistantPipeline({
-      controller: new FakeBrowser(),
+      browser: holdBrowserCustody(new FakeBrowser()),
       env: FULL_ENV,
       fetchFn,
       tts: new RecordingTts(),
@@ -368,7 +371,7 @@ describe('createAssistantPipeline', () => {
     const settings = new FakeSettings()
     const tts = new RecordingTts()
     const pipeline = createAssistantPipeline({
-      controller: new FakeBrowser(),
+      browser: holdBrowserCustody(new FakeBrowser()),
       env: {
         BINGBONG_LLM_SCRIPT: JSON.stringify([
           {
@@ -403,7 +406,7 @@ describe('createAssistantPipeline', () => {
   it('holds an app_control quit on the confirmation gate and never quits when denied', async () => {
     const app = new FakeAppControls()
     const pipeline = createAssistantPipeline({
-      controller: new FakeBrowser(),
+      browser: holdBrowserCustody(new FakeBrowser()),
       env: {
         BINGBONG_LLM_SCRIPT: JSON.stringify([
           { kind: 'tool_calls', calls: [{ id: 'q1', name: 'app_control', args: { action: 'quit' } }] },
@@ -435,7 +438,7 @@ describe('createAssistantPipeline', () => {
     const app = new FakeAppControls()
     const tts = new RecordingTts()
     const pipeline = createAssistantPipeline({
-      controller: new FakeBrowser(),
+      browser: holdBrowserCustody(new FakeBrowser()),
       env: {
         BINGBONG_LLM_SCRIPT: JSON.stringify([
           { kind: 'tool_calls', calls: [{ id: 'q1', name: 'app_control', args: { action: 'quit' } }] },
@@ -472,7 +475,7 @@ describe('createAssistantPipeline', () => {
     }) as typeof fetch
 
     const pipeline = createAssistantPipeline({
-      controller: new FakeBrowser(),
+      browser: holdBrowserCustody(new FakeBrowser()),
       env: FULL_ENV,
       fetchFn,
       tts: new RecordingTts(),
@@ -495,7 +498,7 @@ describe('createAssistantPipeline', () => {
     }) as typeof fetch
 
     const pipeline = createAssistantPipeline({
-      controller: new FakeBrowser(),
+      browser: holdBrowserCustody(new FakeBrowser()),
       env: FULL_ENV,
       fetchFn,
       tts: new RecordingTts(),
@@ -512,7 +515,7 @@ describe('createAssistantPipeline', () => {
     const detail: PipelineEvent[] = []
     const manager = fakeSubagentManager([subagentRecord('a-1'), subagentRecord('a-2')])
     const pipeline = createAssistantPipeline({
-      controller: new FakeBrowser(),
+      browser: holdBrowserCustody(new FakeBrowser()),
       env: {
         BINGBONG_LLM_SCRIPT: JSON.stringify([
           { kind: 'tool_calls', calls: [{ id: 'c1', name: 'agent_results', args: { wait: true } }] },
@@ -549,7 +552,7 @@ describe('createAssistantPipeline', () => {
       return new Response(JSON.stringify({ choices: [{ message: { content: '{"speak":"Done.","display":"Done."}' } }] }), { status: 200 })
     }) as typeof fetch
     const pipeline = createAssistantPipeline({
-      controller: new FakeBrowser(),
+      browser: holdBrowserCustody(new FakeBrowser()),
       env: FULL_ENV,
       fetchFn,
       clock: new FakeClock(),
@@ -600,17 +603,10 @@ describe('createAssistantPipeline', () => {
       { kind: 'answer', speak: 'Opened it.', display: 'Navigated after the pane came back.' },
     ])
 
-    const flush = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0))
-
-    async function until(condition: () => boolean): Promise<void> {
-      for (let attempt = 0; attempt < 200 && !condition(); attempt++) await flush()
-      if (!condition()) throw new Error('condition never held')
-    }
-
     async function stoppedMidNavigation(script = UNSETTLED_SCRIPT) {
       const browser = new StallingBrowser(['navigate'])
       const pipeline = createAssistantPipeline({
-        controller: browser,
+        browser: holdBrowserCustody(browser),
         env: { BINGBONG_LLM_SCRIPT: script },
         clock: new FakeClock(),
       })
@@ -618,7 +614,7 @@ describe('createAssistantPipeline', () => {
       const run = (async () => {
         for await (const event of pipeline.execute('open the slow page')) events.push(event)
       })()
-      await until(() => browser.reached.includes('navigate'))
+      await until(() => browser.reached.includes('navigate'), 'the tool reaching the browser')
       pipeline.abort()
       await run
       return { browser, pipeline, events }
@@ -649,6 +645,110 @@ describe('createAssistantPipeline', () => {
         text: expect.stringContaining('unavailable until an abandoned action settles'),
       })
       expect(second.at(-1)).toMatchObject({ type: 'done' })
+    })
+
+    // AC6 asks for an *actual browser-adapter operation* held unresolved,
+    // not a port-level double: this drives the real chain — the CDP
+    // controller's navigate, the pane's bounded wait, and a webContents
+    // whose loadURL only Chromium could settle.
+    it('stops on an unresolved adapter navigation, and neither a late resolve nor a late reject reaches the Run', async () => {
+      let landLoad: ((outcome: { ok: true } | { ok: false; error: Error }) => void) | null = null
+      const loads: string[] = []
+      const wc: PaneNavigationTarget = {
+        loadURL: (url) =>
+          new Promise<void>((resolve, reject) => {
+            loads.push(url)
+            landLoad = (outcome) => (outcome.ok ? resolve() : reject(outcome.error))
+          }),
+        navigationHistory: { canGoBack: () => false, canGoForward: () => false, goBack: () => {}, goForward: () => {} },
+        once: () => {},
+        getURL: () => 'about:blank',
+        getTitle: () => '',
+        isDestroyed: () => false,
+        focus: () => {},
+      }
+      const adapter = createCdpBrowserController({
+        cdp: { send: async () => ({}) as never, on: () => {} },
+        page: createPaneNavigation(wc, new FakeClock()),
+        collectScript: '/* COLLECT */',
+        pacing: { settleMs: 0, moveMs: 0, clickMs: 0, keystrokeMs: 0, scrollTickMs: 0 },
+      })
+      const custody = holdBrowserCustody(adapter)
+      const pipeline = createAssistantPipeline({
+        browser: custody,
+        env: { BINGBONG_LLM_SCRIPT: UNSETTLED_SCRIPT },
+        clock: new FakeClock(),
+      })
+
+      const events: PipelineEvent[] = []
+      const run = (async () => {
+        for await (const event of pipeline.execute('open the slow page')) events.push(event)
+      })()
+      await until(() => loads.length === 1, 'the adapter reaching loadURL')
+      pipeline.abort()
+      await run
+
+      expect(events.some((event) => event.type === 'status' && event.status === 'cancelled')).toBe(true)
+      expect(events.at(-1)).toMatchObject({ type: 'done' })
+      expect(custody.state()).toBe('withheld')
+
+      const second = await collect(pipeline, 'try that again')
+      expect(loads).toEqual(['https://slow.example'])
+      const finalized = [...events]
+
+      // Late, and either way: the load lands, then a second custody's load
+      // fails. Neither reopens the Run that let go of it.
+      landLoad!({ ok: true })
+      await custody.settled()
+      expect(events).toEqual(finalized)
+      expect(second.at(-1)).toMatchObject({ type: 'done' })
+      // The whole adapter navigate — not just loadURL — has to end before
+      // the pane is anyone's again.
+      expect(custody.state()).toBe('available')
+    })
+
+    it('holds the pane just as hard when the abandoned adapter load fails late', async () => {
+      let failLoad: ((error: Error) => void) | null = null
+      const loads: string[] = []
+      const wc: PaneNavigationTarget = {
+        loadURL: (url) =>
+          new Promise<void>((_resolve, reject) => {
+            loads.push(url)
+            failLoad = reject
+          }),
+        navigationHistory: { canGoBack: () => false, canGoForward: () => false, goBack: () => {}, goForward: () => {} },
+        once: () => {},
+        getURL: () => 'about:blank',
+        getTitle: () => '',
+        isDestroyed: () => false,
+        focus: () => {},
+      }
+      const custody = holdBrowserCustody(
+        createCdpBrowserController({
+          cdp: { send: async () => ({}) as never, on: () => {} },
+          page: createPaneNavigation(wc, new FakeClock()),
+          collectScript: '/* COLLECT */',
+          pacing: { settleMs: 0, moveMs: 0, clickMs: 0, keystrokeMs: 0, scrollTickMs: 0 },
+        }),
+      )
+      const pipeline = createAssistantPipeline({
+        browser: custody,
+        env: { BINGBONG_LLM_SCRIPT: UNSETTLED_SCRIPT },
+        clock: new FakeClock(),
+      })
+
+      const run = (async () => {
+        for await (const _event of pipeline.execute('open the slow page')) void _event
+      })()
+      await until(() => loads.length === 1, 'the adapter reaching loadURL')
+      pipeline.abort()
+      await run
+      expect(custody.state()).toBe('withheld')
+
+      // A failure is still an ending: the pane comes back, uncertainty gone.
+      failLoad!(new Error('net::ERR_CONNECTION_TIMED_OUT'))
+      await custody.settled()
+      expect(custody.state()).toBe('available')
     })
 
     it('goes on withholding the pane across a Session Reset', async () => {
@@ -702,7 +802,7 @@ describe('createAssistantPipeline', () => {
     // as one merged fragment.
     const detail: PipelineEvent[] = []
     const pipeline = createAssistantPipeline({
-      controller: new FakeBrowser(),
+      browser: holdBrowserCustody(new FakeBrowser()),
       env: {
         BINGBONG_LLM_SCRIPT: JSON.stringify([
           {

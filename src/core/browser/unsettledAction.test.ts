@@ -1,5 +1,5 @@
-import { describe, expect, it, vi } from 'vitest'
-import { FakeBrowser, StallingBrowser } from '../testing/doubles'
+import { describe, expect, it } from 'vitest'
+import { FakeBrowser, FakeClock, StallingBrowser, flushMicrotasks as flush } from '../testing/doubles'
 import {
   AbandonedActionError,
   UnsettledActionError,
@@ -8,26 +8,18 @@ import {
   holdBrowserCustody,
 } from './unsettledAction'
 
-/** Lets the microtask queue drain so settled promises have run their handlers. */
-const flush = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0))
-
 describe('boundedWait', () => {
   it('rejects with the underlying operation still outstanding when the wait expires', async () => {
     let settle = (): void => {}
     const underlying = new Promise<void>((resolve) => (settle = resolve))
-    const timers: (() => void)[] = []
-    const waited = boundedWait(underlying, 30_000, 'timed out loading https://slow.example', {
-      setTimer: (_ms, fn) => {
-        timers.push(fn)
-        return () => {}
-      },
-    })
+    const clock = new FakeClock()
+    const waited = boundedWait(underlying, 30_000, 'stopped waiting for https://slow.example to load', clock)
 
-    timers[0]!()
+    clock.advance(30_000)
 
     const error = await waited.catch((err: unknown) => err)
     expect(error).toBeInstanceOf(UnsettledActionError)
-    expect((error as UnsettledActionError).message).toBe('timed out loading https://slow.example')
+    expect((error as UnsettledActionError).message).toBe('stopped waiting for https://slow.example to load')
 
     let settled = false
     void (error as UnsettledActionError).settlement.then(() => (settled = true))
@@ -39,18 +31,21 @@ describe('boundedWait', () => {
     expect(settled).toBe(true)
   })
 
-  it('passes a value through and cancels its timer when the operation settles in time', async () => {
-    const cancel = vi.fn()
-    const value = await boundedWait(Promise.resolve('landed'), 100, 'too slow', { setTimer: () => cancel })
+  it('passes a value through, and its timer never fires afterwards', async () => {
+    const clock = new FakeClock()
+    const value = await boundedWait(Promise.resolve('landed'), 100, 'gave up waiting', clock)
     expect(value).toBe('landed')
-    expect(cancel).toHaveBeenCalledOnce()
+
+    // The wait is over; advancing past it must not raise a late rejection.
+    clock.advance(1_000)
+    await flush()
   })
 
   it('passes a genuine failure through unwrapped — the operation ended, it just ended badly', async () => {
     const failure = new Error('cannot go back: no history')
-    const error = await boundedWait(Promise.reject(failure), 100, 'too slow', {
-      setTimer: () => () => {},
-    }).catch((err: unknown) => err)
+    const error = await boundedWait(Promise.reject(failure), 100, 'gave up waiting', new FakeClock()).catch(
+      (err: unknown) => err,
+    )
     expect(error).toBe(failure)
   })
 })
@@ -129,7 +124,7 @@ describe('holdBrowserCustody', () => {
     const underlying = new Promise<void>((resolve) => (settleUnderlying = resolve))
     const browser = new StallingBrowser(['navigate', 'readPage'])
     // The adapter's own bounded wait already gave up on this navigation.
-    browser.navigateRejectsWith = new UnsettledActionError('timed out loading', underlying)
+    browser.navigateRejectsWith = new UnsettledActionError('stopped waiting for the load', underlying)
     const custody = holdBrowserCustody(browser)
 
     await expect(custody.controller.navigate('https://slow.example')).rejects.toBeInstanceOf(UnsettledActionError)
@@ -171,22 +166,6 @@ describe('holdBrowserCustody', () => {
     await flush()
 
     expect(outcomes).toEqual(['rejected:AbandonedActionError'])
-  })
-
-  it('releases a resource whose surface is provably gone without waiting for settlement', async () => {
-    const browser = new StallingBrowser(['navigate', 'readPage'])
-    const custody = holdBrowserCustody(browser)
-
-    void custody.controller.navigate('https://slow.example').catch(() => {})
-    custody.abandon()
-    expect(custody.state()).toBe('withheld')
-
-    custody.isolate()
-    await custody.settled()
-    expect(custody.state()).toBe('available')
-    // The stalled navigation still never settled; isolation, not settlement,
-    // is what made reuse safe.
-    expect(browser.reached.filter((action) => action === 'navigate')).toHaveLength(1)
   })
 
   it('does not withhold for an action that is merely still running', async () => {

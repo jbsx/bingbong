@@ -1,4 +1,4 @@
-import type { Clock } from '../../core/ports/clock'
+import { systemClock, type Clock } from '../../core/ports/clock'
 import { boundedWait } from '../../core/browser/unsettledAction'
 import type { CdpPageDriver } from './createCdpBrowserController'
 
@@ -34,15 +34,7 @@ export interface PaneNavigationTarget {
   focus(): void
 }
 
-export function createPaneNavigation(
-  wc: PaneNavigationTarget,
-  deps: { clock?: Clock; setTimer?: Clock['setTimer'] } = {},
-): CdpPageDriver {
-  const waitDeps = {
-    ...(deps.clock ? { clock: deps.clock } : {}),
-    ...(deps.setTimer ? { setTimer: deps.setTimer } : {}),
-  }
-
+export function createPaneNavigation(wc: PaneNavigationTarget, clock: Clock = systemClock): CdpPageDriver {
   /** One step in history ('back'/'forward'): guarded, awaited, bounded. */
   function historyStep(canGo: boolean, go: () => void, direction: string): Promise<void> {
     if (!canGo) return Promise.reject(new Error(`cannot go ${direction}: no history`))
@@ -50,11 +42,12 @@ export function createPaneNavigation(
       wc.once('did-navigate', () => resolve())
     })
     go()
-    return boundedWait(navigated, HISTORY_STEP_TIMEOUT_MS, `timed out going ${direction} after ${HISTORY_STEP_TIMEOUT_MS}ms`, waitDeps)
+    return boundedWait(navigated, HISTORY_STEP_TIMEOUT_MS, `stopped waiting for the page to go ${direction}; it may still be navigating`, clock)
   }
 
   return {
-    loadUrl: (url) => boundedWait(wc.loadURL(url), LOAD_TIMEOUT_MS, `timed out loading ${url} after ${LOAD_TIMEOUT_MS}ms`, waitDeps),
+    loadUrl: (url) =>
+      boundedWait(wc.loadURL(url), LOAD_TIMEOUT_MS, `stopped waiting for ${url} to load; it may still be loading`, clock),
     goBack: () => historyStep(wc.navigationHistory.canGoBack(), () => wc.navigationHistory.goBack(), 'back'),
     goForward: () => historyStep(wc.navigationHistory.canGoForward(), () => wc.navigationHistory.goForward(), 'forward'),
     url: () => wc.getURL(),

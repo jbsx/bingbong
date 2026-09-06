@@ -11,7 +11,7 @@ import { createReportRunPlanTool } from '../../core/pipeline/runPlanTools'
 import { createRecordEvidenceTool } from '../../core/pipeline/evidenceTools'
 import { createRecordCandidateTool } from '../../core/pipeline/candidateTools'
 import { createBrowserTools } from '../../core/pipeline/browserTools'
-import { holdBrowserCustody } from '../../core/browser/unsettledAction'
+import type { BrowserCustody } from '../../core/browser/unsettledAction'
 import { hostFromUrl } from '../../core/pipeline/blockerGate'
 import { createVisionGroundingTools } from '../../core/pipeline/visionGroundingTools'
 import type { VisionTraceReporter } from '../../core/trace/visionTrace'
@@ -39,7 +39,15 @@ import { orchestratorSystemPrompt } from './orchestratorPrompt'
 import { createZaiVisionApi } from '../vision/createZaiVisionApi'
 
 export interface AssistantPipelineDeps {
-  controller: BrowserController & VisualGroundingController
+  /**
+   * The shared browsing resource, in custody (#205, ADR 0038). A custody
+   * rather than a controller because the pipeline is not this resource's
+   * owner: whoever holds it — main, the CLI harness, the failure screenshot
+   * — must reach it through the same custody, or a withheld pane would be
+   * acted on behind the Run's back. Taking the handle here makes handing
+   * over an unguarded controller a type error rather than an oversight.
+   */
+  browser: BrowserCustody<BrowserController & VisualGroundingController>
   env: Record<string, string | undefined>
   /**
    * Live env source (settings file layered over process.env). When provided,
@@ -252,12 +260,10 @@ function createDynamicLlm(
 /** The text-driven assistant: browser and media tools + model-routed LLM behind the command pipeline. */
 export function createAssistantPipeline(deps: AssistantPipelineDeps): CommandPipeline {
   const fetchFn = deps.fetchFn ?? fetch
-  // The shared browsing resource's custody (#205, ADR 0038). Held here,
-  // once, for the pipeline's whole life — so it outlives the Run that
-  // abandoned an action and refuses the *next* Run's calls too. Every tool,
-  // gate, and rail below reaches the pane through it; nothing keeps a
-  // reference to the raw controller, which is the point.
-  const custody = holdBrowserCustody(deps.controller)
+  // Every tool, gate, and rail below reaches the pane through the custody
+  // its owner handed in, which outlives any one Run — so a Run that
+  // abandoned an action leaves the *next* Run refused too.
+  const custody = deps.browser
   const controller = custody.controller
   const getEnv = deps.getEnv ?? (() => deps.env)
   const vision = deps.vision ?? createZaiVisionApi({ getEnv })

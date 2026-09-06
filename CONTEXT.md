@@ -717,9 +717,25 @@ _Avoid_: hung action, timed-out navigation, cancelled action
 The browser resource an Unsettled Action holds. Every later action on it is
 refused outright rather than queued — a later Run's and a new Session's
 included — and it reports no page at all in place of the stale one. Reuse
-resumes on settlement or safe isolation, so Answer availability and safe reuse
-are separate boundaries: a Run can finish while its resource stays withheld.
+resumes only once the action is observed to end, so Answer availability and
+safe reuse are separate boundaries: a Run can finish while its resource stays
+withheld, and one whose action never ends stays withheld.
 _Avoid_: locked tab, busy browser, browser lock
+
+**Browsing Custody**:
+The holder of one browser resource, and the only way anything reaches it. It
+is held by whoever owns the resource — the app for the shared tab, the tab
+pool for a Subagent's — never by a Run, because it outlives every Run that
+uses it. Abandoning it ends the waits in flight and withholds the resource;
+nothing else can act on that resource behind those waits' backs.
+_Avoid_: browser lease, tab guard, controller wrapper
+
+**Abandon**:
+Ending a Run's or a Subagent's wait on a browser action without ending the
+action. A decision does it — Stop, the orchestrator's cancel, a Session Reset
+— and Finalization never does: a Subagent's bounded report is not a
+cancellation. What is abandoned becomes an Unsettled Action.
+_Avoid_: cancel the action, kill the navigation, abort
 
 **Ref**:
 A numbered handle in a page read naming one element in the viewport at the

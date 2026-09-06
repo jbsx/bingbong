@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import { FakeBrowser, FakeClock, FakeVision, StallingBrowser, fakePerfHarness } from '../../core/testing/doubles'
+import { FakeBrowser, FakeClock, FakeVision, StallingBrowser, fakePerfHarness, until } from '../../core/testing/doubles'
 import { SUBAGENT_LIMITS } from '../../core/agent/subagentRails'
 import { SubagentCancelledError } from '../../core/agent/subagentRunner'
+import { holdBrowserCustody, WithheldResourceError } from '../../core/browser/unsettledAction'
 import { createSubagentTaskApi, toolsForKind } from './createSubagentWorkhorse'
 import { withAgentActivity } from '../../core/downloads/agentActivity'
 import { createAgentActivityTracker } from '../../core/downloads/agentActivity'
@@ -30,7 +31,7 @@ describe('createSubagentTaskApi', () => {
     const api = createSubagentTaskApi({
       getEnv: () => envWith(BROWSE_SCRIPT),
       fetchFn: (async () => new Response('<p>x</p>', { status: 200 })) as typeof fetch,
-      controllerFor: () => browser,
+      browserFor: () => holdBrowserCustody(browser),
       clock: new FakeClock(),
     })
 
@@ -47,25 +48,25 @@ describe('createSubagentTaskApi', () => {
   // not a fake agreeing to be cancelled.
   describe('a worker cancelled while its tab action is still unsettled', () => {
     const STALLED_SCRIPT = JSON.stringify([
-      { kind: 'tool_calls', calls: [{ id: 'n1', name: 'navigate', args: { url: 'https://slow.example' } }] },
+      // A sibling behind the stalled navigation: it must never run.
+      { kind: 'tool_calls', calls: [
+        { id: 'n1', name: 'navigate', args: { url: 'https://slow.example' } },
+        { id: 'r1', name: 'read_page', args: {} },
+      ] },
       { kind: 'answer', speak: 'Done.', display: 'Should never be reached.' },
     ])
-
-    const flush = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0))
-
-    async function until(condition: () => boolean): Promise<void> {
-      for (let attempt = 0; attempt < 200 && !condition(); attempt++) await flush()
-      if (!condition()) throw new Error('condition never held')
-    }
 
     async function cancelledMidNavigation() {
       const browser = new StallingBrowser(['navigate'])
       const stop = new AbortController()
       let cancelled = false
+      // The same custody the workhorse would build, handed in — so the test
+      // can ask the tab's own holder whether it is still withheld.
+      const custody = holdBrowserCustody(browser)
       const api = createSubagentTaskApi({
         getEnv: () => envWith(STALLED_SCRIPT),
         fetchFn: (async () => new Response('{}')) as typeof fetch,
-        controllerFor: () => browser,
+        browserFor: () => custody,
         clock: new FakeClock(),
       })
       const { done } = api.start(
@@ -76,10 +77,10 @@ describe('createSubagentTaskApi', () => {
         (report) => ({ kind: 'report' as const, report }),
         (error: Error) => ({ kind: 'error' as const, error }),
       )
-      await until(() => browser.reached.includes('navigate'))
+      await until(() => browser.reached.includes('navigate'), 'the worker reaching its tab')
       cancelled = true
       stop.abort()
-      return { browser, outcome: await settled }
+      return { browser, custody, outcome: await settled }
     }
 
     it('ends the worker instead of waiting the tab action out', async () => {
@@ -87,20 +88,24 @@ describe('createSubagentTaskApi', () => {
 
       expect(outcome.kind).toBe('error')
       expect(outcome.kind === 'error' && outcome.error).toBeInstanceOf(SubagentCancelledError)
-      // The worker is over; its tab never said it stopped.
+      // The worker is over; its tab never said it stopped, and the sibling
+      // queued behind the abandoned call never ran.
       expect(browser.outstanding).toBe(1)
       expect(browser.reached).toEqual(['navigate'])
     })
 
     it('withholds the worker-owned tab from any further work until the action settles', async () => {
-      const { browser } = await cancelledMidNavigation()
-      const before = [...browser.reached]
+      const { browser, custody } = await cancelledMidNavigation()
 
-      // Late old work — anything still holding the worker's controller — is
-      // refused, not queued behind the unsettled navigation.
+      // Late old work — anything still holding this tab's controller — is
+      // refused outright, not queued behind the unsettled navigation.
+      expect(custody.state()).toBe('withheld')
+      await expect(custody.controller.readPage()).rejects.toBeInstanceOf(WithheldResourceError)
+      expect(browser.reached).toEqual(['navigate'])
+
       browser.settleLate()
-      await flush()
-      expect(browser.reached).toEqual(before)
+      await custody.settled()
+      expect(custody.state()).toBe('available')
     })
 
     it('never abandons the browsing of a parent that is merely finalizing', async () => {
@@ -108,7 +113,7 @@ describe('createSubagentTaskApi', () => {
       const api = createSubagentTaskApi({
         getEnv: () => envWith(BROWSE_SCRIPT),
         fetchFn: (async () => new Response('{}')) as typeof fetch,
-        controllerFor: () => browser,
+        browserFor: () => holdBrowserCustody(browser),
         clock: new FakeClock(),
       })
 
@@ -138,7 +143,7 @@ describe('createSubagentTaskApi', () => {
     const api = createSubagentTaskApi({
       getEnv: () => envWith(script),
       fetchFn: (async () => new Response('{}')) as typeof fetch,
-      controllerFor: () => browser,
+      browserFor: () => holdBrowserCustody(browser),
       clock: new FakeClock(),
     })
 
@@ -163,7 +168,7 @@ describe('createSubagentTaskApi', () => {
     const api = createSubagentTaskApi({
       getEnv: () => envWith(script),
       fetchFn: (async () => new Response('{}')) as typeof fetch,
-      controllerFor: () => browser,
+      browserFor: () => holdBrowserCustody(browser),
       clock: new FakeClock(),
     })
 
@@ -190,7 +195,7 @@ describe('createSubagentTaskApi', () => {
     const api = createSubagentTaskApi({
       getEnv: () => envWith(script),
       fetchFn: (async () => new Response('{}')) as typeof fetch,
-      controllerFor: () => browser,
+      browserFor: () => holdBrowserCustody(browser),
       clock: new FakeClock(),
     })
 
@@ -217,7 +222,7 @@ describe('createSubagentTaskApi', () => {
     const api = createSubagentTaskApi({
       getEnv: () => envWith(script),
       fetchFn: fetch,
-      controllerFor: () => browser,
+      browserFor: () => holdBrowserCustody(browser),
       vision,
       clock: new FakeClock(),
     })
@@ -249,7 +254,7 @@ describe('createSubagentTaskApi', () => {
     const api = createSubagentTaskApi({
       getEnv: () => envWith(script),
       fetchFn: fetch,
-      controllerFor: () => {
+      browserFor: () => {
         throw new Error('background agents must not claim a browser tab')
       },
       backgroundTools,
@@ -336,7 +341,7 @@ describe('createSubagentTaskApi', () => {
       const api = createSubagentTaskApi({
         getEnv: () => envWith(script),
         fetchFn: fetch,
-        ...(kind === 'browse' ? { controllerFor: () => new FakeBrowser() } : {}),
+        ...(kind === 'browse' ? { browserFor: () => holdBrowserCustody(new FakeBrowser()) } : {}),
         ...(kind === 'background' ? { backgroundTools: [] } : {}),
         clock: new FakeClock(),
       })
@@ -358,7 +363,7 @@ describe('createSubagentTaskApi', () => {
     const api = createSubagentTaskApi({
       getEnv: () => envWith(BROWSE_SCRIPT),
       fetchFn: (async () => new Response('<p>x</p>', { status: 200 })) as typeof fetch,
-      controllerFor: () => new FakeBrowser(),
+      browserFor: () => holdBrowserCustody(new FakeBrowser()),
       clock: new FakeClock(),
     })
 
@@ -392,7 +397,7 @@ describe('createSubagentTaskApi', () => {
     const api = createSubagentTaskApi({
       getEnv: () => envWith(browseScript),
       fetchFn: fetch,
-      controllerFor: () => browser,
+      browserFor: () => holdBrowserCustody(browser),
       clock: new FakeClock(),
     })
 
@@ -432,7 +437,7 @@ describe('createSubagentTaskApi', () => {
     const api = createSubagentTaskApi({
       getEnv: () => envWith(BROWSE_SCRIPT),
       fetchFn: (async () => new Response('<p>x</p>', { status: 200 })) as typeof fetch,
-      controllerFor: () => new FakeBrowser(),
+      browserFor: () => holdBrowserCustody(new FakeBrowser()),
       clock: new FakeClock(),
       tracer,
     })
@@ -453,7 +458,7 @@ describe('createSubagentTaskApi', () => {
     const api = createSubagentTaskApi({
       getEnv: () => envWith(BROWSE_SCRIPT),
       fetchFn: (async () => new Response('<p>x</p>', { status: 200 })) as typeof fetch,
-      controllerFor: () => new FakeBrowser(),
+      browserFor: () => holdBrowserCustody(new FakeBrowser()),
       clock: new FakeClock(),
       tracer,
     })
@@ -506,7 +511,7 @@ describe('createSubagentTaskApi', () => {
     const api = createSubagentTaskApi({
       getEnv: () => envWith(BROWSE_SCRIPT),
       fetchFn: (async () => new Response('<p>x</p>', { status: 200 })) as typeof fetch,
-      controllerFor: () => new FakeBrowser(),
+      browserFor: () => holdBrowserCustody(new FakeBrowser()),
       clock: new FakeClock(),
     })
 
@@ -528,7 +533,7 @@ describe('createSubagentTaskApi', () => {
     const api = createSubagentTaskApi({
       getEnv: () => envWith(script),
       fetchFn: (async () => new Response('{}')) as typeof fetch,
-      controllerFor: () => controller,
+      browserFor: () => holdBrowserCustody(controller),
       clock: new FakeClock(),
     })
 

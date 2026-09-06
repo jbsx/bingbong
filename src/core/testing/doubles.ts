@@ -77,6 +77,26 @@ export class FakeClock implements Clock {
 }
 
 /**
+ * Lets the microtask queue drain, so promises settled during the last step
+ * have run their handlers. The one way a test says "let everything that was
+ * already going to happen, happen".
+ */
+export function flushMicrotasks(): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, 0))
+}
+
+/**
+ * Wait for something a live loop is about to do — a tool reaching the
+ * browser, an agent recording a step. Bounded so a condition that never
+ * holds fails the test loudly instead of hanging it out to the runner's
+ * timeout.
+ */
+export async function until(condition: () => boolean, what = 'condition'): Promise<void> {
+  for (let attempt = 0; attempt < 200 && !condition(); attempt++) await flushMicrotasks()
+  if (!condition()) throw new Error(`${what} never held`)
+}
+
+/**
  * In-memory perf harness (#27-#30): a real tracer over a sink that captures
  * records, on a scriptable monotonic/wall clock — the shared seam for
  * tracer, wrapper, and pipeline perf tests.

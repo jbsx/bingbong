@@ -16,6 +16,10 @@ export const systemClock: Clock = {
  * page whose surface is mid-transition can hang; the caller skips the
  * frame instead of waiting on it). Late results are dropped — a skipped
  * frame is stale by definition.
+ *
+ * For work whose abandonment leaves something to reclaim, `boundedWait`
+ * (core/browser/unsettledAction) races the same way but hands back the
+ * operation's own eventual settlement instead of forgetting it (#205).
  */
 export function withDeadline<T>(work: Promise<T>, clock: Clock, ms: number): Promise<T | null> {
   return new Promise((resolve) => {

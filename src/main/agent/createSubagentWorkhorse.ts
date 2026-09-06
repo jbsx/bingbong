@@ -19,7 +19,7 @@ import { runSubagent } from '../../core/agent/subagentRunner'
 import type { SubagentKind, SubagentSpec, SubagentTaskApi, SubagentTaskHooks } from '../../core/agent/subagentManager'
 import { ScriptedLlm, UnavailableLlm } from '../../core/testing/doubles'
 import { createBrowserTools } from '../../core/pipeline/browserTools'
-import { holdBrowserCustody } from '../../core/browser/unsettledAction'
+import type { BrowserCustody } from '../../core/browser/unsettledAction'
 import { hostFromUrl } from '../../core/pipeline/blockerGate'
 import { createLookTool } from '../../core/pipeline/visionGroundingTools'
 import { createSubagentAskTool } from '../../core/pipeline/askUserTools'
@@ -45,8 +45,13 @@ export const SUBAGENT_LLM_ENV_KEYS = [SUBAGENT_SCRIPT_ENV, REASONING_EFFORT_ENV_
 export interface SubagentWorkhorseDeps {
   getEnv(): Record<string, string | undefined>
   fetchFn: typeof fetch
-  /** The pane controller behind a browsing agent's tab; background agents pass nothing. */
-  controllerFor?(agentId: string): BrowserController | null
+  /**
+   * The tab behind a browsing agent, in custody (#205, ADR 0038); background
+   * agents pass nothing. A custody rather than a controller because the tab
+   * belongs to the pane pool that made it, not to this spawn — the workhorse
+   * only abandons what its worker was doing when a decision ends it.
+   */
+  browserFor?(agentId: string): BrowserCustody<BrowserController> | null
   backgroundTools?: Tool[]
   clock?: Clock
   onUsage?(record: UsageRecord): void
@@ -115,14 +120,12 @@ export function createSubagentTaskApi(deps: SubagentWorkhorseDeps): SubagentTask
       // background agents must not grab a tab (looking one up would). The
       // kind structure mirrors toolsForKind's: whatever isn't background is
       // a browser kind.
-      const pane = spec.kind !== 'background' ? deps.controllerFor?.(spec.id) ?? null : null
-      // The worker-owned resource's custody (#205, ADR 0038): one per spawn,
-      // because the resource is this worker's own tab — retired with it, never
-      // handed to the next Run. A decision ending the worker abandons whatever
-      // its tab is doing, so an uncooperative action cannot outlive the
-      // cancellation; the tab stays withheld until that action is observed to
-      // end, which is all a retiring pool needs before it drops the view.
-      const custody = pane ? holdBrowserCustody(pane) : null
+      // The worker-owned resource (#205, ADR 0038): a decision ending this
+      // worker abandons whatever its tab was doing, so an uncooperative
+      // action cannot outlive the cancellation. The tab stays withheld until
+      // that action is observed to end — which is what a retiring pool needs
+      // before it drops the view out from under it.
+      const custody = spec.kind !== 'background' ? deps.browserFor?.(spec.id) ?? null : null
       const controller = custody?.controller ?? null
       if (custody && hooks.stopBrowsing) {
         if (hooks.stopBrowsing.aborted) custody.abandon()

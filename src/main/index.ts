@@ -9,6 +9,7 @@ import { attachIdentityHeaders } from './browser/attachIdentityHeaders'
 import { createBrowserPane, BROWSER_PARTITION } from './browser/createBrowserPane'
 import { attachBrowserPaneToWindow, registerBrowserIpc } from './browser/attachBrowserPane'
 import { createPaneBrowserController } from './browser/createPaneBrowserController'
+import { holdBrowserCustody } from '../core/browser/unsettledAction'
 import { createAuthPopupDirector } from './browser/authPopupDirector'
 import { resolveAuthIdentity } from '../core/browser/authIdentity'
 import { resetBrowserState } from './browser/resetBrowserState'
@@ -388,10 +389,16 @@ async function createWindow(): Promise<BrowserWindow> {
   const authPopups = createAuthPopupDirector(pane, {
     createController: (webContents) => createPaneBrowserController({ view: { webContents } }),
   })
-  const controller: BrowserController & VisualGroundingController = withAgentActivity(
-    authPopups.route(createPaneBrowserController(pane, { subspans: browserSubspans })),
-    agentActivity,
+  // The shared browsing resource, in custody (#205, ADR 0038). Held here,
+  // at the resource itself, because everything that reaches the pane must
+  // reach it through the same handle: the assistant, the CLI harness, and
+  // the failure screenshot alike. `controller` below is the guarded one —
+  // the raw controller is never named again, so an action abandoned by
+  // Stop cannot be worked around by a caller that kept its own reference.
+  const paneCustody = holdBrowserCustody(
+    withAgentActivity(authPopups.route(createPaneBrowserController(pane, { subspans: browserSubspans })), agentActivity),
   )
+  const controller: BrowserController & VisualGroundingController = paneCustody.controller
 
   const downloadsDir = resolveDownloadsDir(process.env, app.getPath('downloads'))
   // Spoken output (T8), wrapped in a speaking gate (T9): the pipeline,
@@ -507,7 +514,7 @@ async function createWindow(): Promise<BrowserWindow> {
   // cleanup — before the command runner admits the original command as
   // fresh work.
   const pipeline = createAssistantPipeline({
-    controller,
+    browser: paneCustody,
     env: currentEnv(),
     getEnv: currentEnv,
     tts: speakingGate.tts,
