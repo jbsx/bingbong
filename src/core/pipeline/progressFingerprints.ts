@@ -299,10 +299,13 @@ export function actionFingerprint(call: ToolCall): string {
       return offset !== undefined ? `media_control:${action}:${offset}` : `media_control:${action}`
     }
     case 'read_page':
-    case 'look':
     case 'back':
     case 'go_forward':
       return call.name
+    case 'look': {
+      const question = typeof args.question === 'string' ? args.question.trim() : ''
+      return question === '' ? 'look' : `look:${stableStringify({ question: typedTextFingerprint(question) })}`
+    }
     default:
       break
   }

@@ -223,6 +223,10 @@ export function createNoProgressRail(deps: NoProgressRailDeps = {}): NoProgressR
       // forgets its pair in observe) — so a repeat is objectively
       // redundant: nudged first, refused next.
       if (prior !== undefined && prior.preState === live) {
+        // A questioned Look is already a precise inspection; repeating it can only spend vision again.
+        if (call.name === 'look' && typeof call.args.question === 'string' && call.args.question.trim() !== '') {
+          return { ok: false, reason: REDUNDANCY_REFUSAL }
+        }
         if (prior.nudged) return { ok: false, reason: REDUNDANCY_REFUSAL }
         prior.nudged = true
         pendingNudge = call

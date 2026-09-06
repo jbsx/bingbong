@@ -47,6 +47,8 @@ export interface VisionRequestEvent {
   readonly reason: VisionReason
   /** The target a `locate` was asked to find; absent on a describe. */
   readonly target?: string
+  /** The question a model-requested Describe was asked to answer. */
+  readonly question?: string
   /** The caller's advisory whole-Look cap (#106); absent means the Look's own. */
   readonly capMs?: number
   /** How long the request took, in milliseconds, however it ended. */
@@ -144,7 +146,7 @@ export function tracedAnswer(answer: string): { answer: string; answerChars: num
 }
 
 /** What a request record says about the ask, before it settled. */
-export type VisionRequestDescriptor = Pick<VisionRequestEvent, 'capability' | 'reason' | 'target' | 'capMs'>
+export type VisionRequestDescriptor = Pick<VisionRequestEvent, 'capability' | 'reason' | 'target' | 'question' | 'capMs'>
 
 /**
  * The reporter, the identities and the clock one vision call site records

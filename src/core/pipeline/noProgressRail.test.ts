@@ -116,6 +116,20 @@ describe('no-progress rail — objective repetition (#126/AC1)', () => {
     expect(await rail2.gate(call('click', { ref: 7 }))).toEqual({ ok: true })
     expect(await rail2.observe(call('click', { ref: 7 }), ok())).toBeNull()
   })
+
+  it('allows different Look questions on unchanged state and refuses the second equivalent question', async () => {
+    const rail = createNoProgressRail({ settledState: () => BASE })
+    const titles = call('look', { question: 'Which titles are in the top row?' })
+    const labels = call('look', { question: 'What labels are beside the rows?' })
+
+    expect(await rail.gate(titles)).toEqual({ ok: true })
+    expect(await rail.observe(titles, ok())).toBeNull()
+    expect(await rail.gate(labels)).toEqual({ ok: true })
+    expect(await rail.observe(labels, ok())).toBeNull()
+    expect(await rail.gate(call('look', { question: '  WHICH titles are in the top row?  ' }))).toMatchObject({
+      ok: false,
+    })
+  })
 })
 
 describe('no-progress rail — meaningful progression (#126/AC2)', () => {

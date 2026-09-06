@@ -10,6 +10,8 @@ export interface VisionLocateRequest {
 export interface VisionDescribeRequest {
   image: Uint8Array
   prompt: string
+  /** Caller-selected answer cap; absent keeps the adapter's default Describe cap. */
+  maxTokens?: number
   /**
    * Whole-Look cap this caller is willing to wait (#106, ADR 0016):
    * auto-vision passes a smaller advisory budget than a model-requested

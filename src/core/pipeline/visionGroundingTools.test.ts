@@ -5,6 +5,7 @@ import { FakeBrowser, FakeClock, FakeVision, RecordingTts, ScriptedLlm } from '.
 import { createCommandPipeline } from './createCommandPipeline'
 import { createBrowserTools } from './browserTools'
 import type { PipelineEvent } from './events'
+import type { VisionTraceEvent } from '../trace/visionTrace'
 import { createVisionGroundingTools } from './visionGroundingTools'
 
 const snapshot: PageSnapshot = {
@@ -186,5 +187,70 @@ describe('vision grounding through the command pipeline', () => {
       ok: true,
       result: 'A sign-in modal blocks the article.',
     })
+  })
+
+  it('answers a question from the screenshot with a larger response cap', async () => {
+    const browser = new FakeBrowser()
+    browser.screenshotBytes = new Uint8Array([7, 8, 9])
+    const vision = new FakeVision()
+    vision.descriptions = ['Solo Leveling, Omniscient Reader.']
+    const tools = createVisionGroundingTools(browser, vision)
+    const look = tools.find((candidate) => candidate.name === 'look')
+    if (!look) throw new Error('look tool is missing')
+
+    await look.execute(
+      { id: 'l1', name: 'look', args: { question: 'Which titles are in the top row?' } },
+      { clock: new FakeClock() },
+    )
+
+    expect(look.parameters?.question).toMatchObject({ type: 'string', required: false })
+    expect(look.description).toMatch(/text|tables|chart labels|image content/i)
+    expect(vision.describeRequests).toEqual([
+      {
+        image: new Uint8Array([7, 8, 9]),
+        prompt: expect.stringMatching(
+          /answer only from the screenshot[\s\S]*transcribe text exactly as it appears[\s\S]*say "not legible"[\s\S]*Which titles are in the top row\?/i,
+        ),
+        maxTokens: 512,
+      },
+    ])
+  })
+
+  it('charges questioned and unasked Looks equally to the Vision Budget', async () => {
+    const vision = new FakeVision()
+    vision.descriptions = ['Page state.', 'Top-row titles.']
+    const trace: VisionTraceEvent[] = []
+    const pipeline = createCommandPipeline({
+      llm: new ScriptedLlm([
+        {
+          kind: 'tool_calls',
+          calls: [
+            { id: 'l1', name: 'look', args: {} },
+            { id: 'l2', name: 'look', args: { question: 'Which titles are in the top row?' } },
+          ],
+        },
+        { kind: 'answer', speak: 'Seen.', display: 'Seen.' },
+      ]),
+      tts: new RecordingTts(),
+      clock: new FakeClock(),
+      tools: createVisionGroundingTools(new FakeBrowser(), vision),
+      traceVision: (event) => trace.push(event),
+    })
+
+    for await (const event of pipeline.execute('inspect the page')) void event
+
+    expect(trace.filter((event) => event.kind === 'vision_budget')).toEqual([
+      { kind: 'vision_budget', reason: 'look', granted: true },
+      { kind: 'vision_budget', reason: 'look', granted: true },
+    ])
+    expect(vision.describeRequests).toHaveLength(2)
+  })
+
+  it('describes Locate as returning a ref rather than readable text', () => {
+    const tools = createVisionGroundingTools(new FakeBrowser(), new FakeVision())
+    const grounding = tools.find((candidate) => candidate.name === 'ground_visual')
+
+    expect(grounding?.description).toMatch(/returns?.*ref|return.*ref/i)
+    expect(grounding?.description).toMatch(/look.*question/i)
   })
 })

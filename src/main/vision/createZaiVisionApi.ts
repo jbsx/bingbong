@@ -302,7 +302,7 @@ export function createZaiVisionApi(deps: ZaiVisionApiDeps): VisionModel {
       const advisoryFirstTokenMs = Math.min(firstTokenMs, Math.round((capMs * FIRST_TOKEN_TIMEOUT_MS) / DESCRIBE_TIMEOUT_MS))
       return complete(request.image, request.prompt, {
         thinking: 'disabled',
-        maxTokens: DESCRIBE_MAX_TOKENS,
+        maxTokens: request.maxTokens ?? DESCRIBE_MAX_TOKENS,
         timeoutMs: capMs,
         firstTokenMs: request.lookCapMs === undefined ? firstTokenMs : advisoryFirstTokenMs,
       })

@@ -306,6 +306,21 @@ describe('createZaiVisionApi', () => {
     expect(body.model).toBe('GLM-4.6V')
   })
 
+  it('uses a caller-selected answer cap for a questioned Describe', async () => {
+    let body: Record<string, unknown> | undefined
+    const vision = createZaiVisionApi({
+      getEnv: () => ({ ...configuredEnv }),
+      fetch: async (_url, init) => {
+        body = JSON.parse(String(init?.body)) as Record<string, unknown>
+        return okResponse('Solo Leveling, Omniscient Reader.')
+      },
+    })
+
+    await vision.describe({ ...describeRequest, maxTokens: 512 })
+
+    expect(body?.max_tokens).toBe(512)
+  })
+
   it('locate: keeps thinking enabled on the precision path and parses the point', async () => {
     const captured: CapturedRequest[] = []
     const vision = createZaiVisionApi({

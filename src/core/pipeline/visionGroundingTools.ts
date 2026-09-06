@@ -7,6 +7,11 @@ import { tracedVisionRequest } from '../trace/visionTrace'
 import { traceVisionBudget, visionSeam } from './visionSeam'
 
 const IGNORED_WORDS = new Set(['a', 'an', 'the', 'on', 'in', 'at', 'of'])
+const LOOK_PROMPT =
+  'Describe the current browser page. Focus on page state, popups, dialogs, overlays, consent prompts, errors, and anything that could block the requested task.'
+const QUESTIONED_LOOK_PREAMBLE =
+  'Answer only from the screenshot. Transcribe text exactly as it appears. Say "not legible" for anything you cannot read rather than guessing.'
+const QUESTIONED_LOOK_MAX_TOKENS = 512
 
 function targetArg(call: ToolCall): string {
   const value = call.args.target
@@ -38,18 +43,23 @@ export function createLookTool(browser: BrowserController, vision: VisionDescrib
     usesVision: true,
     acquisition: true,
     description:
-      'Inspect a screenshot of the current browser page and return a text description of visible page state, popups, overlays, and anything blocking progress.',
-    async execute(_call, context: ToolContext) {
+      'Inspect a screenshot of the current browser page and return visible page state. Ask a question when you need to read text, tables, chart labels, or image content.',
+    parameters: {
+      question: { type: 'string', required: false, description: 'A specific question to answer from the screenshot.' },
+    },
+    async execute(call, context: ToolContext) {
+      const rawQuestion = call.args.question
+      const question = typeof rawQuestion === 'string' && rawQuestion.trim() !== '' ? rawQuestion.trim() : undefined
       // The Look's own record (#186): the Vision Budget was already spent
       // by the round (`usesVision`), so this covers the request alone.
       return tracedVisionRequest(
         visionSeam(context),
-        { capability: 'describe', reason: 'look' },
+        { capability: 'describe', reason: 'look', ...(question !== undefined ? { question } : {}) },
         async () =>
           vision.describe({
             image: await browser.screenshot(),
-            prompt:
-              'Describe the current browser page. Focus on page state, popups, dialogs, overlays, consent prompts, errors, and anything that could block the requested task.',
+            prompt: question === undefined ? LOOK_PROMPT : `${QUESTIONED_LOOK_PREAMBLE}\n\nQuestion: ${question}`,
+            ...(question !== undefined ? { maxTokens: QUESTIONED_LOOK_MAX_TOKENS } : {}),
           }),
         (answer) => answer,
       )
@@ -63,7 +73,7 @@ export function createVisionGroundingTools(browser: BrowserController & VisualGr
       name: 'ground_visual',
       acquisition: true,
       description:
-        'Resolve a visually described target to a numbered ref. It performs its own fresh DOM grounding without requiring read_page, then calls vision only when the DOM cannot identify one target.',
+        'Resolve a visually described target and return a numbered ref, not readable text. It performs its own fresh DOM grounding without requiring read_page, then calls vision only when the DOM cannot identify one target. Use look with a question to read what is on screen.',
       parameters: {
         target: { type: 'string', description: 'Visual description, e.g. "the red play button in the thumbnail"' },
       },

@@ -78,6 +78,21 @@ describe('look records', () => {
     ])
   })
 
+  it('records the question a Look was asked', async () => {
+    const { ctx, reported } = context({ turnId: 'turn-3' })
+
+    await createLookTool(new FakeBrowser(), new FakeVision()).execute(
+      call('look', { question: 'Which titles are in the top row?' }),
+      ctx,
+    )
+
+    expect(reported[0]?.event).toMatchObject({
+      kind: 'vision_request',
+      reason: 'look',
+      question: 'Which titles are in the top row?',
+    })
+  })
+
   it('records a missed Vision Deadline as a deadline, not a plain error, and rethrows', async () => {
     const vision = new FakeVision()
     vision.failWith = new VisionDeadlineError(8_000, 'first-token')
