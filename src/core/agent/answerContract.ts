@@ -40,6 +40,17 @@ export function capSentences(text: string, max: number): string {
   return sentences.slice(0, max).join(' ')
 }
 
+/**
+ * The answer turn's text, in the one place that decides it: the display
+ * text when there is any, else the spoken line. Every reader of an answer
+ * turn's words — a Subagent Report's text, a failed reserved round's trace
+ * record (#198) — asks here, so none of them can disagree about what the
+ * model said.
+ */
+export function answerText(turn: { speak: string; display: string }): string {
+  return turn.display !== '' ? turn.display : turn.speak
+}
+
 /** A spoken one-liner for an error; the full message stays on the dashboard. */
 export function spokenErrorLine(message: string): string {
   const first = capSentences(message, 1)

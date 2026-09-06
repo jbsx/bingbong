@@ -16,7 +16,7 @@ import type {
 import { selectDelegatedMemory } from '../agent/subagentReport'
 import { createLlmDeltaBatcher } from './deltaBatcher'
 import type { TtsSpeaker } from '../ports/tts'
-import { spokenErrorLine } from '../agent/answerContract'
+import { answerText, spokenErrorLine } from '../agent/answerContract'
 import type { LearnedTermsControls } from '../voice/learnedTerms'
 import { MAX_RUN_NOTE_CHARS, finalizeRun, type FinalizationCause, type RunFinalization, type RunJournalEntry, type RunJournalSnapshot } from '../session/runJournal'
 import type { MemoryEntryId, MemoryPatch, WorkingMemorySnapshot } from '../session/workingMemory'
@@ -68,7 +68,7 @@ import type { VisionTraceReporter } from '../trace/visionTrace'
 import { createReasoningRounds, reasoningEvent, type TracedReasoningRound } from '../trace/reasoningTrace'
 import { createLlmRounds, llmRequestShape, llmRoundEvent, type LlmRound, type TracedLlmRound } from '../trace/llmRoundTrace'
 import { pipelineEventTraceBody, tracesPipelineEvent } from '../trace/pipelineEventTrace'
-import { offContractFaultMessage, offContractReplyEvent, type TracedOffContractReply } from '../trace/offContractReplyTrace'
+import { offContractReplyEvent, recordOffContractReply, type TracedOffContractReply } from '../trace/offContractReplyTrace'
 import { completedEvidenceIsFresh } from './evidenceFreshness'
 import { evaluateCandidateCheckpoint, type CandidateCheckpointOutcome, type EvidenceSessionSource } from './candidateCheckpoint'
 import { deriveAnswerSources, scrubAnswerText } from './answerEvidence'
@@ -1158,14 +1158,15 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
           // has just declared itself out of budget or progress ten to
           // eighty seconds for a second chance at the behaviour it showed.
           if (reservedRound && turn.kind === 'answer' && turn.shape === 'off_contract') {
-            const raw = turn.display !== '' ? turn.display : turn.speak
-            const cause = fallbackCause()
-            writeOffContractReply?.({ role: 'orchestrator', shape: turn.shape, text: raw, cause })
-            reportFault(
-              'pipeline.finalization.offContractReply',
-              offContractFaultMessage({ role: 'orchestrator', cause, text: raw }),
-              { turnId },
-            )
+            recordOffContractReply({
+              site: 'pipeline.createCommandPipeline.offContractReply',
+              role: 'orchestrator',
+              shape: turn.shape,
+              text: answerText(turn),
+              cause: fallbackCause(),
+              ...(writeOffContractReply ? { trace: writeOffContractReply } : {}),
+              turnId,
+            })
             deterministicFallback = true
             break
           }

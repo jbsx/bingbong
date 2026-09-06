@@ -1,5 +1,12 @@
-import { describe, expect, it } from 'vitest'
-import { offContractFaultMessage, offContractReplyEvent, OFF_CONTRACT_FAULT_HEAD_CHARS } from './offContractReplyTrace'
+import { afterEach, describe, expect, it } from 'vitest'
+import {
+  offContractFaultMessage,
+  offContractReplyEvent,
+  recordOffContractReply,
+  OFF_CONTRACT_FAULT_HEAD_CHARS,
+  type TracedOffContractReply,
+} from './offContractReplyTrace'
+import { setFaultSink, type FaultReport } from './fault'
 import { TRACE_OFF_CONTRACT_TEXT_MAX_CHARS } from './runTrace'
 
 // Issue #198, ADR 0034: a reserved Answer round whose reply is not the
@@ -58,5 +65,61 @@ describe('offContractFaultMessage', () => {
 
     expect(message).toContain('y'.repeat(OFF_CONTRACT_FAULT_HEAD_CHARS))
     expect(message).not.toContain('y'.repeat(OFF_CONTRACT_FAULT_HEAD_CHARS + 1))
+  })
+})
+
+describe('recordOffContractReply', () => {
+  afterEach(() => setFaultSink(null))
+
+  it('writes the record and reports the fault together, on the caller’s site', () => {
+    const traced: TracedOffContractReply[] = []
+    const faults: FaultReport[] = []
+    setFaultSink((report) => faults.push(report))
+
+    recordOffContractReply({
+      site: 'agent.subagentRunner.offContractReply',
+      role: 'subagent',
+      shape: 'off_contract',
+      text: 'Let me try again.',
+      cause: 'budget_exhausted',
+      trace: (reply) => traced.push(reply),
+      turnId: 'turn-1',
+      agentId: 'a-3',
+    })
+
+    expect(traced).toEqual([
+      { role: 'subagent', shape: 'off_contract', text: 'Let me try again.', cause: 'budget_exhausted', agentId: 'a-3' },
+    ])
+    expect(faults).toEqual([
+      {
+        kind: 'fault',
+        site: 'agent.subagentRunner.offContractReply',
+        message: 'reserved report round replied off contract (budget_exhausted): Let me try again.',
+        turnId: 'turn-1',
+      },
+    ])
+  })
+
+  it('still reports the fault when nothing is tracing', () => {
+    const faults: FaultReport[] = []
+    setFaultSink((report) => faults.push(report))
+
+    recordOffContractReply({
+      site: 'pipeline.createCommandPipeline.offContractReply',
+      role: 'orchestrator',
+      shape: 'off_contract',
+      text: 'Retrying.',
+      cause: 'no_progress',
+      turnId: 'turn-2',
+    })
+
+    expect(faults).toEqual([
+      {
+        kind: 'fault',
+        site: 'pipeline.createCommandPipeline.offContractReply',
+        message: 'reserved Answer round replied off contract (no_progress): Retrying.',
+        turnId: 'turn-2',
+      },
+    ])
   })
 })

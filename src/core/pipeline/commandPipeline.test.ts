@@ -3048,6 +3048,11 @@ describe('command pipeline', () => {
         'I stopped making progress on that request.',
       ])
       expect(events.at(-1)).toEqual({ type: 'done', outcome: 'failed', finalizationCause: 'no_progress', at: 0 })
+      // Outcome and Run Resolution match the existing fallback's exactly:
+      // the equality above admits no `resolution` key, because a failed run
+      // carries no model Assessment to propose one — and the off-contract
+      // reply never became the Answer that could have.
+      expect(events.at(-1)).not.toHaveProperty('resolution')
       // Nothing the model wrote reaches the user, on either channel.
       const rendered = events.filter((e) => e.type === 'display' || e.type === 'speak')
       expect(rendered.some((e) => (e.type === 'display' || e.type === 'speak') && e.text.includes('retries exhausted'))).toBe(false)
@@ -3069,7 +3074,7 @@ describe('command pipeline', () => {
       ])
       expect(faults).toMatchObject([
         {
-          site: 'pipeline.finalization.offContractReply',
+          site: 'pipeline.createCommandPipeline.offContractReply',
           message: expect.stringContaining('replied off contract (no_progress)'),
           turnId: 'turn-oc',
         },

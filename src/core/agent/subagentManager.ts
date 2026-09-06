@@ -115,7 +115,7 @@ export interface SubagentTaskHooks {
    * The off_contract_reply record for this worker's reserved report round
    * (#198): the spawning Run's own writer, closed over its identity and
    * turn. Absent unless the developer opted in with `BINGBONG_RUN_TRACE`
-   * (#184) — and absent, a narrated report is dropped without a trace.
+   * (#184) — and absent, an Off-contract Reply is dropped without a trace.
    */
   traceOffContractReply?: SubagentOffContractReplyTrace
   /**

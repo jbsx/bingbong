@@ -209,10 +209,14 @@ export type AssistantTurn =
       evidenceIssue?: 'malformed'
       /**
        * Which contract the reply matched (#198, ADR 0034): the parser's
-       * own marker, so neither loop judges prose itself. Absent from a
-       * client that does not report it — the two reserved rounds treat
-       * only an explicit `off_contract` as a failed round, so a client
-       * that says nothing keeps the old behaviour.
+       * own marker, so neither loop judges prose itself. Optional here,
+       * required on `parseAssistantAnswer`'s result — which is where the
+       * guarantee belongs, because the wire client builds every real
+       * answer turn by spreading that result and so can never omit it.
+       * Absent means a client said nothing, and the two reserved rounds
+       * read only an explicit `off_contract` as a failed round: a double
+       * that scripts a turn by hand keeps the ordinary behaviour rather
+       * than being forced to answer a question it has no view on.
        */
       shape?: AnswerShape
       usage?: TokenUsage

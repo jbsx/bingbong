@@ -29,10 +29,8 @@ import { MAX_SUBAGENT_VISION_CALLS } from './subagentRails'
 import { droppedFindingsNote, validateReportFindings, type SubagentReport } from './subagentReport'
 import { createReasoningRounds, type ReasoningRound, type SubagentReasoningTrace } from '../trace/reasoningTrace'
 import { createLlmRounds, llmRequestShape, type LlmRound, type SubagentLlmRoundTrace } from '../trace/llmRoundTrace'
-import {
-  offContractFaultMessage,
-  type SubagentOffContractReplyTrace,
-} from '../trace/offContractReplyTrace'
+import { answerText } from './answerContract'
+import { recordOffContractReply, type SubagentOffContractReplyTrace } from '../trace/offContractReplyTrace'
 import type { SubagentPipelineEventTrace } from '../trace/pipelineEventTrace'
 import type { VisionTraceReporter } from '../trace/visionTrace'
 import { reportFault } from '../trace/fault'
@@ -350,7 +348,7 @@ function reportFromTurn(
   if (validated.dropped > 0) unresolved.push(droppedFindingsNote(validated.dropped))
   return {
     ...(agentId !== undefined ? { agentId } : {}),
-    text: turn.display !== '' ? turn.display : turn.speak,
+    text: answerText(turn),
     findings: validated.findings,
     unresolved,
     ...(observations.length > 0 ? { observations } : {}),
@@ -578,19 +576,16 @@ export async function runSubagent(deps: RunSubagentDeps, options: RunSubagentOpt
       // stands in with the round's own cause, and the text is dropped —
       // never the report's text, never its findings.
       if (turn !== null && turn.kind === 'answer' && turn.shape === 'off_contract') {
-        const raw = turn.display !== '' ? turn.display : turn.speak
-        options.traceOffContractReply?.({
+        recordOffContractReply({
+          site: 'agent.subagentRunner.offContractReply',
           role: 'subagent',
           shape: turn.shape,
-          text: raw,
+          text: answerText(turn),
           cause: decision.cause,
+          ...(options.traceOffContractReply !== undefined ? { trace: options.traceOffContractReply } : {}),
+          ...(options.turnId !== undefined ? { turnId: options.turnId } : {}),
           ...(options.agentId !== undefined ? { agentId: options.agentId } : {}),
         })
-        reportFault(
-          'agent.subagentRunner.offContractReply',
-          offContractFaultMessage({ role: 'subagent', cause: decision.cause, text: raw }),
-          { ...(options.turnId !== undefined ? { turnId: options.turnId } : {}) },
-        )
       } else if (turn !== null && turn.kind === 'answer') {
         // The mechanical cause wins over the model's own conclusion, the
         // same precedence `finalizeRun` applies to a Run (#110/#162): the
