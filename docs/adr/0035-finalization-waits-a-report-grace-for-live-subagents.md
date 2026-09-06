@@ -9,6 +9,10 @@ sits before the bookkeeping Tool Round holds only because of ADR 0036, which
 fixes that round as the first to *begin* in Finalization — before it, a
 mid-round entry had no bookkeeping round for the wait to sit before.
 
+ADR 0038 places Report Grace inside a shared Finalization Allowance and suspends
+that allowance, including grace, during explicit user Pause. The report-first
+ordering and distinction between bounded reports and cancellation stand.
+
 ## Context
 
 Entering Finalization — for any cause, through the one door — cancelled every

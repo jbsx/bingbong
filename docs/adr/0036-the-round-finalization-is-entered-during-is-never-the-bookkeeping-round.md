@@ -9,6 +9,10 @@ rule (#117/AC3) that a round Finalization was entered during counts as that
 round however it ended. ADR 0035's rationale for where the Report Grace sits
 depends on this decision and cites it.
 
+ADR 0038 bounds this optional bookkeeping opportunity in elapsed time and makes
+its request failure advance toward an Answer instead of escaping before the
+reserved Answer's fallback. The trip round remains distinct from bookkeeping.
+
 ## Context
 
 Finalization has one door and two ways through it. A loop-top rail — the

@@ -279,6 +279,13 @@ Round to begin in Finalization; the round Finalization is entered during is
 never it.
 _Avoid_: failure, timeout
 
+**Finalization Allowance**:
+The shared elapsed-time allowance from Finalization entry until the Answer's
+Card is available, covering Report Grace, bookkeeping, retries, and Answer
+generation but not speech playback. Explicit user Pause suspends it; Stop
+takes precedence.
+_Avoid_: active-work deadline, request timeout
+
 **Finalization Cause**:
 The reason a Run entered Finalization, such as satisfying the objective,
 exhausting its budget, reaching its deadline, making no Progress, keeping at
@@ -286,6 +293,14 @@ a Blocker it was told it cannot pass, or reaching a hard safety limit — or,
 for a Subagent only, its parent Run entering Finalization or the user being
 unreachable through it. A Run never carries those last two.
 _Avoid_: Run Resolution, outcome
+
+**Stop Record**:
+What a Run retains about its own stop: the Finalization Cause it entered
+under, that cause's specifics, and any execution failure recorded afterwards
+— three separate facts, none of which overwrites another. It rides the Run
+Journal rather than a separate diagnostic store, and reaches the user only
+when they explicitly ask why work stopped.
+_Avoid_: error log, trace, diagnostics
 
 **Report Grace**:
 The bounded wait, measured from the moment a Run enters Finalization for any
@@ -309,6 +324,16 @@ The semantic result delivered to the user: `completed`, `partial`, `blocked`,
 `needs_user`, or `unsuccessful`. It is distinct from both the Run's mechanical
 outcome and its Finalization Cause.
 _Avoid_: outcome, Finalization Cause
+
+**Outcome-First Ending**:
+The rule that an Answer closes on the state of the task rather than on the
+limit that ended the Run. Time limits, work budgets, round counts, and
+provider failures stay in the Stop Record; grounded progress, unresolved
+checks, and blockers the user can clear are what the Spoken Rendering and the
+Card carry. It binds model-written and deterministic Answers alike, and never
+implies an exhaustive search, work continuing after the Run, or a rejection
+that was not actually decided.
+_Avoid_: apology, excuse, status update
 
 **Run Note**:
 A Run's continuity contribution, produced alongside its final Answer without a
@@ -389,9 +414,19 @@ evidence and remains distinct from what was directly observed.
 _Avoid_: Observation, fact
 
 **Candidate**:
-A possible answer under evaluation, retained with the evidence for and against
-it until accepted, rejected, or superseded.
+A possible answer evaluated against an objective, retained with evidence for
+and against it and the provenance of its acceptance, rejection, or supersession.
+A user rejection stands for that objective until the user reopens it; a model
+elimination may be reconsidered when new evidence overturns its rationale.
 _Avoid_: result, guess
+
+**Inspection Reference**:
+The explicit relationship between an Answer and the Candidate it presents for
+the user to inspect, preserved through inspection commands but replaced by a
+new presentation and cleared by an objective change or Session end. An
+ambiguous reference remains unresolved; the current browser page alone never
+establishes one.
+_Avoid_: current tab, last link
 
 **Memory Compaction**:
 An exceptional reduction performed only when Session Working Memory crosses its

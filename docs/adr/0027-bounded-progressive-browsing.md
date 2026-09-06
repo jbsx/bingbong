@@ -2,7 +2,10 @@
 
 ## Status
 
-Accepted
+Accepted. ADR 0038 adds a separate Finalization Allowance and extends fallback
+protection to bookkeeping failure; the active-work deadline and its exemption
+for Finalization remain distinct from that new bound. ADR 0038 also records
+outcome-first user-facing stopping, without changing diagnostic stop causes.
 
 ## Context
 

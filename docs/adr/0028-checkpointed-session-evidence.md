@@ -2,7 +2,9 @@
 
 ## Status
 
-Accepted
+Accepted. ADR 0039 extends this decision with pre-model retention of user
+corrections, explicit Inspection References, and objective-scoped Candidate
+decisions; retaining an utterance does not assert that it has been interpreted.
 
 ## Context
 
