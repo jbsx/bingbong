@@ -331,34 +331,40 @@ export const ANSWER_ONLY_REPORT_DIRECTIVE =
  * gives the same reason the round's refusals already gave.
  */
 export function injectedReportDirective(phase: EffortPhase): string {
-  const demand = phase.kind === 'finalizing' ? FINALIZATION_REPORT_CHECKPOINT_DIRECTIVE : ANSWER_ONLY_REPORT_DIRECTIVE
-  const reason =
-    phase.kind === 'working' ? undefined : runFinalizationReason(phase.cause, phase.detail)
-  // A sentence break rather than the Instruction's em dash: both demands
-  // here are whole sentences, and the Answer-only one carries a dash of
-  // its own — chaining a third would read as one long clause.
+  return openedOnReason(phase, phase.kind === 'finalizing' ? FINALIZATION_REPORT_CHECKPOINT_DIRECTIVE : ANSWER_ONLY_REPORT_DIRECTIVE)
+}
+
+/**
+ * A demand opened on the reason the phase's Finalization Cause gives
+ * (#201): the one owner of that pairing, so the Answer-only wording has
+ * one home however many carriers ask for it. A sentence break rather than
+ * the Finalize Instruction's em dash — these demands are whole sentences,
+ * and the Answer-only one carries a dash of its own, so chaining a third
+ * would read as one long clause.
+ */
+function openedOnReason(phase: EffortPhase, demand: string): string {
+  const reason = phase.kind === 'working' ? undefined : runFinalizationReason(phase.cause, phase.detail)
   return reason === undefined ? demand : `${reason}. ${demand}`
 }
 
 /**
- * The Finalization Instruction the model *request* carries (#207, ADR
- * 0038): the standalone message that tells the model acquisition has
- * ended, on every request a Finalization round sends. Its sibling
- * `injectedReportDirective` chooses the same two demands for a worker
- * report; this one chooses them for the request itself, because a Run
- * that stopped before it executed anything has no tool result for the
- * Finalize Instruction to ride — and inventing a call and a result to
- * carry it would put a tool round in the transcript that never happened.
- * Null while the run is working: only a Finalization round says this.
+ * The Finalize Instruction a Finalization model *request* carries (#207,
+ * ADR 0038): its fourth carrier, beside a closed tool's refusal, a Notice
+ * on a bookkeeping result, and an injected Subagent Report. A Run that
+ * stopped before it executed anything has none of those three — no tool
+ * call, no tool result — so without this the one message saying
+ * acquisition has ended reaches that Run's model never at all. Fabricating
+ * a call and a result to carry it would put a Tool Round in the transcript
+ * that never happened, so the request states it directly instead.
+ *
+ * The bookkeeping round is told Bookkeeping is still open; the reserved
+ * Answer round, that no tool round remains. Null while the run is working:
+ * only a Finalization round has this to say.
  */
-export function finalizationRequestInstruction(phase: EffortPhase): string | null {
+export function requestFinalizeInstruction(phase: EffortPhase): string | null {
   if (phase.kind === 'working') return null
   if (phase.kind === 'finalizing') return finalizeInstruction(phase.cause, phase.detail)
-  // The reserved Answer round: the bookkeeping opportunity is behind it,
-  // so it is told what the injected report tells it there — a tool call
-  // from here is a failed round, not a checkpoint.
-  const reason = runFinalizationReason(phase.cause, phase.detail)
-  return reason === undefined ? ANSWER_ONLY_REPORT_DIRECTIVE : `${reason}. ${ANSWER_ONLY_REPORT_DIRECTIVE}`
+  return openedOnReason(phase, ANSWER_ONLY_REPORT_DIRECTIVE)
 }
 
 /**

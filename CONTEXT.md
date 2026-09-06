@@ -234,8 +234,11 @@ _Avoid_: nudge, warning text, hint
 The model-facing instruction that Finalization has been entered: the reason —
 the Finalization Cause the Run or Subagent actually stopped for — which tools
 are closed, and what reply is wanted. It is carried by a closed tool's
-refusal, by a Notice on a bookkeeping result, and by an injected Subagent
-Report, and it names one reason wherever it appears in a round.
+refusal, by a Notice on a bookkeeping result, by an injected Subagent
+Report, and by the Finalization model request itself, and it names one reason
+wherever it appears in a round. The request carries it because the other three
+need a tool result that a Run stopped before executing anything never produced;
+no call or result is invented to carry it.
 _Avoid_: Finalization directive, finalize directive
 
 **Progress**:

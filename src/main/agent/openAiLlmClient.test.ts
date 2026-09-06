@@ -472,7 +472,7 @@ describe('openAiLlmClient', () => {
     expect((last as { content: string }).content).not.toContain('Steering directive:')
   })
 
-  it('states Finalization on the wire, with no tool-result history to ride (#207, ADR 0038)', async () => {
+  it('states the Finalize Instruction on the wire, with no tool-result history to ride (#207, ADR 0038)', async () => {
     const fetch = new ScriptedFetch([
       completionResponse({ content: '{"speak":"Out of time.","display":"Out of time."}' }),
     ])
@@ -483,7 +483,7 @@ describe('openAiLlmClient', () => {
       // The captured failure's shape: a Run whose first request ended at
       // the active-work deadline has executed nothing at all.
       toolResults: [],
-      finalization: 'The run\u2019s active-work deadline has passed \u2014 Finalize now.',
+      finalizeInstruction: 'The run\u2019s active-work deadline has passed \u2014 Finalize now.',
     })
 
     // Last of all, past the command and any correction: the operational
@@ -494,7 +494,7 @@ describe('openAiLlmClient', () => {
     })
   })
 
-  it('sends no Finalization message while the run is working (#207)', async () => {
+  it('sends no Finalize Instruction while the run is working (#207)', async () => {
     const fetch = new ScriptedFetch([
       completionResponse({ content: '{"speak":"Done.","display":"Done."}' }),
     ])

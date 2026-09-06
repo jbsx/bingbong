@@ -30,8 +30,8 @@ import { createToolRoundExecutor, type ToolRoundExecutor } from './toolRound'
 import {
   createEffortEpoch,
   deterministicFinalAnswer,
-  finalizationRequestInstruction,
   injectedReportDirective,
+  requestFinalizeInstruction,
   resolveReportGraceMs,
   type EffortEpoch,
   type FinalizationDetail,
@@ -962,19 +962,6 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
         // spoken Answer but not the displayed one would be two stories.
         const fallbackDetail = (): FinalizationDetail | undefined =>
           effortEpoch.phase.kind === 'working' ? undefined : effortEpoch.phase.detail
-        // What a failed Finalization model request leaves behind (#207,
-        // ADR 0038). The run is not stopping *because* the request failed
-        // — it stopped for its own cause a round ago, and that cause is
-        // what the Answer and the record say. So the failure is additional
-        // diagnostic information, named by the round it lost, and the
-        // Finalization Cause rides along to join the two.
-        const reportFinalizationRequestFailure = (site: string, round: string, error: unknown): void => {
-          reportFault(
-            `pipeline.createCommandPipeline.${site}`,
-            `the ${round} request failed during Finalization (${fallbackCause()}): ${toErrorMessage(error)}`,
-            { turnId },
-          )
-        }
 
         for (;;) {
           // The loop top asks the epoch's rails (#146–#148): a tripped rail
@@ -1114,7 +1101,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
           // the same moment (#207): the bookkeeping round is told
           // Bookkeeping is still open, the reserved Answer round that no
           // tool round remains.
-          const finalizationInstruction = finalizationRequestInstruction(effortEpoch.phase)
+          const roundFinalizeInstruction = requestFinalizeInstruction(effortEpoch.phase)
           try {
             const request: LlmRequest = {
               command,
@@ -1134,14 +1121,14 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
               // adapter sends no tool definitions and no automatic tool
               // choice, whatever the catalog still holds for bookkeeping.
               ...(reservedRound ? { answerOnly: true } : {}),
-              // The Finalization Instruction (#207, ADR 0038): every
+              // The Finalize Instruction (#207, ADR 0038): every
               // Finalization request states outright that acquisition has
               // ended and what this round may still do. The captured
               // failure was a Run whose first request was aborted at the
               // active-work deadline — no tool call, no tool result, so
-              // nothing for the Finalize Instruction to ride, and a
-              // bookkeeping round that read as ordinary work.
-              ...(finalizationInstruction !== null ? { finalization: finalizationInstruction } : {}),
+              // none of the instruction's other three carriers existed,
+              // and a bookkeeping round that read as ordinary work.
+              ...(roundFinalizeInstruction !== null ? { finalizeInstruction: roundFinalizeInstruction } : {}),
               ...(continuity ? { journal: continuity.snapshot } : {}),
               ...(continuity ? { memory: continuity.memory } : {}),
               // Checkpointed Session Evidence this Run starts beside (#121):
@@ -1226,11 +1213,15 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
             if (armedRound.deadlineAborted) continue
             // The reserved Answer round failed (#117): the run still ends
             // with a guaranteed Answer — the deterministic fallback — not
-            // a raw provider error. The failure is diagnostics (#207, ADR
-            // 0038), recorded beside the Finalization Cause it kept rather
-            // than replacing it.
+            // a raw provider error. The lost round is diagnostics (#207,
+            // ADR 0038): the run is not stopping *because* this request
+            // failed — it stopped for its own cause a round ago, and that
+            // cause is what the Answer and the record still say. So the
+            // failure is reported under a site naming the round it lost,
+            // carrying the thrown error itself so a provider failure keeps
+            // its stack, and joined to the Run's own cause by the turn id.
             if (reservedRound) {
-              reportFinalizationRequestFailure('reservedAnswerRequestFailed', 'reserved Answer', err)
+              reportFault('pipeline.createCommandPipeline.reservedAnswerRequestFailed', err, { turnId })
               deterministicFallback = true
               break
             }
@@ -1242,7 +1233,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
             // not escape as the raw provider error the user would
             // otherwise hear instead of an Answer.
             if (effortEpoch.spendBookkeepingOpportunity()) {
-              reportFinalizationRequestFailure('bookkeepingRequestFailed', 'bookkeeping', err)
+              reportFault('pipeline.createCommandPipeline.bookkeepingRequestFailed', err, { turnId })
               continue
             }
             throw err
@@ -1326,8 +1317,16 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
 
           // The reserved Answer round requested tools (#117): Finalization
           // granted its one bookkeeping Tool Round already — the run now
-          // answers deterministically instead of working further.
+          // answers deterministically instead of working further. The
+          // third of the round's three failure modes, and recorded like
+          // the other two (#207, ADR 0038): a fallback Answer nobody can
+          // account for is the diagnosis this seam exists to prevent.
           if (reservedRound) {
+            reportFault(
+              'pipeline.createCommandPipeline.reservedAnswerRequestedTools',
+              `reserved Answer round requested tools (${fallbackCause()}): ${turn.calls.map((call) => call.name).join(', ')}`,
+              { turnId },
+            )
             deterministicFallback = true
             break
           }

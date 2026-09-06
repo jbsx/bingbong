@@ -7,9 +7,9 @@ import {
   createEffortEpoch,
   deterministicFinalAnswer,
   FINALIZATION_REPORT_CHECKPOINT_DIRECTIVE,
-  finalizationRequestInstruction,
   finalizationToolRefusal,
   finalizeInstruction,
+  requestFinalizeInstruction,
   HARD_TOOL_ROUND_CEILING,
   injectedReportDirective,
   REPORT_GRACE_MS,
@@ -395,38 +395,38 @@ describe('Effort Epoch (#146, ADR 0027)', () => {
   // active-work deadline has no tool call and no tool result — so the
   // Finalize Instruction, which rides refusals and bookkeeping
   // acknowledgements, reaches a model that executed nothing never at all.
-  describe('the Finalization Instruction the request carries (#207, ADR 0038)', () => {
+  describe('the Finalize Instruction the request carries (#207, ADR 0038)', () => {
     it('says nothing while the run is working', () => {
-      expect(finalizationRequestInstruction({ kind: 'working' })).toBeNull()
+      expect(requestFinalizeInstruction({ kind: 'working' })).toBeNull()
     })
 
     it('gives the bookkeeping round the Finalize Instruction, cause and all', () => {
-      expect(finalizationRequestInstruction({ kind: 'finalizing', cause: 'deadline_reached' })).toBe(
+      expect(requestFinalizeInstruction({ kind: 'finalizing', cause: 'deadline_reached' })).toBe(
         finalizeInstruction('deadline_reached'),
       )
-      expect(finalizationRequestInstruction({ kind: 'finalizing', cause: 'no_progress' })).toBe(
+      expect(requestFinalizeInstruction({ kind: 'finalizing', cause: 'no_progress' })).toBe(
         finalizeInstruction('no_progress'),
       )
     })
 
     it('tells the reserved Answer round that no tool round remains', () => {
-      expect(finalizationRequestInstruction({ kind: 'answer_only', cause: 'deadline_reached' })).toBe(
+      expect(requestFinalizeInstruction({ kind: 'answer_only', cause: 'deadline_reached' })).toBe(
         `The run\u2019s active-work deadline has passed. ${ANSWER_ONLY_REPORT_DIRECTIVE}`,
       )
     })
 
     it('names the wall a `blocker` stop kept at, in both phases (#202)', () => {
       const wall = { signal: 'login-wall', host: 'shop.example' } as const
-      expect(finalizationRequestInstruction({ kind: 'finalizing', cause: 'blocker', detail: wall })).toBe(
+      expect(requestFinalizeInstruction({ kind: 'finalizing', cause: 'blocker', detail: wall })).toBe(
         finalizeInstruction('blocker', wall),
       )
-      expect(finalizationRequestInstruction({ kind: 'answer_only', cause: 'blocker', detail: wall })).toContain(
+      expect(requestFinalizeInstruction({ kind: 'answer_only', cause: 'blocker', detail: wall })).toContain(
         'shop.example',
       )
     })
 
     it('invents no reason for a cause a Run never finalizes under', () => {
-      expect(finalizationRequestInstruction({ kind: 'answer_only', cause: 'parent_finalized' })).toBe(
+      expect(requestFinalizeInstruction({ kind: 'answer_only', cause: 'parent_finalized' })).toBe(
         ANSWER_ONLY_REPORT_DIRECTIVE,
       )
     })

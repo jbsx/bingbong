@@ -1593,9 +1593,20 @@ describe('command pipeline', () => {
         // The reserved Answer round misbehaves: it asks for tools again.
         { kind: 'tool_calls', calls: [{ id: 'w7', name: 'work', args: {} }] },
       ])
+      const faults: FaultReport[] = []
+      setFaultSink((report) => faults.push(report))
       const pipeline = createCommandPipeline({ llm, tts: new RecordingTts(), clock: new FakeClock(), tools: [createReportRunPlanTool(), work] })
 
       const events = await collect(pipeline, 'do the thing')
+
+      // The third of the reserved round's failure modes is recorded like
+      // the other two (#207): a fallback Answer is always accounted for.
+      expect(faults).toEqual([{
+        kind: 'fault',
+        site: 'pipeline.createCommandPipeline.reservedAnswerRequestedTools',
+        message: 'reserved Answer round requested tools (budget_exhausted): work',
+        turnId: expect.any(String),
+      }])
 
       // The second bookkeeping round never executed its calls, and no raw
       // error surfaces — the deterministic Answer replaces it.
@@ -1933,11 +1944,11 @@ describe('command pipeline', () => {
       // and said outright that acquisition had ended, rather than
       // depending on a refusal or an acknowledgement that never existed.
       expect(requests[1].toolResults).toEqual([])
-      expect(requests[1].finalization).toBe(finalizeInstruction('deadline_reached'))
+      expect(requests[1].finalizeInstruction).toBe(finalizeInstruction('deadline_reached'))
       expect(requests[1].answerOnly).toBeUndefined()
       // The reserved Answer round is told the phase it actually runs in.
       expect(requests[2].answerOnly).toBe(true)
-      expect(requests[2].finalization).toBe(
+      expect(requests[2].finalizeInstruction).toBe(
         `The run’s active-work deadline has passed. ${ANSWER_ONLY_REPORT_DIRECTIVE}`,
       )
       // Acquisition never reopened: no tool call was ever made.
@@ -1954,12 +1965,13 @@ describe('command pipeline', () => {
         finalizationCause: 'deadline_reached',
         at: DEADLINE_MS,
       })
-      // The lost round is recorded beside the Finalization Cause, never
-      // in its place.
+      // The lost round is recorded under a site naming it, never in place
+      // of the Finalization Cause — which the `done` event above still
+      // carries, and which the shared turn id joins this record to.
       expect(faults).toHaveLength(1)
       expect(faults[0]).toMatchObject({
         site: 'pipeline.createCommandPipeline.bookkeepingRequestFailed',
-        message: expect.stringMatching(/bookkeeping request failed during Finalization \(deadline_reached\)[\s\S]*provider timed out/),
+        message: 'provider timed out',
       })
     })
 
@@ -1975,16 +1987,34 @@ describe('command pipeline', () => {
       }
       const faults: FaultReport[] = []
       setFaultSink((report) => faults.push(report))
+      // Continuity, so the double failure's terminal commit is countable.
+      const commits: string[] = []
+      const continuity: RunContinuityContext = {
+        snapshot: [],
+        memory: [],
+        generation: 0,
+        commit: (outcome) => {
+          commits.push(outcome)
+          return 'committed'
+        },
+      }
       const pipeline = createCommandPipeline({ llm, tts: new RecordingTts(), clock, tools: [createReportRunPlanTool(), work] })
 
-      const run = collect(pipeline, 'find the tier list')
+      const events: PipelineEvent[] = []
+      const run = (async () => {
+        for await (const raw of pipeline.execute('find the tier list', undefined, false, continuity)) {
+          events.push(withoutTurnId(raw))
+        }
+      })()
       await waitUntil(() => requests.length === 1)
       clock.advance(DEADLINE_MS)
-      const events = await run
+      await run
 
       // Bookkeeping is not retried: one failed opportunity, then the
       // reserved Answer, then the deterministic Answer. Never a fourth.
       expect(requests).toHaveLength(3)
+      // Two lost rounds still leave exactly one terminal contribution.
+      expect(commits).toEqual(['failed'])
       expect(events.filter((e) => e.type === 'error')).toEqual([])
       expect(events.some((e) => e.type === 'display' && e.text ===
         'I could not finish “find the tier list”. The run passed its active-work deadline.')).toBe(true)
@@ -2131,7 +2161,7 @@ describe('command pipeline', () => {
       expect(store.snapshot().observations).toMatchObject([{ id: 'memory-1', text: 'The Acme router costs $39.' }])
       expect(commits).toEqual(['done'])
       expect(requests).toHaveLength(5)
-      expect(requests[3].finalization).toBe(finalizeInstruction('deadline_reached'))
+      expect(requests[3].finalizeInstruction).toBe(finalizeInstruction('deadline_reached'))
       expect(events.filter((e) => e.type === 'error')).toEqual([])
       expect(events.filter((e) => e.type === 'done')).toHaveLength(1)
       expect(events.at(-1)).toMatchObject({ type: 'done', outcome: 'done', finalizationCause: 'deadline_reached' })
@@ -2157,9 +2187,9 @@ describe('command pipeline', () => {
 
       // Six working requests carry nothing; the bookkeeping request and
       // the reserved Answer round each carry their own phase's words.
-      expect(llm.requests.slice(0, 6).map((request) => request.finalization)).toEqual(Array(6).fill(undefined))
-      expect(llm.requests[6].finalization).toBe(finalizeInstruction('budget_exhausted'))
-      expect(llm.requests[7].finalization).toBe(
+      expect(llm.requests.slice(0, 6).map((request) => request.finalizeInstruction)).toEqual(Array(6).fill(undefined))
+      expect(llm.requests[6].finalizeInstruction).toBe(finalizeInstruction('budget_exhausted'))
+      expect(llm.requests[7].finalizeInstruction).toBe(
         `The run’s work budget is exhausted. ${ANSWER_ONLY_REPORT_DIRECTIVE}`,
       )
     })
