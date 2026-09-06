@@ -262,6 +262,29 @@ describe('subagent card bridge', () => {
     for (const update of agentUpdates(w.events)) expect(update.agent).not.toHaveProperty('bounded')
   })
 
+  it('carries a worker’s Blocker stop onto the turn-scoped event (#202, ADR 0037)', async () => {
+    const w = ownedWiring({ sessionId: 'session-6' as SessionId, generation: 1 })
+    w.manager.spawn('browse', 'read the post', { turnId: 'turn-90' })
+    w.settle('a-1', 'resolve', {
+      text: 'Stopped at a wall on www.reddit.com after 2 tool rounds.',
+      findings: [],
+      unresolved: ['Cut short at a wall on www.reddit.com that only the user can clear — the task is incomplete.'],
+      finalizationCause: 'blocker',
+      bounded: true,
+    })
+    await flush()
+
+    const finalized = w.events.filter(
+      (e): e is Extract<PipelineEvent, { type: 'subagent_finalized' }> => e.type === 'subagent_finalized',
+    )
+    // A worker that kept at a wall is measurable as such: `blocker` is a
+    // WorkerStop bucket of its own, not a spent budget wearing its name.
+    expect(finalized[0]).toMatchObject({ status: 'completed', cause: 'blocker', bounded: true })
+    // The wall itself stays out of the card: the event is diagnostic, and
+    // the card has never carried a stop cause.
+    for (const update of agentUpdates(w.events)) expect(update.agent).not.toHaveProperty('finalizationCause')
+  })
+
   it('leaves the bounded flag off a report the worker wrote itself (#199)', async () => {
     const w = ownedWiring({ sessionId: 'session-5' as SessionId, generation: 1 })
     w.manager.spawn('browse', 'compare prices', { turnId: 'turn-89' })

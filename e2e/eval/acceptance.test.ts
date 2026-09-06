@@ -3,6 +3,7 @@ import { fileURLToPath } from 'node:url'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { finalizationToolRefusal } from '../../src/core/pipeline/effortEpoch'
+import { createBlockerGate } from '../../src/core/pipeline/blockerGate'
 import {
   buildPool,
   decideRelease,
@@ -926,6 +927,25 @@ describe('the #130 corpus', () => {
   })
 })
 
+/**
+ * The refusal the same-wall gate answers with when it stops the run
+ * (#202): armed, then refused in two Tool Rounds. Built from the real gate
+ * so wording drift in src fails here.
+ */
+function blockerTrippingRefusal(): string {
+  const gate = createBlockerGate(() => 'example.com')
+  const navigate = { id: 'n', name: 'navigate', args: { url: 'https://example.com/' } }
+  gate.beginRound()
+  gate.observe(navigate, { ok: true, result: 'BLOCKER:challenge example.com\nThis page is a Blocker.' })
+  const click = { id: 'c', name: 'click', args: { ref: 1 } }
+  gate.beginRound()
+  gate.gate(click)
+  gate.beginRound()
+  const tripping = gate.gate(click)
+  if (tripping.ok) throw new Error('the gate did not trip')
+  return tripping.reason
+}
+
 describe('isRuntimeRefusal', () => {
   it('recognizes the rails’ pre-execution refusals and rejects ordinary errors', () => {
     expect(isRuntimeRefusal('Not executed — this action repeats an equivalent action against unchanged page state.')).toBe(true)
@@ -937,6 +957,11 @@ describe('isRuntimeRefusal', () => {
     }
     expect(isRuntimeRefusal(finalizationToolRefusal('blocker', { signal: 'challenge', host: 'example.com' }))).toBe(true)
     expect(isRuntimeRefusal('Search loop limit (5 consecutive similar searches — q= navigate) reached for this run.')).toBe(true)
+    // Pinned against the string the gate actually produces when it stops a
+    // run at a wall (#202) — not just the closed-tool helper. That refusal
+    // splices the wall sentence between the prefix and the instruction, so
+    // only a real trip proves the prefix survived the splice.
+    expect(isRuntimeRefusal(blockerTrippingRefusal())).toBe(true)
     // The Blocker gate's nudging refusal is recoverable by design — not a
     // violation to retry after. Only the refusal that *stops* the run for
     // `blocker` (#202) takes the prefix, which is why it reads as a stop

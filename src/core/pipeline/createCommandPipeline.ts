@@ -1454,6 +1454,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
         // unverified model claim.
         if (deterministicFallback) {
           runOutcome = 'failed'
+          const fallbackWall = fallbackDetail()
           const fallback = deterministicFinalAnswer({
             // The task the stopped run was working on, in words the user
             // recognizes: their Steering correction once one landed (#119)
@@ -1462,7 +1463,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
             // a never-steered run.
             command: correctedObjective ?? command,
             cause: fallbackCause(),
-            ...(fallbackDetail() !== undefined ? { detail: fallbackDetail()! } : {}),
+            ...(fallbackWall !== undefined ? { detail: fallbackWall } : {}),
             sources: deriveFallbackSources({
               records: ledger.snapshot(),
               checkpoints: acceptedCheckpoints,

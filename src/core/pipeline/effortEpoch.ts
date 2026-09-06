@@ -283,12 +283,21 @@ export function finalizeInstruction(cause: FinalizationCause | null, detail?: Fi
 }
 
 /**
- * The refusal a closed tool call answers with in Finalization. The
- * `Not executed — ` prefix is an eval contract rather than a style: the
- * acceptance harness classifies runtime refusals by it.
+ * The `Not executed — ` prefix is an eval contract rather than a style:
+ * the acceptance harness classifies runtime refusals by it
+ * (`RUNTIME_REFUSAL_PREFIXES`, e2e/eval/acceptance.ts). Every refusal that
+ * means "the run will not do this" is built here, so the contract has one
+ * owner — the round's closed-tool refusal, worded for whichever caller
+ * (#159), and the Blocker gate's tripping refusal, which splices the wall
+ * sentence ahead of its instruction (#202).
  */
+export function notExecuted(instruction: string): string {
+  return `Not executed — ${instruction}`
+}
+
+/** The refusal a closed tool call answers with in a Run's Finalization. */
 export function finalizationToolRefusal(cause: FinalizationCause | null, detail?: FinalizationDetail): string {
-  return `Not executed — ${finalizeInstruction(cause, detail)}`
+  return notExecuted(finalizeInstruction(cause, detail))
 }
 
 /**
@@ -737,42 +746,43 @@ const CAUSE_SENTENCES: Readonly<Record<string, string>> = {
 }
 
 /**
- * What each Blocker flavor is called where the user hears it (#202): the
- * gate's own vocabulary ("network-block") is a marker token, not a noun
- * anyone says out loud.
- */
-const BLOCKER_LABELS: Readonly<Record<BlockerSignal, string>> = {
-  challenge: 'challenge',
-  'network-block': 'network block',
-  'login-wall': 'sign-in wall',
-}
-
-/**
- * What the *user* is asked to do about each flavor, naming the host —
- * the sibling of BLOCKER_HELP_BY_SIGNAL, which is what the model is told.
- * Separate for the same reason CAUSE_SENTENCES is separate from
+ * How each Blocker flavor reaches the *user* (#202): what it is called out
+ * loud — the gate's own vocabulary ("network-block") is a marker token,
+ * not a noun anyone says — and what the user is asked to do about it, on
+ * the host it is on.
+ *
+ * The sibling of BLOCKER_HELP_BY_SIGNAL, which is what the *model* is
+ * told, and separate for the same reason CAUSE_SENTENCES is separate from
  * RUN_FINALIZATION_REASONS (#201): the model's instruction and the user's
  * next step are two sentences with two audiences, and rewording one must
- * not move the other. This is the whole point of the cause — a user who
- * hears "the run stopped" learns nothing they can act on.
+ * not move the other. It is also the whole point of the cause — a user who
+ * hears "the run stopped" learns nothing they can act on, so this table is
+ * imperative where the model's is a noun phrase.
  */
-const BLOCKER_USER_HELP: Readonly<Record<BlockerSignal, (host: string) => string>> = {
-  challenge: (host) => `complete the challenge on ${host} in the browser tab and ask again`,
-  'network-block': (host) => `sign in to ${host} once in the browser tab, or ask me to try a different route`,
-  'login-wall': (host) => `sign in to ${host} once in the browser tab and ask again`,
+const BLOCKER_FOR_THE_USER: Readonly<Record<BlockerSignal, { label: string; help: (host: string) => string }>> = {
+  challenge: {
+    label: 'challenge',
+    help: (host) => `complete the challenge on ${host} in the browser tab and ask again`,
+  },
+  'network-block': {
+    label: 'network block',
+    help: (host) => `sign in to ${host} once in the browser tab, or ask me to try a different route`,
+  },
+  'login-wall': {
+    label: 'sign-in wall',
+    help: (host) => `sign in to ${host} once in the browser tab and ask again`,
+  },
 }
 
 /** The displayed sentence a Blocker stop replaces CAUSE_SENTENCES with (#202). */
 function blockerCauseSentence(wall: FinalizationDetail): string {
-  return (
-    `The run kept at a ${BLOCKER_LABELS[wall.signal]} it cannot pass. ` +
-    `To get past it, ${BLOCKER_USER_HELP[wall.signal](wall.host)}.`
-  )
+  const flavor = BLOCKER_FOR_THE_USER[wall.signal]
+  return `The run kept at a ${flavor.label} it cannot pass. To get past it, ${flavor.help(wall.host)}.`
 }
 
 /** The spoken half of the same stop (#202): the wall, named, in one breath. */
 function blockerSpokenSentence(wall: FinalizationDetail): string {
-  return `I could not get past the ${BLOCKER_LABELS[wall.signal]} on ${wall.host}.`
+  return `I could not get past the ${BLOCKER_FOR_THE_USER[wall.signal].label} on ${wall.host}.`
 }
 
 /**

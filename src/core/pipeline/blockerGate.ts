@@ -1,7 +1,7 @@
 import type { ToolCall, ToolResultOutcome } from '../ports/llm'
 import type { BlockerSignal, BlockerWall } from '../browser/blockerNudge'
 import { BLOCKER_HELP_BY_SIGNAL, parseBlockerMarker, UNKNOWN_BLOCKER_HOST } from '../browser/blockerNudge'
-import { finalizeInstruction } from './effortEpoch'
+import { finalizeInstruction, notExecuted } from './effortEpoch'
 import { reportFault } from '../trace/fault'
 
 // Issue #80, ADR 0010: the same-wall Blocker gate. Detection (#78) puts a
@@ -197,7 +197,7 @@ export function createBlockerGate(
    * stays out of.
    */
   function trippingRefusal(a: BlockerWall, call: ToolCall): string {
-    return `Not executed — ${wallSentence(a, call)} ${finalizeAt(a)}`
+    return notExecuted(`${wallSentence(a, call)} ${finalizeAt(a)}`)
   }
 
   return {

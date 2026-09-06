@@ -362,6 +362,65 @@ function workerFinalizationNotice(cause: FinalizationCause, maxToolRounds: numbe
 }
 
 /**
+ * How one stop cause reads in a bounded report: what the report opens on,
+ * why it stopped, and what it leaves open. One cascade rather than three
+ * — every cause answers all three at once, so a cause added here cannot
+ * be given a lead-in and forgotten in the unresolved line.
+ *
+ * Only the delegated budget is a spent limit. The no-progress stop (#159)
+ * had budget left and stopped because repetition stopped paying, and the
+ * Blocker stop (#202) names the wall — the orchestrator reading this
+ * report is the one that can ask the user about it — so neither borrows
+ * the budget wording.
+ */
+interface BoundedStopWording {
+  readonly leadIn: string
+  readonly causeSentence: string
+  readonly unresolved: string
+}
+
+function boundedStopWording(input: {
+  cause: FinalizationCause
+  detail?: FinalizationDetail
+  maxToolRounds: number
+}): BoundedStopWording {
+  const wall = input.cause === 'blocker' ? input.detail : undefined
+  if (wall !== undefined) {
+    return {
+      leadIn: `Stopped at a wall on ${wall.host}`,
+      causeSentence: `${wall.host} is walled (Blocker: ${wall.signal}) and this task kept at it — what helps is ${BLOCKER_HELP_BY_SIGNAL[wall.signal]}`,
+      unresolved: `Cut short at a wall on ${wall.host} that only the user can clear — the task is incomplete.`,
+    }
+  }
+  switch (input.cause) {
+    case 'no_progress':
+      return {
+        leadIn: 'Stopped without progress',
+        causeSentence: 'two Approaches in a row made no progress',
+        unresolved: 'Cut short with no progress left to make — the task is incomplete.',
+      }
+    case 'parent_finalized':
+      return {
+        leadIn: 'Stopped when the parent run finalized',
+        causeSentence: 'the parent run finalized before this report was written',
+        unresolved: 'Cut short by the parent run\u2019s finalization — the task is incomplete.',
+      }
+    case 'deadline_reached':
+      return {
+        leadIn: 'Stopped at the delegated work limit',
+        causeSentence: 'the parent run reached its active-work deadline',
+        unresolved: 'Cut short at the delegated work limit — the task is incomplete.',
+      }
+    default:
+      return {
+        leadIn: 'Stopped at the delegated work limit',
+        causeSentence: `the delegated work budget (${input.maxToolRounds} tool rounds) was spent`,
+        unresolved: 'Cut short at the delegated work limit — the task is incomplete.',
+      }
+  }
+}
+
+/**
  * The deterministic bounded report (#120): what the worker answers with
  * when its reserved Answer round fails or requests tools. Built only from
  * the stop cause and the run's own progress — it invents no findings.
@@ -376,44 +435,13 @@ function boundedStopReport(input: {
   lastAction: string | null
   observations?: readonly ObservationRecord[]
 }): SubagentReport {
-  // The no-progress stop (#159) is not a spent limit: the worker had
-  // budget left and stopped because repetition stopped paying, so it says
-  // so rather than borrowing the budget wording. Nor is the Blocker stop
-  // (#202): it names the wall, because the orchestrator reading this
-  // report is the one that can ask the user about it.
-  const noProgress = input.cause === 'no_progress'
-  const parentFinalized = input.cause === 'parent_finalized'
-  const wall = input.cause === 'blocker' ? input.detail : undefined
-  const causeSentence = noProgress
-    ? 'two Approaches in a row made no progress'
-    : input.cause === 'deadline_reached'
-      ? 'the parent run reached its active-work deadline'
-      : parentFinalized
-        ? 'the parent run finalized before this report was written'
-        : wall !== undefined
-          ? `${wall.host} is walled (Blocker: ${wall.signal}) and this task kept at it — what helps is ${BLOCKER_HELP_BY_SIGNAL[wall.signal]}`
-          : `the delegated work budget (${input.maxToolRounds} tool rounds) was spent`
-  const leadIn = noProgress
-    ? 'Stopped without progress'
-    : parentFinalized
-      ? 'Stopped when the parent run finalized'
-      : wall !== undefined
-        ? `Stopped at a wall on ${wall.host}`
-        : 'Stopped at the delegated work limit'
+  const { leadIn, causeSentence, unresolved } = boundedStopWording(input)
   const lastActionSentence = input.lastAction !== null ? ` The last action was: ${input.lastAction}.` : ''
   return {
     ...(input.agentId !== undefined ? { agentId: input.agentId } : {}),
     text: `${leadIn} after ${input.rounds} tool round${input.rounds === 1 ? '' : 's'} — ${causeSentence}, and no final report was produced.${lastActionSentence}`,
     findings: [],
-    unresolved: [
-      noProgress
-        ? 'Cut short with no progress left to make — the task is incomplete.'
-        : parentFinalized
-          ? 'Cut short by the parent run\u2019s finalization — the task is incomplete.'
-          : wall !== undefined
-            ? `Cut short at a wall on ${wall.host} that only the user can clear — the task is incomplete.`
-            : 'Cut short at the delegated work limit — the task is incomplete.',
-    ],
+    unresolved: [unresolved],
     ...(input.observations !== undefined && input.observations.length > 0 ? { observations: input.observations } : {}),
     finalizationCause: input.cause,
     // Every bounded report says so (#199, ADR 0035), not only one the

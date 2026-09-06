@@ -700,6 +700,12 @@ A Blocker no in-view action clears — the site refuses this network or
 session outright. Escalation offers sign-in or a different route.
 _Avoid_: IP ban, blacklist
 
+**Login Wall**:
+A Blocker whose content needs a signed-in session — only the user can sign
+in, and the session persists in the app profile afterwards. Escalation asks
+them to sign in once in the browser tab.
+_Avoid_: paywall, auth error
+
 **Escalation**:
 Handing a Blocker from the agent to the user via a spoken ask — the fallback
 when no automatic path exists.

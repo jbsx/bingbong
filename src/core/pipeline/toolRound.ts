@@ -13,7 +13,7 @@ import { createSearchLoopRail } from './searchLoopRail'
 import { createNoProgressRail } from './noProgressRail'
 import type { SettledPageState } from './progressFingerprints'
 import type { SnapshotRef } from '../browser/snapshot'
-import { finalizeInstruction, type EffortEpoch, type FinalizationDetail } from './effortEpoch'
+import { finalizeInstruction, notExecuted, type EffortEpoch, type FinalizationDetail } from './effortEpoch'
 import type { Notices } from './notices'
 import type { ConfirmDecision, RunDecisions } from './decisions'
 import { STEERED_CANCELLED, type Directive, type RunInterrupts } from './interrupts'
@@ -276,12 +276,12 @@ export function createToolRoundExecutor(config: ToolRoundConfig): ToolRoundExecu
    * epoch is finalizing under (#199). Only read inside Finalization —
    * the closed-tool check that reaches it is gated on the phase.
    */
-  const closedToolRefusal = (): string => {
-    const phase = effortEpoch.phase
-    return phase.kind === 'working'
-      ? `Not executed — ${finalizeWording(null)}`
-      : `Not executed — ${finalizeWording(phase.cause, phase.detail)}`
-  }
+  const closedToolRefusal = (): string =>
+    notExecuted(
+      effortEpoch.phase.kind === 'working'
+        ? finalizeWording(null)
+        : finalizeWording(effortEpoch.phase.cause, effortEpoch.phase.detail),
+    )
   // The Vision Budget is the round's, so the context tools execute against
   // acquires from it — a caller can never hand a tool a different one.
   const toolContext: ToolContext = { ...config.toolContext, acquireVision: () => visionBudget.tryAcquire() }
