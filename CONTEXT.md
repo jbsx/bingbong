@@ -615,6 +615,14 @@ meaningfully changes the page. It is the next decision's observation, not merely
 confirmation that a call ran.
 _Avoid_: tool result, success flag
 
+**Ref**:
+A numbered handle in a page read naming one element in the viewport at the
+moment of that read, for click, type, and Look to act on. A number names the
+same element until the page is collected again; a number used after a collect
+the model did not see in full names an element only if it still is that
+element, otherwise the action is refused.
+_Avoid_: selector, element id, index
+
 **New In View**:
 What a scroll's Action Outcome reports: the refs and page text that entered the
 viewport, formatted and capped as a page read formats and caps them. A scroll

@@ -52,7 +52,9 @@ mechanics and encourage redundant reads, clicks, screenshots, and vision calls.
   explicit inspection tool, but is not a mandatory follow-up to every action.
   A scroll is one of those actions (#194): it returns what entered the
   viewport — the refs and page text that were not visible before, under the
-  same caps `read_page` uses — or `end of page` when nothing did.
+  same caps `read_page` uses — or `end of page` when nothing did. A ref
+  number names the element the model was shown, or the action is refused with
+  the page attached (ADR 0033, #196).
   The model-facing byte-count-only screenshot tool is removed; Look and visual
   grounding capture images internally.
 - Mechanical tool usage belongs in tool descriptions. The shared orchestrator
