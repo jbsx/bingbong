@@ -69,5 +69,25 @@ Three rules were on the table:
 - The `scroll` description states the rule rather than warning about
   renumbering: a pre-scroll number is refused, with the page, if it no longer
   names the same element.
+- **Where a scroll's numbers collide with the old ones, the delta wins —
+  deliberately.** A scroll that renumbers everything prints the entered refs
+  as `[1]`, `[2]`, … and overlays exactly those positions, so a pre-scroll
+  number the delta *also* printed resolves — to the delta's element, not the
+  pre-scroll one. This is the ambiguity rejecting remap accepts: the model
+  holds both numberings and the browser cannot tell which it meant, so the
+  numbers it was shown *last* are the ones that stand. Only a pre-scroll
+  number the delta did not print is refused. The rule is still honest about
+  what it can know — it never aims a number at an element no page ever
+  showed under it — but it does not make a scroll's overlap unambiguous, and
+  nothing downstream should be written as though it did.
+- Nothing is left to fire auto-vision on a stale ref. The refusal carries the
+  page state, which is what the screenshot was standing in for, so the
+  stale-ref trigger loses its last producer and goes with it.
+- A number handed to the model outside a page read has to be recorded as
+  shown, or the action after it is refused. `ground_visual` answers with one
+  ref out of a collect the model never reads as a page, so the grounding port
+  records that number. Marking the whole grounding collect shown instead
+  would re-open this ADR's bug: it would silently revalidate every older
+  number against the new numbering.
 - A refused action is a failed call to the no-progress rail — neutral, as
   every failed call is.
