@@ -30,6 +30,9 @@ import type { EffortTier } from './runPlan'
 export const OFF_TIER_BROWSE_SPAWN_REFUSAL =
   'browse subagents are for genuinely independent Investigation branches'
 
+export const FINALIZATION_AGENT_WAIT_REFUSAL =
+  'agent_results: wait not executed — the selected worker was cancelled by Finalization; collect any report that already completed or finalize from the evidence available'
+
 const KINDS: SubagentKind[] = ['browse', 'background']
 
 const KIND_HINT =
@@ -160,7 +163,6 @@ export function createSubagentTools(manager: SubagentManager): Tool[] {
     },
     {
       name: 'agent_results',
-      acquisition: true,
       description:
         'Collect subagent reports. Without agent_id: every agent so far. With wait: true: block until the selected agents finish (bounded wait).',
       parameters: {
@@ -179,6 +181,12 @@ export function createSubagentTools(manager: SubagentManager): Tool[] {
         const rawId = call.args.agent_id
         const ids = typeof rawId === 'string' && rawId.trim() !== '' ? [rawId.trim()] : undefined
         const wait = call.args.wait === true
+        const selectedRunning = ids
+          ? ids.some((id) => manager.isRunning(id))
+          : manager.list().some((record) => record.status === 'running')
+        if (wait && ctx.finalizing?.() === true && selectedRunning) {
+          throw new Error(FINALIZATION_AGENT_WAIT_REFUSAL)
+        }
         if (wait) {
           // Progress detail (#43): the wait only reads as a stall if the
           // dashboard doesn't know what it is waiting on. Snapshot at wait

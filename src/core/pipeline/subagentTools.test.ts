@@ -20,6 +20,7 @@ function fakeManager(overrides: Partial<SubagentManager> = {}): SubagentManager 
     pauseAll: () => {},
     resumeAll: () => {},
     results: async () => 'merged results',
+    collectCompleted: () => [],
     list: () => [],
     isRunning: () => false,
     ...overrides,
@@ -276,5 +277,43 @@ describe('subagent tools', () => {
     expect(await results.execute({ id: 'c1', name: 'agent_results', args: {} }, ctx)).toBe('report for all')
     expect(await results.execute({ id: 'c2', name: 'agent_results', args: { agent_id: 'a-2', wait: true } }, ctx)).toBe('report for a-2 (waited)')
     expect(calls).toEqual([{ ids: undefined, wait: false }, { ids: ['a-2'], wait: true }])
+  })
+
+  it('classifies agent_results as Collection, not Acquisition (#192)', () => {
+    const results = createSubagentTools(fakeManager()).find((tool) => tool.name === 'agent_results')!
+
+    expect(results.acquisition).not.toBe(true)
+  })
+
+  it('refuses a Finalization wait on a worker that Finalization cancelled (#192)', async () => {
+    let collections = 0
+    const manager = fakeManager({
+      list: () => [{ id: 'a-1', kind: 'browse', task: 'still working', status: 'running', startedAt: 0, finishedAt: null, steps: 1, lastAction: 'reading', result: null, error: null }],
+      isRunning: (id) => id === 'a-1',
+      results: async () => {
+        collections += 1
+        return 'must not wait'
+      },
+    })
+    const results = createSubagentTools(manager).find((tool) => tool.name === 'agent_results')!
+
+    await expect(results.execute(
+      { id: 'c1', name: 'agent_results', args: { agent_id: 'a-1', wait: true } },
+      { clock: { now: () => 0, setTimer: () => () => {} }, finalizing: () => true },
+    )).rejects.toThrow(/cancelled by Finalization/)
+    expect(collections).toBe(0)
+  })
+
+  it('allows a Finalization wait when the selected worker already finished (#192)', async () => {
+    const manager = fakeManager({
+      list: () => [{ id: 'a-1', kind: 'browse', task: 'done', status: 'completed', startedAt: 0, finishedAt: 1, steps: 1, lastAction: 'done', result: 'Report.', error: null }],
+      results: async () => 'completed report',
+    })
+    const results = createSubagentTools(manager).find((tool) => tool.name === 'agent_results')!
+
+    await expect(results.execute(
+      { id: 'c1', name: 'agent_results', args: { agent_id: 'a-1', wait: true } },
+      { clock: { now: () => 0, setTimer: () => () => {} }, finalizing: () => true },
+    )).resolves.toBe('completed report')
   })
 })

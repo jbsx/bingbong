@@ -756,5 +756,7 @@ describe('Effort Epoch (#146, ADR 0027)', () => {
     expect(finalizationToolRefusal).toMatch(/^Not executed — /)
     expect(finalizationToolRefusal).toContain('final answer JSON')
     expect(finalizationToolRefusal).toContain('ask_user')
+    expect(finalizationToolRefusal).toMatch(/Acquisition.*closed/)
+    expect(finalizationToolRefusal).toMatch(/Collection and Bookkeeping remain open/)
   })
 })

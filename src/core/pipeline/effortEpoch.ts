@@ -170,8 +170,8 @@ export function budgetWarningMessage(milestone: BudgetWarningMilestone, remainin
  * always learns that the Answer round is next.
  */
 export const FINALIZATION_ANSWER_DIRECTIVE =
-  'The run\u2019s work budget is exhausted — acquisition, vision, media, delegation, and ask_user tools are ' +
-  'closed; only Run Plan bookkeeping remains. Finalize now: reply with your final answer JSON and state ' +
+  'The run\u2019s work budget is exhausted — Acquisition tools (browser, vision, media, and delegation) and ask_user are ' +
+  'closed; Collection and Bookkeeping remain open. Finalize now: reply with your final answer JSON and state ' +
   'honestly what was and was not completed.'
 
 /** The refusal a closed tool call answers with in Finalization. */

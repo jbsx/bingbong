@@ -31,6 +31,7 @@ import type { PerfTracer } from '../../core/perf/perfTracer'
 import { withPerfTracing } from '../../core/perf/perfTracing'
 import type { BrowserSubspans } from '../../core/perf/browserSubspans'
 import type { ObservationRecord } from '../../core/session/observationLedger'
+import type { CollectedSubagentReport } from '../../core/agent/subagentManager'
 import { ScriptedLlm, silentTts, UnavailableLlm } from '../../core/testing/doubles'
 import { createOpenAiLlmClient } from './openAiLlmClient'
 import { orchestratorSystemPrompt } from './orchestratorPrompt'
@@ -62,6 +63,7 @@ export interface AssistantPipelineDeps {
     cancelAll(): number
     pauseAll(): void
     resumeAll(): void
+    collectCompleted?(turnId: string): CollectedSubagentReport[]
   }
   /** Receives per-turn orchestrator token usage (daily spend estimate). */
   onLlmUsage?: UsageSink
@@ -306,6 +308,9 @@ export function createAssistantPipeline(deps: AssistantPipelineDeps): CommandPip
     // Finalization cancels unfinished delegated acquisition (#120); the
     // reserved Answer round still uses whatever reports completed.
     onFinalize: cancelSubagents,
+    ...(deps.subagentControl?.collectCompleted
+      ? { collectCompletedSubagentResults: (turnId: string) => deps.subagentControl!.collectCompleted!(turnId) }
+      : {}),
     ...(configuredAskTimeoutMs !== undefined ? { askTimeoutMs: configuredAskTimeoutMs } : {}),
     ...(configuredActiveWorkDeadlineMs !== undefined ? { activeWorkDeadlineMs: configuredActiveWorkDeadlineMs } : {}),
   })

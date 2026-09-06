@@ -7,7 +7,7 @@ import type { Tool } from '../../core/pipeline/tool'
 import type { UsageRecord } from '../../core/agent/usageTracking'
 import type { PerfTracer } from '../../core/perf/perfTracer'
 import type { ObservationRecord } from '../../core/session/observationLedger'
-import type { SubagentOwner } from '../../core/agent/subagentManager'
+import type { CollectedSubagentReport, SubagentOwner } from '../../core/agent/subagentManager'
 import { SUBAGENT_LIMITS } from '../../core/agent/subagentRails'
 import { createSubagentManager } from '../../core/agent/subagentManager'
 import { createSubagentCardBridge, type SubagentCardBridge } from '../../core/agent/subagentCards'
@@ -79,6 +79,7 @@ export interface SubagentRuntime {
    * agent is unknown or retained nothing.
    */
   observationsFor(agentId: string): readonly ObservationRecord[] | null
+  collectCompleted(turnId: string): CollectedSubagentReport[]
   /**
    * Session end (#97): cancel every running agent, discard its pending
    * reports, and close + drop its tabs and panes. The runtime stays
@@ -173,6 +174,7 @@ export function createSubagentRuntime(deps: SubagentRuntimeDeps): SubagentRuntim
     cancel: (agentId) => manager.cancel(agentId).ok,
     cancelAll: () => manager.cancelAll(),
     observationsFor: (agentId) => manager.list().find((record) => record.id === agentId)?.report?.observations ?? null,
+    collectCompleted: (turnId) => manager.collectCompleted(turnId),
     retire: () => {
       // Agents stop initiating work first; their transient tabs close and
       // drop without the linger, which destroys the panes' webContents and

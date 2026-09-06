@@ -26,6 +26,8 @@ export interface ToolContext {
    * subagents exist only for Investigation branches.
    */
   effortTier?(): EffortTier
+  /** Whether the Run has stopped Acquisition and entered Finalization (#192). */
+  finalizing?(): boolean
   /**
    * The Run's shared active-work deadline (#120): handed to delegated
    * workers, who stop acquiring when the parent's work time is gone,
@@ -149,8 +151,7 @@ export interface Tool {
   /**
    * An acquisition tool (#117, ADR 0027): browser, vision, media, or
    * delegation work that gathers evidence or changes external state.
-   * Finalization closes these — only Run Plan bookkeeping and
-   * record_evidence remain available once a Run's work budget is spent.
+   * Finalization closes these; Collection and Bookkeeping remain available.
    */
   acquisition?: boolean
   /**

@@ -631,6 +631,7 @@ export function fakeSubagentManager(
     list: () => records.map((record) => ({ ...record })),
     isRunning: (agentId) => records.some((record) => record.id === agentId && record.status === 'running'),
     results: async () => 'merged results',
+    collectCompleted: () => [],
     ...overrides,
   }
 }

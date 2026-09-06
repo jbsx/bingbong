@@ -30,6 +30,7 @@ import { createToolRoundExecutor, type ToolRoundExecutor } from './toolRound'
 import {
   createEffortEpoch,
   deterministicFinalAnswer,
+  FINALIZATION_ANSWER_DIRECTIVE,
   type EffortEpoch,
 } from './effortEpoch'
 import {
@@ -73,6 +74,7 @@ import { deriveAnswerSources, scrubAnswerText } from './answerEvidence'
 import { deriveFallbackSources } from './fallbackAnswer'
 import { compactRunContext, type RunEvidenceCheckpoint } from './runContextCompaction'
 import { reportFault } from '../trace/fault'
+import type { CollectedSubagentReport } from '../agent/subagentManager'
 
 export interface CommandPipelineDeps {
   llm: LlmClient
@@ -147,6 +149,11 @@ export interface CommandPipelineDeps {
    * Wired by main to the subagent rail's cancelAll.
    */
   onFinalize?(): void
+  /**
+   * Collection at Finalization entry (#192): takes completed worker reports
+   * that have not entered this Run's transcript yet.
+   */
+  collectCompletedSubagentResults?(turnId: string): readonly CollectedSubagentReport[]
   /** Turn-id source (#28) and span/summary recorder (#29/#30); absent falls back to a local id mint. */
   tracer?: PerfTracer
   /**
@@ -799,6 +806,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
           // share this run's active-work deadline as a live predicate, so
           // a tier escalation re-arm reaches them without a respawn.
           effortTier: () => effortEpoch.tier,
+          finalizing: () => effortEpoch.phase.kind !== 'working',
           delegationDeadline: effortEpoch.delegationDeadline,
           // A delegated worker's reasoning records (#183): the Run's own
           // writer and turn, closed over here so the worker never sees
@@ -898,6 +906,37 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
           // read from the epoch below, so the answer needs no unpacking.
           effortEpoch.decideLoopTop()
           steering = (yield* interrupts.check('thinking')) ?? steering
+          // A report that completed before Finalization is Collection, not
+          // Acquisition (#192). Put it through the same call/result transcript
+          // and event shapes as an explicit agent_results call before the
+          // bookkeeping request (or the reserved Answer request) is built.
+          if (effortEpoch.phase.kind !== 'working') {
+            for (;;) {
+              const completedReports = deps.collectCompletedSubagentResults?.(turnId) ?? []
+              if (completedReports.length === 0) break
+              for (const completed of completedReports) {
+                const call: ToolCall = {
+                  id: `finalization-agent-results-${completed.agentId}`,
+                  name: 'agent_results',
+                  args: { agent_id: completed.agentId },
+                }
+                const result = `${completed.formattedReport}\n\n${FINALIZATION_ANSWER_DIRECTIVE}`
+                const outcome: ToolResultOutcome = { ok: true, result }
+                yield { type: 'tool_call', callId: call.id, name: call.name, args: call.args, at: clock.now() }
+                const observed = observe({ producer: 'subagent_report', ok: true, payload: completed.formattedReport })
+                toolResults.push({ call, outcome })
+                resultObservationIds.push(observed?.id ?? null)
+                yield {
+                  type: 'tool_result',
+                  callId: call.id,
+                  name: call.name,
+                  ok: true,
+                  result,
+                  at: clock.now(),
+                }
+              }
+            }
+          }
           // Run Context Compaction (#124, ADR 0028): before every model
           // round, past the deterministic size threshold, older tool
           // results an accepted Evidence Checkpoint represents are

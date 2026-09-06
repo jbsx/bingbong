@@ -55,6 +55,7 @@ function delegationToolCatalog(): Tool[] {
     pauseAll: () => {},
     resumeAll: () => {},
     results: async () => 'none',
+    collectCompleted: () => [],
     list: () => [],
     isRunning: () => false,
   }

@@ -428,6 +428,54 @@ describe('subagent manager', () => {
     expect(merged).toContain('Report two.')
   })
 
+  it('collects each completed report once across automatic and explicit collection (#192)', async () => {
+    const { mgr, api } = manager()
+
+    mgr.spawn('browse', 'find the answer')
+    api.tasks.get('a-1')!.resolve('The answer is 42.')
+    await flush()
+
+    expect(mgr.collectCompleted()).toEqual([{
+      agentId: 'a-1',
+      formattedReport: expect.stringContaining('report:\nThe answer is 42.'),
+    }])
+    expect(mgr.list()[0]).toMatchObject({ collected: true })
+    expect(mgr.collectCompleted()).toEqual([])
+    await expect(mgr.results({ ids: ['a-1'] })).resolves.toBe('no uncollected subagent reports')
+  })
+
+  it('leaves a running worker uncollected until its report exists (#192)', async () => {
+    const { mgr, api } = manager()
+
+    mgr.spawn('browse', 'finish later')
+    expect(mgr.collectCompleted()).toEqual([])
+    await expect(mgr.results({ ids: ['a-1'] })).resolves.toContain('still running')
+
+    api.tasks.get('a-1')!.resolve('Finished later.')
+    await flush()
+
+    expect(mgr.collectCompleted()).toEqual([{
+      agentId: 'a-1',
+      formattedReport: expect.stringContaining('Finished later.'),
+    }])
+  })
+
+  it('automatically collects only reports spawned by the current turn (#192)', async () => {
+    const { mgr, api } = manager()
+
+    mgr.spawn('browse', 'older work', { turnId: 'turn-old' })
+    mgr.spawn('browse', 'current work', { turnId: 'turn-current' })
+    api.tasks.get('a-1')!.resolve('Old report.')
+    api.tasks.get('a-2')!.resolve('Current report.')
+    await flush()
+
+    expect(mgr.collectCompleted('turn-current')).toEqual([{
+      agentId: 'a-2',
+      formattedReport: expect.stringContaining('Current report.'),
+    }])
+    expect(mgr.list().find((record) => record.id === 'a-1')).toMatchObject({ collected: false })
+  })
+
   it('results(wait) blocks until the selected agents finish', async () => {
     const { mgr, api } = manager()
 

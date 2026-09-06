@@ -29,6 +29,8 @@ import { withPerfTracing } from '../perf/perfTracing'
 import { createBrowserSubspans } from '../perf/browserSubspans'
 import { DELTA_FLUSH_MS } from './deltaBatcher'
 import { HARD_TOOL_ROUND_CEILING, TIER_TOOL_ROUND_BUDGETS } from './effortEpoch'
+import { createSubagentManager } from '../agent/subagentManager'
+import type { SubagentReport } from '../agent/subagentReport'
 
 async function collect(
   pipeline: CommandPipeline,
@@ -1441,6 +1443,140 @@ describe('command pipeline', () => {
         finalizationCause: 'budget_exhausted',
         at: 0,
       })
+    })
+
+    it('collects a finished worker explicitly during the Finalization Tool Round (#192)', async () => {
+      const manager = fakeSubagentManager([subagentRecord('a-1', 'completed')], {
+        results: async () => 'a-1 [browsing] completed — compare vendors\nreport:\nVendor A wins.',
+      })
+      const llm = new ScriptedLlm([
+        ...Array.from({ length: 6 }, (_, i) => workRound(i, i === 0)),
+        { kind: 'tool_calls', calls: [{ id: 'collect', name: 'agent_results', args: { agent_id: 'a-1', wait: true } }] },
+        { kind: 'answer', speak: 'Vendor A.', display: 'Vendor A wins.', resolution: 'partial' },
+      ])
+      const pipeline = createCommandPipeline({
+        llm,
+        tts: new RecordingTts(),
+        clock: new FakeClock(),
+        tools: [createReportRunPlanTool(), work, ...createSubagentTools(manager)],
+      })
+
+      const events = await collect(pipeline, 'compare vendors')
+
+      expect(events.find((event) => event.type === 'tool_result' && event.callId === 'collect')).toMatchObject({
+        ok: true,
+        result: expect.stringContaining('Vendor A wins.'),
+      })
+      expect(llm.requests[7].toolResults).toContainEqual({
+        call: { id: 'collect', name: 'agent_results', args: { agent_id: 'a-1', wait: true } },
+        outcome: { ok: true, result: expect.stringContaining('Vendor A wins.') },
+      })
+    })
+
+    it('injects each uncollected worker report into the first Finalization request only once (#192)', async () => {
+      let firstCollected = false
+      let secondReady = false
+      let secondCollected = false
+      const collectCompletedSubagentResults = () => {
+        if (!firstCollected) {
+          firstCollected = true
+          return [{ agentId: 'a-1', formattedReport: 'a-1 [browsing] completed — compare vendors\nreport:\nVendor A wins.' }]
+        }
+        if (secondReady && !secondCollected) {
+          secondCollected = true
+          return [{ agentId: 'a-2', formattedReport: 'a-2 [browsing] completed — check stock\nreport:\nVendor A is in stock.' }]
+        }
+        return []
+      }
+      const llm = new ScriptedLlm([
+        ...Array.from({ length: 6 }, (_, i) => workRound(i, i === 0)),
+        { kind: 'tool_calls', calls: [directPlan('p7', 'Wrapping up')] },
+        { kind: 'answer', speak: 'Vendor A.', display: 'Vendor A wins.', resolution: 'partial' },
+      ])
+      const pipeline = createCommandPipeline({
+        llm,
+        tts: new RecordingTts(),
+        clock: new FakeClock(),
+        tools: [createReportRunPlanTool(), work],
+        collectCompletedSubagentResults,
+      })
+
+      const events = await collect(pipeline, 'compare vendors', (event) => {
+        if (event.type === 'tool_result' && event.callId === 'finalization-agent-results-a-1') secondReady = true
+      })
+
+      const injected = {
+        call: { id: 'finalization-agent-results-a-1', name: 'agent_results', args: { agent_id: 'a-1' } },
+        outcome: { ok: true, result: expect.stringMatching(/Vendor A wins\.[\s\S]*Collection and Bookkeeping remain open/) },
+      }
+      expect(llm.requests[6].toolResults).toContainEqual(injected)
+      expect(llm.requests[7].toolResults.filter((result) => result.call.id === injected.call.id)).toEqual([injected])
+      expect(llm.requests[6].toolResults).toContainEqual({
+        call: { id: 'finalization-agent-results-a-2', name: 'agent_results', args: { agent_id: 'a-2' } },
+        outcome: { ok: true, result: expect.stringContaining('Vendor A is in stock.') },
+      })
+      expect(events.filter((event) => event.type === 'tool_call' && event.callId === injected.call.id)).toHaveLength(1)
+      expect(events.filter((event) => event.type === 'tool_result' && event.callId === injected.call.id)).toHaveLength(1)
+    })
+
+    it('carries a report that finishes before the deadline into Finalization and the Answer (#192)', async () => {
+      const clock = new FakeClock()
+      let finishWorker!: (report: SubagentReport) => void
+      const workerDone = new Promise<SubagentReport>((resolve) => { finishWorker = resolve })
+      const manager = createSubagentManager({
+        taskApi: { start: () => ({ done: workerDone }) },
+        tabs: { openFor: () => ({ ok: true }), finish: () => {} },
+        clock,
+        onEvent: () => {},
+      })
+      const requests: LlmRequest[] = []
+      const llm: LlmClient = {
+        async complete(request) {
+          requests.push(request)
+          if (requests.length === 1) {
+            return {
+              kind: 'tool_calls',
+              calls: [
+                { id: 'p1', name: 'report_run_plan', args: { objective: 'Compare vendors', headline: 'Comparing vendors', effort_tier: 'investigation' } },
+                { id: 'spawn', name: 'spawn_agent', args: { kind: 'browse', task: 'compare vendors' } },
+              ],
+            }
+          }
+          if (requests.length === 2) return abortableRound(request)
+          if (requests.length === 3) {
+            return {
+              kind: 'tool_calls',
+              calls: [{ id: 'p2', name: 'report_run_plan', args: { objective: 'Compare vendors', headline: 'Wrapping up', effort_tier: 'investigation' } }],
+            }
+          }
+          return { kind: 'answer', speak: 'Vendor A.', display: 'Vendor A wins.', resolution: 'partial' }
+        },
+      }
+      const pipeline = createCommandPipeline({
+        llm,
+        tts: new RecordingTts(),
+        clock,
+        tools: [createReportRunPlanTool(), ...createSubagentTools(manager)],
+        activeWorkDeadlineMs: 1_000,
+        onFinalize: () => { manager.cancelAll() },
+        collectCompletedSubagentResults: (turnId) => manager.collectCompleted(turnId),
+      })
+
+      const run = collect(pipeline, 'compare vendors')
+      for (let attempt = 0; attempt < 200 && requests.length < 2; attempt += 1) await flush()
+      expect(requests).toHaveLength(2)
+      finishWorker({ text: 'Vendor A wins.', findings: [], unresolved: [] })
+      await flush()
+      expect(manager.list()[0]).toMatchObject({ status: 'completed', collected: false })
+      clock.advance(1_000)
+      const events = await run
+
+      expect(requests[2].toolResults).toContainEqual({
+        call: { id: 'finalization-agent-results-a-1', name: 'agent_results', args: { agent_id: 'a-1' } },
+        outcome: { ok: true, result: expect.stringContaining('Vendor A wins.') },
+      })
+      expect(requests[3].toolResults.filter((result) => result.call.id === 'finalization-agent-results-a-1')).toHaveLength(1)
+      expect(events.at(-1)).toMatchObject({ type: 'done', finalizationCause: 'deadline_reached' })
     })
 
     it('answers deterministically with a failed outcome when the reserved Answer requests tools', async () => {

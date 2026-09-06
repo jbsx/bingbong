@@ -59,6 +59,8 @@ export interface SubagentRecord {
   result: string | null
   /** The validated structured report (#98) — present on completed agents. */
   report?: Readonly<SubagentReport>
+  /** Whether the completed report has entered the orchestrator transcript (#192). */
+  collected?: boolean
   error: string | null
   /** The Session that spawned this agent — late events stay attributable after the Session ends (#97). */
   owner?: SubagentOwner
@@ -152,6 +154,11 @@ export type SpawnResult = { ok: true; agent: SubagentRecord } | { ok: false; rea
 
 export type CancelResult = { ok: true } | { ok: false; reason: string }
 
+export interface CollectedSubagentReport {
+  agentId: string
+  formattedReport: string
+}
+
 /**
  * What rides a spawn from the Run that delegates: the turn it happened in
  * (#29), the Memory Entries it selected (#98), its shared active-work
@@ -183,6 +190,8 @@ export interface SubagentManager {
   pauseAll(): void
   resumeAll(): void
   results(options: { ids?: string[]; wait?: boolean }): Promise<string>
+  /** Takes completed reports that have not entered the orchestrator transcript yet. */
+  collectCompleted(turnId?: string): CollectedSubagentReport[]
   list(): SubagentRecord[]
   /** Whether the agent is still working — the capture loop's gate (#57). */
   isRunning(agentId: string): boolean
@@ -257,6 +266,17 @@ export function createSubagentManager(deps: SubagentManagerDeps): SubagentManage
     return count
   }
 
+  function takeCompleted(candidates: readonly SubagentRecord[], turnId?: string): SubagentRecord[] {
+    const completed = candidates.filter(
+      (record) =>
+        record.status === 'completed' &&
+        record.collected !== true &&
+        (turnId === undefined || record.turnId === turnId),
+    )
+    for (const record of completed) record.collected = true
+    return completed
+  }
+
   return {
     spawn(kind, task, context = {}) {
       const { turnId, memory, sharedDeadline, traceReasoning, traceLlmRound, tracePipelineEvent, traceVision } = context
@@ -295,6 +315,7 @@ export function createSubagentManager(deps: SubagentManagerDeps): SubagentManage
         steps: 0,
         lastAction: null,
         result: null,
+        collected: false,
         error: null,
         ...(owner ? { owner } : {}),
       }
@@ -412,7 +433,21 @@ export function createSubagentManager(deps: SubagentManagerDeps): SubagentManage
         }
       }
 
-      return formatAgentResults(selected.map((record) => ({ ...record })))
+      const collectedIds = new Set(takeCompleted(selected).map((record) => record.id))
+      const uncollected = selected.filter(
+        (record) => record.status !== 'completed' || collectedIds.has(record.id),
+      )
+      if (selected.length === 0) return 'no subagents have been spawned yet'
+      return uncollected.length > 0
+        ? formatAgentResults(uncollected.map((record) => ({ ...record })))
+        : 'no uncollected subagent reports'
+    },
+
+    collectCompleted(turnId) {
+      return takeCompleted([...records.values()], turnId).map((record) => ({
+        agentId: record.id,
+        formattedReport: formatAgentResults([{ ...record }]),
+      }))
     },
 
     list: () => [...records.values()].map((record) => ({ ...record })),
