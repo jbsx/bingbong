@@ -217,6 +217,32 @@ function list(value: unknown): string {
   return Array.isArray(value) ? value.map(str).join(', ') : str(value)
 }
 
+/**
+ * One vision attempt's milestones (#204), in the order they happen. A
+ * milestone that never happened is left out rather than printed as a zero —
+ * the gap between `resp` and `first-byte`, or the absence of both, is what
+ * separates a queued provider from a silent one.
+ */
+function attemptOf(value: unknown): string {
+  if (typeof value !== 'object' || value === null) return ''
+  const attempt = value as Record<string, unknown>
+  const at = (label: string, ms: unknown): string => (typeof ms === 'number' ? `${label} ${Math.round(ms)}ms` : '')
+  return [
+    str(attempt.ending),
+    at('resp', attempt.responseAtMs),
+    typeof attempt.responseStatus === 'number' ? `http ${str(attempt.responseStatus)}` : '',
+    at('byte', attempt.firstByteAtMs),
+    at('reasoning', attempt.firstReasoningAtMs),
+    at('content', attempt.firstContentAtMs),
+    at('end', attempt.streamEndAtMs),
+    `limits ${str(attempt.firstTokenLimitMs)}/${str(attempt.wholeLookLimitMs)} ms`,
+    `${str(attempt.progressEvents)}/${str(attempt.streamEvents)} events`,
+    typeof attempt.malformedEvents === 'number' && attempt.malformedEvents > 0 ? `${str(attempt.malformedEvents)} malformed` : '',
+  ]
+    .filter((part) => part !== '')
+    .join(', ')
+}
+
 function countsOf(value: unknown): string {
   if (typeof value !== 'object' || value === null) return ''
   const counts = value as Record<string, unknown>
@@ -262,8 +288,12 @@ function summarizeTrace(kind: string, record: Record<string, unknown>): string {
       return `${str(record.reason)}: ${countsOf(record.counts)}`
     case 'fault':
       return `${str(record.site)}: ${str(record.message)}`
-    case 'vision_request':
-      return `${str(record.capability)} (${str(record.reason)}) ${str(record.outcome)} in ${str(record.durationMs)} ms${record.message !== undefined ? `: ${str(record.message)}` : ''}`
+    case 'vision_request': {
+      // The attempt's milestones read beside the outcome (#204): an eight-second
+      // failure says which deadline fired and how far the exchange actually got.
+      const attempt = attemptOf(record.attempt)
+      return `${str(record.capability)} (${str(record.reason)}) ${str(record.outcome)} in ${str(record.durationMs)} ms${attempt === '' ? '' : ` [${attempt}]`}${record.message !== undefined ? `: ${str(record.message)}` : ''}`
+    }
     case 'vision_budget':
       return `${str(record.reason)} ${record.granted === true ? 'granted' : `refused: ${str(record.refusal)}`}`
     case 'voice_wake':

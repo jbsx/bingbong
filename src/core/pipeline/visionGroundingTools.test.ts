@@ -265,6 +265,50 @@ describe('vision grounding through the command pipeline', () => {
     ])
   })
 
+  it("keeps what the adapter observed on the Look's own record, and records nothing when nothing traces (#204)", async () => {
+    const browser = new FakeBrowser()
+    const vision = new FakeVision()
+    vision.descriptions = ['A cookie banner covers the page.', 'A cookie banner covers the page.']
+    vision.observation = {
+      ending: 'answered',
+      firstTokenLimitMs: 8_000,
+      wholeLookLimitMs: 15_000,
+      model: 'GLM-4.6V',
+      maxTokens: 128,
+      thinking: 'disabled',
+      responseAtMs: 180,
+      responseStatus: 200,
+      firstByteAtMs: 240,
+      firstContentAtMs: 260,
+      firstTokenKind: 'content',
+      streamEndAtMs: 900,
+      settledAtMs: 901,
+      bytesRead: 512,
+      streamEvents: 6,
+      progressEvents: 5,
+      malformedEvents: 0,
+      sawDone: true,
+      reasoningChars: 0,
+      contentChars: 32,
+    }
+    const trace: VisionTraceEvent[] = []
+    const look = createVisionGroundingTools(browser, vision).find((candidate) => candidate.name === 'look')
+    if (!look) throw new Error('look tool is missing')
+
+    await look.execute(
+      { id: 'l1', name: 'look', args: {} },
+      { clock: new FakeClock(), traceVision: (event) => trace.push(event) },
+    )
+
+    expect(trace).toEqual([expect.objectContaining({ kind: 'vision_request', outcome: 'ok', attempt: vision.observation })])
+
+    // The same Look with nothing tracing: the answer is identical and no
+    // record exists at all — diagnostics stay opt-in (ADR 0031).
+    const answer = await look.execute({ id: 'l2', name: 'look', args: {} }, { clock: new FakeClock() })
+    expect(answer).toBe('A cookie banner covers the page.')
+    expect(trace).toHaveLength(1)
+  })
+
   it('states a region at the zoom cap without inviting a smaller one (#195)', async () => {
     const browser = new FakeBrowser()
     const vision = new FakeVision()

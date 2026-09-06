@@ -20,6 +20,8 @@ import type {
   VisionLocateRequest,
   VisionLocation,
   VisionModel,
+  VisionAttemptObservation,
+  VisionAttemptObserver,
 } from '../ports/vision'
 import type { PipelineEvent } from '../pipeline/events'
 import type { SubagentManager, SubagentRecord, SubagentStatus } from '../agent/subagentManager'
@@ -438,20 +440,35 @@ export class StallingBrowser extends FakeBrowser {
 }
 
 export class FakeVision implements VisionModel {
-  readonly locateRequests: VisionLocateRequest[] = []
-  readonly describeRequests: VisionDescribeRequest[] = []
+  readonly locateRequests: Omit<VisionLocateRequest, 'observe'>[] = []
+  readonly describeRequests: Omit<VisionDescribeRequest, 'observe'>[] = []
   location: VisionLocation = { x: 0, y: 0 }
   description = 'A cookie popup covers the page.'
   descriptions: string[] = []
   failWith: Error | null = null
+  /**
+   * What this fake reports observing, if anything (#204). A real adapter
+   * reports at settlement; setting this makes the fake do the same, so a
+   * caller's record can be asserted end to end. The observer itself is kept
+   * out of the recorded requests: it is plumbing, not an ask.
+   */
+  observation: VisionAttemptObservation | null = null
+
+  private report(observe: VisionAttemptObserver | undefined): void {
+    if (observe !== undefined && this.observation !== null) observe(this.observation)
+  }
 
   async locate(request: VisionLocateRequest): Promise<VisionLocation> {
-    this.locateRequests.push(request)
+    const { observe, ...asked } = request
+    this.locateRequests.push(asked)
+    this.report(observe)
     return this.location
   }
 
   async describe(request: VisionDescribeRequest): Promise<string> {
-    this.describeRequests.push(request)
+    const { observe, ...asked } = request
+    this.describeRequests.push(asked)
+    this.report(observe)
     if (this.failWith) throw this.failWith
     return this.descriptions.shift() ?? this.description
   }

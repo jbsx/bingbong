@@ -111,11 +111,12 @@ export function createLookTool(browser: BrowserController, vision: VisionDescrib
           ...(question !== undefined ? { question } : {}),
           ...(crop !== undefined ? { region: formatLookRegion(crop.region), scale: crop.scale } : {}),
         },
-        async () =>
+        async (observe) =>
           vision.describe({
             image: await browser.screenshot(crop === undefined ? undefined : screenshotOptionsOf(crop)),
             prompt: question === undefined ? LOOK_PROMPT : questionedPrompt(question, crop),
             ...(question !== undefined ? { maxTokens: QUESTIONED_LOOK_MAX_TOKENS } : {}),
+            observe,
           }),
         (answer) => answer,
       )
@@ -153,11 +154,12 @@ export function createVisionGroundingTools(browser: BrowserController & VisualGr
         const location = await tracedVisionRequest(
           visionSeam(context),
           { capability: 'locate', reason: 'ground_visual', target },
-          async () =>
+          async (observe) =>
             vision.locate({
               image: await browser.screenshot(),
               target,
               viewport: snapshot.viewport,
+              observe,
             }),
           (point) => `${point.x},${point.y}`,
         )

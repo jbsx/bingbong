@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { VisionDescribeRequest, VisionLocateRequest } from '../../core/ports/vision'
+import type { VisionAttemptObservation, VisionDescribeRequest, VisionLocateRequest } from '../../core/ports/vision'
 import { AUTO_VISION_DESCRIBE_MS, VisionDeadlineError } from '../../core/ports/vision'
 import { createZaiVisionApi, DESCRIBE_MAX_TOKENS, DESCRIBE_TIMEOUT_MS, LOCATE_MAX_TOKENS, resolveVisionTimeouts } from './createZaiVisionApi'
 
@@ -399,5 +399,366 @@ describe('createZaiVisionApi', () => {
     expect(calls).toEqual([])
     await expect(vision.locate(locateRequest)).rejects.toThrow(/ran out of points/)
     await expect(vision.describe(describeRequest)).rejects.toThrow(/ran out of descriptions/)
+  })
+})
+
+/**
+ * The vision attempt fixtures (#204). Each one drives the adapter with a
+ * locally injected stream and asserts both what the caller got back and what
+ * the attempt reported observing — the two together are the diagnosis. What
+ * they establish is local: how this adapter parses and times a stream it is
+ * handed. They say nothing about why a provider was slow in the captured
+ * failures, and nothing about whether live vision has recovered.
+ */
+describe('createZaiVisionApi: vision attempt records', () => {
+  function observer(): { observations: VisionAttemptObservation[]; observe: (o: VisionAttemptObservation) => void } {
+    const observations: VisionAttemptObservation[] = []
+    return { observations, observe: (o) => observations.push(o) }
+  }
+
+  /** The one observation of an attempt, failing loudly if it never reported. */
+  function only(observations: VisionAttemptObservation[]): VisionAttemptObservation {
+    expect(observations).toHaveLength(1)
+    return observations[0] as VisionAttemptObservation
+  }
+
+  it('records no response milestone at all when no response ever arrives', async () => {
+    const { observations, observe } = observer()
+    const vision = createZaiVisionApi({
+      getEnv: () => ({ ...configuredEnv }),
+      // The provider never answers: no headers, no body, nothing.
+      fetch: () => new Promise<Response>(() => {}),
+      timeoutMs: { describeMs: 10_000, locateMs: 40_000, firstTokenMs: 30 },
+    })
+
+    await expect(vision.describe({ ...describeRequest, observe })).rejects.toBeInstanceOf(VisionDeadlineError)
+
+    const attempt = only(observations)
+    expect(attempt.ending).toBe('first_token_deadline')
+    // Absent, not zero: nothing was observed, and nothing is guessed.
+    expect(attempt).not.toHaveProperty('responseAtMs')
+    expect(attempt).not.toHaveProperty('responseStatus')
+    expect(attempt).not.toHaveProperty('firstByteAtMs')
+    expect(attempt).not.toHaveProperty('firstTokenKind')
+    expect(attempt.bytesRead).toBe(0)
+    expect(attempt.streamEvents).toBe(0)
+    expect(attempt.firstTokenLimitMs).toBe(30)
+    expect(attempt.wholeLookLimitMs).toBe(10_000)
+  })
+
+  it('separates a response that arrived from progress that did not', async () => {
+    const { observations, observe } = observer()
+    const vision = createZaiVisionApi({
+      getEnv: () => ({ ...configuredEnv }),
+      // Headers, a keep-alive comment and a role-only frame: bytes flow, no
+      // generation content ever does.
+      fetch: async () =>
+        timedSseResponse([
+          { afterMs: 1, data: ': keep-alive\n\n' },
+          { afterMs: 1, data: sseChunk({ role: 'assistant' }) },
+          { afterMs: 5_000, data: SSE_DONE },
+        ]),
+      timeoutMs: { describeMs: 10_000, locateMs: 40_000, firstTokenMs: 60 },
+    })
+
+    await expect(vision.describe({ ...describeRequest, observe })).rejects.toMatchObject({
+      name: 'VisionDeadlineError',
+      message: expect.stringContaining('did not begin answering'),
+    })
+
+    const attempt = only(observations)
+    expect(attempt.ending).toBe('first_token_deadline')
+    expect(attempt.responseStatus).toBe(200)
+    expect(typeof attempt.responseAtMs).toBe('number')
+    expect(typeof attempt.firstByteAtMs).toBe('number')
+    expect(attempt.bytesRead).toBeGreaterThan(0)
+    // One parsed event, none of it recognized generation content.
+    expect(attempt.streamEvents).toBe(1)
+    expect(attempt.progressEvents).toBe(0)
+    expect(attempt.malformedEvents).toBe(0)
+    expect(attempt).not.toHaveProperty('firstReasoningAtMs')
+    expect(attempt).not.toHaveProperty('firstContentAtMs')
+    expect(attempt).not.toHaveProperty('streamEndAtMs')
+    expect(attempt.sawDone).toBe(false)
+  })
+
+  it('reasoning satisfies the first-token window and is recorded as reasoning, not as answer content', async () => {
+    const { observations, observe } = observer()
+    const vision = createZaiVisionApi({
+      getEnv: () => ({ ...configuredEnv }),
+      fetch: async () =>
+        timedSseResponse([
+          { afterMs: 5, data: sseChunk({ reasoning_content: 'scanning the thumbnail…' }) },
+          { afterMs: 60, data: sseChunk({ content: 'A cookie banner ' }) },
+          { afterMs: 10, data: sseChunk({ content: 'covers the page.' }) },
+          { afterMs: 5, data: SSE_DONE },
+        ]),
+      // The window would have fired at 40ms had reasoning not counted.
+      timeoutMs: { describeMs: 5_000, locateMs: 20_000, firstTokenMs: 40 },
+    })
+
+    // The answer is the content alone: reasoning kept the Look alive, it did
+    // not answer the question.
+    await expect(vision.describe({ ...describeRequest, observe })).resolves.toBe('A cookie banner covers the page.')
+
+    const attempt = only(observations)
+    expect(attempt.ending).toBe('answered')
+    expect(attempt.firstTokenKind).toBe('reasoning')
+    expect(attempt.firstReasoningAtMs).toBeLessThan(attempt.firstContentAtMs as number)
+    expect(attempt.reasoningChars).toBe('scanning the thumbnail…'.length)
+    expect(attempt.contentChars).toBe('A cookie banner covers the page.'.length)
+    expect(attempt.progressEvents).toBe(3)
+    expect(attempt.sawDone).toBe(true)
+  })
+
+  it('records a slow but valid answer as answered, milestones in the order they happened', async () => {
+    const { observations, observe } = observer()
+    const vision = createZaiVisionApi({
+      getEnv: () => ({ ...configuredEnv }),
+      fetch: async () =>
+        timedSseResponse([
+          { afterMs: 10, data: sseChunk({ content: 'A cookie ' }) },
+          { afterMs: 50, data: sseChunk({ content: 'banner.' }) },
+          { afterMs: 10, data: SSE_DONE },
+        ]),
+      timeoutMs: { describeMs: 5_000, locateMs: 20_000, firstTokenMs: 40 },
+    })
+
+    await expect(vision.describe({ ...describeRequest, observe })).resolves.toBe('A cookie banner.')
+
+    const attempt = only(observations)
+    expect(attempt.ending).toBe('answered')
+    expect(attempt.firstTokenKind).toBe('content')
+    expect(attempt).not.toHaveProperty('firstReasoningAtMs')
+    const { responseAtMs, firstByteAtMs, firstContentAtMs, streamEndAtMs, settledAtMs } = attempt
+    expect(responseAtMs).toBeLessThanOrEqual(firstByteAtMs as number)
+    expect(firstByteAtMs).toBeLessThanOrEqual(firstContentAtMs as number)
+    expect(firstContentAtMs).toBeLessThanOrEqual(streamEndAtMs as number)
+    expect(streamEndAtMs).toBeLessThanOrEqual(settledAtMs)
+  })
+
+  it('records a mid-stream stall as the whole-Look cap, with the content it did see', async () => {
+    const { observations, observe } = observer()
+    const vision = createZaiVisionApi({
+      getEnv: () => ({ ...configuredEnv }),
+      fetch: async () =>
+        new Response(
+          new ReadableStream({
+            start(controller) {
+              controller.enqueue(new TextEncoder().encode(sseChunk({ content: 'partial' })))
+              // Tokens flowed, then the stream stalls forever.
+            },
+          }),
+          { status: 200 },
+        ),
+      timeoutMs: { describeMs: 60, locateMs: 240, firstTokenMs: 10_000 },
+    })
+
+    await expect(vision.describe({ ...describeRequest, observe })).rejects.toMatchObject({
+      name: 'VisionDeadlineError',
+      phase: 'whole-look',
+      message: 'Vision request timed out after 60ms',
+    })
+
+    const attempt = only(observations)
+    expect(attempt.ending).toBe('whole_look_deadline')
+    expect(attempt.firstTokenKind).toBe('content')
+    expect(attempt.contentChars).toBe('partial'.length)
+    // The stream never ended and never said DONE — that is the stall.
+    expect(attempt).not.toHaveProperty('streamEndAtMs')
+    expect(attempt.sawDone).toBe(false)
+    expect(attempt.wholeLookLimitMs).toBe(60)
+  })
+
+  it('records a completed but empty stream as an empty completion, not as a deadline', async () => {
+    const { observations, observe } = observer()
+    const vision = createZaiVisionApi({
+      getEnv: () => ({ ...configuredEnv }),
+      fetch: async () => sseResponse([sseChunk({ role: 'assistant' }), SSE_DONE]),
+    })
+
+    await expect(vision.describe({ ...describeRequest, observe })).rejects.toThrow('Vision model returned no content')
+
+    const attempt = only(observations)
+    expect(attempt.ending).toBe('empty_completion')
+    expect(attempt.sawDone).toBe(true)
+    expect(typeof attempt.streamEndAtMs).toBe('number')
+    expect(attempt.streamEvents).toBe(1)
+    expect(attempt.progressEvents).toBe(0)
+    expect(attempt.contentChars).toBe(0)
+    expect(attempt.message).toContain('no content')
+  })
+
+  it('counts supported SSE framing as events and unparseable payloads as malformed', async () => {
+    const { observations, observe } = observer()
+    const whole = `data: ${JSON.stringify({ choices: [{ delta: { content: 'reassembled' } }] })}\n\n${SSE_DONE}`
+    const splitAt = Math.floor(whole.length / 2)
+    const vision = createZaiVisionApi({
+      getEnv: () => ({ ...configuredEnv }),
+      fetch: async () =>
+        sseResponse([
+          ': keep-alive\n',
+          // One payload split across two data: lines of one event.
+          'data: {"choices":\n',
+          'data: [{"delta":{"content":"joined payload"}}]}\n\n',
+          // Content this adapter cannot parse: a finding of its own.
+          'data: {not json at all}\n\n',
+          whole.slice(0, splitAt),
+          whole.slice(splitAt),
+        ]),
+    })
+
+    await expect(vision.describe({ ...describeRequest, observe })).resolves.toBe('joined payloadreassembled')
+
+    const attempt = only(observations)
+    expect(attempt.ending).toBe('answered')
+    expect(attempt.streamEvents).toBe(2)
+    expect(attempt.progressEvents).toBe(2)
+    expect(attempt.malformedEvents).toBe(1)
+    expect(attempt.sawDone).toBe(true)
+  })
+
+  it('records an aborted request as aborted rather than as a failed deadline', async () => {
+    const { observations, observe } = observer()
+    const vision = createZaiVisionApi({
+      getEnv: () => ({ ...configuredEnv }),
+      fetch: async () => {
+        const aborted = new Error('The operation was aborted')
+        aborted.name = 'AbortError'
+        throw aborted
+      },
+      timeoutMs: { describeMs: 5_000, locateMs: 20_000, firstTokenMs: 4_000 },
+    })
+
+    await expect(vision.describe({ ...describeRequest, observe })).rejects.toMatchObject({ name: 'AbortError' })
+
+    const attempt = only(observations)
+    expect(attempt.ending).toBe('aborted')
+    expect(attempt).not.toHaveProperty('responseAtMs')
+  })
+
+  it('records a transport failure as a stream error, and an HTTP status as an HTTP error', async () => {
+    const streamError = observer()
+    const failing = createZaiVisionApi({
+      getEnv: () => ({ ...configuredEnv }),
+      fetch: async () => {
+        throw new Error('socket hang up')
+      },
+    })
+    await expect(failing.describe({ ...describeRequest, observe: streamError.observe })).rejects.toThrow('socket hang up')
+    expect(only(streamError.observations).ending).toBe('stream_error')
+
+    const httpError = observer()
+    const rateLimited = createZaiVisionApi({
+      getEnv: () => ({ ...configuredEnv }),
+      fetch: async () => new Response(JSON.stringify({ error: { message: 'Rate limit exceeded' } }), { status: 429 }),
+    })
+    await expect(rateLimited.describe({ ...describeRequest, observe: httpError.observe })).rejects.toThrow(/429/)
+    const attempt = only(httpError.observations)
+    expect(attempt.ending).toBe('http_error')
+    expect(attempt.responseStatus).toBe(429)
+  })
+
+  it('a stream that settles after the deadline cannot rewrite the record of the attempt that failed', async () => {
+    const { observations, observe } = observer()
+    const vision = createZaiVisionApi({
+      getEnv: () => ({ ...configuredEnv }),
+      // Content arrives well after the first-token window has already fired.
+      fetch: async () =>
+        timedSseResponse([
+          { afterMs: 80, data: sseChunk({ content: 'too late to matter' }) },
+          { afterMs: 5, data: SSE_DONE },
+        ]),
+      timeoutMs: { describeMs: 10_000, locateMs: 40_000, firstTokenMs: 20 },
+    })
+
+    await expect(vision.describe({ ...describeRequest, observe })).rejects.toMatchObject({ phase: 'first-token' })
+    const attempt = only(observations)
+    expect(attempt.ending).toBe('first_token_deadline')
+
+    // Let the late stream run to completion behind the failure.
+    await new Promise((resolve) => setTimeout(resolve, 150))
+
+    // Still one record, and still the record of what the caller saw.
+    expect(observations).toHaveLength(1)
+    expect(attempt.ending).toBe('first_token_deadline')
+    expect(attempt).not.toHaveProperty('firstContentAtMs')
+    expect(attempt.contentChars).toBe(0)
+  })
+
+  it('records the limits and settings in force without credentials, prompt, image, or reasoning text', async () => {
+    const { observations, observe } = observer()
+    const vision = createZaiVisionApi({
+      getEnv: () => ({ ...configuredEnv }),
+      fetch: async () =>
+        sseResponse([sseChunk({ reasoning_content: 'the tier list is unreadable at this size' }), sseChunk({ content: 'ok' }), SSE_DONE]),
+      timeoutMs: { describeMs: 15_000, locateMs: 60_000, firstTokenMs: 8_000 },
+    })
+
+    await vision.describe({ ...describeRequest, maxTokens: 512, lookCapMs: 6_000, observe })
+
+    const attempt = only(observations)
+    expect(attempt).toMatchObject({
+      model: 'GLM-4.6V',
+      maxTokens: 512,
+      thinking: 'disabled',
+      // The advisory cap as asked for, and the deadlines it actually produced.
+      requestedCapMs: 6_000,
+      wholeLookLimitMs: 6_000,
+      firstTokenLimitMs: 3_200,
+    })
+    // Reasoning is counted, never quoted.
+    expect(attempt.reasoningChars).toBe('the tier list is unreadable at this size'.length)
+    const serialized = JSON.stringify(attempt)
+    for (const secret of [
+      'secret-value',
+      describeRequest.prompt,
+      'the tier list is unreadable',
+      Buffer.from(describeRequest.image).toString('base64'),
+    ]) {
+      expect(serialized).not.toContain(secret)
+    }
+  })
+
+  it('records a locate attempt too, and omits a cap the caller never asked for', async () => {
+    const { observations, observe } = observer()
+    const vision = createZaiVisionApi({
+      getEnv: () => ({ ...configuredEnv }),
+      fetch: async () => okResponse('{"x": 340, "y": 220}'),
+      timeoutMs: { describeMs: 15_000, locateMs: 60_000, firstTokenMs: 8_000 },
+    })
+
+    await expect(vision.locate({ ...locateRequest, observe })).resolves.toEqual({ x: 340, y: 220 })
+
+    const attempt = only(observations)
+    expect(attempt).toMatchObject({ ending: 'answered', thinking: 'enabled', maxTokens: LOCATE_MAX_TOKENS, wholeLookLimitMs: 60_000 })
+    expect(attempt).not.toHaveProperty('requestedCapMs')
+  })
+
+  it('never lets a throwing observer fail the Look it describes', async () => {
+    const vision = createZaiVisionApi({
+      getEnv: () => ({ ...configuredEnv }),
+      fetch: async () => okResponse('A cookie banner covers the page.'),
+    })
+
+    await expect(
+      vision.describe({
+        ...describeRequest,
+        observe: () => {
+          throw new Error('dead logs dir')
+        },
+      }),
+    ).resolves.toBe('A cookie banner covers the page.')
+  })
+
+  it('reports nothing for a scripted answer, which never made an attempt', async () => {
+    const { observations, observe } = observer()
+    const vision = createZaiVisionApi({
+      getEnv: () => ({ ...configuredEnv, BINGBONG_VISION_DESCRIPTION_SCRIPT: JSON.stringify(['Scripted state.']) }),
+      fetch: async () => okResponse('unused'),
+    })
+
+    await expect(vision.describe({ ...describeRequest, observe })).resolves.toBe('Scripted state.')
+    expect(observations).toEqual([])
   })
 })

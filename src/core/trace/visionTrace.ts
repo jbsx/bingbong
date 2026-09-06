@@ -16,6 +16,7 @@
 // justified by reaching every `catch {}` in the codebase.
 
 import { VisionDeadlineError } from '../ports/vision'
+import type { VisionAttemptObservation, VisionAttemptObserver, VisionDeadlinePhase } from '../ports/vision'
 import { routeByTurn, type TraceRouteDeps } from './traceRoute'
 import type { RunId, SessionId } from '../session/sessionIdentity'
 
@@ -73,6 +74,20 @@ export interface VisionRequestEvent {
   readonly answer?: string
   /** The failure's message on `deadline` or `error`. */
   readonly message?: string
+  /**
+   * Which deadline a `deadline` outcome breached (#204): the first-token
+   * window it never began answering within, or the whole-Look cap it was
+   * still generating past. Two different failures that used to reach a
+   * reader as one duration and one sentence.
+   */
+  readonly deadlinePhase?: VisionDeadlinePhase
+  /**
+   * What the adapter observed while making the request (#204) — response,
+   * first byte, first recognized reasoning, first answer content, and the
+   * limits in force. Absent when the adapter reported nothing, which is
+   * itself the finding: the request never reached one.
+   */
+  readonly attempt?: VisionAttemptObservation
   /** The delegated worker whose Look this was; absent on the Run's own. */
   readonly agentId?: string
 }
@@ -182,13 +197,19 @@ export interface VisionTraceSeam {
 export async function tracedVisionRequest<T>(
   seam: VisionTraceSeam,
   descriptor: VisionRequestDescriptor,
-  run: () => Promise<T>,
+  run: (observe: VisionAttemptObserver) => Promise<T>,
   answerOf: (value: T) => string,
 ): Promise<T> {
   const trace = seam.trace
-  if (trace === undefined) return run()
+  // Nothing is tracing: the request runs with an observer that discards, so
+  // the adapter's diagnostic path costs an untraced Look nothing (#204).
+  if (trace === undefined) return run(() => {})
   const started = seam.now()
-  const settle = (settled: Pick<VisionRequestEvent, 'outcome' | 'answer' | 'answerChars' | 'message'>): void => {
+  // The adapter reports at most once per attempt, and this seam makes one
+  // attempt: the last report wins rather than accumulating a list nobody
+  // would know how to read.
+  let attempt: VisionAttemptObservation | undefined
+  const settle = (settled: Pick<VisionRequestEvent, 'outcome' | 'answer' | 'answerChars' | 'message' | 'deadlinePhase'>): void => {
     trace(
       {
         kind: 'vision_request',
@@ -196,17 +217,24 @@ export async function tracedVisionRequest<T>(
         ...(seam.agentId !== undefined ? { agentId: seam.agentId } : {}),
         durationMs: seam.now() - started,
         ...settled,
+        ...(attempt === undefined ? {} : { attempt }),
       },
       seam.ids,
     )
   }
   try {
-    const value = await run()
+    const value = await run((observation) => {
+      attempt = observation
+    })
     settle({ outcome: 'ok', ...tracedAnswer(answerOf(value)) })
     return value
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
-    settle({ outcome: error instanceof VisionDeadlineError ? 'deadline' : 'error', message })
+    settle({
+      outcome: error instanceof VisionDeadlineError ? 'deadline' : 'error',
+      message,
+      ...(error instanceof VisionDeadlineError ? { deadlinePhase: error.phase } : {}),
+    })
     throw error
   }
 }

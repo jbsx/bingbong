@@ -1,6 +1,12 @@
 import { resolveModelEndpoint } from '../../core/agent/modelRouting'
 import { VisionDeadlineError } from '../../core/ports/vision'
-import type { VisionLocation, VisionModel } from '../../core/ports/vision'
+import type {
+  VisionAttemptEnding,
+  VisionAttemptObservation,
+  VisionAttemptObserver,
+  VisionLocation,
+  VisionModel,
+} from '../../core/ports/vision'
 import { reportFault } from '../../core/trace/fault'
 
 /**
@@ -120,41 +126,69 @@ function createScriptedQueue<T>(name: string, exhaustedMessage: string, validate
 }
 
 /**
- * Reads an OpenAI-compatible SSE stream, returning the accumulated content.
- * `onFirstToken` fires once — on the first model token of any kind (content
- * or reasoning) — because that is the evidence the exchange is generating
- * rather than hung (ADR 0016). Parses per the SSE event model: `data:` lines
- * of one event join with newlines before JSON parsing, so a payload the
- * provider split across lines is not silently dropped.
+ * What one attempt observed happening on the wire (#204). The adapter turns
+ * these into milestones; the reader stays a reader. `delta` is the signal the
+ * Vision Deadline has always keyed off — an event carrying recognized
+ * reasoning or content text — so recording it changes nothing about which
+ * events satisfy the deadline, only whether anyone can see which ones did.
  */
-async function readSseStream(response: Response, onFirstToken: () => void): Promise<string> {
+export type VisionStreamSignal =
+  /** A body chunk arrived. */
+  | { readonly kind: 'bytes'; readonly bytes: number }
+  /** A parsed event carried recognized generation text. */
+  | { readonly kind: 'delta'; readonly reasoningChars: number; readonly contentChars: number }
+  /** A parsed event carried no recognized reasoning or content. */
+  | { readonly kind: 'unrecognized' }
+  /** A payload this adapter could not parse. */
+  | { readonly kind: 'malformed' }
+  /** The `[DONE]` frame arrived. */
+  | { readonly kind: 'done' }
+  /** The body stream ended. */
+  | { readonly kind: 'end' }
+
+/**
+ * Reads an OpenAI-compatible SSE stream, returning the accumulated content.
+ * `onSignal` fires as the stream is consumed — the first `delta` is the
+ * evidence the exchange is generating rather than hung (ADR 0016), and the
+ * rest is what the attempt observed on the way (#204). Parses per the SSE
+ * event model: `data:` lines of one event join with newlines before JSON
+ * parsing, so a payload the provider split across lines is not silently
+ * dropped.
+ */
+async function readSseStream(response: Response, onSignal: (signal: VisionStreamSignal) => void): Promise<string> {
   const reader = response.body?.getReader()
   if (!reader) throw new Error('Vision response had no body')
   const decoder = new TextDecoder()
   let buffer = ''
   let dataLines: string[] = []
   let content = ''
-  let sawToken = false
   const dispatchEvent = (): void => {
     if (dataLines.length === 0) return
     const payload = dataLines.join('\n').trim()
     dataLines = []
-    if (payload === '' || payload === '[DONE]') return
+    if (payload === '') return
+    if (payload === '[DONE]') {
+      onSignal({ kind: 'done' })
+      return
+    }
     let parsed: unknown
     try {
       parsed = JSON.parse(payload)
     } catch (error) {
       reportFault('vision.createZaiVisionApi.readSseStream', error)
+      // Unrecognized stream content is a finding, not silence (#204).
+      onSignal({ kind: 'malformed' })
       return
     }
     const delta = (parsed as { choices?: { delta?: { content?: unknown; reasoning_content?: unknown } }[] })
       .choices?.[0]?.delta
     const text = typeof delta?.content === 'string' ? delta.content : ''
     const reasoning = typeof delta?.reasoning_content === 'string' ? delta.reasoning_content : ''
-    if (!sawToken && (text !== '' || reasoning !== '')) {
-      sawToken = true
-      onFirstToken()
+    if (text === '' && reasoning === '') {
+      onSignal({ kind: 'unrecognized' })
+      return
     }
+    onSignal({ kind: 'delta', reasoningChars: reasoning.length, contentChars: text.length })
     content += text
   }
   const consumeLine = (line: string): void => {
@@ -170,6 +204,7 @@ async function readSseStream(response: Response, onFirstToken: () => void): Prom
   for (;;) {
     const { done, value } = await reader.read()
     if (done) break
+    onSignal({ kind: 'bytes', bytes: value.byteLength })
     buffer += decoder.decode(value, { stream: true })
     let newline = buffer.indexOf('\n')
     while (newline !== -1) {
@@ -180,7 +215,156 @@ async function readSseStream(response: Response, onFirstToken: () => void): Prom
   }
   consumeLine(buffer.replace(/\r$/, ''))
   dispatchEvent()
+  onSignal({ kind: 'end' })
   return content
+}
+
+/** The endpoint answered with a non-2xx status. Typed so the attempt record
+ * can say so without reading its own message back (#204). */
+class VisionHttpError extends Error {}
+
+/** The stream completed carrying no answer content. */
+class VisionEmptyCompletionError extends Error {}
+
+/** What an attempt is asked to record about itself, beyond what it observes. */
+interface AttemptRecorderInput {
+  readonly firstTokenLimitMs: number
+  readonly wholeLookLimitMs: number
+  readonly requestedCapMs?: number | undefined
+  readonly model: string
+  readonly maxTokens: number
+  readonly thinking: 'enabled' | 'disabled'
+  /** Milliseconds since the request was sent. */
+  since(): number
+  readonly observe?: VisionAttemptObserver | undefined
+}
+
+interface AttemptRecorder {
+  /** Response headers arrived. */
+  response(status: number): void
+  /** One thing the stream did. */
+  signal(signal: VisionStreamSignal): void
+  /** Whether the first-token window has been satisfied. */
+  sawFirstToken(): boolean
+  /** Reports the attempt once, at settlement. Later calls are ignored. */
+  emit(ending: VisionAttemptEnding, message?: string): void
+}
+
+/**
+ * Collects one attempt's milestones and reports them exactly once (#204).
+ *
+ * Once, because a Look that already failed its deadline can still have a
+ * stream arrive behind it: the record describes the attempt as its caller
+ * saw it settle, and a late frame cannot rewrite that. The report is a
+ * snapshot for the same reason. Absent fields are absent on purpose — a
+ * milestone that never happened is never guessed at.
+ */
+function createAttemptRecorder(input: AttemptRecorderInput): AttemptRecorder {
+  let responseAtMs: number | undefined
+  let responseStatus: number | undefined
+  let firstByteAtMs: number | undefined
+  let firstReasoningAtMs: number | undefined
+  let firstContentAtMs: number | undefined
+  let firstTokenKind: 'reasoning' | 'content' | undefined
+  let streamEndAtMs: number | undefined
+  let bytesRead = 0
+  let streamEvents = 0
+  let progressEvents = 0
+  let malformedEvents = 0
+  let sawDone = false
+  let reasoningChars = 0
+  let contentChars = 0
+  let emitted = false
+  return {
+    response(status) {
+      if (responseAtMs === undefined) responseAtMs = input.since()
+      responseStatus = status
+    },
+    signal(signal) {
+      switch (signal.kind) {
+        case 'bytes':
+          if (firstByteAtMs === undefined) firstByteAtMs = input.since()
+          bytesRead += signal.bytes
+          return
+        case 'delta': {
+          streamEvents += 1
+          progressEvents += 1
+          const at = input.since()
+          // The kind that satisfied the window. An event carrying both is
+          // credited to reasoning: providers emit it first, and the two
+          // cannot be ordered inside one frame.
+          if (firstTokenKind === undefined) firstTokenKind = signal.reasoningChars > 0 ? 'reasoning' : 'content'
+          if (signal.reasoningChars > 0 && firstReasoningAtMs === undefined) firstReasoningAtMs = at
+          if (signal.contentChars > 0 && firstContentAtMs === undefined) firstContentAtMs = at
+          reasoningChars += signal.reasoningChars
+          contentChars += signal.contentChars
+          return
+        }
+        case 'unrecognized':
+          streamEvents += 1
+          return
+        case 'malformed':
+          malformedEvents += 1
+          return
+        case 'done':
+          sawDone = true
+          return
+        case 'end':
+          if (streamEndAtMs === undefined) streamEndAtMs = input.since()
+      }
+    },
+    sawFirstToken() {
+      return firstTokenKind !== undefined
+    },
+    emit(ending, message) {
+      if (emitted) return
+      emitted = true
+      const observe = input.observe
+      if (observe === undefined) return
+      const observation: VisionAttemptObservation = {
+        ending,
+        firstTokenLimitMs: input.firstTokenLimitMs,
+        wholeLookLimitMs: input.wholeLookLimitMs,
+        ...(input.requestedCapMs === undefined ? {} : { requestedCapMs: input.requestedCapMs }),
+        model: input.model,
+        maxTokens: input.maxTokens,
+        thinking: input.thinking,
+        ...(responseAtMs === undefined ? {} : { responseAtMs }),
+        ...(responseStatus === undefined ? {} : { responseStatus }),
+        ...(firstByteAtMs === undefined ? {} : { firstByteAtMs }),
+        ...(firstReasoningAtMs === undefined ? {} : { firstReasoningAtMs }),
+        ...(firstContentAtMs === undefined ? {} : { firstContentAtMs }),
+        ...(firstTokenKind === undefined ? {} : { firstTokenKind }),
+        ...(streamEndAtMs === undefined ? {} : { streamEndAtMs }),
+        settledAtMs: input.since(),
+        bytesRead,
+        streamEvents,
+        progressEvents,
+        malformedEvents,
+        sawDone,
+        reasoningChars,
+        contentChars,
+        ...(message === undefined ? {} : { message }),
+      }
+      try {
+        observe(observation)
+      } catch (error) {
+        // A diagnostic must never fail the Look it describes.
+        reportFault('vision.createZaiVisionApi.observe', error)
+      }
+    },
+  }
+}
+
+/** How the attempt ended, from what it threw — never from its duration. */
+function endingOf(error: unknown): VisionAttemptEnding {
+  if (error instanceof VisionDeadlineError) {
+    return error.phase === 'first-token' ? 'first_token_deadline' : 'whole_look_deadline'
+  }
+  if (error instanceof VisionHttpError) return 'http_error'
+  if (error instanceof VisionEmptyCompletionError) return 'empty_completion'
+  if (error instanceof Error && error.name === 'AbortError') return 'aborted'
+  return 'stream_error'
 }
 
 export function createZaiVisionApi(deps: ZaiVisionApiDeps): VisionModel {
@@ -194,7 +378,16 @@ export function createZaiVisionApi(deps: ZaiVisionApiDeps): VisionModel {
   async function complete(
     image: Uint8Array,
     prompt: string,
-    options: { thinking: 'enabled' | 'disabled'; maxTokens: number; timeoutMs: number; firstTokenMs: number },
+    options: {
+      thinking: 'enabled' | 'disabled'
+      maxTokens: number
+      timeoutMs: number
+      firstTokenMs: number
+      /** The advisory cap the caller asked for, before clamping (#204). */
+      requestedCapMs?: number | undefined
+      /** Where this attempt reports its milestones (#204). */
+      observe?: VisionAttemptObserver | undefined
+    },
   ): Promise<string> {
     const endpoint = resolveModelEndpoint(deps.getEnv(), 'vision')
     const body = {
@@ -219,13 +412,25 @@ export function createZaiVisionApi(deps: ZaiVisionApiDeps): VisionModel {
     // fails immediately; once tokens flow, only the whole-Look cap bounds
     // the rest — total wall-clock never exceeds the per-capability cap.
     const firstTokenMs = Math.min(options.firstTokenMs, options.timeoutMs)
-    let firstTokenSeen = false
     let firstTokenTimer: ReturnType<typeof setTimeout> | undefined
     let wholeLookTimer: ReturnType<typeof setTimeout> | undefined
     const controller = new AbortController()
+    // The attempt's own record (#204). It observes; it never decides — the
+    // deadlines below fire off the same first `delta` they always have.
+    const startedAt = Date.now()
+    const attempt = createAttemptRecorder({
+      firstTokenLimitMs: firstTokenMs,
+      wholeLookLimitMs: options.timeoutMs,
+      requestedCapMs: options.requestedCapMs,
+      model: endpoint.model,
+      maxTokens: options.maxTokens,
+      thinking: options.thinking,
+      since: () => Date.now() - startedAt,
+      observe: options.observe,
+    })
     const deadline = new Promise<never>((_, reject) => {
       firstTokenTimer = setTimeout(() => {
-        if (!firstTokenSeen) reject(new VisionDeadlineError(firstTokenMs, 'first-token'))
+        if (!attempt.sawFirstToken()) reject(new VisionDeadlineError(firstTokenMs, 'first-token'))
       }, firstTokenMs)
       wholeLookTimer = setTimeout(() => reject(new VisionDeadlineError(options.timeoutMs)), options.timeoutMs)
     })
@@ -236,18 +441,24 @@ export function createZaiVisionApi(deps: ZaiVisionApiDeps): VisionModel {
         body: JSON.stringify(body),
         signal: controller.signal,
       })
-      if (!response.ok) throw new Error(`Vision request failed (HTTP ${await readError(response)})`)
-      const content = await readSseStream(response, () => {
-        firstTokenSeen = true
-        clearTimeout(firstTokenTimer)
+      attempt.response(response.status)
+      if (!response.ok) throw new VisionHttpError(`Vision request failed (HTTP ${await readError(response)})`)
+      const content = await readSseStream(response, (signal) => {
+        attempt.signal(signal)
+        if (signal.kind === 'delta') clearTimeout(firstTokenTimer)
       })
       if (content.trim() === '') {
-        throw new Error('Vision model returned no content')
+        throw new VisionEmptyCompletionError('Vision model returned no content')
       }
       return content
     })()
     try {
-      return await Promise.race([exchange, deadline])
+      const answer = await Promise.race([exchange, deadline])
+      attempt.emit('answered')
+      return answer
+    } catch (error) {
+      attempt.emit(endingOf(error), error instanceof Error ? error.message : String(error))
+      throw error
     } finally {
       clearTimeout(firstTokenTimer)
       clearTimeout(wholeLookTimer)
@@ -284,7 +495,13 @@ export function createZaiVisionApi(deps: ZaiVisionApiDeps): VisionModel {
         `Locate ${JSON.stringify(request.target)} in this browser screenshot. ` +
           `The viewport is ${request.viewport.width}x${request.viewport.height} CSS pixels. ` +
           'Return only JSON with the center point in viewport pixels: {"x": number, "y": number}.',
-        { thinking: 'enabled', maxTokens: LOCATE_MAX_TOKENS, timeoutMs: locateMs, firstTokenMs },
+        {
+          thinking: 'enabled',
+          maxTokens: LOCATE_MAX_TOKENS,
+          timeoutMs: locateMs,
+          firstTokenMs,
+          observe: request.observe,
+        },
       )
       return parsePoint(answer, request.viewport.width, request.viewport.height)
     },
@@ -305,6 +522,8 @@ export function createZaiVisionApi(deps: ZaiVisionApiDeps): VisionModel {
         maxTokens: request.maxTokens ?? DESCRIBE_MAX_TOKENS,
         timeoutMs: capMs,
         firstTokenMs: request.lookCapMs === undefined ? firstTokenMs : advisoryFirstTokenMs,
+        requestedCapMs: request.lookCapMs,
+        observe: request.observe,
       })
     },
   }

@@ -8,7 +8,15 @@ import { describe, expect, it } from 'vitest'
 
 import { createHostTraceWriter, HOST_TRACE_VERSION, type HostTraceRecord } from './hostTrace'
 import { RUN_TRACE_VERSION, type TraceRecord } from './runTrace'
-import { createVisionTraceRouter, tracedAnswer, TRACE_VISION_ANSWER_MAX_CHARS, type VisionRequestEvent } from './visionTrace'
+import {
+  createVisionTraceRouter,
+  tracedAnswer,
+  tracedVisionRequest,
+  TRACE_VISION_ANSWER_MAX_CHARS,
+  type VisionRequestEvent,
+  type VisionTraceEvent,
+} from './visionTrace'
+import { VisionDeadlineError, type VisionAttemptObservation } from '../ports/vision'
 import type { SessionId } from '../session/sessionIdentity'
 
 const SESSION = 'session-1' as SessionId
@@ -124,5 +132,142 @@ describe('tracedAnswer', () => {
       answer: 'x'.repeat(TRACE_VISION_ANSWER_MAX_CHARS),
       answerChars: TRACE_VISION_ANSWER_MAX_CHARS + 500,
     })
+  })
+})
+
+
+/**
+ * What one attempt reported observing (#204). A whole-Look breach that got
+ * headers, a first byte and reasoning, but never an answer.
+ */
+const ATTEMPT: VisionAttemptObservation = {
+  ending: 'whole_look_deadline',
+  firstTokenLimitMs: 8_000,
+  wholeLookLimitMs: 15_000,
+  model: 'GLM-4.6V',
+  maxTokens: 128,
+  thinking: 'disabled',
+  responseAtMs: 210,
+  responseStatus: 200,
+  firstByteAtMs: 260,
+  firstReasoningAtMs: 300,
+  firstTokenKind: 'reasoning',
+  settledAtMs: 15_001,
+  bytesRead: 1_204,
+  streamEvents: 12,
+  progressEvents: 9,
+  malformedEvents: 0,
+  sawDone: false,
+  reasoningChars: 240,
+  contentChars: 0,
+  message: 'Vision request timed out after 15000ms',
+}
+
+describe('tracedVisionRequest', () => {
+  function seam(): { events: VisionTraceEvent[]; trace: (event: VisionTraceEvent) => void } {
+    const events: VisionTraceEvent[] = []
+    return { events, trace: (event) => events.push(event) }
+  }
+
+  it('keeps what the attempt observed beside the outcome it produced', async () => {
+    const { events, trace } = seam()
+
+    const failure = await tracedVisionRequest(
+      { trace, ids: { turnId: 'turn-3' }, now: () => NOW },
+      { capability: 'describe', reason: 'look' },
+      async (observe) => {
+        observe(ATTEMPT)
+        throw new VisionDeadlineError(15_000)
+      },
+      (answer: string) => answer,
+    ).catch((error: unknown) => error)
+
+    expect(failure).toBeInstanceOf(VisionDeadlineError)
+    expect(events[0]).toMatchObject({
+      kind: 'vision_request',
+      outcome: 'deadline',
+      // Which deadline, structurally — not a sentence to parse.
+      deadlinePhase: 'whole-look',
+      attempt: ATTEMPT,
+    })
+  })
+
+  it('distinguishes the first-token window from the whole-Look cap', async () => {
+    const { events, trace } = seam()
+
+    await tracedVisionRequest(
+      { trace, now: () => NOW },
+      { capability: 'describe', reason: 'auto_vision', capMs: 6_000 },
+      async () => {
+        throw new VisionDeadlineError(3_200, 'first-token')
+      },
+      (answer: string) => answer,
+    ).catch(() => undefined)
+
+    expect(events[0]).toMatchObject({ outcome: 'deadline', deadlinePhase: 'first-token' })
+  })
+
+  it('leaves the phase off an outcome that was not a deadline', async () => {
+    const { events, trace } = seam()
+
+    await tracedVisionRequest(
+      { trace, now: () => NOW },
+      { capability: 'locate', reason: 'ground_visual', target: 'the play button' },
+      async () => {
+        throw new Error('Vision request failed (HTTP 429: Rate limit exceeded)')
+      },
+      (answer: string) => answer,
+    ).catch(() => undefined)
+
+    expect(events[0]).toMatchObject({ outcome: 'error' })
+    expect(events[0]).not.toHaveProperty('deadlinePhase')
+  })
+
+  it('keeps an attempt record on a Look that answered', async () => {
+    const { events, trace } = seam()
+    const answered: VisionAttemptObservation = { ...ATTEMPT, ending: 'answered', contentChars: 32 }
+
+    await tracedVisionRequest(
+      { trace, now: () => NOW },
+      { capability: 'describe', reason: 'look' },
+      async (observe) => {
+        observe(answered)
+        return 'A cookie banner covers the page.'
+      },
+      (answer: string) => answer,
+    )
+
+    expect(events[0]).toMatchObject({ outcome: 'ok', attempt: answered, answerChars: 32 })
+  })
+
+  it('says nothing about an attempt that reported nothing, rather than inventing one', async () => {
+    const { events, trace } = seam()
+
+    await tracedVisionRequest(
+      { trace, now: () => NOW },
+      { capability: 'describe', reason: 'look' },
+      async () => 'A cookie banner covers the page.',
+      (answer: string) => answer,
+    )
+
+    expect(events[0]).not.toHaveProperty('attempt')
+  })
+
+  it('still runs the request, with an observer that discards, when nothing is tracing', async () => {
+    let observed = 0
+
+    await expect(
+      tracedVisionRequest(
+        { now: () => NOW },
+        { capability: 'describe', reason: 'look' },
+        async (observe) => {
+          observe(ATTEMPT)
+          observed += 1
+          return 'A cookie banner covers the page.'
+        },
+        (answer: string) => answer,
+      ),
+    ).resolves.toBe('A cookie banner covers the page.')
+    expect(observed).toBe(1)
   })
 })

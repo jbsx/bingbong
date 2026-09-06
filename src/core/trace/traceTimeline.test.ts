@@ -253,6 +253,52 @@ describe('buildTraceTimeline', () => {
     expect(entries[1].agentId).toBe('agent-7')
   })
 
+  it('reads a vision attempt as milestones beside the outcome, omitting the ones that never happened (#204)', () => {
+    const timeline = buildTraceTimeline([
+      run({
+        at: T0,
+        turnId: 'turn-1',
+        kind: 'vision_request',
+        capability: 'describe',
+        reason: 'look',
+        durationMs: 8_004,
+        outcome: 'deadline',
+        deadlinePhase: 'first-token',
+        attempt: {
+          ending: 'first_token_deadline',
+          firstTokenLimitMs: 8_000,
+          wholeLookLimitMs: 15_000,
+          model: 'GLM-4.6V',
+          maxTokens: 128,
+          thinking: 'disabled',
+          responseAtMs: 214,
+          responseStatus: 200,
+          firstByteAtMs: 260,
+          settledAtMs: 8_003,
+          bytesRead: 96,
+          streamEvents: 2,
+          progressEvents: 0,
+          malformedEvents: 0,
+          sawDone: false,
+          reasoningChars: 0,
+          contentChars: 0,
+        },
+        message: 'Vision request did not begin answering within 8000ms',
+      }),
+    ])
+
+    const entry = timeline.lanes[0].entries[0]
+    // Headers and a first byte arrived; no recognized generation content ever
+    // did — so no reasoning or content milestone is printed at all.
+    expect(entry.summary).toContain(
+      'describe (look) deadline in 8004 ms [first_token_deadline, resp 214ms, http 200, byte 260ms, limits 8000/15000 ms, 0/2 events]',
+    )
+    expect(entry.summary).not.toContain('reasoning')
+    expect(entry.summary).not.toContain('content ')
+    // The line is a preview; the expander still has every milestone.
+    expect((entry.record as { attempt: { ending: string } }).attempt.ending).toBe('first_token_deadline')
+  })
+
   it('cuts a long summary and keeps the whole record for the expander', () => {
     const text = 'x'.repeat(500)
     const timeline = buildTraceTimeline([

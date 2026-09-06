@@ -880,6 +880,20 @@ capability; once answering has begun, a separate cap bounds the whole Look. A
 safety net against silent endpoint hangs, not a latency target. Breach
 surfaces as a failure plus a Notice, never a silent blind browse.
 
+**Vision Attempt**:
+One request the vision adapter makes, from the moment it is sent to the
+moment it settles for its caller. What it observed on the way — response
+headers, first body byte, first recognized reasoning, first answer content,
+stream end — is recorded as Look Milestones, and how it stopped is one named
+ending, never inferred from its duration (ADR 0040).
+_Avoid_: vision call, request attempt
+
+**Look Milestones**:
+The observable points of one Vision Attempt, each recorded only when it
+actually happened and absent when it did not — the absences are the
+diagnosis. Diagnostics only: they never change which stream events satisfy
+the Vision Deadline, and reasoning is counted, never quoted.
+
 ### Hardware
 
 **Kiosk**:

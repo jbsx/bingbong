@@ -86,13 +86,14 @@ async function autoDescribe(
     const description = await tracedVisionRequest(
       visionSeam(context),
       { capability: 'describe', reason: 'auto_vision', capMs: AUTO_VISION_DESCRIBE_MS },
-      async () =>
+      async (observe) =>
         vision.describe({
           image: await browser.screenshot(),
           prompt: `${AUTO_VISION_PROMPT}\nTrigger: ${reason}.`,
           // Advisory budget (#106, ADR 0016): auto-vision waits less than a
           // model-requested Look; the adapter clamps this against the Look cap.
           lookCapMs: AUTO_VISION_DESCRIBE_MS,
+          observe,
         }),
       (answer) => answer,
     )
