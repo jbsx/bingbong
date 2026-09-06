@@ -525,7 +525,7 @@ export async function runSubagent(deps: RunSubagentDeps, options: RunSubagentOpt
     toolContext,
     decisions,
     interrupts,
-    capabilities: { searchLoopRail: true, noProgressRail: true, deadlineGate: true },
+    capabilities: { searchLoopRail: true, noProgressRail: true, perCallGate: true },
     terminalResult: (_call, outcome) => askEscalation(outcome) !== null,
     blockerEscalation: subagentBlockerEscalation,
     finalizationWording: workerFinalizationWording,
@@ -634,7 +634,12 @@ export async function runSubagent(deps: RunSubagentDeps, options: RunSubagentOpt
       try {
         turn = await llm.complete(answerRequest)
       } catch (error) {
-        reportFault('agent.subagentRunner.answerRound', error, { ...(options.turnId !== undefined ? { turnId: options.turnId } : {}) })
+        // The Report Grace ending aborts this round on purpose (#199), so
+        // it is not a fault — the bounded report below is the designed
+        // outcome. Anything else genuinely failed the reserved round.
+        if (!graceEnded()) {
+          reportFault('agent.subagentRunner.answerRound', error, { ...(options.turnId !== undefined ? { turnId: options.turnId } : {}) })
+        }
         turn = null
       } finally {
         // The reserved Answer round thinks too, and a round that failed is

@@ -60,8 +60,12 @@ export interface ToolRoundCapabilities {
   readonly searchLoopRail: boolean
   /** The no-progress rails (#126): gate ahead of risk, observe after execution, trip mid-round. */
   readonly noProgressRail: boolean
-  /** The per-call deadline gate (#135): expiry checked before every call in the round begins. */
-  readonly deadlineGate: boolean
+  /**
+   * The per-call gate (#135/#199): the epoch's boundaries checked before
+   * every call in the round begins — its deadline, and for a Subagent its
+   * parent Run's Finalization.
+   */
+  readonly perCallGate: boolean
 }
 
 /**
@@ -430,13 +434,15 @@ export function createToolRoundExecutor(config: ToolRoundConfig): ToolRoundExecu
         break
       }
       yield { type: 'tool_call', callId: call.id, name: call.name, args: call.args, at: clock.now() }
-      // The deadline gate (#135): expiry is checked before every call
-      // begins, so no browser, vision, media, delegation, or user-question
-      // action starts past the boundary. An already-executing
-      // non-interruptible action settles once — this check runs between
-      // calls — but every later acquisition sibling in the response is
-      // refused by the closed-tool check below.
-      if (capabilities.deadlineGate) effortEpoch.tripDeadline()
+      // The per-call gate (#135/#199): the epoch's boundaries are checked
+      // before every call begins, so no browser, vision, media,
+      // delegation, or user-question action starts past one — the
+      // deadline for any epoch, and for a Subagent its parent Run's
+      // Finalization too. An already-executing non-interruptible action
+      // settles once — this check runs between calls — but every later
+      // acquisition sibling in the response is refused by the closed-tool
+      // check below.
+      if (capabilities.perCallGate) effortEpoch.tripPerCallGate()
       // The caller's own answer (#116): a Run Plan report never reaches a
       // gate or an execution once the pipeline handled it.
       const intercepted = config.intercept?.(call) ?? null

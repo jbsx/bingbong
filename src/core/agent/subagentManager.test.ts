@@ -763,7 +763,7 @@ describe('the parent Run’s Finalization (#199)', () => {
     mgr.spawn('browse', 'check stock')
     api.tasks.get('a-1')!.resolve('done early')
 
-    expect(mgr.parentFinalizing()).toBe(2)
+    expect(mgr.tellParentFinalizing()).toBe(2)
     expect(api.hooksSeen.get('a-1')!.isParentFinalizing!()).toBe(true)
     expect(api.hooksSeen.get('a-2')!.isParentFinalizing!()).toBe(true)
     // Told, not killed: the worker's own cancellation flag is untouched,
@@ -779,7 +779,7 @@ describe('the parent Run’s Finalization (#199)', () => {
     api.tasks.get('a-1')!.resolve('done early')
 
     return flush().then(() => {
-      expect(mgr.parentFinalizing()).toBe(1)
+      expect(mgr.tellParentFinalizing()).toBe(1)
     })
   })
 
@@ -810,7 +810,7 @@ describe('the parent Run’s Finalization (#199)', () => {
   it('abandons the round of whoever is still running when the grace ends, and they complete', async () => {
     const { mgr, api } = manager()
     mgr.spawn('browse', 'compare vendors')
-    mgr.parentFinalizing()
+    mgr.tellParentFinalizing()
     const hooks = api.hooksSeen.get('a-1')!
     expect(hooks.abandonReport?.aborted).toBe(false)
 
@@ -836,7 +836,7 @@ describe('the parent Run’s Finalization (#199)', () => {
   it('leaves cancellation to decisions — Stop still cancels every worker', async () => {
     const { mgr, api } = manager()
     mgr.spawn('browse', 'compare vendors')
-    mgr.parentFinalizing()
+    mgr.tellParentFinalizing()
 
     // The user's Stop during the grace: a decision, so it cancels.
     expect(mgr.cancelAll()).toBe(1)
@@ -851,7 +851,7 @@ describe('the parent Run’s Finalization (#199)', () => {
   it('gives a worker spawned after a spent grace its own signal', () => {
     const { mgr, api } = manager()
     mgr.spawn('browse', 'compare vendors')
-    mgr.parentFinalizing()
+    mgr.tellParentFinalizing()
     mgr.endReportGrace()
     // A Steering replan reopens work: the fresh worker must not inherit
     // the abandonment of the grace that preceded it.

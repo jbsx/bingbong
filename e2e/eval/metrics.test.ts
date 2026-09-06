@@ -230,8 +230,10 @@ describe('extractMetrics', () => {
       status,
       at,
     })
-    // The parent Run's Finalization cancels unfinished workers: three
-    // delegated and killed must never read as none delegated.
+    // Since #199 Finalization no longer cancels, so these statuses mean a
+    // decision was taken — a Stop, a `cancel_agent`, a Session Reset — or
+    // the worker failed. Three delegated and ended must never read as
+    // none delegated.
     const metrics = extractMetrics(
       [command(0), ended('a-1', 'cancelled', 1), ended('a-2', 'cancelled', 2), ended('a-3', 'failed', 3), done(4)],
       [],

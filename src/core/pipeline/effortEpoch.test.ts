@@ -263,10 +263,10 @@ describe('Effort Epoch (#146, ADR 0027)', () => {
       })
       epoch.beginToolRound()
 
-      expect(epoch.tripDeadline()).toBe(false)
+      expect(epoch.tripPerCallGate()).toBe(false)
       clock.advance(TIER_ACTIVE_WORK_DEADLINES_MS.direct_action)
-      expect(epoch.tripDeadline()).toBe(true)
-      expect(epoch.tripDeadline()).toBe(false)
+      expect(epoch.tripPerCallGate()).toBe(true)
+      expect(epoch.tripPerCallGate()).toBe(false)
       expect(causes).toEqual(['deadline_reached'])
     })
 
@@ -710,13 +710,13 @@ describe('Effort Epoch (#146, ADR 0027)', () => {
         },
       })
       expect(epoch.beginToolRound()).toBe(true)
-      expect(epoch.tripDeadline()).toBe(false)
+      expect(epoch.tripPerCallGate()).toBe(false)
 
       finalizing = true
 
       // Mid-round: the call in flight settled, and every later sibling in
       // the same response is refused by the closed-tool check.
-      expect(epoch.tripDeadline()).toBe(true)
+      expect(epoch.tripPerCallGate()).toBe(true)
       expect(epoch.phase).toEqual({ kind: 'finalizing', cause: 'parent_finalized' })
     })
 
@@ -735,6 +735,28 @@ describe('Effort Epoch (#146, ADR 0027)', () => {
       expect(epoch.decideLoopTop()).toEqual({ kind: 'finalize', cause: 'deadline_reached' })
     })
 
+    it('reports its own spent budget, not the parent, when both hold (#199)', () => {
+      let finalizing = false
+      const epoch = createEffortEpoch({
+        clock: new FakeClock(),
+        subagent: {
+          toolRoundBudget: 1,
+          deadline: { expired: () => false },
+          parentFinalizing: () => finalizing,
+        },
+      })
+      epoch.beginToolRound()
+      // The worker's single round is spent, and the parent finalizes in
+      // the same breath.
+      finalizing = true
+
+      // A worker with no round left stopped for its own reason.
+      // `parent_finalized` belongs to the case the Report Grace exists to
+      // rescue — one cut short with capacity still on the clock — so
+      // letting it win here would inflate that column in the eval.
+      expect(epoch.decideLoopTop()).toEqual({ kind: 'finalize', cause: 'budget_exhausted' })
+    })
+
     it('carries no parent Finalization when the spawn wired none', () => {
       const epoch = createEffortEpoch({
         clock: new FakeClock(),
@@ -742,7 +764,7 @@ describe('Effort Epoch (#146, ADR 0027)', () => {
       })
 
       expect(epoch.decideLoopTop()).toEqual({ kind: 'work' })
-      expect(epoch.tripDeadline()).toBe(false)
+      expect(epoch.tripPerCallGate()).toBe(false)
     })
   })
 

@@ -27,7 +27,7 @@ import { SubagentCancelledError } from './subagentRunner'
 // Browsing workers also carry their parent Run's shared active-work
 // deadline (#120): the workhorse polls it and finalizes when it passes.
 // The parent's Finalization is told rather than enforced (#199, ADR
-// 0035): `parentFinalizing()` marks every running worker so it enters its
+// 0035): `tellParentFinalizing()` marks every running worker so it enters its
 // own Finalization and writes a report, `settledAll()` is what the Run
 // races its Report Grace against, and `endReportGrace()` abandons the
 // round of whoever is still running. None of the three cancels — a
@@ -207,7 +207,7 @@ export interface SubagentManager {
    * acquisition calls, and runs its reserved report round. Returns how
    * many were told.
    */
-  parentFinalizing(): number
+  tellParentFinalizing(): number
   /**
    * Resolves once every worker running at the call has settled (#199) —
    * what the Run races the Report Grace against, so a Finalization with
@@ -454,7 +454,7 @@ export function createSubagentManager(deps: SubagentManagerDeps): SubagentManage
       return cancelAllRunning()
     },
 
-    parentFinalizing() {
+    tellParentFinalizing() {
       let told = 0
       for (const record of records.values()) {
         if (record.status !== 'running') continue

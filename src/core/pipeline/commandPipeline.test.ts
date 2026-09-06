@@ -6719,7 +6719,7 @@ describe('the Report Grace at Finalization (#199)', () => {
       // Stop still cancels, as it always has — it is a decision.
       onAbort: () => { manager.cancelAll() },
       // The wiring #199 replaced: told, not cancelled.
-      onFinalize: () => { manager.parentFinalizing() },
+      onFinalize: () => { manager.tellParentFinalizing() },
       subagentReportsSettled: () => {
         graceStarted = true
         return manager.settledAll()

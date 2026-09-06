@@ -310,7 +310,7 @@ export interface EffortEpoch {
    * any epoch; for a Subagent, its parent Run's Finalization too (ADR
    * 0035) — the in-flight call settles, every later sibling is refused.
    */
-  tripDeadline(): boolean
+  tripPerCallGate(): boolean
   /** Counts a returned tool-bearing decision and latches a pending Finalization round as Answer-only. */
   beginToolRound(): boolean
   /** Latches Finalization entered while executing the round as Answer-only. */
@@ -425,17 +425,18 @@ export function createEffortEpoch(deps: {
     // A Subagent has no hard ceiling of its own, and its shared deadline
     // outranks its remaining rounds (#149/AC2): once the parent Run has
     // stopped working, that deadline — not the Subagent's spent budget —
-    // is why it stops. The parent's Finalization (#199) sits between the
-    // two: it arrives from outside and closes the worker's window now,
-    // where a spent budget only says the worker had no round left anyway.
+    // is why it stops. The parent's Finalization (#199) is last of the
+    // three: a worker whose own rail is already spent stopped for its own
+    // reason, and `parent_finalized` is reserved for the case the Report
+    // Grace exists to rescue — a worker cut short with capacity left.
     const cause: FinalizationCause | null =
       subagent !== undefined
         ? deadlinePassed
           ? 'deadline_reached'
-          : subagent.parentFinalizing?.() === true
-            ? 'parent_finalized'
-            : budgetExhausted
-              ? 'budget_exhausted'
+          : budgetExhausted
+            ? 'budget_exhausted'
+            : subagent.parentFinalizing?.() === true
+              ? 'parent_finalized'
               : null
         : budgetExhausted
           ? 'budget_exhausted'
@@ -468,11 +469,11 @@ export function createEffortEpoch(deps: {
     decideLoopTop,
     enterFinalization,
     tripNoProgress: () => enterFinalization('no_progress'),
-    tripDeadline() {
+    tripPerCallGate() {
       if (phase.kind !== 'working') return false
-      // Same precedence the loop top applies: the deadline is the harder
-      // boundary, and the parent's Finalization is the worker's own door
-      // opening from outside (#199).
+      // The deadline is the harder boundary; the parent's Finalization is
+      // the worker's own door opening from outside (#199). A spent budget
+      // is not checked here — the round it belongs to is already running.
       if (deadlineExpired()) return enterFinalization('deadline_reached')
       if (subagent?.parentFinalizing?.() === true) return enterFinalization('parent_finalized')
       return false

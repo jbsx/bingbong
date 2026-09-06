@@ -149,7 +149,7 @@ export interface CommandPipelineDeps {
    * rail trips the run into Finalization. It no longer cancels delegated
    * work — every live Subagent is *told* the parent is finalizing, so it
    * enters its own Finalization and writes a report. Wired by main to the
-   * subagent rail's parentFinalizing.
+   * subagent rail's tellParentFinalizing.
    */
   onFinalize?(): void
   /**
@@ -530,7 +530,11 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
     // 0035) and consumed at the loop top before the bookkeeping round —
     // so a Steering replan that exits Finalization and a later re-entry
     // each get their own wait, exactly as the entry hook fires twice.
-    let reportGracePending = false
+    // The clock starts at the entry, not at the loop top: the door often
+    // opens mid-round (a no-Progress trip, the deadline timer), and the
+    // round's remaining calls settle before the loop comes back round.
+    // The grace is thirty seconds from when the workers were told.
+    let reportGraceDueAt: number | null = null
     const run: ActiveRun = {
       turnId,
       aborted: false,
@@ -549,7 +553,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
         // clears its own owed budget warning.
         onFinalizationEntered: () => {
           deps.onFinalize?.()
-          reportGracePending = true
+          reportGraceDueAt = clock.now() + reportGraceMs
           notices.clear('run_plan')
         },
       }),
@@ -911,7 +915,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
           toolContext,
           decisions,
           interrupts,
-          capabilities: { searchLoopRail: true, noProgressRail: true, deadlineGate: true },
+          capabilities: { searchLoopRail: true, noProgressRail: true, perCallGate: true },
           intercept: (call) => interceptCall(call),
           // A successful Session Reset (#99) discards the rest of the run.
           terminalResult: (call, outcome) => outcome.ok && toolsByName.get(call.name)?.sessionReset === true,
@@ -968,12 +972,13 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
           // running when the grace elapses has its round abandoned and
           // returns its bounded report, too late for this round's context.
           let graceJustEnded = false
-          if (reportGracePending) {
-            reportGracePending = false
+          if (reportGraceDueAt !== null) {
+            const remainingGraceMs = Math.max(0, reportGraceDueAt - clock.now())
+            reportGraceDueAt = null
             const settled = deps.subagentReportsSettled?.()
             if (settled !== undefined) {
               await new Promise<void>((resolve) => {
-                const cancelTimer = clock.setTimer(reportGraceMs, resolve)
+                const cancelTimer = clock.setTimer(remainingGraceMs, resolve)
                 void settled.then(
                   () => {
                     cancelTimer()

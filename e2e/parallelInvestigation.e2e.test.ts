@@ -11,8 +11,9 @@ import { waitFor } from './waitFor'
 // its 12-Tool-Round leash (a bounded report, never a raw round-limit
 // failure; a scripted thirteenth round proves acquisition stopped at
 // twelve). When the parent Run's own work budget exhausts, Finalization
-// cancels unfinished delegated acquisition — while a completed, collected
-// report still feeds the reserved Answer round.
+// closes unfinished delegated acquisition and waits a Report Grace for
+// each live branch's report (#199, ADR 0035) — while a report that had
+// already completed still feeds the reserved Answer round.
 
 type ToolResultEvent = Extract<PipelineEvent, { type: 'tool_result' }>
 type DoneEvent = Extract<PipelineEvent, { type: 'done' }>
@@ -172,7 +173,7 @@ describe('parallel Investigation e2e (#120) — concurrency, bounds, graceful co
   })
 })
 
-describe('parallel Investigation e2e (#120) — Finalization cancels unfinished delegated work', () => {
+describe('parallel Investigation e2e (#120/#199) — Finalization waits a Report Grace for unfinished delegated work', () => {
   let fixture: FixtureServer
   let harness: Harness
 
@@ -208,8 +209,10 @@ describe('parallel Investigation e2e (#120) — Finalization cancels unfinished 
     ]
 
     // The worker would keep browsing for far longer than the parent's
-    // budget: thirty slow pages at ~3 s each. Finalization's cancel lands
-    // long before its own leash runs out.
+    // budget: thirty slow pages at ~3 s each. The parent finalizes long
+    // before that leash runs out, so the branch is mid-navigation when it
+    // is told — the case #199 exists for. Its script never answers, so
+    // the report it returns inside the grace is the bounded one.
     const worker: AssistantTurn[] = Array.from({ length: 30 }, (_, i) => ({
       kind: 'tool_calls' as const,
       calls: [{ id: `w${i}`, name: 'navigate', args: { url: slowUrl } }],
@@ -230,7 +233,7 @@ describe('parallel Investigation e2e (#120) — Finalization cancels unfinished 
     await fixture?.close()
   })
 
-  it('cancels the still-running worker when the parent exhausts its budget', async () => {
+  it('waits the Report Grace and takes the still-running branch report instead of killing it', async () => {
     await armEventCapture(harness)
     expect(await harness.submitCommand('compare vendors while a branch researches')).toBe('submitted')
     const events = await waitForRunDone(harness, 120_000)
@@ -247,17 +250,25 @@ describe('parallel Investigation e2e (#120) — Finalization cancels unfinished 
       error: expect.stringMatching(/work budget is exhausted/),
     })
 
-    // The delegated acquisition was cancelled at Finalization entry — the
-    // worker never completed its own research.
+    // #199 / ADR 0035: Finalization no longer cancels the branch. The
+    // worker was told, its in-flight navigation settled, its remaining
+    // acquisition was refused, and its report arrived inside the grace —
+    // so the card reads completed and nothing was cancelled.
     await waitFor(
       async () => {
-        const cancelled = await harness.dashboardEval<number>(`document.querySelectorAll('.subagent-card--cancelled').length`)
-        return cancelled >= 1 ? cancelled : undefined
+        const completed = await harness.dashboardEval<number>(`document.querySelectorAll('.subagent-card--completed').length`)
+        return completed >= 1 ? completed : undefined
       },
-      { timeoutMs: 30_000, intervalMs: 500 },
+      { timeoutMs: 60_000, intervalMs: 500 },
     )
-    const completed = await harness.dashboardEval<number>(`document.querySelectorAll('.subagent-card--completed').length`)
-    expect(completed).toBe(0)
+    const cancelled = await harness.dashboardEval<number>(`document.querySelectorAll('.subagent-card--cancelled').length`)
+    expect(cancelled).toBe(0)
+
+    // And the report reached the bookkeeping round, which is the whole
+    // point of waiting: it is the last round that could checkpoint it.
+    expect(
+      events.filter((event) => event.type === 'tool_call' && event.callId === 'finalization-agent-results-a-1'),
+    ).toHaveLength(1)
 
     const done = events.find((event): event is DoneEvent => event.type === 'done')
     expect(done).toMatchObject({

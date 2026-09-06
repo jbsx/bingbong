@@ -64,7 +64,7 @@ export interface AssistantPipelineDeps {
     pauseAll(): void
     resumeAll(): void
     /** The parent Run entered Finalization (#199, ADR 0035): told, never cancelled. */
-    parentFinalizing?(): number
+    tellParentFinalizing?(): number
     /** Resolves once every worker running at the call has settled (#199). */
     settledAll?(): Promise<void>
     /** The Report Grace ended (#199): still-running workers abandon their round. */
@@ -329,7 +329,7 @@ export function createAssistantPipeline(deps: AssistantPipelineDeps): CommandPip
     // (#199, ADR 0035), and the Run waits the Report Grace for each
     // one's report before the bookkeeping round it can be checkpointed in.
     onFinalize: () => {
-      deps.subagentControl?.parentFinalizing?.()
+      deps.subagentControl?.tellParentFinalizing?.()
     },
     ...(deps.subagentControl?.settledAll
       ? { subagentReportsSettled: () => deps.subagentControl!.settledAll!() }

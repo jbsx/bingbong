@@ -295,8 +295,9 @@ export async function startEvaluator(options?: {
     // Let the run's terminal bookkeeping (summary span, memory commit) land.
     await sleep(500)
     // A delegated worker settles outside the turn's generator, so its stop
-    // (#162) can land after `done` — the Run's Finalization cancels
-    // unfinished workers, but the cancellation still has to travel. Wait,
+    // (#162) can land after `done` — the Run's Finalization tells its
+    // workers to report and waits a Report Grace (#199, ADR 0035), and a
+    // worker the grace outran settles just after the Run does. Wait,
     // bounded, until no card spawned by this run is still running. A worker
     // that outlasts the wait is simply uncounted rather than fatal — but it
     // is announced, because a silent leak is what made this cost every
