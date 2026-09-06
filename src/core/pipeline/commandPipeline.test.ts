@@ -31,7 +31,7 @@ import { createPerfTracer, type PerfTracer } from '../perf/perfTracer'
 import { withPerfTracing } from '../perf/perfTracing'
 import { createBrowserSubspans } from '../perf/browserSubspans'
 import { DELTA_FLUSH_MS } from './deltaBatcher'
-import { HARD_TOOL_ROUND_CEILING, TIER_TOOL_ROUND_BUDGETS } from './effortEpoch'
+import { ANSWER_ONLY_REPORT_DIRECTIVE, FINALIZATION_REPORT_CHECKPOINT_DIRECTIVE, HARD_TOOL_ROUND_CEILING, TIER_TOOL_ROUND_BUDGETS } from './effortEpoch'
 import { createSubagentManager, type SubagentTaskHooks } from '../agent/subagentManager'
 import type { SubagentReport } from '../agent/subagentReport'
 
@@ -1514,7 +1514,7 @@ describe('command pipeline', () => {
 
       const injected = {
         call: { id: 'finalization-agent-results-a-1', name: 'agent_results', args: { agent_id: 'a-1' } },
-        outcome: { ok: true, result: expect.stringMatching(/Vendor A wins\.[\s\S]*Collection and Bookkeeping remain open/) },
+        outcome: { ok: true, result: expect.stringMatching(/Vendor A wins\.[\s\S]*Record an Evidence Checkpoint/) },
       }
       expect(llm.requests[6].toolResults).toContainEqual(injected)
       expect(llm.requests[7].toolResults.filter((result) => result.call.id === injected.call.id)).toEqual([injected])
@@ -2959,10 +2959,13 @@ describe('command pipeline', () => {
         { kind: 'tool_calls', calls: [{ id: 'b1', name: 'back', args: {} }] },
         { kind: 'tool_calls', calls: [{ id: 'r2', name: 'read_page', args: {} }] },
         { kind: 'tool_calls', calls: [{ id: 'l2', name: 'look', args: {} }] },
-        // The second Approach exhausts here; the script ends, so the
-        // reserved Answer round fails — the deterministic Answer replaces
-        // it with the no_progress cause.
+        // The second Approach exhausts here. The trip round is not the
+        // bookkeeping round (#200, ADR 0036) — the round after it is, and
+        // its acquisition is refused. Then the script ends, so the
+        // reserved Answer round fails and the deterministic Answer
+        // replaces it with the no_progress cause.
         { kind: 'tool_calls', calls: [{ id: 's2', name: 'scroll', args: { direction: 'up' } }] },
+        { kind: 'tool_calls', calls: [{ id: 'bk1', name: 'read_page', args: {} }] },
       ])
       const pipeline = createCommandPipeline({
         llm,
@@ -3005,11 +3008,13 @@ describe('command pipeline', () => {
         { kind: 'tool_calls', calls: [{ id: 'b1', name: 'back', args: {} }] },
         { kind: 'tool_calls', calls: [{ id: 'r2', name: 'read_page', args: {} }] },
         { kind: 'tool_calls', calls: [{ id: 'l2', name: 'look', args: {} }] },
-        // The second Approach exhausts here; the reserved Answer round
-        // follows, and it narrates. The shape marker is the real parser's
-        // — the double carries exactly what the wire client would build,
-        // and the raw text streams as the provider would emit it.
+        // The second Approach exhausts here; the bookkeeping round (#200,
+        // ADR 0036) follows, and then the reserved Answer round, which
+        // narrates. The shape marker is the real parser's — the double
+        // carries exactly what the wire client would build, and the raw
+        // text streams as the provider would emit it.
         { kind: 'tool_calls', calls: [{ id: 's2', name: 'scroll', args: { direction: 'up' } }] },
+        { kind: 'tool_calls', calls: [{ id: 'bk1', name: 'read_page', args: {} }] },
         { kind: 'answer', ...parseAssistantAnswer(NARRATION), streamChunks: [NARRATION] },
       ] as ScriptedTurn[])
       const detail: PipelineEvent[] = []
@@ -6882,6 +6887,311 @@ describe('the Report Grace at Finalization (#199)', () => {
     // resolves at once, so nothing is added to the Run's wall time.
     const events = await collect(pipeline, 'do the thing')
     expect(settledCalls).toBe(1)
+    expect(events.at(-1)).toMatchObject({ type: 'done', finalizationCause: 'budget_exhausted' })
+  })
+})
+
+// The bookkeeping Tool Round a mid-round Finalization gets (#200, ADR
+// 0036). Before this, a no-Progress trip spent the round it fired in as
+// the one bookkeeping round, so the reports the Report Grace rescued
+// reached the reserved Answer's context and could never become Session
+// Evidence — and the directive riding them invited a `record_evidence`
+// the next round would have failed the run for.
+describe('the bookkeeping round a mid-round Finalization gets (#200, ADR 0036)', () => {
+  const WORKER_URL = 'https://rival.example/router'
+  const STUCK_STATE: SettledPageState = {
+    url: 'https://example.com/article',
+    title: 'The article',
+    textDigest: 'Intro paragraph.\nSecond paragraph.',
+    scrollX: 0,
+    scrollY: 0,
+    dialogOpen: false,
+    dialogText: '',
+  }
+
+  /** The hidden provenance a completed worker's report carried (#123) — what a subagent citation grounds in. */
+  const workerObservations: ObservationRecord[] = [{
+    id: 'wobs-1' as ObservationRecord['id'],
+    at: 0,
+    producer: 'page_read',
+    ok: true,
+    payload: 'The rival router costs $29.',
+    sourceUrl: WORKER_URL,
+  }]
+
+  const investigationPlan = (id: string): ToolCall => ({
+    id,
+    name: 'report_run_plan',
+    args: { objective: 'Compare the routers', headline: 'Comparing routers', effort_tier: 'investigation' },
+  })
+  const spawn: ToolCall = { id: 'spawn', name: 'spawn_agent', args: { kind: 'browse', task: 'price the rival' } }
+  const checkpoint = (id: string): ToolCall => ({
+    id,
+    name: 'record_evidence',
+    args: { kind: 'subagent', agent_id: 'a-1', observation: 'The rival router costs $29.', source_url: WORKER_URL },
+  })
+
+  const page = (name: string, result: string): Tool => ({ name, acquisition: true, async execute() { return result } })
+
+  /**
+   * A tool that spends the whole active-work deadline while it runs, so
+   * the crossing lands during tool execution and takes the per-call gate
+   * rather than the armed round's abort. The holder is how it reaches the
+   * clock the harness owns, which only exists once the harness is built.
+   */
+  function deadlineCrossingTool(): { tool: Tool; spend: { advance: () => void } } {
+    const spend: { advance: () => void } = { advance: () => {} }
+    return {
+      spend,
+      tool: {
+        name: 'slow',
+        acquisition: true,
+        async execute() {
+          spend.advance()
+          return 'slow work done'
+        },
+      },
+    }
+  }
+
+  /**
+   * One Run with a live Browse Subagent whose report the test releases by
+   * hand, so it lands inside the Report Grace the mid-round trip opens.
+   */
+  function harnessWith(options: {
+    turns: ScriptedTurn[]
+    tools: Tool[]
+    settledPageState?: () => SettledPageState
+    activeWorkDeadlineMs?: number
+  }) {
+    const clock = new FakeClock()
+    let next = 0
+    const store = createSessionEvidence({
+      sessionId: 'session-1' as SessionId,
+      now: () => 0,
+      mintId: () => `memory-${++next}` as MemoryEntryId,
+    })
+    let finishWorker!: (report: SubagentReport) => void
+    const workerDone = new Promise<SubagentReport>((resolve) => {
+      finishWorker = resolve
+    })
+    let workerHooks: SubagentTaskHooks | null = null
+    const manager = createSubagentManager({
+      taskApi: {
+        start: (_spec, hooks) => {
+          workerHooks = hooks
+          hooks.abandonReport?.addEventListener('abort', () => {
+            finishWorker({
+              text: 'Stopped when the parent run finalized.',
+              findings: [],
+              unresolved: ['Cut short by the parent run’s finalization — the task is incomplete.'],
+              finalizationCause: 'parent_finalized',
+              bounded: true,
+            })
+          })
+          return { done: workerDone }
+        },
+      },
+      tabs: { openFor: () => ({ ok: true }), finish: () => {} },
+      clock,
+      onEvent: () => {},
+    })
+    const pipeline = createCommandPipeline({
+      llm: new ScriptedLlm(options.turns),
+      tts: new RecordingTts(),
+      clock,
+      tools: [createReportRunPlanTool(), createRecordEvidenceTool(), ...options.tools, ...createSubagentTools(manager)],
+      ...(options.settledPageState !== undefined ? { settledPageState: options.settledPageState } : {}),
+      ...(options.activeWorkDeadlineMs !== undefined ? { activeWorkDeadlineMs: options.activeWorkDeadlineMs } : {}),
+      reportGraceMs: 30_000,
+      onAbort: () => manager.cancelAll(),
+      onFinalize: () => manager.tellParentFinalizing(),
+      subagentReportsSettled: () => manager.settledAll(),
+      onReportGraceEnd: () => manager.endReportGrace(),
+      collectCompletedSubagentResults: (turnId) => manager.collectCompleted(turnId),
+      subagentObservations: (agentId) => (agentId === 'a-1' ? workerObservations : null),
+    })
+    const runId = 'run-1' as RunId
+    const start = async (): Promise<PipelineEvent[]> => {
+      const events: PipelineEvent[] = []
+      for await (const raw of pipeline.execute('compare the routers', undefined, false, {
+        snapshot: [],
+        memory: [],
+        evidence: store.snapshot(),
+        generation: 0,
+        commit: () => 'committed',
+        checkpointEvidence: webEvidenceCommit(() => store, runId),
+        evidenceSession: () => ({ store, runId }),
+      })) {
+        events.push(withoutTurnId(raw))
+      }
+      return events
+    }
+    return {
+      clock,
+      store,
+      start,
+      finishWorker,
+      // Read live: the parent tells the worker at Finalization entry, so
+      // this is "the door has opened and the grace is what follows".
+      wasTold: (): boolean => (workerHooks as SubagentTaskHooks | null)?.isParentFinalizing?.() ?? false,
+    }
+  }
+
+  /** A longer settle than the shared one: a Run with a live worker needs many microtask turns. */
+  async function settleFor(predicate: () => boolean): Promise<void> {
+    for (let attempt = 0; attempt < 400 && !predicate(); attempt += 1) await flush()
+    expect(predicate()).toBe(true)
+  }
+
+  it('gives a no-Progress trip a bookkeeping round the rescued worker’s finding is checkpointed in (#200/AC2)', async () => {
+    // Two Approaches exhausted against a page that never moves: the
+    // fourth no-Progress action trips Finalization inside round 8. That
+    // round is not the bookkeeping round — round 9 is.
+    const harness = harnessWith({
+      tools: [page('navigate', 'navigated'), page('read_page', 'read'), page('look', 'seen'), page('scroll', 'scrolled')],
+      settledPageState: () => STUCK_STATE,
+      turns: [
+        { kind: 'tool_calls', calls: [investigationPlan('p1'), spawn] },
+        { kind: 'tool_calls', calls: [{ id: 'n1', name: 'navigate', args: { url: 'https://example.com/article' } }] },
+        { kind: 'tool_calls', calls: [{ id: 'r1', name: 'read_page', args: {} }] },
+        { kind: 'tool_calls', calls: [{ id: 'l1', name: 'look', args: {} }] },
+        { kind: 'tool_calls', calls: [{ id: 's1', name: 'scroll', args: { direction: 'down' } }] },
+        { kind: 'tool_calls', calls: [{ id: 'r2', name: 'read_page', args: {} }] },
+        { kind: 'tool_calls', calls: [{ id: 'l2', name: 'look', args: {} }] },
+        // The trip round.
+        { kind: 'tool_calls', calls: [{ id: 's2', name: 'scroll', args: { direction: 'up' } }] },
+        // The bookkeeping round #200 restores — and the model spends it
+        // on the finding the grace rescued.
+        { kind: 'tool_calls', calls: [checkpoint('e1')] },
+        { kind: 'answer', speak: 'The rival is cheaper.', display: 'The rival router costs $29.', resolution: 'partial' },
+      ],
+    })
+    const run = harness.start()
+    await settleFor(() => harness.wasTold())
+
+    // The worker reports inside the grace, so its findings are in the
+    // bookkeeping round's context.
+    harness.finishWorker({ text: 'The rival router costs $29.', findings: [], unresolved: [] })
+    const events = await run
+
+    expect(events.find((e) => e.type === 'tool_result' && e.callId === 'finalization-agent-results-a-1')).toMatchObject({
+      ok: true,
+      result: expect.stringContaining('The rival router costs $29.'),
+    })
+    // The checkpoint the reserved Answer round would have failed the run
+    // for is accepted, and the finding outlives the stopped run.
+    expect(events.find((e) => e.type === 'tool_result' && e.callId === 'e1')).toMatchObject({
+      ok: true,
+      result: expect.stringContaining('memory-1'),
+    })
+    expect(harness.store.snapshot().observations).toEqual([expect.objectContaining({
+      text: 'The rival router costs $29.',
+      references: [{ url: WORKER_URL }],
+      provenance: [{ runId: 'run-1', subagentId: 'a-1' }],
+    })])
+    expect(events.at(-1)).toMatchObject({ type: 'done', finalizationCause: 'no_progress' })
+  })
+
+  it('gives a deadline crossed during tool execution the same bookkeeping round (#200/AC3)', async () => {
+    // The per-call gate path, not the armed round's abort: the crossing
+    // lands while a tool runs, so the round is already past its model
+    // call. Before #200 those few hundred milliseconds decided whether
+    // the run got a bookkeeping round at all.
+    const { tool: slow, spend } = deadlineCrossingTool()
+    const harness = harnessWith({
+      tools: [slow, page('read_page', 'read')],
+      activeWorkDeadlineMs: 1_000,
+      turns: [
+        { kind: 'tool_calls', calls: [investigationPlan('p1'), spawn] },
+        // The tool spends the whole deadline while it runs; the sibling
+        // after it begins past the boundary and is refused.
+        { kind: 'tool_calls', calls: [{ id: 'w1', name: 'slow', args: {} }, { id: 'w2', name: 'read_page', args: {} }] },
+        { kind: 'tool_calls', calls: [checkpoint('e1')] },
+        { kind: 'answer', speak: 'The rival is cheaper.', display: 'The rival router costs $29.', resolution: 'partial' },
+      ],
+    })
+    spend.advance = () => harness.clock.advance(5_000)
+    const run = harness.start()
+    await settleFor(() => harness.wasTold())
+
+    harness.finishWorker({ text: 'The rival router costs $29.', findings: [], unresolved: [] })
+    const events = await run
+
+    expect(events.find((e) => e.type === 'tool_result' && e.callId === 'w2')).toMatchObject({
+      ok: false,
+      error: expect.stringMatching(/final answer JSON/),
+    })
+    expect(events.find((e) => e.type === 'tool_result' && e.callId === 'e1')).toMatchObject({
+      ok: true,
+      result: expect.stringContaining('memory-1'),
+    })
+    expect(events.at(-1)).toMatchObject({ type: 'done', finalizationCause: 'deadline_reached' })
+  })
+
+  it('invites a checkpoint on a report injected while a bookkeeping round is still to come (#200/AC4)', async () => {
+    const { tool: slow, spend } = deadlineCrossingTool()
+    const harness = harnessWith({
+      tools: [slow],
+      activeWorkDeadlineMs: 1_000,
+      turns: [
+        { kind: 'tool_calls', calls: [investigationPlan('p1'), spawn] },
+        { kind: 'tool_calls', calls: [{ id: 'w1', name: 'slow', args: {} }] },
+        { kind: 'tool_calls', calls: [checkpoint('e1')] },
+        { kind: 'answer', speak: 'Done.', display: 'Done.', resolution: 'partial' },
+      ],
+    })
+    spend.advance = () => harness.clock.advance(5_000)
+    const run = harness.start()
+    await settleFor(() => harness.wasTold())
+    harness.finishWorker({ text: 'The rival router costs $29.', findings: [], unresolved: [] })
+    const events = await run
+
+    const injected = events.find((e) => e.type === 'tool_result' && e.callId === 'finalization-agent-results-a-1')
+    expect(injected).toMatchObject({ ok: true, result: expect.stringContaining(FINALIZATION_REPORT_CHECKPOINT_DIRECTIVE) })
+    expect(injected).toMatchObject({ ok: true, result: expect.stringMatching(/Record an Evidence Checkpoint/) })
+  })
+
+  it('claims nothing about Bookkeeping on a report that lands once the run is Answer-only (#200/AC4)', async () => {
+    // The late report: it settles after the bookkeeping round has been
+    // spent, so the #192 collect block picks it up at the reserved Answer
+    // round's loop top. Nothing there will honour a tool call.
+    let released = false
+    let collected = false
+    const report = 'a-1 [browsing] completed — price the rival\nreport:\nThe rival router costs $29.'
+    const llm = new ScriptedLlm([
+      { kind: 'tool_calls', calls: [{ id: 'p1', name: 'report_run_plan', args: { objective: 'Compare the routers', headline: 'Comparing routers', effort_tier: 'direct_action' } }] },
+      ...Array.from({ length: 5 }, (_, i) => ({ kind: 'tool_calls' as const, calls: [{ id: `w${i}`, name: 'read_page', args: {} }] })),
+      // The bookkeeping round: the worker has not reported yet.
+      { kind: 'tool_calls', calls: [{ id: 'b1', name: 'read_page', args: {} }] },
+      { kind: 'answer', speak: 'Done.', display: 'Done.', resolution: 'partial' },
+    ])
+    const events: PipelineEvent[] = []
+    const pipeline = createCommandPipeline({
+      llm,
+      tts: new RecordingTts(),
+      clock: new FakeClock(),
+      tools: [createReportRunPlanTool(), page('read_page', 'read')],
+      reportGraceMs: 30_000,
+      subagentReportsSettled: async () => {},
+      collectCompletedSubagentResults: () => {
+        if (!released || collected) return []
+        collected = true
+        return [{ agentId: 'a-1', formattedReport: report }]
+      },
+    })
+    for await (const raw of pipeline.execute('compare the routers')) {
+      const event = withoutTurnId(raw)
+      events.push(event)
+      // The bookkeeping round has run: the report lands after it.
+      if (event.type === 'tool_result' && event.callId === 'b1') released = true
+    }
+
+    const injected = events.find((e) => e.type === 'tool_result' && e.callId === 'finalization-agent-results-a-1')
+    expect(injected).toMatchObject({ ok: true, result: expect.stringContaining(ANSWER_ONLY_REPORT_DIRECTIVE) })
+    // The lie #200 found: it must not survive into the round that refuses
+    // the very call it invites.
+    expect(injected).toMatchObject({ ok: true, result: expect.not.stringContaining('Collection and Bookkeeping') })
     expect(events.at(-1)).toMatchObject({ type: 'done', finalizationCause: 'budget_exhausted' })
   })
 })

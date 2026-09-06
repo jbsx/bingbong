@@ -305,9 +305,10 @@ describe('mid-round trips close the round’s remaining siblings (#157/AC2)', ()
 
     const { outcome } = await h.round([...calls, call('navigate', { url: 'https://example.com/late' })])
 
-    // The round is spent by the time it returns, so the phase already
-    // latched Answer-only; the cause is what the trip decided.
-    expect(h.epoch.phase).toEqual({ kind: 'answer_only', cause: 'no_progress' })
+    // The round the door opened during is not the bookkeeping round (#200,
+    // ADR 0036): it ends finalizing, and the round after it is the one the
+    // model can checkpoint in. The cause is what the trip decided.
+    expect(h.epoch.phase).toEqual({ kind: 'finalizing', cause: 'no_progress' })
     expect(resultOf(outcome.results[4]!.outcome)).toMatch(/second Approach has made no progress/)
     // The sibling after the trip never executed: it met the closed-tool
     // refusal, which carries the finalize directive itself.
@@ -349,7 +350,7 @@ describe('mid-round trips close the round’s remaining siblings (#157/AC2)', ()
     await h.round(candidates(1))
     expect(h.epoch.phase).toEqual({ kind: 'working' })
     await h.round(candidates(1))
-    expect(h.epoch.phase).toEqual({ kind: 'answer_only', cause: 'no_progress' })
+    expect(h.epoch.phase).toEqual({ kind: 'finalizing', cause: 'no_progress' })
     expect(trace.filter((entry) => entry === 'execute:record_candidate')).toHaveLength(7)
   })
 
@@ -376,7 +377,10 @@ describe('mid-round trips close the round’s remaining siblings (#157/AC2)', ()
     // the sibling that begins past the boundary never starts.
     expect(resultOf(outcome.results[0]!.outcome)).toMatch(/^done/)
     expect(errorOf(outcome.results[1]!.outcome)).toBe(finalizationToolRefusal)
-    expect(h.epoch.phase).toEqual({ kind: 'answer_only', cause: 'deadline_reached' })
+    // Finalizing, not Answer-only: a crossing during tool execution gets
+    // the same bookkeeping round a crossing during the model call does
+    // (#200, ADR 0036).
+    expect(h.epoch.phase).toEqual({ kind: 'finalizing', cause: 'deadline_reached' })
     expect(trace.filter((entry) => entry.startsWith('execute:'))).toEqual(['execute:slow'])
   })
 })
@@ -504,7 +508,7 @@ describe('how a round ends (#157/AC2)', () => {
 })
 
 describe('the epoch’s round protocol (#157/AC2)', () => {
-  /** A Finalization round already entered: spending it latches Answer-only. */
+  /** A Finalization round already entered: beginning it latches Answer-only. */
   function finalizing(options: Parameters<typeof harness>[1]): Harness {
     const h = harness([scripted('spin', [])], options)
     h.epoch.enterFinalization('budget_exhausted')

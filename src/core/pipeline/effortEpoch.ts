@@ -211,6 +211,38 @@ export const FINALIZATION_ANSWER_DIRECTIVE =
 export const finalizationToolRefusal = `Not executed — ${FINALIZATION_ANSWER_DIRECTIVE}`
 
 /**
+ * What a worker report injected at a Finalization loop top says while a
+ * bookkeeping Tool Round is still to come (#200, ADR 0036). The
+ * invitation is the point: a rescued finding that lives only in a stopped
+ * run's Answer text is gone, and only an Evidence Checkpoint carries it
+ * into the next attempt (ADR 0028).
+ */
+export const FINALIZATION_REPORT_CHECKPOINT_DIRECTIVE =
+  'Acquisition tools (browser, vision, media, and delegation) and ask_user are closed; Collection and Bookkeeping ' +
+  'are open for one more tool round. Record an Evidence Checkpoint for anything in this report worth keeping, then ' +
+  'reply with your final answer JSON and state honestly what was and was not completed.'
+
+/**
+ * What the same report says once the run is Answer-only (#200, ADR 0036):
+ * the bookkeeping round is behind it, so it claims nothing about
+ * Bookkeeping — a tool call from here is a failed round, not a checkpoint.
+ */
+export const ANSWER_ONLY_REPORT_DIRECTIVE =
+  'No tool round remains — every tool is closed. Reply with your final answer JSON and state honestly what was and ' +
+  'was not completed.'
+
+/**
+ * The directive an injected worker report ends with, chosen by the phase
+ * the next model round will run under (#200, ADR 0036): a report must
+ * only ask for what that round will honour. Only Finalization injects
+ * reports, so `finalizing` — a bookkeeping round is next — is the
+ * positive case; every other phase a report can reach is Answer-only.
+ */
+export function injectedReportDirective(phase: EffortPhase): string {
+  return phase.kind === 'finalizing' ? FINALIZATION_REPORT_CHECKPOINT_DIRECTIVE : ANSWER_ONLY_REPORT_DIRECTIVE
+}
+
+/**
  * The active-work clock (#117, ADR 0027): accumulates wall time the Run
  * spends working, excluding user-dependent waiting — Confirmation, ask_user,
  * Pause, and Steering — which suspends it. Fresh per Run; a tier change
@@ -311,10 +343,14 @@ export interface EffortEpoch {
    * 0035) — the in-flight call settles, every later sibling is refused.
    */
   tripPerCallGate(): boolean
-  /** Counts a returned tool-bearing decision and latches a pending Finalization round as Answer-only. */
+  /**
+   * Counts a returned tool-bearing decision and latches a pending
+   * Finalization round as Answer-only. The bookkeeping Tool Round is the
+   * first round that *begins* in Finalization, whatever opened the door
+   * (#200, ADR 0036) — a round the door opened during is never it, so
+   * nothing latches at a round's end.
+   */
   beginToolRound(): boolean
-  /** Latches Finalization entered while executing the round as Answer-only. */
-  completeToolRound(): void
   declareTier(tier: EffortTier, initialDeclaration?: boolean): boolean
   replan(tier?: EffortTier): boolean
   /**
@@ -500,9 +536,6 @@ export function createEffortEpoch(deps: {
         pendingWarning = crossed
       }
       return true
-    },
-    completeToolRound() {
-      if (phase.kind === 'finalizing') phase = { kind: 'answer_only', cause: phase.cause }
     },
     declareTier(nextTier, initialDeclaration = false) {
       // A Subagent has no Effort Tier to declare and no Steering to replan for.

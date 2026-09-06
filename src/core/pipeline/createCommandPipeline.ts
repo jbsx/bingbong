@@ -30,7 +30,7 @@ import { createToolRoundExecutor, type ToolRoundExecutor } from './toolRound'
 import {
   createEffortEpoch,
   deterministicFinalAnswer,
-  FINALIZATION_ANSWER_DIRECTIVE,
+  injectedReportDirective,
   resolveReportGraceMs,
   type EffortEpoch,
 } from './effortEpoch'
@@ -1011,7 +1011,12 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
                   name: 'agent_results',
                   args: { agent_id: completed.agentId },
                 }
-                const result = `${completed.formattedReport}\n\n${FINALIZATION_ANSWER_DIRECTIVE}`
+                // Phase-aware (#200, ADR 0036): while the epoch is
+                // finalizing a bookkeeping round is next and the report
+                // invites a checkpoint; once it is Answer-only the report
+                // claims nothing about Bookkeeping, because a call from
+                // there fails the round.
+                const result = `${completed.formattedReport}\n\n${injectedReportDirective(effortEpoch.phase)}`
                 const outcome: ToolResultOutcome = { ok: true, result }
                 yield { type: 'tool_call', callId: call.id, name: call.name, args: call.args, at: clock.now() }
                 const observed = observe({ producer: 'subagent_report', ok: true, payload: completed.formattedReport })

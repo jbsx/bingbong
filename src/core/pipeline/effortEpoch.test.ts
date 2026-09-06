@@ -189,7 +189,8 @@ describe('Effort Epoch (#146, ADR 0027)', () => {
       const epoch = createEffortEpoch({ clock: new FakeClock(), initialTier: 'investigation' })
       epoch.beginToolRound()
       if (latch !== undefined) epoch.enterFinalization(latch)
-      if (spent) epoch.completeToolRound()
+      // The bookkeeping round is spent by beginning it (#200, ADR 0036).
+      if (spent) epoch.beginToolRound()
 
       expect(epoch.replan()).toBe(exits)
       expect(epoch.phase).toEqual(
@@ -202,7 +203,7 @@ describe('Effort Epoch (#146, ADR 0027)', () => {
       // An exit clears the stale objective's cause and re-arms the tier;
       // a terminal phase keeps both.
       expect(epoch.tier).toBe(exits ? DEFAULT_EFFORT_TIER : 'investigation')
-      expect(epoch.cumulativeRounds).toBe(1)
+      expect(epoch.cumulativeRounds).toBe(spent ? 2 : 1)
     })
   })
 
@@ -314,6 +315,74 @@ describe('Effort Epoch (#146, ADR 0027)', () => {
       expect(epoch.phase).toEqual({ kind: 'finalizing', cause: 'deadline_reached' })
       expect(causes).toEqual(['deadline_reached'])
       round.disarm()
+    })
+  })
+
+  // The bookkeeping Tool Round is the first round that *begins* in
+  // Finalization, whatever opened the door (#200, ADR 0036). A round the
+  // door opened during is never it: the model chose that round's calls
+  // before it knew, so none of them could have been a checkpoint.
+  describe('the bookkeeping Tool Round (#200, ADR 0036)', () => {
+    it('leaves a mid-round no-Progress trip finalizing, so the next round is the bookkeeping one', () => {
+      const epoch = createEffortEpoch({ clock: new FakeClock(), initialTier: 'direct_action' })
+      epoch.beginToolRound()
+
+      expect(epoch.tripNoProgress()).toBe(true)
+      // The trip round runs to its end — its remaining acquisition
+      // siblings refused — and ends finalizing, not Answer-only.
+      expect(epoch.phase).toEqual({ kind: 'finalizing', cause: 'no_progress' })
+
+      // The next round is the one bookkeeping round: it begins, it
+      // latches, and the reserved Answer round follows it.
+      expect(epoch.beginToolRound()).toBe(true)
+      expect(epoch.phase).toEqual({ kind: 'answer_only', cause: 'no_progress' })
+      expect(epoch.beginToolRound()).toBe(false)
+    })
+
+    it('leaves a deadline crossed at the per-call gate finalizing too', () => {
+      // The crossing lands during tool execution rather than the model
+      // call, so it takes the gate instead of the armed round's abort.
+      // Either way the round after it is the bookkeeping round.
+      const clock = new FakeClock()
+      const epoch = createEffortEpoch({ clock, initialTier: 'direct_action' })
+      epoch.beginToolRound()
+      clock.advance(TIER_ACTIVE_WORK_DEADLINES_MS.direct_action)
+
+      expect(epoch.tripPerCallGate()).toBe(true)
+      expect(epoch.phase).toEqual({ kind: 'finalizing', cause: 'deadline_reached' })
+
+      expect(epoch.beginToolRound()).toBe(true)
+      expect(epoch.phase).toEqual({ kind: 'answer_only', cause: 'deadline_reached' })
+    })
+
+    it('gives a trip in cumulative round 31 round 32 as its bookkeeping round', () => {
+      // The hard ceiling already reserves the capacity: acquisition stops
+      // at 31, so a trip inside round 31 still has round 32 to spend.
+      const epoch = createEffortEpoch({ clock: new FakeClock(), initialTier: 'investigation' })
+      for (let round = 0; round < 16; round += 1) epoch.beginToolRound()
+      epoch.replan('investigation')
+      for (let round = 0; round < 15; round += 1) epoch.beginToolRound()
+      expect(epoch.cumulativeRounds).toBe(31)
+
+      expect(epoch.tripNoProgress()).toBe(true)
+
+      expect(epoch.beginToolRound()).toBe(true)
+      expect(epoch.cumulativeRounds).toBe(HARD_TOOL_ROUND_CEILING)
+      expect(epoch.phase).toEqual({ kind: 'answer_only', cause: 'no_progress' })
+    })
+
+    it('lets a Directive reopen a mid-round deadline until the bookkeeping round begins', () => {
+      // The latch that guards the bookkeeping round against Steering is
+      // the one at its beginning, and that one stays — so a deadline
+      // crossed mid-round reopens exactly as a loop-top one does.
+      const clock = new FakeClock()
+      const epoch = createEffortEpoch({ clock, initialTier: 'direct_action' })
+      epoch.beginToolRound()
+      clock.advance(TIER_ACTIVE_WORK_DEADLINES_MS.direct_action)
+      epoch.tripPerCallGate()
+
+      expect(epoch.replan()).toBe(true)
+      expect(epoch.phase).toEqual({ kind: 'working' })
     })
   })
 

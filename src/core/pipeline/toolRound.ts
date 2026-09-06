@@ -414,7 +414,11 @@ export function createToolRoundExecutor(config: ToolRoundConfig): ToolRoundExecu
     // Finalization's one bookkeeping Tool Round (#117/AC3): every result
     // it produces must teach the model that the Answer round is next —
     // refusals carry it directly; successful bookkeeping results carry
-    // the epoch's owed directive as a Notice.
+    // the epoch's owed directive as a Notice. Beginning the round is the
+    // whole of the epoch's round protocol (#200, ADR 0036): the round a
+    // mid-round rail opens the door during ends finalizing, so the round
+    // after it is the bookkeeping one — the model chose this round's
+    // calls before it knew, so none of them could have been a checkpoint.
     effortEpoch.beginToolRound()
     // The round boundary the no-progress rail needs (#197): its rejected
     // Evidence Checkpoints count once per round, and only the executor
@@ -519,11 +523,6 @@ export function createToolRoundExecutor(config: ToolRoundConfig): ToolRoundExecu
       }
     }
 
-    // A Finalization Tool Round is spent (#117/AC3) — however it ended,
-    // only an Answer is accepted from here. Ahead of the sibling answers
-    // and the caller's steering exit on purpose: a Directive during the
-    // bookkeeping round must not reopen tool work.
-    effortEpoch.completeToolRound()
     // The sole call ran and failed: its discarded siblings still need
     // answers for the following round to be protocol-consistent. A steered
     // round never got that far.
