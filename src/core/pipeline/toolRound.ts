@@ -20,6 +20,7 @@ import { STEERED_CANCELLED, type Directive, type RunInterrupts } from './interru
 import { classifyToolObservation } from './toolObservations'
 import type { ObservationId, ObservationInput, ObservationRecord } from '../session/observationLedger'
 import { reportFault } from '../trace/fault'
+import type { FinalizationCause } from '../session/runJournal'
 
 // Issue #154, step 2 (#157): the Tool Round executor.
 //
@@ -72,8 +73,13 @@ export interface ToolRoundCapabilities {
  * own, the way it already injects the Blocker escalation.
  */
 export interface FinalizationWording {
-  /** What a closed acquisition or ask_user call answers with in Finalization. */
-  readonly toolRefusal: string
+  /**
+   * What a closed acquisition or ask_user call answers with in
+   * Finalization. A function when the phase's cause changes the wording
+   * (#199): a worker told its parent is finalizing must not read that its
+   * own delegated budget is spent.
+   */
+  readonly toolRefusal: string | ((cause: FinalizationCause) => string)
   /** What the action exhausting the second Approach is told (#126). */
   readonly approachExhausted: string
 }
@@ -251,7 +257,18 @@ export function createToolRoundExecutor(config: ToolRoundConfig): ToolRoundExecu
           : {}),
       })
     : null
-  const closedToolRefusal = config.finalizationWording?.toolRefusal ?? finalizationToolRefusal
+  /**
+   * The refusal a closed call answers with, worded for the cause this
+   * epoch is finalizing under (#199). Only read inside Finalization —
+   * the closed-tool check that reaches it is gated on the phase.
+   */
+  const closedToolRefusal = (): string => {
+    const wording = config.finalizationWording?.toolRefusal
+    if (wording === undefined) return finalizationToolRefusal
+    if (typeof wording === 'string') return wording
+    const phase = effortEpoch.phase
+    return phase.kind === 'working' ? finalizationToolRefusal : wording(phase.cause)
+  }
   // The Vision Budget is the round's, so the context tools execute against
   // acquires from it — a caller can never hand a tool a different one.
   const toolContext: ToolContext = { ...config.toolContext, acquireVision: () => visionBudget.tryAcquire() }
@@ -432,7 +449,7 @@ export function createToolRoundExecutor(config: ToolRoundConfig): ToolRoundExecu
         intercepted !== null
           ? intercepted
           : closedTool !== undefined && (closedTool.acquisition === true || closedTool.askUser !== undefined)
-            ? { ok: false, error: closedToolRefusal }
+            ? { ok: false, error: closedToolRefusal() }
             : yield* runGatedTool(call, turnId)
 
       // Observation ledger (#111): the raw outcome as the tool produced

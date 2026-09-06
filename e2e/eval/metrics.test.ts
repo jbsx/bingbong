@@ -256,6 +256,30 @@ describe('extractMetrics', () => {
     const metrics = extractMetrics([command(0), completedUncaused, done(2)], [], false)
     expect(metrics.subagentFinalizations).toEqual({ uncaused: 1 })
   })
+
+  it('counts how many of those reports were the bounded fallback (#199, ADR 0035)', () => {
+    const worker = (agentId: string, bounded: boolean, at: number): PipelineEvent => ({
+      type: 'subagent_finalized',
+      turnId: T,
+      agentId,
+      kind: 'browse',
+      status: 'completed',
+      cause: 'parent_finalized',
+      ...(bounded ? { bounded: true as const } : {}),
+      at,
+    })
+    // The same stop cause reads differently depending on it: three
+    // `parent_finalized` workers of which two never wrote a report is a
+    // Report Grace that is too short, not a Finalization that worked.
+    const metrics = extractMetrics(
+      [command(0), worker('a-1', false, 1), worker('a-2', true, 2), worker('a-3', true, 3), done(4)],
+      [],
+      false,
+    )
+    expect(metrics.subagentFinalizations).toEqual({ parent_finalized: 3 })
+    expect(metrics.subagentBoundedReports).toBe(2)
+    expect(extractMetrics([command(0), done(1)], [], false).subagentBoundedReports).toBe(0)
+  })
 })
 
 describe('combineRuns', () => {
@@ -322,6 +346,7 @@ describe('aggregateScenarios', () => {
         rawLimitFailure: null,
         askTimedOut: false,
         subagentFinalizations: {},
+        subagentBoundedReports: 0,
         actions: [],
         answerText: 'x',
         timedOut: false,

@@ -81,6 +81,17 @@ import { reportFault } from '../trace/fault'
 // round fails or demands tools. A worker always terminates with a report,
 // never a raw round-limit failure.
 //
+// The parent Run's Finalization no longer cancels this loop (#199, ADR
+// 0035): it is told instead. `isParentFinalizing` is polled beside the
+// shared deadline, so the worker enters its own Finalization with
+// `parent_finalized` — in-flight call settles, remaining acquisition
+// siblings refused, reserved report round runs — and the parent waits a
+// Report Grace for the report. `abandonReport` is that grace ending: the
+// round in flight is aborted and the bounded report is returned, because
+// a worker the grace outran completed, and `cancelled` stays reserved
+// for a decision — the user's Stop, the orchestrator's cancel, a
+// Session Reset.
+//
 // Every report carries why the worker stopped (#162): the Finalization
 // Cause rides the report beside the Observations, as hidden provenance the
 // orchestrator's model never reads — `model_answered` for a voluntary
@@ -179,6 +190,21 @@ export interface RunSubagentOptions {
    * worker stops acquiring and finalizes — a bounded report, never a crash.
    */
   isWorkExpired?(): boolean
+  /**
+   * Whether the parent Run has entered Finalization (#199, ADR 0035):
+   * polled beside the shared deadline. True, this worker enters its own
+   * Finalization with `parent_finalized` — its in-flight call settles,
+   * the round's remaining acquisition siblings are refused, and its
+   * reserved report round runs. Finalization never cancels a worker.
+   */
+  isParentFinalizing?(): boolean
+  /**
+   * The Report Grace's end (#199, ADR 0035): aborted by the parent Run
+   * when the grace elapses with this worker still running. Whatever round
+   * is in flight is abandoned and the bounded report stands — a worker
+   * the grace passed by completed, it was not cancelled.
+   */
+  abandonReport?: AbortSignal
   /** Resolves immediately while running, or after the shared pause gate opens. */
   waitIfPaused?(): Promise<void>
   onProgress?(progress: SubagentProgress): void
@@ -260,8 +286,23 @@ const WORKER_FINALIZE_INSTRUCTION =
   'The delegated work is over \u2014 browsing, vision, and ask_user tools are closed. Reply now with ONLY ' +
   'your final report JSON \u2014 state honestly what you found and what remains open.'
 
+/**
+ * And how it reads when the parent Run is what closed the work (#199,
+ * ADR 0035). Nothing of the worker's own stopped it — its budget is not
+ * spent and its deadline has not passed — so the sentence names the
+ * parent, and ends on the same demand as every other one here.
+ */
+const WORKER_PARENT_FINALIZING_INSTRUCTION =
+  'The parent run is finalizing. Tool calls are closed. Reply now with ONLY your final report JSON ' +
+  '\u2014 state honestly what you found and what remains open.'
+
+/** The instruction this Finalization's refusals and its directive share. */
+function workerFinalizeInstruction(cause: FinalizationCause): string {
+  return cause === 'parent_finalized' ? WORKER_PARENT_FINALIZING_INSTRUCTION : WORKER_FINALIZE_INSTRUCTION
+}
+
 const workerFinalizationWording: FinalizationWording = {
-  toolRefusal: `Not executed \u2014 ${WORKER_FINALIZE_INSTRUCTION}`,
+  toolRefusal: (cause) => `Not executed \u2014 ${workerFinalizeInstruction(cause)}`,
   approachExhausted: `A second Approach has made no progress. ${WORKER_FINALIZE_INSTRUCTION}`,
 }
 
@@ -282,10 +323,12 @@ function askEscalation(outcome: ToolResultOutcome): string | null {
  * rides its Finalization results — the model learns the work budget is
  * spent and that only the final report JSON is accepted now.
  */
-// A Subagent epoch reports these three of the Finalization Causes (#159:
+// A Subagent epoch reports these four of the Finalization Causes (#159:
 // `no_progress` joined the two budget causes when the worker adopted the
-// Run's no-progress rails).
+// Run's no-progress rails; #199: `parent_finalized` joined them when
+// Finalization stopped cancelling live workers).
 function workerFinalizationNotice(cause: FinalizationCause, maxToolRounds: number): string {
+  if (cause === 'parent_finalized') return WORKER_PARENT_FINALIZING_INSTRUCTION
   const reason =
     cause === 'deadline_reached'
       ? 'The parent run\u2019s active-work deadline has passed'
@@ -312,12 +355,19 @@ function boundedStopReport(input: {
   // budget left and stopped because repetition stopped paying, so it says
   // so rather than borrowing the budget wording.
   const noProgress = input.cause === 'no_progress'
+  const parentFinalized = input.cause === 'parent_finalized'
   const causeSentence = noProgress
     ? 'two Approaches in a row made no progress'
     : input.cause === 'deadline_reached'
       ? 'the parent run reached its active-work deadline'
-      : `the delegated work budget (${input.maxToolRounds} tool rounds) was spent`
-  const leadIn = noProgress ? 'Stopped without progress' : 'Stopped at the delegated work limit'
+      : parentFinalized
+        ? 'the parent run finalized before this report was written'
+        : `the delegated work budget (${input.maxToolRounds} tool rounds) was spent`
+  const leadIn = noProgress
+    ? 'Stopped without progress'
+    : parentFinalized
+      ? 'Stopped when the parent run finalized'
+      : 'Stopped at the delegated work limit'
   const lastActionSentence = input.lastAction !== null ? ` The last action was: ${input.lastAction}.` : ''
   return {
     ...(input.agentId !== undefined ? { agentId: input.agentId } : {}),
@@ -326,10 +376,16 @@ function boundedStopReport(input: {
     unresolved: [
       noProgress
         ? 'Cut short with no progress left to make — the task is incomplete.'
-        : 'Cut short at the delegated work limit — the task is incomplete.',
+        : parentFinalized
+          ? 'Cut short by the parent run\u2019s finalization — the task is incomplete.'
+          : 'Cut short at the delegated work limit — the task is incomplete.',
     ],
     ...(input.observations !== undefined && input.observations.length > 0 ? { observations: input.observations } : {}),
     finalizationCause: input.cause,
+    // Every bounded report says so (#199, ADR 0035), not only one the
+    // Report Grace passed by: the stop-cause breakdown can only tell a
+    // model-written report from this fallback if the fallback is marked.
+    bounded: true,
   }
 }
 
@@ -401,8 +457,25 @@ export async function runSubagent(deps: RunSubagentDeps, options: RunSubagentOpt
     subagent: {
       toolRoundBudget: maxToolRounds,
       deadline: { expired: () => options.isWorkExpired?.() ?? false },
+      // The parent Run's Finalization (#199, ADR 0035): polled beside the
+      // shared deadline, at the loop top and before every call in a round.
+      parentFinalizing: () => options.isParentFinalizing?.() ?? false,
     },
   })
+  // The Report Grace's end (#199, ADR 0035): the parent waited, and this
+  // worker's round — reserved or not — is abandoned where it stands. The
+  // bounded report is the return, never a throw: a worker the grace
+  // passed by completed, and `cancelled` is reserved for a decision.
+  const graceEnded = (): boolean => options.abandonReport?.aborted === true
+  const abandonedReport = (): SubagentReport =>
+    boundedStopReport({
+      ...(options.agentId !== undefined ? { agentId: options.agentId } : {}),
+      cause: epoch.phase.kind === 'working' ? 'parent_finalized' : epoch.phase.cause,
+      maxToolRounds,
+      rounds: epoch.tierRounds,
+      lastAction,
+      observations: workerLedger.snapshot(),
+    })
   // The worker's owed-Notice queue (#154): with every rail off, the only
   // Notice a worker ever owes is its own Finalization directive below.
   const notices = createNotices()
@@ -495,6 +568,10 @@ export async function runSubagent(deps: RunSubagentDeps, options: RunSubagentOpt
     const request: LlmRequest = {
       command: options.task,
       toolResults,
+      // The Report Grace's end aborts the round in flight (#199): a
+      // reserved report round the grace outran is abandoned rather than
+      // left running past the answer it was going to feed.
+      ...(options.abandonReport !== undefined ? { signal: options.abandonReport } : {}),
       // A worker carries no Effort Tier, so its epoch answers with the
       // Subagent rung (#166) — brief deliberation for execution work.
       reasoningEffort: epoch.reasoningEffort,
@@ -529,6 +606,7 @@ export async function runSubagent(deps: RunSubagentDeps, options: RunSubagentOpt
 
   for (;;) {
     await checkpoint(options)
+    if (graceEnded()) return abandonedReport()
     const decision = epoch.decideLoopTop()
     if (decision.kind === 'finalize') {
       // Worker Finalization (#120/#149): one reserved Answer-only round —
@@ -595,12 +673,17 @@ export async function runSubagent(deps: RunSubagentDeps, options: RunSubagentOpt
       return boundedStopReport({ ...(options.agentId !== undefined ? { agentId: options.agentId } : {}), cause: decision.cause, maxToolRounds, rounds, lastAction, observations })
     }
 
-    let turn: AssistantTurn
+    let turn: AssistantTurn | null = null
     const request = requestArgs()
     let usage: TokenUsage | undefined
     try {
       turn = await llm.complete(request)
       usage = turn.usage
+    } catch (error) {
+      // The grace ended mid-round (#199): the abort is the parent's, not
+      // a fault — the worker returns the bounded report below rather than
+      // failing. Any other error is still the loop's to throw.
+      if (!graceEnded()) throw error
     } finally {
       // One record per model round, written in a finally so a round that
       // threw leaves its thinking behind like one that returned (#183) —
@@ -608,6 +691,7 @@ export async function runSubagent(deps: RunSubagentDeps, options: RunSubagentOpt
       traceThinking(reasoningRounds?.takeRound())
       closeLlmAttempt(llmRounds?.takeRound(usage), request)
     }
+    if (turn === null) return abandonedReport()
     await checkpoint(options)
     if (turn.kind === 'answer') {
       // A voluntary conclusion — no rail forced it (#162).
@@ -639,6 +723,7 @@ export async function runSubagent(deps: RunSubagentDeps, options: RunSubagentOpt
     // terminal end carries the tool's raw result (#164), so a Notice that
     // rode the escalation in-round never reaches the user welded to the
     // question.
+    if (graceEnded()) return abandonedReport()
     const end = step.value.end
     const relay = end.kind === 'terminal' ? askEscalation(end.outcome) : null
     if (relay !== null) {

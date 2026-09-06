@@ -1378,3 +1378,137 @@ describe("a delegated worker's reasoning records (#183)", () => {
     expect(traced).toEqual([{ round: 1, attempt: 1, text: 'no id here' }])
   })
 })
+
+// The Report Grace (#199, ADR 0035): the parent Run's Finalization is told
+// to a live worker rather than cancelling it. The worker enters its own
+// Finalization under `parent_finalized` — in-flight call settles,
+// remaining acquisition siblings refused, reserved report round runs — and
+// the grace's end abandons whatever is still running for the bounded
+// report. The shape mirrors the budget-exhaustion path above on purpose.
+describe('runSubagent under the parent Run\'s Finalization (#199)', () => {
+  it('enters its own Finalization with parent_finalized and reports in the reserved round', async () => {
+    let finalizing = false
+    let executions = 0
+    const spin: Tool = { name: 'spin', acquisition: true, async execute() { executions += 1; finalizing = true; return 'spun' } }
+    const llm = new ScriptedLlm([
+      { kind: 'tool_calls', calls: [{ id: 'c0', name: 'spin', args: {} }] },
+      { kind: 'answer', speak: 's', display: 'What I found before the parent finalized.' },
+    ])
+
+    const report = await runSubagent(
+      { llm, tools: [spin], clock: new FakeClock(), maxToolRounds: 12 },
+      { task: 't', agentId: 'a-1', isCancelled: () => false, isParentFinalizing: () => finalizing },
+    )
+
+    // One acquisition round ran. Neither the worker's own budget (12) nor
+    // any deadline stopped the second — the parent's Finalization did, and
+    // the reserved round turned what the worker held into a report.
+    expect(executions).toBe(1)
+    expect(llm.requests).toHaveLength(2)
+    expect(report.text).toBe('What I found before the parent finalized.')
+    expect(report.finalizationCause).toBe('parent_finalized')
+    expect(report.bounded).toBeUndefined()
+    expect(llm.requests[1]?.toolResults[0]?.outcome).toMatchObject({
+      ok: true,
+      result: expect.stringContaining('The parent run is finalizing. Tool calls are closed. Reply now with ONLY your final report JSON'),
+    })
+  })
+
+  it('settles the in-flight call and refuses the round\'s remaining acquisition siblings', async () => {
+    let finalizing = false
+    const executed: string[] = []
+    const spin: Tool = {
+      name: 'spin',
+      acquisition: true,
+      async execute(call) {
+        executed.push(String(call.args.n))
+        finalizing = true
+        return 'spun'
+      },
+    }
+    const llm = new ScriptedLlm([
+      {
+        kind: 'tool_calls',
+        calls: [
+          { id: 'c0', name: 'spin', args: { n: 1 } },
+          { id: 'c1', name: 'spin', args: { n: 2 } },
+        ],
+      },
+      { kind: 'answer', speak: 's', display: 'Reported.' },
+    ])
+
+    const report = await runSubagent(
+      { llm, tools: [spin], clock: new FakeClock(), maxToolRounds: 12 },
+      { task: 't', isCancelled: () => false, isParentFinalizing: () => finalizing },
+    )
+
+    // The first call was already executing when the parent finalized, so
+    // it settled; the sibling behind it never ran, and it read the
+    // parent's wording — not the spent-budget one it would have read
+    // before #199.
+    expect(executed).toEqual(['1'])
+    const refused = llm.requests[1]?.toolResults[1]?.outcome
+    expect(refused).toMatchObject({
+      ok: false,
+      error: expect.stringContaining('The parent run is finalizing. Tool calls are closed.'),
+    })
+    expect(refused).not.toMatchObject({ error: expect.stringContaining('delegated work is over') })
+    expect(report.finalizationCause).toBe('parent_finalized')
+  })
+
+  it('returns the bounded report, marked bounded, when the grace ends mid report round', async () => {
+    const abandon = new AbortController()
+    let finalizing = false
+    const spin: Tool = { name: 'spin', acquisition: true, async execute() { finalizing = true; return 'spun' } }
+    let round = 0
+    const llm = {
+      async complete(request: LlmRequest) {
+        round += 1
+        if (round === 1) return { kind: 'tool_calls' as const, calls: [{ id: 'c0', name: 'spin', args: {} }] }
+        // The reserved report round: still thinking when the grace ends.
+        abandon.abort()
+        await Promise.resolve()
+        if (request.signal?.aborted === true) throw new Error('aborted')
+        return { kind: 'answer' as const, speak: 'too late', display: 'too late' }
+      },
+    }
+
+    const report = await runSubagent(
+      { llm, tools: [spin], clock: new FakeClock(), maxToolRounds: 12 },
+      {
+        task: 't',
+        agentId: 'a-2',
+        isCancelled: () => false,
+        isParentFinalizing: () => finalizing,
+        abandonReport: abandon.signal,
+      },
+    )
+
+    // The grace outran the report round: the call is abandoned and the
+    // bounded report stands. The worker was never cancelled — it returns
+    // a report, so the manager settles it `completed`.
+    expect(report.agentId).toBe('a-2')
+    expect(report.finalizationCause).toBe('parent_finalized')
+    expect(report.bounded).toBe(true)
+    expect(report.text).toMatch(/Stopped when the parent run finalized after 1 tool round — the parent run finalized before this report was written/)
+    expect(report.unresolved).toEqual(['Cut short by the parent run’s finalization — the task is incomplete.'])
+  })
+
+  it('marks every bounded report bounded, not only one the grace passed by', async () => {
+    const spin: Tool = { name: 'spin', acquisition: true, async execute() { return 'spun' } }
+    const llm = new ScriptedLlm([
+      { kind: 'tool_calls', calls: [{ id: 'c0', name: 'spin', args: {} }] },
+      { kind: 'tool_calls', calls: [{ id: 'c1', name: 'spin', args: {} }] },
+      { kind: 'tool_calls', calls: [{ id: 'c2', name: 'spin', args: {} }] },
+      { kind: 'answer', speak: 'never', display: 'never' },
+    ])
+
+    const report = await runSubagent(
+      { llm, tools: [spin], clock: new FakeClock(), maxToolRounds: 2 },
+      { task: 't', isCancelled: () => false },
+    )
+
+    expect(report.finalizationCause).toBe('budget_exhausted')
+    expect(report.bounded).toBe(true)
+  })
+})

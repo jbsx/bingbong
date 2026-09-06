@@ -71,10 +71,11 @@ export function createSubagentCardBridge(deps: SubagentCardBridgeDeps): Subagent
       if (event.type === 'finished') {
         // How this worker ended (#162), on the one surface the eval's
         // turn-scoped extraction can see. Every finished worker reports,
-        // cause or no cause: the parent Run's own Finalization cancels
-        // unfinished workers, so the cut-short case the measurement exists
-        // for is exactly the one with no report to read a cause from. A
-        // worker spawned outside any turn has nothing turn-scoped to say.
+        // cause or no cause. Since #199 (ADR 0035) Finalization no longer
+        // cancels a worker, so a `cancelled` status here means a decision
+        // — Stop, `cancel_agent`, a Session Reset — and the cut-short
+        // case now arrives as a report the `bounded` flag marks. A worker
+        // spawned outside any turn has nothing turn-scoped to say.
         const { turnId, report } = event.record
         if (turnId !== undefined) {
           emit(
@@ -86,6 +87,7 @@ export function createSubagentCardBridge(deps: SubagentCardBridgeDeps): Subagent
                 kind: event.record.kind,
                 status: event.record.status,
                 ...(report?.finalizationCause !== undefined ? { cause: report.finalizationCause } : {}),
+                ...(report?.bounded === true ? { bounded: true } : {}),
                 at: clock.now(),
               },
               event.record.owner,

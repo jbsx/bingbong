@@ -238,6 +238,13 @@ export type PipelineEvent = SessionEventIdentity & (
       status: SubagentStatus
       /** Absent unless the worker finalized itself into a report. */
       cause?: FinalizationCause
+      /**
+       * Whether that report is the deterministic bounded one rather than
+       * the worker model's own (#199, ADR 0035). Present on every bounded
+       * report, absent otherwise — the stop-cause breakdown reads it to
+       * tell a written report from the fallback.
+       */
+      bounded?: true
       at: number
     }
   /**

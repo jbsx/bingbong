@@ -31,6 +31,7 @@ import {
   createEffortEpoch,
   deterministicFinalAnswer,
   FINALIZATION_ANSWER_DIRECTIVE,
+  resolveReportGraceMs,
   type EffortEpoch,
 } from './effortEpoch'
 import {
@@ -144,12 +145,34 @@ export interface CommandPipelineDeps {
    */
   onSteer?(): void
   /**
-   * Finalization entry (#120, ADR 0027): fired when a work rail trips the
-   * run into Finalization — unfinished delegated acquisition is cancelled,
-   * while completed reports stay available to the reserved Answer round.
-   * Wired by main to the subagent rail's cancelAll.
+   * Finalization entry (#120, ADR 0027; #199, ADR 0035): fired when a work
+   * rail trips the run into Finalization. It no longer cancels delegated
+   * work — every live Subagent is *told* the parent is finalizing, so it
+   * enters its own Finalization and writes a report. Wired by main to the
+   * subagent rail's parentFinalizing.
    */
   onFinalize?(): void
+  /**
+   * The Report Grace (#199, ADR 0035): resolves once every Subagent live
+   * at the call has settled. The Run races it against the grace before
+   * its bookkeeping Tool Round — a Finalization with no live worker
+   * therefore waits for nothing. Absent (no delegation is wired at all),
+   * Finalization waits for nothing either.
+   */
+  subagentReportsSettled?(): Promise<void>
+  /**
+   * The Report Grace's end (#199): every Subagent still running abandons
+   * its round and returns its bounded Subagent Report. Not a
+   * cancellation — those workers finish `completed`.
+   */
+  onReportGraceEnd?(): void
+  /**
+   * Test/e2e override for the Report Grace (#199):
+   * `BINGBONG_REPORT_GRACE_MS` threaded by the assistant pipeline —
+   * coverage reproduces the grace in milliseconds. Production never sets
+   * it; REPORT_GRACE_MS applies.
+   */
+  reportGraceMs?: number
   /**
    * Collection at Finalization entry (#192): takes completed worker reports
    * that have not entered this Run's transcript yet.
@@ -348,6 +371,9 @@ function stampTurn(event: UnstampedEvent, turnId: string): PipelineEvent {
 export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipeline {
   const { llm, tts, clock, tools } = deps
   const mintTurnId = createTurnIdSource(deps.tracer)
+  // The Report Grace (#199, ADR 0035): the constant, or the single
+  // test/e2e override — resolved once, since it never varies within a run.
+  const reportGraceMs = resolveReportGraceMs(deps.reportGraceMs)
   const confirmTimeoutMs = deps.confirmTimeoutMs ?? 60_000
   const askTimeoutMs = deps.askTimeoutMs ?? ASK_TIMEOUT_MS
   const toolsByName = new Map(tools.map((tool) => [tool.name, tool]))
@@ -500,6 +526,11 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
     // until it actually rides a useful result, so a round whose siblings
     // all fail does not swallow it.
     const notices = createNotices()
+    // The Report Grace is owed once per Finalization entry (#199, ADR
+    // 0035) and consumed at the loop top before the bookkeeping round —
+    // so a Steering replan that exits Finalization and a later re-entry
+    // each get their own wait, exactly as the entry hook fires twice.
+    let reportGracePending = false
     const run: ActiveRun = {
       turnId,
       aborted: false,
@@ -518,6 +549,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
         // clears its own owed budget warning.
         onFinalizationEntered: () => {
           deps.onFinalize?.()
+          reportGracePending = true
           notices.clear('run_plan')
         },
       }),
@@ -926,6 +958,40 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
           // read from the epoch below, so the answer needs no unpacking.
           effortEpoch.decideLoopTop()
           steering = (yield* interrupts.check('thinking')) ?? steering
+          // The Report Grace (#199, ADR 0035): Finalization no longer
+          // cancels a live Subagent, so before the bookkeeping Tool Round
+          // the Run waits for each one's report — that round is the last
+          // place a worker's findings can become Session Evidence (ADR
+          // 0028). The wait ends the moment every worker has settled, so
+          // a Run that delegated nothing pays nothing, and a Stop — which
+          // cancels them all — ends it the same way. Whatever is still
+          // running when the grace elapses has its round abandoned and
+          // returns its bounded report, too late for this round's context.
+          let graceJustEnded = false
+          if (reportGracePending) {
+            reportGracePending = false
+            const settled = deps.subagentReportsSettled?.()
+            if (settled !== undefined) {
+              await new Promise<void>((resolve) => {
+                const cancelTimer = clock.setTimer(reportGraceMs, resolve)
+                void settled.then(
+                  () => {
+                    cancelTimer()
+                    resolve()
+                  },
+                  () => {
+                    cancelTimer()
+                    resolve()
+                  },
+                )
+              })
+              graceJustEnded = true
+              // A Stop during the wait cancelled every worker, which is
+              // what ended it: the run is over, and no bookkeeping round
+              // follows a Stop.
+              if (run.aborted) throw new CommandAbortedError()
+            }
+          }
           // A report that completed before Finalization is Collection, not
           // Acquisition (#192). Put it through the same call/result transcript
           // and event shapes as an explicit agent_results call before the
@@ -957,6 +1023,12 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
               }
             }
           }
+          // Abandoning what is still running comes after this round's
+          // collection (#199): what a worker managed to report inside the
+          // grace is in the round, and cutting the rest off cannot race
+          // with reading them. A bounded report that lands after this
+          // point is collected by the reserved Answer round instead.
+          if (graceJustEnded) deps.onReportGraceEnd?.()
           // Run Context Compaction (#124, ADR 0028): before every model
           // round, past the deterministic size threshold, older tool
           // results an accepted Evidence Checkpoint represents are

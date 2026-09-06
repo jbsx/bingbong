@@ -45,6 +45,7 @@ function metrics(overrides: Partial<ScenarioMetrics> = {}): ScenarioMetrics {
     rawLimitFailure: null,
     askTimedOut: false,
     subagentFinalizations: {},
+    subagentBoundedReports: 0,
     actions: [],
     answerText: 'answer',
     timedOut: false,

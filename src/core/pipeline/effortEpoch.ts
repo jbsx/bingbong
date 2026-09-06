@@ -32,6 +32,18 @@ export const TIER_ACTIVE_WORK_DEADLINES_MS: Readonly<Record<EffortTier, number>>
 }
 
 /**
+ * The Report Grace (#199, ADR 0035): how long a Run waits, from the
+ * moment it enters Finalization for any cause, before its bookkeeping
+ * Tool Round — so each live Browse Subagent has a window to turn what it
+ * holds into a Subagent Report. Thirty seconds: a worker's report round
+ * averaged about six in the #199 session and a Look or navigate settles
+ * in two to three, so the default covers one settling call and one
+ * report round with margin. A default beside the tier budgets and
+ * deadlines, and tunable the same way — evaluation may move it.
+ */
+export const REPORT_GRACE_MS = 30_000
+
+/**
  * The reasoning-effort rung each tier runs its model rounds at (#166):
  * the cheap tiers think less than an Investigation, which thinks as hard
  * as the provider allows. A Browse Subagent has no tier and runs at
@@ -75,6 +87,18 @@ export function resolveActiveWorkDeadlineMs(
 }
 
 /**
+ * The Run's live Report Grace (#199): the constant, or the single
+ * test/e2e override (`BINGBONG_REPORT_GRACE_MS`) when one is set —
+ * coverage must reproduce a grace that elapses in milliseconds, not in
+ * half a minute of wall clock. Production never sets an override.
+ */
+export function resolveReportGraceMs(overrideMs: number | undefined): number {
+  return overrideMs !== undefined && Number.isFinite(overrideMs) && overrideMs >= 0
+    ? overrideMs
+    : REPORT_GRACE_MS
+}
+
+/**
  * The orchestrator's product-owned hard work ceiling (#108/#118, ADR
  * 0027): 32 Tool Rounds per Run, cumulative across tier epochs and
  * Steering replans — the only round limit; the user-facing maximum-round
@@ -100,15 +124,24 @@ export const CEILING_RESERVED_BOOKKEEPING_ROUNDS = 1
  * deadline, a live predicate the epoch polls rather than a duration its
  * own clock measures. Tier declarations, Steering replans, and the
  * orchestrator's hard ceiling belong to the Run and never apply to a
- * Subagent; a Subagent epoch stops for three Finalization Causes only —
- * `budget_exhausted`, `deadline_reached`, and, since the worker adopted
- * the Run's no-progress rails (#159), `no_progress`.
+ * Subagent; a Subagent epoch stops for four Finalization Causes only —
+ * `budget_exhausted`, `deadline_reached`, since the worker adopted the
+ * Run's no-progress rails (#159) `no_progress`, and, since Finalization
+ * stopped cancelling workers (#199, ADR 0035), `parent_finalized`.
  */
 export interface SubagentEpochConfig {
   /** The Subagent's independent Tool Round budget (SUBAGENT_LIMITS.maxToolRoundsPerTask). */
   readonly toolRoundBudget: number
   /** The parent Run's shared active-work deadline, as this epoch's deadline. */
   readonly deadline: SubagentSharedDeadline
+  /**
+   * Whether the parent Run has entered Finalization (#199, ADR 0035): a
+   * live predicate the epoch polls beside the shared deadline. True, the
+   * worker enters its own Finalization with `parent_finalized` — it is
+   * told, never cancelled. Absent for a worker whose spawn carried no
+   * parent, which is every direct loop user.
+   */
+  readonly parentFinalizing?: () => boolean
 }
 
 export type EffortPhase =
@@ -271,9 +304,11 @@ export interface EffortEpoch {
    */
   tripNoProgress(): boolean
   /**
-   * The per-call deadline gate (#135/#148): expiry checked before each
-   * call in a round begins, so no acquisition, vision, media,
-   * delegation, or user-question action starts past the boundary.
+   * The per-call gate (#135/#148/#199): the epoch's boundaries checked
+   * before each call in a round begins, so no acquisition, vision, media,
+   * delegation, or user-question action starts past one. The deadline for
+   * any epoch; for a Subagent, its parent Run's Finalization too (ADR
+   * 0035) — the in-flight call settles, every later sibling is refused.
    */
   tripDeadline(): boolean
   /** Counts a returned tool-bearing decision and latches a pending Finalization round as Answer-only. */
@@ -390,14 +425,18 @@ export function createEffortEpoch(deps: {
     // A Subagent has no hard ceiling of its own, and its shared deadline
     // outranks its remaining rounds (#149/AC2): once the parent Run has
     // stopped working, that deadline — not the Subagent's spent budget —
-    // is why it stops.
+    // is why it stops. The parent's Finalization (#199) sits between the
+    // two: it arrives from outside and closes the worker's window now,
+    // where a spent budget only says the worker had no round left anyway.
     const cause: FinalizationCause | null =
       subagent !== undefined
         ? deadlinePassed
           ? 'deadline_reached'
-          : budgetExhausted
-            ? 'budget_exhausted'
-            : null
+          : subagent.parentFinalizing?.() === true
+            ? 'parent_finalized'
+            : budgetExhausted
+              ? 'budget_exhausted'
+              : null
         : budgetExhausted
           ? 'budget_exhausted'
           : deadlinePassed
@@ -429,7 +468,15 @@ export function createEffortEpoch(deps: {
     decideLoopTop,
     enterFinalization,
     tripNoProgress: () => enterFinalization('no_progress'),
-    tripDeadline: () => (phase.kind === 'working' && deadlineExpired() ? enterFinalization('deadline_reached') : false),
+    tripDeadline() {
+      if (phase.kind !== 'working') return false
+      // Same precedence the loop top applies: the deadline is the harder
+      // boundary, and the parent's Finalization is the worker's own door
+      // opening from outside (#199).
+      if (deadlineExpired()) return enterFinalization('deadline_reached')
+      if (subagent?.parentFinalizing?.() === true) return enterFinalization('parent_finalized')
+      return false
+    },
     beginToolRound() {
       const spendable =
         phase.kind !== 'answer_only' &&

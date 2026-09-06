@@ -240,6 +240,46 @@ describe('subagent card bridge', () => {
     }
   })
 
+  it('says when the report is the bounded fallback rather than the worker\u2019s own (#199, ADR 0035)', async () => {
+    const w = ownedWiring({ sessionId: 'session-5' as SessionId, generation: 1 })
+    w.manager.spawn('browse', 'compare prices', { turnId: 'turn-88' })
+    w.settle('a-1', 'resolve', {
+      text: 'Stopped when the parent run finalized.',
+      findings: [],
+      unresolved: ['Cut short by the parent run\u2019s finalization — the task is incomplete.'],
+      finalizationCause: 'parent_finalized',
+      bounded: true,
+    })
+    await flush()
+
+    const finalized = w.events.filter(
+      (e): e is Extract<PipelineEvent, { type: 'subagent_finalized' }> => e.type === 'subagent_finalized',
+    )
+    // The stop-cause breakdown can only tell a written report from the
+    // fallback if the fallback says so on the one turn-scoped surface.
+    expect(finalized[0]).toMatchObject({ status: 'completed', cause: 'parent_finalized', bounded: true })
+    // And the flag stays off the user-facing card, like the cause beside it.
+    for (const update of agentUpdates(w.events)) expect(update.agent).not.toHaveProperty('bounded')
+  })
+
+  it('leaves the bounded flag off a report the worker wrote itself (#199)', async () => {
+    const w = ownedWiring({ sessionId: 'session-5' as SessionId, generation: 1 })
+    w.manager.spawn('browse', 'compare prices', { turnId: 'turn-89' })
+    w.settle('a-1', 'resolve', {
+      text: 'Vendor A wins.',
+      findings: [],
+      unresolved: [],
+      finalizationCause: 'parent_finalized',
+    })
+    await flush()
+
+    const finalized = w.events.filter(
+      (e): e is Extract<PipelineEvent, { type: 'subagent_finalized' }> => e.type === 'subagent_finalized',
+    )
+    expect(finalized[0]).toMatchObject({ status: 'completed', cause: 'parent_finalized' })
+    expect(finalized[0]).not.toHaveProperty('bounded')
+  })
+
   it('reports a worker the parent run cancelled, with no cause of its own (#162)', async () => {
     const w = wiring()
     // The Run's own Finalization cancels unfinished workers: the worker

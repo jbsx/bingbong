@@ -26,6 +26,13 @@ import { SubagentCancelledError } from './subagentRunner'
 // their structured Subagent Report for the orchestrator to reconcile.
 // Browsing workers also carry their parent Run's shared active-work
 // deadline (#120): the workhorse polls it and finalizes when it passes.
+// The parent's Finalization is told rather than enforced (#199, ADR
+// 0035): `parentFinalizing()` marks every running worker so it enters its
+// own Finalization and writes a report, `settledAll()` is what the Run
+// races its Report Grace against, and `endReportGrace()` abandons the
+// round of whoever is still running. None of the three cancels — a
+// worker is cancelled only by a decision, so `cancelled` on a record
+// still means the user's Stop, `cancel_agent`, or a Session Reset.
 
 export type SubagentKind = 'browse' | 'background'
 
@@ -96,6 +103,10 @@ export interface SubagentTaskHooks {
   isCancelled(): boolean
   /** The parent Run's shared active-work deadline (#120); absent when the spawn carries none. */
   isWorkExpired?(): boolean
+  /** Whether the parent Run has entered Finalization (#199, ADR 0035). */
+  isParentFinalizing?(): boolean
+  /** Aborted when the Report Grace ends with this worker still running (#199). */
+  abandonReport?: AbortSignal
   waitIfPaused?(): Promise<void>
   onProgress(step: number, action: string): void
   /**
@@ -190,6 +201,26 @@ export interface SubagentManager {
   cancel(agentId: string): CancelResult
   cancelAll(): number
   /**
+   * The parent Run entered Finalization (#199, ADR 0035): every running
+   * worker is told, and none is cancelled. Each enters its own
+   * Finalization with `parent_finalized`, refuses the rest of its round's
+   * acquisition calls, and runs its reserved report round. Returns how
+   * many were told.
+   */
+  parentFinalizing(): number
+  /**
+   * Resolves once every worker running at the call has settled (#199) —
+   * what the Run races the Report Grace against, so a Finalization with
+   * no live worker waits for nothing.
+   */
+  settledAll(): Promise<void>
+  /**
+   * The Report Grace ended (#199): every worker still running has its
+   * round abandoned and returns its bounded Subagent Report. Not a
+   * cancellation — those workers finish `completed`. Returns how many.
+   */
+  endReportGrace(): number
+  /**
    * Session end (#97): cancels every running agent, discards all records —
    * pending reports included — and arms the epoch guard so late progress or
    * completion from the ended Session never emits. The manager stays
@@ -217,6 +248,12 @@ export function createSubagentManager(deps: SubagentManagerDeps): SubagentManage
 
   const records = new Map<string, SubagentRecord>()
   const cancelled = new Set<string>()
+  // The parent's Finalization, per worker (#199, ADR 0035): told, not
+  // cancelled — the worker reads it as its own Finalization's door, and
+  // the controller beside it is how the Report Grace's end reaches the
+  // round it is still running.
+  const parentFinalized = new Set<string>()
+  const abandonReports = new Map<string, AbortController>()
   const settled = new Map<string, Promise<void>>()
   const pauseWaiters = new Map<string, Set<() => void>>()
   let paused = false
@@ -313,6 +350,11 @@ export function createSubagentManager(deps: SubagentManagerDeps): SubagentManage
       }
 
       const spawnEpoch = epoch
+      // One controller per worker (#199): a Steering replan that reopens
+      // work spawns fresh workers with fresh controllers, so a spent
+      // grace can never abandon the round that replaced it.
+      const abandonReport = new AbortController()
+      abandonReports.set(id, abandonReport)
       const owner = deps.owner?.() ?? undefined
       const record: SubagentRecord = {
         id,
@@ -345,6 +387,11 @@ export function createSubagentManager(deps: SubagentManagerDeps): SubagentManage
           // workhorse polls it alongside cancellation and finalizes with a
           // bounded report when the parent's work time is gone.
           ...(sharedDeadline !== undefined ? { isWorkExpired: () => sharedDeadline.expired() } : {}),
+          // The parent Run's Finalization (#199, ADR 0035): polled like
+          // the deadline beside it, and the signal the grace's end
+          // aborts the worker's round with.
+          isParentFinalizing: () => parentFinalized.has(id),
+          abandonReport: abandonReport.signal,
           // The worker's reasoning records (#183): handed down only when
           // the Run is tracing them, so an unasked-for worker collects
           // nothing — the same invariant the Run path holds.
@@ -407,6 +454,31 @@ export function createSubagentManager(deps: SubagentManagerDeps): SubagentManage
       return cancelAllRunning()
     },
 
+    parentFinalizing() {
+      let told = 0
+      for (const record of records.values()) {
+        if (record.status !== 'running') continue
+        parentFinalized.add(record.id)
+        told += 1
+      }
+      return told
+    },
+
+    settledAll() {
+      const running = [...records.values()].filter((record) => record.status === 'running')
+      return Promise.all(running.map((record) => settled.get(record.id) ?? Promise.resolve())).then(() => undefined)
+    },
+
+    endReportGrace() {
+      let abandoned = 0
+      for (const record of records.values()) {
+        if (record.status !== 'running') continue
+        abandonReports.get(record.id)?.abort()
+        abandoned += 1
+      }
+      return abandoned
+    },
+
     retire() {
       const running = cancelAllRunning()
       // Everything the ended Session owned goes: pending reports, finished
@@ -416,6 +488,8 @@ export function createSubagentManager(deps: SubagentManagerDeps): SubagentManage
       epoch += 1
       records.clear()
       cancelled.clear()
+      parentFinalized.clear()
+      abandonReports.clear()
       settled.clear()
       return running
     },

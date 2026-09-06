@@ -752,3 +752,112 @@ describe('subagentAnnouncement', () => {
     expect(subagentAnnouncement({ ...base, status: 'cancelled' })).toBeNull()
   })
 })
+
+// The Report Grace's manager seams (#199, ADR 0035). Finalization tells,
+// waits, then abandons — and none of the three is a cancellation, so a
+// record that reads `cancelled` still means a decision was taken.
+describe('the parent Run’s Finalization (#199)', () => {
+  it('tells every running worker without cancelling any of them', () => {
+    const { mgr, api } = manager()
+    mgr.spawn('browse', 'compare vendors')
+    mgr.spawn('browse', 'check stock')
+    api.tasks.get('a-1')!.resolve('done early')
+
+    expect(mgr.parentFinalizing()).toBe(2)
+    expect(api.hooksSeen.get('a-1')!.isParentFinalizing!()).toBe(true)
+    expect(api.hooksSeen.get('a-2')!.isParentFinalizing!()).toBe(true)
+    // Told, not killed: the worker's own cancellation flag is untouched,
+    // so its loop finalizes into a report instead of throwing.
+    expect(api.tasks.get('a-2')!.cancelFlag()).toBe(false)
+    expect(mgr.list().map((record) => record.status)).toEqual(['running', 'running'])
+  })
+
+  it('counts only the workers still running', () => {
+    const { mgr, api } = manager()
+    mgr.spawn('browse', 'compare vendors')
+    mgr.spawn('browse', 'check stock')
+    api.tasks.get('a-1')!.resolve('done early')
+
+    return flush().then(() => {
+      expect(mgr.parentFinalizing()).toBe(1)
+    })
+  })
+
+  it('settles the wait as soon as every live worker has reported', async () => {
+    const { mgr, api } = manager()
+    mgr.spawn('browse', 'compare vendors')
+    let settled = false
+    void mgr.settledAll().then(() => { settled = true })
+    await flush()
+    expect(settled).toBe(false)
+
+    api.tasks.get('a-1')!.resolve('Vendor A wins.')
+    await flush()
+
+    expect(settled).toBe(true)
+  })
+
+  it('resolves the wait at once when nothing is running', async () => {
+    const { mgr } = manager()
+    let settled = false
+    void mgr.settledAll().then(() => { settled = true })
+    await flush()
+
+    // A Run that delegated nothing pays nothing for the grace.
+    expect(settled).toBe(true)
+  })
+
+  it('abandons the round of whoever is still running when the grace ends, and they complete', async () => {
+    const { mgr, api } = manager()
+    mgr.spawn('browse', 'compare vendors')
+    mgr.parentFinalizing()
+    const hooks = api.hooksSeen.get('a-1')!
+    expect(hooks.abandonReport?.aborted).toBe(false)
+
+    expect(mgr.endReportGrace()).toBe(1)
+    expect(hooks.abandonReport?.aborted).toBe(true)
+    // The abandoned worker returns its bounded report — a report, not a
+    // rejection — so the record settles `completed`.
+    api.tasks.get('a-1')!.resolve({
+      text: 'Stopped when the parent run finalized.',
+      findings: [],
+      unresolved: [],
+      finalizationCause: 'parent_finalized',
+      bounded: true,
+    })
+    await flush()
+
+    expect(mgr.list()[0]).toMatchObject({
+      status: 'completed',
+      report: expect.objectContaining({ finalizationCause: 'parent_finalized', bounded: true }),
+    })
+  })
+
+  it('leaves cancellation to decisions — Stop still cancels every worker', async () => {
+    const { mgr, api } = manager()
+    mgr.spawn('browse', 'compare vendors')
+    mgr.parentFinalizing()
+
+    // The user's Stop during the grace: a decision, so it cancels.
+    expect(mgr.cancelAll()).toBe(1)
+    expect(api.tasks.get('a-1')!.cancelFlag()).toBe(true)
+    api.tasks.get('a-1')!.reject(new SubagentCancelledError())
+    await flush()
+
+    expect(mgr.list()[0]).toMatchObject({ status: 'cancelled' })
+    expect(mgr.list()[0]).not.toHaveProperty('report')
+  })
+
+  it('gives a worker spawned after a spent grace its own signal', () => {
+    const { mgr, api } = manager()
+    mgr.spawn('browse', 'compare vendors')
+    mgr.parentFinalizing()
+    mgr.endReportGrace()
+    // A Steering replan reopens work: the fresh worker must not inherit
+    // the abandonment of the grace that preceded it.
+    mgr.spawn('browse', 'a fresh branch')
+
+    expect(api.hooksSeen.get('a-1')!.abandonReport?.aborted).toBe(true)
+    expect(api.hooksSeen.get('a-2')!.abandonReport?.aborted).toBe(false)
+  })
+})

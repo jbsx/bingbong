@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   finalizeRun,
+  FINALIZATION_CAUSES,
   parseFinalizationCause,
   parseRunResolution,
   type FinalizationCause,
@@ -50,6 +51,14 @@ describe('parseFinalizationCause', () => {
       expect(parseFinalizationCause(value)).toBeNull()
     },
   )
+
+  it('rejects parent_finalized — a Run never stops for its own Finalization (#199, ADR 0035)', () => {
+    // The cause exists in the vocabulary a Subagent reports in, but a Run
+    // that names it is naming something it cannot have stopped for, so the
+    // Answer parser treats it as malformed like any cause it cannot attest.
+    expect(FINALIZATION_CAUSES).toContain('parent_finalized')
+    expect(parseFinalizationCause('parent_finalized')).toBeNull()
+  })
 })
 
 describe('finalizeRun', () => {

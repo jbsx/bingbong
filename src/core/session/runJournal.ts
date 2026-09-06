@@ -40,11 +40,20 @@ export const FINALIZATION_CAUSES = [
   'user_unavailable',
   'hard_limit',
   'model_answered',
+  'parent_finalized',
 ] as const
 export type FinalizationCause = (typeof FINALIZATION_CAUSES)[number]
 
 /** The one Finalization Cause only the model can attest. */
 const MODEL_FINALIZATION_CAUSE: FinalizationCause = 'objective_met'
+
+/**
+ * The Finalization Causes a Subagent alone can carry (#199, ADR 0035).
+ * `parent_finalized` is the parent Run entering Finalization: a worker
+ * stops for it, a Run never does — so the Run's Answer parser treats it
+ * as malformed, the way it treats a cause the model cannot attest.
+ */
+const SUBAGENT_ONLY_FINALIZATION_CAUSES: readonly FinalizationCause[] = ['parent_finalized']
 
 /** Parse a proposed Run Resolution; anything but the five values is null. */
 export function parseRunResolution(value: unknown): RunResolution | null {
@@ -53,9 +62,15 @@ export function parseRunResolution(value: unknown): RunResolution | null {
     : null
 }
 
-/** Parse a proposed Finalization Cause; anything but the eight values is null. */
+/**
+ * Parse a Finalization Cause a *Run* proposed; anything else is null. The
+ * Subagent-only causes are rejected here (#199): a Run that names one is
+ * naming something it cannot have stopped for.
+ */
 export function parseFinalizationCause(value: unknown): FinalizationCause | null {
-  return typeof value === 'string' && (FINALIZATION_CAUSES as readonly string[]).includes(value)
+  return typeof value === 'string' &&
+    (FINALIZATION_CAUSES as readonly string[]).includes(value) &&
+    !(SUBAGENT_ONLY_FINALIZATION_CAUSES as readonly string[]).includes(value)
     ? (value as FinalizationCause)
     : null
 }

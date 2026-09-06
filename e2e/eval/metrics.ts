@@ -73,6 +73,14 @@ export interface ScenarioMetrics {
    * outcome, and #132's pooled statistics keep their shape.
    */
   subagentFinalizations: Partial<Record<WorkerStop, number>>
+  /**
+   * How many of those workers returned the deterministic bounded report
+   * rather than one their own model wrote (#199, ADR 0035). A subset of
+   * `subagentFinalizations`, not a fifth bucket: `parent_finalized 3` is
+   * a different reading depending on whether all three were bounded or
+   * none were, and the Report Grace exists to move that number down.
+   */
+  subagentBoundedReports: number
   actions: RecordedAction[]
   answerText: string | null
   timedOut: boolean
@@ -151,11 +159,11 @@ export function extractMetrics(events: RunEvents, perfRecords: readonly PerfSpan
   const plans = events.filter(
     (event): event is Extract<PipelineEvent, { type: 'run_plan' }> => event.type === 'run_plan',
   )
+  const subagentFinalizedEvents = events.filter(
+    (event): event is Extract<PipelineEvent, { type: 'subagent_finalized' }> => event.type === 'subagent_finalized',
+  )
   const subagentFinalizations = countStops(
-    events
-      .filter(
-        (event): event is Extract<PipelineEvent, { type: 'subagent_finalized' }> => event.type === 'subagent_finalized',
-      )
+    subagentFinalizedEvents
       // A cancelled or failed worker reached no cause of its own — the
       // status it ended on is what it stopped for. Any other status
       // without a cause is `uncaused`: it says the cause is missing,
@@ -179,6 +187,7 @@ export function extractMetrics(events: RunEvents, perfRecords: readonly PerfSpan
     rawLimitFailure: rawLimit?.message ?? null,
     askTimedOut: askTimedOutIn(events),
     subagentFinalizations,
+    subagentBoundedReports: subagentFinalizedEvents.filter((event) => event.bounded === true).length,
     actions,
     answerText: displays.length > 0 ? displays[displays.length - 1]!.text : null,
     timedOut,
@@ -210,6 +219,7 @@ export function combineRuns(runs: readonly ScenarioMetrics[]): ScenarioMetrics {
     // Work counters sum across a scenario's runs, and delegated workers are
     // work (#162): every run's breakdown adds into the scenario's.
     subagentFinalizations: mergeStopCounts(runs.map((metrics) => metrics.subagentFinalizations)),
+    subagentBoundedReports: runs.reduce((total, metrics) => total + (metrics.subagentBoundedReports ?? 0), 0),
     actions: runs.flatMap((metrics) => metrics.actions),
     answerText: final.answerText,
     timedOut: runs.some((metrics) => metrics.timedOut),

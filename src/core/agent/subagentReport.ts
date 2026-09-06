@@ -65,6 +65,15 @@ export interface SubagentReport {
    * diagnostic event; the user-facing Subagent card carries neither.
    */
   readonly finalizationCause?: FinalizationCause
+  /**
+   * Whether this report is the deterministic bounded one (#199, ADR
+   * 0035) rather than the worker model's own — present on every bounded
+   * report, absent otherwise. Hidden provenance like `finalizationCause`:
+   * it reaches the finished-worker diagnostic event so the delegation
+   * summary's stop-cause breakdown can tell a model-written report from
+   * the fallback, and no model ever reads it.
+   */
+  readonly bounded?: true
 }
 
 export const MAX_SUBAGENT_REPORT_FINDINGS = 10

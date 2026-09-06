@@ -63,6 +63,12 @@ export interface AssistantPipelineDeps {
     cancelAll(): number
     pauseAll(): void
     resumeAll(): void
+    /** The parent Run entered Finalization (#199, ADR 0035): told, never cancelled. */
+    parentFinalizing?(): number
+    /** Resolves once every worker running at the call has settled (#199). */
+    settledAll?(): Promise<void>
+    /** The Report Grace ended (#199): still-running workers abandon their round. */
+    endReportGrace?(): number
     collectCompleted?(turnId: string): CollectedSubagentReport[]
   }
   /** Receives per-turn orchestrator token usage (daily spend estimate). */
@@ -201,6 +207,19 @@ function activeWorkDeadlineMs(env: Record<string, string | undefined>): number |
 }
 
 /**
+ * Test/e2e override for the Report Grace (#199, ADR 0035):
+ * `BINGBONG_REPORT_GRACE_MS` lets coverage reproduce a grace that
+ * elapses in milliseconds. Zero is honoured — it is how a suite that
+ * delegates opts out of the wait entirely. Production never sets it.
+ */
+function reportGraceMs(env: Record<string, string | undefined>): number | undefined {
+  const raw = env.BINGBONG_REPORT_GRACE_MS
+  if (raw === undefined || raw.trim() === '') return undefined
+  const value = Number(raw)
+  return Number.isFinite(value) && value >= 0 ? value : undefined
+}
+
+/**
  * Re-resolves the underlying client whenever the routing env changes between
  * commands. Resolution failures degrade to UnavailableLlm, so a half-edited
  * settings page never crashes the pipeline.
@@ -267,10 +286,11 @@ export function createAssistantPipeline(deps: AssistantPipelineDeps): CommandPip
   const clock = deps.clock ?? systemClock
   const configuredAskTimeoutMs = askTimeoutMs(deps.env)
   const configuredActiveWorkDeadlineMs = activeWorkDeadlineMs(deps.env)
-  // Stop, Steering, and Finalization all cancel delegated work (#119/#120):
-  // Stop ends the run, a directive supersedes everything spawned under the
-  // corrected-away objective, and Finalization's entry ends unfinished
-  // delegated acquisition while completed reports stay available.
+  const configuredReportGraceMs = reportGraceMs(deps.env)
+  // Stop and Steering cancel delegated work (#119/#120): Stop ends the
+  // run, and a directive supersedes everything spawned under the
+  // corrected-away objective. Finalization no longer joins them (#199,
+  // ADR 0035) — it tells its workers instead and waits the Report Grace.
   const cancelSubagents = (): void => {
     deps.subagentControl?.cancelAll()
   }
@@ -305,9 +325,23 @@ export function createAssistantPipeline(deps: AssistantPipelineDeps): CommandPip
     // A Steering directive corrects the objective (#119): delegated
     // work spawned under the stale one is cancelled, not resumed.
     onSteer: cancelSubagents,
-    // Finalization cancels unfinished delegated acquisition (#120); the
-    // reserved Answer round still uses whatever reports completed.
-    onFinalize: cancelSubagents,
+    // Finalization tells its live workers rather than cancelling them
+    // (#199, ADR 0035), and the Run waits the Report Grace for each
+    // one's report before the bookkeeping round it can be checkpointed in.
+    onFinalize: () => {
+      deps.subagentControl?.parentFinalizing?.()
+    },
+    ...(deps.subagentControl?.settledAll
+      ? { subagentReportsSettled: () => deps.subagentControl!.settledAll!() }
+      : {}),
+    ...(deps.subagentControl?.endReportGrace
+      ? {
+          onReportGraceEnd: () => {
+            deps.subagentControl!.endReportGrace!()
+          },
+        }
+      : {}),
+    ...(configuredReportGraceMs !== undefined ? { reportGraceMs: configuredReportGraceMs } : {}),
     ...(deps.subagentControl?.collectCompleted
       ? { collectCompletedSubagentResults: (turnId: string) => deps.subagentControl!.collectCompleted!(turnId) }
       : {}),

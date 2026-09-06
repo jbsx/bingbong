@@ -8,6 +8,8 @@ import {
   FINALIZATION_ANSWER_DIRECTIVE,
   finalizationToolRefusal,
   HARD_TOOL_ROUND_CEILING,
+  REPORT_GRACE_MS,
+  resolveReportGraceMs,
   TIER_ACTIVE_WORK_DEADLINES_MS,
   TIER_REASONING_EFFORT,
   TIER_TOOL_ROUND_BUDGETS,
@@ -673,6 +675,86 @@ describe('Effort Epoch (#146, ADR 0027)', () => {
       epoch.decideLoopTop()
 
       expect(entered).toEqual(['budget_exhausted'])
+    })
+
+    it('enters Finalization with parent_finalized when the parent Run finalizes (#199, ADR 0035)', () => {
+      let finalizing = false
+      const epoch = createEffortEpoch({
+        clock: new FakeClock(),
+        subagent: {
+          toolRoundBudget: SUBAGENT_LIMITS.maxToolRoundsPerTask,
+          deadline: { expired: () => false },
+          parentFinalizing: () => finalizing,
+        },
+      })
+      expect(epoch.beginToolRound()).toBe(true)
+      expect(epoch.decideLoopTop()).toEqual({ kind: 'work' })
+
+      finalizing = true
+
+      // Nothing of the worker's own is spent — eleven rounds remain and
+      // the shared deadline has not passed — so the cause names the parent.
+      expect(epoch.decideLoopTop()).toEqual({ kind: 'finalize', cause: 'parent_finalized' })
+      expect(epoch.phase).toEqual({ kind: 'finalizing', cause: 'parent_finalized' })
+      expect(epoch.tierRounds).toBe(1)
+    })
+
+    it('trips the parent Run’s Finalization at the per-call gate too (#199)', () => {
+      let finalizing = false
+      const epoch = createEffortEpoch({
+        clock: new FakeClock(),
+        subagent: {
+          toolRoundBudget: SUBAGENT_LIMITS.maxToolRoundsPerTask,
+          deadline: { expired: () => false },
+          parentFinalizing: () => finalizing,
+        },
+      })
+      expect(epoch.beginToolRound()).toBe(true)
+      expect(epoch.tripDeadline()).toBe(false)
+
+      finalizing = true
+
+      // Mid-round: the call in flight settled, and every later sibling in
+      // the same response is refused by the closed-tool check.
+      expect(epoch.tripDeadline()).toBe(true)
+      expect(epoch.phase).toEqual({ kind: 'finalizing', cause: 'parent_finalized' })
+    })
+
+    it('takes the shared deadline ahead of the parent’s Finalization when both hold (#199)', () => {
+      const epoch = createEffortEpoch({
+        clock: new FakeClock(),
+        subagent: {
+          toolRoundBudget: SUBAGENT_LIMITS.maxToolRoundsPerTask,
+          deadline: { expired: () => true },
+          parentFinalizing: () => true,
+        },
+      })
+
+      // ADR 0027's rule stands: the deadline is the harder boundary, and a
+      // worker that outlived it says so rather than blaming the parent.
+      expect(epoch.decideLoopTop()).toEqual({ kind: 'finalize', cause: 'deadline_reached' })
+    })
+
+    it('carries no parent Finalization when the spawn wired none', () => {
+      const epoch = createEffortEpoch({
+        clock: new FakeClock(),
+        subagent: { toolRoundBudget: 12, deadline: { expired: () => false } },
+      })
+
+      expect(epoch.decideLoopTop()).toEqual({ kind: 'work' })
+      expect(epoch.tripDeadline()).toBe(false)
+    })
+  })
+
+  describe('the Report Grace (#199, ADR 0035)', () => {
+    it('defaults to thirty seconds and honours a single override', () => {
+      expect(REPORT_GRACE_MS).toBe(30_000)
+      expect(resolveReportGraceMs(undefined)).toBe(REPORT_GRACE_MS)
+      expect(resolveReportGraceMs(50)).toBe(50)
+      // Zero is a real setting — it is how a suite opts out of the wait.
+      expect(resolveReportGraceMs(0)).toBe(0)
+      expect(resolveReportGraceMs(Number.NaN)).toBe(REPORT_GRACE_MS)
+      expect(resolveReportGraceMs(-1)).toBe(REPORT_GRACE_MS)
     })
   })
 

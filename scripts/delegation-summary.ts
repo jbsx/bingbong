@@ -93,6 +93,10 @@ const lines = [
   `workers observed         : ${summary.workersObserved} ` +
     `(${summary.selfFinalizedWorkers} reached a cause of their own — the reading below rests on those)`,
   `worker stop causes       : ${stops === '' ? 'none' : stops}`,
+  // How many of those were the fallback rather than a report the worker
+  // wrote (#199, ADR 0035): the same causes read differently depending
+  // on it, and the Report Grace exists to bring it down.
+  `bounded reports          : ${summary.boundedReports} of ${summary.workersObserved}`,
   '',
 ]
 
@@ -132,7 +136,7 @@ for (const capture of captures) {
       `    ${row.id.padEnd(30)} ${row.success ? 'PASS' : 'FAIL'}  tier ${row.effortTier.padEnd(14)} ` +
         `spawns ${row.spawns.attempted}/${row.spawns.accepted} accepted` +
         (row.spawns.refusedOffTier > 0 ? ` (${row.spawns.refusedOffTier} off-tier)` : '') +
-        `  workers ${JSON.stringify(row.workerStops)}`,
+        `  workers ${JSON.stringify(row.workerStops)}${row.boundedReports > 0 ? ` (${row.boundedReports} bounded)` : ''}`,
     )
   }
 }

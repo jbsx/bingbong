@@ -30,6 +30,7 @@ function metrics(overrides: Partial<ScenarioMetrics> = {}): ScenarioMetrics {
     rawLimitFailure: null,
     askTimedOut: false,
     subagentFinalizations: {},
+    subagentBoundedReports: 0,
     actions: [],
     answerText: null,
     timedOut: false,
@@ -169,6 +170,7 @@ describe('summarizeDelegation', () => {
         delegated: true,
         spawns: { attempted: 2, accepted: 2, refusedOffTier: 0, refusedOther: 0, unanswered: 0 },
         workerStops: { objective_met: 1, no_progress: 1 },
+        boundedReports: 0,
       },
       {
         id: 'delegation-recall-theories',
@@ -177,6 +179,7 @@ describe('summarizeDelegation', () => {
         delegated: false,
         spawns: { attempted: 1, accepted: 0, refusedOffTier: 1, refusedOther: 0, unanswered: 0 },
         workerStops: {},
+        boundedReports: 0,
       },
     ])
     expect(summary.delegatingScenarios).toBe(1)
@@ -185,6 +188,31 @@ describe('summarizeDelegation', () => {
     expect(summary.workersObserved).toBe(2)
     expect(summary.selfFinalizedWorkers).toBe(2)
     expect(summary.noProgress).toEqual({ kind: 'seen', workers: 2, count: 1, rate: 0.5 })
+    expect(summary.boundedReports).toBe(0)
+  })
+
+  it('pools how many workers fell back to the bounded report (#199, ADR 0035)', () => {
+    // The breakdown alone cannot tell a Report Grace that worked from one
+    // that expired: both read `parent_finalized`. This is the column that can.
+    const summary = summarizeDelegation([
+      result({
+        id: 'delegation-hub-audit-sweep',
+        runs: [
+          metrics({
+            actions: [action({ name: 'spawn_agent' }), action({ name: 'spawn_agent' })],
+            subagentFinalizations: { parent_finalized: 2 },
+            subagentBoundedReports: 1,
+          }),
+        ],
+      }),
+    ])
+
+    expect(summary.workerStops).toEqual({ parent_finalized: 2 })
+    expect(summary.boundedReports).toBe(1)
+    expect(summary.scenarios[0]!.boundedReports).toBe(1)
+    // A bounded report is still a cause of its own — the worker finalized,
+    // it was not killed — so it stays in the rule-of-three denominator.
+    expect(summary.selfFinalizedWorkers).toBe(2)
   })
 
   it('keeps cancelled and failed workers out of the no_progress denominator', () => {

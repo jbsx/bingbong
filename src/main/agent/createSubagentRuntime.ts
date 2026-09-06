@@ -73,6 +73,15 @@ export interface SubagentRuntime {
   cancel(agentId: string): boolean
   cancelAll(): number
   /**
+   * The parent Run entered Finalization (#199, ADR 0035): every running
+   * worker is told so it writes a report — none is cancelled.
+   */
+  parentFinalizing(): number
+  /** Resolves once every worker running at the call has settled (#199). */
+  settledAll(): Promise<void>
+  /** The Report Grace ended (#199): still-running workers abandon their round. */
+  endReportGrace(): number
+  /**
    * A completed worker's retained Observations (#123, ADR 0028): the
    * hidden provenance its report carried — what the orchestrator's
    * kind "subagent" Evidence Checkpoint grounds against. Null when the
@@ -173,6 +182,9 @@ export function createSubagentRuntime(deps: SubagentRuntimeDeps): SubagentRuntim
     pool,
     cancel: (agentId) => manager.cancel(agentId).ok,
     cancelAll: () => manager.cancelAll(),
+    parentFinalizing: () => manager.parentFinalizing(),
+    settledAll: () => manager.settledAll(),
+    endReportGrace: () => manager.endReportGrace(),
     observationsFor: (agentId) => manager.list().find((record) => record.id === agentId)?.report?.observations ?? null,
     collectCompleted: (turnId) => manager.collectCompleted(turnId),
     retire: () => {

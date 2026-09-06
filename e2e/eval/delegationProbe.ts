@@ -55,6 +55,8 @@ export interface DelegationRow {
   delegated: boolean
   spawns: SpawnTally
   workerStops: Partial<Record<WorkerStop, number>>
+  /** How many of those stops returned the bounded report (#199, ADR 0035). */
+  boundedReports: number
 }
 
 export interface DelegationSummary {
@@ -62,6 +64,14 @@ export interface DelegationSummary {
   delegatingScenarios: number
   spawns: SpawnTally
   workerStops: Partial<Record<WorkerStop, number>>
+  /**
+   * How many of the workers behind `workerStops` returned the
+   * deterministic bounded report rather than one their own model wrote
+   * (#199, ADR 0035). It qualifies the whole breakdown rather than
+   * splitting it: the Report Grace's job is to move this number down
+   * while the causes beside it stay the same.
+   */
+  boundedReports: number
   /** Every worker whose stop was recorded, however it stopped. */
   workersObserved: number
   /**
@@ -121,6 +131,11 @@ export function tallyWorkerStops(runs: readonly ScenarioMetrics[]): Partial<Reco
   return merged
 }
 
+/** How many workers across these runs returned the bounded report (#199). */
+export function tallyBoundedReports(runs: readonly ScenarioMetrics[]): number {
+  return runs.reduce((total, run) => total + (run.subagentBoundedReports ?? 0), 0)
+}
+
 function addTally(left: SpawnTally, right: SpawnTally): SpawnTally {
   return {
     attempted: left.attempted + right.attempted,
@@ -165,6 +180,7 @@ export function summarizeDelegation(results: readonly ScenarioResult[]): Delegat
       delegated: spawns.accepted > 0,
       spawns,
       workerStops: tallyWorkerStops(result.runs),
+      boundedReports: tallyBoundedReports(result.runs),
     }
   })
   const workerStops = tallyWorkerStops(results.flatMap((result) => result.runs))
@@ -178,6 +194,7 @@ export function summarizeDelegation(results: readonly ScenarioResult[]): Delegat
     delegatingScenarios: scenarios.filter((row) => row.delegated).length,
     spawns: scenarios.map((row) => row.spawns).reduce(addTally, EMPTY_TALLY),
     workerStops,
+    boundedReports: tallyBoundedReports(results.flatMap((result) => result.runs)),
     workersObserved,
     selfFinalizedWorkers,
     noProgress: noProgressReading(selfFinalizedWorkers, workerStops.no_progress ?? 0),

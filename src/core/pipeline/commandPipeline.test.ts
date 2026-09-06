@@ -32,7 +32,7 @@ import { withPerfTracing } from '../perf/perfTracing'
 import { createBrowserSubspans } from '../perf/browserSubspans'
 import { DELTA_FLUSH_MS } from './deltaBatcher'
 import { HARD_TOOL_ROUND_CEILING, TIER_TOOL_ROUND_BUDGETS } from './effortEpoch'
-import { createSubagentManager } from '../agent/subagentManager'
+import { createSubagentManager, type SubagentTaskHooks } from '../agent/subagentManager'
 import type { SubagentReport } from '../agent/subagentReport'
 
 // The fault sink is a module-level global that outlives any one test
@@ -6633,5 +6633,255 @@ describe('run context compaction (#124)', () => {
     // no live Session Evidence, so the read stays verbatim.
     expect(store.snapshot().observations.map(({ id }) => id)).toEqual(['memory-1'])
     expect(resultTextOf(llm.requests[4]!.toolResults[0]!)).toBe(LONG_PAGE_TEXT)
+  })
+})
+
+// The Report Grace (#199, ADR 0035): Finalization no longer cancels a live
+// Browse Subagent. It tells each one, then waits — up to the grace, or
+// until they have all settled — before the bookkeeping Tool Round, because
+// that round is the last place a worker's findings can become Session
+// Evidence (ADR 0028). Whatever is still running when the grace elapses is
+// abandoned into its bounded report, too late for that round's context.
+describe('the Report Grace at Finalization (#199)', () => {
+  /**
+   * One Run that spawns a worker, hits its active-work deadline, and then
+   * finalizes. The worker's loop is the test's to drive: `finishWorker`
+   * settles it with a report, and an abandoned one settles with the
+   * bounded report its runner would have produced.
+   */
+  function graceHarness(options: { reportGraceMs: number; activeWorkDeadlineMs?: number }) {
+    const clock = new FakeClock()
+    let finishWorker!: (report: SubagentReport) => void
+    let failWorker!: (error: Error) => void
+    const workerDone = new Promise<SubagentReport>((resolve, reject) => {
+      finishWorker = resolve
+      failWorker = reject
+    })
+    let workerHooks: SubagentTaskHooks | null = null
+    let abandoned = false
+    let graceStarted = false
+    const manager = createSubagentManager({
+      taskApi: {
+        start: (_spec, hooks) => {
+          workerHooks = hooks
+          hooks.abandonReport?.addEventListener('abort', () => {
+            abandoned = true
+            // What runSubagent returns on an abandoned round: the bounded
+            // report, under the parent's cause — never a cancellation.
+            finishWorker({
+              text: 'Stopped when the parent run finalized.',
+              findings: [],
+              unresolved: ['Cut short by the parent run’s finalization — the task is incomplete.'],
+              finalizationCause: 'parent_finalized',
+              bounded: true,
+            })
+          })
+          return { done: workerDone }
+        },
+      },
+      tabs: { openFor: () => ({ ok: true }), finish: () => {} },
+      clock,
+      onEvent: () => {},
+    })
+    const requests: LlmRequest[] = []
+    const llm: LlmClient = {
+      async complete(request) {
+        // The pipeline carries one live `toolResults` array across every
+        // round, so a request kept by reference keeps growing. Snapshot it
+        // — "what this round was actually sent" is the whole assertion.
+        requests.push({ ...request, toolResults: [...request.toolResults] })
+        if (requests.length === 1) {
+          return {
+            kind: 'tool_calls',
+            calls: [
+              { id: 'p1', name: 'report_run_plan', args: { objective: 'Compare vendors', headline: 'Comparing vendors', effort_tier: 'investigation' } },
+              { id: 'spawn', name: 'spawn_agent', args: { kind: 'browse', task: 'compare vendors' } },
+            ],
+          }
+        }
+        if (requests.length === 2) return abortableRound(request)
+        if (requests.length === 3) {
+          return {
+            kind: 'tool_calls',
+            calls: [{ id: 'p2', name: 'report_run_plan', args: { objective: 'Compare vendors', headline: 'Wrapping up', effort_tier: 'investigation' } }],
+          }
+        }
+        return { kind: 'answer', speak: 'Vendor A.', display: 'Vendor A wins.', resolution: 'partial' }
+      },
+    }
+    const pipeline = createCommandPipeline({
+      llm,
+      tts: new RecordingTts(),
+      clock,
+      tools: [createReportRunPlanTool(), ...createSubagentTools(manager)],
+      activeWorkDeadlineMs: options.activeWorkDeadlineMs ?? 1_000,
+      reportGraceMs: options.reportGraceMs,
+      // Stop still cancels, as it always has — it is a decision.
+      onAbort: () => { manager.cancelAll() },
+      // The wiring #199 replaced: told, not cancelled.
+      onFinalize: () => { manager.parentFinalizing() },
+      subagentReportsSettled: () => {
+        graceStarted = true
+        return manager.settledAll()
+      },
+      onReportGraceEnd: () => { manager.endReportGrace() },
+      collectCompletedSubagentResults: (turnId) => manager.collectCompleted(turnId),
+    })
+    return {
+      clock,
+      manager,
+      pipeline,
+      requests,
+      finishWorker,
+      failWorker,
+      // Read live: the parent tells the worker at Finalization entry, and
+      // the worker's own loop would poll it at its next checkpoint.
+      wasTold: (): boolean => (workerHooks as SubagentTaskHooks | null)?.isParentFinalizing?.() ?? false,
+      wasAbandoned: () => abandoned,
+      /** True once the Run is inside the wait — the grace timer is armed. */
+      graceStarted: () => graceStarted,
+    }
+  }
+
+  /**
+   * A longer settle than the shared `waitUntil`: a Run that spawns and
+   * then blocks on an abortable round needs a few hundred microtask turns
+   * before its second request is in flight.
+   */
+  async function settle(predicate: () => boolean): Promise<void> {
+    for (let attempt = 0; attempt < 400 && !predicate(); attempt += 1) await flush()
+    expect(predicate()).toBe(true)
+  }
+
+  /** The bookkeeping round's injected worker report, if any. */
+  function injectedReport(request: LlmRequest | undefined) {
+    return request?.toolResults.find((result) => result.call.id === 'finalization-agent-results-a-1')
+  }
+
+  it('does not cancel a live worker at Finalization entry — it tells it (#199/AC2)', async () => {
+    const harness = graceHarness({ reportGraceMs: 30_000 })
+    const run = collect(harness.pipeline, 'compare vendors')
+    await settle(() => harness.requests.length >= 2)
+    harness.clock.advance(1_000)
+    await settle(() => harness.wasTold())
+
+    // The deadline opened Finalization's door. Before #199 the worker was
+    // `cancelled` within the same tick; now it is still running, and it
+    // has been told why its window is closing.
+    expect(harness.manager.list()[0]).toMatchObject({ status: 'running' })
+    expect(harness.wasTold()).toBe(true)
+
+    harness.finishWorker({ text: 'Vendor A wins.', findings: [], unresolved: [] })
+    await run
+    expect(harness.manager.list()[0]).toMatchObject({ status: 'completed' })
+  })
+
+  it('carries a report that arrives inside the grace into the bookkeeping round (#199/AC3)', async () => {
+    const harness = graceHarness({ reportGraceMs: 30_000 })
+    const run = collect(harness.pipeline, 'compare vendors')
+    await settle(() => harness.requests.length >= 2)
+    harness.clock.advance(1_000)
+    await settle(() => harness.wasTold())
+
+    // Ten seconds into a thirty-second grace, the worker reports.
+    harness.clock.advance(10_000)
+    harness.finishWorker({ text: 'Vendor A wins.', findings: [], unresolved: [] })
+    const events = await run
+
+    // The wait ended the moment the worker settled — the grace timer never
+    // had to fire — and the report is in the bookkeeping round's context.
+    expect(harness.wasAbandoned()).toBe(false)
+    expect(injectedReport(harness.requests[2])).toMatchObject({
+      outcome: { ok: true, result: expect.stringContaining('Vendor A wins.') },
+    })
+    expect(events.at(-1)).toMatchObject({ type: 'done', finalizationCause: 'deadline_reached' })
+  })
+
+  it('abandons a worker still running when the grace elapses — bounded, completed, not in the round (#199/AC3–AC4)', async () => {
+    const harness = graceHarness({ reportGraceMs: 30_000 })
+    const run = collect(harness.pipeline, 'compare vendors')
+    await settle(() => harness.requests.length >= 2)
+    harness.clock.advance(1_000)
+    await settle(() => harness.wasTold())
+
+    // The full grace passes with the worker still thinking.
+    await settle(() => harness.graceStarted())
+    harness.clock.advance(30_000)
+    const events = await run
+
+    expect(harness.wasAbandoned()).toBe(true)
+    // Too late for the bookkeeping round's context — the grace is the
+    // boundary, and the report settled after it.
+    expect(injectedReport(harness.requests[2])).toBeUndefined()
+    // But the worker completed with its bounded report. `cancelled` stays
+    // reserved for a decision; Finalization never produces it.
+    expect(harness.manager.list()[0]).toMatchObject({
+      status: 'completed',
+      report: expect.objectContaining({ finalizationCause: 'parent_finalized', bounded: true }),
+    })
+    expect(events.at(-1)).toMatchObject({ type: 'done', finalizationCause: 'deadline_reached' })
+  })
+
+  it('ends the wait when a Stop cancels every worker at once (#199)', async () => {
+    const harness = graceHarness({ reportGraceMs: 30_000 })
+    const run = collect(harness.pipeline, 'compare vendors')
+    await settle(() => harness.requests.length >= 2)
+    harness.clock.advance(1_000)
+    await settle(() => harness.graceStarted())
+
+    // A Stop during the grace is a decision, so it cancels every worker at
+    // once. Their settling is what ends the wait — the timer never fires.
+    harness.pipeline.abort()
+    harness.failWorker(new Error('subagent cancelled by the user'))
+    const events = await run
+
+    expect(harness.manager.list()[0]).toMatchObject({ status: 'cancelled' })
+    expect(events.at(-1)).toMatchObject({ type: 'done', outcome: 'cancelled' })
+    // And no bookkeeping round followed the Stop.
+    expect(harness.requests).toHaveLength(2)
+  })
+
+  it('shows the user nothing new while it waits (#199/AC7)', async () => {
+    const harness = graceHarness({ reportGraceMs: 30_000 })
+    const during: PipelineEvent[] = []
+    const run = collect(harness.pipeline, 'compare vendors', (event) => during.push(event))
+    await settle(() => harness.requests.length >= 2)
+    const before = during.length
+    harness.clock.advance(1_000)
+    await settle(() => harness.wasTold())
+    const grace = during.slice(before)
+
+    // The status stays `acting` and no event kind appears that a run
+    // without delegation would not also emit.
+    expect(grace.filter((event) => event.type === 'status')).toEqual([])
+    expect(grace.map((event) => event.type)).not.toContain('subagent_finalized')
+
+    harness.finishWorker({ text: 'Vendor A wins.', findings: [], unresolved: [] })
+    await run
+  })
+
+  it('waits for nothing when the Run delegated nothing', async () => {
+    let settledCalls = 0
+    const work: Tool = { name: 'work', acquisition: true, async execute() { return 'worked' } }
+    const llm = new ScriptedLlm([
+      { kind: 'tool_calls', calls: [{ id: 'p1', name: 'report_run_plan', args: { objective: 'Do it', headline: 'Doing it', effort_tier: 'direct_action' } }] },
+      ...Array.from({ length: 5 }, (_, i) => ({ kind: 'tool_calls' as const, calls: [{ id: `w${i}`, name: 'work', args: {} }] })),
+      { kind: 'tool_calls', calls: [{ id: 'p2', name: 'report_run_plan', args: { objective: 'Do it', headline: 'Wrapping up', effort_tier: 'direct_action' } }] },
+      { kind: 'answer', speak: 'Done.', display: 'Done.', resolution: 'completed' },
+    ])
+    const pipeline = createCommandPipeline({
+      llm,
+      tts: new RecordingTts(),
+      clock: new FakeClock(),
+      tools: [createReportRunPlanTool(), work],
+      reportGraceMs: 30_000,
+      subagentReportsSettled: async () => { settledCalls += 1 },
+    })
+
+    // The budget runs out with no worker alive: the wait is asked for and
+    // resolves at once, so nothing is added to the Run's wall time.
+    const events = await collect(pipeline, 'do the thing')
+    expect(settledCalls).toBe(1)
+    expect(events.at(-1)).toMatchObject({ type: 'done', finalizationCause: 'budget_exhausted' })
   })
 })
