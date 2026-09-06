@@ -167,6 +167,11 @@ export function createSubagentTaskApi(deps: SubagentWorkhorseDeps): SubagentTask
           ...(hooks.traceReasoning !== undefined ? { traceReasoning: hooks.traceReasoning } : {}),
           // The worker's llm_round records (#191): the same hand-down.
           ...(hooks.traceLlmRound !== undefined ? { traceLlmRound: hooks.traceLlmRound } : {}),
+          // Its failed reserved report round (#198): the same hand-down, for
+          // the one reply the bounded report drops on the floor.
+          ...(hooks.traceOffContractReply !== undefined
+            ? { traceOffContractReply: hooks.traceOffContractReply }
+            : {}),
           // The worker's Tool Round events (#185): the same hand-down, for
           // the calls and results a worker's rounds publish to no view.
           ...(hooks.tracePipelineEvent !== undefined ? { tracePipelineEvent: hooks.tracePipelineEvent } : {}),

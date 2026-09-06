@@ -2,6 +2,7 @@ import type { RunJournalSnapshot } from '../session/runJournal'
 import type { FinalizationCause, RunResolution } from '../session/runJournal'
 import type { MemoryEntryId, MemoryPatch, WorkingMemorySnapshot } from '../session/workingMemory'
 import type { SessionEvidenceSnapshot } from '../session/sessionEvidence'
+import type { AnswerShape } from '../agent/answerContract'
 import type { SubagentReportFinding } from '../agent/subagentReport'
 import type { MishearProposal } from '../voice/learnedTerms'
 
@@ -206,6 +207,14 @@ export type AssistantTurn =
        */
       evidenceIds?: readonly MemoryEntryId[]
       evidenceIssue?: 'malformed'
+      /**
+       * Which contract the reply matched (#198, ADR 0034): the parser's
+       * own marker, so neither loop judges prose itself. Absent from a
+       * client that does not report it — the two reserved rounds treat
+       * only an explicit `off_contract` as a failed round, so a client
+       * that says nothing keeps the old behaviour.
+       */
+      shape?: AnswerShape
       usage?: TokenUsage
     }
   | { kind: 'tool_calls'; calls: ToolCall[]; usage?: TokenUsage }

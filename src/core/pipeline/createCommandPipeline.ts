@@ -18,7 +18,7 @@ import { createLlmDeltaBatcher } from './deltaBatcher'
 import type { TtsSpeaker } from '../ports/tts'
 import { spokenErrorLine } from '../agent/answerContract'
 import type { LearnedTermsControls } from '../voice/learnedTerms'
-import { MAX_RUN_NOTE_CHARS, finalizeRun, type RunFinalization, type RunJournalEntry, type RunJournalSnapshot } from '../session/runJournal'
+import { MAX_RUN_NOTE_CHARS, finalizeRun, type FinalizationCause, type RunFinalization, type RunJournalEntry, type RunJournalSnapshot } from '../session/runJournal'
 import type { MemoryEntryId, MemoryPatch, WorkingMemorySnapshot } from '../session/workingMemory'
 import type { PerfTracer } from '../perf/perfTracer'
 import { createTurnIdSource } from '../perf/perfTracer'
@@ -68,6 +68,7 @@ import type { VisionTraceReporter } from '../trace/visionTrace'
 import { createReasoningRounds, reasoningEvent, type TracedReasoningRound } from '../trace/reasoningTrace'
 import { createLlmRounds, llmRequestShape, llmRoundEvent, type LlmRound, type TracedLlmRound } from '../trace/llmRoundTrace'
 import { pipelineEventTraceBody, tracesPipelineEvent } from '../trace/pipelineEventTrace'
+import { offContractFaultMessage, offContractReplyEvent, type TracedOffContractReply } from '../trace/offContractReplyTrace'
 import { completedEvidenceIsFresh } from './evidenceFreshness'
 import { evaluateCandidateCheckpoint, type CandidateCheckpointOutcome, type EvidenceSessionSource } from './candidateCheckpoint'
 import { deriveAnswerSources, scrubAnswerText } from './answerEvidence'
@@ -684,6 +685,14 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
       traceRun && llmRounds
         ? (round: TracedLlmRound): void => traceRun(() => ({ turnId, ...llmRoundEvent(round) }))
         : undefined
+    // The off_contract_reply records (#198): one per reserved Answer round
+    // whose reply was not the contract's shape — the Run's own round and a
+    // delegated worker's (handed down as `traceSubagentOffContractReply`).
+    // The round's raw text reaches no view, so this write is the only place
+    // it is kept; the fault beside it is reported at the failure itself.
+    const writeOffContractReply = traceRun
+      ? (reply: TracedOffContractReply): void => traceRun(() => ({ turnId, ...offContractReplyEvent(reply) }))
+      : undefined
     // A delegated worker's Tool Rounds (#185): the same one write, for the
     // events a worker's rounds publish to nobody. Its events arrive
     // unstamped — a worker knows no turn — so the Run stamps its own,
@@ -817,6 +826,10 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
           ...(writeReasoning ? { traceSubagentReasoning: writeReasoning } : {}),
           // And its llm_round records (#191), through the same hand-down.
           ...(writeLlmRound ? { traceSubagentLlmRound: writeLlmRound } : {}),
+          // And its failed reserved round (#198), through the same hand-down:
+          // a worker's off-contract report reply is dropped on the floor for
+          // the bounded report, so the trace is the only record of it.
+          ...(writeOffContractReply ? { traceSubagentOffContractReply: writeOffContractReply } : {}),
           // And what those rounds called (#185), through the same writer:
           // a worker's stream reaches no view at all, so this is the only
           // record of it there will ever be.
@@ -897,8 +910,15 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
         // the run scope — the Steering replan (see interrupts.check)
         // resets them at the checkpoint that consumes a directive.
         // The deterministic fallback Answer (#117): produced when the
-        // reserved Answer round fails or requests tools.
+        // reserved Answer round fails, requests tools, or replies off
+        // contract (#198).
         let deterministicFallback = false
+        // The cause that fallback answers under, asked in one place so the
+        // Answer the user hears and the trace record of the failed round
+        // can never disagree: the phase's own Finalization Cause, or the
+        // hard round ceiling when the loop broke while still working.
+        const fallbackCause = (): FinalizationCause =>
+          effortEpoch.phase.kind === 'working' ? 'hard_limit' : effortEpoch.phase.cause
 
         for (;;) {
           // The loop top asks the epoch's rails (#146–#148): a tripped rail
@@ -983,6 +1003,11 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
             if (sentRound === undefined) return
             writeLlmRound?.({ ...closed, role: 'orchestrator', ...sentRound })
           }
+          // Whether this round is the reserved Answer round, read once as
+          // the request is built: the phase cannot change while a round is
+          // in flight, and the streaming and off-contract branches below
+          // both ask the same question.
+          const reservedRound = isAnswerOnly()
           try {
             const request: LlmRequest = {
               command,
@@ -1001,7 +1026,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
               // tool-free one — the flag rides the contract so the
               // adapter sends no tool definitions and no automatic tool
               // choice, whatever the catalog still holds for bookkeeping.
-              ...(isAnswerOnly() ? { answerOnly: true } : {}),
+              ...(reservedRound ? { answerOnly: true } : {}),
               ...(continuity ? { journal: continuity.snapshot } : {}),
               ...(continuity ? { memory: continuity.memory } : {}),
               // Checkpointed Session Evidence this Run starts beside (#121):
@@ -1053,7 +1078,16 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
               ...(batcher || reasoningRounds
                 ? {
                     onDelta: (delta: LlmStreamDelta): void => {
-                      batcher?.onDelta(delta)
+                      // A reserved round streams nothing (#198, ADR 0034).
+                      // The partial Answer streams to the Card as it
+                      // arrives and prose streams raw, so a narrating
+                      // reserved round would flash its narration before the
+                      // deterministic fallback replaced it. The Card renders
+                      // the final Answer or the fallback, never both. The
+                      // reasoning collector still sees every delta: the
+                      // reserved round's thinking is exactly what a
+                      // diagnosis wants (#183), and it reaches no view.
+                      if (!reservedRound) batcher?.onDelta(delta)
                       reasoningRounds?.onDelta(delta)
                     },
                   }
@@ -1078,7 +1112,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
             // The reserved Answer round failed (#117): the run still ends
             // with a guaranteed Answer — the deterministic fallback — not
             // a raw provider error.
-            if (isAnswerOnly()) {
+            if (reservedRound) {
               deterministicFallback = true
               break
             }
@@ -1112,6 +1146,30 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
             steering = afterModelSteering
             continue
           }
+          // An Off-contract Reply in the reserved Answer round (#198, ADR
+          // 0034): prose, or JSON of the wrong shape, where the round's one
+          // job was the Answer contract the finalize directive stated a
+          // message earlier and the model held no tools. It is a failed
+          // round beside the thrown and tool-requesting cases — the model
+          // narrating, not answering — so it takes the same deterministic
+          // fallback with the phase's own cause, and its text is never
+          // spoken, displayed, or recorded as an Answer. No retry: the
+          // directive was already read, and another round costs a run that
+          // has just declared itself out of budget or progress ten to
+          // eighty seconds for a second chance at the behaviour it showed.
+          if (reservedRound && turn.kind === 'answer' && turn.shape === 'off_contract') {
+            const raw = turn.display !== '' ? turn.display : turn.speak
+            const cause = fallbackCause()
+            writeOffContractReply?.({ role: 'orchestrator', shape: turn.shape, text: raw, cause })
+            reportFault(
+              'pipeline.finalization.offContractReply',
+              offContractFaultMessage({ role: 'orchestrator', cause, text: raw }),
+              { turnId },
+            )
+            deterministicFallback = true
+            break
+          }
+
           if (turn.kind === 'answer') {
             finalAnswer = turn
             // Displayed Answers are evidence-grounded (#122, ADR 0028;
@@ -1139,7 +1197,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
           // The reserved Answer round requested tools (#117): Finalization
           // granted its one bookkeeping Tool Round already — the run now
           // answers deterministically instead of working further.
-          if (isAnswerOnly()) {
+          if (reservedRound) {
             deterministicFallback = true
             break
           }
@@ -1314,7 +1372,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
             // the directive's own words otherwise — and their command on
             // a never-steered run.
             command: correctedObjective ?? command,
-            cause: effortEpoch.phase.kind === 'working' ? 'hard_limit' : effortEpoch.phase.cause,
+            cause: fallbackCause(),
             sources: deriveFallbackSources({
               records: ledger.snapshot(),
               checkpoints: acceptedCheckpoints,

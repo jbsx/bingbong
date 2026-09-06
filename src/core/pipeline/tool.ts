@@ -4,6 +4,7 @@ import type { SubagentSharedDeadline, VisionGrant } from '../agent/subagentRails
 import type { WorkingMemorySnapshot } from '../session/workingMemory'
 import type { SubagentReasoningTrace } from '../trace/reasoningTrace'
 import type { SubagentLlmRoundTrace } from '../trace/llmRoundTrace'
+import type { SubagentOffContractReplyTrace } from '../trace/offContractReplyTrace'
 import type { SubagentPipelineEventTrace } from '../trace/pipelineEventTrace'
 import type { VisionTraceReporter } from '../trace/visionTrace'
 import type { EffortTier } from './runPlan'
@@ -52,6 +53,15 @@ export interface ToolContext {
    * the reasoning trace beside it.
    */
   traceSubagentLlmRound?: SubagentLlmRoundTrace
+  /**
+   * The off_contract_reply records for delegated workers (#198, ADR 0034):
+   * a worker whose reserved report round narrates instead of reporting is
+   * answered with the bounded report, and its own words are dropped — so
+   * they are kept through this, already closed over the spawning Run's
+   * trace writer and turn, or nowhere. Absent unless the developer opted in
+   * with `BINGBONG_RUN_TRACE` (#184), like the traces beside it.
+   */
+  traceSubagentOffContractReply?: SubagentOffContractReplyTrace
   /**
    * The pipeline_event records for delegated workers (#185, ADR 0031): a
    * worker's Tool Rounds never reach the main stream — only its

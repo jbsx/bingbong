@@ -1,4 +1,7 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
+import { parseAssistantAnswer } from './answerContract'
+import { setFaultSink, type FaultReport } from '../trace/fault'
+import type { TracedOffContractReply } from '../trace/offContractReplyTrace'
 import { FakeClock, ScriptedLlm, memoryEntry, type ScriptedTurn } from '../testing/doubles'
 import { runSubagent, SubagentCancelledError } from './subagentRunner'
 import type { Tool } from '../pipeline/tool'
@@ -16,6 +19,10 @@ import type { LlmRequest } from '../ports/llm'
 // with its own tool set, no confirmations (the policy wrapper already
 // downgraded those to denials), progress reported per step, cancellation
 // polled at every checkpoint. The manager above it owns lifecycle rails.
+
+// The fault sink is a module-level global that outlives any one test
+// (#184): a test that installs one clears it here.
+afterEach(() => setFaultSink(null))
 
 function noopTools(): Tool[] {
   return []
@@ -335,6 +342,82 @@ describe('runSubagent', () => {
     expect(report.text).toMatch(/Stopped at the delegated work limit after 2 tool rounds — the delegated work budget \(2 tool rounds\) was spent, and no final report was produced\. The last action was: spin/)
     expect(report.findings).toEqual([])
     expect(report.unresolved).toEqual(['Cut short at the delegated work limit — the task is incomplete.'])
+  })
+
+  it('answers deterministically when the reserved round replies off contract (#198)', async () => {
+    // A worker that narrates instead of reporting used to arrive as its
+    // prose with an empty findings list, so its orchestrator could not tell
+    // "found nothing" from "did not report". The reserved report round has
+    // one job, stated in the directive riding the last result: an
+    // Off-contract Reply there is a failed round, and the bounded report
+    // stands in with the round's own cause.
+    const NARRATION = 'Let me try the search again with a narrower query. Retrying now.'
+    const spin: Tool = { name: 'spin', async execute() { return 'spun' } }
+    const traced: TracedOffContractReply[] = []
+    const faults: FaultReport[] = []
+    const llm = new ScriptedLlm([
+      { kind: 'tool_calls', calls: [{ id: 'c1', name: 'spin', args: {} }] },
+      { kind: 'tool_calls', calls: [{ id: 'c2', name: 'spin', args: {} }] },
+      // The reserved report round narrates; the shape marker is the real
+      // parser's, exactly what the wire client would have built.
+      { kind: 'answer', ...parseAssistantAnswer(NARRATION) },
+    ])
+    // Installed after the script is built: the parser reports its own
+    // rejected JSON candidates as faults, and those are not this test's.
+    setFaultSink((report) => faults.push(report))
+
+    const report = await runSubagent(
+      { llm, tools: [spin], clock: new FakeClock(), maxToolRounds: 2 },
+      {
+        task: 't',
+        turnId: 'turn-w',
+        agentId: 'a-11',
+        isCancelled: () => false,
+        traceOffContractReply: (reply) => traced.push(reply),
+      },
+    )
+
+    // The bounded report stands in — and the worker's own words are in
+    // neither its text nor its findings.
+    expect(report.agentId).toBe('a-11')
+    expect(report.text).toMatch(/Stopped at the delegated work limit after 2 tool rounds/)
+    expect(report.text).not.toContain('Retrying now')
+    expect(report.findings).toEqual([])
+    expect(report.unresolved).toEqual(['Cut short at the delegated work limit — the task is incomplete.'])
+    expect(report.finalizationCause).toBe('budget_exhausted')
+    expect(JSON.stringify(report)).not.toContain('narrower query')
+    // The failed round is recorded with the shape, the raw text, the role
+    // and the worker it belongs to — plus a fault under the parent's turn.
+    expect(traced).toEqual([
+      {
+        role: 'subagent',
+        shape: 'off_contract',
+        text: NARRATION,
+        cause: 'budget_exhausted',
+        agentId: 'a-11',
+      },
+    ])
+    expect(faults).toMatchObject([
+      {
+        site: 'agent.subagentRunner.offContractReply',
+        message: expect.stringContaining('reserved report round replied off contract (budget_exhausted)'),
+        turnId: 'turn-w',
+      },
+    ])
+  })
+
+  it('still reads a worker’s prose as its report outside the reserved round (#198)', async () => {
+    // Outside a reserved round nothing changes: a worker that concludes on
+    // its own in prose is reporting, and the prose is the report.
+    const llm = new ScriptedLlm([{ kind: 'answer', ...parseAssistantAnswer('Found the price on the vendor page: $39.') }])
+
+    const report = await runSubagent(
+      { llm, tools: [], clock: new FakeClock(), maxToolRounds: 2 },
+      { task: 't', agentId: 'a-12', isCancelled: () => false },
+    )
+
+    expect(report.text).toBe('Found the price on the vendor page: $39.')
+    expect(report.finalizationCause).toBe('model_answered')
   })
 
   it('answers deterministically when the reserved round itself fails (#120)', async () => {

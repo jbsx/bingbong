@@ -246,6 +246,8 @@ function summarizeTrace(kind: string, record: Record<string, unknown>): string {
         .filter((part) => part !== '')
         .join(' ')
     }
+    case 'off_contract_reply':
+      return `${str(record.role)}${record.agentId !== undefined ? ` ${str(record.agentId)}` : ''} ${str(record.shape)} (${str(record.cause)}): ${str(record.text)}`
     case 'failure_screenshot':
       return `${str(record.cause)}: ${str(fileNameOf(record.path))} (${str(record.bytes)} bytes)`
     case 'evidence_checkpoint':

@@ -21,7 +21,7 @@ describe('parseAssistantAnswer', () => {
   it('reads speak and display from a JSON object, capping spoken sentences', () => {
     const answer = parseAssistantAnswer('{"speak":"One. Two. Three.","display":"# Full detail\\nwith markdown"}')
 
-    expect(answer).toEqual({ speak: 'One. Two.', display: '# Full detail\nwith markdown' })
+    expect(answer).toEqual({ speak: 'One. Two.', display: '# Full detail\nwith markdown', shape: 'on_contract' })
   })
 
   it('extracts a hidden Run Note without changing the visible Answer', () => {
@@ -33,6 +33,7 @@ describe('parseAssistantAnswer', () => {
       speak: 'Done.',
       display: 'Useful detail.',
       runNote: 'Ruled out option A; option B remains.',
+      shape: 'on_contract',
     })
   })
 
@@ -113,6 +114,7 @@ describe('parseAssistantAnswer', () => {
       display: 'Useful detail.',
       runNote: 'Still useful.',
       memoryPatchIssue: 'malformed',
+      shape: 'on_contract',
     })
   })
 
@@ -131,6 +133,7 @@ describe('parseAssistantAnswer', () => {
         { op: 'add', suspect: 'pedal', repair: 'panel' },
         { op: 'remove', term: 'pannel' },
       ],
+      shape: 'on_contract',
     })
   })
 
@@ -143,12 +146,13 @@ describe('parseAssistantAnswer', () => {
       speak: 'Done.',
       display: 'Useful detail.',
       mishearProposalsIssue: 'malformed',
+      shape: 'on_contract',
     })
     expect(parseAssistantAnswer(JSON.stringify({
       speak: 'Done.',
       display: 'Useful detail.',
       mishear_proposals: [],
-    }))).toEqual({ speak: 'Done.', display: 'Useful detail.', mishearProposals: [] })
+    }))).toEqual({ speak: 'Done.', display: 'Useful detail.', mishearProposals: [], shape: 'on_contract' })
   })
 
   it.each([null, 42, '', ' '.repeat(2), 'x'.repeat(1_201)])(
@@ -156,7 +160,7 @@ describe('parseAssistantAnswer', () => {
     (runNote) => {
       const answer = parseAssistantAnswer(JSON.stringify({ speak: 'Done.', display: 'Useful detail.', run_note: runNote }))
 
-      expect(answer).toEqual({ speak: 'Done.', display: 'Useful detail.', runNoteIssue: 'malformed' })
+      expect(answer).toEqual({ speak: 'Done.', display: 'Useful detail.', runNoteIssue: 'malformed', shape: 'on_contract' })
     },
   )
 
@@ -172,6 +176,7 @@ describe('parseAssistantAnswer', () => {
         display: 'Useful detail.',
         resolution,
         finalizationCause: 'objective_met',
+        shape: 'on_contract',
       })
     },
   )
@@ -181,7 +186,7 @@ describe('parseAssistantAnswer', () => {
     (resolution) => {
       const answer = parseAssistantAnswer(JSON.stringify({ speak: 'Done.', display: 'Useful detail.', resolution }))
 
-      expect(answer).toEqual({ speak: 'Done.', display: 'Useful detail.', resolutionIssue: 'malformed' })
+      expect(answer).toEqual({ speak: 'Done.', display: 'Useful detail.', resolutionIssue: 'malformed', shape: 'on_contract' })
     },
   )
 
@@ -192,7 +197,13 @@ describe('parseAssistantAnswer', () => {
         JSON.stringify({ speak: 'Done.', display: 'Useful detail.', resolution: 'partial', finalization_cause: cause }),
       )
 
-      expect(answer).toEqual({ speak: 'Done.', display: 'Useful detail.', resolution: 'partial', finalizationCauseIssue: 'malformed' })
+      expect(answer).toEqual({
+        speak: 'Done.',
+        display: 'Useful detail.',
+        resolution: 'partial',
+        finalizationCauseIssue: 'malformed',
+        shape: 'on_contract',
+      })
     },
   )
 
@@ -206,6 +217,7 @@ describe('parseAssistantAnswer', () => {
       display: 'Useful detail.',
       resolutionIssue: 'malformed',
       finalizationCauseIssue: 'malformed',
+      shape: 'on_contract',
     })
   })
 
@@ -220,11 +232,13 @@ describe('parseAssistantAnswer', () => {
       speak: 'Done.',
       display: 'Useful detail.',
       evidenceIds: ['memory-2', 'memory-1'],
+      shape: 'on_contract',
     })
     expect(parseAssistantAnswer(JSON.stringify({ speak: 'Done.', display: 'Useful detail.', evidence_ids: [] }))).toEqual({
       speak: 'Done.',
       display: 'Useful detail.',
       evidenceIds: [],
+      shape: 'on_contract',
     })
   })
 
@@ -233,20 +247,20 @@ describe('parseAssistantAnswer', () => {
     (evidenceIds) => {
       const answer = parseAssistantAnswer(JSON.stringify({ speak: 'Done.', display: 'Useful detail.', evidence_ids: evidenceIds }))
 
-      expect(answer).toEqual({ speak: 'Done.', display: 'Useful detail.', evidenceIssue: 'malformed' })
+      expect(answer).toEqual({ speak: 'Done.', display: 'Useful detail.', evidenceIssue: 'malformed', shape: 'on_contract' })
     },
   )
 
   it('accepts JSON wrapped in a code fence', () => {
     const answer = parseAssistantAnswer('```json\n{"speak":"Done.","display":"Detail."}\n```')
 
-    expect(answer).toEqual({ speak: 'Done.', display: 'Detail.' })
+    expect(answer).toEqual({ speak: 'Done.', display: 'Detail.', shape: 'on_contract' })
   })
 
   it('accepts JSON embedded in surrounding prose', () => {
     const answer = parseAssistantAnswer('Here you go: {"speak":"Done.","display":"Detail."} — hope that helps')
 
-    expect(answer).toEqual({ speak: 'Done.', display: 'Detail.' })
+    expect(answer).toEqual({ speak: 'Done.', display: 'Detail.', shape: 'on_contract' })
   })
 
   it('falls back to the raw text: capped for speaking, full for display', () => {
@@ -255,6 +269,36 @@ describe('parseAssistantAnswer', () => {
     expect(answer).toEqual({
       speak: 'Could not find it. The page had no results.',
       display: 'Could not find it. The page had no results. Extra detail here.',
+      shape: 'off_contract',
+    })
+  })
+
+  it('marks the reply’s shape: the JSON branch is on contract, everything else is off (#198)', () => {
+    // The marker is what the two reserved rounds read — the boundary is
+    // exactly what the JSON branch accepts, with no finer cut between "no
+    // JSON found" and "JSON of the wrong shape". An ordinary round renders
+    // an off-contract reply as the Answer either way, which is why the
+    // prose fallback below still carries speak and display.
+    expect(parseAssistantAnswer('{"speak":"Done.","display":"Detail."}').shape).toBe('on_contract')
+    expect(parseAssistantAnswer('```json\n{"speak":"Done.","display":"Detail."}\n```').shape).toBe('on_contract')
+    expect(parseAssistantAnswer('Here you go: {"speak":"Done.","display":"Detail."}').shape).toBe('on_contract')
+    // Prose, and JSON that is not the Answer's shape.
+    expect(parseAssistantAnswer('Retrying with the observation id.').shape).toBe('off_contract')
+    expect(parseAssistantAnswer('{"answer":"Done."}').shape).toBe('off_contract')
+    expect(parseAssistantAnswer('{"speak":"Done.","display":42}').shape).toBe('off_contract')
+    expect(parseAssistantAnswer('').shape).toBe('off_contract')
+  })
+
+  it('still reads an ordinary round’s prose reply as an Answer (#198)', () => {
+    // Outside a reserved round nothing changes: a model that answers a
+    // simple question in prose is answering, and the fallback contract
+    // still carries the spoken line and the displayed text.
+    const answer = parseAssistantAnswer('The router costs $39. It ships free over $25. Stock is low.')
+
+    expect(answer).toEqual({
+      speak: 'The router costs $39. It ships free over $25.',
+      display: 'The router costs $39. It ships free over $25. Stock is low.',
+      shape: 'off_contract',
     })
   })
 

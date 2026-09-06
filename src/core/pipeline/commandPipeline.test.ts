@@ -1,4 +1,7 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
+import { parseAssistantAnswer } from '../agent/answerContract'
+import { setFaultSink, type FaultReport } from '../trace/fault'
+import type { RunTraceEvent } from '../trace/runTrace'
 import { VisionDeadlineError } from '../ports/vision'
 import { createCommandPipeline, type CommandPipeline } from './createCommandPipeline'
 import { hostFromUrl } from './blockerGate'
@@ -8,7 +11,7 @@ import { createAskUserTool } from './askUserTools'
 import { createReportRunPlanTool } from './runPlanTools'
 import { RUN_PLAN_NUDGE, RUN_PLAN_STANDALONE_ROUND, RUN_PLAN_TIER_BELOW_LOOKUP } from './runPlan'
 import type { EffortTier } from './runPlan'
-import { FailingTts, FakeClock, fakePerfHarness, fakeSubagentManager, memoryEntry, RecordingTts, ScriptedLlm, subagentRecord, withoutTurnId } from '../testing/doubles'
+import { FailingTts, FakeClock, fakePerfHarness, fakeSubagentManager, memoryEntry, RecordingTts, ScriptedLlm, subagentRecord, withoutTurnId, type ScriptedTurn } from '../testing/doubles'
 import type { PipelineEvent } from './events'
 import type { SessionId } from '../session/sessionIdentity'
 import type { ObservationRecord } from '../session/observationLedger'
@@ -31,6 +34,10 @@ import { DELTA_FLUSH_MS } from './deltaBatcher'
 import { HARD_TOOL_ROUND_CEILING, TIER_TOOL_ROUND_BUDGETS } from './effortEpoch'
 import { createSubagentManager } from '../agent/subagentManager'
 import type { SubagentReport } from '../agent/subagentReport'
+
+// The fault sink is a module-level global that outlives any one test
+// (#184): a test that installs one clears it here.
+afterEach(() => setFaultSink(null))
 
 async function collect(
   pipeline: CommandPipeline,
@@ -2975,6 +2982,102 @@ describe('command pipeline', () => {
       ])
       expect(events.find((e) => e.type === 'error')).toBeUndefined()
       expect(events.at(-1)).toEqual({ type: 'done', outcome: 'failed', finalizationCause: 'no_progress', at: 0 })
+    })
+
+    it('routes an Off-contract Reply in the reserved Answer round to the fallback, unstreamed and unrendered (#198)', async () => {
+      // The 2026-09-06 session: after the no-progress trip the reserved
+      // round returned a note to itself — a retry count nothing in the
+      // runtime produced — and the pipeline displayed it, spoke it, and
+      // closed the run `done`. The reply is prose, so the parser marks it
+      // off contract; the round is a failed round beside the thrown and
+      // tool-requesting cases, and the deterministic Answer stands in.
+      const NARRATION =
+        'The candidate schema needs an evidence reference — retrying with the observation id. ' +
+        '3/3 retries exhausted, continuing without candidate records.'
+      const readPage: Tool = { name: 'read_page', acquisition: true, async execute() { return 'read' } }
+      const look: Tool = { name: 'look', acquisition: true, usesVision: true, async execute() { return 'seen' } }
+      const scroll: Tool = { name: 'scroll', acquisition: true, async execute() { return 'scrolled' } }
+      const back: Tool = { name: 'back', acquisition: true, async execute() { return 'went back' } }
+      const llm = new ScriptedLlm([
+        { kind: 'tool_calls', calls: [lookupPlan('p1', 'Study the article'), { id: 'r0', name: 'read_page', args: {} }] },
+        { kind: 'tool_calls', calls: [{ id: 'l1', name: 'look', args: {} }] },
+        { kind: 'tool_calls', calls: [{ id: 's1', name: 'scroll', args: { direction: 'down' } }] },
+        { kind: 'tool_calls', calls: [{ id: 'b1', name: 'back', args: {} }] },
+        { kind: 'tool_calls', calls: [{ id: 'r2', name: 'read_page', args: {} }] },
+        { kind: 'tool_calls', calls: [{ id: 'l2', name: 'look', args: {} }] },
+        // The second Approach exhausts here; the reserved Answer round
+        // follows, and it narrates. The shape marker is the real parser's
+        // — the double carries exactly what the wire client would build,
+        // and the raw text streams as the provider would emit it.
+        { kind: 'tool_calls', calls: [{ id: 's2', name: 'scroll', args: { direction: 'up' } }] },
+        { kind: 'answer', ...parseAssistantAnswer(NARRATION), streamChunks: [NARRATION] },
+      ] as ScriptedTurn[])
+      const detail: PipelineEvent[] = []
+      const traced: RunTraceEvent[] = []
+      const faults: FaultReport[] = []
+      const committed: { outcome: string; note: string; patch: MemoryPatch }[] = []
+      setFaultSink((report) => faults.push(report))
+      const pipeline = createCommandPipeline({
+        llm,
+        tts: new RecordingTts(),
+        clock: new FakeClock(),
+        tools: [createReportRunPlanTool(), readPage, look, scroll, back],
+        settledPageState: () => BASE_STATE,
+        emitDetail: (event) => detail.push(event),
+      })
+
+      const events: PipelineEvent[] = []
+      for await (const raw of pipeline.execute('study the article', 'turn-oc', false, {
+        snapshot: [],
+        memory: [],
+        commit: (outcome, note, patch) => {
+          committed.push({ outcome, note, patch })
+          return 'committed'
+        },
+        traceRun: (build) => traced.push(build()),
+      })) {
+        events.push(withoutTurnId(raw))
+      }
+
+      // The run answers deterministically, with the phase's own cause —
+      // the same Answer the thrown and tool-requesting cases produce.
+      expect(events.find((e) => e.type === 'display')).toMatchObject({
+        text: expect.stringMatching(/stopped making progress/i),
+      })
+      expect(events.filter((e) => e.type === 'speak').map((e) => e.text)).toEqual([
+        'I stopped making progress on that request.',
+      ])
+      expect(events.at(-1)).toEqual({ type: 'done', outcome: 'failed', finalizationCause: 'no_progress', at: 0 })
+      // Nothing the model wrote reaches the user, on either channel.
+      const rendered = events.filter((e) => e.type === 'display' || e.type === 'speak')
+      expect(rendered.some((e) => (e.type === 'display' || e.type === 'speak') && e.text.includes('retries exhausted'))).toBe(false)
+      // And nothing of it streamed: a reserved round streams nothing, so
+      // the Card never flashes the narration ahead of the fallback.
+      expect(detail.filter((e) => e.type === 'llm_delta')).toEqual([])
+      // The failed round is recorded once, with the shape, the raw text,
+      // the role, and the cause the fallback answered under — plus a fault.
+      expect(traced.filter((record) => record.kind === 'off_contract_reply')).toEqual([
+        {
+          kind: 'off_contract_reply',
+          turnId: 'turn-oc',
+          role: 'orchestrator',
+          shape: 'off_contract',
+          text: NARRATION,
+          chars: NARRATION.length,
+          cause: 'no_progress',
+        },
+      ])
+      expect(faults).toMatchObject([
+        {
+          site: 'pipeline.finalization.offContractReply',
+          message: expect.stringContaining('replied off contract (no_progress)'),
+          turnId: 'turn-oc',
+        },
+      ])
+      // Recorded History is untouched: the failed run commits its
+      // deterministic note and no patch, and the narration is not in it.
+      expect(committed).toEqual([{ outcome: 'failed', note: expect.any(String), patch: [] }])
+      expect(committed[0]?.note).not.toContain('retries exhausted')
     })
 
     it('resets the rails on a requested state change and on an accepted Evidence Checkpoint, not on URL-only jumps (#126/AC3)', async () => {

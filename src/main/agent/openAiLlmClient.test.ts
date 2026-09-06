@@ -203,7 +203,12 @@ describe('openAiLlmClient', () => {
       ],
     })
 
-    expect(turn).toEqual({ kind: 'answer', speak: 'Done. Playing it now.', display: 'Opened YouTube and played the first MKBHD result: <a>…</a>' })
+    expect(turn).toEqual({
+      kind: 'answer',
+      speak: 'Done. Playing it now.',
+      display: 'Opened YouTube and played the first MKBHD result: <a>…</a>',
+      shape: 'on_contract',
+    })
 
     const messages = fetch.calls[0].body.messages
     expect(messages.slice(2)).toEqual([
@@ -268,6 +273,7 @@ describe('openAiLlmClient', () => {
       speak: 'The second one.',
       display: 'Chose B.',
       runNote: 'Selected B.',
+      shape: 'on_contract',
     })
     const messages = fetch.calls[0].body.messages
     expect(messages[1]).toMatchObject({
@@ -318,6 +324,7 @@ describe('openAiLlmClient', () => {
       speak: 'Done.',
       display: 'Useful detail.',
       runNoteIssue: 'malformed',
+      shape: 'on_contract',
     })
   })
 
@@ -648,7 +655,7 @@ describe('openAiLlmClient', () => {
 
     const turn = await client.complete({ command: 'x', toolResults: [] })
 
-    expect(turn).toEqual({ kind: 'answer', speak: 'First. Second.', display: 'detail' })
+    expect(turn).toEqual({ kind: 'answer', speak: 'First. Second.', display: 'detail', shape: 'on_contract' })
   })
 
   it('falls back to raw content when the answer is not the JSON contract', async () => {
@@ -657,7 +664,15 @@ describe('openAiLlmClient', () => {
 
     const turn = await client.complete({ command: 'x', toolResults: [] })
 
-    expect(turn).toEqual({ kind: 'answer', speak: 'Plain reply, no JSON here.', display: 'Plain reply, no JSON here.' })
+    // The prose fallback is marked off contract (#198): an ordinary round
+    // still renders it as the Answer, and only a reserved round reads the
+    // marker as a failed round.
+    expect(turn).toEqual({
+      kind: 'answer',
+      speak: 'Plain reply, no JSON here.',
+      display: 'Plain reply, no JSON here.',
+      shape: 'off_contract',
+    })
   })
 
   it('tolerates malformed tool arguments from the model', async () => {
@@ -687,7 +702,7 @@ describe('openAiLlmClient', () => {
 
     const turn = await client.complete({ command: 'x', toolResults: [] })
 
-    expect(turn).toEqual({ kind: 'answer', speak: 'hi', display: 'hi' })
+    expect(turn).toEqual({ kind: 'answer', speak: 'hi', display: 'hi', shape: 'on_contract' })
     expect(fetch.calls).toHaveLength(2)
   })
 
@@ -842,6 +857,7 @@ describe('openAiLlmClient streaming (#47)', () => {
       kind: 'answer',
       speak: 'Done. Playing.',
       display: 'Opened <a>yt</a>',
+      shape: 'on_contract',
       usage: { promptTokens: 10, completionTokens: 6 },
     })
 
@@ -1010,7 +1026,7 @@ describe('openAiLlmClient streaming (#47)', () => {
 
     const turn = await client.complete({ command: 'x', toolResults: [], onDelta: () => {} })
 
-    expect(turn).toEqual({ kind: 'answer', speak: 'hi', display: 'hi' })
+    expect(turn).toEqual({ kind: 'answer', speak: 'hi', display: 'hi', shape: 'on_contract' })
     expect(fetch.calls).toHaveLength(2)
   })
 
@@ -1056,6 +1072,7 @@ describe('openAiLlmClient streaming (#47)', () => {
       kind: 'answer',
       speak: 'Done.',
       display: 'Done.',
+      shape: 'on_contract',
       usage: { promptTokens: 3, completionTokens: 5 },
     })
   })

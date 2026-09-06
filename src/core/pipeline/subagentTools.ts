@@ -132,6 +132,9 @@ export function createSubagentTools(manager: SubagentManager): Tool[] {
           ...(ctx.delegationDeadline !== undefined ? { sharedDeadline: ctx.delegationDeadline } : {}),
           ...(ctx.traceSubagentReasoning !== undefined ? { traceReasoning: ctx.traceSubagentReasoning } : {}),
           ...(ctx.traceSubagentLlmRound !== undefined ? { traceLlmRound: ctx.traceSubagentLlmRound } : {}),
+          ...(ctx.traceSubagentOffContractReply !== undefined
+            ? { traceOffContractReply: ctx.traceSubagentOffContractReply }
+            : {}),
           ...(ctx.traceSubagentPipelineEvent !== undefined
             ? { tracePipelineEvent: ctx.traceSubagentPipelineEvent }
             : {}),

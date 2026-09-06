@@ -119,14 +119,25 @@ export function partialAnswerText(content: string): string {
 }
 
 /**
+ * Which contract a reply matched (#198, ADR 0034). `on_contract` is the
+ * JSON branch below — the shape with `speak` and `display`; `off_contract`
+ * is everything the branch refused, prose and wrong-shaped JSON alike. The
+ * marker is the parser's so both loops read the same fact: an ordinary
+ * round still renders an off-contract reply as an Answer, and only the two
+ * reserved rounds treat it as a failed round.
+ */
+export type AnswerShape = 'on_contract' | 'off_contract'
+
+/**
  * Parse the model's final message into {speak, display}. Accepted shapes, in
  * order: a bare JSON object, a JSON object in a code fence, a JSON object with
  * surrounding prose. Anything else falls back to the raw text — capped for
- * speaking, unchanged for display.
+ * speaking, unchanged for display — and is marked `off_contract` (#198).
  */
 export function parseAssistantAnswer(content: string): {
   speak: string
   display: string
+  shape: AnswerShape
   runNote?: string
   runNoteIssue?: 'malformed'
   memoryPatch?: MemoryPatch
@@ -176,6 +187,7 @@ export function parseAssistantAnswer(content: string): {
         let answer: {
           speak: string
           display: string
+          shape: AnswerShape
           memoryPatch?: MemoryPatch
           memoryPatchIssue?: 'malformed'
           mishearProposals?: MishearProposal[]
@@ -188,7 +200,7 @@ export function parseAssistantAnswer(content: string): {
           finalizationCauseIssue?: 'malformed'
           evidenceIds?: MemoryEntryId[]
           evidenceIssue?: 'malformed'
-        } = { speak: capSentences(speak, SPEAK_SENTENCE_LIMIT), display }
+        } = { speak: capSentences(speak, SPEAK_SENTENCE_LIMIT), display, shape: 'on_contract' }
         // Subagent Report sections (#98): validated independently, absent
         // when invalid — the orchestrator never emits these keys, and a
         // subagent's prose report survives a bad section untouched.
@@ -239,5 +251,5 @@ export function parseAssistantAnswer(content: string): {
     }
   }
 
-  return { speak: capSentences(trimmed, SPEAK_SENTENCE_LIMIT), display: trimmed }
+  return { speak: capSentences(trimmed, SPEAK_SENTENCE_LIMIT), display: trimmed, shape: 'off_contract' }
 }

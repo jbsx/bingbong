@@ -220,6 +220,39 @@ describe('buildTraceTimeline', () => {
     expect(entries[0].screenshot).toBeUndefined()
   })
 
+  it('summarizes a failed reserved round, orchestrator and worker alike (#198)', () => {
+    const timeline = buildTraceTimeline([
+      run({
+        at: T0 + 1,
+        turnId: 'turn-1',
+        kind: 'off_contract_reply',
+        role: 'orchestrator',
+        shape: 'off_contract',
+        text: 'Retrying with the observation id.',
+        chars: 33,
+        cause: 'no_progress',
+      }),
+      run({
+        at: T0 + 2,
+        turnId: 'turn-1',
+        kind: 'off_contract_reply',
+        role: 'subagent',
+        agentId: 'agent-7',
+        shape: 'off_contract',
+        text: 'Let me try a narrower query.',
+        chars: 28,
+        cause: 'budget_exhausted',
+      }),
+    ])
+
+    const entries = timeline.lanes[0].entries
+    expect(entries.map((entry) => entry.summary)).toEqual([
+      'orchestrator off_contract (no_progress): Retrying with the observation id.',
+      'subagent agent-7 off_contract (budget_exhausted): Let me try a narrower query.',
+    ])
+    expect(entries[1].agentId).toBe('agent-7')
+  })
+
   it('cuts a long summary and keeps the whole record for the expander', () => {
     const text = 'x'.repeat(500)
     const timeline = buildTraceTimeline([

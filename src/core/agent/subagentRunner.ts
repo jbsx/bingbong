@@ -29,6 +29,10 @@ import { MAX_SUBAGENT_VISION_CALLS } from './subagentRails'
 import { droppedFindingsNote, validateReportFindings, type SubagentReport } from './subagentReport'
 import { createReasoningRounds, type ReasoningRound, type SubagentReasoningTrace } from '../trace/reasoningTrace'
 import { createLlmRounds, llmRequestShape, type LlmRound, type SubagentLlmRoundTrace } from '../trace/llmRoundTrace'
+import {
+  offContractFaultMessage,
+  type SubagentOffContractReplyTrace,
+} from '../trace/offContractReplyTrace'
 import type { SubagentPipelineEventTrace } from '../trace/pipelineEventTrace'
 import type { VisionTraceReporter } from '../trace/visionTrace'
 import { reportFault } from '../trace/fault'
@@ -198,6 +202,15 @@ export interface RunSubagentOptions {
    * `BINGBONG_RUN_TRACE` (#184); absent, nothing is counted.
    */
   traceLlmRound?: SubagentLlmRoundTrace
+  /**
+   * The off_contract_reply record for this worker's reserved report round
+   * (#198, ADR 0034): built by the spawning Run over its own writer, like
+   * the traces beside it. A reserved round that narrates is a failed round
+   * — the bounded report stands in and the worker's own words are dropped
+   * — so this is the only place they are kept. Absent unless the developer
+   * set `BINGBONG_RUN_TRACE` (#184); absent, the report still stands in.
+   */
+  traceOffContractReply?: SubagentOffContractReplyTrace
   /**
    * The pipeline_event records for this worker's Tool Rounds (#185, ADR
    * 0031): built by the spawning Run the same way, over the same writer.
@@ -556,7 +569,29 @@ export async function runSubagent(deps: RunSubagentDeps, options: RunSubagentOpt
         closeLlmAttempt(llmRounds?.takeRound(turn?.usage), answerRequest)
       }
       await checkpoint(options)
-      if (turn !== null && turn.kind === 'answer') {
+      // An Off-contract Reply in the reserved report round (#198, ADR
+      // 0034): the worker narrating instead of reporting, one message after
+      // the directive that stated the contract. Its prose would otherwise
+      // become the report's text with an empty findings list, so an
+      // orchestrator could not tell a worker that found nothing from one
+      // that never reported. It is a failed round: the bounded report
+      // stands in with the round's own cause, and the text is dropped —
+      // never the report's text, never its findings.
+      if (turn !== null && turn.kind === 'answer' && turn.shape === 'off_contract') {
+        const raw = turn.display !== '' ? turn.display : turn.speak
+        options.traceOffContractReply?.({
+          role: 'subagent',
+          shape: turn.shape,
+          text: raw,
+          cause: decision.cause,
+          ...(options.agentId !== undefined ? { agentId: options.agentId } : {}),
+        })
+        reportFault(
+          'agent.subagentRunner.offContractReply',
+          offContractFaultMessage({ role: 'subagent', cause: decision.cause, text: raw }),
+          { ...(options.turnId !== undefined ? { turnId: options.turnId } : {}) },
+        )
+      } else if (turn !== null && turn.kind === 'answer') {
         // The mechanical cause wins over the model's own conclusion, the
         // same precedence `finalizeRun` applies to a Run (#110/#162): the
         // worker answered because a rail told it to, not because it chose to.

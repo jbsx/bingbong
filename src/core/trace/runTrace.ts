@@ -13,9 +13,11 @@
 // (#182), and a fault reported with a turn id in hand (#184).
 
 import type { PipelineEvent } from '../pipeline/events'
+import type { AnswerShape } from '../agent/answerContract'
 import type { AgentRole } from '../agent/modelRouting'
 import type { ReasoningEffort, TokenUsage } from '../ports/llm'
 import type { ObservationProducer } from '../session/observationLedger'
+import type { FinalizationCause } from '../session/runJournal'
 import type { SessionEvidenceCounts } from '../session/sessionEvidence'
 import type { SessionEndReason } from '../session/sessionRuntime'
 import type { RunId, SessionGeneration, SessionId } from '../session/sessionIdentity'
@@ -30,6 +32,15 @@ export const TRACE_PAYLOAD_HEAD_CHARS = 500
 
 /** How much of a round's reasoning a `reasoning` record keeps (#182). */
 export const TRACE_REASONING_MAX_CHARS = 8_000
+
+/**
+ * How much of an off-contract reserved reply an `off_contract_reply`
+ * record keeps (#198). A reserved round has no tools and one job, so its
+ * reply is short; the cut exists so a model that dumps a page into the
+ * round cannot dominate the roll, and `chars` beside it keeps the cut
+ * visible.
+ */
+export const TRACE_OFF_CONTRACT_TEXT_MAX_CHARS = 4_000
 
 /**
  * How much of a `tool_result` event's text a `pipeline_event` record keeps
@@ -187,6 +198,36 @@ export interface LlmRoundEvent {
   readonly agentId?: string
 }
 
+/**
+ * One reserved Answer round whose reply was off contract (#198, ADR 0034):
+ * prose, or JSON of the wrong shape, where the round's one job was an
+ * Answer or a Subagent Report. The round failed — the Run's deterministic
+ * Answer or the worker's bounded report stood in — so the model's own
+ * words reach no view and no Recorded History, and this record is the only
+ * place they are kept. It joins the round's `reasoning` and `llm_round`
+ * records through the turn and, for a worker, the `agentId`.
+ */
+export interface OffContractReplyEvent {
+  readonly kind: 'off_contract_reply'
+  /** Which loop's reserved round it was: the Run's own, or a delegated worker's. */
+  readonly role: LlmRoundRole
+  /**
+   * The parser's shape marker, carried verbatim. Only `off_contract` is
+   * ever recorded today; the field is here because the cut between "no
+   * JSON found" and "JSON of the wrong shape" belongs to the parser, and
+   * a finer marker must widen this record rather than add a kind.
+   */
+  readonly shape: AnswerShape
+  /** The reply as the model wrote it, cut at {@link TRACE_OFF_CONTRACT_TEXT_MAX_CHARS}. */
+  readonly text: string
+  /** Full length in characters before the cut, so truncation is visible. */
+  readonly chars: number
+  /** The Finalization Cause the stand-in Answer or bounded report was built with. */
+  readonly cause: FinalizationCause
+  /** The delegated worker whose round replied (#183's stamp); absent on the Run's own. */
+  readonly agentId?: string
+}
+
 /** Which model each role was routed to when the Run declared its plan (#191). */
 export type RunPlanModels = Partial<Record<AgentRole, string>>
 
@@ -258,6 +299,7 @@ export type RunTraceEventBody =
   | ReasoningEvent
   | PipelineEventTraceEvent
   | LlmRoundEvent
+  | OffContractReplyEvent
   | FailureScreenshotEvent
 
 /** What a Run hands the writer: one event, stamped with the turn it happened in. */
