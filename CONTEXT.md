@@ -263,7 +263,9 @@ The terminal phase in which a Run stops acquiring evidence and acting on pages,
 then produces the best grounded Answer available. Finalization never asks the
 user a new question after the work budget is exhausted. Entering it does not
 cancel a live Subagent: the Run waits the Report Grace for each one's Subagent
-Report before its bookkeeping Tool Round.
+Report before its bookkeeping Tool Round — which is always the first Tool
+Round to begin in Finalization; the round Finalization is entered during is
+never it.
 _Avoid_: failure, timeout
 
 **Finalization Cause**:

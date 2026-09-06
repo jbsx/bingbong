@@ -4,7 +4,10 @@
 
 Accepted. Supersedes the clause in ADR 0027 that records a worker "the Run's
 own Finalization cancelled before it reached a cause": Finalization no longer
-cancels a worker, so no worker ends without a cause.
+cancels a worker, so no worker ends without a cause. The reason the wait
+sits before the bookkeeping Tool Round holds only because of ADR 0036, which
+fixes that round as the first to *begin* in Finalization — before it, a
+mid-round entry had no bookkeeping round for the wait to sit before.
 
 ## Context
 
