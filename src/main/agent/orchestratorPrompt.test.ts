@@ -281,3 +281,40 @@ describe('orchestrator prompt round-efficiency teachings (#131)', () => {
     expect(checkpoint).toMatch(/no subject on a decision/)
   })
 })
+
+// #212, ADR 0041: search ranking is not verification, a failed check is
+// not a gone route, and the assistant's own check is not the user's job.
+// These pin the instruction, never the behaviour — what a live model does
+// with it is unverified (docs/search-continuation-design.md).
+
+describe('orchestrator prompt verification policy (#212)', () => {
+  const line = (marker: string): string => {
+    const found = ORCHESTRATOR_SYSTEM_PROMPT.split('\n').find((candidate) => candidate.includes(marker))
+    expect(found, `no prompt line contains "${marker}"`).toBeDefined()
+    return found!
+  }
+
+  it('refuses a match claimed from where a result appeared in a list', () => {
+    const ranking = line('ranking highly in a search')
+    expect(ranking).toMatch(/a reason to consider it, never evidence/)
+    expect(ranking).toMatch(/which of the user's constraints you established and which are still unchecked/)
+    expect(ranking).toMatch(/never call a candidate a match or a strong match on where it appeared/)
+  })
+
+  it('describes a failed check as the attempt, not the route', () => {
+    const failed = line('that attempt failed')
+    expect(failed).toMatch(/the route is not gone for the rest of the run/)
+    expect(failed).toMatch(/genuinely different route to the same check/)
+    expect(failed).toMatch(/never send the same request again/)
+    expect(failed).toMatch(/never gather more interchangeable candidates/)
+    // Rewording is the escape the policy names explicitly, because it is
+    // the one that looks like a new Approach and is not.
+    expect(failed).toMatch(/Rewording the request or searching somewhere else is the same route/)
+    expect(failed).toMatch(/spend it only on a candidate it names/)
+  })
+
+  it('keeps an unmade check out of needs_user', () => {
+    expect(ORCHESTRATOR_SYSTEM_PROMPT).toMatch(/A check you could not make is not a user choice/)
+    expect(ORCHESTRATOR_SYSTEM_PROMPT).toMatch(/never "needs_user" to hand your own image reading to the user/)
+  })
+})

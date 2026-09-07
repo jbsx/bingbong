@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { createOpenAiLlmClient, inspectionSubjectMessage, promptHashOf, retainedCorrectionsMessage, retainedObjectiveMessage, standingDirectiveMessage, TRUNCATION_NOTE } from './openAiLlmClient'
+import { createOpenAiLlmClient, inspectionSubjectMessage, promptHashOf, retainedCorrectionsMessage, retainedObjectiveMessage, retainedVerificationMessage, standingDirectiveMessage, TRUNCATION_NOTE } from './openAiLlmClient'
 import { ORCHESTRATOR_SYSTEM_PROMPT } from './orchestratorPrompt'
 import { createBrowserTools } from '../../core/pipeline/browserTools'
 import { createMediaTools } from '../../core/pipeline/mediaTools'
@@ -1394,5 +1394,87 @@ describe("the user's unresolved words on the wire (#211, ADR 0039)", () => {
 
     const messages = fetch.calls[0].body.messages
     expect(messages.slice(1).map((message) => message.content)).toEqual(['keep going'])
+  })
+})
+
+describe('the routes this objective already spent, on the wire (#212, ADR 0041)', () => {
+  it('quotes what the route reported and names what one fresh attempt may settle', async () => {
+    const fetch = new ScriptedFetch([
+      completionResponse({ content: '{"speak":"Still unchecked.","display":"Still unchecked.","run_note":"Read the page."}' }),
+    ])
+    const client = makeClient(fetch)
+
+    await client.complete({
+      command: 'keep looking',
+      toolResults: [],
+      verification: {
+        failures: [
+          {
+            route: 'vision',
+            failure: 'Vision request timed out after 8000ms',
+            candidateId: 'memory-4' as never,
+            candidateSubject: 'r/tierlists — "Ranking every mech"',
+          },
+        ],
+        freshAttemptAllowed: true,
+        eligible: [{ candidateId: 'memory-4' as never, subject: 'r/tierlists — "Ranking every mech"' }],
+      },
+    })
+
+    const messages = fetch.calls[0].body.messages
+    // Last of the continuity blocks, immediately above the command.
+    expect(messages[1]).toEqual({ role: 'user', content: expect.stringContaining('Verification already attempted') })
+    expect(messages[2]).toEqual({ role: 'user', content: 'keep looking' })
+
+    const content = messages[1].content as string
+    // The route's own words, quoted — not a characterization of them.
+    expect(content).toContain('vision: Vision request timed out after 8000ms')
+    expect(content).toContain('Ranking every mech')
+    // What the attempt establishes, and what it does not (ADR 0040).
+    expect(content).toContain('it describes that attempt only')
+    expect(content).not.toMatch(/vision is unavailable/i)
+    // The fresh attempt, and the one thing it may be spent on.
+    expect(content).toContain('one fresh attempt on that route')
+    expect(content).toContain('- memory-4: r/tierlists — "Ranking every mech"')
+    expect(content).toContain('do not send it a third time')
+    // And the three endings the policy rules out.
+    expect(content).toContain('Do not gather more interchangeable Candidates')
+    expect(content).toContain('do not ask the user to make the check for you')
+    expect(content).toContain('never evidence')
+  })
+
+  it('says not to spend one when nothing is left for it to settle', () => {
+    const content = retainedVerificationMessage({
+      failures: [{ route: 'vision', failure: 'Vision request timed out after 8000ms' }],
+      freshAttemptAllowed: false,
+      eligible: [],
+    })
+
+    expect(content).toContain('no Candidate left')
+    expect(content).toContain('do not spend one')
+    expect(content).not.toContain('one fresh attempt on that route')
+  })
+
+  it('keeps the failure when the Session no longer holds the Candidate it was checking', () => {
+    const content = retainedVerificationMessage({
+      failures: [{ route: 'vision', failure: 'timed out', candidateId: 'memory-4' as never }],
+      freshAttemptAllowed: false,
+      eligible: [],
+    })
+
+    expect(content).toContain('timed out')
+    expect(content).toContain('which this Session no longer holds')
+  })
+
+  it('sends no verification message when nothing has failed (#212)', async () => {
+    const fetch = new ScriptedFetch([
+      completionResponse({ content: '{"speak":"Done.","display":"Done.","run_note":"Answered."}' }),
+    ])
+    const client = makeClient(fetch)
+
+    await client.complete({ command: 'keep looking', toolResults: [] })
+
+    const messages = fetch.calls[0].body.messages
+    expect(messages.slice(1).map((message) => message.content)).toEqual(['keep looking'])
   })
 })

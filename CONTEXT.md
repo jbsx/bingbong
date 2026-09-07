@@ -269,6 +269,40 @@ already reached — that first observation is neutral within the Approach:
 neither a step toward exhausting it nor a reset of it.
 _Avoid_: attempt, action
 
+**Verification Route**:
+The means by which a defining constraint can be checked — reading what the
+page itself carries, a Look at what only the image shows, or the user. It is
+what makes two Approaches genuinely different for a check: rewording a Look's
+question or searching somewhere else stays on the route it was already on.
+_Avoid_: method, channel
+
+**Verification Failure**:
+One attempt on a Verification Route that the application watched fail,
+retained for the Session with the route, the words that route itself reported,
+the objective it was spent under, and the Candidate it was checking. It
+explains nothing: a Look that breached its Vision Deadline describes that
+attempt, never the route for the rest of the Session (ADR 0040). Retired by a
+replacement objective and dropped with the Session, like every decision beside
+it.
+_Avoid_: vision outage, provider error
+
+**Verification Allowance**:
+What a Run may still spend on a Route the Session has watched fail: nothing
+more in the Run that watched it, and exactly one fresh attempt in a later Run
+— and only while an Eligible Candidate exists that the attempt could settle. A
+second failure closes it again; the honest moves are then a different Route or
+the constraint named as unverified.
+_Avoid_: retry, vision budget
+
+**Eligible Candidate**:
+A Candidate a fresh verification attempt could still resolve: one whose newest
+Candidate Decision under the objective in force is accepted, reopened, or
+absent, and about which the Run has inherited no unresolved user correction. A
+rejected or superseded Candidate is not a question a check would answer, and
+one the user has spoken about is waiting on their words rather than on the
+model's own check.
+_Avoid_: open candidate, live result
+
 **Finalization**:
 The terminal phase in which a Run stops acquiring evidence and acting on pages,
 then produces the best grounded Answer available. Finalization never asks the

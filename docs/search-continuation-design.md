@@ -145,6 +145,13 @@ extends ADR 0028 with pre-model correction retention, explicit Inspection
 References, and objective-scoped Candidate decisions without treating retained
 utterances as already interpreted.
 
+[ADR 0041](adr/0041-a-failed-check-is-spent-until-something-can-answer-it.md)
+records the verification and retry policy above: a retained Verification
+Failure in the route's own words, a route spent for the Run that watched it
+fail, one fresh attempt on a later Run against an Eligible Candidate alone, and
+the `partial`/`blocked` reading of a check the assistant could not make. It
+extends ADRs 0039 and 0040 and refines ADR 0016's deadline nudge.
+
 The current implementation also has model-invoked user-evidence retention and
 Session-wide Candidate status. These do not yet fulfill the accepted retention
 and objective-scoped rejection rules. Glossary changes record the intended
