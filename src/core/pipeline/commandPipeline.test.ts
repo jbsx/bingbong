@@ -3752,8 +3752,11 @@ describe('command pipeline', () => {
     const events = await collect(pipeline, 'look at the page')
 
     expect(events.find((event) => event.type === 'tool_result' && !event.ok)).toMatchObject({
+      // The nudge names the different route and the honest ending, and
+      // describes this attempt rather than the route (#212, ADR 0041):
+      // handing the check to the user is what it must not offer.
       error: expect.stringMatching(
-        /Vision request timed out after 15000ms[\s\S]*read_page[\s\S]*ask_user/,
+        /Vision request timed out after 15000ms[\s\S]*read_page[\s\S]*still unverified/,
       ),
     })
   })

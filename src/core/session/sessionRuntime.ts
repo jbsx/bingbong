@@ -33,7 +33,7 @@ import {
 } from './workingMemory'
 
 import type { RetainedInspectionReference } from './inspectionReference'
-import type { RetainedUserCorrection } from './userCorrections'
+import { correctionsInheritedBy, type RetainedUserCorrection } from './userCorrections'
 import {
   eligibleVerificationCandidates,
   verificationSubject,
@@ -899,7 +899,12 @@ export function createSessionRuntime(deps: {
         objectiveId: objectiveInForce,
         eligible: eligibleVerificationCandidates(evidenceSnapshot, {
           objectiveId: objectiveInForce,
-          corrections,
+          // Inherited words only — the rule the store applies to a
+          // decision and a presentation (#211). This Run's own command
+          // is what it is here to answer, and checking a Candidate is
+          // one of the ways it answers it; words left by a Run that
+          // never answered are the debt it must not settle around.
+          corrections: correctionsInheritedBy(corrections, runId),
         }),
         evidence: evidenceSnapshot,
       })

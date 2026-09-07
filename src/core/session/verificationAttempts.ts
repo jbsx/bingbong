@@ -58,6 +58,27 @@ export type VerificationRoute = (typeof VERIFICATION_ROUTES)[number]
 export const MAX_VERIFICATION_FAILURE_CHARS = 300
 
 /**
+ * The failure text as it is retained: trimmed, and cut with an ellipsis
+ * rather than refused when it runs long. Null only when there is nothing
+ * to retain at all.
+ *
+ * Cutting rather than refusing is the whole difference between a
+ * continuation that knows the route was spent and one that does not.
+ * Every other bounded field here is content the caller chose and can
+ * shorten; this one is whatever the route happened to say, and a bound
+ * that drops it entirely turns a long error message into no record of
+ * the attempt.
+ */
+export function boundedVerificationFailure(value: unknown): string | null {
+  if (typeof value !== 'string') return null
+  const trimmed = value.trim()
+  if (trimmed === '') return null
+  return trimmed.length <= MAX_VERIFICATION_FAILURE_CHARS
+    ? trimmed
+    : `${trimmed.slice(0, MAX_VERIFICATION_FAILURE_CHARS - 1)}…`
+}
+
+/**
  * How many failures one Session retains. Each one is a route spent under
  * an objective, and the allowance only ever reads the newest per route,
  * so this bounds the projection a later Run carries rather than the

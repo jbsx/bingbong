@@ -63,7 +63,7 @@ import {
 import type { SessionEvidenceSnapshot, SessionEvidenceStore, ObservationCheckpointResult } from '../session/sessionEvidence'
 import { retainedUserObjective } from '../session/objectiveContinuity'
 import { retainedInspectionSubject, type RetainedInspectionReference } from '../session/inspectionReference'
-import { userCorrectionSubjects, type RetainedUserCorrection } from '../session/userCorrections'
+import { correctionsInheritedBy, userCorrectionSubjects, type RetainedUserCorrection } from '../session/userCorrections'
 import { eligibleVerificationCandidates, type VerificationSubject } from '../session/verificationAttempts'
 import type { RunId, SessionGeneration } from '../session/sessionIdentity'
 import {
@@ -1222,7 +1222,11 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
               if (!session) return []
               return eligibleVerificationCandidates(session.store.snapshot(), {
                 objectiveId: objectiveInForce(),
-                corrections: session.store.unresolvedCorrections(),
+                // Inherited words only — the rule the store already
+                // applies to a decision and a presentation (#211). This
+                // Run's own command is what it is here to answer, and
+                // checking a Candidate is one of the ways it answers it.
+                corrections: correctionsInheritedBy(session.store.unresolvedCorrections(), session.runId),
               })
             },
             objectiveId: objectiveInForce,
@@ -2100,6 +2104,27 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
             observedSince: runStartedAt,
           })
         if (!fresh) proposedResolution = 'partial'
+      }
+      // The verification a Run could not make is not the user's to make
+      // (#212/AC2, ADR 0041). `needs_user` says only a specific user
+      // choice or action can move this forward — and an unreadable image
+      // is not one of those: it is the assistant's own check, and
+      // handing it over is the ending the stopping policy rules out.
+      //
+      // Where it lands instead is decided by what the Run actually has.
+      // Useful grounded progress with the match unverified is exactly
+      // what `partial` means, so a Run holding retained sources records
+      // that. A Run holding nothing was stopped by a capability it could
+      // not use with no useful partial result, which is `blocked`.
+      //
+      // Only `needs_user` is touched. A Run that genuinely asked the
+      // user something reaches this too, and it is downgraded all the
+      // same: the question it asked is on the Answer either way, and the
+      // Resolution is about what the Run established, not about what it
+      // asked. What it never does is promote — a Run reporting
+      // `unsuccessful` or `blocked` keeps its own honest reading.
+      if (runOutcome === 'done' && proposedResolution === 'needs_user' && hasUnresolvedImageCheck(ledger.snapshot())) {
+        proposedResolution = deriveFallbackSources({ records: ledger.snapshot() }).length > 0 ? 'partial' : 'blocked'
       }
       const finalization: RunFinalization | null = resetConsumed
         ? null

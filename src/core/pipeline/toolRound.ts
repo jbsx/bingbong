@@ -245,6 +245,19 @@ export function unknownToolError(name: string): ToolResultOutcome {
 }
 
 /**
+ * What the route itself reported, without the advisory nudge this round
+ * appended to it (#212, ADR 0041). The Session retains the words of the
+ * attempt, and our own instruction to the model is not one of them —
+ * retaining it would hand the next Run our advice back as though the
+ * provider had said it, which is exactly the invented explanation the
+ * retention exists to keep out. Notices attach after this point, so the
+ * nudge is the only thing here that is ours.
+ */
+function routeWords(error: string): string {
+  return error.replace(VISION_DEADLINE_NUDGE, '').trim()
+}
+
+/**
  * Advisory bookkeeping (#29/#30): the perf log must never fail a round,
  * so a throwing tracer is swallowed here. Absent turn id — a caller that
  * traces nothing — records nothing.
@@ -538,7 +551,9 @@ export function createToolRoundExecutor(config: ToolRoundConfig): ToolRoundExecu
       // from them, and the Session retains none.
       if (verificationRail !== null) {
         const spent = verificationRail.observe(routeOf(call), outcome)
-        if (spent !== null) config.verification?.retainFailure?.(spent)
+        if (spent !== null) {
+          config.verification?.retainFailure?.({ ...spent, failure: routeWords(spent.failure) })
+        }
       }
       // No-progress rails (#126, ADR 0027): the redundancy nudge and the
       // Approach instructions are immediate Notices too; two exhausted

@@ -627,8 +627,12 @@ describe('runSubagent', () => {
     const outcome = llm.requests[1]?.toolResults[0]?.outcome
     expect(outcome).toMatchObject({
       ok: false,
+      // The nudge names the fallback and the honest ending, and says
+      // what this attempt did rather than what the route is (#212): a
+      // worker told vision is gone stops looking at anything, and it has
+      // no user of its own to hand the check to.
       error: expect.stringMatching(
-        /did not begin answering within 8000ms[\s\S]*read_page[\s\S]*ask_user[\s\S]*do not keep retrying look/,
+        /did not begin answering within 8000ms[\s\S]*read_page[\s\S]*still unverified[\s\S]*Do not send the same look again/,
       ),
     })
   })

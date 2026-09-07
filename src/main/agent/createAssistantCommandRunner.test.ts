@@ -15,6 +15,9 @@ import { createSessionRuntime } from '../../core/session/sessionRuntime'
 import type { SubmissionFeedback } from '../../core/session/submissionFeedback'
 import { createAssistantCommandRunner } from './createAssistantCommandRunner'
 import { setFaultSink, type FaultReport } from '../../core/trace/fault'
+import { VisionDeadlineError } from '../../core/ports/vision'
+import { TIER_TOOL_ROUND_BUDGETS } from '../../core/pipeline/effortEpoch'
+import { FORBIDDEN_ENDINGS, RESOURCE_ACCOUNTING } from '../../core/testing/stoppingPolicy'
 import type { TraceRecord } from '../../core/trace/runTrace'
 
 class DeterministicIdentities implements SessionIdentitySource {
@@ -2119,6 +2122,432 @@ describe('assistant command runner', () => {
       // A rejected submission is not an accepted Run, so it changed
       // nothing: only the accepted continuation's words are retained.
       expect(runtime.evidenceStore()!.unresolvedCorrections().map(({ text }) => text)).toEqual([REJECT])
+    })
+  })
+
+  // #212, ADR 0041: a search that cannot check its defining constraint
+  // must not keep asking the same route the same question. The whole
+  // failure, scripted end to end over a real Session: present a lead,
+  // fail the check, refuse the repeat, continue, spend the one fresh
+  // attempt, and refuse everything after it.
+  //
+  // What these tests establish is mechanical — which calls the rails
+  // refuse, what the Session retains, what the next Run's request
+  // carries, and which Resolution the Run records. They cannot establish
+  // that a live model honours the policy it is given, and the scripted
+  // Answers below are fixtures, never evidence of live-model compliance
+  // (docs/search-continuation-design.md, "Verification Boundary").
+  describe('verifying eligible Candidates without repeating a failed check (#212)', () => {
+    const FIND = 'find the tier list post with both titles in the 10/10 tier'
+    const KEEP = 'keep looking'
+    const POST = 'https://old.reddit.com/r/tierlists/comments/abc'
+    const LOOK_FAILED = 'Vision request timed out after 8000ms'
+
+    function harness(options: { lookFails?: boolean } = {}) {
+      const clock = new FakeClock(1_000)
+      const runtime = createSessionRuntime({ clock, identities: new DeterministicIdentities() })
+      const requests: LlmRequest[] = []
+      const queue: AssistantTurn[] = []
+      const published: PipelineEvent[] = []
+      let lookFails = options.lookFails ?? true
+      const looks: boolean[] = []
+      const readPage: Tool = {
+        name: 'read_page',
+        acquisition: true,
+        async execute() {
+          return `# The mech tier list — ${POST}\n\npage text:\nThe 10/10 tier is an image.`
+        },
+      }
+      const look: Tool = {
+        name: 'look',
+        usesVision: true,
+        acquisition: true,
+        async execute() {
+          looks.push(lookFails)
+          if (lookFails) throw new VisionDeadlineError(8_000)
+          return 'The 10/10 tier lists both titles.'
+        },
+      }
+      let failAt: number | null = null
+      let exhausted = false
+      const llm: LlmClient = {
+        complete(request) {
+          requests.push(request)
+          if (requests.length === failAt) {
+            failAt = null
+            return Promise.reject(new Error('provider unavailable'))
+          }
+          const next = queue.shift()
+          if (next !== undefined) return Promise.resolve(next)
+          if (exhausted) return Promise.reject(new Error('ran out of scripted turns'))
+          return Promise.resolve({ kind: 'answer', speak: 'Nothing yet.', display: 'Nothing yet.' })
+        },
+      }
+      const pipeline = createCommandPipeline({
+        llm,
+        tts: new RecordingTts(),
+        clock,
+        tools: [readPage, look, createRecordEvidenceTool(), createRecordCandidateTool()],
+        currentPageUrl: () => POST,
+      })
+      const runner = createAssistantCommandRunner({
+        pipeline,
+        runtime,
+        clock,
+        onSessionReset: () => {},
+        createRunPublisher: () => ({ publish: (event: PipelineEvent) => published.push(event) }),
+        publishFeedback: () => {},
+      })
+      return {
+        runtime,
+        runner,
+        requests,
+        queue,
+        published,
+        /** Every Look this Session attempted, and whether it was set to fail. */
+        looks,
+        letLookSucceed: () => {
+          lookFails = false
+        },
+        /** Fails the nth model request of the Session, once. */
+        failRequest: (nth: number) => {
+          failAt = nth
+        },
+        /** Every request past the queue fails — including the reserved Answer round. */
+        exhaustAfterQueue: () => {
+          exhausted = true
+        },
+        failures: () => runtime.evidenceStore()!.verificationFailures(),
+        candidate: (id: string) => runtime.evidenceStore()!.candidate(id as MemoryEntryId)!,
+        /** Every failed tool result the Session published, in order. */
+        refusals: () =>
+          published
+            .filter((event): event is Extract<PipelineEvent, { type: 'tool_result' }> => event.type === 'tool_result')
+            .filter((event) => !event.ok)
+            .map((event) => event.error ?? ''),
+        resolutions: () =>
+          published
+            .filter((event): event is Extract<PipelineEvent, { type: 'done' }> => event.type === 'done')
+            .map((event) => event.resolution),
+      }
+    }
+
+    /**
+     * Run 1: reads the post, grounds it, records Candidate A, then tries
+     * to read the 10/10 tier image and cannot. Leaves memory-1 (the
+     * post), memory-2 (the user's words), memory-3 (Candidate A) and
+     * memory-4 (the objective).
+     */
+    async function failTheCheck(h: ReturnType<typeof harness>, extraLooks = 0): Promise<void> {
+      h.queue.push({ kind: 'tool_calls', calls: [{ id: 'r1', name: 'read_page', args: { url: POST } }] })
+      h.queue.push({
+        kind: 'tool_calls',
+        calls: [
+          {
+            id: 'e1',
+            name: 'record_evidence',
+            args: {
+              observation: 'The mech tier list post shows the 10/10 tier as an image.',
+              source_url: POST,
+              excerpt: 'The 10/10 tier is an image.',
+            },
+          },
+          { id: 'e2', name: 'record_evidence', args: { kind: 'user', observation: FIND } },
+          { id: 'c1', name: 'record_candidate', args: { subject: 'Ranking every mech', supporting_evidence: ['memory-1'] } },
+        ],
+      })
+      for (let at = 0; at <= extraLooks; at += 1) {
+        h.queue.push({ kind: 'tool_calls', calls: [{ id: `l${at}`, name: 'look', args: { question: 'which titles are in the 10/10 tier?' } }] })
+      }
+      h.queue.push({
+        kind: 'answer',
+        speak: 'I found one possible post but have not checked the tier.',
+        display: 'The "Ranking every mech" post — the 10/10 tier is an image I could not read.',
+        runNote: 'Presented the mech post; the tier image is unread.',
+        inspectionCandidateId: 'memory-3' as MemoryEntryId,
+        resolution: 'partial',
+        memoryPatch: parseMemoryPatch([{
+          op: 'add',
+          entry: {
+            kind: 'objective',
+            subject: 'Find the tier list post',
+            detail: 'Both titles must be in the 10/10 tier.',
+            user_evidence: ['memory-2'],
+          },
+        }])!,
+      })
+      await h.runner.run(FIND)
+    }
+
+    it('retains what the attempt reported, and no explanation of it (#212/AC3)', async () => {
+      const h = harness()
+      await failTheCheck(h)
+
+      // The route, the words it used, and the Run that spent it. The
+      // words are the route's own: the advisory nudge the round appends
+      // is ours, and retaining it would hand the next Run our own advice
+      // back as though the provider had said it.
+      expect(h.failures()).toEqual([
+        expect.objectContaining({ route: 'vision', failure: LOOK_FAILED, runId: 'run-1' }),
+      ])
+      expect(h.failures()[0]!.failure).not.toMatch(/unavailable|broken|offline|read_page/i)
+      // No subject and no objective yet, and neither is guessed at: this
+      // check was made before anything had been presented, and the task
+      // it served only enters Working Memory at the Run's own commit.
+      expect(h.failures()[0]!.candidateId).toBeUndefined()
+      expect(h.failures()[0]!.objectiveId).toBeUndefined()
+
+      // The next admission joins it to the objective that landed after it
+      // — the same commit-time adoption a correction and a decision get.
+      h.queue.push({ kind: 'answer', speak: 'Nothing new.', display: 'Nothing new.', resolution: 'partial' })
+      await h.runner.run(KEEP)
+      expect(h.failures()[0]!.objectiveId).toBe('memory-4')
+    })
+
+    it('stamps the Candidate a check was about once one has been presented (#212/AC3)', async () => {
+      const h = harness()
+      await failTheCheck(h)
+
+      // The continuation looks again at the Candidate the last Answer
+      // presented, so this attempt has an unambiguous subject.
+      h.queue.push({ kind: 'tool_calls', calls: [{ id: 'l9', name: 'look', args: {} }] })
+      h.queue.push({ kind: 'answer', speak: 'Still unchecked.', display: 'Still unchecked.', resolution: 'partial' })
+      await h.runner.run(KEEP)
+
+      expect(h.failures()[1]).toEqual(
+        expect.objectContaining({ route: 'vision', candidateId: 'memory-3', objectiveId: 'memory-4', runId: 'run-2' }),
+      )
+    })
+
+    it('refuses the same check again in the same Run (#212/AC4)', async () => {
+      const h = harness()
+      await failTheCheck(h, 2)
+
+      // Three Looks were asked for; one was made. The rest never reached
+      // the vision model at all.
+      expect(h.looks).toHaveLength(1)
+      const refused = h.refusals().filter((error) => error.includes('already failed once in this run'))
+      expect(refused).toHaveLength(2)
+      // And the refusal points somewhere rather than only saying no.
+      expect(refused[0]).toContain('read_page')
+      expect(refused[0]).toContain('still unverified')
+    })
+
+    it('carries the spent route into the next Run’s request, in its own words (#212/AC3)', async () => {
+      const h = harness()
+      await failTheCheck(h)
+      const before = h.requests.length
+
+      await h.runner.run(KEEP)
+
+      const continuation = h.requests[before]!
+      expect(continuation.verification).toEqual({
+        failures: [{ route: 'vision', failure: LOOK_FAILED }],
+        freshAttemptAllowed: true,
+        eligible: [{ candidateId: 'memory-3', subject: 'Ranking every mech' }],
+      })
+    })
+
+    it('permits one fresh attempt on the continuation, then closes it again (#212/AC5)', async () => {
+      const h = harness()
+      await failTheCheck(h)
+
+      // The continuation asks twice. The first is the fresh attempt the
+      // eligible Candidate earns; the second is the repeat the policy
+      // answers with a different route or the limitation.
+      h.queue.push({ kind: 'tool_calls', calls: [{ id: 'l9', name: 'look', args: {} }] })
+      h.queue.push({ kind: 'tool_calls', calls: [{ id: 'l10', name: 'look', args: {} }] })
+      h.queue.push({ kind: 'answer', speak: 'Still unchecked.', display: 'Still unchecked.', resolution: 'partial' })
+      await h.runner.run(KEEP)
+
+      expect(h.looks).toHaveLength(2)
+      expect(h.refusals().filter((error) => error.includes('already failed once in this run'))).toHaveLength(1)
+      // Both attempts are on record, each describing itself.
+      expect(h.failures()).toHaveLength(2)
+      expect(h.failures().map((held) => held.runId)).toEqual(['run-1', 'run-2'])
+    })
+
+    it('refuses a fresh attempt once the user has rejected the Candidate it would settle (#212/AC5)', async () => {
+      const h = harness()
+      await failTheCheck(h)
+
+      // The user rejects A, and the continuation records that decision on
+      // their authority before asking to look again.
+      h.queue.push({
+        kind: 'tool_calls',
+        calls: [{ id: 'e9', name: 'record_evidence', args: { kind: 'user', observation: 'not that one; keep looking' } }],
+      })
+      h.queue.push({
+        kind: 'tool_calls',
+        calls: [
+          {
+            id: 'c9',
+            name: 'record_candidate',
+            args: {
+              candidate_id: 'memory-3',
+              status: 'rejected',
+              authority: 'user',
+              reason: 'the user said it is not that one',
+              supporting_evidence: ['memory-5'],
+            },
+          },
+        ],
+      })
+      h.queue.push({ kind: 'tool_calls', calls: [{ id: 'l9', name: 'look', args: {} }] })
+      h.queue.push({ kind: 'answer', speak: 'Looking elsewhere.', display: 'Looking elsewhere.', resolution: 'partial' })
+      await h.runner.run('not that one; keep looking')
+
+      expect(h.candidate('memory-3')).toMatchObject({ status: 'rejected' })
+      // Nothing is left for a repeat to settle, so it is not spent.
+      expect(h.looks).toHaveLength(1)
+      expect(h.refusals().some((error) => error.includes('no candidate left'))).toBe(true)
+    })
+
+    it('refuses a fresh attempt while inherited words about it are unresolved (#212/AC5)', async () => {
+      const h = harness()
+      await failTheCheck(h)
+
+      // The user says something about the presented Candidate and that
+      // Run's very first model request never returns — so nothing
+      // interprets their words, and they outlive the Run (#211).
+      h.failRequest(h.requests.length + 1)
+      await h.runner.run('not that one; keep looking')
+      expect(h.candidate('memory-3')).toMatchObject({ status: 'active', decisions: [] })
+
+      // The Run after it inherits that debt. Checking the Candidate their
+      // words name would settle on the model's own authority the very
+      // thing they are waiting to be asked about, so the route stays shut.
+      h.queue.push({ kind: 'tool_calls', calls: [{ id: 'l9', name: 'look', args: {} }] })
+      h.queue.push({ kind: 'answer', speak: 'Which one did you mean?', display: 'Which one did you mean?', resolution: 'partial' })
+      await h.runner.run(KEEP)
+
+      expect(h.looks).toHaveLength(1)
+      expect(h.refusals().some((error) => error.includes('no candidate left'))).toBe(true)
+    })
+
+    it('reopens every route when the user replaces the objective (#212/AC5)', async () => {
+      const h = harness()
+      await failTheCheck(h)
+
+      // A replacement objective is a different search. It inherits no
+      // rejection and no spent route.
+      h.queue.push({
+        kind: 'tool_calls',
+        calls: [{ id: 'e9', name: 'record_evidence', args: { kind: 'user', observation: 'forget that, find me a mechanical keyboard' } }],
+      })
+      h.queue.push({
+        kind: 'answer',
+        speak: 'New search.',
+        display: 'New search.',
+        runNote: 'The user replaced the objective with a keyboard search.',
+        resolution: 'partial',
+        memoryPatch: parseMemoryPatch([{
+          op: 'add',
+          entry: {
+            kind: 'objective',
+            subject: 'Find a mechanical keyboard',
+            detail: 'The user replaced the tier list search with this one.',
+            user_evidence: ['memory-5'],
+          },
+        }])!,
+      })
+      await h.runner.run('forget that, find me a mechanical keyboard')
+
+      const before = h.requests.length
+      h.queue.push({ kind: 'tool_calls', calls: [{ id: 'l9', name: 'look', args: {} }] })
+      h.queue.push({ kind: 'answer', speak: 'Looking.', display: 'Looking.', resolution: 'partial' })
+      await h.runner.run(KEEP)
+
+      // Nothing is carried into the new task, and the Look is made.
+      expect(h.requests[before]!.verification).toBeUndefined()
+      expect(h.looks).toHaveLength(2)
+    })
+
+    it('does not hand routine image verification to the user (#212/AC2)', async () => {
+      const h = harness()
+      h.queue.push({ kind: 'tool_calls', calls: [{ id: 'r1', name: 'read_page', args: { url: POST } }] })
+      h.queue.push({ kind: 'tool_calls', calls: [{ id: 'l1', name: 'look', args: {} }] })
+      h.queue.push({
+        kind: 'answer',
+        speak: 'Can you read the tier image for me?',
+        display: 'Can you read the tier image for me?',
+        // The Run proposes handing its own check back. It found a page
+        // and read it, so what it actually has is useful partial work.
+        resolution: 'needs_user',
+      })
+      await h.runner.run(FIND)
+
+      expect(h.resolutions()).toEqual(['partial'])
+    })
+
+    it('records blocked when the failed check left nothing useful to show (#212/AC2)', async () => {
+      const h = harness()
+      h.queue.push({ kind: 'tool_calls', calls: [{ id: 'l1', name: 'look', args: {} }] })
+      h.queue.push({
+        kind: 'answer',
+        speak: 'Can you read the tier image for me?',
+        display: 'Can you read the tier image for me?',
+        resolution: 'needs_user',
+      })
+      await h.runner.run(FIND)
+
+      // An unavailable capability prevented further useful work and there
+      // is no useful partial result: that is `blocked`, not the user's
+      // job.
+      expect(h.resolutions()).toEqual(['blocked'])
+    })
+
+    it('leaves an honest Resolution the Run proposed alone', async () => {
+      const h = harness()
+      h.queue.push({ kind: 'tool_calls', calls: [{ id: 'r1', name: 'read_page', args: { url: POST } }] })
+      h.queue.push({ kind: 'tool_calls', calls: [{ id: 'l1', name: 'look', args: {} }] })
+      h.queue.push({
+        kind: 'answer',
+        speak: 'I found one post but have not checked the tier.',
+        display: 'I found one post but have not checked the tier.',
+        resolution: 'partial',
+      })
+      await h.runner.run(FIND)
+
+      expect(h.resolutions()).toEqual(['partial'])
+    })
+
+    it('says both what it found and what it could not check, in the deterministic Answer (#212/AC1)', async () => {
+      const h = harness()
+      h.queue.push({ kind: 'tool_calls', calls: [{ id: 'r1', name: 'read_page', args: { url: POST } }] })
+      h.queue.push({ kind: 'tool_calls', calls: [{ id: 'l1', name: 'look', args: {} }] })
+      // The rest of the Lookup budget goes on reading, so the run stops
+      // on its own budget; the reserved Answer round then finds no
+      // scripted turn left and fails, which is what puts the
+      // deterministic Answer in front of the user.
+      for (let at = 2; at < TIER_TOOL_ROUND_BUDGETS.lookup; at += 1) {
+        h.queue.push({ kind: 'tool_calls', calls: [{ id: `r${at}`, name: 'read_page', args: { url: `${POST}?page=${at}` } }] })
+      }
+      h.exhaustAfterQueue()
+      await h.runner.run(FIND)
+
+      const display = h.published.find((event) => event.type === 'display') as { text: string } | undefined
+      expect(display).toBeDefined()
+      // The lead is shown, and neither sentence stands in for the other.
+      expect(display!.text).toContain(POST)
+      expect(display!.text).toContain('I have not verified that any of these answers the request.')
+      expect(display!.text).toContain('I could not read the image I needed to check, so that is still unverified.')
+      for (const event of h.published.filter((item) => item.type === 'display' || item.type === 'speak')) {
+        const text = (event as { text: string }).text
+        expect(text).not.toMatch(RESOURCE_ACCOUNTING)
+        expect(text).not.toMatch(FORBIDDEN_ENDINGS)
+      }
+    })
+
+    it('spends the route only on a failure — a Look that answered closes nothing', async () => {
+      const h = harness({ lookFails: false })
+      h.queue.push({ kind: 'tool_calls', calls: [{ id: 'l1', name: 'look', args: {} }] })
+      h.queue.push({ kind: 'tool_calls', calls: [{ id: 'l2', name: 'look', args: {} }] })
+      h.queue.push({ kind: 'answer', speak: 'Both titles are there.', display: 'Both titles are there.', resolution: 'completed' })
+      await h.runner.run(FIND)
+
+      expect(h.looks).toHaveLength(2)
+      expect(h.failures()).toEqual([])
     })
   })
 })

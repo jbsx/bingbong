@@ -131,6 +131,24 @@ export function correctionsInForce(
 }
 
 /**
+ * The unresolved words a Run inherited: everything left behind by a Run
+ * that never answered, and nothing the caller was itself admitted with.
+ *
+ * The distinction is the whole gate. A Run holding the user's latest
+ * command is answering it — deciding, presenting, and checking are how
+ * it answers — while words left by a Run that failed are a debt this one
+ * did not hear and must not settle on its own authority. Every rule that
+ * refuses on an unresolved correction reads this, so none of them can
+ * disagree about whose words are in the way.
+ */
+export function correctionsInheritedBy(
+  corrections: readonly RetainedUserCorrection[],
+  runId: RunId,
+): RetainedUserCorrection[] {
+  return corrections.filter((held) => held.runId !== runId)
+}
+
+/**
  * Whether the user has said something about this Candidate that no Run
  * has resolved yet. This is the whole enforcement surface: while it is
  * true the Candidate is not presented again and the model does not

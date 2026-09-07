@@ -4,6 +4,7 @@ import type { RetainedInspectionReference } from './inspectionReference'
 import {
   correctionAffects,
   correctionsInForce,
+  correctionsInheritedBy,
   MAX_CORRECTION_CHARS,
   retainedCorrections,
   type RetainedUserCorrection,
@@ -21,7 +22,7 @@ import {
   type DecisionAuthority,
 } from './candidateDecisions'
 import {
-  MAX_VERIFICATION_FAILURE_CHARS,
+  boundedVerificationFailure,
   retainedVerificationFailures,
   verificationFailuresInForce,
   VERIFICATION_ROUTES,
@@ -641,7 +642,7 @@ export function createSessionEvidence(deps: {
    * back as though nothing had been said.
    */
   const inheritedCorrections = (runId: RunId): RetainedUserCorrection[] =>
-    liveCorrections().filter((held) => held.runId !== runId)
+    correctionsInheritedBy(liveCorrections(), runId)
 
   /**
    * Drops the retained corrections a predicate has seen resolved. Only
@@ -985,7 +986,7 @@ export function createSessionEvidence(deps: {
     retainVerificationFailure(input) {
       if (cleared) return null
       if (!(VERIFICATION_ROUTES as readonly string[]).includes(input.route)) return null
-      const failure = boundedString(input.failure, MAX_VERIFICATION_FAILURE_CHARS)
+      const failure = boundedVerificationFailure(input.failure)
       const runId = boundedString(input.runId, MAX_PROVENANCE_CHARS)
       if (!failure || !runId) return null
       const objectiveId = deps.objectiveId?.()

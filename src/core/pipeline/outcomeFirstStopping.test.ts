@@ -177,16 +177,18 @@ describe('a stopped Run ends on the state of the task (#203, ADR 0038)', () => {
 
     const display = events.find((event) => event.type === 'display')!
     expect(display.text).toContain('I have not confirmed an answer for')
-    // The check the run could not complete is named as exactly that —
-    // not as the generic "these are unverified leads" line, and not as
-    // the vision failure behind it (#203/AC2).
+    // The check the run could not complete is named as exactly that, and
+    // not as the vision failure behind it (#203/AC2). With leads to show
+    // as well, both facts are stated rather than one standing in for the
+    // other (#212/AC1): a listed post under nothing but "I could not read
+    // the image" reads as a post that was checked.
+    expect(display.text).toContain('I have not verified that any of these answers the request.')
     expect(display.text).toContain('I could not read the image I needed to check, so that is still unverified.')
-    expect(display.text).not.toContain('I have not verified that any of these answers the request.')
     // The page the run did read is still shown.
     expect(display.text).toContain('https://www.reddit.com/r/manhwa/tiers')
     // The spoken half names the same unresolved check.
     expect(events.filter((event) => event.type === 'speak').map((event) => event.text)).toEqual([
-      'I could not read the image I needed, so I have not confirmed that.',
+      'Here is what I found so far. I could not read the image I needed, so I have not confirmed any of it.',
     ])
     // Nothing about the provider's own failure reaches either half.
     for (const text of rendered(events)) {

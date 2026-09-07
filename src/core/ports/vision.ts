@@ -65,11 +65,23 @@ export class VisionDeadlineError extends Error {
   }
 }
 
-/** The advisory nudge every Vision Deadline breach carries (ADR 0016) —
- * orchestrator and subagent Looks alike: fall back to the DOM or escalate,
- * never retry look blind. */
+/**
+ * The advisory nudge every Vision Deadline breach carries (ADR 0016) —
+ * orchestrator and subagent Looks alike: fall back to the DOM, never
+ * retry look blind.
+ *
+ * It says what the attempt did, not what the route is (#212, ADR 0041).
+ * The first wording opened "Vision is unavailable right now", which is a
+ * claim about the rest of the Session that one breached deadline cannot
+ * establish (ADR 0040) — and a run told the route is gone stops trying
+ * to see anything at all, then hands the check back to the user, which
+ * is the one ending the stopping policy rules out. What one attempt
+ * establishes is that one attempt failed, so that is what this says.
+ */
 export const VISION_DEADLINE_NUDGE =
-  'Vision is unavailable right now. Proceed with the DOM snapshot (read_page) or ask_user — do not keep retrying look.'
+  'That look did not finish in time — this attempt, not the route for the rest of this run. ' +
+  'Read the text the page itself carries (read_page) instead, or answer with the check named as still ' +
+  'unverified. Do not send the same look again, and do not ask the user to make the check for you.'
 
 /**
  * How one vision attempt ended (#204). The Vision Deadline's two breaches

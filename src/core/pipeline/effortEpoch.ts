@@ -754,6 +754,14 @@ const IMAGE_CHECK_LINE = 'I could not read the image I needed to check, so that 
 const IMAGE_CHECK_SPOKEN = 'I could not read the image I needed, so I have not confirmed that.'
 
 /**
+ * Its spoken half when the run also has leads to show (#212/AC1). Two
+ * short sentences, because the two facts are different: something was
+ * found, and the thing that would have settled it was not checked.
+ */
+const FOUND_BUT_UNCHECKED_SPOKEN =
+  'Here is what I found so far. I could not read the image I needed, so I have not confirmed any of it.'
+
+/**
  * How each Blocker flavor reaches the *user* (#202): what it is called out
  * loud — the gate's own vocabulary ("network-block") is a marker token,
  * not a noun anyone says — and what the user is asked to do about it, on
@@ -863,9 +871,21 @@ export function deterministicFinalAnswer(input: {
   const imageUnverified = input.imageUnverified === true
   const observations = observed ? `\n\nWhat I have so far:\n${sourceLines.join('\n')}` : ''
   // The unresolved check closes the display whenever there is one to
-  // name: a failed Look names itself, and otherwise a listed source is
-  // an unverified lead. With neither there is nothing honest to add.
-  const check = imageUnverified ? IMAGE_CHECK_LINE : observed ? UNVERIFIED_SOURCES_LINE : ''
+  // name. With both a failed Look and sources to show, both sentences
+  // are said (#212/AC1): they are two different facts, and a list of
+  // posts under nothing but "I could not read the image" reads as a list
+  // of posts that were checked. Distinguishing what was established from
+  // what was not is the whole of the honesty this Answer can offer —
+  // "I found two possible posts, but have not verified that either title
+  // is in the 10/10 tier", in the two sentences the fallback can build.
+  // With neither there is nothing honest to add.
+  const check = imageUnverified
+    ? observed
+      ? `${UNVERIFIED_SOURCES_LINE} ${IMAGE_CHECK_LINE}`
+      : IMAGE_CHECK_LINE
+    : observed
+      ? UNVERIFIED_SOURCES_LINE
+      : ''
   // The state of the task, first (#203). A Blocker replaces only the
   // opening sentence — what was observed still follows it, because a run
   // that got somewhere before the wall has something to show.
@@ -878,7 +898,9 @@ export function deterministicFinalAnswer(input: {
     wall !== undefined
       ? blockerSpokenSentence(wall)
       : imageUnverified
-        ? IMAGE_CHECK_SPOKEN
+        ? observed
+          ? FOUND_BUT_UNCHECKED_SPOKEN
+          : IMAGE_CHECK_SPOKEN
         : observed
           ? UNCONFIRMED_SPOKEN
           : NOTHING_TO_SHOW_SPOKEN
