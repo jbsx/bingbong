@@ -13,7 +13,7 @@ import { createToolRoundExecutor, type ToolRoundCapabilities, type ToolRoundConf
 import type { VisionTraceEvent, VisionTraceReporter } from '../trace/visionTrace'
 
 // Issue #157: the Tool Round executor's own invariants — the order its
-// nine seams run in, and the four ways a round can end. Everything here is
+// gated seams run in, and the four ways a round can end. Everything here is
 // plain values and a scripted tool catalog: no LLM, no browser, no pipeline.
 // What each test pins is a decision the Run loop used to make in comments
 // (ADR 0010, ADR 0027), so a reordering here has to fail a test.

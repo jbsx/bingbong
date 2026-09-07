@@ -27,12 +27,13 @@ import type { FinalizationCause } from '../session/runJournal'
 // Issue #154, step 2 (#157): the Tool Round executor.
 //
 // Vocabulary (CONTEXT.md, Tool Round): one model response's tool calls,
-// executed in order. Every round crosses nine seams in a fixed order —
+// executed in order. Every round crosses the same seams in a fixed order —
 // Blocker gate, no-progress gate, risk assessment and Confirmation, the
-// Vision Budget, the search-loop gate, execution, then classify →
-// Observation ledger → Blocker observe → the Blocker trip → search-loop
-// observe → no-progress observe → the no-Progress trip → Notices. That
-// order is an ADR 0010 / ADR 0027 / ADR 0037 requirement, and it used to
+// verification gate, the Vision Budget, the search-loop gate, execution,
+// then classify → Observation ledger → Blocker observe → the Blocker trip →
+// search-loop observe → verification observe → no-progress observe → the
+// no-Progress trip → Notices. That
+// order is an ADR 0010 / ADR 0027 / ADR 0037 / ADR 0041 requirement, and it used to
 // live as comments in a nine-parameter generator plus a loop body in the
 // Run pipeline, with the steering variable threaded through six exits.
 //
