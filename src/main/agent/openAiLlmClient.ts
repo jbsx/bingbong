@@ -8,6 +8,7 @@ import type {
   ToolCall,
   ToolResult,
 } from '../../core/ports/llm'
+import { LlmEmptyCompletionError, LlmRequestTimeoutError } from '../../core/ports/llm'
 import { createHash } from 'node:crypto'
 import type { Tool, ToolParameterSpec } from '../../core/pipeline/tool'
 import type { ModelEndpointConfig } from '../../core/agent/modelRouting'
@@ -529,7 +530,7 @@ export function createOpenAiLlmClient(deps: OpenAiLlmClientDeps): LlmClient {
     // is for the one reading the file afterwards (#186).
     console.warn(`[llm] ${emptyCompletion}`)
     reportFault('llm.openAiLlmClient.emptyCompletion', emptyCompletion)
-    throw new Error(`orchestrator returned an empty completion (request_id: ${lastRequestId ?? 'unknown'})`)
+    throw new LlmEmptyCompletionError(`orchestrator returned an empty completion (request_id: ${lastRequestId ?? 'unknown'})`)
   }
 
   interface CompletionPayload {
@@ -602,26 +603,38 @@ export function createOpenAiLlmClient(deps: OpenAiLlmClientDeps): LlmClient {
     const timeoutSignal = AbortSignal.timeout(timeoutMs)
     const signal = options.signal ? AbortSignal.any([timeoutSignal, options.signal]) : timeoutSignal
 
-    const response = await fetchFn(completionsUrl(endpoint.baseUrl), {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        authorization: `Bearer ${endpoint.apiKey}`,
-      },
-      body: JSON.stringify(body),
-      signal,
-    })
+    try {
+      const response = await fetchFn(completionsUrl(endpoint.baseUrl), {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          authorization: `Bearer ${endpoint.apiKey}`,
+        },
+        body: JSON.stringify(body),
+        signal,
+      })
 
-    if (!response.ok) {
-      const detail = (await response.text()).slice(0, 500)
-      throw new Error(`orchestrator request failed (HTTP ${response.status}): ${detail}`)
+      if (!response.ok) {
+        const detail = (await response.text()).slice(0, 500)
+        throw new Error(`orchestrator request failed (HTTP ${response.status}): ${detail}`)
+      }
+
+      if (options.streaming) return await consumeSseStream(response, options.onDelta)
+
+      const raw = await response.text()
+      const payload = JSON.parse(raw) as CompletionPayload
+      return { payload, requestId: payload.request_id, raw }
+    } catch (error) {
+      // The client's own timeout ended the round (#218): named as such,
+      // so the round's record never reads a provider still reasoning at
+      // the cut as one that answered empty. The caller's own abort — a
+      // Stop, the deadline — is theirs to name, and passes through as it
+      // came, even when the timer happened to fire in the same instant.
+      if (timeoutSignal.aborted && options.signal?.aborted !== true) {
+        throw new LlmRequestTimeoutError(timeoutMs, { cause: error })
+      }
+      throw error
     }
-
-    if (options.streaming) return consumeSseStream(response, options.onDelta)
-
-    const raw = await response.text()
-    const payload = JSON.parse(raw) as CompletionPayload
-    return { payload, requestId: payload.request_id, raw }
   }
 
   /** Accumulates one streamed round while fragments fan out to onDelta. */

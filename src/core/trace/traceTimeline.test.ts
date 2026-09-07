@@ -179,6 +179,8 @@ describe('buildTraceTimeline', () => {
         round: 3,
         attempt: 2,
         role: 'orchestrator',
+        outcome: 'completed',
+        reasoningChars: 812,
         model: 'glm-5.3',
         reasoningEffort: 'high',
         usage: { promptTokens: 12_345, completionTokens: 210 },
@@ -192,6 +194,8 @@ describe('buildTraceTimeline', () => {
         round: 1,
         attempt: 1,
         role: 'subagent',
+        outcome: 'deadline',
+        reasoningChars: 0,
         agentId: 'agent-7',
         request: { toolResults: 0, chars: 900 },
       }),
@@ -207,8 +211,8 @@ describe('buildTraceTimeline', () => {
     const entries = timeline.lanes[0].entries
     expect(entries.map((entry) => entry.summary)).toEqual([
       'investigation (model): find the fare [orchestrator glm-5.3, subagent deepseek-chat, vision glm-4.6v]',
-      'round 3 attempt 2 orchestrator glm-5.3 @high 4 results / 38000 chars → 12345 in / 210 out prompt deadbeefcafef00d',
-      'round 1 attempt 1 subagent 0 results / 900 chars',
+      'round 3 attempt 2 orchestrator glm-5.3 @high 4 results / 38000 chars thought 812 chars → 12345 in / 210 out prompt deadbeefcafef00d',
+      'round 1 attempt 1 subagent 0 results / 900 chars ✗ deadline',
       'done (no_progress)',
       'no_progress: run-trace-run-a-turn-1.png (51200 bytes)',
     ])

@@ -296,3 +296,34 @@ export type AssistantTurn =
 export interface LlmClient {
   complete(request: LlmRequest): Promise<AssistantTurn>
 }
+
+/**
+ * The client's own request timeout ended the round (#218): the provider
+ * had not finished answering when the client gave up waiting. Thrown as
+ * its own class so the round's record can name it — a round that was
+ * still reasoning when the client cut it is not an empty completion,
+ * and reading the two alike is how #218's captures were first
+ * misdiagnosed. A caller's own abort (Stop, the deadline) is not this:
+ * the client rethrows that as it came.
+ */
+export class LlmRequestTimeoutError extends Error {
+  readonly timeoutMs: number
+  constructor(timeoutMs: number, options?: ErrorOptions) {
+    super(`orchestrator request timed out after ${timeoutMs} ms`, options)
+    this.name = 'LlmRequestTimeoutError'
+    this.timeoutMs = timeoutMs
+  }
+}
+
+/**
+ * Every attempt of the round came back with neither content nor a tool
+ * call (#218): the provider answered, and said nothing. Thrown as its
+ * own class for the same reason as the timeout — the round's record
+ * distinguishes a provider that answered empty from one that was cut.
+ */
+export class LlmEmptyCompletionError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'LlmEmptyCompletionError'
+  }
+}

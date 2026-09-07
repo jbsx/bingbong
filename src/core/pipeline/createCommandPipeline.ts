@@ -83,7 +83,7 @@ import { candidateCheckpointEvent, evidenceCheckpointEvent } from '../trace/evid
 import type { LlmRequestShape, RunTraceWriter } from '../trace/runTrace'
 import type { VisionTraceReporter } from '../trace/visionTrace'
 import { createReasoningRounds, reasoningEvent, type TracedReasoningRound } from '../trace/reasoningTrace'
-import { createLlmRounds, llmRequestShape, llmRoundEvent, type LlmRound, type TracedLlmRound } from '../trace/llmRoundTrace'
+import { createLlmRounds, llmRequestShape, llmRoundEvent, llmRoundFailure, type LlmRound, type LlmRoundOutcome, type TracedLlmRound } from '../trace/llmRoundTrace'
 import { pipelineEventTraceBody, tracesPipelineEvent } from '../trace/pipelineEventTrace'
 import { offContractReplyEvent, recordOffContractReply, type TracedOffContractReply } from '../trace/offContractReplyTrace'
 import { completedEvidenceIsFresh } from './evidenceFreshness'
@@ -1528,6 +1528,10 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
           // it went out under — and the usage of the attempt that returned.
           let sentRound: { readonly request: LlmRequestShape; readonly reasoningEffort: ReasoningEffort } | undefined
           let roundUsage: AssistantTurn['usage']
+          // How the round ended (#218): set where the outcome is decided
+          // — the return, or the catch that maps the abort back to what
+          // caused it — and read by the record in the finally.
+          let roundOutcome: LlmRoundOutcome = 'failed'
           const closeLlmAttempt = (closed: LlmRound): void => {
             // The request is built before any attempt can close, so this
             // is the llmRounds gate restated, never a missing shape.
@@ -1639,7 +1643,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
               // Streaming is also what the reasoning records read (#182):
               // reasoning exists only as deltas, so the opt-in wires the
               // round to stream even where no detail channel is listening.
-              ...(batcher || reasoningRounds
+              ...(batcher || reasoningRounds || llmRounds
                 ? {
                     onDelta: (delta: LlmStreamDelta): void => {
                       // A reserved round streams nothing (#198, ADR 0034).
@@ -1653,6 +1657,10 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
                       // diagnosis wants (#183), and it reaches no view.
                       if (!reservedRound) batcher?.onDelta(delta)
                       reasoningRounds?.onDelta(delta)
+                      // And the round's record counts it (#218): how much
+                      // thinking a cut round streamed is what tells it
+                      // from an empty completion.
+                      llmRounds?.onDelta(delta)
                     },
                   }
                 : {}),
@@ -1661,7 +1669,18 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
             if (llmRounds) sentRound = { request: llmRequestShape(request), reasoningEffort: request.reasoningEffort ?? effortEpoch.reasoningEffort }
             turn = await llm.complete(request)
             roundUsage = turn.usage
+            roundOutcome = 'completed'
           } catch (err) {
+            // What ended the round, for its record (#218): the cuts this
+            // loop made itself first — they all reach the client as one
+            // abort — then the client's own word on why it threw.
+            roundOutcome = run.aborted
+              ? 'cancelled'
+              : armedRound.deadlineAborted
+                ? 'deadline'
+                : allowanceSpent
+                  ? 'allowance'
+                  : llmRoundFailure(err)
             // The aborted signal rejects the request; the run was stopped,
             // so this is a cancellation whatever the rejection looks like.
             if (run.aborted) throw new CommandAbortedError()
@@ -1744,9 +1763,10 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
             // returned. Truncation happens inside the writer's guard.
             if (reasoningRounds) writeReasoning?.(reasoningRounds.takeRound())
             // The round's llm_round record (#191), on the same terms: an
-            // aborted or failed round leaves what it was sent under, and
-            // only a round that returned carries usage.
-            if (llmRounds) closeLlmAttempt(llmRounds.takeRound(roundUsage))
+            // aborted or failed round leaves what it was sent under and
+            // how it ended (#218), and only a round that returned carries
+            // usage.
+            if (llmRounds) closeLlmAttempt(llmRounds.takeRound(roundOutcome, roundUsage))
           }
           // The round can resolve despite the deadline abort (a client that
           // ignored the signal, or the response landing in the race

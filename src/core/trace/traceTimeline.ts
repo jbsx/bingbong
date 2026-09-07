@@ -270,6 +270,10 @@ function summarizeTrace(kind: string, record: Record<string, unknown>): string {
         record.model !== undefined ? str(record.model) : '',
         record.reasoningEffort !== undefined ? `@${str(record.reasoningEffort)}` : '',
         `${str(request.toolResults)} results / ${str(request.chars)} chars`,
+        // How it ended and how much it thought (#218): a cut round says so
+        // on the line, next to the reasoning it streamed before the cut.
+        record.outcome !== undefined && record.outcome !== 'completed' ? `✗ ${str(record.outcome)}` : '',
+        typeof record.reasoningChars === 'number' && record.reasoningChars > 0 ? `thought ${str(record.reasoningChars)} chars` : '',
         record.usage !== undefined ? `→ ${usageOf(record.usage)}` : '',
         record.promptHash !== undefined ? `prompt ${str(record.promptHash)}` : '',
       ]

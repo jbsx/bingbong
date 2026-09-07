@@ -34,7 +34,7 @@ import { describeToolAction } from '../pipeline/toolCallDisplay'
 import { MAX_SUBAGENT_VISION_CALLS } from './subagentRails'
 import { droppedFindingsNote, validateReportFindings, type SubagentReport } from './subagentReport'
 import { createReasoningRounds, type ReasoningRound, type SubagentReasoningTrace } from '../trace/reasoningTrace'
-import { createLlmRounds, llmRequestShape, type LlmRound, type SubagentLlmRoundTrace } from '../trace/llmRoundTrace'
+import { createLlmRounds, llmRequestShape, llmRoundFailure, type LlmRound, type SubagentLlmRoundTrace } from '../trace/llmRoundTrace'
 import { answerText } from './answerContract'
 import { recordOffContractReply, type SubagentOffContractReplyTrace } from '../trace/offContractReplyTrace'
 import type { SubagentPipelineEventTrace } from '../trace/pipelineEventTrace'
@@ -646,7 +646,11 @@ export async function runSubagent(deps: RunSubagentDeps, options: RunSubagentOpt
       // stays non-streaming without it.
       ...(reasoningRounds
         ? {
-            onDelta: (delta: LlmStreamDelta): void => reasoningRounds.onDelta(delta),
+            onDelta: (delta: LlmStreamDelta): void => {
+              reasoningRounds.onDelta(delta)
+              // The round's record counts the reasoning too (#218).
+              llmRounds?.onDelta(delta)
+            },
           }
         : {}),
       // A retried round leaves one record per attempt (#182, #191): the
@@ -693,6 +697,7 @@ export async function runSubagent(deps: RunSubagentDeps, options: RunSubagentOpt
         last.outcome = notices.attach(last.outcome, { usefulWork: false })
       }
       let turn: AssistantTurn | null = null
+      let answerError: unknown
       const answerRequest = requestArgs()
       try {
         turn = await llm.complete(answerRequest)
@@ -703,14 +708,19 @@ export async function runSubagent(deps: RunSubagentDeps, options: RunSubagentOpt
         if (!graceEnded()) {
           reportFault('agent.subagentRunner.answerRound', error, { ...(options.turnId !== undefined ? { turnId: options.turnId } : {}) })
         }
+        answerError = error
         turn = null
       } finally {
         // The reserved Answer round thinks too, and a round that failed is
         // the one a diagnosis wants most (#183) — so its record is written
         // here, whatever the round did. Its llm_round record (#191) on the
-        // same terms: usage only when the round returned.
+        // same terms: how it ended (#218), and usage only when it returned.
+        // The grace ending is the parent's deadline reaching this worker.
         traceThinking(reasoningRounds?.takeRound())
-        closeLlmAttempt(llmRounds?.takeRound(turn?.usage), answerRequest)
+        closeLlmAttempt(
+          llmRounds?.takeRound(turn !== null ? 'completed' : graceEnded() ? 'deadline' : llmRoundFailure(answerError), turn?.usage),
+          answerRequest,
+        )
       }
       await checkpoint(options)
       // An Off-contract Reply in the reserved report round (#198, ADR
@@ -744,10 +754,12 @@ export async function runSubagent(deps: RunSubagentDeps, options: RunSubagentOpt
     let turn: AssistantTurn | null = null
     const request = requestArgs()
     let usage: TokenUsage | undefined
+    let roundError: unknown
     try {
       turn = await llm.complete(request)
       usage = turn.usage
     } catch (error) {
+      roundError = error
       // The grace ended mid-round (#199): the abort is the parent's, not
       // a fault — the worker returns the bounded report below rather than
       // failing. Any other error is still the loop's to throw.
@@ -755,9 +767,13 @@ export async function runSubagent(deps: RunSubagentDeps, options: RunSubagentOpt
     } finally {
       // One record per model round, written in a finally so a round that
       // threw leaves its thinking behind like one that returned (#183) —
-      // and its llm_round record (#191) says what it was sent under.
+      // and its llm_round record (#191) says what it was sent under and
+      // how it ended (#218).
       traceThinking(reasoningRounds?.takeRound())
-      closeLlmAttempt(llmRounds?.takeRound(usage), request)
+      closeLlmAttempt(
+        llmRounds?.takeRound(turn !== null ? 'completed' : graceEnded() ? 'deadline' : llmRoundFailure(roundError), usage),
+        request,
+      )
     }
     if (turn === null) return abandonedReport()
     await checkpoint(options)

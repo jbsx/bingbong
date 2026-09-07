@@ -214,7 +214,14 @@ incidental — nothing is written unless a developer asked for it.
   system prompt text, never the text), the `reasoningEffort` actually sent,
   the provider's `usage` when it reported one, and the request's shape as
   counts (`toolResults` and `chars`) — never the request text, which the
-  `command`, `tool_call` and `tool_result` records already hold. A worker's
+  `command`, `tool_call` and `tool_result` records already hold. Since
+  #218 (ADR 0043) the record also says how the attempt ended (`outcome`:
+  completed, or cut by the deadline, the Finalization Allowance, the
+  client's request timeout, a Stop; or empty, or failed) and how many
+  characters of reasoning it streamed first (`reasoningChars`) — because a
+  round the deadline cut mid-thought and a round the provider answered
+  empty had left the same record, and a Session's decay was misread as
+  the provider's fault on exactly that. A worker's
   attempts take the same road as its reasoning, stamped with its `agentId`.
   The `run_plan` record is stamped with `models`, the three role models from
   the routing config as the plan was published, so a Run across a model

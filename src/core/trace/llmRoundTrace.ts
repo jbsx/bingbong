@@ -15,13 +15,27 @@
 // `round` and `attempt`. Nothing here exists unless the Run is tracing
 // (`BINGBONG_RUN_TRACE`, #184).
 
-import type { LlmAttemptSent, LlmRequest, ReasoningEffort, TokenUsage } from '../ports/llm'
-import type { LlmRequestShape, LlmRoundEvent, LlmRoundRole } from './runTrace'
+import {
+  LlmEmptyCompletionError,
+  LlmRequestTimeoutError,
+  type LlmAttemptSent,
+  type LlmRequest,
+  type LlmStreamDelta,
+  type ReasoningEffort,
+  type TokenUsage,
+} from '../ports/llm'
+import type { LlmRequestShape, LlmRoundEvent, LlmRoundOutcome, LlmRoundRole } from './runTrace'
 
-/** One attempt as the collector closed it: its numbering and what the client reported. */
+export type { LlmRoundOutcome } from './runTrace'
+
+/** One attempt as the collector closed it: its numbering, how it ended, and what the client reported. */
 export interface LlmRound {
   readonly round: number
   readonly attempt: number
+  /** How the attempt ended (#218). */
+  readonly outcome: LlmRoundOutcome
+  /** How many characters of reasoning streamed before it ended (#218). */
+  readonly reasoningChars: number
   /** What the client said it dispatched; absent when it threw before reporting. */
   readonly sent?: LlmAttemptSent
   /** The provider's usage; only an attempt that returned a turn has one. */
@@ -33,41 +47,67 @@ export interface LlmRound {
  * `takeAttempt` closes an abandoned attempt and leaves the round open,
  * `takeRound` closes the round's last attempt and starts the next round
  * at attempt 1. A client reports each attempt's identity through
- * `onAttempt` before it starts; the next take carries it.
+ * `onAttempt` before it starts; the next take carries it. Every delta
+ * the round streams passes through `onDelta`, so the record says how
+ * much reasoning an attempt produced before it ended (#218) — the
+ * measure that tells a round the deadline cut mid-thought from one the
+ * provider answered empty.
  */
 export interface LlmRounds {
   onAttempt(sent: LlmAttemptSent): void
+  onDelta(delta: LlmStreamDelta): void
+  /** Closes an attempt the client abandoned — which it does only for an empty completion. */
   takeAttempt(): LlmRound
-  takeRound(usage?: TokenUsage): LlmRound
+  takeRound(outcome: LlmRoundOutcome, usage?: TokenUsage): LlmRound
 }
 
 export function createLlmRounds(): LlmRounds {
   let rounds = 0
   let attempts = 0
   let sent: LlmAttemptSent | undefined
-  const take = (usage?: TokenUsage): LlmRound => {
+  let reasoningChars = 0
+  const take = (outcome: LlmRoundOutcome, usage?: TokenUsage): LlmRound => {
     attempts += 1
     const closed: LlmRound = {
       round: rounds + 1,
       attempt: attempts,
+      outcome,
+      reasoningChars,
       ...(sent !== undefined ? { sent } : {}),
       ...(usage !== undefined ? { usage } : {}),
     }
     sent = undefined
+    reasoningChars = 0
     return closed
   }
   return {
     onAttempt(next) {
       sent = next
     },
-    takeAttempt: () => take(),
-    takeRound(usage) {
-      const closed = take(usage)
+    onDelta(delta) {
+      if (delta.kind === 'reasoning') reasoningChars += delta.text.length
+    },
+    takeAttempt: () => take('empty'),
+    takeRound(outcome, usage) {
+      const closed = take(outcome, usage)
       rounds += 1
       attempts = 0
       return closed
     },
   }
+}
+
+/**
+ * What a round that threw is recorded as (#218): the client's own
+ * request timeout and the empty completion by their classes, anything
+ * else as a plain failure. The caller decides the cuts it made itself —
+ * the deadline, the allowance, a Stop — before asking this, because
+ * those reach the client as one abort and come back looking alike.
+ */
+export function llmRoundFailure(error: unknown): Extract<LlmRoundOutcome, 'timeout' | 'empty' | 'failed'> {
+  if (error instanceof LlmRequestTimeoutError) return 'timeout'
+  if (error instanceof LlmEmptyCompletionError) return 'empty'
+  return 'failed'
 }
 
 /** The request fields whose text the shape counts; callbacks, ids and flags are not content. */
@@ -115,6 +155,8 @@ export function llmRoundEvent(input: TracedLlmRound): LlmRoundEvent {
     round: input.round,
     attempt: input.attempt,
     role: input.role,
+    outcome: input.outcome,
+    reasoningChars: input.reasoningChars,
     ...(input.sent !== undefined ? { model: input.sent.model } : {}),
     ...(effort !== undefined ? { reasoningEffort: effort } : {}),
     ...(input.usage !== undefined ? { usage: input.usage } : {}),

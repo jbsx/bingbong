@@ -178,6 +178,18 @@ export interface LlmRequestShape {
  * round. Numbered exactly as the `reasoning` record for the same attempt,
  * so the two join on `round` and `attempt`.
  */
+/**
+ * How one LLM attempt ended (#218): `completed` returned a turn; `deadline`
+ * was cut by the Run's active-work deadline and `allowance` by its
+ * Finalization Allowance; `timeout` by the client's own request timeout;
+ * `empty` came back with neither content nor a tool call; `cancelled` was
+ * aborted by a Stop; `failed` threw anything else. A cut round is never
+ * an empty one, however alike the two look from the outside — reading
+ * them alike is how a Session's decay was first misdiagnosed — and a
+ * per-round latency reads only `completed` rounds.
+ */
+export type LlmRoundOutcome = 'completed' | 'deadline' | 'allowance' | 'timeout' | 'empty' | 'cancelled' | 'failed'
+
 export interface LlmRoundEvent {
   readonly kind: 'llm_round'
   /** Which LLM round of the Run, counting from 1 — the `reasoning` record's numbering. */
@@ -185,6 +197,15 @@ export interface LlmRoundEvent {
   /** Which attempt within that round, counting from 1 — the `reasoning` record's numbering. */
   readonly attempt: number
   readonly role: LlmRoundRole
+  /** How the attempt ended (#218). */
+  readonly outcome: LlmRoundOutcome
+  /**
+   * How many characters of reasoning the attempt streamed before it
+   * ended (#218) — the full length, where the `reasoning` record's text
+   * is cut. Zero for a round that streamed no reasoning, including one
+   * that never streamed at all.
+   */
+  readonly reasoningChars: number
   /** The model the attempt went to; absent when the client reported none (it threw before dispatch). */
   readonly model?: string
   /** The rung sent: the client's word when it reported one, else the request's. */

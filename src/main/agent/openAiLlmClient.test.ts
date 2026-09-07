@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { createOpenAiLlmClient, inspectionSubjectMessage, promptHashOf, retainedCorrectionsMessage, retainedObjectiveMessage, retainedVerificationMessage, standingDirectiveMessage, TRUNCATION_NOTE } from './openAiLlmClient'
+import { LlmEmptyCompletionError, LlmRequestTimeoutError } from '../../core/ports/llm'
 import { ORCHESTRATOR_SYSTEM_PROMPT } from './orchestratorPrompt'
 import { createBrowserTools } from '../../core/pipeline/browserTools'
 import { createMediaTools } from '../../core/pipeline/mediaTools'
@@ -904,8 +905,40 @@ describe('openAiLlmClient', () => {
     ])
     const client = makeClient(fetch)
 
-    await expect(client.complete({ command: 'x', toolResults: [] })).rejects.toThrow(/empty completion/)
+    const rejection = client.complete({ command: 'x', toolResults: [] })
+    await expect(rejection).rejects.toThrow(/empty completion/)
+    // Named by class (#218), so a round record can tell a provider that
+    // answered empty from one the client cut.
+    await expect(rejection).rejects.toBeInstanceOf(LlmEmptyCompletionError)
     expect(fetch.calls).toHaveLength(3)
+  })
+
+  it("names its own request timeout by class, and passes the caller's abort through as it came (#218)", async () => {
+    // A provider that never answers: only the signal ends the request.
+    const hanging = (_url: string | URL | Request, init?: RequestInit): Promise<Response> =>
+      new Promise((_resolve, reject) => {
+        init?.signal?.addEventListener('abort', () => reject(init.signal?.reason))
+      })
+    const clientWith = (requestTimeoutMs: number) =>
+      createOpenAiLlmClient({
+        endpoint: ENDPOINT,
+        systemPrompt: ORCHESTRATOR_SYSTEM_PROMPT,
+        tools: createBrowserTools(new FakeBrowser()),
+        fetchFn: hanging,
+        requestTimeoutMs,
+      })
+
+    const timedOut = clientWith(5).complete({ command: 'x', toolResults: [] })
+    await expect(timedOut).rejects.toBeInstanceOf(LlmRequestTimeoutError)
+    await expect(timedOut).rejects.toMatchObject({ timeoutMs: 5 })
+
+    // The caller's own abort — a Stop, the deadline — is not a timeout,
+    // and reaches them exactly as they raised it.
+    const controller = new AbortController()
+    const stopped = clientWith(10_000).complete({ command: 'x', toolResults: [], signal: controller.signal })
+    controller.abort(new Error('stopped by the user'))
+    await expect(stopped).rejects.toThrow('stopped by the user')
+    await expect(stopped).rejects.not.toBeInstanceOf(LlmRequestTimeoutError)
   })
 
   it('reports each retry attempt with the loop ceiling through the request hook (#29/#43)', async () => {

@@ -1385,8 +1385,11 @@ describe("a delegated worker's reasoning records (#183)", () => {
 
     expect(rounds.map((r) => [r.round, r.attempt])).toEqual(thought.map((r) => [r.round, r.attempt]))
     expect(rounds).toEqual([
-      { round: 1, attempt: 1, role: 'subagent', sent: { model: 'deepseek-chat', promptHash: 'abc123', reasoningEffort: 'low' }, reasoningEffort: 'low', request: { toolResults: 0, chars: expect.any(Number) }, agentId: 'a-8' },
-      { round: 1, attempt: 2, role: 'subagent', sent: { model: 'deepseek-chat', promptHash: 'abc123', reasoningEffort: 'low' }, usage: { promptTokens: 40, completionTokens: 4 }, reasoningEffort: 'low', request: { toolResults: 0, chars: expect.any(Number) }, agentId: 'a-8' },
+      // The abandoned attempt was an empty completion — the only thing the
+      // client retries — and each attempt's record counts the reasoning it
+      // streamed (#218).
+      { round: 1, attempt: 1, role: 'subagent', outcome: 'empty', reasoningChars: 'the provider hung up'.length, sent: { model: 'deepseek-chat', promptHash: 'abc123', reasoningEffort: 'low' }, reasoningEffort: 'low', request: { toolResults: 0, chars: expect.any(Number) }, agentId: 'a-8' },
+      { round: 1, attempt: 2, role: 'subagent', outcome: 'completed', reasoningChars: 'second time lucky'.length, sent: { model: 'deepseek-chat', promptHash: 'abc123', reasoningEffort: 'low' }, usage: { promptTokens: 40, completionTokens: 4 }, reasoningEffort: 'low', request: { toolResults: 0, chars: expect.any(Number) }, agentId: 'a-8' },
     ])
   })
 

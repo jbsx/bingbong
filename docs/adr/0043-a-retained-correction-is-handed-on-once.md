@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted on 2026-09-07, to be implemented in #218. Amends the second boundary
+Accepted on 2026-09-07 and implemented in #218 the same day. Amends the second boundary
 ADR 0039 recorded for #211 — what discharges a retained correction — and
 replaces its numeric bound. Retention itself, the Inspection Reference, and
 the refusal to interpret an utterance at admission are unchanged.

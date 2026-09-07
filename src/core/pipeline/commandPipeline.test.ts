@@ -15,7 +15,7 @@ import { FailingTts, FakeClock, fakePerfHarness, fakeSubagentManager, memoryEntr
 import type { PipelineEvent } from './events'
 import type { SessionId } from '../session/sessionIdentity'
 import type { ObservationRecord } from '../session/observationLedger'
-import type { AssistantTurn, LlmClient, LlmRequest, ToolCall } from '../ports/llm'
+import { LlmEmptyCompletionError, LlmRequestTimeoutError, type AssistantTurn, type LlmClient, type LlmRequest, type ToolCall } from '../ports/llm'
 import type { Tool } from './tool'
 import type { WorkingMemorySnapshot } from '../session/workingMemory'
 import { createSubagentTools } from './subagentTools'
@@ -1929,6 +1929,88 @@ describe('command pipeline', () => {
           'I have not verified that any of these answers the request.',
       })
       expect(events.at(-1)).toEqual({ type: 'done', outcome: 'failed', finalizationCause: 'budget_exhausted', at: 0 })
+    })
+  })
+
+  // Issue #218. Two full-corpus captures were first read as the provider
+  // answering empty three times per round, because a round the deadline
+  // cut mid-reasoning and a round that came back empty left the same
+  // record: no usage, no tool call. The record now says how the round
+  // ended and how much reasoning streamed before it did.
+  describe('how a round ended, on its llm_round record (#218)', () => {
+    const DEADLINE_MS = TIER_ACTIVE_WORK_DEADLINES_MS[DEFAULT_EFFORT_TIER]
+    type LlmRoundRecord = Extract<RunTraceEvent, { kind: 'llm_round' }>
+    const llmRounds = (traced: readonly RunTraceEvent[]): LlmRoundRecord[] =>
+      traced.filter((record): record is LlmRoundRecord => record.kind === 'llm_round')
+
+    async function traceRun(pipeline: CommandPipeline, command: string, onStarted: () => Promise<void>): Promise<RunTraceEvent[]> {
+      const traced: RunTraceEvent[] = []
+      const events: PipelineEvent[] = []
+      const run = (async () => {
+        for await (const event of pipeline.execute(command, 'turn-218', false, {
+          snapshot: [],
+          memory: [],
+          commit: () => 'committed',
+          traceRun: (build) => traced.push(build()),
+        })) {
+          events.push(event)
+        }
+      })()
+      await onStarted()
+      await run
+      return traced
+    }
+
+    it('records a round the deadline cut mid-reasoning as cut by the deadline, never as empty', async () => {
+      const clock = new FakeClock()
+      const requests: LlmRequest[] = []
+      const llm: LlmClient = {
+        complete(request) {
+          requests.push(request)
+          request.onAttempt?.({ model: 'stalled', ...(request.reasoningEffort !== undefined ? { reasoningEffort: request.reasoningEffort } : {}) })
+          if (requests.length === 1) {
+            // The provider is still thinking — reasoning streams, nothing
+            // else does — when the active-work deadline crosses.
+            request.onDelta?.({ kind: 'reasoning', text: 'x'.repeat(4_000) })
+            return abortableRound(request)
+          }
+          return Promise.resolve({ kind: 'answer', speak: 'Out of time.', display: 'I ran out of time.', resolution: 'unsuccessful' })
+        },
+      }
+      const pipeline = createCommandPipeline({ llm, tts: new RecordingTts(), clock, tools: [createReportRunPlanTool()] })
+
+      const traced = await traceRun(pipeline, 'find the tier list', async () => {
+        await waitUntil(() => requests.length === 1)
+        clock.advance(DEADLINE_MS)
+      })
+
+      const rounds = llmRounds(traced)
+      // The cut round: attempt 1, no usage, and the record says the
+      // deadline ended it after 4,000 characters of reasoning — not that
+      // the provider answered empty.
+      expect(rounds[0]).toMatchObject({ round: 1, attempt: 1, role: 'orchestrator', model: 'stalled', outcome: 'deadline', reasoningChars: 4_000 })
+      expect(rounds[0]).not.toHaveProperty('usage')
+      // The Finalization rounds that returned say so, and streamed nothing.
+      expect(rounds.length).toBeGreaterThan(1)
+      expect(rounds.slice(1).map(({ outcome, reasoningChars }) => [outcome, reasoningChars])).toEqual(
+        rounds.slice(1).map(() => ['completed', 0]),
+      )
+    })
+
+    it("records the client's own word on a round that threw: its request timeout, an empty completion, or a failure", async () => {
+      const cases: [Error, LlmRoundRecord['outcome']][] = [
+        [new LlmRequestTimeoutError(120_000), 'timeout'],
+        [new LlmEmptyCompletionError('orchestrator returned an empty completion (request_id: r-1)'), 'empty'],
+        [new Error('orchestrator request failed (HTTP 502)'), 'failed'],
+      ]
+      for (const [thrown, outcome] of cases) {
+        const llm: LlmClient = { complete: () => Promise.reject(thrown) }
+        const pipeline = createCommandPipeline({ llm, tts: new RecordingTts(), clock: new FakeClock(), tools: [] })
+
+        const traced = await traceRun(pipeline, 'find the tier list', () => Promise.resolve())
+
+        expect(llmRounds(traced).map((record) => record.outcome)).toEqual([outcome])
+      }
     })
   })
 

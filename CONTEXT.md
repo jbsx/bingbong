@@ -600,7 +600,8 @@ _Avoid_: hydration, restore, session replay
 A durable, machine-readable record of a Run's internal decisions — every event
 the Run published, its Tool Rounds and those of its Subagents, evidence
 grading, the model's per-round reasoning, each LLM attempt's model, prompt
-hash, rung, request shape and usage (`llm_round`), the models the Run Plan
+hash, rung, request shape, usage, how it ended and how much reasoning it
+streamed (`llm_round`), the models the Run Plan
 was declared under, the vision calls it made and what they cost, and a
 screenshot of the visible tab when the Run finalized failed or on a work rail
 (`failure_screenshot`, a PNG beside the file) — written for diagnosis only.
