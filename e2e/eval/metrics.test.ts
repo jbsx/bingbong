@@ -32,6 +32,16 @@ function done(
   }
 }
 
+/** An Answer a model round wrote. */
+function display(text: string, at: number): PipelineEvent {
+  return { type: 'display', turnId: T, text, at }
+}
+
+/** The Answer the pipeline composed itself, flagged as the pipeline flags it. */
+function fallbackDisplay(text: string, at: number): PipelineEvent {
+  return { type: 'display', turnId: T, text, deterministicAnswer: true, at }
+}
+
 function span(stage: string): PerfSpanRecord {
   return { turnId: T, stage, durMs: 10, at: 0, t: 0 }
 }
@@ -282,6 +292,34 @@ describe('extractMetrics', () => {
     expect(metrics.subagentBoundedReports).toBe(2)
     expect(extractMetrics([command(0), done(1)], [], false).subagentBoundedReports).toBe(0)
   })
+
+  it('derives seconds per model round from the run\u2019s own wall time and round count (#214)', () => {
+    // The measurement the deadline work needs: a tier's deadline is only
+    // derivable from what one round of that tier actually costs.
+    const metrics = extractMetrics([command(1_000), done(76_000)], [span('llm'), span('llm'), span('llm')], false)
+    expect(metrics.elapsedMs).toBe(75_000)
+    expect(metrics.secondsPerLlmRound).toBe(25)
+    // A run with no timing, and a run that never reached a model round,
+    // measure nothing rather than dividing into a number.
+    expect(extractMetrics([command(0)], [span('llm')], true).secondsPerLlmRound).toBeNull()
+    expect(extractMetrics([command(0), done(9_000)], [], false).secondsPerLlmRound).toBeNull()
+  })
+
+  it('reads the Answer\u2019s origin from the pipeline\u2019s flag, never from its wording (#214)', () => {
+    // The fallback's sentences are product-owned prose that has already
+    // been reworded twice (#137, #203). Sourcing the metric from the
+    // pipeline's own flag is what makes it survive the next rewording.
+    const reworded = 'Nothing I can show for \u201Cdo it\u201D so far.'
+    expect(extractMetrics([command(0), fallbackDisplay(reworded, 1), done(2)], [], false)).toMatchObject({
+      answerText: reworded,
+      deterministicAnswer: true,
+    })
+    // A model Answer that happens to word itself the same way is not the
+    // fallback — only the flag says so.
+    expect(extractMetrics([command(0), display(reworded, 1), done(2)], [], false).deterministicAnswer).toBe(false)
+    // No Answer at all is not a deterministic Answer.
+    expect(extractMetrics([command(0), done(1)], [], false).deterministicAnswer).toBe(false)
+  })
 })
 
 describe('combineRuns', () => {
@@ -329,31 +367,49 @@ describe('combineRuns', () => {
     ])
     expect(combined.subagentFinalizations).toEqual({ model_answered: 1, no_progress: 3, deadline_reached: 1 })
   })
+
+  it('rates seconds per round over the summed work, and takes the Answer\u2019s origin from the final run (#214)', () => {
+    const combined = combineRuns([
+      run({ llmRounds: 2, elapsedMs: 10_000, deterministicAnswer: true }),
+      run({ llmRounds: 3, elapsedMs: 20_000, deterministicAnswer: false }),
+    ])
+    // Work counters sum, so the rate is the scenario's own 30s over 5
+    // rounds \u2014 never an average of the two runs' rates.
+    expect(combined.secondsPerLlmRound).toBe(6)
+    // The Answer the user keeps is the final run's, and so is its origin.
+    expect(combined.deterministicAnswer).toBe(false)
+    expect(combineRuns([run({ deterministicAnswer: false }), run({ deterministicAnswer: true })]).deterministicAnswer).toBe(true)
+  })
 })
 
 describe('aggregateScenarios', () => {
+  const metricsOf = (overrides: Partial<ScenarioMetrics>): ScenarioMetrics => ({
+    llmRounds: 0,
+    attemptedTools: 0,
+    executedTools: 0,
+    elapsedMs: null,
+    secondsPerLlmRound: null,
+    repeatedActions: 0,
+    outcome: 'done' as const,
+    effortTier: 'lookup' as const,
+    resolution: null,
+    finalizationCause: null,
+    rawLimitFailure: null,
+    askTimedOut: false,
+    deterministicAnswer: false,
+    subagentFinalizations: {},
+    subagentBoundedReports: 0,
+    actions: [],
+    answerText: 'x',
+    timedOut: false,
+    ...overrides,
+  })
+
   it('uses nearest-rank median and p95 over the measured scenarios', () => {
-    const of = (rounds: number, elapsedMs: number, success: boolean) => ({
-      success,
-      metrics: {
-        llmRounds: rounds,
-        attemptedTools: rounds,
-        executedTools: rounds,
-        elapsedMs,
-        repeatedActions: 0,
-        outcome: 'done' as const,
-        effortTier: 'lookup' as const,
-        resolution: null,
-        finalizationCause: null,
-        rawLimitFailure: null,
-        askTimedOut: false,
-        subagentFinalizations: {},
-        subagentBoundedReports: 0,
-        actions: [],
-        answerText: 'x',
-        timedOut: false,
-      },
-    })
+    const of = (rounds: number, elapsedMs: number, success: boolean) => {
+      const run = metricsOf({ llmRounds: rounds, attemptedTools: rounds, executedTools: rounds, elapsedMs })
+      return { success, metrics: run, runs: [run] }
+    }
     const aggregate = aggregateScenarios([of(2, 100, true), of(4, 300, true), of(8, 700, true), of(16, 1_500, false)])
     expect(aggregate.scenarioCount).toBe(4)
     expect(aggregate.objectiveSuccesses).toBe(3)
@@ -362,5 +418,36 @@ describe('aggregateScenarios', () => {
     expect(aggregate.elapsedMs.median).toBe(300)
     expect(aggregate.elapsedMs.p95).toBe(1_500)
     expect(aggregate.rawLimitFailures).toBe(0)
+  })
+
+  it('aggregates seconds per round per Effort Tier over Runs, not scenarios (#214)', () => {
+    // Each Run declares its own tier and spends its own deadline, so the
+    // rate that a tier's deadline can be derived from is a Run's, not a
+    // two-Run scenario's summed view.
+    const runOf = (effortTier: ScenarioMetrics['effortTier'], secondsPerLlmRound: number): ScenarioMetrics =>
+      metricsOf({ effortTier, secondsPerLlmRound })
+    const aggregate = aggregateScenarios([
+      { success: true, metrics: metricsOf({ effortTier: 'lookup' }), runs: [runOf('lookup', 4), runOf('lookup', 6)] },
+      { success: true, metrics: metricsOf({ effortTier: 'lookup' }), runs: [runOf('lookup', 20)] },
+      { success: false, metrics: metricsOf({ effortTier: 'investigation' }), runs: [runOf('investigation', 13)] },
+    ])
+    expect(aggregate.secondsPerLlmRound.lookup).toEqual({ median: 6, p95: 20 })
+    expect(aggregate.secondsPerLlmRound.investigation).toEqual({ median: 13, p95: 13 })
+    // A tier no Run declared is absent, never a zero that reads as fast.
+    expect(aggregate.secondsPerLlmRound.direct_action).toBeUndefined()
+    expect(aggregate.measuredRuns).toBe(4)
+  })
+
+  it('counts the Runs whose Answer the user heard was the deterministic one (#214)', () => {
+    const aggregate = aggregateScenarios([
+      {
+        success: false,
+        metrics: metricsOf({ deterministicAnswer: true }),
+        runs: [metricsOf({ deterministicAnswer: false }), metricsOf({ deterministicAnswer: true })],
+      },
+      { success: true, metrics: metricsOf({ deterministicAnswer: false }), runs: [metricsOf({ deterministicAnswer: false })] },
+    ])
+    expect(aggregate.deterministicAnswers).toBe(1)
+    expect(aggregate.measuredRuns).toBe(3)
   })
 })

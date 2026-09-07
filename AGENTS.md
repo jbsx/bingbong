@@ -54,6 +54,31 @@ Lookup-class pooled medians (strict improvement), and corpus-declared
 structural ceilings per scenario (`expectedEffort` in
 `e2e/eval/scenarios.ts`); pooled p95 is reported, never gated.
 
+Two measurements ride every capture since #214, because the deadline work
+(#215–#217) cannot be judged without them. `secondsPerLlmRound` is recorded
+per Run and aggregated per Effort Tier (median and p95) in the report's
+`aggregate` — a tier's active-work deadline is only its round budget
+expressed in time, so it has to be derived from what a round of that tier
+actually costs rather than picked. `deterministicAnswer` records, per Run,
+whether the Answer the user heard was the deterministic fallback or one a
+model round wrote; it comes from the pipeline's own flag on the Answer's
+display event, never from matching the fallback's wording, so rewording
+those product-owned sentences can never move the number.
+
+The corpus crosses a deadline in exactly one place
+(`deadline-ledger-revisions`): two ledger chains whose revisions never
+certify, each revision served slowly. That slowness is the mechanism, not
+an accident — at the corpus's measured round latency the 24-round
+Investigation budget would bind first, and a Run that stops for
+`budget_exhausted` measures nothing about deadlines. The rule when either
+number moves: `LEDGER_REVISION_DELAY_MS` (`e2e/fixtureServer.ts`) has to
+stay above the tier's implied seconds per round (its deadline over its
+round budget — 300 s ÷ 24 = 12.5 s for Investigation) minus the
+orchestrator's own round latency, which `secondsPerLlmRound` now reports.
+Expect that one scenario to cost about six minutes of every pass. Its
+success is the Finalization Cause plus an Answer of either kind — which
+kind is data the fixes are judged on, never a corpus gate.
+
 When the corpus gains a scenario, the pinned baseline cannot grow with it —
 it is a frozen capture of an old tree. Nothing needs re-pinning: the
 comparison runs on the corpus both pools cover (#168), and

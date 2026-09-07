@@ -7,6 +7,7 @@ describe('fixtureServer', () => {
   afterEach(async () => {
     await server?.close()
     server = undefined
+    delete process.env.BINGBONG_FIXTURE_LEDGER_DELAY_MS
   })
 
   it('serves an input page with a #t field', async () => {
@@ -21,6 +22,34 @@ describe('fixtureServer', () => {
     const first = await (await fetch(server.url('/'))).text()
     const second = await (await fetch(server.url('/second'))).text()
     expect(first).not.toEqual(second)
+  })
+
+  it('serves a ledger revision chain that never certifies, one host per chain (#214)', async () => {
+    // The deadline scenario's fixture: every revision exists, states its
+    // own distinct provisional figure, and hands certification to the
+    // next one. Read at zero delay — the 12 s a capture pays is the
+    // scenario's mechanism, not something coverage has to sit through.
+    process.env.BINGBONG_FIXTURE_LEDGER_DELAY_MS = '0'
+    server = await startFixtureServer()
+
+    const first = await (await fetch(server.url('/ledger-depot-1'))).text()
+    expect(first).toContain('41.1 Nm, provisional')
+    expect(first).toContain('is not the certified figure')
+    expect(first).toContain(`href="${server.url('/ledger-depot-2')}"`)
+
+    // Deep in the chain the page still exists and still defers — there is
+    // no last revision to reach, which is what makes the Run spend its
+    // whole deadline instead of running out of pages.
+    const deep = await (await fetch(server.url('/ledger-depot-40'))).text()
+    expect(deep).toContain('45.0 Nm, provisional')
+    expect(deep).toContain(`href="${server.url('/ledger-depot-41')}"`)
+
+    // The field chain is a genuinely independent source on the other
+    // host, and it never crosses back.
+    const field = await (await fetch(server.altUrl('/ledger-field-1'))).text()
+    expect(field).toContain('63.1 Nm, provisional')
+    expect(field).toContain(`href="${server.altUrl('/ledger-field-2')}"`)
+    expect(field).not.toContain(server.url('/'))
   })
 
   it('serves the delegation probe’s three hub branches across both hostnames', async () => {

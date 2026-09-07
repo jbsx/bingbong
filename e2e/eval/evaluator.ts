@@ -29,8 +29,16 @@ import { runningAgentsSinceSource } from './tape'
 
 const repoRoot = fileURLToPath(new URL('../..', import.meta.url))
 
-/** Per-scenario wall budget before the run is aborted and recorded as timed out. */
-export const DEFAULT_SCENARIO_TIMEOUT_MS = 15 * 60_000
+/**
+ * Per-scenario wall budget before the run is aborted and recorded as timed
+ * out. Twenty minutes since #214: a scenario that spends a whole
+ * Investigation active-work deadline (5 minutes) and then its Finalization
+ * rounds is ordinary corpus work now, and an abort would record a timeout
+ * where the measurement wanted a Finalization Cause. The budget still
+ * bounds a genuinely stuck run — it is four times the deadline it has to
+ * clear.
+ */
+export const DEFAULT_SCENARIO_TIMEOUT_MS = 20 * 60_000
 
 /**
  * Steering's fallback window (#130): submit the directive this long after

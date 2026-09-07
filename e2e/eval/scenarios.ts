@@ -36,6 +36,13 @@ export type ScenarioKind =
   | 'subagent'
   | 'cancelled-evidence'
   | 'stale-evidence'
+  // #214: a Run that reaches its active-work deadline. Not one of #108's
+  // behavior classes — it exists to measure the Finalization rounds the
+  // corpus never crossed a deadline to reach, and it is kept out of
+  // `investigation` deliberately: this Run cannot settle its comparison
+  // by design, so pooling it with the Investigations that can would
+  // misread a class the release gates judge on its own terms.
+  | 'deadline'
 
 /** Objective pane state beyond URL/heading — the fixed probe the evaluator collects after each scenario. */
 export interface PaneState {
@@ -131,6 +138,16 @@ function finalRunRetouched(observation: ScenarioObservation, urlMarker: string):
   return finalRun(observation).metrics.actions.some(
     (action) => action.ok && JSON.stringify(action.args).includes(urlMarker),
   )
+}
+
+/** The Finalization Cause the scenario's last run stopped under — null when it finalized without one. */
+function finalCause(observation: ScenarioObservation): ScenarioMetrics['finalizationCause'] {
+  return finalRun(observation).metrics.finalizationCause
+}
+
+/** The Effort Tier the scenario's last run ended under — the declared one, or Lookup where nothing was declared. */
+function finalTier(observation: ScenarioObservation): ScenarioMetrics['effortTier'] {
+  return finalRun(observation).metrics.effortTier
 }
 
 /** Every executed command finished done with no raw-limit error. */
@@ -464,6 +481,43 @@ export function evalScenarios(): EvalScenario[] {
       command: () => 'search the fixture web for mercury dampeners and tell me which page explains them',
       expectedEffort: { tier: 'lookup' },
       success: answeredWithoutRawLimit,
+    },
+
+    // ---- The active-work deadline: a comparison over two ledgers that never certify (#214) ----
+    //
+    // Last in the corpus on purpose. It is the only scenario that spends
+    // its whole deadline (~5 minutes of Investigation active work) and the
+    // only one whose pages exist to be endless, so it runs after every
+    // scenario whose Session Evidence it could otherwise crowd.
+    //
+    // Success is the measurement, not the answer: the Run must stop at its
+    // deadline and still deliver an Answer. WHICH Answer — the model's or
+    // the deterministic fallback — is recorded by `deterministicAnswer`
+    // and left to the fixes this data exists for (#215, #216, #217), so
+    // the corpus stays green at today's baseline.
+    {
+      id: 'deadline-ledger-revisions',
+      kind: 'deadline',
+      // Worded against the Investigation completion standard itself —
+      // independent sources, a chain to work through, and a disagreement
+      // to disclose. The first wording ("compare the two ledgers") read
+      // as two known pages and was declared Lookup, which crosses the
+      // 2-minute deadline instead of the 5-minute one and leaves the
+      // Investigation tier unmeasured, which is the tier #215–#217 need.
+      command: (fixture) =>
+        `the torque of the standard fixture widget is certified by two independent offices whose ledgers disagree: the depot ledger at ${fixture.url('/ledger-depot-1')} and the field ledger at ${fixture.altUrl('/ledger-field-1')}. each ledger is a chain of revisions in which only the final revision certifies. work through both chains, tell me the certified figure each office settles on, and disclose the disagreement between them`,
+      expectedEffort: { tier: 'investigation' },
+      // The declared tier is part of success here, unlike everywhere else
+      // in the corpus, because it decides WHICH deadline was crossed. A
+      // Lookup declaration also reaches `deadline_reached` — at 2 minutes,
+      // on the tier the corpus already measures — and would leave
+      // Investigation, the tier #215–#217 are about, unmeasured while the
+      // scenario read green. `expectedEffort` cannot carry this: it only
+      // ever derives the structural ceiling, never what the model said.
+      success: (observation) =>
+        finalTier(observation) === 'investigation' &&
+        finalCause(observation) === 'deadline_reached' &&
+        observation.answerText !== null,
     },
   ]
 }

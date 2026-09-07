@@ -2028,7 +2028,10 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
             // never as the vision failure behind it.
             ...(hasUnresolvedImageCheck(fallbackRecords) ? { imageUnverified: true } : {}),
           })
-          yield { type: 'display', text: fallback.display, at: clock.now() }
+          // The Answer's origin travels with the Answer (#214): the eval's
+          // per-run `deterministicAnswer` reads this flag, so it can never
+          // be inferred from the wording of the sentences above.
+          yield { type: 'display', text: fallback.display, deterministicAnswer: true, at: clock.now() }
           yield* speakLine(fallback.speak, turnId)
           yield* checkpoint(run, 'thinking')
         }
