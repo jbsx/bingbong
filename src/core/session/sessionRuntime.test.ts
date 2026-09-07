@@ -1484,3 +1484,187 @@ describe('user objective continuity', () => {
     }])!)).toBe('invalid_patch')
   })
 })
+
+// #211, ADR 0039: the user's words are retained before the Run that
+// carries them makes a single model request, and stay retained until a
+// Run grounds them into something the Session holds.
+describe('retained user corrections', () => {
+  /** A first Run that presents one Candidate and finishes, leaving a subject behind. */
+  function presented(runtime: SessionRuntime) {
+    const first = runtime.accept(runtime.submit().submissionId, 'find the tier list post')
+    const evidence = runtime.evidenceStore()!
+    const observation = evidence.checkpointObservation({
+      sourceKind: 'web',
+      text: 'r/tierlists — Ranking every mech.',
+      references: [{ url: 'https://old.reddit.com/r/tierlists/comments/abc' }],
+      runId: first.runId,
+    })!.observation
+    const candidate = evidence.addCandidate({
+      subject: 'r/tierlists — "Ranking every mech"',
+      supportingObservationIds: [observation.id],
+      runId: first.runId,
+    })!
+    evidence.presentInspection({ candidateId: candidate.id, runId: first.runId })
+    runtime.finish(first.runId)
+    return { first, evidence, candidate }
+  }
+
+  it('retains a continuation command verbatim, with the subject it was spoken about', () => {
+    const { runtime } = harness()
+    const { candidate } = presented(runtime)
+
+    const second = runtime.accept(runtime.submit().submissionId, 'not that one; keep looking')
+
+    // Before this Run has made a single model request, the words and the
+    // subject are already the Session's.
+    expect(second.corrections).toEqual([
+      expect.objectContaining({ text: 'not that one; keep looking', candidateId: candidate.id, runId: second.runId }),
+    ])
+    // And nothing has been classified: the Candidate is as active as it was.
+    expect(second.evidence.candidates.map(({ id, status }) => ({ id, status }))).toEqual([
+      { id: candidate.id, status: 'active' },
+    ])
+  })
+
+  it('retains nothing from the command that opens a Session, or a Reset replay of it', () => {
+    const { runtime } = harness()
+    const first = runtime.accept(runtime.submit().submissionId, 'find the tier list post')
+    expect(first.corrections).toBeUndefined()
+
+    runtime.finish(first.runId)
+    runtime.end('reset')
+
+    // The Reset replays the same command as the first Run of a fresh
+    // Session: there is no earlier work for it to be correcting.
+    expect(runtime.accept(runtime.submit().submissionId, 'find the tier list post').corrections).toBeUndefined()
+  })
+
+  it('retains nothing from a submission the Session rejected', () => {
+    const { runtime } = harness()
+    presented(runtime)
+
+    const rejected = runtime.submit()
+    expect(runtime.reject(rejected.submissionId)).toBe(true)
+
+    // A busy or rejected submission is not an accepted Run, and cannot
+    // mutate Session continuity.
+    expect(runtime.accept(runtime.submit().submissionId).corrections).toBeUndefined()
+  })
+
+  it('keeps the words when the Run that carried them commits nothing at all', () => {
+    const { runtime } = harness()
+    presented(runtime)
+    const second = runtime.accept(runtime.submit().submissionId, 'not that one; keep looking')
+
+    // The Run ends without a Memory Commit — the shape a first-request
+    // failure leaves behind.
+    runtime.finish(second.runId)
+
+    // Both words wait: the second Run never answered, and "keep going"
+    // is a nudge rather than a restatement of the rejection.
+    expect(runtime.accept(runtime.submit().submissionId, 'keep going').corrections).toEqual([
+      expect.objectContaining({ text: 'not that one; keep looking', runId: second.runId }),
+      expect.objectContaining({ text: 'keep going' }),
+    ])
+  })
+
+  it('resolves the words the committed task carries, and only those', () => {
+    const { runtime } = harness()
+    presented(runtime)
+    const second = runtime.accept(runtime.submit().submissionId, 'only posts from 2023')
+    expect(second.corrections).toHaveLength(1)
+    const words = runtime.evidenceStore()!.checkpointObservation({
+      sourceKind: 'user',
+      text: 'only posts from 2023',
+      runId: second.runId,
+      originEvent: { producer: 'command', observationId: 'obs-1' as never },
+    })!.observation
+
+    expect(runtime.commitRunContinuity(second.runId, 'done', 'Narrowed the search to 2023.', parseMemoryPatch([
+      {
+        op: 'add',
+        entry: {
+          kind: 'objective',
+          subject: 'Find the tier list post',
+          detail: 'A post the user found last week.',
+          user_evidence: [words.id],
+        },
+      },
+      {
+        op: 'add',
+        entry: {
+          kind: 'constraint',
+          subject: 'Year',
+          detail: 'Only posts from 2023.',
+          user_evidence: [words.id],
+        },
+      },
+    ])!)).toBe('committed')
+    runtime.finish(second.runId)
+
+    // The constraint the user corrected is grounded in their own words,
+    // so the words are a correction no longer.
+    expect(runtime.accept(runtime.submit().submissionId).corrections).toBeUndefined()
+  })
+
+  it('binds words spoken before the task was recorded to the task that lands', () => {
+    const { runtime } = harness()
+    presented(runtime)
+    // Nothing has recorded an objective yet, so these words name no task.
+    const second = runtime.accept(runtime.submit().submissionId, 'not that one; keep looking')
+    expect(second.corrections![0]).not.toHaveProperty('objectiveId')
+    const words = runtime.evidenceStore()!.checkpointObservation({
+      sourceKind: 'user',
+      text: 'find the tier list post',
+      runId: second.runId,
+      originEvent: { producer: 'command', observationId: 'obs-2' as never },
+    })!.observation
+    runtime.commitRunContinuity(second.runId, 'done', 'Recorded the task.', parseMemoryPatch([{
+      op: 'add',
+      entry: {
+        kind: 'objective',
+        subject: 'Find the tier list post',
+        detail: 'A post the user found last week.',
+        user_evidence: [words.id],
+      },
+    }])!)
+    runtime.finish(second.runId)
+
+    // The next admission binds them to the objective they were spoken
+    // under — the commit-time adoption `scopeInspection` exists for.
+    const third = runtime.accept(runtime.submit().submissionId)
+    expect(third.corrections![0]!.objectiveId).toBe('memory-4')
+
+    // And a replacement objective retires them, as it retires the subject.
+    const replacementWords = runtime.evidenceStore()!.checkpointObservation({
+      sourceKind: 'user',
+      text: 'forget that, find me a router instead',
+      runId: third.runId,
+      originEvent: { producer: 'command', observationId: 'obs-3' as never },
+    })!.observation
+    expect(runtime.commitRunContinuity(third.runId, 'done', 'Replaced the task.', parseMemoryPatch([{
+      op: 'add',
+      entry: {
+        kind: 'objective',
+        subject: 'Find a wifi router',
+        detail: 'The user asked for a router instead.',
+        user_evidence: [replacementWords.id],
+      },
+    }])!)).toBe('committed')
+    runtime.finish(third.runId)
+
+    expect(runtime.accept(runtime.submit().submissionId).corrections).toBeUndefined()
+  })
+
+  it('drops the retained words with the Session', () => {
+    const { runtime } = harness()
+    presented(runtime)
+    const second = runtime.accept(runtime.submit().submissionId, 'not that one; keep looking')
+    expect(second.corrections).toHaveLength(1)
+    runtime.finish(second.runId)
+
+    runtime.end('reset')
+
+    expect(runtime.accept(runtime.submit().submissionId, 'keep going').corrections).toBeUndefined()
+  })
+})

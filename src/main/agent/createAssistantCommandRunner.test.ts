@@ -1639,4 +1639,443 @@ describe('assistant command runner', () => {
       expect(h.requests.at(-1)?.inspection).toBeUndefined()
     })
   })
+
+  // #211, ADR 0039: an accepted correction is retained before the model
+  // runs, survives a first request that never returns, and is resolved by
+  // grounding rather than by anyone deciding it looks like a rejection.
+  // The whole failure, scripted end to end: present A, say "not that one;
+  // keep looking", lose the very first model request, then continue.
+  describe('user corrections retained before the model responds (#211)', () => {
+    const FIND = 'find that tier list post'
+    const REJECT = 'not that one; keep looking'
+    const NARROW = 'only posts from 2023'
+    const POST = 'https://old.reddit.com/r/tierlists/comments/abc'
+    const THREAD = 'https://forum.example/thread/9'
+
+    /** Where the browser happens to be — moved by reads, never consulted for a subject. */
+    let page = POST
+
+    /** The acquisition a web Observation has to be grounded in. */
+    const readPage: Tool = {
+      name: 'read_page',
+      acquisition: true,
+      async execute(call) {
+        if (typeof call.args.url === 'string') page = call.args.url
+        return 'A tier list post.'
+      },
+    }
+
+    function harness() {
+      const clock = new FakeClock(1_000)
+      const runtime = createSessionRuntime({ clock, identities: new DeterministicIdentities() })
+      const requests: LlmRequest[] = []
+      const queue: AssistantTurn[] = []
+      const published: PipelineEvent[] = []
+      let failAt: number | null = null
+      const llm: LlmClient = {
+        complete(request) {
+          requests.push(request)
+          if (requests.length === failAt) {
+            failAt = null
+            return Promise.reject(new Error('provider unavailable'))
+          }
+          return Promise.resolve(queue.shift() ?? { kind: 'answer', speak: 'Nothing yet.', display: 'Nothing yet.' })
+        },
+      }
+      const pipeline = createCommandPipeline({
+        llm,
+        tts: new RecordingTts(),
+        clock,
+        tools: [readPage, createRecordEvidenceTool(), createRecordCandidateTool()],
+        currentPageUrl: () => page,
+      })
+      const runner = createAssistantCommandRunner({
+        pipeline,
+        runtime,
+        clock,
+        onSessionReset: () => {},
+        createRunPublisher: () => ({ publish: (event: PipelineEvent) => published.push(event) }),
+        publishFeedback: () => {},
+      })
+      return {
+        runtime,
+        runner,
+        requests,
+        queue,
+        published,
+        /** Fails the nth model request of the Session, once. */
+        failRequest: (nth: number) => {
+          failAt = nth
+        },
+        /** What the Session retains and no Run has resolved. */
+        unresolved: () => runtime.evidenceStore()!.unresolvedCorrections(),
+        candidate: (id: string) => runtime.evidenceStore()!.candidate(id as MemoryEntryId)!,
+      }
+    }
+
+    /**
+     * Run 1: reads the post, grounds it, quotes the user's command, records
+     * Candidate A, and presents it — recording the user's objective in the
+     * same Memory Commit, exactly as the commonest Run of all does.
+     *
+     * Leaves memory-1 (the post), memory-2 (the user's words), memory-3
+     * (Candidate A) and memory-4 (the objective).
+     */
+    async function present(h: ReturnType<typeof harness>): Promise<void> {
+      h.queue.push({ kind: 'tool_calls', calls: [{ id: 'r1', name: 'read_page', args: { url: POST } }] })
+      h.queue.push({
+        kind: 'tool_calls',
+        calls: [
+          {
+            id: 'e1',
+            name: 'record_evidence',
+            args: { observation: 'Ranking every mech is a tier list post.', source_url: POST, excerpt: 'tier list post' },
+          },
+          { id: 'e2', name: 'record_evidence', args: { kind: 'user', observation: FIND } },
+          { id: 'c1', name: 'record_candidate', args: { subject: 'Ranking every mech', supporting_evidence: ['memory-1'] } },
+        ],
+      })
+      h.queue.push({
+        kind: 'answer',
+        speak: 'Here it is.',
+        display: 'The "Ranking every mech" post.',
+        runNote: 'Presented the mech tier list post.',
+        inspectionCandidateId: 'memory-3' as MemoryEntryId,
+        memoryPatch: parseMemoryPatch([{
+          op: 'add',
+          entry: {
+            kind: 'objective',
+            subject: 'Find the tier list post',
+            detail: 'A post the user found last week.',
+            user_evidence: ['memory-2'],
+          },
+        }])!,
+      })
+      await h.runner.run(FIND)
+    }
+
+    it('retains the wording and the subject through a first request that never returned', async () => {
+      const h = harness()
+      await present(h)
+
+      // The correction arrives and the very first model request of its Run
+      // fails — before a tool has run, before anything could interpret it.
+      h.failRequest(h.requests.length + 1)
+      await h.runner.run(REJECT)
+
+      // The words, the subject, and the task they were spoken under are
+      // the Session's, exactly as spoken.
+      expect(h.unresolved()).toEqual([
+        expect.objectContaining({
+          text: REJECT,
+          candidateId: 'memory-3',
+          objectiveId: 'memory-4',
+          runId: 'run-2',
+        }),
+      ])
+      // And nothing was decided on the way: retention is not
+      // interpretation, so no deterministic output can claim A was ruled
+      // out — because nothing ruled it out.
+      expect(h.candidate('memory-3')).toMatchObject({ status: 'active', decisions: [] })
+      const spoken = h.published.filter((event) => event.type === 'display' || event.type === 'speak')
+      expect(spoken.length).toBeGreaterThan(0)
+      for (const event of spoken) {
+        expect((event as { text: string }).text).not.toMatch(/ruled out|rejected|not a match/i)
+      }
+    })
+
+    it('carries the unresolved words into the next Run request, beside the subject', async () => {
+      const h = harness()
+      await present(h)
+      h.failRequest(h.requests.length + 1)
+      await h.runner.run(REJECT)
+
+      await h.runner.run('keep looking')
+
+      const request = h.requests.at(-1)!
+      expect(request.command).toBe('keep looking')
+      // The user's words, quoted, with the Candidate they were about and
+      // the Observation a decision on their authority has to cite.
+      expect(request.corrections).toEqual([
+        { text: REJECT, observationId: 'memory-5', candidateId: 'memory-3', candidateSubject: 'Ranking every mech' },
+        { text: 'keep looking', candidateId: 'memory-3', candidateSubject: 'Ranking every mech' },
+      ])
+      // The inherited words became Session Evidence as this Run was
+      // admitted, under the Run that heard them: only that Run could
+      // ground them, and it ended without the chance. This Run's own
+      // words are not evidence — it is about to answer them itself.
+      expect(h.runtime.evidenceStore()!.observation('memory-5' as MemoryEntryId)).toMatchObject({
+        sourceKind: 'user',
+        text: REJECT,
+        provenance: [expect.objectContaining({ runId: 'run-2' })],
+      })
+      // Beside — never instead of — the objective and the subject.
+      expect(request.objective).toMatchObject({ id: 'memory-4', userText: [FIND] })
+      expect(request.inspection).toMatchObject({ candidateId: 'memory-3' })
+    })
+
+    it('refuses to settle or re-present the Candidate until the words are resolved', async () => {
+      const h = harness()
+      await present(h)
+      h.failRequest(h.requests.length + 1)
+      await h.runner.run(REJECT)
+      const presentedBy = h.runtime.evidenceStore()!.inspectionReference()
+
+      // The continuation likes Candidate A again and says so, on its own
+      // authority, and then shows it to the user.
+      h.queue.push({
+        kind: 'tool_calls',
+        calls: [{
+          id: 'c2',
+          name: 'record_candidate',
+          args: {
+            candidate_id: 'memory-3',
+            status: 'accepted',
+            reason: 'it still looks like the best match to me',
+            supporting_evidence: ['memory-1'],
+          },
+        }],
+      })
+      h.queue.push({
+        kind: 'answer',
+        speak: 'Here it is again.',
+        display: 'The "Ranking every mech" post.',
+        runNote: 'Tried to present the mech post again.',
+        inspectionCandidateId: 'memory-3' as MemoryEntryId,
+      })
+      await h.runner.run('keep looking')
+
+      // The decision was refused, and told why in terms the run can act on.
+      const refusal = h.published.find((event) => event.type === 'tool_result' && event.callId === 'c2')
+      expect(refusal).toMatchObject({ ok: false })
+      expect(JSON.stringify(refusal)).toContain('no run has resolved')
+      expect(h.candidate('memory-3')).toMatchObject({ status: 'active', decisions: [] })
+      // And the presentation was refused too: the subject is still the one
+      // Run 1 presented, not a fresh presentation by this Run.
+      expect(h.runtime.evidenceStore()!.inspectionReference()).toEqual(presentedBy)
+      expect(presentedBy).toMatchObject({ runId: 'run-1' })
+      // Answering its own command resolves its own words — never the debt
+      // it inherited from the Run that never answered.
+      expect(h.unresolved().map(({ text }) => text)).toEqual([REJECT])
+    })
+
+    it('turns the resolved words into an objective-scoped decision the user owns', async () => {
+      const h = harness()
+      await present(h)
+      h.failRequest(h.requests.length + 1)
+      await h.runner.run(REJECT)
+
+      // The continuation does what the correction asks: it records the
+      // decision the user's own retained words carry, as theirs.
+      h.queue.push({
+        kind: 'tool_calls',
+        calls: [{
+          id: 'c3',
+          name: 'record_candidate',
+          args: {
+            candidate_id: 'memory-3',
+            status: 'rejected',
+            authority: 'user',
+            reason: 'the user ruled this post out and asked to keep looking',
+            supporting_evidence: ['memory-5'],
+          },
+        }],
+      })
+      h.queue.push({ kind: 'answer', speak: 'Still looking.', display: 'Looking elsewhere.', runNote: 'Ruled out the mech post.' })
+      await h.runner.run('keep looking')
+
+      // Retained as the user's, for the objective they were working.
+      expect(h.candidate('memory-3').decisions).toEqual([
+        expect.objectContaining({ status: 'rejected', authority: 'user', objectiveId: 'memory-4' }),
+      ])
+      expect(h.unresolved()).toEqual([])
+
+      // And with the words resolved, the Session may show it again — the
+      // block was on the unresolved correction, never on the Candidate.
+      h.queue.push({
+        kind: 'answer',
+        speak: 'This is the one you ruled out.',
+        display: 'The post you ruled out.',
+        runNote: 'Showed the ruled-out post back.',
+        inspectionCandidateId: 'memory-3' as MemoryEntryId,
+      })
+      await h.runner.run('what was the one I said no to')
+      expect(h.runtime.evidenceStore()!.inspectionReference()).toMatchObject({ runId: 'run-4' })
+    })
+
+    /**
+     * Run 1 with two Candidates and no subject named: the Answer put both
+     * in front of the user, so "not that one" has no unambiguous subject.
+     * Leaves memory-1/memory-4 (the sources), memory-2 (the user's words),
+     * memory-3 and memory-5 (the Candidates) and memory-6 (the objective).
+     */
+    async function presentTwo(h: ReturnType<typeof harness>): Promise<void> {
+      h.queue.push({ kind: 'tool_calls', calls: [{ id: 'r1', name: 'read_page', args: { url: POST } }] })
+      h.queue.push({
+        kind: 'tool_calls',
+        calls: [
+          {
+            id: 'e1',
+            name: 'record_evidence',
+            args: { observation: 'Ranking every mech is a tier list post.', source_url: POST, excerpt: 'tier list post' },
+          },
+          { id: 'e2', name: 'record_evidence', args: { kind: 'user', observation: FIND } },
+          { id: 'c1', name: 'record_candidate', args: { subject: 'Ranking every mech', supporting_evidence: ['memory-1'] } },
+        ],
+      })
+      h.queue.push({ kind: 'tool_calls', calls: [{ id: 'r2', name: 'read_page', args: { url: THREAD } }] })
+      h.queue.push({
+        kind: 'tool_calls',
+        calls: [
+          {
+            id: 'e3',
+            name: 'record_evidence',
+            args: { observation: 'Every mech ranked again is a tier list post.', source_url: THREAD, excerpt: 'tier list post' },
+          },
+          { id: 'c2', name: 'record_candidate', args: { subject: 'Every mech, ranked again', supporting_evidence: ['memory-4'] } },
+        ],
+      })
+      h.queue.push({
+        kind: 'answer',
+        speak: 'I found two.',
+        display: 'Two possible posts.',
+        runNote: 'Presented a shortlist of two.',
+        memoryPatch: parseMemoryPatch([{
+          op: 'add',
+          entry: {
+            kind: 'objective',
+            subject: 'Find the tier list post',
+            detail: 'A post the user found last week.',
+            user_evidence: ['memory-2'],
+          },
+        }])!,
+      })
+      await h.runner.run(FIND)
+    }
+
+    it('retains an ambiguous correction without inventing a subject or rejecting the shortlist', async () => {
+      const h = harness()
+      await presentTwo(h)
+      // No Candidate was named, so the Session holds no subject to take.
+      expect(h.runtime.evidenceStore()!.inspectionReference()).toBeNull()
+
+      h.failRequest(h.requests.length + 1)
+      await h.runner.run('not that one')
+
+      // The words are kept; the subject is not guessed at.
+      expect(h.unresolved()).toEqual([
+        expect.objectContaining({ text: 'not that one', objectiveId: 'memory-6', runId: 'run-2' }),
+      ])
+      expect(h.unresolved()[0]).not.toHaveProperty('candidateId')
+      // Neither Candidate was rejected to cover the doubt, and neither is
+      // blocked: what is unresolved is a question, not a verdict.
+      expect(h.candidate('memory-3')).toMatchObject({ status: 'active', decisions: [] })
+      expect(h.candidate('memory-5')).toMatchObject({ status: 'active', decisions: [] })
+
+      // The next Run is handed the words with no subject — which is what
+      // it needs in order to ask the user which they meant.
+      await h.runner.run('well?')
+      expect(h.requests.at(-1)?.corrections).toContainEqual({ text: 'not that one', observationId: 'memory-7' })
+    })
+
+    it('retains a constraint correction with no Candidate subject, and resolves it by revising the constraint', async () => {
+      const h = harness()
+      await presentTwo(h)
+
+      h.failRequest(h.requests.length + 1)
+      await h.runner.run(NARROW)
+      expect(h.unresolved()).toEqual([
+        expect.objectContaining({ text: NARROW, objectiveId: 'memory-6', runId: 'run-2' }),
+      ])
+
+      // The continuation revises the constraint the user corrected, citing
+      // their own retained words — under the same objective identity.
+      h.queue.push({
+        kind: 'answer',
+        speak: 'Narrowing to 2023.',
+        display: 'Only 2023 posts from here.',
+        runNote: 'Narrowed the search to 2023.',
+        memoryPatch: parseMemoryPatch([{
+          op: 'add',
+          entry: {
+            kind: 'constraint',
+            subject: 'Year',
+            detail: 'Only posts from 2023.',
+            user_evidence: ['memory-7'],
+          },
+        }])!,
+      })
+      await h.runner.run('keep looking')
+
+      expect(h.unresolved()).toEqual([])
+      // Changing a constraint continues the task; it does not replace it.
+      await h.runner.run('and now')
+      expect(h.requests.at(-1)?.objective).toEqual({
+        id: 'memory-6',
+        userText: [FIND],
+        constraints: [{ id: 'memory-8', userText: [NARROW] }],
+      })
+    })
+
+    it('drops the retained words when the Session ends', async () => {
+      const h = harness()
+      await present(h)
+      h.failRequest(h.requests.length + 1)
+      await h.runner.run(REJECT)
+      expect(h.unresolved()).toHaveLength(1)
+
+      h.runtime.end('reset')
+
+      // A new Session inherits neither the work nor the obligation to
+      // resolve what was said about it.
+      await h.runner.run(FIND)
+      expect(h.runtime.evidenceStore()!.unresolvedCorrections()).toEqual([])
+    })
+
+    it('retains nothing from a command the Session rejected as busy', async () => {
+      const clock = new FakeClock(1_000)
+      const runtime = createSessionRuntime({ clock, identities: new DeterministicIdentities() })
+      const feedback: SubmissionFeedback[] = []
+      let release!: () => void
+      const blocked = new Promise<void>((resolve) => {
+        release = resolve
+      })
+      let runs = 0
+      const pipeline: CommandPipeline = {
+        async *execute(_command, turnId) {
+          runs += 1
+          if (runs === 2) await blocked
+          yield { type: 'done', turnId: turnId ?? `turn-${runs}`, at: clock.now(), outcome: 'done' }
+        },
+        resolveConfirmation: () => {},
+        resolveAsk: () => {},
+        abort: () => {},
+        pause: () => {},
+        resume: () => false,
+        getState: () => 'idle',
+      }
+      const runner = createAssistantCommandRunner({
+        pipeline,
+        runtime,
+        clock,
+        onSessionReset: () => {},
+        createRunPublisher: () => ({ publish: () => {} }),
+        publishFeedback: (item) => feedback.push(item),
+      })
+
+      // One Run opens the Session, a second is still running, and a third
+      // arrives while it is.
+      await runner.run(FIND)
+      const busy = runner.run(REJECT)
+      const rejected = await runner.run('and this one too')
+      release()
+      await busy
+
+      expect(rejected).toBe(false)
+      expect(feedback.map(({ reason }) => reason)).toEqual(['busy'])
+      // A rejected submission is not an accepted Run, so it changed
+      // nothing: only the accepted continuation's words are retained.
+      expect(runtime.evidenceStore()!.unresolvedCorrections().map(({ text }) => text)).toEqual([REJECT])
+    })
+  })
 })

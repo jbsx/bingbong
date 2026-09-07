@@ -13,6 +13,7 @@ import type { Tool, ToolParameterSpec } from '../../core/pipeline/tool'
 import type { ModelEndpointConfig } from '../../core/agent/modelRouting'
 import type { RetainedUserObjective } from '../../core/session/objectiveContinuity'
 import type { InspectionSubject } from '../../core/session/inspectionReference'
+import type { UserCorrectionSubject } from '../../core/session/userCorrections'
 import { parseAssistantAnswer } from '../../core/agent/answerContract'
 import { reportFault } from '../../core/trace/fault'
 
@@ -257,6 +258,51 @@ export function inspectionSubjectMessage(subject: InspectionSubject): string {
 }
 
 /**
+ * The retained corrections' wire message (#211, ADR 0039): what the user
+ * said, unresolved, in their own words on their own lines behind a label
+ * — the Standing Directive's shape again, for the Standing Directive's
+ * reason. These are the words a Run has to cite verbatim to record the
+ * decision they carry, and a narration of them is what a model copies
+ * into `record_evidence` instead of the real thing.
+ *
+ * Nothing here says what an utterance means. The message names the
+ * Candidate each was spoken about, where the Session held one, and
+ * states the three rules a round cannot get wrong without recreating the
+ * bug: the words outrank the model's own older reading of them, a clear
+ * decision is recorded on the user's authority citing those words, and
+ * an unclear one is a question for the user rather than a sweep through
+ * every Candidate on the list.
+ */
+export function retainedCorrectionsMessage(corrections: readonly UserCorrectionSubject[]): string {
+  const lines = ['Unresolved — the user said this and nothing has recorded what it decided:']
+  for (const correction of corrections) {
+    lines.push('', correction.text)
+    if (correction.observationId !== undefined) {
+      lines.push(`(their words are Observation ${correction.observationId} — cite it to record what they decided)`)
+    }
+    if (correction.candidateId !== undefined) {
+      lines.push(
+        correction.candidateSubject === undefined
+          ? `(said about Candidate ${correction.candidateId}, which this Session no longer holds)`
+          : `(said about Candidate ${correction.candidateId}: ${correction.candidateSubject})`,
+      )
+    }
+  }
+  lines.push(
+    '',
+    "These are the user's own words, kept because an earlier run ended before it could act on them. They " +
+      'stand over your own earlier notes and assessments about what they were said about. Resolve them in this ' +
+      'run: where the words plainly decide a Candidate, record that with record_candidate, authority "user", ' +
+      'citing a kind "user" Observation holding this exact text — until you do, that Candidate is neither ' +
+      'presented again nor settled by you. Where you cannot tell which Candidate is meant, or whether the words ' +
+      'decide anything at all, ask the user which they mean; never rule out several Candidates to cover the ' +
+      'doubt. Words that change a constraint revise the constraint the user set — they do not replace their ' +
+      'objective.',
+  )
+  return lines.join('\n')
+}
+
+/**
  * The Standing Directive's wire message (#167): the same correction, in the
  * user's own words, on every later round. Worded as the standing correction
  * it is rather than as a fresh arrival — the round that carried it as
@@ -301,6 +347,12 @@ export function createOpenAiLlmClient(deps: OpenAiLlmClientDeps): LlmClient {
       // answer "what is this request about?" for a command whose own
       // words say only "that one".
       ...(request.inspection ? [{ role: 'user' as const, content: inspectionSubjectMessage(request.inspection) }] : []),
+      // The user's unresolved words ride last of the three (#211):
+      // whatever the objective and the subject say, this is what the user
+      // actually said about them that nobody has answered yet.
+      ...(request.corrections !== undefined && request.corrections.length > 0
+        ? [{ role: 'user' as const, content: retainedCorrectionsMessage(request.corrections) }]
+        : []),
       {
         role: 'user',
         // The truncation note rides the command itself (#61): one user

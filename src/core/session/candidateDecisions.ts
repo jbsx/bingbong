@@ -84,6 +84,8 @@ export type CandidateDecisionRefusal =
 export type CandidateChangeRefusal =
   | CandidateDecisionRefusal
   | 'unsupported_authority'
+  /** The user has said something about this Candidate that no Run has resolved yet (#211). */
+  | 'correction_unresolved'
   | 'unknown_candidate'
   | 'invalid'
 

@@ -2,6 +2,13 @@ import type { RunId, SessionId } from './sessionIdentity'
 import type { ObservationId } from './observationLedger'
 import type { RetainedInspectionReference } from './inspectionReference'
 import {
+  correctionAffects,
+  correctionsInForce,
+  MAX_CORRECTION_CHARS,
+  retainedCorrections,
+  type RetainedUserCorrection,
+} from './userCorrections'
+import {
   candidateDecisionRefusal,
   DECISION_AUTHORITIES,
   latestDecisionUnder,
@@ -54,6 +61,19 @@ export {
   type CandidateStatus,
   type DecisionAuthority,
 } from './candidateDecisions'
+
+/**
+ * Retained user corrections (#211, ADR 0039) live in this store for the
+ * same reason the Inspection Reference does: one Session lifetime, one
+ * clear at the Session boundary, and beside the Candidates they are
+ * spoken about. The vocabulary and rules are `userCorrections`'.
+ */
+export {
+  MAX_CORRECTION_CHARS,
+  MAX_RETAINED_CORRECTIONS,
+  type RetainedUserCorrection,
+  type UserCorrectionSubject,
+} from './userCorrections'
 
 export const MAX_UNCERTAINTY_CHARS = 200
 /** Bound on a provenance identity — Run ids and Subagent ids alike. */
@@ -239,6 +259,18 @@ export interface InspectionPresentation {
 }
 
 /**
+ * One user utterance to retain before its Run's first model request
+ * (#211, ADR 0039). The caller supplies only the words and whose Run
+ * they arrived on; the subject and the task they were spoken under are
+ * the Session's own state, so the store stamps them rather than trusting
+ * a caller to have read them consistently.
+ */
+export interface UserCorrectionInput {
+  readonly text: string
+  readonly runId: RunId
+}
+
+/**
  * What one decision came to (#208, ADR 0039): the Candidate as retained,
  * or why the Session would not retain it — and, when a scoping rule is
  * what refused it, the decision that blocks it. The verdict is reached
@@ -302,6 +334,71 @@ export interface SessionEvidenceStore {
   scopeInspection(objectiveId: MemoryEntryId): RetainedInspectionReference | null
   /** The Candidate the Session's latest presentation named, if any (#210). */
   inspectionReference(): RetainedInspectionReference | null
+  /**
+   * Retains one user utterance verbatim, before the Run admitted with it
+   * has made a single model request (#211, ADR 0039), together with the
+   * Inspection Reference in force — the two things a failed first request
+   * would otherwise destroy.
+   *
+   * This classifies nothing. The words are held as an unresolved
+   * correction; no Candidate changes status, no rejection is invented,
+   * and no subject is guessed at when the Session holds no unambiguous
+   * one. Null when the Session ended or the utterance is out of bounds.
+   */
+  retainCorrection(input: UserCorrectionInput): RetainedUserCorrection | null
+  /**
+   * Grounds every unresolved correction that is not yet Session Evidence
+   * (#211): checkpoints the user's exact words as a User Observation
+   * under the Run that heard them, so a later Run can cite them to
+   * record what they decided.
+   *
+   * Called when the Session hands a correction to another Run, not when
+   * it retains one. Words a Run answered for itself never become
+   * evidence on the application's say-so — only words that outlived a
+   * Run that never answered, which are exactly the words that now need
+   * an identity someone else can cite.
+   */
+  groundCorrections(): void
+  /**
+   * Binds retained corrections made before the Session held a user
+   * objective to the objective it turns out they were spoken under
+   * (#211) — the commit-time adoption `scopeInspection` and
+   * `adoptUnscopedDecisions` exist for, for the same reason: a Run's
+   * Memory Commit lands after its Answer, so words spoken to the
+   * establishing Run name no task yet.
+   */
+  scopeCorrections(objectiveId: MemoryEntryId): void
+  /**
+   * The user's own words this Session retains and no Run has resolved,
+   * oldest first, scoped to the objective in force (#211).
+   */
+  unresolvedCorrections(): readonly RetainedUserCorrection[]
+  /**
+   * Resolves every retained correction whose words the given
+   * Observations quote (#211): a Run has grounded that utterance into
+   * something the Session retains — a Candidate decision, or the
+   * objective or constraint the user corrected — so it is a correction
+   * no longer. Identities that are not live User Observations resolve
+   * nothing.
+   */
+  resolveCorrectionsCiting(observationIds: readonly MemoryEntryId[]): void
+  /**
+   * Resolves the words this Run was itself admitted with (#211): it
+   * reached an Answer of the model's own writing, and answering the
+   * user's latest words is what an Answer is.
+   *
+   * Its *own* words, and no others. A correction inherited from an
+   * earlier Run that never answered is a debt: that Run failed before it
+   * could interpret anything, and a later Run answering some other
+   * command is no evidence the debt was discharged. Only grounding
+   * discharges it — a decision the Session retains, or the objective or
+   * constraint the words corrected.
+   *
+   * A Run that failed, was cancelled, or fell back to a deterministic
+   * Answer never reaches this at all, which is the failure the whole
+   * retention exists to survive.
+   */
+  resolveCorrectionsFrom(runId: RunId): void
   /**
    * Binds every decision made before the Session held a user objective to
    * the objective it turns out to have been serving (#208, ADR 0039).
@@ -445,6 +542,9 @@ export function createSessionEvidence(deps: {
   // The Session's current inspection subject (#210): one relationship,
   // replaced by the next presentation and dropped with the Session.
   let inspection: RetainedInspectionReference | null = null
+  // The user's words this Session retains and no Run has resolved (#211):
+  // oldest first, dropped with the Session like the subject above.
+  let corrections: RetainedUserCorrection[] = []
   let cleared = false
 
   const liveObservation = (id: MemoryEntryId): MutableObservation | null =>
@@ -465,6 +565,39 @@ export function createSessionEvidence(deps: {
    */
   const hasUserSupport = (ids: readonly MemoryEntryId[]): boolean =>
     ids.some((id) => liveObservation(id)?.sourceKind === 'user')
+
+  /**
+   * The corrections still in force (#211): the ones spoken under the
+   * objective the Session is working, plus any spoken before it held
+   * one. A word about a task the user has since replaced binds nothing.
+   */
+  const liveCorrections = (): RetainedUserCorrection[] => correctionsInForce(corrections, deps.objectiveId?.())
+
+  /**
+   * The unresolved words this Run inherited — everything a Run that
+   * never answered left behind, and nothing the caller was itself
+   * admitted with (#211).
+   *
+   * The distinction is the whole gate. A Run holding the user's latest
+   * command is answering it: deciding and presenting are how it answers,
+   * and blocking them would make "show me that again" unanswerable
+   * forever. A Run holding words from an earlier Run that failed has
+   * been handed a debt nobody has discharged, and the Candidate those
+   * words were about is exactly what it must not quietly settle or show
+   * back as though nothing had been said.
+   */
+  const inheritedCorrections = (runId: RunId): RetainedUserCorrection[] =>
+    liveCorrections().filter((held) => held.runId !== runId)
+
+  /**
+   * Drops the retained corrections a predicate has seen resolved. Only
+   * live ones are dropped by resolution — a correction retired by an
+   * objective replacement is already out of force, and leaving it in the
+   * list costs nothing the bound does not already cover.
+   */
+  const dropCorrections = (resolved: (correction: RetainedUserCorrection) => boolean): void => {
+    corrections = corrections.filter((held) => !resolved(held))
+  }
 
   const validOriginEvent = (input: ObservationCheckpointInput): UserObservationOrigin | null | 'invalid' => {
     if (input.originEvent === undefined) return null
@@ -647,6 +780,17 @@ export function createSessionEvidence(deps: {
       if (change.authority === 'user' && !hasUserSupport(change.supportingObservationIds)) {
         return { ok: false, refusal: 'unsupported_authority' }
       }
+      // The user has spoken about this Candidate and no Run has resolved
+      // what they said (#211, ADR 0039). Until it is resolved, the model
+      // does not settle this Candidate on its own reading: whatever it
+      // concludes, the user's own unresolved words outrank it, and a
+      // status recorded now would say the Candidate was ruled out — or
+      // ruled in — on the model's authority while the user's word on it
+      // is still sitting unread. The user's own decision is the way
+      // through, and it resolves the correction as it lands.
+      if (change.authority !== 'user' && correctionAffects(inheritedCorrections(change.runId as RunId), id)) {
+        return { ok: false, refusal: 'correction_unresolved' }
+      }
       const objectiveId = deps.objectiveId?.()
       const decision: CandidateDecision = {
         status: change.status,
@@ -672,6 +816,16 @@ export function createSessionEvidence(deps: {
       candidate.supportingObservationIds = [...support]
       candidate.references = mergeMemoryReferences(candidate.references, references)
       candidate.provenance = appendProvenance(candidate.provenance, source)
+      // The user's word on this Candidate is now retained (#211, ADR
+      // 0039), so the words that were waiting for it are resolved: the
+      // ones spoken about this Candidate, and any this decision cites
+      // the user's own Observation for. Only the user's authority
+      // resolves — a model decision is a reading of the correction, not
+      // the correction being answered.
+      if (change.authority === 'user') {
+        dropCorrections((held) => held.candidateId === id)
+        store.resolveCorrectionsCiting(change.supportingObservationIds)
+      }
       const frozen = freezeCandidate(candidate)
       notifyCandidateChanged(frozen)
       return { ok: true, candidate: frozen }
@@ -690,6 +844,12 @@ export function createSessionEvidence(deps: {
       // is looking at. It resolves to nothing instead.
       const candidate = liveCandidate(input.candidateId)
       if (candidate === null) return null
+      // Nothing is presented back to the user while their own unresolved
+      // words about it are still waiting (#211, ADR 0039): showing them
+      // the thing they just spoke about, as though they had not, is the
+      // failure this retention exists to prevent. Refusing leaves the
+      // standing subject as it was — the correction still names it.
+      if (correctionAffects(inheritedCorrections(input.runId), candidate.id)) return null
       inspection = Object.freeze({
         candidateId: candidate.id,
         ...(input.objectiveId !== undefined ? { objectiveId: input.objectiveId } : {}),
@@ -713,6 +873,76 @@ export function createSessionEvidence(deps: {
     },
     inspectionReference() {
       return inspection
+    },
+    retainCorrection(input) {
+      if (cleared) return null
+      const text = boundedString(input.text, MAX_CORRECTION_CHARS)
+      const runId = boundedString(input.runId, MAX_PROVENANCE_CHARS)
+      if (!text || !runId) return null
+      const objectiveId = deps.objectiveId?.()
+      // The subject is taken only when it is unambiguously available
+      // (#211): a reference the Session still holds under the task in
+      // force. One left over from a replaced objective names nothing the
+      // user could have meant, and the words are retained without a
+      // subject rather than against the wrong one.
+      const subject =
+        inspection !== null && (inspection.objectiveId === undefined || inspection.objectiveId === objectiveId)
+          ? inspection.candidateId
+          : undefined
+      const retained: RetainedUserCorrection = Object.freeze({
+        text,
+        ...(subject !== undefined ? { candidateId: subject } : {}),
+        ...(objectiveId !== undefined ? { objectiveId } : {}),
+        runId: runId as RunId,
+        retainedAt: deps.now(),
+      })
+      corrections = retainedCorrections(corrections, retained)
+      return retained
+    },
+    groundCorrections() {
+      if (cleared) return
+      corrections = corrections.map((held) => {
+        if (held.observationId !== undefined) return held
+        // A User Observation is grounded against the user events of the
+        // Run that heard them (#122), so the Run this utterance was
+        // admitted with is the only Run that could ever ground it — and
+        // it has already ended without doing so. Every way out of an
+        // unresolved correction cites the user's own words to earn the
+        // user's authority, so the Session grounds them here, under that
+        // Run's provenance, at the moment it hands them to another Run.
+        //
+        // Only words that actually outlived a Run reach this: an
+        // ordinary continuation resolves its own utterance when it
+        // answers, and never becomes Session Evidence on the app's say-so.
+        const grounded = store.checkpointObservation({ sourceKind: 'user', text: held.text, runId: held.runId })
+        return grounded === null ? held : Object.freeze({ ...held, observationId: grounded.observation.id })
+      })
+    },
+    scopeCorrections(objectiveId) {
+      if (cleared) return
+      corrections = corrections.map((held) =>
+        held.objectiveId === undefined ? Object.freeze({ ...held, objectiveId }) : held,
+      )
+    },
+    unresolvedCorrections() {
+      return Object.freeze(liveCorrections())
+    },
+    resolveCorrectionsCiting(observationIds) {
+      if (cleared) return
+      const quoted = new Set<string>()
+      for (const id of observationIds) {
+        const observation = liveObservation(id)
+        // Only the user's own words resolve their own words: a web or
+        // vision Observation sharing the identity space is not the user
+        // being answered, however exactly its text happens to match.
+        if (observation?.sourceKind === 'user') quoted.add(normalizeMemoryText(observation.text))
+      }
+      if (quoted.size === 0) return
+      dropCorrections((held) => quoted.has(normalizeMemoryText(held.text)))
+    },
+    resolveCorrectionsFrom(runId) {
+      if (cleared) return
+      dropCorrections((held) => held.runId === runId)
     },
     adoptUnscopedDecisions(objectiveId) {
       if (cleared) return
@@ -747,6 +977,10 @@ export function createSessionEvidence(deps: {
       // The Session boundary clears the inspection subject too (#210):
       // "that one" means nothing across a Reset or a Lapse.
       inspection = null
+      // And the words waiting on it (#211): a correction is a word about
+      // work this Session was doing. The next Session inherits neither
+      // the work nor the obligation to resolve what was said about it.
+      corrections = []
     },
     get cleared() {
       return cleared

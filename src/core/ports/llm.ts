@@ -4,6 +4,7 @@ import type { MemoryEntryId, MemoryPatch, WorkingMemorySnapshot } from '../sessi
 import type { SessionEvidenceSnapshot } from '../session/sessionEvidence'
 import type { RetainedUserObjective } from '../session/objectiveContinuity'
 import type { InspectionSubject } from '../session/inspectionReference'
+import type { UserCorrectionSubject } from '../session/userCorrections'
 import type { AnswerShape } from '../agent/answerContract'
 import type { SubagentReportFinding } from '../agent/subagentReport'
 import type { MishearProposal } from '../voice/learnedTerms'
@@ -81,6 +82,17 @@ export interface LlmRequest {
    * since the alternative is answering about whichever page is open.
    */
   inspection?: InspectionSubject
+  /**
+   * The user's own words the Session retained and no Run has resolved
+   * (#211, ADR 0039), oldest first. A correction is retained before its
+   * Run's first model request, so these outlive a request that failed
+   * before it could interpret them — and they are quoted, never
+   * classified: nothing upstream has decided that any of them is a
+   * rejection. Until a Run grounds one into a decision the Session
+   * retains, the words outrank every older Assessment about what they
+   * were spoken about. Absent when the Session holds nothing unresolved.
+   */
+  corrections?: readonly UserCorrectionSubject[]
   /** One immutable Session Journal snapshot, captured when this Run was accepted. */
   journal?: RunJournalSnapshot
   /** One immutable Session Working Memory snapshot captured with the Journal. */

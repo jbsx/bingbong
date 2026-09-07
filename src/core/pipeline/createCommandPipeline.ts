@@ -63,6 +63,7 @@ import {
 import type { SessionEvidenceSnapshot, SessionEvidenceStore, ObservationCheckpointResult } from '../session/sessionEvidence'
 import { retainedUserObjective } from '../session/objectiveContinuity'
 import { retainedInspectionSubject, type RetainedInspectionReference } from '../session/inspectionReference'
+import { userCorrectionSubjects, type RetainedUserCorrection } from '../session/userCorrections'
 import type { RunId, SessionGeneration } from '../session/sessionIdentity'
 import {
   evaluateEvidenceCheckpoint,
@@ -376,6 +377,24 @@ export interface RunContinuityContext {
    * Session holds no inspection subject.
    */
   readonly inspection?: RetainedInspectionReference
+  /**
+   * The user's own words this Session retains unresolved (#211, ADR
+   * 0039), admitted with this Run — its own utterance included, retained
+   * before the first model request so a request that never returned
+   * cannot erase what the user said.
+   */
+  readonly corrections?: readonly RetainedUserCorrection[]
+  /**
+   * Resolves the words this Run was itself admitted with (#211, ADR
+   * 0039), called only when the model has written an Answer: answering
+   * the user's latest command is what an Answer is. A correction
+   * inherited from an earlier Run that never answered is untouched — it
+   * is discharged by grounding alone. A Run that fails, is cancelled, or
+   * falls back to a deterministic Answer never reaches this at all,
+   * which is the point. Absent when the run carries no evidence
+   * continuity.
+   */
+  resolveCorrections?(): void
   /**
    * The Session generation this Run was admitted under (#111): the
    * Observation ledger's staleness guard. Absent in tests that carry no
@@ -822,6 +841,15 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
     const inspectionSubject = continuity
       ? retainedInspectionSubject(continuity.inspection, continuity.memory, continuity.evidence)
       : null
+    /**
+     * The user's unresolved words (#211, ADR 0039), projected from the
+     * same admission the subject and the objective come from. Every
+     * round carries them, the reserved Answer round included: a Run that
+     * fails on its way to an Answer must leave them exactly as it found
+     * them, and a Run that resolves one does so by grounding a decision
+     * the Session retains — never by having read the words once.
+     */
+    const retainedCorrections = userCorrectionSubjects(continuity?.corrections ?? [], continuity?.evidence)
     /**
      * Retains the Candidate an Answer presented, under the objective in
      * force as it was presented. Admission memory is that objective: a
@@ -1450,6 +1478,10 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
               // this Run's inspection commands are about, beside the
               // objective they are about it under.
               ...(inspectionSubject ? { inspection: inspectionSubject } : {}),
+              // The user's unresolved words (#211): what they said, still
+              // waiting on a Run to resolve it, beside the subject it was
+              // said about.
+              ...(retainedCorrections.length > 0 ? { corrections: retainedCorrections } : {}),
               // Checkpointed Session Evidence this Run starts beside (#121):
               // the immutable admission snapshot — mid-Run checkpoints ride
               // tool results, later Runs' admissions.
@@ -1665,6 +1697,14 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
             // Candidate, and a refusal leaves the standing subject
             // untouched rather than silently clearing it.
             presentInspectionSubject(turn.inspectionCandidateId)
+            // And the user's unresolved words are resolved here (#211,
+            // ADR 0039) — after the presentation, never before. The Run
+            // had them in front of it on every round and has now
+            // answered; what the words decided about a Candidate it
+            // recorded on the way, and the gate above still held for
+            // this Answer. Every other way a Run can end reaches none of
+            // this, so the words outlive it.
+            continuity?.resolveCorrections?.()
             yield {
               type: 'display',
               text: scrubAnswerText(turn.display),

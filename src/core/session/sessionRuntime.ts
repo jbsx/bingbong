@@ -19,6 +19,7 @@ import {
   estimateWorkingMemoryTokens,
   currentUserObjective,
   freezeWorkingMemory,
+  hasUserAuthority,
   isDuplicateMemoryAddition,
   isLowPriorityMemoryAddition,
   isValidWorkingMemory,
@@ -32,10 +33,12 @@ import {
 } from './workingMemory'
 
 import type { RetainedInspectionReference } from './inspectionReference'
+import type { RetainedUserCorrection } from './userCorrections'
 
 export type { RunJournalEntry, RunJournalSnapshot, RunStopRecord } from './runJournal'
 export type { MemoryEntry, MemoryPatch, WorkingMemorySnapshot } from './workingMemory'
 export type { InspectionSubject, RetainedInspectionReference } from './inspectionReference'
+export type { RetainedUserCorrection, UserCorrectionSubject } from './userCorrections'
 export type {
   SessionCandidate,
   SessionEvidenceCounts,
@@ -80,6 +83,14 @@ export interface AcceptedRunAdmission {
    * commands address. Absent when the Session holds no subject.
    */
   inspection?: RetainedInspectionReference
+  /**
+   * The user's own words this Session retains and no Run has resolved
+   * (#211, ADR 0039), this Run's own utterance included. Retained before
+   * the Run makes a single model request, so a first-request failure
+   * leaves the correction standing rather than erasing it. Absent when
+   * the Session holds nothing unresolved.
+   */
+  corrections?: readonly RetainedUserCorrection[]
 }
 
 export interface SessionRuntimeState {
@@ -207,7 +218,13 @@ export function parseSessionContinuityBudgets(value: string | undefined): Record
 export interface SessionRuntime {
   state(): SessionRuntimeState
   submit(): Submission
-  accept(submissionId: SubmissionId): AcceptedRunAdmission
+  /**
+   * Admits one submission as a Run. `utterance` is the user's exact
+   * command: on a continuation it is retained verbatim as an unresolved
+   * correction before the Run starts (#211, ADR 0039) — a rejected
+   * submission is not an accepted Run and retains nothing.
+   */
+  accept(submissionId: SubmissionId, utterance?: string): AcceptedRunAdmission
   reject(submissionId: SubmissionId): boolean
   finish(runId: RunId): boolean
   /** The live Session's evidence store, or null while no Session exists (#112). */
@@ -739,7 +756,7 @@ export function createSessionRuntime(deps: {
     evidenceStore() {
       return evidence
     },
-    accept(submissionId) {
+    accept(submissionId, utterance) {
       if (!pendingSubmissionIds.has(submissionId)) {
         throw new Error(`Submission is unknown or already admitted: ${submissionId}`)
       }
@@ -830,6 +847,28 @@ export function createSessionRuntime(deps: {
       const inspectionReference = objectiveInForce === undefined
         ? evidence!.inspectionReference()
         : evidence!.scopeInspection(objectiveInForce)
+      // Retained corrections bind to their objective on the same beat and
+      // for the same reason (#211): words spoken to the Run that then
+      // recorded the user's task were spoken *for* that task, and only
+      // here can the two be joined.
+      if (objectiveInForce !== undefined) evidence!.scopeCorrections(objectiveInForce)
+      // Anything still unresolved is about to be handed to a Run that did
+      // not hear it (#211), so this is where it earns an identity that
+      // Run can cite: the user's words, checkpointed as Session Evidence
+      // under the Run they were spoken to. Before that Run's model
+      // starts, like the retention itself.
+      evidence!.groundCorrections()
+      // The user's words, retained before this Run's first model request
+      // (#211, ADR 0039). A Session's opening command corrects nothing —
+      // there is no earlier work to correct, and a Reset replays it as
+      // exactly that — so only a continuation retains. Nothing here reads
+      // the words: retention is not interpretation, and what they turn
+      // out to mean is the Run's to resolve and the Session's to keep
+      // until it does.
+      if (!createsSession && utterance !== undefined) {
+        evidence!.retainCorrection({ text: utterance, runId })
+      }
+      const corrections = evidence!.unresolvedCorrections()
       return {
         accepted: true,
         submissionId,
@@ -846,6 +885,11 @@ export function createSessionRuntime(deps: {
         // Run — a Run's own presentation lands on the store, and reaches
         // the next Run through its admission, never mid-flight.
         ...(inspectionReference !== null ? { inspection: inspectionReference } : {}),
+        // The user's unresolved words (#211, ADR 0039), admitted beside
+        // the subject they were spoken about. Immutable for the Run for
+        // the same reason: what this Run resolves lands on the store and
+        // reaches the next Run through its admission.
+        ...(corrections.length > 0 ? { corrections } : {}),
       }
     },
     reject(submissionId) {
@@ -952,6 +996,16 @@ export function createSessionRuntime(deps: {
       // was made for rather than to nothing.
       const objectiveId = currentUserObjective(memory)?.id
       if (objectiveId !== undefined) evidence?.adoptUnscopedDecisions(objectiveId)
+      // The user's corrections the committed task now carries (#211, ADR
+      // 0039). A correction with no Candidate to decide — "only posts
+      // from 2023" — is resolved by the objective or constraint it
+      // changed, and that entry earns its authority by citing the User
+      // Observation holding those exact words. So the citations of every
+      // user-authoritative entry are what resolves them: the same
+      // grounding #206 already requires, read for what it settles.
+      evidence?.resolveCorrectionsCiting(
+        memory.flatMap((entry) => (hasUserAuthority(entry) ? [...(entry.userEvidenceIds ?? [])] : [])),
+      )
       nextMemoryId = proposedNextMemoryId
       committedRunIds.add(runId)
       continuityRevision += 1

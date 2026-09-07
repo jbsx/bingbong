@@ -216,6 +216,20 @@ function refusalOutcome(
         'checkpoint what the user said with record_evidence first, or record this as your own decision',
     }
   }
+  // The user has spoken about this Candidate and nothing has recorded
+  // what they decided (#211, ADR 0039). Their words are the authority
+  // here, so the way through is to record the decision as theirs — or,
+  // when it is not clear the words decide anything, to ask them.
+  if (refusal === 'correction_unresolved') {
+    return {
+      ok: false,
+      reason: 'unauthorized',
+      error:
+        `the user said something about Candidate '${id}' that no run has resolved — see the unresolved correction above. ` +
+        'Record what their words decided with authority "user", citing a kind "user" Observation holding their exact ' +
+        'text; if you cannot tell whether they meant this Candidate, ask them rather than deciding it yourself',
+    }
+  }
   if (refusal === 'user_decision_stands') {
     return {
       ok: false,

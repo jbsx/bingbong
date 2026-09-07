@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { RunId, SessionId } from './sessionIdentity'
 import type { MemoryEntryId } from './workingMemory'
 import type { ObservationId } from './observationLedger'
-import { createSessionEvidence, MAX_UNCERTAINTY_CHARS } from './sessionEvidence'
+import { createSessionEvidence, MAX_CORRECTION_CHARS, MAX_UNCERTAINTY_CHARS } from './sessionEvidence'
 import type {
   CandidateDecisionOutcome,
   CandidateStatusChange,
@@ -803,5 +803,219 @@ describe('Candidate decisions are scoped and authorised in the store (#208, ADR 
       runId: 'run-2' as RunId,
     }))).toBe('invalid')
     expect(evidence.candidate(candidateId)!.decisions).toEqual([])
+  })
+})
+
+describe('the store retains what the user said before the model ran (#211, ADR 0039)', () => {
+  /** A store whose objective moves, seeded with a presentable Candidate. */
+  function correctionHarness(withoutObjective = false) {
+    let next = 0
+    let objectiveId: MemoryEntryId | undefined = withoutObjective
+      ? undefined
+      : ('memory-objective-a' as MemoryEntryId)
+    const evidence = createSessionEvidence({
+      sessionId: 'session-1' as SessionId,
+      now: () => 55,
+      mintId: () => `memory-${++next}` as MemoryEntryId,
+      objectiveId: () => objectiveId,
+    })
+    const web = evidence.checkpointObservation(webObservation())!.observation
+    const candidate = evidence.addCandidate({
+      subject: 'Acme wifi router',
+      supportingObservationIds: [web.id],
+      runId: 'run-1' as RunId,
+    })!
+    /** The user's own words, checkpointed as this Session grounds them. */
+    const said = (text: string): MemoryEntryId =>
+      evidence.checkpointObservation({
+        sourceKind: 'user',
+        text,
+        runId: 'run-2' as RunId,
+        originEvent: { producer: 'command', observationId: 'obs-1' as ObservationId },
+      })!.observation.id
+    return {
+      evidence,
+      web: web.id,
+      candidate,
+      said,
+      objectiveIs: (id: MemoryEntryId | undefined) => {
+        objectiveId = id
+      },
+    }
+  }
+
+  it('retains the exact wording with the Inspection Reference in force, classifying nothing', () => {
+    const { evidence, candidate } = correctionHarness()
+    evidence.presentInspection({
+      candidateId: candidate.id,
+      objectiveId: 'memory-objective-a' as MemoryEntryId,
+      runId: 'run-1' as RunId,
+    })
+
+    const retained = evidence.retainCorrection({ text: 'not that one; keep looking', runId: 'run-2' as RunId })
+
+    expect(retained).toEqual({
+      text: 'not that one; keep looking',
+      candidateId: candidate.id,
+      objectiveId: 'memory-objective-a',
+      runId: 'run-2',
+      retainedAt: 55,
+    })
+    expect(evidence.unresolvedCorrections()).toEqual([retained])
+    // Retaining is not yet grounding: the words become Session Evidence
+    // only if they outlive the Run that heard them.
+    expect(retained).not.toHaveProperty('observationId')
+    expect(evidence.groundCorrections())
+    expect(evidence.unresolvedCorrections()[0]).toMatchObject({ observationId: 'memory-3' })
+    expect(evidence.observation('memory-3' as MemoryEntryId)).toMatchObject({
+      sourceKind: 'user',
+      text: 'not that one; keep looking',
+    })
+    // Grounding twice does not mint a second identity for one utterance.
+    evidence.groundCorrections()
+    expect(evidence.unresolvedCorrections()[0]).toMatchObject({ observationId: 'memory-3' })
+    // Retention is not interpretation: nothing was decided, and the
+    // Candidate is exactly as active as it was.
+    expect(evidence.candidate(candidate.id)).toMatchObject({ status: 'active', decisions: [] })
+  })
+
+  it('retains words spoken with no subject, and never invents one', () => {
+    const { evidence } = correctionHarness()
+
+    const retained = evidence.retainCorrection({ text: 'only posts from 2023', runId: 'run-2' as RunId })
+
+    expect(retained).toMatchObject({ text: 'only posts from 2023' })
+    expect(retained).not.toHaveProperty('candidateId')
+  })
+
+  it('does not take a subject left over from a replaced objective', () => {
+    const { evidence, candidate, objectiveIs } = correctionHarness()
+    evidence.presentInspection({
+      candidateId: candidate.id,
+      objectiveId: 'memory-objective-a' as MemoryEntryId,
+      runId: 'run-1' as RunId,
+    })
+    objectiveIs('memory-objective-b' as MemoryEntryId)
+
+    expect(evidence.retainCorrection({ text: 'not that one', runId: 'run-3' as RunId })).not.toHaveProperty('candidateId')
+  })
+
+  it('adopts the objective the establishing Run records, so its replacement retires the words', () => {
+    const { evidence, objectiveIs } = correctionHarness(true)
+    const retained = evidence.retainCorrection({ text: 'only posts from 2023', runId: 'run-2' as RunId })
+    expect(retained).not.toHaveProperty('objectiveId')
+
+    objectiveIs('memory-objective-a' as MemoryEntryId)
+    evidence.scopeCorrections('memory-objective-a' as MemoryEntryId)
+    expect(evidence.unresolvedCorrections()).toEqual([{ ...retained, objectiveId: 'memory-objective-a' }])
+
+    objectiveIs('memory-objective-b' as MemoryEntryId)
+    expect(evidence.unresolvedCorrections()).toEqual([])
+  })
+
+  it('refuses to present a Candidate the user has spoken about until it is resolved', () => {
+    const { evidence, candidate } = correctionHarness()
+    evidence.presentInspection({ candidateId: candidate.id, runId: 'run-1' as RunId })
+    evidence.retainCorrection({ text: 'not that one; keep looking', runId: 'run-2' as RunId })
+
+    // A later Run inherits the words: it may not show back the thing the
+    // user spoke about as though nothing had been said.
+    expect(evidence.presentInspection({ candidateId: candidate.id, runId: 'run-3' as RunId })).toBeNull()
+    // Refusing leaves the standing subject exactly where it was — the
+    // correction still names it.
+    expect(evidence.inspectionReference()).toMatchObject({ candidateId: candidate.id, runId: 'run-1' })
+  })
+
+  it('refuses the model its own verdict on a Candidate the user has spoken about', () => {
+    const { evidence, candidate, web } = correctionHarness()
+    evidence.presentInspection({ candidateId: candidate.id, runId: 'run-1' as RunId })
+    evidence.retainCorrection({ text: 'not that one; keep looking', runId: 'run-2' as RunId })
+
+    for (const status of ['accepted', 'rejected', 'superseded'] as const) {
+      expect(refusedAs(evidence.setCandidateStatus(candidate.id, {
+        status,
+        authority: 'model',
+        reason: 'my own reading of what they meant',
+        supportingObservationIds: [web],
+        runId: 'run-3' as RunId,
+      }))).toBe('correction_unresolved')
+    }
+    expect(evidence.candidate(candidate.id)).toMatchObject({ status: 'active', decisions: [] })
+  })
+
+  it('resolves the words when the user own decision on that Candidate is retained', () => {
+    const { evidence, candidate, said } = correctionHarness()
+    evidence.presentInspection({ candidateId: candidate.id, runId: 'run-1' as RunId })
+    evidence.retainCorrection({ text: 'not that one; keep looking', runId: 'run-2' as RunId })
+
+    const outcome = evidence.setCandidateStatus(candidate.id, {
+      status: 'rejected',
+      authority: 'user',
+      reason: 'the user ruled it out',
+      supportingObservationIds: [said('not that one; keep looking')],
+      runId: 'run-2' as RunId,
+    })
+
+    expect(decided(outcome)).toMatchObject({ status: 'rejected' })
+    expect(evidence.unresolvedCorrections()).toEqual([])
+    // And with nothing unresolved, the Candidate may be presented again.
+    expect(evidence.presentInspection({ candidateId: candidate.id, runId: 'run-3' as RunId })).not.toBeNull()
+  })
+
+  it('resolves words with no Candidate subject when the user own Observation behind them is cited', () => {
+    const { evidence, said } = correctionHarness()
+    evidence.retainCorrection({ text: 'only posts from 2023', runId: 'run-2' as RunId })
+
+    // The constraint the user corrected is grounded in their own words;
+    // the Memory Commit that cites them is what resolves the correction.
+    evidence.resolveCorrectionsCiting([said('Only posts from 2023')])
+
+    expect(evidence.unresolvedCorrections()).toEqual([])
+  })
+
+  it('resolves nothing on a web Observation that happens to quote the same words', () => {
+    const { evidence } = correctionHarness()
+    evidence.retainCorrection({ text: 'only posts from 2023', runId: 'run-2' as RunId })
+    const web = evidence.checkpointObservation({
+      sourceKind: 'web',
+      text: 'only posts from 2023',
+      references: [{ url: 'https://example.com/thread' }],
+      runId: 'run-2' as RunId,
+    })!.observation.id
+
+    evidence.resolveCorrectionsCiting([web])
+
+    expect(evidence.unresolvedCorrections()).toHaveLength(1)
+  })
+
+  it('drops the retained words with the Session', () => {
+    const { evidence } = correctionHarness()
+    evidence.retainCorrection({ text: 'not that one', runId: 'run-2' as RunId })
+
+    evidence.clear()
+
+    expect(evidence.unresolvedCorrections()).toEqual([])
+    expect(evidence.retainCorrection({ text: 'nor that one', runId: 'run-3' as RunId })).toBeNull()
+  })
+
+  it('refuses an utterance past its bound rather than retaining a truncated one', () => {
+    const { evidence } = correctionHarness()
+
+    expect(evidence.retainCorrection({ text: '   ', runId: 'run-2' as RunId })).toBeNull()
+    expect(evidence.retainCorrection({ text: 'x'.repeat(MAX_CORRECTION_CHARS + 1), runId: 'run-2' as RunId })).toBeNull()
+    expect(evidence.unresolvedCorrections()).toEqual([])
+  })
+
+  it('resolves a Run own words when it answered, and never the debt it inherited', () => {
+    const { evidence } = correctionHarness()
+    evidence.retainCorrection({ text: 'not that one; keep looking', runId: 'run-2' as RunId })
+    evidence.retainCorrection({ text: 'keep going', runId: 'run-3' as RunId })
+
+    // run-3 answered. Answering its own command is what an Answer is;
+    // it is no evidence at all that run-2's unanswered words were dealt
+    // with, and those wait for the grounding that discharges them.
+    evidence.resolveCorrectionsFrom('run-3' as RunId)
+
+    expect(evidence.unresolvedCorrections().map(({ text }) => text)).toEqual(['not that one; keep looking'])
   })
 })

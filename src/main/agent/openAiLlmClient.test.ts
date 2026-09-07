@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { createOpenAiLlmClient, inspectionSubjectMessage, promptHashOf, retainedObjectiveMessage, standingDirectiveMessage, TRUNCATION_NOTE } from './openAiLlmClient'
+import { createOpenAiLlmClient, inspectionSubjectMessage, promptHashOf, retainedCorrectionsMessage, retainedObjectiveMessage, standingDirectiveMessage, TRUNCATION_NOTE } from './openAiLlmClient'
 import { ORCHESTRATOR_SYSTEM_PROMPT } from './orchestratorPrompt'
 import { createBrowserTools } from '../../core/pipeline/browserTools'
 import { createMediaTools } from '../../core/pipeline/mediaTools'
@@ -1325,5 +1325,74 @@ describe('openAiLlmClient streaming (#47)', () => {
     expect(await outcome).toBe('AbortError')
     expect(seenSignals).toHaveLength(1)
     expect(seenSignals[0]!.aborted).toBe(true)
+  })
+})
+
+describe("the user's unresolved words on the wire (#211, ADR 0039)", () => {
+  it('quotes what the user said and names the Candidate it was said about', async () => {
+    const fetch = new ScriptedFetch([
+      completionResponse({ content: '{"speak":"Which one?","display":"Which one?","run_note":"Asked which."}' }),
+    ])
+    const client = makeClient(fetch)
+
+    await client.complete({
+      command: 'keep going',
+      toolResults: [],
+      objective: { id: 'memory-2' as never, userText: ['find that tier list post'], constraints: [] },
+      corrections: [
+        {
+          text: 'not that one; keep looking',
+          candidateId: 'memory-4' as never,
+          candidateSubject: 'r/tierlists — "Ranking every mech"',
+        },
+      ],
+    })
+
+    const messages = fetch.calls[0].body.messages
+    // Objective, then the words nobody has answered, then the command.
+    expect(messages[2]).toEqual({
+      role: 'user',
+      content: retainedCorrectionsMessage([
+        {
+          text: 'not that one; keep looking',
+          candidateId: 'memory-4' as never,
+          candidateSubject: 'r/tierlists — "Ranking every mech"',
+        },
+      ]),
+    })
+    expect(messages[3]).toEqual({ role: 'user', content: 'keep going' })
+
+    const content = messages[2].content as string
+    // The user's words on their own line behind a label — the rule the
+    // Standing Directive earned (#167): a narration of them is what gets
+    // copied into record_evidence in their place.
+    expect(content).toContain('\nnot that one; keep looking\n')
+    expect(content).toContain('memory-4')
+    expect(content).toContain('Ranking every mech')
+    // And the three rules a round cannot get wrong: the words outrank the
+    // model's own reading, the decision is recorded on the user's
+    // authority, and doubt is a question rather than a sweep.
+    expect(content).toContain('stand over your own earlier notes')
+    expect(content).toContain('authority "user"')
+    expect(content).toContain('never rule out several Candidates')
+  })
+
+  it('keeps the words when the Session no longer holds the Candidate they named', () => {
+    const content = retainedCorrectionsMessage([{ text: 'not that one', candidateId: 'memory-4' as never }])
+
+    expect(content).toContain('not that one')
+    expect(content).toContain('which this Session no longer holds')
+  })
+
+  it('sends no corrections message when the Session holds nothing unresolved (#211)', async () => {
+    const fetch = new ScriptedFetch([
+      completionResponse({ content: '{"speak":"Done.","display":"Done.","run_note":"Answered."}' }),
+    ])
+    const client = makeClient(fetch)
+
+    await client.complete({ command: 'keep going', toolResults: [], corrections: [] })
+
+    const messages = fetch.calls[0].body.messages
+    expect(messages.slice(1).map((message) => message.content)).toEqual(['keep going'])
   })
 })

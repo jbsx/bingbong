@@ -2,12 +2,31 @@
 
 ## Status
 
-Accepted on 2026-09-06. Objective continuity (#206) and Inspection References
-(#210) are implemented; correction retention across a failed first request and
-objective-scoped Candidate decisions remain pending. Extends ADR 0028's
-distinction between User Observations, Assessments, and Candidates. Session
-lifetime, source-grounding requirements, and the ban on speculative partial
-Memory Commits remain unchanged.
+Accepted on 2026-09-06, implemented in full on 2026-09-07: objective continuity
+(#206), Inspection References (#210), objective-scoped Candidate decisions
+(#208), and correction retention across a failed first request (#211). Extends
+ADR 0028's distinction between User Observations, Assessments, and Candidates.
+Session lifetime, source-grounding requirements, and the ban on speculative
+partial Memory Commits remain unchanged.
+
+Two boundaries #211 settled, because the Decision below does not fix them:
+
+- *Whose* words are retained. Every continuation command is retained verbatim,
+  because deciding which utterances are corrections is the interpretation this
+  ADR keeps out of the application. A Session's opening command retains
+  nothing — there is no earlier work to correct — and a rejected or busy
+  submission is not an accepted Run and mutates nothing.
+- *What discharges* a retained correction. A Run resolves the words it was
+  itself admitted with by answering: producing a model-written Answer is what
+  it means to have addressed the user's latest command. Words inherited from a
+  Run that never answered are a debt, discharged only by grounding — a
+  Candidate decision the Session retains, or the objective or constraint those
+  words revised. Until then the Candidate they name is neither presented again
+  nor settled on the model's own authority. Because a User Observation is
+  grounded against the events of the Run that heard it, the Session
+  checkpoints an inherited correction's exact words itself, under that Run's
+  provenance, as it hands them on — otherwise no later Run could cite the very
+  words it is required to act on.
 
 ## Context
 

@@ -68,7 +68,12 @@ export function createAssistantCommandRunner(deps: {
           return false
         }
 
-        const admission = deps.runtime.accept(submission.submissionId)
+        // The command is retained before the Run starts (#211, ADR 0039):
+        // a continuation's utterance may be the user correcting what the
+        // last Answer showed them, and the first model request of this Run
+        // can fail before a single tool has run. Admission is the last
+        // moment their words are certain to exist.
+        const admission = deps.runtime.accept(submission.submissionId, command)
         activeRun = admission
         let restartRequested = false
         try {
@@ -100,6 +105,17 @@ export function createAssistantCommandRunner(deps: {
             // Candidate a previous Answer presented, so this Run's "show
             // me that again" addresses it rather than the open page.
             ...(admission.inspection ? { inspection: admission.inspection } : {}),
+            // The user's unresolved words (#211, ADR 0039): what they
+            // said, including this Run's own command, that no Run has yet
+            // grounded into a decision the Session retains.
+            ...(admission.corrections ? { corrections: admission.corrections } : {}),
+            // Resolved only by an Answer the model wrote (#211): the
+            // store is resolved per call, so a Session that ended keeps
+            // nothing to resolve, and a Run that never answered leaves
+            // the user's words standing for the next one.
+            resolveCorrections: () => {
+              deps.runtime.evidenceStore()?.resolveCorrectionsFrom(admission.runId)
+            },
             // The Observation ledger's staleness guard (#111): the Session
             // generation this Run was admitted under.
             generation: admission.generation,
