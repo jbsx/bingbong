@@ -1337,6 +1337,7 @@ describe('command pipeline', () => {
     expect(events).toContainEqual({
       type: 'display',
       text: 'I have not made progress I can show on \u201Ckeep going\u201D yet.',
+      deterministicAnswer: true,
       at: 0,
     })
     expect(events.find((e) => e.type === 'speak')).toMatchObject({
@@ -1649,6 +1650,7 @@ describe('command pipeline', () => {
       expect(events).toContainEqual({
         type: 'display',
         text: 'I have not made progress I can show on \u201Cdo the thing\u201D yet.',
+        deterministicAnswer: true,
         at: 0,
       })
       expect(events.find((e) => e.type === 'speak' && e.text !== 'Partial.')).toMatchObject({
@@ -1675,6 +1677,7 @@ describe('command pipeline', () => {
       expect(events).toContainEqual({
         type: 'display',
         text: 'I have not made progress I can show on \u201Cdo the thing\u201D yet.',
+        deterministicAnswer: true,
         at: 0,
       })
       expect(events.at(-1)).toEqual({ type: 'done', outcome: 'failed', finalizationCause: 'budget_exhausted', at: 0 })
@@ -1929,6 +1932,61 @@ describe('command pipeline', () => {
           'I have not verified that any of these answers the request.',
       })
       expect(events.at(-1)).toEqual({ type: 'done', outcome: 'failed', finalizationCause: 'budget_exhausted', at: 0 })
+    })
+
+    it('marks its own Answer as the deterministic one, and never a model-written Answer (#214)', async () => {
+      // The Answer's origin is the pipeline's own knowledge of which round
+      // produced it — the eval reads this flag rather than matching the
+      // fallback's wording, so rewording the sentences below moves nothing.
+      const store = evidenceStore()
+      const { tools, currentUrl } = browserPages()
+      // Six work rounds spend the Direct Action budget, the seventh is
+      // Finalization's bookkeeping round, and the exhausted script fails
+      // the reserved Answer round — so the deterministic Answer stands.
+      const fallbackLlm = new ScriptedLlm([
+        { kind: 'tool_calls', calls: [plan('p1'), { id: 'n1', name: 'navigate', args: { url: GUIDE_URL } }] },
+        { kind: 'tool_calls', calls: [{ id: 'r1', name: 'read_page', args: {} }] },
+        { kind: 'tool_calls', calls: [{ id: 'r2', name: 'read_page', args: {} }] },
+        { kind: 'tool_calls', calls: [{ id: 'n2', name: 'navigate', args: { url: REDDIT_URL } }] },
+        { kind: 'tool_calls', calls: [{ id: 'r3', name: 'read_page', args: {} }] },
+        { kind: 'tool_calls', calls: [{ id: 'r4', name: 'read_page', args: {} }] },
+        { kind: 'tool_calls', calls: [{ id: 'n3', name: 'navigate', args: { url: GUIDE_URL } }] },
+      ])
+      const fallbackEvents = await collectWithEvidence(
+        createCommandPipeline({
+          llm: fallbackLlm,
+          tts: new RecordingTts(),
+          clock: new FakeClock(),
+          tools: [createReportRunPlanTool(), createRecordEvidenceTool(), ...tools],
+          currentPageUrl: currentUrl,
+        }),
+        'which horizon chapter introduces the boxer',
+        store,
+      )
+      expect(fallbackEvents.filter((event) => event.type === 'display')).toMatchObject([{ deterministicAnswer: true }])
+
+      // The same run with a model Answer in the reserved round: the flag
+      // is absent, not false — an Answer the model wrote carries nothing.
+      const answered = new ScriptedLlm([
+        { kind: 'tool_calls', calls: [plan('p2'), { id: 'n1', name: 'navigate', args: { url: GUIDE_URL } }] },
+        { kind: 'tool_calls', calls: [{ id: 'r1', name: 'read_page', args: {} }] },
+        { kind: 'answer', speak: 'Chapter 45.', display: 'The boxer appears in chapter 45.' },
+      ])
+      const answeredPages = browserPages()
+      const answeredEvents = await collectWithEvidence(
+        createCommandPipeline({
+          llm: answered,
+          tts: new RecordingTts(),
+          clock: new FakeClock(),
+          tools: [createReportRunPlanTool(), createRecordEvidenceTool(), ...answeredPages.tools],
+          currentPageUrl: answeredPages.currentUrl,
+        }),
+        'which horizon chapter introduces the boxer',
+        evidenceStore(),
+      )
+      const answerDisplay = answeredEvents.find((event) => event.type === 'display')
+      expect(answerDisplay).toMatchObject({ text: expect.stringContaining('chapter 45') })
+      expect(answerDisplay).not.toHaveProperty('deterministicAnswer')
     })
   })
 

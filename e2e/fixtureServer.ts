@@ -829,6 +829,72 @@ function custodyLegPage(consignment: Consignment, leg: number, nextUrl: string |
 </html>`
 }
 
+// The #214 deadline scenario's fixture web: two torque ledgers that never
+// certify. Every revision states its own provisional figure — a distinct
+// settled state per hop, so the no-progress rails see real Progress and
+// never stop the Run early — and hands the certification to the next
+// revision, which exists for every n. Nothing here is broken or
+// unreachable: the work is genuinely available and genuinely endless,
+// which is the only honest way to make a Run spend a whole active-work
+// deadline rather than simply run out of pages.
+//
+// Each chain stays on one host (depot primary, field alt), so a Run
+// comparing them reads two independent sources — the shape that earns an
+// Investigation declaration.
+
+const LEDGERS = [
+  { slug: 'depot', host: 'primary', label: 'depot ledger', office: 'Depot metrology office', baseNm: 41 },
+  { slug: 'field', host: 'alt', label: 'field ledger', office: 'Field calibration office', baseNm: 63 },
+] as const
+
+/**
+ * How slowly one ledger revision is served (#214). This is the scenario's
+ * whole mechanism, and it is arithmetic rather than taste: the Run has to
+ * reach its 5-minute Investigation deadline BEFORE its 24 Tool Round
+ * budget, or it finalizes `budget_exhausted` and measures nothing the
+ * deadline work can use.
+ *
+ * The rule: this delay must exceed the tier's implied seconds per round
+ * (deadline ÷ round budget — 300 s ÷ 24 = 12.5 s for Investigation) minus
+ * the orchestrator's own LLM-round latency, which `secondsPerLlmRound`
+ * now reports (5–11 s on the corpus's model). At 18 s the deadline
+ * arrives around round 13, leaving the rest of the budget as margin for
+ * the rounds that fetch nothing and so pay no delay — a plan report, an
+ * evidence checkpoint, the Finalization rounds. Raising it costs no wall
+ * clock, because the deadline, not the delay, is what ends the Run.
+ * The ceiling is the 30 s page load (LOAD_TIMEOUT_MS).
+ *
+ * `BINGBONG_FIXTURE_LEDGER_DELAY_MS` overrides it so coverage can read
+ * these pages without paying for them; the eval never sets it.
+ */
+const LEDGER_REVISION_DELAY_MS = 18_000
+
+/** The delay in force — the constant above, or the coverage override; an empty or malformed value never disarms it. */
+function ledgerRevisionDelayMs(): number {
+  const declared = process.env.BINGBONG_FIXTURE_LEDGER_DELAY_MS
+  if (declared === undefined || declared.trim() === '') return LEDGER_REVISION_DELAY_MS
+  const override = Number(declared)
+  return Number.isFinite(override) && override >= 0 ? override : LEDGER_REVISION_DELAY_MS
+}
+
+/** The provisional figure revision `n` of a ledger states — distinct per hop, never certified. */
+function ledgerFigure(ledger: (typeof LEDGERS)[number], revision: number): string {
+  return `${(ledger.baseNm + revision * 0.1).toFixed(1)} Nm`
+}
+
+function ledgerRevisionPage(ledger: (typeof LEDGERS)[number], revision: number, nextUrl: string): string {
+  return `<!doctype html>
+<html>
+<head><title>${ledger.office} — revision ${revision}</title></head>
+<body style="background:#222;color:#fff;margin:0">
+  <h1>${ledger.office}: torque revision ${revision}</h1>
+  <p>Revision ${revision} of the ${ledger.label} records the torque of the standard fixture widget as ${ledgerFigure(ledger, revision)}, provisional.</p>
+  <p>Revision ${revision} is not the certified figure. Certification was carried forward to revision ${revision + 1}:
+    <a id="revision-${revision + 1}" href="${nextUrl}">${ledger.label} revision ${revision + 1}</a>.</p>
+</body>
+</html>`
+}
+
 export async function startFixtureServer(): Promise<FixtureServer> {
   let adblockListHits = 0
   let visionEndpointHits = 0
@@ -1049,6 +1115,22 @@ export async function startFixtureServer(): Promise<FixtureServer> {
       // Leg 2 lives on alt, so leg 3 is primary, and leg 4 alt again.
       const nextUrl = nextHop === undefined ? null : leg % 2 === 0 ? urlOf(`/custody-${nextHop}`) : altUrlOf(`/custody-${nextHop}`)
       res.end(custodyLegPage(consignment, leg, nextUrl))
+      return
+    }
+    // A ledger revision (#214): every n exists, and each one is served
+    // slowly on purpose — see LEDGER_REVISION_DELAY_MS. The chain's own
+    // host builds the next revision's link, so a chain never crosses
+    // hosts however the Run reaches it. `res.destroyed` guards an aborted
+    // Run's socket, like /slow above.
+    const ledgerPath = /^\/ledger-([a-z]+)-(\d+)$/.exec(req.url ?? '')
+    const ledger = ledgerPath === null ? undefined : LEDGERS.find((candidate) => candidate.slug === ledgerPath[1])
+    if (ledgerPath !== null && ledger !== undefined) {
+      const revision = Number(ledgerPath[2])
+      const hostUrl = ledger.host === 'primary' ? urlOf : altUrlOf
+      setTimeout(() => {
+        if (res.destroyed) return
+        res.end(ledgerRevisionPage(ledger, revision, hostUrl(`/ledger-${ledger.slug}-${revision + 1}`)))
+      }, ledgerRevisionDelayMs())
       return
     }
     if (req.url === '/recall-brief') {

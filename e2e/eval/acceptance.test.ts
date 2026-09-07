@@ -38,6 +38,7 @@ function metrics(overrides: Partial<ScenarioMetrics> = {}): ScenarioMetrics {
     attemptedTools: 2,
     executedTools: 2,
     elapsedMs: 10_000,
+    secondsPerLlmRound: 5,
     repeatedActions: 0,
     outcome: 'done',
     resolution: null,
@@ -45,6 +46,7 @@ function metrics(overrides: Partial<ScenarioMetrics> = {}): ScenarioMetrics {
     effortTier: 'lookup',
     rawLimitFailure: null,
     askTimedOut: false,
+    deterministicAnswer: false,
     subagentFinalizations: {},
     subagentBoundedReports: 0,
     actions: [],
@@ -100,6 +102,9 @@ function passReport(
       executedTools: { median: 0, p95: 0 },
       elapsedMs: { median: 0, p95: 0 },
       repeatedActions: { median: 0, p95: 0 },
+      secondsPerLlmRound: {},
+      deterministicAnswers: 0,
+      measuredRuns: scenarios.length,
     },
     ...overrides,
   }
@@ -139,6 +144,7 @@ const CORPUS: { id: string; kind: EvalScenario['kind'] }[] = [
   { id: 'near-identical-depot-bulletins', kind: 'near-identical' },
   { id: 'blocker-challenge-page', kind: 'blocker' },
   { id: 'unresolvable-mercury-dampeners', kind: 'unresolvable' },
+  { id: 'deadline-ledger-revisions', kind: 'deadline' },
 ]
 
 /** Kind-shaped round counts: an unbounded old-path pass (median 6, p95 12 pooled). */
@@ -156,6 +162,9 @@ const OLD_PATH_ROUNDS: Record<EvalScenario['kind'], number> = {
   'near-identical': 5,
   blocker: 7,
   unresolvable: 20,
+  // A deadline Run is a long one — the same shape as an Investigation,
+  // so the pool's designed median/p95 stays exactly what it was (#214).
+  deadline: 12,
 }
 
 /** The bounded candidate's shape (median 3, p95 6 pooled — the tail exactly halves). */
@@ -173,6 +182,7 @@ const CANDIDATE_ROUNDS: Record<EvalScenario['kind'], number> = {
   'near-identical': 3,
   blocker: 4,
   unresolvable: 8,
+  deadline: 6,
 }
 
 function corpusPass(
@@ -192,7 +202,7 @@ function corpusPass(
   )
 }
 
-/** A pass whose 32 round counts come from an explicit [value, count] vector. */
+/** A pass whose corpus-length round counts come from an explicit [value, count] vector. */
 function vectorPass(commit: string, passNumber: number, spec: [number, number][]): EvalReport {
   const values = spec.flatMap(([value, count]) => Array.from({ length: count }, () => value))
   if (values.length !== CORPUS.length) {
@@ -236,7 +246,7 @@ describe('decideRelease over pooled captures', () => {
       'no-action-after-runtime-refusal',
       'mandatory-regressions',
     ])
-    // The pooled statistics the rounds gate judged: 96 observations per side.
+    // The pooled statistics the rounds gate judged: 3 × CORPUS observations per side.
     expect(gateOf(decision, 'llm-rounds').detail).toContain('median 6 → 3')
     expect(gateOf(decision, 'llm-rounds').detail).toContain('Direct Action median 4 → 2')
     expect(gateOf(decision, 'llm-rounds').detail).toContain('Lookup-class median 6 → 3')
@@ -265,8 +275,8 @@ describe('decideRelease over pooled captures', () => {
     expect(decision.candidate.captures.every((capture) => capture.orchestratorModel === 'GLM-5.3-flash')).toBe(true)
     expect(decision.candidate.routing).toEqual(candidatePool()[0]!.routing)
     expect(decision.candidate.scenarioIds).toEqual(CORPUS.map(({ id }) => id))
-    expect(decision.candidate.scenarioObservations).toBe(96)
-    expect(decision.baseline.scenarioObservations).toBe(96)
+    expect(decision.candidate.scenarioObservations).toBe(3 * CORPUS.length)
+    expect(decision.baseline.scenarioObservations).toBe(3 * CORPUS.length)
     expect(decision.candidate.pooledLlmRounds).toEqual({ median: 3, p95: 6 })
     expect(decision.baseline.pooledLlmRounds).toEqual({ median: 6, p95: 12 })
     expect(decision.candidate.classMedians).toEqual({ directAction: 2, lookupClass: 3 })
@@ -287,7 +297,7 @@ describe('decideRelease over pooled captures', () => {
     // halving gate rejected. Every median improves, every observation sits
     // inside its ceiling, so the amended contract accepts.
     const uniform = (commit: string, value: number): EvalReport[] =>
-      [1, 2, 3].map((n) => vectorPass(commit, n, [[value, 32]]))
+      [1, 2, 3].map((n) => vectorPass(commit, n, [[value, CORPUS.length]]))
     const decision = decide(uniform(CANDIDATE_COMMIT, 8), uniform(OLD_COMMIT, 12))
     expect(gateOf(decision, 'llm-rounds').passed).toBe(true)
     expect(decision.decision).toBe('accept')
@@ -295,11 +305,11 @@ describe('decideRelease over pooled captures', () => {
   })
 
   it('fails the rounds gate when the pooled median regresses', () => {
-    // Per pass 17 low + 15 high pools to 51 low + 45 high: baseline median 6
+    // Per pass 17 low + 16 high pools to 51 low + 48 high: baseline median 6
     // p95 14; candidate median 7 (regression).
     const perPass = (commit: string, spec: [number, number][]) => [1, 2, 3].map((n) => vectorPass(commit, n, spec))
     const gate = gateOf(
-      decide(perPass(CANDIDATE_COMMIT, [[7, 17], [2, 15]]), perPass(OLD_COMMIT, [[6, 17], [14, 15]])),
+      decide(perPass(CANDIDATE_COMMIT, [[7, 17], [2, 16]]), perPass(OLD_COMMIT, [[6, 17], [14, 16]])),
       'llm-rounds',
     )
     expect(gate.passed).toBe(false)
@@ -311,7 +321,7 @@ describe('decideRelease over pooled captures', () => {
     // improves 6 → 3 and the Lookup-class median improves 6 → 3.
     const perPass = (commit: string, spec: [number, number][]) => [1, 2, 3].map((n) => vectorPass(commit, n, spec))
     const gate = gateOf(
-      decide(perPass(CANDIDATE_COMMIT, [[4, 12], [3, 20]]), perPass(OLD_COMMIT, [[4, 12], [6, 20]])),
+      decide(perPass(CANDIDATE_COMMIT, [[4, 12], [3, 21]]), perPass(OLD_COMMIT, [[4, 12], [6, 21]])),
       'llm-rounds',
     )
     expect(gate.passed).toBe(false)
@@ -323,7 +333,7 @@ describe('decideRelease over pooled captures', () => {
     // global median holds 6 → 6 (non-regressing) and Direct Action improves.
     const perPass = (commit: string, spec: [number, number][]) => [1, 2, 3].map((n) => vectorPass(commit, n, spec))
     const gate = gateOf(
-      decide(perPass(CANDIDATE_COMMIT, [[2, 12], [6, 20]]), perPass(OLD_COMMIT, [[4, 12], [6, 20]])),
+      decide(perPass(CANDIDATE_COMMIT, [[2, 12], [6, 21]]), perPass(OLD_COMMIT, [[4, 12], [6, 21]])),
       'llm-rounds',
     )
     expect(gate.passed).toBe(false)
@@ -336,15 +346,15 @@ describe('decideRelease over pooled captures', () => {
     // pooled number — and every class median improves pooled: the Direct
     // Action and Lookup-class slots all sit in the low bucket.
     const baseline = [
-      vectorPass(OLD_COMMIT, 1, [[5, 25], [8, 7]]),
-      vectorPass(OLD_COMMIT, 2, [[5, 25], [12, 7]]),
-      vectorPass(OLD_COMMIT, 3, [[5, 25], [14, 7]]),
+      vectorPass(OLD_COMMIT, 1, [[5, 25], [8, 8]]),
+      vectorPass(OLD_COMMIT, 2, [[5, 25], [12, 8]]),
+      vectorPass(OLD_COMMIT, 3, [[5, 25], [14, 8]]),
     ]
-    const candidate = [1, 2, 3].map((n) => vectorPass(CANDIDATE_COMMIT, n, [[4, 23], [6, 9]]))
+    const candidate = [1, 2, 3].map((n) => vectorPass(CANDIDATE_COMMIT, n, [[4, 23], [6, 10]]))
     const gate = gateOf(decide(candidate, baseline), 'llm-rounds')
     expect(gate.passed).toBe(true)
     expect(gate.detail).toContain('p95 14 → 6')
-    expect(gate.detail).toContain('96 observations per side')
+    expect(gate.detail).toContain(`${3 * CORPUS.length} observations per side`)
   })
 
   it('fails the rounds gate on a structural-bound violation, naming pass, scenario, epochs, and allowance', () => {
@@ -453,7 +463,7 @@ describe('decideRelease over pooled captures', () => {
     blocker.metrics.rawLimitFailure = 'tool round limit (32) reached'
     const gate = gateOf(decide(pool), 'no-raw-limit-error')
     expect(gate.passed).toBe(false)
-    expect(gate.detail).toContain('1 of 96')
+    expect(gate.detail).toContain(`1 of ${3 * CORPUS.length}`)
   })
 
   it('pools Direct Action completion across passes — one miss in one pass tolerated, two reject', () => {
@@ -755,7 +765,7 @@ describe('a corpus that has grown past the pinned baseline (#168)', () => {
     const decision = decide(candidate, baselineMissingGained())
     expect(decision.decision).toBe('reject')
     expect(gateOf(decision, 'no-raw-limit-error').passed).toBe(false)
-    expect(gateOf(decision, 'no-raw-limit-error').detail).toContain('3 of 96')
+    expect(gateOf(decision, 'no-raw-limit-error').detail).toContain(`3 of ${3 * CORPUS.length}`)
   })
 
   it('tolerates a baseline scenario the corpus has since dropped, names it, and never compares it', () => {
@@ -797,19 +807,32 @@ describe('the recorded #132 pools (#134: existing-pool compatibility)', () => {
       .map((entry) => JSON.parse(readFileSync(join(dir, entry), 'utf8')) as EvalReport)
   }
 
-  it('regenerates every pooled gate from the six immutable captures, with no structural violation', () => {
+  it('regenerates every pooled gate from the six immutable captures, and asks for a recapture the corpus has outgrown', () => {
     // The baseline artifacts predate the corpus's expected-Effort metadata
     // (31 scenarios, model-declared tiers, no select-option id); the
     // candidate pool was captured from the 32-scenario corpus of record
     // (#168). The gate must judge both from the corpus of record alone,
     // never new telemetry, and never by mutating the captures: the pair
     // decides on the 31 scenarios both sides ran, the candidate-only id is
-    // gated but never compared, and every gate clears.
+    // gated but never compared, and every statistical gate clears.
+    //
+    // What no longer clears is coverage: the corpus of record has since
+    // gained the #214 deadline scenario, which these captures predate, so
+    // `candidate-covers-corpus` names it and the verdict is reject — the
+    // documented consequence of growing the corpus (AGENTS.md), and the
+    // reason a stale candidate pool cannot ride a shrinking comparison to
+    // an accept. Recapturing the candidate at the current commit is what
+    // clears it; every other gate here is unchanged by the growth.
     const decision = decideRelease(recordedPool('candidate'), recordedPool('baseline'), {
       regressions: 'passed',
       decidedAt: new Date('2026-09-04T00:00:00.000Z'),
     })
-    expect(decision.decision).toBe('accept')
+    expect(decision.decision).toBe('reject')
+    expect(gateOf(decision, 'candidate-covers-corpus')).toMatchObject({
+      passed: false,
+      detail: expect.stringContaining('deadline-ledger-revisions'),
+    })
+    expect(decision.gates.filter((entry) => !entry.passed).map((entry) => entry.gate)).toEqual(['candidate-covers-corpus'])
     expect(decision.sharedCorpus.size).toBe(31)
     expect(decision.sharedCorpus.corpusOfRecordSize).toBe(CORPUS.length)
     expect(decision.sharedCorpus.candidateOnly).toEqual(['direct-action-select-option'])
@@ -864,17 +887,17 @@ describe('one reasoning-effort rung per pool (#166)', () => {
 describe('buildPool pooled statistics', () => {
   it('pools nearest-rank median and p95 over all raw scenario round counts', () => {
     const pool = buildPool('candidate', candidatePool())
-    expect(pool.scenarios).toHaveLength(96)
+    expect(pool.scenarios).toHaveLength(3 * CORPUS.length)
     expect(pool.pooledRounds).toEqual({ median: 3, p95: 6 })
     expect(pool.scenarioIds).toEqual(CORPUS.map(({ id }) => id))
   })
 
   it('computes nearest-rank positions over the pooled population, not per pass', () => {
-    // 96 pooled values: 75×5, 7×8, 7×12, 7×14 → median rank 48 = 5, p95 rank 92 = 14.
+    // 99 pooled values: 75×5, 8×8, 8×12, 8×14 → median rank 50 = 5, p95 rank 95 = 14.
     const pool = buildPool('baseline', [
-      vectorPass(OLD_COMMIT, 1, [[5, 25], [8, 7]]),
-      vectorPass(OLD_COMMIT, 2, [[5, 25], [12, 7]]),
-      vectorPass(OLD_COMMIT, 3, [[5, 25], [14, 7]]),
+      vectorPass(OLD_COMMIT, 1, [[5, 25], [8, 8]]),
+      vectorPass(OLD_COMMIT, 2, [[5, 25], [12, 8]]),
+      vectorPass(OLD_COMMIT, 3, [[5, 25], [14, 8]]),
     ])
     expect(pool.pooledRounds).toEqual({ median: 5, p95: 14 })
   })
@@ -888,10 +911,13 @@ describe('the #130 corpus', () => {
     expect(scenarios.filter((entry) => entry.kind === 'lookup' || entry.kind === 'candidate')).toHaveLength(10)
   })
 
-  it('covers every class #108’s Testing Decisions list names', () => {
+  it('covers every class #108’s Testing Decisions list names, plus the #214 deadline class', () => {
     const kinds = new Set(scenarios.map((entry) => entry.kind))
     expect([...kinds].sort()).toEqual(
       [
+        // #214's class is not one of #108's: it exists to measure the
+        // Finalization rounds a Run reaches only by crossing its deadline.
+        'deadline',
         'direct-action',
         'lookup',
         'candidate',

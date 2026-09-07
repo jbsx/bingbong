@@ -12,8 +12,10 @@ export default defineConfig({
     // One Electron app whose synthetic input needs OS focus — never parallel.
     fileParallelism: false,
     // Per-scenario wall budgets live inside the evaluator (it aborts and
-    // records timeouts); these are the outer guard rails.
-    testTimeout: 20 * 60_000,
+    // records timeouts); these are the outer guard rails. Sized above two
+    // 20-minute scenario budgets since #214, so a two-run scenario is
+    // never cut off by the guard rail instead of by its own budget.
+    testTimeout: 45 * 60_000,
     hookTimeout: 120_000,
   },
 })

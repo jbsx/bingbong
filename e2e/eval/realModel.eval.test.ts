@@ -63,6 +63,15 @@ afterAll(async () => {
         `  llm rounds     median ${agg.llmRounds.median}  p95 ${agg.llmRounds.p95}`,
         `  elapsed      ${Math.round(agg.elapsedMs.median / 1000)}s median  ${Math.round(agg.elapsedMs.p95 / 1000)}s p95`,
         `  raw-limit failures: ${agg.rawLimitFailures}   timed out: ${agg.timedOutScenarios}`,
+        // #214: the two numbers the deadline work is measured from — what a
+        // round of each tier costs, and how often the user heard the
+        // deterministic Answer instead of one a model round wrote.
+        `  seconds per round: ${
+          Object.entries(agg.secondsPerLlmRound)
+            .map(([tier, stats]) => `${tier} median ${stats.median.toFixed(1)} p95 ${stats.p95.toFixed(1)}`)
+            .join('   ') || 'no run measured one'
+        }`,
+        `  deterministic Answers: ${agg.deterministicAnswers}/${agg.measuredRuns} runs`,
         `  delegated workers: ${workerLine === '' ? 'none delegated' : workerLine}`,
         `  model: ${report.modelWitness.orchestratorModel} (${report.modelWitness.orchestratorRequests} rounds witnessed)`,
         `  reasoning effort: ${reasoningEffortLabel(report.modelWitness).replace('effort:', '')}`,
@@ -76,8 +85,9 @@ afterAll(async () => {
 
 for (const scenario of evalScenarios()) {
   // Two-run scenarios (cancelled-work, stale evidence) get two scenario
-  // budgets plus collection overhead — 35 minutes bounds the worst case.
-  it(`records the ${scenario.kind} scenario (${scenario.id})`, { timeout: 35 * 60_000 }, async () => {
+  // budgets plus collection overhead — 45 minutes bounds the worst case
+  // against the 20-minute per-scenario budget (#214).
+  it(`records the ${scenario.kind} scenario (${scenario.id})`, { timeout: 45 * 60_000 }, async () => {
     const result = await evaluator.runScenario(scenario)
     // Success, failure, and timeout are all recorded data — logged, not asserted.
     const runs = result.runs.length > 1 ? ` over ${result.runs.length} runs` : ''

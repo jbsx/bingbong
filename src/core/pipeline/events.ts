@@ -140,6 +140,14 @@ export type PipelineEvent = SessionEventIdentity & (
    * since Recorded History was retired (#188) they are read only by the
    * Run Trace, which records the event as published. Non-Answer displays
    * carry neither.
+   *
+   * `deterministicAnswer` names the Answer's origin (#214): present only
+   * on the deterministic fallback the pipeline composes when no model
+   * round produced an Answer, absent on a model-written one. It rides the
+   * Answer it describes rather than the run's boundary, so a reader can
+   * never pair the flag with a different display — and it is the
+   * pipeline's own knowledge of which round answered, so a reworded
+   * fallback sentence can never change it.
    */
   | {
       type: 'display'
@@ -148,6 +156,7 @@ export type PipelineEvent = SessionEventIdentity & (
       at: number
       evidenceIds?: readonly MemoryEntryId[]
       sources?: readonly MemoryReference[]
+      deterministicAnswer?: true
     }
   | { type: 'error'; turnId?: string; message: string; at: number }
   /**
