@@ -40,6 +40,7 @@ function metrics(overrides: Partial<ScenarioMetrics> = {}): ScenarioMetrics {
     elapsedMs: 10_000,
     secondsPerLlmRound: 5,
     repeatedActions: 0,
+    deadlineEscalations: 0,
     outcome: 'done',
     resolution: null,
     finalizationCause: null,

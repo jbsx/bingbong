@@ -35,6 +35,7 @@ import {
   requestFinalizeInstruction,
   type EffortEpoch,
   type FinalizationDetail,
+  type TierEscalation,
 } from './effortEpoch'
 import {
   createFinalizationAllowance,
@@ -318,6 +319,17 @@ export const ASK_TIMEOUT_MS = 45_000
  * Run's stop record. The user cannot act on an exception message.
  */
 const RUN_FAILED_SPOKEN = 'I could not finish that request.'
+
+/**
+ * What the user hears when the deadline raises the Effort Tier (#216, ADR
+ * 0042): a status line of the same kind as the session-expiry prompt, not
+ * an Answer and not in the Answer contract. This is a voice-first
+ * appliance, and a wait that has just grown from two minutes to five is
+ * something the user is told rather than something they infer from
+ * silence. It names no tier, no deadline, and no budget — the Effort Tier
+ * is our vocabulary, not theirs.
+ */
+export const TIER_ESCALATION_SPOKEN = 'This is taking longer than expected \u2014 I\u2019m still working on it.'
 
 function deterministicRunNote(command: string, outcome: RunJournalEntry['outcome']): string {
   const task = command.trim().replace(/\s+/g, ' ').slice(0, 500) || '(empty command)'
@@ -685,6 +697,20 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
     // declaration: the first valid report is always accepted.
     let runPlan: RunPlan | null = null
     let modelDeclaredPlan = false
+    // The automatic Tier Escalation waiting to be announced (#216, ADR
+    // 0042), and whether this Run has already spoken about one. The
+    // epoch's own once is reset by a Steering replan; the spoken line's
+    // is not — a status line repeated after the user has spoken again is
+    // noise, and the Run Plan event and the model's Notice still land on
+    // every escalation.
+    let pendingTierEscalation: TierEscalation | null = null
+    let tierEscalationSpoken = false
+    /** The pending escalation, once: the loop top announces it and it is gone. */
+    const takeTierEscalation = (): TierEscalation | null => {
+      const escalation = pendingTierEscalation
+      pendingTierEscalation = null
+      return escalation
+    }
     // The Run's Notices (#154): every advisory line a tool result carries
     // — rail verdicts, the plan's corrective nudge, the epoch's budget
     // warning and Finalize Instruction — is owed to and delivered by
@@ -736,6 +762,17 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
       effortEpoch: createEffortEpoch({
         clock,
         activeWorkDeadlineMs: deps.activeWorkDeadlineMs,
+        // The deadline's Progress test (#216, ADR 0042): the no-progress
+        // rail's own answer, read live — the executor that owns the rail
+        // is created further down this Run, so this cannot be a value.
+        makingProgress: () => toolRound?.makingProgress() ?? false,
+        // An automatic Tier Escalation announces itself at the next loop
+        // top (#216): the crossing often happens inside a model round —
+        // the deadline timer — where there is no generator to yield the
+        // Run Plan event or speak from.
+        onTierEscalated: (escalation) => {
+          pendingTierEscalation = escalation
+        },
         // What the run owes at every Finalization entry (#120/#148):
         // unfinished delegated acquisition is cancelled, and the phase's
         // own directive supersedes the still-owed plan nudge — the epoch
@@ -774,6 +811,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
     // superseded by its own Finalization entry and re-armed by its own
     // replan — Notices only asks when a result can carry them.
     notices.supply('budget', () => run.effortEpoch.takeBudgetWarning())
+    notices.supply('tier_escalation', () => run.effortEpoch.takeTierEscalationNotice())
     notices.supply('finalization', () => run.effortEpoch.takeFinalizationNotice())
     // When this Run started (#123): the freshness boundary — evidence
     // observed before it predates the Run, however it is cited.
@@ -1336,6 +1374,34 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
           // enters Finalization there — the phase this round runs under is
           // read from the epoch below, so the answer needs no unpacking.
           effortEpoch.decideLoopTop()
+          // The automatic Tier Escalation becomes visible here (#216, ADR
+          // 0042), whether the crossing was the deadline timer's mid-round
+          // or this loop top's own: one Run Plan event at the new tier,
+          // and the Run's one spoken status line. The plan's objective and
+          // headline are untouched — only the tier rose — and the pipeline's
+          // own plan has to follow the epoch, or the next model report
+          // reads as a downgrade against a tier the Run no longer holds.
+          const escalation = takeTierEscalation()
+          if (escalation !== null) {
+            const escalated: RunPlan = {
+              ...(runPlan ?? lookupFallbackPlan(correctedObjective ?? command)),
+              effortTier: escalation.to,
+            }
+            runPlan = escalated
+            yield {
+              type: 'run_plan',
+              objective: escalated.objective,
+              headline: escalated.headline,
+              effortTier: escalated.effortTier,
+              source: 'deadline',
+              escalationReason: escalation.reason,
+              at: clock.now(),
+            }
+            if (!tierEscalationSpoken) {
+              tierEscalationSpoken = true
+              yield* speakLine(TIER_ESCALATION_SPOKEN, turnId)
+            }
+          }
           steering = (yield* interrupts.check('thinking')) ?? steering
           // The Report Grace (#199, ADR 0035): Finalization no longer
           // cancels a live Subagent, so before the bookkeeping Tool Round

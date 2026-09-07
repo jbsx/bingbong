@@ -3,7 +3,7 @@ import { parseAssistantAnswer } from '../agent/answerContract'
 import { setFaultSink, type FaultReport } from '../trace/fault'
 import type { RunTraceEvent } from '../trace/runTrace'
 import { VisionDeadlineError } from '../ports/vision'
-import { createCommandPipeline, type CommandPipeline } from './createCommandPipeline'
+import { createCommandPipeline, TIER_ESCALATION_SPOKEN, type CommandPipeline } from './createCommandPipeline'
 import { hostFromUrl } from './blockerGate'
 import { steerPipeline } from './steering'
 import { createSpeechCoordinator } from '../tts/speechCoordinator'
@@ -25,6 +25,7 @@ import { webEvidenceCommit } from './evidenceCheckpoint'
 import type { SettledPageState } from './progressFingerprints'
 import type { RunContinuityContext } from './createCommandPipeline'
 import type { RunStopRecord } from '../session/runJournal'
+import type { VerificationSubject } from '../session/verificationAttempts'
 import { createSessionEvidence, type SessionEvidenceSnapshot, type SessionEvidenceStore } from '../session/sessionEvidence'
 import type { MemoryEntryId, MemoryPatch } from '../session/workingMemory'
 import type { RunId } from '../session/sessionIdentity'
@@ -32,7 +33,7 @@ import { createPerfTracer, type PerfTracer } from '../perf/perfTracer'
 import { withPerfTracing } from '../perf/perfTracing'
 import { createBrowserSubspans } from '../perf/browserSubspans'
 import { DELTA_FLUSH_MS } from './deltaBatcher'
-import { ANSWER_ONLY_REPORT_DIRECTIVE, FINALIZATION_REPORT_CHECKPOINT_DIRECTIVE, finalizeInstruction, HARD_TOOL_ROUND_CEILING, TIER_ACTIVE_WORK_DEADLINES_MS, TIER_TOOL_ROUND_BUDGETS } from './effortEpoch'
+import { ANSWER_ONLY_REPORT_DIRECTIVE, DEADLINE_TIER_ESCALATION_REASON, FINALIZATION_REPORT_CHECKPOINT_DIRECTIVE, finalizeInstruction, HARD_TOOL_ROUND_CEILING, TIER_ACTIVE_WORK_DEADLINES_MS, TIER_TOOL_ROUND_BUDGETS } from './effortEpoch'
 import { createSubagentManager, type SubagentTaskHooks } from '../agent/subagentManager'
 import type { SubagentReport } from '../agent/subagentReport'
 
@@ -2369,6 +2370,212 @@ describe('command pipeline', () => {
       expect(llm.requests[7].finalizeInstruction).toBe(
         `The run’s work budget is exhausted. ${ANSWER_ONLY_REPORT_DIRECTIVE}`,
       )
+    })
+  })
+
+  describe('automatic Tier Escalation at the deadline (#216, ADR 0042)', () => {
+    const MOVING_PAGE = (scrollY: number): SettledPageState => ({
+      url: 'https://example.com/tier-list',
+      title: 'The tier list',
+      textDigest: `Paragraph at ${scrollY}.`,
+      scrollX: 0,
+      scrollY,
+      dialogOpen: false,
+      dialogText: '',
+    })
+
+    const lookupPlan: ToolCall = {
+      id: 'p0',
+      name: 'report_run_plan',
+      args: { objective: 'Find the tier list', headline: 'Find the tier list', effort_tier: 'lookup' },
+    }
+
+    /** A route this Session already spent, in force for the whole Run (#212, ADR 0041). */
+    const SPENT_ROUTE: VerificationSubject = {
+      failures: [{ route: 'vision', failure: 'the look timed out' }],
+      freshAttemptAllowed: false,
+      eligible: [],
+    }
+
+    /** A Run whose page keeps moving, so the no-progress rail vouches for Progress at the crossing. */
+    const progressingRun = (
+      turns: ScriptedTurn[],
+      advances: Record<string, number>,
+    ): {
+      clock: FakeClock
+      tts: RecordingTts
+      requests: LlmRequest[]
+      events: Promise<PipelineEvent[]>
+      executed: string[]
+      finalizations: () => number
+    } => {
+      const clock = new FakeClock()
+      const tts = new RecordingTts()
+      const executed: string[] = []
+      let scrollY = 0
+      const work: Tool = {
+        name: 'work',
+        acquisition: true,
+        async execute(call) {
+          executed.push(call.id)
+          scrollY += 100
+          clock.advance(advances[call.id] ?? 0)
+          return `worked (${call.id})`
+        },
+      }
+      const requests: LlmRequest[] = []
+      const scripted = new ScriptedLlm(turns)
+      const llm: LlmClient = {
+        complete(request) {
+          requests.push(request)
+          return scripted.complete(request)
+        },
+      }
+      let finalizations = 0
+      const pipeline = createCommandPipeline({
+        llm,
+        tts,
+        clock,
+        tools: [createReportRunPlanTool(), work],
+        settledPageState: () => MOVING_PAGE(scrollY),
+        onFinalize: () => {
+          finalizations += 1
+        },
+      })
+      const events = (async () => {
+        const collected: PipelineEvent[] = []
+        for await (const event of pipeline.execute('find the tier list', undefined, undefined, {
+          snapshot: [],
+          memory: [],
+          verification: SPENT_ROUTE,
+          commit: () => 'committed' as const,
+        })) {
+          collected.push(withoutTurnId(event))
+        }
+        return collected
+      })()
+      return { clock, tts, requests, executed, events, finalizations: () => finalizations }
+    }
+
+    it('raises the tier at the crossing, keeps the round\u2019s siblings open, and says so once', async () => {
+      const { tts, requests, events, executed, finalizations } = progressingRun(
+        [
+          { kind: 'tool_calls', calls: [lookupPlan, { id: 'w0', name: 'work', args: {} }] },
+          {
+            kind: 'tool_calls',
+            calls: [
+              { id: 'w1', name: 'work', args: {} },
+              { id: 'w2', name: 'work', args: {} },
+            ],
+          },
+          { kind: 'tool_calls', calls: [{ id: 'w3', name: 'work', args: {} }] },
+          { kind: 'answer', speak: 'Here it is.', display: 'The tier list.', resolution: 'completed' },
+        ],
+        // w1 crosses the two-minute Lookup deadline while it executes.
+        { w0: 110_000, w1: 15_000 },
+      )
+
+      const emitted = await events
+
+      // The sibling behind the crossing executed: the tier rose, so
+      // nothing was past a boundary.
+      expect(executed).toEqual(['w0', 'w1', 'w2', 'w3'])
+      // One Run Plan event for the escalation, at the larger tier, with
+      // the objective and headline the model declared.
+      const escalations = emitted.filter((e) => e.type === 'run_plan' && e.source === 'deadline')
+      expect(escalations).toEqual([
+        {
+          type: 'run_plan',
+          objective: 'Find the tier list',
+          headline: 'Find the tier list',
+          effortTier: 'investigation',
+          source: 'deadline',
+          escalationReason: DEADLINE_TIER_ESCALATION_REASON,
+          at: 125_000,
+        },
+      ])
+      // The model is told on its next round, through the Notice channel
+      // every other advisory rides.
+      const escalatedResult = emitted.find((e) => e.type === 'tool_result' && e.callId === 'w2')
+      expect(escalatedResult).toMatchObject({
+        ok: true,
+        result: expect.stringContaining('Effort Tier raised to Investigation'),
+      })
+      expect(JSON.stringify(requests[2])).toContain('Effort Tier raised to Investigation')
+      // One spoken status line, and it is not the Answer.
+      expect(tts.spoken.filter((line) => line === TIER_ESCALATION_SPOKEN)).toHaveLength(1)
+      expect(tts.spoken.at(-1)).toBe('Here it is.')
+      // Nothing else reopened (ADR 0041/0042): the route spent before the
+      // crossing is still spent in the round after it, and Finalization
+      // was never entered, so no Finalization Allowance was minted.
+      expect(requests[1]?.verification).toEqual(SPENT_ROUTE)
+      expect(requests[2]?.verification).toEqual(SPENT_ROUTE)
+      expect(finalizations()).toBe(0)
+      // The Run answered inside the Investigation deadline it was given.
+      expect(emitted.at(-1)).toMatchObject({ type: 'done', finalizationCause: 'model_answered' })
+    })
+
+    it('finalizes at the second crossing \u2014 the escalation is once per Run', async () => {
+      const { tts, events, finalizations } = progressingRun(
+        [
+          { kind: 'tool_calls', calls: [lookupPlan, { id: 'w0', name: 'work', args: {} }] },
+          { kind: 'tool_calls', calls: [{ id: 'w1', name: 'work', args: {} }] },
+          { kind: 'tool_calls', calls: [{ id: 'w2', name: 'work', args: {} }] },
+          { kind: 'answer', speak: 'Partial.', display: 'What I have.', resolution: 'partial' },
+        ],
+        // The Lookup deadline, then the whole Investigation deadline.
+        { w0: 110_000, w1: 15_000, w2: 300_000 },
+      )
+
+      const emitted = await events
+
+      expect(emitted.filter((e) => e.type === 'run_plan' && e.source === 'deadline')).toHaveLength(1)
+      expect(tts.spoken.filter((line) => line === TIER_ESCALATION_SPOKEN)).toHaveLength(1)
+      // The Run that does finalize mints its Allowance exactly as today.
+      expect(finalizations()).toBe(1)
+      expect(emitted.at(-1)).toMatchObject({ type: 'done', finalizationCause: 'deadline_reached' })
+    })
+
+    it('finalizes as before when the Run stopped getting anywhere', async () => {
+      const clock = new FakeClock()
+      const tts = new RecordingTts()
+      const STUCK: SettledPageState = MOVING_PAGE(0)
+      const click: Tool = {
+        name: 'click',
+        acquisition: true,
+        async execute(call) {
+          clock.advance(call.id === 'c2' ? 121_000 : 0)
+          return 'clicked'
+        },
+      }
+      const llm = new ScriptedLlm([
+        {
+          kind: 'tool_calls',
+          calls: [
+            lookupPlan,
+            { id: 'c0', name: 'click', args: { ref: 1 } },
+            { id: 'c1', name: 'click', args: { ref: 2 } },
+            { id: 'c2', name: 'click', args: { ref: 3 } },
+          ],
+        },
+        { kind: 'answer', speak: 'Nothing found.', display: 'Nothing.', resolution: 'partial' },
+      ])
+      const pipeline = createCommandPipeline({
+        llm,
+        tts,
+        clock,
+        tools: [createReportRunPlanTool(), click],
+        settledPageState: () => STUCK,
+      })
+
+      const emitted = await collect(pipeline, 'find the tier list')
+
+      // Two no-progress actions exhausted the Approach before the
+      // crossing, so the deadline stopped the Run exactly as it did
+      // before #216 — and the user heard nothing about a longer wait.
+      expect(emitted.filter((e) => e.type === 'run_plan' && e.source === 'deadline')).toEqual([])
+      expect(tts.spoken).not.toContain(TIER_ESCALATION_SPOKEN)
+      expect(emitted.at(-1)).toMatchObject({ type: 'done', finalizationCause: 'deadline_reached' })
     })
   })
 

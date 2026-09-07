@@ -9,6 +9,7 @@ import {
   reviewPlanReport,
   type PlanReport,
 } from './runPlan'
+import { createReportRunPlanTool } from './runPlanTools'
 
 // #118 / ADR 0027: the tier completion standards — the vocabulary every
 // model-facing surface (Run Plan tool, orchestrator prompt, later the
@@ -33,6 +34,16 @@ describe('tier completion standards (#118, ADR 0027)', () => {
   it('demands independent relevant sources with disclosed disagreement for Investigations', () => {
     expect(TIER_COMPLETION_STANDARDS.investigation).toMatch(/multiple independent relevant sources/)
     expect(TIER_COMPLETION_STANDARDS.investigation).toMatch(/disagreement is disclosed/)
+  })
+
+  it('names finding an unknown page as Investigation work, in the rendered tool description (#216)', () => {
+    // The 2026-09-07 tier-list session declared Lookup three times for a
+    // task whose whole difficulty was finding the page. The guidance
+    // rides the one vocabulary, so the tool the model actually reads
+    // carries it — the escalation is the backstop, not the norm.
+    const guidance = 'finding a specific page whose URL you do not know is Investigation work'
+    expect(effortTierVocabulary()).toContain(guidance)
+    expect(createReportRunPlanTool().description).toContain(guidance)
   })
 
   it('renders the vocabulary with labels, ids, scopes, and standards for every tier', () => {

@@ -14,11 +14,15 @@ import {
   HARD_TOOL_ROUND_CEILING,
   injectedReportDirective,
   TIER_ACTIVE_WORK_DEADLINES_MS,
+  TIME_MILESTONE_FRACTION,
+  tierEscalationNotice,
+  DEADLINE_TIER_ESCALATION_REASON,
   TIER_REASONING_EFFORT,
   TIER_TOOL_ROUND_BUDGETS,
   type EffortEpoch,
+  type TierEscalation,
 } from './effortEpoch'
-import { DEFAULT_EFFORT_TIER } from './runPlan'
+import { DEFAULT_EFFORT_TIER, type EffortTier } from './runPlan'
 import type { FinalizationCause } from '../session/runJournal'
 import { SUBAGENT_LIMITS } from '../agent/subagentRails'
 
@@ -488,28 +492,46 @@ describe('Effort Epoch (#146, ADR 0027)', () => {
   })
 
   describe('budget warnings', () => {
-    const none = { near: false, imminent: false }
+    const none = { near: false, imminent: false, time: false }
 
     it('crosses near then imminent around 75% and 90% of a 6-round budget', () => {
       // floor(6 × 0.75) = 4, floor(6 × 0.9) = 5 — the closest a 6-round
       // budget comes to both milestones with headroom before exhaustion.
       expect(budgetWarningCrossed(6, 3, none)).toBeNull()
       expect(budgetWarningCrossed(6, 4, none)).toBe('near')
-      expect(budgetWarningCrossed(6, 5, { near: true, imminent: false })).toBe('imminent')
-      expect(budgetWarningCrossed(6, 6, { near: true, imminent: true })).toBeNull()
+      expect(budgetWarningCrossed(6, 5, { near: true, imminent: false, time: false })).toBe('imminent')
+      expect(budgetWarningCrossed(6, 6, { near: true, imminent: true, time: false })).toBeNull()
     })
 
     it('hits the exact milestones on a divisible budget', () => {
       // floor(12 × 0.75) = 9, floor(12 × 0.9) = 10
       expect(budgetWarningCrossed(12, 9, none)).toBe('near')
-      expect(budgetWarningCrossed(12, 10, { near: true, imminent: false })).toBe('imminent')
+      expect(budgetWarningCrossed(12, 10, { near: true, imminent: false, time: false })).toBe('imminent')
       expect(budgetWarningCrossed(24, 18, none)).toBe('near')
-      expect(budgetWarningCrossed(24, 21, { near: true, imminent: false })).toBe('imminent')
+      expect(budgetWarningCrossed(24, 21, { near: true, imminent: false, time: false })).toBe('imminent')
     })
 
     it('never re-fires a milestone, even one skipped to exhaustion', () => {
       expect(budgetWarningCrossed(6, 6, none)).toBe('near')
-      expect(budgetWarningCrossed(2, 2, { near: true, imminent: true })).toBeNull()
+      expect(budgetWarningCrossed(2, 2, { near: true, imminent: true, time: false })).toBeNull()
+    })
+
+    it('fires the time milestone at 60% of the deadline, once (#216, ADR 0042)', () => {
+      // Round-based milestones first: the time one is the decision the
+      // model has not been asked for, not a louder version of them.
+      expect(budgetWarningCrossed(12, 1, none, 0.59)).toBeNull()
+      expect(budgetWarningCrossed(12, 1, none, 0.6)).toBe('time')
+      expect(budgetWarningCrossed(12, 1, none, 0.99)).toBe('time')
+      expect(budgetWarningCrossed(12, 1, { ...none, time: true }, 0.99)).toBeNull()
+      expect(budgetWarningCrossed(12, 9, none, 0.99)).toBe('near')
+      expect(TIME_MILESTONE_FRACTION).toBe(0.6)
+    })
+
+    it('asks the time milestone for a decision, not for a counter (#216)', () => {
+      expect(budgetWarningMessage('time', 8, 12)).toBe(
+        'Time: 60% of this run\u2019s active-work deadline is spent. Decide now \u2014 escalate the Effort Tier with ' +
+          'report_run_plan and the escalation_reason that justifies it, or finish with what you have.',
+      )
     })
 
     it('tells the model how much work remains without user-facing counters', () => {
@@ -685,6 +707,205 @@ describe('Effort Epoch (#146, ADR 0027)', () => {
       clock.advance(TIER_ACTIVE_WORK_DEADLINES_MS.direct_action)
 
       expect(round.deadlineAborted).toBe(true)
+    })
+  })
+
+  describe('automatic Tier Escalation at the deadline (#216, ADR 0042)', () => {
+    const escalatingEpoch = (
+      overrides: { tier?: EffortTier; progressing?: () => boolean } = {},
+    ) => {
+      const clock = new FakeClock()
+      const escalations: TierEscalation[] = []
+      const epoch = createEffortEpoch({
+        clock,
+        initialTier: overrides.tier ?? 'lookup',
+        makingProgress: overrides.progressing ?? (() => true),
+        onTierEscalated: (escalation) => escalations.push(escalation),
+      })
+      return { clock, epoch, escalations }
+    }
+
+    it('rises one tier at the crossing and starts the new tier\u2019s full deadline', () => {
+      const { clock, epoch, escalations } = escalatingEpoch()
+      clock.advance(TIER_ACTIVE_WORK_DEADLINES_MS.lookup)
+
+      expect(epoch.decideLoopTop()).toEqual({ kind: 'work' })
+      expect(epoch.tier).toBe('investigation')
+      expect(epoch.phase).toEqual({ kind: 'working' })
+      expect(epoch.remainingActiveWorkMs()).toBe(TIER_ACTIVE_WORK_DEADLINES_MS.investigation)
+      expect(escalations).toEqual([
+        { from: 'lookup', to: 'investigation', reason: DEADLINE_TIER_ESCALATION_REASON },
+      ])
+    })
+
+    it('escalates a Direct Action to Lookup and re-arms its round budget', () => {
+      const { clock, epoch } = escalatingEpoch({ tier: 'direct_action' })
+      for (let round = 0; round < 5; round += 1) epoch.beginToolRound()
+      clock.advance(TIER_ACTIVE_WORK_DEADLINES_MS.direct_action)
+
+      expect(epoch.decideLoopTop()).toEqual({ kind: 'work' })
+      expect(epoch.tier).toBe('lookup')
+      expect(epoch.tierRounds).toBe(0)
+      expect(epoch.cumulativeRounds).toBe(5)
+    })
+
+    it('finalizes at an Investigation\u2019s deadline \u2014 there is no tier above it', () => {
+      const { clock, epoch, escalations } = escalatingEpoch({ tier: 'investigation' })
+      clock.advance(TIER_ACTIVE_WORK_DEADLINES_MS.investigation)
+
+      expect(epoch.decideLoopTop()).toEqual({ kind: 'finalize', cause: 'deadline_reached' })
+      expect(escalations).toEqual([])
+    })
+
+    it('finalizes as before when the current Approach is exhausted', () => {
+      const { clock, epoch, escalations } = escalatingEpoch({ progressing: () => false })
+      clock.advance(TIER_ACTIVE_WORK_DEADLINES_MS.lookup)
+
+      expect(epoch.decideLoopTop()).toEqual({ kind: 'finalize', cause: 'deadline_reached' })
+      expect(epoch.tier).toBe('lookup')
+      expect(escalations).toEqual([])
+    })
+
+    it('escalates once per Run \u2014 the second crossing finalizes', () => {
+      const { clock, epoch } = escalatingEpoch()
+      clock.advance(TIER_ACTIVE_WORK_DEADLINES_MS.lookup)
+      expect(epoch.decideLoopTop()).toEqual({ kind: 'work' })
+
+      clock.advance(TIER_ACTIVE_WORK_DEADLINES_MS.investigation)
+      expect(epoch.decideLoopTop()).toEqual({ kind: 'finalize', cause: 'deadline_reached' })
+      expect(epoch.tier).toBe('investigation')
+    })
+
+    it('lets a Steering replan buy the Run another escalation', () => {
+      const { clock, epoch, escalations } = escalatingEpoch()
+      clock.advance(TIER_ACTIVE_WORK_DEADLINES_MS.lookup)
+      epoch.decideLoopTop()
+
+      epoch.replan('lookup')
+      clock.advance(TIER_ACTIVE_WORK_DEADLINES_MS.lookup)
+      expect(epoch.decideLoopTop()).toEqual({ kind: 'work' })
+      expect(escalations).toHaveLength(2)
+    })
+
+    it('leaves the in-flight round running under the new deadline', () => {
+      const { clock, epoch } = escalatingEpoch()
+
+      const round = epoch.armRound()
+      clock.advance(TIER_ACTIVE_WORK_DEADLINES_MS.lookup)
+      expect(round.deadlineAborted).toBe(false)
+      expect(round.signal.aborted).toBe(false)
+      expect(epoch.tier).toBe('investigation')
+
+      clock.advance(TIER_ACTIVE_WORK_DEADLINES_MS.investigation)
+      expect(round.deadlineAborted).toBe(true)
+    })
+
+    it('stops the round the deadline aborts once the escalation is spent', () => {
+      const { clock, epoch } = escalatingEpoch()
+      clock.advance(TIER_ACTIVE_WORK_DEADLINES_MS.lookup)
+      epoch.decideLoopTop()
+
+      const round = epoch.armRound()
+      clock.advance(TIER_ACTIVE_WORK_DEADLINES_MS.investigation)
+      expect(round.deadlineAborted).toBe(true)
+      expect(epoch.phase).toEqual({ kind: 'finalizing', cause: 'deadline_reached' })
+    })
+
+    it('escalates from the per-call gate instead of closing the round\u2019s siblings', () => {
+      const { clock, epoch } = escalatingEpoch()
+      clock.advance(TIER_ACTIVE_WORK_DEADLINES_MS.lookup)
+
+      expect(epoch.tripPerCallGate()).toBe(false)
+      expect(epoch.tier).toBe('investigation')
+      expect(epoch.phase).toEqual({ kind: 'working' })
+    })
+
+    it('never rescues a spent tier budget \u2014 budget exhaustion still finalizes', () => {
+      const { clock, epoch } = escalatingEpoch()
+      for (let round = 0; round < TIER_TOOL_ROUND_BUDGETS.lookup; round += 1) epoch.beginToolRound()
+      clock.advance(TIER_ACTIVE_WORK_DEADLINES_MS.lookup)
+
+      expect(epoch.decideLoopTop()).toEqual({ kind: 'finalize', cause: 'budget_exhausted' })
+      expect(epoch.tier).toBe('lookup')
+    })
+
+    it('keeps the deadline terminal for an epoch with no Progress test', () => {
+      // The escalation needs someone to vouch for Progress: an epoch
+      // without the rail behind it keeps the boundary it had before #216.
+      const clock = new FakeClock()
+      const epoch = createEffortEpoch({ clock, initialTier: 'lookup' })
+      clock.advance(TIER_ACTIVE_WORK_DEADLINES_MS.lookup)
+
+      expect(epoch.decideLoopTop()).toEqual({ kind: 'finalize', cause: 'deadline_reached' })
+      expect(epoch.tier).toBe('lookup')
+    })
+
+    it('never escalates a Browse Subagent \u2014 its deadline is the parent Run\u2019s', () => {
+      const clock = new FakeClock()
+      let expired = false
+      const escalations: TierEscalation[] = []
+      const epoch = createEffortEpoch({
+        clock,
+        subagent: { toolRoundBudget: SUBAGENT_LIMITS.maxToolRoundsPerTask, deadline: { expired: () => expired } },
+        makingProgress: () => true,
+        onTierEscalated: (escalation) => escalations.push(escalation),
+      })
+      expired = true
+
+      expect(epoch.decideLoopTop()).toEqual({ kind: 'finalize', cause: 'deadline_reached' })
+      expect(escalations).toEqual([])
+    })
+
+    it('owes the model one Notice naming the new tier and why it rose', () => {
+      const { clock, epoch } = escalatingEpoch()
+      clock.advance(TIER_ACTIVE_WORK_DEADLINES_MS.lookup)
+      epoch.decideLoopTop()
+
+      const notice = epoch.takeTierEscalationNotice()
+      expect(notice).toBe(tierEscalationNotice('investigation'))
+      expect(notice).toContain('Investigation')
+      expect(notice).toContain('still making progress')
+      expect(epoch.takeTierEscalationNotice()).toBeNull()
+    })
+
+    it('drops an undelivered escalation Notice at Finalization', () => {
+      const { clock, epoch } = escalatingEpoch()
+      clock.advance(TIER_ACTIVE_WORK_DEADLINES_MS.lookup)
+      epoch.decideLoopTop()
+      epoch.enterFinalization('no_progress')
+
+      expect(epoch.takeTierEscalationNotice()).toBeNull()
+    })
+
+    it('gives the escalated epoch its own time milestone', () => {
+      const { clock, epoch } = escalatingEpoch()
+      clock.advance(Math.ceil(TIER_ACTIVE_WORK_DEADLINES_MS.lookup * TIME_MILESTONE_FRACTION))
+      epoch.beginToolRound()
+      expect(epoch.takeBudgetWarning()).toContain('60% of this run')
+
+      clock.advance(TIER_ACTIVE_WORK_DEADLINES_MS.lookup)
+      expect(epoch.decideLoopTop()).toEqual({ kind: 'work' })
+      clock.advance(Math.ceil(TIER_ACTIVE_WORK_DEADLINES_MS.investigation * TIME_MILESTONE_FRACTION))
+      epoch.beginToolRound()
+      expect(epoch.takeBudgetWarning()).toContain('60% of this run')
+    })
+
+    it('survives a throwing escalation hook \u2014 the tier still rose', () => {
+      const clock = new FakeClock()
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+      const epoch = createEffortEpoch({
+        clock,
+        initialTier: 'lookup',
+        makingProgress: () => true,
+        onTierEscalated: () => {
+          throw new Error('consumer blew up')
+        },
+      })
+      clock.advance(TIER_ACTIVE_WORK_DEADLINES_MS.lookup)
+
+      expect(epoch.decideLoopTop()).toEqual({ kind: 'work' })
+      expect(epoch.tier).toBe('investigation')
+      warn.mockRestore()
     })
   })
 

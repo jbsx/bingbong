@@ -26,15 +26,19 @@ describe('Notices', () => {
     notices.owe('no_progress', 'NO PROGRESS')
     notices.owe('search_loop', 'SEARCH LOOP')
     notices.owe('subagent_finalization', 'SUBAGENT FINALIZE')
+    notices.supply('tier_escalation', () => 'TIER ROSE')
 
     expect(text(notices.attach(ok, useful))).toBe(
-      ['page read', 'SEARCH LOOP', 'NO PROGRESS', 'PLAN', 'BUDGET', 'FINALIZE', 'SUBAGENT FINALIZE'].join('\n\n'),
+      ['page read', 'SEARCH LOOP', 'NO PROGRESS', 'PLAN', 'BUDGET', 'TIER ROSE', 'FINALIZE', 'SUBAGENT FINALIZE'].join(
+        '\n\n',
+      ),
     )
     expect(NOTICE_PRECEDENCE).toEqual([
       'search_loop',
       'no_progress',
       'run_plan',
       'budget',
+      'tier_escalation',
       'finalization',
       'subagent_finalization',
     ])

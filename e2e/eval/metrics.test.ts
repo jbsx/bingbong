@@ -151,6 +151,44 @@ describe('extractMetrics', () => {
     expect(fallbackEvent.effortTier).toBe('lookup')
   })
 
+  it('counts the automatic Tier Escalations a run took, apart from the tier it ended at (#216)', () => {
+    // Two runs end at Investigation; only one of them chose it. Without
+    // the count the report cannot tell the declaration from the deadline.
+    const escalated = extractMetrics(
+      [
+        command(0),
+        { type: 'run_plan', turnId: T, objective: 'Find the list', headline: 'Find the list', effortTier: 'lookup', source: 'model', at: 1 },
+        {
+          type: 'run_plan',
+          turnId: T,
+          objective: 'Find the list',
+          headline: 'Find the list',
+          effortTier: 'investigation',
+          source: 'deadline',
+          escalationReason: 'The active-work deadline passed while the run was still making progress, so the Effort Tier rose one level.',
+          at: 2,
+        },
+        done(3),
+      ],
+      [],
+      false,
+    )
+    const declaredOnly = extractMetrics(
+      [
+        command(0),
+        { type: 'run_plan', turnId: T, objective: 'Compare', headline: 'Compare', effortTier: 'investigation', source: 'model', at: 1 },
+        done(2),
+      ],
+      [],
+      false,
+    )
+
+    expect(escalated.effortTier).toBe('investigation')
+    expect(escalated.deadlineEscalations).toBe(1)
+    expect(declaredOnly.effortTier).toBe('investigation')
+    expect(declaredOnly.deadlineEscalations).toBe(0)
+  })
+
   it('records a hard-limit failure’s mechanical cause with no Resolution (#110)', () => {
     const metrics = extractMetrics(
       [command(0), { type: 'error', turnId: T, message: 'tool round limit (32) reached', at: 1 }, done(2, 'failed', { finalizationCause: 'hard_limit' })],
@@ -390,6 +428,7 @@ describe('aggregateScenarios', () => {
     elapsedMs: null,
     secondsPerLlmRound: null,
     repeatedActions: 0,
+    deadlineEscalations: 0,
     outcome: 'done' as const,
     effortTier: 'lookup' as const,
     resolution: null,

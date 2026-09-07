@@ -44,11 +44,29 @@ const TIER_LABELS: Readonly<Record<EffortTier, string>> = {
   investigation: 'Investigation',
 }
 
-/** The one-line scope summary for each tier. */
+/**
+ * One tier's glossary label, for the surfaces that name a tier outside
+ * the vocabulary sentence (#216: the Notice an automatic Tier Escalation
+ * owes the model). One table, so a tier is never spelled twice.
+ */
+export function effortTierLabel(tier: EffortTier): string {
+  return TIER_LABELS[tier]
+}
+
+/**
+ * The one-line scope summary for each tier. The Investigation summary
+ * carries the guidance #216 added, beside the "must search for or find
+ * content is Lookup work or above" rule the prompt already states: the
+ * 2026-09-07 tier-list session declared Lookup three times for a task
+ * whose whole difficulty was finding the page, and a Lookup's one search
+ * cannot bound work that has to try sources until one of them is the
+ * right page.
+ */
 const TIER_SUMMARIES: Readonly<Record<EffortTier, string>> = {
   direct_action: 'one immediate action',
   lookup: 'one page or one search for a fact',
-  investigation: 'comparing multiple sources',
+  investigation:
+    'comparing multiple sources \u2014 and finding a specific page whose URL you do not know is Investigation work',
 }
 
 /**

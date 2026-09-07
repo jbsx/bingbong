@@ -2,10 +2,18 @@
 
 ## Status
 
-Proposed on 2026-09-07, to be implemented in #216. Supersedes the part of ADR
+Accepted on 2026-09-07, implemented in #216. Supersedes the part of ADR
 0027 that makes the active-work deadline a terminal boundary; its budgets, its
 definition of Progress, and its Finalization Causes are unchanged. ADR 0038's
 Finalization Allowance and ADR 0041's verification routes are untouched.
+
+One thing the implementation settled that the decision below leaves open: the
+escalation needs someone to vouch for Progress, and the no-progress rail can
+only do that where it observes the page. A rail with no settled state to read
+— a lean pipeline, a Browse Subagent, a test — vouches for nothing, and its
+epoch keeps the terminal deadline it had before this decision. A tier that
+rose with no Run Plan event, no Notice, and no spoken line would be a change
+nobody could see.
 
 ## Context
 

@@ -221,7 +221,14 @@ export type PipelineEvent = SessionEventIdentity & (
       /** Null while the Command Echo stands in (the fallback plan). */
       headline: string | null
       effortTier: EffortTier
-      source: 'model' | 'fallback'
+      /**
+       * Who set this plan: the model's own report, the fallback Lookup
+       * plan a run without one takes, or (#216, ADR 0042) the active-work
+       * deadline raising the tier of a run that was still making
+       * progress. A `deadline` plan changes the tier alone — its
+       * objective and headline are the ones already standing.
+       */
+      source: 'model' | 'fallback' | 'deadline'
       escalationReason?: string
       at: number
     }

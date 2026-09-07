@@ -234,6 +234,14 @@ export interface ToolRoundExecutor {
    * count goes, the arm stays, #202) or the Effort Epoch's own.
    */
   replan(): void
+  /**
+   * The deadline's Progress test (#216, ADR 0042): whether the
+   * no-progress rail says this run is still getting somewhere under its
+   * current Approach. The Effort Epoch asks it at a deadline crossing, so
+   * the escalation and the `no_progress` stop read the one definition of
+   * Progress. A caller running without the rail vouches for nothing.
+   */
+  makingProgress(): boolean
 }
 
 /**
@@ -641,6 +649,7 @@ export function createToolRoundExecutor(config: ToolRoundConfig): ToolRoundExecu
 
   return {
     run,
+    makingProgress: () => noProgressRail?.makingProgress() ?? false,
     replan() {
       noProgressRail?.reset()
       blockerGate.replan()

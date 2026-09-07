@@ -526,3 +526,59 @@ describe('no-progress rail — first observation by a new producer (#161)', () =
     expect(await rail.observe(call('scroll', { direction: 'down' }), ok())).toMatch(/change your approach/i)
   })
 })
+
+describe('the deadline\u2019s Progress test (#216, ADR 0042)', () => {
+  it('vouches for nothing when it observes nothing', () => {
+    // An inert rail (no settled state to read) has no Approach accounting
+    // at all: it cannot say this run is getting anywhere, so the deadline
+    // stays the terminal boundary it was.
+    expect(createNoProgressRail().makingProgress()).toBe(false)
+  })
+
+  it('reports Progress on a fresh rail and on one that is moving', async () => {
+    const moving = scriptedStates([BASE, state({ scrollY: 400 }), state({ scrollY: 900 })])
+    const rail = createNoProgressRail({ settledState: moving })
+    expect(rail.makingProgress()).toBe(true)
+
+    await rail.observe(call('scroll', { direction: 'down' }), ok()) // baseline
+    await rail.observe(call('scroll', { direction: 'down' }), ok()) // the page moved: Progress
+    expect(rail.makingProgress()).toBe(true)
+  })
+
+  it('stops reporting Progress one step before the run would stop for no_progress', async () => {
+    const rail = createNoProgressRail({ settledState: () => BASE })
+    await rail.observe(call('navigate', { url: 'https://example.com/a' }), ok()) // baseline
+    await rail.observe(call('click', { ref: 3 }), ok()) // no-progress 1
+    expect(rail.makingProgress()).toBe(true)
+
+    expect(await rail.observe(call('scroll', { direction: 'down' }), ok())).toMatch(/change your approach/i)
+    expect(rail.makingProgress()).toBe(false)
+    expect(rail.finalizationDue()).toBe(false)
+  })
+
+  it('stays false through the trip, and a Steering replan clears it', async () => {
+    const rail = createNoProgressRail({ settledState: () => BASE })
+    await rail.observe(call('navigate', { url: 'https://example.com/a' }), ok()) // baseline
+    for (let action = 0; action < 4; action += 1) {
+      await rail.observe(call('click', { ref: action }), ok())
+    }
+    expect(rail.finalizationDue()).toBe(true)
+    expect(rail.makingProgress()).toBe(false)
+
+    rail.reset()
+    expect(rail.makingProgress()).toBe(true)
+  })
+
+  it('is restored by Progress \u2014 the one definition, not a second one', async () => {
+    const states = scriptedStates([BASE, BASE, BASE, state({ url: 'https://example.com/next', textDigest: 'New.' })])
+    const rail = createNoProgressRail({ settledState: states })
+    await rail.observe(call('navigate', { url: 'https://example.com/a' }), ok()) // baseline
+    await rail.observe(call('click', { ref: 1 }), ok()) // no-progress 1
+    expect(await rail.observe(call('click', { ref: 2 }), ok())).toMatch(/change your approach/i)
+    expect(rail.makingProgress()).toBe(false)
+
+    // The next action moves the page: new decision-relevant material.
+    await rail.observe(call('navigate', { url: 'https://example.com/next' }), ok())
+    expect(rail.makingProgress()).toBe(true)
+  })
+})

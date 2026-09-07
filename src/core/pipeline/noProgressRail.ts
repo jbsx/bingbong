@@ -159,6 +159,17 @@ export interface NoProgressRail {
   reset(): void
   /** True once two Approaches exhausted — the run must finalize for `no_progress`. */
   finalizationDue(): boolean
+  /**
+   * Whether the run is still getting somewhere under its current Approach
+   * (#216, ADR 0042): the deadline's Progress test, read off the same
+   * accounting `finalizationDue` trips on, one Approach earlier. False
+   * once an Approach has run out with no Progress since — so a Run the
+   * rail is about to stop for `no_progress` is never rescued by the
+   * deadline — and false on an inert rail, which observes nothing and can
+   * therefore vouch for nothing. Progress makes it true again, because
+   * Progress is what clears the Approach accounting.
+   */
+  makingProgress(): boolean
 }
 
 /** One action fingerprint's last attempt: the state it started from, and whether its repeat was nudged. */
@@ -380,5 +391,7 @@ export function createNoProgressRail(deps: NoProgressRailDeps = {}): NoProgressR
     },
 
     finalizationDue: () => tripped,
+
+    makingProgress: () => settledState !== undefined && !tripped && exhaustedApproaches === 0,
   }
 }

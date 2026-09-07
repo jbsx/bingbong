@@ -2,7 +2,7 @@
 // state machine. A Tool Round is one model response containing one or more
 // tool calls; it consumes one unit regardless of sibling-call count.
 
-import { DEFAULT_EFFORT_TIER, type EffortTier } from './runPlan.ts'
+import { DEFAULT_EFFORT_TIER, effortTierLabel, type EffortTier } from './runPlan.ts'
 import { createSuspendableClock, type Clock } from '../ports/clock.ts'
 import type { ReasoningEffort } from '../ports/llm'
 import type { SubagentSharedDeadline } from '../agent/subagentRails'
@@ -132,6 +132,49 @@ export interface SubagentEpochConfig {
  */
 export type FinalizationDetail = BlockerWall
 
+/**
+ * The tier an automatic Tier Escalation rises to (#216, ADR 0042). One
+ * level at a time, and nothing above an Investigation: the escalation is
+ * the deadline buying the Run the next tier's budget, not a way out of
+ * every bound.
+ */
+const NEXT_TIER: Readonly<Partial<Record<EffortTier, EffortTier>>> = {
+  direct_action: 'lookup',
+  lookup: 'investigation',
+}
+
+/** One automatic Tier Escalation, as its consumers report it (#216). */
+export interface TierEscalation {
+  readonly from: EffortTier
+  readonly to: EffortTier
+  /** The fixed reason the Run Plan event carries; the deadline speaks for every such escalation. */
+  readonly reason: string
+}
+
+/**
+ * Why an automatic Tier Escalation happened (#216, ADR 0042), fixed
+ * because the deadline has exactly one thing to say: unlike a declared
+ * escalation, no model wrote this reason and none may vary it.
+ */
+export const DEADLINE_TIER_ESCALATION_REASON =
+  'The active-work deadline passed while the run was still making progress, so the Effort Tier rose one level.'
+
+/**
+ * What the model is told on its next round (#216, ADR 0042): the tier
+ * rose, why, and what did not change with it. It names the once — a
+ * model that reads "the deadline is not final" and slows down is exactly
+ * the failure this escalation must not buy.
+ */
+export function tierEscalationNotice(to: EffortTier): string {
+  return (
+    `Effort Tier raised to ${effortTierLabel(to)}: the active-work deadline passed while this run was still making ` +
+    'progress, so it continues at the larger tier with that tier\u2019s full deadline and round budget from now. You do ' +
+    'not need to report a new plan for this. Nothing else reopens \u2014 a check that already failed stays closed, and ' +
+    'the run\u2019s hard work limit is unchanged. This happens once: the next deadline ends the run, so spend it only ' +
+    'on what decides the objective.'
+  )
+}
+
 export type EffortPhase =
   | { readonly kind: 'working' }
   | { readonly kind: 'finalizing'; readonly cause: FinalizationCause; readonly detail?: FinalizationDetail }
@@ -141,14 +184,27 @@ export type EffortLoopDecision =
   | { readonly kind: 'work' }
   | { readonly kind: 'finalize'; readonly cause: FinalizationCause; readonly detail?: FinalizationDetail }
 
-/** The internal warning milestones: ~75% and ~90% of the budget consumed. */
-export type BudgetWarningMilestone = 'near' | 'imminent'
+/**
+ * The internal warning milestones: ~75% and ~90% of the budget consumed,
+ * and (#216, ADR 0042) 60% of the active-work deadline elapsed. The
+ * round-based two warn a Run that is spending rounds; on a model whose
+ * rounds are slow the deadline is the limit that binds, and a Run inside
+ * its round budget used to reach the deadline with no warning at all.
+ */
+export type BudgetWarningMilestone = 'near' | 'imminent' | 'time'
 
-/** The consumption fraction at which each milestone first fires. */
-const MILESTONE_FRACTIONS: Readonly<Record<BudgetWarningMilestone, number>> = {
+/** The consumption fraction at which each round-based milestone first fires. */
+const MILESTONE_FRACTIONS: Readonly<Record<'near' | 'imminent', number>> = {
   near: 0.75,
   imminent: 0.9,
 }
+
+/**
+ * The share of the active-work deadline the time milestone fires at
+ * (#216, ADR 0042): early enough that an escalation still has a tier's
+ * work left in it, late enough that it is not a running commentary.
+ */
+export const TIME_MILESTONE_FRACTION = 0.6
 
 /**
  * Which warning milestone a just-completed Tool Round crossed, if any.
@@ -162,11 +218,16 @@ export function budgetWarningCrossed(
   budget: number,
   used: number,
   alreadyWarned: Readonly<Record<BudgetWarningMilestone, boolean>>,
+  elapsedDeadlineFraction = 0,
 ): BudgetWarningMilestone | null {
   for (const milestone of ['near', 'imminent'] as const) {
     if (alreadyWarned[milestone]) continue
     if (used >= Math.floor(budget * MILESTONE_FRACTIONS[milestone])) return milestone
   }
+  // The time milestone is last (#216): a round-based warning that has not
+  // fired yet is about the same round this one would ride, and the model
+  // reads one line at a time.
+  if (!alreadyWarned.time && elapsedDeadlineFraction >= TIME_MILESTONE_FRACTION) return 'time'
   return null
 }
 
@@ -178,6 +239,15 @@ export function budgetWarningCrossed(
  * the caller at delivery, so a late-delivered warning stays honest.
  */
 export function budgetWarningMessage(milestone: BudgetWarningMilestone, remaining: number, budget: number): string {
+  if (milestone === 'time') {
+    // Time, not rounds: the counters would be the honest answer to a
+    // question nobody asked, and this milestone asks for a decision
+    // (#216, ADR 0042) — the tier this Run declared may be the wrong one.
+    return (
+      'Time: 60% of this run\u2019s active-work deadline is spent. Decide now \u2014 escalate the Effort Tier with ' +
+      'report_run_plan and the escalation_reason that justifies it, or finish with what you have.'
+    )
+  }
   if (milestone === 'near') {
     return `Work budget: ${remaining} of ${budget} tool rounds remain. Prioritize decisive evidence — finalize as soon as the objective is met.`
   }
@@ -446,6 +516,14 @@ export interface EffortEpoch {
    * trip's own refusals carry the directive.
    */
   takeFinalizationNotice(): string | null
+  /**
+   * The automatic Tier Escalation's own Notice (#216, ADR 0042), owed
+   * from the crossing until a result can carry it: the model learns the
+   * tier rose from the same channel every other advisory arrives on.
+   * Superseded by Finalization like the budget warning — a Run that has
+   * stopped acquiring has no use for a larger tier.
+   */
+  takeTierEscalationNotice(): string | null
 }
 
 /**
@@ -470,6 +548,26 @@ export function createEffortEpoch(deps: {
    * completed worker reports stay available to the reserved Answer round.
    */
   onFinalizationEntered?: (cause: FinalizationCause, detail?: FinalizationDetail) => void
+  /**
+   * Whether the Run is still getting somewhere under its current Approach
+   * (#216, ADR 0042): the deadline's Progress test, asked of the one
+   * definition of Progress the Run already holds rather than a second
+   * one. False, the crossing finalizes as it always did — a Run the
+   * no-progress rail is about to stop is never rescued by the deadline.
+   * Absent, so is the escalation: an epoch nobody can vouch for keeps the
+   * terminal deadline it had before #216, which is also what a Subagent
+   * and a lean pipeline should have — a tier that rises with no Run Plan
+   * event, no Notice, and no spoken line is a change nobody can see.
+   */
+  makingProgress?: () => boolean
+  /**
+   * An automatic Tier Escalation happened (#216, ADR 0042): the Run Plan
+   * event, the spoken status line, and the dashboard's tier all follow
+   * from here. Fired after the re-arm, so a consumer reads the epoch it
+   * describes; it fires from the deadline timer, so a throw is contained
+   * exactly as the Finalization hook's is.
+   */
+  onTierEscalated?: (escalation: TierEscalation) => void
 }): EffortEpoch {
   // The active-work clock (#117, ADR 0027): accumulates wall time the Run
   // spends working, excluding user-dependent waiting — Confirmation,
@@ -481,9 +579,15 @@ export function createEffortEpoch(deps: {
   let tierRounds = 0
   let cumulativeRounds = 0
   let phase: EffortPhase = { kind: 'working' }
-  const warned: Record<BudgetWarningMilestone, boolean> = { near: false, imminent: false }
+  const warned: Record<BudgetWarningMilestone, boolean> = { near: false, imminent: false, time: false }
   let pendingWarning: BudgetWarningMilestone | null = null
   let pendingFinalizationNotice = false
+  // The automatic Tier Escalation (#216, ADR 0042): once per Run, and the
+  // Notice it owes the model until a result can carry it. A Steering
+  // replan resets the once — the user has spoken again, so the Run's own
+  // spend starts over, the rule the tool budget already follows.
+  let escalationSpent = false
+  let pendingEscalationNotice: string | null = null
 
   // The round currently armed against the deadline, if any: a tier re-arm
   // replaces its watcher rather than leaving it on the spent deadline.
@@ -501,11 +605,18 @@ export function createEffortEpoch(deps: {
         : Number.POSITIVE_INFINITY
       : deadlineMs() - workClock.spent()
   const deadlineExpired = (): boolean => remainingActiveWorkMs() <= 0
+  /** How much of this tier's deadline the Run has spent (#216). A Subagent measures no deadline of its own. */
+  const elapsedDeadlineFraction = (): number => {
+    if (subagent !== undefined) return 0
+    const total = deadlineMs()
+    return total > 0 ? workClock.spent() / total : 0
+  }
   const rearm = (nextTier: EffortTier): void => {
     tier = nextTier
     tierRounds = 0
     warned.near = false
     warned.imminent = false
+    warned.time = false
     pendingWarning = null
     workClock.rearm()
     armedRound?.rewatch()
@@ -514,6 +625,9 @@ export function createEffortEpoch(deps: {
     if (phase.kind !== 'working') return false
     phase = { kind: 'finalizing', cause, ...(detail !== undefined ? { detail } : {}) }
     pendingWarning = null
+    // A tier that rose is moot once acquisition is over (#216) — the
+    // Finalize Instruction is the only thing this round has to say.
+    pendingEscalationNotice = null
     try {
       deps.onFinalizationEntered?.(cause, detail)
     } catch (err) {
@@ -521,6 +635,35 @@ export function createEffortEpoch(deps: {
       // stands whatever the consumer does. It also fires from the
       // deadline timer, where a throw would escape the run entirely.
       console.warn('[effort-epoch] the Finalization entry hook threw:', err)
+    }
+    return true
+  }
+  /**
+   * The deadline crossing that is a Tier Escalation rather than a stop
+   * (#216, ADR 0042). One door for all three places a crossing is seen —
+   * the loop top, the per-call gate, and the in-flight round's timer — so
+   * the once, the Progress test, and the re-arm cannot drift apart. The
+   * re-arm's `rewatch()` puts a round already in flight under the new
+   * deadline instead of throwing it away: a model round is the scarce
+   * thing, which is the cost this decision exists to avoid.
+   */
+  const escalateAtDeadline = (): boolean => {
+    if (subagent !== undefined || phase.kind !== 'working' || escalationSpent) return false
+    if (!deadlineExpired()) return false
+    const next = NEXT_TIER[tier]
+    if (next === undefined) return false
+    if (deps.makingProgress?.() !== true) return false
+    escalationSpent = true
+    const from = tier
+    rearm(next)
+    pendingEscalationNotice = tierEscalationNotice(next)
+    try {
+      deps.onTierEscalated?.({ from, to: next, reason: DEADLINE_TIER_ESCALATION_REASON })
+    } catch (err) {
+      // The escalation is a state transition, not the hook's errand, and
+      // it fires from the deadline timer where a throw would escape the
+      // run entirely — the same containment the Finalization hook gets.
+      console.warn('[effort-epoch] the Tier Escalation hook threw:', err)
     }
     return true
   }
@@ -532,6 +675,11 @@ export function createEffortEpoch(deps: {
       return { kind: 'finalize', cause: phase.cause, ...(phase.detail !== undefined ? { detail: phase.detail } : {}) }
     }
     const budgetExhausted = tierRounds >= roundBudget()
+    // A crossing on a Run that is still making Progress raises the tier
+    // instead of stopping it (#216, ADR 0042). A spent tier budget is
+    // checked first and is not a crossing the escalation may rescue: the
+    // Run stopped for its budget, and the deadline never spoke.
+    if (!budgetExhausted) escalateAtDeadline()
     const deadlinePassed = deadlineExpired()
     // Precedence at a coincidence differs by configuration. A Run answers
     // to its own tier budget first, then its deadline, then the hard
@@ -588,7 +736,9 @@ export function createEffortEpoch(deps: {
       // The deadline is the harder boundary; the parent's Finalization is
       // the worker's own door opening from outside (#199). A spent budget
       // is not checked here — the round it belongs to is already running.
-      if (deadlineExpired()) return enterFinalization('deadline_reached')
+      // A crossing the escalation takes leaves the round's remaining
+      // siblings open (#216): the tier rose, so nothing is past a boundary.
+      if (deadlineExpired() && !escalateAtDeadline()) return enterFinalization('deadline_reached')
       if (subagent?.parentFinalizing?.() === true) return enterFinalization('parent_finalized')
       return false
     },
@@ -608,7 +758,7 @@ export function createEffortEpoch(deps: {
       }
       tierRounds += 1
       if (pendingWarning !== null) return true
-      const crossed = budgetWarningCrossed(roundBudget(), tierRounds, warned)
+      const crossed = budgetWarningCrossed(roundBudget(), tierRounds, warned, elapsedDeadlineFraction())
       if (crossed !== null) {
         warned[crossed] = true
         pendingWarning = crossed
@@ -640,6 +790,10 @@ export function createEffortEpoch(deps: {
         return false
       }
       phase = { kind: 'working' }
+      // The user has spoken again (#216, ADR 0042): the Run's one
+      // automatic escalation is its own spend, and a corrected objective
+      // starts that spend over.
+      escalationSpent = false
       rearm(nextTier)
       return true
     },
@@ -648,6 +802,10 @@ export function createEffortEpoch(deps: {
       let deadlineAborted = false
       let cancelWatch: () => void = () => {}
       const expire = (): void => {
+        // The escalation's re-arm rewatches this very round against the
+        // new tier's deadline (#216, ADR 0042), so the round in flight
+        // continues rather than being thrown away mid-request.
+        if (escalateAtDeadline()) return
         deadlineAborted = true
         // The crossing is a Finalization entry like any other rail's
         // (#147/#148): the door opens here, so the aborted round's caller
@@ -709,6 +867,12 @@ export function createEffortEpoch(deps: {
       // the wall it entered with, when the cause carries one (#202): the
       // notice and the round's refusals must give the model one reason.
       return finalizeInstruction(current.cause, current.detail)
+    },
+    takeTierEscalationNotice() {
+      if (pendingEscalationNotice === null || phase.kind !== 'working') return null
+      const notice = pendingEscalationNotice
+      pendingEscalationNotice = null
+      return notice
     },
   }
 }
