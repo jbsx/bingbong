@@ -2539,6 +2539,86 @@ describe('assistant command runner', () => {
       }
     })
 
+
+    it('does not retain a check that was refused before it ran (#212/AC3)', async () => {
+      const h = harness()
+      // The whole Lookup budget goes on reading, so the run finalizes on
+      // its own budget. The bookkeeping round then asks for a look, and
+      // Finalization refuses it: acquisition is closed.
+      for (let at = 0; at < TIER_TOOL_ROUND_BUDGETS.lookup; at += 1) {
+        h.queue.push({ kind: 'tool_calls', calls: [{ id: `r${at}`, name: 'read_page', args: { url: `${POST}?page=${at}` } }] })
+      }
+      h.queue.push({ kind: 'tool_calls', calls: [{ id: 'bk', name: 'look', args: {} }] })
+      h.queue.push({ kind: 'answer', speak: 'Not confirmed.', display: 'Not confirmed.', runNote: 'Read the pages.', resolution: 'partial' })
+      await h.runner.run(FIND)
+
+      // The vision model was never contacted.
+      expect(h.looks).toHaveLength(0)
+      // So nothing was spent, and nothing is retained. Retaining here
+      // would put our own Finalize Instruction into the Session as "what
+      // the route reported", and hand it to the next Run as the
+      // provider's words.
+      expect(h.failures()).toEqual([])
+    })
+
+    it('keeps looking available to a Session that is weighing no Candidates (#212/AC5)', async () => {
+      const h = harness()
+      // Reading a chart is not Candidate verification: this Session has no
+      // shortlist, so there is nothing for a repeat to grow.
+      h.queue.push({ kind: 'tool_calls', calls: [{ id: 'r1', name: 'read_page', args: { url: POST } }] })
+      h.queue.push({ kind: 'tool_calls', calls: [{ id: 'l1', name: 'look', args: { question: 'what does the chart say?' } }] })
+      h.queue.push({
+        kind: 'answer',
+        speak: 'I could not read it.',
+        display: 'I could not read it.',
+        runNote: 'The chart is unread.',
+        resolution: 'partial',
+        memoryPatch: parseMemoryPatch([{
+          op: 'add',
+          entry: {
+            kind: 'objective',
+            subject: 'Read the chart on the page',
+            detail: 'The user asked what the chart shows.',
+            user_evidence: ['memory-1'],
+          },
+        }])!,
+      })
+      // The user's own words, so the objective carries their authority.
+      h.queue.splice(1, 0, {
+        kind: 'tool_calls',
+        calls: [{ id: 'e1', name: 'record_evidence', args: { kind: 'user', observation: FIND } }],
+      })
+      await h.runner.run(FIND)
+      expect(h.looks).toHaveLength(1)
+
+      // A later Run asks again. One transient deadline breach must not
+      // have disabled looking for the rest of the objective.
+      h.queue.push({ kind: 'tool_calls', calls: [{ id: 'l2', name: 'look', args: {} }] })
+      h.queue.push({ kind: 'answer', speak: 'Still not readable.', display: 'Still not readable.', resolution: 'partial' })
+      await h.runner.run('please try again')
+
+      expect(h.looks).toHaveLength(2)
+      expect(h.refusals().some((error) => error.includes('no candidate left'))).toBe(false)
+    })
+
+    it('stops telling a Run an attempt is open once it has spent one (#212)', async () => {
+      const h = harness()
+      await failTheCheck(h)
+
+      // The continuation is told a fresh attempt is open, spends it, and
+      // watches it fail. The next round must not still be told one is
+      // open — the rail will refuse it, and a block that disagrees with
+      // the gate costs a round and contradicts itself.
+      const before = h.requests.length
+      h.queue.push({ kind: 'tool_calls', calls: [{ id: 'l9', name: 'look', args: {} }] })
+      h.queue.push({ kind: 'tool_calls', calls: [{ id: 'r9', name: 'read_page', args: { url: POST } }] })
+      h.queue.push({ kind: 'answer', speak: 'Read it instead.', display: 'Read it instead.', resolution: 'partial' })
+      await h.runner.run(KEEP)
+
+      expect(h.requests[before]!.verification!.freshAttemptAllowed).toBe(true)
+      expect(h.requests[before + 1]!.verification!.freshAttemptAllowed).toBe(false)
+    })
+
     it('spends the route only on a failure — a Look that answered closes nothing', async () => {
       const h = harness({ lookFails: false })
       h.queue.push({ kind: 'tool_calls', calls: [{ id: 'l1', name: 'look', args: {} }] })

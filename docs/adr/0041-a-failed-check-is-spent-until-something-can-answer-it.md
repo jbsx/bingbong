@@ -53,13 +53,30 @@ of attempts, it is short of a memory of them.
   the Vision Budget is charged — a check this Run will not make must not spend
   the budget for one — and the refusal names the route still open and the
   honest ending, never that the route is unavailable.
+- **Only a check that was actually asked can spend a route.** Every refusal
+  ahead of execution — Finalization's closed tools, the Vision Budget, a risk
+  denial, a Steering cancel, this rail's own — reads as a failed call carrying
+  *our* sentence. Counting one would close the route on a request nobody made
+  and then quote our own Finalize Instruction to the next Run as what the
+  provider said. The round tells the rail which calls reached the tool.
 - **A later Run reopens it once, for something specific.** A later Run is a new
-  explicit command from the user, so it may spend one fresh attempt — but only
-  while a Candidate exists that the attempt could settle. A Candidate rejected
-  or superseded under the objective in force is not one, and neither is one
-  carrying words the user spoke that no Run has resolved (ADR 0039): checking
-  it would settle on the model's own authority the very thing they are waiting
-  to be asked about. A second failure closes the route again.
+  explicit command from the user, so it may spend one fresh attempt — and so is
+  a Steering Directive, which reopens this Run's own spend for the same reason.
+  What a fresh attempt may not do is reopen the route into a shortlist that is
+  already settled: where the Session is weighing Candidates, it has to be able
+  to resolve one. A Candidate rejected or superseded under the objective in
+  force is not one, and neither is one carrying words the user spoke that no Run
+  has resolved (ADR 0039): checking it would settle on the model's own authority
+  the very thing they are waiting to be asked about. A second failure closes the
+  route again.
+- **A Session weighing no Candidates simply reopens the route.** Most Looks are
+  not Candidate verification — a table, a chart's labels, text baked into an
+  image — and a Session with no shortlist has none to grow. Closing the route
+  there would let one transient deadline breach disable looking for the rest of
+  the objective, and would aim the rule at exactly the requests it was not
+  written about: with leads the user gets a retry per Run, with none they would
+  get none, ever. So the route stays shut only when a shortlist exists and every
+  lead on it is settled or waiting on the user.
 - **Eligibility is read live, and from inherited words only.** A Candidate this
   Run has just found is exactly the specific lead a fresh check exists for, so
   the set is resolved per call rather than at admission. And the corrections
@@ -72,10 +89,13 @@ of attempts, it is short of a memory of them.
   a Run that spends a route before its own Memory Commit names the task at the
   next admission.
 - **An unmade check is not a user choice.** A Run proposing `needs_user` while
-  holding a check it could not complete records what it actually has instead —
-  `partial` with retained sources, `blocked` with none. Only `needs_user` is
-  touched, and never upward: a Run reporting `blocked` or `unsuccessful` keeps
-  its own honest reading.
+  holding a check it *asked for and lost* records what it actually has instead —
+  `partial` with retained sources, `blocked` with none. It keys on a spent route
+  rather than on any failed `look` record, because a check refused before it ran
+  was never the assistant's to hand over. Only `needs_user` is touched, and never
+  upward: a Run reporting `blocked` or `unsuccessful` keeps its own honest
+  reading. The deterministic Answer deliberately keeps the wider reading — a
+  check the Run wanted and did not get is unresolved however it was refused.
 - **Both Answers distinguish what was established from what was not.** The
   deterministic Answer says both sentences when both are true — the leads are
   unverified, and the check that would have settled them did not happen. The
@@ -86,12 +106,19 @@ of attempts, it is short of a memory of them.
 ## Consequences
 
 A continuing search stops paying for the same unanswerable question. What it
-gains is bounded and specific: one attempt per Run, and only against a
-Candidate a check could actually settle. What it loses is the accidental
-retry — a Run whose Look fails cannot look again at a different page in that
-Run either. That is deliberate. The failure this addresses is a route that
-stopped answering, and distinguishing "this page's image" from "that page's
-image" would reopen the loop under a different name.
+gains is bounded and specific: at most one attempt per Run, and where a
+shortlist exists, only against a Candidate a check could actually settle. What
+it loses is the accidental retry — a Run whose Look fails cannot look again at a
+different page in that Run either. That is deliberate. The failure this
+addresses is a route that stopped answering, and distinguishing "this page's
+image" from "that page's image" would reopen the loop under a different name.
+A Steering Directive is the release valve: the user saying something new is
+what reopens the spend mid-Run.
+
+What a Run is told about all this is rebuilt every round rather than frozen at
+admission, including the Run's own in-flight spend, which no store can know: a
+block saying an attempt is open to a Run whose next Look the rail will refuse
+costs a round and contradicts itself.
 
 The retention is Session-lifetime, bounded at five failures, and dies with the
 Session and with a replaced objective. It is not diagnostics: the Run Trace's

@@ -288,10 +288,14 @@ _Avoid_: vision outage, provider error
 
 **Verification Allowance**:
 What a Run may still spend on a Route the Session has watched fail: nothing
-more in the Run that watched it, and exactly one fresh attempt in a later Run
-— and only while an Eligible Candidate exists that the attempt could settle. A
-second failure closes it again; the honest moves are then a different Route or
-the constraint named as unverified.
+more in the Run that watched it, and one fresh attempt in a later Run — or
+after a Steering Directive, which is the same new explicit command arriving
+mid-flight. It stays shut only where the Session is weighing Candidates and
+none of them is Eligible; with no shortlist to grow, the Route reopens. Only a
+check that actually reached its tool ever spends one: a call refused by
+Finalization, the Vision Budget, or the risk gate asked the Route nothing. A
+second failure closes it again, and the honest moves are then a different Route
+or the constraint named as unverified.
 _Avoid_: retry, vision budget
 
 **Eligible Candidate**:

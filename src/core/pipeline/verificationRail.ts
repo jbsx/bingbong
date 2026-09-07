@@ -56,8 +56,8 @@ export const VERIFICATION_ROUTE_SPENT_REFUSAL =
  * the one fresh attempt a continuation would allow has nothing to do.
  */
 export const VERIFICATION_NOTHING_ELIGIBLE_REFUSAL =
-  'That check already failed for this objective, and there is no candidate left that repeating it could ' +
-  'settle — the ones on record are rejected, superseded, or waiting on something the user said. Take a ' +
+  'That check already failed for this objective, and every candidate on record is already settled or waiting ' +
+  'on something the user said — so there is no candidate left that repeating it could settle. Take a ' +
   'genuinely different route to it (read_page), or answer with the constraint named as still unverified.'
 
 export interface VerificationRailDeps {
@@ -74,6 +74,13 @@ export interface VerificationRailDeps {
    * has just spoken about has stopped being one.
    */
   eligibleCandidates?: () => readonly VerificationCandidate[]
+  /**
+   * How many Candidates the Session is weighing at all, live. The
+   * companion to the eligible list: with no shortlist there is nothing a
+   * repeat could grow, so the route reopens rather than staying shut on
+   * a rule written about shortlists.
+   */
+  heldCandidates?: () => number
   /** The objective in force, which scopes every retained failure. */
   objectiveId?: () => MemoryEntryId | undefined
   /**
@@ -100,8 +107,21 @@ export interface VerificationRail {
    * failure's own words when the route was spent by this call, so the
    * caller can retain them — the rail records nothing itself, because the
    * store it would write to belongs to the Session and this is a Run.
+   *
+   * `attempted` is what separates a route that answered badly from one
+   * that was never asked. A call refused before it ran — by Finalization,
+   * the Vision Budget, the risk gate, a Steering cancel, this rail — is
+   * not an attempt, and its refusal text is ours rather than the route's.
+   * Counting one would spend the route on our own sentence and then hand
+   * that sentence to the next Run as what the provider said.
    */
-  observe(route: VerificationRoute | null, outcome: ToolResultOutcome): SpentVerificationRoute | null
+  observe(
+    route: VerificationRoute | null,
+    outcome: ToolResultOutcome,
+    attempted: boolean,
+  ): SpentVerificationRoute | null
+  /** A Steering replan: the user has spoken again, so this Run's own spend starts over. */
+  replan(): void
 }
 
 /** A route this call spent, and the words it reported spending it. */
@@ -112,10 +132,15 @@ export interface SpentVerificationRoute {
 
 /**
  * Which verification route a tool call spends, or null when it spends
- * none. `usesVision` is the classification rather than a name list for
- * the reason the Vision Budget uses it: a tool that reaches the vision
- * model is on the vision route however it is named, and a tool that does
- * not is not put on it by having a similar name.
+ * none. The catalog's own `usesVision` flag decides, rather than a list
+ * of names, for the reason the Vision Budget reads the same flag: a tool
+ * declaring itself a vision spender is one however it is named.
+ *
+ * The flag is narrower than "reaches the vision model", and deliberately
+ * so. `ground_visual` resolves a target from the DOM first and only falls
+ * back to vision, and auto-vision fires on the pipeline's own suspicion
+ * with its own cooldown — neither is a check the model asked for, so
+ * neither spends a route the model would then be refused.
  */
 export function verificationRouteOf(
   call: ToolCall,
@@ -131,6 +156,13 @@ export function createVerificationRail(deps: VerificationRailDeps = {}): Verific
   const spentInRun = new Set<VerificationRoute>()
 
   return {
+    replan() {
+      // A Steering Directive is a new explicit command from the user —
+      // the same thing that earns a later Run its fresh attempt, arriving
+      // mid-flight. The objective may have changed outright, so a route
+      // spent against the old one says nothing about the new one.
+      spentInRun.clear()
+    },
     gate(route) {
       if (route === null) return { ok: true }
       if (spentInRun.has(route)) return { ok: false, reason: VERIFICATION_ROUTE_SPENT_REFUSAL }
@@ -141,17 +173,15 @@ export function createVerificationRail(deps: VerificationRailDeps = {}): Verific
         route,
         objectiveId: deps.objectiveId?.(),
         eligible: deps.eligibleCandidates?.() ?? [],
+        held: deps.heldCandidates?.() ?? 0,
       })
       return open ? { ok: true } : { ok: false, reason: VERIFICATION_NOTHING_ELIGIBLE_REFUSAL }
     },
-    observe(route, outcome) {
-      if (route === null || outcome.ok) return null
-      // A refusal this rail itself issued is not a spent attempt: the
-      // route was already spent, and counting the refusal would be
-      // counting the same failure twice.
-      if (outcome.error === VERIFICATION_ROUTE_SPENT_REFUSAL || outcome.error === VERIFICATION_NOTHING_ELIGIBLE_REFUSAL) {
-        return null
-      }
+    observe(route, outcome, attempted) {
+      // Only a call that actually ran can have spent a route. Every
+      // refusal ahead of execution — this rail's own included — leaves
+      // the route exactly as it was, because nothing asked it anything.
+      if (route === null || outcome.ok || !attempted) return null
       const first = !spentInRun.has(route)
       spentInRun.add(route)
       // The route's own words, as it reported them. Nothing here derives

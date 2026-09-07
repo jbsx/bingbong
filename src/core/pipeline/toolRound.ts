@@ -10,7 +10,7 @@ import { createVisionBudget, MAX_ORCHESTRATOR_VISION_CALLS } from '../agent/suba
 import { traceVisionBudget } from './visionSeam'
 import { createBlockerGate, orchestratorBlockerEscalation, type BlockerEscalation } from './blockerGate'
 import { createSearchLoopRail } from './searchLoopRail'
-import { createVerificationRail, verificationRouteOf, type VerificationRailDeps } from './verificationRail'
+import { createVerificationRail, verificationRouteOf, type VerificationGate, type VerificationRailDeps } from './verificationRail'
 import type { VerificationRoute } from '../session/verificationAttempts'
 import { createNoProgressRail } from './noProgressRail'
 import type { SettledPageState } from './progressFingerprints'
@@ -296,6 +296,16 @@ export function createToolRoundExecutor(config: ToolRoundConfig): ToolRoundExecu
   /** Which route this call spends, read from the catalog's own flag rather than a name (#212). */
   const routeOf = (call: ToolCall): VerificationRoute | null =>
     verificationRail === null ? null : verificationRouteOf(call, (name) => toolsByName.get(name)?.usesVision === true)
+  /**
+   * The calls that actually reached `tool.execute` this round (#212, ADR
+   * 0041). Only these can have spent a verification route: every gate
+   * ahead of execution — Finalization, the no-progress rails, the risk
+   * tiers, the Vision Budget, the verification rail itself, a Steering
+   * cancel — returns a failed outcome carrying *our* sentence, and
+   * counting one would both close the route on a request nobody made and
+   * hand the next Run our own words as what the route reported.
+   */
+  const attempted = new WeakSet<ToolCall>()
   const noProgressRail = capabilities.noProgressRail
     ? createNoProgressRail({
         ...(config.settledPageState ? { settledState: config.settledPageState } : {}),
@@ -395,7 +405,17 @@ export function createToolRoundExecutor(config: ToolRoundConfig): ToolRoundExecu
     // make must not spend the budget for one, exactly as a call the risk
     // gate will deny never reaches a Confirmation.
     if (verificationRail !== null) {
-      const verificationGate = verificationRail.gate(routeOf(call))
+      // The rail reads the live Session through injected accessors, and a
+      // diagnostic-shaped seam must never fail a Run that would otherwise
+      // have succeeded (the convention `recordSpan` and the vision seam
+      // already follow). A throwing accessor is a fault, and the call
+      // proceeds — erring toward letting a check happen.
+      let verificationGate: VerificationGate = { ok: true }
+      try {
+        verificationGate = verificationRail.gate(routeOf(call))
+      } catch (error) {
+        reportFault('pipeline.toolRound.verificationGate', error, { turnId })
+      }
       if (!verificationGate.ok) return { ok: false, error: verificationGate.reason }
     }
 
@@ -431,6 +451,8 @@ export function createToolRoundExecutor(config: ToolRoundConfig): ToolRoundExecu
         // controller internals) key to this turn while it is open. Absent
         // channel — the call runs untouched.
         const subspans = config.diagnostics?.browserSubspans
+        // Past every gate: whatever happens now, the tool was asked.
+        attempted.add(call)
         result =
           subspans !== undefined && turnId !== undefined
             ? await subspans.runInTurn(turnId, () => tool.execute(call, toolContext))
@@ -551,9 +573,15 @@ export function createToolRoundExecutor(config: ToolRoundConfig): ToolRoundExecu
       // are handed to the Session verbatim — the rail derives no cause
       // from them, and the Session retains none.
       if (verificationRail !== null) {
-        const spent = verificationRail.observe(routeOf(call), outcome)
-        if (spent !== null) {
-          config.verification?.retainFailure?.({ ...spent, failure: routeWords(spent.failure) })
+        try {
+          const spent = verificationRail.observe(routeOf(call), outcome, attempted.has(call))
+          if (spent !== null) {
+            config.verification?.retainFailure?.({ ...spent, failure: routeWords(spent.failure) })
+          }
+        } catch (error) {
+          // Retention is bookkeeping over the Session store; a store that
+          // throws loses the record, never the Run.
+          reportFault('pipeline.toolRound.verificationObserve', error, { turnId })
         }
       }
       // No-progress rails (#126, ADR 0027): the redundancy nudge and the
@@ -616,6 +644,12 @@ export function createToolRoundExecutor(config: ToolRoundConfig): ToolRoundExecu
     replan() {
       noProgressRail?.reset()
       blockerGate.replan()
+      // The verification spend starts over too (#212, ADR 0041): a
+      // Steering Directive is the same new explicit user command that
+      // earns a later Run its fresh attempt, and a replan may be working
+      // a different objective entirely. The Session's own retained
+      // failures are untouched — those are scoped, not per-Run.
+      verificationRail?.replan()
     },
   }
 }

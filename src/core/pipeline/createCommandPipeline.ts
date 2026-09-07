@@ -64,7 +64,12 @@ import type { SessionEvidenceSnapshot, SessionEvidenceStore, ObservationCheckpoi
 import { retainedUserObjective } from '../session/objectiveContinuity'
 import { retainedInspectionSubject, type RetainedInspectionReference } from '../session/inspectionReference'
 import { correctionsInheritedBy, userCorrectionSubjects, type RetainedUserCorrection } from '../session/userCorrections'
-import { eligibleVerificationCandidates, type VerificationSubject } from '../session/verificationAttempts'
+import {
+  eligibleVerificationCandidates,
+  heldVerificationCandidates,
+  verificationSubject,
+  type VerificationSubject,
+} from '../session/verificationAttempts'
 import type { RunId, SessionGeneration } from '../session/sessionIdentity'
 import {
   evaluateEvidenceCheckpoint,
@@ -866,6 +871,46 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
     const objectiveInForce = (): MemoryEntryId | undefined =>
       continuity ? currentUserObjective(continuity.memory)?.id : undefined
     /**
+     * What this Run is told about verification, read fresh each round
+     * (#212, ADR 0041). Admission's projection is the starting value, but
+     * a Run spends its own fresh attempt mid-flight and records its own
+     * Candidates mid-flight — so a block frozen at admission would tell
+     * round four that an attempt is open which round three already spent,
+     * or forbid one the rail would now allow. The gate reads live state;
+     * so must the sentence describing it.
+     *
+     * Falls back to admission's value when no Session answers, which is
+     * the same thing a caller with no evidence continuity already had.
+     */
+    /**
+     * Whether this Run actually spent a verification route — asked a
+     * check and watched it fail (#212, ADR 0041). Deliberately not the
+     * deterministic Answer's `hasUnresolvedImageCheck`, which counts any
+     * failed `look` record including one refused before it ran. The two
+     * answer different questions: the Answer names a check the Run wanted
+     * and did not get, which a refusal also is, while the Resolution
+     * decides whether `needs_user` is the assistant handing over its own
+     * work — and a check nobody made was never the assistant's to hand
+     * over.
+     */
+    let verificationSpent = false
+    const verificationInForce = (): VerificationSubject | null => {
+      const session = evidenceSession?.()
+      if (!session) return continuity?.verification ?? null
+      const snapshot = session.store.snapshot()
+      return verificationSubject({
+        failures: session.store.verificationFailures(),
+        objectiveId: objectiveInForce(),
+        eligible: eligibleVerificationCandidates(snapshot, {
+          objectiveId: objectiveInForce(),
+          corrections: correctionsInheritedBy(session.store.unresolvedCorrections(), session.runId),
+        }),
+        evidence: snapshot,
+        // What this Run has already spent, which the store cannot know.
+        spentInRun: verificationSpent,
+      })
+    }
+    /**
      * Retains the Candidate an Answer presented, under the objective in
      * force as it was presented. Admission memory is that objective: a
      * Run's own Memory Commit lands after its Answer, so an Answer that
@@ -1229,8 +1274,18 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
                 corrections: correctionsInheritedBy(session.store.unresolvedCorrections(), session.runId),
               })
             },
+            // Whether there is a shortlist at all (#212): with none, a
+            // spent route reopens rather than staying shut on a rule
+            // written about shortlists.
+            heldCandidates: () => heldVerificationCandidates(evidenceSession?.()?.store.snapshot()),
             objectiveId: objectiveInForce,
             retainFailure: (spent) => {
+              // The Run's own record that a route was actually asked and
+              // actually failed (#212). Set whether or not a Session is
+              // there to retain it, because the Resolution rule below
+              // reads it and a Run without evidence continuity still made
+              // the attempt.
+              verificationSpent = true
               const session = evidenceSession?.()
               session?.store.retainVerificationFailure({
                 route: spent.route,
@@ -1488,6 +1543,10 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
           // Bookkeeping is still open, the reserved Answer round that no
           // tool round remains.
           const roundFinalizeInstruction = requestFinalizeInstruction(effortEpoch.phase)
+          // Read per round, not per Run (#212): what this round is told
+          // about spent routes has to be what the gate it meets will
+          // decide from.
+          const verificationRound = verificationInForce()
           try {
             const request: LlmRequest = {
               command,
@@ -1529,9 +1588,10 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
               // said about.
               ...(retainedCorrections.length > 0 ? { corrections: retainedCorrections } : {}),
               // The routes this objective already spent checking itself
-              // (#212): every round carries it, so a Run cannot forget
-              // mid-flight which check has already reported what it can.
-              ...(continuity?.verification ? { verification: continuity.verification } : {}),
+              // (#212), read fresh: every round carries what is true when
+              // that round is built, so the block and the gate it will
+              // meet cannot contradict each other mid-Run.
+              ...(verificationRound !== null ? { verification: verificationRound } : {}),
               // Checkpointed Session Evidence this Run starts beside (#121):
               // the immutable admission snapshot — mid-Run checkpoints ride
               // tool results, later Runs' admissions.
@@ -2123,7 +2183,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
       // Resolution is about what the Run established, not about what it
       // asked. What it never does is promote — a Run reporting
       // `unsuccessful` or `blocked` keeps its own honest reading.
-      if (runOutcome === 'done' && proposedResolution === 'needs_user' && hasUnresolvedImageCheck(ledger.snapshot())) {
+      if (runOutcome === 'done' && proposedResolution === 'needs_user' && verificationSpent) {
         proposedResolution = deriveFallbackSources({ records: ledger.snapshot() }).length > 0 ? 'partial' : 'blocked'
       }
       const finalization: RunFinalization | null = resetConsumed

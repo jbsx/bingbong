@@ -135,7 +135,9 @@ describe('which Candidate a fresh verification attempt could still resolve (#212
 
 describe('whether a Run may spend a verification route at all (#212/AC4, AC5)', () => {
   it('opens a route the Session has never seen fail', () => {
-    expect(verificationRouteOpen({ failures: [], route: 'vision', objectiveId: OBJECTIVE, eligible: [] })).toBe(true)
+    expect(
+      verificationRouteOpen({ failures: [], route: 'vision', objectiveId: OBJECTIVE, eligible: [], held: 0 }),
+    ).toBe(true)
   })
 
   it('opens one fresh attempt when a retained failure leaves an eligible Candidate', () => {
@@ -145,14 +147,25 @@ describe('whether a Run may spend a verification route at all (#212/AC4, AC5)', 
         route: 'vision',
         objectiveId: OBJECTIVE,
         eligible: [{ candidateId: id('memory-9'), subject: 'The 2019 tier list post' }],
+        held: 2,
       }),
     ).toBe(true)
   })
 
-  it('stays closed when the retained failure leaves nothing the attempt could resolve', () => {
+  it('stays closed only when a shortlist exists and every lead on it is settled', () => {
     expect(
-      verificationRouteOpen({ failures: [failure()], route: 'vision', objectiveId: OBJECTIVE, eligible: [] }),
+      verificationRouteOpen({ failures: [failure()], route: 'vision', objectiveId: OBJECTIVE, eligible: [], held: 2 }),
     ).toBe(false)
+  })
+
+  it('reopens when the Session is weighing no Candidates at all', () => {
+    // Most Looks are not Candidate verification — reading a chart's
+    // labels, a table, text baked into an image. A Session with no
+    // shortlist has none to grow, so one transient deadline breach must
+    // not disable looking for the rest of the objective.
+    expect(
+      verificationRouteOpen({ failures: [failure()], route: 'vision', objectiveId: OBJECTIVE, eligible: [], held: 0 }),
+    ).toBe(true)
   })
 
   it('does not carry a failure across a replacement objective', () => {
@@ -162,13 +175,14 @@ describe('whether a Run may spend a verification route at all (#212/AC4, AC5)', 
         route: 'vision',
         objectiveId: OBJECTIVE,
         eligible: [],
+        held: 3,
       }),
     ).toBe(true)
   })
 
   it('leaves a different route open — a failed Look never closes the page text', () => {
     expect(
-      verificationRouteOpen({ failures: [failure()], route: 'page_text', objectiveId: OBJECTIVE, eligible: [] }),
+      verificationRouteOpen({ failures: [failure()], route: 'page_text', objectiveId: OBJECTIVE, eligible: [], held: 2 }),
     ).toBe(true)
   })
 })

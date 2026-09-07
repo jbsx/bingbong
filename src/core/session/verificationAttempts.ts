@@ -16,13 +16,18 @@
 // What the retention buys is an allowance. Within one Run a failed route
 // is spent: the answer to a failed check is a different route or an
 // honest limitation, never the same request again. A later Run is a new
-// explicit command from the user, so it may reopen the route once — but
-// only when there is a specific Candidate a fresh attempt could actually
-// resolve. A Candidate the user rejected is not one, and neither is a
-// Candidate they have spoken about with nothing yet recording what their
-// words decided (#211): reopening the route for it would settle on the
-// model's own authority the very thing the user is waiting to be asked
-// about.
+// explicit command from the user, so it may reopen the route once. What
+// it may not do is reopen it into a shortlist that is already settled:
+// where the Session is weighing Candidates, the fresh attempt has to be
+// able to resolve one of them. A Candidate the user rejected is not one,
+// and neither is a Candidate they have spoken about with nothing yet
+// recording what their words decided (#211) — reopening the route for it
+// would settle on the model's own authority the very thing the user is
+// waiting to be asked about.
+//
+// Where the Session is weighing no Candidates at all, the route simply
+// reopens. Most Looks are not Candidate verification, and a Session with
+// no shortlist has none to grow.
 //
 // This module is the vocabulary and the decidable rules; it holds no
 // state, so the store that retains failures, the rail that spends the
@@ -203,14 +208,42 @@ export function eligibleVerificationCandidates(
 }
 
 /**
+ * How many Candidates the Session is weighing at all. The companion to
+ * the eligible list, and the difference between the two questions the
+ * allowance has to keep apart: "every lead on record is settled or
+ * waiting" and "there are no leads, because this was never that kind of
+ * request".
+ */
+export function heldVerificationCandidates(evidence: SessionEvidenceSnapshot | undefined): number {
+  return evidence?.candidates.length ?? 0
+}
+
+/**
  * Whether a Run may spend this route.
  *
  * A route the objective in force has never seen fail is simply open —
  * this rule says nothing about a first attempt. Once a failure is
- * retained the route is closed, and one fresh attempt reopens it only
- * while there is a specific eligible Candidate it could resolve. With
- * nothing eligible the honest move is the limitation, not another
- * request down a route that has already reported what it can.
+ * retained the route is closed, and one fresh attempt reopens it under
+ * either of two conditions.
+ *
+ * The first is a specific eligible Candidate the attempt could settle.
+ * That is the case the policy was written for: a shortlist growing
+ * behind one unreadable image, where checking again is only worth a
+ * round if it would settle something on the list.
+ *
+ * The second is that the Session is weighing no Candidates at all. Most
+ * Looks are not Candidate verification — reading a table, a chart's
+ * labels, the text baked into an image — and a Session that never
+ * recorded a Candidate has no shortlist to grow. Closing the route there
+ * would let one transient deadline breach disable looking for the rest
+ * of the objective, and would aim the rule at exactly the requests it
+ * was not written about: with leads the user gets a retry per Run, with
+ * none they would get none, ever.
+ *
+ * So the route stays shut only when the Session is weighing Candidates
+ * and every one of them is settled or waiting on the user. That is when
+ * another request down it would answer nothing, and the honest move is a
+ * different route or the limitation.
  *
  * The rule is per route, so a spent Look leaves reading the page and
  * asking the user exactly as open as they were.
@@ -220,11 +253,13 @@ export function verificationRouteOpen(input: {
   readonly route: VerificationRoute
   readonly objectiveId: MemoryEntryId | undefined
   readonly eligible: readonly VerificationCandidate[]
+  /** How many Candidates the Session holds; zero means there is no shortlist to grow. */
+  readonly held: number
 }): boolean {
   const spent = verificationFailuresInForce(input.failures, input.objectiveId).some(
     (held) => held.route === input.route,
   )
-  return !spent || input.eligible.length > 0
+  return !spent || input.eligible.length > 0 || input.held === 0
 }
 
 /**
@@ -242,9 +277,19 @@ export function verificationSubject(input: {
   readonly objectiveId: MemoryEntryId | undefined
   readonly eligible: readonly VerificationCandidate[]
   readonly evidence: SessionEvidenceSnapshot | undefined
+  /**
+   * Whether the reading Run has already spent the route itself. The
+   * Session's retained failures cannot answer this: a Run that spends its
+   * fresh attempt retains a failure and leaves its Candidate every bit as
+   * eligible as before, so the Session's rule would keep saying "one
+   * attempt is open" to a Run whose next Look the rail will refuse. The
+   * Run knows; the store cannot.
+   */
+  readonly spentInRun?: boolean
 }): VerificationSubject | null {
   const inForce = verificationFailuresInForce(input.failures, input.objectiveId)
   if (inForce.length === 0) return null
+  const held = heldVerificationCandidates(input.evidence)
   const failures = inForce.map((held) => {
     const candidate =
       held.candidateId === undefined
@@ -258,8 +303,10 @@ export function verificationSubject(input: {
     })
   })
   return Object.freeze({
+    // The same rule the rail spends by, so the block a Run reads and the
+    // gate it meets can never disagree about whether an attempt is open.
     failures,
-    freshAttemptAllowed: input.eligible.length > 0,
+    freshAttemptAllowed: input.spentInRun !== true && (input.eligible.length > 0 || held === 0),
     eligible: input.eligible,
   })
 }

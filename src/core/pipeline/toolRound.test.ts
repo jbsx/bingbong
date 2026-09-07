@@ -71,6 +71,8 @@ function harness(
     terminalResult?: ToolRoundConfig['terminalResult']
     soleCall?: ToolRoundConfig['soleCall']
     currentHost?: () => string | null
+    /** The verification rail's Session seams (#212). */
+    verification?: ToolRoundConfig['verification']
     /** The shared order log — pass the same array the scripted tools write to. */
     trace?: string[]
   } = {},
@@ -134,6 +136,7 @@ function harness(
     ...(options.currentHost ? { currentHost: options.currentHost } : {}),
     ...(options.settledPageState ? { settledPageState: options.settledPageState } : {}),
     ...(options.visionCalls !== undefined ? { visionCalls: options.visionCalls } : {}),
+    ...(options.verification ? { verification: options.verification } : {}),
   })
   return {
     trace,
@@ -656,5 +659,56 @@ describe('vision budget records', () => {
       { kind: 'vision_budget', reason: 'look', granted: true },
       { kind: 'vision_budget', reason: 'look', granted: false, refusal: expect.stringMatching(/vision call limit/) },
     ])
+  })
+})
+
+describe('the verification gate sits ahead of the Vision Budget (#212, ADR 0041)', () => {
+  const capabilities: ToolRoundCapabilities = {
+    searchLoopRail: false,
+    verificationRail: true,
+    noProgressRail: false,
+    perCallGate: true,
+  }
+
+  it('refuses a spent route without charging the budget for a check it will not make', async () => {
+    // One vision call in the budget, and a Session that already watched
+    // this route fail with nothing left to settle. If the order were the
+    // other way round, the refused call would eat the only grant and a
+    // later legitimate Look would be told the budget was gone — a second,
+    // wrong reason for a stop.
+    const h = harness([scripted('look', [], { usesVision: true })], {
+      capabilities,
+      visionCalls: 1,
+      verification: {
+        retainedFailures: () => [
+          { route: 'vision', failure: 'timed out', objectiveId: undefined, runId: 'run-1' as never, failedAt: 0 },
+        ],
+        eligibleCandidates: () => [],
+        heldCandidates: () => 2,
+      },
+    })
+
+    const outcome = await h.round([call('look', {})])
+    const error = errorOf(outcome.outcome.results[0]!.outcome)
+    expect(error).toContain('already failed for this objective')
+    // The budget's own refusal never appears, because the budget was
+    // never asked.
+    expect(error).not.toMatch(/vision budget|no vision calls/i)
+  })
+
+  it('does not spend a route on a call the budget itself refused', async () => {
+    // The reverse direction: an exhausted budget refuses the call before
+    // the tool runs, and that refusal is ours — so it must not be
+    // retained as what the route reported.
+    const spent: unknown[] = []
+    const h = harness([scripted('look', [], { usesVision: true })], {
+      capabilities,
+      visionCalls: 0,
+      verification: { retainFailure: (failure) => spent.push(failure) },
+    })
+
+    const outcome = await h.round([call('look', {})])
+    expect(outcome.outcome.results[0]!.outcome.ok).toBe(false)
+    expect(spent).toEqual([])
   })
 })
