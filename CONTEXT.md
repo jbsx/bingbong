@@ -162,22 +162,28 @@ _Avoid_: plan, task plan
 **Effort Tier**:
 The bounded class of autonomous work a Run may spend: Direct Action, Lookup, or
 Investigation. The smallest tier sufficient for the objective is preferred. The
-tier also fixes how hard the model thinks per round (#166): Direct Action and
-Lookup run at the `high` reasoning rung, an Investigation at `max`, and a Browse
-Subagent — which has no tier — always at `low`. The cheap tiers ran at `low`
-until the corpus measured it: a Run steered mid-flight then declared its fresh
-plan against the original objective, losing the correction, and Lookups wandered
-to budget exhaustion — while `high` cost nothing in rounds or wall time. The rung is read from the
-Effort Epoch as each request is built, so an escalation or a Steering replan
-carries it with everything else.
+tier also fixes how hard the model thinks per acquisition round (#166): Direct
+Action and Lookup run at the `high` reasoning rung, an Investigation at `max`,
+and a Browse Subagent — which has no tier — always at `low`. The cheap tiers ran
+at `low` until the corpus measured it: a Run steered mid-flight then declared
+its fresh plan against the original objective, losing the correction, and
+Lookups wandered to budget exhaustion — while `high` cost nothing in rounds or
+wall time. Finalization rounds are the exception (#215): bookkeeping and the
+reserved Answer think at their own rung, `low`, whatever the tier, because
+neither acquires anything and both must fit their share of the Finalization
+Allowance. The rung is read from the Effort Epoch as each request is built, so
+a Tier Escalation, a Steering replan, or Finalization entry carries it with
+everything else.
 _Avoid_: complexity, mode
 
 **Effort Epoch**:
 The current bounded-effort window: one Effort Tier's Tool Round budget,
 warnings, and active-work deadline. It counts the Run's Tool Rounds, owes the
-internal budget warnings, and arms each acquisition round against the deadline
-as a cancellation boundary. A tier change or Steering replan re-arms it while
-cumulative Tool Rounds keep counting toward the hard ceiling. It is also
+internal budget warnings — two by rounds used, and one by elapsed time at 60%
+of the deadline that asks for a Tier Escalation or an ending (#216) — and arms
+each acquisition round against the deadline as a cancellation boundary. A Tier
+Escalation or Steering replan re-arms it while cumulative Tool Rounds keep
+counting toward the hard ceiling. It is also
 Finalization's one door: every mechanically known Finalization Cause — budget,
 deadline, hard limit, no Progress — is decided there, and entry cancels
 unfinished delegated work once and supersedes the Run's owed advisory notices.
@@ -190,6 +196,16 @@ count the same rounds because both execute the same round — and, from #159,
 with the same rails and deadline gate, so a worker also stops for
 `no_progress`.
 _Avoid_: tier window, budget window
+
+**Tier Escalation**:
+A Run's Effort Tier rising exactly one level, re-arming the Effort Epoch with
+the new tier's full budget, warnings, and deadline. The model declares one with
+the evidence that makes more effort necessary; the application performs one
+when the active-work deadline crosses while the Run's current Approach is still
+making Progress (#216, ADR 0042) — once per Run, reset by a Steering replan,
+never into anything above Investigation, and reopening nothing else. Distinct
+from Escalation, which hands a Blocker to the user.
+_Avoid_: escalation, upgrade, promotion
 
 **Tool Round**:
 One model decision that requests one or more tools. It consumes one unit of a
@@ -878,7 +894,8 @@ _Avoid_: paywall, auth error
 
 **Escalation**:
 Handing a Blocker from the agent to the user via a spoken ask — the fallback
-when no automatic path exists.
+when no automatic path exists. Not a Tier Escalation, which raises a Run's
+Effort Tier.
 
 ### Delegation
 
