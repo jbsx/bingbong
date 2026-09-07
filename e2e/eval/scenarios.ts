@@ -145,9 +145,24 @@ function finalCause(observation: ScenarioObservation): ScenarioMetrics['finaliza
   return finalRun(observation).metrics.finalizationCause
 }
 
-/** The Effort Tier the scenario's last run ended under — the declared one, or Lookup where nothing was declared. */
+/**
+ * The Effort Tier the scenario's last run ended under — declared, escalated
+ * into, or Lookup where nothing was declared. Since #216 a run can end at a
+ * tier it never declared, so a predicate about what the model *said* pairs
+ * this with `declaredTheTier` below.
+ */
 function finalTier(observation: ScenarioObservation): ScenarioMetrics['effortTier'] {
   return finalRun(observation).metrics.effortTier
+}
+
+/**
+ * Whether the last run reached its final tier by declaring it rather than by
+ * the deadline raising it (#216, ADR 0042). An automatic Tier Escalation only
+ * ever moves a run up, so no escalation means the tier it ended at is the tier
+ * it chose.
+ */
+function declaredTheTier(observation: ScenarioObservation): boolean {
+  return (finalRun(observation).metrics.deadlineEscalations ?? 0) === 0
 }
 
 /** Every executed command finished done with no raw-limit error. */
@@ -514,8 +529,17 @@ export function evalScenarios(): EvalScenario[] {
       // Investigation, the tier #215–#217 are about, unmeasured while the
       // scenario read green. `expectedEffort` cannot carry this: it only
       // ever derives the structural ceiling, never what the model said.
+      //
+      // Since #216 a Lookup that is still making Progress escalates into
+      // Investigation at the 2-minute mark and reaches `deadline_reached`
+      // at the 5-minute one, ending at Investigation without ever having
+      // declared it — which would read green here for exactly the reason
+      // this predicate exists to refuse. So the tier has to have been
+      // chosen: the escalation is the backstop, and the tier guidance
+      // #216 added to the vocabulary is what this scenario measures.
       success: (observation) =>
         finalTier(observation) === 'investigation' &&
+        declaredTheTier(observation) &&
         finalCause(observation) === 'deadline_reached' &&
         observation.answerText !== null,
     },
