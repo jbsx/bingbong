@@ -14,7 +14,7 @@
 // (dialogPolicy.ts), never Blockers.
 
 import type { PageSnapshot, RefKind } from './snapshot'
-import { reportFault } from '../trace/fault'
+import { reportFault } from '../trace/fault.ts'
 
 /** Which kind of Blocker the page smells like (ADR 0010 flavors). */
 export type BlockerSignal = 'challenge' | 'network-block' | 'login-wall'

@@ -3,11 +3,11 @@
 // tool calls; it consumes one unit regardless of sibling-call count.
 
 import { DEFAULT_EFFORT_TIER, type EffortTier } from './runPlan.ts'
-import { createSuspendableClock, type Clock } from '../ports/clock'
+import { createSuspendableClock, type Clock } from '../ports/clock.ts'
 import type { ReasoningEffort } from '../ports/llm'
 import type { SubagentSharedDeadline } from '../agent/subagentRails'
 import type { FinalizationCause } from '../session/runJournal'
-import { BLOCKER_HELP_BY_SIGNAL, type BlockerSignal, type BlockerWall } from '../browser/blockerNudge'
+import { BLOCKER_HELP_BY_SIGNAL, type BlockerSignal, type BlockerWall } from '../browser/blockerNudge.ts'
 import type { FallbackSource } from './fallbackAnswer'
 
 /**
