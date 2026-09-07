@@ -1025,4 +1025,324 @@ describe('assistant command runner', () => {
       expect(h.requests.at(-1)?.memory).toEqual([])
     })
   })
+
+  // #210, ADR 0039: an Answer that presents a Candidate says which one,
+  // and the Session retains that relationship. Every test here reads the
+  // subject out of the *next* Run's outgoing context — that is the whole
+  // observable behaviour: what a later "show me that again" is told it
+  // is about. The page the browser is on moves independently throughout,
+  // because the page is exactly what must not decide this.
+  describe('Inspection Reference across commands (#210)', () => {
+    /** Where the browser happens to be — moved between Runs, never consulted. */
+    let page = 'https://old.reddit.com/r/tierlists'
+    const POST = 'https://old.reddit.com/r/tierlists/comments/abc'
+    const THREAD = 'https://forum.example/thread/9'
+
+    /** The acquisition a web Observation has to be grounded in. */
+    const readPage: Tool = {
+      name: 'read_page',
+      acquisition: true,
+      async execute() {
+        return 'A tier list post.'
+      },
+    }
+
+    function harness() {
+      const clock = new FakeClock(1_000)
+      const runtime = createSessionRuntime({ clock, identities: new DeterministicIdentities() })
+      const requests: LlmRequest[] = []
+      const queue: AssistantTurn[] = []
+      const degraded: string[] = []
+      let failAt: number | null = null
+      const llm: LlmClient = {
+        complete(request) {
+          requests.push(request)
+          if (requests.length === failAt) {
+            failAt = null
+            return Promise.reject(new Error('provider unavailable'))
+          }
+          return Promise.resolve(queue.shift() ?? { kind: 'answer', speak: 'Nothing yet.', display: 'Nothing yet.' })
+        },
+      }
+      const pipeline = createCommandPipeline({
+        llm,
+        tts: new RecordingTts(),
+        clock,
+        tools: [readPage, createRecordEvidenceTool(), createRecordCandidateTool()],
+        currentPageUrl: () => page,
+        onContinuityDegraded: (reason) => degraded.push(reason),
+      })
+      const runner = createAssistantCommandRunner({
+        pipeline,
+        runtime,
+        clock,
+        onSessionReset: () => {},
+        createRunPublisher: () => ({ publish: () => {} }),
+        publishFeedback: () => {},
+      })
+      /** Fails the nth model request of the Session, once. */
+      return { runtime, runner, requests, queue, degraded, failRequest: (nth: number) => { failAt = nth } }
+    }
+
+    /**
+     * Two rounds that find one Candidate: the page is read, the fact is
+     * checkpointed against it, and the Candidate is recorded on that
+     * Observation. `supportId` is the Observation the run is about to
+     * mint — Session identities are minted in order, so the script names
+     * them rather than deriving them twice.
+     */
+    function findCandidate(
+      h: ReturnType<typeof harness>,
+      fields: { subject: string; url: string; supportId: string; callId: string },
+    ): void {
+      page = fields.url
+      h.queue.push({ kind: 'tool_calls', calls: [{ id: `${fields.callId}r`, name: 'read_page', args: {} }] })
+      h.queue.push({
+        kind: 'tool_calls',
+        calls: [
+          {
+            id: `${fields.callId}a`,
+            name: 'record_evidence',
+            // The excerpt must appear in what the page read returned.
+            args: { observation: `${fields.subject} is a tier list post.`, source_url: fields.url, excerpt: 'tier list post' },
+          },
+          {
+            id: `${fields.callId}b`,
+            name: 'record_candidate',
+            args: { subject: fields.subject, supporting_evidence: [fields.supportId] },
+          },
+        ],
+      })
+    }
+
+    /**
+     * The Run that presents Candidate A: memory-1 grounds it, memory-2 is
+     * the Candidate, and the Answer names memory-2 as what the user is now
+     * looking at.
+     */
+    async function present(h: ReturnType<typeof harness>): Promise<void> {
+      findCandidate(h, { subject: 'Ranking every mech', url: POST, supportId: 'memory-1', callId: 'c1' })
+      h.queue.push({
+        kind: 'answer',
+        speak: 'Here it is.',
+        display: 'The "Ranking every mech" post.',
+        runNote: 'Presented the mech tier list post.',
+        inspectionCandidateId: 'memory-2' as MemoryEntryId,
+      })
+      await h.runner.run('find that tier list post')
+    }
+
+    it('addresses the presented Candidate after the browser moved on', async () => {
+      const h = harness()
+      await present(h)
+
+      // An ordinary continuation that browses elsewhere and presents
+      // nothing: incidental navigation neither creates a subject nor
+      // replaces one.
+      page = 'https://news.example/unrelated'
+      await h.runner.run('what else is on that subreddit')
+      expect(h.requests.at(-1)?.inspection).toMatchObject({ candidateId: 'memory-2' })
+
+      page = 'https://another.example/elsewhere'
+      await h.runner.run('show me that again')
+
+      expect(h.requests.at(-1)?.inspection).toEqual({
+        candidateId: 'memory-2',
+        subject: 'Ranking every mech',
+        status: 'active',
+        references: [{ url: POST }],
+      })
+      // The subject is the Candidate, never the page the Run is standing on.
+      expect(JSON.stringify(h.requests.at(-1)?.inspection)).not.toContain('another.example')
+    })
+
+    it('replaces the subject only when another Candidate is presented', async () => {
+      const h = harness()
+      await present(h)
+
+      findCandidate(h, { subject: 'Every mech, ranked again', url: THREAD, supportId: 'memory-3', callId: 'c2' })
+      h.queue.push({
+        kind: 'answer',
+        speak: 'Try this one.',
+        display: 'A forum thread instead.',
+        runNote: 'Presented the forum thread.',
+        inspectionCandidateId: 'memory-4' as MemoryEntryId,
+      })
+      await h.runner.run('keep looking')
+      await h.runner.run('scroll down')
+
+      expect(h.requests.at(-1)?.inspection).toMatchObject({
+        candidateId: 'memory-4',
+        subject: 'Every mech, ranked again',
+      })
+    })
+
+    it('refuses an identity that is not a live Candidate, and keeps the standing subject', async () => {
+      const h = harness()
+      await present(h)
+
+      // memory-1 is the Observation the Candidate stands on. Naming it
+      // would make evidence the thing the user is looking at, so it is
+      // refused — and refusing does not unset the real subject either.
+      h.queue.push({
+        kind: 'answer',
+        speak: 'Still looking.',
+        display: 'Still looking.',
+        runNote: 'Nothing new.',
+        inspectionCandidateId: 'memory-1' as MemoryEntryId,
+      })
+      await h.runner.run('keep looking')
+      h.queue.push({
+        kind: 'answer',
+        speak: 'Still looking.',
+        display: 'Still looking.',
+        runNote: 'Nothing new.',
+        inspectionCandidateId: 'memory-404' as MemoryEntryId,
+      })
+      await h.runner.run('keep looking')
+      await h.runner.run('show me that again')
+
+      expect(h.requests.at(-1)?.inspection).toMatchObject({ candidateId: 'memory-2' })
+    })
+
+    it('establishes nothing from a Candidate the Run never presented', async () => {
+      const h = harness()
+
+      // Two Candidates recorded, an Answer that names neither: the user
+      // was shown a shortlist, so "that one" has no subject and the model
+      // is left to ask which they mean rather than being handed one.
+      findCandidate(h, { subject: 'Ranking every mech', url: POST, supportId: 'memory-1', callId: 'c1' })
+      findCandidate(h, { subject: 'Every mech, ranked again', url: THREAD, supportId: 'memory-3', callId: 'c2' })
+      h.queue.push({
+        kind: 'answer',
+        speak: 'Two possibilities.',
+        display: 'Two posts match.',
+        runNote: 'Shortlisted two posts.',
+      })
+      await h.runner.run('find that tier list post')
+      await h.runner.run('open that one')
+
+      expect(h.requests.at(-1)?.inspection).toBeUndefined()
+    })
+
+    it('establishes nothing from a Run that never reached an Answer', async () => {
+      const h = harness()
+
+      // The Candidate is recorded and the model is about to present it —
+      // then the round fails and the Run ends without an Answer. Nobody
+      // was shown anything, so nothing is retained for the next command.
+      findCandidate(h, { subject: 'Ranking every mech', url: POST, supportId: 'memory-1', callId: 'c1' })
+      // The page is read and the Candidate recorded; the round that would
+      // have presented it never returns.
+      h.failRequest(3)
+      await h.runner.run('find that tier list post')
+      await h.runner.run('show me that again')
+
+      expect(h.requests.at(-1)?.evidence?.candidates).toHaveLength(1)
+      expect(h.requests.at(-1)?.inspection).toBeUndefined()
+    })
+
+    it('survives a constraint the user corrects, and clears on the objective they replace', async () => {
+      const h = harness()
+      // The objective the Candidate is presented under, in the user's own
+      // words (#206): memory-1 the words, memory-2 the objective.
+      h.queue.push({ kind: 'tool_calls', calls: [{ id: 'u1', name: 'record_evidence', args: { kind: 'user', observation: 'find that tier list post i found last week' } }] })
+      h.queue.push({
+        kind: 'answer',
+        speak: 'Looking.',
+        display: 'Looking.',
+        runNote: 'Started the search.',
+        memoryPatch: parseMemoryPatch([{
+          op: 'add',
+          entry: { kind: 'objective', subject: 'Find the tier list post', detail: 'A post the user found.', user_evidence: ['memory-1'] },
+        }])!,
+      })
+      await h.runner.run('find that tier list post i found last week')
+
+      findCandidate(h, { subject: 'Ranking every mech', url: POST, supportId: 'memory-3', callId: 'c2' })
+      h.queue.push({
+        kind: 'answer',
+        speak: 'Here it is.',
+        display: 'The "Ranking every mech" post.',
+        runNote: 'Presented the post.',
+        inspectionCandidateId: 'memory-4' as MemoryEntryId,
+      })
+      await h.runner.run('keep looking')
+
+      // A correction that narrows the same objective: the user is still
+      // looking at the same thing.
+      h.queue.push({ kind: 'tool_calls', calls: [{ id: 'u2', name: 'record_evidence', args: { kind: 'user', observation: 'it was on a forum, not reddit' } }] })
+      h.queue.push({
+        kind: 'answer',
+        speak: 'Understood.',
+        display: 'Forums it is.',
+        runNote: 'Narrowed to forums.',
+        memoryPatch: parseMemoryPatch([{
+          op: 'add',
+          entry: { kind: 'constraint', subject: 'Source', detail: 'A forum, not Reddit.', user_evidence: ['memory-5'] },
+        }])!,
+      })
+      await h.runner.run('it was on a forum, not reddit')
+      await h.runner.run('show me that again')
+      expect(h.requests.at(-1)?.inspection).toMatchObject({ candidateId: 'memory-4' })
+
+      // A different task: what they were looking at under the old one is
+      // no longer what "that one" means.
+      h.queue.push({ kind: 'tool_calls', calls: [{ id: 'u3', name: 'record_evidence', args: { kind: 'user', observation: 'forget that, book me a table for two tonight' } }] })
+      h.queue.push({
+        kind: 'answer',
+        speak: 'On it.',
+        display: 'Looking for tables.',
+        runNote: 'Switched to booking.',
+        memoryPatch: parseMemoryPatch([{
+          op: 'add',
+          entry: { kind: 'objective', subject: 'Book a table', detail: 'For two tonight.', user_evidence: ['memory-7'] },
+        }])!,
+      })
+      await h.runner.run('forget that, book me a table for two tonight')
+      await h.runner.run('show me that again')
+
+      expect(h.requests.at(-1)?.objective).toMatchObject({ userText: ['forget that, book me a table for two tonight'] })
+      expect(h.requests.at(-1)?.inspection).toBeUndefined()
+    })
+
+    it('is not Observation support, however the Answer cites it', async () => {
+      const h = harness()
+      findCandidate(h, { subject: 'Ranking every mech', url: POST, supportId: 'memory-1', callId: 'c1' })
+      // The same identity offered twice: as the subject the user is
+      // looking at, and as the evidence an Assessment stands on. Only the
+      // first is what a Candidate identity can be — the Assessment is
+      // stripped rather than standing on a Candidate the model chose.
+      h.queue.push({
+        kind: 'answer',
+        speak: 'Here it is.',
+        display: 'The "Ranking every mech" post.',
+        runNote: 'Presented the post.',
+        inspectionCandidateId: 'memory-2' as MemoryEntryId,
+        evidenceIds: ['memory-2' as MemoryEntryId],
+        memoryPatch: parseMemoryPatch([{
+          op: 'add',
+          entry: { kind: 'assessment', subject: 'It is the post', detail: 'Certainly the one.', references: [{ url: POST }] },
+        }])!,
+      })
+      await h.runner.run('find that tier list post')
+      await h.runner.run('show me that again')
+
+      expect(h.degraded).toContain('unsupported_assessment')
+      expect(h.requests.at(-1)?.memory?.some(({ kind }) => kind === 'assessment')).toBe(false)
+      // The subject still stands: refusing the citation is not refusing
+      // the presentation.
+      expect(h.requests.at(-1)?.inspection).toMatchObject({ candidateId: 'memory-2' })
+    })
+
+    it('carries no inspection subject into the Session that replaces this one', async () => {
+      const h = harness()
+      await present(h)
+
+      h.runtime.end('reset')
+      await h.runner.run('show me that again')
+
+      expect(h.requests.at(-1)?.inspection).toBeUndefined()
+    })
+  })
 })

@@ -96,6 +96,10 @@ export function createAssistantCommandRunner(deps: {
             // the immutable admission snapshot — mid-Run checkpoints join
             // the Session store and later admissions, never this snapshot.
             evidence: admission.evidence,
+            // The Session's inspection subject (#210, ADR 0039): the
+            // Candidate a previous Answer presented, so this Run's "show
+            // me that again" addresses it rather than the open page.
+            ...(admission.inspection ? { inspection: admission.inspection } : {}),
             // The Observation ledger's staleness guard (#111): the Session
             // generation this Run was admitted under.
             generation: admission.generation,

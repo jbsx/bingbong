@@ -2,10 +2,12 @@
 
 ## Status
 
-Accepted on 2026-09-06; implementation pending. Extends ADR 0028's distinction
-between User Observations, Assessments, and Candidates. Session lifetime,
-source-grounding requirements, and the ban on speculative partial Memory
-Commits remain unchanged.
+Accepted on 2026-09-06. Objective continuity (#206) and Inspection References
+(#210) are implemented; correction retention across a failed first request and
+objective-scoped Candidate decisions remain pending. Extends ADR 0028's
+distinction between User Observations, Assessments, and Candidates. Session
+lifetime, source-grounding requirements, and the ban on speculative partial
+Memory Commits remain unchanged.
 
 ## Context
 

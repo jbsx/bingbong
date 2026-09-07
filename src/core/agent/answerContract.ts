@@ -29,6 +29,20 @@ function parseEvidenceIds(value: unknown): MemoryEntryId[] | null {
 }
 
 /**
+ * Parses the Candidate an Answer presents for inspection (#210, ADR
+ * 0039): exactly one Memory Entry identity, or nothing. One is the whole
+ * point — a list is precisely the "multiple Candidates without a clear
+ * subject" ADR 0039 says to clarify with the user, so it is refused here
+ * rather than resolved by picking from it. Whether that identity names a
+ * live Candidate is the Session's question, not the parser's.
+ */
+function parseInspectionCandidateId(value: unknown): MemoryEntryId | null {
+  if (typeof value !== 'string') return null
+  const id = value.trim()
+  return id === '' ? null : (id as MemoryEntryId)
+}
+
+/**
  * Keep at most `max` sentences. A sentence ends at a [.!?] run followed by
  * whitespace (or end of text) — so URLs and numbers like `youtube.com` or
  * `1.5gb` do not split mid-token.
@@ -163,6 +177,8 @@ export function parseAssistantAnswer(content: string): {
   finalizationCauseIssue?: 'malformed'
   evidenceIds?: MemoryEntryId[]
   evidenceIssue?: 'malformed'
+  inspectionCandidateId?: MemoryEntryId
+  inspectionIssue?: 'malformed'
 } {
   const trimmed = content.trim()
   const candidates = [trimmed, extractFenced(trimmed), extractJsonSlice(trimmed)]
@@ -185,6 +201,7 @@ export function parseAssistantAnswer(content: string): {
           resolution: rawResolution,
           finalization_cause: rawFinalizationCause,
           evidence_ids: rawEvidenceIds,
+          inspection_candidate_id: rawInspectionCandidateId,
         } = parsed as {
           speak: string
           display: string
@@ -194,6 +211,7 @@ export function parseAssistantAnswer(content: string): {
           resolution?: unknown
           finalization_cause?: unknown
           evidence_ids?: unknown
+          inspection_candidate_id?: unknown
         }
         let answer: {
           speak: string
@@ -211,6 +229,8 @@ export function parseAssistantAnswer(content: string): {
           finalizationCauseIssue?: 'malformed'
           evidenceIds?: MemoryEntryId[]
           evidenceIssue?: 'malformed'
+          inspectionCandidateId?: MemoryEntryId
+          inspectionIssue?: 'malformed'
         } = { speak: capSentences(speak, SPEAK_SENTENCE_LIMIT), display, shape: 'on_contract' }
         // Subagent Report sections (#98): validated independently, absent
         // when invalid — the orchestrator never emits these keys, and a
@@ -248,6 +268,17 @@ export function parseAssistantAnswer(content: string): {
         if (rawEvidenceIds !== undefined) {
           const evidenceIds = parseEvidenceIds(rawEvidenceIds)
           answer = evidenceIds ? { ...answer, evidenceIds } : { ...answer, evidenceIssue: 'malformed' }
+        }
+        // The Candidate this Answer presents for inspection (#210, ADR
+        // 0039): validated like the other hidden metadata, and kept in
+        // its own field for the same reason it is a different thing —
+        // an inspection subject is what the user is looking at, never
+        // support for a claim, so it can never arrive as evidence.
+        if (rawInspectionCandidateId !== undefined) {
+          const inspectionCandidateId = parseInspectionCandidateId(rawInspectionCandidateId)
+          answer = inspectionCandidateId
+            ? { ...answer, inspectionCandidateId }
+            : { ...answer, inspectionIssue: 'malformed' }
         }
         if (rawRunNote === undefined) return answer
         if (typeof rawRunNote !== 'string') return { ...answer, runNoteIssue: 'malformed' }

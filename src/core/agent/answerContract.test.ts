@@ -251,6 +251,37 @@ describe('parseAssistantAnswer', () => {
     },
   )
 
+  it('accepts the one Candidate an Answer presents for inspection (#210)', () => {
+    const answer = parseAssistantAnswer(JSON.stringify({
+      speak: 'Here it is.',
+      display: 'The r/tierlists post.',
+      inspection_candidate_id: 'memory-4',
+    }))
+
+    expect(answer).toEqual({
+      speak: 'Here it is.',
+      display: 'The r/tierlists post.',
+      inspectionCandidateId: 'memory-4',
+      shape: 'on_contract',
+    })
+  })
+
+  // #210, ADR 0039: an inspection subject is one Candidate or none. A
+  // list of them is the ambiguity that has to be clarified with the user,
+  // so it never becomes a reference — and the Answer still stands.
+  it.each([null, 42, '', '   ', ['memory-4'], ['memory-4', 'memory-5'], { id: 'memory-4' }])(
+    'drops a malformed inspection_candidate_id %j while keeping the Answer (#210)',
+    (inspectionCandidateId) => {
+      const answer = parseAssistantAnswer(JSON.stringify({
+        speak: 'Done.',
+        display: 'Useful detail.',
+        inspection_candidate_id: inspectionCandidateId,
+      }))
+
+      expect(answer).toEqual({ speak: 'Done.', display: 'Useful detail.', inspectionIssue: 'malformed', shape: 'on_contract' })
+    },
+  )
+
   it('accepts JSON wrapped in a code fence', () => {
     const answer = parseAssistantAnswer('```json\n{"speak":"Done.","display":"Detail."}\n```')
 

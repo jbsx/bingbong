@@ -1,5 +1,6 @@
 import type { RunId, SessionId } from './sessionIdentity'
 import type { ObservationId } from './observationLedger'
+import type { RetainedInspectionReference } from './inspectionReference'
 import {
   boundedString,
   canonicalizeMemoryUrl,
@@ -188,6 +189,18 @@ export interface CandidateStatusChange {
   readonly subagentId?: string
 }
 
+/**
+ * One Answer's presentation of a Candidate for inspection (#210, ADR
+ * 0039). The presenting Run supplies the objective in force, because the
+ * store holds evidence rather than Working Memory; everything the store
+ * can check itself — that the identity names a live Candidate — it does.
+ */
+export interface InspectionPresentation {
+  readonly candidateId: MemoryEntryId
+  readonly objectiveId?: MemoryEntryId
+  readonly runId: RunId
+}
+
 export interface ObservationCheckpointResult {
   readonly observation: SessionObservation
   /** True when an exact duplicate already existed and the checkpoint merged into it. */
@@ -215,6 +228,16 @@ export interface SessionEvidenceStore {
   candidate(id: MemoryEntryId): SessionCandidate | null
   /** Whether the cited identities are all live Observations — the bar an Assessment must clear. */
   hasObservationSupport(ids: readonly MemoryEntryId[]): boolean
+  /**
+   * Retains the Candidate an Answer just presented for inspection (#210,
+   * ADR 0039), replacing whatever the Session was holding. Null — the
+   * identity is not a live Candidate, or the Session ended — leaves the
+   * standing subject exactly as it was: a refused presentation cannot
+   * quietly unset the subject a later command still means.
+   */
+  presentInspection(input: InspectionPresentation): RetainedInspectionReference | null
+  /** The Candidate the Session's latest presentation named, if any (#210). */
+  inspectionReference(): RetainedInspectionReference | null
   snapshot(): SessionEvidenceSnapshot
   /** How many of each form the store holds right now (#181) — no copy, no freeze. */
   counts(): SessionEvidenceCounts
@@ -323,6 +346,9 @@ export function createSessionEvidence(deps: {
   const observations: MutableObservation[] = []
   const candidates: MutableCandidate[] = []
   const contradictions: ObservationContradiction[] = []
+  // The Session's current inspection subject (#210): one relationship,
+  // replaced by the next presentation and dropped with the Session.
+  let inspection: RetainedInspectionReference | null = null
   let cleared = false
 
   const liveObservation = (id: MemoryEntryId): MutableObservation | null =>
@@ -517,6 +543,24 @@ export function createSessionEvidence(deps: {
     hasObservationSupport(ids) {
       return supportIsValid(ids)
     },
+    presentInspection(input) {
+      if (cleared) return null
+      // Candidates alone: the identity space is shared with Observations,
+      // so an Observation id here would make evidence the thing the user
+      // is looking at. It resolves to nothing instead.
+      const candidate = candidates.find((held) => held.id === input.candidateId)
+      if (candidate === undefined) return null
+      inspection = Object.freeze({
+        candidateId: candidate.id,
+        ...(input.objectiveId !== undefined ? { objectiveId: input.objectiveId } : {}),
+        runId: input.runId,
+        presentedAt: deps.now(),
+      })
+      return inspection
+    },
+    inspectionReference() {
+      return inspection
+    },
     snapshot() {
       return Object.freeze({
         observations: Object.freeze(observations.map(freezeObservation)),
@@ -536,6 +580,9 @@ export function createSessionEvidence(deps: {
       observations.length = 0
       candidates.length = 0
       contradictions.length = 0
+      // The Session boundary clears the inspection subject too (#210):
+      // "that one" means nothing across a Reset or a Lapse.
+      inspection = null
     },
     get cleared() {
       return cleared

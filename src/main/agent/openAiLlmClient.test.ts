@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { createOpenAiLlmClient, promptHashOf, retainedObjectiveMessage, standingDirectiveMessage, TRUNCATION_NOTE } from './openAiLlmClient'
+import { createOpenAiLlmClient, inspectionSubjectMessage, promptHashOf, retainedObjectiveMessage, standingDirectiveMessage, TRUNCATION_NOTE } from './openAiLlmClient'
 import { ORCHESTRATOR_SYSTEM_PROMPT } from './orchestratorPrompt'
 import { createBrowserTools } from '../../core/pipeline/browserTools'
 import { createMediaTools } from '../../core/pipeline/mediaTools'
@@ -352,6 +352,65 @@ describe('openAiLlmClient', () => {
     expect(content).toContain('\nit was on a forum, not reddit\n')
     expect(content).toContain('memory-2')
     expect(content).toContain('memory-3')
+  })
+
+  it('names the Candidate an inspection command is about, beside the objective (#210)', async () => {
+    const fetch = new ScriptedFetch([
+      completionResponse({ content: '{"speak":"Here it is.","display":"Here it is.","run_note":"Reopened the post."}' }),
+    ])
+    const client = makeClient(fetch)
+
+    await client.complete({
+      command: 'show me that again',
+      toolResults: [],
+      objective: { id: 'memory-2' as never, userText: ['find that tier list post'], constraints: [] },
+      inspection: {
+        candidateId: 'memory-4' as never,
+        subject: 'r/tierlists — "Ranking every mech"',
+        detail: 'Posted 6 days ago.',
+        status: 'active',
+        references: [{ url: 'https://old.reddit.com/r/tierlists/comments/abc' }],
+      },
+    })
+
+    const messages = fetch.calls[0].body.messages
+    // Objective, then subject, then the command: both answer "what is
+    // this request about?" for words that say only "that again".
+    expect(messages[2]).toEqual({
+      role: 'user',
+      content: inspectionSubjectMessage({
+        candidateId: 'memory-4' as never,
+        subject: 'r/tierlists — "Ranking every mech"',
+        detail: 'Posted 6 days ago.',
+        status: 'active',
+        references: [{ url: 'https://old.reddit.com/r/tierlists/comments/abc' }],
+      }),
+    })
+    expect(messages[3]).toEqual({ role: 'user', content: 'show me that again' })
+    const content = messages[2].content as string
+    // The identity to decide about, the words to recognize it by, and the
+    // way back to it.
+    expect(content).toContain('memory-4')
+    expect(content).toContain('Ranking every mech')
+    expect(content).toContain('https://old.reddit.com/r/tierlists/comments/abc')
+    // And the rule that keeps the open page out of it.
+    expect(content).toContain('not about whichever page is currently open')
+  })
+
+  it('sends no inspection message when the Session holds no subject (#210)', async () => {
+    const fetch = new ScriptedFetch([
+      completionResponse({ content: '{"speak":"Which one?","display":"Which one?","run_note":"Asked which."}' }),
+    ])
+    const client = makeClient(fetch)
+
+    await client.complete({ command: 'show me that again', toolResults: [] })
+
+    // Nothing invents a subject: the model is left to ask. (The system
+    // prompt names the block, so only the round's own messages count.)
+    const messages = fetch.calls[0].body.messages
+    expect(messages.filter((message) => message.role === 'user')).toEqual([
+      { role: 'user', content: 'show me that again' },
+    ])
   })
 
   it('sends no objective message when the Session holds no user objective (#206)', async () => {

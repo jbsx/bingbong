@@ -129,8 +129,10 @@ must still receive a truthful explanation.
 
 Use existing objective/constraint Memory Entries, User Observations, Candidate
 identities, and Run Notes before introducing another identity system. The
-Answer-to-Candidate Inspection Reference is a missing relationship, not a new
-kind of Candidate.
+Answer-to-Candidate Inspection Reference is a relationship over those
+identities, not a new kind of Candidate: an Answer names the Candidate it
+presents, the Session retains that relationship beside the Candidate, and a
+later Run is told which subject its inspection command addresses.
 
 ADR 0027 exempts Finalization rounds from the active-work deadline. The
 Finalization Allowance is a distinct bound, not extra acquisition time.

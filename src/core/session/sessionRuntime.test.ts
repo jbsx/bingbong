@@ -310,6 +310,37 @@ describe('session runtime', () => {
     expect(replacement.memory).toEqual([])
   })
 
+  // #210, ADR 0039: the Session's inspection subject is admitted with the
+  // Run that will act on it, and dies with the Session like the Candidate
+  // it points at.
+  it('admits the retained Inspection Reference and drops it with the Session', () => {
+    const { runtime } = harness()
+    const first = runtime.accept(runtime.submit().submissionId)
+    const evidence = runtime.evidenceStore()!
+    const observation = evidence.checkpointObservation({
+      sourceKind: 'web',
+      text: 'The Acme router costs $39.',
+      references: [{ url: 'https://shop.example/acme-router' }],
+      runId: first.runId,
+    })!.observation
+    const candidate = evidence.addCandidate({
+      subject: 'Acme wifi router',
+      supportingObservationIds: [observation.id],
+      runId: first.runId,
+    })!
+
+    // No Answer has presented anything yet, so this Run was admitted
+    // without a subject.
+    expect(first.inspection).toBeUndefined()
+    evidence.presentInspection({ candidateId: candidate.id, runId: first.runId })
+    runtime.finish(first.runId)
+
+    expect(runtime.accept(runtime.submit().submissionId).inspection).toMatchObject({ candidateId: candidate.id })
+
+    runtime.end('reset')
+    expect(runtime.accept(runtime.submit().submissionId).inspection).toBeUndefined()
+  })
+
   it('clears Session Evidence when the Session lapses', () => {
     const { clock, runtime } = expiringHarness()
     const admission = runtime.accept(runtime.submit().submissionId)

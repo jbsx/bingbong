@@ -30,8 +30,11 @@ import {
   type WorkingMemorySnapshot,
 } from './workingMemory'
 
+import type { RetainedInspectionReference } from './inspectionReference'
+
 export type { RunJournalEntry, RunJournalSnapshot, RunStopRecord } from './runJournal'
 export type { MemoryEntry, MemoryPatch, WorkingMemorySnapshot } from './workingMemory'
+export type { InspectionSubject, RetainedInspectionReference } from './inspectionReference'
 export type {
   SessionCandidate,
   SessionEvidenceCounts,
@@ -70,6 +73,12 @@ export interface AcceptedRunAdmission {
   memory: WorkingMemorySnapshot
   /** Checkpointed Session Evidence the accepted Run starts beside its Memory Entries (#112). */
   evidence: SessionEvidenceSnapshot
+  /**
+   * The Inspection Reference the Session retained (#210, ADR 0039): the
+   * Candidate a previous Answer presented, which this Run's inspection
+   * commands address. Absent when the Session holds no subject.
+   */
+  inspection?: RetainedInspectionReference
 }
 
 export interface SessionRuntimeState {
@@ -805,6 +814,7 @@ export function createSessionRuntime(deps: {
       acceptedRunIds.push(runId)
       liveRunIds.add(runId)
 
+      const inspectionReference = evidence!.inspectionReference()
       return {
         accepted: true,
         submissionId,
@@ -816,6 +826,11 @@ export function createSessionRuntime(deps: {
         journal: journalSnapshot(),
         memory: memorySnapshot(),
         evidence: evidence!.snapshot(),
+        // The Session's inspection subject (#210, ADR 0039), admitted
+        // beside the evidence it resolves against and immutable for the
+        // Run — a Run's own presentation lands on the store, and reaches
+        // the next Run through its admission, never mid-flight.
+        ...(inspectionReference !== null ? { inspection: inspectionReference } : {}),
       }
     },
     reject(submissionId) {

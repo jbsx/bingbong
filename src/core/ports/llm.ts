@@ -3,6 +3,7 @@ import type { FinalizationCause, RunResolution } from '../session/runJournal'
 import type { MemoryEntryId, MemoryPatch, WorkingMemorySnapshot } from '../session/workingMemory'
 import type { SessionEvidenceSnapshot } from '../session/sessionEvidence'
 import type { RetainedUserObjective } from '../session/objectiveContinuity'
+import type { InspectionSubject } from '../session/inspectionReference'
 import type { AnswerShape } from '../agent/answerContract'
 import type { SubagentReportFinding } from '../agent/subagentReport'
 import type { MishearProposal } from '../voice/learnedTerms'
@@ -71,6 +72,15 @@ export interface LlmRequest {
    * holds no user-set objective it can still quote.
    */
   objective?: RetainedUserObjective
+  /**
+   * The Candidate a previous Answer presented for inspection (#210, ADR
+   * 0039): the subject "show me that again", "scroll down", or "not that
+   * one" is about, resolved from the Session's retained Inspection
+   * Reference. Absent when the Session holds no unambiguous subject — the
+   * one case where the model asks the user which Candidate they mean,
+   * since the alternative is answering about whichever page is open.
+   */
+  inspection?: InspectionSubject
   /** One immutable Session Journal snapshot, captured when this Run was accepted. */
   journal?: RunJournalSnapshot
   /** One immutable Session Working Memory snapshot captured with the Journal. */
@@ -230,6 +240,16 @@ export type AssistantTurn =
        */
       evidenceIds?: readonly MemoryEntryId[]
       evidenceIssue?: 'malformed'
+      /**
+       * The Candidate this Answer presents for inspection (#210, ADR
+       * 0039): one existing Candidate identity, so a later "show me that
+       * again" addresses what was presented rather than whatever page
+       * the Run left open. The relationship is retained only when this
+       * Answer is actually presented, and only when the identity names a
+       * live Candidate — an unpresented draft establishes nothing.
+       */
+      inspectionCandidateId?: MemoryEntryId
+      inspectionIssue?: 'malformed'
       /**
        * Which contract the reply matched (#198, ADR 0034): the parser's
        * own marker, so neither loop judges prose itself. Optional here,

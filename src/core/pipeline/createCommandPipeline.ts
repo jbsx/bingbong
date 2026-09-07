@@ -19,7 +19,7 @@ import type { TtsSpeaker } from '../ports/tts'
 import { answerText, spokenErrorLine } from '../agent/answerContract'
 import type { LearnedTermsControls } from '../voice/learnedTerms'
 import { MAX_RUN_NOTE_CHARS, finalizeRun, runStopRecord, type FinalizationCause, type RunFinalization, type RunJournalEntry, type RunJournalSnapshot, type RunStopRecord } from '../session/runJournal'
-import type { MemoryEntryId, MemoryPatch, WorkingMemorySnapshot } from '../session/workingMemory'
+import { currentUserObjective, type MemoryEntryId, type MemoryPatch, type WorkingMemorySnapshot } from '../session/workingMemory'
 import type { PerfTracer } from '../perf/perfTracer'
 import { createTurnIdSource } from '../perf/perfTracer'
 import type { BrowserSubspans } from '../perf/browserSubspans'
@@ -58,6 +58,7 @@ import {
 } from '../session/observationLedger'
 import type { SessionEvidenceSnapshot, SessionEvidenceStore, ObservationCheckpointResult } from '../session/sessionEvidence'
 import { retainedUserObjective } from '../session/objectiveContinuity'
+import { retainedInspectionSubject, type RetainedInspectionReference } from '../session/inspectionReference'
 import type { RunId, SessionGeneration } from '../session/sessionIdentity'
 import {
   evaluateEvidenceCheckpoint,
@@ -337,6 +338,13 @@ export interface RunContinuityContext {
    * snapshot.
    */
   readonly evidence?: SessionEvidenceSnapshot
+  /**
+   * The Inspection Reference the Session retained (#210, ADR 0039): the
+   * Candidate a previous Answer presented, admitted with this Run and
+   * resolved against the evidence snapshot beside it. Absent when the
+   * Session holds no inspection subject.
+   */
+  readonly inspection?: RetainedInspectionReference
   /**
    * The Session generation this Run was admitted under (#111): the
    * Observation ledger's staleness guard. Absent in tests that carry no
@@ -647,6 +655,39 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
     const retainedObjective = continuity
       ? retainedUserObjective(continuity.memory, continuity.evidence)
       : null
+    /**
+     * The Candidate this Run's inspection commands address (#210, ADR
+     * 0039), read from the same admission the objective and the evidence
+     * come from. "Show me that again" arrives with no subject in its own
+     * words, and the page the last Run left open is not one — a Run that
+     * browsed on after presenting would otherwise inspect, or reject,
+     * whatever it last happened to open. Null when the Session retained
+     * no subject, or when a replacement objective retired the one it was
+     * presented under: an unresolved subject is a question for the user,
+     * never a guess from the current page.
+     */
+    const inspectionSubject = continuity
+      ? retainedInspectionSubject(continuity.inspection, continuity.memory, continuity.evidence)
+      : null
+    /**
+     * Retains the Candidate an Answer presented, under the objective in
+     * force as it was presented. Admission memory is that objective: a
+     * Run's own Memory Commit lands after its Answer, so an Answer that
+     * replaces the objective *and* presents a Candidate stamps the
+     * reference with the objective the user had when they saw it — and
+     * the replacement then clears it, as a replacement should.
+     */
+    const presentInspectionSubject = (candidateId: MemoryEntryId | undefined): void => {
+      if (candidateId === undefined) return
+      const session = evidenceSession?.()
+      if (!session) return
+      const objectiveId = continuity ? currentUserObjective(continuity.memory)?.id : undefined
+      session.store.presentInspection({
+        candidateId,
+        ...(objectiveId !== undefined ? { objectiveId } : {}),
+        runId: session.runId,
+      })
+    }
     // Admission evidence identities (#123): which Observations this Run
     // starts beside — anything else in the live store was checkpointed
     // mid-Run, so it is fresh by construction. The staleness gate reads
@@ -1172,6 +1213,10 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
               // The user's own objective (#206), beside the memory it was
               // projected from — never in place of it.
               ...(retainedObjective ? { objective: retainedObjective } : {}),
+              // The Candidate a previous Answer presented (#210): what
+              // this Run's inspection commands are about, beside the
+              // objective they are about it under.
+              ...(inspectionSubject ? { inspection: inspectionSubject } : {}),
               // Checkpointed Session Evidence this Run starts beside (#121):
               // the immutable admission snapshot — mid-Run checkpoints ride
               // tool results, later Runs' admissions.
@@ -1353,6 +1398,16 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
             // Feed renders the structured summary instead of a
             // generated Sources list.
             const answerSources = deriveAnswerSources(turn.evidenceIds, resolveSessionObservation)
+            // The Inspection Reference lands here (#210, ADR 0039) — at
+            // the presentation itself, not at the parse. A draft the
+            // model abandoned, a reserved round that asked for tools
+            // instead of answering, a run that failed on its way here:
+            // none of them presented a Candidate to anyone, so none of
+            // them may leave a subject behind for the next command to
+            // address. The store refuses an identity that is not a live
+            // Candidate, and a refusal leaves the standing subject
+            // untouched rather than silently clearing it.
+            presentInspectionSubject(turn.inspectionCandidateId)
             yield {
               type: 'display',
               text: scrubAnswerText(turn.display),

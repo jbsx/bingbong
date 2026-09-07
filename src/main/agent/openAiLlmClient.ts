@@ -12,6 +12,7 @@ import { createHash } from 'node:crypto'
 import type { Tool, ToolParameterSpec } from '../../core/pipeline/tool'
 import type { ModelEndpointConfig } from '../../core/agent/modelRouting'
 import type { RetainedUserObjective } from '../../core/session/objectiveContinuity'
+import type { InspectionSubject } from '../../core/session/inspectionReference'
 import { parseAssistantAnswer } from '../../core/agent/answerContract'
 import { reportFault } from '../../core/trace/fault'
 
@@ -220,6 +221,42 @@ export function retainedObjectiveMessage(objective: RetainedUserObjective): stri
 }
 
 /**
+ * The inspection subject's wire message (#210, ADR 0039): the Candidate a
+ * previous Answer presented, named so that "show me that again", "scroll
+ * down", or "not that one" resolve to it rather than to whatever page the
+ * last Run left open.
+ *
+ * The Candidate's own sources ride along because they are what makes the
+ * subject reachable: returning to what was presented is a navigation, and
+ * a Run told only an identity would have to find the thing again from its
+ * notes. The closing lines carry the two rules a round cannot get wrong
+ * without recreating the bug — the open page is not the subject, and an
+ * unclear reference is a question for the user rather than a guess.
+ *
+ * How a *new* presentation is declared belongs to the orchestrator
+ * prompt, which owns the answer contract; stating it here as well would
+ * be two copies of one policy.
+ */
+export function inspectionSubjectMessage(subject: InspectionSubject): string {
+  const lines = [
+    `Inspection subject (${subject.candidateId}) — the Candidate your last Answer presented, status ${subject.status}:`,
+    subject.subject,
+  ]
+  if (subject.detail !== undefined) lines.push(subject.detail)
+  for (const source of subject.references) {
+    lines.push(source.title === undefined ? source.url : `${source.title} — ${source.url}`)
+  }
+  lines.push(
+    '',
+    'A request to look again, scroll, enlarge, read more, or decide about "it" or "that one" is about this ' +
+      'Candidate — not about whichever page is currently open, and not about the first link to hand. Where it ' +
+      'is no longer on screen, go back to it. If the user plainly means something else, ask which they mean ' +
+      'rather than assuming.',
+  )
+  return lines.join('\n')
+}
+
+/**
  * The Standing Directive's wire message (#167): the same correction, in the
  * user's own words, on every later round. Worded as the standing correction
  * it is rather than as a fresh arrival — the round that carried it as
@@ -260,6 +297,10 @@ export function createOpenAiLlmClient(deps: OpenAiLlmClientDeps): LlmClient {
       // "keep looking" is only readable against the task it continues,
       // and a continuation command has nowhere else to find one.
       ...(request.objective ? [{ role: 'user' as const, content: retainedObjectiveMessage(request.objective) }] : []),
+      // The inspection subject rides beside the objective (#210): both
+      // answer "what is this request about?" for a command whose own
+      // words say only "that one".
+      ...(request.inspection ? [{ role: 'user' as const, content: inspectionSubjectMessage(request.inspection) }] : []),
       {
         role: 'user',
         // The truncation note rides the command itself (#61): one user

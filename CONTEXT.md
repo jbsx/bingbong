@@ -441,9 +441,12 @@ _Avoid_: result, guess
 **Inspection Reference**:
 The explicit relationship between an Answer and the Candidate it presents for
 the user to inspect, preserved through inspection commands but replaced by a
-new presentation and cleared by an objective change or Session end. An
-ambiguous reference remains unresolved; the current browser page alone never
-establishes one.
+new presentation and cleared by an objective change or Session end. It is
+retained when the Answer is actually presented and only for an identity that
+names a live Candidate — a draft the model abandoned, or an Observation
+identity, establishes nothing. A later Run is given the subject it addresses:
+the Candidate, what it was, and where to find it again. An ambiguous reference
+remains unresolved; the current browser page alone never establishes one.
 _Avoid_: current tab, last link
 
 **Memory Compaction**:

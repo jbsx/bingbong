@@ -520,3 +520,67 @@ describe('session evidence', () => {
     ])
   })
 })
+
+// #210, ADR 0039: the store retains which Candidate an Answer presented
+// for inspection. Validation lives here because the Candidate identities
+// do — an identity nothing minted, or one that names an Observation, is
+// not a subject a later Run can be told it is addressing.
+describe('retained Inspection Reference (#210)', () => {
+  function presentedHarness() {
+    const harness = evidenceHarness(() => 55)
+    const observation = harness.evidence.checkpointObservation(webObservation())!.observation
+    const candidate = harness.evidence.addCandidate({
+      subject: 'Acme wifi router',
+      supportingObservationIds: [observation.id],
+      runId: 'run-1' as RunId,
+    })!
+    return { ...harness, observation, candidate }
+  }
+
+  it('retains the Candidate an Answer presented, stamped with the objective it was presented under', () => {
+    const { evidence, candidate } = presentedHarness()
+
+    const retained = evidence.presentInspection({
+      candidateId: candidate.id,
+      objectiveId: 'memory-9' as MemoryEntryId,
+      runId: 'run-1' as RunId,
+    })
+
+    expect(retained).toEqual({
+      candidateId: candidate.id,
+      objectiveId: 'memory-9',
+      runId: 'run-1',
+      presentedAt: 55,
+    })
+    expect(evidence.inspectionReference()).toEqual(retained)
+  })
+
+  it('refuses an identity that is not a live Candidate, leaving the standing subject alone', () => {
+    const { evidence, candidate, observation } = presentedHarness()
+    evidence.presentInspection({ candidateId: candidate.id, runId: 'run-1' as RunId })
+
+    // An Observation identity, and one nothing minted: neither is a
+    // Candidate, so neither can become the subject — nor quietly unset
+    // the one that is.
+    expect(evidence.presentInspection({ candidateId: observation.id, runId: 'run-2' as RunId })).toBeNull()
+    expect(evidence.presentInspection({ candidateId: 'memory-404' as MemoryEntryId, runId: 'run-2' as RunId })).toBeNull()
+    expect(evidence.inspectionReference()?.candidateId).toBe(candidate.id)
+  })
+
+  it('replaces the subject on a new presentation and drops it with the Session', () => {
+    const { evidence, candidate, observation } = presentedHarness()
+    const second = evidence.addCandidate({
+      subject: 'Bolt wifi router',
+      supportingObservationIds: [observation.id],
+      runId: 'run-1' as RunId,
+    })!
+
+    evidence.presentInspection({ candidateId: candidate.id, runId: 'run-1' as RunId })
+    evidence.presentInspection({ candidateId: second.id, runId: 'run-2' as RunId })
+    expect(evidence.inspectionReference()?.candidateId).toBe(second.id)
+
+    evidence.clear()
+    expect(evidence.inspectionReference()).toBeNull()
+    expect(evidence.presentInspection({ candidateId: second.id, runId: 'run-3' as RunId })).toBeNull()
+  })
+})
