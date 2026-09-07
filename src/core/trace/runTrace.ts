@@ -169,16 +169,6 @@ export interface LlmRequestShape {
 }
 
 /**
- * One LLM attempt as it was sent (#191): the record that answers "why did
- * the model choose what it chose" alongside `reasoning`. The `command`,
- * `tool_call` and `tool_result` records already hold the request's text,
- * so this holds only what they cannot: which model served the attempt,
- * under which prompt, at which rung, how big the request was, and what
- * it cost — the numbers a "ran out of rounds" post mortem reads round by
- * round. Numbered exactly as the `reasoning` record for the same attempt,
- * so the two join on `round` and `attempt`.
- */
-/**
  * How one LLM attempt ended (#218): `completed` returned a turn; `deadline`
  * was cut by the Run's active-work deadline and `allowance` by its
  * Finalization Allowance; `timeout` by the client's own request timeout;
@@ -190,6 +180,16 @@ export interface LlmRequestShape {
  */
 export type LlmRoundOutcome = 'completed' | 'deadline' | 'allowance' | 'timeout' | 'empty' | 'cancelled' | 'failed'
 
+/**
+ * One LLM attempt as it was sent (#191): the record that answers "why did
+ * the model choose what it chose" alongside `reasoning`. The `command`,
+ * `tool_call` and `tool_result` records already hold the request's text,
+ * so this holds only what they cannot: which model served the attempt,
+ * under which prompt, at which rung, how big the request was, and what
+ * it cost — the numbers a "ran out of rounds" post mortem reads round by
+ * round. Numbered exactly as the `reasoning` record for the same attempt,
+ * so the two join on `round` and `attempt`.
+ */
 export interface LlmRoundEvent {
   readonly kind: 'llm_round'
   /** Which LLM round of the Run, counting from 1 — the `reasoning` record's numbering. */

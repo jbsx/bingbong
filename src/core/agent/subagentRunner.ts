@@ -35,6 +35,7 @@ import { MAX_SUBAGENT_VISION_CALLS } from './subagentRails'
 import { droppedFindingsNote, validateReportFindings, type SubagentReport } from './subagentReport'
 import { createReasoningRounds, type ReasoningRound, type SubagentReasoningTrace } from '../trace/reasoningTrace'
 import { createLlmRounds, llmRequestShape, llmRoundFailure, type LlmRound, type SubagentLlmRoundTrace } from '../trace/llmRoundTrace'
+import type { LlmRoundOutcome } from '../trace/runTrace'
 import { answerText } from './answerContract'
 import { recordOffContractReply, type SubagentOffContractReplyTrace } from '../trace/offContractReplyTrace'
 import type { SubagentPipelineEventTrace } from '../trace/pipelineEventTrace'
@@ -616,6 +617,17 @@ export async function runSubagent(deps: RunSubagentDeps, options: RunSubagentOpt
   const traceLlmRound = options.traceLlmRound
   const llmRounds = traceLlmRound ? createLlmRounds() : undefined
   /** Closes one attempt — abandoned or the round's last — and records what it was sent under. */
+  /**
+   * How a Subagent round ended, for its record (#218). A Stop is named
+   * first, as the pipeline names it. The Report Grace ending is the
+   * parent's Finalization Allowance reaching this Subagent — it fires
+   * for whatever cause the parent finalized under — so a round it cut
+   * is an allowance cut, never the active-work deadline's, which a
+   * Subagent polls at its loop top and never has an in-flight round
+   * aborted by.
+   */
+  const roundOutcome = (turn: AssistantTurn | null, error: unknown): LlmRoundOutcome =>
+    turn !== null ? 'completed' : options.isCancelled() ? 'cancelled' : graceEnded() ? 'allowance' : llmRoundFailure(error)
   const closeLlmAttempt = (closed: LlmRound | undefined, request: LlmRequest): void => {
     if (closed === undefined || traceLlmRound === undefined) return
     traceLlmRound({
@@ -644,11 +656,12 @@ export async function runSubagent(deps: RunSubagentDeps, options: RunSubagentOpt
       // have never streamed, and nothing here listens to a delta but the
       // collector — so the opt-in is what turns streaming on, and the round
       // stays non-streaming without it.
-      ...(reasoningRounds
+      ...(reasoningRounds || llmRounds
         ? {
             onDelta: (delta: LlmStreamDelta): void => {
-              reasoningRounds.onDelta(delta)
-              // The round's record counts the reasoning too (#218).
+              reasoningRounds?.onDelta(delta)
+              // The round's record counts the reasoning too (#218), so it
+              // streams for either collector.
               llmRounds?.onDelta(delta)
             },
           }
@@ -715,12 +728,8 @@ export async function runSubagent(deps: RunSubagentDeps, options: RunSubagentOpt
         // the one a diagnosis wants most (#183) — so its record is written
         // here, whatever the round did. Its llm_round record (#191) on the
         // same terms: how it ended (#218), and usage only when it returned.
-        // The grace ending is the parent's deadline reaching this worker.
         traceThinking(reasoningRounds?.takeRound())
-        closeLlmAttempt(
-          llmRounds?.takeRound(turn !== null ? 'completed' : graceEnded() ? 'deadline' : llmRoundFailure(answerError), turn?.usage),
-          answerRequest,
-        )
+        closeLlmAttempt(llmRounds?.takeRound(roundOutcome(turn, answerError), turn?.usage), answerRequest)
       }
       await checkpoint(options)
       // An Off-contract Reply in the reserved report round (#198, ADR
@@ -770,10 +779,7 @@ export async function runSubagent(deps: RunSubagentDeps, options: RunSubagentOpt
       // and its llm_round record (#191) says what it was sent under and
       // how it ended (#218).
       traceThinking(reasoningRounds?.takeRound())
-      closeLlmAttempt(
-        llmRounds?.takeRound(turn !== null ? 'completed' : graceEnded() ? 'deadline' : llmRoundFailure(roundError), usage),
-        request,
-      )
+      closeLlmAttempt(llmRounds?.takeRound(roundOutcome(turn, roundError), usage), request)
     }
     if (turn === null) return abandonedReport()
     await checkpoint(options)

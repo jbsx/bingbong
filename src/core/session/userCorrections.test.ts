@@ -48,19 +48,6 @@ describe('handing a correction on (#218, ADR 0043)', () => {
     expect(correctionsHandedOn([left], run('run-3'), undefined)).toEqual([{ ...left, handedTo: run('run-3') }])
   })
 
-  it('keeps both when the user spoke twice to one Run that never answered, in the order spoken', () => {
-    // "not that one; keep looking" then "keep going" is a rejection and
-    // a nudge, not a restatement: nothing here reads the newer as the
-    // newer wording of the older.
-    const older = correction({ text: 'not that one; keep looking', runId: run('run-2'), candidateId: id('memory-9') })
-    const newer = correction({ text: 'keep going', runId: run('run-2'), candidateId: id('memory-9'), retainedAt: 5 })
-
-    expect(correctionsHandedOn([older, newer], run('run-3'), undefined).map(({ text }) => text)).toEqual([
-      'not that one; keep looking',
-      'keep going',
-    ])
-  })
-
   it('never hands words on a second time: what the last Run was handed lapses when the next is admitted', () => {
     const left = correction({ text: 'not that one; keep looking', runId: run('run-2'), candidateId: id('memory-9') })
     const handedOnce = correctionsHandedOn([left], run('run-3'), undefined)

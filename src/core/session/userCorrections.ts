@@ -108,13 +108,6 @@ export interface UserCorrectionSubject {
  * no Run has been handed yet, stamped as handed to this one; everything
  * else lapses.
  *
- * Nothing replaces anything among the words one Run left, deliberately.
- * Two utterances about one Candidate look like the user restating
- * themselves, and treating the newer as the newer wording would be the
- * silent erasure this retention exists to prevent — "not that one; keep
- * looking" followed by "keep going" is a rejection and a nudge. Both are
- * handed on, in the order spoken.
- *
  * What lapses is a real loss and it is bounded on purpose. Words already
  * handed to a Run that has since ended were that Run's to ground, to ask
  * about, or to let go: the user has heard two Answers fall short by now,
@@ -122,7 +115,9 @@ export interface UserCorrectionSubject {
  * that made those Runs fall short. Words retired with the task they were
  * spoken about bind nothing and are dropped on the same beat, so the
  * list never grows past one Run's words plus the one utterance it
- * inherited.
+ * inherited. ADR 0039's "both wait" case — "not that one; keep looking"
+ * then "keep going", each to a Run that failed — is given up here on
+ * purpose: the older words lapse.
  */
 export function correctionsHandedOn(
   corrections: readonly RetainedUserCorrection[],

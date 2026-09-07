@@ -80,10 +80,10 @@ import {
   type EvidenceCommitInput,
 } from './evidenceCheckpoint'
 import { candidateCheckpointEvent, evidenceCheckpointEvent } from '../trace/evidenceCheckpointTrace'
-import type { LlmRequestShape, RunTraceWriter } from '../trace/runTrace'
+import type { LlmRequestShape, LlmRoundOutcome, RunTraceWriter } from '../trace/runTrace'
 import type { VisionTraceReporter } from '../trace/visionTrace'
 import { createReasoningRounds, reasoningEvent, type TracedReasoningRound } from '../trace/reasoningTrace'
-import { createLlmRounds, llmRequestShape, llmRoundEvent, llmRoundFailure, type LlmRound, type LlmRoundOutcome, type TracedLlmRound } from '../trace/llmRoundTrace'
+import { createLlmRounds, llmRequestShape, llmRoundEvent, llmRoundFailure, type LlmRound, type TracedLlmRound } from '../trace/llmRoundTrace'
 import { pipelineEventTraceBody, tracesPipelineEvent } from '../trace/pipelineEventTrace'
 import { offContractReplyEvent, recordOffContractReply, type TracedOffContractReply } from '../trace/offContractReplyTrace'
 import { completedEvidenceIsFresh } from './evidenceFreshness'

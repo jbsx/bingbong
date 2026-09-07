@@ -26,8 +26,6 @@ import {
 } from '../ports/llm'
 import type { LlmRequestShape, LlmRoundEvent, LlmRoundOutcome, LlmRoundRole } from './runTrace'
 
-export type { LlmRoundOutcome } from './runTrace'
-
 /** One attempt as the collector closed it: its numbering, how it ended, and what the client reported. */
 export interface LlmRound {
   readonly round: number

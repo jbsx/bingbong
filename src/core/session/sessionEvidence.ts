@@ -965,7 +965,6 @@ export function createSessionEvidence(deps: {
       // either, so minting an Observation for them would be evidence of
       // nothing.
       corrections = correctionsHandedOn(corrections, runId, deps.objectiveId?.()).map((held) => {
-        if (held.observationId !== undefined) return held
         // A User Observation is grounded against the user events of the
         // Run that heard them (#122), so the Run this utterance was
         // admitted with is the only Run that could ever ground it — and
