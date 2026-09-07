@@ -350,17 +350,17 @@ describe('evidence browser e2e', () => {
           {
             id: 'd1',
             name: 'record_candidate',
-            args: { candidate_id: 'memory-4', status: 'accepted', supporting_evidence: ['memory-1'] },
+            args: { candidate_id: 'memory-4', status: 'accepted', reason: 'the heading is on the page', supporting_evidence: ['memory-1'] },
           },
           {
             id: 'd2',
             name: 'record_candidate',
-            args: { candidate_id: 'memory-5', status: 'rejected', supporting_evidence: ['memory-1'] },
+            args: { candidate_id: 'memory-5', status: 'rejected', reason: 'the heading is not elsewhere', supporting_evidence: ['memory-1'] },
           },
           {
             id: 'd3',
             name: 'record_candidate',
-            args: { candidate_id: 'memory-6', status: 'superseded', supporting_evidence: ['memory-1'] },
+            args: { candidate_id: 'memory-6', status: 'superseded', reason: 'the page answered it, no need to ask', supporting_evidence: ['memory-1'] },
           },
         ],
       },

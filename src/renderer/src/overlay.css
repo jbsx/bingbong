@@ -328,6 +328,7 @@ body,
    under the statement, never competing with it. */
 .evidence-uncertainty,
 .evidence-source,
+.evidence-decision,
 .evidence-provenance {
   margin: 4px 0 0;
   color: var(--muted);
@@ -338,6 +339,13 @@ body,
 
 .evidence-uncertainty {
   font-style: italic;
+}
+
+/* What stands on a decided Candidate (#208): who decided, for which
+   objective, and why — the one card line that is not the model's
+   description of the Candidate but the record of a decision on it. */
+.evidence-decision {
+  color: var(--text);
 }
 
 /* The shared evidence source control (#144): one line per source — the

@@ -453,6 +453,23 @@ A user rejection stands for that objective until the user reopens it; a model
 elimination may be reconsidered when new evidence overturns its rationale.
 _Avoid_: result, guess
 
+**Candidate Decision**:
+One retained verdict on a Candidate — accepted, rejected, superseded, or
+reopened — carrying the objective it was made under, its Decision Authority,
+its reason, and the Observations it stands on. Decisions accumulate rather than
+overwrite, so what a reconsideration overturned keeps its own authority and
+reason. What a Candidate holds *for one objective* is its newest decision under
+that objective, and an objective that decided nothing holds no verdict on it.
+_Avoid_: status change, verdict flag
+
+**Decision Authority**:
+Who made a Candidate Decision: the user, or the model. The user's is claimed by
+citing a User Observation holding their own words and is refused without one, so
+model evidence can never be filed as the user's. A user decision stands until
+the user reopens it; the model's own stands until it cites evidence that
+decision did not already rest on.
+_Avoid_: decided_by, owner
+
 **Inspection Reference**:
 The explicit relationship between an Answer and the Candidate it presents for
 the user to inspect, preserved through inspection commands but replaced by a

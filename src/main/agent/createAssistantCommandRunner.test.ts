@@ -670,7 +670,7 @@ describe('assistant command runner', () => {
         { id: 'c4', name: 'record_candidate', args: { subject: 'Acme wifi router', supporting_evidence: ['memory-1'] } },
       ] },
       { kind: 'tool_calls', calls: [
-        { id: 'c5', name: 'record_candidate', args: { candidate_id: 'memory-3', status: 'accepted', supporting_evidence: ['memory-1', 'memory-2'] } },
+        { id: 'c5', name: 'record_candidate', args: { candidate_id: 'memory-3', status: 'accepted', reason: 'the price answers the question', supporting_evidence: ['memory-1', 'memory-2'] } },
       ] },
       {
         kind: 'answer',
@@ -762,11 +762,12 @@ describe('assistant command runner', () => {
           return Promise.resolve(queue.shift() ?? { kind: 'answer', speak: 'Nothing yet.', display: 'Nothing yet.' })
         },
       }
+      const published: PipelineEvent[] = []
       const pipeline = createCommandPipeline({
         llm,
         tts: new RecordingTts(),
         clock,
-        tools: [createRecordEvidenceTool()],
+        tools: [createRecordEvidenceTool(), createRecordCandidateTool()],
         currentPageUrl: () => 'https://old.reddit.com/r/tierlists',
         onContinuityDegraded: (reason) => degraded.push(reason),
       })
@@ -775,10 +776,10 @@ describe('assistant command runner', () => {
         runtime,
         clock,
         onSessionReset: () => {},
-        createRunPublisher: () => ({ publish: () => {} }),
+        createRunPublisher: () => ({ publish: (event: PipelineEvent) => published.push(event) }),
         publishFeedback: () => {},
       })
-      return { runtime, runner, requests, queue, degraded }
+      return { runtime, runner, requests, queue, degraded, published }
     }
 
     /**
@@ -927,6 +928,257 @@ describe('assistant command runner', () => {
       // rather than deleted.
       expect(h.requests.at(-1)?.memory?.map(({ id, kind, status }) => [id, kind, status])).toContainEqual([
         'memory-2', 'objective', 'superseded',
+      ])
+    })
+
+    // #208, ADR 0039: the same Session, one step on. A Candidate is
+    // decided *for* the objective in force and *by* someone — and both
+    // facts have to survive a continuation, a revised constraint, and a
+    // replacement objective.
+    const REJECTION = 'not that one, i never wrote it'
+    const REOPEN = 'actually show me that one again'
+
+    /** Records one Candidate resting on the user's own words, and rejects it on their authority. */
+    async function rejectOnUserAuthority(h: ReturnType<typeof harness>): Promise<void> {
+      h.queue.push({
+        kind: 'tool_calls',
+        calls: [{ id: 'k1', name: 'record_candidate', args: { subject: 'A reddit tier list post', supporting_evidence: ['memory-1'] } }],
+      })
+      h.queue.push({ kind: 'answer', speak: 'One option.', display: 'One option.', runNote: 'Recorded one candidate.' })
+      await h.runner.run('keep looking')
+
+      h.queue.push(citeUser('c9', REJECTION))
+      h.queue.push({
+        kind: 'tool_calls',
+        calls: [{ id: 'k2', name: 'record_candidate', args: {
+          candidate_id: 'memory-4',
+          status: 'rejected',
+          reason: REJECTION,
+          authority: 'user',
+          supporting_evidence: ['memory-5'],
+        } }],
+      })
+      h.queue.push({ kind: 'answer', speak: 'Dropped it.', display: 'Dropped it.', runNote: 'Dropped the reddit post.' })
+      await h.runner.run(REJECTION)
+    }
+
+    /** Every refused tool result the Runs published, as the model saw them. */
+    const refusals = (h: ReturnType<typeof harness>): string[] =>
+      h.published
+        .filter((event): event is Extract<PipelineEvent, { type: 'tool_result' }> => event.type === 'tool_result' && !event.ok)
+        .map((event) => event.error ?? '')
+
+    it('scopes a Candidate decision to the objective in force and to who made it', async () => {
+      const h = harness()
+      await establish(h)
+      await rejectOnUserAuthority(h)
+      await h.runner.run('keep looking')
+
+      // The decision reaches the next Run's context carrying the objective
+      // it was made under, the authority behind it, and its reason — and
+      // beside it, the objective that context is to be read against.
+      const evidence = h.requests.at(-1)?.evidence
+      expect(evidence?.objectiveId).toBe('memory-2')
+      expect(evidence?.candidates).toEqual([expect.objectContaining({
+        id: 'memory-4',
+        status: 'rejected',
+        decisions: [{
+          status: 'rejected',
+          authority: 'user',
+          reason: REJECTION,
+          objectiveId: 'memory-2',
+          supportingObservationIds: ['memory-5'],
+          decidedAt: expect.any(Number),
+        }],
+      })])
+    })
+
+    it('binds a decision made before the objective landed to the objective it was made for', async () => {
+      const h = harness()
+      // The whole sequence inside the establishing Run: the user's words,
+      // a Candidate, and their rejection of it — all recorded while the
+      // objective those same words set is still only a pending Memory
+      // Commit. Nothing here has an objective to name yet.
+      h.queue.push(citeUser('c1', FOUND))
+      h.queue.push({
+        kind: 'tool_calls',
+        calls: [{ id: 'k0', name: 'record_candidate', args: { subject: 'A reddit tier list post', supporting_evidence: ['memory-1'] } }],
+      })
+      h.queue.push({
+        kind: 'tool_calls',
+        calls: [{ id: 'k1', name: 'record_candidate', args: {
+          candidate_id: 'memory-2',
+          status: 'rejected',
+          reason: REJECTION,
+          authority: 'user',
+          supporting_evidence: ['memory-1'],
+        } }],
+      })
+      h.queue.push({
+        kind: 'answer',
+        speak: 'Dropped it.',
+        display: 'Dropped it.',
+        runNote: 'Rejected the reddit post.',
+        memoryPatch: parseMemoryPatch([{
+          op: 'add',
+          entry: {
+            kind: 'objective',
+            subject: 'Find the tier list post',
+            detail: 'A post the user found last week.',
+            user_evidence: ['memory-1'],
+          },
+        }])!,
+      })
+      await h.runner.run(FOUND)
+
+      // The Memory Commit that retained the objective claimed the decision
+      // made for it: without that, the rejection is scoped to nothing and
+      // the next Run — proposing under the objective — finds no decision
+      // to respect.
+      const objectiveId = h.requests.at(-1)?.objective?.id ?? 'memory-3'
+      expect(h.runtime.evidenceStore()!.candidate('memory-2' as never)!.decisions).toEqual([
+        expect.objectContaining({ status: 'rejected', authority: 'user', objectiveId }),
+      ])
+
+      h.queue.push({
+        kind: 'tool_calls',
+        calls: [{ id: 'k2', name: 'record_candidate', args: {
+          candidate_id: 'memory-2',
+          status: 'accepted',
+          reason: 'on reflection it does match',
+          supporting_evidence: ['memory-1'],
+        } }],
+      })
+      h.queue.push({ kind: 'answer', speak: 'Still looking.', display: 'Still looking.', runNote: 'Still looking.' })
+      await h.runner.run('keep looking')
+      expect(refusals(h).some((error) => /only the user reopens it/.test(error))).toBe(true)
+      expect(h.runtime.evidenceStore()?.candidate('memory-2' as never)?.status).toBe('rejected')
+    })
+
+    it('refuses a model revival of the user\'s rejection, and admits the user\'s own reopening', async () => {
+      const h = harness()
+      await establish(h)
+      await rejectOnUserAuthority(h)
+
+      // A later round finds the Candidate promising again. It is not the
+      // model's to undo — and the refusal says what would move it.
+      h.queue.push({
+        kind: 'tool_calls',
+        calls: [{ id: 'k3', name: 'record_candidate', args: {
+          candidate_id: 'memory-4',
+          status: 'accepted',
+          reason: 'on reflection it does match',
+          supporting_evidence: ['memory-1'],
+        } }],
+      })
+      h.queue.push({ kind: 'answer', speak: 'Still looking.', display: 'Still looking.', runNote: 'Still looking.' })
+      await h.runner.run('keep looking')
+      expect(refusals(h).some((error) => /only the user reopens it/.test(error))).toBe(true)
+      expect(h.runtime.evidenceStore()?.candidate('memory-4' as never)?.status).toBe('rejected')
+
+      // The user themselves reopens it, in their own words.
+      h.queue.push(citeUser('c10', REOPEN))
+      h.queue.push({
+        kind: 'tool_calls',
+        calls: [{ id: 'k4', name: 'record_candidate', args: {
+          candidate_id: 'memory-4',
+          status: 'active',
+          reason: REOPEN,
+          authority: 'user',
+          supporting_evidence: ['memory-6'],
+        } }],
+      })
+      h.queue.push({ kind: 'answer', speak: 'Back on it.', display: 'Back on it.', runNote: 'Reopened the reddit post.' })
+      await h.runner.run(REOPEN)
+
+      const candidate = h.runtime.evidenceStore()!.candidate('memory-4' as never)!
+      expect(candidate.status).toBe('active')
+      // The rejection it overturned is still on the record, with the
+      // reason and the authority it was made under.
+      expect(candidate.decisions.map(({ status, authority, reason }) => [status, authority, reason])).toEqual([
+        ['rejected', 'user', REJECTION],
+        ['active', 'user', REOPEN],
+      ])
+    })
+
+    it('keeps the rejection through a constraint revision and drops it for a replacement objective', async () => {
+      const h = harness()
+      await establish(h)
+      await rejectOnUserAuthority(h)
+
+      // Revising a constraint continues the same objective, so the user's
+      // rejection under it is untouched — and still not the model's to undo.
+      h.queue.push(citeUser('c11', REVISION))
+      h.queue.push({
+        kind: 'answer',
+        speak: 'Understood.',
+        display: 'Searching forums instead.',
+        runNote: 'Narrowed the search to forums.',
+        memoryPatch: parseMemoryPatch([{
+          op: 'update',
+          id: 'memory-3',
+          entry: {
+            kind: 'constraint',
+            subject: 'Authorship',
+            detail: 'The user found it on a forum, not on Reddit.',
+            user_evidence: ['memory-6'],
+          },
+        }])!,
+      })
+      await h.runner.run(REVISION)
+      h.queue.push({
+        kind: 'tool_calls',
+        calls: [{ id: 'k5', name: 'record_candidate', args: {
+          candidate_id: 'memory-4',
+          status: 'accepted',
+          reason: 'the revision makes it fit',
+          supporting_evidence: ['memory-6'],
+        } }],
+      })
+      h.queue.push({ kind: 'answer', speak: 'Still looking.', display: 'Still looking.', runNote: 'Still looking.' })
+      await h.runner.run('keep looking')
+      expect(h.requests.at(-1)?.objective?.id).toBe('memory-2')
+      expect(refusals(h).some((error) => /only the user reopens it/.test(error))).toBe(true)
+      expect(h.runtime.evidenceStore()?.candidate('memory-4' as never)?.status).toBe('rejected')
+
+      // Replacing the objective is a different task. The rejection was for
+      // the old one: the new objective inherits none of it, so the same
+      // Candidate may be decided afresh — and the old decision stays on
+      // the record under the objective it belonged to.
+      h.queue.push(citeUser('c12', REPLACEMENT))
+      h.queue.push({
+        kind: 'answer',
+        speak: 'On it.',
+        display: 'Looking for tables.',
+        runNote: 'Switched to booking a table.',
+        memoryPatch: parseMemoryPatch([{
+          op: 'add',
+          entry: {
+            kind: 'objective',
+            subject: 'Book a table',
+            detail: 'A table for two tonight.',
+            user_evidence: ['memory-7'],
+          },
+        }])!,
+      })
+      await h.runner.run(REPLACEMENT)
+      h.queue.push({
+        kind: 'tool_calls',
+        calls: [{ id: 'k6', name: 'record_candidate', args: {
+          candidate_id: 'memory-4',
+          status: 'accepted',
+          reason: 'it is the right one for the booking',
+          supporting_evidence: ['memory-1'],
+        } }],
+      })
+      h.queue.push({ kind: 'answer', speak: 'Booked.', display: 'Booked.', runNote: 'Booked a table.' })
+      await h.runner.run('keep looking')
+
+      const candidate = h.runtime.evidenceStore()!.candidate('memory-4' as never)!
+      expect(candidate.status).toBe('accepted')
+      expect(candidate.decisions.map(({ status, authority, objectiveId }) => [status, authority, objectiveId])).toEqual([
+        ['rejected', 'user', 'memory-2'],
+        ['accepted', 'model', 'memory-8'],
       ])
     })
 

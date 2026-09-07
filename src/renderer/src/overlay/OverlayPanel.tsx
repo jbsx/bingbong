@@ -183,6 +183,7 @@ export function OverlayPanel() {
             observations={evidence.observations}
             candidates={evidence.candidates}
             contradictions={evidence.contradictions}
+            objectiveId={evidence.objectiveId}
             footer={panelFooter}
             headerActions={
               <>

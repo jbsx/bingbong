@@ -2,6 +2,18 @@ import type { RunId, SessionId } from './sessionIdentity'
 import type { ObservationId } from './observationLedger'
 import type { RetainedInspectionReference } from './inspectionReference'
 import {
+  candidateDecisionRefusal,
+  DECISION_AUTHORITIES,
+  latestDecisionUnder,
+  MAX_DECISION_REASON_CHARS,
+  retainedDecisions,
+  TERMINAL_CANDIDATE_STATUSES,
+  type CandidateChangeRefusal,
+  type CandidateDecision,
+  type CandidateStatus,
+  type DecisionAuthority,
+} from './candidateDecisions'
+import {
   boundedString,
   canonicalizeMemoryUrl,
   MAX_MEMORY_DETAIL_CHARS,
@@ -27,16 +39,21 @@ export const OBSERVATION_SOURCE_KINDS = [
 ] as const
 export type ObservationSourceKind = (typeof OBSERVATION_SOURCE_KINDS)[number]
 
-/** The lifecycle of a Candidate (#112, ADR 0028): grounded status with no silent overwriting. */
-export const CANDIDATE_STATUSES = [
-  'active',
-  'accepted',
-  'rejected',
-  'superseded',
-] as const
-export type CandidateStatus = (typeof CANDIDATE_STATUSES)[number]
-
-const TERMINAL_CANDIDATE_STATUSES: readonly CandidateStatus[] = ['accepted', 'rejected', 'superseded']
+/**
+ * The Candidate lifecycle vocabulary and the rules that scope a decision
+ * to its objective and authority live in `candidateDecisions` (#112, #208);
+ * they are re-exported here because Session Evidence is where every caller
+ * already reads the Candidate's shape from.
+ */
+export {
+  CANDIDATE_STATUSES,
+  DECISION_AUTHORITIES,
+  MAX_DECISION_REASON_CHARS,
+  type CandidateChangeRefusal,
+  type CandidateDecision,
+  type CandidateStatus,
+  type DecisionAuthority,
+} from './candidateDecisions'
 
 export const MAX_UNCERTAINTY_CHARS = 200
 /** Bound on a provenance identity — Run ids and Subagent ids alike. */
@@ -97,6 +114,14 @@ export interface SessionCandidate {
   readonly supportingObservationIds: readonly MemoryEntryId[]
   readonly references: readonly MemoryReference[]
   readonly provenance: readonly MemoryProvenance[]
+  /**
+   * Every decision this Candidate carries, oldest first (#208, ADR 0039):
+   * what was decided, under which objective, on whose authority, and why.
+   * Empty while the Candidate is only active. `status` is the newest
+   * decision's verdict; what stands *for one objective* is read from this
+   * list, because a rejection for one task is not a verdict on another.
+   */
+  readonly decisions: readonly CandidateDecision[]
 }
 
 /**
@@ -118,6 +143,14 @@ export interface SessionEvidenceSnapshot {
   readonly candidates: readonly SessionCandidate[]
   /** Every mechanical contradiction the Session's Observations carry (#143). */
   readonly contradictions: readonly ObservationContradiction[]
+  /**
+   * The user objective in force when the snapshot was taken (#208, ADR
+   * 0039), absent when the Session holds none. Every reader of a Candidate
+   * decision needs it to tell "rejected for the task you are on" from
+   * "rejected for a task that has since been replaced" — and it is read
+   * from Working Memory at snapshot time, never stored a second time here.
+   */
+  readonly objectiveId?: MemoryEntryId
 }
 
 /**
@@ -183,6 +216,10 @@ export interface CandidateInput {
 
 export interface CandidateStatusChange {
   readonly status: CandidateStatus
+  /** Whose decision this is (#208); `user` is admitted only against the user's own retained words. */
+  readonly authority: DecisionAuthority
+  /** Why — the grounded rationale the decision is reconsidered against later (#208). */
+  readonly reason: string
   readonly supportingObservationIds: readonly MemoryEntryId[]
   readonly references?: readonly MemoryReference[]
   readonly runId: RunId
@@ -200,6 +237,22 @@ export interface InspectionPresentation {
   readonly objectiveId?: MemoryEntryId
   readonly runId: RunId
 }
+
+/**
+ * What one decision came to (#208, ADR 0039): the Candidate as retained,
+ * or why the Session would not retain it — and, when a scoping rule is
+ * what refused it, the decision that blocks it. The verdict is reached
+ * once, here, where the state it is reached against lives; the tool
+ * surface renders it rather than deriving it a second time.
+ */
+export type CandidateDecisionOutcome =
+  | { readonly ok: true; readonly candidate: SessionCandidate }
+  | {
+      readonly ok: false
+      readonly refusal: CandidateChangeRefusal
+      /** The standing decision the refusal cites; absent when no decision is what refused it. */
+      readonly standing?: CandidateDecision
+    }
 
 export interface ObservationCheckpointResult {
   readonly observation: SessionObservation
@@ -224,7 +277,12 @@ export interface SessionEvidenceStore {
   checkpointObservation(input: ObservationCheckpointInput): ObservationCheckpointResult | null
   observation(id: MemoryEntryId): SessionObservation | null
   addCandidate(input: CandidateInput): SessionCandidate | null
-  setCandidateStatus(id: MemoryEntryId, change: CandidateStatusChange): SessionCandidate | null
+  /**
+   * Decides one Candidate, or refuses and says why (#208): the scoping and
+   * authority rules are enforced here, and the outcome carries what the
+   * refusal rests on so no caller has to re-derive the verdict.
+   */
+  setCandidateStatus(id: MemoryEntryId, change: CandidateStatusChange): CandidateDecisionOutcome
   candidate(id: MemoryEntryId): SessionCandidate | null
   /** Whether the cited identities are all live Observations — the bar an Assessment must clear. */
   hasObservationSupport(ids: readonly MemoryEntryId[]): boolean
@@ -244,6 +302,25 @@ export interface SessionEvidenceStore {
   scopeInspection(objectiveId: MemoryEntryId): RetainedInspectionReference | null
   /** The Candidate the Session's latest presentation named, if any (#210). */
   inspectionReference(): RetainedInspectionReference | null
+  /**
+   * Binds every decision made before the Session held a user objective to
+   * the objective it turns out to have been serving (#208, ADR 0039).
+   *
+   * A Run records its decisions as it works, but the objective the user
+   * set only enters Working Memory at that Run's Memory Commit — so the
+   * first Run's rejections are made with no objective to name yet. They
+   * were still made *for* the task that Run was doing, and the objective
+   * that lands at its commit is that task's identity. Without this, a
+   * rejection recorded in the establishing Run would be scoped to nothing
+   * and the next Run — proposing under the objective — would find no
+   * decision to respect and admit the revival.
+   *
+   * Only unscoped decisions move, so this can never re-parent a decision
+   * from one objective to another: once an objective exists, every later
+   * decision names it, and a replacement objective finds nothing unscoped
+   * left to claim.
+   */
+  adoptUnscopedDecisions(objectiveId: MemoryEntryId): void
   snapshot(): SessionEvidenceSnapshot
   /** How many of each form the store holds right now (#181) — no copy, no freeze. */
   counts(): SessionEvidenceCounts
@@ -275,6 +352,7 @@ interface MutableCandidate {
   supportingObservationIds: MemoryEntryId[]
   references: MemoryReference[]
   provenance: MemoryProvenance[]
+  decisions: CandidateDecision[]
 }
 
 function parseProvenance(runId: RunId, subagentId: string | undefined): MemoryProvenance | null {
@@ -326,6 +404,10 @@ function freezeCandidate(candidate: MutableCandidate): SessionCandidate {
     supportingObservationIds: Object.freeze([...candidate.supportingObservationIds]),
     references: Object.freeze(candidate.references.map((reference) => Object.freeze({ ...reference }))),
     provenance: Object.freeze(candidate.provenance.map((source) => Object.freeze({ ...source }))),
+    decisions: Object.freeze(candidate.decisions.map((decision) => Object.freeze({
+      ...decision,
+      supportingObservationIds: Object.freeze([...decision.supportingObservationIds]),
+    }))),
   })
 }
 
@@ -333,6 +415,14 @@ export function createSessionEvidence(deps: {
   sessionId: SessionId
   now(): number
   mintId(): MemoryEntryId
+  /**
+   * The user objective in force, asked at every decision and every
+   * snapshot (#208, ADR 0039). Absent — or answering undefined — every
+   * decision is unscoped, and they all share one implicit scope: a
+   * Session that never retained the user's task cannot pretend to
+   * separate two of them.
+   */
+  objectiveId?(): MemoryEntryId | undefined
   /**
    * Fired after every accepted Observation checkpoint — a new Observation
    * or an exact-duplicate merge (#139). Refused checkpoints (validation,
@@ -365,6 +455,16 @@ export function createSessionEvidence(deps: {
 
   const supportIsValid = (ids: readonly MemoryEntryId[]): boolean =>
     ids.length > 0 && ids.every((id) => liveObservation(id) !== null)
+
+  /**
+   * Whether the user's own words are among the cited support (#208, ADR
+   * 0039). User authority is earned exactly the way #206 makes an
+   * objective the user's: by citing a User Observation the Session
+   * already grounded. Distilled model notes read as fluently as the
+   * user's words, so nothing but the source kind is trusted here.
+   */
+  const hasUserSupport = (ids: readonly MemoryEntryId[]): boolean =>
+    ids.some((id) => liveObservation(id)?.sourceKind === 'user')
 
   const validOriginEvent = (input: ObservationCheckpointInput): UserObservationOrigin | null | 'invalid' => {
     if (input.originEvent === undefined) return null
@@ -518,6 +618,7 @@ export function createSessionEvidence(deps: {
         supportingObservationIds: [...input.supportingObservationIds],
         references,
         provenance: [source],
+        decisions: [],
       }
       candidates.push(candidate)
       const frozen = freezeCandidate(candidate)
@@ -525,17 +626,47 @@ export function createSessionEvidence(deps: {
       return frozen
     },
     setCandidateStatus(id, change) {
-      if (cleared) return null
+      if (cleared) return { ok: false, refusal: 'invalid' }
       const candidate = liveCandidate(id)
-      if (!candidate) return null
-      // Statuses are retained, never replayed: a change must land on a
-      // different terminal status, from whatever the Candidate holds now.
-      if (!TERMINAL_CANDIDATE_STATUSES.includes(change.status) || change.status === candidate.status) return null
+      if (!candidate) return { ok: false, refusal: 'unknown_candidate' }
+      // A decision settles on a verdict, or reopens what a decision in
+      // this same scope settled — nothing else is a decision.
+      if (!TERMINAL_CANDIDATE_STATUSES.includes(change.status) && change.status !== 'active') {
+        return { ok: false, refusal: 'invalid' }
+      }
+      if (!DECISION_AUTHORITIES.includes(change.authority)) return { ok: false, refusal: 'invalid' }
+      const reason = boundedString(change.reason, MAX_DECISION_REASON_CHARS)
       const references = parseMemoryReferences(change.references)
       const source = parseProvenance(change.runId, change.subagentId)
-      if (!references || !source || !supportIsValid(change.supportingObservationIds)) return null
+      if (!reason || !references || !source || !supportIsValid(change.supportingObservationIds)) {
+        return { ok: false, refusal: 'invalid' }
+      }
+      // Only the user's own retained words carry the user's authority
+      // (#208): claimed without them, the decision is refused outright
+      // rather than quietly recorded as the model's.
+      if (change.authority === 'user' && !hasUserSupport(change.supportingObservationIds)) {
+        return { ok: false, refusal: 'unsupported_authority' }
+      }
+      const objectiveId = deps.objectiveId?.()
+      const decision: CandidateDecision = {
+        status: change.status,
+        authority: change.authority,
+        reason,
+        ...(objectiveId !== undefined ? { objectiveId } : {}),
+        supportingObservationIds: [...change.supportingObservationIds],
+        decidedAt: deps.now(),
+      }
+      // The scoping and authority rules, in one place (#208, ADR 0039):
+      // no replay within a scope, no model revival of what the user
+      // decided, no model reconsideration on grounds it already had.
+      const refusal = candidateDecisionRefusal(candidate.decisions, decision)
+      if (refusal !== null) {
+        const standing = latestDecisionUnder(candidate.decisions, objectiveId)
+        return { ok: false, refusal, ...(standing !== null ? { standing } : {}) }
+      }
 
       candidate.status = change.status
+      candidate.decisions = retainedDecisions(candidate.decisions, decision)
       const support = new Set(candidate.supportingObservationIds)
       for (const observationId of change.supportingObservationIds) support.add(observationId)
       candidate.supportingObservationIds = [...support]
@@ -543,7 +674,7 @@ export function createSessionEvidence(deps: {
       candidate.provenance = appendProvenance(candidate.provenance, source)
       const frozen = freezeCandidate(candidate)
       notifyCandidateChanged(frozen)
-      return frozen
+      return { ok: true, candidate: frozen }
     },
     candidate(id) {
       const found = liveCandidate(id)
@@ -583,11 +714,22 @@ export function createSessionEvidence(deps: {
     inspectionReference() {
       return inspection
     },
+    adoptUnscopedDecisions(objectiveId) {
+      if (cleared) return
+      for (const candidate of candidates) {
+        if (!candidate.decisions.some((decision) => decision.objectiveId === undefined)) continue
+        candidate.decisions = candidate.decisions.map((decision) =>
+          decision.objectiveId === undefined ? { ...decision, objectiveId } : decision,
+        )
+      }
+    },
     snapshot() {
+      const objectiveId = deps.objectiveId?.()
       return Object.freeze({
         observations: Object.freeze(observations.map(freezeObservation)),
         candidates: Object.freeze(candidates.map(freezeCandidate)),
         contradictions: Object.freeze(contradictions.map((pair) => Object.freeze({ ...pair }))),
+        ...(objectiveId !== undefined ? { objectiveId } : {}),
       })
     },
     counts() {

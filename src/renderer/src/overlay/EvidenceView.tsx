@@ -9,6 +9,8 @@ import {
   CANDIDATE_FILTERS,
   OBSERVATION_FILTERS,
   candidateMatchesFilter,
+  candidateStatusFor,
+  describeCandidateStanding,
   describeObservationProvenance,
   describeProvenance,
   isDelegatedObservation,
@@ -49,6 +51,7 @@ export function EvidenceView({
   observations,
   candidates,
   contradictions = NO_CONTRADICTIONS,
+  objectiveId,
   headerActions,
   footer,
 }: {
@@ -56,6 +59,8 @@ export function EvidenceView({
   candidates: readonly SessionCandidate[]
   /** The snapshot's retained contradictions (#143) — contradictory Observations group on them. */
   contradictions?: readonly ObservationContradiction[]
+  /** The objective in force (#208): what a Candidate's decision line is scoped against. */
+  objectiveId?: MemoryEntryId
   headerActions?: React.ReactNode
   /** Below the list — the panel's prompt row, same as Activity. */
   footer?: React.ReactNode
@@ -100,8 +105,15 @@ export function EvidenceView({
   const byId = new Map(observations.map((observation) => [observation.id, observation]))
   const visibleObservations = newestFirstObservations(observations)
     .filter((observation) => observationMatchesFilter(observation, observationFilter))
+  // Each card's scoped reading, derived once: the status the objective in
+  // force decided, and how that decision reads (#208).
   const visibleCandidates = newestFirstCandidates(candidates)
-    .filter((candidate) => candidateMatchesFilter(candidate, candidateFilter))
+    .filter((candidate) => candidateMatchesFilter(candidate, candidateFilter, objectiveId))
+    .map((candidate) => ({
+      candidate,
+      status: candidateStatusFor(candidate, objectiveId),
+      standing: describeCandidateStanding(candidate, objectiveId),
+    }))
   // The contradiction grouping (#143): clusters of mechanically
   // contradictory Observations render as one visible group; the chip
   // truth comes from every retained pair, resolved from either member —
@@ -234,15 +246,15 @@ export function EvidenceView({
               {candidates.length === 0 ? 'No candidates yet.' : 'No candidates match this filter.'}
             </p>
           ) : (
-            visibleCandidates.map((candidate) => (
+            visibleCandidates.map(({ candidate, status, standing }) => (
               <article
                 key={candidate.id}
                 className="evidence-card evidence-card--candidate"
                 data-candidate-id={candidate.id}
-                data-candidate-status={candidate.status}
+                data-candidate-status={status}
               >
                 <header className="evidence-card-head">
-                  <span className={`evidence-status evidence-status--${candidate.status}`}>{candidate.status}</span>
+                  <span className={`evidence-status evidence-status--${status}`}>{status}</span>
                   <time className="feed-time">{formatFeedTime(candidate.recordedAt)}</time>
                 </header>
                 <p className="evidence-text">{candidate.subject}</p>
@@ -267,6 +279,10 @@ export function EvidenceView({
                     })}
                   </div>
                 ) : null}
+                {/* What stands for the objective in hand (#208, ADR 0039):
+                    who decided, whether it was for this objective or one
+                    since replaced, and the reason they gave. */}
+                {standing !== null ? <p className="evidence-decision">{standing}</p> : null}
                 <p className="evidence-provenance">{describeProvenance(candidate.provenance)}</p>
               </article>
             ))

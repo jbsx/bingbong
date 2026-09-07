@@ -1170,6 +1170,8 @@ describe('session runtime', () => {
     store.addCandidate({ subject: 'Ghost', supportingObservationIds: ['memory-99' as never], runId: admission.runId })
     store.setCandidateStatus(candidate.id, {
       status: 'accepted',
+      authority: 'model',
+      reason: 'it is the only one in range',
       supportingObservationIds: [observation.id],
       runId: admission.runId,
     })

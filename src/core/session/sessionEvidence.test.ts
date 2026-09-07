@@ -3,7 +3,12 @@ import type { RunId, SessionId } from './sessionIdentity'
 import type { MemoryEntryId } from './workingMemory'
 import type { ObservationId } from './observationLedger'
 import { createSessionEvidence, MAX_UNCERTAINTY_CHARS } from './sessionEvidence'
-import type { SessionEvidenceStore } from './sessionEvidence'
+import type {
+  CandidateDecisionOutcome,
+  CandidateStatusChange,
+  SessionCandidate,
+  SessionEvidenceStore,
+} from './sessionEvidence'
 function evidenceHarness(now = (): number => 0): { evidence: SessionEvidenceStore; ids: string[] } {
   const minted: string[] = []
   let next = 0
@@ -274,11 +279,13 @@ describe('session evidence', () => {
 
     const accepted = evidence.setCandidateStatus(candidate!.id, {
       status: 'accepted',
+      authority: 'model',
+      reason: 'cheapest of the two that meets the range',
       supportingObservationIds: [rival.id],
       runId: 'run-2' as RunId,
       subagentId: 'a-1',
     })
-    expect(accepted).toMatchObject({
+    expect(decided(accepted)).toMatchObject({
       status: 'accepted',
       supportingObservationIds: [price.id, rival.id],
       provenance: [{ runId: 'run-1' }, { runId: 'run-2', subagentId: 'a-1' }],
@@ -289,8 +296,10 @@ describe('session evidence', () => {
       supportingObservationIds: [rival.id],
       runId: 'run-2' as RunId,
     })!
-    expect(evidence.setCandidateStatus(rivalCandidate.id, { status: 'rejected', supportingObservationIds: [rival.id], runId: 'run-2' as RunId })).toMatchObject({ status: 'rejected' })
-    expect(evidence.setCandidateStatus(rivalCandidate.id, { status: 'rejected', supportingObservationIds: [rival.id], runId: 'run-3' as RunId })).toBeNull()
+    const decide = { authority: 'model' as const, reason: 'over the price ceiling', supportingObservationIds: [rival.id] }
+    expect(decided(evidence.setCandidateStatus(rivalCandidate.id, { ...decide, status: 'rejected', runId: 'run-2' as RunId }))).toMatchObject({ status: 'rejected' })
+    // Statuses are retained, not replayed — the same verdict again is refused.
+    expect(refusedAs(evidence.setCandidateStatus(rivalCandidate.id, { ...decide, status: 'rejected', runId: 'run-3' as RunId }))).toBe('replayed')
     expect(evidence.candidate(rivalCandidate.id)?.status).toBe('rejected')
 
     const third = evidence.addCandidate({
@@ -298,18 +307,22 @@ describe('session evidence', () => {
       supportingObservationIds: [rival.id],
       runId: 'run-3' as RunId,
     })!
-    expect(evidence.setCandidateStatus(third.id, { status: 'superseded', supportingObservationIds: [rival.id], runId: 'run-3' as RunId })).toMatchObject({ status: 'superseded' })
+    expect(decided(evidence.setCandidateStatus(third.id, { ...decide, status: 'superseded', runId: 'run-3' as RunId }))).toMatchObject({ status: 'superseded' })
 
+    const later = evidence.checkpointObservation(webObservation('A newer listing undercuts both at $31.', 'run-3' as RunId))!.observation
     // Retained statuses stay revisable with fresh support: an accepted
-    // Candidate can later be superseded by a better-grounded one.
+    // Candidate can later be superseded by a better-grounded one — on
+    // evidence the acceptance did not already stand on (#208).
     const revised = evidence.setCandidateStatus(candidate!.id, {
       status: 'superseded',
-      supportingObservationIds: [rival.id],
+      authority: 'model',
+      reason: 'the newer listing undercuts it',
+      supportingObservationIds: [later.id],
       runId: 'run-4' as RunId,
     })
-    expect(revised).toMatchObject({
+    expect(decided(revised)).toMatchObject({
       status: 'superseded',
-      supportingObservationIds: [price.id, rival.id],
+      supportingObservationIds: [price.id, rival.id, later.id],
       provenance: [{ runId: 'run-1' }, { runId: 'run-2', subagentId: 'a-1' }, { runId: 'run-4' }],
     })
     expect(evidence.snapshot().candidates.map(({ status }) => status)).toEqual(['superseded', 'rejected', 'superseded'])
@@ -346,11 +359,13 @@ describe('session evidence', () => {
       supportingObservationIds: ['memory-999' as MemoryEntryId],
       runId: 'run-1' as RunId,
     })).toBeNull()
-    expect(evidence.setCandidateStatus('memory-999' as MemoryEntryId, {
+    expect(refusedAs(evidence.setCandidateStatus('memory-999' as MemoryEntryId, {
       status: 'accepted',
+      authority: 'model',
+      reason: 'no such Candidate',
       supportingObservationIds: [observation.id],
       runId: 'run-2' as RunId,
-    })).toBeNull()
+    }))).toBe('unknown_candidate')
 
     expect(ids).toEqual(['memory-1'])
     expect(evidence.snapshot().candidates).toEqual([])
@@ -428,12 +443,14 @@ describe('session evidence', () => {
     // A later decision moves the status but never rewrites the record's
     // creation time — ordering stays deterministic under live updates.
     at = 2_000
-    const decided = evidence.setCandidateStatus(candidate.id, {
+    const outcome = evidence.setCandidateStatus(candidate.id, {
       status: 'accepted',
+      authority: 'model',
+      reason: 'it is the only one in range',
       supportingObservationIds: [observation.id],
       runId: 'run-2' as RunId,
-    })!
-    expect(decided.recordedAt).toBe(1_500)
+    })
+    expect(decided(outcome).recordedAt).toBe(1_500)
   })
 
   it('notifies retained Candidate changes — creation and decision — but never refused or post-clear ones', () => {
@@ -456,16 +473,22 @@ describe('session evidence', () => {
     evidence.addCandidate({ subject: 'Ghost support', supportingObservationIds: ['memory-99' as MemoryEntryId], runId: 'run-1' as RunId })
     evidence.setCandidateStatus('memory-99' as MemoryEntryId, {
       status: 'accepted',
+      authority: 'model',
+      reason: 'no such Candidate',
       supportingObservationIds: [observation.id],
       runId: 'run-1' as RunId,
     })
     evidence.setCandidateStatus(candidate.id, {
       status: 'accepted',
+      authority: 'model',
+      reason: 'ghost support',
       supportingObservationIds: ['memory-99' as MemoryEntryId],
       runId: 'run-1' as RunId,
     })
     evidence.setCandidateStatus(candidate.id, {
       status: 'accepted',
+      authority: 'model',
+      reason: 'it is the only one in range',
       supportingObservationIds: [observation.id],
       runId: 'run-2' as RunId,
     })!
@@ -608,5 +631,177 @@ describe('retained Inspection Reference (#210)', () => {
     evidence.clear()
     expect(evidence.inspectionReference()).toBeNull()
     expect(evidence.presentInspection({ candidateId: second.id, runId: 'run-3' as RunId })).toBeNull()
+  })
+})
+
+/** The Candidate a retained decision produced; fails the test when it was refused. */
+const decided = (outcome: CandidateDecisionOutcome): SessionCandidate => {
+  expect(outcome.ok).toBe(true)
+  return (outcome as Extract<CandidateDecisionOutcome, { ok: true }>).candidate
+}
+
+/** Why the Session refused a decision. */
+const refusedAs = (outcome: CandidateDecisionOutcome): string | undefined =>
+  outcome.ok ? undefined : outcome.refusal
+
+describe('Candidate decisions are scoped and authorised in the store (#208, ADR 0039)', () => {
+  /** A store whose objective moves, as Working Memory's does across a Session. */
+  function scopedHarness(): {
+    evidence: SessionEvidenceStore
+    objectiveIs(id: MemoryEntryId | undefined): void
+  } {
+    let next = 0
+    let objectiveId: MemoryEntryId | undefined = 'memory-objective-a' as MemoryEntryId
+    return {
+      evidence: createSessionEvidence({
+        sessionId: 'session-1' as SessionId,
+        now: () => 0,
+        mintId: () => `memory-${++next}` as MemoryEntryId,
+        objectiveId: () => objectiveId,
+      }),
+      objectiveIs: (id) => {
+        objectiveId = id
+      },
+    }
+  }
+
+  /** One web Observation, one of the user's own words, and one Candidate resting on the web one. */
+  function seeded(evidence: SessionEvidenceStore): {
+    web: MemoryEntryId
+    user: MemoryEntryId
+    later: MemoryEntryId
+    candidateId: MemoryEntryId
+  } {
+    const web = evidence.checkpointObservation(webObservation())!.observation
+    const later = evidence.checkpointObservation(webObservation('A newer listing undercuts it.', 'run-1' as RunId))!.observation
+    const user = evidence.checkpointObservation({
+      sourceKind: 'user',
+      text: 'not that one, I want the matte black',
+      runId: 'run-1' as RunId,
+      originEvent: { producer: 'command', observationId: 'obs-1' as ObservationId },
+    })!.observation
+    const candidate = evidence.addCandidate({
+      subject: 'Acme wifi router',
+      supportingObservationIds: [web.id],
+      runId: 'run-1' as RunId,
+    })!
+    return { web: web.id, user: user.id, later: later.id, candidateId: candidate.id }
+  }
+
+  /** A well-typed decision; only the deliberately invalid cases cast. */
+  const decide = (fields: CandidateStatusChange): CandidateStatusChange => fields
+
+  it('refuses a decision claiming the user without the user own words behind it', () => {
+    const { evidence } = scopedHarness()
+    const { web, candidateId } = seeded(evidence)
+    expect(refusedAs(evidence.setCandidateStatus(candidateId, decide({
+      status: 'rejected',
+      authority: 'user',
+      reason: 'the user did not want it',
+      supportingObservationIds: [web],
+      runId: 'run-2' as RunId,
+    })))).toBe('unsupported_authority')
+    // Refused outright, never downgraded into the model own decision.
+    expect(evidence.candidate(candidateId)).toMatchObject({ status: 'active', decisions: [] })
+    expect(evidence.candidate(candidateId)!.status).toBe('active')
+  })
+
+  it('stamps the objective in force and keeps the user decision against a model revival', () => {
+    const { evidence } = scopedHarness()
+    const { user, later, candidateId } = seeded(evidence)
+    expect(decided(evidence.setCandidateStatus(candidateId, decide({
+      status: 'rejected',
+      authority: 'user',
+      reason: 'not that one, I want the matte black',
+      supportingObservationIds: [user],
+      runId: 'run-2' as RunId,
+    })))).toMatchObject({ status: 'rejected' })
+    expect(evidence.candidate(candidateId)!.decisions).toEqual([
+      {
+        status: 'rejected',
+        authority: 'user',
+        reason: 'not that one, I want the matte black',
+        objectiveId: 'memory-objective-a',
+        supportingObservationIds: [user],
+        decidedAt: 0,
+      },
+    ])
+
+    // A later round, new evidence in hand, still may not undo the user.
+    const revival = evidence.setCandidateStatus(candidateId, decide({
+      status: 'accepted',
+      authority: 'model',
+      reason: 'it does match after all',
+      supportingObservationIds: [later],
+      runId: 'run-3' as RunId,
+    }))
+    expect(refusedAs(revival)).toBe('user_decision_stands')
+    // The refusal names the decision that blocks it, so the caller needs
+    // no second read to say what stands.
+    expect(revival.ok ? null : revival.standing?.reason).toBe('not that one, I want the matte black')
+    expect(evidence.candidate(candidateId)!.status).toBe('rejected')
+  })
+
+  it('leaves a replacement objective free of the previous objective decision', () => {
+    const { evidence, objectiveIs } = scopedHarness()
+    const { web, user, candidateId } = seeded(evidence)
+    evidence.setCandidateStatus(candidateId, decide({
+      status: 'rejected',
+      authority: 'user',
+      reason: 'not that one, I want the matte black',
+      supportingObservationIds: [user],
+      runId: 'run-2' as RunId,
+    }))
+
+    objectiveIs('memory-objective-b' as MemoryEntryId)
+    expect(decided(evidence.setCandidateStatus(candidateId, decide({
+      status: 'accepted',
+      authority: 'model',
+      reason: 'it is right for the new task',
+      supportingObservationIds: [web],
+      runId: 'run-3' as RunId,
+    })))).toMatchObject({ status: 'accepted' })
+    // Both decisions stand, each under the objective it was made for.
+    expect(evidence.candidate(candidateId)!.decisions.map(({ status, objectiveId }) => [status, objectiveId])).toEqual([
+      ['rejected', 'memory-objective-a'],
+      ['accepted', 'memory-objective-b'],
+    ])
+    // And the snapshot carries the objective a reader compares against.
+    expect(evidence.snapshot().objectiveId).toBe('memory-objective-b')
+  })
+
+  it('carries no objective at all when the Session retained none', () => {
+    const { evidence, objectiveIs } = scopedHarness()
+    objectiveIs(undefined)
+    const { web, candidateId } = seeded(evidence)
+    expect(decided(evidence.setCandidateStatus(candidateId, decide({
+      status: 'rejected',
+      authority: 'model',
+      reason: 'over the ceiling',
+      supportingObservationIds: [web],
+      runId: 'run-2' as RunId,
+    })))).toMatchObject({ status: 'rejected' })
+    expect(evidence.candidate(candidateId)!.decisions[0]).not.toHaveProperty('objectiveId')
+    expect(evidence.snapshot()).not.toHaveProperty('objectiveId')
+  })
+
+  it('refuses a decision with no reason and one naming an authority the vocabulary has no room for', () => {
+    const { evidence } = scopedHarness()
+    const { web, candidateId } = seeded(evidence)
+    expect(refusedAs(evidence.setCandidateStatus(candidateId, decide({
+      status: 'rejected',
+      authority: 'model',
+      reason: '   ',
+      supportingObservationIds: [web],
+      runId: 'run-2' as RunId,
+    })))).toBe('invalid')
+    expect(refusedAs(evidence.setCandidateStatus(candidateId, {
+      status: 'rejected',
+      authority: 'boss' as never,
+      reason: 'over the ceiling',
+      supportingObservationIds: [web],
+      runId: 'run-2' as RunId,
+    }))).toBe('invalid')
+    expect(evidence.candidate(candidateId)!.decisions).toEqual([])
   })
 })

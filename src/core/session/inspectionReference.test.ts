@@ -15,6 +15,7 @@ function candidate(fields: Partial<SessionCandidate> & Pick<SessionCandidate, 'i
     supportingObservationIds: [],
     references: [],
     provenance: [{ runId }],
+    decisions: [],
     ...fields,
   }
 }

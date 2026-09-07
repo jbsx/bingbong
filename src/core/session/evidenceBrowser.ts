@@ -4,6 +4,7 @@ import type {
   SessionObservation,
   UserObservationOrigin,
 } from './sessionEvidence'
+import { describeCandidateDecision, latestDecisionUnder, type CandidateStatus } from './candidateDecisions'
 import type { MemoryEntryId, MemoryProvenance, MemoryReference } from './workingMemory'
 import { reportFault } from '../trace/fault'
 
@@ -45,8 +46,28 @@ export function observationMatchesFilter(observation: SessionObservation, filter
   return observation.sourceKind === filter
 }
 
-export function candidateMatchesFilter(candidate: SessionCandidate, filter: CandidateFilter): boolean {
-  return filter === 'all' || candidate.status === filter
+/**
+ * The status a Candidate holds *for one objective* (#208, ADR 0039): what
+ * the objective in force decided, or `active` where it decided nothing.
+ * The stored `status` is the newest decision the Candidate carries at all,
+ * which is the honest lifecycle value for the Session — but showing it
+ * under a replacement objective would present a Candidate rejected for a
+ * retired task as settled for the one in hand. The browser reads scope.
+ */
+export function candidateStatusFor(
+  candidate: Pick<SessionCandidate, 'status' | 'decisions'>,
+  objectiveInForce?: MemoryEntryId,
+): CandidateStatus {
+  if (candidate.decisions.length === 0) return candidate.status
+  return latestDecisionUnder(candidate.decisions, objectiveInForce)?.status ?? 'active'
+}
+
+export function candidateMatchesFilter(
+  candidate: SessionCandidate,
+  filter: CandidateFilter,
+  objectiveInForce?: MemoryEntryId,
+): boolean {
+  return filter === 'all' || candidateStatusFor(candidate, objectiveInForce) === filter
 }
 
 /**
@@ -198,6 +219,25 @@ export function describeProvenance(provenance: readonly MemoryProvenance[]): str
     return runs === 1 ? 'via a delegated subagent' : `via a delegated subagent · ${runNote}`
   }
   return runNote
+}
+
+/**
+ * What a decided Candidate's card says about its decision (#208, ADR
+ * 0039), or null while it is only active: who decided, whether that was
+ * for the objective still in force, and the reason they gave. What stands
+ * is read for the current objective — a Candidate rejected under an
+ * objective since replaced shows that earlier decision rather than
+ * presenting itself as universally settled.
+ */
+export function describeCandidateStanding(
+  candidate: Pick<SessionCandidate, 'decisions'>,
+  objectiveInForce?: MemoryEntryId,
+): string | null {
+  const standing = latestDecisionUnder(candidate.decisions, objectiveInForce)
+    ?? candidate.decisions.at(-1)
+    ?? null
+  if (standing === null) return null
+  return `${describeCandidateDecision(standing, objectiveInForce)} — ${standing.reason}`
 }
 
 /**

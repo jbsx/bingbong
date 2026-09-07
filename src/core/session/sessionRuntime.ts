@@ -17,13 +17,13 @@ import {
 import {
   applyMemoryPatch,
   estimateWorkingMemoryTokens,
+  currentUserObjective,
   freezeWorkingMemory,
   isDuplicateMemoryAddition,
   isLowPriorityMemoryAddition,
   isValidWorkingMemory,
   MAX_MEMORY_DETAIL_CHARS,
   MAX_MEMORY_REFERENCES,
-  currentUserObjective,
   type MemoryEntry,
   type MemoryEntryId,
   type MemoryPatch,
@@ -764,6 +764,11 @@ export function createSessionRuntime(deps: {
           sessionId: acceptedSessionId,
           now: () => deps.clock.now(),
           mintId: () => `memory-${nextMemoryId++}` as MemoryEntryId,
+          // The objective every Candidate decision is scoped to (#208,
+          // ADR 0039), read from Working Memory at the moment it is
+          // needed rather than copied into the store: one objective
+          // identity, in one place, however often the user revises it.
+          objectiveId: () => currentUserObjective(memory)?.id,
           // The Evidence Browser's change signal (#139): reads the live
           // generation at fire time — the store is cleared before a reset
           // bumps it, so a report can never carry a stale generation.
@@ -939,6 +944,14 @@ export function createSessionRuntime(deps: {
       }
       journal.push({ runId, outcome, text: normalized, ...(stop ? { stop } : {}) })
       memory = proposedMemory
+      // The objective this Run's decisions were made for (#208, ADR 0039):
+      // a Run decides as it works, but the objective the user set only
+      // becomes Working Memory here, at its Memory Commit. Decisions made
+      // before any objective existed are bound to the one now in force, so
+      // a rejection made in the establishing Run is scoped to the task it
+      // was made for rather than to nothing.
+      const objectiveId = currentUserObjective(memory)?.id
+      if (objectiveId !== undefined) evidence?.adoptUnscopedDecisions(objectiveId)
       nextMemoryId = proposedNextMemoryId
       committedRunIds.add(runId)
       continuityRevision += 1

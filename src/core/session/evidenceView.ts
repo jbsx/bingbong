@@ -5,6 +5,7 @@ import type {
   SessionObservation,
 } from './sessionEvidence'
 import type { SessionEvidenceChangePayload, SessionEvidencePayload } from './evidenceIpcChannels'
+import type { MemoryEntryId } from './workingMemory'
 
 // The Evidence Browser's view model (#139): a pure fold over the Session
 // boundary, the same shape as the feed projection. Two laws hold
@@ -26,6 +27,14 @@ export interface EvidenceViewState {
   readonly candidates: readonly SessionCandidate[]
   /** The snapshot's retained contradictions (#143) — grouping and Answer warnings derive from them. */
   readonly contradictions: readonly ObservationContradiction[]
+  /**
+   * The user objective in force when the snapshot was read (#208, ADR
+   * 0039): what tells a Candidate decided for the task in hand from one
+   * decided for a task since replaced. Absent when the Session holds no
+   * user objective — then a decision is shown without a scope, which is
+   * the honest reading of an unscoped decision.
+   */
+  readonly objectiveId?: MemoryEntryId
 }
 
 const EMPTY_STATE: EvidenceViewState = Object.freeze({
@@ -117,6 +126,7 @@ export function createEvidenceView(): {
         observations: payload.snapshot.observations,
         candidates: payload.snapshot.candidates,
         contradictions: payload.snapshot.contradictions,
+        ...(payload.snapshot.objectiveId !== undefined ? { objectiveId: payload.snapshot.objectiveId } : {}),
       }
     },
     state: () => state,

@@ -6378,7 +6378,7 @@ describe('grounded Candidates, user corrections, and Answers (#122)', () => {
         { id: 'c3', name: 'record_candidate', args: { subject: 'Acme wifi router', detail: 'Cheapest option.', supporting_evidence: ['memory-1'] } },
       ] },
       { kind: 'tool_calls', calls: [
-        { id: 'c4', name: 'record_candidate', args: { candidate_id: 'memory-2', status: 'accepted', supporting_evidence: ['memory-1'] } },
+        { id: 'c4', name: 'record_candidate', args: { candidate_id: 'memory-2', status: 'accepted', reason: 'cheapest that meets the ask', supporting_evidence: ['memory-1'] } },
       ] },
       { kind: 'answer', speak: 'The Acme.', display: 'The Acme router.' },
     ])
@@ -6398,7 +6398,7 @@ describe('grounded Candidates, user corrections, and Answers (#122)', () => {
     })
     expect(events.find((e) => e.type === 'tool_result' && e.callId === 'c4')).toMatchObject({
       ok: true,
-      result: expect.stringMatching(/accepted[\s\S]*provenance/i),
+      result: expect.stringMatching(/accepted by the assistant[\s\S]*earlier decision/i),
     })
     expect(store.snapshot().candidates).toEqual([
       expect.objectContaining({
@@ -6410,6 +6410,11 @@ describe('grounded Candidates, user corrections, and Answers (#122)', () => {
         // identity, deduplicated — the decision's support union is what
         // grows, never repeated provenance.
         provenance: [{ runId: 'run-1' }],
+        // The decision is retained with who made it and why (#208); this
+        // Session holds no user objective, so it is unscoped.
+        decisions: [
+          expect.objectContaining({ status: 'accepted', authority: 'model', reason: 'cheapest that meets the ask' }),
+        ],
       }),
     ])
   })

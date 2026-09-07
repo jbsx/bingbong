@@ -136,8 +136,12 @@ describe('orchestrator tool surface', () => {
       expect(tool.assessRisk).toBeUndefined()
       expect(tool.askUser).toBeUndefined()
     }
-    // The Candidate decision vocabulary is terminal-only on the surface.
-    expect(byName.record_candidate!.parameters?.['status']?.enum).toEqual(['accepted', 'rejected', 'superseded'])
+    // The Candidate decision vocabulary: three verdicts, plus the explicit
+    // reopening a scoped decision can be undone by (#208).
+    expect(byName.record_candidate!.parameters?.['status']?.enum).toEqual(['accepted', 'rejected', 'superseded', 'active'])
+    // Who decided is declared, never inferred from the prose (#208).
+    expect(byName.record_candidate!.parameters?.['authority']?.enum).toEqual(['user', 'model'])
+    expect(byName.record_candidate!.parameters?.['reason']).toBeDefined()
   })
 
   it('record_evidence carries the three citation kinds and the volatility declaration (#123)', () => {

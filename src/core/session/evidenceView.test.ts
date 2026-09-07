@@ -15,7 +15,7 @@ const observation = (id: string, text: string, observedAt = 0): SessionObservati
   ({ id: id as MemoryEntryId, sessionId: 'session-a' as SessionId, sourceKind: 'web', text, observedAt, references: [], provenance: [] }) as SessionObservation
 
 const candidate = (id: string): SessionCandidate =>
-  ({ id: id as MemoryEntryId, sessionId: 'session-a' as SessionId, subject: 'Acme router', status: 'active', recordedAt: 0, supportingObservationIds: [], references: [], provenance: [] }) as SessionCandidate
+  ({ id: id as MemoryEntryId, sessionId: 'session-a' as SessionId, subject: 'Acme router', status: 'active', recordedAt: 0, supportingObservationIds: [], references: [], provenance: [], decisions: [] }) as SessionCandidate
 
 const payload = (
   sessionId: string,
@@ -174,5 +174,27 @@ describe('evidence view', () => {
     )
     view.onSessionEnded({ sessionId: 'session-a' as SessionId, generation: 0 })
     expect(view.state().contradictions).toEqual([])
+  })
+})
+
+describe('the objective a Candidate decision is read against (#208, ADR 0039)', () => {
+  it('carries the snapshot objective into the view, and holds none when the snapshot has none', () => {
+    const view = createEvidenceView()
+    view.applyResponse({
+      sessionId: 'session-a' as SessionId,
+      generation: 0,
+      snapshot: {
+        observations: [],
+        candidates: [candidate('memory-2')],
+        contradictions: [],
+        objectiveId: 'memory-1' as MemoryEntryId,
+      },
+    })
+    expect(view.state().objectiveId).toBe('memory-1')
+
+    // A Session that retained no user objective decides unscoped, and the
+    // view says so rather than keeping the last objective it saw.
+    view.applyResponse(payload('session-a', 0, [], [candidate('memory-2')]))
+    expect(view.state()).not.toHaveProperty('objectiveId')
   })
 })

@@ -4,6 +4,8 @@ import type { MemoryEntryId, MemoryProvenance } from './workingMemory'
 import type { ObservationContradiction, SessionCandidate, SessionObservation } from './sessionEvidence'
 import {
   candidateMatchesFilter,
+  candidateStatusFor,
+  describeCandidateStanding,
   describeObservationProvenance,
   evidenceTotal,
   isDelegatedObservation,
@@ -37,6 +39,7 @@ function candidate(overrides: Partial<SessionCandidate> = {}): SessionCandidate 
     supportingObservationIds: ['memory-1' as MemoryEntryId],
     references: [],
     provenance: [{ runId: 'run-1' as RunId }],
+    decisions: [],
     ...overrides,
   }
 }
@@ -222,5 +225,88 @@ describe('contradiction grouping (#143)', () => {
     const tieLate = observation({ id: 'memory-2' as MemoryEntryId, observedAt: 500 })
     const { groups } = layoutObservationCards([tieEarly, tieLate], [pair('memory-1', 'memory-2')])
     expect(groupIds(groups)).toEqual([['memory-2', 'memory-1']])
+  })
+})
+
+describe('a Candidate card shows what stands for the objective in hand (#208, ADR 0039)', () => {
+  const objectiveA = 'memory-100' as MemoryEntryId
+  const objectiveB = 'memory-200' as MemoryEntryId
+  const rejectedForA = {
+    status: 'rejected' as const,
+    authority: 'user' as const,
+    reason: 'not that one — I wrote it, I never found it',
+    objectiveId: objectiveA,
+    supportingObservationIds: ['memory-1' as MemoryEntryId],
+    decidedAt: 3_000,
+  }
+
+  it('says nothing while the Candidate is only active', () => {
+    expect(describeCandidateStanding(candidate(), objectiveA)).toBeNull()
+  })
+
+  it('names the decider and the reason for the objective still in force', () => {
+    expect(describeCandidateStanding(candidate({ status: 'rejected', decisions: [rejectedForA] }), objectiveA))
+      .toBe('rejected by the user for the current objective — not that one — I wrote it, I never found it')
+  })
+
+  it('marks a decision made under an objective since replaced as the earlier decision it is', () => {
+    // The rejection is not inherited by objective B — the card says which
+    // objective it belonged to rather than presenting it as settled here.
+    expect(describeCandidateStanding(candidate({ status: 'rejected', decisions: [rejectedForA] }), objectiveB))
+      .toBe('rejected by the user for an earlier objective — not that one — I wrote it, I never found it')
+  })
+
+  it('shows the decision made under the objective in force, not merely the latest one', () => {
+    const decidedForB = {
+      ...rejectedForA,
+      status: 'accepted' as const,
+      authority: 'model' as const,
+      reason: 'it satisfies the new task',
+      objectiveId: objectiveB,
+      decidedAt: 4_000,
+    }
+    const decided = candidate({ status: 'accepted', decisions: [rejectedForA, decidedForB] })
+    expect(describeCandidateStanding(decided, objectiveA))
+      .toBe('rejected by the user for the current objective — not that one — I wrote it, I never found it')
+    expect(describeCandidateStanding(decided, objectiveB))
+      .toBe('accepted by the assistant for the current objective — it satisfies the new task')
+  })
+
+  it('never surfaces an internal identity', () => {
+    expect(describeCandidateStanding(candidate({ status: 'rejected', decisions: [rejectedForA] }), objectiveB))
+      .not.toContain('memory-')
+  })
+})
+
+describe('a Candidate reads by the objective in force, not by its newest decision (#208, ADR 0039)', () => {
+  const objectiveA = 'memory-100' as MemoryEntryId
+  const objectiveB = 'memory-200' as MemoryEntryId
+  const rejectedForA = {
+    status: 'rejected' as const,
+    authority: 'user' as const,
+    reason: 'not that one',
+    objectiveId: objectiveA,
+    supportingObservationIds: ['memory-1' as MemoryEntryId],
+    decidedAt: 3_000,
+  }
+  const decided = candidate({ status: 'rejected', decisions: [rejectedForA] })
+
+  it('reads the stored status while the Candidate carries no decision', () => {
+    expect(candidateStatusFor(candidate(), objectiveA)).toBe('active')
+  })
+
+  it('reads what this objective decided, and active where it decided nothing', () => {
+    expect(candidateStatusFor(decided, objectiveA)).toBe('rejected')
+    // The rejection belonged to a task since replaced. Presenting it as
+    // settled here would be exactly the universal invalidity ADR 0039
+    // refuses — under B nothing has decided it.
+    expect(candidateStatusFor(decided, objectiveB)).toBe('active')
+  })
+
+  it('filters on the scoped status, so a retired objective\'s verdict never chips a card', () => {
+    expect(candidateMatchesFilter(decided, 'rejected', objectiveA)).toBe(true)
+    expect(candidateMatchesFilter(decided, 'rejected', objectiveB)).toBe(false)
+    expect(candidateMatchesFilter(decided, 'active', objectiveB)).toBe(true)
+    expect(candidateMatchesFilter(decided, 'all', objectiveB)).toBe(true)
   })
 })
