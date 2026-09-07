@@ -9,6 +9,11 @@ ADR 0028's distinction between User Observations, Assessments, and Candidates.
 Session lifetime, source-grounding requirements, and the ban on speculative
 partial Memory Commits remain unchanged.
 
+ADR 0043 (accepted 2026-09-07, #218) amends the second boundary below: an
+inherited correction is handed on once and lapses with the Run it was handed
+to, and the bound of five is replaced by that rule. The "both wait" case it
+argues for is given up there, with the captures that showed its price.
+
 Two boundaries #211 settled, because the Decision below does not fix them:
 
 - *Whose* words are retained. Every continuation command is retained verbatim,

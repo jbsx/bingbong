@@ -543,6 +543,18 @@ Session holds none — the case the Run clarifies with the user rather than
 answering about the open page.
 _Avoid_: selected candidate, active result
 
+**Retained Correction**:
+The user's exact continuation words, kept by the Session from the moment a
+Run is admitted with them until a Run grounds them into something the Session
+retains. The Run admitted with them answers them by producing its own Answer
+and is never shown them as unresolved; only words left by a Run that never
+answered are handed on, and they are handed on exactly once, to the next Run,
+which grounds them, asks the user about them, or lets them lapse when it ends.
+While handed-on words name a Candidate, that Candidate is neither presented
+again nor settled on the model's authority. Retention is not interpretation:
+nothing decides that the words were a rejection, a nudge, or a new task.
+_Avoid_: pending directive, unresolved command, correction debt
+
 **Memory Compaction**:
 An exceptional reduction performed only when Session Working Memory crosses its
 high-water limit. It condenses older, inactive material to a lower limit while
