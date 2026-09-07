@@ -3,7 +3,7 @@ import type { Clock } from '../ports/clock'
 import { toErrorMessage } from '../errors'
 import type { ToolCall, ToolResultOutcome } from '../ports/llm'
 import type { UnstampedEvent } from './events'
-import type { RiskVerdict, Tool, ToolContext } from './tool'
+import { closedInFinalization, type RiskVerdict, type Tool, type ToolContext } from './tool'
 import type { PerfTracer } from '../perf/perfTracer'
 import type { BrowserSubspans } from '../perf/browserSubspans'
 import { createVisionBudget, MAX_ORCHESTRATOR_VISION_CALLS } from '../agent/subagentRails'
@@ -469,7 +469,7 @@ export function createToolRoundExecutor(config: ToolRoundConfig): ToolRoundExecu
       const outcome: ToolResultOutcome =
         intercepted !== null
           ? intercepted
-          : closedTool !== undefined && (closedTool.acquisition === true || closedTool.askUser !== undefined)
+          : closedTool !== undefined && closedInFinalization(closedTool)
             ? { ok: false, error: closedToolRefusal() }
             : yield* runGatedTool(call, turnId)
 

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { createAssistantPipeline } from './createAssistantPipeline'
-import { FakeAppControls, FakeBrowser, FakeClock, FakePanel, FakeSettings, RecordingTts, StallingBrowser, fakeSubagentManager, flushMicrotasks as flush, subagentRecord, until } from '../../core/testing/doubles'
+import { createAssistantPipeline, orchestratorToolCatalog } from './createAssistantPipeline'
+import { closedInFinalization } from '../../core/pipeline/tool'
+import { FakeAppControls, FakeBrowser, FakeClock, FakePanel, FakeSettings, FakeVision, RecordingTts, StallingBrowser, fakeSubagentManager, flushMicrotasks as flush, subagentRecord, until } from '../../core/testing/doubles'
 import type { CommandPipeline } from '../../core/pipeline/createCommandPipeline'
 import type { PipelineEvent } from '../../core/pipeline/events'
 import { createSubagentTools } from '../../core/pipeline/subagentTools'
@@ -226,6 +227,74 @@ describe('createAssistantPipeline', () => {
     expect(after.find((e) => e.type === 'error')).toBeUndefined()
     expect(requests).toHaveLength(1)
     expect(requests[0].headers.authorization).toBe('Bearer test-key')
+  })
+
+  it('lets Finalization reach exactly the bookkeeping, Collection and control tools — nothing slow (#213)', () => {
+    // The Finalization Allowance bounds a bookkeeping round's model
+    // attempts by a watch that aborts the round, but the tool handling
+    // after it is only charged, never interrupted: a Tool takes no
+    // cancellation signal (`Tool.acquisition` in core/pipeline/tool.ts
+    // states the bound). So every tool the closed-tool check leaves
+    // reachable while finalizing must settle promptly, and that holds by
+    // this pin against the production catalog — not by a flag a new tool
+    // might forget. A tool that lands in the reachable list is a
+    // deliberate decision: mark it `acquisition: true` so Finalization
+    // closes it, or name it here because it is quick. Note what "quick"
+    // excludes: a risk gate's confirmation waits on the user for up to a
+    // minute, so a confirm-gated tool is closed too.
+    const catalog = orchestratorToolCatalog({
+      controller: new FakeBrowser(),
+      vision: new FakeVision(),
+      subagentTools: createSubagentTools(fakeSubagentManager()),
+      panel: new FakePanel(),
+      settings: new FakeSettings(),
+      app: new FakeAppControls(),
+    })
+    const reachable = catalog.filter((tool) => !closedInFinalization(tool))
+    expect(reachable.map((tool) => tool.name).sort()).toEqual(
+      [
+        // Bookkeeping: immediate, in-memory checkpoints.
+        'report_run_plan',
+        'record_evidence',
+        'record_candidate',
+        // Collection: agent_results refuses `wait` on a running Subagent
+        // while finalizing (core/pipeline/subagentTools.ts), so it never
+        // blocks here.
+        'agent_results',
+        // Control: synchronous panel and settings verbs, and the Session
+        // Reset boundary.
+        'toggle_panel',
+        'set_panel_mode',
+        'set_panel_width',
+        'set_setting',
+        'new_session',
+      ].sort(),
+    )
+    // The complement is exactly what Finalization closes: every
+    // acquisition tool and everything that would ask the user.
+    const closed = catalog.filter(closedInFinalization)
+    expect(closed.map((tool) => tool.name).sort()).toEqual(
+      [
+        'ask_user',
+        'navigate',
+        'read_page',
+        'click',
+        'type',
+        'scroll',
+        'back',
+        'go_forward',
+        'ground_visual',
+        'look',
+        'media_control',
+        // Delegation control is acquisition both ways: Finalization
+        // neither spawns nor cancels a Subagent (ADR 0035).
+        'spawn_agent',
+        'cancel_agent',
+        // app_control is confirm-gated on every call (quit, reload): the
+        // gate would wait on the user, and Finalization never asks.
+        'app_control',
+      ].sort(),
+    )
   })
 
   it('exposes media tools alongside the browser verbs, and no off-screen web tool (#83)', async () => {

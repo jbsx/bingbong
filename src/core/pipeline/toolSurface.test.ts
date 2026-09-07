@@ -11,12 +11,16 @@ import { createAppControlTool, createSetSettingTool } from './settingsTools'
 import { createReportRunPlanTool } from './runPlanTools'
 import { createRecordEvidenceTool } from './evidenceTools'
 import { createRecordCandidateTool } from './candidateTools'
+import { createNewSessionTool } from './sessionTools'
 import { FakeAppControls, FakeBrowser, FakePanel, FakeSettings, FakeVision } from '../testing/doubles'
 
 const unusedVision = new FakeVision()
 
-// The full orchestrator tool catalog, assembled exactly as
-// createAssistantPipeline assembles it (main/agent/createAssistantPipeline.ts).
+// The orchestrator's base tool catalog — what createAssistantPipeline
+// (main/agent/createAssistantPipeline.ts) assembles before the attached
+// panel, settings and delegation tools join it; those have their own
+// helpers below. A hand-built copy, since core tests never import main:
+// the production assembly itself is pinned in createAssistantPipeline.test.ts.
 // This file pins the surface: no ad-skip capability may ever appear in it —
 // not as a tool, not as a parameter enum value, not hidden in a description.
 // (The system prompt's "never skip ads" rule is policy, not surface; tool
@@ -24,7 +28,7 @@ const unusedVision = new FakeVision()
 // Since #83 / ADR 0009 the same strictness covers the deleted off-screen web
 // tools: every read and write happens in a visible tab.
 
-function orchestratorToolCatalog(): Tool[] {
+function coreToolCatalog(): Tool[] {
   return [
     createAskUserTool(),
     ...createBrowserTools(new FakeBrowser(), unusedVision),
@@ -33,6 +37,7 @@ function orchestratorToolCatalog(): Tool[] {
     createReportRunPlanTool(),
     createRecordEvidenceTool(),
     createRecordCandidateTool(),
+    createNewSessionTool(),
   ]
 }
 
@@ -74,7 +79,7 @@ function settingsToolCatalog(): Tool[] {
 
 /** Every catalog the ad-skip scans cover — the whole orchestrator surface. */
 function allCatalogs(): Tool[] {
-  return [...orchestratorToolCatalog(), ...delegationToolCatalog(), ...panelToolCatalog(), ...settingsToolCatalog()]
+  return [...coreToolCatalog(), ...delegationToolCatalog(), ...panelToolCatalog(), ...settingsToolCatalog()]
 }
 
 // Matches any phrasing that pairs skipping/closing/bypassing with ads.
@@ -82,7 +87,7 @@ const AD_SKIP_RE = /\b(skip|close|bypass|fast[- ]forward)\b[^.\n]*\bads?\b|\bads
 
 describe('orchestrator tool surface', () => {
   it('is exactly the intended catalog — nothing more', () => {
-    const names = orchestratorToolCatalog().map((tool) => tool.name)
+    const names = coreToolCatalog().map((tool) => tool.name)
 
     expect(names.sort()).toEqual(
       [
@@ -100,12 +105,13 @@ describe('orchestrator tool surface', () => {
         'record_candidate',
         'record_evidence',
         'report_run_plan',
+        'new_session',
       ].sort(),
     )
   })
 
   it('report_run_plan carries the objective, Run Headline, and Effort Tier without a gate', async () => {
-    const runPlan = orchestratorToolCatalog().find((tool) => tool.name === 'report_run_plan')!
+    const runPlan = coreToolCatalog().find((tool) => tool.name === 'report_run_plan')!
     expect(Object.keys(runPlan.parameters ?? {}).sort()).toEqual([
       'effort_tier',
       'escalation_reason',
@@ -128,7 +134,7 @@ describe('orchestrator tool surface', () => {
   })
 
   it('record_evidence and record_candidate are bookkeeping: never acquisition, never gated (#121/#122)', () => {
-    const byName = Object.fromEntries(orchestratorToolCatalog().map((tool) => [tool.name, tool]))
+    const byName = Object.fromEntries(coreToolCatalog().map((tool) => [tool.name, tool]))
     for (const name of ['record_evidence', 'record_candidate']) {
       const tool = byName[name]!
       expect(tool.acquisition).not.toBe(true)
@@ -145,7 +151,7 @@ describe('orchestrator tool surface', () => {
   })
 
   it('record_evidence carries the three citation kinds and the volatility declaration (#123)', () => {
-    const evidence = orchestratorToolCatalog().find((tool) => tool.name === 'record_evidence')!
+    const evidence = coreToolCatalog().find((tool) => tool.name === 'record_evidence')!
     expect(Object.keys(evidence.parameters ?? {}).sort()).toEqual([
       'agent_id',
       'excerpt',
@@ -167,7 +173,7 @@ describe('orchestrator tool surface', () => {
     // web_search and read_url are deleted: every web read and write happens
     // in a rendered, visible tab. The names must never reappear in any
     // catalog — not as a tool, not as a parameter enum value.
-    for (const catalog of [orchestratorToolCatalog(), delegationToolCatalog(), panelToolCatalog(), settingsToolCatalog()]) {
+    for (const catalog of [coreToolCatalog(), delegationToolCatalog(), panelToolCatalog(), settingsToolCatalog()]) {
       for (const tool of catalog) {
         expect(tool.name).not.toMatch(/web_search|read_url/)
         for (const paramName of Object.keys(tool.parameters ?? {})) {
@@ -181,7 +187,7 @@ describe('orchestrator tool surface', () => {
   })
 
   it('go_forward is registered at parity with back', () => {
-    const byName = Object.fromEntries(orchestratorToolCatalog().map((tool) => [tool.name, tool]))
+    const byName = Object.fromEntries(coreToolCatalog().map((tool) => [tool.name, tool]))
     const back = byName.back
     const goForward = byName.go_forward
 

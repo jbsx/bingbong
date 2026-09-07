@@ -162,6 +162,17 @@ export interface Tool {
    * An acquisition tool (#117, ADR 0027): browser, vision, media, or
    * delegation work that gathers evidence or changes external state.
    * Finalization closes these; Collection and Bookkeeping remain available.
+   *
+   * The bound a tool left open by Finalization must respect (#213, ADR
+   * 0038): it runs inside the bookkeeping share of the Finalization
+   * Allowance (`bookkeepingMs()`, finalizationAllowance.ts), which is
+   * charged for its execution where the bookkeeping round runs in
+   * createCommandPipeline.ts but cannot cut it short — `execute` takes no
+   * cancellation signal, so an overrun costs the reserved Answer its
+   * round. A tool that can block on the network or on the user therefore
+   * declares this flag (or `askUser`, or a risk gate) and is closed; what
+   * stays open is pinned by name in createAssistantPipeline.test.ts and
+   * createSubagentWorkhorse.test.ts, so a new tool decides deliberately.
    */
   acquisition?: boolean
   /**
@@ -196,4 +207,18 @@ export interface Tool {
    */
   sessionReset?: boolean
   execute(call: ToolCall, ctx: ToolContext): Promise<unknown>
+}
+
+/**
+ * Whether Finalization closes this tool (#117/AC3, #213): every acquisition
+ * tool, and every tool that can put a question to the user — an
+ * interactive ask, or a risk gate whose confirmation would wait on them —
+ * because Finalization never asks the user a new question once entered
+ * (CONTEXT.md). The one predicate the Tool Round's closed-tool check
+ * (toolRound.ts) and the catalog pins share, so a pin can never drift from
+ * what the round actually refuses. Everything this leaves open runs under
+ * the bound documented on `Tool.acquisition`.
+ */
+export function closedInFinalization(tool: Tool): boolean {
+  return tool.acquisition === true || tool.askUser !== undefined || tool.assessRisk !== undefined
 }

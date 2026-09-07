@@ -268,17 +268,21 @@ function createDynamicLlm(
   }
 }
 
-/** The text-driven assistant: browser and media tools + model-routed LLM behind the command pipeline. */
-export function createAssistantPipeline(deps: AssistantPipelineDeps): CommandPipeline {
-  const fetchFn = deps.fetchFn ?? fetch
-  // Every tool, gate, and rail below reaches the pane through the custody
-  // its owner handed in, which outlives any one Run — so a Run that
-  // abandoned an action leaves the *next* Run refused too.
-  const custody = deps.browser
-  const controller = custody.controller
-  const getEnv = deps.getEnv ?? (() => deps.env)
-  const vision = deps.vision ?? createZaiVisionApi({ getEnv })
-  const tools: Tool[] = [
+/**
+ * The orchestrator's whole tool catalog, in the order the model sees it.
+ * Exported so the surface pins run against the production assembly rather
+ * than a hand-built copy of it: what Finalization can reach is pinned from
+ * this list (#213), so a tool added here without `acquisition: true` fails
+ * that pin instead of quietly joining the bookkeeping round.
+ */
+export function orchestratorToolCatalog(
+  deps: Pick<AssistantPipelineDeps, 'subagentTools' | 'panel' | 'settings' | 'app'> & {
+    controller: BrowserController & VisualGroundingController
+    vision: VisionModel
+  },
+): Tool[] {
+  const { controller, vision } = deps
+  return [
     createAskUserTool(),
     // The Run Plan (#116, ADR 0025/0027): the orchestrator declares the
     // objective, Run Headline, and Effort Tier; the pipeline re-emits
@@ -308,6 +312,26 @@ export function createAssistantPipeline(deps: AssistantPipelineDeps): CommandPip
     // lean (spec #24).
     createNewSessionTool(),
   ]
+}
+
+/** The text-driven assistant: browser and media tools + model-routed LLM behind the command pipeline. */
+export function createAssistantPipeline(deps: AssistantPipelineDeps): CommandPipeline {
+  const fetchFn = deps.fetchFn ?? fetch
+  // Every tool, gate, and rail below reaches the pane through the custody
+  // its owner handed in, which outlives any one Run — so a Run that
+  // abandoned an action leaves the *next* Run refused too.
+  const custody = deps.browser
+  const controller = custody.controller
+  const getEnv = deps.getEnv ?? (() => deps.env)
+  const vision = deps.vision ?? createZaiVisionApi({ getEnv })
+  const tools = orchestratorToolCatalog({
+    controller,
+    vision,
+    subagentTools: deps.subagentTools,
+    panel: deps.panel,
+    settings: deps.settings,
+    app: deps.app,
+  })
   const clock = deps.clock ?? systemClock
   const configuredAskTimeoutMs = askTimeoutMs(deps.env)
   const configuredActiveWorkDeadlineMs = activeWorkDeadlineMs(deps.env)
