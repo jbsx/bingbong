@@ -28,8 +28,10 @@ export interface ToolResult {
 /**
  * How hard the provider should think on one round (#166): the rungs GLM
  * exposes as `reasoning_effort`. A Run's rung is a pure function of its
- * Effort Epoch — see TIER_REASONING_EFFORT — so deliberation is bounded
- * by the same declaration that bounds rounds and wall time.
+ * Effort Epoch — its tier's TIER_REASONING_EFFORT while acquiring,
+ * FINALIZATION_REASONING_EFFORT once Finalization begins (#215) — so
+ * deliberation is bounded by the same declaration that bounds rounds and
+ * wall time.
  */
 export type ReasoningEffort = 'low' | 'high' | 'max'
 

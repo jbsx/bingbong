@@ -78,12 +78,13 @@ export const FINALIZATION_REASONING_EFFORT: ReasoningEffort = 'low'
 
 /**
  * The rung a Run's next round thinks at: a function of tier *and* phase
- * (#215). Acquisition rounds — the `working` phase — think at the tier's
- * rung; both Finalization phases think at the Finalization rung. A
- * Browse Subagent's epoch never reads this table: its rung is
+ * (#215), read only through the epoch's `reasoningEffort`. Acquisition
+ * rounds — the `working` phase — think at the tier's rung; both
+ * Finalization phases think at the Finalization rung. A Browse
+ * Subagent's epoch never applies this rule: its rung is
  * SUBAGENT_REASONING_EFFORT in every phase.
  */
-export function reasoningEffortFor(tier: EffortTier, phase: EffortPhase): ReasoningEffort {
+function reasoningEffortFor(tier: EffortTier, phase: EffortPhase): ReasoningEffort {
   return phase.kind === 'working' ? TIER_REASONING_EFFORT[tier] : FINALIZATION_REASONING_EFFORT
 }
 

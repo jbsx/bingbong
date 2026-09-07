@@ -11,7 +11,6 @@ import {
   FINALIZATION_REPORT_CHECKPOINT_DIRECTIVE,
   finalizationToolRefusal,
   finalizeInstruction,
-  reasoningEffortFor,
   requestFinalizeInstruction,
   HARD_TOOL_ROUND_CEILING,
   injectedReportDirective,
@@ -72,27 +71,23 @@ describe('Effort Epoch (#146, ADR 0027)', () => {
     })
 
     describe('the Finalization rung (#215)', () => {
-      it('is low, named by role so a thinking-off value can replace it without touching the pipeline', () => {
-        expect(FINALIZATION_REASONING_EFFORT).toBe('low')
-        expect(reasoningEffortFor('investigation', { kind: 'finalizing', cause: 'deadline_reached' })).toBe(FINALIZATION_REASONING_EFFORT)
-        expect(reasoningEffortFor('investigation', { kind: 'answer_only', cause: 'deadline_reached' })).toBe(FINALIZATION_REASONING_EFFORT)
-        expect(reasoningEffortFor('investigation', { kind: 'working' })).toBe(TIER_REASONING_EFFORT.investigation)
-      })
-
       it('drops to the Finalization rung at entry, and stays there through the reserved Answer round', () => {
         // Bookkeeping is one structured call with a ten-second share and
         // the Answer synthesises context already in the prompt: neither
-        // needs an Investigation's `max`, and at `max` neither fits.
+        // needs an Investigation's `max`, and at `max` neither fits. The
+        // rung is named by role, so a thinking-off value can replace it
+        // without touching the pipeline; today it is `low`.
+        expect(FINALIZATION_REASONING_EFFORT).toBe('low')
         const epoch = createEffortEpoch({ clock: new FakeClock(), initialTier: 'investigation' })
         expect(epoch.reasoningEffort).toBe('max')
 
         epoch.enterFinalization('deadline_reached')
         expect(epoch.phase.kind).toBe('finalizing')
-        expect(epoch.reasoningEffort).toBe('low')
+        expect(epoch.reasoningEffort).toBe(FINALIZATION_REASONING_EFFORT)
 
         expect(epoch.beginToolRound()).toBe(true)
         expect(epoch.phase.kind).toBe('answer_only')
-        expect(epoch.reasoningEffort).toBe('low')
+        expect(epoch.reasoningEffort).toBe(FINALIZATION_REASONING_EFFORT)
       })
 
       it('keeps the Finalization rung when a failed bookkeeping request spends its opportunity', () => {
