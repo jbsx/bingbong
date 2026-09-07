@@ -1244,3 +1244,52 @@ describe('Effort Epoch (#146, ADR 0027)', () => {
     })
   })
 })
+
+describe('the deterministic Answer separates what was found from what was checked (#212/AC1)', () => {
+  it('says both sentences when there are leads and a check that did not happen', () => {
+    const answer = deterministicFinalAnswer({
+      command: 'find the tier list post',
+      cause: 'budget_exhausted',
+      sources: [{ url: 'https://www.reddit.com/r/manhwa/tiers/' }],
+      imageUnverified: true,
+    })
+
+    // The lead is shown, and neither sentence stands in for the other: a
+    // post listed under nothing but "I could not read the image" reads as
+    // a post that was checked.
+    expect(answer.display).toContain('https://www.reddit.com/r/manhwa/tiers/')
+    expect(answer.display).toContain('I have not verified that any of these answers the request.')
+    expect(answer.display).toContain('I could not read the image I needed to check, so that is still unverified.')
+    // Two short sentences spoken, within the Spoken Rendering's limit.
+    expect(answer.speak).toBe(
+      'Here is what I found so far. I could not read the image I needed, so I have not confirmed any of it.',
+    )
+    expect(answer.speak).not.toMatch(RESOURCE_ACCOUNTING)
+    expect(answer.display).not.toMatch(RESOURCE_ACCOUNTING)
+    expect(answer.speak).not.toMatch(FORBIDDEN_ENDINGS)
+    expect(answer.display).not.toMatch(FORBIDDEN_ENDINGS)
+  })
+
+  it('names the check alone when the run has nothing to show behind it', () => {
+    const answer = deterministicFinalAnswer({
+      command: 'find the tier list post',
+      cause: 'budget_exhausted',
+      sources: [],
+      imageUnverified: true,
+    })
+
+    expect(answer.speak).toBe('I could not read the image I needed, so I have not confirmed that.')
+    expect(answer.display).toContain('I could not read the image I needed to check, so that is still unverified.')
+    // There is no list, so there is nothing to call unverified leads.
+    expect(answer.display).not.toContain('I have not verified that any of these answers the request.')
+    expect(answer.display).not.toMatch(RESOURCE_ACCOUNTING)
+    expect(answer.display).not.toMatch(FORBIDDEN_ENDINGS)
+  })
+
+  it('leaves an unchecked run with no leads to the briefest honest answer', () => {
+    const answer = deterministicFinalAnswer({ command: 'find the tier list post', cause: 'budget_exhausted', sources: [] })
+
+    expect(answer.speak).toBe('I do not have anything to show for that request yet.')
+    expect(answer.display).not.toContain('I could not read the image')
+  })
+})
