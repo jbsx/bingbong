@@ -550,6 +550,7 @@ retains. The Run admitted with them answers them by producing its own Answer
 and is never shown them as unresolved; only words left by a Run that never
 answered are handed on, and they are handed on exactly once, to the next Run,
 which grounds them, asks the user about them, or lets them lapse when it ends.
+A Run the user stopped leaves none: a Stop withdraws the command.
 While handed-on words name a Candidate, that Candidate is neither presented
 again nor settled on the model's authority. Retention is not interpretation:
 nothing decides that the words were a rejection, a nudge, or a new task.

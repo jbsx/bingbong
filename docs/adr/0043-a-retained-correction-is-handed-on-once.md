@@ -2,7 +2,9 @@
 
 ## Status
 
-Accepted on 2026-09-07 and implemented in #218 the same day. Amends the second boundary
+Accepted on 2026-09-07 and implemented in #218 the same day; the Stop rule
+below was added that evening, after the first full-corpus capture at the
+implementing commit. Amends the second boundary
 ADR 0039 recorded for #211 — what discharges a retained correction — and
 replaces its numeric bound. Retention itself, the Inspection Reference, and
 the refusal to interpret an utterance at admission are unchanged.
@@ -47,12 +49,26 @@ means the block offers.
   the next Run admitted. That Run grounds it into a decision or objective the
   Session retains, asks the user about it, or lets it lapse when it ends —
   answered, failed, or cancelled. It is never handed on a second time.
+- A Run the user stopped leaves no words behind. A Stop is the user
+  withdrawing the command; withdrawn words are not a debt the next Run owes
+  an answer to. The Session reads nothing into the words to know this — the
+  Stop is the user's own later act, and it is what discharges them.
 - The store therefore holds at most one own and one inherited correction at
   any admission. The bound is the rule, not a constant; the numeric cap and
   its "five consecutive failures" rationale are removed.
 - Lapsing discharges the obligation, not the evidence. The User Observation
   that grounded the words stays in Session Evidence; the Candidate the words
   named becomes presentable and settleable again.
+
+The first full-corpus capture at the implementing commit (79a7b3e) showed
+the one hand-on this decision keeps is still expensive when the words are a
+command: the cancellation scenario's follow-up inherited the command the
+user had just stopped, held the answer in evidence already, and spent its
+whole 120 s deadline on the block's obligation (26,630 characters of
+reasoning) where every pre-#211 capture answered in 30 s. The next
+scenario's first Run inherited that failure's words in turn and crossed its
+own deadline. Hence the Stop rule: a cancelled Run's words are not handed on
+at all.
 
 ## Considered options
 

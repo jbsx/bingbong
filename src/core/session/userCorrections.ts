@@ -23,7 +23,9 @@
 // admitted with the words answers them by answering at all, and is never
 // shown them as unresolved. Words left by a Run that never answered are
 // handed to the next Run admitted, and to no Run after it: that Run
-// grounds them, asks about them, or lets them lapse when it ends. Two
+// grounds them, asks about them, or lets them lapse when it ends. A Run
+// the user stopped leaves none: a Stop withdraws the command, and words
+// the user withdrew are not a debt. Two
 // captures showed what an open-ended debt costs — every later Run
 // deliberating over commands it could never discharge, until none
 // declared a plan inside its deadline — so the bound is structural: at

@@ -1070,6 +1070,14 @@ export function createSessionRuntime(deps: {
           return (entry.userEvidenceIds ?? []).filter((id) => before === undefined || !before.has(id))
         }),
       )
+      // A Run the user stopped leaves no words behind (#218, ADR 0043). A
+      // Stop is the user withdrawing the command, and withdrawn words are
+      // not a debt the next Run owes an answer to: handing them on made
+      // the follow-up spend its whole deadline deliberating over a
+      // command the user had already taken back, with the answer sitting
+      // in evidence. This reads nothing into the words themselves — the
+      // Stop is the user's own later act, and it is what discharges them.
+      if (outcome === 'cancelled') evidence?.resolveCorrectionsFrom(runId)
       nextMemoryId = proposedNextMemoryId
       committedRunIds.add(runId)
       continuityRevision += 1

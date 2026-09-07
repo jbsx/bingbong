@@ -1780,6 +1780,24 @@ describe('retained user corrections', () => {
     ])
   })
 
+  it('discharges the words of a Run the user stopped, so a cancelled command is never handed on (#218, ADR 0043)', () => {
+    const { runtime } = harness()
+    presented(runtime)
+    const second = runtime.accept(runtime.submit().submissionId, 'read the warranty page and tell me how long it lasts')
+    expect(runtime.evidenceStore()!.unresolvedCorrections()).toHaveLength(1)
+
+    // The user pressed Stop: the Run commits as cancelled, with no Answer.
+    expect(runtime.commitRunContinuity(second.runId, 'cancelled', 'Stopped while reading the warranty page.', [])).toBe('committed')
+    runtime.finish(second.runId)
+
+    // A Stop is the user withdrawing the command. Withdrawn words are not
+    // a debt the next Run owes an answer to — the follow-up answers its
+    // own question from evidence instead of deliberating over words the
+    // user already took back.
+    expect(runtime.evidenceStore()!.unresolvedCorrections()).toEqual([])
+    expect(runtime.accept(runtime.submit().submissionId, 'how long did that warranty last again?').corrections).toBeUndefined()
+  })
+
   it('drops the retained words with the Session', () => {
     const { runtime } = harness()
     presented(runtime)
