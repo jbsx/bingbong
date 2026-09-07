@@ -865,7 +865,7 @@ describe('the store retains what the user said before the model ran (#211, ADR 0
     // Retaining is not yet grounding: the words become Session Evidence
     // only if they outlive the Run that heard them.
     expect(retained).not.toHaveProperty('observationId')
-    expect(evidence.groundCorrections())
+    evidence.groundCorrections()
     expect(evidence.unresolvedCorrections()[0]).toMatchObject({ observationId: 'memory-3' })
     expect(evidence.observation('memory-3' as MemoryEntryId)).toMatchObject({
       sourceKind: 'user',
@@ -988,14 +988,25 @@ describe('the store retains what the user said before the model ran (#211, ADR 0
     expect(evidence.unresolvedCorrections()).toHaveLength(1)
   })
 
-  it('drops the retained words with the Session', () => {
-    const { evidence } = correctionHarness()
+  it('drops the retained words with the Session, and refuses every later touch', () => {
+    const { evidence, candidate, said } = correctionHarness()
+    const words = said('not that one')
     evidence.retainCorrection({ text: 'not that one', runId: 'run-2' as RunId })
 
     evidence.clear()
 
+    // An ended Session holds nothing, and nothing an old Run does late
+    // reaches the store that replaced it: every route in is refused
+    // rather than quietly writing into the void.
     expect(evidence.unresolvedCorrections()).toEqual([])
     expect(evidence.retainCorrection({ text: 'nor that one', runId: 'run-3' as RunId })).toBeNull()
+    evidence.groundCorrections()
+    evidence.scopeCorrections('memory-objective-b' as MemoryEntryId)
+    evidence.resolveCorrectionsCiting([words])
+    evidence.resolveCorrectionsFrom('run-2' as RunId)
+    expect(evidence.unresolvedCorrections()).toEqual([])
+    expect(evidence.snapshot()).toMatchObject({ observations: [], candidates: [] })
+    expect(evidence.presentInspection({ candidateId: candidate.id, runId: 'run-3' as RunId })).toBeNull()
   })
 
   it('refuses an utterance past its bound rather than retaining a truncated one', () => {

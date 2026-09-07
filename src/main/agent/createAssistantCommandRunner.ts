@@ -109,11 +109,16 @@ export function createAssistantCommandRunner(deps: {
             // said, including this Run's own command, that no Run has yet
             // grounded into a decision the Session retains.
             ...(admission.corrections ? { corrections: admission.corrections } : {}),
-            // Resolved only by an Answer the model wrote (#211): the
-            // store is resolved per call, so a Session that ended keeps
-            // nothing to resolve, and a Run that never answered leaves
-            // the user's words standing for the next one.
+            // Resolved only by an Answer the model wrote (#211), and only
+            // against the Session that admitted this Run. A Run whose
+            // Answer lands after a Reset is answering work nobody is
+            // doing any more: the store it would reach belongs to a new
+            // owner, whose retained words this Run never saw and cannot
+            // discharge. Identity is checked at call time, because that
+            // is when the ownership question is actually being asked.
             resolveCorrections: () => {
+              const live = deps.runtime.state()
+              if (live.sessionId !== admission.sessionId || live.generation !== admission.generation) return
               deps.runtime.evidenceStore()?.resolveCorrectionsFrom(admission.runId)
             },
             // The Observation ledger's staleness guard (#111): the Session

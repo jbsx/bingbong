@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest'
-import { createCommandPipeline, type CommandPipeline } from '../../core/pipeline/createCommandPipeline'
+import { createCommandPipeline, type CommandPipeline, type RunContinuityContext } from '../../core/pipeline/createCommandPipeline'
 import type { PipelineEvent } from '../../core/pipeline/events'
 import type { Tool } from '../../core/pipeline/tool'
 import { createRecordEvidenceTool } from '../../core/pipeline/evidenceTools'
@@ -1852,6 +1852,16 @@ describe('assistant command runner', () => {
       expect(h.candidate('memory-3')).toMatchObject({ status: 'active', decisions: [] })
       // And the presentation was refused too: the subject is still the one
       // Run 1 presented, not a fresh presentation by this Run.
+      //
+      // The boundary this scenario shows on purpose: presentation is an
+      // explicit act (#210), and refusing it is what the application can
+      // enforce. The Answer's own prose is the model's, and this script
+      // has it describe the post anyway — nothing here can stop that, and
+      // pretending otherwise would be the wrong claim to make. What keeps
+      // prose honest is the orchestrator instruction and the fact that no
+      // decision exists to call the Candidate ruled out; what keeps the
+      // *Session* honest is this refusal, which is why the next Run is
+      // still addressing Run 1's subject rather than this Run's.
       expect(h.runtime.evidenceStore()!.inspectionReference()).toEqual(presentedBy)
       expect(presentedBy).toMatchObject({ runId: 'run-1' })
       // Answering its own command resolves its own words — never the debt
@@ -2015,6 +2025,39 @@ describe('assistant command runner', () => {
         userText: [FIND],
         constraints: [{ id: 'memory-8', userText: [NARROW] }],
       })
+    })
+
+    it('resolves the words only when the model actually wrote an Answer', async () => {
+      // AC: "a first-request exception, deadline, or cancellation does not
+      // erase it". All three arrive at one seam — the Run reaches an Answer
+      // of the model's own writing, or it does not — so this pins the seam
+      // rather than one route to it. A Run that recovers from a deadline
+      // and answers has answered; a Run that ends any other way leaves the
+      // user's words exactly as it found them.
+      const clock = new FakeClock(1_000)
+      const resolved: string[] = []
+      const continuityFor = (label: string): RunContinuityContext => ({
+        snapshot: [],
+        memory: [],
+        generation: 0,
+        commit: () => 'committed',
+        resolveCorrections: () => resolved.push(label),
+      })
+      const drive = async (label: string, llm: LlmClient, cancel = false): Promise<void> => {
+        const pipeline = createCommandPipeline({ llm, tts: new RecordingTts(), clock, tools: [] })
+        for await (const event of pipeline.execute('keep looking', `turn-${label}`, false, continuityFor(label))) {
+          if (cancel && event.type === 'command') pipeline.abort()
+        }
+      }
+      const throwing: LlmClient = { complete: () => Promise.reject(new Error('provider unavailable')) }
+      const answering = (): LlmClient =>
+        new ScriptedLlm([{ kind: 'answer', speak: 'Done.', display: 'Done.', runNote: 'Answered.' }])
+
+      await drive('answered', answering())
+      await drive('threw', throwing)
+      await drive('cancelled', answering(), true)
+
+      expect(resolved).toEqual(['answered'])
     })
 
     it('drops the retained words when the Session ends', async () => {

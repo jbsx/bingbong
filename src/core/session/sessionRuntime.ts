@@ -987,6 +987,16 @@ export function createSessionRuntime(deps: {
         return 'invalid_patch'
       }
       journal.push({ runId, outcome, text: normalized, ...(stop ? { stop } : {}) })
+      // What the user's own entries cited *before* this commit (#211): the
+      // citations it adds are what it resolves, and a citation an earlier
+      // Run already made resolves nothing now. Working Memory is
+      // cumulative, so reading the whole of it here would let a standing
+      // constraint discharge a correction nobody had grounded — the user
+      // repeating a phrase their objective already quotes would have their
+      // new words dropped at the next unrelated commit.
+      const citedBefore = new Map<MemoryEntryId, ReadonlySet<MemoryEntryId>>(
+        memory.map((entry) => [entry.id, new Set(entry.userEvidenceIds ?? [])]),
+      )
       memory = proposedMemory
       // The objective this Run's decisions were made for (#208, ADR 0039):
       // a Run decides as it works, but the objective the user set only
@@ -996,15 +1006,19 @@ export function createSessionRuntime(deps: {
       // was made for rather than to nothing.
       const objectiveId = currentUserObjective(memory)?.id
       if (objectiveId !== undefined) evidence?.adoptUnscopedDecisions(objectiveId)
-      // The user's corrections the committed task now carries (#211, ADR
-      // 0039). A correction with no Candidate to decide — "only posts
+      // The user's corrections this commit carried into the task (#211,
+      // ADR 0039). A correction with no Candidate to decide — "only posts
       // from 2023" — is resolved by the objective or constraint it
       // changed, and that entry earns its authority by citing the User
-      // Observation holding those exact words. So the citations of every
-      // user-authoritative entry are what resolves them: the same
-      // grounding #206 already requires, read for what it settles.
+      // Observation holding those exact words. So the citations this
+      // commit *added* are what it resolves: the same grounding #206
+      // already requires, read for what it settles.
       evidence?.resolveCorrectionsCiting(
-        memory.flatMap((entry) => (hasUserAuthority(entry) ? [...(entry.userEvidenceIds ?? [])] : [])),
+        memory.flatMap((entry) => {
+          if (!hasUserAuthority(entry)) return []
+          const before = citedBefore.get(entry.id)
+          return (entry.userEvidenceIds ?? []).filter((id) => before === undefined || !before.has(id))
+        }),
       )
       nextMemoryId = proposedNextMemoryId
       committedRunIds.add(runId)

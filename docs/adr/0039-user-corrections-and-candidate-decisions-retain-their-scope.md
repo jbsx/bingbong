@@ -83,3 +83,13 @@ confirmed retry, Run Resolution, and verification policies are in
 [Reliable Search Continuation](../search-continuation-design.md). Regression
 coverage must span presentation, correction, first-request failure, and a later
 continuation; isolated successful-Run tests cannot prove correction retention.
+
+What the application enforces about an unresolved correction is mechanical:
+the Inspection Reference is refused, and no Candidate decision is retained on
+the model's own authority. An Answer's prose is still the model's own, so
+"do not tell them it is ruled out" rides the orchestrator prompt rather than a
+gate — the deterministic half holds because a rejection exists only as a
+retained decision, and an unresolved correction is not one. Retention is also
+bounded: five unresolved corrections per Session, oldest evicted. Only words
+that outlived a Run that never answered accumulate, so reaching that bound
+means five consecutive Runs failed to answer.

@@ -1546,9 +1546,11 @@ describe('retained user corrections', () => {
     const rejected = runtime.submit()
     expect(runtime.reject(rejected.submissionId)).toBe(true)
 
-    // A busy or rejected submission is not an accepted Run, and cannot
-    // mutate Session continuity.
-    expect(runtime.accept(runtime.submit().submissionId).corrections).toBeUndefined()
+    // A rejected submission is not an accepted Run: the only words the
+    // Session holds are the accepted continuation's, and the rejected
+    // submission left nothing of its own behind.
+    const accepted = runtime.accept(runtime.submit().submissionId, 'keep looking')
+    expect(accepted.corrections).toEqual([expect.objectContaining({ text: 'keep looking' })])
   })
 
   it('keeps the words when the Run that carried them commits nothing at all', () => {
@@ -1656,15 +1658,92 @@ describe('retained user corrections', () => {
     expect(runtime.accept(runtime.submit().submissionId).corrections).toBeUndefined()
   })
 
+  it('keeps words the user repeats, however often the standing task already quotes them', async () => {
+    // The trap: Working Memory is cumulative, so the objective set in Run 1
+    // goes on citing the User Observation holding the user's opening words
+    // for the rest of the Session. If a commit resolved corrections against
+    // everything memory cites rather than what that commit added, a user
+    // repeating themselves would have their new words dropped by the next
+    // unrelated commit, with no Run having grounded anything.
+    const { runtime } = harness()
+    const first = runtime.accept(runtime.submit().submissionId, 'find the tier list post')
+    const words = runtime.evidenceStore()!.checkpointObservation({
+      sourceKind: 'user',
+      text: 'find the tier list post',
+      runId: first.runId,
+      originEvent: { producer: 'command', observationId: 'obs-1' as never },
+    })!.observation
+    expect(runtime.commitRunContinuity(first.runId, 'done', 'Recorded the task.', parseMemoryPatch([{
+      op: 'add',
+      entry: {
+        kind: 'objective',
+        subject: 'Find the tier list post',
+        detail: 'A post the user found last week.',
+        user_evidence: [words.id],
+      },
+    }])!)).toBe('committed')
+    runtime.finish(first.runId)
+
+    // The user says exactly what they said before.
+    const second = runtime.accept(runtime.submit().submissionId, 'find the tier list post')
+    expect(second.corrections).toHaveLength(1)
+
+    // An ordinary commit that adds a finding and no user citation at all.
+    expect(runtime.commitRunContinuity(second.runId, 'done', 'Looked at two subreddits.', [{
+      op: 'add',
+      entry: { kind: 'finding', subject: 'Subreddits', detail: 'Two searched, no match.' },
+    }])).toBe('committed')
+    runtime.finish(second.runId)
+
+    expect(runtime.evidenceStore()!.unresolvedCorrections()).toHaveLength(1)
+  })
+
+  it('survives continuity compaction, which never reaches Session Evidence', async () => {
+    // #211 AC: older summaries and compaction cannot silently erase a
+    // still-relevant unresolved correction. They cannot reach it at all —
+    // compaction rewrites the Journal and Working Memory, and the user's
+    // retained words live in the Session Evidence store beside the
+    // Candidate they were spoken about.
+    const runtime = createSessionRuntime({
+      clock: new FakeClock(),
+      identities: new DeterministicIdentities(),
+      continuityModel: 'test-model',
+      continuityBudgets: budgets({ high: 15, reserve: 80, hard: 100 }),
+      recentJournalEntries: 1,
+      compactContinuity: async ({ journal, memory }) => ({ journal: journal.slice(-1), memory }),
+    })
+    const first = runtime.accept(runtime.submit().submissionId)
+    runtime.commitRunContinuity(first.runId, 'done', 'old chronology'.repeat(2), [])
+    runtime.finish(first.runId)
+
+    const second = runtime.accept(runtime.submit().submissionId, 'not that one; keep looking')
+    expect(second.corrections).toHaveLength(1)
+    runtime.commitRunContinuity(second.runId, 'done', 'recent work'.repeat(4), [])
+    await settleMaintenance()
+    runtime.finish(second.runId)
+
+    // The Journal really was compacted, and the words are still waiting.
+    const third = runtime.accept(runtime.submit().submissionId)
+    expect(third.journal.map(({ text }) => text)).toEqual(['recent work'.repeat(4)])
+    expect(third.corrections).toEqual([
+      expect.objectContaining({ text: 'not that one; keep looking', runId: second.runId }),
+    ])
+  })
+
   it('drops the retained words with the Session', () => {
     const { runtime } = harness()
     presented(runtime)
+    const store = runtime.evidenceStore()!
     const second = runtime.accept(runtime.submit().submissionId, 'not that one; keep looking')
     expect(second.corrections).toHaveLength(1)
     runtime.finish(second.runId)
 
     runtime.end('reset')
 
+    // The ended Session dropped them, and the replacement inherits none:
+    // asserted against the old store as well, because a fresh Session
+    // would look empty whether the clear happened or not.
+    expect(store.unresolvedCorrections()).toEqual([])
     expect(runtime.accept(runtime.submit().submissionId, 'keep going').corrections).toBeUndefined()
   })
 })

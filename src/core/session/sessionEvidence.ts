@@ -788,7 +788,7 @@ export function createSessionEvidence(deps: {
       // ruled in — on the model's authority while the user's word on it
       // is still sitting unread. The user's own decision is the way
       // through, and it resolves the correction as it lands.
-      if (change.authority !== 'user' && correctionAffects(inheritedCorrections(change.runId as RunId), id)) {
+      if (change.authority !== 'user' && correctionAffects(inheritedCorrections(change.runId), id)) {
         return { ok: false, refusal: 'correction_unresolved' }
       }
       const objectiveId = deps.objectiveId?.()
@@ -901,8 +901,12 @@ export function createSessionEvidence(deps: {
     },
     groundCorrections() {
       if (cleared) return
+      const inForce = new Set(liveCorrections())
       corrections = corrections.map((held) => {
-        if (held.observationId !== undefined) return held
+        // Words retired with the task they were spoken about are not
+        // grounded: no Run will be asked to resolve them, so minting an
+        // Observation for them would be evidence of nothing.
+        if (held.observationId !== undefined || !inForce.has(held)) return held
         // A User Observation is grounded against the user events of the
         // Run that heard them (#122), so the Run this utterance was
         // admitted with is the only Run that could ever ground it — and
@@ -929,16 +933,26 @@ export function createSessionEvidence(deps: {
     },
     resolveCorrectionsCiting(observationIds) {
       if (cleared) return
+      const cited = new Set<MemoryEntryId>()
       const quoted = new Set<string>()
       for (const id of observationIds) {
         const observation = liveObservation(id)
         // Only the user's own words resolve their own words: a web or
         // vision Observation sharing the identity space is not the user
         // being answered, however exactly its text happens to match.
-        if (observation?.sourceKind === 'user') quoted.add(normalizeMemoryText(observation.text))
+        if (observation?.sourceKind !== 'user') continue
+        cited.add(observation.id)
+        quoted.add(normalizeMemoryText(observation.text))
       }
-      if (quoted.size === 0) return
-      dropCorrections((held) => quoted.has(normalizeMemoryText(held.text)))
+      if (cited.size === 0) return
+      // Identity first, for a correction the Session has already grounded:
+      // that Observation *is* those words. Text is the fallback, and the
+      // only route for words a Run checkpointed for itself before the
+      // Session had to ground them.
+      dropCorrections((held) =>
+        held.observationId !== undefined
+          ? cited.has(held.observationId)
+          : quoted.has(normalizeMemoryText(held.text)))
     },
     resolveCorrectionsFrom(runId) {
       if (cleared) return
