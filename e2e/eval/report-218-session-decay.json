@@ -1,0 +1,1294 @@
+{
+  "capturedAt": "2026-09-07T18:07:40.015Z",
+  "gitCommit": "313fba1a42c82a870a30f14f6ee26b27099e007e",
+  "scenarioTimeoutMs": 1200000,
+  "routing": {
+    "orchestrator": {
+      "configured": true,
+      "baseUrl": "https://api.z.ai/api/coding/paas/v4",
+      "model": "GLM-5.3-flash",
+      "keyFingerprint": "sha256:496fb3dd2227"
+    },
+    "subagent": {
+      "configured": true,
+      "baseUrl": "https://api.z.ai/api/coding/paas/v4",
+      "model": "GLM-5.3-flash",
+      "keyFingerprint": "sha256:496fb3dd2227"
+    },
+    "vision": {
+      "configured": true,
+      "baseUrl": "https://api.z.ai/api/coding/paas/v4",
+      "model": "GLM-4.6V",
+      "keyFingerprint": "sha256:496fb3dd2227"
+    }
+  },
+  "modelWitness": {
+    "orchestratorModel": null,
+    "orchestratorRequests": 0,
+    "reasoningEffort": null,
+    "scriptedEntries": []
+  },
+  "scenarios": [
+    {
+      "id": "direct-action-open-page",
+      "kind": "direct-action",
+      "command": "open http://127.0.0.1:43171/second in the browser",
+      "success": true,
+      "failureReason": null,
+      "metrics": {
+        "llmRounds": 2,
+        "attemptedTools": 2,
+        "executedTools": 1,
+        "elapsedMs": 11149,
+        "secondsPerLlmRound": 5.5745,
+        "repeatedActions": 0,
+        "outcome": "done",
+        "resolution": "completed",
+        "finalizationCause": "objective_met",
+        "effortTier": "direct_action",
+        "rawLimitFailure": null,
+        "askTimedOut": false,
+        "deterministicAnswer": false,
+        "subagentFinalizations": {},
+        "subagentBoundedReports": 0,
+        "actions": [
+          {
+            "name": "report_run_plan",
+            "args": {
+              "headline": "Open the local page 127.0.0.1:43171/second",
+              "objective": "Open http://127.0.0.1:43171/second in the browser",
+              "effort_tier": "direct_action"
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "navigate",
+            "args": {
+              "url": "http://127.0.0.1:43171/second"
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          }
+        ],
+        "answerText": "Opened http://127.0.0.1:43171/second in the browser. The page loaded successfully with the text: **second fixture page**.",
+        "timedOut": false
+      },
+      "runs": [
+        {
+          "llmRounds": 2,
+          "attemptedTools": 2,
+          "executedTools": 1,
+          "elapsedMs": 11149,
+          "secondsPerLlmRound": 5.5745,
+          "repeatedActions": 0,
+          "outcome": "done",
+          "resolution": "completed",
+          "finalizationCause": "objective_met",
+          "effortTier": "direct_action",
+          "rawLimitFailure": null,
+          "askTimedOut": false,
+          "deterministicAnswer": false,
+          "subagentFinalizations": {},
+          "subagentBoundedReports": 0,
+          "actions": [
+            {
+              "name": "report_run_plan",
+              "args": {
+                "headline": "Open the local page 127.0.0.1:43171/second",
+                "objective": "Open http://127.0.0.1:43171/second in the browser",
+                "effort_tier": "direct_action"
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "navigate",
+              "args": {
+                "url": "http://127.0.0.1:43171/second"
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            }
+          ],
+          "answerText": "Opened http://127.0.0.1:43171/second in the browser. The page loaded successfully with the text: **second fixture page**.",
+          "timedOut": false
+        }
+      ]
+    },
+    {
+      "id": "direct-action-open-article",
+      "kind": "direct-action",
+      "command": "open http://127.0.0.1:43171/widgets-article in the browser",
+      "success": true,
+      "failureReason": null,
+      "metrics": {
+        "llmRounds": 6,
+        "attemptedTools": 7,
+        "executedTools": 6,
+        "elapsedMs": 57479,
+        "secondsPerLlmRound": 9.579833333333333,
+        "repeatedActions": 0,
+        "outcome": "done",
+        "resolution": "completed",
+        "finalizationCause": "objective_met",
+        "effortTier": "direct_action",
+        "rawLimitFailure": null,
+        "askTimedOut": false,
+        "deterministicAnswer": false,
+        "subagentFinalizations": {},
+        "subagentBoundedReports": 0,
+        "actions": [
+          {
+            "name": "report_run_plan",
+            "args": {
+              "effort_tier": "direct_action",
+              "headline": "Opening the widgets-article page",
+              "objective": "Open http://127.0.0.1:43171/widgets-article in the visible browser, resolving the user's earlier spoken request that no prior run acted on."
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "record_evidence",
+            "args": {
+              "kind": "user",
+              "observation": "open http://127.0.0.1:43171/widgets-article in the browser"
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "navigate",
+            "args": {
+              "url": "http://127.0.0.1:43171/widgets-article"
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "record_candidate",
+            "args": {
+              "detail": "Navigate to http://127.0.0.1:43171/widgets-article in the browser",
+              "subject": "Open the widgets-article page at 127.0.0.1:43171 in the browser",
+              "supporting_evidence": [
+                "memory-1"
+              ]
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "record_candidate",
+            "args": {
+              "authority": "user",
+              "candidate_id": "memory-2",
+              "reason": "The user's own words plainly decide this: they asked to open this exact page, and the navigation succeeded — the page loaded and settled.",
+              "status": "accepted",
+              "supporting_evidence": [
+                "memory-1"
+              ]
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "record_evidence",
+            "args": {
+              "observation": "The browser landed on http://127.0.0.1:43171/widgets-article, page title \"fixture widgets article\"; the visible text reads: \"Fixture widgets: the complete guide — Everything about fixture widgets, found entirely on screen.\"",
+              "source_url": "http://127.0.0.1:43171/widgets-article",
+              "volatile": true
+            },
+            "ok": false,
+            "repeated": false,
+            "error": "record_evidence rejected (excerpt_required): the citation carries no excerpt, and nothing this run retained from 'http://127.0.0.1:43171/widgets-article' grounds one without it — copy a contiguous span verbatim from the tool result you are citing; only a structured action outcome grounds excerptless."
+          },
+          {
+            "name": "record_evidence",
+            "args": {
+              "excerpt": "Fixture widgets: the complete guide\nEverything about fixture widgets, found entirely on screen.",
+              "observation": "The browser opened the requested page: title \"fixture widgets article\" at http://127.0.0.1:43171/widgets-article, which reads \"Fixture widgets: the complete guide — Everything about fixture widgets, found entirely on screen.\"",
+              "source_url": "http://127.0.0.1:43171/widgets-article",
+              "volatile": true
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          }
+        ],
+        "answerText": "Opened **http://127.0.0.1:43171/widgets-article** in the visible browser (this was your earlier request, which the previous run ended before acting on).\n\n- Page title: *fixture widgets article*\n- Visible content: \"Fixture widgets: the complete guide — Everything about fixture widgets, found entirely on screen.\"\n\nThe page loaded and is on screen now — nothing further was pending on it.",
+        "timedOut": false
+      },
+      "runs": [
+        {
+          "llmRounds": 6,
+          "attemptedTools": 7,
+          "executedTools": 6,
+          "elapsedMs": 57479,
+          "secondsPerLlmRound": 9.579833333333333,
+          "repeatedActions": 0,
+          "outcome": "done",
+          "resolution": "completed",
+          "finalizationCause": "objective_met",
+          "effortTier": "direct_action",
+          "rawLimitFailure": null,
+          "askTimedOut": false,
+          "deterministicAnswer": false,
+          "subagentFinalizations": {},
+          "subagentBoundedReports": 0,
+          "actions": [
+            {
+              "name": "report_run_plan",
+              "args": {
+                "effort_tier": "direct_action",
+                "headline": "Opening the widgets-article page",
+                "objective": "Open http://127.0.0.1:43171/widgets-article in the visible browser, resolving the user's earlier spoken request that no prior run acted on."
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "record_evidence",
+              "args": {
+                "kind": "user",
+                "observation": "open http://127.0.0.1:43171/widgets-article in the browser"
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "navigate",
+              "args": {
+                "url": "http://127.0.0.1:43171/widgets-article"
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "record_candidate",
+              "args": {
+                "detail": "Navigate to http://127.0.0.1:43171/widgets-article in the browser",
+                "subject": "Open the widgets-article page at 127.0.0.1:43171 in the browser",
+                "supporting_evidence": [
+                  "memory-1"
+                ]
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "record_candidate",
+              "args": {
+                "authority": "user",
+                "candidate_id": "memory-2",
+                "reason": "The user's own words plainly decide this: they asked to open this exact page, and the navigation succeeded — the page loaded and settled.",
+                "status": "accepted",
+                "supporting_evidence": [
+                  "memory-1"
+                ]
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "record_evidence",
+              "args": {
+                "observation": "The browser landed on http://127.0.0.1:43171/widgets-article, page title \"fixture widgets article\"; the visible text reads: \"Fixture widgets: the complete guide — Everything about fixture widgets, found entirely on screen.\"",
+                "source_url": "http://127.0.0.1:43171/widgets-article",
+                "volatile": true
+              },
+              "ok": false,
+              "repeated": false,
+              "error": "record_evidence rejected (excerpt_required): the citation carries no excerpt, and nothing this run retained from 'http://127.0.0.1:43171/widgets-article' grounds one without it — copy a contiguous span verbatim from the tool result you are citing; only a structured action outcome grounds excerptless."
+            },
+            {
+              "name": "record_evidence",
+              "args": {
+                "excerpt": "Fixture widgets: the complete guide\nEverything about fixture widgets, found entirely on screen.",
+                "observation": "The browser opened the requested page: title \"fixture widgets article\" at http://127.0.0.1:43171/widgets-article, which reads \"Fixture widgets: the complete guide — Everything about fixture widgets, found entirely on screen.\"",
+                "source_url": "http://127.0.0.1:43171/widgets-article",
+                "volatile": true
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            }
+          ],
+          "answerText": "Opened **http://127.0.0.1:43171/widgets-article** in the visible browser (this was your earlier request, which the previous run ended before acting on).\n\n- Page title: *fixture widgets article*\n- Visible content: \"Fixture widgets: the complete guide — Everything about fixture widgets, found entirely on screen.\"\n\nThe page loaded and is on screen now — nothing further was pending on it.",
+          "timedOut": false
+        }
+      ]
+    },
+    {
+      "id": "direct-action-open-alt-host",
+      "kind": "direct-action",
+      "command": "open http://127.0.0.2:33111/widget-review in the browser",
+      "success": true,
+      "failureReason": null,
+      "metrics": {
+        "llmRounds": 8,
+        "attemptedTools": 8,
+        "executedTools": 7,
+        "elapsedMs": 109713,
+        "secondsPerLlmRound": 13.714125,
+        "repeatedActions": 0,
+        "outcome": "done",
+        "resolution": "completed",
+        "finalizationCause": "deadline_reached",
+        "effortTier": "direct_action",
+        "rawLimitFailure": null,
+        "askTimedOut": false,
+        "deterministicAnswer": false,
+        "subagentFinalizations": {},
+        "subagentBoundedReports": 0,
+        "actions": [
+          {
+            "name": "report_run_plan",
+            "args": {
+              "effort_tier": "direct_action",
+              "headline": "Open the widget-review page at 127.0.0.2:33111",
+              "objective": "Follow the user's new spoken command: open http://127.0.0.2:33111/widget-review in the browser (a different page than the previously opened widgets-article)."
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "record_evidence",
+            "args": {
+              "kind": "user",
+              "observation": "open http://127.0.0.2:33111/widget-review in the browser"
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "navigate",
+            "args": {
+              "url": "http://127.0.0.2:33111/widget-review"
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "record_evidence",
+            "args": {
+              "kind": "web",
+              "observation": "The browser opened the requested page: title \"independent widget review\" at http://127.0.0.2:33111/widget-review, which reads \"Independent fixture widget review — Our review lab measured the standard fixture widget at 4.2 kg on the bench scale.\"",
+              "source_url": "http://127.0.0.2:33111/widget-review",
+              "volatile": true
+            },
+            "ok": false,
+            "repeated": false,
+            "error": "record_evidence rejected (excerpt_required): the citation carries no excerpt, and nothing this run retained from 'http://127.0.0.2:33111/widget-review' grounds one without it — copy a contiguous span verbatim from the tool result you are citing; only a structured action outcome grounds excerptless."
+          },
+          {
+            "name": "record_evidence",
+            "args": {
+              "excerpt": "Independent fixture widget review\nOur review lab measured the standard fixture widget at 4.2 kg on the bench scale.",
+              "kind": "web",
+              "observation": "The browser opened the requested page: title \"independent widget review\" at http://127.0.0.2:33111/widget-review, which reads \"Independent fixture widget review — Our review lab measured the standard fixture widget at 4.2 kg on the bench scale.\"",
+              "source_url": "http://127.0.0.2:33111/widget-review",
+              "volatile": true
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "record_candidate",
+            "args": {
+              "detail": "Navigate to http://127.0.0.2:33111/widget-review in the browser (user's new spoken command, replacing the earlier widgets-article page as the current request)",
+              "subject": "Open the widget-review page at 127.0.0.2:33111 in the browser",
+              "supporting_evidence": [
+                "memory-4"
+              ]
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "record_candidate",
+            "args": {
+              "candidate_id": "memory-6",
+              "reason": "The user's own words plainly decide this: they asked to open this exact page, and the navigation succeeded — the page loaded and settled with title \"independent widget review\".",
+              "status": "accepted",
+              "supporting_evidence": [
+                "memory-4",
+                "memory-5"
+              ]
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "record_candidate",
+            "args": {
+              "candidate_id": "memory-2",
+              "reason": "Superseded for the current objective by the user's own new command (memory-4), which requested a different page; the earlier widgets-article request was completed in a prior run.",
+              "status": "superseded",
+              "supporting_evidence": [
+                "memory-4",
+                "memory-5"
+              ]
+            },
+            "ok": false,
+            "repeated": false,
+            "error": "record_candidate rejected (unauthorized): the user decided Candidate 'memory-2' for this objective — \"The user's own words plainly decide this: they asked to open this exact page, and the navigation succeeded — the page loaded and settled.\" — and only the user reopens it. Ask them, checkpoint their answer as a kind \"user\" Observation, and cite it with authority \"user\". A different objective is not bound by this decision."
+          }
+        ],
+        "answerText": "Opened **http://127.0.0.2:33111/widget-review** in the browser as requested (this replaces the earlier widgets-article page as the current one).\n\n**Page: \"independent widget review\"**\n- \"Independent fixture widget review\"\n- \"Our review lab measured the standard fixture widget at 4.2 kg on the bench scale.\"\n\nThe page loaded and settled successfully. One note: the previous widgets-article page remains marked as the user-accepted request in session memory — only you can reopen that one, so I left its status untouched.",
+        "timedOut": false
+      },
+      "runs": [
+        {
+          "llmRounds": 8,
+          "attemptedTools": 8,
+          "executedTools": 7,
+          "elapsedMs": 109713,
+          "secondsPerLlmRound": 13.714125,
+          "repeatedActions": 0,
+          "outcome": "done",
+          "resolution": "completed",
+          "finalizationCause": "deadline_reached",
+          "effortTier": "direct_action",
+          "rawLimitFailure": null,
+          "askTimedOut": false,
+          "deterministicAnswer": false,
+          "subagentFinalizations": {},
+          "subagentBoundedReports": 0,
+          "actions": [
+            {
+              "name": "report_run_plan",
+              "args": {
+                "effort_tier": "direct_action",
+                "headline": "Open the widget-review page at 127.0.0.2:33111",
+                "objective": "Follow the user's new spoken command: open http://127.0.0.2:33111/widget-review in the browser (a different page than the previously opened widgets-article)."
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "record_evidence",
+              "args": {
+                "kind": "user",
+                "observation": "open http://127.0.0.2:33111/widget-review in the browser"
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "navigate",
+              "args": {
+                "url": "http://127.0.0.2:33111/widget-review"
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "record_evidence",
+              "args": {
+                "kind": "web",
+                "observation": "The browser opened the requested page: title \"independent widget review\" at http://127.0.0.2:33111/widget-review, which reads \"Independent fixture widget review — Our review lab measured the standard fixture widget at 4.2 kg on the bench scale.\"",
+                "source_url": "http://127.0.0.2:33111/widget-review",
+                "volatile": true
+              },
+              "ok": false,
+              "repeated": false,
+              "error": "record_evidence rejected (excerpt_required): the citation carries no excerpt, and nothing this run retained from 'http://127.0.0.2:33111/widget-review' grounds one without it — copy a contiguous span verbatim from the tool result you are citing; only a structured action outcome grounds excerptless."
+            },
+            {
+              "name": "record_evidence",
+              "args": {
+                "excerpt": "Independent fixture widget review\nOur review lab measured the standard fixture widget at 4.2 kg on the bench scale.",
+                "kind": "web",
+                "observation": "The browser opened the requested page: title \"independent widget review\" at http://127.0.0.2:33111/widget-review, which reads \"Independent fixture widget review — Our review lab measured the standard fixture widget at 4.2 kg on the bench scale.\"",
+                "source_url": "http://127.0.0.2:33111/widget-review",
+                "volatile": true
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "record_candidate",
+              "args": {
+                "detail": "Navigate to http://127.0.0.2:33111/widget-review in the browser (user's new spoken command, replacing the earlier widgets-article page as the current request)",
+                "subject": "Open the widget-review page at 127.0.0.2:33111 in the browser",
+                "supporting_evidence": [
+                  "memory-4"
+                ]
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "record_candidate",
+              "args": {
+                "candidate_id": "memory-6",
+                "reason": "The user's own words plainly decide this: they asked to open this exact page, and the navigation succeeded — the page loaded and settled with title \"independent widget review\".",
+                "status": "accepted",
+                "supporting_evidence": [
+                  "memory-4",
+                  "memory-5"
+                ]
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "record_candidate",
+              "args": {
+                "candidate_id": "memory-2",
+                "reason": "Superseded for the current objective by the user's own new command (memory-4), which requested a different page; the earlier widgets-article request was completed in a prior run.",
+                "status": "superseded",
+                "supporting_evidence": [
+                  "memory-4",
+                  "memory-5"
+                ]
+              },
+              "ok": false,
+              "repeated": false,
+              "error": "record_candidate rejected (unauthorized): the user decided Candidate 'memory-2' for this objective — \"The user's own words plainly decide this: they asked to open this exact page, and the navigation succeeded — the page loaded and settled.\" — and only the user reopens it. Ask them, checkpoint their answer as a kind \"user\" Observation, and cite it with authority \"user\". A different objective is not bound by this decision."
+            }
+          ],
+          "answerText": "Opened **http://127.0.0.2:33111/widget-review** in the browser as requested (this replaces the earlier widgets-article page as the current one).\n\n**Page: \"independent widget review\"**\n- \"Independent fixture widget review\"\n- \"Our review lab measured the standard fixture widget at 4.2 kg on the bench scale.\"\n\nThe page loaded and settled successfully. One note: the previous widgets-article page remains marked as the user-accepted request in session memory — only you can reopen that one, so I left its status untouched.",
+          "timedOut": false
+        }
+      ]
+    },
+    {
+      "id": "direct-action-open-results",
+      "kind": "direct-action",
+      "command": "open the fixture web results for widgets at http://127.0.0.1:43171/results?q=widgets in the browser",
+      "success": true,
+      "failureReason": null,
+      "metrics": {
+        "llmRounds": 8,
+        "attemptedTools": 8,
+        "executedTools": 7,
+        "elapsedMs": 123335,
+        "secondsPerLlmRound": 15.416875,
+        "repeatedActions": 0,
+        "outcome": "done",
+        "resolution": "completed",
+        "finalizationCause": "deadline_reached",
+        "effortTier": "direct_action",
+        "rawLimitFailure": null,
+        "askTimedOut": false,
+        "deterministicAnswer": false,
+        "subagentFinalizations": {},
+        "subagentBoundedReports": 0,
+        "actions": [
+          {
+            "name": "report_run_plan",
+            "args": {
+              "effort_tier": "direct_action",
+              "headline": "Open the fixture web results page for widgets",
+              "objective": "Open the fixture web results for widgets at http://127.0.0.1:43171/results?q=widgets in the browser, resolving the user's pending spoken directive left over from the previous run."
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "record_evidence",
+            "args": {
+              "kind": "user",
+              "observation": "open the fixture web results for widgets at http://127.0.0.1:43171/results?q=widgets in the browser"
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "navigate",
+            "args": {
+              "url": "http://127.0.0.1:43171/results?q=widgets"
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "record_evidence",
+            "args": {
+              "kind": "web",
+              "observation": "The browser opened the requested page: title \"widgets — fixture engine results\" at http://127.0.0.1:43171/results?q=widgets, which reads \"results for \"widgets\"\" and lists three links: Fixture widgets: the complete guide, Independent fixture widget review, and Polished widgets — the mirror finish guide.",
+              "source_url": "http://127.0.0.1:43171/results?q=widgets",
+              "excerpt": "[1] link \"Fixture widgets: the complete guide\" href=\"http://127.0.0.1:43171/widgets-article\"\n[2] link \"Independent fixture widget review\" href=\"http://127.0.0.2:33111/widget-review\"\n[3] link \"Polished widgets — the mirror finish guide\" href=\"http://127.0.0.1:43171/widgets-polished\"\npage text:\nresults for \"widgets\"",
+              "volatile": true
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "record_candidate",
+            "args": {
+              "subject": "Open the fixture web results for widgets at http://127.0.0.1:43171/results?q=widgets in the browser",
+              "detail": "The user's pending spoken directive from the previous run, now carried out: navigate the browser to the fixture engine results page for the query \"widgets\""
+            },
+            "ok": false,
+            "repeated": false,
+            "error": "record_candidate rejected (malformed): the call is malformed — create a Candidate with {subject, detail?, supporting_evidence: [Session Evidence observation ids]}, or decide one with {candidate_id, status: accepted|rejected|superseded|active, reason, supporting_evidence, authority?: user|model}."
+          },
+          {
+            "name": "record_candidate",
+            "args": {
+              "detail": "The user's pending spoken directive from the previous run, now carried out: navigate the browser to the fixture engine results page for the query \"widgets\"",
+              "subject": "Open the fixture web results for widgets at http://127.0.0.1:43171/results?q=widgets in the browser",
+              "supporting_evidence": [
+                "memory-7",
+                "memory-8"
+              ]
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "record_candidate",
+            "args": {
+              "candidate_id": "memory-9",
+              "reason": "The user's own words plainly decide this: they directed the browser to open this exact results URL, and the navigation succeeded — the page settled with title \"widgets — fixture engine results\" showing results for \"widgets\".",
+              "status": "accepted",
+              "supporting_evidence": [
+                "memory-7",
+                "memory-8"
+              ]
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "record_evidence",
+            "args": {
+              "kind": "user",
+              "observation": "The user's pending directive, said about the previous answer (widget-review page), is resolved by their exact follow-up words: \"open the fixture web results for widgets at http://127.0.0.1:43171/results?q=widgets in the browser\" — a new page to open, plainly stated with its URL, not a comment or judgment on the widget-review page."
+            },
+            "ok": false,
+            "repeated": false,
+            "error": "record_evidence rejected (user_text_unverified): no command, ask_user answer, or steering directive in this run supplied those exact words — copy the user's text verbatim, or checkpoint what you observed instead."
+          }
+        ],
+        "answerText": "Opened the requested results page: **widgets — fixture engine results** at http://127.0.0.1:43171/results?q=widgets. The page reads \"results for \\\"widgets\\\"\" and lists three links:\n\n1. [Fixture widgets: the complete guide](http://127.0.0.1:43171/widgets-article)\n2. [Independent fixture widget review](http://127.0.0.2:33111/widget-review)\n3. [Polished widgets — the mirror finish guide](http://127.0.0.1:43171/widgets-polished)\n\nYour spoken request to open this results page (left pending from the previous run) has been carried out and recorded as the current subject.",
+        "timedOut": false
+      },
+      "runs": [
+        {
+          "llmRounds": 8,
+          "attemptedTools": 8,
+          "executedTools": 7,
+          "elapsedMs": 123335,
+          "secondsPerLlmRound": 15.416875,
+          "repeatedActions": 0,
+          "outcome": "done",
+          "resolution": "completed",
+          "finalizationCause": "deadline_reached",
+          "effortTier": "direct_action",
+          "rawLimitFailure": null,
+          "askTimedOut": false,
+          "deterministicAnswer": false,
+          "subagentFinalizations": {},
+          "subagentBoundedReports": 0,
+          "actions": [
+            {
+              "name": "report_run_plan",
+              "args": {
+                "effort_tier": "direct_action",
+                "headline": "Open the fixture web results page for widgets",
+                "objective": "Open the fixture web results for widgets at http://127.0.0.1:43171/results?q=widgets in the browser, resolving the user's pending spoken directive left over from the previous run."
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "record_evidence",
+              "args": {
+                "kind": "user",
+                "observation": "open the fixture web results for widgets at http://127.0.0.1:43171/results?q=widgets in the browser"
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "navigate",
+              "args": {
+                "url": "http://127.0.0.1:43171/results?q=widgets"
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "record_evidence",
+              "args": {
+                "kind": "web",
+                "observation": "The browser opened the requested page: title \"widgets — fixture engine results\" at http://127.0.0.1:43171/results?q=widgets, which reads \"results for \"widgets\"\" and lists three links: Fixture widgets: the complete guide, Independent fixture widget review, and Polished widgets — the mirror finish guide.",
+                "source_url": "http://127.0.0.1:43171/results?q=widgets",
+                "excerpt": "[1] link \"Fixture widgets: the complete guide\" href=\"http://127.0.0.1:43171/widgets-article\"\n[2] link \"Independent fixture widget review\" href=\"http://127.0.0.2:33111/widget-review\"\n[3] link \"Polished widgets — the mirror finish guide\" href=\"http://127.0.0.1:43171/widgets-polished\"\npage text:\nresults for \"widgets\"",
+                "volatile": true
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "record_candidate",
+              "args": {
+                "subject": "Open the fixture web results for widgets at http://127.0.0.1:43171/results?q=widgets in the browser",
+                "detail": "The user's pending spoken directive from the previous run, now carried out: navigate the browser to the fixture engine results page for the query \"widgets\""
+              },
+              "ok": false,
+              "repeated": false,
+              "error": "record_candidate rejected (malformed): the call is malformed — create a Candidate with {subject, detail?, supporting_evidence: [Session Evidence observation ids]}, or decide one with {candidate_id, status: accepted|rejected|superseded|active, reason, supporting_evidence, authority?: user|model}."
+            },
+            {
+              "name": "record_candidate",
+              "args": {
+                "detail": "The user's pending spoken directive from the previous run, now carried out: navigate the browser to the fixture engine results page for the query \"widgets\"",
+                "subject": "Open the fixture web results for widgets at http://127.0.0.1:43171/results?q=widgets in the browser",
+                "supporting_evidence": [
+                  "memory-7",
+                  "memory-8"
+                ]
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "record_candidate",
+              "args": {
+                "candidate_id": "memory-9",
+                "reason": "The user's own words plainly decide this: they directed the browser to open this exact results URL, and the navigation succeeded — the page settled with title \"widgets — fixture engine results\" showing results for \"widgets\".",
+                "status": "accepted",
+                "supporting_evidence": [
+                  "memory-7",
+                  "memory-8"
+                ]
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "record_evidence",
+              "args": {
+                "kind": "user",
+                "observation": "The user's pending directive, said about the previous answer (widget-review page), is resolved by their exact follow-up words: \"open the fixture web results for widgets at http://127.0.0.1:43171/results?q=widgets in the browser\" — a new page to open, plainly stated with its URL, not a comment or judgment on the widget-review page."
+              },
+              "ok": false,
+              "repeated": false,
+              "error": "record_evidence rejected (user_text_unverified): no command, ask_user answer, or steering directive in this run supplied those exact words — copy the user's text verbatim, or checkpoint what you observed instead."
+            }
+          ],
+          "answerText": "Opened the requested results page: **widgets — fixture engine results** at http://127.0.0.1:43171/results?q=widgets. The page reads \"results for \\\"widgets\\\"\" and lists three links:\n\n1. [Fixture widgets: the complete guide](http://127.0.0.1:43171/widgets-article)\n2. [Independent fixture widget review](http://127.0.0.2:33111/widget-review)\n3. [Polished widgets — the mirror finish guide](http://127.0.0.1:43171/widgets-polished)\n\nYour spoken request to open this results page (left pending from the previous run) has been carried out and recorded as the current subject.",
+          "timedOut": false
+        }
+      ]
+    },
+    {
+      "id": "direct-action-click-button",
+      "kind": "direct-action",
+      "command": "open http://127.0.0.1:43171/interactive and click the Say hello button",
+      "success": false,
+      "failureReason": "pipeline outcome: failed",
+      "metrics": {
+        "llmRounds": 8,
+        "attemptedTools": 7,
+        "executedTools": 6,
+        "elapsedMs": 185359,
+        "secondsPerLlmRound": 23.169875,
+        "repeatedActions": 0,
+        "outcome": "failed",
+        "resolution": null,
+        "finalizationCause": "deadline_reached",
+        "effortTier": "direct_action",
+        "rawLimitFailure": null,
+        "askTimedOut": false,
+        "deterministicAnswer": true,
+        "subagentFinalizations": {},
+        "subagentBoundedReports": 0,
+        "actions": [
+          {
+            "name": "report_run_plan",
+            "args": {
+              "effort_tier": "direct_action",
+              "headline": "Open the interactive page and click Say hello",
+              "objective": "Open http://127.0.0.1:43171/interactive in the browser and click its \"Say hello\" button"
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "record_evidence",
+            "args": {
+              "kind": "user",
+              "observation": "open http://127.0.0.1:43171/interactive and click the Say hello button"
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "navigate",
+            "args": {
+              "url": "http://127.0.0.1:43171/interactive"
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "record_candidate",
+            "args": {
+              "candidate_id": "memory-9",
+              "reason": "The user's new directive is a fresh request — navigate to /interactive and click Say hello — plainly not about the results page itself; recorded with their exact words (memory-10) so memory-9 is settled for its own objective and the new task stands.",
+              "status": "active",
+              "supporting_evidence": [
+                "memory-10"
+              ]
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "click",
+            "args": {
+              "ref": 1
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "look",
+            "args": {
+              "question": "Did clicking \"Say hello\" produce a visible greeting or message anywhere on the page? Quote the exact text of the page and any message shown."
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "record_evidence",
+            "args": {
+              "kind": "web",
+              "observation": "Task completed on http://127.0.0.1:43171/interactive (title \"interactive fixture\"): the \"Say hello\" button [1] was clicked; the click registered with dialogOpen=false and the page signature changed c91251e3 → b3a369c0, confirming the button press took effect.",
+              "source_url": "http://127.0.0.1:43171/interactive",
+              "volatile": true
+            },
+            "ok": false,
+            "repeated": false,
+            "error": "record_evidence rejected (excerpt_required): the citation carries no excerpt, and nothing this run retained from 'http://127.0.0.1:43171/interactive' grounds one without it — copy a contiguous span verbatim from the tool result you are citing; only a structured action outcome grounds excerptless."
+          }
+        ],
+        "answerText": "I have not confirmed an answer for “open http://127.0.0.1:43171/interactive and click the Say hello button” yet.\n\nWhat I have so far:\n- http://127.0.0.1:43171/interactive\n  “clicked:btn-hello”\n  Quoted from the page as observed:\n  > interactive fixture page\n  > Only visible after scrolling down.\n\nI have not verified that any of these answers the request.",
+        "timedOut": false
+      },
+      "runs": [
+        {
+          "llmRounds": 8,
+          "attemptedTools": 7,
+          "executedTools": 6,
+          "elapsedMs": 185359,
+          "secondsPerLlmRound": 23.169875,
+          "repeatedActions": 0,
+          "outcome": "failed",
+          "resolution": null,
+          "finalizationCause": "deadline_reached",
+          "effortTier": "direct_action",
+          "rawLimitFailure": null,
+          "askTimedOut": false,
+          "deterministicAnswer": true,
+          "subagentFinalizations": {},
+          "subagentBoundedReports": 0,
+          "actions": [
+            {
+              "name": "report_run_plan",
+              "args": {
+                "effort_tier": "direct_action",
+                "headline": "Open the interactive page and click Say hello",
+                "objective": "Open http://127.0.0.1:43171/interactive in the browser and click its \"Say hello\" button"
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "record_evidence",
+              "args": {
+                "kind": "user",
+                "observation": "open http://127.0.0.1:43171/interactive and click the Say hello button"
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "navigate",
+              "args": {
+                "url": "http://127.0.0.1:43171/interactive"
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "record_candidate",
+              "args": {
+                "candidate_id": "memory-9",
+                "reason": "The user's new directive is a fresh request — navigate to /interactive and click Say hello — plainly not about the results page itself; recorded with their exact words (memory-10) so memory-9 is settled for its own objective and the new task stands.",
+                "status": "active",
+                "supporting_evidence": [
+                  "memory-10"
+                ]
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "click",
+              "args": {
+                "ref": 1
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "look",
+              "args": {
+                "question": "Did clicking \"Say hello\" produce a visible greeting or message anywhere on the page? Quote the exact text of the page and any message shown."
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "record_evidence",
+              "args": {
+                "kind": "web",
+                "observation": "Task completed on http://127.0.0.1:43171/interactive (title \"interactive fixture\"): the \"Say hello\" button [1] was clicked; the click registered with dialogOpen=false and the page signature changed c91251e3 → b3a369c0, confirming the button press took effect.",
+                "source_url": "http://127.0.0.1:43171/interactive",
+                "volatile": true
+              },
+              "ok": false,
+              "repeated": false,
+              "error": "record_evidence rejected (excerpt_required): the citation carries no excerpt, and nothing this run retained from 'http://127.0.0.1:43171/interactive' grounds one without it — copy a contiguous span verbatim from the tool result you are citing; only a structured action outcome grounds excerptless."
+            }
+          ],
+          "answerText": "I have not confirmed an answer for “open http://127.0.0.1:43171/interactive and click the Say hello button” yet.\n\nWhat I have so far:\n- http://127.0.0.1:43171/interactive\n  “clicked:btn-hello”\n  Quoted from the page as observed:\n  > interactive fixture page\n  > Only visible after scrolling down.\n\nI have not verified that any of these answers the request.",
+          "timedOut": false
+        }
+      ]
+    },
+    {
+      "id": "direct-action-check-checkbox",
+      "kind": "direct-action",
+      "command": "open http://127.0.0.1:43171/interactive and tick the Agree checkbox",
+      "success": false,
+      "failureReason": "pipeline outcome: failed",
+      "metrics": {
+        "llmRounds": 5,
+        "attemptedTools": 4,
+        "executedTools": 3,
+        "elapsedMs": 223069,
+        "secondsPerLlmRound": 44.6138,
+        "repeatedActions": 0,
+        "outcome": "failed",
+        "resolution": null,
+        "finalizationCause": "deadline_reached",
+        "effortTier": "direct_action",
+        "rawLimitFailure": null,
+        "askTimedOut": false,
+        "deterministicAnswer": true,
+        "subagentFinalizations": {},
+        "subagentBoundedReports": 0,
+        "actions": [
+          {
+            "name": "report_run_plan",
+            "args": {
+              "objective": "Open http://127.0.0.1:43171/interactive and tick the Agree checkbox — the user's latest words replace the earlier pending \"Say hello button\" directive for the same page.",
+              "effort_tier": "direct_action",
+              "headline": "Open the interactive fixture page and tick the Agree checkbox"
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "record_evidence",
+            "args": {
+              "kind": "user",
+              "observation": "open http://127.0.0.1:43171/interactive and tick the Agree checkbox"
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "navigate",
+            "args": {
+              "url": "http://127.0.0.1:43171/interactive"
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          },
+          {
+            "name": "click",
+            "args": {
+              "ref": 8
+            },
+            "ok": true,
+            "repeated": false,
+            "error": null
+          }
+        ],
+        "answerText": "I have not confirmed an answer for “open http://127.0.0.1:43171/interactive and tick the Agree checkbox” yet.\n\nWhat I have so far:\n- http://127.0.0.1:43171/interactive\n  “interactive fixture”\n  Quoted from the page as observed:\n  > interactive fixture page\n  > Only visible after scrolling down.\n\nI have not verified that any of these answers the request.",
+        "timedOut": false
+      },
+      "runs": [
+        {
+          "llmRounds": 5,
+          "attemptedTools": 4,
+          "executedTools": 3,
+          "elapsedMs": 223069,
+          "secondsPerLlmRound": 44.6138,
+          "repeatedActions": 0,
+          "outcome": "failed",
+          "resolution": null,
+          "finalizationCause": "deadline_reached",
+          "effortTier": "direct_action",
+          "rawLimitFailure": null,
+          "askTimedOut": false,
+          "deterministicAnswer": true,
+          "subagentFinalizations": {},
+          "subagentBoundedReports": 0,
+          "actions": [
+            {
+              "name": "report_run_plan",
+              "args": {
+                "objective": "Open http://127.0.0.1:43171/interactive and tick the Agree checkbox — the user's latest words replace the earlier pending \"Say hello button\" directive for the same page.",
+                "effort_tier": "direct_action",
+                "headline": "Open the interactive fixture page and tick the Agree checkbox"
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "record_evidence",
+              "args": {
+                "kind": "user",
+                "observation": "open http://127.0.0.1:43171/interactive and tick the Agree checkbox"
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "navigate",
+              "args": {
+                "url": "http://127.0.0.1:43171/interactive"
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            },
+            {
+              "name": "click",
+              "args": {
+                "ref": 8
+              },
+              "ok": true,
+              "repeated": false,
+              "error": null
+            }
+          ],
+          "answerText": "I have not confirmed an answer for “open http://127.0.0.1:43171/interactive and tick the Agree checkbox” yet.\n\nWhat I have so far:\n- http://127.0.0.1:43171/interactive\n  “interactive fixture”\n  Quoted from the page as observed:\n  > interactive fixture page\n  > Only visible after scrolling down.\n\nI have not verified that any of these answers the request.",
+          "timedOut": false
+        }
+      ]
+    },
+    {
+      "id": "direct-action-select-option",
+      "kind": "direct-action",
+      "command": "open http://127.0.0.1:43171/interactive and choose Beta in the Choice select",
+      "success": false,
+      "failureReason": "pipeline outcome: failed",
+      "metrics": {
+        "llmRounds": 3,
+        "attemptedTools": 0,
+        "executedTools": 0,
+        "elapsedMs": 180005,
+        "secondsPerLlmRound": 60.001666666666665,
+        "repeatedActions": 0,
+        "outcome": "failed",
+        "resolution": null,
+        "finalizationCause": "deadline_reached",
+        "effortTier": "lookup",
+        "rawLimitFailure": null,
+        "askTimedOut": false,
+        "deterministicAnswer": true,
+        "subagentFinalizations": {},
+        "subagentBoundedReports": 0,
+        "actions": [],
+        "answerText": "I have not made progress I can show on “open http://127.0.0.1:43171/interactive and choose Beta in the Choice select” yet.",
+        "timedOut": false
+      },
+      "runs": [
+        {
+          "llmRounds": 3,
+          "attemptedTools": 0,
+          "executedTools": 0,
+          "elapsedMs": 180005,
+          "secondsPerLlmRound": 60.001666666666665,
+          "repeatedActions": 0,
+          "outcome": "failed",
+          "resolution": null,
+          "finalizationCause": "deadline_reached",
+          "effortTier": "lookup",
+          "rawLimitFailure": null,
+          "askTimedOut": false,
+          "deterministicAnswer": true,
+          "subagentFinalizations": {},
+          "subagentBoundedReports": 0,
+          "actions": [],
+          "answerText": "I have not made progress I can show on “open http://127.0.0.1:43171/interactive and choose Beta in the Choice select” yet.",
+          "timedOut": false
+        }
+      ]
+    },
+    {
+      "id": "direct-action-click-link",
+      "kind": "direct-action",
+      "command": "open http://127.0.0.1:43171/native-dialog and click the Leave page link",
+      "success": false,
+      "failureReason": "pipeline outcome: failed",
+      "metrics": {
+        "llmRounds": 3,
+        "attemptedTools": 0,
+        "executedTools": 0,
+        "elapsedMs": 180003,
+        "secondsPerLlmRound": 60.001,
+        "repeatedActions": 0,
+        "outcome": "failed",
+        "resolution": null,
+        "finalizationCause": "deadline_reached",
+        "effortTier": "lookup",
+        "rawLimitFailure": null,
+        "askTimedOut": false,
+        "deterministicAnswer": true,
+        "subagentFinalizations": {},
+        "subagentBoundedReports": 0,
+        "actions": [],
+        "answerText": "I have not made progress I can show on “open http://127.0.0.1:43171/native-dialog and click the Leave page link” yet.",
+        "timedOut": false
+      },
+      "runs": [
+        {
+          "llmRounds": 3,
+          "attemptedTools": 0,
+          "executedTools": 0,
+          "elapsedMs": 180003,
+          "secondsPerLlmRound": 60.001,
+          "repeatedActions": 0,
+          "outcome": "failed",
+          "resolution": null,
+          "finalizationCause": "deadline_reached",
+          "effortTier": "lookup",
+          "rawLimitFailure": null,
+          "askTimedOut": false,
+          "deterministicAnswer": true,
+          "subagentFinalizations": {},
+          "subagentBoundedReports": 0,
+          "actions": [],
+          "answerText": "I have not made progress I can show on “open http://127.0.0.1:43171/native-dialog and click the Leave page link” yet.",
+          "timedOut": false
+        }
+      ]
+    },
+    {
+      "id": "direct-action-type-submit",
+      "kind": "direct-action",
+      "command": "open http://127.0.0.1:43171/site-search and submit a search for widgets",
+      "success": false,
+      "failureReason": "pipeline outcome: failed",
+      "metrics": {
+        "llmRounds": 3,
+        "attemptedTools": 0,
+        "executedTools": 0,
+        "elapsedMs": 180002,
+        "secondsPerLlmRound": 60.00066666666667,
+        "repeatedActions": 0,
+        "outcome": "failed",
+        "resolution": null,
+        "finalizationCause": "deadline_reached",
+        "effortTier": "lookup",
+        "rawLimitFailure": null,
+        "askTimedOut": false,
+        "deterministicAnswer": true,
+        "subagentFinalizations": {},
+        "subagentBoundedReports": 0,
+        "actions": [],
+        "answerText": "I have not made progress I can show on “open http://127.0.0.1:43171/site-search and submit a search for widgets” yet.",
+        "timedOut": false
+      },
+      "runs": [
+        {
+          "llmRounds": 3,
+          "attemptedTools": 0,
+          "executedTools": 0,
+          "elapsedMs": 180002,
+          "secondsPerLlmRound": 60.00066666666667,
+          "repeatedActions": 0,
+          "outcome": "failed",
+          "resolution": null,
+          "finalizationCause": "deadline_reached",
+          "effortTier": "lookup",
+          "rawLimitFailure": null,
+          "askTimedOut": false,
+          "deterministicAnswer": true,
+          "subagentFinalizations": {},
+          "subagentBoundedReports": 0,
+          "actions": [],
+          "answerText": "I have not made progress I can show on “open http://127.0.0.1:43171/site-search and submit a search for widgets” yet.",
+          "timedOut": false
+        }
+      ]
+    }
+  ]
+}
