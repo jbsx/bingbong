@@ -2899,6 +2899,46 @@ describe('command pipeline', () => {
       expect(llm.requests.map((request) => request.reasoningEffort)).toEqual(['high', 'high', 'max', 'max'])
     })
 
+    it('thinks at the Finalization rung for the bookkeeping and reserved Answer rounds (#215)', async () => {
+      // An Investigation thinks at `max` while it acquires. Once its
+      // budget is spent, the bookkeeping Tool Round and the reserved
+      // Answer round both think at the Finalization rung — on the
+      // request, and on each round's llm_round record — because neither
+      // acquires anything and both must fit their share of the
+      // Finalization Allowance. The captured Session lost every Answer to
+      // the deterministic fallback with both rounds thinking at the tier's
+      // rung.
+      const llm = new ScriptedLlm([
+        workRound(0, plan('p0', 'investigation')),
+        ...Array.from({ length: 23 }, (_, i) => workRound(i + 1)),
+        { kind: 'tool_calls', calls: [{ id: 'w24', name: 'work', args: {} }] },
+        { kind: 'answer', speak: 'Done.', display: 'Detail.', resolution: 'partial' },
+      ])
+      const pipeline = createCommandPipeline({ llm, tts: new RecordingTts(), clock: new FakeClock(), tools: [createReportRunPlanTool(), work] })
+
+      const traced: RunTraceEvent[] = []
+      const events: PipelineEvent[] = []
+      for await (const event of pipeline.execute('research the thing', 'turn-215', false, {
+        snapshot: [],
+        memory: [],
+        commit: () => 'committed',
+        traceRun: (build) => traced.push(build()),
+      })) {
+        events.push(event)
+      }
+
+      expect(events.at(-1)).toMatchObject({ type: 'done', finalizationCause: 'budget_exhausted' })
+      // Round one runs before any plan is declared, at the default tier's
+      // rung; the declaration raises the next 23 to `max`.
+      const rungs = llm.requests.map((request) => request.reasoningEffort)
+      expect(rungs).toEqual(['high', ...Array<string>(23).fill('max'), 'low', 'low'])
+      // Round 25 is the bookkeeping Tool Round, round 26 the reserved Answer.
+      expect(llm.requests[24]?.answerOnly).toBeUndefined()
+      expect(llm.requests[25]?.answerOnly).toBe(true)
+      const rounds = traced.filter((record): record is Extract<RunTraceEvent, { kind: 'llm_round' }> => record.kind === 'llm_round')
+      expect(rounds.map((record) => [record.round, record.reasoningEffort])).toEqual(rungs.map((rung, i) => [i + 1, rung]))
+    })
+
     it('grants an escalated tier its full fresh Tool-Round budget (#118/AC2)', async () => {
       // Five Direct Action rounds, then a reasoned one-level escalation:
       // the Lookup epoch re-arms to its full 12 rounds, so acquisition

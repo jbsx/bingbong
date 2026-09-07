@@ -61,6 +61,33 @@ export const TIER_REASONING_EFFORT: Readonly<Record<EffortTier, ReasoningEffort>
 export const SUBAGENT_REASONING_EFFORT: ReasoningEffort = 'low'
 
 /**
+ * The rung both Finalization rounds think at (#215), whatever the tier:
+ * the bookkeeping Tool Round is one structured call inside a ten-second
+ * share of the Finalization Allowance, and the reserved Answer round
+ * synthesises context already in the prompt inside a twenty-second
+ * protected share. Neither acquires anything, and at the active-work
+ * rung neither fits — in the captured Session a first round's reasoning
+ * alone ran 58 s and 85 s at `high`, so every Run fell to the
+ * deterministic Answer. Named by role, not by value: a thinking-off
+ * rung, should `low` still overrun the Answer share, slots in here
+ * without touching the pipeline. The #166 measurement that moved the
+ * cheap tiers off `low` was about a Run declaring its fresh Run Plan
+ * after a Steering directive; a tool-free Answer round is not that.
+ */
+export const FINALIZATION_REASONING_EFFORT: ReasoningEffort = 'low'
+
+/**
+ * The rung a Run's next round thinks at: a function of tier *and* phase
+ * (#215). Acquisition rounds — the `working` phase — think at the tier's
+ * rung; both Finalization phases think at the Finalization rung. A
+ * Browse Subagent's epoch never reads this table: its rung is
+ * SUBAGENT_REASONING_EFFORT in every phase.
+ */
+export function reasoningEffortFor(tier: EffortTier, phase: EffortPhase): ReasoningEffort {
+  return phase.kind === 'working' ? TIER_REASONING_EFFORT[tier] : FINALIZATION_REASONING_EFFORT
+}
+
+/**
  * The tier's live active-work deadline (#135): the table value, or the
  * single test/e2e override (`BINGBONG_ACTIVE_WORK_DEADLINE_MS`) when one
  * is set — coverage must reproduce deadline crossings in seconds, not
@@ -438,10 +465,12 @@ export interface ArmedRound {
 export interface EffortEpoch {
   readonly tier: EffortTier
   /**
-   * The rung this epoch's next model round runs at (#166). A pure
-   * function of the epoch: an escalation or a Steering replan re-derives
-   * it with everything else, and the reserved Answer round is no special
-   * case.
+   * The rung this epoch's next model round runs at (#166, #215). A pure
+   * function of the epoch's tier and phase: an escalation or a Steering
+   * replan re-derives it with everything else, and Finalization entry
+   * drops it to the Finalization rung for the bookkeeping round and the
+   * reserved Answer round alike. A Steering replan that reopens
+   * acquisition returns it to the tier's rung.
    */
   readonly reasoningEffort: ReasoningEffort
   readonly tierRounds: number
@@ -724,7 +753,7 @@ export function createEffortEpoch(deps: {
       return tier
     },
     get reasoningEffort() {
-      return subagent !== undefined ? SUBAGENT_REASONING_EFFORT : TIER_REASONING_EFFORT[tier]
+      return subagent !== undefined ? SUBAGENT_REASONING_EFFORT : reasoningEffortFor(tier, phase)
     },
     get tierRounds() {
       return tierRounds

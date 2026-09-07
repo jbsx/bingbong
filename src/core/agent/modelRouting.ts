@@ -112,9 +112,13 @@ export function resolveRoutingStatus(env: Record<string, string | undefined>): R
 
 /**
  * The experiment lever that forces every round's reasoning-effort rung
- * (#166), orchestrator and Browse Subagent alike. Unset, each round's own
- * rung — the Effort Tier's — decides. This is how a probe runs the same
- * command at `low` and at `max` on one commit.
+ * (#166), orchestrator and Browse Subagent alike — and the Finalization
+ * rounds too (#215): a corpus pass at a forced rung is uniform, so the
+ * bookkeeping round and the reserved Answer round give up their own
+ * `low` for the forced value like every other round. Unset, each
+ * round's own rung — the Effort Tier's, or Finalization's — decides.
+ * This is how a probe runs the same command at `low` and at `max` on
+ * one commit.
  */
 export const REASONING_EFFORT_ENV_KEY = 'BINGBONG_REASONING_EFFORT'
 

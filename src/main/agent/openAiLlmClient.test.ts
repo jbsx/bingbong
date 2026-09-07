@@ -150,6 +150,24 @@ describe('openAiLlmClient', () => {
     expect(fetch.calls[0]!.body.reasoning_effort).toBe('max')
   })
 
+  it('the experiment override outranks the Finalization rung too, so a forced pass is uniform (#215)', async () => {
+    // The reserved Answer round carries Finalization's own `low`; under
+    // the override it goes out at the forced rung like every other round.
+    const fetch = new ScriptedFetch([completionResponse({ content: '{"speak":"OK.","display":"OK."}' })])
+    const client = createOpenAiLlmClient({
+      endpoint: ENDPOINT,
+      systemPrompt: ORCHESTRATOR_SYSTEM_PROMPT,
+      tools: createBrowserTools(new FakeBrowser()),
+      fetchFn: fetch.fetchFn,
+      reasoningEffort: 'max',
+    })
+
+    await client.complete({ command: 'open youtube', toolResults: [], reasoningEffort: 'low', answerOnly: true })
+
+    expect(fetch.calls[0]!.body.reasoning_effort).toBe('max')
+    expect(fetch.calls[0]!.body.tools).toBeUndefined()
+  })
+
   it('posts the catalog and command, and maps tool_calls back', async () => {
     const fetch = new ScriptedFetch([
       completionResponse({

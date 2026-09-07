@@ -7,12 +7,15 @@ import {
   budgetWarningMessage,
   createEffortEpoch,
   deterministicFinalAnswer,
+  FINALIZATION_REASONING_EFFORT,
   FINALIZATION_REPORT_CHECKPOINT_DIRECTIVE,
   finalizationToolRefusal,
   finalizeInstruction,
+  reasoningEffortFor,
   requestFinalizeInstruction,
   HARD_TOOL_ROUND_CEILING,
   injectedReportDirective,
+  SUBAGENT_REASONING_EFFORT,
   TIER_ACTIVE_WORK_DEADLINES_MS,
   TIME_MILESTONE_FRACTION,
   tierEscalationNotice,
@@ -66,6 +69,66 @@ describe('Effort Epoch (#146, ADR 0027)', () => {
       epoch.replan('direct_action')
 
       expect(epoch.reasoningEffort).toBe('high')
+    })
+
+    describe('the Finalization rung (#215)', () => {
+      it('is low, named by role so a thinking-off value can replace it without touching the pipeline', () => {
+        expect(FINALIZATION_REASONING_EFFORT).toBe('low')
+        expect(reasoningEffortFor('investigation', { kind: 'finalizing', cause: 'deadline_reached' })).toBe(FINALIZATION_REASONING_EFFORT)
+        expect(reasoningEffortFor('investigation', { kind: 'answer_only', cause: 'deadline_reached' })).toBe(FINALIZATION_REASONING_EFFORT)
+        expect(reasoningEffortFor('investigation', { kind: 'working' })).toBe(TIER_REASONING_EFFORT.investigation)
+      })
+
+      it('drops to the Finalization rung at entry, and stays there through the reserved Answer round', () => {
+        // Bookkeeping is one structured call with a ten-second share and
+        // the Answer synthesises context already in the prompt: neither
+        // needs an Investigation's `max`, and at `max` neither fits.
+        const epoch = createEffortEpoch({ clock: new FakeClock(), initialTier: 'investigation' })
+        expect(epoch.reasoningEffort).toBe('max')
+
+        epoch.enterFinalization('deadline_reached')
+        expect(epoch.phase.kind).toBe('finalizing')
+        expect(epoch.reasoningEffort).toBe('low')
+
+        expect(epoch.beginToolRound()).toBe(true)
+        expect(epoch.phase.kind).toBe('answer_only')
+        expect(epoch.reasoningEffort).toBe('low')
+      })
+
+      it('keeps the Finalization rung when a failed bookkeeping request spends its opportunity', () => {
+        const epoch = createEffortEpoch({ clock: new FakeClock(), initialTier: 'lookup' })
+        epoch.enterFinalization('budget_exhausted')
+        expect(epoch.spendBookkeepingOpportunity()).toBe(true)
+
+        expect(epoch.phase.kind).toBe('answer_only')
+        expect(epoch.reasoningEffort).toBe('low')
+      })
+
+      it('returns to the active rung when a Steering replan reopens acquisition', () => {
+        const epoch = createEffortEpoch({ clock: new FakeClock(), initialTier: 'investigation' })
+        epoch.enterFinalization('deadline_reached')
+        expect(epoch.reasoningEffort).toBe('low')
+
+        expect(epoch.replan('investigation')).toBe(true)
+
+        expect(epoch.phase).toEqual({ kind: 'working' })
+        expect(epoch.reasoningEffort).toBe('max')
+      })
+
+      it('lets a tier escalation raise the rung only while acquisition is open', () => {
+        // Working: the escalation re-arms and the rung follows the new
+        // tier. Finalizing: the escalation is refused (#146), so the rung
+        // stays the Finalization one rather than the tier's.
+        const working = createEffortEpoch({ clock: new FakeClock(), initialTier: 'lookup' })
+        expect(working.declareTier('investigation')).toBe(true)
+        expect(working.reasoningEffort).toBe('max')
+
+        const finalizing = createEffortEpoch({ clock: new FakeClock(), initialTier: 'lookup' })
+        finalizing.enterFinalization('no_progress')
+        expect(finalizing.declareTier('investigation')).toBe(false)
+        expect(finalizing.tier).toBe('lookup')
+        expect(finalizing.reasoningEffort).toBe('low')
+      })
     })
   })
 
@@ -1096,6 +1159,15 @@ describe('Effort Epoch (#146, ADR 0027)', () => {
       // A worker's epoch carries no tier: walking a delegated branch is
       // execution, not planning, so the rung is its own constant.
       expect(workerEpoch().reasoningEffort).toBe('low')
+    })
+
+    it('keeps its own rung through Finalization — the Finalization rung is the Run’s (#215)', () => {
+      const epoch = workerEpoch()
+      epoch.enterFinalization('parent_finalized')
+
+      expect(epoch.reasoningEffort).toBe(SUBAGENT_REASONING_EFFORT)
+      expect(epoch.beginToolRound()).toBe(true)
+      expect(epoch.reasoningEffort).toBe(SUBAGENT_REASONING_EFFORT)
     })
 
     it('answers to its budget alone — no Effort Tier, no hard ceiling', () => {

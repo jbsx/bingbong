@@ -51,7 +51,9 @@ export interface OpenAiLlmClientDeps {
   /**
    * The experiment override (BINGBONG_REASONING_EFFORT, #166): forces
    * every round to one rung, outranking the rung the round itself
-   * carries. Absent, each round's own rung — the Effort Tier's — is sent.
+   * carries — the Finalization rounds' own `low` included (#215), so a
+   * forced pass is uniform. Absent, each round's own rung — the Effort
+   * Tier's, or Finalization's — is sent.
    */
   reasoningEffort?: ReasoningEffort
 }
