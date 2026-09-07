@@ -124,6 +124,24 @@ describe('Effort Epoch (#146, ADR 0027)', () => {
         expect(finalizing.tier).toBe('lookup')
         expect(finalizing.reasoningEffort).toBe('low')
       })
+
+      it('follows a deadline crossing wherever it leads: the next tier’s rung, or Finalization’s (#216)', () => {
+        // The automatic Tier Escalation replaces Finalization for a Run
+        // still making Progress, so acquisition never closes and the rung
+        // is the new tier's. A stalled Run crosses into Finalization.
+        const progressingClock = new FakeClock()
+        const progressing = createEffortEpoch({ clock: progressingClock, initialTier: 'lookup', makingProgress: () => true })
+        progressingClock.advance(TIER_ACTIVE_WORK_DEADLINES_MS.lookup)
+        expect(progressing.decideLoopTop()).toEqual({ kind: 'work' })
+        expect(progressing.tier).toBe('investigation')
+        expect(progressing.reasoningEffort).toBe('max')
+
+        const stalledClock = new FakeClock()
+        const stalled = createEffortEpoch({ clock: stalledClock, initialTier: 'lookup', makingProgress: () => false })
+        stalledClock.advance(TIER_ACTIVE_WORK_DEADLINES_MS.lookup)
+        expect(stalled.decideLoopTop()).toEqual({ kind: 'finalize', cause: 'deadline_reached' })
+        expect(stalled.reasoningEffort).toBe(FINALIZATION_REASONING_EFFORT)
+      })
     })
   })
 
