@@ -4,9 +4,9 @@ import type { RetainedInspectionReference } from './inspectionReference'
 import {
   correctionAffects,
   correctionsInForce,
+  correctionsHandedOn,
   correctionsInheritedBy,
   MAX_CORRECTION_CHARS,
-  retainedCorrections,
   type RetainedUserCorrection,
 } from './userCorrections'
 import {
@@ -79,7 +79,6 @@ export {
  */
 export {
   MAX_CORRECTION_CHARS,
-  MAX_RETAINED_CORRECTIONS,
   type RetainedUserCorrection,
   type UserCorrectionSubject,
 } from './userCorrections'
@@ -370,18 +369,22 @@ export interface SessionEvidenceStore {
    */
   retainCorrection(input: UserCorrectionInput): RetainedUserCorrection | null
   /**
-   * Grounds every unresolved correction that is not yet Session Evidence
-   * (#211): checkpoints the user's exact words as a User Observation
-   * under the Run that heard them, so a later Run can cite them to
-   * record what they decided.
+   * Hands the unresolved corrections to the Run being admitted (#218,
+   * ADR 0043), before that Run's own words are retained. Words left by
+   * the Run that heard them are stamped as handed to this one and
+   * grounded as Session Evidence: the user's exact words, checkpointed
+   * as a User Observation under the Run that heard them, so this Run
+   * can cite them to record what they decided. Words already handed to
+   * an earlier Run lapse here — handed on once, never twice — and so do
+   * words retired with the task they were spoken about.
    *
-   * Called when the Session hands a correction to another Run, not when
-   * it retains one. Words a Run answered for itself never become
-   * evidence on the application's say-so — only words that outlived a
-   * Run that never answered, which are exactly the words that now need
-   * an identity someone else can cite.
+   * Words a Run answered for itself never become evidence on the
+   * application's say-so: only words that outlived a Run that never
+   * answered reach this, and those are exactly the words that now need
+   * an identity someone else can cite. Lapsing discharges the
+   * obligation and keeps the Observation.
    */
-  groundCorrections(): void
+  handOnCorrections(runId: RunId): void
   /**
    * Binds retained corrections made before the Session held a user
    * objective to the objective it turns out they were spoken under
@@ -647,8 +650,8 @@ export function createSessionEvidence(deps: {
   /**
    * Drops the retained corrections a predicate has seen resolved. Only
    * live ones are dropped by resolution — a correction retired by an
-   * objective replacement is already out of force, and leaving it in the
-   * list costs nothing the bound does not already cover.
+   * objective replacement is already out of force, and the next
+   * admission lets it lapse (#218).
    */
   const dropCorrections = (resolved: (correction: RetainedUserCorrection) => boolean): void => {
     corrections = corrections.filter((held) => !resolved(held))
@@ -951,17 +954,18 @@ export function createSessionEvidence(deps: {
         runId: runId as RunId,
         retainedAt: deps.now(),
       })
-      corrections = retainedCorrections(corrections, retained)
+      corrections = [...corrections, retained]
       return retained
     },
-    groundCorrections() {
+    handOnCorrections(runId) {
       if (cleared) return
-      const inForce = new Set(liveCorrections())
-      corrections = corrections.map((held) => {
-        // Words retired with the task they were spoken about are not
-        // grounded: no Run will be asked to resolve them, so minting an
-        // Observation for them would be evidence of nothing.
-        if (held.observationId !== undefined || !inForce.has(held)) return held
+      // What this admission hands on, and nothing else (#218, ADR 0043):
+      // words already handed to an earlier Run lapse here, and so do
+      // words retired with their task — no Run will be asked to resolve
+      // either, so minting an Observation for them would be evidence of
+      // nothing.
+      corrections = correctionsHandedOn(corrections, runId, deps.objectiveId?.()).map((held) => {
+        if (held.observationId !== undefined) return held
         // A User Observation is grounded against the user events of the
         // Run that heard them (#122), so the Run this utterance was
         // admitted with is the only Run that could ever ground it — and

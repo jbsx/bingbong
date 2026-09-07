@@ -1,9 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import {
   correctionAffects,
+  correctionsHandedOn,
   correctionsInForce,
-  MAX_RETAINED_CORRECTIONS,
-  retainedCorrections,
   userCorrectionSubjects,
   type RetainedUserCorrection,
 } from './userCorrections'
@@ -42,47 +41,56 @@ function candidate(over: Partial<SessionEvidenceSnapshot['candidates'][number]> 
   }
 }
 
-describe('retaining what the user said (#211, ADR 0039)', () => {
-  it('keeps each correction in the order it was spoken', () => {
-    const first = correction({ text: 'not that one' })
-    const second = correction({ text: 'only posts from 2023', candidateId: id('memory-9') })
+describe('handing a correction on (#218, ADR 0043)', () => {
+  it('hands words left by an earlier Run to the Run being admitted, stamped with it', () => {
+    const left = correction({ text: 'not that one; keep looking', runId: run('run-2'), candidateId: id('memory-9') })
 
-    expect(retainedCorrections(retainedCorrections([], first), second)).toEqual([first, second])
+    expect(correctionsHandedOn([left], run('run-3'), undefined)).toEqual([{ ...left, handedTo: run('run-3') }])
   })
 
-  it('keeps both when the user speaks twice about one Candidate', () => {
+  it('keeps both when the user spoke twice to one Run that never answered, in the order spoken', () => {
     // "not that one; keep looking" then "keep going" is a rejection and
-    // a nudge, not a restatement: treating the newer as the newer
-    // wording would erase the decision the first one carried.
-    const older = correction({ text: 'not that one; keep looking', candidateId: id('memory-9') })
-    const newer = correction({ text: 'keep going', candidateId: id('memory-9'), retainedAt: 5 })
+    // a nudge, not a restatement: nothing here reads the newer as the
+    // newer wording of the older.
+    const older = correction({ text: 'not that one; keep looking', runId: run('run-2'), candidateId: id('memory-9') })
+    const newer = correction({ text: 'keep going', runId: run('run-2'), candidateId: id('memory-9'), retainedAt: 5 })
 
-    expect(retainedCorrections([older], newer)).toEqual([older, newer])
+    expect(correctionsHandedOn([older, newer], run('run-3'), undefined).map(({ text }) => text)).toEqual([
+      'not that one; keep looking',
+      'keep going',
+    ])
   })
 
-  it('keeps both when neither named a Candidate', () => {
-    const older = correction({ text: 'only posts from 2023' })
-    const newer = correction({ text: 'make that 2024', retainedAt: 5 })
+  it('never hands words on a second time: what the last Run was handed lapses when the next is admitted', () => {
+    const left = correction({ text: 'not that one; keep looking', runId: run('run-2'), candidateId: id('memory-9') })
+    const handedOnce = correctionsHandedOn([left], run('run-3'), undefined)
+    // run-3 ended without grounding the words, and run-4 is being admitted
+    // with its own: the debt lapses rather than riding a second Run.
+    const ownOfThree = correction({ text: 'open the second result', runId: run('run-3'), retainedAt: 5 })
 
-    expect(retainedCorrections([older], newer)).toEqual([older, newer])
+    expect(correctionsHandedOn([...handedOnce, ownOfThree], run('run-4'), undefined)).toEqual([
+      { ...ownOfThree, handedTo: run('run-4') },
+    ])
   })
 
-  it('keeps corrections about different Candidates apart', () => {
-    const aboutA = correction({ text: 'not that one', candidateId: id('memory-9') })
-    const aboutB = correction({ text: 'nor that one', candidateId: id('memory-10') })
-
-    expect(retainedCorrections([aboutA], aboutB)).toEqual([aboutA, aboutB])
-  })
-
-  it('drops the oldest past the bound rather than growing without limit', () => {
+  it('carries at most one correction into any admission, however many Runs fell back in a row', () => {
     let held: readonly RetainedUserCorrection[] = []
-    for (let at = 0; at <= MAX_RETAINED_CORRECTIONS; at += 1) {
-      held = retainedCorrections(held, correction({ text: `correction ${at}`, candidateId: id(`memory-${at}`) }))
+    for (let at = 2; at <= 8; at += 1) {
+      held = correctionsHandedOn(held, run(`run-${at}`), undefined)
+      held = [...held, correction({ text: `command ${at}`, runId: run(`run-${at}`), retainedAt: at })]
     }
 
-    expect(held).toHaveLength(MAX_RETAINED_CORRECTIONS)
-    expect(held[0]!.text).toBe('correction 1')
-    expect(held.at(-1)!.text).toBe(`correction ${MAX_RETAINED_CORRECTIONS}`)
+    const admitted = correctionsHandedOn(held, run('run-9'), undefined)
+    expect(admitted).toEqual([expect.objectContaining({ text: 'command 8', runId: run('run-8'), handedTo: run('run-9') })])
+  })
+
+  it('lets words retired with their task lapse instead of carrying them for the rest of the Session', () => {
+    const retired = correction({ text: 'not that one', runId: run('run-2'), objectiveId: id('memory-objective-a') })
+    const live = correction({ text: 'keep going', runId: run('run-2'), objectiveId: id('memory-objective-b'), retainedAt: 5 })
+
+    expect(correctionsHandedOn([retired, live], run('run-3'), id('memory-objective-b'))).toEqual([
+      { ...live, handedTo: run('run-3') },
+    ])
   })
 })
 

@@ -854,12 +854,13 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
       ? retainedInspectionSubject(continuity.inspection, continuity.memory, continuity.evidence)
       : null
     /**
-     * The user's unresolved words (#211, ADR 0039), projected from the
-     * same admission the subject and the objective come from. Every
-     * round carries them, the reserved Answer round included: a Run that
-     * fails on its way to an Answer must leave them exactly as it found
-     * them, and a Run that resolves one does so by grounding a decision
-     * the Session retains — never by having read the words once.
+     * The words this Run inherited (#211, ADR 0039; #218, ADR 0043),
+     * projected from the same admission the subject and the objective
+     * come from — never its own command, which it answers by answering.
+     * Every round carries them, the reserved Answer round included: a Run
+     * that fails on its way to an Answer must leave them exactly as it
+     * found them, and a Run that resolves one does so by grounding a
+     * decision the Session retains — never by having read the words once.
      */
     const retainedCorrections = userCorrectionSubjects(continuity?.corrections ?? [], continuity?.evidence)
     /**

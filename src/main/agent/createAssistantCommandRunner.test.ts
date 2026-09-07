@@ -1797,11 +1797,12 @@ describe('assistant command runner', () => {
 
       const request = h.requests.at(-1)!
       expect(request.command).toBe('keep looking')
-      // The user's words, quoted, with the Candidate they were about and
-      // the Observation a decision on their authority has to cite.
+      // The inherited words, quoted, with the Candidate they were about
+      // and the Observation a decision on their authority has to cite —
+      // and never this Run's own command (#218, ADR 0043), which is what
+      // it is there to answer, not a debt it has to resolve.
       expect(request.corrections).toEqual([
         { text: REJECT, observationId: 'memory-5', candidateId: 'memory-3', candidateSubject: 'Ranking every mech' },
-        { text: 'keep looking', candidateId: 'memory-3', candidateSubject: 'Ranking every mech' },
       ])
       // The inherited words became Session Evidence as this Run was
       // admitted, under the Run that heard them: only that Run could

@@ -89,11 +89,13 @@ export interface AcceptedRunAdmission {
    */
   inspection?: RetainedInspectionReference
   /**
-   * The user's own words this Session retains and no Run has resolved
-   * (#211, ADR 0039), this Run's own utterance included. Retained before
-   * the Run makes a single model request, so a first-request failure
-   * leaves the correction standing rather than erasing it. Absent when
-   * the Session holds nothing unresolved.
+   * The user's words this Run inherited (#211, ADR 0039; #218, ADR 0043):
+   * what a Run that never answered left behind, handed to this one and
+   * to no Run after it. This Run's own utterance is retained on the same
+   * beat — before it makes a single model request, so a first-request
+   * failure leaves it standing rather than erasing it — but is never
+   * here: its own command is what it is there to answer. Absent when
+   * nothing was handed on.
    */
   corrections?: readonly RetainedUserCorrection[]
   /**
@@ -874,7 +876,7 @@ export function createSessionRuntime(deps: {
       // Run can cite: the user's words, checkpointed as Session Evidence
       // under the Run they were spoken to. Before that Run's model
       // starts, like the retention itself.
-      evidence!.groundCorrections()
+      evidence!.handOnCorrections(runId)
       // The user's words, retained before this Run's first model request
       // (#211, ADR 0039). A Session's opening command corrects nothing —
       // there is no earlier work to correct, and a Reset replays it as
@@ -885,7 +887,13 @@ export function createSessionRuntime(deps: {
       if (!createsSession && utterance !== undefined) {
         evidence!.retainCorrection({ text: utterance, runId })
       }
-      const corrections = evidence!.unresolvedCorrections()
+      // What this Run is handed: inherited words only (#218, ADR 0043).
+      // Its own command is what it is there to answer, and a block
+      // obliging it to resolve its own words is what cost every
+      // continuation Run the deliberation the captures measured. The
+      // rule is the one the store applies to a decision and a
+      // presentation, and the one the eligibility gate below reads.
+      const corrections = correctionsInheritedBy(evidence!.unresolvedCorrections(), runId)
       // What this Session has already watched fail, and what a fresh
       // attempt could still resolve (#212, ADR 0041). Read after the
       // retention above on purpose: a user who has just spoken about a
@@ -899,12 +907,11 @@ export function createSessionRuntime(deps: {
         objectiveId: objectiveInForce,
         eligible: eligibleVerificationCandidates(evidenceSnapshot, {
           objectiveId: objectiveInForce,
-          // Inherited words only — the rule the store applies to a
-          // decision and a presentation (#211). This Run's own command
-          // is what it is here to answer, and checking a Candidate is
-          // one of the ways it answers it; words left by a Run that
-          // never answered are the debt it must not settle around.
-          corrections: correctionsInheritedBy(corrections, runId),
+          // The same inherited words (#211): checking a Candidate is one
+          // of the ways this Run answers its own command, and words left
+          // by a Run that never answered are the debt it must not settle
+          // around.
+          corrections,
         }),
         evidence: evidenceSnapshot,
       })
@@ -924,10 +931,10 @@ export function createSessionRuntime(deps: {
         // Run — a Run's own presentation lands on the store, and reaches
         // the next Run through its admission, never mid-flight.
         ...(inspectionReference !== null ? { inspection: inspectionReference } : {}),
-        // The user's unresolved words (#211, ADR 0039), admitted beside
-        // the subject they were spoken about. Immutable for the Run for
-        // the same reason: what this Run resolves lands on the store and
-        // reaches the next Run through its admission.
+        // The words this Run inherited (#211, ADR 0039; #218, ADR 0043),
+        // admitted beside the subject they were spoken about. Immutable
+        // for the Run for the same reason: what this Run resolves lands
+        // on the store and reaches the next Run through its admission.
         ...(corrections.length > 0 ? { corrections } : {}),
         // Which verification routes this objective has already spent
         // (#212, ADR 0041), admitted beside them. Absent — the ordinary

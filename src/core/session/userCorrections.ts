@@ -18,6 +18,16 @@
 // This module is the vocabulary and the decidable rules; it holds no
 // state, so the store that retains corrections, the runtime that admits
 // them, and the projection a later Run reads all answer to one set.
+//
+// A retained correction is handed on once (#218, ADR 0043). The Run
+// admitted with the words answers them by answering at all, and is never
+// shown them as unresolved. Words left by a Run that never answered are
+// handed to the next Run admitted, and to no Run after it: that Run
+// grounds them, asks about them, or lets them lapse when it ends. Two
+// captures showed what an open-ended debt costs — every later Run
+// deliberating over commands it could never discharge, until none
+// declared a plan inside its deadline — so the bound is structural: at
+// most one Run's own words and one inherited utterance at any admission.
 
 import type { SessionCandidate, SessionEvidenceSnapshot } from './sessionEvidence'
 import type { RunId } from './sessionIdentity'
@@ -31,14 +41,6 @@ import type { MemoryEntryId } from './workingMemory'
  * thing this retention exists to keep.
  */
 export const MAX_CORRECTION_CHARS = 1_000
-
-/**
- * How many unresolved corrections one Session retains. A Run that
- * answers resolves what it carried, so reaching this bound means five
- * Runs in a row ended without answering at all — by then the oldest
- * utterance is the least likely to still be live.
- */
-export const MAX_RETAINED_CORRECTIONS = 5
 
 /**
  * One user utterance the Session retained before its Run's first model
@@ -75,6 +77,14 @@ export interface RetainedUserCorrection {
   readonly observationId?: MemoryEntryId
   /** The Run admitted with these words — the one that first had the chance to resolve them. */
   readonly runId: RunId
+  /**
+   * The one later Run these words were handed to, once the Run that
+   * heard them ended without resolving them (#218, ADR 0043). Set at
+   * that Run's admission and never changed: when the next Run is
+   * admitted, words already handed on lapse rather than riding again.
+   * Absent while the words still belong to the Run that heard them.
+   */
+  readonly handedTo?: RunId
   readonly retainedAt: number
 }
 
@@ -93,26 +103,35 @@ export interface UserCorrectionSubject {
 }
 
 /**
- * The list one more retention produces: append, oldest first.
+ * The list one admission produces, before the admitted Run's own words
+ * are retained (#218, ADR 0043): every correction still in force that
+ * no Run has been handed yet, stamped as handed to this one; everything
+ * else lapses.
  *
- * Nothing replaces anything, deliberately. Two utterances about one
- * Candidate look like the user restating themselves, and treating the
- * newer as the newer wording would be exactly the silent erasure this
- * slice exists to prevent — "not that one; keep looking" followed by
- * "keep going" is a rejection and a nudge, not a nudge. Both wait.
+ * Nothing replaces anything among the words one Run left, deliberately.
+ * Two utterances about one Candidate look like the user restating
+ * themselves, and treating the newer as the newer wording would be the
+ * silent erasure this retention exists to prevent — "not that one; keep
+ * looking" followed by "keep going" is a rejection and a nudge. Both are
+ * handed on, in the order spoken.
  *
- * Past the bound the oldest goes. That is a real loss and it is bounded
- * on purpose: an unresolved correction only survives a Run that never
- * answered, so five of them means five Runs in a row failed, and an
- * unbounded list would carry a stale utterance into every request for
- * the rest of the Session.
+ * What lapses is a real loss and it is bounded on purpose. Words already
+ * handed to a Run that has since ended were that Run's to ground, to ask
+ * about, or to let go: the user has heard two Answers fall short by now,
+ * and a debt carried further only costs every later Run the deliberation
+ * that made those Runs fall short. Words retired with the task they were
+ * spoken about bind nothing and are dropped on the same beat, so the
+ * list never grows past one Run's words plus the one utterance it
+ * inherited.
  */
-export function retainedCorrections(
+export function correctionsHandedOn(
   corrections: readonly RetainedUserCorrection[],
-  added: RetainedUserCorrection,
+  runId: RunId,
+  objectiveId: MemoryEntryId | undefined,
 ): RetainedUserCorrection[] {
-  const kept = [...corrections, added]
-  return kept.length <= MAX_RETAINED_CORRECTIONS ? kept : kept.slice(kept.length - MAX_RETAINED_CORRECTIONS)
+  return correctionsInForce(corrections, objectiveId)
+    .filter((held) => held.handedTo === undefined)
+    .map((held) => Object.freeze({ ...held, handedTo: runId }))
 }
 
 

@@ -1517,9 +1517,14 @@ describe('retained user corrections', () => {
 
     // Before this Run has made a single model request, the words and the
     // subject are already the Session's.
-    expect(second.corrections).toEqual([
+    expect(runtime.evidenceStore()!.unresolvedCorrections()).toEqual([
       expect.objectContaining({ text: 'not that one; keep looking', candidateId: candidate.id, runId: second.runId }),
     ])
+    // The Run admitted with them is never shown them as unresolved (#218,
+    // ADR 0043): its own command is what it is there to answer, and a
+    // block obliging it to "resolve" its own words is what cost every
+    // continuation Run the deliberation the captures measured.
+    expect(second.corrections).toBeUndefined()
     // And nothing has been classified: the Candidate is as active as it was.
     expect(second.evidence.candidates.map(({ id, status }) => ({ id, status }))).toEqual([
       { id: candidate.id, status: 'active' },
@@ -1550,10 +1555,12 @@ describe('retained user corrections', () => {
     // Session holds are the accepted continuation's, and the rejected
     // submission left nothing of its own behind.
     const accepted = runtime.accept(runtime.submit().submissionId, 'keep looking')
-    expect(accepted.corrections).toEqual([expect.objectContaining({ text: 'keep looking' })])
+    expect(runtime.evidenceStore()!.unresolvedCorrections()).toEqual([
+      expect.objectContaining({ text: 'keep looking', runId: accepted.runId }),
+    ])
   })
 
-  it('keeps the words when the Run that carried them commits nothing at all', () => {
+  it('hands the words on when the Run that carried them commits nothing at all', () => {
     const { runtime } = harness()
     presented(runtime)
     const second = runtime.accept(runtime.submit().submissionId, 'not that one; keep looking')
@@ -1562,19 +1569,62 @@ describe('retained user corrections', () => {
     // failure leaves behind.
     runtime.finish(second.runId)
 
-    // Both words wait: the second Run never answered, and "keep going"
-    // is a nudge rather than a restatement of the rejection.
-    expect(runtime.accept(runtime.submit().submissionId, 'keep going').corrections).toEqual([
-      expect.objectContaining({ text: 'not that one; keep looking', runId: second.runId }),
-      expect.objectContaining({ text: 'keep going' }),
+    // The next Run inherits the rejection it did not hear, and only that:
+    // "keep going" is its own command, answered by answering, never a
+    // debt it is shown. The Session still holds both, in the order spoken.
+    const third = runtime.accept(runtime.submit().submissionId, 'keep going')
+    expect(third.corrections).toEqual([
+      expect.objectContaining({ text: 'not that one; keep looking', runId: second.runId, handedTo: third.runId }),
     ])
+    expect(runtime.evidenceStore()!.unresolvedCorrections().map(({ text }) => text)).toEqual([
+      'not that one; keep looking',
+      'keep going',
+    ])
+  })
+
+  it('hands words on once: a chain of Runs that never answer carries at most one inherited correction (#218, ADR 0043)', () => {
+    const { runtime, clock } = harness()
+    const { candidate } = presented(runtime)
+
+    // Six continuation Runs in a row cross their deadline and end without
+    // answering — the captures' shape. Each admission is checked as the
+    // Run it admits would read it.
+    let previous: { runId: RunId; text: string } | null = null
+    for (let at = 1; at <= 6; at += 1) {
+      const text = `open result ${at}`
+      const run = runtime.accept(runtime.submit().submissionId, text)
+      expect(run.corrections ?? []).toEqual(
+        previous === null
+          ? []
+          : [expect.objectContaining({ text: previous.text, runId: previous.runId, handedTo: run.runId })],
+      )
+      // And the store never holds more than this Run's words plus the one
+      // utterance it inherited, whatever the count of failures behind it.
+      expect(runtime.evidenceStore()!.unresolvedCorrections().length).toBeLessThanOrEqual(2)
+      clock.advance(1_000)
+      runtime.finish(run.runId)
+      previous = { runId: run.runId, text }
+    }
+
+    // What lapsed left its evidence: every handed-on utterance stays a
+    // User Observation under the Run that heard it.
+    const grounded = runtime.evidenceStore()!.snapshot().observations.filter(({ sourceKind }) => sourceKind === 'user')
+    expect(grounded.map(({ text }) => text)).toEqual(['open result 1', 'open result 2', 'open result 3', 'open result 4', 'open result 5'])
+    // And a Run admitted after the debt lapsed may present the Candidate
+    // the lapsed words named — it inherits only the latest utterance.
+    const seventh = runtime.accept(runtime.submit().submissionId)
+    expect(seventh.corrections).toEqual([expect.objectContaining({ text: 'open result 6' })])
+    runtime.finish(seventh.runId)
+    const eighth = runtime.accept(runtime.submit().submissionId)
+    expect(eighth.corrections).toBeUndefined()
+    expect(runtime.evidenceStore()!.presentInspection({ candidateId: candidate.id, runId: eighth.runId })).not.toBeNull()
   })
 
   it('resolves the words the committed task carries, and only those', () => {
     const { runtime } = harness()
     presented(runtime)
     const second = runtime.accept(runtime.submit().submissionId, 'only posts from 2023')
-    expect(second.corrections).toHaveLength(1)
+    expect(runtime.evidenceStore()!.unresolvedCorrections()).toHaveLength(1)
     const words = runtime.evidenceStore()!.checkpointObservation({
       sourceKind: 'user',
       text: 'only posts from 2023',
@@ -1614,7 +1664,7 @@ describe('retained user corrections', () => {
     presented(runtime)
     // Nothing has recorded an objective yet, so these words name no task.
     const second = runtime.accept(runtime.submit().submissionId, 'not that one; keep looking')
-    expect(second.corrections![0]).not.toHaveProperty('objectiveId')
+    expect(runtime.evidenceStore()!.unresolvedCorrections()[0]).not.toHaveProperty('objectiveId')
     const words = runtime.evidenceStore()!.checkpointObservation({
       sourceKind: 'user',
       text: 'find the tier list post',
@@ -1686,7 +1736,7 @@ describe('retained user corrections', () => {
 
     // The user says exactly what they said before.
     const second = runtime.accept(runtime.submit().submissionId, 'find the tier list post')
-    expect(second.corrections).toHaveLength(1)
+    expect(runtime.evidenceStore()!.unresolvedCorrections()).toHaveLength(1)
 
     // An ordinary commit that adds a finding and no user citation at all.
     expect(runtime.commitRunContinuity(second.runId, 'done', 'Looked at two subreddits.', [{
@@ -1717,7 +1767,7 @@ describe('retained user corrections', () => {
     runtime.finish(first.runId)
 
     const second = runtime.accept(runtime.submit().submissionId, 'not that one; keep looking')
-    expect(second.corrections).toHaveLength(1)
+    expect(runtime.evidenceStore()!.unresolvedCorrections()).toHaveLength(1)
     runtime.commitRunContinuity(second.runId, 'done', 'recent work'.repeat(4), [])
     await settleMaintenance()
     runtime.finish(second.runId)
@@ -1735,7 +1785,7 @@ describe('retained user corrections', () => {
     presented(runtime)
     const store = runtime.evidenceStore()!
     const second = runtime.accept(runtime.submit().submissionId, 'not that one; keep looking')
-    expect(second.corrections).toHaveLength(1)
+    expect(store.unresolvedCorrections()).toHaveLength(1)
     runtime.finish(second.runId)
 
     runtime.end('reset')

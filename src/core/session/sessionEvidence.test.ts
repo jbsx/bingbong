@@ -865,15 +865,12 @@ describe('the store retains what the user said before the model ran (#211, ADR 0
     // Retaining is not yet grounding: the words become Session Evidence
     // only if they outlive the Run that heard them.
     expect(retained).not.toHaveProperty('observationId')
-    evidence.groundCorrections()
-    expect(evidence.unresolvedCorrections()[0]).toMatchObject({ observationId: 'memory-3' })
+    evidence.handOnCorrections('run-3' as RunId)
+    expect(evidence.unresolvedCorrections()[0]).toMatchObject({ observationId: 'memory-3', handedTo: 'run-3' })
     expect(evidence.observation('memory-3' as MemoryEntryId)).toMatchObject({
       sourceKind: 'user',
       text: 'not that one; keep looking',
     })
-    // Grounding twice does not mint a second identity for one utterance.
-    evidence.groundCorrections()
-    expect(evidence.unresolvedCorrections()[0]).toMatchObject({ observationId: 'memory-3' })
     // Retention is not interpretation: nothing was decided, and the
     // Candidate is exactly as active as it was.
     expect(evidence.candidate(candidate.id)).toMatchObject({ status: 'active', decisions: [] })
@@ -1000,7 +997,7 @@ describe('the store retains what the user said before the model ran (#211, ADR 0
     // rather than quietly writing into the void.
     expect(evidence.unresolvedCorrections()).toEqual([])
     expect(evidence.retainCorrection({ text: 'nor that one', runId: 'run-3' as RunId })).toBeNull()
-    evidence.groundCorrections()
+    evidence.handOnCorrections('run-4' as RunId)
     evidence.scopeCorrections('memory-objective-b' as MemoryEntryId)
     evidence.resolveCorrectionsCiting([words])
     evidence.resolveCorrectionsFrom('run-2' as RunId)
@@ -1020,14 +1017,47 @@ describe('the store retains what the user said before the model ran (#211, ADR 0
   it('resolves a Run own words when it answered, and never the debt it inherited', () => {
     const { evidence } = correctionHarness()
     evidence.retainCorrection({ text: 'not that one; keep looking', runId: 'run-2' as RunId })
+    evidence.handOnCorrections('run-3' as RunId)
     evidence.retainCorrection({ text: 'keep going', runId: 'run-3' as RunId })
 
     // run-3 answered. Answering its own command is what an Answer is;
     // it is no evidence at all that run-2's unanswered words were dealt
-    // with, and those wait for the grounding that discharges them.
+    // with, and those wait for the grounding that discharges them — or
+    // for the next admission, which lets them lapse.
     evidence.resolveCorrectionsFrom('run-3' as RunId)
 
     expect(evidence.unresolvedCorrections().map(({ text }) => text)).toEqual(['not that one; keep looking'])
+  })
+
+  it('holds at most one own and one inherited correction at any admission, and lapses what was handed on (#218, ADR 0043)', () => {
+    const { evidence, candidate } = correctionHarness()
+    evidence.presentInspection({ candidateId: candidate.id, runId: 'run-1' as RunId })
+    // Six Runs in a row are admitted with a command and end without
+    // answering — the shape of the captures #218 diagnosed.
+    for (let at = 2; at <= 7; at += 1) {
+      evidence.handOnCorrections(`run-${at}` as RunId)
+      evidence.retainCorrection({ text: `command ${at}`, runId: `run-${at}` as RunId })
+      expect(evidence.unresolvedCorrections().length).toBeLessThanOrEqual(2)
+    }
+
+    // run-8 is admitted with no words of its own. It inherits run-7's and
+    // nothing older: every earlier utterance was handed to the Run after
+    // it and lapsed when that Run ended.
+    evidence.handOnCorrections('run-8' as RunId)
+    expect(evidence.unresolvedCorrections().map(({ text, runId, handedTo }) => ({ text, runId, handedTo }))).toEqual([
+      { text: 'command 7', runId: 'run-7', handedTo: 'run-8' },
+    ])
+    // Lapsing discharged the obligation, not the evidence: every
+    // handed-on utterance was grounded as a User Observation and stays.
+    expect(
+      evidence.snapshot().observations.filter(({ sourceKind }) => sourceKind === 'user').map(({ text }) => text),
+    ).toEqual(['command 2', 'command 3', 'command 4', 'command 5', 'command 6', 'command 7'])
+    // While the inherited words name the Candidate, it is not presented;
+    // once they lapse at the next admission, it is presentable again.
+    expect(evidence.presentInspection({ candidateId: candidate.id, runId: 'run-8' as RunId })).toBeNull()
+    evidence.handOnCorrections('run-9' as RunId)
+    expect(evidence.unresolvedCorrections()).toEqual([])
+    expect(evidence.presentInspection({ candidateId: candidate.id, runId: 'run-9' as RunId })).not.toBeNull()
   })
 })
 
