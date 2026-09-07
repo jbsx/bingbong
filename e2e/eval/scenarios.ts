@@ -162,7 +162,7 @@ function finalTier(observation: ScenarioObservation): ScenarioMetrics['effortTie
  * it chose.
  */
 function declaredTheTier(observation: ScenarioObservation): boolean {
-  return (finalRun(observation).metrics.deadlineEscalations ?? 0) === 0
+  return (finalRun(observation).metrics.deadlineTierEscalations ?? 0) === 0
 }
 
 /** Every executed command finished done with no raw-limit error. */

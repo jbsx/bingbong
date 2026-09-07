@@ -77,7 +77,7 @@ export interface ScenarioMetrics {
    * Investigation from one that *declared* it: `effortTier` records the
    * tier, never who chose it.
    */
-  deadlineEscalations: number
+  deadlineTierEscalations: number
   rawLimitFailure: string | null
   /** True when the run asked the user and the ask timed out unanswered. */
   askTimedOut: boolean
@@ -220,7 +220,7 @@ export function extractMetrics(events: RunEvents, perfRecords: readonly PerfSpan
     resolution: done?.resolution ?? null,
     finalizationCause: done?.finalizationCause ?? null,
     effortTier: plans.at(-1)?.effortTier ?? UNDECLARED_PLAN_TIER,
-    deadlineEscalations: plans.filter((plan) => plan.source === 'deadline').length,
+    deadlineTierEscalations: plans.filter((plan) => plan.source === 'deadline').length,
     rawLimitFailure: rawLimit?.message ?? null,
     askTimedOut: askTimedOutIn(events),
     deterministicAnswer: answer?.deterministicAnswer === true,
@@ -257,7 +257,7 @@ export function combineRuns(runs: readonly ScenarioMetrics[]): ScenarioMetrics {
     resolution: final.resolution,
     finalizationCause: final.finalizationCause,
     effortTier: final.effortTier,
-    deadlineEscalations: sum((metrics) => metrics.deadlineEscalations ?? 0),
+    deadlineTierEscalations: sum((metrics) => metrics.deadlineTierEscalations),
     rawLimitFailure: runs.find((metrics) => metrics.rawLimitFailure !== null)?.rawLimitFailure ?? null,
     askTimedOut: runs.some((metrics) => metrics.askTimedOut),
     // The Answer the user keeps is the final run's, and so is its origin.

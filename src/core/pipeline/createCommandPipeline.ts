@@ -321,6 +321,16 @@ export const ASK_TIMEOUT_MS = 45_000
 const RUN_FAILED_SPOKEN = 'I could not finish that request.'
 
 /**
+ * One automatic Tier Escalation waiting to be announced (#216): what the
+ * epoch decided, the plan it produced, and when the tier actually rose.
+ */
+interface TierEscalationAnnouncement {
+  readonly escalation: TierEscalation
+  readonly plan: RunPlan
+  readonly at: number
+}
+
+/**
  * What the user hears when the deadline raises the Effort Tier (#216, ADR
  * 0042): a status line of the same kind as the session-expiry prompt, not
  * an Answer and not in the Answer contract. This is a voice-first
@@ -703,13 +713,20 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
     // is not — a status line repeated after the user has spoken again is
     // noise, and the Run Plan event and the model's Notice still land on
     // every escalation.
-    let pendingTierEscalation: TierEscalation | null = null
+    let pendingTierEscalation: TierEscalationAnnouncement | null = null
     let tierEscalationSpoken = false
-    /** The pending escalation, once: the loop top announces it and it is gone. */
-    const takeTierEscalation = (): TierEscalation | null => {
-      const escalation = pendingTierEscalation
+    /**
+     * Whether the deadline has raised this Run's tier (#216). It decides
+     * whether the plan in force constrains the next report: the runtime's
+     * escalation is not the fallback plan's default, so a first
+     * declaration may no longer ignore it and declare the Run back down.
+     */
+    let tierRaisedByDeadline = false
+    /** The pending announcement, once: the loop top makes it and it is gone. */
+    const takeTierEscalation = (): TierEscalationAnnouncement | null => {
+      const announcement = pendingTierEscalation
       pendingTierEscalation = null
-      return escalation
+      return announcement
     }
     // The Run's Notices (#154): every advisory line a tool result carries
     // — rail verdicts, the plan's corrective nudge, the epoch's budget
@@ -766,12 +783,23 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
         // rail's own answer, read live — the executor that owns the rail
         // is created further down this Run, so this cannot be a value.
         makingProgress: () => toolRound?.makingProgress() ?? false,
-        // An automatic Tier Escalation announces itself at the next loop
-        // top (#216): the crossing often happens inside a model round —
-        // the deadline timer — where there is no generator to yield the
-        // Run Plan event or speak from.
+        // An automatic Tier Escalation (#216, ADR 0042). The Run Plan
+        // follows the epoch here, at the crossing, because the tier a
+        // later report is reviewed against has to be the tier the Run
+        // actually holds: a report at the tier the Run has just left
+        // would otherwise read as an unchanged plan and re-arm the epoch
+        // back down, spending the Run's one escalation on nothing. Only
+        // the announcement waits for the next loop top — the crossing
+        // usually happens inside a model round, where there is no
+        // generator to yield an event or speak from.
         onTierEscalated: (escalation) => {
-          pendingTierEscalation = escalation
+          const plan: RunPlan = {
+            ...(runPlan ?? lookupFallbackPlan(correctedObjective ?? command)),
+            effortTier: escalation.to,
+          }
+          runPlan = plan
+          tierRaisedByDeadline = true
+          pendingTierEscalation = { escalation, plan, at: clock.now() }
         },
         // What the run owes at every Finalization entry (#120/#148):
         // unfinished delegated acquisition is cancelled, and the phase's
@@ -1011,6 +1039,9 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
           // but cannot reopen a Run whose no_progress cause already latched.
           runPlan = null
           modelDeclaredPlan = false
+          // The epoch's own once is reset below; so is what it did to the
+          // plan (#216) — a corrected objective declares its tier freely.
+          tierRaisedByDeadline = false
           notices.replan()
           toolRound?.replan()
           // A replan that reopened acquisition drops the allowance with
@@ -1376,26 +1407,21 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
           effortEpoch.decideLoopTop()
           // The automatic Tier Escalation becomes visible here (#216, ADR
           // 0042), whether the crossing was the deadline timer's mid-round
-          // or this loop top's own: one Run Plan event at the new tier,
-          // and the Run's one spoken status line. The plan's objective and
-          // headline are untouched — only the tier rose — and the pipeline's
-          // own plan has to follow the epoch, or the next model report
-          // reads as a downgrade against a tier the Run no longer holds.
-          const escalation = takeTierEscalation()
-          if (escalation !== null) {
-            const escalated: RunPlan = {
-              ...(runPlan ?? lookupFallbackPlan(correctedObjective ?? command)),
-              effortTier: escalation.to,
-            }
-            runPlan = escalated
+          // or this loop top's own: one Run Plan event at the tier the
+          // epoch already holds, and the Run's one spoken status line. The
+          // objective and headline are untouched — only the tier rose.
+          const announced = takeTierEscalation()
+          if (announced !== null) {
             yield {
               type: 'run_plan',
-              objective: escalated.objective,
-              headline: escalated.headline,
-              effortTier: escalated.effortTier,
+              objective: announced.plan.objective,
+              headline: announced.plan.headline,
+              effortTier: announced.plan.effortTier,
               source: 'deadline',
-              escalationReason: escalation.reason,
-              at: clock.now(),
+              escalationReason: announced.escalation.reason,
+              // Stamped when the tier rose, not when the loop got round to
+              // saying so: the crossing is the event.
+              at: announced.at,
             }
             if (!tierEscalationSpoken) {
               tierEscalationSpoken = true
@@ -1954,7 +1980,12 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
             const planReport = planCall ? parsePlanReport(planCall) : null
             if (planCall !== undefined) planCallHandled = true
             if (planReport !== null) {
-              const review = reviewPlanReport(runPlan, modelDeclaredPlan, planReport)
+              // What the review judges against (#116/#216): the fallback
+              // Lookup plan is a default and constrains nothing, but a
+              // tier the deadline raised is a decision — a first
+              // declaration back down is the downgrade the review
+              // already refuses, not an opening statement.
+              const review = reviewPlanReport(runPlan, modelDeclaredPlan || tierRaisedByDeadline, planReport)
               if (review.kind === 'rejected') {
                 planResultError = review.reason
               } else {

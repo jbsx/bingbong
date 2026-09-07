@@ -25,6 +25,7 @@ import { webEvidenceCommit } from './evidenceCheckpoint'
 import type { SettledPageState } from './progressFingerprints'
 import type { RunContinuityContext } from './createCommandPipeline'
 import type { RunStopRecord } from '../session/runJournal'
+import type { HostTraceEvent } from '../trace/hostTrace'
 import type { VerificationSubject } from '../session/verificationAttempts'
 import { createSessionEvidence, type SessionEvidenceSnapshot, type SessionEvidenceStore } from '../session/sessionEvidence'
 import type { MemoryEntryId, MemoryPatch } from '../session/workingMemory'
@@ -2401,6 +2402,8 @@ describe('command pipeline', () => {
     const progressingRun = (
       turns: ScriptedTurn[],
       advances: Record<string, number>,
+      /** Active-work time spent inside the nth model request, before it returns. */
+      thinkingAdvances: Record<number, number> = {},
     ): {
       clock: FakeClock
       tts: RecordingTts
@@ -2428,6 +2431,9 @@ describe('command pipeline', () => {
       const llm: LlmClient = {
         complete(request) {
           requests.push(request)
+          // Time spent thinking is active work like any other: a deadline
+          // crossed here is crossed by the round's own watcher, mid-request.
+          clock.advance(thinkingAdvances[requests.length - 1] ?? 0)
           return scripted.complete(request)
         },
       }
@@ -2515,6 +2521,48 @@ describe('command pipeline', () => {
       expect(emitted.at(-1)).toMatchObject({ type: 'done', finalizationCause: 'model_answered' })
     })
 
+    // ADR 0042 promises the user is told the wait grew. The Host Trace is
+    // where that claim is checked after the fact, so the line has to reach
+    // it as a `tts_line` — through the real coordinator, not a double.
+    it('reaches the Host Trace as a tts_line', async () => {
+      const clock = new FakeClock()
+      const traced: HostTraceEvent[] = []
+      let scrollY = 0
+      const work: Tool = {
+        name: 'work',
+        acquisition: true,
+        async execute(call) {
+          scrollY += 100
+          clock.advance(call.id === 'w0' ? 110_000 : 15_000)
+          return 'worked'
+        },
+      }
+      const pipeline = createCommandPipeline({
+        llm: new ScriptedLlm([
+          { kind: 'tool_calls', calls: [lookupPlan, { id: 'w0', name: 'work', args: {} }] },
+          { kind: 'tool_calls', calls: [{ id: 'w1', name: 'work', args: {} }] },
+          { kind: 'answer', speak: 'Here it is.', display: 'The tier list.', resolution: 'completed' },
+        ]),
+        tts: createSpeechCoordinator({
+          synth: { synthesize: async () => new Uint8Array([1]) },
+          player: { play: () => ({ done: Promise.resolve(), stop: () => {} }) },
+          hostTrace: (event) => traced.push(event()),
+        }),
+        clock,
+        tools: [createReportRunPlanTool(), work],
+        settledPageState: () => MOVING_PAGE(scrollY),
+      })
+
+      await collectStamped(pipeline, 'find the tier list', 'turn-escalated')
+
+      expect(traced).toContainEqual({
+        kind: 'tts_line',
+        text: TIER_ESCALATION_SPOKEN,
+        chars: TIER_ESCALATION_SPOKEN.length,
+        turnId: 'turn-escalated',
+      })
+    })
+
     it('finalizes at the second crossing \u2014 the escalation is once per Run', async () => {
       const { tts, events, finalizations } = progressingRun(
         [
@@ -2534,6 +2582,77 @@ describe('command pipeline', () => {
       // The Run that does finalize mints its Allowance exactly as today.
       expect(finalizations()).toBe(1)
       expect(emitted.at(-1)).toMatchObject({ type: 'done', finalizationCause: 'deadline_reached' })
+    })
+
+    // The escalation is spent the moment it happens, so anything that
+    // quietly puts the tier back costs the Run its one rescue and leaves
+    // the announcement describing a tier the epoch no longer holds. A
+    // plan report in the very round that crossed is the way that happens.
+    it('refuses a plan that declares the Run back down after the crossing', async () => {
+      const { events, tts } = progressingRun(
+        [
+          { kind: 'tool_calls', calls: [lookupPlan, { id: 'w0', name: 'work', args: {} }] },
+          {
+            kind: 'tool_calls',
+            calls: [
+              { id: 'w1', name: 'work', args: {} },
+              // Written before the crossing, read after it: an unchanged
+              // plan as far as the model knew when it wrote it.
+              { ...lookupPlan, id: 'p1' },
+            ],
+          },
+          { kind: 'tool_calls', calls: [{ id: 'w2', name: 'work', args: {} }] },
+          { kind: 'answer', speak: 'Here it is.', display: 'The tier list.', resolution: 'completed' },
+        ],
+        // w2 then spends longer than a re-armed Lookup deadline would have
+        // allowed, so a Run put back to Lookup could not have answered.
+        { w0: 110_000, w2: 150_000 },
+        // The second round crosses the Lookup deadline while the model is
+        // still thinking — the shape the deadline timer exists for.
+        { 1: 15_000 },
+      )
+
+      const emitted = await events
+
+      expect(emitted.find((e) => e.type === 'tool_result' && e.callId === 'p1')).toMatchObject({
+        ok: false,
+        error: expect.stringMatching(/never downgrades mid-run/),
+      })
+      expect(emitted.filter((e) => e.type === 'run_plan' && e.source === 'deadline')).toHaveLength(1)
+      expect(tts.spoken.filter((line) => line === TIER_ESCALATION_SPOKEN)).toHaveLength(1)
+      // Still working 275 s in: the Run held the Investigation deadline
+      // it was given, rather than a second Lookup one.
+      expect(emitted.at(-1)).toMatchObject({ type: 'done', finalizationCause: 'model_answered' })
+    })
+
+    it('refuses a first plan declared below the tier the deadline raised', async () => {
+      // No plan yet, so the Run is on the fallback Lookup one: the first
+      // declaration is normally accepted at any tier, because a default
+      // constrains nothing. A tier the deadline raised is not a default.
+      const { events } = progressingRun(
+        [
+          { kind: 'tool_calls', calls: [{ id: 'w0', name: 'work', args: {} }] },
+          {
+            kind: 'tool_calls',
+            calls: [
+              { id: 'w1', name: 'work', args: {} },
+              { ...lookupPlan, id: 'p1' },
+            ],
+          },
+          { kind: 'tool_calls', calls: [{ id: 'w2', name: 'work', args: {} }] },
+          { kind: 'answer', speak: 'Here it is.', display: 'The tier list.', resolution: 'completed' },
+        ],
+        { w0: 110_000, w2: 150_000 },
+        { 1: 15_000 },
+      )
+
+      const emitted = await events
+
+      expect(emitted.find((e) => e.type === 'tool_result' && e.callId === 'p1')).toMatchObject({
+        ok: false,
+        error: expect.stringMatching(/never downgrades mid-run/),
+      })
+      expect(emitted.at(-1)).toMatchObject({ type: 'done', finalizationCause: 'model_answered' })
     })
 
     it('finalizes as before when the Run stopped getting anywhere', async () => {

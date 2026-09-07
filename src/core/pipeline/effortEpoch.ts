@@ -193,8 +193,11 @@ export type EffortLoopDecision =
  */
 export type BudgetWarningMilestone = 'near' | 'imminent' | 'time'
 
+/** The round-based milestones, in the order they fire. */
+const ROUND_MILESTONES = ['near', 'imminent'] as const
+
 /** The consumption fraction at which each round-based milestone first fires. */
-const MILESTONE_FRACTIONS: Readonly<Record<'near' | 'imminent', number>> = {
+const MILESTONE_FRACTIONS: Readonly<Record<(typeof ROUND_MILESTONES)[number], number>> = {
   near: 0.75,
   imminent: 0.9,
 }
@@ -218,16 +221,15 @@ export function budgetWarningCrossed(
   budget: number,
   used: number,
   alreadyWarned: Readonly<Record<BudgetWarningMilestone, boolean>>,
-  elapsedDeadlineFraction = 0,
 ): BudgetWarningMilestone | null {
-  for (const milestone of ['near', 'imminent'] as const) {
+  for (const milestone of ROUND_MILESTONES) {
     if (alreadyWarned[milestone]) continue
     if (used >= Math.floor(budget * MILESTONE_FRACTIONS[milestone])) return milestone
   }
-  // The time milestone is last (#216): a round-based warning that has not
-  // fired yet is about the same round this one would ride, and the model
-  // reads one line at a time.
-  if (!alreadyWarned.time && elapsedDeadlineFraction >= TIME_MILESTONE_FRACTION) return 'time'
+  // The `time` milestone is not decided here (#216): it is crossed by the
+  // clock, not by a round, and a Run whose one round spans 60% to 100% of
+  // its deadline would never be warned if the crossing were only looked
+  // for at a round's start. The epoch checks it as a Notice is taken.
   return null
 }
 
@@ -586,8 +588,8 @@ export function createEffortEpoch(deps: {
   // Notice it owes the model until a result can carry it. A Steering
   // replan resets the once — the user has spoken again, so the Run's own
   // spend starts over, the rule the tool budget already follows.
-  let escalationSpent = false
-  let pendingEscalationNotice: string | null = null
+  let tierEscalationSpent = false
+  let pendingTierEscalationNotice: string | null = null
 
   // The round currently armed against the deadline, if any: a tier re-arm
   // replaces its watcher rather than leaving it on the spent deadline.
@@ -627,7 +629,7 @@ export function createEffortEpoch(deps: {
     pendingWarning = null
     // A tier that rose is moot once acquisition is over (#216) — the
     // Finalize Instruction is the only thing this round has to say.
-    pendingEscalationNotice = null
+    pendingTierEscalationNotice = null
     try {
       deps.onFinalizationEntered?.(cause, detail)
     } catch (err) {
@@ -647,16 +649,21 @@ export function createEffortEpoch(deps: {
    * deadline instead of throwing it away: a model round is the scarce
    * thing, which is the cost this decision exists to avoid.
    */
-  const escalateAtDeadline = (): boolean => {
-    if (subagent !== undefined || phase.kind !== 'working' || escalationSpent) return false
+  const escalateTierAtDeadline = (): boolean => {
+    if (subagent !== undefined || phase.kind !== 'working' || tierEscalationSpent) return false
     if (!deadlineExpired()) return false
     const next = NEXT_TIER[tier]
     if (next === undefined) return false
+    // A Run with no Tool Rounds left cannot spend a larger tier: the hard
+    // ceiling still bounds everything, and announcing a bigger tier in
+    // the same breath as `hard_limit` would promise work that cannot
+    // happen.
+    if (cumulativeRounds >= HARD_TOOL_ROUND_CEILING - CEILING_RESERVED_BOOKKEEPING_ROUNDS) return false
     if (deps.makingProgress?.() !== true) return false
-    escalationSpent = true
+    tierEscalationSpent = true
     const from = tier
     rearm(next)
-    pendingEscalationNotice = tierEscalationNotice(next)
+    pendingTierEscalationNotice = tierEscalationNotice(next)
     try {
       deps.onTierEscalated?.({ from, to: next, reason: DEADLINE_TIER_ESCALATION_REASON })
     } catch (err) {
@@ -679,7 +686,7 @@ export function createEffortEpoch(deps: {
     // instead of stopping it (#216, ADR 0042). A spent tier budget is
     // checked first and is not a crossing the escalation may rescue: the
     // Run stopped for its budget, and the deadline never spoke.
-    if (!budgetExhausted) escalateAtDeadline()
+    if (!budgetExhausted) escalateTierAtDeadline()
     const deadlinePassed = deadlineExpired()
     // Precedence at a coincidence differs by configuration. A Run answers
     // to its own tier budget first, then its deadline, then the hard
@@ -738,7 +745,7 @@ export function createEffortEpoch(deps: {
       // is not checked here — the round it belongs to is already running.
       // A crossing the escalation takes leaves the round's remaining
       // siblings open (#216): the tier rose, so nothing is past a boundary.
-      if (deadlineExpired() && !escalateAtDeadline()) return enterFinalization('deadline_reached')
+      if (deadlineExpired() && !escalateTierAtDeadline()) return enterFinalization('deadline_reached')
       if (subagent?.parentFinalizing?.() === true) return enterFinalization('parent_finalized')
       return false
     },
@@ -758,7 +765,7 @@ export function createEffortEpoch(deps: {
       }
       tierRounds += 1
       if (pendingWarning !== null) return true
-      const crossed = budgetWarningCrossed(roundBudget(), tierRounds, warned, elapsedDeadlineFraction())
+      const crossed = budgetWarningCrossed(roundBudget(), tierRounds, warned)
       if (crossed !== null) {
         warned[crossed] = true
         pendingWarning = crossed
@@ -793,7 +800,7 @@ export function createEffortEpoch(deps: {
       // The user has spoken again (#216, ADR 0042): the Run's one
       // automatic escalation is its own spend, and a corrected objective
       // starts that spend over.
-      escalationSpent = false
+      tierEscalationSpent = false
       rearm(nextTier)
       return true
     },
@@ -805,7 +812,7 @@ export function createEffortEpoch(deps: {
         // The escalation's re-arm rewatches this very round against the
         // new tier's deadline (#216, ADR 0042), so the round in flight
         // continues rather than being thrown away mid-request.
-        if (escalateAtDeadline()) return
+        if (escalateTierAtDeadline()) return
         deadlineAborted = true
         // The crossing is a Finalization entry like any other rail's
         // (#147/#148): the door opens here, so the aborted round's caller
@@ -853,7 +860,17 @@ export function createEffortEpoch(deps: {
     resume: () => workClock.resume(),
     stop: () => workClock.suspend(),
     takeBudgetWarning() {
-      if (pendingWarning === null || phase.kind !== 'working') return null
+      if (phase.kind !== 'working') return null
+      // The time milestone is decided here rather than at a round's start
+      // (#216): elapsed time crosses 60% of the deadline inside a round as
+      // readily as between two, and a Notice rides a result — so the first
+      // result that can carry one after the crossing carries this. A
+      // round-based warning already owed goes first; this one keeps.
+      if (pendingWarning === null && !warned.time && elapsedDeadlineFraction() >= TIME_MILESTONE_FRACTION) {
+        warned.time = true
+        pendingWarning = 'time'
+      }
+      if (pendingWarning === null) return null
       const milestone = pendingWarning
       pendingWarning = null
       const budget = roundBudget()
@@ -869,9 +886,9 @@ export function createEffortEpoch(deps: {
       return finalizeInstruction(current.cause, current.detail)
     },
     takeTierEscalationNotice() {
-      if (pendingEscalationNotice === null || phase.kind !== 'working') return null
-      const notice = pendingEscalationNotice
-      pendingEscalationNotice = null
+      if (pendingTierEscalationNotice === null || phase.kind !== 'working') return null
+      const notice = pendingTierEscalationNotice
+      pendingTierEscalationNotice = null
       return notice
     },
   }

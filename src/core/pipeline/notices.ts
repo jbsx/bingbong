@@ -5,11 +5,12 @@ import { reportFault } from '../trace/fault'
 // lines ride tool results — the search-loop nudge, the no-progress nudge,
 // the Run Plan's corrective nudge, the Effort Epoch's budget warning,
 // (#216) its automatic Tier Escalation, its Finalize Instruction, and
-// (#158) the Browse Subagent's own Finalize Instruction. Their precedence used to be the order of
-// five `if` statements in the Run loop, and the Run Plan nudge's "owed
-// until it actually lands" rule was one boolean set and cleared from five
-// places. This module owns all of that as data: one precedence table, one
-// delivery guard, and the immediate-vs-owed distinction.
+// (#158) the Browse Subagent's own Finalize Instruction. Their precedence
+// used to be the order of five `if` statements in the Run loop, and the
+// Run Plan nudge's "owed until it actually lands" rule was one boolean set
+// and cleared from five places. This module owns all of that as data: one
+// precedence table, one delivery guard, and the immediate-vs-owed
+// distinction.
 //
 // Vocabulary (CONTEXT.md, Notice): a Notice rides only a successful
 // string result — an error already tells the model what happened, and a

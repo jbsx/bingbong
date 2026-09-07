@@ -184,9 +184,9 @@ describe('extractMetrics', () => {
     )
 
     expect(escalated.effortTier).toBe('investigation')
-    expect(escalated.deadlineEscalations).toBe(1)
+    expect(escalated.deadlineTierEscalations).toBe(1)
     expect(declaredOnly.effortTier).toBe('investigation')
-    expect(declaredOnly.deadlineEscalations).toBe(0)
+    expect(declaredOnly.deadlineTierEscalations).toBe(0)
   })
 
   it('records a hard-limit failure’s mechanical cause with no Resolution (#110)', () => {
@@ -428,7 +428,7 @@ describe('aggregateScenarios', () => {
     elapsedMs: null,
     secondsPerLlmRound: null,
     repeatedActions: 0,
-    deadlineEscalations: 0,
+    deadlineTierEscalations: 0,
     outcome: 'done' as const,
     effortTier: 'lookup' as const,
     resolution: null,

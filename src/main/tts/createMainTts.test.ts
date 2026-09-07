@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest'
 import type { WebContents } from 'electron'
 import type { HostTraceEvent } from '../../core/trace/hostTrace'
 import { createMainTts } from './createMainTts'
-import { TIER_ESCALATION_SPOKEN } from '../../core/pipeline/createCommandPipeline'
 
 // The composition root is where a dependency goes missing without anything
 // failing: an optional dep that main resolves and this factory forgets to
@@ -32,29 +31,6 @@ describe('createMainTts', () => {
       text: 'Here is what I found.',
       chars: 21,
       turnId: 'turn-3',
-    })
-  })
-
-  // #216, ADR 0042: the automatic Tier Escalation's status line is spoken
-  // through the same seam as every other line, so the Host Trace shows
-  // that the user was told the wait grew — the one place a reader can
-  // check that claim after the fact.
-  it('records the Tier Escalation status line as a tts_line', async () => {
-    const traced: HostTraceEvent[] = []
-    const tts = createMainTts({
-      config: { bin: '/nonexistent/piper', voicesDir: '/nonexistent/voices', voiceId: 'test' },
-      pane: DEAD_PANE,
-      getVoiceId: () => 'test',
-      hostTrace: (event) => traced.push(event()),
-    })
-
-    await tts.speak(TIER_ESCALATION_SPOKEN, 'turn-9')
-
-    expect(traced).toContainEqual({
-      kind: 'tts_line',
-      text: TIER_ESCALATION_SPOKEN,
-      chars: TIER_ESCALATION_SPOKEN.length,
-      turnId: 'turn-9',
     })
   })
 

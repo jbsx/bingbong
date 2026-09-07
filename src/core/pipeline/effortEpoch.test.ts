@@ -516,14 +516,11 @@ describe('Effort Epoch (#146, ADR 0027)', () => {
       expect(budgetWarningCrossed(2, 2, { near: true, imminent: true, time: false })).toBeNull()
     })
 
-    it('fires the time milestone at 60% of the deadline, once (#216, ADR 0042)', () => {
-      // Round-based milestones first: the time one is the decision the
-      // model has not been asked for, not a louder version of them.
-      expect(budgetWarningCrossed(12, 1, none, 0.59)).toBeNull()
-      expect(budgetWarningCrossed(12, 1, none, 0.6)).toBe('time')
-      expect(budgetWarningCrossed(12, 1, none, 0.99)).toBe('time')
-      expect(budgetWarningCrossed(12, 1, { ...none, time: true }, 0.99)).toBeNull()
-      expect(budgetWarningCrossed(12, 9, none, 0.99)).toBe('near')
+    it('leaves the time milestone to the clock, never to a round count (#216)', () => {
+      // The rounds spent say nothing about the time spent: a Run inside
+      // its round budget is exactly the Run this milestone exists for.
+      expect(budgetWarningCrossed(12, 1, none)).toBeNull()
+      expect(budgetWarningCrossed(12, 11, { near: true, imminent: true, time: false })).toBeNull()
       expect(TIME_MILESTONE_FRACTION).toBe(0.6)
     })
 
@@ -605,6 +602,52 @@ describe('Effort Epoch (#146, ADR 0027)', () => {
       for (let round = 0; round < 4; round += 1) rearmed.beginToolRound()
       rearmed.declareTier('lookup')
       expect(rearmed.takeBudgetWarning()).toBeNull()
+    })
+  })
+
+  describe('the time milestone (#216, ADR 0042)', () => {
+    it('warns at 60% of the deadline, once per epoch, with no round of its own', () => {
+      const clock = new FakeClock()
+      const epoch = createEffortEpoch({ clock, initialTier: 'lookup' })
+      epoch.beginToolRound()
+      expect(epoch.takeBudgetWarning()).toBeNull()
+
+      clock.advance(TIER_ACTIVE_WORK_DEADLINES_MS.lookup * TIME_MILESTONE_FRACTION)
+      const warning = epoch.takeBudgetWarning()
+      expect(warning).toContain('60% of this run')
+      expect(warning).toContain('escalate the Effort Tier')
+      expect(epoch.takeBudgetWarning()).toBeNull()
+    })
+
+    it('warns inside the round that crossed, not at the next round\u2019s start', () => {
+      // The Run this milestone exists for spends most of its deadline in
+      // one slow round: a crossing looked for only at a round's start
+      // would never reach it before the deadline did.
+      const clock = new FakeClock()
+      const epoch = createEffortEpoch({ clock, initialTier: 'lookup' })
+      epoch.beginToolRound()
+      clock.advance(TIER_ACTIVE_WORK_DEADLINES_MS.lookup * 0.9)
+
+      expect(epoch.takeBudgetWarning()).toContain('60% of this run')
+    })
+
+    it('yields to a round-based warning already owed, and keeps until it can be taken', () => {
+      const clock = new FakeClock()
+      const epoch = createEffortEpoch({ clock, initialTier: 'direct_action' })
+      for (let round = 0; round < 4; round += 1) epoch.beginToolRound() // `near` crosses
+      clock.advance(TIER_ACTIVE_WORK_DEADLINES_MS.direct_action * 0.7)
+
+      expect(epoch.takeBudgetWarning()).toContain('of 6 tool rounds remain')
+      expect(epoch.takeBudgetWarning()).toContain('60% of this run')
+    })
+
+    it('says nothing once the run is finalizing', () => {
+      const clock = new FakeClock()
+      const epoch = createEffortEpoch({ clock, initialTier: 'lookup' })
+      clock.advance(TIER_ACTIVE_WORK_DEADLINES_MS.lookup * 0.7)
+      epoch.enterFinalization('no_progress')
+
+      expect(epoch.takeBudgetWarning()).toBeNull()
     })
   })
 
@@ -879,15 +922,33 @@ describe('Effort Epoch (#146, ADR 0027)', () => {
 
     it('gives the escalated epoch its own time milestone', () => {
       const { clock, epoch } = escalatingEpoch()
-      clock.advance(Math.ceil(TIER_ACTIVE_WORK_DEADLINES_MS.lookup * TIME_MILESTONE_FRACTION))
+      clock.advance(TIER_ACTIVE_WORK_DEADLINES_MS.lookup * TIME_MILESTONE_FRACTION)
       epoch.beginToolRound()
       expect(epoch.takeBudgetWarning()).toContain('60% of this run')
 
       clock.advance(TIER_ACTIVE_WORK_DEADLINES_MS.lookup)
       expect(epoch.decideLoopTop()).toEqual({ kind: 'work' })
-      clock.advance(Math.ceil(TIER_ACTIVE_WORK_DEADLINES_MS.investigation * TIME_MILESTONE_FRACTION))
-      epoch.beginToolRound()
+      expect(epoch.takeBudgetWarning()).toBeNull()
+      clock.advance(TIER_ACTIVE_WORK_DEADLINES_MS.investigation * TIME_MILESTONE_FRACTION)
       expect(epoch.takeBudgetWarning()).toContain('60% of this run')
+    })
+
+    it('never escalates a Run with no Tool Rounds left \u2014 the hard ceiling still bounds it', () => {
+      const { clock, epoch } = escalatingEpoch()
+      for (let round = 0; round < HARD_TOOL_ROUND_CEILING - 1; round += 1) {
+        epoch.beginToolRound()
+        // Each tier's budget would stop the Run long before the ceiling;
+        // the declaration re-arms it, which is what a real Run's own
+        // escalations do.
+        epoch.declareTier(epoch.tier === 'lookup' ? 'direct_action' : 'lookup')
+      }
+      const tierAtTheCeiling = epoch.tier
+      clock.advance(TIER_ACTIVE_WORK_DEADLINES_MS.lookup)
+
+      // The deadline is still the cause it stops for — it simply buys
+      // nothing, because there is no round left to spend at a larger tier.
+      expect(epoch.decideLoopTop()).toEqual({ kind: 'finalize', cause: 'deadline_reached' })
+      expect(epoch.tier).toBe(tierAtTheCeiling)
     })
 
     it('survives a throwing escalation hook \u2014 the tier still rose', () => {
