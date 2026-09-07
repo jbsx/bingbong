@@ -14,6 +14,7 @@ import type { ModelEndpointConfig } from '../../core/agent/modelRouting'
 import type { RetainedUserObjective } from '../../core/session/objectiveContinuity'
 import type { InspectionSubject } from '../../core/session/inspectionReference'
 import type { UserCorrectionSubject } from '../../core/session/userCorrections'
+import type { VerificationSubject } from '../../core/session/verificationAttempts'
 import { parseAssistantAnswer } from '../../core/agent/answerContract'
 import { reportFault } from '../../core/trace/fault'
 
@@ -303,6 +304,74 @@ export function retainedCorrectionsMessage(corrections: readonly UserCorrectionS
 }
 
 /**
+ * The retained verification failures' wire message (#212, ADR 0041):
+ * which routes this objective has already spent, in the words the route
+ * itself reported, and what remains open.
+ *
+ * The failure is quoted rather than characterized for the reason ADR
+ * 0040 records: "the Look failed after eight seconds" is the whole of
+ * what was observed, and a sentence of ours turning that into "vision is
+ * unavailable" is a claim about the rest of the Session that no single
+ * attempt establishes. A model told the route is broken stops trying
+ * anything; a model told this attempt failed goes and reads the page.
+ *
+ * The closing lines state the rules a round cannot get wrong without
+ * recreating the bug: the same route is not sent again, a fresh attempt
+ * exists only for a named eligible Candidate, and the answer to a second
+ * failure is a different route or an honest limitation — never another
+ * shortlist gathered behind the same unchecked step, and never the
+ * user's own eyes.
+ */
+export function retainedVerificationMessage(verification: VerificationSubject): string {
+  const lines = ['Verification already attempted for this objective — what the route reported:']
+  for (const failed of verification.failures) {
+    lines.push('', `${failed.route}: ${failed.failure}`)
+    if (failed.candidateId !== undefined) {
+      lines.push(
+        failed.candidateSubject === undefined
+          ? `(checking Candidate ${failed.candidateId}, which this Session no longer holds)`
+          : `(checking Candidate ${failed.candidateId}: ${failed.candidateSubject})`,
+      )
+    }
+  }
+  lines.push(
+    '',
+    'That is what the attempt observed, and it describes that attempt only — not the route for the rest of ' +
+      'this Session.',
+  )
+  if (verification.freshAttemptAllowed) {
+    lines.push(
+      '',
+      'You may spend one fresh attempt on that route in this run, and only to settle one of these Candidates:',
+    )
+    for (const candidate of verification.eligible) {
+      lines.push(`- ${candidate.candidateId}: ${candidate.subject}`)
+    }
+    lines.push(
+      '',
+      'If it fails again, do not send it a third time: take a genuinely different route to the same check — ' +
+        'read the text the page itself carries — or answer with the check named as still unverified. ' +
+        'Rewording the request or searching somewhere else is the same route, not a different one.',
+    )
+  } else {
+    lines.push(
+      '',
+      'There is no Candidate left that a fresh attempt on that route could settle, so do not spend one. Take a ' +
+        'genuinely different route to the same check — read the text the page itself carries — or answer with ' +
+        'the check named as still unverified.',
+    )
+  }
+  lines.push(
+    '',
+    'Do not gather more interchangeable Candidates behind the same unchecked step, and do not ask the user to ' +
+      'make the check for you. A result ranking highly in a search is a reason to consider it, never evidence ' +
+      'that it satisfies the constraint you have not checked: say which constraints you established and which ' +
+      'are still unchecked.',
+  )
+  return lines.join('\n')
+}
+
+/**
  * The Standing Directive's wire message (#167): the same correction, in the
  * user's own words, on every later round. Worded as the standing correction
  * it is rather than as a fresh arrival — the round that carried it as
@@ -352,6 +421,12 @@ export function createOpenAiLlmClient(deps: OpenAiLlmClientDeps): LlmClient {
       // actually said about them that nobody has answered yet.
       ...(request.corrections !== undefined && request.corrections.length > 0
         ? [{ role: 'user' as const, content: retainedCorrectionsMessage(request.corrections) }]
+        : []),
+      // What this objective has already spent on checking itself (#212):
+      // last of the continuity blocks, because it is about the work the
+      // three above have just finished describing.
+      ...(request.verification
+        ? [{ role: 'user' as const, content: retainedVerificationMessage(request.verification) }]
         : []),
       {
         role: 'user',

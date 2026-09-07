@@ -588,7 +588,7 @@ export async function runSubagent(deps: RunSubagentDeps, options: RunSubagentOpt
     toolContext,
     decisions,
     interrupts,
-    capabilities: { searchLoopRail: true, noProgressRail: true, perCallGate: true },
+    capabilities: { searchLoopRail: true, verificationRail: true, noProgressRail: true, perCallGate: true },
     terminalResult: (_call, outcome) => askEscalation(outcome) !== null,
     blockerEscalation: subagentBlockerEscalation,
     finalizationWording: workerFinalizationWording,

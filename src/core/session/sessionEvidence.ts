@@ -21,6 +21,14 @@ import {
   type DecisionAuthority,
 } from './candidateDecisions'
 import {
+  MAX_VERIFICATION_FAILURE_CHARS,
+  retainedVerificationFailures,
+  verificationFailuresInForce,
+  VERIFICATION_ROUTES,
+  type RetainedVerificationFailure,
+  type VerificationRoute,
+} from './verificationAttempts'
+import {
   boundedString,
   canonicalizeMemoryUrl,
   MAX_MEMORY_DETAIL_CHARS,
@@ -271,6 +279,20 @@ export interface UserCorrectionInput {
 }
 
 /**
+ * One verification attempt to retain as failed (#212, ADR 0041). The
+ * caller supplies the route it spent, the words that route reported, and
+ * whose Run spent it; the objective and the Candidate the check was
+ * about are the Session's own state, so the store stamps them — exactly
+ * as it stamps a retained correction's subject.
+ */
+export interface VerificationFailureInput {
+  readonly route: VerificationRoute
+  /** What the route reported, as it reported it. No cause is derived from it here or anywhere. */
+  readonly failure: string
+  readonly runId: RunId
+}
+
+/**
  * What one decision came to (#208, ADR 0039): the Candidate as retained,
  * or why the Session would not retain it — and, when a scoping rule is
  * what refused it, the decision that blocks it. The verdict is reached
@@ -418,6 +440,34 @@ export interface SessionEvidenceStore {
    * left to claim.
    */
   adoptUnscopedDecisions(objectiveId: MemoryEntryId): void
+  /**
+   * Retains a verification attempt the Session watched fail (#212, ADR
+   * 0041): the route spent, in the words the route used, under the
+   * objective in force and against the Candidate the check was about
+   * when the Session holds an unambiguous subject.
+   *
+   * It explains nothing. A Look that breached its deadline is retained
+   * as that attempt breaching that deadline — never as vision being
+   * unavailable, which is a claim about the rest of the Session that no
+   * single attempt establishes. Null when the Session ended or the
+   * input is out of bounds.
+   */
+  retainVerificationFailure(input: VerificationFailureInput): RetainedVerificationFailure | null
+  /**
+   * Binds failures retained before the Session held a user objective to
+   * the objective they turn out to have been spent under (#212) — the
+   * commit-time adoption `scopeCorrections` and `adoptUnscopedDecisions`
+   * exist for, and for the same reason: a Run's Memory Commit lands
+   * after its Answer, so a route spent by the establishing Run names no
+   * task yet.
+   */
+  scopeVerificationFailures(objectiveId: MemoryEntryId): void
+  /**
+   * The verification failures this Session retains under the objective
+   * in force, oldest first (#212). What a later Run reads to know which
+   * routes are already spent.
+   */
+  verificationFailures(): readonly RetainedVerificationFailure[]
   snapshot(): SessionEvidenceSnapshot
   /** How many of each form the store holds right now (#181) — no copy, no freeze. */
   counts(): SessionEvidenceCounts
@@ -545,6 +595,10 @@ export function createSessionEvidence(deps: {
   // The user's words this Session retains and no Run has resolved (#211):
   // oldest first, dropped with the Session like the subject above.
   let corrections: RetainedUserCorrection[] = []
+  // The verification routes this Session has watched fail (#212): oldest
+  // first, scoped to the objective they were spent under, dropped with
+  // the Session like everything else here.
+  let verificationFailures: RetainedVerificationFailure[] = []
   let cleared = false
 
   const liveObservation = (id: MemoryEntryId): MutableObservation | null =>
@@ -928,6 +982,42 @@ export function createSessionEvidence(deps: {
         held.objectiveId === undefined ? Object.freeze({ ...held, objectiveId }) : held,
       )
     },
+    retainVerificationFailure(input) {
+      if (cleared) return null
+      if (!(VERIFICATION_ROUTES as readonly string[]).includes(input.route)) return null
+      const failure = boundedString(input.failure, MAX_VERIFICATION_FAILURE_CHARS)
+      const runId = boundedString(input.runId, MAX_PROVENANCE_CHARS)
+      if (!failure || !runId) return null
+      const objectiveId = deps.objectiveId?.()
+      // The subject is taken on exactly the terms a correction's is
+      // (#211): the Inspection Reference the Session still holds under
+      // the task in force. A check made while nothing was presented was
+      // about the task, and the failure is retained without a subject
+      // rather than against a Candidate nobody named.
+      const subject =
+        inspection !== null && (inspection.objectiveId === undefined || inspection.objectiveId === objectiveId)
+          ? inspection.candidateId
+          : undefined
+      const retained: RetainedVerificationFailure = Object.freeze({
+        route: input.route,
+        failure,
+        ...(subject !== undefined ? { candidateId: subject } : {}),
+        ...(objectiveId !== undefined ? { objectiveId } : {}),
+        runId: runId as RunId,
+        failedAt: deps.now(),
+      })
+      verificationFailures = retainedVerificationFailures(verificationFailures, retained)
+      return retained
+    },
+    scopeVerificationFailures(objectiveId) {
+      if (cleared) return
+      verificationFailures = verificationFailures.map((held) =>
+        held.objectiveId === undefined ? Object.freeze({ ...held, objectiveId }) : held,
+      )
+    },
+    verificationFailures() {
+      return Object.freeze(verificationFailuresInForce(verificationFailures, deps.objectiveId?.()))
+    },
     unresolvedCorrections() {
       return Object.freeze(liveCorrections())
     },
@@ -995,6 +1085,9 @@ export function createSessionEvidence(deps: {
       // work this Session was doing. The next Session inherits neither
       // the work nor the obligation to resolve what was said about it.
       corrections = []
+      // And the routes spent on it (#212): a new Session is a new search,
+      // and it starts with every verification route open.
+      verificationFailures = []
     },
     get cleared() {
       return cleared

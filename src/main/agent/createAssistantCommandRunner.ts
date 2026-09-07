@@ -109,6 +109,11 @@ export function createAssistantCommandRunner(deps: {
             // said, including this Run's own command, that no Run has yet
             // grounded into a decision the Session retains.
             ...(admission.corrections ? { corrections: admission.corrections } : {}),
+            // Which verification routes this objective already spent
+            // (#212, ADR 0039/0041): so a continuation takes a different
+            // route to the check, or names it unverified, rather than
+            // sending the request that already reported what it can.
+            ...(admission.verification ? { verification: admission.verification } : {}),
             // Resolved only by an Answer the model wrote (#211), and only
             // against the Session that admitted this Run. A Run whose
             // Answer lands after a Reset is answering work nobody is

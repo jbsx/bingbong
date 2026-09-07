@@ -34,6 +34,11 @@ import {
 
 import type { RetainedInspectionReference } from './inspectionReference'
 import type { RetainedUserCorrection } from './userCorrections'
+import {
+  eligibleVerificationCandidates,
+  verificationSubject,
+  type VerificationSubject,
+} from './verificationAttempts'
 
 export type { RunJournalEntry, RunJournalSnapshot, RunStopRecord } from './runJournal'
 export type { MemoryEntry, MemoryPatch, WorkingMemorySnapshot } from './workingMemory'
@@ -91,6 +96,13 @@ export interface AcceptedRunAdmission {
    * the Session holds nothing unresolved.
    */
   corrections?: readonly RetainedUserCorrection[]
+  /**
+   * Which verification routes this Session has already watched fail
+   * under the objective in force, and whether one fresh attempt is open
+   * (#212, ADR 0041). Absent when nothing has failed — the ordinary
+   * case, in which every route is simply open.
+   */
+  verification?: VerificationSubject
 }
 
 export interface SessionRuntimeState {
@@ -852,6 +864,11 @@ export function createSessionRuntime(deps: {
       // recorded the user's task were spoken *for* that task, and only
       // here can the two be joined.
       if (objectiveInForce !== undefined) evidence!.scopeCorrections(objectiveInForce)
+      // And the routes already spent (#212): a verification failure is
+      // scoped to the task it was spent on, so a Run that established
+      // the objective after failing its check has its failure joined to
+      // that task here, on the same beat and for the same reason.
+      if (objectiveInForce !== undefined) evidence!.scopeVerificationFailures(objectiveInForce)
       // Anything still unresolved is about to be handed to a Run that did
       // not hear it (#211), so this is where it earns an identity that
       // Run can cite: the user's words, checkpointed as Session Evidence
@@ -869,6 +886,23 @@ export function createSessionRuntime(deps: {
         evidence!.retainCorrection({ text: utterance, runId })
       }
       const corrections = evidence!.unresolvedCorrections()
+      // What this Session has already watched fail, and what a fresh
+      // attempt could still resolve (#212, ADR 0041). Read after the
+      // retention above on purpose: a user who has just spoken about a
+      // Candidate has made it ineligible, because their words are what
+      // this Run owes an answer to — reopening a route to check that
+      // Candidate would settle on the model's own authority the very
+      // thing they are waiting to be asked about.
+      const evidenceSnapshot = evidence!.snapshot()
+      const verification = verificationSubject({
+        failures: evidence!.verificationFailures(),
+        objectiveId: objectiveInForce,
+        eligible: eligibleVerificationCandidates(evidenceSnapshot, {
+          objectiveId: objectiveInForce,
+          corrections,
+        }),
+        evidence: evidenceSnapshot,
+      })
       return {
         accepted: true,
         submissionId,
@@ -879,7 +913,7 @@ export function createSessionRuntime(deps: {
         createsSession,
         journal: journalSnapshot(),
         memory: memorySnapshot(),
-        evidence: evidence!.snapshot(),
+        evidence: evidenceSnapshot,
         // The Session's inspection subject (#210, ADR 0039), admitted
         // beside the evidence it resolves against and immutable for the
         // Run — a Run's own presentation lands on the store, and reaches
@@ -890,6 +924,10 @@ export function createSessionRuntime(deps: {
         // the same reason: what this Run resolves lands on the store and
         // reaches the next Run through its admission.
         ...(corrections.length > 0 ? { corrections } : {}),
+        // Which verification routes this objective has already spent
+        // (#212, ADR 0041), admitted beside them. Absent — the ordinary
+        // case — means nothing has failed and every route is open.
+        ...(verification !== null ? { verification } : {}),
       }
     },
     reject(submissionId) {

@@ -10,6 +10,8 @@ import { createVisionBudget, MAX_ORCHESTRATOR_VISION_CALLS } from '../agent/suba
 import { traceVisionBudget } from './visionSeam'
 import { createBlockerGate, orchestratorBlockerEscalation, type BlockerEscalation } from './blockerGate'
 import { createSearchLoopRail } from './searchLoopRail'
+import { createVerificationRail, verificationRouteOf, type VerificationRailDeps } from './verificationRail'
+import type { VerificationRoute } from '../session/verificationAttempts'
 import { createNoProgressRail } from './noProgressRail'
 import type { SettledPageState } from './progressFingerprints'
 import type { SnapshotRef } from '../browser/snapshot'
@@ -58,6 +60,12 @@ import type { FinalizationCause } from '../session/runJournal'
 export interface ToolRoundCapabilities {
   /** The search-loop rail (#74/#82): gate after the Vision Budget, observe after execution. */
   readonly searchLoopRail: boolean
+  /**
+   * The verification rail (#212): gate ahead of the Vision Budget —
+   * a check this run will not make must not spend the budget for one —
+   * and observe after execution.
+   */
+  readonly verificationRail: boolean
   /** The no-progress rails (#126): gate ahead of risk, observe after execution, trip mid-round. */
   readonly noProgressRail: boolean
   /**
@@ -193,6 +201,13 @@ export interface ToolRoundConfig {
   settledPageState?(): Promise<SettledPageState | null> | SettledPageState | null
   /** How many vision calls this round's budget grants (#83). Defaults to the orchestrator's. */
   readonly visionCalls?: number
+  /**
+   * The verification rail's Session seams (#212): what this objective has
+   * already watched fail, what a fresh attempt could still settle, and
+   * where a spent route is retained. Absent — a caller with no Session —
+   * leaves the rail enforcing this Run's own spend and nothing more.
+   */
+  readonly verification?: VerificationRailDeps
   /** Advisory bookkeeping only — a throwing tracer never fails a round. */
   readonly diagnostics?: {
     readonly tracer?: PerfTracer
@@ -263,6 +278,10 @@ export function createToolRoundExecutor(config: ToolRoundConfig): ToolRoundExecu
   const searchLoopRail = capabilities.searchLoopRail
     ? createSearchLoopRail(config.describeRef ? { describeRef: config.describeRef } : {})
     : null
+  const verificationRail = capabilities.verificationRail ? createVerificationRail(config.verification ?? {}) : null
+  /** Which route this call spends, read from the catalog's own flag rather than a name (#212). */
+  const routeOf = (call: ToolCall): VerificationRoute | null =>
+    verificationRail === null ? null : verificationRouteOf(call, (name) => toolsByName.get(name)?.usesVision === true)
   const noProgressRail = capabilities.noProgressRail
     ? createNoProgressRail({
         ...(config.settledPageState ? { settledState: config.settledPageState } : {}),
@@ -353,6 +372,17 @@ export function createToolRoundExecutor(config: ToolRoundConfig): ToolRoundExecu
       // is already worded as the outcome the model reads.
       const confirmation: ConfirmDecision = yield* decisions.confirm(verdict.prompt, call)
       if (!confirmation.approved) return confirmation.outcome
+    }
+
+    // The verification rail (#212, ADR 0041): a check this run has
+    // already watched fail is not sent again — the honest moves are a
+    // different route or the limitation, and the refusal names both.
+    // Ahead of the Vision Budget on purpose: a call this run will not
+    // make must not spend the budget for one, exactly as a call the risk
+    // gate will deny never reaches a Confirmation.
+    if (verificationRail !== null) {
+      const verificationGate = verificationRail.gate(routeOf(call))
+      if (!verificationGate.ok) return { ok: false, error: verificationGate.reason }
     }
 
     if (tool.usesVision) {
@@ -502,6 +532,14 @@ export function createToolRoundExecutor(config: ToolRoundConfig): ToolRoundExecu
       // what tracks and resets the streak — a failed intervening tool
       // leaves it alone); its advisory verdict is an immediate Notice.
       if (searchLoopRail !== null) notices.owe('search_loop', await searchLoopRail.observe(call, outcome))
+      // The verification rail (#212, ADR 0041): a failed check spends its
+      // route for the rest of this run, and the words the route reported
+      // are handed to the Session verbatim — the rail derives no cause
+      // from them, and the Session retains none.
+      if (verificationRail !== null) {
+        const spent = verificationRail.observe(routeOf(call), outcome)
+        if (spent !== null) config.verification?.retainFailure?.(spent)
+      }
       // No-progress rails (#126, ADR 0027): the redundancy nudge and the
       // Approach instructions are immediate Notices too; two exhausted
       // Approaches trip the run into Finalization mid-round — remaining

@@ -64,6 +64,7 @@ import type { SessionEvidenceSnapshot, SessionEvidenceStore, ObservationCheckpoi
 import { retainedUserObjective } from '../session/objectiveContinuity'
 import { retainedInspectionSubject, type RetainedInspectionReference } from '../session/inspectionReference'
 import { userCorrectionSubjects, type RetainedUserCorrection } from '../session/userCorrections'
+import { eligibleVerificationCandidates, type VerificationSubject } from '../session/verificationAttempts'
 import type { RunId, SessionGeneration } from '../session/sessionIdentity'
 import {
   evaluateEvidenceCheckpoint,
@@ -384,6 +385,12 @@ export interface RunContinuityContext {
    * cannot erase what the user said.
    */
   readonly corrections?: readonly RetainedUserCorrection[]
+  /**
+   * The verification routes this objective has already spent (#212, ADR
+   * 0041), admitted with this Run: what each attempt reported, and
+   * whether one fresh attempt is open. Absent when nothing has failed.
+   */
+  readonly verification?: VerificationSubject
   /**
    * Resolves the words this Run was itself admitted with (#211, ADR
    * 0039), called only when the model has written an Answer: answering
@@ -851,6 +858,14 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
      */
     const retainedCorrections = userCorrectionSubjects(continuity?.corrections ?? [], continuity?.evidence)
     /**
+     * The objective this Run's Session decisions are scoped to (#208):
+     * admission memory's, because a Run's own Memory Commit lands after
+     * its Answer — the same reading `presentInspectionSubject` takes,
+     * named once so the two cannot drift.
+     */
+    const objectiveInForce = (): MemoryEntryId | undefined =>
+      continuity ? currentUserObjective(continuity.memory)?.id : undefined
+    /**
      * Retains the Candidate an Answer presented, under the objective in
      * force as it was presented. Admission memory is that objective: a
      * Run's own Memory Commit lands after its Answer, so an Answer that
@@ -862,7 +877,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
       if (candidateId === undefined) return
       const session = evidenceSession?.()
       if (!session) return
-      const objectiveId = continuity ? currentUserObjective(continuity.memory)?.id : undefined
+      const objectiveId = objectiveInForce()
       session.store.presentInspection({
         candidateId,
         ...(objectiveId !== undefined ? { objectiveId } : {}),
@@ -1183,7 +1198,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
           toolContext,
           decisions,
           interrupts,
-          capabilities: { searchLoopRail: true, noProgressRail: true, perCallGate: true },
+          capabilities: { searchLoopRail: true, verificationRail: true, noProgressRail: true, perCallGate: true },
           intercept: (call) => interceptCall(call),
           // A successful Session Reset (#99) discards the rest of the run.
           terminalResult: (call, outcome) => outcome.ok && toolsByName.get(call.name)?.sessionReset === true,
@@ -1192,6 +1207,33 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
           soleCall: {
             select: (call) => toolsByName.get(call.name)?.sessionReset === true,
             notExecuted: 'not executed: this response carried a session reset, but it failed',
+          },
+          // The verification rail's Session seams (#212, ADR 0041). All
+          // four resolve per call against the live store rather than
+          // against admission: a Candidate this Run has only just
+          // recorded is exactly the specific lead a fresh check exists
+          // for, and one the user has just spoken about has stopped
+          // being one. A Session that ended (Reset, Lapse) answers with
+          // nothing, and the rail falls back to this Run's own spend.
+          verification: {
+            retainedFailures: () => evidenceSession?.()?.store.verificationFailures() ?? [],
+            eligibleCandidates: () => {
+              const session = evidenceSession?.()
+              if (!session) return []
+              return eligibleVerificationCandidates(session.store.snapshot(), {
+                objectiveId: objectiveInForce(),
+                corrections: session.store.unresolvedCorrections(),
+              })
+            },
+            objectiveId: objectiveInForce,
+            retainFailure: (spent) => {
+              const session = evidenceSession?.()
+              session?.store.retainVerificationFailure({
+                route: spent.route,
+                failure: spent.failure,
+                runId: session.runId,
+              })
+            },
           },
           ...(deps.currentHost ? { currentHost: deps.currentHost } : {}),
           ...(deps.currentPageUrl ? { currentPageUrl: deps.currentPageUrl } : {}),
@@ -1482,6 +1524,10 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
               // waiting on a Run to resolve it, beside the subject it was
               // said about.
               ...(retainedCorrections.length > 0 ? { corrections: retainedCorrections } : {}),
+              // The routes this objective already spent checking itself
+              // (#212): every round carries it, so a Run cannot forget
+              // mid-flight which check has already reported what it can.
+              ...(continuity?.verification ? { verification: continuity.verification } : {}),
               // Checkpointed Session Evidence this Run starts beside (#121):
               // the immutable admission snapshot — mid-Run checkpoints ride
               // tool results, later Runs' admissions.

@@ -1030,3 +1030,101 @@ describe('the store retains what the user said before the model ran (#211, ADR 0
     expect(evidence.unresolvedCorrections().map(({ text }) => text)).toEqual(['not that one; keep looking'])
   })
 })
+
+describe('retaining the verification routes a Session watched fail (#212, ADR 0041)', () => {
+  it('keeps the route’s own words, stamped with the run and the objective in force', () => {
+    const objective: MemoryEntryId = 'memory-objective' as MemoryEntryId
+    const evidence = createSessionEvidence({
+      sessionId: 'session-1' as SessionId,
+      now: () => 7,
+      mintId: () => 'memory-1' as MemoryEntryId,
+      objectiveId: () => objective,
+    })
+    const retained = evidence.retainVerificationFailure({
+      route: 'vision',
+      failure: 'look timed out after 8000ms',
+      runId: 'run-1' as RunId,
+    })
+    expect(retained).toEqual({
+      route: 'vision',
+      failure: 'look timed out after 8000ms',
+      objectiveId: 'memory-objective',
+      runId: 'run-1',
+      failedAt: 7,
+    })
+    expect(evidence.verificationFailures()).toEqual([retained])
+  })
+
+  it('stamps the Candidate the check was about when the Session holds that subject', () => {
+    const { evidence } = evidenceHarness()
+    const observation = evidence.checkpointObservation(webObservation())!.observation
+    const candidate = evidence.addCandidate({
+      subject: 'Acme wifi router',
+      supportingObservationIds: [observation.id],
+      runId: 'run-1' as RunId,
+    })!
+    evidence.presentInspection({ candidateId: candidate.id, runId: 'run-1' as RunId })
+
+    const retained = evidence.retainVerificationFailure({
+      route: 'vision',
+      failure: 'look timed out after 8000ms',
+      runId: 'run-1' as RunId,
+    })
+    expect(retained!.candidateId).toBe(candidate.id)
+  })
+
+  it('refuses a route it does not know and an empty failure, retaining neither', () => {
+    const { evidence } = evidenceHarness()
+    expect(
+      evidence.retainVerificationFailure({
+        route: 'telepathy' as never,
+        failure: 'nothing came through',
+        runId: 'run-1' as RunId,
+      }),
+    ).toBeNull()
+    expect(evidence.retainVerificationFailure({ route: 'vision', failure: '   ', runId: 'run-1' as RunId })).toBeNull()
+    expect(evidence.verificationFailures()).toEqual([])
+  })
+
+  it('binds a failure spent before the objective existed to the objective that lands after it', () => {
+    let objective: MemoryEntryId | undefined = undefined
+    const evidence = createSessionEvidence({
+      sessionId: 'session-1' as SessionId,
+      now: () => 0,
+      mintId: () => 'memory-1' as MemoryEntryId,
+      objectiveId: () => objective,
+    })
+    // The establishing Run spends the route before its own Memory Commit
+    // records the task it was spending it on.
+    evidence.retainVerificationFailure({ route: 'vision', failure: 'look timed out', runId: 'run-1' as RunId })
+    objective = 'memory-objective' as MemoryEntryId
+    evidence.scopeVerificationFailures(objective)
+    expect(evidence.verificationFailures()[0]!.objectiveId).toBe('memory-objective')
+  })
+
+  it('retires a failure with the objective the user replaced', () => {
+    let objective: MemoryEntryId | undefined = 'memory-first' as MemoryEntryId
+    const evidence = createSessionEvidence({
+      sessionId: 'session-1' as SessionId,
+      now: () => 0,
+      mintId: () => 'memory-1' as MemoryEntryId,
+      objectiveId: () => objective,
+    })
+    evidence.retainVerificationFailure({ route: 'vision', failure: 'look timed out', runId: 'run-1' as RunId })
+    expect(evidence.verificationFailures()).toHaveLength(1)
+    objective = 'memory-second' as MemoryEntryId
+    // A replacement objective is a different search, and it starts with
+    // every route open.
+    expect(evidence.verificationFailures()).toEqual([])
+  })
+
+  it('drops every retained failure when the Session ends', () => {
+    const { evidence } = evidenceHarness()
+    evidence.retainVerificationFailure({ route: 'vision', failure: 'look timed out', runId: 'run-1' as RunId })
+    evidence.clear()
+    expect(evidence.verificationFailures()).toEqual([])
+    expect(
+      evidence.retainVerificationFailure({ route: 'vision', failure: 'look timed out', runId: 'run-1' as RunId }),
+    ).toBeNull()
+  })
+})

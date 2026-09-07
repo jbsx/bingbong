@@ -22,7 +22,7 @@ function call(name: string, args: Record<string, unknown> = {}, id = `${name}-${
   return { id, name, args }
 }
 
-const ALL_RAILS: ToolRoundCapabilities = { searchLoopRail: true, noProgressRail: true, perCallGate: true }
+const ALL_RAILS: ToolRoundCapabilities = { searchLoopRail: true, verificationRail: true, noProgressRail: true, perCallGate: true }
 
 /** A settled page state that never moves — the no-progress rails' worst case. */
 const STUCK: SettledPageState = {
@@ -234,7 +234,7 @@ describe('gate order (#157/AC2, ADR 0010 + ADR 0027)', () => {
     // The no-progress rail is off here: this test is about which of the
     // other two gates answers first, and the flags are how that isolation
     // is expressed (#154).
-    const capabilities: ToolRoundCapabilities = { searchLoopRail: true, noProgressRail: false, perCallGate: true }
+    const capabilities: ToolRoundCapabilities = { searchLoopRail: true, verificationRail: true, noProgressRail: false, perCallGate: true }
 
     // Five similar searches reach the search-loop cap; the sixth is
     // refused by both gates at once. With one vision call left over, the
@@ -284,7 +284,7 @@ describe('the rails observe the raw outcome, ahead of Notices (#157/AC2)', () =>
       call('navigate', { url: `https://s.example/?q=${query.replace(/ /g, '+')}` }),
     )
     const h = harness([scripted('navigate', [])], {
-      capabilities: { searchLoopRail: true, noProgressRail: false, perCallGate: true },
+      capabilities: { searchLoopRail: true, verificationRail: true, noProgressRail: false, perCallGate: true },
     })
 
     const { outcome } = await h.round(calls)
@@ -331,7 +331,7 @@ describe('mid-round trips close the round’s remaining siblings (#157/AC2)', ()
     ]
     const h = harness(tools, {
       currentHost: () => 'www.reddit.com',
-      capabilities: { searchLoopRail: true, noProgressRail: false, perCallGate: true },
+      capabilities: { searchLoopRail: true, verificationRail: true, noProgressRail: false, perCallGate: true },
       trace,
     })
 

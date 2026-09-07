@@ -5,6 +5,7 @@ import type { SessionEvidenceSnapshot } from '../session/sessionEvidence'
 import type { RetainedUserObjective } from '../session/objectiveContinuity'
 import type { InspectionSubject } from '../session/inspectionReference'
 import type { UserCorrectionSubject } from '../session/userCorrections'
+import type { VerificationSubject } from '../session/verificationAttempts'
 import type { AnswerShape } from '../agent/answerContract'
 import type { SubagentReportFinding } from '../agent/subagentReport'
 import type { MishearProposal } from '../voice/learnedTerms'
@@ -93,6 +94,20 @@ export interface LlmRequest {
    * were spoken about. Absent when the Session holds nothing unresolved.
    */
   corrections?: readonly UserCorrectionSubject[]
+  /**
+   * The verification routes this objective has already spent (#212, ADR
+   * 0041): what each attempt mechanically reported, in its own words,
+   * and whether one fresh attempt is open — which it is only while a
+   * specific eligible Candidate could be settled by one.
+   *
+   * A failed check is the one thing a continuing search must not repeat
+   * blindly: the captured failure gathered four interchangeable
+   * shortlists behind one unreadable image, each Run reporting the same
+   * unverified leads because nothing recorded that the check, rather
+   * than the search, was what failed. Absent when nothing has failed —
+   * the ordinary case, in which every route is simply open.
+   */
+  verification?: VerificationSubject
   /** One immutable Session Journal snapshot, captured when this Run was accepted. */
   journal?: RunJournalSnapshot
   /** One immutable Session Working Memory snapshot captured with the Journal. */
