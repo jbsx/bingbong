@@ -1,10 +1,10 @@
 {
-  "decidedAt": "2026-09-04T12:05:45.519Z",
+  "decidedAt": "2026-09-07T22:16:06.191Z",
   "decision": "accept",
   "sharedCorpus": {
     "baselineCommit": "2343a3cf56deb57e745cec357e446e0255e58098",
     "size": 31,
-    "corpusOfRecordSize": 32,
+    "corpusOfRecordSize": 33,
     "scenarioIds": [
       "direct-action-open-page",
       "direct-action-open-article",
@@ -39,7 +39,8 @@
       "unresolvable-mercury-dampeners"
     ],
     "candidateOnly": [
-      "direct-action-select-option"
+      "direct-action-select-option",
+      "deadline-ledger-revisions"
     ],
     "baselineOnly": []
   },
@@ -134,24 +135,24 @@
   "candidate": {
     "captures": [
       {
-        "commit": "a4f31684b0ce544694987743a2dbad005b37c666",
-        "capturedAt": "2026-09-04T11:08:45.220Z",
+        "commit": "2c689dc21ab1155e68ed7a9e2a63f492e98606bd",
+        "capturedAt": "2026-09-07T20:34:41.141Z",
         "orchestratorModel": "GLM-5.3-flash",
-        "orchestratorRequests": 131,
+        "orchestratorRequests": 141,
         "reasoningEffort": "per-tier"
       },
       {
-        "commit": "a4f31684b0ce544694987743a2dbad005b37c666",
-        "capturedAt": "2026-09-04T11:31:25.182Z",
+        "commit": "2c689dc21ab1155e68ed7a9e2a63f492e98606bd",
+        "capturedAt": "2026-09-07T20:57:47.503Z",
         "orchestratorModel": "GLM-5.3-flash",
-        "orchestratorRequests": 138,
+        "orchestratorRequests": 136,
         "reasoningEffort": "per-tier"
       },
       {
-        "commit": "a4f31684b0ce544694987743a2dbad005b37c666",
-        "capturedAt": "2026-09-04T11:51:37.785Z",
+        "commit": "2c689dc21ab1155e68ed7a9e2a63f492e98606bd",
+        "capturedAt": "2026-09-07T21:21:12.616Z",
         "orchestratorModel": "GLM-5.3-flash",
-        "orchestratorRequests": 133,
+        "orchestratorRequests": 143,
         "reasoningEffort": "per-tier"
       }
     ],
@@ -207,34 +208,35 @@
       "stale-status-board",
       "near-identical-depot-bulletins",
       "blocker-challenge-page",
-      "unresolvable-mercury-dampeners"
+      "unresolvable-mercury-dampeners",
+      "deadline-ledger-revisions"
     ],
     "pooledLlmRounds": {
-      "median": 4,
-      "p95": 11
+      "median": 3,
+      "p95": 8
     },
     "classMedians": {
       "directAction": 3,
-      "lookupClass": 4
+      "lookupClass": 3
     },
-    "scenarioObservations": 96,
+    "scenarioObservations": 99,
     "comparedObservations": 93
   },
   "gates": [
     {
       "gate": "candidate-covers-corpus",
       "passed": true,
-      "detail": "the candidate pool covers all 32 scenarios of record; 31 of them are shared with the baseline"
+      "detail": "the candidate pool covers all 33 scenarios of record; 31 of them are shared with the baseline"
     },
     {
       "gate": "no-raw-limit-error",
       "passed": true,
-      "detail": "0 of 96 scenario observations across 3 captures ended with a raw round-limit error"
+      "detail": "0 of 99 scenario observations across 3 captures ended with a raw round-limit error"
     },
     {
       "gate": "direct-action-completion",
       "passed": true,
-      "detail": "35/36 (97%) of deterministic Direct Actions completed across 3 captures — needs ≥95%"
+      "detail": "36/36 (100%) of deterministic Direct Actions completed across 3 captures — needs ≥95%"
     },
     {
       "gate": "lookup-correct-or-partial",
@@ -244,7 +246,7 @@
     {
       "gate": "llm-rounds",
       "passed": true,
-      "detail": "median 5 → 4 pooled over 93 observations per side (3 captures each over the 31-scenario shared corpus — pass percentiles are never averaged) — must not regress; Direct Action median 4 → 3 — must improve; Lookup-class median 5 → 4 — must improve; p95 9 → 11 (reported, never gated #134); structural bounds: every observation within its corpus-declared ceiling"
+      "detail": "median 5 → 3 pooled over 93 observations per side (3 captures each over the 31-scenario shared corpus — pass percentiles are never averaged) — must not regress; Direct Action median 4 → 3 — must improve; Lookup-class median 5 → 3 — must improve; p95 9 → 8 (reported, never gated #134); structural bounds: every observation within its corpus-declared ceiling"
     },
     {
       "gate": "no-action-after-runtime-refusal",
