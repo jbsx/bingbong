@@ -1315,11 +1315,25 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
             }
             // Bookkeeping's was: it is one *optional* opportunity, and one
             // there is no time to take is one the run advances past, under
-            // the cause it entered Finalization with.
+            // the cause it entered Finalization with. The epoch refuses
+            // only from a phase that has no opportunity to spend, and this
+            // branch is unreachable from one — but falling through would
+            // arm a zero watch that abort the round before it was sent and
+            // escape as the raw error ADR 0038 forbids, so it answers
+            // deterministically instead.
+            reportFault(
+              'pipeline.createCommandPipeline.bookkeepingAllowanceSpent',
+              `the Finalization Allowance was spent before the bookkeeping round (${fallbackCause()})`,
+              { turnId },
+            )
             if (effortEpoch.spendBookkeepingOpportunity()) {
-              finalizationFailure = 'the Finalization bookkeeping round was skipped: the Allowance had no time left for it'
+              finalizationFailure =
+                'the Finalization bookkeeping round was skipped: the Finalization Allowance had no time left for it'
               continue
             }
+            finalizationFailure = 'the Finalization Allowance was spent with no opportunity left to take'
+            deterministicFallback = true
+            break
           }
           // Run Context Compaction (#124, ADR 0028): before every model
           // round, past the deterministic size threshold, older tool
@@ -1361,6 +1375,14 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
           // included, shares it rather than starting another full client
           // timeout of its own. The allowance suspends the watch on a
           // Pause, so a held round is not aborted for the user's time.
+          //
+          // The tool handling that follows a bookkeeping round is charged
+          // to the same allowance but cannot be cut short by it: a Tool
+          // takes no signal, and the one seam that can end a wait on
+          // something outstanding is the pane custody's (#205), which the
+          // cutoff below fires. So a bookkeeping tool that overruns costs
+          // the reserved Answer its round rather than its own — the run
+          // still answers, deterministically, inside the allowance.
           let allowanceSpent = false
           const cancelRoundWatch =
             roundAllowanceMs === null || run.finalizationAllowance === null
@@ -1550,6 +1572,13 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
               // too its failure supersedes this one — it is the more
               // proximate answer to what the user actually got.
               if (allowanceSpent) {
+                // Filed like the reserved Answer's exhaustion, and worded
+                // for the bound rather than the abort error it produced.
+                reportFault(
+                  'pipeline.createCommandPipeline.bookkeepingAllowanceSpent',
+                  `the bookkeeping round ran out of Finalization Allowance (${fallbackCause()})`,
+                  { turnId },
+                )
                 finalizationFailure = 'the Finalization bookkeeping round ran out of Finalization Allowance'
               } else {
                 reportFault('pipeline.createCommandPipeline.bookkeepingRequestFailed', err, { turnId })

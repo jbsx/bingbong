@@ -10,7 +10,7 @@
 // answer spends the same sixty seconds, and what an early phase does not
 // spend is left for the Answer rather than returned to the provider.
 
-import type { Clock } from '../ports/clock'
+import { createSuspendableClock, type Clock } from '../ports/clock'
 
 /**
  * The whole allowance, from Finalization entry to the Card (#209, ADR
@@ -64,11 +64,9 @@ const GRACE_SHARE = REPORT_GRACE_MS / FINALIZATION_ALLOWANCE_MS
 const BOOKKEEPING_SHARE = BOOKKEEPING_ALLOWANCE_MS / FINALIZATION_ALLOWANCE_MS
 const RESERVED_ANSWER_SHARE = RESERVED_ANSWER_ALLOWANCE_MS / FINALIZATION_ALLOWANCE_MS
 
-/** A positive, finite override, or undefined for "use the default". */
-function usableOverride(overrideMs: number | undefined, allowZero = false): number | undefined {
-  if (overrideMs === undefined || !Number.isFinite(overrideMs)) return undefined
-  if (overrideMs < 0 || (overrideMs === 0 && !allowZero)) return undefined
-  return overrideMs
+/** A finite override of at least `floorMs`, or undefined for "use the default". */
+function usableOverride(overrideMs: number | undefined, floorMs: number): number | undefined {
+  return overrideMs !== undefined && Number.isFinite(overrideMs) && overrideMs >= floorMs ? overrideMs : undefined
 }
 
 /**
@@ -78,7 +76,9 @@ function usableOverride(overrideMs: number | undefined, allowZero = false): numb
  * milliseconds. Production never sets an override.
  */
 export function resolveFinalizationAllowanceMs(overrideMs: number | undefined): number {
-  return usableOverride(overrideMs) ?? FINALIZATION_ALLOWANCE_MS
+  // An allowance of zero would be a Run with no Finalization at all, so
+  // the floor is the smallest positive value.
+  return usableOverride(overrideMs, Number.MIN_VALUE) ?? FINALIZATION_ALLOWANCE_MS
 }
 
 /**
@@ -88,7 +88,7 @@ export function resolveFinalizationAllowanceMs(overrideMs: number | undefined): 
  * never sets one, and the grace then scales with the allowance.
  */
 export function resolveReportGraceMs(overrideMs: number | undefined, allowanceMs = FINALIZATION_ALLOWANCE_MS): number {
-  return usableOverride(overrideMs, true) ?? allowanceMs * GRACE_SHARE
+  return usableOverride(overrideMs, 0) ?? allowanceMs * GRACE_SHARE
 }
 
 /**
@@ -121,7 +121,14 @@ export interface FinalizationAllowance {
   cutoffMs(): number
   /** The Report Grace's share of what is left, capped by the grace itself. */
   reportGraceMs(): number
-  /** Bookkeeping's share of what is left, capped by bookkeeping's own. */
+  /**
+   * Bookkeeping's share of what is left, capped by bookkeeping's own. It
+   * bounds the round's model attempts; the tool handling after them is
+   * charged to the allowance but cannot be interrupted by it, because a
+   * Tool takes no cancellation signal. An overrunning bookkeeping tool
+   * therefore costs the reserved Answer its round, not the allowance its
+   * guarantee — see the round's own comment in createCommandPipeline.
+   */
   bookkeepingMs(): number
   /**
    * The reserved Answer round's share: everything left. The protected
@@ -138,13 +145,21 @@ export interface FinalizationAllowance {
   watch(budgetMs: number, onExpire: () => void): () => void
 }
 
+/** One live watch on the allowance: when it is due, and how to stop or fire it. */
 interface Watch {
   /** The allowance spend at which this watch fires — a point on a clock Pause stops. */
   readonly expiresAtSpent: number
-  cancelTimer(): void
+  /** A property, not a method: `arm` replaces it each time it re-arms the watch. */
+  cancelTimer: () => void
   fire(): void
 }
 
+/**
+ * Mint the allowance a Run has just entered Finalization with. It starts
+ * spending immediately: the door opens mid-round more often than not, and
+ * the time between the entry and the loop coming back round is time the
+ * user is already waiting.
+ */
 export function createFinalizationAllowance(deps: {
   clock: Clock
   /** The whole allowance; defaults to FINALIZATION_ALLOWANCE_MS. */
@@ -156,21 +171,27 @@ export function createFinalizationAllowance(deps: {
   const totalMs = resolveFinalizationAllowanceMs(deps.totalMs)
   const graceCapMs = resolveReportGraceMs(deps.reportGraceMs, totalMs)
   const bookkeepingCapMs = totalMs * BOOKKEEPING_SHARE
-  const reservedAnswerMs = totalMs * RESERVED_ANSWER_SHARE
+  // The Answer's protected floor — not `reservedAnswerMs()` below, which is
+  // everything left. The floor is what the earlier phases are held off.
+  const protectedAnswerMs = totalMs * RESERVED_ANSWER_SHARE
 
-  let accumulatedMs = 0
-  let activeSince: number | null = clock.now()
-  let suspendDepth = 0
+  // Pause is the whole reason this is a suspendable clock and not a
+  // deadline (#209/AC4): the same accumulator the active-work clock uses.
+  const elapsed = createSuspendableClock(clock)
   const watches = new Set<Watch>()
+  // Whether the clock is currently stopped, so a watch minted during a
+  // Pause knows to wait for the resume rather than arm against time
+  // nobody is spending.
+  let suspended = false
 
-  const spentMs = (): number => (activeSince === null ? accumulatedMs : accumulatedMs + (clock.now() - activeSince))
+  const spentMs = (): number => elapsed.spent()
   const remainingMs = (): number => Math.max(0, totalMs - spentMs())
-  const cutoffMs = (): number => Math.max(0, remainingMs() - reservedAnswerMs)
+  const cutoffMs = (): number => Math.max(0, remainingMs() - protectedAnswerMs)
   const clampToCutoff = (capMs: number, aheadMs: number): number =>
     Math.min(capMs, Math.max(0, cutoffMs() - aheadMs))
 
   /** Arms one watch's timer for whatever it has left; a spent one fires now. */
-  const arm = (watch: Watch & { cancelTimer: () => void }): void => {
+  const arm = (watch: Watch): void => {
     const leftMs = watch.expiresAtSpent - spentMs()
     if (leftMs > 0) {
       const cancel = clock.setTimer(leftMs, () => watch.fire())
@@ -182,21 +203,20 @@ export function createFinalizationAllowance(deps: {
 
   return {
     suspend() {
-      if (suspendDepth === 0 && activeSince !== null) {
-        accumulatedMs += clock.now() - activeSince
-        activeSince = null
-        // The watches stop with the clock they measure: a Pause during a
-        // Finalization round is the user's time, not the allowance's.
-        for (const watch of watches) watch.cancelTimer()
-      }
-      suspendDepth += 1
+      // The watches stop with the clock they measure: a Pause during a
+      // Finalization round is the user's time, not the allowance's. Only
+      // the outermost suspend has anything to stop.
+      if (!elapsed.suspend()) return
+      suspended = true
+      for (const watch of watches) watch.cancelTimer()
     },
     resume() {
-      if (suspendDepth === 0) return
-      suspendDepth -= 1
-      if (suspendDepth > 0) return
-      activeSince = clock.now()
-      for (const watch of [...watches]) arm(watch as Watch & { cancelTimer: () => void })
+      // Re-armed against what each watch has left, so one that ran out
+      // while the user held the Run fires now rather than never. Iterated
+      // over a copy: firing removes the watch from the set.
+      if (!elapsed.resume()) return
+      suspended = false
+      for (const watch of [...watches]) arm(watch)
     },
     spentMs,
     remainingMs,
@@ -208,7 +228,7 @@ export function createFinalizationAllowance(deps: {
     reservedAnswerMs: remainingMs,
     watch(budgetMs, onExpire) {
       let fired = false
-      const watch: Watch & { cancelTimer: () => void } = {
+      const watch: Watch = {
         expiresAtSpent: spentMs() + Math.max(0, budgetMs),
         cancelTimer: () => {},
         fire() {
@@ -219,7 +239,9 @@ export function createFinalizationAllowance(deps: {
         },
       }
       watches.add(watch)
-      if (suspendDepth === 0) arm(watch)
+      // A watch minted while the user holds the Run waits for the resume
+      // to arm it, exactly like the ones already running.
+      if (!suspended) arm(watch)
       return () => {
         fired = true
         watch.cancelTimer()

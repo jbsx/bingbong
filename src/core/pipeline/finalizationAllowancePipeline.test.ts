@@ -267,8 +267,11 @@ describe('the Finalization Allowance in a Run (#209, ADR 0038)', () => {
 
   it('skips the reserved Answer round outright when nothing is left for it (#209/AC3)', async () => {
     // Thirty seconds of grace, then a bookkeeping round whose own tool
-    // call runs the rest of the allowance out. The reserved Answer round
-    // is never started: there is no time to start it in.
+    // call runs the rest of the allowance out. The tool handling is
+    // charged to the allowance but cannot be cut short by it — a Tool
+    // takes no signal — so what the bound protects here is the *next*
+    // decision: the reserved Answer round is never started, because there
+    // is no time to start it in.
     let releaseTool: (() => void) | null = null
     const slow: Tool = {
       name: 'slow_note',
@@ -306,6 +309,42 @@ describe('the Finalization Allowance in a Run (#209, ADR 0038)', () => {
     expect(h.faults.map((fault) => fault.site)).toContain(
       'pipeline.createCommandPipeline.reservedAnswerAllowanceSpent',
     )
+  })
+
+  it('gives the Answer what is left after a bookkeeping request failed outright (#209/AC5)', async () => {
+    const h = harness({
+      subagentReportsSettled: async () => {},
+      laterRounds: [
+        // Not exhaustion — a provider failure three seconds in.
+        async () => {
+          await new Promise<void>((resolve) => h.clock.setTimer(3_000, resolve))
+          throw new Error('provider said no')
+        },
+        abortableRound,
+      ],
+    })
+    const run = collect(h.pipeline, 'compare vendors')
+    await h.enterFinalization()
+    await settle(() => h.requests.length >= 3)
+    h.clock.advance(3_000)
+    await settle(() => h.requests.length >= 4)
+
+    // The failed opportunity is spent, not retried, and the reserved
+    // Answer round runs on the fifty-seven seconds the allowance still
+    // holds — not on a fresh timeout and not on the protected twenty.
+    expect(h.requests[3]).toMatchObject({ answerOnly: true })
+    h.clock.advance(56_999)
+    await flush()
+    expect(h.requests).toHaveLength(4)
+    h.clock.advance(1)
+    const events = await run
+
+    expect(displayText(events)).toContain('I have not made progress I can show')
+    expect(h.faults.map((fault) => fault.site)).toContain(
+      'pipeline.createCommandPipeline.bookkeepingRequestFailed',
+    )
+    // The Run still stopped for the deadline it crossed.
+    expect(events.at(-1)).toMatchObject({ type: 'done', finalizationCause: 'deadline_reached' })
   })
 
   it('keeps the entry cause and files the allowance failure separately (#209/AC7)', async () => {
@@ -500,9 +539,13 @@ describe('the Finalization Allowance in a Run (#209, ADR 0038)', () => {
   // withheld, which is the prerequisite's boundary, not this one's.
   it('lets go of an outstanding action at the cutoff and publishes anyway (#209/AC6)', async () => {
     let cutoffAt: number | null = null
+    // The pane action the Run is still waiting on: the cutoff ends the
+    // *wait*, and the action itself settles long after the Card is out.
+    let actionSettled = false
     const h = harness({
       subagentReportsSettled: () => new Promise<void>(() => {}),
       laterRounds: [abortableRound, abortableRound],
+      onFinalizationCutoff: () => { /* main abandons the pane here (#205) */ },
     })
     const run = collect(h.pipeline, 'compare vendors')
     // The cutoff's own timestamp, read from the harness's clock.
@@ -526,11 +569,27 @@ describe('the Finalization Allowance in a Run (#209, ADR 0038)', () => {
     expect(h.cutoffs()).toBe(1)
     expect(cutoffAt! - enteredAt).toBe(40_000)
 
+    // The reserved Answer round still runs, on its protected twenty.
+    await settle(() => h.requests.length >= 4)
+    expect(h.requests[3]).toMatchObject({ answerOnly: true })
     h.clock.advance(20_000)
     const events = await run
     // Once only: the cutoff is a boundary, not a retry.
     expect(h.cutoffs()).toBe(1)
-    expect(displayText(events)).toContain('I have not made progress I can show')
+    const answer = displayText(events)
+    expect(answer).toContain('I have not made progress I can show')
+
+    // The action the cutoff let go of settles now, long after the Card.
+    // It cannot rewrite the Answer, add an event, or start a round: the
+    // Run that would have read it is over.
+    actionSettled = true
+    h.clock.advance(600_000)
+    await flush()
+    await flush()
+    expect(actionSettled).toBe(true)
+    expect(h.requests).toHaveLength(4)
+    expect(displayText(events)).toBe(answer)
+    expect(events.at(-1)).toMatchObject({ type: 'done' })
   })
 
   it('does not let a late settlement rewrite the Answer (#209/AC6)', async () => {

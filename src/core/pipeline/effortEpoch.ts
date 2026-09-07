@@ -3,7 +3,7 @@
 // tool calls; it consumes one unit regardless of sibling-call count.
 
 import { DEFAULT_EFFORT_TIER, type EffortTier } from './runPlan.ts'
-import type { Clock } from '../ports/clock'
+import { createSuspendableClock, type Clock } from '../ports/clock'
 import type { ReasoningEffort } from '../ports/llm'
 import type { SubagentSharedDeadline } from '../agent/subagentRails'
 import type { FinalizationCause } from '../session/runJournal'
@@ -344,51 +344,6 @@ export function requestFinalizeInstruction(phase: EffortPhase): string | null {
 }
 
 /**
- * The active-work clock (#117, ADR 0027): accumulates wall time the Run
- * spends working, excluding user-dependent waiting — Confirmation, ask_user,
- * Pause, and Steering — which suspends it. Fresh per Run; a tier change
- * re-arms it for the new tier's deadline.
- */
-interface ActiveWorkClock {
-  /** Starts (or resumes) an active span; pairs with suspend(). */
-  resume(): void
-  /** Suspends accumulation — the run is waiting on the user. */
-  suspend(): void
-  /** Active work accumulated since the last rearm(), in milliseconds. */
-  spent(): number
-  /** Resets the accumulation — a fresh tier deadline starts now. */
-  rearm(): void
-}
-
-function createActiveWorkClock(clock: Clock): ActiveWorkClock {
-  let accumulatedMs = 0
-  let activeSince: number | null = clock.now()
-  let suspendDepth = 0
-  return {
-    resume() {
-      if (suspendDepth > 0) {
-        suspendDepth -= 1
-        if (suspendDepth === 0) activeSince = clock.now()
-      }
-    },
-    suspend() {
-      if (suspendDepth === 0 && activeSince !== null) {
-        accumulatedMs += clock.now() - activeSince
-        activeSince = null
-      }
-      suspendDepth += 1
-    },
-    spent() {
-      return activeSince === null ? accumulatedMs : accumulatedMs + (clock.now() - activeSince)
-    },
-    rearm() {
-      accumulatedMs = 0
-      activeSince = suspendDepth === 0 ? clock.now() : null
-    },
-  }
-}
-
-/**
  * One model round armed against the epoch's active-work deadline (#135/#147,
  * ADR 0027). The deadline is a live cancellation boundary, not a value polled
  * between rounds: while the round is in flight the epoch's remaining time
@@ -516,7 +471,11 @@ export function createEffortEpoch(deps: {
    */
   onFinalizationEntered?: (cause: FinalizationCause, detail?: FinalizationDetail) => void
 }): EffortEpoch {
-  const workClock = createActiveWorkClock(deps.clock)
+  // The active-work clock (#117, ADR 0027): accumulates wall time the Run
+  // spends working, excluding user-dependent waiting — Confirmation,
+  // ask_user, Pause, and Steering — which suspends it. Fresh per Run; a
+  // tier change re-arms it for the new tier's deadline.
+  const workClock = createSuspendableClock(deps.clock)
   const subagent = deps.subagent
   let tier = deps.initialTier ?? DEFAULT_EFFORT_TIER
   let tierRounds = 0
