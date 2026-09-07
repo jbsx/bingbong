@@ -4,6 +4,8 @@ import { SUBAGENT_LIMITS } from '../../core/agent/subagentRails'
 import { SubagentCancelledError } from '../../core/agent/subagentRunner'
 import { holdBrowserCustody, WithheldResourceError } from '../../core/browser/unsettledAction'
 import { createSubagentTaskApi, toolsForKind } from './createSubagentWorkhorse'
+import { createBackgroundTools } from './backgroundTools'
+import { closedInFinalization } from '../../core/pipeline/tool'
 import { withAgentActivity } from '../../core/downloads/agentActivity'
 import { createAgentActivityTracker } from '../../core/downloads/agentActivity'
 import type { SnapshotRef } from '../../core/browser/snapshot'
@@ -291,6 +293,32 @@ describe('createSubagentTaskApi', () => {
       expect(names).not.toContain('record_evidence')
       expect(names).not.toContain('record_candidate')
     }
+  })
+
+  it('lets a finalizing Subagent reach nothing slow: the ask relay and the file verbs only (#213)', () => {
+    // The Subagent loop is the same Tool Round as the Run's, with the same
+    // closed-tool check; a Subagent told to finalize — its own leash, or
+    // its parent finalizing — may still call whatever the check leaves
+    // open. Its parent waits at most the Report Grace, so a tool that can
+    // block past it (download_url's 120 s fetch) is acquisition: closed,
+    // like a Run's. Pinned against the production toolboxes, so a new
+    // Subagent tool decides this deliberately. The ask relay stays open
+    // on purpose: unlike the orchestrator's ask_user it declares no
+    // `askUser` — it returns an escalation directive at once, never
+    // waiting on anyone.
+    const deps = { getEnv: () => ({}) as Record<string, string | undefined>, fetchFn: fetch, vision: new FakeVision() }
+    const browse = toolsForKind('browse', deps, new FakeBrowser())
+    expect(browse.filter((tool) => !closedInFinalization(tool)).map((tool) => tool.name)).toEqual(['ask_user'])
+
+    const background = toolsForKind(
+      'background',
+      { ...deps, backgroundTools: createBackgroundTools({ downloadsDir: '/nonexistent/bingbong_downloads', fetchFn: fetch }) },
+      null,
+    )
+    expect(background.filter((tool) => !closedInFinalization(tool)).map((tool) => tool.name).sort()).toEqual(
+      ['ask_user', 'list_downloads', 'move_download'].sort(),
+    )
+    expect(background.filter(closedInFinalization).map((tool) => tool.name)).toEqual(['download_url'])
   })
 
   it('passes search submits through the confirm downgrade — browse agents can GUI-search (#102, ADR 0015)', async () => {

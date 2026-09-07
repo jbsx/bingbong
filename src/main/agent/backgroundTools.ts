@@ -72,6 +72,11 @@ export function createBackgroundTools(deps: BackgroundToolsDeps): Tool[] {
   return [
     {
       name: 'download_url',
+      // Acquisition (#213): a fetch of up to 120 s brings new material in,
+      // and a finalizing Subagent's parent waits at most the Report Grace
+      // — so Finalization closes it, the way it closes a Run's page
+      // fetches. The file verbs beside it are immediate and stay open.
+      acquisition: true,
       description: 'Download a direct HTTP(S) URL into the approved Bing Bong downloads directory.',
       parameters: {
         url: { type: 'string', description: 'Direct HTTP(S) URL to download' },
