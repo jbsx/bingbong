@@ -1417,6 +1417,21 @@ describe("the user's unresolved words on the wire (#211, ADR 0039)", () => {
     expect(content).toContain('which this Session no longer holds')
   })
 
+  it('carries on through words that only ask it to continue (#217)', () => {
+    const content = retainedCorrectionsMessage([{ text: 'keep looking' }])
+
+    // "Keep looking" is exactly what the sentence above it would otherwise
+    // send back to the user as a question, and deciding whether to ask cost
+    // a first round 58 s and 85 s in session-95446163.
+    expect(content).toContain('Words that only ask you to continue decide nothing and raise no question; carry on.')
+  })
+
+  it('leaves the continuation sentence out of the Standing Directive message (#217)', () => {
+    // Live Steering never produced this deliberation: a directive arrives
+    // as an instruction to follow, not as words waiting to be resolved.
+    expect(standingDirectiveMessage('keep looking')).not.toContain('only ask you to continue')
+  })
+
   it('sends no corrections message when the Session holds nothing unresolved (#211)', async () => {
     const fetch = new ScriptedFetch([
       completionResponse({ content: '{"speak":"Done.","display":"Done.","run_note":"Answered."}' }),

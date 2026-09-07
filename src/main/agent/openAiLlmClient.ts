@@ -274,6 +274,18 @@ export function inspectionSubjectMessage(subject: InspectionSubject): string {
  * decision is recorded on the user's authority citing those words, and
  * an unclear one is a question for the user rather than a sweep through
  * every Candidate on the list.
+ *
+ * The words that are neither clear nor unclear are a bare continuation
+ * command (#217). "Keep looking" and "Keep going" name no task of their
+ * own and decide no Candidate, so the question rule above reaches them,
+ * and a first round in session-95446163 spent 58 s and 85 s deciding
+ * whether to ask about exactly those words. The sentence that excuses
+ * them still interprets nothing: it says what the words do not do, never
+ * that they were a nudge rather than a rejection. Nor does it claim they
+ * are resolved — under ADR 0039 a Retained Correction is grounded by a
+ * user-authority Candidate decision citing its Observation, or answered
+ * by the Run carrying it. Carrying on is how these words reach the
+ * second of those; it is not leave to drop them.
  */
 export function retainedCorrectionsMessage(corrections: readonly UserCorrectionSubject[]): string {
   const lines = ['Unresolved — the user said this and nothing has recorded what it decided:']
@@ -298,8 +310,8 @@ export function retainedCorrectionsMessage(corrections: readonly UserCorrectionS
       'citing a kind "user" Observation holding this exact text — until you do, that Candidate is neither ' +
       'presented again nor settled by you. Where you cannot tell which Candidate is meant, or whether the words ' +
       'decide anything at all, ask the user which they mean; never rule out several Candidates to cover the ' +
-      'doubt. Words that change a constraint revise the constraint the user set — they do not replace their ' +
-      'objective.',
+      'doubt. Words that only ask you to continue decide nothing and raise no question; carry on. Words that ' +
+      'change a constraint revise the constraint the user set — they do not replace their objective.',
   )
   return lines.join('\n')
 }
