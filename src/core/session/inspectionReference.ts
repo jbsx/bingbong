@@ -14,7 +14,13 @@
 
 import type { SessionCandidate, SessionEvidenceSnapshot } from './sessionEvidence'
 import type { RunId } from './sessionIdentity'
-import { currentUserObjective, type MemoryEntry, type MemoryEntryId, type MemoryReference } from './workingMemory'
+import {
+  currentUserObjective,
+  mergeMemoryReferences,
+  type MemoryEntry,
+  type MemoryEntryId,
+  type MemoryReference,
+} from './workingMemory'
 
 /**
  * The relationship as the Session retains it: which Candidate an Answer
@@ -56,10 +62,13 @@ export interface InspectionSubject {
  * subject survives it; a replacement objective retires the old identity,
  * and with it every subject that only meant something inside it.
  *
- * A reference retained while the Session held no user objective survives
- * the first one it records: naming the task already in progress is not
- * the user replacing it. Only a change *away from* the objective the
- * reference was made under clears it.
+ * A reference is unscoped only while the Session has no user objective at
+ * all: the Run that presents a Candidate often records the user's
+ * objective in the same Memory Commit, so the Session adopts that
+ * objective into the reference at the next admission
+ * (`SessionEvidenceStore.scopeInspection`). Naming the task already in
+ * progress is not the user replacing it — but once named, replacing it
+ * clears the subject like any other.
  */
 function objectiveStillInForce(
   reference: RetainedInspectionReference,
@@ -102,28 +111,20 @@ export function retainedInspectionSubject(
 /**
  * Where the subject can be found again. A Candidate recorded through
  * record_candidate carries no sources of its own — it is grounded by
- * citing Observations, and those carry the URLs — so the sources are its
- * own first, then its live support's, deduplicated by URL in that order.
- * Without this the subject is a name with nowhere to go back to, which
- * is precisely the state that leaves a Run inspecting the open page.
+ * citing Observations, and those carry the URLs — so its own sources
+ * come first and its live support's join them, through the same
+ * URL-keyed union Entries and Session Evidence already share. Without
+ * this the subject is a name with nowhere to go back to, which is
+ * precisely the state that leaves a Run inspecting the open page.
  */
 function subjectSources(
   candidate: SessionCandidate,
   evidence: SessionEvidenceSnapshot,
 ): MemoryReference[] {
-  const sources: MemoryReference[] = []
-  const seen = new Set<string>()
-  const collect = (references: readonly Readonly<MemoryReference>[]): void => {
-    for (const source of references) {
-      if (seen.has(source.url)) continue
-      seen.add(source.url)
-      sources.push(source)
-    }
-  }
-  collect(candidate.references)
+  let sources = [...candidate.references]
   for (const id of candidate.supportingObservationIds) {
     const observation = evidence.observations.find((held) => held.id === id)
-    if (observation !== undefined) collect(observation.references)
+    if (observation !== undefined) sources = mergeMemoryReferences(sources, observation.references)
   }
   return sources
 }

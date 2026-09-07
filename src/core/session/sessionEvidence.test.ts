@@ -567,6 +567,32 @@ describe('retained Inspection Reference (#210)', () => {
     expect(evidence.inspectionReference()?.candidateId).toBe(candidate.id)
   })
 
+  it('adopts the objective in force once, so replacing it can clear the subject', () => {
+    const { evidence, candidate } = presentedHarness()
+    // The commonest presentation of all: the Run that presents the
+    // Candidate is the Run that records the user's objective, so its
+    // admission memory held no objective to stamp.
+    evidence.presentInspection({ candidateId: candidate.id, runId: 'run-1' as RunId })
+    expect(evidence.inspectionReference()?.objectiveId).toBeUndefined()
+
+    expect(evidence.scopeInspection('memory-9' as MemoryEntryId)).toMatchObject({ objectiveId: 'memory-9' })
+    // Adoption happens once: a later objective does not re-scope a
+    // subject that already belongs to one — that is what replacement
+    // clearing is for.
+    expect(evidence.scopeInspection('memory-11' as MemoryEntryId)).toMatchObject({ objectiveId: 'memory-9' })
+    // And it is not a re-presentation: the presenting Run stands.
+    expect(evidence.inspectionReference()).toMatchObject({ runId: 'run-1', presentedAt: 55 })
+  })
+
+  it('has no subject to scope before one is presented, or after the Session ends', () => {
+    const { evidence, candidate } = presentedHarness()
+    expect(evidence.scopeInspection('memory-9' as MemoryEntryId)).toBeNull()
+
+    evidence.presentInspection({ candidateId: candidate.id, runId: 'run-1' as RunId })
+    evidence.clear()
+    expect(evidence.scopeInspection('memory-9' as MemoryEntryId)).toBeNull()
+  })
+
   it('replaces the subject on a new presentation and drops it with the Session', () => {
     const { evidence, candidate, observation } = presentedHarness()
     const second = evidence.addCandidate({

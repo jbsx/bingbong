@@ -3,7 +3,7 @@
 // errors get a spoken one-liner while the dashboard keeps the detail.
 
 import { MAX_RUN_NOTE_CHARS, parseFinalizationCause, parseRunResolution, type FinalizationCause, type RunResolution } from '../session/runJournal'
-import { MAX_MEMORY_REFERENCES, parseMemoryPatch, type MemoryEntryId, type MemoryPatch } from '../session/workingMemory'
+import { boundedString, MAX_MEMORY_REFERENCES, MAX_MEMORY_SUBJECT_CHARS, parseMemoryPatch, type MemoryEntryId, type MemoryPatch } from '../session/workingMemory'
 import { parseMishearProposals, type MishearProposal } from '../voice/learnedTerms'
 import { parseSubagentReportSections } from './subagentReport'
 import { reportFault } from '../trace/fault'
@@ -37,9 +37,7 @@ function parseEvidenceIds(value: unknown): MemoryEntryId[] | null {
  * live Candidate is the Session's question, not the parser's.
  */
 function parseInspectionCandidateId(value: unknown): MemoryEntryId | null {
-  if (typeof value !== 'string') return null
-  const id = value.trim()
-  return id === '' ? null : (id as MemoryEntryId)
+  return (boundedString(value, MAX_MEMORY_SUBJECT_CHARS) ?? null) as MemoryEntryId | null
 }
 
 /**

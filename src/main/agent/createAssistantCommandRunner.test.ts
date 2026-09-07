@@ -1306,6 +1306,48 @@ describe('assistant command runner', () => {
       expect(h.requests.at(-1)?.inspection).toBeUndefined()
     })
 
+    it('clears a subject presented in the same Run that recorded the objective', async () => {
+      const h = harness()
+      // The commonest shape of all, and the one that hid a hole: the Run
+      // that presents the Candidate is the Run that first records the
+      // user's objective, so its admission memory held no objective to
+      // stamp the reference with. The Session adopts the objective at the
+      // next admission — without that, the replacement below would leave
+      // the old subject standing for the rest of the Session.
+      h.queue.push({ kind: 'tool_calls', calls: [{ id: 'u1', name: 'record_evidence', args: { kind: 'user', observation: 'find that tier list post' } }] })
+      findCandidate(h, { subject: 'Ranking every mech', url: POST, supportId: 'memory-2', callId: 'c1' })
+      h.queue.push({
+        kind: 'answer',
+        speak: 'Here it is.',
+        display: 'The "Ranking every mech" post.',
+        runNote: 'Presented the post.',
+        inspectionCandidateId: 'memory-3' as MemoryEntryId,
+        memoryPatch: parseMemoryPatch([{
+          op: 'add',
+          entry: { kind: 'objective', subject: 'Find the tier list post', detail: 'A post the user found.', user_evidence: ['memory-1'] },
+        }])!,
+      })
+      await h.runner.run('find that tier list post')
+      await h.runner.run('show me that again')
+      expect(h.requests.at(-1)?.inspection).toMatchObject({ candidateId: 'memory-3' })
+
+      h.queue.push({ kind: 'tool_calls', calls: [{ id: 'u2', name: 'record_evidence', args: { kind: 'user', observation: 'forget that, book me a table for two tonight' } }] })
+      h.queue.push({
+        kind: 'answer',
+        speak: 'On it.',
+        display: 'Looking for tables.',
+        runNote: 'Switched to booking.',
+        memoryPatch: parseMemoryPatch([{
+          op: 'add',
+          entry: { kind: 'objective', subject: 'Book a table', detail: 'For two tonight.', user_evidence: ['memory-5'] },
+        }])!,
+      })
+      await h.runner.run('forget that, book me a table for two tonight')
+      await h.runner.run('show me that again')
+
+      expect(h.requests.at(-1)?.inspection).toBeUndefined()
+    })
+
     it('is not Observation support, however the Answer cites it', async () => {
       const h = harness()
       findCandidate(h, { subject: 'Ranking every mech', url: POST, supportId: 'memory-1', callId: 'c1' })

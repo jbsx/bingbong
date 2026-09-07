@@ -126,7 +126,9 @@ describe('retained Inspection Reference (#210, ADR 0039)', () => {
   it('carries an unscoped reference through the first objective the Session records', () => {
     // Presented before the user's objective was ever recorded: recording
     // one names the task already in progress, which is not the user
-    // replacing it. Only a replacement clears the subject.
+    // replacing it. The Session adopts that objective into the reference
+    // at the next admission — see the store's scopeInspection — and only
+    // a replacement clears the subject.
     const unscoped: RetainedInspectionReference = { candidateId: presented.id, runId, presentedAt: 10 }
 
     expect(retainedInspectionSubject(unscoped, [objective], evidence({ candidates: [presented] })))

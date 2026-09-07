@@ -449,6 +449,14 @@ the Candidate, what it was, and where to find it again. An ambiguous reference
 remains unresolved; the current browser page alone never establishes one.
 _Avoid_: current tab, last link
 
+**Inspection Subject**:
+The Inspection Reference as a later Run receives it: the Candidate it names,
+what that Candidate is, how it was decided, and the sources to reach it again,
+projected from the Candidate and the Observations grounding it. Absent when the
+Session holds none — the case the Run clarifies with the user rather than
+answering about the open page.
+_Avoid_: selected candidate, active result
+
 **Memory Compaction**:
 An exceptional reduction performed only when Session Working Memory crosses its
 high-water limit. It condenses older, inactive material to a lower limit while

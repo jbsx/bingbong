@@ -23,6 +23,7 @@ import {
   isValidWorkingMemory,
   MAX_MEMORY_DETAIL_CHARS,
   MAX_MEMORY_REFERENCES,
+  currentUserObjective,
   type MemoryEntry,
   type MemoryEntryId,
   type MemoryPatch,
@@ -814,7 +815,16 @@ export function createSessionRuntime(deps: {
       acceptedRunIds.push(runId)
       liveRunIds.add(runId)
 
-      const inspectionReference = evidence!.inspectionReference()
+      // The inspection subject binds to the objective in force as this
+      // Run is admitted (#210): the Run that presented it may have
+      // recorded that objective in the same Memory Commit, after its own
+      // admission memory was taken, so this is the first moment the two
+      // can be joined. Once joined, a replacement objective clears the
+      // subject the way ADR 0039 says it must.
+      const objectiveInForce = currentUserObjective(memory)?.id
+      const inspectionReference = objectiveInForce === undefined
+        ? evidence!.inspectionReference()
+        : evidence!.scopeInspection(objectiveInForce)
       return {
         accepted: true,
         submissionId,

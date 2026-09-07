@@ -236,6 +236,12 @@ export interface SessionEvidenceStore {
    * quietly unset the subject a later command still means.
    */
   presentInspection(input: InspectionPresentation): RetainedInspectionReference | null
+  /**
+   * Binds an unscoped inspection subject to the objective now in force
+   * (#210), so that the objective's later replacement clears it. A
+   * subject already scoped, or none at all, is returned unchanged.
+   */
+  scopeInspection(objectiveId: MemoryEntryId): RetainedInspectionReference | null
   /** The Candidate the Session's latest presentation named, if any (#210). */
   inspectionReference(): RetainedInspectionReference | null
   snapshot(): SessionEvidenceSnapshot
@@ -353,6 +359,9 @@ export function createSessionEvidence(deps: {
 
   const liveObservation = (id: MemoryEntryId): MutableObservation | null =>
     observations.find((observation) => observation.id === id) ?? null
+
+  const liveCandidate = (id: MemoryEntryId): MutableCandidate | null =>
+    candidates.find((candidate) => candidate.id === id) ?? null
 
   const supportIsValid = (ids: readonly MemoryEntryId[]): boolean =>
     ids.length > 0 && ids.every((id) => liveObservation(id) !== null)
@@ -517,7 +526,7 @@ export function createSessionEvidence(deps: {
     },
     setCandidateStatus(id, change) {
       if (cleared) return null
-      const candidate = candidates.find((entry) => entry.id === id)
+      const candidate = liveCandidate(id)
       if (!candidate) return null
       // Statuses are retained, never replayed: a change must land on a
       // different terminal status, from whatever the Candidate holds now.
@@ -537,7 +546,7 @@ export function createSessionEvidence(deps: {
       return frozen
     },
     candidate(id) {
-      const found = candidates.find((candidate) => candidate.id === id)
+      const found = liveCandidate(id)
       return found ? freezeCandidate(found) : null
     },
     hasObservationSupport(ids) {
@@ -548,14 +557,27 @@ export function createSessionEvidence(deps: {
       // Candidates alone: the identity space is shared with Observations,
       // so an Observation id here would make evidence the thing the user
       // is looking at. It resolves to nothing instead.
-      const candidate = candidates.find((held) => held.id === input.candidateId)
-      if (candidate === undefined) return null
+      const candidate = liveCandidate(input.candidateId)
+      if (candidate === null) return null
       inspection = Object.freeze({
         candidateId: candidate.id,
         ...(input.objectiveId !== undefined ? { objectiveId: input.objectiveId } : {}),
         runId: input.runId,
         presentedAt: deps.now(),
       })
+      return inspection
+    },
+    scopeInspection(objectiveId) {
+      // An unscoped subject belongs to the first objective the Session
+      // establishes (#210). A Run that presents a Candidate and records
+      // the user's objective in the same breath stamps the reference
+      // from its admission memory, where that objective does not exist
+      // yet — so without this the commonest presentation of all would be
+      // scoped to nothing, and the replacement that should clear it
+      // never would. Adoption is not re-presentation: the presenting Run
+      // and the moment it presented are left as they were.
+      if (cleared || inspection === null || inspection.objectiveId !== undefined) return inspection
+      inspection = Object.freeze({ ...inspection, objectiveId })
       return inspection
     },
     inspectionReference() {
