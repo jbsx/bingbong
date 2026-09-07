@@ -13,8 +13,6 @@ import {
   requestFinalizeInstruction,
   HARD_TOOL_ROUND_CEILING,
   injectedReportDirective,
-  REPORT_GRACE_MS,
-  resolveReportGraceMs,
   TIER_ACTIVE_WORK_DEADLINES_MS,
   TIER_REASONING_EFFORT,
   TIER_TOOL_ROUND_BUDGETS,
@@ -937,18 +935,6 @@ describe('Effort Epoch (#146, ADR 0027)', () => {
 
       expect(epoch.decideLoopTop()).toEqual({ kind: 'work' })
       expect(epoch.tripPerCallGate()).toBe(false)
-    })
-  })
-
-  describe('the Report Grace (#199, ADR 0035)', () => {
-    it('defaults to thirty seconds and honours a single override', () => {
-      expect(REPORT_GRACE_MS).toBe(30_000)
-      expect(resolveReportGraceMs(undefined)).toBe(REPORT_GRACE_MS)
-      expect(resolveReportGraceMs(50)).toBe(50)
-      // Zero is a real setting — it is how a suite opts out of the wait.
-      expect(resolveReportGraceMs(0)).toBe(0)
-      expect(resolveReportGraceMs(Number.NaN)).toBe(REPORT_GRACE_MS)
-      expect(resolveReportGraceMs(-1)).toBe(REPORT_GRACE_MS)
     })
   })
 

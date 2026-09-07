@@ -282,9 +282,21 @@ _Avoid_: failure, timeout
 **Finalization Allowance**:
 The shared elapsed-time allowance from Finalization entry until the Answer's
 Card is available, covering Report Grace, bookkeeping, retries, and Answer
-generation but not speech playback. Explicit user Pause suspends it; Stop
-takes precedence.
+generation but not speech playback. Sixty seconds, split into up to thirty of
+Report Grace, up to ten of bookkeeping, and twenty protected for the reserved
+Answer, which also inherits whatever the earlier shares did not spend. An
+opportunity with nothing left is skipped rather than started. Explicit user
+Pause suspends it; Stop takes precedence; a Steering replan that reopens
+acquisition drops it, and a later Finalization entry mints a fresh one.
 _Avoid_: active-work deadline, request timeout
+
+**Finalization Cutoff**:
+The point in the Finalization Allowance at which only the reserved Answer's
+protected share is left, and the Run therefore lets go of anything it is still
+waiting on — including an Unsettled Action, whose browser resource stays
+withheld all the same. Card availability and safe resource reuse are two
+boundaries; this is the first one.
+_Avoid_: cancel, cleanup
 
 **Finalization Cause**:
 The reason a Run entered Finalization, such as satisfying the objective,
@@ -303,9 +315,12 @@ when they explicitly ask why work stopped.
 _Avoid_: error log, trace, diagnostics
 
 **Report Grace**:
-The bounded wait, measured from the moment a Run enters Finalization for any
-cause, in which each live Subagent is told the parent is finalizing and given
-its reserved Answer round. A Subagent that reports within it returns a
+The Finalization Allowance's first share — measured, like the allowance
+itself, from the moment a Run enters Finalization for any cause — in which
+each live Subagent is told the parent is finalizing and given its reserved
+Answer round. It ends early when they settle, at once on a Stop, and can
+never spend what bookkeeping and the reserved Answer are owed. A Subagent
+that reports within it returns a
 Subagent Report; one that does not returns the bounded Subagent Report
 instead. A Subagent is cancelled only by a decision — the user's Stop, the
 orchestrator's cancel, a Session Reset — never by Finalization.

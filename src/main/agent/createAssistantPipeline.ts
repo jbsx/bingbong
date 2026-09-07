@@ -229,6 +229,17 @@ function reportGraceMs(env: Record<string, string | undefined>): number | undefi
 }
 
 /**
+ * Test/e2e override for the whole Finalization Allowance (#209, ADR
+ * 0038): `BINGBONG_FINALIZATION_ALLOWANCE_MS` lets coverage run the
+ * allowance out in milliseconds instead of a minute of wall clock. Its
+ * three shares scale with it. Production never sets it.
+ */
+function finalizationAllowanceMs(env: Record<string, string | undefined>): number | undefined {
+  const value = Number(env.BINGBONG_FINALIZATION_ALLOWANCE_MS)
+  return Number.isFinite(value) && value > 0 ? value : undefined
+}
+
+/**
  * Re-resolves the underlying client whenever the routing env changes between
  * commands. Resolution failures degrade to UnavailableLlm, so a half-edited
  * settings page never crashes the pipeline.
@@ -301,6 +312,7 @@ export function createAssistantPipeline(deps: AssistantPipelineDeps): CommandPip
   const configuredAskTimeoutMs = askTimeoutMs(deps.env)
   const configuredActiveWorkDeadlineMs = activeWorkDeadlineMs(deps.env)
   const configuredReportGraceMs = reportGraceMs(deps.env)
+  const configuredFinalizationAllowanceMs = finalizationAllowanceMs(deps.env)
   // Stop and Steering cancel delegated work (#119/#120): Stop ends the
   // run, and a directive supersedes everything spawned under the
   // corrected-away objective. Finalization no longer joins them (#199,
@@ -364,6 +376,18 @@ export function createAssistantPipeline(deps: AssistantPipelineDeps): CommandPip
         }
       : {}),
     ...(configuredReportGraceMs !== undefined ? { reportGraceMs: configuredReportGraceMs } : {}),
+    ...(configuredFinalizationAllowanceMs !== undefined
+      ? { finalizationAllowanceMs: configuredFinalizationAllowanceMs }
+      : {}),
+    // The Finalization cutoff (#209, ADR 0038): the allowance is down to
+    // the reserved Answer's protected share, so the Run lets go of what
+    // the pane is still doing. The same two boundaries Stop uses (#205) —
+    // the wait ends, the pane stays withheld until the action is observed
+    // to end. Delegated workers are not touched: they had the Report
+    // Grace, and their own end is `onReportGraceEnd`.
+    onFinalizationCutoff: () => {
+      custody.abandon()
+    },
     ...(deps.subagentControl?.collectCompleted
       ? { collectCompletedSubagentResults: (turnId: string) => deps.subagentControl!.collectCompleted!(turnId) }
       : {}),

@@ -33,18 +33,6 @@ export const TIER_ACTIVE_WORK_DEADLINES_MS: Readonly<Record<EffortTier, number>>
 }
 
 /**
- * The Report Grace (#199, ADR 0035): how long a Run waits, from the
- * moment it enters Finalization for any cause, before its bookkeeping
- * Tool Round — so each live Browse Subagent has a window to turn what it
- * holds into a Subagent Report. Thirty seconds: a worker's report round
- * averaged about six in the #199 session and a Look or navigate settles
- * in two to three, so the default covers one settling call and one
- * report round with margin. A default beside the tier budgets and
- * deadlines, and tunable the same way — evaluation may move it.
- */
-export const REPORT_GRACE_MS = 30_000
-
-/**
  * The reasoning-effort rung each tier runs its model rounds at (#166):
  * the cheap tiers think less than an Investigation, which thinks as hard
  * as the provider allows. A Browse Subagent has no tier and runs at
@@ -85,18 +73,6 @@ export function resolveActiveWorkDeadlineMs(
   return overrideMs !== undefined && Number.isFinite(overrideMs) && overrideMs > 0
     ? overrideMs
     : TIER_ACTIVE_WORK_DEADLINES_MS[tier]
-}
-
-/**
- * The Run's live Report Grace (#199): the constant, or the single
- * test/e2e override (`BINGBONG_REPORT_GRACE_MS`) when one is set —
- * coverage must reproduce a grace that elapses in milliseconds, not in
- * half a minute of wall clock. Production never sets an override.
- */
-export function resolveReportGraceMs(overrideMs: number | undefined): number {
-  return overrideMs !== undefined && Number.isFinite(overrideMs) && overrideMs >= 0
-    ? overrideMs
-    : REPORT_GRACE_MS
 }
 
 /**

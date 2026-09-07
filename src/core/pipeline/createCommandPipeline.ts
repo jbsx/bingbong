@@ -33,10 +33,14 @@ import {
   deterministicFinalAnswer,
   injectedReportDirective,
   requestFinalizeInstruction,
-  resolveReportGraceMs,
   type EffortEpoch,
   type FinalizationDetail,
 } from './effortEpoch'
+import {
+  createFinalizationAllowance,
+  resolveFinalizationAllowanceMs,
+  type FinalizationAllowance,
+} from './finalizationAllowance'
 import {
   DEFAULT_EFFORT_TIER,
   lookupFallbackPlan,
@@ -175,9 +179,28 @@ export interface CommandPipelineDeps {
    * Test/e2e override for the Report Grace (#199):
    * `BINGBONG_REPORT_GRACE_MS` threaded by the assistant pipeline —
    * coverage reproduces the grace in milliseconds. Production never sets
-   * it; REPORT_GRACE_MS applies.
+   * it; the Finalization Allowance's own grace share applies.
    */
   reportGraceMs?: number
+  /**
+   * Test/e2e override for the whole Finalization Allowance (#209, ADR
+   * 0038): `BINGBONG_FINALIZATION_ALLOWANCE_MS` threaded by the assistant
+   * pipeline. The three shares scale with it, so a scaled run still
+   * exercises the grace and bookkeeping rather than collapsing them into
+   * the Answer's protected floor. Production never sets it.
+   */
+  finalizationAllowanceMs?: number
+  /**
+   * The Finalization cutoff (#209, ADR 0038): fired once per Finalization
+   * entry, when the allowance has spent everything but the reserved
+   * Answer's protected share. The Run lets go of whatever it is still
+   * waiting on — an outstanding browser action's *wait* ends now, so the
+   * Card cannot be postponed by an action that will not settle. Wired by
+   * main to the pane custody's abandon (#205): letting go of the wait is
+   * not undoing the action, and the resource stays withheld until it is
+   * observed to end.
+   */
+  onFinalizationCutoff?(): void
   /**
    * Collection at Finalization entry (#192): takes completed worker reports
    * that have not entered this Run's transcript yet.
@@ -263,6 +286,14 @@ interface ActiveRun {
   releaseControl?: () => void
   /** The Run's bounded-effort window, including its suspendable active-work clock. */
   effortEpoch: EffortEpoch
+  /**
+   * The Run's Finalization Allowance while it has one (#209, ADR 0038):
+   * null until Finalization is entered, and null again if a Steering
+   * replan reopens acquisition. It lives here rather than in the run body
+   * because Pause reaches it through the same checkpoint that suspends
+   * the active-work clock.
+   */
+  finalizationAllowance: FinalizationAllowance | null
   /**
    * Aborts the in-flight LLM round's HTTP request (#47): set while the
    * round is awaiting, fired by abort() so Stop cancels the request
@@ -398,9 +429,11 @@ function stampTurn(event: UnstampedEvent, turnId: string): PipelineEvent {
 export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipeline {
   const { llm, tts, clock, tools } = deps
   const mintTurnId = createTurnIdSource(deps.tracer)
-  // The Report Grace (#199, ADR 0035): the constant, or the single
-  // test/e2e override — resolved once, since it never varies within a run.
-  const reportGraceMs = resolveReportGraceMs(deps.reportGraceMs)
+  // The Finalization Allowance and the Report Grace inside it (#199/#209,
+  // ADR 0035, ADR 0038): the constants, or their single test/e2e
+  // overrides — resolved once, since neither varies within a run.
+  const finalizationAllowanceMs = resolveFinalizationAllowanceMs(deps.finalizationAllowanceMs)
+  const reportGraceOverrideMs = deps.reportGraceMs
   const confirmTimeoutMs = deps.confirmTimeoutMs ?? 60_000
   const askTimeoutMs = deps.askTimeoutMs ?? ASK_TIMEOUT_MS
   const toolsByName = new Map(tools.map((tool) => [tool.name, tool]))
@@ -443,7 +476,11 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
       yield { type: 'status', status: 'paused', at: clock.now() }
       if (run.paused) {
         // Paused time is user-dependent (#117): it never counts toward
-        // the run's active-work deadline.
+        // the run's active-work deadline. The Finalization Allowance is
+        // suspended by pause() itself rather than here (#209/AC4) — it
+        // has to stop the moment the user does, not at the next
+        // checkpoint, because a Finalization round already in flight is
+        // bounded against it.
         run.effortEpoch.suspend()
         try {
           await new Promise<void>((resolve) => {
@@ -507,6 +544,77 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
     if (!run.steering) yield deadlineEvent(decision.expiresAt())
   }
 
+  /**
+   * The Report Grace's wait (#199/#209, ADR 0035, ADR 0038): returns when
+   * every Subagent live at Finalization entry has settled, when the
+   * grace's share of the Finalization Allowance is spent, or at once on a
+   * Stop. Four things can end it and only one of them is the workers, so
+   * none of the other three may be held by a worker that never answers:
+   * Stop and Pause reach it through the run's control release, and the
+   * grace's own share through a watch the allowance suspends with itself.
+   *
+   * A Pause suspends the allowance for as long as the user holds it and
+   * yields the same paused/resumed status the checkpoint does; a directive
+   * that arrived with the resume is left for the caller's checkpoint,
+   * because a replan may reopen acquisition and there would then be no
+   * grace to finish waiting out.
+   */
+  async function* awaitReportGrace(run: ActiveRun, settled: Promise<void>): AsyncGenerator<UnstampedEvent> {
+    let workersSettled = false
+    let wake: (() => void) | null = null
+    const finish = (): void => {
+      workersSettled = true
+      wake?.()
+    }
+    void settled.then(finish, finish)
+    for (;;) {
+      if (run.aborted || workersSettled) return
+      // A directive arrived with the resume (#119/#209/AC4): it corrects
+      // the objective the grace is waiting on reports about, and its
+      // replan may reopen acquisition. The caller's checkpoint consumes
+      // it — there is nothing here left worth waiting out.
+      if (run.steering !== undefined) return
+      if (run.paused) {
+        yield { type: 'status', status: 'paused', at: clock.now() }
+        run.effortEpoch.suspend()
+        try {
+          await new Promise<void>((resolve) => {
+            run.releasePause = resolve
+          })
+        } finally {
+          run.releasePause = undefined
+          run.effortEpoch.resume()
+        }
+        yield { type: 'status', status: 'thinking', at: clock.now() }
+        continue
+      }
+      const allowance = run.finalizationAllowance
+      if (allowance === null) return
+      const remainingGraceMs = allowance.reportGraceMs()
+      if (remainingGraceMs <= 0) return
+      let spent = false
+      let cancelWatch: () => void = () => {}
+      try {
+        await new Promise<void>((resolve) => {
+          wake = resolve
+          // Stop and Pause both reach the wait here: abort() and pause()
+          // fire the control release, and the loop above reads which.
+          run.releaseControl = resolve
+          cancelWatch = allowance.watch(remainingGraceMs, () => {
+            spent = true
+            resolve()
+          })
+          if (workersSettled) resolve()
+        })
+      } finally {
+        cancelWatch()
+        wake = null
+        run.releaseControl = undefined
+      }
+      if (spent) return
+    }
+  }
+
   async function* speakLine(text: string, turnId: string): AsyncGenerator<UnstampedEvent> {
     yield { type: 'status', status: 'speaking', at: clock.now() }
     yield { type: 'speak', text, at: clock.now() }
@@ -553,19 +661,42 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
     // until it actually rides a useful result, so a round whose siblings
     // all fail does not swallow it.
     const notices = createNotices()
+    // The Finalization Allowance (#209, ADR 0038): minted at Finalization
+    // entry and null until then. Everything Finalization does — the
+    // Report Grace, the bookkeeping round and its retries, the reserved
+    // Answer, and any wait on an action that will not settle — spends
+    // this one budget. It is never re-created for the same entry, so a
+    // retry or a phase change reads it rather than restarting it; a
+    // Steering replan that reopens acquisition drops it, so a later entry
+    // mints a fresh one instead of inheriting a spent timer.
+    //
+    // It starts at the entry, not at the loop top: the door often opens
+    // mid-round (a no-Progress trip, the deadline timer), and the round's
+    // remaining calls settle before the loop comes back round.
+    // The cutoff watch on that allowance, cancelled when the allowance is.
+    let cancelCutoffWatch: () => void = () => {}
     // The Report Grace is owed once per Finalization entry (#199, ADR
     // 0035) and consumed at the loop top before the bookkeeping round —
     // so a Steering replan that exits Finalization and a later re-entry
     // each get their own wait, exactly as the entry hook fires twice.
-    // The clock starts at the entry, not at the loop top: the door often
-    // opens mid-round (a no-Progress trip, the deadline timer), and the
-    // round's remaining calls settle before the loop comes back round.
-    // The grace is thirty seconds from when the workers were told.
-    let reportGraceDueAt: number | null = null
+    let reportGraceOwed = false
+    /**
+     * Drops the allowance (#209): a Steering replan reopened acquisition,
+     * or the Run ended. The cutoff watch goes with it — a timer that
+     * outlived its Finalization would abandon a browser action the
+     * reopened Run is legitimately using.
+     */
+    const dropAllowance = (): void => {
+      cancelCutoffWatch()
+      cancelCutoffWatch = () => {}
+      run.finalizationAllowance = null
+      reportGraceOwed = false
+    }
     const run: ActiveRun = {
       turnId,
       aborted: false,
       paused: false,
+      finalizationAllowance: null,
       // The Effort Epoch (#146–#148, ADR 0027) owns this Run's bounded
       // effort end to end — the tier budget, the deadline and its
       // cancellation boundary, the hard ceiling, the no-Progress trip,
@@ -580,7 +711,29 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
         // clears its own owed budget warning.
         onFinalizationEntered: () => {
           deps.onFinalize?.()
-          reportGraceDueAt = clock.now() + reportGraceMs
+          // One allowance per entry (#209/AC1), started here — including
+          // an entry made while a browser action is still outstanding.
+          dropAllowance()
+          const entered = createFinalizationAllowance({
+            clock,
+            totalMs: finalizationAllowanceMs,
+            ...(reportGraceOverrideMs !== undefined ? { reportGraceMs: reportGraceOverrideMs } : {}),
+          })
+          run.finalizationAllowance = entered
+          reportGraceOwed = true
+          // The cutoff (#209/AC6): once only the reserved Answer's
+          // protected share is left, the Run stops waiting on anything
+          // else. An action that will not settle keeps its resource
+          // withheld, but it no longer holds the Card.
+          cancelCutoffWatch = entered.watch(entered.cutoffMs(), () => {
+            try {
+              deps.onFinalizationCutoff?.()
+            } catch (err) {
+              // The cutoff fires from a timer, where a throw would escape
+              // the run entirely — and letting go is best-effort anyway.
+              reportFault('pipeline.createCommandPipeline.finalizationCutoff', err, { turnId })
+            }
+          })
           notices.clear('run_plan')
         },
       }),
@@ -733,7 +886,13 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
           modelDeclaredPlan = false
           notices.replan()
           toolRound?.replan()
-          effortEpoch.replan(DEFAULT_EFFORT_TIER)
+          // A replan that reopened acquisition drops the allowance with
+          // everything else planned for the stale objective (#209/AC4):
+          // reopened work is not Finalization, and a timer left running
+          // across it would cut the fresh work short or abandon a browser
+          // action it is legitimately using. A later Finalization entry
+          // mints its own.
+          if (effortEpoch.replan(DEFAULT_EFFORT_TIER)) dropAllowance()
           correctedObjective = directive
           standingDirective = directive
         }
@@ -1057,30 +1216,32 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
           // cancels them all — ends it the same way. Whatever is still
           // running when the grace elapses has its round abandoned and
           // returns its bounded report, too late for this round's context.
+          //
+          // Since #209 the grace is a share of the Finalization Allowance
+          // rather than a wait of its own: it may only spend what
+          // bookkeeping's share and the Answer's protected share leave it,
+          // a Pause suspends it, and a Stop ends it at once even where the
+          // workers themselves never answer.
           let graceJustEnded = false
-          if (reportGraceDueAt !== null) {
-            const remainingGraceMs = Math.max(0, reportGraceDueAt - clock.now())
-            reportGraceDueAt = null
+          if (reportGraceOwed) {
+            reportGraceOwed = false
             const settled = deps.subagentReportsSettled?.()
             if (settled !== undefined) {
-              await new Promise<void>((resolve) => {
-                const cancelTimer = clock.setTimer(remainingGraceMs, resolve)
-                void settled.then(
-                  () => {
-                    cancelTimer()
-                    resolve()
-                  },
-                  () => {
-                    cancelTimer()
-                    resolve()
-                  },
-                )
-              })
+              yield* awaitReportGrace(run, settled)
               graceJustEnded = true
               // A Stop during the wait cancelled every worker, which is
               // what ended it: the run is over, and no bookkeeping round
               // follows a Stop.
               if (run.aborted) throw new CommandAbortedError()
+              // A directive that landed while the grace was paused is
+              // consumed here, at the checkpoint every one passes through
+              // — its replan may have reopened acquisition, so the loop
+              // has to start over rather than fall into bookkeeping.
+              const afterGrace = yield* interrupts.check('thinking')
+              if (afterGrace !== undefined) {
+                steering = afterGrace
+                continue
+              }
             }
           }
           // A report that completed before Finalization is Collection, not
@@ -1125,6 +1286,41 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
           // with reading them. A bounded report that lands after this
           // point is collected by the reserved Answer round instead.
           if (graceJustEnded) deps.onReportGraceEnd?.()
+          // What this round may spend of the Finalization Allowance
+          // (#209/AC3): bookkeeping's share while the epoch is finalizing,
+          // everything left once it is Answer-only, and nothing at all
+          // while the run is still working — the active-work deadline
+          // bounds those. An opportunity with no share left is *skipped*
+          // rather than started: opening another full client timeout for
+          // it is the accumulation this allowance exists to end.
+          const roundAllowanceMs =
+            run.finalizationAllowance === null || effortEpoch.phase.kind === 'working'
+              ? null
+              : isAnswerOnly()
+                ? run.finalizationAllowance.reservedAnswerMs()
+                : run.finalizationAllowance.bookkeepingMs()
+          if (roundAllowanceMs !== null && roundAllowanceMs <= 0) {
+            // The reserved Answer's own share is gone: the run answers
+            // deterministically from what it retained, now, rather than
+            // spending a round it has no time for.
+            if (isAnswerOnly()) {
+              reportFault(
+                'pipeline.createCommandPipeline.reservedAnswerAllowanceSpent',
+                `the Finalization Allowance was spent before the reserved Answer round (${fallbackCause()})`,
+                { turnId },
+              )
+              finalizationFailure = 'the Finalization Allowance was spent before the reserved Answer round could run'
+              deterministicFallback = true
+              break
+            }
+            // Bookkeeping's was: it is one *optional* opportunity, and one
+            // there is no time to take is one the run advances past, under
+            // the cause it entered Finalization with.
+            if (effortEpoch.spendBookkeepingOpportunity()) {
+              finalizationFailure = 'the Finalization bookkeeping round was skipped: the Allowance had no time left for it'
+              continue
+            }
+          }
           // Run Context Compaction (#124, ADR 0028): before every model
           // round, past the deterministic size threshold, older tool
           // results an accepted Evidence Checkpoint represents are
@@ -1158,6 +1354,21 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
           // rather than waiting out the request timeout.
           const armedRound = effortEpoch.armRound()
           run.abortLlm = () => armedRound.abort()
+          // The same boundary for a Finalization round (#209/AC3), which
+          // the epoch deliberately arms nothing for: this round's share of
+          // the allowance, holding the *whole* request — every retry the
+          // client makes inside `llm.complete`, an empty reply retried
+          // included, shares it rather than starting another full client
+          // timeout of its own. The allowance suspends the watch on a
+          // Pause, so a held round is not aborted for the user's time.
+          let allowanceSpent = false
+          const cancelRoundWatch =
+            roundAllowanceMs === null || run.finalizationAllowance === null
+              ? () => {}
+              : run.finalizationAllowance.watch(roundAllowanceMs, () => {
+                  allowanceSpent = true
+                  armedRound.abort()
+                })
           let turn: AssistantTurn
           // What this round's llm_round records carry (#191): the request's
           // shape and rung as it was sent — captured once the request is
@@ -1307,8 +1518,20 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
             // carrying the thrown error itself so a provider failure keeps
             // its stack, and joined to the Run's own cause by the turn id.
             if (reservedRound) {
-              reportFault('pipeline.createCommandPipeline.reservedAnswerRequestFailed', err, { turnId })
-              finalizationFailure = `the reserved Answer round failed: ${toErrorMessage(err)}`
+              if (allowanceSpent) {
+                // The round ran out of allowance rather than failing
+                // (#209/AC3): the bound did its job, so the record names
+                // the exhaustion instead of the abort error it produced.
+                reportFault(
+                  'pipeline.createCommandPipeline.reservedAnswerAllowanceSpent',
+                  `the reserved Answer round ran out of Finalization Allowance (${fallbackCause()})`,
+                  { turnId },
+                )
+                finalizationFailure = 'the reserved Answer round ran out of Finalization Allowance'
+              } else {
+                reportFault('pipeline.createCommandPipeline.reservedAnswerRequestFailed', err, { turnId })
+                finalizationFailure = `the reserved Answer round failed: ${toErrorMessage(err)}`
+              }
               deterministicFallback = true
               break
             }
@@ -1320,18 +1543,23 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
             // not escape as the raw provider error the user would
             // otherwise hear instead of an Answer.
             if (effortEpoch.spendBookkeepingOpportunity()) {
-              reportFault('pipeline.createCommandPipeline.bookkeepingRequestFailed', err, { turnId })
               // Retained for a later "why did you stop?" (#203) on the
               // same terms as the round's own record: a Finalization
               // failure beside the entry cause, never in place of it. The
               // reserved Answer round is still to come, and if that fails
               // too its failure supersedes this one — it is the more
               // proximate answer to what the user actually got.
-              finalizationFailure = `the Finalization bookkeeping round failed: ${toErrorMessage(err)}`
+              if (allowanceSpent) {
+                finalizationFailure = 'the Finalization bookkeeping round ran out of Finalization Allowance'
+              } else {
+                reportFault('pipeline.createCommandPipeline.bookkeepingRequestFailed', err, { turnId })
+                finalizationFailure = `the Finalization bookkeeping round failed: ${toErrorMessage(err)}`
+              }
               continue
             }
             throw err
           } finally {
+            cancelRoundWatch()
             armedRound.disarm()
             run.abortLlm = undefined
             // Round end (#47): drain the streamed tail (and reset the
@@ -1779,6 +2007,10 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
       // its parent Run finalizes against the deadline as it stood at the
       // end, not one that keeps ticking after the Run is gone.
       run.effortEpoch.stop()
+      // Run end (#209): the allowance dies with its Run, cutoff watch and
+      // all — the Card is out, and nothing may fire against a Run that is
+      // over.
+      dropAllowance()
       // Run end (#111): the Observation ledger disappears with its Run —
       // records dropped, late writers refused.
       ledger.close()
@@ -1984,6 +2216,12 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
     pause: () => {
       if (!activeRun || activeRun.aborted || activeRun.paused) return
       activeRun.paused = true
+      // The Finalization Allowance stops the moment the user does
+      // (#209/AC4), not at the next checkpoint: a Finalization round or a
+      // Report Grace already in flight is bounded against it, and time the
+      // user is holding must not spend either. Resume picks the same
+      // allowance back up — it never mints a new one.
+      activeRun.finalizationAllowance?.suspend()
       deps.onPause?.()
       eachPendingDecision((pending) => pending.pause())
       activeRun.releaseControl?.()
@@ -2004,6 +2242,11 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
         eachPendingDecision((pending) => pending.resume())
       }
       activeRun.paused = false
+      // The allowance resumes with the Run (#209/AC4). A directive that
+      // rides the resume may replan the Run back out of Finalization; the
+      // checkpoint that consumes it drops the allowance there, so nothing
+      // is left ticking against reopened work.
+      activeRun.finalizationAllowance?.resume()
       // A directive supersedes the delegated work the paused run was
       // waiting on (#119): it is cancelled, not resumed. A plain resume
       // un-pauses it.

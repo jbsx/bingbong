@@ -12,9 +12,13 @@ the Stop Record that makes an explicit "why did you stop?" answerable —
 shipped on 2026-09-06 (#203). The unsettled-action boundary — a Stop that ends
 the Run's wait while the action's browser resource stays withheld until it is
 observed to end — shipped on 2026-09-06 (#205); Answer-side disclosure of an
-uncertain outcome arrives with the allowance that needs it. The Finalization
-Allowance itself, its Pause interaction, and bookkeeping recovery remain
-pending in #207 and #209.
+uncertain outcome arrives with the allowance that needs it. Bookkeeping
+recovery shipped on 2026-09-06 (#207). The Finalization Allowance itself and
+its Pause interaction shipped on 2026-09-07 (#209): sixty seconds from entry,
+the three shares scaling together under one test/e2e override, a cutoff at
+which the Run lets go of an action it is still waiting on, and a Steering
+replan that drops the allowance rather than leaving it ticking against
+reopened work. Every Decision below is now implemented.
 
 ## Context
 
