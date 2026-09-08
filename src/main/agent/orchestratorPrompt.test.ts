@@ -318,3 +318,41 @@ describe('orchestrator prompt verification policy (#212)', () => {
     expect(ORCHESTRATOR_SYSTEM_PROMPT).toMatch(/never "needs_user" to hand your own image reading to the user/)
   })
 })
+
+// #221 pins: a continuation Run that rejects what earlier Runs presented
+// owes no Candidate bookkeeping. The Session held no Candidate at all, and
+// the model still reasoned its way to creating three in order to reject
+// them — spending round 1 on it and never calling a tool.
+
+describe('orchestrator prompt Candidate bookkeeping (#221)', () => {
+  it('scopes deciding to the Candidates the Session holds, and bans creating one to reject it', () => {
+    const ruledOut = line('Say a Candidate was ruled out')
+    expect(ruledOut).toMatch(/Only Candidates the Session already holds need deciding/)
+    expect(ruledOut).toMatch(/never recorded as Candidates/)
+    expect(ruledOut).toMatch(/record their words with record_evidence and move on/)
+    expect(ruledOut).toMatch(/Never create a Candidate in order to reject it/)
+  })
+
+  // The Run's own command is a Retained Correction it answers by answering
+  // (ADR 0043), not bookkeeping owed before work can start. The retention
+  // half is scoped to a continuation on purpose: a Session's opening
+  // command retains nothing, because there is no earlier work to correct
+  // (ADR 0039). The rule that nothing needs recording first holds for both.
+  it('tells the Run its own command is already retained and needs no recording first', () => {
+    const admitted = line('already retained by the Session')
+    expect(admitted).toMatch(/^- A continuation command is already retained by the Session/)
+    expect(admitted).toMatch(/You answer it by answering it/)
+    expect(admitted).toMatch(/nothing about the command you were admitted with needs recording before work starts/)
+  })
+
+  // Deferring the checkpoint is the failure mode the previous wording
+  // invited: a rejection of what was presented is grounded in the user's
+  // words whether or not a Candidate is ever recorded to cite them.
+  it('still checkpoints the words a rejection or a user-set constraint rests on', () => {
+    const admitted = line('already retained by the Session')
+    expect(admitted).toMatch(/Checkpoint the user's words when something rests on them/)
+    expect(admitted).toMatch(/a constraint they set/)
+    expect(admitted).toMatch(/a decision made on their authority/)
+    expect(admitted).toMatch(/a rejection of what you presented/)
+  })
+})
