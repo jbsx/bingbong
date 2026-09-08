@@ -42,10 +42,13 @@ describe('Effort Epoch (#146, ADR 0027)', () => {
 
   // Issue #219. The client's whole-request timeout was a literal 120 s —
   // the Lookup deadline every Run's first round starts under — so the
-  // transport could end a working round before the epoch did, and the Run
-  // failed instead of finalizing. The timeout is derived from the table
-  // now, and this test reads the table rather than a number so a later
-  // deadline change cannot quietly re-open the race.
+  // transport could end an acquisition round before the epoch did, and
+  // the Run failed instead of finalizing. The timeout is derived from the
+  // table now, and this test reads the table rather than a number so a
+  // later change to a tier's deadline cannot quietly re-open the race.
+  // The one deadline this cannot speak for is the single test/e2e
+  // override (BINGBONG_ACTIVE_WORK_DEADLINE_MS), which lives outside the
+  // table and only ever shortens.
   it('keeps the LLM request timeout above every tier\u2019s active-work deadline (#219)', () => {
     for (const deadlineMs of Object.values(TIER_ACTIVE_WORK_DEADLINES_MS)) {
       expect(LLM_REQUEST_TIMEOUT_MS).toBeGreaterThan(deadlineMs)

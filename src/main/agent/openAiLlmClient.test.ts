@@ -107,12 +107,18 @@ class ScriptedFetch {
 
 const ENDPOINT = { baseUrl: 'https://ai.z.ai/api/coding/paas/v4', model: 'glm-5.3', apiKey: 'test-key' }
 
+// The transport takes its whole-request timeout from whoever composes it
+// (#219). No test here exercises the backstop, so any value serves; the
+// one production composes is pinned in effortEpoch.test.ts.
+const TEST_REQUEST_TIMEOUT_MS = 30_000
+
 function makeClient(fetch: ScriptedFetch) {
   return createOpenAiLlmClient({
     endpoint: ENDPOINT,
     systemPrompt: ORCHESTRATOR_SYSTEM_PROMPT,
     tools: createBrowserTools(new FakeBrowser()),
     fetchFn: fetch.fetchFn,
+    requestTimeoutMs: TEST_REQUEST_TIMEOUT_MS,
   })
 }
 
@@ -142,6 +148,7 @@ describe('openAiLlmClient', () => {
       systemPrompt: ORCHESTRATOR_SYSTEM_PROMPT,
       tools: createBrowserTools(new FakeBrowser()),
       fetchFn: fetch.fetchFn,
+      requestTimeoutMs: TEST_REQUEST_TIMEOUT_MS,
       reasoningEffort: 'max',
     })
 
@@ -159,6 +166,7 @@ describe('openAiLlmClient', () => {
       systemPrompt: ORCHESTRATOR_SYSTEM_PROMPT,
       tools: createBrowserTools(new FakeBrowser()),
       fetchFn: fetch.fetchFn,
+      requestTimeoutMs: TEST_REQUEST_TIMEOUT_MS,
       reasoningEffort: 'max',
     })
 
@@ -257,6 +265,7 @@ describe('openAiLlmClient', () => {
       systemPrompt: () => `Static contract.\n\nRuntime context:\n- Today is ${new Date(clock.now()).toLocaleDateString('en-CA')}`,
       tools: [],
       fetchFn: fetch.fetchFn,
+      requestTimeoutMs: TEST_REQUEST_TIMEOUT_MS,
     })
 
     await client.complete({
@@ -721,6 +730,7 @@ describe('openAiLlmClient', () => {
       endpoint: ENDPOINT,
       systemPrompt: ORCHESTRATOR_SYSTEM_PROMPT,
       fetchFn: fetch.fetchFn,
+      requestTimeoutMs: TEST_REQUEST_TIMEOUT_MS,
       tools: [
         {
           name: 'optional_probe',
@@ -750,6 +760,7 @@ describe('openAiLlmClient', () => {
       endpoint: ENDPOINT,
       systemPrompt: ORCHESTRATOR_SYSTEM_PROMPT,
       fetchFn: fetch.fetchFn,
+      requestTimeoutMs: TEST_REQUEST_TIMEOUT_MS,
       tools: createMediaTools(new FakeBrowser()),
     })
 
@@ -815,6 +826,7 @@ describe('openAiLlmClient', () => {
       endpoint: ENDPOINT,
       systemPrompt: ORCHESTRATOR_SYSTEM_PROMPT,
       fetchFn: fetch.fetchFn,
+      requestTimeoutMs: TEST_REQUEST_TIMEOUT_MS,
       tools: [
         ...createBrowserTools(new FakeBrowser()),
         { ...createNewSessionTool() },
@@ -990,6 +1002,7 @@ describe('openAiLlmClient', () => {
       systemPrompt: ORCHESTRATOR_SYSTEM_PROMPT,
       tools: createBrowserTools(new FakeBrowser()),
       fetchFn: fetch.fetchFn,
+      requestTimeoutMs: TEST_REQUEST_TIMEOUT_MS,
       reasoningEffort: 'max',
     })
     const sent: unknown[] = []
@@ -1009,7 +1022,7 @@ describe('openAiLlmClient', () => {
     const hashes: string[] = []
     for (const prompt of ['prompt A', 'prompt B', 'prompt A']) {
       const fetch = new ScriptedFetch([completionResponse({ content: '{"speak":"hi","display":"hi"}' })])
-      const client = createOpenAiLlmClient({ endpoint: ENDPOINT, systemPrompt: prompt, tools: [], fetchFn: fetch.fetchFn })
+      const client = createOpenAiLlmClient({ endpoint: ENDPOINT, systemPrompt: prompt, tools: [], fetchFn: fetch.fetchFn, requestTimeoutMs: TEST_REQUEST_TIMEOUT_MS })
       await client.complete({ command: 'x', toolResults: [], onAttempt: (attempt) => hashes.push(attempt.promptHash ?? '') })
     }
 
@@ -1362,6 +1375,7 @@ describe('openAiLlmClient streaming (#47)', () => {
       systemPrompt: ORCHESTRATOR_SYSTEM_PROMPT,
       tools: createBrowserTools(new FakeBrowser()),
       fetchFn: neverSettles as typeof fetch,
+      requestTimeoutMs: TEST_REQUEST_TIMEOUT_MS,
     })
 
     const pending = client.complete({ command: 'x', toolResults: [], onDelta: () => {}, signal: controller.signal })

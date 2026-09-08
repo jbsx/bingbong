@@ -179,7 +179,7 @@ function resolveLlm(
         tools,
         fetchFn,
         // The transport backstop, above every active-work deadline
-        // (#219): the epoch's own abort is what ends a working round, so
+        // (#219): the epoch's own abort is what ends an acquisition round, so
         // a slow-reasoning round is cut by the deadline it was armed
         // against — and finalizes — rather than lost to the client's
         // timer racing it.

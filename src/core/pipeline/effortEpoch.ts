@@ -46,7 +46,7 @@ export const LLM_REQUEST_TIMEOUT_MARGIN_MS = 30_000
  * Lookup deadline every Run's first round starts under — so two timers
  * raced and the transport's win cost the Run its Answer outright. It is
  * a backstop now: above every tier's deadline, so the epoch's abort is
- * the only thing that ends a working round, and above the deadline a
+ * the only thing that ends an acquisition round, and above the deadline a
  * Tier Escalation (#216) raises a round to as well. Read from the table
  * so a later change to a tier's deadline cannot reintroduce the race.
  * Finalization rounds are bounded by their allowance shares (#209)

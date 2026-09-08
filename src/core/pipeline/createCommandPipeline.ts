@@ -1841,20 +1841,29 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
               }
               continue
             }
-            // The client cut a working round at its own request timeout
-            // (#219). Reaching here, the round was acquisition: Stop,
-            // the deadline abort, the reserved Answer round and the
-            // bookkeeping round have each already been asked, so the
-            // only thing left is a working round the transport ended.
+            // The client cut an acquisition round at its own request
+            // timeout (#219). Reaching here, the round was acquisition:
+            // Stop, the deadline abort, the reserved Answer round and
+            // the bookkeeping round have each already been asked, so
+            // what is left is an acquisition round the transport ended.
             // A cut is a cut whichever timer fired, so this takes the
             // deadline's path rather than escaping as a failure that
             // costs the user every Observation the Session holds: the
-            // door opens here, and the loop picks the Run up at its
+            // door opens here, and the loop picks the run up at its
             // Finalization phase exactly as `deadlineAborted` does — the
             // loop-top Steering checkpoint, bookkeeping, the reserved
             // Answer round, then the deterministic Answer if those fail.
             // No new Finalization Cause: the round's own record already
             // says `timeout`, which is where the distinction lives.
+            //
+            // No Tier Escalation is offered here, unlike the deadline's
+            // own `expire()`. The transport's timeout sits above every
+            // active-work deadline by construction (#216's raised one
+            // included) and effortEpoch.test.ts pins that against the
+            // tier table, so by the time this fires the epoch's timer
+            // has already run and already decided the escalation
+            // question — either it escalated, spending the Run's one,
+            // or it aborted the round and the branch above caught it.
             if (err instanceof LlmRequestTimeoutError) {
               effortEpoch.enterFinalization('deadline_reached')
               continue

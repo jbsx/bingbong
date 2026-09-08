@@ -9,7 +9,6 @@ import type {
   ToolResult,
 } from '../../core/ports/llm'
 import { LlmEmptyCompletionError, LlmRequestTimeoutError } from '../../core/ports/llm'
-import { LLM_REQUEST_TIMEOUT_MS } from '../../core/pipeline/effortEpoch'
 import { createHash } from 'node:crypto'
 import type { Tool, ToolParameterSpec } from '../../core/pipeline/tool'
 import type { ModelEndpointConfig } from '../../core/agent/modelRouting'
@@ -49,12 +48,17 @@ export interface OpenAiLlmClientDeps {
   tools: Tool[]
   fetchFn: typeof fetch
   /**
-   * The whole-request timeout, in milliseconds. Both compositions pass
-   * LLM_REQUEST_TIMEOUT_MS (#219); the default is the same value, so a
-   * lean construction gets the same backstop rather than a literal that
-   * could race an active-work deadline.
+   * The whole-request timeout, in milliseconds — required, and with no
+   * default (#219). It used to be an optional 120 s, which is exactly
+   * the Lookup deadline every Run's first round starts under, so the
+   * transport could end an acquisition round before the Effort Epoch
+   * did. How long a round may run is the epoch's policy, not the
+   * transport's, so the transport asks for the number rather than
+   * holding an opinion about it: composition derives it from the tier
+   * table (LLM_REQUEST_TIMEOUT_MS), which is what keeps the two from
+   * racing.
    */
-  requestTimeoutMs?: number
+  requestTimeoutMs: number
   /**
    * The experiment override (BINGBONG_REASONING_EFFORT, #166): forces
    * every round to one rung, outranking the rung the round itself
@@ -441,7 +445,7 @@ export function standingDirectiveMessage(directive: string): string {
 
 export function createOpenAiLlmClient(deps: OpenAiLlmClientDeps): LlmClient {
   const { endpoint, systemPrompt, tools, fetchFn } = deps
-  const timeoutMs = deps.requestTimeoutMs ?? LLM_REQUEST_TIMEOUT_MS
+  const timeoutMs = deps.requestTimeoutMs
   const effortOverride = deps.reasoningEffort
 
   function buildMessages(request: LlmRequest): WireMessage[] {
