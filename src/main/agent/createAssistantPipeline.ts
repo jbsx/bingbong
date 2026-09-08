@@ -8,6 +8,7 @@ import type { PipelineEvent } from '../../core/pipeline/events'
 import type { Tool } from '../../core/pipeline/tool'
 import { createAskUserTool } from '../../core/pipeline/askUserTools'
 import { createReportRunPlanTool } from '../../core/pipeline/runPlanTools'
+import { LLM_REQUEST_TIMEOUT_MS } from '../../core/pipeline/effortEpoch'
 import { createRecordEvidenceTool } from '../../core/pipeline/evidenceTools'
 import { createRecordCandidateTool } from '../../core/pipeline/candidateTools'
 import { createBrowserTools } from '../../core/pipeline/browserTools'
@@ -177,6 +178,12 @@ function resolveLlm(
         systemPrompt: () => orchestratorSystemPrompt(clock, getLearnedTerms?.()),
         tools,
         fetchFn,
+        // The transport backstop, above every active-work deadline
+        // (#219): the epoch's own abort is what ends a working round, so
+        // a slow-reasoning round is cut by the deadline it was armed
+        // against — and finalizes — rather than lost to the client's
+        // timer racing it.
+        requestTimeoutMs: LLM_REQUEST_TIMEOUT_MS,
         // The experiment override (#166): set, it forces every round to
         // one rung. Unset, each round carries the Effort Tier's own.
         ...(effortOverride !== undefined ? { reasoningEffort: effortOverride } : {}),

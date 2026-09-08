@@ -2058,19 +2058,252 @@ describe('command pipeline', () => {
     })
 
     it("records the client's own word on a round that threw: its request timeout, an empty completion, or a failure", async () => {
-      const cases: [Error, LlmRoundRecord['outcome']][] = [
-        [new LlmRequestTimeoutError(120_000), 'timeout'],
-        [new LlmEmptyCompletionError('orchestrator returned an empty completion (request_id: r-1)'), 'empty'],
-        [new Error('orchestrator request failed (HTTP 502)'), 'failed'],
+      // Every round of each Run throws the same way, so the record count
+      // is how far the Run got. A timeout is a deadline crossing now
+      // (#219), so that Run finalizes — the working round, then
+      // bookkeeping, then the reserved Answer round, three records saying
+      // `timeout`. An empty completion and a plain failure still end the
+      // Run where they are thrown.
+      const cases: [Error, LlmRoundRecord['outcome'][]][] = [
+        [new LlmRequestTimeoutError(120_000), ['timeout', 'timeout', 'timeout']],
+        [new LlmEmptyCompletionError('orchestrator returned an empty completion (request_id: r-1)'), ['empty']],
+        [new Error('orchestrator request failed (HTTP 502)'), ['failed']],
       ]
-      for (const [thrown, outcome] of cases) {
+      for (const [thrown, outcomes] of cases) {
         const llm: LlmClient = { complete: () => Promise.reject(thrown) }
         const pipeline = createCommandPipeline({ llm, tts: new RecordingTts(), clock: new FakeClock(), tools: [] })
 
         const traced = await traceRun(pipeline, 'find the tier list', () => Promise.resolve())
 
-        expect(llmRounds(traced).map((record) => record.outcome)).toEqual([outcome])
+        expect(llmRounds(traced).map((record) => record.outcome)).toEqual(outcomes)
       }
+    })
+  })
+
+  // Issue #219. Session session-d9fb240d, run 3: the Run's first round —
+  // a Lookup, whose active-work deadline is 120 s — was still reasoning
+  // when the LLM client's own 120 s request timeout fired first. The two
+  // timers had started within milliseconds of each other, and the
+  // transport won: the round threw, the working loop rethrew it, and the
+  // user heard "I could not finish that request." while the Session held
+  // three Observations an Answer could have been built from. A round the
+  // epoch cuts at the same instant finalizes instead. A cut is a cut, so
+  // the client's now takes the deadline's path.
+  describe('a client timeout in a working round is a deadline crossing (#219)', () => {
+    const work: Tool = { name: 'work', acquisition: true, async execute() { return 'worked' } }
+    type LlmRoundRecord = Extract<RunTraceEvent, { kind: 'llm_round' }>
+
+    /** Runs a command with the Journal commit and the Run Trace both wired. */
+    async function runWithRecords(
+      llm: LlmClient,
+      command: string,
+    ): Promise<{
+      events: PipelineEvent[]
+      stops: (RunStopRecord | null | undefined)[]
+      traced: RunTraceEvent[]
+      tts: RecordingTts
+    }> {
+      const tts = new RecordingTts()
+      const traced: RunTraceEvent[] = []
+      const stops: (RunStopRecord | null | undefined)[] = []
+      const events: PipelineEvent[] = []
+      const pipeline = createCommandPipeline({
+        llm,
+        tts,
+        clock: new FakeClock(),
+        tools: [createReportRunPlanTool(), work],
+      })
+      for await (const event of pipeline.execute(command, 'turn-219', false, {
+        snapshot: [],
+        memory: [],
+        commit: (_outcome, _note, _patch, stop) => {
+          stops.push(stop)
+          return 'committed'
+        },
+        traceRun: (build) => traced.push(build()),
+      })) {
+        events.push(event)
+      }
+      return { events, stops, traced, tts }
+    }
+
+    it('finalizes and answers instead of failing the Run (#219/AC1)', async () => {
+      let requests = 0
+      const llm: LlmClient = {
+        complete(request) {
+          requests += 1
+          request.onAttempt?.({ model: 'stalled' })
+          // The working round the client cut at its own timeout: it
+          // produced no tool call, only reasoning, exactly as the
+          // captured round did.
+          if (requests === 1) {
+            request.onDelta?.({ kind: 'reasoning', text: 'x'.repeat(4_000) })
+            return Promise.reject(new LlmRequestTimeoutError(120_000))
+          }
+          return Promise.resolve({
+            kind: 'answer' as const,
+            speak: 'Here is what I found.',
+            display: 'The three lists I had already read.',
+            resolution: 'unsuccessful' as const,
+          })
+        },
+      }
+
+      const { events, stops, traced, tts } = await runWithRecords(llm, 'it is none of these keep looking')
+
+      // The user hears an Answer, not the failure line.
+      expect(tts.spoken).toEqual(['Here is what I found.'])
+      expect(events.find((event) => event.type === 'display')).toMatchObject({
+        text: 'The three lists I had already read.',
+      })
+      expect(events.some((event) => event.type === 'error')).toBe(false)
+      // The Run ended as a deadline crossing, not a failure.
+      expect(events.at(-1)).toMatchObject({ type: 'done', outcome: 'done', finalizationCause: 'deadline_reached' })
+      expect(stops).toHaveLength(1)
+      expect(stops[0]).toMatchObject({ cause: 'deadline_reached' })
+      expect(stops[0]).not.toHaveProperty('failure')
+      // The distinction survives for diagnostics on the round's own
+      // record (#218), which is why no new Finalization Cause was needed.
+      const rounds = traced.filter((record): record is LlmRoundRecord => record.kind === 'llm_round')
+      expect(rounds[0]).toMatchObject({ round: 1, outcome: 'timeout', reasoningChars: 4_000 })
+      expect(rounds.length).toBeGreaterThan(1)
+    })
+
+    it('ends a Run exactly as the deadline’s own cut does, down to the deterministic fallback (#219/AC1)', async () => {
+      // The decision is an equivalence, so this asserts one: the same Run
+      // cut two ways — by the epoch's abort and by the client's timeout —
+      // reaches the same end. Both Finalization rounds then time out, so
+      // both land on the deterministic Answer, which is the harshest
+      // version of the guarantee: an Answer, never a raw provider error.
+      // `outcome: 'failed'` on that path is #117's own reading of a Run
+      // that produced no model Answer, unchanged here and identical on
+      // both sides — what #219 fixes is the Run that never got this far.
+      const scenario = async (cut: 'deadline' | 'timeout') => {
+        const requests: LlmRequest[] = []
+        const clock = new FakeClock()
+        const tts = new RecordingTts()
+        const stops: (RunStopRecord | null | undefined)[] = []
+        const llm: LlmClient = {
+          complete(request) {
+            requests.push(request)
+            if (requests.length === 1 && cut === 'deadline') return abortableRound(request)
+            return Promise.reject(new LlmRequestTimeoutError(120_000))
+          },
+        }
+        const pipeline = createCommandPipeline({
+          llm,
+          tts,
+          clock,
+          tools: [createReportRunPlanTool(), work],
+        })
+        const events: PipelineEvent[] = []
+        const run = (async () => {
+          for await (const event of pipeline.execute('find the tier list', 'turn-219', false, {
+            snapshot: [],
+            memory: [],
+            commit: (_outcome, _note, _patch, stop) => {
+              stops.push(stop)
+              return 'committed'
+            },
+          })) {
+            events.push(withoutTurnId(event))
+          }
+        })()
+        if (cut === 'deadline') {
+          await waitUntil(() => requests.length === 1)
+          clock.advance(TIER_ACTIVE_WORK_DEADLINES_MS[DEFAULT_EFFORT_TIER])
+        }
+        await run
+        // Without `at`: only the deadline variant advances its clock, and
+        // when the two Runs stopped is the one thing that must differ.
+        const untimed = ({ at: _at, ...rest }: PipelineEvent): Omit<PipelineEvent, 'at'> => rest
+        return {
+          rounds: requests.length,
+          types: events.map((event) => event.type),
+          display: events.filter((event) => event.type === 'display').map(untimed),
+          done: untimed(events.at(-1)!),
+          spoken: tts.spoken,
+          stop: stops[0],
+        }
+      }
+
+      const byTimeout = await scenario('timeout')
+      const byDeadline = await scenario('deadline')
+
+      expect(byTimeout).toEqual(byDeadline)
+      // And what they agree on is an Answer under the crossing's cause.
+      expect(byTimeout.display).toEqual([expect.objectContaining({ deterministicAnswer: true })])
+      expect(byTimeout.spoken).not.toContain('I could not finish that request.')
+      expect(byTimeout.done).toMatchObject({ type: 'done', finalizationCause: 'deadline_reached' })
+      expect(byTimeout.stop).toMatchObject({ cause: 'deadline_reached' })
+    })
+
+    it('leaves a Stop landing in the same instant a cancellation (#219/AC2)', async () => {
+      // The existing precedence: `run.aborted` is read before anything
+      // else the catch asks, so a Stop that lands while the client is
+      // throwing its timeout still ends the Run as the user asked.
+      const requests: LlmRequest[] = []
+      const tts = new RecordingTts()
+      const llm: LlmClient = {
+        complete(request) {
+          requests.push(request)
+          return new Promise((_resolve, reject) => {
+            request.signal?.addEventListener('abort', () => reject(new LlmRequestTimeoutError(120_000)))
+          })
+        },
+      }
+      const pipeline = createCommandPipeline({
+        llm,
+        tts,
+        clock: new FakeClock(),
+        tools: [createReportRunPlanTool(), work],
+      })
+
+      const run = collect(pipeline, 'find the tier list')
+      await waitUntil(() => requests.length === 1)
+      pipeline.abort()
+      const events = await run
+
+      expect(requests).toHaveLength(1)
+      expect(events.at(-1)).toMatchObject({ type: 'done', outcome: 'cancelled' })
+      expect(events.some((event) => event.type === 'display')).toBe(false)
+      expect(tts.spoken).toEqual(['Stopped.'])
+    })
+
+    it('leaves the reserved Answer round’s timeout to its own handling (#219/AC2)', async () => {
+      // A timeout inside Finalization is not a fresh crossing: the Run
+      // stopped for its own cause a round ago, and #117/#207 already own
+      // what happens — the deterministic fallback under that cause, with
+      // the lost round reported as diagnostics.
+      const requests: LlmRequest[] = []
+      const clock = new FakeClock()
+      const llm: LlmClient = {
+        complete(request) {
+          requests.push(request)
+          // Round 1 is the working round the deadline itself cuts.
+          if (requests.length === 1) return abortableRound(request)
+          // The bookkeeping round returns; the reserved Answer round then
+          // times out.
+          if (requests.length === 2) {
+            return Promise.resolve({ kind: 'tool_calls' as const, calls: [{ id: 'c1', name: 'work', arguments: {} }] })
+          }
+          return Promise.reject(new LlmRequestTimeoutError(120_000))
+        },
+      }
+      const faults: FaultReport[] = []
+      setFaultSink((report) => faults.push(report))
+      const tts = new RecordingTts()
+      const pipeline = createCommandPipeline({ llm, tts, clock, tools: [createReportRunPlanTool(), work] })
+
+      const run = collect(pipeline, 'find the tier list')
+      await waitUntil(() => requests.length === 1)
+      clock.advance(TIER_ACTIVE_WORK_DEADLINES_MS[DEFAULT_EFFORT_TIER])
+      const events = await run
+
+      expect(faults.map((fault) => fault.site)).toEqual(['pipeline.createCommandPipeline.reservedAnswerRequestFailed'])
+      expect(events.find((event) => event.type === 'display')).toMatchObject({ deterministicAnswer: true })
+      expect(events.at(-1)).toMatchObject({ type: 'done', finalizationCause: 'deadline_reached' })
+      expect(tts.spoken).not.toContain('I could not finish that request.')
     })
   })
 

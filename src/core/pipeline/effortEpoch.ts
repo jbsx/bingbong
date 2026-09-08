@@ -33,6 +33,29 @@ export const TIER_ACTIVE_WORK_DEADLINES_MS: Readonly<Record<EffortTier, number>>
 }
 
 /**
+ * The margin the LLM client's whole-request timeout keeps above the
+ * longest active-work deadline (#219): enough that a round the epoch is
+ * about to cut is never cut by the transport first, small enough that a
+ * genuinely wedged request still ends.
+ */
+export const LLM_REQUEST_TIMEOUT_MARGIN_MS = 30_000
+
+/**
+ * The LLM client's whole-request timeout (#219), derived rather than
+ * picked. The client's own timer used to sit at 120 s — exactly the
+ * Lookup deadline every Run's first round starts under — so two timers
+ * raced and the transport's win cost the Run its Answer outright. It is
+ * a backstop now: above every tier's deadline, so the epoch's abort is
+ * the only thing that ends a working round, and above the deadline a
+ * Tier Escalation (#216) raises a round to as well. Read from the table
+ * so a later change to a tier's deadline cannot reintroduce the race.
+ * Finalization rounds are bounded by their allowance shares (#209)
+ * instead, and are unaffected.
+ */
+export const LLM_REQUEST_TIMEOUT_MS =
+  Math.max(...Object.values(TIER_ACTIVE_WORK_DEADLINES_MS)) + LLM_REQUEST_TIMEOUT_MARGIN_MS
+
+/**
  * The reasoning-effort rung each tier runs its model rounds at (#166):
  * the cheap tiers think less than an Investigation, which thinks as hard
  * as the provider allows. A Browse Subagent has no tier and runs at

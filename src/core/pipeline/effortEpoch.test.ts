@@ -16,6 +16,8 @@ import {
   injectedReportDirective,
   SUBAGENT_REASONING_EFFORT,
   TIER_ACTIVE_WORK_DEADLINES_MS,
+  LLM_REQUEST_TIMEOUT_MS,
+  LLM_REQUEST_TIMEOUT_MARGIN_MS,
   TIME_MILESTONE_FRACTION,
   tierEscalationNotice,
   DEADLINE_TIER_ESCALATION_REASON,
@@ -36,6 +38,21 @@ describe('Effort Epoch (#146, ADR 0027)', () => {
       lookup: 120_000,
       investigation: 300_000,
     })
+  })
+
+  // Issue #219. The client's whole-request timeout was a literal 120 s —
+  // the Lookup deadline every Run's first round starts under — so the
+  // transport could end a working round before the epoch did, and the Run
+  // failed instead of finalizing. The timeout is derived from the table
+  // now, and this test reads the table rather than a number so a later
+  // deadline change cannot quietly re-open the race.
+  it('keeps the LLM request timeout above every tier\u2019s active-work deadline (#219)', () => {
+    for (const deadlineMs of Object.values(TIER_ACTIVE_WORK_DEADLINES_MS)) {
+      expect(LLM_REQUEST_TIMEOUT_MS).toBeGreaterThan(deadlineMs)
+    }
+    expect(LLM_REQUEST_TIMEOUT_MS).toBe(
+      Math.max(...Object.values(TIER_ACTIVE_WORK_DEADLINES_MS)) + LLM_REQUEST_TIMEOUT_MARGIN_MS,
+    )
   })
 
   describe('reasoning effort rung (#166)', () => {

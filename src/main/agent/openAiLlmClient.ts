@@ -9,6 +9,7 @@ import type {
   ToolResult,
 } from '../../core/ports/llm'
 import { LlmEmptyCompletionError, LlmRequestTimeoutError } from '../../core/ports/llm'
+import { LLM_REQUEST_TIMEOUT_MS } from '../../core/pipeline/effortEpoch'
 import { createHash } from 'node:crypto'
 import type { Tool, ToolParameterSpec } from '../../core/pipeline/tool'
 import type { ModelEndpointConfig } from '../../core/agent/modelRouting'
@@ -47,6 +48,12 @@ export interface OpenAiLlmClientDeps {
   systemPrompt: string | (() => string)
   tools: Tool[]
   fetchFn: typeof fetch
+  /**
+   * The whole-request timeout, in milliseconds. Both compositions pass
+   * LLM_REQUEST_TIMEOUT_MS (#219); the default is the same value, so a
+   * lean construction gets the same backstop rather than a literal that
+   * could race an active-work deadline.
+   */
   requestTimeoutMs?: number
   /**
    * The experiment override (BINGBONG_REASONING_EFFORT, #166): forces
@@ -434,7 +441,7 @@ export function standingDirectiveMessage(directive: string): string {
 
 export function createOpenAiLlmClient(deps: OpenAiLlmClientDeps): LlmClient {
   const { endpoint, systemPrompt, tools, fetchFn } = deps
-  const timeoutMs = deps.requestTimeoutMs ?? 120_000
+  const timeoutMs = deps.requestTimeoutMs ?? LLM_REQUEST_TIMEOUT_MS
   const effortOverride = deps.reasoningEffort
 
   function buildMessages(request: LlmRequest): WireMessage[] {

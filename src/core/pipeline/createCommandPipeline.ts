@@ -13,6 +13,7 @@ import type {
   ToolResult,
   ToolResultOutcome,
 } from '../ports/llm'
+import { LlmRequestTimeoutError } from '../ports/llm'
 import { selectDelegatedMemory } from '../agent/subagentReport'
 import { createLlmDeltaBatcher } from './deltaBatcher'
 import type { TtsSpeaker } from '../ports/tts'
@@ -1838,6 +1839,24 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
                 reportFault('pipeline.createCommandPipeline.bookkeepingRequestFailed', err, { turnId })
                 finalizationFailure = `the Finalization bookkeeping round failed: ${toErrorMessage(err)}`
               }
+              continue
+            }
+            // The client cut a working round at its own request timeout
+            // (#219). Reaching here, the round was acquisition: Stop,
+            // the deadline abort, the reserved Answer round and the
+            // bookkeeping round have each already been asked, so the
+            // only thing left is a working round the transport ended.
+            // A cut is a cut whichever timer fired, so this takes the
+            // deadline's path rather than escaping as a failure that
+            // costs the user every Observation the Session holds: the
+            // door opens here, and the loop picks the Run up at its
+            // Finalization phase exactly as `deadlineAborted` does — the
+            // loop-top Steering checkpoint, bookkeeping, the reserved
+            // Answer round, then the deterministic Answer if those fail.
+            // No new Finalization Cause: the round's own record already
+            // says `timeout`, which is where the distinction lives.
+            if (err instanceof LlmRequestTimeoutError) {
+              effortEpoch.enterFinalization('deadline_reached')
               continue
             }
             throw err

@@ -19,6 +19,7 @@ import { runSubagent } from '../../core/agent/subagentRunner'
 import type { SubagentKind, SubagentSpec, SubagentTaskApi, SubagentTaskHooks } from '../../core/agent/subagentManager'
 import { ScriptedLlm, UnavailableLlm } from '../../core/testing/doubles'
 import { createBrowserTools } from '../../core/pipeline/browserTools'
+import { LLM_REQUEST_TIMEOUT_MS } from '../../core/pipeline/effortEpoch'
 import type { BrowserCustody } from '../../core/browser/unsettledAction'
 import { hostFromUrl } from '../../core/pipeline/blockerGate'
 import { createLookTool } from '../../core/pipeline/visionGroundingTools'
@@ -101,6 +102,10 @@ function resolveSubagentLlm(deps: SubagentWorkhorseDeps, tools: Tool[]): LlmClie
       systemPrompt: subagentSystemPrompt(deps.clock ?? systemClock),
       tools,
       fetchFn: deps.fetchFn,
+      // The same transport backstop the orchestrator gets (#219): a
+      // worker shares the parent Run's deadline, so its rounds must be
+      // ended by that deadline rather than by the client's timer.
+      requestTimeoutMs: LLM_REQUEST_TIMEOUT_MS,
       // The experiment override (#166) reaches workers too, so a probe
       // moves every round of a Run — delegated ones included — at once.
       ...(effortOverride !== undefined ? { reasoningEffort: effortOverride } : {}),
