@@ -354,8 +354,9 @@ _Avoid_: cancel, cleanup
 
 **Finalization Cause**:
 The reason a Run entered Finalization, such as satisfying the objective,
-exhausting its budget, reaching its deadline, making no Progress, keeping at
-a Blocker it was told it cannot pass, or reaching a hard safety limit — or,
+exhausting its budget, reaching its deadline (or a single round outliving
+it), making no Progress, keeping at a Blocker it was told it cannot pass, or
+reaching a hard safety limit — or,
 for a Subagent only, its parent Run entering Finalization or the user being
 unreachable through it. A Run never carries those last two.
 _Avoid_: Run Resolution, outcome
