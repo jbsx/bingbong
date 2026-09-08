@@ -332,10 +332,18 @@ export function retainedCorrectionsMessage(corrections: readonly UserCorrectionS
  *
  * The closing lines state the rules a round cannot get wrong without
  * recreating the bug: the same route is not sent again, a fresh attempt
- * exists only for a named eligible Candidate, and the answer to a second
- * failure is a different route or an honest limitation — never another
- * shortlist gathered behind the same unchecked step, and never the
- * user's own eyes.
+ * exists only for a named eligible Candidate wherever the Session is
+ * weighing any, and the answer to a second failure is a different route
+ * or an honest limitation — never another shortlist gathered behind the
+ * same unchecked step, and never the user's own eyes.
+ *
+ * Where the Session is weighing no Candidates at all, the allowance is
+ * open under that same eligibility rule — ADR 0041: with no shortlist to grow, the Route
+ * reopens — and the message says so rather than naming an empty list.
+ * A round shown "only to settle one of these Candidates:" above nothing
+ * spent its reasoning on which absent Candidate was meant, concluded the
+ * check was moot, and reached no tool call at all (#220). The attempt
+ * that branch describes is for whatever lead the run finds.
  */
 export function retainedVerificationMessage(verification: VerificationSubject): string {
   const lines = ['Verification already attempted for this objective — what the route reported:']
@@ -355,12 +363,26 @@ export function retainedVerificationMessage(verification: VerificationSubject): 
       'this Session.',
   )
   if (verification.freshAttemptAllowed) {
-    lines.push(
-      '',
-      'You may spend one fresh attempt on that route in this run, and only to settle one of these Candidates:',
-    )
-    for (const candidate of verification.eligible) {
-      lines.push(`- ${candidate.candidateId}: ${candidate.subject}`)
+    // An allowed attempt with nothing eligible is the Session weighing no
+    // Candidates at all, and only that: `verificationSubject` allows one
+    // on `eligible.length > 0 || held === 0`, so an empty `eligible` here
+    // leaves `held === 0` as the only way this branch is reached. The
+    // subject carries no count of its own; if that rule ever loosens,
+    // this sentence starts telling the model something untrue.
+    if (verification.eligible.length === 0) {
+      lines.push(
+        '',
+        'You may spend one fresh attempt on that route in this run. This Session holds no Candidates, so ' +
+          'there is none to name it against: spend it on whatever lead this run finds.',
+      )
+    } else {
+      lines.push(
+        '',
+        'You may spend one fresh attempt on that route in this run, and only to settle one of these Candidates:',
+      )
+      for (const candidate of verification.eligible) {
+        lines.push(`- ${candidate.candidateId}: ${candidate.subject}`)
+      }
     }
     lines.push(
       '',

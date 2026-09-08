@@ -1521,6 +1521,35 @@ describe('the routes this objective already spent, on the wire (#212, ADR 0041)'
     expect(content).not.toContain('one fresh attempt on that route')
   })
 
+  it('names no Candidate when the Session holds none and the route reopens (#220)', () => {
+    const content = retainedVerificationMessage({
+      failures: [{ route: 'vision', failure: 'Vision request timed out after 8000ms' }],
+      freshAttemptAllowed: true,
+      eligible: [],
+    })
+
+    // The allowance is open on purpose (ADR 0041: with no shortlist to grow, the Route reopens) --
+    expect(content).toContain('one fresh attempt on that route')
+    // -- but there is no shortlist to point it at, so none is announced and none is listed.
+    expect(content).not.toContain('one of these Candidates')
+    expect(content).toContain('This Session holds no Candidates')
+    expect(content).toContain('whatever lead this run finds')
+    // The second-failure rule is the same rule whether or not a Candidate was named.
+    expect(content).toContain('do not send it a third time')
+  })
+
+  it('still names the shortlist a fresh attempt may settle when the Session holds one (#220)', () => {
+    const content = retainedVerificationMessage({
+      failures: [{ route: 'vision', failure: 'Vision request timed out after 8000ms' }],
+      freshAttemptAllowed: true,
+      eligible: [{ candidateId: 'memory-4' as never, subject: 'r/tierlists — "Ranking every mech"' }],
+    })
+
+    expect(content).toContain('and only to settle one of these Candidates:')
+    expect(content).toContain('- memory-4: r/tierlists — "Ranking every mech"')
+    expect(content).not.toContain('holds no Candidates')
+  })
+
   it('keeps the failure when the Session no longer holds the Candidate it was checking', () => {
     const content = retainedVerificationMessage({
       failures: [{ route: 'vision', failure: 'timed out', candidateId: 'memory-4' as never }],
