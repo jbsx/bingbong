@@ -330,6 +330,15 @@ export function retainedCorrectionsMessage(corrections: readonly UserCorrectionS
 }
 
 /**
+ * The two endings a spent route leaves, in the words every branch that
+ * reaches them uses. One string rather than three copies: the sentence is
+ * prose #220 pinned byte-for-byte, and three copies of pinned prose drift.
+ */
+const HONEST_ENDINGS =
+  'genuinely different route to the same check — read the text the page itself carries — or answer with the ' +
+  'check named as still unverified.'
+
+/**
  * The retained verification failures' wire message (#212, ADR 0041):
  * which routes this objective has already spent, in the words the route
  * itself reported, and what remains open.
@@ -355,6 +364,15 @@ export function retainedCorrectionsMessage(corrections: readonly UserCorrectionS
  * spent its reasoning on which absent Candidate was meant, concluded the
  * check was moot, and reached no tool call at all (#220). The attempt
  * that branch describes is for whatever lead the run finds.
+ *
+ * A shut route says which of the two things shut it (#222), and the
+ * subject decides which — the count that tells them apart lives beside
+ * the rule, not here. Only `nothing-eligible` is a shortlist with nothing
+ * left to settle; the other is this Run having spent the route itself,
+ * which ADR 0041 scopes to the Run. Telling a Session that never held a
+ * Candidate that "no Candidate left" could settle the check asserts a
+ * shortlist that never existed — the same falsehood #220 removed from the
+ * open branch, and equally false where leads are held and still eligible.
  */
 export function retainedVerificationMessage(verification: VerificationSubject): string {
   const lines = ['Verification already attempted for this objective — what the route reported:']
@@ -397,16 +415,18 @@ export function retainedVerificationMessage(verification: VerificationSubject): 
     }
     lines.push(
       '',
-      'If it fails again, do not send it a third time: take a genuinely different route to the same check — ' +
-        'read the text the page itself carries — or answer with the check named as still unverified. ' +
+      `If it fails again, do not send it a third time: take a ${HONEST_ENDINGS} ` +
         'Rewording the request or searching somewhere else is the same route, not a different one.',
+    )
+  } else if (verification.closedBy === 'nothing-eligible') {
+    lines.push(
+      '',
+      `There is no Candidate left that a fresh attempt on that route could settle, so do not spend one. Take a ${HONEST_ENDINGS}`,
     )
   } else {
     lines.push(
       '',
-      'There is no Candidate left that a fresh attempt on that route could settle, so do not spend one. Take a ' +
-        'genuinely different route to the same check — read the text the page itself carries — or answer with ' +
-        'the check named as still unverified.',
+      `That route is spent for the rest of this run, so do not send it again. Take a ${HONEST_ENDINGS}`,
     )
   }
   lines.push(

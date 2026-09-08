@@ -202,6 +202,60 @@ describe('what a later Run is told about the attempt that failed (#212/AC3)', ()
     })
   })
 
+  it('says what shut the Route, and never names a shortlist the Session never held (#222)', () => {
+    const spentByTheRun = verificationSubject({
+      failures: [failure({ objectiveId: OBJECTIVE })],
+      objectiveId: OBJECTIVE,
+      eligible: [],
+      evidence: snapshot([]),
+      spentInRun: true,
+    })
+    // Nothing held, so nothing but this Run's own spend can have shut it.
+    expect(spentByTheRun!.freshAttemptAllowed).toBe(false)
+    expect(spentByTheRun!.closedBy).toBe('spent-in-run')
+
+    const shortlistSettled = verificationSubject({
+      failures: [failure({ objectiveId: OBJECTIVE })],
+      objectiveId: OBJECTIVE,
+      eligible: [],
+      evidence: snapshot([candidate()]),
+    })
+    // A shortlist is held and nothing on it is eligible -- the one case that is about a shortlist.
+    expect(shortlistSettled!.freshAttemptAllowed).toBe(false)
+    expect(shortlistSettled!.closedBy).toBe('nothing-eligible')
+
+    // Both causes at once: the shortlist outlives the Run, so it is the one named.
+    const both = verificationSubject({
+      failures: [failure({ objectiveId: OBJECTIVE })],
+      objectiveId: OBJECTIVE,
+      eligible: [],
+      evidence: snapshot([candidate()]),
+      spentInRun: true,
+    })
+    expect(both!.closedBy).toBe('nothing-eligible')
+
+    // An eligible lead the Run can no longer spend on is the Run's spend, not an empty shortlist.
+    const spentWithLeads = verificationSubject({
+      failures: [failure({ objectiveId: OBJECTIVE })],
+      objectiveId: OBJECTIVE,
+      eligible: [{ candidateId: id('memory-9'), subject: 'The 2019 tier list post' }],
+      evidence: snapshot([candidate()]),
+      spentInRun: true,
+    })
+    expect(spentWithLeads!.closedBy).toBe('spent-in-run')
+  })
+
+  it('leaves the cause off entirely while a fresh attempt is open (#222)', () => {
+    const open = verificationSubject({
+      failures: [failure({ objectiveId: OBJECTIVE })],
+      objectiveId: OBJECTIVE,
+      eligible: [],
+      evidence: snapshot([]),
+    })
+    expect(open!.freshAttemptAllowed).toBe(true)
+    expect(open!.closedBy).toBeUndefined()
+  })
+
   it('names the Candidate a failed attempt was about when the Session still holds it', () => {
     const subject = verificationSubject({
       failures: [failure({ candidateId: id('memory-9') })],

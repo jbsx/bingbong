@@ -137,7 +137,30 @@ export interface VerificationSubject {
   readonly failures: readonly VerificationFailureSubject[]
   readonly freshAttemptAllowed: boolean
   readonly eligible: readonly VerificationCandidate[]
+  /**
+   * Why the Route is shut, absent while a fresh attempt is open (#222).
+   * A Run told only that the allowance is closed cannot say what closed
+   * it, and the two causes are not interchangeable: only one of them is
+   * about a shortlist.
+   */
+  readonly closedBy?: VerificationClosure
 }
+
+/**
+ * Why a Route this Session watched fail is shut to the Run now reading
+ * it (#222).
+ *
+ * `spent-in-run` is ADR 0041's Run-level rule — this Run has already
+ * asked that Route, and a later Run reopens it. `nothing-eligible` is
+ * the shortlist case: the Session is weighing Candidates and a fresh
+ * attempt could settle none of them.
+ *
+ * Only the second is a claim about a shortlist, which is why they are
+ * told apart. A Session that never held a Candidate has no exhausted
+ * shortlist to be told about, and saying it has asserts a list that
+ * never existed.
+ */
+export type VerificationClosure = 'spent-in-run' | 'nothing-eligible'
 
 /**
  * The failure list one more failure produces: append, oldest first,
@@ -271,6 +294,12 @@ export function verificationRouteOpen(input: {
  * A failure whose Candidate the Session no longer holds keeps its words
  * and loses only the subject line — the route was still spent, and that
  * is the fact a continuation needs.
+ *
+ * A shut Route says what shut it (#222). That is decided here, beside
+ * the rule that shuts it, because the two causes can hold at once and
+ * choosing between them is policy rather than wording — and because the
+ * count of held Candidates the choice turns on lives here and nowhere
+ * the message can reach.
  */
 export function verificationSubject(input: {
   readonly failures: readonly RetainedVerificationFailure[]
@@ -302,11 +331,17 @@ export function verificationSubject(input: {
       ...(candidate !== undefined ? { candidateSubject: candidate.subject } : {}),
     })
   })
+  // The same rule the rail spends by, so the block a Run reads and the
+  // gate it meets can never disagree about whether an attempt is open.
+  const freshAttemptAllowed = input.spentInRun !== true && (input.eligible.length > 0 || held === 0)
+  // Both causes hold at once for a Run that spent the Route while its
+  // shortlist had nothing eligible. The shortlist is the one that
+  // outlives the Run, so it is the one named.
+  const closedBy: VerificationClosure = input.eligible.length === 0 && held > 0 ? 'nothing-eligible' : 'spent-in-run'
   return Object.freeze({
-    // The same rule the rail spends by, so the block a Run reads and the
-    // gate it meets can never disagree about whether an attempt is open.
     failures,
-    freshAttemptAllowed: input.spentInRun !== true && (input.eligible.length > 0 || held === 0),
+    freshAttemptAllowed,
     eligible: input.eligible,
+    ...(freshAttemptAllowed ? {} : { closedBy }),
   })
 }

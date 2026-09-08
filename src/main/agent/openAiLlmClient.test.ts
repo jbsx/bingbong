@@ -1528,11 +1528,60 @@ describe('the routes this objective already spent, on the wire (#212, ADR 0041)'
       failures: [{ route: 'vision', failure: 'Vision request timed out after 8000ms' }],
       freshAttemptAllowed: false,
       eligible: [],
+      closedBy: 'nothing-eligible',
     })
 
     expect(content).toContain('no Candidate left')
     expect(content).toContain('do not spend one')
     expect(content).not.toContain('one fresh attempt on that route')
+  })
+
+  it('says the Run spent the route, naming no shortlist, when that is what shut it (#222)', () => {
+    const content = retainedVerificationMessage({
+      failures: [{ route: 'vision', failure: 'Vision request timed out after 8000ms' }],
+      freshAttemptAllowed: false,
+      eligible: [],
+      closedBy: 'spent-in-run',
+    })
+
+    // A shortlist that never existed is never described as exhausted (AC1).
+    expect(content).not.toContain('no Candidate left')
+    // What actually shut it: this Run's own spend, which ADR 0041 scopes to the Run.
+    expect(content).toContain(
+      'That route is spent for the rest of this run, so do not send it again. Take a genuinely different ' +
+        'route to the same check — read the text the page itself carries — or answer with the check named as ' +
+        'still unverified.',
+    )
+    expect(content).not.toContain('one fresh attempt on that route')
+  })
+
+  it('says the same when the Run spent it while leads stayed eligible (#222)', () => {
+    const content = retainedVerificationMessage({
+      failures: [{ route: 'vision', failure: 'Vision request timed out after 8000ms' }],
+      // Eligible leads with the Route shut is the Run-level spend too.
+      freshAttemptAllowed: false,
+      eligible: [{ candidateId: 'memory-4' as never, subject: 'r/tierlists — "Ranking every mech"' }],
+      closedBy: 'spent-in-run',
+    })
+
+    expect(content).not.toContain('no Candidate left')
+    expect(content).toContain('spent for the rest of this run')
+  })
+
+  it('keeps the exhausted-shortlist wording when a shortlist is what shut it (#222/AC2)', () => {
+    const content = retainedVerificationMessage({
+      failures: [{ route: 'vision', failure: 'Vision request timed out after 8000ms' }],
+      freshAttemptAllowed: false,
+      eligible: [],
+      closedBy: 'nothing-eligible',
+    })
+
+    // Byte-for-byte what this branch has said since #212.
+    expect(content).toContain(
+      'There is no Candidate left that a fresh attempt on that route could settle, so do not spend one. Take a ' +
+        'genuinely different route to the same check — read the text the page itself carries — or answer with ' +
+        'the check named as still unverified.',
+    )
   })
 
   it('names no Candidate when the Session holds none and the route reopens (#220)', () => {
@@ -1548,8 +1597,14 @@ describe('the routes this objective already spent, on the wire (#212, ADR 0041)'
     expect(content).not.toContain('one of these Candidates')
     expect(content).toContain('This Session holds no Candidates')
     expect(content).toContain('whatever lead this run finds')
-    // The second-failure rule is the same rule whether or not a Candidate was named.
-    expect(content).toContain('do not send it a third time')
+    // The second-failure rule is the same rule whether or not a Candidate was named,
+    // and it shares its closing words with both shut branches -- pinned, so the one
+    // string all three read from cannot drift under them.
+    expect(content).toContain(
+      'If it fails again, do not send it a third time: take a genuinely different route to the same check — ' +
+        'read the text the page itself carries — or answer with the check named as still unverified. ' +
+        'Rewording the request or searching somewhere else is the same route, not a different one.',
+    )
   })
 
   it('still names the shortlist a fresh attempt may settle when the Session holds one (#220)', () => {
@@ -1569,6 +1624,7 @@ describe('the routes this objective already spent, on the wire (#212, ADR 0041)'
       failures: [{ route: 'vision', failure: 'timed out', candidateId: 'memory-4' as never }],
       freshAttemptAllowed: false,
       eligible: [],
+      closedBy: 'spent-in-run',
     })
 
     expect(content).toContain('timed out')

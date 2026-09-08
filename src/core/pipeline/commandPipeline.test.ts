@@ -2625,6 +2625,7 @@ describe('command pipeline', () => {
       failures: [{ route: 'vision', failure: 'the look timed out' }],
       freshAttemptAllowed: false,
       eligible: [],
+      closedBy: 'spent-in-run',
     }
 
     /** A Run whose page keeps moving, so the no-progress rail vouches for Progress at the crossing. */
