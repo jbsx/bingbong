@@ -73,6 +73,33 @@ hunt is structural rather than remembered: there is nowhere else to submit it.
 Hunts run one at a time. The previous hunt's context is ended before the next
 begins, so no two are ever live at once.
 
+### What isolation is for, and what it therefore excludes
+
+The bar is that an independent hunt **cannot inherit earlier task evidence or
+browser storage a previous hunt mutated**. Cookies, local storage, history,
+Feed and Session evidence all fall under it: a hunt could change them, so
+carrying them forward would hand a later hunt an advantage it did not earn.
+
+A third-party input that no hunt can affect is a different thing, and sharing
+one is not a breach. The ad-blocker's filter-list cache is the case in point:
+its contents depend only on what the list publishers served, never on anything
+the assistant did. Seeding every hunt from one snapshot of it is therefore
+allowed — and is **preferable**, because the alternative is worse for
+equivalence. Filter lists are republished several times a day, so a pass that
+fetches them per hunt can run hunt 1 and hunt 4 against different filters,
+which is precisely the uncontrolled variation "equivalently restored" exists to
+prevent.
+
+Two conditions on it. Every hunt is seeded from the *same* snapshot, the first
+included — a warm-up that leaves hunt 1 alone would be an asymmetry with no
+benefit. And what was in force is recorded, so a capture can be attributed to a
+known filter set rather than to "whatever was live that afternoon".
+
+Note what this does *not* affect: Task Completion Time starts at the first
+accepted command, so app startup — cold cache or warm — is outside the measured
+window. The filter set matters because it shapes the browsing inside that
+window, not because fetching it is slow.
+
 ## Follow-up delivery
 
 A follow-up is delivered when, and only when:
