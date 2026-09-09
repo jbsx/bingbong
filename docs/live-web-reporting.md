@@ -143,6 +143,17 @@ one cited claim and named reviewer, and the graded Answer being the captured
 one. It does **not** check that the reviewer was right. There is no automated
 judge and no keyword match anywhere in this path, by design.
 
+**Read the key's constraints before judging its checks.** A check id exists for
+everything a reviewer can answer yes or no about the Answer in front of them —
+a required fact was reached or it was not, a pitfall was walked into or it was
+not, an uncertainty survived or it was flattened. A key's `constraints` are
+deliberately *not* checks, because they are instructions to the reviewer rather
+than things an Answer can satisfy: how to decompose the verdict ("grade the
+cable, the hardware pairing and the software stack separately"), what not to
+grade at all, and — the ones that change verdicts — which alternatives count as
+acceptable. Judging the checks without having read them will produce a
+defensible-looking record with the wrong verdicts in it.
+
 ### Equivalent sources
 
 An Answer that reached the key's conclusion by another route is not thereby
