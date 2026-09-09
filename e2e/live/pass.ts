@@ -35,6 +35,7 @@ import type {
   LiveCaptureSetState,
   LivePromptIdentity,
   LiveScheduledAttempt,
+  LiveSessionCapture,
   LiveSessionReference,
   LiveStopReason,
 } from './types.ts'
@@ -211,6 +212,13 @@ export interface HuntCaptureHostOptions {
 export interface LiveHuntCaptureHost extends HuntCaptureHost<HuntAttempt> {
   /** One reference per hunt that got as far as a launched app, in the order they ran. */
   readonly sessions: readonly LiveSessionReference[]
+  /**
+   * The closed session captures themselves, as the apps recorded them. The
+   * set file needs only the references; these are what lets a caller check a
+   * pass against what the apps actually saw, rather than against what the
+   * schedule believes it did.
+   */
+  readonly captures: readonly LiveSessionCapture[]
 }
 
 /**
@@ -228,6 +236,7 @@ export function createHuntCaptureHost(
 ): LiveHuntCaptureHost {
   const slots = plannedSlots(options.hunts)
   const sessions: LiveSessionReference[] = []
+  const captures: LiveSessionCapture[] = []
 
   function slotFor(huntId: string, stepId: StepId): LiveScheduledAttempt {
     const slot = slots.find((candidate) => candidate.huntId === huntId && candidate.stepId === stepId)
@@ -239,6 +248,7 @@ export function createHuntCaptureHost(
 
   return {
     sessions,
+    captures,
     async beginHunt(hunt: LiveWebHunt): Promise<HuntContext<HuntAttempt>> {
       const captureId = `${options.setId}--${hunt.id}`
       const session = await startCaptureSession({
@@ -284,6 +294,7 @@ export function createHuntCaptureHost(
           // capture file before the disposable profile is removed, so the
           // reference below always names a file that exists.
           const capture = await session.close()
+          captures.push(capture)
           sessions.push({ captureId: capture.captureId, huntId: capture.huntId, path: `${capture.captureId}/capture.json` })
         },
       }

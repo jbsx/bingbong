@@ -137,6 +137,24 @@ describe('the four-hunt schedule, end to end (#225)', () => {
       expect(pass.hunts[1].followUp).toBeNull()
       expect(pass.hunts[3].followUp).toBeNull()
 
+      // THE SIX-COMMAND MAXIMUM, read from what the apps themselves recorded
+      // rather than from what the schedule believes it sent. Each hunt's
+      // capture file lists every attempt its app saw; six across the four is
+      // the bound, and an extra submission anywhere would show up here.
+      const recorded = host.captures.flatMap((capture) => capture.attempts)
+      expect(recorded).toHaveLength(6)
+      expect(recorded.filter((attempt) => attempt.kind === 'attempt')).toHaveLength(6)
+      expect(new Set(recorded.map((attempt) => attempt.attemptId)).size).toBe(6)
+
+      // PROMPT/KEY SEPARATION at the seam: what reached the pipeline is the
+      // approved text exactly (asserted above, which is stricter than any
+      // substring rule) and carries no evaluator source — the assistant has
+      // to find its own.
+      for (const hunt of CORPUS) {
+        const record = pass.hunts.find((candidate) => candidate.huntId === hunt.id)!
+        expect(acceptedOf(record.initial, hunt.id).text).not.toMatch(/https?:\/\//i)
+      }
+
       // The set file describes the whole planned population, and #224's own
       // reader accepts it.
       const set = captureSetOf(pass, { setId: 'set-whole', mode: 'verification', sessions: host.sessions })
