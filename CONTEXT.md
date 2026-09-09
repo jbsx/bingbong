@@ -1024,6 +1024,25 @@ input latency, speech playback completion, and full Run duration are separate
 measurements rather than interchangeable endpoints.
 _Avoid_: Run duration, model latency, time to first token
 
+**Grading Key**:
+The evaluator's private record of what an evaluation task's Answer must
+establish — required conclusions and constraints, the passages supporting them,
+known near matches and superseded answers, and the alternatives that count as
+equivalent. Prepared before the task is accepted, versioned, and never placed in
+the measured assistant's context. A published **Key Manifest** carries only its
+version, its digest and the ids of the checks it requires, so a review can prove
+which key it applied without carrying the key.
+_Avoid_: rubric, answer key in the prompt, automated judge
+
+**Grade**:
+One reviewer's recorded judgment of one captured attempt against a Grading Key:
+the verdict, each required check judged exactly once, the sources supporting the
+claims, and who reviewed it when. It is bound to the exact Answer observed, so a
+review cannot drift onto a different one. A Grade establishes Task Success; code
+checks only that the record is complete and correctly bound, never that the
+judgment is right.
+_Avoid_: score, evaluation result, pass rate
+
 ### Hardware
 
 **Kiosk**:
