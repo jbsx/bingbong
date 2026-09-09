@@ -78,6 +78,7 @@ class FakeHost implements HuntCaptureHost<FakeAttempt> {
         return {
           command: prompt.text,
           role,
+          declined: null,
           accepted: true,
           measurementFault: null,
           answerText: 'an answer',
@@ -305,14 +306,15 @@ describe('task failure and broken measurement are different records', () => {
     expect(host.submitted).toEqual([])
   })
 
-  it('does not resend a command whose capture threw', async () => {
-    const host = new FakeHost({ [PI.id]: { initial: { throws: 'the tape was lost' } } })
+  it('does not resend a command whose dispatch threw', async () => {
+    const host = new FakeHost({ [PI.id]: { initial: { throws: 'the session was already closed' } } })
     const pass = await runLiveWebPass(host, { hunts: [PI] })
 
     expect(pass.hunts[0].initial).toMatchObject({ status: 'not-reached', reason: 'capture_failed' })
     expect(host.calls.filter((call) => call.startsWith('submit:'))).toEqual([`submit:${PI.id}:initial`])
-    // The command was sent, so its budget is spent even though nothing was observed.
-    expect(pass.commandsSubmitted).toBe(1)
+    // A throw is a protocol error — the capture never submits on that path —
+    // so nothing went out and nothing was spent.
+    expect(pass.commandsSubmitted).toBe(0)
   })
 
   it('archives a broken hunt before tearing it down', async () => {
@@ -332,6 +334,43 @@ describe('task failure and broken measurement are different records', () => {
     expect(pass.hunts[3].initial).toMatchObject({ status: 'attempted' })
     // One hunt lost: the four initials minus one, plus both follow-ups.
     expect(pass.commandsSubmitted).toBe(5)
+  })
+})
+
+describe('a command the capture declined to dispatch', () => {
+  // The capture re-checks readiness immediately before submitting, so it can
+  // refuse after the schedule's own check passed. Nothing goes out on that
+  // path, and calling it an attempt would claim a Run that never existed.
+  const declined = {
+    declined: { reason: 'session_unavailable' as const, detail: 'the Session lapsed before the submit' },
+  }
+
+  it('is recorded as not reached, not as an attempt', async () => {
+    const pass = await runLiveWebPass(new FakeHost({ [PI.id]: { initial: declined } }), { hunts: [PI] })
+
+    expect(pass.hunts[0].initial).toMatchObject({
+      status: 'not-reached',
+      reason: 'session_unavailable',
+      detail: 'the Session lapsed before the submit',
+    })
+  })
+
+  it('spends no budget, because no command went out', async () => {
+    const pass = await runLiveWebPass(new FakeHost({ [PI.id]: { initial: declined } }), { hunts: [PI] })
+    expect(pass.commandsSubmitted).toBe(0)
+  })
+
+  it('leaves the follow-up of an undispatched initial not reached too', async () => {
+    const pass = await runLiveWebPass(new FakeHost({ [PI.id]: { initial: declined } }), { hunts: [PI] })
+    expect(pass.hunts[0].followUp).toMatchObject({ status: 'not-reached', reason: 'initial_not_accepted' })
+  })
+
+  it('records a declined follow-up as not reached, and charges only the initial', async () => {
+    const pass = await runLiveWebPass(new FakeHost({ [PI.id]: { followUp: declined } }), { hunts: [PI] })
+
+    expect(pass.hunts[0].initial).toMatchObject({ status: 'attempted' })
+    expect(pass.hunts[0].followUp).toMatchObject({ status: 'not-reached', reason: 'session_unavailable' })
+    expect(pass.commandsSubmitted).toBe(1)
   })
 })
 

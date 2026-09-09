@@ -182,15 +182,40 @@ results are diagnostic-only and gate no release — the `canaries` slot in
 
 ## Running it
 
-Unit checks — the corpus rules and the whole schedule, no Electron, no spend:
+Unit checks — the corpus rules, the whole schedule, the adapter, and the
+guards that keep the paid suite off the free one. No Electron, no spend:
 
 ```
 pnpm test
 ```
 
-Electron verification and any real capture run under Xvfb, one app at a time,
-as everything else in this repo does. Paid captures are opt-in, never ride CI
-or `pnpm test:e2e`, and are bounded by the pilot cap above.
+No-spend verification of the whole schedule through the real Electron seam:
+real Prompt Bar, real app Sessions, real benchmark profiles, a scripted model
+and local fixture pages. Under Xvfb, one app at a time:
+
+```
+pnpm test:e2e e2e/live/schedule.e2e.test.ts
+```
+
+The paid pilot pass — four hunts on the live web, six commands, once each:
+
+```
+BINGBONG_LIVE_SET_ID=pilot-1 pnpm test:live
+```
+
+`*.live.test.ts` is matched by **no config but `vitest.live.config.ts`**, is
+explicitly excluded from the unit suite, and rides no CI. That arrangement is
+asserted in `e2e/live/config.test.ts` rather than trusted, because everything
+preventing an accidental paid run is a glob in a config file.
+
+One pass per invocation: there is no loop and no repeat flag. Three baseline
+passes need separate post-pilot authorization, and a campaign that could be
+started by passing a number is what that authorization exists to gate.
+
+The pilot suite fails only on **broken measurement** — the same rule the
+release evaluator follows. A hunt the assistant gets wrong is the finding this
+study exists to record, not a red test; grading happens offline, against keys
+the runner cannot see.
 
 ## Stop point
 

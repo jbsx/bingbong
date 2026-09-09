@@ -10,11 +10,8 @@ import {
   plannedSlots,
   scheduledView,
   type HuntAttempt,
-  type LiveCaptureCommand,
-  type LiveCaptureSession,
-  type LiveContinuationState,
-  type StartCaptureOptions,
 } from './pass'
+import type { CaptureCommandInput, CaptureSession, CaptureSessionOptions, ContinuationState } from './capture'
 import { runLiveWebPass } from './schedule'
 import type { LiveAttemptCapture, LiveAttemptRecord, LiveSessionCapture, LiveStopReason } from './types'
 
@@ -30,7 +27,7 @@ import type { LiveAttemptCapture, LiveAttemptRecord, LiveSessionCapture, LiveSto
 const CORPUS = liveWebHunts()
 const [PI, WATCH, EUROSTAR, VOYAGER] = CORPUS
 
-const EMPTY_METRICS = extractLiveMetrics({ events: [], perfRecords: [], traceRecords: [], input: 'typed' })
+const EMPTY_METRICS = extractLiveMetrics({ events: [], perfRecords: [], traceRecords: [], input: 'typed', clockOrigin: 'app' })
 
 function attempt(overrides: {
   huntId?: string
@@ -80,28 +77,34 @@ function attempt(overrides: {
 interface SessionScript {
   /** What each step returns, by stepId. */
   results?: Record<string, LiveAttemptRecord>
-  continuation?: LiveContinuationState
+  continuation?: ContinuationState
 }
 
 class FakeCaptures {
-  readonly started: StartCaptureOptions[] = []
-  readonly commands: LiveCaptureCommand[] = []
+  readonly started: CaptureSessionOptions[] = []
+  readonly commands: CaptureCommandInput[] = []
   readonly closed: string[] = []
   /** Which session handle each step was submitted through. */
   readonly handles = new Map<string, object>()
 
   constructor(private readonly script: Record<string, SessionScript> = {}) {}
 
-  start = async (options: StartCaptureOptions): Promise<LiveCaptureSession> => {
+  start = async (options: CaptureSessionOptions): Promise<CaptureSession> => {
     this.started.push(options)
     const scripted = this.script[options.huntId] ?? {}
-    const session: LiveCaptureSession = {
-      captureCommand: async (command: LiveCaptureCommand): Promise<LiveAttemptRecord> => {
+    const session: CaptureSession = {
+      captureId: options.captureId,
+      captureDir: `/tmp/${options.captureId}`,
+      mode: options.mode,
+      // Measured scheduling never browses or steers through the harness, so
+      // the double withholds it exactly as measured mode does.
+      harness: null,
+      captureCommand: async (command: CaptureCommandInput): Promise<LiveAttemptRecord> => {
         this.commands.push(command)
-        this.handles.set(`${command.huntId}:${command.stepId}`, session)
-        return scripted.results?.[command.stepId] ?? attempt({ huntId: command.huntId, stepId: command.stepId })
+        this.handles.set(`${options.huntId}:${command.stepId}`, session)
+        return scripted.results?.[command.stepId] ?? attempt({ huntId: options.huntId, stepId: command.stepId })
       },
-      continuationState: async (): Promise<LiveContinuationState> => scripted.continuation ?? { ready: true },
+      continuationState: async (): Promise<ContinuationState> => scripted.continuation ?? { ready: true },
       close: async (): Promise<LiveSessionCapture> => {
         this.closed.push(options.captureId)
         return { captureId: options.captureId, huntId: options.huntId } as unknown as LiveSessionCapture
@@ -130,7 +133,13 @@ describe('the schedule’s view of a capture', () => {
       reason: 'the Session was gone',
       decidedAt: '2026-09-09T00:00:00.000Z',
     }
-    expect(scheduledView(notReached)).toMatchObject({ accepted: false, measurementFault: null })
+    expect(scheduledView(notReached)).toMatchObject({
+      accepted: false,
+      measurementFault: null,
+      // Nothing was submitted, so the schedule must record a not-reached
+      // command rather than an attempt — and the capture's own words survive.
+      declined: { reason: 'session_unavailable', detail: 'the Session was gone' },
+    })
   })
 
   it.each<LiveStopReason>(['observer_failure', 'acceptance_timeout', 'rejected'])(
@@ -328,6 +337,6 @@ describe('what the schedule can never read', () => {
     const initial = pass.hunts[0].initial
     expect(initial.status).toBe('attempted')
     const view: HuntAttempt = (initial as { attempt: HuntAttempt }).attempt
-    expect(Object.keys(view).sort()).toEqual(['accepted', 'capture', 'measurementFault'])
+    expect(Object.keys(view).sort()).toEqual(['accepted', 'capture', 'declined', 'measurementFault'])
   })
 })

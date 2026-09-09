@@ -5,13 +5,16 @@ export default defineConfig({
     environment: 'node',
     include: ['src/**/*.test.ts', 'e2e/**/*.test.ts'],
     // E2e runs under its own Xvfb-wrapped config; the real-model evaluation
-    // suite (#109) and the delegation probe (#163) are opt-in only — they
-    // must never ride the unit suite.
+    // suite (#109), the delegation probe (#163) and the live-web pilot (#225)
+    // are opt-in only — they must never ride the unit suite. The live-web
+    // pattern is the costly one: it browses the real web on real budget, so
+    // e2e/live/config.test.ts asserts this exclusion rather than trusting it.
     exclude: [
       ...configDefaults.exclude,
       'e2e/**/*.e2e.test.ts',
       'e2e/**/*.eval.test.ts',
       'e2e/**/*.probe.test.ts',
+      'e2e/**/*.live.test.ts',
     ],
   },
 })

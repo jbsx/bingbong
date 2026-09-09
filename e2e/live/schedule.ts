@@ -42,6 +42,14 @@ export type CommandRole = 'initial' | 'follow-up'
  */
 export interface ScheduledAttempt {
   /**
+   * Set when the capture declined to dispatch: nothing was submitted at all.
+   * The capture runs its own readiness check immediately before submitting,
+   * so a Session that lapsed between the schedule's check and the capture's
+   * lands here. Such a command spends no budget and is recorded as not
+   * reached — calling it an attempt would claim a Run that never existed.
+   */
+  declined: { reason: NotReachedReason; detail: string } | null
+  /**
    * Pipeline acceptance — a Run exists and carries an identity. NOT task
    * success, and not "the DOM form submitted". A command that was rejected
    * (busy, no Session) was never a Run.
@@ -165,10 +173,20 @@ export class CommandBudget {
 
   constructor(private readonly budget: number) {}
 
-  spend(): void {
+  /**
+   * Refuse to dispatch when the bound is used up. Checked BEFORE a command
+   * goes out — a guard that noticed afterwards would have already paid for
+   * the command it was meant to prevent.
+   */
+  reserve(): void {
     if (this.spent >= this.budget) {
       throw new CommandBudgetExceeded(this.budget)
     }
+  }
+
+  /** Record a command that actually went out. */
+  spend(): void {
+    this.reserve()
     this.spent += 1
   }
 
@@ -276,15 +294,15 @@ async function runHunt<TAttempt extends ScheduledAttempt>(
   }
 
   try {
-    budget.spend()
+    budget.reserve()
     let initial: TAttempt
     try {
       initial = await context.submit(hunt.prompt, 'initial')
     } catch (error) {
-      // The command went out and the harness broke observing it. That is
-      // broken measurement, and it is never retried — a second submission
-      // would be a second attempt at a task the pilot allows one of.
-      const detail = `the initial capture failed: ${describe(error)}`
+      // A throw is a protocol error — a concurrent call, a reused attempt id,
+      // a closed session — so no command went out and no budget was spent. It
+      // is never retried either way: the pilot allows one attempt at a task.
+      const detail = `the initial command could not be dispatched: ${describe(error)}`
       return {
         huntId: hunt.id,
         initial: notReached(hunt.prompt, 'capture_failed', detail),
@@ -292,6 +310,20 @@ async function runHunt<TAttempt extends ScheduledAttempt>(
       }
     }
 
+    if (initial.declined) {
+      // The capture's own readiness check refused between this schedule's
+      // check and the submit. Nothing was submitted, so this is a not-reached
+      // command, not a Run that went badly.
+      return {
+        huntId: hunt.id,
+        initial: notReached(hunt.prompt, initial.declined.reason, initial.declined.detail),
+        followUp: hunt.followUp
+          ? notReached(hunt.followUp, 'initial_not_accepted', 'the initial command was never dispatched')
+          : null,
+      }
+    }
+
+    budget.spend()
     return {
       huntId: hunt.id,
       initial: { status: 'attempted', promptVersion: hunt.prompt.version, attempt: initial },
@@ -345,14 +377,20 @@ async function followUpOf<TAttempt extends ScheduledAttempt>(
     return notReached(prompt, continuation.reason, continuation.detail)
   }
 
-  budget.spend()
+  budget.reserve()
+  let attempt: TAttempt
   try {
-    return { status: 'attempted', promptVersion: prompt.version, attempt: await context.submit(prompt, 'follow-up') }
+    attempt = await context.submit(prompt, 'follow-up')
   } catch (error) {
-    // Sent, then the harness broke. Never re-sent: the follow-up is allowed
-    // one submission and it has had it.
-    return notReached(prompt, 'capture_failed', `the follow-up capture failed: ${describe(error)}`)
+    // Never re-sent: the follow-up is allowed one submission and it has had
+    // its turn at one.
+    return notReached(prompt, 'capture_failed', `the follow-up could not be dispatched: ${describe(error)}`)
   }
+  if (attempt.declined) {
+    return notReached(prompt, attempt.declined.reason, attempt.declined.detail)
+  }
+  budget.spend()
+  return { status: 'attempted', promptVersion: prompt.version, attempt }
 }
 
 /**

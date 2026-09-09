@@ -24,17 +24,16 @@
 // that was never accepted started no Run, so there is nothing to continue.
 
 import { promptIdentity } from './artifacts'
+import { MEASUREMENT_FAULT_REASONS, type CaptureSession, type CaptureSessionOptions, type ContinuationBlock } from './capture'
 import { liveWebHunts, type LiveWebHunt, type MeasuredPrompt } from './hunts'
 import type { CommandRole, ContinuationState, HuntCaptureHost, HuntContext, NotReachedReason, PassRecord, ScheduledAttempt } from './schedule'
 import type {
-  AttemptRelation,
   LiveAttemptRecord,
   LiveCaptureMode,
   LiveCaptureSet,
   LiveCaptureSetState,
   LivePromptIdentity,
   LiveScheduledAttempt,
-  LiveSessionCapture,
   LiveSessionReference,
   LiveStopReason,
 } from './types'
@@ -52,77 +51,34 @@ export const LIVE_WEB_STUDY = {
 } as const
 
 // ---------------------------------------------------------------------------
-// #224's capture handle
-//
-// Declared structurally rather than imported, because ./capture.ts is #224's
-// and lands separately. The shapes mirror its published contract exactly; when
-// it lands these become type-only imports and nothing else here changes.
-// ---------------------------------------------------------------------------
-
-export interface LiveCaptureCommand {
-  readonly attemptId: string
-  readonly huntId: string
-  readonly stepId: string
-  readonly order: number
-  readonly relation: AttemptRelation
-  readonly parentAttemptId?: string
-  readonly text: string
-  readonly prompt: LivePromptIdentity
-}
-
-/** #224's continuation vocabulary. `run_active` has no counterpart of its own here — see CONTINUATION_REASONS. */
-export type LiveContinuationReason =
-  | 'awaiting_help'
-  | 'session_lost'
-  | 'session_unavailable'
-  | 'run_active'
-  | 'capture_failed'
-
-export type LiveContinuationState =
-  | { readonly ready: true }
-  | { readonly ready: false; readonly reason: LiveContinuationReason; readonly detail: string }
-
-/** One launched app on one fresh benchmark profile: #224's `startCaptureSession` handle. */
-export interface LiveCaptureSession {
-  captureCommand(command: LiveCaptureCommand): Promise<LiveAttemptRecord>
-  continuationState(): Promise<LiveContinuationState>
-  close(): Promise<LiveSessionCapture>
-}
-
-export interface StartCaptureOptions {
-  readonly mode: LiveCaptureMode
-  readonly captureId: string
-  readonly huntId: string
-  readonly setId?: string
-  readonly root?: string
-  readonly verification?: { readonly env: Record<string, string | undefined>; readonly fixture?: unknown }
-}
-
-export type StartCaptureSession = (options: StartCaptureOptions) => Promise<LiveCaptureSession>
-
-// ---------------------------------------------------------------------------
 // The two derivations the schedule needs
 // ---------------------------------------------------------------------------
 
 /**
- * Stop reasons that mean the harness failed rather than the task did.
- *
- * `observer_failure` and `acceptance_timeout` are plainly instrumentation.
- * `rejected` is here because a rejected submission is not a Run at all: the
- * schedule submits into an idle Session by contract, so a busy rejection means
- * the capture's own readiness check was wrong. Reading it as a task outcome
- * would quietly convert a scheduling bug into a failed hunt.
- *
- * Absent on purpose: `attempt_timeout` and `session_lost`, which are things
- * that happened to the Run — real, retained, and graded as task outcomes.
+ * Starting one capture session, injectable so the schedule can be driven
+ * against a double. In production this is #224's `startCaptureSession`.
  */
-const MEASUREMENT_FAULT_STOPS: readonly LiveStopReason[] = ['observer_failure', 'acceptance_timeout', 'rejected']
+export type StartCaptureSession = (options: CaptureSessionOptions) => Promise<CaptureSession>
 
-/** #224's continuation reasons in #225's vocabulary. */
-const CONTINUATION_REASONS: Readonly<Record<LiveContinuationReason, NotReachedReason>> = {
+/**
+ * Which stop reasons mean the harness failed rather than the task did —
+ * #224's own list, not a second copy of it. `observer_failure` and
+ * `acceptance_timeout` are plainly instrumentation; `rejected` counts because
+ * the schedule submits into an idle Session by contract, so a busy rejection
+ * means the readiness check was wrong, and reading it as a task outcome would
+ * quietly convert a scheduling bug into a failed hunt.
+ *
+ * Absent on purpose: `attempt_timeout` and `session_lost` are things that
+ * happened to the Run — real, retained, and graded as task outcomes.
+ */
+const MEASUREMENT_FAULT_STOPS: readonly LiveStopReason[] = MEASUREMENT_FAULT_REASONS
+
+/** #224's continuation vocabulary in #225's. Total, so a new block cannot go unmapped. */
+const CONTINUATION_REASONS: Readonly<Record<ContinuationBlock, NotReachedReason>> = {
   awaiting_help: 'awaiting_help',
   session_lost: 'session_lost',
   session_unavailable: 'session_unavailable',
+  initial_not_accepted: 'initial_not_accepted',
   // A Run still live at the readiness check is a Session that cannot take the
   // command now. The schedule never waits it out — waiting until it works is
   // how an unreachable continuation quietly becomes a successful one.
@@ -136,15 +92,25 @@ export interface HuntAttempt extends ScheduledAttempt {
   readonly capture: LiveAttemptRecord
 }
 
-/** Derive the schedule's view of a capture. The only place these two rules live. */
+/** Derive the schedule's view of a capture. The only place these rules live. */
 export function scheduledView(capture: LiveAttemptRecord): HuntAttempt {
   if (capture.kind !== 'attempt') {
-    // #224 declined to dispatch. No Run exists, so nothing can continue from
-    // it; the reason it gives is preserved on the record itself.
-    return { capture, accepted: false, measurementFault: null }
+    // The capture re-checks readiness immediately before submitting, so it can
+    // refuse after the schedule's own check passed — a Session that lapsed in
+    // between. Nothing was submitted, so this is a not-reached command rather
+    // than a Run that went badly, and `session_unavailable` is the honest
+    // reading: the Session could not take it now. The capture's own words are
+    // kept as the detail rather than being re-worded here.
+    return {
+      capture,
+      declined: { reason: 'session_unavailable', detail: capture.reason },
+      accepted: false,
+      measurementFault: null,
+    }
   }
   return {
     capture,
+    declined: null,
     accepted: capture.accepted.status === 'observed',
     measurementFault: MEASUREMENT_FAULT_STOPS.includes(capture.stop.reason)
       ? (capture.stop.detail ?? capture.stop.reason)
@@ -217,9 +183,16 @@ export interface HuntCaptureHostOptions {
   /** Artifact root; defaults to #224's. */
   readonly root?: string
   /** Verification-mode composition — a scripted model and fixture pages. Never present in measured mode. */
-  readonly verification?: StartCaptureOptions['verification']
+  readonly verification?: CaptureSessionOptions['verification']
   /** The hunts this pass will run, so slot order matches the set file. Defaults to the corpus. */
   readonly hunts?: readonly LiveWebHunt[]
+  /**
+   * Capture knobs forwarded to every hunt's session unchanged — attempt
+   * bounds, startup budget, the access guard, the profile recipe. Forwarded
+   * rather than chosen here: how long a Run may take is the capture
+   * contract's business, not the protocol's.
+   */
+  readonly capture?: Pick<CaptureSessionOptions, 'profile' | 'accessGuard' | 'bounds' | 'startupMs'>
 }
 
 /** A host, plus the session files it produced — the set file needs both. */
@@ -263,6 +236,7 @@ export function createHuntCaptureHost(
         setId: options.setId,
         root: options.root,
         verification: options.verification,
+        ...options.capture,
       })
 
       return {
@@ -272,11 +246,14 @@ export function createHuntCaptureHost(
           return scheduledView(
             await session.captureCommand({
               attemptId: slot.attemptId,
-              huntId: slot.huntId,
               stepId: slot.stepId,
               order: slot.order,
               relation: slot.relation,
               parentAttemptId: slot.parentAttemptId,
+              // The corpus stores prompts exactly as #223 approved them, and
+              // corpus.test.ts pins them single-line — the capture refuses a
+              // newline, because the Prompt Bar would strip it and the
+              // accepted text would then never match what was dispatched.
               text: prompt.text,
               prompt: slot.prompt,
             }),

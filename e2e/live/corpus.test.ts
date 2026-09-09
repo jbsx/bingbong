@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto'
 import { describe, expect, it } from 'vitest'
+import { normalizeCommandText } from './capture'
 import { huntById, liveWebHunts, scheduledCommandCount, type MeasuredPrompt } from './hunts'
 import { gradingKeyFor, gradingKeys, type GradingKey } from './keys'
 
@@ -135,6 +136,18 @@ describe('the live-web hunt corpus', () => {
   it('has no empty prompt', () => {
     for (const { label, prompt } of allPrompts()) {
       expect(prompt.text.trim(), label).not.toBe('')
+    }
+  })
+
+  it('stores every prompt exactly as the Prompt Bar will submit it', () => {
+    // The capture refuses a multi-line command, because the single-line
+    // Prompt Bar would strip the newline and the accepted text would then
+    // never match what was dispatched. Checked with the capture's own
+    // normalizer rather than a local regex, so the corpus and the thing that
+    // submits it cannot drift: a prompt is stored ready to send, and
+    // dispatch never has to edit approved text.
+    for (const { label, prompt } of allPrompts()) {
+      expect(normalizeCommandText(prompt.text), label).toBe(prompt.text)
     }
   })
 
