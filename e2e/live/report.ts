@@ -18,7 +18,7 @@
 //     never confirmed — each keeps its own disposition, and none of them
 //     quietly leaves the denominator.
 //   * Nested work is not wall time. Tool spans contain browser spans,
-//     worker rounds overlap the tools they drive, and this report will not
+//     Subagent rounds overlap the tools they drive, and this report will not
 //     add them up or invent the remainder.
 //
 // Relative imports carry `.ts` — the CLI runs this file under Node's type
@@ -29,7 +29,7 @@ import type { FinalizationCause, RunResolution } from '../../src/core/session/ru
 import { nearestRankPercentile } from '../../src/core/report/stats.ts'
 import type { Validation } from './artifacts.ts'
 import { isVerifiedSuccess, type LiveGradeStatus, type LiveGradeEntry, type LiveGrades, type LiveKeyManifest } from './grades.ts'
-import { indexAttempts } from './grades.ts'
+import { duplicateIds, indexAttempts } from './grades.ts'
 import type {
   AttemptRelation,
   LiveArtifactReference,
@@ -103,8 +103,16 @@ export interface LiveRowTiming {
   readonly userWaitMs: Observed<number>
   /**
    * What the clock had reached when observation stopped short of a
-   * terminal — a censored elapsed time, not a Run duration. Not
-   * applicable when the Run did reach its terminal.
+   * terminal — a censored elapsed time, not a Run duration, and not the
+   * Answer latency either: a Run that answered at 15 s and was then
+   * observed to a 300 s timeout spent 300 s, and both numbers are true.
+   * Not applicable when the Run did reach its terminal.
+   *
+   * It is the one figure here that crosses two clocks: the accepted
+   * command is the app process's wall stamp and the stop is the
+   * evaluator's, both `Date.now()` on the same machine (#224). That is a
+   * wall-to-wall difference, never the monotonic-to-wall join the
+   * attribution section refuses to make.
    */
   readonly censoredElapsedMs: Observed<number>
 }
@@ -115,7 +123,7 @@ export interface LiveRowWork {
   readonly toolCalls: number
   readonly toolSpans: number
   readonly visionRequests: number
-  readonly workersFinalized: number
+  readonly subagentsFinalized: number
   readonly errors: number
 }
 
@@ -155,6 +163,15 @@ export interface LivePopulation {
   readonly verifiedSuccess: number
   /** Verified successes that also carry a Task Completion Time. */
   readonly timedSuccess: number
+  /**
+   * The secondary rate: verified successes over the slots actually
+   * reviewed, rather than over the slots scheduled. It exists because
+   * partial grading makes the primary rate read low for a reason that is
+   * not the assistant's. It is never the headline — a reviewed-only rate
+   * is exactly how unreachable work disappears from a denominator — and it
+   * is null when nothing has been reviewed.
+   */
+  readonly verifiedOverReviewed: number | null
   readonly byGrade: Readonly<Record<LiveGradeStatus, number>>
 }
 
@@ -198,11 +215,24 @@ export interface LiveAttribution {
   readonly attemptsWithoutSpans: number
   readonly retries: number
   readonly toolCalls: number
-  readonly workersFinalized: number
+  /** Distinct Subagents that stopped, by agentId — a Subagent witnessed twice is one. */
+  readonly subagentsFinalized: number
+  /**
+   * How those Subagents stopped. A cancelled or failed one is here
+   * beside those that reached a cause of their own: a Run that
+   * delegated three and killed all three must never read as one that
+   * delegated none. `uncaused` is a Subagent whose cause never reached
+   * the tape, which is a gap in the record rather than a way to stop.
+   */
+  readonly subagentStops: Readonly<Record<string, number>>
+  /** Of those, the ones that returned the deterministic bounded report (#199). */
+  readonly subagentBoundedReports: number
+  /** Attempts whose Subagent record was unavailable rather than empty. */
+  readonly subagentsUnobserved: number
   readonly vision: { readonly requests: number; readonly totalMs: number | null; readonly attemptsCovered: number }
   readonly userWaitMs: LiveDistribution
   readonly speech: { readonly synthesisMs: number | null; readonly playbackMs: number | null; readonly inputLatency: 'not_applicable' }
-  /** Always false: tool spans contain browser spans and worker rounds overlap both. */
+  /** Always false: tool spans contain browser spans and Subagent rounds overlap both. */
   readonly stagesAreAdditive: false
   readonly note: string
 }
@@ -243,6 +273,15 @@ export interface LiveUsageSection {
   readonly byRole: readonly LiveRoleUsageSummary[]
   /** Null unless an explicit price list was supplied. Never a billing figure. */
   readonly estimate: LiveCostEstimate | null
+  /**
+   * What this section cannot say. The capture sums tokens per role and
+   * lists the models the role used, so a role that spanned two models has
+   * no per-model split here — and inventing one is how an estimate becomes
+   * a fiction. Stated always, not only when a price list happens to be
+   * supplied, because the limit is a property of the data rather than of
+   * the request.
+   */
+  readonly limits: readonly string[]
 }
 
 /** One cohort of comparable attempts: the same mode, commit and prompt version. */
@@ -331,6 +370,11 @@ function distribution(values: readonly (number | null)[]): LiveDistribution {
   }
 }
 
+/** A rate, or null when its denominator is empty — never a zero standing in for one. */
+function rateOver(numerator: number, denominator: number): number | null {
+  return denominator === 0 ? null : Math.round((numerator / denominator) * 1_000) / 1_000
+}
+
 function emptyGradeCounts(): Record<LiveGradeStatus, number> {
   return { pending: 0, pass: 0, useful_partial: 0, help_access_blocked: 0, unsuccessful: 0 }
 }
@@ -350,6 +394,7 @@ function populationOf(label: string, rows: readonly LiveReportRow[]): LivePopula
     pending: rows.filter((row) => row.grade === 'pending').length,
     verifiedSuccess: rows.filter((row) => row.verifiedSuccess).length,
     timedSuccess: rows.filter((row) => row.verifiedSuccess && row.timing.successfulTaskCompletionTimeMs.status === 'observed').length,
+    verifiedOverReviewed: rateOver(rows.filter((row) => row.verifiedSuccess).length, rows.filter((row) => row.reviewed).length),
     byGrade,
   }
 }
@@ -360,6 +405,11 @@ interface SlotView {
   readonly captureId: string | null
   readonly record: LiveAttemptRecord | null
   readonly session: LiveSessionCapture | null
+}
+
+/** The dispatched attempt behind a slot, or null for a slot nothing ran into. */
+function attemptOf(view: SlotView | null | undefined): LiveAttemptCapture | null {
+  return view?.record?.kind === 'attempt' ? view.record : null
 }
 
 function dispositionOf(view: SlotView): { disposition: LiveDisposition; reason: string | null } {
@@ -397,11 +447,23 @@ function chainStart(attemptId: string, byId: ReadonlyMap<string, SlotView>): Slo
   return current
 }
 
+/**
+ * When the capture stopped observing an attempt, as an epoch stamp. The
+ * stop is recorded on the evaluator's clock and the command on the app's,
+ * both wall clocks on the same machine — so the difference is honest, and
+ * a stamp that will not parse is `invalid` rather than quietly dropped.
+ */
+function stoppedAtOf(attempt: LiveAttemptCapture | null): Observed<number> {
+  if (attempt === null) return unavailable('no attempt was dispatched into this slot')
+  const stopped = Date.parse(attempt.stop.at)
+  return Number.isFinite(stopped)
+    ? observed(stopped)
+    : { status: 'invalid', reason: 'the capture recorded no parseable stop time' }
+}
+
 function acceptedAtOf(view: SlotView | null): Observed<number> {
-  if (view === null || view.record === null || view.record.kind !== 'attempt') {
-    return unavailable('the chain’s first command was never captured')
-  }
-  return view.record.metrics.acceptedAt
+  const attempt = attemptOf(view)
+  return attempt === null ? unavailable('the chain’s first command was never captured') : attempt.metrics.acceptedAt
 }
 
 function artifactsOf(session: LiveSessionCapture | null, attempt: LiveAttemptCapture | null): LiveArtifactIdentity[] {
@@ -448,7 +510,7 @@ function flagsFor(view: SlotView, entry: LiveGradeEntry, attempt: LiveAttemptCap
 }
 
 function rowFor(view: SlotView, entry: LiveGradeEntry, byId: ReadonlyMap<string, SlotView>): LiveReportRow {
-  const attempt = view.record?.kind === 'attempt' ? view.record : null
+  const attempt = attemptOf(view)
   const { disposition, reason } = dispositionOf(view)
   const verified = isVerifiedSuccess(entry)
   const metrics = attempt?.metrics ?? null
@@ -473,11 +535,13 @@ function rowFor(view: SlotView, entry: LiveGradeEntry, byId: ReadonlyMap<string,
 
   // Observation stopped short of a terminal: what the clock had reached is
   // a censored elapsed time, and calling it a Run duration would be a lie.
+  // It runs to where observation actually stopped, not to the Answer — an
+  // attempt that answered early and was then watched to its timeout spent
+  // the whole timeout, and `observedAnswerLatencyMs` already holds the other
+  // number.
   let censored: Observed<number> = notApplicable('the Run reached its terminal')
   if (metrics !== null && metrics.terminalAt.status !== 'observed') {
-    censored = metrics.finalAnswerAt.status === 'observed'
-      ? elapsedBetween(metrics.acceptedAt, metrics.finalAnswerAt)
-      : unavailable('the capture stopped with no Answer and no terminal to measure to')
+    censored = elapsedBetween(metrics.acceptedAt, stoppedAtOf(attempt))
   }
 
   return {
@@ -517,7 +581,9 @@ function rowFor(view: SlotView, entry: LiveGradeEntry, byId: ReadonlyMap<string,
             toolCalls: metrics.counts.toolCalls,
             toolSpans: metrics.counts.toolSpans,
             visionRequests: metrics.counts.visionRequests,
-            workersFinalized: metrics.counts.workersFinalized,
+            // The capture contract still spells it "worker"; the domain
+            // name is Subagent (CONTEXT.md §Delegation), so it is mapped here.
+            subagentsFinalized: metrics.counts.subagentsFinalized,
             errors: metrics.counts.errors,
           },
     flags: flagsFor(view, entry, attempt),
@@ -542,10 +608,8 @@ function pairsOf(rows: readonly LiveReportRow[], byId: ReadonlyMap<string, SlotV
       const initial = rowById.get(followUp.parentAttemptId!)
       if (initial === undefined) return []
       const bothVerified = initial.verifiedSuccess && followUp.verifiedSuccess
-      const initialAttempt = byId.get(initial.attemptId)?.record
-      const followUpAttempt = byId.get(followUp.attemptId)?.record
-      const initialMetrics = initialAttempt?.kind === 'attempt' ? initialAttempt.metrics : null
-      const followUpMetrics = followUpAttempt?.kind === 'attempt' ? followUpAttempt.metrics : null
+      const initialMetrics = attemptOf(byId.get(initial.attemptId))?.metrics ?? null
+      const followUpMetrics = attemptOf(byId.get(followUp.attemptId))?.metrics ?? null
       return [
         {
           huntId: followUp.huntId,
@@ -602,14 +666,33 @@ function bothStepPopulation(pairs: readonly LivePairRow[], rows: readonly LiveRe
     pending,
     verifiedSuccess: pairs.filter((pair) => pair.bothVerified).length,
     timedSuccess: pairs.filter((pair) => pair.bothVerified && pair.sequenceElapsedMs.status === 'observed').length,
+    verifiedOverReviewed: rateOver(pairs.filter((pair) => pair.bothVerified).length, reviewed),
     byGrade,
   }
 }
 
+/**
+ * Sum the per-attempt Subagent stop breakdowns. Each attempt's own
+ * breakdown is already deduplicated by agentId upstream, and attempts
+ * delegate their own Subagents, so these add.
+ */
+function mergeStops(attempts: readonly LiveAttemptCapture[]): Record<string, number> {
+  const merged: Record<string, number> = {}
+  for (const attempt of attempts) {
+    const stops = valueOf(attempt.metrics.subagents)?.byStop
+    if (stops === undefined) continue
+    for (const [stop, count] of Object.entries(stops)) merged[stop] = (merged[stop] ?? 0) + count
+  }
+  return merged
+}
+
+/** Every dispatched attempt behind a set of rows, in row order. */
+function attemptsOf(rows: readonly LiveReportRow[], byId: ReadonlyMap<string, SlotView>): LiveAttemptCapture[] {
+  return rows.map((row) => attemptOf(byId.get(row.attemptId))).filter((attempt): attempt is LiveAttemptCapture => attempt !== null)
+}
+
 function attributionOf(rows: readonly LiveReportRow[], byId: ReadonlyMap<string, SlotView>): LiveAttribution {
-  const attempts = rows
-    .map((row) => byId.get(row.attemptId)?.record)
-    .filter((record): record is LiveAttemptCapture => record?.kind === 'attempt')
+  const attempts = attemptsOf(rows, byId)
   const stages = new Map<string, { count: number; totalMs: number; unionMs: number; attemptsCovered: number }>()
   const clockOrigins = new Set<string>()
   let withSpans = 0
@@ -644,7 +727,13 @@ function attributionOf(rows: readonly LiveReportRow[], byId: ReadonlyMap<string,
     attemptsWithoutSpans: attempts.length - withSpans,
     retries: attempts.reduce((total, attempt) => total + attempt.metrics.counts.llmRetries, 0),
     toolCalls: attempts.reduce((total, attempt) => total + attempt.metrics.counts.toolCalls, 0),
-    workersFinalized: attempts.reduce((total, attempt) => total + attempt.metrics.counts.workersFinalized, 0),
+    subagentsFinalized: attempts.reduce((total, attempt) => total + attempt.metrics.counts.subagentsFinalized, 0),
+    subagentStops: mergeStops(attempts),
+    subagentBoundedReports: attempts.reduce(
+      (total, attempt) => total + (valueOf(attempt.metrics.subagents)?.bounded ?? 0),
+      0,
+    ),
+    subagentsUnobserved: attempts.filter((attempt) => attempt.metrics.subagents.status === 'unavailable').length,
     vision: {
       requests: attempts.reduce((total, attempt) => total + attempt.metrics.counts.visionRequests, 0),
       totalMs:
@@ -661,7 +750,7 @@ function attributionOf(rows: readonly LiveReportRow[], byId: ReadonlyMap<string,
     },
     stagesAreAdditive: false,
     note:
-      'Stage totals are not additive: tool spans contain browser sub-spans and worker rounds overlap the tools they drive. ' +
+      'Stage totals are not additive: tool spans contain browser sub-spans and Subagent rounds overlap the tools they drive. ' +
       'No exclusive wall-time split or unexplained remainder is derived from them.',
   }
 }
@@ -673,9 +762,7 @@ function usageOf(
   byId: ReadonlyMap<string, SlotView>,
   pricing: LivePricingInput | undefined,
 ): LiveUsageSection {
-  const attempts = rows
-    .map((row) => byId.get(row.attemptId)?.record)
-    .filter((record): record is LiveAttemptCapture => record?.kind === 'attempt')
+  const attempts = attemptsOf(rows, byId)
   const byRole = AGENT_ROLE_ORDER.map((role): LiveRoleUsageSummary => {
     const observations = attempts.map((attempt) => attempt.metrics.usage[role])
     const present = observations.filter((observation) => observation.status === 'observed').map((observation) => valueOf(observation)!)
@@ -693,7 +780,19 @@ function usageOf(
     }
   })
 
-  if (pricing === undefined) return { byRole, estimate: null }
+  const limits = [
+    'Tokens are summed per role, not per model: a role that used several models has no per-model split, and none is inferred.',
+    'Vision usage is unavailable by construction — vision records carry request duration and never tokens.',
+    'The daily spend ledger is never read: it turns missing usage into zero and binds nothing to an attempt.',
+    ...byRole
+      .filter((summary) => summary.rounds > 0 && !summary.complete)
+      .map(
+        (summary) =>
+          `${summary.role}: ${summary.rounds - summary.roundsWithUsage} of ${summary.rounds} round(s) reported no usage, so its tokens are a floor.`,
+      ),
+  ]
+
+  if (pricing === undefined) return { byRole, estimate: null, limits }
 
   const unpriced: { what: string; reason: string }[] = []
   const pricedModels: string[] = []
@@ -726,6 +825,7 @@ function usageOf(
 
   return {
     byRole,
+    limits,
     estimate: {
       currency: 'USD',
       subtotalUsd: Math.round(subtotal * 10_000) / 10_000,
@@ -742,9 +842,9 @@ function cohortsOf(rows: readonly LiveReportRow[], byId: ReadonlyMap<string, Slo
   const groups = new Map<string, { mode: string; commit: string; promptVersions: Set<string>; rows: LiveReportRow[] }>()
   for (const row of rows) {
     const view = byId.get(row.attemptId)
-    const record = view?.record
-    if (record?.kind !== 'attempt') continue
-    const launch = view!.session!.launch
+    const record = attemptOf(view)
+    const launch = view?.session?.launch
+    if (record === null || launch === undefined) continue
     const key = `${launch.mode}|${launch.commit.slice(0, 8)}|${record.command.prompt.version}`
     const group = groups.get(key) ?? { mode: launch.mode, commit: launch.commit.slice(0, 8), promptVersions: new Set<string>(), rows: [] }
     group.promptVersions.add(record.command.prompt.version)
@@ -781,8 +881,8 @@ function validatePopulation(input: LiveReportInput): { errors: string[]; anomali
 
   if (grades.setId !== set.setId) errors.push(`the grades are for capture set "${grades.setId}", the capture is "${set.setId}"`)
   const slotIds = set.slots.map((slot) => slot.attemptId)
-  const repeatedSlots = slotIds.filter((id, index) => slotIds.indexOf(id) !== index)
-  if (repeatedSlots.length > 0) errors.push(`the capture set schedules ${[...new Set(repeatedSlots)].join(', ')} more than once`)
+  const repeatedSlots = duplicateIds(slotIds)
+  if (repeatedSlots.length > 0) errors.push(`the capture set schedules ${repeatedSlots.join(', ')} more than once`)
 
   const declared = new Set(set.sessions.map((reference) => reference.captureId))
   for (const session of sessions) {
@@ -954,10 +1054,10 @@ function ms(observation: Observed<number>): string {
   }
 }
 
-function statsLine(distributionOf: LiveDistribution): string {
-  if (distributionOf.stats === null) return `no observations (missing ${distributionOf.missing})`
-  const { minMs, medianMs, maxMs } = distributionOf.stats
-  return `n=${distributionOf.observed} (missing ${distributionOf.missing}) min ${minMs} ms | median ${medianMs} ms | max ${maxMs} ms`
+function statsLine(spread: LiveDistribution): string {
+  if (spread.stats === null) return `no observations (missing ${spread.missing})`
+  const { minMs, medianMs, maxMs } = spread.stats
+  return `n=${spread.observed} (missing ${spread.missing}) min ${minMs} ms | median ${medianMs} ms | max ${maxMs} ms`
 }
 
 function populationLine(population: LivePopulation): string {
@@ -1053,7 +1153,15 @@ export function formatLiveReport(report: LiveReport): string {
   }
   lines.push('')
   lines.push(
-    `- retries observed: ${report.attribution.retries} (counted, never timed) | tool calls: ${report.attribution.toolCalls} | workers finalized: ${report.attribution.workersFinalized}`,
+    `- retries observed: ${report.attribution.retries} (counted, never timed) | tool calls: ${report.attribution.toolCalls}`,
+  )
+  const stops = Object.entries(report.attribution.subagentStops)
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([stop, count]) => `${stop} ${count}`)
+  lines.push(
+    `- Subagents: ${report.attribution.subagentStops === undefined ? 0 : report.attribution.subagentsFinalized} stopped (${stops.length === 0 ? 'none delegated' : stops.join(', ')})` +
+      `${report.attribution.subagentBoundedReports > 0 ? `, ${report.attribution.subagentBoundedReports} bounded report(s)` : ''}` +
+      `${report.attribution.subagentsUnobserved > 0 ? `, ${report.attribution.subagentsUnobserved} attempt(s) with no Subagent record` : ''}`,
   )
   lines.push(
     `- vision: ${report.attribution.vision.requests} request(s), ${report.attribution.vision.totalMs === null ? 'duration unavailable' : `${report.attribution.vision.totalMs} ms`} over ${report.attribution.vision.attemptsCovered} attempt(s)`,

@@ -217,8 +217,8 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 const isString = (value: unknown): value is string => typeof value === 'string'
 const isNonEmpty = (value: unknown): value is string => isString(value) && value.trim() !== ''
 
-/** Ids repeated in a list, in first-seen order — the shape both duplicate checks report. */
-function duplicates(ids: readonly string[]): string[] {
+/** Ids repeated in a list, in first-seen order — the shape every duplicate check reports. */
+export function duplicateIds(ids: readonly string[]): string[] {
   const seen = new Set<string>()
   const repeated = new Set<string>()
   for (const id of ids) {
@@ -254,7 +254,7 @@ function parseKeyTask(value: unknown, index: number, errors: string[]): LiveKeyT
     return null
   }
   const parsed = checks.map((check) => parseKeyCheck(check, where, errors)).filter((check): check is LiveKeyCheck => check !== null)
-  const repeated = duplicates(parsed.map((check) => check.checkId))
+  const repeated = duplicateIds(parsed.map((check) => check.checkId))
   if (repeated.length > 0) errors.push(`${where}: check id(s) ${repeated.join(', ')} appear more than once`)
   if (referenceSources !== undefined && (!Array.isArray(referenceSources) || !referenceSources.every(isString))) {
     errors.push(`${where}: referenceSources must be a list of strings`)
@@ -286,7 +286,7 @@ export function parseLiveKeyManifest(raw: unknown): Validation<LiveKeyManifest> 
     return { ok: false, errors }
   }
   const tasks = raw.tasks.map((task, index) => parseKeyTask(task, index, errors)).filter((task): task is LiveKeyTask => task !== null)
-  const repeated = duplicates(tasks.map((task) => `${task.huntId}/${task.stepId}`))
+  const repeated = duplicateIds(tasks.map((task) => `${task.huntId}/${task.stepId}`))
   if (repeated.length > 0) errors.push(`the key manifest declares ${repeated.join(', ')} more than once`)
   if (errors.length > 0) return { ok: false, errors }
   return {
@@ -466,7 +466,7 @@ function checkReviewShape(
   } else {
     const required = new Set(task.checks.map((check) => check.checkId))
     const judged = entry.checks.map((judgment) => judgment.checkId)
-    const repeated = duplicates(judged)
+    const repeated = duplicateIds(judged)
     if (repeated.length > 0) errors.push(`${where}: check(s) ${repeated.join(', ')} judged more than once`)
     const unknown = judged.filter((id) => !required.has(id))
     if (unknown.length > 0) errors.push(`${where}: judged check(s) ${unknown.join(', ')} the key does not require`)
@@ -593,7 +593,7 @@ export function parseLiveGrades(raw: unknown, inputs: LiveGradingInputs): Valida
   const { byAttemptId, duplicated } = indexAttempts(inputs.sessions)
   for (const id of duplicated) errors.push(`attempt ${id} is captured in more than one Session — no single Answer to grade`)
 
-  const repeated = duplicates(entries.map((entry) => entry.attemptId))
+  const repeated = duplicateIds(entries.map((entry) => entry.attemptId))
   if (repeated.length > 0) errors.push(`slot(s) ${repeated.join(', ')} are graded twice`)
 
   const tasks = new Map(inputs.manifest.tasks.map((task) => [`${task.huntId}/${task.stepId}`, task]))

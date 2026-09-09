@@ -347,7 +347,11 @@ describe('Task Success and Task Completion Time', () => {
     const row = rowOf(built(inputFor(set, sessions, manifest, (grades) => grade(grades, 'a1', 'pass'))), 'a1')
 
     expect(row.timing.runDurationMs.status).toBe('unavailable')
-    expect(row.timing.censoredElapsedMs).toEqual({ status: 'observed', value: 15_000 })
+    // The Answer arrived at 15 s; observation ran on to 60 s. The censored
+    // elapsed time is what the clock reached, not a second copy of the
+    // Answer latency — both numbers are true and they are different.
+    expect(row.timing.observedAnswerLatencyMs).toEqual({ status: 'observed', value: 15_000 })
+    expect(row.timing.censoredElapsedMs).toEqual({ status: 'observed', value: 60_000 })
     expect(row.flags).toContain('no_terminal_observed')
   })
 
@@ -501,6 +505,90 @@ describe('attribution, usage and anomalies', () => {
     expect(orchestrator.roundsWithUsage).toBe(1)
     expect(orchestrator.complete).toBe(false)
     expect(rowOf(report, 'a1').flags).toContain('usage_incomplete')
+  })
+
+  it('counts a Subagent the parent killed, and one whose cause never reached the tape', () => {
+    // Three Subagents: one finalized itself, one the Run cancelled, one
+    // ended with no cause recorded. A Run that delegated three and killed
+    // one must never read as a Run that delegated one.
+    const attempt = attemptCapture({
+      attemptId: 'a1',
+      huntId: 'hunt-a',
+      extraEvents: [
+        { type: 'subagent_finalized', turnId: 'turn-a1', agentId: 'w1', kind: 'browse', status: 'done', cause: 'objective_met', at: T0 + 1_000 },
+        { type: 'subagent_finalized', turnId: 'turn-a1', agentId: 'w2', kind: 'browse', status: 'cancelled', at: T0 + 1_100 },
+        { type: 'subagent_finalized', turnId: 'turn-a1', agentId: 'w3', kind: 'browse', status: 'done', at: T0 + 1_200 },
+      ] as never,
+    })
+    const session = sessionCapture({ captureId: 'capture-hunt-a', huntId: 'hunt-a', attempts: [attempt], setId: 'set-1' })
+    const report = built(inputFor(captureSet({ slots: [slotOf(attempt)], sessions: [session] }), [session], manifest))
+
+    expect(report.attribution.subagentsFinalized).toBe(3)
+    expect(report.attribution.subagentStops).toEqual({ objective_met: 1, cancelled: 1, uncaused: 1 })
+    // The cancelled one is visible rather than absorbed into the successes.
+    expect(formatLiveReport(report)).toContain('cancelled 1')
+  })
+
+  it('counts a Subagent witnessed twice once — a duplicate tape witness is not a second Subagent', () => {
+    // A Subagent's rounds are tapped both inside the worker loop and
+    // main-side, so the same agentId can be published twice. Counting
+    // witnesses would double it; counting distinct agentIds does not.
+    const attempt = attemptCapture({
+      attemptId: 'a1',
+      huntId: 'hunt-a',
+      extraEvents: [
+        { type: 'subagent_finalized', turnId: 'turn-a1', agentId: 'w1', kind: 'browse', status: 'done', cause: 'objective_met', at: T0 + 1_000 },
+        { type: 'subagent_finalized', turnId: 'turn-a1', agentId: 'w1', kind: 'browse', status: 'done', cause: 'objective_met', at: T0 + 1_050 },
+      ] as never,
+    })
+    const session = sessionCapture({ captureId: 'capture-hunt-a', huntId: 'hunt-a', attempts: [attempt], setId: 'set-1' })
+    const report = built(inputFor(captureSet({ slots: [slotOf(attempt)], sessions: [session] }), [session], manifest))
+
+    expect(report.attribution.subagentsFinalized).toBe(1)
+    expect(report.attribution.subagentStops).toEqual({ objective_met: 1 })
+  })
+
+  it('says an attempt delegated nothing rather than reporting an empty breakdown as a gap', () => {
+    const attempt = attemptCapture({ attemptId: 'a1', huntId: 'hunt-a' })
+    const session = sessionCapture({ captureId: 'capture-hunt-a', huntId: 'hunt-a', attempts: [attempt], setId: 'set-1' })
+    const report = built(inputFor(captureSet({ slots: [slotOf(attempt)], sessions: [session] }), [session], manifest))
+
+    expect(report.attribution.subagentsFinalized).toBe(0)
+    expect(report.attribution.subagentStops).toEqual({})
+    // Not delegating is not the same as a missing record.
+    expect(report.attribution.subagentsUnobserved).toBe(0)
+  })
+
+  it('states the per-model usage limit even when no price list was supplied', () => {
+    const attempt = attemptCapture({ attemptId: 'a1', huntId: 'hunt-a' })
+    const session = sessionCapture({ captureId: 'capture-hunt-a', huntId: 'hunt-a', attempts: [attempt], setId: 'set-1' })
+    const report = built(inputFor(captureSet({ slots: [slotOf(attempt)], sessions: [session] }), [session], manifest))
+
+    expect(report.usage.estimate).toBeNull()
+    expect(report.usage.limits.join(' ')).toContain('summed per role, not per model')
+    expect(report.usage.limits.join(' ')).toContain('daily spend ledger is never read')
+  })
+
+  it('reports a reviewed-only rate as a secondary figure with its own denominator', () => {
+    const { set, sessions, manifest: paired } = pairedFixture({ secondFollowUpReached: false })
+    // Two initials scheduled, one reviewed and passing, one left pending.
+    const report = built(inputFor(set, sessions, paired, (grades) => grade(grades, 'a1', 'pass')))
+
+    expect(report.populations.initial.scheduled).toBe(2)
+    expect(report.populations.initial.verifiedSuccess).toBe(1)
+    expect(report.populations.initial.reviewed).toBe(1)
+    // 1 of 1 reviewed, but still only 1 of 2 scheduled — and the headline
+    // stays the scheduled one.
+    expect(report.populations.initial.verifiedOverReviewed).toBe(1)
+    expect(formatLiveReport(report)).toContain('| initial | 1/2 |')
+  })
+
+  it('returns no reviewed-only rate when nothing has been reviewed', () => {
+    const attempt = attemptCapture({ attemptId: 'a1', huntId: 'hunt-a' })
+    const session = sessionCapture({ captureId: 'capture-hunt-a', huntId: 'hunt-a', attempts: [attempt], setId: 'set-1' })
+    const report = built(inputFor(captureSet({ slots: [slotOf(attempt)], sessions: [session] }), [session], manifest))
+
+    expect(report.populations.initial.verifiedOverReviewed).toBeNull()
   })
 
   it('retains an unscheduled observation as an anomaly instead of counting it', () => {

@@ -36,9 +36,9 @@ an accepted Evidence Checkpoint or a successful tool call to a `pass`.
 | Grades | `init-grades`, then the reviewer by hand | beside the key; reviewer prose stays local |
 | Compact report | the report command | `e2e/live/reports/` — committed |
 
-> **Before first use**, confirm `e2e/live/artifacts/` and `e2e/live/private/`
-> are ignored by Git. Raw traces, Browser Profiles and key material must never
-> be committed; inspect generated output before staging and never `git add .`.
+> `e2e/live/artifacts/` and `e2e/live/private/` are ignored by Git (#224).
+> Raw traces, Browser Profiles and key material must never be committed —
+> inspect generated output before staging, and never `git add .`.
 
 ### The key manifest
 
@@ -195,10 +195,12 @@ quietly:
 | `not_reached` | the protocol decided against dispatching it; the reason is kept |
 | `unaccounted` | scheduled, and no Session capture mentions it at all |
 
-Verified successes are reported over the **scheduled** population. A
-reviewed-only rate is secondary and carries its own denominator; it never
-stands in for the scheduled one, because that is exactly how unreachable work
-disappears.
+Verified successes are reported over the **scheduled** population — that is the
+headline in both output formats. `verifiedOverReviewed` carries the secondary
+reviewed-only rate with its own denominator, and is `null` when nothing has been
+reviewed. It exists because partial grading makes the primary rate read low for
+a reason that is not the assistant's; it never stands in for the scheduled rate,
+because substituting it is exactly how unreachable work disappears.
 
 ### Timestamps, exactly
 
@@ -207,7 +209,7 @@ disappears.
 | `observedAnswerLatencyMs` | accepted `command` event → the `display` the pipeline marked as the final Answer. Event publication, **not** renderer paint and **not** audible onset. |
 | `successfulTaskCompletionTimeMs` | the same fixed observation, present only for an independently verified Answer. |
 | `runDurationMs` | accepted command → the `done` event. A different question from the Answer. |
-| `censoredElapsedMs` | what the clock had reached when observation stopped short of a terminal. Not a Run duration. |
+| `censoredElapsedMs` | accepted command → where observation actually stopped, when the Run reached no terminal. Not a Run duration, and not a second copy of the Answer latency: a Run that answered at 15 s and was then watched to a 300 s timeout spent 300 s. It is the one figure crossing two clocks — the app's wall stamp and the evaluator's, both `Date.now()` on the same machine. |
 | `userWaitMs` | resolved ask and confirmation intervals. |
 | speech input latency | `not_applicable` on a typed command — never zero. |
 
@@ -258,7 +260,7 @@ markers, tool and browser sub-spans, vision records, user waits, speech spans,
 
 The one thing to understand before reading it: **stage totals are not
 additive**. A `tool` span contains the `browser-*` sub-spans beneath it, and a
-worker's rounds overlap the tools they drive. Each stage therefore reports its
+Subagent's rounds overlap the tools they drive. Each stage therefore reports its
 own count, its plain sum, and the union of its own intervals; there is no
 cross-stage total, no exclusive wall-time split, and no
 `unexplained = wall − sum(stages)` remainder. Unions are only meaningful within
@@ -269,6 +271,14 @@ are counted, never timed.
 Attempts with no span coverage are counted as such rather than treated as
 instant.
 
+Subagents are counted by distinct `agentId`, never by tape witness: a Subagent
+whose rounds were published twice is one Subagent. They are broken down by how
+each one stopped — its own Finalization Cause where it reached one, else
+`cancelled` or `failed`, else `uncaused` when no cause reached the tape. A Run
+that delegated three and cancelled all three must never read as one that
+delegated none, which is why the cancelled and failed ones appear beside the
+rest instead of being dropped for lacking a clean finish.
+
 ### Usage and cost
 
 Per role — orchestrator, subagent, vision — with prompt and completion tokens,
@@ -277,6 +287,13 @@ when the sum is a floor. Read from raw `llm_round` records, never from the daily
 spend ledger, which turns missing usage into zero and binds nothing to an
 attempt. Vision usage is always unavailable: vision records carry request
 duration and never tokens.
+
+The section states its own limits every time, not only when a price list is
+supplied, because they are properties of the data rather than of the request:
+tokens are summed **per role, not per model**, so a role that used two models
+has no per-model split and none is inferred; vision has no tokens at all; the
+daily ledger is never read; and any role whose rounds did not all report usage
+is named, with its token count marked a floor.
 
 Dollars appear **only** with an explicit `--pricing` file:
 
