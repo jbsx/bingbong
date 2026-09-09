@@ -74,6 +74,22 @@ function attempt(overrides: {
   }
 }
 
+/** What the capture writes when it refuses to dispatch: identity and reason, nothing invented. */
+function notReachedRecord(command: CaptureCommandInput, huntId: string, reason: string): LiveAttemptRecord {
+  return {
+    kind: 'not_reached',
+    attemptId: command.attemptId,
+    huntId,
+    stepId: command.stepId,
+    order: command.order,
+    relation: command.relation,
+    ...(command.parentAttemptId === undefined ? {} : { parentAttemptId: command.parentAttemptId }),
+    command: { text: command.text, prompt: command.prompt },
+    reason,
+    decidedAt: '2026-09-10T00:00:00.000Z',
+  }
+}
+
 interface SessionScript {
   /** What each step returns, by stepId. */
   results?: Record<string, LiveAttemptRecord>
@@ -102,6 +118,13 @@ class FakeCaptures {
       captureCommand: async (command: CaptureCommandInput): Promise<LiveAttemptRecord> => {
         this.commands.push(command)
         this.handles.set(`${options.huntId}:${command.stepId}`, session)
+        // The real capture checks readiness itself for any command after the
+        // first, and when it refuses it writes a not_reached record — reason
+        // and all — into the capture file rather than submitting.
+        const blocked = scripted.continuation
+        if (command.stepId !== 'initial' && blocked !== undefined && !blocked.ready) {
+          return notReachedRecord(command, options.huntId, `${blocked.reason}: ${blocked.detail}`)
+        }
         return scripted.results?.[command.stepId] ?? attempt({ huntId: options.huntId, stepId: command.stepId })
       },
       continuationState: async (): Promise<ContinuationState> => scripted.continuation ?? { ready: true },
@@ -253,8 +276,9 @@ describe('driving a capture from the schedule', () => {
     })
 
     expect(pass.hunts[0].followUp).toMatchObject({ status: 'not-reached', reason: 'session_unavailable' })
-    // Not waited out: only the initial went to the capture.
-    expect(captures.commands).toHaveLength(1)
+    // The follow-up was handed over — that is what makes the refusal durable —
+    // but nothing was submitted, and the capture recorded why.
+    expect(captures.commands).toHaveLength(2)
   })
 
   it('maps a Run that ended asking for help to a not-reached follow-up', async () => {

@@ -89,19 +89,15 @@ export type ContinuationState =
  */
 export interface HuntContext<TAttempt extends ScheduledAttempt> {
   /**
-   * Submit one command and wait for its Run to end. Called at most once per
-   * prompt, ever. An implementation must not retry, must not steer, and must
-   * return a capture whose `measurementFault` is set rather than throwing when
-   * the harness itself fails.
+   * Hand over one command, at most once per prompt, ever.
+   *
+   * The host decides whether the Session can take it: when it cannot, it
+   * submits nothing, returns a capture whose `declined` says why, and records
+   * that refusal durably. When it can, it submits once — never retrying,
+   * never steering — and sets `measurementFault` rather than throwing if the
+   * harness itself fails.
    */
   submit(prompt: MeasuredPrompt, role: CommandRole): Promise<TAttempt>
-  /**
-   * Whether this hunt's Session can accept its follow-up. Must be bounded by
-   * the capture contract's own readiness budget — an implementation that waits
-   * indefinitely for a Session to become ready violates #225 as surely as one
-   * that resets it.
-   */
-  continuationState(): Promise<ContinuationState>
   /** Archive diagnostics, then tear down the Session and disposable profile. */
   end(): Promise<void>
 }
@@ -224,32 +220,6 @@ export class CommandBudget {
   }
 }
 
-/**
- * A follow-up is eligible when its initial command was accepted — that and
- * only that. Correctness is not consulted, and cannot be: the schedule has no
- * access to a grade and the port exposes no answer text to judge.
- *
- * An unaccepted initial is the one structural bar: without an accepted Run
- * there is no Session to continue and nothing for the follow-up to mean.
- */
-function eligibilityOf(initial: ScheduledAttempt): ContinuationState {
-  if (!initial.accepted) {
-    return {
-      ready: false,
-      reason: 'initial_not_accepted',
-      detail: 'the initial command was never accepted by the pipeline, so no Run exists to continue',
-    }
-  }
-  // A broken initial CAPTURE is deliberately not a bar. #225 gives exactly two
-  // conditions — the initial Run ended, and the same Session can accept the
-  // command — and an instrumentation failure is neither. The Run still
-  // happened and the Session may well be fine, so refusing here would discard
-  // a measurable follow-up over a fault that is already recorded on the
-  // initial's own attempt. Whether the Session can actually take it is the
-  // next check's job, not this one's.
-  return { ready: true }
-}
-
 export interface PassOptions {
   /**
    * The hunts to run. Defaults to the whole approved corpus. Every entry must
@@ -353,7 +323,7 @@ async function runHunt<TAttempt extends ScheduledAttempt>(
     return {
       huntId: hunt.id,
       initial: { status: 'attempted', promptVersion: hunt.prompt.version, attempt: initial },
-      followUp: hunt.followUp ? await followUpOf(context, hunt.followUp, initial, budget) : null,
+      followUp: hunt.followUp ? await followUpOf(context, hunt.followUp, budget) : null,
     }
   } finally {
     // Diagnostics are archived here, so a hunt that failed still leaves its
@@ -383,35 +353,24 @@ function describe(error: unknown): string {
 /**
  * Deliver a hunt's follow-up, once, or say why it was not reached.
  *
- * Two gates, in order: what the initial attempt structurally allows, then
- * whether the live Session can actually take another command. Neither gate is
- * correctness. When either refuses, the reason is recorded and the hunt ends —
- * there is no branch that waits longer, resets, or tries again.
+ * The readiness decision is the HOST'S, not the schedule's, and that is the
+ * whole point. A schedule that decided for itself — asking whether the Session
+ * could continue and returning before dispatching — would leave the reason
+ * nowhere but memory: the host writes a durable record only for a command it
+ * was actually handed, so a follow-up refused before dispatch vanished from
+ * every artifact and a report could only call the slot unaccounted. #225
+ * requires the reason to be retained, so the command is always handed over and
+ * the host records its own refusal.
+ *
+ * Handing it over is not submitting it. A host that cannot take the command
+ * declines it without sending anything, spends no budget, and says why — which
+ * is the same guarantee the old pre-check gave, minus the lost evidence.
  */
 async function followUpOf<TAttempt extends ScheduledAttempt>(
   context: HuntContext<TAttempt>,
   prompt: MeasuredPrompt,
-  initial: TAttempt,
   budget: CommandBudget,
 ): Promise<CommandRecord<TAttempt>> {
-  const eligibility = eligibilityOf(initial)
-  if (!eligibility.ready) {
-    return notReached(prompt, eligibility.reason, eligibility.detail)
-  }
-
-  // Asked once. A host that needs to wait for readiness owns that bound
-  // itself; the schedule never polls, because "wait until it works" is how an
-  // unreachable continuation quietly becomes a successful one.
-  let continuation: ContinuationState
-  try {
-    continuation = await context.continuationState()
-  } catch (error) {
-    return notReached(prompt, 'capture_failed', `readiness could not be determined: ${describe(error)}`)
-  }
-  if (!continuation.ready) {
-    return notReached(prompt, continuation.reason, continuation.detail)
-  }
-
   budget.reserve()
   let attempt: TAttempt
   try {

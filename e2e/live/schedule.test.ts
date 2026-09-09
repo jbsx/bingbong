@@ -9,6 +9,7 @@ import {
   type ContinuationState,
   type HuntCaptureHost,
   type HuntContext,
+  type NotReachedReason,
   type ScheduledAttempt,
 } from './schedule.ts'
 
@@ -57,6 +58,25 @@ class FakeHost implements HuntCaptureHost<FakeAttempt> {
 
   constructor(private readonly script: Record<string, HuntScript> = {}) {}
 
+  /**
+   * What the host would refuse this follow-up for, mirroring the real
+   * capture's own order: an unready Session first, then an initial that was
+   * never accepted and so left nothing to continue.
+   */
+  private refusalFor(scripted: HuntScript): { reason: NotReachedReason; detail: string } | null {
+    const continuation = scripted.continuation
+    if (continuation !== undefined && !isThrown(continuation) && !continuation.ready) {
+      return { reason: continuation.reason, detail: continuation.detail }
+    }
+    if (scripted.initial !== undefined && !isThrown(scripted.initial) && scripted.initial.accepted === false) {
+      return {
+        reason: 'initial_not_accepted',
+        detail: 'the initial command was never accepted by the pipeline, so no Run exists to continue',
+      }
+    }
+    return null
+  }
+
   async beginHunt(hunt: LiveWebHunt): Promise<HuntContext<FakeAttempt>> {
     this.calls.push(`begin:${hunt.id}`)
     const scripted = this.script[hunt.id] ?? {}
@@ -70,12 +90,30 @@ class FakeHost implements HuntCaptureHost<FakeAttempt> {
     const context: HuntContext<FakeAttempt> = {
       submit: async (prompt: MeasuredPrompt, role: CommandRole): Promise<FakeAttempt> => {
         this.calls.push(`submit:${hunt.id}:${role}`)
-        this.submitted.push(prompt.text)
         this.contexts.set(`${hunt.id}:${role}`, [context])
         const plan = role === 'initial' ? scripted.initial : scripted.followUp
         if (isThrown(plan)) {
           throw new Error(plan.throws)
         }
+
+        // The real host checks readiness itself, immediately before
+        // submitting, and records its own refusal. A declined command sends
+        // nothing — so it never reaches `submitted`.
+        const refusal = role === 'follow-up' ? this.refusalFor(scripted) : null
+        if (refusal) {
+          this.calls.push(`decline:${hunt.id}:${role}`)
+          return {
+            command: prompt.text,
+            role,
+            declined: refusal,
+            accepted: false,
+            measurementFault: null,
+            answerText: null,
+            taskOutcome: 'failed',
+          }
+        }
+
+        this.submitted.push(prompt.text)
         return {
           command: prompt.text,
           role,
@@ -86,14 +124,6 @@ class FakeHost implements HuntCaptureHost<FakeAttempt> {
           taskOutcome: 'done',
           ...plan,
         }
-      },
-      continuationState: async (): Promise<ContinuationState> => {
-        this.calls.push(`continuation:${hunt.id}`)
-        const plan = scripted.continuation
-        if (isThrown(plan)) {
-          throw new Error(plan.throws)
-        }
-        return plan ?? { ready: true }
       },
       end: async (): Promise<void> => {
         this.calls.push(`end:${hunt.id}`)

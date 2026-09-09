@@ -263,12 +263,22 @@ describe('nothing on the capture path can load a key', () => {
     expect([...reachable].sort()).not.toContain('keys.ts')
   })
 
-  it('is loaded only by the tests that grade against it', () => {
-    // If a second importer ever appears, this is where it gets noticed.
+  it('is loaded only by grading-side modules, never by the runner', () => {
+    // Grading legitimately loads keys — that is what grading is. What must
+    // never happen is a module on the capture path loading them, and the
+    // walk above is the guard for that. This one keeps the list of loaders
+    // short and deliberate: a new name here is a decision someone should
+    // have to make on purpose, not a diff nobody read.
+    const allowed = new Set(['corpus.test.ts', 'keyManifest.ts', 'keyManifest.test.ts'])
     const importers = readdirSync(liveDir)
       .filter((name) => name.endsWith('.ts'))
       .filter((name) => localImportsOf(name).includes('keys.ts'))
-    expect(importers).toEqual(['corpus.test.ts'])
+
+    expect(importers.length).toBeGreaterThan(0)
+    expect(importers.filter((name) => !allowed.has(name))).toEqual([])
+    // And none of them may be reachable from a measured pass.
+    const reachable = capturePathModules()
+    expect(importers.filter((name) => reachable.has(name))).toEqual([])
   })
 })
 

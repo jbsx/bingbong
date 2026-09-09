@@ -27,7 +27,7 @@ import { promptIdentity } from './artifacts.ts'
 import { MEASUREMENT_FAULT_REASONS, type CaptureSession, type CaptureSessionOptions, type ContinuationBlock } from './capture.ts'
 import { liveWebHunts, type LiveWebHunt, type MeasuredPrompt } from './hunts.ts'
 import { brokenMeasurements } from './schedule.ts'
-import type { CommandRole, ContinuationState, HuntCaptureHost, HuntContext, NotReachedReason, PassRecord, ScheduledAttempt } from './schedule.ts'
+import type { CommandRole, HuntCaptureHost, HuntContext, NotReachedReason, PassRecord, ScheduledAttempt } from './schedule.ts'
 import type {
   LiveAttemptRecord,
   LiveCaptureMode,
@@ -94,18 +94,33 @@ export interface HuntAttempt extends ScheduledAttempt {
   readonly capture: LiveAttemptRecord
 }
 
+/**
+ * The capture writes its refusal as `"<block>: <detail>"`. Recover the block,
+ * so the schedule's in-memory record keeps the distinction the durable one
+ * has — an access wall, a lost Session and a Run still waiting on help are
+ * different findings, and collapsing them to one reason would throw away
+ * exactly what a report needs to say.
+ */
+function declineOf(reason: string): { reason: NotReachedReason; detail: string } {
+  const [block, ...rest] = reason.split(': ')
+  const mapped = (CONTINUATION_REASONS as Record<string, NotReachedReason | undefined>)[block]
+  return mapped === undefined
+    ? // An unrecognised block is still a refusal, and its words are kept
+      // whole rather than half-parsed into a shape they do not fit.
+      { reason: 'session_unavailable', detail: reason }
+    : { reason: mapped, detail: rest.join(': ') || reason }
+}
+
 /** Derive the schedule's view of a capture. The only place these rules live. */
 export function scheduledView(capture: LiveAttemptRecord): HuntAttempt {
   if (capture.kind !== 'attempt') {
-    // The capture re-checks readiness immediately before submitting, so it can
-    // refuse after the schedule's own check passed — a Session that lapsed in
-    // between. Nothing was submitted, so this is a not-reached command rather
-    // than a Run that went badly, and `session_unavailable` is the honest
-    // reading: the Session could not take it now. The capture's own words are
-    // kept as the detail rather than being re-worded here.
+    // The capture decided the Session could not take this command and
+    // submitted nothing — recording that refusal, with its reason, in the
+    // capture file. So this is a not-reached command rather than a Run that
+    // went badly, and the reason survives into the artifacts a grader reads.
     return {
       capture,
-      declined: { reason: 'session_unavailable', detail: capture.reason },
+      declined: declineOf(capture.reason),
       accepted: false,
       measurementFault: null,
     }
@@ -279,14 +294,6 @@ export function createHuntCaptureHost(
               prompt: slot.prompt,
             }),
           )
-        },
-
-        async continuationState(): Promise<ContinuationState> {
-          const state = await session.continuationState()
-          if (state.ready) {
-            return { ready: true }
-          }
-          return { ready: false, reason: CONTINUATION_REASONS[state.reason], detail: state.detail }
         },
 
         async end(): Promise<void> {

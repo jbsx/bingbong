@@ -239,6 +239,21 @@ describe('the four-hunt schedule, end to end (#225)', () => {
       // The slot still exists in the plan, so a reader sees the command that
       // never happened rather than a shorter pass.
       expect(set.slots.filter((slot) => slot.huntId === PI.id)).toHaveLength(2)
+
+      // AND THE REASON IS DURABLE. This is the part a pass record cannot be
+      // trusted for: it dies with the process. The capture file must carry
+      // the not-reached follow-up itself, or a grader reading only the
+      // artifacts sees an unaccounted slot and cannot tell a lost Session
+      // from an access wall from a Run still waiting on help.
+      const recorded = host.captures.flatMap((capture) => capture.attempts)
+      expect(recorded).toHaveLength(2)
+      const followUpRecord = recorded.find((attempt) => attempt.stepId === 'follow_up')!
+      expect(followUpRecord.kind).toBe('not_reached')
+      if (followUpRecord.kind !== 'not_reached') throw new Error('unreachable')
+      expect(followUpRecord.reason).toMatch(/^session_lost: /)
+      expect(followUpRecord.attemptId).toBe(
+        set.slots.find((slot) => slot.stepId === 'follow_up')!.attemptId,
+      )
     },
     10 * 60_000,
   )
