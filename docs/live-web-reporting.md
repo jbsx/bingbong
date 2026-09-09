@@ -7,7 +7,7 @@ Two commands, one human step between them:
 
 ```sh
 pnpm live:report init-grades --capture=<capture-set.json> --keys=<key-manifest.json> --out=<pending-grades.json>
-# … the reviewer reads each Answer against the private key and edits the grades file …
+# … the reviewer reads each Answer against the grading key and edits the grades file …
 pnpm live:report --capture=<capture-set.json> --keys=<key-manifest.json> --grades=<reviewed-grades.json> \
                  [--format=markdown|json] [--pricing=<dated-prices.json>] [--out=<report.md>]
 ```
@@ -31,21 +31,35 @@ an accepted Evidence Checkpoint or a successful tool call to a `pass`.
 | File | Who writes it | Where it lives |
 | --- | --- | --- |
 | Capture set + Session captures | the capture runner (#224) / scheduler (#225) | `e2e/live/artifacts/` — raw, local, out of Git |
-| Substantive key | the evaluator, before the hunt is accepted | `e2e/live/private/` — never in Git, never in app context |
-| Key manifest | the evaluator | beside the key; carries no key content |
-| Grades | `init-grades`, then the reviewer by hand | beside the key; reviewer prose stays local |
+| Substantive key | the evaluator, before the hunt is accepted | `e2e/live/keys.ts` (#225) — committed and versioned |
+| Key manifest | derived from the key | carries the key's version, digest and check ids, never its content |
+| Grades | `init-grades`, then the reviewer by hand | local; reviewer prose and notes stay out of the report |
 | Compact report | the report command | `e2e/live/reports/` — committed |
 
 > `e2e/live/artifacts/` and `e2e/live/private/` are ignored by Git (#224).
-> Raw traces, Browser Profiles and key material must never be committed —
+> Raw traces, Browser Profiles and credentials must never be committed —
 > inspect generated output before staging, and never `git add .`.
+
+**Why the key is committed, when "private" suggests otherwise.** The rule the
+key has to satisfy is that it never enters the *measured assistant's context* —
+which is a different requirement from staying out of Git. The assistant under
+measurement is a browser agent with no repository access, and #225's corpus test
+walks the import graph to prove nothing on the capture path loads the keys.
+
+Committing them buys something the alternative cannot: **tamper evidence**. This
+document forbids "rewriting a key simply to agree with the measured model", and
+that rule is only enforceable when an edit after the fact is visible in history
+and breaks a recorded digest. A key nobody can diff is a key nobody can be held
+to. If a key ever does need to hold a genuine secret, that secret belongs in
+`e2e/live/private/` with the committed key referencing it — not the other way
+around.
 
 ### The key manifest
 
 The *substantive* key — required conclusions, supporting passages, known near
-matches, valid alternatives — is prepared before the task is accepted and stays
-in the evaluator's private directory. It never enters the measured assistant's
-context and never enters a report.
+matches, valid alternatives — is prepared before the task is accepted, and lives
+in `e2e/live/keys.ts` (#225), versioned with its own revision history. It never
+enters the measured assistant's context and never enters a report.
 
 What the manifest carries is the key's public face: which key, at which
 version, and what it requires of each hunt step.
@@ -62,7 +76,7 @@ version, and what it requires of each hunt step.
       "huntId": "compatibility",
       "stepId": "initial",
       "promptVersion": "p1",
-      "keyRef": "private/keys.md#compatibility",
+      "keyRef": "keys.ts#compatibility",
       "checks": [
         { "checkId": "c1", "description": "qualified yes, with both cable ends named" },
         { "checkId": "c2", "description": "explicitly rejects the legacy stack for this module" }

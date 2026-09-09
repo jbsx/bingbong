@@ -15,10 +15,18 @@
 // call are all self-declarations, and initialization yields `pending`
 // over every one of them.
 //
-// The substantive key — the conclusions, passages and near misses —
-// stays in the evaluator's private directory. What reaches a grades file
-// is its version, its digest, and the ids of the checks it requires, so
-// the record can prove which key was applied without carrying the key.
+// The substantive key — the conclusions, passages and near misses — lives
+// wherever the study keeps it; what reaches a grades file is only its
+// version, its digest, and the ids of the checks it requires, so the
+// record proves which key was applied without carrying the key.
+//
+// The rule the key must satisfy is that it never enters the *measured
+// assistant's* context (#223), which is a different thing from staying out
+// of Git. #225 keeps the pilot's keys in a committed, versioned module,
+// and that is the stronger arrangement: this ticket's own rule against
+// "rewriting a key simply to agree with the measured model" is only
+// enforceable when an edit after the fact is visible in history. A key
+// nobody can diff is a key nobody can be held to.
 //
 // Relative imports carry `.ts` (the Node type-stripping pattern the
 // scripts run under); src imports are type-only.
@@ -32,6 +40,15 @@ export const LIVE_KEY_MANIFEST_KIND = 'bingbong.live.key-manifest'
 export const LIVE_GRADES_KIND = 'bingbong.live.grades'
 /** The one schema version for both; a reader that meets another refuses it. */
 export const LIVE_GRADING_SCHEMA_VERSION = 1
+
+/**
+ * What joins a manifest digest's fields. NUL, because no id, version or
+ * digest can contain one, so no arrangement of field values can collide
+ * with another arrangement. Written as an escape and never as a literal: a
+ * raw NUL in the source makes the file binary to `file` and `grep`, and a
+ * grep that silently skips a file is worse than one that fails.
+ */
+const MANIFEST_FIELD_SEPARATOR = '\u0000'
 
 /**
  * How a reviewed attempt was classified. The four reviewed states are
@@ -70,7 +87,12 @@ export interface LiveKeyTask {
   readonly stepId: string
   /** The prompt version the key was prepared against. */
   readonly promptVersion: string
-  /** Where the substantive key lives, for the reviewer — never its content. */
+  /**
+   * Where the substantive key lives, for the reviewer — a module export
+   * id or a path, never the key's content. Opaque to this module on
+   * purpose: grading must work for arbitrary task ids, so nothing here
+   * knows the pilot's corpus or how it stores its keys.
+   */
   readonly keyRef: string
   readonly checks: readonly LiveKeyCheck[]
   /**
@@ -82,9 +104,11 @@ export interface LiveKeyTask {
 }
 
 /**
- * The public face of a private key: which key, at which version, and what
- * it requires. The conclusions and passages stay in the evaluator's own
- * document; `keyDigest` is what ties this manifest to it.
+ * The public face of a grading key: which key, at which version, and what
+ * it requires. The conclusions and passages stay in the key itself;
+ * `keyDigest` is what ties this manifest to the exact key that was
+ * applied, so a key edited after an Answer was graded no longer matches
+ * the grade that claims it.
  */
 export interface LiveKeyManifest {
   readonly kind: typeof LIVE_KEY_MANIFEST_KIND
@@ -200,7 +224,7 @@ export function keyManifestDigest(manifest: LiveKeyManifest): string {
   const tasks = [...manifest.tasks]
     .map((task) => `${task.huntId}/${task.stepId}@${task.promptVersion}:${[...task.checks.map((check) => check.checkId)].sort().join(',')}`)
     .sort()
-  return digestOf(`${manifest.keyVersion} ${manifest.keyDigest} ${tasks.join(' ')}`)
+  return digestOf([manifest.keyVersion, manifest.keyDigest, ...tasks].join(MANIFEST_FIELD_SEPARATOR))
 }
 
 /** Which Answer a dispatched attempt recorded, or null when it published none. */
