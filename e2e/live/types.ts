@@ -353,6 +353,22 @@ export interface LiveMetrics {
     readonly errors: number
   }
   readonly usage: Readonly<Record<AgentRole, Observed<LiveRoleUsage>>>
+  /**
+   * Per-stage perf spans of the turn. `totalMs` is a plain sum and is
+   * NOT additive across stages — tool, browser, vision and worker spans
+   * nest and overlap — so `unionMs` (the union of each stage's
+   * [t − durMs, t] intervals) is beside it. Both are meaningful only
+   * within one launch: `t` is monotonic from the app's own start, and
+   * `clockOrigin` names that launch. The synthetic `summary` record and
+   * the zero-length `llm-retry` markers are excluded — retries are
+   * counted, never timed. Unavailable when the turn recorded no span.
+   */
+  readonly spans: Observed<{
+    readonly clockOrigin: string
+    readonly stages: Readonly<Record<string, { readonly count: number; readonly totalMs: number; readonly unionMs: number }>>
+  }>
+  /** Vision request durations from the `vision_request` records; tokens stay unavailable. */
+  readonly vision: Observed<{ readonly requests: number; readonly totalMs: number; readonly outcomes: Readonly<Record<string, number>> }>
   readonly coverage: {
     readonly events: number
     readonly traceRecords: number

@@ -28,6 +28,52 @@ export interface LiveMetricsInput {
   readonly traceRecords: readonly TraceRecord[]
   /** How the command entered: typed capture has no voice-input latency. */
   readonly input: 'typed'
+  /** The launch the perf clock belongs to (the capture id): span unions never cross it. */
+  readonly clockOrigin: string
+}
+
+/** Perf records that are event markers or synthetic rather than timed stages. */
+const UNTIMED_STAGES: ReadonlySet<string> = new Set(['summary', 'llm-retry'])
+
+/** The union length of [start, end] intervals, overlap counted once. */
+function unionLength(intervals: readonly (readonly [number, number])[]): number {
+  const sorted = [...intervals].sort((a, b) => a[0] - b[0])
+  let total = 0
+  let current: [number, number] | null = null
+  for (const [start, end] of sorted) {
+    if (current === null || start > current[1]) {
+      if (current !== null) total += current[1] - current[0]
+      current = [start, end]
+    } else if (end > current[1]) {
+      current[1] = end
+    }
+  }
+  if (current !== null) total += current[1] - current[0]
+  return total
+}
+
+/**
+ * Per-stage span aggregates for one turn: count, plain sum and interval
+ * union. Reads only the perf records; the caller scopes them to the
+ * turn. Exported so a reader over the raw perf artifact selects the
+ * same way this projection does.
+ */
+export function spanAggregates(perfRecords: readonly PerfSpanRecord[]): Record<string, { count: number; totalMs: number; unionMs: number }> {
+  const byStage = new Map<string, PerfSpanRecord[]>()
+  for (const record of perfRecords) {
+    if (UNTIMED_STAGES.has(record.stage)) continue
+    if (typeof record.durMs !== 'number' || !Number.isFinite(record.durMs) || typeof record.t !== 'number' || !Number.isFinite(record.t)) continue
+    byStage.set(record.stage, [...(byStage.get(record.stage) ?? []), record])
+  }
+  const stages: Record<string, { count: number; totalMs: number; unionMs: number }> = {}
+  for (const [stage, spans] of byStage) {
+    stages[stage] = {
+      count: spans.length,
+      totalMs: spans.reduce((total, span) => total + span.durMs, 0),
+      unionMs: unionLength(spans.map((span) => [span.t - span.durMs, span.t] as const)),
+    }
+  }
+  return stages
 }
 
 type Event<Kind extends PipelineEvent['type']> = Extract<PipelineEvent, { type: Kind }>
@@ -192,6 +238,22 @@ export function extractLiveMetrics(input: LiveMetricsInput): LiveMetrics {
       errors: ofType(events, 'error').length,
     },
     usage: roleUsage(traceRecords),
+    spans: (() => {
+      const stages = spanAggregates(perfRecords)
+      return Object.keys(stages).length === 0
+        ? unavailable<{ clockOrigin: string; stages: typeof stages }>('no timed perf span was recorded for the turn')
+        : observed({ clockOrigin: input.clockOrigin, stages })
+    })(),
+    vision: (() => {
+      const requests = traceRecords.filter((record): record is TraceRecord & { durationMs: number; outcome: string } => {
+        const candidate = record as { kind?: unknown; durationMs?: unknown }
+        return candidate.kind === 'vision_request' && typeof candidate.durationMs === 'number'
+      })
+      if (requests.length === 0) return unavailable<{ requests: number; totalMs: number; outcomes: Record<string, number> }>('no vision request was recorded for the turn')
+      const outcomes: Record<string, number> = {}
+      for (const request of requests) outcomes[request.outcome] = (outcomes[request.outcome] ?? 0) + 1
+      return observed({ requests: requests.length, totalMs: requests.reduce((total, request) => total + request.durationMs, 0), outcomes })
+    })(),
     coverage: {
       events: events.length,
       traceRecords: traceRecords.length,

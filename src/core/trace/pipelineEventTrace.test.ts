@@ -124,6 +124,16 @@ describe('the pipeline_event tap (#185)', () => {
     expect(record !== undefined && 'runId' in record).toBe(false)
   })
 
+  it('keeps the final Answer mark the pipeline stamped on a display (#224)', () => {
+    const { records, sink } = collector()
+    const trace = createPipelineEventTraceWriter({ sink, now: () => 0 })
+
+    trace(owned({ type: 'display', turnId: 't-1', text: 'Here it is.', finalAnswer: true, at: 9 }))
+    trace(owned({ type: 'display', turnId: 't-1', text: 'A worker line.', at: 10 }))
+
+    expect(records.map((record) => ('event' in record && record.event.type === 'display' ? record.event.finalAnswer : null))).toEqual([true, undefined])
+  })
+
   it('never lets a throwing sink fail the publication', () => {
     const trace = createPipelineEventTraceWriter({
       sink: {

@@ -3,7 +3,7 @@ import type { PerfSpanRecord } from '../../src/core/perf/perfTracer'
 import type { PipelineEvent } from '../../src/core/pipeline/events'
 import type { TraceRecord } from '../../src/core/trace/runTrace'
 import type { SessionEventIdentity } from '../../src/core/pipeline/events'
-import { extractLiveMetrics, finalAnswerDisplay, roleUsage } from './metrics.ts'
+import { extractLiveMetrics, finalAnswerDisplay, roleUsage, spanAggregates } from './metrics.ts'
 
 // The raw projection (#224): observed timings and usage, never Task
 // Success. The cases are the ones a report must keep apart — missing vs
@@ -52,7 +52,7 @@ function llmRound(overrides: Record<string, unknown>): TraceRecord {
 
 describe('extractLiveMetrics', () => {
   it('reads the marked final Answer, not the last display, and keeps Answer latency apart from Run duration', () => {
-    const metrics = extractLiveMetrics({ events, perfRecords: perf, traceRecords: [], input: 'typed' })
+    const metrics = extractLiveMetrics({ events, perfRecords: perf, traceRecords: [], input: 'typed', clockOrigin: 'cap-1' })
     expect(metrics.answerBoundary).toBe('event_publication')
     expect(metrics.finalAnswerAt).toEqual({ status: 'observed', value: 1500 })
     expect(metrics.answerLatencyMs).toEqual({ status: 'observed', value: 500 })
@@ -68,7 +68,7 @@ describe('extractLiveMetrics', () => {
 
   it('leaves a missing Answer and a missing terminal unavailable rather than zero', () => {
     const aborted = events.filter((event) => event.type !== 'done' && !(event.type === 'display' && event.finalAnswer))
-    const metrics = extractLiveMetrics({ events: aborted, perfRecords: [], traceRecords: [], input: 'typed' })
+    const metrics = extractLiveMetrics({ events: aborted, perfRecords: [], traceRecords: [], input: 'typed', clockOrigin: 'cap-1' })
     expect(metrics.finalAnswerAt.status).toBe('unavailable')
     expect(metrics.answerLatencyMs.status).toBe('unavailable')
     expect(metrics.terminalAt.status).toBe('unavailable')
@@ -79,7 +79,7 @@ describe('extractLiveMetrics', () => {
 
   it('marks a clock anomaly invalid instead of reporting a negative latency', () => {
     const backwards = events.map((event) => (event.type === 'done' ? { ...event, at: 900 } : event))
-    const metrics = extractLiveMetrics({ events: backwards, perfRecords: [], traceRecords: [], input: 'typed' })
+    const metrics = extractLiveMetrics({ events: backwards, perfRecords: [], traceRecords: [], input: 'typed', clockOrigin: 'cap-1' })
     expect(metrics.runDurationMs.status).toBe('invalid')
     expect(metrics.answerLatencyMs).toEqual({ status: 'observed', value: 500 })
   })
@@ -97,16 +97,42 @@ describe('extractLiveMetrics', () => {
       { type: 'confirmation_requested', turnId: 't1', confirmationId: 'k1', callId: 'c8', toolName: 'click', prompt: 'ok?', expiresAt: 9000, at: 1400, ...identity },
       ...events.slice(2),
     ]
-    const metrics = extractLiveMetrics({ events: withAsk, perfRecords: [], traceRecords: [], input: 'typed' })
+    const metrics = extractLiveMetrics({ events: withAsk, perfRecords: [], traceRecords: [], input: 'typed', clockOrigin: 'cap-1' })
     expect(metrics.waits).toHaveLength(2)
     expect(metrics.userWaitMs.status).toBe('unavailable')
     const resolved = [...withAsk, { type: 'confirmation_resolved', turnId: 't1', confirmationId: 'k1', approved: true, reason: 'user', at: 1450, ...identity } as PipelineEvent]
-    expect(extractLiveMetrics({ events: resolved, perfRecords: [], traceRecords: [], input: 'typed' }).userWaitMs).toEqual({ status: 'observed', value: 300 })
+    expect(extractLiveMetrics({ events: resolved, perfRecords: [], traceRecords: [], input: 'typed', clockOrigin: 'cap-1' }).userWaitMs).toEqual({ status: 'observed', value: 300 })
   })
 
   it('reports the deterministic fallback Answer as such', () => {
     const fallback = events.map((event) => (event.type === 'display' && event.finalAnswer ? { ...event, deterministicAnswer: true as const } : event))
-    expect(extractLiveMetrics({ events: fallback, perfRecords: [], traceRecords: [], input: 'typed' }).deterministicAnswer).toBe(true)
+    expect(extractLiveMetrics({ events: fallback, perfRecords: [], traceRecords: [], input: 'typed', clockOrigin: 'cap-1' }).deterministicAnswer).toBe(true)
+  })
+})
+
+describe('spanAggregates', () => {
+  it('sums per stage, unions overlapping intervals once, and skips summary and retry markers', () => {
+    const stages = spanAggregates([
+      { turnId: 't1', stage: 'tool', durMs: 100, at: 0, t: 100 },
+      { turnId: 't1', stage: 'tool', durMs: 100, at: 0, t: 150 },
+      { turnId: 't1', stage: 'tool', durMs: 50, at: 0, t: 400 },
+      { turnId: 't1', stage: 'llm-retry', durMs: 0, at: 0, t: 120 },
+      { turnId: 't1', stage: 'summary', durMs: 999, at: 0, t: 500, detail: {} },
+    ])
+    expect(stages).toEqual({ tool: { count: 3, totalMs: 250, unionMs: 200 } })
+    const metrics = extractLiveMetrics({ events, perfRecords: perf, traceRecords: [], input: 'typed', clockOrigin: 'cap-1' })
+    expect(metrics.spans).toMatchObject({ status: 'observed', value: { clockOrigin: 'cap-1', stages: { llm: { count: 1, totalMs: 300, unionMs: 300 } } } })
+    expect(extractLiveMetrics({ events, perfRecords: [], traceRecords: [], input: 'typed', clockOrigin: 'cap-1' }).spans.status).toBe('unavailable')
+  })
+
+  it('times vision requests from their records without inventing tokens', () => {
+    const records = [
+      { v: 1, at: 1, turnId: 't1', kind: 'vision_request', capability: 'describe', reason: 'look', durationMs: 20, outcome: 'ok' },
+      { v: 1, at: 2, turnId: 't1', kind: 'vision_request', capability: 'describe', reason: 'auto_vision', durationMs: 30, outcome: 'deadline' },
+    ] as unknown as TraceRecord[]
+    const metrics = extractLiveMetrics({ events, perfRecords: [], traceRecords: records, input: 'typed', clockOrigin: 'cap-1' })
+    expect(metrics.vision).toEqual({ status: 'observed', value: { requests: 2, totalMs: 50, outcomes: { ok: 1, deadline: 1 } } })
+    expect(metrics.usage.vision.status).toBe('unavailable')
   })
 })
 
@@ -130,6 +156,6 @@ describe('roleUsage', () => {
     const usage = roleUsage([llmRound({ round: 1 })])
     expect(usage.orchestrator.status).toBe('unavailable')
     expect(usage.subagent.status).toBe('not_applicable')
-    expect(extractLiveMetrics({ events, perfRecords: [], traceRecords: [], input: 'typed' }).usage.orchestrator.status).toBe('not_applicable')
+    expect(extractLiveMetrics({ events, perfRecords: [], traceRecords: [], input: 'typed', clockOrigin: 'cap-1' }).usage.orchestrator.status).toBe('not_applicable')
   })
 })

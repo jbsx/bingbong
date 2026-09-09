@@ -1956,12 +1956,17 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
             // this Answer. Every other way a Run can end reaches none of
             // this, so the words outlive it.
             continuity?.resolveCorrections?.()
+            // The Run's final Answer, marked as such (#224): this display
+            // and the deterministic fallback's are the two the mark rides,
+            // so an observer never has to guess which display was the
+            // Answer from position or wording.
             yield {
               type: 'display',
               text: scrubAnswerText(turn.display),
               at: clock.now(),
               ...(turn.evidenceIds !== undefined ? { evidenceIds: turn.evidenceIds } : {}),
               ...(answerSources.length > 0 ? { sources: answerSources } : {}),
+              finalAnswer: true,
             }
             yield* speakLine(turn.speak, turnId)
             yield* checkpoint(run, 'thinking')
@@ -2177,7 +2182,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
           // The Answer's origin travels with the Answer (#214): the eval's
           // per-run `deterministicAnswer` reads this flag, so it can never
           // be inferred from the wording of the sentences above.
-          yield { type: 'display', text: fallback.display, deterministicAnswer: true, at: clock.now() }
+          yield { type: 'display', text: fallback.display, deterministicAnswer: true, finalAnswer: true, at: clock.now() }
           yield* speakLine(fallback.speak, turnId)
           yield* checkpoint(run, 'thinking')
         }

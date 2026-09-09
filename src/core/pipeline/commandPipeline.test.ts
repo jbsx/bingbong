@@ -298,7 +298,7 @@ describe('command pipeline', () => {
     })
     expect(executions).toBe(0)
     expect(events).toContainEqual({ type: 'status', status: 'paused', at: 0 })
-    expect(events).toContainEqual({ type: 'display', text: 'Using the steering.', at: 86_400_000 })
+    expect(events).toContainEqual({ type: 'display', text: 'Using the steering.', finalAnswer: true, at: 86_400_000 })
   })
 
   it('resumes without steering and continues the untouched model turn', async () => {
@@ -362,7 +362,7 @@ describe('command pipeline', () => {
     expect(events).toEqual([
       { type: 'command', text: 'hello', at: 1000 },
       { type: 'status', status: 'thinking', at: 1000 },
-      { type: 'display', text: 'Full detail here.', at: 1000 },
+      { type: 'display', text: 'Full detail here.', finalAnswer: true, at: 1000 },
       { type: 'status', status: 'speaking', at: 1000 },
       { type: 'speak', text: 'Done.', at: 1000 },
       { type: 'done', outcome: 'done', finalizationCause: 'model_answered', at: 1000 },
@@ -452,7 +452,7 @@ describe('command pipeline', () => {
 
     const events = await collect(pipeline, 'hello')
 
-    expect(events).toContainEqual({ type: 'display', text: 'Full detail here.', at: 1000 })
+    expect(events).toContainEqual({ type: 'display', text: 'Full detail here.', finalAnswer: true, at: 1000 })
     expect(events).toContainEqual({ type: 'speak', text: 'Done.', at: 1000 })
     expect(events).toContainEqual({
       type: 'error',
@@ -1340,6 +1340,7 @@ describe('command pipeline', () => {
       type: 'display',
       text: 'I have not made progress I can show on \u201Ckeep going\u201D yet.',
       deterministicAnswer: true,
+      finalAnswer: true,
       at: 0,
     })
     expect(events.find((e) => e.type === 'speak')).toMatchObject({
@@ -1653,6 +1654,7 @@ describe('command pipeline', () => {
         type: 'display',
         text: 'I have not made progress I can show on \u201Cdo the thing\u201D yet.',
         deterministicAnswer: true,
+        finalAnswer: true,
         at: 0,
       })
       expect(events.find((e) => e.type === 'speak' && e.text !== 'Partial.')).toMatchObject({
@@ -1680,6 +1682,7 @@ describe('command pipeline', () => {
         type: 'display',
         text: 'I have not made progress I can show on \u201Cdo the thing\u201D yet.',
         deterministicAnswer: true,
+        finalAnswer: true,
         at: 0,
       })
       expect(events.at(-1)).toEqual({ type: 'done', outcome: 'failed', finalizationCause: 'budget_exhausted', at: 0 })
@@ -3007,7 +3010,7 @@ describe('command pipeline', () => {
       expect(requests[1]?.signal?.aborted).toBe(true)
       expect(requests).toHaveLength(3)
       expect(events.filter((e) => e.type === 'tool_result' && e.name === 'work')).toHaveLength(1)
-      expect(events).toContainEqual({ type: 'display', text: 'Detail.', at: 120_000 })
+      expect(events).toContainEqual({ type: 'display', text: 'Detail.', finalAnswer: true, at: 120_000 })
       // No provider, abort, or raw round-limit error ever surfaced.
       expect(events.filter((e) => e.type === 'error')).toEqual([])
       expect(events.at(-1)).toEqual({ type: 'done', outcome: 'done', resolution: 'partial', finalizationCause: 'deadline_reached', at: 120_000 })
@@ -4370,7 +4373,7 @@ describe('command pipeline', () => {
 
         const events = await collect(pipeline, 'do something')
 
-        expect(events).toContainEqual({ type: 'display', text: 'Detail.', at: 0 })
+        expect(events).toContainEqual({ type: 'display', text: 'Detail.', finalAnswer: true, at: 0 })
         expect(events.at(-1)).toEqual({ type: 'done', outcome: 'done', resolution, finalizationCause: 'model_answered', at: 0 })
       },
     )
@@ -4414,7 +4417,7 @@ describe('command pipeline', () => {
 
       const events = await collect(pipeline, 'look something up')
 
-      expect(events).toContainEqual({ type: 'display', text: 'Still useful detail.', at: 0 })
+      expect(events).toContainEqual({ type: 'display', text: 'Still useful detail.', finalAnswer: true, at: 0 })
       expect(events.at(-1)).toEqual({ type: 'done', outcome: 'done', finalizationCause: 'model_answered', at: 0 })
     })
 
@@ -6000,7 +6003,7 @@ describe('typed steering (#46)', () => {
     expect(executions).toBe(0)
     expect(requests).toHaveLength(2)
     expect(requests[1]!.steering).toBe('Use Paris instead.')
-    expect(events).toContainEqual({ type: 'display', text: 'Using the typed steering.', at: 0 })
+    expect(events).toContainEqual({ type: 'display', text: 'Using the typed steering.', finalAnswer: true, at: 0 })
     // The pause-and-resume is one atomic steer: no paused status surfaces.
     expect(events.some((event) => event.type === 'status' && event.status === 'paused')).toBe(false)
   })
@@ -8331,5 +8334,20 @@ describe('the bookkeeping round a mid-round Finalization gets (#200, ADR 0036)',
     // the very call it invites.
     expect(injected).toMatchObject({ ok: true, result: expect.not.stringContaining('Collection and Bookkeeping') })
     expect(events.at(-1)).toMatchObject({ type: 'done', finalizationCause: 'budget_exhausted' })
+  })
+})
+
+describe('the final Answer mark (#224)', () => {
+  it('marks exactly one display per Run — the Answer the user keeps — and nothing else', async () => {
+    const llm = new ScriptedLlm([{ kind: 'answer', speak: 'Done.', display: 'Full detail here.' }])
+    const pipeline = createCommandPipeline({ llm, tts: new RecordingTts(), clock: new FakeClock(1000), tools: [] })
+
+    const events = await collect(pipeline, 'hello')
+
+    const marked = events.filter((e) => e.type === 'display' && e.finalAnswer === true)
+    expect(marked).toEqual([{ type: 'display', text: 'Full detail here.', finalAnswer: true, at: 1000 }])
+    // The mark rides the display alone: the spoken line and the boundary
+    // are not Answers, so an observer reading the mark never lands on them.
+    expect(events.filter((e) => e.type !== 'display' && 'finalAnswer' in e)).toEqual([])
   })
 })

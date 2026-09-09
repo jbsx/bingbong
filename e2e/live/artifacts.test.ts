@@ -84,6 +84,8 @@ const metrics: LiveMetrics = {
     subagent: { status: 'not_applicable', reason: 'none' },
     vision: { status: 'unavailable', reason: 'none' },
   },
+  spans: { status: 'unavailable', reason: 'none' },
+  vision: { status: 'unavailable', reason: 'none' },
   coverage: { events: 3, traceRecords: 0, llmRoundRecords: 0, truncatedToolResults: 0, perfRecords: 1 },
 }
 

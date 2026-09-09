@@ -79,8 +79,12 @@ export function FeedLine({
         </div>
       )
     }
+    // The entry's own event stamp rides the card as nonvisual metadata
+    // (#224): an observer correlating a rendered Answer with the
+    // published `display` event reads the same `at` here, never the
+    // time it happened to look.
     return (
-      <div className={`feed-entry feed-entry--assistant feed-entry--${entry.kind}`}>
+      <div className={`feed-entry feed-entry--assistant feed-entry--${entry.kind}`} data-event-at={entry.at}>
         {time}
         <span className="feed-orb" aria-hidden="true" />
         <div className="feed-card">
