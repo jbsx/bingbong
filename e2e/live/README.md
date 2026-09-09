@@ -153,7 +153,7 @@ requires a scripted orchestrator, and refuses any real routing key.
 ## The evaluator-material boundary
 
 What the guard closes: `file:` loads on the browse partition (main pane,
-worker tabs, auth popups, redirects, clicks), when
+Subagent tabs, auth popups, redirects, clicks), when
 `BINGBONG_MEASUREMENT_ACCESS_GUARD=1`. That is the route by which a
 private key file, a capture, or `/proc/self/environ` on the same machine
 could reach the measured assistant. Production is unchanged with the
@@ -173,7 +173,7 @@ observed contamination rather than grading it as discovery.
   reads exempt); `metrics.coverage.truncatedToolResults` counts them.
 - Trace files roll at 5 MB and purge after 7 days; the capture archives
   before close, so a purge cannot erase a hunt's records.
-- A worker's stop can land after `done`; the drain waits for settlement,
-  not for every worker.
+- A Subagent's stop can land after `done`; the drain waits for settlement,
+  not for every Subagent.
 - Perf `llm`/`subagent-llm` spans include client retries; `llm-retry` is
   a zero-length marker, excluded from `spans`.

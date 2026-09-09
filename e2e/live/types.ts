@@ -349,13 +349,28 @@ export interface LiveMetrics {
     /** Perf `tool` spans — calls that reached execute. */
     readonly toolSpans: number
     readonly visionRequests: number
-    readonly workersFinalized: number
+    /** Distinct Subagents that stopped during the attempt — by agentId, never by event. */
+    readonly subagentsFinalized: number
     readonly errors: number
   }
+  /**
+   * How the attempt's Subagents stopped, deduplicated by agentId (the
+   * last witness wins): under their own Finalization Cause when they
+   * finalized themselves, else `cancelled`/`failed` by status, else
+   * `uncaused` — a Subagent that ended without a cause reaching the
+   * tape, which is not the same as one the Run killed. `bounded` counts
+   * the deterministic bounded reports (#199). `not_applicable` when the
+   * attempt delegated nothing.
+   */
+  readonly subagents: Observed<{
+    readonly observed: number
+    readonly byStop: Readonly<Record<string, number>>
+    readonly bounded: number
+  }>
   readonly usage: Readonly<Record<AgentRole, Observed<LiveRoleUsage>>>
   /**
    * Per-stage perf spans of the turn. `totalMs` is a plain sum and is
-   * NOT additive across stages — tool, browser, vision and worker spans
+   * NOT additive across stages — tool, browser, vision and Subagent spans
    * nest and overlap — so `unionMs` (the union of each stage's
    * [t − durMs, t] intervals) is beside it. Both are meaningful only
    * within one launch: `t` is monotonic from the app's own start, and

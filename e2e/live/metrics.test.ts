@@ -3,7 +3,7 @@ import type { PerfSpanRecord } from '../../src/core/perf/perfTracer'
 import type { PipelineEvent } from '../../src/core/pipeline/events'
 import type { TraceRecord } from '../../src/core/trace/runTrace'
 import type { SessionEventIdentity } from '../../src/core/pipeline/events'
-import { extractLiveMetrics, finalAnswerDisplay, roleUsage, spanAggregates } from './metrics.ts'
+import { extractLiveMetrics, finalAnswerDisplay, roleUsage, spanAggregates, subagentStops } from './metrics.ts'
 
 // The raw projection (#224): observed timings and usage, never Task
 // Success. The cases are the ones a report must keep apart — missing vs
@@ -133,6 +133,25 @@ describe('spanAggregates', () => {
     const metrics = extractLiveMetrics({ events, perfRecords: [], traceRecords: records, input: 'typed', clockOrigin: 'cap-1' })
     expect(metrics.vision).toEqual({ status: 'observed', value: { requests: 2, totalMs: 50, outcomes: { ok: 1, deadline: 1 } } })
     expect(metrics.usage.vision.status).toBe('unavailable')
+  })
+})
+
+describe('subagentStops', () => {
+  it('counts distinct Subagents by how they stopped, last witness wins, and never by event', () => {
+    const stops: PipelineEvent[] = [
+      { type: 'subagent_finalized', turnId: 't1', agentId: 'w1', kind: 'browse', status: 'done', cause: 'objective_met', at: 1, ...identity },
+      { type: 'subagent_finalized', turnId: 't1', agentId: 'w1', kind: 'browse', status: 'done', cause: 'objective_met', at: 2, ...identity },
+      { type: 'subagent_finalized', turnId: 't1', agentId: 'w2', kind: 'browse', status: 'cancelled', at: 3, ...identity },
+      { type: 'subagent_finalized', turnId: 't1', agentId: 'w3', kind: 'browse', status: 'done', cause: 'parent_finalized', bounded: true, at: 4, ...identity },
+      { type: 'subagent_finalized', turnId: 't1', agentId: 'w4', kind: 'browse', status: 'done', at: 5, ...identity },
+    ] as PipelineEvent[]
+    const metrics = extractLiveMetrics({ events: [...events, ...stops], perfRecords: [], traceRecords: [], input: 'typed', clockOrigin: 'cap-1' })
+    expect(metrics.counts.subagentsFinalized).toBe(4)
+    expect(metrics.subagents).toEqual({
+      status: 'observed',
+      value: { observed: 4, byStop: { objective_met: 1, cancelled: 1, parent_finalized: 1, uncaused: 1 }, bounded: 1 },
+    })
+    expect(subagentStops(events).status).toBe('not_applicable')
   })
 })
 

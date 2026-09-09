@@ -188,6 +188,26 @@ export function roleUsage(traceRecords: readonly TraceRecord[]): Record<AgentRol
   }
 }
 
+/**
+ * The attempt's Subagent stops, one per agentId. The stop vocabulary is
+ * the release evaluator's (`WorkerStop` in e2e/eval/metrics.ts): the
+ * Subagent's own cause when it finalized itself, else the terminal status
+ * it reached, else `uncaused`.
+ */
+export function subagentStops(events: readonly PipelineEvent[]): Observed<{ observed: number; byStop: Record<string, number>; bounded: number }> {
+  const last = new Map<string, Event<'subagent_finalized'>>()
+  for (const event of ofType(events, 'subagent_finalized')) last.set(event.agentId, event)
+  if (last.size === 0) return notApplicable('the attempt delegated no Subagent')
+  const byStop: Record<string, number> = {}
+  let bounded = 0
+  for (const event of last.values()) {
+    const stop = event.cause ?? (event.status === 'failed' ? 'failed' : event.status === 'cancelled' ? 'cancelled' : 'uncaused')
+    byStop[stop] = (byStop[stop] ?? 0) + 1
+    if (event.bounded === true) bounded += 1
+  }
+  return observed({ observed: last.size, byStop, bounded })
+}
+
 /** Project one attempt's observations. Pure; never throws on missing data. */
 export function extractLiveMetrics(input: LiveMetricsInput): LiveMetrics {
   const { events, perfRecords, traceRecords } = input
@@ -234,9 +254,10 @@ export function extractLiveMetrics(input: LiveMetricsInput): LiveMetrics {
       toolCalls: ofType(events, 'tool_call').length,
       toolSpans: perfRecords.filter((record) => record.stage === 'tool').length,
       visionRequests,
-      workersFinalized: ofType(events, 'subagent_finalized').length,
+      subagentsFinalized: new Set(ofType(events, 'subagent_finalized').map((event) => event.agentId)).size,
       errors: ofType(events, 'error').length,
     },
+    subagents: subagentStops(events),
     usage: roleUsage(traceRecords),
     spans: (() => {
       const stages = spanAggregates(perfRecords)
