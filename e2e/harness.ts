@@ -240,6 +240,9 @@ export async function startHarness(
   },
 ): Promise<Harness> {
   const productionDefaults = options?.productionDefaults === true
+  if (productionDefaults && options?.fixture !== undefined) {
+    throw new Error('productionDefaults and a fixture server are exclusive: a measured launch must not have an evaluator-local page to reach')
+  }
   const ownsFixture = !options?.fixture && !productionDefaults
   const ownsUserDataDir = !options?.userDataDir
   const fixture = options?.fixture ?? (productionDefaults ? noFixture() : await startFixtureServer())

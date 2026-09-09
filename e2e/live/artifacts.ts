@@ -236,11 +236,17 @@ export function archiveLogsDir(logsDir: string, captureDir: string, options: Arc
   const skipped: string[] = []
   for (const name of names) {
     const path = join(logsDir, name)
-    if (archiveFamilyOf(name) === null || !statSync(path).isFile()) {
+    if (archiveFamilyOf(name) === null) {
       skipped.push(name)
       continue
     }
     try {
+      // The stat sits inside the guard too: the app's own purge can remove
+      // a family file between the listing and the copy.
+      if (!statSync(path).isFile()) {
+        skipped.push(name)
+        continue
+      }
       artifacts.push(archiveLogFile(path, captureDir, options))
     } catch (error) {
       failures.push({ name, reason: redactedMessage(error, options.secrets) })

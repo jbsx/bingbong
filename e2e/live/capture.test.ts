@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import type { FixtureServer } from '../fixtureServer'
-import { captureFilePath, DEFAULT_ATTEMPT_BOUNDS, MEASUREMENT_FAULT_REASONS, startCaptureSession } from './capture.ts'
+import { captureFilePath, DEFAULT_ATTEMPT_BOUNDS, MEASUREMENT_FAULT_REASONS, normalizeCommandText, startCaptureSession } from './capture.ts'
 
 // The launch-free half of the capture lifecycle (#224): what fails
 // before any Electron process exists, and where a capture lands.
@@ -40,16 +40,16 @@ describe('startCaptureSession, before any launch', () => {
     expect(readdirSync(join(root, 'cap-2'))).toEqual([])
   })
 
-  it('refuses measured mode without production routing, before a launch', async () => {
-    await expect(
-      startCaptureSession({ mode: 'measured', captureId: 'cap-3', huntId: 'h', root, processEnv: { BINGBONG_ENV_FILE: join(root, 'no-such-env') } }),
-    ).rejects.toThrow(/orchestrator routing/)
-    expect(existsSync(join(root, 'cap-3'))).toBe(true)
+  it('normalizes a command the way the Prompt Bar submits it, and refuses what the bar would alter', () => {
+    expect(normalizeCommandText('  find the fare  ')).toBe('find the fare')
+    expect(() => normalizeCommandText('find the fare\n')).toThrow(/single line/)
+    expect(() => normalizeCommandText('   ')).toThrow(/not be empty/)
   })
 
   it('names the capture file and the measurement-fault stop reasons', () => {
     expect(captureFilePath('cap-9', '/tmp/x')).toBe('/tmp/x/cap-9/capture.json')
     expect(MEASUREMENT_FAULT_REASONS).toEqual(['observer_failure', 'acceptance_timeout', 'rejected'])
     expect(DEFAULT_ATTEMPT_BOUNDS.attemptMs).toBe(20 * 60_000)
+    expect(existsSync(root)).toBe(true)
   })
 })

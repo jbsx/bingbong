@@ -63,14 +63,12 @@ function envPrefixOf(role: AgentRole): string {
 /**
  * The env the app's own loader would see: repo `.env` layered under the
  * process environment (`.env` fills gaps; exported vars win). A missing
- * `.env` is fine — exported routing alone configures the roles. A caller
- * that resolved the file path the app's way may pass it (#224); without
- * one the repo `.env` is read, as before.
+ * `.env` is fine — exported routing alone configures the roles.
  */
-export async function loadProductionEnv(envFilePath: string = join(repoRoot, '.env')): Promise<Record<string, string | undefined>> {
+export async function loadProductionEnv(): Promise<Record<string, string | undefined>> {
   let fileValues: Record<string, string> = {}
   try {
-    fileValues = parseDotEnv(await readFile(envFilePath, 'utf8'))
+    fileValues = parseDotEnv(await readFile(join(repoRoot, '.env'), 'utf8'))
   } catch {
     // No repo .env — process env is the whole config surface.
   }

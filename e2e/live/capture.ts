@@ -23,20 +23,22 @@
 // keeps its own reason; one bounded abort follows, and no `done` and no
 // Finalization Cause is ever invented for it.
 
+import { readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { PipelineEvent } from '../../src/core/pipeline/events'
 import type { PerfSpanRecord } from '../../src/core/perf/perfTracer'
 import { collectPerfRecords } from '../../src/main/perf/collectPerfRecords'
 import type { TraceRecord } from '../../src/core/trace/runTrace'
+import { RUN_TRACE_FILE_PATTERN } from '../../src/main/trace/traceFiles.ts'
 import { startFixtureServer, type FixtureServer } from '../fixtureServer'
 import { startHarness, type Harness } from '../harness'
-import { readRunTrace } from '../runTrace'
 import { sleep } from '../waitFor'
 import {
   archiveLogsDir,
   archiveUsageLedger,
   claimCaptureDir,
   LIVE_ARTIFACTS_ROOT,
+  parseJsonl,
   redactedMessage,
   verifyArtifacts,
   writeEventTape,
@@ -44,7 +46,7 @@ import {
   writeTextArtifact,
 } from './artifacts.ts'
 import { composeMeasuredLaunch, composeVerificationLaunch, gitProvenance, loadEnvFile, type ComposedLaunch } from './launch.ts'
-import { extractLiveMetrics } from './metrics.ts'
+import { extractLiveMetrics, finalAnswerDisplay, waitIntervals } from './metrics.ts'
 import { createBenchmarkProfile, type BenchmarkProfile, type BenchmarkProfileOptions } from './profile.ts'
 import {
   LIVE_CAPTURE_SCHEMA_VERSION,
@@ -95,8 +97,6 @@ export interface CaptureSessionOptions {
   readonly profile?: BenchmarkProfileOptions
   /** Required in verification mode: the scripted env, and optionally a fixture server the caller owns. */
   readonly verification?: { readonly env: Record<string, string | undefined>; readonly fixture?: FixtureServer }
-  /** Measured mode reads the process env by default; a caller may substitute one. */
-  readonly processEnv?: Record<string, string | undefined>
   readonly accessGuard?: boolean
   readonly bounds?: Partial<LiveAttemptBounds>
   readonly startupMs?: number
@@ -157,6 +157,31 @@ function nowIso(): string {
   return new Date().toISOString()
 }
 
+/**
+ * The command as the Prompt Bar will submit it: trimmed, as the bar and
+ * main both trim before the pipeline publishes `command.text`. A newline
+ * is refused rather than silently stripped by the single-line input —
+ * the accepted text would then never match the dispatched one.
+ */
+export function normalizeCommandText(text: string): string {
+  if (/[\r\n]/.test(text)) throw new Error('a command must be a single line — the Prompt Bar strips newlines and the accepted text would not match')
+  const trimmed = text.trim()
+  if (trimmed === '') throw new Error('a command must not be empty')
+  return trimmed
+}
+
+/** The Run Trace read the way an archive reads it: every whole valid line, a torn tail ignored. */
+function readRunTraceTolerant(userDataDir: string): TraceRecord[] {
+  const logsDir = join(userDataDir, 'logs')
+  let names: string[]
+  try {
+    names = readdirSync(logsDir).filter((name) => RUN_TRACE_FILE_PATTERN.test(name)).sort()
+  } catch {
+    return []
+  }
+  return names.flatMap((name) => parseJsonl(readFileSync(join(logsDir, name), 'utf8')).records as TraceRecord[])
+}
+
 /** Bound one operation; a hung CDP Promise is otherwise unbounded. */
 async function bounded<T>(operation: Promise<T>, ms: number, label: string): Promise<T> {
   let timer: NodeJS.Timeout | undefined
@@ -190,10 +215,11 @@ export async function startCaptureSession(options: CaptureSessionOptions): Promi
   let composed: ComposedLaunch
   try {
     if (options.mode === 'measured') {
+      // The real process env, always: it is what the launched app inherits.
       composed = composeMeasuredLaunch({
         profile,
-        envFile: loadEnvFile(options.processEnv ?? process.env),
-        processEnv: options.processEnv ?? process.env,
+        envFile: loadEnvFile(process.env),
+        processEnv: process.env,
         git: gitProvenance(),
         ...(options.accessGuard !== undefined ? { accessGuard: options.accessGuard } : {}),
       })
@@ -236,26 +262,39 @@ export async function startCaptureSession(options: CaptureSessionOptions): Promi
     errors.push({ at: nowIso(), stage, message: redactedMessage(error, secrets) })
   }
 
-  /** Copy every diagnostic family out of the profile now; later copies overwrite with more. */
+  /**
+   * Copy every diagnostic family out of the profile now; later copies
+   * overwrite with more. Never throws: an archive that fails is a
+   * recorded, incomplete retention, not a capture that cannot close.
+   */
   const archive = (stage: string): { complete: boolean; note: string | null } => {
-    const archived = archiveLogsDir(profile.logsDir, captureDir, { secrets })
-    const byPath = new Map(artifacts.map((artifact) => [artifact.path, artifact]))
-    for (const artifact of archived.artifacts) byPath.set(artifact.path, artifact)
-    const ledger = archiveUsageLedger(profile.userDataDir, captureDir)
-    if (ledger !== null) byPath.set(ledger.path, ledger)
-    artifacts = [...byPath.values()]
-    for (const failure of archived.failures) recordError(`${stage}.archive`, `${failure.name}: ${failure.reason}`)
-    const incomplete = archived.artifacts.filter((artifact) => !artifact.complete)
-    const notes = [
-      ...archived.failures.map((failure) => `${failure.name} could not be copied`),
-      ...incomplete.map((artifact) => `${artifact.locator ?? artifact.path}: ${artifact.note ?? 'incomplete'}`),
-    ]
-    return { complete: archived.failures.length === 0 && incomplete.length === 0, note: notes.length > 0 ? notes.join('; ') : null }
+    try {
+      const archived = archiveLogsDir(profile.logsDir, captureDir, { secrets })
+      const byPath = new Map(artifacts.map((artifact) => [artifact.path, artifact]))
+      for (const artifact of archived.artifacts) byPath.set(artifact.path, artifact)
+      const ledger = archiveUsageLedger(profile.userDataDir, captureDir)
+      if (ledger !== null) byPath.set(ledger.path, ledger)
+      artifacts = [...byPath.values()]
+      for (const failure of archived.failures) recordError(`${stage}.archive`, `${failure.name}: ${failure.reason}`)
+      const incomplete = archived.artifacts.filter((artifact) => !artifact.complete)
+      const notes = [
+        ...archived.failures.map((failure) => `${failure.name} could not be copied`),
+        ...incomplete.map((artifact) => `${artifact.locator ?? artifact.path}: ${artifact.note ?? 'incomplete'}`),
+      ]
+      return { complete: archived.failures.length === 0 && incomplete.length === 0, note: notes.length > 0 ? notes.join('; ') : null }
+    } catch (error) {
+      recordError(`${stage}.archive`, error)
+      return { complete: false, note: `archive failed: ${redactedMessage(error, secrets)}` }
+    }
   }
 
   const checkpoint = (closeState: LiveSessionCapture['closeState'], closedAt: string | null = null): void => {
     const retention = archive('checkpoint')
-    writeSessionCapture(captureDir, capture(closeState, retention, closedAt), { secrets })
+    try {
+      writeSessionCapture(captureDir, capture(closeState, retention, closedAt), { secrets })
+    } catch (error) {
+      recordError('checkpoint.write', error)
+    }
   }
 
   // The capture exists on disk before the app does.
@@ -273,6 +312,9 @@ export async function startCaptureSession(options: CaptureSessionOptions): Promi
     await bounded(harness.dashboardEval<number>(TAPE_INSTALL), CDP_OP_MS, 'installing the event tape')
   } catch (error) {
     recordError('launch', error)
+    // A launched app is quit before its profile goes — never leaked onto
+    // a deleted directory.
+    if (harness! !== undefined) await bounded(harness!.quit(), 30_000, 'quitting after a failed launch').catch(() => {})
     const retention = archive('launch_failed')
     writeSessionCapture(captureDir, capture('launch_failed', retention, nowIso()), { secrets })
     profile.dispose()
@@ -286,10 +328,29 @@ export async function startCaptureSession(options: CaptureSessionOptions): Promi
   let lastCursor = 0
   let failed: string | null = null
 
-  const readTape = (): Promise<TapeEntry[]> => bounded(harness.dashboardEval<TapeEntry[]>('window.__liveTape ?? []'), CDP_OP_MS, 'reading the event tape')
-  const tapeLength = (): Promise<number> => bounded(harness.dashboardEval<number>('(window.__liveTape ?? []).length'), CDP_OP_MS, 'reading the tape length')
-  const submitBusy = (): Promise<boolean> =>
-    bounded(harness.overlayEval<boolean>(`document.querySelector('.prompt-form')?.getAttribute('aria-busy') === 'true'`), CDP_OP_MS, 'reading the Prompt Bar')
+  // The tape, accumulated locally: each poll fetches only what the
+  // dashboard appended since the last, so a long Run costs O(new events)
+  // per poll rather than the whole history — and a tape that shrank means
+  // the dashboard page was replaced (a crash reload), which is a loss the
+  // observer names rather than reads as "no events yet".
+  const tape: TapeEntry[] = []
+  const readTape = async (): Promise<TapeEntry[]> => {
+    const remote = await bounded(harness.dashboardEval<number>('(window.__liveTape ?? []).length'), CDP_OP_MS, 'reading the tape length')
+    if (remote < tape.length) throw new Error(`the event tape was lost: the dashboard holds ${remote} events, ${tape.length} were seen — the page was reloaded`)
+    if (remote > tape.length) {
+      const added = await bounded(harness.dashboardEval<TapeEntry[]>(`(window.__liveTape ?? []).slice(${tape.length})`), CDP_OP_MS, 'reading the event tape')
+      tape.push(...added)
+    }
+    return tape
+  }
+  const tapeLength = async (): Promise<number> => (await readTape()).length
+  /** Whether the initial submit is outstanding; null when the Prompt Bar cannot be found (the overlay was replaced). */
+  const submitBusy = (): Promise<boolean | null> =>
+    bounded(
+      harness.overlayEval<boolean | null>(`(() => { const form = document.querySelector('.prompt-form'); return form ? form.getAttribute('aria-busy') === 'true' : null })()`),
+      CDP_OP_MS,
+      'reading the Prompt Bar',
+    )
   const promptVerb = (): Promise<string> =>
     bounded(harness.overlayEval<string>(`document.querySelector('.prompt-verb')?.textContent ?? ''`), CDP_OP_MS, 'reading the Prompt Bar verb')
   const liveSession = (): Promise<{ sessionId: string; generation: number } | null> =>
@@ -297,18 +358,11 @@ export async function startCaptureSession(options: CaptureSessionOptions): Promi
   const helpCardsShown = (): Promise<boolean> =>
     bounded(harness.dashboardEval<boolean>(`!!document.querySelector('.ask-card') || !!document.querySelector('.confirmation-card')`), CDP_OP_MS, 'reading the help cards')
 
-  /** Asks and confirmations raised since `cursor` that no resolution followed. */
-  const openWaits = (tape: readonly TapeEntry[], cursor: number): string[] => {
-    const since = tape.slice(cursor)
-    const open: string[] = []
-    for (const entry of since) {
-      if (entry.type === 'ask_requested' && !since.some((other) => other.type === 'ask_resolved' && other.askId === entry.askId)) open.push(`ask ${entry.askId}`)
-      if (entry.type === 'confirmation_requested' && !since.some((other) => other.type === 'confirmation_resolved' && other.confirmationId === entry.confirmationId)) {
-        open.push(`confirmation ${entry.confirmationId}`)
-      }
-    }
-    return open
-  }
+  /** Asks and confirmations raised since `cursor` that no resolution followed — the projection's own pairing. */
+  const openWaits = (tape: readonly TapeEntry[], cursor: number): string[] =>
+    waitIntervals(tape.slice(cursor).filter((entry): entry is PipelineEvent => entry.type !== 'submission_feedback'))
+      .filter((wait) => wait.resolvedAt === null)
+      .map((wait) => `${wait.kind} ${wait.id}`)
 
   async function continuationState(): Promise<ContinuationState> {
     if (closed || failed !== null) return { ready: false, reason: 'capture_failed', detail: failed ?? 'the capture is closed' }
@@ -325,7 +379,9 @@ export async function startCaptureSession(options: CaptureSessionOptions): Promi
         if (last.accepted.status !== 'observed') return { ready: false, reason: 'initial_not_accepted', detail: last.accepted.reason }
         if (last.terminal.status !== 'observed') return { ready: false, reason: 'run_active', detail: `no terminal event was observed: ${last.terminal.reason}` }
       }
-      if (await submitBusy()) return { ready: false, reason: 'run_active', detail: 'the initial submit has not settled' }
+      const submitState = await submitBusy()
+      if (submitState === null) return { ready: false, reason: 'capture_failed', detail: 'the Prompt Bar cannot be found — the overlay page was replaced' }
+      if (submitState) return { ready: false, reason: 'run_active', detail: 'the initial submit has not settled' }
       if ((await promptVerb()) !== 'run') return { ready: false, reason: 'run_active', detail: 'the Prompt Bar is still steering a live Run' }
       const session = await liveSession()
       if (session === null) return { ready: false, reason: 'session_unavailable', detail: 'no live Session' }
@@ -346,7 +402,7 @@ export async function startCaptureSession(options: CaptureSessionOptions): Promi
     order: input.order,
     relation: input.relation,
     ...(input.parentAttemptId !== undefined ? { parentAttemptId: input.parentAttemptId } : {}),
-    command: { text: input.text, prompt: input.prompt },
+    command: { text: normalizeCommandText(input.text), prompt: input.prompt },
     reason,
     decidedAt: nowIso(),
   })
@@ -356,6 +412,7 @@ export async function startCaptureSession(options: CaptureSessionOptions): Promi
     if (busy) throw new Error('a captureCommand is already in flight — one command at a time')
     if (attempts.some((attempt) => attempt.attemptId === input.attemptId)) throw new Error(`attempt id ${input.attemptId} was already used in this capture`)
     if (input.relation !== 'initial' && input.parentAttemptId === undefined) throw new Error(`${input.relation} needs a parentAttemptId`)
+    normalizeCommandText(input.text)
     busy = true
     try {
       // A follow-up is dispatched only into a Session that can take it —
@@ -381,6 +438,8 @@ export async function startCaptureSession(options: CaptureSessionOptions): Promi
   }
 
   async function observeAttempt(input: CaptureCommandInput): Promise<LiveAttemptCapture> {
+    // One normalized text for the submit and both matches below.
+    const text = normalizeCommandText(input.text)
     const anomalies: LiveAnomaly[] = []
     let accepted: Observed<LiveAcceptedCommand> = unavailable('the command was not submitted')
     // Held in one object: the tape projection below assigns these from a
@@ -406,12 +465,12 @@ export async function startCaptureSession(options: CaptureSessionOptions): Promi
       if (turnId === null) return
       const own = turnId
       events = since.filter((entry): entry is PipelineEvent => entry.type !== 'submission_feedback' && 'turnId' in entry && entry.turnId === own)
-      const marked = events.filter((event): event is Extract<PipelineEvent, { type: 'display' }> => event.type === 'display' && event.finalAnswer === true)
-      if (marked.length === 1) {
-        seen.finalAnswer = observed({ at: marked[0]!.at, text: marked[0]!.text, turnId: own, deterministic: marked[0]!.deterministicAnswer === true })
-      } else if (marked.length > 1) {
-        seen.finalAnswer = { status: 'invalid', reason: `${marked.length} displays were marked as the final Answer` }
-      }
+      // The projection's own selection of the final Answer — one rule, in metrics.ts.
+      const marked = finalAnswerDisplay(events)
+      seen.finalAnswer =
+        marked.status === 'observed'
+          ? observed({ at: marked.value.at, text: marked.value.text, turnId: own, deterministic: marked.value.deterministicAnswer === true })
+          : { ...marked }
       const done = events.find((event): event is Extract<PipelineEvent, { type: 'done' }> => event.type === 'done')
       if (done !== undefined) {
         seen.terminal = observed({ at: done.at, turnId: own, outcome: done.outcome ?? null, resolution: done.resolution ?? null, finalizationCause: done.finalizationCause ?? null })
@@ -419,14 +478,14 @@ export async function startCaptureSession(options: CaptureSessionOptions): Promi
       // A second accepted command of the same text after ours, in another
       // Session, is the app's own reset replay (#99): recorded, never merged.
       for (const entry of since.filter(isCommand)) {
-        if (entry.turnId !== own && entry.text === input.text && !anomalies.some((anomaly) => anomaly.detail.includes(entry.turnId))) {
+        if (entry.turnId !== own && entry.text === text && !anomalies.some((anomaly) => anomaly.detail.includes(entry.turnId))) {
           anomalies.push({ kind: 'session_reset_replay', at: entry.at, detail: `command replayed as turn ${entry.turnId} in Session ${String(entry.sessionId)}/${String(entry.sessionGeneration)}` })
         }
       }
     }
 
     try {
-      submitResult = await bounded(harness.submitCommand(input.text), CDP_OP_MS, 'driving the Prompt Bar')
+      submitResult = await bounded(harness.submitCommand(text), CDP_OP_MS, 'driving the Prompt Bar')
       if (submitResult !== 'submitted') {
         stop = { at: nowIso(), reason: 'rejected', detail: `the Prompt Bar reported ${submitResult}` }
         accepted = unavailable(`the Prompt Bar reported ${submitResult}`)
@@ -438,7 +497,7 @@ export async function startCaptureSession(options: CaptureSessionOptions): Promi
         while (Date.now() < acceptanceDeadline && turnId === null && rejection === null) {
           const tape = await readTape()
           const since = tape.slice(cursor)
-          const command = since.find((entry): entry is Extract<PipelineEvent, { type: 'command' }> => isCommand(entry) && entry.text === input.text)
+          const command = since.find((entry): entry is Extract<PipelineEvent, { type: 'command' }> => isCommand(entry) && entry.text === text)
           if (command !== undefined) {
             if (command.runId === undefined || command.sessionId === undefined || command.sessionGeneration === undefined || command.submissionId === undefined) {
               accepted = { status: 'invalid', reason: 'the command event carries no Run/Session identity' }
@@ -492,14 +551,21 @@ export async function startCaptureSession(options: CaptureSessionOptions): Promi
           // Drain: the submit's own settlement (the runner has unwound —
           // failure screenshot included) and any post-terminal events.
           const drainDeadline = Date.now() + bounds.drainMs
+          let barMissing = false
           while (Date.now() < drainDeadline) {
-            if (!(await submitBusy())) {
+            const state = await submitBusy()
+            barMissing = state === null
+            if (state === false) {
               settlement = observed(nowIso())
               break
             }
             await sleep(POLL_MS)
           }
-          if (settlement.status !== 'observed') settlement = unavailable(`the submit had not settled ${bounds.drainMs} ms after the terminal`)
+          if (settlement.status !== 'observed') {
+            settlement = unavailable(
+              barMissing ? 'the Prompt Bar could not be found after the terminal — the overlay page was replaced' : `the submit had not settled ${bounds.drainMs} ms after the terminal`,
+            )
+          }
           projectAttempt(await readTape())
         }
       }
@@ -514,12 +580,28 @@ export async function startCaptureSession(options: CaptureSessionOptions): Promi
     }
 
     const stoppedAt = nowIso()
-    const waits = waitsOf(events)
-    const perfRecords: PerfSpanRecord[] = turnId === null ? [] : collectPerfRecords(profile.logsDir).records.filter((record) => record.turnId === turnId)
-    const traceRecords: TraceRecord[] = turnId === null ? [] : readRunTrace(profile.userDataDir).filter((record) => 'turnId' in record && record.turnId === turnId)
+    // The diagnostics are read tolerantly (a sink may be mid-append) and a
+    // read that still fails is recorded, never thrown past the record.
+    let perfRecords: PerfSpanRecord[] = []
+    let traceRecords: TraceRecord[] = []
+    if (turnId !== null) {
+      try {
+        perfRecords = collectPerfRecords(profile.logsDir).records.filter((record) => record.turnId === turnId)
+        traceRecords = readRunTraceTolerant(profile.userDataDir).filter((record) => 'turnId' in record && record.turnId === turnId)
+      } catch (error) {
+        recordError('diagnostics.read', error)
+      }
+    }
     const metrics = extractLiveMetrics({ events, perfRecords, traceRecords, input: 'typed', clockOrigin: options.captureId })
-    const tape = turnId === null ? null : writeEventTape(captureDir, { attemptId: input.attemptId, turnId, events }, { secrets })
-    if (tape !== null) artifacts = [...artifacts.filter((artifact) => artifact.path !== tape.path), tape]
+    let tapeArtifact: LiveArtifactReference | null = null
+    if (turnId !== null) {
+      try {
+        tapeArtifact = writeEventTape(captureDir, { attemptId: input.attemptId, turnId, events }, { secrets })
+        artifacts = [...artifacts.filter((artifact) => artifact.path !== tapeArtifact!.path), tapeArtifact]
+      } catch (error) {
+        recordError('events.write', error)
+      }
+    }
     const continuation = await continuationStateAfter()
     return {
       kind: 'attempt',
@@ -529,19 +611,20 @@ export async function startCaptureSession(options: CaptureSessionOptions): Promi
       order: input.order,
       relation: input.relation,
       ...(input.parentAttemptId !== undefined ? { parentAttemptId: input.parentAttemptId } : {}),
-      command: { text: input.text, prompt: input.prompt },
+      command: { text, prompt: input.prompt },
       dispatch: { requestedAt, submitResult, cursor },
       accepted,
       finalAnswer: seen.finalAnswer,
       terminal: seen.terminal,
       settlement,
       stop: { ...stop, at: stop.reason === 'terminal' ? stoppedAt : stop.at },
-      waits,
+      // The same pairing the projection made — one rule, in metrics.ts.
+      waits: metrics.waits,
       anomalies,
       continuation,
       bounds,
       metrics,
-      events: tape,
+      events: tapeArtifact,
     }
   }
 
@@ -606,28 +689,6 @@ export async function startCaptureSession(options: CaptureSessionOptions): Promi
     continuationState,
     close,
   }
-}
-
-/** Every ask and confirmation of the attempt, with its resolution when one came. */
-function waitsOf(events: readonly PipelineEvent[]): LiveAttemptCapture['waits'] {
-  const waits: LiveAttemptCapture['waits'][number][] = []
-  for (const event of events) {
-    if (event.type === 'ask_requested') {
-      const resolved = events.find((other) => other.type === 'ask_resolved' && other.askId === event.askId)
-      waits.push({ kind: 'ask', id: event.askId, requestedAt: event.at, resolvedAt: resolved?.at ?? null, ...(resolved?.type === 'ask_resolved' ? { reason: resolved.reason } : {}) })
-    }
-    if (event.type === 'confirmation_requested') {
-      const resolved = events.find((other) => other.type === 'confirmation_resolved' && other.confirmationId === event.confirmationId)
-      waits.push({
-        kind: 'confirmation',
-        id: event.confirmationId,
-        requestedAt: event.at,
-        resolvedAt: resolved?.at ?? null,
-        ...(resolved?.type === 'confirmation_resolved' ? { reason: resolved.reason } : {}),
-      })
-    }
-  }
-  return waits
 }
 
 /** The path of a capture's `capture.json` under a root — for callers that only hold the id. */

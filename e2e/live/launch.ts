@@ -19,7 +19,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { AGENT_ROLES, REASONING_EFFORT_ENV_KEY, routingEnvKeys, type AgentRole } from '../../src/core/agent/modelRouting'
-import { parseDotEnv } from '../../src/core/settings/dotEnv'
+import { layerEnv, parseDotEnv } from '../../src/core/settings/dotEnv'
 import { resolveEnvFilePath } from '../../src/main/envFile'
 import { HOST_TRACE_ENV, RUN_TRACE_ENV } from '../../src/core/trace/traceFlags'
 import { MEASUREMENT_ACCESS_GUARD_ENV } from '../../src/core/browser/measurementAccessGuard'
@@ -165,8 +165,9 @@ export function composeMeasuredLaunch(input: MeasuredLaunchInput): ComposedLaunc
       `measured mode refuses the env file ${envFile.path}: it carries ${fileHooks.join(', ')}, which the app would read past any process-env unset — remove them from the file`,
     )
   }
-  // The app's own precedence: file fills gaps, process env wins.
-  const productionEnv: Record<string, string | undefined> = { ...envFile.values, ...processEnv }
+  // The app's own precedence, by the app's own function: file fills gaps,
+  // process env wins.
+  const productionEnv = layerEnv(envFile.values, processEnv)
   const routing = resolveProductionRouting(productionEnv)
 
   const env: Record<string, string | undefined> = {
@@ -220,7 +221,9 @@ export function composeMeasuredLaunch(input: MeasuredLaunchInput): ComposedLaunc
     mode: 'measured',
     env,
     productionDefaults: true,
-    secrets: [...new Set([...secretsOf(routing.env), ...secretsOf(productionEnv)])],
+    // Redact what the app can actually see: the routing it was handed,
+    // the production env, and the real process env it inherits underneath.
+    secrets: [...new Set([...secretsOf(routing.env), ...secretsOf(productionEnv), ...secretsOf(process.env)])],
     provenance,
   }
 }
@@ -266,7 +269,9 @@ export function composeVerificationLaunch(input: VerificationLaunchInput): Compo
     mode: 'verification',
     env,
     productionDefaults: false,
-    secrets: secretsOf(effective),
+    // The hermetic template unsets only the routing keys; any other
+    // credential exported in the shell reaches the app and is redacted too.
+    secrets: [...new Set([...secretsOf(effective), ...secretsOf(process.env)])],
     provenance: {
       mode: 'verification',
       commit: git.commit,
