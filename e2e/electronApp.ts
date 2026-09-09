@@ -14,6 +14,8 @@ export interface LaunchedApp {
   stdoutLineCount(): number
   /** Everything printed to stdout so far (only with `pipeStdio`). */
   stdoutText(): string
+  /** The most recent stderr, bounded at {@link STDERR_LIMIT} characters. */
+  stderrTail(): string
   quit(): Promise<void>
 }
 
@@ -29,9 +31,11 @@ export interface LaunchOptions {
   env?: Record<string, string | undefined>
   /** Pipe stdin/stdout so callers can drive/reap a CLI harness. */
   pipeStdio?: boolean
+  /** How long the app may take to expose its debug port (default 20 s). */
+  startupTimeoutMs?: number
 }
 
-const STDERR_LIMIT = 10_000
+export const STDERR_LIMIT = 10_000
 
 /** Merge overrides into a base env; `undefined` values unset the key. */
 export function buildEnv(
@@ -72,6 +76,7 @@ export async function launchApp({
   args = [],
   env,
   pipeStdio = false,
+  startupTimeoutMs = 20000,
 }: LaunchOptions): Promise<LaunchedApp> {
   // Chromium's Ozone auto-detection prefers Wayland when WAYLAND_DISPLAY is
   // set (e.g. a sway session), which bypasses the Xvfb DISPLAY the suite runs
@@ -112,13 +117,14 @@ export async function launchApp({
         const response = await fetch(`http://127.0.0.1:${debugPort}/json/version`)
         return (await response.json()) as { webSocketDebuggerUrl: string }
       },
-      { timeoutMs: 20000, intervalMs: 250 },
+      { timeoutMs: startupTimeoutMs, intervalMs: 250 },
     )
     const cdp = await connectCdp(version.webSocketDebuggerUrl)
 
     return {
       cdp,
       stdin: proc.stdin,
+      stderrTail: () => stderr,
       waitForStdoutLine: (match: RegExp, since = 0) =>
         // Result lines follow the 'bingbong> ' prompt on the same stdout line;
         // match against the line with the prompt prefix stripped.

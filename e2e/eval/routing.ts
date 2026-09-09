@@ -23,8 +23,17 @@ import { layerEnv, parseDotEnv } from '../../src/core/settings/dotEnv'
 
 const repoRoot = fileURLToPath(new URL('../..', import.meta.url))
 
-/** Env hooks that would put a scripted model in any serving position. */
-export const SCRIPTED_MODEL_HOOKS = ['BINGBONG_LLM_SCRIPT', 'BINGBONG_VISION_SCRIPT', 'BINGBONG_VISION_DESCRIPTION_SCRIPT'] as const
+/**
+ * Env hooks that would put a scripted model in any serving position —
+ * the orchestrator's, the delegated worker's (#224: the one the guard
+ * used to omit), and both vision hooks.
+ */
+export const SCRIPTED_MODEL_HOOKS = [
+  'BINGBONG_LLM_SCRIPT',
+  'BINGBONG_SUBAGENT_LLM_SCRIPT',
+  'BINGBONG_VISION_SCRIPT',
+  'BINGBONG_VISION_DESCRIPTION_SCRIPT',
+] as const
 
 /** A resolved role, or why it isn't serving. `unconfigured` never fails the suite. */
 export type RoleRouting = { configured: true; baseUrl: string; model: string; keyFingerprint: string } | { configured: false }
@@ -54,12 +63,14 @@ function envPrefixOf(role: AgentRole): string {
 /**
  * The env the app's own loader would see: repo `.env` layered under the
  * process environment (`.env` fills gaps; exported vars win). A missing
- * `.env` is fine — exported routing alone configures the roles.
+ * `.env` is fine — exported routing alone configures the roles. A caller
+ * that resolved the file path the app's way may pass it (#224); without
+ * one the repo `.env` is read, as before.
  */
-export async function loadProductionEnv(): Promise<Record<string, string | undefined>> {
+export async function loadProductionEnv(envFilePath: string = join(repoRoot, '.env')): Promise<Record<string, string | undefined>> {
   let fileValues: Record<string, string> = {}
   try {
-    fileValues = parseDotEnv(await readFile(join(repoRoot, '.env'), 'utf8'))
+    fileValues = parseDotEnv(await readFile(envFilePath, 'utf8'))
   } catch {
     // No repo .env — process env is the whole config surface.
   }
@@ -107,9 +118,7 @@ export function resolveProductionRouting(env: Record<string, string | undefined>
   const harnessEnv: Record<string, string | undefined> = {
     // Kill every scripted hook the ordinary harness template sets; the
     // invariant below proves the composed env cannot script a model.
-    BINGBONG_LLM_SCRIPT: undefined,
-    BINGBONG_VISION_SCRIPT: undefined,
-    BINGBONG_VISION_DESCRIPTION_SCRIPT: undefined,
+    ...(Object.fromEntries(SCRIPTED_MODEL_HOOKS.map((hook) => [hook, undefined])) as Record<string, undefined>),
     ...(reasoningEffort !== null ? { [REASONING_EFFORT_ENV_KEY]: reasoningEffort } : {}),
   }
   for (const [role, endpoint] of endpoints) {

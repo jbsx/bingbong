@@ -38,6 +38,7 @@ describe('resolveProductionRouting', () => {
     const routing = resolveProductionRouting({
       ...ORCHESTRATOR_ENV,
       BINGBONG_LLM_SCRIPT: '[{"kind":"answer"}]',
+      BINGBONG_SUBAGENT_LLM_SCRIPT: '[]',
       BINGBONG_VISION_SCRIPT: '[]',
     })
     for (const hook of SCRIPTED_MODEL_HOOKS) {
@@ -45,6 +46,8 @@ describe('resolveProductionRouting', () => {
     }
     expect(noScriptedModelActive(routing.env)).toBe(true)
     expect(noScriptedModelActive({ ...routing.env, BINGBONG_LLM_SCRIPT: '[]' })).toBe(false)
+    // The worker's hook is a serving position too (#224).
+    expect(noScriptedModelActive({ ...routing.env, BINGBONG_SUBAGENT_LLM_SCRIPT: '[]' })).toBe(false)
   })
 
   it('resolves every configured role, including the default key env fallbacks', () => {

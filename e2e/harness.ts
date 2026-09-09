@@ -75,6 +75,8 @@ export interface Harness {
   cliOutput(): string
   /** Give the pane target OS/webContents focus so synthetic input lands. */
   focusPane(): Promise<void>
+  /** The app's most recent stderr (bounded) — what a launch failure or a capture retains. */
+  stderrTail(): string
   quit(): Promise<void>
 }
 
@@ -149,6 +151,67 @@ function elementCenterScript(selector: string): string {
   })()`
 }
 
+/**
+ * The hermetic env every ordinary e2e launch gets (#224 named it so a
+ * verification capture can say what it launched under). Wake-word
+ * monitoring keeps the mic hot from app start; tests opt in explicitly
+ * (BINGBONG_WAKE_ENGINE + BINGBONG_WAKE_SCRIPT) so the default suite
+ * stays hotkey-only. The adblocker always runs, but on the fixture
+ * server's tiny local list — offline, deterministic, and it exercises
+ * the engine in every test instead of downloading EasyList per launch.
+ * The empty resources value means "skip scriptlet resources"
+ * (set-but-empty in resolveAdblockConfig), keeping even that fetch off
+ * the network. The empty vision scripts do the same for the vision
+ * models: without them, any "no observable change" click auto-describes
+ * the page with a live Z.ai call — a hang or flake waiting to happen,
+ * and a real API bill. Set-but-empty makes every scripted path fail fast
+ * instead; tests that want vision pass their own non-empty script and
+ * override. The env-file pointer (#76) aims the app's .env loader at a
+ * path that doesn't exist, so e2e never picks up the developer's real
+ * .env next to the repo — tests that want file config pass their own
+ * BINGBONG_ENV_FILE and override this.
+ */
+export function hermeticEnvTemplate(fixture: FixtureServer, userDataDir: string): Record<string, string | undefined> {
+  return {
+    BINGBONG_WAKE_ENGINE: 'off',
+    // The Run Trace is the e2e suite's record of what a Run did (#188):
+    // Recorded History is retired, so every launch opts in and the
+    // suites read `run-trace-*.jsonl` out of the profile's logs dir.
+    [RUN_TRACE_ENV]: '1',
+    BINGBONG_ADBLOCK_LISTS: fixture.url('/adblock-list'),
+    BINGBONG_ADBLOCK_RESOURCES: '',
+    BINGBONG_VISION_SCRIPT: '[]',
+    BINGBONG_VISION_DESCRIPTION_SCRIPT: '[]',
+    BINGBONG_ENV_FILE: join(userDataDir, 'env-file-not-set'),
+    // The reasoning-effort override (#166) is unset for the same reason
+    // routing is: the launched app must never inherit an exported
+    // experiment rung from the developer's shell. The real-model
+    // evaluator passes its own value explicitly and overrides this.
+    [REASONING_EFFORT_ENV_KEY]: undefined,
+    ...ROUTING_ENV_UNSET,
+  }
+}
+
+/**
+ * The fixture stand-in a production-defaults launch gets when the caller
+ * brought none (#224): nothing listens, so no evaluator-local page can
+ * become a source, and any test that reaches for it fails loudly.
+ */
+function noFixture(): FixtureServer {
+  const refuse = (): never => {
+    throw new Error('no fixture server: this launch runs under production defaults')
+  }
+  return {
+    url: refuse,
+    altUrl: refuse,
+    adblockListHits: () => 0,
+    visionEndpointHits: () => 0,
+    lastVisionAuthorization: () => undefined,
+    setStatusBoard: refuse,
+    close: async () => {},
+  }
+}
+
 export async function startHarness(
   options?: {
     fixture?: FixtureServer
@@ -162,11 +225,24 @@ export async function startHarness(
      * false to observe the boot-idle state itself.
      */
     wakeFromBootIdle?: boolean
+    /**
+     * Launch under production defaults (#224): none of the hermetic
+     * template — no fixture adblock list, no empty vision scripts, no
+     * nonexistent env file, no routing unset — reaches the app; only
+     * `env` does, on top of the process env. The caller composes the
+     * whole surface (e2e/live/launch.ts does) and no fixture server is
+     * started unless one is passed. Every existing test keeps the
+     * hermetic default.
+     */
+    productionDefaults?: boolean
+    /** How long the app may take to expose its debug port and mount; the default suits a warm cache. */
+    startupTimeoutMs?: number
   },
 ): Promise<Harness> {
-  const ownsFixture = !options?.fixture
+  const productionDefaults = options?.productionDefaults === true
+  const ownsFixture = !options?.fixture && !productionDefaults
   const ownsUserDataDir = !options?.userDataDir
-  const fixture = options?.fixture ?? (await startFixtureServer())
+  const fixture = options?.fixture ?? (productionDefaults ? noFixture() : await startFixtureServer())
   const userDataDir = options?.userDataDir ?? (await mkdtemp(join(tmpdir(), 'bingbong-e2e-profile-')))
   const app: LaunchedApp = await launchApp({
     electronBinary: `${repoRoot}/node_modules/.bin/electron`,
@@ -176,41 +252,8 @@ export async function startHarness(
     userDataDir,
     args: options?.launchArgs,
     pipeStdio: options?.pipeStdio,
-    // Wake-word monitoring keeps the mic hot from app start; tests opt in
-    // explicitly (BINGBONG_WAKE_ENGINE + BINGBONG_WAKE_SCRIPT) so the default
-    // suite stays hotkey-only. The adblocker always runs, but on the fixture
-    // server's tiny local list — offline, deterministic, and it exercises the
-    // engine in every test instead of downloading EasyList per launch. The
-    // empty resources value means "skip scriptlet resources" (set-but-empty
-    // in resolveAdblockConfig), keeping even that fetch off the network.
-    // The empty vision scripts do the same for the vision models: without
-    // them, any "no observable change" click auto-describes the page with a
-    // live Z.ai call — a hang or flake waiting to happen, and a real API
-    // bill. Set-but-empty makes every scripted path fail fast instead;
-    // tests that want vision pass their own non-empty script and override.
-    // The env-file pointer (#76) aims the app's new .env loader at a path
-    // that doesn't exist, so e2e never picks up the developer's real .env
-    // next to the repo — tests that want file config pass their own
-    // BINGBONG_ENV_FILE and override this.
-    env: {
-      BINGBONG_WAKE_ENGINE: 'off',
-      // The Run Trace is the e2e suite's record of what a Run did (#188):
-      // Recorded History is retired, so every launch opts in and the
-      // suites read `run-trace-*.jsonl` out of the profile's logs dir.
-      [RUN_TRACE_ENV]: '1',
-      BINGBONG_ADBLOCK_LISTS: fixture.url('/adblock-list'),
-      BINGBONG_ADBLOCK_RESOURCES: '',
-      BINGBONG_VISION_SCRIPT: '[]',
-      BINGBONG_VISION_DESCRIPTION_SCRIPT: '[]',
-      BINGBONG_ENV_FILE: join(userDataDir, 'env-file-not-set'),
-      // The reasoning-effort override (#166) is unset for the same reason
-      // routing is: the launched app must never inherit an exported
-      // experiment rung from the developer's shell. The real-model
-      // evaluator passes its own value explicitly and overrides this.
-      [REASONING_EFFORT_ENV_KEY]: undefined,
-      ...ROUTING_ENV_UNSET,
-      ...options?.env,
-    },
+    startupTimeoutMs: options?.startupTimeoutMs,
+    env: productionDefaults ? { ...options?.env } : { ...hermeticEnvTemplate(fixture, userDataDir), ...options?.env },
   })
   const teardown = async () => {
     try {
@@ -221,7 +264,7 @@ export async function startHarness(
     }
   }
   try {
-    return await buildHarness(app, fixture, userDataDir, teardown, options?.wakeFromBootIdle ?? true)
+    return await buildHarness(app, fixture, userDataDir, teardown, options?.wakeFromBootIdle ?? true, options?.startupTimeoutMs)
   } catch (error) {
     await teardown().catch(() => {})
     throw error
@@ -234,6 +277,7 @@ async function buildHarness(
   userDataDir: string,
   teardown: () => Promise<void>,
   wakeFromBootIdle: boolean,
+  startupTimeoutMs = 15000,
 ): Promise<Harness> {
   const { cdp } = app
 
@@ -256,7 +300,7 @@ async function buildHarness(
   const overlaySid = () => sidOf('overlay')
   const paneSid = () => sidOf('pane')
 
-  await waitFor(async () => dashboardSid(), { timeoutMs: 15000, intervalMs: 250 })
+  await waitFor(async () => dashboardSid(), { timeoutMs: startupTimeoutMs, intervalMs: 250 })
   // Wait until React has mounted, not just until the target exists. The app
   // boots into the idle screen (T11): by default the harness wakes it — the
   // synthetic keydown is the same "any interaction wakes it" real input
@@ -274,7 +318,7 @@ async function buildHarness(
       )
       return ready ? sid : undefined
     },
-    { timeoutMs: 15000, intervalMs: 250 },
+    { timeoutMs: startupTimeoutMs, intervalMs: 250 },
   )
 
   // Synthetic input is dropped unless the OS window has focus AND the target
@@ -502,6 +546,8 @@ async function buildHarness(
     cliOutput: () => app.stdoutText(),
 
     focusPane: () => activateFor('pane'),
+
+    stderrTail: () => app.stderrTail(),
 
     quit: teardown,
   }
