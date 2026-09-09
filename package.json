@@ -19,6 +19,7 @@
     "delegation:summary": "node scripts/delegation-summary.ts",
     "test:watch": "vitest",
     "cli": "pnpm build && electron . --browser-cli",
+    "live:report": "node scripts/live-report.ts",
     "perf:report": "node scripts/perf-report.ts",
     "trace:ui": "node scripts/trace-ui.ts",
     "stt:replay": "node scripts/replay-stt.ts",
