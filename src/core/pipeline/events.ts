@@ -148,6 +148,15 @@ export type PipelineEvent = SessionEventIdentity & (
    * never pair the flag with a different display — and it is the
    * pipeline's own knowledge of which round answered, so a reworded
    * fallback sentence can never change it.
+   *
+   * `finalAnswer` marks the Run's final Answer display (#224): present
+   * on the one display that is the Answer the user keeps — a model
+   * Answer or the deterministic fallback — and absent on every other
+   * display, worker output and stream. It is stamped by the producer, at
+   * the two Answer display sites, so an observer measuring "when was the
+   * final Answer available" reads the pipeline's own mark rather than
+   * guessing from the last display it happened to see. Its `at` is the
+   * event's publication stamp: not renderer paint, not audible onset.
    */
   | {
       type: 'display'
@@ -157,6 +166,7 @@ export type PipelineEvent = SessionEventIdentity & (
       evidenceIds?: readonly MemoryEntryId[]
       sources?: readonly MemoryReference[]
       deterministicAnswer?: true
+      finalAnswer?: true
     }
   | { type: 'error'; turnId?: string; message: string; at: number }
   /**
