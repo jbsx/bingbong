@@ -29,8 +29,8 @@ no hunt can inform another.
 
 ## The corpus
 
-`e2e/eval/liveweb/hunts.ts` holds prompt text and nothing else.
-`e2e/eval/liveweb/keys.ts` holds the evaluator-only grading keys — required
+`e2e/live/hunts.ts` holds prompt text and nothing else.
+`e2e/live/keys.ts` holds the evaluator-only grading keys — required
 facts, constraints, near-match pitfalls, uncertainties, primary sources, and
 the follow-up grading deltas.
 
@@ -128,6 +128,28 @@ discarded — but it is never read as a task result, and its follow-up is
 A hunt that breaks does not abort the pass. The remaining hunts are independent
 by construction, so they still run; abandoning them would silently shrink the
 study.
+
+## What lands on disk
+
+A pass produces one **capture set** plus one **session capture** per hunt
+(#224's artifacts, under `e2e/live/artifacts/`, gitignored).
+
+The set file carries the pass's *planned* population — all six scheduled
+commands, with each follow-up filed under its own initial as a
+`revised_objective` — alongside the session captures that were actually
+produced. The slots come from the corpus rather than from the results, which is
+what lets a reader name a command that never happened at all; a set whose slots
+were read back off its own results could only describe what did.
+
+A set is `measurement_failed` when any scheduled command could not be observed,
+and `complete` otherwise — **including when hunts simply failed**. That
+asymmetry is deliberate: a task the assistant got wrong is a finding and the
+pass that recorded it is complete, while a command the harness could not
+observe is a broken measurement and the pass has to say so rather than present
+a hole as a result.
+
+Evaluator-only material (the grading keys and anything derived from them) stays
+out of the artifacts and out of Git.
 
 ## The work bound
 
