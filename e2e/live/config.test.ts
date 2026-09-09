@@ -28,6 +28,16 @@ describe('the live-web pilot cannot run by accident', () => {
     expect(read('vitest.eval.config.ts')).toContain("include: ['e2e/eval/**/*.eval.test.ts']")
     expect(read('vitest.delegation.config.ts')).toContain("include: ['e2e/eval/**/*.probe.test.ts']")
     expect(read('vitest.live.config.ts')).toContain("include: ['e2e/live/**/*.live.test.ts']")
+    expect(read('vitest.preflight.config.ts')).toContain("include: ['e2e/live/**/*.preflight.test.ts']")
+  })
+
+  it('keeps the live-access preflight opt-in too', () => {
+    // It spends no model budget, but it contacts live websites, so it earns
+    // the same treatment: excluded from the unit suite, under Xvfb, one app
+    // at a time.
+    expect(read('vitest.config.ts')).toContain("'e2e/**/*.preflight.test.ts'")
+    expect(read('vitest.preflight.config.ts')).toContain('fileParallelism: false')
+    expect(read('package.json')).toContain('"live:preflight": "pnpm build && xvfb-run')
   })
 
   it('runs one app at a time, under Xvfb', () => {
@@ -36,6 +46,15 @@ describe('the live-web pilot cannot run by accident', () => {
     // on the developer's real display.
     expect(read('vitest.live.config.ts')).toContain('fileParallelism: false')
     expect(read('package.json')).toContain('"test:live": "pnpm build && xvfb-run')
+  })
+
+  it('does not drag the preflight along with it', () => {
+    // The preflight (#227) exists to run BEFORE the pilot and help decide
+    // whether the pilot should run at all. If one config matched both, then
+    // "check the sources first" and "spend the budget" would be one command,
+    // and the check would stop being a check.
+    expect(read('vitest.live.config.ts')).not.toContain('preflight')
+    expect(read('vitest.preflight.config.ts')).not.toContain('live.test.ts')
   })
 
   it('writes nowhere near the release and delegation corpora', () => {

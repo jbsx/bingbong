@@ -15,6 +15,10 @@ export default defineConfig({
       'e2e/**/*.eval.test.ts',
       'e2e/**/*.probe.test.ts',
       'e2e/**/*.live.test.ts',
+      // The live-access preflight (#227) browses the real web. It spends no
+      // model budget, but it contacts live sites, so it is opt-in for the
+      // same reason and asserted in the same place.
+      'e2e/**/*.preflight.test.ts',
     ],
   },
 })
