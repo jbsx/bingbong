@@ -342,6 +342,28 @@ describe('the manifest a key shows the grader', () => {
   it('refuses a hunt the corpus does not declare', () => {
     expect(() => keyManifestOf('no-such-hunt')).toThrow(/not an approved live-web hunt/)
   })
+
+  it('states the review load a pass costs a human', () => {
+    // Manual review is the pilot's real bottleneck, so the number belongs
+    // somewhere it can be checked rather than in a summary someone wrote from
+    // memory. It grows whenever a key gains a fact, pitfall or uncertainty:
+    // update it deliberately, and tell whoever is planning reviewer time.
+    const load = liveWebHunts().flatMap((hunt) =>
+      keyManifestOf(hunt.id).tasks.map((task) => [`${hunt.id}/${task.stepId}`, task.checks.length] as const),
+    )
+
+    expect(Object.fromEntries(load)).toEqual({
+      'compatibility-pi-camera/initial': 10,
+      'compatibility-pi-camera/follow_up': 6,
+      'historical-longitude-watch/initial': 17,
+      'rule-eurostar-luggage/initial': 14,
+      'rule-eurostar-luggage/follow_up': 6,
+      'superseded-voyager-interstellar/initial': 15,
+    })
+
+    const total = load.reduce((sum, [, checks]) => sum + checks, 0)
+    expect(total).toBe(68)
+  })
 })
 
 describe('task and key provenance', () => {
