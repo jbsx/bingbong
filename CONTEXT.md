@@ -1007,6 +1007,23 @@ actually happened and absent when it did not — the absences are the
 diagnosis. Diagnostics only: they never change which stream events satisfy
 the Vision Deadline, and reasoning is counted, never quoted.
 
+### Performance Evaluation
+
+**Task Success**:
+Independently verified fulfillment of an evaluation task's predefined expected
+outcome, not merely a Run ending or claiming completion. Useful partials and
+requests for help are reported separately unless they are the predefined expected
+outcome; first-attempt success is distinguished from success after correction.
+_Avoid_: done, Run Resolution, graceful ending
+
+**Task Completion Time**:
+The elapsed time from the task's first accepted command until its requested action
+is verified or its usable Answer is available, including unsuccessful Runs before
+a successful correction. Time awaiting the user is identified separately; voice
+input latency, speech playback completion, and full Run duration are separate
+measurements rather than interchangeable endpoints.
+_Avoid_: Run duration, model latency, time to first token
+
 ### Hardware
 
 **Kiosk**:

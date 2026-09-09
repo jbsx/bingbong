@@ -18,3 +18,10 @@ e2e/eval/delegation/probe.json
 config/
 data/
 
+# Live-web captures (#224): raw diagnostics of a hunt — traces, event
+# tapes, screenshots — and the evaluator-only inputs (grading keys, source
+# targets) the measured assistant must never see. Compact reports live
+# outside these roots and are committed.
+e2e/live/artifacts/
+e2e/live/private/
+
