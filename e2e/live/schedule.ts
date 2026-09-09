@@ -30,7 +30,7 @@
 // was right. That is #225's rule and #223's story 11: conditioning delivery on
 // correctness would hand a weaker assistant an easier evaluation population.
 
-import { liveWebHunts, scheduledCommandCount, type HuntId, type LiveWebHunt, type MeasuredPrompt } from './hunts'
+import { liveWebHunts, scheduledCommandCount, type HuntId, type LiveWebHunt, type MeasuredPrompt } from './hunts.ts'
 
 /** Where a command sits in its hunt. Reporting groups initial and follow-up separately. */
 export type CommandRole = 'initial' | 'follow-up'
@@ -149,6 +149,35 @@ export interface PassRecord<TAttempt extends ScheduledAttempt> {
   commandBudget: number
 }
 
+/**
+ * The pilot's absolute work bound: four initial submissions plus the two
+ * eligible predefined follow-ups (#225). Stated here as a number rather than
+ * derived from the corpus, so that growing the corpus cannot silently grow
+ * what a paid pass may spend.
+ */
+export const PILOT_COMMAND_CEILING = 6
+
+/**
+ * Every command in a pass whose measurement broke, as sentences naming the
+ * hunt. Empty when the pass was measured — including when hunts simply failed,
+ * which is a finding rather than a fault.
+ */
+export function brokenMeasurements<TAttempt extends ScheduledAttempt>(pass: PassRecord<TAttempt>): string[] {
+  const broken: string[] = []
+  for (const hunt of pass.hunts) {
+    for (const record of [hunt.initial, hunt.followUp]) {
+      if (record === null) continue
+      if (record.status === 'not-reached' && record.reason === 'capture_failed') {
+        broken.push(`${hunt.huntId}: ${record.detail}`)
+      }
+      if (record.status === 'attempted' && record.attempt.measurementFault !== null) {
+        broken.push(`${hunt.huntId}: ${record.attempt.measurementFault}`)
+      }
+    }
+  }
+  return broken
+}
+
 /** Raised when the schedule would exceed the pilot's work bound. Never caught internally. */
 export class CommandBudgetExceeded extends Error {
   constructor(budget: number) {
@@ -211,13 +240,13 @@ function eligibilityOf(initial: ScheduledAttempt): ContinuationState {
       detail: 'the initial command was never accepted by the pipeline, so no Run exists to continue',
     }
   }
-  if (initial.measurementFault !== null) {
-    return {
-      ready: false,
-      reason: 'capture_failed',
-      detail: `the initial capture is broken measurement: ${initial.measurementFault}`,
-    }
-  }
+  // A broken initial CAPTURE is deliberately not a bar. #225 gives exactly two
+  // conditions — the initial Run ended, and the same Session can accept the
+  // command — and an instrumentation failure is neither. The Run still
+  // happened and the Session may well be fine, so refusing here would discard
+  // a measurable follow-up over a fault that is already recorded on the
+  // initial's own attempt. Whether the Session can actually take it is the
+  // next check's job, not this one's.
   return { ready: true }
 }
 
@@ -249,10 +278,17 @@ export async function runLiveWebPass<TAttempt extends ScheduledAttempt>(
   host: HuntCaptureHost<TAttempt>,
   options: PassOptions = {},
 ): Promise<PassRecord<TAttempt>> {
-  const hunts = options.hunts ?? liveWebHunts()
-  assertCorpusHunts(hunts)
+  const hunts = resolveCorpusHunts(options.hunts ?? liveWebHunts())
 
-  const budget = new CommandBudget(scheduledCommandCount(hunts))
+  const scheduled = scheduledCommandCount(hunts)
+  if (scheduled > PILOT_COMMAND_CEILING) {
+    // The bound #225 states is absolute, not merely whatever the corpus adds
+    // up to. If the corpus ever grows past it, a pass refuses to start rather
+    // than quietly spending more — and corpus.test.ts trips first, pinning
+    // the corpus and this ceiling to the same number.
+    throw new CommandBudgetExceeded(PILOT_COMMAND_CEILING)
+  }
+  const budget = new CommandBudget(scheduled)
   const records: HuntRecord<TAttempt>[] = []
 
   for (const hunt of hunts) {
@@ -285,12 +321,7 @@ async function runHunt<TAttempt extends ScheduledAttempt>(
     context = await host.beginHunt(hunt)
   } catch (error) {
     // No Session, so neither command was ever sent and no budget was spent.
-    const detail = `the hunt could not be started: ${describe(error)}`
-    return {
-      huntId: hunt.id,
-      initial: notReached(hunt.prompt, 'capture_failed', detail),
-      followUp: hunt.followUp ? notReached(hunt.followUp, 'capture_failed', detail) : null,
-    }
+    return huntNotReached(hunt, 'capture_failed', `the hunt could not be started: ${describe(error)}`)
   }
 
   try {
@@ -302,12 +333,7 @@ async function runHunt<TAttempt extends ScheduledAttempt>(
       // A throw is a protocol error — a concurrent call, a reused attempt id,
       // a closed session — so no command went out and no budget was spent. It
       // is never retried either way: the pilot allows one attempt at a task.
-      const detail = `the initial command could not be dispatched: ${describe(error)}`
-      return {
-        huntId: hunt.id,
-        initial: notReached(hunt.prompt, 'capture_failed', detail),
-        followUp: hunt.followUp ? notReached(hunt.followUp, 'capture_failed', detail) : null,
-      }
+      return huntNotReached(hunt, 'capture_failed', `the initial command could not be dispatched: ${describe(error)}`)
     }
 
     if (initial.declined) {
@@ -339,6 +365,15 @@ async function runHunt<TAttempt extends ScheduledAttempt>(
 /** A scheduled command that did not happen, with the reason it did not. */
 function notReached(prompt: MeasuredPrompt, reason: NotReachedReason, detail: string): CommandRecord<never> {
   return { status: 'not-reached', promptVersion: prompt.version, reason, detail }
+}
+
+/** Neither of a hunt's commands happened, for the same reason. */
+function huntNotReached(hunt: LiveWebHunt, reason: NotReachedReason, detail: string): HuntRecord<never> {
+  return {
+    huntId: hunt.id,
+    initial: notReached(hunt.prompt, reason, detail),
+    followUp: hunt.followUp ? notReached(hunt.followUp, reason, detail) : null,
+  }
 }
 
 function describe(error: unknown): string {
@@ -394,24 +429,29 @@ async function followUpOf<TAttempt extends ScheduledAttempt>(
 }
 
 /**
- * Measured tasks come from the approved corpus and nowhere else. Fixture
- * pages and scripted responses verify the runner; they are not pilot tasks,
- * and #225 requires that distinction to be unable to blur.
+ * Resolve a selection back to the approved corpus, and dispatch THAT.
+ *
+ * Checking that an id is known is not enough: an object carrying a corpus id
+ * and substituted prompt text would pass an id check and then be sent to a
+ * measured Session. So the caller's objects are used only to choose which
+ * hunts run — every prompt actually dispatched is the corpus's own. A fixture
+ * page or a scripted task cannot be dressed up as an approved one, which is
+ * what #225 means by fixtures being verification-only.
  */
-function assertCorpusHunts(hunts: readonly LiveWebHunt[]): void {
-  const corpus = new Set(liveWebHunts().map((hunt) => hunt.id))
-  for (const hunt of hunts) {
-    if (!corpus.has(hunt.id)) {
+function resolveCorpusHunts(hunts: readonly LiveWebHunt[]): LiveWebHunt[] {
+  const corpus = liveWebHunts()
+  const seen = new Set<string>()
+  return hunts.map((hunt) => {
+    const approved = corpus.find((candidate) => candidate.id === hunt.id)
+    if (!approved) {
       throw new Error(
         `"${hunt.id}" is not an approved live-web hunt — measured pilot tasks come from the corpus, never from a fixture or scripted scenario (#225)`,
       )
     }
-  }
-  const seen = new Set<string>()
-  for (const hunt of hunts) {
     if (seen.has(hunt.id)) {
       throw new Error(`"${hunt.id}" appears twice in one pass — a hunt is attempted at most once (#225)`)
     }
     seen.add(hunt.id)
-  }
+    return approved
+  })
 }

@@ -196,8 +196,3 @@ export function liveWebHunts(): readonly LiveWebHunt[] {
 export function scheduledCommandCount(hunts: readonly LiveWebHunt[] = liveWebHunts()): number {
   return hunts.reduce((total, hunt) => total + (hunt.followUp ? 2 : 1), 0)
 }
-
-/** The hunt with this id, or `undefined`. */
-export function huntById(id: string, hunts: readonly LiveWebHunt[] = liveWebHunts()): LiveWebHunt | undefined {
-  return hunts.find((hunt) => hunt.id === id)
-}

@@ -27,7 +27,7 @@
 // bias #225's third acceptance criterion forbids; `revisions.length ===
 // version` makes an unprovenanced edit visible.
 
-import type { HuntId, Revision } from './hunts'
+import type { HuntId, Revision } from './hunts.ts'
 
 /** A primary source, and what the evaluator verified it states. */
 export interface KeySource {

@@ -148,6 +148,44 @@ reached a Finalization Cause of their own (a cancelled or failed worker
 never had the chance to stop for no Progress): zero events in N such
 workers bounds the rate below 3/N, so bounding it under 10% needs 30.
 
+### The live-web study is measured by its own pass, and never by CI
+
+`pnpm test:live` (Xvfb-wrapped, real model budget, opt-in) runs the #223
+live-web performance study: four independently researched information hunts
+against the **real web**, each from a fresh Session on a dedicated benchmark
+Browser Profile, with two fixed follow-ups. It captures to `e2e/live/artifacts/`
+— never `e2e/eval/pools/` or `e2e/eval/delegation/` — and changes neither the
+pinned release comparison nor the delegation probe.
+
+It is the only suite here that both spends budget *and* browses live sites, so
+the guard rails are stricter than the other two. `*.live.test.ts` is matched by
+no config but `vitest.live.config.ts`; the unit config excludes the pattern
+explicitly, because `e2e/**/*.test.ts` would otherwise sweep it into
+`pnpm test` and spend real money on a command a developer thought was free.
+That whole arrangement is asserted in `e2e/live/config.test.ts` rather than
+trusted — everything preventing an accidental paid run is a glob in a config
+file, and globs get quietly edited.
+
+A pass is **bounded at six commands**: four initial submissions plus the two
+eligible predefined follow-ups, at most once each (`PILOT_COMMAND_CEILING` in
+`e2e/live/schedule.ts`). There is no repeat flag and no loop — three baseline
+passes need separate post-pilot authorization (#223), and a campaign that could
+be started by passing a number is what that authorization exists to gate.
+Production's own effort and retry behaviour is untouched; the cap is on user
+commands, not on how hard a Run works.
+
+Like the release evaluator, the suite fails only on **broken measurement**. A
+hunt the assistant gets wrong is the finding the study exists to record, not a
+red test. Correctness is graded manually and offline against private keys in
+`e2e/live/keys.ts`, which nothing on the capture path may import — `e2e/live/
+corpus.test.ts` walks the import graph and fails if anything does. Prompts are
+digest-pinned to the text #223 approved, so a task cannot be edited after a
+measured Answer has been seen.
+
+No-spend verification of the same schedule runs at the real Electron seam:
+`pnpm test:e2e e2e/live/schedule.e2e.test.ts`. The reproducible protocol is
+`docs/liveweb-hunt-protocol.md`.
+
 ## graphify
 
 This project has a knowledge graph at graphify-out/ with god nodes, community structure, and cross-file relationships.

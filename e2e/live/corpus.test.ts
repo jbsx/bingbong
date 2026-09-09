@@ -1,8 +1,11 @@
 import { createHash } from 'node:crypto'
+import { readdirSync, readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { normalizeCommandText } from './capture'
-import { huntById, liveWebHunts, scheduledCommandCount, type MeasuredPrompt } from './hunts'
-import { gradingKeyFor, gradingKeys, type GradingKey } from './keys'
+import { normalizeCommandText } from './capture.ts'
+import { liveWebHunts, scheduledCommandCount, type MeasuredPrompt } from './hunts.ts'
+import { gradingKeyFor, gradingKeys, type GradingKey } from './keys.ts'
+import { PILOT_COMMAND_CEILING } from './schedule.ts'
 
 // The corpus's own guard rails (#225 acceptance criteria 1–3). Three things
 // are pinned here, and each of them is a rule that would otherwise survive
@@ -131,6 +134,10 @@ describe('the live-web hunt corpus', () => {
   it('bounds a pass at six commands — four initials plus two follow-ups', () => {
     expect(scheduledCommandCount()).toBe(6)
     expect(allPrompts()).toHaveLength(6)
+    // The schedule states the same bound as an absolute number. Pinning them
+    // equal here is what makes a corpus that grows fail loudly rather than
+    // quietly widening what a paid pass may spend.
+    expect(scheduledCommandCount()).toBe(PILOT_COMMAND_CEILING)
   })
 
   it('has no empty prompt', () => {
@@ -151,10 +158,6 @@ describe('the live-web hunt corpus', () => {
     }
   })
 
-  it('finds a hunt by id, and nothing by an unknown one', () => {
-    expect(huntById('rule-eurostar-luggage')?.kind).toBe('rule-applicability')
-    expect(huntById('no-such-hunt')).toBeUndefined()
-  })
 })
 
 describe('prompt and key separation', () => {
@@ -225,6 +228,49 @@ describe('prompt and key separation', () => {
   })
 })
 
+describe('nothing on the capture path can load a key', () => {
+  // The protocol doc calls this split structural rather than conventional:
+  // "the runner cannot leak a key it never loaded". String non-overlap does
+  // not show that — only the import graph does. Walked transitively from the
+  // module a pass actually starts from, so a key reached through two hops
+  // fails here too.
+  const liveDir = join(import.meta.dirname)
+
+  function localImportsOf(module: string): string[] {
+    const source = readFileSync(join(liveDir, module), 'utf8')
+    return [...source.matchAll(/from '\.\/([\w.]+?)(?:\.ts)?'/g)].map((match) => `${match[1]}.ts`)
+  }
+
+  /** Every module reachable from the entry points a measured pass loads. */
+  function capturePathModules(): Set<string> {
+    const seen = new Set<string>()
+    const queue = ['pass.ts', 'schedule.ts', 'hunts.ts', 'pilot.live.test.ts']
+    while (queue.length > 0) {
+      const module = queue.pop()!
+      if (seen.has(module)) continue
+      seen.add(module)
+      queue.push(...localImportsOf(module))
+    }
+    return seen
+  }
+
+  it('never reaches keys.ts from anything a measured pass loads', () => {
+    const reachable = capturePathModules()
+    // Sanity: the walk really did traverse, rather than silently finding nothing.
+    expect(reachable.has('schedule.ts')).toBe(true)
+    expect(reachable.has('capture.ts')).toBe(true)
+    expect([...reachable].sort()).not.toContain('keys.ts')
+  })
+
+  it('is loaded only by the tests that grade against it', () => {
+    // If a second importer ever appears, this is where it gets noticed.
+    const importers = readdirSync(liveDir)
+      .filter((name) => name.endsWith('.ts'))
+      .filter((name) => localImportsOf(name).includes('keys.ts'))
+    expect(importers).toEqual(['corpus.test.ts'])
+  })
+})
+
 describe('task and key provenance', () => {
   /** A version is only real if every version up to it has a dated, reasoned entry. */
   function expectProvenanced(label: string, version: number, revisions: readonly { version: number; date: string; reason: string }[]): void {
@@ -265,7 +311,10 @@ describe('task and key provenance', () => {
     // captures were taken against. They must still name a hunt that exists.
     for (const pin of superseded) {
       const huntId = pin.split(':')[0]
-      expect(huntById(huntId), `pin ${pin} names a hunt the corpus dropped`).toBeDefined()
+      expect(
+        liveWebHunts().some((hunt) => hunt.id === huntId),
+        `pin ${pin} names a hunt the corpus dropped`,
+      ).toBe(true)
     }
   })
 

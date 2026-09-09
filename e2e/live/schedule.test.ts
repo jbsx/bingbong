@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { liveWebHunts, type LiveWebHunt, type MeasuredPrompt } from './hunts'
+import { liveWebHunts, type LiveWebHunt, type MeasuredPrompt } from './hunts.ts'
 import {
+  brokenMeasurements,
   CommandBudget,
   CommandBudgetExceeded,
   runLiveWebPass,
@@ -9,7 +10,7 @@ import {
   type HuntCaptureHost,
   type HuntContext,
   type ScheduledAttempt,
-} from './schedule'
+} from './schedule.ts'
 
 // The schedule's rules are all about something NOT happening — no second
 // attempt, no retry after failure, no replacement Session, no coaching, no
@@ -284,16 +285,30 @@ describe('task failure and broken measurement are different records', () => {
     expect(hunt.followUp!.status === 'attempted' && hunt.followUp!.attempt.taskOutcome).toBe('done')
   })
 
-  it('treats a broken initial capture as broken measurement, not a task result', async () => {
+  it('retains a broken initial capture and still delivers its follow-up', async () => {
     const host = new FakeHost({ [PI.id]: { initial: { measurementFault: 'the Answer timestamp was never observed' } } })
     const pass = await runLiveWebPass(host, { hunts: [PI] })
 
-    // The attempt itself is retained, fault and all — the latency of a broken
+    // The attempt is retained, fault and all — the latency of a broken
     // capture is not silently discarded.
     expect(pass.hunts[0].initial).toMatchObject({ status: 'attempted' })
-    // But its follow-up is not reached, and says so as measurement rather
-    // than as a task outcome.
-    expect(pass.hunts[0].followUp).toMatchObject({ status: 'not-reached', reason: 'capture_failed' })
+    expect(pass.hunts[0].initial.status === 'attempted' && pass.hunts[0].initial.attempt.measurementFault).toBe(
+      'the Answer timestamp was never observed',
+    )
+    // #225 gives a follow-up exactly two conditions: the initial Run ended,
+    // and the Session can accept the command. An instrumentation failure is
+    // neither, so the follow-up still goes out — refusing it would discard a
+    // measurable command over a fault already recorded on the initial.
+    expect(pass.hunts[0].followUp).toMatchObject({ status: 'attempted' })
+  })
+
+  it('still reports the pass as broken measurement when a capture faulted', async () => {
+    const host = new FakeHost({ [PI.id]: { initial: { measurementFault: 'the Answer timestamp was never observed' } } })
+    const pass = await runLiveWebPass(host, { hunts: [PI] })
+
+    // The fault is not swallowed by the follow-up succeeding: it is still
+    // what the pass reports about its own measurement.
+    expect(brokenMeasurements(pass)).toEqual([`${PI.id}: the Answer timestamp was never observed`])
   })
 
   it('records both commands as not reached when the hunt could not start', async () => {
@@ -380,6 +395,21 @@ describe('the measured corpus cannot be substituted', () => {
     await expect(runLiveWebPass(new FakeHost(), { hunts: [invented] })).rejects.toThrow(
       /not an approved live-web hunt/,
     )
+  })
+
+  it('dispatches the corpus text even when the caller supplies its own', async () => {
+    // An object carrying a corpus id but substituted prompt text would pass an
+    // id check and then reach a measured Session. The caller's object chooses
+    // WHICH hunt runs; the text sent is always the corpus's own.
+    const substituted = {
+      ...PI,
+      prompt: { ...PI.prompt, text: 'a fixture page pretending to be an approved hunt' },
+    } as LiveWebHunt
+    const host = new FakeHost()
+
+    await runLiveWebPass(host, { hunts: [substituted] })
+
+    expect(host.submitted).toEqual([PI.prompt.text, PI.followUp!.text])
   })
 
   it('refuses to run the same hunt twice in one pass', async () => {

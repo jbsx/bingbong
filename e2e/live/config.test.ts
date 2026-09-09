@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { join, sep } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { LIVE_ARTIFACTS_ROOT } from './artifacts'
+import { LIVE_ARTIFACTS_ROOT } from './artifacts.ts'
 
 // The pilot is the one suite in this repo that both spends model budget and
 // browses the real web. Everything that keeps it from running by accident is

@@ -23,10 +23,11 @@
 // distinction matters because the schedule gates a follow-up on it: a command
 // that was never accepted started no Run, so there is nothing to continue.
 
-import { promptIdentity } from './artifacts'
-import { MEASUREMENT_FAULT_REASONS, type CaptureSession, type CaptureSessionOptions, type ContinuationBlock } from './capture'
-import { liveWebHunts, type LiveWebHunt, type MeasuredPrompt } from './hunts'
-import type { CommandRole, ContinuationState, HuntCaptureHost, HuntContext, NotReachedReason, PassRecord, ScheduledAttempt } from './schedule'
+import { promptIdentity } from './artifacts.ts'
+import { MEASUREMENT_FAULT_REASONS, type CaptureSession, type CaptureSessionOptions, type ContinuationBlock } from './capture.ts'
+import { liveWebHunts, type LiveWebHunt, type MeasuredPrompt } from './hunts.ts'
+import { brokenMeasurements } from './schedule.ts'
+import type { CommandRole, ContinuationState, HuntCaptureHost, HuntContext, NotReachedReason, PassRecord, ScheduledAttempt } from './schedule.ts'
 import type {
   LiveAttemptRecord,
   LiveCaptureMode,
@@ -36,8 +37,8 @@ import type {
   LiveScheduledAttempt,
   LiveSessionReference,
   LiveStopReason,
-} from './types'
-import { LIVE_CAPTURE_SCHEMA_VERSION, LIVE_CAPTURE_SET_KIND } from './types'
+} from './types.ts'
+import { LIVE_CAPTURE_SCHEMA_VERSION, LIVE_CAPTURE_SET_KIND } from './types.ts'
 
 /**
  * This study's identity, stamped on every set file. `protocolVersion` tracks
@@ -124,6 +125,17 @@ export function scheduledView(capture: LiveAttemptRecord): HuntAttempt {
 
 /** The step label a command is filed under. #224's `stepId`. */
 export type StepId = 'initial' | 'follow_up'
+
+/**
+ * The schedule's command roles in #224's step vocabulary. They differ by one
+ * character (`follow-up` against `follow_up`), so the translation is a total
+ * map rather than a conditional: a role that gained no step label would fail
+ * to compile instead of dispatching under the wrong id.
+ */
+const STEP_IDS: Readonly<Record<CommandRole, StepId>> = {
+  initial: 'initial',
+  'follow-up': 'follow_up',
+}
 
 /** Filename-safe and stable across passes — an attempt id names a slot, not a run. */
 export function attemptIdFor(huntId: string, stepId: StepId): string {
@@ -241,8 +253,7 @@ export function createHuntCaptureHost(
 
       return {
         async submit(prompt: MeasuredPrompt, role: CommandRole): Promise<HuntAttempt> {
-          const stepId: StepId = role === 'initial' ? 'initial' : 'follow_up'
-          const slot = slotFor(hunt.id, stepId)
+          const slot = slotFor(hunt.id, STEP_IDS[role])
           return scheduledView(
             await session.captureCommand({
               attemptId: slot.attemptId,
@@ -297,18 +308,9 @@ export function passState<TAttempt extends ScheduledAttempt>(pass: PassRecord<TA
   state: LiveCaptureSetState
   stateReason?: string
 } {
-  const broken: string[] = []
-  for (const hunt of pass.hunts) {
-    for (const record of [hunt.initial, hunt.followUp]) {
-      if (record === null) continue
-      if (record.status === 'not-reached' && record.reason === 'capture_failed') {
-        broken.push(`${hunt.huntId}: ${record.detail}`)
-      }
-      if (record.status === 'attempted' && record.attempt.measurementFault !== null) {
-        broken.push(`${hunt.huntId}: ${record.attempt.measurementFault}`)
-      }
-    }
-  }
+  // The walk over a pass belongs to the pass; this only names the result in
+  // #224's set vocabulary.
+  const broken = brokenMeasurements(pass)
   return broken.length > 0
     ? { state: 'measurement_failed', stateReason: broken.join('; ') }
     : { state: 'complete' }

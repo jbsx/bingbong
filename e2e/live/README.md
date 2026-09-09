@@ -18,11 +18,22 @@ Neither needs to edit anything here.
 | `profile.ts` | vitest / e2e | `createBenchmarkProfile` — the fresh userData seed. |
 | `launch.ts` | vitest / e2e | `composeMeasuredLaunch`, `composeVerificationLaunch`, `loadEnvFile`, `gitProvenance`, `SCRIPTED_SERVING_HOOKS`, `TEST_ONLY_OVERRIDES`. |
 | `capture.ts` | e2e (launches Electron) | `startCaptureSession(options) → CaptureSession { captureCommand, continuationState, close }`. |
+| `hunts.ts` (#225) | plain Node | The corpus: four approved prompts and two fixed follow-ups, versioned and digest-pinned. Prompt text and nothing else. |
+| `keys.ts` (#225) | plain Node | The evaluator-only grading keys. **Nothing on the capture path may import this** — `corpus.test.ts` walks the import graph and fails if anything does. |
+| `schedule.ts` (#225) | plain Node | `runLiveWebPass(host)` — the protocol: sequencing, isolation, one-shot follow-ups, not-reached reasons, `PILOT_COMMAND_CEILING`. |
+| `pass.ts` (#225) | vitest / e2e | The join: `createHuntCaptureHost(startCaptureSession, …)`, `plannedSlots`, `captureSetOf` — the adapter from this handle to the schedule, and the set file a pass writes. |
 
 `*.test.ts` are launch-free unit tests in the normal `pnpm test` config;
-`capture.e2e.test.ts` runs under `pnpm test:e2e e2e/live/capture.e2e.test.ts`
-(Xvfb, scripted model, local fixture pages — never baseline evidence).
-No paid entry point lives here; #225 adds it.
+`capture.e2e.test.ts` and `schedule.e2e.test.ts` run under `pnpm test:e2e
+e2e/live/` (Xvfb, scripted model, local fixture pages — never baseline
+evidence).
+
+The paid entry point is `pilot.live.test.ts` (#225), run only by
+`pnpm test:live`. `*.live.test.ts` is matched by no other config and is
+excluded from the unit suite explicitly; `config.test.ts` asserts that
+arrangement rather than trusting it. A pass is bounded at six commands and
+fails only on broken measurement — a hunt the assistant gets wrong is data.
+The protocol is `docs/liveweb-hunt-protocol.md`.
 
 ## Lifecycle
 

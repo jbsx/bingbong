@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { validateCaptureSet } from './artifacts'
-import { liveWebHunts, type LiveWebHunt } from './hunts'
-import { extractLiveMetrics } from './metrics'
+import { validateCaptureSet } from './artifacts.ts'
+import { liveWebHunts, type LiveWebHunt } from './hunts.ts'
+import { extractLiveMetrics } from './metrics.ts'
 import {
   attemptIdFor,
   captureSetOf,
@@ -10,10 +10,10 @@ import {
   plannedSlots,
   scheduledView,
   type HuntAttempt,
-} from './pass'
-import type { CaptureCommandInput, CaptureSession, CaptureSessionOptions, ContinuationState } from './capture'
-import { runLiveWebPass } from './schedule'
-import type { LiveAttemptCapture, LiveAttemptRecord, LiveSessionCapture, LiveStopReason } from './types'
+} from './pass.ts'
+import type { CaptureCommandInput, CaptureSession, CaptureSessionOptions, ContinuationState } from './capture.ts'
+import { runLiveWebPass } from './schedule.ts'
+import type { LiveAttemptCapture, LiveAttemptRecord, LiveSessionCapture, LiveStopReason } from './types.ts'
 
 // The join between #225's schedule and #224's capture. Two derivations, one
 // reason mapping, and the planned population — all of which decide what a
