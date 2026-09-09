@@ -5,6 +5,7 @@ import { BROWSER_IPC } from '../core/browser/ipcChannels'
 import { createAgentActivityTracker, withAgentActivity } from '../core/downloads/agentActivity'
 import { PIPELINE_IPC } from '../core/pipeline/ipcChannels'
 import { attachAdblock } from './browser/attachAdblock'
+import { attachMeasurementAccessGuard } from './browser/attachMeasurementAccessGuard'
 import { attachIdentityHeaders } from './browser/attachIdentityHeaders'
 import { createBrowserPane, BROWSER_PARTITION } from './browser/createBrowserPane'
 import { attachBrowserPaneToWindow, registerBrowserIpc } from './browser/attachBrowserPane'
@@ -751,6 +752,14 @@ app.whenReady().then(async () => {
     onWebRequestCleared: () => identityHeaders.refresh(),
   })
 
+  // The measurement access guard (#224): file: loads refused on the
+  // browse partition, only when a measured capture asked for it. Boot
+  // scoped like the adblocker — process env, not the env file.
+  const accessGuard = attachMeasurementAccessGuard({
+    session: session.fromPartition(BROWSER_PARTITION, { cache: true }),
+    env: process.env,
+  })
+
   // Appearance (ADR 0020): resolve the tri-state Setting through
   // nativeTheme before the first window — renderers and pages read the
   // resolved prefers-color-scheme from their first paint, and the native
@@ -758,6 +767,7 @@ app.whenReady().then(async () => {
   const detachAppearance = attachAppearance(settingsStore)
   app.on('will-quit', () => {
     adblock.dispose()
+    accessGuard.dispose()
     detachAppearance()
   })
   await adblock.ready()

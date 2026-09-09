@@ -19,6 +19,7 @@
 // contamination rather than pretending otherwise.
 
 import { envFlagEnabled } from '../perf/envFlag'
+import { reportFault } from '../trace/fault'
 
 /** Env opt-in for the guard: `BINGBONG_MEASUREMENT_ACCESS_GUARD=1`. */
 export const MEASUREMENT_ACCESS_GUARD_ENV = 'BINGBONG_MEASUREMENT_ACCESS_GUARD'
@@ -40,7 +41,8 @@ export function measurementGuardRefuses(url: string): string | null {
   let parsed: URL
   try {
     parsed = new URL(url)
-  } catch {
+  } catch (error) {
+    reportFault('browser.measurementAccessGuard.parse', error)
     return null
   }
   return REFUSED_SCHEMES.has(parsed.protocol) ? `measurement access guard: ${parsed.protocol} loads are refused during a measured capture` : null
