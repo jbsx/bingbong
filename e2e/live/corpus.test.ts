@@ -4,7 +4,8 @@ import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { normalizeCommandText } from './capture.ts'
 import { liveWebHunts, scheduledCommandCount, type MeasuredPrompt } from './hunts.ts'
-import { gradingKeyFor, gradingKeys, type GradingKey } from './keys.ts'
+import { keyManifestDigest, parseLiveKeyManifest } from './grades.ts'
+import { gradingKeyFor, gradingKeys, keyManifestOf, type GradingKey } from './keys.ts'
 import { PILOT_COMMAND_CEILING } from './schedule.ts'
 
 // The corpus's own guard rails (#225 acceptance criteria 1–3). Three things
@@ -268,6 +269,78 @@ describe('nothing on the capture path can load a key', () => {
       .filter((name) => name.endsWith('.ts'))
       .filter((name) => localImportsOf(name).includes('keys.ts'))
     expect(importers).toEqual(['corpus.test.ts'])
+  })
+})
+
+describe('the manifest a key shows the grader', () => {
+  it('is accepted by #226’s own parser, for every hunt', () => {
+    for (const hunt of liveWebHunts()) {
+      const parsed = parseLiveKeyManifest(JSON.parse(JSON.stringify(keyManifestOf(hunt.id))))
+      expect(parsed.ok ? [] : parsed.errors, hunt.id).toEqual([])
+    }
+  })
+
+  it('describes both steps of a hunt that has a follow-up, and one otherwise', () => {
+    for (const hunt of liveWebHunts()) {
+      const steps = keyManifestOf(hunt.id).tasks.map((task) => task.stepId)
+      expect(steps, hunt.id).toEqual(hunt.followUp ? ['initial', 'follow_up'] : ['initial'])
+    }
+  })
+
+  it('grades each step against the prompt version that step was submitted at', () => {
+    const manifest = keyManifestOf('rule-eurostar-luggage')
+    const hunt = liveWebHunts().find((candidate) => candidate.id === 'rule-eurostar-luggage')!
+    expect(manifest.tasks[0].promptVersion).toBe(String(hunt.prompt.version))
+    expect(manifest.tasks[1].promptVersion).toBe(String(hunt.followUp!.version))
+  })
+
+  it('gives every step at least one check — a key that requires nothing cannot be failed', () => {
+    for (const hunt of liveWebHunts()) {
+      for (const task of keyManifestOf(hunt.id).tasks) {
+        expect(task.checks.length, `${hunt.id}/${task.stepId}`).toBeGreaterThan(0)
+        const ids = task.checks.map((check) => check.checkId)
+        expect(new Set(ids).size, `${hunt.id}/${task.stepId} repeats a check id`).toBe(ids.length)
+      }
+    }
+  })
+
+  it('carries no key conclusions in the reference the grader stores', () => {
+    // `keyRef` points a reviewer at the key; it is opaque to grades.ts and
+    // must never be a way for a conclusion to travel into a grading record.
+    for (const hunt of liveWebHunts()) {
+      const key = gradingKeyFor(hunt.id)!
+      for (const task of keyManifestOf(hunt.id).tasks) {
+        expect(task.keyRef).toContain('e2e/live/keys.ts')
+        for (const fact of key.requiredFacts) {
+          expect(task.keyRef).not.toContain(fact)
+        }
+      }
+    }
+  })
+
+  it('pins the key it was prepared from', () => {
+    const manifest = keyManifestOf('superseded-voyager-interstellar')
+    expect(manifest.keyDigest).toMatch(/^sha256:[0-9a-f]{64}$/)
+    expect(manifest.keyVersion).toBe(String(gradingKeyFor('superseded-voyager-interstellar')!.version))
+    // preparedAt is the key's own newest revision, not generation time.
+    expect(manifest.preparedAt).toMatch(/^\d{4}-\d{2}-\d{2}$/)
+  })
+
+  it('changes its digest when the key changes, which is what makes a late edit visible', () => {
+    // The whole point of binding a grade to a keyDigest: a key edited after
+    // an Answer was graded no longer matches the grade that claims it.
+    const manifest = keyManifestOf('historical-longitude-watch')
+    const before = keyManifestDigest(manifest)
+
+    const edited = { ...manifest, keyDigest: 'sha256:' + '0'.repeat(64) }
+    expect(keyManifestDigest(edited)).not.toBe(before)
+
+    // And the same manifest digests the same, whatever order it was built in.
+    expect(keyManifestDigest({ ...manifest, tasks: [...manifest.tasks].reverse() })).toBe(before)
+  })
+
+  it('refuses a hunt the corpus does not declare', () => {
+    expect(() => keyManifestOf('no-such-hunt')).toThrow(/not an approved live-web hunt/)
   })
 })
 

@@ -27,7 +27,15 @@
 // bias #225's third acceptance criterion forbids; `revisions.length ===
 // version` makes an unprovenanced edit visible.
 
-import type { HuntId, Revision } from './hunts.ts'
+import { digestOf } from './artifacts.ts'
+import {
+  LIVE_GRADING_SCHEMA_VERSION,
+  LIVE_KEY_MANIFEST_KIND,
+  type LiveKeyCheck,
+  type LiveKeyManifest,
+  type LiveKeyTask,
+} from './grades.ts'
+import { liveWebHunts, type HuntId, type Revision } from './hunts.ts'
 
 /** A primary source, and what the evaluator verified it states. */
 export interface KeySource {
@@ -304,4 +312,122 @@ export function gradingKeys(): readonly GradingKey[] {
 /** The key for this hunt, or `undefined`. */
 export function gradingKeyFor(huntId: string, keys: readonly GradingKey[] = gradingKeys()): GradingKey | undefined {
   return keys.find((key) => key.huntId === huntId)
+}
+
+// ---------------------------------------------------------------------------
+// The public face of a key (#226)
+//
+// A grade binds itself to the key it was applied under by `keyVersion` and
+// `keyDigest`, so a key edited after an Answer was graded no longer matches
+// the grade claiming it. That binding is only worth anything because the keys
+// above are COMMITTED: an edit shows up in history and breaks a recorded
+// digest. A key nobody can diff is a key nobody can be held to — which is why
+// this study keeps its keys in the repository rather than an ignored
+// directory. Privacy is not the thing at stake: the measured assistant is a
+// browser agent with no repo access, and corpus.test.ts walks the import graph
+// to prove nothing on the capture path loads this module.
+//
+// The dependency points this way on purpose. `grades.ts` stays generic over
+// arbitrary task ids and never imports this corpus; it treats `keyRef` as
+// opaque. So the corpus knows how to describe itself to the grader, and the
+// grader knows nothing about the corpus.
+// ---------------------------------------------------------------------------
+
+/** Where a reviewer finds the substantive key. Never its content. */
+const KEY_MODULE = 'e2e/live/keys.ts'
+
+/**
+ * A digest of the key's content that does not depend on how its JSON happened
+ * to be written: object keys sorted, `undefined` dropped. Two keys that say
+ * the same thing agree, and any change to what a key requires, forbids or
+ * rests on changes the digest.
+ */
+function canonicalJson(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`
+  if (value !== null && typeof value === 'object') {
+    const entries = Object.entries(value as Record<string, unknown>)
+      .filter(([, field]) => field !== undefined)
+      .sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0))
+    return `{${entries.map(([name, field]) => `${JSON.stringify(name)}:${canonicalJson(field)}`).join(',')}}`
+  }
+  return JSON.stringify(value) ?? 'null'
+}
+
+const numbered = (index: number): string => String(index + 1).padStart(2, '0')
+
+/**
+ * The checks a reviewer judges one by one, derived from the key's own
+ * sentences rather than minted as opaque ids — someone reading `fact-03` in a
+ * grade can find exactly which sentence it refers to.
+ *
+ * Three of the key's prose fields become checks, because each is a yes/no
+ * question about the Answer in front of the reviewer: a required fact is
+ * present or it is not, a pitfall was walked into or it was not, an
+ * uncertainty survived or it did not. `constraints` deliberately does not —
+ * it tells the reviewer HOW to grade ("grade cable, hardware and software
+ * separately"), which is not a claim an Answer can satisfy or fail.
+ */
+function checksOf(key: {
+  requiredFacts: readonly string[]
+  pitfalls: readonly string[]
+  uncertainties?: readonly string[]
+}): LiveKeyCheck[] {
+  return [
+    ...key.requiredFacts.map((description, index) => ({ checkId: `fact-${numbered(index)}`, description })),
+    ...key.pitfalls.map((description, index) => ({
+      checkId: `pitfall-${numbered(index)}`,
+      description: `The Answer avoids: ${description}`,
+    })),
+    ...(key.uncertainties ?? []).map((description, index) => ({
+      checkId: `uncertainty-${numbered(index)}`,
+      description: `The Answer preserves: ${description}`,
+    })),
+  ]
+}
+
+/**
+ * Describe one hunt's key to the grader: which key, at what version, and what
+ * it requires of each step — never the conclusions themselves. A hunt with a
+ * follow-up describes both steps, because the follow-up is graded against its
+ * own delta and its own prompt version.
+ */
+export function keyManifestOf(huntId: string): LiveKeyManifest {
+  const key = gradingKeyFor(huntId)
+  const hunt = liveWebHunts().find((candidate) => candidate.id === huntId)
+  if (!key || !hunt) {
+    throw new Error(`"${huntId}" is not an approved live-web hunt, so it has no grading key`)
+  }
+
+  const tasks: LiveKeyTask[] = [
+    {
+      huntId,
+      stepId: 'initial',
+      promptVersion: String(hunt.prompt.version),
+      keyRef: `${KEY_MODULE}#${huntId}`,
+      checks: checksOf(key),
+      referenceSources: key.sources.map((source) => source.url),
+    },
+  ]
+
+  if (hunt.followUp && key.followUpDelta) {
+    tasks.push({
+      huntId,
+      stepId: 'follow_up',
+      promptVersion: String(hunt.followUp.version),
+      keyRef: `${KEY_MODULE}#${huntId}.followUpDelta`,
+      checks: checksOf(key.followUpDelta),
+      referenceSources: key.followUpDelta.sources.map((source) => source.url),
+    })
+  }
+
+  return {
+    kind: LIVE_KEY_MANIFEST_KIND,
+    schemaVersion: LIVE_GRADING_SCHEMA_VERSION,
+    keyVersion: String(key.version),
+    keyDigest: digestOf(canonicalJson(key)),
+    // The key's own newest revision date — when the key was last prepared,
+    // never when this manifest happened to be generated.
+    preparedAt: key.revisions[key.revisions.length - 1].date,
+    tasks,
+  }
 }
