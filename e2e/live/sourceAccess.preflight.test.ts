@@ -159,13 +159,20 @@ describe('the key’s source pages, through the real embedded browser (#227)', (
       })
 
       let harness: Harness | null = null
+      let started = false
       try {
         harness = await startHarness({
           userDataDir: profile.userDataDir,
           env: composed.env,
           productionDefaults: composed.productionDefaults,
-          startupTimeoutMs: 120_000,
+          // A measured launch builds its ad blocker from the real filter
+          // lists before the first window (src/main/index.ts), and a
+          // benchmark profile is new every time, so that cache is always
+          // cold. Overridable because "how long does a cold build actually
+          // take" is a question this suite is used to answer.
+          startupTimeoutMs: Number(process.env.PREFLIGHT_STARTUP_MS ?? 240_000),
         })
+        started = true
 
         for (const source of sources) {
           try {
@@ -214,7 +221,11 @@ describe('the key’s source pages, through the real embedded browser (#227)', (
         }
       } finally {
         if (harness) await harness.quit().catch(() => {})
-        profile.dispose()
+        // A launch that never came up leaves its profile behind, logs and
+        // all. Disposing here would destroy the only account of why — the
+        // same rule #224 follows when an archive cannot be completed.
+        if (started) profile.dispose()
+        else console.log(`launch failed; profile retained for diagnosis: ${profile.userDataDir}`)
       }
 
       // The only failure this suite recognises: it could not observe at all.

@@ -292,10 +292,46 @@ async function buildHarness(
     }
     sessions.set(sessionId, { sessionId, targetId: targetInfo.targetId, type: targetInfo.type, url: targetInfo.url })
   })
+  // A target is attached when it is CREATED, which is before it navigates:
+  // `Target.attachedToTarget` then carries `url: ''`, and every predicate
+  // below matches on url. Without this the first account of a target is also
+  // the last, and a window attached a moment early is invisible for the
+  // lifetime of the harness — it never becomes the dashboard, however long
+  // anything waits (#227).
+  //
+  // Whether that race is lost depends on how busy the main process is while
+  // the first window opens. A hermetic launch wins it and never noticed;
+  // a measured one builds its ad blocker from the real filter lists first
+  // (~2.7 MB, on the main thread, before the first window by design), loses
+  // it every time, and hung on startup 4 runs out of 4.
+  cdp.on('Target.targetInfoChanged', (params) => {
+    const { targetInfo } = params as { targetInfo: { targetId: string; type: string; url: string } }
+    for (const [sessionId, known] of sessions) {
+      if (known.targetId !== targetInfo.targetId) continue
+      sessions.set(sessionId, { ...known, type: targetInfo.type, url: targetInfo.url })
+    }
+  })
   cdp.on('Target.detachedFromTarget', (params) => {
     sessions.delete((params as { sessionId: string }).sessionId)
   })
   await cdp.send('Target.setAutoAttach', { autoAttach: true, waitForDebuggerOnStart: false, flatten: true })
+
+  /**
+   * Re-read every attached target's current url from the browser itself.
+   * `Target.targetInfoChanged` covers the ordinary case, but it only helps
+   * for a change that happens after the listener exists; a target that
+   * navigated during the attach handshake would still be remembered blank.
+   * Polled from the authoritative list, so startup cannot depend on winning
+   * a race at all.
+   */
+  const refreshTargets = async (): Promise<void> => {
+    const { targetInfos } = await cdp.send<{ targetInfos: { targetId: string; type: string; url: string }[] }>('Target.getTargets')
+    const byTargetId = new Map(targetInfos.map((info) => [info.targetId, info]))
+    for (const [sessionId, known] of sessions) {
+      const current = byTargetId.get(known.targetId)
+      if (current) sessions.set(sessionId, { ...known, type: current.type, url: current.url })
+    }
+  }
 
   const findTarget = (kind: TargetKind) => [...sessions.values()].find(targetPredicates[kind])
   const sidOf = (kind: TargetKind) => findTarget(kind)?.sessionId
@@ -303,7 +339,13 @@ async function buildHarness(
   const overlaySid = () => sidOf('overlay')
   const paneSid = () => sidOf('pane')
 
-  await waitFor(async () => dashboardSid(), { timeoutMs: startupTimeoutMs, intervalMs: 250 })
+  await waitFor(
+    async () => {
+      await refreshTargets().catch(() => {})
+      return dashboardSid()
+    },
+    { timeoutMs: startupTimeoutMs, intervalMs: 250 },
+  )
   // Wait until React has mounted, not just until the target exists. The app
   // boots into the idle screen (T11): by default the harness wakes it — the
   // synthetic keydown is the same "any interaction wakes it" real input
