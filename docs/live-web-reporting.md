@@ -3,11 +3,12 @@
 How a retained live-web capture (#224) becomes a graded, reportable result
 (#226), for the [live-web performance baseline](performance-baseline.md) (#223).
 
-Two commands, one human step between them:
+One human step between the capture and the report:
 
 ```sh
-pnpm live:review --capture=<capture-set.json> --keys=<key-manifest.json> --grades=<your-grades.json>
-# … the reviewer reads each Answer against the grading key at the Grading Bench, which writes the grades file …
+pnpm live:review [--port N] [--no-open]
+# … the reviewer confirms a capture set on the bench's setup page, then reads each Answer against the grading key, which writes the grades file …
+pnpm live:keys --out=<key-manifest.json>
 pnpm live:report --capture=<capture-set.json> --keys=<key-manifest.json> --grades=<reviewed-grades.json> \
                  [--format=markdown|json] [--pricing=<dated-prices.json>] [--out=<report.md>]
 ```
@@ -16,10 +17,13 @@ The bench (see [Grading at the bench](#grading-at-the-bench)) opens its own
 pending grades in memory; `pnpm live:report init-grades … --out=<pending-grades.json>`
 still writes a pending file for a reviewer who edits JSON by hand.
 
-Both commands are offline. They read files and nothing else: no model, no
-browser, no Electron, no network, no scheduler, and no discovery — every input
-is an explicit path. Checking a source against the key is the reviewer's job,
-done in a browser of their own; this tool cannot fetch a page and never tries.
+All three are offline. They read files and nothing else: no model, no browser,
+no Electron, no network and no scheduler. `live:keys` and `live:report` discover
+nothing — every input is an explicit path. The bench is the one exception, and
+a bounded one: it proposes from its two fixed roots and the reviewer confirms on
+a page before anything opens. Checking a source against the key is the
+reviewer's job, done in a browser of their own; this tool cannot fetch a page
+and never tries.
 
 ## The rule everything else follows
 
@@ -36,8 +40,8 @@ an accepted Evidence Checkpoint or a successful tool call to a `pass`.
 | --- | --- | --- |
 | Capture set + Session captures | the capture runner (#224) / scheduler (#225) | `e2e/live/artifacts/` — raw, local, out of Git |
 | Substantive key | the evaluator, before the hunt is accepted | `e2e/live/keys.ts` (#225) — committed and versioned |
-| Key manifest | derived from the key | carries the key's version, digest and check ids, never its content |
-| Grades | the Grading Bench (`pnpm live:review`), or `init-grades` and the reviewer by hand | `e2e/live/private/`, one file per reviewer; reviewer prose and notes stay out of the report |
+| Key manifest | derived from the key: in memory by the bench, as a file by `pnpm live:keys` for `live:report` | carries the key's version, digest and check ids, never its content |
+| Grades | the Grading Bench (`pnpm live:review`), or `init-grades` and the reviewer by hand | `e2e/live/private/`, one file per reviewer, which the bench names `<setId>-grades-<reviewer slug>.json`; reviewer prose and notes stay out of the report |
 | Grading drafts | the Grading Bench, on every change | beside the grades file as `<grades>.drafts.json` — never committed |
 | Compact report | the report command | `e2e/live/reports/` — committed |
 
@@ -203,16 +207,67 @@ file the validator accepts, is not a pass anyone does twice. The **Grading
 Bench** (#228) is where a human does it instead:
 
 ```sh
-pnpm live:review --capture=e2e/live/artifacts/pilot-2.json \
-                 --keys=e2e/live/private/key-manifest.json \
-                 --grades=e2e/live/private/pilot-2-grades-<you>.json \
-                 [--reviewer=<name>] [--compare=<another-reviewers-grades.json>] [--port N] [--no-open]
+pnpm live:review [--port N] [--no-open]
 ```
 
-It is a loopback-only server (port 4227 by default) serving one page, in the
-mould of `pnpm trace:ui`. Every input is an explicit path, and it is a script,
-never an app view — one of the two scripts `corpus.test.ts` allows to import the
-keys.
+It is a loopback-only server (port 4227 by default), in the mould of
+`pnpm trace:ui`. It is a script, never an app view — one of the two scripts
+`corpus.test.ts` allows to import the keys — and it takes no paths.
+
+### The setup page
+
+The bench opens on a setup page, and nothing else happens until the reviewer
+presses **Start**. The rule it follows: **the bench proposes from its two fixed
+roots and the reviewer confirms; it never opens anything silently.** It replaced
+#228's three path flags (#229), and it is the bench's rule only — `live:report`
+and `live:keys` keep their explicit paths. The roots are `e2e/live/artifacts/`
+and `e2e/live/private/`, with no override.
+
+- **Capture set.** Every capture set in the artifacts root, recognised by its
+  `kind`, so the preflight record beside them is skipped. Each shows its id,
+  when it was created, its mode and state, its slot count, and the reviewer's
+  progress: graded, drafted, pending and not reached. Some sets are listed
+  greyed out with the reason and cannot be started:
+  - a verification-mode set;
+  - an incomplete one (`in_progress`, `interrupted`, `measurement_failed`);
+  - one that does not validate;
+  - one whose id another file also claims;
+  - one a bench would refuse to open.
+
+  The newest set that can be started, where the reviewer still has an ungraded
+  slot, is proposed. When nothing can be graded, the page says how a pass is
+  run.
+- **Reviewer.** Filled from `git config user.name`, editable here, and fixed
+  once the bench opens. A typo guard flags a name before Start when nothing in
+  the private root was graded or drafted under it but other names have work
+  there. The flag lists the names that do. It cautions and never refuses:
+  every second reviewer is new too.
+- **Grades file.** Read-only: `<setId>-grades-<reviewer slug>.json` in the
+  private root. The slug is the name lowercased, each run outside `[a-z0-9]`
+  one `-`, none at either end. A name with nothing a slug keeps gets
+  `reviewer-<12 hex of its digest>`. The file's `reviewer` field keeps the
+  exact name.
+
+  A file already holding the reviewer's work is found **by content** and
+  reopened, whatever it is called: a grades file for the set with an entry by
+  this reviewer, or a drafts sidecar bound to them. The set is greyed out, and
+  no second file is ever started, when:
+  - two files match;
+  - the matching file mixes reviewers;
+  - it or its sidecar is bound to another key than the current one. A grades
+    file is resolved through the documented recheck in
+    [When live facts change](#when-live-facts-change); a draft has no recheck
+    and is moved aside;
+  - the derived name is already taken by something that is not the reviewer's.
+- **Key.** Its version and digest. The manifest is built in memory from the
+  committed keys, so there is no manifest file to name, and no way for key
+  prose and check wording to disagree. `pnpm live:keys` is needed only for
+  `live:report`, and writes the same manifest byte for byte.
+
+Start opens the bench on the chosen set. To grade another set, or under
+another name, restart `live:review`.
+
+### At the bench
 
 The sidebar lists the set's slots in schedule order with each one's state:
 pending, drafted, graded, or not reached with the capture's reason. Under the
@@ -249,21 +304,22 @@ status has to be chosen. A slot nothing was dispatched into stays pending. An
 attempt that published no Answer is `unsuccessful` or `help_access_blocked`:
 one click marks every check unsatisfied, and the rationale is still typed.
 
-**One grades file per reviewer.** The reviewer is `--reviewer`, else
-`git config user.name`, and the bench refuses to open a grades file anyone else
-has reviewed in. To compare, pass the other reviewer's file as `--compare`. The
-other Grade for a slot is not sent to the page at all until the reviewer's own
-entry for that slot is saved. After that it appears as a per-check
+**One grades file per reviewer.** The bench refuses to open a grades file anyone
+else has reviewed in. It can still show another reviewer's Grade, but blind:
+the other Grade for a slot is not sent to the page at all until the reviewer's
+own entry for that slot is saved. After that it appears as a per-check
 agree/disagree with both notes, and the two statuses and rationales side by
 side. The blank start is deliberate: a pre-filled Grade anchors the reviewer to
-the other one's interpretation calls.
+the other one's interpretation calls. #228 chose that file with `--compare`,
+which went with the other path flags; until the setup page offers a comparison
+(#230), there is no way to choose one.
 
-It reads only the paths it was given and the files the capture set names. It
-writes only the grades file and its drafts sidecar, and warns when they are
-outside `e2e/live/private/`. It refuses to open a key that has moved past the
-manifest the checks came from, so key prose and check wording cannot silently
-disagree. It answers only requests addressed to loopback from its own page. Both
-files it writes carry reviewer notes about Answers — never commit them.
+Before Start it reads only the two roots' top-level files, and each set it
+offers the way a bench would open it. After Start it reads the chosen set and
+the files that set names. It writes only the grades file and its drafts
+sidecar, both in `e2e/live/private/`, and nothing at all before Start. It
+answers only requests addressed to loopback from its own pages. Both files it
+writes carry reviewer notes about Answers — never commit them.
 
 ## The report
 
@@ -438,7 +494,7 @@ Sessions.
 ## Verifying a change here
 
 ```sh
-pnpm exec vitest run e2e/live/grades.test.ts e2e/live/report.test.ts e2e/live/gradingBench.test.ts e2e/live/gradingBenchServer.test.ts
+pnpm exec vitest run e2e/live/grades.test.ts e2e/live/report.test.ts e2e/live/gradingBench.test.ts e2e/live/gradingSetup.test.ts e2e/live/gradingBenchServer.test.ts
 pnpm typecheck
 pnpm lint
 pnpm test
@@ -447,8 +503,25 @@ pnpm test
 The suites run under the ordinary unit run — they spend nothing and launch
 nothing. `report.test.ts` invokes `scripts/live-report.ts` as a real Node
 subprocess, which is what catches an accidental Electron import or an
-extensionless runtime import on the CLI's graph. `gradingBenchServer.test.ts`
-serves a fixture set on a real loopback socket, saves Grades through it, and
-checks the file it wrote against `scripts/live-report.ts` run the same way.
-The page itself has no automated test; after changing `scripts/live-review.html`,
-open a set at the bench and walk a draft, a reload and a save.
+extensionless runtime import on the CLI's graph.
+
+`gradingSetup.test.ts` covers the setup page's decisions as functions:
+- discovery and preselection;
+- resume-by-content and the slug;
+- the refusals.
+
+`gradingBenchServer.test.ts` works on a real loopback socket:
+- it serves a fixture set, saves Grades through it, and checks the file it
+  wrote against `scripts/live-report.ts`, run the same way;
+- it drives one setup→Start round trip against a fixture pair of roots;
+- it starts `scripts/live-review.ts` itself.
+
+The pages have no automated test. After changing
+`scripts/live-review-setup.html` or `scripts/live-review.html`, drive them in a
+real browser. Headless Chrome over CDP will do.
+1. On the setup page, check the listed sets and the proposed one.
+2. Check the greyed-out rows and their reasons.
+3. Check that the grades file follows the reviewer field.
+4. Check that a set picked by hand stays picked.
+5. Press Start.
+6. At the bench, walk a draft, a reload and a save.

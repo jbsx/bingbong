@@ -68,15 +68,14 @@ directories it names. Both are gitignored.
 ## Grading and reporting
 
 ```sh
-# 1. Describe the keys to the grader. Writes into the gitignored private root.
-pnpm live:keys --out=e2e/live/private/key-manifest.json
+# 1. A human grades every slot at the Grading Bench. It opens on a setup page
+#    that proposes the newest set with ungraded slots, the reviewer from
+#    git config user.name, and the grades file derived from both. Check them,
+#    then press Start. One grades file per reviewer.
+pnpm live:review
 
-# 2. A human grades every slot at the Grading Bench. One grades file per
-#    reviewer; the reviewer defaults to git config user.name.
-pnpm live:review \
-  --capture=e2e/live/artifacts/pilot-1.json \
-  --keys=e2e/live/private/key-manifest.json \
-  --grades=e2e/live/private/pilot-1-grades-<you>.json
+# 2. Describe the keys to the report. Writes into the gitignored private root.
+pnpm live:keys --out=e2e/live/private/key-manifest.json
 
 # 3. The compact report. This one is committed.
 pnpm live:report \
@@ -86,12 +85,13 @@ pnpm live:report \
   --format=markdown --out=e2e/live/reports/pilot-1.md
 ```
 
-A second reviewer grades into their own file and passes the first reviewer's as
-`--compare=…`; the bench shows it slot by slot only after their own Grade for
-that slot is saved. The bench is described in
+The bench builds the key manifest in memory, so grading needs no `live:keys`
+run; the report does. A second reviewer starts the bench under their own name,
+which gives them their own file. Seeing the first reviewer's Grade beside theirs
+waits on the setup page offering a comparison (#230). The bench is described in
 [live-web-reporting.md](live-web-reporting.md#grading-at-the-bench).
 
-### Step 2 is the bottleneck, not the model
+### Grading is the bottleneck, not the model
 
 **68 checks.** 56 across the four initial hunts (10 / 17 / 14 / 15) and 12
 across the two follow-ups (6 / 6). Nothing in this path grades anything: there
