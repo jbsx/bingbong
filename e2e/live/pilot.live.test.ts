@@ -16,7 +16,16 @@ import { runLiveWebPass, type PassRecord } from './schedule.ts'
 // in config.test.ts, because the cost of that exclusion being wrong is real
 // money), and rides no CI. Run it deliberately:
 //
-//     BINGBONG_LIVE_SET_ID=pilot-1 pnpm test:live
+//     pnpm test:live
+//
+// A SET ID IS CLAIMED ONCE. The capture directory refuses an identity that
+// already exists, which is what stops a re-run overwriting evidence that was
+// already captured — and on a paid path that refusal surfaces late, as a
+// `measurement_failed` set rather than as an obvious error. So the default id
+// is timestamped and a pass never collides with itself. Set
+// BINGBONG_LIVE_SET_ID only to name a pass deliberately, and give each pass
+// its own value; re-running a failed pass under the id it already used is the
+// one way to make a fresh attempt look like broken measurement.
 //
 // ONE PASS PER INVOCATION. There is no loop and no repeat flag. Three
 // baseline passes need separate post-pilot authorization (#223), and a

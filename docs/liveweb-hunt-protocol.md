@@ -107,8 +107,15 @@ A follow-up is delivered when, and only when:
 1. its initial command was **accepted** by the pipeline (a Run exists and
    carries an identity — not that a DOM form submitted, and not that the task
    succeeded), and
-2. the same Session reports it **can take another command**, within the capture
-   contract's own bounded readiness budget.
+2. the same Session **can take another command**, checked by the capture within
+   its own bounded readiness budget immediately before submitting.
+
+The schedule does not make that decision itself, and the reason is evidence:
+a host writes a durable record only for a command it was actually handed, so a
+follow-up refused *before* dispatch would leave its reason nowhere but memory
+and a report could only call the slot unaccounted. The command is therefore
+always handed over — which is not the same as submitting it. A capture that
+cannot take it sends nothing, spends no budget, and records why.
 
 **Correctness is never consulted.** The schedule has no access to a grade and
 the port exposes no answer text to judge. A follow-up goes out after a wrong
@@ -149,8 +156,11 @@ one.
 
 Task failure and broken measurement are different records. A capture carrying a
 `measurementFault` is retained — the latency of a broken capture is not
-discarded — but it is never read as a task result, and its follow-up is
-`capture_failed` rather than a task outcome.
+discarded — and it is never read as a task result. It does not bar the
+follow-up either: a follow-up has two conditions, that the initial Run ended
+and that the Session can take the command, and an instrumentation failure is
+neither. The pass still reports itself `measurement_failed`, so the fault is
+not swallowed by the follow-up going well.
 
 A hunt that breaks does not abort the pass. The remaining hunts are independent
 by construction, so they still run; abandoning them would silently shrink the
@@ -227,8 +237,16 @@ pnpm test:e2e e2e/live/schedule.e2e.test.ts
 The paid pilot pass — four hunts on the live web, six commands, once each:
 
 ```
-BINGBONG_LIVE_SET_ID=pilot-1 pnpm test:live
+pnpm test:live
 ```
+
+Each pass writes under a set id, and **an id is claimed once**: the capture
+directory refuses an identity that already exists, so a re-run cannot overwrite
+evidence already captured. The default id is timestamped, so passes never
+collide. `BINGBONG_LIVE_SET_ID=<name>` names one deliberately — give each pass
+its own value. Re-running a failed pass under the id it already used is the one
+way to make a fresh attempt look like broken measurement, because the refusal
+surfaces as a `measurement_failed` set rather than as an obvious error.
 
 `*.live.test.ts` is matched by **no config but `vitest.live.config.ts`**, is
 explicitly excluded from the unit suite, and rides no CI. That arrangement is
