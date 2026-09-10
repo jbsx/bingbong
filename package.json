@@ -23,6 +23,7 @@
     "cli": "pnpm build && electron . --browser-cli",
     "live:keys": "node scripts/live-keys.ts",
     "live:report": "node scripts/live-report.ts",
+    "live:review": "node scripts/live-review.ts",
     "perf:report": "node scripts/perf-report.ts",
     "trace:ui": "node scripts/trace-ui.ts",
     "stt:replay": "node scripts/replay-stt.ts",

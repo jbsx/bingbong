@@ -1,0 +1,689 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Grading Bench</title>
+<link rel="icon" href="data:,">
+<!--
+  The Grading Bench page (#228), served by scripts/live-review.ts on loopback.
+  Plain DOM, no framework, no network beyond its own server. Every string
+  from a capture, a key or a Grade goes in through textContent; the one
+  exception is the Answer, which the server rendered with the app's
+  react-markdown (raw HTML escaped, unsafe URLs dropped). Links from a
+  capture are only ever http(s) and open in a new tab.
+
+  The page never picks a verdict and never shows another reviewer's Grade
+  before this reviewer's own is saved: the server does not send it.
+-->
+<style>
+  :root {
+    --bg: #f7f7f5; --panel: #ffffff; --ink: #1d1d1b; --muted: #6b6b66; --line: #deded8;
+    --accent: #2f5bd3; --ok: #1f7a3a; --warn: #9a6200; --bad: #b3261e; --soft: #eef1fb;
+    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    color-scheme: light dark;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #151514; --panel: #1f1f1d; --ink: #ecece8; --muted: #9c9c95; --line: #34342f;
+      --accent: #8aa8ff; --ok: #6fcf8a; --warn: #e6b450; --bad: #ff8a80; --soft: #232a3d; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 14px/1.45 system-ui, sans-serif; background: var(--bg); color: var(--ink); }
+  a { color: var(--accent); overflow-wrap: anywhere; }
+  code, pre { font-family: var(--mono); font-size: 12.5px; }
+  pre { white-space: pre-wrap; overflow-wrap: anywhere; background: var(--bg); border: 1px solid var(--line); padding: 8px; border-radius: 6px; max-height: 420px; overflow: auto; }
+  h1 { font-size: 16px; margin: 0; }
+  h2 { font-size: 15px; margin: 18px 0 8px; }
+  h3 { font-size: 13px; margin: 14px 0 6px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+  h4 { font-size: 13px; margin: 10px 0 4px; }
+  ul, ol { padding-left: 20px; margin: 4px 0; }
+  .muted { color: var(--muted); }
+  .top { display: flex; flex-wrap: wrap; gap: 6px 16px; align-items: baseline; padding: 10px 16px; border-bottom: 1px solid var(--line); background: var(--panel); position: sticky; top: 0; z-index: 2; }
+  .top .note { color: var(--muted); font-size: 12.5px; }
+  .layout { display: grid; grid-template-columns: 250px minmax(0, 1fr); min-height: calc(100vh - 44px); }
+  nav { border-right: 1px solid var(--line); padding: 10px; background: var(--panel); }
+  nav ol { list-style: none; padding: 0; margin: 0; }
+  nav li a { display: grid; grid-template-columns: 20px 1fr; gap: 0 6px; padding: 6px; border-radius: 6px; text-decoration: none; color: inherit; }
+  nav li.follow-up a { margin-left: 16px; }
+  nav li.active a { background: var(--soft); }
+  nav .slot-name { font-weight: 600; overflow-wrap: anywhere; }
+  nav .slot-meta { grid-column: 2; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+  nav .slot-reason { grid-column: 2; font-size: 12px; color: var(--muted); }
+  .counts table { border-collapse: collapse; width: 100%; font-size: 12.5px; margin-top: 6px; }
+  .counts td, .counts th { text-align: left; padding: 2px 4px; border-bottom: 1px solid var(--line); }
+  .chip { display: inline-block; font-size: 11.5px; padding: 0 6px; border-radius: 999px; border: 1px solid var(--line); white-space: nowrap; }
+  .chip-graded, .chip-loaded, .chip-agree { color: var(--ok); border-color: currentColor; }
+  .chip-drafted, .chip-walled { color: var(--warn); border-color: currentColor; }
+  .chip-errored, .chip-disagree { color: var(--bad); border-color: currentColor; }
+  .chip-not_reached, .chip-no_result, .chip-pending { color: var(--muted); }
+  main { padding: 0 16px 40px; min-width: 0; }
+  .attempt-head { display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: baseline; padding: 12px 0 4px; }
+  .attempt-head h2 { margin: 0; }
+  .columns { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; }
+  .column { min-width: 0; }
+  @media (min-width: 1100px) {
+    .column { max-height: calc(100vh - 110px); overflow: auto; padding-right: 6px; }
+  }
+  @media (max-width: 1100px) { .columns { grid-template-columns: minmax(0, 1fr); } }
+  @media (max-width: 760px) { .layout { grid-template-columns: minmax(0, 1fr); } nav { border-right: 0; border-bottom: 1px solid var(--line); } }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; margin: 10px 0; }
+  .toggle button { font: inherit; font-size: 12.5px; padding: 2px 8px; border: 1px solid var(--line); background: var(--panel); color: inherit; border-radius: 6px; cursor: pointer; }
+  .toggle button[aria-pressed="true"] { background: var(--soft); border-color: var(--accent); }
+  .feed-markdown > :first-child { margin-top: 0; }
+  .feed-markdown pre { max-height: none; }
+  .constraints { border-left: 4px solid var(--warn); }
+  .trail > li, .evidence > li { margin: 8px 0; }
+  .step-head { display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: baseline; }
+  .step-head .tool { font-family: var(--mono); font-weight: 600; }
+  .requested, .error { font-size: 12.5px; }
+  .error { color: var(--bad); }
+  blockquote { margin: 4px 0; padding-left: 8px; border-left: 3px solid var(--line); color: var(--muted); }
+  .checks { list-style: none; padding: 0; }
+  .check { border-bottom: 1px solid var(--line); padding: 8px 0; }
+  .check-head { display: grid; grid-template-columns: auto 1fr; gap: 8px; }
+  .judge { display: flex; gap: 14px; margin: 4px 0 0 0; flex-wrap: wrap; }
+  .judge label, .statuses label { cursor: pointer; }
+  .statuses { display: grid; gap: 4px; }
+  .statuses .muted { font-size: 12.5px; }
+  textarea, input[type="text"], select { font: inherit; width: 100%; padding: 5px 7px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); color: inherit; }
+  textarea { resize: vertical; }
+  details.note summary { font-size: 12.5px; color: var(--muted); cursor: pointer; }
+  .support-row { display: grid; gap: 6px; padding: 8px; border: 1px dashed var(--line); border-radius: 6px; margin: 6px 0; }
+  .support-row .supports { font-size: 12.5px; }
+  .actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 10px 0; }
+  .actions button, .panel > button { font: inherit; padding: 5px 12px; border-radius: 6px; border: 1px solid var(--line); background: var(--panel); color: inherit; cursor: pointer; }
+  .actions button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .actions button:disabled { opacity: .5; cursor: not-allowed; }
+  .problems { border-left: 4px solid var(--bad); }
+  .problems.blocking li { color: var(--bad); }
+  .compare table { border-collapse: collapse; width: 100%; font-size: 13px; }
+  .compare td, .compare th { text-align: left; vertical-align: top; padding: 4px; border-bottom: 1px solid var(--line); }
+  .save-state { font-size: 12.5px; color: var(--muted); }
+</style>
+</head>
+<body>
+<header class="top">
+  <h1>Grading Bench</h1>
+  <span id="set-id" class="muted"></span>
+  <span id="reviewer"></span>
+  <span id="files" class="note"></span>
+  <span id="compare-note" class="note"></span>
+</header>
+<div class="layout">
+  <nav>
+    <ol id="slots"></ol>
+    <section class="counts" id="counts"></section>
+  </nav>
+  <main id="main"><p class="muted">Loading the capture set…</p></main>
+</div>
+<script>
+'use strict'
+
+// ---------------------------------------------------------------------------
+// Small DOM helpers. Text always goes in as text.
+
+function el(tag, attrs, ...children) {
+  const node = document.createElement(tag)
+  for (const [name, value] of Object.entries(attrs || {})) {
+    if (value === undefined || value === null || value === false) continue
+    if (name === 'class') node.className = value
+    else if (name === 'text') node.textContent = value
+    else if (name.startsWith('on')) node.addEventListener(name.slice(2), value)
+    else if (value === true) node.setAttribute(name, '')
+    else node.setAttribute(name, String(value))
+  }
+  for (const child of children.flat(Infinity)) {
+    if (child === null || child === undefined || child === false) continue
+    node.append(typeof child === 'string' ? document.createTextNode(child) : child)
+  }
+  return node
+}
+
+/** A link only for http(s) — a URL from a captured page is untrusted. */
+function link(url, label) {
+  if (typeof url !== 'string' || url === '') return null
+  if (!/^https?:\/\//i.test(url)) return el('span', { class: 'muted', text: label || url })
+  return el('a', { href: url, target: '_blank', rel: 'noopener noreferrer', text: label || url })
+}
+
+function list(items) {
+  return el('ul', {}, items.map((item) => el('li', { text: item })))
+}
+
+function block(title, items) {
+  if (!items || items.length === 0) return el('p', { class: 'muted', text: `${title}: none.` })
+  return [el('h4', { text: title }), list(items)]
+}
+
+async function api(method, path, body, extra) {
+  const init = Object.assign({ method, headers: {} }, extra || {})
+  if (body !== undefined) {
+    init.headers['content-type'] = 'application/json'
+    init.body = JSON.stringify(body)
+  }
+  const response = await fetch(path, init)
+  let data = null
+  try {
+    data = await response.json()
+  } catch (error) {
+    data = { error: `the server sent no JSON (${String(error)})` }
+  }
+  return { status: response.status, data }
+}
+
+const STATUS_TEXT = {
+  pass: ['pass', 'the expected outcome, independently verified against the key'],
+  useful_partial: ['useful partial', 'real verified work, short of the expected outcome'],
+  help_access_blocked: ['help / access blocked', 'the Run hit an access wall or needed help it did not get'],
+  unsuccessful: ['unsuccessful', 'no useful result or actionable next step was established'],
+}
+
+const WALL_TEXT = { challenge: 'challenge-walled', 'network-block': 'network-blocked', 'login-wall': 'login-walled' }
+
+// ---------------------------------------------------------------------------
+// State
+
+let setView = null
+/** The attempt on screen: the server's view, the editable state, and the draft bookkeeping. */
+let current = null
+
+function freshCurrent(view) {
+  const state = view.editor ? JSON.parse(JSON.stringify(view.editor.state)) : null
+  const picks = view.key.pickSources
+  return {
+    attemptId: view.slot.attemptId,
+    view,
+    state,
+    source: view.editor ? view.editor.source : null,
+    supportModes: state ? state.support.map((row) => (row.sourceUrl === '' || picks.some((pick) => pick.url === row.sourceUrl) ? 'pick' : 'other')) : [],
+    timer: null,
+    dirty: false,
+    inflight: Promise.resolve(),
+  }
+}
+
+// ---------------------------------------------------------------------------
+// The set: header, sidebar, counts
+
+async function refreshSet() {
+  const { status, data } = await api('GET', '/api/set')
+  if (status !== 200) {
+    document.getElementById('main').replaceChildren(el('p', { class: 'error', text: data.error || `the set could not be loaded (HTTP ${status})` }))
+    return false
+  }
+  setView = data
+  document.getElementById('set-id').textContent = `capture set ${data.setId}`
+  document.getElementById('reviewer').replaceChildren('grading as ', el('strong', { text: data.reviewer }))
+  document.getElementById('files').textContent = `writes ${data.gradesFile} and ${data.draftsFile}`
+  document.getElementById('compare-note').textContent = data.comparing ? 'another reviewer’s Grade appears for a slot once you have saved yours' : ''
+  renderSidebar()
+  return true
+}
+
+function slotLabel(slot) {
+  if (slot.state === 'not_reached') return 'not reached'
+  if (slot.state === 'graded') return slot.unsavedDraft ? `${STATUS_TEXT[slot.status][0]} · unsaved edit` : STATUS_TEXT[slot.status][0]
+  return slot.state
+}
+
+function renderSidebar() {
+  if (!setView) return
+  document.getElementById('slots').replaceChildren(
+    ...setView.slots.map((slot) =>
+      el(
+        'li',
+        { class: [slot.relation === 'initial' ? '' : 'follow-up', current && current.attemptId === slot.attemptId ? 'active' : ''].join(' ') },
+        el(
+          'a',
+          { href: `#${encodeURIComponent(slot.attemptId)}` },
+          el('span', { class: 'muted', text: String(slot.order + 1) }),
+          el('span', { class: 'slot-name', text: slot.huntId }),
+          el('span', { class: 'slot-meta' }, el('span', { class: 'muted', text: slot.stepId }), el('span', { class: `chip chip-${slot.state}`, text: slotLabel(slot) })),
+          slot.reason ? el('span', { class: 'slot-reason', text: slot.reason }) : null,
+        ),
+      ),
+    ),
+  )
+  const populations = setView.populations
+  const counts = document.getElementById('counts')
+  if (!populations) {
+    counts.replaceChildren(el('p', { class: 'muted', text: 'The report cannot be built over these grades yet.' }))
+    return
+  }
+  const row = (label, population) =>
+    el('tr', {}, el('td', { text: label }), el('td', { text: `${population.verifiedSuccess} / ${population.scheduled}` }), el('td', { text: String(population.reviewed) }), el('td', { text: String(population.pending) }))
+  counts.replaceChildren(
+    el('h3', { text: 'What live:report counts' }),
+    el('p', { class: 'muted', text: 'From your saved grades file — drafts are not in it.' }),
+    el(
+      'table',
+      {},
+      el('tr', {}, el('th', { text: '' }), el('th', { text: 'verified' }), el('th', { text: 'reviewed' }), el('th', { text: 'pending' })),
+      row('initial', populations.initial),
+      populations.revisedObjective.scheduled > 0 ? row('follow-ups', populations.revisedObjective) : null,
+      populations.bothStep.scheduled > 0 ? row('both steps', populations.bothStep) : null,
+    ),
+  )
+}
+
+// ---------------------------------------------------------------------------
+// One attempt
+
+async function openFromHash() {
+  const wanted = decodeURIComponent(location.hash.slice(1))
+  if (!wanted) {
+    const first = setView.slots.find((slot) => slot.state === 'pending' || slot.state === 'drafted') || setView.slots[0]
+    if (first) location.replace(`#${encodeURIComponent(first.attemptId)}`)
+    return
+  }
+  await flushDraft()
+  const { status, data } = await api('GET', `/api/attempt/${encodeURIComponent(wanted)}`)
+  if (status !== 200) {
+    current = null
+    document.getElementById('main').replaceChildren(el('p', { class: 'error', text: data.error || `HTTP ${status}` }))
+    renderSidebar()
+    return
+  }
+  renderAttempt(data)
+}
+
+function renderAttempt(view, saveNote) {
+  current = freshCurrent(view)
+  const slot = view.slot
+  const head = el(
+    'div',
+    { class: 'attempt-head' },
+    el('h2', { text: slot.attemptId }),
+    el('span', { class: 'muted', text: `${slot.huntId} · ${slot.stepId} · ${slot.relation}` }),
+    el('span', { class: `chip chip-${slot.state}`, text: slotLabel(slot) }),
+  )
+  document.getElementById('main').replaceChildren(
+    head,
+    el('div', { class: 'columns' }, el('div', { class: 'column' }, answerSection(view), trailSection(view)), el('div', { class: 'column' }, judgeSection(view, saveNote), keySection(view))),
+  )
+  renderSidebar()
+}
+
+function answerCard(answer, collapsedTitle) {
+  const rendered = el('div', { class: 'feed-markdown' })
+  rendered.innerHTML = answer.html // rendered server-side by react-markdown: raw HTML escaped, unsafe URLs dropped
+  const raw = el('pre', { text: answer.text, hidden: true })
+  const renderedButton = el('button', { type: 'button', 'aria-pressed': 'true', text: 'rendered' })
+  const rawButton = el('button', { type: 'button', 'aria-pressed': 'false', text: 'raw' })
+  const show = (asRaw) => {
+    raw.hidden = !asRaw
+    rendered.hidden = asRaw
+    renderedButton.setAttribute('aria-pressed', String(!asRaw))
+    rawButton.setAttribute('aria-pressed', String(asRaw))
+  }
+  renderedButton.addEventListener('click', () => show(false))
+  rawButton.addEventListener('click', () => show(true))
+  const body = [el('div', { class: 'toggle' }, renderedButton, ' ', rawButton), rendered, raw]
+  if (collapsedTitle) return el('details', { class: 'panel' }, el('summary', { text: collapsedTitle }), body)
+  return el('div', { class: 'panel' }, body)
+}
+
+function answerSection(view) {
+  const parts = [el('h2', { text: 'The Answer' })]
+  if (view.parent) {
+    parts.push(
+      view.parent.answer
+        ? answerCard(view.parent.answer, `The initial’s Answer (${view.parent.attemptId})`)
+        : el('p', { class: 'muted', text: `The initial (${view.parent.attemptId}) published no Answer.` }),
+    )
+  }
+  if (view.command) parts.push(el('details', { class: 'panel' }, el('summary', { text: 'The command as submitted' }), el('pre', { text: view.command })))
+  if (view.answer) parts.push(answerCard(view.answer))
+  else if (view.slot.state === 'not_reached') parts.push(el('div', { class: 'panel' }, el('strong', { text: 'Not reached. ' }), view.slot.reason, el('p', { class: 'muted', text: 'Nothing was dispatched, so there is no Answer to grade; the slot stays pending and the report carries its reason.' })))
+  else parts.push(el('div', { class: 'panel' }, el('strong', { text: 'No Answer was published. ' }), view.noAnswerReason || ''))
+  return parts
+}
+
+function stepLabel(step) {
+  if (step.outcome === 'walled') return WALL_TEXT[step.wall.signal] || 'walled'
+  if (step.outcome === 'loaded') return step.tool === 'look' ? 'looked' : 'loaded'
+  if (step.outcome === 'no_result') return 'no result on the tape'
+  return step.outcome
+}
+
+function trailSection(view) {
+  const parts = [el('h2', { text: 'What the assistant read' })]
+  if (view.trailNote) parts.push(el('p', { class: 'error', text: view.trailNote }))
+  if (!view.trail) {
+    if (!view.trailNote) parts.push(el('p', { class: 'muted', text: 'No trail: nothing was dispatched.' }))
+    return parts
+  }
+  const trail = view.trail
+  if (trail.subagentsSpawned > 0) {
+    parts.push(el('p', { class: 'muted', text: `The Run spawned ${trail.subagentsSpawned} Subagent(s); their own browsing is not on this tape.` }))
+  }
+  parts.push(
+    trail.steps.length === 0
+      ? el('p', { class: 'muted', text: 'The Run navigated, read and looked at nothing.' })
+      : el(
+          'ol',
+          { class: 'trail' },
+          trail.steps.map((step) =>
+            el(
+              'li',
+              {},
+              el('div', { class: 'step-head' }, el('span', { class: 'tool', text: step.tool }), el('span', { class: `chip chip-${step.outcome}`, text: stepLabel(step) }), step.url ? link(step.url) : el('span', { class: 'muted', text: 'no page' })),
+              step.title ? el('div', { class: 'muted', text: step.title }) : null,
+              step.requested && step.requested !== step.url ? el('div', { class: 'requested muted', text: `${step.tool === 'look' ? 'asked' : 'requested'}: ${step.requested}` }) : null,
+              step.error ? el('div', { class: 'error', text: step.error }) : null,
+              step.text ? el('details', {}, el('summary', { text: step.tool === 'look' ? 'what the look reported' : 'full page text' }), el('pre', { text: step.text })) : null,
+            ),
+          ),
+        ),
+  )
+  parts.push(el('h3', { text: 'Evidence the assistant recorded' }))
+  parts.push(
+    trail.evidence.length === 0
+      ? el('p', { class: 'muted', text: 'None.' })
+      : el(
+          'ol',
+          { class: 'evidence' },
+          trail.evidence.map((entry) => {
+            const verdict = entry.accepted === true ? ['chip-loaded', 'recorded'] : entry.accepted === false ? ['chip-errored', 'rejected'] : ['chip-no_result', 'no result']
+            return el(
+              'li',
+              {},
+              el('div', { class: 'step-head' }, el('span', { class: `chip ${verdict[0]}`, text: verdict[1] }), entry.kind ? el('span', { class: 'muted', text: entry.kind }) : null, link(entry.sourceUrl)),
+              entry.observation ? el('div', { text: entry.observation }) : null,
+              entry.excerpt ? el('blockquote', { text: entry.excerpt }) : null,
+              entry.outcome ? el('div', { class: 'muted requested', text: entry.outcome }) : null,
+            )
+          }),
+        ),
+  )
+  if (view.screenshots.length > 0) {
+    parts.push(el('h3', { text: 'Failure screenshots' }), el('ul', {}, view.screenshots.map((shot) => el('li', {}, el('a', { href: shot.href, target: '_blank', rel: 'noopener noreferrer', text: shot.name })))))
+  }
+  return parts
+}
+
+function sourcesList(sources) {
+  if (!sources || sources.length === 0) return el('p', { class: 'muted', text: 'None.' })
+  return el('ul', {}, sources.map((source) => el('li', {}, link(source.url), el('div', { class: 'muted', text: source.supports }))))
+}
+
+function keySection(view) {
+  const key = view.key
+  const delta = key.followUpDelta
+  return [
+    el('h2', { text: `The rest of the key · ${key.huntId} v${key.version}` }),
+    el('div', { class: 'panel' }, el('h3', { text: 'Sources' }), sourcesList(key.sources)),
+    el(
+      'details',
+      { class: 'panel', open: true },
+      el('summary', { text: 'Required facts, pitfalls, uncertainties, live facts' + (delta ? ', follow-up delta' : '') }),
+      block('Required facts', key.requiredFacts),
+      block('Pitfalls', key.pitfalls),
+      block('Uncertainties', key.uncertainties),
+      block('Live facts', key.liveFacts),
+      delta ? [el('h3', { text: 'Follow-up delta' }), block('Required facts', delta.requiredFacts), block('Pitfalls', delta.pitfalls), el('h4', { text: 'Sources' }), sourcesList(delta.sources)] : null,
+    ),
+  ]
+}
+
+// ---------------------------------------------------------------------------
+// Judging
+
+function judgeSection(view, saveNote) {
+  const key = view.key
+  const parts = [
+    el('h2', { text: 'Judge' }),
+    el('div', { class: 'panel constraints' }, el('h3', { text: 'Constraints — read these before judging' }), el('p', { class: 'muted', text: 'They decide verdicts without being checks: how to decompose the verdict, what not to grade, which alternatives count.' }), key.constraints.length ? list(key.constraints) : el('p', { class: 'muted', text: 'None.' })),
+  ]
+  if (!current.state) {
+    parts.push(el('p', { class: 'muted', text: 'Nothing to grade: no attempt was dispatched into this slot.' }))
+    parts.push(el('div', { class: 'panel' }, el('h3', { text: 'The checks this step would have been judged against' }), el('ul', {}, view.checks.map((check) => el('li', {}, el('code', { text: check.checkId }), ' ', check.description)))))
+    return parts
+  }
+  const state = current.state
+
+  const statuses = el(
+    'div',
+    { class: 'statuses' },
+    view.allowedStatuses.map((status) =>
+      el('label', {}, el('input', { type: 'radio', name: 'status', value: status, checked: state.status === status, onchange: () => { state.status = status; changed() } }), ' ', el('strong', { text: STATUS_TEXT[status][0] }), ' ', el('span', { class: 'muted', text: STATUS_TEXT[status][1] })),
+    ),
+  )
+  parts.push(el('div', { class: 'panel' }, el('h3', { text: 'Status' }), view.answer ? null : el('p', { class: 'muted', text: 'The Run published no Answer, so it can only be unsuccessful or help/access blocked.' }), statuses))
+
+  const checks = el('ol', { class: 'checks', id: 'checks' })
+  const renderChecks = () => checks.replaceChildren(...view.checks.map(checkRow))
+  renderChecks()
+  const markAll = view.answer
+    ? null
+    : el('button', { type: 'button', text: 'Mark every check unsatisfied', onclick: () => { for (const check of view.checks) state.checks[check.checkId] = Object.assign({}, state.checks[check.checkId], { satisfied: false }); renderChecks(); changed() } })
+  parts.push(el('div', { class: 'panel' }, el('h3', { text: `Checks (${view.checks.length})` }), markAll, checks))
+
+  const supportRows = el('div', { id: 'support-rows' })
+  current.renderSupport = () => supportRows.replaceChildren(...state.support.map(supportRow))
+  current.renderSupport()
+  parts.push(
+    el(
+      'div',
+      { class: 'panel' },
+      el('h3', { text: 'Support' }),
+      el('p', { class: 'muted', text: 'What you read to accept a claim: pick a key source, or name another URL an equivalent official source carries.' }),
+      supportRows,
+      el('button', { type: 'button', text: 'Add support', onclick: () => { state.support.push({ claim: '', sourceUrl: '', passageRef: '', equivalentTo: '' }); current.supportModes.push('pick'); current.renderSupport(); changed() } }),
+    ),
+  )
+
+  const rationale = el('textarea', { rows: 4, placeholder: 'Why this status — required', oninput: (event) => { state.rationale = event.target.value; changed() } })
+  rationale.value = state.rationale
+  parts.push(el('div', { class: 'panel' }, el('h3', { text: 'Rationale' }), rationale))
+
+  // Built with the server's problems already in place: this section is not in
+  // the document yet, so nothing here can be looked up by id.
+  const problems = el('ul', { id: 'problems' }, view.problems.map((problem) => el('li', { text: problem })))
+  const problemsPanel = el('div', { class: 'panel problems', id: 'problems-panel', hidden: view.problems.length === 0 }, el('h3', { text: 'What blocks the save' }), el('p', { class: 'muted', text: 'Code confirms the record is complete — never that it is right.' }), problems)
+  const saveButton = el('button', { type: 'button', class: 'primary', id: 'save', disabled: view.problems.length > 0, text: view.saved ? 'Save changes' : 'Save Grade', onclick: save })
+  // Always present, shown once a draft exists — an edit begun on this screen can be discarded on it.
+  const discard = el('button', { type: 'button', id: 'discard', hidden: current.source !== 'draft', text: view.saved ? 'Discard edit, back to saved' : 'Discard draft', onclick: discardDraft })
+  const saveState = el('span', { class: 'save-state', id: 'save-state', text: saveNote || (current.source === 'draft' ? 'restored your draft' : current.source === 'saved' ? 'as saved in your grades file' : 'blank — nothing judged yet') })
+  parts.push(problemsPanel, el('div', { class: 'actions' }, saveButton, discard, saveState))
+
+  if (view.comparison) parts.push(comparisonPanel(view.comparison))
+  return parts
+}
+
+function checkRow(check) {
+  const state = current.state
+  const judged = state.checks[check.checkId]
+  const name = `check-${check.checkId}`
+  const set = (satisfied) => { state.checks[check.checkId] = Object.assign({}, state.checks[check.checkId], { satisfied }); changed() }
+  const note = el('textarea', { rows: 2, placeholder: 'optional note — kept in your grades file, never exported into a report', oninput: (event) => { state.checks[check.checkId] = Object.assign({}, state.checks[check.checkId], { note: event.target.value }); changed() } })
+  note.value = judged.note
+  return el(
+    'li',
+    { class: 'check' },
+    el('div', { class: 'check-head' }, el('code', { text: check.checkId }), el('span', { text: check.description })),
+    el(
+      'div',
+      { class: 'judge' },
+      el('label', {}, el('input', { type: 'radio', name, checked: judged.satisfied === true, onchange: () => set(true) }), ' satisfied'),
+      el('label', {}, el('input', { type: 'radio', name, checked: judged.satisfied === false, onchange: () => set(false) }), ' not satisfied'),
+    ),
+    el('details', { class: 'note', open: judged.note !== '' }, el('summary', { text: 'note' }), note),
+  )
+}
+
+function supportRow(row, index) {
+  const picks = current.view.key.pickSources
+  const mode = current.supportModes[index]
+  const update = (field, value) => { row[field] = value; changed() }
+  const text = (field, placeholder) => {
+    const input = el('input', { type: 'text', placeholder, oninput: (event) => update(field, event.target.value) })
+    input.value = row[field]
+    return input
+  }
+  const pickedIndex = picks.findIndex((pick) => pick.url === row.sourceUrl)
+  const select = el(
+    'select',
+    {
+      onchange: (event) => {
+        const value = event.target.value
+        if (value === 'other') {
+          current.supportModes[index] = 'other'
+          row.sourceUrl = ''
+          row.passageRef = ''
+        } else {
+          current.supportModes[index] = 'pick'
+          const pick = picks[Number(value)]
+          row.sourceUrl = pick ? pick.url : ''
+          row.passageRef = pick ? pick.passageRef : ''
+          row.equivalentTo = ''
+        }
+        current.renderSupport()
+        changed()
+      },
+    },
+    el('option', { value: '', text: 'choose a key source…', selected: mode === 'pick' && pickedIndex === -1 }),
+    picks.map((pick, pickIndex) => el('option', { value: String(pickIndex), text: pick.url, selected: mode === 'pick' && pickIndex === pickedIndex })),
+    el('option', { value: 'other', text: 'another URL — an equivalent source', selected: mode === 'other' }),
+  )
+  const parts = [text('claim', 'the claim in the Answer this supports'), select]
+  if (mode === 'pick' && pickedIndex !== -1) {
+    parts.push(el('div', { class: 'supports muted', text: picks[pickedIndex].supports }), text('passageRef', 'where the passage is — a heading or the key source id'))
+  }
+  if (mode === 'other') {
+    const equivalent = el(
+      'select',
+      { onchange: (event) => update('equivalentTo', event.target.value) },
+      el('option', { value: '', text: 'equivalent to… (none)', selected: row.equivalentTo === '' }),
+      picks.map((pick) => el('option', { value: pick.url, text: pick.url, selected: row.equivalentTo === pick.url })),
+    )
+    parts.push(text('sourceUrl', 'https://… the page you read'), text('passageRef', 'where the passage is on it'), equivalent)
+  }
+  parts.push(el('div', {}, el('button', { type: 'button', text: 'Remove', onclick: () => { current.state.support.splice(index, 1); current.supportModes.splice(index, 1); current.renderSupport(); changed() } })))
+  return el('div', { class: 'support-row' }, parts)
+}
+
+function showProblems(problems, blocking) {
+  const box = document.getElementById('problems')
+  const panel = document.getElementById('problems-panel')
+  const button = document.getElementById('save')
+  if (!box || !panel || !button) return
+  box.replaceChildren(...problems.map((problem) => el('li', { text: problem })))
+  panel.hidden = problems.length === 0
+  panel.classList.toggle('blocking', Boolean(blocking))
+  button.disabled = problems.length > 0
+}
+
+function saveState(text) {
+  const node = document.getElementById('save-state')
+  if (node) node.textContent = text
+}
+
+function changed() {
+  current.dirty = true
+  saveState('writing draft…')
+  clearTimeout(current.timer)
+  current.timer = setTimeout(() => void flushDraft(), 300)
+}
+
+/** Write the current draft now, if there is one to write. Every change lands in the sidecar. */
+function flushDraft() {
+  if (!current || !current.dirty) return current ? current.inflight : Promise.resolve()
+  const target = current
+  clearTimeout(target.timer)
+  target.dirty = false
+  const state = JSON.parse(JSON.stringify(target.state))
+  // keepalive lets a draft written as the page closes still land, but the
+  // browser refuses a keepalive body over 64 KB — a Grade with long notes.
+  const keepalive = JSON.stringify(state).length < 60_000
+  target.inflight = target.inflight.then(async () => {
+    const { status, data } = await api('PUT', `/api/drafts/${encodeURIComponent(target.attemptId)}`, { state }, { keepalive })
+    if (current !== target) return
+    if (status === 200) {
+      target.source = 'draft'
+      document.getElementById('discard').hidden = false
+      showProblems(data.problems, false)
+      saveState('draft written beside your grades file')
+      await refreshSet()
+    } else {
+      showProblems(data.errors || [data.error || `the draft was not written (HTTP ${status})`], true)
+      saveState('the draft was NOT written')
+    }
+  })
+  return target.inflight
+}
+
+async function save() {
+  const target = current
+  await flushDraft()
+  if (current !== target) return
+  const { status, data } = await api('POST', `/api/grades/${encodeURIComponent(target.attemptId)}`, { state: target.state })
+  if (current !== target) return
+  if (status === 200) {
+    await refreshSet()
+    renderAttempt(data, 'saved to your grades file')
+    return
+  }
+  showProblems(data.errors || [data.error || `not saved (HTTP ${status})`], true)
+  saveState('not saved — your grades file is unchanged')
+}
+
+async function discardDraft() {
+  const target = current
+  clearTimeout(target.timer)
+  target.dirty = false
+  await target.inflight
+  const { status, data } = await api('DELETE', `/api/drafts/${encodeURIComponent(target.attemptId)}`)
+  if (status !== 200) {
+    showProblems([data.error || `the draft was not discarded (HTTP ${status})`], true)
+    return
+  }
+  await refreshSet()
+  renderAttempt(data, 'draft discarded')
+}
+
+function mark(value) {
+  if (value === null) return '—'
+  return value ? 'satisfied' : 'not satisfied'
+}
+
+function comparisonPanel(comparison) {
+  if (comparison.otherPending) {
+    return el('div', { class: 'panel compare' }, el('h3', { text: 'The other Grade' }), el('p', { class: 'muted', text: 'The other reviewer has not graded this slot.' }))
+  }
+  const supportList = (rows) => (rows.length === 0 ? el('span', { class: 'muted', text: 'none' }) : el('ul', {}, rows.map((row) => el('li', {}, row.claim, ' — ', link(row.sourceUrl), ` (${row.passageRef})`, row.equivalentTo ? [' equivalent to ', link(row.equivalentTo)] : null))))
+  return el(
+    'div',
+    { class: 'panel compare' },
+    el('h3', { text: `Beside ${comparison.reviewer}’s Grade — ${comparison.agreements} agree, ${comparison.disagreements} disagree` }),
+    el(
+      'table',
+      {},
+      el('tr', {}, el('th', { text: '' }), el('th', { text: 'you' }), el('th', { text: comparison.reviewer }), el('th', { text: '' })),
+      el('tr', {}, el('td', { text: 'status' }), el('td', { text: STATUS_TEXT[comparison.status.own][0] }), el('td', { text: STATUS_TEXT[comparison.status.other][0] }), el('td', {}, el('span', { class: `chip chip-${comparison.status.agree ? 'agree' : 'disagree'}`, text: comparison.status.agree ? 'agree' : 'disagree' }))),
+      el('tr', {}, el('td', { text: 'rationale' }), el('td', { text: comparison.rationale.own }), el('td', { text: comparison.rationale.other }), el('td', { text: '' })),
+      comparison.checks.map((check) =>
+        el(
+          'tr',
+          {},
+          el('td', {}, el('code', { text: check.checkId }), el('div', { class: 'muted', text: check.description })),
+          el('td', {}, mark(check.own.satisfied), check.own.note ? el('div', { class: 'muted', text: check.own.note }) : null),
+          el('td', {}, check.other ? [mark(check.other.satisfied), check.other.note ? el('div', { class: 'muted', text: check.other.note }) : null] : el('span', { class: 'muted', text: 'not judged' })),
+          el('td', {}, el('span', { class: `chip chip-${check.agree ? 'agree' : 'disagree'}`, text: check.agree ? 'agree' : 'disagree' })),
+        ),
+      ),
+      el('tr', {}, el('td', { text: 'support' }), el('td', {}, supportList(comparison.support.own)), el('td', {}, supportList(comparison.support.other)), el('td', { text: '' })),
+    ),
+  )
+}
+
+// ---------------------------------------------------------------------------
+
+window.addEventListener('hashchange', () => void openFromHash())
+window.addEventListener('pagehide', () => void flushDraft())
+refreshSet().then((loaded) => {
+  if (loaded) return openFromHash()
+})
+</script>
+</body>
+</html>

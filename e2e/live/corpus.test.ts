@@ -280,6 +280,26 @@ describe('nothing on the capture path can load a key', () => {
     const reachable = capturePathModules()
     expect(importers.filter((name) => reachable.has(name))).toEqual([])
   })
+
+  it('is loaded from scripts/ only by the evaluator entry points that must read a key', () => {
+    // The list above only ever looked inside e2e/live/, while scripts/ holds
+    // the commands a person actually runs (#228). `keyManifest.ts` counts as a
+    // key importer here: it re-exports the keys, so importing it is importing
+    // them. Two scripts need the keys — `live:keys` writes the manifest, and
+    // the Grading Bench puts the key beside the Answer — and a third is a
+    // decision to make on purpose.
+    const scriptsDir = join(liveDir, '..', '..', 'scripts')
+    const allowed = new Set(['live-keys.ts', 'live-review.ts'])
+    const keyImport = /(?:from|import\()\s*['"](?:\.{1,2}\/)+(?:[\w.-]+\/)*e2e\/live\/(?:keys|keyManifest)(?:\.ts)?['"]/
+    const importers = readdirSync(scriptsDir, { recursive: true, encoding: 'utf8' })
+      .filter((name) => /\.(?:[cm]?[jt]s|tsx)$/.test(name))
+      .filter((name) => keyImport.test(readFileSync(join(scriptsDir, name), 'utf8')))
+
+    // Sanity: the pattern really does see the importers it allows.
+    expect(importers).toContain('live-keys.ts')
+    expect(importers).toContain('live-review.ts')
+    expect(importers.filter((name) => !allowed.has(name))).toEqual([])
+  })
 })
 
 describe('the manifest a key shows the grader', () => {
