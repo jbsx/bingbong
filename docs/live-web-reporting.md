@@ -285,7 +285,8 @@ change is already in the drafts sidecar, and re-entering the set restores it.
 The reviewer is fixed from the first Start for every set that process grades;
 to grade under another name, restart `live:review`. A bench page still open on
 a set that has been left is refused rather than served, so it cannot write into
-the set that is open now.
+the set that is open now. Another reviewer's Grade to compare against is not
+carried over: each Start takes the one chosen for its own set.
 
 ### At the bench
 

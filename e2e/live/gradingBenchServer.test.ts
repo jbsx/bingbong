@@ -626,13 +626,14 @@ describe('changing set without restarting', () => {
 
   const call = (method: string, path: string, body?: unknown, headers: Record<string, string> = {}) => request(port, method, path, body, headers)
   const onSet = (setId: string) => ({ [SET_HEADER]: setId })
-  /** Start as the page does: read the setup's proposal for the name, and confirm the grades file it shows for the set. */
+  /** Start as the page does: read the setup's proposal for the name, and confirm the grades file and the comparison it proposes for the set. */
   const startOn = async (setId: string, reviewer = 'reviewer-a') => {
     const proposal = (await call('GET', `/api/setup?reviewer=${encodeURIComponent(reviewer)}`)).json()
-    const shown = proposal.started ? null : (setupSet(proposal, `${setId}.json`)?.gradesFile?.name ?? null)
-    return call('POST', '/api/start', { file: `${setId}.json`, reviewer, gradesFile: shown })
+    const shown = proposal.started ? undefined : setupSet(proposal, `${setId}.json`)
+    return call('POST', '/api/start', { file: `${setId}.json`, reviewer, gradesFile: shown?.gradesFile?.name ?? null, comparisonFile: shown?.preselectedComparison ?? null })
   }
-  const setupSet = (view: { sets: { file: string; gradesFile: { name: string } | null }[] }, file: string) => view.sets.find((set) => set.file === file)
+  const setupSet = (view: { sets: { file: string; gradesFile: { name: string } | null; preselectedComparison: string | null }[] }, file: string) =>
+    view.sets.find((set) => set.file === file)
   /** set-1's grades file and drafts sidecar, byte for byte. */
   const set1Files = () => ['set-1-grades-reviewer-a.json', 'set-1-grades-reviewer-a.drafts.json'].map((name) => readFileSync(join(privateRoot, name), 'utf8'))
 
@@ -644,8 +645,10 @@ describe('changing set without restarting', () => {
     privateRoot = join(root, 'private')
     mkdirSync(artifactsRoot)
     mkdirSync(privateRoot)
-    writeFixtureSet(artifactsRoot, 'set-1.json')
+    const set1 = writeFixtureSet(artifactsRoot, 'set-1.json')
     writeFixtureSet(artifactsRoot, 'set-2.json', 'set-2')
+    // Another reviewer has graded set-1 and not set-2, so each Start proposes a different comparison.
+    writeFileSync(join(privateRoot, 'set-1-grades-reviewer-b.json'), `${JSON.stringify(reviewerBGrades(set1), null, 2)}\n`)
 
     const setup = openGradingSetup({
       artifactsRoot,
@@ -667,7 +670,7 @@ describe('changing set without restarting', () => {
   })
 
   it('leaves a set mid-draft through change set, back on the setup page with that set’s progress refreshed', async () => {
-    expect((await startOn('set-1')).status).toBe(200)
+    expect((await startOn('set-1')).json()).toMatchObject({ setId: 'set-1', comparisonFile: 'set-1-grades-reviewer-b.json' })
     expect((await call('POST', '/api/grades/b1', { state: b1Unsuccessful }, onSet('set-1'))).status).toBe(200)
     expect((await call('PUT', '/api/drafts/a1', { state: draft }, onSet('set-1'))).status).toBe(200)
 
@@ -713,7 +716,9 @@ describe('changing set without restarting', () => {
 
     const second = await startOn('set-2')
     expect(second.status, second.text).toBe(200)
-    expect(second.json()).toEqual({ setId: 'set-2', reviewer: 'reviewer-a', gradesFile: 'set-2-grades-reviewer-a.json' })
+    // The comparison is each Start’s own: set-2 has none on offer, so set-1’s is not carried over.
+    expect(second.json()).toEqual({ setId: 'set-2', reviewer: 'reviewer-a', gradesFile: 'set-2-grades-reviewer-a.json', comparisonFile: null })
+    expect(started.map((bench) => bench.comparePath && relative(privateRoot, bench.comparePath))).toEqual(['set-1-grades-reviewer-b.json', null])
     expect(started.map((bench) => [bench.setId, bench.reviewer])).toEqual([
       ['set-1', 'reviewer-a'],
       ['set-2', 'reviewer-a'],
@@ -750,7 +755,7 @@ describe('changing set without restarting', () => {
   it('restores the draft in progress on re-entering the set it was left in', async () => {
     const before = set1Files()
     expect((await call('POST', '/api/change-set', {}, onSet('set-2'))).status).toBe(200)
-    expect((await startOn('set-1')).status).toBe(200)
+    expect((await startOn('set-1')).json().comparisonFile).toBe('set-1-grades-reviewer-b.json')
 
     const view = (await call('GET', '/api/attempt/a1', undefined, onSet('set-1'))).json()
     expect(view.editor).toEqual({ source: 'draft', state: draft })
