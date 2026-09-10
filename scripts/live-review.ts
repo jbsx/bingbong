@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-// The Grading Bench entry point (`pnpm live:review`, #228): a loopback-only
-// server and one page where a human records Grades over a live-web capture
+// The Grading Bench entry point (`pnpm live:review`, #228, #229): a
+// loopback-only server where a human records Grades over a live-web capture
 // set — one attempt at a time, its Answer beside the Grading Key and the
 // trail of what the assistant read.
 //
@@ -10,37 +10,36 @@
 // enforces the list. Node runs this .ts directly via type stripping (Node ≥
 // 22.18), so every runtime import on its graph carries a .ts extension.
 //
-// Every input is an explicit path; nothing is discovered. The bench writes
-// only the grades file and a drafts sidecar beside it, and only with Grades
-// the real `parseLiveGrades` accepts.
+// It takes no paths. It opens a setup page that proposes from the two fixed
+// roots — every capture set in the artifacts root, and the grades file the
+// reviewer's work goes into in the private root — beside the key manifest,
+// built in memory from the committed keys. The bench proposes and the
+// reviewer confirms: nothing is opened, and nothing written, until Start.
+// `live:report` and `live:keys` keep their explicit paths.
 //
 // Usage:
-//   pnpm live:review --capture=<capture-set.json> --keys=<key-manifest.json> --grades=<your-grades.json> \
-//                    [--reviewer=<name>] [--compare=<other-reviewer-grades.json>] [--port N] [--no-open]
+//   pnpm live:review [--port N] [--no-open]
 //
-// The reviewer defaults to `git config user.name`. One grades file per
+// The reviewer field starts as `git config user.name`. One grades file per
 // reviewer: the bench refuses a file someone else has reviewed in.
 
 import { execFileSync, spawn } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 import { createServer } from 'node:http'
-import { resolve } from 'node:path'
-import { LIVE_PRIVATE_ROOT } from '../e2e/live/artifacts.ts'
-import { resolveReviewer } from '../e2e/live/gradingBench.ts'
-import { openGradingBench } from '../e2e/live/gradingBenchServer.ts'
-import { gradingKeyFor, keyManifestOf } from '../e2e/live/keyManifest.ts'
+import { LIVE_ARTIFACTS_ROOT, LIVE_PRIVATE_ROOT, redactedMessage } from '../e2e/live/artifacts.ts'
+import { parseLiveKeyManifest, type LiveKeyManifest } from '../e2e/live/grades.ts'
+import { openGradingSetup } from '../e2e/live/gradingBenchServer.ts'
+import { buildLiveKeyManifest, gradingKeyFor } from '../e2e/live/keyManifest.ts'
 
 const DEFAULT_PORT = 4227
-const VALUE_FLAGS = ['capture', 'keys', 'grades', 'reviewer', 'compare', 'port'] as const
-const REQUIRED_FLAGS = ['capture', 'keys', 'grades'] as const
 
 function fail(message: string): never {
   process.stderr.write(`live:review: ${message}\n`)
   process.exit(1)
 }
 
-function parseArgv(argv: readonly string[]): { flags: Map<string, string>; open: boolean } {
-  const flags = new Map<string, string>()
+function parseArgv(argv: readonly string[]): { port: number; open: boolean } {
+  let port: number | null = null
   let open = true
   for (let index = 0; index < argv.length; index += 1) {
     const argument = argv[index]
@@ -48,26 +47,28 @@ function parseArgv(argv: readonly string[]): { flags: Map<string, string>; open:
       open = false
       continue
     }
-    if (!argument.startsWith('--')) fail(`unexpected argument "${argument}" — every input is a named path`)
+    if (!argument.startsWith('--')) fail(`unexpected argument "${argument}" — it takes only --port N and --no-open`)
     const separator = argument.indexOf('=')
     const name = separator === -1 ? argument.slice(2) : argument.slice(2, separator)
-    if (!(VALUE_FLAGS as readonly string[]).includes(name)) {
-      fail(`unknown option --${name} (it takes ${VALUE_FLAGS.map((flag) => `--${flag}`).join(', ')} and --no-open)`)
+    if (name !== 'port') {
+      fail(`unknown option --${name} (it takes --port N and --no-open; the capture set, the reviewer and the grades file are chosen on the setup page)`)
     }
-    // `--port N` as `trace:ui` takes it; every path flag as --name=value.
-    let value: string | undefined = separator === -1 ? undefined : argument.slice(separator + 1)
-    if (value === undefined && name === 'port') value = argv[++index]
-    if (value === undefined) fail(`--${name} needs a value, as --${name}=<value>`)
-    if (value === '') fail(`--${name} was given an empty value`)
-    if (flags.has(name)) fail(`--${name} was given more than once`)
-    flags.set(name, value)
+    if (port !== null) fail('--port was given more than once')
+    // `--port N` as `trace:ui` takes it, or --port=N.
+    const value = separator === -1 ? argv[++index] : argument.slice(separator + 1)
+    const parsed = Number(value)
+    if (value === undefined || value === '' || !Number.isInteger(parsed) || parsed < 0 || parsed > 65535) {
+      fail(`--port needs an integer 0–65535, got ${JSON.stringify(value)}`)
+    }
+    port = parsed
   }
-  return { flags, open }
+  return { port: port ?? DEFAULT_PORT, open }
 }
 
 function gitUserName(): string | null {
   try {
-    return execFileSync('git', ['config', 'user.name'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] })
+    const name = execFileSync('git', ['config', 'user.name'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim()
+    return name === '' ? null : name
   } catch {
     return null
   }
@@ -85,49 +86,35 @@ function openInBrowser(url: string): void {
   }
 }
 
-const { flags, open } = parseArgv(process.argv.slice(2))
+const { port, open } = parseArgv(process.argv.slice(2))
 
-const missing = REQUIRED_FLAGS.filter((flag) => !flags.has(flag))
-if (missing.length > 0) {
-  fail(
-    `${missing.map((flag) => `--${flag}`).join(', ')} ${missing.length === 1 ? 'is' : 'are'} required — ` +
-      'the bench discovers nothing: name the capture set, the key manifest and your own grades file',
-  )
+// The manifest `pnpm live:keys` would write, built from the same keys the
+// bench puts beside each Answer — so the two cannot disagree.
+let manifest: LiveKeyManifest
+try {
+  manifest = buildLiveKeyManifest()
+} catch (error) {
+  fail(`the key manifest could not be built from the keys: ${redactedMessage(error)}`)
 }
+const parsed = parseLiveKeyManifest(manifest)
+if (!parsed.ok) fail(`the key manifest built from the keys is not valid:\n${parsed.errors.map((error) => `  - ${error}`).join('\n')}`)
 
-let port = DEFAULT_PORT
-if (flags.has('port')) {
-  port = Number(flags.get('port'))
-  if (!Number.isInteger(port) || port < 0 || port > 65535) fail(`--port needs an integer 0–65535, got ${JSON.stringify(flags.get('port'))}`)
-}
-
-const reviewer = resolveReviewer(flags.get('reviewer'), gitUserName)
-if (reviewer === null) fail('no reviewer — pass --reviewer=<name> or set git config user.name; an entry naming no one cannot be saved')
-
-const gradesPath = resolve(flags.get('grades')!)
-if (!gradesPath.startsWith(`${LIVE_PRIVATE_ROOT}/`)) {
-  process.stderr.write(`live:review: warning — ${gradesPath} is outside the gitignored private root (${LIVE_PRIVATE_ROOT}).\n`)
-  process.stderr.write('live:review: a grades file and its drafts carry reviewer notes about Answers. Do not commit them.\n')
-}
-
-const opened = openGradingBench({
-  capturePath: flags.get('capture')!,
-  keysPath: flags.get('keys')!,
-  gradesPath,
-  ...(flags.has('compare') ? { comparePath: flags.get('compare')! } : {}),
-  reviewer,
+const setup = openGradingSetup({
+  artifactsRoot: LIVE_ARTIFACTS_ROOT,
+  privateRoot: LIVE_PRIVATE_ROOT,
+  manifest,
   keyFor: (huntId) => gradingKeyFor(huntId),
-  keyManifestFor: keyManifestOf,
-  pageHtml: readFileSync(new URL('./live-review.html', import.meta.url), 'utf8'),
+  defaultReviewer: gitUserName(),
+  setupHtml: readFileSync(new URL('./live-review-setup.html', import.meta.url), 'utf8'),
+  benchHtml: readFileSync(new URL('./live-review.html', import.meta.url), 'utf8'),
+  onStart: (bench) => {
+    console.log(`live:review grading capture set ${bench.setId} as ${bench.reviewer}`)
+    console.log(`live:review grades: ${bench.gradesPath}`)
+    console.log(`live:review drafts: ${bench.draftsPath}`)
+  },
 })
-if (!opened.ok) {
-  process.stderr.write('live:review: the bench cannot open:\n')
-  for (const error of opened.errors) process.stderr.write(`  - ${error}\n`)
-  process.exit(1)
-}
-const bench = opened.value
 
-const server = createServer(bench.handle)
+const server = createServer(setup.handle)
 server.on('error', (error: NodeJS.ErrnoException) => {
   if (error.code === 'EADDRINUSE') fail(`port ${port} is in use — pass --port N`)
   fail(`the server failed: ${error.message}`)
@@ -136,10 +123,7 @@ server.listen(port, '127.0.0.1', () => {
   const address = server.address()
   const bound = typeof address === 'object' && address !== null ? address.port : port
   const url = `http://127.0.0.1:${bound}/`
-  console.log(`live:review grading capture set ${bench.setId} as ${bench.reviewer}`)
-  console.log(`live:review grades: ${bench.gradesPath}`)
-  console.log(`live:review drafts: ${bench.draftsPath}`)
-  console.log(`live:review at ${url}`)
+  console.log(`live:review setup at ${url} — choose a capture set and press Start`)
   if (open) openInBrowser(url)
 })
 

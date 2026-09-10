@@ -1,0 +1,325 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Grading Bench · setup</title>
+<link rel="icon" href="data:,">
+<!--
+  The Grading Bench's setup page (#229), served by scripts/live-review.ts on
+  loopback before the bench opens. The bench proposes — every capture set in
+  the artifacts root, the grades file your work goes into, the key — and you
+  confirm with Start. Nothing is opened, and nothing is written, before that.
+
+  Plain DOM, no framework, no network beyond its own server. Every string
+  from a capture set or a grades file goes in through textContent.
+-->
+<style>
+  :root {
+    --bg: #f7f7f5; --panel: #ffffff; --ink: #1d1d1b; --muted: #6b6b66; --line: #deded8;
+    --accent: #2f5bd3; --ok: #1f7a3a; --warn: #9a6200; --bad: #b3261e; --soft: #eef1fb;
+    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    color-scheme: light dark;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #151514; --panel: #1f1f1d; --ink: #ecece8; --muted: #9c9c95; --line: #34342f;
+      --accent: #8aa8ff; --ok: #6fcf8a; --warn: #e6b450; --bad: #ff8a80; --soft: #232a3d; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 14px/1.45 system-ui, sans-serif; background: var(--bg); color: var(--ink); }
+  code { font-family: var(--mono); font-size: 12.5px; overflow-wrap: anywhere; }
+  h1 { font-size: 16px; margin: 0; }
+  h2 { font-size: 13px; margin: 0 0 8px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+  .muted { color: var(--muted); }
+  .top { display: flex; flex-wrap: wrap; gap: 6px 16px; align-items: baseline; padding: 10px 16px; border-bottom: 1px solid var(--line); background: var(--panel); }
+  .top .note { color: var(--muted); font-size: 12.5px; }
+  main { max-width: 980px; margin: 0 auto; padding: 8px 16px 40px; }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 12px; margin: 12px 0; }
+  input[type="text"] { font: inherit; width: 100%; max-width: 420px; padding: 5px 7px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); color: inherit; }
+  .caution { color: var(--warn); margin: 6px 0 0; }
+  .error { color: var(--bad); }
+  .sets { list-style: none; padding: 0; margin: 0; }
+  .set { border-bottom: 1px solid var(--line); }
+  .set:last-child { border-bottom: 0; }
+  .set label { display: grid; grid-template-columns: 22px minmax(0, 1fr); gap: 2px 8px; padding: 8px 4px; cursor: pointer; border-radius: 6px; }
+  .set.chosen label { background: var(--soft); }
+  .set.refused label { cursor: not-allowed; }
+  .set.refused .set-head, .set.refused .set-meta { opacity: .55; }
+  .set-head { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: baseline; }
+  .set-head strong { overflow-wrap: anywhere; }
+  .set-meta, .set-progress, .reasons { grid-column: 2; font-size: 12.5px; }
+  .reasons { margin: 2px 0 0; padding-left: 18px; color: var(--bad); }
+  .chip { display: inline-block; font-size: 11.5px; padding: 0 6px; border-radius: 999px; border: 1px solid var(--line); white-space: nowrap; }
+  .chip-preselected { color: var(--accent); border-color: currentColor; }
+  dl { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 4px 12px; margin: 0; }
+  dt { color: var(--muted); }
+  dd { margin: 0; min-width: 0; }
+  .actions { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin: 14px 0; }
+  .actions button { font: inherit; padding: 6px 16px; border-radius: 6px; border: 1px solid var(--accent); background: var(--accent); color: #fff; cursor: pointer; }
+  .actions button:disabled { opacity: .5; cursor: not-allowed; }
+  .start-errors { margin: 0; padding-left: 18px; color: var(--bad); }
+</style>
+</head>
+<body>
+<header class="top">
+  <h1>Grading Bench</h1>
+  <span class="muted">setup</span>
+  <span class="note">The bench proposes; nothing opens, and nothing is written, until you press Start.</span>
+</header>
+<main>
+  <section class="panel">
+    <h2>Reviewer</h2>
+    <input type="text" id="reviewer" autocomplete="off" spellcheck="false" aria-describedby="reviewer-note">
+    <p class="muted" id="reviewer-note"></p>
+    <p class="caution" id="caution" hidden></p>
+  </section>
+
+  <section class="panel">
+    <h2>Capture set</h2>
+    <p class="muted" id="roots-note"></p>
+    <ol class="sets" id="sets"><li class="muted">Reading the artifacts root…</li></ol>
+    <p class="muted" id="nothing" hidden>
+      Nothing here can be graded. A measured pass is run with
+      <code>BINGBONG_ENV_FILE=/absolute/path/to/.env pnpm test:live</code> and lands in the artifacts root;
+      <code>docs/live-web-pilot-runbook.md</code> walks through it.
+    </p>
+  </section>
+
+  <section class="panel">
+    <h2>Grades file</h2>
+    <dl>
+      <dt>file</dt><dd id="grades-file" class="muted">choose a set</dd>
+      <dt>drafts</dt><dd id="drafts-file" class="muted">—</dd>
+    </dl>
+  </section>
+
+  <section class="panel">
+    <h2>Key</h2>
+    <dl>
+      <dt>version</dt><dd><code id="key-version"></code></dd>
+      <dt>digest</dt><dd><code id="key-digest"></code></dd>
+    </dl>
+    <p class="muted">Built in memory from the committed keys; the bench grades against nothing else.</p>
+  </section>
+
+  <div class="actions">
+    <button type="button" id="start" disabled>Start</button>
+    <span class="muted" id="start-note"></span>
+  </div>
+  <ul class="start-errors" id="start-errors" hidden></ul>
+</main>
+<script>
+'use strict'
+
+// ---------------------------------------------------------------------------
+// Small DOM helpers. Text always goes in as text.
+
+function el(tag, attrs, ...children) {
+  const node = document.createElement(tag)
+  for (const [name, value] of Object.entries(attrs || {})) {
+    if (value === undefined || value === null || value === false) continue
+    if (name === 'class') node.className = value
+    else if (name === 'text') node.textContent = value
+    else if (name.startsWith('on')) node.addEventListener(name.slice(2), value)
+    else if (value === true) node.setAttribute(name, '')
+    else node.setAttribute(name, String(value))
+  }
+  for (const child of children.flat(Infinity)) {
+    if (child === null || child === undefined || child === false) continue
+    node.append(typeof child === 'string' ? document.createTextNode(child) : child)
+  }
+  return node
+}
+
+async function api(method, path, body) {
+  const init = { method, headers: {} }
+  if (body !== undefined) {
+    init.headers['content-type'] = 'application/json'
+    init.body = JSON.stringify(body)
+  }
+  const response = await fetch(path, init)
+  let data = null
+  try {
+    data = await response.json()
+  } catch (error) {
+    data = { error: `the server sent no JSON (${String(error)})` }
+  }
+  return { status: response.status, data }
+}
+
+const $ = (id) => document.getElementById(id)
+
+// ---------------------------------------------------------------------------
+// State
+
+/** The server's last proposal, for the name in the reviewer field. */
+let view = null
+/** The set file chosen; the server's preselection until the reviewer picks one. */
+let chosen = null
+let pickedByHand = false
+/** Only the answer to the newest question is drawn — the field changes faster than the server answers. */
+let asked = 0
+let timer = null
+
+function chosenSet() {
+  return view && chosen ? view.sets.find((set) => set.file === chosen) || null : null
+}
+
+// ---------------------------------------------------------------------------
+// Rendering
+
+function progressText(progress) {
+  const parts = [`${progress.graded} graded`, `${progress.drafted} drafted`, `${progress.pending} pending`]
+  if (progress.notReached > 0) parts.push(`${progress.notReached} not reached`)
+  return `your progress: ${parts.join(' · ')}`
+}
+
+function created(iso) {
+  if (!iso) return 'created —'
+  const date = new Date(iso)
+  return Number.isNaN(date.getTime()) ? `created ${iso}` : `created ${date.toLocaleString()}`
+}
+
+function render() {
+  const reviewer = $('reviewer').value.trim()
+  $('reviewer-note').textContent =
+    reviewer === ''
+      ? 'Name a reviewer — an entry naming no one cannot be saved.'
+      : view.defaultReviewer !== null && reviewer === view.defaultReviewer
+        ? 'From git config user.name. Change it here if that is not you; it is fixed once the bench opens.'
+        : 'It is fixed once the bench opens.'
+  $('caution').hidden = !view.caution
+  $('caution').textContent = view.caution || ''
+  $('roots-note').textContent = `Every capture set in ${view.roots.artifacts}. Grades are filed in ${view.roots.private}.`
+  $('key-version').textContent = view.key.version
+  $('key-digest').textContent = view.key.digest
+
+  const startable = view.sets.filter((set) => set.refusals.length === 0)
+  $('nothing').hidden = startable.length > 0
+  const sets = $('sets')
+  if (view.sets.length === 0) {
+    sets.replaceChildren(el('li', { class: 'muted', text: 'No capture sets.' }))
+  } else {
+    sets.replaceChildren(
+      ...view.sets.map((set) => {
+        const refused = set.refusals.length > 0
+        const radio = el('input', {
+          type: 'radio',
+          name: 'set',
+          value: set.file,
+          checked: set.file === chosen,
+          disabled: refused,
+          onchange: () => {
+            chosen = set.file
+            pickedByHand = true
+            render()
+          },
+        })
+        return el(
+          'li',
+          { class: ['set', refused ? 'refused' : '', set.file === chosen ? 'chosen' : ''].join(' ') },
+          el(
+            'label',
+            {},
+            radio,
+            el(
+              'span',
+              { class: 'set-head' },
+              el('strong', { text: set.setId || set.file }),
+              set.file === view.preselected ? el('span', { class: 'chip chip-preselected', text: 'proposed' }) : null,
+              el('span', { class: 'muted', text: set.file }),
+            ),
+            el('span', { class: 'set-meta muted', title: set.createdAt || '', text: [created(set.createdAt), set.mode || 'mode —', set.state || 'state —', set.slots === null ? 'slots —' : `${set.slots} slots`].join(' · ') }),
+            set.progress ? el('span', { class: 'set-progress', text: progressText(set.progress) }) : null,
+            refused ? el('ul', { class: 'reasons' }, set.refusals.map((reason) => el('li', { text: reason }))) : null,
+          ),
+        )
+      }),
+    )
+  }
+
+  const set = chosenSet()
+  const file = set && set.gradesFile
+  $('grades-file').className = file ? '' : 'muted'
+  $('drafts-file').className = file ? '' : 'muted'
+  if (file) {
+    $('grades-file').replaceChildren(el('code', { text: file.name }), ' ', el('span', { class: 'muted', text: file.resumed ? '— your work there is reopened' : '— a new file, written on your first save' }))
+    $('drafts-file').replaceChildren(el('code', { text: file.name.replace(/\.json$/, '.drafts.json') }), ' ', el('span', { class: 'muted', text: '— every change lands here first' }))
+  } else {
+    $('grades-file').textContent = reviewer === '' ? 'name a reviewer — the file is named for them' : set ? 'none — this set cannot be started' : 'choose a set'
+    $('drafts-file').textContent = '—'
+  }
+
+  const ready = reviewer !== '' && set !== null && set.refusals.length === 0
+  $('start').disabled = !ready
+  $('start-note').textContent = ready ? `grade ${set.setId} as ${reviewer}` : ''
+}
+
+// ---------------------------------------------------------------------------
+// Asking the server
+
+async function propose() {
+  const question = ++asked
+  const reviewer = $('reviewer').value
+  const { status, data } = await api('GET', `/api/setup?reviewer=${encodeURIComponent(reviewer)}`)
+  if (question !== asked) return
+  if (status !== 200) {
+    $('sets').replaceChildren(el('li', { class: 'error', text: data.error || `the setup could not be read (HTTP ${status})` }))
+    return
+  }
+  if (data.started) {
+    location.replace('/')
+    return
+  }
+  view = data
+  const hand = chosenSet()
+  if (!pickedByHand || hand === null) {
+    chosen = view.preselected
+    pickedByHand = false
+  }
+  render()
+}
+
+function showStartErrors(errors) {
+  const list = $('start-errors')
+  list.replaceChildren(...errors.map((error) => el('li', { text: error })))
+  list.hidden = errors.length === 0
+}
+
+async function start() {
+  $('start').disabled = true
+  showStartErrors([])
+  const { status, data } = await api('POST', '/api/start', { file: chosen, reviewer: $('reviewer').value })
+  if (status === 200) {
+    location.replace('/')
+    return
+  }
+  showStartErrors(data.errors || [data.error || `the bench did not open (HTTP ${status})`])
+  await propose()
+}
+
+$('reviewer').addEventListener('input', () => {
+  showStartErrors([])
+  clearTimeout(timer)
+  timer = setTimeout(() => void propose(), 250)
+  if (view) render()
+})
+$('start').addEventListener('click', () => void start())
+
+api('GET', '/api/setup').then(({ status, data }) => {
+  if (status !== 200) {
+    $('sets').replaceChildren(el('li', { class: 'error', text: data.error || `the setup could not be read (HTTP ${status})` }))
+    return
+  }
+  if (data.started) {
+    location.replace('/')
+    return
+  }
+  $('reviewer').value = data.reviewer
+  view = data
+  chosen = data.preselected
+  render()
+})
+</script>
+</body>
+</html>

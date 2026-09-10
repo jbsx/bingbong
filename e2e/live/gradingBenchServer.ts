@@ -1,32 +1,39 @@
-// The Grading Bench server (#228): the loopback door between the bench page
-// and the files. `scripts/live-review.ts` opens it with explicit paths and
-// listens on 127.0.0.1; everything it decides is in `gradingBench.ts`, and
-// everything it validates is `grades.ts`'s own `parseLiveGrades`.
+// The Grading Bench server (#228, #229): the loopback door between the pages
+// and the files. `scripts/live-review.ts` listens on 127.0.0.1 with the setup
+// door (`openGradingSetup`) in front of the bench (`openGradingBench`): the
+// setup page proposes a capture set, a reviewer and a grades file from the
+// two roots, and only Start opens a bench on them. What the setup decides is
+// in `gradingSetup.ts`, what the bench decides is in `gradingBench.ts`, and
+// everything either validates is `grades.ts`'s own `parseLiveGrades`.
 //
 // What it guarantees, and where:
 //
-//   - It reads only the paths it was given (and the Session captures and
-//     artifacts the capture set itself names), and writes exactly two files:
-//     the grades file, and the drafts sidecar beside it. Nothing it reads —
-//     an Answer, a page, the key — is ever written anywhere else, logged, or
-//     printed.
+//   - Before Start it only reads: the two roots' top-level JSON files, and
+//     each set that can be started, as a bench would open it. A bench opens
+//     on one set, one reviewer and one grades file, fixed for its life.
+//   - A bench reads only the capture set it was opened on (and the Session
+//     captures and artifacts the set itself names), its grades file, sidecar
+//     and comparison file, and writes exactly two files: the grades file,
+//     and the drafts sidecar beside it. Nothing it reads — an Answer, a
+//     page, the key — is ever written anywhere else, logged, or printed.
 //   - The grades file is written only with a set that `parseLiveGrades`
 //     accepted, so it is always one `pnpm live:report` accepts. Half-done
 //     work goes to the sidecar.
 //   - It refuses to open another reviewer's grades file, and it never sends
-//     the `--compare` Grade for a slot until this reviewer's own entry for
+//     the comparison Grade for a slot until this reviewer's own entry for
 //     that slot is saved.
-//   - It answers only requests addressed to loopback, from its own page:
+//   - It answers only requests addressed to loopback, from its own pages:
 //     a browser tab on another site cannot read the key or post a Grade.
 //
 // The Answer is rendered with the app's own `react-markdown` through
 // `react-dom/server`, so the reviewer grades what the Feed would have shown.
-// Only the server touches React; the page stays plain DOM. Links open in a
+// Only the server touches React; the pages stay plain DOM. Links open in a
 // new tab. The Answer digest is always taken over the raw text.
 //
-// NOTHING HERE LOADS A KEY: the keys arrive as `keyFor`, from the CLI.
+// NOTHING HERE LOADS A KEY: the keys arrive as `keyFor`, and the manifest
+// built from them in memory, from the CLI.
 
-import { existsSync, readFileSync, realpathSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync, realpathSync } from 'node:fs'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { basename, dirname, join, resolve, sep } from 'node:path'
 import { createElement } from 'react'
@@ -43,7 +50,6 @@ import {
   emptyDrafts,
   evidenceTrailOf,
   gradesWith,
-  keyDriftOf,
   keyViewFor,
   parseDrafts,
   reviewerRefusal,
@@ -55,6 +61,7 @@ import {
   type BenchEditorState,
   type BenchKey,
   type BenchSlot,
+  type BenchSlotSummary,
   type EvidenceTrail,
 } from './gradingBench.ts'
 import {
@@ -68,20 +75,24 @@ import {
   type LiveGradingInputs,
   type LiveKeyManifest,
 } from './grades.ts'
+import { captureSetsIn, preselectedSetFile, progressOf, resolveGradesFile, reviewerCaution, type RootFile, type SetupSet } from './gradingSetup.ts'
 import { buildLiveReport, type LivePopulation } from './report.ts'
 import type { LiveAttemptCapture } from './types.ts'
 
 export interface GradingBenchOptions {
   readonly capturePath: string
-  readonly keysPath: string
+  /**
+   * The key manifest, built in memory from the same keys `keyFor` reads —
+   * so key prose and check wording cannot disagree, and there is no file
+   * to name. The CLI builds it; a test passes an invented one.
+   */
+  readonly manifest: LiveKeyManifest
   readonly gradesPath: string
   /** Another reviewer's grades file, shown slot by slot only after this reviewer saves. */
   readonly comparePath?: string
   readonly reviewer: string
   /** The substantive key for a hunt. The CLI passes the corpus's; a test passes an invented one. */
   readonly keyFor: (huntId: string) => BenchKey | undefined
-  /** The key's own manifest for a hunt, when available, to refuse a key that moved past the manifest file. */
-  readonly keyManifestFor?: (huntId: string) => LiveKeyManifest
   readonly pageHtml: string
   readonly now?: () => Date
 }
@@ -91,6 +102,8 @@ export interface GradingBench {
   readonly reviewer: string
   readonly gradesPath: string
   readonly draftsPath: string
+  /** Every slot with this reviewer's state on it, as the sidebar shows them. */
+  readonly slots: () => readonly BenchSlotSummary[]
   readonly handle: (request: IncomingMessage, response: ServerResponse) => void
 }
 
@@ -208,6 +221,21 @@ function readBody(request: IncomingMessage): Promise<Body> {
   })
 }
 
+/** A JSON write: a cross-site form cannot send one without a preflight this server never answers. */
+function isJsonRequest(request: IncomingMessage): boolean {
+  return (request.headers['content-type'] ?? '').toLowerCase().startsWith('application/json')
+}
+
+/** A request handler whose failure is answered, never left hanging or thrown into the server. */
+function guarded(serve: (request: IncomingMessage, response: ServerResponse) => Promise<void>): (request: IncomingMessage, response: ServerResponse) => void {
+  return (request, response) => {
+    serve(request, response).catch((error: unknown) => {
+      if (response.headersSent) response.end()
+      else send(response, 500, { error: `the bench failed: ${redactedMessage(error)}` })
+    })
+  }
+}
+
 /** The counts `pnpm live:report` reports for a population, which the sidebar shows beside the slots. */
 function countsOf(population: LivePopulation): { scheduled: number; reviewed: number; pending: number; verifiedSuccess: number } {
   return { scheduled: population.scheduled, reviewed: population.reviewed, pending: population.pending, verifiedSuccess: population.verifiedSuccess }
@@ -231,9 +259,7 @@ export function openGradingBench(options: GradingBenchOptions): Validation<Gradi
   const sessions = capture.value.sessions.flatMap((session) => (session.ok ? [session.value] : []))
   const set = capture.value.set
 
-  const manifestInput = readJsonInput(options.keysPath, 'key manifest')
-  if (!manifestInput.ok) return manifestInput
-  const parsedManifest = parseLiveKeyManifest(manifestInput.value.value)
+  const parsedManifest = parseLiveKeyManifest(options.manifest)
   if (!parsedManifest.ok) return refused('the key manifest is not usable', parsedManifest.errors)
   const manifest = parsedManifest.value
   const inputs: LiveGradingInputs = { set, sessions, manifest }
@@ -257,7 +283,6 @@ export function openGradingBench(options: GradingBenchOptions): Validation<Gradi
       problems.push(`there is no grading key for hunt ${slot.huntId}`)
     }
   }
-  if (options.keyManifestFor !== undefined) problems.push(...keyDriftOf(manifest, options.keyManifestFor))
   if (problems.length > 0) return refused('the bench cannot put a key beside every slot', problems)
 
   const gradesPath = resolve(options.gradesPath)
@@ -269,7 +294,6 @@ export function openGradingBench(options: GradingBenchOptions): Validation<Gradi
   // The two files the bench writes may never be a file it reads.
   const readPaths = [
     options.capturePath,
-    options.keysPath,
     ...(comparePath === undefined ? [] : [comparePath]),
     ...set.sessions.map((reference) => resolve(setDirectory, reference.path)),
     ...sessions.flatMap((session) => {
@@ -306,17 +330,17 @@ export function openGradingBench(options: GradingBenchOptions): Validation<Gradi
   let other: LiveGrades | null = null
   if (comparePath !== undefined) {
     if (targetOf(comparePath) === targetOf(gradesPath)) {
-      return { ok: false, errors: ['--compare and --grades name the same file — compare against another reviewer’s grades'] }
+      return { ok: false, errors: ['the file to compare against is the grades file itself — compare against another reviewer’s grades'] }
     }
     const input = readJsonInput(comparePath, 'grades file to compare against')
     if (!input.ok) return input
     const parsed = parseLiveGrades(input.value.value, inputs)
-    if (!parsed.ok) return refused('the --compare grades do not validate against this capture set and key manifest', parsed.errors)
+    if (!parsed.ok) return refused('the grades to compare against do not validate against this capture set and key manifest', parsed.errors)
     // The comparison is another reviewer's Grade: a file holding this
     // reviewer's own reviews is not a second opinion, and its per-check diff
     // would read as agreement nobody else gave.
     if (parsed.value.entries.some((entry) => entry.reviewer === reviewer)) {
-      return { ok: false, errors: [`the --compare grades hold reviews by ${reviewer}, the reviewer at this bench — compare against another reviewer's grades`] }
+      return { ok: false, errors: [`the grades to compare against hold reviews by ${reviewer}, the reviewer at this bench — compare against another reviewer's grades`] }
     }
     other = parsed.value
   }
@@ -458,7 +482,7 @@ export function openGradingBench(options: GradingBenchOptions): Validation<Gradi
 
   /** The posted editor state for a slot that can be graded, or the response already sent. */
   async function postedState(request: IncomingMessage, response: ServerResponse, bench: BenchSlot): Promise<BenchEditorState | null> {
-    if (!(request.headers['content-type'] ?? '').toLowerCase().startsWith('application/json')) {
+    if (!isJsonRequest(request)) {
       send(response, 415, { error: 'the bench accepts JSON only' })
       return null
     }
@@ -565,12 +589,156 @@ export function openGradingBench(options: GradingBenchOptions): Validation<Gradi
       reviewer,
       gradesPath,
       draftsPath,
-      handle: (request, response) => {
-        serve(request, response).catch((error: unknown) => {
-          if (response.headersSent) response.end()
-          else send(response, 500, { error: `the bench failed: ${redactedMessage(error)}` })
-        })
-      },
+      slots: () => slotSummariesOf(inputs, grades, drafts),
+      handle: guarded(serve),
     },
   }
+}
+
+// ---------------------------------------------------------------------------
+// The setup door
+
+export interface GradingSetupOptions {
+  /** Where capture sets are listed from: `LIVE_ARTIFACTS_ROOT` for the CLI, a fixture root for a test. */
+  readonly artifactsRoot: string
+  /** Where grades files are found and written: `LIVE_PRIVATE_ROOT` for the CLI. */
+  readonly privateRoot: string
+  readonly manifest: LiveKeyManifest
+  readonly keyFor: (huntId: string) => BenchKey | undefined
+  /** What the reviewer field starts as — `git config user.name` — or null. */
+  readonly defaultReviewer: string | null
+  readonly setupHtml: string
+  readonly benchHtml: string
+  readonly now?: () => Date
+  /** Told once, when Start opens the bench. */
+  readonly onStart?: (bench: GradingBench) => void
+}
+
+export interface GradingSetup {
+  readonly handle: (request: IncomingMessage, response: ServerResponse) => void
+}
+
+/** A root's top-level JSON files, parsed; a file that does not parse is kept with no value. A missing root holds nothing. */
+function readRoot(root: string): RootFile[] {
+  let names: string[]
+  try {
+    names = readdirSync(root, { withFileTypes: true })
+      .filter((entry) => entry.isFile() && entry.name.endsWith('.json'))
+      .map((entry) => entry.name)
+      .sort()
+  } catch {
+    return []
+  }
+  return names.map((name) => {
+    try {
+      return { name, value: JSON.parse(readFileSync(join(root, name), 'utf8')) as unknown }
+    } catch {
+      return { name, value: undefined }
+    }
+  })
+}
+
+/**
+ * The setup door: a page that proposes, from the two roots, every capture
+ * set with the grades file this reviewer's work goes into, and an open bench
+ * only once the reviewer presses Start. Until then it reads and never writes;
+ * after, it hands every request to that bench, and the set and the reviewer
+ * are fixed until the process ends.
+ */
+export function openGradingSetup(options: GradingSetupOptions): GradingSetup {
+  let bench: GradingBench | null = null
+
+  function openOn(setFile: string, reviewer: string, gradesFile: string): Validation<GradingBench> {
+    return openGradingBench({
+      capturePath: join(options.artifactsRoot, setFile),
+      manifest: options.manifest,
+      gradesPath: join(options.privateRoot, gradesFile),
+      reviewer,
+      keyFor: options.keyFor,
+      pageHtml: options.benchHtml,
+      ...(options.now === undefined ? {} : { now: options.now }),
+    })
+  }
+
+  /**
+   * Every listed set with what Start would open it on. A set is only offered
+   * when a bench really opens on it — opening reads, and writes nothing — so
+   * a set that can be chosen is a set Start can open.
+   */
+  function survey(reviewer: string): { sets: SetupSet[]; privateFiles: RootFile[] } {
+    const privateFiles = readRoot(options.privateRoot)
+    const sets = captureSetsIn(readRoot(options.artifactsRoot)).map((listing): SetupSet => {
+      const unopened = { ...listing, gradesFile: null, progress: null }
+      if (listing.refusals.length > 0 || reviewer === '') return unopened
+      const choice = resolveGradesFile({ setId: listing.setId!, reviewer, manifest: options.manifest, privateFiles })
+      if (!choice.ok) return { ...unopened, refusals: choice.errors }
+      const opened = openOn(listing.file, reviewer, choice.value.name)
+      if (!opened.ok) return { ...unopened, refusals: opened.errors }
+      return { ...listing, gradesFile: choice.value, progress: progressOf(opened.value.slots()) }
+    })
+    return { sets, privateFiles }
+  }
+
+  function setupView(reviewer: string) {
+    const { sets, privateFiles } = survey(reviewer)
+    return {
+      started: null,
+      reviewer,
+      defaultReviewer: options.defaultReviewer,
+      caution: reviewer === '' ? null : reviewerCaution(reviewer, privateFiles),
+      key: { version: options.manifest.keyVersion, digest: options.manifest.keyDigest },
+      roots: { artifacts: options.artifactsRoot, private: options.privateRoot },
+      sets,
+      preselected: preselectedSetFile(sets),
+    }
+  }
+
+  async function start(request: IncomingMessage, response: ServerResponse): Promise<void> {
+    if (!isJsonRequest(request)) return send(response, 415, { error: 'the bench accepts JSON only' })
+    const body = await readBody(request)
+    if (!body.ok) return send(response, body.status, { error: body.error })
+    // Everything from here to the assignment is synchronous, so two Starts cannot both open a bench.
+    if (bench !== null) {
+      return send(response, 409, { errors: [`the bench is already open on set ${bench.setId} as ${bench.reviewer} — restart live:review to grade another set or under another name`] })
+    }
+    const posted = isRecord(body.value) ? body.value : {}
+    const file = typeof posted.file === 'string' ? posted.file : ''
+    const reviewer = typeof posted.reviewer === 'string' ? posted.reviewer.trim() : ''
+    if (reviewer === '') return send(response, 409, { errors: ['no reviewer is named, and an entry naming no one cannot be saved'] })
+    const set = survey(reviewer).sets.find((candidate) => candidate.file === file)
+    if (set === undefined) return send(response, 409, { errors: [`the artifacts root holds no capture set ${file}`] })
+    if (set.gradesFile === null) return send(response, 409, { errors: set.refusals })
+    const opened = openOn(set.file, reviewer, set.gradesFile.name)
+    if (!opened.ok) return send(response, 409, { errors: opened.errors })
+    bench = opened.value
+    options.onStart?.(bench)
+    return send(response, 200, { setId: bench.setId, reviewer: bench.reviewer, gradesFile: basename(bench.gradesPath) })
+  }
+
+  async function serve(request: IncomingMessage, response: ServerResponse): Promise<void> {
+    const refusal = requestRefusal(request)
+    if (refusal !== null) return send(response, 403, { error: refusal })
+    const method = request.method ?? 'GET'
+    const url = new URL(request.url ?? '/', 'http://127.0.0.1')
+
+    if (url.pathname === '/api/setup') {
+      if (method !== 'GET') return send(response, 405, { error: `${method} is not accepted here` })
+      if (bench !== null) return send(response, 200, { started: { setId: bench.setId, reviewer: bench.reviewer } })
+      return send(response, 200, setupView((url.searchParams.get('reviewer') ?? options.defaultReviewer ?? '').trim()))
+    }
+    if (url.pathname === '/api/start') {
+      if (method !== 'POST') return send(response, 405, { error: `${method} is not accepted here` })
+      return start(request, response)
+    }
+    if (bench !== null) return bench.handle(request, response)
+    if (url.pathname === '/') {
+      if (method !== 'GET') return send(response, 405, { error: `${method} is not accepted here` })
+      response.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' })
+      response.end(options.setupHtml)
+      return
+    }
+    return send(response, 409, { error: 'the bench has not started — choose a set and a reviewer on the setup page, then Start' })
+  }
+
+  return { handle: guarded(serve) }
 }

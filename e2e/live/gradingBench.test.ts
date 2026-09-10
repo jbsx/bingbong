@@ -11,10 +11,8 @@ import {
   emptyDrafts,
   evidenceTrailOf,
   gradesWith,
-  keyDriftOf,
   keyViewFor,
   parseDrafts,
-  resolveReviewer,
   reviewerRefusal,
   sanitizeEditorState,
   slotSummariesOf,
@@ -353,17 +351,6 @@ describe('the drafts sidecar', () => {
 })
 
 describe('whose grades file this is', () => {
-  it('names the reviewer from --reviewer, else from git, and no one when neither says', () => {
-    const git = (name: string | null) => () => name
-    const unasked = (): string | null => {
-      throw new Error('git was asked although --reviewer named someone')
-    }
-    expect(resolveReviewer('Ada', unasked)).toBe('Ada')
-    expect(resolveReviewer(undefined, git('  jaish\n'))).toBe('jaish')
-    expect(resolveReviewer('  ', git(''))).toBeNull()
-    expect(resolveReviewer(undefined, git(null))).toBeNull()
-  })
-
   it('opens a file nobody has reviewed in, or one only this reviewer has', () => {
     expect(reviewerRefusal(fixture().grades, 'reviewer-a')).toBeNull()
     expect(reviewerRefusal(savedGrades(), 'reviewer-a')).toBeNull()
@@ -557,22 +544,5 @@ describe('the key beside the Answer', () => {
     expect(keyViewFor(key, initial.slot, initial.task).pickSources).toEqual([
       { url: 'https://spec.invalid/a', supports: 'the code', passageRef: 'fixture/keys.ts#hunt-a.sources[0]' },
     ])
-  })
-
-  it('refuses to show a key that has moved past the manifest the checks came from', () => {
-    const current = manifest()
-    const edited: LiveKeyManifest = {
-      ...current,
-      tasks: current.tasks.map((task) => (task.huntId === 'hunt-b' && task.stepId === 'initial' ? { ...task, checks: [{ checkId: 'c1', description: 'gives a different date' }] } : task)),
-    }
-    const per = (source: LiveKeyManifest) => (huntId: string): LiveKeyManifest => {
-      if (huntId === 'hunt-z') throw new Error('"hunt-z" is not an approved live-web hunt')
-      return { ...source, tasks: source.tasks.filter((task) => task.huntId === huntId) }
-    }
-
-    expect(keyDriftOf(current, per(current))).toEqual([])
-    expect(keyDriftOf(current, per(edited))).toEqual(['hunt-b/initial: check c1 reads differently in the key than in the manifest — regenerate the manifest with pnpm live:keys'])
-    const stray = { ...current, tasks: [...current.tasks, { ...current.tasks[0], huntId: 'hunt-z' }] }
-    expect(keyDriftOf(stray, per(current))).toEqual(['hunt-z: Error: "hunt-z" is not an approved live-web hunt'])
   })
 })

@@ -1,4 +1,4 @@
-import { execFileSync } from 'node:child_process'
+import { execFileSync, spawn, spawnSync } from 'node:child_process'
 import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync, existsSync } from 'node:fs'
 import { createServer, request as httpRequest, type Server } from 'node:http'
 import { tmpdir } from 'node:os'
@@ -8,7 +8,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import type { PipelineEvent } from '../../src/core/pipeline/events'
 import { digestOf } from './artifacts.ts'
 import { gradesWith, type BenchEditorState, type BenchKey } from './gradingBench.ts'
-import { openGradingBench, type GradingBench } from './gradingBenchServer.ts'
+import { openGradingBench, openGradingSetup, type GradingBench } from './gradingBenchServer.ts'
 import {
   LIVE_GRADING_SCHEMA_VERSION,
   LIVE_KEY_MANIFEST_KIND,
@@ -22,15 +22,17 @@ import {
 import { attemptCapture, captureSet, notReached, sessionCapture, slotOf } from './gradingFixtures.ts'
 import type { LiveAttemptCapture, LiveEventTape } from './types.ts'
 
-// The Grading Bench server (#228), exercised once, end to end, against a
-// fixture capture set on disk: the real handler on a real loopback socket,
-// with no Electron, no model and no browser. The order of the tests is the
-// order a reviewer works in, and later tests read what earlier ones wrote.
-// The facts are invented, as in every grading suite.
+// The Grading Bench server (#228) and the setup page in front of it (#229),
+// exercised end to end against fixture files on disk: the real handlers on a
+// real loopback socket, with no Electron, no model and no browser. The order
+// of the tests in each describe is the order a reviewer works in, and later
+// tests read what earlier ones wrote. The facts are invented, as in every
+// grading suite.
 
 const LIVE_REVIEW = fileURLToPath(new URL('../../scripts/live-review.ts', import.meta.url))
 const LIVE_REPORT = fileURLToPath(new URL('../../scripts/live-report.ts', import.meta.url))
 const PAGE = fileURLToPath(new URL('../../scripts/live-review.html', import.meta.url))
+const SETUP_PAGE = fileURLToPath(new URL('../../scripts/live-review-setup.html', import.meta.url))
 const [major, minor] = process.versions.node.split('.').map(Number)
 const stripsTypes = major! > 22 || (major === 22 && minor! >= 18)
 
@@ -67,6 +69,9 @@ const manifest: LiveKeyManifest = {
     },
   ],
 }
+
+/** The manifest as `pnpm live:keys` writes it, which is what `pnpm live:report` is given. */
+const MANIFEST_TEXT = `${JSON.stringify(manifest, null, 2)}\n`
 
 const keys: Record<string, BenchKey> = {
   'hunt-a': {
@@ -117,6 +122,121 @@ const passing: BenchEditorState = {
   rationale: 'both checks met by the spec page',
 }
 
+/** A complete judgment of b1, which published no Answer. */
+const b1Unsuccessful: BenchEditorState = { status: 'unsuccessful', checks: { c1: { satisfied: false, note: '' } }, support: [], rationale: 'it never answered' }
+
+/**
+ * The fixture capture set, written into `directory` as `setFile` beside its
+ * Session captures: a1 answered, with an event tape and a failure screenshot;
+ * b1 ran and published no Answer; b2 was never reached.
+ */
+function writeFixtureSet(directory: string, setFile: string): LiveGradingInputs {
+  const tape: LiveEventTape = { attemptId: 'a1', turnId: 'turn-a1', events: TAPE_EVENTS }
+  const tapeText = `${JSON.stringify(tape, null, 2)}\n`
+  const screenshot = Buffer.from('not really a png')
+  const a1: LiveAttemptCapture = {
+    ...attemptCapture({ attemptId: 'a1', huntId: 'hunt-a', answer: { at: 20_000, text: 'The widget code is **W-1**.' } }),
+    events: { path: 'events/a1.json', family: 'events', digest: digestOf(tapeText), bytes: Buffer.byteLength(tapeText), complete: true },
+  }
+  const b1 = attemptCapture({ attemptId: 'b1', huntId: 'hunt-b', order: 1, answer: null, terminal: null })
+  const b2 = notReached({ attemptId: 'b2', huntId: 'hunt-b', order: 2, parentAttemptId: 'b1', reason: 'the Run never ended, so no follow-up was sent' })
+  const screenshotName = 'logs/run-trace-run-a1-turn-x-1.png'
+  const sessionA = sessionCapture({
+    captureId: 'capture-hunt-a',
+    huntId: 'hunt-a',
+    attempts: [a1],
+    setId: 'set-1',
+    artifacts: [{ path: screenshotName, family: 'screenshot', digest: digestOf(screenshot), bytes: screenshot.length, complete: true }],
+  })
+  const sessionB = sessionCapture({ captureId: 'capture-hunt-b', huntId: 'hunt-b', attempts: [b1, b2], setId: 'set-1' })
+  const set = captureSet({ slots: [a1, b1, b2].map(slotOf), sessions: [sessionA, sessionB] })
+
+  writeFileSync(join(directory, setFile), `${JSON.stringify(set, null, 2)}\n`)
+  for (const session of [sessionA, sessionB]) {
+    mkdirSync(join(directory, session.captureId, 'events'), { recursive: true })
+    mkdirSync(join(directory, session.captureId, 'logs'), { recursive: true })
+    writeFileSync(join(directory, session.captureId, 'capture.json'), `${JSON.stringify(session, null, 2)}\n`)
+  }
+  writeFileSync(join(directory, 'capture-hunt-a', 'events', 'a1.json'), tapeText)
+  writeFileSync(join(directory, 'capture-hunt-a', screenshotName), screenshot)
+  return { set, sessions: [sessionA, sessionB], manifest }
+}
+
+/** Another reviewer's finished Grade: a1 a useful partial with the cable check failed, b1 unsuccessful. */
+function reviewerBGrades(inputs: LiveGradingInputs): LiveGrades {
+  const { byAttemptId } = indexAttempts(inputs.sessions)
+  const slotOfId = (attemptId: string) => {
+    const slot = inputs.set.slots.find((candidate) => candidate.attemptId === attemptId)!
+    return { slot, dispatched: byAttemptId.get(attemptId), task: manifest.tasks.find((task) => task.huntId === slot.huntId && task.stepId === slot.stepId)! }
+  }
+  let other: LiveGrades = initializeLiveGrades(inputs)
+  for (const [attemptId, state] of [
+    ['a1', { status: 'useful_partial', checks: { c1: { satisfied: true, note: '' }, c2: { satisfied: false, note: 'mentions the old cable' } }, support: [], rationale: 'the cable slip costs the pass' }],
+    ['b1', { status: 'unsuccessful', checks: { c1: { satisfied: false, note: '' } }, support: [], rationale: 'no Answer' }],
+  ] as const) {
+    const next = gradesWith(state as BenchEditorState, slotOfId(attemptId), other, inputs, 'reviewer-b', REVIEWED_AT)
+    if (!next.ok) throw new Error(next.errors.join('\n'))
+    other = next.value
+  }
+  return other
+}
+
+function listen(handler: GradingBench['handle']): Promise<{ server: Server; port: number }> {
+  return new Promise((resolve) => {
+    const created = createServer(handler)
+    created.listen(0, '127.0.0.1', () => {
+      const address = created.address()
+      resolve({ server: created, port: typeof address === 'object' && address !== null ? address.port : 0 })
+    })
+  })
+}
+
+function close(server: Server): Promise<void> {
+  return new Promise((resolve) => server.close(() => resolve()))
+}
+
+function request(
+  port: number,
+  method: string,
+  path: string,
+  body?: unknown,
+  headers: Record<string, string> = {},
+  // The bodies are the page's JSON, asserted field by field below; a typed
+  // mirror of every view would only restate the server.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+): Promise<{ status: number; text: string; json: () => any }> {
+  return new Promise((resolve, reject) => {
+    const payload = body === undefined ? undefined : JSON.stringify(body)
+    const outgoing = httpRequest(
+      {
+        host: '127.0.0.1',
+        port,
+        method,
+        path,
+        headers: { ...(payload === undefined ? {} : { 'content-type': 'application/json' }), ...headers },
+      },
+      (response) => {
+        const chunks: Buffer[] = []
+        response.on('data', (chunk: Buffer) => chunks.push(chunk))
+        response.on('end', () => {
+          const text = Buffer.concat(chunks).toString('utf8')
+          resolve({ status: response.statusCode ?? 0, text, json: () => JSON.parse(text) })
+        })
+      },
+    )
+    outgoing.on('error', reject)
+    if (payload !== undefined) outgoing.write(payload)
+    outgoing.end()
+  })
+}
+
+function filesUnder(root: string): string[] {
+  return readdirSync(root, { recursive: true, encoding: 'utf8' })
+    .filter((name) => statSync(join(root, name)).isFile())
+    .map((name) => relative(root, join(root, name)))
+    .sort()
+}
+
 describe('the Grading Bench server', () => {
   let dir: string
   let paths: { capture: string; keys: string; grades: string; compare: string; drafts: string }
@@ -129,7 +249,7 @@ describe('the Grading Bench server', () => {
   function open(overrides: Partial<Parameters<typeof openGradingBench>[0]> = {}) {
     return openGradingBench({
       capturePath: paths.capture,
-      keysPath: paths.keys,
+      manifest,
       gradesPath: paths.grades,
       comparePath: paths.compare,
       reviewer: 'reviewer-a',
@@ -140,81 +260,11 @@ describe('the Grading Bench server', () => {
     })
   }
 
-  function listen(handler: GradingBench['handle']): Promise<{ server: Server; port: number }> {
-    return new Promise((resolve) => {
-      const created = createServer(handler)
-      created.listen(0, '127.0.0.1', () => {
-        const address = created.address()
-        resolve({ server: created, port: typeof address === 'object' && address !== null ? address.port : 0 })
-      })
-    })
-  }
-
-  function call(
-    method: string,
-    path: string,
-    body?: unknown,
-    headers: Record<string, string> = {},
-    onPort = port,
-    // The bodies are the page's JSON, asserted field by field below; a typed
-    // mirror of every view would only restate the server.
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  ): Promise<{ status: number; text: string; json: () => any }> {
-    return new Promise((resolve, reject) => {
-      const payload = body === undefined ? undefined : JSON.stringify(body)
-      const outgoing = httpRequest(
-        {
-          host: '127.0.0.1',
-          port: onPort,
-          method,
-          path,
-          headers: { ...(payload === undefined ? {} : { 'content-type': 'application/json' }), ...headers },
-        },
-        (response) => {
-          const chunks: Buffer[] = []
-          response.on('data', (chunk: Buffer) => chunks.push(chunk))
-          response.on('end', () => {
-            const text = Buffer.concat(chunks).toString('utf8')
-            resolve({ status: response.statusCode ?? 0, text, json: () => JSON.parse(text) })
-          })
-        },
-      )
-      outgoing.on('error', reject)
-      if (payload !== undefined) outgoing.write(payload)
-      outgoing.end()
-    })
-  }
-
-  function filesUnder(root: string): string[] {
-    return readdirSync(root, { recursive: true, encoding: 'utf8' })
-      .filter((name) => statSync(join(root, name)).isFile())
-      .map((name) => relative(root, join(root, name)))
-      .sort()
-  }
+  const call = (method: string, path: string, body?: unknown, headers: Record<string, string> = {}, onPort = port) => request(onPort, method, path, body, headers)
 
   beforeAll(async () => {
     dir = mkdtempSync(join(tmpdir(), 'bingbong-grading-bench-'))
-    const tape: LiveEventTape = { attemptId: 'a1', turnId: 'turn-a1', events: TAPE_EVENTS }
-    const tapeText = `${JSON.stringify(tape, null, 2)}\n`
-    const screenshot = Buffer.from('not really a png')
-    const a1: LiveAttemptCapture = {
-      ...attemptCapture({ attemptId: 'a1', huntId: 'hunt-a', answer: { at: 20_000, text: 'The widget code is **W-1**.' } }),
-      events: { path: 'events/a1.json', family: 'events', digest: digestOf(tapeText), bytes: Buffer.byteLength(tapeText), complete: true },
-    }
-    const b1 = attemptCapture({ attemptId: 'b1', huntId: 'hunt-b', order: 1, answer: null, terminal: null })
-    const b2 = notReached({ attemptId: 'b2', huntId: 'hunt-b', order: 2, parentAttemptId: 'b1', reason: 'the Run never ended, so no follow-up was sent' })
-    const screenshotName = 'logs/run-trace-run-a1-turn-x-1.png'
-    const sessionA = sessionCapture({
-      captureId: 'capture-hunt-a',
-      huntId: 'hunt-a',
-      attempts: [a1],
-      setId: 'set-1',
-      artifacts: [{ path: screenshotName, family: 'screenshot', digest: digestOf(screenshot), bytes: screenshot.length, complete: true }],
-    })
-    const sessionB = sessionCapture({ captureId: 'capture-hunt-b', huntId: 'hunt-b', attempts: [b1, b2], setId: 'set-1' })
-    const set = captureSet({ slots: [a1, b1, b2].map(slotOf), sessions: [sessionA, sessionB] })
-    inputs = { set, sessions: [sessionA, sessionB], manifest }
-
+    inputs = writeFixtureSet(dir, 'capture-set.json')
     paths = {
       capture: join(dir, 'capture-set.json'),
       keys: join(dir, 'private', 'key-manifest.json'),
@@ -222,34 +272,9 @@ describe('the Grading Bench server', () => {
       compare: join(dir, 'private', 'set-1-grades-reviewer-b.json'),
       drafts: join(dir, 'private', 'set-1-grades-reviewer-a.drafts.json'),
     }
-    writeFileSync(paths.capture, `${JSON.stringify(set, null, 2)}\n`)
-    for (const session of [sessionA, sessionB]) {
-      mkdirSync(join(dir, session.captureId, 'events'), { recursive: true })
-      mkdirSync(join(dir, session.captureId, 'logs'), { recursive: true })
-      writeFileSync(join(dir, session.captureId, 'capture.json'), `${JSON.stringify(session, null, 2)}\n`)
-    }
-    writeFileSync(join(dir, 'capture-hunt-a', 'events', 'a1.json'), tapeText)
-    writeFileSync(join(dir, 'capture-hunt-a', screenshotName), screenshot)
     mkdirSync(join(dir, 'private'))
-    writeFileSync(paths.keys, `${JSON.stringify(manifest, null, 2)}\n`)
-
-    // Another reviewer's finished Grade: a1 a useful partial with the cable
-    // check failed, b1 unsuccessful.
-    const { byAttemptId } = indexAttempts(inputs.sessions)
-    const slotOfId = (attemptId: string) => {
-      const slot = set.slots.find((candidate) => candidate.attemptId === attemptId)!
-      return { slot, dispatched: byAttemptId.get(attemptId), task: manifest.tasks.find((task) => task.huntId === slot.huntId && task.stepId === slot.stepId)! }
-    }
-    let other: LiveGrades = initializeLiveGrades(inputs)
-    for (const [attemptId, state] of [
-      ['a1', { status: 'useful_partial', checks: { c1: { satisfied: true, note: '' }, c2: { satisfied: false, note: 'mentions the old cable' } }, support: [], rationale: 'the cable slip costs the pass' }],
-      ['b1', { status: 'unsuccessful', checks: { c1: { satisfied: false, note: '' } }, support: [], rationale: 'no Answer' }],
-    ] as const) {
-      const next = gradesWith(state as BenchEditorState, slotOfId(attemptId), other, inputs, 'reviewer-b', REVIEWED_AT)
-      if (!next.ok) throw new Error(next.errors.join('\n'))
-      other = next.value
-    }
-    writeFileSync(paths.compare, `${JSON.stringify(other, null, 2)}\n`)
+    writeFileSync(paths.keys, MANIFEST_TEXT)
+    writeFileSync(paths.compare, `${JSON.stringify(reviewerBGrades(inputs), null, 2)}\n`)
 
     filesBefore = filesUnder(dir)
     const opened = open()
@@ -259,7 +284,7 @@ describe('the Grading Bench server', () => {
   })
 
   afterAll(async () => {
-    await new Promise<void>((resolve) => server.close(() => resolve()))
+    await close(server)
     rmSync(dir, { recursive: true, force: true })
   })
 
@@ -270,7 +295,7 @@ describe('the Grading Bench server', () => {
     expect(readFileSync(paths.compare)).toEqual(before)
   })
 
-  it('refuses a --compare file holding this reviewer’s own reviews', () => {
+  it('refuses a comparison file holding this reviewer’s own reviews', () => {
     const refused = open({ reviewer: 'reviewer-b', gradesPath: join(dir, 'private', 'set-1-grades-reviewer-b-again.json') })
     expect(refused.ok ? [] : refused.errors.join(' ')).toContain('compare against another reviewer')
   })
@@ -351,7 +376,7 @@ describe('the Grading Bench server', () => {
       const view = (await call('GET', '/api/attempt/a1', undefined, {}, second.port)).json()
       expect(view.editor).toEqual({ source: 'draft', state: draft })
     } finally {
-      await new Promise<void>((resolve) => second.server.close(() => resolve()))
+      await close(second.server)
     }
   })
 
@@ -362,7 +387,7 @@ describe('the Grading Bench server', () => {
   })
 
   it('saves a complete entry for an attempt with no Answer', async () => {
-    const response = await call('POST', '/api/grades/b1', { state: { status: 'unsuccessful', checks: { c1: { satisfied: false, note: '' } }, support: [], rationale: 'it never answered' } })
+    const response = await call('POST', '/api/grades/b1', { state: b1Unsuccessful })
     expect(response.status, response.text).toBe(200)
     const written = JSON.parse(readFileSync(paths.grades, 'utf8'))
     expect(parseLiveGrades(written, inputs).ok).toBe(true)
@@ -422,19 +447,164 @@ describe('the Grading Bench server', () => {
     const added = filesUnder(dir).filter((name) => !filesBefore.includes(name))
     expect(added).toEqual([relative(dir, paths.drafts), relative(dir, paths.grades)].sort())
   })
+})
 
-  it.skipIf(!stripsTypes)('refuses to start without every input named explicitly', () => {
-    let status = 0
-    let stderr = ''
+describe('the setup page in front of the bench', () => {
+  let root: string
+  let privateRoot: string
+  let server: Server
+  let port: number
+  let filesBefore: string[]
+  const started: GradingBench[] = []
+
+  const call = (method: string, path: string, body?: unknown, headers: Record<string, string> = {}) => request(port, method, path, body, headers)
+
+  beforeAll(async () => {
+    // The two fixed roots, in miniature: a measured set beside the preflight
+    // record and a rehearsal, and another reviewer's grades already filed.
+    root = mkdtempSync(join(tmpdir(), 'bingbong-grading-setup-'))
+    const artifactsRoot = join(root, 'artifacts')
+    privateRoot = join(root, 'private')
+    mkdirSync(artifactsRoot)
+    mkdirSync(privateRoot)
+    const inputs = writeFixtureSet(artifactsRoot, 'set-1.json')
+    writeFileSync(join(artifactsRoot, 'preflight-2026-09-10.json'), JSON.stringify({ kind: 'bingbong.live.source-preflight', observedAt: '2026-09-10T00:00:00.000Z', observations: [] }))
+    writeFileSync(join(artifactsRoot, 'rehearsal.json'), JSON.stringify({ ...inputs.set, setId: 'rehearsal', mode: 'verification' }))
+    writeFileSync(join(privateRoot, 'key-manifest.json'), MANIFEST_TEXT)
+    writeFileSync(join(privateRoot, 'set-1-grades-reviewer-b.json'), `${JSON.stringify(reviewerBGrades(inputs), null, 2)}\n`)
+    filesBefore = filesUnder(root)
+
+    const setup = openGradingSetup({
+      artifactsRoot,
+      privateRoot,
+      manifest,
+      keyFor: (huntId) => keys[huntId],
+      defaultReviewer: 'reviewer-a',
+      setupHtml: readFileSync(SETUP_PAGE, 'utf8'),
+      benchHtml: readFileSync(PAGE, 'utf8'),
+      now: () => new Date(REVIEWED_AT),
+      onStart: (bench) => started.push(bench),
+    })
+    ;({ server, port } = await listen(setup.handle))
+  })
+
+  afterAll(async () => {
+    await close(server)
+    rmSync(root, { recursive: true, force: true })
+  })
+
+  it('serves the setup page and nothing of the bench until Start, and only to this machine’s own page', async () => {
+    const page = await call('GET', '/')
+    expect(page.status).toBe(200)
+    expect(page.text).toContain('Start')
+    expect(page.text).not.toContain('Loading the capture set')
+
+    expect((await call('GET', '/api/set')).status).toBe(409)
+    expect((await call('GET', '/api/attempt/a1')).status).toBe(409)
+    expect((await call('GET', '/api/setup', undefined, { host: 'evil.invalid' })).status).toBe(403)
+    expect((await call('POST', '/api/start', { file: 'set-1.json', reviewer: 'reviewer-a' }, { origin: 'https://evil.invalid' })).status).toBe(403)
+    expect((await call('POST', '/api/start', { file: 'set-1.json', reviewer: 'reviewer-a' }, { 'content-type': 'text/plain' })).status).toBe(415)
+    expect(started).toEqual([])
+  })
+
+  it('proposes each capture set with the reviewer’s grades file and progress, preselects the one to grade, and shows the key', async () => {
+    const response = await call('GET', '/api/setup')
+    expect(response.status).toBe(200)
+    const view = response.json()
+
+    expect(view.started).toBeNull()
+    expect(view.reviewer).toBe('reviewer-a')
+    expect(view.key).toEqual({ version: 'k1', digest: manifest.keyDigest })
+    expect(view.sets.map((set: { file: string }) => set.file).sort()).toEqual(['rehearsal.json', 'set-1.json'])
+    expect(view.sets.find((set: { file: string }) => set.file === 'set-1.json')).toMatchObject({
+      setId: 'set-1',
+      mode: 'measured',
+      state: 'complete',
+      slots: 3,
+      refusals: [],
+      gradesFile: { name: 'set-1-grades-reviewer-a.json', resumed: false },
+      progress: { graded: 0, drafted: 0, pending: 2, notReached: 1 },
+    })
+    expect(view.sets.find((set: { file: string }) => set.file === 'rehearsal.json').refusals.join(' ')).toContain('verification')
+    expect(view.preselected).toBe('set-1.json')
+    // reviewer-a has nothing filed while reviewer-b has: the typo guard names who does.
+    expect(view.caution).toContain('reviewer-b')
+  })
+
+  it('follows the name typed on the page: another reviewer resumes their own file, found by what it holds', async () => {
+    const view = (await call('GET', `/api/setup?reviewer=${encodeURIComponent('reviewer-b')}`)).json()
+    expect(view.reviewer).toBe('reviewer-b')
+    expect(view.caution).toBeNull()
+    expect(view.sets.find((set: { file: string }) => set.file === 'set-1.json')).toMatchObject({
+      gradesFile: { name: 'set-1-grades-reviewer-b.json', resumed: true },
+      progress: { graded: 2, drafted: 0, pending: 0, notReached: 1 },
+    })
+    expect(view.preselected).toBeNull()
+  })
+
+  it('refuses to start a set it lists as unavailable, or with no reviewer, and writes nothing before Start', async () => {
+    const rehearsal = await call('POST', '/api/start', { file: 'rehearsal.json', reviewer: 'reviewer-a' })
+    expect(rehearsal.status).toBe(409)
+    expect(rehearsal.json().errors.join(' ')).toContain('verification')
+    expect((await call('POST', '/api/start', { file: 'set-1.json', reviewer: '  ' })).status).toBe(409)
+    expect((await call('POST', '/api/start', { file: 'no-such-set.json', reviewer: 'reviewer-a' })).status).toBe(409)
+
+    expect(started).toEqual([])
+    expect(filesUnder(root)).toEqual(filesBefore)
+  })
+
+  it.skipIf(!stripsTypes)('opens the bench on the chosen set as the reviewer named, and what it saves passes pnpm live:report', async () => {
+    const response = await call('POST', '/api/start', { file: 'set-1.json', reviewer: ' reviewer-a ' })
+    expect(response.status, response.text).toBe(200)
+    expect(response.json()).toEqual({ setId: 'set-1', reviewer: 'reviewer-a', gradesFile: 'set-1-grades-reviewer-a.json' })
+    expect(started.map((bench) => [bench.setId, bench.reviewer])).toEqual([['set-1', 'reviewer-a']])
+
+    // The bench, unchanged, now answers — and the setup is closed: the name is fixed for this bench.
+    expect((await call('GET', '/')).text).toContain('Loading the capture set')
+    expect((await call('GET', '/api/set')).json()).toMatchObject({ setId: 'set-1', reviewer: 'reviewer-a', gradesFile: 'set-1-grades-reviewer-a.json' })
+    expect((await call('GET', '/api/setup')).json()).toEqual({ started: { setId: 'set-1', reviewer: 'reviewer-a' } })
+    expect((await call('POST', '/api/start', { file: 'set-1.json', reviewer: 'reviewer-c' })).status).toBe(409)
+
+    expect((await call('POST', '/api/grades/b1', { state: b1Unsuccessful })).status).toBe(200)
+    expect(filesUnder(root).filter((name) => !filesBefore.includes(name))).toEqual([join('private', 'set-1-grades-reviewer-a.json')])
+
+    const gradesPath = join(privateRoot, 'set-1-grades-reviewer-a.json')
+    expect(JSON.parse(readFileSync(gradesPath, 'utf8')).entries.find((entry: { attemptId: string }) => entry.attemptId === 'b1').reviewer).toBe('reviewer-a')
+    const report = spawnSync(
+      process.execPath,
+      [LIVE_REPORT, `--capture=${join(root, 'artifacts', 'set-1.json')}`, `--keys=${join(privateRoot, 'key-manifest.json')}`, `--grades=${gradesPath}`, '--format=json'],
+      { encoding: 'utf8' },
+    )
+    expect(report.status, report.stderr).toBe(0)
+  })
+})
+
+describe.skipIf(!stripsTypes)('pnpm live:review', () => {
+  it('takes a path flag as an unknown option', () => {
+    const refused = spawnSync(process.execPath, [LIVE_REVIEW, '--capture=e2e/live/artifacts/pilot-2.json', '--no-open'], { encoding: 'utf8' })
+    expect(refused.status).toBe(1)
+    expect(refused.stderr).toContain('unknown option --capture')
+  })
+
+  it('starts on loopback with no path flags, on the port it is given, without opening a browser', async () => {
+    const child = spawn(process.execPath, [LIVE_REVIEW, '--port', '0', '--no-open'], { stdio: ['ignore', 'pipe', 'pipe'] })
     try {
-      execFileSync(process.execPath, [LIVE_REVIEW, `--capture=${paths.capture}`, '--no-open'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })
-    } catch (error) {
-      const failure = error as { status?: number; stderr?: string }
-      status = failure.status ?? -1
-      stderr = failure.stderr ?? ''
+      const url = await new Promise<string>((resolve, reject) => {
+        let stdout = ''
+        let stderr = ''
+        child.stdout.on('data', (chunk: Buffer) => {
+          stdout += chunk.toString('utf8')
+          const match = /(http:\/\/127\.0\.0\.1:\d+\/)/.exec(stdout)
+          if (match !== null) resolve(match[1])
+        })
+        child.stderr.on('data', (chunk: Buffer) => (stderr += chunk.toString('utf8')))
+        child.on('exit', (code) => reject(new Error(`live:review exited ${String(code)} before listening: ${stderr}`)))
+      })
+      const setup = await request(Number(new URL(url).port), 'GET', '/api/setup')
+      expect(setup.status).toBe(200)
+      expect(setup.json().started).toBeNull()
+    } finally {
+      child.kill()
     }
-    expect(status).toBe(1)
-    expect(stderr).toContain('--keys')
-    expect(stderr).toContain('--grades')
   })
 })

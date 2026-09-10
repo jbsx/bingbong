@@ -34,7 +34,7 @@
 
 import { parseBlockerMarker, type BlockerSignal } from '../../src/core/browser/blockerNudge.ts'
 import type { PipelineEvent } from '../../src/core/pipeline/events'
-import { redactedMessage, type Validation } from './artifacts.ts'
+import type { Validation } from './artifacts.ts'
 import {
   answerBindingOf,
   indexAttempts,
@@ -451,14 +451,6 @@ export function parseDrafts(
 // ---------------------------------------------------------------------------
 // Whose grades file this is
 
-/** `--reviewer` when given, else `git config user.name` (asked only then), else no one. */
-export function resolveReviewer(flag: string | undefined, gitUserName: () => string | null): string | null {
-  const named = flag?.trim()
-  if (named) return named
-  const fromGit = gitUserName()?.trim()
-  return fromGit ? fromGit : null
-}
-
 /**
  * Why the bench will not write into this grades file, or null when it
  * may. One grades file per reviewer: two people's judgments in one file
@@ -467,10 +459,7 @@ export function resolveReviewer(flag: string | undefined, gitUserName: () => str
 export function reviewerRefusal(grades: LiveGrades, reviewer: string): string | null {
   const others = [...new Set(grades.entries.map((entry) => entry.reviewer).filter((name) => name !== '' && name !== reviewer))]
   if (others.length === 0) return null
-  return (
-    `the grades file holds reviews by ${others.join(', ')}, and the bench writes only ${reviewer}'s — ` +
-    'give --grades a file of your own, and pass theirs as --compare'
-  )
+  return `the grades file holds reviews by ${others.join(', ')}, and the bench writes only ${reviewer}'s — one reviewer, one grades file`
 }
 
 // ---------------------------------------------------------------------------
@@ -766,45 +755,4 @@ export function keyViewFor(key: BenchKey, slot: LiveScheduledAttempt, task: Live
     followUpDelta: key.followUpDelta ?? null,
     pickSources: slot.relation === 'initial' ? base : [...delta, ...base],
   }
-}
-
-/**
- * Where the key the bench would show has moved past the manifest the checks
- * came from. The page puts key prose beside manifest check descriptions; if
- * a key was revised after the manifest was generated the two would quietly
- * disagree, and the reviewer would judge one against the other.
- */
-export function keyDriftOf(manifest: LiveKeyManifest, currentFor: (huntId: string) => LiveKeyManifest): string[] {
-  const problems: string[] = []
-  const regenerate = 'regenerate the manifest with pnpm live:keys'
-  for (const huntId of [...new Set(manifest.tasks.map((task) => task.huntId))]) {
-    let current: LiveKeyManifest
-    try {
-      current = currentFor(huntId)
-    } catch (error) {
-      problems.push(`${huntId}: ${redactedMessage(error)}`)
-      continue
-    }
-    for (const task of manifest.tasks.filter((candidate) => candidate.huntId === huntId)) {
-      const where = `${huntId}/${task.stepId}`
-      const now = current.tasks.find((candidate) => candidate.stepId === task.stepId)
-      if (now === undefined) {
-        problems.push(`${where}: the key no longer describes this step — ${regenerate}`)
-        continue
-      }
-      for (const check of task.checks) {
-        const described = now.checks.find((candidate) => candidate.checkId === check.checkId)
-        if (described === undefined) problems.push(`${where}: check ${check.checkId} is no longer required by the key — ${regenerate}`)
-        else if (described.description !== check.description) {
-          problems.push(`${where}: check ${check.checkId} reads differently in the key than in the manifest — ${regenerate}`)
-        }
-      }
-      for (const check of now.checks) {
-        if (!task.checks.some((candidate) => candidate.checkId === check.checkId)) {
-          problems.push(`${where}: the key requires check ${check.checkId}, which the manifest lacks — ${regenerate}`)
-        }
-      }
-    }
-  }
-  return problems
 }
