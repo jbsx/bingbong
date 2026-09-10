@@ -35,6 +35,8 @@ const PAGE = fileURLToPath(new URL('../../scripts/live-review.html', import.meta
 const SETUP_PAGE = fileURLToPath(new URL('../../scripts/live-review-setup.html', import.meta.url))
 const [major, minor] = process.versions.node.split('.').map(Number)
 const stripsTypes = major! > 22 || (major === 22 && minor! >= 18)
+/** The header the bench page names its set in, as `scripts/live-review.html` sends it. */
+const SET_HEADER = 'x-grading-set'
 
 const manifest: LiveKeyManifest = {
   kind: LIVE_KEY_MANIFEST_KIND,
@@ -128,9 +130,10 @@ const b1Unsuccessful: BenchEditorState = { status: 'unsuccessful', checks: { c1:
 /**
  * The fixture capture set, written into `directory` as `setFile` beside its
  * Session captures: a1 answered, with an event tape and a failure screenshot;
- * b1 ran and published no Answer; b2 was never reached.
+ * b1 ran and published no Answer; b2 was never reached. A second set in the
+ * same directory takes another `setId`, and keeps the same attempt ids.
  */
-function writeFixtureSet(directory: string, setFile: string): LiveGradingInputs {
+function writeFixtureSet(directory: string, setFile: string, setId = 'set-1'): LiveGradingInputs {
   const tape: LiveEventTape = { attemptId: 'a1', turnId: 'turn-a1', events: TAPE_EVENTS }
   const tapeText = `${JSON.stringify(tape, null, 2)}\n`
   const screenshot = Buffer.from('not really a png')
@@ -141,15 +144,16 @@ function writeFixtureSet(directory: string, setFile: string): LiveGradingInputs 
   const b1 = attemptCapture({ attemptId: 'b1', huntId: 'hunt-b', order: 1, answer: null, terminal: null })
   const b2 = notReached({ attemptId: 'b2', huntId: 'hunt-b', order: 2, parentAttemptId: 'b1', reason: 'the Run never ended, so no follow-up was sent' })
   const screenshotName = 'logs/run-trace-run-a1-turn-x-1.png'
+  const captureIdPrefix = setId === 'set-1' ? 'capture' : `capture-${setId}`
   const sessionA = sessionCapture({
-    captureId: 'capture-hunt-a',
+    captureId: `${captureIdPrefix}-hunt-a`,
     huntId: 'hunt-a',
     attempts: [a1],
-    setId: 'set-1',
+    setId,
     artifacts: [{ path: screenshotName, family: 'screenshot', digest: digestOf(screenshot), bytes: screenshot.length, complete: true }],
   })
-  const sessionB = sessionCapture({ captureId: 'capture-hunt-b', huntId: 'hunt-b', attempts: [b1, b2], setId: 'set-1' })
-  const set = captureSet({ slots: [a1, b1, b2].map(slotOf), sessions: [sessionA, sessionB] })
+  const sessionB = sessionCapture({ captureId: `${captureIdPrefix}-hunt-b`, huntId: 'hunt-b', attempts: [b1, b2], setId })
+  const set = captureSet({ setId, slots: [a1, b1, b2].map(slotOf), sessions: [sessionA, sessionB] })
 
   writeFileSync(join(directory, setFile), `${JSON.stringify(set, null, 2)}\n`)
   for (const session of [sessionA, sessionB]) {
@@ -157,8 +161,8 @@ function writeFixtureSet(directory: string, setFile: string): LiveGradingInputs 
     mkdirSync(join(directory, session.captureId, 'logs'), { recursive: true })
     writeFileSync(join(directory, session.captureId, 'capture.json'), `${JSON.stringify(session, null, 2)}\n`)
   }
-  writeFileSync(join(directory, 'capture-hunt-a', 'events', 'a1.json'), tapeText)
-  writeFileSync(join(directory, 'capture-hunt-a', screenshotName), screenshot)
+  writeFileSync(join(directory, sessionA.captureId, 'events', 'a1.json'), tapeText)
+  writeFileSync(join(directory, sessionA.captureId, screenshotName), screenshot)
   return { set, sessions: [sessionA, sessionB], manifest }
 }
 
@@ -596,7 +600,7 @@ describe('the setup page in front of the bench', () => {
     const unsaved = await call('GET', '/api/attempt/b1')
     expect(unsaved.json().comparison).toBeNull()
     expect(unsaved.text).not.toContain('reviewer-b')
-    const saved = await call('POST', '/api/grades/b1', { state: b1Unsuccessful })
+    const saved = await call('POST', '/api/grades/b1', { state: b1Unsuccessful }, { [SET_HEADER]: 'set-1' })
     expect(saved.status, saved.text).toBe(200)
     expect(saved.json().comparison).toMatchObject({ otherPending: false, reviewer: 'reviewer-b', status: { own: 'unsuccessful', other: 'unsuccessful', agree: true } })
     expect(filesUnder(root).filter((name) => !filesBefore.includes(name))).toEqual([join('private', 'set-1-grades-reviewer-a.json')])
@@ -609,6 +613,146 @@ describe('the setup page in front of the bench', () => {
       { encoding: 'utf8' },
     )
     expect(report.status, report.stderr).toBe(0)
+  })
+})
+
+describe('changing set without restarting', () => {
+  let root: string
+  let privateRoot: string
+  let server: Server
+  let port: number
+  const started: GradingBench[] = []
+  /** Where a1 stood on set-1 when the reviewer followed change set. */
+  const draft: BenchEditorState = { ...passing, rationale: 'half way through set-1' }
+
+  const call = (method: string, path: string, body?: unknown, headers: Record<string, string> = {}) => request(port, method, path, body, headers)
+  const onSet = (setId: string) => ({ [SET_HEADER]: setId })
+  const startOn = (setId: string, reviewer = 'reviewer-a') =>
+    call('POST', '/api/start', { file: `${setId}.json`, reviewer, gradesFile: `${setId}-grades-${reviewer}.json` })
+  const setupSet = (view: { sets: { file: string }[] }, file: string) => view.sets.find((set) => set.file === file)
+  /** set-1's grades file and drafts sidecar, byte for byte. */
+  const set1Files = () => ['set-1-grades-reviewer-a.json', 'set-1-grades-reviewer-a.drafts.json'].map((name) => readFileSync(join(privateRoot, name), 'utf8'))
+
+  beforeAll(async () => {
+    // Two measured sets in one artifacts root, with the same attempt ids: a
+    // page left open on one would otherwise address slots on the other.
+    root = mkdtempSync(join(tmpdir(), 'bingbong-grading-switch-'))
+    const artifactsRoot = join(root, 'artifacts')
+    privateRoot = join(root, 'private')
+    mkdirSync(artifactsRoot)
+    mkdirSync(privateRoot)
+    writeFixtureSet(artifactsRoot, 'set-1.json')
+    writeFixtureSet(artifactsRoot, 'set-2.json', 'set-2')
+
+    const setup = openGradingSetup({
+      artifactsRoot,
+      privateRoot,
+      manifest,
+      keyFor: (huntId) => keys[huntId],
+      defaultReviewer: 'reviewer-a',
+      setupHtml: readFileSync(SETUP_PAGE, 'utf8'),
+      benchHtml: readFileSync(PAGE, 'utf8'),
+      now: () => new Date(REVIEWED_AT),
+      onStart: (bench) => started.push(bench),
+    })
+    ;({ server, port } = await listen(setup.handle))
+  })
+
+  afterAll(async () => {
+    await close(server)
+    rmSync(root, { recursive: true, force: true })
+  })
+
+  it('leaves a set mid-draft through change set, back on the setup page with that set’s progress refreshed', async () => {
+    expect((await startOn('set-1')).status).toBe(200)
+    expect((await call('POST', '/api/grades/b1', { state: b1Unsuccessful }, onSet('set-1'))).status).toBe(200)
+    expect((await call('PUT', '/api/drafts/a1', { state: draft }, onSet('set-1'))).status).toBe(200)
+
+    const left = await call('POST', '/api/change-set', {}, onSet('set-1'))
+    expect(left.status, left.text).toBe(200)
+    expect(left.json()).toEqual({ left: { setId: 'set-1' } })
+
+    // The setup page is back, and the bench is closed.
+    const page = await call('GET', '/')
+    expect(page.text).toContain('Start')
+    expect(page.text).not.toContain('Loading the capture set')
+    expect((await call('GET', '/api/set')).status).toBe(409)
+
+    const view = (await call('GET', '/api/setup')).json()
+    expect(view.started).toBeNull()
+    expect(setupSet(view, 'set-1.json')).toMatchObject({
+      gradesFile: { name: 'set-1-grades-reviewer-a.json', resumed: true },
+      progress: { graded: 1, drafted: 1, pending: 0, notReached: 1 },
+    })
+    expect(setupSet(view, 'set-2.json')).toMatchObject({
+      gradesFile: { name: 'set-2-grades-reviewer-a.json', resumed: false },
+      progress: { graded: 0, drafted: 0, pending: 2, notReached: 1 },
+    })
+
+    // Nothing is open to leave.
+    expect((await call('POST', '/api/change-set', {})).status).toBe(409)
+  })
+
+  it('keeps the reviewer from the first Start: another name is neither proposed nor started', async () => {
+    const view = (await call('GET', `/api/setup?reviewer=${encodeURIComponent('reviewer-c')}`)).json()
+    expect(view).toMatchObject({ reviewer: 'reviewer-a', reviewerLocked: true })
+    expect(setupSet(view, 'set-2.json')).toMatchObject({ gradesFile: { name: 'set-2-grades-reviewer-a.json' } })
+
+    const renamed = await startOn('set-2', 'reviewer-c')
+    expect(renamed.status).toBe(409)
+    expect(renamed.json().errors.join(' ')).toContain('reviewer-a')
+    expect(started.map((bench) => [bench.setId, bench.reviewer])).toEqual([['set-1', 'reviewer-a']])
+    expect(readdirSync(privateRoot).filter((name) => name.startsWith('set-2'))).toEqual([])
+  })
+
+  it('opens a second set in the same process, and the switch leaves the first set’s grades file and drafts sidecar untouched', async () => {
+    const before = set1Files()
+
+    const second = await startOn('set-2')
+    expect(second.status, second.text).toBe(200)
+    expect(second.json()).toEqual({ setId: 'set-2', reviewer: 'reviewer-a', gradesFile: 'set-2-grades-reviewer-a.json' })
+    expect(started.map((bench) => [bench.setId, bench.reviewer])).toEqual([
+      ['set-1', 'reviewer-a'],
+      ['set-2', 'reviewer-a'],
+    ])
+
+    expect((await call('GET', '/api/set', undefined, onSet('set-2'))).json()).toMatchObject({ setId: 'set-2', gradesFile: 'set-2-grades-reviewer-a.json' })
+    // set-1's draft on a1 is set-1's: set-2's a1 starts blank.
+    expect((await call('GET', '/api/attempt/a1', undefined, onSet('set-2'))).json().editor.source).toBe('blank')
+    expect((await call('PUT', '/api/drafts/a1', { state: passing }, onSet('set-2'))).status).toBe(200)
+    expect((await call('POST', '/api/grades/a1', { state: passing }, onSet('set-2'))).status).toBe(200)
+
+    expect(set1Files()).toEqual(before)
+    // A second Start while a bench is open is refused, and says how to switch.
+    expect((await startOn('set-1')).json().errors.join(' ')).toContain('change set')
+  })
+
+  it('refuses a page still showing the set it left, so it cannot write into the set open now', async () => {
+    const draftsPath = join(privateRoot, 'set-2-grades-reviewer-a.drafts.json')
+    const drafts = readFileSync(draftsPath, 'utf8')
+
+    const stale = await call('PUT', '/api/drafts/b1', { state: b1Unsuccessful }, onSet('set-1'))
+    expect(stale.status).toBe(409)
+    expect(stale.json().error).toContain('set-2')
+    expect((await call('GET', '/api/attempt/a1', undefined, onSet('set-1'))).status).toBe(409)
+    // A write that names no set is not trusted to be for this one.
+    expect((await call('PUT', '/api/drafts/b1', { state: b1Unsuccessful })).status).toBe(409)
+    // Nor can that page close the bench someone opened on set-2.
+    expect((await call('POST', '/api/change-set', {}, onSet('set-1'))).status).toBe(409)
+    expect((await call('GET', '/api/set', undefined, onSet('set-2'))).json().setId).toBe('set-2')
+
+    expect(readFileSync(draftsPath, 'utf8')).toBe(drafts)
+  })
+
+  it('restores the draft in progress on re-entering the set it was left in', async () => {
+    const before = set1Files()
+    expect((await call('POST', '/api/change-set', {}, onSet('set-2'))).status).toBe(200)
+    expect((await startOn('set-1')).status).toBe(200)
+
+    const view = (await call('GET', '/api/attempt/a1', undefined, onSet('set-1'))).json()
+    expect(view.editor).toEqual({ source: 'draft', state: draft })
+    expect((await call('GET', '/api/set', undefined, onSet('set-1'))).json().slots.find((slot: { attemptId: string }) => slot.attemptId === 'b1').state).toBe('graded')
+    expect(set1Files()).toEqual(before)
   })
 })
 

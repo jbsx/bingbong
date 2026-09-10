@@ -109,6 +109,7 @@
   <span id="reviewer"></span>
   <span id="files" class="note"></span>
   <span id="compare-note" class="note"></span>
+  <a href="/" id="change-set" class="note" style="margin-left: auto" title="Back to the setup page — your drafts are kept, and this process stays open">change set</a>
 </header>
 <div class="layout">
   <nav>
@@ -158,6 +159,8 @@ function block(title, items) {
 
 async function api(method, path, body, extra) {
   const init = Object.assign({ method, headers: {} }, extra || {})
+  // Sets switch in one process: a bench since opened on another set refuses this page rather than serve it.
+  if (benchSet !== null) init.headers['x-grading-set'] = benchSet
   if (body !== undefined) {
     init.headers['content-type'] = 'application/json'
     init.body = JSON.stringify(body)
@@ -185,6 +188,8 @@ const WALL_TEXT = { challenge: 'challenge-walled', 'network-block': 'network-blo
 // State
 
 let setView = null
+/** The set this page was opened on, named on every request once known. */
+let benchSet = null
 /** The attempt on screen: the server's view, the editable state, and the draft bookkeeping. */
 let current = null
 
@@ -213,6 +218,7 @@ async function refreshSet() {
     return false
   }
   setView = data
+  benchSet = data.setId
   document.getElementById('set-id').textContent = `capture set ${data.setId}`
   document.getElementById('reviewer').replaceChildren('grading as ', el('strong', { text: data.reviewer }))
   document.getElementById('files').textContent = `writes ${data.gradesFile} and ${data.draftsFile}`
@@ -680,6 +686,19 @@ function comparisonPanel(comparison) {
 
 // ---------------------------------------------------------------------------
 
+/** Back to the setup page in the same process. The draft on screen is written first, so re-entering the set restores it. */
+async function changeSet(event) {
+  event.preventDefault()
+  await flushDraft()
+  const { status, data } = await api('POST', '/api/change-set', {})
+  if (status !== 200) {
+    document.getElementById('main').replaceChildren(el('p', { class: 'error', text: data.error || `the set could not be left (HTTP ${status})` }))
+    return
+  }
+  location.assign('/')
+}
+
+document.getElementById('change-set').addEventListener('click', (event) => void changeSet(event))
 window.addEventListener('hashchange', () => void openFromHash())
 window.addEventListener('pagehide', () => void flushDraft())
 refreshSet().then((loaded) => {

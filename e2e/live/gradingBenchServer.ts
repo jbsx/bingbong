@@ -577,7 +577,7 @@ export function openGradingBench(options: GradingBenchOptions): Validation<Gradi
         if (!next.ok) return send(response, 422, { errors: next.errors })
         const onDisk = existsSync(gradesPath) ? readFileSync(gradesPath, 'utf8') : null
         if (onDisk !== gradesText) {
-          return send(response, 409, { errors: ['the grades file changed on disk after the bench opened it — restart the bench before saving, so nothing written there is lost'] })
+          return send(response, 409, { errors: ['the grades file changed on disk after the bench opened it — follow change set and start this set again before saving, so nothing written there is lost'] })
         }
         const text = `${JSON.stringify(next.value, null, 2)}\n`
         writeFileAtomic(gradesPath, text)
@@ -653,14 +653,32 @@ function readRoot(root: string): RootFile[] {
 }
 
 /**
+ * The header the bench page names its set in. Sets switch within one process
+ * (#231), and two sets can schedule the same attempt ids, so a page still open
+ * on a set that was left must never be served by the bench open now.
+ */
+const SET_HEADER = 'x-grading-set'
+
+/** Why a request is not for the set whose bench is open, or null. A page names its set once it knows it; a change must name one. */
+function otherSetRefusal(request: IncomingMessage, method: string, setId: string): string | null {
+  const named = request.headers[SET_HEADER]
+  if (typeof named === 'string') return named === setId ? null : `this page is on set ${named}, and the bench is now open on set ${setId} — reload the page`
+  return method === 'GET' ? null : `a change has to name its set, and this page names none while the bench is open on set ${setId} — reload the page`
+}
+
+/**
  * The setup door: a page that proposes, from the two roots, every capture
  * set with the grades file this reviewer's work goes into, and an open bench
  * only once the reviewer presses Start. Until then it reads and never writes;
- * after, it hands every request to that bench, and the set and the reviewer
- * are fixed until the process ends.
+ * after, it hands every request for that set to that bench. Change set (#231)
+ * closes the bench and brings the setup back, read afresh, so the next Start
+ * opens another set in the same process. The set is fixed while its bench is
+ * open; the reviewer from the first Start until the process ends.
  */
 export function openGradingSetup(options: GradingSetupOptions): GradingSetup {
   let bench: GradingBench | null = null
+  /** The name the first Start opened a bench under, which every later Start keeps. */
+  let lockedReviewer: string | null = null
 
   function openOn(setFile: string, reviewer: string, gradesFile: string, comparisonFile: string | null): Validation<GradingBench> {
     return openGradingBench({
@@ -709,6 +727,7 @@ export function openGradingSetup(options: GradingSetupOptions): GradingSetup {
     return {
       started: null,
       reviewer,
+      reviewerLocked: lockedReviewer !== null,
       defaultReviewer: options.defaultReviewer,
       caution: reviewer === '' ? null : reviewerCaution(reviewer, privateFiles),
       key: { version: options.manifest.keyVersion, digest: options.manifest.keyDigest },
@@ -724,12 +743,15 @@ export function openGradingSetup(options: GradingSetupOptions): GradingSetup {
     if (!body.ok) return send(response, body.status, { error: body.error })
     // Everything from here to the assignment is synchronous, so two Starts cannot both open a bench.
     if (bench !== null) {
-      return send(response, 409, { errors: [`the bench is already open on set ${bench.setId} as ${bench.reviewer} — restart live:review to grade another set or under another name`] })
+      return send(response, 409, { errors: [`the bench is already open on set ${bench.setId} as ${bench.reviewer} — follow change set on the bench to grade another set`] })
     }
     const posted = isRecord(body.value) ? body.value : {}
     const file = typeof posted.file === 'string' ? posted.file : ''
     const reviewer = typeof posted.reviewer === 'string' ? posted.reviewer.trim() : ''
     if (reviewer === '') return send(response, 409, { errors: ['no reviewer is named, and an entry naming no one cannot be saved'] })
+    if (lockedReviewer !== null && reviewer !== lockedReviewer) {
+      return send(response, 409, { errors: [`the reviewer has been ${lockedReviewer} since the first Start, for every set — restart live:review to grade as ${reviewer}`] })
+    }
     const set = survey(reviewer).sets.find((candidate) => candidate.file === file)
     if (set === undefined) return send(response, 409, { errors: [`the artifacts root holds no capture set ${file}`] })
     if (set.gradesFile === null) return send(response, 409, { errors: set.refusals })
@@ -751,6 +773,7 @@ export function openGradingSetup(options: GradingSetupOptions): GradingSetup {
     const opened = openOn(set.file, reviewer, set.gradesFile.name, comparisonFile)
     if (!opened.ok) return send(response, 409, { errors: opened.errors })
     bench = opened.value
+    lockedReviewer = bench.reviewer
     options.onStart?.(bench)
     return send(response, 200, {
       setId: bench.setId,
@@ -769,13 +792,28 @@ export function openGradingSetup(options: GradingSetupOptions): GradingSetup {
     if (url.pathname === '/api/setup') {
       if (method !== 'GET') return send(response, 405, { error: `${method} is not accepted here` })
       if (bench !== null) return send(response, 200, { started: { setId: bench.setId, reviewer: bench.reviewer } })
-      return send(response, 200, setupView((url.searchParams.get('reviewer') ?? options.defaultReviewer ?? '').trim()))
+      return send(response, 200, setupView(lockedReviewer ?? (url.searchParams.get('reviewer') ?? options.defaultReviewer ?? '').trim()))
     }
     if (url.pathname === '/api/start') {
       if (method !== 'POST') return send(response, 405, { error: `${method} is not accepted here` })
       return start(request, response)
     }
-    if (bench !== null) return bench.handle(request, response)
+    if (url.pathname === '/api/change-set') {
+      if (method !== 'POST') return send(response, 405, { error: `${method} is not accepted here` })
+      if (!isJsonRequest(request)) return send(response, 415, { error: 'the bench accepts JSON only' })
+      if (bench === null) return send(response, 409, { error: 'no bench is open to leave — choose a set on the setup page, then Start' })
+      const refusal = otherSetRefusal(request, method, bench.setId)
+      if (refusal !== null) return send(response, 409, { error: refusal })
+      // Nothing is written on the way out: every change is already in the sidecar, and the next Start reads it afresh.
+      const left = bench
+      bench = null
+      return send(response, 200, { left: { setId: left.setId } })
+    }
+    if (bench !== null) {
+      const refusal = otherSetRefusal(request, method, bench.setId)
+      if (refusal !== null) return send(response, 409, { error: refusal })
+      return bench.handle(request, response)
+    }
     if (url.pathname === '/') {
       if (method !== 'GET') return send(response, 405, { error: `${method} is not accepted here` })
       response.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' })
