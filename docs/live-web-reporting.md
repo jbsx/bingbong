@@ -243,8 +243,9 @@ and `e2e/live/private/`, with no override.
   graded or drafted under it but other names have work
   there. The flag lists the names that do. It cautions and never refuses:
   every second reviewer is new too.
-- **Grades file.** Read-only: `<setId>-grades-<reviewer slug>.json` in the
-  private root. The slug is the name lowercased, each run outside `[a-z0-9]`
+- **Grades file.** Shown under the chosen set, read-only:
+  `<setId>-grades-<reviewer slug>.json` in the private root, with its drafts
+  sidecar beside it. The slug is the name lowercased, each run outside `[a-z0-9]`
   one `-`, none at either end. A name with nothing a slug keeps gets
   `reviewer-<12 hex of its digest>`. The file's `reviewer` field keeps the
   exact name.
@@ -269,8 +270,11 @@ and `e2e/live/private/`, with no override.
   is one Start can open. When exactly one file is offered it is preselected;
   otherwise **none** is, and none is always on offer. A default is safe here,
   as it was not for the reviewer's own file, because the bench keeps the other
-  Grade blind until each save ([At the bench](#at-the-bench)).
-- **Key.** Its version and digest. The manifest is built in memory from the
+  Grade blind until each save ([At the bench](#at-the-bench)): it is shown
+  beside the reviewer's own slot by slot, and only once that slot is saved, so
+  it cannot anchor them.
+- **Key.** Its version and a shortened digest, the whole digest on hover, at
+  the foot of the page. The manifest is built in memory from the
   committed keys, so there is no manifest file to name, and no way for key
   prose and check wording to disagree. `pnpm live:keys` is needed only for
   `live:report`, and writes the same manifest byte for byte.
@@ -290,47 +294,82 @@ carried over: each Start takes the one chosen for its own set.
 
 ### At the bench
 
-The sidebar lists the set's slots in schedule order with each one's state:
-pending, drafted, graded, or not reached with the capture's reason. Under the
-slots are `live:report`'s own counts over the saved file. Each screen holds one
-attempt:
+The bench is laid out to be read in one order, with nothing on screen that the
+current step does not need (#232). The header names the set, the slot's
+position in it and the reviewer, with **change set** as its only action. The
+sidebar groups the set's slots by hunt, in schedule order — each hunt's
+initial, then its follow-up — with each slot's state: pending, drafted, the
+saved verdict, or not reached, with the capture's reason on hover and on the
+slot. One line under it counts the slots saved, drafted and not reached;
+`live:report`'s own counts are read in the report, not here.
 
-- **The Answer**, rendered server-side with the app's own `react-markdown`, so
-  the reviewer grades what the Feed showed, with a raw toggle. A follow-up
-  carries its initial's Answer in a collapsed panel.
-- **What the assistant read**, from the attempt's event tape: every `navigate`,
-  `read_page` and `look` in order with its URL and outcome — loaded, walled
-  (the app's own Blocker marker, as challenge-walled, network-blocked or
-  login-walled), errored — each with its full page text, collapsed. Then every
-  `record_evidence` call, rejected ones included. This is what separates
-  `help_access_blocked` from `unsuccessful`. A Run that spawned Subagents says
-  so, because their browsing is not on its tape. Failure screenshots are linked
-  when the capture kept any.
-- **The whole key**: its constraints first, then the step's checks with their
-  descriptions, then the required facts, pitfalls, uncertainties, sources, live
-  facts and follow-up delta. A support row picks its URL from the key's sources
-  (a follow-up's own first), or names another URL as an equivalent.
+Each slot is two panes. The left pane holds what to read, in three tabs, and
+every slot opens on the first:
+
+- **Answer** — rendered server-side with the app's own `react-markdown`, so the
+  reviewer grades what the Feed showed, with a rendered/raw switch in the tab
+  bar. The command as submitted is folded above it; a follow-up folds its
+  initial's Answer there too.
+- **What it read** — from the attempt's event tape: every `navigate`,
+  `read_page` and `look` in order, one line each (tool, outcome, host and path,
+  page title) with its full page text folded under the line. The outcome is
+  loaded, walled (the app's own Blocker marker, as challenge-walled,
+  network-blocked or login-walled) or errored. This is what separates
+  `help_access_blocked` from `unsuccessful`, and the tab is not opened on every
+  slot, so its label carries the number of reads and a marker when any was
+  walled, blocked or errored: *What it read · 8 · 1 walled*. Then the evidence
+  the assistant recorded; entries the app rejected, or never answered, are
+  folded behind a count, because they diagnose the Run rather than the Answer.
+  A Run that spawned Subagents says so, because their browsing is not on its
+  tape. Failure screenshots are linked last when the capture kept any.
+- **Key** — the key beyond its checks: sources, uncertainties, live facts and
+  the follow-up delta. Its required facts and pitfalls are not repeated, because
+  the checks are those.
+
+The right pane is the Grade form, in the order a reviewer works:
+
+1. **Constraints**, open on every slot. They decide verdicts without being
+   checks: how to decompose the verdict, what not to grade, which alternatives
+   count.
+2. **Checks**, one row each: the check id, its description, *satisfied* or *not
+   satisfied*, and an optional note behind the pencil. The note is kept in the
+   grades file and never exported into a report.
+3. **Verdict** — the Grade's status: pass, useful partial, help / access
+   blocked, or unsuccessful.
+4. **Support** — a row picks its URL from the key's sources (a follow-up's own
+   first), or names another URL as an equivalent.
+5. **Rationale**, required.
+
+A save bar is pinned under the form. It says what is left before a save —
+*left: verdict · 4 of 10 checks · rationale* — and opens into the whole
+checklist. The checklist is the validator's rule said as work left, not as
+errors: a verdict, every check judged, a rationale, what a pass needs (every
+check satisfied, support for a claim), finished support rows, and, once all of
+those are done, any other rule the validator still names, in its own words.
+Save is enabled only when the validator would accept the entry, and the
+checklist can never enable it on its own.
 
 Judging writes nothing to the grades file. Every change — a check, a support
 row, a note, the rationale — goes to a drafts sidecar beside it
 (`<grades>.drafts.json`), so closing the page loses nothing. **Save** composes
 the entry and runs the real `parseLiveGrades` over the file it would produce.
 Only a file the validator accepts is written, so the grades file is always one
-`live:report` accepts. A rejected save shows the validator's message verbatim;
-the page shows the same message while the reviewer works, and keeps Save
-disabled while there is one.
+`live:report` accepts. A refused save, or a draft that could not be written,
+shows the server's message verbatim, in red, in the save bar. Nothing on the
+page is red before that.
 
 **The bench never picks a verdict.** It has only three rules of its own. A
-status has to be chosen. A slot nothing was dispatched into stays pending. An
+verdict has to be chosen. A slot nothing was dispatched into stays pending. An
 attempt that published no Answer is `unsuccessful` or `help_access_blocked`:
 one click marks every check unsatisfied, and the rationale is still typed.
 
 **One grades file per reviewer.** The bench refuses to open a grades file anyone
 else has reviewed in. It can still show another reviewer's Grade, but blind:
 the other Grade for a slot is not sent to the page at all until the reviewer's
-own entry for that slot is saved. After that it appears as a per-check
-agree/disagree with both notes, and the two statuses and rationales side by
-side. The blank start is deliberate: a pre-filled Grade anchors the reviewer to
+own entry for that slot is saved. After that it appears under the form: the
+disagreements first — the verdict if it differs, and each check judged
+differently, with both notes — then both rationales side by side, with the
+agreements and both reviewers' support behind a toggle. The blank start is deliberate: a pre-filled Grade anchors the reviewer to
 the other one's interpretation calls. The other Grade shown is the one chosen
 on the setup page, from the files it offers for the set, or none.
 
@@ -515,7 +554,7 @@ Sessions.
 ## Verifying a change here
 
 ```sh
-pnpm exec vitest run e2e/live/grades.test.ts e2e/live/report.test.ts e2e/live/gradingBench.test.ts e2e/live/gradingSetup.test.ts e2e/live/gradingBenchServer.test.ts
+pnpm exec vitest run e2e/live/grades.test.ts e2e/live/report.test.ts e2e/live/gradingBench.test.ts e2e/live/gradingSetup.test.ts e2e/live/gradingBenchServer.test.ts e2e/live/gradingBenchPage.test.ts
 pnpm typecheck
 pnpm lint
 pnpm test
@@ -542,9 +581,21 @@ extensionless runtime import on the CLI's graph.
   refused, and the draft is back on re-entry;
 - it starts `scripts/live-review.ts` itself.
 
-The pages have no automated test. After changing
-`scripts/live-review-setup.html` or `scripts/live-review.html`, drive them in a
-real browser. Headless Chrome over CDP will do.
+`gradingBenchPage.test.ts` drives both pages in a real headless Chrome over the
+DevTools protocol, against the same fixture set (#232). It is skipped, not
+failed, where no Chrome or no global `WebSocket` is found; set `CHROME_PATH` to
+point it at one. It walks:
+- setup lists the sets, greys out the rehearsal, proposes the set and the
+  comparison, and Start lands on the bench's first pending slot;
+- the bench opens on the Answer tab, and the three tabs switch;
+- a blank slot shows the work left, not an error;
+- a judged check lands in the drafts sidecar;
+- a refused save shows the validator's words, and writes nothing;
+- the other Grade appears only after a save, disagreements first.
+
+What it does not walk is still checked by hand after changing
+`scripts/live-review-setup.html` or `scripts/live-review.html`, in a real
+browser; headless Chrome over CDP will do.
 1. On the setup page, check the listed sets and the proposed one.
 2. Check the greyed-out rows and their reasons.
 3. Check that the grades file follows the reviewer field.

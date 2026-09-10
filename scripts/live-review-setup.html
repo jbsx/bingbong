@@ -6,111 +6,89 @@
 <title>Grading Bench · setup</title>
 <link rel="icon" href="data:,">
 <!--
-  The Grading Bench's setup page (#229, #230), served by scripts/live-review.ts
-  on loopback before the bench opens. The bench proposes — every capture set in
-  the artifacts root, the grades file your work goes into, another reviewer's
-  Grade to compare against, the key — and you confirm with Start. Nothing is
-  opened, and nothing is written, before that.
+  The Grading Bench's setup page (#229, #230, #232), served by
+  scripts/live-review.ts on loopback before the bench opens. The bench
+  proposes — every capture set in the artifacts root, the grades file your
+  work goes into, another reviewer's Grade to compare against, the key — and
+  you confirm with Start. Nothing is opened, and nothing is written, before
+  that. What each choice means is in docs/live-web-reporting.md; the page
+  carries labels, not lessons.
 
   Plain DOM, no framework, no network beyond its own server. Every string
   from a capture set or a grades file goes in through textContent.
 -->
 <style>
   :root {
-    --bg: #f7f7f5; --panel: #ffffff; --ink: #1d1d1b; --muted: #6b6b66; --line: #deded8;
+    --bg: #f7f7f5; --panel: #ffffff; --ink: #1d1d1b; --muted: #6b6b66; --line: #e6e6e0;
     --accent: #2f5bd3; --ok: #1f7a3a; --warn: #9a6200; --bad: #b3261e; --soft: #eef1fb;
     --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
     color-scheme: light dark;
   }
   @media (prefers-color-scheme: dark) {
-    :root { --bg: #151514; --panel: #1f1f1d; --ink: #ecece8; --muted: #9c9c95; --line: #34342f;
+    :root { --bg: #151514; --panel: #1f1f1d; --ink: #ecece8; --muted: #9c9c95; --line: #2e2e2a;
       --accent: #8aa8ff; --ok: #6fcf8a; --warn: #e6b450; --bad: #ff8a80; --soft: #232a3d; }
   }
   * { box-sizing: border-box; }
-  body { margin: 0; font: 14px/1.45 system-ui, sans-serif; background: var(--bg); color: var(--ink); }
+  body { margin: 0; font: 14px/1.5 system-ui, sans-serif; background: var(--bg); color: var(--ink); }
   code { font-family: var(--mono); font-size: 12.5px; overflow-wrap: anywhere; }
   h1 { font-size: 16px; margin: 0; }
-  h2 { font-size: 13px; margin: 0 0 8px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+  h2 { font-size: 12px; margin: 0 0 10px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); font-weight: 600; }
   .muted { color: var(--muted); }
-  .top { display: flex; flex-wrap: wrap; gap: 6px 16px; align-items: baseline; padding: 10px 16px; border-bottom: 1px solid var(--line); background: var(--panel); }
-  .top .note { color: var(--muted); font-size: 12.5px; }
-  main { max-width: 980px; margin: 0 auto; padding: 8px 16px 40px; }
-  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 12px; margin: 12px 0; }
-  input[type="text"] { font: inherit; width: 100%; max-width: 420px; padding: 5px 7px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); color: inherit; }
-  .caution { color: var(--warn); margin: 6px 0 0; }
-  .error { color: var(--bad); }
-  .sets { list-style: none; padding: 0; margin: 0; }
-  .set { border-bottom: 1px solid var(--line); }
-  .set:last-child { border-bottom: 0; }
-  .set label { display: grid; grid-template-columns: 22px minmax(0, 1fr); gap: 2px 8px; padding: 8px 4px; cursor: pointer; border-radius: 6px; }
-  .set.chosen label { background: var(--soft); }
+  .small { font-size: 12.5px; }
+  .top { display: flex; gap: 10px; align-items: baseline; padding: 12px 20px; border-bottom: 1px solid var(--line); background: var(--panel); }
+  main { max-width: 760px; margin: 0 auto; padding: 16px 20px 48px; }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 16px; margin: 0 0 14px; }
+  input[type="text"] { font: inherit; width: 100%; max-width: 360px; padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); color: inherit; }
+  .reviewer-row { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: baseline; }
+  .reviewer-row p { margin: 0; }
+  #caution { margin: 8px 0 0; }
+  .sets, .comparisons { list-style: none; padding: 0; margin: 0; }
+  .set label, .comparisons label { display: grid; grid-template-columns: 20px minmax(0, 1fr); gap: 0 8px; padding: 8px; cursor: pointer; border-radius: 8px; }
+  .set + .set, .comparisons li + li { margin-top: 2px; }
+  .set.chosen label, .comparisons .chosen label { background: var(--soft); }
   .set.refused label { cursor: not-allowed; }
-  .set.refused .set-head, .set.refused .set-meta { opacity: .55; }
-  .set-head { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: baseline; }
-  .set-head strong { overflow-wrap: anywhere; }
-  .set-meta, .set-progress, .reasons { grid-column: 2; font-size: 12.5px; }
-  .reasons { margin: 2px 0 0; padding-left: 18px; color: var(--bad); }
-  .chip { display: inline-block; font-size: 11.5px; padding: 0 6px; border-radius: 999px; border: 1px solid var(--line); white-space: nowrap; }
-  .chip-preselected { color: var(--accent); border-color: currentColor; }
-  dl { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 4px 12px; margin: 0; }
-  dt { color: var(--muted); }
-  dd { margin: 0; min-width: 0; }
-  .actions { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin: 14px 0; }
-  .actions button { font: inherit; padding: 6px 16px; border-radius: 6px; border: 1px solid var(--accent); background: var(--accent); color: #fff; cursor: pointer; }
-  .actions button:disabled { opacity: .5; cursor: not-allowed; }
-  .start-errors { margin: 0; padding-left: 18px; color: var(--bad); }
-  .comparisons { list-style: none; padding: 0; margin: 0 0 6px; }
-  .comparisons label { display: flex; flex-wrap: wrap; gap: 2px 8px; align-items: baseline; padding: 4px; cursor: pointer; border-radius: 6px; }
-  .comparisons .chosen label { background: var(--soft); }
-  .comparisons strong { overflow-wrap: anywhere; }
+  .set.refused .set-line { opacity: .55; }
+  .set-line { display: flex; flex-wrap: wrap; gap: 2px 10px; align-items: baseline; }
+  .set-line strong, .comparisons strong { overflow-wrap: anywhere; }
+  .set-progress, .set-files, .reasons { grid-column: 2; }
+  .reasons { margin: 2px 0 0; padding-left: 18px; color: var(--bad); font-size: 12.5px; }
+  .chip { display: inline-block; font-size: 11px; padding: 0 6px; border-radius: 999px; border: 1px solid currentColor; white-space: nowrap; color: var(--accent); }
+  .actions { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; margin: 18px 0 6px; }
+  .actions button { font: inherit; font-weight: 600; padding: 7px 22px; border-radius: 8px; border: 1px solid var(--accent); background: var(--accent); color: #fff; cursor: pointer; }
+  .actions button:disabled { opacity: .45; cursor: not-allowed; }
+  .start-errors { margin: 6px 0 0; padding-left: 18px; color: var(--bad); }
+  .footer { margin-top: 28px; }
+  .footer p { margin: 2px 0; }
 </style>
 </head>
 <body>
 <header class="top">
   <h1>Grading Bench</h1>
   <span class="muted">setup</span>
-  <span class="note">The bench proposes; nothing opens, and nothing is written, until you press Start.</span>
 </header>
 <main>
   <section class="panel">
     <h2>Reviewer</h2>
-    <input type="text" id="reviewer" autocomplete="off" spellcheck="false" aria-describedby="reviewer-note">
-    <p class="muted" id="reviewer-note"></p>
-    <p class="caution" id="caution" hidden></p>
+    <div class="reviewer-row">
+      <input type="text" id="reviewer" autocomplete="off" spellcheck="false" aria-describedby="reviewer-note">
+      <p class="muted small" id="reviewer-note"></p>
+    </div>
+    <p class="muted small" id="caution" hidden></p>
   </section>
 
   <section class="panel">
     <h2>Capture set</h2>
-    <p class="muted" id="roots-note"></p>
     <ol class="sets" id="sets"><li class="muted">Reading the artifacts root…</li></ol>
-    <p class="muted" id="nothing" hidden>
+    <p class="muted small" id="nothing" hidden>
       Nothing here is left to grade. A measured pass is run with
-      <code>BINGBONG_ENV_FILE=/absolute/path/to/.env pnpm test:live</code> and lands in the artifacts root;
+      <code>BINGBONG_ENV_FILE=/absolute/path/to/.env pnpm test:live</code>;
       <code>docs/live-web-pilot-runbook.md</code> walks through it.
     </p>
   </section>
 
   <section class="panel">
-    <h2>Grades file</h2>
-    <dl>
-      <dt>file</dt><dd id="grades-file" class="muted">choose a set</dd>
-      <dt>drafts</dt><dd id="drafts-file" class="muted">—</dd>
-    </dl>
-  </section>
-
-  <section class="panel">
-    <h2>Another reviewer’s Grade</h2>
+    <h2>Compare against</h2>
     <ol class="comparisons" id="comparisons"><li class="muted">choose a set</li></ol>
-    <p class="muted">Shown beside yours slot by slot, and only once you have saved your own Grade for that slot, so it cannot anchor you.</p>
-  </section>
-
-  <section class="panel">
-    <h2>Key</h2>
-    <dl>
-      <dt>version</dt><dd><code id="key-version"></code></dd>
-      <dt>digest</dt><dd><code id="key-digest"></code></dd>
-    </dl>
-    <p class="muted">Built in memory from the committed keys; the bench grades against nothing else.</p>
   </section>
 
   <div class="actions">
@@ -118,6 +96,11 @@
     <span class="muted" id="start-note"></span>
   </div>
   <ul class="start-errors" id="start-errors" hidden></ul>
+
+  <div class="footer muted small">
+    <p id="key-line"></p>
+    <p id="roots-line"></p>
+  </div>
 </main>
 <script>
 'use strict'
@@ -200,30 +183,54 @@ function settleComparison(set) {
 function progressText(progress) {
   const parts = [`${progress.graded} graded`, `${progress.drafted} drafted`, `${progress.pending} pending`]
   if (progress.notReached > 0) parts.push(`${progress.notReached} not reached`)
-  return `your progress: ${parts.join(' · ')}`
+  return parts.join(' · ')
 }
 
 function created(iso) {
-  if (!iso) return 'created —'
+  if (!iso) return null
   const date = new Date(iso)
-  return Number.isNaN(date.getTime()) ? `created ${iso}` : `created ${date.toLocaleString()}`
+  return Number.isNaN(date.getTime()) ? iso : date.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
+}
+
+/** A digest short enough to glance at: its algorithm, the first and last few hex digits. */
+function shortDigest(digest) {
+  const match = /^([a-z0-9]+):([0-9a-f]{16,})$/.exec(digest || '')
+  return match ? `${match[1]}:${match[2].slice(0, 6)}…${match[2].slice(-6)}` : digest || '—'
+}
+
+function reviewerNote(reviewer) {
+  if (view.reviewerFixed) return 'fixed for this process; restart live:review to grade as someone else'
+  if (reviewer === '') return 'name a reviewer to start'
+  if (view.defaultReviewer !== null && reviewer === view.defaultReviewer) return 'from git config user.name; fixed at the first Start'
+  return 'fixed at the first Start'
+}
+
+/** The chosen set's files, in one line under it. */
+function filesLine(set, reviewer) {
+  if (set.gradesFile) {
+    return el(
+      'span',
+      { class: 'set-files muted small' },
+      'files: ',
+      el('code', { text: set.gradesFile.name }),
+      set.gradesFile.resumed ? ' (your work there is reopened)' : ' (new)',
+      ', drafts beside it',
+    )
+  }
+  if (reviewer === '') return el('span', { class: 'set-files muted small', text: 'files: name a reviewer first — the grades file is named for them' })
+  return null
 }
 
 function render() {
   const reviewer = $('reviewer').value.trim()
   $('reviewer').readOnly = view.reviewerFixed
-  $('reviewer-note').textContent = view.reviewerFixed
-    ? 'Fixed since the first Start, for every set graded here. Restart live:review to grade under another name.'
-    : reviewer === ''
-      ? 'Name a reviewer — an entry naming no one cannot be saved.'
-      : view.defaultReviewer !== null && reviewer === view.defaultReviewer
-        ? 'From git config user.name. Change it here if that is not you; it is fixed at the first Start.'
-        : 'It is fixed at the first Start.'
+  $('reviewer-note').textContent = reviewerNote(reviewer)
   $('caution').hidden = !view.caution
   $('caution').textContent = view.caution || ''
-  $('roots-note').textContent = `Every capture set in ${view.roots.artifacts}. Grades are filed in ${view.roots.private}.`
-  $('key-version').textContent = view.key.version
-  $('key-digest').textContent = view.key.digest
+
+  const keyLine = $('key-line')
+  keyLine.replaceChildren('key ', el('code', { text: view.key.version }), ' · ', el('code', { text: shortDigest(view.key.digest), title: view.key.digest }))
+  $('roots-line').textContent = `capture sets from ${view.roots.artifacts} · grades filed in ${view.roots.private}`
 
   const startable = view.sets.filter((set) => set.refusals.length === 0)
   $('nothing').hidden = !(startable.length === 0 || (answered && reviewer !== '' && view.preselected === null))
@@ -234,11 +241,12 @@ function render() {
     sets.replaceChildren(
       ...view.sets.map((set) => {
         const refused = set.refusals.length > 0
+        const isChosen = set.file === chosen
         const radio = el('input', {
           type: 'radio',
           name: 'set',
           value: set.file,
-          checked: set.file === chosen,
+          checked: isChosen,
           disabled: refused,
           onchange: () => {
             chosen = set.file
@@ -246,22 +254,23 @@ function render() {
             render()
           },
         })
+        const facts = [set.slots === null ? null : `${set.slots} slots`, created(set.createdAt)].filter(Boolean).join(' · ')
         return el(
           'li',
-          { class: ['set', refused ? 'refused' : '', set.file === chosen ? 'chosen' : ''].join(' ') },
+          { class: ['set', refused ? 'refused' : '', isChosen ? 'chosen' : ''].join(' ') },
           el(
             'label',
-            {},
+            { title: [set.file, set.mode, set.state].filter(Boolean).join(' · ') },
             radio,
             el(
               'span',
-              { class: 'set-head' },
+              { class: 'set-line' },
               el('strong', { text: set.setId || set.file }),
-              set.file === view.preselected ? el('span', { class: 'chip chip-preselected', text: 'proposed' }) : null,
-              el('span', { class: 'muted', text: set.file }),
+              set.file === view.preselected ? el('span', { class: 'chip', text: 'proposed' }) : null,
+              facts ? el('span', { class: 'muted small', text: facts }) : null,
             ),
-            el('span', { class: 'set-meta muted', title: set.createdAt || '', text: [created(set.createdAt), set.mode || 'mode —', set.state || 'state —', set.slots === null ? 'slots —' : `${set.slots} slots`].join(' · ') }),
-            set.progress ? el('span', { class: 'set-progress', text: progressText(set.progress) }) : null,
+            set.progress ? el('span', { class: 'set-progress small', text: progressText(set.progress) }) : null,
+            isChosen && !refused ? filesLine(set, reviewer) : null,
             refused ? el('ul', { class: 'reasons' }, set.refusals.map((reason) => el('li', { text: reason }))) : null,
           ),
         )
@@ -271,16 +280,6 @@ function render() {
 
   const set = chosenSet()
   const file = set && set.gradesFile
-  $('grades-file').className = file ? '' : 'muted'
-  $('drafts-file').className = file ? '' : 'muted'
-  if (file) {
-    $('grades-file').replaceChildren(el('code', { text: file.name }), ' ', el('span', { class: 'muted', text: file.resumed ? '— your work there is reopened' : '— a new file, written on your first save' }))
-    $('drafts-file').replaceChildren(el('code', { text: file.name.replace(/\.json$/, '.drafts.json') }), ' ', el('span', { class: 'muted', text: '— every change lands here first' }))
-  } else {
-    $('grades-file').textContent = reviewer === '' ? 'name a reviewer — the file is named for them' : set ? 'none — this set cannot be started' : 'choose a set'
-    $('drafts-file').textContent = '—'
-  }
-
   settleComparison(set)
   const offered = file ? set.comparisons : []
   const comparisonOption = (value, label, note) =>
@@ -301,16 +300,13 @@ function render() {
             render()
           },
         }),
-        el('strong', { text: label }),
-        note ? el('span', { class: 'muted', text: note }) : null,
+        el('span', { class: 'set-line' }, el('strong', { text: label }), note ? el('span', { class: 'muted small', text: note }) : null),
       ),
     )
   if (file) {
     $('comparisons').replaceChildren(
-      comparisonOption(null, 'none', offered.length === 0 ? 'no other reviewer’s grades for this set are filed' : null),
-      ...offered.map((candidate) =>
-        comparisonOption(candidate.file, candidate.reviewer, candidate.file === set.preselectedComparison ? `${candidate.file} · proposed` : candidate.file),
-      ),
+      comparisonOption(null, 'none', offered.length === 0 ? 'no other reviewer’s grades for this set' : null),
+      ...offered.map((candidate) => comparisonOption(candidate.file, candidate.reviewer, candidate.file)),
     )
   } else {
     $('comparisons').replaceChildren(el('li', { class: 'muted', text: set ? 'none — this set cannot be started' : 'choose a set' }))
@@ -320,7 +316,7 @@ function render() {
   const ready = answered && reviewer !== '' && set !== null && set.gradesFile !== null
   $('start').disabled = !ready
   $('start-note').textContent = ready
-    ? `grade ${set.setId} as ${reviewer}${beside ? `, beside ${beside.reviewer}’s Grade` : ''}`
+    ? `grade ${set.setId} as ${reviewer}${beside ? `, compared with ${beside.reviewer}` : ''}`
     : !answered && reviewer !== ''
       ? 'checking what this name would open…'
       : ''
@@ -335,7 +331,7 @@ async function propose(reviewer) {
   const { status, data } = await api('GET', reviewer === undefined ? '/api/setup' : `/api/setup?reviewer=${encodeURIComponent(reviewer)}`)
   if (proposal !== proposals) return
   if (status !== 200) {
-    $('sets').replaceChildren(el('li', { class: 'error', text: data.error || `the setup could not be read (HTTP ${status})` }))
+    $('sets').replaceChildren(el('li', { class: 'start-errors', text: data.error || `the setup could not be read (HTTP ${status})` }))
     return
   }
   if (data.started) {

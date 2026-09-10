@@ -224,7 +224,7 @@ export function reviewerCaution(reviewer: string, privateFiles: readonly RootFil
     if (value.kind === LIVE_GRADING_DRAFTS_KIND && typeof value.reviewer === 'string' && value.reviewer !== '') known.add(value.reviewer)
   }
   if (known.size === 0 || known.has(reviewer)) return null
-  return `nothing in the private root was graded or drafted by “${reviewer}”, and these names have work there: ${[...known].sort().join(', ')} — check the spelling before Start`
+  return `no work by “${reviewer}” yet; names with work here: ${[...known].sort().join(', ')}`
 }
 
 // ---------------------------------------------------------------------------

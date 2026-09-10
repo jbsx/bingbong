@@ -6,116 +6,199 @@
 <title>Grading Bench</title>
 <link rel="icon" href="data:,">
 <!--
-  The Grading Bench page (#228), served by scripts/live-review.ts on loopback
-  once the setup page's Start has opened a bench (#229).
+  The Grading Bench page (#228, #232), served by scripts/live-review.ts on
+  loopback once the setup page's Start has opened a bench (#229).
   Plain DOM, no framework, no network beyond its own server. Every string
   from a capture, a key or a Grade goes in through textContent; the one
   exception is the Answer, which the server rendered with the app's
   react-markdown (raw HTML escaped, unsafe URLs dropped). Links from a
   capture are only ever http(s) and open in a new tab.
 
+  One slot is two panes (#232): what to read on the left, in three tabs —
+  the Answer, what the assistant read, the key — and the Grade form on the
+  right, in the order a reviewer works: constraints, checks, verdict,
+  support, rationale, with the save bar pinned under it. What each part
+  means is in docs/live-web-reporting.md; the page carries labels, not
+  lessons.
+
   The page never picks a verdict and never shows another reviewer's Grade
   before this reviewer's own is saved: the server does not send it.
 -->
 <style>
   :root {
-    --bg: #f7f7f5; --panel: #ffffff; --ink: #1d1d1b; --muted: #6b6b66; --line: #deded8;
+    --bg: #f7f7f5; --panel: #ffffff; --ink: #1d1d1b; --muted: #6b6b66; --line: #e6e6e0; --line-strong: #d3d3cb;
     --accent: #2f5bd3; --ok: #1f7a3a; --warn: #9a6200; --bad: #b3261e; --soft: #eef1fb;
     --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
     color-scheme: light dark;
   }
   @media (prefers-color-scheme: dark) {
-    :root { --bg: #151514; --panel: #1f1f1d; --ink: #ecece8; --muted: #9c9c95; --line: #34342f;
+    :root { --bg: #151514; --panel: #1f1f1d; --ink: #ecece8; --muted: #9c9c95; --line: #2e2e2a; --line-strong: #43433d;
       --accent: #8aa8ff; --ok: #6fcf8a; --warn: #e6b450; --bad: #ff8a80; --soft: #232a3d; }
   }
   * { box-sizing: border-box; }
-  body { margin: 0; font: 14px/1.45 system-ui, sans-serif; background: var(--bg); color: var(--ink); }
+  [hidden] { display: none !important; }
+  body { margin: 0; font: 14px/1.5 system-ui, sans-serif; background: var(--bg); color: var(--ink); }
   a { color: var(--accent); overflow-wrap: anywhere; }
+  button { font: inherit; color: inherit; cursor: pointer; }
   code, pre { font-family: var(--mono); font-size: 12.5px; }
-  pre { white-space: pre-wrap; overflow-wrap: anywhere; background: var(--bg); border: 1px solid var(--line); padding: 8px; border-radius: 6px; max-height: 420px; overflow: auto; }
-  h1 { font-size: 16px; margin: 0; }
-  h2 { font-size: 15px; margin: 18px 0 8px; }
-  h3 { font-size: 13px; margin: 14px 0 6px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
-  h4 { font-size: 13px; margin: 10px 0 4px; }
+  pre { white-space: pre-wrap; overflow-wrap: anywhere; background: var(--bg); border: 1px solid var(--line); padding: 8px 10px; border-radius: 6px; max-height: 420px; overflow: auto; margin: 6px 0; }
+  h1 { font-size: 15px; margin: 0; }
+  h2 { font-size: 15px; margin: 0; overflow-wrap: anywhere; }
+  h3 { font-size: 12px; margin: 22px 0 8px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); font-weight: 600; }
+  h4 { font-size: 13px; margin: 12px 0 4px; }
   ul, ol { padding-left: 20px; margin: 4px 0; }
   .muted { color: var(--muted); }
-  .top { display: flex; flex-wrap: wrap; gap: 6px 16px; align-items: baseline; padding: 10px 16px; border-bottom: 1px solid var(--line); background: var(--panel); position: sticky; top: 0; z-index: 2; }
-  .top .note { color: var(--muted); font-size: 12.5px; }
-  .top #change-set { margin-left: auto; color: var(--accent); }
-  .layout { display: grid; grid-template-columns: 250px minmax(0, 1fr); min-height: calc(100vh - 44px); }
-  nav { border-right: 1px solid var(--line); padding: 10px; background: var(--panel); }
-  nav ol { list-style: none; padding: 0; margin: 0; }
-  nav li a { display: grid; grid-template-columns: 20px 1fr; gap: 0 6px; padding: 6px; border-radius: 6px; text-decoration: none; color: inherit; }
-  nav li.follow-up a { margin-left: 16px; }
-  nav li.active a { background: var(--soft); }
-  nav .slot-name { font-weight: 600; overflow-wrap: anywhere; }
-  nav .slot-meta { grid-column: 2; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
-  nav .slot-reason { grid-column: 2; font-size: 12px; color: var(--muted); }
-  .counts table { border-collapse: collapse; width: 100%; font-size: 12.5px; margin-top: 6px; }
-  .counts td, .counts th { text-align: left; padding: 2px 4px; border-bottom: 1px solid var(--line); }
-  .chip { display: inline-block; font-size: 11.5px; padding: 0 6px; border-radius: 999px; border: 1px solid var(--line); white-space: nowrap; }
-  .chip-graded, .chip-loaded, .chip-agree { color: var(--ok); border-color: currentColor; }
-  .chip-drafted, .chip-walled { color: var(--warn); border-color: currentColor; }
-  .chip-errored, .chip-disagree { color: var(--bad); border-color: currentColor; }
-  .chip-not_reached, .chip-no_result, .chip-pending { color: var(--muted); }
-  main { padding: 0 16px 40px; min-width: 0; }
-  .attempt-head { display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: baseline; padding: 12px 0 4px; }
-  .attempt-head h2 { margin: 0; }
-  .columns { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; }
-  .column { min-width: 0; }
-  @media (min-width: 1100px) {
-    .column { max-height: calc(100vh - 110px); overflow: auto; padding-right: 6px; }
-  }
-  @media (max-width: 1100px) { .columns { grid-template-columns: minmax(0, 1fr); } }
-  @media (max-width: 760px) { .layout { grid-template-columns: minmax(0, 1fr); } nav { border-right: 0; border-bottom: 1px solid var(--line); } }
-  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; margin: 10px 0; }
-  .toggle button { font: inherit; font-size: 12.5px; padding: 2px 8px; border: 1px solid var(--line); background: var(--panel); color: inherit; border-radius: 6px; cursor: pointer; }
-  .toggle button[aria-pressed="true"] { background: var(--soft); border-color: var(--accent); }
-  .feed-markdown > :first-child { margin-top: 0; }
-  .feed-markdown pre { max-height: none; }
-  .constraints { border-left: 4px solid var(--warn); }
-  .trail > li, .evidence > li { margin: 8px 0; }
-  .step-head { display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: baseline; }
-  .step-head .tool { font-family: var(--mono); font-weight: 600; }
-  .requested, .error { font-size: 12.5px; }
+  .small { font-size: 12.5px; }
   .error { color: var(--bad); }
-  blockquote { margin: 4px 0; padding-left: 8px; border-left: 3px solid var(--line); color: var(--muted); }
-  .checks { list-style: none; padding: 0; }
-  .check { border-bottom: 1px solid var(--line); padding: 8px 0; }
-  .check-head { display: grid; grid-template-columns: auto 1fr; gap: 8px; }
-  .judge { display: flex; gap: 14px; margin: 4px 0 0 0; flex-wrap: wrap; }
-  .judge label, .statuses label { cursor: pointer; }
-  .statuses { display: grid; gap: 4px; }
-  .statuses .muted { font-size: 12.5px; }
-  textarea, input[type="text"], select { font: inherit; width: 100%; padding: 5px 7px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); color: inherit; }
+
+  /* The frame: header, slot list, one slot. */
+  .top { display: flex; flex-wrap: wrap; gap: 4px 16px; align-items: baseline; padding: 10px 16px; border-bottom: 1px solid var(--line); background: var(--panel); }
+  .top #change-set { margin-left: auto; }
+  .layout { display: grid; grid-template-columns: 220px minmax(0, 1fr); }
+  nav { border-right: 1px solid var(--line); padding: 12px 8px; background: var(--panel); }
+  .hunts, .hunts ol { list-style: none; padding: 0; margin: 0; }
+  .hunt + .hunt { margin-top: 12px; }
+  .hunt-name { font-size: 12.5px; font-weight: 600; padding: 0 8px 2px; overflow-wrap: anywhere; }
+  .hunt a { display: grid; grid-template-columns: 8px minmax(0, 1fr) auto; gap: 8px; align-items: center; padding: 4px 8px; border-radius: 6px; text-decoration: none; color: inherit; font-size: 13px; }
+  .hunt a:hover { background: var(--soft); }
+  .hunt li.active a { background: var(--soft); font-weight: 600; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; border: 1.5px solid var(--muted); }
+  .dot-graded { background: var(--ok); border-color: var(--ok); }
+  .dot-drafted { border-color: var(--warn); background: linear-gradient(90deg, var(--warn) 50%, transparent 50%); }
+  .dot-not_reached { border-style: dashed; }
+  .state { font-size: 12px; color: var(--muted); font-weight: 400; }
+  .state-graded { color: var(--ok); }
+  .state-drafted { color: var(--warn); }
+  #progress { margin: 14px 8px 0; padding-top: 10px; border-top: 1px solid var(--line); font-size: 12.5px; color: var(--muted); }
+  main { padding: 0 16px 16px; min-width: 0; }
+  .attempt-head { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: baseline; padding: 12px 2px 10px; }
+  .chip { display: inline-block; font-size: 11.5px; padding: 0 7px; border-radius: 999px; border: 1px solid var(--line-strong); white-space: nowrap; color: var(--muted); }
+  .chip-graded, .chip-loaded, .chip-recorded { color: var(--ok); border-color: currentColor; }
+  .chip-drafted, .chip-walled { color: var(--warn); border-color: currentColor; }
+  .chip-errored, .chip-rejected { color: var(--bad); border-color: currentColor; }
+  .panes { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; }
+  .pane { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; min-width: 0; display: flex; flex-direction: column; }
+  .pane-scroll { padding: 4px 18px 18px; min-height: 0; }
+  @media (min-width: 1100px) {
+    body { height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+    .layout { flex: 1; min-height: 0; }
+    nav { overflow: auto; }
+    main { display: flex; flex-direction: column; min-height: 0; overflow: auto; }
+    .panes { flex: 1; min-height: 0; }
+    .pane { min-height: 0; }
+    .pane-scroll { overflow: auto; flex: 1; }
+  }
+  @media (max-width: 1100px) {
+    .panes { grid-template-columns: minmax(0, 1fr); }
+    .tabbar { position: sticky; top: 0; z-index: 1; }
+    .save-bar { position: sticky; bottom: 0; }
+  }
+  @media (max-width: 760px) { .layout { grid-template-columns: minmax(0, 1fr); } nav { border-right: 0; border-bottom: 1px solid var(--line); } }
+
+  /* The reading pane. */
+  .tabbar { display: flex; align-items: center; gap: 8px; padding: 0 12px 0 8px; border-bottom: 1px solid var(--line); background: var(--panel); border-radius: 10px 10px 0 0; }
+  .tabs { display: flex; flex-wrap: wrap; gap: 2px; }
+  [role="tab"] { border: 0; background: none; padding: 10px 10px 8px; border-bottom: 2px solid transparent; color: var(--muted); }
+  [role="tab"][aria-selected="true"] { color: var(--ink); border-bottom-color: var(--accent); font-weight: 600; }
+  .tab-count { font-weight: 400; }
+  .tab-marker { color: var(--warn); font-weight: 400; }
+  .view-toggle { margin-left: auto; display: flex; }
+  .view-toggle button { font-size: 12px; padding: 1px 9px; border: 1px solid var(--line-strong); background: var(--panel); color: var(--muted); }
+  .view-toggle button:first-child { border-radius: 6px 0 0 6px; }
+  .view-toggle button:last-child { border-radius: 0 6px 6px 0; border-left: 0; }
+  .view-toggle button[aria-pressed="true"] { background: var(--soft); color: var(--accent); }
+  .feed-markdown { line-height: 1.6; }
+  .feed-markdown pre { max-height: none; }
+  .answer { margin-top: 14px; }
+  details.fold { margin: 12px 0 0; border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; }
+  details.fold > summary { cursor: pointer; color: var(--muted); font-size: 13px; }
+  .empty-state { margin: 16px 0; }
+  .reads, .evidence { list-style: none; padding: 0; margin: 8px 0; }
+  .read { border-top: 1px solid var(--line); }
+  .read:first-child { border-top: 0; }
+  .read-line { display: flex; gap: 8px; align-items: baseline; padding: 7px 0; min-width: 0; }
+  summary.read-line { cursor: pointer; list-style: none; }
+  summary.read-line::-webkit-details-marker { display: none; }
+  summary.read-line::before { content: '▸'; color: var(--muted); font-size: 11px; }
+  details[open] > summary.read-line::before { content: '▾'; }
+  .read-line .tool { font-family: var(--mono); font-size: 12px; color: var(--muted); }
+  .read-url, .read-title { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+  .read-url { flex: 0 1 auto; max-width: 55%; }
+  .read-title { flex: 1 1 0; font-size: 12.5px; }
+  .read-detail { padding: 0 0 8px 18px; }
+  .evidence > li { padding: 8px 0; border-top: 1px solid var(--line); }
+  .evidence > li:first-child { border-top: 0; }
+  .evidence-head { display: flex; flex-wrap: wrap; gap: 2px 8px; align-items: baseline; }
+  blockquote { margin: 4px 0; padding-left: 10px; border-left: 3px solid var(--line-strong); color: var(--muted); }
+
+  /* The Grade form. */
+  .constraints { margin: 14px 0 0; padding: 8px 12px; border-left: 3px solid var(--warn); background: var(--bg); border-radius: 0 6px 6px 0; }
+  .constraints h3 { margin: 0 0 4px; color: var(--warn); }
+  .constraints ul { margin: 0; padding-left: 18px; font-size: 13px; }
+  .section-head { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: baseline; margin: 22px 0 8px; }
+  .section-head h3 { margin: 0; }
+  .checks { list-style: none; padding: 0; margin: 0; }
+  .check { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 6px 12px; padding: 9px 0; border-top: 1px solid var(--line); }
+  .check-text { flex: 1 1 240px; min-width: 0; }
+  .check-id { font-size: 11px; color: var(--muted); margin-right: 4px; }
+  .check-controls { display: flex; gap: 6px; align-items: center; margin-left: auto; }
+  .seg-group { display: inline-flex; border: 1px solid var(--line-strong); border-radius: 7px; overflow: hidden; }
+  .seg { border: 0; background: var(--panel); padding: 2px 10px; font-size: 12.5px; color: var(--muted); }
+  .seg + .seg { border-left: 1px solid var(--line-strong); }
+  .seg-yes[aria-pressed="true"] { background: color-mix(in srgb, var(--ok) 16%, var(--panel)); color: var(--ok); font-weight: 600; }
+  .seg-no[aria-pressed="true"] { background: color-mix(in srgb, var(--bad) 14%, var(--panel)); color: var(--bad); font-weight: 600; }
+  .note-toggle { border: 1px solid transparent; background: none; border-radius: 6px; padding: 0 6px; color: var(--muted); }
+  .note-toggle:hover, .note-toggle[aria-expanded="true"] { border-color: var(--line-strong); }
+  .note-toggle.has-note { color: var(--accent); }
+  .note-box { flex-basis: 100%; }
+  .verdicts { display: grid; gap: 2px; }
+  .verdict { display: flex; gap: 8px; align-items: baseline; padding: 4px 6px; border-radius: 6px; cursor: pointer; }
+  .verdict:has(input:checked) { background: var(--soft); }
+  .verdict-gloss { margin-left: 6px; }
+  textarea, input[type="text"], select { font: inherit; width: 100%; padding: 6px 8px; border: 1px solid var(--line-strong); border-radius: 6px; background: var(--panel); color: inherit; }
   textarea { resize: vertical; }
-  details.note summary { font-size: 12.5px; color: var(--muted); cursor: pointer; }
-  .support-row { display: grid; gap: 6px; padding: 8px; border: 1px dashed var(--line); border-radius: 6px; margin: 6px 0; }
+  .support-row { display: grid; gap: 6px; padding: 10px 0; border-top: 1px dashed var(--line-strong); }
   .support-row .supports { font-size: 12.5px; }
-  .actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 10px 0; }
-  .actions button, .panel > button { font: inherit; padding: 5px 12px; border-radius: 6px; border: 1px solid var(--line); background: var(--panel); color: inherit; cursor: pointer; }
-  .actions button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
-  .actions button:disabled { opacity: .5; cursor: not-allowed; }
-  .problems { border-left: 4px solid var(--bad); }
-  .problems.blocking li { color: var(--bad); }
-  .compare table { border-collapse: collapse; width: 100%; font-size: 13px; }
-  .compare td, .compare th { text-align: left; vertical-align: top; padding: 4px; border-bottom: 1px solid var(--line); }
-  .save-state { font-size: 12.5px; color: var(--muted); }
+  button.quiet { border: 1px solid var(--line-strong); background: var(--panel); border-radius: 6px; padding: 2px 10px; font-size: 12.5px; }
+
+  /* The save bar, pinned under the form. */
+  .save-bar { border-top: 1px solid var(--line); padding: 10px 18px; background: var(--panel); border-radius: 0 0 10px 10px; }
+  .save-row { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; }
+  .save-status { display: flex; flex-wrap: wrap; gap: 2px 10px; align-items: baseline; flex: 1 1 220px; min-width: 0; }
+  .to-save-line { font-size: 13px; }
+  .to-save-line .ready { color: var(--ok); font-weight: 600; }
+  .save-state { font-size: 12px; color: var(--muted); }
+  .save-buttons { display: flex; gap: 8px; }
+  .save-buttons button { border: 1px solid var(--line-strong); background: var(--panel); border-radius: 7px; padding: 6px 14px; }
+  .save-buttons button.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+  .save-buttons button:disabled { opacity: .45; cursor: not-allowed; }
+  .to-save { list-style: none; padding: 0; margin: 0 0 8px; font-size: 13px; }
+  .to-save .mark { display: inline-block; width: 1.2em; color: var(--muted); }
+  .to-save .done { color: var(--muted); }
+  .to-save .done .mark { color: var(--ok); }
+  .save-errors { margin: 0 0 8px; padding-left: 18px; color: var(--bad); font-size: 13px; }
+
+  /* Another reviewer's Grade, after save. */
+  .comparison { margin-top: 26px; padding-top: 2px; border-top: 2px solid var(--line); }
+  .comparison-summary { margin: 0 0 4px; }
+  .pair { padding: 8px 0; border-top: 1px solid var(--line); }
+  .pair-cols { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; margin-top: 4px; }
+  .who { display: block; font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+  #show-agreements { margin-top: 8px; }
 </style>
 </head>
 <body>
 <header class="top">
   <h1>Grading Bench</h1>
-  <span id="set-id" class="muted"></span>
-  <span id="reviewer"></span>
-  <span id="files" class="note"></span>
-  <span id="compare-note" class="note"></span>
-  <a href="/" id="change-set" class="note" title="Back to the setup page — your drafts are kept, and this process stays open">change set</a>
+  <span id="set-id"></span>
+  <span id="slot-position" class="muted"></span>
+  <span id="reviewer" class="muted"></span>
+  <a href="/" id="change-set" title="Back to the setup page — your drafts are kept, and this process stays open">change set</a>
 </header>
 <div class="layout">
-  <nav>
-    <ol id="slots"></ol>
-    <section class="counts" id="counts"></section>
+  <nav aria-label="slots">
+    <ol class="hunts" id="slots"></ol>
+    <p id="progress"></p>
   </nav>
   <main id="main"><p class="muted">Loading the capture set…</p></main>
 </div>
@@ -149,13 +232,28 @@ function link(url, label) {
   return el('a', { href: url, target: '_blank', rel: 'noopener noreferrer', text: label || url })
 }
 
+/** A link that names only a page's host and path, with the whole URL on hover. */
+function shortLink(url, className) {
+  if (typeof url !== 'string' || url === '') return null
+  let label = url
+  try {
+    const parsed = new URL(url)
+    label = `${parsed.host}${parsed.pathname === '/' ? '' : parsed.pathname}${parsed.search}`
+  } catch {
+    // Not a URL: shown as it is.
+  }
+  const node = link(url, label)
+  node.className = [node.className, className].filter(Boolean).join(' ')
+  node.title = url
+  return node
+}
+
 function list(items) {
   return el('ul', {}, items.map((item) => el('li', { text: item })))
 }
 
-function block(title, items) {
-  if (!items || items.length === 0) return el('p', { class: 'muted', text: `${title}: none.` })
-  return [el('h4', { text: title }), list(items)]
+function listOrNone(items) {
+  return items && items.length > 0 ? list(items) : el('p', { class: 'muted small', text: 'None.' })
 }
 
 async function api(method, path, body, extra) {
@@ -177,10 +275,10 @@ async function api(method, path, body, extra) {
 }
 
 const STATUS_TEXT = {
-  pass: ['pass', 'the expected outcome, independently verified against the key'],
-  useful_partial: ['useful partial', 'real verified work, short of the expected outcome'],
-  help_access_blocked: ['help / access blocked', 'the Run hit an access wall or needed help it did not get'],
-  unsuccessful: ['unsuccessful', 'no useful result or actionable next step was established'],
+  pass: ['pass', 'the expected outcome, independently verified'],
+  useful_partial: ['useful partial', 'real verified work, short of the outcome'],
+  help_access_blocked: ['help / access blocked', 'hit an access wall, or needed help it did not get'],
+  unsuccessful: ['unsuccessful', 'no useful result or next step'],
 }
 
 const WALL_TEXT = { challenge: 'challenge-walled', 'network-block': 'network-blocked', 'login-wall': 'login-walled' }
@@ -191,26 +289,31 @@ const WALL_TEXT = { challenge: 'challenge-walled', 'network-block': 'network-blo
 let setView = null
 /** The set this page was opened on, named on every request once known. */
 let benchSet = null
-/** The attempt on screen: the server's view, the editable state, and the draft bookkeeping. */
+/** The attempt on screen: the server's view, the editable state, the draft bookkeeping, and the save bar's parts. */
 let current = null
 
 function freshCurrent(view) {
   const state = view.editor ? JSON.parse(JSON.stringify(view.editor.state)) : null
   const picks = view.key.pickSources
+  // Every slot opens on the Answer; re-drawing the same slot (a save, a discard) keeps the tab.
+  const tab = current && current.attemptId === view.slot.attemptId ? current.tab : 'answer'
   return {
     attemptId: view.slot.attemptId,
     view,
     state,
+    tab,
     source: view.editor ? view.editor.source : null,
+    toSave: view.toSave,
     supportModes: state ? state.support.map((row) => (row.sourceUrl === '' || picks.some((pick) => pick.url === row.sourceUrl) ? 'pick' : 'other')) : [],
     timer: null,
     dirty: false,
     inflight: Promise.resolve(),
+    ui: null,
   }
 }
 
 // ---------------------------------------------------------------------------
-// The set: header, sidebar, counts
+// The set: header and slot list
 
 async function refreshSet() {
   const { status, data } = await api('GET', '/api/set')
@@ -220,58 +323,69 @@ async function refreshSet() {
   }
   setView = data
   benchSet = data.setId
-  document.getElementById('set-id').textContent = `capture set ${data.setId}`
-  document.getElementById('reviewer').replaceChildren('grading as ', el('strong', { text: data.reviewer }))
-  document.getElementById('files').textContent = `writes ${data.gradesFile} and ${data.draftsFile}`
-  document.getElementById('compare-note').textContent = data.comparing ? 'another reviewer’s Grade appears for a slot once you have saved yours' : ''
+  document.getElementById('set-id').textContent = data.setId
+  document.getElementById('reviewer').replaceChildren('as ', el('strong', { text: data.reviewer }))
   renderSidebar()
   return true
 }
 
+function stepName(slot) {
+  return slot.relation === 'initial' ? 'initial' : 'follow-up'
+}
+
 function slotLabel(slot) {
   if (slot.state === 'not_reached') return 'not reached'
-  if (slot.state === 'graded') return slot.unsavedDraft ? `${STATUS_TEXT[slot.status][0]} · unsaved edit` : STATUS_TEXT[slot.status][0]
+  if (slot.state === 'graded') return slot.unsavedDraft ? `${STATUS_TEXT[slot.status][0]} · edited` : STATUS_TEXT[slot.status][0]
   return slot.state
 }
 
 function renderSidebar() {
   if (!setView) return
+  const slots = setView.slots
+  // Grouped by hunt, in schedule order: a follow-up sits under its hunt rather than indented beside it.
+  const hunts = []
+  for (const slot of slots) {
+    let hunt = hunts.find((candidate) => candidate.huntId === slot.huntId)
+    if (!hunt) {
+      hunt = { huntId: slot.huntId, slots: [] }
+      hunts.push(hunt)
+    }
+    hunt.slots.push(slot)
+  }
   document.getElementById('slots').replaceChildren(
-    ...setView.slots.map((slot) =>
+    ...hunts.map((hunt) =>
       el(
         'li',
-        { class: [slot.relation === 'initial' ? '' : 'follow-up', current && current.attemptId === slot.attemptId ? 'active' : ''].join(' ') },
+        { class: 'hunt' },
+        el('div', { class: 'hunt-name', text: hunt.huntId }),
         el(
-          'a',
-          { href: `#${encodeURIComponent(slot.attemptId)}` },
-          el('span', { class: 'muted', text: String(slot.order + 1) }),
-          el('span', { class: 'slot-name', text: slot.huntId }),
-          el('span', { class: 'slot-meta' }, el('span', { class: 'muted', text: slot.stepId }), el('span', { class: `chip chip-${slot.state}`, text: slotLabel(slot) })),
-          slot.reason ? el('span', { class: 'slot-reason', text: slot.reason }) : null,
+          'ol',
+          {},
+          hunt.slots.map((slot) =>
+            el(
+              'li',
+              { class: current && current.attemptId === slot.attemptId ? 'active' : '' },
+              el(
+                'a',
+                { href: `#${encodeURIComponent(slot.attemptId)}`, title: slot.reason || slot.attemptId },
+                el('span', { class: `dot dot-${slot.state}`, 'aria-hidden': 'true' }),
+                el('span', { text: stepName(slot) }),
+                el('span', { class: `state state-${slot.state}`, text: slotLabel(slot) }),
+              ),
+            ),
+          ),
         ),
       ),
     ),
   )
-  const populations = setView.populations
-  const counts = document.getElementById('counts')
-  if (!populations) {
-    counts.replaceChildren(el('p', { class: 'muted', text: 'The report cannot be built over these grades yet.' }))
-    return
-  }
-  const row = (label, population) =>
-    el('tr', {}, el('td', { text: label }), el('td', { text: `${population.verifiedSuccess} / ${population.scheduled}` }), el('td', { text: String(population.reviewed) }), el('td', { text: String(population.pending) }))
-  counts.replaceChildren(
-    el('h3', { text: 'What live:report counts' }),
-    el('p', { class: 'muted', text: 'From your saved grades file — drafts are not in it.' }),
-    el(
-      'table',
-      {},
-      el('tr', {}, el('th', { text: '' }), el('th', { text: 'verified' }), el('th', { text: 'reviewed' }), el('th', { text: 'pending' })),
-      row('initial', populations.initial),
-      populations.revisedObjective.scheduled > 0 ? row('follow-ups', populations.revisedObjective) : null,
-      populations.bothStep.scheduled > 0 ? row('both steps', populations.bothStep) : null,
-    ),
-  )
+  const count = (state) => slots.filter((slot) => slot.state === state).length
+  const notReached = count('not_reached')
+  const parts = [`${count('graded')} of ${slots.length - notReached} saved`]
+  if (count('drafted') > 0) parts.push(`${count('drafted')} drafted`)
+  if (notReached > 0) parts.push(`${notReached} not reached`)
+  document.getElementById('progress').textContent = parts.join(' · ')
+  const index = current ? slots.findIndex((slot) => slot.attemptId === current.attemptId) : -1
+  document.getElementById('slot-position').textContent = index === -1 ? '' : `slot ${index + 1} of ${slots.length}`
 }
 
 // ---------------------------------------------------------------------------
@@ -301,50 +415,97 @@ function renderAttempt(view, saveNote) {
   const head = el(
     'div',
     { class: 'attempt-head' },
-    el('h2', { text: slot.attemptId }),
-    el('span', { class: 'muted', text: `${slot.huntId} · ${slot.stepId} · ${slot.relation}` }),
+    el('h2', { text: slot.huntId, title: slot.attemptId }),
+    el('span', { class: 'muted', text: stepName(slot) }),
     el('span', { class: `chip chip-${slot.state}`, text: slotLabel(slot) }),
   )
-  document.getElementById('main').replaceChildren(
-    head,
-    el('div', { class: 'columns' }, el('div', { class: 'column' }, answerSection(view), trailSection(view)), el('div', { class: 'column' }, judgeSection(view, saveNote), keySection(view))),
-  )
+  const grade = gradePane(view, saveNote)
+  document.getElementById('main').replaceChildren(head, el('div', { class: 'panes' }, readingPane(view), grade))
+  // Drawn once the bar is in the document, from the view the server sent.
+  drawToSave()
   renderSidebar()
-}
-
-function answerCard(answer, collapsedTitle) {
-  const rendered = el('div', { class: 'feed-markdown' })
-  rendered.innerHTML = answer.html // rendered server-side by react-markdown: raw HTML escaped, unsafe URLs dropped
-  const raw = el('pre', { text: answer.text, hidden: true })
-  const renderedButton = el('button', { type: 'button', 'aria-pressed': 'true', text: 'rendered' })
-  const rawButton = el('button', { type: 'button', 'aria-pressed': 'false', text: 'raw' })
-  const show = (asRaw) => {
-    raw.hidden = !asRaw
-    rendered.hidden = asRaw
-    renderedButton.setAttribute('aria-pressed', String(!asRaw))
-    rawButton.setAttribute('aria-pressed', String(asRaw))
+  if (saveNote && view.comparison) {
+    const comparison = document.getElementById('comparison')
+    if (comparison) comparison.scrollIntoView({ block: 'nearest' })
   }
-  renderedButton.addEventListener('click', () => show(false))
-  rawButton.addEventListener('click', () => show(true))
-  const body = [el('div', { class: 'toggle' }, renderedButton, ' ', rawButton), rendered, raw]
-  if (collapsedTitle) return el('details', { class: 'panel' }, el('summary', { text: collapsedTitle }), body)
-  return el('div', { class: 'panel' }, body)
 }
 
-function answerSection(view) {
-  const parts = [el('h2', { text: 'The Answer' })]
+// ---------------------------------------------------------------------------
+// The reading pane: Answer, What it read, Key
+
+function readingPane(view) {
+  const panels = { answer: answerPanel(view), read: readPanel(view), key: keyPanel(view) }
+  const tabs = [
+    ['answer', ['Answer']],
+    ['read', readLabel(view)],
+    ['key', ['Key']],
+  ]
+  const buttons = tabs.map(([id, label]) => el('button', { type: 'button', role: 'tab', 'data-tab': id, 'aria-selected': 'false', onclick: () => select(id) }, label))
+  const toggle = view.answer || (view.parent && view.parent.answer) ? viewToggle(panels.answer) : null
+  const select = (id) => {
+    current.tab = id
+    for (const button of buttons) button.setAttribute('aria-selected', String(button.dataset.tab === id))
+    for (const [panelId, panel] of Object.entries(panels)) panel.hidden = panelId !== id
+    if (toggle) toggle.hidden = id !== 'answer'
+  }
+  const pane = el(
+    'section',
+    { class: 'pane reading-pane' },
+    el('div', { class: 'tabbar' }, el('div', { class: 'tabs', role: 'tablist', 'aria-label': 'what to read' }, buttons), toggle),
+    el('div', { class: 'pane-scroll' }, Object.values(panels)),
+  )
+  select(current.tab)
+  return pane
+}
+
+/** "What it read · 8 · 1 walled": the number of reads, and a marker when any hit a wall or an error. */
+function readLabel(view) {
+  if (!view.trail) return ['What it read']
+  const steps = view.trail.steps
+  const count = (test) => steps.filter(test).length
+  const markers = [
+    [count((step) => step.outcome === 'walled' && step.wall.signal !== 'network-block'), 'walled'],
+    [count((step) => step.outcome === 'walled' && step.wall.signal === 'network-block'), 'blocked'],
+    [count((step) => step.outcome === 'errored'), 'errored'],
+  ].filter(([n]) => n > 0)
+  return ['What it read', el('span', { class: 'tab-count', text: ` · ${steps.length}` }), markers.map(([n, word]) => el('span', { class: 'tab-marker', text: ` · ${n} ${word}` }))]
+}
+
+/** The rendered/raw switch for every Answer in the Answer tab. */
+function viewToggle(panel) {
+  const rendered = el('button', { type: 'button', 'aria-pressed': 'true', text: 'rendered' })
+  const raw = el('button', { type: 'button', 'aria-pressed': 'false', text: 'raw' })
+  const show = (asRaw) => {
+    for (const node of panel.querySelectorAll('.answer-rendered')) node.hidden = asRaw
+    for (const node of panel.querySelectorAll('.answer-raw')) node.hidden = !asRaw
+    rendered.setAttribute('aria-pressed', String(!asRaw))
+    raw.setAttribute('aria-pressed', String(asRaw))
+  }
+  rendered.addEventListener('click', () => show(false))
+  raw.addEventListener('click', () => show(true))
+  return el('div', { class: 'view-toggle', role: 'group', 'aria-label': 'how the Answer is shown' }, rendered, raw)
+}
+
+function answerBody(answer) {
+  const rendered = el('div', { class: 'feed-markdown answer-rendered' })
+  rendered.innerHTML = answer.html // rendered server-side by react-markdown: raw HTML escaped, unsafe URLs dropped
+  return [rendered, el('pre', { class: 'answer-raw', text: answer.text, hidden: true })]
+}
+
+function answerPanel(view) {
+  const parts = []
   if (view.parent) {
     parts.push(
       view.parent.answer
-        ? answerCard(view.parent.answer, `The initial’s Answer (${view.parent.attemptId})`)
-        : el('p', { class: 'muted', text: `The initial (${view.parent.attemptId}) published no Answer.` }),
+        ? el('details', { class: 'fold' }, el('summary', { text: 'The initial’s Answer' }), answerBody(view.parent.answer))
+        : el('p', { class: 'muted small', text: `The initial (${view.parent.attemptId}) published no Answer.` }),
     )
   }
-  if (view.command) parts.push(el('details', { class: 'panel' }, el('summary', { text: 'The command as submitted' }), el('pre', { text: view.command })))
-  if (view.answer) parts.push(answerCard(view.answer))
-  else if (view.slot.state === 'not_reached') parts.push(el('div', { class: 'panel' }, el('strong', { text: 'Not reached. ' }), view.slot.reason, el('p', { class: 'muted', text: 'Nothing was dispatched, so there is no Answer to grade; the slot stays pending and the report carries its reason.' })))
-  else parts.push(el('div', { class: 'panel' }, el('strong', { text: 'No Answer was published. ' }), view.noAnswerReason || ''))
-  return parts
+  if (view.command) parts.push(el('details', { class: 'fold' }, el('summary', { text: 'The command as submitted' }), el('pre', { text: view.command })))
+  if (view.answer) parts.push(el('div', { class: 'answer' }, answerBody(view.answer)))
+  else if (view.slot.state === 'not_reached') parts.push(el('div', { class: 'empty-state' }, el('strong', { text: 'Not reached. ' }), view.slot.reason, el('p', { class: 'muted', text: 'Nothing was dispatched, so there is no Answer to grade; the slot stays pending and the report carries its reason.' })))
+  else parts.push(el('div', { class: 'empty-state' }, el('strong', { text: 'No Answer was published. ' }), view.noAnswerReason || ''))
+  return el('div', { role: 'tabpanel', 'data-tab': 'answer' }, parts)
 }
 
 function stepLabel(step) {
@@ -354,169 +515,198 @@ function stepLabel(step) {
   return step.outcome
 }
 
-function trailSection(view) {
-  const parts = [el('h2', { text: 'What the assistant read' })]
+/** One read on one line — tool, outcome, host and path, title — with the rest behind it. */
+function readRow(step) {
+  const line = [
+    el('span', { class: 'tool', text: step.tool }),
+    el('span', { class: `chip chip-${step.outcome}`, text: stepLabel(step) }),
+    step.url ? shortLink(step.url, 'read-url') : el('span', { class: 'muted read-url', text: 'no page' }),
+    step.title ? el('span', { class: 'muted read-title', text: step.title, title: step.title }) : null,
+  ]
+  const requested = step.requested && step.requested !== step.url ? el('div', { class: 'muted small', text: `${step.tool === 'look' ? 'asked' : 'requested'}: ${step.requested}` }) : null
+  const error = step.error ? el('div', { class: 'error small', text: step.error }) : null
+  if (!step.text && !requested) return el('li', { class: 'read' }, el('div', { class: 'read-line' }, line), error)
+  return el(
+    'li',
+    { class: 'read' },
+    el('details', {}, el('summary', { class: 'read-line' }, line), el('div', { class: 'read-detail' }, requested, step.text ? el('pre', { text: step.text }) : null)),
+    error,
+  )
+}
+
+function evidenceRow(entry) {
+  const verdict = entry.accepted === true ? ['recorded', 'recorded'] : entry.accepted === false ? ['rejected', 'rejected'] : ['no_result', 'no result']
+  return el(
+    'li',
+    {},
+    el('div', { class: 'evidence-head' }, el('span', { class: `chip chip-${verdict[0]}`, text: verdict[1] }), entry.kind ? el('span', { class: 'muted small', text: entry.kind }) : null, shortLink(entry.sourceUrl)),
+    entry.observation ? el('div', { text: entry.observation }) : null,
+    entry.excerpt ? el('blockquote', { text: entry.excerpt }) : null,
+    entry.outcome ? el('div', { class: 'muted small', text: entry.outcome }) : null,
+  )
+}
+
+function readPanel(view) {
+  const parts = []
   if (view.trailNote) parts.push(el('p', { class: 'error', text: view.trailNote }))
   if (!view.trail) {
     if (!view.trailNote) parts.push(el('p', { class: 'muted', text: 'No trail: nothing was dispatched.' }))
-    return parts
+    return el('div', { role: 'tabpanel', 'data-tab': 'read' }, parts)
   }
   const trail = view.trail
   if (trail.subagentsSpawned > 0) {
-    parts.push(el('p', { class: 'muted', text: `The Run spawned ${trail.subagentsSpawned} Subagent(s); their own browsing is not on this tape.` }))
+    parts.push(el('p', { class: 'muted small', text: `The Run spawned ${trail.subagentsSpawned} Subagent(s); their own browsing is not on this tape.` }))
   }
-  parts.push(
-    trail.steps.length === 0
-      ? el('p', { class: 'muted', text: 'The Run navigated, read and looked at nothing.' })
-      : el(
-          'ol',
-          { class: 'trail' },
-          trail.steps.map((step) =>
-            el(
-              'li',
-              {},
-              el('div', { class: 'step-head' }, el('span', { class: 'tool', text: step.tool }), el('span', { class: `chip chip-${step.outcome}`, text: stepLabel(step) }), step.url ? link(step.url) : el('span', { class: 'muted', text: 'no page' })),
-              step.title ? el('div', { class: 'muted', text: step.title }) : null,
-              step.requested && step.requested !== step.url ? el('div', { class: 'requested muted', text: `${step.tool === 'look' ? 'asked' : 'requested'}: ${step.requested}` }) : null,
-              step.error ? el('div', { class: 'error', text: step.error }) : null,
-              step.text ? el('details', {}, el('summary', { text: step.tool === 'look' ? 'what the look reported' : 'full page text' }), el('pre', { text: step.text })) : null,
-            ),
-          ),
-        ),
-  )
-  parts.push(el('h3', { text: 'Evidence the assistant recorded' }))
-  parts.push(
-    trail.evidence.length === 0
-      ? el('p', { class: 'muted', text: 'None.' })
-      : el(
-          'ol',
-          { class: 'evidence' },
-          trail.evidence.map((entry) => {
-            const verdict = entry.accepted === true ? ['chip-loaded', 'recorded'] : entry.accepted === false ? ['chip-errored', 'rejected'] : ['chip-no_result', 'no result']
-            return el(
-              'li',
-              {},
-              el('div', { class: 'step-head' }, el('span', { class: `chip ${verdict[0]}`, text: verdict[1] }), entry.kind ? el('span', { class: 'muted', text: entry.kind }) : null, link(entry.sourceUrl)),
-              entry.observation ? el('div', { text: entry.observation }) : null,
-              entry.excerpt ? el('blockquote', { text: entry.excerpt }) : null,
-              entry.outcome ? el('div', { class: 'muted requested', text: entry.outcome }) : null,
-            )
-          }),
-        ),
-  )
+  parts.push(trail.steps.length === 0 ? el('p', { class: 'muted', text: 'The Run navigated, read and looked at nothing.' }) : el('ol', { class: 'reads' }, trail.steps.map(readRow)))
+
+  parts.push(el('h3', { text: 'Evidence recorded' }))
+  const accepted = trail.evidence.filter((entry) => entry.accepted === true)
+  const others = trail.evidence.filter((entry) => entry.accepted !== true)
+  if (trail.evidence.length === 0) parts.push(el('p', { class: 'muted small', text: 'None.' }))
+  if (accepted.length > 0) parts.push(el('ol', { class: 'evidence' }, accepted.map(evidenceRow)))
+  if (others.length > 0) {
+    // What the assistant tried to record and could not: for diagnosing the Run, not for judging the Answer.
+    const rejected = others.filter((entry) => entry.accepted === false).length
+    const noResult = others.length - rejected
+    const summary = [rejected > 0 ? `${rejected} rejected` : null, noResult > 0 ? `${noResult} with no result` : null].filter(Boolean).join(' · ')
+    parts.push(el('details', { class: 'fold' }, el('summary', { text: summary }), el('ol', { class: 'evidence' }, others.map(evidenceRow))))
+  }
   if (view.screenshots.length > 0) {
     parts.push(el('h3', { text: 'Failure screenshots' }), el('ul', {}, view.screenshots.map((shot) => el('li', {}, el('a', { href: shot.href, target: '_blank', rel: 'noopener noreferrer', text: shot.name })))))
   }
-  return parts
+  return el('div', { role: 'tabpanel', 'data-tab': 'read' }, parts)
 }
 
 function sourcesList(sources) {
-  if (!sources || sources.length === 0) return el('p', { class: 'muted', text: 'None.' })
-  return el('ul', {}, sources.map((source) => el('li', {}, link(source.url), el('div', { class: 'muted', text: source.supports }))))
+  if (!sources || sources.length === 0) return el('p', { class: 'muted small', text: 'None.' })
+  return el('ul', {}, sources.map((source) => el('li', {}, link(source.url), el('div', { class: 'muted small', text: source.supports }))))
 }
 
-function keySection(view) {
+/** The key beyond its checks: the required facts and pitfalls are the checks, so they are not repeated here. */
+function keyPanel(view) {
   const key = view.key
   const delta = key.followUpDelta
-  return [
-    el('h2', { text: `The rest of the key · ${key.huntId} v${key.version}` }),
-    el('div', { class: 'panel' }, el('h3', { text: 'Sources' }), sourcesList(key.sources)),
-    el(
-      'details',
-      { class: 'panel', open: true },
-      el('summary', { text: 'Required facts, pitfalls, uncertainties, live facts' + (delta ? ', follow-up delta' : '') }),
-      block('Required facts', key.requiredFacts),
-      block('Pitfalls', key.pitfalls),
-      block('Uncertainties', key.uncertainties),
-      block('Live facts', key.liveFacts),
-      delta ? [el('h3', { text: 'Follow-up delta' }), block('Required facts', delta.requiredFacts), block('Pitfalls', delta.pitfalls), el('h4', { text: 'Sources' }), sourcesList(delta.sources)] : null,
-    ),
-  ]
+  return el(
+    'div',
+    { role: 'tabpanel', 'data-tab': 'key' },
+    el('p', { class: 'muted small', text: `${key.huntId} · key v${key.version}` }),
+    el('h3', { text: 'Sources' }),
+    sourcesList(key.sources),
+    el('h3', { text: 'Uncertainties' }),
+    listOrNone(key.uncertainties),
+    el('h3', { text: 'Live facts' }),
+    listOrNone(key.liveFacts),
+    delta ? [el('h3', { text: 'Follow-up delta' }), el('h4', { text: 'Required facts' }), listOrNone(delta.requiredFacts), el('h4', { text: 'Pitfalls' }), listOrNone(delta.pitfalls), el('h4', { text: 'Sources' }), sourcesList(delta.sources)] : null,
+  )
 }
 
 // ---------------------------------------------------------------------------
-// Judging
+// The Grade form: constraints, checks, verdict, support, rationale
 
-function judgeSection(view, saveNote) {
+function gradePane(view, saveNote) {
   const key = view.key
-  const parts = [
-    el('h2', { text: 'Judge' }),
-    el('div', { class: 'panel constraints' }, el('h3', { text: 'Constraints — read these before judging' }), el('p', { class: 'muted', text: 'They decide verdicts without being checks: how to decompose the verdict, what not to grade, which alternatives count.' }), key.constraints.length ? list(key.constraints) : el('p', { class: 'muted', text: 'None.' })),
-  ]
+  const form = el('div', { class: 'grade-form', id: 'grade' })
+  if (key.constraints.length > 0) form.append(el('div', { class: 'constraints' }, el('h3', { text: 'Constraints' }), list(key.constraints)))
+
   if (!current.state) {
-    parts.push(el('p', { class: 'muted', text: 'Nothing to grade: no attempt was dispatched into this slot.' }))
-    parts.push(el('div', { class: 'panel' }, el('h3', { text: 'The checks this step would have been judged against' }), el('ul', {}, view.checks.map((check) => el('li', {}, el('code', { text: check.checkId }), ' ', check.description)))))
-    return parts
+    form.append(
+      el('p', { class: 'muted', text: 'Nothing to grade: no attempt was dispatched into this slot.' }),
+      el('h3', { text: 'The checks this step would have been judged against' }),
+      el('ul', {}, view.checks.map((check) => el('li', {}, el('code', { class: 'check-id', text: check.checkId }), ' ', check.description))),
+    )
+    const bar = el('div', { class: 'save-bar', id: 'save-bar' }, el('div', { class: 'save-row' }, el('span', { class: 'to-save-line muted', id: 'to-save-line', text: 'nothing to grade' })))
+    return el('section', { class: 'pane grade-pane' }, el('div', { class: 'pane-scroll' }, form), bar)
   }
   const state = current.state
-
-  const statuses = el(
-    'div',
-    { class: 'statuses' },
-    view.allowedStatuses.map((status) =>
-      el('label', {}, el('input', { type: 'radio', name: 'status', value: status, checked: state.status === status, onchange: () => { state.status = status; changed() } }), ' ', el('strong', { text: STATUS_TEXT[status][0] }), ' ', el('span', { class: 'muted', text: STATUS_TEXT[status][1] })),
-    ),
-  )
-  parts.push(el('div', { class: 'panel' }, el('h3', { text: 'Status' }), view.answer ? null : el('p', { class: 'muted', text: 'The Run published no Answer, so it can only be unsuccessful or help/access blocked.' }), statuses))
 
   const checks = el('ol', { class: 'checks', id: 'checks' })
   const renderChecks = () => checks.replaceChildren(...view.checks.map(checkRow))
   renderChecks()
   const markAll = view.answer
     ? null
-    : el('button', { type: 'button', text: 'Mark every check unsatisfied', onclick: () => { for (const check of view.checks) state.checks[check.checkId] = Object.assign({}, state.checks[check.checkId], { satisfied: false }); renderChecks(); changed() } })
-  parts.push(el('div', { class: 'panel' }, el('h3', { text: `Checks (${view.checks.length})` }), markAll, checks))
+    : el('button', { type: 'button', class: 'quiet', text: 'Mark every check unsatisfied', onclick: () => { for (const check of view.checks) state.checks[check.checkId] = Object.assign({}, state.checks[check.checkId], { satisfied: false }); renderChecks(); changed() } })
+  form.append(el('div', { class: 'section-head' }, el('h3', { text: 'Checks' }), el('span', { class: 'muted small', text: String(view.checks.length) }), markAll), checks)
+
+  const verdicts = el(
+    'div',
+    { class: 'verdicts', role: 'radiogroup', 'aria-label': 'verdict' },
+    view.allowedStatuses.map((status) =>
+      el(
+        'label',
+        { class: 'verdict' },
+        el('input', { type: 'radio', name: 'verdict', value: status, checked: state.status === status, onchange: () => { state.status = status; changed() } }),
+        el('span', {}, el('strong', { text: STATUS_TEXT[status][0] }), el('span', { class: 'muted small verdict-gloss', text: STATUS_TEXT[status][1] })),
+      ),
+    ),
+  )
+  // Element.append writes a null as the text "null", so nothing optional goes through it directly.
+  form.append(el('h3', { text: 'Verdict' }))
+  if (!view.answer) form.append(el('p', { class: 'muted small', text: 'No Answer was published: unsuccessful or help / access blocked only.' }))
+  form.append(verdicts)
 
   const supportRows = el('div', { id: 'support-rows' })
   current.renderSupport = () => supportRows.replaceChildren(...state.support.map(supportRow))
   current.renderSupport()
-  parts.push(
-    el(
-      'div',
-      { class: 'panel' },
-      el('h3', { text: 'Support' }),
-      el('p', { class: 'muted', text: 'What you read to accept a claim: pick a key source, or name another URL an equivalent official source carries.' }),
-      supportRows,
-      el('button', { type: 'button', text: 'Add support', onclick: () => { state.support.push({ claim: '', sourceUrl: '', passageRef: '', equivalentTo: '' }); current.supportModes.push('pick'); current.renderSupport(); changed() } }),
-    ),
+  form.append(
+    el('div', { class: 'section-head' }, el('h3', { text: 'Support' }), el('button', { type: 'button', class: 'quiet', text: 'Add support', onclick: () => { state.support.push({ claim: '', sourceUrl: '', passageRef: '', equivalentTo: '' }); current.supportModes.push('pick'); current.renderSupport(); changed() } })),
+    supportRows,
   )
 
-  const rationale = el('textarea', { rows: 4, placeholder: 'Why this status — required', oninput: (event) => { state.rationale = event.target.value; changed() } })
+  const rationale = el('textarea', { id: 'rationale', rows: 4, placeholder: 'Why this verdict — required', oninput: (event) => { state.rationale = event.target.value; changed() } })
   rationale.value = state.rationale
-  parts.push(el('div', { class: 'panel' }, el('h3', { text: 'Rationale' }), rationale))
+  form.append(el('h3', { text: 'Rationale' }), rationale)
 
-  // Built with the server's problems already in place: this section is not in
-  // the document yet, so nothing here can be looked up by id.
-  const problems = el('ul', { id: 'problems' }, view.problems.map((problem) => el('li', { text: problem })))
-  const problemsPanel = el('div', { class: 'panel problems', id: 'problems-panel', hidden: view.problems.length === 0 }, el('h3', { text: 'What blocks the save' }), el('p', { class: 'muted', text: 'Code confirms the record is complete — never that it is right.' }), problems)
-  const saveButton = el('button', { type: 'button', class: 'primary', id: 'save', disabled: view.problems.length > 0, text: view.saved ? 'Save changes' : 'Save Grade', onclick: save })
-  // Always present, shown once a draft exists — an edit begun on this screen can be discarded on it.
-  const discard = el('button', { type: 'button', id: 'discard', hidden: current.source !== 'draft', text: view.saved ? 'Discard edit, back to saved' : 'Discard draft', onclick: discardDraft })
-  const saveState = el('span', { class: 'save-state', id: 'save-state', text: saveNote || (current.source === 'draft' ? 'restored your draft' : current.source === 'saved' ? 'as saved in your grades file' : 'blank — nothing judged yet') })
-  parts.push(problemsPanel, el('div', { class: 'actions' }, saveButton, discard, saveState))
+  if (view.comparison) form.append(comparisonPanel(view.comparison))
 
-  if (view.comparison) parts.push(comparisonPanel(view.comparison))
-  return parts
+  return el('section', { class: 'pane grade-pane' }, el('div', { class: 'pane-scroll' }, form), saveBar(view, saveNote))
 }
 
 function checkRow(check) {
   const state = current.state
-  const judged = state.checks[check.checkId]
-  const name = `check-${check.checkId}`
-  const set = (satisfied) => { state.checks[check.checkId] = Object.assign({}, state.checks[check.checkId], { satisfied }); changed() }
-  const note = el('textarea', { rows: 2, placeholder: 'optional note — kept in your grades file, never exported into a report', oninput: (event) => { state.checks[check.checkId] = Object.assign({}, state.checks[check.checkId], { note: event.target.value }); changed() } })
-  note.value = judged.note
+  const id = check.checkId
+  const judged = state.checks[id]
+  const noteBox = el('textarea', {
+    rows: 2,
+    class: 'note-box',
+    placeholder: 'optional note — kept in your grades file, never exported into a report',
+    'aria-label': `note on ${id}`,
+    hidden: judged.note === '',
+    oninput: (event) => {
+      state.checks[id] = Object.assign({}, state.checks[id], { note: event.target.value })
+      noteButton.classList.toggle('has-note', event.target.value !== '')
+      changed()
+    },
+  })
+  noteBox.value = judged.note
+  const yes = el('button', { type: 'button', class: 'seg seg-yes', 'data-satisfied': 'true', 'aria-pressed': String(judged.satisfied === true), text: 'satisfied' })
+  const no = el('button', { type: 'button', class: 'seg seg-no', 'data-satisfied': 'false', 'aria-pressed': String(judged.satisfied === false), text: 'not satisfied' })
+  const set = (satisfied) => {
+    state.checks[id] = Object.assign({}, state.checks[id], { satisfied })
+    yes.setAttribute('aria-pressed', String(satisfied === true))
+    no.setAttribute('aria-pressed', String(satisfied === false))
+    changed()
+  }
+  yes.addEventListener('click', () => set(true))
+  no.addEventListener('click', () => set(false))
+  const noteButton = el('button', {
+    type: 'button',
+    class: ['note-toggle', judged.note !== '' ? 'has-note' : ''].join(' '),
+    title: 'note',
+    'aria-label': `note on ${id}`,
+    'aria-expanded': String(judged.note !== ''),
+    text: '✎',
+    onclick: () => {
+      noteBox.hidden = !noteBox.hidden
+      noteButton.setAttribute('aria-expanded', String(!noteBox.hidden))
+      if (!noteBox.hidden) noteBox.focus()
+    },
+  })
   return el(
     'li',
-    { class: 'check' },
-    el('div', { class: 'check-head' }, el('code', { text: check.checkId }), el('span', { text: check.description })),
-    el(
-      'div',
-      { class: 'judge' },
-      el('label', {}, el('input', { type: 'radio', name, checked: judged.satisfied === true, onchange: () => set(true) }), ' satisfied'),
-      el('label', {}, el('input', { type: 'radio', name, checked: judged.satisfied === false, onchange: () => set(false) }), ' not satisfied'),
-    ),
-    el('details', { class: 'note', open: judged.note !== '' }, el('summary', { text: 'note' }), note),
+    { class: 'check', 'data-check': id },
+    el('div', { class: 'check-text' }, el('code', { class: 'check-id', text: id }), check.description),
+    el('div', { class: 'check-controls' }, el('div', { class: 'seg-group', role: 'group', 'aria-label': `${id} judgment` }, yes, no), noteButton),
+    noteBox,
   )
 }
 
@@ -567,28 +757,68 @@ function supportRow(row, index) {
     )
     parts.push(text('sourceUrl', 'https://… the page you read'), text('passageRef', 'where the passage is on it'), equivalent)
   }
-  parts.push(el('div', {}, el('button', { type: 'button', text: 'Remove', onclick: () => { current.state.support.splice(index, 1); current.supportModes.splice(index, 1); current.renderSupport(); changed() } })))
+  parts.push(el('div', {}, el('button', { type: 'button', class: 'quiet', text: 'Remove', onclick: () => { current.state.support.splice(index, 1); current.supportModes.splice(index, 1); current.renderSupport(); changed() } })))
   return el('div', { class: 'support-row' }, parts)
 }
 
-function showProblems(problems, blocking) {
-  const box = document.getElementById('problems')
-  const panel = document.getElementById('problems-panel')
-  const button = document.getElementById('save')
-  if (!box || !panel || !button) return
-  box.replaceChildren(...problems.map((problem) => el('li', { text: problem })))
-  panel.hidden = problems.length === 0
-  panel.classList.toggle('blocking', Boolean(blocking))
-  button.disabled = problems.length > 0
+// ---------------------------------------------------------------------------
+// The save bar
+
+function saveBar(view, saveNote) {
+  const line = el('span', { class: 'to-save-line', id: 'to-save-line' })
+  const checklist = el('ul', { class: 'to-save', id: 'to-save', hidden: true })
+  const toggle = el('button', {
+    type: 'button',
+    class: 'quiet',
+    id: 'to-save-toggle',
+    'aria-expanded': 'false',
+    'aria-controls': 'to-save',
+    text: 'checklist',
+    onclick: () => {
+      checklist.hidden = !checklist.hidden
+      toggle.setAttribute('aria-expanded', String(!checklist.hidden))
+    },
+  })
+  const errors = el('ul', { class: 'save-errors', id: 'save-errors', hidden: true })
+  const saveButton = el('button', { type: 'button', class: 'primary', id: 'save', disabled: true, text: view.saved ? 'Save changes' : 'Save Grade', onclick: () => void save() })
+  // Always present, shown once a draft exists — an edit begun on this screen can be discarded on it.
+  const discard = el('button', { type: 'button', id: 'discard', hidden: current.source !== 'draft', text: view.saved ? 'Discard edit' : 'Discard draft', onclick: () => void discardDraft() })
+  const note = el('span', { class: 'save-state', id: 'save-state', text: saveNote || (current.source === 'draft' ? 'restored your draft' : current.source === 'saved' ? 'as saved in your grades file' : '') })
+  current.ui = { line, checklist, errors, saveButton, discard, note }
+  return el(
+    'div',
+    { class: 'save-bar', id: 'save-bar' },
+    checklist,
+    errors,
+    el('div', { class: 'save-row' }, el('div', { class: 'save-status' }, line, toggle, note), el('div', { class: 'save-buttons' }, discard, saveButton)),
+  )
+}
+
+/** What is left before a save, as the server worked it out from the validator: work to do, never errors. */
+function drawToSave() {
+  if (!current || !current.ui || !current.toSave) return
+  const { line, checklist, saveButton } = current.ui
+  const toSave = current.toSave
+  const left = toSave.items.filter((item) => !item.done)
+  line.replaceChildren(...(toSave.ready ? [el('span', { class: 'ready', text: 'ready to save' })] : ['left: ', left.map((item) => item.short).join(' · ')]))
+  checklist.replaceChildren(...toSave.items.map((item) => el('li', { class: item.done ? 'done' : 'todo' }, el('span', { class: 'mark', 'aria-hidden': 'true', text: item.done ? '✓' : '○' }), item.label)))
+  saveButton.disabled = !toSave.ready
+}
+
+/** The server's refusal, in its own words, and only after a save or a draft was actually refused. */
+function showErrors(messages) {
+  if (!current || !current.ui) return
+  current.ui.errors.replaceChildren(...messages.map((message) => el('li', { text: message })))
+  current.ui.errors.hidden = messages.length === 0
 }
 
 function saveState(text) {
-  const node = document.getElementById('save-state')
-  if (node) node.textContent = text
+  if (current && current.ui) current.ui.note.textContent = text
 }
 
 function changed() {
   current.dirty = true
+  showErrors([])
   saveState('writing draft…')
   clearTimeout(current.timer)
   current.timer = setTimeout(() => void flushDraft(), 300)
@@ -610,12 +840,14 @@ function flushDraft() {
     if (current !== target) return written
     if (written) {
       target.source = 'draft'
-      document.getElementById('discard').hidden = false
-      showProblems(data.problems, false)
-      saveState('draft written beside your grades file')
+      target.ui.discard.hidden = false
+      target.toSave = data.toSave
+      drawToSave()
+      saveState('draft written')
       await refreshSet()
     } else {
-      showProblems(data.errors || [data.error || `the draft was not written (HTTP ${status})`], true)
+      target.ui.saveButton.disabled = true
+      showErrors(data.errors || [data.error || `the draft was not written (HTTP ${status})`])
       saveState('the draft was NOT written')
     }
     return written
@@ -634,7 +866,7 @@ async function save() {
     renderAttempt(data, 'saved to your grades file')
     return
   }
-  showProblems(data.errors || [data.error || `not saved (HTTP ${status})`], true)
+  showErrors(data.errors || [data.error || `not saved (HTTP ${status})`])
   saveState('not saved — your grades file is unchanged')
 }
 
@@ -645,12 +877,15 @@ async function discardDraft() {
   await target.inflight
   const { status, data } = await api('DELETE', `/api/drafts/${encodeURIComponent(target.attemptId)}`)
   if (status !== 200) {
-    showProblems([data.error || `the draft was not discarded (HTTP ${status})`], true)
+    showErrors([data.error || `the draft was not discarded (HTTP ${status})`])
     return
   }
   await refreshSet()
   renderAttempt(data, 'draft discarded')
 }
+
+// ---------------------------------------------------------------------------
+// Another reviewer's Grade: disagreements first
 
 function mark(value) {
   if (value === null) return '—'
@@ -659,31 +894,46 @@ function mark(value) {
 
 function comparisonPanel(comparison) {
   if (comparison.otherPending) {
-    return el('div', { class: 'panel compare' }, el('h3', { text: 'The other Grade' }), el('p', { class: 'muted', text: 'The other reviewer has not graded this slot.' }))
+    return el('section', { class: 'comparison', id: 'comparison' }, el('h3', { text: 'The other Grade' }), el('p', { class: 'muted', text: 'The other reviewer has not graded this slot.' }))
   }
+  const who = comparison.reviewer
+  const pair = (label, own, other) =>
+    el('div', { class: 'pair' }, el('div', {}, label), el('div', { class: 'pair-cols' }, el('div', {}, el('span', { class: 'who', text: 'you' }), own), el('div', {}, el('span', { class: 'who', text: who }), other)))
+  const judgment = (view) => (view === null ? el('span', { class: 'muted', text: 'not judged' }) : [mark(view.satisfied), view.note ? el('div', { class: 'muted small', text: view.note }) : null])
+  const checkPair = (check) => pair([el('code', { class: 'check-id', text: check.checkId }), check.description], judgment(check.own), judgment(check.other))
+  const verdictPair = pair(el('strong', { text: 'verdict' }), STATUS_TEXT[comparison.status.own][0], STATUS_TEXT[comparison.status.other][0])
   const supportList = (rows) => (rows.length === 0 ? el('span', { class: 'muted', text: 'none' }) : el('ul', {}, rows.map((row) => el('li', {}, row.claim, ' — ', link(row.sourceUrl), ` (${row.passageRef})`, row.equivalentTo ? [' equivalent to ', link(row.equivalentTo)] : null))))
-  return el(
+
+  const disagreements = [comparison.status.agree ? null : verdictPair, ...comparison.checks.filter((check) => !check.agree).map(checkPair)].filter(Boolean)
+  const agreements = el(
     'div',
-    { class: 'panel compare' },
-    el('h3', { text: `Beside ${comparison.reviewer}’s Grade — ${comparison.agreements} agree, ${comparison.disagreements} disagree` }),
-    el(
-      'table',
-      {},
-      el('tr', {}, el('th', { text: '' }), el('th', { text: 'you' }), el('th', { text: comparison.reviewer }), el('th', { text: '' })),
-      el('tr', {}, el('td', { text: 'status' }), el('td', { text: STATUS_TEXT[comparison.status.own][0] }), el('td', { text: STATUS_TEXT[comparison.status.other][0] }), el('td', {}, el('span', { class: `chip chip-${comparison.status.agree ? 'agree' : 'disagree'}`, text: comparison.status.agree ? 'agree' : 'disagree' }))),
-      el('tr', {}, el('td', { text: 'rationale' }), el('td', { text: comparison.rationale.own }), el('td', { text: comparison.rationale.other }), el('td', { text: '' })),
-      comparison.checks.map((check) =>
-        el(
-          'tr',
-          {},
-          el('td', {}, el('code', { text: check.checkId }), el('div', { class: 'muted', text: check.description })),
-          el('td', {}, mark(check.own.satisfied), check.own.note ? el('div', { class: 'muted', text: check.own.note }) : null),
-          el('td', {}, check.other ? [mark(check.other.satisfied), check.other.note ? el('div', { class: 'muted', text: check.other.note }) : null] : el('span', { class: 'muted', text: 'not judged' })),
-          el('td', {}, el('span', { class: `chip chip-${check.agree ? 'agree' : 'disagree'}`, text: check.agree ? 'agree' : 'disagree' })),
-        ),
-      ),
-      el('tr', {}, el('td', { text: 'support' }), el('td', {}, supportList(comparison.support.own)), el('td', {}, supportList(comparison.support.other)), el('td', { text: '' })),
-    ),
+    { class: 'agreements', hidden: true },
+    comparison.status.agree ? verdictPair : null,
+    comparison.checks.filter((check) => check.agree).map(checkPair),
+    pair(el('strong', { text: 'support' }), supportList(comparison.support.own), supportList(comparison.support.other)),
+  )
+  const showText = `show ${comparison.agreements} agreement${comparison.agreements === 1 ? '' : 's'} and support`
+  const toggle = el('button', {
+    type: 'button',
+    class: 'quiet',
+    id: 'show-agreements',
+    'aria-expanded': 'false',
+    text: showText,
+    onclick: () => {
+      agreements.hidden = !agreements.hidden
+      toggle.setAttribute('aria-expanded', String(!agreements.hidden))
+      toggle.textContent = agreements.hidden ? showText : 'hide agreements'
+    },
+  })
+  return el(
+    'section',
+    { class: 'comparison', id: 'comparison' },
+    el('h3', { text: `Compared with ${who}` }),
+    el('p', { class: 'comparison-summary', text: `${comparison.disagreements} disagree · ${comparison.agreements} agree` }),
+    disagreements.length > 0 ? disagreements : el('p', { class: 'muted small', text: 'No disagreements.' }),
+    pair(el('strong', { text: 'rationale' }), comparison.rationale.own, comparison.rationale.other),
+    toggle,
+    agreements,
   )
 }
 

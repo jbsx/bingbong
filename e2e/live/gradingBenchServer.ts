@@ -56,6 +56,7 @@ import {
   reviewerRefusal,
   sanitizeEditorState,
   slotSummariesOf,
+  toSaveOf,
   withDraft,
   withoutDraft,
   type BenchDrafts,
@@ -434,6 +435,12 @@ export function openGradingBench(options: GradingBenchOptions): Validation<Gradi
     return result.ok ? [] : result.errors
   }
 
+  /** What a save would break, in the validator's words, and the same said as the page's to-save checklist. */
+  function judgmentOf(state: BenchEditorState, bench: BenchSlot) {
+    const problems = problemsOf(state, bench)
+    return { problems, toSave: toSaveOf(state, bench.task, problems) }
+  }
+
   function draftOf(attemptId: string) {
     return Object.hasOwn(drafts.drafts, attemptId) ? drafts.drafts[attemptId] : undefined
   }
@@ -482,7 +489,7 @@ export function openGradingBench(options: GradingBenchOptions): Validation<Gradi
       screenshots: screenshots.map((shot, index) => ({ name: shot.name, href: `/api/screenshot/${encodeURIComponent(slot.attemptId)}/${index}` })),
       allowedStatuses: allowedStatusesFor(dispatched),
       editor,
-      problems: editor === null ? [] : problemsOf(editor.state, bench),
+      ...(editor === null ? { problems: [], toSave: null } : judgmentOf(editor.state, bench)),
       saved: entry !== undefined && isReviewed(entry.status),
       // Null until this reviewer's own entry is saved — see compareGrades.
       comparison: other === null ? null : compareGrades(entry, other.entries.find((candidate) => candidate.attemptId === slot.attemptId), task),
@@ -559,7 +566,7 @@ export function openGradingBench(options: GradingBenchOptions): Validation<Gradi
         if (state === null) return
         drafts = withDraft(drafts, attemptId, state, now().toISOString())
         writeDrafts()
-        return send(response, 200, { problems: problemsOf(state, bench), slot: summaryOf(attemptId) })
+        return send(response, 200, { ...judgmentOf(state, bench), slot: summaryOf(attemptId) })
       }
 
       case 'DELETE drafts': {

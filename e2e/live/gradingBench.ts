@@ -579,6 +579,67 @@ export function gradesWith(
 }
 
 // ---------------------------------------------------------------------------
+// What is left before a save
+
+/** One thing the record still needs, as the page's to-save checklist says it. */
+export interface ToSaveItem {
+  /** The checklist's line. */
+  readonly label: string
+  /** The same in a word or two, for the progress line on the save bar. */
+  readonly short: string
+  readonly done: boolean
+}
+
+export interface ToSave {
+  /** Whether the validator would accept a save now. Always the validator's answer, never the checklist's. */
+  readonly ready: boolean
+  readonly items: readonly ToSaveItem[]
+}
+
+const filled = (value: string): boolean => value.trim() !== ''
+
+/**
+ * The to-save checklist (#232): what the record still needs, said as work
+ * left rather than as errors, so a blank slot reads as a list to do and not a
+ * list of failures. It restates from the editor state the rules a reviewer
+ * meets on every slot — a verdict, every check judged, a rationale, what a
+ * pass needs, finished support rows — and, once all of those are done, falls
+ * back to the validator's own words for any rule it does not restate.
+ * `ready` is taken from the validator, so the checklist can never unlock a
+ * save the validator would refuse.
+ */
+export function toSaveOf(state: BenchEditorState, task: LiveKeyTask, problems: readonly string[]): ToSave {
+  const total = task.checks.length
+  const judged = task.checks.filter((check) => typeof state.checks[check.checkId]?.satisfied === 'boolean').length
+  const items: ToSaveItem[] = [
+    { label: 'choose a verdict', short: 'verdict', done: state.status !== null },
+    { label: `judge every check (${judged} of ${total})`, short: `${judged} of ${total} checks`, done: judged === total },
+    { label: 'write a rationale', short: 'rationale', done: filled(state.rationale) },
+  ]
+  if (state.status === 'pass') {
+    const unsatisfied = task.checks.filter((check) => state.checks[check.checkId]?.satisfied === false).map((check) => check.checkId)
+    items.push({
+      label: unsatisfied.length === 0 ? 'a pass needs every check satisfied' : `a pass needs every check satisfied (${unsatisfied.join(', ')} ${unsatisfied.length === 1 ? 'is' : 'are'} not)`,
+      short: 'pass: checks',
+      done: unsatisfied.length === 0,
+    })
+    items.push({ label: 'a pass needs support for a claim', short: 'pass: support', done: state.support.length > 0 })
+  }
+  const unfinished = state.support.filter((row) => !(filled(row.claim) && filled(row.sourceUrl) && filled(row.passageRef))).length
+  if (unfinished > 0) {
+    items.push({
+      label: unfinished === 1 ? 'finish the support row: claim, source and passage' : `finish ${unfinished} support rows: claim, source and passage`,
+      short: 'support rows',
+      done: false,
+    })
+  }
+  if (problems.length > 0 && items.every((item) => item.done)) {
+    for (const problem of problems) items.push({ label: problem.replace(/^grade for [^:]*: /, ''), short: 'a rule', done: false })
+  }
+  return { ready: problems.length === 0, items }
+}
+
+// ---------------------------------------------------------------------------
 // Another reviewer's Grade
 
 export interface CheckJudgmentView {

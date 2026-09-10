@@ -17,6 +17,7 @@ import {
   reviewerRefusal,
   sanitizeEditorState,
   slotSummariesOf,
+  toSaveOf,
   withDraft,
   withoutDraft,
   type BenchEditorState,
@@ -445,6 +446,83 @@ describe('saving an entry', () => {
     expect(allowedStatusesFor(b2.dispatched)).toEqual([])
     const result = gradesWith({ status: 'unsuccessful', checks: { d1: { satisfied: false, note: '' } }, support: [], rationale: 'x' }, b2, grades, inputs, 'reviewer-a', REVIEWED_AT)
     expect(result.ok ? '' : result.errors.join(' ')).toContain('stays pending')
+  })
+})
+
+describe('what is left before a save', () => {
+  // The page's to-save checklist (#232). It is the same rule the validator
+  // enforces, said as work left rather than as errors, so a blank slot reads
+  // as a list to do and not as a list of failures.
+  const problemsFor = (state: BenchEditorState, attemptId = 'a1') => {
+    const { inputs, grades } = fixture()
+    const result = gradesWith(state, benchSlot(inputs, attemptId), grades, inputs, 'reviewer-a', REVIEWED_AT)
+    return result.ok ? [] : result.errors
+  }
+  const toSave = (state: BenchEditorState, attemptId = 'a1') => toSaveOf(state, taskOf(fixture().inputs, attemptId), problemsFor(state, attemptId))
+
+  it('lists the verdict, every check and the rationale as not done yet on a blank slot', () => {
+    expect(toSave(blankEditorState(taskOf(fixture().inputs, 'a1')))).toEqual({
+      ready: false,
+      items: [
+        { label: 'choose a verdict', short: 'verdict', done: false },
+        { label: 'judge every check (0 of 2)', short: '0 of 2 checks', done: false },
+        { label: 'write a rationale', short: 'rationale', done: false },
+      ],
+    })
+  })
+
+  it('ticks items off as the judgment fills in, and adds what a pass needs once pass is chosen', () => {
+    const state: BenchEditorState = { ...passingState(), checks: { c1: { satisfied: true, note: '' }, c2: { satisfied: null, note: '' } }, rationale: '   ' }
+    expect(toSave(state).items).toEqual([
+      { label: 'choose a verdict', short: 'verdict', done: true },
+      { label: 'judge every check (1 of 2)', short: '1 of 2 checks', done: false },
+      { label: 'write a rationale', short: 'rationale', done: false },
+      { label: 'a pass needs every check satisfied', short: 'pass: checks', done: true },
+      { label: 'a pass needs support for a claim', short: 'pass: support', done: true },
+    ])
+  })
+
+  it('names the checks a pass cannot carry, and asks for support when there is none', () => {
+    const state: BenchEditorState = { ...passingState(), checks: { c1: { satisfied: true, note: '' }, c2: { satisfied: false, note: '' } }, support: [] }
+    const result = toSave(state)
+    expect(result.ready).toBe(false)
+    expect(result.items.filter((item) => !item.done)).toEqual([
+      { label: 'a pass needs every check satisfied (c2 is not)', short: 'pass: checks', done: false },
+      { label: 'a pass needs support for a claim', short: 'pass: support', done: false },
+    ])
+  })
+
+  it('asks for every support row to be finished, whatever the verdict', () => {
+    const half = { claim: 'the code', sourceUrl: '', passageRef: '', equivalentTo: '' }
+    const state: BenchEditorState = { ...passingState(), status: 'useful_partial', support: [half, half] }
+    expect(toSave(state).items.filter((item) => !item.done)).toEqual([{ label: 'finish 2 support rows: claim, source and passage', short: 'support rows', done: false }])
+  })
+
+  it('is complete exactly when the validator would accept the save', () => {
+    const { inputs } = fixture()
+    const cases: Array<[BenchEditorState, string]> = [
+      [blankEditorState(taskOf(inputs, 'a1')), 'a1'],
+      [passingState(), 'a1'],
+      [{ ...passingState(), status: null }, 'a1'],
+      [{ ...passingState(), rationale: '' }, 'a1'],
+      [{ ...passingState(), support: [] }, 'a1'],
+      [{ ...passingState(), status: 'useful_partial', checks: { c1: { satisfied: true, note: '' }, c2: { satisfied: false, note: '' } }, support: [] }, 'a1'],
+      [{ ...passingState(), status: 'unsuccessful', support: [{ claim: '', sourceUrl: 'https://spec.invalid/a', passageRef: 'x', equivalentTo: '' }] }, 'a1'],
+      [{ status: 'unsuccessful', checks: { c1: { satisfied: false, note: '' } }, support: [], rationale: 'never answered' }, 'b1'],
+      [{ status: null, checks: { c1: { satisfied: false, note: '' } }, support: [], rationale: 'never answered' }, 'b1'],
+    ]
+    for (const [state, attemptId] of cases) {
+      const problems = problemsFor(state, attemptId)
+      const result = toSave(state, attemptId)
+      expect(result.ready, JSON.stringify(state)).toBe(problems.length === 0)
+      expect(result.items.every((item) => item.done), JSON.stringify(state)).toBe(problems.length === 0)
+    }
+  })
+
+  it('falls back to the validator’s own words for a rule it does not list itself', () => {
+    const result = toSaveOf(passingState(), taskOf(fixture().inputs, 'a1'), ['grade for a1: the graded Answer is not the Answer the capture recorded'])
+    expect(result.ready).toBe(false)
+    expect(result.items.filter((item) => !item.done)).toEqual([{ label: 'the graded Answer is not the Answer the capture recorded', short: 'a rule', done: false }])
   })
 })
 

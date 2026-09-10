@@ -261,9 +261,8 @@ describe('the reviewer’s name', () => {
   ]
 
   it('is flagged when it has no grades or drafts in the private root while other names have some', () => {
-    const caution = reviewerCaution('grace', privateFiles)
-    expect(caution).toContain('Grace')
-    expect(caution).toContain('Hopper')
+    // Said plainly and briefly: it cautions, so it reads as a note, not an alarm.
+    expect(reviewerCaution('grace', privateFiles)).toBe('no work by “grace” yet; names with work here: Grace, Hopper')
   })
 
   it('is not flagged when it has grades or drafts, or when no one has any yet', () => {
