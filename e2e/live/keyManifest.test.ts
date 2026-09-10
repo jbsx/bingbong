@@ -1,8 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { parseLiveKeyManifest } from './grades.ts'
 import { liveWebHunts } from './hunts.ts'
-import { keyManifestOf } from './keys.ts'
-import { buildLiveKeyManifest, keyCorpusDigest, keyVersionLabel, liveFactsToRecheck } from './keyManifest.ts'
+import { buildLiveKeyManifest, keyCorpusDigest, keyManifestOf, keyVersionLabel, liveFactsToRecheck } from './keyManifest.ts'
 import { plannedSlots } from './pass.ts'
 
 // Composition, and only composition. `keys.ts` describes one hunt to the

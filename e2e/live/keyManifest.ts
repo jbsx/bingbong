@@ -108,5 +108,12 @@ export function liveFactsToRecheck(
     .map((key) => ({ huntId: key.huntId, liveFacts: key.liveFacts }))
 }
 
-/** A hunt's key, for a reviewer reading `constraints` before judging its checks. */
-export { gradingKeyFor }
+/**
+ * Re-exported so callers compose through this module rather than reaching
+ * around it: `gradingKeyFor` for a reviewer reading `constraints` before
+ * judging a hunt's checks, and `keyManifestOf` for the per-hunt manifest this
+ * composition is built from. Keeping the direct importers of `keys.ts` down to
+ * the two that must read it is what makes `corpus.test.ts`'s importer pin
+ * mean something.
+ */
+export { gradingKeyFor, keyManifestOf }
