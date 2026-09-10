@@ -79,7 +79,7 @@
     <p class="muted" id="roots-note"></p>
     <ol class="sets" id="sets"><li class="muted">Reading the artifacts root…</li></ol>
     <p class="muted" id="nothing" hidden>
-      Nothing here can be graded. A measured pass is run with
+      Nothing here is left to grade. A measured pass is run with
       <code>BINGBONG_ENV_FILE=/absolute/path/to/.env pnpm test:live</code> and lands in the artifacts root;
       <code>docs/live-web-pilot-runbook.md</code> walks through it.
     </p>
@@ -157,8 +157,10 @@ let view = null
 /** The set file chosen; the server's preselection until the reviewer picks one. */
 let chosen = null
 let pickedByHand = false
-/** Only the answer to the newest question is drawn — the field changes faster than the server answers. */
-let asked = 0
+/** Only the newest proposal is drawn — the field changes faster than the server answers. */
+let proposals = 0
+/** False while the reviewer field has changed and its proposal is not back: Start waits for it. */
+let answered = false
 let timer = null
 
 function chosenSet() {
@@ -195,7 +197,7 @@ function render() {
   $('key-digest').textContent = view.key.digest
 
   const startable = view.sets.filter((set) => set.refusals.length === 0)
-  $('nothing').hidden = startable.length > 0
+  $('nothing').hidden = !(startable.length === 0 || (answered && reviewer !== '' && view.preselected === null))
   const sets = $('sets')
   if (view.sets.length === 0) {
     sets.replaceChildren(el('li', { class: 'muted', text: 'No capture sets.' }))
@@ -250,19 +252,19 @@ function render() {
     $('drafts-file').textContent = '—'
   }
 
-  const ready = reviewer !== '' && set !== null && set.refusals.length === 0
+  const ready = answered && reviewer !== '' && set !== null && set.gradesFile !== null
   $('start').disabled = !ready
-  $('start-note').textContent = ready ? `grade ${set.setId} as ${reviewer}` : ''
+  $('start-note').textContent = ready ? `grade ${set.setId} as ${reviewer}` : !answered && reviewer !== '' ? 'checking what this name would open…' : ''
 }
 
 // ---------------------------------------------------------------------------
 // Asking the server
 
-async function propose() {
-  const question = ++asked
-  const reviewer = $('reviewer').value
-  const { status, data } = await api('GET', `/api/setup?reviewer=${encodeURIComponent(reviewer)}`)
-  if (question !== asked) return
+/** Ask what the bench proposes for a name — or, with none, for the one git names, which then fills the field. */
+async function propose(reviewer) {
+  const proposal = ++proposals
+  const { status, data } = await api('GET', reviewer === undefined ? '/api/setup' : `/api/setup?reviewer=${encodeURIComponent(reviewer)}`)
+  if (proposal !== proposals) return
   if (status !== 200) {
     $('sets').replaceChildren(el('li', { class: 'error', text: data.error || `the setup could not be read (HTTP ${status})` }))
     return
@@ -271,9 +273,11 @@ async function propose() {
     location.replace('/')
     return
   }
+  if (reviewer === undefined) $('reviewer').value = data.reviewer
   view = data
-  const hand = chosenSet()
-  if (!pickedByHand || hand === null) {
+  answered = true
+  const picked = chosenSet()
+  if (!pickedByHand || picked === null) {
     chosen = view.preselected
     pickedByHand = false
   }
@@ -287,39 +291,31 @@ function showStartErrors(errors) {
 }
 
 async function start() {
+  const set = chosenSet()
   $('start').disabled = true
   showStartErrors([])
-  const { status, data } = await api('POST', '/api/start', { file: chosen, reviewer: $('reviewer').value })
+  // The grades file goes with Start, so the server opens only the file this page showed.
+  const { status, data } = await api('POST', '/api/start', { file: set.file, reviewer: $('reviewer').value, gradesFile: set.gradesFile.name })
   if (status === 200) {
     location.replace('/')
     return
   }
   showStartErrors(data.errors || [data.error || `the bench did not open (HTTP ${status})`])
-  await propose()
+  await propose($('reviewer').value)
 }
 
 $('reviewer').addEventListener('input', () => {
   showStartErrors([])
+  // Whatever is on its way back answers an older name.
+  proposals += 1
+  answered = false
   clearTimeout(timer)
-  timer = setTimeout(() => void propose(), 250)
+  timer = setTimeout(() => void propose($('reviewer').value), 250)
   if (view) render()
 })
 $('start').addEventListener('click', () => void start())
 
-api('GET', '/api/setup').then(({ status, data }) => {
-  if (status !== 200) {
-    $('sets').replaceChildren(el('li', { class: 'error', text: data.error || `the setup could not be read (HTTP ${status})` }))
-    return
-  }
-  if (data.started) {
-    location.replace('/')
-    return
-  }
-  $('reviewer').value = data.reviewer
-  view = data
-  chosen = data.preselected
-  render()
-})
+void propose()
 </script>
 </body>
 </html>

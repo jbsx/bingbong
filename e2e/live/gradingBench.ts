@@ -388,6 +388,11 @@ export function draftsPathFor(gradesPath: string): string {
   return gradesPath.endsWith('.json') ? `${gradesPath.slice(0, -'.json'.length)}.drafts.json` : `${gradesPath}.drafts.json`
 }
 
+/** `draftsPathFor` read backwards: the grades file a sidecar sits beside, or null for a file not named as one. */
+export function gradesPathOfDrafts(draftsPath: string): string | null {
+  return draftsPath.endsWith('.drafts.json') ? `${draftsPath.slice(0, -'.drafts.json'.length)}.json` : null
+}
+
 export function emptyDrafts(binding: DraftBinding): BenchDrafts {
   return { kind: LIVE_GRADING_DRAFTS_KIND, schemaVersion: LIVE_GRADING_DRAFTS_SCHEMA_VERSION, ...binding, drafts: {} }
 }

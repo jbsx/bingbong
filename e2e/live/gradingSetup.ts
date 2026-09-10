@@ -12,7 +12,7 @@
 // type-stripping pattern the scripts run under).
 
 import { digestOf, validateCaptureSet, type Validation } from './artifacts.ts'
-import { LIVE_GRADING_DRAFTS_KIND, draftsPathFor, type BenchSlotState } from './gradingBench.ts'
+import { LIVE_GRADING_DRAFTS_KIND, draftsPathFor, gradesPathOfDrafts, type BenchSlotState } from './gradingBench.ts'
 import { LIVE_GRADES_KIND, keyManifestDigest, type LiveKeyManifest } from './grades.ts'
 import { LIVE_CAPTURE_SET_KIND } from './types.ts'
 
@@ -110,9 +110,6 @@ export function gradesFileNameFor(setId: string, reviewer: string): string {
 // ---------------------------------------------------------------------------
 // Which grades file the reviewer resumes
 
-/** The suffix `draftsPathFor` gives a sidecar; a drafts file named otherwise sits beside no grades file. */
-const DRAFTS_SUFFIX = '.drafts.json'
-
 /** Every name on a reviewed entry of a grades file. A pending entry names no one. */
 function reviewersOf(grades: Record<string, unknown>): string[] {
   const entries = Array.isArray(grades.entries) ? grades.entries : []
@@ -191,9 +188,9 @@ export function resolveGradesFile(query: GradesFileQuery): Validation<GradesFile
   for (const { name, value } of privateFiles) {
     if (!isRecord(value) || value.setId !== setId) continue
     if (value.kind === LIVE_GRADES_KIND && reviewersOf(value).includes(reviewer)) matches.add(name)
-    if (value.kind === LIVE_GRADING_DRAFTS_KIND && value.reviewer === reviewer && name.endsWith(DRAFTS_SUFFIX)) {
-      matches.add(`${name.slice(0, -DRAFTS_SUFFIX.length)}.json`)
-    }
+    // A drafts file named otherwise than as a sidecar sits beside no grades file.
+    const beside = value.kind === LIVE_GRADING_DRAFTS_KIND && value.reviewer === reviewer ? gradesPathOfDrafts(name) : null
+    if (beside !== null) matches.add(beside)
   }
   if (matches.size > 1) {
     return { ok: false, errors: [`${[...matches].sort().join(', ')} each hold ${reviewer}’s work on set ${setId} — the bench will not pick one; move all but one aside`] }

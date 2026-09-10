@@ -10,6 +10,7 @@ import {
   editorStateOf,
   emptyDrafts,
   evidenceTrailOf,
+  gradesPathOfDrafts,
   gradesWith,
   keyViewFor,
   parseDrafts,
@@ -312,9 +313,11 @@ describe('the reviewer’s editor state', () => {
 describe('the drafts sidecar', () => {
   const binding = { setId: 'set-1', keyManifestDigest: keyManifestDigest(manifest()), reviewer: 'reviewer-a' }
 
-  it('sits beside the grades file', () => {
+  it('sits beside the grades file, and names the grades file it sits beside', () => {
     expect(draftsPathFor('/private/pilot-2-grades-ada.json')).toBe('/private/pilot-2-grades-ada.drafts.json')
     expect(draftsPathFor('/private/grades')).toBe('/private/grades.drafts.json')
+    expect(gradesPathOfDrafts('/private/pilot-2-grades-ada.drafts.json')).toBe('/private/pilot-2-grades-ada.json')
+    expect(gradesPathOfDrafts('/private/pilot-2-grades-ada.json')).toBeNull()
   })
 
   it('replaces one attempt’s draft without touching another’s, and forgets it on request', () => {

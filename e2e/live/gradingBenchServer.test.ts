@@ -549,12 +549,19 @@ describe('the setup page in front of the bench', () => {
     expect((await call('POST', '/api/start', { file: 'set-1.json', reviewer: '  ' })).status).toBe(409)
     expect((await call('POST', '/api/start', { file: 'no-such-set.json', reviewer: 'reviewer-a' })).status).toBe(409)
 
+    // Start confirms what the page showed. A grades file it did not show for this name — the page
+    // still drawing an older proposal — is not opened, and neither is a Start that names none.
+    const unshown = await call('POST', '/api/start', { file: 'set-1.json', reviewer: 'reviewer-a', gradesFile: 'set-1-grades-reviewer-b.json' })
+    expect(unshown.status).toBe(409)
+    expect(unshown.json().errors.join(' ')).toContain('set-1-grades-reviewer-a.json')
+    expect((await call('POST', '/api/start', { file: 'set-1.json', reviewer: 'reviewer-a' })).status).toBe(409)
+
     expect(started).toEqual([])
     expect(filesUnder(root)).toEqual(filesBefore)
   })
 
   it.skipIf(!stripsTypes)('opens the bench on the chosen set as the reviewer named, and what it saves passes pnpm live:report', async () => {
-    const response = await call('POST', '/api/start', { file: 'set-1.json', reviewer: ' reviewer-a ' })
+    const response = await call('POST', '/api/start', { file: 'set-1.json', reviewer: ' reviewer-a ', gradesFile: 'set-1-grades-reviewer-a.json' })
     expect(response.status, response.text).toBe(200)
     expect(response.json()).toEqual({ setId: 'set-1', reviewer: 'reviewer-a', gradesFile: 'set-1-grades-reviewer-a.json' })
     expect(started.map((bench) => [bench.setId, bench.reviewer])).toEqual([['set-1', 'reviewer-a']])

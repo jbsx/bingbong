@@ -708,6 +708,14 @@ export function openGradingSetup(options: GradingSetupOptions): GradingSetup {
     const set = survey(reviewer).sets.find((candidate) => candidate.file === file)
     if (set === undefined) return send(response, 409, { errors: [`the artifacts root holds no capture set ${file}`] })
     if (set.gradesFile === null) return send(response, 409, { errors: set.refusals })
+    // Start confirms what the page showed. A grades file it did not show for this name — the page
+    // drawing an older proposal, or the private root changing since — is not opened.
+    const shown = typeof posted.gradesFile === 'string' ? posted.gradesFile : null
+    if (shown !== set.gradesFile.name) {
+      return send(response, 409, {
+        errors: [`${reviewer}’s grades file for set ${set.setId} is ${set.gradesFile.name}, not ${shown ?? 'one the page named'} — check the setup page, then Start again`],
+      })
+    }
     const opened = openOn(set.file, reviewer, set.gradesFile.name)
     if (!opened.ok) return send(response, 409, { errors: opened.errors })
     bench = opened.value
