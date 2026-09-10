@@ -259,6 +259,16 @@ and `e2e/live/private/`, with no override.
     [When live facts change](#when-live-facts-change); a draft has no recheck
     and is moved aside;
   - the derived name is already taken by something that is not the reviewer's.
+- **Another reviewer's Grade.** Every grades file in the private root, whatever
+  it is called, that is bound to the chosen set and the current key and holds
+  one other reviewer's reviews and none of this reviewer's. Each is labelled by
+  its `reviewer` string, so a model-graded file reads as exactly that. A file
+  mixing two other reviewers has no one name to label it, and is not offered;
+  nor is one that does not validate against the set, so a comparison on offer
+  is one Start can open. When exactly one file is offered it is preselected;
+  otherwise **none** is, and none is always on offer. A default is safe here,
+  as it was not for the reviewer's own file, because the bench keeps the other
+  Grade blind until each save ([At the bench](#at-the-bench)).
 - **Key.** Its version and digest. The manifest is built in memory from the
   committed keys, so there is no manifest file to name, and no way for key
   prose and check wording to disagree. `pnpm live:keys` is needed only for
@@ -310,16 +320,16 @@ the other Grade for a slot is not sent to the page at all until the reviewer's
 own entry for that slot is saved. After that it appears as a per-check
 agree/disagree with both notes, and the two statuses and rationales side by
 side. The blank start is deliberate: a pre-filled Grade anchors the reviewer to
-the other one's interpretation calls. #228 chose that file with `--compare`,
-which went with the other path flags; until the setup page offers a comparison
-(#230), there is no way to choose one.
+the other one's interpretation calls. The other Grade shown is the one chosen
+on the setup page, from the files it offers for the set, or none.
 
 Before Start it reads only the two roots' top-level files, and each set it
-offers the way a bench would open it. After Start it reads the chosen set and
-the files that set names. It writes only the grades file and its drafts
-sidecar, both in `e2e/live/private/`, and nothing at all before Start. It
-answers only requests addressed to loopback from its own pages. Both files it
-writes carry reviewer notes about Answers — never commit them.
+offers, with each comparison beside it, the way a bench would open them. After
+Start it reads the chosen set and the files that set names. It writes only the
+grades file and its drafts sidecar, both in `e2e/live/private/`, and nothing at
+all before Start. It answers only requests addressed to loopback from its own
+pages. Both files it writes carry reviewer notes about Answers — never commit
+them.
 
 ## The report
 
@@ -506,14 +516,15 @@ subprocess, which is what catches an accidental Electron import or an
 extensionless runtime import on the CLI's graph.
 
 `gradingSetup.test.ts` covers the setup page's decisions as functions:
-- discovery and preselection;
+- discovery and preselection, of sets and of another reviewer's grades file;
 - resume-by-content and the slug;
 - the refusals.
 
 `gradingBenchServer.test.ts` works on a real loopback socket:
 - it serves a fixture set, saves Grades through it, and checks the file it
   wrote against `scripts/live-report.ts`, run the same way;
-- it drives one setup→Start round trip against a fixture pair of roots;
+- it drives one setup→Start round trip against a fixture pair of roots, with
+  another reviewer's Grade chosen for comparison;
 - it starts `scripts/live-review.ts` itself.
 
 The pages have no automated test. After changing
@@ -523,5 +534,9 @@ real browser. Headless Chrome over CDP will do.
 2. Check the greyed-out rows and their reasons.
 3. Check that the grades file follows the reviewer field.
 4. Check that a set picked by hand stays picked.
-5. Press Start.
-6. At the bench, walk a draft, a reload and a save.
+5. Check the comparisons offered for the chosen set: each labelled by its
+   reviewer, the proposed one, "none", and that the choice follows a change of
+   set.
+6. Press Start.
+7. At the bench, walk a draft, a reload and a save; with a comparison chosen,
+   the other Grade appears only after the save.

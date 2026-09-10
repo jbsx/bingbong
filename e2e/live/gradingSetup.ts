@@ -228,6 +228,47 @@ export function reviewerCaution(reviewer: string, privateFiles: readonly RootFil
 }
 
 // ---------------------------------------------------------------------------
+// Another reviewer's Grade
+
+/** A grades file the setup page offers to show beside this reviewer's — blind, slot by slot, until each of theirs is saved. */
+export interface OfferedComparison {
+  /** The grades file's name in the private root. */
+  readonly file: string
+  /** The one reviewer whose Grades it holds, exactly as the file names them: a model-graded file reads as that model. */
+  readonly reviewer: string
+}
+
+/**
+ * The grades files that can be shown as another reviewer's Grade on a set,
+ * whatever they are called. A file is offered when it is bound to the set
+ * and to the current key, and its reviews are one other reviewer's: a file
+ * with none has nothing to show, a file with this reviewer's in it is not a
+ * second opinion, and a file mixing two others has no one name to label it.
+ */
+export function comparisonsOfferedFor(query: GradesFileQuery): OfferedComparison[] {
+  const { setId, reviewer, manifest, privateFiles } = query
+  const digest = keyManifestDigest(manifest)
+  return privateFiles
+    .flatMap(({ name, value }): OfferedComparison[] => {
+      if (!isRecord(value) || value.kind !== LIVE_GRADES_KIND || value.setId !== setId) return []
+      if (value.keyVersion !== manifest.keyVersion || value.keyManifestDigest !== digest) return []
+      const reviewers = reviewersOf(value)
+      return reviewers.length === 1 && reviewers[0] !== reviewer ? [{ file: name, reviewer: reviewers[0] }] : []
+    })
+    .sort((left, right) => (left.file < right.file ? -1 : left.file > right.file ? 1 : 0))
+}
+
+/**
+ * The comparison proposed: the one offered file when there is exactly one, else
+ * none. A default is safe here, as it was not for the reviewer's own file,
+ * because the bench keeps the other Grade blind until each save — and "none"
+ * stays on offer beside it.
+ */
+export function preselectedComparisonFile(offered: readonly OfferedComparison[]): string | null {
+  return offered.length === 1 ? offered[0].file : null
+}
+
+// ---------------------------------------------------------------------------
 // The list, and the set it preselects
 
 /** Where this reviewer stands on a set, counted as the bench's sidebar counts it. */
@@ -244,10 +285,14 @@ export function progressOf(slots: readonly { readonly state: BenchSlotState }[])
   return { graded: count('graded'), drafted: count('drafted'), pending: count('pending'), notReached: count('not_reached') }
 }
 
-/** A listed set, with what Start would open it on — both null while it cannot be started. */
+/** A listed set, with what Start would open it on — no grades file, no progress and no comparison while it cannot be started. */
 export interface SetupSet extends SetListing {
   readonly gradesFile: GradesFileChoice | null
   readonly progress: SetProgress | null
+  /** Other reviewers' grades files a bench really opens beside this reviewer's on the set. "None" is always on offer too. */
+  readonly comparisons: readonly OfferedComparison[]
+  /** The comparison proposed, by file — see `preselectedComparisonFile`. */
+  readonly preselectedComparison: string | null
 }
 
 /**

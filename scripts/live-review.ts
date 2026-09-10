@@ -111,6 +111,7 @@ const setup = openGradingSetup({
     console.log(`live:review grading capture set ${bench.setId} as ${bench.reviewer}`)
     console.log(`live:review grades: ${bench.gradesPath}`)
     console.log(`live:review drafts: ${bench.draftsPath}`)
+    if (bench.comparePath !== null) console.log(`live:review comparing, blind until each save, with: ${bench.comparePath}`)
   },
 })
 

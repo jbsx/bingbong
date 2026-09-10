@@ -1,8 +1,9 @@
 // The Grading Bench server (#228, #229): the loopback door between the pages
 // and the files. `scripts/live-review.ts` listens on 127.0.0.1 with the setup
 // door (`openGradingSetup`) in front of the bench (`openGradingBench`): the
-// setup page proposes a capture set, a reviewer and a grades file from the
-// two roots, and only Start opens a bench on them. What the setup decides is
+// setup page proposes a capture set, a reviewer, a grades file and another
+// reviewer's Grade to compare against from the two roots, and only Start
+// opens a bench on them. What the setup decides is
 // in `gradingSetup.ts`, what the bench decides is in `gradingBench.ts`, and
 // everything either validates is `grades.ts`'s own `parseLiveGrades`.
 //
@@ -75,7 +76,17 @@ import {
   type LiveGradingInputs,
   type LiveKeyManifest,
 } from './grades.ts'
-import { captureSetsIn, preselectedSetFile, progressOf, resolveGradesFile, reviewerCaution, type RootFile, type SetupSet } from './gradingSetup.ts'
+import {
+  captureSetsIn,
+  comparisonsOfferedFor,
+  preselectedComparisonFile,
+  preselectedSetFile,
+  progressOf,
+  resolveGradesFile,
+  reviewerCaution,
+  type RootFile,
+  type SetupSet,
+} from './gradingSetup.ts'
 import { buildLiveReport, type LivePopulation } from './report.ts'
 import type { LiveAttemptCapture } from './types.ts'
 
@@ -102,6 +113,8 @@ export interface GradingBench {
   readonly reviewer: string
   readonly gradesPath: string
   readonly draftsPath: string
+  /** The other reviewer's grades file shown beside this reviewer's, or null for none. */
+  readonly comparePath: string | null
   /** Every slot with this reviewer's state on it, as the sidebar shows them. */
   readonly slots: () => readonly BenchSlotSummary[]
   readonly handle: (request: IncomingMessage, response: ServerResponse) => void
@@ -589,6 +602,7 @@ export function openGradingBench(options: GradingBenchOptions): Validation<Gradi
       reviewer,
       gradesPath,
       draftsPath,
+      comparePath: comparePath ?? null,
       slots: () => slotSummariesOf(inputs, grades, drafts),
       handle: guarded(serve),
     },
@@ -648,11 +662,12 @@ function readRoot(root: string): RootFile[] {
 export function openGradingSetup(options: GradingSetupOptions): GradingSetup {
   let bench: GradingBench | null = null
 
-  function openOn(setFile: string, reviewer: string, gradesFile: string): Validation<GradingBench> {
+  function openOn(setFile: string, reviewer: string, gradesFile: string, comparisonFile: string | null): Validation<GradingBench> {
     return openGradingBench({
       capturePath: join(options.artifactsRoot, setFile),
       manifest: options.manifest,
       gradesPath: join(options.privateRoot, gradesFile),
+      ...(comparisonFile === null ? {} : { comparePath: join(options.privateRoot, comparisonFile) }),
       reviewer,
       keyFor: options.keyFor,
       pageHtml: options.benchHtml,
@@ -663,18 +678,28 @@ export function openGradingSetup(options: GradingSetupOptions): GradingSetup {
   /**
    * Every listed set with what Start would open it on. A set is only offered
    * when a bench really opens on it — opening reads, and writes nothing — so
-   * a set that can be chosen is a set Start can open.
+   * a set that can be chosen is a set Start can open. So is each comparison
+   * beside it: a file that does not validate against the set is not offered,
+   * rather than offered and then refused on Start.
    */
   function survey(reviewer: string): { sets: SetupSet[]; privateFiles: RootFile[] } {
     const privateFiles = readRoot(options.privateRoot)
     const sets = captureSetsIn(readRoot(options.artifactsRoot)).map((listing): SetupSet => {
-      const unopened = { ...listing, gradesFile: null, progress: null }
+      const unopened = { ...listing, gradesFile: null, progress: null, comparisons: [], preselectedComparison: null }
       if (listing.refusals.length > 0 || reviewer === '') return unopened
-      const choice = resolveGradesFile({ setId: listing.setId!, reviewer, manifest: options.manifest, privateFiles })
+      const query = { setId: listing.setId!, reviewer, manifest: options.manifest, privateFiles }
+      const choice = resolveGradesFile(query)
       if (!choice.ok) return { ...unopened, refusals: choice.errors }
-      const opened = openOn(listing.file, reviewer, choice.value.name)
+      const opened = openOn(listing.file, reviewer, choice.value.name, null)
       if (!opened.ok) return { ...unopened, refusals: opened.errors }
-      return { ...listing, gradesFile: choice.value, progress: progressOf(opened.value.slots()) }
+      const comparisons = comparisonsOfferedFor(query).filter((candidate) => openOn(listing.file, reviewer, choice.value.name, candidate.file).ok)
+      return {
+        ...listing,
+        gradesFile: choice.value,
+        progress: progressOf(opened.value.slots()),
+        comparisons,
+        preselectedComparison: preselectedComparisonFile(comparisons),
+      }
     })
     return { sets, privateFiles }
   }
@@ -716,11 +741,23 @@ export function openGradingSetup(options: GradingSetupOptions): GradingSetup {
         errors: [`${reviewer}’s grades file for set ${set.setId} is ${set.gradesFile.name}, not ${shown ?? 'one the page named'} — check the setup page, then Start again`],
       })
     }
-    const opened = openOn(set.file, reviewer, set.gradesFile.name)
+    // So is the comparison: one of the files the page offered for this set and name, or none.
+    const comparisonFile = posted.comparisonFile === undefined || posted.comparisonFile === null ? null : String(posted.comparisonFile)
+    if (comparisonFile !== null && !set.comparisons.some((candidate) => candidate.file === comparisonFile)) {
+      return send(response, 409, {
+        errors: [`${comparisonFile} is not a grades file the setup page offers to compare against on set ${set.setId} for ${reviewer} — check the setup page, then Start again`],
+      })
+    }
+    const opened = openOn(set.file, reviewer, set.gradesFile.name, comparisonFile)
     if (!opened.ok) return send(response, 409, { errors: opened.errors })
     bench = opened.value
     options.onStart?.(bench)
-    return send(response, 200, { setId: bench.setId, reviewer: bench.reviewer, gradesFile: basename(bench.gradesPath) })
+    return send(response, 200, {
+      setId: bench.setId,
+      reviewer: bench.reviewer,
+      gradesFile: basename(bench.gradesPath),
+      comparisonFile: bench.comparePath === null ? null : basename(bench.comparePath),
+    })
   }
 
   async function serve(request: IncomingMessage, response: ServerResponse): Promise<void> {

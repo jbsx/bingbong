@@ -87,9 +87,10 @@ pnpm live:report \
 
 The bench builds the key manifest in memory, so grading needs no `live:keys`
 run; the report does. A second reviewer starts the bench under their own name,
-which gives them their own file. Seeing the first reviewer's Grade beside theirs
-waits on the setup page offering a comparison (#230). The bench is described in
-[live-web-reporting.md](live-web-reporting.md#grading-at-the-bench).
+which gives them their own file, and the setup page offers the first reviewer's
+file to compare against — preselected when it is the only one. The bench shows
+it slot by slot only after their own Grade for that slot is saved. The bench is
+described in [live-web-reporting.md](live-web-reporting.md#grading-at-the-bench).
 
 ### Grading is the bottleneck, not the model
 

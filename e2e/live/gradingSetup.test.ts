@@ -13,7 +13,9 @@ import {
 import { attemptCapture, captureSet, sessionCapture, slotOf } from './gradingFixtures.ts'
 import {
   captureSetsIn,
+  comparisonsOfferedFor,
   gradesFileNameFor,
+  preselectedComparisonFile,
   preselectedSetFile,
   resolveGradesFile,
   reviewerCaution,
@@ -227,6 +229,8 @@ describe('the set the setup page preselects', () => {
       refusals,
       gradesFile: refusals.length > 0 ? null : { name: `${file.replace('.json', '')}-grades-ada.json`, resumed: false },
       progress,
+      comparisons: [],
+      preselectedComparison: null,
     }
   }
   const untouched = { graded: 0, drafted: 0, pending: 6, notReached: 0 }
@@ -266,5 +270,56 @@ describe('the reviewer’s name', () => {
     expect(reviewerCaution('Grace', privateFiles)).toBeNull()
     expect(reviewerCaution('Hopper', privateFiles)).toBeNull()
     expect(reviewerCaution('Ada', [file('set-3-pending.json', gradedBy([], { setId: 'set-3' })), file('key-manifest.json', manifest())])).toBeNull()
+  })
+})
+
+describe('another reviewer’s Grade the setup page offers', () => {
+  const offered = (privateFiles: readonly RootFile[], reviewer = 'Ada') => comparisonsOfferedFor({ setId: 'set-1', reviewer, manifest: manifest(), privateFiles })
+
+  it('is each other reviewer’s grades file for the set, labelled by its reviewer string, whatever the file is called', () => {
+    expect(
+      offered([
+        file('set-1-grades-grace.json', gradedBy(['Grace', 'Grace'])),
+        file('model-graded.json', gradedBy(['claude-opus-5 (AI reviewer, not a human)'])),
+        file('set-1-grades-ada.json', gradedBy(['Ada'])),
+        file('key-manifest.json', manifest()),
+      ]),
+    ).toEqual([
+      { file: 'model-graded.json', reviewer: 'claude-opus-5 (AI reviewer, not a human)' },
+      { file: 'set-1-grades-grace.json', reviewer: 'Grace' },
+    ])
+  })
+
+  it('is never a file with an entry by this reviewer, one bound to another set or key, or one nobody has graded in', () => {
+    expect(
+      offered([
+        file('shared.json', gradedBy(['Grace', 'Ada'])),
+        file('set-2-grades-grace.json', gradedBy(['Grace'], { setId: 'set-2' })),
+        file('old-key-grace.json', gradedBy(['Grace'], { keyVersion: 'k0' })),
+        file('other-manifest-grace.json', { ...gradedBy(['Grace']), keyManifestDigest: `sha256:${'0'.repeat(64)}` }),
+        file('set-1-grades-hopper.drafts.json', draftsBy('Hopper')),
+        file('set-1-pending.json', gradedBy([])),
+        file('torn.json', undefined),
+      ]),
+    ).toEqual([])
+  })
+
+  it('is never a file mixing two other reviewers, which no one reviewer’s name can label', () => {
+    expect(offered([file('grace-and-hopper.json', gradedBy(['Grace', 'Hopper']))])).toEqual([])
+  })
+})
+
+describe('the comparison the setup page preselects', () => {
+  const grace = { file: 'set-1-grades-grace.json', reviewer: 'Grace' }
+  const model = { file: 'model-graded.json', reviewer: 'claude-opus-5 (AI reviewer, not a human)' }
+
+  // Safe as a default where the grades file was not: the bench keeps the other Grade blind until each save.
+  it('is the other reviewer’s file when exactly one is offered', () => {
+    expect(preselectedComparisonFile([grace])).toBe('set-1-grades-grace.json')
+  })
+
+  it('is none when nothing is offered, or when several are and the reviewer has to choose', () => {
+    expect(preselectedComparisonFile([])).toBeNull()
+    expect(preselectedComparisonFile([model, grace])).toBeNull()
   })
 })

@@ -472,6 +472,11 @@ describe('the setup page in front of the bench', () => {
     writeFileSync(join(artifactsRoot, 'rehearsal.json'), JSON.stringify({ ...inputs.set, setId: 'rehearsal', mode: 'verification' }))
     writeFileSync(join(privateRoot, 'key-manifest.json'), MANIFEST_TEXT)
     writeFileSync(join(privateRoot, 'set-1-grades-reviewer-b.json'), `${JSON.stringify(reviewerBGrades(inputs), null, 2)}\n`)
+    // A third reviewer's file, bound to the set and the key, that does not validate against the set:
+    // never offered as a comparison, so never a Start that fails on one.
+    const unusable = reviewerBGrades(inputs)
+    const misfiled = unusable.entries.map((entry) => ({ ...entry, reviewer: 'reviewer-c', captureId: entry.captureId === null ? null : 'capture-nowhere' }))
+    writeFileSync(join(privateRoot, 'set-1-grades-reviewer-c.json'), `${JSON.stringify({ ...unusable, entries: misfiled }, null, 2)}\n`)
     filesBefore = filesUnder(root)
 
     const setup = openGradingSetup({
@@ -524,6 +529,9 @@ describe('the setup page in front of the bench', () => {
       refusals: [],
       gradesFile: { name: 'set-1-grades-reviewer-a.json', resumed: false },
       progress: { graded: 0, drafted: 0, pending: 2, notReached: 1 },
+      // Another reviewer's Grade, labelled by their name — the only one on offer, so proposed.
+      comparisons: [{ file: 'set-1-grades-reviewer-b.json', reviewer: 'reviewer-b' }],
+      preselectedComparison: 'set-1-grades-reviewer-b.json',
     })
     expect(view.sets.find((set: { file: string }) => set.file === 'rehearsal.json').refusals.join(' ')).toContain('verification')
     expect(view.preselected).toBe('set-1.json')
@@ -538,6 +546,9 @@ describe('the setup page in front of the bench', () => {
     expect(view.sets.find((set: { file: string }) => set.file === 'set-1.json')).toMatchObject({
       gradesFile: { name: 'set-1-grades-reviewer-b.json', resumed: true },
       progress: { graded: 2, drafted: 0, pending: 0, notReached: 1 },
+      // Their own file is not a second opinion, and nobody else's validates: "none" is all there is.
+      comparisons: [],
+      preselectedComparison: null,
     })
     expect(view.preselected).toBeNull()
   })
@@ -556,14 +567,22 @@ describe('the setup page in front of the bench', () => {
     expect(unshown.json().errors.join(' ')).toContain('set-1-grades-reviewer-a.json')
     expect((await call('POST', '/api/start', { file: 'set-1.json', reviewer: 'reviewer-a' })).status).toBe(409)
 
+    // So is the comparison. One the page did not offer — the reviewer's own file, one that does not validate
+    // against the set, or no grades file at all — is not opened.
+    for (const comparisonFile of ['set-1-grades-reviewer-a.json', 'set-1-grades-reviewer-c.json', 'key-manifest.json']) {
+      const unoffered = await call('POST', '/api/start', { file: 'set-1.json', reviewer: 'reviewer-a', gradesFile: 'set-1-grades-reviewer-a.json', comparisonFile })
+      expect(unoffered.status).toBe(409)
+      expect(unoffered.json().errors.join(' ')).toContain(comparisonFile)
+    }
+
     expect(started).toEqual([])
     expect(filesUnder(root)).toEqual(filesBefore)
   })
 
-  it.skipIf(!stripsTypes)('opens the bench on the chosen set as the reviewer named, and what it saves passes pnpm live:report', async () => {
-    const response = await call('POST', '/api/start', { file: 'set-1.json', reviewer: ' reviewer-a ', gradesFile: 'set-1-grades-reviewer-a.json' })
+  it.skipIf(!stripsTypes)('opens the bench on the chosen set as the reviewer named, with the comparison chosen, and what it saves passes pnpm live:report', async () => {
+    const response = await call('POST', '/api/start', { file: 'set-1.json', reviewer: ' reviewer-a ', gradesFile: 'set-1-grades-reviewer-a.json', comparisonFile: 'set-1-grades-reviewer-b.json' })
     expect(response.status, response.text).toBe(200)
-    expect(response.json()).toEqual({ setId: 'set-1', reviewer: 'reviewer-a', gradesFile: 'set-1-grades-reviewer-a.json' })
+    expect(response.json()).toEqual({ setId: 'set-1', reviewer: 'reviewer-a', gradesFile: 'set-1-grades-reviewer-a.json', comparisonFile: 'set-1-grades-reviewer-b.json' })
     expect(started.map((bench) => [bench.setId, bench.reviewer])).toEqual([['set-1', 'reviewer-a']])
 
     // The bench, unchanged, now answers — and the setup is closed: the name is fixed for this bench.
@@ -572,7 +591,14 @@ describe('the setup page in front of the bench', () => {
     expect((await call('GET', '/api/setup')).json()).toEqual({ started: { setId: 'set-1', reviewer: 'reviewer-a' } })
     expect((await call('POST', '/api/start', { file: 'set-1.json', reviewer: 'reviewer-c' })).status).toBe(409)
 
-    expect((await call('POST', '/api/grades/b1', { state: b1Unsuccessful })).status).toBe(200)
+    // The comparison chosen on setup stays blind until this reviewer's own entry for the slot is saved (#228 Decision 7).
+    expect((await call('GET', '/api/set')).json().comparing).toBe(true)
+    const unsaved = await call('GET', '/api/attempt/b1')
+    expect(unsaved.json().comparison).toBeNull()
+    expect(unsaved.text).not.toContain('reviewer-b')
+    const saved = await call('POST', '/api/grades/b1', { state: b1Unsuccessful })
+    expect(saved.status, saved.text).toBe(200)
+    expect(saved.json().comparison).toMatchObject({ otherPending: false, reviewer: 'reviewer-b', status: { own: 'unsuccessful', other: 'unsuccessful', agree: true } })
     expect(filesUnder(root).filter((name) => !filesBefore.includes(name))).toEqual([join('private', 'set-1-grades-reviewer-a.json')])
 
     const gradesPath = join(privateRoot, 'set-1-grades-reviewer-a.json')

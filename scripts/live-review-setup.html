@@ -6,10 +6,11 @@
 <title>Grading Bench · setup</title>
 <link rel="icon" href="data:,">
 <!--
-  The Grading Bench's setup page (#229), served by scripts/live-review.ts on
-  loopback before the bench opens. The bench proposes — every capture set in
-  the artifacts root, the grades file your work goes into, the key — and you
-  confirm with Start. Nothing is opened, and nothing is written, before that.
+  The Grading Bench's setup page (#229, #230), served by scripts/live-review.ts
+  on loopback before the bench opens. The bench proposes — every capture set in
+  the artifacts root, the grades file your work goes into, another reviewer's
+  Grade to compare against, the key — and you confirm with Start. Nothing is
+  opened, and nothing is written, before that.
 
   Plain DOM, no framework, no network beyond its own server. Every string
   from a capture set or a grades file goes in through textContent.
@@ -58,6 +59,10 @@
   .actions button { font: inherit; padding: 6px 16px; border-radius: 6px; border: 1px solid var(--accent); background: var(--accent); color: #fff; cursor: pointer; }
   .actions button:disabled { opacity: .5; cursor: not-allowed; }
   .start-errors { margin: 0; padding-left: 18px; color: var(--bad); }
+  .comparisons { list-style: none; padding: 0; margin: 0 0 6px; }
+  .comparisons label { display: flex; flex-wrap: wrap; gap: 2px 8px; align-items: baseline; padding: 4px; cursor: pointer; border-radius: 6px; }
+  .comparisons .chosen label { background: var(--soft); }
+  .comparisons strong { overflow-wrap: anywhere; }
 </style>
 </head>
 <body>
@@ -91,6 +96,12 @@
       <dt>file</dt><dd id="grades-file" class="muted">choose a set</dd>
       <dt>drafts</dt><dd id="drafts-file" class="muted">—</dd>
     </dl>
+  </section>
+
+  <section class="panel">
+    <h2>Another reviewer’s Grade</h2>
+    <ol class="comparisons" id="comparisons"><li class="muted">choose a set</li></ol>
+    <p class="muted">Shown beside yours slot by slot, and only once you have saved your own Grade for that slot, so it cannot anchor you.</p>
   </section>
 
   <section class="panel">
@@ -162,9 +173,25 @@ let proposals = 0
 /** False while the reviewer field has changed and its proposal is not back: Start waits for it. */
 let answered = false
 let timer = null
+/** The comparison chosen, by file, or null for none: the set's proposal until the reviewer picks, and again when the set changes. */
+let comparison = null
+let comparisonByHand = false
+/** The set the comparison was settled for. */
+let comparisonSetFile = null
 
 function chosenSet() {
   return view && chosen ? view.sets.find((set) => set.file === chosen) || null : null
+}
+
+/** Keep a comparison picked by hand while its set is chosen and the file is still offered; otherwise take the set's proposal. */
+function settleComparison(set) {
+  const offered = set ? set.comparisons : []
+  const kept = comparisonByHand && comparisonSetFile === (set && set.file) && (comparison === null || offered.some((candidate) => candidate.file === comparison))
+  if (!kept) {
+    comparison = set ? set.preselectedComparison : null
+    comparisonByHand = false
+  }
+  comparisonSetFile = set ? set.file : null
 }
 
 // ---------------------------------------------------------------------------
@@ -252,9 +279,49 @@ function render() {
     $('drafts-file').textContent = '—'
   }
 
+  settleComparison(set)
+  const offered = file ? set.comparisons : []
+  const comparisonOption = (value, label, note) =>
+    el(
+      'li',
+      { class: comparison === value ? 'chosen' : '' },
+      el(
+        'label',
+        {},
+        el('input', {
+          type: 'radio',
+          name: 'comparison',
+          value: value === null ? '' : value,
+          checked: comparison === value,
+          onchange: () => {
+            comparison = value
+            comparisonByHand = true
+            render()
+          },
+        }),
+        el('strong', { text: label }),
+        note ? el('span', { class: 'muted', text: note }) : null,
+      ),
+    )
+  if (file) {
+    $('comparisons').replaceChildren(
+      comparisonOption(null, 'none', offered.length === 0 ? 'no other reviewer’s grades for this set are filed' : null),
+      ...offered.map((candidate) =>
+        comparisonOption(candidate.file, candidate.reviewer, candidate.file === set.preselectedComparison ? `${candidate.file} · proposed` : candidate.file),
+      ),
+    )
+  } else {
+    $('comparisons').replaceChildren(el('li', { class: 'muted', text: set ? 'none — this set cannot be started' : 'choose a set' }))
+  }
+  const beside = offered.find((candidate) => candidate.file === comparison)
+
   const ready = answered && reviewer !== '' && set !== null && set.gradesFile !== null
   $('start').disabled = !ready
-  $('start-note').textContent = ready ? `grade ${set.setId} as ${reviewer}` : !answered && reviewer !== '' ? 'checking what this name would open…' : ''
+  $('start-note').textContent = ready
+    ? `grade ${set.setId} as ${reviewer}${beside ? `, beside ${beside.reviewer}’s Grade` : ''}`
+    : !answered && reviewer !== ''
+      ? 'checking what this name would open…'
+      : ''
 }
 
 // ---------------------------------------------------------------------------
@@ -294,8 +361,8 @@ async function start() {
   const set = chosenSet()
   $('start').disabled = true
   showStartErrors([])
-  // The grades file goes with Start, so the server opens only the file this page showed.
-  const { status, data } = await api('POST', '/api/start', { file: set.file, reviewer: $('reviewer').value, gradesFile: set.gradesFile.name })
+  // The grades file and the comparison go with Start, so the server opens only what this page showed.
+  const { status, data } = await api('POST', '/api/start', { file: set.file, reviewer: $('reviewer').value, gradesFile: set.gradesFile.name, comparisonFile: comparison })
   if (status === 200) {
     location.replace('/')
     return
