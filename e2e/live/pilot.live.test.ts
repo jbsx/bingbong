@@ -29,23 +29,6 @@ import { runLiveWebPass, type PassRecord } from './schedule.ts'
 // keys this file cannot see. So the assertions below check that the pass was
 // *measured*, never that it went well.
 
-/**
- * How long a measured launch may take to reach the dashboard.
- *
- * The capture's own default is sized for the hermetic verification launch,
- * which is given a fixture ad-block list of a few rules. A measured launch
- * takes the production lists instead — a few megabytes of filters, fetched
- * and parsed before the first window, since the app waits on the blocker
- * rather than racing the first navigation — and every hunt starts on a fresh
- * benchmark profile, so that cost is paid on all four launches.
- *
- * This is a guard rail, not a target: nothing gets faster by raising it, and
- * it must never become the answer to a launch that is actually hung. Startup
- * sits outside Task Completion Time, which starts at the first accepted
- * command, so a slow one costs wall clock and measures nothing.
- */
-const MEASURED_STARTUP_MS = 3 * 60_000
-
 describe('live-web pilot pass (#225)', () => {
   const setId = process.env.BINGBONG_LIVE_SET_ID ?? `pilot-${new Date().toISOString().replace(/[:.]/g, '-')}`
   let pass: PassRecord<HuntAttempt> | null = null
@@ -79,7 +62,15 @@ describe('live-web pilot pass (#225)', () => {
         // Measured mode composes production routing itself and fails fast
         // without an orchestrator, refuses every scripted hook, and unsets
         // the test-only timing overrides. Nothing here may relax that.
-        capture: { startupMs: MEASURED_STARTUP_MS },
+        //
+        // The capture's own startup budget is left alone deliberately. This
+        // once carried a three-minute override, added while a measured launch
+        // was failing to come up and the real ad-block lists were the
+        // suspect. The cause turned out to be a target-discovery race in the
+        // harness (#227), which no budget could have fixed — 420 s failed
+        // exactly as 120 s did — and the lists cost a second or two to parse.
+        // A guard rail sized against a cause that does not exist is just a
+        // number nobody can justify, so it is gone.
       })
 
       pass = await runLiveWebPass(host)
