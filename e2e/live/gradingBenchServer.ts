@@ -678,7 +678,7 @@ function otherSetRefusal(request: IncomingMessage, method: string, setId: string
 export function openGradingSetup(options: GradingSetupOptions): GradingSetup {
   let bench: GradingBench | null = null
   /** The name the first Start opened a bench under, which every later Start keeps. */
-  let lockedReviewer: string | null = null
+  let fixedReviewer: string | null = null
 
   function openOn(setFile: string, reviewer: string, gradesFile: string, comparisonFile: string | null): Validation<GradingBench> {
     return openGradingBench({
@@ -727,7 +727,7 @@ export function openGradingSetup(options: GradingSetupOptions): GradingSetup {
     return {
       started: null,
       reviewer,
-      reviewerLocked: lockedReviewer !== null,
+      reviewerFixed: fixedReviewer !== null,
       defaultReviewer: options.defaultReviewer,
       caution: reviewer === '' ? null : reviewerCaution(reviewer, privateFiles),
       key: { version: options.manifest.keyVersion, digest: options.manifest.keyDigest },
@@ -749,8 +749,8 @@ export function openGradingSetup(options: GradingSetupOptions): GradingSetup {
     const file = typeof posted.file === 'string' ? posted.file : ''
     const reviewer = typeof posted.reviewer === 'string' ? posted.reviewer.trim() : ''
     if (reviewer === '') return send(response, 409, { errors: ['no reviewer is named, and an entry naming no one cannot be saved'] })
-    if (lockedReviewer !== null && reviewer !== lockedReviewer) {
-      return send(response, 409, { errors: [`the reviewer has been ${lockedReviewer} since the first Start, for every set — restart live:review to grade as ${reviewer}`] })
+    if (fixedReviewer !== null && reviewer !== fixedReviewer) {
+      return send(response, 409, { errors: [`the reviewer has been ${fixedReviewer} since the first Start, for every set — restart live:review to grade as ${reviewer}`] })
     }
     const set = survey(reviewer).sets.find((candidate) => candidate.file === file)
     if (set === undefined) return send(response, 409, { errors: [`the artifacts root holds no capture set ${file}`] })
@@ -773,7 +773,7 @@ export function openGradingSetup(options: GradingSetupOptions): GradingSetup {
     const opened = openOn(set.file, reviewer, set.gradesFile.name, comparisonFile)
     if (!opened.ok) return send(response, 409, { errors: opened.errors })
     bench = opened.value
-    lockedReviewer = bench.reviewer
+    fixedReviewer = bench.reviewer
     options.onStart?.(bench)
     return send(response, 200, {
       setId: bench.setId,
@@ -792,28 +792,25 @@ export function openGradingSetup(options: GradingSetupOptions): GradingSetup {
     if (url.pathname === '/api/setup') {
       if (method !== 'GET') return send(response, 405, { error: `${method} is not accepted here` })
       if (bench !== null) return send(response, 200, { started: { setId: bench.setId, reviewer: bench.reviewer } })
-      return send(response, 200, setupView(lockedReviewer ?? (url.searchParams.get('reviewer') ?? options.defaultReviewer ?? '').trim()))
+      return send(response, 200, setupView(fixedReviewer ?? (url.searchParams.get('reviewer') ?? options.defaultReviewer ?? '').trim()))
     }
     if (url.pathname === '/api/start') {
       if (method !== 'POST') return send(response, 405, { error: `${method} is not accepted here` })
       return start(request, response)
     }
+    // Everything from here on is for the open bench's set: a page on another set is refused, not served.
+    const otherSet = bench === null ? null : otherSetRefusal(request, method, bench.setId)
+    if (otherSet !== null) return send(response, 409, { error: otherSet })
     if (url.pathname === '/api/change-set') {
       if (method !== 'POST') return send(response, 405, { error: `${method} is not accepted here` })
       if (!isJsonRequest(request)) return send(response, 415, { error: 'the bench accepts JSON only' })
       if (bench === null) return send(response, 409, { error: 'no bench is open to leave — choose a set on the setup page, then Start' })
-      const refusal = otherSetRefusal(request, method, bench.setId)
-      if (refusal !== null) return send(response, 409, { error: refusal })
       // Nothing is written on the way out: every change is already in the sidecar, and the next Start reads it afresh.
       const left = bench
       bench = null
       return send(response, 200, { left: { setId: left.setId } })
     }
-    if (bench !== null) {
-      const refusal = otherSetRefusal(request, method, bench.setId)
-      if (refusal !== null) return send(response, 409, { error: refusal })
-      return bench.handle(request, response)
-    }
+    if (bench !== null) return bench.handle(request, response)
     if (url.pathname === '/') {
       if (method !== 'GET') return send(response, 405, { error: `${method} is not accepted here` })
       response.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' })

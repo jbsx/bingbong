@@ -211,8 +211,8 @@ function created(iso) {
 
 function render() {
   const reviewer = $('reviewer').value.trim()
-  $('reviewer').readOnly = view.reviewerLocked
-  $('reviewer-note').textContent = view.reviewerLocked
+  $('reviewer').readOnly = view.reviewerFixed
+  $('reviewer-note').textContent = view.reviewerFixed
     ? 'Fixed since the first Start, for every set graded here. Restart live:review to grade under another name.'
     : reviewer === ''
       ? 'Name a reviewer — an entry naming no one cannot be saved.'
@@ -343,7 +343,7 @@ async function propose(reviewer) {
     return
   }
   // With no name asked, or once the first Start has fixed it, the field shows the server's.
-  if (reviewer === undefined || data.reviewerLocked) $('reviewer').value = data.reviewer
+  if (reviewer === undefined || data.reviewerFixed) $('reviewer').value = data.reviewer
   view = data
   answered = true
   const picked = chosenSet()

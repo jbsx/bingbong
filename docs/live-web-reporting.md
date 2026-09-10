@@ -238,8 +238,9 @@ and `e2e/live/private/`, with no override.
   slot, is proposed. When nothing can be graded, the page says how a pass is
   run.
 - **Reviewer.** Filled from `git config user.name`, editable here until the
-  first Start, and fixed from then on — across every set that process grades. A typo guard flags a name before Start when nothing in
-  the private root was graded or drafted under it but other names have work
+  first Start, and fixed from then on — across every set that process grades.
+  A typo guard flags a name before Start when nothing in the private root was
+  graded or drafted under it but other names have work
   there. The flag lists the names that do. It cautions and never refuses:
   every second reviewer is new too.
 - **Grades file.** Read-only: `<setId>-grades-<reviewer slug>.json` in the

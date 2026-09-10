@@ -41,6 +41,7 @@
   .muted { color: var(--muted); }
   .top { display: flex; flex-wrap: wrap; gap: 6px 16px; align-items: baseline; padding: 10px 16px; border-bottom: 1px solid var(--line); background: var(--panel); position: sticky; top: 0; z-index: 2; }
   .top .note { color: var(--muted); font-size: 12.5px; }
+  .top #change-set { margin-left: auto; color: var(--accent); }
   .layout { display: grid; grid-template-columns: 250px minmax(0, 1fr); min-height: calc(100vh - 44px); }
   nav { border-right: 1px solid var(--line); padding: 10px; background: var(--panel); }
   nav ol { list-style: none; padding: 0; margin: 0; }
@@ -109,7 +110,7 @@
   <span id="reviewer"></span>
   <span id="files" class="note"></span>
   <span id="compare-note" class="note"></span>
-  <a href="/" id="change-set" class="note" style="margin-left: auto" title="Back to the setup page — your drafts are kept, and this process stays open">change set</a>
+  <a href="/" id="change-set" class="note" title="Back to the setup page — your drafts are kept, and this process stays open">change set</a>
 </header>
 <div class="layout">
   <nav>
@@ -593,7 +594,7 @@ function changed() {
   current.timer = setTimeout(() => void flushDraft(), 300)
 }
 
-/** Write the current draft now, if there is one to write. Every change lands in the sidecar. */
+/** Write the current draft now, if there is one to write. Every change lands in the sidecar. Resolves false when the last write was refused. */
 function flushDraft() {
   if (!current || !current.dirty) return current ? current.inflight : Promise.resolve()
   const target = current
@@ -605,8 +606,9 @@ function flushDraft() {
   const keepalive = JSON.stringify(state).length < 60_000
   target.inflight = target.inflight.then(async () => {
     const { status, data } = await api('PUT', `/api/drafts/${encodeURIComponent(target.attemptId)}`, { state }, { keepalive })
-    if (current !== target) return
-    if (status === 200) {
+    const written = status === 200
+    if (current !== target) return written
+    if (written) {
       target.source = 'draft'
       document.getElementById('discard').hidden = false
       showProblems(data.problems, false)
@@ -616,6 +618,7 @@ function flushDraft() {
       showProblems(data.errors || [data.error || `the draft was not written (HTTP ${status})`], true)
       saveState('the draft was NOT written')
     }
+    return written
   })
   return target.inflight
 }
@@ -686,10 +689,14 @@ function comparisonPanel(comparison) {
 
 // ---------------------------------------------------------------------------
 
-/** Back to the setup page in the same process. The draft on screen is written first, so re-entering the set restores it. */
+/**
+ * Back to the setup page in the same process. The draft on screen is written
+ * first, so re-entering the set restores it — and a draft that could not be
+ * written keeps the reviewer here, with the reason, rather than lost.
+ */
 async function changeSet(event) {
   event.preventDefault()
-  await flushDraft()
+  if ((await flushDraft()) === false) return
   const { status, data } = await api('POST', '/api/change-set', {})
   if (status !== 200) {
     document.getElementById('main').replaceChildren(el('p', { class: 'error', text: data.error || `the set could not be left (HTTP ${status})` }))

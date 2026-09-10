@@ -144,15 +144,14 @@ function writeFixtureSet(directory: string, setFile: string, setId = 'set-1'): L
   const b1 = attemptCapture({ attemptId: 'b1', huntId: 'hunt-b', order: 1, answer: null, terminal: null })
   const b2 = notReached({ attemptId: 'b2', huntId: 'hunt-b', order: 2, parentAttemptId: 'b1', reason: 'the Run never ended, so no follow-up was sent' })
   const screenshotName = 'logs/run-trace-run-a1-turn-x-1.png'
-  const captureIdPrefix = setId === 'set-1' ? 'capture' : `capture-${setId}`
   const sessionA = sessionCapture({
-    captureId: `${captureIdPrefix}-hunt-a`,
+    captureId: `capture-${setId}-hunt-a`,
     huntId: 'hunt-a',
     attempts: [a1],
     setId,
     artifacts: [{ path: screenshotName, family: 'screenshot', digest: digestOf(screenshot), bytes: screenshot.length, complete: true }],
   })
-  const sessionB = sessionCapture({ captureId: `${captureIdPrefix}-hunt-b`, huntId: 'hunt-b', attempts: [b1, b2], setId })
+  const sessionB = sessionCapture({ captureId: `capture-${setId}-hunt-b`, huntId: 'hunt-b', attempts: [b1, b2], setId })
   const set = captureSet({ setId, slots: [a1, b1, b2].map(slotOf), sessions: [sessionA, sessionB] })
 
   writeFileSync(join(directory, setFile), `${JSON.stringify(set, null, 2)}\n`)
@@ -627,9 +626,13 @@ describe('changing set without restarting', () => {
 
   const call = (method: string, path: string, body?: unknown, headers: Record<string, string> = {}) => request(port, method, path, body, headers)
   const onSet = (setId: string) => ({ [SET_HEADER]: setId })
-  const startOn = (setId: string, reviewer = 'reviewer-a') =>
-    call('POST', '/api/start', { file: `${setId}.json`, reviewer, gradesFile: `${setId}-grades-${reviewer}.json` })
-  const setupSet = (view: { sets: { file: string }[] }, file: string) => view.sets.find((set) => set.file === file)
+  /** Start as the page does: read the setup's proposal for the name, and confirm the grades file it shows for the set. */
+  const startOn = async (setId: string, reviewer = 'reviewer-a') => {
+    const proposal = (await call('GET', `/api/setup?reviewer=${encodeURIComponent(reviewer)}`)).json()
+    const shown = proposal.started ? null : (setupSet(proposal, `${setId}.json`)?.gradesFile?.name ?? null)
+    return call('POST', '/api/start', { file: `${setId}.json`, reviewer, gradesFile: shown })
+  }
+  const setupSet = (view: { sets: { file: string; gradesFile: { name: string } | null }[] }, file: string) => view.sets.find((set) => set.file === file)
   /** set-1's grades file and drafts sidecar, byte for byte. */
   const set1Files = () => ['set-1-grades-reviewer-a.json', 'set-1-grades-reviewer-a.drafts.json'].map((name) => readFileSync(join(privateRoot, name), 'utf8'))
 
@@ -695,7 +698,7 @@ describe('changing set without restarting', () => {
 
   it('keeps the reviewer from the first Start: another name is neither proposed nor started', async () => {
     const view = (await call('GET', `/api/setup?reviewer=${encodeURIComponent('reviewer-c')}`)).json()
-    expect(view).toMatchObject({ reviewer: 'reviewer-a', reviewerLocked: true })
+    expect(view).toMatchObject({ reviewer: 'reviewer-a', reviewerFixed: true })
     expect(setupSet(view, 'set-2.json')).toMatchObject({ gradesFile: { name: 'set-2-grades-reviewer-a.json' } })
 
     const renamed = await startOn('set-2', 'reviewer-c')
