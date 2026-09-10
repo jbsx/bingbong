@@ -1043,6 +1043,15 @@ checks only that the record is complete and correctly bound, never that the
 judgment is right.
 _Avoid_: score, evaluation result, pass rate
 
+**Grading Bench**:
+The evaluator's private workplace for producing Grades: one captured attempt at
+a time, its Answer beside the Grading Key and the trail of what the assistant
+read, with the reviewer judging every check and recording the verdict. It never
+picks a verdict and never shows another reviewer's Grade before the reviewer's
+own is recorded; code confirms only that the Grade it writes is complete. Like
+the Grading Key, it is never rendered in any app view.
+_Avoid_: checker, review UI, grader, automated judge
+
 ### Hardware
 
 **Kiosk**:
