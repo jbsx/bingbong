@@ -36,8 +36,14 @@ import { runLiveWebPass, type PassRecord } from './schedule.ts'
 
 const answer = (display: string, speak = 'Done.'): AssistantTurn => ({ kind: 'answer', speak, display })
 
-/** The set id the offline commands are then run against. Stable, so the rehearsal is repeatable. */
-export const VERIFICATION_SET_ID = process.env.BINGBONG_LIVE_SET_ID ?? 'verification-pilot'
+/**
+ * The set id the offline commands are then run against. Fresh per run, because
+ * a capture identity is claimed and never reused — a stable id makes the
+ * second rehearsal fail on the first one's leftovers rather than repeating it.
+ * `afterAll` prints the path the grading commands take.
+ */
+export const VERIFICATION_SET_ID =
+  process.env.BINGBONG_LIVE_SET_ID ?? `verification-${new Date().toISOString().replace(/[:.]/g, '-')}`
 
 describe('the capture-to-report path, rehearsed without spending (#227)', () => {
   let fixture: FixtureServer
