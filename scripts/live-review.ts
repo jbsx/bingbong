@@ -101,7 +101,7 @@ if (flags.has('port')) {
   if (!Number.isInteger(port) || port < 0 || port > 65535) fail(`--port needs an integer 0–65535, got ${JSON.stringify(flags.get('port'))}`)
 }
 
-const reviewer = resolveReviewer(flags.get('reviewer'), flags.get('reviewer')?.trim() ? null : gitUserName())
+const reviewer = resolveReviewer(flags.get('reviewer'), gitUserName)
 if (reviewer === null) fail('no reviewer — pass --reviewer=<name> or set git config user.name; an entry naming no one cannot be saved')
 
 const gradesPath = resolve(flags.get('grades')!)

@@ -37,6 +37,7 @@ import { digestOf, readCaptureSet, redactedMessage, writeFileAtomic, type Valida
 import {
   allowedStatusesFor,
   compareGrades,
+  dispatchedAttemptOf,
   draftsPathFor,
   editorStateOf,
   emptyDrafts,
@@ -63,7 +64,6 @@ import {
   keyManifestDigest,
   parseLiveGrades,
   parseLiveKeyManifest,
-  type LiveDispatchedAttempt,
   type LiveGrades,
   type LiveGradingInputs,
   type LiveKeyManifest,
@@ -96,6 +96,9 @@ export interface GradingBench {
 
 /** Generous for a Grade with every note typed out; fatal for anything else. */
 const BODY_LIMIT_BYTES = 1_000_000
+
+/** An attempt's evidence trail as read from its tape, or null with the reason it could not be. */
+type TrailRead = { readonly trail: EvidenceTrail | null; readonly note: string | null }
 
 /** The hostnames a request may be addressed to, and an Origin may name. */
 const LOOPBACK_HOSTNAMES = new Set(['127.0.0.1', 'localhost', '[::1]'])
@@ -205,10 +208,6 @@ function readBody(request: IncomingMessage): Promise<Body> {
   })
 }
 
-function attemptOf(dispatched: LiveDispatchedAttempt | undefined): LiveAttemptCapture | null {
-  return dispatched?.record.kind === 'attempt' ? dispatched.record : null
-}
-
 /** The counts `pnpm live:report` reports for a population, which the sidebar shows beside the slots. */
 function countsOf(population: LivePopulation): { scheduled: number; reviewed: number; pending: number; verifiedSuccess: number } {
   return { scheduled: population.scheduled, reviewed: population.reviewed, pending: population.pending, verifiedSuccess: population.verifiedSuccess }
@@ -243,15 +242,20 @@ export function openGradingBench(options: GradingBenchOptions): Validation<Gradi
   // it checks, and a key for the reviewer to read those checks against.
   const tasks = new Map(manifest.tasks.map((task) => [`${task.huntId}/${task.stepId}`, task]))
   const keys = new Map<string, BenchKey>()
+  const keyless = new Set<string>()
   const problems: string[] = []
   for (const slot of set.slots) {
     if (!tasks.has(`${slot.huntId}/${slot.stepId}`)) {
       problems.push(`the key manifest declares no task for ${slot.huntId}/${slot.stepId}, so slot ${slot.attemptId} has no checks to judge`)
     }
-    if (keys.has(slot.huntId) || problems.some((problem) => problem.endsWith(`hunt ${slot.huntId}`))) continue
+    if (keys.has(slot.huntId) || keyless.has(slot.huntId)) continue
     const key = options.keyFor(slot.huntId)
-    if (key === undefined) problems.push(`there is no grading key for hunt ${slot.huntId}`)
-    else keys.set(slot.huntId, key)
+    if (key !== undefined) {
+      keys.set(slot.huntId, key)
+    } else {
+      keyless.add(slot.huntId)
+      problems.push(`there is no grading key for hunt ${slot.huntId}`)
+    }
   }
   if (options.keyManifestFor !== undefined) problems.push(...keyDriftOf(manifest, options.keyManifestFor))
   if (problems.length > 0) return refused('the bench cannot put a key beside every slot', problems)
@@ -308,6 +312,12 @@ export function openGradingBench(options: GradingBenchOptions): Validation<Gradi
     if (!input.ok) return input
     const parsed = parseLiveGrades(input.value.value, inputs)
     if (!parsed.ok) return refused('the --compare grades do not validate against this capture set and key manifest', parsed.errors)
+    // The comparison is another reviewer's Grade: a file holding this
+    // reviewer's own reviews is not a second opinion, and its per-check diff
+    // would read as agreement nobody else gave.
+    if (parsed.value.entries.some((entry) => entry.reviewer === reviewer)) {
+      return { ok: false, errors: [`the --compare grades hold reviews by ${reviewer}, the reviewer at this bench — compare against another reviewer's grades`] }
+    }
     other = parsed.value
   }
 
@@ -325,14 +335,14 @@ export function openGradingBench(options: GradingBenchOptions): Validation<Gradi
     if (!input.ok) return input
     const parsed = parseDrafts(input.value.value, binding, (attemptId) => {
       const bench = benchSlotOf(attemptId)
-      return bench !== null && attemptOf(bench.dispatched) !== null ? bench.task : undefined
+      return bench !== null && dispatchedAttemptOf(bench.dispatched) !== null ? bench.task : undefined
     })
     if (!parsed.ok) return refused(`the drafts in ${basename(draftsPath)} are not usable (move the file aside to start those slots over)`, parsed.errors)
     drafts = parsed.value
   }
 
   const renderedAnswers = new Map<string, string>()
-  const trails = new Map<string, { trail: EvidenceTrail | null; note: string | null }>()
+  const trails = new Map<string, TrailRead>()
 
   function answerView(attempt: LiveAttemptCapture | null): { text: string; html: string; at: number; digest: string } | null {
     if (attempt === null || attempt.finalAnswer.status !== 'observed') return null
@@ -345,10 +355,10 @@ export function openGradingBench(options: GradingBenchOptions): Validation<Gradi
     return { text, html, at, digest: digestOf(text) }
   }
 
-  function trailOf(attempt: LiveAttemptCapture, captureId: string): { trail: EvidenceTrail | null; note: string | null } {
+  function trailOf(attempt: LiveAttemptCapture, captureId: string): TrailRead {
     const cached = trails.get(attempt.attemptId)
     if (cached !== undefined) return cached
-    const read = (): { trail: EvidenceTrail | null; note: string | null } => {
+    const read = (): TrailRead => {
       if (attempt.events === null) return { trail: null, note: 'the capture retained no event tape for this attempt' }
       const directory = sessionDirectories.get(captureId) ?? setDirectory
       const path = resolve(directory, attempt.events.path)
@@ -416,7 +426,7 @@ export function openGradingBench(options: GradingBenchOptions): Validation<Gradi
 
   function attemptView(bench: BenchSlot) {
     const { slot, dispatched, task } = bench
-    const attempt = attemptOf(dispatched)
+    const attempt = dispatchedAttemptOf(dispatched)
     const entry = grades.entries.find((candidate) => candidate.attemptId === slot.attemptId)
     const editor = attempt === null ? null : editorStateOf(task, entry, draftOf(slot.attemptId))
     const parent = slot.parentAttemptId === undefined ? null : benchSlotOf(slot.parentAttemptId)
@@ -427,7 +437,7 @@ export function openGradingBench(options: GradingBenchOptions): Validation<Gradi
       command: dispatched?.record.command.text ?? null,
       answer: answerView(attempt),
       noAnswerReason: attempt !== null && attempt.finalAnswer.status !== 'observed' ? attempt.finalAnswer.reason : null,
-      parent: parent === null ? null : { attemptId: parent.slot.attemptId, answer: answerView(attemptOf(parent.dispatched)) },
+      parent: parent === null ? null : { attemptId: parent.slot.attemptId, answer: answerView(dispatchedAttemptOf(parent.dispatched)) },
       checks: task.checks,
       key: keyViewFor(keys.get(slot.huntId)!, slot, task),
       trail: trail.trail,
@@ -457,7 +467,7 @@ export function openGradingBench(options: GradingBenchOptions): Validation<Gradi
       send(response, body.status, { error: body.error })
       return null
     }
-    if (attemptOf(bench.dispatched) === null) {
+    if (dispatchedAttemptOf(bench.dispatched) === null) {
       send(response, 409, { errors: [`nothing was dispatched into slot ${bench.slot.attemptId}, so there is nothing to grade — it stays pending`] })
       return null
     }
@@ -499,7 +509,7 @@ export function openGradingBench(options: GradingBenchOptions): Validation<Gradi
         return send(response, 200, attemptView(bench))
 
       case 'GET screenshot': {
-        const attempt = attemptOf(bench.dispatched)
+        const attempt = dispatchedAttemptOf(bench.dispatched)
         const shot = attempt === null ? undefined : screenshotsOf(attempt, bench.dispatched!.captureId)[Number(match[3])]
         if (shot === undefined || !existsSync(shot.path)) return send(response, 404, { error: 'no such screenshot' })
         response.writeHead(200, { 'content-type': 'image/png', 'cache-control': 'no-store' })

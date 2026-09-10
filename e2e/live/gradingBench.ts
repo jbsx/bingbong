@@ -16,10 +16,11 @@
 //      with an unjudged check.
 //   3. Saving: composing an entry from the editor state and running the
 //      real `parseLiveGrades` over the file it would produce. The bench
-//      never picks a verdict and adds only two rules of its own — a status
-//      must be chosen, and an attempt that published no Answer is
-//      `unsuccessful` or `help_access_blocked`. Everything else a save can
-//      break is the validator's rule, reported in the validator's words.
+//      never picks a verdict and adds only three rules of its own — a
+//      status must be chosen, a slot nothing was dispatched into stays
+//      pending, and an attempt that published no Answer is `unsuccessful`
+//      or `help_access_blocked`. Everything else a save can break is the
+//      validator's rule, reported in the validator's words.
 //   4. Whose file it is, and another reviewer's Grade — invisible until
 //      this reviewer's own entry is saved, so a blank start is not anchored
 //      to someone else's interpretation calls.
@@ -33,7 +34,7 @@
 
 import { parseBlockerMarker, type BlockerSignal } from '../../src/core/browser/blockerNudge.ts'
 import type { PipelineEvent } from '../../src/core/pipeline/events'
-import type { Validation } from './artifacts.ts'
+import { redactedMessage, type Validation } from './artifacts.ts'
 import {
   answerBindingOf,
   indexAttempts,
@@ -48,7 +49,7 @@ import {
   type LiveKeyManifest,
   type LiveKeyTask,
 } from './grades.ts'
-import type { LiveScheduledAttempt } from './types.ts'
+import type { LiveAttemptCapture, LiveScheduledAttempt } from './types.ts'
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -97,7 +98,7 @@ export interface TrailEvidence {
   readonly sourceUrl: string | null
   /** Null when the tape holds no result for the call. */
   readonly accepted: boolean | null
-  /** The app's reply — the recorded id, or the rejection. */
+  /** The tool result the app returned — the recorded id, or the rejection. */
   readonly outcome: string | null
 }
 
@@ -450,11 +451,11 @@ export function parseDrafts(
 // ---------------------------------------------------------------------------
 // Whose grades file this is
 
-/** `--reviewer` when given, else `git config user.name`, else no one. */
-export function resolveReviewer(flag: string | undefined, gitUserName: string | null): string | null {
+/** `--reviewer` when given, else `git config user.name` (asked only then), else no one. */
+export function resolveReviewer(flag: string | undefined, gitUserName: () => string | null): string | null {
   const named = flag?.trim()
   if (named) return named
-  const fromGit = gitUserName?.trim()
+  const fromGit = gitUserName()?.trim()
   return fromGit ? fromGit : null
 }
 
@@ -482,9 +483,14 @@ export interface BenchSlot {
   readonly task: LiveKeyTask
 }
 
+/** The attempt dispatched into a slot, or null when nothing was — a not-reached record, or no record at all. */
+export function dispatchedAttemptOf(dispatched: LiveDispatchedAttempt | undefined): LiveAttemptCapture | null {
+  return dispatched?.record.kind === 'attempt' ? dispatched.record : null
+}
+
 /** The statuses the page offers for a slot; none for a slot nothing was dispatched into. */
 export function allowedStatusesFor(dispatched: LiveDispatchedAttempt | undefined): readonly ReviewedStatus[] {
-  const attempt = dispatched?.record.kind === 'attempt' ? dispatched.record : null
+  const attempt = dispatchedAttemptOf(dispatched)
   if (attempt === null) return []
   return answerBindingOf(attempt) === null ? NO_ANSWER_STATUSES : REVIEWED_STATUSES
 }
@@ -501,7 +507,7 @@ export function composeEntry(
 ): Validation<LiveGradeEntry> {
   const { slot, dispatched, task } = bench
   const where = `grade for ${slot.attemptId}`
-  const attempt = dispatched?.record.kind === 'attempt' ? dispatched.record : null
+  const attempt = dispatchedAttemptOf(dispatched)
   if (dispatched === undefined || attempt === null) {
     return {
       ok: false,
@@ -564,9 +570,18 @@ export function gradesWith(
   reviewer: string,
   reviewedAt: string,
 ): Validation<LiveGrades> {
-  const composed = composeEntry(state, bench, { manifest: inputs.manifest, reviewer, reviewedAt })
-  if (!composed.ok) return composed
-  return parseLiveGrades(withEntry(current, composed.value), inputs)
+  const binding = { manifest: inputs.manifest, reviewer, reviewedAt }
+  const composed = composeEntry(state, bench, binding)
+  if (composed.ok) return parseLiveGrades(withEntry(current, composed.value), inputs)
+  if (state.status !== null || dispatchedAttemptOf(bench.dispatched) === null) return composed
+  // No status yet. What else the record needs — every check judged, a
+  // rationale — does not depend on which status is chosen, so it is shown
+  // now rather than after a choice. `unsuccessful` is only the probe: every
+  // dispatched attempt may hold it, and it has no rule of its own for the
+  // validator to report, so no message can hint at a verdict.
+  const probe = composeEntry({ ...state, status: 'unsuccessful' }, bench, binding)
+  const rest = probe.ok ? parseLiveGrades(withEntry(current, probe.value), inputs) : probe
+  return { ok: false, errors: [...composed.errors, ...(rest.ok ? [] : rest.errors)] }
 }
 
 // ---------------------------------------------------------------------------
@@ -767,7 +782,7 @@ export function keyDriftOf(manifest: LiveKeyManifest, currentFor: (huntId: strin
     try {
       current = currentFor(huntId)
     } catch (error) {
-      problems.push(`${huntId}: ${error instanceof Error ? error.message : String(error)}`)
+      problems.push(`${huntId}: ${redactedMessage(error)}`)
       continue
     }
     for (const task of manifest.tasks.filter((candidate) => candidate.huntId === huntId)) {

@@ -287,13 +287,31 @@ describe('nothing on the capture path can load a key', () => {
     // key importer here: it re-exports the keys, so importing it is importing
     // them. Two scripts need the keys — `live:keys` writes the manifest, and
     // the Grading Bench puts the key beside the Answer — and a third is a
-    // decision to make on purpose.
+    // decision to make on purpose. A script counts whether it imports a key
+    // module itself or reaches one through any other e2e/live module.
     const scriptsDir = join(liveDir, '..', '..', 'scripts')
     const allowed = new Set(['live-keys.ts', 'live-review.ts'])
-    const keyImport = /(?:from|import\()\s*['"](?:\.{1,2}\/)+(?:[\w.-]+\/)*e2e\/live\/(?:keys|keyManifest)(?:\.ts)?['"]/
+    const liveImport = /(?:from|import\()\s*['"](?:\.{1,2}\/)+(?:[\w.-]+\/)*e2e\/live\/([\w.]+?)(?:\.ts)?['"]/g
+
+    /** Every e2e/live module a script loads, directly or through another e2e/live module. */
+    function liveModulesOf(script: string): Set<string> {
+      const seen = new Set<string>()
+      const queue = [...readFileSync(join(scriptsDir, script), 'utf8').matchAll(liveImport)].map((match) => `${match[1]}.ts`)
+      while (queue.length > 0) {
+        const module = queue.pop()!
+        if (seen.has(module)) continue
+        seen.add(module)
+        queue.push(...localImportsOf(module))
+      }
+      return seen
+    }
+
     const importers = readdirSync(scriptsDir, { recursive: true, encoding: 'utf8' })
       .filter((name) => /\.(?:[cm]?[jt]s|tsx)$/.test(name))
-      .filter((name) => keyImport.test(readFileSync(join(scriptsDir, name), 'utf8')))
+      .filter((name) => {
+        const reached = liveModulesOf(name)
+        return reached.has('keys.ts') || reached.has('keyManifest.ts')
+      })
 
     // Sanity: the pattern really does see the importers it allows.
     expect(importers).toContain('live-keys.ts')

@@ -270,6 +270,11 @@ describe('the Grading Bench server', () => {
     expect(readFileSync(paths.compare)).toEqual(before)
   })
 
+  it('refuses a --compare file holding this reviewer’s own reviews', () => {
+    const refused = open({ reviewer: 'reviewer-b', gradesPath: join(dir, 'private', 'set-1-grades-reviewer-b-again.json') })
+    expect(refused.ok ? [] : refused.errors.join(' ')).toContain('compare against another reviewer')
+  })
+
   it('serves the page, and only to a request that came from this machine’s own page', async () => {
     const page = await call('GET', '/')
     expect(page.status).toBe(200)

@@ -354,10 +354,14 @@ describe('the drafts sidecar', () => {
 
 describe('whose grades file this is', () => {
   it('names the reviewer from --reviewer, else from git, and no one when neither says', () => {
-    expect(resolveReviewer('Ada', 'jaish')).toBe('Ada')
-    expect(resolveReviewer(undefined, '  jaish\n')).toBe('jaish')
-    expect(resolveReviewer('  ', '')).toBeNull()
-    expect(resolveReviewer(undefined, null)).toBeNull()
+    const git = (name: string | null) => () => name
+    const unasked = (): string | null => {
+      throw new Error('git was asked although --reviewer named someone')
+    }
+    expect(resolveReviewer('Ada', unasked)).toBe('Ada')
+    expect(resolveReviewer(undefined, git('  jaish\n'))).toBe('jaish')
+    expect(resolveReviewer('  ', git(''))).toBeNull()
+    expect(resolveReviewer(undefined, git(null))).toBeNull()
   })
 
   it('opens a file nobody has reviewed in, or one only this reviewer has', () => {
@@ -403,6 +407,16 @@ describe('saving an entry', () => {
     const { inputs, grades } = fixture()
     const result = gradesWith({ ...passingState(), status: null }, benchSlot(inputs, 'a1'), grades, inputs, 'reviewer-a', REVIEWED_AT)
     expect(result.ok ? [] : result.errors).toEqual(['grade for a1: choose a status — the bench never picks one'])
+  })
+
+  it('shows what else a blank judgment needs before a status is chosen, without naming a status', () => {
+    const { inputs, grades } = fixture()
+    const result = gradesWith(blankEditorState(taskOf(inputs, 'a1')), benchSlot(inputs, 'a1'), grades, inputs, 'reviewer-a', REVIEWED_AT)
+    expect(result.ok ? [] : result.errors).toEqual([
+      'grade for a1: choose a status — the bench never picks one',
+      'grade for a1: a reviewed entry records no rationale',
+      'grade for a1: required check(s) c1, c2 left unjudged',
+    ])
   })
 
   it('returns the validator’s own words for the rule the record would break', () => {
@@ -559,6 +573,6 @@ describe('the key beside the Answer', () => {
     expect(keyDriftOf(current, per(current))).toEqual([])
     expect(keyDriftOf(current, per(edited))).toEqual(['hunt-b/initial: check c1 reads differently in the key than in the manifest — regenerate the manifest with pnpm live:keys'])
     const stray = { ...current, tasks: [...current.tasks, { ...current.tasks[0], huntId: 'hunt-z' }] }
-    expect(keyDriftOf(stray, per(current))).toEqual(['hunt-z: "hunt-z" is not an approved live-web hunt'])
+    expect(keyDriftOf(stray, per(current))).toEqual(['hunt-z: Error: "hunt-z" is not an approved live-web hunt'])
   })
 })
