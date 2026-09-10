@@ -13,8 +13,9 @@ baseline passes it informs need **separate post-pilot authorisation**.
 Run these in order. Each is free, and each has caught something real.
 
 ```sh
-# 1. Everything that does not need the app.
+# 1. Everything that does not need the app, plus the measured launch itself.
 pnpm test && pnpm typecheck && pnpm lint
+pnpm test:e2e e2e/live/measuredLaunch.e2e.test.ts
 
 # 2. The whole capture-to-report path, scripted model, local pages, no spend.
 pnpm test:e2e e2e/live/pilotVerification.e2e.test.ts
@@ -45,12 +46,17 @@ competing Electron or Xvfb run before starting, including other agent sessions.
 ## Running the pass
 
 ```sh
-BINGBONG_LIVE_SET_ID=pilot-1 BINGBONG_ENV_FILE=/absolute/path/to/.env pnpm test:live
+BINGBONG_ENV_FILE=/absolute/path/to/.env pnpm test:live
 ```
 
 One pass per invocation, by design — there is no repeat flag, because a
 campaign that can be started by passing a number is exactly what the separate
 authorisation exists to gate.
+
+The set id defaults to a timestamp. Name a pass only when you mean to
+(`BINGBONG_LIVE_SET_ID=…`), and only with an id nothing has used: a capture
+identity is claimed once and never reused, so a repeated id fails the pass as
+`measurement_failed` before anything launches.
 
 What the suite asserts is that the pass was **measured**, never that it went
 well. A hunt the assistant gets wrong is the finding the study exists to
