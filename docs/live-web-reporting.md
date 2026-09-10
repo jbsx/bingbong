@@ -237,8 +237,8 @@ and `e2e/live/private/`, with no override.
   The newest set that can be started, where the reviewer still has an ungraded
   slot, is proposed. When nothing can be graded, the page says how a pass is
   run.
-- **Reviewer.** Filled from `git config user.name`, editable here, and fixed
-  once the bench opens. A typo guard flags a name before Start when nothing in
+- **Reviewer.** Filled from `git config user.name`, editable here until the
+  first Start, and fixed from then on — across every set that process grades. A typo guard flags a name before Start when nothing in
   the private root was graded or drafted under it but other names have work
   there. The flag lists the names that do. It cautions and never refuses:
   every second reviewer is new too.
@@ -274,8 +274,17 @@ and `e2e/live/private/`, with no override.
   prose and check wording to disagree. `pnpm live:keys` is needed only for
   `live:report`, and writes the same manifest byte for byte.
 
-Start opens the bench on the chosen set. To grade another set, or under
-another name, restart `live:review`.
+Start opens the bench on the chosen set.
+
+**Switching sets.** The bench's **change set** link comes back to this page
+without restarting `live:review` (#231). The list is read again, so the set just
+left shows its new graded, drafted and pending counts. Start opens the next set
+in the same process, any number of times. Leaving mid-draft loses nothing: every
+change is already in the drafts sidecar, and re-entering the set restores it.
+The reviewer is fixed from the first Start for every set that process grades;
+to grade under another name, restart `live:review`. A bench page still open on
+a set that has been left is refused rather than served, so it cannot write into
+the set that is open now.
 
 ### At the bench
 
@@ -525,6 +534,10 @@ extensionless runtime import on the CLI's graph.
   wrote against `scripts/live-report.ts`, run the same way;
 - it drives one setup→Start round trip against a fixture pair of roots, with
   another reviewer's Grade chosen for comparison;
+- it switches sets without restarting — setup → Start → change set → Start on a
+  second fixture set with the same attempt ids — and checks the first set's
+  files are untouched, the reviewer stays fixed, a page left on the old set is
+  refused, and the draft is back on re-entry;
 - it starts `scripts/live-review.ts` itself.
 
 The pages have no automated test. After changing
@@ -540,3 +553,7 @@ real browser. Headless Chrome over CDP will do.
 6. Press Start.
 7. At the bench, walk a draft, a reload and a save; with a comparison chosen,
    the other Grade appears only after the save.
+8. Change a draft and follow **change set** straight away. Back on the setup
+   page, check that the reviewer is read-only and the set shows the draft.
+9. Start another set, follow change set again, re-enter the first set, and
+   check that the draft is restored.
