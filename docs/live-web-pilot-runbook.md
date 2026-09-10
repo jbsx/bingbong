@@ -71,28 +71,32 @@ directories it names. Both are gitignored.
 # 1. Describe the keys to the grader. Writes into the gitignored private root.
 pnpm live:keys --out=e2e/live/private/key-manifest.json
 
-# 2. Open one pending entry per scheduled slot — including slots nothing reached.
-pnpm live:report init-grades \
+# 2. A human grades every slot at the Grading Bench. One grades file per
+#    reviewer; the reviewer defaults to git config user.name.
+pnpm live:review \
   --capture=e2e/live/artifacts/pilot-1.json \
   --keys=e2e/live/private/key-manifest.json \
-  --out=e2e/live/private/pilot-1-grades.json
+  --grades=e2e/live/private/pilot-1-grades-<you>.json
 
-# 3. … a human reads each Answer against the key and edits that file …
-
-# 4. The compact report. This one is committed.
+# 3. The compact report. This one is committed.
 pnpm live:report \
   --capture=e2e/live/artifacts/pilot-1.json \
   --keys=e2e/live/private/key-manifest.json \
-  --grades=e2e/live/private/pilot-1-grades.json \
+  --grades=e2e/live/private/pilot-1-grades-<you>.json \
   --format=markdown --out=e2e/live/reports/pilot-1.md
 ```
 
-### Step 3 is the bottleneck, not the model
+A second reviewer grades into their own file and passes the first reviewer's as
+`--compare=…`; the bench shows it slot by slot only after their own Grade for
+that slot is saved. The bench is described in
+[live-web-reporting.md](live-web-reporting.md#grading-at-the-bench).
+
+### Step 2 is the bottleneck, not the model
 
 **68 checks.** 56 across the four initial hunts (10 / 17 / 14 / 15) and 12
 across the two follow-ups (6 / 6). Nothing in this path grades anything: there
 is no automated judge, and no code path from a `done` outcome or a proposed
-`completed` Run Resolution to a pass. Until a human edits the grades file the
+`completed` Run Resolution to a pass. Until a human grades at the bench the
 report shows zeros over full denominators, and **that is correct output, not a
 broken run**. Budget the review as a work item.
 

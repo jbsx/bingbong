@@ -6,11 +6,15 @@ How a retained live-web capture (#224) becomes a graded, reportable result
 Two commands, one human step between them:
 
 ```sh
-pnpm live:report init-grades --capture=<capture-set.json> --keys=<key-manifest.json> --out=<pending-grades.json>
-# … the reviewer reads each Answer against the grading key and edits the grades file …
+pnpm live:review --capture=<capture-set.json> --keys=<key-manifest.json> --grades=<your-grades.json>
+# … the reviewer reads each Answer against the grading key at the Grading Bench, which writes the grades file …
 pnpm live:report --capture=<capture-set.json> --keys=<key-manifest.json> --grades=<reviewed-grades.json> \
                  [--format=markdown|json] [--pricing=<dated-prices.json>] [--out=<report.md>]
 ```
+
+The bench (see [Grading at the bench](#grading-at-the-bench)) opens its own
+pending grades in memory; `pnpm live:report init-grades … --out=<pending-grades.json>`
+still writes a pending file for a reviewer who edits JSON by hand.
 
 Both commands are offline. They read files and nothing else: no model, no
 browser, no Electron, no network, no scheduler, and no discovery — every input
@@ -33,7 +37,8 @@ an accepted Evidence Checkpoint or a successful tool call to a `pass`.
 | Capture set + Session captures | the capture runner (#224) / scheduler (#225) | `e2e/live/artifacts/` — raw, local, out of Git |
 | Substantive key | the evaluator, before the hunt is accepted | `e2e/live/keys.ts` (#225) — committed and versioned |
 | Key manifest | derived from the key | carries the key's version, digest and check ids, never its content |
-| Grades | `init-grades`, then the reviewer by hand | local; reviewer prose and notes stay out of the report |
+| Grades | the Grading Bench (`pnpm live:review`), or `init-grades` and the reviewer by hand | `e2e/live/private/`, one file per reviewer; reviewer prose and notes stay out of the report |
+| Grading drafts | the Grading Bench, on every change | beside the grades file as `<grades>.drafts.json` — never committed |
 | Compact report | the report command | `e2e/live/reports/` — committed |
 
 > `e2e/live/artifacts/` and `e2e/live/private/` are ignored by Git (#224).
@@ -189,6 +194,76 @@ what the model happened to say. Add to the entry:
   re-reviewed under the new key. Letting it stand would be the rewrite the
   study forbids.
 - `unresolved` — kept as-is, and never counted as verified success.
+
+## Grading at the bench
+
+Reading six Answers out of `capture.json`, sixty-eight check descriptions out of
+a manifest and every key's constraints out of `keys.ts`, then typing a grades
+file the validator accepts, is not a pass anyone does twice. The **Grading
+Bench** (#228) is where a human does it instead:
+
+```sh
+pnpm live:review --capture=e2e/live/artifacts/pilot-2.json \
+                 --keys=e2e/live/private/key-manifest.json \
+                 --grades=e2e/live/private/pilot-2-grades-<you>.json \
+                 [--reviewer=<name>] [--compare=<another-reviewers-grades.json>] [--port N] [--no-open]
+```
+
+It is a loopback-only server (port 4227 by default) serving one page, in the
+mould of `pnpm trace:ui`. Every input is an explicit path, and it is a script,
+never an app view — one of the two scripts `corpus.test.ts` allows to import the
+keys.
+
+The sidebar lists the set's slots in schedule order with each one's state:
+pending, drafted, graded, or not reached with the capture's reason. Under the
+slots are `live:report`'s own counts over the saved file. Each screen holds one
+attempt:
+
+- **The Answer**, rendered server-side with the app's own `react-markdown`, so
+  the reviewer grades what the Feed showed, with a raw toggle. A follow-up
+  carries its initial's Answer in a collapsed panel.
+- **What the assistant read**, from the attempt's event tape: every `navigate`,
+  `read_page` and `look` in order with its URL and outcome — loaded, walled
+  (the app's own Blocker marker, as challenge-walled, network-blocked or
+  login-walled), errored — each with its full page text, collapsed. Then every
+  `record_evidence` call, rejected ones included. This is what separates
+  `help_access_blocked` from `unsuccessful`. A Run that spawned Subagents says
+  so, because their browsing is not on its tape. Failure screenshots are linked
+  when the capture kept any.
+- **The whole key**: its constraints first, then the step's checks with their
+  descriptions, then the required facts, pitfalls, uncertainties, sources, live
+  facts and follow-up delta. A support row picks its URL from the key's sources
+  (a follow-up's own first), or names another URL as an equivalent.
+
+Judging writes nothing to the grades file. Every change — a check, a support
+row, a note, the rationale — goes to a drafts sidecar beside it
+(`<grades>.drafts.json`), so closing the page loses nothing. **Save** composes
+the entry and runs the real `parseLiveGrades` over the file it would produce.
+Only a file the validator accepts is written, so the grades file is always one
+`live:report` accepts. A rejected save shows the validator's message verbatim;
+the page shows the same message while the reviewer works, and keeps Save
+disabled while there is one.
+
+**The bench never picks a verdict.** It has only three rules of its own. A
+status has to be chosen. A slot nothing was dispatched into stays pending. An
+attempt that published no Answer is `unsuccessful` or `help_access_blocked`:
+one click marks every check unsatisfied, and the rationale is still typed.
+
+**One grades file per reviewer.** The reviewer is `--reviewer`, else
+`git config user.name`, and the bench refuses to open a grades file anyone else
+has reviewed in. To compare, pass the other reviewer's file as `--compare`. The
+other Grade for a slot is not sent to the page at all until the reviewer's own
+entry for that slot is saved. After that it appears as a per-check
+agree/disagree with both notes, and the two statuses and rationales side by
+side. The blank start is deliberate: a pre-filled Grade anchors the reviewer to
+the other one's interpretation calls.
+
+It reads only the paths it was given and the files the capture set names. It
+writes only the grades file and its drafts sidecar, and warns when they are
+outside `e2e/live/private/`. It refuses to open a key that has moved past the
+manifest the checks came from, so key prose and check wording cannot silently
+disagree. It answers only requests addressed to loopback from its own page. Both
+files it writes carry reviewer notes about Answers — never commit them.
 
 ## The report
 
@@ -363,7 +438,7 @@ Sessions.
 ## Verifying a change here
 
 ```sh
-pnpm exec vitest run e2e/live/grades.test.ts e2e/live/report.test.ts
+pnpm exec vitest run e2e/live/grades.test.ts e2e/live/report.test.ts e2e/live/gradingBench.test.ts e2e/live/gradingBenchServer.test.ts
 pnpm typecheck
 pnpm lint
 pnpm test
@@ -372,4 +447,8 @@ pnpm test
 The suites run under the ordinary unit run — they spend nothing and launch
 nothing. `report.test.ts` invokes `scripts/live-report.ts` as a real Node
 subprocess, which is what catches an accidental Electron import or an
-extensionless runtime import on the CLI's graph.
+extensionless runtime import on the CLI's graph. `gradingBenchServer.test.ts`
+serves a fixture set on a real loopback socket, saves Grades through it, and
+checks the file it wrote against `scripts/live-report.ts` run the same way.
+The page itself has no automated test; after changing `scripts/live-review.html`,
+open a set at the bench and walk a draft, a reload and a save.
