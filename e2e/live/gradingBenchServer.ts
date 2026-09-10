@@ -436,7 +436,7 @@ export function openGradingBench(options: GradingBenchOptions): Validation<Gradi
   }
 
   /** What a save would break, in the validator's words, and the same said as the page's to-save checklist. */
-  function judgmentOf(state: BenchEditorState, bench: BenchSlot) {
+  function saveReadinessOf(state: BenchEditorState, bench: BenchSlot) {
     const problems = problemsOf(state, bench)
     return { problems, toSave: toSaveOf(state, bench.task, problems) }
   }
@@ -489,7 +489,7 @@ export function openGradingBench(options: GradingBenchOptions): Validation<Gradi
       screenshots: screenshots.map((shot, index) => ({ name: shot.name, href: `/api/screenshot/${encodeURIComponent(slot.attemptId)}/${index}` })),
       allowedStatuses: allowedStatusesFor(dispatched),
       editor,
-      ...(editor === null ? { problems: [], toSave: null } : judgmentOf(editor.state, bench)),
+      ...(editor === null ? { problems: [], toSave: null } : saveReadinessOf(editor.state, bench)),
       saved: entry !== undefined && isReviewed(entry.status),
       // Null until this reviewer's own entry is saved — see compareGrades.
       comparison: other === null ? null : compareGrades(entry, other.entries.find((candidate) => candidate.attemptId === slot.attemptId), task),
@@ -566,7 +566,7 @@ export function openGradingBench(options: GradingBenchOptions): Validation<Gradi
         if (state === null) return
         drafts = withDraft(drafts, attemptId, state, now().toISOString())
         writeDrafts()
-        return send(response, 200, { ...judgmentOf(state, bench), slot: summaryOf(attemptId) })
+        return send(response, 200, { ...saveReadinessOf(state, bench), slot: summaryOf(attemptId) })
       }
 
       case 'DELETE drafts': {

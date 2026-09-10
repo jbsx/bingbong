@@ -464,8 +464,8 @@ describe('what is left before a save', () => {
     expect(toSave(blankEditorState(taskOf(fixture().inputs, 'a1')))).toEqual({
       ready: false,
       items: [
-        { label: 'choose a verdict', short: 'verdict', done: false },
         { label: 'judge every check (0 of 2)', short: '0 of 2 checks', done: false },
+        { label: 'choose a verdict', short: 'verdict', done: false },
         { label: 'write a rationale', short: 'rationale', done: false },
       ],
     })
@@ -473,12 +473,13 @@ describe('what is left before a save', () => {
 
   it('ticks items off as the judgment fills in, and adds what a pass needs once pass is chosen', () => {
     const state: BenchEditorState = { ...passingState(), checks: { c1: { satisfied: true, note: '' }, c2: { satisfied: null, note: '' } }, rationale: '   ' }
+    // In the form's order: checks, verdict, what a pass needs, rationale.
     expect(toSave(state).items).toEqual([
-      { label: 'choose a verdict', short: 'verdict', done: true },
       { label: 'judge every check (1 of 2)', short: '1 of 2 checks', done: false },
-      { label: 'write a rationale', short: 'rationale', done: false },
+      { label: 'choose a verdict', short: 'verdict', done: true },
       { label: 'a pass needs every check satisfied', short: 'pass: checks', done: true },
       { label: 'a pass needs support for a claim', short: 'pass: support', done: true },
+      { label: 'write a rationale', short: 'rationale', done: false },
     ])
   })
 
@@ -519,10 +520,11 @@ describe('what is left before a save', () => {
     }
   })
 
-  it('falls back to the validator’s own words for a rule it does not list itself', () => {
-    const result = toSaveOf(passingState(), taskOf(fixture().inputs, 'a1'), ['grade for a1: the graded Answer is not the Answer the capture recorded'])
+  it('falls back to the validator’s own words, unaltered, for a rule it does not list itself', () => {
+    const problem = 'grade for a1: the graded Answer is not the Answer the capture recorded'
+    const result = toSaveOf(passingState(), taskOf(fixture().inputs, 'a1'), [problem])
     expect(result.ready).toBe(false)
-    expect(result.items.filter((item) => !item.done)).toEqual([{ label: 'the graded Answer is not the Answer the capture recorded', short: 'a rule', done: false }])
+    expect(result.items.filter((item) => !item.done)).toEqual([{ label: problem, short: 'another rule', done: false }])
   })
 })
 

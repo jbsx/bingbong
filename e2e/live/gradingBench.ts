@@ -602,19 +602,18 @@ const filled = (value: string): boolean => value.trim() !== ''
  * The to-save checklist (#232): what the record still needs, said as work
  * left rather than as errors, so a blank slot reads as a list to do and not a
  * list of failures. It restates from the editor state the rules a reviewer
- * meets on every slot — a verdict, every check judged, a rationale, what a
- * pass needs, finished support rows — and, once all of those are done, falls
- * back to the validator's own words for any rule it does not restate.
- * `ready` is taken from the validator, so the checklist can never unlock a
- * save the validator would refuse.
+ * meets on every slot, in the form's order — every check judged, a verdict,
+ * what a pass needs, finished support rows, a rationale — and, once all of
+ * those are done, lists any rule it does not restate in the validator's own
+ * words, unaltered. `ready` is taken from the validator, so the checklist can
+ * never unlock a save the validator would refuse.
  */
 export function toSaveOf(state: BenchEditorState, task: LiveKeyTask, problems: readonly string[]): ToSave {
   const total = task.checks.length
   const judged = task.checks.filter((check) => typeof state.checks[check.checkId]?.satisfied === 'boolean').length
   const items: ToSaveItem[] = [
-    { label: 'choose a verdict', short: 'verdict', done: state.status !== null },
     { label: `judge every check (${judged} of ${total})`, short: `${judged} of ${total} checks`, done: judged === total },
-    { label: 'write a rationale', short: 'rationale', done: filled(state.rationale) },
+    { label: 'choose a verdict', short: 'verdict', done: state.status !== null },
   ]
   if (state.status === 'pass') {
     const unsatisfied = task.checks.filter((check) => state.checks[check.checkId]?.satisfied === false).map((check) => check.checkId)
@@ -633,8 +632,9 @@ export function toSaveOf(state: BenchEditorState, task: LiveKeyTask, problems: r
       done: false,
     })
   }
+  items.push({ label: 'write a rationale', short: 'rationale', done: filled(state.rationale) })
   if (problems.length > 0 && items.every((item) => item.done)) {
-    for (const problem of problems) items.push({ label: problem.replace(/^grade for [^:]*: /, ''), short: 'a rule', done: false })
+    for (const problem of problems) items.push({ label: problem, short: 'another rule', done: false })
   }
   return { ready: problems.length === 0, items }
 }

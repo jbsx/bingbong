@@ -87,7 +87,7 @@
   </section>
 
   <section class="panel">
-    <h2>Compare against</h2>
+    <h2>Another reviewer’s Grade</h2>
     <ol class="comparisons" id="comparisons"><li class="muted">choose a set</li></ol>
   </section>
 
@@ -306,7 +306,7 @@ function render() {
   if (file) {
     $('comparisons').replaceChildren(
       comparisonOption(null, 'none', offered.length === 0 ? 'no other reviewer’s grades for this set' : null),
-      ...offered.map((candidate) => comparisonOption(candidate.file, candidate.reviewer, candidate.file)),
+      ...offered.map((candidate) => comparisonOption(candidate.file, candidate.reviewer, candidate.file === set.preselectedComparison ? `${candidate.file} · proposed` : candidate.file)),
     )
   } else {
     $('comparisons').replaceChildren(el('li', { class: 'muted', text: set ? 'none — this set cannot be started' : 'choose a set' }))
@@ -316,7 +316,7 @@ function render() {
   const ready = answered && reviewer !== '' && set !== null && set.gradesFile !== null
   $('start').disabled = !ready
   $('start-note').textContent = ready
-    ? `grade ${set.setId} as ${reviewer}${beside ? `, compared with ${beside.reviewer}` : ''}`
+    ? `grade ${set.setId} as ${reviewer}${beside ? `, beside ${beside.reviewer}’s Grade` : ''}`
     : !answered && reviewer !== ''
       ? 'checking what this name would open…'
       : ''

@@ -6,6 +6,7 @@ import { join } from 'node:path'
 import { setTimeout as sleep } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { connectCdp, type CdpClient } from '../cdpClient.ts'
 import { parseLiveGrades, type LiveGradingInputs } from './grades.ts'
 import { REVIEWED_AT, keys, manifest, reviewerBGrades, writeFixtureSet } from './gradingBenchFixtures.ts'
 import { openGradingSetup } from './gradingBenchServer.ts'
@@ -14,14 +15,15 @@ import { openGradingSetup } from './gradingBenchServer.ts'
 // the DevTools protocol, against the same invented fixture set the server
 // suite uses — never a pilot. The server suite proves the JSON; this proves
 // what a reviewer sees: setup lists the sets and Start lands on the bench, the
-// bench opens on the Answer, the three tabs switch, a judged check lands in the
-// drafts sidecar, a blank slot shows work left rather than errors, a refused
-// save shows the validator's words, and the other Grade appears only after a
-// save, disagreements first. The tests run in the order a reviewer works, and
-// later ones read what earlier ones did.
+// bench opens on the Answer, the three tabs switch, a blank slot shows work
+// left rather than errors, a judged check is a draft the server hands back, a
+// refused save shows the validator's words, the other Grade appears only
+// after a save with the disagreements first, and a follow-up's Key tab does not
+// repeat its checks. The tests run in the order a reviewer works, and later
+// ones read what earlier ones did.
 //
 // It needs a Chrome and a global WebSocket (Node ≥ 22); without either it is
-// skipped, not failed.
+// skipped, not failed. CHROME_PATH points it at a Chrome elsewhere.
 
 const PAGE = fileURLToPath(new URL('../../scripts/live-review.html', import.meta.url))
 const SETUP_PAGE = fileURLToPath(new URL('../../scripts/live-review-setup.html', import.meta.url))
@@ -31,18 +33,9 @@ const CHROME = [process.env.CHROME_PATH, '/usr/bin/google-chrome', '/usr/bin/goo
 const canDrive = CHROME !== undefined && typeof WebSocket === 'function'
 const STEP_TIMEOUT_MS = 30_000
 
-interface CdpReply {
-  readonly id?: number
-  readonly result?: {
-    readonly result?: { readonly value?: unknown }
-    readonly exceptionDetails?: { readonly text: string; readonly exception?: { readonly description?: string } }
-  }
-  readonly error?: { readonly message: string }
-}
-
-interface Cdp {
-  readonly send: (method: string, params?: Record<string, unknown>) => Promise<CdpReply>
-  readonly close: () => void
+interface EvaluateResult {
+  readonly result?: { readonly value?: unknown }
+  readonly exceptionDetails?: { readonly text: string; readonly exception?: { readonly description?: string } }
 }
 
 async function until<T>(probe: () => T | Promise<T>, what: string, timeoutMs = 10_000): Promise<NonNullable<T>> {
@@ -58,31 +51,6 @@ async function until<T>(probe: () => T | Promise<T>, what: string, timeoutMs = 1
     if (value) return value
     if (Date.now() > deadline) throw new Error(`timed out waiting for ${what}`)
     await sleep(100)
-  }
-}
-
-async function connect(url: string): Promise<Cdp> {
-  const socket = new WebSocket(url)
-  await new Promise<void>((resolve, reject) => {
-    socket.addEventListener('open', () => resolve())
-    socket.addEventListener('error', () => reject(new Error('the DevTools socket did not open')))
-  })
-  let next = 0
-  const waiting = new Map<number, (reply: CdpReply) => void>()
-  socket.addEventListener('message', (event) => {
-    const reply = JSON.parse(String(event.data)) as CdpReply
-    if (reply.id === undefined) return
-    waiting.get(reply.id)?.(reply)
-    waiting.delete(reply.id)
-  })
-  return {
-    send: (method, params = {}) =>
-      new Promise((resolve) => {
-        next += 1
-        waiting.set(next, resolve)
-        socket.send(JSON.stringify({ id: next, method, params }))
-      }),
-    close: () => socket.close(),
   }
 }
 
@@ -104,18 +72,23 @@ describe.skipIf(!canDrive)('the Grading Bench pages in a browser', () => {
   let server: Server
   let base: string
   let chrome: ChildProcess
-  let cdp: Cdp
+  let cdp: CdpClient
 
   async function evaluate<T>(expression: string): Promise<T> {
-    const reply = await cdp.send('Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true })
-    if (reply.error) throw new Error(reply.error.message)
-    const details = reply.result?.exceptionDetails
+    const reply = await cdp.send<EvaluateResult>('Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true })
+    const details = reply.exceptionDetails
     if (details) throw new Error(details.exception?.description ?? details.text)
-    return reply.result?.result?.value as T
+    return reply.result?.value as T
   }
 
   const waitFor = (expression: string, what: string) => until(() => evaluate<boolean>(expression), what)
   const click = (selector: string) => evaluate(`document.querySelector(${JSON.stringify(selector)}).click()`)
+  const saveLine = () => evaluate<string>(`document.getElementById('to-save-line').textContent`)
+  const shownPanel = () =>
+    evaluate<{ tab: string; text: string }>(`(() => ({
+      tab: document.querySelector('[role=tab][aria-selected=true]').dataset.tab,
+      text: document.querySelector('[role=tabpanel]:not([hidden])').textContent,
+    }))()`)
 
   beforeAll(async () => {
     root = mkdtempSync(join(tmpdir(), 'bingbong-grading-page-'))
@@ -152,9 +125,9 @@ describe.skipIf(!canDrive)('the Grading Bench pages in a browser', () => {
     const devtoolsPort = await until(() => (existsSync(portFile) ? readFileSync(portFile, 'utf8').split('\n')[0] : ''), 'Chrome to open its debugging port', 20_000)
     const target = await until(async () => {
       const targets = (await (await fetch(`http://127.0.0.1:${devtoolsPort}/json/list`)).json()) as Array<{ type: string; webSocketDebuggerUrl: string }>
-      return targets.find((candidate) => candidate.type === 'page')
+      return targets.find((listed) => listed.type === 'page')
     }, 'a page target')
-    cdp = await connect(target.webSocketDebuggerUrl)
+    cdp = await connectCdp(target.webSocketDebuggerUrl)
     await cdp.send('Page.enable')
     await cdp.send('Runtime.enable')
   }, 60_000)
@@ -180,12 +153,14 @@ describe.skipIf(!canDrive)('the Grading Bench pages in a browser', () => {
       files: string | null
       caution: string | null
       comparison: string | null
+      comparisonNote: string | null
       key: string
     }>(`(() => ({
       sets: [...document.querySelectorAll('#sets input[name=set]')].map((input) => ({ value: input.value, checked: input.checked, disabled: input.disabled })),
       files: document.querySelector('#sets .set-files')?.textContent ?? null,
       caution: document.getElementById('caution').hidden ? null : document.getElementById('caution').textContent,
       comparison: document.querySelector('#comparisons input:checked')?.value ?? null,
+      comparisonNote: document.querySelector('#comparisons .chosen .muted')?.textContent ?? null,
       key: document.getElementById('key-line').textContent,
     }))()`)
     expect(setup.sets).toContainEqual({ value: 'set-1.json', checked: true, disabled: false })
@@ -193,6 +168,7 @@ describe.skipIf(!canDrive)('the Grading Bench pages in a browser', () => {
     expect(setup.files).toContain('set-1-grades-reviewer-a.json')
     expect(setup.caution).toBe('no work by “reviewer-a” yet; names with work here: reviewer-b')
     expect(setup.comparison).toBe('set-1-grades-reviewer-b.json')
+    expect(setup.comparisonNote).toBe('set-1-grades-reviewer-b.json · proposed')
     expect(setup.key).toContain('k1')
 
     await click('#start')
@@ -204,36 +180,32 @@ describe.skipIf(!canDrive)('the Grading Bench pages in a browser', () => {
   }, STEP_TIMEOUT_MS)
 
   it('opens on the Answer tab, and the three tabs switch', async () => {
-    const shown = () => evaluate<{ tab: string; text: string; toggleHidden: boolean }>(`(() => ({
-      tab: document.querySelector('[role=tab][aria-selected=true]').dataset.tab,
-      text: document.querySelector('[role=tabpanel]:not([hidden])').textContent,
-      toggleHidden: document.querySelector('.view-toggle').hidden,
-    }))()`)
+    const toggleHidden = () => evaluate<boolean>(`document.querySelector('.view-toggle').hidden`)
 
-    const answer = await shown()
+    const answer = await shownPanel()
     expect(answer.tab).toBe('answer')
     expect(answer.text).toContain('The widget code is W-1.')
-    expect(answer.toggleHidden).toBe(false)
+    expect(await toggleHidden()).toBe(false)
 
     expect(await evaluate(`document.querySelector('[role=tab][data-tab=read]').textContent`)).toBe('What it read · 1')
     await click('[role=tab][data-tab=read]')
-    const read = await shown()
+    const read = await shownPanel()
     expect(read.tab).toBe('read')
     expect(read.text).toContain('spec.invalid/a')
     expect(read.text).toContain('code W-1')
-    expect(read.toggleHidden).toBe(true)
+    expect(await toggleHidden()).toBe(true)
 
     await click('[role=tab][data-tab=key]')
-    const key = await shown()
+    const key = await shownPanel()
     expect(key.tab).toBe('key')
     expect(key.text).toContain('https://spec.invalid/a')
     expect(key.text).toContain('the invented spec hedges on the revision')
-    // The required facts and pitfalls are the checks; the Key tab does not repeat them.
+    // The required facts and pitfalls are this initial's checks; the Key tab does not repeat them.
     expect(key.text).not.toContain('the superseded fixture cable')
     expect(key.text).not.toContain('Required facts')
 
     await click('[role=tab][data-tab=answer]')
-    expect((await shown()).tab).toBe('answer')
+    expect((await shownPanel()).tab).toBe('answer')
   }, STEP_TIMEOUT_MS)
 
   it('shows a blank slot the work left before a save, not an error', async () => {
@@ -241,27 +213,34 @@ describe.skipIf(!canDrive)('the Grading Bench pages in a browser', () => {
       line: document.getElementById('to-save-line').textContent,
       errorsHidden: document.getElementById('save-errors').hidden,
       saveDisabled: document.getElementById('save').disabled,
+      discardShown: !document.getElementById('discard').hidden,
+      discardDisabled: document.getElementById('discard').disabled,
       checklistHidden: document.getElementById('to-save').hidden,
     })`)
-    expect(bar).toEqual({ line: 'left: verdict · 0 of 2 checks · rationale', errorsHidden: true, saveDisabled: true, checklistHidden: true })
+    expect(bar).toEqual({ line: '0 of 2 checks · verdict · rationale', errorsHidden: true, saveDisabled: true, discardShown: true, discardDisabled: true, checklistHidden: true })
     // An optional part left out must leave nothing behind — Element.append writes a null as "null".
     expect(await evaluate<string>(`document.querySelector('.grade-pane').textContent`)).not.toMatch(/\b(null|undefined)\b/)
 
     await click('#to-save-toggle')
     expect(await evaluate(`[...document.querySelectorAll('#to-save li')].map((item) => item.textContent)`)).toEqual([
-      '○choose a verdict',
       '○judge every check (0 of 2)',
+      '○choose a verdict',
       '○write a rationale',
     ])
   }, STEP_TIMEOUT_MS)
 
-  it('writes a judged check into the drafts sidecar', async () => {
+  it('keeps a judged check as a draft the server hands back', async () => {
     await click('li.check[data-check=c1] button[data-satisfied=true]')
-    await waitFor(`document.getElementById('to-save-line').textContent === 'left: verdict · 1 of 2 checks · rationale'`, 'the draft to be written')
+    await until(async () => (await saveLine()) === '1 of 2 checks · verdict · rationale', 'the draft to be written')
+    expect(await evaluate(`document.querySelector('li.check[data-check=c1] button[data-satisfied=true]').getAttribute('aria-pressed')`)).toBe('true')
+    expect(await evaluate(`document.getElementById('discard').disabled`)).toBe(false)
+
     const drafts = JSON.parse(readFileSync(join(privateRoot, 'set-1-grades-reviewer-a.drafts.json'), 'utf8'))
     expect(drafts.drafts.a1.state.checks.c1.satisfied).toBe(true)
-    expect(await evaluate(`document.querySelector('li.check[data-check=c1] button[data-satisfied=true]').getAttribute('aria-pressed')`)).toBe('true')
-    expect(await evaluate(`[...document.querySelectorAll('#to-save li')].map((item) => item.className)`)).toEqual(['todo', 'todo', 'todo'])
+    // What a reopened page is given for the slot: the draft, as the server reads it back.
+    const reopened = (await (await fetch(`${base}api/attempt/a1`, { headers: { 'x-grading-set': 'set-1' } })).json()) as { editor: { source: string; state: { checks: Record<string, { satisfied: boolean | null }> } } }
+    expect(reopened.editor.source).toBe('draft')
+    expect(reopened.editor.state.checks.c1.satisfied).toBe(true)
   }, STEP_TIMEOUT_MS)
 
   it('shows the validator’s own words when a save is refused, and writes nothing', async () => {
@@ -281,7 +260,7 @@ describe.skipIf(!canDrive)('the Grading Bench pages in a browser', () => {
     await click('li.check[data-check=c2] button[data-satisfied=true]')
     await evaluate(`(() => { const box = document.getElementById('rationale'); box.value = 'the code is right'; box.dispatchEvent(new Event('input')) })()`)
     await waitFor(`!document.getElementById('save').disabled`, 'Save to be enabled')
-    expect(await evaluate(`document.getElementById('to-save-line').textContent`)).toBe('ready to save')
+    expect(await saveLine()).toBe('ready to save')
 
     await click('#save')
     await waitFor(`!!document.getElementById('comparison')`, 'the comparison to appear')
@@ -294,6 +273,8 @@ describe.skipIf(!canDrive)('the Grading Bench pages in a browser', () => {
     expect(comparison.visible).toContain('Compared with reviewer-b')
     expect(comparison.visible).toContain('c2')
     expect(comparison.visible).toContain('The Answer avoids: the superseded fixture cable')
+    // Support is never judged agree or disagree, so it is not hidden under the agreements.
+    expect(comparison.visible).toContain('support')
     expect(comparison.visible).not.toContain('names the invented widget code')
     expect(comparison.agreementsHidden).toBe(true)
 
@@ -302,5 +283,19 @@ describe.skipIf(!canDrive)('the Grading Bench pages in a browser', () => {
 
     const written = JSON.parse(readFileSync(join(privateRoot, 'set-1-grades-reviewer-a.json'), 'utf8'))
     expect(parseLiveGrades(written, inputs).ok).toBe(true)
+  }, STEP_TIMEOUT_MS)
+
+  it('does not repeat a follow-up’s checks in its Key tab, and says a not-reached slot has nothing to grade', async () => {
+    await evaluate(`location.hash = '#b2'`)
+    await waitFor(`document.querySelector('.attempt-head h2')?.title === 'b2'`, 'the follow-up slot to open')
+    expect((await shownPanel()).tab).toBe('answer')
+    expect(await saveLine()).toBe('nothing to grade')
+
+    await click('[role=tab][data-tab=key]')
+    const key = await shownPanel()
+    expect(key.text).toContain('https://dates.invalid/')
+    expect(key.text).toContain('Follow-up sources')
+    // The delta's required fact is this follow-up's check.
+    expect(key.text).not.toContain('the date stands')
   }, STEP_TIMEOUT_MS)
 })

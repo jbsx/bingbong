@@ -299,9 +299,9 @@ current step does not need (#232). The header names the set, the slot's
 position in it and the reviewer, with **change set** as its only action. The
 sidebar groups the set's slots by hunt, in schedule order — each hunt's
 initial, then its follow-up — with each slot's state: pending, drafted, the
-saved verdict, or not reached, with the capture's reason on hover and on the
-slot. One line under it counts the slots saved, drafted and not reached;
-`live:report`'s own counts are read in the report, not here.
+saved verdict, or not reached, with the capture's reason on hover and in full
+on the slot itself. One line under it counts the slots saved, drafted and not
+reached; `live:report`'s own counts are read in the report, not here.
 
 Each slot is two panes. The left pane holds what to read, in three tabs, and
 every slot opens on the first:
@@ -323,8 +323,10 @@ every slot opens on the first:
   A Run that spawned Subagents says so, because their browsing is not on its
   tape. Failure screenshots are linked last when the capture kept any.
 - **Key** — the key beyond its checks: sources, uncertainties, live facts and
-  the follow-up delta. Its required facts and pitfalls are not repeated, because
-  the checks are those.
+  the follow-up delta. Nothing that is already a check on this slot is
+  repeated: an initial's checks are the key's required facts and pitfalls, and
+  a follow-up's are its delta's, so a follow-up's Key tab adds only the delta's
+  sources.
 
 The right pane is the Grade form, in the order a reviewer works:
 
@@ -340,14 +342,15 @@ The right pane is the Grade form, in the order a reviewer works:
    first), or names another URL as an equivalent.
 5. **Rationale**, required.
 
-A save bar is pinned under the form. It says what is left before a save —
-*left: verdict · 4 of 10 checks · rationale* — and opens into the whole
-checklist. The checklist is the validator's rule said as work left, not as
-errors: a verdict, every check judged, a rationale, what a pass needs (every
-check satisfied, support for a claim), finished support rows, and, once all of
-those are done, any other rule the validator still names, in its own words.
-Save is enabled only when the validator would accept the entry, and the
-checklist can never enable it on its own.
+A save bar is pinned under the form, with **Save** and **Discard** (enabled
+once a draft exists). It says what is left before a save, in the form's order —
+*4 of 10 checks · verdict · rationale* — and opens into the whole checklist.
+The checklist is the validator's rule said as work left, not as errors: every
+check judged, a verdict, what a pass needs (every check satisfied, support for
+a claim), finished support rows, a rationale, and, once all of those are done,
+any other rule the validator still names, in its own words, unaltered. Save is
+enabled only when the validator would accept the entry, and the checklist can
+never enable it on its own.
 
 Judging writes nothing to the grades file. Every change — a check, a support
 row, a note, the rationale — goes to a drafts sidecar beside it
@@ -368,10 +371,11 @@ else has reviewed in. It can still show another reviewer's Grade, but blind:
 the other Grade for a slot is not sent to the page at all until the reviewer's
 own entry for that slot is saved. After that it appears under the form: the
 disagreements first — the verdict if it differs, and each check judged
-differently, with both notes — then both rationales side by side, with the
-agreements and both reviewers' support behind a toggle. The blank start is deliberate: a pre-filled Grade anchors the reviewer to
-the other one's interpretation calls. The other Grade shown is the one chosen
-on the setup page, from the files it offers for the set, or none.
+differently, with both notes — then both rationales and both reviewers' support
+side by side, which are never judged agree or disagree, with the agreements
+behind a toggle. The blank start is deliberate: a pre-filled Grade anchors the
+reviewer to the other one's interpretation calls. The other Grade shown is the
+one chosen on the setup page, from the files it offers for the set, or none.
 
 Before Start it reads only the two roots' top-level files, and each set it
 offers, with each comparison beside it, the way a bench would open them. After

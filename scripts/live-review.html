@@ -345,7 +345,7 @@ function renderSidebar() {
   // Grouped by hunt, in schedule order: a follow-up sits under its hunt rather than indented beside it.
   const hunts = []
   for (const slot of slots) {
-    let hunt = hunts.find((candidate) => candidate.huntId === slot.huntId)
+    let hunt = hunts.find((listed) => listed.huntId === slot.huntId)
     if (!hunt) {
       hunt = { huntId: slot.huntId, slots: [] }
       hunts.push(hunt)
@@ -582,7 +582,11 @@ function sourcesList(sources) {
   return el('ul', {}, sources.map((source) => el('li', {}, link(source.url), el('div', { class: 'muted small', text: source.supports }))))
 }
 
-/** The key beyond its checks: the required facts and pitfalls are the checks, so they are not repeated here. */
+/**
+ * The key beyond its checks. The required facts and pitfalls are an initial's
+ * checks, and the delta's are a follow-up's, so neither is repeated on the
+ * slot whose checks they are.
+ */
 function keyPanel(view) {
   const key = view.key
   const delta = key.followUpDelta
@@ -596,7 +600,10 @@ function keyPanel(view) {
     listOrNone(key.uncertainties),
     el('h3', { text: 'Live facts' }),
     listOrNone(key.liveFacts),
-    delta ? [el('h3', { text: 'Follow-up delta' }), el('h4', { text: 'Required facts' }), listOrNone(delta.requiredFacts), el('h4', { text: 'Pitfalls' }), listOrNone(delta.pitfalls), el('h4', { text: 'Sources' }), sourcesList(delta.sources)] : null,
+    delta && view.slot.relation === 'initial'
+      ? [el('h3', { text: 'Follow-up delta' }), el('h4', { text: 'Required facts' }), listOrNone(delta.requiredFacts), el('h4', { text: 'Pitfalls' }), listOrNone(delta.pitfalls), el('h4', { text: 'Sources' }), sourcesList(delta.sources)]
+      : null,
+    delta && view.slot.relation !== 'initial' ? [el('h3', { text: 'Follow-up sources' }), sourcesList(delta.sources)] : null,
   )
 }
 
@@ -781,8 +788,8 @@ function saveBar(view, saveNote) {
   })
   const errors = el('ul', { class: 'save-errors', id: 'save-errors', hidden: true })
   const saveButton = el('button', { type: 'button', class: 'primary', id: 'save', disabled: true, text: view.saved ? 'Save changes' : 'Save Grade', onclick: () => void save() })
-  // Always present, shown once a draft exists — an edit begun on this screen can be discarded on it.
-  const discard = el('button', { type: 'button', id: 'discard', hidden: current.source !== 'draft', text: view.saved ? 'Discard edit' : 'Discard draft', onclick: () => void discardDraft() })
+  // Always in the bar, and enabled once a draft exists — an edit begun on this screen can be discarded on it.
+  const discard = el('button', { type: 'button', id: 'discard', disabled: current.source !== 'draft', text: view.saved ? 'Discard edit' : 'Discard draft', onclick: () => void discardDraft() })
   const note = el('span', { class: 'save-state', id: 'save-state', text: saveNote || (current.source === 'draft' ? 'restored your draft' : current.source === 'saved' ? 'as saved in your grades file' : '') })
   current.ui = { line, checklist, errors, saveButton, discard, note }
   return el(
@@ -800,7 +807,8 @@ function drawToSave() {
   const { line, checklist, saveButton } = current.ui
   const toSave = current.toSave
   const left = toSave.items.filter((item) => !item.done)
-  line.replaceChildren(...(toSave.ready ? [el('span', { class: 'ready', text: 'ready to save' })] : ['left: ', left.map((item) => item.short).join(' · ')]))
+  // Several rules the checklist does not restate share one short word; the line names it once.
+  line.replaceChildren(toSave.ready ? el('span', { class: 'ready', text: 'ready to save' }) : [...new Set(left.map((item) => item.short))].join(' · '))
   checklist.replaceChildren(...toSave.items.map((item) => el('li', { class: item.done ? 'done' : 'todo' }, el('span', { class: 'mark', 'aria-hidden': 'true', text: item.done ? '✓' : '○' }), item.label)))
   saveButton.disabled = !toSave.ready
 }
@@ -840,7 +848,7 @@ function flushDraft() {
     if (current !== target) return written
     if (written) {
       target.source = 'draft'
-      target.ui.discard.hidden = false
+      target.ui.discard.disabled = false
       target.toSave = data.toSave
       drawToSave()
       saveState('draft written')
@@ -910,9 +918,8 @@ function comparisonPanel(comparison) {
     { class: 'agreements', hidden: true },
     comparison.status.agree ? verdictPair : null,
     comparison.checks.filter((check) => check.agree).map(checkPair),
-    pair(el('strong', { text: 'support' }), supportList(comparison.support.own), supportList(comparison.support.other)),
   )
-  const showText = `show ${comparison.agreements} agreement${comparison.agreements === 1 ? '' : 's'} and support`
+  const showText = `show ${comparison.agreements} agreement${comparison.agreements === 1 ? '' : 's'}`
   const toggle = el('button', {
     type: 'button',
     class: 'quiet',
@@ -931,9 +938,10 @@ function comparisonPanel(comparison) {
     el('h3', { text: `Compared with ${who}` }),
     el('p', { class: 'comparison-summary', text: `${comparison.disagreements} disagree · ${comparison.agreements} agree` }),
     disagreements.length > 0 ? disagreements : el('p', { class: 'muted small', text: 'No disagreements.' }),
+    // Rationale and support are not judged agree or disagree, so they are never hidden under the agreements.
     pair(el('strong', { text: 'rationale' }), comparison.rationale.own, comparison.rationale.other),
-    toggle,
-    agreements,
+    pair(el('strong', { text: 'support' }), supportList(comparison.support.own), supportList(comparison.support.other)),
+    comparison.agreements > 0 ? [toggle, agreements] : null,
   )
 }
 
