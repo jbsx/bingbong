@@ -1052,6 +1052,23 @@ own is recorded; code confirms only that the Grade it writes is complete. Like
 the Grading Key, it is never rendered in any app view.
 _Avoid_: checker, review UI, grader, automated judge
 
+**Hunt**:
+One information-seeking objective in the evaluation corpus, with an initial
+step and optionally a follow-up step; an evaluation task is one Hunt's step.
+_Avoid_: query, question, scenario
+
+**Pass**:
+One complete execution of the evaluation protocol's scheduled commands on one
+route, retained as one capture set and graded as one. Never a Run, which is
+the app's unit; a Pass contains many.
+_Avoid_: run, session, batch, eval run
+
+**Baseline**:
+The Passes taken on one route under one Grading Key version and one reviewer,
+human or model, read together as the reference measurement. Passes that
+differ on any of those are not a Baseline together, and nothing joins them.
+_Avoid_: benchmark, eval, comparison
+
 ### Hardware
 
 **Kiosk**:
