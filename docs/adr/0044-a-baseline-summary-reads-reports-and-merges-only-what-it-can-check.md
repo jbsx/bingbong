@@ -50,7 +50,12 @@ summary must never read, and the prompt version only as a set-wide list.
   reasoning-effort override or effort overrides are refused with the
   differing values named. A capture set named twice, or two sets with the
   same `createdAt`, is refused: one Pass counts once. Fewer than two inputs is
-  refused: for one Pass, read its report.
+  refused: for one Pass, read its report. A Pass with no reviewed entry is
+  refused by name — it has no reviewer to agree with the others, and reporting
+  its absence as a disagreement would be false. A Pass with two rows for one
+  task is refused, since every per-task figure counts against N Passes and a
+  task is one Hunt's step under one relation: a corrective retry carrying its
+  parent's step id is its own task, not a second row of the step it corrects.
 - **Commit, dirty tree and grades revision are listed per input, never
   compared.** They are what a Pass records about itself; three Passes on
   three commits are still one Baseline when everything the protocol fixes
@@ -65,12 +70,21 @@ summary must never read, and the prompt version only as a set-wide list.
   N substituted: "Min, median and max only, over N passes. N repeats do not
   support a p95, a mean or a confidence interval, and none is offered. A
   median of an even count is the mean of its two middle values." With three
-  Passes the even case never arises for a per-task row, and the summary still
-  says what it would do.
+  Passes the even case arises whenever exactly two attempts qualify — the
+  Eurostar follow-up's two verified times are the first instance — which is
+  why the rule is stated rather than left implicit. It is a different rule
+  from the per-set report's, whose distributions take the lower nearest rank
+  (`src/core/report/stats.ts`): the same pair of values can print two
+  medians in the two documents, and this sentence is the record of why. The
+  summary's rule is #233's decision; the report's predates it and is
+  unchanged.
 - **Missing stays missing, and stays in the denominator.** A Pass with no
   verified attempt contributes nothing to a task's Task Completion Time and
-  the row says `n=2 of 3 passes`; it is never a zero and never dropped. An
-  input whose set state is not `complete` is accepted and carried as a warning
+  the row says `n=2 of 3 passes`; it is never a zero and never dropped. A
+  verified attempt whose time is unavailable or invalid is a different
+  absence — correctness and timing are independent — and is counted apart, as
+  a qualifying attempt without an observation. An input whose set state is
+  not `complete` is accepted; the warning its own report carries says so,
   with its set id, and its holes show as `not_reached` / `unaccounted` in the
   per-task rows.
 - **Per-Pass rates stand beside every pooled count.** A population's verified

@@ -628,9 +628,13 @@ and a comparison across routes is a different document this command is not.
 Commit, dirty tree and grades revision are listed per input and never
 compared. A capture set named twice, or two inputs with the same `createdAt`,
 is refused — one Pass counts once — and so is a single input: for one Pass,
-read its report. An input whose set state is not `complete` is accepted and
-carried as a warning with its set id; its unreached slots appear as
-`not_reached` / `unaccounted` in the per-task rows.
+read its report. A Pass with no reviewed entry is refused by name rather than
+reported as a reviewer disagreement, and so is a Pass with two rows for one
+task (a task is one Hunt's step under one relation; a corrective retry under
+its parent's step id is its own task). An input whose set state is not
+`complete` is accepted; its report's own warning is carried with its set id,
+and its unreached slots appear as `not_reached` / `unaccounted` in the
+per-task rows.
 
 What it writes, in either format (`kind: bingbong.live.summary`,
 `summaryVersion: 1`):
@@ -647,7 +651,10 @@ What it writes, in either format (`kind: bingbong.live.summary`,
   Completion Time min / median / max over verified attempts with `n=k of N
   passes` stated, Answer latency over unverified attempts, full Run duration,
   and finalization causes and flags with counts. A Pass with no verified
-  attempt contributes nothing and stays in N; it is never a zero.
+  attempt contributes nothing and stays in N; it is never a zero. A verified
+  attempt whose time is unavailable or invalid is counted apart, as a
+  qualifying attempt without an observation, so `n=2 of 3 passes` never
+  hides which kind of absence it is.
 - **Both-step sequences** — per Hunt with a follow-up, the initial-acceptance
   to follow-up-Answer elapsed over the pairs both steps of which verified.
 - **Usage** — per role summed across Passes with `live:report`'s `complete`
@@ -659,8 +666,11 @@ What it writes, in either format (`kind: bingbong.live.summary`,
 **Min, median and max only.** The summary states, with N substituted: "Min,
 median and max only, over N passes. N repeats do not support a p95, a mean or
 a confidence interval, and none is offered. A median of an even count is the
-mean of its two middle values." There is no attribution section: one line says
-the per-set reports keep the stage tables.
+mean of its two middle values." That even-count rule is the summary's own
+(#233); the per-set report's distributions take the lower nearest rank, so the
+same two values can print different medians in the two documents, and ADR
+0044 records why. There is no attribution section: one line says the per-set
+reports keep the stage tables.
 
 Like the report, the summary carries no reviewer notes, rationales, Answer
 text or key material — the inputs hold none, and `summary.test.ts` asserts

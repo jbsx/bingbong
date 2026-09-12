@@ -59,7 +59,7 @@
         "reportGeneratedAt": "2026-09-12T22:12:27.509Z"
       }
     ],
-    "generatedAt": "2026-09-12T22:12:37.955Z"
+    "generatedAt": "2026-09-12T22:33:55.858Z"
   },
   "passes": 3,
   "tasks": [
@@ -145,6 +145,7 @@
       "taskCompletionTimeMs": {
         "observations": [],
         "observed": 0,
+        "missing": 0,
         "passes": 3,
         "stats": null
       },
@@ -155,6 +156,7 @@
           423977
         ],
         "observed": 3,
+        "missing": 0,
         "passes": 3,
         "stats": {
           "minMs": 266322,
@@ -169,6 +171,7 @@
           423979
         ],
         "observed": 3,
+        "missing": 0,
         "passes": 3,
         "stats": {
           "minMs": 266324,
@@ -268,6 +271,7 @@
       "taskCompletionTimeMs": {
         "observations": [],
         "observed": 0,
+        "missing": 0,
         "passes": 3,
         "stats": null
       },
@@ -278,6 +282,7 @@
           443817
         ],
         "observed": 3,
+        "missing": 0,
         "passes": 3,
         "stats": {
           "minMs": 355037,
@@ -292,6 +297,7 @@
           443819
         ],
         "observed": 3,
+        "missing": 0,
         "passes": 3,
         "stats": {
           "minMs": 355038,
@@ -388,6 +394,7 @@
       "taskCompletionTimeMs": {
         "observations": [],
         "observed": 0,
+        "missing": 0,
         "passes": 3,
         "stats": null
       },
@@ -398,6 +405,7 @@
           216818
         ],
         "observed": 3,
+        "missing": 0,
         "passes": 3,
         "stats": {
           "minMs": 178435,
@@ -412,6 +420,7 @@
           216821
         ],
         "observed": 3,
+        "missing": 0,
         "passes": 3,
         "stats": {
           "minMs": 178437,
@@ -506,6 +515,7 @@
       "taskCompletionTimeMs": {
         "observations": [],
         "observed": 0,
+        "missing": 0,
         "passes": 3,
         "stats": null
       },
@@ -516,6 +526,7 @@
           382036
         ],
         "observed": 3,
+        "missing": 0,
         "passes": 3,
         "stats": {
           "minMs": 231362,
@@ -530,6 +541,7 @@
           382039
         ],
         "observed": 3,
+        "missing": 0,
         "passes": 3,
         "stats": {
           "minMs": 231365,
@@ -624,6 +636,7 @@
           297080
         ],
         "observed": 2,
+        "missing": 0,
         "passes": 3,
         "stats": {
           "minMs": 288264,
@@ -636,6 +649,7 @@
           119618
         ],
         "observed": 1,
+        "missing": 0,
         "passes": 3,
         "stats": {
           "minMs": 119618,
@@ -650,6 +664,7 @@
           297082
         ],
         "observed": 3,
+        "missing": 0,
         "passes": 3,
         "stats": {
           "minMs": 119619,
@@ -745,6 +760,7 @@
       "taskCompletionTimeMs": {
         "observations": [],
         "observed": 0,
+        "missing": 0,
         "passes": 3,
         "stats": null
       },
@@ -755,6 +771,7 @@
           452936
         ],
         "observed": 3,
+        "missing": 0,
         "passes": 3,
         "stats": {
           "minMs": 368438,
@@ -769,6 +786,7 @@
           452939
         ],
         "observed": 3,
+        "missing": 0,
         "passes": 3,
         "stats": {
           "minMs": 368440,
@@ -830,6 +848,7 @@
       "sequenceElapsedMs": {
         "observations": [],
         "observed": 0,
+        "missing": 0,
         "passes": 3,
         "stats": null
       }
@@ -878,6 +897,7 @@
       "sequenceElapsedMs": {
         "observations": [],
         "observed": 0,
+        "missing": 0,
         "passes": 3,
         "stats": null
       }

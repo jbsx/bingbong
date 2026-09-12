@@ -37,6 +37,7 @@ const notApplicable = (reason: string): Observed<number> => ({ status: 'not_appl
 const unavailable = (reason: string): Observed<number> => ({ status: 'unavailable', reason })
 
 interface RowSpec {
+  readonly attemptId?: string
   readonly huntId: string
   readonly stepId: string
   readonly relation?: AttemptRelation
@@ -88,7 +89,7 @@ function rowOf(spec: RowSpec, order: number): LiveReportRow {
       : observed(answer)
   const run = spec.runMs === undefined ? answer === null ? null : answer + 5_000 : spec.runMs
   return {
-    attemptId: `${spec.huntId}--${spec.stepId}`,
+    attemptId: spec.attemptId ?? `${spec.huntId}--${spec.stepId}`,
     huntId: spec.huntId,
     stepId: spec.stepId,
     order,
@@ -292,9 +293,9 @@ describe('per-task statistics over passes', () => {
     expect(followUp.verified).toBe(2)
     expect(followUp.attempts).toBe(3)
     // Two verified of three passes: the third contributes nothing and is not a zero.
-    expect(followUp.taskCompletionTimeMs).toEqual({ observations: [288_000, 297_000], observed: 2, passes: 3, stats: { minMs: 288_000, medianMs: 292_500, maxMs: 297_000 } })
+    expect(followUp.taskCompletionTimeMs).toEqual({ observations: [288_000, 297_000], observed: 2, missing: 0, passes: 3, stats: { minMs: 288_000, medianMs: 292_500, maxMs: 297_000 } })
     // The unverified third attempt keeps its latency as a measurement.
-    expect(followUp.unverifiedAnswerLatencyMs).toEqual({ observations: [310_000], observed: 1, passes: 3, stats: { minMs: 310_000, medianMs: 310_000, maxMs: 310_000 } })
+    expect(followUp.unverifiedAnswerLatencyMs).toEqual({ observations: [310_000], observed: 1, missing: 0, passes: 3, stats: { minMs: 310_000, medianMs: 310_000, maxMs: 310_000 } })
     expect(followUp.runDurationMs.observed).toBe(3)
     expect(followUp.finalizationCauses).toEqual({ budget_exhausted: 1, objective_met: 2 })
     expect(followUp.flags).toEqual({ self_declared_completed_but_unverified: 1 })
@@ -314,6 +315,18 @@ describe('per-task statistics over passes', () => {
     expect(formatLiveSummary(summary)).toContain('- Task Completion Time (verified): no observations (n=0 of 3 passes)')
   })
 
+  it('keeps a verified attempt without a Task Completion Time apart from a pass with no verified attempt', () => {
+    const [one, two] = threePasses()
+    // Verified, and the capture recorded no Answer stamp: correctness and timing are independent.
+    const untimed = input(reportOf({ setId: 'pass-3', createdAt: '2026-02-01T12:00:00.000Z', rows: passRows({ a2: { answerMs: null } }) }))
+    const followUp = taskOf(built([one!, two!, untimed]), 'hunt-a', 'follow_up')
+    expect(followUp.verified).toBe(3)
+    expect(followUp.taskCompletionTimeMs).toMatchObject({ observed: 2, missing: 1, passes: 3 })
+    expect(formatLiveSummary(built([one!, two!, untimed]))).toContain(
+      '- Task Completion Time (verified): n=2 of 3 passes, 1 qualifying attempt(s) without an observation: min 288000 ms',
+    )
+  })
+
   it('defines the median of an even count as the mean of the two middle values', () => {
     expect(medianOf([1, 2, 3, 4])).toBe(2.5)
     expect(medianOf([5])).toBe(5)
@@ -328,7 +341,7 @@ describe('per-task statistics over passes', () => {
     const sequence = summary.sequences[0]!
     expect(sequence.huntId).toBe('hunt-a')
     expect(sequence.rows.map((row) => row.bothVerified)).toEqual([false, false, false, true])
-    expect(sequence.sequenceElapsedMs).toEqual({ observations: [348_000], observed: 1, passes: 4, stats: { minMs: 348_000, medianMs: 348_000, maxMs: 348_000 } })
+    expect(sequence.sequenceElapsedMs).toEqual({ observations: [348_000], observed: 1, missing: 0, passes: 4, stats: { minMs: 348_000, medianMs: 348_000, maxMs: 348_000 } })
     expect(summary.populations.bothStep.verifiedSuccess).toBe(1)
 
     const none = built(threePasses())
@@ -372,7 +385,41 @@ describe('populations, usage and carried statements', () => {
       }),
     )
     // A corrective slot the other passes never scheduled is a schedule difference, refused.
-    expect(refused([one!, two!, withCorrective]).join('\n')).toContain('scheduled tasks differ: pass-3 has hunt-b/corrective, which pass-1 does not')
+    expect(refused([one!, two!, withCorrective]).join('\n')).toContain('scheduled tasks differ: pass-3 has hunt-b/corrective (corrective), which pass-1 does not')
+
+    // Scheduled in every pass — under its parent's step id, as a corrective
+    // retry may be — it is its own task, not a second row of the initial.
+    const retry = (setId: string, createdAt: string) =>
+      input(
+        reportOf({
+          setId,
+          createdAt,
+          rows: [...passRows(), { attemptId: 'hunt-b--retry', huntId: 'hunt-b', stepId: 'initial', relation: 'corrective', parentAttemptId: 'hunt-b--initial', grade: 'pass', answerMs: 15_000 }],
+        }),
+      )
+    const summary = built([retry('p1', '2026-02-01T10:00:00.000Z'), retry('p2', '2026-02-01T11:00:00.000Z'), retry('p3', '2026-02-01T12:00:00.000Z')])
+    expect(summary.tasks.map((task) => `${task.huntId}/${task.stepId}/${task.relation}`)).toEqual([
+      'hunt-a/initial/initial',
+      'hunt-a/follow_up/revised_objective',
+      'hunt-b/initial/initial',
+      'hunt-b/initial/corrective',
+    ])
+    expect(taskOf(summary, 'hunt-b', 'initial').rows).toHaveLength(3)
+    expect(summary.tasks[3]!.taskCompletionTimeMs).toMatchObject({ observed: 3, passes: 3 })
+    expect(summary.populations.corrective).toMatchObject({ scheduled: 3, verifiedSuccess: 3 })
+    expect(formatLiveSummary(summary)).toContain('### hunt-b / initial (corrective, prompt 1)')
+  })
+
+  it('refuses a pass with two rows for one task rather than counting it twice against N', () => {
+    const [one, two] = threePasses()
+    const doubled = input(
+      reportOf({
+        setId: 'pass-3',
+        createdAt: '2026-02-01T12:00:00.000Z',
+        rows: [...passRows(), { attemptId: 'hunt-a--follow_up-again', huntId: 'hunt-a', stepId: 'follow_up', relation: 'revised_objective', parentAttemptId: 'hunt-a--initial', grade: 'pass', answerMs: 100_000 }],
+      }),
+    )
+    expect(refused([one!, two!, doubled])).toContain('pass-3: hunt-a/follow_up (revised_objective) has 2 rows, and a Pass has one row per task')
   })
 
   it('sums usage per role and marks a role incomplete when any pass was', () => {
@@ -392,7 +439,7 @@ describe('populations, usage and carried statements', () => {
     expect(summary.usage.limits.some((limit) => limit.includes('Vision usage is unavailable'))).toBe(true)
   })
 
-  it('carries every warning and anomaly forward with its set id, and warns on an incomplete set', () => {
+  it('carries every warning and anomaly forward with its set id, including an incomplete set’s own', () => {
     const [one, two] = threePasses()
     const partial = input(
       reportOf({
@@ -405,8 +452,10 @@ describe('populations, usage and carried statements', () => {
       }),
     )
     const summary = built([one!, two!, partial])
-    expect(summary.warnings).toContainEqual({ setId: 'pass-3', message: 'the capture set is partial — the runner stopped after hunt-a' })
-    expect(summary.warnings.some((warning) => warning.setId === 'pass-3' && warning.message.startsWith('the capture set is partial:'))).toBe(true)
+    // The report already says the set is partial; the summary carries that
+    // line once and adds no second copy of it.
+    expect(summary.warnings).toEqual([{ setId: 'pass-3', message: 'the capture set is partial — the runner stopped after hunt-a' }])
+    expect(summary.provenance.passes[2]!.state).toBe('partial')
     expect(summary.anomalies).toEqual([{ setId: 'pass-3', message: 'Session capture capture-hunt-a holds attempt stray, which the set never scheduled' }])
     expect(taskOf(summary, 'hunt-b', 'initial').rows.map((row) => row.disposition)).toEqual(['answered', 'answered', 'not_reached'])
     const markdown = formatLiveSummary(summary)
@@ -463,7 +512,18 @@ describe('refusals', () => {
   it('refuses a mixed prompt version on one task', () => {
     const [one, two] = threePasses()
     const moved = input(reportOf({ setId: 'pass-3', createdAt: '2026-02-01T12:00:00.000Z', rows: passRows({ b1: { promptVersion: '2' } }) }))
-    expect(refused([one!, two!, moved])).toContain('prompt version of hunt-b/initial differs: pass-1=1, pass-2=1, pass-3=2')
+    expect(refused([one!, two!, moved])).toContain('prompt version of hunt-b/initial (initial) differs: pass-1=1, pass-2=1, pass-3=2')
+  })
+
+  it('refuses a pass nobody has graded, instead of reporting an absent reviewer as a disagreement', () => {
+    const [one, two] = threePasses()
+    const ungraded = input(reportOf({ setId: 'pass-3', createdAt: '2026-02-01T12:00:00.000Z', rows: passRows({ a1: { grade: 'pending' }, a2: { grade: 'pending' }, b1: { grade: 'pending' } }), reviewers: [] }))
+    const errors = refused([one!, two!, ungraded])
+    expect(errors).toEqual(['pass-3: no entry has been reviewed — a Pass without a Grade is not part of a Baseline yet'])
+    expect(errors.join('\n')).not.toContain('reviewer differs')
+    // Three ungraded passes are not a Baseline either.
+    const blank = (setId: string, createdAt: string) => input(reportOf({ setId, createdAt, rows: passRows(), reviewers: [] }))
+    expect(refused([blank('u1', '2026-02-01T10:00:00.000Z'), blank('u2', '2026-02-01T11:00:00.000Z')])).toHaveLength(2)
   })
 
   it('does not compare commit, dirty tree or grades revision', () => {
@@ -497,6 +557,35 @@ describe('refusals', () => {
     expect(noReviewers.ok).toBe(false)
     if (!noReviewers.ok) expect(noReviewers.errors).toContain('x.json: provenance.reviewers is not a list of strings')
     expect(parseLiveReportForSummary(report, 'x.json').ok).toBe(true)
+  })
+
+  it('refuses a report whose counts or observations are not what the summary would count', () => {
+    const report = threePasses()[0]!.report
+    const emptyPopulation = parseLiveReportForSummary({ ...report, populations: { ...report.populations, initial: {} } }, 'x.json')
+    expect(emptyPopulation.ok).toBe(false)
+    if (!emptyPopulation.ok) expect(emptyPopulation.errors).toContain('x.json: populations.initial.scheduled is not a number')
+
+    const stringLatency = parseLiveReportForSummary(
+      { ...report, rows: [{ ...report.rows[0]!, timing: { ...report.rows[0]!.timing, observedAnswerLatencyMs: { status: 'observed', value: '40000' } } }, ...report.rows.slice(1)] },
+      'x.json',
+    )
+    expect(stringLatency.ok).toBe(false)
+    if (!stringLatency.ok) expect(stringLatency.errors).toContain('x.json: rows[0].timing.observedAnswerLatencyMs is not an observation of a number')
+
+    const unknownStatus = parseLiveReportForSummary(
+      { ...report, pairs: [{ ...report.pairs[0]!, sequenceElapsedMs: { status: 'missing' } }] },
+      'x.json',
+    )
+    expect(unknownStatus.ok).toBe(false)
+    if (!unknownStatus.ok) expect(unknownStatus.errors).toContain('x.json: pairs[0].sequenceElapsedMs is not an observation of a number')
+
+    const nullRole = parseLiveReportForSummary({ ...report, usage: { ...report.usage, byRole: [null] } }, 'x.json')
+    expect(nullRole.ok).toBe(false)
+    if (!nullRole.ok) expect(nullRole.errors).toContain('x.json: usage.byRole[0] is not an object')
+
+    const badRelation = parseLiveReportForSummary({ ...report, rows: [{ ...report.rows[0]!, relation: 'retry' }, ...report.rows.slice(1)] }, 'x.json')
+    expect(badRelation.ok).toBe(false)
+    if (!badRelation.ok) expect(badRelation.errors).toContain('x.json: rows[0].relation is not an attempt relation')
   })
 })
 

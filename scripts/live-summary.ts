@@ -18,7 +18,7 @@
 // unreadable, mismatched or too few inputs fail.
 
 import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs'
-import { basename, dirname, isAbsolute, join, resolve } from 'node:path'
+import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path'
 import { redactedMessage, type Validation } from '../e2e/live/artifacts.ts'
 import { buildLiveSummary, formatLiveSummary, parseLiveReportForSummary, type LiveSummaryInput } from '../e2e/live/summary.ts'
 
@@ -67,6 +67,17 @@ function required(flags: Map<string, string>, name: string): string {
 function display(path: string): string {
   const relative = resolve(path).startsWith(`${process.cwd()}/`) ? resolve(path).slice(process.cwd().length + 1) : path
   return isAbsolute(relative) ? basename(relative) : relative
+}
+
+/**
+ * How an input is named in the summary's provenance: relative to the
+ * working directory when it lies inside it, else exactly as it was given.
+ * Never a bare basename — two inputs in two directories must stay apart in
+ * a record that outlives the command.
+ */
+function named(path: string): string {
+  const fromCwd = relative(process.cwd(), resolve(path))
+  return fromCwd !== '' && !fromCwd.startsWith('..') && !isAbsolute(fromCwd) ? fromCwd : path
 }
 
 /** Read and parse one JSON input. A parse failure names the file, never its contents. */
@@ -140,7 +151,7 @@ const format = flags.get('format') ?? 'markdown'
 if (format !== 'markdown' && format !== 'json') fail(`--format must be markdown or json (got "${format}")`)
 
 const inputs: LiveSummaryInput[] = reportPaths.map((path) => ({
-  path: display(path),
+  path: named(path),
   report: unwrap(parseLiveReportForSummary(readJson(path, 'report'), display(path)), `report at ${display(path)}`),
 }))
 

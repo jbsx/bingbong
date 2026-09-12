@@ -384,7 +384,7 @@ function distribution(values: readonly (number | null)[]): LiveDistribution {
 }
 
 /** A rate, or null when its denominator is empty — never a zero standing in for one. */
-function rateOver(numerator: number, denominator: number): number | null {
+export function rateOver(numerator: number, denominator: number): number | null {
   return denominator === 0 ? null : Math.round((numerator / denominator) * 1_000) / 1_000
 }
 
@@ -1056,7 +1056,8 @@ export function buildLiveReport(input: LiveReportInput): Validation<LiveReport> 
 // Formatting. Both formats carry the same facts; neither carries raw
 // prompts, Answers, tool results, reviewer prose or absolute paths.
 
-function ms(observation: Observed<number>): string {
+/** One observation as a table cell; shared with the cross-pass summary so both print a missing figure the same way. */
+export function ms(observation: Observed<number>): string {
   switch (observation.status) {
     case 'observed':
       return `${observation.value} ms`

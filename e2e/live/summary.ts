@@ -28,6 +28,8 @@ import type { LiveGradeStatus } from './grades.ts'
 import {
   LIVE_REPORT_KIND,
   LIVE_REPORT_VERSION,
+  ms,
+  rateOver,
   type LiveDisposition,
   type LivePopulation,
   type LiveReport,
@@ -68,6 +70,13 @@ export interface LiveSummaryPass {
 export interface LiveSummarySpread {
   readonly observations: readonly number[]
   readonly observed: number
+  /**
+   * Attempts that qualified for this spread and carried no observation —
+   * a verified Answer whose Task Completion Time is unavailable or invalid.
+   * Kept apart from a Pass that had no qualifying attempt at all, which is
+   * the gap between `observed + missing` and `passes`.
+   */
+  readonly missing: number
   readonly passes: number
   readonly stats: { readonly minMs: number; readonly medianMs: number; readonly maxMs: number } | null
 }
@@ -219,7 +228,31 @@ export interface LiveSummary {
 const isString = (value: unknown): value is string => typeof value === 'string'
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value)
 const isStringArray = (value: unknown): value is string[] => Array.isArray(value) && value.every(isString)
-const isObserved = (value: unknown): boolean => isRecord(value) && isString(value.status)
+const isNumber = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value)
+const isBoolean = (value: unknown): value is boolean => typeof value === 'boolean'
+/** An `Observed<number>` as the report writes one: a finite value when observed, a reason otherwise. */
+const isObservedNumber = (value: unknown): boolean =>
+  isRecord(value) &&
+  (value.status === 'observed'
+    ? isNumber(value.value)
+    : (value.status === 'unavailable' || value.status === 'invalid' || value.status === 'not_applicable') && isString(value.reason))
+
+const RELATIONS: readonly string[] = ['initial', 'revised_objective', 'corrective']
+const DISPOSITIONS: readonly string[] = ['answered', 'no_answer', 'acceptance_unconfirmed', 'not_reached', 'unaccounted']
+const GRADES: readonly string[] = ['pending', 'pass', 'useful_partial', 'help_access_blocked', 'unsuccessful']
+const POPULATION_COUNTS = ['scheduled', 'attempted', 'answered', 'notReached', 'unaccounted', 'acceptanceUnconfirmed', 'reviewed', 'pending', 'verifiedSuccess', 'timedSuccess'] as const
+const USAGE_COUNTS = ['attemptsObserved', 'attemptsUnavailable', 'attemptsNotApplicable', 'promptTokens', 'completionTokens', 'rounds', 'roundsWithUsage'] as const
+
+function checkAll(value: unknown, where: string, check: (item: Record<string, unknown>, at: string) => void, errors: string[]): void {
+  if (!Array.isArray(value)) {
+    errors.push(`${where} is not a list`)
+    return
+  }
+  value.forEach((item: unknown, index: number) => {
+    if (isRecord(item)) check(item, `${where}[${index}]`)
+    else errors.push(`${where}[${index}] is not an object`)
+  })
+}
 
 /** Validate one parsed JSON value as a version-2 report. Names the file, never its contents. */
 export function parseLiveReportForSummary(raw: unknown, label: string): Validation<LiveReport> {
@@ -254,42 +287,76 @@ export function parseLiveReportForSummary(raw: unknown, label: string): Validati
     }
   }
 
-  if (!Array.isArray(raw.rows)) {
-    errors.push(`${label}: rows is not a list`)
-  } else {
-    raw.rows.forEach((row: unknown, index: number) => {
-      const where = `${label}: rows[${index}]`
-      if (!isRecord(row)) {
-        errors.push(`${where} is not an object`)
-        return
-      }
-      for (const field of ['attemptId', 'huntId', 'stepId', 'relation', 'promptVersion', 'disposition', 'grade']) {
+  checkAll(
+    raw.rows,
+    `${label}: rows`,
+    (row, where) => {
+      for (const field of ['attemptId', 'huntId', 'stepId', 'promptVersion']) {
         if (!isString(row[field])) errors.push(`${where}.${field} is not a string`)
       }
-      if (typeof row.verifiedSuccess !== 'boolean') errors.push(`${where}.verifiedSuccess is not a boolean`)
+      if (!isString(row.relation) || !RELATIONS.includes(row.relation)) errors.push(`${where}.relation is not an attempt relation`)
+      if (!isString(row.disposition) || !DISPOSITIONS.includes(row.disposition)) errors.push(`${where}.disposition is not a disposition`)
+      if (!isString(row.grade) || !GRADES.includes(row.grade)) errors.push(`${where}.grade is not a grade status`)
+      if (!isBoolean(row.verifiedSuccess)) errors.push(`${where}.verifiedSuccess is not a boolean`)
       if (!isStringArray(row.flags)) errors.push(`${where}.flags is not a list of strings`)
-      if (!isRecord(row.mechanical)) errors.push(`${where}.mechanical is missing`)
+      if (!isRecord(row.mechanical) || (row.mechanical.finalizationCause !== null && !isString(row.mechanical.finalizationCause))) {
+        errors.push(`${where}.mechanical.finalizationCause is neither a string nor null`)
+      }
       const timing = row.timing
       if (!isRecord(timing)) {
         errors.push(`${where}.timing is missing`)
       } else {
         for (const field of ['observedAnswerLatencyMs', 'successfulTaskCompletionTimeMs', 'runDurationMs']) {
-          if (!isObserved(timing[field])) errors.push(`${where}.timing.${field} is not an observation`)
+          if (!isObservedNumber(timing[field])) errors.push(`${where}.timing.${field} is not an observation of a number`)
         }
       }
-    })
-  }
+    },
+    errors,
+  )
 
   const populations = raw.populations
   if (!isRecord(populations)) {
     errors.push(`${label}: populations is missing`)
   } else {
     for (const field of ['initial', 'revisedObjective', 'corrective', 'bothStep']) {
-      if (!isRecord(populations[field])) errors.push(`${label}: populations.${field} is missing`)
+      const population = populations[field]
+      if (!isRecord(population)) {
+        errors.push(`${label}: populations.${field} is missing`)
+        continue
+      }
+      if (!isString(population.label)) errors.push(`${label}: populations.${field}.label is not a string`)
+      for (const count of POPULATION_COUNTS) {
+        if (!isNumber(population[count])) errors.push(`${label}: populations.${field}.${count} is not a number`)
+      }
     }
   }
-  if (!Array.isArray(raw.pairs)) errors.push(`${label}: pairs is not a list`)
-  if (!isRecord(raw.usage) || !Array.isArray(raw.usage.byRole)) errors.push(`${label}: usage.byRole is not a list`)
+  checkAll(
+    raw.pairs,
+    `${label}: pairs`,
+    (pair, where) => {
+      for (const field of ['huntId', 'initialAttemptId', 'followUpAttemptId']) {
+        if (!isString(pair[field])) errors.push(`${where}.${field} is not a string`)
+      }
+      for (const field of ['initialVerified', 'followUpVerified', 'bothVerified']) {
+        if (!isBoolean(pair[field])) errors.push(`${where}.${field} is not a boolean`)
+      }
+      if (!isObservedNumber(pair.sequenceElapsedMs)) errors.push(`${where}.sequenceElapsedMs is not an observation of a number`)
+    },
+    errors,
+  )
+  checkAll(
+    isRecord(raw.usage) ? raw.usage.byRole : undefined,
+    `${label}: usage.byRole`,
+    (summary, where) => {
+      if (!isString(summary.role)) errors.push(`${where}.role is not a string`)
+      for (const count of USAGE_COUNTS) {
+        if (!isNumber(summary[count])) errors.push(`${where}.${count} is not a number`)
+      }
+      if (!isBoolean(summary.complete)) errors.push(`${where}.complete is not a boolean`)
+      if (!isStringArray(summary.models)) errors.push(`${where}.models is not a list of strings`)
+    },
+    errors,
+  )
   if (!isStringArray(raw.anomalies)) errors.push(`${label}: anomalies is not a list of strings`)
   if (!isStringArray(raw.warnings)) errors.push(`${label}: warnings is not a list of strings`)
 
@@ -313,14 +380,10 @@ function spread(observations: readonly Observed<number>[], passes: number): Live
   return {
     observations: sorted,
     observed: sorted.length,
+    missing: observations.length - sorted.length,
     passes,
     stats: sorted.length === 0 ? null : { minMs: sorted[0]!, medianMs: medianOf(sorted), maxMs: sorted[sorted.length - 1]! },
   }
-}
-
-/** A rate, or null when its denominator is empty — never a zero standing in for one. */
-function rateOver(numerator: number, denominator: number): number | null {
-  return denominator === 0 ? null : Math.round((numerator / denominator) * 1_000) / 1_000
 }
 
 function counted(values: readonly string[]): Record<string, number> {
@@ -332,14 +395,20 @@ function counted(values: readonly string[]): Record<string, number> {
 // ---------------------------------------------------------------------------
 // The refusals. Everything the protocol fixes must agree across inputs.
 
-const taskKey = (row: { huntId: string; stepId: string }): string => `${row.huntId}/${row.stepId}`
+/**
+ * A task's identity: the Hunt, the step and the relation. The relation is
+ * part of it because a corrective retry may carry its parent's step id (the
+ * capture contract leaves step ids free), and a retry is not the step it
+ * corrects.
+ */
+const taskKey = (row: { huntId: string; stepId: string; relation: AttemptRelation }): string => `${row.huntId}/${row.stepId} (${row.relation})`
 
 /** Which fields a Baseline holds fixed, and how each reads from a report. */
 const FIXED_FIELDS: readonly { readonly name: string; readonly of: (report: LiveReport) => string }[] = [
   { name: 'key version', of: (report) => report.provenance.keyVersion },
   { name: 'key manifest digest', of: (report) => report.provenance.keyManifestDigest },
   { name: 'routing', of: (report) => report.provenance.roles.join('; ') },
-  { name: 'reviewer', of: (report) => report.provenance.reviewers.join('; ') || 'none' },
+  { name: 'reviewer', of: (report) => report.provenance.reviewers.join('; ') },
   { name: 'study', of: (report) => report.provenance.study },
   { name: 'protocol version', of: (report) => report.provenance.protocolVersion },
   { name: 'mode', of: (report) => report.provenance.mode },
@@ -352,6 +421,16 @@ function refusals(ordered: readonly LiveSummaryInput[]): string[] {
   const errors: string[] = []
   const label = (input: LiveSummaryInput): string => input.report.provenance.setId
 
+  // A Pass nobody has graded has no reviewer to agree with the others: it is
+  // not yet part of a Baseline, and comparing an empty reviewer list would
+  // report a disagreement that is really an absence.
+  for (const input of ordered) {
+    if (input.report.provenance.reviewers.length === 0) {
+      errors.push(`${label(input)}: no entry has been reviewed — a Pass without a Grade is not part of a Baseline yet`)
+    }
+  }
+  if (errors.length > 0) return errors
+
   for (const field of FIXED_FIELDS) {
     const values = ordered.map((input) => field.of(input.report))
     if (new Set(values).size > 1) {
@@ -359,17 +438,22 @@ function refusals(ordered: readonly LiveSummaryInput[]): string[] {
     }
   }
 
-  // The schedule: every Pass runs the same tasks, and each under one prompt.
-  const tasksOf = (input: LiveSummaryInput): Map<string, string> => {
-    const versions = new Map<string, Set<string>>()
+  // The schedule: every Pass runs the same tasks, each once, each under one
+  // prompt. A Pass with two rows for one task would count twice against N
+  // in every per-task figure, so it is refused rather than folded in.
+  const taskVersionsOf = (input: LiveSummaryInput): Map<string, string> => {
+    const versions = new Map<string, string[]>()
     for (const row of input.report.rows) {
       const key = taskKey(row)
-      versions.set(key, (versions.get(key) ?? new Set<string>()).add(row.promptVersion))
+      versions.set(key, [...(versions.get(key) ?? []), row.promptVersion])
     }
-    return new Map([...versions.entries()].map(([key, set]) => [key, [...set].sort().join(', ')]))
+    for (const [key, rows] of versions) {
+      if (rows.length > 1) errors.push(`${label(input)}: ${key} has ${rows.length} rows, and a Pass has one row per task`)
+    }
+    return new Map([...versions.entries()].map(([key, rows]) => [key, rows[0]!]))
   }
   const first = ordered[0]!
-  const tasksByInput = new Map(ordered.map((input) => [input, tasksOf(input)]))
+  const tasksByInput = new Map(ordered.map((input) => [input, taskVersionsOf(input)]))
   const firstTasks = tasksByInput.get(first)!
   for (const input of ordered.slice(1)) {
     const tasks = tasksByInput.get(input)!
@@ -575,10 +659,9 @@ export function buildLiveSummary(inputs: readonly LiveSummaryInput[], generatedA
   const warnings: LiveSummaryCarried[] = []
   const anomalies: LiveSummaryCarried[] = []
   for (const input of ordered) {
-    const { setId, state } = input.report.provenance
-    if (state !== 'complete') {
-      warnings.push({ setId, message: `the capture set is ${state}: slots it never reached appear as not_reached or unaccounted in the per-task rows` })
-    }
+    const { setId } = input.report.provenance
+    // A set whose state is not complete arrives with its report's own
+    // warning saying so; it is carried like every other, never re-derived.
     for (const warning of input.report.warnings) warnings.push({ setId, message: warning })
     for (const anomaly of input.report.anomalies) anomalies.push({ setId, message: anomaly })
   }
@@ -635,23 +718,11 @@ export function buildLiveSummary(inputs: readonly LiveSummaryInput[], generatedA
 // Formatting. The same facts as the JSON; no Answer text, reviewer prose or
 // key material can appear because none reaches this module.
 
-function ms(observation: Observed<number>): string {
-  switch (observation.status) {
-    case 'observed':
-      return `${observation.value} ms`
-    case 'unavailable':
-      return 'unavailable'
-    case 'invalid':
-      return 'invalid'
-    case 'not_applicable':
-      return 'n/a'
-  }
-}
-
 function spreadLine(spread: LiveSummarySpread): string {
-  if (spread.stats === null) return `no observations (n=0 of ${spread.passes} passes)`
+  const missing = spread.missing === 0 ? '' : `, ${spread.missing} qualifying attempt(s) without an observation`
+  if (spread.stats === null) return `no observations (n=0 of ${spread.passes} passes${missing})`
   const { minMs, medianMs, maxMs } = spread.stats
-  return `n=${spread.observed} of ${spread.passes} passes: min ${minMs} ms | median ${medianMs} ms | max ${maxMs} ms`
+  return `n=${spread.observed} of ${spread.passes} passes${missing}: min ${minMs} ms | median ${medianMs} ms | max ${maxMs} ms`
 }
 
 function countsLine(counts: Readonly<Record<string, number>>): string {
@@ -688,7 +759,7 @@ export function formatLiveSummary(summary: LiveSummary): string {
   lines.push('')
   lines.push(`- key ${provenance.keyVersion}, manifest ${provenance.keyManifestDigest.slice(0, 15)}…`)
   lines.push(`- routing: ${provenance.roles.join('; ')}`)
-  lines.push(`- reviewer(s): ${provenance.reviewers.length === 0 ? 'none yet — every entry is pending' : provenance.reviewers.join('; ')}`)
+  lines.push(`- reviewer(s): ${provenance.reviewers.join('; ')}`)
   lines.push(`- study ${provenance.study}, protocol ${provenance.protocolVersion}, mode ${provenance.mode}, prompt version(s) ${provenance.promptVersions.join(', ')}`)
   lines.push(
     `- reasoning override: ${provenance.reasoningEffortOverride ?? 'none'} | effort overrides: ${provenance.effortOverrides.length === 0 ? 'none' : provenance.effortOverrides.join(', ')} | adblock: ${provenance.adblock}`,
