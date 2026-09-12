@@ -1053,26 +1053,21 @@ the Grading Key, it is never rendered in any app view.
 _Avoid_: checker, review UI, grader, automated judge
 
 **Hunt**:
-One corpus objective of the live-web protocol: an initial step and, where the
-corpus schedules one, a revised-objective follow-up. A task is one Hunt's step,
-and each step is graded against its own Grading Key. The follow-up cannot
-repair the initial that failed; the pair passes only when both steps do.
-_Avoid_: scenario, query, question, test case
+One information-seeking objective in the evaluation corpus, with an initial
+step and optionally a follow-up step; an evaluation task is one Hunt's step.
+_Avoid_: query, question, scenario
 
 **Pass**:
-One complete execution of the protocol's scheduled commands on one route,
-retained as one capture set and graded as one. A Pass reports per task, not per
-protocol: a slot it never reached stays a row with that disposition. Repeated
-Passes are compared by what the protocol fixes — key version, routing, prompt
-version, reviewer — and never merged when any of those differ.
-_Avoid_: run, iteration, trial, sample
+One complete execution of the evaluation protocol's scheduled commands on one
+route, retained as one capture set and graded as one. Never a Run, which is
+the app's unit; a Pass contains many.
+_Avoid_: run, session, batch, eval run
 
 **Baseline**:
-The Passes on one route under one Grading Key version and one reviewer, read
-together: every result per task, with min, median and max only, since a few
-repeats support no p95, mean or confidence interval. It compares nothing across
-routes or reviewers — that is a different document with a different question.
-_Avoid_: benchmark score, average, aggregate
+The Passes taken on one route under one Grading Key version and one reviewer,
+human or model, read together as the reference measurement. Passes that
+differ on any of those are not a Baseline together, and nothing joins them.
+_Avoid_: benchmark, eval, comparison
 
 ### Hardware
 
