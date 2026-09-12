@@ -858,6 +858,35 @@ describe('the live:report CLI', () => {
   })
 })
 
+describe('report version 2 provenance (#233)', () => {
+  it('names the distinct reviewers over reviewed entries, and none while everything is pending', () => {
+    const { set, sessions, manifest } = pairedFixture({ secondFollowUpReached: false })
+    const pending = built(inputFor(set, sessions, manifest))
+    expect(pending.reportVersion).toBe(2)
+    expect(pending.provenance.reviewers).toEqual([])
+
+    const report = built(
+      inputFor(set, sessions, manifest, (grades) => {
+        let graded = grade(grades, 'a1', 'unsuccessful', { reviewer: 'claude-opus-5 via live:grade' })
+        graded = grade(graded, 'a2', 'pass', { reviewer: 'claude-opus-5 via live:grade' })
+        return grade(graded, 'b1', 'unsuccessful', { reviewer: 'evaluator-1' })
+      }),
+    )
+    // Distinct, sorted, and only from entries a reviewer actually judged: the
+    // pending b2 carries an empty reviewer and must not appear.
+    expect(report.provenance.reviewers).toEqual(['claude-opus-5 via live:grade', 'evaluator-1'])
+    expect(formatLiveReport(report)).toContain('- reviewer(s): claude-opus-5 via live:grade; evaluator-1')
+  })
+
+  it('carries the prompt version on every row, including one nothing was dispatched into', () => {
+    const { set, sessions, manifest } = pairedFixture({ secondFollowUpReached: false })
+    const report = built(inputFor(set, sessions, manifest))
+    expect(report.rows.map((row) => row.promptVersion)).toEqual(set.slots.map((slot) => slot.prompt.version))
+    expect(rowOf(report, 'b2').disposition).toBe('not_reached')
+    expect(rowOf(report, 'b2').promptVersion).toBe(set.slots.find((slot) => slot.attemptId === 'b2')!.prompt.version)
+  })
+})
+
 describe('grade bindings survive the round trip', () => {
   it('binds an initialized grade to the Answer digest the capture recorded', () => {
     const attempt = attemptCapture({ attemptId: 'a1', huntId: 'hunt-a', answer: { at: 5_000, text: 'the answer' } })

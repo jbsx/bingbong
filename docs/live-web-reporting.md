@@ -11,15 +11,18 @@ pnpm live:review [--port N] [--no-open]
 pnpm live:keys --out=<key-manifest.json>
 pnpm live:report --capture=<capture-set.json> --keys=<key-manifest.json> --grades=<reviewed-grades.json> \
                  [--format=markdown|json] [--pricing=<dated-prices.json>] [--out=<report.md>]
+pnpm live:summary --reports=<a.json>,<b.json>[,…] --out=<summary.md|json> [--format=markdown|json]
 ```
 
 The bench (see [Grading at the bench](#grading-at-the-bench)) opens its own
 pending grades in memory; `pnpm live:report init-grades … --out=<pending-grades.json>`
-still writes a pending file for a reviewer who edits JSON by hand.
+still writes a pending file for a reviewer who edits JSON by hand. `live:summary`
+reads the JSON reports of several Passes and writes what they say together
+(see [The cross-pass summary](#the-cross-pass-summary)).
 
-All three are offline. They read files and nothing else: no model, no browser,
-no Electron, no network and no scheduler. `live:keys` and `live:report` discover
-nothing — every input is an explicit path. The bench is the one exception, and
+All four are offline. They read files and nothing else: no model, no browser,
+no Electron, no network and no scheduler. `live:keys`, `live:report` and
+`live:summary` discover nothing — every input is an explicit path. The bench is the one exception, and
 a bounded one: it proposes from its two fixed roots and the reviewer confirms on
 a page before anything opens. Checking a source against the key is the
 reviewer's job, done in a browser of their own; this tool cannot fetch a page
@@ -43,7 +46,8 @@ an accepted Evidence Checkpoint or a successful tool call to a `pass`.
 | Key manifest | derived from the key: in memory by the bench, as a file by `pnpm live:keys` for `live:report` | carries the key's version, digest and check ids, never its content |
 | Grades | the Grading Bench (`pnpm live:review`), or `init-grades` and the reviewer by hand | `e2e/live/private/`, one file per reviewer, which the bench names `<setId>-grades-<reviewer slug>.json`; reviewer prose and notes stay out of the report |
 | Grading drafts | the Grading Bench, on every change | beside the grades file as `<grades>.drafts.json` — never committed |
-| Compact report | the report command | `e2e/live/reports/` — committed |
+| Compact report | the report command | `e2e/live/reports/` — committed, as markdown and as the JSON the summary reads |
+| Cross-pass summary | `pnpm live:summary`, from the JSON reports of several Passes | `e2e/live/reports/` — committed beside the per-set reports |
 
 > `e2e/live/artifacts/` and `e2e/live/private/` are ignored by Git (#224).
 > Raw traces, Browser Profiles and credentials must never be committed —
@@ -447,6 +451,13 @@ the verdicts in a report are a model's, under rules the owner wrote, and the
 
 ## The report
 
+The JSON form carries `kind: bingbong.live.report` and `reportVersion: 2`.
+Version 2 (#233) added `provenance.reviewers` — the distinct reviewer
+identities over the entries a reviewer judged, printed in the markdown
+provenance block — and `promptVersion` on every row, so the cross-pass summary
+can check who graded and which prompt each task ran under from the report
+alone. Nothing the report derives changed with the version.
+
 ### Populations, each with its own denominator
 
 Three are reported separately and never merged:
@@ -588,6 +599,77 @@ model, incomplete role and vision request is listed beside the subtotal. The
 figure is a labelled estimate over observed priced usage — not a billing
 figure, not a spend limit, and not a guarantee.
 
+## The cross-pass summary
+
+A Baseline is several Passes read together (CONTEXT.md §Performance
+Evaluation), and `pnpm live:summary` is the one document that reads them:
+
+```sh
+pnpm live:report … --format=json --out=e2e/live/reports/<set>.json   # once per Pass
+pnpm live:summary --reports=e2e/live/reports/baseline-1.json,e2e/live/reports/baseline-2.json,e2e/live/reports/baseline-3.json \
+                  --out=e2e/live/reports/baseline-<date>.md
+```
+
+**Its input is the JSON report, never the captures or the grades** (ADR 0044).
+`live:report` already answered every disposition, grade-binding, timing and
+usage question once; a summary that re-derived them from raw captures would be
+a second implementation of the same rules, and the two would diverge. The
+command imports no capture reader, no grades parser and no key module —
+`corpus.test.ts` did not change for it — and it re-derives nothing: a Task
+Completion Time in the summary is the one the report earned.
+
+**It merges nothing it cannot check.** Every input must share everything the
+protocol fixes — key version, key digest, routing (any role's model), the
+prompt version of every task, reviewer, study, protocol version, mode, adblock,
+reasoning-effort override and effort overrides — or the command refuses and
+names the differing values per set id. A mixed set of inputs is a protocol
+break, not a merge: a Baseline is one route under one key and one reviewer,
+and a comparison across routes is a different document this command is not.
+Commit, dirty tree and grades revision are listed per input and never
+compared. A capture set named twice, or two inputs with the same `createdAt`,
+is refused — one Pass counts once — and so is a single input: for one Pass,
+read its report. An input whose set state is not `complete` is accepted and
+carried as a warning with its set id; its unreached slots appear as
+`not_reached` / `unaccounted` in the per-task rows.
+
+What it writes, in either format (`kind: bingbong.live.summary`,
+`summaryVersion: 1`):
+
+- **Provenance** — every input by set id, report path, commit(s) and
+  dirty-tree flag, ordered by `createdAt` whatever order `--reports` named
+  them in; the shared key version, routing and reviewer once.
+- **Populations** — verified over scheduled summed across Passes, with every
+  Pass's own ratio printed beside the sum; never one pooled rate alone.
+  `corrective` appears only when some input scheduled one.
+- **Tasks** — one section per Hunt step with one row per Pass (disposition,
+  grade, finalization cause, Answer latency, Task Completion Time, Run
+  duration, flags), then attempts / answered / verified over Passes, Task
+  Completion Time min / median / max over verified attempts with `n=k of N
+  passes` stated, Answer latency over unverified attempts, full Run duration,
+  and finalization causes and flags with counts. A Pass with no verified
+  attempt contributes nothing and stays in N; it is never a zero.
+- **Both-step sequences** — per Hunt with a follow-up, the initial-acceptance
+  to follow-up-Answer elapsed over the pairs both steps of which verified.
+- **Usage** — per role summed across Passes with `live:report`'s `complete`
+  semantics: a role incomplete in any Pass is incomplete here, and the Passes
+  are named; vision stays unavailable. No cost estimate.
+- **Data quality and protocol anomalies** — every warning and anomaly from
+  every input, carried with its set id, never dropped.
+
+**Min, median and max only.** The summary states, with N substituted: "Min,
+median and max only, over N passes. N repeats do not support a p95, a mean or
+a confidence interval, and none is offered. A median of an even count is the
+mean of its two middle values." There is no attribution section: one line says
+the per-set reports keep the stage tables.
+
+Like the report, the summary carries no reviewer notes, rationales, Answer
+text or key material — the inputs hold none, and `summary.test.ts` asserts
+the output holds none — and it is written once, never over.
+
+The first Baseline is `e2e/live/reports/baseline-2026-09-12.md` (and `.json`),
+over `baseline-{1,2,3}.json`. The pilots are not inputs: they ran on two routes
+under a different reviewer file, and #227 kept them out of baseline evidence.
+
 ## Safety of the exported report
 
 Both output formats carry the same facts, and neither carries raw prompts,
@@ -618,7 +700,7 @@ Sessions.
 ## Verifying a change here
 
 ```sh
-pnpm exec vitest run e2e/live/grades.test.ts e2e/live/report.test.ts e2e/live/gradingBench.test.ts e2e/live/gradingSetup.test.ts e2e/live/gradingBenchServer.test.ts e2e/live/gradingBenchPage.test.ts
+pnpm exec vitest run e2e/live/grades.test.ts e2e/live/report.test.ts e2e/live/summary.test.ts e2e/live/gradingBench.test.ts e2e/live/gradingSetup.test.ts e2e/live/gradingBenchServer.test.ts e2e/live/gradingBenchPage.test.ts
 pnpm typecheck
 pnpm lint
 pnpm test
@@ -627,7 +709,8 @@ pnpm test
 The suites run under the ordinary unit run — they spend nothing and launch
 nothing. `report.test.ts` invokes `scripts/live-report.ts` as a real Node
 subprocess, which is what catches an accidental Electron import or an
-extensionless runtime import on the CLI's graph.
+extensionless runtime import on the CLI's graph; `summary.test.ts` does the
+same for `scripts/live-summary.ts`, over three hand-built version-2 reports.
 
 `gradingSetup.test.ts` covers the setup page's decisions as functions:
 - discovery and preselection, of sets and of another reviewer's grades file;

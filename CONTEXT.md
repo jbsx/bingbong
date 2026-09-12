@@ -1052,6 +1052,28 @@ own is recorded; code confirms only that the Grade it writes is complete. Like
 the Grading Key, it is never rendered in any app view.
 _Avoid_: checker, review UI, grader, automated judge
 
+**Hunt**:
+One corpus objective of the live-web protocol: an initial step and, where the
+corpus schedules one, a revised-objective follow-up. A task is one Hunt's step,
+and each step is graded against its own Grading Key. The follow-up cannot
+repair the initial that failed; the pair passes only when both steps do.
+_Avoid_: scenario, query, question, test case
+
+**Pass**:
+One complete execution of the protocol's scheduled commands on one route,
+retained as one capture set and graded as one. A Pass reports per task, not per
+protocol: a slot it never reached stays a row with that disposition. Repeated
+Passes are compared by what the protocol fixes — key version, routing, prompt
+version, reviewer — and never merged when any of those differ.
+_Avoid_: run, iteration, trial, sample
+
+**Baseline**:
+The Passes on one route under one Grading Key version and one reviewer, read
+together: every result per task, with min, median and max only, since a few
+repeats support no p95, mean or confidence interval. It compares nothing across
+routes or reviewers — that is a different document with a different question.
+_Avoid_: benchmark score, average, aggregate
+
 ### Hardware
 
 **Kiosk**:

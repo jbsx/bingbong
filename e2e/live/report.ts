@@ -44,7 +44,12 @@ import type {
 
 /** The `kind` a report file carries. */
 export const LIVE_REPORT_KIND = 'bingbong.live.report'
-export const LIVE_REPORT_VERSION = 1
+/**
+ * Version 2 (#233) added `provenance.reviewers` and `promptVersion` on
+ * every row, so a cross-pass summary can read who graded and which prompt
+ * each task ran under from the report alone. Nothing derived changed.
+ */
+export const LIVE_REPORT_VERSION = 2
 
 const observed = <T>(value: T): Observed<T> => ({ status: 'observed', value })
 const unavailable = <T>(reason: string): Observed<T> => ({ status: 'unavailable', reason })
@@ -135,6 +140,8 @@ export interface LiveReportRow {
   readonly order: number
   readonly relation: AttemptRelation
   readonly parentAttemptId: string | null
+  /** The version label of the prompt this slot was scheduled with. */
+  readonly promptVersion: string
   readonly captureId: string | null
   readonly disposition: LiveDisposition
   readonly dispositionReason: string | null
@@ -309,6 +316,12 @@ export interface LiveReportProvenance {
   readonly keyVersion: string
   readonly keyManifestDigest: string
   readonly gradesRevision: number
+  /**
+   * The distinct reviewer identities over the entries a reviewer judged,
+   * sorted. A model reviewer is named as the grades file names it
+   * (`claude-opus-5 via live:grade`); a pending entry names nobody.
+   */
+  readonly reviewers: readonly string[]
   readonly roles: readonly string[]
   readonly reasoningEffortOverride: string | null
   readonly effortOverrides: readonly string[]
@@ -551,6 +564,7 @@ function rowFor(view: SlotView, entry: LiveGradeEntry, byId: ReadonlyMap<string,
     order: view.slot.order,
     relation: view.slot.relation,
     parentAttemptId: view.slot.parentAttemptId ?? null,
+    promptVersion: view.slot.prompt.version,
     captureId: view.captureId,
     disposition,
     dispositionReason: reason,
@@ -989,6 +1003,7 @@ export function buildLiveReport(input: LiveReportInput): Validation<LiveReport> 
     keyVersion: input.manifest.keyVersion,
     keyManifestDigest: input.grades.keyManifestDigest,
     gradesRevision: input.grades.revision,
+    reviewers: [...new Set(input.grades.entries.filter((entry) => entry.status !== 'pending').map((entry) => entry.reviewer))].sort(),
     roles: [
       ...new Set(
         launches.flatMap((launch) =>
@@ -1082,6 +1097,7 @@ export function formatLiveReport(report: LiveReport): string {
   lines.push(`- commit(s): ${provenance.commits.map((commit) => commit.slice(0, 8)).join(', ')}${provenance.dirtyTree ? ' (dirty tree)' : ''}`)
   lines.push(`- prompt version(s): ${provenance.promptVersions.join(', ')}`)
   lines.push(`- key ${provenance.keyVersion}, manifest ${provenance.keyManifestDigest.slice(0, 15)}…, grades revision ${provenance.gradesRevision}`)
+  lines.push(`- reviewer(s): ${provenance.reviewers.length === 0 ? 'none yet — every entry is pending' : provenance.reviewers.join('; ')}`)
   lines.push(`- routing: ${provenance.roles.join('; ')}`)
   lines.push(
     `- reasoning override: ${provenance.reasoningEffortOverride ?? 'none'} | effort overrides: ${provenance.effortOverrides.length === 0 ? 'none' : provenance.effortOverrides.join(', ')} | adblock: ${provenance.adblock}`,
