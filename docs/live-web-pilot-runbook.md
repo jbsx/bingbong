@@ -68,10 +68,19 @@ directories it names. Both are gitignored.
 ## Grading and reporting
 
 ```sh
-# 1. A human grades every slot at the Grading Bench. It opens on a setup page
-#    that proposes the newest set with ungraded slots, the reviewer from
-#    git config user.name, and the grades file derived from both. Check them,
-#    then press Start. One grades file per reviewer.
+# 1. The model reviewer grades every dispatched slot: one `claude -p` call per
+#    slot, Opus, no tools, the key shown as the bench shows it. About five
+#    minutes and a dollar for six slots. It writes the grades file under the
+#    bench's name for the reviewer, and an adjudication file beside it.
+pnpm live:grade --capture=e2e/live/artifacts/pilot-1.json
+
+# 1a. Read e2e/live/private/pilot-1-grades-<reviewer slug>.adjudicate.md and
+#    decide the flagged calls. A decision that changes a verdict goes into the
+#    key's constraints as a revision, never into the grades file by hand.
+#    To grade by hand instead, or to compare against the model's file, the
+#    Grading Bench still opens on a setup page that proposes the newest set
+#    with ungraded slots, the reviewer from git config user.name, and the
+#    grades file derived from both — and offers the model's file to compare.
 pnpm live:review
 
 # 2. Describe the keys to the report. Writes into the gitignored private root.
@@ -92,14 +101,17 @@ file to compare against — preselected when it is the only one. The bench shows
 it slot by slot only after their own Grade for that slot is saved. The bench is
 described in [live-web-reporting.md](live-web-reporting.md#grading-at-the-bench).
 
-### Grading is the bottleneck, not the model
+### Grading was the bottleneck; adjudication is what is left of it
 
 **68 checks.** 56 across the four initial hunts (10 / 17 / 14 / 15) and 12
-across the two follow-ups (6 / 6). Nothing in this path grades anything: there
-is no automated judge, and no code path from a `done` outcome or a proposed
-`completed` Run Resolution to a pass. Until a human grades at the bench the
-report shows zeros over full denominators, and **that is correct output, not a
-broken run**. Budget the review as a work item.
+across the two follow-ups (6 / 6). The model reviewer (`pnpm live:grade`,
+[described here](live-web-reporting.md#grading-by-a-model-reviewer)) judges
+all of them; the human reads its adjudication file, which on `pilot-1` flagged
+a handful of calls, not 68. Nothing in the report path grades anything: there
+is no judge there, and no code path from a `done` outcome or a proposed
+`completed` Run Resolution to a pass. Until a grades file exists the report
+shows zeros over full denominators, and **that is correct output, not a
+broken run**.
 
 **Read each key's `constraints` before judging its checks.** Check ids come
 only from required facts, pitfalls and uncertainties — the things answerable

@@ -385,6 +385,66 @@ all before Start. It answers only requests addressed to loopback from its own
 pages. Both files it writes carry reviewer notes about Answers — never commit
 them.
 
+## Grading by a model reviewer
+
+The protocol as #223 first wrote it had a human grade every slot. It was
+amended on 2026-09-12: the reviewer of record is a model, driven through the
+Claude Code CLI, and the human adjudicates only the calls it flags.
+
+```sh
+pnpm live:grade --capture=e2e/live/artifacts/<setId>.json
+#   [--reviewer=<name>] [--model=<id>] [--out=<grades.json>] [--only=<attemptId>]
+#   [--prompts-dir=<dir>] [--dry-run] [--max-usd=<per call>]
+```
+
+It is the same review the bench asks a person for, one `claude -p` call per
+dispatched slot, with **no tools and no session**: the model is handed the
+Answer, the trail the Run left (every navigate, read and look, with its
+outcome, and the evidence the assistant recorded), the key as the bench's Key
+tab shows it — constraints first, then the facts, pitfalls and uncertainties
+with their check ids, then the verified sources — and the exact list of check
+ids to judge. A follow-up slot also gets its initial's command and Answer, as
+context, not as something to grade. The reply is structured output: a verdict,
+every check judged with a note, support rows, a rationale, and a list of
+**calls a careful human might make the other way**, each naming its check id
+and what the alternative reading would change.
+
+What it never does:
+
+- **Grade a slot nothing was dispatched into.** Not reached stays `pending`,
+  as at the bench.
+- **Pick a verdict itself.** The output is composed into a grade entry and run
+  through `parseLiveGrades` — the same validator the bench's Save runs. A
+  refused output goes back to the model once, with the validator's own words
+  and an instruction not to change a judgment merely to satisfy it; a second
+  refusal leaves the slot `pending` and says why in the adjudication file.
+- **Overwrite.** It writes `<setId>-grades-<reviewer slug>.json` in the private
+  root — the bench's own name for this reviewer, so the setup page offers the
+  file as another reviewer's Grade to compare against — and refuses to write
+  where a file already exists.
+- **Run unasked.** It is opt-in and paid, excluded from every test config, and
+  `live:report` never calls it. The measured model is `GLM-5.3`; the reviewer
+  is `claude-opus-5` (the CLI's served model is checked against the name the
+  grades file carries, and a mismatch fails the run rather than mislabel it).
+
+Beside the grades file it writes `<grades>.adjudicate.md`: slot by slot, the
+flagged calls, the rationale, the check notes and the served model, then the
+spend the CLI reported. **That file is the human's work item.** A decision
+that changes a verdict is recorded in the key's `constraints` as a key
+revision with provenance — the two rules `SHARED_GRADING_RULES` carries were
+the first — never silently in the grades file. It quotes reviewer prose about
+Answers, so it is never committed.
+
+Measured on `pilot-1`: about 45 seconds and $0.18 per slot, so a six-slot set
+grades in about five minutes for about a dollar. A prompt can be inspected
+before anything is spent with `--dry-run --prompts-dir=<dir>`.
+
+What this does not change: there is still no judge in the report path, no
+keyword matching anywhere, and no code path from a `done` outcome or a
+proposed Run Resolution to a `pass`. What it does change is honest to name:
+the verdicts in a report are a model's, under rules the owner wrote, and the
+`reviewer` field says so.
+
 ## The report
 
 ### Populations, each with its own denominator

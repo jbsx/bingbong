@@ -84,12 +84,32 @@ const RESEARCHED: Revision = {
     'Initial key, researched from the primary sources listed below and accepted on #223. Verified against retrieved page bodies; no measured Answer had been observed.',
 }
 
+const GRADING_RULES: Revision = {
+  version: 2,
+  date: '2026-09-12',
+  reason:
+    'Two grading rules added to every key’s constraints, fixing the judgement calls #227 recorded as carrying the pilot result: a required fact must be stated, not left to inference; an uncertainty is failed only when the Answer resolves it. No fact, pitfall, uncertainty or source changed, so every check id and count is unchanged. Decided on #223 after the pilot Answers had been read, and recorded as rules for the reviewer rather than a change to what any key requires — the strict reading was taken where it costs a pilot verdict, never the one that rescues it.',
+}
+
+/**
+ * Rules every reviewer applies, on every key, whoever the reviewer is. They
+ * decide verdicts without being checks, so they live in `constraints`, where
+ * the bench shows them and the key digest binds them. Each is one of the two
+ * calls #227 flagged as carrying the whole pilot result — both went the
+ * generous way there, and neither was written down, so the next reviewer
+ * could have gone the other way without anyone noticing.
+ */
+const SHARED_GRADING_RULES: readonly string[] = [
+  'A required fact is carried only when the Answer states it. An enumerated set, a piece of arithmetic or a general rule from which a reader could work the fact out does not carry it: a required fact left to inference is not satisfied.',
+  'An uncertainty check ("The Answer preserves: …") is unsatisfied only when the Answer resolves the matter — states it with a certainty the source does not have. An Answer that never reaches the matter has not resolved it; the required facts it missed carry that failure, not this check. An Answer that does reach it must carry the source’s own qualification.',
+]
+
 export function gradingKeys(): readonly GradingKey[] {
   return [
     {
       huntId: 'compatibility-pi-camera',
-      version: 1,
-      revisions: [RESEARCHED],
+      version: 2,
+      revisions: [RESEARCHED, GRADING_RULES],
       requiredFacts: [
         'Compatible in principle: the stated board has a CSI camera connector, which is what the camera requires.',
         'The standard ribbon supplied with the camera does not fit the Zero connector.',
@@ -102,6 +122,7 @@ export function gradingKeys(): readonly GradingKey[] {
         'Grade the cable, the hardware pairing, and the software stack separately — one of the three being right does not carry the others.',
         'Require source support for the hardware and software claims. Producing an actual photograph is not required and was never verified by the evaluator.',
         'An autofocus-on-capture explanation is acceptable when it describes running an autofocus cycle just before image capture.',
+        ...SHARED_GRADING_RULES,
       ],
       pitfalls: [
         'Treating the supplied ribbon as usable because the connector is "the camera connector" — the Zero connector is the smaller one.',
@@ -150,8 +171,8 @@ export function gradingKeys(): readonly GradingKey[] {
     },
     {
       huntId: 'historical-longitude-watch',
-      version: 1,
-      revisions: [RESEARCHED],
+      version: 2,
+      revisions: [RESEARCHED, GRADING_RULES],
       requiredFacts: [
         'The watch is H4.',
         'Catalogue ID ZAA0037.',
@@ -170,6 +191,7 @@ export function gradingKeys(): readonly GradingKey[] {
         'The dial diameter is the wanted measurement, not the object’s overall width.',
         'Do not grade trial-voyage details or current exhibition availability — neither was part of the verified task.',
         'Which watch is on which side must be stated, not merely that both are present.',
+        ...SHARED_GRADING_RULES,
       ],
       pitfalls: [
         'Reporting the numeric URL identifier (for example the object number in the page address) as the catalogue ID.',
@@ -197,8 +219,8 @@ export function gradingKeys(): readonly GradingKey[] {
     },
     {
       huntId: 'rule-eurostar-luggage',
-      version: 1,
-      revisions: [RESEARCHED],
+      version: 2,
+      revisions: [RESEARCHED, GRADING_RULES],
       requiredFacts: [
         'No — the complete load is not included in the ordinary Standard allowance.',
         'Standard permits two pieces of luggage plus one item of hand luggage; the load is three large items plus the daypack, which exceeds it.',
@@ -213,6 +235,7 @@ export function gradingKeys(): readonly GradingKey[] {
         'The guitar rule and the medium-instrument rule are different rules and must be distinguished, as the prompt asks.',
         'Grade the allowance arithmetic and the guitar exception separately; getting the exception right while miscounting the allowance is not success.',
         'Equivalent official pages stating the same allowance are acceptable sources.',
+        ...SHARED_GRADING_RULES,
       ],
       pitfalls: [
         'Applying the generic 85–136 cm medium-instrument seat/service arrangements to this guitar and concluding it needs its own seat or a booked service.',
@@ -264,8 +287,8 @@ export function gradingKeys(): readonly GradingKey[] {
     },
     {
       huntId: 'superseded-voyager-interstellar',
-      version: 1,
-      revisions: [RESEARCHED],
+      version: 2,
+      revisions: [RESEARCHED, GRADING_RULES],
       requiredFacts: [
         'The JPL account was published June 27, 2013.',
         'The NASA announcement was published September 12, 2013.',
@@ -281,6 +304,7 @@ export function gradingKeys(): readonly GradingKey[] {
         'Crossing date, observation date, and announcement dates are three different things and must stay separate.',
         'Use the explicit release dates, not a site migration or "last updated" footer.',
         'Grade the causal reconciliation against both official accounts; a correct pair of dates with no mechanism is not success.',
+        ...SHARED_GRADING_RULES,
       ],
       pitfalls: [
         'Answering from a remembered date without the two accounts.',
