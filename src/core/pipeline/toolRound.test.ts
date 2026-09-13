@@ -728,9 +728,10 @@ describe('the verification gate sits ahead of the Vision Budget (#212, ADR 0041)
 })
 
 // The Baseline's nine spent-route refusals (#236, ADR 0046): a Look whose
-// region `look` refused from inside execute counted as a failed Vision
-// Attempt and closed vision for the rest of the Run. An admission step
-// refuses the arguments ahead of the charge and the attempted mark.
+// region `look` refused from inside execute counted as an attempted call,
+// so the verification rail spent the vision route on our own sentence for
+// the rest of the Run. An admission step refuses the arguments ahead of
+// the charge and the attempted mark.
 describe('an argument refusal is not a Vision Attempt (#236, ADR 0046)', () => {
   const capabilities: ToolRoundCapabilities = {
     searchLoopRail: false,
@@ -765,8 +766,8 @@ describe('an argument refusal is not a Vision Attempt (#236, ADR 0046)', () => {
     const trace: string[] = []
     const spent: unknown[] = []
     const reported: VisionTraceEvent[] = []
-    // One vision call in the budget: had the refused call been charged,
-    // the well-formed Look would be refused for the budget instead.
+    // A Vision Budget of one: had the refused call been charged, the
+    // well-formed Look would be refused for the budget instead.
     const h = harness([look(trace)], {
       capabilities,
       trace,
@@ -805,6 +806,25 @@ describe('an argument refusal is not a Vision Attempt (#236, ADR 0046)', () => {
     ])
     expect(errorOf(outcome.results[0]!.outcome)).toBe(MALFORMED)
     expect(reported).toEqual([])
+  })
+
+  it('runs admission after the no-progress rail — a repeat is refused as a repeat, whatever the arguments', async () => {
+    const trace: string[] = []
+    // Admits the first call and refuses the second — the same call the
+    // no-progress rail refuses as the same inspection of unchanged state,
+    // so whichever gate runs first is the one that answers.
+    let admissions = 0
+    const tool = scripted('look', trace, {
+      usesVision: true,
+      admit: () => (++admissions <= 1 ? { ok: true } : { ok: false, reason: MALFORMED }),
+    })
+    const h = harness([tool], { capabilities: { ...capabilities, noProgressRail: true }, settledPageState: () => STUCK, trace })
+
+    await h.round([wellFormed])
+    const { outcome } = await h.round([wellFormed])
+
+    expect(errorOf(outcome.results[0]!.outcome)).toMatch(/Not executed/)
+    expect(trace.filter((entry) => entry === 'admit:look')).toHaveLength(1)
   })
 
   it('runs admission after the verification rail — a spent route is refused as spent, whatever the arguments', async () => {

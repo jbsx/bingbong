@@ -8,12 +8,11 @@ import {
   formatLookRegion,
   LOOK_REGION_FORMAT,
   LOOK_REGION_MAX_SCALE,
-  lookCropOf,
   readLookRegion,
   screenshotOptionsOf,
   type LookCrop,
-  type LookRegion,
   type LookRegionClamp,
+  type LookRegionReading,
 } from './lookRegion'
 import { traceVisionBudget, visionSeam } from './visionSeam'
 
@@ -44,11 +43,7 @@ function questionedPrompt(question: string, crop: LookCrop | undefined): string 
 const REGION_NEEDS_QUESTION = "look: 'region' needs a 'question' to answer about that part of the page"
 
 /** A region Look's region: as the model wrote it, how the crop differs, and the crop it is shown. */
-interface AskedLookRegion {
-  written: LookRegion
-  clamp: LookRegionClamp
-  crop: LookCrop
-}
+type AskedLookRegion = Extract<LookRegionReading, { kind: 'region' }>
 
 /** `look`'s arguments as read, or the refusal they earn. */
 type LookArgs = { ok: true; question: string | undefined; region: AskedLookRegion | undefined } | { ok: false; reason: string }
@@ -65,7 +60,7 @@ function readLookArgs(args: ToolCall['args']): LookArgs {
   if (region.kind === 'refused') return { ok: false, reason: region.reason }
   if (region.kind === 'none') return { ok: true, question, region: undefined }
   if (question === undefined) return { ok: false, reason: REGION_NEEDS_QUESTION }
-  return { ok: true, question, region: { written: region.written, clamp: region.clamp, crop: lookCropOf(region.shown) } }
+  return { ok: true, question, region }
 }
 
 /** Why a clamped region was shown as something else, as the footer names it. */
@@ -138,7 +133,7 @@ export function createLookTool(browser: BrowserController, vision: VisionDescrib
     // sentence, not a failed Vision Attempt.
     admit(args) {
       const read = readLookArgs(args)
-      return read.ok ? { ok: true } : { ok: false, reason: read.reason }
+      return read.ok ? { ok: true } : read
     },
     async execute(call, context: ToolContext) {
       const read = readLookArgs(call.args)

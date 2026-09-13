@@ -16,7 +16,7 @@ function read(value: unknown): { written: string; shown: string; clamp: string }
   const result = readLookRegion(value)
   if (result.kind === 'none') return 'none'
   if (result.kind === 'refused') return { refused: result.reason }
-  return { written: formatLookRegion(result.written), shown: formatLookRegion(result.shown), clamp: result.clamp }
+  return { written: formatLookRegion(result.written), shown: formatLookRegion(result.crop.region), clamp: result.clamp }
 }
 
 describe('readLookRegion', () => {
@@ -69,11 +69,11 @@ describe('readLookRegion', () => {
       for (let height = 1; height <= 100; height += 1) {
         const result = readLookRegion(`0,0,${width},${height}`)
         if (result.kind !== 'region') throw new Error(`${width}×${height} did not read as a region`)
-        const { shown } = result
+        const { region: shown, scale } = result.crop
         expect(shown.width * shown.height).toBeLessThanOrEqual(cap)
         expect(shown.left + shown.width).toBeLessThanOrEqual(100)
         expect(shown.top + shown.height).toBeLessThanOrEqual(100)
-        expect(lookCropOf(shown).scale).toBeGreaterThanOrEqual(LOOK_REGION_MIN_SCALE)
+        expect(scale).toBeGreaterThanOrEqual(LOOK_REGION_MIN_SCALE)
         expect(Math.abs(shown.left + shown.width / 2 - width / 2)).toBeLessThanOrEqual(0.5)
         expect(Math.abs(shown.top + shown.height / 2 - height / 2)).toBeLessThanOrEqual(0.5)
         if (width * height <= cap) expect(result.clamp).toBe('none')

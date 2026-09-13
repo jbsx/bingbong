@@ -310,9 +310,9 @@ export function createToolRoundExecutor(config: ToolRoundConfig): ToolRoundExecu
    * ahead of execution — Finalization, the no-progress rails, the risk
    * tiers, the verification rail itself, a tool's admission step (#236),
    * the Vision Budget, a Steering cancel — returns a failed outcome
-   * carrying *our* sentence, and
-   * counting one would both close the route on a request nobody made and
-   * hand the next Run our own words as what the route reported.
+   * carrying *our* sentence, and counting one would both close the route
+   * on a request nobody made and hand the next Run our own words as what
+   * the route reported.
    */
   const attempted = new WeakSet<ToolCall>()
   const noProgressRail = capabilities.noProgressRail
@@ -430,9 +430,10 @@ export function createToolRoundExecutor(config: ToolRoundConfig): ToolRoundExecu
 
     // The admission step (#236, ADR 0046): a call whose arguments name
     // nothing the tool can do is refused in the tool's own words. After the
-    // rails and the risk gate, which still see a repeated mistake; before
-    // the Vision Budget and the attempted mark, so a malformed Look spends
-    // neither the budget nor the verification route.
+    // rails and the risk gate — so the no-progress rail still sees a
+    // repeated mistake — and before the Vision Budget and the attempted
+    // mark, so a malformed Look spends neither the budget nor the
+    // verification route.
     if (tool.admit) {
       const admission = tool.admit(call.args)
       if (!admission.ok) return { ok: false, error: admission.reason }

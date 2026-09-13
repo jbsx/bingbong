@@ -58,11 +58,12 @@ export type LookRegionClamp = 'none' | 'clipped' | 'shrunk'
 
 /**
  * What the model's region argument turned out to be: nothing, a region —
- * as written and as shown — or a refusal in the words the model is given.
+ * as written, and the crop it is shown as — or a refusal in the words the
+ * model is given.
  */
-export type ReadLookRegion =
+export type LookRegionReading =
   | { kind: 'none' }
-  | { kind: 'region'; written: LookRegion; shown: LookRegion; clamp: LookRegionClamp }
+  | { kind: 'region'; written: LookRegion; clamp: LookRegionClamp; crop: LookCrop }
   | { kind: 'refused'; reason: string }
 
 /** Where a side shrunk around its own centre starts: rounded, and kept inside the viewport. */
@@ -77,7 +78,7 @@ function centred(start: number, side: number, shownSide: number): number {
  * the same factor around the region's own centre and floored, so the area
  * never exceeds the cap. No side is preferred: the shape drawn is kept.
  */
-function showLookRegion(written: LookRegion): { shown: LookRegion; clamp: LookRegionClamp } | undefined {
+function clampLookRegion(written: LookRegion): { shown: LookRegion; clamp: LookRegionClamp } | undefined {
   const left = Math.min(written.left, 100)
   const top = Math.min(written.top, 100)
   const width = Math.min(written.left + written.width, 100) - left
@@ -112,7 +113,7 @@ function showLookRegion(written: LookRegion): { shown: LookRegion; clamp: LookRe
  * is refused, with the expected format in the reason, so the model's next
  * call can be well-formed.
  */
-export function readLookRegion(value: unknown): ReadLookRegion {
+export function readLookRegion(value: unknown): LookRegionReading {
   if (value === undefined || value === null) return { kind: 'none' }
   if (typeof value !== 'string') return { kind: 'refused', reason: REGION_REFUSAL }
   const text = value.trim()
@@ -124,9 +125,9 @@ export function readLookRegion(value: unknown): ReadLookRegion {
   const [left, top, width, height] = parts.map((part) => Math.round(Number(part))) as [number, number, number, number]
   if (width < 1 || height < 1) return { kind: 'refused', reason: REGION_REFUSAL }
   const written = { left, top, width, height }
-  const shown = showLookRegion(written)
-  if (shown === undefined) return { kind: 'refused', reason: REGION_REFUSAL }
-  return { kind: 'region', written, ...shown }
+  const clamped = clampLookRegion(written)
+  if (clamped === undefined) return { kind: 'refused', reason: REGION_REFUSAL }
+  return { kind: 'region', written, clamp: clamped.clamp, crop: lookCropOf(clamped.shown) }
 }
 
 /**
@@ -161,7 +162,7 @@ export function formatLookRegion(region: LookRegion): string {
  */
 export function lookRegionFingerprint(value: unknown): string | undefined {
   const read = readLookRegion(value)
-  if (read.kind === 'region') return formatLookRegion(read.shown)
+  if (read.kind === 'region') return formatLookRegion(read.crop.region)
   if (read.kind === 'none') return undefined
   const raw = typeof value === 'string' ? value.replace(/[\s%]+/g, '') : ''
   return raw === '' ? undefined : raw
