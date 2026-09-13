@@ -406,6 +406,13 @@ describe('createSearchLoopRail — inspection is not escape, one Search Intent a
     await rail.observe(type(7, 'site:rmg.co.uk\n'), ok)
     expect(await rail.observe(nav('https://duckduckgo.com/?q=site%3Armg.co.uk'), ok)).toMatch(/ask_user/)
 
+    // A scope-only search after a terms search over the same scope continues
+    // that streak rather than starting its own (AC2).
+    const sharedScope = createSearchLoopRail(searchBoxAt)
+    await sharedScope.observe(nav('https://www.bing.com/search?q=site%3Armg.co.uk+collections+Harrison+longitude+watch'), ok)
+    await sharedScope.observe(type(7, 'site:rmg.co.uk\n'), ok)
+    expect(await sharedScope.observe(nav('https://www.bing.com/search?q=site%3Armg.co.uk+Harrison+longitude+watch+H4'), ok)).toMatch(/ask_user/)
+
     const hostOnly = createSearchLoopRail(searchBoxAt)
     await hostOnly.observe(type(7, 'eurostar.com\n'), ok)
     await hostOnly.observe(type(7, 'eurostar.com\n'), ok)

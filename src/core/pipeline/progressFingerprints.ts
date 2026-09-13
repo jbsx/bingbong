@@ -5,7 +5,7 @@ import { fnv1a32 } from '../browser/snapshot'
 import { normalizeUrlInput } from '../browser/urlInput'
 import { coercedNumber } from './tool'
 import { lookRegionFingerprint } from './lookRegion'
-import { queryTokens, similarQueries } from './searchLoopRule'
+import { queryTokens } from './searchLoopRule'
 import { reportFault } from '../trace/fault'
 
 // Issue #125, ADR 0027 prefactor: the search-loop signatures (#74/#82/#83)
@@ -33,7 +33,6 @@ import { reportFault } from '../trace/fault'
 // The Search Intent tokenizer and same-intent test live in searchLoopRule.ts
 // (#238, ADR 0048), loadable by the Round Audit's replay; one tokenizer
 // serves the rail and this fingerprint alike.
-export { queryTokens, similarQueries }
 
 /**
  * One query's intent as a canonical fingerprint: its Search Intent tokens,

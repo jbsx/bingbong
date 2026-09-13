@@ -143,14 +143,22 @@ navigate-only until the trace carries the typed half.
   `similarQueries` and `isSearchInspection`. It is its own module because the
   audit runs under plain Node's type stripping, which cannot load
   `progressFingerprints.ts`'s extensionless import graph; the rule imports
-  only `urlInput.ts`, with its extension. `progressFingerprints.ts` and the
-  rail re-export from it, and `audit.ts` re-exports the rule's
-  `similarQueries` so its test can pin that they are one function.
+  only `urlInput.ts`, with its extension. The rail and
+  `progressFingerprints.ts` import from it, and `audit.ts` re-exports the
+  rule's `similarQueries` so its test can pin that they are one function.
 - The hostname test is `looksLikeDomain`, which `normalizeUrlInput` now calls
-  too. It is the normalizer's own test, so a decimal term (`3.5`) folds as
-  scope like a hostname does. Accepted with the rule: none of the 23 searches
-  the audit replays over the Baseline carries one, and a query of only such
-  tokens keeps them.
+  too. Review found the normalizer's old test took any dotted word for a
+  domain, so the fold would have dropped `v1.3` or `No.1` from a Search
+  Intent. The one test now needs a host to end in an alphabetic (or punycode)
+  top-level label, so a version stays a term, and typed into the address bar
+  it is searched rather than opened as `https://v1.3`. Every dotted word the
+  audit replays over the Baseline is a real hostname, so no Baseline number
+  moves with it.
+- A search that is nothing but scope is compared against the other search
+  scope and all (both searches' raw tokens), so `site:rmg.co.uk` after
+  `site:rmg.co.uk collections Harrison longitude watch` continues that streak
+  (0.5) instead of starting its own, while `site:rmg.co.uk` after a search on
+  other terms, or `site:nasa.gov`, does not.
 - An operator's argument is the rest of its token, the whole quoted phrase
   when the token opens a quote (`intitle:"longitude watch"`), or the next
   token when the operator stands alone (`site: rmg.co.uk`). A leading `-`

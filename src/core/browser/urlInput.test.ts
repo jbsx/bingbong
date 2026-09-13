@@ -36,6 +36,13 @@ describe('normalizeUrlInput', () => {
     expect(normalizeUrlInput('youtube')).toBe('https://duckduckgo.com/?q=youtube')
   })
 
+  it('treats a dotted word with no alphabetic top-level label as a web search — a version is not a host (#238)', () => {
+    expect(normalizeUrlInput('v1.3')).toBe('https://duckduckgo.com/?q=v1.3')
+    expect(normalizeUrlInput('No.1')).toBe('https://duckduckgo.com/?q=No.1')
+    expect(normalizeUrlInput('en.wikipedia.org/wiki/Harrison_(watch)')).toBe('https://en.wikipedia.org/wiki/Harrison_(watch)')
+    expect(normalizeUrlInput('rmg.co.uk/collections?q=H4')).toBe('https://rmg.co.uk/collections?q=H4')
+  })
+
   it('treats non-web schemes as a web search', () => {
     expect(normalizeUrlInput('javascript:alert(1)')).toBe(
       'https://duckduckgo.com/?q=javascript%3Aalert(1)',

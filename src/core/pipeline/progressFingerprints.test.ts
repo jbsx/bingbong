@@ -6,9 +6,9 @@ import {
   pageFingerprint,
   queryIntentFingerprint,
   searchQueryFromUrl,
-  similarQueries,
   urlFingerprint,
 } from './progressFingerprints'
+import { similarQueries } from './searchLoopRule'
 import type { SnapshotRef } from '../browser/snapshot'
 
 // Issue #125, ADR 0027 prefactor: the search-loop signatures generalized

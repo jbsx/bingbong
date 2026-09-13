@@ -35,60 +35,67 @@ function tokensOf(text: string): Set<string> {
   )
 }
 
-function withoutLeadingPunctuation(token: string): string {
-  return token.replace(/^[^a-z0-9]+/i, '')
-}
-
 /**
- * The whitespace tokens that are terms, scope dropped. Runs before
+ * The whitespace-separated words that are terms, scope dropped. Runs before
  * punctuation is stripped, or `jpl.nasa.gov` is three tokens before the
- * domain test sees it. A token is a hostname by the URL normalizer's own
- * domain test, so a decimal like `3.5` counts as one too.
+ * domain test sees it. A word is a hostname by the URL normalizer's own
+ * domain test, which needs an alphabetic top-level label: `v1.3` is a term.
  */
-function termsWithoutScope(raw: readonly string[]): string[] {
+function termsWithoutScope(words: readonly string[]): string[] {
   const terms: string[] = []
-  for (let index = 0; index < raw.length; index += 1) {
-    const token = raw[index]!
-    const lead = withoutLeadingPunctuation(token)
-    const operator = SCOPE_OPERATORS.find((candidate) => lead.toLowerCase().startsWith(candidate))
+  for (let index = 0; index < words.length; index += 1) {
+    const word = words[index]!
+    // Quotes, brackets and a leading `-` never hide an operator or a host.
+    const unquoted = word.replace(/^[^a-z0-9]+/i, '')
+    const operator = SCOPE_OPERATORS.find((candidate) => unquoted.toLowerCase().startsWith(candidate))
     if (operator !== undefined) {
-      const argument = lead.slice(operator.length)
+      const argument = unquoted.slice(operator.length)
       if (argument === '') {
-        // `site: rmg.co.uk` — the argument is the next token.
+        // `site: rmg.co.uk` — the argument is the next word.
         index += 1
       } else if ((argument.match(/"/g) ?? []).length % 2 === 1) {
         // `intitle:"longitude watch"` — the argument runs to its closing quote.
         index += 1
-        while (index < raw.length && !raw[index]!.includes('"')) index += 1
+        while (index < words.length && !words[index]!.includes('"')) index += 1
       }
       continue
     }
-    if (CONNECTIVES.has(token)) continue
-    if (looksLikeDomain(token.replace(/^[^a-z0-9]+|[^a-z0-9]+$/gi, ''))) continue
-    terms.push(token)
+    if (CONNECTIVES.has(word)) continue
+    if (looksLikeDomain(unquoted.replace(/[^a-z0-9]+$/i, ''))) continue
+    terms.push(word)
   }
   return terms
 }
 
 /**
- * A query's Search Intent as tokens: its terms with scope removed — a search
+ * A search's Search Intent as tokens: its terms with scope removed — a search
  * operator with its argument, an uppercase connective, a bare hostname.
- * Quotation marks and `-` are punctuation and their words stay. A query that
+ * Quotation marks and `-` are punctuation and their words stay. A search that
  * is nothing but scope keeps its scope, so it is still a search.
  */
 export function queryTokens(query: string): Set<string> {
-  const intent = tokensOf(termsWithoutScope(query.split(/\s+/).filter((token) => token !== '')).join(' '))
-  return intent.size > 0 ? intent : tokensOf(query)
+  return intentOf(query).tokens
+}
+
+function intentOf(query: string): { tokens: Set<string>; scopeOnly: boolean } {
+  const terms = tokensOf(termsWithoutScope(query.split(/\s+/).filter((word) => word !== '')).join(' '))
+  return terms.size > 0 ? { tokens: terms, scopeOnly: false } : { tokens: tokensOf(query), scopeOnly: true }
 }
 
 /**
  * Pure same-intent test: token-Jaccard similarity of the two Search Intents
- * at or above the threshold. Empty queries never match. (The search-loop
+ * at or above the threshold. Empty searches never match. A search that is
+ * nothing but scope has its scope as its intent, so it is compared against
+ * the other search scope and all: `site:rmg.co.uk` continues a streak whose
+ * searches share that scope rather than starting its own. (The search-loop
  * rail's chaining rule since #74.)
  */
 export function similarQueries(a: string, b: string): boolean {
-  const left = queryTokens(a)
-  const right = queryTokens(b)
+  const leftIntent = intentOf(a)
+  const rightIntent = intentOf(b)
+  const scoped = leftIntent.scopeOnly || rightIntent.scopeOnly
+  const left = scoped ? tokensOf(a) : leftIntent.tokens
+  const right = scoped ? tokensOf(b) : rightIntent.tokens
   if (left.size === 0 || right.size === 0) return false
   let shared = 0
   for (const token of left) {

@@ -39,6 +39,7 @@ import {
   type AuditProvenance,
   type AuditTraceInput,
 } from './audit.ts'
+import * as auditModule from './audit.ts'
 import type { LiveGradeEntry, LiveKeyTask } from './grades.ts'
 import { attemptCapture, T0, turnIdOf } from './gradingFixtures.ts'
 import { liveWebHunts } from './hunts.ts'
@@ -404,8 +405,7 @@ describe('the mechanical classification', () => {
 
   it('replays the Search Loop rail’s own rule, not a copy of it (#238, ADR 0048)', () => {
     expect(similarQueries).toBe(ruleSimilarQueries)
-    const source = readFileSync(fileURLToPath(new URL('./audit.ts', import.meta.url)), 'utf8')
-    expect(source).not.toMatch(/function (queryTokens|similarQueries)\b/)
+    expect(auditModule).not.toHaveProperty('queryTokens')
   })
 
   it('keeps the replayed streak across a scroll or a Look between searches, as the rail does', () => {

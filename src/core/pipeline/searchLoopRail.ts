@@ -1,7 +1,7 @@
 import type { ToolCall, ToolResultOutcome } from '../ports/llm'
 import type { SnapshotRef } from '../browser/snapshot'
-import { isSearchInputRef, refNumberOf, searchQueryFromUrl, similarQueries, typedQuery } from './progressFingerprints'
-import { isSearchInspection } from './searchLoopRule'
+import { isSearchInputRef, refNumberOf, searchQueryFromUrl, typedQuery } from './progressFingerprints'
+import { isSearchInspection, similarQueries } from './searchLoopRule'
 import { reportFault } from '../trace/fault'
 
 // Issue #74, run rails: the 80-round flail's signature is a blind search
