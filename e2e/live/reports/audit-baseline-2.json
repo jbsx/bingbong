@@ -32,9 +32,9 @@
     "reviewerModel": "claude-opus-5",
     "reviewerEffort": "high",
     "reviewerPromptVersion": "audit-p1",
-    "auditCommit": "7501742a5cc8764af7d83b7dcd09f070db5dc31d",
+    "auditCommit": "182d4d68c4976d194e0b6b896997e1b40699a57c",
     "auditDirtyTree": true,
-    "generatedAt": "2026-09-13T03:58:10.286Z"
+    "generatedAt": "2026-09-13T22:10:41.876Z"
   },
   "attempts": [
     {
@@ -1363,6 +1363,7 @@
         "rejectedCheckpoints": 0,
         "inheritedRounds": 0,
         "mechanicalSearchRounds": 0,
+        "searchLoopHeads": [],
         "walledRounds": 0,
         "latency": {
           "llmMs": 389039,
@@ -2797,6 +2798,7 @@
         "rejectedCheckpoints": 2,
         "inheritedRounds": 1,
         "mechanicalSearchRounds": 0,
+        "searchLoopHeads": [],
         "walledRounds": 0,
         "latency": {
           "llmMs": 340027,
@@ -4212,6 +4214,7 @@
         "rejectedCheckpoints": 0,
         "inheritedRounds": 0,
         "mechanicalSearchRounds": 0,
+        "searchLoopHeads": [],
         "walledRounds": 0,
         "latency": {
           "llmMs": 196001,
@@ -5656,6 +5659,7 @@
         "rejectedCheckpoints": 5,
         "inheritedRounds": 0,
         "mechanicalSearchRounds": 0,
+        "searchLoopHeads": [],
         "walledRounds": 0,
         "latency": {
           "llmMs": 374300,
@@ -6714,6 +6718,7 @@
         "rejectedCheckpoints": 2,
         "inheritedRounds": 1,
         "mechanicalSearchRounds": 0,
+        "searchLoopHeads": [],
         "walledRounds": 0,
         "latency": {
           "llmMs": 285366,
@@ -8101,6 +8106,7 @@
         "rejectedCheckpoints": 0,
         "inheritedRounds": 0,
         "mechanicalSearchRounds": 0,
+        "searchLoopHeads": [],
         "walledRounds": 1,
         "latency": {
           "llmMs": 398995,

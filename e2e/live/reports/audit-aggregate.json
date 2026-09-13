@@ -36,9 +36,9 @@
         ],
         "dirtyTree": true,
         "gradesRevision": 1,
-        "auditCommit": "7501742a5cc8764af7d83b7dcd09f070db5dc31d",
+        "auditCommit": "182d4d68c4976d194e0b6b896997e1b40699a57c",
         "auditDirtyTree": true,
-        "generatedAt": "2026-09-13T03:58:10.286Z"
+        "generatedAt": "2026-09-13T22:10:41.876Z"
       },
       {
         "setId": "baseline-2",
@@ -49,9 +49,9 @@
         ],
         "dirtyTree": true,
         "gradesRevision": 1,
-        "auditCommit": "7501742a5cc8764af7d83b7dcd09f070db5dc31d",
+        "auditCommit": "182d4d68c4976d194e0b6b896997e1b40699a57c",
         "auditDirtyTree": true,
-        "generatedAt": "2026-09-13T03:58:10.286Z"
+        "generatedAt": "2026-09-13T22:10:41.876Z"
       },
       {
         "setId": "baseline-3",
@@ -62,12 +62,12 @@
         ],
         "dirtyTree": true,
         "gradesRevision": 1,
-        "auditCommit": "7501742a5cc8764af7d83b7dcd09f070db5dc31d",
+        "auditCommit": "182d4d68c4976d194e0b6b896997e1b40699a57c",
         "auditDirtyTree": true,
-        "generatedAt": "2026-09-13T03:58:10.286Z"
+        "generatedAt": "2026-09-13T22:10:41.876Z"
       }
     ],
-    "generatedAt": "2026-09-13T03:58:10.286Z"
+    "generatedAt": "2026-09-13T22:10:41.876Z"
   },
   "populations": {
     "initial": {
@@ -78,24 +78,24 @@
       "budgetedRounds": 225,
       "toolRoundsUsed": 224,
       "counts": {
-        "acquisition_with_progress": 155,
-        "acquisition_without_progress": 27,
+        "acquisition_with_progress": 154,
+        "acquisition_without_progress": 28,
         "collection": 2,
         "bookkeeping": 18,
         "failed_round": 23,
         "finalization": 21
       },
       "countsAfterOverrules": {
-        "acquisition_with_progress": 132,
-        "acquisition_without_progress": 50,
+        "acquisition_with_progress": 133,
+        "acquisition_without_progress": 49,
         "collection": 2,
         "bookkeeping": 18,
         "failed_round": 23,
         "finalization": 21
       },
       "shares": {
-        "acquisition_with_progress": 0.689,
-        "acquisition_without_progress": 0.12,
+        "acquisition_with_progress": 0.684,
+        "acquisition_without_progress": 0.124,
         "collection": 0.009,
         "bookkeeping": 0.08,
         "failed_round": 0.102,
@@ -115,15 +115,15 @@
         "stopped_early": 0,
         "failed_rounds": 4
       },
-      "offKeyRounds": 63,
+      "offKeyRounds": 62,
       "searchLoopRounds": 10,
-      "mechanicalSearchRounds": 3,
+      "mechanicalSearchRounds": 6,
       "inheritedRounds": 0,
       "rejectedCheckpoints": 9,
       "walledRounds": 2,
       "subagentRounds": 26,
       "stoppedEarly": 2,
-      "overrules": 25,
+      "overrules": 23,
       "flags": 63,
       "finalizationCauses": {
         "budget_exhausted": 8,
@@ -239,7 +239,7 @@
             },
             "offKeyRounds": 26,
             "searchLoopRounds": 5,
-            "mechanicalSearchRounds": 2,
+            "mechanicalSearchRounds": 3,
             "inheritedRounds": 0,
             "rejectedCheckpoints": 1,
             "walledRounds": 1,
@@ -427,24 +427,24 @@
             "budgetedRounds": 64,
             "toolRoundsUsed": 63,
             "counts": {
-              "acquisition_with_progress": 40,
-              "acquisition_without_progress": 8,
+              "acquisition_with_progress": 39,
+              "acquisition_without_progress": 9,
               "collection": 1,
               "bookkeeping": 8,
               "failed_round": 7,
               "finalization": 7
             },
             "countsAfterOverrules": {
-              "acquisition_with_progress": 32,
-              "acquisition_without_progress": 16,
+              "acquisition_with_progress": 33,
+              "acquisition_without_progress": 15,
               "collection": 1,
               "bookkeeping": 8,
               "failed_round": 7,
               "finalization": 7
             },
             "shares": {
-              "acquisition_with_progress": 0.625,
-              "acquisition_without_progress": 0.125,
+              "acquisition_with_progress": 0.609,
+              "acquisition_without_progress": 0.141,
               "collection": 0.016,
               "bookkeeping": 0.125,
               "failed_round": 0.109,
@@ -464,15 +464,15 @@
               "stopped_early": 0,
               "failed_rounds": 1
             },
-            "offKeyRounds": 15,
+            "offKeyRounds": 14,
             "searchLoopRounds": 5,
-            "mechanicalSearchRounds": 1,
+            "mechanicalSearchRounds": 3,
             "inheritedRounds": 0,
             "rejectedCheckpoints": 3,
             "walledRounds": 0,
             "subagentRounds": 13,
             "stoppedEarly": 1,
-            "overrules": 8,
+            "overrules": 6,
             "flags": 20,
             "finalizationCauses": {
               "budget_exhausted": 2,

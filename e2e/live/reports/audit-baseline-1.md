@@ -1,13 +1,13 @@
 # Round Audit — bingbong.live-web.information-hunts (baseline-1)
 
-Generated 2026-09-13T03:58:10.286Z from a capture set created 2026-09-12T17:06:30.219Z (state complete). This audit counts and does not judge: every verdict is the reviewer’s for one attempt, and the ranking is arithmetic over those verdicts.
+Generated 2026-09-13T22:10:41.876Z from a capture set created 2026-09-12T17:06:30.219Z (state complete). This audit counts and does not judge: every verdict is the reviewer’s for one attempt, and the ranking is arithmetic over those verdicts.
 
 ## Provenance
 
 - capture: commit(s) fbd2b865 (dirty tree); mode measured; protocol 1; prompt version(s) 1
 - routing: orchestrator=GLM-5.3; subagent=GLM-5.3-flash; vision=GLM-4.6V | reasoning override: none | effort overrides: none | adblock: production_default
 - key 2.2.2.2, manifest sha256:faa25d04…; grades by claude-opus-5 via live:grade (revision 1)
-- reviewer: claude-opus-5 at high, prompt audit-p1; audit run at commit 7501742a (dirty tree)
+- reviewer: claude-opus-5 at high, prompt audit-p1; audit run at commit 182d4d68 (dirty tree)
 
 ## Populations
 
@@ -26,7 +26,7 @@ Kinds are mechanical counts; a share is over the budgeted rounds (Finalization o
 | stopped early | 1 | 0 | 0 | 0 |
 | failed rounds | 0 | 1 | 0 | 0 |
 
-- initial: 26 Off-key round(s), 5 Search Loop round(s) by the reviewer (2 by the streak rule), 0 inherited, 1 rejected Evidence Checkpoint(s), 1 walled round(s), 13 Subagent round(s), 1 stopped early, 11 overrule(s), 22 flag(s); Finalization Causes: budget_exhausted 3, model_answered 1
+- initial: 26 Off-key round(s), 5 Search Loop round(s) by the reviewer (3 by the streak rule), 0 inherited, 1 rejected Evidence Checkpoint(s), 1 walled round(s), 13 Subagent round(s), 1 stopped early, 11 overrule(s), 22 flag(s); Finalization Causes: budget_exhausted 3, model_answered 1
 - follow_up: 7 Off-key round(s), 0 Search Loop round(s) by the reviewer (0 by the streak rule), 5 inherited, 2 rejected Evidence Checkpoint(s), 0 walled round(s), 0 Subagent round(s), 0 stopped early, 3 overrule(s), 9 flag(s); Finalization Causes: deadline_reached 1, objective_met 1
 
 ## Tool rounds
@@ -298,7 +298,7 @@ The rounds outside Finalization that called each tool — a round counts once pe
 | round | kind | tools | page | ms | note |
 | --- | --- | --- | --- | --- | --- |
 | 1 | Acquisition with Progress → Acquisition without Progress | report_run_plan, navigate | https://www.jpl.nasa.gov/news/nasa-voyager-statement-about-entering-interstellar… | 117157 | navigate: the settled page state moved to a page this Run had not acquired [off-key] |
-| 2 | Acquisition with Progress → Acquisition without Progress | navigate | https://www.google.com/search?q=NASA+Voyager+statement+June+2013+%22has+not+yet+… | 8156 | navigate: the settled page state moved to a page this Run had not acquired [walled, off-key, search loop] |
+| 2 | Acquisition with Progress → Acquisition without Progress | navigate | https://www.google.com/search?q=NASA+Voyager+statement+June+2013+%22has+not+yet+… | 8156 | navigate: the settled page state moved to a page this Run had not acquired [walled, off-key, search loop, loop head by the streak rule] |
 | 3 | Acquisition without Progress | navigate | https://duckduckgo.com/?q=NASA+Voyager+1+June+2013+statement+%22not+yet+in+inter… | 2607 | navigate: a search that rewords the one before it (streak 2) [off-key, search loop] |
 | 4 | Acquisition without Progress | navigate | https://duckduckgo.com/?q=Voyager+1+June+27+2013+NASA+statement+interstellar+spa… | 5926 | navigate: a search that rewords the one before it (streak 3) [off-key, search loop] |
 | 5 | Acquisition with Progress → Acquisition without Progress | navigate | https://www.nasa.gov/press-release/nasa-voyager-1-officially-in-interstellar-spa… | 7521 | navigate: the settled page state moved to a page this Run had not acquired [off-key] |

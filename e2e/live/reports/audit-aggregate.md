@@ -1,6 +1,6 @@
 # Round Audit — aggregate over 3 sets (bingbong.live-web.information-hunts)
 
-Generated 2026-09-13T03:58:10.286Z over baseline-1, baseline-2, baseline-3, ordered by capture-set creation. This audit counts and does not judge: every verdict is the reviewer’s for one attempt, and the ranking is arithmetic over those verdicts.
+Generated 2026-09-13T22:10:41.876Z over baseline-1, baseline-2, baseline-3, ordered by capture-set creation. This audit counts and does not judge: every verdict is the reviewer’s for one attempt, and the ranking is arithmetic over those verdicts.
 
 ## Ranked causes
 
@@ -25,15 +25,15 @@ Shared by every set, and checked before anything was counted:
 
 | set | created | state | commit(s) | dirty tree | grades revision | audited at |
 | --- | --- | --- | --- | --- | --- | --- |
-| baseline-1 | 2026-09-12T17:06:30.219Z | complete | fbd2b865 | yes | 1 | 7501742a (dirty) |
-| baseline-2 | 2026-09-12T18:10:26.845Z | complete | 6152d8dc | yes | 1 | 7501742a (dirty) |
-| baseline-3 | 2026-09-12T18:57:29.347Z | complete | 59bdf48b | yes | 1 | 7501742a (dirty) |
+| baseline-1 | 2026-09-12T17:06:30.219Z | complete | fbd2b865 | yes | 1 | 182d4d68 (dirty) |
+| baseline-2 | 2026-09-12T18:10:26.845Z | complete | 6152d8dc | yes | 1 | 182d4d68 (dirty) |
+| baseline-3 | 2026-09-12T18:57:29.347Z | complete | 59bdf48b | yes | 1 | 182d4d68 (dirty) |
 
 ## Populations
 
 | population | attempts | judged | rounds | budgeted | tool rounds used | at budget | Acquisition with Progress | Acquisition without Progress | Collection | Bookkeeping | Failed round | Finalization |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| initial | 12 | 12 | 246 | 225 | 224 | 8 | 155 (69%) → 132 | 27 (12%) → 50 | 2 (1%) | 18 (8%) | 23 (10%) | 21 (9%) |
+| initial | 12 | 12 | 246 | 225 | 224 | 8 | 154 (68%) → 133 | 28 (12%) → 49 | 2 (1%) | 18 (8%) | 23 (10%) | 21 (9%) |
 | follow_up | 6 | 6 | 127 | 117 | 116 | 3 | 71 (61%) → 65 | 19 (16%) → 25 | 1 (1%) | 19 (16%) | 7 (6%) | 10 (8%) |
 
 | verdict | initial primary | initial secondary | follow_up primary | follow_up secondary |
@@ -44,7 +44,7 @@ Shared by every set, and checked before anything was counted:
 | stopped early | 2 | 0 | 0 | 0 |
 | failed rounds | 1 | 4 | 0 | 1 |
 
-- initial: 63 Off-key round(s), 10 Search Loop round(s) by the reviewer (3 by the streak rule), 0 inherited, 9 rejected Evidence Checkpoint(s), 2 walled round(s), 26 Subagent round(s), 2 stopped early, 25 overrule(s), 63 flag(s); Finalization Causes: budget_exhausted 8, deadline_reached 1, model_answered 1, objective_met 2
+- initial: 62 Off-key round(s), 10 Search Loop round(s) by the reviewer (6 by the streak rule), 0 inherited, 9 rejected Evidence Checkpoint(s), 2 walled round(s), 26 Subagent round(s), 2 stopped early, 23 overrule(s), 63 flag(s); Finalization Causes: budget_exhausted 8, deadline_reached 1, model_answered 1, objective_met 2
 - follow_up: 27 Off-key round(s), 0 Search Loop round(s) by the reviewer (0 by the streak rule), 9 inherited, 9 rejected Evidence Checkpoint(s), 0 walled round(s), 13 Subagent round(s), 0 stopped early, 6 overrule(s), 29 flag(s); Finalization Causes: budget_exhausted 3, deadline_reached 1, objective_met 2
 
 ## Tool rounds
@@ -74,7 +74,7 @@ The rounds outside Finalization that called each tool — a round counts once pe
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | baseline-1 | 4 | 4 | 73 | 66 | 66 | 3 | 48 (73%) → 37 | 9 (14%) → 20 | 1 (2%) | 4 (6%) | 4 (6%) | 7 (10%) |
 | baseline-2 | 4 | 4 | 102 | 95 | 95 | 3 | 67 (71%) → 63 | 10 (11%) → 14 | 0 (0%) | 6 (6%) | 12 (13%) | 7 (7%) |
-| baseline-3 | 4 | 4 | 71 | 64 | 63 | 2 | 40 (63%) → 32 | 8 (13%) → 16 | 1 (2%) | 8 (13%) | 7 (11%) | 7 (10%) |
+| baseline-3 | 4 | 4 | 71 | 64 | 63 | 2 | 39 (61%) → 33 | 9 (14%) → 15 | 1 (2%) | 8 (13%) | 7 (11%) | 7 (10%) |
 
 | verdict | baseline-1 primary | baseline-1 secondary | baseline-2 primary | baseline-2 secondary | baseline-3 primary | baseline-3 secondary |
 | --- | --- | --- | --- | --- | --- | --- |

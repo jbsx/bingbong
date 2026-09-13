@@ -32,9 +32,9 @@
     "reviewerModel": "claude-opus-5",
     "reviewerEffort": "high",
     "reviewerPromptVersion": "audit-p1",
-    "auditCommit": "7501742a5cc8764af7d83b7dcd09f070db5dc31d",
+    "auditCommit": "182d4d68c4976d194e0b6b896997e1b40699a57c",
     "auditDirtyTree": true,
-    "generatedAt": "2026-09-13T03:58:10.286Z"
+    "generatedAt": "2026-09-13T22:10:41.876Z"
   },
   "attempts": [
     {
@@ -1357,6 +1357,7 @@
         "rejectedCheckpoints": 3,
         "inheritedRounds": 0,
         "mechanicalSearchRounds": 0,
+        "searchLoopHeads": [],
         "walledRounds": 0,
         "latency": {
           "llmMs": 196187,
@@ -2840,6 +2841,7 @@
         "rejectedCheckpoints": 3,
         "inheritedRounds": 1,
         "mechanicalSearchRounds": 0,
+        "searchLoopHeads": [],
         "walledRounds": 0,
         "latency": {
           "llmMs": 426768,
@@ -3416,16 +3418,16 @@
                 "notices": [],
                 "search": {
                   "query": "Harrison longitude watch",
-                  "streak": 1
+                  "streak": 2
                 },
                 "progress": {
-                  "made": true,
-                  "reason": "the settled page state moved to a page this Run had not acquired"
+                  "made": false,
+                  "reason": "a search that rewords the one before it (streak 2)"
                 }
               }
             ],
-            "kind": "acquisition_with_progress",
-            "reason": "navigate: the settled page state moved to a page this Run had not acquired",
+            "kind": "acquisition_without_progress",
+            "reason": "navigate: a search that rewords the one before it (streak 2)",
             "tags": {
               "inherited": false,
               "rejectedCheckpoints": 0,
@@ -3466,16 +3468,16 @@
                 "notices": [],
                 "search": {
                   "query": "Harrison longitude watch",
-                  "streak": 2
+                  "streak": 3
                 },
                 "progress": {
                   "made": false,
-                  "reason": "a search that rewords the one before it (streak 2)"
+                  "reason": "a search that rewords the one before it (streak 3)"
                 }
               }
             ],
             "kind": "acquisition_without_progress",
-            "reason": "navigate: a search that rewords the one before it (streak 2)",
+            "reason": "navigate: a search that rewords the one before it (streak 3)",
             "tags": {
               "inherited": false,
               "rejectedCheckpoints": 0,
@@ -4202,16 +4204,16 @@
         "orchestratorRounds": 26,
         "budgetedRounds": 24,
         "counts": {
-          "acquisition_with_progress": 13,
-          "acquisition_without_progress": 5,
+          "acquisition_with_progress": 12,
+          "acquisition_without_progress": 6,
           "collection": 0,
           "bookkeeping": 0,
           "failed_round": 6,
           "finalization": 2
         },
         "shares": {
-          "acquisition_with_progress": 0.542,
-          "acquisition_without_progress": 0.208,
+          "acquisition_with_progress": 0.5,
+          "acquisition_without_progress": 0.25,
           "collection": 0,
           "bookkeeping": 0,
           "failed_round": 0.25,
@@ -4220,7 +4222,10 @@
         "acceptedCheckpoints": 0,
         "rejectedCheckpoints": 0,
         "inheritedRounds": 0,
-        "mechanicalSearchRounds": 1,
+        "mechanicalSearchRounds": 3,
+        "searchLoopHeads": [
+          8
+        ],
         "walledRounds": 0,
         "latency": {
           "llmMs": 157331,
@@ -4249,7 +4254,7 @@
           "fact-11"
         ],
         "checksTotal": 17,
-        "digestHash": "sha256:192e5ef405beb7544ce059601b74f4a68c7dc41197a00204ebae160c196d3101"
+        "digestHash": "sha256:91e106f8fd88d660086dbe31ec510e43019eb2aeeb3103f512a909f3ed0f2cb3"
       },
       "review": {
         "judgement": {
@@ -4262,135 +4267,120 @@
                 13,
                 15
               ],
-              "reason": "Every one of these rewords a single intent: find the Harrison watch record in the RMG collection. Round 8 is a Bing site search; rounds 9 and 10 run the same query on two RMG search paths. Round 13 types a reworded query into the listing's search box and round 15 narrows it to one name. The scrolls in rounds 11 and 14 are reads of the results and do not break the loop. The app counted rounds 9 and 15 as fresh streaks only because the engine or path changed."
+              "reason": "Every one of these rounds tries to find the same catalogue record by searching for Harrison's watch. Round 8 searches Bing; rounds 9 and 10 run the identical query on two RMG search URLs; round 13 retypes a reworded query into the site's box; round 15 narrows it to the maker's name. Reads between them (the scrolls in rounds 11 and 14) and the refused round 12 do not break the loop."
             }
           ],
           "offKey": [
             {
               "round": 1,
               "url": "https://www.rmg.co.uk/collections/objects",
-              "reason": "A generic collection listing page, not an object record, so it cannot carry any required fact."
+              "reason": "This is the unfiltered collection landing page. It lists no particular object, so it cannot hold any fact about the watch or its case."
             },
             {
               "round": 4,
               "url": "https://www.rmg.co.uk/collections/objects",
-              "reason": "The same generic listing. The click changed the page state but stayed on a listing that cannot carry any required fact."
+              "reason": "The click changed the unfiltered results listing, but the page still names no watch or case record."
             },
             {
               "round": 8,
               "url": "https://www.bing.com/search?q=site%3Armg.co.uk+collections+Harrison+longitude+watch",
-              "reason": "A search engine results page. It can point to a record but cannot itself carry a catalogue field."
-            },
-            {
-              "round": 9,
-              "url": "https://www.rmg.co.uk/collections/search?q=Harrison+longitude+watch",
-              "reason": "An on-site search results page, not the watch or case record."
+              "reason": "A search engine results page. It is not a catalogue record and cannot hold catalogue fields."
             },
             {
               "round": 11,
               "url": "https://www.rmg.co.uk/collections/object?q=Harrison+longitude+watch",
-              "reason": "A scroll on a results listing. The new material was unrelated objects (hull models, house flags), so it is the right site but the wrong subject."
+              "reason": "The scroll showed results for unrelated objects (a hull model, a house flag). This is the right site but the wrong subject, and the page is not a record."
             },
             {
               "round": 13,
               "url": "https://www.rmg.co.uk/collections/object?q=Harrison+longitude+watch",
-              "reason": "Text typed into a results listing. The page stayed a listing, not a record."
+              "reason": "Text typed into the search box on the same unrelated results listing. No record page was reached."
             },
             {
               "round": 14,
               "url": "https://www.rmg.co.uk/collections/object?q=Harrison+longitude+watch",
-              "reason": "A scroll on the same listing that again showed unrelated objects."
+              "reason": "The same unrelated results (hull model, house flag) came back into view. No record for the watch or case."
             },
             {
               "round": 15,
               "url": "https://www.rmg.co.uk/collections/object?q=%22Harrison%22&filter=date",
-              "reason": "A filtered results listing, which cannot carry the record fields."
+              "reason": "A collection results listing, not the watch record (S1) or the case record (S2)."
             },
             {
               "round": 16,
               "url": "https://duckduckgo.com/?q=rmg.co.uk+collections+Harrison+H4+longitude+timekeeper+rmgc-object&ia=web",
-              "reason": "A search engine results page. It surfaced the record URL, but a results page cannot carry the required record fields."
+              "reason": "A search engine results page. It pointed to S1 but cannot itself hold the catalogue fields."
             }
           ],
           "overrules": [
             {
-              "round": 9,
+              "round": 14,
               "kind": "acquisition_without_progress",
-              "reason": "It rewords the round 8 search on a different engine, so it is a member of the rounds 8 to 15 Search Loop."
-            },
-            {
-              "round": 13,
-              "kind": "acquisition_without_progress",
-              "reason": "It types a reworded query into the same results listing. That is a loop member, not progress, even though the page signature changed."
-            },
-            {
-              "round": 15,
-              "kind": "acquisition_without_progress",
-              "reason": "It narrows the same search intent again on the RMG listing, so it is a loop member."
+              "reason": "The scroll brought back the same results already seen in round 11 (the rmgc-object-548960 hull model, the house flag). The typing in round 13 was never submitted, so this repeats an observation of an unchanged listing."
             },
             {
               "round": 24,
               "kind": "acquisition_without_progress",
-              "reason": "It navigates to the record already acquired in round 17 with only a meaningless page parameter added. The title and page are unchanged, so this repeats an acquired page."
+              "reason": "Adding ?page=2 to the object record just reloaded the same H4 record (same title), which round 23 had already read in full. Nothing new came in; only the URL string was new."
             }
           ],
           "stoppedEarly": {
             "value": false,
-            "reason": "The Run used all 24 of 24 Tool Rounds and ended on budget exhaustion. The case record (S2) had never been found on any page it held, so it did not stop early."
+            "reason": "The Run used all 24 of its 24 budgeted Tool Rounds and ended on budget_exhausted. It did not stop with budget left."
           },
           "verdict": {
             "primary": "rounds_wasted",
-            "primaryReason": "Rounds 1 to 16 never reached a record page. Nine of them (1, 4, 8, 9, 11, 13, 14, 15, 16) were off-key listings or results pages, and rounds 8 to 15 formed one Search Loop. With rounds 3, 6, 10, 19 and 21 already labelled without progress and rounds 9, 13, 15 and 24 overruled, 9 of 24 rounds (38%) made no progress. Only rounds 17, 18 and 23, about 3 of 24 (13%), were on-key and productive. The watch record (S1) arrived at round 17 with 7 rounds left, which was too late to also reach the case record (S2) that fact-08, fact-10 and fact-11 need.",
+            "primaryReason": "Only rounds 17, 18 and 23 did productive work on a page that could hold required facts (S1), about 3 of 24 rounds. Rounds 1–16 went on landing pages, results listings and search engine pages: 8 Off-key rounds, the search loop 8/9/10/13/15, and repeated typing (rounds 3 and 6), plus a repeat listing (round 14, overruled) and a duplicate reload of S1 (round 24, overruled). With the overrules, 8 of 24 rounds made no progress. Because S1 was reached only at round 17, the budget ran out before any path to the case record S2 was found, so fact-08, fact-10 and fact-11 were never reached, and fact-03 and fact-05 went unreported from S1.",
             "secondary": "failed_rounds",
-            "secondaryReason": "Six of 24 rounds (25%) failed: 2, 5, 7, 12, 20 and 22. The refusals in rounds 2, 5 and 7 blocked the on-site search box and pushed the Run toward outside search engines. The Look refusals in rounds 20 and 22 on S1 cost two of the last seven rounds before the round 23 read_page."
+            "secondaryReason": "6 of 24 rounds (25%) failed with every call refused: rounds 2, 5, 7 and 12 in the search phase, and rounds 20 and 22 on S1 itself. Together with the illegible Look in round 19, these used up most of the rounds left after S1 was reached, when the creator and dial diameter still needed reading."
           },
           "flags": [
             {
               "round": 16,
-              "question": "Should round 16 join the rounds 8 to 15 Search Loop? It serves the same intent, but it was the search that surfaced the record URL, so I left it out."
+              "question": "Round 16 has the same intent as the loop, but its results page led straight to S1 in round 17. Should it count as a loop member and Off-key, or as the round that broke the loop?"
             },
             {
-              "round": 16,
-              "question": "Is round 16 really off-key? A search engine results page cannot carry record fields, yet this one was the step that led to S1."
+              "round": 3,
+              "question": "Rounds 3 and 6 typed the same query into the site search box before the URL searches began. Should they open the search loop in rounds 8–15?"
             },
             {
-              "round": 24,
-              "question": "Is round 24 a repeat of the round 17 page or new material? A different URL parameter might return a different page state."
+              "round": 13,
+              "question": "Round 13 typed a reworded query that was apparently never submitted. Is it a search loop member, an Acquisition without Progress, or rightly left as with Progress?"
             },
             {
               "round": 18,
-              "question": "Should round 18 count as without progress? The scroll on S1 brought only a cookie settings button into view."
+              "question": "On S1, round 18's scroll showed only a cookie-settings button. Did it really bring in new material, or should it be an Acquisition without Progress?"
             },
             {
-              "round": 4,
-              "question": "Is round 4 off-key? It may have dismissed an overlay needed to use the search box rather than acquiring anything."
+              "round": 24,
+              "question": "Is ?page=2 on the object record really the same page as S1 (the overrule assumes so), or could it have shown different content such as the linked part?"
             },
             {
               "round": null,
-              "question": "Is failed_rounds the right secondary? At 25% of the budget, including the refusals in rounds 2, 5 and 7 that blocked on-site search, a reviewer could weigh it close to rounds_wasted as the primary cause."
+              "question": "Is failed_rounds the better primary verdict? Two of the six refused rounds (20 and 22) came during the only on-key phase and may have directly cost fact-03 and fact-05."
             }
           ]
         },
         "caveats": [
-          "flag (round 16): Should round 16 join the rounds 8 to 15 Search Loop? It serves the same intent, but it was the search that surfaced the record URL, so I left it out.",
-          "flag (round 16): Is round 16 really off-key? A search engine results page cannot carry record fields, yet this one was the step that led to S1.",
-          "flag (round 24): Is round 24 a repeat of the round 17 page or new material? A different URL parameter might return a different page state.",
-          "flag (round 18): Should round 18 count as without progress? The scroll on S1 brought only a cookie settings button into view.",
-          "flag (round 4): Is round 4 off-key? It may have dismissed an overlay needed to use the search box rather than acquiring anything.",
-          "flag: Is failed_rounds the right secondary? At 25% of the budget, including the refusals in rounds 2, 5 and 7 that blocked on-site search, a reviewer could weigh it close to rounds_wasted as the primary cause."
+          "flag (round 16): Round 16 has the same intent as the loop, but its results page led straight to S1 in round 17. Should it count as a loop member and Off-key, or as the round that broke the loop?",
+          "flag (round 3): Rounds 3 and 6 typed the same query into the site search box before the URL searches began. Should they open the search loop in rounds 8–15?",
+          "flag (round 13): Round 13 typed a reworded query that was apparently never submitted. Is it a search loop member, an Acquisition without Progress, or rightly left as with Progress?",
+          "flag (round 18): On S1, round 18's scroll showed only a cookie-settings button. Did it really bring in new material, or should it be an Acquisition without Progress?",
+          "flag (round 24): Is ?page=2 on the object record really the same page as S1 (the overrule assumes so), or could it have shown different content such as the linked part?",
+          "flag: Is failed_rounds the better primary verdict? Two of the six refused rounds (20 and 22) came during the only on-key phase and may have directly cost fact-03 and fact-05."
         ],
         "model": "claude-opus-5",
         "served": "claude-opus-5",
         "effort": "high",
         "promptVersion": "audit-p1",
-        "digestHash": "sha256:192e5ef405beb7544ce059601b74f4a68c7dc41197a00204ebae160c196d3101",
-        "costUsd": 0.31,
-        "durationMs": 73233,
-        "judgedAt": "2026-09-13T01:54:00.084Z"
+        "digestHash": "sha256:91e106f8fd88d660086dbe31ec510e43019eb2aeeb3103f512a909f3ed0f2cb3",
+        "costUsd": 0.21,
+        "durationMs": 47187,
+        "judgedAt": "2026-09-13T22:09:58.173Z"
       },
       "countsAfterOverrules": {
-        "acquisition_with_progress": 9,
-        "acquisition_without_progress": 9,
+        "acquisition_with_progress": 10,
+        "acquisition_without_progress": 8,
         "collection": 0,
         "bookkeeping": 0,
         "failed_round": 6,
@@ -5243,6 +5233,7 @@
         "rejectedCheckpoints": 0,
         "inheritedRounds": 0,
         "mechanicalSearchRounds": 0,
+        "searchLoopHeads": [],
         "walledRounds": 0,
         "latency": {
           "llmMs": 294145,
@@ -6084,6 +6075,7 @@
         "rejectedCheckpoints": 0,
         "inheritedRounds": 1,
         "mechanicalSearchRounds": 0,
+        "searchLoopHeads": [],
         "walledRounds": 0,
         "latency": {
           "llmMs": 116385,
@@ -6309,6 +6301,7 @@
         "rejectedCheckpoints": 0,
         "inheritedRounds": 0,
         "mechanicalSearchRounds": 0,
+        "searchLoopHeads": [],
         "walledRounds": 0,
         "latency": {
           "llmMs": 368430,
@@ -6399,24 +6392,24 @@
       "budgetedRounds": 64,
       "toolRoundsUsed": 63,
       "counts": {
-        "acquisition_with_progress": 40,
-        "acquisition_without_progress": 8,
+        "acquisition_with_progress": 39,
+        "acquisition_without_progress": 9,
         "collection": 1,
         "bookkeeping": 8,
         "failed_round": 7,
         "finalization": 7
       },
       "countsAfterOverrules": {
-        "acquisition_with_progress": 32,
-        "acquisition_without_progress": 16,
+        "acquisition_with_progress": 33,
+        "acquisition_without_progress": 15,
         "collection": 1,
         "bookkeeping": 8,
         "failed_round": 7,
         "finalization": 7
       },
       "shares": {
-        "acquisition_with_progress": 0.625,
-        "acquisition_without_progress": 0.125,
+        "acquisition_with_progress": 0.609,
+        "acquisition_without_progress": 0.141,
         "collection": 0.016,
         "bookkeeping": 0.125,
         "failed_round": 0.109,
@@ -6436,15 +6429,15 @@
         "stopped_early": 0,
         "failed_rounds": 1
       },
-      "offKeyRounds": 15,
+      "offKeyRounds": 14,
       "searchLoopRounds": 5,
-      "mechanicalSearchRounds": 1,
+      "mechanicalSearchRounds": 3,
       "inheritedRounds": 0,
       "rejectedCheckpoints": 3,
       "walledRounds": 0,
       "subagentRounds": 13,
       "stoppedEarly": 1,
-      "overrules": 8,
+      "overrules": 6,
       "flags": 20,
       "finalizationCauses": {
         "budget_exhausted": 2,

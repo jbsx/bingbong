@@ -1,13 +1,13 @@
 # Round Audit — bingbong.live-web.information-hunts (baseline-3)
 
-Generated 2026-09-13T03:58:10.286Z from a capture set created 2026-09-12T18:57:29.347Z (state complete). This audit counts and does not judge: every verdict is the reviewer’s for one attempt, and the ranking is arithmetic over those verdicts.
+Generated 2026-09-13T22:10:41.876Z from a capture set created 2026-09-12T18:57:29.347Z (state complete). This audit counts and does not judge: every verdict is the reviewer’s for one attempt, and the ranking is arithmetic over those verdicts.
 
 ## Provenance
 
 - capture: commit(s) 59bdf48b (dirty tree); mode measured; protocol 1; prompt version(s) 1
 - routing: orchestrator=GLM-5.3; subagent=GLM-5.3-flash; vision=GLM-4.6V | reasoning override: none | effort overrides: none | adblock: production_default
 - key 2.2.2.2, manifest sha256:faa25d04…; grades by claude-opus-5 via live:grade (revision 1)
-- reviewer: claude-opus-5 at high, prompt audit-p1; audit run at commit 7501742a (dirty tree)
+- reviewer: claude-opus-5 at high, prompt audit-p1; audit run at commit 182d4d68 (dirty tree)
 
 ## Populations
 
@@ -15,7 +15,7 @@ Kinds are mechanical counts; a share is over the budgeted rounds (Finalization o
 
 | population | attempts | judged | rounds | budgeted | tool rounds used | at budget | Acquisition with Progress | Acquisition without Progress | Collection | Bookkeeping | Failed round | Finalization |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| initial | 4 | 4 | 71 | 64 | 63 | 2 | 40 (63%) → 32 | 8 (13%) → 16 | 1 (2%) | 8 (13%) | 7 (11%) | 7 (10%) |
+| initial | 4 | 4 | 71 | 64 | 63 | 2 | 39 (61%) → 33 | 9 (14%) → 15 | 1 (2%) | 8 (13%) | 7 (11%) | 7 (10%) |
 | follow_up | 2 | 2 | 40 | 36 | 36 | 2 | 23 (64%) → 20 | 4 (11%) → 7 | 1 (3%) | 5 (14%) | 3 (8%) | 4 (10%) |
 
 | verdict | initial primary | initial secondary | follow_up primary | follow_up secondary |
@@ -26,7 +26,7 @@ Kinds are mechanical counts; a share is over the budgeted rounds (Finalization o
 | stopped early | 1 | 0 | 0 | 0 |
 | failed rounds | 1 | 1 | 0 | 1 |
 
-- initial: 15 Off-key round(s), 5 Search Loop round(s) by the reviewer (1 by the streak rule), 0 inherited, 3 rejected Evidence Checkpoint(s), 0 walled round(s), 13 Subagent round(s), 1 stopped early, 8 overrule(s), 20 flag(s); Finalization Causes: budget_exhausted 2, deadline_reached 1, objective_met 1
+- initial: 14 Off-key round(s), 5 Search Loop round(s) by the reviewer (3 by the streak rule), 0 inherited, 3 rejected Evidence Checkpoint(s), 0 walled round(s), 13 Subagent round(s), 1 stopped early, 6 overrule(s), 20 flag(s); Finalization Causes: budget_exhausted 2, deadline_reached 1, objective_met 1
 - follow_up: 1 Off-key round(s), 0 Search Loop round(s) by the reviewer (0 by the streak rule), 2 inherited, 3 rejected Evidence Checkpoint(s), 0 walled round(s), 13 Subagent round(s), 0 stopped early, 3 overrule(s), 10 flag(s); Finalization Causes: budget_exhausted 2
 
 ## Tool rounds
@@ -153,31 +153,28 @@ The rounds outside Finalization that called each tool — a round counts once pe
 - answered; ended done / partial (budget_exhausted); tier investigation; 24 of 24 Tool Rounds used; 26 orchestrator rounds, 2 in Finalization; Run duration 186557 ms; LLM stage 157331 ms over 26 joined round(s)
 - grade useful_partial; checks not reached: fact-03, fact-05, fact-08, fact-10, fact-11 (5 of 17)
 - 0 Subagent round(s) over 0 Subagent(s); 0 accepted and 0 rejected Evidence Checkpoint(s); 0 inherited round(s); 0 walled round(s)
-- kinds: Acquisition with Progress 13 (54%) · Acquisition without Progress 5 (21%) · Collection 0 (0%) · Bookkeeping 0 (0%) · Failed round 6 (25%) · Finalization 2 (8%)
-- **verdict: rounds wasted** — Rounds 1 to 16 never reached a record page. Nine of them (1, 4, 8, 9, 11, 13, 14, 15, 16) were off-key listings or results pages, and rounds 8 to 15 formed one Search Loop. With rounds 3, 6, 10, 19 and 21 already labelled without progress and rounds 9, 13, 15 and 24 overruled, 9 of 24 rounds (38%) made no progress. Only rounds 17, 18 and 23, about 3 of 24 (13%), were on-key and productive. The watch record (S1) arrived at round 17 with 7 rounds left, which was too late to also reach the case record (S2) that fact-08, fact-10 and fact-11 need.
-- secondary: failed rounds — Six of 24 rounds (25%) failed: 2, 5, 7, 12, 20 and 22. The refusals in rounds 2, 5 and 7 blocked the on-site search box and pushed the Run toward outside search engines. The Look refusals in rounds 20 and 22 on S1 cost two of the last seven rounds before the round 23 read_page.
-- stopped early: no — The Run used all 24 of 24 Tool Rounds and ended on budget exhaustion. The case record (S2) had never been found on any page it held, so it did not stop early.
-- Search Loop over rounds 8, 9, 10, 13, 15: Every one of these rewords a single intent: find the Harrison watch record in the RMG collection. Round 8 is a Bing site search; rounds 9 and 10 run the same query on two RMG search paths. Round 13 types a reworded query into the listing's search box and round 15 narrows it to one name. The scrolls in rounds 11 and 14 are reads of the results and do not break the loop. The app counted rounds 9 and 15 as fresh streaks only because the engine or path changed.
-- Off-key round 1 (https://www.rmg.co.uk/collections/objects): A generic collection listing page, not an object record, so it cannot carry any required fact.
-- Off-key round 4 (https://www.rmg.co.uk/collections/objects): The same generic listing. The click changed the page state but stayed on a listing that cannot carry any required fact.
-- Off-key round 8 (https://www.bing.com/search?q=site%3Armg.co.uk+collections+Harrison+longitude+watch): A search engine results page. It can point to a record but cannot itself carry a catalogue field.
-- Off-key round 9 (https://www.rmg.co.uk/collections/search?q=Harrison+longitude+watch): An on-site search results page, not the watch or case record.
-- Off-key round 11 (https://www.rmg.co.uk/collections/object?q=Harrison+longitude+watch): A scroll on a results listing. The new material was unrelated objects (hull models, house flags), so it is the right site but the wrong subject.
-- Off-key round 13 (https://www.rmg.co.uk/collections/object?q=Harrison+longitude+watch): Text typed into a results listing. The page stayed a listing, not a record.
-- Off-key round 14 (https://www.rmg.co.uk/collections/object?q=Harrison+longitude+watch): A scroll on the same listing that again showed unrelated objects.
-- Off-key round 15 (https://www.rmg.co.uk/collections/object?q=%22Harrison%22&filter=date): A filtered results listing, which cannot carry the record fields.
-- Off-key round 16 (https://duckduckgo.com/?q=rmg.co.uk+collections+Harrison+H4+longitude+timekeeper+rmgc-object&ia=web): A search engine results page. It surfaced the record URL, but a results page cannot carry the required record fields.
-- overrule round 9 → Acquisition without Progress: It rewords the round 8 search on a different engine, so it is a member of the rounds 8 to 15 Search Loop.
-- overrule round 13 → Acquisition without Progress: It types a reworded query into the same results listing. That is a loop member, not progress, even though the page signature changed.
-- overrule round 15 → Acquisition without Progress: It narrows the same search intent again on the RMG listing, so it is a loop member.
-- overrule round 24 → Acquisition without Progress: It navigates to the record already acquired in round 17 with only a meaningless page parameter added. The title and page are unchanged, so this repeats an acquired page.
-- flag (round 16): Should round 16 join the rounds 8 to 15 Search Loop? It serves the same intent, but it was the search that surfaced the record URL, so I left it out.
-- flag (round 16): Is round 16 really off-key? A search engine results page cannot carry record fields, yet this one was the step that led to S1.
-- flag (round 24): Is round 24 a repeat of the round 17 page or new material? A different URL parameter might return a different page state.
-- flag (round 18): Should round 18 count as without progress? The scroll on S1 brought only a cookie settings button into view.
-- flag (round 4): Is round 4 off-key? It may have dismissed an overlay needed to use the search box rather than acquiring anything.
-- flag: Is failed_rounds the right secondary? At 25% of the budget, including the refusals in rounds 2, 5 and 7 that blocked on-site search, a reviewer could weigh it close to rounds_wasted as the primary cause.
-- reviewer claude-opus-5 at high, prompt audit-p1, digest sha256:192e5ef4…, $0.31
+- kinds: Acquisition with Progress 12 (50%) · Acquisition without Progress 6 (25%) · Collection 0 (0%) · Bookkeeping 0 (0%) · Failed round 6 (25%) · Finalization 2 (8%)
+- **verdict: rounds wasted** — Only rounds 17, 18 and 23 did productive work on a page that could hold required facts (S1), about 3 of 24 rounds. Rounds 1–16 went on landing pages, results listings and search engine pages: 8 Off-key rounds, the search loop 8/9/10/13/15, and repeated typing (rounds 3 and 6), plus a repeat listing (round 14, overruled) and a duplicate reload of S1 (round 24, overruled). With the overrules, 8 of 24 rounds made no progress. Because S1 was reached only at round 17, the budget ran out before any path to the case record S2 was found, so fact-08, fact-10 and fact-11 were never reached, and fact-03 and fact-05 went unreported from S1.
+- secondary: failed rounds — 6 of 24 rounds (25%) failed with every call refused: rounds 2, 5, 7 and 12 in the search phase, and rounds 20 and 22 on S1 itself. Together with the illegible Look in round 19, these used up most of the rounds left after S1 was reached, when the creator and dial diameter still needed reading.
+- stopped early: no — The Run used all 24 of its 24 budgeted Tool Rounds and ended on budget_exhausted. It did not stop with budget left.
+- Search Loop over rounds 8, 9, 10, 13, 15: Every one of these rounds tries to find the same catalogue record by searching for Harrison's watch. Round 8 searches Bing; rounds 9 and 10 run the identical query on two RMG search URLs; round 13 retypes a reworded query into the site's box; round 15 narrows it to the maker's name. Reads between them (the scrolls in rounds 11 and 14) and the refused round 12 do not break the loop.
+- Off-key round 1 (https://www.rmg.co.uk/collections/objects): This is the unfiltered collection landing page. It lists no particular object, so it cannot hold any fact about the watch or its case.
+- Off-key round 4 (https://www.rmg.co.uk/collections/objects): The click changed the unfiltered results listing, but the page still names no watch or case record.
+- Off-key round 8 (https://www.bing.com/search?q=site%3Armg.co.uk+collections+Harrison+longitude+watch): A search engine results page. It is not a catalogue record and cannot hold catalogue fields.
+- Off-key round 11 (https://www.rmg.co.uk/collections/object?q=Harrison+longitude+watch): The scroll showed results for unrelated objects (a hull model, a house flag). This is the right site but the wrong subject, and the page is not a record.
+- Off-key round 13 (https://www.rmg.co.uk/collections/object?q=Harrison+longitude+watch): Text typed into the search box on the same unrelated results listing. No record page was reached.
+- Off-key round 14 (https://www.rmg.co.uk/collections/object?q=Harrison+longitude+watch): The same unrelated results (hull model, house flag) came back into view. No record for the watch or case.
+- Off-key round 15 (https://www.rmg.co.uk/collections/object?q=%22Harrison%22&filter=date): A collection results listing, not the watch record (S1) or the case record (S2).
+- Off-key round 16 (https://duckduckgo.com/?q=rmg.co.uk+collections+Harrison+H4+longitude+timekeeper+rmgc-object&ia=web): A search engine results page. It pointed to S1 but cannot itself hold the catalogue fields.
+- overrule round 14 → Acquisition without Progress: The scroll brought back the same results already seen in round 11 (the rmgc-object-548960 hull model, the house flag). The typing in round 13 was never submitted, so this repeats an observation of an unchanged listing.
+- overrule round 24 → Acquisition without Progress: Adding ?page=2 to the object record just reloaded the same H4 record (same title), which round 23 had already read in full. Nothing new came in; only the URL string was new.
+- flag (round 16): Round 16 has the same intent as the loop, but its results page led straight to S1 in round 17. Should it count as a loop member and Off-key, or as the round that broke the loop?
+- flag (round 3): Rounds 3 and 6 typed the same query into the site search box before the URL searches began. Should they open the search loop in rounds 8–15?
+- flag (round 13): Round 13 typed a reworded query that was apparently never submitted. Is it a search loop member, an Acquisition without Progress, or rightly left as with Progress?
+- flag (round 18): On S1, round 18's scroll showed only a cookie-settings button. Did it really bring in new material, or should it be an Acquisition without Progress?
+- flag (round 24): Is ?page=2 on the object record really the same page as S1 (the overrule assumes so), or could it have shown different content such as the linked part?
+- flag: Is failed_rounds the better primary verdict? Two of the six refused rounds (20 and 22) came during the only on-key phase and may have directly cost fact-03 and fact-05.
+- reviewer claude-opus-5 at high, prompt audit-p1, digest sha256:91e106f8…, $0.21
 
 | round | kind | tools | page | ms | note |
 | --- | --- | --- | --- | --- | --- |
@@ -188,14 +185,14 @@ The rounds outside Finalization that called each tool — a round counts once pe
 | 5 | Failed round | type ✗ | https://www.rmg.co.uk/collections/objects | 1366 | every call was refused (type) |
 | 6 | Acquisition without Progress | type | https://www.rmg.co.uk/collections/objects | 2619 | type: the app’s own no-progress Notice rode the result |
 | 7 | Failed round | click ✗ | https://www.rmg.co.uk/collections/objects | 1360 | every call was refused (click) |
-| 8 | Acquisition with Progress | navigate | https://www.bing.com/search?q=site%3Armg.co.uk+collections+Harrison+longitude+wa… | 6767 | navigate: the settled page state moved to a page this Run had not acquired [off-key, search loop] |
-| 9 | Acquisition with Progress → Acquisition without Progress | navigate | https://www.rmg.co.uk/collections/search?q=Harrison+longitude+watch | 6525 | navigate: the settled page state moved to a page this Run had not acquired [off-key, search loop] |
-| 10 | Acquisition without Progress | navigate | https://www.rmg.co.uk/collections/object?q=Harrison+longitude+watch | 5623 | navigate: a search that rewords the one before it (streak 2) [search loop] |
+| 8 | Acquisition with Progress | navigate | https://www.bing.com/search?q=site%3Armg.co.uk+collections+Harrison+longitude+wa… | 6767 | navigate: the settled page state moved to a page this Run had not acquired [off-key, search loop, loop head by the streak rule] |
+| 9 | Acquisition without Progress | navigate | https://www.rmg.co.uk/collections/search?q=Harrison+longitude+watch | 6525 | navigate: a search that rewords the one before it (streak 2) [search loop] |
+| 10 | Acquisition without Progress | navigate | https://www.rmg.co.uk/collections/object?q=Harrison+longitude+watch | 5623 | navigate: a search that rewords the one before it (streak 3) [search loop] |
 | 11 | Acquisition with Progress | scroll | https://www.rmg.co.uk/collections/object?q=Harrison+longitude+watch | 6719 | scroll: the scroll brought new material into view [off-key] |
 | 12 | Failed round | type ✗ | https://www.rmg.co.uk/collections/object?q=Harrison+longitude+watch | 9389 | every call was refused (type) |
-| 13 | Acquisition with Progress → Acquisition without Progress | type | https://www.rmg.co.uk/collections/object?q=Harrison+longitude+watch | 1961 | type: a requested state change (text entered or an option selected) [off-key, search loop] |
-| 14 | Acquisition with Progress | scroll | https://www.rmg.co.uk/collections/object?q=Harrison+longitude+watch | 3584 | scroll: the scroll brought new material into view [off-key] |
-| 15 | Acquisition with Progress → Acquisition without Progress | navigate | https://www.rmg.co.uk/collections/object?q=%22Harrison%22&filter=date | 1478 | navigate: the settled page state moved to a page this Run had not acquired [off-key, search loop] |
+| 13 | Acquisition with Progress | type | https://www.rmg.co.uk/collections/object?q=Harrison+longitude+watch | 1961 | type: a requested state change (text entered or an option selected) [off-key, search loop] |
+| 14 | Acquisition with Progress → Acquisition without Progress | scroll | https://www.rmg.co.uk/collections/object?q=Harrison+longitude+watch | 3584 | scroll: the scroll brought new material into view [off-key] |
+| 15 | Acquisition with Progress | navigate | https://www.rmg.co.uk/collections/object?q=%22Harrison%22&filter=date | 1478 | navigate: the settled page state moved to a page this Run had not acquired [off-key, search loop] |
 | 16 | Acquisition with Progress | navigate | https://duckduckgo.com/?q=rmg.co.uk+collections+Harrison+H4+longitude+timekeeper… | 7270 | navigate: the settled page state moved to a page this Run had not acquired [off-key] |
 | 17 | Acquisition with Progress | navigate | https://www.rmg.co.uk/collections/objects/rmgc-object-79142 | 3265 | navigate: the settled page state moved to a page this Run had not acquired |
 | 18 | Acquisition with Progress | scroll | https://www.rmg.co.uk/collections/objects/rmgc-object-79142 | 3191 | scroll: the scroll brought new material into view |
