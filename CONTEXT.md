@@ -582,16 +582,30 @@ Memory Compaction and never invokes a summarization model.
 _Avoid_: Memory Compaction, compact command
 
 **Search Loop**:
-A run flailing blind — consecutive searches rewording one intent. Reads
-between searches do not break it (reading is inspection, not escape);
-only escape breaks it — opening a result, or any successful tool call other
-than a page read. That rule is this rail's own and independent of Progress:
-a first page read of a search result page is neutral to the Approach
-accounting, and still no escape. One search observation is the visible search
-signature: a navigate to a q=-carrying search URL (plain search terms
-normalize to exactly that) or text typed into a search input. Similar searches
-remain one Approach and follow the Run's no-progress Notice and refusal policy.
+A run flailing blind — consecutive searches rewording one Search Intent.
+Inspection between searches does not break it: a page read, a Look, or a
+scroll looks at what the search returned and is not escape. Only escape
+breaks it — opening a result, or any other successful tool call. That rule is
+this rail's own and independent of Progress: a first page read of a search
+result page is neutral to the Approach accounting, and still no escape. One
+search observation is the visible search signature: a navigate to a
+q=-carrying search URL (plain search terms normalize to exactly that) or text
+typed into a search input, whatever engine or site the search ran on. Similar
+searches remain one Approach and follow the Run's no-progress Notice and
+refusal policy.
 _Avoid_: search spam, retry storm
+
+**Search Intent**:
+What a search asks for: its terms, with the scope it was pointed at removed.
+Scope is a search operator (`site:`, `intitle:`, `filetype:`), an engine's
+connective (`OR`), or a bare hostname given as a term; quotation marks are
+emphasis, and the words inside them stay. Two searches with similar Search
+Intent reword one intent whatever surface ran them — a web engine, a
+different engine, or the site's own search box. A search that is nothing but
+scope keeps the scope as its intent, so that it still counts as a search.
+Narrowing to a subset of the terms is a different Search Intent by this
+definition, a known loss.
+_Avoid_: query, search terms, keywords
 
 **Boot State**:
 Bing Bong starts with no Session and renders no entries from any earlier launch.
