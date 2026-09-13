@@ -308,8 +308,9 @@ export function createToolRoundExecutor(config: ToolRoundConfig): ToolRoundExecu
    * The calls that actually reached `tool.execute` this round (#212, ADR
    * 0041). Only these can have spent a verification route: every gate
    * ahead of execution — Finalization, the no-progress rails, the risk
-   * tiers, the Vision Budget, the verification rail itself, a Steering
-   * cancel — returns a failed outcome carrying *our* sentence, and
+   * tiers, the verification rail itself, a tool's admission step (#236),
+   * the Vision Budget, a Steering cancel — returns a failed outcome
+   * carrying *our* sentence, and
    * counting one would both close the route on a request nobody made and
    * hand the next Run our own words as what the route reported.
    */
@@ -425,6 +426,16 @@ export function createToolRoundExecutor(config: ToolRoundConfig): ToolRoundExecu
         reportFault('pipeline.toolRound.verificationGate', error, { turnId })
       }
       if (!verificationGate.ok) return { ok: false, error: verificationGate.reason }
+    }
+
+    // The admission step (#236, ADR 0046): a call whose arguments name
+    // nothing the tool can do is refused in the tool's own words. After the
+    // rails and the risk gate, which still see a repeated mistake; before
+    // the Vision Budget and the attempted mark, so a malformed Look spends
+    // neither the budget nor the verification route.
+    if (tool.admit) {
+      const admission = tool.admit(call.args)
+      if (!admission.ok) return { ok: false, error: admission.reason }
     }
 
     if (tool.usesVision) {

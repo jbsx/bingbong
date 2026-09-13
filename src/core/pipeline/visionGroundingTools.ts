@@ -9,9 +9,11 @@ import {
   LOOK_REGION_FORMAT,
   LOOK_REGION_MAX_SCALE,
   lookCropOf,
-  parseLookRegion,
+  readLookRegion,
   screenshotOptionsOf,
   type LookCrop,
+  type LookRegion,
+  type LookRegionClamp,
 } from './lookRegion'
 import { traceVisionBudget, visionSeam } from './visionSeam'
 
@@ -39,17 +41,57 @@ function questionedPrompt(question: string, crop: LookCrop | undefined): string 
   return lines.join('\n\n')
 }
 
+const REGION_NEEDS_QUESTION = "look: 'region' needs a 'question' to answer about that part of the page"
+
+/** A region Look's region: as the model wrote it, how the crop differs, and the crop it is shown. */
+interface AskedLookRegion {
+  written: LookRegion
+  clamp: LookRegionClamp
+  crop: LookCrop
+}
+
+/** `look`'s arguments as read, or the refusal they earn. */
+type LookArgs = { ok: true; question: string | undefined; region: AskedLookRegion | undefined } | { ok: false; reason: string }
+
+/**
+ * Reads `look`'s arguments — the one reader its admission step and its
+ * execute share (#236, ADR 0046), so the round refuses exactly what the
+ * tool would, ahead of the charge instead of inside the attempt.
+ */
+function readLookArgs(args: ToolCall['args']): LookArgs {
+  const rawQuestion = args.question
+  const question = typeof rawQuestion === 'string' && rawQuestion.trim() !== '' ? rawQuestion.trim() : undefined
+  const region = readLookRegion(args.region)
+  if (region.kind === 'refused') return { ok: false, reason: region.reason }
+  if (region.kind === 'none') return { ok: true, question, region: undefined }
+  if (question === undefined) return { ok: false, reason: REGION_NEEDS_QUESTION }
+  return { ok: true, question, region: { written: region.written, clamp: region.clamp, crop: lookCropOf(region.shown) } }
+}
+
+/** Why a clamped region was shown as something else, as the footer names it. */
+const CLAMP_REASON: Record<Exclude<LookRegionClamp, 'none'>, string> = {
+  clipped: 'the part inside the viewport',
+  shrunk: 'at most a quarter of the viewport',
+}
+
 /**
  * The one line a region Look's result ends with (#195): the region and the
  * magnification it got, and — while there is magnification left — that a
  * smaller region gets more. The #195 recapture chose bands of half the
  * viewport and more, which magnify 2x and read wrong; the probe read the
  * same row correctly at 3x. The model cannot know the scale it got unless
- * told, and this is the moment it decides whether to narrow.
+ * told, and this is the moment it decides whether to narrow. A clamped
+ * region (#236, ADR 0046) is named as written and as shown, here only:
+ * the vision model has no use for what was asked.
  */
-function regionFooter(crop: LookCrop): string {
+function regionFooter(region: AskedLookRegion): string {
+  const { crop } = region
   const more = crop.scale < LOOK_REGION_MAX_SCALE ? `; a smaller region is magnified more, up to ${LOOK_REGION_MAX_SCALE}x` : ''
-  return `[region ${formatLookRegion(crop.region)} shown at ${crop.scale}x${more}]`
+  const named =
+    region.clamp === 'none'
+      ? formatLookRegion(crop.region)
+      : `${formatLookRegion(region.written)} clamped to ${formatLookRegion(crop.region)} (${CLAMP_REASON[region.clamp]})`
+  return `[region ${named} shown at ${crop.scale}x${more}]`
 }
 
 function targetArg(call: ToolCall): string {
@@ -88,28 +130,39 @@ export function createLookTool(browser: BrowserController, vision: VisionDescrib
       region: {
         type: 'string',
         required: false,
-        description: `With a question: crop the screenshot to this part of the viewport and magnify it before answering — ${LOOK_REGION_FORMAT}. At most a quarter of the viewport; smaller regions are magnified more — a quarter gets 3x, a third by a third or less gets 4x. Aim at the target, not the whole area around it.`,
+        description: `With a question: crop the screenshot to this part of the viewport and magnify it before answering — ${LOOK_REGION_FORMAT}. At most a quarter of the viewport — a larger region is shrunk around its centre to a quarter; smaller regions are magnified more — a quarter gets 3x, a third by a third or less gets 4x. Aim at the target, not the whole area around it.`,
       },
     },
+    // The two refusals a Look still makes (#236, ADR 0046), ahead of the
+    // Vision Budget and the attempted mark: a malformed region is our
+    // sentence, not a failed Vision Attempt.
+    admit(args) {
+      const read = readLookArgs(args)
+      return read.ok ? { ok: true } : { ok: false, reason: read.reason }
+    },
     async execute(call, context: ToolContext) {
-      const rawQuestion = call.args.question
-      const question = typeof rawQuestion === 'string' && rawQuestion.trim() !== '' ? rawQuestion.trim() : undefined
-      const region = parseLookRegion(call.args.region)
-      if (region !== undefined && question === undefined) {
-        throw new Error("look: 'region' needs a 'question' to answer about that part of the page")
-      }
-      const crop = region === undefined ? undefined : lookCropOf(region)
+      const read = readLookArgs(call.args)
+      if (!read.ok) throw new Error(read.reason)
+      const { question, region } = read
+      const crop = region?.crop
       // The Look's own record (#186): the Vision Budget was already spent
       // by the round (`usesVision`), so this covers the request alone. A
       // region Look (#195) is the same one Look, bounded and magnified —
-      // the record keeps the region as the model wrote it and the scale.
+      // the record keeps the region as the model wrote it, the region it
+      // was shown (#236) and the scale.
       const answer = await tracedVisionRequest(
         visionSeam(context),
         {
           capability: 'describe',
           reason: 'look',
           ...(question !== undefined ? { question } : {}),
-          ...(crop !== undefined ? { region: formatLookRegion(crop.region), scale: crop.scale } : {}),
+          ...(region !== undefined
+            ? {
+                region: formatLookRegion(region.written),
+                regionShown: formatLookRegion(region.crop.region),
+                scale: region.crop.scale,
+              }
+            : {}),
         },
         async (observe) =>
           vision.describe({
@@ -120,7 +173,7 @@ export function createLookTool(browser: BrowserController, vision: VisionDescrib
           }),
         (answer) => answer,
       )
-      return crop === undefined ? answer : `${answer}\n\n${regionFooter(crop)}`
+      return region === undefined ? answer : `${answer}\n\n${regionFooter(region)}`
     },
   }
 }

@@ -154,6 +154,9 @@ export type RiskVerdict =
   | { kind: 'confirm'; prompt: string }
   | { kind: 'deny'; reason: string }
 
+/** What a tool's admission step decided about one call's arguments (#236, ADR 0046). */
+export type ToolAdmission = { ok: true } | { ok: false; reason: string }
+
 export interface Tool {
   name: string
   /** Each execution consumes one call from the per-task vision budget. */
@@ -191,6 +194,17 @@ export interface Tool {
    * A throwing assessment is treated as 'confirm' (fail closed).
    */
   assessRisk?(call: ToolCall): RiskVerdict | Promise<RiskVerdict>
+  /**
+   * An admission step over this call's arguments (#236, ADR 0046): refuses
+   * a call its arguments make impossible, in the words the model reads.
+   * The Tool Round runs it after the rails and the risk gate and before
+   * the Vision Budget charge and the mark that says the call was attempted,
+   * so a refusal here spends no budget and no verification route — unlike
+   * the same refusal thrown from execute, which is a failed attempt. It
+   * only refuses: execute still reads its own arguments. Absent means
+   * every call is admitted.
+   */
+  admit?(args: ToolCall['args']): ToolAdmission
   /**
    * Declares an interactive ask: instead of execute, the pipeline shows and
    * speaks the returned question, waits for the user's free-text answer

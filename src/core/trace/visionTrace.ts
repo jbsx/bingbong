@@ -56,7 +56,14 @@ export interface VisionRequestEvent {
    * whole-viewport capture.
    */
   readonly region?: string
-  /** The device pixels per CSS pixel that region was captured at; absent without a region. */
+  /**
+   * The part of the viewport that Look was shown (#236, ADR 0046): the
+   * region clipped to the viewport and shrunk to a quarter of it where it
+   * had to be, the same as `region` where it did not. Present exactly when
+   * `region` is.
+   */
+  readonly regionShown?: string
+  /** The device pixels per CSS pixel the shown region was captured at; absent without a region. */
   readonly scale?: number
   /** The caller's advisory whole-Look cap (#106); absent means the Look's own. */
   readonly capMs?: number
@@ -171,7 +178,7 @@ export function tracedAnswer(answer: string): { answer: string; answerChars: num
 /** What a request record says about the ask, before it settled. */
 export type VisionRequestDescriptor = Pick<
   VisionRequestEvent,
-  'capability' | 'reason' | 'target' | 'question' | 'region' | 'scale' | 'capMs'
+  'capability' | 'reason' | 'target' | 'question' | 'region' | 'regionShown' | 'scale' | 'capMs'
 >
 
 /**

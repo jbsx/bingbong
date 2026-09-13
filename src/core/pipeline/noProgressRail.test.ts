@@ -205,6 +205,17 @@ describe('no-progress rail — objective repetition (#126/AC1)', () => {
       ok: false,
     })
   })
+
+  it('treats two regions that clamp to one crop as the same Look (#236, ADR 0046)', async () => {
+    const rail = createNoProgressRail({ settledState: () => BASE })
+    const wholeViewport = call('look', { question: 'Which titles are in the top row?', region: '0,0,100,100' })
+
+    expect(await rail.gate(wholeViewport)).toEqual({ ok: true })
+    await rail.observe(wholeViewport, ok())
+    expect(await rail.gate(call('look', { question: 'Which titles are in the top row?', region: '25,25,50,50' }))).toMatchObject({
+      ok: false,
+    })
+  })
 })
 
 describe('no-progress rail — meaningful progression (#126/AC2)', () => {

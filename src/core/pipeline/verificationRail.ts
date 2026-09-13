@@ -110,7 +110,8 @@ export interface VerificationRail {
    *
    * `attempted` is what separates a route that answered badly from one
    * that was never asked. A call refused before it ran — by Finalization,
-   * the Vision Budget, the risk gate, a Steering cancel, this rail — is
+   * the Vision Budget, the risk gate, a Steering cancel, this rail, the
+   * tool's own admission step over its arguments (#236) — is
    * not an attempt, and its refusal text is ours rather than the route's.
    * Counting one would spend the route on our own sentence and then hand
    * that sentence to the next Run as what the provider said.

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { ToolCall, ToolResultOutcome } from '../ports/llm'
 import type { UnstampedEvent } from './events'
-import type { RiskVerdict, Tool } from './tool'
+import type { RiskVerdict, Tool, ToolAdmission } from './tool'
 import type { RunDecisions } from './decisions'
 import type { Directive, RunInterrupts } from './interrupts'
 import type { SettledPageState } from './progressFingerprints'
@@ -162,12 +162,26 @@ function harness(
 function scripted(
   name: string,
   trace: string[],
-  options: { result?: string | (() => string); assessRisk?: RiskVerdict; acquisition?: boolean; usesVision?: boolean } = {},
+  options: {
+    result?: string | (() => string)
+    assessRisk?: RiskVerdict
+    acquisition?: boolean
+    usesVision?: boolean
+    admit?: (args: ToolCall['args']) => ToolAdmission
+  } = {},
 ): Tool {
   return {
     name,
     ...(options.acquisition ? { acquisition: true } : {}),
     ...(options.usesVision ? { usesVision: true } : {}),
+    ...(options.admit
+      ? {
+          admit: (args: ToolCall['args']): ToolAdmission => {
+            trace.push(`admit:${name}`)
+            return options.admit!(args)
+          },
+        }
+      : {}),
     ...(options.assessRisk
       ? {
           assessRisk: (): RiskVerdict => {
@@ -710,5 +724,106 @@ describe('the verification gate sits ahead of the Vision Budget (#212, ADR 0041)
     const outcome = await h.round([call('look', {})])
     expect(outcome.outcome.results[0]!.outcome.ok).toBe(false)
     expect(spent).toEqual([])
+  })
+})
+
+// The Baseline's nine spent-route refusals (#236, ADR 0046): a Look whose
+// region `look` refused from inside execute counted as a failed Vision
+// Attempt and closed vision for the rest of the Run. An admission step
+// refuses the arguments ahead of the charge and the attempted mark.
+describe('an argument refusal is not a Vision Attempt (#236, ADR 0046)', () => {
+  const capabilities: ToolRoundCapabilities = {
+    searchLoopRail: false,
+    verificationRail: true,
+    noProgressRail: false,
+    perCallGate: true,
+  }
+  const MALFORMED = `look: 'region' must be "left,top,width,height"`
+  const malformed = call('look', { question: 'Which titles are in the top row?', region: 'top' })
+  const wellFormed = call('look', { question: 'Which titles are in the top row?', region: '0,0,100,25' })
+
+  /**
+   * A Look that refuses a malformed region in admission and — as `look`
+   * does, reading its own arguments — in execute too, so a round that
+   * skipped admission would see a failed attempt.
+   */
+  function look(trace: string[], options: { assessRisk?: RiskVerdict } = {}): Tool {
+    const admit = (args: ToolCall['args']): ToolAdmission =>
+      args.region === 'top' ? { ok: false, reason: MALFORMED } : { ok: true }
+    const tool = scripted('look', trace, { usesVision: true, admit, ...options })
+    return {
+      ...tool,
+      async execute(callArg, context) {
+        const admission = admit(callArg.args)
+        if (!admission.ok) throw new Error(admission.reason)
+        return tool.execute(callArg, context)
+      },
+    }
+  }
+
+  it('spends no budget and no route, so the next well-formed Look passes the rail and runs', async () => {
+    const trace: string[] = []
+    const spent: unknown[] = []
+    const reported: VisionTraceEvent[] = []
+    // One vision call in the budget: had the refused call been charged,
+    // the well-formed Look would be refused for the budget instead.
+    const h = harness([look(trace)], {
+      capabilities,
+      trace,
+      visionCalls: 1,
+      traceVision: (event) => reported.push(event),
+      verification: { retainFailure: (failure) => spent.push(failure) },
+    })
+
+    const { outcome } = await h.round([malformed, wellFormed])
+
+    expect(errorOf(outcome.results[0]!.outcome)).toBe(MALFORMED)
+    expect(resultOf(outcome.results[1]!.outcome)).toBe('done')
+    expect(trace.filter((entry) => entry.startsWith('execute:'))).toEqual(['execute:look'])
+    expect(reported).toEqual([{ kind: 'vision_budget', reason: 'look', granted: true }])
+    expect(spent).toEqual([])
+  })
+
+  it('runs admission after the risk gate and before the Vision Budget', async () => {
+    const trace: string[] = []
+    const reported: VisionTraceEvent[] = []
+    // No budget at all: a budget charged ahead of admission would answer
+    // with its own refusal, and record it.
+    const h = harness([look(trace, { assessRisk: { kind: 'confirm', prompt: 'Look at the page?' } })], {
+      capabilities,
+      trace,
+      visionCalls: 0,
+      traceVision: (event) => reported.push(event),
+    })
+
+    const { outcome } = await h.round([malformed])
+
+    expect(trace.filter((entry) => !entry.startsWith('observe:'))).toEqual([
+      'assess:look',
+      'confirm:Look at the page?',
+      'admit:look',
+    ])
+    expect(errorOf(outcome.results[0]!.outcome)).toBe(MALFORMED)
+    expect(reported).toEqual([])
+  })
+
+  it('runs admission after the verification rail — a spent route is refused as spent, whatever the arguments', async () => {
+    const trace: string[] = []
+    const h = harness([look(trace)], {
+      capabilities,
+      trace,
+      verification: {
+        retainedFailures: () => [
+          { route: 'vision', failure: 'timed out', objectiveId: undefined, runId: 'run-1' as never, failedAt: 0 },
+        ],
+        eligibleCandidates: () => [],
+        heldCandidates: () => 2,
+      },
+    })
+
+    const { outcome } = await h.round([malformed])
+
+    expect(errorOf(outcome.results[0]!.outcome)).toContain('already failed for this objective')
+    expect(trace).not.toContain('admit:look')
   })
 })

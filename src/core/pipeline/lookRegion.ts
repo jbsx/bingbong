@@ -27,11 +27,11 @@ export interface LookCrop {
 export const LOOK_REGION_FORMAT = '"left,top,width,height" as percentages of the viewport, e.g. "0,0,100,25" for the top quarter'
 
 /**
- * The most of the viewport one region may cover, in percent of its area.
- * Larger regions are refused rather than shown at a magnification that
- * misleads: on the #195 page the vision model read titles that were not
- * there from a half-viewport band at 2x and read the row exactly from a
- * quarter at 3x. The cap also bounds the capture — a quarter at 3x is
+ * The most of the viewport one crop may show, in percent of its area.
+ * A larger region is shrunk to it rather than shown at a magnification
+ * that misleads: on the #195 page the vision model read titles that were
+ * not there from a half-viewport band at 2x and read the row exactly from
+ * a quarter at 3x. The cap also bounds the capture — a quarter at 3x is
  * about twice the full screenshot's pixels, never more.
  */
 export const LOOK_REGION_MAX_AREA_PERCENT = 25
@@ -47,46 +47,86 @@ export const LOOK_REGION_MIN_SCALE = 3
  */
 export const LOOK_REGION_MAX_SCALE = 4
 
-function refusal(): Error {
-  return new Error(`look: 'region' must be ${LOOK_REGION_FORMAT}`)
+const REGION_REFUSAL = `look: 'region' must be ${LOOK_REGION_FORMAT}`
+
+/**
+ * How the region shown differs from the region written (#236, ADR 0046):
+ * not at all, clipped to the viewport, or shrunk to a quarter of it
+ * (whether or not it was clipped first).
+ */
+export type LookRegionClamp = 'none' | 'clipped' | 'shrunk'
+
+/**
+ * What the model's region argument turned out to be: nothing, a region —
+ * as written and as shown — or a refusal in the words the model is given.
+ */
+export type ReadLookRegion =
+  | { kind: 'none' }
+  | { kind: 'region'; written: LookRegion; shown: LookRegion; clamp: LookRegionClamp }
+  | { kind: 'refused'; reason: string }
+
+/** Where a side shrunk around its own centre starts: rounded, and kept inside the viewport. */
+function centred(start: number, side: number, shownSide: number): number {
+  return Math.min(100 - shownSide, Math.max(0, Math.round(start + (side - shownSide) / 2)))
 }
 
-function tooLarge(): Error {
-  return new Error(
-    `look: 'region' must cover at most a quarter of the viewport (width × height ≤ ${LOOK_REGION_MAX_AREA_PERCENT * 100} in percent, e.g. "0,0,100,25" or "25,0,50,50"); aim a smaller region at the target — it is magnified more`,
-  )
-}
-
-/** What the model's region argument turned out to be: nothing, a region, or a refusal to hand back. */
-type ReadLookRegion = { kind: 'none' } | { kind: 'region'; region: LookRegion } | { kind: 'refused'; error: Error }
-
-function readLookRegion(value: unknown): ReadLookRegion {
-  if (value === undefined || value === null) return { kind: 'none' }
-  if (typeof value !== 'string') return { kind: 'refused', error: refusal() }
-  const text = value.trim()
-  if (text === '') return { kind: 'none' }
-  const parts = text.split(',').map((part) => part.replace(/%/g, '').trim())
-  if (parts.length !== 4 || parts.some((part) => part === '' || !/^\d+(\.\d+)?$/.test(part))) {
-    return { kind: 'refused', error: refusal() }
+/**
+ * The crop a region names (ADR 0046), or undefined when it names no place.
+ * Clipped first — the part past an edge cannot be shown, so the request is
+ * the part inside — then, if still over a quarter, both sides shrunk by
+ * the same factor around the region's own centre and floored, so the area
+ * never exceeds the cap. No side is preferred: the shape drawn is kept.
+ */
+function showLookRegion(written: LookRegion): { shown: LookRegion; clamp: LookRegionClamp } | undefined {
+  const left = Math.min(written.left, 100)
+  const top = Math.min(written.top, 100)
+  const width = Math.min(written.left + written.width, 100) - left
+  const height = Math.min(written.top + written.height, 100) - top
+  if (width < 1 || height < 1) return undefined
+  const clipped = width !== written.width || height !== written.height
+  const cap = LOOK_REGION_MAX_AREA_PERCENT * 100
+  if (width * height <= cap) return { shown: { left, top, width, height }, clamp: clipped ? 'clipped' : 'none' }
+  const factor = Math.sqrt(cap / (width * height))
+  // The epsilon keeps an exact product (100 × 0.5) from flooring a whole
+  // percent short; it cannot lift an inexact one over the next integer.
+  const shownWidth = Math.floor(width * factor + 1e-9)
+  const shownHeight = Math.floor(height * factor + 1e-9)
+  return {
+    shown: {
+      left: centred(left, width, shownWidth),
+      top: centred(top, height, shownHeight),
+      width: shownWidth,
+      height: shownHeight,
+    },
+    clamp: 'shrunk',
   }
-  const [left, top, width, height] = parts.map((part) => Math.round(Number(part))) as [number, number, number, number]
-  if (width < 1 || height < 1 || left + width > 100 || top + height > 100) return { kind: 'refused', error: refusal() }
-  if (width * height > LOOK_REGION_MAX_AREA_PERCENT * 100) return { kind: 'refused', error: tooLarge() }
-  return { kind: 'region', region: { left, top, width, height } }
 }
 
 /**
  * Reads the model's region argument. Absent or blank means no region — a
- * plain Look. Anything else must be four percentages that describe a
- * non-empty area inside the viewport, at most a quarter of it; percent
- * signs, spaces and decimals are tolerated (decimals round to whole
- * percent), everything else is refused with the expected format in the
- * message, so the model's next call can be well-formed.
+ * plain Look. Anything else must be four percentages; percent signs,
+ * spaces and decimals are tolerated (decimals round to whole percent).
+ * A region that names a place is shown, clipped to the viewport and shrunk
+ * to a quarter of it when it must be (ADR 0046); only a string that names
+ * no place — not four numbers, a zero side, nothing inside the viewport —
+ * is refused, with the expected format in the reason, so the model's next
+ * call can be well-formed.
  */
-export function parseLookRegion(value: unknown): LookRegion | undefined {
-  const read = readLookRegion(value)
-  if (read.kind === 'refused') throw read.error
-  return read.kind === 'region' ? read.region : undefined
+export function readLookRegion(value: unknown): ReadLookRegion {
+  if (value === undefined || value === null) return { kind: 'none' }
+  if (typeof value !== 'string') return { kind: 'refused', reason: REGION_REFUSAL }
+  const text = value.trim()
+  if (text === '') return { kind: 'none' }
+  const parts = text.split(',').map((part) => part.replace(/%/g, '').trim())
+  if (parts.length !== 4 || parts.some((part) => part === '' || !/^\d+(\.\d+)?$/.test(part))) {
+    return { kind: 'refused', reason: REGION_REFUSAL }
+  }
+  const [left, top, width, height] = parts.map((part) => Math.round(Number(part))) as [number, number, number, number]
+  if (width < 1 || height < 1) return { kind: 'refused', reason: REGION_REFUSAL }
+  const written = { left, top, width, height }
+  const shown = showLookRegion(written)
+  if (shown === undefined) return { kind: 'refused', reason: REGION_REFUSAL }
+  return { kind: 'region', written, ...shown }
 }
 
 /**
@@ -106,21 +146,22 @@ export function lookCropOf(region: LookRegion): LookCrop {
   return { region, scale: lookRegionScale(region) }
 }
 
-/** The region as the model wrote it, normalized — what the trace and the fingerprint keep. */
+/** A region in the grammar the model writes it in — what the trace, the footer and the fingerprint name. */
 export function formatLookRegion(region: LookRegion): string {
   return `${region.left},${region.top},${region.width},${region.height}`
 }
 
 /**
- * The region as the no-progress rail identifies it: a well-formed region
- * normalized the way the tool reads it, so "0, 0, 100, 20" and
- * "0,0,100,20.4" are the same region; a malformed one kept as written
- * (stripped of spaces and percent signs), so two identical mistakes are
- * still a repeat. Absent for no region.
+ * The region as the no-progress rail identifies it: a region that names a
+ * place by the crop it shows, so "0, 0, 100, 20" and "0,0,100,20.4" are
+ * the same region, and so are two oversize regions that clamp to one crop
+ * (ADR 0046); a malformed one kept as written (stripped of spaces and
+ * percent signs), so two identical mistakes are still a repeat. Absent for
+ * no region.
  */
 export function lookRegionFingerprint(value: unknown): string | undefined {
   const read = readLookRegion(value)
-  if (read.kind === 'region') return formatLookRegion(read.region)
+  if (read.kind === 'region') return formatLookRegion(read.shown)
   if (read.kind === 'none') return undefined
   const raw = typeof value === 'string' ? value.replace(/[\s%]+/g, '') : ''
   return raw === '' ? undefined : raw

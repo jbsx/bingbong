@@ -258,11 +258,82 @@ describe('vision grounding through the command pipeline', () => {
         reason: 'look',
         question: 'Which titles are in the S tier row?',
         region: '0,0,100,20',
+        regionShown: '0,0,100,20',
         scale: 3,
         outcome: 'ok',
         answer: 'Solo Leveling, Omniscient Reader.',
       }),
     ])
+  })
+
+  it('tells the model a larger region is shrunk to a quarter, after the cap (#236)', () => {
+    const look = createVisionGroundingTools(new FakeBrowser(), new FakeVision()).find((candidate) => candidate.name === 'look')
+    expect(look?.parameters?.region?.description).toMatch(
+      /At most a quarter of the viewport — a larger region is shrunk around its centre to a quarter; smaller regions are magnified more/,
+    )
+  })
+
+  it('shows an oversize region shrunk around its centre, naming the clamp to the orchestrator alone (#236)', async () => {
+    const browser = new FakeBrowser()
+    const vision = new FakeVision()
+    vision.descriptions = ['Watch 42mm, Titanium.']
+    const trace: VisionTraceEvent[] = []
+    const look = createVisionGroundingTools(browser, vision).find((candidate) => candidate.name === 'look')
+    if (!look) throw new Error('look tool is missing')
+
+    const answer = await look.execute(
+      { id: 'l1', name: 'look', args: { question: 'What does the spec row say?', region: '0,55,100,30' } },
+      { clock: new FakeClock(), traceVision: (event) => trace.push(event) },
+    )
+
+    expect(answer).toBe(
+      'Watch 42mm, Titanium.\n\n[region 0,55,100,30 clamped to 5,57,91,27 (at most a quarter of the viewport) shown at 3x; a smaller region is magnified more, up to 4x]',
+    )
+    expect(browser.screenshotRequests).toEqual([{ region: { left: 0.05, top: 0.57, width: 0.91, height: 0.27 }, scale: 3 }])
+    // The vision model is told the crop it is looking at, and nothing of
+    // what was asked.
+    const prompt = vision.describeRequests[0]?.prompt ?? ''
+    expect(prompt).toContain('from 5% to 96% of the viewport width and from 57% to 84% of its height, shown at 3x')
+    expect(prompt).not.toMatch(/clamp|0,55,100,30|quarter/)
+    expect(trace).toEqual([
+      expect.objectContaining({ kind: 'vision_request', region: '0,55,100,30', regionShown: '5,57,91,27', scale: 3 }),
+    ])
+  })
+
+  it('names a region clipped to the viewport as the part inside it (#236)', async () => {
+    const browser = new FakeBrowser()
+    const vision = new FakeVision()
+    vision.descriptions = ['Checkout.']
+    const look = createVisionGroundingTools(browser, vision).find((candidate) => candidate.name === 'look')
+    if (!look) throw new Error('look tool is missing')
+
+    const answer = await look.execute(
+      { id: 'l1', name: 'look', args: { question: 'What is the button label?', region: '50,50,100,100' } },
+      { clock: new FakeClock() },
+    )
+
+    expect(answer).toBe(
+      'Checkout.\n\n[region 50,50,100,100 clamped to 50,50,50,50 (the part inside the viewport) shown at 3x; a smaller region is magnified more, up to 4x]',
+    )
+    expect(browser.screenshotRequests).toEqual([{ region: { left: 0.5, top: 0.5, width: 0.5, height: 0.5 }, scale: 3 }])
+  })
+
+  it('admits a Look unless its region names no place or has no question to answer (#236, ADR 0046)', () => {
+    const look = createVisionGroundingTools(new FakeBrowser(), new FakeVision()).find((candidate) => candidate.name === 'look')
+    if (!look?.admit) throw new Error('look declares no admission step')
+
+    expect(look.admit({})).toEqual({ ok: true })
+    expect(look.admit({ question: 'What is on screen?' })).toEqual({ ok: true })
+    expect(look.admit({ question: 'What is on screen?', region: '0,0,100,100' })).toEqual({ ok: true })
+    expect(look.admit({ region: '0,0,100,20' })).toEqual({ ok: false, reason: expect.stringMatching(/needs a 'question'/) })
+    expect(look.admit({ question: 'What is on screen?', region: 'top' })).toEqual({
+      ok: false,
+      reason: expect.stringMatching(/left,top,width,height/),
+    })
+    expect(look.admit({ question: 'What is on screen?', region: '100,0,20,20' })).toEqual({
+      ok: false,
+      reason: expect.stringMatching(/left,top,width,height/),
+    })
   })
 
   it("keeps what the adapter observed on the Look's own record, and records nothing when nothing traces (#204)", async () => {
