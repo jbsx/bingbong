@@ -977,6 +977,23 @@ a query and submitting it — merely navigates to results and is never
 Consequential.
 _Avoid_: risky action, dangerous action
 
+**Risk Gate**:
+The in-code verdict on one browser action before it runs — allow, a
+Confirmation, or a refusal — decided from the facts of the element the action
+targets and never by the model. A refusal reaches the model as the tool's
+result and is never a question to the user. The verdict is read from the
+element and its form as they are, so a misread element is a wrong verdict for
+every action on that form.
+_Avoid_: safety check, action filter, permission gate
+
+**Payment Field**:
+A control that takes a card detail — number, security code, expiry — and so
+marks its whole form as one that takes a payment. Only a control a person
+types or chooses a value into can be one: a checkbox, radio, button or hidden
+control never is, whatever its name, and a name marks a field only when the
+card word begins a word of it — a postcard filter is not a card number.
+_Avoid_: card field, payment input
+
 ### Vision
 
 **Look**:

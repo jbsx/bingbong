@@ -2,7 +2,16 @@
 
 ## Status
 
-Accepted
+Accepted. Note of 2026-09-13 (#237): the payment hard rule stays ahead of the
+search exemption as decided below, and what it reads changed. A Payment Field
+is now only a control a value is typed or chosen into — a checkbox, radio,
+button or hidden control never is — and a name or id marks one only where a
+card token begins a word of it. Royal Museums Greenwich's collection search
+is one form with thousands of facet checkboxes named "Postcard", "Compass
+card" and `filter_materials[card]`; the unanchored substring over every
+control made that search a payment form and refused the search box and its
+Search button in both watch attempts of the Baseline. The gate's order was
+right; its facts were wrong.
 
 ## Context
 
