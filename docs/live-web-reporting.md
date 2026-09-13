@@ -736,11 +736,17 @@ result texts the app wrote — the navigated line and page header, the page
 signature, `end of page`, the no-progress Notice — and the search streak is the
 Search Loop rail's own rule, imported from `searchLoopRule.ts` rather than
 copied (ADR 0048): searches chain by Search Intent, and a page read, a Look or
-a scroll between them is inspection that never resets the streak. It is re-run
-over the trace for `navigate` searches; a query typed into a page's search box
-is a search the rail recognises from the element's facts, which the trace does
-not keep, so the digest shows the rail's own `search_loop_nudge` Notice where it
-fired and the reviewer judges the rest. A loop the streak rule catches counts
+a scroll between them is inspection that never resets the streak. Where the trace
+carries the rail's Search Observations (#243, ADR 0049) the rule is not re-run
+at all: each search round takes the query, signature (`url` or `input`) and
+streak the rail recorded, typed searches and refused ones included, and the
+attempt's `searchSource` reads `rail`. A trace written before observations were
+kept holds no element facts, so a query typed into a page's search box cannot
+be told from other typing; the rule is re-run over its `navigate` searches
+(`searchSource: replay`, or `none` when the replay finds no search) and the
+reviewer judges the rest. The two sources cannot mislabel an attempt: a
+`navigate` search the replay finds is one the rail would have observed, so an
+observation-free attempt with one is provably retained. A loop the streak rule catches counts
 its head too — the round whose search started the streak — as
 `searchLoopHeads` beside the digest's rounds, never in them, so counting it
 re-keys no cached judgement. Rounds are numbered by position in the digest,

@@ -607,6 +607,19 @@ Narrowing to a subset of the terms is a different Search Intent by this
 definition, a known loss.
 _Avoid_: query, search terms, keywords
 
+**Search Observation**:
+What the Search Loop rail saw in one tool call it classified as a search: the
+query as the rail read it, the search signature it ran under — a navigate to a
+search URL, or text typed into a search input — and the streak the call left,
+whether the call succeeded, failed or was refused. A call the rail read as
+inspection or as escape leaves none. It is the rail's verdict, not the
+evidence for one: the Round Audit replays what the rail saw where an
+observation exists and re-derives the rule only over a Run Trace written
+before observations were kept. "Surface" is a different thing — the engine or
+site a search ran on — and two signatures on one surface are still one Search
+Intent.
+_Avoid_: search event, search record, query log, surface
+
 **Boot State**:
 Bing Bong starts with no Session and renders no entries from any earlier launch.
 There is no durable store for it to render from.
@@ -618,7 +631,8 @@ the Run published, its Tool Rounds and those of its Subagents, evidence
 grading, the model's per-round reasoning, each LLM attempt's model, prompt
 hash, rung, request shape, usage, how it ended and how much reasoning it
 streamed (`llm_round`), the models the Run Plan
-was declared under, the vision calls it made and what they cost, and a
+was declared under, the vision calls it made and what they cost, each
+Search Observation its Search Loop rail made, and a
 screenshot of the visible tab when the Run finalized failed or on a work rail
 (`failure_screenshot`, a PNG beside the file) — written for diagnosis only.
 It is never rendered in any view and never provides continuity to a Session.
