@@ -138,7 +138,15 @@ Recorded when #235 was built, where the decision left a choice open:
 - One collect carries at most twenty parts of text (240,000 characters);
   past that only blocks in view still ride the payload, for the scroll delta.
   Every Action Outcome serializes a collect, so the whole page cannot be
-  unbounded; a page past the bound reads as the parts collected.
+  unbounded; a page past the bound reads as the parts collected, and its last
+  part says so — `page text: part 20 of 20 — the most one page read
+  collects; the page's text continues past it` — rather than calling itself
+  the last.
+- Known and left: the part count admission checks is taken before read_page
+  dismisses a consent dialog, so on that one page the count and the read can
+  differ (the read then refuses the part itself); a table or pre block inside
+  a list item or paragraph is part of that block's text and flattens, as the
+  nesting rule says.
 - Prose that repeats earlier prose word for word is still dropped, as the
   digest always did; identical table rows and definitions are data and are
   kept.

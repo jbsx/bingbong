@@ -138,6 +138,13 @@ describe('fact lines (#235/AC1, AC2)', () => {
     expect(pageReadPartLine(1, 1)).toBeNull()
   })
 
+  it('does not call the last part collected the last when the collector stopped at its bound', () => {
+    expect(pageReadPartLine(19, 20, true)).toBe('page text: part 19 of 20 — read_page part=20 continues')
+    expect(pageReadPartLine(20, 20, true)).toBe(
+      "page text: part 20 of 20 — the most one page read collects; the page's text continues past it",
+    )
+  })
+
   it('names the range when a part is past the end', () => {
     expect(partPastTheEnd(4, 3)).toBe("read_page: part 4 is past the end — this page's text has 3 parts, part=1 to part=3")
     expect(partPastTheEnd(2, 1)).toBe("read_page: part 2 is past the end — this page's text has 1 part, part=1")

@@ -9,6 +9,7 @@ import { tracedVisionRequest } from '../trace/visionTrace'
 import { traceVisionBudget, visionSeam } from './visionSeam'
 import { reportFault } from '../trace/fault'
 import { partPastTheEnd } from '../browser/pageText'
+import { pageReadPartOf } from './progressFingerprints'
 
 const AUTO_VISION_PROMPT =
   'Describe the current browser screenshot, focusing on page state, popups, dialogs, overlays, errors, and anything blocking the requested task.'
@@ -51,18 +52,7 @@ async function withBlockerNudge(browser: BrowserController, action: () => Promis
 }
 
 /** The refs each part's last read listed (ADR 0047): near-identical reads are compared part by part. */
-type ReadState = Map<number, Set<number>>
-
-/**
- * The part a read_page call names (ADR 0047): 1 when none is, null when the
- * argument is not a whole number from 1. Models write numbers as strings.
- */
-function partOf(args: ToolCall['args']): number | null {
-  const value = args.part
-  if (value === undefined || value === null || value === '') return 1
-  const part = typeof value === 'string' ? Number(value) : value
-  return typeof part === 'number' && Number.isInteger(part) && part >= 1 ? part : null
-}
+type RefsByPart = Map<number, Set<number>>
 
 const MALFORMED_PART = "read_page: 'part' must be a whole number from 1"
 
@@ -170,7 +160,7 @@ async function assessRefAction(browser: BrowserController, call: ToolCall, tool:
 // pipeline enforces the verdict — confirm for form submits/downloads, hard
 // deny for credential fills and payment submits.
 export function createBrowserTools(browser: BrowserController, vision?: VisionDescriber): Tool[] {
-  const reads = new WeakMap<ToolContext, ReadState>()
+  const reads = new WeakMap<ToolContext, RefsByPart>()
   // Per-run auto-vision cooldown state (#106): keyed on the run's
   // ToolContext like `reads`, so each run cools down independently.
   const autoVisionCooldown = new WeakMap<ToolContext, number>()
@@ -207,7 +197,7 @@ export function createBrowserTools(browser: BrowserController, vision?: VisionDe
       // A part the page does not have is refused before the read runs
       // (ADR 0047, the admission step of ADR 0046), naming the range.
       async admit(args) {
-        const part = partOf(args)
+        const part = pageReadPartOf(args)
         if (part === null) return { ok: false, reason: MALFORMED_PART }
         if (part === 1) return { ok: true }
         try {
@@ -220,7 +210,7 @@ export function createBrowserTools(browser: BrowserController, vision?: VisionDe
         }
       },
       async execute(call, context) {
-        const part = partOf(call.args)
+        const part = pageReadPartOf(call.args)
         if (part === null) throw new Error(MALFORMED_PART)
         const result = await browser.readPage(part)
         // ADR 0010 choke point 2: the digest, dialog text, and refs the

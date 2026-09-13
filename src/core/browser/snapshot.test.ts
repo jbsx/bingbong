@@ -118,6 +118,13 @@ describe('page text: Page Preview and Page Read (#235, ADR 0047)', () => {
     expect(third.endsWith(`${snapshot.textBlocks[29]}\npage text: part 3 of 3 — the last part`)).toBe(true)
   })
 
+  it('a read of a page the collector cut says its last part is not the end of the text', () => {
+    const snapshot = buildPageSnapshot(parseCollectedPage(textPage(30, 1000, { textCut: true })))
+
+    expect(snapshot.textCut).toBe(true)
+    expect(formatPageRead(snapshot, 3).endsWith("page text: part 3 of 3 — the most one page read collects; the page's text continues past it")).toBe(true)
+  })
+
   it('refuses to format a part past the end, naming the range', () => {
     const snapshot = buildPageSnapshot(textPage(2, 100))
     expect(() => formatPageRead(snapshot, 2)).toThrow("read_page: part 2 is past the end — this page's text has 1 part, part=1")

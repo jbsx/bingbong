@@ -218,7 +218,7 @@ export function createNoProgressRail(deps: NoProgressRailDeps = {}): NoProgressR
    */
   function observerOf(call: ToolCall): string {
     const producer: ObservationProducer = classifyToolObservation(call.name).producer
-    const part = producer === 'page_read' ? pageReadPartOf(call) : 1
+    const part = producer === 'page_read' ? (pageReadPartOf(call.args) ?? 1) : 1
     return part > 1 ? `${producer}:part=${part}` : producer
   }
 

@@ -1241,6 +1241,11 @@ function addCounts<K extends string>(into: Record<K, number>, from: Readonly<Rec
   for (const key of Object.keys(from) as K[]) into[key] += from[key]
 }
 
+/** Tool counts, most rounds first and ties by name, so every output lists tools in one order. */
+function mostCalledFirst(counts: ReadonlyMap<string, number>): [string, number][] {
+  return [...counts.entries()].sort(([leftTool, left], [rightTool, right]) => right - left || leftTool.localeCompare(rightTool))
+}
+
 export function populationOf(label: string, attempts: readonly AuditAttempt[]): AuditPopulation {
   const counts = emptyCounts()
   const after = emptyCounts()
@@ -1318,9 +1323,7 @@ export function populationOf(label: string, attempts: readonly AuditAttempt[]): 
     flags,
     finalizationCauses: Object.fromEntries(Object.entries(causes).sort(([left], [right]) => left.localeCompare(right))),
     attemptsAtBudget: atBudget,
-    toolRounds: [...byTool.entries()]
-      .sort(([leftTool, left], [rightTool, right]) => right - left || leftTool.localeCompare(rightTool))
-      .map(([tool, rounds]) => ({ tool, rounds, share: toolRoundsUsed === 0 ? null : rounds / toolRoundsUsed })),
+    toolRounds: mostCalledFirst(byTool).map(([tool, rounds]) => ({ tool, rounds, share: toolRoundsUsed === 0 ? null : rounds / toolRoundsUsed })),
   }
 }
 
@@ -1474,7 +1477,7 @@ function toolRoundTable(populations: readonly AuditPopulation[]): string[] {
   for (const population of populations) {
     for (const entry of population.toolRounds) totals.set(entry.tool, (totals.get(entry.tool) ?? 0) + entry.rounds)
   }
-  const tools = [...totals.entries()].sort(([leftTool, left], [rightTool, right]) => right - left || leftTool.localeCompare(rightTool)).map(([tool]) => tool)
+  const tools = mostCalledFirst(totals).map(([tool]) => tool)
   const lines = [`| tool | ${populations.map((population) => population.label).join(' | ')} |`, `| --- | ${populations.map(() => '---').join(' | ')} |`]
   for (const tool of tools) {
     const cells = populations.map((population) => {

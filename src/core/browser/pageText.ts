@@ -42,7 +42,7 @@ export const MAX_PAGE_READ_TEXT = 12_000
  */
 export const MAX_COLLECTED_PAGE_TEXT = 20 * MAX_PAGE_READ_TEXT
 
-/** Viewport text blocks kept for the scroll delta (#194), and the length each is held to. */
+/** Viewport text blocks kept for a scroll's New In View (#194), and the length each is held to. */
 export const MAX_VIEWPORT_TEXT_BLOCKS = 60
 export const MAX_VIEWPORT_TEXT_BLOCK_LENGTH = 300
 
@@ -105,7 +105,7 @@ function renderBlock(block: CollectedTextBlock): string[] {
 /**
  * The page's text blocks in collected order, and the ones in view. Prose
  * that repeats earlier prose word for word (the h1 restated, a second "Read
- * more") is dropped, as the digest always did; table rows and definitions
+ * more") is dropped, as the page text always was; table rows and definitions
  * are data, and an identical row is still a row.
  */
 export function renderPageText(collected: readonly CollectedTextBlock[]): PageText {
@@ -181,12 +181,15 @@ export function previewFactLine(shown: number, total: number): string {
   return `page text: first ${count(shown)} of ${count(total)} characters — read_page returns the whole text`
 }
 
-/** The line a Page Read of a multi-part page ends with; null when the page is one part. */
-export function pageReadPartLine(part: number, of: number): string | null {
-  if (of <= 1) return null
-  return part < of
-    ? `page text: part ${part} of ${of} — read_page part=${part + 1} continues`
-    : `page text: part ${part} of ${of} — the last part`
+/**
+ * The line a Page Read of a multi-part page ends with; null when the page is
+ * one part. `cut` says the collector stopped at MAX_COLLECTED_PAGE_TEXT, so
+ * the last part collected is not the end of the page's text.
+ */
+export function pageReadPartLine(part: number, of: number, cut = false): string | null {
+  if (part < of) return `page text: part ${part} of ${of} — read_page part=${part + 1} continues`
+  if (cut) return `page text: part ${part} of ${of} — the most one page read collects; the page's text continues past it`
+  return of <= 1 ? null : `page text: part ${part} of ${of} — the last part`
 }
 
 /** The refusal for a part the page does not have, naming the range. */

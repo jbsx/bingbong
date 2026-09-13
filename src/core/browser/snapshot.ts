@@ -77,6 +77,8 @@ export interface CollectedPage {
    * which carried the capped digest and the viewport text below instead.
    */
   textBlocks?: CollectedTextBlock[]
+  /** The collector stopped taking blocks at MAX_COLLECTED_PAGE_TEXT: the page's text runs on past them. */
+  textCut?: boolean
   /** Older payloads: the page's text, capped from the top. */
   textDigest?: string
   /**
@@ -144,6 +146,8 @@ export interface PageSnapshot {
   textBlocks: string[]
   /** The length of the whole collected text, blocks joined by line breaks; the preview's is at most the cap. */
   textLength: number
+  /** The page's text runs on past what was collected (MAX_COLLECTED_PAGE_TEXT). */
+  textCut: boolean
   /** Text blocks intersecting the viewport when this snapshot was taken (#194). */
   viewportText: string[]
   refs: SnapshotRef[]
@@ -290,7 +294,7 @@ export function parseCollectedPage(raw: unknown): CollectedPage {
     dialogOpen: candidate.dialogOpen === true,
     dialogText: typeof candidate.dialogText === 'string' ? candidate.dialogText : '',
     ...(Array.isArray(candidate.textBlocks)
-      ? { textBlocks: candidate.textBlocks.flatMap((entry) => parseTextBlock(entry) ?? []) }
+      ? { textBlocks: candidate.textBlocks.flatMap((entry) => parseTextBlock(entry) ?? []), textCut: candidate.textCut === true }
       : {}),
     textDigest: typeof candidate.textDigest === 'string' ? candidate.textDigest : '',
     viewportText: Array.isArray(candidate.viewportText)
@@ -323,11 +327,17 @@ function truncateHref(href: string): string {
 }
 
 /** A collected page's text: its blocks, the preview, the whole length, and what is in view. */
-function pageTextOf(page: CollectedPage): Pick<PageSnapshot, 'textBlocks' | 'textDigest' | 'textLength' | 'viewportText'> {
+function pageTextOf(page: CollectedPage): Pick<PageSnapshot, 'textBlocks' | 'textDigest' | 'textLength' | 'textCut' | 'viewportText'> {
   if (page.textBlocks !== undefined) {
     const { blocks, viewportText } = renderPageText(page.textBlocks)
     const whole = blocks.join('\n')
-    return { textBlocks: blocks, textDigest: whole.slice(0, MAX_SNAPSHOT_TEXT), textLength: whole.length, viewportText }
+    return {
+      textBlocks: blocks,
+      textDigest: whole.slice(0, MAX_SNAPSHOT_TEXT),
+      textLength: whole.length,
+      textCut: page.textCut === true,
+      viewportText,
+    }
   }
   // An older payload sent only the capped digest: it is all the text there is.
   const digest = page.textDigest ?? ''
@@ -335,6 +345,7 @@ function pageTextOf(page: CollectedPage): Pick<PageSnapshot, 'textBlocks' | 'tex
     textBlocks: digest === '' ? [] : digest.split('\n'),
     textDigest: digest,
     textLength: digest.length,
+    textCut: false,
     viewportText: page.viewportText ?? [],
   }
 }
@@ -458,7 +469,7 @@ export function formatPageRead(snapshot: PageSnapshot, part: number): string {
   const lines = snapshotHead(snapshot)
   const text = parts[part - 1]!
   if (text !== '') lines.push('page text:', text)
-  const partLine = pageReadPartLine(part, parts.length)
+  const partLine = pageReadPartLine(part, parts.length, snapshot.textCut)
   if (partLine !== null) lines.push(partLine)
   return lines.join('\n')
 }

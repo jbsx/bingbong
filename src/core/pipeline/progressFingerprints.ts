@@ -256,6 +256,18 @@ export function typedTextFingerprint(text: string): string {
 }
 
 /**
+ * The Page Read part a read_page call's arguments name (ADR 0047): 1 when
+ * none is named, null when `part` is not a whole number from 1. The one
+ * reading read_page's admission refuses by and the rails key a read by.
+ */
+export function pageReadPartOf(args: ToolCall['args']): number | null {
+  const value = args.part
+  if (value === undefined || value === null || (typeof value === 'string' && value.trim() === '')) return 1
+  const part = coercedNumber(value)
+  return part !== undefined && Number.isInteger(part) && part >= 1 ? part : null
+}
+
+/**
  * One targeted action's deterministic fingerprint — the normalized shape
  * of "do this, to that". Equivalent calls normalize to one string:
  * navigations through the URL fingerprint (search navigations through
@@ -267,16 +279,6 @@ export function typedTextFingerprint(text: string): string {
  * number pointed at in the snapshot the model was looking at", so #126's
  * equivalence test is action fingerprint + page fingerprint together.
  */
-/**
- * The Page Read part a read_page call names (ADR 0047): a whole number from
- * 2 names that part, and anything else — no part, part 1, a malformed part
- * admission refuses anyway — reads as part 1.
- */
-export function pageReadPartOf(call: ToolCall): number {
-  const part = coercedNumber(call.args.part)
-  return part !== undefined && Number.isInteger(part) && part > 1 ? part : 1
-}
-
 export function actionFingerprint(call: ToolCall): string {
   const args = call.args
   switch (call.name) {
@@ -311,7 +313,8 @@ export function actionFingerprint(call: ToolCall): string {
     }
     case 'read_page': {
       // A continuation is its own read (ADR 0047): part 2 is not part 1 again.
-      const part = pageReadPartOf(call)
+      // A malformed part is refused before it runs; it fingerprints as part 1.
+      const part = pageReadPartOf(args) ?? 1
       return part > 1 ? `read_page:part=${part}` : 'read_page'
     }
     case 'back':

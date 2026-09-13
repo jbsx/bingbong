@@ -197,6 +197,7 @@ export const COLLECT_PAGE_SCRIPT = `(() => {
   const textBlocks = []
   const taken = new Set()
   let collectedText = 0
+  let textCut = false
   // Whether a block is in the viewport right now, so a scroll can report
   // what it brought in (#194). Rect-only intersection: a text block is not a
   // click target, so it does not need the style pass rectVisible does — a
@@ -230,6 +231,8 @@ export const COLLECT_PAGE_SCRIPT = `(() => {
         return { kind: 'text', text: textOf(el) }
     }
   }
+  // Near enough for the collected-text bound, which only has to stop an
+  // unbounded payload; core measures the rendered text exactly.
   const lengthOf = (block) => {
     if (block.kind === 'row') return block.cells.join('').length
     if (block.kind === 'definitions') return block.items.reduce((total, item) => total + item.text.length, 0)
@@ -241,8 +244,11 @@ export const COLLECT_PAGE_SCRIPT = `(() => {
     if (length === 0) return
     const inView = inViewport(el)
     // Past the collected-text bound only blocks in view still ride the
-    // payload — the scroll delta needs them; a read ends at the bound.
-    if (collectedText > ${MAX_COLLECTED_PAGE_TEXT} && !inView) return
+    // payload — a scroll's New In View needs them; a read ends at the bound.
+    if (collectedText > ${MAX_COLLECTED_PAGE_TEXT} && !inView) {
+      textCut = true
+      return
+    }
     collectedText += length + 1
     if (inView) block.inView = true
     textBlocks.push(block)
@@ -364,6 +370,7 @@ export const COLLECT_PAGE_SCRIPT = `(() => {
     dialogOpen: dialogRoot !== null,
     dialogText: dialogRoot !== null ? textOf(dialogRoot).slice(0, 400) : '',
     textBlocks,
+    textCut,
     elements
   }
 })()`

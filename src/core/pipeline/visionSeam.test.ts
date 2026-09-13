@@ -25,6 +25,7 @@ const emptySnapshot: PageSnapshot = {
   textDigest: '',
   textBlocks: [],
   textLength: 0,
+  textCut: false,
   viewportText: [],
   refs: [],
   totalVisible: 0,
