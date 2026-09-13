@@ -13,6 +13,7 @@ import {
   END_OF_PAGE_MARK,
   FINALIZATION_REASONING_EFFORT,
   FINALIZE_INSTRUCTION_MARK,
+  NO_PROGRESS_NOTICE_MARK,
   LIVE_AUDIT_AGGREGATE_KIND,
   LIVE_AUDIT_KIND,
   NOT_EXECUTED_PREFIX,
@@ -189,32 +190,33 @@ function inputOf(overrides: Partial<AuditTraceInput> = {}): AuditTraceInput {
   }
 }
 
-const kindsOf = (input: AuditTraceInput) => classifyAttempt(input).rounds.map((round) => `${round.round}${round.attempt > 1 ? `.${round.attempt}` : ''}:${round.kind}`)
+/** Digest numbering is by position; the trace's round and attempt ride beside it. */
+const kindsOf = (input: AuditTraceInput) => classifyAttempt(input).rounds.map((round) => `${round.round}[${round.llmRound}.${round.attempt}]:${round.kind}`)
 
 describe('the mechanical classification', () => {
-  it('assigns every round one kind from the trace alone', () => {
+  it('assigns every round one kind from the trace alone, numbered by position with the trace’s round beside it', () => {
     expect(kindsOf(inputOf())).toEqual([
-      '1:acquisition_with_progress',
-      '2:acquisition_with_progress',
-      '3:acquisition_without_progress',
-      '4:acquisition_with_progress',
-      '5:acquisition_with_progress',
-      '6:acquisition_without_progress',
-      '7:acquisition_without_progress',
-      '8:acquisition_without_progress',
-      '9:bookkeeping',
-      '10:collection',
-      '11:failed_round',
-      '12:failed_round',
-      '12.2:acquisition_with_progress',
-      '13:finalization',
-      '14:finalization',
+      '1[1.1]:acquisition_with_progress',
+      '2[2.1]:acquisition_with_progress',
+      '3[3.1]:acquisition_without_progress',
+      '4[4.1]:acquisition_with_progress',
+      '5[5.1]:acquisition_with_progress',
+      '6[6.1]:acquisition_without_progress',
+      '7[7.1]:acquisition_without_progress',
+      '8[8.1]:acquisition_without_progress',
+      '9[9.1]:bookkeeping',
+      '10[10.1]:collection',
+      '11[11.1]:failed_round',
+      '12[12.1]:failed_round',
+      '13[12.2]:acquisition_with_progress',
+      '14[13.1]:finalization',
+      '15[14.1]:finalization',
     ])
   })
 
   it('states the rule each label rests on', () => {
     const { rounds } = classifyAttempt(inputOf())
-    const reason = (round: number, attempt = 1) => rounds.find((candidate) => candidate.round === round && candidate.attempt === attempt)!.reason
+    const reason = (round: number) => rounds.find((candidate) => candidate.round === round)!.reason
     expect(reason(3)).toContain('rewords the one before it (streak 2)')
     expect(reason(5)).toContain('first read')
     expect(reason(6)).toContain('repeat read')
@@ -223,15 +225,61 @@ describe('the mechanical classification', () => {
     expect(reason(9)).toContain('1 rejected Evidence Checkpoint')
     expect(reason(11)).toContain('every call was refused')
     expect(reason(12)).toContain('request timeout')
-    expect(reason(13)).toContain('bookkeeping round')
-    expect(reason(14)).toBe('the reserved Answer')
+    expect(reason(14)).toContain('bookkeeping round')
+    expect(reason(15)).toBe('the reserved Answer')
+  })
+
+  it('joins each Evidence Checkpoint to its own call when a round records several, in trace order', () => {
+    // The trace writes tool_call, evidence_checkpoint, tool_result for each
+    // call in turn: three checkpoints in one round, the middle one rejected.
+    const rounds: RoundSpec[] = [
+      {
+        round: 1,
+        at: 1_000,
+        calls: [
+          { name: 'record_evidence', args: { kind: 'web', observation: 'one', source_url: SPEC_URL }, result: 'Session Evidence recorded: memory-1', checkpoint: 'accepted' },
+          { name: 'record_evidence', args: { kind: 'web', observation: 'two', source_url: SPEC_URL }, ok: false, error: 'record_evidence rejected (excerpt_unsupported): the excerpt does not appear', checkpoint: 'excerpt_unsupported' },
+          { name: 'record_evidence', args: { kind: 'web', observation: 'three', source_url: SPEC_URL }, result: 'Session Evidence recorded: memory-2', checkpoint: 'accepted' },
+        ],
+      },
+    ]
+    const round = classifyAttempt(inputOf({ traceRecords: traceOf(rounds, EXTRA) })).rounds[0]!
+    expect(round.calls.map((call) => call.checkpoint)).toEqual([
+      { accepted: true, outcome: 'accepted' },
+      { accepted: false, outcome: 'excerpt_unsupported' },
+      { accepted: true, outcome: 'accepted' },
+    ])
+    expect(round.tags).toMatchObject({ acceptedCheckpoints: 2, rejectedCheckpoints: 1 })
+    expect(round.reason).toBe('record_evidence, record_evidence, record_evidence — 1 rejected Evidence Checkpoint(s)')
+  })
+
+  it('reads Progress for clicks and typing from the controller’s outcome lines', () => {
+    const rounds: RoundSpec[] = [
+      { round: 1, at: 1_000, calls: [{ name: 'navigate', args: { url: SPEC_URL }, result: PAGE('Watch spec', SPEC_URL, 'aaaa1111') }] },
+      { round: 2, at: 2_000, calls: [{ name: 'click', args: { ref: 3 }, result: `clicked [3]: urlChanged=false dialogOpen=false; page signature changed\n${READ('Watch spec', SPEC_URL, 'bbbb2222')}` }] },
+      { round: 3, at: 3_000, calls: [{ name: 'click', args: { ref: 4 }, result: 'clicked [4]: urlChanged=false dialogOpen=false' }] },
+      { round: 4, at: 4_000, calls: [{ name: 'type', args: { ref: 5, text: 'x' }, result: 'typed [5]: value="x"' }] },
+      { round: 5, at: 5_000, calls: [{ name: 'type', args: { ref: 6, text: 'b' }, result: 'typed [6]: selected="Option B"' }] },
+      { round: 6, at: 6_000, calls: [{ name: 'type', args: { ref: 7, text: 'y' }, result: `typed [7]: not typed — blocked by overlay\n\nThat action ${NO_PROGRESS_NOTICE_MARK} — it will not produce anything new.` }] },
+    ]
+    const { rounds: classified } = classifyAttempt(inputOf({ traceRecords: traceOf(rounds, EXTRA) }))
+    expect(classified.map((round) => round.kind)).toEqual([
+      'acquisition_with_progress',
+      'acquisition_with_progress',
+      'acquisition_without_progress',
+      'acquisition_with_progress',
+      'acquisition_with_progress',
+      'acquisition_without_progress',
+    ])
+    expect(classified[2]!.reason).toContain('neither the URL nor the page signature')
+    expect(classified[5]!.reason).toContain('no-progress Notice')
   })
 
   it('counts the budget, the shares, the checkpoints and the Subagent rounds', () => {
     const mechanical = classifyAttempt(inputOf())
     expect(mechanical.tier).toBe('investigation')
     expect(mechanical.toolRoundBudget).toBe(24)
-    // Rounds outside Finalization that requested a tool: 1–11 and 12.2.
+    // Rounds outside Finalization that requested a tool: 1–11 and 13.
     expect(mechanical.toolRoundsUsed).toBe(12)
     expect(mechanical.budgetedRounds).toBe(13)
     expect(mechanical.counts).toEqual({ acquisition_with_progress: 5, acquisition_without_progress: 4, collection: 1, bookkeeping: 1, failed_round: 2, finalization: 2 })
@@ -393,6 +441,15 @@ describe('the reviewer’s output', () => {
       'offKey: round 9 is bookkeeping, and Off-key is a judgement over Acquisition rounds only',
       'verdict.secondary repeats the primary — a secondary verdict must differ',
     ])
+    // Finalization is mechanical: neither a Finalization round nor a round
+    // overruled into Finalization is a judgement the reviewer can make.
+    const finalization = validateJudgement({ ...judgement, overrules: [{ round: 14, kind: 'failed_round', reason: 'x' }, { round: 11, kind: 'finalization', reason: 'x' }] }, mechanical)
+    expect(finalization.ok).toBe(false)
+    if (finalization.ok) return
+    expect(finalization.errors).toEqual([
+      'overrules: round 14 — Finalization is mechanical and cannot be overruled into or out of',
+      'overrules: round 11 — Finalization is mechanical and cannot be overruled into or out of',
+    ])
     expect(validateJudgement('prose', mechanical)).toEqual({ ok: false, errors: ['the output is not a JSON object'] })
   })
 
@@ -504,7 +561,7 @@ describe('a set and the aggregate', () => {
     expect(markdown).toContain('overrule round 5 → Acquisition without Progress')
     expect(markdown).toContain('Off-key round 4 (https://spec.invalid/other)')
     expect(markdown).toContain('flag (round 5)')
-    expect(markdown).toContain('| 12.2 | Acquisition with Progress |')
+    expect(markdown).toContain('| 13 (trace 12.2) | Acquisition with Progress |')
     expect(markdown).toContain(AUDIT_COUNTS_NOTE)
   })
 })

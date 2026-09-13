@@ -32,9 +32,9 @@
     "reviewerModel": "claude-opus-5",
     "reviewerEffort": "high",
     "reviewerPromptVersion": "audit-p1",
-    "auditCommit": "e63404a7034fb83b7849dafb586ed29cedc21df5",
+    "auditCommit": "49d5371dec49753f4c98784732372f0ef957a431",
     "auditDirtyTree": true,
-    "generatedAt": "2026-09-13T02:02:01.363Z"
+    "generatedAt": "2026-09-13T02:26:24.200Z"
   },
   "attempts": [
     {
@@ -74,6 +74,7 @@
         "rounds": [
           {
             "round": 1,
+            "llmRound": 1,
             "attempt": 1,
             "at": 1789237821771,
             "outcome": "completed",
@@ -139,6 +140,7 @@
           },
           {
             "round": 2,
+            "llmRound": 2,
             "attempt": 1,
             "at": 1789237824018,
             "outcome": "completed",
@@ -185,6 +187,7 @@
           },
           {
             "round": 3,
+            "llmRound": 3,
             "attempt": 1,
             "at": 1789237828624,
             "outcome": "completed",
@@ -231,6 +234,7 @@
           },
           {
             "round": 4,
+            "llmRound": 4,
             "attempt": 1,
             "at": 1789237830338,
             "outcome": "completed",
@@ -277,6 +281,7 @@
           },
           {
             "round": 5,
+            "llmRound": 5,
             "attempt": 1,
             "at": 1789237836065,
             "outcome": "completed",
@@ -323,6 +328,7 @@
           },
           {
             "round": 6,
+            "llmRound": 6,
             "attempt": 1,
             "at": 1789237839288,
             "outcome": "completed",
@@ -369,6 +375,7 @@
           },
           {
             "round": 7,
+            "llmRound": 7,
             "attempt": 1,
             "at": 1789237845043,
             "outcome": "completed",
@@ -415,6 +422,7 @@
           },
           {
             "round": 8,
+            "llmRound": 8,
             "attempt": 1,
             "at": 1789237848713,
             "outcome": "completed",
@@ -461,6 +469,7 @@
           },
           {
             "round": 9,
+            "llmRound": 9,
             "attempt": 1,
             "at": 1789237853123,
             "outcome": "completed",
@@ -507,6 +516,7 @@
           },
           {
             "round": 10,
+            "llmRound": 10,
             "attempt": 1,
             "at": 1789237855566,
             "outcome": "completed",
@@ -553,6 +563,7 @@
           },
           {
             "round": 11,
+            "llmRound": 11,
             "attempt": 1,
             "at": 1789237860933,
             "outcome": "completed",
@@ -599,6 +610,7 @@
           },
           {
             "round": 12,
+            "llmRound": 12,
             "attempt": 1,
             "at": 1789237867278,
             "outcome": "completed",
@@ -627,7 +639,7 @@
                 "wall": null,
                 "checkpoint": {
                   "accepted": false,
-                  "outcome": "record_evidence rejected (malformed): the citation is malformed — provide observation and source_url plus the excerpt copied verbatim from what you observed the…"
+                  "outcome": "malformed"
                 },
                 "notices": [],
                 "search": null,
@@ -669,6 +681,7 @@
           },
           {
             "round": 13,
+            "llmRound": 13,
             "attempt": 1,
             "at": 1789237872666,
             "outcome": "completed",
@@ -718,6 +731,7 @@
           },
           {
             "round": 14,
+            "llmRound": 14,
             "attempt": 1,
             "at": 1789237875988,
             "outcome": "completed",
@@ -766,6 +780,7 @@
           },
           {
             "round": 15,
+            "llmRound": 15,
             "attempt": 1,
             "at": 1789237887880,
             "outcome": "completed",
@@ -813,6 +828,7 @@
           },
           {
             "round": 16,
+            "llmRound": 16,
             "attempt": 1,
             "at": 1789237896533,
             "outcome": "completed",
@@ -859,6 +875,7 @@
           },
           {
             "round": 17,
+            "llmRound": 17,
             "attempt": 1,
             "at": 1789237900816,
             "outcome": "completed",
@@ -905,6 +922,7 @@
           },
           {
             "round": 18,
+            "llmRound": 18,
             "attempt": 1,
             "at": 1789237902960,
             "outcome": "completed",
@@ -953,6 +971,7 @@
           },
           {
             "round": 19,
+            "llmRound": 19,
             "attempt": 1,
             "at": 1789237905467,
             "outcome": "completed",
@@ -1001,6 +1020,7 @@
           },
           {
             "round": 20,
+            "llmRound": 20,
             "attempt": 1,
             "at": 1789237909632,
             "outcome": "completed",
@@ -1047,6 +1067,7 @@
           },
           {
             "round": 21,
+            "llmRound": 21,
             "attempt": 1,
             "at": 1789237911589,
             "outcome": "completed",
@@ -1095,6 +1116,7 @@
           },
           {
             "round": 22,
+            "llmRound": 22,
             "attempt": 1,
             "at": 1789237913380,
             "outcome": "completed",
@@ -1141,6 +1163,7 @@
           },
           {
             "round": 23,
+            "llmRound": 23,
             "attempt": 1,
             "at": 1789237917735,
             "outcome": "completed",
@@ -1185,6 +1208,7 @@
           },
           {
             "round": 24,
+            "llmRound": 24,
             "attempt": 1,
             "at": 1789237984133,
             "outcome": "completed",
@@ -1213,7 +1237,7 @@
                 "wall": null,
                 "checkpoint": {
                   "accepted": false,
-                  "outcome": "record_evidence rejected (malformed): the citation is malformed — provide observation and source_url plus the excerpt copied verbatim from what you observed the…"
+                  "outcome": "malformed"
                 },
                 "notices": [],
                 "search": null,
@@ -1233,6 +1257,7 @@
           },
           {
             "round": 25,
+            "llmRound": 25,
             "attempt": 1,
             "at": 1789237987232,
             "outcome": "completed",
@@ -1285,6 +1310,7 @@
           },
           {
             "round": 26,
+            "llmRound": 26,
             "attempt": 1,
             "at": 1789238005745,
             "outcome": "completed",
@@ -1358,7 +1384,7 @@
           "fact-06"
         ],
         "checksTotal": 10,
-        "digestHash": "sha256:4bf8d0d2566187518a71f8ef66422ac299ee5f31ade4113dffda7340e9b258e0"
+        "digestHash": "sha256:e03bffa8506124d61fcbc6a4b672d2571c094b0884987b3bef05f64abb0b1757"
       },
       "review": {
         "judgement": {
@@ -1436,7 +1462,7 @@
         "served": "claude-opus-5",
         "effort": "high",
         "promptVersion": "audit-p1",
-        "digestHash": "sha256:4bf8d0d2566187518a71f8ef66422ac299ee5f31ade4113dffda7340e9b258e0",
+        "digestHash": "sha256:e03bffa8506124d61fcbc6a4b672d2571c094b0884987b3bef05f64abb0b1757",
         "costUsd": 0.2,
         "durationMs": 36076,
         "judgedAt": "2026-09-13T01:52:06.373Z"
@@ -1491,6 +1517,7 @@
         "rounds": [
           {
             "round": 1,
+            "llmRound": 1,
             "attempt": 1,
             "at": 1789238178740,
             "outcome": "completed",
@@ -1537,7 +1564,7 @@
                 "wall": null,
                 "checkpoint": {
                   "accepted": false,
-                  "outcome": "record_evidence rejected (user_text_unverified): no command, ask_user answer, or steering directive in this run supplied those exact words — copy the user's tex…"
+                  "outcome": "user_text_unverified"
                 },
                 "notices": [],
                 "search": null,
@@ -1598,6 +1625,7 @@
           },
           {
             "round": 2,
+            "llmRound": 2,
             "attempt": 1,
             "at": 1789238184524,
             "outcome": "completed",
@@ -1644,6 +1672,7 @@
           },
           {
             "round": 3,
+            "llmRound": 3,
             "attempt": 1,
             "at": 1789238187161,
             "outcome": "completed",
@@ -1690,6 +1719,7 @@
           },
           {
             "round": 4,
+            "llmRound": 4,
             "attempt": 1,
             "at": 1789238192849,
             "outcome": "completed",
@@ -1734,6 +1764,7 @@
           },
           {
             "round": 5,
+            "llmRound": 5,
             "attempt": 1,
             "at": 1789238198403,
             "outcome": "completed",
@@ -1780,6 +1811,7 @@
           },
           {
             "round": 6,
+            "llmRound": 6,
             "attempt": 1,
             "at": 1789238201603,
             "outcome": "completed",
@@ -1826,6 +1858,7 @@
           },
           {
             "round": 7,
+            "llmRound": 7,
             "attempt": 1,
             "at": 1789238211664,
             "outcome": "completed",
@@ -1872,6 +1905,7 @@
           },
           {
             "round": 8,
+            "llmRound": 8,
             "attempt": 1,
             "at": 1789238214758,
             "outcome": "completed",
@@ -1918,6 +1952,7 @@
           },
           {
             "round": 9,
+            "llmRound": 9,
             "attempt": 1,
             "at": 1789238218669,
             "outcome": "completed",
@@ -1964,6 +1999,7 @@
           },
           {
             "round": 10,
+            "llmRound": 10,
             "attempt": 1,
             "at": 1789238224726,
             "outcome": "completed",
@@ -2010,6 +2046,7 @@
           },
           {
             "round": 11,
+            "llmRound": 11,
             "attempt": 1,
             "at": 1789238234454,
             "outcome": "completed",
@@ -2054,6 +2091,7 @@
           },
           {
             "round": 12,
+            "llmRound": 12,
             "attempt": 1,
             "at": 1789238265637,
             "outcome": "completed",
@@ -2100,6 +2138,7 @@
           },
           {
             "round": 13,
+            "llmRound": 13,
             "attempt": 1,
             "at": 1789238276654,
             "outcome": "completed",
@@ -2146,6 +2185,7 @@
           },
           {
             "round": 14,
+            "llmRound": 14,
             "attempt": 1,
             "at": 1789238285822,
             "outcome": "completed",
@@ -2189,6 +2229,7 @@
           },
           {
             "round": 15,
+            "llmRound": 15,
             "attempt": 1,
             "at": 1789238293868,
             "outcome": "completed",
@@ -2235,6 +2276,7 @@
           },
           {
             "round": 16,
+            "llmRound": 16,
             "attempt": 1,
             "at": 1789238295427,
             "outcome": "completed",
@@ -2281,6 +2323,7 @@
           },
           {
             "round": 17,
+            "llmRound": 17,
             "attempt": 1,
             "at": 1789238300523,
             "outcome": "completed",
@@ -2327,6 +2370,7 @@
           },
           {
             "round": 18,
+            "llmRound": 18,
             "attempt": 1,
             "at": 1789238306486,
             "outcome": "completed",
@@ -2375,6 +2419,7 @@
           },
           {
             "round": 19,
+            "llmRound": 19,
             "attempt": 1,
             "at": 1789238324467,
             "outcome": "completed",
@@ -2442,6 +2487,7 @@
           },
           {
             "round": 20,
+            "llmRound": 20,
             "attempt": 1,
             "at": 1789238385961,
             "outcome": "completed",
@@ -2516,6 +2562,7 @@
           },
           {
             "round": 21,
+            "llmRound": 21,
             "attempt": 1,
             "at": 1789238398131,
             "outcome": "completed",
@@ -2548,7 +2595,7 @@
                 "wall": null,
                 "checkpoint": {
                   "accepted": false,
-                  "outcome": "record_candidate rejected (malformed): the call is malformed — create a Candidate with {subject, detail?, supporting_evidence: [Session Evidence observation ids…"
+                  "outcome": "malformed"
                 },
                 "notices": [],
                 "search": null,
@@ -2568,6 +2615,7 @@
           },
           {
             "round": 22,
+            "llmRound": 22,
             "attempt": 1,
             "at": 1789238408864,
             "outcome": "completed",
@@ -2597,7 +2645,7 @@
                 "wall": null,
                 "checkpoint": {
                   "accepted": false,
-                  "outcome": "record_candidate rejected (malformed): the call is malformed — create a Candidate with {subject, detail?, supporting_evidence: [Session Evidence observation ids…"
+                  "outcome": "malformed"
                 },
                 "notices": [],
                 "search": null,
@@ -2617,6 +2665,7 @@
           },
           {
             "round": 23,
+            "llmRound": 23,
             "attempt": 1,
             "at": 1789238417823,
             "outcome": "completed",
@@ -2667,6 +2716,7 @@
           },
           {
             "round": 24,
+            "llmRound": 24,
             "attempt": 1,
             "at": 1789238423051,
             "outcome": "completed",
@@ -2717,6 +2767,7 @@
           },
           {
             "round": 25,
+            "llmRound": 25,
             "attempt": 1,
             "at": 1789238433056,
             "outcome": "allowance",
@@ -2742,6 +2793,7 @@
           },
           {
             "round": 26,
+            "llmRound": 26,
             "attempt": 1,
             "at": 1789238450356,
             "outcome": "completed",
@@ -2814,7 +2866,7 @@
           "fact-02"
         ],
         "checksTotal": 6,
-        "digestHash": "sha256:68ece2a0e0cc52fd095fa004f73a6379c5c8372d29ef7b8a4906c437e4205129"
+        "digestHash": "sha256:aab3fc8483b398eb67c5b17637e4ada5dd07b7f20c47e0b229365bfd519ad295"
       },
       "review": {
         "judgement": {
@@ -2887,7 +2939,7 @@
         "served": "claude-opus-5",
         "effort": "high",
         "promptVersion": "audit-p1",
-        "digestHash": "sha256:68ece2a0e0cc52fd095fa004f73a6379c5c8372d29ef7b8a4906c437e4205129",
+        "digestHash": "sha256:aab3fc8483b398eb67c5b17637e4ada5dd07b7f20c47e0b229365bfd519ad295",
         "costUsd": 0.21,
         "durationMs": 38805,
         "judgedAt": "2026-09-13T01:52:46.031Z"
@@ -2938,6 +2990,7 @@
         "rounds": [
           {
             "round": 1,
+            "llmRound": 1,
             "attempt": 1,
             "at": 1789238497619,
             "outcome": "completed",
@@ -3003,6 +3056,7 @@
           },
           {
             "round": 2,
+            "llmRound": 2,
             "attempt": 1,
             "at": 1789238503324,
             "outcome": "completed",
@@ -3047,6 +3101,7 @@
           },
           {
             "round": 3,
+            "llmRound": 3,
             "attempt": 1,
             "at": 1789238507444,
             "outcome": "completed",
@@ -3096,6 +3151,7 @@
           },
           {
             "round": 4,
+            "llmRound": 4,
             "attempt": 1,
             "at": 1789238511585,
             "outcome": "completed",
@@ -3142,6 +3198,7 @@
           },
           {
             "round": 5,
+            "llmRound": 5,
             "attempt": 1,
             "at": 1789238513891,
             "outcome": "completed",
@@ -3186,6 +3243,7 @@
           },
           {
             "round": 6,
+            "llmRound": 6,
             "attempt": 1,
             "at": 1789238516514,
             "outcome": "completed",
@@ -3235,6 +3293,7 @@
           },
           {
             "round": 7,
+            "llmRound": 7,
             "attempt": 1,
             "at": 1789238519974,
             "outcome": "completed",
@@ -3278,6 +3337,7 @@
           },
           {
             "round": 8,
+            "llmRound": 8,
             "attempt": 1,
             "at": 1789238526744,
             "outcome": "completed",
@@ -3327,6 +3387,7 @@
           },
           {
             "round": 9,
+            "llmRound": 9,
             "attempt": 1,
             "at": 1789238533893,
             "outcome": "completed",
@@ -3376,6 +3437,7 @@
           },
           {
             "round": 10,
+            "llmRound": 10,
             "attempt": 1,
             "at": 1789238540712,
             "outcome": "completed",
@@ -3425,6 +3487,7 @@
           },
           {
             "round": 11,
+            "llmRound": 11,
             "attempt": 1,
             "at": 1789238553605,
             "outcome": "completed",
@@ -3471,6 +3534,7 @@
           },
           {
             "round": 12,
+            "llmRound": 12,
             "attempt": 1,
             "at": 1789238563354,
             "outcome": "completed",
@@ -3515,6 +3579,7 @@
           },
           {
             "round": 13,
+            "llmRound": 13,
             "attempt": 1,
             "at": 1789238565386,
             "outcome": "completed",
@@ -3545,12 +3610,12 @@
                 "search": null,
                 "progress": {
                   "made": true,
-                  "reason": "a requested state change (text entered)"
+                  "reason": "a requested state change (text entered or an option selected)"
                 }
               }
             ],
             "kind": "acquisition_with_progress",
-            "reason": "type: a requested state change (text entered)",
+            "reason": "type: a requested state change (text entered or an option selected)",
             "tags": {
               "inherited": false,
               "rejectedCheckpoints": 0,
@@ -3562,6 +3627,7 @@
           },
           {
             "round": 14,
+            "llmRound": 14,
             "attempt": 1,
             "at": 1789238571176,
             "outcome": "completed",
@@ -3608,6 +3674,7 @@
           },
           {
             "round": 15,
+            "llmRound": 15,
             "attempt": 1,
             "at": 1789238572972,
             "outcome": "completed",
@@ -3657,6 +3724,7 @@
           },
           {
             "round": 16,
+            "llmRound": 16,
             "attempt": 1,
             "at": 1789238587314,
             "outcome": "completed",
@@ -3706,6 +3774,7 @@
           },
           {
             "round": 17,
+            "llmRound": 17,
             "attempt": 1,
             "at": 1789238591953,
             "outcome": "completed",
@@ -3752,6 +3821,7 @@
           },
           {
             "round": 18,
+            "llmRound": 18,
             "attempt": 1,
             "at": 1789238596116,
             "outcome": "completed",
@@ -3800,6 +3870,7 @@
           },
           {
             "round": 19,
+            "llmRound": 19,
             "attempt": 1,
             "at": 1789238598519,
             "outcome": "completed",
@@ -3846,6 +3917,7 @@
           },
           {
             "round": 20,
+            "llmRound": 20,
             "attempt": 1,
             "at": 1789238601892,
             "outcome": "completed",
@@ -3890,6 +3962,7 @@
           },
           {
             "round": 21,
+            "llmRound": 21,
             "attempt": 1,
             "at": 1789238608235,
             "outcome": "completed",
@@ -3938,6 +4011,7 @@
           },
           {
             "round": 22,
+            "llmRound": 22,
             "attempt": 1,
             "at": 1789238611886,
             "outcome": "completed",
@@ -3982,6 +4056,7 @@
           },
           {
             "round": 23,
+            "llmRound": 23,
             "attempt": 1,
             "at": 1789238613232,
             "outcome": "completed",
@@ -4026,6 +4101,7 @@
           },
           {
             "round": 24,
+            "llmRound": 24,
             "attempt": 1,
             "at": 1789238614841,
             "outcome": "completed",
@@ -4072,6 +4148,7 @@
           },
           {
             "round": 25,
+            "llmRound": 25,
             "attempt": 1,
             "at": 1789238626188,
             "outcome": "allowance",
@@ -4097,6 +4174,7 @@
           },
           {
             "round": 26,
+            "llmRound": 26,
             "attempt": 1,
             "at": 1789238642268,
             "outcome": "completed",
@@ -4171,7 +4249,7 @@
           "fact-11"
         ],
         "checksTotal": 17,
-        "digestHash": "sha256:55f9524bfc01af3d98eef329064e03f4a606a37ad22aff105845af4b7bd56583"
+        "digestHash": "sha256:192e5ef405beb7544ce059601b74f4a68c7dc41197a00204ebae160c196d3101"
       },
       "review": {
         "judgement": {
@@ -4305,7 +4383,7 @@
         "served": "claude-opus-5",
         "effort": "high",
         "promptVersion": "audit-p1",
-        "digestHash": "sha256:55f9524bfc01af3d98eef329064e03f4a606a37ad22aff105845af4b7bd56583",
+        "digestHash": "sha256:192e5ef405beb7544ce059601b74f4a68c7dc41197a00204ebae160c196d3101",
         "costUsd": 0.31,
         "durationMs": 73233,
         "judgedAt": "2026-09-13T01:54:00.084Z"
@@ -4357,6 +4435,7 @@
         "rounds": [
           {
             "round": 1,
+            "llmRound": 1,
             "attempt": 1,
             "at": 1789238782347,
             "outcome": "completed",
@@ -4425,6 +4504,7 @@
           },
           {
             "round": 2,
+            "llmRound": 2,
             "attempt": 1,
             "at": 1789238788945,
             "outcome": "completed",
@@ -4471,6 +4551,7 @@
           },
           {
             "round": 3,
+            "llmRound": 3,
             "attempt": 1,
             "at": 1789238803428,
             "outcome": "completed",
@@ -4517,6 +4598,7 @@
           },
           {
             "round": 4,
+            "llmRound": 4,
             "attempt": 1,
             "at": 1789238805451,
             "outcome": "completed",
@@ -4563,6 +4645,7 @@
           },
           {
             "round": 5,
+            "llmRound": 5,
             "attempt": 1,
             "at": 1789238837053,
             "outcome": "completed",
@@ -4609,6 +4692,7 @@
           },
           {
             "round": 6,
+            "llmRound": 6,
             "attempt": 1,
             "at": 1789238843017,
             "outcome": "completed",
@@ -4681,6 +4765,7 @@
           },
           {
             "round": 7,
+            "llmRound": 7,
             "attempt": 1,
             "at": 1789238845831,
             "outcome": "completed",
@@ -4730,6 +4815,7 @@
           },
           {
             "round": 8,
+            "llmRound": 8,
             "attempt": 1,
             "at": 1789238853462,
             "outcome": "completed",
@@ -4776,6 +4862,7 @@
           },
           {
             "round": 9,
+            "llmRound": 9,
             "attempt": 1,
             "at": 1789238861885,
             "outcome": "completed",
@@ -4822,6 +4909,7 @@
           },
           {
             "round": 10,
+            "llmRound": 10,
             "attempt": 1,
             "at": 1789238866659,
             "outcome": "completed",
@@ -4871,6 +4959,7 @@
           },
           {
             "round": 11,
+            "llmRound": 11,
             "attempt": 1,
             "at": 1789238877331,
             "outcome": "completed",
@@ -4917,6 +5006,7 @@
           },
           {
             "round": 12,
+            "llmRound": 12,
             "attempt": 1,
             "at": 1789238881752,
             "outcome": "completed",
@@ -4964,6 +5054,7 @@
           },
           {
             "round": 13,
+            "llmRound": 13,
             "attempt": 1,
             "at": 1789238883652,
             "outcome": "completed",
@@ -5008,6 +5099,7 @@
           },
           {
             "round": 14,
+            "llmRound": 14,
             "attempt": 1,
             "at": 1789238886720,
             "outcome": "completed",
@@ -5057,6 +5149,7 @@
           },
           {
             "round": 15,
+            "llmRound": 15,
             "attempt": 1,
             "at": 1789238889988,
             "outcome": "completed",
@@ -5103,6 +5196,7 @@
           },
           {
             "round": 16,
+            "llmRound": 16,
             "attempt": 1,
             "at": 1789238956671,
             "outcome": "completed",
@@ -5173,7 +5267,7 @@
           "fact-07"
         ],
         "checksTotal": 14,
-        "digestHash": "sha256:0a64fe88a5c4b6ed0545a963804940ba63d8934fe7bff69fb1db894977d3b646"
+        "digestHash": "sha256:15c5f7feeaa8f09770734fca5dda15e56d3dd6c06ad0ae2f8952cf7bbde40b35"
       },
       "review": {
         "judgement": {
@@ -5255,7 +5349,7 @@
         "served": "claude-opus-5",
         "effort": "high",
         "promptVersion": "audit-p1",
-        "digestHash": "sha256:0a64fe88a5c4b6ed0545a963804940ba63d8934fe7bff69fb1db894977d3b646",
+        "digestHash": "sha256:15c5f7feeaa8f09770734fca5dda15e56d3dd6c06ad0ae2f8952cf7bbde40b35",
         "costUsd": 0.17,
         "durationMs": 32984,
         "judgedAt": "2026-09-13T01:54:33.946Z"
@@ -5306,6 +5400,7 @@
         "rounds": [
           {
             "round": 1,
+            "llmRound": 1,
             "attempt": 1,
             "at": 1789238974401,
             "outcome": "completed",
@@ -5371,6 +5466,7 @@
           },
           {
             "round": 2,
+            "llmRound": 2,
             "attempt": 1,
             "at": 1789238987233,
             "outcome": "completed",
@@ -5417,6 +5513,7 @@
           },
           {
             "round": 3,
+            "llmRound": 3,
             "attempt": 1,
             "at": 1789238990882,
             "outcome": "completed",
@@ -5463,6 +5560,7 @@
           },
           {
             "round": 4,
+            "llmRound": 4,
             "attempt": 1,
             "at": 1789238992336,
             "outcome": "completed",
@@ -5509,6 +5607,7 @@
           },
           {
             "round": 5,
+            "llmRound": 5,
             "attempt": 1,
             "at": 1789238996876,
             "outcome": "completed",
@@ -5555,6 +5654,7 @@
           },
           {
             "round": 6,
+            "llmRound": 6,
             "attempt": 1,
             "at": 1789238998427,
             "outcome": "completed",
@@ -5601,6 +5701,7 @@
           },
           {
             "round": 7,
+            "llmRound": 7,
             "attempt": 1,
             "at": 1789239001141,
             "outcome": "completed",
@@ -5647,6 +5748,7 @@
           },
           {
             "round": 8,
+            "llmRound": 8,
             "attempt": 1,
             "at": 1789239011179,
             "outcome": "completed",
@@ -5691,6 +5793,7 @@
           },
           {
             "round": 9,
+            "llmRound": 9,
             "attempt": 1,
             "at": 1789239020024,
             "outcome": "completed",
@@ -5739,6 +5842,7 @@
           },
           {
             "round": 10,
+            "llmRound": 10,
             "attempt": 1,
             "at": 1789239037218,
             "outcome": "completed",
@@ -5783,6 +5887,7 @@
           },
           {
             "round": 11,
+            "llmRound": 11,
             "attempt": 1,
             "at": 1789239046424,
             "outcome": "completed",
@@ -5831,6 +5936,7 @@
           },
           {
             "round": 12,
+            "llmRound": 12,
             "attempt": 1,
             "at": 1789239050653,
             "outcome": "completed",
@@ -5877,6 +5983,7 @@
           },
           {
             "round": 13,
+            "llmRound": 13,
             "attempt": 1,
             "at": 1789239060399,
             "outcome": "completed",
@@ -5930,6 +6037,7 @@
           },
           {
             "round": 14,
+            "llmRound": 14,
             "attempt": 1,
             "at": 1789239076668,
             "outcome": "completed",
@@ -6002,7 +6110,7 @@
           "fact-03"
         ],
         "checksTotal": 6,
-        "digestHash": "sha256:150bcd6ec4ccac51b5b42b3f965c723fa260d08bdf0bf2f9e949ad23ab31341a"
+        "digestHash": "sha256:b7527ab6f7fefa44e72bafbe69e7cb0f69a1bf215eb36687013c1fdbfa4af1bd"
       },
       "review": {
         "judgement": {
@@ -6054,7 +6162,7 @@
         "served": "claude-opus-5",
         "effort": "high",
         "promptVersion": "audit-p1",
-        "digestHash": "sha256:150bcd6ec4ccac51b5b42b3f965c723fa260d08bdf0bf2f9e949ad23ab31341a",
+        "digestHash": "sha256:b7527ab6f7fefa44e72bafbe69e7cb0f69a1bf215eb36687013c1fdbfa4af1bd",
         "costUsd": 0.13,
         "durationMs": 24413,
         "judgedAt": "2026-09-13T01:54:59.181Z"
@@ -6102,6 +6210,7 @@
         "rounds": [
           {
             "round": 1,
+            "llmRound": 1,
             "attempt": 1,
             "at": 1789239410577,
             "outcome": "timeout",
@@ -6127,6 +6236,7 @@
           },
           {
             "round": 2,
+            "llmRound": 2,
             "attempt": 1,
             "at": 1789239420581,
             "outcome": "allowance",
@@ -6152,6 +6262,7 @@
           },
           {
             "round": 3,
+            "llmRound": 3,
             "attempt": 1,
             "at": 1789239449009,
             "outcome": "completed",
@@ -6223,7 +6334,7 @@
           "pitfall-01"
         ],
         "checksTotal": 15,
-        "digestHash": "sha256:34d3a9270a17ab6d17b57ce393ef8e131230af01bb8c854ac637da6d7f9b42b3"
+        "digestHash": "sha256:d9aeea603cf64ff890b1b6cd63e70a8eb726495ee37dfa5862ddd7db4c4532ed"
       },
       "review": {
         "judgement": {
@@ -6264,7 +6375,7 @@
         "served": "claude-opus-5",
         "effort": "high",
         "promptVersion": "audit-p1",
-        "digestHash": "sha256:34d3a9270a17ab6d17b57ce393ef8e131230af01bb8c854ac637da6d7f9b42b3",
+        "digestHash": "sha256:d9aeea603cf64ff890b1b6cd63e70a8eb726495ee37dfa5862ddd7db4c4532ed",
         "costUsd": 0.07,
         "durationMs": 12523,
         "judgedAt": "2026-09-13T01:55:12.747Z"

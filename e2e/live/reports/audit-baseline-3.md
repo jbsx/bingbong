@@ -1,13 +1,13 @@
 # Round Audit — bingbong.live-web.information-hunts (baseline-3)
 
-Generated 2026-09-13T02:02:01.363Z from a capture set created 2026-09-12T18:57:29.347Z (state complete). This audit counts and does not judge: every verdict is the reviewer’s for one attempt, and the ranking is arithmetic over those verdicts.
+Generated 2026-09-13T02:26:24.200Z from a capture set created 2026-09-12T18:57:29.347Z (state complete). This audit counts and does not judge: every verdict is the reviewer’s for one attempt, and the ranking is arithmetic over those verdicts.
 
 ## Provenance
 
 - capture: commit(s) 59bdf48b (dirty tree); mode measured; protocol 1; prompt version(s) 1
 - routing: orchestrator=GLM-5.3; subagent=GLM-5.3-flash; vision=GLM-4.6V | reasoning override: none | effort overrides: none | adblock: production_default
 - key 2.2.2.2, manifest sha256:faa25d04…; grades by claude-opus-5 via live:grade (revision 1)
-- reviewer: claude-opus-5 at high, prompt audit-p1; audit run at commit e63404a7 (dirty tree)
+- reviewer: claude-opus-5 at high, prompt audit-p1; audit run at commit 49d5371d (dirty tree)
 
 ## Populations
 
@@ -33,7 +33,7 @@ Kinds are mechanical counts; a share is over the budgeted rounds (Finalization o
 
 ### compatibility-pi-camera--initial (initial)
 
-- answered; ended done / completed (budget_exhausted); tier investigation; 24 of 24 Tool Rounds used; 26 model rounds, 2 in Finalization; Run duration 266324 ms; LLM stage 196187 ms over 26 joined round(s)
+- answered; ended done / completed (budget_exhausted); tier investigation; 24 of 24 Tool Rounds used; 26 orchestrator rounds, 2 in Finalization; Run duration 266324 ms; LLM stage 196187 ms over 26 joined round(s)
 - grade useful_partial; checks not reached: fact-05, fact-06 (2 of 10)
 - 13 Subagent round(s) over 1 Subagent(s), stopped by budget_exhausted 1; 4 accepted and 3 rejected Evidence Checkpoint(s); 0 inherited round(s); 0 walled round(s)
 - kinds: Acquisition with Progress 16 (67%) · Acquisition without Progress 2 (8%) · Collection 1 (4%) · Bookkeeping 5 (21%) · Failed round 0 (0%) · Finalization 2 (8%)
@@ -50,7 +50,7 @@ Kinds are mechanical counts; a share is over the budgeted rounds (Finalization o
 - flag (round 21): Rounds 21–22 scrolled accessories/camera.html to y=277 and y=554 after an anchor navigate. Round 3 had already scrolled to y=277 on that page, though with a different result head. Do these rounds count as progress or as repeats?
 - flag (round 12): Rounds 12 and 24 had all of their evidence records rejected as malformed. Should they count toward wasted rounds, or stay as ordinary bookkeeping?
 - flag: Should the secondary verdict be tier_too_small_or_never_escalated, or is rounds_wasted alone enough, since the wasted rounds, if spent reading, might have reached fact-05 and fact-06 within the same budget?
-- reviewer claude-opus-5 at high, prompt audit-p1, digest sha256:4bf8d0d2…, $0.20
+- reviewer claude-opus-5 at high, prompt audit-p1, digest sha256:e03bffa8…, $0.20
 
 | round | kind | tools | page | ms | note |
 | --- | --- | --- | --- | --- | --- |
@@ -83,7 +83,7 @@ Kinds are mechanical counts; a share is over the budgeted rounds (Finalization o
 
 ### compatibility-pi-camera--follow_up (revised_objective)
 
-- answered; ended done / completed (budget_exhausted); tier investigation (1 deadline escalation(s)); 24 of 24 Tool Rounds used; 26 model rounds, 2 in Finalization; Run duration 443819 ms; LLM stage 426768 ms over 26 joined round(s)
+- answered; ended done / completed (budget_exhausted); tier investigation (1 Tier Escalation(s) at the deadline); 24 of 24 Tool Rounds used; 26 orchestrator rounds, 2 in Finalization; Run duration 443819 ms; LLM stage 426768 ms over 26 joined round(s)
 - grade useful_partial; checks not reached: fact-02 (1 of 6)
 - 13 Subagent round(s) over 1 Subagent(s), stopped by budget_exhausted 1; 5 accepted and 3 rejected Evidence Checkpoint(s); 1 inherited round(s); 0 walled round(s)
 - kinds: Acquisition with Progress 14 (58%) · Acquisition without Progress 3 (13%) · Collection 1 (4%) · Bookkeeping 5 (21%) · Failed round 1 (4%) · Finalization 2 (8%)
@@ -98,7 +98,7 @@ Kinds are mechanical counts; a share is over the budgeted rounds (Finalization o
 - flag (round 3): The scroll answered End of Page at y=277, but round 4 shows the page is 8310 px tall. Was this a real End of Page, or a scroll failure that should be classed as a failed round?
 - flag (round 10): Is a look that returned only the page title really a round without progress, or should the mechanical label with progress stand?
 - flag: Should tier_too_small_or_never_escalated be a secondary verdict? The Run stayed on the investigation tier and never escalated, but much of its budget went to unproductive rounds, so a larger budget may not have been what it lacked.
-- reviewer claude-opus-5 at high, prompt audit-p1, digest sha256:68ece2a0…, $0.21
+- reviewer claude-opus-5 at high, prompt audit-p1, digest sha256:aab3fc84…, $0.21
 
 | round | kind | tools | page | ms | note |
 | --- | --- | --- | --- | --- | --- |
@@ -131,7 +131,7 @@ Kinds are mechanical counts; a share is over the budgeted rounds (Finalization o
 
 ### historical-longitude-watch--initial (initial)
 
-- answered; ended done / partial (budget_exhausted); tier investigation; 24 of 24 Tool Rounds used; 26 model rounds, 2 in Finalization; Run duration 186557 ms; LLM stage 157331 ms over 26 joined round(s)
+- answered; ended done / partial (budget_exhausted); tier investigation; 24 of 24 Tool Rounds used; 26 orchestrator rounds, 2 in Finalization; Run duration 186557 ms; LLM stage 157331 ms over 26 joined round(s)
 - grade useful_partial; checks not reached: fact-03, fact-05, fact-08, fact-10, fact-11 (5 of 17)
 - 0 Subagent round(s) over 0 Subagent(s); 0 accepted and 0 rejected Evidence Checkpoint(s); 0 inherited round(s); 0 walled round(s)
 - kinds: Acquisition with Progress 13 (54%) · Acquisition without Progress 5 (21%) · Collection 0 (0%) · Bookkeeping 0 (0%) · Failed round 6 (25%) · Finalization 2 (8%)
@@ -158,7 +158,7 @@ Kinds are mechanical counts; a share is over the budgeted rounds (Finalization o
 - flag (round 18): Should round 18 count as without progress? The scroll on S1 brought only a cookie settings button into view.
 - flag (round 4): Is round 4 off-key? It may have dismissed an overlay needed to use the search box rather than acquiring anything.
 - flag: Is failed_rounds the right secondary? At 25% of the budget, including the refusals in rounds 2, 5 and 7 that blocked on-site search, a reviewer could weigh it close to rounds_wasted as the primary cause.
-- reviewer claude-opus-5 at high, prompt audit-p1, digest sha256:55f9524b…, $0.31
+- reviewer claude-opus-5 at high, prompt audit-p1, digest sha256:192e5ef4…, $0.31
 
 | round | kind | tools | page | ms | note |
 | --- | --- | --- | --- | --- | --- |
@@ -174,7 +174,7 @@ Kinds are mechanical counts; a share is over the budgeted rounds (Finalization o
 | 10 | Acquisition without Progress | navigate | https://www.rmg.co.uk/collections/object?q=Harrison+longitude+watch | 5623 | navigate: a search that rewords the one before it (streak 2) [search loop] |
 | 11 | Acquisition with Progress | scroll | https://www.rmg.co.uk/collections/object?q=Harrison+longitude+watch | 6719 | scroll: the scroll brought new material into view [off-key] |
 | 12 | Failed round | type ✗ | https://www.rmg.co.uk/collections/object?q=Harrison+longitude+watch | 9389 | every call was refused (type) |
-| 13 | Acquisition with Progress → Acquisition without Progress | type | https://www.rmg.co.uk/collections/object?q=Harrison+longitude+watch | 1961 | type: a requested state change (text entered) [off-key, search loop] |
+| 13 | Acquisition with Progress → Acquisition without Progress | type | https://www.rmg.co.uk/collections/object?q=Harrison+longitude+watch | 1961 | type: a requested state change (text entered or an option selected) [off-key, search loop] |
 | 14 | Acquisition with Progress | scroll | https://www.rmg.co.uk/collections/object?q=Harrison+longitude+watch | 3584 | scroll: the scroll brought new material into view [off-key] |
 | 15 | Acquisition with Progress → Acquisition without Progress | navigate | https://www.rmg.co.uk/collections/object?q=%22Harrison%22&filter=date | 1478 | navigate: the settled page state moved to a page this Run had not acquired [off-key, search loop] |
 | 16 | Acquisition with Progress | navigate | https://duckduckgo.com/?q=rmg.co.uk+collections+Harrison+H4+longitude+timekeeper… | 7270 | navigate: the settled page state moved to a page this Run had not acquired [off-key] |
@@ -191,7 +191,7 @@ Kinds are mechanical counts; a share is over the budgeted rounds (Finalization o
 
 ### rule-eurostar-luggage--initial (initial)
 
-- answered; ended done / completed (objective_met); tier investigation (1 deadline escalation(s)); 15 of 24 Tool Rounds used; 16 model rounds, 1 in Finalization; Run duration 310484 ms; LLM stage 294145 ms over 16 joined round(s)
+- answered; ended done / completed (objective_met); tier investigation (1 Tier Escalation(s) at the deadline); 15 of 24 Tool Rounds used; 16 orchestrator rounds, 1 in Finalization; Run duration 310484 ms; LLM stage 294145 ms over 16 joined round(s)
 - grade useful_partial; checks not reached: fact-07 (1 of 14)
 - 0 Subagent round(s) over 0 Subagent(s); 4 accepted and 0 rejected Evidence Checkpoint(s); 0 inherited round(s); 0 walled round(s)
 - kinds: Acquisition with Progress 11 (73%) · Acquisition without Progress 1 (7%) · Collection 0 (0%) · Bookkeeping 3 (20%) · Failed round 0 (0%) · Finalization 1 (6%)
@@ -208,7 +208,7 @@ Kinds are mechanical counts; a share is over the budgeted rounds (Finalization o
 - flag (round 8): https://help.eurostar.com/faq/uk-en/category/luggage is a category index of FAQ titles. Could it carry allowance facts in expanded answers, or should it be marked off-key like the search pages?
 - flag (round 12): The type call returned 'not typed — blocked by overlay'. Is that a refused call, making round 12 a failed round rather than acquisition without progress?
 - flag (round 13): read_page of the Help Centre home page, already in view since round 11, is labelled a first read with progress. Should it be overruled to acquisition without progress as a repeat observation of an already-observed state?
-- reviewer claude-opus-5 at high, prompt audit-p1, digest sha256:0a64fe88…, $0.17
+- reviewer claude-opus-5 at high, prompt audit-p1, digest sha256:15c5f7fe…, $0.17
 
 | round | kind | tools | page | ms | note |
 | --- | --- | --- | --- | --- | --- |
@@ -231,7 +231,7 @@ Kinds are mechanical counts; a share is over the budgeted rounds (Finalization o
 
 ### rule-eurostar-luggage--follow_up (revised_objective)
 
-- answered; ended done / partial (budget_exhausted); tier lookup; 12 of 12 Tool Rounds used; 14 model rounds, 2 in Finalization; Run duration 119619 ms; LLM stage 116385 ms over 14 joined round(s)
+- answered; ended done / partial (budget_exhausted); tier lookup; 12 of 12 Tool Rounds used; 14 orchestrator rounds, 2 in Finalization; Run duration 119619 ms; LLM stage 116385 ms over 14 joined round(s)
 - grade useful_partial; checks not reached: fact-01, fact-02, fact-03 (3 of 6)
 - 0 Subagent round(s) over 0 Subagent(s); 1 accepted and 0 rejected Evidence Checkpoint(s); 1 inherited round(s); 0 walled round(s)
 - kinds: Acquisition with Progress 9 (75%) · Acquisition without Progress 1 (8%) · Collection 0 (0%) · Bookkeeping 0 (0%) · Failed round 2 (17%) · Finalization 2 (14%)
@@ -243,7 +243,7 @@ Kinds are mechanical counts; a share is over the budgeted rounds (Finalization o
 - flag (round 11): Is the overrule to without progress right? The mechanical label counted new text in view, but the scroll went back to the y=1662 position seen in round 7.
 - flag: Should the primary verdict be tier_too_small_or_never_escalated instead of rounds_wasted? Rounds 2-7 were mechanically labelled with progress and all stayed on key, and the lookup tier's 12 rounds were never escalated.
 - flag (round 9): Was round 9 wasted overshoot, or a fair progress round? It scrolled past the table but did bring new page text into view.
-- reviewer claude-opus-5 at high, prompt audit-p1, digest sha256:150bcd6e…, $0.13
+- reviewer claude-opus-5 at high, prompt audit-p1, digest sha256:b7527ab6…, $0.13
 
 | round | kind | tools | page | ms | note |
 | --- | --- | --- | --- | --- | --- |
@@ -264,7 +264,7 @@ Kinds are mechanical counts; a share is over the budgeted rounds (Finalization o
 
 ### superseded-voyager-interstellar--initial (initial)
 
-- answered; ended done / partial (deadline_reached); tier investigation (1 deadline escalation(s)); 0 of 24 Tool Rounds used; 3 model rounds, 2 in Finalization; Run duration 368440 ms; LLM stage 368430 ms over 3 joined round(s)
+- answered; ended done / partial (deadline_reached); tier investigation (1 Tier Escalation(s) at the deadline); 0 of 24 Tool Rounds used; 3 orchestrator rounds, 2 in Finalization; Run duration 368440 ms; LLM stage 368430 ms over 3 joined round(s)
 - grade useful_partial; checks not reached: fact-06, pitfall-01 (2 of 15)
 - 0 Subagent round(s) over 0 Subagent(s); 0 accepted and 0 rejected Evidence Checkpoint(s); 0 inherited round(s); 0 walled round(s)
 - kinds: Acquisition with Progress 0 (0%) · Acquisition without Progress 0 (0%) · Collection 0 (0%) · Bookkeeping 0 (0%) · Failed round 1 (100%) · Finalization 2 (67%)
@@ -273,7 +273,7 @@ Kinds are mechanical counts; a share is over the budgeted rounds (Finalization o
 - flag (round 1): Round 1 timed out after producing 62793 chars of reasoning with no tool call, under a deadline plan. Should this count as a failed round (a client timeout), or as a planning failure where the model spent its time thinking instead of acquiring pages? The second reading could point to a different verdict.
 - flag (round 2): Round 2 was a Finalization round cut by the Finalization Allowance after 10001 ms. Did losing it add to the partial grade, beyond the round 1 timeout?
 - flag: The grade is useful_partial, and most checks were met with zero acquisition. Is failed_rounds still the right primary verdict? Or does the result say the task was mostly answerable from memory, which would make the unreached pitfall-01 the real cost?
-- reviewer claude-opus-5 at high, prompt audit-p1, digest sha256:34d3a927…, $0.07
+- reviewer claude-opus-5 at high, prompt audit-p1, digest sha256:d9aeea60…, $0.07
 
 | round | kind | tools | page | ms | note |
 | --- | --- | --- | --- | --- | --- |

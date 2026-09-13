@@ -1,13 +1,13 @@
 # Round Audit — bingbong.live-web.information-hunts (baseline-2)
 
-Generated 2026-09-13T02:02:01.363Z from a capture set created 2026-09-12T18:10:26.845Z (state complete). This audit counts and does not judge: every verdict is the reviewer’s for one attempt, and the ranking is arithmetic over those verdicts.
+Generated 2026-09-13T02:26:24.200Z from a capture set created 2026-09-12T18:10:26.845Z (state complete). This audit counts and does not judge: every verdict is the reviewer’s for one attempt, and the ranking is arithmetic over those verdicts.
 
 ## Provenance
 
 - capture: commit(s) 6152d8dc (dirty tree); mode measured; protocol 1; prompt version(s) 1
 - routing: orchestrator=GLM-5.3; subagent=GLM-5.3-flash; vision=GLM-4.6V | reasoning override: none | effort overrides: none | adblock: production_default
 - key 2.2.2.2, manifest sha256:faa25d04…; grades by claude-opus-5 via live:grade (revision 1)
-- reviewer: claude-opus-5 at high, prompt audit-p1; audit run at commit e63404a7 (dirty tree)
+- reviewer: claude-opus-5 at high, prompt audit-p1; audit run at commit 49d5371d (dirty tree)
 
 ## Populations
 
@@ -26,14 +26,14 @@ Kinds are mechanical counts; a share is over the budgeted rounds (Finalization o
 | stopped early | 0 | 0 | 0 | 0 |
 | failed rounds | 0 | 2 | 0 | 0 |
 
-- initial: 22 Off-key round(s), 0 Search Loop round(s) by the reviewer (0 by the streak rule), 0 inherited, 5 rejected Evidence Checkpoint(s), 1 walled round(s), 0 Subagent round(s), 0 stopped early, 6 overrule(s), 22 flag(s); Finalization Causes: budget_exhausted 3, objective_met 1
+- initial: 22 Off-key round(s), 0 Search Loop round(s) by the reviewer (0 by the streak rule), 0 inherited, 5 rejected Evidence Checkpoint(s), 1 walled round(s), 0 Subagent round(s), 0 stopped early, 6 overrule(s), 21 flag(s); Finalization Causes: budget_exhausted 3, objective_met 1
 - follow_up: 19 Off-key round(s), 0 Search Loop round(s) by the reviewer (0 by the streak rule), 2 inherited, 4 rejected Evidence Checkpoint(s), 0 walled round(s), 0 Subagent round(s), 0 stopped early, 0 overrule(s), 10 flag(s); Finalization Causes: budget_exhausted 1, objective_met 1
 
 ## Attempts
 
 ### compatibility-pi-camera--initial (initial)
 
-- answered; ended done / completed (budget_exhausted); tier investigation (1 deadline escalation(s)); 24 of 24 Tool Rounds used; 26 model rounds, 2 in Finalization; Run duration 401400 ms; LLM stage 389039 ms over 26 joined round(s)
+- answered; ended done / completed (budget_exhausted); tier investigation (1 Tier Escalation(s) at the deadline); 24 of 24 Tool Rounds used; 26 orchestrator rounds, 2 in Finalization; Run duration 401400 ms; LLM stage 389039 ms over 26 joined round(s)
 - grade useful_partial; checks not reached: fact-05 (1 of 10)
 - 0 Subagent round(s) over 0 Subagent(s); 4 accepted and 0 rejected Evidence Checkpoint(s); 0 inherited round(s); 0 walled round(s)
 - kinds: Acquisition with Progress 16 (67%) · Acquisition without Progress 4 (17%) · Collection 0 (0%) · Bookkeeping 1 (4%) · Failed round 3 (13%) · Finalization 2 (8%)
@@ -49,7 +49,7 @@ Kinds are mechanical counts; a share is over the budgeted rounds (Finalization o
 - flag (round 10): The raw.githubusercontent URLs in rounds 10 and 15 could carry the required facts, but they rendered empty. Should they be judged off-key because of what they actually delivered?
 - flag (round 21): libcamera_differences.adoc covers how rpicam differs from raspicam rather than which cameras the legacy stack supports. Is it on-key for fact-05, or only next to it?
 - flag: Is failed_rounds a fair secondary verdict, or tier_too_small_or_never_escalated, given the investigation tier ran to budget with no Tier Escalation and the refused rounds are also counted under the primary waste?
-- reviewer claude-opus-5 at high, prompt audit-p1, digest sha256:c6f7e6af…, $0.20
+- reviewer claude-opus-5 at high, prompt audit-p1, digest sha256:2ff731b4…, $0.20
 
 | round | kind | tools | page | ms | note |
 | --- | --- | --- | --- | --- | --- |
@@ -82,7 +82,7 @@ Kinds are mechanical counts; a share is over the budgeted rounds (Finalization o
 
 ### compatibility-pi-camera--follow_up (revised_objective)
 
-- answered; ended done / completed (budget_exhausted); tier investigation (1 deadline escalation(s)); 24 of 24 Tool Rounds used; 26 model rounds, 2 in Finalization; Run duration 355038 ms; LLM stage 340027 ms over 26 joined round(s)
+- answered; ended done / completed (budget_exhausted); tier investigation (1 Tier Escalation(s) at the deadline); 24 of 24 Tool Rounds used; 26 orchestrator rounds, 2 in Finalization; Run duration 355038 ms; LLM stage 340027 ms over 26 joined round(s)
 - grade useful_partial; checks not reached: fact-02 (1 of 6)
 - 0 Subagent round(s) over 0 Subagent(s); 3 accepted and 2 rejected Evidence Checkpoint(s); 1 inherited round(s); 0 walled round(s)
 - kinds: Acquisition with Progress 18 (75%) · Acquisition without Progress 3 (13%) · Collection 0 (0%) · Bookkeeping 3 (13%) · Failed round 0 (0%) · Finalization 2 (8%)
@@ -108,7 +108,7 @@ Kinds are mechanical counts; a share is over the budgeted rounds (Finalization o
 - flag (round 21): The Look on the verified documentation page asked about dimensions and case compatibility but did not surface fact-02. Was that the page failing to show the mechanical section, or the question and scroll position missing it? If the former, is 'tier_too_small_or_never_escalated' a fair secondary verdict, since no Tier Escalation happened and the budget ran out right after the right page was reached?
 - flag (round 22): Round 22's record_candidate was rejected as malformed, costing a budgeted round. Should it be read as a partly failed round instead of plain Bookkeeping?
 - flag: Is rounds_wasted the right primary verdict, given that about half the waste was on an official, related page and not on unrelated sites?
-- reviewer claude-opus-5 at high, prompt audit-p1, digest sha256:572b212c…, $0.22
+- reviewer claude-opus-5 at high, prompt audit-p1, digest sha256:55f47c8a…, $0.22
 
 | round | kind | tools | page | ms | note |
 | --- | --- | --- | --- | --- | --- |
@@ -141,7 +141,7 @@ Kinds are mechanical counts; a share is over the budgeted rounds (Finalization o
 
 ### historical-longitude-watch--initial (initial)
 
-- answered; ended done / partial (budget_exhausted); tier investigation; 24 of 24 Tool Rounds used; 26 model rounds, 2 in Finalization; Run duration 216821 ms; LLM stage 196001 ms over 26 joined round(s)
+- answered; ended done / partial (budget_exhausted); tier investigation; 24 of 24 Tool Rounds used; 26 orchestrator rounds, 2 in Finalization; Run duration 216821 ms; LLM stage 196001 ms over 26 joined round(s)
 - grade useful_partial; checks not reached: fact-03, fact-05, fact-08, fact-09, fact-10, fact-11 (6 of 17)
 - 0 Subagent round(s) over 0 Subagent(s); 0 accepted and 0 rejected Evidence Checkpoint(s); 0 inherited round(s); 0 walled round(s)
 - kinds: Acquisition with Progress 14 (58%) · Acquisition without Progress 4 (17%) · Collection 0 (0%) · Bookkeeping 0 (0%) · Failed round 6 (25%) · Finalization 2 (8%)
@@ -163,7 +163,7 @@ Kinds are mechanical counts; a share is over the budgeted rounds (Finalization o
 - flag (round 24): Is ?view=full on rmgc-object-79142 a genuinely new page state, or a re-acquisition of S1 that should count as without progress?
 - flag (round 22): The click in round 22 changed the page signature on S1 but has no recorded outcome for the details table. Does it deserve with-progress?
 - flag: Should failed_rounds be primary instead? 25% failed rounds is close to the combined off-key and repeat share, and the refusals in 19–20 came right before the budget ran out.
-- reviewer claude-opus-5 at high, prompt audit-p1, digest sha256:57584390…, $0.19
+- reviewer claude-opus-5 at high, prompt audit-p1, digest sha256:2ba76696…, $0.19
 
 | round | kind | tools | page | ms | note |
 | --- | --- | --- | --- | --- | --- |
@@ -196,19 +196,18 @@ Kinds are mechanical counts; a share is over the budgeted rounds (Finalization o
 
 ### rule-eurostar-luggage--initial (initial)
 
-- answered; ended done / completed (objective_met); tier investigation (1 deadline escalation(s)); 23 of 24 Tool Rounds used; 24 model rounds, 1 in Finalization; Run duration 382039 ms; LLM stage 374300 ms over 24 joined round(s)
+- answered; ended done / completed (objective_met); tier investigation (1 Tier Escalation(s) at the deadline); 23 of 24 Tool Rounds used; 24 orchestrator rounds, 1 in Finalization; Run duration 382039 ms; LLM stage 374300 ms over 24 joined round(s)
 - grade useful_partial; checks not reached: fact-03, fact-07, fact-08 (3 of 14)
 - 0 Subagent round(s) over 0 Subagent(s); 4 accepted and 5 rejected Evidence Checkpoint(s); 0 inherited round(s); 0 walled round(s)
 - kinds: Acquisition with Progress 18 (78%) · Acquisition without Progress 0 (0%) · Collection 0 (0%) · Bookkeeping 5 (22%) · Failed round 0 (0%) · Finalization 1 (4%)
-- **verdict: rounds wasted** — The Run needed only two official pages: https://www.eurostar.com/uk-en/travel-info/travel-planning/luggage (rounds 2-12) and https://www.eurostar.com/uk-en/travel-info/travel-planning/luggage/musical-instruments (rounds 13-18). Every page it needed was in hand by round 18, but reading them took 17 rounds: 9 small 277px scrolls on the first page and 5 on the second. Of the 5 bookkeeping rounds (22% of the 23 budgeted), rounds 20, 21 and 22 were all refused attempts to record a user constraint that no check needs. Round 19 had 2 of its 5 checkpoints rejected, and round 23 re-recorded an excerpt refused in round 19. That is at least 4 rounds (about 17%) spent redoing refused work, and the budget was nearly gone (1 remaining) as the Answer was written. The misses (fact-03, fact-07, fact-08) were answerable from material already gathered.
-- stopped early: no — The Run used 23 of its 24 Tool Rounds, and a budget warning of 1 remaining arrived in round 23 before the reserved Answer in round 24. It ran to its budget. The unreached checks (fact-03, fact-07, fact-08) needed no new pages: both official pages were already held by round 13, and round 23 even recorded the general length limit. So they were missed when the Answer was written, not cut off by stopping early.
-- Off-key round 1 (https://duckduckgo.com/?q=eurostar+luggage+allowance+official&ia=web): A search results page. It lists links but cannot itself state any required fact. It did lead straight to the official luggage page in round 2.
-- flag (round 1): Should the DuckDuckGo results page count as Off-key, given it led directly to the official page in round 2?
-- flag (round 20): Rounds 20-22 each made a single record_evidence call and all were refused. Should they be Failed rounds (every call refused) rather than Bookkeeping?
-- flag (round 19): In round 19 the per-call checkpoint labels contradict the results: call 2 is marked REJECTED but was recorded as memory-1, and call 5 is marked accepted but was rejected. Does the digest's rejected count (2) for this round stand?
-- flag: The unreached checks were not held back by budget or missing pages; they were left out of the Answer. Is rounds_wasted the right primary, or should this attempt get no budget-related verdict at all?
-- flag (round 4): Rounds 4-12 and 14-18 read two pages in 277px steps, each marked as progress. Should the finer steps count as inefficient acquisition that helped waste the budget?
-- reviewer claude-opus-5 at high, prompt audit-p1, digest sha256:ea7a563e…, $0.19
+- **verdict: rounds wasted** — Acquisition was on-key and done by round 18: S1 in rounds 2–12 and S2 in rounds 13–18, with round 1 the only Off-key round (1/23). The rest of the budget went to 5 bookkeeping rounds (19–23, about 22%) with 5 rejected checkpoints. Rounds 20, 21 and 22 (3/23, 13%) each made one attempt to record the user's constraint, and every one was rejected. That retry streak, plus the rejected first checkpoint in round 19 that round 23 had to redo, ate the remaining budget. The Run reached its final round with 1/24 left and no margin to check the Answer's coverage of fact-03, fact-07 and fact-08.
+- stopped early: no — The Run used 23 of its 24 Tool Rounds, with a budget warning at 1/24 in round 23, so it ran to its budget. The unreached checks fact-03, fact-07 and fact-08 needed no new pages: the material was already on S1 and S2, acquired in rounds 2–18. They were missed when the Answer was written, not by stopping acquisition.
+- Off-key round 1 (https://duckduckgo.com/?q=eurostar+luggage+allowance+official&ia=web): This is a search results page. It can point to the official sources, but it cannot carry any required fact itself. It did lead straight to S1 in round 2.
+- flag (round 1): Should the DuckDuckGo results page be called Off-key? It carries no required fact, but it was a one-round step that led directly to S1.
+- flag (round 20): Rounds 20–22 each held a single record_evidence call that was rejected. Should they stay Bookkeeping with the rejections counted beside them, or count as Failed rounds because every call was refused?
+- flag (round 4): Rounds 4–12 scrolled S1 in small steps, and some steps showed only navigation links. Were these really Acquisition with Progress, or would a careful reviewer count some of them as low-value repeats?
+- flag: Is rounds_wasted the right primary verdict when all acquisition was on-key and the unreached checks were composition misses? Would no verdict from the closed set fit better, or does the 13–22% share of rejected-checkpoint rounds justify it?
+- reviewer claude-opus-5 at high, prompt audit-p1, digest sha256:e5eaf4c6…, $0.18
 
 | round | kind | tools | page | ms | note |
 | --- | --- | --- | --- | --- | --- |
@@ -239,7 +238,7 @@ Kinds are mechanical counts; a share is over the budgeted rounds (Finalization o
 
 ### rule-eurostar-luggage--follow_up (revised_objective)
 
-- answered; ended done / completed (objective_met); tier investigation (1 deadline escalation(s)); 18 of 24 Tool Rounds used; 19 model rounds, 1 in Finalization; Run duration 297082 ms; LLM stage 285366 ms over 19 joined round(s)
+- answered; ended done / completed (objective_met); tier investigation (1 Tier Escalation(s) at the deadline); 18 of 24 Tool Rounds used; 19 orchestrator rounds, 1 in Finalization; Run duration 297082 ms; LLM stage 285366 ms over 19 joined round(s)
 - grade pass; checks not reached: none
 - 0 Subagent round(s) over 0 Subagent(s); 2 accepted and 2 rejected Evidence Checkpoint(s); 1 inherited round(s); 0 walled round(s)
 - kinds: Acquisition with Progress 10 (56%) · Acquisition without Progress 2 (11%) · Collection 0 (0%) · Bookkeeping 4 (22%) · Failed round 2 (11%) · Finalization 1 (5%)
@@ -254,7 +253,7 @@ Kinds are mechanical counts; a share is over the budgeted rounds (Finalization o
 - flag (round 11): The URL names a luggage FAQ but the title reads 'Home'. Did the page actually render the FAQ answer, which would make it on-key, or did it fall back to the home page, and possibly repeat round 10's state?
 - flag (round 9): Round 9's read_page is labelled as progress, yet the run then left S1 without the class table. Did this read bring in any useful new material?
 - flag: The run passed with 6 rounds of budget unused. Is rounds_wasted still the right primary verdict, or should waste count against a verdict only when it cost the result? Should the two refused Looks (rounds 6 and 8) be a failed_rounds secondary?
-- reviewer claude-opus-5 at high, prompt audit-p1, digest sha256:23ca0904…, $0.16
+- reviewer claude-opus-5 at high, prompt audit-p1, digest sha256:84237167…, $0.16
 
 | round | kind | tools | page | ms | note |
 | --- | --- | --- | --- | --- | --- |
@@ -280,7 +279,7 @@ Kinds are mechanical counts; a share is over the budgeted rounds (Finalization o
 
 ### superseded-voyager-interstellar--initial (initial)
 
-- answered; ended done / partial (budget_exhausted); tier investigation (1 deadline escalation(s)); 24 of 24 Tool Rounds used; 26 model rounds, 2 in Finalization; Run duration 452939 ms; LLM stage 398995 ms over 26 joined round(s)
+- answered; ended done / partial (budget_exhausted); tier investigation (1 Tier Escalation(s) at the deadline); 24 of 24 Tool Rounds used; 26 orchestrator rounds, 2 in Finalization; Run duration 452939 ms; LLM stage 398995 ms over 26 joined round(s)
 - grade useful_partial; checks not reached: fact-06, fact-07, fact-08 (3 of 15)
 - 0 Subagent round(s) over 0 Subagent(s); 0 accepted and 0 rejected Evidence Checkpoint(s); 0 inherited round(s); 1 walled round(s)
 - kinds: Acquisition with Progress 19 (79%) · Acquisition without Progress 2 (8%) · Collection 0 (0%) · Bookkeeping 0 (0%) · Failed round 3 (13%) · Finalization 2 (8%)
@@ -306,7 +305,7 @@ Kinds are mechanical counts; a share is over the budgeted rounds (Finalization o
 - flag (round 9): Should the walled challenge page be overruled to acquisition_without_progress, or keep its mechanical progress label because the URL was new?
 - flag (round 22): This look was refused as a repeat of an earlier failed check, but it was on a different page with a different question. Is it really a failed round, or a refusal the assistant could not have foreseen?
 - flag: Three failed rounds (11, 12, 22) is 12.5% of the budget. Does that justify failed_rounds as a secondary verdict, given the needed page was still read in round 23?
-- reviewer claude-opus-5 at high, prompt audit-p1, digest sha256:1f8ada36…, $0.23
+- reviewer claude-opus-5 at high, prompt audit-p1, digest sha256:f6031180…, $0.23
 
 | round | kind | tools | page | ms | note |
 | --- | --- | --- | --- | --- | --- |

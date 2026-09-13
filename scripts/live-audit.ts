@@ -45,7 +45,7 @@ import {
   type AuditReview,
   type AuditSetOutput,
 } from '../e2e/live/audit.ts'
-import { indexAttempts, parseLiveGrades, type LiveGradeEntry, type LiveGrades, type LiveGradingInputs, type LiveKeyTask } from '../e2e/live/grades.ts'
+import { LIVE_GRADES_KIND, indexAttempts, keyManifestDigest, parseLiveGrades, type LiveGradeEntry, type LiveGrades, type LiveGradingInputs, type LiveKeyTask } from '../e2e/live/grades.ts'
 import { dispatchedAttemptOf } from '../e2e/live/gradingBench.ts'
 import { buildLiveKeyManifest, gradingKeyFor, type GradingKey } from '../e2e/live/keyManifest.ts'
 import type { LiveAttemptCapture, LiveSessionCapture } from '../e2e/live/types.ts'
@@ -119,10 +119,36 @@ interface SetContext {
   readonly setDirectory: string
   readonly sessionDirectories: ReadonlyMap<string, string>
   readonly grades: LiveGrades | null
-  readonly gradesNote: string | null
+  /** What the reader could not vouch for, carried into the set's caveats. */
+  readonly notes: readonly string[]
 }
 
-function readSet(capturePath: string, gradesPaths: readonly string[]): SetContext {
+/** A grades file named on the command line: read strictly, and bound to exactly one set id. */
+interface ExplicitGrades {
+  readonly path: string
+  readonly setId: string
+  readonly raw: unknown
+  used: boolean
+}
+
+function readExplicitGrades(paths: readonly string[]): ExplicitGrades[] {
+  return paths.map((path) => {
+    if (!existsSync(path)) fail(`the grades file ${display(path)} does not exist`)
+    let raw: unknown
+    try {
+      raw = JSON.parse(readFileSync(path, 'utf8'))
+    } catch {
+      fail(`the grades file ${display(path)} is not valid JSON`)
+    }
+    const record = raw as { kind?: unknown; setId?: unknown } | null
+    if (typeof record !== 'object' || record === null || record.kind !== LIVE_GRADES_KIND || typeof record.setId !== 'string') {
+      fail(`${display(path)} is not a grades file (kind ${LIVE_GRADES_KIND})`)
+    }
+    return { path, setId: record.setId, raw, used: false }
+  })
+}
+
+function readSet(capturePath: string, explicitGrades: ExplicitGrades[]): SetContext {
   const capture = readCaptureSet(capturePath)
   if (!capture.ok) failWith(`the capture set at ${display(capturePath)} does not validate`, capture.errors)
   const { set } = capture.value
@@ -137,30 +163,38 @@ function readSet(capturePath: string, gradesPaths: readonly string[]): SetContex
   const { duplicated } = indexAttempts(sessions)
   if (duplicated.length > 0) failWith('attempt id(s) claimed by more than one Session capture', duplicated)
 
-  // The grades: an explicit file bound to this set, else the one file in the
+  // The same data-quality reading `live:report` makes: a Session of another
+  // set is refused; incomplete retention and capture errors are carried as
+  // caveats, because rounds counted from a torn trace are fewer than ran.
+  const notes: string[] = []
+  for (const session of sessions) {
+    if (session.setId !== undefined && session.setId !== set.setId) fail(`Session capture ${session.captureId} belongs to capture set ${session.setId}, not ${set.setId}`)
+    if (!session.retention.complete) notes.push(`${session.captureId}: retained incomplete diagnostics${session.retention.note ? ` — ${session.retention.note}` : ''}; its rounds may be fewer than ran`)
+    if (session.errors.length > 0) notes.push(`${session.captureId}: the capture recorded ${session.errors.length} error(s) of its own (${session.errors.map((error) => error.stage).join(', ')})`)
+    if (session.closeState !== 'closed') notes.push(`${session.captureId}: the Session capture closed as ${session.closeState}`)
+  }
+
+  // The grades: the explicit file bound to this set, else the one file in the
   // private root bound to it. Two candidates is a decision the caller makes.
-  const candidates: string[] = []
-  const explicit = gradesPaths.filter((path) => {
-    const raw = readJsonQuietly(path)
-    return raw !== null && (raw as { setId?: unknown }).setId === set.setId
-  })
-  if (explicit.length > 0) candidates.push(...explicit)
-  else if (existsSync(LIVE_PRIVATE_ROOT)) {
-    for (const name of readdirSync(LIVE_PRIVATE_ROOT).filter((name) => name.endsWith('.json')).sort()) {
-      const raw = readJsonQuietly(join(LIVE_PRIVATE_ROOT, name)) as { kind?: unknown; setId?: unknown; entries?: unknown } | null
-      if (raw !== null && raw.kind === 'bingbong.live.grades' && raw.setId === set.setId) candidates.push(join(LIVE_PRIVATE_ROOT, name))
-    }
+  const explicit = explicitGrades.filter((candidate) => candidate.setId === set.setId)
+  let candidates: { readonly label: string; readonly raw: unknown }[] = explicit.map((candidate) => ({ label: display(candidate.path), raw: candidate.raw }))
+  for (const candidate of explicit) candidate.used = true
+  if (candidates.length === 0 && existsSync(LIVE_PRIVATE_ROOT)) {
+    candidates = readdirSync(LIVE_PRIVATE_ROOT)
+      .filter((name) => name.endsWith('.json'))
+      .sort()
+      .map((name) => ({ label: name, raw: readJsonQuietly(join(LIVE_PRIVATE_ROOT, name)) as { kind?: unknown; setId?: unknown } | null }))
+      .filter((candidate) => candidate.raw !== null && candidate.raw.kind === LIVE_GRADES_KIND && candidate.raw.setId === set.setId)
   }
   if (candidates.length > 1) fail(`${candidates.length} grades files are bound to ${set.setId}; pass --grades=<file> to name the one to read`)
   let grades: LiveGrades | null = null
-  let gradesNote: string | null = null
-  if (candidates.length === 0) gradesNote = `no grades file is bound to ${set.setId}: every check is reported as not reached`
+  if (candidates.length === 0) notes.push(`no grades file is bound to ${set.setId}: every check is reported as not reached`)
   else {
-    const parsed = parseLiveGrades(readJsonQuietly(candidates[0]!), inputs)
-    if (!parsed.ok) failWith(`the grades file for ${set.setId} does not validate`, parsed.errors)
+    const parsed = parseLiveGrades(candidates[0]!.raw, inputs)
+    if (!parsed.ok) failWith(`the grades file ${candidates[0]!.label} for ${set.setId} does not validate`, parsed.errors)
     grades = parsed.value
   }
-  return { path: capturePath, inputs, setDirectory, sessionDirectories, grades, gradesNote }
+  return { path: capturePath, inputs, setDirectory, sessionDirectories, grades, notes }
 }
 
 function readJsonQuietly(path: string): unknown {
@@ -171,13 +205,25 @@ function readJsonQuietly(path: string): unknown {
   }
 }
 
+/** Each retained JSONL file parsed once: a capture's trace is read for every attempt and its parent. */
+const parsedFiles = new Map<string, readonly unknown[]>()
+
+function parsedJsonl(path: string): readonly unknown[] {
+  let records = parsedFiles.get(path)
+  if (records === undefined) {
+    records = parseJsonl(readFileSync(path, 'utf8')).records
+    parsedFiles.set(path, records)
+  }
+  return records
+}
+
 /** The turn's records from every retained file of one family, in file order. */
 function turnRecords<T>(session: LiveSessionCapture, directory: string, family: 'run_trace' | 'perf', turnId: string): T[] {
   const records: T[] = []
   for (const artifact of session.artifacts.filter((artifact) => artifact.family === family)) {
     const path = resolve(directory, artifact.path)
     if (!path.startsWith(`${directory}${sep}`) || !existsSync(path)) continue
-    for (const record of parseJsonl(readFileSync(path, 'utf8')).records) {
+    for (const record of parsedJsonl(path)) {
       if (typeof record === 'object' && record !== null && (record as { turnId?: unknown }).turnId === turnId) records.push(record as T)
     }
   }
@@ -222,7 +268,10 @@ function keyBlock(key: GradingKey, task: LiveKeyTask): string {
     `Pitfalls (the pitfall-NN checks):\n${numbered(key.pitfalls, 'pitfall')}`,
     `Uncertainties (the uncertainty-NN checks):\n${key.uncertainties.length === 0 ? '- (none)' : numbered(key.uncertainties, 'uncertainty')}`,
     `Sources verified for this key:\n${sourcesBlock(key.sources)}`,
-  ].join('\n\n')
+    key.liveFacts.length === 0 ? '' : `Live facts this key marks as able to move (rechecked before the pass):\n${bullets(key.liveFacts)}`,
+  ]
+    .filter((block) => block !== '')
+    .join('\n\n')
 }
 
 /** Every string of the key bundle, labelled by kind, for the leak check. */
@@ -296,7 +345,7 @@ function digestBlock(mechanical: AuditMechanical): string {
   const lines: string[] = []
   const terminal = mechanical.terminal
   lines.push(
-    `Tier ${mechanical.tier ?? 'none'} (plans: ${mechanical.plans.map((plan) => `${plan.tier}/${plan.source}`).join(', ') || 'none'}); Tool Round budget ${mechanical.toolRoundBudget ?? '?'}; ${mechanical.toolRoundsUsed} Tool Rounds used; ${mechanical.orchestratorRounds} model rounds of which ${mechanical.counts.finalization} Finalization.`,
+    `Tier ${mechanical.tier ?? 'none'} (plans: ${mechanical.plans.map((plan) => `${plan.tier}/${plan.source}`).join(', ') || 'none'}); Tool Round budget ${mechanical.toolRoundBudget ?? '?'}; ${mechanical.toolRoundsUsed} Tool Rounds used; ${mechanical.orchestratorRounds} orchestrator rounds of which ${mechanical.counts.finalization} Finalization.`,
   )
   lines.push(`Ended: ${terminal === null ? 'no terminal' : `${terminal.outcome ?? '?'}${terminal.resolution ? ` / ${terminal.resolution}` : ''}${terminal.finalizationCause ? ` (${terminal.finalizationCause})` : ''}`}; stop reason ${mechanical.stopReason}; Run duration ${mechanical.runDurationMs.status === 'observed' ? `${mechanical.runDurationMs.value} ms` : mechanical.runDurationMs.status}.`)
   lines.push(`Mechanical kinds over ${mechanical.budgetedRounds} budgeted rounds: ${ROUND_KINDS.map((kind) => `${kind} ${mechanical.counts[kind]}`).join(', ')}.`)
@@ -305,7 +354,8 @@ function digestBlock(mechanical: AuditMechanical): string {
   lines.push('The assistant’s own reasoning is not shown; each round lists its calls, the page each put in front of the assistant, the result head and the app’s Notices.')
   lines.push('')
   for (const round of mechanical.rounds) {
-    lines.push(`## Round ${round.round}${round.attempt > 1 ? ` (attempt ${round.attempt})` : ''} — ${round.kind}: ${round.reason}`)
+    const trace = round.llmRound !== round.round || round.attempt > 1 ? ` (the trace's round ${round.llmRound}, attempt ${round.attempt})` : ''
+    lines.push(`## Round ${round.round}${trace} — ${round.kind}: ${round.reason}`)
     lines.push(
       `outcome ${round.outcome}; effort ${round.effort ?? '?'}; ${round.latencyMs === null ? 'latency unjoined' : `${round.latencyMs} ms`}; tokens ${round.promptTokens ?? '?'} in / ${round.completionTokens ?? '?'} out; request ${round.requestChars ?? '?'} chars with ${round.toolResultsInRequest ?? '?'} tool results; reasoning ${round.reasoningChars} chars` +
         `${round.tags.inherited ? '; inherited' : ''}${round.tags.wall ? '; walled' : ''}${round.tags.rejectedCheckpoints > 0 ? `; ${round.tags.rejectedCheckpoints} rejected checkpoint(s)` : ''}`,
@@ -502,8 +552,12 @@ function reviewAttempt(view: SlotView, setId: string, options: { model: string; 
     durationMs,
     judgedAt: new Date().toISOString(),
   }
-  mkdirSync(dirname(cachePath), { recursive: true })
-  writeFileAtomic(cachePath, `${JSON.stringify({ review }, null, 2)}\n`)
+  // Only a judgement is cached: an attempt that got none is asked again on
+  // the next run, so a transient refusal is never frozen as permanent.
+  if (judgement !== null) {
+    mkdirSync(dirname(cachePath), { recursive: true })
+    writeFileAtomic(cachePath, `${JSON.stringify({ review }, null, 2)}\n`)
+  }
   return review
 }
 
@@ -535,9 +589,12 @@ function main(): void {
   const git = gitProvenance()
   const generatedAt = new Date().toISOString()
 
-  const contexts = capturePaths.map((path) => readSet(path, gradesPaths))
+  const explicitGrades = readExplicitGrades(gradesPaths)
+  const contexts = capturePaths.map((path) => readSet(path, explicitGrades))
   const setIds = contexts.map((context) => context.inputs.set.setId)
   if (new Set(setIds).size !== setIds.length) fail(`a capture set is named twice: ${setIds.join(', ')}`)
+  const unused = explicitGrades.filter((candidate) => !candidate.used)
+  if (unused.length > 0) fail(`--grades names ${unused.map((candidate) => `${display(candidate.path)} (bound to ${candidate.setId})`).join(', ')}, which no named capture set is bound to`)
 
   const outputs: { context: SetContext; audit: AuditSetOutput; jsonPath: string; mdPath: string }[] = []
   let totalCost = 0
@@ -549,13 +606,12 @@ function main(): void {
     const { byAttemptId } = indexAttempts(sessions)
     const jsonPath = join(outDir, `audit-${set.setId}.json`)
     const mdPath = join(outDir, `audit-${set.setId}.md`)
-    if (!dryRun) {
+    if (!dryRun && only === null) {
       assertWritable(jsonPath)
       assertWritable(mdPath)
     }
     note(`auditing ${set.setId} (${set.slots.length} slots)…`)
-    const caveats: string[] = []
-    if (context.gradesNote !== null) caveats.push(context.gradesNote)
+    const caveats: string[] = [...context.notes]
     const gradeOf = (attemptId: string): LiveGradeEntry | null => context.grades?.entries.find((entry) => entry.attemptId === attemptId) ?? null
 
     const views: SlotView[] = []
@@ -625,7 +681,8 @@ function main(): void {
       dirtyTree: launches.some((launch) => launch.dirtyTree),
       promptVersions: [...new Set(set.slots.map((slot) => slot.prompt.version))].sort(),
       keyVersion: manifest.keyVersion,
-      keyManifestDigest: context.grades?.keyManifestDigest ?? manifest.keyDigest,
+      // The same digest a grades file binds to, whether or not one exists.
+      keyManifestDigest: context.grades?.keyManifestDigest ?? keyManifestDigest(manifest),
       gradesReviewers: context.grades === null ? [] : [...new Set(context.grades.entries.filter((entry) => entry.status !== 'pending').map((entry) => entry.reviewer))].sort(),
       gradesRevision: context.grades?.revision ?? null,
       roles: [
@@ -649,6 +706,20 @@ function main(): void {
       generatedAt,
     }
     outputs.push({ context, audit: buildAuditSet(provenance, attempts, caveats), jsonPath, mdPath })
+  }
+
+  // --only judges one attempt into the cache and prints it; a set's audit is
+  // written only over the whole set, so a partial file can never stand in
+  // for it.
+  if (only !== null && !dryRun) {
+    for (const output of outputs) {
+      for (const attempt of output.audit.attempts) {
+        const verdict = attempt.review?.judgement?.verdict
+        process.stdout.write(`${output.audit.provenance.setId} ${attempt.mechanical.attemptId}: ${verdict === undefined ? `no judgement (${attempt.review?.caveats.join('; ') ?? ''})` : `${verdict.primary}${verdict.secondary === null ? '' : ` + ${verdict.secondary}`} — ${verdict.primaryReason}`}\n`)
+      }
+    }
+    note(`--only: the judgement is cached; no audit file was written — run without --only to write ${outputs.map((output) => output.audit.provenance.setId).join(', ')}`)
+    return
   }
 
   if (dryRun) {

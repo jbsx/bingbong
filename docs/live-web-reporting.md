@@ -734,7 +734,12 @@ rung (#215, skipped under a reasoning override), and the last round replying
 with no tool call under a known Finalization Cause. Progress is read from the
 result texts the app wrote — the navigated line and page header, the page
 signature, `end of page`, the no-progress Notice — and the search streak is the
-Search Loop rail's own rule re-run over the trace. The same trace classifies
+Search Loop rail's own rule re-run over the trace for `navigate` searches; a
+query typed into a page's search box is a search the rail recognises from the
+element's facts, which the trace does not keep, so the digest shows the rail's
+own `search_loop_nudge` Notice where it fired and the reviewer judges the
+rest. Rounds are numbered by position in the digest, with the trace's round
+and attempt beside them, because a retried round repeats its number. The same trace classifies
 identically on every run, and every attempt carries a `digestHash` over the
 digest the reviewer was shown; `audit.test.ts` pins the copied budgets, rungs and
 marker sentences to the app's constants.
@@ -759,7 +764,9 @@ attempt, digest hash, model, effort and prompt version, so a refused or failed
 call never redoes the others and a rerun after a mechanical change asks again
 only where the digest changed. A call the model does not answer — a safeguard
 refusal, an API error — is retried once and then left without a judgement,
-with the reason as a caveat.
+with the reason as a caveat, and nothing is cached for it, so the next run asks
+again. `--only=<attemptId>` judges one attempt into the cache and writes no
+audit file: a set's audit is only ever written over the whole set.
 
 **The digest quotes no reasoning.** #234 planned a head of the assistant's
 reasoning, capped at 1,500 characters, per round. Measured on 2026-09-13:

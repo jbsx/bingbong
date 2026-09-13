@@ -156,8 +156,15 @@ export interface AuditCall {
 }
 
 export interface AuditRound {
-  /** The `llm_round` numbering: every model round, Finalization included. */
+  /**
+   * The digest's own numbering: the round's position among the attempt's
+   * orchestrator rounds, from 1, Finalization included. Unique, so a
+   * judgement can name a round — the trace's `llm_round` numbering repeats
+   * across a retried round's attempts.
+   */
   readonly round: number
+  /** The trace's `llm_round` number and attempt, for joining back to the Run Trace. */
+  readonly llmRound: number
   readonly attempt: number
   readonly at: number
   readonly outcome: string
@@ -537,27 +544,26 @@ function rawRounds(records: readonly TraceLine[]): RawRound[] {
     }
   }
   let current: RawRound | null = null
-  let pendingCheckpoints: TraceLine[] = []
   for (const record of records) {
     if (record.agentId !== undefined) continue
     if (record.kind === 'llm_round') {
       current = { record, round: isFiniteNumber(record.round) ? record.round : rounds.length + 1, attempt: isFiniteNumber(record.attempt) ? record.attempt : 1, calls: [] }
       rounds.push(current)
-      pendingCheckpoints = []
       continue
     }
     if (record.kind === 'evidence_checkpoint') {
-      pendingCheckpoints.push(record)
+      // The trace writes tool_call, then evidence_checkpoint, then
+      // tool_result: the checkpoint belongs to the latest call of its tool
+      // in this round that has none yet.
+      if (current === null) continue
+      const owner = [...current.calls].reverse().find((entry) => entry.call.name === record.tool && entry.checkpoint === undefined)
+      if (owner !== undefined) owner.checkpoint = record
       continue
     }
     const event = eventOf(record)
     if (event === null || event.type !== 'tool_call' || current === null) continue
     const call = event as unknown as ToolCallEvent
-    // A checkpoint record is written before its tool result; the first
-    // pending one for this tool is the call's.
-    const index = pendingCheckpoints.findIndex((checkpoint) => checkpoint.tool === call.name)
-    const checkpoint = index === -1 ? undefined : pendingCheckpoints.splice(index, 1)[0]
-    current.calls.push({ call, result: results.get(call.callId), checkpoint })
+    current.calls.push({ call, result: results.get(call.callId), checkpoint: undefined })
   }
   return rounds
 }
@@ -569,7 +575,6 @@ interface ProgressState {
   readonly observed: Set<string>
   /** The page the Run is on, as the last successful result said. */
   currentUrl: string | null
-  currentSignature: string | null
   /** The Search Loop rail's streak, mirrored. */
   lastQuery: string | null
   anchor: string | null
@@ -698,8 +703,10 @@ function classifyCall(
         progress = { made: false, reason: 'the app’s own no-progress Notice rode the result' }
       } else if (text !== null && (text.includes('page signature changed') || text.includes('urlChanged=true') || text.includes('after page change'))) {
         progress = { made: true, reason: 'the settled page state moved' }
-      } else if (call.name === 'type' && text !== null && /^typed \[\d+\]: value=/.test(text)) {
-        progress = { made: true, reason: 'a requested state change (text entered)' }
+      } else if (call.name === 'type' && text !== null && /^typed \[\d+\]: (?:value|selected)=/.test(text)) {
+        // The controller's two typed outcomes (createCdpBrowserController.ts):
+        // text entered into a field, or an option selected in a <select>.
+        progress = { made: true, reason: 'a requested state change (text entered or an option selected)' }
       } else if (text !== null && text.includes('urlChanged=false') && !text.includes('page signature changed')) {
         progress = { made: false, reason: 'the action changed neither the URL nor the page signature' }
       } else if (page !== null) {
@@ -720,10 +727,7 @@ function classifyCall(
     state.acquiredUrls.add(landedCanonical)
     state.currentUrl = landedCanonical
   }
-  if (signature !== null) {
-    state.currentSignature = signature
-    state.observed.add(`action_outcome|${landedCanonical ?? state.currentUrl ?? ''}|${signature}`)
-  }
+  if (signature !== null) state.observed.add(`action_outcome|${landedCanonical ?? state.currentUrl ?? ''}|${signature}`)
   return { call: { ...base, search, progress }, inherited }
 }
 
@@ -811,7 +815,7 @@ export function classifyAttempt(input: AuditTraceInput): AuditMechanical {
   const rungRuleApplies = input.reasoningEffortOverride === null && tierRung !== null && tierRung !== FINALIZATION_REASONING_EFFORT
 
   // Pass one: calls and Progress, in trace order.
-  const state: ProgressState = { acquiredUrls: new Set(), observed: new Set(), currentUrl: null, currentSignature: null, lastQuery: null, anchor: null, streak: 0 }
+  const state: ProgressState = { acquiredUrls: new Set(), observed: new Set(), currentUrl: null, lastQuery: null, anchor: null, streak: 0 }
   const classified = raw.map((round) => {
     const calls = round.calls.map((entry) => classifyCall(entry, state, input.parentCheckpointedUrls))
     return { round, calls: calls.map((item) => item.call), inherited: calls.some((item) => item.inherited) }
@@ -847,11 +851,13 @@ export function classifyAttempt(input: AuditTraceInput): AuditMechanical {
           ? 'a Finalization round cut by the Finalization Allowance'
           : outcome !== 'completed'
             ? `a Finalization round that ended ${outcome}`
-            : calls.length > 0
-              ? `the bookkeeping round (${calls.map((call) => call.name).join(', ')})`
-              : isLast
-                ? 'the reserved Answer'
-                : 'a Finalization round'
+            : calls.length > 0 && successful.length === 0
+              ? `a Finalization round whose calls were refused — the tools are closed (${calls.map((call) => call.name).join(', ')})`
+              : calls.length > 0
+                ? `the bookkeeping round (${calls.map((call) => call.name).join(', ')})`
+                : isLast
+                  ? 'the reserved Answer'
+                  : 'a Finalization round'
     } else if (outcome !== 'completed') {
       kind = 'failed_round'
       reason = outcome === 'deadline' ? 'cut by the active-work deadline' : outcome === 'timeout' ? 'the client’s request timeout ended the round' : `the round ended ${outcome}`
@@ -882,7 +888,8 @@ export function classifyAttempt(input: AuditTraceInput): AuditMechanical {
     const usage = isRecord(record.usage) ? record.usage : null
     const request = isRecord(record.request) ? record.request : null
     return {
-      round: round.round,
+      round: index + 1,
+      llmRound: round.round,
       attempt: round.attempt,
       at: isFiniteNumber(record.at) ? record.at : 0,
       outcome,
@@ -1093,6 +1100,12 @@ export function validateJudgement(raw: unknown, mechanical: AuditMechanical): Va
     }
     if (kindOf.get(item.round) === item.kind) {
       errors.push(`overrules: round ${item.round} is already ${item.kind} — an overrule must change the label`)
+      continue
+    }
+    // Finalization is read from the app's own marks, not judged: a round is
+    // in Finalization or it is not, whatever its calls did.
+    if (kindOf.get(item.round) === 'finalization' || item.kind === 'finalization') {
+      errors.push(`overrules: round ${item.round} — Finalization is mechanical and cannot be overruled into or out of`)
       continue
     }
     if (!isString(item.reason) || item.reason.trim() === '') errors.push(`overrules: round ${item.round} has no stated reason`)
@@ -1460,8 +1473,8 @@ function attemptSection(attempt: AuditAttempt): string[] {
   const terminal = mechanical.terminal
   lines.push(
     `- ${mechanical.disposition}; ended ${terminal === null ? 'without a terminal' : `${terminal.outcome ?? '?'}${terminal.resolution ? ` / ${terminal.resolution}` : ''}${terminal.finalizationCause ? ` (${terminal.finalizationCause})` : ''}`}; ` +
-      `tier ${mechanical.tier ?? 'none'}${mechanical.deadlineEscalations > 0 ? ` (${mechanical.deadlineEscalations} deadline escalation(s))` : ''}; ` +
-      `${mechanical.toolRoundsUsed} of ${mechanical.toolRoundBudget ?? '?'} Tool Rounds used; ${mechanical.orchestratorRounds} model rounds, ${mechanical.counts.finalization} in Finalization; ` +
+      `tier ${mechanical.tier ?? 'none'}${mechanical.deadlineEscalations > 0 ? ` (${mechanical.deadlineEscalations} Tier Escalation(s) at the deadline)` : ''}; ` +
+      `${mechanical.toolRoundsUsed} of ${mechanical.toolRoundBudget ?? '?'} Tool Rounds used; ${mechanical.orchestratorRounds} orchestrator rounds, ${mechanical.counts.finalization} in Finalization; ` +
       `Run duration ${msOf(mechanical.runDurationMs)}; LLM stage ${mechanical.latency.llmMs === null ? 'unjoined' : `${mechanical.latency.llmMs} ms over ${mechanical.latency.joined} joined round(s)`}${mechanical.latency.unjoined > 0 ? ` (${mechanical.latency.unjoined} unjoined)` : ''}`,
   )
   lines.push(
@@ -1497,8 +1510,9 @@ function attemptSection(attempt: AuditAttempt): string[] {
     const tools = round.calls.map((call) => `${call.name}${call.refused ? ' ✗' : ''}`).join(', ') || '—'
     const page = round.calls.map((call) => call.url).find((url) => url !== null) ?? '—'
     const markers = [round.tags.inherited ? 'inherited' : '', round.tags.wall ? 'walled' : '', offKey ? 'off-key' : '', inLoop ? 'search loop' : '', round.tags.rejectedCheckpoints > 0 ? `${round.tags.rejectedCheckpoints} rejected checkpoint` : ''].filter((marker) => marker !== '')
+    const trace = round.llmRound !== round.round || round.attempt > 1 ? ` (trace ${round.llmRound}.${round.attempt})` : ''
     lines.push(
-      `| ${round.round}${round.attempt > 1 ? `.${round.attempt}` : ''} | ${KIND_LABELS[round.kind]}${overrule ? ` → ${KIND_LABELS[overrule.kind]}` : ''} | ${tools} | ${head(page, 80)} | ${round.latencyMs ?? '—'} | ${round.reason}${markers.length > 0 ? ` [${markers.join(', ')}]` : ''} |`,
+      `| ${round.round}${trace} | ${KIND_LABELS[round.kind]}${overrule ? ` → ${KIND_LABELS[overrule.kind]}` : ''} | ${tools} | ${head(page, 80)} | ${round.latencyMs ?? '—'} | ${round.reason}${markers.length > 0 ? ` [${markers.join(', ')}]` : ''} |`,
     )
   }
   lines.push('')

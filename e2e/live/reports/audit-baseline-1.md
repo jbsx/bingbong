@@ -1,13 +1,13 @@
 # Round Audit — bingbong.live-web.information-hunts (baseline-1)
 
-Generated 2026-09-13T02:02:01.363Z from a capture set created 2026-09-12T17:06:30.219Z (state complete). This audit counts and does not judge: every verdict is the reviewer’s for one attempt, and the ranking is arithmetic over those verdicts.
+Generated 2026-09-13T02:26:24.200Z from a capture set created 2026-09-12T17:06:30.219Z (state complete). This audit counts and does not judge: every verdict is the reviewer’s for one attempt, and the ranking is arithmetic over those verdicts.
 
 ## Provenance
 
 - capture: commit(s) fbd2b865 (dirty tree); mode measured; protocol 1; prompt version(s) 1
 - routing: orchestrator=GLM-5.3; subagent=GLM-5.3-flash; vision=GLM-4.6V | reasoning override: none | effort overrides: none | adblock: production_default
 - key 2.2.2.2, manifest sha256:faa25d04…; grades by claude-opus-5 via live:grade (revision 1)
-- reviewer: claude-opus-5 at high, prompt audit-p1; audit run at commit e63404a7 (dirty tree)
+- reviewer: claude-opus-5 at high, prompt audit-p1; audit run at commit 49d5371d (dirty tree)
 
 ## Populations
 
@@ -26,14 +26,14 @@ Kinds are mechanical counts; a share is over the budgeted rounds (Finalization o
 | stopped early | 1 | 0 | 0 | 0 |
 | failed rounds | 0 | 1 | 0 | 0 |
 
-- initial: 26 Off-key round(s), 5 Search Loop round(s) by the reviewer (2 by the streak rule), 0 inherited, 2 rejected Evidence Checkpoint(s), 1 walled round(s), 13 Subagent round(s), 1 stopped early, 11 overrule(s), 21 flag(s); Finalization Causes: budget_exhausted 3, model_answered 1
-- follow_up: 7 Off-key round(s), 0 Search Loop round(s) by the reviewer (0 by the streak rule), 5 inherited, 1 rejected Evidence Checkpoint(s), 0 walled round(s), 0 Subagent round(s), 0 stopped early, 3 overrule(s), 12 flag(s); Finalization Causes: deadline_reached 1, objective_met 1
+- initial: 26 Off-key round(s), 5 Search Loop round(s) by the reviewer (2 by the streak rule), 0 inherited, 1 rejected Evidence Checkpoint(s), 1 walled round(s), 13 Subagent round(s), 1 stopped early, 11 overrule(s), 22 flag(s); Finalization Causes: budget_exhausted 3, model_answered 1
+- follow_up: 7 Off-key round(s), 0 Search Loop round(s) by the reviewer (0 by the streak rule), 5 inherited, 2 rejected Evidence Checkpoint(s), 0 walled round(s), 0 Subagent round(s), 0 stopped early, 3 overrule(s), 9 flag(s); Finalization Causes: deadline_reached 1, objective_met 1
 
 ## Attempts
 
 ### compatibility-pi-camera--initial (initial)
 
-- answered; ended done / completed (budget_exhausted); tier investigation (1 deadline escalation(s)); 24 of 24 Tool Rounds used; 26 model rounds, 2 in Finalization; Run duration 423979 ms; LLM stage 411453 ms over 26 joined round(s)
+- answered; ended done / completed (budget_exhausted); tier investigation (1 Tier Escalation(s) at the deadline); 24 of 24 Tool Rounds used; 26 orchestrator rounds, 2 in Finalization; Run duration 423979 ms; LLM stage 411453 ms over 26 joined round(s)
 - grade useful_partial; checks not reached: fact-05 (1 of 10)
 - 13 Subagent round(s) over 1 Subagent(s), stopped by budget_exhausted 1; 2 accepted and 0 rejected Evidence Checkpoint(s); 0 inherited round(s); 0 walled round(s)
 - kinds: Acquisition with Progress 17 (71%) · Acquisition without Progress 4 (17%) · Collection 1 (4%) · Bookkeeping 1 (4%) · Failed round 1 (4%) · Finalization 2 (8%)
@@ -52,7 +52,7 @@ Kinds are mechanical counts; a share is over the budgeted rounds (Finalization o
 - flag (round 12): Is the overrule right? The page signature did move to #autofocus-mode, which may have been new material in view even though the type call itself failed.
 - flag (round 18): Is the overrule of round 18 to without-progress sound, given the app treated the different branch path as a new URL?
 - flag: Is the secondary verdict tier_too_small_or_never_escalated warranted when the primary cause was waste, or should there be no secondary at all?
-- reviewer claude-opus-5 at high, prompt audit-p1, digest sha256:b032237a…, $0.28
+- reviewer claude-opus-5 at high, prompt audit-p1, digest sha256:7cd6c971…, $0.28
 
 | round | kind | tools | page | ms | note |
 | --- | --- | --- | --- | --- | --- |
@@ -80,33 +80,30 @@ Kinds are mechanical counts; a share is over the budgeted rounds (Finalization o
 | 22 | Acquisition with Progress | read_page | https://raw.githubusercontent.com/raspberrypi/rpicam-apps/main/README.md | 5939 | read_page: the first read of this page state |
 | 23 | Acquisition with Progress | navigate | https://www.raspberrypi.com/news/camera-module-3-show-off-your-shots/ | 13020 | navigate: the settled page state moved to a page this Run had not acquired [off-key] |
 | 24 | Acquisition with Progress | navigate | https://www.raspberrypi.com/news/new-autofocus-camera-modules/ | 4711 | navigate: the settled page state moved to a page this Run had not acquired |
-| 25 | Finalization | scroll ✗ | https://www.raspberrypi.com/news/new-autofocus-camera-modules | 4838 | the bookkeeping round (scroll) |
+| 25 | Finalization | scroll ✗ | https://www.raspberrypi.com/news/new-autofocus-camera-modules | 4838 | a Finalization round whose calls were refused — the tools are closed (scroll) |
 | 26 | Finalization | — | — | 28902 | the reserved Answer |
 
 ### compatibility-pi-camera--follow_up (revised_objective)
 
-- answered; ended done / completed (deadline_reached); tier investigation; 20 of 24 Tool Rounds used; 23 model rounds, 2 in Finalization; Run duration 401951 ms; LLM stage 385882 ms over 23 joined round(s)
+- answered; ended done / completed (deadline_reached); tier investigation; 20 of 24 Tool Rounds used; 23 orchestrator rounds, 2 in Finalization; Run duration 401951 ms; LLM stage 385882 ms over 23 joined round(s)
 - grade useful_partial; checks not reached: fact-02 (1 of 6)
-- 0 Subagent round(s) over 0 Subagent(s); 8 accepted and 0 rejected Evidence Checkpoint(s); 3 inherited round(s); 0 walled round(s)
+- 0 Subagent round(s) over 0 Subagent(s); 7 accepted and 1 rejected Evidence Checkpoint(s); 3 inherited round(s); 0 walled round(s)
 - kinds: Acquisition with Progress 9 (43%) · Acquisition without Progress 6 (29%) · Collection 0 (0%) · Bookkeeping 4 (19%) · Failed round 2 (10%) · Finalization 2 (9%)
-- **verdict: rounds wasted** — With the overrules, 8 of the 21 budgeted rounds made no progress (2, 3, 9, 10, 11, 14, 15, 16). Two more failed (round 5, a refused repeat scroll, and round 21), and round 6 was off-key. That is 11 of 21 rounds, about 52%, with no on-key progress. On https://www.raspberrypi.com/documentation/accessories/camera.html, the source that carries fact-02, the Run spent rounds 9-16 on a re-navigate, scrolls to End of Page and three unreadable Looks (11, 15, 16), and never did a read_page there. Long reasoning rounds (1, 2, 17, together about 204 s of the 402 s Run) then used up the time before the unreached fact-02 could be read.
-- stopped early: no — The Run ended on deadline_reached: round 21 was cut by the active-work deadline, with 20 of 24 Tool Rounds used. Rounds were left, but time was not, so this is not an early stop. fact-02 was reachable on camera.html, which the Run had open in rounds 9-16, but the deadline, not a voluntary stop, ended the attempt.
-- Off-key round 6 (https://www.raspberrypi.com/news/camera-module-3-show-off-your-shots/): The navigate redirected to a community photo showcase post. That is the right site but the wrong subject: a gallery of user photos cannot carry the lid-fit verdict (fact-01), the mechanical reason (fact-02) or the electrical and software compatibility (fact-03).
-- overrule round 11 → Acquisition without Progress: The Look on https://www.raspberrypi.com/documentation/accessories/camera.html returned 'not legible'. Nothing new came in, which is the same outcome code marked as no progress in round 15.
-- overrule round 16 → Acquisition without Progress: The region Look on camera.html also returned 'not legible', and the app itself added a notice that two consecutive actions made no progress. The first-Look-with-this-question rule does not make an unreadable result progress.
-- flag (round 6): Is the Camera Module 3 showcase post off-key, or could a launch-related news page plausibly carry compatibility material relevant to fact-03?
-- flag (round 7): The Camera Module 3 launch article was left on-key because it might carry compatibility statements relevant to fact-03. Should it count as off-key for the follow-up's lid-fit facts?
-- flag (round 11): Is overruling a 'not legible' Look to without-progress right, given it was the first Look at that region with that question?
-- flag (round 16): Same question for this region Look: should an unreadable first Look count as progress?
-- flag (round 21): Round 21 was cut by the deadline after the Run had already moved to bookkeeping. Should failed_rounds be a secondary verdict, or was the deadline only a consequence of time spent in earlier rounds?
-- flag (round 2): The second record_evidence is marked 'checkpoint: accepted' but its result says rejected (malformed), and the digest header counts 0 rejected checkpoints. Which is right?
-- flag: Is rounds_wasted the right primary verdict, given that the attempt ended on the time deadline rather than the round budget, which might point toward a time-driven cause instead?
-- reviewer claude-opus-5 at high, prompt audit-p1, digest sha256:36e1b680…, $0.20
+- **verdict: rounds wasted** — Of the 21 budgeted rounds, 8 made no progress once rounds 11 and 16 are overruled (rounds 2, 3, 9, 10, 11, 14, 15, 16). Another 2 failed: round 5 was a refused repeat scroll and round 21 was cut. Round 6 was off-key, and rounds 7-8 went to a launch article that could not carry fact-02. That comes to roughly half the budget. The Run did load the verified source https://www.raspberrypi.com/documentation/accessories/camera.html in rounds 9-16, but it used scrolls and screenshot Looks that came back illegible (rounds 11, 15, 16) and never read the page text. So the mechanical section behind fact-02 was never extracted. Long reasoning rounds (1, 2, 17, each over 60 s) also used up the time before the deadline.
+- stopped early: no — The Run was ended by the active-work deadline: round 21 was cut and the end reason was deadline_reached. It did not choose to stop with time left. It had shifted to bookkeeping in rounds 17-20 while 6 of 24 tool rounds remained, and fact-02 was reachable on camera.html, which it had already loaded in rounds 9-16. But time, not a decision to stop, ended the Run.
+- Off-key round 6 (https://www.raspberrypi.com/news/camera-module-3-show-off-your-shots/): The navigate to /news/camera-module-3/ redirected to a community photo showcase post. That is the right site but the wrong subject. A gallery of user shots cannot carry the enclosure verdict (fact-01), the official mechanical reason (fact-02) or the electrical and software carry-over (fact-03).
+- overrule round 11 → Acquisition without Progress: The Look on https://www.raspberrypi.com/documentation/accessories/camera.html returned 'not legible'. Nothing new came in. Round 15 got the same result and was labelled without progress, so round 11 should be too.
+- overrule round 16 → Acquisition without Progress: The region Look on camera.html also returned 'not legible', and the app itself added a no-progress notice to the result. No material came in, the same as round 15.
+- flag (round 7): Should the launch article https://www.raspberrypi.com/news/new-autofocus-camera-modules/ (rounds 7-8) also count as off-key? It could plausibly carry general compatibility statements relevant to fact-03, so it was left on-key.
+- flag (round 11): Is overruling rounds 11 and 16 to without-progress right, given that the app counts a first Look with a new question as progress even when the Look returns nothing legible?
+- flag (round 21): Should failed_rounds be a secondary verdict? The deadline cut at round 21 ended the Run, but by then acquisition had already stopped and fact-02 had already been missed.
+- flag (round 17): Should the Run count as stopped early? It left the camera.html source for bookkeeping at round 17 with budget left and fact-02 still within reach on that page, even though the formal end was the deadline.
+- reviewer claude-opus-5 at high, prompt audit-p1, digest sha256:5fa2d7bb…, $0.08
 
 | round | kind | tools | page | ms | note |
 | --- | --- | --- | --- | --- | --- |
 | 1 | Acquisition with Progress | report_run_plan, navigate | https://www.raspberrypi.com/products/raspberry-pi-zero-case/ | 72549 | navigate: the settled page state moved to a page this Run had not acquired |
-| 2 | Acquisition without Progress | record_evidence, record_evidence, navigate | https://www.raspberrypi.com/products/raspberry-pi-zero-case | 63845 | navigate: a re-acquisition of a page the initial attempt already checkpointed (inherited) [inherited] |
+| 2 | Acquisition without Progress | record_evidence, record_evidence, navigate | https://www.raspberrypi.com/products/raspberry-pi-zero-case | 63845 | navigate: a re-acquisition of a page the initial attempt already checkpointed (inherited) [inherited, 1 rejected checkpoint] |
 | 3 | Acquisition without Progress | scroll | https://www.raspberrypi.com/products/camera-module-3 | 9291 | scroll: a scroll that answered End of Page |
 | 4 | Acquisition with Progress | read_page | https://www.raspberrypi.com/products/camera-module-3/ | 7073 | read_page: the first read of this page state |
 | 5 | Failed round | scroll ✗ | https://www.raspberrypi.com/products/camera-module-3 | 10248 | every call was refused (scroll) |
@@ -131,7 +128,7 @@ Kinds are mechanical counts; a share is over the budgeted rounds (Finalization o
 
 ### historical-longitude-watch--initial (initial)
 
-- answered; ended done / partial (budget_exhausted); tier lookup; 12 of 12 Tool Rounds used; 14 model rounds, 2 in Finalization; Run duration 178437 ms; LLM stage 141672 ms over 14 joined round(s)
+- answered; ended done / partial (budget_exhausted); tier lookup; 12 of 12 Tool Rounds used; 14 orchestrator rounds, 2 in Finalization; Run duration 178437 ms; LLM stage 141672 ms over 14 joined round(s)
 - grade useful_partial; checks not reached: fact-02, fact-03, fact-05, fact-08, fact-10, fact-11 (6 of 17)
 - 0 Subagent round(s) over 0 Subagent(s); 1 accepted and 0 rejected Evidence Checkpoint(s); 0 inherited round(s); 0 walled round(s)
 - kinds: Acquisition with Progress 7 (58%) · Acquisition without Progress 2 (17%) · Collection 0 (0%) · Bookkeeping 0 (0%) · Failed round 3 (25%) · Finalization 2 (14%)
@@ -149,7 +146,7 @@ Kinds are mechanical counts; a share is over the budgeted rounds (Finalization o
 - flag (round 10): Do rounds 8 and 10 form one Search Loop, since both look for the Harrison watch record, or does the switch from on-site search to a site-restricted external engine with a new query break it?
 - flag (round 4): Should the overlay-dismissing click on the listing page count as off-key, or as a necessary step toward the site's search box?
 - flag: Should the secondary verdict be tier_too_small_or_never_escalated instead of failed_rounds? The lookup tier's 12 rounds were never escalated, and the task needs two catalogue records plus a full read of the first.
-- reviewer claude-opus-5 at high, prompt audit-p1, digest sha256:d638f530…, $0.09
+- reviewer claude-opus-5 at high, prompt audit-p1, digest sha256:d7ca694b…, $0.09
 
 | round | kind | tools | page | ms | note |
 | --- | --- | --- | --- | --- | --- |
@@ -170,31 +167,32 @@ Kinds are mechanical counts; a share is over the budgeted rounds (Finalization o
 
 ### rule-eurostar-luggage--initial (initial)
 
-- answered; ended done (model_answered); tier lookup; 6 of 12 Tool Rounds used; 7 model rounds, 1 in Finalization; Run duration 231365 ms; LLM stage 224830 ms over 7 joined round(s)
+- answered; ended done (model_answered); tier lookup; 6 of 12 Tool Rounds used; 7 orchestrator rounds, 1 in Finalization; Run duration 231365 ms; LLM stage 224830 ms over 7 joined round(s)
 - grade useful_partial; checks not reached: fact-07, fact-08 (2 of 14)
-- 0 Subagent round(s) over 0 Subagent(s); 4 accepted and 2 rejected Evidence Checkpoint(s); 0 inherited round(s); 0 walled round(s)
+- 0 Subagent round(s) over 0 Subagent(s); 5 accepted and 1 rejected Evidence Checkpoint(s); 0 inherited round(s); 0 walled round(s)
 - kinds: Acquisition with Progress 3 (50%) · Acquisition without Progress 0 (0%) · Collection 0 (0%) · Bookkeeping 3 (50%) · Failed round 0 (0%) · Finalization 1 (14%)
-- **verdict: stopped early** — The Run used 6 of 12 budgeted rounds (50%) and ended with the model answering. 3 of the 6 were Acquisition with Progress: round 2 reached S2 and round 3 reached S1. The other 3 (rounds 4–6) were Bookkeeping, with 4 checkpoints accepted. There were no failed rounds, no loops and no repeats. The only unreached checks, fact-07 and fact-08, were within reach from the pages acquired in rounds 2–3, but the Run went to Finalization in round 7 with half its budget unspent.
-- stopped early: yes — The Run answered after 6 of its 12 Tool Rounds and about 231 s. It never reached fact-07 or fact-08. Both follow from the two verified official pages it already had: https://www.eurostar.com/uk-en/travel-info/travel-planning/luggage (round 3, recorded in rounds 5 and 6) and https://www.eurostar.com/uk-en/travel-info/travel-planning/luggage/musical-instruments (round 2). No new page was needed, and budget was left to reason them out and record them before answering.
-- Off-key round 1 (https://duckduckgo.com/?q=Eurostar+luggage+allowance+musical+instruments+official+eurostar.com&ia=web): A search results page. Result snippets can't serve as the official statement any required fact needs. It only pointed the Run to the official pages it opened in rounds 2 and 3.
-- flag (round 1): Should the DuckDuckGo results page in round 1 count as Off-key? It can't carry a required fact itself, but it is how the Run found the official pages, and it is only 1 of 6 rounds.
-- flag (round 7): fact-07 and fact-08 need reasoning over material already in hand, not new acquisition. Is stopped_early the right verdict here, or is this better seen as an Answer-composition shortfall that no budget verdict fully captures?
-- flag (round 4): In round 4 the second record_evidence is marked REJECTED, yet its result says memory-1 was recorded. Should the 2 rejected checkpoints in this round really count as 2, or only as 1?
-- reviewer claude-opus-5 at high, prompt audit-p1, digest sha256:cbf2936b…, $0.12
+- **verdict: stopped early** — All 5 non-finalization rounds after round 1 were on-key: rounds 2 and 3 reached both verified sources, and rounds 4 to 6 recorded evidence from them (5 accepted checkpoints, 1 rejected). Only 1 of 6 budgeted rounds (17%, round 1) was a search page, with no loops, no repeats and no failed rounds. The Run then answered at round 7 with half the budget unused, leaving fact-07 and fact-08 unreached even though pages already in hand covered them.
+- stopped early: yes — The Run used 6 of its 12 Tool Rounds and answered with 6 left. The checks it never reached, fact-07 and fact-08, needed no page beyond the two it already held: https://www.eurostar.com/uk-en/travel-info/travel-planning/luggage (opened in round 3, recorded in rounds 5 and 6) and https://www.eurostar.com/uk-en/travel-info/travel-planning/luggage/musical-instruments (opened in round 2, recorded in round 4). Both checks could be worked out from that material. A time notice at round 4 said 60% of the active-work deadline was spent, but time was left when the Run stopped.
+- Off-key round 1 (https://duckduckgo.com/?q=Eurostar+luggage+allowance+musical+instruments+official+eurostar.com&ia=web): A search engine results page. It can point to the official sources but cannot itself carry any required fact as an official rule. It worked only as a step toward the pages opened in rounds 2 and 3.
+- flag (round 1): Should the DuckDuckGo results page in round 1 count as Off-key? It cannot carry a fact itself, but it was the necessary way to find the official pages opened in rounds 2 and 3.
+- flag (round 7): Should this be called stopped_early? The misses on fact-07 and fact-08 are gaps in how the Answer was written from material already acquired, and more Tool Rounds might not have closed them.
+- flag (round 4): Did the 60% time notice at round 4 make stopping at round 6 reasonable, so that time left, not rounds left, is the better measure of whether the Run stopped early?
+- flag (round 4): Round 4's first record_evidence was rejected because its excerpt did not appear in anything retained from the luggage page, which was only re-recorded in rounds 5 and 6. Should rounds 5 and 6 count partly as repair of that rejection rather than as fresh Bookkeeping?
+- reviewer claude-opus-5 at high, prompt audit-p1, digest sha256:8493fa21…, $0.12
 
 | round | kind | tools | page | ms | note |
 | --- | --- | --- | --- | --- | --- |
 | 1 | Acquisition with Progress | report_run_plan, navigate | https://duckduckgo.com/?q=Eurostar+luggage+allowance+musical+instruments+officia… | 88450 | navigate: the settled page state moved to a page this Run had not acquired [off-key] |
 | 2 | Acquisition with Progress | navigate | https://www.eurostar.com/uk-en/travel-info/travel-planning/luggage/musical-instr… | 4997 | navigate: the settled page state moved to a page this Run had not acquired |
 | 3 | Acquisition with Progress | navigate | https://www.eurostar.com/uk-en/travel-info/travel-planning/luggage | 13221 | navigate: the settled page state moved to a page this Run had not acquired |
-| 4 | Bookkeeping | record_evidence, record_evidence, record_evidence, record_evidence | https://www.eurostar.com/uk-en/travel-info/travel-planning/luggage | 70195 | record_evidence, record_evidence, record_evidence, record_evidence — 2 rejected Evidence Checkpoint(s) [2 rejected checkpoint] |
+| 4 | Bookkeeping | record_evidence, record_evidence, record_evidence, record_evidence | https://www.eurostar.com/uk-en/travel-info/travel-planning/luggage | 70195 | record_evidence, record_evidence, record_evidence, record_evidence — 1 rejected Evidence Checkpoint(s) [1 rejected checkpoint] |
 | 5 | Bookkeeping | record_evidence | https://www.eurostar.com/uk-en/travel-info/travel-planning/luggage | 5221 | record_evidence |
 | 6 | Bookkeeping | record_evidence | https://www.eurostar.com/uk-en/travel-info/travel-planning/luggage | 5849 | record_evidence |
 | 7 | Finalization | — | — | 36897 | the reserved Answer |
 
 ### rule-eurostar-luggage--follow_up (revised_objective)
 
-- answered; ended done / completed (objective_met); tier investigation (1 deadline escalation(s)); 18 of 24 Tool Rounds used; 19 model rounds, 1 in Finalization; Run duration 288265 ms; LLM stage 278916 ms over 19 joined round(s)
+- answered; ended done / completed (objective_met); tier investigation (1 Tier Escalation(s) at the deadline); 18 of 24 Tool Rounds used; 19 orchestrator rounds, 1 in Finalization; Run duration 288265 ms; LLM stage 278916 ms over 19 joined round(s)
 - grade pass; checks not reached: none
 - 0 Subagent round(s) over 0 Subagent(s); 3 accepted and 1 rejected Evidence Checkpoint(s); 2 inherited round(s); 0 walled round(s)
 - kinds: Acquisition with Progress 11 (61%) · Acquisition without Progress 4 (22%) · Collection 0 (0%) · Bookkeeping 3 (17%) · Failed round 0 (0%) · Finalization 1 (5%)
@@ -212,7 +210,7 @@ Kinds are mechanical counts; a share is over the budgeted rounds (Finalization o
 - flag (round 11): Is the Help Centre FAQ page from round 11 on-key? It is an official luggage page that could state class allowances, but it is not the verified source.
 - flag (round 17): Round 17 is labelled a re-acquisition of an inherited page. Should it count as productive, given that the run needed a fresh observation of that page for round 18's checkpoint to be accepted?
 - flag: Is 'rounds_wasted' too strong as the primary verdict for an attempt that passed with 6 rounds to spare, when none of the listed categories really cost it its result?
-- reviewer claude-opus-5 at high, prompt audit-p1, digest sha256:bc228ef8…, $0.16
+- reviewer claude-opus-5 at high, prompt audit-p1, digest sha256:7f2ae15e…, $0.16
 
 | round | kind | tools | page | ms | note |
 | --- | --- | --- | --- | --- | --- |
@@ -238,7 +236,7 @@ Kinds are mechanical counts; a share is over the budgeted rounds (Finalization o
 
 ### superseded-voyager-interstellar--initial (initial)
 
-- answered; ended done / partial (budget_exhausted); tier investigation; 24 of 24 Tool Rounds used; 26 model rounds, 2 in Finalization; Run duration 388291 ms; LLM stage 337974 ms over 26 joined round(s)
+- answered; ended done / partial (budget_exhausted); tier investigation; 24 of 24 Tool Rounds used; 26 orchestrator rounds, 2 in Finalization; Run duration 388291 ms; LLM stage 337974 ms over 26 joined round(s)
 - grade useful_partial; checks not reached: fact-07 (1 of 15)
 - 0 Subagent round(s) over 0 Subagent(s); 1 accepted and 0 rejected Evidence Checkpoint(s); 0 inherited round(s); 1 walled round(s)
 - kinds: Acquisition with Progress 21 (88%) · Acquisition without Progress 3 (13%) · Collection 0 (0%) · Bookkeeping 0 (0%) · Failed round 0 (0%) · Finalization 2 (8%)
@@ -277,7 +275,7 @@ Kinds are mechanical counts; a share is over the budgeted rounds (Finalization o
 - flag (round 11): Were the CDX index rounds 11-13 a reasonable archival detour, since the listing could have revealed release URLs, rather than Off-key waste?
 - flag (round 16): Rounds 16 and 17 brought only carousel buttons and share links into view. Should they count as Progress?
 - flag: The grade is useful_partial with only fact-07 unreached. Is rounds_wasted too harsh as primary, given that the Answer still carried most of the checks?
-- reviewer claude-opus-5 at high, prompt audit-p1, digest sha256:41a4ad1d…, $0.26
+- reviewer claude-opus-5 at high, prompt audit-p1, digest sha256:453f8ad1…, $0.26
 
 | round | kind | tools | page | ms | note |
 | --- | --- | --- | --- | --- | --- |

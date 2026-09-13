@@ -32,9 +32,9 @@
     "reviewerModel": "claude-opus-5",
     "reviewerEffort": "high",
     "reviewerPromptVersion": "audit-p1",
-    "auditCommit": "e63404a7034fb83b7849dafb586ed29cedc21df5",
+    "auditCommit": "49d5371dec49753f4c98784732372f0ef957a431",
     "auditDirtyTree": true,
-    "generatedAt": "2026-09-13T02:02:01.363Z"
+    "generatedAt": "2026-09-13T02:26:24.200Z"
   },
   "attempts": [
     {
@@ -78,6 +78,7 @@
         "rounds": [
           {
             "round": 1,
+            "llmRound": 1,
             "attempt": 1,
             "at": 1789231051075,
             "outcome": "completed",
@@ -164,6 +165,7 @@
           },
           {
             "round": 2,
+            "llmRound": 2,
             "attempt": 1,
             "at": 1789231057985,
             "outcome": "completed",
@@ -233,6 +235,7 @@
           },
           {
             "round": 3,
+            "llmRound": 3,
             "attempt": 1,
             "at": 1789231064783,
             "outcome": "completed",
@@ -279,6 +282,7 @@
           },
           {
             "round": 4,
+            "llmRound": 4,
             "attempt": 1,
             "at": 1789231069127,
             "outcome": "completed",
@@ -325,6 +329,7 @@
           },
           {
             "round": 5,
+            "llmRound": 5,
             "attempt": 1,
             "at": 1789231075230,
             "outcome": "completed",
@@ -371,6 +376,7 @@
           },
           {
             "round": 6,
+            "llmRound": 6,
             "attempt": 1,
             "at": 1789231080662,
             "outcome": "completed",
@@ -417,6 +423,7 @@
           },
           {
             "round": 7,
+            "llmRound": 7,
             "attempt": 1,
             "at": 1789231084952,
             "outcome": "completed",
@@ -463,6 +470,7 @@
           },
           {
             "round": 8,
+            "llmRound": 8,
             "attempt": 1,
             "at": 1789231094619,
             "outcome": "completed",
@@ -512,6 +520,7 @@
           },
           {
             "round": 9,
+            "llmRound": 9,
             "attempt": 1,
             "at": 1789231099658,
             "outcome": "completed",
@@ -558,6 +567,7 @@
           },
           {
             "round": 10,
+            "llmRound": 10,
             "attempt": 1,
             "at": 1789231112687,
             "outcome": "completed",
@@ -604,6 +614,7 @@
           },
           {
             "round": 11,
+            "llmRound": 11,
             "attempt": 1,
             "at": 1789231132051,
             "outcome": "completed",
@@ -650,6 +661,7 @@
           },
           {
             "round": 12,
+            "llmRound": 12,
             "attempt": 1,
             "at": 1789231138077,
             "outcome": "completed",
@@ -697,6 +709,7 @@
           },
           {
             "round": 13,
+            "llmRound": 13,
             "attempt": 1,
             "at": 1789231149432,
             "outcome": "completed",
@@ -743,6 +756,7 @@
           },
           {
             "round": 14,
+            "llmRound": 14,
             "attempt": 1,
             "at": 1789231157267,
             "outcome": "completed",
@@ -787,6 +801,7 @@
           },
           {
             "round": 15,
+            "llmRound": 15,
             "attempt": 1,
             "at": 1789231167804,
             "outcome": "completed",
@@ -833,6 +848,7 @@
           },
           {
             "round": 16,
+            "llmRound": 16,
             "attempt": 1,
             "at": 1789231172865,
             "outcome": "completed",
@@ -879,6 +895,7 @@
           },
           {
             "round": 17,
+            "llmRound": 17,
             "attempt": 1,
             "at": 1789231176959,
             "outcome": "completed",
@@ -923,6 +940,7 @@
           },
           {
             "round": 18,
+            "llmRound": 18,
             "attempt": 1,
             "at": 1789231181292,
             "outcome": "completed",
@@ -971,6 +989,7 @@
           },
           {
             "round": 19,
+            "llmRound": 19,
             "attempt": 1,
             "at": 1789231186286,
             "outcome": "completed",
@@ -1014,6 +1033,7 @@
           },
           {
             "round": 20,
+            "llmRound": 20,
             "attempt": 1,
             "at": 1789231223257,
             "outcome": "completed",
@@ -1060,6 +1080,7 @@
           },
           {
             "round": 21,
+            "llmRound": 21,
             "attempt": 1,
             "at": 1789231227920,
             "outcome": "completed",
@@ -1108,6 +1129,7 @@
           },
           {
             "round": 22,
+            "llmRound": 22,
             "attempt": 1,
             "at": 1789231234074,
             "outcome": "completed",
@@ -1154,6 +1176,7 @@
           },
           {
             "round": 23,
+            "llmRound": 23,
             "attempt": 1,
             "at": 1789231247097,
             "outcome": "completed",
@@ -1200,6 +1223,7 @@
           },
           {
             "round": 24,
+            "llmRound": 24,
             "attempt": 1,
             "at": 1789231253234,
             "outcome": "completed",
@@ -1246,6 +1270,7 @@
           },
           {
             "round": 25,
+            "llmRound": 25,
             "attempt": 1,
             "at": 1789231259745,
             "outcome": "completed",
@@ -1279,7 +1304,7 @@
               }
             ],
             "kind": "finalization",
-            "reason": "the bookkeeping round (scroll)",
+            "reason": "a Finalization round whose calls were refused — the tools are closed (scroll)",
             "tags": {
               "inherited": false,
               "rejectedCheckpoints": 0,
@@ -1291,6 +1316,7 @@
           },
           {
             "round": 26,
+            "llmRound": 26,
             "attempt": 1,
             "at": 1789231288649,
             "outcome": "completed",
@@ -1363,7 +1389,7 @@
           "fact-05"
         ],
         "checksTotal": 10,
-        "digestHash": "sha256:b032237a7beca3fe5899ec23e66bebd7dce902ba32bb6373bbc9c4e62ec921d0"
+        "digestHash": "sha256:7cd6c971aea8ea337934ed147ab886af2df0c0874ccdd9eb01e206d763d85bf8"
       },
       "review": {
         "judgement": {
@@ -1451,7 +1477,7 @@
         "served": "claude-opus-5",
         "effort": "high",
         "promptVersion": "audit-p1",
-        "digestHash": "sha256:b032237a7beca3fe5899ec23e66bebd7dce902ba32bb6373bbc9c4e62ec921d0",
+        "digestHash": "sha256:7cd6c971aea8ea337934ed147ab886af2df0c0874ccdd9eb01e206d763d85bf8",
         "costUsd": 0.28,
         "durationMs": 55092,
         "judgedAt": "2026-09-13T01:44:37.836Z"
@@ -1502,6 +1528,7 @@
         "rounds": [
           {
             "round": 1,
+            "llmRound": 1,
             "attempt": 1,
             "at": 1789231361743,
             "outcome": "completed",
@@ -1567,6 +1594,7 @@
           },
           {
             "round": 2,
+            "llmRound": 2,
             "attempt": 1,
             "at": 1789231426327,
             "outcome": "completed",
@@ -1617,8 +1645,8 @@
                 "signature": null,
                 "wall": null,
                 "checkpoint": {
-                  "accepted": true,
-                  "outcome": "accepted"
+                  "accepted": false,
+                  "outcome": "malformed"
                 },
                 "notices": [],
                 "search": null,
@@ -1649,8 +1677,8 @@
             "reason": "navigate: a re-acquisition of a page the initial attempt already checkpointed (inherited)",
             "tags": {
               "inherited": true,
-              "rejectedCheckpoints": 0,
-              "acceptedCheckpoints": 2,
+              "rejectedCheckpoints": 1,
+              "acceptedCheckpoints": 1,
               "refusedCalls": 0,
               "wall": false,
               "search": false
@@ -1658,6 +1686,7 @@
           },
           {
             "round": 3,
+            "llmRound": 3,
             "attempt": 1,
             "at": 1789231436264,
             "outcome": "completed",
@@ -1704,6 +1733,7 @@
           },
           {
             "round": 4,
+            "llmRound": 4,
             "attempt": 1,
             "at": 1789231443555,
             "outcome": "completed",
@@ -1748,6 +1778,7 @@
           },
           {
             "round": 5,
+            "llmRound": 5,
             "attempt": 1,
             "at": 1789231453809,
             "outcome": "completed",
@@ -1793,6 +1824,7 @@
           },
           {
             "round": 6,
+            "llmRound": 6,
             "attempt": 1,
             "at": 1789231468984,
             "outcome": "completed",
@@ -1839,6 +1871,7 @@
           },
           {
             "round": 7,
+            "llmRound": 7,
             "attempt": 1,
             "at": 1789231478441,
             "outcome": "completed",
@@ -1885,6 +1918,7 @@
           },
           {
             "round": 8,
+            "llmRound": 8,
             "attempt": 1,
             "at": 1789231486197,
             "outcome": "completed",
@@ -1931,6 +1965,7 @@
           },
           {
             "round": 9,
+            "llmRound": 9,
             "attempt": 1,
             "at": 1789231506125,
             "outcome": "completed",
@@ -1977,6 +2012,7 @@
           },
           {
             "round": 10,
+            "llmRound": 10,
             "attempt": 1,
             "at": 1789231511763,
             "outcome": "completed",
@@ -2023,6 +2059,7 @@
           },
           {
             "round": 11,
+            "llmRound": 11,
             "attempt": 1,
             "at": 1789231514503,
             "outcome": "completed",
@@ -2070,6 +2107,7 @@
           },
           {
             "round": 12,
+            "llmRound": 12,
             "attempt": 1,
             "at": 1789231525031,
             "outcome": "completed",
@@ -2116,6 +2154,7 @@
           },
           {
             "round": 13,
+            "llmRound": 13,
             "attempt": 1,
             "at": 1789231541914,
             "outcome": "completed",
@@ -2164,6 +2203,7 @@
           },
           {
             "round": 14,
+            "llmRound": 14,
             "attempt": 1,
             "at": 1789231546667,
             "outcome": "completed",
@@ -2210,6 +2250,7 @@
           },
           {
             "round": 15,
+            "llmRound": 15,
             "attempt": 1,
             "at": 1789231551387,
             "outcome": "completed",
@@ -2256,6 +2297,7 @@
           },
           {
             "round": 16,
+            "llmRound": 16,
             "attempt": 1,
             "at": 1789231558843,
             "outcome": "completed",
@@ -2303,6 +2345,7 @@
           },
           {
             "round": 17,
+            "llmRound": 17,
             "attempt": 1,
             "at": 1789231627965,
             "outcome": "completed",
@@ -2373,6 +2416,7 @@
           },
           {
             "round": 18,
+            "llmRound": 18,
             "attempt": 1,
             "at": 1789231643961,
             "outcome": "completed",
@@ -2423,6 +2467,7 @@
           },
           {
             "round": 19,
+            "llmRound": 19,
             "attempt": 1,
             "at": 1789231649397,
             "outcome": "completed",
@@ -2472,6 +2517,7 @@
           },
           {
             "round": 20,
+            "llmRound": 20,
             "attempt": 1,
             "at": 1789231655478,
             "outcome": "completed",
@@ -2520,6 +2566,7 @@
           },
           {
             "round": 21,
+            "llmRound": 21,
             "attempt": 1,
             "at": 1789231661746,
             "outcome": "deadline",
@@ -2545,6 +2592,7 @@
           },
           {
             "round": 22,
+            "llmRound": 22,
             "attempt": 1,
             "at": 1789231670093,
             "outcome": "completed",
@@ -2596,6 +2644,7 @@
           },
           {
             "round": 23,
+            "llmRound": 23,
             "attempt": 1,
             "at": 1789231691139,
             "outcome": "completed",
@@ -2638,8 +2687,8 @@
           "failed_round": 0.095,
           "finalization": 0.087
         },
-        "acceptedCheckpoints": 8,
-        "rejectedCheckpoints": 0,
+        "acceptedCheckpoints": 7,
+        "rejectedCheckpoints": 1,
         "inheritedRounds": 3,
         "mechanicalSearchRounds": 0,
         "walledRounds": 0,
@@ -2666,7 +2715,7 @@
           "fact-02"
         ],
         "checksTotal": 6,
-        "digestHash": "sha256:36e1b6800093b9fc6ba0d58122fd7855e36f9ca85e89479cb8586294cae8252f"
+        "digestHash": "sha256:5fa2d7bbe6f665423fe27b47af6cf8ffc32bd95acd1176d322bb9f76dedfc382"
       },
       "review": {
         "judgement": {
@@ -2675,79 +2724,64 @@
             {
               "round": 6,
               "url": "https://www.raspberrypi.com/news/camera-module-3-show-off-your-shots/",
-              "reason": "The navigate redirected to a community photo showcase post. That is the right site but the wrong subject: a gallery of user photos cannot carry the lid-fit verdict (fact-01), the mechanical reason (fact-02) or the electrical and software compatibility (fact-03)."
+              "reason": "The navigate to /news/camera-module-3/ redirected to a community photo showcase post. That is the right site but the wrong subject. A gallery of user shots cannot carry the enclosure verdict (fact-01), the official mechanical reason (fact-02) or the electrical and software carry-over (fact-03)."
             }
           ],
           "overrules": [
             {
               "round": 11,
               "kind": "acquisition_without_progress",
-              "reason": "The Look on https://www.raspberrypi.com/documentation/accessories/camera.html returned 'not legible'. Nothing new came in, which is the same outcome code marked as no progress in round 15."
+              "reason": "The Look on https://www.raspberrypi.com/documentation/accessories/camera.html returned 'not legible'. Nothing new came in. Round 15 got the same result and was labelled without progress, so round 11 should be too."
             },
             {
               "round": 16,
               "kind": "acquisition_without_progress",
-              "reason": "The region Look on camera.html also returned 'not legible', and the app itself added a notice that two consecutive actions made no progress. The first-Look-with-this-question rule does not make an unreadable result progress."
+              "reason": "The region Look on camera.html also returned 'not legible', and the app itself added a no-progress notice to the result. No material came in, the same as round 15."
             }
           ],
           "stoppedEarly": {
             "value": false,
-            "reason": "The Run ended on deadline_reached: round 21 was cut by the active-work deadline, with 20 of 24 Tool Rounds used. Rounds were left, but time was not, so this is not an early stop. fact-02 was reachable on camera.html, which the Run had open in rounds 9-16, but the deadline, not a voluntary stop, ended the attempt."
+            "reason": "The Run was ended by the active-work deadline: round 21 was cut and the end reason was deadline_reached. It did not choose to stop with time left. It had shifted to bookkeeping in rounds 17-20 while 6 of 24 tool rounds remained, and fact-02 was reachable on camera.html, which it had already loaded in rounds 9-16. But time, not a decision to stop, ended the Run."
           },
           "verdict": {
             "primary": "rounds_wasted",
-            "primaryReason": "With the overrules, 8 of the 21 budgeted rounds made no progress (2, 3, 9, 10, 11, 14, 15, 16). Two more failed (round 5, a refused repeat scroll, and round 21), and round 6 was off-key. That is 11 of 21 rounds, about 52%, with no on-key progress. On https://www.raspberrypi.com/documentation/accessories/camera.html, the source that carries fact-02, the Run spent rounds 9-16 on a re-navigate, scrolls to End of Page and three unreadable Looks (11, 15, 16), and never did a read_page there. Long reasoning rounds (1, 2, 17, together about 204 s of the 402 s Run) then used up the time before the unreached fact-02 could be read.",
+            "primaryReason": "Of the 21 budgeted rounds, 8 made no progress once rounds 11 and 16 are overruled (rounds 2, 3, 9, 10, 11, 14, 15, 16). Another 2 failed: round 5 was a refused repeat scroll and round 21 was cut. Round 6 was off-key, and rounds 7-8 went to a launch article that could not carry fact-02. That comes to roughly half the budget. The Run did load the verified source https://www.raspberrypi.com/documentation/accessories/camera.html in rounds 9-16, but it used scrolls and screenshot Looks that came back illegible (rounds 11, 15, 16) and never read the page text. So the mechanical section behind fact-02 was never extracted. Long reasoning rounds (1, 2, 17, each over 60 s) also used up the time before the deadline.",
             "secondary": null,
             "secondaryReason": null
           },
           "flags": [
             {
-              "round": 6,
-              "question": "Is the Camera Module 3 showcase post off-key, or could a launch-related news page plausibly carry compatibility material relevant to fact-03?"
-            },
-            {
               "round": 7,
-              "question": "The Camera Module 3 launch article was left on-key because it might carry compatibility statements relevant to fact-03. Should it count as off-key for the follow-up's lid-fit facts?"
+              "question": "Should the launch article https://www.raspberrypi.com/news/new-autofocus-camera-modules/ (rounds 7-8) also count as off-key? It could plausibly carry general compatibility statements relevant to fact-03, so it was left on-key."
             },
             {
               "round": 11,
-              "question": "Is overruling a 'not legible' Look to without-progress right, given it was the first Look at that region with that question?"
-            },
-            {
-              "round": 16,
-              "question": "Same question for this region Look: should an unreadable first Look count as progress?"
+              "question": "Is overruling rounds 11 and 16 to without-progress right, given that the app counts a first Look with a new question as progress even when the Look returns nothing legible?"
             },
             {
               "round": 21,
-              "question": "Round 21 was cut by the deadline after the Run had already moved to bookkeeping. Should failed_rounds be a secondary verdict, or was the deadline only a consequence of time spent in earlier rounds?"
+              "question": "Should failed_rounds be a secondary verdict? The deadline cut at round 21 ended the Run, but by then acquisition had already stopped and fact-02 had already been missed."
             },
             {
-              "round": 2,
-              "question": "The second record_evidence is marked 'checkpoint: accepted' but its result says rejected (malformed), and the digest header counts 0 rejected checkpoints. Which is right?"
-            },
-            {
-              "round": null,
-              "question": "Is rounds_wasted the right primary verdict, given that the attempt ended on the time deadline rather than the round budget, which might point toward a time-driven cause instead?"
+              "round": 17,
+              "question": "Should the Run count as stopped early? It left the camera.html source for bookkeeping at round 17 with budget left and fact-02 still within reach on that page, even though the formal end was the deadline."
             }
           ]
         },
         "caveats": [
-          "flag (round 6): Is the Camera Module 3 showcase post off-key, or could a launch-related news page plausibly carry compatibility material relevant to fact-03?",
-          "flag (round 7): The Camera Module 3 launch article was left on-key because it might carry compatibility statements relevant to fact-03. Should it count as off-key for the follow-up's lid-fit facts?",
-          "flag (round 11): Is overruling a 'not legible' Look to without-progress right, given it was the first Look at that region with that question?",
-          "flag (round 16): Same question for this region Look: should an unreadable first Look count as progress?",
-          "flag (round 21): Round 21 was cut by the deadline after the Run had already moved to bookkeeping. Should failed_rounds be a secondary verdict, or was the deadline only a consequence of time spent in earlier rounds?",
-          "flag (round 2): The second record_evidence is marked 'checkpoint: accepted' but its result says rejected (malformed), and the digest header counts 0 rejected checkpoints. Which is right?",
-          "flag: Is rounds_wasted the right primary verdict, given that the attempt ended on the time deadline rather than the round budget, which might point toward a time-driven cause instead?"
+          "flag (round 7): Should the launch article https://www.raspberrypi.com/news/new-autofocus-camera-modules/ (rounds 7-8) also count as off-key? It could plausibly carry general compatibility statements relevant to fact-03, so it was left on-key.",
+          "flag (round 11): Is overruling rounds 11 and 16 to without-progress right, given that the app counts a first Look with a new question as progress even when the Look returns nothing legible?",
+          "flag (round 21): Should failed_rounds be a secondary verdict? The deadline cut at round 21 ended the Run, but by then acquisition had already stopped and fact-02 had already been missed.",
+          "flag (round 17): Should the Run count as stopped early? It left the camera.html source for bookkeeping at round 17 with budget left and fact-02 still within reach on that page, even though the formal end was the deadline."
         ],
         "model": "claude-opus-5",
         "served": "claude-opus-5",
         "effort": "high",
         "promptVersion": "audit-p1",
-        "digestHash": "sha256:36e1b6800093b9fc6ba0d58122fd7855e36f9ca85e89479cb8586294cae8252f",
-        "costUsd": 0.2,
-        "durationMs": 38872,
-        "judgedAt": "2026-09-13T01:45:17.777Z"
+        "digestHash": "sha256:5fa2d7bbe6f665423fe27b47af6cf8ffc32bd95acd1176d322bb9f76dedfc382",
+        "costUsd": 0.08,
+        "durationMs": 34798,
+        "judgedAt": "2026-09-13T02:25:12.054Z"
       },
       "countsAfterOverrules": {
         "acquisition_with_progress": 7,
@@ -2795,6 +2829,7 @@
         "rounds": [
           {
             "round": 1,
+            "llmRound": 1,
             "attempt": 1,
             "at": 1789231745670,
             "outcome": "completed",
@@ -2860,6 +2895,7 @@
           },
           {
             "round": 2,
+            "llmRound": 2,
             "attempt": 1,
             "at": 1789231773274,
             "outcome": "completed",
@@ -2904,6 +2940,7 @@
           },
           {
             "round": 3,
+            "llmRound": 3,
             "attempt": 1,
             "at": 1789231779829,
             "outcome": "completed",
@@ -2953,6 +2990,7 @@
           },
           {
             "round": 4,
+            "llmRound": 4,
             "attempt": 1,
             "at": 1789231788541,
             "outcome": "completed",
@@ -2999,6 +3037,7 @@
           },
           {
             "round": 5,
+            "llmRound": 5,
             "attempt": 1,
             "at": 1789231790983,
             "outcome": "completed",
@@ -3043,6 +3082,7 @@
           },
           {
             "round": 6,
+            "llmRound": 6,
             "attempt": 1,
             "at": 1789231792724,
             "outcome": "completed",
@@ -3092,6 +3132,7 @@
           },
           {
             "round": 7,
+            "llmRound": 7,
             "attempt": 1,
             "at": 1789231796156,
             "outcome": "completed",
@@ -3135,6 +3176,7 @@
           },
           {
             "round": 8,
+            "llmRound": 8,
             "attempt": 1,
             "at": 1789231804108,
             "outcome": "completed",
@@ -3186,6 +3228,7 @@
           },
           {
             "round": 9,
+            "llmRound": 9,
             "attempt": 1,
             "at": 1789231813130,
             "outcome": "completed",
@@ -3234,6 +3277,7 @@
           },
           {
             "round": 10,
+            "llmRound": 10,
             "attempt": 1,
             "at": 1789231833268,
             "outcome": "completed",
@@ -3285,6 +3329,7 @@
           },
           {
             "round": 11,
+            "llmRound": 11,
             "attempt": 1,
             "at": 1789231836969,
             "outcome": "completed",
@@ -3333,6 +3378,7 @@
           },
           {
             "round": 12,
+            "llmRound": 12,
             "attempt": 1,
             "at": 1789231854635,
             "outcome": "completed",
@@ -3377,6 +3423,7 @@
           },
           {
             "round": 13,
+            "llmRound": 13,
             "attempt": 1,
             "at": 1789231862694,
             "outcome": "completed",
@@ -3428,6 +3475,7 @@
           },
           {
             "round": 14,
+            "llmRound": 14,
             "attempt": 1,
             "at": 1789231874057,
             "outcome": "completed",
@@ -3503,7 +3551,7 @@
           "fact-11"
         ],
         "checksTotal": 17,
-        "digestHash": "sha256:d638f530b05f3d5972fdc05e8de2c19a0f3a524797e143c09fa417123d2ad9a5"
+        "digestHash": "sha256:d7ca694b96a8102528733f8d2c782e00e07fc03a153b87aed17eecd65c743d1d"
       },
       "review": {
         "judgement": {
@@ -3586,7 +3634,7 @@
         "served": "claude-opus-5",
         "effort": "high",
         "promptVersion": "audit-p1",
-        "digestHash": "sha256:d638f530b05f3d5972fdc05e8de2c19a0f3a524797e143c09fa417123d2ad9a5",
+        "digestHash": "sha256:d7ca694b96a8102528733f8d2c782e00e07fc03a153b87aed17eecd65c743d1d",
         "costUsd": 0.09,
         "durationMs": 38727,
         "judgedAt": "2026-09-13T01:45:58.169Z"
@@ -3634,6 +3682,7 @@
         "rounds": [
           {
             "round": 1,
+            "llmRound": 1,
             "attempt": 1,
             "at": 1789231966383,
             "outcome": "completed",
@@ -3702,6 +3751,7 @@
           },
           {
             "round": 2,
+            "llmRound": 2,
             "attempt": 1,
             "at": 1789231974048,
             "outcome": "completed",
@@ -3748,6 +3798,7 @@
           },
           {
             "round": 3,
+            "llmRound": 3,
             "attempt": 1,
             "at": 1789231989745,
             "outcome": "completed",
@@ -3794,6 +3845,7 @@
           },
           {
             "round": 4,
+            "llmRound": 4,
             "attempt": 1,
             "at": 1789232061314,
             "outcome": "completed",
@@ -3823,7 +3875,7 @@
                 "wall": null,
                 "checkpoint": {
                   "accepted": false,
-                  "outcome": "record_evidence rejected (excerpt_unsupported): the excerpt does not appear in anything this run retained from 'https://www.eurostar.com/uk-en/travel-info/trave…"
+                  "outcome": "excerpt_unsupported"
                 },
                 "notices": [],
                 "search": null,
@@ -3845,8 +3897,8 @@
                 "signature": null,
                 "wall": null,
                 "checkpoint": {
-                  "accepted": false,
-                  "outcome": "excerpt_unsupported"
+                  "accepted": true,
+                  "outcome": "accepted"
                 },
                 "notices": [
                   "time_milestone"
@@ -3902,11 +3954,11 @@
               }
             ],
             "kind": "bookkeeping",
-            "reason": "record_evidence, record_evidence, record_evidence, record_evidence — 2 rejected Evidence Checkpoint(s)",
+            "reason": "record_evidence, record_evidence, record_evidence, record_evidence — 1 rejected Evidence Checkpoint(s)",
             "tags": {
               "inherited": false,
-              "rejectedCheckpoints": 2,
-              "acceptedCheckpoints": 2,
+              "rejectedCheckpoints": 1,
+              "acceptedCheckpoints": 3,
               "refusedCalls": 0,
               "wall": false,
               "search": false
@@ -3914,6 +3966,7 @@
           },
           {
             "round": 5,
+            "llmRound": 5,
             "attempt": 1,
             "at": 1789232066541,
             "outcome": "completed",
@@ -3963,6 +4016,7 @@
           },
           {
             "round": 6,
+            "llmRound": 6,
             "attempt": 1,
             "at": 1789232072393,
             "outcome": "completed",
@@ -4012,6 +4066,7 @@
           },
           {
             "round": 7,
+            "llmRound": 7,
             "attempt": 1,
             "at": 1789232109291,
             "outcome": "completed",
@@ -4054,8 +4109,8 @@
           "failed_round": 0,
           "finalization": 0.143
         },
-        "acceptedCheckpoints": 4,
-        "rejectedCheckpoints": 2,
+        "acceptedCheckpoints": 5,
+        "rejectedCheckpoints": 1,
         "inheritedRounds": 0,
         "mechanicalSearchRounds": 0,
         "walledRounds": 0,
@@ -4083,7 +4138,7 @@
           "fact-08"
         ],
         "checksTotal": 14,
-        "digestHash": "sha256:cbf2936b5c3ff7670b921e9c16cb21c755e74e3c8087edff12d85a373bf9833b"
+        "digestHash": "sha256:8493fa21d62067e110659dddc2cb1437f8c669e499d27471b898b13b05482b52"
       },
       "review": {
         "judgement": {
@@ -4092,48 +4147,53 @@
             {
               "round": 1,
               "url": "https://duckduckgo.com/?q=Eurostar+luggage+allowance+musical+instruments+official+eurostar.com&ia=web",
-              "reason": "A search results page. Result snippets can't serve as the official statement any required fact needs. It only pointed the Run to the official pages it opened in rounds 2 and 3."
+              "reason": "A search engine results page. It can point to the official sources but cannot itself carry any required fact as an official rule. It worked only as a step toward the pages opened in rounds 2 and 3."
             }
           ],
           "overrules": [],
           "stoppedEarly": {
             "value": true,
-            "reason": "The Run answered after 6 of its 12 Tool Rounds and about 231 s. It never reached fact-07 or fact-08. Both follow from the two verified official pages it already had: https://www.eurostar.com/uk-en/travel-info/travel-planning/luggage (round 3, recorded in rounds 5 and 6) and https://www.eurostar.com/uk-en/travel-info/travel-planning/luggage/musical-instruments (round 2). No new page was needed, and budget was left to reason them out and record them before answering."
+            "reason": "The Run used 6 of its 12 Tool Rounds and answered with 6 left. The checks it never reached, fact-07 and fact-08, needed no page beyond the two it already held: https://www.eurostar.com/uk-en/travel-info/travel-planning/luggage (opened in round 3, recorded in rounds 5 and 6) and https://www.eurostar.com/uk-en/travel-info/travel-planning/luggage/musical-instruments (opened in round 2, recorded in round 4). Both checks could be worked out from that material. A time notice at round 4 said 60% of the active-work deadline was spent, but time was left when the Run stopped."
           },
           "verdict": {
             "primary": "stopped_early",
-            "primaryReason": "The Run used 6 of 12 budgeted rounds (50%) and ended with the model answering. 3 of the 6 were Acquisition with Progress: round 2 reached S2 and round 3 reached S1. The other 3 (rounds 4–6) were Bookkeeping, with 4 checkpoints accepted. There were no failed rounds, no loops and no repeats. The only unreached checks, fact-07 and fact-08, were within reach from the pages acquired in rounds 2–3, but the Run went to Finalization in round 7 with half its budget unspent.",
+            "primaryReason": "All 5 non-finalization rounds after round 1 were on-key: rounds 2 and 3 reached both verified sources, and rounds 4 to 6 recorded evidence from them (5 accepted checkpoints, 1 rejected). Only 1 of 6 budgeted rounds (17%, round 1) was a search page, with no loops, no repeats and no failed rounds. The Run then answered at round 7 with half the budget unused, leaving fact-07 and fact-08 unreached even though pages already in hand covered them.",
             "secondary": null,
             "secondaryReason": null
           },
           "flags": [
             {
               "round": 1,
-              "question": "Should the DuckDuckGo results page in round 1 count as Off-key? It can't carry a required fact itself, but it is how the Run found the official pages, and it is only 1 of 6 rounds."
+              "question": "Should the DuckDuckGo results page in round 1 count as Off-key? It cannot carry a fact itself, but it was the necessary way to find the official pages opened in rounds 2 and 3."
             },
             {
               "round": 7,
-              "question": "fact-07 and fact-08 need reasoning over material already in hand, not new acquisition. Is stopped_early the right verdict here, or is this better seen as an Answer-composition shortfall that no budget verdict fully captures?"
+              "question": "Should this be called stopped_early? The misses on fact-07 and fact-08 are gaps in how the Answer was written from material already acquired, and more Tool Rounds might not have closed them."
             },
             {
               "round": 4,
-              "question": "In round 4 the second record_evidence is marked REJECTED, yet its result says memory-1 was recorded. Should the 2 rejected checkpoints in this round really count as 2, or only as 1?"
+              "question": "Did the 60% time notice at round 4 make stopping at round 6 reasonable, so that time left, not rounds left, is the better measure of whether the Run stopped early?"
+            },
+            {
+              "round": 4,
+              "question": "Round 4's first record_evidence was rejected because its excerpt did not appear in anything retained from the luggage page, which was only re-recorded in rounds 5 and 6. Should rounds 5 and 6 count partly as repair of that rejection rather than as fresh Bookkeeping?"
             }
           ]
         },
         "caveats": [
-          "flag (round 1): Should the DuckDuckGo results page in round 1 count as Off-key? It can't carry a required fact itself, but it is how the Run found the official pages, and it is only 1 of 6 rounds.",
-          "flag (round 7): fact-07 and fact-08 need reasoning over material already in hand, not new acquisition. Is stopped_early the right verdict here, or is this better seen as an Answer-composition shortfall that no budget verdict fully captures?",
-          "flag (round 4): In round 4 the second record_evidence is marked REJECTED, yet its result says memory-1 was recorded. Should the 2 rejected checkpoints in this round really count as 2, or only as 1?"
+          "flag (round 1): Should the DuckDuckGo results page in round 1 count as Off-key? It cannot carry a fact itself, but it was the necessary way to find the official pages opened in rounds 2 and 3.",
+          "flag (round 7): Should this be called stopped_early? The misses on fact-07 and fact-08 are gaps in how the Answer was written from material already acquired, and more Tool Rounds might not have closed them.",
+          "flag (round 4): Did the 60% time notice at round 4 make stopping at round 6 reasonable, so that time left, not rounds left, is the better measure of whether the Run stopped early?",
+          "flag (round 4): Round 4's first record_evidence was rejected because its excerpt did not appear in anything retained from the luggage page, which was only re-recorded in rounds 5 and 6. Should rounds 5 and 6 count partly as repair of that rejection rather than as fresh Bookkeeping?"
         ],
         "model": "claude-opus-5",
         "served": "claude-opus-5",
         "effort": "high",
         "promptVersion": "audit-p1",
-        "digestHash": "sha256:cbf2936b5c3ff7670b921e9c16cb21c755e74e3c8087edff12d85a373bf9833b",
+        "digestHash": "sha256:8493fa21d62067e110659dddc2cb1437f8c669e499d27471b898b13b05482b52",
         "costUsd": 0.12,
-        "durationMs": 18437,
-        "judgedAt": "2026-09-13T01:46:17.457Z"
+        "durationMs": 23095,
+        "judgedAt": "2026-09-13T02:25:41.360Z"
       },
       "countsAfterOverrules": {
         "acquisition_with_progress": 3,
@@ -4182,6 +4242,7 @@
         "rounds": [
           {
             "round": 1,
+            "llmRound": 1,
             "attempt": 1,
             "at": 1789232178067,
             "outcome": "completed",
@@ -4247,6 +4308,7 @@
           },
           {
             "round": 2,
+            "llmRound": 2,
             "attempt": 1,
             "at": 1789232197123,
             "outcome": "completed",
@@ -4293,6 +4355,7 @@
           },
           {
             "round": 3,
+            "llmRound": 3,
             "attempt": 1,
             "at": 1789232210445,
             "outcome": "completed",
@@ -4339,6 +4402,7 @@
           },
           {
             "round": 4,
+            "llmRound": 4,
             "attempt": 1,
             "at": 1789232217246,
             "outcome": "completed",
@@ -4385,6 +4449,7 @@
           },
           {
             "round": 5,
+            "llmRound": 5,
             "attempt": 1,
             "at": 1789232221919,
             "outcome": "completed",
@@ -4431,6 +4496,7 @@
           },
           {
             "round": 6,
+            "llmRound": 6,
             "attempt": 1,
             "at": 1789232280171,
             "outcome": "completed",
@@ -4479,6 +4545,7 @@
           },
           {
             "round": 7,
+            "llmRound": 7,
             "attempt": 1,
             "at": 1789232290225,
             "outcome": "completed",
@@ -4526,6 +4593,7 @@
           },
           {
             "round": 8,
+            "llmRound": 8,
             "attempt": 1,
             "at": 1789232296282,
             "outcome": "completed",
@@ -4570,6 +4638,7 @@
           },
           {
             "round": 9,
+            "llmRound": 9,
             "attempt": 1,
             "at": 1789232304245,
             "outcome": "completed",
@@ -4616,6 +4685,7 @@
           },
           {
             "round": 10,
+            "llmRound": 10,
             "attempt": 1,
             "at": 1789232307070,
             "outcome": "completed",
@@ -4662,6 +4732,7 @@
           },
           {
             "round": 11,
+            "llmRound": 11,
             "attempt": 1,
             "at": 1789232311722,
             "outcome": "completed",
@@ -4708,6 +4779,7 @@
           },
           {
             "round": 12,
+            "llmRound": 12,
             "attempt": 1,
             "at": 1789232317490,
             "outcome": "completed",
@@ -4754,6 +4826,7 @@
           },
           {
             "round": 13,
+            "llmRound": 13,
             "attempt": 1,
             "at": 1789232319785,
             "outcome": "completed",
@@ -4803,6 +4876,7 @@
           },
           {
             "round": 14,
+            "llmRound": 14,
             "attempt": 1,
             "at": 1789232325086,
             "outcome": "completed",
@@ -4849,6 +4923,7 @@
           },
           {
             "round": 15,
+            "llmRound": 15,
             "attempt": 1,
             "at": 1789232360661,
             "outcome": "completed",
@@ -4919,6 +4994,7 @@
           },
           {
             "round": 16,
+            "llmRound": 16,
             "attempt": 1,
             "at": 1789232366719,
             "outcome": "completed",
@@ -4947,7 +5023,7 @@
                 "wall": null,
                 "checkpoint": {
                   "accepted": false,
-                  "outcome": "record_evidence rejected (unknown_source): source 'https://www.eurostar.com/uk-en/travel-info/travel-planning/luggage/musical-instruments' was not observed in t…"
+                  "outcome": "unknown_source"
                 },
                 "notices": [],
                 "search": null,
@@ -4967,6 +5043,7 @@
           },
           {
             "round": 17,
+            "llmRound": 17,
             "attempt": 1,
             "at": 1789232368454,
             "outcome": "completed",
@@ -5013,6 +5090,7 @@
           },
           {
             "round": 18,
+            "llmRound": 18,
             "attempt": 1,
             "at": 1789232374120,
             "outcome": "completed",
@@ -5061,6 +5139,7 @@
           },
           {
             "round": 19,
+            "llmRound": 19,
             "attempt": 1,
             "at": 1789232397811,
             "outcome": "completed",
@@ -5129,7 +5208,7 @@
         },
         "checksNotReached": [],
         "checksTotal": 6,
-        "digestHash": "sha256:bc228ef8b8e7efe6c11fa92897e2b2796a16174e3fbd30131b7582f6b7fe59c7"
+        "digestHash": "sha256:7f2ae15e34be450bd5c177ea3c132a78c58dc1082a951534bce8fe89e3aa88c6"
       },
       "review": {
         "judgement": {
@@ -5217,7 +5296,7 @@
         "served": "claude-opus-5",
         "effort": "high",
         "promptVersion": "audit-p1",
-        "digestHash": "sha256:bc228ef8b8e7efe6c11fa92897e2b2796a16174e3fbd30131b7582f6b7fe59c7",
+        "digestHash": "sha256:7f2ae15e34be450bd5c177ea3c132a78c58dc1082a951534bce8fe89e3aa88c6",
         "costUsd": 0.16,
         "durationMs": 26505,
         "judgedAt": "2026-09-13T01:46:44.839Z"
@@ -5268,6 +5347,7 @@
         "rounds": [
           {
             "round": 1,
+            "llmRound": 1,
             "attempt": 1,
             "at": 1789232518779,
             "outcome": "completed",
@@ -5333,6 +5413,7 @@
           },
           {
             "round": 2,
+            "llmRound": 2,
             "attempt": 1,
             "at": 1789232527904,
             "outcome": "completed",
@@ -5382,6 +5463,7 @@
           },
           {
             "round": 3,
+            "llmRound": 3,
             "attempt": 1,
             "at": 1789232531049,
             "outcome": "completed",
@@ -5431,6 +5513,7 @@
           },
           {
             "round": 4,
+            "llmRound": 4,
             "attempt": 1,
             "at": 1789232538289,
             "outcome": "completed",
@@ -5482,6 +5565,7 @@
           },
           {
             "round": 5,
+            "llmRound": 5,
             "attempt": 1,
             "at": 1789232547096,
             "outcome": "completed",
@@ -5528,6 +5612,7 @@
           },
           {
             "round": 6,
+            "llmRound": 6,
             "attempt": 1,
             "at": 1789232552482,
             "outcome": "completed",
@@ -5574,6 +5659,7 @@
           },
           {
             "round": 7,
+            "llmRound": 7,
             "attempt": 1,
             "at": 1789232563202,
             "outcome": "completed",
@@ -5620,6 +5706,7 @@
           },
           {
             "round": 8,
+            "llmRound": 8,
             "attempt": 1,
             "at": 1789232568133,
             "outcome": "completed",
@@ -5669,6 +5756,7 @@
           },
           {
             "round": 9,
+            "llmRound": 9,
             "attempt": 1,
             "at": 1789232577201,
             "outcome": "completed",
@@ -5715,6 +5803,7 @@
           },
           {
             "round": 10,
+            "llmRound": 10,
             "attempt": 1,
             "at": 1789232580455,
             "outcome": "completed",
@@ -5764,6 +5853,7 @@
           },
           {
             "round": 11,
+            "llmRound": 11,
             "attempt": 1,
             "at": 1789232602906,
             "outcome": "completed",
@@ -5810,6 +5900,7 @@
           },
           {
             "round": 12,
+            "llmRound": 12,
             "attempt": 1,
             "at": 1789232620123,
             "outcome": "completed",
@@ -5854,6 +5945,7 @@
           },
           {
             "round": 13,
+            "llmRound": 13,
             "attempt": 1,
             "at": 1789232622433,
             "outcome": "completed",
@@ -5900,6 +5992,7 @@
           },
           {
             "round": 14,
+            "llmRound": 14,
             "attempt": 1,
             "at": 1789232656074,
             "outcome": "completed",
@@ -5949,6 +6042,7 @@
           },
           {
             "round": 15,
+            "llmRound": 15,
             "attempt": 1,
             "at": 1789232663622,
             "outcome": "completed",
@@ -5995,6 +6089,7 @@
           },
           {
             "round": 16,
+            "llmRound": 16,
             "attempt": 1,
             "at": 1789232695260,
             "outcome": "completed",
@@ -6041,6 +6136,7 @@
           },
           {
             "round": 17,
+            "llmRound": 17,
             "attempt": 1,
             "at": 1789232699450,
             "outcome": "completed",
@@ -6089,6 +6185,7 @@
           },
           {
             "round": 18,
+            "llmRound": 18,
             "attempt": 1,
             "at": 1789232701105,
             "outcome": "completed",
@@ -6137,6 +6234,7 @@
           },
           {
             "round": 19,
+            "llmRound": 19,
             "attempt": 1,
             "at": 1789232706124,
             "outcome": "completed",
@@ -6183,6 +6281,7 @@
           },
           {
             "round": 20,
+            "llmRound": 20,
             "attempt": 1,
             "at": 1789232711655,
             "outcome": "completed",
@@ -6229,6 +6328,7 @@
           },
           {
             "round": 21,
+            "llmRound": 21,
             "attempt": 1,
             "at": 1789232715914,
             "outcome": "completed",
@@ -6277,6 +6377,7 @@
           },
           {
             "round": 22,
+            "llmRound": 22,
             "attempt": 1,
             "at": 1789232731495,
             "outcome": "completed",
@@ -6346,6 +6447,7 @@
           },
           {
             "round": 23,
+            "llmRound": 23,
             "attempt": 1,
             "at": 1789232737511,
             "outcome": "completed",
@@ -6395,6 +6497,7 @@
           },
           {
             "round": 24,
+            "llmRound": 24,
             "attempt": 1,
             "at": 1789232742479,
             "outcome": "completed",
@@ -6441,6 +6544,7 @@
           },
           {
             "round": 25,
+            "llmRound": 25,
             "attempt": 1,
             "at": 1789232753661,
             "outcome": "allowance",
@@ -6466,6 +6570,7 @@
           },
           {
             "round": 26,
+            "llmRound": 26,
             "attempt": 1,
             "at": 1789232789908,
             "outcome": "completed",
@@ -6536,7 +6641,7 @@
           "fact-07"
         ],
         "checksTotal": 15,
-        "digestHash": "sha256:41a4ad1d09efe0d3476bf4936af2ad4d3611ef4d5a27e5e9ba0005d2116d32d8"
+        "digestHash": "sha256:453f8ad1331be6e37dcc31f6cc1ed248394e05d9b2a8e6780ef49c5f4873a530"
       },
       "review": {
         "judgement": {
@@ -6735,7 +6840,7 @@
         "served": "claude-opus-5",
         "effort": "high",
         "promptVersion": "audit-p1",
-        "digestHash": "sha256:41a4ad1d09efe0d3476bf4936af2ad4d3611ef4d5a27e5e9ba0005d2116d32d8",
+        "digestHash": "sha256:453f8ad1331be6e37dcc31f6cc1ed248394e05d9b2a8e6780ef49c5f4873a530",
         "costUsd": 0.26,
         "durationMs": 51512,
         "judgedAt": "2026-09-13T01:47:37.167Z"
@@ -6800,12 +6905,12 @@
       "searchLoopRounds": 5,
       "mechanicalSearchRounds": 2,
       "inheritedRounds": 0,
-      "rejectedCheckpoints": 2,
+      "rejectedCheckpoints": 1,
       "walledRounds": 1,
       "subagentRounds": 13,
       "stoppedEarly": 1,
       "overrules": 11,
-      "flags": 21,
+      "flags": 22,
       "finalizationCauses": {
         "budget_exhausted": 3,
         "model_answered": 1
@@ -6861,12 +6966,12 @@
       "searchLoopRounds": 0,
       "mechanicalSearchRounds": 0,
       "inheritedRounds": 5,
-      "rejectedCheckpoints": 1,
+      "rejectedCheckpoints": 2,
       "walledRounds": 0,
       "subagentRounds": 0,
       "stoppedEarly": 0,
       "overrules": 3,
-      "flags": 12,
+      "flags": 9,
       "finalizationCauses": {
         "deadline_reached": 1,
         "objective_met": 1

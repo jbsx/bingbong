@@ -36,9 +36,9 @@
         ],
         "dirtyTree": true,
         "gradesRevision": 1,
-        "auditCommit": "e63404a7034fb83b7849dafb586ed29cedc21df5",
+        "auditCommit": "49d5371dec49753f4c98784732372f0ef957a431",
         "auditDirtyTree": true,
-        "generatedAt": "2026-09-13T02:02:01.363Z"
+        "generatedAt": "2026-09-13T02:26:24.200Z"
       },
       {
         "setId": "baseline-2",
@@ -49,9 +49,9 @@
         ],
         "dirtyTree": true,
         "gradesRevision": 1,
-        "auditCommit": "e63404a7034fb83b7849dafb586ed29cedc21df5",
+        "auditCommit": "49d5371dec49753f4c98784732372f0ef957a431",
         "auditDirtyTree": true,
-        "generatedAt": "2026-09-13T02:02:01.363Z"
+        "generatedAt": "2026-09-13T02:26:24.200Z"
       },
       {
         "setId": "baseline-3",
@@ -62,12 +62,12 @@
         ],
         "dirtyTree": true,
         "gradesRevision": 1,
-        "auditCommit": "e63404a7034fb83b7849dafb586ed29cedc21df5",
+        "auditCommit": "49d5371dec49753f4c98784732372f0ef957a431",
         "auditDirtyTree": true,
-        "generatedAt": "2026-09-13T02:02:01.363Z"
+        "generatedAt": "2026-09-13T02:26:24.200Z"
       }
     ],
-    "generatedAt": "2026-09-13T02:02:01.363Z"
+    "generatedAt": "2026-09-13T02:26:24.200Z"
   },
   "populations": {
     "initial": {
@@ -119,7 +119,7 @@
       "searchLoopRounds": 10,
       "mechanicalSearchRounds": 3,
       "inheritedRounds": 0,
-      "rejectedCheckpoints": 10,
+      "rejectedCheckpoints": 9,
       "walledRounds": 2,
       "subagentRounds": 26,
       "stoppedEarly": 2,
@@ -184,12 +184,12 @@
             "searchLoopRounds": 5,
             "mechanicalSearchRounds": 2,
             "inheritedRounds": 0,
-            "rejectedCheckpoints": 2,
+            "rejectedCheckpoints": 1,
             "walledRounds": 1,
             "subagentRounds": 13,
             "stoppedEarly": 1,
             "overrules": 11,
-            "flags": 21,
+            "flags": 22,
             "finalizationCauses": {
               "budget_exhausted": 3,
               "model_answered": 1
@@ -253,7 +253,7 @@
             "subagentRounds": 0,
             "stoppedEarly": 0,
             "overrules": 6,
-            "flags": 22,
+            "flags": 21,
             "finalizationCauses": {
               "budget_exhausted": 3,
               "objective_met": 1
@@ -377,12 +377,12 @@
       "searchLoopRounds": 0,
       "mechanicalSearchRounds": 0,
       "inheritedRounds": 9,
-      "rejectedCheckpoints": 8,
+      "rejectedCheckpoints": 9,
       "walledRounds": 0,
       "subagentRounds": 13,
       "stoppedEarly": 0,
       "overrules": 6,
-      "flags": 32,
+      "flags": 29,
       "finalizationCauses": {
         "budget_exhausted": 3,
         "deadline_reached": 1,
@@ -441,12 +441,12 @@
             "searchLoopRounds": 0,
             "mechanicalSearchRounds": 0,
             "inheritedRounds": 5,
-            "rejectedCheckpoints": 1,
+            "rejectedCheckpoints": 2,
             "walledRounds": 0,
             "subagentRounds": 0,
             "stoppedEarly": 0,
             "overrules": 3,
-            "flags": 12,
+            "flags": 9,
             "finalizationCauses": {
               "deadline_reached": 1,
               "objective_met": 1
