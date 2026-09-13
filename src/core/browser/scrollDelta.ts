@@ -6,6 +6,7 @@ import {
   type PageSnapshot,
   type SnapshotRef,
 } from './snapshot'
+import { previewFactLine } from './pageText'
 
 /**
  * What a scroll that brought nothing new into the viewport says (#194).
@@ -55,6 +56,11 @@ export function formatNewInView(before: PageSnapshot, after: PageSnapshot): NewI
   // A page read says how many refs the cap withheld; so does the delta, or
   // the model would read the listed refs as everything the viewport holds.
   if (after.truncated) lines.push(`(+${after.totalVisible - after.refs.length} more not listed)`)
-  if (text.length > 0) lines.push('page text:', truncateText(text.join('\n'), MAX_SNAPSHOT_TEXT))
+  if (text.length > 0) {
+    // Capped as a Page Preview is, and a cut says so the same way (ADR 0047).
+    const joined = text.join('\n')
+    lines.push('page text:', truncateText(joined, MAX_SNAPSHOT_TEXT))
+    if (joined.length > MAX_SNAPSHOT_TEXT) lines.push(previewFactLine(MAX_SNAPSHOT_TEXT, joined.length))
+  }
   return { block: lines.join('\n'), shownRefs: refs.map((ref) => ref.ref) }
 }

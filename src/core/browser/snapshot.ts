@@ -1,3 +1,12 @@
+import {
+  pageReadPartLine,
+  partPastTheEnd,
+  previewFactLine,
+  renderPageText,
+  splitPageRead,
+  type CollectedTextBlock,
+} from './pageText'
+
 export interface CollectedRect {
   x: number
   y: number
@@ -62,12 +71,18 @@ export interface CollectedPage {
   dialogOpen?: boolean
   /** Text of the topmost open dialog (Tier 2 facts for the model). */
   dialogText?: string
+  /**
+   * The page's text blocks in document order, raw (#235, ADR 0047): the
+   * whole page's text, rendered and cut here. Absent in older payloads,
+   * which carried the capped digest and the viewport text below instead.
+   */
+  textBlocks?: CollectedTextBlock[]
+  /** Older payloads: the page's text, capped from the top. */
   textDigest?: string
   /**
-   * The page's text blocks that currently intersect the viewport, in
-   * document order (#194). The digest above is the whole page's text,
-   * capped from the top, so it barely moves when the page scrolls; this
-   * is what a scroll actually brought into view.
+   * Older payloads: the page's text blocks that intersected the viewport, in
+   * document order (#194). A payload with `textBlocks` marks those in view
+   * on the blocks themselves.
    */
   viewportText?: string[]
   elements: CollectedElement[]
@@ -119,7 +134,16 @@ export interface PageSnapshot {
   dialogOpen: boolean
   /** Text of the topmost open dialog, capped; '' when no dialog is open. */
   dialogText: string
+  /**
+   * The Page Preview (ADR 0047): the page's text from the top, capped at
+   * MAX_SNAPSHOT_TEXT. What an Action Outcome carries, what the Blocker
+   * classifier reads, and what the settled state fingerprints.
+   */
   textDigest: string
+  /** Every text block collected, in document order — what a Page Read cuts into parts. */
+  textBlocks: string[]
+  /** The length of the whole collected text, blocks joined by line breaks; the preview's is at most the cap. */
+  textLength: number
   /** Text blocks intersecting the viewport when this snapshot was taken (#194). */
   viewportText: string[]
   refs: SnapshotRef[]
@@ -129,8 +153,8 @@ export interface PageSnapshot {
 
 export const MAX_SNAPSHOT_REFS = 75
 
-/** The text cap read_page's digest is collected under — the size any other
- * page text a tool result carries is held to as well (#194). */
+/** The Page Preview's cap (ADR 0047) — the size any page text an Action
+ * Outcome carries is held to, a scroll's New In View included (#194). */
 export const MAX_SNAPSHOT_TEXT = 1800
 const MAX_LABEL_LENGTH = 80
 const MAX_HREF_LENGTH = 80
@@ -165,6 +189,36 @@ function optionalBoolean(value: unknown): boolean {
 
 function nullableBoolean(value: unknown): boolean | null {
   return typeof value === 'boolean' ? value : null
+}
+
+/** One collected text block, or null for an entry of no known shape — dropped, not fatal. */
+function parseTextBlock(entry: unknown): CollectedTextBlock | null {
+  if (typeof entry !== 'object' || entry === null) return null
+  const block = entry as Record<string, unknown>
+  const inView = block.inView === true ? { inView: true } : {}
+  const text = (value: unknown): string => (typeof value === 'string' ? value : '')
+  switch (block.kind) {
+    case 'text':
+      if (typeof block.text !== 'string') return null
+      return { kind: 'text', text: block.text, ...(block.heading === true ? { heading: true } : {}), ...inView }
+    case 'pre':
+      return typeof block.text === 'string' ? { kind: 'pre', text: block.text, ...inView } : null
+    case 'row':
+      return Array.isArray(block.cells) ? { kind: 'row', cells: block.cells.map(text), ...inView } : null
+    case 'definitions':
+      if (!Array.isArray(block.items)) return null
+      return {
+        kind: 'definitions',
+        items: block.items.flatMap((item: unknown) => {
+          if (typeof item !== 'object' || item === null) return []
+          const { term, text: value } = item as Record<string, unknown>
+          return typeof value === 'string' ? [{ term: term === true, text: value }] : []
+        }),
+        ...inView,
+      }
+    default:
+      return null
+  }
 }
 
 export function parseCollectedPage(raw: unknown): CollectedPage {
@@ -235,6 +289,9 @@ export function parseCollectedPage(raw: unknown): CollectedPage {
     },
     dialogOpen: candidate.dialogOpen === true,
     dialogText: typeof candidate.dialogText === 'string' ? candidate.dialogText : '',
+    ...(Array.isArray(candidate.textBlocks)
+      ? { textBlocks: candidate.textBlocks.flatMap((entry) => parseTextBlock(entry) ?? []) }
+      : {}),
     textDigest: typeof candidate.textDigest === 'string' ? candidate.textDigest : '',
     viewportText: Array.isArray(candidate.viewportText)
       ? candidate.viewportText.filter((entry): entry is string => typeof entry === 'string' && entry !== '')
@@ -265,6 +322,23 @@ function truncateHref(href: string): string {
   return truncateText(href, MAX_HREF_LENGTH)
 }
 
+/** A collected page's text: its blocks, the preview, the whole length, and what is in view. */
+function pageTextOf(page: CollectedPage): Pick<PageSnapshot, 'textBlocks' | 'textDigest' | 'textLength' | 'viewportText'> {
+  if (page.textBlocks !== undefined) {
+    const { blocks, viewportText } = renderPageText(page.textBlocks)
+    const whole = blocks.join('\n')
+    return { textBlocks: blocks, textDigest: whole.slice(0, MAX_SNAPSHOT_TEXT), textLength: whole.length, viewportText }
+  }
+  // An older payload sent only the capped digest: it is all the text there is.
+  const digest = page.textDigest ?? ''
+  return {
+    textBlocks: digest === '' ? [] : digest.split('\n'),
+    textDigest: digest,
+    textLength: digest.length,
+    viewportText: page.viewportText ?? [],
+  }
+}
+
 export function buildPageSnapshot(page: CollectedPage, options?: { maxRefs?: number }): PageSnapshot {
   const maxRefs = options?.maxRefs ?? MAX_SNAPSHOT_REFS
   // Dialog-layer elements bypass the viewport bound: the dialog is the page's
@@ -281,8 +355,7 @@ export function buildPageSnapshot(page: CollectedPage, options?: { maxRefs?: num
     viewport: page.viewport,
     dialogOpen: page.dialogOpen ?? false,
     dialogText: page.dialogText ?? '',
-    textDigest: page.textDigest ?? '',
-    viewportText: page.viewportText ?? [],
+    ...pageTextOf(page),
     refs: taken.map((element, index) => ({
       ref: index + 1,
       kind: refKindOf(element),
@@ -332,7 +405,8 @@ export function formatRefLine(ref: SnapshotRef): string {
   return `[${ref.ref}] ${ref.kind}${subtype}${label}${src}${href}${state.length > 0 ? ` ${state.join(' ')}` : ''}${dialogMarker}`
 }
 
-export function formatPageSnapshot(snapshot: PageSnapshot): string {
+/** Everything a formatted snapshot says above its page text. */
+function snapshotHead(snapshot: PageSnapshot): string[] {
   const lines = [
     `# ${snapshot.title} — ${snapshot.url}`,
     // Zoomed pages (#53) scroll on fractional CSS pixels; the header line
@@ -348,7 +422,44 @@ export function formatPageSnapshot(snapshot: PageSnapshot): string {
   if (snapshot.truncated) {
     lines.push(`(+${snapshot.totalVisible - snapshot.refs.length} more not listed)`)
   }
-  if (snapshot.textDigest) lines.push('page text:', snapshot.textDigest)
+  return lines
+}
+
+/**
+ * The settled page as an Action Outcome carries it: refs and the Page
+ * Preview. A preview that was cut ends with the fact line naming how much
+ * of the text it showed (ADR 0047); one that fits carries none.
+ */
+export function formatPageSnapshot(snapshot: PageSnapshot): string {
+  const lines = snapshotHead(snapshot)
+  if (snapshot.textDigest) {
+    lines.push('page text:', snapshot.textDigest)
+    if (snapshot.textLength > snapshot.textDigest.length) {
+      lines.push(previewFactLine(snapshot.textDigest.length, snapshot.textLength))
+    }
+  }
+  return lines.join('\n')
+}
+
+/** How many parts a Page Read of this snapshot's text takes — at least one. */
+export function pageReadPartCount(snapshot: PageSnapshot): number {
+  return splitPageRead(snapshot.textBlocks).length
+}
+
+/**
+ * A Page Read (ADR 0047): the snapshot with one part of the page's whole
+ * text in place of the preview. Part 1 starts at the top; a page of several
+ * parts ends with the line naming this part and the next. A part the page
+ * does not have throws the refusal read_page's admission step gives.
+ */
+export function formatPageRead(snapshot: PageSnapshot, part: number): string {
+  const parts = splitPageRead(snapshot.textBlocks)
+  if (!Number.isInteger(part) || part < 1 || part > parts.length) throw new Error(partPastTheEnd(part, parts.length))
+  const lines = snapshotHead(snapshot)
+  const text = parts[part - 1]!
+  if (text !== '') lines.push('page text:', text)
+  const partLine = pageReadPartLine(part, parts.length)
+  if (partLine !== null) lines.push(partLine)
   return lines.join('\n')
 }
 

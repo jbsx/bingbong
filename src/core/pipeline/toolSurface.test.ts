@@ -186,6 +186,22 @@ describe('orchestrator tool surface', () => {
     }
   })
 
+  it('says a page is read with read_page, in parts, and scrolled for elements and position (#235, ADR 0047)', () => {
+    const byName = Object.fromEntries(coreToolCatalog().map((tool) => [tool.name, tool]))
+    for (const name of ['navigate', 'click']) {
+      expect(byName[name]!.description).toContain('the page text is a preview; read_page returns the whole text')
+      expect(byName[name]!.description).not.toMatch(/no read_page|not a required follow-up/)
+    }
+    expect(byName.scroll!.description).toContain("To read the page's text, use read_page.")
+    expect(byName.scroll!.description).toMatch(/refs past the listed ones.*fills as it scrolls.*viewport for a look/)
+    expect(byName.scroll!.description).not.toMatch(/no read_page/)
+    expect(byName.read_page!.description).toMatch(/whole text from the top/)
+    expect(byName.read_page!.description).toContain('read_page part=2 continues')
+    expect(byName.read_page!.parameters?.['part']).toMatchObject({ type: 'integer', required: false })
+    // A part past the end is refused before the read runs (ADR 0046's admission step).
+    expect(typeof byName.read_page!.admit).toBe('function')
+  })
+
   it('go_forward is registered at parity with back', () => {
     const byName = Object.fromEntries(coreToolCatalog().map((tool) => [tool.name, tool]))
     const back = byName.back

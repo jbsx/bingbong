@@ -340,6 +340,20 @@ export interface AuditPopulation {
   readonly flags: number
   readonly finalizationCauses: Readonly<Record<string, number>>
   readonly attemptsAtBudget: number
+  /**
+   * The rounds outside Finalization that called each tool (#235, ADR 0047),
+   * most called first: a round counts once for a tool however many calls it
+   * made to it, refused calls included, and the share is over the tool rounds
+   * used. Counted from the Run Trace, never shown to the reviewer.
+   */
+  readonly toolRounds: readonly AuditToolRounds[]
+}
+
+export interface AuditToolRounds {
+  readonly tool: string
+  readonly rounds: number
+  /** Over the population's tool rounds used; null when it used none. */
+  readonly share: number | null
 }
 
 export interface AuditSetOutput {
@@ -1248,8 +1262,14 @@ export function populationOf(label: string, attempts: readonly AuditAttempt[]): 
   let overrules = 0
   let flags = 0
   let atBudget = 0
+  const byTool = new Map<string, number>()
   for (const attempt of attempts) {
     const { mechanical } = attempt
+    // The same rounds `toolRoundsUsed` counts: outside Finalization, with a call.
+    for (const round of mechanical.rounds) {
+      if (round.kind === 'finalization') continue
+      for (const tool of new Set(round.calls.map((call) => call.name))) byTool.set(tool, (byTool.get(tool) ?? 0) + 1)
+    }
     addCounts(counts, mechanical.counts)
     addCounts(after, attempt.countsAfterOverrules)
     rounds += mechanical.orchestratorRounds
@@ -1298,6 +1318,9 @@ export function populationOf(label: string, attempts: readonly AuditAttempt[]): 
     flags,
     finalizationCauses: Object.fromEntries(Object.entries(causes).sort(([left], [right]) => left.localeCompare(right))),
     attemptsAtBudget: atBudget,
+    toolRounds: [...byTool.entries()]
+      .sort(([leftTool, left], [rightTool, right]) => right - left || leftTool.localeCompare(rightTool))
+      .map(([tool, rounds]) => ({ tool, rounds, share: toolRoundsUsed === 0 ? null : rounds / toolRoundsUsed })),
   }
 }
 
@@ -1445,6 +1468,26 @@ function populationTable(populations: readonly AuditPopulation[]): string[] {
   return lines
 }
 
+/** Each tool's rounds and share, one column per population, most called overall first (#235). */
+function toolRoundTable(populations: readonly AuditPopulation[]): string[] {
+  const totals = new Map<string, number>()
+  for (const population of populations) {
+    for (const entry of population.toolRounds) totals.set(entry.tool, (totals.get(entry.tool) ?? 0) + entry.rounds)
+  }
+  const tools = [...totals.entries()].sort(([leftTool, left], [rightTool, right]) => right - left || leftTool.localeCompare(rightTool)).map(([tool]) => tool)
+  const lines = [`| tool | ${populations.map((population) => population.label).join(' | ')} |`, `| --- | ${populations.map(() => '---').join(' | ')} |`]
+  for (const tool of tools) {
+    const cells = populations.map((population) => {
+      const entry = population.toolRounds.find((candidate) => candidate.tool === tool)
+      return entry === undefined ? '0' : `${entry.rounds} (${pct(entry.share)})`
+    })
+    lines.push(`| ${tool} | ${cells.join(' | ')} |`)
+  }
+  return lines
+}
+
+const TOOL_ROUNDS_NOTE = 'The rounds outside Finalization that called each tool — a round counts once per tool, refused calls included — and their share of the tool rounds used. Counted from the Run Trace; the reviewer never sees it.'
+
 function verdictTable(populations: readonly AuditPopulation[]): string[] {
   const lines = ['| verdict | ' + populations.map((population) => `${population.label} primary | ${population.label} secondary`).join(' | ') + ' |', `| --- | ${populations.map(() => '--- | ---').join(' | ')} |`]
   for (const verdict of AUDIT_VERDICTS) {
@@ -1542,6 +1585,12 @@ export function formatAuditSet(audit: AuditSetOutput): string {
   lines.push(...verdictTable([audit.populations.initial, audit.populations.followUp]))
   lines.push('')
   lines.push(...judgementLines([audit.populations.initial, audit.populations.followUp]))
+  lines.push('')
+  lines.push('## Tool rounds')
+  lines.push('')
+  lines.push(TOOL_ROUNDS_NOTE)
+  lines.push('')
+  lines.push(...toolRoundTable([audit.populations.initial, audit.populations.followUp]))
   if (audit.caveats.length > 0) {
     lines.push('')
     lines.push('## Caveats')
@@ -1592,6 +1641,12 @@ export function formatAuditAggregate(aggregate: AuditAggregate): string {
   lines.push(...verdictTable([aggregate.populations.initial, aggregate.populations.followUp]))
   lines.push('')
   lines.push(...judgementLines([aggregate.populations.initial, aggregate.populations.followUp]))
+  lines.push('')
+  lines.push('## Tool rounds')
+  lines.push('')
+  lines.push(TOOL_ROUNDS_NOTE)
+  lines.push('')
+  lines.push(...toolRoundTable([aggregate.populations.initial, aggregate.populations.followUp]))
   lines.push('')
   lines.push('## Per set')
   lines.push('')

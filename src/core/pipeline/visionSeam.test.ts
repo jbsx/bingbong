@@ -23,6 +23,8 @@ const emptySnapshot: PageSnapshot = {
   dialogOpen: false,
   dialogText: '',
   textDigest: '',
+  textBlocks: [],
+  textLength: 0,
   viewportText: [],
   refs: [],
   totalVisible: 0,

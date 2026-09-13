@@ -204,7 +204,9 @@ export interface Tool {
    * only refuses: execute still reads its own arguments. Absent means
    * every call is admitted.
    */
-  admit?(args: ToolCall['args']): ToolAdmission
+  // It may ask the page (#235: read_page checks a part against the page's
+  // text), so it may answer a promise; a rejection is the tool's to handle.
+  admit?(args: ToolCall['args']): ToolAdmission | Promise<ToolAdmission>
   /**
    * Declares an interactive ask: instead of execute, the pipeline shows and
    * speaks the returned question, waits for the user's free-text answer

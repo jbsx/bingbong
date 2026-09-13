@@ -32,9 +32,9 @@
     "reviewerModel": "claude-opus-5",
     "reviewerEffort": "high",
     "reviewerPromptVersion": "audit-p1",
-    "auditCommit": "49d5371dec49753f4c98784732372f0ef957a431",
+    "auditCommit": "81048ebfc0bb115a06a449efc64679feb16039bc",
     "auditDirtyTree": true,
-    "generatedAt": "2026-09-13T02:26:24.200Z"
+    "generatedAt": "2026-09-13T03:47:10.128Z"
   },
   "attempts": [
     {
@@ -8330,7 +8330,54 @@
         "budget_exhausted": 3,
         "objective_met": 1
       },
-      "attemptsAtBudget": 3
+      "attemptsAtBudget": 3,
+      "toolRounds": [
+        {
+          "tool": "scroll",
+          "rounds": 34,
+          "share": 0.35789473684210527
+        },
+        {
+          "tool": "navigate",
+          "rounds": 27,
+          "share": 0.28421052631578947
+        },
+        {
+          "tool": "look",
+          "rounds": 12,
+          "share": 0.12631578947368421
+        },
+        {
+          "tool": "read_page",
+          "rounds": 7,
+          "share": 0.07368421052631578
+        },
+        {
+          "tool": "record_evidence",
+          "rounds": 7,
+          "share": 0.07368421052631578
+        },
+        {
+          "tool": "click",
+          "rounds": 6,
+          "share": 0.06315789473684211
+        },
+        {
+          "tool": "report_run_plan",
+          "rounds": 4,
+          "share": 0.042105263157894736
+        },
+        {
+          "tool": "type",
+          "rounds": 2,
+          "share": 0.021052631578947368
+        },
+        {
+          "tool": "ground_visual",
+          "rounds": 1,
+          "share": 0.010526315789473684
+        }
+      ]
     },
     "followUp": {
       "label": "follow_up",
@@ -8391,7 +8438,49 @@
         "budget_exhausted": 1,
         "objective_met": 1
       },
-      "attemptsAtBudget": 1
+      "attemptsAtBudget": 1,
+      "toolRounds": [
+        {
+          "tool": "scroll",
+          "rounds": 16,
+          "share": 0.38095238095238093
+        },
+        {
+          "tool": "navigate",
+          "rounds": 12,
+          "share": 0.2857142857142857
+        },
+        {
+          "tool": "record_evidence",
+          "rounds": 6,
+          "share": 0.14285714285714285
+        },
+        {
+          "tool": "look",
+          "rounds": 4,
+          "share": 0.09523809523809523
+        },
+        {
+          "tool": "record_candidate",
+          "rounds": 3,
+          "share": 0.07142857142857142
+        },
+        {
+          "tool": "click",
+          "rounds": 2,
+          "share": 0.047619047619047616
+        },
+        {
+          "tool": "report_run_plan",
+          "rounds": 2,
+          "share": 0.047619047619047616
+        },
+        {
+          "tool": "read_page",
+          "rounds": 1,
+          "share": 0.023809523809523808
+        }
+      ]
     }
   },
   "caveats": [],

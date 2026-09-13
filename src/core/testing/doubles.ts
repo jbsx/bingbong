@@ -271,6 +271,8 @@ export class FakeBrowser implements BrowserController, VisualGroundingController
     dialogOpen: false,
     dialogText: '',
     textDigest: '',
+    textBlocks: [],
+    textLength: 0,
     viewportText: [],
     refs: [],
     totalVisible: 0,
@@ -294,8 +296,19 @@ export class FakeBrowser implements BrowserController, VisualGroundingController
     this.snapshot = { ...this.snapshot, url, title: `Fake page: ${url}` }
     return `navigated: url=${url} title=${JSON.stringify(this.pageState.title)}`
   }
-  async readPage(): Promise<string> {
-    return `<page>${this.pageState.url ?? 'blank'}</page>`
+  /** The part of every Page Read, in order (ADR 0047). */
+  readonly pageReads: number[] = []
+  /** How many parts the fake page's text reads in. */
+  readParts = 1
+
+  async readPage(part = 1): Promise<string> {
+    this.pageReads.push(part)
+    const url = this.pageState.url ?? 'blank'
+    return part === 1 ? `<page>${url}</page>` : `<page part=${part}>${url}</page>`
+  }
+
+  async pageReadParts(): Promise<number> {
+    return this.readParts
   }
 
   async click(ref: number): Promise<string> {
@@ -416,8 +429,8 @@ export class StallingBrowser extends FakeBrowser {
     return this.act('navigate', `navigated: url=${url}`, () => super.navigate(url))
   }
 
-  override readPage(): Promise<string> {
-    return this.act('readPage', '<page>stalled</page>', () => super.readPage())
+  override readPage(part?: number): Promise<string> {
+    return this.act('readPage', '<page>stalled</page>', () => super.readPage(part))
   }
 
   override click(ref: number): Promise<string> {

@@ -32,9 +32,9 @@
     "reviewerModel": "claude-opus-5",
     "reviewerEffort": "high",
     "reviewerPromptVersion": "audit-p1",
-    "auditCommit": "49d5371dec49753f4c98784732372f0ef957a431",
+    "auditCommit": "81048ebfc0bb115a06a449efc64679feb16039bc",
     "auditDirtyTree": true,
-    "generatedAt": "2026-09-13T02:26:24.200Z"
+    "generatedAt": "2026-09-13T03:47:10.128Z"
   },
   "attempts": [
     {
@@ -6915,7 +6915,59 @@
         "budget_exhausted": 3,
         "model_answered": 1
       },
-      "attemptsAtBudget": 3
+      "attemptsAtBudget": 3,
+      "toolRounds": [
+        {
+          "tool": "navigate",
+          "rounds": 32,
+          "share": 0.48484848484848486
+        },
+        {
+          "tool": "scroll",
+          "rounds": 13,
+          "share": 0.19696969696969696
+        },
+        {
+          "tool": "record_evidence",
+          "rounds": 6,
+          "share": 0.09090909090909091
+        },
+        {
+          "tool": "type",
+          "rounds": 5,
+          "share": 0.07575757575757576
+        },
+        {
+          "tool": "click",
+          "rounds": 4,
+          "share": 0.06060606060606061
+        },
+        {
+          "tool": "read_page",
+          "rounds": 4,
+          "share": 0.06060606060606061
+        },
+        {
+          "tool": "report_run_plan",
+          "rounds": 4,
+          "share": 0.06060606060606061
+        },
+        {
+          "tool": "look",
+          "rounds": 3,
+          "share": 0.045454545454545456
+        },
+        {
+          "tool": "agent_results",
+          "rounds": 1,
+          "share": 0.015151515151515152
+        },
+        {
+          "tool": "spawn_agent",
+          "rounds": 1,
+          "share": 0.015151515151515152
+        }
+      ]
     },
     "followUp": {
       "label": "follow_up",
@@ -6976,7 +7028,54 @@
         "deadline_reached": 1,
         "objective_met": 1
       },
-      "attemptsAtBudget": 0
+      "attemptsAtBudget": 0,
+      "toolRounds": [
+        {
+          "tool": "navigate",
+          "rounds": 13,
+          "share": 0.34210526315789475
+        },
+        {
+          "tool": "scroll",
+          "rounds": 10,
+          "share": 0.2631578947368421
+        },
+        {
+          "tool": "record_evidence",
+          "rounds": 5,
+          "share": 0.13157894736842105
+        },
+        {
+          "tool": "look",
+          "rounds": 4,
+          "share": 0.10526315789473684
+        },
+        {
+          "tool": "record_candidate",
+          "rounds": 3,
+          "share": 0.07894736842105263
+        },
+        {
+          "tool": "read_page",
+          "rounds": 2,
+          "share": 0.05263157894736842
+        },
+        {
+          "tool": "report_run_plan",
+          "rounds": 2,
+          "share": 0.05263157894736842
+        },
+        {
+          "tool": "click",
+          "rounds": 1,
+          "share": 0.02631578947368421
+        },
+        {
+          "tool": "type",
+          "rounds": 1,
+          "share": 0.02631578947368421
+        }
+      ]
     }
   },
   "caveats": [],

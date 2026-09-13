@@ -52,8 +52,18 @@ class FixtureBrowserController implements BrowserController {
     return 'navigated outcome'
   }
 
-  async readPage(): Promise<string> {
+  /** The part of every read, as the tool passed it (ADR 0047). */
+  readonly reads: (number | undefined)[] = []
+  /** How many parts the fixture page's text reads in. */
+  readParts = 1
+
+  async readPage(part?: number): Promise<string> {
+    this.reads.push(part)
     return formatYoutubeSnapshot()
+  }
+
+  async pageReadParts(): Promise<number> {
+    return this.readParts
   }
 
   async click(ref: number): Promise<string> {
@@ -157,6 +167,53 @@ describe('browser tools through the pipeline', () => {
     })
   })
 
+  it('read_page reads the part it names, and refuses one past the end before reading (#235/AC1)', async () => {
+    const browser = new FixtureBrowserController()
+    browser.readParts = 3
+    const { pipeline } = pipelineWith(browser, [
+      {
+        kind: 'tool_calls',
+        calls: [
+          { id: 'c1', name: 'read_page', args: { part: 2 } },
+          { id: 'c2', name: 'read_page', args: { part: '3' } },
+          { id: 'c3', name: 'read_page', args: { part: 4 } },
+          { id: 'c4', name: 'read_page', args: { part: 0 } },
+        ],
+      },
+      { kind: 'answer', speak: 'Read it.', display: 'Detail.' },
+    ])
+
+    const events = await collect(pipeline, 'read the whole page')
+    const results = events.filter((event) => event.type === 'tool_result')
+
+    // Only the parts the page has were read; the refusals ran nothing.
+    expect(browser.reads).toEqual([2, 3])
+    expect(results.slice(0, 2).map((event) => event.ok)).toEqual([true, true])
+    expect(results[2]).toMatchObject({
+      ok: false,
+      error: "read_page: part 4 is past the end — this page's text has 3 parts, part=1 to part=3",
+    })
+    expect(results[3]).toMatchObject({ ok: false, error: "read_page: 'part' must be a whole number from 1" })
+  })
+
+  it('read_page with no part reads part 1 without counting the page’s parts', async () => {
+    const browser = new FixtureBrowserController()
+    let counted = 0
+    browser.pageReadParts = async () => {
+      counted += 1
+      return 1
+    }
+    const { pipeline } = pipelineWith(browser, [
+      { kind: 'tool_calls', calls: [{ id: 'c1', name: 'read_page', args: {} }, { id: 'c2', name: 'read_page', args: { part: 1 } }] },
+      { kind: 'answer', speak: 'Read it.', display: 'Detail.' },
+    ])
+
+    await collect(pipeline, 'what is on the page')
+
+    expect(browser.reads).toEqual([1, 1])
+    expect(counted).toBe(0)
+  })
+
   it('click accepts numeric refs from the model and acts on the browser', async () => {
     const browser = new FixtureBrowserController()
     const { pipeline } = pipelineWith(browser, [
@@ -237,8 +294,9 @@ describe('browser tools through the pipeline', () => {
 
     expect(descriptions.navigate).toMatch(/settled page state/i)
     expect(descriptions.navigate).toMatch(/refs/i)
-    expect(descriptions.navigate).toMatch(/not a required follow-up/)
-    expect(descriptions.read_page).toMatch(/text digest/i)
+    expect(descriptions.navigate).toContain('the page text is a preview; read_page returns the whole text')
+    expect(descriptions.read_page).toMatch(/whole text/i)
+    expect(descriptions.read_page).toContain('page text: part 1 of 3 — read_page part=2 continues')
     expect(descriptions.click).toMatch(/URL-change.*dialog.*state delta/i)
     expect(descriptions.click).toMatch(/settled page state/i)
     // The overlay retry sequence lives here, not in the shared prompt
@@ -250,18 +308,19 @@ describe('browser tools through the pipeline', () => {
     expect(descriptions.type).toMatch(/focus/i)
     expect(descriptions.type).toMatch(/no separate click/i)
     expect(descriptions.scroll).toMatch(/scroll position/i)
-    // #194: scroll and click say they return what changed, so the model
-    // has no reason to spend a round on read_page after either.
+    // #194: scroll says what it brought into view. ADR 0047: that is for
+    // elements and position — the page's text is read with read_page.
     expect(descriptions.scroll).toMatch(/new in view/i)
     expect(descriptions.scroll).toMatch(/end of page/i)
-    expect(descriptions.scroll).toMatch(/no read_page/i)
+    expect(descriptions.scroll).toContain("To read the page's text, use read_page.")
+    expect(descriptions.scroll).not.toMatch(/no read_page/i)
     // ADR 0033: a scroll's delta lists only what entered, and a pre-scroll
     // number is refused — with the page — when the scroll moved its
     // element. The description states that rule, so the model does not read
     // a renumbering as a retarget it can rely on.
     expect(descriptions.scroll).toMatch(/same element/i)
     expect(descriptions.scroll).toMatch(/refuse the number/i)
-    expect(descriptions.click).toMatch(/no read_page/i)
+    expect(descriptions.click).toContain('the page text is a preview; read_page returns the whole text')
     expect(descriptions.back).toMatch(/URL.*title/i)
     expect(descriptions.go_forward).toMatch(/URL.*title/i)
   })

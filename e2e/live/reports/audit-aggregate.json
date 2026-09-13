@@ -36,9 +36,9 @@
         ],
         "dirtyTree": true,
         "gradesRevision": 1,
-        "auditCommit": "49d5371dec49753f4c98784732372f0ef957a431",
+        "auditCommit": "81048ebfc0bb115a06a449efc64679feb16039bc",
         "auditDirtyTree": true,
-        "generatedAt": "2026-09-13T02:26:24.200Z"
+        "generatedAt": "2026-09-13T03:47:10.128Z"
       },
       {
         "setId": "baseline-2",
@@ -49,9 +49,9 @@
         ],
         "dirtyTree": true,
         "gradesRevision": 1,
-        "auditCommit": "49d5371dec49753f4c98784732372f0ef957a431",
+        "auditCommit": "81048ebfc0bb115a06a449efc64679feb16039bc",
         "auditDirtyTree": true,
-        "generatedAt": "2026-09-13T02:26:24.200Z"
+        "generatedAt": "2026-09-13T03:47:10.128Z"
       },
       {
         "setId": "baseline-3",
@@ -62,12 +62,12 @@
         ],
         "dirtyTree": true,
         "gradesRevision": 1,
-        "auditCommit": "49d5371dec49753f4c98784732372f0ef957a431",
+        "auditCommit": "81048ebfc0bb115a06a449efc64679feb16039bc",
         "auditDirtyTree": true,
-        "generatedAt": "2026-09-13T02:26:24.200Z"
+        "generatedAt": "2026-09-13T03:47:10.128Z"
       }
     ],
-    "generatedAt": "2026-09-13T02:26:24.200Z"
+    "generatedAt": "2026-09-13T03:47:10.128Z"
   },
   "populations": {
     "initial": {
@@ -132,6 +132,63 @@
         "objective_met": 2
       },
       "attemptsAtBudget": 8,
+      "toolRounds": [
+        {
+          "tool": "navigate",
+          "rounds": 80,
+          "share": 0.35714285714285715
+        },
+        {
+          "tool": "scroll",
+          "rounds": 64,
+          "share": 0.2857142857142857
+        },
+        {
+          "tool": "record_evidence",
+          "rounds": 21,
+          "share": 0.09375
+        },
+        {
+          "tool": "look",
+          "rounds": 18,
+          "share": 0.08035714285714286
+        },
+        {
+          "tool": "type",
+          "rounds": 14,
+          "share": 0.0625
+        },
+        {
+          "tool": "click",
+          "rounds": 13,
+          "share": 0.05803571428571429
+        },
+        {
+          "tool": "read_page",
+          "rounds": 13,
+          "share": 0.05803571428571429
+        },
+        {
+          "tool": "report_run_plan",
+          "rounds": 11,
+          "share": 0.049107142857142856
+        },
+        {
+          "tool": "agent_results",
+          "rounds": 2,
+          "share": 0.008928571428571428
+        },
+        {
+          "tool": "spawn_agent",
+          "rounds": 2,
+          "share": 0.008928571428571428
+        },
+        {
+          "tool": "ground_visual",
+          "rounds": 1,
+          "share": 0.004464285714285714
+        }
+      ],
       "perSet": [
         {
           "setId": "baseline-1",
@@ -194,7 +251,59 @@
               "budget_exhausted": 3,
               "model_answered": 1
             },
-            "attemptsAtBudget": 3
+            "attemptsAtBudget": 3,
+            "toolRounds": [
+              {
+                "tool": "navigate",
+                "rounds": 32,
+                "share": 0.48484848484848486
+              },
+              {
+                "tool": "scroll",
+                "rounds": 13,
+                "share": 0.19696969696969696
+              },
+              {
+                "tool": "record_evidence",
+                "rounds": 6,
+                "share": 0.09090909090909091
+              },
+              {
+                "tool": "type",
+                "rounds": 5,
+                "share": 0.07575757575757576
+              },
+              {
+                "tool": "click",
+                "rounds": 4,
+                "share": 0.06060606060606061
+              },
+              {
+                "tool": "read_page",
+                "rounds": 4,
+                "share": 0.06060606060606061
+              },
+              {
+                "tool": "report_run_plan",
+                "rounds": 4,
+                "share": 0.06060606060606061
+              },
+              {
+                "tool": "look",
+                "rounds": 3,
+                "share": 0.045454545454545456
+              },
+              {
+                "tool": "agent_results",
+                "rounds": 1,
+                "share": 0.015151515151515152
+              },
+              {
+                "tool": "spawn_agent",
+                "rounds": 1,
+                "share": 0.015151515151515152
+              }
+            ]
           }
         },
         {
@@ -258,7 +367,54 @@
               "budget_exhausted": 3,
               "objective_met": 1
             },
-            "attemptsAtBudget": 3
+            "attemptsAtBudget": 3,
+            "toolRounds": [
+              {
+                "tool": "scroll",
+                "rounds": 34,
+                "share": 0.35789473684210527
+              },
+              {
+                "tool": "navigate",
+                "rounds": 27,
+                "share": 0.28421052631578947
+              },
+              {
+                "tool": "look",
+                "rounds": 12,
+                "share": 0.12631578947368421
+              },
+              {
+                "tool": "read_page",
+                "rounds": 7,
+                "share": 0.07368421052631578
+              },
+              {
+                "tool": "record_evidence",
+                "rounds": 7,
+                "share": 0.07368421052631578
+              },
+              {
+                "tool": "click",
+                "rounds": 6,
+                "share": 0.06315789473684211
+              },
+              {
+                "tool": "report_run_plan",
+                "rounds": 4,
+                "share": 0.042105263157894736
+              },
+              {
+                "tool": "type",
+                "rounds": 2,
+                "share": 0.021052631578947368
+              },
+              {
+                "tool": "ground_visual",
+                "rounds": 1,
+                "share": 0.010526315789473684
+              }
+            ]
           }
         },
         {
@@ -323,7 +479,59 @@
               "deadline_reached": 1,
               "objective_met": 1
             },
-            "attemptsAtBudget": 2
+            "attemptsAtBudget": 2,
+            "toolRounds": [
+              {
+                "tool": "navigate",
+                "rounds": 21,
+                "share": 0.3333333333333333
+              },
+              {
+                "tool": "scroll",
+                "rounds": 17,
+                "share": 0.2698412698412698
+              },
+              {
+                "tool": "record_evidence",
+                "rounds": 8,
+                "share": 0.12698412698412698
+              },
+              {
+                "tool": "type",
+                "rounds": 7,
+                "share": 0.1111111111111111
+              },
+              {
+                "tool": "click",
+                "rounds": 3,
+                "share": 0.047619047619047616
+              },
+              {
+                "tool": "look",
+                "rounds": 3,
+                "share": 0.047619047619047616
+              },
+              {
+                "tool": "report_run_plan",
+                "rounds": 3,
+                "share": 0.047619047619047616
+              },
+              {
+                "tool": "read_page",
+                "rounds": 2,
+                "share": 0.031746031746031744
+              },
+              {
+                "tool": "agent_results",
+                "rounds": 1,
+                "share": 0.015873015873015872
+              },
+              {
+                "tool": "spawn_agent",
+                "rounds": 1,
+                "share": 0.015873015873015872
+              }
+            ]
           }
         }
       ]
@@ -389,6 +597,68 @@
         "objective_met": 2
       },
       "attemptsAtBudget": 3,
+      "toolRounds": [
+        {
+          "tool": "scroll",
+          "rounds": 40,
+          "share": 0.3448275862068966
+        },
+        {
+          "tool": "navigate",
+          "rounds": 31,
+          "share": 0.2672413793103448
+        },
+        {
+          "tool": "record_evidence",
+          "rounds": 14,
+          "share": 0.1206896551724138
+        },
+        {
+          "tool": "look",
+          "rounds": 13,
+          "share": 0.11206896551724138
+        },
+        {
+          "tool": "record_candidate",
+          "rounds": 10,
+          "share": 0.08620689655172414
+        },
+        {
+          "tool": "read_page",
+          "rounds": 6,
+          "share": 0.05172413793103448
+        },
+        {
+          "tool": "report_run_plan",
+          "rounds": 6,
+          "share": 0.05172413793103448
+        },
+        {
+          "tool": "click",
+          "rounds": 3,
+          "share": 0.02586206896551724
+        },
+        {
+          "tool": "ground_visual",
+          "rounds": 2,
+          "share": 0.017241379310344827
+        },
+        {
+          "tool": "agent_results",
+          "rounds": 1,
+          "share": 0.008620689655172414
+        },
+        {
+          "tool": "spawn_agent",
+          "rounds": 1,
+          "share": 0.008620689655172414
+        },
+        {
+          "tool": "type",
+          "rounds": 1,
+          "share": 0.008620689655172414
+        }
+      ],
       "perSet": [
         {
           "setId": "baseline-1",
@@ -451,7 +721,54 @@
               "deadline_reached": 1,
               "objective_met": 1
             },
-            "attemptsAtBudget": 0
+            "attemptsAtBudget": 0,
+            "toolRounds": [
+              {
+                "tool": "navigate",
+                "rounds": 13,
+                "share": 0.34210526315789475
+              },
+              {
+                "tool": "scroll",
+                "rounds": 10,
+                "share": 0.2631578947368421
+              },
+              {
+                "tool": "record_evidence",
+                "rounds": 5,
+                "share": 0.13157894736842105
+              },
+              {
+                "tool": "look",
+                "rounds": 4,
+                "share": 0.10526315789473684
+              },
+              {
+                "tool": "record_candidate",
+                "rounds": 3,
+                "share": 0.07894736842105263
+              },
+              {
+                "tool": "read_page",
+                "rounds": 2,
+                "share": 0.05263157894736842
+              },
+              {
+                "tool": "report_run_plan",
+                "rounds": 2,
+                "share": 0.05263157894736842
+              },
+              {
+                "tool": "click",
+                "rounds": 1,
+                "share": 0.02631578947368421
+              },
+              {
+                "tool": "type",
+                "rounds": 1,
+                "share": 0.02631578947368421
+              }
+            ]
           }
         },
         {
@@ -515,7 +832,49 @@
               "budget_exhausted": 1,
               "objective_met": 1
             },
-            "attemptsAtBudget": 1
+            "attemptsAtBudget": 1,
+            "toolRounds": [
+              {
+                "tool": "scroll",
+                "rounds": 16,
+                "share": 0.38095238095238093
+              },
+              {
+                "tool": "navigate",
+                "rounds": 12,
+                "share": 0.2857142857142857
+              },
+              {
+                "tool": "record_evidence",
+                "rounds": 6,
+                "share": 0.14285714285714285
+              },
+              {
+                "tool": "look",
+                "rounds": 4,
+                "share": 0.09523809523809523
+              },
+              {
+                "tool": "record_candidate",
+                "rounds": 3,
+                "share": 0.07142857142857142
+              },
+              {
+                "tool": "click",
+                "rounds": 2,
+                "share": 0.047619047619047616
+              },
+              {
+                "tool": "report_run_plan",
+                "rounds": 2,
+                "share": 0.047619047619047616
+              },
+              {
+                "tool": "read_page",
+                "rounds": 1,
+                "share": 0.023809523809523808
+              }
+            ]
           }
         },
         {
@@ -578,7 +937,59 @@
             "finalizationCauses": {
               "budget_exhausted": 2
             },
-            "attemptsAtBudget": 2
+            "attemptsAtBudget": 2,
+            "toolRounds": [
+              {
+                "tool": "scroll",
+                "rounds": 14,
+                "share": 0.3888888888888889
+              },
+              {
+                "tool": "navigate",
+                "rounds": 6,
+                "share": 0.16666666666666666
+              },
+              {
+                "tool": "look",
+                "rounds": 5,
+                "share": 0.1388888888888889
+              },
+              {
+                "tool": "record_candidate",
+                "rounds": 4,
+                "share": 0.1111111111111111
+              },
+              {
+                "tool": "read_page",
+                "rounds": 3,
+                "share": 0.08333333333333333
+              },
+              {
+                "tool": "record_evidence",
+                "rounds": 3,
+                "share": 0.08333333333333333
+              },
+              {
+                "tool": "ground_visual",
+                "rounds": 2,
+                "share": 0.05555555555555555
+              },
+              {
+                "tool": "report_run_plan",
+                "rounds": 2,
+                "share": 0.05555555555555555
+              },
+              {
+                "tool": "agent_results",
+                "rounds": 1,
+                "share": 0.027777777777777776
+              },
+              {
+                "tool": "spawn_agent",
+                "rounds": 1,
+                "share": 0.027777777777777776
+              }
+            ]
           }
         }
       ]

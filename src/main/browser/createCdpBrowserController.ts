@@ -15,7 +15,9 @@ import { chooseConsentDismissal, isConsentDialog } from '../../core/browser/dial
 import {
   buildPageSnapshot,
   findSnapshotRef,
+  formatPageRead,
   formatPageSnapshot,
+  pageReadPartCount,
   parseCollectedPage,
   type PageSnapshot,
   type SnapshotRef,
@@ -698,16 +700,23 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
     return withSettledState(`went forward: url=${page.url()} title=${JSON.stringify(page.title())}`)
   }
 
-  async function readPage(): Promise<string> {
+  /** A Page Read (ADR 0047): the refs and one part of the page's whole text. */
+  async function readPage(part = 1): Promise<string> {
     const first = await collectSnapshot()
     const dismissal = await dismissConsentIfOpen(first)
     const reports = drainedReports()
     const snapshot = dismissal !== null ? await recollection('post-dismissal', () => collectSnapshot()) : first
     const header = dismissal !== null ? `${dismissal}\n` : ''
     const footer = reports.length > 0 ? `\n${reports.join('\n')}` : ''
-    const formatted = formatPageSnapshot(snapshot)
+    const formatted = formatPageRead(snapshot, part)
     await markShown(snapshot.refs.length)
     return `${header}${formatted}${footer}`
+  }
+
+  /** The part count read_page's admission checks against — off a fresh
+   * collect, because the read it admits collects fresh too. */
+  async function pageReadParts(): Promise<number> {
+    return pageReadPartCount(await recollection('page-read-parts', () => collectSnapshot()))
   }
 
   /**
@@ -1159,6 +1168,7 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
   return {
     navigate,
     readPage,
+    pageReadParts,
     click,
     type,
     scroll,

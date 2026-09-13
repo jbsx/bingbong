@@ -1,6 +1,6 @@
 # Round Audit — aggregate over 3 sets (bingbong.live-web.information-hunts)
 
-Generated 2026-09-13T02:26:24.200Z over baseline-1, baseline-2, baseline-3, ordered by capture-set creation. This audit counts and does not judge: every verdict is the reviewer’s for one attempt, and the ranking is arithmetic over those verdicts.
+Generated 2026-09-13T03:47:10.128Z over baseline-1, baseline-2, baseline-3, ordered by capture-set creation. This audit counts and does not judge: every verdict is the reviewer’s for one attempt, and the ranking is arithmetic over those verdicts.
 
 ## Ranked causes
 
@@ -25,9 +25,9 @@ Shared by every set, and checked before anything was counted:
 
 | set | created | state | commit(s) | dirty tree | grades revision | audited at |
 | --- | --- | --- | --- | --- | --- | --- |
-| baseline-1 | 2026-09-12T17:06:30.219Z | complete | fbd2b865 | yes | 1 | 49d5371d (dirty) |
-| baseline-2 | 2026-09-12T18:10:26.845Z | complete | 6152d8dc | yes | 1 | 49d5371d (dirty) |
-| baseline-3 | 2026-09-12T18:57:29.347Z | complete | 59bdf48b | yes | 1 | 49d5371d (dirty) |
+| baseline-1 | 2026-09-12T17:06:30.219Z | complete | fbd2b865 | yes | 1 | 81048ebf (dirty) |
+| baseline-2 | 2026-09-12T18:10:26.845Z | complete | 6152d8dc | yes | 1 | 81048ebf (dirty) |
+| baseline-3 | 2026-09-12T18:57:29.347Z | complete | 59bdf48b | yes | 1 | 81048ebf (dirty) |
 
 ## Populations
 
@@ -46,6 +46,25 @@ Shared by every set, and checked before anything was counted:
 
 - initial: 63 Off-key round(s), 10 Search Loop round(s) by the reviewer (3 by the streak rule), 0 inherited, 9 rejected Evidence Checkpoint(s), 2 walled round(s), 26 Subagent round(s), 2 stopped early, 25 overrule(s), 63 flag(s); Finalization Causes: budget_exhausted 8, deadline_reached 1, model_answered 1, objective_met 2
 - follow_up: 27 Off-key round(s), 0 Search Loop round(s) by the reviewer (0 by the streak rule), 9 inherited, 9 rejected Evidence Checkpoint(s), 0 walled round(s), 13 Subagent round(s), 0 stopped early, 6 overrule(s), 29 flag(s); Finalization Causes: budget_exhausted 3, deadline_reached 1, objective_met 2
+
+## Tool rounds
+
+The rounds outside Finalization that called each tool — a round counts once per tool, refused calls included — and their share of the tool rounds used. Counted from the Run Trace; the reviewer never sees it.
+
+| tool | initial | follow_up |
+| --- | --- | --- |
+| navigate | 80 (36%) | 31 (27%) |
+| scroll | 64 (29%) | 40 (34%) |
+| record_evidence | 21 (9%) | 14 (12%) |
+| look | 18 (8%) | 13 (11%) |
+| read_page | 13 (6%) | 6 (5%) |
+| report_run_plan | 11 (5%) | 6 (5%) |
+| click | 13 (6%) | 3 (3%) |
+| type | 14 (6%) | 1 (1%) |
+| record_candidate | 0 | 10 (9%) |
+| agent_results | 2 (1%) | 1 (1%) |
+| ground_visual | 1 (0%) | 2 (2%) |
+| spawn_agent | 2 (1%) | 1 (1%) |
 
 ## Per set
 

@@ -1,13 +1,13 @@
 # Round Audit — bingbong.live-web.information-hunts (baseline-3)
 
-Generated 2026-09-13T02:26:24.200Z from a capture set created 2026-09-12T18:57:29.347Z (state complete). This audit counts and does not judge: every verdict is the reviewer’s for one attempt, and the ranking is arithmetic over those verdicts.
+Generated 2026-09-13T03:47:10.128Z from a capture set created 2026-09-12T18:57:29.347Z (state complete). This audit counts and does not judge: every verdict is the reviewer’s for one attempt, and the ranking is arithmetic over those verdicts.
 
 ## Provenance
 
 - capture: commit(s) 59bdf48b (dirty tree); mode measured; protocol 1; prompt version(s) 1
 - routing: orchestrator=GLM-5.3; subagent=GLM-5.3-flash; vision=GLM-4.6V | reasoning override: none | effort overrides: none | adblock: production_default
 - key 2.2.2.2, manifest sha256:faa25d04…; grades by claude-opus-5 via live:grade (revision 1)
-- reviewer: claude-opus-5 at high, prompt audit-p1; audit run at commit 49d5371d (dirty tree)
+- reviewer: claude-opus-5 at high, prompt audit-p1; audit run at commit 81048ebf (dirty tree)
 
 ## Populations
 
@@ -28,6 +28,25 @@ Kinds are mechanical counts; a share is over the budgeted rounds (Finalization o
 
 - initial: 15 Off-key round(s), 5 Search Loop round(s) by the reviewer (1 by the streak rule), 0 inherited, 3 rejected Evidence Checkpoint(s), 0 walled round(s), 13 Subagent round(s), 1 stopped early, 8 overrule(s), 20 flag(s); Finalization Causes: budget_exhausted 2, deadline_reached 1, objective_met 1
 - follow_up: 1 Off-key round(s), 0 Search Loop round(s) by the reviewer (0 by the streak rule), 2 inherited, 3 rejected Evidence Checkpoint(s), 0 walled round(s), 13 Subagent round(s), 0 stopped early, 3 overrule(s), 10 flag(s); Finalization Causes: budget_exhausted 2
+
+## Tool rounds
+
+The rounds outside Finalization that called each tool — a round counts once per tool, refused calls included — and their share of the tool rounds used. Counted from the Run Trace; the reviewer never sees it.
+
+| tool | initial | follow_up |
+| --- | --- | --- |
+| scroll | 17 (27%) | 14 (39%) |
+| navigate | 21 (33%) | 6 (17%) |
+| record_evidence | 8 (13%) | 3 (8%) |
+| look | 3 (5%) | 5 (14%) |
+| type | 7 (11%) | 0 |
+| read_page | 2 (3%) | 3 (8%) |
+| report_run_plan | 3 (5%) | 2 (6%) |
+| record_candidate | 0 | 4 (11%) |
+| click | 3 (5%) | 0 |
+| agent_results | 1 (2%) | 1 (3%) |
+| ground_visual | 0 | 2 (6%) |
+| spawn_agent | 1 (2%) | 1 (3%) |
 
 ## Attempts
 

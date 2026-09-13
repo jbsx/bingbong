@@ -49,7 +49,8 @@ export function withAgentActivity(
   const run = <T>(action: () => Promise<T>): Promise<T> => tracker.run(action)
   return {
     navigate: (url) => run(() => controller.navigate(url)),
-    readPage: () => controller.readPage(),
+    readPage: (part) => controller.readPage(part),
+    pageReadParts: () => controller.pageReadParts(),
     click: (ref) => run(() => controller.click(ref)),
     type: (ref, text) => run(() => controller.type(ref, text)),
     scroll: (direction) => controller.scroll(direction),

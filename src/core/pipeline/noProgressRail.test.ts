@@ -434,6 +434,47 @@ describe('no-progress rail — approach exhaustion and Finalization (#126/AC4)',
   })
 })
 
+describe('no-progress rail — a Page Read continuation is its own observation (#235/AC5, ADR 0047)', () => {
+  it('reads part 2 of an unchanged page as a first observation, and part 2 again as a repeat', async () => {
+    const rail = createNoProgressRail({ settledState: () => BASE })
+    const navigate = call('navigate', { url: 'https://example.com/article' })
+    const read = call('read_page')
+    const part2 = call('read_page', { part: 2 })
+
+    expect(await rail.gate(navigate)).toEqual({ ok: true })
+    expect(await rail.observe(navigate, ok())).toBeNull() // baseline
+    expect(await rail.gate(read)).toEqual({ ok: true })
+    expect(await rail.observe(read, ok())).toBeNull() // the first read: neutral (#161)
+
+    // Part 2 of the same page is material part 1 did not show: not a
+    // repeat of the read before it, neutral like any first observation.
+    expect(await rail.gate(part2)).toEqual({ ok: true })
+    expect(await rail.observe(part2, ok())).toBeNull()
+
+    // The same part again is a repeat: nudged, then refused.
+    expect(await rail.gate(part2)).toEqual({ ok: true })
+    expect(await rail.observe(part2, ok())).toMatch(/repeat|equivalent/i)
+    expect(await rail.gate(part2)).toMatchObject({ ok: false })
+  })
+
+  it('reads part 1 named and part 1 unnamed as the same read, and a string part as its number', async () => {
+    const rail = createNoProgressRail({ settledState: () => BASE })
+    /** One attempt: the gate and the observation of the same call, as a Tool Round runs them. */
+    const attempt = async (args: Record<string, unknown>) => {
+      const read = call('read_page', args)
+      expect(await rail.gate(read)).toEqual({ ok: true })
+      return rail.observe(read, ok())
+    }
+    await rail.observe(call('navigate', { url: 'https://example.com/article' }), ok()) // baseline
+
+    expect(await attempt({})).toBeNull()
+    expect(await attempt({ part: 1 })).toMatch(/repeat|equivalent/i)
+
+    expect(await attempt({ part: 3 })).toBeNull()
+    expect(await attempt({ part: '3' })).toMatch(/repeat|equivalent/i)
+  })
+})
+
 describe('no-progress rail — first observation by a new producer (#161)', () => {
   it('lets a worker read, look, and re-read one page without finalizing (#161 worked example)', async () => {
     // The canonical browse-worker workload: open a source and study it.

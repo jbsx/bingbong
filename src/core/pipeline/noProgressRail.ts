@@ -1,7 +1,7 @@
 import type { ToolCall, ToolResultOutcome } from '../ports/llm'
 import type { ObservationProducer } from '../session/observationLedger'
 import { SCROLL_END_OF_PAGE } from '../browser/scrollDelta'
-import { actionFingerprint, pageFingerprint, type SettledPageState } from './progressFingerprints'
+import { actionFingerprint, pageFingerprint, pageReadPartOf, type SettledPageState } from './progressFingerprints'
 import { classifyToolObservation } from './toolObservations'
 import { reportFault } from '../trace/fault'
 
@@ -191,8 +191,10 @@ export function createNoProgressRail(deps: NoProgressRailDeps = {}): NoProgressR
   // observed yet still holds material for it — the first read_page of a
   // page and the first look at it are different evidence; the second of
   // either is inspection. Keyed by state, so returning to a page already
-  // studied re-earns nothing. Not the Run's Observation ledger.
-  const observedBy = new Map<string, Set<ObservationProducer>>()
+  // studied re-earns nothing. Not the Run's Observation ledger. A Page Read
+  // past its first part observes as its own reader (ADR 0047), so the set
+  // holds observer keys rather than bare Producers.
+  const observedBy = new Map<string, Set<string>>()
   // The gate's nudge rides the observed result of the call it nudged —
   // single-slot between one call's gate and observe, like the search-loop
   // rail's type memo.
@@ -208,24 +210,32 @@ export function createNoProgressRail(deps: NoProgressRailDeps = {}): NoProgressR
     return classifyToolObservation(name).pageFacing
   }
 
-  function producerOf(name: string): ObservationProducer {
-    return classifyToolObservation(name).producer
+  /**
+   * Who observes with this call (#161): its Observation Producer — and for
+   * a Page Read of a later part, the part too (ADR 0047). Part 2 of a page
+   * whose part 1 was read is material part 1 did not show; the same part
+   * again is a repeat.
+   */
+  function observerOf(call: ToolCall): string {
+    const producer: ObservationProducer = classifyToolObservation(call.name).producer
+    const part = producer === 'page_read' ? pageReadPartOf(call) : 1
+    return part > 1 ? `${producer}:part=${part}` : producer
   }
 
   /**
-   * Records that `producer` has now observed `fingerprint`; true when it
+   * Records that `observer` has now observed `fingerprint`; true when it
    * had not before — the first observation of that state by that
-   * producer, which is new material and so not a no-progress action
+   * observer, which is new material and so not a no-progress action
    * (#161).
    */
-  function markObserved(fingerprint: string, producer: ObservationProducer): boolean {
-    const producers = observedBy.get(fingerprint)
-    if (producers === undefined) {
-      observedBy.set(fingerprint, new Set([producer]))
+  function markObserved(fingerprint: string, observer: string): boolean {
+    const observers = observedBy.get(fingerprint)
+    if (observers === undefined) {
+      observedBy.set(fingerprint, new Set([observer]))
       return true
     }
-    if (producers.has(producer)) return false
-    producers.add(producer)
+    if (observers.has(observer)) return false
+    observers.add(observer)
     return true
   }
 
@@ -339,7 +349,7 @@ export function createNoProgressRail(deps: NoProgressRailDeps = {}): NoProgressR
         // media toggles continue instead of reading as repeats.
         attempts.delete(key)
       }
-      const firstByThisProducer = markObserved(fingerprint, producerOf(call.name)) && !endOfPage
+      const firstByThisProducer = markObserved(fingerprint, observerOf(call)) && !endOfPage
       if (lastState === null) {
         // The baseline read: the state Progress is measured from, not
         // itself an action that failed to make it (#126/AC1 — the first

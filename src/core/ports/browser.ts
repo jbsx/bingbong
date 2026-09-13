@@ -79,7 +79,18 @@ export interface ScreenshotOptions {
 
 export interface BrowserController {
   navigate(url: string): Promise<string>
-  readPage(): Promise<string>
+  /**
+   * A Page Read (ADR 0047): the page's refs and one part of its whole text,
+   * part 1 — from the top — when none is named. Rejects for a part the
+   * page does not have.
+   */
+  readPage(part?: number): Promise<string>
+  /**
+   * How many parts a Page Read of the current page's text takes, at least
+   * one (ADR 0047): what read_page's admission step checks a part past the
+   * first against.
+   */
+  pageReadParts(): Promise<number>
   click(ref: number): Promise<string>
   type(ref: number, text: string): Promise<string>
   scroll(direction: 'up' | 'down'): Promise<string>

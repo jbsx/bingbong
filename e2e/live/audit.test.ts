@@ -529,6 +529,33 @@ describe('a set and the aggregate', () => {
     expect(setOne.note).toBe(AUDIT_COUNTS_NOTE)
   })
 
+  it('counts the rounds that called each tool, outside Finalization, as a share of the tool rounds (#235)', () => {
+    const { toolRounds, toolRoundsUsed } = setOne.populations.initial
+    const of = (tool: string) => toolRounds.find((entry) => entry.tool === tool)
+
+    // A round that called a tool counts once for it, a refused call included;
+    // the Finalization rounds' bookkeeping is outside the budget and the count.
+    expect(of('navigate')).toEqual({ tool: 'navigate', rounds: 6, share: 6 / toolRoundsUsed })
+    expect(of('read_page')).toEqual({ tool: 'read_page', rounds: 2, share: 2 / toolRoundsUsed })
+    expect(of('scroll')).toEqual({ tool: 'scroll', rounds: 1, share: 1 / toolRoundsUsed })
+    expect(of('type')?.rounds).toBe(1)
+    expect(toolRounds[0]?.tool).toBe('navigate')
+    for (const [index, entry] of toolRounds.entries()) {
+      expect(entry.rounds).toBeLessThanOrEqual(toolRoundsUsed)
+      if (index > 0) expect(entry.rounds).toBeLessThanOrEqual(toolRounds[index - 1]!.rounds)
+    }
+    // The count is code, outside the reviewer's digest: it moves no cache key.
+    expect(setOne.attempts[0]!.mechanical).not.toHaveProperty('toolRounds')
+
+    const aggregate = buildAuditAggregate([setTwo, setOne], '2026-09-13T11:00:00.000Z')
+    if (!aggregate.ok) throw new Error(aggregate.errors.join('; '))
+    expect(aggregate.value.populations.initial.toolRounds.find((entry) => entry.tool === 'navigate')?.rounds).toBe(12)
+    expect(formatAuditSet(setOne)).toContain('## Tool rounds')
+    expect(formatAuditSet(setOne)).toMatch(/\| navigate \| 6 \(\d+%\) \| 6 \(\d+%\) \|/)
+    expect(formatAuditAggregate(aggregate.value)).toContain('## Tool rounds')
+    expect(formatAuditAggregate(aggregate.value)).toMatch(/\| navigate \| 12 \(\d+%\) \| 12 \(\d+%\) \|/)
+  })
+
   it('aggregates by arithmetic and ranks the primary verdicts', () => {
     const aggregate = buildAuditAggregate([setTwo, setOne], '2026-09-13T11:00:00.000Z')
     expect(aggregate.ok).toBe(true)

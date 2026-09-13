@@ -811,6 +811,14 @@ prompt version, digest hash, cost). Per set: the two populations' tables and the
 capture's provenance. The aggregate: the ranked causes, the populations per set
 and summed, and the shared provenance.
 
+Each population also counts tool rounds per tool (#235, ADR 0047): for every
+tool, the rounds outside Finalization that called it — a round counts once
+however many calls it made to that tool, refused calls included — and that
+count's share of the population's tool rounds used. It is code-counted from the
+Run Trace and never enters the reviewer's digest, so adding it re-keyed no
+cached judgement. It is the number a fix to how pages are read is measured by:
+the Baseline's scroll rounds were 104 of 340 tool rounds.
+
 They name check ids and URLs only, never key text: the reviewer is told to
 refer to checks by id, every output is checked for any key string or any run of
 eight consecutive words of one before it is written, and `audit.test.ts`

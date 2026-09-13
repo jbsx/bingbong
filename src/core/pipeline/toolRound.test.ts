@@ -167,7 +167,7 @@ function scripted(
     assessRisk?: RiskVerdict
     acquisition?: boolean
     usesVision?: boolean
-    admit?: (args: ToolCall['args']) => ToolAdmission
+    admit?: (args: ToolCall['args']) => ToolAdmission | Promise<ToolAdmission>
   } = {},
 ): Tool {
   return {
@@ -176,7 +176,7 @@ function scripted(
     ...(options.usesVision ? { usesVision: true } : {}),
     ...(options.admit
       ? {
-          admit: (args: ToolCall['args']): ToolAdmission => {
+          admit: (args: ToolCall['args']): ToolAdmission | Promise<ToolAdmission> => {
             trace.push(`admit:${name}`)
             return options.admit!(args)
           },
@@ -825,6 +825,24 @@ describe('an argument refusal is not a Vision Attempt (#236, ADR 0046)', () => {
 
     expect(errorOf(outcome.results[0]!.outcome)).toMatch(/Not executed/)
     expect(trace.filter((entry) => entry === 'admit:look')).toHaveLength(1)
+  })
+
+  it('awaits an admission that asks the page — its refusal still executes nothing (#235)', async () => {
+    const trace: string[] = []
+    const PAST_THE_END = "read_page: part 4 is past the end — this page's text has 3 parts, part=1 to part=3"
+    const tool = scripted('read_page', trace, {
+      admit: async () => {
+        await Promise.resolve()
+        return { ok: false, reason: PAST_THE_END }
+      },
+    })
+    const h = harness([tool], { capabilities, trace })
+
+    const { outcome } = await h.round([call('read_page', { part: 4 })])
+
+    expect(errorOf(outcome.results[0]!.outcome)).toBe(PAST_THE_END)
+    expect(trace).toContain('admit:read_page')
+    expect(trace).not.toContain('execute:read_page')
   })
 
   it('runs admission after the verification rail — a spent route is refused as spent, whatever the arguments', async () => {

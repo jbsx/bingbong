@@ -267,6 +267,16 @@ export function typedTextFingerprint(text: string): string {
  * number pointed at in the snapshot the model was looking at", so #126's
  * equivalence test is action fingerprint + page fingerprint together.
  */
+/**
+ * The Page Read part a read_page call names (ADR 0047): a whole number from
+ * 2 names that part, and anything else — no part, part 1, a malformed part
+ * admission refuses anyway — reads as part 1.
+ */
+export function pageReadPartOf(call: ToolCall): number {
+  const part = coercedNumber(call.args.part)
+  return part !== undefined && Number.isInteger(part) && part > 1 ? part : 1
+}
+
 export function actionFingerprint(call: ToolCall): string {
   const args = call.args
   switch (call.name) {
@@ -299,7 +309,11 @@ export function actionFingerprint(call: ToolCall): string {
       const offset = coercedNumber(args.offset)
       return offset !== undefined ? `media_control:${action}:${offset}` : `media_control:${action}`
     }
-    case 'read_page':
+    case 'read_page': {
+      // A continuation is its own read (ADR 0047): part 2 is not part 1 again.
+      const part = pageReadPartOf(call)
+      return part > 1 ? `read_page:part=${part}` : 'read_page'
+    }
     case 'back':
     case 'go_forward':
       return call.name

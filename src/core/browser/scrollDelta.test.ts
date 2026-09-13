@@ -101,12 +101,20 @@ describe('formatNewInView', () => {
     expect(delta?.block).toContain('(+15 more not listed)')
   })
 
-  it('caps the text it lists at the read_page digest cap', () => {
-    const after = snapshot({ viewportText: ['word '.repeat(500)] })
+  it('caps the text it lists as a Page Preview is, and a cut says so with the preview fact line (#235)', () => {
+    const text = 'word '.repeat(500)
+    const after = snapshot({ viewportText: [text] })
     const delta = formatNewInView(snapshot(), after)
 
-    expect(delta?.block.length).toBeLessThanOrEqual('new in view:\npage text:\n'.length + 1800)
-    expect(delta?.block.endsWith('…')).toBe(true)
+    expect(delta?.block).toBe(
+      `new in view:\npage text:\n${text.slice(0, 1799)}…\npage text: first 1,800 of 2,500 characters — read_page returns the whole text`,
+    )
+  })
+
+  it('text that fits the cap carries no fact line (#235)', () => {
+    const delta = formatNewInView(snapshot(), snapshot({ viewportText: ['A short paragraph.'] }))
+
+    expect(delta?.block).toBe('new in view:\npage text:\nA short paragraph.')
   })
 
   it('names the end of the page with the note the repeat guard reads', () => {

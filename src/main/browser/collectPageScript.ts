@@ -1,10 +1,4 @@
-import { MAX_SNAPSHOT_TEXT } from '../../core/browser/snapshot'
-
-/** Viewport text blocks collected for the scroll delta (#194), and the length
- * each is held to. Bounds on a model-facing result, so they are named here
- * rather than buried as literals in the page script. */
-const MAX_VIEWPORT_TEXT_BLOCKS = 60
-const MAX_VIEWPORT_TEXT_BLOCK_LENGTH = 300
+import { MAX_COLLECTED_PAGE_TEXT } from '../../core/browser/pageText'
 
 // Runs inside the pane's page via Runtime.evaluate. Returns the CollectedPage
 // shape consumed by core/browser/snapshot.ts — DOM-specific work (labeling,
@@ -195,37 +189,70 @@ export const COLLECT_PAGE_SCRIPT = `(() => {
   const textOf = (el) => (el.innerText || el.textContent || '').replace(/\\s+/g, ' ').trim()
   const heading = document.querySelector('h1, [role="heading"][aria-level="1"]')
   const textRoot = document.querySelector('main, article') || document.body
-  const digestParts = []
-  // What the viewport shows right now, so a scroll can report what it
-  // brought in (#194). The digest is the whole page capped from the top and
-  // barely moves when the page scrolls; this tracks the window.
-  const viewportText = []
-  // Rect-only intersection: a text block is not a click target, so it does
-  // not need the style pass rectVisible does — a hidden block has no rect,
-  // and running getComputedStyle over every paragraph would cost every
-  // collect, not just a scroll.
-  const noteInView = (el, text) => {
-    if (viewportText.length >= ${MAX_VIEWPORT_TEXT_BLOCKS} || viewportText.includes(text)) return
+  // The page's text (ADR 0047): each block raw, in document order, for core
+  // to render and cut (core/browser/pageText.ts). A table row, a pre block
+  // and a definition list are blocks beside paragraphs, list items and
+  // headings; an element inside a block already taken is that block's text,
+  // so it is skipped — a paragraph in a table cell, a nested list.
+  const textBlocks = []
+  const taken = new Set()
+  let collectedText = 0
+  // Whether a block is in the viewport right now, so a scroll can report
+  // what it brought in (#194). Rect-only intersection: a text block is not a
+  // click target, so it does not need the style pass rectVisible does — a
+  // hidden block has no rect, and running getComputedStyle over every
+  // paragraph would cost every collect, not just a scroll.
+  const inViewport = (el) => {
     const rect = el.getBoundingClientRect()
-    if (rect.width < 1 || rect.height < 1) return
-    if (rect.bottom > 0 && rect.right > 0 && rect.top < vh && rect.left < vw) {
-      viewportText.push(text.slice(0, ${MAX_VIEWPORT_TEXT_BLOCK_LENGTH}))
+    if (rect.width < 1 || rect.height < 1) return false
+    return rect.bottom > 0 && rect.right > 0 && rect.top < vh && rect.left < vw
+  }
+  const insideTaken = (el) => {
+    for (let node = el.parentElement; node !== null; node = node.parentElement) {
+      if (taken.has(node)) return true
+    }
+    return false
+  }
+  const rawBlock = (el) => {
+    switch (el.tagName) {
+      case 'TR':
+        return { kind: 'row', cells: Array.from(el.cells).map(textOf) }
+      case 'PRE':
+        return { kind: 'pre', text: el.innerText || el.textContent || '' }
+      case 'DL':
+        return {
+          kind: 'definitions',
+          items: Array.from(el.querySelectorAll('dt, dd'))
+            .filter((item) => item.closest('dl') === el)
+            .map((item) => ({ term: item.tagName === 'DT', text: textOf(item) }))
+        }
+      default:
+        return { kind: 'text', text: textOf(el) }
     }
   }
-  const headingText = heading ? textOf(heading) : ''
-  if (headingText) {
-    digestParts.push(headingText)
-    noteInView(heading, headingText)
+  const lengthOf = (block) => {
+    if (block.kind === 'row') return block.cells.join('').length
+    if (block.kind === 'definitions') return block.items.reduce((total, item) => total + item.text.length, 0)
+    return block.text.trim().length
   }
+  const take = (el, block) => {
+    taken.add(el)
+    const length = lengthOf(block)
+    if (length === 0) return
+    const inView = inViewport(el)
+    // Past the collected-text bound only blocks in view still ride the
+    // payload — the scroll delta needs them; a read ends at the bound.
+    if (collectedText > ${MAX_COLLECTED_PAGE_TEXT} && !inView) return
+    collectedText += length + 1
+    if (inView) block.inView = true
+    textBlocks.push(block)
+  }
+  if (heading) take(heading, { kind: 'text', text: textOf(heading), heading: true })
   if (textRoot) {
-    for (const block of textRoot.querySelectorAll('p, li, h2, h3')) {
-      const text = textOf(block)
-      if (!text) continue
-      if (text !== headingText && !digestParts.includes(text)) digestParts.push(text)
-      noteInView(block, text)
+    for (const el of textRoot.querySelectorAll('p, li, h2, h3, tr, pre, dl')) {
+      if (!insideTaken(el)) take(el, rawBlock(el))
     }
   }
-  const textDigest = digestParts.join('\\n').slice(0, ${MAX_SNAPSHOT_TEXT})
 
   const describeElement = (el, dialogRoot) => {
     const rect = el.getBoundingClientRect()
@@ -336,8 +363,7 @@ export const COLLECT_PAGE_SCRIPT = `(() => {
     },
     dialogOpen: dialogRoot !== null,
     dialogText: dialogRoot !== null ? textOf(dialogRoot).slice(0, 400) : '',
-    textDigest,
-    viewportText,
+    textBlocks,
     elements
   }
 })()`

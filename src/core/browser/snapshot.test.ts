@@ -2,7 +2,15 @@ import { describe, expect, it } from 'vitest'
 import challengeIframe from './fixtures/challenge-iframe.json'
 import youtubeHome from './fixtures/youtube-home.json'
 import type { CollectedElement, CollectedPage } from './snapshot'
-import { buildPageSnapshot, clickPoint, formatPageSnapshot, pageSignature, parseCollectedPage } from './snapshot'
+import {
+  buildPageSnapshot,
+  clickPoint,
+  formatPageRead,
+  formatPageSnapshot,
+  pageReadPartCount,
+  pageSignature,
+  parseCollectedPage,
+} from './snapshot'
 
 const youtubeFixture = youtubeHome as unknown as CollectedPage
 const challengeFixture = challengeIframe as unknown as CollectedPage
@@ -29,6 +37,92 @@ function page(overrides: Partial<CollectedPage> = {}): CollectedPage {
     ...overrides,
   }
 }
+
+/** A page whose text is `count` paragraphs of `length` characters each, collected as blocks. */
+function textPage(count: number, length: number, overrides: Partial<CollectedPage> = {}): CollectedPage {
+  return page({
+    textBlocks: Array.from({ length: count }, (_, index) => ({
+      kind: 'text' as const,
+      text: `${String(index).padStart(3, '0')} ${'w'.repeat(length - 4)}`,
+    })),
+    ...overrides,
+  })
+}
+
+describe('page text: Page Preview and Page Read (#235, ADR 0047)', () => {
+  it('parses collected text blocks and renders them into the preview, the whole text and the viewport text', () => {
+    const parsed = parseCollectedPage(
+      page({
+        textBlocks: [
+          { kind: 'text', text: 'Luggage', heading: true, inView: true },
+          { kind: 'row', cells: ['Ticket', 'Allowance'], inView: true },
+          { kind: 'pre', text: 'line one\nline two' },
+          { bogus: true } as never,
+        ],
+      }),
+    )
+    const snapshot = buildPageSnapshot(parsed)
+
+    expect(snapshot.textBlocks).toEqual(['Luggage', 'Ticket | Allowance', 'line one\nline two'])
+    expect(snapshot.textDigest).toBe('Luggage\nTicket | Allowance\nline one\nline two')
+    expect(snapshot.textLength).toBe(snapshot.textDigest.length)
+    expect(snapshot.viewportText).toEqual(['Luggage', 'Ticket | Allowance'])
+  })
+
+  it('reads an older payload’s digest as the whole collected text', () => {
+    const snapshot = buildPageSnapshot(page({ textDigest: 'Heading\nParagraph', viewportText: ['Paragraph'] }))
+
+    expect(snapshot.textBlocks).toEqual(['Heading', 'Paragraph'])
+    expect(snapshot.textLength).toBe('Heading\nParagraph'.length)
+    expect(snapshot.viewportText).toEqual(['Paragraph'])
+  })
+
+  it('a navigate-shaped snapshot whose text was cut ends with the preview fact line (AC2)', () => {
+    const snapshot = buildPageSnapshot(textPage(10, 740))
+    const text = formatPageSnapshot(snapshot)
+
+    expect(snapshot.textDigest).toHaveLength(1800)
+    expect(snapshot.textLength).toBe(7409)
+    expect(text.endsWith(`page text:\n${snapshot.textDigest}\npage text: first 1,800 of 7,409 characters — read_page returns the whole text`)).toBe(true)
+  })
+
+  it('a snapshot whose text fits carries no fact line (AC2)', () => {
+    const text = formatPageSnapshot(buildPageSnapshot(textPage(2, 500)))
+
+    expect(text).not.toContain('read_page returns the whole text')
+    expect(text.split('\n').at(-1)).toMatch(/^001 w+$/)
+  })
+
+  it('a read of a page under the part cap returns all its text with no fact line (AC1)', () => {
+    const snapshot = buildPageSnapshot(textPage(10, 740))
+    const text = formatPageRead(snapshot, 1)
+
+    expect(pageReadPartCount(snapshot)).toBe(1)
+    expect(text.endsWith(`page text:\n${snapshot.textBlocks.join('\n')}`)).toBe(true)
+    expect(text).not.toMatch(/page text: (first|part)/)
+  })
+
+  it('a read of a longer page returns numbered parts cut at block boundaries (AC1)', () => {
+    const snapshot = buildPageSnapshot(textPage(30, 1000, { elements: [element({ label: 'Book' })] }))
+    const first = formatPageRead(snapshot, 1)
+    const second = formatPageRead(snapshot, 2)
+    const third = formatPageRead(snapshot, 3)
+
+    expect(pageReadPartCount(snapshot)).toBe(3)
+    // Part 1 starts at the top — the preview repeated — and each part holds whole blocks.
+    expect(first).toContain(`page text:\n${snapshot.textDigest}`)
+    expect(first).toContain('[1] button "Book"')
+    expect(first.endsWith(`${snapshot.textBlocks[10]}\npage text: part 1 of 3 — read_page part=2 continues`)).toBe(true)
+    expect(second).toContain(`page text:\n${snapshot.textBlocks[11]}\n`)
+    expect(second.endsWith(`${snapshot.textBlocks[21]}\npage text: part 2 of 3 — read_page part=3 continues`)).toBe(true)
+    expect(third.endsWith(`${snapshot.textBlocks[29]}\npage text: part 3 of 3 — the last part`)).toBe(true)
+  })
+
+  it('refuses to format a part past the end, naming the range', () => {
+    const snapshot = buildPageSnapshot(textPage(2, 100))
+    expect(() => formatPageRead(snapshot, 2)).toThrow("read_page: part 2 is past the end — this page's text has 1 part, part=1")
+  })
+})
 
 describe('parseCollectedPage', () => {
   it('accepts the youtube fixture payload', () => {

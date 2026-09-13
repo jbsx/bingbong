@@ -29,6 +29,10 @@ class FakeController implements BrowserController {
     return formatPageSnapshot(buildPageSnapshot(youtubeFixture))
   }
 
+  async pageReadParts(): Promise<number> {
+    return 1
+  }
+
   async click(ref: number): Promise<string> {
     this.clicks.push(ref)
     return `clicked [${ref}]: urlChanged=false dialogOpen=false; no observable change`

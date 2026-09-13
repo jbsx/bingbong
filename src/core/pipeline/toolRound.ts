@@ -435,7 +435,7 @@ export function createToolRoundExecutor(config: ToolRoundConfig): ToolRoundExecu
     // mark, so a malformed Look spends neither the budget nor the
     // verification route.
     if (tool.admit) {
-      const admission = tool.admit(call.args)
+      const admission = await tool.admit(call.args)
       if (!admission.ok) return { ok: false, error: admission.reason }
     }
 

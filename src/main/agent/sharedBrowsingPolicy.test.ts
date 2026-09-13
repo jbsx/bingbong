@@ -61,6 +61,14 @@ describe('shared policy on-screen invariants (#83/ADR 0009)', () => {
     expect(line).not.toMatch(/After any navigation, call read_page/)
   })
 
+  it('sends reading to read_page and scrolling to elements and position (#235, ADR 0047)', () => {
+    const line = bullet('A browser Action Outcome')
+    expect(line).toContain(
+      'Read a page with read_page when its preview is cut or you need a fresh look; scrolling is for elements and position, not for reading.',
+    )
+    expect(line).not.toMatch(/Re-inspect a page only/)
+  })
+
   it('reserves vision for insufficient structured information', () => {
     expect(bullet('Reference elements strictly')).toMatch(
       /visual inspection only when structured page information is insufficient/i,

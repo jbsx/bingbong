@@ -76,11 +76,12 @@ export function createAuthPopupDirector(
         state: () => base.state(),
         // Everything the agent does to "the current page" routes to the
         // popup while one is open.
-        readPage: async () => {
+        readPage: async (part) => {
           const popup = activePopup()
-          const result = await (popup ? popup.controller : base).readPage()
+          const result = await (popup ? popup.controller : base).readPage(part)
           return popup ? `${result}\nauth popup open: ${popup.webContents.getURL()}` : result
         },
+        pageReadParts: () => target(base).pageReadParts(),
         click: (ref) => target(base).click(ref),
         type: (ref, text) => target(base).type(ref, text),
         scroll: (direction) => target(base).scroll(direction),

@@ -478,6 +478,39 @@ function widgetsArticlePage(): string {
 </html>`
 }
 
+// Page Read (#235, ADR 0047): a page whose text a preview cuts and a read
+// returns in two parts, holding each block kind a read renders — a table
+// whose header row is th cells and one of whose cells wraps a paragraph, a
+// pre block, and a definition list.
+function readingPage(): string {
+  const paragraphs = Array.from(
+    { length: 30 },
+    (_, index) => `  <p>Paragraph ${String(index).padStart(2, '0')}: ${'reading filler text '.repeat(29).trim()}</p>`,
+  ).join('\n')
+  return `<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>reading fixture</title></head>
+<body style="background:#222;color:#fff;margin:0">
+<main>
+  <h1>Luggage allowances</h1>
+  <p>What each ticket carries.</p>
+  <table>
+    <thead><tr><th>Ticket</th><th>Luggage</th><th>Hand luggage</th></tr></thead>
+    <tbody>
+      <tr><td>Standard</td><td><p>2 pieces of luggage</p></td><td>1 piece of hand luggage</td></tr>
+      <tr><td>Business Premier</td><td>3 pieces of luggage</td><td>1 piece of hand luggage</td></tr>
+    </tbody>
+  </table>
+  <pre>== Camera Module 3
+  sensor: IMX708</pre>
+  <dl><dt>Launch</dt><dd>5 September 1977</dd></dl>
+${paragraphs}
+  <p>The end of the reading fixture.</p>
+</main>
+</body>
+</html>`
+}
+
 // Real-model evaluation corpus (#109): three similarly-named catalog pages
 // whose only distinction is one attribute — the ambiguous-Candidate
 // scenario must pick "polished" out of anodized/polished/vintage, not just
@@ -1016,6 +1049,10 @@ export async function startFixtureServer(): Promise<FixtureServer> {
     // while still being a distinct action (#161).
     if (req.url === '/widgets-article' || req.url === '/widgets-article?print=1') {
       res.end(widgetsArticlePage())
+      return
+    }
+    if (req.url === '/reading') {
+      res.end(readingPage())
       return
     }
     if (req.url === '/catalog') {

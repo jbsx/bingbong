@@ -57,6 +57,30 @@ describe('automatic page vision through the command pipeline', () => {
     })
   })
 
+  it('compares only reads of the same part: every part lists the same refs (#235/AC5, ADR 0047)', async () => {
+    const browser = new FakeBrowser()
+    browser.readParts = 2
+    browser.readPage = async () => '[1] First button\n[2] Second button\n[3] Third button'
+    const vision = new FakeVision()
+    vision.description = 'A transparent consent overlay is blocking the controls.'
+    const { events } = await run(browser, vision, [
+      { kind: 'tool_calls', calls: [{ id: 'r1', name: 'read_page', args: {} }] },
+      { kind: 'tool_calls', calls: [{ id: 'r2', name: 'read_page', args: { part: 2 } }] },
+      { kind: 'tool_calls', calls: [{ id: 'r3', name: 'read_page', args: { part: 2 } }] },
+      { kind: 'answer', speak: 'Done.', display: 'Done.' },
+    ])
+    const resultOf = (callId: string) => events.find((event) => event.type === 'tool_result' && event.callId === callId)
+
+    // Part 2 after part 1 is a continuation, not a near-identical read.
+    expect(resultOf('r2')).toMatchObject({ ok: true, result: expect.not.stringContaining('Auto-vision') })
+    // Part 2 again is.
+    expect(vision.describeRequests).toHaveLength(1)
+    expect(resultOf('r3')).toMatchObject({
+      ok: true,
+      result: expect.stringContaining('Auto-vision (repeated near-identical page reads)'),
+    })
+  })
+
   it('fires no screenshot for a refused ref: the refusal already carries the page (ADR 0033)', async () => {
     const browser = new FakeBrowser()
     const refusal =

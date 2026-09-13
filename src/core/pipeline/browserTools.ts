@@ -8,6 +8,7 @@ import { classifyBlockerPage, type BlockerClassification } from '../browser/bloc
 import { tracedVisionRequest } from '../trace/visionTrace'
 import { traceVisionBudget, visionSeam } from './visionSeam'
 import { reportFault } from '../trace/fault'
+import { partPastTheEnd } from '../browser/pageText'
 
 const AUTO_VISION_PROMPT =
   'Describe the current browser screenshot, focusing on page state, popups, dialogs, overlays, errors, and anything blocking the requested task.'
@@ -49,9 +50,21 @@ async function withBlockerNudge(browser: BrowserController, action: () => Promis
   return verdict ? `${outcome}\n${blockerSuffix(verdict)}` : outcome
 }
 
-interface ReadState {
-  refs: Set<number>
+/** The refs each part's last read listed (ADR 0047): near-identical reads are compared part by part. */
+type ReadState = Map<number, Set<number>>
+
+/**
+ * The part a read_page call names (ADR 0047): 1 when none is, null when the
+ * argument is not a whole number from 1. Models write numbers as strings.
+ */
+function partOf(args: ToolCall['args']): number | null {
+  const value = args.part
+  if (value === undefined || value === null || value === '') return 1
+  const part = typeof value === 'string' ? Number(value) : value
+  return typeof part === 'number' && Number.isInteger(part) && part >= 1 ? part : null
 }
+
+const MALFORMED_PART = "read_page: 'part' must be a whole number from 1"
 
 function refsFrom(result: string): Set<number> {
   return new Set([...result.matchAll(/^\[(\d+)\]/gm)].map((match) => Number(match[1])))
@@ -170,7 +183,7 @@ export function createBrowserTools(browser: BrowserController, vision?: VisionDe
       name: 'navigate',
       acquisition: true,
       description:
-        'Navigate the visible browser to a URL. Accepts full URLs (https://…) or search terms. Returns the settled page state — URL, title, page signature, numbered interactive refs (link refs carry their hrefs), and a text digest — plus a BLOCKER marker when the landing is walled. Continue directly from the returned refs; read_page is for explicit re-inspection, not a required follow-up.',
+        'Navigate the visible browser to a URL. Accepts full URLs (https://…) or search terms. Returns the settled page state — URL, title, page signature, numbered interactive refs (link refs carry their hrefs), and the page text — plus a BLOCKER marker when the landing is walled. Continue directly from the returned refs; the page text is a preview; read_page returns the whole text.',
       parameters: {
         url: { type: 'string', description: 'URL or search terms to open, e.g. "https://youtube.com" or "best mechanical keyboards"' },
       },
@@ -183,17 +196,45 @@ export function createBrowserTools(browser: BrowserController, vision?: VisionDe
       name: 'read_page',
       acquisition: true,
       description:
-        'Return the page URL, title, page signature, scroll state, numbered interactive refs (link refs carry their hrefs — open them with navigate), and a capped text digest. Use refs like [7] with click/type. Walls are reported as a BLOCKER: marker line with what to do. Navigation and page-changing actions already return this state — read only when you need a fresh look.',
-      async execute(_call, context) {
-        const result = await browser.readPage()
+        'Read the page: its URL, title, page signature, scroll state, numbered interactive refs (link refs carry their hrefs — open them with navigate), and the page\'s whole text from the top, tables, preformatted text and definition lists included. Up to 12,000 characters of text per result: a longer page comes in numbered parts, and a result with more ends with "page text: part 1 of 3 — read_page part=2 continues". Use refs like [7] with click/type. Walls are reported as a BLOCKER: marker line with what to do. Navigation and page-changing actions return the page text as a preview — read the page when its preview is cut or you need a fresh look.',
+      parameters: {
+        part: {
+          type: 'integer',
+          required: false,
+          description: 'Which part of a long page\'s text to read, from 1 — omit for part 1, the top of the page.',
+        },
+      },
+      // A part the page does not have is refused before the read runs
+      // (ADR 0047, the admission step of ADR 0046), naming the range.
+      async admit(args) {
+        const part = partOf(args)
+        if (part === null) return { ok: false, reason: MALFORMED_PART }
+        if (part === 1) return { ok: true }
+        try {
+          const parts = await browser.pageReadParts()
+          return part <= parts ? { ok: true } : { ok: false, reason: partPastTheEnd(part, parts) }
+        } catch (error) {
+          // A page that cannot be counted is left to the read itself.
+          reportFault('pipeline.browserTools.readPageAdmission', error)
+          return { ok: true }
+        }
+      },
+      async execute(call, context) {
+        const part = partOf(call.args)
+        if (part === null) throw new Error(MALFORMED_PART)
+        const result = await browser.readPage(part)
         // ADR 0010 choke point 2: the digest, dialog text, and refs the
         // snapshot just collected are exactly the classifier's input.
         const verdict = classifyBlockerPage(await browser.pageFacts())
         const flagged = verdict ? `${result}\n${blockerSuffix(verdict)}` : result
         const refs = refsFrom(result)
-        const previous = reads.get(context)
-        reads.set(context, { refs })
-        if (autoVision && previous && similarity(previous.refs, refs) >= 0.9) {
+        // Every part lists the same refs: only a read of the same part
+        // again is a near-identical read (ADR 0047).
+        const byPart = reads.get(context) ?? new Map<number, Set<number>>()
+        const previous = byPart.get(part)
+        byPart.set(part, refs)
+        reads.set(context, byPart)
+        if (autoVision && previous && similarity(previous, refs) >= 0.9) {
           return `${flagged}\n${await autoVision(context, 'repeated near-identical page reads')}`
         }
         return flagged
@@ -203,7 +244,7 @@ export function createBrowserTools(browser: BrowserController, vision?: VisionDe
       name: 'click',
       acquisition: true,
       description:
-        'Click a ref, then return the URL-change flag, dialog-open flag, clicked state delta, and any coarse page change. When the click meaningfully changes the page (navigation, dialog, state change), the settled page state with fresh refs follows — continue from those refs, no read_page needed; an inert click returns only the concise no-change line. A "blocked by overlay" result means something (usually a dialog) covers the target: read the page, handle the dialog, then retry.',
+        'Click a ref, then return the URL-change flag, dialog-open flag, clicked state delta, and any coarse page change. When the click meaningfully changes the page (navigation, dialog, state change), the settled page state with fresh refs follows — continue from those refs; the page text is a preview; read_page returns the whole text. An inert click returns only the concise no-change line. A "blocked by overlay" result means something (usually a dialog) covers the target: read the page, handle the dialog, then retry.',
       parameters: {
         ref: { type: 'integer', description: 'Element ref number from the snapshot, e.g. 7 for the element shown as [7]' },
       },
@@ -236,7 +277,7 @@ export function createBrowserTools(browser: BrowserController, vision?: VisionDe
       name: 'scroll',
       acquisition: true,
       description:
-        'Scroll the page up or down by about one screen, then return the new scroll position followed by what the scroll brought into the viewport: a "new in view:" block of the refs and page text that were not visible before, numbered for click/type — continue straight from those, no read_page after a scroll. A ref number from before this scroll still works only while it names the same element it did: if the scroll moved that element to another number, click/type refuse the number and return the current page to continue from. When nothing new came into view the block is the single line "end of page" — scrolling further that way is refused as a repeat.',
+        'Scroll the page up or down by about one screen — to bring refs past the listed ones into view, to load more of a page that fills as it scrolls, or to place the viewport for a look. Returns the new scroll position followed by what the scroll brought into the viewport: a "new in view:" block of the refs and page text that were not visible before, numbered for click/type, its text capped as a preview. To read the page\'s text, use read_page. A ref number from before this scroll still works only while it names the same element it did: if the scroll moved that element to another number, click/type refuse the number and return the current page to continue from. When nothing new came into view the block is the single line "end of page" — scrolling further that way is refused as a repeat.',
       parameters: {
         direction: { type: 'string', enum: ['up', 'down'], description: 'Direction to scroll' },
       },

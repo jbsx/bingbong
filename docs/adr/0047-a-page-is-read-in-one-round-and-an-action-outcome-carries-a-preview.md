@@ -126,6 +126,35 @@ viewports. The third shape is the decision.
   30% in the Baseline to 10% or under, with read_page rounds beside it and
   the primary verdicts and checks reached no worse.
 
+## Implementation notes
+
+Recorded when #235 was built, where the decision left a choice open:
+
+- The page collector returns each block raw — text, a row's cells, a `pre`
+  block's rendered text, a definition list's `dt`/`dd` entries, and whether
+  it is in view — and `core/browser/pageText.ts` renders, cuts and words
+  them, so every rule above is unit-tested. The collector keeps only the DOM
+  walk: document order, skipping any element inside a block already taken.
+- One collect carries at most twenty parts of text (240,000 characters);
+  past that only blocks in view still ride the payload, for the scroll delta.
+  Every Action Outcome serializes a collect, so the whole page cannot be
+  unbounded; a page past the bound reads as the parts collected.
+- Prose that repeats earlier prose word for word is still dropped, as the
+  digest always did; identical table rows and definitions are data and are
+  kept.
+- The last part of a multi-part read ends with `page text: part 3 of 3 —
+  the last part`. The decision named the line for a read with more parts and
+  none for a page that fits; the last part says it is the last.
+- A scroll's New In View block names the in-view text's own shown and total
+  characters in its fact line: that is the text the block cut.
+- A malformed `part` (zero, negative, fractional, not a number) is refused
+  in the same admission step: `read_page: 'part' must be a whole number
+  from 1`. Admission counts parts through a new `pageReadParts()` port
+  method, on a fresh collect, and only for a part past 1; `Tool.admit` may
+  now answer a promise.
+- The regenerated Baseline counts 104 scroll rounds (64 initial, 40
+  follow-up) and 19 read_page rounds over 340 tool rounds: 31% scroll.
+
 ## Relationships
 
 Motivated by [ADR 0045](0045-a-round-audit-is-counted-by-code-and-judged-by-a-model-that-is-not-measured.md)'s
