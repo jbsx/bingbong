@@ -74,14 +74,17 @@ export const COLLECT_PAGE_SCRIPT = `(() => {
   // tokens, name/id matching, form association) live here; core only reads
   // the folded flags.
   const CREDENTIAL_AUTOCOMPLETE = ['username', 'current-password', 'new-password']
-  // A card token marks a Payment Field only where it begins a word of the
-  // name/id — not preceded by a letter — so card_number, billing_card and
-  // cardNumber match while postcard, discard and wildcard do not (#237).
+  // A card token marks a Payment Field only where no letter precedes it in
+  // the name/id, so card_number, billing_card and cardNumber match while
+  // postcard, discard and wildcard do not — nor does a camelCase joint such as
+  // billingCard (#237).
   const PAYMENT_NAME_RE = /(?:^|[^a-z])(?:card|ccnum|cvc|cvv|expir)/i
-  // Inputs no value is typed or chosen into. Neither a search nor a Payment
-  // Field can be one, whatever its name or id: a facet checkbox named
-  // "Postcard" or filter_materials[card] is not a card number (#237).
+  // Buttons, toggles, hidden and file inputs take no typed text. Neither a
+  // search field nor a Payment Field can be one, whatever its name or id: a
+  // facet checkbox named "Postcard" or filter_materials[card] is not a card
+  // number (#237).
   const VALUELESS_INPUT_TYPES = ['submit', 'button', 'reset', 'image', 'hidden', 'checkbox', 'radio', 'file']
+  const isValuelessInput = (el) => el.tagName === 'INPUT' && VALUELESS_INPUT_TYPES.includes((el.type || 'text').toLowerCase())
   // Search-flavored fields (ADR 0015): type="search", or the identifying
   // attributes matching /search|query|^q$/i — each attribute tested whole, so
   // Google's name=q matches while "qq" or a submit button named "search" do
@@ -90,7 +93,6 @@ export const COLLECT_PAGE_SCRIPT = `(() => {
   // contenteditable and role=searchbox/textbox hosts qualify through their
   // id/aria-label, so a click on their form's submit is exempt alike.
   const SEARCH_HINT_RE = /search|query|^q$/i
-  const inputTypeOf = (el) => (el.type || 'text').toLowerCase()
   const isEditableField = (el) => {
     if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA') return true
     if (el.isContentEditable) return true
@@ -99,11 +101,8 @@ export const COLLECT_PAGE_SCRIPT = `(() => {
   }
   const isSearchField = (el) => {
     if (!isEditableField(el)) return false
-    if (el.tagName === 'INPUT') {
-      const type = inputTypeOf(el)
-      if (VALUELESS_INPUT_TYPES.includes(type)) return false
-      if (type === 'search') return true
-    }
+    if (isValuelessInput(el)) return false
+    if (el.tagName === 'INPUT' && el.type === 'search') return true
     const hints = [el.name, el.id, el.getAttribute('aria-label'), el.placeholder]
     return hints.some((hint) => typeof hint === 'string' && hint !== '' && SEARCH_HINT_RE.test(hint))
   }
@@ -112,10 +111,9 @@ export const COLLECT_PAGE_SCRIPT = `(() => {
     const ac = (el.getAttribute('autocomplete') || '').toLowerCase()
     return CREDENTIAL_AUTOCOMPLETE.includes(ac)
   }
-  // A Payment Field is a control a card detail is typed or chosen into: a
-  // select (expiry month/year) and a tel input stay eligible.
+  // A select (expiry month/year) and a tel input stay eligible.
   const isPaymentField = (el) => {
-    if (el.tagName === 'INPUT' && VALUELESS_INPUT_TYPES.includes(inputTypeOf(el))) return false
+    if (isValuelessInput(el)) return false
     const ac = (el.getAttribute('autocomplete') || '').toLowerCase()
     if (ac.startsWith('cc-')) return true
     return PAYMENT_NAME_RE.test(((el.name || '') + ' ' + (el.id || '')).trim())

@@ -428,17 +428,18 @@ function siteSearchPage(): string {
 
 // A museum catalogue search shaped like Royal Museums Greenwich's (#237): one
 // form holds the search box and thousands of facet checkboxes, some named with
-// "card" in them. None takes a payment. A second form keeps a real card-number
-// field named card_number (no autocomplete) so the name rule stays pinned.
-// Refs in DOM order: [1] search box [2] Search [3]–[5] facets [6] card_number
-// [7] Pay. Submissions record into the title.
+// "card" in them. None takes a payment. A second form holds a Payment Field
+// known only by its name, card_number (no autocomplete). Refs in DOM order:
+// [1] search box [2] Search [3]–[5] facets [6] card_number [7] Pay.
+// Submissions record into the title; the catalogue form also counts its
+// submits in sessionStorage, which survives a navigate back to the page.
 function catalogueSearchPage(): string {
   return `<!doctype html>
 <html>
 <head><title>catalogue search fixture</title></head>
 <body style="background:#222;color:#fff;margin:0">
   <h1>catalogue search fixture page</h1>
-  <form method="post" onsubmit="document.title='submitted:catalogue';return false">
+  <form method="post" onsubmit="sessionStorage.setItem('catalogueSubmits', String(Number(sessionStorage.getItem('catalogueSubmits') || 0) + 1));document.title='submitted:catalogue';return false">
     <input type="text" id="edit-search-term" name="search_term" placeholder="Search our collection..." style="font-size:24px;width:420px">
     <input type="submit" id="edit-submit" value="Search" style="font-size:20px">
     <label><input type="checkbox" name="filter_type[Postcard]" id="edit-filter-type-postcard"> Postcard</label>

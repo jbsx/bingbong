@@ -227,9 +227,17 @@ describe('risk gate e2e', () => {
       await harness.submitCommand('search the catalogue twice')
 
       await waitForTranscript(harness, 'Catalogue searches ran without a refusal.')
-      // The last submit (the click) landed after the second navigate.
-      const title = await harness.paneEval<string>(`document.title`)
-      expect(title).toBe('submitted:catalogue')
+      // Both submits ran: the navigate between them resets the title, so the
+      // form's sessionStorage count carries the first.
+      await waitFor(
+        async () => {
+          const title = await harness.paneEval<string>(`document.title`)
+          return title === 'submitted:catalogue' ? title : undefined
+        },
+        { timeoutMs: 20000, intervalMs: 250 },
+      )
+      const submits = await harness.paneEval<string | null>(`sessionStorage.getItem('catalogueSubmits')`)
+      expect(submits).toBe('2')
 
       const transcript = await feedText(harness)
       expect(transcript).not.toContain('payments are never submitted')
@@ -241,9 +249,9 @@ describe('risk gate e2e', () => {
     }
   })
 
-  it('still refuses a text field named card_number with no autocomplete, and its form\'s submit (#237)', async () => {
+  it('still refuses a Payment Field known only by its name card_number, and its form\'s submit (#237)', async () => {
     // The word-start anchor keeps card_number a Payment Field: [6] is the
-    // guard form's card_number input on /catalogue-search, [7] its Pay button.
+    // second form's card_number input on /catalogue-search, [7] its Pay button.
     // The gate refuses a type into a Payment Field as a fill before it looks
     // at Enter, so the submit refusal is proven by clicking Pay.
     const script: AssistantTurn[] = [
