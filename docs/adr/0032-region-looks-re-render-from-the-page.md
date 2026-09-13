@@ -1,5 +1,14 @@
 # ADR 0032: Region Looks re-render from the page, not from the screenshot
 
+> **One decision superseded by [ADR 0046](0046-a-region-look-that-names-a-place-runs-and-an-argument-refusal-is-not-a-vision-attempt.md).**
+> A region over a quarter of the viewport is no longer refused: it is clipped
+> to the viewport and shrunk uniformly around its centre to a quarter, and the
+> Look runs with the clamp named in its bracketed line. The consequence that a
+> refused region still spends the Look is retired with it — argument refusals
+> now run ahead of the Vision Budget charge. Everything else here stands: the
+> compositor re-render, the percentage grammar, zoom decided from the area,
+> one Look, the named magnification.
+
 ## Status
 
 Accepted

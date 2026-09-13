@@ -1,5 +1,14 @@
 # ADR 0041: A failed check is spent until something eligible can answer it
 
+> **Refined by [ADR 0046](0046-a-region-look-that-names-a-place-runs-and-an-argument-refusal-is-not-a-vision-attempt.md).**
+> "Only a check that was actually asked can spend a route" held for every gate
+> ahead of execution but not for a refusal a tool threw while reading its own
+> arguments: `look`'s region rule ran inside execute, so the round counted the
+> call as attempted and the rail spent the vision route on our sentence (seven
+> times in the Baseline, nine follow-on refusals). A call is attempted once it
+> has been admitted and executed; a tool's argument admission now runs ahead of
+> the Vision Budget charge and the attempted mark.
+
 ## Status
 
 Accepted on 2026-09-07, implemented in #212. Implements the Reliable Search
