@@ -7,7 +7,10 @@ Accepted on 2026-09-13 for #238, grilled from the Round Audit (#234, ADR
 the search signature (#82), the nudge and refusal tiers (#74), and the
 threshold pinned by the failed-run-47 replay are unchanged. The Round Audit's
 replay of the rail's rule changes with it, and the audit's count of a loop
-gains its head.
+gains its head. Note of 2026-09-14 (#239, ADR 0050): the loss accepted below
+— a guessed-URL navigate that lands on a 404 still resets the streak — is
+closed. A Not-found Landing is recognised by status and title, and the rail
+treats it as inspection: observed, never resetting.
 
 ## Context
 

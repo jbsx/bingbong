@@ -271,7 +271,9 @@ yet observed it is neutral: new material, so not a no-Progress action, but not
 Progress either, so it resets no accounting. A repeat by an Observation
 Producer that already observed this state is a no-Progress action. So is a
 rejected Evidence Checkpoint, counted once per Tool Round: the round's sibling
-calls were made before the model could read the first rejection. For a loop
+calls were made before the model could read the first rejection. A Not-found
+Landing is neutral too: the settled page moved, but to a page that carries
+nothing, so it is not Progress and it resets no accounting. For a loop
 whose catalog holds no checkpoint or state-change tool, Progress is therefore
 the page moving and nothing else; the neutral first observation is what lets it
 study one page without an Approach exhausting on the spot.
@@ -585,8 +587,9 @@ _Avoid_: Memory Compaction, compact command
 **Search Loop**:
 A run flailing blind — consecutive searches rewording one Search Intent.
 Inspection between searches does not break it: a page read, a Look, or a
-scroll looks at what the search returned and is not escape. Only escape
-breaks it — opening a result, or any other successful tool call. That rule is
+scroll looks at what the search returned and is not escape; neither is a
+Not-found Landing, a navigate that settled on nothing. Only escape breaks it —
+opening a result, or any other successful tool call. That rule is
 this rail's own and independent of Progress: a first page read of a search
 result page is neutral to the Approach accounting, and still no escape. One
 search observation is the visible search signature: a navigate to a
@@ -935,6 +938,28 @@ _Avoid_: proxy, cache, clone
 **Consent Dialog**:
 A cookie/consent wall auto-dismissed on read, privacy-preferring controls
 first.
+
+**Not-found Page**:
+A page whose server or title says the address names nothing — a 404 or 410
+answer, or a title that says the page was not found. It is not a Blocker:
+there is no content behind it to reach, and no Escalation clears it.
+_Avoid_: 404, dead link, broken URL, soft 404, error page
+
+**Not-found Landing**:
+A browser action settling on a Not-found Page. Its Action Outcome says so, as
+a fact about the page, on whatever action landed there; it is neutral to
+Progress; and it is not escape from a Search Loop. Only a Composed Address
+landing there spends the site's allowance.
+_Avoid_: 404 hit, failed navigate, bad guess
+
+**Composed Address**:
+A URL the model navigates to that it was not shown this Run — not an href in a
+result it read, not a page the Run landed on, not a source in Session
+Evidence. An Offered Address is any of those three. A site allows one
+Not-found Landing by a Composed Address per Run; after it, Composed Addresses
+to that site are refused and searches and Offered Addresses stay open. A site
+is a registrable domain, so jpl.nasa.gov and science.nasa.gov are one site.
+_Avoid_: guessed URL, made-up URL, typed URL, direct URL
 
 **Blocker**:
 Anything between the agent and page content: Consent Dialogs, CAPTCHAs,
