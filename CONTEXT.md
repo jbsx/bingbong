@@ -857,9 +857,24 @@ the model did not see in full names an element only if it still is that
 element, otherwise the action is refused.
 _Avoid_: selector, element id, index
 
+**Page Preview**:
+The opening stretch of a page's text, capped, that an Action Outcome carries so
+the model can orient and choose without reading. It is not the page: a preview
+that was cut says how much of the page it shows, and the rest is reached by a
+Page Read, never by scrolling it into view.
+_Avoid_: digest, page text, snippet
+
+**Page Read**:
+The whole text of a page as `read_page` returns it — headings, paragraphs,
+list items, table rows, pre blocks — from the top, in numbered parts when it
+exceeds one result. Reading a page is one Page Read, or one per part, never a
+sequence of scrolls; each part of an unchanged page is its own first
+observation.
+_Avoid_: full read, page dump, read the whole page by scrolling
+
 **New In View**:
 What a scroll's Action Outcome reports: the refs and page text that entered the
-viewport, formatted and capped as a page read formats and caps them. A scroll
+viewport, formatted and capped as a Page Preview is. A scroll
 that moved the window without bringing anything in answers End of Page instead.
 _Avoid_: scroll delta, diff, what changed
 
