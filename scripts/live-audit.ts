@@ -739,7 +739,8 @@ function main(): void {
         const { mechanical } = attempt
         process.stdout.write(
           `${output.audit.provenance.setId} ${mechanical.attemptId}: ${mechanical.orchestratorRounds} rounds, ${mechanical.toolRoundsUsed}/${mechanical.toolRoundBudget ?? '?'} Tool Rounds, ` +
-            `${ROUND_KINDS.map((kind) => `${kind.replace(/_/g, ' ')} ${mechanical.counts[kind]}`).join(', ')}; digest ${mechanical.digestHash.slice(0, 19)}…\n`,
+            `${ROUND_KINDS.map((kind) => `${kind.replace(/_/g, ' ')} ${mechanical.counts[kind]}`).join(', ')}; ` +
+            `${mechanical.mechanicalSearchRounds} Search Loop round(s) by the streak rule${mechanical.searchLoopHeads.length > 0 ? ` (heads ${mechanical.searchLoopHeads.join(', ')})` : ''}; digest ${mechanical.digestHash.slice(0, 19)}…\n`,
         )
       }
     }

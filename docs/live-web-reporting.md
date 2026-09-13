@@ -734,11 +734,16 @@ rung (#215, skipped under a reasoning override), and the last round replying
 with no tool call under a known Finalization Cause. Progress is read from the
 result texts the app wrote — the navigated line and page header, the page
 signature, `end of page`, the no-progress Notice — and the search streak is the
-Search Loop rail's own rule re-run over the trace for `navigate` searches; a
+Search Loop rail's own rule, imported from `searchLoopRule.ts` rather than
+copied (ADR 0048): searches chain by Search Intent, and a page read, a Look or
+a scroll between them is inspection that never resets the streak. It is re-run
+over the trace for `navigate` searches; a
 query typed into a page's search box is a search the rail recognises from the
 element's facts, which the trace does not keep, so the digest shows the rail's
 own `search_loop_nudge` Notice where it fired and the reviewer judges the
-rest. Rounds are numbered by position in the digest, with the trace's round
+rest. A loop the streak rule catches counts its head too — the round whose
+search started the streak — as `searchLoopHeads` beside the digest's rounds,
+never in them, so counting it re-keys no cached judgement. Rounds are numbered by position in the digest, with the trace's round
 and attempt beside them, because a retried round repeats its number. The same trace classifies
 identically on every run, and every attempt carries a `digestHash` over the
 digest the reviewer was shown; `audit.test.ts` pins the copied budgets, rungs and

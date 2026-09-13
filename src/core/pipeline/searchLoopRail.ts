@@ -1,6 +1,7 @@
 import type { ToolCall, ToolResultOutcome } from '../ports/llm'
 import type { SnapshotRef } from '../browser/snapshot'
 import { isSearchInputRef, refNumberOf, searchQueryFromUrl, similarQueries, typedQuery } from './progressFingerprints'
+import { isSearchInspection } from './searchLoopRule'
 import { reportFault } from '../trace/fault'
 
 // Issue #74, run rails: the 80-round flail's signature is a blind search
@@ -38,6 +39,14 @@ import { reportFault } from '../trace/fault'
 // page-state fingerprints the no-progress rails (#126) will consume. This
 // rail's behavior is unchanged by the move — same signatures, same
 // thresholds, same refusal set.
+//
+// #238 (ADR 0048) changed two things the rail compares. Similarity is over
+// Search Intent — the terms with scope (a search operator and its argument,
+// an uppercase connective, a bare hostname) removed — so a site: search on an
+// engine and the same terms typed into the site's own box are one intent.
+// And a Look or a scroll joins read_page as inspection: each looks at what
+// the search returned without leaving it, so none resets the streak. Both
+// rules live in searchLoopRule.ts, which the Round Audit replays.
 
 /** Consecutive similar searches before the advisory nudge rides the result. */
 export const SEARCH_LOOP_NUDGE_AFTER = 3
@@ -81,7 +90,7 @@ export interface SearchLoopRail {
 const NUDGE =
   'The last searches reword one intent (a q= navigate or a search box query) — more searches will not surface new results. Change strategy: open a promising result by its href, read the page (read_page), or answer from what you already have. If you cannot proceed, say so and ask_user.'
 
-const REFUSAL = `Search loop limit (${SEARCH_LOOP_REFUSE_AFTER} consecutive similar searches — q= navigate or typed search box query) reached for this run — the queries repeat one intent. Change strategy or ask_user; only escaping clears the limit (open a result by its href or a click, or any successful tool call other than read_page).`
+const REFUSAL = `Search loop limit (${SEARCH_LOOP_REFUSE_AFTER} consecutive similar searches — q= navigate or typed search box query) reached for this run — the queries repeat one intent. Change strategy or ask_user; only escaping clears the limit (open a result by its href or a click, or any successful tool call other than read_page, look or scroll).`
 
 /**
  * What a call is to the rail: a search observation with its query, a read
@@ -134,9 +143,9 @@ export function createSearchLoopRail(deps: SearchLoopRailDeps = {}): SearchLoopR
   }
 
   async function classify(call: ToolCall): Promise<Classification> {
-    // Reads never reset the streak (run 53): reading between reworded
-    // searches is inspection, not escape.
-    if (call.name === 'read_page') return { kind: 'read' }
+    // Inspection never resets the streak (run 53, ADR 0048): reading,
+    // looking at or scrolling a page between reworded searches is not escape.
+    if (isSearchInspection(call.name)) return { kind: 'read' }
     if (call.name === 'navigate') {
       const url = call.args.url
       if (typeof url !== 'string' || url.trim() === '') return { kind: 'other' }

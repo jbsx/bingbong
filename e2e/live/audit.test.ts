@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import { FINALIZATION_REASONING_EFFORT as SOURCE_FINALIZATION_EFFORT, TIER_REASONING_EFFORT as SOURCE_TIER_EFFORT, TIER_TOOL_ROUND_BUDGETS as SOURCE_BUDGETS, budgetWarningMessage, finalizeInstruction, notExecuted } from '../../src/core/pipeline/effortEpoch'
 import { SCROLL_END_OF_PAGE } from '../../src/core/browser/scrollDelta'
+import { similarQueries as ruleSimilarQueries } from '../../src/core/pipeline/searchLoopRule'
 import type { PerfSpanRecord } from '../../src/core/perf/perfTracer'
 import type { TraceRecord } from '../../src/core/trace/runTrace'
 import {
@@ -289,7 +290,8 @@ describe('the mechanical classification', () => {
     expect(mechanical.shares.finalization).toBe(Math.round((2 / 15) * 1000) / 1000)
     expect(mechanical.acceptedCheckpoints).toBe(1)
     expect(mechanical.rejectedCheckpoints).toBe(1)
-    expect(mechanical.mechanicalSearchRounds).toBe(1)
+    // Round 3 rewords round 2, and round 2 is that loop's head (ADR 0048).
+    expect(mechanical.mechanicalSearchRounds).toBe(2)
     expect(mechanical.lastBudgetNotice).toEqual({ remaining: 4, budget: 24 })
     expect(mechanical.subagent).toEqual({ rounds: 2, agents: 1, byStop: { budget_exhausted: 1 } })
     expect(mechanical.checksNotReached).toEqual(['fact-02'])
@@ -398,6 +400,51 @@ describe('the mechanical classification', () => {
     expect(searchQueryOf(SPEC_URL)).toBeNull()
     expect(similarQueries('harrison longitude watch catalogue', 'harrison longitude watch catalogue id')).toBe(true)
     expect(similarQueries('harrison longitude watch', 'voyager interstellar crossing')).toBe(false)
+  })
+
+  it('replays the Search Loop rail’s own rule, not a copy of it (#238, ADR 0048)', () => {
+    expect(similarQueries).toBe(ruleSimilarQueries)
+    const source = readFileSync(fileURLToPath(new URL('./audit.ts', import.meta.url)), 'utf8')
+    expect(source).not.toMatch(/function (queryTokens|similarQueries)\b/)
+  })
+
+  it('keeps the replayed streak across a scroll or a Look between searches, as the rail does', () => {
+    const inspections = [
+      { name: 'scroll', args: { direction: 'down' }, result: 'scrolled down: x=0 y=577\nnew in view: [4] link "Result"' },
+      { name: 'look', args: { question: 'which result names the watch?' }, result: 'The second result names the watch.' },
+    ]
+    for (const inspection of inspections) {
+      const rounds: RoundSpec[] = [
+        { round: 1, at: 1_000, calls: [{ name: 'navigate', args: { url: SEARCH_A }, result: PAGE('search', SEARCH_A, 'bbbb2222') }] },
+        { round: 2, at: 2_000, calls: [inspection] },
+        { round: 3, at: 3_000, calls: [{ name: 'navigate', args: { url: SEARCH_B }, result: PAGE('search', SEARCH_B, 'cccc3333') }] },
+      ]
+      const { rounds: classified } = classifyAttempt(inputOf({ traceRecords: traceOf(rounds, EXTRA) }))
+      expect(classified[2]!.calls[0]!.search, inspection.name).toEqual({ query: 'harrison longitude watch catalogue id', streak: 2 })
+      expect(classified[2]!.reason, inspection.name).toContain('rewords the one before it (streak 2)')
+    }
+  })
+
+  it('counts a loop’s head by the streak rule without touching its kind, its reason or the digest (Decision 8)', () => {
+    const mechanical = classifyAttempt(inputOf())
+    // The hash the fixture had before the head was counted: no cache re-key.
+    expect(mechanical.digestHash).toBe('sha256:dca3c3c8e737a484c75e1c6fd7565b4eadbf1d8f208f1bf03f7d113b96021a6f')
+    // Round 2's search starts the streak round 3's continues.
+    expect(mechanical.searchLoopHeads).toEqual([2])
+    expect(mechanical.mechanicalSearchRounds).toBe(2)
+    expect(mechanical.rounds[1]!.kind).toBe('acquisition_with_progress')
+    expect(mechanical.rounds[1]!.reason).not.toContain('rewords')
+    expect(formatAuditSet(buildAuditSet(provenanceOf(), [attemptOf('initial', judgement)], []))).toMatch(/\n\| 2 \| [^\n]*loop head by the streak rule[^\n]*\|\n/)
+
+    // A streak that never reaches 2 has no head to count.
+    const broken: RoundSpec[] = [
+      { round: 1, at: 1_000, calls: [{ name: 'navigate', args: { url: SEARCH_A }, result: PAGE('search', SEARCH_A, 'bbbb2222') }] },
+      { round: 2, at: 2_000, calls: [{ name: 'navigate', args: { url: OTHER_URL }, result: PAGE('Other', OTHER_URL, 'dddd4444') }] },
+      { round: 3, at: 3_000, calls: [{ name: 'navigate', args: { url: SEARCH_B }, result: PAGE('search', SEARCH_B, 'cccc3333') }] },
+    ]
+    const unbroken = classifyAttempt(inputOf({ traceRecords: traceOf(broken, EXTRA) }))
+    expect(unbroken.searchLoopHeads).toEqual([])
+    expect(unbroken.mechanicalSearchRounds).toBe(0)
   })
 })
 

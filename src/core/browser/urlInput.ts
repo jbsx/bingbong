@@ -8,6 +8,11 @@ function searchUrl(query: string): string {
   return `https://duckduckgo.com/?q=${encodeURIComponent(query)}`
 }
 
+/** Typed text the browser reads as a domain rather than search terms — the one test for "this is a host" (ADR 0048). */
+export function looksLikeDomain(text: string): boolean {
+  return DOMAIN_PATTERN.test(text)
+}
+
 export function normalizeUrlInput(raw: string): string | null {
   const input = raw.trim()
   if (!input) return null
@@ -21,7 +26,7 @@ export function normalizeUrlInput(raw: string): string | null {
     return WEB_SCHEMES.has(scheme[1].toLowerCase()) ? input : searchUrl(input)
   }
 
-  if (DOMAIN_PATTERN.test(input)) {
+  if (looksLikeDomain(input)) {
     return `https://${input}`
   }
 

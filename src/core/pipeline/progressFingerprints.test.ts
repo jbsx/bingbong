@@ -167,6 +167,14 @@ describe('actionFingerprint (#125 AC1: equivalent targeted actions normalize con
     expect(actionFingerprint(call('navigate', { url: 'https://www.google.com/search?q=weather+tokyo' }))).not.toBe(typed)
   })
 
+  it('folds a search navigation’s scope: a site: swap over the same terms is the same navigate (#238, ADR 0048)', () => {
+    const terms = actionFingerprint(call('navigate', { url: 'harrison longitude watch' }))
+    expect(actionFingerprint(call('navigate', { url: 'site:a.com harrison longitude watch' }))).toBe(terms)
+    expect(actionFingerprint(call('navigate', { url: 'https://www.bing.com/search?q=site%3Ab.com+harrison+longitude+watch' }))).toBe(terms)
+    expect(actionFingerprint(call('navigate', { url: 'site:a.com voyager interstellar' }))).not.toBe(terms)
+    expect(queryIntentFingerprint('site:rmg.co.uk')).not.toBeNull()
+  })
+
   it('normalizes typed text case and whitespace but preserves order and punctuation — form text is not a search query', () => {
     expect(actionFingerprint(call('type', { ref: 7, text: 'John Smith' }))).toBe(
       actionFingerprint(call('type', { ref: 7, text: '  john smith ' })),

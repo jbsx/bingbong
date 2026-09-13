@@ -5,6 +5,7 @@ import { fnv1a32 } from '../browser/snapshot'
 import { normalizeUrlInput } from '../browser/urlInput'
 import { coercedNumber } from './tool'
 import { lookRegionFingerprint } from './lookRegion'
+import { queryTokens, similarQueries } from './searchLoopRule'
 import { reportFault } from '../trace/fault'
 
 // Issue #125, ADR 0027 prefactor: the search-loop signatures (#74/#82/#83)
@@ -25,52 +26,26 @@ import { reportFault } from '../trace/fault'
 // independent Progress merely because its URL differs. Pagination stays
 // distinct at every level — turning the page is real progression.
 
-/** Token-Jaccard similarity at or above which two queries share one intent. */
-const SIMILARITY_THRESHOLD = 0.45
-
 // ---------------------------------------------------------------------------
 // Query intent
 // ---------------------------------------------------------------------------
 
-/** Lowercase, punctuation-free tokens with a light plural fold (keyboard ≈ keyboards). */
-export function queryTokens(query: string): Set<string> {
-  return new Set(
-    query
-      .toLowerCase()
-      .replace(/[^a-z0-9\s]/g, ' ')
-      .split(/\s+/)
-      .filter((token) => token !== '')
-      .map((token) => (token.length > 3 && token.endsWith('s') ? token.slice(0, -1) : token)),
-  )
-}
+// The Search Intent tokenizer and same-intent test live in searchLoopRule.ts
+// (#238, ADR 0048), loadable by the Round Audit's replay; one tokenizer
+// serves the rail and this fingerprint alike.
+export { queryTokens, similarQueries }
 
 /**
- * One query's intent as a canonical fingerprint: its normalized tokens,
+ * One query's intent as a canonical fingerprint: its Search Intent tokens,
  * sorted. Equivalent queries — case, punctuation, word order, light
- * plurals — normalize to one string. Empty-after-normalization queries
- * have no intent to fingerprint and return null.
+ * plurals, scope (`site:`, a bare hostname) — normalize to one string.
+ * Empty-after-normalization queries have no intent to fingerprint and
+ * return null.
  */
 export function queryIntentFingerprint(query: string): string | null {
   const tokens = queryTokens(query)
   if (tokens.size === 0) return null
   return [...tokens].sort().join(' ')
-}
-
-/**
- * Pure same-intent test: token-Jaccard similarity of the two normalized
- * queries at or above the threshold. Empty queries never match. (The
- * search-loop rail's chaining rule since #74; the threshold is pinned by
- * the failed-run-47 replay.)
- */
-export function similarQueries(a: string, b: string): boolean {
-  const left = queryTokens(a)
-  const right = queryTokens(b)
-  if (left.size === 0 || right.size === 0) return false
-  let shared = 0
-  for (const token of left) {
-    if (right.has(token)) shared += 1
-  }
-  return shared / (left.size + right.size - shared) >= SIMILARITY_THRESHOLD
 }
 
 /** Typed text as a query: the trailing newline submits the search and is not part of it; blank text has nothing to chain on. */

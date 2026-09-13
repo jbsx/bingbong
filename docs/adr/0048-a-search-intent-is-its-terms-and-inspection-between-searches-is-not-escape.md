@@ -136,3 +136,31 @@ navigate-only until the trace carries the typed half.
   by scope alone will meet the no-progress Notice sooner.
 - `"Harrison"` after `Harrison longitude watch` still starts a new streak.
   Recorded here so the next audit does not rediscover it.
+
+## Implementation notes
+
+- The rule lives in `src/core/pipeline/searchLoopRule.ts`: `queryTokens`,
+  `similarQueries` and `isSearchInspection`. It is its own module because the
+  audit runs under plain Node's type stripping, which cannot load
+  `progressFingerprints.ts`'s extensionless import graph; the rule imports
+  only `urlInput.ts`, with its extension. `progressFingerprints.ts` and the
+  rail re-export from it, and `audit.ts` re-exports the rule's
+  `similarQueries` so its test can pin that they are one function.
+- The hostname test is `looksLikeDomain`, which `normalizeUrlInput` now calls
+  too. It is the normalizer's own test, so a decimal term (`3.5`) folds as
+  scope like a hostname does. Accepted with the rule: none of the 23 searches
+  the audit replays over the Baseline carries one, and a query of only such
+  tokens keeps them.
+- An operator's argument is the rest of its token, the whole quoted phrase
+  when the token opens a quote (`intitle:"longitude watch"`), or the next
+  token when the operator stands alone (`site: rmg.co.uk`). A leading `-`
+  does not hide an operator (`-site:ebay.com` is scope).
+- The head count is `searchLoopHeads` on an attempt's mechanical record,
+  beside `rounds`, and `mechanicalSearchRounds` counts the union of the
+  rewording rounds and the heads. A round's table row in the report carries
+  `loop head by the streak rule`.
+- Replayed over the three Baseline passes before #243: 6 rounds by the
+  streak rule against the reviewer's 10 — Voyager baseline-1 rounds 2, 3, 4
+  and watch baseline-3 rounds 8, 9, 10. Of the 18 digests only watch
+  baseline-3's changed: the fold made its round 9 a rewording. The head count
+  changed none, so Voyager baseline-1's cached judgement still stands.

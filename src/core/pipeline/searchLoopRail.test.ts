@@ -363,6 +363,56 @@ describe('createSearchLoopRail GUI search signature (#82)', () => {
   })
 })
 
+describe('createSearchLoopRail — inspection is not escape, one Search Intent across scope (#238, ADR 0048)', () => {
+  it('a scroll or a Look between searches continues the streak', async () => {
+    for (const inspection of ['scroll', 'look']) {
+      const rail = createSearchLoopRail(searchBoxAt)
+      await rail.observe(search('harrison longitude watch'), ok)
+      await rail.observe(other(inspection), ok)
+      await rail.observe(search('harrison longitude watch catalogue'), ok)
+      await rail.observe(other(inspection), ok)
+      expect(await rail.observe(search('harrison longitude watch collection'), ok), inspection).toMatch(/ask_user/)
+    }
+  })
+
+  it('a successful click or a navigate to a plain URL between searches resets it', async () => {
+    for (const escape of [other('click'), nav('https://www.rmg.co.uk/collections/objects/rmgc-object-79142')]) {
+      const rail = createSearchLoopRail(searchBoxAt)
+      await rail.observe(search('harrison longitude watch'), ok)
+      await rail.observe(search('harrison longitude watch catalogue'), ok)
+      await rail.observe(escape, ok)
+      expect(await rail.observe(search('harrison longitude watch collection'), ok), escape.name).toBeNull()
+    }
+  })
+
+  it('a refused scroll changes nothing', async () => {
+    const rail = createSearchLoopRail(searchBoxAt)
+    await rail.observe(search('harrison longitude watch'), ok)
+    await rail.observe(search('harrison longitude watch catalogue'), ok)
+    await rail.observe(other('scroll'), fail)
+    expect(await rail.observe(search('harrison longitude watch collection'), ok)).toMatch(/ask_user/)
+  })
+
+  it('chains a site: search on an engine to the same terms typed into the site’s own box', async () => {
+    const rail = createSearchLoopRail(searchBoxAt)
+    await rail.observe(nav('https://www.bing.com/search?q=site%3Armg.co.uk+collections+Harrison+longitude+watch'), ok)
+    await rail.observe(type(7, 'Harrison longitude watch\n'), ok)
+    expect(await rail.observe(nav('https://duckduckgo.com/?q=science.rmg.co.uk+Harrison+longitude+watch+H4'), ok)).toMatch(/ask_user/)
+  })
+
+  it('a search that is nothing but scope is still a search, and repeating it continues the streak (Decision 2)', async () => {
+    const rail = createSearchLoopRail(searchBoxAt)
+    await rail.observe(nav('https://www.bing.com/search?q=site%3Armg.co.uk'), ok)
+    await rail.observe(type(7, 'site:rmg.co.uk\n'), ok)
+    expect(await rail.observe(nav('https://duckduckgo.com/?q=site%3Armg.co.uk'), ok)).toMatch(/ask_user/)
+
+    const hostOnly = createSearchLoopRail(searchBoxAt)
+    await hostOnly.observe(type(7, 'eurostar.com\n'), ok)
+    await hostOnly.observe(type(7, 'eurostar.com\n'), ok)
+    expect(await hostOnly.observe(type(7, 'eurostar.com\n'), ok)).toMatch(/ask_user/)
+  })
+})
+
 describe('createSearchLoopRail replay of failed run 47 (#82/#83)', () => {
   // The actual 80-call sequence from history.db run 47 (the run that
   // motived #74 and whose navigates-to-search-URLs defeated the old rail):

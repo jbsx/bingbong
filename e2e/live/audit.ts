@@ -40,6 +40,7 @@ import { parseBlockerMarker } from '../../src/core/browser/blockerNudge.ts'
 import type { PerfSpanRecord } from '../../src/core/perf/perfTracer'
 import type { PipelineEvent } from '../../src/core/pipeline/events'
 import type { EffortTier } from '../../src/core/pipeline/runPlan'
+import { isSearchInspection, similarQueries } from '../../src/core/pipeline/searchLoopRule.ts'
 import type { TraceRecord } from '../../src/core/trace/runTrace'
 import type { Validation } from './artifacts.ts'
 import type { LiveGradeEntry, LiveKeyTask } from './grades.ts'
@@ -243,7 +244,15 @@ export interface AuditMechanical {
   readonly acceptedCheckpoints: number
   readonly rejectedCheckpoints: number
   readonly inheritedRounds: number
+  /** Search Loop rounds by the streak rule: the rounds whose search rewords the one before it, and the heads of those loops. */
   readonly mechanicalSearchRounds: number
+  /**
+   * The rounds whose search started a streak that went on to reach 2 (ADR
+   * 0048): a loop's head is a Search Loop round too. Kept beside the rounds,
+   * never in them, so counting it changes no digest and re-keys no cached
+   * judgement.
+   */
+  readonly searchLoopHeads: readonly number[]
   readonly walledRounds: number
   readonly latency: { readonly llmMs: number | null; readonly joined: number; readonly unjoined: number }
   readonly usage: { readonly promptTokens: number; readonly completionTokens: number; readonly roundsWithUsage: number }
@@ -460,27 +469,8 @@ export function searchQueryOf(raw: string): string | null {
   return input
 }
 
-/** Lowercase, punctuation-free tokens with a light plural fold — the Search Loop rail's own tokenizer. */
-export function queryTokens(query: string): Set<string> {
-  return new Set(
-    query
-      .toLowerCase()
-      .replace(/[^a-z0-9\s]/g, ' ')
-      .split(/\s+/)
-      .filter((token) => token !== '')
-      .map((token) => (token.length > 3 && token.endsWith('s') ? token.slice(0, -1) : token)),
-  )
-}
-
-/** Token-Jaccard at or above the rail's 0.45: two queries reword one intent. */
-export function similarQueries(a: string, b: string): boolean {
-  const left = queryTokens(a)
-  const right = queryTokens(b)
-  if (left.size === 0 || right.size === 0) return false
-  let shared = 0
-  for (const token of left) if (right.has(token)) shared += 1
-  return shared / (left.size + right.size - shared) >= 0.45
-}
+/** The Search Loop rail's same-intent test, the rail's own code (ADR 0048): a replay of a rule that does not run the rule's code is not a replay. */
+export { similarQueries }
 
 const NAVIGATED_LINE = /^navigated: url=(\S+)(?: title="(.*)")?$/m
 const PAGE_HEADER_LINE = /^# (.*) — (\S+)$/m
@@ -631,8 +621,11 @@ function classifyCall(
     notices,
   }
 
-  // The search streak, as the rail keeps it: reads observe without
-  // resetting, a successful escape resets, a refused call changes nothing.
+  // The search streak, as the rail keeps it: inspection (a page read, a Look,
+  // a scroll) observes without resetting, a successful escape resets, a
+  // refused call changes nothing. A typed search cannot be told from the
+  // trace (it keeps no element facts), so a successful type resets here
+  // where the live rail may have counted it (#243).
   let search: AuditCall['search'] = null
   if (call.name === 'navigate' && !refused) {
     const query = searchQueryOf(isString(call.args.url) ? call.args.url : '')
@@ -647,7 +640,7 @@ function classifyCall(
       state.anchor = null
       state.streak = 0
     }
-  } else if (call.name !== 'read_page' && call.name !== 'navigate' && !refused && result !== undefined) {
+  } else if (!isSearchInspection(call.name) && call.name !== 'navigate' && !refused && result !== undefined) {
     state.lastQuery = null
     state.anchor = null
     state.streak = 0
@@ -965,6 +958,20 @@ export function classifyAttempt(input: AuditTraceInput): AuditMechanical {
         ? input.task.checks.map((check) => check.checkId)
         : input.grade.checks.filter((check) => !check.satisfied).map((check) => check.checkId)
 
+  // Pass three, after the digest's rounds are built: the heads of the loops
+  // the streak rule caught. A search at streak 2 always follows the streak-1
+  // search that started it, with no search between.
+  const heads = new Set<number>()
+  let streakHead: number | null = null
+  for (const round of rounds) {
+    for (const call of round.calls) {
+      if (call.search === null) continue
+      if (call.search.streak === 1) streakHead = round.round
+      else if (call.search.streak === SEARCH_STREAK_WITHOUT_PROGRESS && streakHead !== null) heads.add(streakHead)
+    }
+  }
+  const rewordingRounds = rounds.filter((round) => round.kind === 'acquisition_without_progress' && round.reason.includes('rewords the one before it')).map((round) => round.round)
+
   const disposition: AuditDisposition =
     attempt.accepted.status !== 'observed' ? 'acceptance_unconfirmed' : attempt.finalAnswer.status === 'observed' ? 'answered' : 'no_answer'
 
@@ -994,7 +1001,8 @@ export function classifyAttempt(input: AuditTraceInput): AuditMechanical {
     acceptedCheckpoints: rounds.reduce((total, round) => total + round.tags.acceptedCheckpoints, 0),
     rejectedCheckpoints: rounds.reduce((total, round) => total + round.tags.rejectedCheckpoints, 0),
     inheritedRounds: rounds.filter((round) => round.tags.inherited).length,
-    mechanicalSearchRounds: rounds.filter((round) => round.kind === 'acquisition_without_progress' && round.reason.includes('rewords the one before it')).length,
+    mechanicalSearchRounds: new Set([...rewordingRounds, ...heads]).size,
+    searchLoopHeads: [...heads].sort((left, right) => left - right),
     walledRounds: rounds.filter((round) => round.tags.wall).length,
     latency: {
       llmMs: joined.length === 0 ? null : joined.reduce((total, round) => total + round.latencyMs!, 0),
@@ -1594,7 +1602,7 @@ function attemptSection(attempt: AuditAttempt): string[] {
     const inLoop = judgement?.searchLoops.some((loop) => loop.rounds.includes(round.round)) ?? false
     const tools = round.calls.map((call) => `${call.name}${call.refused ? ' ✗' : ''}`).join(', ') || '—'
     const page = round.calls.map((call) => call.url).find((url) => url !== null) ?? '—'
-    const markers = [round.tags.inherited ? 'inherited' : '', round.tags.wall ? 'walled' : '', offKey ? 'off-key' : '', inLoop ? 'search loop' : '', round.tags.rejectedCheckpoints > 0 ? `${round.tags.rejectedCheckpoints} rejected checkpoint` : ''].filter((marker) => marker !== '')
+    const markers = [round.tags.inherited ? 'inherited' : '', round.tags.wall ? 'walled' : '', offKey ? 'off-key' : '', inLoop ? 'search loop' : '', mechanical.searchLoopHeads.includes(round.round) ? 'loop head by the streak rule' : '', round.tags.rejectedCheckpoints > 0 ? `${round.tags.rejectedCheckpoints} rejected checkpoint` : ''].filter((marker) => marker !== '')
     const trace = round.llmRound !== round.round || round.attempt > 1 ? ` (trace ${round.llmRound}.${round.attempt})` : ''
     lines.push(
       `| ${round.round}${trace} | ${KIND_LABELS[round.kind]}${overrule ? ` → ${KIND_LABELS[overrule.kind]}` : ''} | ${tools} | ${head(page, 80)} | ${round.latencyMs ?? '—'} | ${round.reason}${markers.length > 0 ? ` [${markers.join(', ')}]` : ''} |`,
