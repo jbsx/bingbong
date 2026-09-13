@@ -1069,6 +1069,24 @@ human or model, read together as the reference measurement. Passes that
 differ on any of those are not a Baseline together, and nothing joins them.
 _Avoid_: benchmark, eval, comparison
 
+**Round Audit**:
+The classification of every orchestrator Tool Round of a captured attempt by
+the kind of work it did — Acquisition with or without Progress, Collection,
+Bookkeeping, a failed round, Finalization — with a verdict on why the attempt
+ended as it did. The kinds code can check are assigned from the Run Trace and
+never vary between readings; the judgements — a Search Loop, an Off-key
+Acquisition, an early stop, the verdict — belong to a reviewer that is not the
+measured model. It names check ids and pages, never Grading Key text, and it
+counts across attempts without judging across them.
+_Avoid_: waste audit, round classification, trace review
+
+**Off-key**:
+An Acquisition on a page that can carry none of the Grading Key's required
+facts for the task. A judgement laid over a Round Audit's Acquisition rounds,
+never a kind of its own; it separates a budget spent on a real Hunt from one
+spent wandering.
+_Avoid_: off-topic, irrelevant page, wasted round
+
 ### Hardware
 
 **Kiosk**:
