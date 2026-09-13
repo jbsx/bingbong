@@ -12,13 +12,16 @@ pnpm live:keys --out=<key-manifest.json>
 pnpm live:report --capture=<capture-set.json> --keys=<key-manifest.json> --grades=<reviewed-grades.json> \
                  [--format=markdown|json] [--pricing=<dated-prices.json>] [--out=<report.md>]
 pnpm live:summary --reports=<a.json>,<b.json>[,…] --out=<summary.md|json> [--format=markdown|json]
+pnpm live:audit --capture=<set.json> [--capture=…] [--model=<id>] [--effort=<level>] [--max-usd=<n>]
 ```
 
 The bench (see [Grading at the bench](#grading-at-the-bench)) opens its own
 pending grades in memory; `pnpm live:report init-grades … --out=<pending-grades.json>`
 still writes a pending file for a reviewer who edits JSON by hand. `live:summary`
 reads the JSON reports of several Passes and writes what they say together
-(see [The cross-pass summary](#the-cross-pass-summary)).
+(see [The cross-pass summary](#the-cross-pass-summary)). `live:audit` reads the
+captures and the grades back and says where each attempt's rounds went (see
+[The Round Audit](#the-round-audit)); like `live:grade`, it is paid and opt-in.
 
 All four are offline. They read files and nothing else: no model, no browser,
 no Electron, no network and no scheduler. `live:keys`, `live:report` and
@@ -48,6 +51,7 @@ an accepted Evidence Checkpoint or a successful tool call to a `pass`.
 | Grading drafts | the Grading Bench, on every change | beside the grades file as `<grades>.drafts.json` — never committed |
 | Compact report | the report command | `e2e/live/reports/` — committed, as markdown and as the JSON the summary reads |
 | Cross-pass summary | `pnpm live:summary`, from the JSON reports of several Passes | `e2e/live/reports/` — committed beside the per-set reports |
+| Round Audit | `pnpm live:audit`, from the captures' Run Traces and perf logs, the grades and a model reviewer | `e2e/live/reports/audit-<setId>.{json,md}` and one aggregate — committed; the per-attempt reviewer cache stays in `e2e/live/artifacts/audit-cache/` |
 
 > `e2e/live/artifacts/` and `e2e/live/private/` are ignored by Git (#224).
 > Raw traces, Browser Profiles and credentials must never be committed —
@@ -680,6 +684,131 @@ The first Baseline is `e2e/live/reports/baseline-2026-09-12.md` (and `.json`),
 over `baseline-{1,2,3}.json`. The pilots are not inputs: they ran on two routes
 under a different reviewer file, and #227 kept them out of baseline evidence.
 
+## The Round Audit
+
+The Baseline says the assistant does not complete these Hunts and that the
+rounds are where the time goes: 11 of 18 attempts ended at the Investigation
+cap of 24 Tool Rounds, and the LLM stage was an order of magnitude larger than
+the tool stage. The summary derives nothing about where the rounds went, by
+design. The **Round Audit** (#234, ADR 0045) is the document that does:
+
+```sh
+pnpm live:audit --capture=e2e/live/artifacts/baseline-1.json \
+                --capture=e2e/live/artifacts/baseline-2.json \
+                --capture=e2e/live/artifacts/baseline-3.json
+#   [--model=claude-opus-5] [--effort=high] [--max-usd=3] [--out-dir=e2e/live/reports]
+#   [--aggregate=audit-aggregate] [--grades=<grades.json>]… [--only=<attemptId>]
+#   [--prompts-dir=<dir>] [--dry-run] [--fresh]
+```
+
+It reads each set's captures, the Run Trace and perf log each capture retained,
+the grades file bound to the set in the private root (or the one `--grades`
+names), and the committed keys; it writes `audit-<setId>.json` and `.md` per
+set and one aggregate across the sets named, all written once, never over.
+
+### The taxonomy
+
+One kind per orchestrator Tool Round, glossary terms only:
+
+| kind | means |
+| --- | --- |
+| Acquisition with Progress | the productive class: the page moved to somewhere the Run had not acquired, a first read or Look of a page state, a scroll that brought material into view, a delegation |
+| Acquisition without Progress | a repeat observation of a state already observed, a navigate to a URL this Run already acquired, a scroll that answered End of Page, a search that rewords the one before it, or a re-acquisition of a page the initial already checkpointed (tagged `inherited`, follow-ups only) |
+| Collection | reading a finished Subagent Report (`agent_results`) |
+| Bookkeeping | `record_evidence`, `record_candidate`, `report_run_plan`; a rejected Evidence Checkpoint is counted beside the round |
+| Failed round | a timeout, an empty or failed reply, a round cut by the deadline, or a round whose every call was refused (a stale ref, a closed tool) |
+| Finalization | the bookkeeping round and the reserved Answer, after the Run stopped acquiring; outside the budget |
+
+**Off-key** — an Acquisition on a page that can carry none of the key's
+required facts for the task — is a judgement laid over Acquisition rounds,
+never a seventh kind, so the kinds stay checkable.
+
+### The division of labour
+
+**Code assigns the mechanical kinds**, deterministically, from the Run Trace
+(`llm_round`, the `pipeline_event` tool calls and results, `evidence_checkpoint`)
+joined to per-round latency from the perf `llm` spans by turn id and stamp, the
+way `trace:ui` joins them. Finalization is read from the app's own marks: the
+Finalize Instruction riding a result, an `allowance` outcome, the Finalization
+rung (#215, skipped under a reasoning override), and the last round replying
+with no tool call under a known Finalization Cause. Progress is read from the
+result texts the app wrote — the navigated line and page header, the page
+signature, `end of page`, the no-progress Notice — and the search streak is the
+Search Loop rail's own rule re-run over the trace. The same trace classifies
+identically on every run, and every attempt carries a `digestHash` over the
+digest the reviewer was shown; `audit.test.ts` pins the copied budgets, rungs and
+marker sentences to the app's constants.
+
+**Code builds a per-round digest**: round number, kind and the rule behind it,
+tool names and bounded arguments, the page each call put in front of the
+assistant, the result head, checkpoint verdict, Notices, tokens, latency, and
+the head of the assistant's reasoning capped at 1,500 characters. A 24-round
+attempt is tens of kilobytes; raw traces never enter a prompt.
+
+**A model that is not the measured one judges** what needs judgement, from the
+digest plus the same key bundle `live:grade` shows, with no tools: Search Loop
+membership, Off-key, "stopped early", and the per-attempt verdict. It may
+overrule a mechanical label with a stated reason, shown in the report, and it
+flags every call a careful human might make the other way; flags ship as
+caveats and never gate the report. The invocation is `live:grade`'s
+(`--strict-mcp-config`, an explicit system prompt, `--tools ''`,
+`--no-session-persistence`, `--max-budget-usd 3`) plus `--effort high`; the
+default reviewer is `claude-opus-5`. Calls run one at a time, one per attempt,
+and each judgement is cached under `e2e/live/artifacts/audit-cache/` keyed by
+attempt, digest hash, model, effort and prompt version, so a refused or failed
+call never redoes the others and a rerun after a mechanical change asks again
+only where the digest changed. A call the model does not answer — a safeguard
+refusal, an API error — is retried once and then left without a judgement,
+with the reason as a caveat.
+
+**The reviewer is not shown the reasoning heads.** Measured on 2026-09-13:
+Opus 5's safeguards refuse a message carrying the measured model's own
+reasoning — whole, cut to 300 characters, relabelled, or either half of the
+rounds' — with `stop_reason: refusal` and zero output tokens, and the same
+prompt without them is answered. The heads stay in the committed JSON for the
+human reader; the reviewer judges from the calls, pages, results and Notices,
+which is what the mechanical labels are read from too.
+
+**The verdict** is from a closed set, primary plus at most one secondary, each
+with a stated reason: `rounds_wasted`, `tier_too_small_or_never_escalated`,
+`budget_too_small_for_the_hunt`, `stopped_early`, `failed_rounds`. No numeric
+threshold is baked in: the script reports the shares, the reviewer chooses and
+cites them. "Budget too small for the Hunt" is an admissible finding — an audit
+that can only find waste is not one.
+
+**Aggregation is arithmetic.** The script counts kinds and verdicts across
+attempts and sets, reported as two populations — the initials and the
+follow-ups — never pooled; the ranked cause list is the primary verdicts
+counted, most counted first. Before counting, the aggregate checks the shared
+provenance the cross-pass summary checks (key version and manifest digest,
+routing, grades reviewer, study, protocol, mode, adblock, overrides, prompt
+versions) plus the audit's own reviewer model, effort and prompt version, and
+refuses sets that differ. Every output says in one line that it counts and
+does not judge.
+
+### What the outputs hold
+
+Per attempt: a kind per orchestrator round with its reason, the counts and
+shares per kind (over the budgeted rounds; Finalization over all rounds), the
+Tool Rounds used against the tier's budget, the Finalization Cause, the grade
+and the check ids the Answer never reached (every check when ungraded), the
+Subagent round count with how each Subagent stopped, the inherited and walled
+rounds, the reviewer's verdict with reasons, its Search Loops, Off-key rounds,
+overrules and flags, and the provenance of the judgement (model served, effort,
+prompt version, digest hash, cost). Per set: the two populations' tables and the
+capture's provenance. The aggregate: the ranked causes, the populations per set
+and summed, and the shared provenance.
+
+They name check ids and URLs only, never key text: the reviewer is told to
+refer to checks by id, every output is checked for any key string or any run of
+eight consecutive words of one before it is written, and `audit.test.ts`
+asserts the same over the committed files. Nothing under `e2e/live/private/`
+appears in them — the grades are read for check ids and reviewer names only.
+
+The audit fixes nothing. Each fix it motivates is its own issue with its own
+three-pass capture on the frozen route, so the change stays attributable, and
+the audit is re-run over the new sets and diffed.
+
 ## Safety of the exported report
 
 Both output formats carry the same facts, and neither carries raw prompts,
@@ -710,7 +839,7 @@ Sessions.
 ## Verifying a change here
 
 ```sh
-pnpm exec vitest run e2e/live/grades.test.ts e2e/live/report.test.ts e2e/live/summary.test.ts e2e/live/gradingBench.test.ts e2e/live/gradingSetup.test.ts e2e/live/gradingBenchServer.test.ts e2e/live/gradingBenchPage.test.ts
+pnpm exec vitest run e2e/live/grades.test.ts e2e/live/report.test.ts e2e/live/summary.test.ts e2e/live/audit.test.ts e2e/live/gradingBench.test.ts e2e/live/gradingSetup.test.ts e2e/live/gradingBenchServer.test.ts e2e/live/gradingBenchPage.test.ts
 pnpm typecheck
 pnpm lint
 pnpm test
@@ -721,6 +850,11 @@ nothing. `report.test.ts` invokes `scripts/live-report.ts` as a real Node
 subprocess, which is what catches an accidental Electron import or an
 extensionless runtime import on the CLI's graph; `summary.test.ts` does the
 same for `scripts/live-summary.ts`, over three hand-built version-2 reports.
+`audit.test.ts` classifies a fixture trace that holds every kind, asserts the
+classification is byte-identical across two runs, validates and refuses
+reviewer outputs against the digest, checks the key-leak guard, and reads every
+committed `audit-*` file against the real keys; it loads `scripts/live-audit.ts`
+under Node too, on a usage error, so the paid path is never run by a test.
 
 `gradingSetup.test.ts` covers the setup page's decisions as functions:
 - discovery and preselection, of sets and of another reviewer's grades file;

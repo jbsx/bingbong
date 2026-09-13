@@ -289,12 +289,14 @@ describe('nothing on the capture path can load a key', () => {
     // the Grading Bench puts the key beside the Answer — and the third was
     // decided on purpose: `live:grade` is the model reviewer (#223, amended
     // protocol), which reads the key exactly as the bench shows it to a
-    // person. It is opt-in and paid, and no test or report path runs it. A
-    // fourth is again a decision to make on purpose. A script counts whether
-    // it imports a key module itself or reaches one through any other
-    // e2e/live module.
+    // person. It is opt-in and paid, and no test or report path runs it. The
+    // fourth was decided on #234: `live:audit` hands the Round Audit's
+    // reviewer the same key bundle, and checks its own outputs for key text
+    // before writing them. A fifth is again a decision to make on purpose. A
+    // script counts whether it imports a key module itself or reaches one
+    // through any other e2e/live module.
     const scriptsDir = join(liveDir, '..', '..', 'scripts')
-    const allowed = new Set(['live-grade.ts', 'live-keys.ts', 'live-review.ts'])
+    const allowed = new Set(['live-audit.ts', 'live-grade.ts', 'live-keys.ts', 'live-review.ts'])
     const liveImport = /(?:from|import\()\s*['"](?:\.{1,2}\/)+(?:[\w.-]+\/)*e2e\/live\/([\w.]+?)(?:\.ts)?['"]/g
 
     /** Every e2e/live module a script loads, directly or through another e2e/live module. */

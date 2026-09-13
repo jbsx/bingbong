@@ -22,6 +22,7 @@ Neither needs to edit anything here.
 | `keys.ts` (#225) | plain Node | The evaluator-only grading keys. **Nothing on the capture path may import this** — `corpus.test.ts` walks the import graph and fails if anything does. |
 | `schedule.ts` (#225) | plain Node | `runLiveWebPass(host)` — the protocol: sequencing, isolation, one-shot follow-ups, not-reached reasons, `PILOT_COMMAND_CEILING`. |
 | `pass.ts` (#225) | vitest / e2e | The join: `createHuntCaptureHost(startCaptureSession, …)`, `plannedSlots`, `captureSetOf` — the adapter from this handle to the schedule, and the set file a pass writes. |
+| `audit.ts` (#234) | plain Node | The Round Audit's pure half: `classifyAttempt` (one kind per orchestrator round from the Run Trace and perf log, with the per-round digest and its hash), `validateJudgement`, `keyLeaks`, `buildAuditSet`, `buildAuditAggregate`, the Markdown formatters. Loads no key; `scripts/live-audit.ts` is the paid entry point. |
 
 `*.test.ts` are launch-free unit tests in the normal `pnpm test` config;
 `capture.e2e.test.ts` and `schedule.e2e.test.ts` run under `pnpm test:e2e
