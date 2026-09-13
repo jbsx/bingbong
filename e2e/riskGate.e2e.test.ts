@@ -209,4 +209,75 @@ describe('risk gate e2e', () => {
       await harness.quit()
     }
   })
+
+  it('runs a catalogue search whose form holds facet checkboxes named "card" (#237)', async () => {
+    // /catalogue-search refs: [1] the search box [2] the Search submit
+    // [3]–[5] facet checkboxes (Postcard, [card], cardboard) in the same
+    // form. A checkbox is never a Payment Field, so neither submit path may
+    // be refused as a payment or pause on a Confirmation.
+    const script: AssistantTurn[] = [
+      { kind: 'tool_calls', calls: [{ id: 'c1', name: 'navigate', args: { url: fixture.url('/catalogue-search') } }] },
+      { kind: 'tool_calls', calls: [{ id: 'c2', name: 'type', args: { ref: 1, text: 'historical longitude watch\n' } }] },
+      { kind: 'tool_calls', calls: [{ id: 'c3', name: 'navigate', args: { url: fixture.url('/catalogue-search') } }] },
+      { kind: 'tool_calls', calls: [{ id: 'c4', name: 'click', args: { ref: 2 } }] },
+      { kind: 'answer', speak: 'Both catalogue searches ran.', display: 'Catalogue searches ran without a refusal.' },
+    ]
+    const harness = await startHarness({ fixture, env: { BINGBONG_LLM_SCRIPT: JSON.stringify(script) } })
+    try {
+      await harness.submitCommand('search the catalogue twice')
+
+      await waitForTranscript(harness, 'Catalogue searches ran without a refusal.')
+      // The last submit (the click) landed after the second navigate.
+      const title = await harness.paneEval<string>(`document.title`)
+      expect(title).toBe('submitted:catalogue')
+
+      const transcript = await feedText(harness)
+      expect(transcript).not.toContain('payments are never submitted')
+      expect(transcript).not.toContain('credential fields are never filled')
+      const confirmationShown = await harness.dashboardEval<boolean>(`!!document.querySelector('.confirmation-card')`)
+      expect(confirmationShown).toBe(false)
+    } finally {
+      await harness.quit()
+    }
+  })
+
+  it('still refuses a text field named card_number with no autocomplete, and its form\'s submit (#237)', async () => {
+    // The word-start anchor keeps card_number a Payment Field: [6] is the
+    // guard form's card_number input on /catalogue-search, [7] its Pay button.
+    // The gate refuses a type into a Payment Field as a fill before it looks
+    // at Enter, so the submit refusal is proven by clicking Pay.
+    const script: AssistantTurn[] = [
+      { kind: 'tool_calls', calls: [{ id: 'c1', name: 'navigate', args: { url: fixture.url('/catalogue-search') } }] },
+      {
+        kind: 'tool_calls',
+        calls: [
+          { id: 'c2', name: 'type', args: { ref: 6, text: '4111111111111111\n' } },
+          { id: 'c3', name: 'click', args: { ref: 7 } },
+        ],
+      },
+      { kind: 'answer', speak: 'Payment refused.', display: 'The card number was not submitted.' },
+    ]
+    const harness = await startHarness({ fixture, env: { BINGBONG_LLM_SCRIPT: JSON.stringify(script) } })
+    try {
+      await harness.submitCommand('pay with this card')
+      await harness.waitForPaneUrl(fixture.url('/catalogue-search'))
+
+      await waitFor(
+        async () => {
+          const text = await feedText(harness)
+          return text.includes('payment details are never filled by the agent') &&
+            text.includes('payments are never submitted by the agent')
+            ? text
+            : undefined
+        },
+        { timeoutMs: 20000, intervalMs: 250 },
+      )
+      const confirmationShown = await harness.dashboardEval<boolean>(`!!document.querySelector('.confirmation-card')`)
+      expect(confirmationShown).toBe(false)
+      const title = await harness.paneEval<string>(`document.title`)
+      expect(title).toBe('catalogue search fixture')
+    } finally {
+      await harness.quit()
+    }
+  })
 })

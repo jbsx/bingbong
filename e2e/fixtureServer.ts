@@ -426,6 +426,33 @@ function siteSearchPage(): string {
 </html>`
 }
 
+// A museum catalogue search shaped like Royal Museums Greenwich's (#237): one
+// form holds the search box and thousands of facet checkboxes, some named with
+// "card" in them. None takes a payment. A second form keeps a real card-number
+// field named card_number (no autocomplete) so the name rule stays pinned.
+// Refs in DOM order: [1] search box [2] Search [3]–[5] facets [6] card_number
+// [7] Pay. Submissions record into the title.
+function catalogueSearchPage(): string {
+  return `<!doctype html>
+<html>
+<head><title>catalogue search fixture</title></head>
+<body style="background:#222;color:#fff;margin:0">
+  <h1>catalogue search fixture page</h1>
+  <form method="post" onsubmit="document.title='submitted:catalogue';return false">
+    <input type="text" id="edit-search-term" name="search_term" placeholder="Search our collection..." style="font-size:24px;width:420px">
+    <input type="submit" id="edit-submit" value="Search" style="font-size:20px">
+    <label><input type="checkbox" name="filter_type[Postcard]" id="edit-filter-type-postcard"> Postcard</label>
+    <label><input type="checkbox" name="filter_materials[card]" id="edit-filter-materials-card"> card</label>
+    <label><input type="checkbox" name="filter_materials[cardboard]" id="edit-filter-materials-cardboard"> cardboard</label>
+  </form>
+  <form onsubmit="document.title='submitted:cardnumber';return false">
+    <input type="text" name="card_number" placeholder="Number" style="font-size:20px">
+    <button style="font-size:20px">Pay</button>
+  </form>
+</body>
+</html>`
+}
+
 function searchResultsPage(query: string, altReviewUrl: string): string {
   // The real-model evaluator's unresolvable scenario (#109) needs the
   // fixture web to honestly have nothing about a made-up topic: non-widget
@@ -1041,6 +1068,10 @@ export async function startFixtureServer(): Promise<FixtureServer> {
     }
     if (req.url === '/site-search') {
       res.end(siteSearchPage())
+      return
+    }
+    if (req.url === '/catalogue-search') {
+      res.end(catalogueSearchPage())
       return
     }
     // The article and its print rendering: one source, two URLs. The
