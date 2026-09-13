@@ -824,6 +824,11 @@ refer to checks by id, every output is checked for any key string or any run of
 eight consecutive words of one before it is written, and `audit.test.ts`
 asserts the same over the committed files. Nothing under `e2e/live/private/`
 appears in them — the grades are read for check ids and reviewer names only.
+A Run that finds a required fact checkpoints it in the key's own words, so
+before that check a call argument, result head or search query that restates
+key text is replaced by `[withheld: restates Grading Key text]`, and the set's
+caveats say how many (#235). Only the written output changes; the digest the
+reviewer judged, and its cache key, do not.
 
 The audit fixes nothing. Each fix it motivates is its own issue with its own
 three-pass capture on the frozen route, so the change stays attributable, and

@@ -1228,6 +1228,45 @@ export function keyLeaks(output: string, keyTexts: readonly { readonly label: st
 // ---------------------------------------------------------------------------
 // Counting
 
+/** What stands in an output for a string that restated Grading Key text. */
+export const WITHHELD_KEY_TEXT = '[withheld: restates Grading Key text]'
+
+/**
+ * The attempts as an output may carry them (#235): any call argument, result
+ * head or search query that restates Grading Key text is replaced by
+ * WITHHELD_KEY_TEXT. A Run that finds a required fact checkpoints it in words
+ * the key uses, and those words are the model's, copied into the digest — the
+ * write guard would otherwise refuse the whole set for a hunt that succeeded.
+ * Only what is written changes: the digest the reviewer judged, and its hash,
+ * stay as they were, so no cached judgement re-keys.
+ */
+export function withholdKeyText(
+  attempts: readonly AuditAttempt[],
+  keyTextsFor: (huntId: string) => readonly { readonly label: string; readonly text: string }[],
+): { attempts: AuditAttempt[]; withheld: number } {
+  let withheld = 0
+  const guard = (value: string, texts: readonly { readonly label: string; readonly text: string }[]): string => {
+    if (keyLeaks(value, texts).length === 0) return value
+    withheld += 1
+    return WITHHELD_KEY_TEXT
+  }
+  const guarded = attempts.map((attempt) => {
+    const texts = keyTextsFor(attempt.mechanical.huntId)
+    if (texts.length === 0) return attempt
+    const rounds = attempt.mechanical.rounds.map((round) => ({
+      ...round,
+      calls: round.calls.map((call) => ({
+        ...call,
+        args: Object.fromEntries(Object.entries(call.args).map(([name, value]) => [name, typeof value === 'string' ? guard(value, texts) : value])),
+        resultHead: call.resultHead === null ? null : guard(call.resultHead, texts),
+        search: call.search === null ? null : { ...call.search, query: guard(call.search.query, texts) },
+      })),
+    }))
+    return { ...attempt, mechanical: { ...attempt.mechanical, rounds } }
+  })
+  return { attempts: guarded, withheld }
+}
+
 export function countsAfterOverrulesOf(mechanical: AuditMechanical, judgement: AuditJudgement | null): Record<RoundKind, number> {
   const counts = emptyCounts()
   for (const round of mechanical.rounds) {

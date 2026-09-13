@@ -38,6 +38,7 @@ import {
   formatAuditSet,
   keyLeaks,
   validateJudgement,
+  withholdKeyText,
   type AuditAttempt,
   type AuditJudgement,
   type AuditMechanical,
@@ -705,7 +706,15 @@ function main(): void {
       auditDirtyTree: git.dirtyTree,
       generatedAt,
     }
-    outputs.push({ context, audit: buildAuditSet(provenance, attempts, caveats), jsonPath, mdPath })
+    // A hunt that found its facts checkpoints them in the key's own words: those
+    // strings are withheld from what is written, and the set says how many,
+    // before the write guard below checks what is left (#235).
+    const guarded = withholdKeyText(attempts, (huntId) => {
+      const key = gradingKeyFor(huntId)
+      return key === undefined ? [] : keyTextsOf(key).filter((entry) => !entry.label.endsWith('source statement'))
+    })
+    if (guarded.withheld > 0) caveats.push(`${guarded.withheld} call argument(s), result head(s) or search quer(ies) withheld from this output: each restated Grading Key text`)
+    outputs.push({ context, audit: buildAuditSet(provenance, guarded.attempts, caveats), jsonPath, mdPath })
   }
 
   // --only judges one attempt into the cache and prints it; a set's audit is

@@ -31,6 +31,8 @@ import {
   searchQueryOf,
   similarQueries,
   validateJudgement,
+  WITHHELD_KEY_TEXT,
+  withholdKeyText,
   type AuditAttempt,
   type AuditJudgement,
   type AuditProvenance,
@@ -554,6 +556,32 @@ describe('a set and the aggregate', () => {
     expect(formatAuditSet(setOne)).toMatch(/\| navigate \| 6 \(\d+%\) \| 6 \(\d+%\) \|/)
     expect(formatAuditAggregate(aggregate.value)).toContain('## Tool rounds')
     expect(formatAuditAggregate(aggregate.value)).toMatch(/\| navigate \| 12 \(\d+%\) \| 12 \(\d+%\) \|/)
+  })
+
+  it('withholds a call argument that restates Grading Key text, and nothing else, keeping the digest hash (#235)', () => {
+    const base = attemptOf('initial', judgement)
+    const claim = 'the invented watch carries catalogue number nine hundred and ninety nine'
+    const leaking: AuditAttempt = {
+      ...base,
+      mechanical: {
+        ...base.mechanical,
+        rounds: base.mechanical.rounds.map((round, index) =>
+          index === 0
+            ? { ...round, calls: round.calls.map((call, callIndex) => (callIndex === 0 ? { ...call, args: { ...call.args, observation: `Checked: ${claim}.` } } : call)) }
+            : round,
+        ),
+      },
+    }
+
+    const { attempts, withheld } = withholdKeyText([leaking, base], () => [{ label: 'required fact', text: claim }])
+
+    expect(withheld).toBe(1)
+    const call = attempts[0]!.mechanical.rounds[0]!.calls[0]!
+    expect(call.args.observation).toBe(WITHHELD_KEY_TEXT)
+    expect(call.args.effort_tier).toBe('investigation')
+    expect(attempts[0]!.mechanical.digestHash).toBe(leaking.mechanical.digestHash)
+    expect(attempts[1]).toEqual(base)
+    expect(withholdKeyText([leaking], () => []).withheld).toBe(0)
   })
 
   it('aggregates by arithmetic and ranks the primary verdicts', () => {
