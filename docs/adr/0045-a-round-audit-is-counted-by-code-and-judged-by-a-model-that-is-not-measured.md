@@ -2,9 +2,21 @@
 
 ## Status
 
-Accepted on 2026-09-13 for #234. Not yet implemented. Adds a reader of the
-Run Trace and the retained capture sets; changes nothing the trace, the
-report (#226) or the summary (#233) record.
+Accepted on 2026-09-13 for #234, implemented the same day (`pnpm live:audit`,
+`e2e/live/audit.ts`, docs/live-web-reporting.md §The Round Audit). Adds a
+reader of the Run Trace and the retained capture sets; changes nothing the
+trace, the report (#226) or the summary (#233) record.
+
+Two departures from the decision as grilled, both measured rather than
+chosen. The digest was to carry a head of the measured model's reasoning
+(~1,500 characters per round); Opus 5's safeguards refuse a message that
+carries it in any form tried, and a head kept only in the committed file
+collided with the key's wording where both restate the hunt's question, so
+the digest counts the reasoning and never quotes it. And the key-text guard
+over the outputs checks the key's own words — facts, constraints, pitfalls,
+uncertainties — not its source statements, which quote public pages that an
+attempt's own Evidence Checkpoints excerpt verbatim; the reviewer's prose is
+still checked against every string.
 
 ## Context
 

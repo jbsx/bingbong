@@ -282,15 +282,15 @@ interface SlotView {
 }
 
 /**
- * The digest as the reviewer sees it: everything `classifyAttempt` built
- * except the head of the measured model's reasoning. Opus 5's safeguards
- * refuse a message carrying that reasoning — measured 2026-09-13 on two
- * attempts: whole heads, heads cut to 300 characters, relabelled heads, and
- * either half of the rounds' heads were all answered with `stop_reason:
- * refusal` and zero output tokens, and the same prompt with the heads
- * removed was answered. The heads stay in the committed JSON digest for the
- * human reader; the reviewer judges from the calls, pages, results and
- * Notices, which is where the mechanical labels come from too.
+ * The digest as the reviewer sees it: what `classifyAttempt` built, round by
+ * round. It carries no head of the measured model's reasoning, and neither
+ * does the digest itself: Opus 5's safeguards refuse a message carrying that
+ * reasoning — measured 2026-09-13 on two attempts: whole heads, heads cut to
+ * 300 characters, relabelled heads, and either half of the rounds' heads were
+ * all answered with `stop_reason: refusal` and zero output tokens, and the
+ * same prompt with the heads removed was answered — so the reviewer judges
+ * from the calls, pages, results and Notices, which is where the mechanical
+ * labels come from too.
  */
 function digestBlock(mechanical: AuditMechanical): string {
   const lines: string[] = []
@@ -682,17 +682,27 @@ function main(): void {
     aggregateText = { json: `${JSON.stringify(aggregate.value, null, 2)}\n`, md: `${formatAuditAggregate(aggregate.value)}\n` }
   }
 
-  // The last guard before anything lands: no key text in any output.
-  for (const output of outputs) {
+  // The last guard before anything lands: no key text in any output. The
+  // key's own words — facts, constraints, pitfalls, uncertainties — and not
+  // its source statements: those quote public pages, and an attempt's
+  // Evidence Checkpoint excerpts the same pages verbatim, which is the
+  // digest's business to show (the first run over baseline-1 tripped on
+  // exactly that: Eurostar's instrument rule and JPL's "third sign"
+  // sentence, both reproduced from the page by the measured model).
+  // The reviewer's prose is still checked against every string, above.
+  const rendered = outputs.map((output) => {
     const json = `${JSON.stringify(output.audit, null, 2)}\n`
     const md = `${formatAuditSet(output.audit)}\n`
     const texts = output.audit.attempts.flatMap((attempt) => {
       const key = gradingKeyFor(attempt.mechanical.huntId)
-      return key === undefined ? [] : keyTextsOf(key)
+      return key === undefined ? [] : keyTextsOf(key).filter((entry) => !entry.label.endsWith('source statement'))
     })
     const leaks = [...keyLeaks(json, texts), ...keyLeaks(md, texts)]
     if (leaks.length > 0) failWith(`the audit of ${output.audit.provenance.setId} would carry key text — nothing was written`, leaks)
-    mkdirSync(outDir, { recursive: true })
+    return { output, json, md }
+  })
+  mkdirSync(outDir, { recursive: true })
+  for (const { output, json, md } of rendered) {
     writeFileAtomic(output.jsonPath, json)
     writeFileAtomic(output.mdPath, md)
   }

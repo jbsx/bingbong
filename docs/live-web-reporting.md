@@ -742,8 +742,8 @@ marker sentences to the app's constants.
 **Code builds a per-round digest**: round number, kind and the rule behind it,
 tool names and bounded arguments, the page each call put in front of the
 assistant, the result head, checkpoint verdict, Notices, tokens, latency, and
-the head of the assistant's reasoning capped at 1,500 characters. A 24-round
-attempt is tens of kilobytes; raw traces never enter a prompt.
+how much the assistant reasoned, as a length. A 24-round attempt is tens of
+kilobytes; raw traces never enter a prompt.
 
 **A model that is not the measured one judges** what needs judgement, from the
 digest plus the same key bundle `live:grade` shows, with no tools: Search Loop
@@ -761,13 +761,18 @@ only where the digest changed. A call the model does not answer — a safeguard
 refusal, an API error — is retried once and then left without a judgement,
 with the reason as a caveat.
 
-**The reviewer is not shown the reasoning heads.** Measured on 2026-09-13:
+**The digest quotes no reasoning.** #234 planned a head of the assistant's
+reasoning, capped at 1,500 characters, per round. Measured on 2026-09-13:
 Opus 5's safeguards refuse a message carrying the measured model's own
 reasoning — whole, cut to 300 characters, relabelled, or either half of the
 rounds' — with `stop_reason: refusal` and zero output tokens, and the same
-prompt without them is answered. The heads stay in the committed JSON for the
-human reader; the reviewer judges from the calls, pages, results and Notices,
-which is what the mechanical labels are read from too.
+prompt without it is answered. A head kept only in the committed file then
+tripped the key-text guard on its own: the assistant restating the hunt's
+question in its reasoning shares eight words with the key's fact that answers
+it. So the digest counts the reasoning and never quotes it, and holds exactly
+what the reviewer judged: the calls, pages, results and Notices, which is what
+the mechanical labels are read from too. The Run Trace keeps the reasoning for
+anyone diagnosing an attempt by hand.
 
 **The verdict** is from a closed set, primary plus at most one secondary, each
 with a stated reason: `rounds_wasted`, `tier_too_small_or_never_escalated`,

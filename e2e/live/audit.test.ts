@@ -268,15 +268,16 @@ describe('the mechanical classification', () => {
     expect(classifyAttempt(inputOf({ perfRecords: [] })).digestHash).not.toBe(first.digestHash)
   })
 
-  it('keeps the digest bounded: heads of reasoning, results and arguments', () => {
+  it('keeps the digest bounded: heads of results and arguments, and no reasoning text at all', () => {
     const long = 'x'.repeat(5_000)
-    const rounds: RoundSpec[] = [{ round: 1, at: 1_000, reasoning: long, calls: [{ name: 'navigate', args: { url: SPEC_URL, note: long }, result: PAGE('Watch spec', SPEC_URL, 'aaaa1111', long) }] }]
+    const rounds: RoundSpec[] = [{ round: 1, at: 1_000, reasoning: `the secret thought ${long}`, calls: [{ name: 'navigate', args: { url: SPEC_URL, note: long }, result: PAGE('Watch spec', SPEC_URL, 'aaaa1111', long) }] }]
     const mechanical = classifyAttempt(inputOf({ traceRecords: traceOf(rounds, EXTRA) }))
     const round = mechanical.rounds[0]!
-    expect(round.reasoningHead.length).toBeLessThanOrEqual(1_501)
+    expect(round.reasoningChars).toBe(40)
+    expect(JSON.stringify(mechanical)).not.toContain('secret thought')
     expect((round.calls[0]!.args.note as string).length).toBeLessThanOrEqual(201)
     expect(round.calls[0]!.resultHead!.length).toBeLessThanOrEqual(241)
-    expect(JSON.stringify(mechanical).length).toBeLessThan(6_000)
+    expect(JSON.stringify(mechanical).length).toBeLessThan(4_000)
   })
 
   it('tags a follow-up’s re-acquisition of a page the initial checkpointed as inherited and without Progress', () => {
@@ -515,17 +516,18 @@ describe('the committed audit outputs', () => {
   const files = existsSync(REPORTS_DIR) ? readdirSync(REPORTS_DIR).filter((name) => name.startsWith('audit-')) : []
 
   it.skipIf(files.length === 0)('carry no key text and nothing under the private root', () => {
+    // The key's own words. Its source statements are not in the list: they
+    // quote public pages, and an attempt's Evidence Checkpoint excerpts the
+    // same pages verbatim into the digest, which is the audit's business.
     const keys = liveWebHunts().map((hunt) => gradingKeyFor(hunt.id)!)
     const keyTexts = keys.flatMap((key) => [
       ...key.requiredFacts.map((text) => ({ label: `${key.huntId} required fact`, text })),
       ...key.constraints.map((text) => ({ label: `${key.huntId} constraint`, text })),
       ...key.pitfalls.map((text) => ({ label: `${key.huntId} pitfall`, text })),
       ...key.uncertainties.map((text) => ({ label: `${key.huntId} uncertainty`, text })),
-      ...key.sources.map((source) => ({ label: `${key.huntId} source statement`, text: source.supports })),
       ...key.liveFacts.map((text) => ({ label: `${key.huntId} live fact`, text })),
       ...(key.followUpDelta?.requiredFacts ?? []).map((text) => ({ label: `${key.huntId} follow-up fact`, text })),
       ...(key.followUpDelta?.pitfalls ?? []).map((text) => ({ label: `${key.huntId} follow-up pitfall`, text })),
-      ...(key.followUpDelta?.sources ?? []).map((source) => ({ label: `${key.huntId} follow-up source statement`, text: source.supports })),
     ])
     for (const name of files) {
       const text = readFileSync(join(REPORTS_DIR, name), 'utf8')

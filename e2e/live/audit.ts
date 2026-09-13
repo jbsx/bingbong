@@ -5,15 +5,20 @@
 // Two halves, kept apart on purpose:
 //
 //   * The MECHANICAL half reads an attempt's Run Trace (`llm_round`,
-//     `pipeline_event` tool calls and results, `evidence_checkpoint`,
-//     `reasoning`) and its perf `llm` spans, and assigns every orchestrator
-//     round one of the glossary's kinds — Acquisition with Progress,
-//     Acquisition without Progress, Collection, Bookkeeping, a failed
-//     round, Finalization. It is a pure function of the records: the same
-//     trace classifies identically on every run, and `digestHash` says so.
-//     It also builds the per-round digest the reviewer is shown — bounded
-//     heads of arguments, results and reasoning, never a whole page — so a
-//     24-round attempt stays tens of kilobytes, not megabytes.
+//     `pipeline_event` tool calls and results, `evidence_checkpoint`) and
+//     its perf `llm` spans, and assigns every orchestrator round one of the
+//     glossary's kinds — Acquisition with Progress, Acquisition without
+//     Progress, Collection, Bookkeeping, a failed round, Finalization. It
+//     is a pure function of the records: the same trace classifies
+//     identically on every run, and `digestHash` says so. It also builds
+//     the per-round digest the reviewer is shown — bounded heads of
+//     arguments and results, never a whole page — so a 24-round attempt
+//     stays tens of kilobytes, not megabytes. The measured model's
+//     reasoning is counted (`reasoningChars`) and never quoted: a reviewer
+//     cannot be shown it (Opus 5's safeguards refuse a message carrying it,
+//     measured 2026-09-13), and a head of it kept only in the committed file
+//     collides with the key's wording wherever both restate the hunt's
+//     question — so the digest holds exactly what the reviewer judged.
 //   * The JUDGED half is a reviewer's output — Search Loop membership,
 //     Off-key Acquisitions, an early stop, the verdict, overrules of
 //     mechanical labels and flags for a human — validated here against the
@@ -114,8 +119,6 @@ export const ACQUISITION_TOOLS: ReadonlySet<string> = new Set([
 export const COLLECTION_TOOLS: ReadonlySet<string> = new Set(['agent_results'])
 export const BOOKKEEPING_TOOLS: ReadonlySet<string> = new Set(['record_evidence', 'record_candidate', 'report_run_plan'])
 
-/** How much of a round's reasoning the digest keeps. */
-export const DIGEST_REASONING_HEAD_CHARS = 1_500
 /** How much of a tool result the digest keeps. */
 export const DIGEST_RESULT_HEAD_CHARS = 240
 /** How much of one string argument the digest keeps. */
@@ -165,8 +168,8 @@ export interface AuditRound {
   readonly completionTokens: number | null
   readonly requestChars: number | null
   readonly toolResultsInRequest: number | null
+  /** How much the model thought before deciding, as a length; the text itself is never in the digest. */
   readonly reasoningChars: number
-  readonly reasoningHead: string
   readonly calls: readonly AuditCall[]
   readonly kind: RoundKind
   readonly reason: string
@@ -787,10 +790,6 @@ export function classifyAttempt(input: AuditTraceInput): AuditMechanical {
   const records = input.traceRecords as unknown as readonly TraceLine[]
   const raw = rawRounds(records)
   const latencies = joinLatencies(raw, input.perfRecords)
-  const reasoning = new Map<string, TraceLine>()
-  for (const record of records) {
-    if (record.kind === 'reasoning' && record.agentId === undefined) reasoning.set(`${String(record.round)}.${String(record.attempt)}`, record)
-  }
 
   const plans: AuditPlan[] = []
   let terminal: AuditMechanical['terminal'] = null
@@ -882,7 +881,6 @@ export function classifyAttempt(input: AuditTraceInput): AuditMechanical {
 
     const usage = isRecord(record.usage) ? record.usage : null
     const request = isRecord(record.request) ? record.request : null
-    const thought = reasoning.get(`${round.round}.${round.attempt}`)
     return {
       round: round.round,
       attempt: round.attempt,
@@ -896,7 +894,6 @@ export function classifyAttempt(input: AuditTraceInput): AuditMechanical {
       requestChars: request !== null && isFiniteNumber(request.chars) ? request.chars : null,
       toolResultsInRequest: request !== null && isFiniteNumber(request.toolResults) ? request.toolResults : null,
       reasoningChars: isFiniteNumber(record.reasoningChars) ? record.reasoningChars : 0,
-      reasoningHead: head(thought !== undefined && isString(thought.text) ? thought.text : '', DIGEST_REASONING_HEAD_CHARS) ?? '',
       calls,
       kind,
       reason,
@@ -1486,7 +1483,8 @@ function attemptSection(attempt: AuditAttempt): string[] {
     for (const item of judgement.offKey) lines.push(`- Off-key round ${item.round}${item.url ? ` (${item.url})` : ''}: ${item.reason}`)
     for (const item of judgement.overrules) lines.push(`- overrule round ${item.round} → ${KIND_LABELS[item.kind]}: ${item.reason}`)
     for (const flag of judgement.flags) lines.push(`- flag${flag.round === null ? '' : ` (round ${flag.round})`}: ${flag.question}`)
-    for (const caveat of review.caveats) lines.push(`- caveat: ${caveat}`)
+    // The flags are already caveats in the JSON; here they are printed once.
+    for (const caveat of review.caveats.filter((caveat) => !caveat.startsWith('flag'))) lines.push(`- caveat: ${caveat}`)
     lines.push(`- reviewer ${review.served ?? review.model} at ${review.effort}, prompt ${review.promptVersion}, digest ${review.digestHash.slice(0, 15)}…${review.costUsd === null ? '' : `, $${review.costUsd.toFixed(2)}`}`)
   }
   lines.push('')
