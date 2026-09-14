@@ -257,6 +257,22 @@ describe('buildTraceTimeline', () => {
     expect(entries[1].agentId).toBe('agent-7')
   })
 
+  it('summarizes a Malformed Answer and its Answer Retry, orchestrator and worker alike (#245)', () => {
+    const timeline = buildTraceTimeline([
+      run({ at: T0 + 1, turnId: 'turn-1', kind: 'malformed_answer', role: 'orchestrator', text: '{"speak":"Done.","display":42}', chars: 30, error: '"display" is not a string' }),
+      run({ at: T0 + 2, turnId: 'turn-1', kind: 'answer_retry', role: 'orchestrator', outcome: 'on_contract' }),
+      run({ at: T0 + 3, turnId: 'turn-1', kind: 'answer_retry', role: 'subagent', agentId: 'agent-7', outcome: 'tool_calls' }),
+    ])
+
+    const entries = timeline.lanes[0].entries
+    expect(entries.map((entry) => entry.summary)).toEqual([
+      'orchestrator ("display" is not a string): {"speak":"Done.","display":42}',
+      'orchestrator on_contract',
+      'subagent agent-7 tool_calls',
+    ])
+    expect(entries[2].agentId).toBe('agent-7')
+  })
+
   it('summarizes a Search Observation as the call, its signature, the streak and the query (#243)', () => {
     const timeline = buildTraceTimeline([
       run({ at: T0 + 1, turnId: 'turn-1', kind: 'search_observation', callId: 'c1', name: 'type', query: 'harrison longitude watch', signature: 'input', streak: 2 }),

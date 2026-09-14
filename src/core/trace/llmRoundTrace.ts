@@ -111,7 +111,16 @@ export function llmRoundFailure(error: unknown): Extract<LlmRoundOutcome, 'timeo
 /** The request fields whose text the shape counts; callbacks, ids and flags are not content. */
 type LlmRequestContent = Pick<
   LlmRequest,
-  'command' | 'toolResults' | 'steering' | 'standingDirective' | 'finalizeInstruction' | 'objective' | 'journal' | 'memory' | 'evidence'
+  | 'command'
+  | 'toolResults'
+  | 'steering'
+  | 'standingDirective'
+  | 'finalizeInstruction'
+  | 'answerRetry'
+  | 'objective'
+  | 'journal'
+  | 'memory'
+  | 'evidence'
 >
 
 /**
@@ -128,6 +137,8 @@ export function llmRequestShape(request: LlmRequestContent): LlmRequestShape {
     ...(request.steering !== undefined ? { steering: request.steering } : {}),
     ...(request.standingDirective !== undefined ? { standingDirective: request.standingDirective } : {}),
     ...(request.finalizeInstruction !== undefined ? { finalizeInstruction: request.finalizeInstruction } : {}),
+    // The Answer Retry (#245) is content twice over: the broken reply and the message.
+    ...(request.answerRetry !== undefined ? { answerRetry: request.answerRetry } : {}),
     ...(request.objective !== undefined ? { objective: request.objective } : {}),
     ...(request.journal !== undefined ? { journal: request.journal } : {}),
     ...(request.memory !== undefined ? { memory: request.memory } : {}),

@@ -1,5 +1,7 @@
+import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
 import { afterEach, describe, expect, it } from 'vitest'
-import { parseAssistantAnswer } from '../agent/answerContract'
+import { answerRetryMessage, parseAssistantAnswer } from '../agent/answerContract'
 import { setFaultSink, type FaultReport } from '../trace/fault'
 import type { RunTraceEvent } from '../trace/runTrace'
 import { VisionDeadlineError } from '../ports/vision'
@@ -8373,6 +8375,130 @@ describe('the bookkeeping round a mid-round Finalization gets (#200, ADR 0036)',
     // the very call it invites.
     expect(injected).toMatchObject({ ok: true, result: expect.not.stringContaining('Collection and Bookkeeping') })
     expect(events.at(-1)).toMatchObject({ type: 'done', finalizationCause: 'budget_exhausted' })
+  })
+})
+
+describe('the Answer Retry after a Malformed Answer (#245)', () => {
+  // baseline-1's Eurostar round 7, as the provider streamed it.
+  const EUROSTAR_ROUND_7 = readFileSync(fileURLToPath(new URL('../agent/fixtures/eurostar-round-7-reply.txt', import.meta.url)), 'utf8')
+  const ON_CONTRACT =
+    '{"speak":"The guitar can travel.","display":"The guitar can travel as one of your two pieces.","finalization_cause":"objective_met","resolution":"completed"}'
+  const MALFORMED_AGAIN = 'Here it is: {"speak": "The guitar can travel.", "display": 42}'
+  const readPage: Tool = { name: 'read_page', acquisition: true, async execute() { return 'Luggage: two pieces.' } }
+
+  async function runScript(script: ScriptedTurn[]) {
+    const llm = new ScriptedLlm(script)
+    const traced: RunTraceEvent[] = []
+    const faults: FaultReport[] = []
+    const detail: PipelineEvent[] = []
+    const committed: string[] = []
+    setFaultSink((report) => faults.push(report))
+    const pipeline = createCommandPipeline({
+      llm,
+      tts: new RecordingTts(),
+      clock: new FakeClock(),
+      tools: [createReportRunPlanTool(), readPage],
+      emitDetail: (event) => detail.push(event),
+    })
+    const events: PipelineEvent[] = []
+    for await (const raw of pipeline.execute('can I take my guitar on the eurostar', 'turn-retry', false, {
+      snapshot: [],
+      memory: [],
+      commit: (outcome) => {
+        committed.push(outcome)
+        return 'committed'
+      },
+      traceRun: (build) => traced.push(build()),
+    })) {
+      events.push(withoutTurnId(raw))
+    }
+    return {
+      llm,
+      events,
+      detail,
+      committed,
+      retryRecords: traced.filter((record) => record.kind === 'malformed_answer' || record.kind === 'answer_retry'),
+      malformedFaults: faults.filter((fault) => fault.site === 'pipeline.createCommandPipeline.malformedAnswer'),
+      displays: events.filter((event) => event.type === 'display'),
+    }
+  }
+
+  it('retries once and renders the Answer that lands on contract, the broken reply never shown as the Answer', async () => {
+    const malformed = parseAssistantAnswer(EUROSTAR_ROUND_7)
+    const reply = EUROSTAR_ROUND_7.trim()
+
+    const run = await runScript([
+      { kind: 'answer', ...malformed, streamChunks: [EUROSTAR_ROUND_7] },
+      { kind: 'answer', ...parseAssistantAnswer(ON_CONTRACT) },
+    ] as ScriptedTurn[])
+
+    // The next request carries the reply and the message, and nothing else changes about it.
+    expect(run.llm.requests).toHaveLength(2)
+    expect(run.llm.requests[0]).not.toHaveProperty('answerRetry')
+    expect(run.llm.requests[1]?.answerRetry).toEqual({ reply, message: answerRetryMessage(malformed.malformedError ?? '') })
+    expect(run.llm.requests[1]).not.toHaveProperty('finalizeInstruction')
+    expect(run.llm.requests[1]).not.toHaveProperty('answerOnly')
+    // The repaired Answer is the one Answer, and its claims stand.
+    expect(run.displays).toEqual([expect.objectContaining({ text: 'The guitar can travel as one of your two pieces.', finalAnswer: true })])
+    expect(run.events.filter((event) => event.type === 'speak').map((event) => (event.type === 'speak' ? event.text : ''))).toEqual(['The guitar can travel.'])
+    expect(run.events.at(-1)).toMatchObject({ type: 'done', outcome: 'done', finalizationCause: 'objective_met' })
+    // The broken reply streamed as it arrived, and no new feed event says so.
+    expect(JSON.stringify(run.detail.filter((event) => event.type === 'llm_delta'))).toContain('the resolution')
+    // Recorded, not stored: two records and a fault, one commit.
+    expect(run.retryRecords).toEqual([
+      { kind: 'malformed_answer', turnId: 'turn-retry', role: 'orchestrator', text: reply, chars: reply.length, error: malformed.malformedError },
+      { kind: 'answer_retry', turnId: 'turn-retry', role: 'orchestrator', outcome: 'on_contract' },
+    ])
+    expect(run.malformedFaults).toMatchObject([{ turnId: 'turn-retry', message: expect.stringContaining('orchestrator replied with a Malformed Answer') }])
+    expect(run.committed).toEqual(['done'])
+  })
+
+  it('renders a second Malformed Answer raw, as today, once the retry is spent', async () => {
+    const run = await runScript([
+      { kind: 'answer', ...parseAssistantAnswer(EUROSTAR_ROUND_7) },
+      { kind: 'answer', ...parseAssistantAnswer(MALFORMED_AGAIN) },
+    ])
+
+    expect(run.llm.requests).toHaveLength(2)
+    expect(run.displays).toEqual([expect.objectContaining({ text: MALFORMED_AGAIN, finalAnswer: true })])
+    expect(run.events.at(-1)).toMatchObject({ type: 'done', outcome: 'done', finalizationCause: 'model_answered' })
+    expect(run.retryRecords.map((record) => record.kind === 'answer_retry' ? `retry:${record.outcome}` : record.kind)).toEqual([
+      'malformed_answer',
+      'retry:malformed',
+      'malformed_answer',
+    ])
+    expect(run.malformedFaults).toHaveLength(2)
+  })
+
+  it('takes a retry that returns tool calls as a Tool Round and resumes with the retry spent', async () => {
+    const run = await runScript([
+      { kind: 'answer', ...parseAssistantAnswer(EUROSTAR_ROUND_7) },
+      { kind: 'tool_calls', calls: [{ id: 'r1', name: 'read_page', args: {} }] },
+      { kind: 'answer', ...parseAssistantAnswer(ON_CONTRACT) },
+    ])
+
+    expect(run.llm.requests).toHaveLength(3)
+    expect(run.llm.requests[1]?.answerRetry).toBeDefined()
+    expect(run.llm.requests[2]).not.toHaveProperty('answerRetry')
+    expect(run.events.some((event) => event.type === 'tool_result' && event.callId === 'r1')).toBe(true)
+    expect(run.displays).toEqual([expect.objectContaining({ text: 'The guitar can travel as one of your two pieces.' })])
+    expect(run.retryRecords.map((record) => record.kind === 'answer_retry' ? `retry:${record.outcome}` : record.kind)).toEqual([
+      'malformed_answer',
+      'retry:tool_calls',
+    ])
+  })
+
+  it('sends no second retry: a later Malformed Answer after a spent retry renders raw', async () => {
+    const run = await runScript([
+      { kind: 'answer', ...parseAssistantAnswer(EUROSTAR_ROUND_7) },
+      { kind: 'tool_calls', calls: [{ id: 'r1', name: 'read_page', args: {} }] },
+      { kind: 'answer', ...parseAssistantAnswer(MALFORMED_AGAIN) },
+    ])
+
+    expect(run.llm.requests).toHaveLength(3)
+    expect(run.llm.requests.filter((request) => request.answerRetry !== undefined)).toHaveLength(1)
+    expect(run.displays).toEqual([expect.objectContaining({ text: MALFORMED_AGAIN, finalAnswer: true })])
+    expect(run.malformedFaults).toHaveLength(2)
   })
 })
 

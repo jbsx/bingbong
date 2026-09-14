@@ -135,6 +135,7 @@ export function createSubagentTools(manager: SubagentManager): Tool[] {
           ...(ctx.traceSubagentOffContractReply !== undefined
             ? { traceOffContractReply: ctx.traceSubagentOffContractReply }
             : {}),
+          ...(ctx.traceSubagentAnswerRetry !== undefined ? { traceAnswerRetry: ctx.traceSubagentAnswerRetry } : {}),
           ...(ctx.traceSubagentPipelineEvent !== undefined
             ? { tracePipelineEvent: ctx.traceSubagentPipelineEvent }
             : {}),

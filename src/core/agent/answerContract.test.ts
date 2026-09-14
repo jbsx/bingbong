@@ -1,5 +1,7 @@
+import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
-import { capSentences, parseAssistantAnswer, partialAnswerText, spokenErrorLine } from './answerContract'
+import { answerRetryMessage, capSentences, parseAssistantAnswer, partialAnswerText, spokenErrorLine } from './answerContract'
 
 describe('capSentences', () => {
   it('keeps the first n sentences', () => {
@@ -313,11 +315,76 @@ describe('parseAssistantAnswer', () => {
     expect(parseAssistantAnswer('{"speak":"Done.","display":"Detail."}').shape).toBe('on_contract')
     expect(parseAssistantAnswer('```json\n{"speak":"Done.","display":"Detail."}\n```').shape).toBe('on_contract')
     expect(parseAssistantAnswer('Here you go: {"speak":"Done.","display":"Detail."}').shape).toBe('on_contract')
-    // Prose, and JSON that is not the Answer's shape.
+    // Prose, and JSON that carries none of the contract's keys.
     expect(parseAssistantAnswer('Retrying with the observation id.').shape).toBe('off_contract')
     expect(parseAssistantAnswer('{"answer":"Done."}').shape).toBe('off_contract')
-    expect(parseAssistantAnswer('{"speak":"Done.","display":42}').shape).toBe('off_contract')
     expect(parseAssistantAnswer('').shape).toBe('off_contract')
+    // The contract's keys without its shape is the third shape (#245).
+    expect(parseAssistantAnswer('{"speak":"Done.","display":42}').shape).toBe('malformed')
+  })
+
+  describe('a Malformed Answer (#245)', () => {
+    const EUROSTAR_ROUND_7 = readFileSync(fileURLToPath(new URL('./fixtures/eurostar-round-7-reply.txt', import.meta.url)), 'utf8')
+
+    it('marks the recorded Eurostar reply malformed, with the parser’s own message and position', () => {
+      // baseline-1's round 7: prose, then the Answer object wrapped in
+      // `**…**` whose "display" over-escaped its inner quotes.
+      const answer = parseAssistantAnswer(EUROSTAR_ROUND_7)
+
+      expect(answer.shape).toBe('malformed')
+      expect(answer.malformedError).toMatch(/^Expected ',' or '}' after property value in JSON at position 909/)
+      // Rendered exactly as today when nothing retries it: no repair.
+      expect(answer.display).toBe(EUROSTAR_ROUND_7.trim())
+      expect(answer).not.toHaveProperty('finalizationCause')
+      expect(answer).not.toHaveProperty('resolution')
+    })
+
+    it('names the field and what it was for JSON of the wrong shape', () => {
+      expect(parseAssistantAnswer('{"speak":"Done.","display":42}')).toMatchObject({
+        shape: 'malformed',
+        malformedError: '"display" is not a string',
+      })
+      expect(parseAssistantAnswer('{"speak":["Done."],"display":"Detail."}')).toMatchObject({
+        shape: 'malformed',
+        malformedError: '"speak" is not a string',
+      })
+      expect(parseAssistantAnswer('{"answer":{"speak":"Done.","display":"Detail."}}')).toMatchObject({
+        shape: 'malformed',
+        malformedError: '"speak" is missing',
+      })
+    })
+
+    it('reads the candidate slice past a prose lead-in, the way the parser tried it', () => {
+      // The whole text fails at its first letter; the slice is what the
+      // parser meant, so its failure is the one named.
+      expect(parseAssistantAnswer('Here it is: {"speak":"Done.","display":42}')).toMatchObject({
+        shape: 'malformed',
+        malformedError: '"display" is not a string',
+      })
+    })
+
+    it('needs both keys: prose that mentions one is still a prose Answer', () => {
+      expect(parseAssistantAnswer('The "display" setting is under Appearance.').shape).toBe('off_contract')
+      expect(parseAssistantAnswer('{"speak":"Done."}').shape).toBe('off_contract')
+      expect(parseAssistantAnswer('Retrying with the observation id.')).not.toHaveProperty('malformedError')
+    })
+
+    it('words the Answer Retry message as decision 4 pins it, carrying the failure verbatim', () => {
+      const { malformedError } = parseAssistantAnswer(EUROSTAR_ROUND_7)
+
+      expect(answerRetryMessage(malformedError ?? '')).toBe(
+        `Your last reply was meant as the Answer but could not be read as one: ${malformedError}. ` +
+          'Reply with only the JSON object: no text before or after it, no code fences, "speak" and "display" as strings.',
+      )
+      expect(answerRetryMessage('"display" is not a string')).toBe(
+        'Your last reply was meant as the Answer but could not be read as one: "display" is not a string. ' +
+          'Reply with only the JSON object: no text before or after it, no code fences, "speak" and "display" as strings.',
+      )
+    })
+
+    it('never marks an on-contract reply', () => {
+      expect(parseAssistantAnswer('{"speak":"Done.","display":"Detail."}')).not.toHaveProperty('malformedError')
+    })
   })
 
   it('still reads an ordinary round’s prose reply as an Answer (#198)', () => {

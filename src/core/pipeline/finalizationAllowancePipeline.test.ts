@@ -1,7 +1,9 @@
 import { afterEach, describe, expect, it } from 'vitest'
 
+import { answerRetryMessage, parseAssistantAnswer } from '../agent/answerContract'
 import { setFaultSink, type FaultReport } from '../trace/fault'
 import { createCommandPipeline, type CommandPipeline } from './createCommandPipeline'
+import { FINALIZATION_ALLOWANCE_MS, RESERVED_ANSWER_ALLOWANCE_MS } from './finalizationAllowance'
 import { createReportRunPlanTool } from './runPlanTools'
 import { FakeClock, RecordingTts, withoutTurnId } from '../testing/doubles'
 import type { PipelineEvent } from './events'
@@ -164,6 +166,53 @@ describe('the Finalization Allowance in a Run (#209, ADR 0038)', () => {
     expect(h.requests[3]).toMatchObject({ answerOnly: true })
     expect(events.at(-1)).toMatchObject({ type: 'done', outcome: 'done', finalizationCause: 'deadline_reached' })
     expect(displayText(events)).toBe('Vendor A wins.')
+  })
+
+  describe('an Answer Retry the cutoff put in the reserved round (#245)', () => {
+    const MALFORMED = 'Here it is: {"speak": "Vendor A.", "display": 42}'
+    // The bookkeeping round answers voluntarily, malformed, and spends
+    // everything ahead of the Answer's protected share doing it: bookkeeping
+    // has no share left, so the round after it is the reserved one.
+    const retryingBookkeeping = (clock: () => FakeClock) => async (): Promise<AssistantTurn> => {
+      clock().advance(FINALIZATION_ALLOWANCE_MS - RESERVED_ANSWER_ALLOWANCE_MS)
+      return { kind: 'answer', ...parseAssistantAnswer(MALFORMED) }
+    }
+
+    it('carries the retry beside the Finalize Instruction and takes an on-contract reply as the Answer', async () => {
+      const h = harness({ laterRounds: [retryingBookkeeping(() => h.clock)] })
+      const run = collect(h.pipeline, 'compare vendors')
+      await h.enterFinalization()
+      const events = await run
+
+      expect(h.requests).toHaveLength(4)
+      expect(h.requests[2]).not.toHaveProperty('answerRetry')
+      expect(h.requests[3]).toMatchObject({
+        answerOnly: true,
+        finalizeInstruction: expect.any(String),
+        answerRetry: { reply: MALFORMED, message: answerRetryMessage('"display" is not a string') },
+      })
+      expect(displayText(events)).toBe('Vendor A wins.')
+      expect(events.at(-1)).toMatchObject({ type: 'done', outcome: 'done', finalizationCause: 'deadline_reached' })
+    })
+
+    it('lets ADR 0034 judge a reserved reply that is malformed again: the deterministic Answer stands in', async () => {
+      const h = harness({
+        laterRounds: [
+          retryingBookkeeping(() => h.clock),
+          async () => ({ kind: 'answer', ...parseAssistantAnswer(MALFORMED) }),
+        ],
+      })
+      const run = collect(h.pipeline, 'compare vendors')
+      await h.enterFinalization()
+      const events = await run
+
+      expect(h.requests).toHaveLength(4)
+      expect(displayText(events)).not.toContain('"display"')
+      expect(events.at(-1)).toMatchObject({ type: 'done', finalizationCause: 'deadline_reached' })
+      expect(h.faults.map((fault) => fault.site)).toEqual(
+        expect.arrayContaining(['pipeline.createCommandPipeline.malformedAnswer', 'pipeline.createCommandPipeline.offContractReply']),
+      )
+    })
   })
 
   it('leaves an early grace’s savings to the Answer rather than to bookkeeping (#209/AC2)', async () => {

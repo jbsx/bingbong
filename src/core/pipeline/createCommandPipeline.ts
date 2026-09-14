@@ -14,10 +14,11 @@ import type {
   ToolResultOutcome,
 } from '../ports/llm'
 import { LlmRequestTimeoutError } from '../ports/llm'
+import type { AnswerRetryRequest } from '../ports/llm'
 import { selectDelegatedMemory } from '../agent/subagentReport'
 import { createLlmDeltaBatcher } from './deltaBatcher'
 import type { TtsSpeaker } from '../ports/tts'
-import { answerText, spokenErrorLine } from '../agent/answerContract'
+import { answerRetryMessage, answerText, malformedErrorOf, spokenErrorLine } from '../agent/answerContract'
 import type { LearnedTermsControls } from '../voice/learnedTerms'
 import { MAX_RUN_NOTE_CHARS, finalizeRun, runStopRecord, type FinalizationCause, type RunFinalization, type RunJournalEntry, type RunJournalSnapshot, type RunStopRecord } from '../session/runJournal'
 import { currentUserObjective, type MemoryEntryId, type MemoryPatch, type WorkingMemorySnapshot } from '../session/workingMemory'
@@ -82,12 +83,13 @@ import {
   type EvidenceCommitInput,
 } from './evidenceCheckpoint'
 import { candidateCheckpointEvent, evidenceCheckpointEvent } from '../trace/evidenceCheckpointTrace'
-import type { LlmRequestShape, LlmRoundOutcome, RunTraceWriter } from '../trace/runTrace'
+import type { AnswerRetryOutcome, LlmRequestShape, LlmRoundOutcome, RunTraceWriter } from '../trace/runTrace'
 import type { VisionTraceReporter } from '../trace/visionTrace'
 import { createReasoningRounds, reasoningEvent, type TracedReasoningRound } from '../trace/reasoningTrace'
 import { createLlmRounds, llmRequestShape, llmRoundEvent, llmRoundFailure, type LlmRound, type TracedLlmRound } from '../trace/llmRoundTrace'
 import { pipelineEventTraceBody, tracesPipelineEvent } from '../trace/pipelineEventTrace'
 import { offContractReplyEvent, recordOffContractReply, type TracedOffContractReply } from '../trace/offContractReplyTrace'
+import { answerRetryOutcome, answerRetryTraceEvent, recordMalformedAnswer, type TracedAnswerRetryRecord } from '../trace/answerRetryTrace'
 import { completedEvidenceIsFresh } from './evidenceFreshness'
 import { evaluateCandidateCheckpoint, type CandidateCheckpointOutcome, type EvidenceSessionSource } from './candidateCheckpoint'
 import { deriveAnswerSources, repairCard, repairSpokenRendering } from './answerEvidence'
@@ -1118,6 +1120,11 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
     const writeOffContractReply = traceRun
       ? (reply: TracedOffContractReply): void => traceRun(() => ({ turnId, ...offContractReplyEvent(reply) }))
       : undefined
+    // The malformed_answer and answer_retry records (#245): the Run's own
+    // and a delegated worker's (handed down as `traceSubagentAnswerRetry`).
+    const writeAnswerRetry = traceRun
+      ? (record: TracedAnswerRetryRecord): void => traceRun(() => ({ turnId, ...answerRetryTraceEvent(record) }))
+      : undefined
     // A delegated worker's Tool Rounds (#185): the same one write, for the
     // events a worker's rounds publish to nobody. Its events arrive
     // unstamped — a worker knows no turn — so the Run stamps its own,
@@ -1265,6 +1272,8 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
           // a worker's off-contract report reply is dropped on the floor for
           // the bounded report, so the trace is the only record of it.
           ...(writeOffContractReply ? { traceSubagentOffContractReply: writeOffContractReply } : {}),
+          // And its Malformed Answers and Answer Retry (#245), on the same terms.
+          ...(writeAnswerRetry ? { traceSubagentAnswerRetry: writeAnswerRetry } : {}),
           // And what those rounds called (#185), through the same writer:
           // a worker's stream reaches no view at all, so this is the only
           // record of it there will ever be.
@@ -1400,6 +1409,12 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
         // reserved Answer round fails, requests tools, or replies off
         // contract (#198).
         let deterministicFallback = false
+        // The Answer Retry (#245): once per Run, so a Steering replan does
+        // not reset it. Owed after a Malformed Answer outside a reserved
+        // round, and taken by the very next request, whichever round the
+        // loop makes it.
+        let answerRetrySpent = false
+        let owedAnswerRetry: AnswerRetryRequest | undefined
         // The cause that fallback answers under, asked in one place so the
         // Answer the user hears and the trace record of the failed round
         // can never disagree: the phase's own Finalization Cause, or the
@@ -1656,6 +1671,12 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
           // about spent routes has to be what the gate it meets will
           // decide from.
           const verificationRound = verificationInForce()
+          // The Answer Retry this request carries, taken once (#245), and
+          // how the round that carried it resolved — the record is written
+          // in the finally, where a round that threw is known too.
+          const roundAnswerRetry = owedAnswerRetry
+          owedAnswerRetry = undefined
+          let answerRetryResolution: AnswerRetryOutcome = 'round_failed'
           try {
             const request: LlmRequest = {
               command,
@@ -1683,6 +1704,10 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
               // none of the instruction's other three carriers existed,
               // and a bookkeeping round that read as ordinary work.
               ...(roundFinalizeInstruction !== null ? { finalizeInstruction: roundFinalizeInstruction } : {}),
+              // The Answer Retry (#245): the Malformed Answer and the message
+              // about it, beside the Finalize Instruction when a cutoff made
+              // this the reserved round. Nothing else about the request changes.
+              ...(roundAnswerRetry !== undefined ? { answerRetry: roundAnswerRetry } : {}),
               ...(continuity ? { journal: continuity.snapshot } : {}),
               ...(continuity ? { memory: continuity.memory } : {}),
               // The user's own objective (#206), beside the memory it was
@@ -1774,6 +1799,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
             turn = await llm.complete(request)
             roundUsage = turn.usage
             roundOutcome = 'completed'
+            answerRetryResolution = answerRetryOutcome(turn)
           } catch (err) {
             // What ended the round, for its record (#218): the cuts this
             // loop made itself first — they all reach the client as one
@@ -1898,6 +1924,9 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
             // how it ended (#218), and only a round that returned carries
             // usage.
             if (llmRounds) closeLlmAttempt(llmRounds.takeRound(roundOutcome, roundUsage))
+            if (roundAnswerRetry !== undefined) {
+              writeAnswerRetry?.({ kind: 'answer_retry', role: 'orchestrator', outcome: answerRetryResolution })
+            }
           }
           // The round can resolve despite the deadline abort (a client that
           // ignored the signal, or the response landing in the race
@@ -1922,7 +1951,12 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
           // directive was already read, and another round costs a run that
           // has just declared itself out of budget or progress ten to
           // eighty seconds for a second chance at the behaviour it showed.
-          if (reservedRound && turn.kind === 'answer' && turn.shape === 'off_contract') {
+          //
+          // A Malformed Answer there is off contract too (#245): the retry
+          // below belongs to rounds that have a round to spend, and this one
+          // has none. A retry a cutoff carried into this round is judged
+          // here like any reply.
+          if (reservedRound && turn.kind === 'answer' && (turn.shape === 'off_contract' || turn.shape === 'malformed')) {
             recordOffContractReply({
               site: 'pipeline.createCommandPipeline.offContractReply',
               role: 'orchestrator',
@@ -1935,6 +1969,31 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
             finalizationFailure = 'the reserved Answer round replied off contract instead of answering'
             deterministicFallback = true
             break
+          }
+
+          // A Malformed Answer outside a reserved round (#245): the model
+          // meant an Answer the runtime cannot read, so what it claimed —
+          // its cause, its resolution, its run note — would be lost with
+          // the parse and the raw JSON shown and spoken. Recorded at
+          // detection, and met with one Answer Retry per Run: the next
+          // request carries the reply and asks for the Answer alone. The
+          // broken reply is never repaired, and the text it streamed stays
+          // until an Answer replaces it. Once the retry is spent, a
+          // Malformed Answer renders as the prose Answer it always was.
+          if (!reservedRound && turn.kind === 'answer' && turn.shape === 'malformed') {
+            recordMalformedAnswer({
+              site: 'pipeline.createCommandPipeline.malformedAnswer',
+              role: 'orchestrator',
+              text: answerText(turn),
+              error: malformedErrorOf(turn),
+              ...(writeAnswerRetry ? { trace: writeAnswerRetry } : {}),
+              turnId,
+            })
+            if (!answerRetrySpent) {
+              answerRetrySpent = true
+              owedAnswerRetry = { reply: answerText(turn), message: answerRetryMessage(malformedErrorOf(turn)) }
+              continue
+            }
           }
 
           if (turn.kind === 'answer') {

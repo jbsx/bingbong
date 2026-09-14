@@ -84,6 +84,20 @@ describe('the request shape (#191)', () => {
   })
 })
 
+describe('the request shape of an Answer Retry (#245)', () => {
+  it('counts the Malformed Answer and the retry message as content', () => {
+    const bare = llmRequestShape({ command: 'find the fare', toolResults: [] })
+    const retried = llmRequestShape({
+      command: 'find the fare',
+      toolResults: [],
+      answerRetry: { reply: 'x'.repeat(100), message: 'y'.repeat(50) },
+    })
+
+    expect(retried.toolResults).toBe(0)
+    expect(retried.chars - bare.chars).toBeGreaterThanOrEqual(150)
+  })
+})
+
 describe('the llm_round record (#191)', () => {
   it('names the model, prompt hash, rung, usage and shape, stamped with the worker when there is one', () => {
     expect(

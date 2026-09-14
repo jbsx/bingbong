@@ -247,10 +247,10 @@ export interface OffContractReplyEvent {
   /** Which loop's reserved round it was: the Run's own, or a delegated worker's. */
   readonly role: LlmRoundRole
   /**
-   * The parser's shape marker, carried verbatim. Only `off_contract` is
-   * ever recorded today; the field is here because the cut between "no
-   * JSON found" and "JSON of the wrong shape" belongs to the parser, and
-   * a finer marker must widen this record rather than add a kind.
+   * The parser's shape marker, carried verbatim: `off_contract` for prose,
+   * `malformed` for a reply that carried the contract's keys but not its
+   * shape (#245). The cut belongs to the parser, which is why a finer
+   * marker widened this record rather than adding a kind.
    */
   readonly shape: AnswerShape
   /** The reply as the model wrote it, cut at {@link TRACE_OFF_CONTRACT_TEXT_MAX_CHARS}. */
@@ -260,6 +260,41 @@ export interface OffContractReplyEvent {
   /** The Finalization Cause the stand-in Answer or bounded report was built with. */
   readonly cause: FinalizationCause
   /** The delegated worker whose round replied (#183's stamp); absent on the Run's own. */
+  readonly agentId?: string
+}
+
+/**
+ * One Malformed Answer (#245): a reply outside a reserved round that carried
+ * the Answer contract's keys but that no candidate read as its shape. Written
+ * at detection, beside a fault, whether or not the Answer Retry is still
+ * unspent — the `answer_retry` record says whether one followed.
+ */
+export interface MalformedAnswerEvent {
+  readonly kind: 'malformed_answer'
+  readonly role: LlmRoundRole
+  /** The reply as the model wrote it, cut at {@link TRACE_OFF_CONTRACT_TEXT_MAX_CHARS}. */
+  readonly text: string
+  /** Full length in characters before the cut. */
+  readonly chars: number
+  /** What could not be read: the parser's message with its position, or the field and what it was. */
+  readonly error: string
+  /** The delegated worker whose round replied; absent on the Run's own. */
+  readonly agentId?: string
+}
+
+/**
+ * How the round that carried an Answer Retry resolved (#245): an Answer on
+ * contract, another Malformed Answer, a prose Answer, a Tool Round, or a
+ * round that returned no turn.
+ */
+export type AnswerRetryOutcome = 'on_contract' | 'malformed' | 'prose' | 'tool_calls' | 'round_failed'
+
+/** One Answer Retry, written when the round that carried it resolves (#245). */
+export interface AnswerRetryEvent {
+  readonly kind: 'answer_retry'
+  readonly role: LlmRoundRole
+  readonly outcome: AnswerRetryOutcome
+  /** The delegated worker that retried; absent on the Run's own. */
   readonly agentId?: string
 }
 
@@ -385,6 +420,8 @@ export type RunTraceEventBody =
   | PipelineEventTraceEvent
   | LlmRoundEvent
   | OffContractReplyEvent
+  | MalformedAnswerEvent
+  | AnswerRetryEvent
   | FailureScreenshotEvent
   | SearchObservationEvent
   | IdentitySlipEvent

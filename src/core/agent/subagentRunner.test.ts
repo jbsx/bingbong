@@ -1,7 +1,8 @@
 import { afterEach, describe, expect, it } from 'vitest'
-import { parseAssistantAnswer } from './answerContract'
+import { answerRetryMessage, parseAssistantAnswer } from './answerContract'
 import { setFaultSink, type FaultReport } from '../trace/fault'
 import type { TracedOffContractReply } from '../trace/offContractReplyTrace'
+import type { TracedAnswerRetryRecord } from '../trace/answerRetryTrace'
 import { FakeClock, ScriptedLlm, memoryEntry, type ScriptedTurn } from '../testing/doubles'
 import { runSubagent, SubagentCancelledError } from './subagentRunner'
 import type { Tool } from '../pipeline/tool'
@@ -421,6 +422,107 @@ describe('runSubagent', () => {
 
     expect(report.text).toBe('Found the price on the vendor page: $39.')
     expect(report.finalizationCause).toBe('model_answered')
+  })
+
+  describe('the Answer Retry after a Malformed Answer (#245)', () => {
+    const MALFORMED = 'Here is my report: {"speak": "Found it.", "display": 42}'
+    const MALFORMED_AGAIN = 'Report: {"speak": ["Found it."], "display": "The fare is $39."}'
+    const ON_CONTRACT = '{"speak":"Found it.","display":"The fare is $39."}'
+    const answer = (text: string): ScriptedTurn => ({ kind: 'answer', ...parseAssistantAnswer(text) })
+    const spinRound = (id: string): ScriptedTurn => ({ kind: 'tool_calls', calls: [{ id, name: 'spin', args: {} }] })
+    const spin: Tool = { name: 'spin', async execute() { return 'spun' } }
+
+    async function runWorker(script: ScriptedTurn[], options: { maxToolRounds?: number; expiresAfterRequests?: number } = {}) {
+      const llm = new ScriptedLlm(script)
+      const traced: TracedAnswerRetryRecord[] = []
+      const offContract: TracedOffContractReply[] = []
+      const faults: FaultReport[] = []
+      setFaultSink((report) => faults.push(report))
+      const report = await runSubagent(
+        { llm, tools: [spin], clock: new FakeClock(), maxToolRounds: options.maxToolRounds ?? 5 },
+        {
+          task: 't',
+          turnId: 'turn-w',
+          agentId: 'a-20',
+          isCancelled: () => false,
+          ...(options.expiresAfterRequests !== undefined
+            ? { isWorkExpired: () => llm.requests.length >= options.expiresAfterRequests! }
+            : {}),
+          traceAnswerRetry: (record) => traced.push(record),
+          traceOffContractReply: (reply) => offContract.push(reply),
+        },
+      )
+      return {
+        llm,
+        report,
+        traced,
+        offContract,
+        outcomes: traced.map((record) => (record.kind === 'answer_retry' ? `retry:${record.outcome}` : record.kind)),
+        malformedFaults: faults.filter((fault) => fault.site === 'agent.subagentRunner.malformedAnswer'),
+      }
+    }
+
+    it('retries once and takes the report that lands on contract', async () => {
+      const run = await runWorker([answer(MALFORMED), answer(ON_CONTRACT)])
+
+      expect(run.report.text).toBe('The fare is $39.')
+      expect(run.report.finalizationCause).toBe('model_answered')
+      expect(run.llm.requests[0]).not.toHaveProperty('answerRetry')
+      expect(run.llm.requests[1]?.answerRetry).toEqual({ reply: MALFORMED, message: answerRetryMessage('"display" is not a string') })
+      expect(run.traced).toEqual([
+        { kind: 'malformed_answer', role: 'subagent', text: MALFORMED, error: '"display" is not a string', agentId: 'a-20' },
+        { kind: 'answer_retry', role: 'subagent', outcome: 'on_contract', agentId: 'a-20' },
+      ])
+      expect(run.malformedFaults).toMatchObject([{ turnId: 'turn-w', message: expect.stringContaining('subagent replied with a Malformed Answer') }])
+    })
+
+    it('takes a second Malformed Answer as its report text, as today', async () => {
+      const run = await runWorker([answer(MALFORMED), answer(MALFORMED_AGAIN)])
+
+      expect(run.llm.requests).toHaveLength(2)
+      expect(run.report.text).toBe(MALFORMED_AGAIN)
+      expect(run.outcomes).toEqual(['malformed_answer', 'retry:malformed', 'malformed_answer'])
+    })
+
+    it('takes a retry that returns tool calls as a Tool Round and resumes with the retry spent', async () => {
+      const run = await runWorker([answer(MALFORMED), spinRound('c1'), answer(ON_CONTRACT)])
+
+      expect(run.llm.requests).toHaveLength(3)
+      expect(run.llm.requests[1]?.answerRetry).toBeDefined()
+      expect(run.llm.requests[2]).not.toHaveProperty('answerRetry')
+      expect(run.report.text).toBe('The fare is $39.')
+      expect(run.outcomes).toEqual(['malformed_answer', 'retry:tool_calls'])
+    })
+
+    it('sends no second retry once the first is spent', async () => {
+      const run = await runWorker([answer(MALFORMED), spinRound('c1'), answer(MALFORMED_AGAIN)])
+
+      expect(run.llm.requests.filter((request) => request.answerRetry !== undefined)).toHaveLength(1)
+      expect(run.report.text).toBe(MALFORMED_AGAIN)
+      expect(run.malformedFaults).toHaveLength(2)
+    })
+
+    it('carries the retry into the reserved report round the shared deadline made next, and takes its on-contract report', async () => {
+      const run = await runWorker([spinRound('c1'), answer(MALFORMED), answer(ON_CONTRACT)], { expiresAfterRequests: 2 })
+
+      expect(run.llm.requests).toHaveLength(3)
+      expect(run.llm.requests[2]?.answerRetry).toEqual({ reply: MALFORMED, message: answerRetryMessage('"display" is not a string') })
+      expect(run.report.text).toBe('The fare is $39.')
+      expect(run.report.finalizationCause).toBe('deadline_reached')
+      expect(run.outcomes).toEqual(['malformed_answer', 'retry:on_contract'])
+    })
+
+    it('treats a Malformed Answer in the reserved report round as off contract, retry or not (ADR 0034)', async () => {
+      const run = await runWorker([spinRound('c1'), answer(MALFORMED), answer(MALFORMED_AGAIN)], { expiresAfterRequests: 2 })
+
+      expect(run.report.bounded).toBe(true)
+      expect(run.report.text).not.toContain('The fare is $39.')
+      expect(run.offContract).toEqual([
+        { role: 'subagent', shape: 'malformed', text: MALFORMED_AGAIN, cause: 'deadline_reached', agentId: 'a-20' },
+      ])
+      // The reserved round's reply is judged by ADR 0034, so it earns no retry of its own.
+      expect(run.outcomes).toEqual(['malformed_answer', 'retry:malformed'])
+    })
   })
 
   it('answers deterministically when the reserved round itself fails (#120)', async () => {

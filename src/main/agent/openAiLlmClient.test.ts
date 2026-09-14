@@ -711,6 +711,49 @@ describe('openAiLlmClient', () => {
     })
   })
 
+  it('sends the Malformed Answer as the assistant’s reply and the Answer Retry last (#245)', async () => {
+    const fetch = new ScriptedFetch([
+      completionResponse({ content: '{"speak":"Done.","display":"Detail."}' }),
+    ])
+    const client = makeClient(fetch)
+
+    await client.complete({
+      command: 'find the luggage rules',
+      toolResults: [{ call: { id: 'c1', name: 'read_page', args: {} }, outcome: { ok: true, result: 'Luggage: two pieces.' } }],
+      answerRetry: { reply: 'Here it is: **{"speak":"Done.","display":42}**', message: 'Reply with only the JSON object.' },
+    })
+
+    // The broken reply sits after the round's tool history, as the
+    // assistant's own message; the retry message is the last word.
+    expect(fetch.calls[0].body.messages.slice(-3)).toEqual([
+      { role: 'tool', tool_call_id: 'c1', content: 'Luggage: two pieces.' },
+      { role: 'assistant', content: 'Here it is: **{"speak":"Done.","display":42}**' },
+      { role: 'user', content: 'Reply with only the JSON object.' },
+    ])
+  })
+
+  it('sends the Answer Retry after the Finalize Instruction when a cutoff made the next round reserved (#245)', async () => {
+    const fetch = new ScriptedFetch([
+      completionResponse({ content: '{"speak":"Out of time.","display":"Out of time."}' }),
+    ])
+    const client = makeClient(fetch)
+
+    await client.complete({
+      command: 'find the luggage rules',
+      toolResults: [],
+      standingDirective: 'Use the London route.',
+      finalizeInstruction: 'Finalize now.',
+      answerRetry: { reply: '{"speak":"Done.","display":42}', message: 'Reply with only the JSON object.' },
+    })
+
+    expect(fetch.calls[0].body.messages.slice(-4)).toEqual([
+      { role: 'assistant', content: '{"speak":"Done.","display":42}' },
+      { role: 'user', content: standingDirectiveMessage('Use the London route.') },
+      { role: 'user', content: 'Finalize now.' },
+      { role: 'user', content: 'Reply with only the JSON object.' },
+    ])
+  })
+
   it('sends no Finalize Instruction while the run is working (#207)', async () => {
     const fetch = new ScriptedFetch([
       completionResponse({ content: '{"speak":"Done.","display":"Done."}' }),

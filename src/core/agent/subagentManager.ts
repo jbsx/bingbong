@@ -7,6 +7,7 @@ import { SUBAGENT_LIMITS, type SubagentSharedDeadline } from './subagentRails'
 import type { SubagentReasoningTrace } from '../trace/reasoningTrace'
 import type { SubagentLlmRoundTrace } from '../trace/llmRoundTrace'
 import type { SubagentOffContractReplyTrace } from '../trace/offContractReplyTrace'
+import type { SubagentAnswerRetryTrace } from '../trace/answerRetryTrace'
 import type { SubagentPipelineEventTrace } from '../trace/pipelineEventTrace'
 import type { VisionTraceReporter } from '../trace/visionTrace'
 import type { SubagentReport } from './subagentReport'
@@ -138,6 +139,12 @@ export interface SubagentTaskHooks {
    */
   traceOffContractReply?: SubagentOffContractReplyTrace
   /**
+   * The malformed_answer and answer_retry records for this worker (#245):
+   * the spawning Run's own writer, closed over its identity and turn.
+   * Absent unless the developer opted in with `BINGBONG_RUN_TRACE` (#184).
+   */
+  traceAnswerRetry?: SubagentAnswerRetryTrace
+  /**
    * The pipeline_event records for this worker's Tool Rounds (#185): the
    * spawning Run's own writer, closed over its identity and turn. Absent
    * unless the developer opted in with `BINGBONG_RUN_TRACE` (#184) — and
@@ -200,6 +207,7 @@ export interface SpawnContext {
   traceReasoning?: SubagentReasoningTrace
   traceLlmRound?: SubagentLlmRoundTrace
   traceOffContractReply?: SubagentOffContractReplyTrace
+  traceAnswerRetry?: SubagentAnswerRetryTrace
   tracePipelineEvent?: SubagentPipelineEventTrace
   traceVision?: VisionTraceReporter
 }
@@ -340,8 +348,17 @@ export function createSubagentManager(deps: SubagentManagerDeps): SubagentManage
 
   return {
     spawn(kind, task, context = {}) {
-      const { turnId, memory, sharedDeadline, traceReasoning, traceLlmRound, traceOffContractReply, tracePipelineEvent, traceVision } =
-        context
+      const {
+        turnId,
+        memory,
+        sharedDeadline,
+        traceReasoning,
+        traceLlmRound,
+        traceOffContractReply,
+        traceAnswerRetry,
+        tracePipelineEvent,
+        traceVision,
+      } = context
       if (liveCount() >= maxConcurrent) {
         return {
           ok: false,
@@ -423,6 +440,8 @@ export function createSubagentManager(deps: SubagentManagerDeps): SubagentManage
           // the bounded report drops what the worker wrote, so the Run's
           // trace is the only place that reply survives.
           ...(traceOffContractReply !== undefined ? { traceOffContractReply } : {}),
+          // And its Malformed Answers and Answer Retry (#245), on the same terms.
+          ...(traceAnswerRetry !== undefined ? { traceAnswerRetry } : {}),
           // And the worker's own Tool Round events (#185), on the same
           // terms: they reach no view, so the Run's trace is the only
           // place they can be kept — and only when it asked for them.

@@ -203,6 +203,8 @@ export function createSubagentTaskApi(deps: SubagentWorkhorseDeps): SubagentTask
           ...(hooks.traceOffContractReply !== undefined
             ? { traceOffContractReply: hooks.traceOffContractReply }
             : {}),
+          // Its Malformed Answers and Answer Retry (#245): the same hand-down.
+          ...(hooks.traceAnswerRetry !== undefined ? { traceAnswerRetry: hooks.traceAnswerRetry } : {}),
           // The worker's Tool Round events (#185): the same hand-down, for
           // the calls and results a worker's rounds publish to no view.
           ...(hooks.tracePipelineEvent !== undefined ? { tracePipelineEvent: hooks.tracePipelineEvent } : {}),

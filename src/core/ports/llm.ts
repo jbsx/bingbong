@@ -165,11 +165,28 @@ export interface LlmRequest {
    */
   finalizeInstruction?: string
   /**
+   * The Answer Retry this request carries (#245): the Malformed Answer the
+   * last round returned, which enters history as the assistant's reply, and
+   * the message asking for the Answer alone, which rides as the request's
+   * last user message — after the Finalize Instruction when both are
+   * present. Present on the one request after a Malformed Answer, once per
+   * Run or Subagent run; nothing else about that request changes.
+   */
+  answerRetry?: AnswerRetryRequest
+  /**
    * Aborts the in-flight HTTP request immediately (#47): the pipeline
    * wires Stop to this signal so aborting a run no longer waits out the
    * request timeout. Clients that ignore it keep the old contract.
    */
   signal?: AbortSignal
+}
+
+/** What one Answer Retry sends (#245): the reply that could not be read, and the message about it. */
+export interface AnswerRetryRequest {
+  /** The Malformed Answer as the model wrote it. */
+  readonly reply: string
+  /** The Answer Retry message, built by `answerRetryMessage`. */
+  readonly message: string
 }
 
 /** One streamed fragment of an orchestrator round (#47). */
@@ -291,6 +308,8 @@ export type AssistantTurn =
        * than being forced to answer a question it has no view on.
        */
       shape?: AnswerShape
+      /** What could not be read (#245), the parser's own words; present with a `malformed` shape. */
+      malformedError?: string
       usage?: TokenUsage
     }
   | { kind: 'tool_calls'; calls: ToolCall[]; usage?: TokenUsage }

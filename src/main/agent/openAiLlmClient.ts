@@ -527,6 +527,12 @@ export function createOpenAiLlmClient(deps: OpenAiLlmClientDeps): LlmClient {
       })
       messages.push({ role: 'tool', tool_call_id: call.id, content: toolResultContent(outcome) })
     }
+    // The Malformed Answer an Answer Retry is about (#245) enters history
+    // where the model wrote it: after the round's tool history, as its own
+    // reply, so the retry message below refers to a message it can see.
+    if (request.answerRetry) {
+      messages.push({ role: 'assistant', content: request.answerRetry.reply })
+    }
     if (request.steering) {
       messages.push({ role: 'user', content: steeringDirectiveMessage(request.steering) })
     } else if (request.standingDirective) {
@@ -542,6 +548,12 @@ export function createOpenAiLlmClient(deps: OpenAiLlmClientDeps): LlmClient {
     // as written rather than wrapped in a sentence of ours.
     if (request.finalizeInstruction) {
       messages.push({ role: 'user', content: request.finalizeInstruction })
+    }
+    // The Answer Retry's message (#245) takes the Finalize Instruction's
+    // position, after it when both ride: the Run's phase is the fact above,
+    // and this is the one thing the reply has to do under it.
+    if (request.answerRetry) {
+      messages.push({ role: 'user', content: request.answerRetry.message })
     }
     return messages
   }

@@ -5,6 +5,7 @@ import type { WorkingMemorySnapshot } from '../session/workingMemory'
 import type { SubagentReasoningTrace } from '../trace/reasoningTrace'
 import type { SubagentLlmRoundTrace } from '../trace/llmRoundTrace'
 import type { SubagentOffContractReplyTrace } from '../trace/offContractReplyTrace'
+import type { SubagentAnswerRetryTrace } from '../trace/answerRetryTrace'
 import type { SubagentPipelineEventTrace } from '../trace/pipelineEventTrace'
 import type { VisionTraceReporter } from '../trace/visionTrace'
 import type { EffortTier } from './runPlan'
@@ -62,6 +63,12 @@ export interface ToolContext {
    * with `BINGBONG_RUN_TRACE` (#184), like the traces beside it.
    */
   traceSubagentOffContractReply?: SubagentOffContractReplyTrace
+  /**
+   * The malformed_answer and answer_retry records for delegated workers
+   * (#245), closed over the spawning Run's writer and turn like the traces
+   * beside it. Absent unless the developer opted in with `BINGBONG_RUN_TRACE`.
+   */
+  traceSubagentAnswerRetry?: SubagentAnswerRetryTrace
   /**
    * The pipeline_event records for delegated workers (#185, ADR 0031): a
    * worker's Tool Rounds never reach the main stream — only its

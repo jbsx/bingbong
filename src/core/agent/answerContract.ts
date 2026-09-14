@@ -143,24 +143,66 @@ export function partialAnswerText(content: string): string {
 
 /**
  * Which contract a reply matched (#198, ADR 0034). `on_contract` is the
- * JSON branch below — the shape with `speak` and `display`; `off_contract`
- * is everything the branch refused, prose and wrong-shaped JSON alike. The
- * marker is the parser's so both loops read the same fact: an ordinary
- * round still renders an off-contract reply as an Answer, and only the two
- * reserved rounds treat it as a failed round.
+ * JSON branch below — the shape with `speak` and `display`; `malformed`
+ * (#245) is a reply that carries both of the contract's keys but that no
+ * candidate reads as that shape, JSON that fails to parse or parses wrong;
+ * `off_contract` is everything else, prose above all. The marker is the
+ * parser's so both loops read the same fact: an ordinary round renders
+ * prose as an Answer and meets a Malformed Answer with one Answer Retry,
+ * and the two reserved rounds treat both as a failed round.
  */
-export type AnswerShape = 'on_contract' | 'off_contract'
+export type AnswerShape = 'on_contract' | 'off_contract' | 'malformed'
+
+/**
+ * Why a JSON value is not the Answer contract's shape (#245), worded for
+ * the model: the field, and what it was. Null when it is the shape.
+ */
+function contractShapeFailure(parsed: unknown): string | null {
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return 'the reply is not a JSON object'
+  for (const key of ['speak', 'display'] as const) {
+    if (!(key in parsed)) return `"${key}" is missing`
+    if (typeof (parsed as Record<string, unknown>)[key] !== 'string') return `"${key}" is not a string`
+  }
+  return null
+}
+
+/** Whether a reply carries both of the Answer contract's keys (#245) — what it was meant as. */
+function carriesContractKeys(content: string): boolean {
+  return /"speak"\s*:/.test(content) && /"display"\s*:/.test(content)
+}
+
+/**
+ * What could not be read of a turn marked `malformed` (#245): the parser's
+ * own words, or the contract's for a client that marked the shape without
+ * them — so neither loop ever sends a retry message with nothing in it.
+ */
+export function malformedErrorOf(turn: { malformedError?: string }): string {
+  return turn.malformedError ?? '"speak" and "display" are not both strings'
+}
+
+/**
+ * The Answer Retry's message (#245): what could not be read, verbatim, and
+ * the contract asked for alone. It diagnoses nothing further and suggests
+ * no corrected reply — the runtime never writes the user's Answer.
+ */
+export function answerRetryMessage(malformedError: string): string {
+  return `Your last reply was meant as the Answer but could not be read as one: ${malformedError}. Reply with only the JSON object: no text before or after it, no code fences, "speak" and "display" as strings.`
+}
 
 /**
  * Parse the model's final message into {speak, display}. Accepted shapes, in
  * order: a bare JSON object, a JSON object in a code fence, a JSON object with
  * surrounding prose. Anything else falls back to the raw text — capped for
- * speaking, unchanged for display — and is marked `off_contract` (#198).
+ * speaking, unchanged for display, never repaired — and is marked
+ * `malformed` with what the last candidate failed on when it carries the
+ * contract's keys (#245), `off_contract` otherwise (#198).
  */
 export function parseAssistantAnswer(content: string): {
   speak: string
   display: string
   shape: AnswerShape
+  /** What the last candidate failed on, verbatim; present exactly when `shape` is `malformed`. */
+  malformedError?: string
   runNote?: string
   runNoteIssue?: 'malformed'
   memoryPatch?: MemoryPatch
@@ -180,16 +222,17 @@ export function parseAssistantAnswer(content: string): {
 } {
   const trimmed = content.trim()
   const candidates = [trimmed, extractFenced(trimmed), extractJsonSlice(trimmed)]
+  // What the last candidate tried failed on (#245): the candidates narrow
+  // toward the object the reply meant, so the last one's failure is the
+  // one that names what could not be read.
+  let lastFailure: string | null = null
 
   for (const candidate of candidates) {
     if (candidate === null) continue
     try {
       const parsed: unknown = JSON.parse(candidate)
-      if (
-        typeof parsed === 'object' && parsed !== null &&
-        typeof (parsed as { speak?: unknown }).speak === 'string' &&
-        typeof (parsed as { display?: unknown }).display === 'string'
-      ) {
+      lastFailure = contractShapeFailure(parsed)
+      if (lastFailure === null) {
         const {
           speak,
           display,
@@ -287,9 +330,13 @@ export function parseAssistantAnswer(content: string): {
       }
     } catch (error) {
       reportFault('agent.answerContract.parseAssistantAnswer', error)
+      lastFailure = error instanceof Error ? error.message : String(error)
       // try the next candidate
     }
   }
 
-  return { speak: capSentences(trimmed, SPEAK_SENTENCE_LIMIT), display: trimmed, shape: 'off_contract' }
+  const fallback = { speak: capSentences(trimmed, SPEAK_SENTENCE_LIMIT), display: trimmed }
+  return lastFailure !== null && carriesContractKeys(trimmed)
+    ? { ...fallback, shape: 'malformed', malformedError: lastFailure }
+    : { ...fallback, shape: 'off_contract' }
 }

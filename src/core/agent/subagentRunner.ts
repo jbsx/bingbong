@@ -37,8 +37,10 @@ import { droppedFindingsNote, validateReportFindings, type SubagentReport } from
 import { createReasoningRounds, type ReasoningRound, type SubagentReasoningTrace } from '../trace/reasoningTrace'
 import { createLlmRounds, llmRequestShape, llmRoundFailure, type LlmRound, type SubagentLlmRoundTrace } from '../trace/llmRoundTrace'
 import type { LlmRoundOutcome } from '../trace/runTrace'
-import { answerText } from './answerContract'
+import { answerRetryMessage, answerText, malformedErrorOf } from './answerContract'
 import { recordOffContractReply, type SubagentOffContractReplyTrace } from '../trace/offContractReplyTrace'
+import { answerRetryOutcome, recordMalformedAnswer, type SubagentAnswerRetryTrace } from '../trace/answerRetryTrace'
+import type { AnswerRetryRequest } from '../ports/llm'
 import type { SubagentPipelineEventTrace } from '../trace/pipelineEventTrace'
 import type { VisionTraceReporter } from '../trace/visionTrace'
 import { reportFault } from '../trace/fault'
@@ -250,6 +252,12 @@ export interface RunSubagentOptions {
    * set `BINGBONG_RUN_TRACE` (#184); absent, the report still stands in.
    */
   traceOffContractReply?: SubagentOffContractReplyTrace
+  /**
+   * The malformed_answer and answer_retry records for this worker (#245):
+   * built by the spawning Run over its own writer, like the traces beside
+   * it. Absent, the worker still retries and records nothing.
+   */
+  traceAnswerRetry?: SubagentAnswerRetryTrace
   /**
    * The pipeline_event records for this worker's Tool Rounds (#185, ADR
    * 0031): built by the spawning Run the same way, over the same writer.
@@ -516,6 +524,20 @@ export async function runSubagent(deps: RunSubagentDeps, options: RunSubagentOpt
   }
   const toolResults: ToolResult[] = []
   let lastAction: string | null = null
+  // The Answer Retry (#245), once per Subagent run: owed after a Malformed
+  // Answer outside the reserved report round, taken by the next request.
+  let answerRetrySpent = false
+  let owedAnswerRetry: AnswerRetryRequest | undefined
+  const takeAnswerRetry = (): AnswerRetryRequest | undefined => {
+    const taken = owedAnswerRetry
+    owedAnswerRetry = undefined
+    return taken
+  }
+  const worker = options.agentId !== undefined ? { agentId: options.agentId } : {}
+  /** The answer_retry record, for a round that carried the retry. */
+  const traceAnswerRetryOutcome = (retry: AnswerRetryRequest | undefined, turn: AssistantTurn | null): void => {
+    if (retry !== undefined) options.traceAnswerRetry?.({ kind: 'answer_retry', role: 'subagent', outcome: answerRetryOutcome(turn), ...worker })
+  }
   // This Subagent's Effort Epoch (#149, ADR 0027): the Run's bounded-effort
   // module in Subagent configuration — this worker's independent Tool
   // Round budget, the parent Run's shared active-work deadline as its
@@ -657,10 +679,12 @@ export async function runSubagent(deps: RunSubagentDeps, options: RunSubagentOpt
     })
   }
 
-  const requestArgs = (): LlmRequest => {
+  const requestArgs = (answerRetry: AnswerRetryRequest | undefined): LlmRequest => {
     const request: LlmRequest = {
       command: options.task,
       toolResults,
+      // The Answer Retry this round carries (#245), in either round kind.
+      ...(answerRetry !== undefined ? { answerRetry } : {}),
       // The Report Grace's end aborts the round in flight (#199): a
       // reserved report round the grace outran is abandoned rather than
       // left running past the answer it was going to feed.
@@ -729,7 +753,8 @@ export async function runSubagent(deps: RunSubagentDeps, options: RunSubagentOpt
       }
       let turn: AssistantTurn | null = null
       let answerError: unknown
-      const answerRequest = requestArgs()
+      const answerRetry = takeAnswerRetry()
+      const answerRequest = requestArgs(answerRetry)
       try {
         turn = await llm.complete(answerRequest)
       } catch (error) {
@@ -748,6 +773,7 @@ export async function runSubagent(deps: RunSubagentDeps, options: RunSubagentOpt
         // same terms: how it ended (#218), and usage only when it returned.
         traceThinking(reasoningRounds?.takeRound())
         closeLlmAttempt(llmRounds?.takeRound(roundOutcome(turn, answerError), turn?.usage), answerRequest)
+        traceAnswerRetryOutcome(answerRetry, turn)
       }
       await checkpoint(options)
       // An Off-contract Reply in the reserved report round (#198, ADR
@@ -758,7 +784,9 @@ export async function runSubagent(deps: RunSubagentDeps, options: RunSubagentOpt
       // that never reported. It is a failed round: the bounded report
       // stands in with the round's own cause, and the text is dropped —
       // never the report's text, never its findings.
-      if (turn !== null && turn.kind === 'answer' && turn.shape === 'off_contract') {
+      // A Malformed Answer here is off contract too (#245): the retry is
+      // for rounds with a round to spend.
+      if (turn !== null && turn.kind === 'answer' && (turn.shape === 'off_contract' || turn.shape === 'malformed')) {
         recordOffContractReply({
           site: 'agent.subagentRunner.offContractReply',
           role: 'subagent',
@@ -779,7 +807,8 @@ export async function runSubagent(deps: RunSubagentDeps, options: RunSubagentOpt
     }
 
     let turn: AssistantTurn | null = null
-    const request = requestArgs()
+    const answerRetry = takeAnswerRetry()
+    const request = requestArgs(answerRetry)
     let usage: TokenUsage | undefined
     let roundError: unknown
     try {
@@ -798,9 +827,31 @@ export async function runSubagent(deps: RunSubagentDeps, options: RunSubagentOpt
       // how it ended (#218).
       traceThinking(reasoningRounds?.takeRound())
       closeLlmAttempt(llmRounds?.takeRound(roundOutcome(turn, roundError), usage), request)
+      traceAnswerRetryOutcome(answerRetry, turn)
     }
     if (turn === null) return abandonedReport()
     await checkpoint(options)
+    // A Malformed Answer outside the reserved round (#245): an ordinary
+    // round's reply becomes the Report whatever its shape, so without this
+    // the worker's JSON reaches the orchestrator as raw text with no
+    // findings. One retry per Subagent run, bounded by the parent's grace
+    // like any round; once spent, the reply is the Report as it always was.
+    if (turn.kind === 'answer' && turn.shape === 'malformed') {
+      recordMalformedAnswer({
+        site: 'agent.subagentRunner.malformedAnswer',
+        role: 'subagent',
+        text: answerText(turn),
+        error: malformedErrorOf(turn),
+        ...(options.traceAnswerRetry !== undefined ? { trace: options.traceAnswerRetry } : {}),
+        ...(options.turnId !== undefined ? { turnId: options.turnId } : {}),
+        ...worker,
+      })
+      if (!answerRetrySpent) {
+        answerRetrySpent = true
+        owedAnswerRetry = { reply: answerText(turn), message: answerRetryMessage(malformedErrorOf(turn)) }
+        continue
+      }
+    }
     if (turn.kind === 'answer') {
       // A voluntary conclusion — no rail forced it (#162).
       return reportFromTurn(turn, options.agentId, workerLedger.snapshot(), 'model_answered')
