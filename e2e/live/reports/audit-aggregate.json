@@ -36,9 +36,9 @@
         ],
         "dirtyTree": true,
         "gradesRevision": 1,
-        "auditCommit": "33c2b52ac19f79c1a5666a903bc857e1cd0bfa52",
+        "auditCommit": "4586e4137fad698b9b12e92d7d954acb1aaddd24",
         "auditDirtyTree": false,
-        "generatedAt": "2026-09-14T00:38:15.512Z"
+        "generatedAt": "2026-09-14T11:58:54.837Z"
       },
       {
         "setId": "baseline-2",
@@ -49,9 +49,9 @@
         ],
         "dirtyTree": true,
         "gradesRevision": 1,
-        "auditCommit": "33c2b52ac19f79c1a5666a903bc857e1cd0bfa52",
+        "auditCommit": "4586e4137fad698b9b12e92d7d954acb1aaddd24",
         "auditDirtyTree": false,
-        "generatedAt": "2026-09-14T00:38:15.512Z"
+        "generatedAt": "2026-09-14T11:58:54.837Z"
       },
       {
         "setId": "baseline-3",
@@ -62,12 +62,12 @@
         ],
         "dirtyTree": true,
         "gradesRevision": 1,
-        "auditCommit": "33c2b52ac19f79c1a5666a903bc857e1cd0bfa52",
+        "auditCommit": "4586e4137fad698b9b12e92d7d954acb1aaddd24",
         "auditDirtyTree": false,
-        "generatedAt": "2026-09-14T00:38:15.512Z"
+        "generatedAt": "2026-09-14T11:58:54.837Z"
       }
     ],
-    "generatedAt": "2026-09-14T00:38:15.512Z"
+    "generatedAt": "2026-09-14T11:58:54.837Z"
   },
   "populations": {
     "initial": {
@@ -124,6 +124,8 @@
         "none": 4
       },
       "inheritedRounds": 0,
+      "mergedCheckpoints": 0,
+      "heldPageRoundsWithoutProgress": 0,
       "rejectedCheckpoints": 9,
       "walledRounds": 2,
       "notFoundNavigates": 9,
@@ -253,6 +255,8 @@
               "none": 1
             },
             "inheritedRounds": 0,
+            "mergedCheckpoints": 0,
+            "heldPageRoundsWithoutProgress": 0,
             "rejectedCheckpoints": 1,
             "walledRounds": 1,
             "notFoundNavigates": 6,
@@ -376,6 +380,8 @@
               "none": 1
             },
             "inheritedRounds": 0,
+            "mergedCheckpoints": 0,
+            "heldPageRoundsWithoutProgress": 0,
             "rejectedCheckpoints": 5,
             "walledRounds": 1,
             "notFoundNavigates": 2,
@@ -494,6 +500,8 @@
               "none": 2
             },
             "inheritedRounds": 0,
+            "mergedCheckpoints": 0,
+            "heldPageRoundsWithoutProgress": 0,
             "rejectedCheckpoints": 3,
             "walledRounds": 0,
             "notFoundNavigates": 1,
@@ -618,6 +626,8 @@
         "none": 3
       },
       "inheritedRounds": 9,
+      "mergedCheckpoints": 0,
+      "heldPageRoundsWithoutProgress": 6,
       "rejectedCheckpoints": 9,
       "walledRounds": 0,
       "notFoundNavigates": 1,
@@ -751,6 +761,8 @@
               "none": 1
             },
             "inheritedRounds": 5,
+            "mergedCheckpoints": 0,
+            "heldPageRoundsWithoutProgress": 4,
             "rejectedCheckpoints": 2,
             "walledRounds": 0,
             "notFoundNavigates": 1,
@@ -869,6 +881,8 @@
               "none": 0
             },
             "inheritedRounds": 2,
+            "mergedCheckpoints": 0,
+            "heldPageRoundsWithoutProgress": 1,
             "rejectedCheckpoints": 4,
             "walledRounds": 0,
             "notFoundNavigates": 0,
@@ -982,6 +996,8 @@
               "none": 2
             },
             "inheritedRounds": 2,
+            "mergedCheckpoints": 0,
+            "heldPageRoundsWithoutProgress": 1,
             "rejectedCheckpoints": 3,
             "walledRounds": 0,
             "notFoundNavigates": 0,

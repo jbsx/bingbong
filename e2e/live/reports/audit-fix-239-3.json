@@ -32,9 +32,9 @@
     "reviewerModel": "claude-opus-5",
     "reviewerEffort": "high",
     "reviewerPromptVersion": "audit-p1",
-    "auditCommit": "8c48a4bba9292be675880222e4cac9ee9ba253a4",
+    "auditCommit": "4586e4137fad698b9b12e92d7d954acb1aaddd24",
     "auditDirtyTree": false,
-    "generatedAt": "2026-09-14T02:57:44.729Z"
+    "generatedAt": "2026-09-14T11:59:08.519Z"
   },
   "attempts": [
     {
@@ -1402,6 +1402,8 @@
         "acceptedCheckpoints": 4,
         "rejectedCheckpoints": 0,
         "inheritedRounds": 0,
+        "mergedCheckpoints": 0,
+        "heldPageRoundsWithoutProgress": 0,
         "mechanicalSearchRounds": 0,
         "searchLoopHeads": [],
         "searchSource": "rail",
@@ -2359,6 +2361,8 @@
         "acceptedCheckpoints": 8,
         "rejectedCheckpoints": 1,
         "inheritedRounds": 3,
+        "mergedCheckpoints": 0,
+        "heldPageRoundsWithoutProgress": 1,
         "mechanicalSearchRounds": 0,
         "searchLoopHeads": [],
         "searchSource": "none",
@@ -3767,6 +3771,8 @@
         "acceptedCheckpoints": 0,
         "rejectedCheckpoints": 1,
         "inheritedRounds": 0,
+        "mergedCheckpoints": 0,
+        "heldPageRoundsWithoutProgress": 0,
         "mechanicalSearchRounds": 4,
         "searchLoopHeads": [
           1,
@@ -4427,6 +4433,8 @@
         "acceptedCheckpoints": 4,
         "rejectedCheckpoints": 0,
         "inheritedRounds": 0,
+        "mergedCheckpoints": 0,
+        "heldPageRoundsWithoutProgress": 0,
         "mechanicalSearchRounds": 0,
         "searchLoopHeads": [],
         "searchSource": "rail",
@@ -4749,6 +4757,8 @@
         "acceptedCheckpoints": 1,
         "rejectedCheckpoints": 0,
         "inheritedRounds": 1,
+        "mergedCheckpoints": 0,
+        "heldPageRoundsWithoutProgress": 0,
         "mechanicalSearchRounds": 0,
         "searchLoopHeads": [],
         "searchSource": "none",
@@ -6145,6 +6155,8 @@
         "acceptedCheckpoints": 0,
         "rejectedCheckpoints": 2,
         "inheritedRounds": 0,
+        "mergedCheckpoints": 0,
+        "heldPageRoundsWithoutProgress": 0,
         "mechanicalSearchRounds": 4,
         "searchLoopHeads": [
           9
@@ -6411,6 +6423,8 @@
         "none": 0
       },
       "inheritedRounds": 0,
+      "mergedCheckpoints": 0,
+      "heldPageRoundsWithoutProgress": 0,
       "rejectedCheckpoints": 3,
       "walledRounds": 1,
       "notFoundNavigates": 2,
@@ -6521,6 +6535,8 @@
         "none": 2
       },
       "inheritedRounds": 4,
+      "mergedCheckpoints": 0,
+      "heldPageRoundsWithoutProgress": 1,
       "rejectedCheckpoints": 1,
       "walledRounds": 0,
       "notFoundNavigates": 0,

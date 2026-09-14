@@ -1,13 +1,13 @@
 # Round Audit — bingbong.live-web.information-hunts (baseline-1)
 
-Generated 2026-09-14T00:38:15.512Z from a capture set created 2026-09-12T17:06:30.219Z (state complete). This audit counts and does not judge: every verdict is the reviewer’s for one attempt, and the ranking is arithmetic over those verdicts.
+Generated 2026-09-14T11:58:54.837Z from a capture set created 2026-09-12T17:06:30.219Z (state complete). This audit counts and does not judge: every verdict is the reviewer’s for one attempt, and the ranking is arithmetic over those verdicts.
 
 ## Provenance
 
 - capture: commit(s) fbd2b865 (dirty tree); mode measured; protocol 1; prompt version(s) 1
 - routing: orchestrator=GLM-5.3; subagent=GLM-5.3-flash; vision=GLM-4.6V | reasoning override: none | effort overrides: none | adblock: production_default
 - key 2.2.2.2, manifest sha256:faa25d04…; grades by claude-opus-5 via live:grade (revision 1)
-- reviewer: claude-opus-5 at high, prompt audit-p1; audit run at commit 33c2b52a
+- reviewer: claude-opus-5 at high, prompt audit-p1; audit run at commit 4586e413
 
 ## Populations
 
@@ -26,8 +26,8 @@ Kinds are mechanical counts; a share is over the budgeted rounds (Finalization o
 | stopped early | 1 | 0 | 0 | 0 |
 | failed rounds | 0 | 1 | 0 | 0 |
 
-- initial: 26 Off-key round(s), 6 Search Loop round(s) by the reviewer (5 by the streak rule; attempts by search source rail 0, replay 3, none 1), 0 inherited, 1 rejected Evidence Checkpoint(s), 1 walled round(s), 6 navigate(s) landed on a Not-found Page (6 judged Off-key), 13 Subagent round(s), 1 stopped early, 4 overrule(s), 23 flag(s); Finalization Causes: budget_exhausted 3, model_answered 1
-- follow_up: 8 Off-key round(s), 0 Search Loop round(s) by the reviewer (0 by the streak rule; attempts by search source rail 0, replay 1, none 1), 5 inherited, 2 rejected Evidence Checkpoint(s), 0 walled round(s), 1 navigate(s) landed on a Not-found Page (1 judged Off-key), 0 Subagent round(s), 0 stopped early, 3 overrule(s), 9 flag(s); Finalization Causes: deadline_reached 1, objective_met 1
+- initial: 26 Off-key round(s), 6 Search Loop round(s) by the reviewer (5 by the streak rule; attempts by search source rail 0, replay 3, none 1), 0 inherited, 1 rejected Evidence Checkpoint(s), 1 walled round(s), 6 navigate(s) landed on a Not-found Page (6 judged Off-key), 13 Subagent round(s), 0 merged Evidence Checkpoint(s) (a floor), 0 Held Page round(s) without Progress, 1 stopped early, 4 overrule(s), 23 flag(s); Finalization Causes: budget_exhausted 3, model_answered 1
+- follow_up: 8 Off-key round(s), 0 Search Loop round(s) by the reviewer (0 by the streak rule; attempts by search source rail 0, replay 1, none 1), 5 inherited, 2 rejected Evidence Checkpoint(s), 0 walled round(s), 1 navigate(s) landed on a Not-found Page (1 judged Off-key), 0 Subagent round(s), 0 merged Evidence Checkpoint(s) (a floor), 4 Held Page round(s) without Progress, 0 stopped early, 3 overrule(s), 9 flag(s); Finalization Causes: deadline_reached 1, objective_met 1
 
 ## Tool rounds
 
@@ -53,7 +53,7 @@ The rounds outside Finalization that called each tool — a round counts once pe
 
 - answered; ended done / completed (budget_exhausted); tier investigation (1 Tier Escalation(s) at the deadline); 24 of 24 Tool Rounds used; 26 orchestrator rounds, 2 in Finalization; Run duration 423979 ms; LLM stage 411453 ms over 26 joined round(s)
 - grade useful_partial; checks not reached: fact-05 (1 of 10)
-- 13 Subagent round(s) over 1 Subagent(s), stopped by budget_exhausted 1; 2 accepted and 0 rejected Evidence Checkpoint(s); 0 inherited round(s); 0 walled round(s)
+- 13 Subagent round(s) over 1 Subagent(s), stopped by budget_exhausted 1; 2 accepted (0 merged, a floor) and 0 rejected Evidence Checkpoint(s); 0 inherited round(s); 0 Held Page round(s) without Progress; 0 walled round(s)
 - navigates that landed on a Not-found Page: 0
 - of those, judged Off-key by the reviewer: 0
 - kinds: Acquisition with Progress 17 (71%) · Acquisition without Progress 4 (17%) · Collection 1 (4%) · Bookkeeping 1 (4%) · Failed round 1 (4%) · Finalization 2 (8%)
@@ -108,7 +108,7 @@ The rounds outside Finalization that called each tool — a round counts once pe
 
 - answered; ended done / completed (deadline_reached); tier investigation; 20 of 24 Tool Rounds used; 23 orchestrator rounds, 2 in Finalization; Run duration 401951 ms; LLM stage 385882 ms over 23 joined round(s)
 - grade useful_partial; checks not reached: fact-02 (1 of 6)
-- 0 Subagent round(s) over 0 Subagent(s); 7 accepted and 1 rejected Evidence Checkpoint(s); 3 inherited round(s); 0 walled round(s)
+- 0 Subagent round(s) over 0 Subagent(s); 7 accepted (0 merged, a floor) and 1 rejected Evidence Checkpoint(s); 3 inherited round(s); 3 Held Page round(s) without Progress; 0 walled round(s)
 - navigates that landed on a Not-found Page: 0
 - of those, judged Off-key by the reviewer: 0
 - kinds: Acquisition with Progress 9 (43%) · Acquisition without Progress 6 (29%) · Collection 0 (0%) · Bookkeeping 4 (19%) · Failed round 2 (10%) · Finalization 2 (9%)
@@ -154,7 +154,7 @@ The rounds outside Finalization that called each tool — a round counts once pe
 
 - answered; ended done / partial (budget_exhausted); tier lookup; 12 of 12 Tool Rounds used; 14 orchestrator rounds, 2 in Finalization; Run duration 178437 ms; LLM stage 141672 ms over 14 joined round(s)
 - grade useful_partial; checks not reached: fact-02, fact-03, fact-05, fact-08, fact-10, fact-11 (6 of 17)
-- 0 Subagent round(s) over 0 Subagent(s); 1 accepted and 0 rejected Evidence Checkpoint(s); 0 inherited round(s); 0 walled round(s)
+- 0 Subagent round(s) over 0 Subagent(s); 1 accepted (0 merged, a floor) and 0 rejected Evidence Checkpoint(s); 0 inherited round(s); 0 Held Page round(s) without Progress; 0 walled round(s)
 - navigates that landed on a Not-found Page: 0
 - of those, judged Off-key by the reviewer: 0
 - kinds: Acquisition with Progress 7 (58%) · Acquisition without Progress 2 (17%) · Collection 0 (0%) · Bookkeeping 0 (0%) · Failed round 3 (25%) · Finalization 2 (14%)
@@ -196,7 +196,7 @@ The rounds outside Finalization that called each tool — a round counts once pe
 
 - answered; ended done (model_answered); tier lookup; 6 of 12 Tool Rounds used; 7 orchestrator rounds, 1 in Finalization; Run duration 231365 ms; LLM stage 224830 ms over 7 joined round(s)
 - grade useful_partial; checks not reached: fact-07, fact-08 (2 of 14)
-- 0 Subagent round(s) over 0 Subagent(s); 5 accepted and 1 rejected Evidence Checkpoint(s); 0 inherited round(s); 0 walled round(s)
+- 0 Subagent round(s) over 0 Subagent(s); 5 accepted (0 merged, a floor) and 1 rejected Evidence Checkpoint(s); 0 inherited round(s); 0 Held Page round(s) without Progress; 0 walled round(s)
 - navigates that landed on a Not-found Page: 0
 - of those, judged Off-key by the reviewer: 0
 - kinds: Acquisition with Progress 3 (50%) · Acquisition without Progress 0 (0%) · Collection 0 (0%) · Bookkeeping 3 (50%) · Failed round 0 (0%) · Finalization 1 (14%)
@@ -224,7 +224,7 @@ The rounds outside Finalization that called each tool — a round counts once pe
 
 - answered; ended done / completed (objective_met); tier investigation (1 Tier Escalation(s) at the deadline); 18 of 24 Tool Rounds used; 19 orchestrator rounds, 1 in Finalization; Run duration 288265 ms; LLM stage 278916 ms over 19 joined round(s)
 - grade pass; checks not reached: none
-- 0 Subagent round(s) over 0 Subagent(s); 3 accepted and 1 rejected Evidence Checkpoint(s); 2 inherited round(s); 0 walled round(s)
+- 0 Subagent round(s) over 0 Subagent(s); 3 accepted (0 merged, a floor) and 1 rejected Evidence Checkpoint(s); 2 inherited round(s); 1 Held Page round(s) without Progress; 0 walled round(s)
 - navigates that landed on a Not-found Page: 1 (round 12)
 - of those, judged Off-key by the reviewer: 1
 - kinds: Acquisition with Progress 10 (56%) · Acquisition without Progress 5 (28%) · Collection 0 (0%) · Bookkeeping 3 (17%) · Failed round 0 (0%) · Finalization 1 (5%)
@@ -272,7 +272,7 @@ The rounds outside Finalization that called each tool — a round counts once pe
 
 - answered; ended done / partial (budget_exhausted); tier investigation; 24 of 24 Tool Rounds used; 26 orchestrator rounds, 2 in Finalization; Run duration 388291 ms; LLM stage 337974 ms over 26 joined round(s)
 - grade useful_partial; checks not reached: fact-07 (1 of 15)
-- 0 Subagent round(s) over 0 Subagent(s); 1 accepted and 0 rejected Evidence Checkpoint(s); 0 inherited round(s); 1 walled round(s)
+- 0 Subagent round(s) over 0 Subagent(s); 1 accepted (0 merged, a floor) and 0 rejected Evidence Checkpoint(s); 0 inherited round(s); 0 Held Page round(s) without Progress; 1 walled round(s)
 - navigates that landed on a Not-found Page: 6 (round 1, 5, 7, 9, 22, 24)
 - of those, judged Off-key by the reviewer: 6
 - kinds: Acquisition with Progress 14 (58%) · Acquisition without Progress 10 (42%) · Collection 0 (0%) · Bookkeeping 0 (0%) · Failed round 0 (0%) · Finalization 2 (8%)

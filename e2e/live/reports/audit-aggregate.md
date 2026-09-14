@@ -1,6 +1,6 @@
 # Round Audit — aggregate over 3 sets (bingbong.live-web.information-hunts)
 
-Generated 2026-09-14T00:38:15.512Z over baseline-1, baseline-2, baseline-3, ordered by capture-set creation. This audit counts and does not judge: every verdict is the reviewer’s for one attempt, and the ranking is arithmetic over those verdicts.
+Generated 2026-09-14T11:58:54.837Z over baseline-1, baseline-2, baseline-3, ordered by capture-set creation. This audit counts and does not judge: every verdict is the reviewer’s for one attempt, and the ranking is arithmetic over those verdicts.
 
 ## Ranked causes
 
@@ -25,9 +25,9 @@ Shared by every set, and checked before anything was counted:
 
 | set | created | state | commit(s) | dirty tree | grades revision | audited at |
 | --- | --- | --- | --- | --- | --- | --- |
-| baseline-1 | 2026-09-12T17:06:30.219Z | complete | fbd2b865 | yes | 1 | 33c2b52a |
-| baseline-2 | 2026-09-12T18:10:26.845Z | complete | 6152d8dc | yes | 1 | 33c2b52a |
-| baseline-3 | 2026-09-12T18:57:29.347Z | complete | 59bdf48b | yes | 1 | 33c2b52a |
+| baseline-1 | 2026-09-12T17:06:30.219Z | complete | fbd2b865 | yes | 1 | 4586e413 |
+| baseline-2 | 2026-09-12T18:10:26.845Z | complete | 6152d8dc | yes | 1 | 4586e413 |
+| baseline-3 | 2026-09-12T18:57:29.347Z | complete | 59bdf48b | yes | 1 | 4586e413 |
 
 ## Populations
 
@@ -44,8 +44,8 @@ Shared by every set, and checked before anything was counted:
 | stopped early | 2 | 0 | 0 | 0 |
 | failed rounds | 1 | 4 | 0 | 1 |
 
-- initial: 52 Off-key round(s), 11 Search Loop round(s) by the reviewer (8 by the streak rule; attempts by search source rail 0, replay 8, none 4), 0 inherited, 9 rejected Evidence Checkpoint(s), 2 walled round(s), 9 navigate(s) landed on a Not-found Page (8 judged Off-key), 26 Subagent round(s), 2 stopped early, 16 overrule(s), 64 flag(s); Finalization Causes: budget_exhausted 8, deadline_reached 1, model_answered 1, objective_met 2
-- follow_up: 28 Off-key round(s), 0 Search Loop round(s) by the reviewer (0 by the streak rule; attempts by search source rail 0, replay 3, none 3), 9 inherited, 9 rejected Evidence Checkpoint(s), 0 walled round(s), 1 navigate(s) landed on a Not-found Page (1 judged Off-key), 13 Subagent round(s), 0 stopped early, 6 overrule(s), 29 flag(s); Finalization Causes: budget_exhausted 3, deadline_reached 1, objective_met 2
+- initial: 52 Off-key round(s), 11 Search Loop round(s) by the reviewer (8 by the streak rule; attempts by search source rail 0, replay 8, none 4), 0 inherited, 9 rejected Evidence Checkpoint(s), 2 walled round(s), 9 navigate(s) landed on a Not-found Page (8 judged Off-key), 26 Subagent round(s), 0 merged Evidence Checkpoint(s) (a floor), 0 Held Page round(s) without Progress, 2 stopped early, 16 overrule(s), 64 flag(s); Finalization Causes: budget_exhausted 8, deadline_reached 1, model_answered 1, objective_met 2
+- follow_up: 28 Off-key round(s), 0 Search Loop round(s) by the reviewer (0 by the streak rule; attempts by search source rail 0, replay 3, none 3), 9 inherited, 9 rejected Evidence Checkpoint(s), 0 walled round(s), 1 navigate(s) landed on a Not-found Page (1 judged Off-key), 13 Subagent round(s), 0 merged Evidence Checkpoint(s) (a floor), 6 Held Page round(s) without Progress, 0 stopped early, 6 overrule(s), 29 flag(s); Finalization Causes: budget_exhausted 3, deadline_reached 1, objective_met 2
 
 ## Tool rounds
 
