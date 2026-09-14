@@ -641,6 +641,59 @@ describe('Identity Slips (#246, ADR 0028)', () => {
   })
 })
 
+describe('Asked Items (#250, ADR 0052)', () => {
+  const declaredPlan = { ...identity, at: T0 + 900, kind: 'pipeline_event', event: { type: 'run_plan', turnId: TURN, objective: 'find it', headline: 'h', effortTier: 'investigation', source: 'model', askedItems: ['the guitar', 'the piece count', 'the fare'], at: T0 + 900 } }
+  const finalDisplay = {
+    ...identity,
+    at: T0 + 15_500,
+    kind: 'pipeline_event',
+    event: {
+      type: 'display',
+      turnId: TURN,
+      text: 'Yes.',
+      finalAnswer: true,
+      askedItems: [
+        { item: 'the guitar', standing: 'stated', statement: 'one piece' },
+        { item: 'the piece count', standing: 'stated', statement: 'two' },
+        { item: 'the fare', standing: 'unverified', statement: 'not stated in the Answer' },
+      ],
+      at: T0 + 15_500,
+    },
+  }
+  const shape = (at: number, retried: boolean) => ({ ...identity, at: T0 + at, kind: 'asked_items_shape', missing: ['the fare'], undeclared: [], retried })
+  const WITH = [declaredPlan, ...EXTRA.slice(1), shape(14_000, true), shape(15_000, false), finalDisplay]
+
+  it('reads the declaration, the standings, and the shape failures from the events and records, never from text', () => {
+    const plain = classifyAttempt(inputOf({ traceRecords: traceOf(ROUNDS, EXTRA) }))
+    const counted = classifyAttempt(inputOf({ traceRecords: traceOf(ROUNDS, WITH) }))
+
+    expect(counted.askedItems).toEqual({ declared: 3, stated: 2, unverified: 1, shapeFailures: 2, shapeRetried: 1 })
+    // A trace written before the field: nothing is recorded, and nothing is guessed.
+    expect(plain.askedItems).toEqual({ declared: null, stated: null, unverified: null, shapeFailures: 0, shapeRetried: 0 })
+    expect(counted.rounds).toEqual(plain.rounds)
+    expect(counted.digestHash).toBe(plain.digestHash)
+  })
+
+  it('sums attempts per population and prints the counts per attempt and per population', () => {
+    const counted = classifyAttempt(inputOf({ traceRecords: traceOf(ROUNDS, WITH) }))
+    const plain = classifyAttempt(inputOf({ traceRecords: traceOf(ROUNDS, EXTRA) }))
+    const set = buildAuditSet(
+      provenanceOf(),
+      [
+        { mechanical: counted, review: null, countsAfterOverrules: counted.counts },
+        { mechanical: { ...plain, attemptId: 'other--initial' }, review: null, countsAfterOverrules: plain.counts },
+      ],
+      [],
+    )
+
+    expect(set.populations.initial).toMatchObject({ askedItemsDeclared: 1, askedItemsUnverified: 1, askedItemsShapeFailures: 2, askedItemsShapeRetried: 1 })
+    const markdown = formatAuditSet(set)
+    expect(markdown).toContain('- Asked Items: 3 declared; Answer standings 2 stated, 1 unverified; 2 shape failure(s) (1 retried)')
+    expect(markdown).toContain('- Asked Items: not recorded')
+    expect(markdown).toMatch(/- initial: .*1 declared Asked Items \(1 with an unverified standing, 2 shape failure\(s\), 1 retried\)/)
+  })
+})
+
 describe('Malformed Answers and Answer Retries (#245)', () => {
   const malformed = (at: number, agentId?: string): Record<string, unknown> => ({
     ...identity,

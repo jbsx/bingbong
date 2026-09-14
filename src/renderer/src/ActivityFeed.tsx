@@ -100,6 +100,27 @@ export function FeedLine({
                   never recorded. Its contradiction warnings (#143) also
                   derive from that snapshot: a later Run's contradictory
                   evidence warns this Answer without rewriting it. */}
+              {/* The Asked Items (#250, ADR 0052): rendered from the
+                  structured field, never parsed out of the text — one
+                  line per item the Run Plan declared, with the standing
+                  the Answer gave it or the runtime settled. A
+                  deterministic Answer lists every declared item
+                  unverified. */}
+              {entry.askedItems !== undefined && entry.askedItems.length > 0 ? (
+                <ul className="asked-items" aria-label="Asked items">
+                  {entry.askedItems.map((standing, index) => (
+                    <li
+                      key={`${index}-${standing.item}`}
+                      className={`asked-item asked-item--${standing.standing}`}
+                      data-standing={standing.standing}
+                    >
+                      <span className="asked-item-name">{standing.item}</span>
+                      <span className="asked-item-standing">{standing.standing}</span>
+                      {standing.statement !== '' ? <span className="asked-item-statement">{standing.statement}</span> : null}
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
               {entry.evidenceIds !== undefined && entry.evidenceIds.length > 0 ? (
                 <AnswerEvidenceSummary
                   evidenceIds={entry.evidenceIds}

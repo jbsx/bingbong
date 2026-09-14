@@ -45,7 +45,7 @@ function abortableRound(request: LlmRequest): Promise<AssistantTurn> {
   })
 }
 
-const ANSWER: AssistantTurn = { kind: 'answer', speak: 'Vendor A.', display: 'Vendor A wins.', resolution: 'partial' }
+const ANSWER: AssistantTurn = { kind: 'answer', askedItems: [{ item: 'the answer', standing: 'stated', statement: 'stated' }], speak: 'Vendor A.', display: 'Vendor A wins.', resolution: 'partial' }
 
 /**
  * One Run that plans, blocks on a round the active-work deadline aborts,
@@ -79,7 +79,7 @@ function harness(options: {
       if (requests.length === 1) {
         return {
           kind: 'tool_calls',
-          calls: [{ id: 'p1', name: 'report_run_plan', args: { objective: 'Compare vendors', headline: 'Comparing vendors', effort_tier: 'lookup' } }],
+          calls: [{ id: 'p1', name: 'report_run_plan', args: { objective: 'Compare vendors', headline: 'Comparing vendors', effort_tier: 'lookup', asked_items: ['the answer'] } }],
         }
       }
       // The round the deadline aborts: Finalization opens here.

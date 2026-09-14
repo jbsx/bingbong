@@ -80,6 +80,14 @@ function isEndOfPageScroll(call: ToolCall, outcome: ToolResultOutcome): boolean 
 /** Bookkeeping whose acceptance is decision-relevant evidence (#126/AC3). */
 const CHECKPOINT_TOOLS: ReadonlySet<string> = new Set(['record_evidence', 'record_candidate'])
 
+/**
+ * Bookkeeping whose rejection is a no-Progress action like a rejected
+ * checkpoint (#250, ADR 0052) — a Run Plan refused for declaring no Asked
+ * Items among them — but whose acceptance establishes nothing on the page
+ * and so resets nothing.
+ */
+const PLAN_TOOLS: ReadonlySet<string> = new Set(['report_run_plan'])
+
 /** Successful calls that are themselves the requested state change (#126/AC3). */
 const STATE_CHANGE_TOOLS: ReadonlySet<string> = new Set([
   'set_setting',
@@ -304,13 +312,13 @@ export function createNoProgressRail(deps: NoProgressRailDeps = {}): NoProgressR
       // rejected ones contribute to no-progress handling (#121/#126/AC3)
       // — once per Tool Round (#197): the round's sibling rejections were
       // made blind to the first and are not separate actions.
-      if (CHECKPOINT_TOOLS.has(call.name)) {
+      if (CHECKPOINT_TOOLS.has(call.name) || PLAN_TOOLS.has(call.name)) {
         if (!outcome.ok) {
           if (checkpointRejectedThisRound) return null
           checkpointRejectedThisRound = true
           return escalate()
         }
-        progress()
+        if (CHECKPOINT_TOOLS.has(call.name)) progress()
         return null
       }
       // A successful requested state change is Progress by definition; a

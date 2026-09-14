@@ -21,7 +21,7 @@ function readingScript(readingUrl: string): AssistantTurn[] {
         {
           id: 'plan',
           name: 'report_run_plan',
-          args: { objective: 'Read the whole reading fixture', headline: 'Reading the fixture page', effort_tier: 'lookup' },
+          args: { objective: 'Read the whole reading fixture', headline: 'Reading the fixture page', effort_tier: 'lookup', asked_items: ['the answer'] },
         },
         { id: 'open', name: 'navigate', args: { url: readingUrl } },
       ],
@@ -29,7 +29,7 @@ function readingScript(readingUrl: string): AssistantTurn[] {
     { kind: 'tool_calls', calls: [{ id: 'part-1', name: 'read_page', args: {} }] },
     { kind: 'tool_calls', calls: [{ id: 'part-2', name: 'read_page', args: { part: 2 } }] },
     { kind: 'tool_calls', calls: [{ id: 'part-3', name: 'read_page', args: { part: 3 } }] },
-    { kind: 'answer', speak: 'Read.', display: 'The whole page was read.' },
+    { kind: 'answer', askedItems: [{ item: 'the answer', standing: 'stated', statement: 'stated' }], speak: 'Read.', display: 'The whole page was read.' },
   ]
 }
 

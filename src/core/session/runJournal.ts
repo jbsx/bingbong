@@ -40,6 +40,13 @@ export interface RunStopRecord {
   readonly cause?: FinalizationCause
   readonly detail?: string
   readonly failure?: string
+  /**
+   * A Run Resolution the runtime overrode (#250, ADR 0052): the Answer
+   * claimed `completed` while an Asked Item stood `unverified`, so the
+   * Run resolved `partial`. Worded here so the transition is on record
+   * beside the Run it happened to, never inferred from the Resolution.
+   */
+  readonly override?: string
 }
 
 /**
@@ -51,7 +58,7 @@ export interface RunStopRecord {
  */
 export function runStopChars(stop: RunStopRecord | undefined): number {
   if (stop === undefined) return 0
-  return (stop.cause?.length ?? 0) + (stop.detail?.length ?? 0) + (stop.failure?.length ?? 0)
+  return (stop.cause?.length ?? 0) + (stop.detail?.length ?? 0) + (stop.failure?.length ?? 0) + (stop.override?.length ?? 0)
 }
 
 /** Trim and bound one worded stop field; empty text records nothing. */
@@ -77,19 +84,28 @@ export function runStopRecord(input: {
   readonly cause: FinalizationCause | null
   readonly detail?: string
   readonly failure?: string
+  readonly override?: string
 }): RunStopRecord | null {
   const detail = boundedStopField(input.detail)
   const failure = boundedStopField(input.failure)
+  const override = boundedStopField(input.override)
   // `model_answered` and `objective_met` are the model concluding on its
   // own terms: nothing stopped the Run, so nothing is retained unless a
-  // failure was actually recorded against it.
+  // failure — or a Resolution override (#250) — was actually recorded
+  // against it.
   const voluntary = input.cause === null || input.cause === 'model_answered' || input.cause === 'objective_met'
-  if (voluntary && failure === undefined) return null
+  if (voluntary && failure === undefined && override === undefined) return null
   return {
     ...(input.cause !== null && !voluntary ? { cause: input.cause } : {}),
     ...(detail !== undefined ? { detail } : {}),
     ...(failure !== undefined ? { failure } : {}),
+    ...(override !== undefined ? { override } : {}),
   }
+}
+
+/** The override's wording (#250): the transition, and which Asked Items forced it. */
+export function askedItemsOverride(unverified: readonly string[]): string {
+  return `resolution completed → partial: ${unverified.length === 1 ? 'an Asked Item stood' : `${unverified.length} Asked Items stood`} unverified (${unverified.map((item) => `"${item}"`).join('; ')})`
 }
 
 export type RunJournalSnapshot = readonly Readonly<RunJournalEntry>[]

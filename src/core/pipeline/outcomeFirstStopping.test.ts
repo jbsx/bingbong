@@ -42,7 +42,7 @@ class Identities implements SessionIdentitySource {
 const lookupPlan = (id: string): ToolCall => ({
   id,
   name: 'report_run_plan',
-  args: { objective: 'Find the tier list post', headline: 'Find the tier list post', effort_tier: 'lookup' },
+  args: { objective: 'Find the tier list post', headline: 'Find the tier list post', effort_tier: 'lookup', asked_items: ['the answer'] },
 })
 
 /** A Session whose Runs share one Journal, and the pipeline that fills it. */
@@ -238,7 +238,7 @@ describe('a later explicit "why did you stop?" is answered from the Run (#203/AC
 
     // The second Run is admitted with the Journal the first one wrote.
     const follow = new ScriptedLlm([
-      { kind: 'answer', speak: 'I stopped before I had confirmed it.', display: 'Detail.' },
+      { kind: 'answer', askedItems: [{ item: 'the answer', standing: 'stated', statement: 'stated' }], speak: 'I stopped before I had confirmed it.', display: 'Detail.' },
     ])
     await harness.run('why did you stop?', follow, [browse])
 
@@ -286,7 +286,7 @@ describe('a later explicit "why did you stop?" is answered from the Run (#203/AC
     )
     expect(events.at(-1)).toMatchObject({ outcome: 'failed', finalizationCause: 'no_progress' })
 
-    const follow = new ScriptedLlm([{ kind: 'answer', speak: 'Because I stalled.', display: 'Detail.' }])
+    const follow = new ScriptedLlm([{ kind: 'answer', askedItems: [{ item: 'the answer', standing: 'stated', statement: 'stated' }], speak: 'Because I stalled.', display: 'Detail.' }])
     await harness.run('why did you stop?', follow, [browse])
 
     const stop = follow.requests[0]!.journal![0]!.stop!
@@ -313,7 +313,7 @@ describe('a later explicit "why did you stop?" is answered from the Run (#203/AC
       { currentHost: () => 'www.reddit.com' },
     )
 
-    const follow = new ScriptedLlm([{ kind: 'answer', speak: 'A sign-in wall.', display: 'Detail.' }])
+    const follow = new ScriptedLlm([{ kind: 'answer', askedItems: [{ item: 'the answer', standing: 'stated', statement: 'stated' }], speak: 'A sign-in wall.', display: 'Detail.' }])
     await harness.run('why did you stop?', follow, [browse])
 
     const stop = follow.requests[0]!.journal![0]!.stop!
@@ -338,7 +338,7 @@ describe('a later explicit "why did you stop?" is answered from the Run (#203/AC
     // request — that is the point of reusing it, and the Journal block
     // labels it internal (openAiLlmClient.test.ts pins that wording).
     const follow = new ScriptedLlm([
-      { kind: 'answer', speak: 'It is the manhwa subreddit.', display: 'The page is r/manhwa.', runNote: 'Read the page.' } as ScriptedTurn,
+      { kind: 'answer', askedItems: [{ item: 'the answer', standing: 'stated', statement: 'stated' }], speak: 'It is the manhwa subreddit.', display: 'The page is r/manhwa.', runNote: 'Read the page.' } as ScriptedTurn,
     ])
     const events = await harness.run('what is on the page?', follow, [browse])
     expect(follow.requests[0]!.journal![0]!.stop).toEqual({
@@ -357,7 +357,7 @@ describe('a later explicit "why did you stop?" is answered from the Run (#203/AC
     // And the follow-up, having concluded on its own terms, retains no
     // stop of its own — the earlier Run's cause does not travel forward
     // as though it were this one's.
-    const third = new ScriptedLlm([{ kind: 'answer', speak: 'Sure.', display: 'Detail.' }])
+    const third = new ScriptedLlm([{ kind: 'answer', askedItems: [{ item: 'the answer', standing: 'stated', statement: 'stated' }], speak: 'Sure.', display: 'Detail.' }])
     await harness.run('and the title?', third, [browse])
     const journal = third.requests[0]!.journal!
     expect(journal).toHaveLength(2)

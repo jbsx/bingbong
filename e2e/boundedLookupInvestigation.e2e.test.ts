@@ -79,7 +79,7 @@ describe('bounded Lookup e2e (#118) — exhausted path', () => {
             args: {
               objective: 'Find the widget finish guide',
               headline: 'Finding the widget finish guide',
-              effort_tier: 'lookup',
+              effort_tier: 'lookup', asked_items: ['the answer'],
             },
           },
           { id: 'nav-0', name: 'navigate', args: { url: fixture.url(pages[0]) } },
@@ -94,6 +94,7 @@ describe('bounded Lookup e2e (#118) — exhausted path', () => {
       { kind: 'tool_calls', calls: [{ id: 'nav-12', name: 'navigate', args: { url: fixture.url('/widget-specs') } }] },
       {
         kind: 'answer',
+        askedItems: [{ item: 'the answer', standing: 'stated', statement: 'stated' }],
         speak: 'I stopped partway.',
         display: 'Only some of the guide pages were opened.',
         resolution: 'partial',
@@ -177,7 +178,7 @@ describe('bounded Lookup e2e (#135) — deadline as a cancellation boundary', ()
             args: {
               objective: 'Find the widget finish guide',
               headline: 'Finding the widget finish guide',
-              effort_tier: 'lookup',
+              effort_tier: 'lookup', asked_items: ['the answer'],
             },
           },
           { id: 'nav-0', name: 'navigate', args: { url: fixture.url('/widgets-article') } },
@@ -192,6 +193,7 @@ describe('bounded Lookup e2e (#135) — deadline as a cancellation boundary', ()
       },
       {
         kind: 'answer',
+        askedItems: [{ item: 'the answer', standing: 'stated', statement: 'stated' }],
         speak: 'I ran out of working time.',
         display: 'Only the first guide page was opened.',
         resolution: 'partial',
@@ -281,7 +283,7 @@ describe('bounded Investigation e2e (#118) — escalation to the 32-round hard c
             args: {
               objective: 'Compare widget finishes across vendors',
               headline: 'Checking the widget catalog',
-              effort_tier: 'lookup',
+              effort_tier: 'lookup', asked_items: ['the answer'],
             },
           },
           nav(0),
@@ -300,7 +302,7 @@ describe('bounded Investigation e2e (#118) — escalation to the 32-round hard c
             args: {
               objective: 'Compare widget finishes across vendors',
               headline: 'Comparing widget vendors',
-              effort_tier: 'investigation',
+              effort_tier: 'investigation', asked_items: ['the answer'],
               escalation_reason: 'The catalog pages disagree on the finishes; vendors must be compared independently.',
             },
           },
@@ -317,6 +319,7 @@ describe('bounded Investigation e2e (#118) — escalation to the 32-round hard c
       // Round 33: the Answer-only round, outside the ceiling.
       {
         kind: 'answer',
+        askedItems: [{ item: 'the answer', standing: 'stated', statement: 'stated' }],
         speak: 'I stopped partway.',
         display: 'The vendors disagree; I compared some of them.',
         resolution: 'partial',

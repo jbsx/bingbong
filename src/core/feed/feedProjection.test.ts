@@ -885,6 +885,20 @@ describe('feed projection', () => {
       expect('evidenceIds' in spoken!).toBe(false)
     })
 
+    it('carries a display event’s Asked Item standings onto its entry, and nothing onto entries without them (#250)', () => {
+      const feed = openFeed()
+      const askedItems = [
+        { item: 'the guitar', standing: 'stated', statement: 'It travels as one piece.' },
+        { item: 'the fare', standing: 'unverified', statement: 'not stated in the Answer' },
+      ] as const
+      feed.onEvent({ type: 'display', turnId: T, text: 'The guitar can travel.', at: 1_000, askedItems })
+      feed.onEvent({ type: 'display', turnId: 'turn-other', text: 'Plain display.', at: 2_000 })
+
+      const [withItems, plain] = feed.entries()
+      expect(withItems!.askedItems).toEqual(askedItems)
+      expect('askedItems' in plain!).toBe(false)
+    })
+
     it('wipes the identities with the feed at the Session boundary', () => {
       const feed = createFeedProjection()
       const owned = { sessionId: 'session-1' as SessionId, sessionGeneration: 0 }

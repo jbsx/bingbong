@@ -405,6 +405,24 @@ describe('no-progress rail — resets (#126/AC3)', () => {
     expect(await rail.observe(call('scroll', { direction: 'down' }), ok())).toBeNull()
   })
 
+  it('counts a rejected Run Plan once per round as a no-Progress action, and an accepted one as neutral (#250, ADR 0052)', async () => {
+    const rail = createNoProgressRail({ settledState: () => BASE })
+    rail.beginRound()
+    await rail.observe(call('navigate', { url: 'https://example.com/a' }), ok()) // baseline
+    rail.beginRound()
+    // A Lookup plan with no Asked Items is refused as a Bookkeeping call:
+    // one no-progress action for the round, its duplicate a silent sibling.
+    expect(await rail.observe(call('report_run_plan', { objective: 'o' }), failed('Run Plan rejected'))).toBeNull()
+    expect(await rail.observe(call('report_run_plan', { objective: 'o' }), failed('Run Plan rejected'))).toBeNull()
+    rail.beginRound()
+    expect(await rail.observe(call('scroll', { direction: 'down' }), ok())).toMatch(/change your approach/i)
+    // An accepted plan is bookkeeping that established nothing on the page: it neither counts nor resets.
+    rail.beginRound()
+    expect(await rail.observe(call('report_run_plan', { objective: 'o' }), ok('Run Plan noted.'))).toBeNull()
+    expect(await rail.observe(call('scroll', { direction: 'down' }), ok())).toBeNull()
+    expect(await rail.observe(call('scroll', { direction: 'down' }), ok())).toMatch(/final answer JSON/)
+  })
+
   it('a requested state change resets the rails', async () => {
     const rail = createNoProgressRail({ settledState: () => BASE })
     await rail.observe(call('navigate', { url: 'https://example.com/a' }), ok()) // baseline

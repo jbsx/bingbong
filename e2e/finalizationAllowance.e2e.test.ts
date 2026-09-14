@@ -53,7 +53,7 @@ describe('the Finalization Allowance e2e (#209, ADR 0038)', () => {
             args: {
               objective: 'Find the widget finish guide',
               headline: 'Finding the widget finish guide',
-              effort_tier: 'lookup',
+              effort_tier: 'lookup', asked_items: ['the answer'],
             },
           },
           { id: 'nav-0', name: 'navigate', args: { url: fixture.url('/widgets-article') } },
@@ -77,6 +77,7 @@ describe('the Finalization Allowance e2e (#209, ADR 0038)', () => {
       // never answers, so the Card is the deterministic Answer.
       {
         kind: 'answer',
+        askedItems: [{ item: 'the answer', standing: 'stated', statement: 'stated' }],
         streamChunks: Array.from({ length: 40 }, () => thinking),
         speak: 'A model Answer nobody will hear.',
         display: 'A model Answer nobody will see.',

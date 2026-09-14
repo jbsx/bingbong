@@ -24,7 +24,7 @@ function orchestratorScript(): AssistantTurn[] {
         {
           id: 'plan',
           name: 'report_run_plan',
-          args: { objective: 'Visit the fixture pages in parallel', headline: 'Visiting fixture pages', effort_tier: 'investigation' },
+          args: { objective: 'Visit the fixture pages in parallel', headline: 'Visiting fixture pages', effort_tier: 'investigation', asked_items: ['the answer'] },
         },
         // Two concurrent browse agents: both views park edge-on at once,
         // exercising the per-view column staggering (an occluded parked
@@ -35,7 +35,7 @@ function orchestratorScript(): AssistantTurn[] {
       ],
     },
     { kind: 'tool_calls', calls: [{ id: 's4', name: 'agent_results', args: { wait: true } }] },
-    { kind: 'answer', speak: 'All agents finished.', display: 'All agents finished.' },
+    { kind: 'answer', askedItems: [{ item: 'the answer', standing: 'stated', statement: 'stated' }], speak: 'All agents finished.', display: 'All agents finished.' },
   ]
 }
 
@@ -50,7 +50,7 @@ function browseScript(slowUrl: string, interactiveUrl: string): AssistantTurn[] 
     // ~1fps captures demonstrably ship mid-run.
     { kind: 'tool_calls', calls: [{ id: 'n2', name: 'navigate', args: { url: slowUrl } }] },
     { kind: 'tool_calls', calls: [{ id: 'n3', name: 'navigate', args: { url: interactiveUrl } }] },
-    { kind: 'answer', speak: 'done', display: 'Visited both fixture pages.' },
+    { kind: 'answer', askedItems: [{ item: 'the answer', standing: 'stated', statement: 'stated' }], speak: 'done', display: 'Visited both fixture pages.' },
   ]
 }
 

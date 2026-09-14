@@ -53,7 +53,7 @@ describe('no-progress rails e2e (#126) — objective repetition', () => {
           {
             id: 'plan',
             name: 'report_run_plan',
-            args: { objective: 'Open the widget article', headline: 'Opening the widget article', effort_tier: 'lookup' },
+            args: { objective: 'Open the widget article', headline: 'Opening the widget article', effort_tier: 'lookup', asked_items: ['the answer'] },
           },
           { id: 'nav-1', name: 'navigate', args: { url: article } },
         ],
@@ -68,6 +68,7 @@ describe('no-progress rails e2e (#126) — objective repetition', () => {
       { kind: 'tool_calls', calls: [{ id: 'nav-4', name: 'navigate', args: { url: article } }] },
       {
         kind: 'answer',
+        askedItems: [{ item: 'the answer', standing: 'stated', statement: 'stated' }],
         speak: 'The article is open.',
         display: 'The fixture widget article is open.',
         resolution: 'completed',
@@ -125,7 +126,7 @@ describe('no-progress rails e2e (#126) — approach exhaustion finalization', ()
         {
           id,
           name: 'report_run_plan',
-          args: { objective: 'Study the article', headline: 'Studying the article', effort_tier: 'lookup' },
+          args: { objective: 'Study the article', headline: 'Studying the article', effort_tier: 'lookup', asked_items: ['the answer'] },
         },
       ],
     })
@@ -163,6 +164,7 @@ describe('no-progress rails e2e (#126) — approach exhaustion finalization', ()
       },
       {
         kind: 'answer',
+        askedItems: [{ item: 'the answer', standing: 'stated', statement: 'stated' }],
         speak: 'I stopped making progress.',
         display: 'The article stopped yielding anything new.',
         resolution: 'unsuccessful',
@@ -239,7 +241,7 @@ describe('no-progress rails e2e (#126) — meaningful movement stays unrefused',
           {
             id: 'plan',
             name: 'report_run_plan',
-            args: { objective: 'Tour the catalog', headline: 'Touring the catalog', effort_tier: 'lookup' },
+            args: { objective: 'Tour the catalog', headline: 'Touring the catalog', effort_tier: 'lookup', asked_items: ['the answer'] },
           },
           { id: 'nav-0', name: 'navigate', args: { url: fixture.url(pages[0]) } },
         ],
@@ -250,6 +252,7 @@ describe('no-progress rails e2e (#126) — meaningful movement stays unrefused',
       })),
       {
         kind: 'answer',
+        askedItems: [{ item: 'the answer', standing: 'stated', statement: 'stated' }],
         speak: 'I toured the catalog.',
         display: 'All four catalog pages were visited twice.',
         resolution: 'completed',

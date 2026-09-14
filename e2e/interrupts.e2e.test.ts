@@ -118,18 +118,18 @@ describe('run interruption e2e', () => {
           {
             id: 'plan',
             name: 'report_run_plan',
-            args: { objective: 'Read the slow fixture across sources', headline: 'Reading the slow fixture', effort_tier: 'investigation' },
+            args: { objective: 'Read the slow fixture across sources', headline: 'Reading the slow fixture', effort_tier: 'investigation', asked_items: ['the answer'] },
           },
           { id: 'spawn', name: 'spawn_agent', args: { kind: 'browse', task: 'read the slow fixture' } },
         ],
       },
       { kind: 'tool_calls', calls: [{ id: 'submit', name: 'click', args: { ref: 7 } }] },
-      { kind: 'answer', speak: 'Should not finish.', display: 'Should not finish.' },
+      { kind: 'answer', askedItems: [{ item: 'the answer', standing: 'stated', statement: 'stated' }], speak: 'Should not finish.', display: 'Should not finish.' },
     ]
     const subagent: AssistantTurn[] = [
       { kind: 'tool_calls', calls: [{ id: 'nav2', name: 'navigate', args: { url: fixture.url('/slow') } }] },
       { kind: 'tool_calls', calls: [{ id: 'read', name: 'read_page', args: {} }] },
-      { kind: 'answer', speak: 'done', display: 'Slow page read finished.' },
+      { kind: 'answer', askedItems: [{ item: 'the answer', standing: 'stated', statement: 'stated' }], speak: 'done', display: 'Slow page read finished.' },
     ]
     const harness = await startHarness({
       fixture,

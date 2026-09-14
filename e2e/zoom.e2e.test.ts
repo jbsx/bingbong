@@ -60,17 +60,17 @@ describe('web zoom e2e', () => {
               {
                 id: 'plan',
                 name: 'report_run_plan',
-                args: { objective: 'Open the fixture pages in parallel', headline: 'Opening fixture pages', effort_tier: 'investigation' },
+                args: { objective: 'Open the fixture pages in parallel', headline: 'Opening fixture pages', effort_tier: 'investigation', asked_items: ['the answer'] },
               },
               { id: 's1', name: 'spawn_agent', args: { kind: 'browse', task: 'open the fixture page' } },
             ],
           },
           { kind: 'tool_calls', calls: [{ id: 's2', name: 'agent_results', args: { wait: true } }] },
-          { kind: 'answer', speak: 'Done browsing.', display: 'Done browsing.' },
+          { kind: 'answer', askedItems: [{ item: 'the answer', standing: 'stated', statement: 'stated' }], speak: 'Done browsing.', display: 'Done browsing.' },
         ]),
         BINGBONG_SUBAGENT_LLM_SCRIPT: JSON.stringify([
           { kind: 'tool_calls', calls: [{ id: 'n1', name: 'navigate', args: { url: fixture.url(SUB_PATH) } }] },
-          { kind: 'answer', speak: 'done', display: 'Browsed the fixture page.' },
+          { kind: 'answer', askedItems: [{ item: 'the answer', standing: 'stated', statement: 'stated' }], speak: 'done', display: 'Browsed the fixture page.' },
         ]),
         // Keep tabs around long enough to inspect their zoom.
         BINGBONG_TAB_LINGER_MS: '20000',

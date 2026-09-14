@@ -19,8 +19,17 @@ import { selectDelegatedMemory } from '../agent/subagentReport'
 import { createLlmDeltaBatcher } from './deltaBatcher'
 import type { TtsSpeaker } from '../ports/tts'
 import { answerRetryMessage, answerText, malformedErrorOf, spokenErrorLine } from '../agent/answerContract'
+import {
+  ASKED_ITEM_UNESTABLISHED,
+  askedItemsCoverage,
+  askedItemsCovered,
+  askedItemsRetryMessage,
+  settleAskedItems,
+  unverifiedAskedItems,
+  type AskedItemStanding,
+} from '../agent/askedItems'
 import type { LearnedTermsControls } from '../voice/learnedTerms'
-import { MAX_RUN_NOTE_CHARS, finalizeRun, runStopRecord, type FinalizationCause, type RunFinalization, type RunJournalEntry, type RunJournalSnapshot, type RunStopRecord } from '../session/runJournal'
+import { askedItemsOverride, MAX_RUN_NOTE_CHARS, finalizeRun, runStopRecord, type FinalizationCause, type RunFinalization, type RunJournalEntry, type RunJournalSnapshot, type RunStopRecord } from '../session/runJournal'
 import { currentUserObjective, type MemoryEntryId, type MemoryPatch, type WorkingMemorySnapshot } from '../session/workingMemory'
 import type { PerfTracer } from '../perf/perfTracer'
 import { createTurnIdSource } from '../perf/perfTracer'
@@ -45,6 +54,7 @@ import {
   type FinalizationAllowance,
 } from './finalizationAllowance'
 import {
+  askedItemsAcknowledgement,
   DEFAULT_EFFORT_TIER,
   lookupFallbackPlan,
   parsePlanReport,
@@ -1155,6 +1165,9 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
       // siblings never execute, no later round happens, nothing commits.
       let resetConsumed = false
       let finalAnswer: Extract<AssistantTurn, { kind: 'answer' }> | undefined
+      // The settled Asked Item standings of the final Answer (#250): set
+      // only when the Run declared any, beside the Answer they belong to.
+      let finalAskedItems: readonly AskedItemStanding[] | undefined
       yield { type: 'command', text: command, at: clock.now() }
       observe({ producer: 'command', ok: true, payload: command })
       yield { type: 'status', status: 'thinking', at: clock.now() }
@@ -1996,8 +2009,34 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
             }
           }
 
+          // The Asked Items shape check (#250, ADR 0052): an Answer the
+          // runtime can read whose `asked_items` is not the declared list
+          // — missing, short, or naming items never declared — is a shape
+          // failure on the same seam as the Malformed Answer, and meets
+          // the same one Answer Retry per Run, its message naming the
+          // missing items. A reserved round has no round to spend, and a
+          // spent retry is spent: the Answer then stands as written, and
+          // every declared item it left unstated settles `unverified`
+          // below, which is what makes the Run partial.
+          const declaredAskedItems = runPlan?.askedItems ?? []
+          if (turn.kind === 'answer' && turn.shape !== 'malformed' && declaredAskedItems.length > 0) {
+            const coverage = askedItemsCoverage(declaredAskedItems, turn.askedItems)
+            if (!askedItemsCovered(coverage)) {
+              const retried = !reservedRound && !answerRetrySpent
+              traceRun?.(() => ({ turnId, kind: 'asked_items_shape', missing: coverage.missing, undeclared: coverage.undeclared, retried }))
+              if (retried) {
+                answerRetrySpent = true
+                owedAnswerRetry = { reply: answerText(turn), message: askedItemsRetryMessage(coverage) }
+                continue
+              }
+            }
+          }
+
           if (turn.kind === 'answer') {
             finalAnswer = turn
+            // The standings the Card renders (#250): the declaration in
+            // declared order, the Answer's own standing where it gave one.
+            if (declaredAskedItems.length > 0) finalAskedItems = settleAskedItems(declaredAskedItems, turn.askedItems)
             // Displayed Answers are evidence-grounded (#122, ADR 0028;
             // #141): the live text is the model's own wording with its
             // Identity Slips repaired — nothing else. The declared
@@ -2046,6 +2085,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
               at: clock.now(),
               ...(turn.evidenceIds !== undefined ? { evidenceIds: turn.evidenceIds } : {}),
               ...(answerSources.length > 0 ? { sources: answerSources } : {}),
+              ...(finalAskedItems !== undefined ? { askedItems: finalAskedItems } : {}),
               finalAnswer: true,
             }
             yield* speakLine(spoken.text, turnId)
@@ -2132,6 +2172,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
                   effortTier: review.plan.effortTier,
                   source: 'model',
                   ...(review.kind === 'escalation' ? { escalationReason: review.reason } : {}),
+                  askedItems: review.plan.askedItems,
                   at: clock.now(),
                 }
               }
@@ -2184,7 +2225,14 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
             ...(planOnlyRound ? [RUN_PLAN_STANDALONE_ROUND] : []),
             ...(planResultNotice !== null ? [planResultNotice] : []),
           ]
-          const planAcknowledgement = planNotices.length > 0 ? `Run Plan noted. ${planNotices.join(' ')}` : 'Run Plan noted.'
+          // The acknowledgement restates the standing Asked Items (#250):
+          // the declaration is what the Answer is later held to, so the
+          // round that made it reads it back in the plan's own words.
+          const planAcknowledgement = [
+            'Run Plan noted.',
+            ...(runPlan !== null && runPlan.askedItems.length > 0 ? [askedItemsAcknowledgement(runPlan.askedItems)] : []),
+            ...planNotices,
+          ].join(' ')
 
           yield { type: 'status', status: 'acting', at: clock.now() }
           // The round's one interception (#116/#157): a report_run_plan
@@ -2262,7 +2310,18 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
           // The Answer's origin travels with the Answer (#214): the eval's
           // per-run `deterministicAnswer` reads this flag, so it can never
           // be inferred from the wording of the sentences above.
-          yield { type: 'display', text: fallback.display, deterministicAnswer: true, finalAnswer: true, at: clock.now() }
+          // Every declared Asked Item is unverified on a deterministic
+          // Answer (#250): the Run stopped before it could state any.
+          yield {
+            type: 'display',
+            text: fallback.display,
+            deterministicAnswer: true,
+            finalAnswer: true,
+            ...(runPlan !== null && runPlan.askedItems.length > 0
+              ? { askedItems: unverifiedAskedItems(runPlan.askedItems, ASKED_ITEM_UNESTABLISHED) }
+              : {}),
+            at: clock.now(),
+          }
           yield* speakLine(fallback.speak, turnId)
           yield* checkpoint(run, 'thinking')
         }
@@ -2301,10 +2360,21 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
       // Run already receives, never a second diagnostic store, and never
       // the Answer the user just heard.
       const stopDetail = finalizationDetailSentence(stopPhase)
+      // The one Resolution transition the runtime decides (#250, ADR
+      // 0052): `completed` claimed over an `unverified` Asked Item is
+      // `partial`, on a fact the model itself supplied — and the override
+      // is on the Stop Record, so the Journal says it happened. It never
+      // promotes, and it never judges what a standing says.
+      const unverifiedAsked =
+        runOutcome === 'done' && finalAnswer?.resolution === 'completed' && finalAskedItems !== undefined
+          ? finalAskedItems.filter((standing) => standing.standing === 'unverified').map((standing) => standing.item)
+          : []
+      const resolutionOverride = unverifiedAsked.length > 0 ? askedItemsOverride(unverifiedAsked) : undefined
       const stop: RunStopRecord | null = runStopRecord({
         cause: mechanicalCause,
         ...(stopDetail !== undefined ? { detail: stopDetail } : {}),
         ...(finalizationFailure !== null ? { failure: finalizationFailure } : {}),
+        ...(resolutionOverride !== undefined ? { override: resolutionOverride } : {}),
       })
       // A reset-consumed run commits nothing (#99): its observations and
       // Subagent Reports belong to the Session that just ended.
@@ -2399,6 +2469,9 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
           })
         if (!fresh) proposedResolution = 'partial'
       }
+      // An unverified Asked Item under `completed` (#250): the override
+      // recorded on the Stop Record above lands here.
+      if (resolutionOverride !== undefined) proposedResolution = 'partial'
       // The verification a Run could not make is not the user's to make
       // (#212/AC2, ADR 0041). `needs_user` says only a specific user
       // choice or action can move this forward — and an unreadable image

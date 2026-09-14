@@ -414,6 +414,20 @@ export interface IdentitySlipEvent {
 }
 
 /** One decision a Run traces, whatever kind it is. */
+/**
+ * An Answer whose `asked_items` was not the declared list (#250, ADR
+ * 0052): the declared items it left without a standing and the entries
+ * naming items never declared, and whether the one Answer Retry was
+ * spent on it. Written at detection, in the orchestrator loop only —
+ * Subagents declare no Asked Items.
+ */
+export interface AskedItemsShapeEvent {
+  readonly kind: 'asked_items_shape'
+  readonly missing: readonly string[]
+  readonly undeclared: readonly string[]
+  readonly retried: boolean
+}
+
 export type RunTraceEventBody =
   | EvidenceCheckpointEvent
   | ReasoningEvent
@@ -425,6 +439,7 @@ export type RunTraceEventBody =
   | FailureScreenshotEvent
   | SearchObservationEvent
   | IdentitySlipEvent
+  | AskedItemsShapeEvent
 
 /** What a Run hands the writer: one event, stamped with the turn it happened in. */
 export type RunTraceEvent = { readonly turnId: string } & RunTraceEventBody

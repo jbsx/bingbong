@@ -7,6 +7,7 @@
 // keeps the Command Echo as the Peek Card's title.
 
 import type { ToolCall } from '../ports/llm'
+import { MAX_ASKED_ITEM_CHARS, MAX_ASKED_ITEMS, sameAskedItems } from '../agent/askedItems'
 
 /** The bounded classes of autonomous work a Run may spend (glossary). */
 export type EffortTier = 'direct_action' | 'lookup' | 'investigation'
@@ -89,6 +90,13 @@ export interface RunPlan {
   objective: string
   headline: string | null
   effortTier: EffortTier
+  /**
+   * The Asked Items the Run declared (#250, ADR 0052): what the command
+   * explicitly requests be reported, one string each. Empty on a Direct
+   * Action and on the fallback plan — a hunting tier declares at least one
+   * or its plan is refused.
+   */
+  askedItems: readonly string[]
 }
 
 /** A parsed, well-formed report_run_plan call. */
@@ -97,19 +105,60 @@ export interface PlanReport {
   headline: string
   effortTier: EffortTier
   escalationReason?: string
+  /** `asked_items` as written, trimmed, empties dropped; absent reads as none. */
+  askedItems: readonly string[]
 }
 
 /** The one corrective nudge a Run without a valid plan receives (#116). */
 export const RUN_PLAN_NUDGE =
   'Every run declares a Run Plan: call report_run_plan alongside your useful work with ' +
   'objective (the task as you now understand it), headline (one short line in task terms — ' +
-  'the run\u2019s live title on screen), and effort_tier (the smallest sufficient of ' +
-  'direct_action, lookup, investigation). This run continues under the default Lookup plan.'
+  'the run\u2019s live title on screen), effort_tier (the smallest sufficient of ' +
+  'direct_action, lookup, investigation), and asked_items (each thing the command asks you to report, ' +
+  'as short strings). This run continues under the default Lookup plan.'
 
 /** The per-call validation error once the corrective nudge has been spent. */
 export const RUN_PLAN_INVALID =
-  'Run Plan rejected: objective and headline must be non-empty strings and effort_tier one of ' +
-  'direct_action, lookup, or investigation.'
+  'Run Plan rejected: objective and headline must be non-empty strings, effort_tier one of ' +
+  'direct_action, lookup, or investigation, and asked_items a list of strings.'
+
+/**
+ * The refusal a hunting plan with no Asked Items meets (#250, ADR 0052):
+ * a Run that will look things up and declares nothing it must report has
+ * not planned. Named as a Bookkeeping rejection and counted once as a
+ * no-Progress action, like a rejected checkpoint.
+ */
+export const RUN_PLAN_NO_ASKED_ITEMS =
+  'Run Plan rejected: a lookup or investigation plan declares asked_items \u2014 one short string per thing the command ' +
+  'asks you to report (an id, a measurement, a yes or no, a qualification, each named item\u2019s standing, and under a ' +
+  'smallest-change ask one per named item). Report the plan again with them, alongside your work.'
+
+/** What an accepted plan's acknowledgement reads back (#250): the standing Asked Items, and what the Answer owes them. */
+export function askedItemsAcknowledgement(standing: readonly string[]): string {
+  return (
+    `Asked Items (${standing.length}): ${standing.map((item) => `"${item}"`).join('; ')}. ` +
+    'The Answer’s asked_items carries one entry per item, "stated" with the statement or "unverified" with why.'
+  )
+}
+
+/** The refusal a later plan meets for changing the standing Asked Items (#250): the list is declared once. */
+export function askedItemsChangedReason(standing: readonly string[]): string {
+  return (
+    `Run Plan rejected: asked_items are declared once, in the first Run Plan, and this objective\u2019s stand \u2014 ` +
+    `${standing.map((item) => `"${item}"`).join('; ')}. Continue with them; only a Steering correction re-declares them.`
+  )
+}
+
+/** The bounds refusal (#250): at most {@link MAX_ASKED_ITEMS} items of at most {@link MAX_ASKED_ITEM_CHARS} characters. */
+function askedItemsBoundsReason(items: readonly string[]): string | null {
+  if (items.length > MAX_ASKED_ITEMS) {
+    return `Run Plan rejected: asked_items holds ${items.length} items; declare at most ${MAX_ASKED_ITEMS}, one per thing the command asks you to report.`
+  }
+  if (items.some((item) => item.length > MAX_ASKED_ITEM_CHARS)) {
+    return `Run Plan rejected: each of asked_items is at most ${MAX_ASKED_ITEM_CHARS} characters \u2014 name the thing asked, not its answer.`
+  }
+  return null
+}
 
 /**
  * The correction a plan-only Tool Round receives (#131): the acceptance
@@ -151,7 +200,14 @@ export const RUN_PLAN_TIER_BELOW_LOOKUP =
   'alongside your next work — or, if the task truly is one immediate action, keep Direct Action and do it now.'
 
 export function lookupFallbackPlan(command: string): RunPlan {
-  return { objective: command.trim(), headline: null, effortTier: DEFAULT_EFFORT_TIER }
+  return { objective: command.trim(), headline: null, effortTier: DEFAULT_EFFORT_TIER, askedItems: [] }
+}
+
+/** `asked_items` as a list of trimmed, non-empty strings; null when it is present but not a list of strings. */
+function parseAskedItems(raw: unknown): readonly string[] | null {
+  if (raw === undefined || raw === null) return []
+  if (!Array.isArray(raw) || raw.some((item) => typeof item !== 'string')) return null
+  return (raw as string[]).map((item) => item.trim()).filter((item) => item !== '')
 }
 
 /** Parses a report_run_plan call; null when any field is missing or malformed. */
@@ -159,9 +215,10 @@ export function parsePlanReport(call: ToolCall): PlanReport | null {
   const objective = typeof call.args.objective === 'string' ? call.args.objective.trim() : ''
   const headline = typeof call.args.headline === 'string' ? call.args.headline.trim() : ''
   const tier = call.args.effort_tier
-  if (objective === '' || headline === '' || !isEffortTier(tier)) return null
+  const askedItems = parseAskedItems(call.args.asked_items)
+  if (objective === '' || headline === '' || !isEffortTier(tier) || askedItems === null) return null
   const reason = typeof call.args.escalation_reason === 'string' ? call.args.escalation_reason.trim() : ''
-  return { objective, headline, effortTier: tier, ...(reason !== '' ? { escalationReason: reason } : {}) }
+  return { objective, headline, effortTier: tier, askedItems, ...(reason !== '' ? { escalationReason: reason } : {}) }
 }
 
 const TIER_LEVELS: Record<EffortTier, number> = { direct_action: 0, lookup: 1, investigation: 2 }
@@ -192,9 +249,28 @@ function belowLookupAdvisory(report: PlanReport): string | undefined {
  * the pipeline signals by clearing `modelDeclared`. An accepted Direct
  * Action plan whose objective words discovery carries the below-Lookup
  * advisory (#131) — a flag, not a rejection.
+ *
+ * The Asked Items ride the same review (#250, ADR 0052). The first
+ * declaration sets them, and a hunting tier — Lookup or Investigation —
+ * that sets none is refused: the list is a gate only while the model has
+ * found nothing to be satisfied with. Once set they stand for the
+ * objective: a later report may repeat or omit them, never change them,
+ * until a Steering replan clears the declaration. A Direct Action that
+ * declared none may still set them on escalation — nothing stood yet.
  */
 export function reviewPlanReport(current: RunPlan | null, modelDeclared: boolean, report: PlanReport): PlanReview {
-  const plan: RunPlan = { objective: report.objective, headline: report.headline, effortTier: report.effortTier }
+  const bounds = askedItemsBoundsReason(report.askedItems)
+  if (bounds !== null) return { kind: 'rejected', reason: bounds }
+  const standing = current !== null && modelDeclared ? current.askedItems : []
+  if (standing.length > 0 && report.askedItems.length > 0 && !sameAskedItems(standing, report.askedItems)) {
+    return { kind: 'rejected', reason: askedItemsChangedReason(standing) }
+  }
+  // The standing wording is the declaration; a repeat in another order or case changes nothing.
+  const askedItems = standing.length > 0 ? standing : report.askedItems
+  if (report.effortTier !== 'direct_action' && askedItems.length === 0) {
+    return { kind: 'rejected', reason: RUN_PLAN_NO_ASKED_ITEMS }
+  }
+  const plan: RunPlan = { objective: report.objective, headline: report.headline, effortTier: report.effortTier, askedItems }
   // Computed once: both accepted returns carry it, the others ignore it.
   const advisory = belowLookupAdvisory(report)
   if (current === null || !modelDeclared) {

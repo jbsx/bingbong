@@ -322,6 +322,23 @@ describe('orchestrator prompt verification policy (#212)', () => {
     )
   })
 
+  // #250, ADR 0052: the Asked Item is the Itemized Verdict's checkable
+  // form, so its rule sits directly after that line and names the field
+  // at both ends — the Run Plan's asked_items and the Answer's.
+  it('names the Asked Item field on the Run Plan and the Answer, directly after the Itemized Verdict', () => {
+    const lines = ORCHESTRATOR_SYSTEM_PROMPT.split('\n')
+    const itemized = lines.findIndex((candidate) => candidate.includes('names the items or options it asks about'))
+    expect(itemized).toBeGreaterThanOrEqual(0)
+    const askedItem = lines[itemized + 1]!
+    expect(askedItem).toMatch(/^- The checkable form of that rule is the Asked Item/)
+    expect(askedItem).toMatch(/asked_items on your first report_run_plan/)
+    expect(askedItem).toMatch(/the Answer's "asked_items" carries exactly one entry per declared item/)
+    expect(askedItem).toMatch(/"standing": "stated" or "unverified"/)
+    expect(askedItem).toMatch(/An "unverified" entry makes "resolution" "partial"/)
+    // Stated once: no other line teaches the field.
+    expect(lines.filter((candidate) => candidate.includes('asked_items'))).toHaveLength(1)
+  })
+
   it('describes a failed check as the attempt, not the route', () => {
     const failed = line('that attempt failed')
     expect(failed).toMatch(/the route is not gone for the rest of the run/)

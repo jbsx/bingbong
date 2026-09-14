@@ -66,7 +66,7 @@ describe('parallel Investigation e2e (#120) — concurrency, bounds, graceful co
           {
             id: 'plan',
             name: 'report_run_plan',
-            args: { objective: 'Compare the fixture pages across branches', headline: 'Comparing fixture pages', effort_tier: 'investigation' },
+            args: { objective: 'Compare the fixture pages across branches', headline: 'Comparing fixture pages', effort_tier: 'investigation', asked_items: ['the answer'] },
           },
           { id: 's1', name: 'spawn_agent', args: { kind: 'browse', task: 'branch one: visit the fixture pages' } },
           { id: 's2', name: 'spawn_agent', args: { kind: 'browse', task: 'branch two: visit the fixture pages' } },
@@ -75,7 +75,7 @@ describe('parallel Investigation e2e (#120) — concurrency, bounds, graceful co
         ],
       },
       { kind: 'tool_calls', calls: [{ id: 'results', name: 'agent_results', args: { wait: true } }] },
-      { kind: 'answer', speak: 'All three branches reported.', display: 'Merged three bounded branch reports.' },
+      { kind: 'answer', askedItems: [{ item: 'the answer', standing: 'stated', statement: 'stated' }], speak: 'All three branches reported.', display: 'Merged three bounded branch reports.' },
     ]
 
     // Every worker runs the same script from the top: two slow pages hold
@@ -197,7 +197,7 @@ describe('parallel Investigation e2e (#120/#199) — Finalization waits a Report
           {
             id: 'plan',
             name: 'report_run_plan',
-            args: { objective: 'Compare vendors while a branch researches', headline: 'Comparing vendors', effort_tier: 'investigation' },
+            args: { objective: 'Compare vendors while a branch researches', headline: 'Comparing vendors', effort_tier: 'investigation', asked_items: ['the answer'] },
           },
           { id: 's1', name: 'spawn_agent', args: { kind: 'browse', task: 'research the slow fixture page thoroughly' } },
           nav(0),
@@ -205,7 +205,7 @@ describe('parallel Investigation e2e (#120/#199) — Finalization waits a Report
       },
       ...Array.from({ length: 23 }, (_, i) => ({ kind: 'tool_calls' as const, calls: [nav(i + 1)] })),
       { kind: 'tool_calls', calls: [nav(24)] },
-      { kind: 'answer', speak: 'I stopped partway.', display: 'Compared some vendors myself; the branch was cut short.', resolution: 'partial' },
+      { kind: 'answer', askedItems: [{ item: 'the answer', standing: 'stated', statement: 'stated' }], speak: 'I stopped partway.', display: 'Compared some vendors myself; the branch was cut short.', resolution: 'partial' },
     ]
 
     // The worker would keep browsing for far longer than the parent's
@@ -302,7 +302,7 @@ describe('parallel Investigation e2e (#120) — Finalization still uses a comple
           {
             id: 'plan',
             name: 'report_run_plan',
-            args: { objective: 'Compare vendors with a delegated branch', headline: 'Comparing vendors', effort_tier: 'investigation' },
+            args: { objective: 'Compare vendors with a delegated branch', headline: 'Comparing vendors', effort_tier: 'investigation', asked_items: ['the answer'] },
           },
           { id: 's1', name: 'spawn_agent', args: { kind: 'browse', task: 'check the second fixture page' } },
           nav(0),
@@ -313,14 +313,14 @@ describe('parallel Investigation e2e (#120) — Finalization still uses a comple
       // Finalization's refused bookkeeping round, and the Answer follows.
       ...Array.from({ length: 22 }, (_, i) => ({ kind: 'tool_calls' as const, calls: [nav(i + 1)] })),
       { kind: 'tool_calls', calls: [nav(23)] },
-      { kind: 'answer', speak: 'I used the fast branch report.', display: 'FAST BRANCH REPORT merged with my own comparison.' },
+      { kind: 'answer', askedItems: [{ item: 'the answer', standing: 'stated', statement: 'stated' }], speak: 'I used the fast branch report.', display: 'FAST BRANCH REPORT merged with my own comparison.' },
     ]
 
     // The worker finishes well inside its leash with a report the parent
     // collects before its own budget is gone.
     const worker: AssistantTurn[] = [
       { kind: 'tool_calls', calls: [{ id: 'w1', name: 'navigate', args: { url: fastUrl } }] },
-      { kind: 'answer', speak: 'done', display: 'FAST BRANCH REPORT: the second fixture page checks out.' },
+      { kind: 'answer', askedItems: [{ item: 'the answer', standing: 'stated', statement: 'stated' }], speak: 'done', display: 'FAST BRANCH REPORT: the second fixture page checks out.' },
     ]
 
     harness = await startHarness({

@@ -113,6 +113,7 @@ describe('orchestrator tool surface', () => {
   it('report_run_plan carries the objective, Run Headline, and Effort Tier without a gate', async () => {
     const runPlan = coreToolCatalog().find((tool) => tool.name === 'report_run_plan')!
     expect(Object.keys(runPlan.parameters ?? {}).sort()).toEqual([
+      'asked_items',
       'effort_tier',
       'escalation_reason',
       'headline',
@@ -128,7 +129,7 @@ describe('orchestrator tool surface', () => {
       runPlan.execute?.({
         id: 'c',
         name: 'report_run_plan',
-        args: { objective: 'Find a blue mug', headline: 'Find a blue mug', effort_tier: 'lookup' },
+        args: { objective: 'Find a blue mug', headline: 'Find a blue mug', effort_tier: 'lookup', asked_items: ['the answer'] },
       }, { clock: { now: () => 0, setTimer: () => () => {} } }),
     ).resolves.toBe('Run Plan noted.')
   })
