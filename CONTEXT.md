@@ -430,11 +430,11 @@ The rule that when a command names the items or options it asks about, the
 Answer states each one's standing — allowed or not, fits or not, which wins
 and which would also work — not only the one it chose. A named item the Run
 could not establish is stated as unverified, and an unverified named item
-means the request is partial, never completed. The trigger is the command's
-own enumeration: items found along the way are Candidates and keep their own
-rules. It binds model-written Answers only; the Card carries the itemized
-standings and the Spoken Rendering the chosen answer.
-_Avoid_: exhaustive answer, completeness check, coverage
+makes the Run Resolution `partial`, never `completed`. The trigger is the
+command's own enumeration: items found along the way are Candidates and keep
+their own rules. It binds model-written Answers only; the Card carries the
+itemized standings and the Spoken Rendering the chosen Answer.
+_Avoid_: exhaustive answer, completeness check
 
 **Run Note**:
 A Run's continuity contribution, produced alongside its final Answer without a

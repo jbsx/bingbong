@@ -307,6 +307,7 @@ describe('orchestrator prompt verification policy (#212)', () => {
   it('states the standing of every item the command names, directly after the constraints line', () => {
     const lines = ORCHESTRATOR_SYSTEM_PROMPT.split('\n')
     const ranking = lines.findIndex((candidate) => candidate.includes('ranking highly in a search'))
+    expect(ranking, 'no prompt line contains "ranking highly in a search"').toBeGreaterThanOrEqual(0)
     const itemized = lines[ranking + 1]
     expect(itemized).toBe(
       '- When the command itself names the items or options it asks about, "display" states each one\'s standing — ' +
