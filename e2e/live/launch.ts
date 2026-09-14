@@ -25,6 +25,7 @@ import { HOST_TRACE_ENV, RUN_TRACE_ENV } from '../../src/core/trace/traceFlags'
 import { MEASUREMENT_ACCESS_GUARD_ENV } from '../../src/core/browser/measurementAccessGuard'
 import { resolveProductionRouting, type ProductionRouting } from '../eval/routing'
 import type { FixtureServer } from '../fixtureServer'
+import { browserSubspansEnabled } from '../../src/core/perf/browserSubspans'
 import { hermeticEnvTemplate } from '../harness'
 import { digestOf } from './artifacts.ts'
 import type { BenchmarkProfile } from './profile.ts'
@@ -213,7 +214,8 @@ export function composeMeasuredLaunch(input: MeasuredLaunchInput): ComposedLaunc
     adblock: adblockProvenance(processEnv),
     scriptedHooks: [],
     wakeMonitoring: 'off',
-    traceFlags: { runTrace: true, hostTrace: true },
+    // The sub-spans flag is read the way main reads it: file under process env.
+    traceFlags: { runTrace: true, hostTrace: true, browserSubspans: browserSubspansEnabled(productionEnv) },
     profile: { seed: 'fresh_benchmark', downloadsDir: 'benchmark_owned' },
     accessGuard,
   }
@@ -286,7 +288,7 @@ export function composeVerificationLaunch(input: VerificationLaunchInput): Compo
       adblock: adblockProvenance(effective),
       scriptedHooks,
       wakeMonitoring: 'off',
-      traceFlags: { runTrace: true, hostTrace: true },
+      traceFlags: { runTrace: true, hostTrace: true, browserSubspans: browserSubspansEnabled(effective) },
       profile: { seed: 'fresh_benchmark', downloadsDir: 'benchmark_owned' },
       accessGuard,
     },

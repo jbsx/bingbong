@@ -178,6 +178,8 @@ export interface LiveSummaryProvenance {
   readonly adblock: string
   readonly reasoningEffortOverride: string | null
   readonly effortOverrides: readonly string[]
+  /** Whether the Passes retained the verbose browser sub-spans (#247): shared, compared, timing records only. */
+  readonly browserSubspans: boolean
   readonly keyVersion: string
   readonly keyManifestDigest: string
   readonly roles: readonly string[]
@@ -285,6 +287,10 @@ export function parseLiveReportForSummary(raw: unknown, label: string): Validati
     if (provenance.reasoningEffortOverride !== null && !isString(provenance.reasoningEffortOverride)) {
       errors.push(`${label}: provenance.reasoningEffortOverride is neither a string nor null`)
     }
+    // Recorded since #247; a report written before then was captured with the flag off.
+    if (provenance.browserSubspans !== undefined && !isBoolean(provenance.browserSubspans)) {
+      errors.push(`${label}: provenance.browserSubspans is not a boolean`)
+    }
   }
 
   checkAll(
@@ -360,7 +366,9 @@ export function parseLiveReportForSummary(raw: unknown, label: string): Validati
   if (!isStringArray(raw.anomalies)) errors.push(`${label}: anomalies is not a list of strings`)
   if (!isStringArray(raw.warnings)) errors.push(`${label}: warnings is not a list of strings`)
 
-  return errors.length > 0 ? { ok: false, errors } : { ok: true, value: raw as unknown as LiveReport }
+  if (errors.length > 0) return { ok: false, errors }
+  const report = raw as unknown as LiveReport
+  return { ok: true, value: { ...report, provenance: { ...report.provenance, browserSubspans: report.provenance.browserSubspans === true } } }
 }
 
 // ---------------------------------------------------------------------------
@@ -415,6 +423,7 @@ const FIXED_FIELDS: readonly { readonly name: string; readonly of: (report: Live
   { name: 'adblock', of: (report) => report.provenance.adblock },
   { name: 'reasoning-effort override', of: (report) => report.provenance.reasoningEffortOverride ?? 'none' },
   { name: 'effort overrides', of: (report) => report.provenance.effortOverrides.join(', ') || 'none' },
+  { name: 'browser sub-spans', of: (report) => (report.provenance.browserSubspans ? 'on' : 'off') },
 ]
 
 function refusals(ordered: readonly LiveSummaryInput[]): string[] {
@@ -679,6 +688,7 @@ export function buildLiveSummary(inputs: readonly LiveSummaryInput[], generatedA
         adblock: shared.adblock,
         reasoningEffortOverride: shared.reasoningEffortOverride,
         effortOverrides: shared.effortOverrides,
+        browserSubspans: shared.browserSubspans,
         keyVersion: shared.keyVersion,
         keyManifestDigest: shared.keyManifestDigest,
         roles: shared.roles,
@@ -762,7 +772,7 @@ export function formatLiveSummary(summary: LiveSummary): string {
   lines.push(`- reviewer(s): ${provenance.reviewers.join('; ')}`)
   lines.push(`- study ${provenance.study}, protocol ${provenance.protocolVersion}, mode ${provenance.mode}, prompt version(s) ${provenance.promptVersions.join(', ')}`)
   lines.push(
-    `- reasoning override: ${provenance.reasoningEffortOverride ?? 'none'} | effort overrides: ${provenance.effortOverrides.length === 0 ? 'none' : provenance.effortOverrides.join(', ')} | adblock: ${provenance.adblock}`,
+    `- reasoning override: ${provenance.reasoningEffortOverride ?? 'none'} | effort overrides: ${provenance.effortOverrides.length === 0 ? 'none' : provenance.effortOverrides.join(', ')} | adblock: ${provenance.adblock} | browser sub-spans: ${provenance.browserSubspans ? 'on' : 'off'}`,
   )
   lines.push('')
   lines.push('Per input, listed and never compared:')

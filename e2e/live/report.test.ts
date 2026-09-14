@@ -878,6 +878,23 @@ describe('report version 2 provenance (#233)', () => {
     expect(formatLiveReport(report)).toContain('- reviewer(s): claude-opus-5 via live:grade; evaluator-1')
   })
 
+  it('names the browser sub-spans flag: on when any launch retained them, off for a set captured without the flag (#247)', () => {
+    const { set, sessions, manifest } = pairedFixture({ secondFollowUpReached: false })
+    const off = built(inputFor(set, sessions, manifest))
+    expect(off.provenance.browserSubspans).toBe(false)
+    expect(formatLiveReport(off)).toContain('browser sub-spans: off')
+
+    const on = built(
+      inputFor(
+        set,
+        sessions.map((session) => ({ ...session, launch: { ...session.launch, traceFlags: { ...session.launch.traceFlags, browserSubspans: true } } })),
+        manifest,
+      ),
+    )
+    expect(on.provenance.browserSubspans).toBe(true)
+    expect(formatLiveReport(on)).toContain('browser sub-spans: on')
+  })
+
   it('carries the prompt version on every row, including one nothing was dispatched into', () => {
     const { set, sessions, manifest } = pairedFixture({ secondFollowUpReached: false })
     const report = built(inputFor(set, sessions, manifest))

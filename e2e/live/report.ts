@@ -326,6 +326,8 @@ export interface LiveReportProvenance {
   readonly reasoningEffortOverride: string | null
   readonly effortOverrides: readonly string[]
   readonly adblock: string
+  /** Whether any launch retained the verbose browser sub-spans (#247): timing records only. */
+  readonly browserSubspans: boolean
   readonly generatedAt: string
 }
 
@@ -1017,6 +1019,7 @@ export function buildLiveReport(input: LiveReportInput): Validation<LiveReport> 
     reasoningEffortOverride: launches.find((launch) => launch.reasoningEffortOverride !== null)?.reasoningEffortOverride ?? null,
     effortOverrides: [...new Set(launches.flatMap((launch) => Object.keys(launch.effortOverrides)))].sort(),
     adblock: [...new Set(launches.map((launch) => launch.adblock.lists))].sort().join(', '),
+    browserSubspans: launches.some((launch) => launch.traceFlags.browserSubspans === true),
     generatedAt: input.generatedAt,
   }
 
@@ -1101,7 +1104,7 @@ export function formatLiveReport(report: LiveReport): string {
   lines.push(`- reviewer(s): ${provenance.reviewers.length === 0 ? 'none yet — every entry is pending' : provenance.reviewers.join('; ')}`)
   lines.push(`- routing: ${provenance.roles.join('; ')}`)
   lines.push(
-    `- reasoning override: ${provenance.reasoningEffortOverride ?? 'none'} | effort overrides: ${provenance.effortOverrides.length === 0 ? 'none' : provenance.effortOverrides.join(', ')} | adblock: ${provenance.adblock}`,
+    `- reasoning override: ${provenance.reasoningEffortOverride ?? 'none'} | effort overrides: ${provenance.effortOverrides.length === 0 ? 'none' : provenance.effortOverrides.join(', ')} | adblock: ${provenance.adblock} | browser sub-spans: ${provenance.browserSubspans ? 'on' : 'off'}`,
   )
   lines.push('')
   lines.push('## Populations')

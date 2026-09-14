@@ -248,6 +248,15 @@ its own value. Re-running a failed pass under the id it already used is the one
 way to make a fresh attempt look like broken measurement, because the refusal
 surfaces as a `measurement_failed` set rather than as an obvious error.
 
+`BINGBONG_BROWSER_SUBSPANS=1` in the pass's environment makes the app retain
+the verbose `browser-settle` / `browser-recollection` / `browser-safety` perf
+sub-spans below each `tool` span — the only record of the deliberate sleeps
+inside a browser action (a `type` span reads about 1 ms without them). It
+changes timing records only, never what the model sees or does, and the launch
+provenance records it (`traceFlags.browserSubspans`), so the report, the
+cross-pass summary and the Round Audit name it and refuse to merge Passes that
+differ on it. The second Baseline (#247) runs with it on.
+
 `*.live.test.ts` is matched by **no config but `vitest.live.config.ts`**, is
 explicitly excluded from the unit suite, and rides no CI. That arrangement is
 asserted in `e2e/live/config.test.ts` rather than trusted, because everything

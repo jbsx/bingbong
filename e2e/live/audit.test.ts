@@ -1022,6 +1022,7 @@ function provenanceOf(overrides: Partial<AuditProvenance> = {}): AuditProvenance
     reasoningEffortOverride: null,
     effortOverrides: [],
     adblock: 'production_default',
+    browserSubspans: false,
     reviewerModel: 'claude-opus-5',
     reviewerEffort: 'high',
     reviewerPromptVersion: 'audit-p1',
@@ -1133,9 +1134,12 @@ describe('a set and the aggregate', () => {
   })
 
   it('refuses sets whose shared provenance differs, one set, or one set named twice', () => {
-    const other = buildAuditSet(provenanceOf({ setId: 'set-3', keyVersion: 'k2', reviewerEffort: 'low', createdAt: '2026-09-12T19:00:00.000Z' }), [], [])
+    const other = buildAuditSet(provenanceOf({ setId: 'set-3', keyVersion: 'k2', reviewerEffort: 'low', browserSubspans: true, createdAt: '2026-09-12T19:00:00.000Z' }), [], [])
     const refused = buildAuditAggregate([setOne, other], '2026-09-13T11:00:00.000Z')
-    expect(refused).toEqual({ ok: false, errors: ['key version differs: set-1=k1, set-3=k2', 'audit reviewer effort differs: set-1=high, set-3=low'] })
+    expect(refused).toEqual({
+      ok: false,
+      errors: ['key version differs: set-1=k1, set-3=k2', 'browser sub-spans differs: set-1=off, set-3=on', 'audit reviewer effort differs: set-1=high, set-3=low'],
+    })
     expect(buildAuditAggregate([setOne], 'x').ok).toBe(false)
     expect(buildAuditAggregate([setOne, setOne], 'x')).toEqual({ ok: false, errors: ['capture set set-1 is named 2 times: one set counts once'] })
   })

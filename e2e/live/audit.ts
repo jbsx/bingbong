@@ -406,6 +406,8 @@ export interface AuditProvenance {
   readonly reasoningEffortOverride: string | null
   readonly effortOverrides: readonly string[]
   readonly adblock: string
+  /** Whether any launch retained the verbose browser sub-spans (#247): timing records only. */
+  readonly browserSubspans: boolean
   readonly reviewerModel: string
   readonly reviewerEffort: string
   readonly reviewerPromptVersion: string
@@ -1729,6 +1731,7 @@ const SHARED_FIELDS: readonly { readonly name: string; readonly of: (provenance:
   { name: 'adblock', of: (provenance) => provenance.adblock },
   { name: 'reasoning-effort override', of: (provenance) => provenance.reasoningEffortOverride ?? 'none' },
   { name: 'effort overrides', of: (provenance) => provenance.effortOverrides.join(', ') || 'none' },
+  { name: 'browser sub-spans', of: (provenance) => (provenance.browserSubspans ? 'on' : 'off') },
   { name: 'prompt versions', of: (provenance) => provenance.promptVersions.join(', ') },
   { name: 'audit reviewer model', of: (provenance) => provenance.reviewerModel },
   { name: 'audit reviewer effort', of: (provenance) => provenance.reviewerEffort },
@@ -1782,6 +1785,7 @@ export function buildAuditAggregate(sets: readonly AuditSetOutput[], generatedAt
           reasoningEffortOverride: shared.reasoningEffortOverride,
           effortOverrides: shared.effortOverrides,
           adblock: shared.adblock,
+          browserSubspans: shared.browserSubspans,
           reviewerModel: shared.reviewerModel,
           reviewerEffort: shared.reviewerEffort,
           reviewerPromptVersion: shared.reviewerPromptVersion,
@@ -1982,7 +1986,7 @@ export function formatAuditSet(audit: AuditSetOutput): string {
   lines.push('## Provenance')
   lines.push('')
   lines.push(`- capture: commit(s) ${provenance.commits.map((commit) => commit.slice(0, 8)).join(', ')}${provenance.dirtyTree ? ' (dirty tree)' : ''}; mode ${provenance.mode}; protocol ${provenance.protocolVersion}; prompt version(s) ${provenance.promptVersions.join(', ')}`)
-  lines.push(`- routing: ${provenance.roles.join('; ')} | reasoning override: ${provenance.reasoningEffortOverride ?? 'none'} | effort overrides: ${provenance.effortOverrides.length === 0 ? 'none' : provenance.effortOverrides.join(', ')} | adblock: ${provenance.adblock}`)
+  lines.push(`- routing: ${provenance.roles.join('; ')} | reasoning override: ${provenance.reasoningEffortOverride ?? 'none'} | effort overrides: ${provenance.effortOverrides.length === 0 ? 'none' : provenance.effortOverrides.join(', ')} | adblock: ${provenance.adblock} | browser sub-spans: ${provenance.browserSubspans ? 'on' : 'off'}`)
   lines.push(`- key ${provenance.keyVersion}, manifest ${provenance.keyManifestDigest.slice(0, 15)}…; grades by ${provenance.gradesReviewers.length === 0 ? 'nobody yet' : provenance.gradesReviewers.join('; ')}${provenance.gradesRevision === null ? '' : ` (revision ${provenance.gradesRevision})`}`)
   lines.push(`- reviewer: ${provenance.reviewerModel} at ${provenance.reviewerEffort}, prompt ${provenance.reviewerPromptVersion}; audit run at commit ${provenance.auditCommit.slice(0, 8)}${provenance.auditDirtyTree ? ' (dirty tree)' : ''}`)
   lines.push('')
@@ -2035,7 +2039,7 @@ export function formatAuditAggregate(aggregate: AuditAggregate): string {
   lines.push('')
   lines.push(`- key ${provenance.shared.keyVersion}, manifest ${provenance.shared.keyManifestDigest.slice(0, 15)}…; grades by ${provenance.shared.gradesReviewers.join('; ')}`)
   lines.push(`- routing: ${provenance.shared.roles.join('; ')} | mode ${provenance.shared.mode} | protocol ${provenance.shared.protocolVersion} | prompt version(s) ${provenance.shared.promptVersions.join(', ')}`)
-  lines.push(`- reasoning override: ${provenance.shared.reasoningEffortOverride ?? 'none'} | effort overrides: ${provenance.shared.effortOverrides.length === 0 ? 'none' : provenance.shared.effortOverrides.join(', ')} | adblock: ${provenance.shared.adblock}`)
+  lines.push(`- reasoning override: ${provenance.shared.reasoningEffortOverride ?? 'none'} | effort overrides: ${provenance.shared.effortOverrides.length === 0 ? 'none' : provenance.shared.effortOverrides.join(', ')} | adblock: ${provenance.shared.adblock} | browser sub-spans: ${provenance.shared.browserSubspans ? 'on' : 'off'}`)
   lines.push(`- reviewer: ${provenance.shared.reviewerModel} at ${provenance.shared.reviewerEffort}, prompt ${provenance.shared.reviewerPromptVersion}`)
   lines.push('')
   lines.push('| set | created | state | commit(s) | dirty tree | grades revision | audited at |')

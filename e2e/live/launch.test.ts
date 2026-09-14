@@ -106,6 +106,25 @@ describe('composeMeasuredLaunch', () => {
     expect(composed.provenance.adblock).toEqual({ lists: 'override', listsOverride: 'http://shell.example/list', resourcesOverride: null })
     expect(composed.env.BINGBONG_ADBLOCK_LISTS).toBeUndefined()
   })
+
+  it('records the browser sub-spans flag the app will read — process env over file, off when neither sets it (#247)', () => {
+    const envFile = { path: '/repo/.env', present: true, values: {} }
+    expect(composeMeasuredLaunch({ profile, git, envFile, processEnv: PRODUCTION }).provenance.traceFlags).toEqual({
+      runTrace: true,
+      hostTrace: true,
+      browserSubspans: false,
+    })
+    expect(composeMeasuredLaunch({ profile, git, envFile, processEnv: { ...PRODUCTION, BINGBONG_BROWSER_SUBSPANS: '1' } }).provenance.traceFlags.browserSubspans).toBe(true)
+    // The app layers the env file under the process env, so a file-only flag counts too.
+    expect(
+      composeMeasuredLaunch({ profile, git, envFile: { ...envFile, values: { BINGBONG_BROWSER_SUBSPANS: 'true' } }, processEnv: PRODUCTION }).provenance.traceFlags
+        .browserSubspans,
+    ).toBe(true)
+    expect(
+      composeMeasuredLaunch({ profile, git, envFile: { ...envFile, values: { BINGBONG_BROWSER_SUBSPANS: '1' } }, processEnv: { ...PRODUCTION, BINGBONG_BROWSER_SUBSPANS: '0' } })
+        .provenance.traceFlags.browserSubspans,
+    ).toBe(false)
+  })
 })
 
 describe('composeVerificationLaunch', () => {

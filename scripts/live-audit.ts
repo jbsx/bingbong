@@ -710,6 +710,7 @@ function main(): void {
       reasoningEffortOverride: launches.find((launch) => launch.reasoningEffortOverride !== null)?.reasoningEffortOverride ?? null,
       effortOverrides: [...new Set(launches.flatMap((launch) => Object.keys(launch.effortOverrides)))].sort(),
       adblock: [...new Set(launches.map((launch) => launch.adblock.lists))].sort().join(', '),
+      browserSubspans: launches.some((launch) => launch.traceFlags.browserSubspans === true),
       reviewerModel: model,
       reviewerEffort: effort,
       reviewerPromptVersion: AUDIT_PROMPT_VERSION,

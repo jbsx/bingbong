@@ -221,7 +221,14 @@ export interface LiveLaunchProvenance {
   readonly scriptedHooks: readonly string[]
   /** Wake-word monitoring was turned off for typed capture; recorded, never implied. */
   readonly wakeMonitoring: 'off'
-  readonly traceFlags: { readonly runTrace: boolean; readonly hostTrace: boolean }
+  /**
+   * Trace flags the app ran under. `browserSubspans` (#247) says whether the
+   * verbose `browser-settle` / `browser-recollection` / `browser-safety` perf
+   * sub-spans (`BINGBONG_BROWSER_SUBSPANS`) were retained: a timing record
+   * only, never a change to what the model sees or does. Absent in sets
+   * captured before it was recorded, which all ran with the flag off.
+   */
+  readonly traceFlags: { readonly runTrace: boolean; readonly hostTrace: boolean; readonly browserSubspans?: boolean }
   /** The profile seed: always a fresh benchmark directory, never a discovered personal profile. */
   readonly profile: { readonly seed: 'fresh_benchmark'; readonly downloadsDir: 'benchmark_owned' }
   /** Whether the measurement access guard (file: loads refused) was in force. */

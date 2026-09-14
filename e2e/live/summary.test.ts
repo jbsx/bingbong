@@ -69,6 +69,7 @@ interface ReportSpec {
   readonly adblock?: string
   readonly reasoningEffortOverride?: string | null
   readonly effortOverrides?: readonly string[]
+  readonly browserSubspans?: boolean
   readonly gradesRevision?: number
   readonly warnings?: readonly string[]
   readonly anomalies?: readonly string[]
@@ -195,6 +196,7 @@ function reportOf(spec: ReportSpec): LiveReport {
       reasoningEffortOverride: spec.reasoningEffortOverride === undefined ? null : spec.reasoningEffortOverride,
       effortOverrides: spec.effortOverrides ?? [],
       adblock: spec.adblock ?? 'production_default',
+      browserSubspans: spec.browserSubspans ?? false,
       generatedAt: '2026-02-01T00:00:00.000Z',
     },
     rows,
@@ -505,6 +507,7 @@ describe('refusals', () => {
     ['adblock', { adblock: 'none' }, 'adblock differs: pass-1=production_default, pass-2=production_default, pass-3=none'],
     ['reasoning-effort override', { reasoningEffortOverride: 'low' }, 'reasoning-effort override differs: pass-1=none, pass-2=none, pass-3=low'],
     ['effort overrides', { effortOverrides: ['subagent=high'] }, 'effort overrides differs: pass-1=none, pass-2=none, pass-3=subagent=high'],
+    ['browser sub-spans', { browserSubspans: true }, 'browser sub-spans differs: pass-1=off, pass-2=off, pass-3=on'],
   ] as const)('refuses a mixed %s and names the differing values', (_name, spec, message) => {
     expect(refused(withThird(spec))).toContain(message)
   })
@@ -557,6 +560,28 @@ describe('refusals', () => {
     expect(noReviewers.ok).toBe(false)
     if (!noReviewers.ok) expect(noReviewers.errors).toContain('x.json: provenance.reviewers is not a list of strings')
     expect(parseLiveReportForSummary(report, 'x.json').ok).toBe(true)
+  })
+
+  it('reads a report written before the browser sub-spans flag was recorded as captured with it off (#247)', () => {
+    const report = threePasses()[0]!.report
+    const older: Record<string, unknown> = { ...report.provenance }
+    delete older.browserSubspans
+    const parsed = parseLiveReportForSummary({ ...report, provenance: older }, 'baseline-1.json')
+    expect(parsed.ok).toBe(true)
+    if (parsed.ok) expect(parsed.value.provenance.browserSubspans).toBe(false)
+    const wrongType = parseLiveReportForSummary({ ...report, provenance: { ...report.provenance, browserSubspans: 'on' } }, 'x.json')
+    expect(wrongType.ok).toBe(false)
+    if (!wrongType.ok) expect(wrongType.errors).toContain('x.json: provenance.browserSubspans is not a boolean')
+  })
+
+  it('names the shared browser sub-spans flag once in the provenance it writes (#247)', () => {
+    const on = built([
+      input(reportOf({ setId: 'pass-1', createdAt: '2026-02-01T10:00:00.000Z', rows: passRows(), browserSubspans: true })),
+      input(reportOf({ setId: 'pass-2', createdAt: '2026-02-01T11:00:00.000Z', rows: passRows(), browserSubspans: true })),
+    ])
+    expect(on.provenance.browserSubspans).toBe(true)
+    expect(formatLiveSummary(on)).toContain('browser sub-spans: on')
+    expect(formatLiveSummary(built(threePasses()))).toContain('browser sub-spans: off')
   })
 
   it('refuses a report whose counts or observations are not what the summary would count', () => {
