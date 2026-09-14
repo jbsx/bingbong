@@ -2026,7 +2026,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
               traceRun?.(() => ({ turnId, kind: 'asked_items_shape', missing: coverage.missing, undeclared: coverage.undeclared, retried }))
               if (retried) {
                 answerRetrySpent = true
-                owedAnswerRetry = { reply: answerText(turn), message: askedItemsRetryMessage(coverage) }
+                owedAnswerRetry = { reply: answerText(turn), message: askedItemsRetryMessage(coverage, turn.shape === 'off_contract') }
                 continue
               }
             }
@@ -2367,7 +2367,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
       // promotes, and it never judges what a standing says.
       const unverifiedAsked =
         runOutcome === 'done' && finalAnswer?.resolution === 'completed' && finalAskedItems !== undefined
-          ? finalAskedItems.filter((standing) => standing.standing === 'unverified').map((standing) => standing.item)
+          ? finalAskedItems.filter((entry) => entry.standing === 'unverified').map((entry) => entry.item)
           : []
       const resolutionOverride = unverifiedAsked.length > 0 ? askedItemsOverride(unverifiedAsked) : undefined
       const stop: RunStopRecord | null = runStopRecord({

@@ -86,6 +86,13 @@ item `unverified`.
   rail cannot tell the refusals apart, and none of them is Progress. And
   with nothing declared the Answer's field is ignored rather than judged,
   so a Direct Action or fallback-plan Run never spends its retry on it.
+  Two more follow from the wording: a standing with no statement is not
+  the shape, since a `stated` entry that says nothing is the omission the
+  rule stops, and a prose reply in an ordinary round — an Answer with no
+  list at all — meets the same retry, worded as what it was. The override
+  moves `completed` alone: a Run that claimed `blocked`, `needs_user` or
+  `unsuccessful` over an unverified item keeps its own reading, because
+  `partial` would promote it.
 - The measurement (#250) reports answer-omitted verdicts and the Eurostar
   initial against baseline2 as targets, and the median Run duration against
   a bound of one round's latency as a closing condition: completeness bought

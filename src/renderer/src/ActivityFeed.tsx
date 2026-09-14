@@ -108,15 +108,15 @@ export function FeedLine({
                   unverified. */}
               {entry.askedItems !== undefined && entry.askedItems.length > 0 ? (
                 <ul className="asked-items" aria-label="Asked items">
-                  {entry.askedItems.map((standing, index) => (
+                  {entry.askedItems.map((asked, index) => (
                     <li
-                      key={`${index}-${standing.item}`}
-                      className={`asked-item asked-item--${standing.standing}`}
-                      data-standing={standing.standing}
+                      key={`${index}-${asked.item}`}
+                      className={`asked-item asked-item--${asked.standing}`}
+                      data-standing={asked.standing}
                     >
-                      <span className="asked-item-name">{standing.item}</span>
-                      <span className="asked-item-standing">{standing.standing}</span>
-                      {standing.statement !== '' ? <span className="asked-item-statement">{standing.statement}</span> : null}
+                      <span className="asked-item-name">{asked.item}</span>
+                      <span className="asked-item-standing">{asked.standing}</span>
+                      {asked.statement !== '' ? <span className="asked-item-statement">{asked.statement}</span> : null}
                     </li>
                   ))}
                 </ul>

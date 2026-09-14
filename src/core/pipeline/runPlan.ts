@@ -7,7 +7,7 @@
 // keeps the Command Echo as the Peek Card's title.
 
 import type { ToolCall } from '../ports/llm'
-import { MAX_ASKED_ITEM_CHARS, MAX_ASKED_ITEMS, sameAskedItems } from '../agent/askedItems'
+import { MAX_ASKED_ITEM_CHARS, MAX_ASKED_ITEMS, quoteAskedItems, sameAskedItems } from '../agent/askedItems'
 
 /** The bounded classes of autonomous work a Run may spend (glossary). */
 export type EffortTier = 'direct_action' | 'lookup' | 'investigation'
@@ -93,8 +93,8 @@ export interface RunPlan {
   /**
    * The Asked Items the Run declared (#250, ADR 0052): what the command
    * explicitly requests be reported, one string each. Empty on a Direct
-   * Action and on the fallback plan — a hunting tier declares at least one
-   * or its plan is refused.
+   * Action and on the fallback plan — a Lookup or Investigation plan
+   * declares at least one or is refused.
    */
   askedItems: readonly string[]
 }
@@ -123,29 +123,29 @@ export const RUN_PLAN_INVALID =
   'direct_action, lookup, or investigation, and asked_items a list of strings.'
 
 /**
- * The refusal a hunting plan with no Asked Items meets (#250, ADR 0052):
- * a Run that will look things up and declares nothing it must report has
- * not planned. Named as a Bookkeeping rejection and counted once as a
- * no-Progress action, like a rejected checkpoint.
+ * The refusal a Lookup or Investigation plan with no Asked Items meets
+ * (#250, ADR 0052): a Run that will look things up and declares nothing it
+ * must report has not planned. Named as a Bookkeeping rejection and
+ * counted once as a no-Progress action, like a rejected checkpoint.
  */
 export const RUN_PLAN_NO_ASKED_ITEMS =
   'Run Plan rejected: a lookup or investigation plan declares asked_items \u2014 one short string per thing the command ' +
   'asks you to report (an id, a measurement, a yes or no, a qualification, each named item\u2019s standing, and under a ' +
-  'smallest-change ask one per named item). Report the plan again with them, alongside your work.'
+  'smallest-change command one per named item). Report the plan again with them, alongside your work.'
 
 /** What an accepted plan's acknowledgement reads back (#250): the standing Asked Items, and what the Answer owes them. */
-export function askedItemsAcknowledgement(standing: readonly string[]): string {
+export function askedItemsAcknowledgement(standingItems: readonly string[]): string {
   return (
-    `Asked Items (${standing.length}): ${standing.map((item) => `"${item}"`).join('; ')}. ` +
+    `Asked Items (${standingItems.length}): ${quoteAskedItems(standingItems)}. ` +
     'The Answer’s asked_items carries one entry per item, "stated" with the statement or "unverified" with why.'
   )
 }
 
 /** The refusal a later plan meets for changing the standing Asked Items (#250): the list is declared once. */
-export function askedItemsChangedReason(standing: readonly string[]): string {
+export function askedItemsChangedReason(standingItems: readonly string[]): string {
   return (
     `Run Plan rejected: asked_items are declared once, in the first Run Plan, and this objective\u2019s stand \u2014 ` +
-    `${standing.map((item) => `"${item}"`).join('; ')}. Continue with them; only a Steering correction re-declares them.`
+    `${quoteAskedItems(standingItems)}. Continue with them; only a Steering correction re-declares them.`
   )
 }
 
@@ -251,22 +251,22 @@ function belowLookupAdvisory(report: PlanReport): string | undefined {
  * advisory (#131) — a flag, not a rejection.
  *
  * The Asked Items ride the same review (#250, ADR 0052). The first
- * declaration sets them, and a hunting tier — Lookup or Investigation —
- * that sets none is refused: the list is a gate only while the model has
- * found nothing to be satisfied with. Once set they stand for the
- * objective: a later report may repeat or omit them, never change them,
- * until a Steering replan clears the declaration. A Direct Action that
- * declared none may still set them on escalation — nothing stood yet.
+ * declaration sets them, and a Lookup or Investigation plan that sets
+ * none is refused: the list is a gate only while the model has found
+ * nothing to be satisfied with. Once set they stand for the objective: a
+ * later report may repeat or omit them, never change them, until a
+ * Steering replan clears the declaration. A Direct Action that declared
+ * none may still set them on escalation — nothing stood yet.
  */
 export function reviewPlanReport(current: RunPlan | null, modelDeclared: boolean, report: PlanReport): PlanReview {
   const bounds = askedItemsBoundsReason(report.askedItems)
   if (bounds !== null) return { kind: 'rejected', reason: bounds }
-  const standing = current !== null && modelDeclared ? current.askedItems : []
-  if (standing.length > 0 && report.askedItems.length > 0 && !sameAskedItems(standing, report.askedItems)) {
-    return { kind: 'rejected', reason: askedItemsChangedReason(standing) }
+  const standingItems = current !== null && modelDeclared ? current.askedItems : []
+  if (standingItems.length > 0 && report.askedItems.length > 0 && !sameAskedItems(standingItems, report.askedItems)) {
+    return { kind: 'rejected', reason: askedItemsChangedReason(standingItems) }
   }
   // The standing wording is the declaration; a repeat in another order or case changes nothing.
-  const askedItems = standing.length > 0 ? standing : report.askedItems
+  const askedItems = standingItems.length > 0 ? standingItems : report.askedItems
   if (report.effortTier !== 'direct_action' && askedItems.length === 0) {
     return { kind: 'rejected', reason: RUN_PLAN_NO_ASKED_ITEMS }
   }

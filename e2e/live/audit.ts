@@ -1028,8 +1028,8 @@ export function classifyAttempt(input: AuditTraceInput): AuditMechanical {
     if (event.type === 'run_plan' && event.source === 'model' && Array.isArray(event.askedItems)) askedDeclared = event.askedItems.length
     if (event.type === 'display' && event.finalAnswer === true && Array.isArray(event.askedItems)) {
       const standings = event.askedItems as readonly { standing?: unknown }[]
-      askedStated = standings.filter((standing) => standing.standing === 'stated').length
-      askedUnverified = standings.filter((standing) => standing.standing === 'unverified').length
+      askedStated = standings.filter((entry) => entry.standing === 'stated').length
+      askedUnverified = standings.filter((entry) => entry.standing === 'unverified').length
     }
     if (event.type === 'done') {
       terminal = {

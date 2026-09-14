@@ -1,4 +1,5 @@
 import type { RunId } from './sessionIdentity'
+import { quoteAskedItems } from '../agent/askedItems'
 
 export const MAX_RUN_NOTE_CHARS = 1_200
 
@@ -105,7 +106,7 @@ export function runStopRecord(input: {
 
 /** The override's wording (#250): the transition, and which Asked Items forced it. */
 export function askedItemsOverride(unverified: readonly string[]): string {
-  return `resolution completed → partial: ${unverified.length === 1 ? 'an Asked Item stood' : `${unverified.length} Asked Items stood`} unverified (${unverified.map((item) => `"${item}"`).join('; ')})`
+  return `resolution completed → partial: ${unverified.length === 1 ? 'an Asked Item stood' : `${unverified.length} Asked Items stood`} unverified (${quoteAskedItems(unverified)})`
 }
 
 export type RunJournalSnapshot = readonly Readonly<RunJournalEntry>[]

@@ -260,7 +260,7 @@ describe('parseAssistantAnswer', () => {
       asked_items: [
         { item: ' the guitar ', standing: 'stated', statement: 'It counts as one of two pieces.' },
         { item: 'the fare', standing: 'unverified', statement: 'The fare page did not load.' },
-        { item: 'moot', standing: 'stated' },
+        { item: 'moot', standing: 'stated', statement: ' no such case exists ' },
       ],
     }))
 
@@ -270,7 +270,7 @@ describe('parseAssistantAnswer', () => {
       askedItems: [
         { item: 'the guitar', standing: 'stated', statement: 'It counts as one of two pieces.' },
         { item: 'the fare', standing: 'unverified', statement: 'The fare page did not load.' },
-        { item: 'moot', standing: 'stated', statement: '' },
+        { item: 'moot', standing: 'stated', statement: 'no such case exists' },
       ],
       shape: 'on_contract',
     })
@@ -281,8 +281,11 @@ describe('parseAssistantAnswer', () => {
     'the guitar',
     [{ item: 'the guitar', standing: 'verified', statement: 'x' }],
     [{ standing: 'stated', statement: 'x' }],
-    [{ item: '', standing: 'stated' }],
+    [{ item: '', standing: 'stated', statement: 'x' }],
     [{ item: 'the guitar', standing: 'stated', statement: 42 }],
+    // A standing that says nothing is the omission the rule stops.
+    [{ item: 'the guitar', standing: 'stated' }],
+    [{ item: 'the guitar', standing: 'unverified', statement: ' ' }],
     ['the guitar'],
   ])('drops a malformed asked_items %j while keeping the Answer (#250)', (askedItems) => {
     const answer = parseAssistantAnswer(JSON.stringify({ speak: 'Yes.', display: 'The guitar can travel.', asked_items: askedItems }))
