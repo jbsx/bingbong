@@ -1256,6 +1256,28 @@ never a kind of its own; it separates a budget spent on a real Hunt from one
 spent wandering.
 _Avoid_: off-topic, irrelevant page, wasted round
 
+**Fix Ledger**:
+The evaluator's reading surface for what a capture set changed: every audited
+set in capture order, each measured against its Reference on a fixed headline
+of metrics that each know which direction is better, the whole-set delta shown
+beside the values of its Passes, and a marker on any metric whose two sides
+were judged under different conditions. It reads Round Audits and nothing
+else, never chooses a verdict, and like the Grading Bench is never rendered in
+any app view.
+_Avoid_: dashboard, comparison view, results page, report viewer
+
+**Reference**:
+The set a Fix Ledger row is measured against. By default the most recent
+Baseline captured before the Subject, and a Baseline's Reference is the
+Baseline before it; any set may be chosen instead. Choosing a Reference never
+joins the two sets into one Baseline.
+_Avoid_: control, before, previous run, baseline (when any set is meant)
+
+**Subject**:
+The capture set a Fix Ledger row measures, read as its Round Audit across its
+Passes. Never the app, the Run, or the model under measurement.
+_Avoid_: candidate, treatment, after, target
+
 ### Hardware
 
 **Kiosk**:
