@@ -392,3 +392,151 @@ describe('candidateCheckpointMessage', () => {
     expect(candidateCheckpointMessage(bad)).toMatch(/record_candidate/i)
   })
 })
+
+describe('a malformed Candidate call is told every defect and shown the call to send (#241)', () => {
+  /** The fields a correction names, in the order it names them. */
+  const namedFields = (message: string): string[] => [...message.matchAll(/^- (\w+):/gm)].map((match) => match[1]!)
+  /** The corrected call a correction shows, read back from its JSON block. */
+  const correctedCall = (message: string): Record<string, unknown> | undefined => {
+    const block = /```json\n([\s\S]*?)\n```/.exec(message)
+    return block === null ? undefined : (JSON.parse(block[1]!) as Record<string, unknown>)
+  }
+  const VERDICT = 'Graded as corrected, it would still be refused: '
+  const PLACEHOLDER = expect.stringMatching(/^<.+>$/)
+
+  const ZERO_CASE_REASON =
+    'Official Raspberry Pi Zero Case page states Camera Module 3 "is not mechanically compatible with the camera lid"; lid fits only Modules 1 and 2 standard/NoIR variants.'
+  const SETUP_SUBJECT = 'Camera Module 3 setup (Pi Zero v1.3 + Standard-Mini cable) as the recommended solution'
+  const SETUP_DETAIL =
+    'Previously recommended: standard Camera Module 3 with Standard-Mini 22-pin cable on Pi Zero v1.3, rpicam-apps on Bookworm. Now fails the unmodified-official-Zero-case-camera-lid requirement.'
+
+  // One row per Baseline mistake, arguments as the Run Traces carried them.
+  // None of the ids they cite is live in this harness, so every corrected
+  // call still meets the support check.
+  const rows: {
+    readonly where: string
+    readonly args: Record<string, unknown>
+    readonly fields: string[]
+    readonly corrected: Record<string, unknown>
+  }[] = [
+    {
+      where: 'baseline-2 r22: a decision carrying a subject, its support sent as a JSON string',
+      args: {
+        candidate_id: 'memory-5',
+        reason: ZERO_CASE_REASON,
+        status: 'rejected',
+        subject: 'Camera Module 3 + Pi Zero inside official Zero Case with unmodified camera lid',
+        supporting_evidence: '["memory-5"]',
+      },
+      fields: ['subject', 'supporting_evidence'],
+      corrected: { candidate_id: 'memory-5', reason: ZERO_CASE_REASON, status: 'rejected', supporting_evidence: ['memory-5'] },
+    },
+    {
+      where: 'baseline-3 r21: creation and decision keys mixed, support as a JSON string',
+      args: {
+        subject: SETUP_SUBJECT,
+        candidate_id: 'memory-c1',
+        detail: SETUP_DETAIL,
+        reason:
+          'Official Zero Case product page states "Camera Module 3 is not mechanically compatible with the camera lid", and the user\'s new constraint forbids altering the lid or mounting outside it; first-hand f…',
+        status: 'rejected',
+        supporting_evidence: '["memory-5","memory-6","memory-7"]',
+        authority: 'model',
+      },
+      fields: ['subject', 'detail', 'supporting_evidence'],
+      corrected: {
+        candidate_id: 'memory-c1',
+        reason:
+          'Official Zero Case product page states "Camera Module 3 is not mechanically compatible with the camera lid", and the user\'s new constraint forbids altering the lid or mounting outside it; first-hand f…',
+        status: 'rejected',
+        supporting_evidence: ['memory-5', 'memory-6', 'memory-7'],
+        authority: 'model',
+      },
+    },
+    {
+      where: 'baseline-3 r22: the retry, a creation carrying a status, support still a JSON string',
+      args: {
+        detail: SETUP_DETAIL,
+        status: 'rejected',
+        subject: SETUP_SUBJECT,
+        supporting_evidence: '["memory-5","memory-6","memory-7"]',
+      },
+      fields: ['status', 'supporting_evidence'],
+      corrected: { detail: SETUP_DETAIL, subject: SETUP_SUBJECT, supporting_evidence: ['memory-5', 'memory-6', 'memory-7'] },
+    },
+  ]
+
+  it.each(rows)('$where', ({ args, fields, corrected }) => {
+    const { store } = seededStore()
+    const outcome = evaluateCandidateCheckpoint(callOf(args), { session: sessionOver(store) })
+
+    expect(outcome).toMatchObject({ ok: false, reason: 'malformed' })
+    const message = candidateCheckpointMessage(outcome)
+    expect(namedFields(message)).toEqual(fields)
+    expect(correctedCall(message)).toEqual(corrected)
+    expect(message).toContain(`${VERDICT}record_candidate rejected (invalid_support): `)
+    expect(store.snapshot().candidates).toEqual([])
+  })
+
+  it('grades a repaired decision against the store without deciding anything', () => {
+    const { store, observationId } = seededStore()
+    const session = sessionOver(store)
+    const created = evaluateCandidateCheckpoint(callOf({ subject: 'Acme wifi router', supporting_evidence: [observationId] }), { session })
+    const id = created.ok ? created.candidate.id : ('' as MemoryEntryId)
+    evaluateCandidateCheckpoint(callOf({
+      candidate_id: id,
+      status: 'accepted',
+      reason: 'it meets every constraint',
+      supporting_evidence: [observationId],
+    }), { session })
+
+    const outcome = evaluateCandidateCheckpoint(callOf({
+      candidate_id: id,
+      subject: 'Acme wifi router',
+      status: 'accepted',
+      reason: 'still the best',
+      supporting_evidence: JSON.stringify([observationId]),
+    }), { session })
+    const message = candidateCheckpointMessage(outcome)
+
+    expect(outcome).toMatchObject({ ok: false, reason: 'malformed' })
+    expect(namedFields(message)).toEqual(['subject', 'supporting_evidence'])
+    expect(message).toContain(`${VERDICT}record_candidate rejected (invalid_transition): `)
+    expect(message).toMatch(/retained, not replayed/)
+    expect(store.candidate(id)!.decisions).toHaveLength(1)
+  })
+
+  it('leaves the grading line off when the repaired call grounds, and when nothing supplies a field grading needs', () => {
+    const { store, observationId } = seededStore()
+    const session = sessionOver(store)
+
+    const creation = candidateCheckpointMessage(evaluateCandidateCheckpoint(callOf({
+      subject: 'Acme wifi router',
+      status: 'active',
+      supporting_evidence: [observationId],
+    }), { session }))
+    expect(namedFields(creation)).toEqual(['status'])
+    expect(creation).not.toContain(VERDICT)
+
+    const decision = candidateCheckpointMessage(evaluateCandidateCheckpoint(callOf({
+      candidate_id: '',
+      status: 'maybe',
+      reason: 'x',
+      supporting_evidence: [observationId],
+    }), { session }))
+    expect(namedFields(decision)).toEqual(['candidate_id', 'status'])
+    expect(correctedCall(decision)).toEqual({
+      candidate_id: PLACEHOLDER,
+      status: PLACEHOLDER,
+      reason: 'x',
+      supporting_evidence: [observationId],
+    })
+    expect(decision).not.toContain(VERDICT)
+
+    const unsupported = candidateCheckpointMessage(evaluateCandidateCheckpoint(callOf({ subject: 'No support' }), { session }))
+    expect(namedFields(unsupported)).toEqual(['supporting_evidence'])
+    expect(correctedCall(unsupported)).toEqual({ subject: 'No support', supporting_evidence: [PLACEHOLDER] })
+    expect(unsupported).not.toContain(VERDICT)
+    expect(store.snapshot().candidates).toEqual([])
+  })
+})

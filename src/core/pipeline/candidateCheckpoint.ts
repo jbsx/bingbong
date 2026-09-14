@@ -8,11 +8,28 @@
 // Every failure is recoverable and mutates no Session state.
 
 import type { ToolCall } from '../ports/llm'
-import type { CandidateStatus, DecisionAuthority, SessionCandidate, SessionEvidenceStore } from '../session/sessionEvidence'
+import type {
+  CandidateStatus,
+  CandidateStatusChange,
+  DecisionAuthority,
+  SessionCandidate,
+  SessionEvidenceStore,
+} from '../session/sessionEvidence'
 import { CANDIDATE_STATUSES, DECISION_AUTHORITIES, MAX_DECISION_REASON_CHARS } from '../session/sessionEvidence'
 import { describeCandidateDecision, type CandidateChangeRefusal, type CandidateDecision } from '../session/candidateDecisions'
 import { MAX_MEMORY_REFERENCES, type MemoryEntryId } from '../session/workingMemory'
 import type { RunId } from '../session/sessionIdentity'
+import { reportFault } from '../trace/fault'
+import {
+  inFieldOrder,
+  malformedCorrection,
+  placeholder,
+  stringProblem,
+  withField,
+  withoutField,
+  type ShapeDefect,
+  type ShapeDiagnosis,
+} from './malformedCall'
 
 /** The live Session evidence store, resolved per call under the Run's identity. */
 export type EvidenceSessionSource = () => { store: SessionEvidenceStore; runId: RunId } | null
@@ -117,6 +134,148 @@ export function parseCandidateCall(args: Record<string, unknown>):
   return null
 }
 
+/** The record_candidate fields, in the tool's declared order. */
+const CANDIDATE_FIELDS: readonly string[] = ['subject', 'detail', 'candidate_id', 'status', 'reason', 'authority', 'supporting_evidence']
+const CREATION_FIELDS: readonly string[] = ['subject', 'detail']
+const DECISION_FIELDS: readonly string[] = ['candidate_id', 'status', 'reason', 'authority']
+
+/**
+ * A malformed record_candidate call read back as the call it should have
+ * been (#241): every shape defect named, and the model's own arguments with
+ * each fix applied. `candidate_id` is the one key that cannot mean
+ * creation, so its presence makes the call a decision and `subject` /
+ * `detail` the strays; its absence makes a creation, and the decision keys
+ * are the strays. A `supporting_evidence` sent as a JSON string is shown as
+ * the array it encodes. Nothing here is accepted: the repair is what the
+ * rejection shows, and the repaired call is graded only when nothing its
+ * support or its transition needs is a placeholder.
+ */
+export function diagnoseCandidateCall(args: Readonly<Record<string, unknown>>): ShapeDiagnosis {
+  const defects: ShapeDefect[] = []
+  let corrected: Record<string, unknown> = { ...args }
+  let groundable = true
+  const flag = (field: string, problem: string): void => {
+    defects.push({ field, problem })
+  }
+  const decision = 'candidate_id' in args
+  for (const key of Object.keys(args)) {
+    if (!CANDIDATE_FIELDS.includes(key)) flag(key, 'not a record_candidate field — dropped')
+    else if (decision && CREATION_FIELDS.includes(key)) {
+      flag(key, `creation only — candidate_id makes this call a decision, which carries no ${key}`)
+    } else if (!decision && DECISION_FIELDS.includes(key)) {
+      flag(key, `decision only — without candidate_id this call creates a Candidate, which is active and carries no ${key}`)
+    } else continue
+    corrected = withoutField(corrected, key)
+  }
+
+  if (decision) {
+    if (typeof args.candidate_id !== 'string' || args.candidate_id.trim() === '') {
+      flag('candidate_id', `${stringProblem(args.candidate_id)} — the Candidate being decided`)
+      corrected = withField(corrected, 'candidate_id', placeholder('the memory-N id the creation call returned'))
+      groundable = false
+    }
+    if (!CANDIDATE_STATUSES.includes(args.status as CandidateStatus)) {
+      const problem = args.status === undefined ? 'missing' : `${JSON.stringify(args.status)} is not a status`
+      flag('status', `${problem} — accepted, rejected, superseded, or active`)
+      corrected = withField(corrected, 'status', placeholder('accepted, rejected, superseded, or active'))
+      groundable = false
+    }
+    const reason = typeof args.reason === 'string' ? args.reason.trim() : ''
+    if (reason === '' || reason.length > MAX_DECISION_REASON_CHARS) {
+      // The reason is retained, not checked: a placeholder still grades.
+      flag('reason', `${stringProblem(args.reason, MAX_DECISION_REASON_CHARS)} — what this decision rests on, in one line`)
+      corrected = withField(corrected, 'reason', placeholder('what this decision rests on, in one line'))
+    }
+    if (args.authority !== undefined && !DECISION_AUTHORITIES.includes(args.authority as DecisionAuthority)) {
+      flag('authority', `${JSON.stringify(args.authority)} is not an authority — "user" or "model"`)
+      corrected = withField(corrected, 'authority', placeholder('"user" or "model"'))
+      groundable = false
+    }
+  } else {
+    if (typeof args.subject !== 'string' || args.subject.trim() === '') {
+      flag('subject', `${stringProblem(args.subject)} — the Candidate in one line`)
+      corrected = withField(corrected, 'subject', placeholder('the Candidate in one line'))
+    }
+    if (args.detail !== undefined && typeof args.detail !== 'string') {
+      flag('detail', `${stringProblem(args.detail)} — dropped`)
+      corrected = withoutField(corrected, 'detail')
+    }
+  }
+
+  if (parseSupport(args.supporting_evidence) === null) {
+    const decoded = typeof args.supporting_evidence === 'string' ? decodedJson(args.supporting_evidence) : undefined
+    if (parseSupport(decoded) !== null) {
+      flag('supporting_evidence', 'sent as a JSON string — send the array itself')
+      corrected = withField(corrected, 'supporting_evidence', decoded)
+    } else {
+      const problem = args.supporting_evidence === undefined ? 'missing' : `must be an array of 1 to ${MAX_SUPPORT_IDS} ids`
+      flag('supporting_evidence', `${problem} — the memory-N ids of live Session Evidence Observations`)
+      corrected = withField(corrected, 'supporting_evidence', [placeholder('the memory-N id of a live Session Evidence Observation')])
+      groundable = false
+    }
+  }
+
+  return {
+    defects: inFieldOrder(defects, CANDIDATE_FIELDS),
+    corrected,
+    // A repair the parser would still refuse is not graded as the call to send.
+    groundable: groundable && parseCandidateCall(corrected) !== null,
+  }
+}
+
+/** A JSON string's value, or undefined when it is not JSON. */
+function decodedJson(text: string): unknown {
+  try {
+    return JSON.parse(text)
+  } catch (error) {
+    reportFault('pipeline.candidateCheckpoint.decodedJson', error)
+    // not a JSON-encoded array — the correction shows a placeholder instead
+    return undefined
+  }
+}
+
+/** A parsed record_candidate call: a creation or a decision. */
+type CandidateCall = NonNullable<ReturnType<typeof parseCandidateCall>>
+
+/** The Session-side status change one parsed decision proposes. */
+function statusChange(parsed: Extract<CandidateCall, { action: 'status' }>, runId: RunId): CandidateStatusChange {
+  return {
+    status: parsed.status,
+    authority: parsed.authority,
+    reason: parsed.reason,
+    supportingObservationIds: [...parsed.supportingObservationIds],
+    runId,
+  }
+}
+
+/** The refusal naming cited ids that are not live Observations; null when every one is. */
+function supportRefusal(store: SessionEvidenceStore, ids: readonly MemoryEntryId[]): CandidateCheckpointOutcome | null {
+  if (store.hasObservationSupport(ids)) return null
+  const unknown = ids.filter((id) => store.observation(id) === null)
+  return {
+    ok: false,
+    reason: 'invalid_support',
+    error:
+      `supporting_evidence must cite live Session Evidence Observations — unknown ids: ${unknown.join(', ')}. ` +
+      'Cite the memory-N identities record_evidence returned or your Session Evidence block carries',
+  }
+}
+
+/**
+ * What grading alone says of a parsed call (#241): its support, then — for
+ * a decision — the verdict the Session would reach, checked without
+ * retaining anything. Null when the call would land.
+ */
+function gradeCandidateCall(
+  parsed: CandidateCall,
+  { store, runId }: { store: SessionEvidenceStore; runId: RunId },
+): CandidateCheckpointOutcome | null {
+  const unsupported = supportRefusal(store, parsed.supportingObservationIds)
+  if (unsupported !== null || parsed.action === 'add') return unsupported
+  const check = store.checkCandidateStatus(parsed.id, statusChange(parsed, runId))
+  return check.ok ? null : refusalOutcome(check.refusal, parsed.id, check.standing)
+}
+
 /** Runs one Candidate checkpoint end to end against the live Session store. */
 export function evaluateCandidateCheckpoint(
   call: ToolCall,
@@ -124,27 +283,25 @@ export function evaluateCandidateCheckpoint(
 ): CandidateCheckpointOutcome {
   const parsed = parseCandidateCall(call.args)
   if (parsed === null) {
+    // A malformed call stays a rejected checkpoint (#241): the correction
+    // names every defect and grades the call it should have been against
+    // the live store, which it leaves exactly as it was.
+    const diagnosis = diagnoseCandidateCall(call.args)
+    const repaired = diagnosis.groundable ? parseCandidateCall(diagnosis.corrected) : null
+    const session = repaired === null ? null : (deps.session?.() ?? null)
+    const refusal = repaired === null || session === null ? null : gradeCandidateCall(repaired, session)
     return {
       ok: false,
       reason: 'malformed',
-      error:
-        'the call is malformed — create a Candidate with {subject, detail?, supporting_evidence: [Session Evidence observation ids]}, or decide one with {candidate_id, status: accepted|rejected|superseded|active, reason, supporting_evidence, authority?: user|model}',
+      error: malformedCorrection('call', diagnosis, refusal === null ? undefined : candidateCheckpointMessage(refusal)),
     }
   }
   const session = deps.session?.() ?? null
   if (session === null) return CANDIDATE_NO_SESSION
   const { store, runId } = session
 
-  if (!store.hasObservationSupport(parsed.supportingObservationIds)) {
-    const unknown = parsed.supportingObservationIds.filter((id) => store.observation(id) === null)
-    return {
-      ok: false,
-      reason: 'invalid_support',
-      error:
-        `supporting_evidence must cite live Session Evidence Observations — unknown ids: ${unknown.join(', ')}. ` +
-        'Cite the memory-N identities record_evidence returned or your Session Evidence block carries',
-    }
-  }
+  const unsupported = supportRefusal(store, parsed.supportingObservationIds)
+  if (unsupported !== null) return unsupported
 
   if (parsed.action === 'add') {
     const candidate = store.addCandidate({
@@ -166,13 +323,7 @@ export function evaluateCandidateCheckpoint(
   // One verdict, reached where the rules are enforced (#208, ADR 0039):
   // the scoping and authority checks belong to the Session's own state, so
   // this asks once and renders the answer rather than re-deriving it.
-  const outcome = store.setCandidateStatus(parsed.id, {
-    status: parsed.status,
-    authority: parsed.authority,
-    reason: parsed.reason,
-    supportingObservationIds: [...parsed.supportingObservationIds],
-    runId,
-  })
+  const outcome = store.setCandidateStatus(parsed.id, statusChange(parsed, runId))
   if (!outcome.ok) return refusalOutcome(outcome.refusal, parsed.id, outcome.standing)
   const retained = outcome.candidate.decisions.at(-1)
   return {
@@ -285,5 +436,7 @@ export function candidateCheckpointMessage(outcome: CandidateCheckpointOutcome):
         'Supporting Observations and every earlier decision on it are kept. A decision the user made stands until they reopen it; ' +
         'your own stands for this objective until new evidence overturns it.'
   }
-  return `record_candidate rejected (${outcome.reason}): ${outcome.error}.`
+  // A malformed correction ends on the call to send, or on a grading line
+  // that carries its own full stop (#241).
+  return `record_candidate rejected (${outcome.reason}): ${outcome.error}${outcome.reason === 'malformed' ? '' : '.'}`
 }

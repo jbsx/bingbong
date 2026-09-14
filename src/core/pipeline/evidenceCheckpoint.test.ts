@@ -754,3 +754,200 @@ describe('evidence grading faults (#179)', () => {
     expect(wrong.ok ? '' : wrong.error).toContain('page read, look')
   })
 })
+
+describe('a malformed citation is told every defect and shown the call to send (#241)', () => {
+  /** The fields a correction names, in the order it names them. */
+  const namedFields = (message: string): string[] => [...message.matchAll(/^- (\w+):/gm)].map((match) => match[1]!)
+  /** The corrected call a correction shows, read back from its JSON block. */
+  const correctedCall = (message: string): Record<string, unknown> | undefined => {
+    const block = /```json\n([\s\S]*?)\n```/.exec(message)
+    return block === null ? undefined : (JSON.parse(block[1]!) as Record<string, unknown>)
+  }
+  const VERDICT = 'Graded as corrected, it would still be refused: '
+  const PLACEHOLDER = expect.stringMatching(/^<.+>$/)
+
+  const PI_CASE_CONSTRAINT =
+    'the camera must fit the unmodified camera lid of the official Raspberry Pi Zero Case, the one intended for Camera Module 2. I cannot alter the lid or mount the camera outside it.'
+  const EUROSTAR_CONSTRAINT = 'Do not book, buy, log in or contact anyone.'
+  const EUROSTAR_COMMAND = userRecord({
+    id: 'obs-1' as ObservationRecord['id'],
+    producer: 'command',
+    payload: `What are Eurostar's luggage rules for two 70cm suitcases, a daypack and a guitar? ${EUROSTAR_CONSTRAINT}`,
+  })
+  const CAMERA_SOFTWARE = 'https://www.raspberrypi.com/documentation/computers/camera_software.html'
+  const LEGACY_STACK =
+    'This guide no longer covers the legacy camera stack which was available in Bullseye and earlier Raspberry Pi OS releases. The legacy camera stack, using applications like raspivid, raspistill and the …'
+  const CAMERA_SOFTWARE_READ = webRecord({ sourceUrl: CAMERA_SOFTWARE, payload: `Camera software\n${LEGACY_STACK}` })
+  const CAMERA_ACCESSORIES = 'https://www.raspberrypi.com/documentation/accessories/camera.html'
+
+  interface Row {
+    readonly where: string
+    readonly args: Record<string, unknown>
+    readonly records: ObservationRecord[]
+    readonly workers?: Record<string, ObservationRecord[]>
+    readonly fields: string[]
+    readonly corrected: Record<string, unknown>
+    /** The grounding class the corrected call would still meet; absent when it grounds. */
+    readonly verdict?: string
+  }
+
+  // One row per Baseline mistake, arguments as the Run Traces carried them.
+  const rows: Row[] = [
+    {
+      where: 'baseline-1 r2: kind "user" carrying an excerpt that holds the user\'s words',
+      args: {
+        excerpt: PI_CASE_CONSTRAINT,
+        kind: 'user',
+        observation:
+          'New hard constraint added by the user for the Pi Zero v1.3 camera objective: the camera must fit the unmodified camera lid of the official Raspberry Pi Zero Case (the lid intended for Camera Module 2)…',
+      },
+      records: [userRecord({ producer: 'steering', payload: PI_CASE_CONSTRAINT })],
+      fields: ['observation', 'excerpt'],
+      corrected: { kind: 'user', observation: PI_CASE_CONSTRAINT },
+    },
+    {
+      where: 'baseline-2 r20: kind "user" carrying an excerpt, beside a glossed observation',
+      args: {
+        kind: 'user',
+        excerpt: EUROSTAR_CONSTRAINT,
+        observation:
+          "User's constraint on the luggage-rules task: no booking, buying, logging in, or contacting anyone — research official rules only. Load in question: two 70cm suitcases + one small daypack + acoustic gu…",
+      },
+      records: [EUROSTAR_COMMAND],
+      fields: ['excerpt'],
+      corrected: {
+        kind: 'user',
+        observation:
+          "User's constraint on the luggage-rules task: no booking, buying, logging in, or contacting anyone — research official rules only. Load in question: two 70cm suitcases + one small daypack + acoustic gu…",
+      },
+      verdict: 'user_text_unverified',
+    },
+    {
+      where: 'baseline-2 r21: the retry, still carrying the excerpt and a gloss after the words',
+      args: {
+        excerpt: EUROSTAR_CONSTRAINT,
+        kind: 'user',
+        observation:
+          'Do not book, buy, log in or contact anyone. — user constraint for the Eurostar luggage task (adult, London–Paris, Eurostar Standard, two 70cm suitcases + small daypack + acoustic guitar in 90cm case).',
+      },
+      records: [EUROSTAR_COMMAND],
+      fields: ['excerpt'],
+      corrected: {
+        kind: 'user',
+        observation:
+          'Do not book, buy, log in or contact anyone. — user constraint for the Eurostar luggage task (adult, London–Paris, Eurostar Standard, two 70cm suitcases + small daypack + acoustic guitar in 90cm case).',
+      },
+      verdict: 'user_text_unverified',
+    },
+    {
+      where: 'baseline-3 r12: observation missing, the excerpt grounded',
+      args: { kind: 'web', excerpt: LEGACY_STACK, source_url: CAMERA_SOFTWARE },
+      records: [CAMERA_SOFTWARE_READ],
+      fields: ['observation'],
+      corrected: { kind: 'web', excerpt: LEGACY_STACK, source_url: CAMERA_SOFTWARE, observation: PLACEHOLDER },
+    },
+    {
+      where: 'baseline-3 r12, again: observation missing, the excerpt not in what was read',
+      args: {
+        kind: 'web',
+        excerpt: 'From Raspberry Pi OS Bookworm onwards, the camera capture applications are named rpicam-*.',
+        source_url: CAMERA_SOFTWARE,
+      },
+      records: [CAMERA_SOFTWARE_READ],
+      fields: ['observation'],
+      corrected: {
+        kind: 'web',
+        excerpt: 'From Raspberry Pi OS Bookworm onwards, the camera capture applications are named rpicam-*.',
+        source_url: CAMERA_SOFTWARE,
+        observation: PLACEHOLDER,
+      },
+      verdict: 'excerpt_unsupported',
+    },
+    {
+      where: 'baseline-3 r24: agent_id without kind "subagent"',
+      args: {
+        agent_id: 'a-1',
+        observation:
+          'Official Raspberry Pi camera docs: all Pi cameras use the standard 15-pin connector at the camera end; Pi 5, all Pi Zero models (incl. v1.3), and CM IO boards use the mini 22-pin connector, requiring …',
+        source_url: CAMERA_ACCESSORIES,
+      },
+      records: [],
+      workers: { 'a-1': [webRecord({ id: 'wobs-2' as ObservationRecord['id'], sourceUrl: CAMERA_ACCESSORIES })] },
+      fields: ['kind'],
+      corrected: {
+        kind: 'subagent',
+        agent_id: 'a-1',
+        observation:
+          'Official Raspberry Pi camera docs: all Pi cameras use the standard 15-pin connector at the camera end; Pi 5, all Pi Zero models (incl. v1.3), and CM IO boards use the mini 22-pin connector, requiring …',
+        source_url: CAMERA_ACCESSORIES,
+      },
+    },
+  ]
+
+  it.each(rows)('$where', ({ args, records, workers, fields, corrected, verdict }) => {
+    const store = evidenceHarness()
+    const outcome = evaluateEvidenceCheckpoint(callOf(args), {
+      records,
+      commit: commitOver(store),
+      commitUser: userEvidenceCommit(() => store, 'run-1' as RunId),
+      commitSubagent: (agentId) => subagentEvidenceCommit(() => store, 'run-1' as RunId, agentId),
+      workerObservations: (agentId) => workers?.[agentId] ?? null,
+    })
+
+    // The outcome names what refused the call, whatever the grounding line says.
+    expect(outcome).toMatchObject({ ok: false, reason: 'malformed' })
+    const message = evidenceCheckpointMessage(outcome)
+    expect(namedFields(message)).toEqual(fields)
+    expect(correctedCall(message)).toEqual(corrected)
+    expect(parseEvidenceCitation(correctedCall(message)!)).not.toBeNull()
+    if (verdict === undefined) expect(message).not.toContain(VERDICT)
+    else expect(message).toContain(`${VERDICT}record_evidence rejected (${verdict}): `)
+    expect(store.snapshot().observations).toEqual([])
+  })
+
+  it('names every defect at once in field order, and grades nothing without a source to grade', () => {
+    const outcome = evaluateEvidenceCheckpoint(callOf({ excerpt: 7, agent_id: '', note: 'x', volatile: 'true' }), {
+      records: [webRecord()],
+      commit: commitOver(evidenceHarness()),
+    })
+    const message = evidenceCheckpointMessage(outcome)
+
+    expect(namedFields(message)).toEqual(['kind', 'observation', 'source_url', 'excerpt', 'agent_id', 'volatile', 'note'])
+    expect(correctedCall(message)).toEqual({
+      kind: 'subagent',
+      agent_id: PLACEHOLDER,
+      volatile: true,
+      observation: PLACEHOLDER,
+      source_url: PLACEHOLDER,
+    })
+    expect(message).not.toContain(VERDICT)
+  })
+
+  it('never grades a user citation on a placeholder standing in for the words', () => {
+    const outcome = evaluateEvidenceCheckpoint(callOf({ kind: 'user', source_url: 'https://shop.example/x' }), {
+      records: [userRecord()],
+    })
+    const message = evidenceCheckpointMessage(outcome)
+
+    expect(namedFields(message)).toEqual(['observation', 'source_url'])
+    expect(correctedCall(message)).toEqual({ kind: 'user', observation: PLACEHOLDER })
+    expect(message).not.toContain(VERDICT)
+  })
+
+  it('shows an unparseable source_url replaced, and a string volatile as the boolean it spells', () => {
+    const outcome = evaluateEvidenceCheckpoint(
+      callOf({ observation: 'The Acme router costs $39.', source_url: 'not a url', excerpt: 'costs $39', volatile: 'false' }),
+      { records: [webRecord()], commit: commitOver(evidenceHarness()) },
+    )
+    const message = evidenceCheckpointMessage(outcome)
+
+    expect(namedFields(message)).toEqual(['source_url', 'volatile'])
+    expect(correctedCall(message)).toEqual({
+      observation: 'The Acme router costs $39.',
+      source_url: PLACEHOLDER,
+      excerpt: 'costs $39',
+      volatile: false,
+    })
+    expect(message).not.toContain(VERDICT)
+  })
+})

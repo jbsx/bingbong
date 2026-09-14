@@ -804,6 +804,38 @@ describe('Candidate decisions are scoped and authorised in the store (#208, ADR 
     }))).toBe('invalid')
     expect(evidence.candidate(candidateId)!.decisions).toEqual([])
   })
+
+  it('checks a decision exactly as it would retain one, retaining nothing (#241)', () => {
+    const { evidence } = scopedHarness()
+    const { web, later, candidateId } = seeded(evidence)
+    const rejection = decide({
+      status: 'rejected',
+      authority: 'model',
+      reason: 'above the price ceiling',
+      supportingObservationIds: [web],
+      runId: 'run-2' as RunId,
+    })
+
+    expect(evidence.checkCandidateStatus(candidateId, rejection)).toEqual({ ok: true })
+    expect(evidence.candidate(candidateId)).toMatchObject({ status: 'active', decisions: [] })
+
+    decided(evidence.setCandidateStatus(candidateId, rejection))
+    // The verdicts the retaining call reaches, reached the same way.
+    expect(evidence.checkCandidateStatus(candidateId, rejection)).toMatchObject({
+      ok: false,
+      refusal: 'replayed',
+      standing: { status: 'rejected' },
+    })
+    expect(evidence.checkCandidateStatus(candidateId, { ...rejection, status: 'active' })).toMatchObject({
+      ok: false,
+      refusal: 'no_new_evidence',
+    })
+    expect(evidence.checkCandidateStatus(candidateId, { ...rejection, status: 'active', supportingObservationIds: [later] }))
+      .toEqual({ ok: true })
+    expect(evidence.checkCandidateStatus('memory-999' as MemoryEntryId, rejection)).toEqual({ ok: false, refusal: 'unknown_candidate' })
+    expect(evidence.candidate(candidateId)).toMatchObject({ status: 'rejected' })
+    expect(evidence.candidate(candidateId)!.decisions).toHaveLength(1)
+  })
 })
 
 describe('the store retains what the user said before the model ran (#211, ADR 0039)', () => {

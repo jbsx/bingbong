@@ -308,6 +308,9 @@ export type CandidateDecisionOutcome =
       readonly standing?: CandidateDecision
     }
 
+/** A decision checked but not retained (#241): it would land, or the refusal `setCandidateStatus` would give. */
+export type CandidateStatusCheck = { readonly ok: true } | Extract<CandidateDecisionOutcome, { ok: false }>
+
 export interface ObservationCheckpointResult {
   readonly observation: SessionObservation
   /** True when an exact duplicate already existed and the checkpoint merged into it. */
@@ -337,6 +340,12 @@ export interface SessionEvidenceStore {
    * refusal rests on so no caller has to re-derive the verdict.
    */
   setCandidateStatus(id: MemoryEntryId, change: CandidateStatusChange): CandidateDecisionOutcome
+  /**
+   * The verdict `setCandidateStatus` would reach for this change, reached
+   * the same way and retaining nothing (#241): how a malformed
+   * record_candidate call's correction grades the call it shows.
+   */
+  checkCandidateStatus(id: MemoryEntryId, change: CandidateStatusChange): CandidateStatusCheck
   candidate(id: MemoryEntryId): SessionCandidate | null
   /** Whether the cited identities are all live Observations — the bar an Assessment must clear. */
   hasObservationSupport(ids: readonly MemoryEntryId[]): boolean
@@ -725,6 +734,75 @@ export function createSessionEvidence(deps: {
     }
   }
 
+  /**
+   * One status change judged against the live state (#208, #241): the
+   * refusal, or everything retaining it needs. The call that retains and
+   * the check that only asks share it, so the two can never disagree.
+   */
+  const judgeStatusChange = (
+    id: MemoryEntryId,
+    change: CandidateStatusChange,
+  ):
+    | Extract<CandidateDecisionOutcome, { ok: false }>
+    | {
+        readonly ok: true
+        readonly candidate: MutableCandidate
+        readonly decision: CandidateDecision
+        readonly references: NonNullable<ReturnType<typeof parseMemoryReferences>>
+        readonly source: NonNullable<ReturnType<typeof parseProvenance>>
+      } => {
+    if (cleared) return { ok: false, refusal: 'invalid' }
+    const candidate = liveCandidate(id)
+    if (!candidate) return { ok: false, refusal: 'unknown_candidate' }
+    // A decision settles on a verdict, or reopens what a decision in
+    // this same scope settled — nothing else is a decision.
+    if (!TERMINAL_CANDIDATE_STATUSES.includes(change.status) && change.status !== 'active') {
+      return { ok: false, refusal: 'invalid' }
+    }
+    if (!DECISION_AUTHORITIES.includes(change.authority)) return { ok: false, refusal: 'invalid' }
+    const reason = boundedString(change.reason, MAX_DECISION_REASON_CHARS)
+    const references = parseMemoryReferences(change.references)
+    const source = parseProvenance(change.runId, change.subagentId)
+    if (!reason || !references || !source || !supportIsValid(change.supportingObservationIds)) {
+      return { ok: false, refusal: 'invalid' }
+    }
+    // Only the user's own retained words carry the user's authority
+    // (#208): claimed without them, the decision is refused outright
+    // rather than quietly recorded as the model's.
+    if (change.authority === 'user' && !hasUserSupport(change.supportingObservationIds)) {
+      return { ok: false, refusal: 'unsupported_authority' }
+    }
+    // The user has spoken about this Candidate and no Run has resolved
+    // what they said (#211, ADR 0039). Until it is resolved, the model
+    // does not settle this Candidate on its own reading: whatever it
+    // concludes, the user's own unresolved words outrank it, and a
+    // status recorded now would say the Candidate was ruled out — or
+    // ruled in — on the model's authority while the user's word on it
+    // is still sitting unread. The user's own decision is the way
+    // through, and it resolves the correction as it lands.
+    if (change.authority !== 'user' && correctionAffects(inheritedCorrections(change.runId), id)) {
+      return { ok: false, refusal: 'correction_unresolved' }
+    }
+    const objectiveId = deps.objectiveId?.()
+    const decision: CandidateDecision = {
+      status: change.status,
+      authority: change.authority,
+      reason,
+      ...(objectiveId !== undefined ? { objectiveId } : {}),
+      supportingObservationIds: [...change.supportingObservationIds],
+      decidedAt: deps.now(),
+    }
+    // The scoping and authority rules, in one place (#208, ADR 0039):
+    // no replay within a scope, no model revival of what the user
+    // decided, no model reconsideration on grounds it already had.
+    const refusal = candidateDecisionRefusal(candidate.decisions, decision)
+    if (refusal !== null) {
+      const standing = latestDecisionUnder(candidate.decisions, objectiveId)
+      return { ok: false, refusal, ...(standing !== null ? { standing } : {}) }
+    }
+    return { ok: true, candidate, decision, references, source }
+  }
+
   const store: SessionEvidenceStore = {
     checkpointObservation(input) {
       if (cleared) return null
@@ -817,55 +895,9 @@ export function createSessionEvidence(deps: {
       return frozen
     },
     setCandidateStatus(id, change) {
-      if (cleared) return { ok: false, refusal: 'invalid' }
-      const candidate = liveCandidate(id)
-      if (!candidate) return { ok: false, refusal: 'unknown_candidate' }
-      // A decision settles on a verdict, or reopens what a decision in
-      // this same scope settled — nothing else is a decision.
-      if (!TERMINAL_CANDIDATE_STATUSES.includes(change.status) && change.status !== 'active') {
-        return { ok: false, refusal: 'invalid' }
-      }
-      if (!DECISION_AUTHORITIES.includes(change.authority)) return { ok: false, refusal: 'invalid' }
-      const reason = boundedString(change.reason, MAX_DECISION_REASON_CHARS)
-      const references = parseMemoryReferences(change.references)
-      const source = parseProvenance(change.runId, change.subagentId)
-      if (!reason || !references || !source || !supportIsValid(change.supportingObservationIds)) {
-        return { ok: false, refusal: 'invalid' }
-      }
-      // Only the user's own retained words carry the user's authority
-      // (#208): claimed without them, the decision is refused outright
-      // rather than quietly recorded as the model's.
-      if (change.authority === 'user' && !hasUserSupport(change.supportingObservationIds)) {
-        return { ok: false, refusal: 'unsupported_authority' }
-      }
-      // The user has spoken about this Candidate and no Run has resolved
-      // what they said (#211, ADR 0039). Until it is resolved, the model
-      // does not settle this Candidate on its own reading: whatever it
-      // concludes, the user's own unresolved words outrank it, and a
-      // status recorded now would say the Candidate was ruled out — or
-      // ruled in — on the model's authority while the user's word on it
-      // is still sitting unread. The user's own decision is the way
-      // through, and it resolves the correction as it lands.
-      if (change.authority !== 'user' && correctionAffects(inheritedCorrections(change.runId), id)) {
-        return { ok: false, refusal: 'correction_unresolved' }
-      }
-      const objectiveId = deps.objectiveId?.()
-      const decision: CandidateDecision = {
-        status: change.status,
-        authority: change.authority,
-        reason,
-        ...(objectiveId !== undefined ? { objectiveId } : {}),
-        supportingObservationIds: [...change.supportingObservationIds],
-        decidedAt: deps.now(),
-      }
-      // The scoping and authority rules, in one place (#208, ADR 0039):
-      // no replay within a scope, no model revival of what the user
-      // decided, no model reconsideration on grounds it already had.
-      const refusal = candidateDecisionRefusal(candidate.decisions, decision)
-      if (refusal !== null) {
-        const standing = latestDecisionUnder(candidate.decisions, objectiveId)
-        return { ok: false, refusal, ...(standing !== null ? { standing } : {}) }
-      }
+      const judged = judgeStatusChange(id, change)
+      if (!judged.ok) return judged
+      const { candidate, decision, references, source } = judged
 
       candidate.status = change.status
       candidate.decisions = retainedDecisions(candidate.decisions, decision)
@@ -887,6 +919,10 @@ export function createSessionEvidence(deps: {
       const frozen = freezeCandidate(candidate)
       notifyCandidateChanged(frozen)
       return { ok: true, candidate: frozen }
+    },
+    checkCandidateStatus(id, change) {
+      const judged = judgeStatusChange(id, change)
+      return judged.ok ? { ok: true } : judged
     },
     candidate(id) {
       const found = liveCandidate(id)

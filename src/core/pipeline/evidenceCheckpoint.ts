@@ -18,6 +18,16 @@ import {
   normalizeMemoryText,
 } from '../session/workingMemory'
 import { observedPageTitle } from './fallbackAnswer'
+import {
+  inFieldOrder,
+  malformedCorrection,
+  placeholder,
+  stringProblem,
+  withField,
+  withoutField,
+  type ShapeDefect,
+  type ShapeDiagnosis,
+} from './malformedCall'
 
 /** The model-writable citation fields, snake_case like the Memory Patch. */
 export const EVIDENCE_CITATION_KEYS = ['kind', 'observation', 'source_url', 'excerpt', 'uncertainty', 'agent_id', 'volatile'] as const
@@ -446,25 +456,23 @@ export function evaluateEvidenceCheckpoint(
 ): EvidenceCheckpointOutcome {
   const citation = parseEvidenceCitation(call.args)
   if (citation === null) {
+    // A malformed call stays a rejected checkpoint (#241): the correction
+    // names every defect and grades the call it should have been, and
+    // nothing it shows is committed.
+    const diagnosis = diagnoseEvidenceCall(call.args, deps.records)
+    const repaired = diagnosis.groundable ? parseEvidenceCitation(diagnosis.corrected) : null
+    const refusal = repaired === null ? null : gradeCitation(repaired, deps.records, deps.workerObservations)
     return {
       ok: false,
       reason: 'malformed',
-      error:
-        'the citation is malformed — provide observation and source_url plus the excerpt copied verbatim from what you observed there (a structured action outcome grounds itself without one), kind "user" with the user\'s exact words as the observation, or kind "subagent" with agent_id and a source_url that worker observed; uncertainty and volatile optional',
+      error: malformedCorrection('citation', diagnosis, refusal === null ? undefined : evidenceCheckpointMessage(refusal)),
     }
   }
   if (citation.kind === 'user') {
     if (deps.commitUser === undefined) return EVIDENCE_NO_SESSION
-    const event = findUserEventObservation(deps.records, citation.observation)
-    if (event === null) {
-      return {
-        ok: false,
-        reason: 'user_text_unverified',
-        error:
-          'no command, ask_user answer, or steering directive in this run supplied those exact words — copy the user\'s text verbatim, or checkpoint what you observed instead',
-      }
-    }
-    const producer = userProducer(event)!
+    const grounding = groundUserCitation(citation.observation, deps.records)
+    if (!grounding.ok) return grounding
+    const { event, producer } = grounding
     const committed = deps.commitUser({
       text: citation.observation,
       ...(citation.uncertainty !== undefined ? { uncertainty: citation.uncertainty } : {}),
@@ -491,35 +499,9 @@ export function evaluateEvidenceCheckpoint(
   if (citation.kind === 'subagent') {
     const commit = deps.commitSubagent?.(citation.agentId)
     if (commit === undefined) return EVIDENCE_NO_SESSION
-    const workerRecords = deps.workerObservations?.(citation.agentId) ?? null
-    if (workerRecords === null) {
-      return {
-        ok: false,
-        reason: 'unknown_agent',
-        error: `no completed subagent '${citation.agentId}' with retained observations — collect its report with agent_results first, and cite a source it actually observed`,
-      }
-    }
-    // The citing model saw the worker's report, not its tool results, so
-    // an excerpt is optional here; one offered must still appear in what
-    // the worker retained — a wrong quote never grounds.
-    const grounding = findGroundingObservation(workerRecords, citation.sourceUrl, citation.excerpt)
-    if (!grounding.ok && grounding.reason === 'excerpt_unsupported') {
-      return {
-        ok: false,
-        reason: 'excerpt_unsupported',
-        error: `the excerpt does not appear in anything subagent '${citation.agentId}' retained from '${citation.sourceUrl}' — checked its ${producerList(grounding.producers)} — omit it, or copy it verbatim from the report you are citing`,
-      }
-    }
-    // No excerpt offered: the worker's freshest retention of the source
-    // grounds the citation, text or structured alike.
-    const source = grounding.ok ? grounding.record : findSourceObservation(workerRecords, citation.sourceUrl)
-    if (source === null) {
-      return {
-        ok: false,
-        reason: 'unknown_source',
-        error: `subagent '${citation.agentId}' did not observe '${citation.sourceUrl}' — cite one of the evidence URLs its report's findings carry`,
-      }
-    }
+    const grounding = groundSubagentCitation(citation, deps.workerObservations)
+    if (!grounding.ok) return grounding
+    const { source, workerRecords } = grounding
     const canonical = canonicalizeMemoryUrl(citation.sourceUrl)!
     // The retained page title (#144): already named by the worker's own
     // observations of the source — never a second browser read or model
@@ -556,29 +538,9 @@ export function evaluateEvidenceCheckpoint(
     }
   }
   if (deps.commit === undefined) return EVIDENCE_NO_SESSION
-  const grounding = findGroundingObservation(deps.records, citation.sourceUrl, citation.excerpt)
-  if (!grounding.ok) {
-    if (grounding.reason === 'unknown_source') {
-      return {
-        ok: false,
-        reason: 'unknown_source',
-        error: `source '${citation.sourceUrl}' was not observed in this run — cite the URL of a page this run opened or read`,
-      }
-    }
-    if (grounding.reason === 'excerpt_required') {
-      return {
-        ok: false,
-        reason: 'excerpt_required',
-        error: `the citation carries no excerpt, and nothing this run retained from '${citation.sourceUrl}' grounds one without it — copy a contiguous span verbatim from the tool result you are citing; only a structured action outcome grounds excerptless`,
-      }
-    }
-    return {
-      ok: false,
-      reason: 'excerpt_unsupported',
-      error: `the excerpt does not appear in anything this run retained from '${citation.sourceUrl}' — checked its ${producerList(grounding.producers)} — copy it verbatim from the tool result you are citing, or cite the observation's structured outcome`,
-    }
-  }
-  const source = grounding.record
+  const grounding = groundWebCitation(citation, deps.records)
+  if (!grounding.ok) return grounding
+  const { source } = grounding
   const canonical = canonicalizeMemoryUrl(citation.sourceUrl)!
   // The retained page title (#144): already named by this Run's own
   // observations of the source — never a second browser read or model
@@ -608,6 +570,236 @@ export function evaluateEvidenceCheckpoint(
   }
 }
 
+type SubagentCitation = Extract<EvidenceCitation, { kind: 'subagent' }>
+type WebCitation = Extract<EvidenceCitation, { kind: 'web' }>
+type WorkerObservations = (agentId: string) => readonly ObservationRecord[] | null
+
+/** A user citation's grounding (#122): the user event this Run's ledger retained that supplied its exact words. */
+function groundUserCitation(
+  observation: string,
+  records: readonly ObservationRecord[],
+): { ok: true; event: ObservationRecord; producer: UserObservationOrigin['producer'] } | EvidenceCheckpointFailure {
+  const event = findUserEventObservation(records, observation)
+  if (event === null) {
+    return {
+      ok: false,
+      reason: 'user_text_unverified',
+      error:
+        'no command, ask_user answer, or steering directive in this run supplied those exact words — copy the user\'s text verbatim, or checkpoint what you observed instead',
+    }
+  }
+  return { ok: true, event, producer: userProducer(event)! }
+}
+
+/** A subagent citation's grounding (#123): the named worker's own retained observation of the source. */
+function groundSubagentCitation(
+  citation: SubagentCitation,
+  workerObservations: WorkerObservations | undefined,
+): { ok: true; source: ObservationRecord; workerRecords: readonly ObservationRecord[] } | EvidenceCheckpointFailure {
+  const workerRecords = workerObservations?.(citation.agentId) ?? null
+  if (workerRecords === null) {
+    return {
+      ok: false,
+      reason: 'unknown_agent',
+      error: `no completed subagent '${citation.agentId}' with retained observations — collect its report with agent_results first, and cite a source it actually observed`,
+    }
+  }
+  // The citing model saw the worker's report, not its tool results, so
+  // an excerpt is optional here; one offered must still appear in what
+  // the worker retained — a wrong quote never grounds.
+  const grounding = findGroundingObservation(workerRecords, citation.sourceUrl, citation.excerpt)
+  if (!grounding.ok && grounding.reason === 'excerpt_unsupported') {
+    return {
+      ok: false,
+      reason: 'excerpt_unsupported',
+      error: `the excerpt does not appear in anything subagent '${citation.agentId}' retained from '${citation.sourceUrl}' — checked its ${producerList(grounding.producers)} — omit it, or copy it verbatim from the report you are citing`,
+    }
+  }
+  // No excerpt offered: the worker's freshest retention of the source
+  // grounds the citation, text or structured alike.
+  const source = grounding.ok ? grounding.record : findSourceObservation(workerRecords, citation.sourceUrl)
+  if (source === null) {
+    return {
+      ok: false,
+      reason: 'unknown_source',
+      error: `subagent '${citation.agentId}' did not observe '${citation.sourceUrl}' — cite one of the evidence URLs its report's findings carry`,
+    }
+  }
+  return { ok: true, source, workerRecords }
+}
+
+/** A web citation's grounding (#179): the newest retention this Run holds that supports it. */
+function groundWebCitation(
+  citation: WebCitation,
+  records: readonly ObservationRecord[],
+): { ok: true; source: ObservationRecord } | EvidenceCheckpointFailure {
+  const grounding = findGroundingObservation(records, citation.sourceUrl, citation.excerpt)
+  if (grounding.ok) return { ok: true, source: grounding.record }
+  if (grounding.reason === 'unknown_source') {
+    return {
+      ok: false,
+      reason: 'unknown_source',
+      error: `source '${citation.sourceUrl}' was not observed in this run — cite the URL of a page this run opened or read`,
+    }
+  }
+  if (grounding.reason === 'excerpt_required') {
+    return {
+      ok: false,
+      reason: 'excerpt_required',
+      error: `the citation carries no excerpt, and nothing this run retained from '${citation.sourceUrl}' grounds one without it — copy a contiguous span verbatim from the tool result you are citing; only a structured action outcome grounds excerptless`,
+    }
+  }
+  return {
+    ok: false,
+    reason: 'excerpt_unsupported',
+    error: `the excerpt does not appear in anything this run retained from '${citation.sourceUrl}' — checked its ${producerList(grounding.producers)} — copy it verbatim from the tool result you are citing, or cite the observation's structured outcome`,
+  }
+}
+
+/**
+ * What grading alone says of a citation (#241): the refusal its own class
+ * produces, or null when it grounds. No Session seam is consulted and
+ * nothing commits — this answers for the call a malformed rejection shows.
+ */
+function gradeCitation(
+  citation: EvidenceCitation,
+  records: readonly ObservationRecord[],
+  workerObservations: WorkerObservations | undefined,
+): EvidenceCheckpointFailure | null {
+  const grounding =
+    citation.kind === 'user'
+      ? groundUserCitation(citation.observation, records)
+      : citation.kind === 'subagent'
+        ? groundSubagentCitation(citation, workerObservations)
+        : groundWebCitation(citation, records)
+  return grounding.ok ? null : grounding
+}
+
+const EVIDENCE_CITATION_KINDS: readonly EvidenceCitationKind[] = ['web', 'user', 'subagent']
+
+/**
+ * A malformed record_evidence call read back as the citation it should have
+ * been (#241): every shape defect named, and the model's own arguments with
+ * each fix applied. The repair is what the rejection shows, never what the
+ * checkpoint accepts. A user citation whose stray excerpt holds the user's
+ * exact words while its observation does not takes the excerpt's text as
+ * its observation — both values are the model's own, and the rule is the
+ * tool's. Grading needs the source (for a user citation, the words): when
+ * nothing supplies those, the repaired call is not graded.
+ */
+export function diagnoseEvidenceCall(
+  args: Readonly<Record<string, unknown>>,
+  records: readonly ObservationRecord[],
+): ShapeDiagnosis {
+  const defects: ShapeDefect[] = []
+  let corrected: Record<string, unknown> = { ...args }
+  let groundable = true
+  const flag = (field: string, problem: string): void => {
+    defects.push({ field, problem })
+  }
+  const allowed: readonly string[] = EVIDENCE_CITATION_KEYS
+  for (const key of Object.keys(args)) {
+    if (allowed.includes(key)) continue
+    flag(key, 'not a record_evidence field — dropped')
+    corrected = withoutField(corrected, key)
+  }
+
+  // The kind decides which fields belong. An agent_id cites a subagent's
+  // finding, a source or excerpt a page, and neither leaves the user's words.
+  let kind: EvidenceCitationKind
+  if (args.kind === undefined) {
+    kind = args.agent_id !== undefined ? 'subagent' : 'web'
+    if (kind === 'subagent') {
+      flag('kind', 'missing — an agent_id cites a subagent\'s finding, which is kind "subagent"')
+      corrected = withField(corrected, 'kind', 'subagent', 'agent_id')
+    }
+  } else if (EVIDENCE_CITATION_KINDS.includes(args.kind as EvidenceCitationKind)) {
+    kind = args.kind as EvidenceCitationKind
+  } else {
+    kind = args.agent_id !== undefined ? 'subagent' : args.source_url !== undefined || args.excerpt !== undefined ? 'web' : 'user'
+    flag('kind', `${JSON.stringify(args.kind)} is not a kind — "web", "user", or "subagent"; this call's fields make it "${kind}"`)
+    corrected = withField(corrected, 'kind', kind)
+  }
+
+  const observation = boundedString(args.observation, MAX_MEMORY_DETAIL_CHARS)
+  if (kind === 'user') {
+    for (const stray of ['source_url', 'excerpt', 'agent_id']) {
+      if (args[stray] === undefined) continue
+      flag(stray, `a kind "user" citation carries no ${stray} — the user's exact words are its observation`)
+      corrected = withoutField(corrected, stray)
+    }
+    const excerpt = typeof args.excerpt === 'string' ? args.excerpt : undefined
+    const excerptIsTheWords = excerpt !== undefined && findUserEventObservation(records, excerpt) !== null
+    const observationIsTheWords = !!observation && findUserEventObservation(records, observation) !== null
+    if (excerptIsTheWords && !observationIsTheWords) {
+      flag('observation', "not the user's exact words, which the excerpt holds — the excerpt's text is the observation")
+      corrected = withField(corrected, 'observation', excerpt)
+    } else if (!observation) {
+      flag('observation', `${stringProblem(args.observation, MAX_MEMORY_DETAIL_CHARS)} — the user's exact words, verbatim`)
+      corrected = withField(corrected, 'observation', placeholder("the user's exact words, verbatim"))
+      // A user citation grades its words, and a placeholder has none.
+      groundable = false
+    }
+  } else {
+    if (!observation) {
+      // Stored, not graded: a placeholder observation still grades.
+      flag('observation', `${stringProblem(args.observation, MAX_MEMORY_DETAIL_CHARS)} — the one decision-relevant fact this citation grounds`)
+      corrected = withField(corrected, 'observation', placeholder('the one decision-relevant fact this citation grounds'))
+    }
+    const sourceUrl = boundedString(args.source_url, MAX_SOURCE_URL_CHARS)
+    if (!sourceUrl || canonicalizeMemoryUrl(sourceUrl) === null) {
+      const wanted =
+        kind === 'subagent' ? "one of the evidence URLs the subagent's findings carry" : 'the URL of a page this run opened or read'
+      const problem = sourceUrl ? `${JSON.stringify(sourceUrl)} is not an http(s) URL` : stringProblem(args.source_url, MAX_SOURCE_URL_CHARS)
+      flag('source_url', `${problem} — ${wanted}`)
+      corrected = withField(corrected, 'source_url', placeholder(wanted))
+      groundable = false
+    }
+    if (boundedString(args.excerpt, MAX_MEMORY_DETAIL_CHARS, true) === null) {
+      const problem = stringProblem(args.excerpt, MAX_MEMORY_DETAIL_CHARS)
+      if (kind === 'subagent') {
+        flag('excerpt', `${problem} — optional on a subagent citation, so dropped`)
+        corrected = withoutField(corrected, 'excerpt')
+      } else {
+        const wanted = 'a span copied verbatim from the tool result that observed the source'
+        flag('excerpt', `${problem} — ${wanted}`)
+        corrected = withField(corrected, 'excerpt', placeholder(wanted))
+        groundable = false
+      }
+    }
+    if (kind === 'web' && args.agent_id !== undefined) {
+      flag('agent_id', 'a kind "web" citation carries no agent_id — only a subagent citation names one')
+      corrected = withoutField(corrected, 'agent_id')
+    }
+    if (kind === 'subagent' && !boundedString(args.agent_id, MAX_PROVENANCE_CHARS)) {
+      flag('agent_id', `${stringProblem(args.agent_id, MAX_PROVENANCE_CHARS)} — the subagent whose report grounds this finding`)
+      corrected = withField(corrected, 'agent_id', placeholder('the id of the subagent whose report grounds this finding, e.g. a-1'))
+      groundable = false
+    }
+  }
+  if (boundedString(args.uncertainty, MAX_UNCERTAINTY_CHARS, true) === null) {
+    flag('uncertainty', `${stringProblem(args.uncertainty, MAX_UNCERTAINTY_CHARS)} — dropped`)
+    corrected = withoutField(corrected, 'uncertainty')
+  }
+  if (args.volatile !== undefined && typeof args.volatile !== 'boolean') {
+    const spelled = args.volatile === 'true' ? true : args.volatile === 'false' ? false : undefined
+    if (spelled === undefined) {
+      flag('volatile', 'must be true or false — dropped')
+      corrected = withoutField(corrected, 'volatile')
+    } else {
+      flag('volatile', `the string "${String(args.volatile)}" — send the boolean ${String(spelled)}`)
+      corrected = withField(corrected, 'volatile', spelled)
+    }
+  }
+
+  return {
+    defects: inFieldOrder(defects, EVIDENCE_CITATION_KEYS),
+    corrected,
+    // A repair the parser would still refuse is not graded as the call to send.
+    groundable: groundable && parseEvidenceCitation(corrected) !== null,
+  }
+}
+
 const USER_EVENT_LABELS: Record<UserObservationOrigin['producer'], string> = {
   command: 'command',
   ask_user: 'ask_user answer',
@@ -634,5 +826,7 @@ export function evidenceCheckpointMessage(outcome: EvidenceCheckpointOutcome): s
       ? `Session Evidence already held this Observation: ${outcome.entryId} (provenance recorded).${contradiction}`
       : `Session Evidence recorded: ${outcome.entryId}, grounded in ${outcome.sourceObservationId} at ${outcome.sourceUrl}. It survives this run's outcome.${contradiction}`
   }
-  return `record_evidence rejected (${outcome.reason}): ${outcome.error}.`
+  // A malformed correction ends on the call to send, or on a grading line
+  // that carries its own full stop (#241).
+  return `record_evidence rejected (${outcome.reason}): ${outcome.error}${outcome.reason === 'malformed' ? '' : '.'}`
 }
