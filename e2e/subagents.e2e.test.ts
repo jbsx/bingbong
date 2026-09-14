@@ -22,21 +22,21 @@ function orchestratorScript(): AssistantTurn[] {
         {
           id: 'plan',
           name: 'report_run_plan',
-          args: { objective: 'Compare the fixture pages in parallel', headline: 'Comparing fixture pages', effort_tier: 'investigation' },
+          args: { objective: 'Compare the fixture pages in parallel', headline: 'Comparing fixture pages', effort_tier: 'investigation', asked_items: ['the answer'] },
         },
         { id: 's1', name: 'spawn_agent', args: { kind: 'browse', task: 'compare prices on the fixture page' } },
         { id: 's2', name: 'spawn_agent', args: { kind: 'browse', task: 'check stock on the fixture page' } },
       ],
     },
     { kind: 'tool_calls', calls: [{ id: 's3', name: 'agent_results', args: { wait: true } }] },
-    { kind: 'answer', speak: 'Both browsing agents finished.', display: 'Merged both browsing reports.' },
+    { kind: 'answer', askedItems: [{ item: 'the answer', standing: 'stated', statement: 'stated' }], speak: 'Both browsing agents finished.', display: 'Merged both browsing reports.' },
   ]
 }
 
 function subagentScript(fixtureUrl: string): AssistantTurn[] {
   return [
     { kind: 'tool_calls', calls: [{ id: 'n1', name: 'navigate', args: { url: fixtureUrl } }] },
-    { kind: 'answer', speak: 'done', display: 'Browsed the fixture page and found it.' },
+    { kind: 'answer', askedItems: [{ item: 'the answer', standing: 'stated', statement: 'stated' }], speak: 'done', display: 'Browsed the fixture page and found it.' },
   ]
 }
 
@@ -223,17 +223,17 @@ describe('subagent vision budget e2e', () => {
               {
                 id: 'plan',
                 name: 'report_run_plan',
-                args: { objective: 'Inspect the page repeatedly', headline: 'Inspecting the page', effort_tier: 'investigation' },
+                args: { objective: 'Inspect the page repeatedly', headline: 'Inspecting the page', effort_tier: 'investigation', asked_items: ['the answer'] },
               },
               { id: 'spawn', name: 'spawn_agent', args: { kind: 'browse', task: 'inspect the page repeatedly' } },
             ],
           },
           { kind: 'tool_calls', calls: [{ id: 'results', name: 'agent_results', args: { wait: true } }] },
-          { kind: 'answer', speak: 'Inspection finished.', display: 'Inspection finished.' },
+          { kind: 'answer', askedItems: [{ item: 'the answer', standing: 'stated', statement: 'stated' }], speak: 'Inspection finished.', display: 'Inspection finished.' },
         ]),
         BINGBONG_SUBAGENT_LLM_SCRIPT: JSON.stringify([
           { kind: 'tool_calls', calls: roundCalls },
-          { kind: 'answer', speak: '$last_tool_error', display: '$last_tool_error' },
+          { kind: 'answer', askedItems: [{ item: 'the answer', standing: 'stated', statement: 'stated' }], speak: '$last_tool_error', display: '$last_tool_error' },
         ]),
         BINGBONG_VISION_DESCRIPTION_SCRIPT: JSON.stringify(
           Array.from({ length: 15 }, (_, index) => `Subagent page description ${index + 1}.`),

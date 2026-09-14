@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted on 2026-09-14 for #250. Not yet implemented. Changes the Run Plan
+Accepted on 2026-09-14 for #250, and implemented the same day. Changes the Run Plan
 (one bounded argument), the Answer contract (one structured field), and gives
 the runtime authority over one Run Resolution transition. Amends nothing in
 ADR 0045's audit or in #245's Answer Retry beyond sharing the retry.
@@ -76,6 +76,16 @@ item `unverified`.
   unstated, not a wrong statement.
 - The one Answer Retry is shared. A Run whose Answer is both malformed and
   short gets one retry, not two.
+- Three readings the implementation fixed where the decision left room.
+  A later Run Plan that repeats the standing list, in any order or case,
+  or omits `asked_items` altogether, is a headline update and keeps the
+  declaration — only a different non-empty list is refused, and a Direct
+  Action that declared none may set the list when it escalates. Every
+  refused Run Plan report, not only the no-Asked-Items one, is the
+  no-Progress action a rejected checkpoint is, once per Tool Round — the
+  rail cannot tell the refusals apart, and none of them is Progress. And
+  with nothing declared the Answer's field is ignored rather than judged,
+  so a Direct Action or fallback-plan Run never spends its retry on it.
 - The measurement (#250) reports answer-omitted verdicts and the Eurostar
   initial against baseline2 as targets, and the median Run duration against
   a bound of one round's latency as a closing condition: completeness bought

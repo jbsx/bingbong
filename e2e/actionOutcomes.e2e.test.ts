@@ -28,7 +28,7 @@ function outcomeScript(resultsUrl: string, interactiveUrl: string, engineUrl: st
           args: {
             objective: 'Exercise every browser Action Outcome class',
             headline: 'Exercising browser Action Outcomes',
-            effort_tier: 'investigation',
+            effort_tier: 'investigation', asked_items: ['the answer'],
           },
         },
         // Visible search by direct navigation (#113): the rendered results
@@ -61,6 +61,7 @@ function outcomeScript(resultsUrl: string, interactiveUrl: string, engineUrl: st
     { kind: 'tool_calls', calls: [{ id: 'type-submit', name: 'type', args: { ref: 1, text: 'fixture widgets\n' } }] },
     {
       kind: 'answer',
+      askedItems: [{ item: 'the answer', standing: 'stated', statement: 'stated' }],
       speak: 'Outcomes observed.',
       display: 'Every browser action returned its settled state.',
     },

@@ -3,6 +3,7 @@
 // errors get a spoken one-liner while the dashboard keeps the detail.
 
 import { MAX_RUN_NOTE_CHARS, parseFinalizationCause, parseRunResolution, type FinalizationCause, type RunResolution } from '../session/runJournal'
+import { parseAskedItemStandings, type AskedItemStanding } from './askedItems'
 import { boundedString, MAX_MEMORY_REFERENCES, MAX_MEMORY_SUBJECT_CHARS, parseMemoryPatch, type MemoryEntryId, type MemoryPatch } from '../session/workingMemory'
 import { parseMishearProposals, type MishearProposal } from '../voice/learnedTerms'
 import { parseSubagentReportSections } from './subagentReport'
@@ -219,6 +220,8 @@ export function parseAssistantAnswer(content: string): {
   evidenceIssue?: 'malformed'
   inspectionCandidateId?: MemoryEntryId
   inspectionIssue?: 'malformed'
+  askedItems?: AskedItemStanding[]
+  askedItemsIssue?: 'malformed'
 } {
   const trimmed = content.trim()
   const candidates = [trimmed, extractFenced(trimmed), extractJsonSlice(trimmed)]
@@ -243,6 +246,7 @@ export function parseAssistantAnswer(content: string): {
           finalization_cause: rawFinalizationCause,
           evidence_ids: rawEvidenceIds,
           inspection_candidate_id: rawInspectionCandidateId,
+          asked_items: rawAskedItems,
         } = parsed as {
           speak: string
           display: string
@@ -253,6 +257,7 @@ export function parseAssistantAnswer(content: string): {
           finalization_cause?: unknown
           evidence_ids?: unknown
           inspection_candidate_id?: unknown
+          asked_items?: unknown
         }
         let answer: {
           speak: string
@@ -272,7 +277,17 @@ export function parseAssistantAnswer(content: string): {
           evidenceIssue?: 'malformed'
           inspectionCandidateId?: MemoryEntryId
           inspectionIssue?: 'malformed'
+          askedItems?: AskedItemStanding[]
+          askedItemsIssue?: 'malformed'
         } = { speak: capSentences(speak, SPEAK_SENTENCE_LIMIT), display, shape: 'on_contract' }
+        // The Asked Item standings (#250, ADR 0052): validated like the
+        // other hidden metadata — malformed drops the list, the Answer
+        // stands — and whether the list is the declared one is the
+        // pipeline's question, since only it holds the declaration.
+        if (rawAskedItems !== undefined) {
+          const askedItems = parseAskedItemStandings(rawAskedItems)
+          answer = askedItems ? { ...answer, askedItems } : { ...answer, askedItemsIssue: 'malformed' }
+        }
         // Subagent Report sections (#98): validated independently, absent
         // when invalid — the orchestrator never emits these keys, and a
         // subagent's prose report survives a bad section untouched.

@@ -242,6 +242,18 @@ export type AuditDisposition = 'answered' | 'no_answer' | 'acceptance_unconfirme
 export const SEARCH_SOURCES = ['rail', 'replay', 'none'] as const
 export type AuditSearchSource = (typeof SEARCH_SOURCES)[number]
 
+/** The Asked Items counts of one attempt (#250). */
+export interface AuditAskedItems {
+  /** Items the last model Run Plan declared; null when no model plan carried the field. */
+  readonly declared: number | null
+  /** Standings the final Answer's display carried, by kind; null when it carried none. */
+  readonly stated: number | null
+  readonly unverified: number | null
+  /** `asked_items_shape` records: Answers whose list was not the declared one, and how many of those were retried. */
+  readonly shapeFailures: number
+  readonly shapeRetried: number
+}
+
 export interface AuditPlan {
   readonly tier: EffortTier
   readonly source: string
@@ -326,6 +338,15 @@ export interface AuditMechanical {
   readonly malformedAnswers: number
   /** Answer Retries (#245): the turn's `answer_retry` records, on the same terms. */
   readonly answerRetries: number
+  /**
+   * Asked Items (#250, ADR 0052), read from the Run's own events and records
+   * and never from Answer text: what the last model Run Plan declared, the
+   * standings the final Answer's display carried, and the Answers whose list
+   * was not the declared one. `null` where the event carried no field — a
+   * trace written before the field existed. Beside the rounds; the digest
+   * does not move.
+   */
+  readonly askedItems: AuditAskedItems
   readonly latency: { readonly llmMs: number | null; readonly joined: number; readonly unjoined: number }
   readonly usage: { readonly promptTokens: number; readonly completionTokens: number; readonly roundsWithUsage: number }
   readonly subagent: { readonly rounds: number; readonly agents: number; readonly byStop: Readonly<Record<string, number>> }
@@ -454,6 +475,13 @@ export interface AuditPopulation {
   readonly malformedAnswers: number
   /** Answer Retries over the attempts (#245). */
   readonly answerRetries: number
+  /** Attempts whose model Run Plan declared at least one Asked Item (#250). */
+  readonly askedItemsDeclared: number
+  /** Attempts whose final Answer carried at least one `unverified` standing (#250). */
+  readonly askedItemsUnverified: number
+  /** Answers whose list was not the declared one, and how many of those were retried (#250). */
+  readonly askedItemsShapeFailures: number
+  readonly askedItemsShapeRetried: number
   readonly subagentRounds: number
   readonly stoppedEarly: number
   /** Judged attempts whose Answer Omission holds (#244), whatever their verdict. */
@@ -986,11 +1014,23 @@ export function classifyAttempt(input: AuditTraceInput): AuditMechanical {
 
   const plans: AuditPlan[] = []
   let terminal: AuditMechanical['terminal'] = null
+  let askedDeclared: number | null = null
+  let askedStated: number | null = null
+  let askedUnverified: number | null = null
   for (const record of records) {
     if (record.agentId !== undefined) continue
     const event = eventOf(record)
     if (event === null) continue
     if (event.type === 'run_plan' && isString(event.effortTier)) plans.push({ tier: event.effortTier as EffortTier, source: isString(event.source) ? event.source : 'unknown' })
+    // The Asked Items (#250): the last model plan's declaration, and the
+    // standings the final Answer carried — read from the events, never
+    // from the Card's text.
+    if (event.type === 'run_plan' && event.source === 'model' && Array.isArray(event.askedItems)) askedDeclared = event.askedItems.length
+    if (event.type === 'display' && event.finalAnswer === true && Array.isArray(event.askedItems)) {
+      const standings = event.askedItems as readonly { standing?: unknown }[]
+      askedStated = standings.filter((standing) => standing.standing === 'stated').length
+      askedUnverified = standings.filter((standing) => standing.standing === 'unverified').length
+    }
     if (event.type === 'done') {
       terminal = {
         outcome: isString(event.outcome) ? event.outcome : null,
@@ -1217,6 +1257,13 @@ export function classifyAttempt(input: AuditTraceInput): AuditMechanical {
     identitySlips,
     malformedAnswers: records.filter((record) => record.kind === 'malformed_answer').length,
     answerRetries: records.filter((record) => record.kind === 'answer_retry').length,
+    askedItems: {
+      declared: askedDeclared,
+      stated: askedStated,
+      unverified: askedUnverified,
+      shapeFailures: records.filter((record) => record.kind === 'asked_items_shape').length,
+      shapeRetried: records.filter((record) => record.kind === 'asked_items_shape' && record.retried === true).length,
+    },
     latency: {
       llmMs: joined.length === 0 ? null : joined.reduce((total, round) => total + round.latencyMs!, 0),
       joined: joined.length,
@@ -1255,6 +1302,13 @@ function digestPayloadOf(mechanical: Omit<AuditMechanical, 'digestHash'>): unkno
     checksUnsatisfied: mechanical.checksUnsatisfied,
     subagent: mechanical.subagent,
   }
+}
+
+/** One attempt's Asked Items line (#250): "not recorded" where the trace predates the field. */
+export function askedItemsText(askedItems: AuditAskedItems | undefined): string {
+  if (askedItems === undefined || askedItems.declared === null) return 'not recorded'
+  const standings = askedItems.stated === null ? 'no standings on the Answer' : `Answer standings ${askedItems.stated} stated, ${askedItems.unverified} unverified`
+  return `${askedItems.declared} declared; ${standings}; ${askedItems.shapeFailures} shape failure(s) (${askedItems.shapeRetried} retried)`
 }
 
 /** An attempt with no grade, or a pending one: its `checksUnsatisfied` is every check, and says so as "ungraded". */
@@ -1594,6 +1648,10 @@ export function populationOf(label: string, attempts: readonly AuditAttempt[]): 
   let slipsNotRecorded = 0
   let malformedAnswers = 0
   let answerRetries = 0
+  let askedItemsDeclared = 0
+  let askedItemsUnverified = 0
+  let askedItemsShapeFailures = 0
+  let askedItemsShapeRetried = 0
   let subagentRounds = 0
   let stoppedEarly = 0
   let answerOmitted = 0
@@ -1629,6 +1687,10 @@ export function populationOf(label: string, attempts: readonly AuditAttempt[]): 
     }
     malformedAnswers += mechanical.malformedAnswers
     answerRetries += mechanical.answerRetries
+    if ((mechanical.askedItems?.declared ?? 0) > 0) askedItemsDeclared += 1
+    if ((mechanical.askedItems?.unverified ?? 0) > 0) askedItemsUnverified += 1
+    askedItemsShapeFailures += mechanical.askedItems?.shapeFailures ?? 0
+    askedItemsShapeRetried += mechanical.askedItems?.shapeRetried ?? 0
     subagentRounds += mechanical.subagent.rounds
     if (mechanical.toolRoundBudget !== null && mechanical.toolRoundsUsed >= mechanical.toolRoundBudget) atBudget += 1
     const cause = mechanical.terminal?.finalizationCause ?? 'none'
@@ -1674,6 +1736,10 @@ export function populationOf(label: string, attempts: readonly AuditAttempt[]): 
     identitySlipsNotRecorded: slipsNotRecorded,
     malformedAnswers,
     answerRetries,
+    askedItemsDeclared,
+    askedItemsUnverified,
+    askedItemsShapeFailures,
+    askedItemsShapeRetried,
     subagentRounds,
     stoppedEarly,
     answerOmitted,
@@ -1905,6 +1971,7 @@ function judgementLines(populations: readonly AuditPopulation[]): string[] {
       `${population.inheritedRounds} inherited, ${population.rejectedCheckpoints} rejected Evidence Checkpoint(s), ${population.walledRounds} walled round(s), ${population.notFoundNavigates} navigate(s) landed on a Not-found Page (${population.notFoundOffKey} judged Off-key), ${population.subagentRounds} Subagent round(s), ` +
       `${population.mergedCheckpoints} merged Evidence Checkpoint(s) (a floor), ${population.heldPageRoundsWithoutProgress} Held Page round(s) without Progress, ${populationSlipsText(population)}, ` +
       `${population.malformedAnswers} Malformed Answer(s) (${population.answerRetries} retried), ` +
+      `${population.askedItemsDeclared} declared Asked Items (${population.askedItemsUnverified} with an unverified standing, ${population.askedItemsShapeFailures} shape failure(s), ${population.askedItemsShapeRetried} retried), ` +
       `${population.stoppedEarly} stopped early, ${population.answerOmitted} answer omitted, ${population.overrules} overrule(s), ${population.flags} flag(s); Finalization Causes: ${Object.entries(population.finalizationCauses)
         .map(([cause, count]) => `${cause} ${count}`)
         .join(', ')}`,
@@ -1933,6 +2000,7 @@ function attemptSection(attempt: AuditAttempt): string[] {
       `${mechanical.heldPageRoundsWithoutProgress} Held Page round(s) without Progress; ${mechanical.walledRounds} walled round(s)`,
   )
   lines.push(`- Malformed Answers: ${mechanical.malformedAnswers} (${mechanical.answerRetries} retried)`)
+  lines.push(`- Asked Items: ${askedItemsText(mechanical.askedItems)}`)
   const landings = mechanical.notFoundNavigates
   lines.push(`- navigates that landed on a Not-found Page: ${landings.length}${landings.length > 0 ? ` (round ${landings.join(', ')})` : ''}`)
   lines.push(`- of those, judged Off-key by the reviewer: ${judgement === null ? 'not judged' : notFoundOffKeyOf(mechanical, judgement)}`)

@@ -301,7 +301,7 @@ describe('evidence source controls e2e', () => {
           {
             id: 'plan',
             name: 'report_run_plan',
-            args: { objective: 'Collect the delegated source', headline: 'Collecting', effort_tier: 'investigation' },
+            args: { objective: 'Collect the delegated source', headline: 'Collecting', effort_tier: 'investigation', asked_items: ['the answer'] },
           },
           { id: 's1', name: 'spawn_agent', args: { kind: 'browse', task: 'look at the widgets article' } },
         ],
@@ -322,11 +322,11 @@ describe('evidence source controls e2e', () => {
           },
         ],
       },
-      { kind: 'answer', speak: 'Collected.', display: 'Collected the delegated source.' },
+      { kind: 'answer', askedItems: [{ item: 'the answer', standing: 'stated', statement: 'stated' }], speak: 'Collected.', display: 'Collected the delegated source.' },
     ]
     const worker: AssistantTurn[] = [
       { kind: 'tool_calls', calls: [{ id: 'w1', name: 'navigate', args: { url: titled } }] },
-      { kind: 'answer', speak: 'done', display: 'Saw the widgets article.' },
+      { kind: 'answer', askedItems: [{ item: 'the answer', standing: 'stated', statement: 'stated' }], speak: 'done', display: 'Saw the widgets article.' },
     ]
     const app = await startHarness({
       fixture,

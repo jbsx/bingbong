@@ -132,7 +132,7 @@ describe('subagent ask_user relay e2e', () => {
           {
             id: 'plan',
             name: 'report_run_plan',
-            args: { objective: 'Plan the trip across sources', headline: 'Planning the trip', effort_tier: 'investigation' },
+            args: { objective: 'Plan the trip across sources', headline: 'Planning the trip', effort_tier: 'investigation', asked_items: ['the answer'] },
           },
           { id: 'spawn', name: 'spawn_agent', args: { kind: 'browse', task: 'plan the trip' } },
         ],

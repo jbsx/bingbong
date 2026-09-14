@@ -8,6 +8,7 @@
 
 import type { Tool } from './tool'
 import { EFFORT_TIERS, effortTierVocabulary } from './runPlan'
+import { MAX_ASKED_ITEM_CHARS, MAX_ASKED_ITEMS } from '../agent/askedItems'
 
 export function createReportRunPlanTool(): Tool {
   return {
@@ -19,7 +20,10 @@ export function createReportRunPlanTool(): Tool {
       'round — never as a tool round of its own, which wastes the round — and again whenever the task changes, ' +
       'especially right after a steering directive. An objective that must search for or find content is Lookup work ' +
       'or above: a discover-and-open task on a Direct Action budget runs dry before the honest answer. Later calls ' +
-      'update the headline at the same tier or escalate exactly one level with escalation_reason naming the new evidence.',
+      'update the headline at the same tier or escalate exactly one level with escalation_reason naming the new evidence. ' +
+      'asked_items lists what the command explicitly asks you to report, one short string each, declared once in the ' +
+      'first plan: a lookup or investigation plan without them is rejected, a Direct Action declares none, and the ' +
+      'Answer’s asked_items then carries a standing for every one of them.',
     parameters: {
       objective: {
         type: 'string',
@@ -37,6 +41,16 @@ export function createReportRunPlanTool(): Tool {
       escalation_reason: {
         type: 'string',
         description: 'Required only when escalating effort_tier: the new evidence that makes more effort necessary.',
+        required: false,
+      },
+      asked_items: {
+        type: 'array',
+        items: { type: 'string' },
+        description:
+          `The Asked Items: each thing the command explicitly asks you to report — an id, a measurement, a yes or no, ` +
+          `a qualification, each named item’s standing, and under a smallest-change ask one entry per named item. ` +
+          `At most ${MAX_ASKED_ITEMS} short strings of at most ${MAX_ASKED_ITEM_CHARS} characters, declared once in the first plan and ` +
+          `unchanged by later plans; required for lookup and investigation, empty for direct_action.`,
         required: false,
       },
     },

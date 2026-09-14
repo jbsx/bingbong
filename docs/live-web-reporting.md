@@ -906,6 +906,15 @@ written below Run Trace version 2 predates the record, so its attempt reads
 many of its attempts were not recorded and counts only the rest, and reads
 "Identity Slips not recorded" when none was.
 
+The **Asked Items** (#250, ADR 0052) sit beside the rounds on the same terms:
+`declared` is what the attempt's last model Run Plan carried in `asked_items`,
+`stated` and `unverified` count the standings the final Answer's display event
+carried, and `shapeFailures` counts the `asked_items_shape` records — Answers
+whose list was not the declared one — with `shapeRetried` the ones the Answer
+Retry was spent on. Each population counts the attempts that declared any and
+the attempts whose Answer carried an `unverified` standing. A trace written
+before the field reads "not recorded", and the digest does not move.
+
 Two more sit beside those, for an Answer the runtime could not read (#245),
 read from the records and never from Answer text. **Malformed Answers** are
 the attempt turn's `malformed_answer` records,

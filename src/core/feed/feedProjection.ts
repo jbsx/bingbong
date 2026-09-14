@@ -4,6 +4,7 @@ import { formatRetryLine } from '../pipeline/runProgress'
 import type { SessionId } from '../session/sessionIdentity'
 import type { MemoryEntryId } from '../session/workingMemory'
 import type { SessionAdoptionPayload } from '../session/ipcChannels'
+import type { AskedItemStanding } from '../agent/askedItems'
 import { projectPipelineEvent, type TranscriptEvent } from './transcriptProjection'
 
 // Feed projection (#44): the right-edge activity feed as a pure function —
@@ -78,6 +79,13 @@ export interface FeedEntry {
    * boundary — it lives exactly as long as the entry does.
    */
   evidenceIds?: readonly MemoryEntryId[]
+  /**
+   * The Asked Item standings a displayed Answer carries (#250, ADR 0052):
+   * the Card renders them as a list under the text, one line per item
+   * the Run Plan declared. Present exactly when the display event carried
+   * them; like the evidence identities, never recorded.
+   */
+  askedItems?: readonly AskedItemStanding[]
 }
 
 /** Detail entries are trimmed beyond this (~500, spec #42). */
@@ -171,12 +179,21 @@ export function createFeedProjection(deps?: {
     entry: TranscriptEvent,
     runId?: string,
     evidenceIds?: readonly MemoryEntryId[],
+    askedItems?: readonly AskedItemStanding[],
   ): number => {
     closeStreaming()
     const id = nextId++
     feed = [
       ...feed,
-      { ...entry, id, role: feedRoleForKind(entry.kind), detail: false, runId, ...(evidenceIds !== undefined ? { evidenceIds } : {}) },
+      {
+        ...entry,
+        id,
+        role: feedRoleForKind(entry.kind),
+        detail: false,
+        runId,
+        ...(evidenceIds !== undefined ? { evidenceIds } : {}),
+        ...(askedItems !== undefined ? { askedItems } : {}),
+      },
     ]
     return id
   }
@@ -322,7 +339,7 @@ export function createFeedProjection(deps?: {
           // Summary against the authoritative snapshot; nothing here is
           // ever recorded.
           dropOpenText()
-          appendOutcome(projectPipelineEvent(event)!, undefined, event.evidenceIds)
+          appendOutcome(projectPipelineEvent(event)!, undefined, event.evidenceIds, event.askedItems)
           if (event.turnId !== undefined) {
             // And its Spoken Rendering (#54): the Card renders, so the
             // turn's speak entry stays out of the view — the pipeline

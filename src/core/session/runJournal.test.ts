@@ -1,9 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import {
+  askedItemsOverride,
   finalizeRun,
   FINALIZATION_CAUSES,
   parseFinalizationCause,
   parseRunResolution,
+  runStopChars,
+  runStopRecord,
   type FinalizationCause,
   type RunResolution,
 } from './runJournal'
@@ -12,6 +15,25 @@ import {
 // Cause are carried beside the mechanical outcome — never replacing it. A
 // valid model Answer completes mechanically as done whatever it proposes,
 // and runtime-owned causes come only from the runtime.
+
+describe('runStopRecord with a Resolution override (#250, ADR 0052)', () => {
+  it('retains an override on a voluntary stop, bounded and counted in the Journal measure', () => {
+    const override = askedItemsOverride(['the piece count'])
+    const stop = runStopRecord({ cause: 'objective_met', override })
+    expect(stop).toEqual({ override })
+    expect(override).toMatch(/completed .* partial/)
+    expect(override).toContain('"the piece count"')
+    expect(runStopChars(stop ?? undefined)).toBe(override.length)
+    expect(runStopRecord({ cause: 'objective_met' })).toBeNull()
+  })
+
+  it('records the override beside a mechanical cause without touching it', () => {
+    expect(runStopRecord({ cause: 'budget_exhausted', override: askedItemsOverride(['a', 'b']) })).toEqual({
+      cause: 'budget_exhausted',
+      override: 'resolution completed → partial: 2 Asked Items stood unverified ("a"; "b")',
+    })
+  })
+})
 
 describe('parseRunResolution', () => {
   it.each(['completed', 'partial', 'blocked', 'needs_user', 'unsuccessful'] as const)(

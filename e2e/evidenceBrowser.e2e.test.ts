@@ -281,7 +281,7 @@ describe('evidence browser e2e', () => {
           {
             id: 'plan',
             name: 'report_run_plan',
-            args: { objective: 'Collect every evidence kind', headline: 'Collecting evidence', effort_tier: 'investigation' },
+            args: { objective: 'Collect every evidence kind', headline: 'Collecting evidence', effort_tier: 'investigation', asked_items: ['the answer'] },
           },
           { id: 'n1', name: 'navigate', args: { url: page } },
           {
@@ -341,7 +341,7 @@ describe('evidence browser e2e', () => {
           },
         ],
       },
-      { kind: 'answer', speak: 'Collected.', display: 'Collected every kind.' },
+      { kind: 'answer', askedItems: [{ item: 'the answer', standing: 'stated', statement: 'stated' }], speak: 'Collected.', display: 'Collected every kind.' },
     ]
     const decision: AssistantTurn[] = [
       {
@@ -364,11 +364,11 @@ describe('evidence browser e2e', () => {
           },
         ],
       },
-      { kind: 'answer', speak: 'Decided.', display: 'Accepted the candidate.' },
+      { kind: 'answer', askedItems: [{ item: 'the answer', standing: 'stated', statement: 'stated' }], speak: 'Decided.', display: 'Accepted the candidate.' },
     ]
     const worker: AssistantTurn[] = [
       { kind: 'tool_calls', calls: [{ id: 'w1', name: 'navigate', args: { url: page } }] },
-      { kind: 'answer', speak: 'done', display: 'Saw the second page.' },
+      { kind: 'answer', askedItems: [{ item: 'the answer', standing: 'stated', statement: 'stated' }], speak: 'done', display: 'Saw the second page.' },
     ]
     const app = await startHarness({
       fixture,

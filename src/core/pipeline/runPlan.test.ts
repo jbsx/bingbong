@@ -5,11 +5,18 @@ import {
   TIER_COMPLETION_STANDARDS,
   RUN_PLAN_STANDALONE_ROUND,
   RUN_PLAN_TIER_BELOW_LOOKUP,
+  lookupFallbackPlan,
   objectiveDemandsDiscovery,
+  parsePlanReport,
   reviewPlanReport,
+  RUN_PLAN_NO_ASKED_ITEMS,
+  type EffortTier,
   type PlanReport,
+  type RunPlan,
 } from './runPlan'
 import { createReportRunPlanTool } from './runPlanTools'
+import { MAX_ASKED_ITEM_CHARS, MAX_ASKED_ITEMS } from '../agent/askedItems'
+import type { ToolCall } from '../ports/llm'
 
 // #118 / ADR 0027: the tier completion standards — the vocabulary every
 // model-facing surface (Run Plan tool, orchestrator prompt, later the
@@ -63,6 +70,7 @@ describe('round-efficiency tuning from the acceptance-replay tape (#131)', () =>
     objective,
     headline: 'A headline',
     effortTier,
+    askedItems: effortTier === 'direct_action' ? [] : ['the answer'],
   })
 
   describe('objectiveDemandsDiscovery', () => {
@@ -133,5 +141,86 @@ describe('round-efficiency tuning from the acceptance-replay tape (#131)', () =>
   it('words the standalone-round correction as plan-with-work teaching', () => {
     expect(RUN_PLAN_STANDALONE_ROUND).toMatch(/alongside useful work/i)
     expect(RUN_PLAN_STANDALONE_ROUND).toMatch(/never.*round.*alone|never as a round of its own/i)
+  })
+})
+
+describe('Asked Items on the Run Plan (#250, ADR 0052)', () => {
+  const call = (args: Record<string, unknown>): ToolCall => ({ id: 'p1', name: 'report_run_plan', args })
+  const report = (effortTier: EffortTier, askedItems: readonly string[]): PlanReport => ({
+    objective: 'Can I take a guitar on the Eurostar',
+    headline: 'Check the Eurostar luggage rule',
+    effortTier,
+    askedItems,
+  })
+  const declared: RunPlan = { objective: 'o', headline: 'h', effortTier: 'lookup', askedItems: ['the guitar', 'the piece count'] }
+
+  describe('parsePlanReport', () => {
+    it('reads asked_items as trimmed strings, dropping empty ones, and absent as none', () => {
+      expect(parsePlanReport(call({ objective: 'o', headline: 'h', effort_tier: 'lookup', asked_items: [' the guitar ', '', 'the piece count'] }))?.askedItems).toEqual(['the guitar', 'the piece count'])
+      expect(parsePlanReport(call({ objective: 'o', headline: 'h', effort_tier: 'lookup' }))?.askedItems).toEqual([])
+    })
+
+    it('treats a list that is not strings as a malformed report', () => {
+      expect(parsePlanReport(call({ objective: 'o', headline: 'h', effort_tier: 'lookup', asked_items: 'the guitar' }))).toBeNull()
+      expect(parsePlanReport(call({ objective: 'o', headline: 'h', effort_tier: 'lookup', asked_items: [1] }))).toBeNull()
+    })
+  })
+
+  describe('reviewPlanReport', () => {
+    it('rejects a first Lookup or Investigation plan that declares none, naming the reason', () => {
+      for (const tier of ['lookup', 'investigation'] as const) {
+        const review = reviewPlanReport(null, false, report(tier, []))
+        expect(review).toEqual({ kind: 'rejected', reason: RUN_PLAN_NO_ASKED_ITEMS })
+      }
+      expect(RUN_PLAN_NO_ASKED_ITEMS).toMatch(/asked_items/)
+    })
+
+    it('accepts a Direct Action plan that declares none', () => {
+      expect(reviewPlanReport(null, false, report('direct_action', []))).toMatchObject({ kind: 'accepted', plan: { askedItems: [] } })
+    })
+
+    it('accepts the first declaration and carries it on the plan', () => {
+      expect(reviewPlanReport(null, false, report('lookup', ['the guitar']))).toMatchObject({ kind: 'accepted', plan: { askedItems: ['the guitar'] } })
+    })
+
+    it('rejects a later plan under the same objective that changes the list, naming the standing list', () => {
+      const review = reviewPlanReport(declared, true, report('lookup', ['the guitar', 'the fare']))
+      expect(review.kind).toBe('rejected')
+      expect(review.kind === 'rejected' && review.reason).toContain('"the guitar"; "the piece count"')
+      expect(review.kind === 'rejected' && review.reason).toMatch(/Steering/)
+    })
+
+    it('keeps the standing list when a later plan repeats it or omits it', () => {
+      expect(reviewPlanReport(declared, true, report('lookup', ['The piece count', 'the guitar']))).toMatchObject({ kind: 'accepted', plan: { askedItems: declared.askedItems } })
+      expect(reviewPlanReport(declared, true, report('lookup', []))).toMatchObject({ kind: 'accepted', plan: { askedItems: declared.askedItems } })
+    })
+
+    it('lets an escalation from a Direct Action that declared none declare the list, and refuses one that still declares none', () => {
+      const direct: RunPlan = { objective: 'o', headline: 'h', effortTier: 'direct_action', askedItems: [] }
+      expect(reviewPlanReport(direct, true, { ...report('lookup', ['the guitar']), escalationReason: 'the page must be found' })).toMatchObject({ kind: 'escalation', plan: { askedItems: ['the guitar'] } })
+      expect(reviewPlanReport(direct, true, { ...report('lookup', []), escalationReason: 'the page must be found' })).toEqual({ kind: 'rejected', reason: RUN_PLAN_NO_ASKED_ITEMS })
+    })
+
+    it('re-declares freely after a Steering replan cleared the declaration', () => {
+      expect(reviewPlanReport(declared, false, report('lookup', ['the fare']))).toMatchObject({ kind: 'accepted', plan: { askedItems: ['the fare'] } })
+    })
+
+    it('rejects more than the bound, and an item past its bound, naming the bound', () => {
+      const many = Array.from({ length: MAX_ASKED_ITEMS + 1 }, (_, index) => `item ${index}`)
+      const tooMany = reviewPlanReport(null, false, report('lookup', many))
+      expect(tooMany.kind === 'rejected' && tooMany.reason).toContain(`${MAX_ASKED_ITEMS}`)
+      const tooLong = reviewPlanReport(null, false, report('lookup', ['x'.repeat(MAX_ASKED_ITEM_CHARS + 1)]))
+      expect(tooLong.kind === 'rejected' && tooLong.reason).toContain(`${MAX_ASKED_ITEM_CHARS}`)
+    })
+  })
+
+  it('the fallback Lookup plan declares none', () => {
+    expect(lookupFallbackPlan('find it').askedItems).toEqual([])
+  })
+
+  it('the tool declares asked_items as a bounded string list', () => {
+    const tool = createReportRunPlanTool()
+    expect(tool.parameters?.asked_items).toMatchObject({ type: 'array', items: { type: 'string' }, required: false })
+    expect(tool.parameters?.asked_items?.description).toContain(`${MAX_ASKED_ITEMS}`)
   })
 })

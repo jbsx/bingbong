@@ -202,13 +202,13 @@ describe('feed panel layout e2e', () => {
             args: {
               objective: 'Find a blue mug under $20',
               headline: 'Find a blue mug under $20',
-              effort_tier: 'lookup',
+              effort_tier: 'lookup', asked_items: ['the answer'],
             },
           },
           { id: 'c1', name: 'navigate', args: { url: fixture.url('/slow') } },
         ],
       },
-      { kind: 'answer', speak: 'Found one.', display: 'Found a blue mug.' },
+      { kind: 'answer', askedItems: [{ item: 'the answer', standing: 'stated', statement: 'stated' }], speak: 'Found one.', display: 'Found a blue mug.' },
     ]
     const app = await startHarness({ fixture, env: { BINGBONG_LLM_SCRIPT: JSON.stringify(script) } })
     try {

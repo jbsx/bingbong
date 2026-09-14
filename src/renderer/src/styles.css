@@ -1570,3 +1570,48 @@ body {
   font-size: 0.85rem;
   color: var(--muted);
 }
+
+/* The Asked Items list on the Answer Card (#250, ADR 0052): one line per
+   item the Run Plan declared, its standing as a small label, and the
+   statement or the reason it stands unverified. */
+.asked-items {
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 8px 0 0;
+  border-top: 1px solid var(--edge);
+  display: grid;
+  gap: 6px;
+  font-size: 0.95rem;
+}
+
+.asked-item {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 8px;
+}
+
+.asked-item-name {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.asked-item-standing {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 1px 6px;
+  border-radius: 999px;
+  border: 1px solid var(--edge);
+  color: var(--muted);
+}
+
+.asked-item--stated .asked-item-standing {
+  border-color: var(--status-green);
+  color: var(--status-green);
+}
+
+.asked-item-statement {
+  flex-basis: 100%;
+  color: var(--muted);
+}

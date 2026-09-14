@@ -253,6 +253,43 @@ describe('parseAssistantAnswer', () => {
     },
   )
 
+  it('reads the Asked Item standings, trimmed, in the Answer’s order (#250)', () => {
+    const answer = parseAssistantAnswer(JSON.stringify({
+      speak: 'Yes.',
+      display: 'The guitar can travel.',
+      asked_items: [
+        { item: ' the guitar ', standing: 'stated', statement: 'It counts as one of two pieces.' },
+        { item: 'the fare', standing: 'unverified', statement: 'The fare page did not load.' },
+        { item: 'moot', standing: 'stated' },
+      ],
+    }))
+
+    expect(answer).toEqual({
+      speak: 'Yes.',
+      display: 'The guitar can travel.',
+      askedItems: [
+        { item: 'the guitar', standing: 'stated', statement: 'It counts as one of two pieces.' },
+        { item: 'the fare', standing: 'unverified', statement: 'The fare page did not load.' },
+        { item: 'moot', standing: 'stated', statement: '' },
+      ],
+      shape: 'on_contract',
+    })
+  })
+
+  it.each([
+    null,
+    'the guitar',
+    [{ item: 'the guitar', standing: 'verified', statement: 'x' }],
+    [{ standing: 'stated', statement: 'x' }],
+    [{ item: '', standing: 'stated' }],
+    [{ item: 'the guitar', standing: 'stated', statement: 42 }],
+    ['the guitar'],
+  ])('drops a malformed asked_items %j while keeping the Answer (#250)', (askedItems) => {
+    const answer = parseAssistantAnswer(JSON.stringify({ speak: 'Yes.', display: 'The guitar can travel.', asked_items: askedItems }))
+
+    expect(answer).toEqual({ speak: 'Yes.', display: 'The guitar can travel.', askedItemsIssue: 'malformed', shape: 'on_contract' })
+  })
+
   it('accepts the one Candidate an Answer presents for inspection (#210)', () => {
     const answer = parseAssistantAnswer(JSON.stringify({
       speak: 'Here it is.',

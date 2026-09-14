@@ -7,6 +7,7 @@ import type { InspectionSubject } from '../session/inspectionReference'
 import type { UserCorrectionSubject } from '../session/userCorrections'
 import type { VerificationSubject } from '../session/verificationAttempts'
 import type { AnswerShape } from '../agent/answerContract'
+import type { AskedItemStanding } from '../agent/askedItems'
 import type { SubagentReportFinding } from '../agent/subagentReport'
 import type { MishearProposal } from '../voice/learnedTerms'
 
@@ -296,6 +297,14 @@ export type AssistantTurn =
        */
       inspectionCandidateId?: MemoryEntryId
       inspectionIssue?: 'malformed'
+      /**
+       * The Asked Item standings (#250, ADR 0052): one entry per Asked
+       * Item the Run Plan declared, `stated` with the statement or
+       * `unverified` with why. Validated at the contract; malformed drops
+       * the list, which the pipeline then reads as missing.
+       */
+      askedItems?: readonly AskedItemStanding[]
+      askedItemsIssue?: 'malformed'
       /**
        * Which contract the reply matched (#198, ADR 0034): the parser's
        * own marker, so neither loop judges prose itself. Optional here,

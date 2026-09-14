@@ -114,7 +114,7 @@ async function runSession(
       if (options.thinks && request.onDelta) {
         for (const chunk of options.thinks(round)) request.onDelta({ kind: 'reasoning', text: chunk })
       }
-      const turn = turns[served++] ?? { kind: 'answer', speak: 'Done.', display: 'Done.' }
+      const turn = turns[served++] ?? { kind: 'answer', askedItems: [{ item: 'the answer', standing: 'stated', statement: 'stated' }], speak: 'Done.', display: 'Done.' }
       return Promise.resolve({ ...turn, usage: { promptTokens: 100 * round, completionTokens: 10 } })
     },
   }
@@ -165,6 +165,7 @@ async function runDelegatingSession(
           : []),
         {
           kind: 'answer',
+          askedItems: [{ item: 'the answer', standing: 'stated', statement: 'stated' }],
           speak: 'Checked.',
           display: 'Checked.',
           streamChunks: options.workerThinks.map((text) => ({ kind: 'reasoning', text })),
@@ -193,17 +194,17 @@ async function runDelegatingSession(
         {
           id: 'p1',
           name: 'report_run_plan',
-          args: { objective: 'Find the router price', headline: 'Checking the router', effort_tier: 'investigation' },
+          args: { objective: 'Find the router price', headline: 'Checking the router', effort_tier: 'investigation', asked_items: ['the answer'] },
         },
         { id: 'c1', name: 'spawn_agent', args: { kind: 'browse', task: 'check the price page' } },
       ],
     },
     { kind: 'tool_calls', calls: [{ id: 'c2', name: 'agent_results', args: { wait: true } }] },
-    { kind: 'answer', speak: 'It is $39.', display: 'It is $39.' },
+    { kind: 'answer', askedItems: [{ item: 'the answer', standing: 'stated', statement: 'stated' }], speak: 'It is $39.', display: 'It is $39.' },
   ]
   let served = 0
   const llm: LlmClient = {
-    complete: () => Promise.resolve(orchestratorTurns[served++] ?? { kind: 'answer', speak: 'Done.', display: 'Done.' }),
+    complete: () => Promise.resolve(orchestratorTurns[served++] ?? { kind: 'answer', askedItems: [{ item: 'the answer', standing: 'stated', statement: 'stated' }], speak: 'Done.', display: 'Done.' }),
   }
   const pipeline = createCommandPipeline({
     llm,
@@ -262,7 +263,7 @@ describe('the Run Trace file', () => {
           },
         ],
       },
-      { kind: 'answer', speak: 'It is $39.', display: 'It is $39.' },
+      { kind: 'answer', askedItems: [{ item: 'the answer', standing: 'stated', statement: 'stated' }], speak: 'It is $39.', display: 'It is $39.' },
     ]))
 
     expect(records.map((record) => [record.tool, record.outcome, record.matched])).toEqual([
@@ -327,7 +328,7 @@ describe('the Run Trace file', () => {
           },
         ],
       },
-      { kind: 'answer', speak: 'It is $39.', display: 'It is $39.' },
+      { kind: 'answer', askedItems: [{ item: 'the answer', standing: 'stated', statement: 'stated' }], speak: 'It is $39.', display: 'It is $39.' },
     ]))
 
     expect(records.map((record) => [record.tool, record.outcome])).toEqual([
@@ -347,7 +348,7 @@ describe('the Run Trace file', () => {
       dir,
       [
         { kind: 'tool_calls', calls: [{ id: 'c1', name: 'read_page', args: {} }] },
-        { kind: 'answer', speak: 'It is $39.', display: 'It is $39.' },
+        { kind: 'answer', askedItems: [{ item: 'the answer', standing: 'stated', statement: 'stated' }], speak: 'It is $39.', display: 'It is $39.' },
       ],
       // Several deltas per round, so the record proves the assembly.
       { thinks: (round) => [`round ${round}: `, 'what does', ' it cost'] },
@@ -374,7 +375,7 @@ describe('the Run Trace file', () => {
 
   it('truncates a round that thought past the cap, and keeps the true length', async () => {
     const long = 'z'.repeat(TRACE_REASONING_MAX_CHARS + 1_000)
-    const all = await runSession(dir, [{ kind: 'answer', speak: 'Done.', display: 'Done.' }], {
+    const all = await runSession(dir, [{ kind: 'answer', askedItems: [{ item: 'the answer', standing: 'stated', statement: 'stated' }], speak: 'Done.', display: 'Done.' }], {
       thinks: () => [long],
     })
 
@@ -384,7 +385,7 @@ describe('the Run Trace file', () => {
   })
 
   it('closes a retried round once per attempt, so the abandoned thinking stands alone', async () => {
-    const all = await runSession(dir, [{ kind: 'answer', speak: 'Done.', display: 'Done.' }], {
+    const all = await runSession(dir, [{ kind: 'answer', askedItems: [{ item: 'the answer', standing: 'stated', statement: 'stated' }], speak: 'Done.', display: 'Done.' }], {
       retriesFirstRound: true,
       thinks: () => ['second time lucky'],
     })
@@ -475,7 +476,7 @@ describe('the Run Trace file', () => {
   it('writes one llm_round line per attempt, numbered as the reasoning record for the same attempt', async () => {
     const all = await runSession(dir, [
       { kind: 'tool_calls', calls: [{ id: 'c1', name: 'read_page', args: {} }] },
-      { kind: 'answer', speak: 'It is $39.', display: 'It is $39.' },
+      { kind: 'answer', askedItems: [{ item: 'the answer', standing: 'stated', statement: 'stated' }], speak: 'It is $39.', display: 'It is $39.' },
     ], { retriesFirstRound: true, thinks: (round) => [`round ${round}`] })
 
     const rounds = llmRounds(all)
@@ -570,7 +571,7 @@ describe('the Run Trace file', () => {
             },
           ],
         },
-        { kind: 'answer', speak: 'It is $39.', display: 'It is $39.' },
+        { kind: 'answer', askedItems: [{ item: 'the answer', standing: 'stated', statement: 'stated' }], speak: 'It is $39.', display: 'It is $39.' },
       ],
       { traced: false, thinks: () => ['the user asked about their own shopping'] },
     )

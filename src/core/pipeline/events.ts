@@ -6,6 +6,7 @@ import type { MemoryEntryId, MemoryReference } from '../session/workingMemory'
 import type { RunId, SessionGeneration, SessionId, SubmissionId } from '../session/sessionIdentity'
 import type { FinalizationCause, RunResolution } from '../session/runJournal'
 import type { EffortTier } from './runPlan'
+import type { AskedItemStanding } from '../agent/askedItems'
 
 /**
  * Ownership metadata on Session-scoped events (#86–#100): every published
@@ -167,6 +168,14 @@ export type PipelineEvent = SessionEventIdentity & (
       sources?: readonly MemoryReference[]
       deterministicAnswer?: true
       finalAnswer?: true
+      /**
+       * The Asked Item standings the Card renders (#250, ADR 0052): one
+       * per item the Run Plan declared, in declared order — the Answer's
+       * own where it gave one, `unverified` where it did not, and every
+       * one `unverified` on a deterministic Answer. Present exactly when
+       * the Run declared any.
+       */
+      askedItems?: readonly AskedItemStanding[]
     }
   | { type: 'error'; turnId?: string; message: string; at: number }
   /**
@@ -240,6 +249,12 @@ export type PipelineEvent = SessionEventIdentity & (
        */
       source: 'model' | 'fallback' | 'deadline'
       escalationReason?: string
+      /**
+       * The Asked Items the plan carries (#250, ADR 0052): on a model plan
+       * the declared list, empty for a Direct Action; absent on the
+       * fallback and deadline plans, which declare nothing.
+       */
+      askedItems?: readonly string[]
       at: number
     }
   /** A subagent's state changed — the dashboard keeps one card per agent id. */

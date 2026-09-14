@@ -2,6 +2,8 @@ import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { afterEach, describe, expect, it } from 'vitest'
 import { answerRetryMessage, parseAssistantAnswer } from '../agent/answerContract'
+import { ASKED_ITEM_UNESTABLISHED, ASKED_ITEM_UNSTATED, askedItemsRetryMessage, type AskedItemStanding } from '../agent/askedItems'
+import { askedItemsOverride } from '../session/runJournal'
 import { setFaultSink, type FaultReport } from '../trace/fault'
 import type { RunTraceEvent } from '../trace/runTrace'
 import { VisionDeadlineError } from '../ports/vision'
@@ -11,7 +13,7 @@ import { steerPipeline } from './steering'
 import { createSpeechCoordinator } from '../tts/speechCoordinator'
 import { createAskUserTool } from './askUserTools'
 import { createReportRunPlanTool } from './runPlanTools'
-import { RUN_PLAN_NUDGE, RUN_PLAN_STANDALONE_ROUND, RUN_PLAN_TIER_BELOW_LOOKUP } from './runPlan'
+import { askedItemsAcknowledgement, RUN_PLAN_NO_ASKED_ITEMS, RUN_PLAN_NUDGE, RUN_PLAN_STANDALONE_ROUND, RUN_PLAN_TIER_BELOW_LOOKUP } from './runPlan'
 import { DEFAULT_EFFORT_TIER, type EffortTier } from './runPlan'
 import { FailingTts, FakeClock, fakePerfHarness, fakeSubagentManager, memoryEntry, RecordingTts, ScriptedLlm, subagentRecord, withoutTurnId, type ScriptedTurn } from '../testing/doubles'
 import type { PipelineEvent } from './events'
@@ -533,7 +535,7 @@ describe('command pipeline', () => {
     }
     const llm = new ScriptedLlm([
       { kind: 'tool_calls', calls: [{ id: 'c1', name: 'boom', args: {} }] },
-      { kind: 'answer', speak: 'Recovered.', display: 'Detail.' },
+      { kind: 'answer', askedItems: [{ item: 'the answer', standing: 'stated', statement: 'stated' }], speak: 'Recovered.', display: 'Detail.' },
     ])
     const pipeline = createCommandPipeline({ llm, tts: new RecordingTts(), clock: new FakeClock(), tools: [boom] })
 
@@ -568,6 +570,7 @@ describe('command pipeline', () => {
         objective,
         headline,
         effort_tier: effortTier,
+        ...(effortTier !== 'direct_action' ? { asked_items: ['the answer'] } : {}),
         ...(escalationReason ? { escalation_reason: escalationReason } : {}),
       },
     })
@@ -584,7 +587,7 @@ describe('command pipeline', () => {
             { id: 'c1', name: 'noop', args: {} },
           ],
         },
-        { kind: 'answer', speak: 'Found one.', display: 'Found a blue mug.' },
+        { kind: 'answer', askedItems: [{ item: 'the answer', standing: 'stated', statement: 'stated' }], speak: 'Found one.', display: 'Found a blue mug.' },
       ])
       const pipeline = createCommandPipeline({ llm, tts: new RecordingTts(), clock: new FakeClock(), tools: [createReportRunPlanTool(), noop] })
 
@@ -596,16 +599,52 @@ describe('command pipeline', () => {
         headline: 'Find a blue mug under $20',
         effortTier: 'lookup',
         source: 'model',
+        askedItems: ['the answer'],
         at: 0,
       })
       expect(events.find((event) => event.type === 'tool_result' && event.callId === 'p1b')).toMatchObject({
         ok: true,
-        result: 'Run Plan noted.',
+        result: `Run Plan noted. ${askedItemsAcknowledgement(['the answer'])}`,
       })
       const headlineAt = events.findIndex((event) => event.type === 'run_headline' && event.text === 'Find a blue mug under $20')
       const workAt = events.findIndex((event) => event.type === 'tool_call' && event.name === 'noop')
       expect(headlineAt).toBeGreaterThanOrEqual(0)
       expect(workAt).toBeGreaterThan(headlineAt)
+    })
+
+    it('keeps the first declaration of Asked Items for the objective and refuses a later plan that changes them (#250/AC1)', async () => {
+      const declare = (id: string, headline: string, askedItems: string[]): ToolCall => ({
+        id,
+        name: 'report_run_plan',
+        args: { objective: 'Find a blue mug', headline, effort_tier: 'lookup', asked_items: askedItems },
+      })
+      const llm = new ScriptedLlm([
+        { kind: 'tool_calls', calls: [declare('p1', 'Find a blue mug', ['the mug', 'its price']), { id: 'c1', name: 'noop', args: {} }] },
+        { kind: 'tool_calls', calls: [declare('p2', 'Compare blue mugs', ['the mug']), { id: 'c2', name: 'noop', args: {} }] },
+        { kind: 'tool_calls', calls: [declare('p3', 'Compare blue mugs', []), { id: 'c3', name: 'noop', args: {} }] },
+        { kind: 'answer', askedItems: [{ item: 'the answer', standing: 'stated', statement: 'stated' }], speak: 'Found one.', display: 'Found a blue mug.' },
+      ])
+      const pipeline = createCommandPipeline({ llm, tts: new RecordingTts(), clock: new FakeClock(), tools: [createReportRunPlanTool(), noop] })
+
+      const events = await collect(pipeline, 'find a blue mug')
+
+      // The trimmed list is refused with the standing one named; the
+      // sibling work of that round still ran, and the headline did not move.
+      expect(events.find((event) => event.type === 'tool_result' && event.callId === 'p2')).toMatchObject({
+        ok: false,
+        error: expect.stringContaining('"the mug"; "its price"'),
+      })
+      // A later report that omits the list keeps it, and restates it.
+      expect(events.find((event) => event.type === 'tool_result' && event.callId === 'p3')).toMatchObject({
+        ok: true,
+        result: `Run Plan noted. ${askedItemsAcknowledgement(['the mug', 'its price'])}`,
+      })
+      expect(events.filter((event) => event.type === 'run_plan').map((event) => (event as { askedItems: readonly string[] }).askedItems)).toEqual([
+        ['the mug', 'its price'],
+        ['the mug', 'its price'],
+      ])
+      expect(events.filter((event) => event.type === 'run_headline').map((event) => (event as { text: string }).text)).toEqual(['Find a blue mug', 'Compare blue mugs'])
+      expect(events.filter((event) => event.type === 'tool_result' && event.name === 'noop' && event.ok)).toHaveLength(3)
     })
 
     it('updates the headline at the same tier and gates escalation — one level, with a reason', async () => {
@@ -614,7 +653,7 @@ describe('command pipeline', () => {
         { kind: 'tool_calls', calls: [plan('p2', 'Find a blue mug', 'Compare every blue mug', 'investigation'), { id: 'c2', name: 'noop', args: {} }] },
         { kind: 'tool_calls', calls: [plan('p3', 'Find a blue mug', 'Find a blue mug under $10', 'lookup'), { id: 'c3', name: 'noop', args: {} }] },
         { kind: 'tool_calls', calls: [plan('p4', 'Find a blue mug', 'Compare blue mug prices', 'lookup', 'The first store had none in stock.'), { id: 'c4', name: 'noop', args: {} }] },
-        { kind: 'answer', speak: 'Found one.', display: 'Found a cheaper blue mug.' },
+        { kind: 'answer', askedItems: [{ item: 'the answer', standing: 'stated', statement: 'stated' }], speak: 'Found one.', display: 'Found a cheaper blue mug.' },
       ])
       const pipeline = createCommandPipeline({ llm, tts: new RecordingTts(), clock: new FakeClock(), tools: [createReportRunPlanTool(), noop] })
 
@@ -646,7 +685,7 @@ describe('command pipeline', () => {
       const llm = new ScriptedLlm([
         { kind: 'tool_calls', calls: [{ id: 'c1', name: 'noop', args: {} }] },
         { kind: 'tool_calls', calls: [{ id: 'c2', name: 'noop', args: {} }] },
-        { kind: 'answer', speak: 'Done.', display: 'Done.' },
+        { kind: 'answer', askedItems: [{ item: 'the answer', standing: 'stated', statement: 'stated' }], speak: 'Done.', display: 'Done.' },
       ])
       const pipeline = createCommandPipeline({ llm, tts: new RecordingTts(), clock: new FakeClock(), tools: [createReportRunPlanTool(), noop] })
 
@@ -680,7 +719,7 @@ describe('command pipeline', () => {
           ],
         },
         { kind: 'tool_calls', calls: [plan('p2', 'Do the thing', 'Do the thing', 'direct_action'), { id: 'c2', name: 'noop', args: {} }] },
-        { kind: 'answer', speak: 'Done.', display: 'Done.' },
+        { kind: 'answer', askedItems: [{ item: 'the answer', standing: 'stated', statement: 'stated' }], speak: 'Done.', display: 'Done.' },
       ])
       const pipeline = createCommandPipeline({ llm, tts: new RecordingTts(), clock: new FakeClock(), tools: [createReportRunPlanTool(), noop] })
 
@@ -712,7 +751,7 @@ describe('command pipeline', () => {
         // standalone report_run_plan leak.
         { kind: 'tool_calls', calls: [plan('p1', 'Open the second page', 'Opening the second page', 'direct_action')] },
         { kind: 'tool_calls', calls: [{ id: 'c1', name: 'noop', args: {} }] },
-        { kind: 'answer', speak: 'Opened.', display: 'Opened the page.' },
+        { kind: 'answer', askedItems: [{ item: 'the answer', standing: 'stated', statement: 'stated' }], speak: 'Opened.', display: 'Opened the page.' },
       ])
       const pipeline = createCommandPipeline({ llm, tts: new RecordingTts(), clock: new FakeClock(), tools: [createReportRunPlanTool(), noop] })
 
@@ -727,6 +766,7 @@ describe('command pipeline', () => {
         headline: 'Opening the second page',
         effortTier: 'direct_action',
         source: 'model',
+        askedItems: [],
         at: 0,
       })
       expect(events.find((event) => event.type === 'tool_result' && event.callId === 'p1')).toMatchObject({
@@ -741,7 +781,7 @@ describe('command pipeline', () => {
         // way — its corrective error gains the standalone-round teaching.
         { kind: 'tool_calls', calls: [{ id: 'p1', name: 'report_run_plan', args: { objective: '', headline: 42, effort_tier: 'huge' } }] },
         { kind: 'tool_calls', calls: [{ id: 'c1', name: 'noop', args: {} }] },
-        { kind: 'answer', speak: 'Done.', display: 'Done.' },
+        { kind: 'answer', askedItems: [{ item: 'the answer', standing: 'stated', statement: 'stated' }], speak: 'Done.', display: 'Done.' },
       ])
       const pipeline = createCommandPipeline({ llm, tts: new RecordingTts(), clock: new FakeClock(), tools: [createReportRunPlanTool(), noop] })
 
@@ -758,7 +798,7 @@ describe('command pipeline', () => {
     it('leaves a plan riding real work acknowledged cleanly', async () => {
       const llm = new ScriptedLlm([
         { kind: 'tool_calls', calls: [plan('p1', 'Open the second page', 'Opening the second page', 'direct_action'), { id: 'c1', name: 'noop', args: {} }] },
-        { kind: 'answer', speak: 'Opened.', display: 'Opened the page.' },
+        { kind: 'answer', askedItems: [{ item: 'the answer', standing: 'stated', statement: 'stated' }], speak: 'Opened.', display: 'Opened the page.' },
       ])
       const pipeline = createCommandPipeline({ llm, tts: new RecordingTts(), clock: new FakeClock(), tools: [createReportRunPlanTool(), noop] })
 
@@ -786,7 +826,7 @@ describe('command pipeline', () => {
             { id: 'c2', name: 'noop', args: {} },
           ],
         },
-        { kind: 'answer', speak: 'Opened the guide.', display: 'Opened the complete guide.' },
+        { kind: 'answer', askedItems: [{ item: 'the answer', standing: 'stated', statement: 'stated' }], speak: 'Opened the guide.', display: 'Opened the complete guide.' },
       ])
       const pipeline = createCommandPipeline({ llm, tts: new RecordingTts(), clock: new FakeClock(), tools: [createReportRunPlanTool(), noop] })
 
@@ -801,7 +841,7 @@ describe('command pipeline', () => {
       // The escalated report is clean, and the run now records Lookup.
       expect(events.find((event) => event.type === 'tool_result' && event.callId === 'p2')).toMatchObject({
         ok: true,
-        result: 'Run Plan noted.',
+        result: `Run Plan noted. ${askedItemsAcknowledgement(['the answer'])}`,
       })
       expect(events.filter((event) => event.type === 'run_plan').map((event) => (event as { effortTier: string }).effortTier)).toEqual([
         'direct_action',
@@ -813,7 +853,7 @@ describe('command pipeline', () => {
       const llm = new ScriptedLlm([
         { kind: 'tool_calls', calls: [plan('p1', 'Search the fixture web for widgets', 'Finding widgets', 'direct_action')] },
         { kind: 'tool_calls', calls: [{ id: 'c1', name: 'noop', args: {} }] },
-        { kind: 'answer', speak: 'Done.', display: 'Done.' },
+        { kind: 'answer', askedItems: [{ item: 'the answer', standing: 'stated', statement: 'stated' }], speak: 'Done.', display: 'Done.' },
       ])
       const pipeline = createCommandPipeline({ llm, tts: new RecordingTts(), clock: new FakeClock(), tools: [createReportRunPlanTool(), noop] })
 
@@ -839,12 +879,17 @@ describe('command pipeline', () => {
           }
           if (requests.length === 2) return secondTurn.promise
           if (requests.length === 3) {
+            // The corrected objective re-declares its own Asked Items (#250):
+            // a list a mid-run report would be refused for changing.
             return {
               kind: 'tool_calls',
-              calls: [plan('p2', 'Find a red mug', 'Find a red mug', 'direct_action'), { id: 'c2', name: 'noop', args: {} }],
+              calls: [
+                { id: 'p2', name: 'report_run_plan', args: { objective: 'Find a red mug', headline: 'Find a red mug', effort_tier: 'lookup', asked_items: ['the red mug'] } },
+                { id: 'c2', name: 'noop', args: {} },
+              ],
             }
           }
-          return { kind: 'answer', speak: 'Found a red one.', display: 'Found a red mug.' }
+          return { kind: 'answer', speak: 'Found a red one.', display: 'Found a red mug.', askedItems: [{ item: 'the red mug', standing: 'stated', statement: 'Found one.' }] }
         },
       }
       const pipeline = createCommandPipeline({ llm, tts: new RecordingTts(), clock: new FakeClock(), tools: [createReportRunPlanTool(), noop] })
@@ -864,11 +909,11 @@ describe('command pipeline', () => {
       const events = await run
 
       expect(requests[2]?.steering).toBe('Find a red mug instead.')
-      // The corrected objective's report is a fresh initial plan — the
-      // smaller tier is accepted where a mid-run downgrade would be refused.
-      expect(events.filter((event) => event.type === 'run_plan').map((event) => (event as { effortTier: string }).effortTier)).toEqual([
-        'lookup',
-        'direct_action',
+      // The corrected objective's report is a fresh initial plan — its
+      // Asked Items are its own, where a mid-run change would be refused.
+      expect(events.filter((event) => event.type === 'run_plan').map((event) => (event as { askedItems: readonly string[] }).askedItems)).toEqual([
+        ['the answer'],
+        ['the red mug'],
       ])
       expect(events.filter((event) => event.type === 'run_headline').map((event) => (event as { text: string }).text)).toEqual([
         'Find a mug',
@@ -1286,6 +1331,7 @@ describe('command pipeline', () => {
             objective: 'Keep going forever',
             headline: 'Keeping going',
             effort_tier: tier,
+            asked_items: ['the answer'],
             ...(escalationReason ? { escalation_reason: escalationReason } : {}),
           },
         },
@@ -1343,6 +1389,7 @@ describe('command pipeline', () => {
       text: 'I have not made progress I can show on \u201Ckeep going\u201D yet.',
       deterministicAnswer: true,
       finalAnswer: true,
+      askedItems: [{ item: 'the answer', standing: 'unverified', statement: ASKED_ITEM_UNESTABLISHED }],
       at: 0,
     })
     expect(events.find((e) => e.type === 'speak')).toMatchObject({
@@ -1582,7 +1629,7 @@ describe('command pipeline', () => {
             return {
               kind: 'tool_calls',
               calls: [
-                { id: 'p1', name: 'report_run_plan', args: { objective: 'Compare vendors', headline: 'Comparing vendors', effort_tier: 'investigation' } },
+                { id: 'p1', name: 'report_run_plan', args: { objective: 'Compare vendors', headline: 'Comparing vendors', effort_tier: 'investigation', asked_items: ['the answer'] } },
                 { id: 'spawn', name: 'spawn_agent', args: { kind: 'browse', task: 'compare vendors' } },
               ],
             }
@@ -1591,10 +1638,10 @@ describe('command pipeline', () => {
           if (requests.length === 3) {
             return {
               kind: 'tool_calls',
-              calls: [{ id: 'p2', name: 'report_run_plan', args: { objective: 'Compare vendors', headline: 'Wrapping up', effort_tier: 'investigation' } }],
+              calls: [{ id: 'p2', name: 'report_run_plan', args: { objective: 'Compare vendors', headline: 'Wrapping up', effort_tier: 'investigation', asked_items: ['the answer'] } }],
             }
           }
-          return { kind: 'answer', speak: 'Vendor A.', display: 'Vendor A wins.', resolution: 'partial' }
+          return { kind: 'answer', askedItems: [{ item: 'the answer', standing: 'stated', statement: 'stated' }], speak: 'Vendor A.', display: 'Vendor A wins.', resolution: 'partial' }
         },
       }
       const pipeline = createCommandPipeline({
@@ -2592,7 +2639,7 @@ describe('command pipeline', () => {
         { kind: 'tool_calls', calls: [directPlan, { id: 'w0', name: 'work', args: {} }] },
         ...Array.from({ length: 5 }, (_, i) => ({ kind: 'tool_calls' as const, calls: [{ id: `w${i + 1}`, name: 'work', args: {} }] })),
         { kind: 'tool_calls', calls: [{ id: 'w6', name: 'work', args: {} }] },
-        { kind: 'answer', speak: 'Partial.', display: 'Partial detail.', resolution: 'partial' },
+        { kind: 'answer', askedItems: [{ item: 'the answer', standing: 'stated', statement: 'stated' }], speak: 'Partial.', display: 'Partial detail.', resolution: 'partial' },
       ])
       const pipeline = createCommandPipeline({ llm, tts: new RecordingTts(), clock: new FakeClock(), tools: [createReportRunPlanTool(), work] })
 
@@ -2622,7 +2669,7 @@ describe('command pipeline', () => {
     const lookupPlan: ToolCall = {
       id: 'p0',
       name: 'report_run_plan',
-      args: { objective: 'Find the tier list', headline: 'Find the tier list', effort_tier: 'lookup' },
+      args: { objective: 'Find the tier list', headline: 'Find the tier list', effort_tier: 'lookup', asked_items: ['the answer'] },
     }
 
     /** A route this Session already spent, in force for the whole Run (#212, ADR 0041). */
@@ -2710,7 +2757,7 @@ describe('command pipeline', () => {
             ],
           },
           { kind: 'tool_calls', calls: [{ id: 'w3', name: 'work', args: {} }] },
-          { kind: 'answer', speak: 'Here it is.', display: 'The tier list.', resolution: 'completed' },
+          { kind: 'answer', askedItems: [{ item: 'the answer', standing: 'stated', statement: 'stated' }], speak: 'Here it is.', display: 'The tier list.', resolution: 'completed' },
         ],
         // w1 crosses the two-minute Lookup deadline while it executes.
         { w0: 110_000, w1: 15_000 },
@@ -2776,7 +2823,7 @@ describe('command pipeline', () => {
         llm: new ScriptedLlm([
           { kind: 'tool_calls', calls: [lookupPlan, { id: 'w0', name: 'work', args: {} }] },
           { kind: 'tool_calls', calls: [{ id: 'w1', name: 'work', args: {} }] },
-          { kind: 'answer', speak: 'Here it is.', display: 'The tier list.', resolution: 'completed' },
+          { kind: 'answer', askedItems: [{ item: 'the answer', standing: 'stated', statement: 'stated' }], speak: 'Here it is.', display: 'The tier list.', resolution: 'completed' },
         ]),
         tts: createSpeechCoordinator({
           synth: { synthesize: async () => new Uint8Array([1]) },
@@ -2804,7 +2851,7 @@ describe('command pipeline', () => {
           { kind: 'tool_calls', calls: [lookupPlan, { id: 'w0', name: 'work', args: {} }] },
           { kind: 'tool_calls', calls: [{ id: 'w1', name: 'work', args: {} }] },
           { kind: 'tool_calls', calls: [{ id: 'w2', name: 'work', args: {} }] },
-          { kind: 'answer', speak: 'Partial.', display: 'What I have.', resolution: 'partial' },
+          { kind: 'answer', askedItems: [{ item: 'the answer', standing: 'stated', statement: 'stated' }], speak: 'Partial.', display: 'What I have.', resolution: 'partial' },
         ],
         // The Lookup deadline, then the whole Investigation deadline.
         { w0: 110_000, w1: 15_000, w2: 300_000 },
@@ -2837,7 +2884,7 @@ describe('command pipeline', () => {
             ],
           },
           { kind: 'tool_calls', calls: [{ id: 'w2', name: 'work', args: {} }] },
-          { kind: 'answer', speak: 'Here it is.', display: 'The tier list.', resolution: 'completed' },
+          { kind: 'answer', askedItems: [{ item: 'the answer', standing: 'stated', statement: 'stated' }], speak: 'Here it is.', display: 'The tier list.', resolution: 'completed' },
         ],
         // w2 then spends longer than a re-armed Lookup deadline would have
         // allowed, so a Run put back to Lookup could not have answered.
@@ -2875,7 +2922,7 @@ describe('command pipeline', () => {
             ],
           },
           { kind: 'tool_calls', calls: [{ id: 'w2', name: 'work', args: {} }] },
-          { kind: 'answer', speak: 'Here it is.', display: 'The tier list.', resolution: 'completed' },
+          { kind: 'answer', askedItems: [{ item: 'the answer', standing: 'stated', statement: 'stated' }], speak: 'Here it is.', display: 'The tier list.', resolution: 'completed' },
         ],
         { w0: 110_000, w2: 150_000 },
         { 1: 15_000 },
@@ -2912,7 +2959,7 @@ describe('command pipeline', () => {
             { id: 'c2', name: 'click', args: { ref: 3 } },
           ],
         },
-        { kind: 'answer', speak: 'Nothing found.', display: 'Nothing.', resolution: 'partial' },
+        { kind: 'answer', askedItems: [{ item: 'the answer', standing: 'stated', statement: 'stated' }], speak: 'Nothing found.', display: 'Nothing.', resolution: 'partial' },
       ])
       const pipeline = createCommandPipeline({
         llm,
@@ -2946,6 +2993,7 @@ describe('command pipeline', () => {
         objective: 'Research the thing',
         headline,
         effort_tier: effortTier,
+        ...(effortTier !== 'direct_action' ? { asked_items: ['the answer'] } : {}),
         ...(escalationReason ? { escalation_reason: escalationReason } : {}),
       },
     })
@@ -2991,7 +3039,7 @@ describe('command pipeline', () => {
             // 110 s, it crosses the two-minute deadline before answering.
             return abortableRound(request)
           }
-          return Promise.resolve({ kind: 'answer', speak: 'Ran out of time.', display: 'Detail.', resolution: 'partial' })
+          return Promise.resolve({ kind: 'answer', askedItems: [{ item: 'the answer', standing: 'stated', statement: 'stated' }], speak: 'Ran out of time.', display: 'Detail.', resolution: 'partial' })
         },
       }
       const pipeline = createCommandPipeline({ llm, tts: new RecordingTts(), clock, tools: [createReportRunPlanTool(), timedWork] })
@@ -3012,7 +3060,13 @@ describe('command pipeline', () => {
       expect(requests[1]?.signal?.aborted).toBe(true)
       expect(requests).toHaveLength(3)
       expect(events.filter((e) => e.type === 'tool_result' && e.name === 'work')).toHaveLength(1)
-      expect(events).toContainEqual({ type: 'display', text: 'Detail.', finalAnswer: true, at: 120_000 })
+      expect(events).toContainEqual({
+        type: 'display',
+        text: 'Detail.',
+        askedItems: [{ item: 'the answer', standing: 'stated', statement: 'stated' }],
+        finalAnswer: true,
+        at: 120_000,
+      })
       // No provider, abort, or raw round-limit error ever surfaced.
       expect(events.filter((e) => e.type === 'error')).toEqual([])
       expect(events.at(-1)).toEqual({ type: 'done', outcome: 'done', resolution: 'partial', finalizationCause: 'deadline_reached', at: 120_000 })
@@ -3039,7 +3093,7 @@ describe('command pipeline', () => {
             { id: 'ask1', name: 'ask_user', args: { question: 'Which finish?' } },
           ],
         },
-        { kind: 'answer', speak: 'Ran out of time.', display: 'Detail.', resolution: 'partial' },
+        { kind: 'answer', askedItems: [{ item: 'the answer', standing: 'stated', statement: 'stated' }], speak: 'Ran out of time.', display: 'Detail.', resolution: 'partial' },
       ])
       const pipeline = createCommandPipeline({
         llm,
@@ -3089,7 +3143,7 @@ describe('command pipeline', () => {
             // 100 s more, only possible under a freshly armed deadline.
             return Promise.resolve(workRound(2, plan('p2', 'lookup', 'Search the catalog')))
           }
-          return Promise.resolve({ kind: 'answer', speak: 'Corrected and done.', display: 'Detail.' })
+          return Promise.resolve({ kind: 'answer', askedItems: [{ item: 'the answer', standing: 'stated', statement: 'stated' }], speak: 'Corrected and done.', display: 'Detail.' })
         },
       }
       const pipeline = createCommandPipeline({ llm, tts: new RecordingTts(), clock, tools: [createReportRunPlanTool(), timedWork] })
@@ -3125,7 +3179,7 @@ describe('command pipeline', () => {
         workRound(0),
         workRound(1, plan('p1', 'investigation')),
         workRound(2),
-        { kind: 'answer', speak: 'Done.', display: 'Detail.' },
+        { kind: 'answer', askedItems: [{ item: 'the answer', standing: 'stated', statement: 'stated' }], speak: 'Done.', display: 'Detail.' },
       ])
       const pipeline = createCommandPipeline({ llm, tts: new RecordingTts(), clock: new FakeClock(), tools: [createReportRunPlanTool(), work] })
 
@@ -3147,7 +3201,7 @@ describe('command pipeline', () => {
         workRound(0, plan('p0', 'investigation')),
         ...Array.from({ length: 23 }, (_, i) => workRound(i + 1)),
         { kind: 'tool_calls', calls: [{ id: 'w24', name: 'work', args: {} }] },
-        { kind: 'answer', speak: 'Done.', display: 'Detail.', resolution: 'partial' },
+        { kind: 'answer', askedItems: [{ item: 'the answer', standing: 'stated', statement: 'stated' }], speak: 'Done.', display: 'Detail.', resolution: 'partial' },
       ])
       const pipeline = createCommandPipeline({ llm, tts: new RecordingTts(), clock: new FakeClock(), tools: [createReportRunPlanTool(), work] })
 
@@ -3184,7 +3238,7 @@ describe('command pipeline', () => {
         workRound(5, plan('p5', 'lookup', 'Widen the search', 'The direct pages named no vendor.')),
         ...Array.from({ length: 11 }, (_, i) => workRound(i + 6)),
         { kind: 'tool_calls', calls: [{ id: 'w17', name: 'work', args: {} }] },
-        { kind: 'answer', speak: 'Done.', display: 'Detail.' },
+        { kind: 'answer', askedItems: [{ item: 'the answer', standing: 'stated', statement: 'stated' }], speak: 'Done.', display: 'Detail.' },
       ])
       const pipeline = createCommandPipeline({ llm, tts: new RecordingTts(), clock: new FakeClock(), tools: [createReportRunPlanTool(), work] })
 
@@ -3224,7 +3278,7 @@ describe('command pipeline', () => {
         workRound(1, plan('p1', 'investigation', 'Compare vendors', 'The pages disagree on the finish.')),
         workRound(2),
         { kind: 'tool_calls', calls: [{ id: 'w3', name: 'work', args: {} }] },
-        { kind: 'answer', speak: 'Ran out of time.', display: 'Detail.', resolution: 'partial' },
+        { kind: 'answer', askedItems: [{ item: 'the answer', standing: 'stated', statement: 'stated' }], speak: 'Ran out of time.', display: 'Detail.', resolution: 'partial' },
       ])
       const pipeline = createCommandPipeline({ llm, tts: new RecordingTts(), clock, tools: [createReportRunPlanTool(), timedWork] })
 
@@ -3253,7 +3307,7 @@ describe('command pipeline', () => {
       }
       const llm = new ScriptedLlm([
         workRound(0, plan('p0', 'lookup')),
-        { kind: 'answer', speak: 'Done.', display: 'Detail.' },
+        { kind: 'answer', askedItems: [{ item: 'the answer', standing: 'stated', statement: 'stated' }], speak: 'Done.', display: 'Detail.' },
       ])
       // Park the run's speech so the test controls when the confirmation
       // window actually begins, then let the generator park in the
@@ -3308,7 +3362,7 @@ describe('command pipeline', () => {
         workRound(16, plan('p16', 'investigation', 'Compare vendors', 'The catalog vendors disagree on the finish.')),
         ...Array.from({ length: 14 }, (_, i) => workRound(i + 17)),
         { kind: 'tool_calls', calls: [{ id: 'w31', name: 'work', args: {} }] },
-        { kind: 'answer', speak: 'Partial.', display: 'Partial detail.', resolution: 'partial' },
+        { kind: 'answer', askedItems: [{ item: 'the answer', standing: 'stated', statement: 'stated' }], speak: 'Partial.', display: 'Partial detail.', resolution: 'partial' },
       ])
       const pipeline = createCommandPipeline({ llm, tts: new RecordingTts(), clock: new FakeClock(), tools: [createReportRunPlanTool(), work] })
 
@@ -3335,7 +3389,7 @@ describe('command pipeline', () => {
     const investigationPlan = (id: string): ToolCall => ({
       id,
       name: 'report_run_plan',
-      args: { objective: 'Compare vendor finishes', headline: 'Comparing vendors', effort_tier: 'investigation' },
+      args: { objective: 'Compare vendor finishes', headline: 'Comparing vendors', effort_tier: 'investigation', asked_items: ['the answer'] },
     })
 
     it('refuses browse delegation while the run sits below the Investigation tier', async () => {
@@ -3352,11 +3406,11 @@ describe('command pipeline', () => {
         {
           kind: 'tool_calls',
           calls: [
-            { id: 'p1', name: 'report_run_plan', args: { objective: 'Find the fact', headline: 'Finding the fact', effort_tier: 'lookup' } },
+            { id: 'p1', name: 'report_run_plan', args: { objective: 'Find the fact', headline: 'Finding the fact', effort_tier: 'lookup', asked_items: ['the answer'] } },
             { id: 's1', name: 'spawn_agent', args: { kind: 'browse', task: 'check the vendor' } },
           ],
         },
-        { kind: 'answer', speak: 'Did it myself.', display: 'Did it myself.' },
+        { kind: 'answer', askedItems: [{ item: 'the answer', standing: 'stated', statement: 'stated' }], speak: 'Did it myself.', display: 'Did it myself.' },
       ])
       const pipeline = createCommandPipeline({
         llm,
@@ -3393,7 +3447,7 @@ describe('command pipeline', () => {
             { id: 's1', name: 'spawn_agent', args: { kind: 'browse', task: 'compare the vendor pages' } },
           ],
         },
-        { kind: 'answer', speak: 'Delegated.', display: 'Delegated.' },
+        { kind: 'answer', askedItems: [{ item: 'the answer', standing: 'stated', statement: 'stated' }], speak: 'Delegated.', display: 'Delegated.' },
       ])
       const pipeline = createCommandPipeline({
         llm,
@@ -3424,7 +3478,7 @@ describe('command pipeline', () => {
           ],
         })),
         { kind: 'tool_calls', calls: [{ id: 'w6', name: 'work', args: {} }] },
-        { kind: 'answer', speak: 'Partial.', display: 'Partial.', resolution: 'partial' },
+        { kind: 'answer', askedItems: [{ item: 'the answer', standing: 'stated', statement: 'stated' }], speak: 'Partial.', display: 'Partial.', resolution: 'partial' },
       ])
       let finalized = 0
       const pipeline = createCommandPipeline({
@@ -3455,7 +3509,7 @@ describe('command pipeline', () => {
             { id: 'w0', name: 'work', args: {} },
           ],
         },
-        { kind: 'answer', speak: 'Done.', display: 'Done.' },
+        { kind: 'answer', askedItems: [{ item: 'the answer', standing: 'stated', statement: 'stated' }], speak: 'Done.', display: 'Done.' },
       ])
       let finalized = 0
       const pipeline = createCommandPipeline({
@@ -3484,7 +3538,7 @@ describe('command pipeline', () => {
     ): ToolCall => ({
       id,
       name: 'report_run_plan',
-      args: { objective, headline, effort_tier: effortTier },
+      args: { objective, headline, effort_tier: effortTier, ...(effortTier !== 'direct_action' ? { asked_items: ['the answer'] } : {}) },
     })
 
     const work: Tool = {
@@ -3535,7 +3589,7 @@ describe('command pipeline', () => {
           if (requests.length === 8) {
             return workRound(8, plan('p8', 'Find a red mug', 'Find a red mug', 'lookup'))
           }
-          return { kind: 'answer', speak: 'Found a red one.', display: 'Found a red mug.' }
+          return { kind: 'answer', askedItems: [{ item: 'the answer', standing: 'stated', statement: 'stated' }], speak: 'Found a red one.', display: 'Found a red mug.' }
         },
       }
       let executions = 0
@@ -3584,7 +3638,7 @@ describe('command pipeline', () => {
         workRound(1, plan('p1', 'Find a red mug', 'Find a red mug', 'lookup')),
         workRound(2),
         { kind: 'tool_calls', calls: [{ id: 'w3', name: 'work', args: {} }] },
-        { kind: 'answer', speak: 'Found a red one.', display: 'Found a red mug.' },
+        { kind: 'answer', askedItems: [{ item: 'the answer', standing: 'stated', statement: 'stated' }], speak: 'Found a red one.', display: 'Found a red mug.' },
       ])
       const pipeline = createCommandPipeline({ llm, tts: new RecordingTts(), clock, tools: [createReportRunPlanTool(), timedWork] })
 
@@ -3605,7 +3659,7 @@ describe('command pipeline', () => {
       const llm = new ScriptedLlm([
         { kind: 'tool_calls', calls: [{ id: 'w0', name: 'work', args: {} }] },
         { kind: 'tool_calls', calls: [{ id: 'w1', name: 'work', args: {} }] },
-        { kind: 'answer', speak: 'Done.', display: 'Done.' },
+        { kind: 'answer', askedItems: [{ item: 'the answer', standing: 'stated', statement: 'stated' }], speak: 'Done.', display: 'Done.' },
       ])
       const pipeline = createCommandPipeline({ llm, tts: new RecordingTts(), clock: new FakeClock(), tools: [createReportRunPlanTool(), work] })
 
@@ -3637,7 +3691,7 @@ describe('command pipeline', () => {
         workRound(0, plan('p0', 'Find a mug', 'Find a mug', 'lookup')),
         workRound(1, plan('p1', 'Find a red mug', 'Find a red mug', 'lookup')),
         workRound(2),
-        { kind: 'answer', speak: 'Found a red one.', display: 'Found a red mug.' },
+        { kind: 'answer', askedItems: [{ item: 'the answer', standing: 'stated', statement: 'stated' }], speak: 'Found a red one.', display: 'Found a red mug.' },
       ])
       const pipeline = createCommandPipeline({ llm, tts: new RecordingTts(), clock: new FakeClock(), tools: [createReportRunPlanTool(), work] })
 
@@ -3664,7 +3718,7 @@ describe('command pipeline', () => {
         workRound(0, plan('p0', 'Find a mug', 'Find a mug', 'lookup')),
         workRound(1, plan('p1', 'Find a mug', 'Find a mug', 'lookup')),
         workRound(2),
-        { kind: 'answer', speak: 'Found one.', display: 'Found a mug.' },
+        { kind: 'answer', askedItems: [{ item: 'the answer', standing: 'stated', statement: 'stated' }], speak: 'Found one.', display: 'Found a mug.' },
       ])
       const pipeline = createCommandPipeline({ llm, tts: new RecordingTts(), clock: new FakeClock(), tools: [createReportRunPlanTool(), work] })
 
@@ -3682,7 +3736,7 @@ describe('command pipeline', () => {
         workRound(1, plan('p1', 'Find a red mug', 'Find a red mug', 'lookup')),
         workRound(2, plan('p2', 'Find a blue mug', 'Find a blue mug', 'lookup')),
         workRound(3),
-        { kind: 'answer', speak: 'Found a blue one.', display: 'Found a blue mug.' },
+        { kind: 'answer', askedItems: [{ item: 'the answer', standing: 'stated', statement: 'stated' }], speak: 'Found a blue one.', display: 'Found a blue mug.' },
       ])
       const pipeline = createCommandPipeline({ llm, tts: new RecordingTts(), clock: new FakeClock(), tools: [createReportRunPlanTool(), work] })
 
@@ -3704,7 +3758,7 @@ describe('command pipeline', () => {
       const llm = new ScriptedLlm([
         ...Array.from({ length: 31 }, (_, i) => workRound(i, i === 0 ? plan('p0', 'Research the thing', 'Research the thing', 'lookup') : undefined)),
         { kind: 'tool_calls', calls: [{ id: 'w31', name: 'work', args: {} }] },
-        { kind: 'answer', speak: 'Partial.', display: 'Partial detail.', resolution: 'partial' },
+        { kind: 'answer', askedItems: [{ item: 'the answer', standing: 'stated', statement: 'stated' }], speak: 'Partial.', display: 'Partial detail.', resolution: 'partial' },
       ])
       const pipeline = createCommandPipeline({ llm, tts: new RecordingTts(), clock: new FakeClock(), tools: [createReportRunPlanTool(), work] })
 
@@ -3796,7 +3850,7 @@ describe('command pipeline', () => {
       for (let attempt = 0; attempt < 1000 && requests.length < 14; attempt += 1) await flush()
       expect(requests.length).toBeGreaterThanOrEqual(14)
       pipeline.pause()
-      answerTurn.resolve({ kind: 'answer', speak: 'Stale.', display: 'Stale.' })
+      answerTurn.resolve({ kind: 'answer', askedItems: [{ item: 'the answer', standing: 'stated', statement: 'stated' }], speak: 'Stale.', display: 'Stale.' })
       await waitUntil(() => pipeline.getState() === 'paused')
       pipeline.resume('the red mug instead')
 
@@ -3820,7 +3874,7 @@ describe('command pipeline', () => {
       const observations: string[] = []
       const llm = new ScriptedLlm([
         { kind: 'tool_calls', calls: [{ id: 'c1', name: 'spin', args: {} }] },
-        { kind: 'answer', speak: 'The red one.', display: 'The red mug.', runNote: 'Chose the red mug.' },
+        { kind: 'answer', askedItems: [{ item: 'the answer', standing: 'stated', statement: 'stated' }], speak: 'The red one.', display: 'The red mug.', runNote: 'Chose the red mug.' },
       ])
       const spin: Tool = { name: 'spin', async execute() { return 'spun' } }
       const pipeline = createCommandPipeline({
@@ -3873,7 +3927,7 @@ describe('command pipeline', () => {
             parks.push(park)
             return park.promise
           }
-          return { kind: 'answer', speak: 'Done.', display: 'Done.' }
+          return { kind: 'answer', askedItems: [{ item: 'the answer', standing: 'stated', statement: 'stated' }], speak: 'Done.', display: 'Done.' }
         },
       }
       const pipeline = createCommandPipeline({
@@ -3889,7 +3943,7 @@ describe('command pipeline', () => {
       const first = collect(pipeline, 'find a mug')
       await waitUntil(() => parks.length === 1)
       pipeline.pause()
-      parks[0].resolve({ kind: 'answer', speak: 'Stale.', display: 'Stale.' })
+      parks[0].resolve({ kind: 'answer', askedItems: [{ item: 'the answer', standing: 'stated', statement: 'stated' }], speak: 'Stale.', display: 'Stale.' })
       await waitUntil(() => pipeline.getState() === 'paused')
       pipeline.resume('the red one instead')
       const firstEvents = await first
@@ -3897,7 +3951,7 @@ describe('command pipeline', () => {
       const second = collect(pipeline, 'find another mug')
       await waitUntil(() => parks.length === 2)
       pipeline.pause()
-      parks[1].resolve({ kind: 'answer', speak: 'Stale.', display: 'Stale.' })
+      parks[1].resolve({ kind: 'answer', askedItems: [{ item: 'the answer', standing: 'stated', statement: 'stated' }], speak: 'Stale.', display: 'Stale.' })
       await waitUntil(() => pipeline.getState() === 'paused')
       pipeline.resume()
       await second
@@ -3931,7 +3985,7 @@ describe('command pipeline', () => {
     const lookupPlan = (id: string, objective: string): ToolCall => ({
       id,
       name: 'report_run_plan',
-      args: { objective, headline: objective, effort_tier: 'lookup' },
+      args: { objective, headline: objective, effort_tier: 'lookup', asked_items: ['the answer'] },
     })
 
     // The one no-progress wiring test (#160): the rail's gate and its
@@ -3954,7 +4008,7 @@ describe('command pipeline', () => {
         { kind: 'tool_calls', calls: [lookupPlan('p1', 'Open the article'), { id: 'n1', name: 'navigate', args: { url: 'https://example.com/article' } }] },
         { kind: 'tool_calls', calls: [{ id: 'n2', name: 'navigate', args: { url: 'https://EXAMPLE.com/article/' } }] },
         { kind: 'tool_calls', calls: [{ id: 'n3', name: 'navigate', args: { url: 'https://example.com/article' } }] },
-        { kind: 'answer', speak: 'Done.', display: 'Done.' },
+        { kind: 'answer', askedItems: [{ item: 'the answer', standing: 'stated', statement: 'stated' }], speak: 'Done.', display: 'Done.' },
       ])
       const pipeline = createCommandPipeline({
         llm,
@@ -3996,7 +4050,7 @@ describe('command pipeline', () => {
         // trip's directive rides its result, and the sibling ask_user is
         // already inside Finalization: refused, no window ever opens.
         { kind: 'tool_calls', calls: [{ id: 's2', name: 'scroll', args: { direction: 'up' } }, { id: 'a1', name: 'ask_user', args: { question: 'Which part?' } }] },
-        { kind: 'answer', speak: 'I stopped.', display: 'No new material arrived.', resolution: 'unsuccessful' },
+        { kind: 'answer', askedItems: [{ item: 'the answer', standing: 'stated', statement: 'stated' }], speak: 'I stopped.', display: 'No new material arrived.', resolution: 'unsuccessful' },
       ])
       const pipeline = createCommandPipeline({
         llm,
@@ -4032,6 +4086,67 @@ describe('command pipeline', () => {
         finalizationCause: 'no_progress',
         at: 0,
       })
+    })
+
+    it('refuses a Lookup plan with no Asked Items as Bookkeeping, counted once per round as a no-Progress action (#250/AC2)', async () => {
+      const navigate: Tool = { name: 'navigate', acquisition: true, async execute() { return 'navigated' } }
+      const readPage: Tool = { name: 'read_page', acquisition: true, async execute() { return 'read' } }
+      const scroll: Tool = { name: 'scroll', acquisition: true, async execute() { return 'scrolled' } }
+      const bare = (id: string): ToolCall => ({ id, name: 'report_run_plan', args: { objective: 'Study the article', headline: 'Studying', effort_tier: 'lookup' } })
+      const llm = new ScriptedLlm([
+        { kind: 'tool_calls', calls: [bare('p1'), { id: 'n1', name: 'navigate', args: { url: 'https://example.com/article' } }] },
+        // Two refusals in one round are one no-progress action: the second
+        // was made blind to the first. Together with round 1's, the first
+        // Approach is exhausted.
+        { kind: 'tool_calls', calls: [bare('p2'), bare('p2b'), { id: 'r1', name: 'read_page', args: {} }] },
+        // One no-progress action under the second Approach: were the
+        // siblings counted separately, this round would already be the
+        // trip and its neutral sibling would carry the Finalize directive.
+        { kind: 'tool_calls', calls: [bare('p3'), { id: 'x1', name: 'noop', args: {} }] },
+        // The fourth exhausts the second Approach: the trip lands here, and
+        // the acquisition sibling is refused inside Finalization.
+        { kind: 'tool_calls', calls: [bare('p4'), { id: 's2', name: 'scroll', args: { direction: 'up' } }] },
+        { kind: 'answer', askedItems: [{ item: 'the answer', standing: 'stated', statement: 'stated' }], speak: 'I stopped.', display: 'No plan landed.', resolution: 'unsuccessful' },
+      ])
+      const noop: Tool = { name: 'noop', async execute() { return 'ok' } }
+      const pipeline = createCommandPipeline({
+        llm,
+        tts: new RecordingTts(),
+        clock: new FakeClock(),
+        tools: [createReportRunPlanTool(), navigate, readPage, scroll, noop],
+        settledPageState: () => BASE_STATE,
+      })
+
+      const events = await collect(pipeline, 'study the article')
+
+      for (const id of ['p1', 'p2', 'p2b', 'p3', 'p4']) {
+        expect(events.find((e) => e.type === 'tool_result' && e.callId === id)).toMatchObject({ ok: false, error: expect.stringContaining(RUN_PLAN_NO_ASKED_ITEMS) })
+      }
+      // No plan landed: the Run works under the fallback Lookup plan, which declares none.
+      expect(events.filter((e) => e.type === 'run_plan').map((e) => (e as { source: string }).source)).toEqual(['fallback'])
+      expect(events.find((e) => e.type === 'tool_result' && e.callId === 'x1')).toMatchObject({ ok: true, result: 'ok' })
+      expect(events.find((e) => e.type === 'tool_result' && e.callId === 's2')).toMatchObject({ ok: false })
+      expect(events.at(-1)).toMatchObject({ type: 'done', outcome: 'done', resolution: 'unsuccessful', finalizationCause: 'no_progress' })
+    })
+
+    it('accepts a Direct Action plan that declares no Asked Items (#250/AC2)', async () => {
+      const navigate: Tool = { name: 'navigate', acquisition: true, async execute() { return 'navigated' } }
+      const llm = new ScriptedLlm([
+        {
+          kind: 'tool_calls',
+          calls: [
+            { id: 'p1', name: 'report_run_plan', args: { objective: 'Open the article', headline: 'Opening', effort_tier: 'direct_action' } },
+            { id: 'n1', name: 'navigate', args: { url: 'https://example.com/article' } },
+          ],
+        },
+        { kind: 'answer', askedItems: [{ item: 'the answer', standing: 'stated', statement: 'stated' }], speak: 'Opened.', display: 'Opened the article.' },
+      ])
+      const pipeline = createCommandPipeline({ llm, tts: new RecordingTts(), clock: new FakeClock(), tools: [createReportRunPlanTool(), navigate], settledPageState: () => BASE_STATE })
+
+      const events = await collect(pipeline, 'open the article')
+
+      expect(events.find((e) => e.type === 'tool_result' && e.callId === 'p1')).toMatchObject({ ok: true, result: 'Run Plan noted.' })
+      expect(events).toContainEqual({ type: 'run_plan', objective: 'Open the article', headline: 'Opening', effortTier: 'direct_action', source: 'model', askedItems: [], at: 0 })
     })
 
     it('answers deterministically with the no_progress cause when the reserved Answer misbehaves (#126/AC4-5)', async () => {
@@ -4240,7 +4355,7 @@ describe('command pipeline', () => {
         { kind: 'tool_calls', calls: [{ id: 's1', name: 'set_setting', args: { setting: 'appearance', string_value: 'dark' } }] },
         { kind: 'tool_calls', calls: [{ id: 'n4', name: 'navigate', args: { url: 'https://example.com/article?reader=1' } }] },
         { kind: 'tool_calls', calls: [{ id: 'n5', name: 'navigate', args: { url: 'https://example.com/article?output=json' } }] },
-        { kind: 'answer', speak: 'Done.', display: 'Done.' },
+        { kind: 'answer', askedItems: [{ item: 'the answer', standing: 'stated', statement: 'stated' }], speak: 'Done.', display: 'Done.' },
       ])
       const pipeline = createCommandPipeline({
         llm,
@@ -4291,7 +4406,7 @@ describe('command pipeline', () => {
         }] },
         { kind: 'tool_calls', calls: [{ id: 'r2', name: 'read_page', args: {} }] },
         { kind: 'tool_calls', calls: [{ id: 'l2', name: 'look', args: {} }] },
-        { kind: 'answer', speak: 'Done.', display: 'Done.' },
+        { kind: 'answer', askedItems: [{ item: 'the answer', standing: 'stated', statement: 'stated' }], speak: 'Done.', display: 'Done.' },
       ])
       const pipeline = createCommandPipeline({
         llm,
@@ -4339,7 +4454,7 @@ describe('command pipeline', () => {
         { kind: 'tool_calls', calls: [{ id: 'l3', name: 'look', args: {} }] },
         { kind: 'tool_calls', calls: [{ id: 'r4', name: 'read_page', args: {} }] },
         { kind: 'tool_calls', calls: [{ id: 'l4', name: 'look', args: {} }] },
-        { kind: 'answer', speak: 'Done.', display: 'Done.' },
+        { kind: 'answer', askedItems: [{ item: 'the answer', standing: 'stated', statement: 'stated' }], speak: 'Done.', display: 'Done.' },
       ])
       const pipeline = createCommandPipeline({
         llm,
@@ -6814,7 +6929,7 @@ describe('evidence checkpoints (#121)', () => {
           args: { observation: 'The Acme router costs $39.', source_url: PAGE_URL, excerpt: 'Price: $39' },
         },
       ] },
-      { kind: 'answer', speak: 'Partial.', display: 'Partial.', resolution: 'partial' },
+      { kind: 'answer', askedItems: [{ item: 'the answer', standing: 'stated', statement: 'stated' }], speak: 'Partial.', display: 'Partial.', resolution: 'partial' },
     ])
     const pipeline = createCommandPipeline({
       llm,
@@ -6846,7 +6961,7 @@ describe('evidence checkpoints (#121)', () => {
         ? [{
             id: `p${i}`,
             name: 'report_run_plan',
-            args: { objective: 'Find the price', headline: 'Find the price', effort_tier: 'lookup' },
+            args: { objective: 'Find the price', headline: 'Find the price', effort_tier: 'lookup', asked_items: ['the answer'] },
           }]
         : []),
       { id: `w${i}`, name: 'read_page', args: {} },
@@ -7881,7 +7996,7 @@ describe('the Report Grace at Finalization (#199)', () => {
           return {
             kind: 'tool_calls',
             calls: [
-              { id: 'p1', name: 'report_run_plan', args: { objective: 'Compare vendors', headline: 'Comparing vendors', effort_tier: 'investigation' } },
+              { id: 'p1', name: 'report_run_plan', args: { objective: 'Compare vendors', headline: 'Comparing vendors', effort_tier: 'investigation', asked_items: ['the answer'] } },
               { id: 'spawn', name: 'spawn_agent', args: { kind: 'browse', task: 'compare vendors' } },
             ],
           }
@@ -7890,10 +8005,10 @@ describe('the Report Grace at Finalization (#199)', () => {
         if (requests.length === 3) {
           return {
             kind: 'tool_calls',
-            calls: [{ id: 'p2', name: 'report_run_plan', args: { objective: 'Compare vendors', headline: 'Wrapping up', effort_tier: 'investigation' } }],
+            calls: [{ id: 'p2', name: 'report_run_plan', args: { objective: 'Compare vendors', headline: 'Wrapping up', effort_tier: 'investigation', asked_items: ['the answer'] } }],
           }
         }
-        return { kind: 'answer', speak: 'Vendor A.', display: 'Vendor A wins.', resolution: 'partial' }
+        return { kind: 'answer', askedItems: [{ item: 'the answer', standing: 'stated', statement: 'stated' }], speak: 'Vendor A.', display: 'Vendor A wins.', resolution: 'partial' }
       },
     }
     const pipeline = createCommandPipeline({
@@ -8054,7 +8169,7 @@ describe('the Report Grace at Finalization (#199)', () => {
       { kind: 'tool_calls', calls: [{ id: 'p1', name: 'report_run_plan', args: { objective: 'Do it', headline: 'Doing it', effort_tier: 'direct_action' } }] },
       ...Array.from({ length: 5 }, (_, i) => ({ kind: 'tool_calls' as const, calls: [{ id: `w${i}`, name: 'work', args: {} }] })),
       { kind: 'tool_calls', calls: [{ id: 'p2', name: 'report_run_plan', args: { objective: 'Do it', headline: 'Wrapping up', effort_tier: 'direct_action' } }] },
-      { kind: 'answer', speak: 'Done.', display: 'Done.', resolution: 'completed' },
+      { kind: 'answer', askedItems: [{ item: 'the answer', standing: 'stated', statement: 'stated' }], speak: 'Done.', display: 'Done.', resolution: 'completed' },
     ])
     const pipeline = createCommandPipeline({
       llm,
@@ -8104,7 +8219,7 @@ describe('the bookkeeping round a mid-round Finalization gets (#200, ADR 0036)',
   const investigationPlan = (id: string): ToolCall => ({
     id,
     name: 'report_run_plan',
-    args: { objective: 'Compare the routers', headline: 'Comparing routers', effort_tier: 'investigation' },
+    args: { objective: 'Compare the routers', headline: 'Comparing routers', effort_tier: 'investigation', asked_items: ['the answer'] },
   })
   const spawn: ToolCall = { id: 'spawn', name: 'spawn_agent', args: { kind: 'browse', task: 'price the rival' } }
   const checkpoint = (id: string): ToolCall => ({
@@ -8246,7 +8361,7 @@ describe('the bookkeeping round a mid-round Finalization gets (#200, ADR 0036)',
         // The bookkeeping round #200 restores — and the model spends it
         // on the finding the grace rescued.
         { kind: 'tool_calls', calls: [checkpoint('e1')] },
-        { kind: 'answer', speak: 'The rival is cheaper.', display: 'The rival router costs $29.', resolution: 'partial' },
+        { kind: 'answer', askedItems: [{ item: 'the answer', standing: 'stated', statement: 'stated' }], speak: 'The rival is cheaper.', display: 'The rival router costs $29.', resolution: 'partial' },
       ],
     })
     const run = harness.start()
@@ -8290,7 +8405,7 @@ describe('the bookkeeping round a mid-round Finalization gets (#200, ADR 0036)',
         // after it begins past the boundary and is refused.
         { kind: 'tool_calls', calls: [{ id: 'w1', name: 'slow', args: {} }, { id: 'w2', name: 'read_page', args: {} }] },
         { kind: 'tool_calls', calls: [checkpoint('e1')] },
-        { kind: 'answer', speak: 'The rival is cheaper.', display: 'The rival router costs $29.', resolution: 'partial' },
+        { kind: 'answer', askedItems: [{ item: 'the answer', standing: 'stated', statement: 'stated' }], speak: 'The rival is cheaper.', display: 'The rival router costs $29.', resolution: 'partial' },
       ],
     })
     spend.advance = () => harness.clock.advance(5_000)
@@ -8320,7 +8435,7 @@ describe('the bookkeeping round a mid-round Finalization gets (#200, ADR 0036)',
         { kind: 'tool_calls', calls: [investigationPlan('p1'), spawn] },
         { kind: 'tool_calls', calls: [{ id: 'w1', name: 'slow', args: {} }] },
         { kind: 'tool_calls', calls: [checkpoint('e1')] },
-        { kind: 'answer', speak: 'Done.', display: 'Done.', resolution: 'partial' },
+        { kind: 'answer', askedItems: [{ item: 'the answer', standing: 'stated', statement: 'stated' }], speak: 'Done.', display: 'Done.', resolution: 'partial' },
       ],
     })
     spend.advance = () => harness.clock.advance(5_000)
@@ -8346,7 +8461,7 @@ describe('the bookkeeping round a mid-round Finalization gets (#200, ADR 0036)',
       ...Array.from({ length: 5 }, (_, i) => ({ kind: 'tool_calls' as const, calls: [{ id: `w${i}`, name: 'read_page', args: {} }] })),
       // The bookkeeping round: the worker has not reported yet.
       { kind: 'tool_calls', calls: [{ id: 'b1', name: 'read_page', args: {} }] },
-      { kind: 'answer', speak: 'Done.', display: 'Done.', resolution: 'partial' },
+      { kind: 'answer', askedItems: [{ item: 'the answer', standing: 'stated', statement: 'stated' }], speak: 'Done.', display: 'Done.', resolution: 'partial' },
     ])
     const events: PipelineEvent[] = []
     const pipeline = createCommandPipeline({
@@ -8502,6 +8617,173 @@ describe('the Answer Retry after a Malformed Answer (#245)', () => {
     expect(run.llm.requests.filter((request) => request.answerRetry !== undefined)).toHaveLength(1)
     expect(run.displays).toEqual([expect.objectContaining({ text: MALFORMED_AGAIN, finalAnswer: true })])
     expect(run.malformedFaults).toHaveLength(2)
+  })
+})
+
+describe('Asked Items on the Answer (#250, ADR 0052)', () => {
+  const DECLARED = ['the guitar', 'the piece count']
+  const readPage: Tool = { name: 'read_page', acquisition: true, async execute() { return 'Luggage: two pieces.' } }
+  const planRound = (calls: ToolCall[] = []): ScriptedTurn => ({
+    kind: 'tool_calls',
+    calls: [
+      { id: 'p1', name: 'report_run_plan', args: { objective: 'Check the guitar rule', headline: 'Checking', effort_tier: 'lookup', asked_items: DECLARED } },
+      { id: 'r0', name: 'read_page', args: {} },
+      ...calls,
+    ],
+  })
+  const guitar = { item: 'the guitar', standing: 'stated', statement: 'It travels as one piece.' } as const
+  const pieces = { item: 'the piece count', standing: 'stated', statement: 'Two pieces are allowed.' } as const
+  const answer = (askedItems: readonly AskedItemStanding[] | undefined, resolution: 'completed' | 'partial' = 'completed'): ScriptedTurn => ({
+    kind: 'answer',
+    speak: 'Yes.',
+    display: 'The guitar can travel.',
+    shape: 'on_contract',
+    resolution,
+    finalizationCause: 'objective_met',
+    ...(askedItems !== undefined ? { askedItems } : {}),
+  })
+
+  async function runScript(script: ScriptedTurn[]) {
+    const llm = new ScriptedLlm(script)
+    const traced: RunTraceEvent[] = []
+    const committed: { outcome: string; stop: RunStopRecord | null | undefined }[] = []
+    const pipeline = createCommandPipeline({ llm, tts: new RecordingTts(), clock: new FakeClock(), tools: [createReportRunPlanTool(), readPage] })
+    const events: PipelineEvent[] = []
+    for await (const raw of pipeline.execute('can I take my guitar on the eurostar', 'turn-asked', false, {
+      snapshot: [],
+      memory: [],
+      commit: (outcome, _note, _patch, stop) => {
+        committed.push({ outcome, stop })
+        return 'committed'
+      },
+      traceRun: (build) => traced.push(build()),
+    })) {
+      events.push(withoutTurnId(raw))
+    }
+    const display = events.find((event) => event.type === 'display' && event.finalAnswer)
+    return {
+      llm,
+      events,
+      committed,
+      shapeRecords: traced.filter((record) => record.kind === 'asked_items_shape'),
+      retryRecords: traced.filter((record) => record.kind === 'answer_retry'),
+      askedItems: display?.type === 'display' ? display.askedItems : undefined,
+      done: events.at(-1),
+    }
+  }
+
+  it('renders the standings an Answer gave for every declared item, and leaves a fully stated completed Run untouched (#250/AC4)', async () => {
+    const run = await runScript([planRound(), answer([pieces, guitar])])
+
+    // In declared order, the Answer's own words.
+    expect(run.askedItems).toEqual([guitar, pieces])
+    expect(run.done).toMatchObject({ type: 'done', outcome: 'done', resolution: 'completed', finalizationCause: 'objective_met' })
+    expect(run.committed).toEqual([{ outcome: 'done', stop: null }])
+    expect(run.shapeRecords).toEqual([])
+    expect(run.llm.requests.some((request) => request.answerRetry !== undefined)).toBe(false)
+  })
+
+  it('meets a short list with the one Answer Retry naming the missing item, and the reply to it stands (#250/AC3)', async () => {
+    const run = await runScript([planRound(), answer([guitar]), answer([guitar, pieces])])
+
+    expect(run.llm.requests).toHaveLength(3)
+    expect(run.llm.requests[2]?.answerRetry).toEqual({
+      reply: expect.any(String),
+      message: askedItemsRetryMessage({ missing: ['the piece count'], undeclared: [] }),
+    })
+    expect(askedItemsRetryMessage({ missing: ['the piece count'], undeclared: [] })).toContain('"the piece count"')
+    expect(run.askedItems).toEqual([guitar, pieces])
+    expect(run.done).toMatchObject({ resolution: 'completed' })
+    expect(run.shapeRecords).toEqual([{ kind: 'asked_items_shape', turnId: 'turn-asked', missing: ['the piece count'], undeclared: [], retried: true }])
+    expect(run.retryRecords).toEqual([{ kind: 'answer_retry', turnId: 'turn-asked', role: 'orchestrator', outcome: 'on_contract' }])
+  })
+
+  it('names undeclared items in the retry, and drops them from the Card once the reply stands', async () => {
+    const fare = { item: 'the fare', standing: 'stated', statement: '£50.' } as const
+    const run = await runScript([planRound(), answer([guitar, pieces, fare]), answer([guitar, pieces, fare])])
+
+    expect(run.llm.requests[2]?.answerRetry?.message).toBe(askedItemsRetryMessage({ missing: [], undeclared: ['the fare'] }))
+    // The retry reply still names it; the Card renders the declaration, and
+    // nothing declared is missing, so the Run completes.
+    expect(run.askedItems).toEqual([guitar, pieces])
+    expect(run.done).toMatchObject({ resolution: 'completed' })
+  })
+
+  it('settles a still-short reply as unverified and resolves the Run partial, the override on the Stop Record (#250/AC3-4)', async () => {
+    const run = await runScript([planRound(), answer(undefined), answer([guitar])])
+
+    expect(run.llm.requests.filter((request) => request.answerRetry !== undefined)).toHaveLength(1)
+    expect(run.askedItems).toEqual([guitar, { item: 'the piece count', standing: 'unverified', statement: ASKED_ITEM_UNSTATED }])
+    expect(run.done).toMatchObject({ type: 'done', outcome: 'done', resolution: 'partial', finalizationCause: 'objective_met' })
+    expect(run.committed).toEqual([{ outcome: 'done', stop: { override: askedItemsOverride(['the piece count']) } }])
+    expect(run.shapeRecords.map((record) => record.kind === 'asked_items_shape' && record.retried)).toEqual([true, false])
+  })
+
+  it('shares the one retry with the Malformed Answer: a short list after a spent retry gets none (#250/AC3)', async () => {
+    const malformed = parseAssistantAnswer('Here it is: {"speak": "Yes.", "display": 42}')
+    const run = await runScript([planRound(), { kind: 'answer', ...malformed }, answer([guitar])])
+
+    expect(run.llm.requests).toHaveLength(3)
+    expect(run.llm.requests[2]?.answerRetry?.message).toBe(answerRetryMessage(malformed.malformedError ?? ''))
+    expect(run.shapeRecords).toEqual([{ kind: 'asked_items_shape', turnId: 'turn-asked', missing: ['the piece count'], undeclared: [], retried: false }])
+    expect(run.done).toMatchObject({ resolution: 'partial' })
+  })
+
+  it('overrides completed to partial on the model’s own unverified standing, and records nothing when it claimed partial (#250/AC4)', async () => {
+    const unverified = { item: 'the piece count', standing: 'unverified', statement: 'The luggage page did not load.' } as const
+    const claimed = await runScript([planRound(), answer([guitar, unverified])])
+    expect(claimed.askedItems).toEqual([guitar, unverified])
+    expect(claimed.done).toMatchObject({ resolution: 'partial' })
+    expect(claimed.committed[0]?.stop).toEqual({ override: askedItemsOverride(['the piece count']) })
+
+    const honest = await runScript([planRound(), answer([guitar, unverified], 'partial')])
+    expect(honest.done).toMatchObject({ resolution: 'partial' })
+    expect(honest.committed[0]?.stop).toBeNull()
+  })
+
+  it('renders every declared item unverified on a deterministic Answer (#250/AC5)', async () => {
+    const work = (i: number): ScriptedTurn => ({ kind: 'tool_calls', calls: [{ id: `w${i}`, name: 'read_page', args: {} }] })
+    const run = await runScript([
+      planRound(),
+      ...Array.from({ length: TIER_TOOL_ROUND_BUDGETS.lookup - 1 }, (_, i) => work(i)),
+      // The bookkeeping round asks for more work; the reserved Answer round asks again, so the Answer is deterministic.
+      work(100),
+      work(101),
+    ])
+
+    const display = run.events.find((event) => event.type === 'display' && event.finalAnswer)
+    expect(display).toMatchObject({ deterministicAnswer: true })
+    expect(run.askedItems).toEqual(DECLARED.map((item) => ({ item, standing: 'unverified', statement: ASKED_ITEM_UNESTABLISHED })))
+    expect(run.done).toMatchObject({ type: 'done', outcome: 'failed', finalizationCause: 'budget_exhausted' })
+  })
+
+  it('spends no retry in the reserved Answer round: a short list there settles unverified and the Run is partial', async () => {
+    const work = (i: number): ScriptedTurn => ({ kind: 'tool_calls', calls: [{ id: `w${i}`, name: 'read_page', args: {} }] })
+    const run = await runScript([
+      planRound(),
+      ...Array.from({ length: TIER_TOOL_ROUND_BUDGETS.lookup - 1 }, (_, i) => work(i)),
+      work(100),
+      answer([guitar]),
+    ])
+
+    expect(run.llm.requests.some((request) => request.answerRetry !== undefined)).toBe(false)
+    expect(run.askedItems).toEqual([guitar, { item: 'the piece count', standing: 'unverified', statement: ASKED_ITEM_UNSTATED }])
+    expect(run.done).toMatchObject({ type: 'done', outcome: 'done', resolution: 'partial', finalizationCause: 'budget_exhausted' })
+    expect(run.shapeRecords).toEqual([{ kind: 'asked_items_shape', turnId: 'turn-asked', missing: ['the piece count'], undeclared: [], retried: false }])
+  })
+
+  it('ignores the field on a Run that declared no Asked Items', async () => {
+    const llm = new ScriptedLlm([
+      { kind: 'tool_calls', calls: [{ id: 'p1', name: 'report_run_plan', args: { objective: 'Open it', headline: 'Opening', effort_tier: 'direct_action' } }, { id: 'r0', name: 'read_page', args: {} }] },
+      answer([guitar]),
+    ])
+    const pipeline = createCommandPipeline({ llm, tts: new RecordingTts(), clock: new FakeClock(), tools: [createReportRunPlanTool(), readPage] })
+
+    const events = await collect(pipeline, 'open it')
+
+    expect(llm.requests.some((request) => request.answerRetry !== undefined)).toBe(false)
+    expect(events.find((event) => event.type === 'display')).not.toHaveProperty('askedItems')
+    expect(events.at(-1)).toMatchObject({ type: 'done', resolution: 'completed' })
   })
 })
 

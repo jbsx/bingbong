@@ -19,7 +19,7 @@ function orchestratorScript(): AssistantTurn[] {
   const plan = (id: string, objective: string) => ({
     id,
     name: 'report_run_plan',
-    args: { objective, headline: 'Researching the slow page', effort_tier: 'investigation' },
+    args: { objective, headline: 'Researching the slow page', effort_tier: 'investigation', asked_items: ['the answer'] },
   })
   return [
     {
@@ -29,7 +29,7 @@ function orchestratorScript(): AssistantTurn[] {
         { id: 's1', name: 'spawn_agent', args: { kind: 'browse', task: 'research the slow fixture page' } },
       ],
     },
-    { kind: 'answer', speak: 'Research is running.', display: 'AGENT RUNNING' },
+    { kind: 'answer', askedItems: [{ item: 'the answer', standing: 'stated', statement: 'stated' }], speak: 'Research is running.', display: 'AGENT RUNNING' },
     {
       kind: 'tool_calls',
       calls: [
@@ -38,7 +38,7 @@ function orchestratorScript(): AssistantTurn[] {
       ],
     },
     { kind: 'tool_calls', calls: [{ id: 's3', name: 'agent_results', args: { wait: true } }] },
-    { kind: 'answer', speak: 'Fresh research merged.', display: 'NEW SESSION DONE' },
+    { kind: 'answer', askedItems: [{ item: 'the answer', standing: 'stated', statement: 'stated' }], speak: 'Fresh research merged.', display: 'NEW SESSION DONE' },
   ]
 }
 
@@ -46,7 +46,7 @@ function subagentScript(fixtureUrl: string): AssistantTurn[] {
   return [
     { kind: 'tool_calls', calls: [{ id: 'n1', name: 'navigate', args: { url: fixtureUrl } }] },
     { kind: 'tool_calls', calls: [{ id: 'n2', name: 'navigate', args: { url: fixtureUrl } }] },
-    { kind: 'answer', speak: 'done', display: 'Researched the slow page.' },
+    { kind: 'answer', askedItems: [{ item: 'the answer', standing: 'stated', statement: 'stated' }], speak: 'done', display: 'Researched the slow page.' },
   ]
 }
 
