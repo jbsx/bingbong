@@ -303,7 +303,10 @@ describe('orchestrator prompt verification policy (#212)', () => {
 
   // #242: the Itemized Verdict. The Eurostar Answers gave the chosen
   // reduction and left the other named items' standing to the reader, so
-  // the rule sits directly after the constraints line it extends.
+  // the rule sits directly after the constraints line it extends. The
+  // fix-242-{1,2,3} capture showed the first wording's "standing" read as
+  // each item's allowance status only, so the smallest-change question is
+  // itemized in its own sentence, bound to "display".
   it('states the standing of every item the command names, directly after the constraints line', () => {
     const lines = ORCHESTRATOR_SYSTEM_PROMPT.split('\n')
     const ranking = lines.findIndex((candidate) => candidate.includes('ranking highly in a search'))
@@ -311,9 +314,11 @@ describe('orchestrator prompt verification policy (#212)', () => {
     const itemized = lines[ranking + 1]
     expect(itemized).toBe(
       '- When the command itself names the items or options it asks about, "display" states each one\'s standing — ' +
-        'allowed or not, fits or not, which wins and which would also work — not only the one you chose. ' +
-        'A named item you could not establish is stated as unverified, and an unverified named item makes ' +
-        '"resolution" "partial", never "completed". "speak" carries the chosen answer.',
+        'allowed or not, fits or not, which wins — not only the one you chose. When it asks for the smallest change, ' +
+        '"display" also says, for each named item, whether applying that change to that item alone would work, ' +
+        'naming the alternatives that would also work and the ones that would not. A named item you could not ' +
+        'establish is stated as unverified, and an unverified named item makes "resolution" "partial", never ' +
+        '"completed". "speak" carries the chosen answer.',
     )
   })
 
