@@ -630,7 +630,8 @@ the command refuses and names the differing values per set id. (The sub-spans
 flag, `BINGBONG_BROWSER_SUBSPANS`, is recorded since #247; a report written
 before then reads as captured with it off. It retains timing records only and
 never changes what the model sees or does, but two Passes that differ on it
-carry different perf artefacts, so it is checked like the rest.) A mixed set of inputs is a protocol
+carry different perf artefacts, so it is checked like the rest.) A mixed set of
+inputs is a protocol
 break, not a merge: a Baseline is one route under one key and one reviewer,
 and a comparison across routes is a different document this command is not.
 Commit, dirty tree and grades revision are listed per input and never
@@ -836,7 +837,8 @@ counted, most counted first. Before counting, the aggregate checks the shared
 provenance the cross-pass summary checks (key version and manifest digest,
 routing, grades reviewer, study, protocol, mode, adblock, overrides, browser
 sub-spans flag, prompt versions) plus the audit's own reviewer model, effort
-and prompt version, and refuses sets that differ. Every output says in one line that it counts and
+and prompt version, and refuses sets that differ. Every output says in one
+line that it counts and
 does not judge.
 
 **Outputs judged before #244** carry reviewer prompt `audit-p1`: the old
