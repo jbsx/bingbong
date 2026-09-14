@@ -992,7 +992,8 @@ since the aggregate does not carry them, and the median is the summary's. The
 per-Pass values sit small beside the whole-set one; a missing or
 `measurement_failed` Pass shows as such, never as a number. Every other
 counter of the population sits in the all-counters expander with a raw delta
-and no colour — useful partials and help-blocked attempts included, never in
+and no colour, a per-round counter (the kind counts, Search Loop, Off-key)
+with its share of the budgeted rounds beside the count — useful partials and help-blocked attempts included, never in
 the headline. A counter an older audit did not record reads as nothing, not
 zero; an audit judged under `audit-p1` has no `answer_omitted` verdict and
 carries its unsatisfied checks as `checksNotReached`, and the ledger reads

@@ -33,7 +33,7 @@ function committedFiles(): LedgerFile[] {
 const committed = buildLedger(committedFiles())
 
 function family(ledger: Ledger, id: string): LedgerFamily {
-  const found = ledger.families.find((candidate) => candidate.id === id)
+  const found = ledger.families.find((listed) => listed.id === id)
   if (found === undefined) throw new Error(`no family ${id} among ${ledger.families.map((listed) => listed.id).join(', ')}`)
   return found
 }
@@ -152,12 +152,15 @@ describe('the committed Round Audits', () => {
 
     // Every counter appears in the expander, and a judgement counter says so.
     const counters = Object.fromEntries(row.counters.map((counter) => [counter.label, counter]))
-    expect(counters['Search Loop rounds']!.populations.initial).toEqual({ reference: 11, subject: 25, delta: 14 })
+    // A per-round counter carries its share's denominator, the budgeted rounds; the delta stays the raw count.
+    expect(counters['Search Loop rounds']!.populations.initial).toEqual({ reference: { value: 11, over: 225 }, subject: { value: 25, over: 252 }, delta: 14 })
     expect(counters['Search Loop rounds']!.judgement).toBe(true)
-    expect(counters['Useful partial attempts']).toBeDefined()
+    expect(counters['Rounds: Acquisition without Progress']!.populations.initial.subject).toEqual({ value: 41, over: 252 })
+    expect(counters['Rounds: Finalization']!.populations.initial.subject).toEqual({ value: 21, over: 273 })
+    expect(counters['Useful partial attempts']!.populations.initial.subject).toEqual({ value: 10, over: null })
     expect(counters['Help-blocked attempts']).toBeDefined()
-    expect(counters['Tool rounds: navigate']!.populations.initial.subject).toBe(103)
-    expect(counters['Finalization cause: budget_exhausted']!.populations.initial).toEqual({ reference: 8, subject: 4, delta: -4 })
+    expect(counters['Tool rounds: navigate']!.populations.initial.subject).toEqual({ value: 103, over: 247 })
+    expect(counters['Finalization cause: budget_exhausted']!.populations.initial).toEqual({ reference: { value: 8, over: null }, subject: { value: 4, over: null }, delta: -4 })
   })
 
   it('marks fix-239 against baseline on the judgement metrics only, baseline2 on every metric, and fix-240 on none', () => {
@@ -188,7 +191,7 @@ describe('the committed Round Audits', () => {
     // fix-237 was audited under audit-p1: its checks are read under the older field name, and a counter it predates is not a zero.
     expect(row.headline.find((entry) => entry.metric.id === 'checks')!.populations.initial.subject.aggregate.over).toBeGreaterThan(0)
     const source = row.counters.find((counter) => counter.label === 'Attempts with search source: rail')!
-    expect(source.populations.initial).toEqual({ reference: 0, subject: null, delta: null })
+    expect(source.populations.initial).toEqual({ reference: { value: 0, over: null }, subject: { value: null, over: null }, delta: null })
     expect(row.markers.judgement).toEqual([{ axis: 'reviewer prompt', reference: 'audit-p2', subject: 'audit-p1' }])
   })
 

@@ -1,15 +1,13 @@
-import { spawn, type ChildProcess } from 'node:child_process'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
-import { createServer, type Server } from 'node:http'
+import type { Server } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { setTimeout as sleep } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { connectCdp, type CdpClient } from '../cdpClient.ts'
 import { parseLiveGrades, type LiveGradingInputs } from './grades.ts'
 import { REVIEWED_AT, keys, manifest, reviewerBGrades, writeFixtureSet } from './gradingBenchFixtures.ts'
 import { openGradingSetup } from './gradingBenchServer.ts'
+import { canDriveChrome, launchHeadlessChrome, listen, until, type HeadlessChrome } from './headlessChrome.ts'
 
 // The Grading Bench's two pages (#232), driven in a real headless Chrome over
 // the DevTools protocol, against the same invented fixture set the server
@@ -27,60 +25,17 @@ import { openGradingSetup } from './gradingBenchServer.ts'
 
 const PAGE = fileURLToPath(new URL('../../scripts/live-review.html', import.meta.url))
 const SETUP_PAGE = fileURLToPath(new URL('../../scripts/live-review-setup.html', import.meta.url))
-const CHROME = [process.env.CHROME_PATH, '/usr/bin/google-chrome', '/usr/bin/google-chrome-stable', '/usr/bin/chromium', '/usr/bin/chromium-browser'].find(
-  (path): path is string => typeof path === 'string' && path !== '' && existsSync(path),
-)
-const canDrive = CHROME !== undefined && typeof WebSocket === 'function'
 const STEP_TIMEOUT_MS = 30_000
 
-interface EvaluateResult {
-  readonly result?: { readonly value?: unknown }
-  readonly exceptionDetails?: { readonly text: string; readonly exception?: { readonly description?: string } }
-}
-
-async function until<T>(probe: () => T | Promise<T>, what: string, timeoutMs = 10_000): Promise<NonNullable<T>> {
-  const deadline = Date.now() + timeoutMs
-  for (;;) {
-    let value: T | undefined
-    try {
-      value = await probe()
-    } catch {
-      // A page mid-navigation has no context to evaluate in yet.
-      value = undefined
-    }
-    if (value) return value
-    if (Date.now() > deadline) throw new Error(`timed out waiting for ${what}`)
-    await sleep(100)
-  }
-}
-
-function listen(handler: Parameters<typeof createServer>[1]): Promise<{ server: Server; port: number }> {
-  return new Promise((resolve) => {
-    const created = createServer(handler)
-    created.listen(0, '127.0.0.1', () => {
-      const address = created.address()
-      resolve({ server: created, port: typeof address === 'object' && address !== null ? address.port : 0 })
-    })
-  })
-}
-
-describe.skipIf(!canDrive)('the Grading Bench pages in a browser', () => {
+describe.skipIf(!canDriveChrome)('the Grading Bench pages in a browser', () => {
   let root: string
-  let profile: string
   let privateRoot: string
   let inputs: LiveGradingInputs
   let server: Server
   let base: string
-  let chrome: ChildProcess
-  let cdp: CdpClient
+  let chrome: HeadlessChrome
 
-  async function evaluate<T>(expression: string): Promise<T> {
-    const reply = await cdp.send<EvaluateResult>('Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true })
-    const details = reply.exceptionDetails
-    if (details) throw new Error(details.exception?.description ?? details.text)
-    return reply.result?.value as T
-  }
-
+  const evaluate = <T,>(expression: string) => chrome.evaluate<T>(expression)
   const waitFor = (expression: string, what: string) => until(() => evaluate<boolean>(expression), what)
   const click = (selector: string) => evaluate(`document.querySelector(${JSON.stringify(selector)}).click()`)
   const saveLine = () => evaluate<string>(`document.getElementById('to-save-line').textContent`)
@@ -114,38 +69,17 @@ describe.skipIf(!canDrive)('the Grading Bench pages in a browser', () => {
     server = listening.server
     base = `http://127.0.0.1:${listening.port}/`
 
-    profile = mkdtempSync(join(tmpdir(), 'bingbong-grading-chrome-'))
-    chrome = spawn(
-      CHROME!,
-      ['--headless=new', '--no-sandbox', '--disable-gpu', '--no-first-run', '--no-default-browser-check', `--user-data-dir=${profile}`, '--remote-debugging-port=0', '--window-size=1440,900', 'about:blank'],
-      { stdio: 'ignore' },
-    )
-    // Port 0 lets Chrome pick; it writes the one it took into the profile.
-    const portFile = join(profile, 'DevToolsActivePort')
-    const devtoolsPort = await until(() => (existsSync(portFile) ? readFileSync(portFile, 'utf8').split('\n')[0] : ''), 'Chrome to open its debugging port', 20_000)
-    const target = await until(async () => {
-      const targets = (await (await fetch(`http://127.0.0.1:${devtoolsPort}/json/list`)).json()) as Array<{ type: string; webSocketDebuggerUrl: string }>
-      return targets.find((listed) => listed.type === 'page')
-    }, 'a page target')
-    cdp = await connectCdp(target.webSocketDebuggerUrl)
-    await cdp.send('Page.enable')
-    await cdp.send('Runtime.enable')
+    chrome = await launchHeadlessChrome('bingbong-grading-chrome-')
   }, 60_000)
 
   afterAll(async () => {
-    cdp?.close()
-    // Chrome still holds its profile until it has exited.
-    if (chrome && chrome.exitCode === null) {
-      const exited = new Promise((resolve) => chrome.once('exit', resolve))
-      chrome.kill()
-      await exited
-    }
+    await chrome?.close()
     await new Promise<void>((resolve) => (server ? server.close(() => resolve()) : resolve()))
-    for (const directory of [root, profile]) if (directory) rmSync(directory, { recursive: true, force: true })
+    if (root) rmSync(root, { recursive: true, force: true })
   })
 
   it('lists the sets on setup, proposes the one to grade, and Start lands on the bench', async () => {
-    await cdp.send('Page.navigate', { url: base })
+    await chrome.cdp.send('Page.navigate', { url: base })
     await waitFor(`document.readyState === 'complete' && !document.getElementById('start').disabled`, 'Start to be enabled')
 
     const setup = await evaluate<{

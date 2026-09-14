@@ -200,7 +200,12 @@ function headlineTable(row, passLabels) {
 function countersTable(row) {
   const head1 = el('tr', null, [el('th', { text: '' }), ...POPULATIONS.map((population) => el('th', { class: 'group', colspan: '3', text: population.label }))])
   const head2 = el('tr', null, [el('th', { text: 'counter' }), ...POPULATIONS.flatMap(() => [el('th', { class: 'num', text: 'Reference' }), el('th', { class: 'num', text: 'Subject' }), el('th', { class: 'num', text: 'Δ' })])])
-  const number = (value) => (value === null ? '—' : String(value))
+  // A count, with its share of the rounds where the counter has a per-round denominator.
+  const number = (reading) => {
+    if (reading === null || reading.value === null) return '—'
+    const share = percent(reading)
+    return share === null ? String(reading.value) : `${reading.value} · ${share}%`
+  }
   const body = row.counters.map((counter) =>
     el('tr', { class: `counter-row ${counter.judgement ? 'judgement' : ''}`, 'data-counter': counter.label }, [
       el('td', { class: 'label' }, [counter.label, markerSpan(counter.markers)]),

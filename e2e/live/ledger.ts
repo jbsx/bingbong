@@ -14,8 +14,8 @@
 // (verified attempts, checks, run durations) are always read from the
 // Passes. A metric whose two sides were judged under different conditions
 // carries a marker naming the axis — never a refusal (the cross-pass summary
-// and the aggregate audit refuse mixed sets; a ledger row compares them and
-// says so).
+// and the aggregate audit refuse mixed sets; a ledger row reads across them
+// and says so).
 //
 // A family is a Baseline when its id begins with `baseline`: provenance
 // carries nothing that says so, and this convention is the one assumption
@@ -61,7 +61,7 @@ export interface LedgerPass {
   readonly audit: AuditSetOutput | null
 }
 
-/** The conditions a comparison is marked on (#251, Decision 7). */
+/** The conditions a row's markers read (#251, Decision 7). */
 export interface LedgerConditions {
   readonly reviewerPromptVersion: string
   readonly keyVersion: string
@@ -157,7 +157,8 @@ export interface HeadlineEntry {
 export interface CounterEntry {
   readonly label: string
   readonly judgement: boolean
-  readonly populations: Readonly<Record<PopulationKey, { readonly reference: number | null; readonly subject: number | null; readonly delta: number | null }>>
+  /** Each side as a count with its per-round denominator where one exists; the delta is the raw count. */
+  readonly populations: Readonly<Record<PopulationKey, { readonly reference: Reading | null; readonly subject: Reading | null; readonly delta: number | null }>>
   readonly markers: readonly Marker[]
 }
 
@@ -189,9 +190,17 @@ export const HEADLINE_METRICS: readonly LedgerMetric[] = [
   { id: 'median_run_duration', label: 'Median run duration', direction: 'lower', judgement: false, compare: 'value', unit: 'seconds' },
 ]
 
-/** The relation each population reads, as the audit builds them. */
-const POPULATION_RELATION: Readonly<Record<PopulationKey, AttemptRelation>> = { initial: 'initial', followUp: 'revised_objective' }
+/** The relation each population reads and the label the audit gives it, as the audit builds them. */
+const POPULATIONS: Readonly<Record<PopulationKey, { readonly relation: AttemptRelation; readonly label: string }>> = {
+  initial: { relation: 'initial', label: 'initial' },
+  followUp: { relation: 'revised_objective', label: 'follow_up' },
+}
 const POPULATION_KEYS: readonly PopulationKey[] = ['initial', 'followUp']
+
+/** One value per population, keyed. */
+function byPopulation<T>(of: (key: PopulationKey) => T): Record<PopulationKey, T> {
+  return { initial: of('initial'), followUp: of('followUp') }
+}
 
 const KIND_LABELS: Readonly<Record<RoundKind, string>> = {
   acquisition_with_progress: 'Acquisition with Progress',
@@ -240,7 +249,7 @@ const CONDITION_AXES: readonly { readonly axis: string; readonly judgement: bool
 ]
 
 /**
- * The markers a comparison carries (#251, Decision 7): judgement metrics are
+ * The markers a row carries (#251, Decision 7): judgement metrics are
  * marked when the reviewer prompt differs; every metric when the key, the
  * grades reviewers, the routing or the browser sub-spans flag differs. The
  * app commit never marks — it is what a Subject is measured for.
@@ -424,6 +433,15 @@ function checksSatisfiedOf(mechanical: AuditAttempt['mechanical']): Reading {
   return { value: mechanical.checksTotal - unsatisfied.length, over: mechanical.checksTotal }
 }
 
+/** Checks satisfied over checks total, summed over the attempts that carry checks. */
+function checksSummed(attempts: readonly AuditAttempt[]): Reading {
+  const checks = attempts.map((attempt) => checksSatisfiedOf(attempt.mechanical)).filter((reading) => reading.over !== null)
+  return {
+    value: checks.reduce((sum, reading) => sum + (reading.value ?? 0), 0),
+    over: checks.reduce((sum, reading) => sum + (reading.over ?? 0), 0),
+  }
+}
+
 /** A counter an older audit did not record reads as nothing, never as zero. */
 function recorded(value: number | undefined): number | null {
   return typeof value === 'number' ? value : null
@@ -439,14 +457,10 @@ function observedSeconds(mechanical: AuditAttempt['mechanical']): number | null 
 
 /** The headline readings of one population: the audit's population for the counters, its attempts for the rest. */
 export function populationReadings(population: AuditPopulation, attempts: readonly AuditAttempt[]): Record<string, Reading> {
-  const checks = attempts.map((attempt) => checksSatisfiedOf(attempt.mechanical)).filter((reading) => reading.over !== null)
   const seconds = attempts.map((attempt) => observedSeconds(attempt.mechanical)).filter((value): value is number => value !== null)
   return {
     verified: { value: attempts.filter((attempt) => attempt.mechanical.grade?.status === 'pass').length, over: attempts.length },
-    checks: {
-      value: checks.reduce((sum, reading) => sum + (reading.value ?? 0), 0),
-      over: checks.reduce((sum, reading) => sum + (reading.over ?? 0), 0),
-    },
+    checks: checksSummed(attempts),
     rounds_wasted_primary: { value: recorded(population.verdictsPrimary.rounds_wasted), over: population.judged },
     answer_omitted_primary: { value: recorded(population.verdictsPrimary.answer_omitted), over: population.judged },
     off_key: { value: population.offKeyRounds, over: population.budgetedRounds },
@@ -480,6 +494,8 @@ interface Counter {
   readonly judgement: boolean
   /** null where this audit predates the counter. */
   readonly value: number | null
+  /** The per-round denominator where one exists (#251, Decision 5): the budgeted rounds, or every round for Finalization. */
+  readonly over: number | null
 }
 
 const GRADE_COUNTERS: readonly { readonly label: string; readonly status: string }[] = [
@@ -492,9 +508,11 @@ const GRADE_COUNTERS: readonly { readonly label: string; readonly status: string
 
 /** Every counter of a population, in a fixed order, for the all-counters expander (#251, Decision 4). */
 export function countersOf(population: AuditPopulation, attempts: readonly AuditAttempt[]): readonly Counter[] {
-  const mechanical = (label: string, value: number | undefined): Counter => ({ label, judgement: false, value: recorded(value) })
-  const judged = (label: string, value: number | undefined): Counter => ({ label, judgement: true, value: recorded(value) })
-  const checks = attempts.map((attempt) => checksSatisfiedOf(attempt.mechanical)).filter((reading) => reading.over !== null)
+  const mechanical = (label: string, value: number | undefined, over: number | null = null): Counter => ({ label, judgement: false, value: recorded(value), over })
+  const judged = (label: string, value: number | undefined, over: number | null = null): Counter => ({ label, judgement: true, value: recorded(value), over })
+  const checks = checksSummed(attempts)
+  const budgeted = population.budgetedRounds
+  const roundsOf = (kind: RoundKind): number => (kind === 'finalization' ? population.rounds : budgeted)
   // Read as written: an audit from before a counter existed has no field for it.
   const older = population as Partial<AuditPopulation>
   return [
@@ -503,33 +521,27 @@ export function countersOf(population: AuditPopulation, attempts: readonly Audit
     ...GRADE_COUNTERS.map((grade) =>
       mechanical(grade.label, attempts.filter((attempt) => (attempt.mechanical.grade?.status ?? 'pending') === grade.status).length),
     ),
-    mechanical(
-      'Checks satisfied',
-      checks.reduce((sum, reading) => sum + (reading.value ?? 0), 0),
-    ),
-    mechanical(
-      'Checks total',
-      checks.reduce((sum, reading) => sum + (reading.over ?? 0), 0),
-    ),
+    mechanical('Checks satisfied', checks.value ?? undefined),
+    mechanical('Checks total', checks.over ?? undefined),
     mechanical('Rounds', population.rounds),
     mechanical('Budgeted rounds', population.budgetedRounds),
     mechanical('Tool rounds used', population.toolRoundsUsed),
     mechanical('Attempts at budget', population.attemptsAtBudget),
-    ...ROUND_KINDS.map((kind) => mechanical(`Rounds: ${KIND_LABELS[kind]}`, population.counts[kind])),
-    ...ROUND_KINDS.map((kind) => judged(`Rounds after overrules: ${KIND_LABELS[kind]}`, population.countsAfterOverrules[kind])),
+    ...ROUND_KINDS.map((kind) => mechanical(`Rounds: ${KIND_LABELS[kind]}`, population.counts[kind], roundsOf(kind))),
+    ...ROUND_KINDS.map((kind) => judged(`Rounds after overrules: ${KIND_LABELS[kind]}`, population.countsAfterOverrules[kind], roundsOf(kind))),
     ...AUDIT_VERDICTS.map((verdict) => judged(`Primary verdict: ${verdict}`, population.verdictsPrimary[verdict])),
     ...AUDIT_VERDICTS.map((verdict) => judged(`Secondary verdict: ${verdict}`, population.verdictsSecondary[verdict])),
-    judged('Off-key rounds', population.offKeyRounds),
-    judged('Search Loop rounds', population.searchLoopRounds),
-    mechanical('Search Loop rounds by the streak rule', population.mechanicalSearchRounds),
+    judged('Off-key rounds', population.offKeyRounds, budgeted),
+    judged('Search Loop rounds', population.searchLoopRounds, budgeted),
+    mechanical('Search Loop rounds by the streak rule', population.mechanicalSearchRounds, budgeted),
     mechanical('Attempts with search source: rail', older.searchSources?.rail),
     mechanical('Attempts with search source: replay', older.searchSources?.replay),
     mechanical('Attempts with search source: none', older.searchSources?.none),
-    mechanical('Inherited rounds', population.inheritedRounds),
+    mechanical('Inherited rounds', population.inheritedRounds, budgeted),
     mechanical('Merged Evidence Checkpoints', older.mergedCheckpoints),
-    mechanical('Held Page rounds without Progress', older.heldPageRoundsWithoutProgress),
+    mechanical('Held Page rounds without Progress', older.heldPageRoundsWithoutProgress, budgeted),
     mechanical('Rejected Evidence Checkpoints', population.rejectedCheckpoints),
-    mechanical('Walled rounds', population.walledRounds),
+    mechanical('Walled rounds', population.walledRounds, budgeted),
     mechanical('Not-found landings', older.notFoundNavigates),
     judged('Not-found landings judged Off-key', older.notFoundOffKey),
     mechanical('Identity Slip Answers', older.identitySlipAnswers),
@@ -537,18 +549,18 @@ export function countersOf(population: AuditPopulation, attempts: readonly Audit
     mechanical('Attempts with Identity Slips not recorded', older.identitySlipsNotRecorded),
     mechanical('Malformed Answers', older.malformedAnswers),
     mechanical('Answer Retries', older.answerRetries),
-    mechanical('Subagent rounds', population.subagentRounds),
+    mechanical('Subagent rounds', population.subagentRounds, budgeted),
     judged('Stopped early', population.stoppedEarly),
     judged('Answer omitted', older.answerOmitted),
     judged('Overrules', population.overrules),
     judged('Flags', population.flags),
     ...Object.entries(population.finalizationCauses).map(([cause, count]) => mechanical(`Finalization cause: ${cause}`, count)),
-    ...(older.toolRounds ?? []).map((tool) => mechanical(`Tool rounds: ${tool.tool}`, tool.rounds)),
+    ...(older.toolRounds ?? []).map((tool) => mechanical(`Tool rounds: ${tool.tool}`, tool.rounds, population.toolRoundsUsed)),
   ]
 }
 
 // ---------------------------------------------------------------------------
-// Comparison
+// Rows
 
 /** One population of one family: the whole-set population and the attempts behind it. */
 interface FamilySide {
@@ -557,9 +569,9 @@ interface FamilySide {
 }
 
 function familySide(family: LedgerFamily, key: PopulationKey): FamilySide {
-  const relation = POPULATION_RELATION[key]
+  const { relation, label } = POPULATIONS[key]
   const attempts = family.passes.flatMap((pass) => pass.audit?.attempts ?? []).filter((attempt) => attempt.mechanical.relation === relation)
-  const population = family.aggregate?.audit.populations[key] ?? populationOf(key === 'initial' ? 'initial' : 'follow_up', attempts)
+  const population = family.aggregate?.audit.populations[key] ?? populationOf(label, attempts)
   return { population, attempts }
 }
 
@@ -572,7 +584,7 @@ function passCell(pass: LedgerPass, reading: () => Reading | null): LedgerCell {
 
 function passReadings(pass: LedgerPass, key: PopulationKey): Record<string, Reading> | null {
   if (pass.audit === null) return null
-  const relation = POPULATION_RELATION[key]
+  const { relation } = POPULATIONS[key]
   return populationReadings(
     pass.audit.populations[key],
     pass.audit.attempts.filter((attempt) => attempt.mechanical.relation === relation),
@@ -627,7 +639,7 @@ function drillDownOf(subject: LedgerFamily, reference: LedgerFamily | null): Dri
       ? []
       : family.passes.map((pass) =>
           passCell(pass, () => {
-            const attempt = pass.audit?.attempts.find((candidate) => attemptKeyOf(candidate) === key)
+            const attempt = pass.audit?.attempts.find((listed) => attemptKeyOf(listed) === key)
             return attempt === undefined ? null : attemptReadings(attempt)[metric.id]!
           }),
         )
@@ -649,23 +661,18 @@ export function compareFamilies(subject: LedgerFamily, reference: LedgerFamily |
   const markers: Markers = reference === null || reference.conditions === null || subject.conditions === null ? { every: [], judgement: [] } : markersOf(reference.conditions, subject.conditions)
   const markersFor = (judgement: boolean): Marker[] => [...markers.every, ...(judgement ? markers.judgement : [])]
 
-  const subjectSides = Object.fromEntries(POPULATION_KEYS.map((key) => [key, familySide(subject, key)])) as Record<PopulationKey, FamilySide>
-  const referenceSides = reference === null ? null : (Object.fromEntries(POPULATION_KEYS.map((key) => [key, familySide(reference, key)])) as Record<PopulationKey, FamilySide>)
-  const subjectHeadline = Object.fromEntries(POPULATION_KEYS.map((key) => [key, headlineSide(subject, key, subjectSides[key])])) as Record<PopulationKey, Record<string, HeadlineSide>>
-  const referenceHeadline =
-    reference === null || referenceSides === null
-      ? null
-      : (Object.fromEntries(POPULATION_KEYS.map((key) => [key, headlineSide(reference, key, referenceSides[key])])) as Record<PopulationKey, Record<string, HeadlineSide>>)
+  const subjectSides = byPopulation((key) => familySide(subject, key))
+  const referenceSides = reference === null ? null : byPopulation((key) => familySide(reference, key))
+  const subjectHeadline = byPopulation((key) => headlineSide(subject, key, subjectSides[key]))
+  const referenceHeadline = reference === null || referenceSides === null ? null : byPopulation((key) => headlineSide(reference, key, referenceSides[key]))
 
   const headline: HeadlineEntry[] = HEADLINE_METRICS.map((metric) => ({
     metric,
-    populations: Object.fromEntries(
-      POPULATION_KEYS.map((key) => {
-        const own = subjectHeadline[key][metric.id]!
-        const other = referenceHeadline?.[key][metric.id] ?? null
-        return [key, { reference: other, subject: own, delta: other === null ? null : deltaOf(metric, other.aggregate, own.aggregate) }]
-      }),
-    ) as Record<PopulationKey, HeadlinePopulation>,
+    populations: byPopulation((key) => {
+      const own = subjectHeadline[key][metric.id]!
+      const other = referenceHeadline?.[key][metric.id] ?? null
+      return { reference: other, subject: own, delta: other === null ? null : deltaOf(metric, other.aggregate, own.aggregate) }
+    }),
     markers: markersFor(metric.judgement),
   }))
 
@@ -687,25 +694,25 @@ function countersRow(
   referenceSides: Record<PopulationKey, FamilySide> | null,
   markersFor: (judgement: boolean) => Marker[],
 ): CounterEntry[] {
-  const own = Object.fromEntries(POPULATION_KEYS.map((key) => [key, countersOf(subjectSides[key].population, subjectSides[key].attempts)])) as Record<PopulationKey, readonly Counter[]>
-  const other =
-    referenceSides === null ? null : (Object.fromEntries(POPULATION_KEYS.map((key) => [key, countersOf(referenceSides[key].population, referenceSides[key].attempts)])) as Record<PopulationKey, readonly Counter[]>)
+  const own = byPopulation((key) => countersOf(subjectSides[key].population, subjectSides[key].attempts))
+  const other = referenceSides === null ? null : byPopulation((key) => countersOf(referenceSides[key].population, referenceSides[key].attempts))
   // Labels in first-seen order: the Subject's initial counters, then anything only another side has (a Finalization Cause or a tool one side never saw).
   const labels = new Map<string, boolean>()
   for (const key of POPULATION_KEYS) {
     for (const list of [own[key], other?.[key] ?? []]) for (const counter of list) if (!labels.has(counter.label)) labels.set(counter.label, counter.judgement)
   }
-  const valueOf = (list: readonly Counter[] | null, label: string): number | null => list?.find((counter) => counter.label === label)?.value ?? null
+  const readingOf = (list: readonly Counter[] | null, label: string): Reading | null => {
+    const counter = list?.find((listed) => listed.label === label)
+    return counter === undefined ? null : { value: counter.value, over: counter.over }
+  }
   return [...labels.entries()].map(([label, judgement]) => ({
     label,
     judgement,
-    populations: Object.fromEntries(
-      POPULATION_KEYS.map((key) => {
-        const subject = valueOf(own[key], label)
-        const reference = valueOf(other?.[key] ?? null, label)
-        return [key, { reference, subject, delta: reference === null || subject === null ? null : subject - reference }]
-      }),
-    ) as CounterEntry['populations'],
+    populations: byPopulation((key) => {
+      const subject = readingOf(own[key], label)
+      const reference = readingOf(other?.[key] ?? null, label)
+      return { reference, subject, delta: reference?.value == null || subject?.value == null ? null : subject.value - reference.value }
+    }),
     markers: markersFor(judgement),
   }))
 }
