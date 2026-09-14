@@ -31,10 +31,10 @@
     "adblock": "production_default",
     "reviewerModel": "claude-opus-5",
     "reviewerEffort": "high",
-    "reviewerPromptVersion": "audit-p1",
-    "auditCommit": "4586e4137fad698b9b12e92d7d954acb1aaddd24",
+    "reviewerPromptVersion": "audit-p2",
+    "auditCommit": "be1e592a808e636b81b10e2a377de8308183d91e",
     "auditDirtyTree": false,
-    "generatedAt": "2026-09-14T11:58:54.837Z"
+    "generatedAt": "2026-09-14T13:00:07.665Z"
   },
   "attempts": [
     {
@@ -1391,11 +1391,11 @@
           "status": "useful_partial",
           "reviewer": "claude-opus-5 via live:grade"
         },
-        "checksNotReached": [
+        "checksUnsatisfied": [
           "fact-05"
         ],
         "checksTotal": 10,
-        "digestHash": "sha256:f7591b07debdb2c11f77aaa351b6df92758f941033d62d5ca746ae91c0d566f1"
+        "digestHash": "sha256:87632bbf7a46f6970479fc48b69cf1fb5ca395673a051e07804e1521eb29d60e"
       },
       "review": {
         "judgement": {
@@ -1404,79 +1404,75 @@
             {
               "round": 1,
               "url": "https://www.raspberrypi.com/documentation/computers/camera.html",
-              "reason": "The navigate landed on a Not-found Page (title 'Page not found – Raspberry Pi'). A 404 can carry none of the required facts, even though the site and subject were right."
+              "reason": "Not-found page: a 404 can carry none of the required facts."
             }
           ],
           "overrules": [
             {
               "round": 11,
               "kind": "acquisition_without_progress",
-              "reason": "The read_page on the raw cm3.adoc returned only the page header, with no body text (6 output tokens). The next round hit End of Page, a look was refused, and the evidence for this file was later grounded in the GitHub-rendered copy from round 14. The read brought in no material."
+              "reason": "read_page on the raw cm3.adoc returned only the header line with no body text, and round 13 then tried to get the text another way. The raw page brought no legible material in."
             },
             {
               "round": 17,
               "kind": "acquisition_without_progress",
-              "reason": "Same pattern as round 11: the read_page on the raw install.adoc returned only the header, with no text. Round 18 answered End of Page and the Run had to re-acquire the file through the GitHub blob view in round 19, where memory-1 is grounded. No new material came in."
+              "reason": "read_page on the raw install.adoc again returned only the header line with no body text. The Run had to renavigate to the GitHub blob view in round 19 to get the content, so this read made no progress."
             }
           ],
           "stoppedEarly": {
             "value": false,
-            "reason": "The Run used all 24 budgeted Tool Rounds (budget_exhausted) before the Finalization rounds 25–26, so it did not stop with budget left."
+            "reason": "The attempt used all 24 of its 24 Tool Rounds and ended as budget_exhausted, so it did not stop early.",
+            "checks": []
+          },
+          "answerOmitted": {
+            "value": false,
+            "reason": "Nothing in the digest shows that a page the Run read carried fact-05. The verified source for that check is the rendered camera_software.html page, which the Run never opened. The GitHub source for that page (round 20) is shown only by its title. The libcamera_differences.adoc page (round 21) was recorded only for dropped legacy options, not for which camera modules the legacy stack supports. So fact-05 needed a page the Run had not read.",
+            "checks": []
           },
           "verdict": {
             "primary": "rounds_wasted",
-            "primaryReason": "With rounds 11 and 17 overruled, 7 of 24 budgeted rounds (29%) had no Progress: rounds 1 (a 404), 5, 7, 11, 12, 17 and 18. Another 3 (12.5%) were refused look calls: rounds 8, 13 and 16. Rounds 10 and 15 opened raw.githubusercontent pages that the tools could not render, and both files had to be fetched again at rounds 14 and 19. That is about 12 of 24 rounds (50%) lost to repeats and dead ends. Meanwhile the camera_software.adoc page reached at round 20 was never read, and the unreached fact-05 sits on that path. Round 21 took the libcamera_differences page instead, and rounds 23–24 went to rpicam_still, with the budget warnings at rounds 18 and 21 already out. The work was on-key, but half the budget went to rounds that brought nothing new.",
-            "secondary": null,
-            "secondaryReason": null
+            "primaryReason": "About 10 of the 24 budgeted rounds brought nothing new: the 404 in round 1; the End of Page scrolls in rounds 5, 12 and 18; the illegible look in round 7; the refused looks in rounds 8, 13 and 16; and the empty raw-page reads in rounds 11 and 17 (overruled). The detour through raw.githubusercontent.com (rounds 10–18) then had to be repeated through GitHub blob pages (rounds 14 and 19). That left too few rounds to reach the legacy-stack material behind fact-05 before the budget ran out.",
+            "secondary": "tier_too_small_or_never_escalated",
+            "secondaryReason": "The pages the Run did reach were on-key, and its productive rounds (2–4, 9, 10, 14, 15 and 19–24) covered 9 of the 10 checks. The investigation-tier budget of 24 ended the Run while it was still acquiring useful pages (rounds 23–24), and there was no Tier Escalation."
           },
           "flags": [
             {
-              "round": 11,
-              "question": "Is it right to overrule round 11 to acquisition_without_progress? The digest shows only the result head, so the read_page may have returned text that the head cut off."
-            },
-            {
-              "round": 17,
-              "question": "Is it right to overrule round 17 to acquisition_without_progress? It rests on the same truncated result head as round 11."
-            },
-            {
-              "round": 10,
-              "question": "Should rounds 10 and 15 (the raw.githubusercontent .adoc files) count as Off-key or as without Progress? The files are on-key in subject, but the tools could not render them and the same files were re-acquired at rounds 14 and 19."
-            },
-            {
               "round": 20,
-              "question": "Was the GitHub camera_software.adoc page at round 20 able to carry fact-05 itself, or is it only a list of includes? The answer decides whether fact-05 was one read away or needed further navigation."
+              "question": "Does the GitHub source of camera_software.adoc (round 20) show the legacy-stack support text directly, or only include directives? If it shows the text, fact-05 came from a page the Run had read, and answerOmitted should be true."
             },
             {
               "round": 21,
-              "question": "Could the libcamera_differences.adoc page at round 21 carry fact-05 (it compares the legacy and current stacks), or did it cover only option differences? A careful reader might call it borderline Off-key for fact-05 while it stays on-key for fact-06."
+              "question": "Does libcamera_differences.adoc say which camera modules the legacy stack supports? If so, fact-05 belongs under answerOmitted."
+            },
+            {
+              "round": 11,
+              "question": "Were the empty read_page results on the raw pages (rounds 11 and 17) really empty, or was the result head just cut short? If the text arrived, the overrules to acquisition_without_progress should be reversed."
+            },
+            {
+              "round": 1,
+              "question": "Should a 404 already labeled acquisition_without_progress also be marked Off-key, or is that double-counting?"
             },
             {
               "round": null,
-              "question": "Should failed_rounds be a secondary verdict? The three refused looks (rounds 8, 13, 16, 12.5% of budget) are counted here as part of the waste, not as the cause of the missed check."
-            },
-            {
-              "round": null,
-              "question": "Is tier_too_small_or_never_escalated a defensible secondary? The Run ran at investigation tier with no Tier Escalation and was cut off by the budget while still making on-key progress at rounds 19–24."
+              "question": "Is rounds_wasted or tier_too_small_or_never_escalated the more decisive primary verdict, given that most pages reached were on-key and the Run was still productive when the budget ran out?"
             }
           ]
         },
         "caveats": [
-          "flag (round 11): Is it right to overrule round 11 to acquisition_without_progress? The digest shows only the result head, so the read_page may have returned text that the head cut off.",
-          "flag (round 17): Is it right to overrule round 17 to acquisition_without_progress? It rests on the same truncated result head as round 11.",
-          "flag (round 10): Should rounds 10 and 15 (the raw.githubusercontent .adoc files) count as Off-key or as without Progress? The files are on-key in subject, but the tools could not render them and the same files were re-acquired at rounds 14 and 19.",
-          "flag (round 20): Was the GitHub camera_software.adoc page at round 20 able to carry fact-05 itself, or is it only a list of includes? The answer decides whether fact-05 was one read away or needed further navigation.",
-          "flag (round 21): Could the libcamera_differences.adoc page at round 21 carry fact-05 (it compares the legacy and current stacks), or did it cover only option differences? A careful reader might call it borderline Off-key for fact-05 while it stays on-key for fact-06.",
-          "flag: Should failed_rounds be a secondary verdict? The three refused looks (rounds 8, 13, 16, 12.5% of budget) are counted here as part of the waste, not as the cause of the missed check.",
-          "flag: Is tier_too_small_or_never_escalated a defensible secondary? The Run ran at investigation tier with no Tier Escalation and was cut off by the budget while still making on-key progress at rounds 19–24."
+          "flag (round 20): Does the GitHub source of camera_software.adoc (round 20) show the legacy-stack support text directly, or only include directives? If it shows the text, fact-05 came from a page the Run had read, and answerOmitted should be true.",
+          "flag (round 21): Does libcamera_differences.adoc say which camera modules the legacy stack supports? If so, fact-05 belongs under answerOmitted.",
+          "flag (round 11): Were the empty read_page results on the raw pages (rounds 11 and 17) really empty, or was the result head just cut short? If the text arrived, the overrules to acquisition_without_progress should be reversed.",
+          "flag (round 1): Should a 404 already labeled acquisition_without_progress also be marked Off-key, or is that double-counting?",
+          "flag: Is rounds_wasted or tier_too_small_or_never_escalated the more decisive primary verdict, given that most pages reached were on-key and the Run was still productive when the budget ran out?"
         ],
         "model": "claude-opus-5",
         "served": "claude-opus-5",
         "effort": "high",
-        "promptVersion": "audit-p1",
-        "digestHash": "sha256:f7591b07debdb2c11f77aaa351b6df92758f941033d62d5ca746ae91c0d566f1",
+        "promptVersion": "audit-p2",
+        "digestHash": "sha256:87632bbf7a46f6970479fc48b69cf1fb5ca395673a051e07804e1521eb29d60e",
         "costUsd": 0.2,
-        "durationMs": 171426,
-        "judgedAt": "2026-09-14T00:35:26.277Z"
+        "durationMs": 35243,
+        "judgedAt": "2026-09-14T12:52:34.503Z"
       },
       "countsAfterOverrules": {
         "acquisition_with_progress": 13,
@@ -2835,145 +2831,94 @@
           "status": "useful_partial",
           "reviewer": "claude-opus-5 via live:grade"
         },
-        "checksNotReached": [
+        "checksUnsatisfied": [
           "fact-02"
         ],
         "checksTotal": 6,
-        "digestHash": "sha256:55f47c8a8d280a1cff941371540d6b8267a7ee46e9551f0b5ef534e9d181d08d"
+        "digestHash": "sha256:6410118bee8952f9a05a5048d847c8d0fb7ed28d72cf8eeb6ea584074e93bf76"
       },
       "review": {
         "judgement": {
           "searchLoops": [],
           "offKey": [
             {
-              "round": 1,
-              "url": "https://www.raspberrypi.com/products/camera-module-3/",
-              "reason": "Camera Module 3 product page. It is a source for the initial task, but it has no case-lid or mechanical-fit material, so it cannot carry fact-01 or fact-02. fact-03 restates earlier conclusions and does not need a re-read."
-            },
-            {
-              "round": 2,
-              "url": "https://www.raspberrypi.com/products/camera-module-3/",
-              "reason": "A click on the same product page. The subject is still the camera's features, not whether it fits the Zero Case lid."
-            },
-            {
-              "round": 3,
-              "url": "https://www.raspberrypi.com/products/camera-module-3",
-              "reason": "This scroll brought in intro marketing text. It is the wrong subject for the enclosure question."
-            },
-            {
-              "round": 4,
-              "url": "https://www.raspberrypi.com/products/camera-module-3",
-              "reason": "This scroll brought in pricing and lens-variant text. Nothing on it bears on the lid."
-            },
-            {
-              "round": 5,
-              "url": "https://www.raspberrypi.com/products/camera-module-3",
-              "reason": "This scroll brought in sensor and autofocus marketing text. It is about features, not mechanical fit."
-            },
-            {
-              "round": 6,
-              "url": "https://www.raspberrypi.com/products/camera-module-3",
-              "reason": "This scroll brought in the wide-lens section. It is the wrong subject."
-            },
-            {
-              "round": 7,
-              "url": "https://www.raspberrypi.com/products/camera-module-3",
-              "reason": "This scroll brought in the section on the no-IR-filter variant. It is the wrong subject."
-            },
-            {
-              "round": 8,
-              "url": "https://www.raspberrypi.com/products/camera-module-3",
-              "reason": "This scroll brought in a video embed and frame-rate text. It is the wrong subject."
-            },
-            {
-              "round": 9,
-              "url": "https://www.raspberrypi.com/products/camera-module-3",
-              "reason": "This scroll brought in the developer and libcamera blurb. It says nothing about lid fit."
-            },
-            {
-              "round": 10,
-              "url": "https://www.raspberrypi.com/products/camera-module-3",
-              "reason": "This scroll brought in the beginner software blurb and a link. It says nothing about lid fit."
-            },
-            {
-              "round": 11,
-              "url": "https://www.raspberrypi.com/products/camera-module-3",
-              "reason": "This scroll brought in only a link to the Picamera2 manual. It is the wrong subject."
-            },
-            {
-              "round": 12,
-              "url": "https://www.raspberrypi.com/products/camera-module-3",
-              "reason": "This scroll exposed a link to the documentation page that is the follow-up's verified source, but the product page itself still carries no lid facts. The run did not follow that link until round 19."
-            },
-            {
-              "round": 13,
-              "url": "https://www.raspberrypi.com/products/camera-module-3",
-              "reason": "This scroll brought in image-gallery buttons. It is the wrong subject."
-            },
-            {
               "round": 16,
               "url": "https://duckduckgo.com/?q=Camera+Module+3+Raspberry+Pi+Zero+Case+camera+lid+not+compatible&ia=web",
-              "reason": "A search results page. It can point to sources but cannot itself carry a required fact."
+              "reason": "A search results page. It lists links but is not a source that can carry any required fact. The record_evidence call in the same round refers to the Zero Case page from round 15, not to this page."
             },
             {
               "round": 17,
               "url": "https://forums.raspberrypi.com/viewtopic.php?t=395459",
-              "reason": "Walled page: the title 'Just a moment...' is a bot-check interstitial, and no forum content loaded."
+              "reason": "The page is titled 'Just a moment...', which is an anti-bot challenge wall. The thread's content never loaded, so the page carried nothing the Run could use."
             }
           ],
-          "overrules": [],
+          "overrules": [
+            {
+              "round": 17,
+              "kind": "acquisition_without_progress",
+              "reason": "The click did change the URL, but it landed on a challenge wall with no thread content. No new material came in, so the page-state change was not real progress."
+            }
+          ],
           "stoppedEarly": {
             "value": false,
-            "reason": "The Run used all 24 budgeted Tool Rounds and ended with budget_exhausted, so it did not stop early."
+            "reason": "The Run used all 24 of its 24 Tool Rounds and ended on budget_exhausted, so it did not stop early.",
+            "checks": []
+          },
+          "answerOmitted": {
+            "value": true,
+            "reason": "fact-02 is carried by the verified source https://www.raspberrypi.com/documentation/accessories/camera.html. The Run opened that page in round 19, opened it again at the #camera-module-3 anchor in round 20, and ran a Look on it in round 21 that asked about dimensions and case compatibility. The page had been read, and the Answer did not state fact-02.",
+            "checks": [
+              "fact-02"
+            ]
           },
           "verdict": {
             "primary": "rounds_wasted",
-            "primaryReason": "13 of 24 budgeted rounds (54%) went to the Camera Module 3 product page (rounds 1-13, plus round 14, which hit End of Page). Most of those were scrolls through feature marketing that could not carry fact-01 or fact-02. Round 12 exposed a link to the verified documentation page, but the Run did not go there until round 19. Rounds 16-18 went to a search results page, a walled forum page and an inherited re-acquisition, and round 20 re-navigated a URL already acquired. Round 15 found the lid verdict on the Zero Case product page. The one Look at the verified source (round 21) came with 3 rounds left, and the rest of the budget went to bookkeeping (rounds 22-24), one call of which was rejected as malformed. fact-02 was never reached, although the page that carries it was open from round 19.",
-            "secondary": null,
-            "secondaryReason": null
+            "primaryReason": "About 14 of the 24 budgeted rounds went to the Camera Module 3 product page (https://www.raspberrypi.com/products/camera-module-3/). Round 1 opened it, round 2 clicked on it, and rounds 3–14 were scrolls to End of Page. That page is context from the initial step and adds nothing for fact-01 or fact-02. Rounds 16–17 went to a search page and a challenge wall, and round 18 re-opened an inherited page. As a result the key mechanical source was not reached until round 19, with only a few rounds left, and it got just one targeted Look (round 21) before the bookkeeping rounds 22–24 used up the budget.",
+            "secondary": "answer_omitted",
+            "secondaryReason": "fact-02 is on camera.html, which the Run read in rounds 19–21, but the Answer did not state it. The Run relied on the Zero Case product page it checkpointed in round 16 and never recorded evidence from the documentation page."
           },
           "flags": [
             {
-              "round": 1,
-              "question": "Should rounds 1-13 on the Camera Module 3 product page count as off-key? That page is a source for the initial task and could be read as re-supporting fact-03, the continuity of the earlier conclusions."
-            },
-            {
-              "round": 18,
-              "question": "Is the GitHub cm3.adoc page on-key? It is the documentation source file behind the Camera Module 3 section and might hold the mechanical text for fact-02, but the round was mechanically labeled an inherited repeat."
-            },
-            {
               "round": 21,
-              "question": "The Look on the verified documentation page asked about dimensions and case compatibility but did not surface fact-02. Was that the page failing to show the mechanical section, or the question and scroll position missing it? If the former, is 'tier_too_small_or_never_escalated' a fair secondary verdict, since no Tier Escalation happened and the budget ran out right after the right page was reached?"
+              "question": "The Look in round 21 was aimed at the Camera Module 3 section of camera.html. Was the mechanical section that carries fact-02 actually in view? If it was not, should fact-02 count as needing material the Run never saw, rather than as omitted?"
             },
             {
-              "round": 22,
-              "question": "Round 22's record_candidate was rejected as malformed, costing a budgeted round. Should it be read as a partly failed round instead of plain Bookkeeping?"
+              "round": 20,
+              "question": "Round 20 navigated to the #camera-module-3 anchor on a page already acquired, and the view moved to a new section that round 21's Look then read. Should round 20 count as Acquisition with Progress rather than without?"
+            },
+            {
+              "round": 3,
+              "question": "Rounds 1–14 were spent on the Camera Module 3 product page. Should they be judged Off-key for this follow-up? That page can support fact-03 only as context from the initial step and cannot carry fact-01 or fact-02."
+            },
+            {
+              "round": 17,
+              "question": "Is it right to overrule round 17 to without-progress because it landed on a challenge wall, given that the URL did change to a page the Run had not visited?"
             },
             {
               "round": null,
-              "question": "Is rounds_wasted the right primary verdict, given that about half the waste was on an official, related page and not on unrelated sites?"
+              "question": "Should answer_omitted be the primary verdict instead of rounds_wasted? The one unsatisfied check was on a page the Run had read, whatever the reason it got there late."
             }
           ]
         },
         "caveats": [
-          "flag (round 1): Should rounds 1-13 on the Camera Module 3 product page count as off-key? That page is a source for the initial task and could be read as re-supporting fact-03, the continuity of the earlier conclusions.",
-          "flag (round 18): Is the GitHub cm3.adoc page on-key? It is the documentation source file behind the Camera Module 3 section and might hold the mechanical text for fact-02, but the round was mechanically labeled an inherited repeat.",
-          "flag (round 21): The Look on the verified documentation page asked about dimensions and case compatibility but did not surface fact-02. Was that the page failing to show the mechanical section, or the question and scroll position missing it? If the former, is 'tier_too_small_or_never_escalated' a fair secondary verdict, since no Tier Escalation happened and the budget ran out right after the right page was reached?",
-          "flag (round 22): Round 22's record_candidate was rejected as malformed, costing a budgeted round. Should it be read as a partly failed round instead of plain Bookkeeping?",
-          "flag: Is rounds_wasted the right primary verdict, given that about half the waste was on an official, related page and not on unrelated sites?"
+          "flag (round 21): The Look in round 21 was aimed at the Camera Module 3 section of camera.html. Was the mechanical section that carries fact-02 actually in view? If it was not, should fact-02 count as needing material the Run never saw, rather than as omitted?",
+          "flag (round 20): Round 20 navigated to the #camera-module-3 anchor on a page already acquired, and the view moved to a new section that round 21's Look then read. Should round 20 count as Acquisition with Progress rather than without?",
+          "flag (round 3): Rounds 1–14 were spent on the Camera Module 3 product page. Should they be judged Off-key for this follow-up? That page can support fact-03 only as context from the initial step and cannot carry fact-01 or fact-02.",
+          "flag (round 17): Is it right to overrule round 17 to without-progress because it landed on a challenge wall, given that the URL did change to a page the Run had not visited?",
+          "flag: Should answer_omitted be the primary verdict instead of rounds_wasted? The one unsatisfied check was on a page the Run had read, whatever the reason it got there late."
         ],
         "model": "claude-opus-5",
         "served": "claude-opus-5",
         "effort": "high",
-        "promptVersion": "audit-p1",
-        "digestHash": "sha256:55f47c8a8d280a1cff941371540d6b8267a7ee46e9551f0b5ef534e9d181d08d",
-        "costUsd": 0.22,
-        "durationMs": 49568,
-        "judgedAt": "2026-09-13T01:49:03.685Z"
+        "promptVersion": "audit-p2",
+        "digestHash": "sha256:6410118bee8952f9a05a5048d847c8d0fb7ed28d72cf8eeb6ea584074e93bf76",
+        "costUsd": 0.2,
+        "durationMs": 47013,
+        "judgedAt": "2026-09-14T12:53:22.503Z"
       },
       "countsAfterOverrules": {
-        "acquisition_with_progress": 18,
-        "acquisition_without_progress": 3,
+        "acquisition_with_progress": 17,
+        "acquisition_without_progress": 4,
         "collection": 0,
         "bookkeeping": 3,
         "failed_round": 0,
@@ -4255,7 +4200,7 @@
           "status": "useful_partial",
           "reviewer": "claude-opus-5 via live:grade"
         },
-        "checksNotReached": [
+        "checksUnsatisfied": [
           "fact-03",
           "fact-05",
           "fact-08",
@@ -4264,7 +4209,7 @@
           "fact-11"
         ],
         "checksTotal": 17,
-        "digestHash": "sha256:2ba76696fd3013ac0e6132c165d64e6fd5a6049e7b9043d19b0ffa8ab2e91f24"
+        "digestHash": "sha256:bb7648c20b1f0f8c8ff091ace11f2101c533579027d3f9985a3bc4ab4ddc8d76"
       },
       "review": {
         "judgement": {
@@ -4273,104 +4218,113 @@
             {
               "round": 1,
               "url": "https://collections.rmg.co.uk/search/?searchString=Harrison%20H4",
-              "reason": "401 Authorization Required: a walled page that carries no record content."
+              "reason": "A 401 authorization wall. It carries no object record."
             },
             {
               "round": 2,
               "url": "https://www.rmg.co.uk/search?q=Harrison%20H4%20watch",
-              "reason": "Site-wide search results page; lists links, not the object record's fields."
+              "reason": "A site-wide search results page. It can only point to records and holds none of the required catalogue fields."
             },
             {
               "round": 3,
               "url": "https://www.rmg.co.uk/collections",
-              "reason": "Collections landing page on the right site but no object record on it."
+              "reason": "The collections landing page. It is on the right site but is not the watch record or the case record."
             },
             {
               "round": 6,
               "url": "https://www.rmg.co.uk/collections",
-              "reason": "Click on the landing page that cleared an overlay; still no record content."
+              "reason": "Clearing an overlay on the same landing page. No object record was in view."
             },
             {
               "round": 7,
               "url": "https://www.rmg.co.uk/collections/search/Harrison%20H4",
-              "reason": "Search results page; a route to the records, not a carrier of any required fact."
+              "reason": "A collections search results page, not an object record."
             },
             {
               "round": 8,
               "url": "https://www.rmg.co.uk/collections/search/Harrison%20H4",
-              "reason": "Reading the same search results page; holds result links only."
+              "reason": "A read of the search results page. It lists hits but carries none of the required fields."
             },
             {
               "round": 9,
               "url": "https://www.rmg.co.uk/collections/objects/search/Harrison%20H4",
-              "reason": "Filtered collection results listing; no record detail fields."
+              "reason": "An object-filtered results list. It is a search results page, not the watch or case record."
             }
           ],
           "overrules": [
             {
               "round": 11,
               "kind": "acquisition_with_progress",
-              "reason": "Round 10's navigate to rmgc-object-79142 was aborted, so round 11 is the Run's first successful arrival at S1. The no-progress Notice does not reflect the page actually acquired."
+              "reason": "The navigate in round 10 was refused, so round 11 was the first time the Run actually loaded https://www.rmg.co.uk/collections/objects/rmgc-object-79142. The no-progress notice was set off by the repeated URL, not by a state the Run had already seen."
             },
             {
               "round": 16,
               "kind": "acquisition_without_progress",
-              "reason": "Scrolling up to y=277 put the Run back in the state it already saw in round 12, with the same 'Next image' button. It repeats an observed state."
+              "reason": "Scrolling back up to y=277 showed the same 'Next image' view already brought in by round 12 on an unchanged page. This was a repeat observation."
             },
             {
               "round": 18,
               "kind": "acquisition_without_progress",
-              "reason": "A third return to the y=277 state seen in rounds 12 and 16, part of an up/down cycle on S1 that brought in nothing new."
+              "reason": "A third return to the y=277 view seen in rounds 12 and 16. It was part of an up/down scroll oscillation across rounds 12–18 that brought nothing new in."
             }
           ],
           "stoppedEarly": {
             "value": false,
-            "reason": "The Run used all 24 of its 24 budgeted rounds and ended on budget_exhausted."
+            "reason": "The attempt used all 24 of its 24 Tool Rounds and ended on budget exhaustion. It did not stop with budget left.",
+            "checks": []
+          },
+          "answerOmitted": {
+            "value": true,
+            "reason": "fact-03 and fact-05 are both fields of the watch record https://www.rmg.co.uk/collections/objects/rmgc-object-79142. The Run read that record in round 14, expanded its details in round 22 and reloaded it with ?view=full in round 24. The Answer did not state either field. fact-08, fact-09, fact-10 and fact-11 would have needed the separate case record, which the Run never opened, so they are not counted here.",
+            "checks": [
+              "fact-03",
+              "fact-05"
+            ]
           },
           "verdict": {
             "primary": "rounds_wasted",
-            "primaryReason": "Rounds 1–9 went to the walled page, landing pages and search results. Seven of the 14 mechanical with-progress rounds (1, 2, 3, 6, 7, 8, 9) are off-key. Once on S1, rounds 12–18 cycled up and down between y=277 and end of page. After overrules, rounds 13, 16, 17 and 18 are repeats without progress, and round 15 was refused as a repeat. The S2 case record, linked from S1, was never opened, so fact-08 to fact-11 were never reached. Fact-03 and fact-05, which S1 carries, were not reached either. On-key productive rounds come to roughly 6 of 24 (11, 12, 14, 21, 22, 24).",
-            "secondary": "failed_rounds",
-            "secondaryReason": "6 of 24 budgeted rounds (25%) failed: refused looks in 5, 19 and 20, an aborted navigate in 10, a refused repeat scroll in 15 and an unresolvable API host in 23. Rounds 19–20 alone cost two of the last six rounds, rounds that could have reached S2."
+            "primaryReason": "About 15 of the 24 budgeted rounds went without on-key progress. Six were failed rounds (5, 10, 15, 19, 20, 23), mostly refused repeat looks and a repeat scroll. Rounds 4, 13 and 17 made no progress, and rounds 16 and 18 were scroll repeats (overruled). Rounds 1–3 and 6–9 were off-key: a walled page, landing pages and search results. Only rounds 11, 12, 14, 21, 22 and 24 worked on the watch record. The budget ran out before the Run reached the case record, leaving fact-08 to fact-11 unsatisfied.",
+            "secondary": "answer_omitted",
+            "secondaryReason": "fact-03 and fact-05 follow from the watch record the Run read in rounds 14, 22 and 24, but the Answer left them unstated."
           },
           "flags": [
             {
+              "round": 14,
+              "question": "The round 14 read_page happened at scroll 554/3254, and round 19 then asked for the creator and dimensions, which suggests the details panel may have been collapsed. Did the Run's reads of S1 actually expose fact-03 and fact-05? If not, those checks belong to neither list rather than to answerOmitted."
+            },
+            {
               "round": 2,
-              "question": "Should rounds 1, 2 and 7 count as one Search Loop for 'Harrison H4', given that each tries a different search surface and rounds 3–6 are navigation between them?"
+              "question": "Rounds 1, 2, 7 and 9 all search for 'Harrison H4' across different entry points. Should they count as one Search Loop, even though non-search rounds 3–6 separate them and round 1 to round 2 was a change of source after a 401?"
             },
             {
               "round": 11,
-              "question": "Is the upgrade to with-progress right, when the app issued a no-progress Notice after round 10's aborted attempt at the same URL?"
+              "question": "Is overruling round 11 to progress right, given that the navigate in round 10 to the same URL was refused and the page had never loaded before?"
             },
             {
-              "round": 24,
-              "question": "Is ?view=full on rmgc-object-79142 a genuinely new page state, or a re-acquisition of S1 that should count as without progress?"
-            },
-            {
-              "round": 22,
-              "question": "The click in round 22 changed the page signature on S1 but has no recorded outcome for the details table. Does it deserve with-progress?"
+              "round": 9,
+              "question": "Should the collections results pages in rounds 7–9 count as off-key, or as on-key navigation needed to find the record ID?"
             },
             {
               "round": null,
-              "question": "Should failed_rounds be primary instead? 25% failed rounds is close to the combined off-key and repeat share, and the refusals in 19–20 came right before the budget ran out."
+              "question": "Six refused rounds make up 25% of the budget. Should failed_rounds rank above answer_omitted as the secondary verdict?"
             }
           ]
         },
         "caveats": [
-          "flag (round 2): Should rounds 1, 2 and 7 count as one Search Loop for 'Harrison H4', given that each tries a different search surface and rounds 3–6 are navigation between them?",
-          "flag (round 11): Is the upgrade to with-progress right, when the app issued a no-progress Notice after round 10's aborted attempt at the same URL?",
-          "flag (round 24): Is ?view=full on rmgc-object-79142 a genuinely new page state, or a re-acquisition of S1 that should count as without progress?",
-          "flag (round 22): The click in round 22 changed the page signature on S1 but has no recorded outcome for the details table. Does it deserve with-progress?",
-          "flag: Should failed_rounds be primary instead? 25% failed rounds is close to the combined off-key and repeat share, and the refusals in 19–20 came right before the budget ran out."
+          "flag (round 14): The round 14 read_page happened at scroll 554/3254, and round 19 then asked for the creator and dimensions, which suggests the details panel may have been collapsed. Did the Run's reads of S1 actually expose fact-03 and fact-05? If not, those checks belong to neither list rather than to answerOmitted.",
+          "flag (round 2): Rounds 1, 2, 7 and 9 all search for 'Harrison H4' across different entry points. Should they count as one Search Loop, even though non-search rounds 3–6 separate them and round 1 to round 2 was a change of source after a 401?",
+          "flag (round 11): Is overruling round 11 to progress right, given that the navigate in round 10 to the same URL was refused and the page had never loaded before?",
+          "flag (round 9): Should the collections results pages in rounds 7–9 count as off-key, or as on-key navigation needed to find the record ID?",
+          "flag: Six refused rounds make up 25% of the budget. Should failed_rounds rank above answer_omitted as the secondary verdict?"
         ],
         "model": "claude-opus-5",
         "served": "claude-opus-5",
         "effort": "high",
-        "promptVersion": "audit-p1",
-        "digestHash": "sha256:2ba76696fd3013ac0e6132c165d64e6fd5a6049e7b9043d19b0ffa8ab2e91f24",
-        "costUsd": 0.19,
-        "durationMs": 36592,
-        "judgedAt": "2026-09-13T01:49:41.104Z"
+        "promptVersion": "audit-p2",
+        "digestHash": "sha256:bb7648c20b1f0f8c8ff091ace11f2101c533579027d3f9985a3bc4ab4ddc8d76",
+        "costUsd": 0.2,
+        "durationMs": 43643,
+        "judgedAt": "2026-09-14T12:54:07.480Z"
       },
       "countsAfterOverrules": {
         "acquisition_with_progress": 13,
@@ -5704,13 +5658,13 @@
           "status": "useful_partial",
           "reviewer": "claude-opus-5 via live:grade"
         },
-        "checksNotReached": [
+        "checksUnsatisfied": [
           "fact-03",
           "fact-07",
           "fact-08"
         ],
         "checksTotal": 14,
-        "digestHash": "sha256:e5eaf4c67c42ed64f949b216c1e71d08e944ea255af931d0122d412aff11e3ba"
+        "digestHash": "sha256:47483da9a468b9d471b0aeab04e681649fd556f9cf5480d9e587642e49828307"
       },
       "review": {
         "judgement": {
@@ -5719,53 +5673,63 @@
             {
               "round": 1,
               "url": "https://duckduckgo.com/?q=eurostar+luggage+allowance+official&ia=web",
-              "reason": "This is a search results page. It can point to the official sources, but it cannot carry any required fact itself. It did lead straight to S1 in round 2."
+              "reason": "This is a search results page. It points to the official sources but cannot itself carry any required fact of the task."
             }
           ],
           "overrules": [],
           "stoppedEarly": {
             "value": false,
-            "reason": "The Run used 23 of its 24 Tool Rounds, with a budget warning at 1/24 in round 23, so it ran to its budget. The unreached checks fact-03, fact-07 and fact-08 needed no new pages: the material was already on S1 and S2, acquired in rounds 2–18. They were missed when the Answer was written, not by stopping acquisition."
+            "reason": "All three unsatisfied checks follow from pages the Run had already read: https://www.eurostar.com/uk-en/travel-info/travel-planning/luggage (rounds 2-12, cited in the round 23 checkpoint, including the London-route maximum bag length) and https://www.eurostar.com/uk-en/travel-info/travel-planning/luggage/musical-instruments (rounds 13-18). No check needed a page the Run had not read, and 23 of 24 Tool Rounds were used.",
+            "checks": []
+          },
+          "answerOmitted": {
+            "value": true,
+            "reason": "fact-03 follows from the general luggage page, which the Run scrolled through in rounds 4-12 and cited in the round 23 checkpoint along with its route length limit. fact-07 and fact-08 follow from combining the Standard allowance on that page (checkpoint memory-4) with the rule on the musical-instruments page that the guitar counts toward the allowance (memory-1, round 19). The Grade shows the Answer did not state any of the three.",
+            "checks": [
+              "fact-03",
+              "fact-07",
+              "fact-08"
+            ]
           },
           "verdict": {
-            "primary": "rounds_wasted",
-            "primaryReason": "Acquisition was on-key and done by round 18: S1 in rounds 2–12 and S2 in rounds 13–18, with round 1 the only Off-key round (1/23). The rest of the budget went to 5 bookkeeping rounds (19–23, about 22%) with 5 rejected checkpoints. Rounds 20, 21 and 22 (3/23, 13%) each made one attempt to record the user's constraint, and every one was rejected. That retry streak, plus the rejected first checkpoint in round 19 that round 23 had to redo, ate the remaining budget. The Run reached its final round with 1/24 left and no margin to check the Answer's coverage of fact-03, fact-07 and fact-08.",
+            "primary": "answer_omitted",
+            "primaryReason": "18 of 23 budgeted rounds were Acquisition with Progress, and 17 of those were on the two verified official pages (rounds 2-18). Only round 1 was Off-key. The Run read everything needed for fact-03, fact-07 and fact-08, but the Answer (round 24) left all three unstated.",
             "secondary": null,
             "secondaryReason": null
           },
           "flags": [
             {
               "round": 1,
-              "question": "Should the DuckDuckGo results page be called Off-key? It carries no required fact, but it was a one-round step that led directly to S1."
+              "question": "Should the search results page be counted as Off-key, given that it led straight to the official luggage page in round 2?"
             },
             {
               "round": 20,
-              "question": "Rounds 20–22 each held a single record_evidence call that was rejected. Should they stay Bookkeeping with the rejections counted beside them, or count as Failed rounds because every call was refused?"
+              "question": "Should rounds 20-22, three retries of a rejected user-text checkpoint (3 of 23 rounds), make rounds_wasted a secondary verdict, even though they did not cost the result?"
+            },
+            {
+              "round": 23,
+              "question": "Round 23 was a bookkeeping checkpoint made after acquisition had stopped in round 18. Should it be counted as Finalization rather than a budgeted Bookkeeping round?"
             },
             {
               "round": 4,
-              "question": "Rounds 4–12 scrolled S1 in small steps, and some steps showed only navigation links. Were these really Acquisition with Progress, or would a careful reviewer count some of them as low-value repeats?"
-            },
-            {
-              "round": null,
-              "question": "Is rounds_wasted the right primary verdict when all acquisition was on-key and the unreached checks were composition misses? Would no verdict from the closed set fit better, or does the 13–22% share of rejected-checkpoint rounds justify it?"
+              "question": "Nine consecutive scrolls on one page (rounds 4-12) each brought in new text, but some of it covered unrelated topics such as liquids and children. Should any of those rounds count as Acquisition without Progress, or as Off-key?"
             }
           ]
         },
         "caveats": [
-          "flag (round 1): Should the DuckDuckGo results page be called Off-key? It carries no required fact, but it was a one-round step that led directly to S1.",
-          "flag (round 20): Rounds 20–22 each held a single record_evidence call that was rejected. Should they stay Bookkeeping with the rejections counted beside them, or count as Failed rounds because every call was refused?",
-          "flag (round 4): Rounds 4–12 scrolled S1 in small steps, and some steps showed only navigation links. Were these really Acquisition with Progress, or would a careful reviewer count some of them as low-value repeats?",
-          "flag: Is rounds_wasted the right primary verdict when all acquisition was on-key and the unreached checks were composition misses? Would no verdict from the closed set fit better, or does the 13–22% share of rejected-checkpoint rounds justify it?"
+          "flag (round 1): Should the search results page be counted as Off-key, given that it led straight to the official luggage page in round 2?",
+          "flag (round 20): Should rounds 20-22, three retries of a rejected user-text checkpoint (3 of 23 rounds), make rounds_wasted a secondary verdict, even though they did not cost the result?",
+          "flag (round 23): Round 23 was a bookkeeping checkpoint made after acquisition had stopped in round 18. Should it be counted as Finalization rather than a budgeted Bookkeeping round?",
+          "flag (round 4): Nine consecutive scrolls on one page (rounds 4-12) each brought in new text, but some of it covered unrelated topics such as liquids and children. Should any of those rounds count as Acquisition without Progress, or as Off-key?"
         ],
         "model": "claude-opus-5",
         "served": "claude-opus-5",
         "effort": "high",
-        "promptVersion": "audit-p1",
-        "digestHash": "sha256:e5eaf4c67c42ed64f949b216c1e71d08e944ea255af931d0122d412aff11e3ba",
-        "costUsd": 0.18,
-        "durationMs": 26018,
-        "judgedAt": "2026-09-13T02:26:13.729Z"
+        "promptVersion": "audit-p2",
+        "digestHash": "sha256:47483da9a468b9d471b0aeab04e681649fd556f9cf5480d9e587642e49828307",
+        "costUsd": 0.21,
+        "durationMs": 39494,
+        "judgedAt": "2026-09-14T12:51:58.221Z"
       },
       "countsAfterOverrules": {
         "acquisition_with_progress": 18,
@@ -6767,9 +6731,9 @@
           "status": "pass",
           "reviewer": "claude-opus-5 via live:grade"
         },
-        "checksNotReached": [],
+        "checksUnsatisfied": [],
         "checksTotal": 6,
-        "digestHash": "sha256:842371670ae6ad0c61a799968a736b1d98a935095d5a6832bedd9ad991544d08"
+        "digestHash": "sha256:8a26b99cb917361e60bdf28cbf70f5566ed8c663fd5b889491742f834b7ef262"
       },
       "review": {
         "judgement": {
@@ -6778,73 +6742,74 @@
             {
               "round": 10,
               "url": "https://help.eurostar.com/?language=uk-en",
-              "reason": "This is the Help Centre home page, a starting point with a quick-search box. It does not itself carry the class-based allowance that fact-02 needs, and no fact-NN check can be settled on a landing page."
+              "reason": "The generic Help Centre home page is a landing page with a search box. It cannot carry any class-based allowance figure for fact-02, and the key's source is a different page."
             },
             {
               "round": 11,
               "url": "https://help.eurostar.com/faq/uk-en/question/What-luggage-can-I-take-onboard",
-              "reason": "The URL names a luggage FAQ, but the settled page title is the Help Centre 'Home'. The page seems to have fallen back to the home page rather than showing the FAQ answer, so it could not carry fact-01 to fact-03."
+              "reason": "The FAQ URL settled on a page titled 'Home | Eurostar Help Centre', the same title as round 10. That suggests a redirect to the help home rather than an FAQ answer, so the page shown could not carry the required facts."
             },
             {
               "round": 12,
               "url": "https://www.eurostar.com/uk-en/train",
-              "reason": "A general marketing page about trains across Europe. It is on the right site but covers the wrong subject, with no luggage allowance rules."
+              "reason": "This is the right site but the wrong subject: a general 'Trains across Europe' marketing page, not the luggage rules page that carries the per-class allowance."
             },
             {
               "round": 13,
               "url": "https://www.bing.com/search?q=%22Eurostar+Premier%22+luggage+allowance+%223+pieces%22+OR+%22three+pieces+of+luggage%22",
-              "reason": "A search results page. It can point to sources but is not itself an official statement of the allowance."
+              "reason": "This is a search results page. It shows third-party snippets, not the official published allowance, so it cannot itself carry a required fact."
             }
           ],
           "overrules": [],
           "stoppedEarly": {
             "value": false,
-            "reason": "The Run ended with objective_met after 18 of 24 rounds, and every check was reached. With nothing left unreached, it did not stop early."
+            "reason": "The attempt was graded pass with no unsatisfied checks, so no check needed a page the Run had not read.",
+            "checks": []
+          },
+          "answerOmitted": {
+            "value": false,
+            "reason": "The attempt was graded pass with no unsatisfied checks, so nothing on a page the Run had read was left out of the Answer.",
+            "checks": []
           },
           "verdict": {
             "primary": "rounds_wasted",
-            "primaryReason": "The run passed, but about 10 of its 18 budgeted rounds gave no on-key progress. That is round 1 (an inherited re-acquisition), round 4 (an unreadable Look), rounds 6 and 8 (refused Looks), rounds 10–13 (four off-key pages: the Help Centre home, the FAQ page that fell back to home, the trains page and a Bing results page) and rounds 16–17 (rejected checkpoints). The on-key work was the scrolls and read on S1 (rounds 2, 3, 5, 7, 9), the equivalent official page at round 14 and the accepted checkpoints at rounds 15 and 18. Moving to the US-English equivalent of S1 could have happened long before round 14.",
+            "primaryReason": "The attempt passed using 18 of 24 Tool Rounds, so the only real finding is inefficiency. Of the 18 budgeted rounds, 2 made no progress (round 1, which re-opened the inherited page, and round 4, whose Look returned nothing legible). Another 2 failed because their Looks were refused (rounds 6 and 8). Rounds 10–13 (4 rounds) went to off-key pages, and rounds 16–17 were rejected Evidence Checkpoints. That is about 10 of 18 rounds (~55%) that added nothing. The deciding reads were round 9 (read_page on S1) and round 14 (the equivalent US-English official page).",
             "secondary": null,
             "secondaryReason": null
           },
           "flags": [
             {
-              "round": 1,
-              "question": "Round 1 navigated back to an inherited page. The follow-up could only read that page by loading it again, so should this count as a necessary re-entry rather than a round without progress?"
-            },
-            {
-              "round": 10,
-              "question": "Is the Help Centre home off-key, or is it a reasonable step toward an equivalent official page that could carry fact-02?"
-            },
-            {
               "round": 11,
-              "question": "The URL names a luggage FAQ but the title reads 'Home'. Did the page actually render the FAQ answer, which would make it on-key, or did it fall back to the home page, and possibly repeat round 10's state?"
+              "question": "The page settled on the title 'Home | Eurostar Help Centre', the same as round 10. Should round 11 be overruled to Acquisition without Progress as a repeat of round 10's state, rather than just marked Off-key?"
             },
             {
-              "round": 9,
-              "question": "Round 9's read_page is labelled as progress, yet the run then left S1 without the class table. Did this read bring in any useful new material?"
+              "round": 12,
+              "question": "Could the general eurostar.com/uk-en/train page carry a summary of each travel class's allowance? If so, it should not be marked Off-key."
+            },
+            {
+              "round": 13,
+              "question": "Should a search results page aimed squarely at the Premier allowance count as Off-key, or as legitimate on-key discovery work?"
             },
             {
               "round": null,
-              "question": "The run passed with 6 rounds of budget unused. Is rounds_wasted still the right primary verdict, or should waste count against a verdict only when it cost the result? Should the two refused Looks (rounds 6 and 8) be a failed_rounds secondary?"
+              "question": "The attempt passed with budget left over. Is rounds_wasted a fair primary verdict, or should an attempt that passed be reported without a failure-type verdict at all?"
             }
           ]
         },
         "caveats": [
-          "flag (round 1): Round 1 navigated back to an inherited page. The follow-up could only read that page by loading it again, so should this count as a necessary re-entry rather than a round without progress?",
-          "flag (round 10): Is the Help Centre home off-key, or is it a reasonable step toward an equivalent official page that could carry fact-02?",
-          "flag (round 11): The URL names a luggage FAQ but the title reads 'Home'. Did the page actually render the FAQ answer, which would make it on-key, or did it fall back to the home page, and possibly repeat round 10's state?",
-          "flag (round 9): Round 9's read_page is labelled as progress, yet the run then left S1 without the class table. Did this read bring in any useful new material?",
-          "flag: The run passed with 6 rounds of budget unused. Is rounds_wasted still the right primary verdict, or should waste count against a verdict only when it cost the result? Should the two refused Looks (rounds 6 and 8) be a failed_rounds secondary?"
+          "flag (round 11): The page settled on the title 'Home | Eurostar Help Centre', the same as round 10. Should round 11 be overruled to Acquisition without Progress as a repeat of round 10's state, rather than just marked Off-key?",
+          "flag (round 12): Could the general eurostar.com/uk-en/train page carry a summary of each travel class's allowance? If so, it should not be marked Off-key.",
+          "flag (round 13): Should a search results page aimed squarely at the Premier allowance count as Off-key, or as legitimate on-key discovery work?",
+          "flag: The attempt passed with budget left over. Is rounds_wasted a fair primary verdict, or should an attempt that passed be reported without a failure-type verdict at all?"
         ],
         "model": "claude-opus-5",
         "served": "claude-opus-5",
         "effort": "high",
-        "promptVersion": "audit-p1",
-        "digestHash": "sha256:842371670ae6ad0c61a799968a736b1d98a935095d5a6832bedd9ad991544d08",
-        "costUsd": 0.16,
-        "durationMs": 27838,
-        "judgedAt": "2026-09-13T01:50:41.277Z"
+        "promptVersion": "audit-p2",
+        "digestHash": "sha256:8a26b99cb917361e60bdf28cbf70f5566ed8c663fd5b889491742f834b7ef262",
+        "costUsd": 0.15,
+        "durationMs": 26259,
+        "judgedAt": "2026-09-14T12:54:49.940Z"
       },
       "countsAfterOverrules": {
         "acquisition_with_progress": 10,
@@ -8162,13 +8127,13 @@
           "status": "useful_partial",
           "reviewer": "claude-opus-5 via live:grade"
         },
-        "checksNotReached": [
+        "checksUnsatisfied": [
           "fact-06",
           "fact-07",
           "fact-08"
         ],
         "checksTotal": 15,
-        "digestHash": "sha256:85b078e1ba2b00ca40f6a15f657d8898d7c0f6299fb758ad56b04b71e59312bf"
+        "digestHash": "sha256:306e12aa9ec146d7111ad526885578374231df8b8622dbda12eb9b2e9020d02d"
       },
       "review": {
         "judgement": {
@@ -8177,68 +8142,78 @@
             {
               "round": 1,
               "url": "https://duckduckgo.com/?q=jpl.nasa.gov+June+2013+news+release+Voyager+1+has+not+yet+left+the+solar+system&ia=web",
-              "reason": "Search results page. It lists links but cannot itself carry any required fact."
+              "reason": "A search results page. It points toward sources but cannot itself carry any required fact."
             },
             {
               "round": 9,
               "url": "https://science.nasa.gov/missions/voyager-program/nasa-voyager-status-update-on-voyager-1-location/",
-              "reason": "Walled page: a browser challenge on science.nasa.gov, so no article text was shown."
+              "reason": "Walled page: a browser challenge was served instead of the article, so no required fact was on the screen."
             },
             {
               "round": 24,
               "url": "https://web.archive.org/web/20131103170646/http://www.jpl.nasa.gov/news/news.php?release=2013-261",
-              "reason": "Right site, wrong subject. The guessed release number led to a Cassini/Saturn moon story that cannot carry any Voyager fact."
+              "reason": "Right site, wrong subject. The guessed release number led to an archived Cassini/Saturn moon release, which has nothing on Voyager 1."
             }
           ],
           "overrules": [],
           "stoppedEarly": {
             "value": false,
-            "reason": "The Run used all 24 of its 24 Tool Rounds and ended on budget_exhausted, so it did not stop early."
+            "reason": "The Run used all 24 of its 24 Tool Rounds and ended on budget_exhausted, so it did not stop early.",
+            "checks": []
+          },
+          "answerOmitted": {
+            "value": true,
+            "reason": "Round 16 reached the September announcement at https://www.jpl.nasa.gov/news/nasa-spacecraft-embarks-on-historic-journey-into-interstellar-space/. Rounds 17-21 scrolled it to the end, and round 23 read its full text. That page is the official announcement the key's second verified source is a copy of, and it carries the material for fact-06, fact-07 and fact-08. The Answer left them unstated, so they follow from a page the Run had read.",
+            "checks": [
+              "fact-06",
+              "fact-07",
+              "fact-08"
+            ]
           },
           "verdict": {
-            "primary": "rounds_wasted",
-            "primaryReason": "Well under half of the budget went to on-key work. Rounds 2-8, 10 and 13 (9 of 24) stayed on https://www.jpl.nasa.gov/news/nasa-voyager-status-update-on-voyager-1-location/, a status-update release that is neither verified source. Round 15 re-fetched that same release from the archive. On that page the Run scrolled, used look, went back to it (round 10) and then read it in full (round 13), covering one text three ways. Round 9 was walled, round 24 was off-key, round 21 was a scroll that hit End of Page, and rounds 11, 12 and 22 were refused. The September announcement page was not reached until round 16 and was read in slices over rounds 17-21. The whole-page read came only at round 23, leaving no rounds for fact-06, fact-07 and fact-08, which that page could carry. The June account itself was never opened on JPL; only the ScienceDaily reprint was, at round 14.",
-            "secondary": "failed_rounds",
-            "secondaryReason": "3 of 24 rounds (12.5%: rounds 11, 12 and 22) were look calls refused on region or repeat grounds. Round 22 fell with only 3 rounds left, and the read it forced (round 23) delayed the final work on the September page past the budget."
+            "primary": "answer_omitted",
+            "primaryReason": "All 3 unsatisfied checks (fact-06, fact-07, fact-08) were on the September announcement page. The Run had that page's text through scrolls in rounds 17-21 and read_page in round 23, and 12 of 15 checks passed. The missing facts were within reach; they were left out of the Answer, not missed by the search.",
+            "secondary": "rounds_wasted",
+            "secondaryReason": "The budget went mostly to a different release, the March-era status update. On it: rounds 2-8, 10 and 13 (9 of 24, about 38%), plus round 15 on its archived copy. Also lost: 3 refused rounds (11, 12, 22, 12.5%), 2 rounds without Progress (10, 21) and 3 Off-key rounds (1, 9, 24). The September announcement was not reached until round 16, which left too few rounds to finish."
           },
           "flags": [
             {
               "round": 2,
-              "question": "Should rounds 2-8, 10 and 13 on the status-update release be called Off-key? That page is not the June account, so it cannot carry fact-01, but it touches the magnetic-direction sign behind fact-04."
+              "question": "The status-update release read in rounds 2-8, 10, 13 and 15 is not the June account the task names, but it discusses the magnetic-field indicator behind fact-04. Should those rounds count as Off-key (wrong release) rather than on-key?"
+            },
+            {
+              "round": 23,
+              "question": "Did the round 23 read_page return the whole announcement text, including the CME and October/November 2012 passages? If only part came back, fact-06 or fact-08 might belong to neither list."
             },
             {
               "round": 15,
-              "question": "Should round 15 (an archive copy of the release already read at rounds 2-13) be overruled to acquisition_without_progress as a repeat, or kept as progress because it may have shown the publication date the live page lacked?"
+              "question": "Round 15 opened an archived copy of a release already read on the live site. Should it be acquisition_without_progress, or did it bring in new material such as a publication date the live page lacked?"
             },
             {
               "round": 1,
-              "question": "Is a search results page that led straight to a relevant JPL release really Off-key, or should it count as on-key discovery work?"
-            },
-            {
-              "round": 22,
-              "question": "Is failed_rounds a fair secondary, given that read_page at round 23 recovered the refused look's route and the unreached facts may have been lost to slice-by-slice reading rather than to the refusal?"
+              "question": "Should a single search results page that led straight to a relevant source count as Off-key?"
             },
             {
               "round": null,
-              "question": "Would tier_too_small_or_never_escalated be a better secondary, since the on-key September-page work ran into the budget of the investigation tier with no Tier Escalation?"
+              "question": "Should the primary verdict be rounds_wasted instead, since poor round allocation is what left only a few rounds for the September page before the budget ran out?"
             }
           ]
         },
         "caveats": [
-          "flag (round 2): Should rounds 2-8, 10 and 13 on the status-update release be called Off-key? That page is not the June account, so it cannot carry fact-01, but it touches the magnetic-direction sign behind fact-04.",
-          "flag (round 15): Should round 15 (an archive copy of the release already read at rounds 2-13) be overruled to acquisition_without_progress as a repeat, or kept as progress because it may have shown the publication date the live page lacked?",
-          "flag (round 1): Is a search results page that led straight to a relevant JPL release really Off-key, or should it count as on-key discovery work?",
-          "flag (round 22): Is failed_rounds a fair secondary, given that read_page at round 23 recovered the refused look's route and the unreached facts may have been lost to slice-by-slice reading rather than to the refusal?",
-          "flag: Would tier_too_small_or_never_escalated be a better secondary, since the on-key September-page work ran into the budget of the investigation tier with no Tier Escalation?"
+          "flag (round 2): The status-update release read in rounds 2-8, 10, 13 and 15 is not the June account the task names, but it discusses the magnetic-field indicator behind fact-04. Should those rounds count as Off-key (wrong release) rather than on-key?",
+          "flag (round 23): Did the round 23 read_page return the whole announcement text, including the CME and October/November 2012 passages? If only part came back, fact-06 or fact-08 might belong to neither list.",
+          "flag (round 15): Round 15 opened an archived copy of a release already read on the live site. Should it be acquisition_without_progress, or did it bring in new material such as a publication date the live page lacked?",
+          "flag (round 1): Should a single search results page that led straight to a relevant source count as Off-key?",
+          "flag: Should the primary verdict be rounds_wasted instead, since poor round allocation is what left only a few rounds for the September page before the budget ran out?"
         ],
         "model": "claude-opus-5",
         "served": "claude-opus-5",
         "effort": "high",
-        "promptVersion": "audit-p1",
-        "digestHash": "sha256:85b078e1ba2b00ca40f6a15f657d8898d7c0f6299fb758ad56b04b71e59312bf",
-        "costUsd": 0.2,
-        "durationMs": 39030,
-        "judgedAt": "2026-09-14T00:36:22.749Z"
+        "promptVersion": "audit-p2",
+        "digestHash": "sha256:306e12aa9ec146d7111ad526885578374231df8b8622dbda12eb9b2e9020d02d",
+        "costUsd": 0.21,
+        "durationMs": 46579,
+        "judgedAt": "2026-09-14T12:55:37.570Z"
       },
       "countsAfterOverrules": {
         "acquisition_with_progress": 19,
@@ -8283,18 +8258,20 @@
         "finalization": 0.069
       },
       "verdictsPrimary": {
-        "rounds_wasted": 4,
+        "rounds_wasted": 2,
         "tier_too_small_or_never_escalated": 0,
         "budget_too_small_for_the_hunt": 0,
         "stopped_early": 0,
+        "answer_omitted": 2,
         "failed_rounds": 0
       },
       "verdictsSecondary": {
-        "rounds_wasted": 0,
-        "tier_too_small_or_never_escalated": 0,
+        "rounds_wasted": 1,
+        "tier_too_small_or_never_escalated": 1,
         "budget_too_small_for_the_hunt": 0,
         "stopped_early": 0,
-        "failed_rounds": 2
+        "answer_omitted": 1,
+        "failed_rounds": 0
       },
       "offKeyRounds": 12,
       "searchLoopRounds": 0,
@@ -8313,8 +8290,9 @@
       "notFoundOffKey": 1,
       "subagentRounds": 0,
       "stoppedEarly": 0,
+      "answerOmitted": 3,
       "overrules": 5,
-      "flags": 21,
+      "flags": 19,
       "finalizationCauses": {
         "budget_exhausted": 3,
         "objective_met": 1
@@ -8384,8 +8362,8 @@
         "finalization": 3
       },
       "countsAfterOverrules": {
-        "acquisition_with_progress": 28,
-        "acquisition_without_progress": 5,
+        "acquisition_with_progress": 27,
+        "acquisition_without_progress": 6,
         "collection": 0,
         "bookkeeping": 7,
         "failed_round": 2,
@@ -8404,6 +8382,7 @@
         "tier_too_small_or_never_escalated": 0,
         "budget_too_small_for_the_hunt": 0,
         "stopped_early": 0,
+        "answer_omitted": 0,
         "failed_rounds": 0
       },
       "verdictsSecondary": {
@@ -8411,9 +8390,10 @@
         "tier_too_small_or_never_escalated": 0,
         "budget_too_small_for_the_hunt": 0,
         "stopped_early": 0,
+        "answer_omitted": 1,
         "failed_rounds": 0
       },
-      "offKeyRounds": 19,
+      "offKeyRounds": 6,
       "searchLoopRounds": 0,
       "mechanicalSearchRounds": 0,
       "searchSources": {
@@ -8430,8 +8410,9 @@
       "notFoundOffKey": 0,
       "subagentRounds": 0,
       "stoppedEarly": 0,
-      "overrules": 0,
-      "flags": 10,
+      "answerOmitted": 1,
+      "overrules": 1,
+      "flags": 9,
       "finalizationCauses": {
         "budget_exhausted": 1,
         "objective_met": 1
