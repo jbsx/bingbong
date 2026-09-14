@@ -1,13 +1,13 @@
 # Round Audit — bingbong.live-web.information-hunts (baseline-2)
 
-Generated 2026-09-14T01:52:13.145Z from a capture set created 2026-09-12T18:10:26.845Z (state complete). This audit counts and does not judge: every verdict is the reviewer’s for one attempt, and the ranking is arithmetic over those verdicts.
+Generated 2026-09-14T00:38:15.512Z from a capture set created 2026-09-12T18:10:26.845Z (state complete). This audit counts and does not judge: every verdict is the reviewer’s for one attempt, and the ranking is arithmetic over those verdicts.
 
 ## Provenance
 
 - capture: commit(s) 6152d8dc (dirty tree); mode measured; protocol 1; prompt version(s) 1
 - routing: orchestrator=GLM-5.3; subagent=GLM-5.3-flash; vision=GLM-4.6V | reasoning override: none | effort overrides: none | adblock: production_default
 - key 2.2.2.2, manifest sha256:faa25d04…; grades by claude-opus-5 via live:grade (revision 1)
-- reviewer: claude-opus-5 at high, prompt audit-p1; audit run at commit 7da13ef8
+- reviewer: claude-opus-5 at high, prompt audit-p1; audit run at commit 33c2b52a
 
 ## Populations
 
@@ -15,7 +15,7 @@ Kinds are mechanical counts; a share is over the budgeted rounds (Finalization o
 
 | population | attempts | judged | rounds | budgeted | tool rounds used | at budget | Acquisition with Progress | Acquisition without Progress | Collection | Bookkeeping | Failed round | Finalization |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| initial | 4 | 4 | 102 | 95 | 95 | 3 | 67 (71%) → 63 | 10 (11%) → 14 | 0 (0%) | 6 (6%) | 12 (13%) | 7 (7%) |
+| initial | 4 | 4 | 102 | 95 | 95 | 3 | 66 (70%) → 63 | 11 (12%) → 14 | 0 (0%) | 6 (6%) | 12 (13%) | 7 (7%) |
 | follow_up | 2 | 2 | 45 | 42 | 42 | 1 | 28 (67%) | 5 (12%) | 0 (0%) | 7 (17%) | 2 (5%) | 3 (7%) |
 
 | verdict | initial primary | initial secondary | follow_up primary | follow_up secondary |
@@ -26,8 +26,8 @@ Kinds are mechanical counts; a share is over the budgeted rounds (Finalization o
 | stopped early | 0 | 0 | 0 | 0 |
 | failed rounds | 0 | 2 | 0 | 0 |
 
-- initial: 22 Off-key round(s), 0 Search Loop round(s) by the reviewer (0 by the streak rule; attempts by search source rail 0, replay 3, none 1), 0 inherited, 5 rejected Evidence Checkpoint(s), 1 walled round(s), 0 Subagent round(s), 0 merged Evidence Checkpoint(s) (a floor), 0 Held Page round(s) without Progress, 0 stopped early, 6 overrule(s), 21 flag(s); Finalization Causes: budget_exhausted 3, objective_met 1
-- follow_up: 19 Off-key round(s), 0 Search Loop round(s) by the reviewer (0 by the streak rule; attempts by search source rail 0, replay 2, none 0), 2 inherited, 4 rejected Evidence Checkpoint(s), 0 walled round(s), 0 Subagent round(s), 0 merged Evidence Checkpoint(s) (a floor), 1 Held Page round(s) without Progress, 0 stopped early, 0 overrule(s), 10 flag(s); Finalization Causes: budget_exhausted 1, objective_met 1
+- initial: 12 Off-key round(s), 0 Search Loop round(s) by the reviewer (0 by the streak rule; attempts by search source rail 0, replay 3, none 1), 0 inherited, 5 rejected Evidence Checkpoint(s), 1 walled round(s), 2 navigate(s) landed on a Not-found Page (1 judged Off-key), 0 Subagent round(s), 0 stopped early, 5 overrule(s), 21 flag(s); Finalization Causes: budget_exhausted 3, objective_met 1
+- follow_up: 19 Off-key round(s), 0 Search Loop round(s) by the reviewer (0 by the streak rule; attempts by search source rail 0, replay 2, none 0), 2 inherited, 4 rejected Evidence Checkpoint(s), 0 walled round(s), 0 navigate(s) landed on a Not-found Page (0 judged Off-key), 0 Subagent round(s), 0 stopped early, 0 overrule(s), 10 flag(s); Finalization Causes: budget_exhausted 1, objective_met 1
 
 ## Tool rounds
 
@@ -52,26 +52,28 @@ The rounds outside Finalization that called each tool — a round counts once pe
 
 - answered; ended done / completed (budget_exhausted); tier investigation (1 Tier Escalation(s) at the deadline); 24 of 24 Tool Rounds used; 26 orchestrator rounds, 2 in Finalization; Run duration 401400 ms; LLM stage 389039 ms over 26 joined round(s)
 - grade useful_partial; checks not reached: fact-05 (1 of 10)
-- 0 Subagent round(s) over 0 Subagent(s); 4 accepted (0 merged, a floor) and 0 rejected Evidence Checkpoint(s); 0 inherited round(s); 0 Held Page round(s) without Progress; 0 walled round(s)
-- kinds: Acquisition with Progress 16 (67%) · Acquisition without Progress 4 (17%) · Collection 0 (0%) · Bookkeeping 1 (4%) · Failed round 3 (13%) · Finalization 2 (8%)
+- 0 Subagent round(s) over 0 Subagent(s); 4 accepted and 0 rejected Evidence Checkpoint(s); 0 inherited round(s); 0 walled round(s)
+- navigates that landed on a Not-found Page: 1 (round 1)
+- of those, judged Off-key by the reviewer: 1
+- kinds: Acquisition with Progress 15 (63%) · Acquisition without Progress 5 (21%) · Collection 0 (0%) · Bookkeeping 1 (4%) · Failed round 3 (13%) · Finalization 2 (8%)
 - search source none: no Search Observation in the trace, and no navigate search for the replay to find
-- **verdict: rounds wasted** — About 10 of 24 budgeted rounds (~42%) produced nothing. With the overrules, 6 rounds made no progress: 5, 7, 11, 12, 17 and 18. Round 1 was an off-key 404, and 3 rounds (8, 13, 16) were refused. Rounds 10–13 and 15–18 were detours to empty raw.githubusercontent pages, and each file then had to be fetched again from GitHub blob (rounds 14, 19). Rounds 2–7 on the accessories camera page yielded no usable text. The on-key software pages only arrived in rounds 20–24, when the budget ran out before the legacy-stack material behind fact-05 was reached.
-- secondary: failed rounds — Three rounds (8, 13, 16; 12.5% of budget) failed because every call was refused. Rounds 13 and 16 repeated a look that had already failed, even after the tool pointed to read_page. Given that fact-05 was the only check missed and was one or two rounds away, getting these rounds back would likely have been enough to reach it.
-- stopped early: no — The Run used all 24 of its budgeted Tool Rounds (budget_exhausted) and was then told to finalize. It did not stop with budget left.
-- Off-key round 1 (https://www.raspberrypi.com/documentation/computers/camera.html): The navigate landed on a 404 'Page not found' page at a guessed URL. A not-found page can carry none of the required facts, although the move counted mechanically as progress.
-- overrule round 11 → Acquisition without Progress: read_page on the raw cm3.adoc returned only the header line and a signature, with no body text. Nothing new was brought in. Round 12's scroll hit End of Page right away, and the later evidence from this file was taken from the GitHub blob view in round 14, not from here.
-- overrule round 17 → Acquisition without Progress: read_page on the raw install.adoc also returned only the header and signature, with no content. Round 18's scroll answered End of Page, and the evidence from this file was recorded from the GitHub blob view reached in round 19.
-- flag (round 1): Should the 404 navigate count as acquisition_without_progress rather than an Off-key round with progress, since the page brought in no material?
-- flag (round 11): Is it right to overrule an empty read_page on a raw file to no progress, or does the first read of a new page state count as progress even when it returns nothing?
-- flag (round 17): Same question as round 11: should the empty read of the raw install.adoc count as no progress?
-- flag (round 10): The raw.githubusercontent URLs in rounds 10 and 15 could carry the required facts, but they rendered empty. Should they be judged off-key because of what they actually delivered?
-- flag (round 21): libcamera_differences.adoc covers how rpicam differs from raspicam rather than which cameras the legacy stack supports. Is it on-key for fact-05, or only next to it?
-- flag: Is failed_rounds a fair secondary verdict, or tier_too_small_or_never_escalated, given the investigation tier ran to budget with no Tier Escalation and the refused rounds are also counted under the primary waste?
-- reviewer claude-opus-5 at high, prompt audit-p1, digest sha256:2ff731b4…, $0.20
+- **verdict: rounds wasted** — With rounds 11 and 17 overruled, 7 of 24 budgeted rounds (29%) had no Progress: rounds 1 (a 404), 5, 7, 11, 12, 17 and 18. Another 3 (12.5%) were refused look calls: rounds 8, 13 and 16. Rounds 10 and 15 opened raw.githubusercontent pages that the tools could not render, and both files had to be fetched again at rounds 14 and 19. That is about 12 of 24 rounds (50%) lost to repeats and dead ends. Meanwhile the camera_software.adoc page reached at round 20 was never read, and the unreached fact-05 sits on that path. Round 21 took the libcamera_differences page instead, and rounds 23–24 went to rpicam_still, with the budget warnings at rounds 18 and 21 already out. The work was on-key, but half the budget went to rounds that brought nothing new.
+- stopped early: no — The Run used all 24 budgeted Tool Rounds (budget_exhausted) before the Finalization rounds 25–26, so it did not stop with budget left.
+- Off-key round 1 (https://www.raspberrypi.com/documentation/computers/camera.html): The navigate landed on a Not-found Page (title 'Page not found – Raspberry Pi'). A 404 can carry none of the required facts, even though the site and subject were right.
+- overrule round 11 → Acquisition without Progress: The read_page on the raw cm3.adoc returned only the page header, with no body text (6 output tokens). The next round hit End of Page, a look was refused, and the evidence for this file was later grounded in the GitHub-rendered copy from round 14. The read brought in no material.
+- overrule round 17 → Acquisition without Progress: Same pattern as round 11: the read_page on the raw install.adoc returned only the header, with no text. Round 18 answered End of Page and the Run had to re-acquire the file through the GitHub blob view in round 19, where memory-1 is grounded. No new material came in.
+- flag (round 11): Is it right to overrule round 11 to acquisition_without_progress? The digest shows only the result head, so the read_page may have returned text that the head cut off.
+- flag (round 17): Is it right to overrule round 17 to acquisition_without_progress? It rests on the same truncated result head as round 11.
+- flag (round 10): Should rounds 10 and 15 (the raw.githubusercontent .adoc files) count as Off-key or as without Progress? The files are on-key in subject, but the tools could not render them and the same files were re-acquired at rounds 14 and 19.
+- flag (round 20): Was the GitHub camera_software.adoc page at round 20 able to carry fact-05 itself, or is it only a list of includes? The answer decides whether fact-05 was one read away or needed further navigation.
+- flag (round 21): Could the libcamera_differences.adoc page at round 21 carry fact-05 (it compares the legacy and current stacks), or did it cover only option differences? A careful reader might call it borderline Off-key for fact-05 while it stays on-key for fact-06.
+- flag: Should failed_rounds be a secondary verdict? The three refused looks (rounds 8, 13, 16, 12.5% of budget) are counted here as part of the waste, not as the cause of the missed check.
+- flag: Is tier_too_small_or_never_escalated a defensible secondary? The Run ran at investigation tier with no Tier Escalation and was cut off by the budget while still making on-key progress at rounds 19–24.
+- reviewer claude-opus-5 at high, prompt audit-p1, digest sha256:f7591b07…, $0.20
 
 | round | kind | tools | page | ms | note |
 | --- | --- | --- | --- | --- | --- |
-| 1 | Acquisition with Progress | report_run_plan, navigate | https://www.raspberrypi.com/documentation/computers/camera.html | 223259 | navigate: the settled page state moved to a page this Run had not acquired [off-key] |
+| 1 | Acquisition without Progress | report_run_plan, navigate | https://www.raspberrypi.com/documentation/computers/camera.html | 223259 | navigate: landed on a Not-found Page [not found, off-key] |
 | 2 | Acquisition with Progress | navigate | https://www.raspberrypi.com/documentation/accessories/camera.html | 5735 | navigate: the settled page state moved to a page this Run had not acquired |
 | 3 | Acquisition with Progress | scroll | https://www.raspberrypi.com/documentation/accessories/camera.html | 7950 | scroll: the scroll brought new material into view |
 | 4 | Acquisition with Progress | click | https://www.raspberrypi.com/documentation/accessories/camera.html#camera-module-… | 6456 | click: the settled page state moved |
@@ -102,7 +104,9 @@ The rounds outside Finalization that called each tool — a round counts once pe
 
 - answered; ended done / completed (budget_exhausted); tier investigation (1 Tier Escalation(s) at the deadline); 24 of 24 Tool Rounds used; 26 orchestrator rounds, 2 in Finalization; Run duration 355038 ms; LLM stage 340027 ms over 26 joined round(s)
 - grade useful_partial; checks not reached: fact-02 (1 of 6)
-- 0 Subagent round(s) over 0 Subagent(s); 3 accepted (0 merged, a floor) and 2 rejected Evidence Checkpoint(s); 1 inherited round(s); 0 Held Page round(s) without Progress; 0 walled round(s)
+- 0 Subagent round(s) over 0 Subagent(s); 3 accepted and 2 rejected Evidence Checkpoint(s); 1 inherited round(s); 0 walled round(s)
+- navigates that landed on a Not-found Page: 0
+- of those, judged Off-key by the reviewer: 0
 - kinds: Acquisition with Progress 18 (75%) · Acquisition without Progress 3 (13%) · Collection 0 (0%) · Bookkeeping 3 (13%) · Failed round 0 (0%) · Finalization 2 (8%)
 - search source replay: the streak rule re-run over navigate searches
 - **verdict: rounds wasted** — 13 of 24 budgeted rounds (54%) went to the Camera Module 3 product page (rounds 1-13, plus round 14, which hit End of Page). Most of those were scrolls through feature marketing that could not carry fact-01 or fact-02. Round 12 exposed a link to the verified documentation page, but the Run did not go there until round 19. Rounds 16-18 went to a search results page, a walled forum page and an inherited re-acquisition, and round 20 re-navigated a URL already acquired. Round 15 found the lid verdict on the Zero Case product page. The one Look at the verified source (round 21) came with 3 rounds left, and the rest of the budget went to bookkeeping (rounds 22-24), one call of which was rejected as malformed. fact-02 was never reached, although the page that carries it was open from round 19.
@@ -162,7 +166,9 @@ The rounds outside Finalization that called each tool — a round counts once pe
 
 - answered; ended done / partial (budget_exhausted); tier investigation; 24 of 24 Tool Rounds used; 26 orchestrator rounds, 2 in Finalization; Run duration 216821 ms; LLM stage 196001 ms over 26 joined round(s)
 - grade useful_partial; checks not reached: fact-03, fact-05, fact-08, fact-09, fact-10, fact-11 (6 of 17)
-- 0 Subagent round(s) over 0 Subagent(s); 0 accepted (0 merged, a floor) and 0 rejected Evidence Checkpoint(s); 0 inherited round(s); 0 Held Page round(s) without Progress; 0 walled round(s)
+- 0 Subagent round(s) over 0 Subagent(s); 0 accepted and 0 rejected Evidence Checkpoint(s); 0 inherited round(s); 0 walled round(s)
+- navigates that landed on a Not-found Page: 0
+- of those, judged Off-key by the reviewer: 0
 - kinds: Acquisition with Progress 14 (58%) · Acquisition without Progress 4 (17%) · Collection 0 (0%) · Bookkeeping 0 (0%) · Failed round 6 (25%) · Finalization 2 (8%)
 - search source replay: the streak rule re-run over navigate searches
 - **verdict: rounds wasted** — Rounds 1–9 went to the walled page, landing pages and search results. Seven of the 14 mechanical with-progress rounds (1, 2, 3, 6, 7, 8, 9) are off-key. Once on S1, rounds 12–18 cycled up and down between y=277 and end of page. After overrules, rounds 13, 16, 17 and 18 are repeats without progress, and round 15 was refused as a repeat. The S2 case record, linked from S1, was never opened, so fact-08 to fact-11 were never reached. Fact-03 and fact-05, which S1 carries, were not reached either. On-key productive rounds come to roughly 6 of 24 (11, 12, 14, 21, 22, 24).
@@ -218,7 +224,9 @@ The rounds outside Finalization that called each tool — a round counts once pe
 
 - answered; ended done / completed (objective_met); tier investigation (1 Tier Escalation(s) at the deadline); 23 of 24 Tool Rounds used; 24 orchestrator rounds, 1 in Finalization; Run duration 382039 ms; LLM stage 374300 ms over 24 joined round(s)
 - grade useful_partial; checks not reached: fact-03, fact-07, fact-08 (3 of 14)
-- 0 Subagent round(s) over 0 Subagent(s); 4 accepted (0 merged, a floor) and 5 rejected Evidence Checkpoint(s); 0 inherited round(s); 0 Held Page round(s) without Progress; 0 walled round(s)
+- 0 Subagent round(s) over 0 Subagent(s); 4 accepted and 5 rejected Evidence Checkpoint(s); 0 inherited round(s); 0 walled round(s)
+- navigates that landed on a Not-found Page: 0
+- of those, judged Off-key by the reviewer: 0
 - kinds: Acquisition with Progress 18 (78%) · Acquisition without Progress 0 (0%) · Collection 0 (0%) · Bookkeeping 5 (22%) · Failed round 0 (0%) · Finalization 1 (4%)
 - search source replay: the streak rule re-run over navigate searches
 - **verdict: rounds wasted** — Acquisition was on-key and done by round 18: S1 in rounds 2–12 and S2 in rounds 13–18, with round 1 the only Off-key round (1/23). The rest of the budget went to 5 bookkeeping rounds (19–23, about 22%) with 5 rejected checkpoints. Rounds 20, 21 and 22 (3/23, 13%) each made one attempt to record the user's constraint, and every one was rejected. That retry streak, plus the rejected first checkpoint in round 19 that round 23 had to redo, ate the remaining budget. The Run reached its final round with 1/24 left and no margin to check the Answer's coverage of fact-03, fact-07 and fact-08.
@@ -261,7 +269,9 @@ The rounds outside Finalization that called each tool — a round counts once pe
 
 - answered; ended done / completed (objective_met); tier investigation (1 Tier Escalation(s) at the deadline); 18 of 24 Tool Rounds used; 19 orchestrator rounds, 1 in Finalization; Run duration 297082 ms; LLM stage 285366 ms over 19 joined round(s)
 - grade pass; checks not reached: none
-- 0 Subagent round(s) over 0 Subagent(s); 2 accepted (0 merged, a floor) and 2 rejected Evidence Checkpoint(s); 1 inherited round(s); 1 Held Page round(s) without Progress; 0 walled round(s)
+- 0 Subagent round(s) over 0 Subagent(s); 2 accepted and 2 rejected Evidence Checkpoint(s); 1 inherited round(s); 0 walled round(s)
+- navigates that landed on a Not-found Page: 0
+- of those, judged Off-key by the reviewer: 0
 - kinds: Acquisition with Progress 10 (56%) · Acquisition without Progress 2 (11%) · Collection 0 (0%) · Bookkeeping 4 (22%) · Failed round 2 (11%) · Finalization 1 (5%)
 - search source replay: the streak rule re-run over navigate searches
 - **verdict: rounds wasted** — The run passed, but about 10 of its 18 budgeted rounds gave no on-key progress. That is round 1 (an inherited re-acquisition), round 4 (an unreadable Look), rounds 6 and 8 (refused Looks), rounds 10–13 (four off-key pages: the Help Centre home, the FAQ page that fell back to home, the trains page and a Bing results page) and rounds 16–17 (rejected checkpoints). The on-key work was the scrolls and read on S1 (rounds 2, 3, 5, 7, 9), the equivalent official page at round 14 and the accepted checkpoints at rounds 15 and 18. Moving to the US-English equivalent of S1 could have happened long before round 14.
@@ -303,51 +313,42 @@ The rounds outside Finalization that called each tool — a round counts once pe
 
 - answered; ended done / partial (budget_exhausted); tier investigation (1 Tier Escalation(s) at the deadline); 24 of 24 Tool Rounds used; 26 orchestrator rounds, 2 in Finalization; Run duration 452939 ms; LLM stage 398995 ms over 26 joined round(s)
 - grade useful_partial; checks not reached: fact-06, fact-07, fact-08 (3 of 15)
-- 0 Subagent round(s) over 0 Subagent(s); 0 accepted (0 merged, a floor) and 0 rejected Evidence Checkpoint(s); 0 inherited round(s); 0 Held Page round(s) without Progress; 1 walled round(s)
+- 0 Subagent round(s) over 0 Subagent(s); 0 accepted and 0 rejected Evidence Checkpoint(s); 0 inherited round(s); 1 walled round(s)
+- navigates that landed on a Not-found Page: 1 (round 16)
+- of those, judged Off-key by the reviewer: 0
 - kinds: Acquisition with Progress 19 (79%) · Acquisition without Progress 2 (8%) · Collection 0 (0%) · Bookkeeping 0 (0%) · Failed round 3 (13%) · Finalization 2 (8%)
 - search source replay: the streak rule re-run over navigate searches
-- **verdict: rounds wasted** — Only 7 of 24 budgeted rounds (14, 16, 17-20, 23) worked on pages that could carry the key's facts. Thirteen rounds (1-10, 13, 15, 24) were off-key: a search page, the wrong JPL status update read over nine rounds, a walled mirror and an unrelated Cassini archive page. Two more were without progress (10, 21), three failed (11, 12, 22), and the scroll-by-scroll reading in rounds 3-6 and 17-21 used rounds where one read_page would have done. As a result, the September release that carries fact-06, fact-07 and fact-08 was only reached in round 16 and fully read only in round 23, with one round left.
+- **verdict: rounds wasted** — Well under half of the budget went to on-key work. Rounds 2-8, 10 and 13 (9 of 24) stayed on https://www.jpl.nasa.gov/news/nasa-voyager-status-update-on-voyager-1-location/, a status-update release that is neither verified source. Round 15 re-fetched that same release from the archive. On that page the Run scrolled, used look, went back to it (round 10) and then read it in full (round 13), covering one text three ways. Round 9 was walled, round 24 was off-key, round 21 was a scroll that hit End of Page, and rounds 11, 12 and 22 were refused. The September announcement page was not reached until round 16 and was read in slices over rounds 17-21. The whole-page read came only at round 23, leaving no rounds for fact-06, fact-07 and fact-08, which that page could carry. The June account itself was never opened on JPL; only the ScienceDaily reprint was, at round 14.
+- secondary: failed rounds — 3 of 24 rounds (12.5%: rounds 11, 12 and 22) were look calls refused on region or repeat grounds. Round 22 fell with only 3 rounds left, and the read it forced (round 23) delayed the final work on the September page past the budget.
 - stopped early: no — The Run used all 24 of its 24 Tool Rounds and ended on budget_exhausted, so it did not stop early.
-- Off-key round 1 (https://duckduckgo.com/?q=jpl.nasa.gov+June+2013+news+release+Voyager+1+has+not+yet+left+the+solar+system&ia=web): Search results page. It can point to sources but cannot itself carry any required fact.
-- Off-key round 2 (https://www.jpl.nasa.gov/news/nasa-voyager-status-update-on-voyager-1-location/): Right site, wrong document. This is JPL's earlier status update (release 2013-107, linked back to 2012-381), not the June account the key verifies (S1). It cannot carry fact-01, and its framing is not the June conclusion that fact-04 is tied to.
-- Off-key round 3 (https://www.jpl.nasa.gov/news/nasa-voyager-status-update-on-voyager-1-location): A scroll on the same wrong-document status update as round 2.
-- Off-key round 4 (https://www.jpl.nasa.gov/news/nasa-voyager-status-update-on-voyager-1-location): A scroll on the same wrong-document status update as round 2.
-- Off-key round 5 (https://www.jpl.nasa.gov/news/nasa-voyager-status-update-on-voyager-1-location): A scroll on the same wrong-document status update as round 2.
-- Off-key round 6 (https://www.jpl.nasa.gov/news/nasa-voyager-status-update-on-voyager-1-location): A scroll on the same wrong-document status update as round 2.
-- Off-key round 7 (https://www.jpl.nasa.gov/news/nasa-voyager-status-update-on-voyager-1-location): A look at the same wrong-document status update as round 2.
-- Off-key round 8 (https://www.jpl.nasa.gov/news/nasa-voyager-status-update-on-voyager-1-location): A look at the same wrong-document status update. The look itself found no publication date on the page.
-- Off-key round 9 (https://science.nasa.gov/missions/voyager-program/nasa-voyager-status-update-on-voyager-1-location/): Walled behind a browser challenge, and it is a mirror of the same wrong-document status update, so it carries nothing.
-- Off-key round 10 (https://www.jpl.nasa.gov/news/nasa-voyager-status-update-on-voyager-1-location/): A re-navigation to the wrong-document status update from round 2.
-- Off-key round 13 (https://www.jpl.nasa.gov/news/nasa-voyager-status-update-on-voyager-1-location/): A full read of the wrong-document status update. Right site, wrong release.
-- Off-key round 15 (https://web.archive.org/web/20131126043936/http://www.jpl.nasa.gov/news/news.php?release=2013-107): An archived copy of the same release 2013-107 status update, not the June account. The archive was used to find a date, but it was the date of the wrong release.
-- Off-key round 24 (https://web.archive.org/web/20131103170646/http://www.jpl.nasa.gov/news/news.php?release=2013-261): A guessed release number landed on an unrelated Cassini/Saturn release. Wrong subject entirely.
-- overrule round 9 → Acquisition without Progress: The page reached was only a browser-challenge wall on science.nasa.gov. No article material came in, so the new URL is not progress.
-- flag (round 2): The status update at jpl.nasa.gov/news/nasa-voyager-status-update-on-voyager-1-location discusses the magnetic-field sign. Should rounds 2-8, 10, 13 and 15 count as on-key for the substance of fact-04, even though it is not the June account (S1)?
-- flag (round 1): Is a search results page that led straight to a JPL page off-key, or is it acceptable navigation cost?
-- flag (round 14): ScienceDaily republished the June JPL release. Is it on-key as that official account, or should it count only as a secondary copy for pitfall-05 purposes?
-- flag (round 9): Should the walled challenge page be overruled to acquisition_without_progress, or keep its mechanical progress label because the URL was new?
-- flag (round 22): This look was refused as a repeat of an earlier failed check, but it was on a different page with a different question. Is it really a failed round, or a refusal the assistant could not have foreseen?
-- flag: Three failed rounds (11, 12, 22) is 12.5% of the budget. Does that justify failed_rounds as a secondary verdict, given the needed page was still read in round 23?
-- reviewer claude-opus-5 at high, prompt audit-p1, digest sha256:f6031180…, $0.23
+- Off-key round 1 (https://duckduckgo.com/?q=jpl.nasa.gov+June+2013+news+release+Voyager+1+has+not+yet+left+the+solar+system&ia=web): Search results page. It lists links but cannot itself carry any required fact.
+- Off-key round 9 (https://science.nasa.gov/missions/voyager-program/nasa-voyager-status-update-on-voyager-1-location/): Walled page: a browser challenge on science.nasa.gov, so no article text was shown.
+- Off-key round 24 (https://web.archive.org/web/20131103170646/http://www.jpl.nasa.gov/news/news.php?release=2013-261): Right site, wrong subject. The guessed release number led to a Cassini/Saturn moon story that cannot carry any Voyager fact.
+- flag (round 2): Should rounds 2-8, 10 and 13 on the status-update release be called Off-key? That page is not the June account, so it cannot carry fact-01, but it touches the magnetic-direction sign behind fact-04.
+- flag (round 15): Should round 15 (an archive copy of the release already read at rounds 2-13) be overruled to acquisition_without_progress as a repeat, or kept as progress because it may have shown the publication date the live page lacked?
+- flag (round 1): Is a search results page that led straight to a relevant JPL release really Off-key, or should it count as on-key discovery work?
+- flag (round 22): Is failed_rounds a fair secondary, given that read_page at round 23 recovered the refused look's route and the unreached facts may have been lost to slice-by-slice reading rather than to the refusal?
+- flag: Would tier_too_small_or_never_escalated be a better secondary, since the on-key September-page work ran into the budget of the investigation tier with no Tier Escalation?
+- reviewer claude-opus-5 at high, prompt audit-p1, digest sha256:85b078e1…, $0.20
 
 | round | kind | tools | page | ms | note |
 | --- | --- | --- | --- | --- | --- |
 | 1 | Acquisition with Progress | report_run_plan, navigate | https://duckduckgo.com/?q=jpl.nasa.gov+June+2013+news+release+Voyager+1+has+not+… | 120877 | navigate: the settled page state moved to a page this Run had not acquired [off-key] |
-| 2 | Acquisition with Progress | navigate | https://www.jpl.nasa.gov/news/nasa-voyager-status-update-on-voyager-1-location/ | 4535 | navigate: the settled page state moved to a page this Run had not acquired [off-key] |
-| 3 | Acquisition with Progress | scroll | https://www.jpl.nasa.gov/news/nasa-voyager-status-update-on-voyager-1-location | 2655 | scroll: the scroll brought new material into view [off-key] |
-| 4 | Acquisition with Progress | scroll | https://www.jpl.nasa.gov/news/nasa-voyager-status-update-on-voyager-1-location | 2872 | scroll: the scroll brought new material into view [off-key] |
-| 5 | Acquisition with Progress | scroll | https://www.jpl.nasa.gov/news/nasa-voyager-status-update-on-voyager-1-location | 1415 | scroll: the scroll brought new material into view [off-key] |
-| 6 | Acquisition with Progress | scroll | https://www.jpl.nasa.gov/news/nasa-voyager-status-update-on-voyager-1-location | 2978 | scroll: the scroll brought new material into view [off-key] |
-| 7 | Acquisition with Progress | look | https://www.jpl.nasa.gov/news/nasa-voyager-status-update-on-voyager-1-location | 4594 | look: the first Look at this page state with this question [off-key] |
-| 8 | Acquisition with Progress | look | https://www.jpl.nasa.gov/news/nasa-voyager-status-update-on-voyager-1-location | 4715 | look: the first Look at this page state with this question [off-key] |
-| 9 | Acquisition with Progress → Acquisition without Progress | navigate | https://science.nasa.gov/missions/voyager-program/nasa-voyager-status-update-on-… | 3330 | navigate: the settled page state moved to a page this Run had not acquired [walled, off-key] |
-| 10 | Acquisition without Progress | navigate | https://www.jpl.nasa.gov/news/nasa-voyager-status-update-on-voyager-1-location/ | 1482 | navigate: a navigate to a URL this Run already acquired [off-key] |
+| 2 | Acquisition with Progress | navigate | https://www.jpl.nasa.gov/news/nasa-voyager-status-update-on-voyager-1-location/ | 4535 | navigate: the settled page state moved to a page this Run had not acquired |
+| 3 | Acquisition with Progress | scroll | https://www.jpl.nasa.gov/news/nasa-voyager-status-update-on-voyager-1-location | 2655 | scroll: the scroll brought new material into view |
+| 4 | Acquisition with Progress | scroll | https://www.jpl.nasa.gov/news/nasa-voyager-status-update-on-voyager-1-location | 2872 | scroll: the scroll brought new material into view |
+| 5 | Acquisition with Progress | scroll | https://www.jpl.nasa.gov/news/nasa-voyager-status-update-on-voyager-1-location | 1415 | scroll: the scroll brought new material into view |
+| 6 | Acquisition with Progress | scroll | https://www.jpl.nasa.gov/news/nasa-voyager-status-update-on-voyager-1-location | 2978 | scroll: the scroll brought new material into view |
+| 7 | Acquisition with Progress | look | https://www.jpl.nasa.gov/news/nasa-voyager-status-update-on-voyager-1-location | 4594 | look: the first Look at this page state with this question |
+| 8 | Acquisition with Progress | look | https://www.jpl.nasa.gov/news/nasa-voyager-status-update-on-voyager-1-location | 4715 | look: the first Look at this page state with this question |
+| 9 | Acquisition with Progress | navigate | https://science.nasa.gov/missions/voyager-program/nasa-voyager-status-update-on-… | 3330 | navigate: the settled page state moved to a page this Run had not acquired [walled, off-key] |
+| 10 | Acquisition without Progress | navigate | https://www.jpl.nasa.gov/news/nasa-voyager-status-update-on-voyager-1-location/ | 1482 | navigate: a navigate to a URL this Run already acquired |
 | 11 | Failed round | look ✗ | https://www.jpl.nasa.gov/news/nasa-voyager-status-update-on-voyager-1-location | 3194 | every call was refused (look) |
 | 12 | Failed round | look ✗ | https://www.jpl.nasa.gov/news/nasa-voyager-status-update-on-voyager-1-location | 1735 | every call was refused (look) |
-| 13 | Acquisition with Progress | read_page | https://www.jpl.nasa.gov/news/nasa-voyager-status-update-on-voyager-1-location/ | 1564 | read_page: the first read of this page state [off-key] |
+| 13 | Acquisition with Progress | read_page | https://www.jpl.nasa.gov/news/nasa-voyager-status-update-on-voyager-1-location/ | 1564 | read_page: the first read of this page state |
 | 14 | Acquisition with Progress | navigate | https://www.sciencedaily.com/releases/2013/06/130627140803.htm | 20729 | navigate: the settled page state moved to a page this Run had not acquired |
-| 15 | Acquisition with Progress | navigate | https://web.archive.org/web/20131126043936/http://www.jpl.nasa.gov/news/news.php… | 36914 | navigate: the settled page state moved to a page this Run had not acquired [off-key] |
-| 16 | Acquisition with Progress | navigate, navigate | https://www.jpl.nasa.gov/news/voyager1-enters-magnetic-highway/ | 56067 | navigate: the settled page state moved to a page this Run had not acquired |
+| 15 | Acquisition with Progress | navigate | https://web.archive.org/web/20131126043936/http://www.jpl.nasa.gov/news/news.php… | 36914 | navigate: the settled page state moved to a page this Run had not acquired |
+| 16 | Acquisition with Progress | navigate, navigate | https://www.jpl.nasa.gov/news/voyager1-enters-magnetic-highway/ | 56067 | navigate: the settled page state moved to a page this Run had not acquired [not found] |
 | 17 | Acquisition with Progress | scroll | https://www.jpl.nasa.gov/news/nasa-spacecraft-embarks-on-historic-journey-into-i… | 2699 | scroll: the scroll brought new material into view |
 | 18 | Acquisition with Progress | scroll | https://www.jpl.nasa.gov/news/nasa-spacecraft-embarks-on-historic-journey-into-i… | 1453 | scroll: the scroll brought new material into view |
 | 19 | Acquisition with Progress | scroll | https://www.jpl.nasa.gov/news/nasa-spacecraft-embarks-on-historic-journey-into-i… | 3330 | scroll: the scroll brought new material into view |

@@ -36,9 +36,9 @@
         ],
         "dirtyTree": true,
         "gradesRevision": 1,
-        "auditCommit": "7da13ef8175a05547c276b027e53c41e1a70ec59",
+        "auditCommit": "33c2b52ac19f79c1a5666a903bc857e1cd0bfa52",
         "auditDirtyTree": false,
-        "generatedAt": "2026-09-14T01:52:13.145Z"
+        "generatedAt": "2026-09-14T00:38:15.512Z"
       },
       {
         "setId": "baseline-2",
@@ -49,9 +49,9 @@
         ],
         "dirtyTree": true,
         "gradesRevision": 1,
-        "auditCommit": "7da13ef8175a05547c276b027e53c41e1a70ec59",
+        "auditCommit": "33c2b52ac19f79c1a5666a903bc857e1cd0bfa52",
         "auditDirtyTree": false,
-        "generatedAt": "2026-09-14T01:52:13.145Z"
+        "generatedAt": "2026-09-14T00:38:15.512Z"
       },
       {
         "setId": "baseline-3",
@@ -62,12 +62,12 @@
         ],
         "dirtyTree": true,
         "gradesRevision": 1,
-        "auditCommit": "7da13ef8175a05547c276b027e53c41e1a70ec59",
+        "auditCommit": "33c2b52ac19f79c1a5666a903bc857e1cd0bfa52",
         "auditDirtyTree": false,
-        "generatedAt": "2026-09-14T01:52:13.145Z"
+        "generatedAt": "2026-09-14T00:38:15.512Z"
       }
     ],
-    "generatedAt": "2026-09-14T01:52:13.145Z"
+    "generatedAt": "2026-09-14T00:38:15.512Z"
   },
   "populations": {
     "initial": {
@@ -78,24 +78,24 @@
       "budgetedRounds": 225,
       "toolRoundsUsed": 224,
       "counts": {
-        "acquisition_with_progress": 154,
-        "acquisition_without_progress": 28,
+        "acquisition_with_progress": 145,
+        "acquisition_without_progress": 37,
         "collection": 2,
         "bookkeeping": 18,
         "failed_round": 23,
         "finalization": 21
       },
       "countsAfterOverrules": {
-        "acquisition_with_progress": 133,
-        "acquisition_without_progress": 49,
+        "acquisition_with_progress": 131,
+        "acquisition_without_progress": 51,
         "collection": 2,
         "bookkeeping": 18,
         "failed_round": 23,
         "finalization": 21
       },
       "shares": {
-        "acquisition_with_progress": 0.684,
-        "acquisition_without_progress": 0.124,
+        "acquisition_with_progress": 0.644,
+        "acquisition_without_progress": 0.164,
         "collection": 0.009,
         "bookkeeping": 0.08,
         "failed_round": 0.102,
@@ -115,23 +115,23 @@
         "stopped_early": 0,
         "failed_rounds": 4
       },
-      "offKeyRounds": 62,
-      "searchLoopRounds": 10,
-      "mechanicalSearchRounds": 6,
+      "offKeyRounds": 52,
+      "searchLoopRounds": 11,
+      "mechanicalSearchRounds": 8,
       "searchSources": {
         "rail": 0,
         "replay": 8,
         "none": 4
       },
       "inheritedRounds": 0,
-      "mergedCheckpoints": 0,
-      "heldPageRoundsWithoutProgress": 0,
       "rejectedCheckpoints": 9,
       "walledRounds": 2,
+      "notFoundNavigates": 9,
+      "notFoundOffKey": 8,
       "subagentRounds": 26,
       "stoppedEarly": 2,
-      "overrules": 23,
-      "flags": 63,
+      "overrules": 16,
+      "flags": 64,
       "finalizationCauses": {
         "budget_exhausted": 8,
         "deadline_reached": 1,
@@ -207,8 +207,8 @@
             "budgetedRounds": 66,
             "toolRoundsUsed": 66,
             "counts": {
-              "acquisition_with_progress": 48,
-              "acquisition_without_progress": 9,
+              "acquisition_with_progress": 41,
+              "acquisition_without_progress": 16,
               "collection": 1,
               "bookkeeping": 4,
               "failed_round": 4,
@@ -223,8 +223,8 @@
               "finalization": 7
             },
             "shares": {
-              "acquisition_with_progress": 0.727,
-              "acquisition_without_progress": 0.136,
+              "acquisition_with_progress": 0.621,
+              "acquisition_without_progress": 0.242,
               "collection": 0.015,
               "bookkeeping": 0.061,
               "failed_round": 0.061,
@@ -245,22 +245,22 @@
               "failed_rounds": 1
             },
             "offKeyRounds": 26,
-            "searchLoopRounds": 5,
-            "mechanicalSearchRounds": 3,
+            "searchLoopRounds": 6,
+            "mechanicalSearchRounds": 5,
             "searchSources": {
               "rail": 0,
               "replay": 3,
               "none": 1
             },
             "inheritedRounds": 0,
-            "mergedCheckpoints": 0,
-            "heldPageRoundsWithoutProgress": 0,
             "rejectedCheckpoints": 1,
             "walledRounds": 1,
+            "notFoundNavigates": 6,
+            "notFoundOffKey": 6,
             "subagentRounds": 13,
             "stoppedEarly": 1,
-            "overrules": 11,
-            "flags": 22,
+            "overrules": 4,
+            "flags": 23,
             "finalizationCauses": {
               "budget_exhausted": 3,
               "model_answered": 1
@@ -330,8 +330,8 @@
             "budgetedRounds": 95,
             "toolRoundsUsed": 95,
             "counts": {
-              "acquisition_with_progress": 67,
-              "acquisition_without_progress": 10,
+              "acquisition_with_progress": 66,
+              "acquisition_without_progress": 11,
               "collection": 0,
               "bookkeeping": 6,
               "failed_round": 12,
@@ -346,8 +346,8 @@
               "finalization": 7
             },
             "shares": {
-              "acquisition_with_progress": 0.705,
-              "acquisition_without_progress": 0.105,
+              "acquisition_with_progress": 0.695,
+              "acquisition_without_progress": 0.116,
               "collection": 0,
               "bookkeeping": 0.063,
               "failed_round": 0.126,
@@ -367,7 +367,7 @@
               "stopped_early": 0,
               "failed_rounds": 2
             },
-            "offKeyRounds": 22,
+            "offKeyRounds": 12,
             "searchLoopRounds": 0,
             "mechanicalSearchRounds": 0,
             "searchSources": {
@@ -376,13 +376,13 @@
               "none": 1
             },
             "inheritedRounds": 0,
-            "mergedCheckpoints": 0,
-            "heldPageRoundsWithoutProgress": 0,
             "rejectedCheckpoints": 5,
             "walledRounds": 1,
+            "notFoundNavigates": 2,
+            "notFoundOffKey": 1,
             "subagentRounds": 0,
             "stoppedEarly": 0,
-            "overrules": 6,
+            "overrules": 5,
             "flags": 21,
             "finalizationCauses": {
               "budget_exhausted": 3,
@@ -448,24 +448,24 @@
             "budgetedRounds": 64,
             "toolRoundsUsed": 63,
             "counts": {
-              "acquisition_with_progress": 39,
-              "acquisition_without_progress": 9,
+              "acquisition_with_progress": 38,
+              "acquisition_without_progress": 10,
               "collection": 1,
               "bookkeeping": 8,
               "failed_round": 7,
               "finalization": 7
             },
             "countsAfterOverrules": {
-              "acquisition_with_progress": 33,
-              "acquisition_without_progress": 15,
+              "acquisition_with_progress": 31,
+              "acquisition_without_progress": 17,
               "collection": 1,
               "bookkeeping": 8,
               "failed_round": 7,
               "finalization": 7
             },
             "shares": {
-              "acquisition_with_progress": 0.609,
-              "acquisition_without_progress": 0.141,
+              "acquisition_with_progress": 0.594,
+              "acquisition_without_progress": 0.156,
               "collection": 0.016,
               "bookkeeping": 0.125,
               "failed_round": 0.109,
@@ -494,13 +494,13 @@
               "none": 2
             },
             "inheritedRounds": 0,
-            "mergedCheckpoints": 0,
-            "heldPageRoundsWithoutProgress": 0,
             "rejectedCheckpoints": 3,
             "walledRounds": 0,
+            "notFoundNavigates": 1,
+            "notFoundOffKey": 1,
             "subagentRounds": 13,
             "stoppedEarly": 1,
-            "overrules": 6,
+            "overrules": 7,
             "flags": 20,
             "finalizationCauses": {
               "budget_exhausted": 2,
@@ -572,24 +572,24 @@
       "budgetedRounds": 117,
       "toolRoundsUsed": 116,
       "counts": {
-        "acquisition_with_progress": 71,
-        "acquisition_without_progress": 19,
+        "acquisition_with_progress": 70,
+        "acquisition_without_progress": 20,
         "collection": 1,
         "bookkeeping": 19,
         "failed_round": 7,
         "finalization": 10
       },
       "countsAfterOverrules": {
-        "acquisition_with_progress": 65,
-        "acquisition_without_progress": 25,
+        "acquisition_with_progress": 64,
+        "acquisition_without_progress": 26,
         "collection": 1,
         "bookkeeping": 19,
         "failed_round": 7,
         "finalization": 10
       },
       "shares": {
-        "acquisition_with_progress": 0.607,
-        "acquisition_without_progress": 0.162,
+        "acquisition_with_progress": 0.598,
+        "acquisition_without_progress": 0.171,
         "collection": 0.009,
         "bookkeeping": 0.162,
         "failed_round": 0.06,
@@ -609,7 +609,7 @@
         "stopped_early": 0,
         "failed_rounds": 1
       },
-      "offKeyRounds": 27,
+      "offKeyRounds": 28,
       "searchLoopRounds": 0,
       "mechanicalSearchRounds": 0,
       "searchSources": {
@@ -618,10 +618,10 @@
         "none": 3
       },
       "inheritedRounds": 9,
-      "mergedCheckpoints": 0,
-      "heldPageRoundsWithoutProgress": 6,
       "rejectedCheckpoints": 9,
       "walledRounds": 0,
+      "notFoundNavigates": 1,
+      "notFoundOffKey": 1,
       "subagentRounds": 13,
       "stoppedEarly": 0,
       "overrules": 6,
@@ -705,24 +705,24 @@
             "budgetedRounds": 39,
             "toolRoundsUsed": 38,
             "counts": {
-              "acquisition_with_progress": 20,
-              "acquisition_without_progress": 10,
+              "acquisition_with_progress": 19,
+              "acquisition_without_progress": 11,
               "collection": 0,
               "bookkeeping": 7,
               "failed_round": 2,
               "finalization": 3
             },
             "countsAfterOverrules": {
-              "acquisition_with_progress": 17,
-              "acquisition_without_progress": 13,
+              "acquisition_with_progress": 16,
+              "acquisition_without_progress": 14,
               "collection": 0,
               "bookkeeping": 7,
               "failed_round": 2,
               "finalization": 3
             },
             "shares": {
-              "acquisition_with_progress": 0.513,
-              "acquisition_without_progress": 0.256,
+              "acquisition_with_progress": 0.487,
+              "acquisition_without_progress": 0.282,
               "collection": 0,
               "bookkeeping": 0.179,
               "failed_round": 0.051,
@@ -742,7 +742,7 @@
               "stopped_early": 0,
               "failed_rounds": 0
             },
-            "offKeyRounds": 7,
+            "offKeyRounds": 8,
             "searchLoopRounds": 0,
             "mechanicalSearchRounds": 0,
             "searchSources": {
@@ -751,10 +751,10 @@
               "none": 1
             },
             "inheritedRounds": 5,
-            "mergedCheckpoints": 0,
-            "heldPageRoundsWithoutProgress": 4,
             "rejectedCheckpoints": 2,
             "walledRounds": 0,
+            "notFoundNavigates": 1,
+            "notFoundOffKey": 1,
             "subagentRounds": 0,
             "stoppedEarly": 0,
             "overrules": 3,
@@ -869,10 +869,10 @@
               "none": 0
             },
             "inheritedRounds": 2,
-            "mergedCheckpoints": 0,
-            "heldPageRoundsWithoutProgress": 1,
             "rejectedCheckpoints": 4,
             "walledRounds": 0,
+            "notFoundNavigates": 0,
+            "notFoundOffKey": 0,
             "subagentRounds": 0,
             "stoppedEarly": 0,
             "overrules": 0,
@@ -982,10 +982,10 @@
               "none": 2
             },
             "inheritedRounds": 2,
-            "mergedCheckpoints": 0,
-            "heldPageRoundsWithoutProgress": 1,
             "rejectedCheckpoints": 3,
             "walledRounds": 0,
+            "notFoundNavigates": 0,
+            "notFoundOffKey": 0,
             "subagentRounds": 13,
             "stoppedEarly": 0,
             "overrules": 3,

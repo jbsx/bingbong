@@ -1,13 +1,13 @@
 # Round Audit — bingbong.live-web.information-hunts (baseline-1)
 
-Generated 2026-09-14T01:52:13.145Z from a capture set created 2026-09-12T17:06:30.219Z (state complete). This audit counts and does not judge: every verdict is the reviewer’s for one attempt, and the ranking is arithmetic over those verdicts.
+Generated 2026-09-14T00:38:15.512Z from a capture set created 2026-09-12T17:06:30.219Z (state complete). This audit counts and does not judge: every verdict is the reviewer’s for one attempt, and the ranking is arithmetic over those verdicts.
 
 ## Provenance
 
 - capture: commit(s) fbd2b865 (dirty tree); mode measured; protocol 1; prompt version(s) 1
 - routing: orchestrator=GLM-5.3; subagent=GLM-5.3-flash; vision=GLM-4.6V | reasoning override: none | effort overrides: none | adblock: production_default
 - key 2.2.2.2, manifest sha256:faa25d04…; grades by claude-opus-5 via live:grade (revision 1)
-- reviewer: claude-opus-5 at high, prompt audit-p1; audit run at commit 7da13ef8
+- reviewer: claude-opus-5 at high, prompt audit-p1; audit run at commit 33c2b52a
 
 ## Populations
 
@@ -15,8 +15,8 @@ Kinds are mechanical counts; a share is over the budgeted rounds (Finalization o
 
 | population | attempts | judged | rounds | budgeted | tool rounds used | at budget | Acquisition with Progress | Acquisition without Progress | Collection | Bookkeeping | Failed round | Finalization |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| initial | 4 | 4 | 73 | 66 | 66 | 3 | 48 (73%) → 37 | 9 (14%) → 20 | 1 (2%) | 4 (6%) | 4 (6%) | 7 (10%) |
-| follow_up | 2 | 2 | 42 | 39 | 38 | 0 | 20 (51%) → 17 | 10 (26%) → 13 | 0 (0%) | 7 (18%) | 2 (5%) | 3 (7%) |
+| initial | 4 | 4 | 73 | 66 | 66 | 3 | 41 (62%) → 37 | 16 (24%) → 20 | 1 (2%) | 4 (6%) | 4 (6%) | 7 (10%) |
+| follow_up | 2 | 2 | 42 | 39 | 38 | 0 | 19 (49%) → 16 | 11 (28%) → 14 | 0 (0%) | 7 (18%) | 2 (5%) | 3 (7%) |
 
 | verdict | initial primary | initial secondary | follow_up primary | follow_up secondary |
 | --- | --- | --- | --- | --- |
@@ -26,8 +26,8 @@ Kinds are mechanical counts; a share is over the budgeted rounds (Finalization o
 | stopped early | 1 | 0 | 0 | 0 |
 | failed rounds | 0 | 1 | 0 | 0 |
 
-- initial: 26 Off-key round(s), 5 Search Loop round(s) by the reviewer (3 by the streak rule; attempts by search source rail 0, replay 3, none 1), 0 inherited, 1 rejected Evidence Checkpoint(s), 1 walled round(s), 13 Subagent round(s), 0 merged Evidence Checkpoint(s) (a floor), 0 Held Page round(s) without Progress, 1 stopped early, 11 overrule(s), 22 flag(s); Finalization Causes: budget_exhausted 3, model_answered 1
-- follow_up: 7 Off-key round(s), 0 Search Loop round(s) by the reviewer (0 by the streak rule; attempts by search source rail 0, replay 1, none 1), 5 inherited, 2 rejected Evidence Checkpoint(s), 0 walled round(s), 0 Subagent round(s), 0 merged Evidence Checkpoint(s) (a floor), 4 Held Page round(s) without Progress, 0 stopped early, 3 overrule(s), 9 flag(s); Finalization Causes: deadline_reached 1, objective_met 1
+- initial: 26 Off-key round(s), 6 Search Loop round(s) by the reviewer (5 by the streak rule; attempts by search source rail 0, replay 3, none 1), 0 inherited, 1 rejected Evidence Checkpoint(s), 1 walled round(s), 6 navigate(s) landed on a Not-found Page (6 judged Off-key), 13 Subagent round(s), 1 stopped early, 4 overrule(s), 23 flag(s); Finalization Causes: budget_exhausted 3, model_answered 1
+- follow_up: 8 Off-key round(s), 0 Search Loop round(s) by the reviewer (0 by the streak rule; attempts by search source rail 0, replay 1, none 1), 5 inherited, 2 rejected Evidence Checkpoint(s), 0 walled round(s), 1 navigate(s) landed on a Not-found Page (1 judged Off-key), 0 Subagent round(s), 0 stopped early, 3 overrule(s), 9 flag(s); Finalization Causes: deadline_reached 1, objective_met 1
 
 ## Tool rounds
 
@@ -53,7 +53,9 @@ The rounds outside Finalization that called each tool — a round counts once pe
 
 - answered; ended done / completed (budget_exhausted); tier investigation (1 Tier Escalation(s) at the deadline); 24 of 24 Tool Rounds used; 26 orchestrator rounds, 2 in Finalization; Run duration 423979 ms; LLM stage 411453 ms over 26 joined round(s)
 - grade useful_partial; checks not reached: fact-05 (1 of 10)
-- 13 Subagent round(s) over 1 Subagent(s), stopped by budget_exhausted 1; 2 accepted (0 merged, a floor) and 0 rejected Evidence Checkpoint(s); 0 inherited round(s); 0 Held Page round(s) without Progress; 0 walled round(s)
+- 13 Subagent round(s) over 1 Subagent(s), stopped by budget_exhausted 1; 2 accepted and 0 rejected Evidence Checkpoint(s); 0 inherited round(s); 0 walled round(s)
+- navigates that landed on a Not-found Page: 0
+- of those, judged Off-key by the reviewer: 0
 - kinds: Acquisition with Progress 17 (71%) · Acquisition without Progress 4 (17%) · Collection 1 (4%) · Bookkeeping 1 (4%) · Failed round 1 (4%) · Finalization 2 (8%)
 - search source none: no Search Observation in the trace, and no navigate search for the replay to find
 - **verdict: rounds wasted** — fact-05, the one check not reached, lives on camera_software.html, which the Run reached in round 9. The Run never extracted it there. Instead: round 10 re-navigated to a URL already acquired, round 12's type failed, the look in round 13 returned nothing legible, and round 14 was refused. Rounds 15-18 then went on a raw-GitHub include-index file, fetched twice under two paths, including an End of Page scroll in round 16. Round 21 was another End of Page scroll, and round 23 landed on an off-key gallery post. Counting those rounds (10, 12, 13, 14, 15, 16, 17, 18, 21, 23), about 10 of 24 budgeted rounds (~42%) went without progress, failed or were off-key. That is enough to have covered the missing check on a page the Run already had.
@@ -106,7 +108,9 @@ The rounds outside Finalization that called each tool — a round counts once pe
 
 - answered; ended done / completed (deadline_reached); tier investigation; 20 of 24 Tool Rounds used; 23 orchestrator rounds, 2 in Finalization; Run duration 401951 ms; LLM stage 385882 ms over 23 joined round(s)
 - grade useful_partial; checks not reached: fact-02 (1 of 6)
-- 0 Subagent round(s) over 0 Subagent(s); 7 accepted (0 merged, a floor) and 1 rejected Evidence Checkpoint(s); 3 inherited round(s); 3 Held Page round(s) without Progress; 0 walled round(s)
+- 0 Subagent round(s) over 0 Subagent(s); 7 accepted and 1 rejected Evidence Checkpoint(s); 3 inherited round(s); 0 walled round(s)
+- navigates that landed on a Not-found Page: 0
+- of those, judged Off-key by the reviewer: 0
 - kinds: Acquisition with Progress 9 (43%) · Acquisition without Progress 6 (29%) · Collection 0 (0%) · Bookkeeping 4 (19%) · Failed round 2 (10%) · Finalization 2 (9%)
 - search source none: no Search Observation in the trace, and no navigate search for the replay to find
 - **verdict: rounds wasted** — Of the 21 budgeted rounds, 8 made no progress once rounds 11 and 16 are overruled (rounds 2, 3, 9, 10, 11, 14, 15, 16). Another 2 failed: round 5 was a refused repeat scroll and round 21 was cut. Round 6 was off-key, and rounds 7-8 went to a launch article that could not carry fact-02. That comes to roughly half the budget. The Run did load the verified source https://www.raspberrypi.com/documentation/accessories/camera.html in rounds 9-16, but it used scrolls and screenshot Looks that came back illegible (rounds 11, 15, 16) and never read the page text. So the mechanical section behind fact-02 was never extracted. Long reasoning rounds (1, 2, 17, each over 60 s) also used up the time before the deadline.
@@ -150,7 +154,9 @@ The rounds outside Finalization that called each tool — a round counts once pe
 
 - answered; ended done / partial (budget_exhausted); tier lookup; 12 of 12 Tool Rounds used; 14 orchestrator rounds, 2 in Finalization; Run duration 178437 ms; LLM stage 141672 ms over 14 joined round(s)
 - grade useful_partial; checks not reached: fact-02, fact-03, fact-05, fact-08, fact-10, fact-11 (6 of 17)
-- 0 Subagent round(s) over 0 Subagent(s); 1 accepted (0 merged, a floor) and 0 rejected Evidence Checkpoint(s); 0 inherited round(s); 0 Held Page round(s) without Progress; 0 walled round(s)
+- 0 Subagent round(s) over 0 Subagent(s); 1 accepted and 0 rejected Evidence Checkpoint(s); 0 inherited round(s); 0 walled round(s)
+- navigates that landed on a Not-found Page: 0
+- of those, judged Off-key by the reviewer: 0
 - kinds: Acquisition with Progress 7 (58%) · Acquisition without Progress 2 (17%) · Collection 0 (0%) · Bookkeeping 0 (0%) · Failed round 3 (25%) · Finalization 2 (14%)
 - search source replay: the streak rule re-run over navigate searches
 - **verdict: rounds wasted** — Only rounds 11 and 12 (2 of 12) were on a page that could carry key facts (S1). The other 10 rounds went elsewhere. Rounds 2, 5 and 7 were refusals; rounds 3 and 6 repeated an equivalent typing action and drew the no-progress Notice; round 9 went back to the listing page (overruled); and rounds 1, 4, 8 and 10 landed on listing or search pages that were off-key. By the time S1 was reached, no budget was left to finish reading it (fact-02, fact-03, fact-05) or to open S2 (fact-08, fact-10, fact-11).
@@ -190,7 +196,9 @@ The rounds outside Finalization that called each tool — a round counts once pe
 
 - answered; ended done (model_answered); tier lookup; 6 of 12 Tool Rounds used; 7 orchestrator rounds, 1 in Finalization; Run duration 231365 ms; LLM stage 224830 ms over 7 joined round(s)
 - grade useful_partial; checks not reached: fact-07, fact-08 (2 of 14)
-- 0 Subagent round(s) over 0 Subagent(s); 5 accepted (0 merged, a floor) and 1 rejected Evidence Checkpoint(s); 0 inherited round(s); 0 Held Page round(s) without Progress; 0 walled round(s)
+- 0 Subagent round(s) over 0 Subagent(s); 5 accepted and 1 rejected Evidence Checkpoint(s); 0 inherited round(s); 0 walled round(s)
+- navigates that landed on a Not-found Page: 0
+- of those, judged Off-key by the reviewer: 0
 - kinds: Acquisition with Progress 3 (50%) · Acquisition without Progress 0 (0%) · Collection 0 (0%) · Bookkeeping 3 (50%) · Failed round 0 (0%) · Finalization 1 (14%)
 - search source replay: the streak rule re-run over navigate searches
 - **verdict: stopped early** — All 5 non-finalization rounds after round 1 were on-key: rounds 2 and 3 reached both verified sources, and rounds 4 to 6 recorded evidence from them (5 accepted checkpoints, 1 rejected). Only 1 of 6 budgeted rounds (17%, round 1) was a search page, with no loops, no repeats and no failed rounds. The Run then answered at round 7 with half the budget unused, leaving fact-07 and fact-08 unreached even though pages already in hand covered them.
@@ -216,24 +224,27 @@ The rounds outside Finalization that called each tool — a round counts once pe
 
 - answered; ended done / completed (objective_met); tier investigation (1 Tier Escalation(s) at the deadline); 18 of 24 Tool Rounds used; 19 orchestrator rounds, 1 in Finalization; Run duration 288265 ms; LLM stage 278916 ms over 19 joined round(s)
 - grade pass; checks not reached: none
-- 0 Subagent round(s) over 0 Subagent(s); 3 accepted (0 merged, a floor) and 1 rejected Evidence Checkpoint(s); 2 inherited round(s); 1 Held Page round(s) without Progress; 0 walled round(s)
-- kinds: Acquisition with Progress 11 (61%) · Acquisition without Progress 4 (22%) · Collection 0 (0%) · Bookkeeping 3 (17%) · Failed round 0 (0%) · Finalization 1 (5%)
+- 0 Subagent round(s) over 0 Subagent(s); 3 accepted and 1 rejected Evidence Checkpoint(s); 2 inherited round(s); 0 walled round(s)
+- navigates that landed on a Not-found Page: 1 (round 12)
+- of those, judged Off-key by the reviewer: 1
+- kinds: Acquisition with Progress 10 (56%) · Acquisition without Progress 5 (28%) · Collection 0 (0%) · Bookkeeping 3 (17%) · Failed round 0 (0%) · Finalization 1 (5%)
 - search source replay: the streak rule re-run over navigate searches
-- **verdict: rounds wasted** — The attempt passed within budget. Of its 18 budgeted rounds, only 3 to 5 (on S1), 11, 14 and 17 landed on pages that could carry the required facts, and the evidence that counted came from rounds 14 and 17. About a third went to rounds without progress: 1, 2, 7, 17, plus round 8 after the overrule. Another 6 went to off-key pages: 6, 8, 9 and 10 on the Help Centre hub, the 404 in round 12 and the search page in round 13. Round 16 also spent a bookkeeping round on a rejected checkpoint for a page it had not yet opened. The run met its objective anyway, but rounds 6 to 13 were a detour that did not advance it.
-- stopped early: no — The run ended once the objective was met, with 18 of 24 rounds used, and the grade reports no unreached checks. Nothing was left undone that it could have reached.
-- Off-key round 6 (https://help.eurostar.com/?language=uk-en): Help Centre home page: a hub of category links and a search box. It states no per-class allowance and no instrument rule, so it cannot carry fact-01, fact-02 or fact-03 itself.
-- Off-key round 8 (https://help.eurostar.com/?language=uk-en): A read of the same Help Centre hub. It is navigation material only and holds none of the required facts.
-- Off-key round 9 (https://help.eurostar.com/?language=uk-en): A scroll on the Help Centre hub. It only brought more category links into view, not an allowance statement.
-- Off-key round 10 (https://help.eurostar.com/?language=uk-en): A scroll on the Help Centre hub. It surfaced the Luggage category link but no allowance text.
-- Off-key round 12 (https://www.eurostar.com/uk-en/travel-info/tickets-fares/eurostar-premier): The title says the page was not found. A 404 page carries no facts.
-- Off-key round 13 (https://duckduckgo.com/?q=site%3Aeurostar.com+Eurostar+Premier+luggage+allowance&ia=web): A search results page. It lists links but cannot itself carry the official allowance, and the run did not open any result from it.
-- overrule round 8 → Acquisition without Progress: The read_page shows the same URL and the same page signature (ce3bfea4) that the round 6 navigate already returned, and round 7's type was blocked, so the page did not change. This was a repeat observation of a state already seen, not a first read.
-- flag (round 6): Should the Help Centre hub (rounds 6, 8, 9, 10) count as off-key, or as reasonable on-site navigation toward a luggage FAQ that could have carried the allowance?
-- flag (round 8): Is round 8's read_page really a repeat of round 6's state (same signature ce3bfea4), or did the read expose page text the navigate result had cut off, which would make it progress?
-- flag (round 11): Is the Help Centre FAQ page from round 11 on-key? It is an official luggage page that could state class allowances, but it is not the verified source.
-- flag (round 17): Round 17 is labelled a re-acquisition of an inherited page. Should it count as productive, given that the run needed a fresh observation of that page for round 18's checkpoint to be accepted?
-- flag: Is 'rounds_wasted' too strong as the primary verdict for an attempt that passed with 6 rounds to spare, when none of the listed categories really cost it its result?
-- reviewer claude-opus-5 at high, prompt audit-p1, digest sha256:7f2ae15e…, $0.16
+- **verdict: rounds wasted** — The attempt passed after using 18 of its 24 rounds, but most acquisition work did not advance it. After the round-8 overrule, 6 of the 15 acquisition rounds had no Progress (1, 2, 7, 8, 12, 17). Rounds 6-10 went to the Help Centre home hub, round 12 hit a 404 and round 13 was a search results page. That is 10 of 15 acquisition rounds with no Progress or on Off-key pages. The deciding pages were the luggage page (rounds 3-5, and round 14's us-en copy), round 11's FAQ and the instruments page (round 17), and they could have been reached in far fewer rounds.
+- stopped early: no — The Run ended with objective_met and a pass grade, and no checks were left unreached. There was nothing within reach left to check, so this was not an early stop.
+- Off-key round 6 (https://help.eurostar.com/?language=uk-en): Help Centre home page: a navigation hub of category links and a search box. It states no fare-class allowance, so it can carry none of fact-01..03.
+- Off-key round 7 (https://help.eurostar.com/?language=uk-en): The same hub page, and the typed query was blocked by an overlay. Nothing on it could carry a required fact.
+- Off-key round 8 (https://help.eurostar.com/?language=uk-en): A re-read of the Help Centre home. The hub lists categories but has no allowance text.
+- Off-key round 9 (https://help.eurostar.com/?language=uk-en): A scroll on the Help Centre home that brought only category 'See more' links into view, none about allowances.
+- Off-key round 10 (https://help.eurostar.com/?language=uk-en): A scroll on the Help Centre home. It surfaced a link to the luggage category, but the page itself carries no allowance figures.
+- Off-key round 12 (https://www.eurostar.com/uk-en/travel-info/tickets-fares/eurostar-premier): A Not-found page (404) on the right site. It carries nothing.
+- Off-key round 13 (https://duckduckgo.com/?q=site%3Aeurostar.com+Eurostar+Premier+luggage+allowance&ia=web): A search results page. It lists links but is not an official rule page, so it cannot itself carry a required fact.
+- overrule round 8 → Acquisition without Progress: read_page returned the same page state round 6 had already put in front of the assistant: the same URL, signature ce3bfea4 and scroll 0/6081. It repeated an observation rather than making a first read of a new state.
+- flag (round 6): Should rounds 6-10 on the Help Centre home count as on-key navigation, since the hub led to round 11's FAQ page (a possible equivalent official source), rather than as Off-key?
+- flag (round 8): Is round 8's read_page really a repeat of round 6's observation (same signature ce3bfea4), or did the full read add content that round 6's navigate result had cut off?
+- flag (round 17): Round 17 re-opened an inherited, already-checkpointed page only to re-ground a claim after round 16's rejection, and fact-03 treats the guitar exception as unchanged. Is 'without progress' the right label, or did it make progress within this run?
+- flag (round 1): Round 1 re-navigated to the inherited S1 page, which is where the Premier allowance for this follow-up sits. Should that re-acquisition count as without progress?
+- flag: The attempt passed with 6 of 24 rounds unused. Is 'rounds_wasted' a fair primary verdict when the waste did not cost the result?
+- reviewer claude-opus-5 at high, prompt audit-p1, digest sha256:a651591a…, $0.17
 
 | round | kind | tools | page | ms | note |
 | --- | --- | --- | --- | --- | --- |
@@ -243,12 +254,12 @@ The rounds outside Finalization that called each tool — a round counts once pe
 | 4 | Acquisition with Progress | scroll | https://www.eurostar.com/uk-en/travel-info/travel-planning/luggage | 6334 | scroll: the scroll brought new material into view |
 | 5 | Acquisition with Progress | scroll | https://www.eurostar.com/uk-en/travel-info/travel-planning/luggage | 4454 | scroll: the scroll brought new material into view |
 | 6 | Acquisition with Progress | navigate | https://help.eurostar.com/?language=uk-en | 58032 | navigate: the settled page state moved to a page this Run had not acquired [off-key] |
-| 7 | Acquisition without Progress | type | https://help.eurostar.com/?language=uk-en | 9071 | type: the result reports no page movement |
+| 7 | Acquisition without Progress | type | https://help.eurostar.com/?language=uk-en | 9071 | type: the result reports no page movement [off-key] |
 | 8 | Acquisition with Progress → Acquisition without Progress | read_page | https://help.eurostar.com/?language=uk-en | 6054 | read_page: the first read of this page state [off-key] |
 | 9 | Acquisition with Progress | scroll | https://help.eurostar.com/?language=uk-en | 7957 | scroll: the scroll brought new material into view [off-key] |
 | 10 | Acquisition with Progress | scroll | https://help.eurostar.com/?language=uk-en | 2602 | scroll: the scroll brought new material into view [off-key] |
 | 11 | Acquisition with Progress | navigate | https://help.eurostar.com/faq/uk-en/question/How-much-luggage-can-I-take | 4432 | navigate: the settled page state moved to a page this Run had not acquired |
-| 12 | Acquisition with Progress | navigate | https://www.eurostar.com/uk-en/travel-info/tickets-fares/eurostar-premier | 5110 | navigate: the settled page state moved to a page this Run had not acquired [off-key] |
+| 12 | Acquisition without Progress | navigate | https://www.eurostar.com/uk-en/travel-info/tickets-fares/eurostar-premier | 5110 | navigate: landed on a Not-found Page [not found, off-key] |
 | 13 | Acquisition with Progress | navigate | https://duckduckgo.com/?q=site%3Aeurostar.com+Eurostar+Premier+luggage+allowance… | 1553 | navigate: the settled page state moved to a page this Run had not acquired [off-key] |
 | 14 | Acquisition with Progress | navigate | https://www.eurostar.com/us-en/travel-info/travel-planning/luggage | 4254 | navigate: the settled page state moved to a page this Run had not acquired |
 | 15 | Bookkeeping | record_evidence, record_evidence | https://www.eurostar.com/us-en/travel-info/travel-planning/luggage | 33703 | record_evidence, record_evidence |
@@ -261,58 +272,54 @@ The rounds outside Finalization that called each tool — a round counts once pe
 
 - answered; ended done / partial (budget_exhausted); tier investigation; 24 of 24 Tool Rounds used; 26 orchestrator rounds, 2 in Finalization; Run duration 388291 ms; LLM stage 337974 ms over 26 joined round(s)
 - grade useful_partial; checks not reached: fact-07 (1 of 15)
-- 0 Subagent round(s) over 0 Subagent(s); 1 accepted (0 merged, a floor) and 0 rejected Evidence Checkpoint(s); 0 inherited round(s); 0 Held Page round(s) without Progress; 1 walled round(s)
-- kinds: Acquisition with Progress 21 (88%) · Acquisition without Progress 3 (13%) · Collection 0 (0%) · Bookkeeping 0 (0%) · Failed round 0 (0%) · Finalization 2 (8%)
+- 0 Subagent round(s) over 0 Subagent(s); 1 accepted and 0 rejected Evidence Checkpoint(s); 0 inherited round(s); 1 walled round(s)
+- navigates that landed on a Not-found Page: 6 (round 1, 5, 7, 9, 22, 24)
+- of those, judged Off-key by the reviewer: 6
+- kinds: Acquisition with Progress 14 (58%) · Acquisition without Progress 10 (42%) · Collection 0 (0%) · Bookkeeping 0 (0%) · Failed round 0 (0%) · Finalization 2 (8%)
 - search source replay: the streak rule re-run over navigate searches
-- **verdict: rounds wasted** — Only about 8 of the 24 budgeted rounds did on-key productive work: round 6, and rounds 15-20 reading https://www.jpl.nasa.gov/news/nasas-voyager-1-explores-final-frontier-of-our-solar-bubble/ (S1), plus round 14, whose results led there. About 16 of 24 rounds (~67%) went elsewhere. Six were 404s from guessing slugs for the September release (rounds 1, 5, 7, 9, 22, 24). Three were the search loop in rounds 2-4, including a walled Google page. Three more were search pages for the same release (rounds 8, 10, 23). Three were spent on a Wayback CDX index (rounds 11-13), and round 21 was an End of Page scroll. The verified September source was never reached, which leaves fact-07 unreached.
-- stopped early: no — The Run used all 24 of its 24 Tool Rounds and ended on budget_exhausted.
-- Search Loop over rounds 2, 3, 4: Three searches in a row for the same intent: the June 2013 JPL statement. Round 2 hit a Google wall, and rounds 3 and 4 reran reworded versions of that query on DuckDuckGo. The app's streak count confirms it, and the round 4 search_loop_nudge fired.
-- Search Loop over rounds 8, 10: Both searches seek the same thing, the September 2013 NASA release (rounds 8 and 10). The only round between them is round 9, one more guessed nasa.gov URL for that same release, so the intent never changed. The app reset the streak because the engine and wording changed.
-- Off-key round 1 (https://www.jpl.nasa.gov/news/nasa-voyager-statement-about-entering-interstellar-space/): A 404 at a guessed JPL slug, so the page holds no content.
-- Off-key round 2 (https://www.google.com/search?q=NASA+Voyager+statement+June+2013+%22has+not+yet+left+the+heliosphere%22+or+%22not+yet+in+interstellar+space%22+jpl): A search results page behind a Google challenge wall. It can carry no required fact.
-- Off-key round 3 (https://duckduckgo.com/?q=NASA+Voyager+1+June+2013+statement+%22not+yet+in+interstellar+space%22+%22magnetic+field%22+jpl.nasa.gov): A search results page. It can lead to a source but cannot carry any fact-NN itself.
-- Off-key round 4 (https://duckduckgo.com/?q=Voyager+1+June+27+2013+NASA+statement+interstellar+space+not+yet): A search results page, and a loop member.
-- Off-key round 5 (https://www.nasa.gov/press-release/nasa-voyager-1-officially-in-interstellar-space): A 404 at a guessed nasa.gov slug. The verified September source lives at a different path.
-- Off-key round 7 (https://science.nasa.gov/press-release/nasa-voyager-1-officially-in-interstellar-space/): A 404 at a guessed science.nasa.gov slug.
-- Off-key round 8 (https://duckduckgo.com/?q=science.nasa.gov+%22Voyager+1+officially+interstellar+space%22+September+2013+press+release): A search results page. No required fact can be carried there.
-- Off-key round 9 (https://www.nasa.gov/content/nasa-voyager-1-officially-in-interstellar-space/): A 404 at a guessed slug.
-- Off-key round 10 (https://duckduckgo.com/?q=site%3Anasa.gov+voyager+1+officially+interstellar+space+September+12+2013): A search results page.
-- Off-key round 11 (http://web.archive.org/cdx/search/cdx?url=jpl.nasa.gov/news/news.php&matchType=prefix&from=20130601&to=20131231&filter=statuscode:200&limit=300&collapse=urlkey): A Wayback CDX index, which lists only capture URLs and timestamps. It cannot carry any fact about the release content.
-- Off-key round 12 (http://web.archive.org/cdx/search/cdx?url=jpl.nasa.gov/news/news.php&matchType=prefix&from=20130601&to=20131231&filter=statuscode:200&limit=300&collapse=urlkey): A read of the same CDX index. The page is only a capture listing.
-- Off-key round 13 (http://web.archive.org/cdx/search/cdx?collapse=urlkey&filter=statuscode%3A200&from=20130601&limit=300&matchType=prefix&to=20131231&url=jpl.nasa.gov%2Fnews%2Fnews.php): A Look at the CDX index. It returned timestamped news.php URLs, not release text.
-- Off-key round 14 (https://www.bing.com/search?q=jpl.nasa.gov+%22Voyager+1%22+June+2013+%22has+not+yet%22+interstellar+space+magnetic+field+statement): A search results page. It did lead to the June source, but the page itself carries no fact.
-- Off-key round 22 (https://www.jpl.nasa.gov/news/nasas-voyager-1-officially-in-interstellar-space/): A 404 at a guessed JPL slug for the September release.
-- Off-key round 23 (https://www.bing.com/search?q=site%3Ajpl.nasa.gov+Voyager+1+%22interstellar+space%22+September+2013+plasma+wave+%22April+9%2C+2013%22): A search results page, restricted to jpl.nasa.gov, while the verified September source is on nasa.gov.
-- Off-key round 24 (https://science.nasa.gov/universe/nasas-voyager-1-officially-in-interstellar-space/): A 404 at a guessed science.nasa.gov slug.
-- overrule round 1 → Acquisition without Progress: The navigate landed on a 404 at https://www.jpl.nasa.gov/news/nasa-voyager-statement-about-entering-interstellar-space/. The URL was new, but no material came in.
-- overrule round 2 → Acquisition without Progress: This opens the loop of rounds 2-4, and the Google page was walled by a challenge, so nothing was acquired.
-- overrule round 5 → Acquisition without Progress: The guessed URL returned a 404 with no material.
-- overrule round 7 → Acquisition without Progress: The guessed URL returned a 404 with no material.
-- overrule round 9 → Acquisition without Progress: The guessed URL returned a 404 with no material.
-- overrule round 10 → Acquisition without Progress: This search rewords round 8's search for the same September release, making it a loop member.
-- overrule round 22 → Acquisition without Progress: The navigate in this round hit a 404. The accepted record_evidence call rides alongside it, but the acquisition itself brought nothing.
-- overrule round 24 → Acquisition without Progress: The guessed URL returned a 404 with no material.
-- flag (round 1): Should the 404 navigations in rounds 1, 5, 7, 9, 22 and 24 stay as Acquisition with Progress, since the URLs were new? Or is the overrule to without-Progress right, since nothing came in?
-- flag (round 14): Is it fair to call the round 14 Bing results page Off-key, when it is what led the Run to S1 in round 15?
-- flag (round 6): https://science.nasa.gov/resource/voyager-reaches-interstellar-space/ is a NASA resource page and was left on-key. Could it carry any fact-NN, or is it a modern summary that should count as Off-key under pitfall-05?
-- flag (round 10): Are rounds 8 and 10 one Search Loop, even though a guessed-URL navigate (round 9) sits between them? And should round 23, which seeks the same September release after further guesses, be counted in that loop too?
-- flag (round 11): Were the CDX index rounds 11-13 a reasonable archival detour, since the listing could have revealed release URLs, rather than Off-key waste?
-- flag (round 16): Rounds 16 and 17 brought only carousel buttons and share links into view. Should they count as Progress?
-- flag: The grade is useful_partial with only fact-07 unreached. Is rounds_wasted too harsh as primary, given that the Answer still carried most of the checks?
-- reviewer claude-opus-5 at high, prompt audit-p1, digest sha256:453f8ad1…, $0.26
+- **verdict: rounds wasted** — Only rounds 15-21 (7 of 24, about 29%) worked a page that could carry required facts, which was S1. Round 6 is borderline. About 16 of 24 rounds (roughly two-thirds) landed on off-key pages: six guessed-URL 404s (rounds 1, 5, 7, 9, 22, 24), seven search results pages (2, 3, 4, 8, 10, 14, 23) and three rounds on a CDX index (11-13). Two search loops (rounds 2-4 and 8-10) and five failed URL guesses for the September release used up the budget, so the verified September source was never opened and fact-07 went unreached.
+- stopped early: no — The Run used all 24 of its 24 budgeted Tool Rounds and ended on budget_exhausted. It did not stop with budget left.
+- Search Loop over rounds 2, 3, 4: Three consecutive searches, on Google and then DuckDuckGo, all reworded one intent: finding the June 2013 JPL statement. The app counted streaks 1 to 3 and sent a search_loop_nudge at round 4.
+- Search Loop over rounds 8, 9, 10: Rounds 8 and 10 reworded one intent: finding the September 2013 NASA release. Round 9 between them was a guessed-URL navigate toward the same release, so it did not break the loop. The app counted round 10 as streak 2.
+- Off-key round 1 (https://www.jpl.nasa.gov/news/nasa-voyager-statement-about-entering-interstellar-space/): A 404 on the right site. A not-found page carries no content.
+- Off-key round 2 (https://www.google.com/search?q=NASA+Voyager+statement+June+2013+%22has+not+yet+left+the+heliosphere%22+or+%22not+yet+in+interstellar+space%22+jpl): A search results page that was also walled by a Google challenge, so nothing was shown.
+- Off-key round 3 (https://duckduckgo.com/?q=NASA+Voyager+1+June+2013+statement+%22not+yet+in+interstellar+space%22+%22magnetic+field%22+jpl.nasa.gov&ia=web): A search results page. It can point to sources but carries none of the required facts itself.
+- Off-key round 4 (https://duckduckgo.com/?q=Voyager+1+June+27+2013+NASA+statement+interstellar+space+not+yet&ia=web): A search results page, and a loop member.
+- Off-key round 5 (https://www.nasa.gov/press-release/nasa-voyager-1-officially-in-interstellar-space): A 404 at a guessed URL. The verified September source is at a different path.
+- Off-key round 7 (https://science.nasa.gov/press-release/nasa-voyager-1-officially-in-interstellar-space/): A 404 at a guessed URL on the right organisation's site.
+- Off-key round 8 (https://duckduckgo.com/?q=science.nasa.gov+%22Voyager+1+officially+interstellar+space%22+September+2013+press+release&ia=web): A search results page.
+- Off-key round 9 (https://www.nasa.gov/content/nasa-voyager-1-officially-in-interstellar-space/): A 404 at a guessed URL.
+- Off-key round 10 (https://duckduckgo.com/?q=site%3Anasa.gov+voyager+1+officially+interstellar+space+September+12+2013&ia=web): A search results page, and a loop member.
+- Off-key round 11 (http://web.archive.org/cdx/search/cdx?url=jpl.nasa.gov/news/news.php&matchType=prefix&from=20130601&to=20131231&filter=statuscode:200&limit=300&collapse=urlkey): A Wayback CDX index listing. It holds only archived URLs and timestamps, not any release text, so it can carry no required fact.
+- Off-key round 12 (http://web.archive.org/cdx/search/cdx?url=jpl.nasa.gov/news/news.php&matchType=prefix&from=20130601&to=20131231&filter=statuscode:200&limit=300&collapse=urlkey): A read of the same CDX index listing. It has no release content.
+- Off-key round 13 (http://web.archive.org/cdx/search/cdx?collapse=urlkey&filter=statuscode%3A200&from=20130601&limit=300&matchType=prefix&to=20131231&url=jpl.nasa.gov%2Fnews%2Fnews.php): A look at the same CDX index listing. It returned URL strings only, and none of them was followed.
+- Off-key round 14 (https://www.bing.com/search?q=jpl.nasa.gov+%22Voyager+1%22+June+2013+%22has+not+yet%22+interstellar+space+magnetic+field+statement): A search results page. It did lead to S1 in round 15.
+- Off-key round 22 (https://www.jpl.nasa.gov/news/nasas-voyager-1-officially-in-interstellar-space/): A 404 at a guessed URL.
+- Off-key round 23 (https://www.bing.com/search?q=site%3Ajpl.nasa.gov+Voyager+1+%22interstellar+space%22+September+2013+plasma+wave+%22April+9%2C+2013%22&rdr=1&rdrig=6CE13DA215DA498E83E3439FF6BA44C5): A search results page.
+- Off-key round 24 (https://science.nasa.gov/universe/nasas-voyager-1-officially-in-interstellar-space/): A 404 at a guessed URL.
+- overrule round 2 → Acquisition without Progress: The page moved to a new URL, but what loaded was a Google challenge wall with no results. No new material came in, and the round opened the rounds 2-4 search loop.
+- flag (round 2): Should the walled Google challenge page count as acquisition_without_progress, as overruled, or keep the mechanical with-progress label because the URL was new?
+- flag (round 6): Is https://science.nasa.gov/resource/voyager-reaches-interstellar-space/ on-key because it could carry the crossing date? Or is it off-key as a modern resource page that is not either official 2013 account?
+- flag (round 9): Does a guessed-URL navigate between searches 8 and 10 belong inside the loop, or does it break it?
+- flag (round 22): Rounds 5, 7, 9, 22 and 24 all guessed URL variants for the same September release. Should they be treated as a loop-like repeat even though they are navigates, not searches?
+- flag (round 11): Is the CDX index work in rounds 11-13 off-key? The listing carries no facts itself, but it was a reasonable route to archived releases.
+- flag (round 14): Should search results pages that led straight to an on-key source (round 14 led to S1) be marked off-key?
+- flag (round 16): Rounds 16 and 17 only scrolled slide buttons and share links into view. Should they count as Acquisition with Progress?
+- flag: Is rounds_wasted right as the sole verdict given a useful_partial grade with only fact-07 unreached? Or does the investigation tier's 24-round budget with no escalation also justify a tier_too_small_or_never_escalated secondary?
+- reviewer claude-opus-5 at high, prompt audit-p1, digest sha256:f886a913…, $0.27
 
 | round | kind | tools | page | ms | note |
 | --- | --- | --- | --- | --- | --- |
-| 1 | Acquisition with Progress → Acquisition without Progress | report_run_plan, navigate | https://www.jpl.nasa.gov/news/nasa-voyager-statement-about-entering-interstellar… | 117157 | navigate: the settled page state moved to a page this Run had not acquired [off-key] |
+| 1 | Acquisition without Progress | report_run_plan, navigate | https://www.jpl.nasa.gov/news/nasa-voyager-statement-about-entering-interstellar… | 117157 | navigate: landed on a Not-found Page [not found, off-key] |
 | 2 | Acquisition with Progress → Acquisition without Progress | navigate | https://www.google.com/search?q=NASA+Voyager+statement+June+2013+%22has+not+yet+… | 8156 | navigate: the settled page state moved to a page this Run had not acquired [walled, off-key, search loop, loop head by the streak rule] |
 | 3 | Acquisition without Progress | navigate | https://duckduckgo.com/?q=NASA+Voyager+1+June+2013+statement+%22not+yet+in+inter… | 2607 | navigate: a search that rewords the one before it (streak 2) [off-key, search loop] |
 | 4 | Acquisition without Progress | navigate | https://duckduckgo.com/?q=Voyager+1+June+27+2013+NASA+statement+interstellar+spa… | 5926 | navigate: a search that rewords the one before it (streak 3) [off-key, search loop] |
-| 5 | Acquisition with Progress → Acquisition without Progress | navigate | https://www.nasa.gov/press-release/nasa-voyager-1-officially-in-interstellar-spa… | 7521 | navigate: the settled page state moved to a page this Run had not acquired [off-key] |
+| 5 | Acquisition without Progress | navigate | https://www.nasa.gov/press-release/nasa-voyager-1-officially-in-interstellar-spa… | 7521 | navigate: landed on a Not-found Page [not found, off-key] |
 | 6 | Acquisition with Progress | navigate | https://science.nasa.gov/resource/voyager-reaches-interstellar-space/ | 3846 | navigate: the settled page state moved to a page this Run had not acquired |
-| 7 | Acquisition with Progress → Acquisition without Progress | navigate | https://science.nasa.gov/press-release/nasa-voyager-1-officially-in-interstellar… | 3922 | navigate: the settled page state moved to a page this Run had not acquired [off-key] |
-| 8 | Acquisition with Progress | navigate | https://duckduckgo.com/?q=science.nasa.gov+%22Voyager+1+officially+interstellar+… | 3453 | navigate: the settled page state moved to a page this Run had not acquired [off-key, search loop] |
-| 9 | Acquisition with Progress → Acquisition without Progress | navigate | https://www.nasa.gov/content/nasa-voyager-1-officially-in-interstellar-space/ | 7863 | navigate: the settled page state moved to a page this Run had not acquired [off-key] |
-| 10 | Acquisition with Progress → Acquisition without Progress | navigate | https://duckduckgo.com/?q=site%3Anasa.gov+voyager+1+officially+interstellar+spac… | 2259 | navigate: the settled page state moved to a page this Run had not acquired [off-key, search loop] |
+| 7 | Acquisition without Progress | navigate | https://science.nasa.gov/press-release/nasa-voyager-1-officially-in-interstellar… | 3922 | navigate: landed on a Not-found Page [not found, off-key] |
+| 8 | Acquisition with Progress | navigate | https://duckduckgo.com/?q=science.nasa.gov+%22Voyager+1+officially+interstellar+… | 3453 | navigate: the settled page state moved to a page this Run had not acquired [off-key, search loop, loop head by the streak rule] |
+| 9 | Acquisition without Progress | navigate | https://www.nasa.gov/content/nasa-voyager-1-officially-in-interstellar-space/ | 7863 | navigate: landed on a Not-found Page [not found, off-key, search loop] |
+| 10 | Acquisition without Progress | navigate | https://duckduckgo.com/?q=site%3Anasa.gov+voyager+1+officially+interstellar+spac… | 2259 | navigate: a search that rewords the one before it (streak 2) [off-key, search loop] |
 | 11 | Acquisition with Progress | navigate | http://web.archive.org/cdx/search/cdx?url=jpl.nasa.gov/news/news.php&matchType=p… | 21415 | navigate: the settled page state moved to a page this Run had not acquired [off-key] |
 | 12 | Acquisition with Progress | read_page | http://web.archive.org/cdx/search/cdx?url=jpl.nasa.gov/news/news.php&matchType=p… | 5512 | read_page: the first read of this page state [off-key] |
 | 13 | Acquisition with Progress | look | http://web.archive.org/cdx/search/cdx?collapse=urlkey&filter=statuscode%3A200&fr… | 2307 | look: the first Look at this page state with this question [off-key] |
@@ -324,9 +331,9 @@ The rounds outside Finalization that called each tool — a round counts once pe
 | 19 | Acquisition with Progress | scroll | https://www.jpl.nasa.gov/news/nasas-voyager-1-explores-final-frontier-of-our-sol… | 4802 | scroll: the scroll brought new material into view |
 | 20 | Acquisition with Progress | scroll | https://www.jpl.nasa.gov/news/nasas-voyager-1-explores-final-frontier-of-our-sol… | 5314 | scroll: the scroll brought new material into view |
 | 21 | Acquisition without Progress | scroll | https://www.jpl.nasa.gov/news/nasas-voyager-1-explores-final-frontier-of-our-sol… | 4040 | scroll: a scroll that answered End of Page |
-| 22 | Acquisition with Progress → Acquisition without Progress | record_evidence, navigate | https://www.jpl.nasa.gov/news/nasas-voyager-1-explores-final-frontier-of-our-sol… | 15364 | navigate: the settled page state moved to a page this Run had not acquired [off-key] |
+| 22 | Acquisition without Progress | record_evidence, navigate | https://www.jpl.nasa.gov/news/nasas-voyager-1-explores-final-frontier-of-our-sol… | 15364 | navigate: landed on a Not-found Page [not found, off-key] |
 | 23 | Acquisition with Progress | navigate | https://www.bing.com/search?q=site%3Ajpl.nasa.gov+Voyager+1+%22interstellar+spac… | 5202 | navigate: the settled page state moved to a page this Run had not acquired [off-key] |
-| 24 | Acquisition with Progress → Acquisition without Progress | navigate | https://science.nasa.gov/universe/nasas-voyager-1-officially-in-interstellar-spa… | 3543 | navigate: the settled page state moved to a page this Run had not acquired [off-key] |
+| 24 | Acquisition without Progress | navigate | https://science.nasa.gov/universe/nasas-voyager-1-officially-in-interstellar-spa… | 3543 | navigate: landed on a Not-found Page [not found, off-key] |
 | 25 | Finalization | — | — | 10001 | a Finalization round cut by the Finalization Allowance |
 | 26 | Finalization | — | — | 36246 | the reserved Answer |
 

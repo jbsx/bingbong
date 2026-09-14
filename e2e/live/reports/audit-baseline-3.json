@@ -32,9 +32,9 @@
     "reviewerModel": "claude-opus-5",
     "reviewerEffort": "high",
     "reviewerPromptVersion": "audit-p1",
-    "auditCommit": "7da13ef8175a05547c276b027e53c41e1a70ec59",
+    "auditCommit": "33c2b52ac19f79c1a5666a903bc857e1cd0bfa52",
     "auditDirtyTree": false,
-    "generatedAt": "2026-09-14T01:52:13.145Z"
+    "generatedAt": "2026-09-14T00:38:15.512Z"
   },
   "attempts": [
     {
@@ -118,17 +118,18 @@
                 "title": "Page not found – Raspberry Pi",
                 "signature": "92ec4d04",
                 "wall": null,
+                "notFound": "title www.raspberrypi.com",
                 "checkpoint": null,
                 "notices": [],
                 "search": null,
                 "progress": {
-                  "made": true,
-                  "reason": "the settled page state moved to a page this Run had not acquired"
+                  "made": false,
+                  "reason": "landed on a Not-found Page"
                 }
               }
             ],
-            "kind": "acquisition_with_progress",
-            "reason": "navigate: the settled page state moved to a page this Run had not acquired",
+            "kind": "acquisition_without_progress",
+            "reason": "navigate: landed on a Not-found Page",
             "tags": {
               "inherited": false,
               "rejectedCheckpoints": 0,
@@ -1338,16 +1339,16 @@
         "orchestratorRounds": 26,
         "budgetedRounds": 24,
         "counts": {
-          "acquisition_with_progress": 16,
-          "acquisition_without_progress": 2,
+          "acquisition_with_progress": 15,
+          "acquisition_without_progress": 3,
           "collection": 1,
           "bookkeeping": 5,
           "failed_round": 0,
           "finalization": 2
         },
         "shares": {
-          "acquisition_with_progress": 0.667,
-          "acquisition_without_progress": 0.083,
+          "acquisition_with_progress": 0.625,
+          "acquisition_without_progress": 0.125,
           "collection": 0.042,
           "bookkeeping": 0.208,
           "failed_round": 0,
@@ -1356,12 +1357,13 @@
         "acceptedCheckpoints": 4,
         "rejectedCheckpoints": 3,
         "inheritedRounds": 0,
-        "mergedCheckpoints": 0,
-        "heldPageRoundsWithoutProgress": 0,
         "mechanicalSearchRounds": 0,
         "searchLoopHeads": [],
         "searchSource": "none",
         "walledRounds": 0,
+        "notFoundNavigates": [
+          1
+        ],
         "latency": {
           "llmMs": 196187,
           "joined": 26,
@@ -1388,7 +1390,7 @@
           "fact-06"
         ],
         "checksTotal": 10,
-        "digestHash": "sha256:e03bffa8506124d61fcbc6a4b672d2571c094b0884987b3bef05f64abb0b1757"
+        "digestHash": "sha256:f1ed07189b04e64f62097715053fb2a0f4aaaf5de80badc8d5fdff1b127e06ce"
       },
       "review": {
         "judgement": {
@@ -1397,83 +1399,88 @@
             {
               "round": 1,
               "url": "https://www.raspberrypi.com/documentation/computers/camera.html",
-              "reason": "The navigate landed on a 'Page not found' 404. The page has no content, so it can carry none of the required facts."
+              "reason": "The navigate landed on a Not-found Page. A 404 can carry none of the required facts, even though it sits on the right documentation site."
             }
           ],
           "overrules": [
             {
               "round": 7,
               "kind": "acquisition_without_progress",
-              "reason": "Scrolled up to y=277 on camera_software.html, a scroll position round 5 had already shown. It re-observed a known state instead of reaching the unread sections further down."
+              "reason": "Scrolling back up to y=277 on https://www.raspberrypi.com/documentation/computers/camera_software.html showed a position round 5 had already observed. It repeated an observed state."
             },
             {
               "round": 8,
               "kind": "acquisition_without_progress",
-              "reason": "Scrolled up to y=0 on camera_software.html, the top of the page that the round 4 navigate had already shown (cookie banner and header links)."
+              "reason": "Scrolling up to y=0 on camera_software.html went back to the top of the page, which round 4's navigate had already shown."
             },
             {
               "round": 9,
               "kind": "acquisition_without_progress",
-              "reason": "Scrolled down to y=277 on camera_software.html. Its result head matches round 5 word for word, so it repeats a state already seen."
+              "reason": "Scrolling down to y=277 on camera_software.html repeated round 5. The new-in-view head is the same (the High Quality Camera and Global Shutter Camera links)."
             },
             {
               "round": 10,
               "kind": "acquisition_without_progress",
-              "reason": "Scrolled down to y=554 on camera_software.html. Its result head matches round 6 word for word, so it repeats a state already seen."
+              "reason": "Scrolling down to y=554 on camera_software.html repeated round 6. The head is the same (the GitHub link and the rpicam-apps Bookworm text)."
+            },
+            {
+              "round": 21,
+              "kind": "acquisition_without_progress",
+              "reason": "The anchor navigate in round 20 did not move the viewport: this scroll reports y=277 on https://www.raspberrypi.com/documentation/accessories/camera.html, the same offset round 3 had already reached on that page. It re-covered observed ground. Only round 22 (y=554) went further."
             }
           ],
           "stoppedEarly": {
             "value": false,
-            "reason": "The run used all 24 of its budgeted rounds and ended with budget_exhausted. It did not stop with budget left."
+            "reason": "The Run used all 24 of its 24 Tool Rounds and ended as budget_exhausted. fact-05 and fact-06 were reachable further down camera_software.html, a page it already had, but the budget ran out. It did not stop with budget left."
           },
           "verdict": {
             "primary": "rounds_wasted",
-            "primaryReason": "About 9 of the 24 budgeted rounds (roughly 38%) produced nothing new: round 1 was an off-key 404, rounds 7–10 scrolled up and back down over parts of camera_software.html that rounds 4–6 had already shown, rounds 16 and 20 navigated back to URLs the run already had, and rounds 12 and 24 were evidence records that were all rejected. The unreached fact-05 and fact-06 both sit on camera_software.html, the page the run held from round 4 onward. Its scrolling there went no deeper than y=1385, and the rounds that went back over the top of the page could have been spent reading further down.",
+            "primaryReason": "8 of 24 budgeted rounds (33%) made no progress: the 404 in round 1, the repeat scrolls in rounds 7–10 over offsets rounds 4–6 had already shown, the navigates in rounds 16 and 20 to URLs already acquired, and the repeat offset in round 21. Another 5 rounds (21%) were bookkeeping, and rounds 12 and 24 were spent entirely on rejected malformed checkpoints. fact-05 and fact-06 were never reached, yet both sit further down camera_software.html. The Run stopped reading that page at y=1385 in round 18. The rounds that went over old ground would have reached them.",
             "secondary": "tier_too_small_or_never_escalated",
-            "secondaryReason": "The rest of the work stayed on the two key pages and was productive: rounds 2–6, 11, 17–18 and 21–22 plus the subagent (rounds 15 and 23) supported the cable and hardware findings. The investigation-tier budget of 24 rounds ran out while the run was still on the right page, and it never moved up a tier."
+            "secondaryReason": "The work that did progress was all on-key: 10 rounds on S2 and S3 plus the subagent spawned in round 15. The investigation tier's 24-round budget ended the Run with no Tier Escalation, even though budget warnings came at 6/24 (round 18) and 3/24 (round 21)."
           },
           "flags": [
             {
-              "round": 7,
-              "question": "Round 7's result head lists a Camera Module 2 link that round 5's head did not show. Was round 7 really a repeat of round 5's state, or did it bring in a little new material?"
+              "round": 21,
+              "question": "Is round 21 really a repeat of round 3? Both report y=277 on accessories/camera.html, but the new-in-view links differ. That could mean round 20's anchor navigate changed what was in view."
             },
             {
               "round": 16,
-              "question": "The navigate to the #autofocus anchor on camera_software.html is labelled as a repeat URL. Should it count as progress if the anchor moved the view to a section the run had not seen, given that round 17 then reports y=1108?"
+              "question": "Did the #autofocus anchor navigate in round 16 bring the autofocus section into view? If it did, it was new material and should count as progress. Round 17's head suggests the viewport did not jump there."
             },
             {
-              "round": 21,
-              "question": "Rounds 21–22 scrolled accessories/camera.html to y=277 and y=554 after an anchor navigate. Round 3 had already scrolled to y=277 on that page, though with a different result head. Do these rounds count as progress or as repeats?"
-            },
-            {
-              "round": 12,
-              "question": "Rounds 12 and 24 had all of their evidence records rejected as malformed. Should they count toward wasted rounds, or stay as ordinary bookkeeping?"
+              "round": 7,
+              "question": "Rounds 7–10 are relabelled as repeats because they return to scroll offsets already seen. Is the mechanical 'new in view' signal enough to say they showed genuinely new material?"
             },
             {
               "round": null,
-              "question": "Should the secondary verdict be tier_too_small_or_never_escalated, or is rounds_wasted alone enough, since the wasted rounds, if spent reading, might have reached fact-05 and fact-06 within the same budget?"
+              "question": "Should the secondary verdict be tier_too_small_or_never_escalated? Or does the 33% share of rounds without progress fully explain why fact-05 and fact-06 went unreached, leaving no secondary?"
+            },
+            {
+              "round": 24,
+              "question": "Round 24's only call was a rejected checkpoint, but it is not a refusal of an acquisition. Should it count as a failed round rather than bookkeeping?"
             }
           ]
         },
         "caveats": [
-          "flag (round 7): Round 7's result head lists a Camera Module 2 link that round 5's head did not show. Was round 7 really a repeat of round 5's state, or did it bring in a little new material?",
-          "flag (round 16): The navigate to the #autofocus anchor on camera_software.html is labelled as a repeat URL. Should it count as progress if the anchor moved the view to a section the run had not seen, given that round 17 then reports y=1108?",
-          "flag (round 21): Rounds 21–22 scrolled accessories/camera.html to y=277 and y=554 after an anchor navigate. Round 3 had already scrolled to y=277 on that page, though with a different result head. Do these rounds count as progress or as repeats?",
-          "flag (round 12): Rounds 12 and 24 had all of their evidence records rejected as malformed. Should they count toward wasted rounds, or stay as ordinary bookkeeping?",
-          "flag: Should the secondary verdict be tier_too_small_or_never_escalated, or is rounds_wasted alone enough, since the wasted rounds, if spent reading, might have reached fact-05 and fact-06 within the same budget?"
+          "flag (round 21): Is round 21 really a repeat of round 3? Both report y=277 on accessories/camera.html, but the new-in-view links differ. That could mean round 20's anchor navigate changed what was in view.",
+          "flag (round 16): Did the #autofocus anchor navigate in round 16 bring the autofocus section into view? If it did, it was new material and should count as progress. Round 17's head suggests the viewport did not jump there.",
+          "flag (round 7): Rounds 7–10 are relabelled as repeats because they return to scroll offsets already seen. Is the mechanical 'new in view' signal enough to say they showed genuinely new material?",
+          "flag: Should the secondary verdict be tier_too_small_or_never_escalated? Or does the 33% share of rounds without progress fully explain why fact-05 and fact-06 went unreached, leaving no secondary?",
+          "flag (round 24): Round 24's only call was a rejected checkpoint, but it is not a refusal of an acquisition. Should it count as a failed round rather than bookkeeping?"
         ],
         "model": "claude-opus-5",
         "served": "claude-opus-5",
         "effort": "high",
         "promptVersion": "audit-p1",
-        "digestHash": "sha256:e03bffa8506124d61fcbc6a4b672d2571c094b0884987b3bef05f64abb0b1757",
+        "digestHash": "sha256:f1ed07189b04e64f62097715053fb2a0f4aaaf5de80badc8d5fdff1b127e06ce",
         "costUsd": 0.2,
-        "durationMs": 36076,
-        "judgedAt": "2026-09-13T01:52:06.373Z"
+        "durationMs": 38333,
+        "judgedAt": "2026-09-14T00:37:25.413Z"
       },
       "countsAfterOverrules": {
-        "acquisition_with_progress": 12,
-        "acquisition_without_progress": 6,
+        "acquisition_with_progress": 10,
+        "acquisition_without_progress": 8,
         "collection": 1,
         "bookkeeping": 5,
         "failed_round": 0,
@@ -2843,12 +2850,11 @@
         "acceptedCheckpoints": 5,
         "rejectedCheckpoints": 3,
         "inheritedRounds": 1,
-        "mergedCheckpoints": 0,
-        "heldPageRoundsWithoutProgress": 1,
         "mechanicalSearchRounds": 0,
         "searchLoopHeads": [],
         "searchSource": "none",
         "walledRounds": 0,
+        "notFoundNavigates": [],
         "latency": {
           "llmMs": 426768,
           "joined": 26,
@@ -4228,14 +4234,13 @@
         "acceptedCheckpoints": 0,
         "rejectedCheckpoints": 0,
         "inheritedRounds": 0,
-        "mergedCheckpoints": 0,
-        "heldPageRoundsWithoutProgress": 0,
         "mechanicalSearchRounds": 3,
         "searchLoopHeads": [
           8
         ],
         "searchSource": "replay",
         "walledRounds": 0,
+        "notFoundNavigates": [],
         "latency": {
           "llmMs": 157331,
           "joined": 26,
@@ -5241,12 +5246,11 @@
         "acceptedCheckpoints": 4,
         "rejectedCheckpoints": 0,
         "inheritedRounds": 0,
-        "mergedCheckpoints": 0,
-        "heldPageRoundsWithoutProgress": 0,
         "mechanicalSearchRounds": 0,
         "searchLoopHeads": [],
         "searchSource": "replay",
         "walledRounds": 0,
+        "notFoundNavigates": [],
         "latency": {
           "llmMs": 294145,
           "joined": 16,
@@ -6086,12 +6090,11 @@
         "acceptedCheckpoints": 1,
         "rejectedCheckpoints": 0,
         "inheritedRounds": 1,
-        "mergedCheckpoints": 0,
-        "heldPageRoundsWithoutProgress": 0,
         "mechanicalSearchRounds": 0,
         "searchLoopHeads": [],
         "searchSource": "none",
         "walledRounds": 0,
+        "notFoundNavigates": [],
         "latency": {
           "llmMs": 116385,
           "joined": 14,
@@ -6315,12 +6318,11 @@
         "acceptedCheckpoints": 0,
         "rejectedCheckpoints": 0,
         "inheritedRounds": 0,
-        "mergedCheckpoints": 0,
-        "heldPageRoundsWithoutProgress": 0,
         "mechanicalSearchRounds": 0,
         "searchLoopHeads": [],
         "searchSource": "none",
         "walledRounds": 0,
+        "notFoundNavigates": [],
         "latency": {
           "llmMs": 368430,
           "joined": 3,
@@ -6410,24 +6412,24 @@
       "budgetedRounds": 64,
       "toolRoundsUsed": 63,
       "counts": {
-        "acquisition_with_progress": 39,
-        "acquisition_without_progress": 9,
+        "acquisition_with_progress": 38,
+        "acquisition_without_progress": 10,
         "collection": 1,
         "bookkeeping": 8,
         "failed_round": 7,
         "finalization": 7
       },
       "countsAfterOverrules": {
-        "acquisition_with_progress": 33,
-        "acquisition_without_progress": 15,
+        "acquisition_with_progress": 31,
+        "acquisition_without_progress": 17,
         "collection": 1,
         "bookkeeping": 8,
         "failed_round": 7,
         "finalization": 7
       },
       "shares": {
-        "acquisition_with_progress": 0.609,
-        "acquisition_without_progress": 0.141,
+        "acquisition_with_progress": 0.594,
+        "acquisition_without_progress": 0.156,
         "collection": 0.016,
         "bookkeeping": 0.125,
         "failed_round": 0.109,
@@ -6456,13 +6458,13 @@
         "none": 2
       },
       "inheritedRounds": 0,
-      "mergedCheckpoints": 0,
-      "heldPageRoundsWithoutProgress": 0,
       "rejectedCheckpoints": 3,
       "walledRounds": 0,
+      "notFoundNavigates": 1,
+      "notFoundOffKey": 1,
       "subagentRounds": 13,
       "stoppedEarly": 1,
-      "overrules": 6,
+      "overrules": 7,
       "flags": 20,
       "finalizationCauses": {
         "budget_exhausted": 2,
@@ -6577,10 +6579,10 @@
         "none": 2
       },
       "inheritedRounds": 2,
-      "mergedCheckpoints": 0,
-      "heldPageRoundsWithoutProgress": 1,
       "rejectedCheckpoints": 3,
       "walledRounds": 0,
+      "notFoundNavigates": 0,
+      "notFoundOffKey": 0,
       "subagentRounds": 13,
       "stoppedEarly": 0,
       "overrules": 3,

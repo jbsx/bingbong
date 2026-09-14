@@ -1,13 +1,13 @@
 # Round Audit — bingbong.live-web.information-hunts (baseline-3)
 
-Generated 2026-09-14T01:52:13.145Z from a capture set created 2026-09-12T18:57:29.347Z (state complete). This audit counts and does not judge: every verdict is the reviewer’s for one attempt, and the ranking is arithmetic over those verdicts.
+Generated 2026-09-14T00:38:15.512Z from a capture set created 2026-09-12T18:57:29.347Z (state complete). This audit counts and does not judge: every verdict is the reviewer’s for one attempt, and the ranking is arithmetic over those verdicts.
 
 ## Provenance
 
 - capture: commit(s) 59bdf48b (dirty tree); mode measured; protocol 1; prompt version(s) 1
 - routing: orchestrator=GLM-5.3; subagent=GLM-5.3-flash; vision=GLM-4.6V | reasoning override: none | effort overrides: none | adblock: production_default
 - key 2.2.2.2, manifest sha256:faa25d04…; grades by claude-opus-5 via live:grade (revision 1)
-- reviewer: claude-opus-5 at high, prompt audit-p1; audit run at commit 7da13ef8
+- reviewer: claude-opus-5 at high, prompt audit-p1; audit run at commit 33c2b52a
 
 ## Populations
 
@@ -15,7 +15,7 @@ Kinds are mechanical counts; a share is over the budgeted rounds (Finalization o
 
 | population | attempts | judged | rounds | budgeted | tool rounds used | at budget | Acquisition with Progress | Acquisition without Progress | Collection | Bookkeeping | Failed round | Finalization |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| initial | 4 | 4 | 71 | 64 | 63 | 2 | 39 (61%) → 33 | 9 (14%) → 15 | 1 (2%) | 8 (13%) | 7 (11%) | 7 (10%) |
+| initial | 4 | 4 | 71 | 64 | 63 | 2 | 38 (59%) → 31 | 10 (16%) → 17 | 1 (2%) | 8 (13%) | 7 (11%) | 7 (10%) |
 | follow_up | 2 | 2 | 40 | 36 | 36 | 2 | 23 (64%) → 20 | 4 (11%) → 7 | 1 (3%) | 5 (14%) | 3 (8%) | 4 (10%) |
 
 | verdict | initial primary | initial secondary | follow_up primary | follow_up secondary |
@@ -26,8 +26,8 @@ Kinds are mechanical counts; a share is over the budgeted rounds (Finalization o
 | stopped early | 1 | 0 | 0 | 0 |
 | failed rounds | 1 | 1 | 0 | 1 |
 
-- initial: 14 Off-key round(s), 5 Search Loop round(s) by the reviewer (3 by the streak rule; attempts by search source rail 0, replay 2, none 2), 0 inherited, 3 rejected Evidence Checkpoint(s), 0 walled round(s), 13 Subagent round(s), 0 merged Evidence Checkpoint(s) (a floor), 0 Held Page round(s) without Progress, 1 stopped early, 6 overrule(s), 20 flag(s); Finalization Causes: budget_exhausted 2, deadline_reached 1, objective_met 1
-- follow_up: 1 Off-key round(s), 0 Search Loop round(s) by the reviewer (0 by the streak rule; attempts by search source rail 0, replay 0, none 2), 2 inherited, 3 rejected Evidence Checkpoint(s), 0 walled round(s), 13 Subagent round(s), 0 merged Evidence Checkpoint(s) (a floor), 1 Held Page round(s) without Progress, 0 stopped early, 3 overrule(s), 10 flag(s); Finalization Causes: budget_exhausted 2
+- initial: 14 Off-key round(s), 5 Search Loop round(s) by the reviewer (3 by the streak rule; attempts by search source rail 0, replay 2, none 2), 0 inherited, 3 rejected Evidence Checkpoint(s), 0 walled round(s), 1 navigate(s) landed on a Not-found Page (1 judged Off-key), 13 Subagent round(s), 1 stopped early, 7 overrule(s), 20 flag(s); Finalization Causes: budget_exhausted 2, deadline_reached 1, objective_met 1
+- follow_up: 1 Off-key round(s), 0 Search Loop round(s) by the reviewer (0 by the streak rule; attempts by search source rail 0, replay 0, none 2), 2 inherited, 3 rejected Evidence Checkpoint(s), 0 walled round(s), 0 navigate(s) landed on a Not-found Page (0 judged Off-key), 13 Subagent round(s), 0 stopped early, 3 overrule(s), 10 flag(s); Finalization Causes: budget_exhausted 2
 
 ## Tool rounds
 
@@ -54,27 +54,30 @@ The rounds outside Finalization that called each tool — a round counts once pe
 
 - answered; ended done / completed (budget_exhausted); tier investigation; 24 of 24 Tool Rounds used; 26 orchestrator rounds, 2 in Finalization; Run duration 266324 ms; LLM stage 196187 ms over 26 joined round(s)
 - grade useful_partial; checks not reached: fact-05, fact-06 (2 of 10)
-- 13 Subagent round(s) over 1 Subagent(s), stopped by budget_exhausted 1; 4 accepted (0 merged, a floor) and 3 rejected Evidence Checkpoint(s); 0 inherited round(s); 0 Held Page round(s) without Progress; 0 walled round(s)
-- kinds: Acquisition with Progress 16 (67%) · Acquisition without Progress 2 (8%) · Collection 1 (4%) · Bookkeeping 5 (21%) · Failed round 0 (0%) · Finalization 2 (8%)
+- 13 Subagent round(s) over 1 Subagent(s), stopped by budget_exhausted 1; 4 accepted and 3 rejected Evidence Checkpoint(s); 0 inherited round(s); 0 walled round(s)
+- navigates that landed on a Not-found Page: 1 (round 1)
+- of those, judged Off-key by the reviewer: 1
+- kinds: Acquisition with Progress 15 (63%) · Acquisition without Progress 3 (13%) · Collection 1 (4%) · Bookkeeping 5 (21%) · Failed round 0 (0%) · Finalization 2 (8%)
 - search source none: no Search Observation in the trace, and no navigate search for the replay to find
-- **verdict: rounds wasted** — About 9 of the 24 budgeted rounds (roughly 38%) produced nothing new: round 1 was an off-key 404, rounds 7–10 scrolled up and back down over parts of camera_software.html that rounds 4–6 had already shown, rounds 16 and 20 navigated back to URLs the run already had, and rounds 12 and 24 were evidence records that were all rejected. The unreached fact-05 and fact-06 both sit on camera_software.html, the page the run held from round 4 onward. Its scrolling there went no deeper than y=1385, and the rounds that went back over the top of the page could have been spent reading further down.
-- secondary: tier too small or never escalated — The rest of the work stayed on the two key pages and was productive: rounds 2–6, 11, 17–18 and 21–22 plus the subagent (rounds 15 and 23) supported the cable and hardware findings. The investigation-tier budget of 24 rounds ran out while the run was still on the right page, and it never moved up a tier.
-- stopped early: no — The run used all 24 of its budgeted rounds and ended with budget_exhausted. It did not stop with budget left.
-- Off-key round 1 (https://www.raspberrypi.com/documentation/computers/camera.html): The navigate landed on a 'Page not found' 404. The page has no content, so it can carry none of the required facts.
-- overrule round 7 → Acquisition without Progress: Scrolled up to y=277 on camera_software.html, a scroll position round 5 had already shown. It re-observed a known state instead of reaching the unread sections further down.
-- overrule round 8 → Acquisition without Progress: Scrolled up to y=0 on camera_software.html, the top of the page that the round 4 navigate had already shown (cookie banner and header links).
-- overrule round 9 → Acquisition without Progress: Scrolled down to y=277 on camera_software.html. Its result head matches round 5 word for word, so it repeats a state already seen.
-- overrule round 10 → Acquisition without Progress: Scrolled down to y=554 on camera_software.html. Its result head matches round 6 word for word, so it repeats a state already seen.
-- flag (round 7): Round 7's result head lists a Camera Module 2 link that round 5's head did not show. Was round 7 really a repeat of round 5's state, or did it bring in a little new material?
-- flag (round 16): The navigate to the #autofocus anchor on camera_software.html is labelled as a repeat URL. Should it count as progress if the anchor moved the view to a section the run had not seen, given that round 17 then reports y=1108?
-- flag (round 21): Rounds 21–22 scrolled accessories/camera.html to y=277 and y=554 after an anchor navigate. Round 3 had already scrolled to y=277 on that page, though with a different result head. Do these rounds count as progress or as repeats?
-- flag (round 12): Rounds 12 and 24 had all of their evidence records rejected as malformed. Should they count toward wasted rounds, or stay as ordinary bookkeeping?
-- flag: Should the secondary verdict be tier_too_small_or_never_escalated, or is rounds_wasted alone enough, since the wasted rounds, if spent reading, might have reached fact-05 and fact-06 within the same budget?
-- reviewer claude-opus-5 at high, prompt audit-p1, digest sha256:e03bffa8…, $0.20
+- **verdict: rounds wasted** — 8 of 24 budgeted rounds (33%) made no progress: the 404 in round 1, the repeat scrolls in rounds 7–10 over offsets rounds 4–6 had already shown, the navigates in rounds 16 and 20 to URLs already acquired, and the repeat offset in round 21. Another 5 rounds (21%) were bookkeeping, and rounds 12 and 24 were spent entirely on rejected malformed checkpoints. fact-05 and fact-06 were never reached, yet both sit further down camera_software.html. The Run stopped reading that page at y=1385 in round 18. The rounds that went over old ground would have reached them.
+- secondary: tier too small or never escalated — The work that did progress was all on-key: 10 rounds on S2 and S3 plus the subagent spawned in round 15. The investigation tier's 24-round budget ended the Run with no Tier Escalation, even though budget warnings came at 6/24 (round 18) and 3/24 (round 21).
+- stopped early: no — The Run used all 24 of its 24 Tool Rounds and ended as budget_exhausted. fact-05 and fact-06 were reachable further down camera_software.html, a page it already had, but the budget ran out. It did not stop with budget left.
+- Off-key round 1 (https://www.raspberrypi.com/documentation/computers/camera.html): The navigate landed on a Not-found Page. A 404 can carry none of the required facts, even though it sits on the right documentation site.
+- overrule round 7 → Acquisition without Progress: Scrolling back up to y=277 on https://www.raspberrypi.com/documentation/computers/camera_software.html showed a position round 5 had already observed. It repeated an observed state.
+- overrule round 8 → Acquisition without Progress: Scrolling up to y=0 on camera_software.html went back to the top of the page, which round 4's navigate had already shown.
+- overrule round 9 → Acquisition without Progress: Scrolling down to y=277 on camera_software.html repeated round 5. The new-in-view head is the same (the High Quality Camera and Global Shutter Camera links).
+- overrule round 10 → Acquisition without Progress: Scrolling down to y=554 on camera_software.html repeated round 6. The head is the same (the GitHub link and the rpicam-apps Bookworm text).
+- overrule round 21 → Acquisition without Progress: The anchor navigate in round 20 did not move the viewport: this scroll reports y=277 on https://www.raspberrypi.com/documentation/accessories/camera.html, the same offset round 3 had already reached on that page. It re-covered observed ground. Only round 22 (y=554) went further.
+- flag (round 21): Is round 21 really a repeat of round 3? Both report y=277 on accessories/camera.html, but the new-in-view links differ. That could mean round 20's anchor navigate changed what was in view.
+- flag (round 16): Did the #autofocus anchor navigate in round 16 bring the autofocus section into view? If it did, it was new material and should count as progress. Round 17's head suggests the viewport did not jump there.
+- flag (round 7): Rounds 7–10 are relabelled as repeats because they return to scroll offsets already seen. Is the mechanical 'new in view' signal enough to say they showed genuinely new material?
+- flag: Should the secondary verdict be tier_too_small_or_never_escalated? Or does the 33% share of rounds without progress fully explain why fact-05 and fact-06 went unreached, leaving no secondary?
+- flag (round 24): Round 24's only call was a rejected checkpoint, but it is not a refusal of an acquisition. Should it count as a failed round rather than bookkeeping?
+- reviewer claude-opus-5 at high, prompt audit-p1, digest sha256:f1ed0718…, $0.20
 
 | round | kind | tools | page | ms | note |
 | --- | --- | --- | --- | --- | --- |
-| 1 | Acquisition with Progress | report_run_plan, navigate | https://www.raspberrypi.com/documentation/computers/camera.html | 82344 | navigate: the settled page state moved to a page this Run had not acquired [off-key] |
+| 1 | Acquisition without Progress | report_run_plan, navigate | https://www.raspberrypi.com/documentation/computers/camera.html | 82344 | navigate: landed on a Not-found Page [not found, off-key] |
 | 2 | Acquisition with Progress | navigate | https://www.raspberrypi.com/documentation/accessories/camera.html | 1697 | navigate: the settled page state moved to a page this Run had not acquired |
 | 3 | Acquisition with Progress | scroll | https://www.raspberrypi.com/documentation/accessories/camera.html | 3298 | scroll: the scroll brought new material into view |
 | 4 | Acquisition with Progress | navigate | https://www.raspberrypi.com/documentation/computers/camera_software.html | 1480 | navigate: the settled page state moved to a page this Run had not acquired |
@@ -94,7 +97,7 @@ The rounds outside Finalization that called each tool — a round counts once pe
 | 18 | Acquisition with Progress | scroll | https://www.raspberrypi.com/documentation/computers/camera_software.html | 1905 | scroll: the scroll brought new material into view |
 | 19 | Bookkeeping | record_evidence | https://www.raspberrypi.com/documentation/computers/camera_software.html | 2264 | record_evidence |
 | 20 | Acquisition without Progress | navigate | https://www.raspberrypi.com/documentation/accessories/camera.html#install-a-rasp… | 4161 | navigate: a navigate to a URL this Run already acquired |
-| 21 | Acquisition with Progress | scroll | https://www.raspberrypi.com/documentation/accessories/camera.html | 1241 | scroll: the scroll brought new material into view |
+| 21 | Acquisition with Progress → Acquisition without Progress | scroll | https://www.raspberrypi.com/documentation/accessories/camera.html | 1241 | scroll: the scroll brought new material into view |
 | 22 | Acquisition with Progress | scroll | https://www.raspberrypi.com/documentation/accessories/camera.html | 1562 | scroll: the scroll brought new material into view |
 | 23 | Collection | agent_results | https://www.raspberrypi.com/documentation/accessories/camera.html | 4124 | read a finished Subagent Report |
 | 24 | Bookkeeping | record_evidence | https://www.raspberrypi.com/documentation/accessories/camera.html | 3018 | record_evidence — 1 rejected Evidence Checkpoint(s) [1 rejected checkpoint] |
@@ -105,7 +108,9 @@ The rounds outside Finalization that called each tool — a round counts once pe
 
 - answered; ended done / completed (budget_exhausted); tier investigation (1 Tier Escalation(s) at the deadline); 24 of 24 Tool Rounds used; 26 orchestrator rounds, 2 in Finalization; Run duration 443819 ms; LLM stage 426768 ms over 26 joined round(s)
 - grade useful_partial; checks not reached: fact-02 (1 of 6)
-- 13 Subagent round(s) over 1 Subagent(s), stopped by budget_exhausted 1; 5 accepted (0 merged, a floor) and 3 rejected Evidence Checkpoint(s); 1 inherited round(s); 1 Held Page round(s) without Progress; 0 walled round(s)
+- 13 Subagent round(s) over 1 Subagent(s), stopped by budget_exhausted 1; 5 accepted and 3 rejected Evidence Checkpoint(s); 1 inherited round(s); 0 walled round(s)
+- navigates that landed on a Not-found Page: 0
+- of those, judged Off-key by the reviewer: 0
 - kinds: Acquisition with Progress 14 (58%) · Acquisition without Progress 3 (13%) · Collection 1 (4%) · Bookkeeping 5 (21%) · Failed round 1 (4%) · Finalization 2 (8%)
 - search source none: no Search Observation in the trace, and no navigate search for the replay to find
 - **verdict: rounds wasted** — The source for the unreached fact-02, https://www.raspberrypi.com/documentation/accessories/camera.html, was open from round 12, but little of the remaining budget went into reading it. Round 13 was an illegible look and round 14 a refused ground_visual. Rounds 15–18 scrolled 277 px at a time and only got to y=1108 on a long page. They never did a read_page, which would have surfaced the mechanical section. Before that, rounds 2–11 spent 10 of 24 rounds (42%) on the Camera Module 3 product page and two news posts. Round 7 was off-key, and rounds 3, 6 and 10 made no progress. At the end, rounds 20–24 went to bookkeeping (5 of 24, 21%), and rounds 21 and 22 were record_candidate calls rejected as malformed. In all, about 7 rounds made no progress or failed (3, 6, 10, 13, 14, 21, 22), 1 was off-key (7), and only rounds 12 and 15–18 worked toward fact-02 on its source.
@@ -154,7 +159,9 @@ The rounds outside Finalization that called each tool — a round counts once pe
 
 - answered; ended done / partial (budget_exhausted); tier investigation; 24 of 24 Tool Rounds used; 26 orchestrator rounds, 2 in Finalization; Run duration 186557 ms; LLM stage 157331 ms over 26 joined round(s)
 - grade useful_partial; checks not reached: fact-03, fact-05, fact-08, fact-10, fact-11 (5 of 17)
-- 0 Subagent round(s) over 0 Subagent(s); 0 accepted (0 merged, a floor) and 0 rejected Evidence Checkpoint(s); 0 inherited round(s); 0 Held Page round(s) without Progress; 0 walled round(s)
+- 0 Subagent round(s) over 0 Subagent(s); 0 accepted and 0 rejected Evidence Checkpoint(s); 0 inherited round(s); 0 walled round(s)
+- navigates that landed on a Not-found Page: 0
+- of those, judged Off-key by the reviewer: 0
 - kinds: Acquisition with Progress 12 (50%) · Acquisition without Progress 6 (25%) · Collection 0 (0%) · Bookkeeping 0 (0%) · Failed round 6 (25%) · Finalization 2 (8%)
 - search source replay: the streak rule re-run over navigate searches
 - **verdict: rounds wasted** — Only rounds 17, 18 and 23 did productive work on a page that could hold required facts (S1), about 3 of 24 rounds. Rounds 1–16 went on landing pages, results listings and search engine pages: 8 Off-key rounds, the search loop 8/9/10/13/15, and repeated typing (rounds 3 and 6), plus a repeat listing (round 14, overruled) and a duplicate reload of S1 (round 24, overruled). With the overrules, 8 of 24 rounds made no progress. Because S1 was reached only at round 17, the budget ran out before any path to the case record S2 was found, so fact-08, fact-10 and fact-11 were never reached, and fact-03 and fact-05 went unreported from S1.
@@ -212,7 +219,9 @@ The rounds outside Finalization that called each tool — a round counts once pe
 
 - answered; ended done / completed (objective_met); tier investigation (1 Tier Escalation(s) at the deadline); 15 of 24 Tool Rounds used; 16 orchestrator rounds, 1 in Finalization; Run duration 310484 ms; LLM stage 294145 ms over 16 joined round(s)
 - grade useful_partial; checks not reached: fact-07 (1 of 14)
-- 0 Subagent round(s) over 0 Subagent(s); 4 accepted (0 merged, a floor) and 0 rejected Evidence Checkpoint(s); 0 inherited round(s); 0 Held Page round(s) without Progress; 0 walled round(s)
+- 0 Subagent round(s) over 0 Subagent(s); 4 accepted and 0 rejected Evidence Checkpoint(s); 0 inherited round(s); 0 walled round(s)
+- navigates that landed on a Not-found Page: 0
+- of those, judged Off-key by the reviewer: 0
 - kinds: Acquisition with Progress 11 (73%) · Acquisition without Progress 1 (7%) · Collection 0 (0%) · Bookkeeping 3 (20%) · Failed round 0 (0%) · Finalization 1 (6%)
 - search source replay: the streak rule re-run over navigate searches
 - **verdict: stopped early** — 15 of 24 rounds were used (62.5%) and no budget or time pressure ended the Run. Both verified sources were acquired and recorded as evidence by round 7 (rounds 2, 4-5, 6-7), with a matching FAQ added in rounds 9-10 and 15. The one unreached check, fact-07, could be derived from material already in hand, yet the Run stopped and answered without it.
@@ -253,7 +262,9 @@ The rounds outside Finalization that called each tool — a round counts once pe
 
 - answered; ended done / partial (budget_exhausted); tier lookup; 12 of 12 Tool Rounds used; 14 orchestrator rounds, 2 in Finalization; Run duration 119619 ms; LLM stage 116385 ms over 14 joined round(s)
 - grade useful_partial; checks not reached: fact-01, fact-02, fact-03 (3 of 6)
-- 0 Subagent round(s) over 0 Subagent(s); 1 accepted (0 merged, a floor) and 0 rejected Evidence Checkpoint(s); 1 inherited round(s); 0 Held Page round(s) without Progress; 0 walled round(s)
+- 0 Subagent round(s) over 0 Subagent(s); 1 accepted and 0 rejected Evidence Checkpoint(s); 1 inherited round(s); 0 walled round(s)
+- navigates that landed on a Not-found Page: 0
+- of those, judged Off-key by the reviewer: 0
 - kinds: Acquisition with Progress 9 (75%) · Acquisition without Progress 1 (8%) · Collection 0 (0%) · Bookkeeping 0 (0%) · Failed round 2 (17%) · Finalization 2 (14%)
 - search source none: no Search Observation in the trace, and no navigate search for the replay to find
 - **verdict: rounds wasted** — All the work stayed on one on-key page, https://www.eurostar.com/uk-en/travel-info/travel-planning/luggage, but the budget went on slow reading of it. Round 1 re-opened a page the initial attempt already had. Rounds 2-7 were six one-screen scrolls of about 277 px each, when a single read_page would have returned the table. Round 9 scrolled past the table, and round 11 scrolled back to a position already seen. The page text was only read in round 12, the last budgeted round. Counting rounds 1, 8, 10 and 11, 4 of 12 rounds (33%) made no progress. The six scrolls also spread one page's text over half the budget, so the class labels needed for fact-01, fact-02 and fact-03 were never tied down.
@@ -287,7 +298,9 @@ The rounds outside Finalization that called each tool — a round counts once pe
 
 - answered; ended done / partial (deadline_reached); tier investigation (1 Tier Escalation(s) at the deadline); 0 of 24 Tool Rounds used; 3 orchestrator rounds, 2 in Finalization; Run duration 368440 ms; LLM stage 368430 ms over 3 joined round(s)
 - grade useful_partial; checks not reached: fact-06, pitfall-01 (2 of 15)
-- 0 Subagent round(s) over 0 Subagent(s); 0 accepted (0 merged, a floor) and 0 rejected Evidence Checkpoint(s); 0 inherited round(s); 0 Held Page round(s) without Progress; 0 walled round(s)
+- 0 Subagent round(s) over 0 Subagent(s); 0 accepted and 0 rejected Evidence Checkpoint(s); 0 inherited round(s); 0 walled round(s)
+- navigates that landed on a Not-found Page: 0
+- of those, judged Off-key by the reviewer: 0
 - kinds: Acquisition with Progress 0 (0%) · Acquisition without Progress 0 (0%) · Collection 0 (0%) · Bookkeeping 0 (0%) · Failed round 1 (100%) · Finalization 2 (67%)
 - search source none: no Search Observation in the trace, and no navigate search for the replay to find
 - **verdict: failed rounds** — The only budgeted round, round 1, failed on a timeout (1 of 1 budgeted rounds, 100%). It took about 90% of the Run's time (330002 of 368440 ms) and made no tool calls. 0 of the 24 Tool Rounds were used, so no official account was ever fetched. The Answer came from the reserved Finalization rounds 2-3, and round 2 was itself cut by the Finalization Allowance. That is why the checks tied to the sources, fact-06 and pitfall-01, went unreached.

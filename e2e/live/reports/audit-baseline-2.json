@@ -32,9 +32,9 @@
     "reviewerModel": "claude-opus-5",
     "reviewerEffort": "high",
     "reviewerPromptVersion": "audit-p1",
-    "auditCommit": "7da13ef8175a05547c276b027e53c41e1a70ec59",
+    "auditCommit": "33c2b52ac19f79c1a5666a903bc857e1cd0bfa52",
     "auditDirtyTree": false,
-    "generatedAt": "2026-09-14T01:52:13.145Z"
+    "generatedAt": "2026-09-14T00:38:15.512Z"
   },
   "attempts": [
     {
@@ -122,17 +122,18 @@
                 "title": "Page not found – Raspberry Pi",
                 "signature": "92ec4d04",
                 "wall": null,
+                "notFound": "title www.raspberrypi.com",
                 "checkpoint": null,
                 "notices": [],
                 "search": null,
                 "progress": {
-                  "made": true,
-                  "reason": "the settled page state moved to a page this Run had not acquired"
+                  "made": false,
+                  "reason": "landed on a Not-found Page"
                 }
               }
             ],
-            "kind": "acquisition_with_progress",
-            "reason": "navigate: the settled page state moved to a page this Run had not acquired",
+            "kind": "acquisition_without_progress",
+            "reason": "navigate: landed on a Not-found Page",
             "tags": {
               "inherited": false,
               "rejectedCheckpoints": 0,
@@ -1344,16 +1345,16 @@
         "orchestratorRounds": 26,
         "budgetedRounds": 24,
         "counts": {
-          "acquisition_with_progress": 16,
-          "acquisition_without_progress": 4,
+          "acquisition_with_progress": 15,
+          "acquisition_without_progress": 5,
           "collection": 0,
           "bookkeeping": 1,
           "failed_round": 3,
           "finalization": 2
         },
         "shares": {
-          "acquisition_with_progress": 0.667,
-          "acquisition_without_progress": 0.167,
+          "acquisition_with_progress": 0.625,
+          "acquisition_without_progress": 0.208,
           "collection": 0,
           "bookkeeping": 0.042,
           "failed_round": 0.125,
@@ -1362,12 +1363,13 @@
         "acceptedCheckpoints": 4,
         "rejectedCheckpoints": 0,
         "inheritedRounds": 0,
-        "mergedCheckpoints": 0,
-        "heldPageRoundsWithoutProgress": 0,
         "mechanicalSearchRounds": 0,
         "searchLoopHeads": [],
         "searchSource": "none",
         "walledRounds": 0,
+        "notFoundNavigates": [
+          1
+        ],
         "latency": {
           "llmMs": 389039,
           "joined": 26,
@@ -1391,7 +1393,7 @@
           "fact-05"
         ],
         "checksTotal": 10,
-        "digestHash": "sha256:2ff731b46efdb7205a241101cbabb0333872b36a4ccbb6dd6daffc0c3813222b"
+        "digestHash": "sha256:f7591b07debdb2c11f77aaa351b6df92758f941033d62d5ca746ae91c0d566f1"
       },
       "review": {
         "judgement": {
@@ -1400,78 +1402,83 @@
             {
               "round": 1,
               "url": "https://www.raspberrypi.com/documentation/computers/camera.html",
-              "reason": "The navigate landed on a 404 'Page not found' page at a guessed URL. A not-found page can carry none of the required facts, although the move counted mechanically as progress."
+              "reason": "The navigate landed on a Not-found Page (title 'Page not found – Raspberry Pi'). A 404 can carry none of the required facts, even though the site and subject were right."
             }
           ],
           "overrules": [
             {
               "round": 11,
               "kind": "acquisition_without_progress",
-              "reason": "read_page on the raw cm3.adoc returned only the header line and a signature, with no body text. Nothing new was brought in. Round 12's scroll hit End of Page right away, and the later evidence from this file was taken from the GitHub blob view in round 14, not from here."
+              "reason": "The read_page on the raw cm3.adoc returned only the page header, with no body text (6 output tokens). The next round hit End of Page, a look was refused, and the evidence for this file was later grounded in the GitHub-rendered copy from round 14. The read brought in no material."
             },
             {
               "round": 17,
               "kind": "acquisition_without_progress",
-              "reason": "read_page on the raw install.adoc also returned only the header and signature, with no content. Round 18's scroll answered End of Page, and the evidence from this file was recorded from the GitHub blob view reached in round 19."
+              "reason": "Same pattern as round 11: the read_page on the raw install.adoc returned only the header, with no text. Round 18 answered End of Page and the Run had to re-acquire the file through the GitHub blob view in round 19, where memory-1 is grounded. No new material came in."
             }
           ],
           "stoppedEarly": {
             "value": false,
-            "reason": "The Run used all 24 of its budgeted Tool Rounds (budget_exhausted) and was then told to finalize. It did not stop with budget left."
+            "reason": "The Run used all 24 budgeted Tool Rounds (budget_exhausted) before the Finalization rounds 25–26, so it did not stop with budget left."
           },
           "verdict": {
             "primary": "rounds_wasted",
-            "primaryReason": "About 10 of 24 budgeted rounds (~42%) produced nothing. With the overrules, 6 rounds made no progress: 5, 7, 11, 12, 17 and 18. Round 1 was an off-key 404, and 3 rounds (8, 13, 16) were refused. Rounds 10–13 and 15–18 were detours to empty raw.githubusercontent pages, and each file then had to be fetched again from GitHub blob (rounds 14, 19). Rounds 2–7 on the accessories camera page yielded no usable text. The on-key software pages only arrived in rounds 20–24, when the budget ran out before the legacy-stack material behind fact-05 was reached.",
-            "secondary": "failed_rounds",
-            "secondaryReason": "Three rounds (8, 13, 16; 12.5% of budget) failed because every call was refused. Rounds 13 and 16 repeated a look that had already failed, even after the tool pointed to read_page. Given that fact-05 was the only check missed and was one or two rounds away, getting these rounds back would likely have been enough to reach it."
+            "primaryReason": "With rounds 11 and 17 overruled, 7 of 24 budgeted rounds (29%) had no Progress: rounds 1 (a 404), 5, 7, 11, 12, 17 and 18. Another 3 (12.5%) were refused look calls: rounds 8, 13 and 16. Rounds 10 and 15 opened raw.githubusercontent pages that the tools could not render, and both files had to be fetched again at rounds 14 and 19. That is about 12 of 24 rounds (50%) lost to repeats and dead ends. Meanwhile the camera_software.adoc page reached at round 20 was never read, and the unreached fact-05 sits on that path. Round 21 took the libcamera_differences page instead, and rounds 23–24 went to rpicam_still, with the budget warnings at rounds 18 and 21 already out. The work was on-key, but half the budget went to rounds that brought nothing new.",
+            "secondary": null,
+            "secondaryReason": null
           },
           "flags": [
             {
-              "round": 1,
-              "question": "Should the 404 navigate count as acquisition_without_progress rather than an Off-key round with progress, since the page brought in no material?"
-            },
-            {
               "round": 11,
-              "question": "Is it right to overrule an empty read_page on a raw file to no progress, or does the first read of a new page state count as progress even when it returns nothing?"
+              "question": "Is it right to overrule round 11 to acquisition_without_progress? The digest shows only the result head, so the read_page may have returned text that the head cut off."
             },
             {
               "round": 17,
-              "question": "Same question as round 11: should the empty read of the raw install.adoc count as no progress?"
+              "question": "Is it right to overrule round 17 to acquisition_without_progress? It rests on the same truncated result head as round 11."
             },
             {
               "round": 10,
-              "question": "The raw.githubusercontent URLs in rounds 10 and 15 could carry the required facts, but they rendered empty. Should they be judged off-key because of what they actually delivered?"
+              "question": "Should rounds 10 and 15 (the raw.githubusercontent .adoc files) count as Off-key or as without Progress? The files are on-key in subject, but the tools could not render them and the same files were re-acquired at rounds 14 and 19."
+            },
+            {
+              "round": 20,
+              "question": "Was the GitHub camera_software.adoc page at round 20 able to carry fact-05 itself, or is it only a list of includes? The answer decides whether fact-05 was one read away or needed further navigation."
             },
             {
               "round": 21,
-              "question": "libcamera_differences.adoc covers how rpicam differs from raspicam rather than which cameras the legacy stack supports. Is it on-key for fact-05, or only next to it?"
+              "question": "Could the libcamera_differences.adoc page at round 21 carry fact-05 (it compares the legacy and current stacks), or did it cover only option differences? A careful reader might call it borderline Off-key for fact-05 while it stays on-key for fact-06."
             },
             {
               "round": null,
-              "question": "Is failed_rounds a fair secondary verdict, or tier_too_small_or_never_escalated, given the investigation tier ran to budget with no Tier Escalation and the refused rounds are also counted under the primary waste?"
+              "question": "Should failed_rounds be a secondary verdict? The three refused looks (rounds 8, 13, 16, 12.5% of budget) are counted here as part of the waste, not as the cause of the missed check."
+            },
+            {
+              "round": null,
+              "question": "Is tier_too_small_or_never_escalated a defensible secondary? The Run ran at investigation tier with no Tier Escalation and was cut off by the budget while still making on-key progress at rounds 19–24."
             }
           ]
         },
         "caveats": [
-          "flag (round 1): Should the 404 navigate count as acquisition_without_progress rather than an Off-key round with progress, since the page brought in no material?",
-          "flag (round 11): Is it right to overrule an empty read_page on a raw file to no progress, or does the first read of a new page state count as progress even when it returns nothing?",
-          "flag (round 17): Same question as round 11: should the empty read of the raw install.adoc count as no progress?",
-          "flag (round 10): The raw.githubusercontent URLs in rounds 10 and 15 could carry the required facts, but they rendered empty. Should they be judged off-key because of what they actually delivered?",
-          "flag (round 21): libcamera_differences.adoc covers how rpicam differs from raspicam rather than which cameras the legacy stack supports. Is it on-key for fact-05, or only next to it?",
-          "flag: Is failed_rounds a fair secondary verdict, or tier_too_small_or_never_escalated, given the investigation tier ran to budget with no Tier Escalation and the refused rounds are also counted under the primary waste?"
+          "flag (round 11): Is it right to overrule round 11 to acquisition_without_progress? The digest shows only the result head, so the read_page may have returned text that the head cut off.",
+          "flag (round 17): Is it right to overrule round 17 to acquisition_without_progress? It rests on the same truncated result head as round 11.",
+          "flag (round 10): Should rounds 10 and 15 (the raw.githubusercontent .adoc files) count as Off-key or as without Progress? The files are on-key in subject, but the tools could not render them and the same files were re-acquired at rounds 14 and 19.",
+          "flag (round 20): Was the GitHub camera_software.adoc page at round 20 able to carry fact-05 itself, or is it only a list of includes? The answer decides whether fact-05 was one read away or needed further navigation.",
+          "flag (round 21): Could the libcamera_differences.adoc page at round 21 carry fact-05 (it compares the legacy and current stacks), or did it cover only option differences? A careful reader might call it borderline Off-key for fact-05 while it stays on-key for fact-06.",
+          "flag: Should failed_rounds be a secondary verdict? The three refused looks (rounds 8, 13, 16, 12.5% of budget) are counted here as part of the waste, not as the cause of the missed check.",
+          "flag: Is tier_too_small_or_never_escalated a defensible secondary? The Run ran at investigation tier with no Tier Escalation and was cut off by the budget while still making on-key progress at rounds 19–24."
         ],
         "model": "claude-opus-5",
         "served": "claude-opus-5",
         "effort": "high",
         "promptVersion": "audit-p1",
-        "digestHash": "sha256:2ff731b46efdb7205a241101cbabb0333872b36a4ccbb6dd6daffc0c3813222b",
+        "digestHash": "sha256:f7591b07debdb2c11f77aaa351b6df92758f941033d62d5ca746ae91c0d566f1",
         "costUsd": 0.2,
-        "durationMs": 35190,
-        "judgedAt": "2026-09-13T01:48:13.277Z"
+        "durationMs": 171426,
+        "judgedAt": "2026-09-14T00:35:26.277Z"
       },
       "countsAfterOverrules": {
-        "acquisition_with_progress": 14,
-        "acquisition_without_progress": 6,
+        "acquisition_with_progress": 13,
+        "acquisition_without_progress": 7,
         "collection": 0,
         "bookkeeping": 1,
         "failed_round": 3,
@@ -2800,12 +2807,11 @@
         "acceptedCheckpoints": 3,
         "rejectedCheckpoints": 2,
         "inheritedRounds": 1,
-        "mergedCheckpoints": 0,
-        "heldPageRoundsWithoutProgress": 0,
         "mechanicalSearchRounds": 0,
         "searchLoopHeads": [],
         "searchSource": "replay",
         "walledRounds": 0,
+        "notFoundNavigates": [],
         "latency": {
           "llmMs": 340027,
           "joined": 26,
@@ -4219,12 +4225,11 @@
         "acceptedCheckpoints": 0,
         "rejectedCheckpoints": 0,
         "inheritedRounds": 0,
-        "mergedCheckpoints": 0,
-        "heldPageRoundsWithoutProgress": 0,
         "mechanicalSearchRounds": 0,
         "searchLoopHeads": [],
         "searchSource": "replay",
         "walledRounds": 0,
+        "notFoundNavigates": [],
         "latency": {
           "llmMs": 196001,
           "joined": 26,
@@ -5667,12 +5672,11 @@
         "acceptedCheckpoints": 4,
         "rejectedCheckpoints": 5,
         "inheritedRounds": 0,
-        "mergedCheckpoints": 0,
-        "heldPageRoundsWithoutProgress": 0,
         "mechanicalSearchRounds": 0,
         "searchLoopHeads": [],
         "searchSource": "replay",
         "walledRounds": 0,
+        "notFoundNavigates": [],
         "latency": {
           "llmMs": 374300,
           "joined": 24,
@@ -6729,12 +6733,11 @@
         "acceptedCheckpoints": 2,
         "rejectedCheckpoints": 2,
         "inheritedRounds": 1,
-        "mergedCheckpoints": 0,
-        "heldPageRoundsWithoutProgress": 1,
         "mechanicalSearchRounds": 0,
         "searchLoopHeads": [],
         "searchSource": "replay",
         "walledRounds": 0,
+        "notFoundNavigates": [],
         "latency": {
           "llmMs": 285366,
           "joined": 19,
@@ -7629,14 +7632,15 @@
                 "title": "404 - Page not found: /news/voyager1-enters-magnetic-highway/ | NASA Jet Propulsion Laboratory (JPL)",
                 "signature": "f64b9d3d",
                 "wall": null,
+                "notFound": "title www.jpl.nasa.gov",
                 "checkpoint": null,
                 "notices": [
                   "time_milestone"
                 ],
                 "search": null,
                 "progress": {
-                  "made": true,
-                  "reason": "the settled page state moved to a page this Run had not acquired"
+                  "made": false,
+                  "reason": "landed on a Not-found Page"
                 }
               },
               {
@@ -8120,12 +8124,13 @@
         "acceptedCheckpoints": 0,
         "rejectedCheckpoints": 0,
         "inheritedRounds": 0,
-        "mergedCheckpoints": 0,
-        "heldPageRoundsWithoutProgress": 0,
         "mechanicalSearchRounds": 0,
         "searchLoopHeads": [],
         "searchSource": "replay",
         "walledRounds": 1,
+        "notFoundNavigates": [
+          16
+        ],
         "latency": {
           "llmMs": 398995,
           "joined": 26,
@@ -8151,7 +8156,7 @@
           "fact-08"
         ],
         "checksTotal": 15,
-        "digestHash": "sha256:f60311800313b8c9fc726e7e0fb7528bfc52479e6fe15729ec6a47e4a0e30c33"
+        "digestHash": "sha256:85b078e1ba2b00ca40f6a15f657d8898d7c0f6299fb758ad56b04b71e59312bf"
       },
       "review": {
         "judgement": {
@@ -8160,133 +8165,72 @@
             {
               "round": 1,
               "url": "https://duckduckgo.com/?q=jpl.nasa.gov+June+2013+news+release+Voyager+1+has+not+yet+left+the+solar+system&ia=web",
-              "reason": "Search results page. It can point to sources but cannot itself carry any required fact."
-            },
-            {
-              "round": 2,
-              "url": "https://www.jpl.nasa.gov/news/nasa-voyager-status-update-on-voyager-1-location/",
-              "reason": "Right site, wrong document. This is JPL's earlier status update (release 2013-107, linked back to 2012-381), not the June account the key verifies (S1). It cannot carry fact-01, and its framing is not the June conclusion that fact-04 is tied to."
-            },
-            {
-              "round": 3,
-              "url": "https://www.jpl.nasa.gov/news/nasa-voyager-status-update-on-voyager-1-location",
-              "reason": "A scroll on the same wrong-document status update as round 2."
-            },
-            {
-              "round": 4,
-              "url": "https://www.jpl.nasa.gov/news/nasa-voyager-status-update-on-voyager-1-location",
-              "reason": "A scroll on the same wrong-document status update as round 2."
-            },
-            {
-              "round": 5,
-              "url": "https://www.jpl.nasa.gov/news/nasa-voyager-status-update-on-voyager-1-location",
-              "reason": "A scroll on the same wrong-document status update as round 2."
-            },
-            {
-              "round": 6,
-              "url": "https://www.jpl.nasa.gov/news/nasa-voyager-status-update-on-voyager-1-location",
-              "reason": "A scroll on the same wrong-document status update as round 2."
-            },
-            {
-              "round": 7,
-              "url": "https://www.jpl.nasa.gov/news/nasa-voyager-status-update-on-voyager-1-location",
-              "reason": "A look at the same wrong-document status update as round 2."
-            },
-            {
-              "round": 8,
-              "url": "https://www.jpl.nasa.gov/news/nasa-voyager-status-update-on-voyager-1-location",
-              "reason": "A look at the same wrong-document status update. The look itself found no publication date on the page."
+              "reason": "Search results page. It lists links but cannot itself carry any required fact."
             },
             {
               "round": 9,
               "url": "https://science.nasa.gov/missions/voyager-program/nasa-voyager-status-update-on-voyager-1-location/",
-              "reason": "Walled behind a browser challenge, and it is a mirror of the same wrong-document status update, so it carries nothing."
-            },
-            {
-              "round": 10,
-              "url": "https://www.jpl.nasa.gov/news/nasa-voyager-status-update-on-voyager-1-location/",
-              "reason": "A re-navigation to the wrong-document status update from round 2."
-            },
-            {
-              "round": 13,
-              "url": "https://www.jpl.nasa.gov/news/nasa-voyager-status-update-on-voyager-1-location/",
-              "reason": "A full read of the wrong-document status update. Right site, wrong release."
-            },
-            {
-              "round": 15,
-              "url": "https://web.archive.org/web/20131126043936/http://www.jpl.nasa.gov/news/news.php?release=2013-107",
-              "reason": "An archived copy of the same release 2013-107 status update, not the June account. The archive was used to find a date, but it was the date of the wrong release."
+              "reason": "Walled page: a browser challenge on science.nasa.gov, so no article text was shown."
             },
             {
               "round": 24,
               "url": "https://web.archive.org/web/20131103170646/http://www.jpl.nasa.gov/news/news.php?release=2013-261",
-              "reason": "A guessed release number landed on an unrelated Cassini/Saturn release. Wrong subject entirely."
+              "reason": "Right site, wrong subject. The guessed release number led to a Cassini/Saturn moon story that cannot carry any Voyager fact."
             }
           ],
-          "overrules": [
-            {
-              "round": 9,
-              "kind": "acquisition_without_progress",
-              "reason": "The page reached was only a browser-challenge wall on science.nasa.gov. No article material came in, so the new URL is not progress."
-            }
-          ],
+          "overrules": [],
           "stoppedEarly": {
             "value": false,
             "reason": "The Run used all 24 of its 24 Tool Rounds and ended on budget_exhausted, so it did not stop early."
           },
           "verdict": {
             "primary": "rounds_wasted",
-            "primaryReason": "Only 7 of 24 budgeted rounds (14, 16, 17-20, 23) worked on pages that could carry the key's facts. Thirteen rounds (1-10, 13, 15, 24) were off-key: a search page, the wrong JPL status update read over nine rounds, a walled mirror and an unrelated Cassini archive page. Two more were without progress (10, 21), three failed (11, 12, 22), and the scroll-by-scroll reading in rounds 3-6 and 17-21 used rounds where one read_page would have done. As a result, the September release that carries fact-06, fact-07 and fact-08 was only reached in round 16 and fully read only in round 23, with one round left.",
-            "secondary": null,
-            "secondaryReason": null
+            "primaryReason": "Well under half of the budget went to on-key work. Rounds 2-8, 10 and 13 (9 of 24) stayed on https://www.jpl.nasa.gov/news/nasa-voyager-status-update-on-voyager-1-location/, a status-update release that is neither verified source. Round 15 re-fetched that same release from the archive. On that page the Run scrolled, used look, went back to it (round 10) and then read it in full (round 13), covering one text three ways. Round 9 was walled, round 24 was off-key, round 21 was a scroll that hit End of Page, and rounds 11, 12 and 22 were refused. The September announcement page was not reached until round 16 and was read in slices over rounds 17-21. The whole-page read came only at round 23, leaving no rounds for fact-06, fact-07 and fact-08, which that page could carry. The June account itself was never opened on JPL; only the ScienceDaily reprint was, at round 14.",
+            "secondary": "failed_rounds",
+            "secondaryReason": "3 of 24 rounds (12.5%: rounds 11, 12 and 22) were look calls refused on region or repeat grounds. Round 22 fell with only 3 rounds left, and the read it forced (round 23) delayed the final work on the September page past the budget."
           },
           "flags": [
             {
               "round": 2,
-              "question": "The status update at jpl.nasa.gov/news/nasa-voyager-status-update-on-voyager-1-location discusses the magnetic-field sign. Should rounds 2-8, 10, 13 and 15 count as on-key for the substance of fact-04, even though it is not the June account (S1)?"
+              "question": "Should rounds 2-8, 10 and 13 on the status-update release be called Off-key? That page is not the June account, so it cannot carry fact-01, but it touches the magnetic-direction sign behind fact-04."
+            },
+            {
+              "round": 15,
+              "question": "Should round 15 (an archive copy of the release already read at rounds 2-13) be overruled to acquisition_without_progress as a repeat, or kept as progress because it may have shown the publication date the live page lacked?"
             },
             {
               "round": 1,
-              "question": "Is a search results page that led straight to a JPL page off-key, or is it acceptable navigation cost?"
-            },
-            {
-              "round": 14,
-              "question": "ScienceDaily republished the June JPL release. Is it on-key as that official account, or should it count only as a secondary copy for pitfall-05 purposes?"
-            },
-            {
-              "round": 9,
-              "question": "Should the walled challenge page be overruled to acquisition_without_progress, or keep its mechanical progress label because the URL was new?"
+              "question": "Is a search results page that led straight to a relevant JPL release really Off-key, or should it count as on-key discovery work?"
             },
             {
               "round": 22,
-              "question": "This look was refused as a repeat of an earlier failed check, but it was on a different page with a different question. Is it really a failed round, or a refusal the assistant could not have foreseen?"
+              "question": "Is failed_rounds a fair secondary, given that read_page at round 23 recovered the refused look's route and the unreached facts may have been lost to slice-by-slice reading rather than to the refusal?"
             },
             {
               "round": null,
-              "question": "Three failed rounds (11, 12, 22) is 12.5% of the budget. Does that justify failed_rounds as a secondary verdict, given the needed page was still read in round 23?"
+              "question": "Would tier_too_small_or_never_escalated be a better secondary, since the on-key September-page work ran into the budget of the investigation tier with no Tier Escalation?"
             }
           ]
         },
         "caveats": [
-          "flag (round 2): The status update at jpl.nasa.gov/news/nasa-voyager-status-update-on-voyager-1-location discusses the magnetic-field sign. Should rounds 2-8, 10, 13 and 15 count as on-key for the substance of fact-04, even though it is not the June account (S1)?",
-          "flag (round 1): Is a search results page that led straight to a JPL page off-key, or is it acceptable navigation cost?",
-          "flag (round 14): ScienceDaily republished the June JPL release. Is it on-key as that official account, or should it count only as a secondary copy for pitfall-05 purposes?",
-          "flag (round 9): Should the walled challenge page be overruled to acquisition_without_progress, or keep its mechanical progress label because the URL was new?",
-          "flag (round 22): This look was refused as a repeat of an earlier failed check, but it was on a different page with a different question. Is it really a failed round, or a refusal the assistant could not have foreseen?",
-          "flag: Three failed rounds (11, 12, 22) is 12.5% of the budget. Does that justify failed_rounds as a secondary verdict, given the needed page was still read in round 23?"
+          "flag (round 2): Should rounds 2-8, 10 and 13 on the status-update release be called Off-key? That page is not the June account, so it cannot carry fact-01, but it touches the magnetic-direction sign behind fact-04.",
+          "flag (round 15): Should round 15 (an archive copy of the release already read at rounds 2-13) be overruled to acquisition_without_progress as a repeat, or kept as progress because it may have shown the publication date the live page lacked?",
+          "flag (round 1): Is a search results page that led straight to a relevant JPL release really Off-key, or should it count as on-key discovery work?",
+          "flag (round 22): Is failed_rounds a fair secondary, given that read_page at round 23 recovered the refused look's route and the unreached facts may have been lost to slice-by-slice reading rather than to the refusal?",
+          "flag: Would tier_too_small_or_never_escalated be a better secondary, since the on-key September-page work ran into the budget of the investigation tier with no Tier Escalation?"
         ],
         "model": "claude-opus-5",
         "served": "claude-opus-5",
         "effort": "high",
         "promptVersion": "audit-p1",
-        "digestHash": "sha256:f60311800313b8c9fc726e7e0fb7528bfc52479e6fe15729ec6a47e4a0e30c33",
-        "costUsd": 0.23,
-        "durationMs": 47296,
-        "judgedAt": "2026-09-13T01:51:29.394Z"
+        "digestHash": "sha256:85b078e1ba2b00ca40f6a15f657d8898d7c0f6299fb758ad56b04b71e59312bf",
+        "costUsd": 0.2,
+        "durationMs": 39030,
+        "judgedAt": "2026-09-14T00:36:22.749Z"
       },
       "countsAfterOverrules": {
-        "acquisition_with_progress": 18,
-        "acquisition_without_progress": 3,
+        "acquisition_with_progress": 19,
+        "acquisition_without_progress": 2,
         "collection": 0,
         "bookkeeping": 0,
         "failed_round": 3,
@@ -8303,8 +8247,8 @@
       "budgetedRounds": 95,
       "toolRoundsUsed": 95,
       "counts": {
-        "acquisition_with_progress": 67,
-        "acquisition_without_progress": 10,
+        "acquisition_with_progress": 66,
+        "acquisition_without_progress": 11,
         "collection": 0,
         "bookkeeping": 6,
         "failed_round": 12,
@@ -8319,8 +8263,8 @@
         "finalization": 7
       },
       "shares": {
-        "acquisition_with_progress": 0.705,
-        "acquisition_without_progress": 0.105,
+        "acquisition_with_progress": 0.695,
+        "acquisition_without_progress": 0.116,
         "collection": 0,
         "bookkeeping": 0.063,
         "failed_round": 0.126,
@@ -8340,7 +8284,7 @@
         "stopped_early": 0,
         "failed_rounds": 2
       },
-      "offKeyRounds": 22,
+      "offKeyRounds": 12,
       "searchLoopRounds": 0,
       "mechanicalSearchRounds": 0,
       "searchSources": {
@@ -8349,13 +8293,13 @@
         "none": 1
       },
       "inheritedRounds": 0,
-      "mergedCheckpoints": 0,
-      "heldPageRoundsWithoutProgress": 0,
       "rejectedCheckpoints": 5,
       "walledRounds": 1,
+      "notFoundNavigates": 2,
+      "notFoundOffKey": 1,
       "subagentRounds": 0,
       "stoppedEarly": 0,
-      "overrules": 6,
+      "overrules": 5,
       "flags": 21,
       "finalizationCauses": {
         "budget_exhausted": 3,
@@ -8464,10 +8408,10 @@
         "none": 0
       },
       "inheritedRounds": 2,
-      "mergedCheckpoints": 0,
-      "heldPageRoundsWithoutProgress": 1,
       "rejectedCheckpoints": 4,
       "walledRounds": 0,
+      "notFoundNavigates": 0,
+      "notFoundOffKey": 0,
       "subagentRounds": 0,
       "stoppedEarly": 0,
       "overrules": 0,
