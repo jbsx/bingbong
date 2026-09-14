@@ -127,6 +127,12 @@ export const BOOKKEEPING_TOOLS: ReadonlySet<string> = new Set(['record_evidence'
 export const DIGEST_RESULT_HEAD_CHARS = 240
 /** How much of one string argument the digest keeps. */
 export const DIGEST_ARG_CHARS = 200
+/**
+ * The Run Trace version from which a Run records its Identity Slips (#246):
+ * a trace below it cannot say whether an Answer slipped, so it reads "not
+ * recorded", never zero.
+ */
+export const IDENTITY_SLIP_TRACE_VERSION = 2
 /** How far apart a perf `llm` span's end and an `llm_round` record may be and still be the same round. */
 const LATENCY_JOIN_TOLERANCE_MS = 2_000
 /** A search that continues a streak of this length rewords the one before it. */
@@ -302,6 +308,14 @@ export interface AuditMechanical {
    * re-keys no cached judgement.
    */
   readonly notFoundNavigates: readonly number[]
+  /**
+   * The Answers that carried an Identity Slip and the ids slipped in them
+   * (#246, ADR 0028), counted from the Run's own `identity_slip` records.
+   * Null — not recorded — for a trace written below
+   * {@link IDENTITY_SLIP_TRACE_VERSION}. Beside the rounds, never in them, so
+   * it re-keys no cached judgement and bears on no verdict.
+   */
+  readonly identitySlips: { readonly answers: number; readonly ids: number } | null
   readonly latency: { readonly llmMs: number | null; readonly joined: number; readonly unjoined: number }
   readonly usage: { readonly promptTokens: number; readonly completionTokens: number; readonly roundsWithUsage: number }
   readonly subagent: { readonly rounds: number; readonly agents: number; readonly byStop: Readonly<Record<string, number>> }
@@ -418,6 +432,12 @@ export interface AuditPopulation {
   readonly notFoundNavigates: number
   /** Of those, the ones in a round the reviewer judged Off-key; judged attempts only. */
   readonly notFoundOffKey: number
+  /** Answers with an Identity Slip over the attempts whose trace recorded them (#246). */
+  readonly identitySlipAnswers: number
+  /** Ids slipped in those Answers (#246). */
+  readonly identitySlipIds: number
+  /** Attempts whose trace predates the record: their slips are not recorded, and count in neither number. */
+  readonly identitySlipsNotRecorded: number
   readonly subagentRounds: number
   readonly stoppedEarly: number
   /** Judged attempts whose Answer Omission holds (#244), whatever their verdict. */
@@ -1133,6 +1153,13 @@ export function classifyAttempt(input: AuditTraceInput): AuditMechanical {
     for (const url of checkpointedUrlsOf(checkpoints)) held.add(url)
   })
 
+  // Pass five, beside the rounds (#246): the Run's own Identity Slips, where
+  // its trace is new enough to have recorded them at all.
+  const slipRecords = records.filter((record) => record.kind === 'identity_slip' && record.agentId === undefined)
+  const identitySlips = records.some((record) => isFiniteNumber(record.v) && record.v >= IDENTITY_SLIP_TRACE_VERSION)
+    ? { answers: slipRecords.length, ids: slipRecords.reduce((total, record) => total + (Array.isArray(record.slips) ? record.slips.length : 0), 0) }
+    : null
+
   const rewordingRounds = rounds.filter((round) => round.kind === 'acquisition_without_progress' && round.reason.includes('rewords the one before it')).map((round) => round.round)
 
   const disposition: AuditDisposition =
@@ -1171,6 +1198,7 @@ export function classifyAttempt(input: AuditTraceInput): AuditMechanical {
     searchSource: railObservations !== null ? 'rail' : rounds.some((round) => round.tags.search) ? 'replay' : 'none',
     walledRounds: rounds.filter((round) => round.tags.wall).length,
     notFoundNavigates: rounds.flatMap((round) => round.calls.filter((call) => call.name === 'navigate' && call.notFound !== undefined).map(() => round.round)),
+    identitySlips,
     latency: {
       llmMs: joined.length === 0 ? null : joined.reduce((total, round) => total + round.latencyMs!, 0),
       joined: joined.length,
@@ -1543,6 +1571,9 @@ export function populationOf(label: string, attempts: readonly AuditAttempt[]): 
   let walled = 0
   let notFound = 0
   let notFoundOffKey = 0
+  let slipAnswers = 0
+  let slipIds = 0
+  let slipsNotRecorded = 0
   let subagentRounds = 0
   let stoppedEarly = 0
   let answerOmitted = 0
@@ -1571,6 +1602,11 @@ export function populationOf(label: string, attempts: readonly AuditAttempt[]): 
     rejected += mechanical.rejectedCheckpoints
     walled += mechanical.walledRounds
     notFound += mechanical.notFoundNavigates.length
+    if (mechanical.identitySlips === null) slipsNotRecorded += 1
+    else {
+      slipAnswers += mechanical.identitySlips.answers
+      slipIds += mechanical.identitySlips.ids
+    }
     subagentRounds += mechanical.subagent.rounds
     if (mechanical.toolRoundBudget !== null && mechanical.toolRoundsUsed >= mechanical.toolRoundBudget) atBudget += 1
     const cause = mechanical.terminal?.finalizationCause ?? 'none'
@@ -1611,6 +1647,9 @@ export function populationOf(label: string, attempts: readonly AuditAttempt[]): 
     walledRounds: walled,
     notFoundNavigates: notFound,
     notFoundOffKey,
+    identitySlipAnswers: slipAnswers,
+    identitySlipIds: slipIds,
+    identitySlipsNotRecorded: slipsNotRecorded,
     subagentRounds,
     stoppedEarly,
     answerOmitted,
@@ -1802,12 +1841,19 @@ function verdictTable(populations: readonly AuditPopulation[]): string[] {
   return lines
 }
 
+/** A population's Identity Slips (#246): the two counts, or "not recorded" when no attempt's trace could hold one. */
+function populationSlipsText(population: AuditPopulation): string {
+  if (population.attempts > 0 && population.identitySlipsNotRecorded === population.attempts) return 'Identity Slips not recorded'
+  const notRecorded = population.identitySlipsNotRecorded > 0 ? `; ${population.identitySlipsNotRecorded} attempt(s) not recorded` : ''
+  return `${population.identitySlipAnswers} Answer(s) with an Identity Slip (${population.identitySlipIds} id(s) slipped${notRecorded})`
+}
+
 function judgementLines(populations: readonly AuditPopulation[]): string[] {
   return populations.map(
     (population) =>
       `- ${population.label}: ${population.offKeyRounds} Off-key round(s), ${population.searchLoopRounds} Search Loop round(s) by the reviewer (${population.mechanicalSearchRounds} by the streak rule; attempts by search source ${SEARCH_SOURCES.map((source) => `${source} ${population.searchSources[source]}`).join(', ')}), ` +
       `${population.inheritedRounds} inherited, ${population.rejectedCheckpoints} rejected Evidence Checkpoint(s), ${population.walledRounds} walled round(s), ${population.notFoundNavigates} navigate(s) landed on a Not-found Page (${population.notFoundOffKey} judged Off-key), ${population.subagentRounds} Subagent round(s), ` +
-      `${population.mergedCheckpoints} merged Evidence Checkpoint(s) (a floor), ${population.heldPageRoundsWithoutProgress} Held Page round(s) without Progress, ` +
+      `${population.mergedCheckpoints} merged Evidence Checkpoint(s) (a floor), ${population.heldPageRoundsWithoutProgress} Held Page round(s) without Progress, ${populationSlipsText(population)}, ` +
       `${population.stoppedEarly} stopped early, ${population.answerOmitted} answer omitted, ${population.overrules} overrule(s), ${population.flags} flag(s); Finalization Causes: ${Object.entries(population.finalizationCauses)
         .map(([cause, count]) => `${cause} ${count}`)
         .join(', ')}`,
@@ -1838,6 +1884,8 @@ function attemptSection(attempt: AuditAttempt): string[] {
   const landings = mechanical.notFoundNavigates
   lines.push(`- navigates that landed on a Not-found Page: ${landings.length}${landings.length > 0 ? ` (round ${landings.join(', ')})` : ''}`)
   lines.push(`- of those, judged Off-key by the reviewer: ${judgement === null ? 'not judged' : notFoundOffKeyOf(mechanical, judgement)}`)
+  const slips = mechanical.identitySlips
+  lines.push(`- Identity Slips: ${slips === null ? `not recorded (a Run Trace below version ${IDENTITY_SLIP_TRACE_VERSION})` : `${slips.answers} Answer(s), ${slips.ids} id(s) slipped`}`)
   lines.push(`- kinds: ${ROUND_KINDS.map((kind) => `${KIND_LABELS[kind]} ${mechanical.counts[kind]} (${pct(mechanical.shares[kind])})`).join(' · ')}`)
   lines.push(`- search source ${mechanical.searchSource}: ${SEARCH_SOURCE_NOTES[mechanical.searchSource]}`)
   if (review === null) lines.push('- reviewer: not consulted')

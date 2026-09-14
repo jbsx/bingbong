@@ -90,7 +90,7 @@ import { pipelineEventTraceBody, tracesPipelineEvent } from '../trace/pipelineEv
 import { offContractReplyEvent, recordOffContractReply, type TracedOffContractReply } from '../trace/offContractReplyTrace'
 import { completedEvidenceIsFresh } from './evidenceFreshness'
 import { evaluateCandidateCheckpoint, type CandidateCheckpointOutcome, type EvidenceSessionSource } from './candidateCheckpoint'
-import { deriveAnswerSources, scrubAnswerText } from './answerEvidence'
+import { deriveAnswerSources, repairCard, repairSpokenRendering } from './answerEvidence'
 import { deriveFallbackSources, hasUnresolvedImageCheck } from './fallbackAnswer'
 import { compactRunContext, type RunEvidenceCheckpoint } from './runContextCompaction'
 import { reportFault } from '../trace/fault'
@@ -1940,8 +1940,8 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
           if (turn.kind === 'answer') {
             finalAnswer = turn
             // Displayed Answers are evidence-grounded (#122, ADR 0028;
-            // #141): the live text is the model's own wording with
-            // internal identities scrubbed — nothing else. The declared
+            // #141): the live text is the model's own wording with its
+            // Identity Slips repaired — nothing else. The declared
             // evidence identities ride the event as Session-only
             // metadata for the live Answer Evidence Summary, and the
             // derived source links travel beside them for Recorded
@@ -1967,19 +1967,29 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
             // this Answer. Every other way a Run can end reaches none of
             // this, so the words outlive it.
             continuity?.resolveCorrections?.()
+            // The display boundary (#246, ADR 0028): an internal id the
+            // model wrote into either rendering is an Identity Slip. The
+            // Card substitutes a source link where the id resolves; the
+            // spoken line only deletes. The declared evidence identities
+            // are the model's and stay as written, and the repair is
+            // recorded, since the raw Answer is kept nowhere else.
+            const card = repairCard(turn.display, resolveSessionObservation)
+            const spoken = repairSpokenRendering(turn.speak)
+            const slips = [...card.slips, ...spoken.slips]
+            if (slips.length > 0) traceRun?.(() => ({ turnId, kind: 'identity_slip', slips }))
             // The Run's final Answer, marked as such (#224): this display
             // and the deterministic fallback's are the two the mark rides,
             // so an observer never has to guess which display was the
             // Answer from position or wording.
             yield {
               type: 'display',
-              text: scrubAnswerText(turn.display),
+              text: card.text,
               at: clock.now(),
               ...(turn.evidenceIds !== undefined ? { evidenceIds: turn.evidenceIds } : {}),
               ...(answerSources.length > 0 ? { sources: answerSources } : {}),
               finalAnswer: true,
             }
-            yield* speakLine(turn.speak, turnId)
+            yield* speakLine(spoken.text, turnId)
             yield* checkpoint(run, 'thinking')
             break
           }

@@ -889,6 +889,16 @@ Page: a page the initial attempt checkpointed, or one this attempt checkpointed
 in an earlier round, canonical under the audit's rule. The `inherited` tag is
 unchanged and differs from both on purpose.
 
+Two more sit beside them for the Answer (#246, ADR 0028): the **Answers with an
+Identity Slip** and the **ids slipped** in them, counted from the Run's own
+`identity_slip` Run Trace records — one per Answer whose Card or Spoken
+Rendering carried an internal id, one entry per id. A Subagent's records are
+not counted. Neither number enters the digest or bears on a verdict. A trace
+written below Run Trace version 2 predates the record, so its attempt reads
+"not recorded" rather than zero (`identitySlips: null`); a population says how
+many of its attempts were not recorded and counts only the rest, and reads
+"Identity Slips not recorded" when none was.
+
 They name check ids and URLs only, never key text: the reviewer is told to
 refer to checks by id, every output is checked for any key string or any run of
 eight consecutive words of one before it is written, and `audit.test.ts`

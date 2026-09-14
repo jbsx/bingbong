@@ -6,6 +6,7 @@ import type { TracedReasoningRound, SubagentReasoningTrace } from '../trace/reas
 import type { SubagentReport } from './subagentReport'
 import {
   createSubagentManager,
+  formatAgentResults,
   subagentAnnouncement,
   type SubagentEvent,
   type SubagentOwner,
@@ -750,6 +751,33 @@ describe('subagentAnnouncement', () => {
 
   it('stays silent for cancelled agents', () => {
     expect(subagentAnnouncement({ ...base, status: 'cancelled' })).toBeNull()
+  })
+})
+
+describe('formatAgentResults', () => {
+  it('hands the orchestrator a Subagent Report with every Memory Entry id it names — the display boundary does not reach it (#246)', () => {
+    const text = 'Per memory-1/memory-2 the router costs $39; obs-3 is stale.'
+    const record: SubagentRecord = {
+      id: 'a-1',
+      kind: 'browse',
+      task: 'price the router',
+      status: 'completed',
+      startedAt: 0,
+      finishedAt: 10,
+      steps: 3,
+      lastAction: null,
+      error: null,
+      result: text,
+      report: {
+        text,
+        findings: [{ subject: 'Price', detail: 'memory-1 says $39', references: [{ url: 'https://shop.example/a' }] }],
+        unresolved: ['whether memory-2 still holds'],
+      },
+    }
+    const results = formatAgentResults([record])
+    expect(results).toContain(`report:\n${text}`)
+    expect(results).toContain('- Price: memory-1 says $39 (evidence: https://shop.example/a)')
+    expect(results).toContain('- whether memory-2 still holds')
   })
 })
 

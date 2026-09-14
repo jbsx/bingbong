@@ -18,7 +18,7 @@ import { setFaultSink, type FaultReport } from '../../core/trace/fault'
 import { VisionDeadlineError } from '../../core/ports/vision'
 import { TIER_TOOL_ROUND_BUDGETS } from '../../core/pipeline/effortEpoch'
 import { FORBIDDEN_ENDINGS, RESOURCE_ACCOUNTING } from '../../core/testing/stoppingPolicy'
-import type { TraceRecord } from '../../core/trace/runTrace'
+import { RUN_TRACE_VERSION, type TraceRecord } from '../../core/trace/runTrace'
 
 class DeterministicIdentities implements SessionIdentitySource {
   readonly minted: string[] = []
@@ -320,7 +320,7 @@ describe('assistant command runner', () => {
       expect(captures).toEqual([{ runId: 'run-1', turnId: 'turn-1' }])
       expect(records).toEqual([
         {
-          v: 1,
+          v: RUN_TRACE_VERSION,
           at: 1_000,
           runId: 'run-1',
           sessionId: 'session-1',

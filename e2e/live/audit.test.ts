@@ -588,6 +588,61 @@ describe('merged checkpoints and Held Page rounds without Progress (#240, ADR 00
   })
 })
 
+describe('Identity Slips (#246, ADR 0028)', () => {
+  const atVersion = (records: readonly TraceRecord[], v: number): TraceRecord[] => records.map((record) => ({ ...record, v })) as unknown as TraceRecord[]
+  const SLIPPED: Record<string, unknown>[] = [
+    {
+      ...identity,
+      at: T0 + 15_500,
+      kind: 'identity_slip',
+      slips: [
+        { surface: 'display', id: 'memory-1', repair: 'substituted' },
+        { surface: 'display', id: 'obs-2', repair: 'deleted' },
+        { surface: 'speak', id: 'memory-1', repair: 'deleted' },
+      ],
+    },
+    // A Subagent's record is not the Run's Answer; the boundary never writes one, and the audit never counts one.
+    { ...identity, at: T0 + 2_650, kind: 'identity_slip', agentId: 'a-1', slips: [{ surface: 'display', id: 'memory-9', repair: 'deleted' }] },
+  ]
+  const slipped = classifyAttempt(inputOf({ traceRecords: atVersion(traceOf(ROUNDS, [...EXTRA, ...SLIPPED]), 2) }))
+  const clean = classifyAttempt(inputOf({ traceRecords: atVersion(traceOf(ROUNDS, EXTRA), 2) }))
+  const old = classifyAttempt(inputOf())
+
+  it('counts the Answers that slipped and the ids slipped in them from a version-2 trace, and zero when none did', () => {
+    expect(slipped.identitySlips).toEqual({ answers: 1, ids: 3 })
+    expect(clean.identitySlips).toEqual({ answers: 0, ids: 0 })
+  })
+
+  it('reads a version-1 trace as not recorded, and moves no digest, kind or verdict', () => {
+    expect(old.identitySlips).toBeNull()
+    expect(slipped.digestHash).toBe(old.digestHash)
+    expect(slipped.rounds).toEqual(old.rounds)
+    expect(slipped.counts).toEqual(old.counts)
+    expect(validateJudgement(judgement, slipped)).toEqual(validateJudgement(judgement, old))
+  })
+
+  it('sums per population and in the aggregate, and prints both counts per attempt and per population', () => {
+    const followUpOf = (mechanical: ReturnType<typeof classifyAttempt>): AuditAttempt => ({ mechanical: { ...mechanical, relation: 'revised_objective' }, review: null, countsAfterOverrules: mechanical.counts })
+    const initialOf = (mechanical: ReturnType<typeof classifyAttempt>): AuditAttempt => ({ mechanical, review: null, countsAfterOverrules: mechanical.counts })
+    const set = buildAuditSet(provenanceOf(), [initialOf(slipped), initialOf(clean), followUpOf(old)], [])
+    expect(set.populations.initial).toMatchObject({ identitySlipAnswers: 1, identitySlipIds: 3, identitySlipsNotRecorded: 0 })
+    expect(set.populations.followUp).toMatchObject({ identitySlipAnswers: 0, identitySlipIds: 0, identitySlipsNotRecorded: 1 })
+
+    const markdown = formatAuditSet(set)
+    expect(markdown).toContain('- Identity Slips: 1 Answer(s), 3 id(s) slipped')
+    expect(markdown).toContain('- Identity Slips: 0 Answer(s), 0 id(s) slipped')
+    expect(markdown).toContain('- Identity Slips: not recorded (a Run Trace below version 2)')
+    expect(markdown).toMatch(/- initial: .*Held Page round\(s\) without Progress, 1 Answer\(s\) with an Identity Slip \(3 id\(s\) slipped\), /)
+    expect(markdown).toMatch(/- follow_up: .*Held Page round\(s\) without Progress, Identity Slips not recorded, /)
+
+    const other = buildAuditSet(provenanceOf({ setId: 'set-2', createdAt: '2026-09-12T18:00:00.000Z' }), [initialOf(old)], [])
+    const aggregate = buildAuditAggregate([set, other], '2026-09-14T11:00:00.000Z')
+    if (!aggregate.ok) throw new Error(aggregate.errors.join('; '))
+    expect(aggregate.value.populations.initial).toMatchObject({ identitySlipAnswers: 1, identitySlipIds: 3, identitySlipsNotRecorded: 1 })
+    expect(formatAuditAggregate(aggregate.value)).toContain('1 Answer(s) with an Identity Slip (3 id(s) slipped; 1 attempt(s) not recorded), ')
+  })
+})
+
 describe('the rail’s Search Observations (#243, ADR 0049)', () => {
   const searchesOf = (mechanical: ReturnType<typeof classifyAttempt>) => mechanical.rounds.map((round) => round.calls.map((call) => call.search))
 

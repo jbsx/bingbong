@@ -7240,38 +7240,77 @@ describe('grounded Candidates, user corrections, and Answers (#122)', () => {
     expect(committed).toEqual([[assessment]])
   })
 
-  it('derives display source links from cited evidence and never exposes internal ids (#122)', async () => {
+  it('derives display source links from cited evidence and repairs every Identity Slip, recording it (#122, #246)', async () => {
     const store = storeHarness()
     const llm = new ScriptedLlm([
       { kind: 'tool_calls', calls: [{ id: 'c1', name: 'read_page', args: {} }] },
       { kind: 'tool_calls', calls: [
         { id: 'c2', name: 'record_evidence', args: { observation: 'The Acme router costs $39.', source_url: PAGE_URL, excerpt: 'Price: $39' } },
       ] },
-      { kind: 'answer', speak: 'It costs $39.', display: 'Cheapest option found (memory-1, obs-2).', evidenceIds: ['memory-1' as MemoryEntryId] },
+      { kind: 'answer', speak: 'It costs $39 (memory-1).', display: 'Cheapest option found (memory-1, obs-2).', evidenceIds: ['memory-1' as MemoryEntryId] },
     ])
+    const tts = new RecordingTts()
     const pipeline = createCommandPipeline({
       llm,
-      tts: new RecordingTts(),
+      tts,
       clock: new FakeClock(),
       tools: [readPage, createRecordEvidenceTool()],
       currentPageUrl: () => PAGE_URL,
     })
+    const traced: RunTraceEvent[] = []
+    const faults: FaultReport[] = []
+    setFaultSink((report) => faults.push(report))
 
-    const events = await collectWithContinuity(pipeline, 'find the price', continuityFor(store))
+    const events = await collectWithContinuity(pipeline, 'find the price', {
+      ...continuityFor(store),
+      traceRun: (build) => traced.push(build()),
+    })
 
     const display = events.find((e) => e.type === 'display')
     expect(display).toMatchObject({
       type: 'display',
-      // Internal identities scrubbed (holes tidied with them) — and the
-      // live text carries no generated Sources block: the structured
+      // The id that names the checkpointed Observation becomes its source
+      // link, the Run Observation id is deleted with its hole tidied — and
+      // the live text carries no generated Sources block: the structured
       // Answer Evidence Summary replaces it (#141).
-      text: 'Cheapest option found ().',
-      // The declared identities ride as Session-only metadata (#141)…
+      text: 'Cheapest option found ([shop.example](https://shop.example/acme-router)).',
+      // The declared identities ride as Session-only metadata (#141),
+      // exactly as the model declared them: a slip never rewrites them…
       evidenceIds: ['memory-1'],
       // …with the derived links beside them for a text-only reader to
       // flatten back into the recorded text.
       sources: [{ url: PAGE_URL }],
     })
+    // The Spoken Rendering only ever deletes, and what is voiced is the repair.
+    expect(events.filter((e) => e.type === 'speak').map((e) => e.text)).toEqual(['It costs $39 ().'])
+    expect(tts.spoken).toEqual(['It costs $39 ().'])
+    // One record for the slipped Answer, one entry per id; no fault, and no
+    // off-contract reply — the reply's shape was fine.
+    expect(traced.filter((record) => record.kind === 'identity_slip')).toEqual([
+      {
+        kind: 'identity_slip',
+        turnId: expect.any(String),
+        slips: [
+          { surface: 'display', id: 'memory-1', repair: 'substituted' },
+          { surface: 'display', id: 'obs-2', repair: 'deleted' },
+          { surface: 'speak', id: 'memory-1', repair: 'deleted' },
+        ],
+      },
+    ])
+    expect(traced.filter((record) => record.kind === 'off_contract_reply')).toEqual([])
+    expect(faults).toEqual([])
+  })
+
+  it('leaves no identity_slip record for an Answer with no slip (#246)', async () => {
+    const store = storeHarness()
+    const llm = new ScriptedLlm([{ kind: 'answer', speak: 'It costs $39.', display: 'Cheapest option found.' }])
+    const pipeline = createCommandPipeline({ llm, tts: new RecordingTts(), clock: new FakeClock(), tools: [readPage] })
+    const traced: RunTraceEvent[] = []
+
+    const events = await collectWithContinuity(pipeline, 'find the price', { ...continuityFor(store), traceRun: (build) => traced.push(build()) })
+
+    expect(events.find((e) => e.type === 'display')).toMatchObject({ text: 'Cheapest option found.' })
+    expect(traced.filter((record) => record.kind === 'identity_slip')).toEqual([])
   })
 })
 

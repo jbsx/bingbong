@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { PipelineEvent } from '../pipeline/events'
 import { createPipelineEventTraceWriter, tracesPipelineEvent } from './pipelineEventTrace'
-import { TRACE_TOOL_RESULT_MAX_CHARS, type TraceRecord } from './runTrace'
+import { RUN_TRACE_VERSION, TRACE_TOOL_RESULT_MAX_CHARS, type TraceRecord } from './runTrace'
 import type { RunId, SessionGeneration, SessionId } from '../session/sessionIdentity'
 
 const runId = 'r-1' as RunId
@@ -26,7 +26,7 @@ describe('the pipeline_event tap (#185)', () => {
 
     expect(records).toEqual([
       {
-        v: 1,
+        v: RUN_TRACE_VERSION,
         at: 1_700,
         turnId: 't-1',
         runId,

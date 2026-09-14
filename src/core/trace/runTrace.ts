@@ -13,6 +13,7 @@
 // (#182), and a fault reported with a turn id in hand (#184).
 
 import type { PipelineEvent } from '../pipeline/events'
+import type { IdentitySlip } from '../pipeline/answerEvidence'
 import type { SearchSignature } from '../pipeline/searchLoopRail'
 import type { NotFoundLanding } from '../browser/notFoundPage'
 import type { AnswerShape } from '../agent/answerContract'
@@ -26,8 +27,12 @@ import type { RunId, SessionGeneration, SessionId } from '../session/sessionIden
 import type { FaultEvent } from './fault'
 import type { VisionRunTraceRecord } from './visionTrace'
 
-/** The record-shape version every line carries; bump it when a field's meaning changes. */
-export const RUN_TRACE_VERSION = 1
+/**
+ * The record-shape version every line carries; bump it when a field's
+ * meaning changes. 2 (#246): the `identity_slip` record exists, so a
+ * version-1 trace's absence of one is "not recorded", not "no slip".
+ */
+export const RUN_TRACE_VERSION = 2
 
 /** How much of a graded observation's retained text a record keeps. */
 export const TRACE_PAYLOAD_HEAD_CHARS = 500
@@ -356,6 +361,22 @@ export interface SearchObservationEvent {
   readonly agentId?: string
 }
 
+/**
+ * One Answer whose Card or Spoken Rendering carried an Identity Slip
+ * (#246, ADR 0028): the internal ids the model wrote where the user reads
+ * or hears, and what the display boundary did with each. The published
+ * `display` and `speak` events carry the repaired text and the raw Answer
+ * is kept nowhere, so this is the only record that a repair happened. Not
+ * a fault — no code failed — and not an `off_contract_reply` — the reply's
+ * shape was fine. Written once per slipped Answer; an Answer with no slip
+ * writes none.
+ */
+export interface IdentitySlipEvent {
+  readonly kind: 'identity_slip'
+  /** One entry per slipped id, the Card's first, each in the order written. */
+  readonly slips: readonly IdentitySlip[]
+}
+
 /** One decision a Run traces, whatever kind it is. */
 export type RunTraceEventBody =
   | EvidenceCheckpointEvent
@@ -365,6 +386,7 @@ export type RunTraceEventBody =
   | OffContractReplyEvent
   | FailureScreenshotEvent
   | SearchObservationEvent
+  | IdentitySlipEvent
 
 /** What a Run hands the writer: one event, stamped with the turn it happened in. */
 export type RunTraceEvent = { readonly turnId: string } & RunTraceEventBody
