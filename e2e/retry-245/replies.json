@@ -1,0 +1,82 @@
+{
+  "issue": 245,
+  "ranAt": "2026-09-14T13:26:08.361Z",
+  "model": "GLM-5.3",
+  "retryMessage": "Your last reply was meant as the Answer but could not be read as one: Expected ',' or '}' after property value in JSON at position 909 (line 1 column 910). Reply with only the JSON object: no text before or after it, no code fences, \"speak\" and \"display\" as strings.",
+  "bar": "at least 2 of 3 on contract",
+  "onContract": 3,
+  "calls": [
+    {
+      "call": 1,
+      "elapsedMs": 38373,
+      "model": "GLM-5.3",
+      "reasoningEffort": "high",
+      "promptHash": "93d576bb24041e85",
+      "kind": "answer",
+      "shape": "on_contract",
+      "finalizationCause": "objective_met",
+      "resolution": "completed",
+      "evidenceIds": [
+        "memory-1",
+        "memory-2",
+        "memory-3",
+        "memory-4",
+        "memory-5"
+      ],
+      "speak": "The guitar is allowed despite being 90 centimetres, because guitars are a named exception to the 85-centimetre limit on London routes. But it uses one of the two luggage slots, so with two suitcases you are one piece over: leave one suitcase behind and the rest fits.",
+      "display": "**Verdict: the complete load (2 suitcases + daypack + guitar) is NOT within the ordinary allowance — but the guitar itself is fine. One item must go.**\n\n**Eurostar Standard allowance (London–Paris):** 2 pieces of luggage + 1 small item of hand luggage (e.g. a handbag or backpack). On routes to and from London, each bag may be up to **85 cm** at its longest point. No weight limit — you must be able to carry everything yourself. ([Eurostar luggage allowance](https://www.eurostar.com/uk-en/travel-info/travel-planning/luggage))\n\n**1. Is the guitar allowed despite its 90 cm length? Yes.** The official rule: 'Musical instruments smaller than 85 cm long and guitars can travel with you as part of your luggage allowance on routes to and from London. Guitars must be in a case.' Guitars are a named exception to the 85 cm limit, so a 90 cm cased guitar is permitted. ([Musical Instruments on board](https://www.eurostar.com/uk-en/travel-info/travel-planning/luggage/musical-instruments))\n\n**2. Does the guitar consume a slot? Yes** — it travels 'as part of your luggage allowance', meaning it counts as **one of the 2 luggage pieces**, not as the small item of hand luggage (the daypack fills that).\n\n**3. Why the full load fails:** 2 suitcases + guitar = **3 luggage pieces** versus 2 allowed. Each 70 cm suitcase is individually fine and the daypack is the 1 permitted small item — only the piece count breaks it.\n\n**4. Smallest reduction:** **leave one suitcase behind** (a single-item change). Then 1 suitcase + guitar = 2 luggage pieces, with the daypack as the small item — fully within the ordinary allowance, no fees or extra booking.\n\n**5. Guitars vs medium instruments (cellos):** a guitar is a special exception — any length, in a case, as ordinary luggage. An instrument **85–136 cm** (e.g. a cello) gets no such exception: it may only travel by (a) an accompanying ticket so it occupies the seat beside you, booked via the contact centre, (b) courier, or (c) a pre-booked dedicated space on selected London–Paris–Brussels trains. Over **136 cm** (double bass, harp) cannot travel with you at all — courier only.\n\nNo booking, purchase, login or contact was made; sourced from Eurostar's current official UK-English pages.",
+      "usage": {
+        "promptTokens": 6005,
+        "completionTokens": 1987
+      }
+    },
+    {
+      "call": 2,
+      "elapsedMs": 70702,
+      "model": "GLM-5.3",
+      "reasoningEffort": "high",
+      "promptHash": "93d576bb24041e85",
+      "kind": "answer",
+      "shape": "on_contract",
+      "finalizationCause": "objective_met",
+      "resolution": "completed",
+      "evidenceIds": [
+        "memory-1",
+        "memory-2",
+        "memory-3",
+        "memory-4",
+        "memory-5"
+      ],
+      "speak": "The guitar is allowed despite being 90 centimetres long — a guitar in a case is a named exception to the 85 centimetre limit on London routes. But it takes one of the two luggage slots, so two suitcases plus guitar is one piece over; leaving one suitcase behind makes everything fit the ordinary allowance.",
+      "display": "**Verdict: the complete load (2 suitcases + daypack + guitar) is NOT within the ordinary allowance — but the guitar itself is fine. One item must go.**\n\n**Eurostar Standard allowance (London–Paris):** 2 pieces of luggage + 1 small item of hand luggage (e.g. a handbag or backpack). On routes to and from London, each bag may be up to **85 cm** at its longest point. No weight limit — you must be able to carry everything yourself. Source: [Eurostar luggage allowance](https://www.eurostar.com/uk-en/travel-info/travel-planning/luggage)\n\n**1. Is the guitar allowed despite its 90 cm length? Yes.** Eurostar's rule: 'Musical instruments smaller than 85 cm long and guitars can travel with you as part of your luggage allowance on routes to and from London. Guitars must be in a case.' Guitars are a named exception to the 85 cm limit, so a 90 cm cased guitar is permitted. Source: [Musical instruments on board | Eurostar](https://www.eurostar.com/uk-en/travel-info/travel-planning/luggage/musical-instruments)\n\n**2. Does the guitar consume an allowance slot? Yes.** It travels 'as part of your luggage allowance', so it counts as **one of the 2 luggage pieces** — it is not the small item of hand luggage (that slot fits the daypack, like a backpack).\n\n**3. Why the full load fails:** 2 suitcases + guitar = **3 luggage pieces versus 2 allowed**. Each suitcase is individually fine (70 cm is under the 85 cm limit) and the daypack fills the permitted 1 small item. Only the piece count breaks the allowance.\n\n**4. Smallest reduction that makes the load fit: leave one suitcase behind.** Then 1 suitcase + guitar = the 2 luggage pieces, plus the daypack as the small item of hand luggage — fully within the ordinary allowance, with no fees or extra booking.\n\n**5. Guitar rule vs medium instruments (e.g. cellos):** a guitar is a special exception — any length, in a case, carried as ordinary luggage. A medium-sized instrument (roughly 85–136 cm, the cello bracket) gets **no such exception**: it may only travel by (a) buying it an accompanying ticket so it occupies the seat beside you (booked via the contact centre, subject to availability), (b) courier, or (c) a pre-booked dedicated instrument space on selected London–Paris–Brussels trains. Instruments over 136 cm (harps, double basses) cannot travel with you at all — courier only.\n\nNo booking, purchase, login or contact was made; everything above is from Eurostar's current official UK pages for this route.",
+      "usage": {
+        "promptTokens": 6005,
+        "completionTokens": 2873
+      }
+    },
+    {
+      "call": 3,
+      "elapsedMs": 34565,
+      "model": "GLM-5.3",
+      "reasoningEffort": "high",
+      "promptHash": "93d576bb24041e85",
+      "kind": "answer",
+      "shape": "on_contract",
+      "finalizationCause": "objective_met",
+      "resolution": "completed",
+      "evidenceIds": [
+        "memory-1",
+        "memory-2",
+        "memory-3",
+        "memory-4",
+        "memory-5"
+      ],
+      "speak": "The guitar is allowed despite being 90 centimetres, because guitars are a named exception to the 85 centimetre London-route limit. But it uses one of the two luggage slots, so with two suitcases you are one piece over: leave one suitcase behind and everything fits.",
+      "display": "**Verdict: the complete load (2 suitcases + daypack + guitar) is NOT within the ordinary allowance — but the guitar itself is fine. One item must go.**\n\n**Eurostar Standard allowance (London–Paris):** 2 pieces of luggage + 1 small item of hand luggage (e.g. handbag or backpack). On routes to and from London, each bag may be up to **85 cm** long. No weight limit — you must be able to carry everything yourself. ([Eurostar luggage allowance](https://www.eurostar.com/uk-en/travel-info/travel-planning/luggage))\n\n**1. Is the guitar allowed despite its 90 cm length?** Yes. Official rule: 'Musical instruments smaller than 85 cm long and guitars can travel with you as part of your luggage allowance on routes to and from London. Guitars must be in a case.' Guitars are named as an exception to the 85 cm limit, so a 90 cm cased guitar is permitted. ([Musical instruments | Eurostar](https://www.eurostar.com/uk-en/travel-info/travel-planning/luggage/musical-instruments))\n\n**2. Does the guitar consume an allowance slot?** Yes — it travels 'as part of your luggage allowance', so it counts as **one of the 2 luggage pieces**. The daypack fills the separate 1 small item of hand luggage (handbag/backpack category).\n\n**3. Why the full load doesn't fit:** 2 suitcases + guitar = **3 luggage pieces** versus 2 allowed. Both suitcases are individually fine (70 cm < 85 cm) and the daypack is the 1 small item; only the piece count fails.\n\n**4. Smallest reduction:** **leave one suitcase behind**. Then 1 suitcase + guitar = 2 luggage pieces, plus the daypack as the small item of hand luggage — fully within the ordinary allowance, no fees or extra booking.\n\n**5. Guitar rule vs medium instruments (cellos):** A guitar is a special exception: any length, in a case, carried as ordinary luggage. An instrument between **85 and 136 cm** (e.g. a cello) gets no such exception — it may only travel by (a) an accompanying ticket so it occupies the seat beside you, booked via the contact centre subject to availability, (b) courier, or (c) a pre-booked dedicated space on selected London–Paris–Brussels trains. Instruments over **136 cm** (harps, double basses) cannot travel with you at all — courier only.\n\nNo booking, purchase, login or contact was made; this is from Eurostar's current official UK-English pages.",
+      "usage": {
+        "promptTokens": 6005,
+        "completionTokens": 1786
+      }
+    }
+  ]
+}
