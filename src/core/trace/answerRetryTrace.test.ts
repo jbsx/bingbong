@@ -37,7 +37,7 @@ describe('answerRetryTraceEvent', () => {
     expect(record).toMatchObject({ text: 'x'.repeat(TRACE_OFF_CONTRACT_TEXT_MAX_CHARS), chars: text.length, agentId: 'a-3' })
   })
 
-  it('records how the retried round resolved, naming the worker only when there is one', () => {
+  it('records how the retried round resolved, naming the Subagent only when there is one', () => {
     expect(answerRetryTraceEvent({ kind: 'answer_retry', role: 'orchestrator', outcome: 'on_contract' })).toEqual({
       kind: 'answer_retry',
       role: 'orchestrator',

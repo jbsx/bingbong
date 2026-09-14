@@ -1683,6 +1683,25 @@ export function populationOf(label: string, attempts: readonly AuditAttempt[]): 
   }
 }
 
+/**
+ * Malformed Answers that predate the `malformed_answer` record (#245), named
+ * from the issue's diagnosis rather than re-parsed from Answer text (ADR
+ * 0049): the attempt's count stays zero, and the set holding it says why.
+ */
+export const PRE_RECORD_MALFORMED_ANSWERS: readonly { readonly captureId: string; readonly attemptId: string; readonly round: number }[] = [
+  { captureId: 'baseline-1--rule-eurostar-luggage', attemptId: 'rule-eurostar-luggage--initial', round: 7 },
+]
+
+/** The caveat each known pre-record Malformed Answer among these attempts earns. */
+export function preRecordMalformedAnswerCaveats(attempts: readonly AuditAttempt[]): string[] {
+  return PRE_RECORD_MALFORMED_ANSWERS.filter((known) =>
+    attempts.some(({ mechanical }) => mechanical.captureId === known.captureId && mechanical.attemptId === known.attemptId),
+  ).map(
+    (known) =>
+      `${known.attemptId} replied with a Malformed Answer in round ${known.round}, before the malformed_answer record existed (#245): its count reads 0, and the audit does not re-parse Answer text to find it`,
+  )
+}
+
 export function buildAuditSet(provenance: AuditProvenance, attempts: readonly AuditAttempt[], caveats: readonly string[]): AuditSetOutput {
   return {
     kind: LIVE_AUDIT_KIND,
@@ -1693,7 +1712,7 @@ export function buildAuditSet(provenance: AuditProvenance, attempts: readonly Au
       initial: populationOf('initial', attempts.filter((attempt) => attempt.mechanical.relation === 'initial')),
       followUp: populationOf('follow_up', attempts.filter((attempt) => attempt.mechanical.relation === 'revised_objective')),
     },
-    caveats,
+    caveats: [...caveats, ...preRecordMalformedAnswerCaveats(attempts)],
     note: AUDIT_COUNTS_NOTE,
   }
 }

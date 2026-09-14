@@ -64,7 +64,7 @@ export interface ToolContext {
    */
   traceSubagentOffContractReply?: SubagentOffContractReplyTrace
   /**
-   * The malformed_answer and answer_retry records for delegated workers
+   * The malformed_answer and answer_retry records for delegated Subagents
    * (#245), closed over the spawning Run's writer and turn like the traces
    * beside it. Absent unless the developer opted in with `BINGBONG_RUN_TRACE`.
    */

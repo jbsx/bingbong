@@ -1,6 +1,7 @@
 import type { Clock } from '../ports/clock'
 import { systemClock } from '../ports/clock'
 import type {
+  AnswerRetryRequest,
   AssistantTurn,
   LlmAttemptSent,
   LlmClient,
@@ -40,7 +41,6 @@ import type { LlmRoundOutcome } from '../trace/runTrace'
 import { answerRetryMessage, answerText, malformedErrorOf } from './answerContract'
 import { recordOffContractReply, type SubagentOffContractReplyTrace } from '../trace/offContractReplyTrace'
 import { answerRetryOutcome, recordMalformedAnswer, type SubagentAnswerRetryTrace } from '../trace/answerRetryTrace'
-import type { AnswerRetryRequest } from '../ports/llm'
 import type { SubagentPipelineEventTrace } from '../trace/pipelineEventTrace'
 import type { VisionTraceReporter } from '../trace/visionTrace'
 import { reportFault } from '../trace/fault'
@@ -253,9 +253,9 @@ export interface RunSubagentOptions {
    */
   traceOffContractReply?: SubagentOffContractReplyTrace
   /**
-   * The malformed_answer and answer_retry records for this worker (#245):
+   * The malformed_answer and answer_retry records for this Subagent (#245):
    * built by the spawning Run over its own writer, like the traces beside
-   * it. Absent, the worker still retries and records nothing.
+   * it. Absent, the Subagent still retries and records nothing.
    */
   traceAnswerRetry?: SubagentAnswerRetryTrace
   /**
@@ -533,10 +533,10 @@ export async function runSubagent(deps: RunSubagentDeps, options: RunSubagentOpt
     owedAnswerRetry = undefined
     return taken
   }
-  const worker = options.agentId !== undefined ? { agentId: options.agentId } : {}
+  const subagentStamp = options.agentId !== undefined ? { agentId: options.agentId } : {}
   /** The answer_retry record, for a round that carried the retry. */
   const traceAnswerRetryOutcome = (retry: AnswerRetryRequest | undefined, turn: AssistantTurn | null): void => {
-    if (retry !== undefined) options.traceAnswerRetry?.({ kind: 'answer_retry', role: 'subagent', outcome: answerRetryOutcome(turn), ...worker })
+    if (retry !== undefined) options.traceAnswerRetry?.({ kind: 'answer_retry', role: 'subagent', outcome: answerRetryOutcome(turn), ...subagentStamp })
   }
   // This Subagent's Effort Epoch (#149, ADR 0027): the Run's bounded-effort
   // module in Subagent configuration — this worker's independent Tool
@@ -833,7 +833,7 @@ export async function runSubagent(deps: RunSubagentDeps, options: RunSubagentOpt
     await checkpoint(options)
     // A Malformed Answer outside the reserved round (#245): an ordinary
     // round's reply becomes the Report whatever its shape, so without this
-    // the worker's JSON reaches the orchestrator as raw text with no
+    // the Subagent's JSON reaches the orchestrator as raw text with no
     // findings. One retry per Subagent run, bounded by the parent's grace
     // like any round; once spent, the reply is the Report as it always was.
     if (turn.kind === 'answer' && turn.shape === 'malformed') {
@@ -844,7 +844,7 @@ export async function runSubagent(deps: RunSubagentDeps, options: RunSubagentOpt
         error: malformedErrorOf(turn),
         ...(options.traceAnswerRetry !== undefined ? { trace: options.traceAnswerRetry } : {}),
         ...(options.turnId !== undefined ? { turnId: options.turnId } : {}),
-        ...worker,
+        ...subagentStamp,
       })
       if (!answerRetrySpent) {
         answerRetrySpent = true

@@ -32,23 +32,23 @@ export type TracedAnswerRetryRecord =
     }
 
 /**
- * What a delegated worker calls to trace both records (#245): the spawning
- * Run builds it over its own writer and turn, the road `off_contract_reply`
- * already takes. Absent, the worker records nothing and still retries.
+ * What a Subagent calls to trace both records (#245): the spawning Run
+ * builds it over its own writer and turn, the road `off_contract_reply`
+ * already takes. Absent, the Subagent records nothing and still retries.
  */
 export type SubagentAnswerRetryTrace = (record: TracedAnswerRetryRecord) => void
 
 /** One record as the file keeps it: the reply cut as `off_contract_reply` cuts it. */
 export function answerRetryTraceEvent(record: TracedAnswerRetryRecord): MalformedAnswerEvent | AnswerRetryEvent {
-  const worker = record.agentId !== undefined ? { agentId: record.agentId } : {}
-  if (record.kind === 'answer_retry') return { kind: 'answer_retry', role: record.role, outcome: record.outcome, ...worker }
+  const subagentStamp = record.agentId !== undefined ? { agentId: record.agentId } : {}
+  if (record.kind === 'answer_retry') return { kind: 'answer_retry', role: record.role, outcome: record.outcome, ...subagentStamp }
   return {
     kind: 'malformed_answer',
     role: record.role,
     text: record.text.slice(0, TRACE_OFF_CONTRACT_TEXT_MAX_CHARS),
     chars: record.text.length,
     error: record.error,
-    ...worker,
+    ...subagentStamp,
   }
 }
 

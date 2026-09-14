@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 
 import { answerRetryMessage, parseAssistantAnswer } from '../agent/answerContract'
 import { setFaultSink, type FaultReport } from '../trace/fault'
+import type { RunTraceEvent } from '../trace/runTrace'
 import { createCommandPipeline, type CommandPipeline } from './createCommandPipeline'
 import { FINALIZATION_ALLOWANCE_MS, RESERVED_ANSWER_ALLOWANCE_MS } from './finalizationAllowance'
 import { createReportRunPlanTool } from './runPlanTools'
@@ -202,12 +203,29 @@ describe('the Finalization Allowance in a Run (#209, ADR 0038)', () => {
           async () => ({ kind: 'answer', ...parseAssistantAnswer(MALFORMED) }),
         ],
       })
-      const run = collect(h.pipeline, 'compare vendors')
+      const traced: RunTraceEvent[] = []
+      const run = (async () => {
+        const events: PipelineEvent[] = []
+        for await (const raw of h.pipeline.execute('compare vendors', 'turn-retry', false, {
+          snapshot: [],
+          memory: [],
+          commit: () => 'committed',
+          traceRun: (build) => traced.push(build()),
+        })) {
+          events.push(withoutTurnId(raw))
+        }
+        return events
+      })()
       await h.enterFinalization()
       const events = await run
 
       expect(h.requests).toHaveLength(4)
       expect(displayText(events)).not.toContain('"display"')
+      // ADR 0034's record carries the parser's shape, and the retry says how it resolved.
+      expect(traced.filter((record) => record.kind === 'off_contract_reply')).toMatchObject([
+        { role: 'orchestrator', shape: 'malformed', text: MALFORMED, cause: 'deadline_reached' },
+      ])
+      expect(traced.filter((record) => record.kind === 'answer_retry')).toMatchObject([{ outcome: 'malformed' }])
       expect(events.at(-1)).toMatchObject({ type: 'done', finalizationCause: 'deadline_reached' })
       expect(h.faults.map((fault) => fault.site)).toEqual(
         expect.arrayContaining(['pipeline.createCommandPipeline.malformedAnswer', 'pipeline.createCommandPipeline.offContractReply']),

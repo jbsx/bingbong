@@ -139,7 +139,7 @@ export interface SubagentTaskHooks {
    */
   traceOffContractReply?: SubagentOffContractReplyTrace
   /**
-   * The malformed_answer and answer_retry records for this worker (#245):
+   * The malformed_answer and answer_retry records for this Subagent (#245):
    * the spawning Run's own writer, closed over its identity and turn.
    * Absent unless the developer opted in with `BINGBONG_RUN_TRACE` (#184).
    */

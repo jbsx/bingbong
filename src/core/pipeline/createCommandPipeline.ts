@@ -12,9 +12,9 @@ import type {
   ToolCall,
   ToolResult,
   ToolResultOutcome,
+  AnswerRetryRequest,
 } from '../ports/llm'
 import { LlmRequestTimeoutError } from '../ports/llm'
-import type { AnswerRetryRequest } from '../ports/llm'
 import { selectDelegatedMemory } from '../agent/subagentReport'
 import { createLlmDeltaBatcher } from './deltaBatcher'
 import type { TtsSpeaker } from '../ports/tts'
@@ -1121,7 +1121,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
       ? (reply: TracedOffContractReply): void => traceRun(() => ({ turnId, ...offContractReplyEvent(reply) }))
       : undefined
     // The malformed_answer and answer_retry records (#245): the Run's own
-    // and a delegated worker's (handed down as `traceSubagentAnswerRetry`).
+    // and a delegated Subagent's (handed down as `traceSubagentAnswerRetry`).
     const writeAnswerRetry = traceRun
       ? (record: TracedAnswerRetryRecord): void => traceRun(() => ({ turnId, ...answerRetryTraceEvent(record) }))
       : undefined
@@ -1676,7 +1676,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
           // in the finally, where a round that threw is known too.
           const roundAnswerRetry = owedAnswerRetry
           owedAnswerRetry = undefined
-          let answerRetryResolution: AnswerRetryOutcome = 'round_failed'
+          let roundAnswerRetryOutcome: AnswerRetryOutcome = 'round_failed'
           try {
             const request: LlmRequest = {
               command,
@@ -1799,7 +1799,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
             turn = await llm.complete(request)
             roundUsage = turn.usage
             roundOutcome = 'completed'
-            answerRetryResolution = answerRetryOutcome(turn)
+            roundAnswerRetryOutcome = answerRetryOutcome(turn)
           } catch (err) {
             // What ended the round, for its record (#218): the cuts this
             // loop made itself first — they all reach the client as one
@@ -1925,7 +1925,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
             // usage.
             if (llmRounds) closeLlmAttempt(llmRounds.takeRound(roundOutcome, roundUsage))
             if (roundAnswerRetry !== undefined) {
-              writeAnswerRetry?.({ kind: 'answer_retry', role: 'orchestrator', outcome: answerRetryResolution })
+              writeAnswerRetry?.({ kind: 'answer_retry', role: 'orchestrator', outcome: roundAnswerRetryOutcome })
             }
           }
           // The round can resolve despite the deadline abort (a client that

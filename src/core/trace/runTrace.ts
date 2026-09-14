@@ -278,7 +278,7 @@ export interface MalformedAnswerEvent {
   readonly chars: number
   /** What could not be read: the parser's message with its position, or the field and what it was. */
   readonly error: string
-  /** The delegated worker whose round replied; absent on the Run's own. */
+  /** The delegated Subagent whose round replied; absent on the Run's own. */
   readonly agentId?: string
 }
 
@@ -294,7 +294,7 @@ export interface AnswerRetryEvent {
   readonly kind: 'answer_retry'
   readonly role: LlmRoundRole
   readonly outcome: AnswerRetryOutcome
-  /** The delegated worker that retried; absent on the Run's own. */
+  /** The delegated Subagent that retried; absent on the Run's own. */
   readonly agentId?: string
 }
 

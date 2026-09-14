@@ -683,6 +683,18 @@ describe('Malformed Answers and Answer Retries (#245)', () => {
     expect(markdown).toContain('- Malformed Answers: 3 (2 retried)')
     expect(markdown).toMatch(/- initial: .*3 Malformed Answer\(s\) \(2 retried\)/)
   })
+
+  it('notes the known pre-record Malformed Answer in the set that holds it, counting it nowhere', () => {
+    const plain = classifyAttempt(inputOf({ traceRecords: traceOf(ROUNDS, EXTRA) }))
+    const eurostar = { ...plain, captureId: 'baseline-1--rule-eurostar-luggage', attemptId: 'rule-eurostar-luggage--initial' }
+    const holding = buildAuditSet(provenanceOf(), [{ mechanical: eurostar, review: null, countsAfterOverrules: eurostar.counts }], [])
+    const other = buildAuditSet(provenanceOf(), [{ mechanical: plain, review: null, countsAfterOverrules: plain.counts }], [])
+
+    expect(holding.caveats).toEqual([expect.stringMatching(/^rule-eurostar-luggage--initial replied with a Malformed Answer in round 7, before the malformed_answer record existed \(#245\)/)])
+    expect(holding.populations.initial.malformedAnswers).toBe(0)
+    expect(formatAuditSet(holding)).toContain('replied with a Malformed Answer in round 7')
+    expect(other.caveats).toEqual([])
+  })
 })
 
 describe('the rail’s Search Observations (#243, ADR 0049)', () => {

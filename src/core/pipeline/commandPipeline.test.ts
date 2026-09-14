@@ -8391,7 +8391,7 @@ describe('the Answer Retry after a Malformed Answer (#245)', () => {
     const traced: RunTraceEvent[] = []
     const faults: FaultReport[] = []
     const detail: PipelineEvent[] = []
-    const committed: string[] = []
+    const committed: { outcome: string; note: string; patch: MemoryPatch }[] = []
     setFaultSink((report) => faults.push(report))
     const pipeline = createCommandPipeline({
       llm,
@@ -8404,8 +8404,8 @@ describe('the Answer Retry after a Malformed Answer (#245)', () => {
     for await (const raw of pipeline.execute('can I take my guitar on the eurostar', 'turn-retry', false, {
       snapshot: [],
       memory: [],
-      commit: (outcome) => {
-        committed.push(outcome)
+      commit: (outcome, note, patch) => {
+        committed.push({ outcome, note, patch })
         return 'committed'
       },
       traceRun: (build) => traced.push(build()),
@@ -8450,7 +8450,10 @@ describe('the Answer Retry after a Malformed Answer (#245)', () => {
       { kind: 'answer_retry', turnId: 'turn-retry', role: 'orchestrator', outcome: 'on_contract' },
     ])
     expect(run.malformedFaults).toMatchObject([{ turnId: 'turn-retry', message: expect.stringContaining('orchestrator replied with a Malformed Answer') }])
-    expect(run.committed).toEqual(['done'])
+    expect(run.committed.map((entry) => entry.outcome)).toEqual(['done'])
+    // The journal is untouched: nothing of the broken reply is committed, and nothing about the retry.
+    expect(JSON.stringify(run.committed)).not.toContain('the resolution')
+    expect(JSON.stringify(run.committed)).not.toMatch(/Malformed Answer|Answer Retry|answer_retry/)
   })
 
   it('renders a second Malformed Answer raw, as today, once the retry is spent', async () => {

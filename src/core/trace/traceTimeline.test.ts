@@ -257,7 +257,7 @@ describe('buildTraceTimeline', () => {
     expect(entries[1].agentId).toBe('agent-7')
   })
 
-  it('summarizes a Malformed Answer and its Answer Retry, orchestrator and worker alike (#245)', () => {
+  it('summarizes a Malformed Answer and its Answer Retry, orchestrator and Subagent alike (#245)', () => {
     const timeline = buildTraceTimeline([
       run({ at: T0 + 1, turnId: 'turn-1', kind: 'malformed_answer', role: 'orchestrator', text: '{"speak":"Done.","display":42}', chars: 30, error: '"display" is not a string' }),
       run({ at: T0 + 2, turnId: 'turn-1', kind: 'answer_retry', role: 'orchestrator', outcome: 'on_contract' }),

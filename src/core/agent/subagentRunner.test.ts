@@ -502,6 +502,30 @@ describe('runSubagent', () => {
       expect(run.malformedFaults).toHaveLength(2)
     })
 
+    it('is bounded by the parent’s grace: a grace that ends before the retry is sent abandons it', async () => {
+      const grace = new AbortController()
+      const requests: LlmRequest[] = []
+      const traced: TracedAnswerRetryRecord[] = []
+      const llm = {
+        async complete(request: LlmRequest) {
+          requests.push(request)
+          // The parent's Report Grace runs out while this round is answering.
+          grace.abort()
+          return { kind: 'answer' as const, ...parseAssistantAnswer(MALFORMED) }
+        },
+      }
+
+      const report = await runSubagent(
+        { llm, tools: [spin], clock: new FakeClock(), maxToolRounds: 5 },
+        { task: 't', agentId: 'a-21', isCancelled: () => false, abandonReport: grace.signal, traceAnswerRetry: (record) => traced.push(record) },
+      )
+
+      expect(requests).toHaveLength(1)
+      expect(report.bounded).toBe(true)
+      expect(report.text).not.toContain('"display"')
+      expect(traced.map((record) => record.kind)).toEqual(['malformed_answer'])
+    })
+
     it('carries the retry into the reserved report round the shared deadline made next, and takes its on-contract report', async () => {
       const run = await runWorker([spinRound('c1'), answer(MALFORMED), answer(ON_CONTRACT)], { expiresAfterRequests: 2 })
 

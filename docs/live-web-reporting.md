@@ -910,7 +910,8 @@ class and reason, and the digest does not move. A trace written before the
 records existed counts none, and the Baseline audits read zero for that reason
 alone: baseline-1's Eurostar initial replied with a Malformed Answer in its
 round 7, before the record, and re-parsing old Answer text to count it would be
-the audit replaying a decision the Run never recorded (ADR 0049).
+the audit replaying a decision the Run never recorded (ADR 0049). The set's
+caveats name that occurrence instead, from `PRE_RECORD_MALFORMED_ANSWERS`.
 
 They name check ids and URLs only, never key text: the reviewer is told to
 refer to checks by id, every output is checked for any key string or any run of

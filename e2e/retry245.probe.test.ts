@@ -1,7 +1,7 @@
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
-import { answerRetryMessage, parseAssistantAnswer } from '../src/core/agent/answerContract'
+import { answerRetryMessage, malformedErrorOf, parseAssistantAnswer } from '../src/core/agent/answerContract'
 import { resolveModelEndpoint } from '../src/core/agent/modelRouting'
 import { systemClock } from '../src/core/ports/clock'
 import type { LlmAttemptSent } from '../src/core/ports/llm'
@@ -62,7 +62,7 @@ describe('#245 Answer Retry probe', () => {
     // message below is not the one the runtime would send.
     const malformed = parseAssistantAnswer(ROUND_7)
     expect(malformed.shape).toBe('malformed')
-    const answerRetry = { reply: ROUND_7.trim(), message: answerRetryMessage(malformed.malformedError ?? '') }
+    const answerRetry = { reply: ROUND_7.trim(), message: answerRetryMessage(malformedErrorOf(malformed)) }
 
     const calls: Record<string, unknown>[] = []
     for (let call = 1; call <= CALLS; call += 1) {
