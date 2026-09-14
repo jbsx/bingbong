@@ -10,7 +10,7 @@ import type { PageSnapshot } from '../browser/snapshot'
 import { VisionDeadlineError } from '../ports/vision'
 import { FakeBrowser, FakeClock, FakeVision } from '../testing/doubles'
 import type { ToolCall } from '../ports/llm'
-import type { VisionTraceEvent, VisionTraceIds } from '../trace/visionTrace'
+import type { ToolTraceEvent, VisionTraceIds } from '../trace/visionTrace'
 import { createBrowserTools } from './browserTools'
 import type { Tool, ToolContext } from './tool'
 import { createLookTool, createVisionGroundingTools } from './visionGroundingTools'
@@ -33,7 +33,7 @@ const emptySnapshot: PageSnapshot = {
 }
 
 interface Reported {
-  event: VisionTraceEvent
+  event: ToolTraceEvent
   ids?: VisionTraceIds
 }
 

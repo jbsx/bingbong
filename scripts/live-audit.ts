@@ -365,7 +365,8 @@ function digestBlock(mechanical: AuditMechanical): string {
       const parts = [
         `- ${call.name}${call.refused ? ' (refused)' : call.ok === null ? ' (no result)' : ''} ${JSON.stringify(call.args)}`,
         call.url ? `  page: ${call.url}${call.title ? ` — "${clip(call.title, 80)}"` : ''}` : '',
-        call.search ? `  search: "${call.search.query}" (streak ${call.search.streak})` : '',
+        // A rail-sourced search names its signature (#243); a replayed one prints as it always did.
+        call.search ? `  search: "${call.search.query}" (${call.search.signature === undefined ? '' : `${call.search.signature}, `}streak ${call.search.streak})` : '',
         call.wall ? `  wall: ${call.wall}` : '',
         call.checkpoint ? `  checkpoint: ${call.checkpoint.accepted ? 'accepted' : `REJECTED — ${call.checkpoint.outcome}`}` : '',
         call.progress ? `  progress: ${call.progress.made ? 'yes' : 'no'} — ${call.progress.reason}` : '',
@@ -740,7 +741,7 @@ function main(): void {
         process.stdout.write(
           `${output.audit.provenance.setId} ${mechanical.attemptId}: ${mechanical.orchestratorRounds} rounds, ${mechanical.toolRoundsUsed}/${mechanical.toolRoundBudget ?? '?'} Tool Rounds, ` +
             `${ROUND_KINDS.map((kind) => `${kind.replace(/_/g, ' ')} ${mechanical.counts[kind]}`).join(', ')}; ` +
-            `${mechanical.mechanicalSearchRounds} Search Loop round(s) by the streak rule${mechanical.searchLoopHeads.length > 0 ? ` (heads ${mechanical.searchLoopHeads.join(', ')})` : ''}; digest ${mechanical.digestHash.slice(0, 19)}…\n`,
+            `${mechanical.mechanicalSearchRounds} Search Loop round(s) by the streak rule${mechanical.searchLoopHeads.length > 0 ? ` (heads ${mechanical.searchLoopHeads.join(', ')})` : ''}; search source ${mechanical.searchSource}; digest ${mechanical.digestHash.slice(0, 19)}…\n`,
         )
       }
     }

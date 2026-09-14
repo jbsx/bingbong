@@ -10,7 +10,7 @@ import { createEffortEpoch, finalizationToolRefusal } from './effortEpoch'
 import { createNotices } from './notices'
 import { createObservationLedger, type ObservationInput } from '../session/observationLedger'
 import { createToolRoundExecutor, type ToolRoundCapabilities, type ToolRoundConfig, type ToolRoundOutcome } from './toolRound'
-import type { VisionTraceEvent, VisionTraceReporter } from '../trace/visionTrace'
+import type { ToolTraceEvent, VisionTraceIds, VisionTraceReporter } from '../trace/visionTrace'
 
 // Issue #157: the Tool Round executor's own invariants — the order its
 // gated seams run in, and the four ways a round can end. Everything here is
@@ -67,6 +67,9 @@ function harness(
     visionCalls?: number
     /** The vision seam (#186): what the round's Vision Budget records through. */
     traceVision?: VisionTraceReporter
+    /** The turn and worker the tool context names — what the seam's records are routed and stamped by. */
+    turnId?: string
+    agentId?: string
     intercept?: ToolRoundConfig['intercept']
     terminalResult?: ToolRoundConfig['terminalResult']
     soleCall?: ToolRoundConfig['soleCall']
@@ -126,7 +129,12 @@ function harness(
       observed.push(input)
       return ledger.record(input)
     },
-    toolContext: { clock, ...(options.traceVision ? { traceVision: options.traceVision } : {}) },
+    toolContext: {
+      clock,
+      ...(options.turnId !== undefined ? { turnId: options.turnId } : {}),
+      ...(options.agentId !== undefined ? { agentId: options.agentId } : {}),
+      ...(options.traceVision ? { traceVision: options.traceVision } : {}),
+    },
     decisions,
     interrupts,
     capabilities: options.capabilities ?? ALL_RAILS,
@@ -650,8 +658,8 @@ describe('interception and Notice eligibility (#157/AC1)', () => {
 // budget for a `usesVision` tool, so the round records it — the tool only
 // ever sees the refusal as a failed call.
 describe('vision budget records', () => {
-  function reporter(): { traceVision: VisionTraceReporter; reported: VisionTraceEvent[] } {
-    const reported: VisionTraceEvent[] = []
+  function reporter(): { traceVision: VisionTraceReporter; reported: ToolTraceEvent[] } {
+    const reported: ToolTraceEvent[] = []
     return { traceVision: (event) => reported.push(event), reported }
   }
 
@@ -673,6 +681,46 @@ describe('vision budget records', () => {
       { kind: 'vision_budget', reason: 'look', granted: true },
       { kind: 'vision_budget', reason: 'look', granted: false, refusal: expect.stringMatching(/vision call limit/) },
     ])
+  })
+})
+
+// The Search Observation record (#243, ADR 0049). The rail decides what it
+// observed; the round records it through the tool context's seam, beside the
+// call's result, so the Round Audit reads the rail instead of replaying it.
+describe('search observation records', () => {
+  function reporter(): { traceVision: VisionTraceReporter; reported: { event: ToolTraceEvent; ids: VisionTraceIds | undefined }[] } {
+    const reported: { event: ToolTraceEvent; ids: VisionTraceIds | undefined }[] = []
+    return { traceVision: (event, ids) => reported.push({ event, ids }), reported }
+  }
+  const SEARCH = 'https://duckduckgo.com/?q=harrison+longitude+watch'
+
+  it('records one observation for a search, joined by the call id and stamped with the turn, and none for a read', async () => {
+    const { traceVision, reported } = reporter()
+    const h = harness([scripted('navigate', []), scripted('read_page', [])], { traceVision, turnId: 'turn-1' })
+    await h.round([call('navigate', { url: SEARCH }, 'c1'), call('read_page', {}, 'c2')])
+    expect(reported).toEqual([
+      {
+        event: { kind: 'search_observation', callId: 'c1', name: 'navigate', query: 'harrison longitude watch', signature: 'url', streak: 1 },
+        ids: { turnId: 'turn-1' },
+      },
+    ])
+  })
+
+  it('stamps a Browse Subagent’s observation with its agent id', async () => {
+    const { traceVision, reported } = reporter()
+    const h = harness([scripted('navigate', [])], { traceVision, turnId: 'turn-1', agentId: 'agent-3' })
+    await h.round([call('navigate', { url: SEARCH }, 'c1'), call('navigate', { url: `${SEARCH}+catalogue` }, 'c2')])
+    expect(reported.map(({ event }) => event)).toEqual([
+      { kind: 'search_observation', callId: 'c1', name: 'navigate', query: 'harrison longitude watch', signature: 'url', streak: 1, agentId: 'agent-3' },
+      { kind: 'search_observation', callId: 'c2', name: 'navigate', query: 'harrison longitude watch catalogue', signature: 'url', streak: 2, agentId: 'agent-3' },
+    ])
+  })
+
+  it('records nothing without the search-loop rail', async () => {
+    const { traceVision, reported } = reporter()
+    const h = harness([scripted('navigate', [])], { traceVision, turnId: 'turn-1', capabilities: { ...ALL_RAILS, searchLoopRail: false } })
+    await h.round([call('navigate', { url: SEARCH }, 'c1')])
+    expect(reported).toEqual([])
   })
 })
 
@@ -765,7 +813,7 @@ describe('an argument refusal is not a Vision Attempt (#236, ADR 0046)', () => {
   it('spends no budget and no route, so the next well-formed Look passes the rail and runs', async () => {
     const trace: string[] = []
     const spent: unknown[] = []
-    const reported: VisionTraceEvent[] = []
+    const reported: ToolTraceEvent[] = []
     // A Vision Budget of one: had the refused call been charged, the
     // well-formed Look would be refused for the budget instead.
     const h = harness([look(trace)], {
@@ -787,7 +835,7 @@ describe('an argument refusal is not a Vision Attempt (#236, ADR 0046)', () => {
 
   it('runs admission after the risk gate and before the Vision Budget', async () => {
     const trace: string[] = []
-    const reported: VisionTraceEvent[] = []
+    const reported: ToolTraceEvent[] = []
     // No budget at all: a budget charged ahead of admission would answer
     // with its own refusal, and record it.
     const h = harness([look(trace, { assessRisk: { kind: 'confirm', prompt: 'Look at the page?' } })], {

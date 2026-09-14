@@ -9,6 +9,7 @@ import {
   SEARCH_LOOP_REFUSE_AFTER,
   searchQueryFromUrl,
   similarQueries,
+  type SearchLoopRail,
   type SearchLoopRailDeps,
 } from './searchLoopRail'
 
@@ -38,6 +39,11 @@ function other(name: string): ToolCall {
 
 const ok: ToolResultOutcome = { ok: true, result: 'done' }
 const fail: ToolResultOutcome = { ok: false, error: 'boom' }
+
+/** The advisory half of the rail's verdict — what every test before #243 pinned. */
+async function noticeOf(rail: SearchLoopRail, call: ToolCall, outcome: ToolResultOutcome): Promise<string | null> {
+  return (await rail.observe(call, outcome)).notice
+}
 
 function ref(facts: Partial<SnapshotRef> = {}): SnapshotRef {
   return {
@@ -134,20 +140,20 @@ describe('createSearchLoopRail', () => {
   it('stays quiet while consecutive searches explore different intents', async () => {
     const rail = createSearchLoopRail(searchBoxAt)
     expect(await rail.gate(search('mechanical keyboards'))).toEqual({ ok: true })
-    expect(await rail.observe(search('mechanical keyboards'), ok)).toBeNull()
+    expect(await noticeOf(rail, search('mechanical keyboards'), ok)).toBeNull()
     expect(await rail.gate(search('weather london'))).toEqual({ ok: true })
-    expect(await rail.observe(search('weather london'), ok)).toBeNull()
+    expect(await noticeOf(rail, search('weather london'), ok)).toBeNull()
   })
 
   it('nudges on the nth consecutive similar search — advisory, never a refusal', async () => {
     const rail = createSearchLoopRail(searchBoxAt)
     for (let i = 1; i < SEARCH_LOOP_NUDGE_AFTER; i += 1) {
       expect(await rail.gate(search(`best mechanical keyboards 2026 v${i}`))).toEqual({ ok: true })
-      expect(await rail.observe(search(`best mechanical keyboards 2026 v${i}`), ok)).toBeNull()
+      expect(await noticeOf(rail, search(`best mechanical keyboards 2026 v${i}`), ok)).toBeNull()
     }
     const last = `best mechanical keyboards 2026 v${SEARCH_LOOP_NUDGE_AFTER}`
     expect(await rail.gate(search(last))).toEqual({ ok: true })
-    const nudge = await rail.observe(search(last), ok)
+    const nudge = await noticeOf(rail, search(last), ok)
     expect(nudge).toMatch(/reword|same intent|one intent/i)
     expect(nudge).toMatch(/q= navigate|search box/)
     expect(nudge).not.toMatch(/web_search|read_url/)
@@ -157,55 +163,55 @@ describe('createSearchLoopRail', () => {
 
   it('catches slow drift: each query similar to the previous, not to the first', async () => {
     const rail = createSearchLoopRail(searchBoxAt)
-    await rail.observe(search('best mechanical keyboards 2026'), ok)
-    await rail.observe(search('best mechanical keyboards 2027'), ok)
+    await noticeOf(rail, search('best mechanical keyboards 2026'), ok)
+    await noticeOf(rail, search('best mechanical keyboards 2027'), ok)
     // Similar to the previous query, but only 0.5 against the first —
     // anchor-only comparison would reset here and miss the drift loop.
-    expect(await rail.observe(search('mechanical keyboards 2027'), ok)).toMatch(/ask_user/)
+    expect(await noticeOf(rail, search('mechanical keyboards 2027'), ok)).toMatch(/ask_user/)
   })
 
   it('chains a return to the original wording after drifting away from it (#82)', async () => {
     const rail = createSearchLoopRail(searchBoxAt)
-    await rail.observe(search('reddit manhwa tier list horizon'), ok)
+    await noticeOf(rail, search('reddit manhwa tier list horizon'), ok)
     // Similar to the previous (0.67) — streak 2.
-    await rail.observe(search('reddit manhwa tier list horizon boxer image'), ok)
+    await noticeOf(rail, search('reddit manhwa tier list horizon boxer image'), ok)
     // Only 0.56 against the previous query — below no threshold this rail
     // has ever used — but 0.67 against the anchor, so the streak continues.
-    expect(await rail.observe(search('reddit manhwa tier list 2023 site'), ok)).toMatch(/ask_user/)
+    expect(await noticeOf(rail, search('reddit manhwa tier list 2023 site'), ok)).toMatch(/ask_user/)
   })
 
   it('resets the streak when a successful other tool intervenes', async () => {
     const rail = createSearchLoopRail(searchBoxAt)
     for (let i = 0; i < SEARCH_LOOP_NUDGE_AFTER; i += 1) {
-      await rail.observe(search('mechanical keyboards gaming'), ok)
+      await noticeOf(rail, search('mechanical keyboards gaming'), ok)
     }
-    await rail.observe(other('navigate'), ok)
+    await noticeOf(rail, other('navigate'), ok)
     expect(await rail.gate(search('mechanical keyboards gaming'))).toEqual({ ok: true })
-    expect(await rail.observe(search('mechanical keyboards gaming'), ok)).toBeNull()
+    expect(await noticeOf(rail, search('mechanical keyboards gaming'), ok)).toBeNull()
   })
 
   it('keeps the streak when the intervening tool fails — the model is still blind (run 46)', async () => {
     const rail = createSearchLoopRail(searchBoxAt)
-    await rail.observe(search('mechanical keyboards'), ok)
-    await rail.observe(search('mechanical keyboards gaming'), ok)
-    expect(await rail.observe(other('navigate'), fail)).toBeNull()
-    expect(await rail.observe(search('mechanical keyboards gaming 2026'), ok)).toMatch(/ask_user/)
+    await noticeOf(rail, search('mechanical keyboards'), ok)
+    await noticeOf(rail, search('mechanical keyboards gaming'), ok)
+    expect(await noticeOf(rail, other('navigate'), fail)).toBeNull()
+    expect(await noticeOf(rail, search('mechanical keyboards gaming 2026'), ok)).toMatch(/ask_user/)
   })
 
   it('resets the streak when the model moves to a new search intent', async () => {
     const rail = createSearchLoopRail(searchBoxAt)
-    await rail.observe(search('mechanical keyboards'), ok)
-    await rail.observe(search('mechanical keyboards gaming'), ok)
-    await rail.observe(search('mechanical keyboards 2026'), ok)
-    expect(await rail.observe(search('weather in london'), ok)).toBeNull()
-    expect(await rail.observe(search('weather in tokyo'), ok)).toBeNull()
+    await noticeOf(rail, search('mechanical keyboards'), ok)
+    await noticeOf(rail, search('mechanical keyboards gaming'), ok)
+    await noticeOf(rail, search('mechanical keyboards 2026'), ok)
+    expect(await noticeOf(rail, search('weather in london'), ok)).toBeNull()
+    expect(await noticeOf(rail, search('weather in tokyo'), ok)).toBeNull()
   })
 
   it('refuses pre-execution once the consecutive-similar cap is reached, with a reason the model can act on', async () => {
     const rail = createSearchLoopRail(searchBoxAt)
     for (let i = 0; i < SEARCH_LOOP_REFUSE_AFTER; i += 1) {
       expect(await rail.gate(search(`mechanical keyboards run ${i}`))).toEqual({ ok: true })
-      await rail.observe(search(`mechanical keyboards run ${i}`), ok)
+      await noticeOf(rail, search(`mechanical keyboards run ${i}`), ok)
     }
     const refusal = await rail.gate(search('mechanical keyboards run 99'))
     expect(refusal.ok).toBe(false)
@@ -221,7 +227,7 @@ describe('createSearchLoopRail', () => {
     const rail = createSearchLoopRail(searchBoxAt)
     for (let i = 0; i < SEARCH_LOOP_REFUSE_AFTER; i += 1) {
       await rail.gate(search(`mechanical keyboards run ${i}`))
-      await rail.observe(search(`mechanical keyboards run ${i}`), ok)
+      await noticeOf(rail, search(`mechanical keyboards run ${i}`), ok)
     }
     expect(await rail.gate(search('train times tokyo osaka'))).toEqual({ ok: true })
   })
@@ -230,37 +236,37 @@ describe('createSearchLoopRail', () => {
     const rail = createSearchLoopRail(searchBoxAt)
     for (let i = 0; i < SEARCH_LOOP_REFUSE_AFTER; i += 1) {
       await rail.gate(search(`mechanical keyboards run ${i}`))
-      await rail.observe(search(`mechanical keyboards run ${i}`), ok)
+      await noticeOf(rail, search(`mechanical keyboards run ${i}`), ok)
     }
     expect((await rail.gate(search('mechanical keyboards run 99'))).ok).toBe(false)
     // The run-53 shape: read_page between reworded searches kept the rail
     // from ever firing — a read never resets the streak now.
-    await rail.observe(other('read_page'), ok)
+    await noticeOf(rail, other('read_page'), ok)
     expect((await rail.gate(search('mechanical keyboards run 100'))).ok).toBe(false)
     // A failed escape consumed nothing; the streak survives it too.
-    await rail.observe(other('click'), fail)
+    await noticeOf(rail, other('click'), fail)
     expect((await rail.gate(search('mechanical keyboards run 101'))).ok).toBe(false)
     // Opening a result is the escape — the cap clears.
-    await rail.observe(other('click'), ok)
+    await noticeOf(rail, other('click'), ok)
     expect(await rail.gate(search('mechanical keyboards run 102'))).toEqual({ ok: true })
   })
 
   it('a blank type into the search box has nothing to chain on — ordinary call, not a search', async () => {
     const rail = createSearchLoopRail(searchBoxAt)
-    await rail.observe(search('mechanical keyboards'), ok)
-    await rail.observe(search('mechanical keyboards gaming'), ok)
+    await noticeOf(rail, search('mechanical keyboards'), ok)
+    await noticeOf(rail, search('mechanical keyboards gaming'), ok)
     expect(await rail.gate(type(7, '\n'))).toEqual({ ok: true })
     // Failed: leaves the streak alone. Successful: resets like any other tool.
-    expect(await rail.observe(type(7, '\n'), fail)).toBeNull()
-    expect(await rail.observe(type(7, '\n'), ok)).toBeNull()
-    expect(await rail.observe(search('mechanical keyboards gaming 2026'), ok)).toBeNull()
+    expect(await noticeOf(rail, type(7, '\n'), fail)).toBeNull()
+    expect(await noticeOf(rail, type(7, '\n'), ok)).toBeNull()
+    expect(await noticeOf(rail, search('mechanical keyboards gaming 2026'), ok)).toBeNull()
   })
 
   it('only rails searches — other tools pass the gate untouched', async () => {
     const rail = createSearchLoopRail(searchBoxAt)
     for (let i = 0; i < SEARCH_LOOP_REFUSE_AFTER; i += 1) {
       await rail.gate(search(`mechanical keyboards run ${i}`))
-      await rail.observe(search(`mechanical keyboards run ${i}`), ok)
+      await noticeOf(rail, search(`mechanical keyboards run ${i}`), ok)
     }
     expect(await rail.gate(other('navigate'))).toEqual({ ok: true })
     expect(await rail.gate(other('look'))).toEqual({ ok: true })
@@ -270,11 +276,11 @@ describe('createSearchLoopRail', () => {
 describe('createSearchLoopRail GUI search signature (#82)', () => {
   it('counts a q=-carrying navigate as a search observation, not a streak reset', async () => {
     const rail = createSearchLoopRail(searchBoxAt)
-    await rail.observe(search('reddit manhwa tier list horizon'), ok)
-    await rail.observe(search('reddit manhwa tier list horizon boxer'), ok)
+    await noticeOf(rail, search('reddit manhwa tier list horizon'), ok)
+    await noticeOf(rail, search('reddit manhwa tier list horizon boxer'), ok)
     // Run 47's hole: this navigate is the same search reworded — before #82
     // it wiped the streak as a successful "other" tool call.
-    const nudge = await rail.observe(
+    const nudge = await noticeOf(rail, 
       nav('https://www.google.com/search?q=reddit+manhwa+tier+list+horizon+boxer'),
       ok,
     )
@@ -283,23 +289,23 @@ describe('createSearchLoopRail GUI search signature (#82)', () => {
 
   it('counts plain search-term navigations as searches too', async () => {
     const rail = createSearchLoopRail(searchBoxAt)
-    await rail.observe(search('best mechanical keyboards 2026'), ok)
-    await rail.observe(search('best mechanical keyboard 2026 reddit'), ok)
-    expect(await rail.observe(nav('best mechanical keyboards 2026 guide'), ok)).toMatch(/ask_user/)
+    await noticeOf(rail, search('best mechanical keyboards 2026'), ok)
+    await noticeOf(rail, search('best mechanical keyboard 2026 reddit'), ok)
+    expect(await noticeOf(rail, nav('best mechanical keyboards 2026 guide'), ok)).toMatch(/ask_user/)
   })
 
   it('a successful navigate to a plain URL still resets the streak', async () => {
     const rail = createSearchLoopRail(searchBoxAt)
-    await rail.observe(search('best mechanical keyboards 2026'), ok)
-    await rail.observe(search('best mechanical keyboard 2026 reddit'), ok)
-    expect(await rail.observe(nav('https://www.reddit.com/r/manhwa/comments/z8sfnn/'), ok)).toBeNull()
-    expect(await rail.observe(search('best mechanical keyboards 2026 guide'), ok)).toBeNull()
+    await noticeOf(rail, search('best mechanical keyboards 2026'), ok)
+    await noticeOf(rail, search('best mechanical keyboard 2026 reddit'), ok)
+    expect(await noticeOf(rail, nav('https://www.reddit.com/r/manhwa/comments/z8sfnn/'), ok)).toBeNull()
+    expect(await noticeOf(rail, search('best mechanical keyboards 2026 guide'), ok)).toBeNull()
   })
 
   it('refuses a q=-carrying navigate at the cap, before it executes', async () => {
     const rail = createSearchLoopRail(searchBoxAt)
     for (let i = 0; i < SEARCH_LOOP_REFUSE_AFTER; i += 1) {
-      await rail.observe(nav(`https://www.google.com/search?q=reddit+manhwa+tier+list+run+${i}`), ok)
+      await noticeOf(rail, nav(`https://www.google.com/search?q=reddit+manhwa+tier+list+run+${i}`), ok)
     }
     const refusal = await rail.gate(nav('https://www.reddit.com/r/manhwa/search/?q=reddit+manhwa+tier+list'))
     expect(refusal.ok).toBe(false)
@@ -309,22 +315,22 @@ describe('createSearchLoopRail GUI search signature (#82)', () => {
   it('lets a genuinely different q= navigate through even at the cap', async () => {
     const rail = createSearchLoopRail(searchBoxAt)
     for (let i = 0; i < SEARCH_LOOP_REFUSE_AFTER; i += 1) {
-      await rail.observe(nav(`https://www.google.com/search?q=reddit+manhwa+tier+list+run+${i}`), ok)
+      await noticeOf(rail, nav(`https://www.google.com/search?q=reddit+manhwa+tier+list+run+${i}`), ok)
     }
     expect(await rail.gate(nav('https://www.google.com/search?q=train+times+tokyo'))).toEqual({ ok: true })
   })
 
   it('counts text typed into a search input as a search observation', async () => {
     const rail = createSearchLoopRail(searchBoxAt)
-    await rail.observe(type(7, 'reddit manhwa tier list horizon\n'), ok)
-    await rail.observe(type(7, 'reddit manhwa tier list horizon boxer\n'), ok)
-    expect(await rail.observe(type(7, 'reddit manhwa tier list 2023\n'), ok)).toMatch(/ask_user/)
+    await noticeOf(rail, type(7, 'reddit manhwa tier list horizon\n'), ok)
+    await noticeOf(rail, type(7, 'reddit manhwa tier list horizon boxer\n'), ok)
+    expect(await noticeOf(rail, type(7, 'reddit manhwa tier list 2023\n'), ok)).toMatch(/ask_user/)
   })
 
   it('refuses a typed search at the cap, before it executes', async () => {
     const rail = createSearchLoopRail(searchBoxAt)
     for (let i = 0; i < SEARCH_LOOP_REFUSE_AFTER; i += 1) {
-      await rail.observe(type(7, `reddit manhwa tier list run ${i}\n`), ok)
+      await noticeOf(rail, type(7, `reddit manhwa tier list run ${i}\n`), ok)
     }
     const refusal = await rail.gate(type(7, 'reddit manhwa tier list once more\n'))
     expect(refusal.ok).toBe(false)
@@ -333,10 +339,10 @@ describe('createSearchLoopRail GUI search signature (#82)', () => {
 
   it('a type into an ordinary input is an other tool call — success resets, and the gate never refuses it', async () => {
     const rail = createSearchLoopRail(searchBoxAt)
-    await rail.observe(type(7, 'reddit manhwa tier list horizon\n'), ok)
-    await rail.observe(type(7, 'reddit manhwa tier list horizon boxer\n'), ok)
-    expect(await rail.observe(type(8, 'someone@example.com'), ok)).toBeNull()
-    expect(await rail.observe(type(7, 'reddit manhwa tier list 2023\n'), ok)).toBeNull()
+    await noticeOf(rail, type(7, 'reddit manhwa tier list horizon\n'), ok)
+    await noticeOf(rail, type(7, 'reddit manhwa tier list horizon boxer\n'), ok)
+    expect(await noticeOf(rail, type(8, 'someone@example.com'), ok)).toBeNull()
+    expect(await noticeOf(rail, type(7, 'reddit manhwa tier list 2023\n'), ok)).toBeNull()
   })
 
   it('types classify via describeRef once per call — the gate result memoizes into observe', async () => {
@@ -349,8 +355,8 @@ describe('createSearchLoopRail GUI search signature (#82)', () => {
     })
     const first = type(7, 'reddit manhwa tier list horizon\n')
     await rail.gate(first)
-    await rail.observe(first, ok)
-    await rail.observe(type(7, 'reddit manhwa tier list horizon boxer\n'), ok)
+    await noticeOf(rail, first, ok)
+    await noticeOf(rail, type(7, 'reddit manhwa tier list horizon boxer\n'), ok)
     expect(describeRefCalls).toBe(2) // one per distinct call, not per gate+observe
   })
 
@@ -358,7 +364,7 @@ describe('createSearchLoopRail GUI search signature (#82)', () => {
     const rail = createSearchLoopRail()
     for (let i = 0; i < SEARCH_LOOP_REFUSE_AFTER + 1; i += 1) {
       expect(await rail.gate(type(7, `reddit manhwa tier list run ${i}\n`))).toEqual({ ok: true })
-      expect(await rail.observe(type(7, `reddit manhwa tier list run ${i}\n`), ok)).toBeNull()
+      expect(await noticeOf(rail, type(7, `reddit manhwa tier list run ${i}\n`), ok)).toBeNull()
     }
   })
 })
@@ -367,56 +373,109 @@ describe('createSearchLoopRail — inspection is not escape, one Search Intent a
   it('a scroll or a Look between searches continues the streak', async () => {
     for (const inspection of ['scroll', 'look']) {
       const rail = createSearchLoopRail(searchBoxAt)
-      await rail.observe(search('harrison longitude watch'), ok)
-      await rail.observe(other(inspection), ok)
-      await rail.observe(search('harrison longitude watch catalogue'), ok)
-      await rail.observe(other(inspection), ok)
-      expect(await rail.observe(search('harrison longitude watch collection'), ok), inspection).toMatch(/ask_user/)
+      await noticeOf(rail, search('harrison longitude watch'), ok)
+      await noticeOf(rail, other(inspection), ok)
+      await noticeOf(rail, search('harrison longitude watch catalogue'), ok)
+      await noticeOf(rail, other(inspection), ok)
+      expect(await noticeOf(rail, search('harrison longitude watch collection'), ok), inspection).toMatch(/ask_user/)
     }
   })
 
   it('a successful click or a navigate to a plain URL between searches resets it', async () => {
     for (const escape of [other('click'), nav('https://www.rmg.co.uk/collections/objects/rmgc-object-79142')]) {
       const rail = createSearchLoopRail(searchBoxAt)
-      await rail.observe(search('harrison longitude watch'), ok)
-      await rail.observe(search('harrison longitude watch catalogue'), ok)
-      await rail.observe(escape, ok)
-      expect(await rail.observe(search('harrison longitude watch collection'), ok), escape.name).toBeNull()
+      await noticeOf(rail, search('harrison longitude watch'), ok)
+      await noticeOf(rail, search('harrison longitude watch catalogue'), ok)
+      await noticeOf(rail, escape, ok)
+      expect(await noticeOf(rail, search('harrison longitude watch collection'), ok), escape.name).toBeNull()
     }
   })
 
   it('a refused scroll changes nothing', async () => {
     const rail = createSearchLoopRail(searchBoxAt)
-    await rail.observe(search('harrison longitude watch'), ok)
-    await rail.observe(search('harrison longitude watch catalogue'), ok)
-    await rail.observe(other('scroll'), fail)
-    expect(await rail.observe(search('harrison longitude watch collection'), ok)).toMatch(/ask_user/)
+    await noticeOf(rail, search('harrison longitude watch'), ok)
+    await noticeOf(rail, search('harrison longitude watch catalogue'), ok)
+    await noticeOf(rail, other('scroll'), fail)
+    expect(await noticeOf(rail, search('harrison longitude watch collection'), ok)).toMatch(/ask_user/)
   })
 
   it('chains a site: search on an engine to the same terms typed into the site’s own box', async () => {
     const rail = createSearchLoopRail(searchBoxAt)
-    await rail.observe(nav('https://www.bing.com/search?q=site%3Armg.co.uk+collections+Harrison+longitude+watch'), ok)
-    await rail.observe(type(7, 'Harrison longitude watch\n'), ok)
-    expect(await rail.observe(nav('https://duckduckgo.com/?q=science.rmg.co.uk+Harrison+longitude+watch+H4'), ok)).toMatch(/ask_user/)
+    await noticeOf(rail, nav('https://www.bing.com/search?q=site%3Armg.co.uk+collections+Harrison+longitude+watch'), ok)
+    await noticeOf(rail, type(7, 'Harrison longitude watch\n'), ok)
+    expect(await noticeOf(rail, nav('https://duckduckgo.com/?q=science.rmg.co.uk+Harrison+longitude+watch+H4'), ok)).toMatch(/ask_user/)
   })
 
   it('a search that is nothing but scope is still a search, and repeating it continues the streak (Decision 2)', async () => {
     const rail = createSearchLoopRail(searchBoxAt)
-    await rail.observe(nav('https://www.bing.com/search?q=site%3Armg.co.uk'), ok)
-    await rail.observe(type(7, 'site:rmg.co.uk\n'), ok)
-    expect(await rail.observe(nav('https://duckduckgo.com/?q=site%3Armg.co.uk'), ok)).toMatch(/ask_user/)
+    await noticeOf(rail, nav('https://www.bing.com/search?q=site%3Armg.co.uk'), ok)
+    await noticeOf(rail, type(7, 'site:rmg.co.uk\n'), ok)
+    expect(await noticeOf(rail, nav('https://duckduckgo.com/?q=site%3Armg.co.uk'), ok)).toMatch(/ask_user/)
 
     // A scope-only search after a terms search over the same scope continues
     // that streak rather than starting its own (AC2).
     const sharedScope = createSearchLoopRail(searchBoxAt)
-    await sharedScope.observe(nav('https://www.bing.com/search?q=site%3Armg.co.uk+collections+Harrison+longitude+watch'), ok)
-    await sharedScope.observe(type(7, 'site:rmg.co.uk\n'), ok)
-    expect(await sharedScope.observe(nav('https://www.bing.com/search?q=site%3Armg.co.uk+Harrison+longitude+watch+H4'), ok)).toMatch(/ask_user/)
+    await noticeOf(sharedScope, nav('https://www.bing.com/search?q=site%3Armg.co.uk+collections+Harrison+longitude+watch'), ok)
+    await noticeOf(sharedScope, type(7, 'site:rmg.co.uk\n'), ok)
+    expect(await noticeOf(sharedScope, nav('https://www.bing.com/search?q=site%3Armg.co.uk+Harrison+longitude+watch+H4'), ok)).toMatch(/ask_user/)
 
     const hostOnly = createSearchLoopRail(searchBoxAt)
-    await hostOnly.observe(type(7, 'eurostar.com\n'), ok)
-    await hostOnly.observe(type(7, 'eurostar.com\n'), ok)
-    expect(await hostOnly.observe(type(7, 'eurostar.com\n'), ok)).toMatch(/ask_user/)
+    await noticeOf(hostOnly, type(7, 'eurostar.com\n'), ok)
+    await noticeOf(hostOnly, type(7, 'eurostar.com\n'), ok)
+    expect(await noticeOf(hostOnly, type(7, 'eurostar.com\n'), ok)).toMatch(/ask_user/)
+  })
+})
+
+describe('createSearchLoopRail — the verdict carries what the rail observed (#243, ADR 0049)', () => {
+  it('observes a typed search into a search input with the query as typed and the streak it left', async () => {
+    const rail = createSearchLoopRail(searchBoxAt)
+    expect(await rail.observe(type(7, 'harrison longitude watch\n'), ok)).toEqual({
+      notice: null,
+      observation: { query: 'harrison longitude watch', signature: 'input', streak: 1 },
+    })
+    expect((await rail.observe(type(7, 'harrison longitude watch catalogue\n'), ok)).observation).toEqual({
+      query: 'harrison longitude watch catalogue',
+      signature: 'input',
+      streak: 2,
+    })
+  })
+
+  it('observes a q= navigate under the url signature, with the decoded query', async () => {
+    const rail = createSearchLoopRail(searchBoxAt)
+    expect((await rail.observe(nav('https://www.bing.com/search?q=site%3Armg.co.uk+harrison+watch'), ok)).observation).toEqual({
+      query: 'site:rmg.co.uk harrison watch',
+      signature: 'url',
+      streak: 1,
+    })
+  })
+
+  it('leaves no observation for a typed non-search, and a successful one still resets', async () => {
+    const rail = createSearchLoopRail(searchBoxAt)
+    await rail.observe(type(7, 'harrison longitude watch\n'), ok)
+    await rail.observe(type(7, 'harrison longitude watch catalogue\n'), ok)
+    expect(await rail.observe(type(8, 'someone@example.com'), ok)).toEqual({ notice: null, observation: null })
+    expect((await rail.observe(type(7, 'harrison longitude watch collection\n'), ok)).observation?.streak).toBe(1)
+  })
+
+  it('leaves no observation for inspection', async () => {
+    const rail = createSearchLoopRail(searchBoxAt)
+    await rail.observe(type(7, 'harrison longitude watch\n'), ok)
+    for (const name of ['read_page', 'look', 'scroll']) {
+      expect(await rail.observe(other(name), ok), name).toEqual({ notice: null, observation: null })
+    }
+  })
+
+  it('observes a refused search with the streak the rail advanced to', async () => {
+    const rail = createSearchLoopRail(searchBoxAt)
+    for (let i = 0; i < SEARCH_LOOP_REFUSE_AFTER; i += 1) {
+      await rail.observe(type(7, `harrison longitude watch run ${i}\n`), ok)
+    }
+    const refused = type(7, 'harrison longitude watch run 99\n')
+    const gate = await rail.gate(refused)
+    expect(gate.ok).toBe(false)
+    const verdict = await rail.observe(refused, { ok: false, error: gate.ok ? '' : gate.reason })
+    expect(verdict.observation).toEqual({ query: 'harrison longitude watch run 99', signature: 'input', streak: SEARCH_LOOP_REFUSE_AFTER + 1 })
+    expect(verdict.notice).toMatch(/ask_user/)
   })
 })
 
@@ -455,7 +514,7 @@ describe('createSearchLoopRail replay of failed run 47 (#82/#83)', () => {
         refusals += 1
         // The pipeline observes refused calls too (failed outcome) — search
         // observations chain regardless of outcome.
-        await rail.observe(call, fail)
+        await noticeOf(rail, call, fail)
         continue
       }
       const url = call.args.url
@@ -465,7 +524,7 @@ describe('createSearchLoopRail replay of failed run 47 (#82/#83)', () => {
       ) {
         searchObservations += 1
       }
-      if ((await rail.observe(call, ok)) !== null) nudges += 1
+      if ((await noticeOf(rail, call, ok)) !== null) nudges += 1
     }
     expect(run47Sequence).toHaveLength(80)
     // 21 typed searches plus the 22 navigations the feed shows going to

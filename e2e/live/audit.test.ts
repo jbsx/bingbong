@@ -6,6 +6,7 @@ import { describe, expect, it } from 'vitest'
 import { FINALIZATION_REASONING_EFFORT as SOURCE_FINALIZATION_EFFORT, TIER_REASONING_EFFORT as SOURCE_TIER_EFFORT, TIER_TOOL_ROUND_BUDGETS as SOURCE_BUDGETS, budgetWarningMessage, finalizeInstruction, notExecuted } from '../../src/core/pipeline/effortEpoch'
 import { SCROLL_END_OF_PAGE } from '../../src/core/browser/scrollDelta'
 import { similarQueries as ruleSimilarQueries } from '../../src/core/pipeline/searchLoopRule'
+import { createSearchLoopRail, type SearchObservation } from '../../src/core/pipeline/searchLoopRail'
 import type { PerfSpanRecord } from '../../src/core/perf/perfTracer'
 import type { TraceRecord } from '../../src/core/trace/runTrace'
 import {
@@ -67,7 +68,16 @@ interface RoundSpec {
   readonly at: number
   readonly outcome?: string
   readonly effort?: string
-  readonly calls?: readonly { name: string; args: Record<string, unknown>; ok?: boolean; result?: string; error?: string; checkpoint?: string }[]
+  readonly calls?: readonly {
+    name: string
+    args: Record<string, unknown>
+    ok?: boolean
+    result?: string
+    error?: string
+    checkpoint?: string
+    /** The Search Observation the rail recorded for this call (#243) — a trace written after observations were kept. */
+    observation?: SearchObservation
+  }[]
   readonly reasoning?: string
 }
 
@@ -101,6 +111,11 @@ function traceOf(rounds: readonly RoundSpec[], extra: readonly Record<string, un
       records.push({ ...identity, at: T0 + spec.at + 1, kind: 'pipeline_event', event: { type: 'tool_call', turnId: TURN, callId, name: call.name, args: call.args, at: T0 + spec.at + 1 } })
       if (call.checkpoint !== undefined) {
         records.push({ ...identity, at: T0 + spec.at + 2, kind: 'evidence_checkpoint', tool: call.name, args: call.args, outcome: call.checkpoint, matched: call.checkpoint === 'accepted', graded: [] })
+      }
+      if (call.observation !== undefined) {
+        // The round records the rail's observation after the call settles and
+        // before it publishes the result; the seam stamps the turn only.
+        records.push({ v: 1, at: T0 + spec.at + 2, turnId: TURN, kind: 'search_observation', callId, name: call.name, ...call.observation })
       }
       const ok = call.ok ?? true
       records.push({
@@ -445,6 +460,114 @@ describe('the mechanical classification', () => {
     const unbroken = classifyAttempt(inputOf({ traceRecords: traceOf(broken, EXTRA) }))
     expect(unbroken.searchLoopHeads).toEqual([])
     expect(unbroken.mechanicalSearchRounds).toBe(0)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// The rail's Search Observations (#243, ADR 0049): where a trace carries them
+// the audit reads what the rail saw; where it carries none it replays.
+
+const SEARCH_C = 'https://www.bing.com/search?q=harrison+longitude+watch+catalogue'
+const REFUSAL = 'Search loop limit (5 consecutive similar searches — q= navigate or typed search box query) reached for this run'
+
+/** A trace written after observations were kept: typed searches, a refused one, and an escape between. */
+const RAIL_ROUNDS: RoundSpec[] = [
+  { round: 1, at: 1_000, calls: [{ name: 'navigate', args: { url: SEARCH_A }, result: PAGE('search', SEARCH_A, 'bbbb2222'), observation: { query: 'harrison longitude watch catalogue', signature: 'url', streak: 1 } }] },
+  { round: 2, at: 2_000, calls: [{ name: 'type', args: { ref: 3, text: 'harrison longitude watch catalogue\n' }, result: 'typed [3]: value="harrison longitude watch catalogue"', observation: { query: 'harrison longitude watch catalogue', signature: 'input', streak: 2 } }] },
+  { round: 3, at: 3_000, calls: [{ name: 'type', args: { ref: 3, text: 'harrison longitude watch catalogue id\n' }, ok: false, error: REFUSAL, observation: { query: 'harrison longitude watch catalogue id', signature: 'input', streak: 3 } }] },
+  { round: 4, at: 4_000, calls: [{ name: 'navigate', args: { url: SEARCH_B }, result: PAGE('search', SEARCH_B, 'cccc3333'), observation: { query: 'harrison longitude watch catalogue id', signature: 'url', streak: 4 } }] },
+  { round: 5, at: 5_000, calls: [{ name: 'type', args: { ref: 8, text: 'someone@example.com' }, result: 'typed [8]: value="someone@example.com"' }] },
+  { round: 6, at: 6_000, calls: [{ name: 'navigate', args: { url: SEARCH_C }, result: PAGE('search', SEARCH_C, 'ffff6666'), observation: { query: 'harrison longitude watch catalogue', signature: 'url', streak: 1 } }] },
+]
+
+/** A Browse Subagent's observation on a call id the orchestrator also used: the audit reads the orchestrator's only. */
+const WORKER_OBSERVATION: Record<string, unknown> = { v: 1, at: T0 + 2_550, turnId: TURN, kind: 'search_observation', agentId: 'a-1', callId: 'call-2', name: 'type', query: 'something else', signature: 'input', streak: 9 }
+
+describe('the rail’s Search Observations (#243, ADR 0049)', () => {
+  const searchesOf = (mechanical: ReturnType<typeof classifyAttempt>) => mechanical.rounds.map((round) => round.calls.map((call) => call.search))
+
+  it('takes each search round from its observation — typed and refused searches included — and never consults the replay', () => {
+    const mechanical = classifyAttempt(inputOf({ traceRecords: traceOf(RAIL_ROUNDS, [...EXTRA, WORKER_OBSERVATION]) }))
+    expect(mechanical.searchSource).toBe('rail')
+    expect(searchesOf(mechanical)).toEqual([
+      [{ query: 'harrison longitude watch catalogue', streak: 1, signature: 'url' }],
+      [{ query: 'harrison longitude watch catalogue', streak: 2, signature: 'input' }],
+      [{ query: 'harrison longitude watch catalogue id', streak: 3, signature: 'input' }],
+      // The replay would have reset at round 2's successful type and skipped
+      // round 3's refusal, and read streak 1 here.
+      [{ query: 'harrison longitude watch catalogue id', streak: 4, signature: 'url' }],
+      [null],
+      [{ query: 'harrison longitude watch catalogue', streak: 1, signature: 'url' }],
+    ])
+    const reasons = mechanical.rounds.map((round) => `${round.kind}: ${round.reason}`)
+    expect(reasons[1]).toBe('acquisition_without_progress: type: a search that rewords the one before it (streak 2)')
+    // The refused search keeps the kind the refusal makes it.
+    expect(reasons[2]).toMatch(/^failed_round: every call was refused/)
+    expect(reasons[3]).toBe('acquisition_without_progress: navigate: a search that rewords the one before it (streak 4)')
+    // A type the rail did not observe is not a search round.
+    expect(reasons[4]).toBe('acquisition_with_progress: type: a requested state change (text entered or an option selected)')
+    expect(mechanical.rounds[4]!.tags.search).toBe(false)
+    // The head of the rail-sourced streak is counted as ADR 0048 counts it.
+    expect(mechanical.searchLoopHeads).toEqual([1])
+    expect(mechanical.mechanicalSearchRounds).toBe(3)
+  })
+
+  it('replays an observation-free trace as before: a successful type resets, and the source says replay or none', () => {
+    expect(classifyAttempt(inputOf()).searchSource).toBe('replay')
+    const typedBetween: RoundSpec[] = [
+      { round: 1, at: 1_000, calls: [{ name: 'navigate', args: { url: SEARCH_A }, result: PAGE('search', SEARCH_A, 'bbbb2222') }] },
+      { round: 2, at: 2_000, calls: [{ name: 'type', args: { ref: 3, text: 'harrison longitude watch catalogue\n' }, result: 'typed [3]: value="harrison longitude watch catalogue"' }] },
+      { round: 3, at: 3_000, calls: [{ name: 'navigate', args: { url: SEARCH_B }, result: PAGE('search', SEARCH_B, 'cccc3333') }] },
+    ]
+    const replayed = classifyAttempt(inputOf({ traceRecords: traceOf(typedBetween, EXTRA) }))
+    expect(replayed.searchSource).toBe('replay')
+    expect(searchesOf(replayed)).toEqual([[{ query: 'harrison longitude watch catalogue', streak: 1 }], [null], [{ query: 'harrison longitude watch catalogue id', streak: 1 }]])
+    const noSearch: RoundSpec[] = [{ round: 1, at: 1_000, calls: [{ name: 'navigate', args: { url: SPEC_URL }, result: PAGE('Watch spec', SPEC_URL, 'aaaa1111') }] }]
+    expect(classifyAttempt(inputOf({ traceRecords: traceOf(noSearch, EXTRA) })).searchSource).toBe('none')
+    // A worker's observations alone do not make the orchestrator's attempt rail-sourced.
+    expect(classifyAttempt(inputOf({ traceRecords: traceOf(typedBetween, [...EXTRA, WORKER_OBSERVATION]) })).searchSource).toBe('replay')
+  })
+
+  it('agrees with the replay on a navigate-only trace when the observations are the rail’s own (AC5)', async () => {
+    // The observations are made by running the rail over the fixture's calls,
+    // outcome by outcome, as the Tool Round does — refused calls observed as failed.
+    const rail = createSearchLoopRail()
+    const observed: RoundSpec[] = []
+    for (const spec of ROUNDS) {
+      const calls = []
+      for (const [index, call] of (spec.calls ?? []).entries()) {
+        const ok = call.ok ?? true
+        const verdict = await rail.observe({ id: `${spec.round}.${index}`, name: call.name, args: call.args }, ok ? { ok, result: call.result ?? 'ok' } : { ok, error: call.error ?? 'refused' })
+        calls.push(verdict.observation === null ? call : { ...call, observation: verdict.observation })
+      }
+      observed.push({ ...spec, calls })
+    }
+    const replayed = classifyAttempt(inputOf())
+    const railed = classifyAttempt(inputOf({ traceRecords: traceOf(observed, EXTRA) }))
+    expect(railed.searchSource).toBe('rail')
+    const withoutSignature = (mechanical: ReturnType<typeof classifyAttempt>) => searchesOf(mechanical).map((calls) => calls.map((search) => (search === null ? null : { query: search.query, streak: search.streak })))
+    expect(withoutSignature(railed)).toEqual(withoutSignature(replayed))
+    expect(railed.rounds.map((round) => `${round.kind}: ${round.reason}`)).toEqual(replayed.rounds.map((round) => `${round.kind}: ${round.reason}`))
+    expect(railed.searchLoopHeads).toEqual(replayed.searchLoopHeads)
+    expect(railed.mechanicalSearchRounds).toBe(replayed.mechanicalSearchRounds)
+  })
+
+  it('names the source per attempt and counts attempts by source, outside the digest', () => {
+    const railed = classifyAttempt(inputOf({ traceRecords: traceOf(RAIL_ROUNDS, EXTRA) }))
+    const replayed = classifyAttempt(inputOf())
+    expect(railed).toHaveProperty('searchSource', 'rail')
+    // The source is not the reviewer's business: the replayed digest is the pinned one.
+    expect(replayed.digestHash).toBe('sha256:dca3c3c8e737a484c75e1c6fd7565b4eadbf1d8f208f1bf03f7d113b96021a6f')
+    const set = buildAuditSet(
+      provenanceOf(),
+      [railed, replayed].map((mechanical) => ({ mechanical, review: null, countsAfterOverrules: countsAfterOverrulesOf(mechanical, null) })),
+      [],
+    )
+    expect(set.populations.initial.searchSources).toEqual({ rail: 1, replay: 1, none: 0 })
+    const markdown = formatAuditSet(set)
+    expect(markdown).toContain('- search source rail: the rail’s own Search Observations')
+    expect(markdown).toContain('- search source replay: the streak rule re-run over navigate searches')
+    expect(markdown).toContain('by search source rail 1, replay 1, none 0')
   })
 })
 

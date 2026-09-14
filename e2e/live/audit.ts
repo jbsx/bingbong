@@ -40,6 +40,7 @@ import { parseBlockerMarker } from '../../src/core/browser/blockerNudge.ts'
 import type { PerfSpanRecord } from '../../src/core/perf/perfTracer'
 import type { PipelineEvent } from '../../src/core/pipeline/events'
 import type { EffortTier } from '../../src/core/pipeline/runPlan'
+import type { SearchObservation, SearchSignature } from '../../src/core/pipeline/searchLoopRail'
 import { isSearchInspection, similarQueries } from '../../src/core/pipeline/searchLoopRule.ts'
 import type { TraceRecord } from '../../src/core/trace/runTrace'
 import type { Validation } from './artifacts.ts'
@@ -150,8 +151,14 @@ export interface AuditCall {
   readonly checkpoint: { readonly accepted: boolean; readonly outcome: string } | null
   /** The app's own Notices riding the result, as marker names. */
   readonly notices: readonly string[]
-  /** The search query a `navigate` carried, when it was one. */
-  readonly search: { readonly query: string; readonly streak: number } | null
+  /**
+   * The search this call was and the streak it left. Read from the rail's
+   * Search Observation where the attempt carries them, with the signature the
+   * search ran under (#243, ADR 0049); otherwise replayed from a `navigate`'s
+   * query with no signature, so a replayed attempt's digest is the one it
+   * always had.
+   */
+  readonly search: { readonly query: string; readonly streak: number; readonly signature?: SearchSignature } | null
   /** Why this call did or did not make Progress, in the words of the rule that decided. */
   readonly progress: { readonly made: boolean; readonly reason: string } | null
 }
@@ -210,6 +217,15 @@ export interface AuditTraceInput {
 
 export type AuditDisposition = 'answered' | 'no_answer' | 'acceptance_unconfirmed'
 
+/**
+ * Where an attempt's search rounds came from (#243, ADR 0049): the rail's own
+ * Search Observations; a replay of its rule over `navigate` searches, on a
+ * trace written before observations were kept; or neither, when the trace
+ * carries no observation and the replay finds no search.
+ */
+export const SEARCH_SOURCES = ['rail', 'replay', 'none'] as const
+export type AuditSearchSource = (typeof SEARCH_SOURCES)[number]
+
 export interface AuditPlan {
   readonly tier: EffortTier
   readonly source: string
@@ -253,6 +269,8 @@ export interface AuditMechanical {
    * judgement.
    */
   readonly searchLoopHeads: readonly number[]
+  /** Where the search rounds came from (#243) — beside the rounds, never in them, so it re-keys no cached judgement. */
+  readonly searchSource: AuditSearchSource
   readonly walledRounds: number
   readonly latency: { readonly llmMs: number | null; readonly joined: number; readonly unjoined: number }
   readonly usage: { readonly promptTokens: number; readonly completionTokens: number; readonly roundsWithUsage: number }
@@ -340,6 +358,8 @@ export interface AuditPopulation {
   readonly offKeyRounds: number
   readonly searchLoopRounds: number
   readonly mechanicalSearchRounds: number
+  /** Attempts by where their search rounds came from (#243). */
+  readonly searchSources: Readonly<Record<AuditSearchSource, number>>
   readonly inheritedRounds: number
   readonly rejectedCheckpoints: number
   readonly walledRounds: number
@@ -585,10 +605,26 @@ interface ProgressState {
   streak: number
 }
 
+/**
+ * The orchestrator's Search Observations by call id (#243, ADR 0049). A
+ * Browse Subagent's are its own rail's, and stay out as its rounds do.
+ */
+function railObservationsOf(records: readonly TraceLine[]): Map<string, SearchObservation> {
+  const observations = new Map<string, SearchObservation>()
+  for (const record of records) {
+    if (record.kind !== 'search_observation' || record.agentId !== undefined) continue
+    const { callId, query, signature, streak } = record
+    if (!isString(callId) || !isString(query) || (signature !== 'url' && signature !== 'input') || !isFiniteNumber(streak)) continue
+    observations.set(callId, { query, signature, streak })
+  }
+  return observations
+}
+
 function classifyCall(
   entry: RawRound['calls'][number],
   state: ProgressState,
   parentUrls: ReadonlySet<string> | null,
+  railObservations: ReadonlyMap<string, SearchObservation> | null,
 ): { call: AuditCall; inherited: boolean } {
   const { call, result, checkpoint } = entry
   const text = result === undefined ? null : result.ok ? resultText(result.result) : (result.error ?? null)
@@ -621,13 +657,20 @@ function classifyCall(
     notices,
   }
 
-  // The search streak, as the rail keeps it: inspection (a page read, a Look,
-  // a scroll) observes without resetting, a successful escape resets, a
-  // refused call changes nothing. A typed search cannot be told from the
-  // trace (it keeps no element facts), so a successful type resets here
-  // where the live rail may have counted it (#243).
+  // The search streak. Where the attempt carries the rail's Search
+  // Observations, a call takes what the rail saw — query, signature and
+  // streak, typed and refused searches included — and the replay below never
+  // runs, so no streak is half one source and half the other (#243, ADR
+  // 0049). Otherwise the rule is replayed as the rail keeps it: inspection (a
+  // page read, a Look, a scroll) observes without resetting, a successful
+  // escape resets, a refused call changes nothing. A typed search cannot be
+  // told from such a trace (it keeps no element facts), so a successful type
+  // resets here where the live rail may have counted it.
   let search: AuditCall['search'] = null
-  if (call.name === 'navigate' && !refused) {
+  if (railObservations !== null) {
+    const observed = railObservations.get(call.callId)
+    if (observed !== undefined) search = { query: head(observed.query, 120)!, streak: observed.streak, signature: observed.signature }
+  } else if (call.name === 'navigate' && !refused) {
     const query = searchQueryOf(isString(call.args.url) ? call.args.url : '')
     if (query !== null) {
       const continues = (state.lastQuery !== null && similarQueries(query, state.lastQuery)) || (state.anchor !== null && similarQueries(query, state.anchor))
@@ -706,6 +749,9 @@ function classifyCall(
       if (landedCanonical !== null && parentUrls !== null && parentUrls.has(landedCanonical) && !state.acquiredUrls.has(landedCanonical)) {
         inherited = true
         progress = { made: false, reason: 'a re-acquisition of a page the initial attempt already checkpointed (inherited)' }
+      } else if (search !== null && search.streak >= SEARCH_STREAK_WITHOUT_PROGRESS) {
+        // Only a typed search the rail observed carries one here (#243).
+        progress = { made: false, reason: `a search that rewords the one before it (streak ${search.streak})` }
       } else if (noProgressNotice) {
         progress = { made: false, reason: 'the app’s own no-progress Notice rode the result' }
       } else if (text !== null && (text.includes('page signature changed') || text.includes('urlChanged=true') || text.includes('after page change'))) {
@@ -821,10 +867,13 @@ export function classifyAttempt(input: AuditTraceInput): AuditMechanical {
   const tierRung = tier === null ? null : TIER_REASONING_EFFORT[tier]
   const rungRuleApplies = input.reasoningEffortOverride === null && tierRung !== null && tierRung !== FINALIZATION_REASONING_EFFORT
 
-  // Pass one: calls and Progress, in trace order.
+  // Pass one: calls and Progress, in trace order. The search rounds come
+  // from the rail's observations when the attempt carries any (#243).
+  const observations = railObservationsOf(records)
+  const railObservations = observations.size > 0 ? observations : null
   const state: ProgressState = { acquiredUrls: new Set(), observed: new Set(), currentUrl: null, lastQuery: null, anchor: null, streak: 0 }
   const classified = raw.map((round) => {
-    const calls = round.calls.map((entry) => classifyCall(entry, state, input.parentCheckpointedUrls))
+    const calls = round.calls.map((entry) => classifyCall(entry, state, input.parentCheckpointedUrls, railObservations))
     return { round, calls: calls.map((item) => item.call), inherited: calls.some((item) => item.inherited) }
   })
 
@@ -1003,6 +1052,7 @@ export function classifyAttempt(input: AuditTraceInput): AuditMechanical {
     inheritedRounds: rounds.filter((round) => round.tags.inherited).length,
     mechanicalSearchRounds: new Set([...rewordingRounds, ...heads]).size,
     searchLoopHeads: [...heads].sort((left, right) => left - right),
+    searchSource: railObservations !== null ? 'rail' : rounds.some((round) => round.tags.search) ? 'replay' : 'none',
     walledRounds: rounds.filter((round) => round.tags.wall).length,
     latency: {
       llmMs: joined.length === 0 ? null : joined.reduce((total, round) => total + round.latencyMs!, 0),
@@ -1314,6 +1364,7 @@ export function populationOf(label: string, attempts: readonly AuditAttempt[]): 
   let overrules = 0
   let flags = 0
   let atBudget = 0
+  const sources: Record<AuditSearchSource, number> = { rail: 0, replay: 0, none: 0 }
   const byTool = new Map<string, number>()
   for (const attempt of attempts) {
     const { mechanical } = attempt
@@ -1328,6 +1379,7 @@ export function populationOf(label: string, attempts: readonly AuditAttempt[]): 
     budgeted += mechanical.budgetedRounds
     toolRoundsUsed += mechanical.toolRoundsUsed
     mechanicalSearch += mechanical.mechanicalSearchRounds
+    sources[mechanical.searchSource] += 1
     inherited += mechanical.inheritedRounds
     rejected += mechanical.rejectedCheckpoints
     walled += mechanical.walledRounds
@@ -1361,6 +1413,7 @@ export function populationOf(label: string, attempts: readonly AuditAttempt[]): 
     offKeyRounds: offKey,
     searchLoopRounds: searchLoop,
     mechanicalSearchRounds: mechanicalSearch,
+    searchSources: sources,
     inheritedRounds: inherited,
     rejectedCheckpoints: rejected,
     walledRounds: walled,
@@ -1500,6 +1553,13 @@ const VERDICT_LABELS: Readonly<Record<AuditVerdict, string>> = {
   failed_rounds: 'failed rounds',
 }
 
+/** What each search source means, as an attempt's report names it (#243). */
+const SEARCH_SOURCE_NOTES: Readonly<Record<AuditSearchSource, string>> = {
+  rail: 'the rail’s own Search Observations',
+  replay: 'the streak rule re-run over navigate searches',
+  none: 'no Search Observation in the trace, and no navigate search for the replay to find',
+}
+
 const pct = (share: number | null): string => (share === null ? 'n/a' : `${Math.round(share * 100)}%`)
 const msOf = (observation: Observed<number>): string => (observation.status === 'observed' ? `${observation.value} ms` : observation.status)
 
@@ -1549,7 +1609,7 @@ function verdictTable(populations: readonly AuditPopulation[]): string[] {
 function judgementLines(populations: readonly AuditPopulation[]): string[] {
   return populations.map(
     (population) =>
-      `- ${population.label}: ${population.offKeyRounds} Off-key round(s), ${population.searchLoopRounds} Search Loop round(s) by the reviewer (${population.mechanicalSearchRounds} by the streak rule), ` +
+      `- ${population.label}: ${population.offKeyRounds} Off-key round(s), ${population.searchLoopRounds} Search Loop round(s) by the reviewer (${population.mechanicalSearchRounds} by the streak rule; attempts by search source ${SEARCH_SOURCES.map((source) => `${source} ${population.searchSources[source]}`).join(', ')}), ` +
       `${population.inheritedRounds} inherited, ${population.rejectedCheckpoints} rejected Evidence Checkpoint(s), ${population.walledRounds} walled round(s), ${population.subagentRounds} Subagent round(s), ` +
       `${population.stoppedEarly} stopped early, ${population.overrules} overrule(s), ${population.flags} flag(s); Finalization Causes: ${Object.entries(population.finalizationCauses)
         .map(([cause, count]) => `${cause} ${count}`)
@@ -1578,6 +1638,7 @@ function attemptSection(attempt: AuditAttempt): string[] {
       `${mechanical.acceptedCheckpoints} accepted and ${mechanical.rejectedCheckpoints} rejected Evidence Checkpoint(s); ${mechanical.inheritedRounds} inherited round(s); ${mechanical.walledRounds} walled round(s)`,
   )
   lines.push(`- kinds: ${ROUND_KINDS.map((kind) => `${KIND_LABELS[kind]} ${mechanical.counts[kind]} (${pct(mechanical.shares[kind])})`).join(' · ')}`)
+  lines.push(`- search source ${mechanical.searchSource}: ${SEARCH_SOURCE_NOTES[mechanical.searchSource]}`)
   if (review === null) lines.push('- reviewer: not consulted')
   else if (judgement === null) lines.push(`- reviewer: no judgement — ${review.caveats.join('; ')}`)
   else {

@@ -307,6 +307,8 @@ function summarizeTrace(kind: string, record: Record<string, unknown>): string {
     }
     case 'vision_budget':
       return `${str(record.reason)} ${record.granted === true ? 'granted' : `refused: ${str(record.refusal)}`}`
+    case 'search_observation':
+      return `${str(record.name)} ${str(record.signature)} streak ${str(record.streak)}: ${str(record.query)}`
     case 'voice_wake':
       return `${str(record.head)} score ${str(record.score)} ≥ ${str(record.threshold)}, gate ${str(record.gateMax)} ≥ ${str(record.gate)}`
     case 'voice_endpoint':

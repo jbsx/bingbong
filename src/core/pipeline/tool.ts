@@ -78,7 +78,9 @@ export interface ToolContext {
    * Budget decided, and how each request settled. Routed by identity like
    * a fault — the reporter reads the ids the call site hands it, so a Run's
    * requests join its decisions and anything outside a Run lands in the
-   * Host Trace. Absent unless the developer opted in to a family.
+   * Host Trace. The Tool Round records the Search Loop rail's Search
+   * Observations through it too (#243, ADR 0049). Absent unless the
+   * developer opted in to a family.
    */
   traceVision?: VisionTraceReporter
   /**

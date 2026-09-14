@@ -257,6 +257,14 @@ describe('buildTraceTimeline', () => {
     expect(entries[1].agentId).toBe('agent-7')
   })
 
+  it('summarizes a Search Observation as the call, its signature, the streak and the query (#243)', () => {
+    const timeline = buildTraceTimeline([
+      run({ at: T0 + 1, turnId: 'turn-1', kind: 'search_observation', callId: 'c1', name: 'type', query: 'harrison longitude watch', signature: 'input', streak: 2 }),
+    ])
+
+    expect(timeline.lanes[0].entries.map((entry) => entry.summary)).toEqual(['type input streak 2: harrison longitude watch'])
+  })
+
   it('reads a vision attempt as milestones beside the outcome, omitting the ones that never happened (#204)', () => {
     const timeline = buildTraceTimeline([
       run({

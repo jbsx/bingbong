@@ -5,7 +5,7 @@ import { FakeBrowser, FakeClock, FakeVision, RecordingTts, ScriptedLlm } from '.
 import { createCommandPipeline } from './createCommandPipeline'
 import { createBrowserTools } from './browserTools'
 import type { PipelineEvent } from './events'
-import type { VisionTraceEvent } from '../trace/visionTrace'
+import type { ToolTraceEvent } from '../trace/visionTrace'
 import { createVisionGroundingTools } from './visionGroundingTools'
 
 const snapshot: PageSnapshot = {
@@ -225,7 +225,7 @@ describe('vision grounding through the command pipeline', () => {
     browser.screenshotBytes = new Uint8Array([7, 8, 9])
     const vision = new FakeVision()
     vision.descriptions = ['Solo Leveling, Omniscient Reader.']
-    const trace: VisionTraceEvent[] = []
+    const trace: ToolTraceEvent[] = []
     const tools = createVisionGroundingTools(browser, vision)
     const look = tools.find((candidate) => candidate.name === 'look')
     if (!look) throw new Error('look tool is missing')
@@ -280,7 +280,7 @@ describe('vision grounding through the command pipeline', () => {
     const browser = new FakeBrowser()
     const vision = new FakeVision()
     vision.descriptions = ['Watch 42mm, Titanium.']
-    const trace: VisionTraceEvent[] = []
+    const trace: ToolTraceEvent[] = []
     const look = createVisionGroundingTools(browser, vision).find((candidate) => candidate.name === 'look')
     if (!look) throw new Error('look tool is missing')
 
@@ -365,7 +365,7 @@ describe('vision grounding through the command pipeline', () => {
       reasoningChars: 0,
       contentChars: 32,
     }
-    const trace: VisionTraceEvent[] = []
+    const trace: ToolTraceEvent[] = []
     const look = createVisionGroundingTools(browser, vision).find((candidate) => candidate.name === 'look')
     if (!look) throw new Error('look tool is missing')
 
@@ -420,7 +420,7 @@ describe('vision grounding through the command pipeline', () => {
   it('charges questioned and unasked Looks equally to the Vision Budget', async () => {
     const vision = new FakeVision()
     vision.descriptions = ['Page state.', 'Top-row titles.']
-    const trace: VisionTraceEvent[] = []
+    const trace: ToolTraceEvent[] = []
     const pipeline = createCommandPipeline({
       llm: new ScriptedLlm([
         {

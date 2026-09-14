@@ -13,6 +13,7 @@
 // (#182), and a fault reported with a turn id in hand (#184).
 
 import type { PipelineEvent } from '../pipeline/events'
+import type { SearchSignature } from '../pipeline/searchLoopRail'
 import type { AnswerShape } from '../agent/answerContract'
 import type { AgentRole } from '../agent/modelRouting'
 import type { ReasoningEffort, TokenUsage } from '../ports/llm'
@@ -318,6 +319,29 @@ export interface PipelineEventTraceEvent {
   readonly agentId?: string
 }
 
+/**
+ * One Search Observation (#243, ADR 0049): what the Search Loop rail saw in
+ * one call it classified as a search — the query as it read it, the
+ * signature, and the streak the call left, refused and failed searches
+ * included. The rail decided it; the Tool Round records it beside the
+ * call's tool result through the tool context's routed seam, as it records
+ * a Vision Budget grant, so the record carries the turn but not the Run's
+ * other ids. The Round Audit reads it in place of replaying the rule.
+ */
+export interface SearchObservationEvent {
+  readonly kind: 'search_observation'
+  /** The observed call; joins the call's `tool_call` and `tool_result` records. */
+  readonly callId: string
+  readonly name: string
+  /** The decoded `q=` of a navigate, or the typed text of a type — exactly what the rail compared. */
+  readonly query: string
+  readonly signature: SearchSignature
+  /** The streak after the call. */
+  readonly streak: number
+  /** The Browse Subagent whose rail observed it; absent on the Run's own. */
+  readonly agentId?: string
+}
+
 /** One decision a Run traces, whatever kind it is. */
 export type RunTraceEventBody =
   | EvidenceCheckpointEvent
@@ -326,6 +350,7 @@ export type RunTraceEventBody =
   | LlmRoundEvent
   | OffContractReplyEvent
   | FailureScreenshotEvent
+  | SearchObservationEvent
 
 /** What a Run hands the writer: one event, stamped with the turn it happened in. */
 export type RunTraceEvent = { readonly turnId: string } & RunTraceEventBody

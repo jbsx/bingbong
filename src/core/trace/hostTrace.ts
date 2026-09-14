@@ -17,14 +17,14 @@
 import type { SessionId } from '../session/sessionIdentity'
 import type { FaultEvent } from './fault'
 import type { RendererTraceEvent } from './rendererTrace'
-import type { VisionTraceEvent } from './visionTrace'
+import type { ToolTraceEvent } from './visionTrace'
 import type { VoiceTraceEvent } from './voiceTrace'
 
 /** The record-shape version every host line carries; bump it when a field's meaning changes. */
 export const HOST_TRACE_VERSION = 1
 
 /** One thing the app did outside a Run. Widened by the later slices. */
-export type HostTraceEvent = FaultEvent | VoiceTraceEvent | VisionTraceEvent | RendererTraceEvent
+export type HostTraceEvent = FaultEvent | VoiceTraceEvent | ToolTraceEvent | RendererTraceEvent
 
 /** One line of a Host Trace file. */
 export type HostTraceRecord = HostTraceEvent & {

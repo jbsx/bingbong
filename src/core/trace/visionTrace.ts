@@ -19,6 +19,7 @@ import { VisionDeadlineError } from '../ports/vision'
 import type { VisionAttemptObservation, VisionAttemptObserver, VisionDeadlinePhase } from '../ports/vision'
 import { routeByTurn, type TraceRouteDeps } from './traceRoute'
 import type { RunId, SessionId } from '../session/sessionIdentity'
+import type { SearchObservationEvent } from './runTrace'
 
 /** How much of a vision answer a settled record keeps. */
 export const TRACE_VISION_ANSWER_MAX_CHARS = 2_000
@@ -119,6 +120,14 @@ export interface VisionBudgetEvent {
 export type VisionTraceEvent = VisionRequestEvent | VisionBudgetEvent
 
 /**
+ * What a tool context's routed seam carries: the vision records, and the
+ * Search Loop rail's Search Observations, which the Tool Round records
+ * through the same seam it records a Vision Budget grant through (#243,
+ * ADR 0049) — the round's verdicts, routed by the turn the tool holds.
+ */
+export type ToolTraceEvent = VisionTraceEvent | SearchObservationEvent
+
+/**
  * The identities a vision call site has in hand. Only the turn: a tool
  * knows the turn it is executing in and nothing else about the Run, and a
  * record naming ids the caller never held would be a joinable-looking
@@ -133,16 +142,16 @@ export interface VisionTraceIds {
  * tracing. Like the fault reporter it is safe to call from anywhere, and
  * like every trace writer it must never throw at its caller.
  */
-export type VisionTraceReporter = (event: VisionTraceEvent, ids?: VisionTraceIds) => void
+export type VisionTraceReporter = (event: ToolTraceEvent, ids?: VisionTraceIds) => void
 
 /**
- * One vision record as the Run Trace keeps it. The Run and Session ids
- * are the shared route's, not the seam's: a vision call site only ever
- * hands over a turn ({@link VisionTraceIds}), so in practice they are
- * absent — the shape says what the file may hold, not what this seam
- * fills in.
+ * One record of the tool context's seam as the Run Trace keeps it — a
+ * vision record or a Search Observation. The Run and Session ids are the
+ * shared route's, not the seam's: a tool call site only ever hands over a
+ * turn ({@link VisionTraceIds}), so in practice they are absent — the shape
+ * says what the file may hold, not what this seam fills in.
  */
-export type VisionRunTraceRecord = VisionTraceEvent & {
+export type VisionRunTraceRecord = ToolTraceEvent & {
   readonly v: number
   readonly at: number
   readonly turnId: string

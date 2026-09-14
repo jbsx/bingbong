@@ -18,16 +18,17 @@
 import type { FaultEvent } from './fault'
 import type { HostTraceWriter } from './hostTrace'
 import { RUN_TRACE_VERSION, type RunTraceSink } from './runTrace'
-import type { VisionTraceEvent } from './visionTrace'
+import type { ToolTraceEvent } from './visionTrace'
 import type { RunId, SessionId } from '../session/sessionIdentity'
 
 /**
  * What routes by identity rather than belonging to one family: a
- * swallowed failure (#184) and a vision request or budget decision
- * (#186). Both are things that happen in a Run as readily as outside one,
- * which is exactly why the route decides where they land.
+ * swallowed failure (#184), a vision request or budget decision (#186),
+ * and a Search Observation the Tool Round records (#243). All are things
+ * that happen in a Run as readily as outside one, which is exactly why the
+ * route decides where they land.
  */
-export type RoutedTraceEvent = FaultEvent | VisionTraceEvent
+export type RoutedTraceEvent = FaultEvent | ToolTraceEvent
 
 /** The identities a reporter's caller had in hand when it made the record. */
 export interface TraceRouteIds {

@@ -47,6 +47,13 @@ import { reportFault } from '../trace/fault'
 // And a Look or a scroll joins read_page as inspection: each looks at what
 // the search returned without leaving it, so none resets the streak. Both
 // rules live in searchLoopRule.ts, which the Round Audit replays.
+//
+// #243 (ADR 0049) made the verdict a value: `observe` returns the nudge and,
+// for a call it classified as a search, a Search Observation — the query as
+// the rail read it, the signature it ran under and the streak it left. The
+// Tool Round records the observation to the Run Trace; the rail itself stays
+// free of any trace dependency beyond the fault route, and the Round Audit
+// reads what the rail saw rather than re-deriving it.
 
 /** Consecutive similar searches before the advisory nudge rides the result. */
 export const SEARCH_LOOP_NUDGE_AFTER = 3
@@ -60,6 +67,31 @@ export const SEARCH_LOOP_REFUSE_AFTER = 5
 export { similarQueries, searchQueryFromUrl, isSearchInputRef }
 
 export type SearchLoopGate = { ok: true } | { ok: false; reason: string }
+
+/**
+ * The two halves of the search signature (CONTEXT.md): a navigate to a
+ * search URL, or text typed into a search input. Not the surface — the
+ * engine or site a search ran on (ADR 0048).
+ */
+export type SearchSignature = 'url' | 'input'
+
+/**
+ * What the rail saw in one call it classified as a search (#243, ADR 0049):
+ * the query as it read it (the decoded `q=` of a navigate, the typed text of
+ * a type), the signature, and the streak after the call — whatever the
+ * call's outcome, refused searches included.
+ */
+export interface SearchObservation {
+  readonly query: string
+  readonly signature: SearchSignature
+  readonly streak: number
+}
+
+/** One observed call's verdict: the advisory nudge it earned, and the observation when it was a search. */
+export interface SearchLoopVerdict {
+  readonly notice: string | null
+  readonly observation: SearchObservation | null
+}
 
 export interface SearchLoopRailDeps {
   /**
@@ -81,11 +113,13 @@ export interface SearchLoopRail {
    * Post-execution observation of every processed tool call — this is what
    * tracks (and resets) the streak. A successful escaping call (anything
    * but a search or a read) resets it; reads never reset, failed calls
-   * leave it alone. Returns the advisory nudge once the streak reaches the
-   * nudge tier; null otherwise.
+   * leave it alone. The verdict carries the advisory nudge once the streak
+   * reaches the nudge tier, and a Search Observation for every search (#243).
    */
-  observe(call: ToolCall, outcome: ToolResultOutcome): Promise<string | null>
+  observe(call: ToolCall, outcome: ToolResultOutcome): Promise<SearchLoopVerdict>
 }
+
+const NO_VERDICT: SearchLoopVerdict = { notice: null, observation: null }
 
 const NUDGE =
   'The last searches reword one intent (a q= navigate or a search box query) — more searches will not surface new results. Change strategy: open a promising result by its href, read the page (read_page), or answer from what you already have. If you cannot proceed, say so and ask_user.'
@@ -96,7 +130,7 @@ const REFUSAL = `Search loop limit (${SEARCH_LOOP_REFUSE_AFTER} consecutive simi
  * What a call is to the rail: a search observation with its query, a read
  * (observed, never resets), or an escaping call (resets on success only).
  */
-type Classification = { kind: 'search'; query: string } | { kind: 'read' } | { kind: 'other' }
+type Classification = { kind: 'search'; query: string; signature: SearchSignature } | { kind: 'read' } | { kind: 'other' }
 
 export function createSearchLoopRail(deps: SearchLoopRailDeps = {}): SearchLoopRail {
   let lastQuery: string | null = null
@@ -150,11 +184,11 @@ export function createSearchLoopRail(deps: SearchLoopRailDeps = {}): SearchLoopR
       const url = call.args.url
       if (typeof url !== 'string' || url.trim() === '') return { kind: 'other' }
       const query = searchQueryFromUrl(url)
-      return query === null ? { kind: 'other' } : { kind: 'search', query }
+      return query === null ? { kind: 'other' } : { kind: 'search', query, signature: 'url' }
     }
     if (call.name === 'type') {
       const query = await typeSearchQuery(call)
-      return query === null ? { kind: 'other' } : { kind: 'search', query }
+      return query === null ? { kind: 'other' } : { kind: 'search', query, signature: 'input' }
     }
     return { kind: 'other' }
   }
@@ -169,12 +203,12 @@ export function createSearchLoopRail(deps: SearchLoopRailDeps = {}): SearchLoopR
     },
     async observe(call, outcome) {
       const classified = await classify(call)
-      if (classified.kind === 'read') return null
+      if (classified.kind === 'read') return NO_VERDICT
       if (classified.kind === 'other') {
         // A successful escape consumed something, breaking the blind
         // loop; a failed one changes nothing, so the streak survives.
         if (outcome.ok) reset()
-        return null
+        return NO_VERDICT
       }
       // Chain to the previous query and the anchor, not just the streak's
       // first query — drift must not walk out of the rail in either
@@ -183,7 +217,10 @@ export function createSearchLoopRail(deps: SearchLoopRailDeps = {}): SearchLoopR
       streak = continues ? streak + 1 : 1
       anchor = continues ? anchor : classified.query
       lastQuery = classified.query
-      return streak >= SEARCH_LOOP_NUDGE_AFTER ? NUDGE : null
+      return {
+        notice: streak >= SEARCH_LOOP_NUDGE_AFTER ? NUDGE : null,
+        observation: { query: classified.query, signature: classified.signature, streak },
+      }
     },
   }
 }

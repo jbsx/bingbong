@@ -14,7 +14,7 @@ import {
   tracedVisionRequest,
   TRACE_VISION_ANSWER_MAX_CHARS,
   type VisionRequestEvent,
-  type VisionTraceEvent,
+  type ToolTraceEvent,
 } from './visionTrace'
 import { VisionDeadlineError, type VisionAttemptObservation } from '../ports/vision'
 import type { SessionId } from '../session/sessionIdentity'
@@ -164,8 +164,8 @@ const ATTEMPT: VisionAttemptObservation = {
 }
 
 describe('tracedVisionRequest', () => {
-  function seam(): { events: VisionTraceEvent[]; trace: (event: VisionTraceEvent) => void } {
-    const events: VisionTraceEvent[] = []
+  function seam(): { events: ToolTraceEvent[]; trace: (event: ToolTraceEvent) => void } {
+    const events: ToolTraceEvent[] = []
     return { events, trace: (event) => events.push(event) }
   }
 

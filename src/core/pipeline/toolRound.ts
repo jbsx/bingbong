@@ -7,7 +7,7 @@ import { closedInFinalization, type RiskVerdict, type Tool, type ToolContext } f
 import type { PerfTracer } from '../perf/perfTracer'
 import type { BrowserSubspans } from '../perf/browserSubspans'
 import { createVisionBudget, MAX_ORCHESTRATOR_VISION_CALLS } from '../agent/subagentRails'
-import { traceVisionBudget } from './visionSeam'
+import { traceSearchObservation, traceVisionBudget } from './visionSeam'
 import { createBlockerGate, orchestratorBlockerEscalation, type BlockerEscalation } from './blockerGate'
 import { createSearchLoopRail } from './searchLoopRail'
 import { createVerificationRail, verificationRouteOf, type VerificationGate, type VerificationRailDeps } from './verificationRail'
@@ -586,8 +586,14 @@ export function createToolRoundExecutor(config: ToolRoundConfig): ToolRoundExecu
       if (wall !== null) effortEpoch.enterFinalization('blocker', wall)
       // Search-loop rail (#74/#82): observe every processed call (this is
       // what tracks and resets the streak — a failed intervening tool
-      // leaves it alone); its advisory verdict is an immediate Notice.
-      if (searchLoopRail !== null) notices.owe('search_loop', await searchLoopRail.observe(call, outcome))
+      // leaves it alone); its advisory verdict is an immediate Notice. What
+      // it observed in a search is the round's to record (#243, ADR 0049),
+      // refused searches included — the rail advanced its streak on them.
+      if (searchLoopRail !== null) {
+        const verdict = await searchLoopRail.observe(call, outcome)
+        notices.owe('search_loop', verdict.notice)
+        traceSearchObservation(toolContext, call, verdict.observation)
+      }
       // The verification rail (#212, ADR 0041): a failed check spends its
       // route for the rest of this run, and the words the route reported
       // are handed to the Session verbatim — the rail derives no cause
