@@ -1031,7 +1031,7 @@ describe('a set and the aggregate', () => {
     expect(buildAuditAggregate([setOne, setOne], 'x')).toEqual({ ok: false, errors: ['capture set set-1 is named 2 times: one set counts once'] })
   })
 
-  it('formats every attempt with its kinds, verdict, unreached checks, Subagent rounds, overrules and flags', () => {
+  it('formats every attempt with its kinds, verdict, checks unsatisfied, Subagent rounds, overrules and flags', () => {
     const markdown = formatAuditSet(setOne)
     expect(markdown).toContain('# Round Audit — fixture-study (set-1)')
     expect(markdown).toContain('checks unsatisfied: fact-02 (1 of 3)')

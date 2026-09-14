@@ -16,7 +16,8 @@ the digest counts the reasoning and never quotes it. And the key-text guard
 over the outputs checks the key's own words — facts, constraints, pitfalls,
 uncertainties — not its source statements, which quote public pages that an
 attempt's own Evidence Checkpoints excerpt verbatim; the reviewer's prose is
-still checked against every string. Note of 2026-09-14 (#244): the verdict set gains `answer_omitted`, and
+still checked against every string. Note of 2026-09-14 (#244): the verdict set
+gains `answer_omitted`, and
 `stopped_early` narrows to an unsatisfied check that needed a page the Run had
 not read. The audit had handed the reviewer the Grade's unsatisfied checks as
 "checks not reached" and asked whether they were reachable from pages already

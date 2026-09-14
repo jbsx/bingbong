@@ -1103,7 +1103,7 @@ export function classifyAttempt(input: AuditTraceInput): AuditMechanical {
   const checksUnsatisfied =
     input.task === null
       ? null
-      : input.grade === null || input.grade.status === 'pending'
+      : input.grade === null || isUngraded(input)
         ? input.task.checks.map((check) => check.checkId)
         : input.grade.checks.filter((check) => !check.satisfied).map((check) => check.checkId)
 
@@ -1212,8 +1212,20 @@ function digestPayloadOf(mechanical: Omit<AuditMechanical, 'digestHash'>): unkno
 }
 
 /** An attempt with no grade, or a pending one: its `checksUnsatisfied` is every check, and says so as "ungraded". */
-export function isUngraded(mechanical: Pick<AuditMechanical, 'grade'>): boolean {
-  return mechanical.grade === null || mechanical.grade.status === 'pending'
+export function isUngraded(attempt: { readonly grade: { readonly status: string } | null }): boolean {
+  return attempt.grade === null || attempt.grade.status === 'pending'
+}
+
+/**
+ * The checks unsatisfied in the words the reviewer and the report both read
+ * (#244): an ungraded attempt's are "ungraded: every check", never listed as
+ * unsatisfied, since no Grade decided them.
+ */
+export function checksUnsatisfiedText(mechanical: Pick<AuditMechanical, 'grade' | 'checksUnsatisfied' | 'checksTotal'>): string {
+  const unsatisfied = mechanical.checksUnsatisfied
+  if (unsatisfied === null) return 'no task in the key'
+  if (isUngraded(mechanical)) return `ungraded: every check (${unsatisfied.length} of ${mechanical.checksTotal})`
+  return unsatisfied.length === 0 ? 'none' : `${unsatisfied.join(', ')} (${unsatisfied.length} of ${mechanical.checksTotal})`
 }
 
 // ---------------------------------------------------------------------------
@@ -1805,7 +1817,6 @@ function judgementLines(populations: readonly AuditPopulation[]): string[] {
 function attemptSection(attempt: AuditAttempt): string[] {
   const { mechanical, review } = attempt
   const judgement = review?.judgement ?? null
-  const checks = mechanical.checksUnsatisfied
   const lines: string[] = []
   lines.push(`### ${mechanical.attemptId} (${mechanical.relation})`)
   lines.push('')
@@ -1817,7 +1828,7 @@ function attemptSection(attempt: AuditAttempt): string[] {
       `Run duration ${msOf(mechanical.runDurationMs)}; LLM stage ${mechanical.latency.llmMs === null ? 'unjoined' : `${mechanical.latency.llmMs} ms over ${mechanical.latency.joined} joined round(s)`}${mechanical.latency.unjoined > 0 ? ` (${mechanical.latency.unjoined} unjoined)` : ''}`,
   )
   lines.push(
-    `- grade ${mechanical.grade?.status ?? 'none'}; checks unsatisfied: ${checks === null ? 'no task in the key' : isUngraded(mechanical) ? `ungraded: every check (${checks.length} of ${mechanical.checksTotal})` : checks.length === 0 ? 'none' : `${checks.join(', ')} (${checks.length} of ${mechanical.checksTotal})`}`,
+    `- grade ${mechanical.grade?.status ?? 'none'}; checks unsatisfied: ${checksUnsatisfiedText(mechanical)}`,
   )
   lines.push(
     `- ${mechanical.subagent.rounds} Subagent round(s) over ${mechanical.subagent.agents} Subagent(s)${Object.keys(mechanical.subagent.byStop).length > 0 ? `, stopped by ${Object.entries(mechanical.subagent.byStop).map(([stop, count]) => `${stop} ${count}`).join(', ')}` : ''}; ` +

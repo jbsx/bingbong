@@ -35,8 +35,8 @@ import {
   classifyAttempt,
   countsAfterOverrulesOf,
   formatAuditAggregate,
+  checksUnsatisfiedText,
   formatAuditSet,
-  isUngraded,
   keyLeaks,
   validateJudgement,
   withholdKeyText,
@@ -316,7 +316,7 @@ What you judge, in this order:
 4. Early Stop and Answer Omission: for each check listed as unsatisfied, decide one thing: did it need a page the Run had not read, or does it follow from material on a page the Run had read, whether or not that material was recorded as Evidence?
    - stoppedEarly: value is true when the Run ended with Tool Rounds and time left and at least one unsatisfied check needed a page the Run had not read; its checks are those. Whether that page was findable does not enter: with budget left, not finding it is the stop. An attempt that ran to its budget did not stop early, and its value is false.
    - answerOmitted: value is true when at least one unsatisfied check follows from material on a page the Run had read, and the Answer left it unstated; its checks are those. It does not depend on how the attempt ended.
-   Each carries a reason. A check id goes in at most one of the two lists and only from the checks listed as unsatisfied; a list is empty when its value is false and names at least one check when true.
+   Each carries a reason. A check id goes in at most one of the two lists and only from the checks listed as unsatisfied; a list is empty when its value is false and names at least one check when true. An ungraded attempt has no unsatisfied checks to judge: both values are false and both lists empty.
 5. The verdict, from the closed set, primary and at most one secondary, each with a reason that cites the shares and rounds it rests on:
    - rounds_wasted: the budget went to rounds without Progress, Off-key pages, loops, or repeats.
    - tier_too_small_or_never_escalated: the work was on-key and productive and the tier's budget ended it, with no Tier Escalation.
@@ -361,8 +361,7 @@ function digestBlock(mechanical: AuditMechanical): string {
   lines.push(`Ended: ${terminal === null ? 'no terminal' : `${terminal.outcome ?? '?'}${terminal.resolution ? ` / ${terminal.resolution}` : ''}${terminal.finalizationCause ? ` (${terminal.finalizationCause})` : ''}`}; stop reason ${mechanical.stopReason}; Run duration ${mechanical.runDurationMs.status === 'observed' ? `${mechanical.runDurationMs.value} ms` : mechanical.runDurationMs.status}.`)
   lines.push(`Mechanical kinds over ${mechanical.budgetedRounds} budgeted rounds: ${ROUND_KINDS.map((kind) => `${kind} ${mechanical.counts[kind]}`).join(', ')}.`)
   lines.push(`${mechanical.subagent.rounds} Subagent round(s) over ${mechanical.subagent.agents} Subagent(s); ${mechanical.acceptedCheckpoints} accepted and ${mechanical.rejectedCheckpoints} rejected Evidence Checkpoint(s); ${mechanical.inheritedRounds} inherited round(s).`)
-  const checks = mechanical.checksUnsatisfied
-  lines.push(`Grade: ${mechanical.grade?.status ?? 'ungraded'}; checks unsatisfied: ${checks === null ? 'unknown' : isUngraded(mechanical) ? `ungraded: every check (${checks.join(', ')})` : checks.join(', ') || 'none'}.`)
+  lines.push(`Grade: ${mechanical.grade?.status ?? 'ungraded'}; checks unsatisfied: ${checksUnsatisfiedText(mechanical)}.`)
   lines.push('The assistant’s own reasoning is not shown; each round lists its calls, the page each put in front of the assistant, the result head and the app’s Notices.')
   lines.push('')
   for (const round of mechanical.rounds) {
