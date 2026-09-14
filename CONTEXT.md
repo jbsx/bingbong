@@ -243,7 +243,8 @@ precedence — except a Finalize Instruction, which closes the loop rather than
 advising inside it and rides whatever the result it lands on read. A Notice is
 model-facing only: the copy of a terminal result the round hands its caller to
 route onward carries none, while the model-facing copy among the round's
-results still does.
+results still does. The Notice that rides an Action Outcome landing on a
+Held Page names the Observations the Session already holds from it.
 _Avoid_: nudge, warning text, hint
 
 **Finalize Instruction**:
@@ -905,6 +906,14 @@ What a scroll's Action Outcome reports: the refs and page text that entered the
 viewport, formatted and capped as a Page Preview is. A scroll
 that moved the window without bringing anything in answers End of Page instead.
 _Avoid_: scroll delta, diff, what changed
+
+**Held Page**:
+A page the Session holds at least one accepted web Observation from, by
+canonical URL, whichever Run or Subagent recorded it and however many rounds
+ago. It is not a page to avoid: it is opened for what its Observations do not
+state, and the Action Outcome that lands on it names what they do, so nothing
+held is recorded twice. User Observations name no page and never make one.
+_Avoid_: inherited page, cached page, already-read page, page in hand
 
 **End of Page**:
 The one-line answer a scroll gives in place of New In View when nothing entered
