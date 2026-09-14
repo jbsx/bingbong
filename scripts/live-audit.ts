@@ -741,7 +741,8 @@ function main(): void {
         process.stdout.write(
           `${output.audit.provenance.setId} ${mechanical.attemptId}: ${mechanical.orchestratorRounds} rounds, ${mechanical.toolRoundsUsed}/${mechanical.toolRoundBudget ?? '?'} Tool Rounds, ` +
             `${ROUND_KINDS.map((kind) => `${kind.replace(/_/g, ' ')} ${mechanical.counts[kind]}`).join(', ')}; ` +
-            `${mechanical.mechanicalSearchRounds} Search Loop round(s) by the streak rule${mechanical.searchLoopHeads.length > 0 ? ` (heads ${mechanical.searchLoopHeads.join(', ')})` : ''}; search source ${mechanical.searchSource}; digest ${mechanical.digestHash.slice(0, 19)}…\n`,
+            `${mechanical.mechanicalSearchRounds} Search Loop round(s) by the streak rule${mechanical.searchLoopHeads.length > 0 ? ` (heads ${mechanical.searchLoopHeads.join(', ')})` : ''}; search source ${mechanical.searchSource}; ` +
+            `${mechanical.notFoundNavigates.length} navigate(s) landed on a Not-found Page${mechanical.notFoundNavigates.length > 0 ? ` (round ${mechanical.notFoundNavigates.join(', ')})` : ''}; digest ${mechanical.digestHash.slice(0, 19)}…\n`,
         )
       }
     }
