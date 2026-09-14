@@ -41,7 +41,7 @@ import type { PerfSpanRecord } from '../../src/core/perf/perfTracer'
 import type { PipelineEvent } from '../../src/core/pipeline/events'
 import type { EffortTier } from '../../src/core/pipeline/runPlan'
 import type { SearchObservation, SearchSignature } from '../../src/core/pipeline/searchLoopRail'
-import { isSearchInspection, similarQueries } from '../../src/core/pipeline/searchLoopRule.ts'
+import { isSearchInspection, SEARCH_SIGNATURES, similarQueries } from '../../src/core/pipeline/searchLoopRule.ts'
 import type { TraceRecord } from '../../src/core/trace/runTrace'
 import type { Validation } from './artifacts.ts'
 import type { LiveGradeEntry, LiveKeyTask } from './grades.ts'
@@ -422,6 +422,7 @@ export const AUDIT_COUNTS_NOTE = 'This audit counts and does not judge: every ve
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value)
 const isString = (value: unknown): value is string => typeof value === 'string'
 const isFiniteNumber = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value)
+const isSearchSignature = (value: unknown): value is SearchSignature => (SEARCH_SIGNATURES as readonly unknown[]).includes(value)
 
 /** Whitespace collapsed, cut with a visible ellipsis. */
 export function head(text: string | null | undefined, limit: number): string | null {
@@ -614,7 +615,7 @@ function railObservationsOf(records: readonly TraceLine[]): Map<string, SearchOb
   for (const record of records) {
     if (record.kind !== 'search_observation' || record.agentId !== undefined) continue
     const { callId, query, signature, streak } = record
-    if (!isString(callId) || !isString(query) || (signature !== 'url' && signature !== 'input') || !isFiniteNumber(streak)) continue
+    if (!isString(callId) || !isString(query) || !isSearchSignature(signature) || !isFiniteNumber(streak)) continue
     observations.set(callId, { query, signature, streak })
   }
   return observations

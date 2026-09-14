@@ -481,13 +481,13 @@ const RAIL_ROUNDS: RoundSpec[] = [
 ]
 
 /** A Browse Subagent's observation on a call id the orchestrator also used: the audit reads the orchestrator's only. */
-const WORKER_OBSERVATION: Record<string, unknown> = { v: 1, at: T0 + 2_550, turnId: TURN, kind: 'search_observation', agentId: 'a-1', callId: 'call-2', name: 'type', query: 'something else', signature: 'input', streak: 9 }
+const SUBAGENT_OBSERVATION: Record<string, unknown> = { v: 1, at: T0 + 2_550, turnId: TURN, kind: 'search_observation', agentId: 'a-1', callId: 'call-2', name: 'type', query: 'something else', signature: 'input', streak: 9 }
 
 describe('the rail’s Search Observations (#243, ADR 0049)', () => {
   const searchesOf = (mechanical: ReturnType<typeof classifyAttempt>) => mechanical.rounds.map((round) => round.calls.map((call) => call.search))
 
   it('takes each search round from its observation — typed and refused searches included — and never consults the replay', () => {
-    const mechanical = classifyAttempt(inputOf({ traceRecords: traceOf(RAIL_ROUNDS, [...EXTRA, WORKER_OBSERVATION]) }))
+    const mechanical = classifyAttempt(inputOf({ traceRecords: traceOf(RAIL_ROUNDS, [...EXTRA, SUBAGENT_OBSERVATION]) }))
     expect(mechanical.searchSource).toBe('rail')
     expect(searchesOf(mechanical)).toEqual([
       [{ query: 'harrison longitude watch catalogue', streak: 1, signature: 'url' }],
@@ -524,8 +524,8 @@ describe('the rail’s Search Observations (#243, ADR 0049)', () => {
     expect(searchesOf(replayed)).toEqual([[{ query: 'harrison longitude watch catalogue', streak: 1 }], [null], [{ query: 'harrison longitude watch catalogue id', streak: 1 }]])
     const noSearch: RoundSpec[] = [{ round: 1, at: 1_000, calls: [{ name: 'navigate', args: { url: SPEC_URL }, result: PAGE('Watch spec', SPEC_URL, 'aaaa1111') }] }]
     expect(classifyAttempt(inputOf({ traceRecords: traceOf(noSearch, EXTRA) })).searchSource).toBe('none')
-    // A worker's observations alone do not make the orchestrator's attempt rail-sourced.
-    expect(classifyAttempt(inputOf({ traceRecords: traceOf(typedBetween, [...EXTRA, WORKER_OBSERVATION]) })).searchSource).toBe('replay')
+    // A Subagent's observations alone do not make the orchestrator's attempt rail-sourced.
+    expect(classifyAttempt(inputOf({ traceRecords: traceOf(typedBetween, [...EXTRA, SUBAGENT_OBSERVATION]) })).searchSource).toBe('replay')
   })
 
   it('agrees with the replay on a navigate-only trace when the observations are the rail’s own (AC5)', async () => {

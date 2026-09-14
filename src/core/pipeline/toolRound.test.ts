@@ -67,7 +67,7 @@ function harness(
     visionCalls?: number
     /** The vision seam (#186): what the round's Vision Budget records through. */
     traceVision?: VisionTraceReporter
-    /** The turn and worker the tool context names — what the seam's records are routed and stamped by. */
+    /** The turn and Subagent the tool context names — what the seam's records are routed and stamped by. */
     turnId?: string
     agentId?: string
     intercept?: ToolRoundConfig['intercept']
@@ -714,6 +714,13 @@ describe('search observation records', () => {
       { kind: 'search_observation', callId: 'c1', name: 'navigate', query: 'harrison longitude watch', signature: 'url', streak: 1, agentId: 'agent-3' },
       { kind: 'search_observation', callId: 'c2', name: 'navigate', query: 'harrison longitude watch catalogue', signature: 'url', streak: 2, agentId: 'agent-3' },
     ])
+  })
+
+  it('records nothing when the tool context names no turn — the record is the Run Trace’s, never the Host Trace’s', async () => {
+    const { traceVision, reported } = reporter()
+    const h = harness([scripted('navigate', [])], { traceVision })
+    await h.round([call('navigate', { url: SEARCH }, 'c1')])
+    expect(reported).toEqual([])
   })
 
   it('records nothing without the search-loop rail', async () => {

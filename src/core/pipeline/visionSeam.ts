@@ -4,12 +4,11 @@
 // hand, so the identities that route the record are already there. This
 // is the one place that reads them, so a tool never assembles ids of its
 // own and the routing rule stays in the router.
-
 //
 // The Tool Round records one more verdict through it (#243, ADR 0049): the
 // Search Loop rail's Search Observation, routed exactly as a Vision Budget
-// grant is, so it joins the Run by its turn and names the worker it was a
-// worker's.
+// grant is, so it joins the Run by its turn and names the Browse Subagent it
+// came from.
 
 import type { VisionGrant } from '../agent/subagentRails'
 import type { ToolCall } from '../ports/llm'
@@ -57,10 +56,12 @@ export function traceVisionBudget(context: ToolContext, reason: VisionReason, gr
  * Records what the Search Loop rail observed in one call, beside the call's
  * tool result and joined to it by the call id. A call the rail read as
  * inspection or escape has no observation and leaves no record: the trace
- * already holds its name and outcome.
+ * already holds its name and outcome. A Search Observation is a Run Trace
+ * record only, so a call made with no turn in hand records nothing rather
+ * than landing in the Host Trace the route would send it to.
  */
 export function traceSearchObservation(context: ToolContext, call: ToolCall, observation: SearchObservation | null): void {
-  if (observation === null) return
+  if (observation === null || context.turnId === undefined) return
   const seam = visionSeam(context)
   seam.trace?.(
     {

@@ -23,6 +23,15 @@ const CONNECTIVES: ReadonlySet<string> = new Set(['OR', 'AND'])
 /** Calls that look at what a search returned without leaving it (run 53 for read_page; ADR 0048 for look and scroll). */
 const SEARCH_INSPECTION_TOOLS: ReadonlySet<string> = new Set(['read_page', 'look', 'scroll'])
 
+/**
+ * The two halves of the search signature (CONTEXT.md): a navigate to a
+ * search URL, or text typed into a search input. Not the surface — the
+ * engine or site a search ran on. Here so the Round Audit reads exactly the
+ * signatures the rail records in a Search Observation (#243, ADR 0049).
+ */
+export const SEARCH_SIGNATURES = ['url', 'input'] as const
+export type SearchSignature = (typeof SEARCH_SIGNATURES)[number]
+
 /** Lowercase, punctuation-free tokens with a light plural fold (keyboard ≈ keyboards). */
 function tokensOf(text: string): Set<string> {
   return new Set(

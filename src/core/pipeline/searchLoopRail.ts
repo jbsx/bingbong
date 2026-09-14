@@ -1,7 +1,7 @@
 import type { ToolCall, ToolResultOutcome } from '../ports/llm'
 import type { SnapshotRef } from '../browser/snapshot'
 import { isSearchInputRef, refNumberOf, searchQueryFromUrl, typedQuery } from './progressFingerprints'
-import { isSearchInspection, similarQueries } from './searchLoopRule'
+import { isSearchInspection, similarQueries, type SearchSignature } from './searchLoopRule'
 import { reportFault } from '../trace/fault'
 
 // Issue #74, run rails: the 80-round flail's signature is a blind search
@@ -68,12 +68,7 @@ export { similarQueries, searchQueryFromUrl, isSearchInputRef }
 
 export type SearchLoopGate = { ok: true } | { ok: false; reason: string }
 
-/**
- * The two halves of the search signature (CONTEXT.md): a navigate to a
- * search URL, or text typed into a search input. Not the surface — the
- * engine or site a search ran on (ADR 0048).
- */
-export type SearchSignature = 'url' | 'input'
+export type { SearchSignature }
 
 /**
  * What the rail saw in one call it classified as a search (#243, ADR 0049):
