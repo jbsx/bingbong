@@ -36,9 +36,9 @@
         ],
         "dirtyTree": true,
         "gradesRevision": 1,
-        "auditCommit": "182d4d68c4976d194e0b6b896997e1b40699a57c",
-        "auditDirtyTree": true,
-        "generatedAt": "2026-09-13T22:10:41.876Z"
+        "auditCommit": "7da13ef8175a05547c276b027e53c41e1a70ec59",
+        "auditDirtyTree": false,
+        "generatedAt": "2026-09-14T01:52:13.145Z"
       },
       {
         "setId": "baseline-2",
@@ -49,9 +49,9 @@
         ],
         "dirtyTree": true,
         "gradesRevision": 1,
-        "auditCommit": "182d4d68c4976d194e0b6b896997e1b40699a57c",
-        "auditDirtyTree": true,
-        "generatedAt": "2026-09-13T22:10:41.876Z"
+        "auditCommit": "7da13ef8175a05547c276b027e53c41e1a70ec59",
+        "auditDirtyTree": false,
+        "generatedAt": "2026-09-14T01:52:13.145Z"
       },
       {
         "setId": "baseline-3",
@@ -62,12 +62,12 @@
         ],
         "dirtyTree": true,
         "gradesRevision": 1,
-        "auditCommit": "182d4d68c4976d194e0b6b896997e1b40699a57c",
-        "auditDirtyTree": true,
-        "generatedAt": "2026-09-13T22:10:41.876Z"
+        "auditCommit": "7da13ef8175a05547c276b027e53c41e1a70ec59",
+        "auditDirtyTree": false,
+        "generatedAt": "2026-09-14T01:52:13.145Z"
       }
     ],
-    "generatedAt": "2026-09-13T22:10:41.876Z"
+    "generatedAt": "2026-09-14T01:52:13.145Z"
   },
   "populations": {
     "initial": {
@@ -118,7 +118,14 @@
       "offKeyRounds": 62,
       "searchLoopRounds": 10,
       "mechanicalSearchRounds": 6,
+      "searchSources": {
+        "rail": 0,
+        "replay": 8,
+        "none": 4
+      },
       "inheritedRounds": 0,
+      "mergedCheckpoints": 0,
+      "heldPageRoundsWithoutProgress": 0,
       "rejectedCheckpoints": 9,
       "walledRounds": 2,
       "subagentRounds": 26,
@@ -240,7 +247,14 @@
             "offKeyRounds": 26,
             "searchLoopRounds": 5,
             "mechanicalSearchRounds": 3,
+            "searchSources": {
+              "rail": 0,
+              "replay": 3,
+              "none": 1
+            },
             "inheritedRounds": 0,
+            "mergedCheckpoints": 0,
+            "heldPageRoundsWithoutProgress": 0,
             "rejectedCheckpoints": 1,
             "walledRounds": 1,
             "subagentRounds": 13,
@@ -356,7 +370,14 @@
             "offKeyRounds": 22,
             "searchLoopRounds": 0,
             "mechanicalSearchRounds": 0,
+            "searchSources": {
+              "rail": 0,
+              "replay": 3,
+              "none": 1
+            },
             "inheritedRounds": 0,
+            "mergedCheckpoints": 0,
+            "heldPageRoundsWithoutProgress": 0,
             "rejectedCheckpoints": 5,
             "walledRounds": 1,
             "subagentRounds": 0,
@@ -467,7 +488,14 @@
             "offKeyRounds": 14,
             "searchLoopRounds": 5,
             "mechanicalSearchRounds": 3,
+            "searchSources": {
+              "rail": 0,
+              "replay": 2,
+              "none": 2
+            },
             "inheritedRounds": 0,
+            "mergedCheckpoints": 0,
+            "heldPageRoundsWithoutProgress": 0,
             "rejectedCheckpoints": 3,
             "walledRounds": 0,
             "subagentRounds": 13,
@@ -584,7 +612,14 @@
       "offKeyRounds": 27,
       "searchLoopRounds": 0,
       "mechanicalSearchRounds": 0,
+      "searchSources": {
+        "rail": 0,
+        "replay": 3,
+        "none": 3
+      },
       "inheritedRounds": 9,
+      "mergedCheckpoints": 0,
+      "heldPageRoundsWithoutProgress": 6,
       "rejectedCheckpoints": 9,
       "walledRounds": 0,
       "subagentRounds": 13,
@@ -710,7 +745,14 @@
             "offKeyRounds": 7,
             "searchLoopRounds": 0,
             "mechanicalSearchRounds": 0,
+            "searchSources": {
+              "rail": 0,
+              "replay": 1,
+              "none": 1
+            },
             "inheritedRounds": 5,
+            "mergedCheckpoints": 0,
+            "heldPageRoundsWithoutProgress": 4,
             "rejectedCheckpoints": 2,
             "walledRounds": 0,
             "subagentRounds": 0,
@@ -821,7 +863,14 @@
             "offKeyRounds": 19,
             "searchLoopRounds": 0,
             "mechanicalSearchRounds": 0,
+            "searchSources": {
+              "rail": 0,
+              "replay": 2,
+              "none": 0
+            },
             "inheritedRounds": 2,
+            "mergedCheckpoints": 0,
+            "heldPageRoundsWithoutProgress": 1,
             "rejectedCheckpoints": 4,
             "walledRounds": 0,
             "subagentRounds": 0,
@@ -927,7 +976,14 @@
             "offKeyRounds": 1,
             "searchLoopRounds": 0,
             "mechanicalSearchRounds": 0,
+            "searchSources": {
+              "rail": 0,
+              "replay": 0,
+              "none": 2
+            },
             "inheritedRounds": 2,
+            "mergedCheckpoints": 0,
+            "heldPageRoundsWithoutProgress": 1,
             "rejectedCheckpoints": 3,
             "walledRounds": 0,
             "subagentRounds": 13,

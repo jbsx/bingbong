@@ -166,6 +166,48 @@ Read from the code and the captures, that is not what was lost:
 - The four URL rules stay four. This ADR names the drift between the store
   and the audit on tracker parameters; no rule is unified here.
 
+## Implementation notes
+
+Implemented 2026-09-14.
+
+- **What a landing is.** The carrier is a successful page-facing call —
+  navigate, click, back, go_forward, and any other page-facing tool that moves
+  the tab, a submitted `type` included — whose landed URL, canonicalised by
+  `canonicalizeMemoryUrl`, differs from the page the executor's last
+  successful page-facing call settled on. That is the store's rule and no
+  other; a first draft compared the progress fingerprint's source identity,
+  which the review caught as a second URL rule. The URL is read from the
+  visible tab, not the settled page state, which would collect a second
+  snapshot per call. A Tool Round executor starts having settled nowhere, so a
+  follow-up whose tab still sits on the initial's page is told on its first
+  result there (the Baseline's round-1 Eurostar navigates), and a later reload
+  of the same page is not. A failed call is no landing, so the Notice rides the
+  next success on the page instead.
+- **Only web Observations hold a page.** Vision Observations are excluded
+  along with User Observations.
+- **The seam.** `SessionEvidenceStore.heldObservations(url)` scans the store's
+  own Observations, whose references are stored canonical. The Tool Round
+  executor takes it as a `HeldObservationsLookup`: the Run pipeline passes its
+  live evidence Session, and a browsing Subagent gets the same live store
+  through the Subagent runtime. With no Session, nothing attaches.
+- **The preface** is one line inside `<session_evidence>`, before the JSON:
+  `held pages: <url> (id, id); <url> (id)`.
+- **`merged` absent reads false, and the Baseline's 0 is real.** The Baseline
+  Run Traces hold 46 accepted checkpoints and no result carrying "Session
+  Evidence already held this", so no Baseline checkpoint merged.
+- **Baseline values.** Replaying `audit-baseline-{1,2,3}` kept all 18 digest
+  hashes, every cached judgement and every `inherited` row:
+
+  | population | budgeted rounds | merged checkpoints | Held Page rounds without Progress | inherited rounds |
+  | --- | --- | --- | --- | --- |
+  | initial | 225 | 0 | 0 | 0 |
+  | follow-up | 117 | 0 | 6 (baseline-1 4, baseline-2 1, baseline-3 1) | 9 |
+
+- **What the capture can show.** Merged checkpoints in follow-ups start at 0
+  and cannot fall; the capture is read on Held Page rounds without Progress
+  (6 of 117 follow-up rounds) with checks reached no worse, and merged
+  checkpoints are watched for rising.
+
 ## Relationships
 
 Motivated by [ADR 0045](0045-a-round-audit-is-counted-by-code-and-judged-by-a-model-that-is-not-measured.md)'s

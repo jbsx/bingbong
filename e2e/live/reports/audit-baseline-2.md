@@ -1,13 +1,13 @@
 # Round Audit — bingbong.live-web.information-hunts (baseline-2)
 
-Generated 2026-09-13T22:10:41.876Z from a capture set created 2026-09-12T18:10:26.845Z (state complete). This audit counts and does not judge: every verdict is the reviewer’s for one attempt, and the ranking is arithmetic over those verdicts.
+Generated 2026-09-14T01:52:13.145Z from a capture set created 2026-09-12T18:10:26.845Z (state complete). This audit counts and does not judge: every verdict is the reviewer’s for one attempt, and the ranking is arithmetic over those verdicts.
 
 ## Provenance
 
 - capture: commit(s) 6152d8dc (dirty tree); mode measured; protocol 1; prompt version(s) 1
 - routing: orchestrator=GLM-5.3; subagent=GLM-5.3-flash; vision=GLM-4.6V | reasoning override: none | effort overrides: none | adblock: production_default
 - key 2.2.2.2, manifest sha256:faa25d04…; grades by claude-opus-5 via live:grade (revision 1)
-- reviewer: claude-opus-5 at high, prompt audit-p1; audit run at commit 182d4d68 (dirty tree)
+- reviewer: claude-opus-5 at high, prompt audit-p1; audit run at commit 7da13ef8
 
 ## Populations
 
@@ -26,8 +26,8 @@ Kinds are mechanical counts; a share is over the budgeted rounds (Finalization o
 | stopped early | 0 | 0 | 0 | 0 |
 | failed rounds | 0 | 2 | 0 | 0 |
 
-- initial: 22 Off-key round(s), 0 Search Loop round(s) by the reviewer (0 by the streak rule), 0 inherited, 5 rejected Evidence Checkpoint(s), 1 walled round(s), 0 Subagent round(s), 0 stopped early, 6 overrule(s), 21 flag(s); Finalization Causes: budget_exhausted 3, objective_met 1
-- follow_up: 19 Off-key round(s), 0 Search Loop round(s) by the reviewer (0 by the streak rule), 2 inherited, 4 rejected Evidence Checkpoint(s), 0 walled round(s), 0 Subagent round(s), 0 stopped early, 0 overrule(s), 10 flag(s); Finalization Causes: budget_exhausted 1, objective_met 1
+- initial: 22 Off-key round(s), 0 Search Loop round(s) by the reviewer (0 by the streak rule; attempts by search source rail 0, replay 3, none 1), 0 inherited, 5 rejected Evidence Checkpoint(s), 1 walled round(s), 0 Subagent round(s), 0 merged Evidence Checkpoint(s) (a floor), 0 Held Page round(s) without Progress, 0 stopped early, 6 overrule(s), 21 flag(s); Finalization Causes: budget_exhausted 3, objective_met 1
+- follow_up: 19 Off-key round(s), 0 Search Loop round(s) by the reviewer (0 by the streak rule; attempts by search source rail 0, replay 2, none 0), 2 inherited, 4 rejected Evidence Checkpoint(s), 0 walled round(s), 0 Subagent round(s), 0 merged Evidence Checkpoint(s) (a floor), 1 Held Page round(s) without Progress, 0 stopped early, 0 overrule(s), 10 flag(s); Finalization Causes: budget_exhausted 1, objective_met 1
 
 ## Tool rounds
 
@@ -52,8 +52,9 @@ The rounds outside Finalization that called each tool — a round counts once pe
 
 - answered; ended done / completed (budget_exhausted); tier investigation (1 Tier Escalation(s) at the deadline); 24 of 24 Tool Rounds used; 26 orchestrator rounds, 2 in Finalization; Run duration 401400 ms; LLM stage 389039 ms over 26 joined round(s)
 - grade useful_partial; checks not reached: fact-05 (1 of 10)
-- 0 Subagent round(s) over 0 Subagent(s); 4 accepted and 0 rejected Evidence Checkpoint(s); 0 inherited round(s); 0 walled round(s)
+- 0 Subagent round(s) over 0 Subagent(s); 4 accepted (0 merged, a floor) and 0 rejected Evidence Checkpoint(s); 0 inherited round(s); 0 Held Page round(s) without Progress; 0 walled round(s)
 - kinds: Acquisition with Progress 16 (67%) · Acquisition without Progress 4 (17%) · Collection 0 (0%) · Bookkeeping 1 (4%) · Failed round 3 (13%) · Finalization 2 (8%)
+- search source none: no Search Observation in the trace, and no navigate search for the replay to find
 - **verdict: rounds wasted** — About 10 of 24 budgeted rounds (~42%) produced nothing. With the overrules, 6 rounds made no progress: 5, 7, 11, 12, 17 and 18. Round 1 was an off-key 404, and 3 rounds (8, 13, 16) were refused. Rounds 10–13 and 15–18 were detours to empty raw.githubusercontent pages, and each file then had to be fetched again from GitHub blob (rounds 14, 19). Rounds 2–7 on the accessories camera page yielded no usable text. The on-key software pages only arrived in rounds 20–24, when the budget ran out before the legacy-stack material behind fact-05 was reached.
 - secondary: failed rounds — Three rounds (8, 13, 16; 12.5% of budget) failed because every call was refused. Rounds 13 and 16 repeated a look that had already failed, even after the tool pointed to read_page. Given that fact-05 was the only check missed and was one or two rounds away, getting these rounds back would likely have been enough to reach it.
 - stopped early: no — The Run used all 24 of its budgeted Tool Rounds (budget_exhausted) and was then told to finalize. It did not stop with budget left.
@@ -101,8 +102,9 @@ The rounds outside Finalization that called each tool — a round counts once pe
 
 - answered; ended done / completed (budget_exhausted); tier investigation (1 Tier Escalation(s) at the deadline); 24 of 24 Tool Rounds used; 26 orchestrator rounds, 2 in Finalization; Run duration 355038 ms; LLM stage 340027 ms over 26 joined round(s)
 - grade useful_partial; checks not reached: fact-02 (1 of 6)
-- 0 Subagent round(s) over 0 Subagent(s); 3 accepted and 2 rejected Evidence Checkpoint(s); 1 inherited round(s); 0 walled round(s)
+- 0 Subagent round(s) over 0 Subagent(s); 3 accepted (0 merged, a floor) and 2 rejected Evidence Checkpoint(s); 1 inherited round(s); 0 Held Page round(s) without Progress; 0 walled round(s)
 - kinds: Acquisition with Progress 18 (75%) · Acquisition without Progress 3 (13%) · Collection 0 (0%) · Bookkeeping 3 (13%) · Failed round 0 (0%) · Finalization 2 (8%)
+- search source replay: the streak rule re-run over navigate searches
 - **verdict: rounds wasted** — 13 of 24 budgeted rounds (54%) went to the Camera Module 3 product page (rounds 1-13, plus round 14, which hit End of Page). Most of those were scrolls through feature marketing that could not carry fact-01 or fact-02. Round 12 exposed a link to the verified documentation page, but the Run did not go there until round 19. Rounds 16-18 went to a search results page, a walled forum page and an inherited re-acquisition, and round 20 re-navigated a URL already acquired. Round 15 found the lid verdict on the Zero Case product page. The one Look at the verified source (round 21) came with 3 rounds left, and the rest of the budget went to bookkeeping (rounds 22-24), one call of which was rejected as malformed. fact-02 was never reached, although the page that carries it was open from round 19.
 - stopped early: no — The Run used all 24 budgeted Tool Rounds and ended with budget_exhausted, so it did not stop early.
 - Off-key round 1 (https://www.raspberrypi.com/products/camera-module-3/): Camera Module 3 product page. It is a source for the initial task, but it has no case-lid or mechanical-fit material, so it cannot carry fact-01 or fact-02. fact-03 restates earlier conclusions and does not need a re-read.
@@ -160,8 +162,9 @@ The rounds outside Finalization that called each tool — a round counts once pe
 
 - answered; ended done / partial (budget_exhausted); tier investigation; 24 of 24 Tool Rounds used; 26 orchestrator rounds, 2 in Finalization; Run duration 216821 ms; LLM stage 196001 ms over 26 joined round(s)
 - grade useful_partial; checks not reached: fact-03, fact-05, fact-08, fact-09, fact-10, fact-11 (6 of 17)
-- 0 Subagent round(s) over 0 Subagent(s); 0 accepted and 0 rejected Evidence Checkpoint(s); 0 inherited round(s); 0 walled round(s)
+- 0 Subagent round(s) over 0 Subagent(s); 0 accepted (0 merged, a floor) and 0 rejected Evidence Checkpoint(s); 0 inherited round(s); 0 Held Page round(s) without Progress; 0 walled round(s)
 - kinds: Acquisition with Progress 14 (58%) · Acquisition without Progress 4 (17%) · Collection 0 (0%) · Bookkeeping 0 (0%) · Failed round 6 (25%) · Finalization 2 (8%)
+- search source replay: the streak rule re-run over navigate searches
 - **verdict: rounds wasted** — Rounds 1–9 went to the walled page, landing pages and search results. Seven of the 14 mechanical with-progress rounds (1, 2, 3, 6, 7, 8, 9) are off-key. Once on S1, rounds 12–18 cycled up and down between y=277 and end of page. After overrules, rounds 13, 16, 17 and 18 are repeats without progress, and round 15 was refused as a repeat. The S2 case record, linked from S1, was never opened, so fact-08 to fact-11 were never reached. Fact-03 and fact-05, which S1 carries, were not reached either. On-key productive rounds come to roughly 6 of 24 (11, 12, 14, 21, 22, 24).
 - secondary: failed rounds — 6 of 24 budgeted rounds (25%) failed: refused looks in 5, 19 and 20, an aborted navigate in 10, a refused repeat scroll in 15 and an unresolvable API host in 23. Rounds 19–20 alone cost two of the last six rounds, rounds that could have reached S2.
 - stopped early: no — The Run used all 24 of its 24 budgeted rounds and ended on budget_exhausted.
@@ -215,8 +218,9 @@ The rounds outside Finalization that called each tool — a round counts once pe
 
 - answered; ended done / completed (objective_met); tier investigation (1 Tier Escalation(s) at the deadline); 23 of 24 Tool Rounds used; 24 orchestrator rounds, 1 in Finalization; Run duration 382039 ms; LLM stage 374300 ms over 24 joined round(s)
 - grade useful_partial; checks not reached: fact-03, fact-07, fact-08 (3 of 14)
-- 0 Subagent round(s) over 0 Subagent(s); 4 accepted and 5 rejected Evidence Checkpoint(s); 0 inherited round(s); 0 walled round(s)
+- 0 Subagent round(s) over 0 Subagent(s); 4 accepted (0 merged, a floor) and 5 rejected Evidence Checkpoint(s); 0 inherited round(s); 0 Held Page round(s) without Progress; 0 walled round(s)
 - kinds: Acquisition with Progress 18 (78%) · Acquisition without Progress 0 (0%) · Collection 0 (0%) · Bookkeeping 5 (22%) · Failed round 0 (0%) · Finalization 1 (4%)
+- search source replay: the streak rule re-run over navigate searches
 - **verdict: rounds wasted** — Acquisition was on-key and done by round 18: S1 in rounds 2–12 and S2 in rounds 13–18, with round 1 the only Off-key round (1/23). The rest of the budget went to 5 bookkeeping rounds (19–23, about 22%) with 5 rejected checkpoints. Rounds 20, 21 and 22 (3/23, 13%) each made one attempt to record the user's constraint, and every one was rejected. That retry streak, plus the rejected first checkpoint in round 19 that round 23 had to redo, ate the remaining budget. The Run reached its final round with 1/24 left and no margin to check the Answer's coverage of fact-03, fact-07 and fact-08.
 - stopped early: no — The Run used 23 of its 24 Tool Rounds, with a budget warning at 1/24 in round 23, so it ran to its budget. The unreached checks fact-03, fact-07 and fact-08 needed no new pages: the material was already on S1 and S2, acquired in rounds 2–18. They were missed when the Answer was written, not by stopping acquisition.
 - Off-key round 1 (https://duckduckgo.com/?q=eurostar+luggage+allowance+official&ia=web): This is a search results page. It can point to the official sources, but it cannot carry any required fact itself. It did lead straight to S1 in round 2.
@@ -257,8 +261,9 @@ The rounds outside Finalization that called each tool — a round counts once pe
 
 - answered; ended done / completed (objective_met); tier investigation (1 Tier Escalation(s) at the deadline); 18 of 24 Tool Rounds used; 19 orchestrator rounds, 1 in Finalization; Run duration 297082 ms; LLM stage 285366 ms over 19 joined round(s)
 - grade pass; checks not reached: none
-- 0 Subagent round(s) over 0 Subagent(s); 2 accepted and 2 rejected Evidence Checkpoint(s); 1 inherited round(s); 0 walled round(s)
+- 0 Subagent round(s) over 0 Subagent(s); 2 accepted (0 merged, a floor) and 2 rejected Evidence Checkpoint(s); 1 inherited round(s); 1 Held Page round(s) without Progress; 0 walled round(s)
 - kinds: Acquisition with Progress 10 (56%) · Acquisition without Progress 2 (11%) · Collection 0 (0%) · Bookkeeping 4 (22%) · Failed round 2 (11%) · Finalization 1 (5%)
+- search source replay: the streak rule re-run over navigate searches
 - **verdict: rounds wasted** — The run passed, but about 10 of its 18 budgeted rounds gave no on-key progress. That is round 1 (an inherited re-acquisition), round 4 (an unreadable Look), rounds 6 and 8 (refused Looks), rounds 10–13 (four off-key pages: the Help Centre home, the FAQ page that fell back to home, the trains page and a Bing results page) and rounds 16–17 (rejected checkpoints). The on-key work was the scrolls and read on S1 (rounds 2, 3, 5, 7, 9), the equivalent official page at round 14 and the accepted checkpoints at rounds 15 and 18. Moving to the US-English equivalent of S1 could have happened long before round 14.
 - stopped early: no — The Run ended with objective_met after 18 of 24 rounds, and every check was reached. With nothing left unreached, it did not stop early.
 - Off-key round 10 (https://help.eurostar.com/?language=uk-en): This is the Help Centre home page, a starting point with a quick-search box. It does not itself carry the class-based allowance that fact-02 needs, and no fact-NN check can be settled on a landing page.
@@ -298,8 +303,9 @@ The rounds outside Finalization that called each tool — a round counts once pe
 
 - answered; ended done / partial (budget_exhausted); tier investigation (1 Tier Escalation(s) at the deadline); 24 of 24 Tool Rounds used; 26 orchestrator rounds, 2 in Finalization; Run duration 452939 ms; LLM stage 398995 ms over 26 joined round(s)
 - grade useful_partial; checks not reached: fact-06, fact-07, fact-08 (3 of 15)
-- 0 Subagent round(s) over 0 Subagent(s); 0 accepted and 0 rejected Evidence Checkpoint(s); 0 inherited round(s); 1 walled round(s)
+- 0 Subagent round(s) over 0 Subagent(s); 0 accepted (0 merged, a floor) and 0 rejected Evidence Checkpoint(s); 0 inherited round(s); 0 Held Page round(s) without Progress; 1 walled round(s)
 - kinds: Acquisition with Progress 19 (79%) · Acquisition without Progress 2 (8%) · Collection 0 (0%) · Bookkeeping 0 (0%) · Failed round 3 (13%) · Finalization 2 (8%)
+- search source replay: the streak rule re-run over navigate searches
 - **verdict: rounds wasted** — Only 7 of 24 budgeted rounds (14, 16, 17-20, 23) worked on pages that could carry the key's facts. Thirteen rounds (1-10, 13, 15, 24) were off-key: a search page, the wrong JPL status update read over nine rounds, a walled mirror and an unrelated Cassini archive page. Two more were without progress (10, 21), three failed (11, 12, 22), and the scroll-by-scroll reading in rounds 3-6 and 17-21 used rounds where one read_page would have done. As a result, the September release that carries fact-06, fact-07 and fact-08 was only reached in round 16 and fully read only in round 23, with one round left.
 - stopped early: no — The Run used all 24 of its 24 Tool Rounds and ended on budget_exhausted, so it did not stop early.
 - Off-key round 1 (https://duckduckgo.com/?q=jpl.nasa.gov+June+2013+news+release+Voyager+1+has+not+yet+left+the+solar+system&ia=web): Search results page. It can point to sources but cannot itself carry any required fact.

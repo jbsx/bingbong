@@ -32,9 +32,9 @@
     "reviewerModel": "claude-opus-5",
     "reviewerEffort": "high",
     "reviewerPromptVersion": "audit-p1",
-    "auditCommit": "182d4d68c4976d194e0b6b896997e1b40699a57c",
-    "auditDirtyTree": true,
-    "generatedAt": "2026-09-13T22:10:41.876Z"
+    "auditCommit": "7da13ef8175a05547c276b027e53c41e1a70ec59",
+    "auditDirtyTree": false,
+    "generatedAt": "2026-09-14T01:52:13.145Z"
   },
   "attempts": [
     {
@@ -1362,8 +1362,11 @@
         "acceptedCheckpoints": 2,
         "rejectedCheckpoints": 0,
         "inheritedRounds": 0,
+        "mergedCheckpoints": 0,
+        "heldPageRoundsWithoutProgress": 0,
         "mechanicalSearchRounds": 0,
         "searchLoopHeads": [],
+        "searchSource": "none",
         "walledRounds": 0,
         "latency": {
           "llmMs": 411453,
@@ -2691,8 +2694,11 @@
         "acceptedCheckpoints": 7,
         "rejectedCheckpoints": 1,
         "inheritedRounds": 3,
+        "mergedCheckpoints": 0,
+        "heldPageRoundsWithoutProgress": 3,
         "mechanicalSearchRounds": 0,
         "searchLoopHeads": [],
+        "searchSource": "none",
         "walledRounds": 0,
         "latency": {
           "llmMs": 385882,
@@ -3523,8 +3529,11 @@
         "acceptedCheckpoints": 1,
         "rejectedCheckpoints": 0,
         "inheritedRounds": 0,
+        "mergedCheckpoints": 0,
+        "heldPageRoundsWithoutProgress": 0,
         "mechanicalSearchRounds": 0,
         "searchLoopHeads": [],
+        "searchSource": "replay",
         "walledRounds": 0,
         "latency": {
           "llmMs": 141672,
@@ -4115,8 +4124,11 @@
         "acceptedCheckpoints": 5,
         "rejectedCheckpoints": 1,
         "inheritedRounds": 0,
+        "mergedCheckpoints": 0,
+        "heldPageRoundsWithoutProgress": 0,
         "mechanicalSearchRounds": 0,
         "searchLoopHeads": [],
+        "searchSource": "replay",
         "walledRounds": 0,
         "latency": {
           "llmMs": 224830,
@@ -5189,8 +5201,11 @@
         "acceptedCheckpoints": 3,
         "rejectedCheckpoints": 1,
         "inheritedRounds": 2,
+        "mergedCheckpoints": 0,
+        "heldPageRoundsWithoutProgress": 1,
         "mechanicalSearchRounds": 0,
         "searchLoopHeads": [],
+        "searchSource": "replay",
         "walledRounds": 0,
         "latency": {
           "llmMs": 278916,
@@ -6621,10 +6636,13 @@
         "acceptedCheckpoints": 1,
         "rejectedCheckpoints": 0,
         "inheritedRounds": 0,
+        "mergedCheckpoints": 0,
+        "heldPageRoundsWithoutProgress": 0,
         "mechanicalSearchRounds": 3,
         "searchLoopHeads": [
           2
         ],
+        "searchSource": "replay",
         "walledRounds": 1,
         "latency": {
           "llmMs": 337974,
@@ -6912,7 +6930,14 @@
       "offKeyRounds": 26,
       "searchLoopRounds": 5,
       "mechanicalSearchRounds": 3,
+      "searchSources": {
+        "rail": 0,
+        "replay": 3,
+        "none": 1
+      },
       "inheritedRounds": 0,
+      "mergedCheckpoints": 0,
+      "heldPageRoundsWithoutProgress": 0,
       "rejectedCheckpoints": 1,
       "walledRounds": 1,
       "subagentRounds": 13,
@@ -7025,7 +7050,14 @@
       "offKeyRounds": 7,
       "searchLoopRounds": 0,
       "mechanicalSearchRounds": 0,
+      "searchSources": {
+        "rail": 0,
+        "replay": 1,
+        "none": 1
+      },
       "inheritedRounds": 5,
+      "mergedCheckpoints": 0,
+      "heldPageRoundsWithoutProgress": 4,
       "rejectedCheckpoints": 2,
       "walledRounds": 0,
       "subagentRounds": 0,
