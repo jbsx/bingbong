@@ -48,9 +48,9 @@ export function createReportRunPlanTool(): Tool {
         items: { type: 'string' },
         description:
           `The Asked Items: each thing the command explicitly asks you to report — an id, a measurement, a yes or no, ` +
-          `a qualification, each named item’s standing, and under a smallest-change ask one entry per named item. ` +
+          `a qualification, each named item’s standing, and under a smallest-change command one entry per named item. ` +
           `At most ${MAX_ASKED_ITEMS} short strings of at most ${MAX_ASKED_ITEM_CHARS} characters, declared once in the first plan and ` +
-          `unchanged by later plans; required for lookup and investigation, empty for direct_action.`,
+          `unchanged by later plans; required for lookup and investigation, none for a direct_action.`,
         required: false,
       },
     },

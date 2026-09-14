@@ -214,9 +214,10 @@ export function createNoProgressRail(deps: NoProgressRailDeps = {}): NoProgressR
   let noProgress = 0
   let exhaustedApproaches = 0
   let tripped = false
-  // Whether a rejected checkpoint has already escalated in the current
-  // Tool Round (#197): the round's later rejections are the same mistake.
-  let checkpointRejectedThisRound = false
+  // Whether a rejected Bookkeeping call — a checkpoint (#197) or a Run Plan
+  // report (#250) — has already escalated in the current Tool Round: the
+  // round's later rejections are the same mistake.
+  let bookkeepingRejectedThisRound = false
 
   function isPageFacing(name: string): boolean {
     return classifyToolObservation(name).pageFacing
@@ -314,8 +315,8 @@ export function createNoProgressRail(deps: NoProgressRailDeps = {}): NoProgressR
       // made blind to the first and are not separate actions.
       if (CHECKPOINT_TOOLS.has(call.name) || PLAN_TOOLS.has(call.name)) {
         if (!outcome.ok) {
-          if (checkpointRejectedThisRound) return null
-          checkpointRejectedThisRound = true
+          if (bookkeepingRejectedThisRound) return null
+          bookkeepingRejectedThisRound = true
           return escalate()
         }
         if (CHECKPOINT_TOOLS.has(call.name)) progress()
@@ -408,7 +409,7 @@ export function createNoProgressRail(deps: NoProgressRailDeps = {}): NoProgressR
     },
 
     beginRound() {
-      checkpointRejectedThisRound = false
+      bookkeepingRejectedThisRound = false
     },
 
     reset() {
@@ -417,7 +418,7 @@ export function createNoProgressRail(deps: NoProgressRailDeps = {}): NoProgressR
       pendingNudge = null
       noProgress = 0
       exhaustedApproaches = 0
-      checkpointRejectedThisRound = false
+      bookkeepingRejectedThisRound = false
       // A corrected objective reopens work (#119): the no_progress trip
       // belonged to the stale one, and so did what each producer had
       // already learned — the same page read against a new question is

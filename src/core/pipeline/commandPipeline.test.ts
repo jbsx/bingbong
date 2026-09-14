@@ -8719,6 +8719,19 @@ describe('Asked Items on the Answer (#250, ADR 0052)', () => {
     expect(run.shapeRecords.map((record) => record.kind === 'asked_items_shape' && record.retried)).toEqual([true, false])
   })
 
+  it('meets a prose Answer with the retry worded for prose, and lets the retry reply stand', async () => {
+    const run = await runScript([
+      planRound(),
+      { kind: 'answer', speak: 'The guitar can travel.', display: 'The guitar can travel.', shape: 'off_contract' },
+      answer([guitar, pieces]),
+    ])
+
+    expect(run.llm.requests[2]?.answerRetry?.message).toBe(askedItemsRetryMessage({ missing: DECLARED, undeclared: [] }, true))
+    expect(run.llm.requests[2]?.answerRetry?.message).toMatch(/was not the JSON object, so it carries no "asked_items"/)
+    expect(run.askedItems).toEqual([guitar, pieces])
+    expect(run.done).toMatchObject({ resolution: 'completed' })
+  })
+
   it('shares the one retry with the Malformed Answer: a short list after a spent retry gets none (#250/AC3)', async () => {
     const malformed = parseAssistantAnswer('Here it is: {"speak": "Yes.", "display": 42}')
     const run = await runScript([planRound(), { kind: 'answer', ...malformed }, answer([guitar])])

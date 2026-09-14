@@ -413,7 +413,6 @@ export interface IdentitySlipEvent {
   readonly slips: readonly IdentitySlip[]
 }
 
-/** One decision a Run traces, whatever kind it is. */
 /**
  * An Answer whose `asked_items` was not the declared list (#250, ADR
  * 0052): the declared items it left without a standing and the entries
@@ -428,6 +427,7 @@ export interface AskedItemsShapeEvent {
   readonly retried: boolean
 }
 
+/** One decision a Run traces, whatever kind it is. */
 export type RunTraceEventBody =
   | EvidenceCheckpointEvent
   | ReasoningEvent
