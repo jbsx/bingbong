@@ -316,6 +316,16 @@ export interface AuditMechanical {
    * it re-keys no cached judgement and bears on no verdict.
    */
   readonly identitySlips: { readonly answers: number; readonly ids: number } | null
+  /**
+   * Malformed Answers (#245): the turn's `malformed_answer` records, the
+   * Run's and its Subagents'. Read from the records and never re-parsed from
+   * Answer text, so a trace written before the record counts none. Beside the
+   * rounds, never in them: the malformed round keeps its class and reason, and
+   * no cached judgement is re-keyed.
+   */
+  readonly malformedAnswers: number
+  /** Answer Retries (#245): the turn's `answer_retry` records, on the same terms. */
+  readonly answerRetries: number
   readonly latency: { readonly llmMs: number | null; readonly joined: number; readonly unjoined: number }
   readonly usage: { readonly promptTokens: number; readonly completionTokens: number; readonly roundsWithUsage: number }
   readonly subagent: { readonly rounds: number; readonly agents: number; readonly byStop: Readonly<Record<string, number>> }
@@ -438,6 +448,10 @@ export interface AuditPopulation {
   readonly identitySlipIds: number
   /** Attempts whose trace predates the record: their slips are not recorded, and count in neither number. */
   readonly identitySlipsNotRecorded: number
+  /** Malformed Answers over the attempts (#245). */
+  readonly malformedAnswers: number
+  /** Answer Retries over the attempts (#245). */
+  readonly answerRetries: number
   readonly subagentRounds: number
   readonly stoppedEarly: number
   /** Judged attempts whose Answer Omission holds (#244), whatever their verdict. */
@@ -1199,6 +1213,8 @@ export function classifyAttempt(input: AuditTraceInput): AuditMechanical {
     walledRounds: rounds.filter((round) => round.tags.wall).length,
     notFoundNavigates: rounds.flatMap((round) => round.calls.filter((call) => call.name === 'navigate' && call.notFound !== undefined).map(() => round.round)),
     identitySlips,
+    malformedAnswers: records.filter((record) => record.kind === 'malformed_answer').length,
+    answerRetries: records.filter((record) => record.kind === 'answer_retry').length,
     latency: {
       llmMs: joined.length === 0 ? null : joined.reduce((total, round) => total + round.latencyMs!, 0),
       joined: joined.length,
@@ -1574,6 +1590,8 @@ export function populationOf(label: string, attempts: readonly AuditAttempt[]): 
   let slipAnswers = 0
   let slipIds = 0
   let slipsNotRecorded = 0
+  let malformedAnswers = 0
+  let answerRetries = 0
   let subagentRounds = 0
   let stoppedEarly = 0
   let answerOmitted = 0
@@ -1607,6 +1625,8 @@ export function populationOf(label: string, attempts: readonly AuditAttempt[]): 
       slipAnswers += mechanical.identitySlips.answers
       slipIds += mechanical.identitySlips.ids
     }
+    malformedAnswers += mechanical.malformedAnswers
+    answerRetries += mechanical.answerRetries
     subagentRounds += mechanical.subagent.rounds
     if (mechanical.toolRoundBudget !== null && mechanical.toolRoundsUsed >= mechanical.toolRoundBudget) atBudget += 1
     const cause = mechanical.terminal?.finalizationCause ?? 'none'
@@ -1650,6 +1670,8 @@ export function populationOf(label: string, attempts: readonly AuditAttempt[]): 
     identitySlipAnswers: slipAnswers,
     identitySlipIds: slipIds,
     identitySlipsNotRecorded: slipsNotRecorded,
+    malformedAnswers,
+    answerRetries,
     subagentRounds,
     stoppedEarly,
     answerOmitted,
@@ -1859,6 +1881,7 @@ function judgementLines(populations: readonly AuditPopulation[]): string[] {
       `- ${population.label}: ${population.offKeyRounds} Off-key round(s), ${population.searchLoopRounds} Search Loop round(s) by the reviewer (${population.mechanicalSearchRounds} by the streak rule; attempts by search source ${SEARCH_SOURCES.map((source) => `${source} ${population.searchSources[source]}`).join(', ')}), ` +
       `${population.inheritedRounds} inherited, ${population.rejectedCheckpoints} rejected Evidence Checkpoint(s), ${population.walledRounds} walled round(s), ${population.notFoundNavigates} navigate(s) landed on a Not-found Page (${population.notFoundOffKey} judged Off-key), ${population.subagentRounds} Subagent round(s), ` +
       `${population.mergedCheckpoints} merged Evidence Checkpoint(s) (a floor), ${population.heldPageRoundsWithoutProgress} Held Page round(s) without Progress, ${populationSlipsText(population)}, ` +
+      `${population.malformedAnswers} Malformed Answer(s) (${population.answerRetries} retried), ` +
       `${population.stoppedEarly} stopped early, ${population.answerOmitted} answer omitted, ${population.overrules} overrule(s), ${population.flags} flag(s); Finalization Causes: ${Object.entries(population.finalizationCauses)
         .map(([cause, count]) => `${cause} ${count}`)
         .join(', ')}`,
@@ -1886,6 +1909,7 @@ function attemptSection(attempt: AuditAttempt): string[] {
       `${mechanical.acceptedCheckpoints} accepted (${mechanical.mergedCheckpoints} merged, a floor) and ${mechanical.rejectedCheckpoints} rejected Evidence Checkpoint(s); ${mechanical.inheritedRounds} inherited round(s); ` +
       `${mechanical.heldPageRoundsWithoutProgress} Held Page round(s) without Progress; ${mechanical.walledRounds} walled round(s)`,
   )
+  lines.push(`- Malformed Answers: ${mechanical.malformedAnswers} (${mechanical.answerRetries} retried)`)
   const landings = mechanical.notFoundNavigates
   lines.push(`- navigates that landed on a Not-found Page: ${landings.length}${landings.length > 0 ? ` (round ${landings.join(', ')})` : ''}`)
   lines.push(`- of those, judged Off-key by the reviewer: ${judgement === null ? 'not judged' : notFoundOffKeyOf(mechanical, judgement)}`)

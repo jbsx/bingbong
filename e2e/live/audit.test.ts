@@ -641,6 +641,50 @@ describe('Identity Slips (#246, ADR 0028)', () => {
   })
 })
 
+describe('Malformed Answers and Answer Retries (#245)', () => {
+  const malformed = (at: number, agentId?: string): Record<string, unknown> => ({
+    ...identity,
+    at: T0 + at,
+    kind: 'malformed_answer',
+    role: agentId === undefined ? 'orchestrator' : 'subagent',
+    text: '{"speak":"Done.","display":42}',
+    chars: 30,
+    error: '"display" is not a string',
+    ...(agentId === undefined ? {} : { agentId }),
+  })
+  const retry = (at: number, outcome: string, agentId?: string): Record<string, unknown> => ({
+    ...identity,
+    at: T0 + at,
+    kind: 'answer_retry',
+    role: agentId === undefined ? 'orchestrator' : 'subagent',
+    outcome,
+    ...(agentId === undefined ? {} : { agentId }),
+  })
+  const RECORDS = [malformed(3_500), retry(4_500, 'tool_calls'), malformed(2_550, 'a-1'), retry(2_650, 'on_contract', 'a-1'), malformed(14_500)]
+
+  it('counts both from the records, the Run’s and its Subagents’, beside the rounds', () => {
+    const plain = classifyAttempt(inputOf({ traceRecords: traceOf(ROUNDS, EXTRA) }))
+    const counted = classifyAttempt(inputOf({ traceRecords: traceOf(ROUNDS, [...EXTRA, ...RECORDS]) }))
+
+    expect([counted.malformedAnswers, counted.answerRetries]).toEqual([3, 2])
+    // A trace written before the records counts none: nothing re-reads Answer text.
+    expect([plain.malformedAnswers, plain.answerRetries]).toEqual([0, 0])
+    // Round classes, reasons and the digest a cached judgement is keyed on do not move.
+    expect(counted.rounds).toEqual(plain.rounds)
+    expect(counted.digestHash).toBe(plain.digestHash)
+  })
+
+  it('sums both per population and prints them per attempt and per population', () => {
+    const counted = classifyAttempt(inputOf({ traceRecords: traceOf(ROUNDS, [...EXTRA, ...RECORDS]) }))
+    const set = buildAuditSet(provenanceOf(), [{ mechanical: counted, review: null, countsAfterOverrules: counted.counts }], [])
+
+    expect([set.populations.initial.malformedAnswers, set.populations.initial.answerRetries]).toEqual([3, 2])
+    const markdown = formatAuditSet(set)
+    expect(markdown).toContain('- Malformed Answers: 3 (2 retried)')
+    expect(markdown).toMatch(/- initial: .*3 Malformed Answer\(s\) \(2 retried\)/)
+  })
+})
+
 describe('the rail’s Search Observations (#243, ADR 0049)', () => {
   const searchesOf = (mechanical: ReturnType<typeof classifyAttempt>) => mechanical.rounds.map((round) => round.calls.map((call) => call.search))
 

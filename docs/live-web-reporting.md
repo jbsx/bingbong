@@ -900,6 +900,18 @@ written below Run Trace version 2 predates the record, so its attempt reads
 many of its attempts were not recorded and counts only the rest, and reads
 "Identity Slips not recorded" when none was.
 
+Two more sit beside those, for an Answer the runtime could not read (#245),
+read from the records and never from Answer text. **Malformed Answers** are
+the attempt turn's `malformed_answer` records,
+the Run's and its Subagents': a reply outside a reserved round that carried the
+Answer contract's keys but not its shape. **Retried** counts its `answer_retry`
+records, one per Answer Retry whose round resolved. A malformed round keeps its
+class and reason, and the digest does not move. A trace written before the
+records existed counts none, and the Baseline audits read zero for that reason
+alone: baseline-1's Eurostar initial replied with a Malformed Answer in its
+round 7, before the record, and re-parsing old Answer text to count it would be
+the audit replaying a decision the Run never recorded (ADR 0049).
+
 They name check ids and URLs only, never key text: the reviewer is told to
 refer to checks by id, every output is checked for any key string or any run of
 eight consecutive words of one before it is written, and `audit.test.ts`
