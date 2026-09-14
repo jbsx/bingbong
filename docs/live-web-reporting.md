@@ -934,6 +934,88 @@ The audit fixes nothing. Each fix it motivates is its own issue with its own
 three-pass capture on the frozen route, so the change stays attributable, and
 the audit is re-run over the new sets and diffed.
 
+## The Fix Ledger
+
+Since the Round Audit, every fix issue was judged by hand: open
+`audit-aggregate-fix-N.md` and its predecessor's, find the metric the fix
+aimed at, read both numbers, and remember which sets were judged under
+`audit-p1`. The **Fix Ledger** (#251; glossary: Fix Ledger, Reference,
+Subject) is the one page that reads them:
+
+```sh
+pnpm live:ledger [--reports=<dir>] [--port N] [--no-open]
+```
+
+It is a loopback-only `node:http` server beside `live:review` and `trace:ui`,
+never an app view and reachable from nothing the app bundles. It serves one
+page from `scripts/live-ledger.html`; the decisions are in `e2e/live/ledger.ts`
+(pure, under vitest) and the door in `e2e/live/ledgerServer.ts`. It writes
+nothing.
+
+**What it reads.** Round Audit JSON only: every `audit-*.json` in
+`e2e/live/reports` (or the `--reports` directory; one directory, never merged
+across two), on page load — a browser reload re-reads, there is no watcher.
+Pass reports, cross-pass summaries, pilots, preflights, Grades and captures are
+out: every number the fix issues cited is in the audit's per-attempt
+`mechanical` record or its populations. Files are grouped into **families** by
+stripping the Pass suffix from the set id in the provenance (`fix-240-1..3` →
+`fix-240`; `fix-242` and `fix-242r` are two families; the first Baseline's
+aggregate, `audit-aggregate.json`, joins `baseline` by its set ids), ordered
+by the earliest `provenance.createdAt`. A family is a **Baseline** when its id
+begins with `baseline` — provenance carries nothing that says so, and this
+convention is the ledger's one assumption. A file that is not a Round Audit,
+a second audit for a set already read, or an aggregate over more than one
+family is listed as ignored with its reason, never silently dropped.
+
+**The Reference rule.** By default a Subject's Reference is the most recent
+Baseline captured before it; a Baseline's Reference is the Baseline before it;
+the first Baseline has none. Any family may be chosen as Reference on the
+page, or none. Choosing never joins the two into one Baseline — the cross-pass
+summary and the aggregate audit still refuse a mixed set; the ledger compares
+across one and says so with a marker.
+
+**The headline**, per population with initial first and follow-up beside it,
+each metric with the direction that is better so its delta knows its colour:
+verified attempts (Grade status `pass`; higher), checks satisfied as
+`n / total` (higher), `rounds_wasted` primary verdicts (lower),
+`answer_omitted` primary verdicts (lower), Off-key rounds (lower), failed
+rounds (lower), attempts at budget (lower), median run duration in seconds
+(lower). Where a per-round denominator exists (Off-key, failed rounds) the
+count is shown with its share of the budgeted rounds — the audit's own
+denominator — and the delta and its colour follow the share, in points.
+Verified and checks use their own denominators (attempts read, total checks);
+the verdict counts and attempts at budget compare on the count. The family's
+whole-set value is the aggregate audit's when one exists (the number its
+Markdown prints), summed from the Passes with a note when none does; verified
+attempts, checks and run durations are always read from the per-Pass attempts,
+since the aggregate does not carry them, and the median is the summary's. The
+per-Pass values sit small beside the whole-set one; a missing or
+`measurement_failed` Pass shows as such, never as a number. Every other
+counter of the population sits in the all-counters expander with a raw delta
+and no colour — useful partials and help-blocked attempts included, never in
+the headline. A counter an older audit did not record reads as nothing, not
+zero; an audit judged under `audit-p1` has no `answer_omitted` verdict and
+carries its unsatisfied checks as `checksNotReached`, and the ledger reads
+both names.
+
+**The markers**, per metric, never a refusal. Judgement metrics (the verdicts,
+Off-key, and in the expander Search Loop, Early Stop, Answer Omission,
+overrules, flags) are marked when `reviewerPromptVersion` differs between
+Reference and Subject. Every metric is marked when `keyVersion`,
+`gradesReviewers`, `roles` or the browser sub-spans flag differs (an audit
+written before #247 reads as captured with the flag off). The app commit never
+marks — it is what a Subject is measured for. A marker names the axis and both
+values; the row also says once, above the table, what differs. So `fix-239`
+against `baseline` marks the judgement metrics only (`audit-p1` against
+`audit-p2`), `baseline2` against `baseline` marks every metric for the
+sub-spans flag, and `fix-240` against `baseline` marks nothing.
+
+**The drill-down**, one level: a Hunt × step table of the headline metrics
+across the Passes of both sets, Reference Passes above Subject Passes, a yes/no
+per attempt where the metric is one. The Tool Round timeline stays where it
+is, in the Markdown audit, which each row links by name. No hand-maintained
+set → issue → metric file exists: what a set was captured for is on its issue.
+
 ## Safety of the exported report
 
 Both output formats carry the same facts, and neither carries raw prompts,
@@ -964,7 +1046,7 @@ Sessions.
 ## Verifying a change here
 
 ```sh
-pnpm exec vitest run e2e/live/grades.test.ts e2e/live/report.test.ts e2e/live/summary.test.ts e2e/live/audit.test.ts e2e/live/gradingBench.test.ts e2e/live/gradingSetup.test.ts e2e/live/gradingBenchServer.test.ts e2e/live/gradingBenchPage.test.ts
+pnpm exec vitest run e2e/live/grades.test.ts e2e/live/report.test.ts e2e/live/summary.test.ts e2e/live/audit.test.ts e2e/live/gradingBench.test.ts e2e/live/gradingSetup.test.ts e2e/live/gradingBenchServer.test.ts e2e/live/gradingBenchPage.test.ts e2e/live/ledger.test.ts e2e/live/ledgerServer.test.ts e2e/live/ledgerPage.test.ts
 pnpm typecheck
 pnpm lint
 pnpm test
@@ -1026,3 +1108,15 @@ browser; headless Chrome over CDP will do.
    page, check that the reviewer is read-only and the set shows the draft.
 9. Start another set, follow change set again, re-enter the first set, and
    check that the draft is restored.
+
+`ledger.test.ts` reads the committed Round Audits — the families #251 names
+in capture order with their References, `fix-240` against `baseline` with the
+numbers the two aggregate audits print, the three marker cases — and fixtures
+cut from them for a family with no aggregate, a Pass the aggregate names but
+no file holds, a chosen Reference, each marker axis alone, and a file that is
+not an audit. `ledgerServer.test.ts` works the door on a real socket (listing,
+rows, the loopback and file-name refusals) and starts `scripts/live-ledger.ts`
+itself. `ledgerPage.test.ts` drives the page in headless Chrome over CDP, over
+the committed audits, and is skipped where no Chrome is found: the families
+and their default Reference, one delta cell with its colour, one marker with
+its axis, the drill-down for one Hunt, and a Reference chosen on the page.

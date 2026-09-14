@@ -23,6 +23,7 @@ Neither needs to edit anything here.
 | `schedule.ts` (#225) | plain Node | `runLiveWebPass(host)` — the protocol: sequencing, isolation, one-shot follow-ups, not-reached reasons, `PILOT_COMMAND_CEILING`. |
 | `pass.ts` (#225) | vitest / e2e | The join: `createHuntCaptureHost(startCaptureSession, …)`, `plannedSlots`, `captureSetOf` — the adapter from this handle to the schedule, and the set file a pass writes. |
 | `audit.ts` (#234) | plain Node | The Round Audit's pure half: `classifyAttempt` (one kind per orchestrator round from the Run Trace and perf log, with the per-round digest and its hash), `validateJudgement`, `keyLeaks`, `buildAuditSet`, `buildAuditAggregate`, the Markdown formatters. Loads no key; `scripts/live-audit.ts` is the paid entry point. |
+| `ledger.ts` (#251) | plain Node | The Fix Ledger's pure half: `buildLedger` (every `audit-*.json` grouped into families in capture order), `defaultReferenceOf`, `compareFamilies` (the headline metrics with direction, deltas, markers, counters and the Hunt × step drill-down). Reads Round Audit JSON and nothing else; `ledgerServer.ts` is its loopback door and `scripts/live-ledger.ts` the entry point. |
 
 `*.test.ts` are launch-free unit tests in the normal `pnpm test` config;
 `capture.e2e.test.ts` and `schedule.e2e.test.ts` run under `pnpm test:e2e

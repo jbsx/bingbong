@@ -1,0 +1,331 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Fix Ledger</title>
+<link rel="icon" href="data:,">
+<!--
+  The Fix Ledger page (#251), served by scripts/live-ledger.ts on loopback.
+  Plain DOM, no framework, no network beyond its own server. Every string
+  from an audit goes in through textContent.
+
+  One row per family of Round Audits, in capture order: the Subject against
+  its Reference (the most recent Baseline before it, or the one chosen in
+  the row's select) on the headline metrics, each population — initial,
+  then follow-up — with the whole-set value, the per-Pass values small
+  beside it, and the delta coloured by the metric's own direction. A metric
+  whose two sides were judged under different conditions carries a marker
+  naming the axis. Under the headline: every counter with its raw delta,
+  and the Hunt × step drill-down across the Passes of both sets. The Tool
+  Round timeline stays in the Markdown audit, linked from each row.
+
+  What each metric means is in docs/live-web-reporting.md; the page carries
+  labels, not lessons. It never chooses a verdict.
+-->
+<style>
+  :root {
+    --bg: #f7f7f5; --panel: #ffffff; --ink: #1d1d1b; --muted: #6b6b66; --line: #e6e6e0; --line-strong: #d3d3cb;
+    --accent: #2f5bd3; --ok: #1f7a3a; --warn: #9a6200; --bad: #b3261e; --soft: #eef1fb; --ok-soft: #e8f5ec; --bad-soft: #fbeae9; --warn-soft: #fbf3e0;
+    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    color-scheme: light dark;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #151514; --panel: #1f1f1d; --ink: #ecece8; --muted: #9c9c95; --line: #2e2e2a; --line-strong: #43433d;
+      --accent: #8aa8ff; --ok: #6fcf8a; --warn: #e6b450; --bad: #ff8a80; --soft: #232a3d; --ok-soft: #1d2f23; --bad-soft: #3a1f1d; --warn-soft: #362c14; }
+  }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  body { margin: 0; font: 14px/1.5 system-ui, sans-serif; background: var(--bg); color: var(--ink); }
+  a { color: var(--accent); overflow-wrap: anywhere; }
+  code { font-family: var(--mono); font-size: 12.5px; }
+  h1 { font-size: 15px; margin: 0; }
+  h2 { font-size: 16px; margin: 0; }
+  h3 { font-size: 12px; margin: 16px 0 6px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); font-weight: 600; }
+  .muted { color: var(--muted); }
+  .small { font-size: 12px; }
+  .error { color: var(--bad); }
+  select { font: inherit; color: inherit; background: var(--panel); border: 1px solid var(--line-strong); border-radius: 6px; padding: 2px 6px; }
+
+  .top { display: flex; flex-wrap: wrap; gap: 4px 16px; align-items: baseline; padding: 10px 16px; border-bottom: 1px solid var(--line); background: var(--panel); position: sticky; top: 0; z-index: 1; }
+  main { padding: 16px; display: grid; gap: 16px; max-width: 1400px; }
+  .family { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 14px 16px; }
+  .family-head { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: baseline; }
+  .tag { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; padding: 1px 6px; border-radius: 4px; background: var(--soft); color: var(--accent); }
+  .pass-state { font-family: var(--mono); font-size: 12px; }
+  .pass-state.failed, .pass-state.missing { color: var(--warn); }
+  .reference-line { margin-top: 6px; display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: baseline; }
+  .markers-line, .notes { margin-top: 6px; font-size: 12.5px; }
+  .markers-line { color: var(--warn); }
+  .notes { color: var(--muted); }
+  .notes ul { margin: 0; padding-left: 18px; }
+
+  table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; }
+  th, td { text-align: left; padding: 5px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { font-weight: 600; font-size: 12px; color: var(--muted); }
+  thead th.group { border-bottom: 1px solid var(--line-strong); text-transform: uppercase; letter-spacing: .05em; font-size: 11px; }
+  td.num, th.num { text-align: right; white-space: nowrap; }
+  td.metric { white-space: nowrap; }
+  .direction { color: var(--muted); font-size: 11px; margin-left: 4px; }
+  .agg { display: block; }
+  .passes { display: block; font-size: 11.5px; color: var(--muted); font-family: var(--mono); }
+  .delta { font-weight: 600; }
+  td.ok { color: var(--ok); background: var(--ok-soft); }
+  td.bad { color: var(--bad); background: var(--bad-soft); }
+  td.same, td.none { color: var(--muted); font-weight: 400; }
+  .marker { display: inline-block; margin-left: 6px; color: var(--warn); background: var(--warn-soft); border-radius: 4px; padding: 0 5px; font-size: 11px; cursor: help; }
+  details { margin-top: 12px; }
+  summary { cursor: pointer; font-size: 13px; color: var(--muted); }
+  details table { margin-top: 8px; }
+  .counter-row.judgement td.label::after { content: ' (judged)'; color: var(--muted); font-size: 11px; }
+  .drill td.cell { font-family: var(--mono); font-size: 11.5px; white-space: nowrap; }
+  .drill .ref { color: var(--muted); display: block; }
+  .drill .subj { display: block; }
+  .drill th.hunt { white-space: nowrap; }
+  .table-scroll { overflow-x: auto; }
+</style>
+</head>
+<body>
+<header class="top">
+  <h1>Fix Ledger</h1>
+  <span id="reports-dir" class="muted small"></span>
+  <span id="status" class="muted small">reading…</span>
+</header>
+<main id="families"></main>
+<script>
+'use strict'
+
+const METRIC_ORDER = ['verified', 'checks', 'rounds_wasted_primary', 'answer_omitted_primary', 'off_key', 'failed_rounds', 'attempts_at_budget', 'median_run_duration']
+const POPULATIONS = [{ key: 'initial', label: 'initial' }, { key: 'followUp', label: 'follow-up' }]
+
+function el(tag, attrs, children) {
+  const node = document.createElement(tag)
+  if (attrs) for (const [name, value] of Object.entries(attrs)) {
+    if (value === null || value === undefined) continue
+    if (name === 'text') node.textContent = value
+    else if (name === 'class') node.className = value
+    else if (name.startsWith('data-')) node.dataset[name.slice(5).replace(/-([a-z])/g, (_, c) => c.toUpperCase())] = value
+    else node.setAttribute(name, value)
+  }
+  if (children) for (const child of children) if (child !== null && child !== undefined) node.append(child)
+  return node
+}
+
+function signed(value, decimals) {
+  const fixed = decimals === undefined ? String(value) : value.toFixed(decimals).replace(/\.0$/, '')
+  return value > 0 ? `+${fixed}` : value < 0 ? `−${fixed.slice(1)}` : fixed
+}
+
+function percent(reading) {
+  if (reading.value === null || reading.over === null || reading.over === 0) return null
+  return Math.round((reading.value / reading.over) * 100)
+}
+
+/** The whole-set value: a count with its denominator and share, a count of its attempts, or seconds. */
+function formatAggregate(metric, reading) {
+  if (reading.value === null) return '—'
+  if (metric.unit === 'seconds') return `${Math.round(reading.value)} s`
+  if (reading.over === null) return String(reading.value)
+  if (metric.compare === 'share') {
+    const share = percent(reading)
+    return `${reading.value} / ${reading.over}${share === null ? '' : ` · ${share}%`}`
+  }
+  return `${reading.value} of ${reading.over}`
+}
+
+/** A per-Pass value, small: the count alone, or seconds; a Pass without one says why. */
+function formatPassCell(metric, cell) {
+  if (cell.state === 'missing') return '—'
+  if (cell.state === 'measurement_failed') return 'failed'
+  if (cell.reading.value === null) return '—'
+  return metric.unit === 'seconds' ? `${Math.round(cell.reading.value)} s` : String(cell.reading.value)
+}
+
+/** A drill-down value for one attempt: yes/no, n/total, or seconds. */
+function formatAttemptCell(metric, cell) {
+  if (cell.state === 'missing') return '—'
+  if (cell.state === 'measurement_failed') return 'failed'
+  const reading = cell.reading
+  if (reading.value === null) return '—'
+  if (metric.unit === 'seconds') return `${Math.round(reading.value)} s`
+  if (metric.unit === 'attempts') return reading.value === 1 ? 'yes' : 'no'
+  return `${reading.value}/${reading.over}`
+}
+
+function formatDelta(metric, delta) {
+  if (delta === null) return { text: '—', className: 'none', title: 'no Reference' }
+  const className = delta.better === null ? 'same' : delta.better ? 'ok' : 'bad'
+  if (delta.value === null && delta.share === null) return { text: '—', className: 'none', title: 'one side has no value' }
+  if (metric.unit === 'seconds') return { text: `${signed(delta.value, 1)} s`, className, title: 'Subject minus Reference, median seconds' }
+  if (metric.compare === 'share' && delta.share !== null) return { text: `${signed(delta.share, 1)} pts`, className, title: `${signed(delta.value)} ${metric.unit}; the colour follows the share` }
+  return { text: signed(delta.value), className, title: `Subject minus Reference, ${metric.unit}` }
+}
+
+function markerSpan(markers) {
+  if (markers.length === 0) return null
+  const axes = markers.map((marker) => `${marker.axis}: ${marker.reference} → ${marker.subject}`)
+  return el('span', { class: 'marker', title: `judged under different conditions — ${axes.join('; ')}`, text: `△ ${markers.map((marker) => marker.axis).join(', ')}` })
+}
+
+function passStateSpan(pass) {
+  const state = pass.state === 'measurement_failed' ? 'failed' : pass.state
+  return el('span', { class: `pass-state ${state === 'complete' ? '' : state}`, title: pass.fileName ?? 'no per-Pass audit', text: `${pass.setId}${state === 'complete' ? '' : ` (${state})`}` })
+}
+
+function headlineTable(row, passLabels) {
+  const head1 = el('tr', null, [el('th', { text: '' }), ...POPULATIONS.map((population) => el('th', { class: 'group', colspan: '3', text: population.label }))])
+  const head2 = el('tr', null, [
+    el('th', { text: 'metric' }),
+    ...POPULATIONS.flatMap(() => [el('th', { class: 'num', text: 'Reference' }), el('th', { class: 'num', text: 'Subject' }), el('th', { class: 'num', text: 'Δ' })]),
+  ])
+  const body = row.headline.map((entry) => {
+    const metric = entry.metric
+    const cells = [el('td', { class: 'metric' }, [metric.label, el('span', { class: 'direction', text: metric.direction === 'higher' ? '↑ better' : '↓ better' }), markerSpan(entry.markers)])]
+    for (const population of POPULATIONS) {
+      const side = entry.populations[population.key]
+      const sideCell = (name, value) =>
+        el('td', { class: 'num', 'data-population': population.key, 'data-side': name }, value === null ? [el('span', { class: 'agg muted', text: '—' })] : [
+          el('span', { class: 'agg', text: formatAggregate(metric, value.aggregate) }),
+          el('span', { class: 'passes', title: passLabels[name].join(' · '), text: value.passes.map((cell) => formatPassCell(metric, cell)).join(' · ') }),
+        ])
+      cells.push(sideCell('reference', side.reference), sideCell('subject', side.subject))
+      const delta = formatDelta(metric, side.delta)
+      cells.push(el('td', { class: `num delta ${delta.className}`, 'data-population': population.key, 'data-side': 'delta', title: delta.title, text: delta.text }))
+    }
+    return el('tr', { 'data-metric': metric.id }, cells)
+  })
+  return el('div', { class: 'table-scroll' }, [el('table', { class: 'headline' }, [el('thead', null, [head1, head2]), el('tbody', null, body)])])
+}
+
+function countersTable(row) {
+  const head1 = el('tr', null, [el('th', { text: '' }), ...POPULATIONS.map((population) => el('th', { class: 'group', colspan: '3', text: population.label }))])
+  const head2 = el('tr', null, [el('th', { text: 'counter' }), ...POPULATIONS.flatMap(() => [el('th', { class: 'num', text: 'Reference' }), el('th', { class: 'num', text: 'Subject' }), el('th', { class: 'num', text: 'Δ' })])])
+  const number = (value) => (value === null ? '—' : String(value))
+  const body = row.counters.map((counter) =>
+    el('tr', { class: `counter-row ${counter.judgement ? 'judgement' : ''}`, 'data-counter': counter.label }, [
+      el('td', { class: 'label' }, [counter.label, markerSpan(counter.markers)]),
+      ...POPULATIONS.flatMap((population) => {
+        const values = counter.populations[population.key]
+        return [
+          el('td', { class: 'num', 'data-side': 'reference', text: number(values.reference) }),
+          el('td', { class: 'num', 'data-side': 'subject', text: number(values.subject) }),
+          el('td', { class: 'num', 'data-side': 'delta', text: values.delta === null ? '—' : signed(values.delta) }),
+        ]
+      }),
+    ]),
+  )
+  return el('div', { class: 'table-scroll' }, [el('table', { class: 'counters' }, [el('thead', null, [head1, head2]), el('tbody', null, body)])])
+}
+
+function drillDownTable(row, metrics) {
+  const head = el('tr', null, [el('th', { class: 'hunt', text: 'Hunt · step' }), ...METRIC_ORDER.map((id) => el('th', { text: metrics[id].label }))])
+  const body = row.drillDown.map((entry) =>
+    el('tr', { 'data-hunt': entry.huntId, 'data-step': entry.stepId }, [
+      el('th', { class: 'hunt', scope: 'row' }, [entry.huntId, el('span', { class: 'muted', text: ` · ${entry.stepId}` })]),
+      ...METRIC_ORDER.map((id) => {
+        const cells = entry.metrics[id]
+        return el('td', { class: 'cell', 'data-metric': id }, [
+          row.reference === null ? null : el('span', { class: 'ref', 'data-side': 'reference', title: `Reference ${row.reference}: ${row.passes.reference.join(' · ')}`, text: cells.reference.map((cell) => formatAttemptCell(metrics[id], cell)).join(' · ') }),
+          el('span', { class: 'subj', 'data-side': 'subject', title: `Subject ${row.subject}: ${row.passes.subject.join(' · ')}`, text: cells.subject.map((cell) => formatAttemptCell(metrics[id], cell)).join(' · ') }),
+        ])
+      }),
+    ]),
+  )
+  return el('div', { class: 'table-scroll' }, [el('table', { class: 'drill' }, [el('thead', null, [head]), el('tbody', null, body)])])
+}
+
+function markersLine(row) {
+  const line = el('div', { class: 'markers-line' })
+  const every = row.markers.every.map((marker) => `${marker.axis} ${marker.reference} → ${marker.subject} (every metric)`)
+  const judgement = row.markers.judgement.map((marker) => `${marker.axis} ${marker.reference} → ${marker.subject} (judgement metrics)`)
+  const all = [...every, ...judgement]
+  line.hidden = all.length === 0
+  line.textContent = all.length === 0 ? '' : `△ Judged under different conditions: ${all.join('; ')}.`
+  return line
+}
+
+async function fetchJson(url) {
+  const response = await fetch(url)
+  const body = await response.json()
+  if (!response.ok) throw new Error(body.error ?? `${response.status} from ${url}`)
+  return body
+}
+
+async function renderRow(section, family, referenceId) {
+  const query = referenceId === null ? 'none' : referenceId
+  const body = section.querySelector('.row-body')
+  body.replaceChildren(el('div', { class: 'muted small', text: 'reading…' }))
+  let row
+  try {
+    row = await fetchJson(`/api/row?subject=${encodeURIComponent(family.id)}&reference=${encodeURIComponent(query)}`)
+  } catch (error) {
+    body.replaceChildren(el('div', { class: 'error', text: String(error.message ?? error) }))
+    return
+  }
+  const metrics = Object.fromEntries(row.headline.map((entry) => [entry.metric.id, entry.metric]))
+  const passLabels = { reference: row.passes.reference, subject: row.passes.subject }
+  body.replaceChildren(
+    markersLine(row),
+    el('h3', { text: 'Headline' }),
+    headlineTable(row, passLabels),
+    el('details', { class: 'counters' }, [el('summary', { text: `All counters (${row.counters.length}) — raw deltas` }), countersTable(row)]),
+    el('details', { class: 'drill' }, [el('summary', { text: `By Hunt × step (${row.drillDown.length}) — Reference Passes above Subject Passes` }), drillDownTable(row, metrics)]),
+  )
+  section.dataset.reference = row.reference ?? 'none'
+}
+
+function familySection(family, listing) {
+  const section = el('section', { class: 'family', 'data-family': family.id, id: `family-${family.id}` })
+  const links = []
+  if (family.aggregate !== null && family.aggregate.markdown !== null) links.push(el('a', { href: `/reports/${family.aggregate.markdown}`, target: '_blank', rel: 'noopener', text: 'aggregate audit' }))
+  for (const pass of family.passes) if (pass.markdown !== null) links.push(el('a', { href: `/reports/${pass.markdown}`, target: '_blank', rel: 'noopener', text: pass.setId }))
+  section.append(
+    el('div', { class: 'family-head' }, [
+      el('h2', { text: family.id }),
+      family.baseline ? el('span', { class: 'tag', text: 'Baseline' }) : null,
+      el('span', { class: 'muted small', text: `captured from ${family.createdAt.slice(0, 16).replace('T', ' ')}` }),
+      el('span', { class: 'small' }, family.passes.flatMap((pass, index) => [index === 0 ? null : ' · ', passStateSpan(pass)])),
+      el('span', { class: 'small muted' }, links.flatMap((link, index) => [index === 0 ? 'Markdown: ' : ' · ', link])),
+    ]),
+  )
+  const select = el('select', { 'aria-label': `Reference for ${family.id}` })
+  select.append(el('option', { value: 'none', text: 'none' }))
+  for (const other of listing.families) {
+    if (other.id === family.id) continue
+    select.append(el('option', { value: other.id, text: `${other.id}${other.id === family.defaultReference ? ' (default)' : ''}` }))
+  }
+  select.value = family.defaultReference ?? 'none'
+  select.addEventListener('change', () => renderRow(section, family, select.value === 'none' ? null : select.value))
+  section.append(el('div', { class: 'reference-line' }, [el('label', null, ['Reference: ', select]), el('span', { class: 'muted small', text: 'Subject minus Reference; the colour follows each metric’s own direction' })]))
+  if (family.notes.length > 0) section.append(el('div', { class: 'notes' }, [el('ul', null, family.notes.map((note) => el('li', { text: note })))]))
+  section.append(el('div', { class: 'row-body' }))
+  return section
+}
+
+async function load() {
+  const status = document.getElementById('status')
+  let listing
+  try {
+    listing = await fetchJson('/api/ledger')
+  } catch (error) {
+    status.textContent = String(error.message ?? error)
+    status.className = 'error small'
+    return
+  }
+  document.getElementById('reports-dir').textContent = listing.reportsDir
+  const main = document.getElementById('families')
+  main.replaceChildren()
+  if (listing.families.length === 0) main.append(el('p', { class: 'muted', text: 'No Round Audit (audit-*.json) in this directory.' }))
+  for (const family of listing.families) main.append(familySection(family, listing))
+  if (listing.ignored.length > 0) {
+    main.append(el('section', { class: 'family', id: 'ignored' }, [el('h2', { text: 'Ignored files' }), el('ul', null, listing.ignored.map((entry) => el('li', { text: `${entry.name}: ${entry.reason}` })))]))
+  }
+  status.textContent = `${listing.families.length} famil${listing.families.length === 1 ? 'y' : 'ies'} · reload to re-read`
+  await Promise.all(listing.families.map((family) => renderRow(main.querySelector(`[data-family="${CSS.escape(family.id)}"]`), family, family.defaultReference)))
+  document.body.dataset.loaded = 'true'
+}
+
+load()
+</script>
+</body>
+</html>
