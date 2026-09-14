@@ -1205,8 +1205,10 @@ _Avoid_: run, session, batch, eval run
 
 **Baseline**:
 The Passes taken on one route under one Grading Key version and one reviewer,
-human or model, read together as the reference measurement. Passes that
-differ on any of those are not a Baseline together, and nothing joins them.
+human or model, on one commit of the app under measurement, read together as
+the reference measurement. Passes that differ on any of those are not a
+Baseline together, and nothing joins them; a change to documents alone does
+not make a new commit for this purpose.
 _Avoid_: benchmark, eval, comparison
 
 **Round Audit**:
