@@ -30,18 +30,6 @@ re-judges a check. Outputs judged before #244 carry the old set and aggregate
 only among themselves; the three Baseline sets are re-judged, the fix-issue
 audits are not.
 
-Amended on 2026-09-14 for #244, from the grill of #242. The verdict set gains
-**answer omitted**, and "stopped early" narrows to an unsatisfied check that
-needed a page the Run had not yet read. The audit had handed the reviewer the
-grade's unsatisfied checks under the name "checks not reached" and asked
-whether they were reachable from pages already held, so a fact the Answer
-left unstated from material already read was "stopped early" by
-construction: the Eurostar initial drew that verdict in two Baseline passes
-and, with the same omission, not in the third, decided only by whether its
-budget ran out. The line is now "checks unsatisfied", which is what the value
-is. Outputs judged before #244 carry the old set; the three Baseline sets are
-re-judged, the fix-issue audits are not.
-
 ## Context
 
 The live-web Baseline (#223) says the assistant does not complete the
