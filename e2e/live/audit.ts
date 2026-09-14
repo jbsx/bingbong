@@ -1155,7 +1155,7 @@ export function classifyAttempt(input: AuditTraceInput): AuditMechanical {
 
   // Pass five, beside the rounds (#246): the Run's own Identity Slips, where
   // its trace is new enough to have recorded them at all.
-  const slipRecords = records.filter((record) => record.kind === 'identity_slip' && record.agentId === undefined)
+  const slipRecords = records.filter((record) => record.kind === 'identity_slip')
   const identitySlips = records.some((record) => isFiniteNumber(record.v) && record.v >= IDENTITY_SLIP_TRACE_VERSION)
     ? { answers: slipRecords.length, ids: slipRecords.reduce((total, record) => total + (Array.isArray(record.slips) ? record.slips.length : 0), 0) }
     : null
@@ -1841,11 +1841,16 @@ function verdictTable(populations: readonly AuditPopulation[]): string[] {
   return lines
 }
 
+/** The two Identity Slip counts (#246), in the one wording an attempt and a population share. */
+function slipCountsText(answers: number, ids: number): string {
+  return `${answers} Answer(s) with an Identity Slip, ${ids} id(s) slipped`
+}
+
 /** A population's Identity Slips (#246): the two counts, or "not recorded" when no attempt's trace could hold one. */
 function populationSlipsText(population: AuditPopulation): string {
   if (population.attempts > 0 && population.identitySlipsNotRecorded === population.attempts) return 'Identity Slips not recorded'
-  const notRecorded = population.identitySlipsNotRecorded > 0 ? `; ${population.identitySlipsNotRecorded} attempt(s) not recorded` : ''
-  return `${population.identitySlipAnswers} Answer(s) with an Identity Slip (${population.identitySlipIds} id(s) slipped${notRecorded})`
+  const notRecorded = population.identitySlipsNotRecorded > 0 ? ` (${population.identitySlipsNotRecorded} attempt(s) not recorded)` : ''
+  return `${slipCountsText(population.identitySlipAnswers, population.identitySlipIds)}${notRecorded}`
 }
 
 function judgementLines(populations: readonly AuditPopulation[]): string[] {
@@ -1885,7 +1890,7 @@ function attemptSection(attempt: AuditAttempt): string[] {
   lines.push(`- navigates that landed on a Not-found Page: ${landings.length}${landings.length > 0 ? ` (round ${landings.join(', ')})` : ''}`)
   lines.push(`- of those, judged Off-key by the reviewer: ${judgement === null ? 'not judged' : notFoundOffKeyOf(mechanical, judgement)}`)
   const slips = mechanical.identitySlips
-  lines.push(`- Identity Slips: ${slips === null ? `not recorded (a Run Trace below version ${IDENTITY_SLIP_TRACE_VERSION})` : `${slips.answers} Answer(s), ${slips.ids} id(s) slipped`}`)
+  lines.push(`- Identity Slips: ${slips === null ? `not recorded (a Run Trace below version ${IDENTITY_SLIP_TRACE_VERSION})` : slipCountsText(slips.answers, slips.ids)}`)
   lines.push(`- kinds: ${ROUND_KINDS.map((kind) => `${KIND_LABELS[kind]} ${mechanical.counts[kind]} (${pct(mechanical.shares[kind])})`).join(' · ')}`)
   lines.push(`- search source ${mechanical.searchSource}: ${SEARCH_SOURCE_NOTES[mechanical.searchSource]}`)
   if (review === null) lines.push('- reviewer: not consulted')

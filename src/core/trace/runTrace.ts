@@ -29,8 +29,9 @@ import type { VisionRunTraceRecord } from './visionTrace'
 
 /**
  * The record-shape version every line carries; bump it when a field's
- * meaning changes. 2 (#246): the `identity_slip` record exists, so a
- * version-1 trace's absence of one is "not recorded", not "no slip".
+ * meaning changes, or when a record's absence starts to mean something.
+ * 2 (#246): an Answer with no `identity_slip` record had no Identity Slip,
+ * which a version-1 trace cannot say.
  */
 export const RUN_TRACE_VERSION = 2
 

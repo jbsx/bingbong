@@ -7270,7 +7270,7 @@ describe('grounded Candidates, user corrections, and Answers (#122)', () => {
     expect(display).toMatchObject({
       type: 'display',
       // The id that names the checkpointed Observation becomes its source
-      // link, the Run Observation id is deleted with its hole tidied — and
+      // link, the Run Observation id is deleted and its punctuation tidied — and
       // the live text carries no generated Sources block: the structured
       // Answer Evidence Summary replaces it (#141).
       text: 'Cheapest option found ([shop.example](https://shop.example/acme-router)).',

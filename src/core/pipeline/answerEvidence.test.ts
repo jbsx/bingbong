@@ -57,7 +57,7 @@ describe('repairCard', () => {
   const link = (entry: { url: string; title: string | null }): string => `[${entry.title}](${entry.url})`
   const firstParagraph = (text: string): string => text.split('\n\n')[0]!
 
-  it('substitutes every resolved id in the captured Eurostar Card with its source link, leaving no hole', () => {
+  it('substitutes every resolved id in the captured Eurostar Card with its source link, so every sentence reads whole', () => {
     expect(eurostar.publishedDisplay).toContain(': /memory-2 give')
     const repaired = repairCard(eurostar.rawDisplay, resolve)
     expect(firstParagraph(repaired.text)).toBe(

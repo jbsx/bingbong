@@ -892,8 +892,9 @@ unchanged and differs from both on purpose.
 Two more sit beside them for the Answer (#246, ADR 0028): the **Answers with an
 Identity Slip** and the **ids slipped** in them, counted from the Run's own
 `identity_slip` Run Trace records — one per Answer whose Card or Spoken
-Rendering carried an internal id, one entry per id. A Subagent's records are
-not counted. Neither number enters the digest or bears on a verdict. A trace
+Rendering carried an internal id, one entry per id; a Subagent Report never
+passes the display boundary, so it writes none. Neither number enters the
+digest or bears on a verdict. A trace
 written below Run Trace version 2 predates the record, so its attempt reads
 "not recorded" rather than zero (`identitySlips: null`); a population says how
 many of its attempts were not recorded and counts only the rest, and reads

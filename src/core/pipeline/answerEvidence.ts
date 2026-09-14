@@ -12,6 +12,7 @@
 
 import type { MemoryEntryId, MemoryReference } from '../session/workingMemory'
 import type { SessionObservation } from '../session/sessionEvidence'
+import { hostFromUrl } from './blockerGate'
 
 /**
  * The source links an Answer's cited evidence carries (#122): each
@@ -75,7 +76,7 @@ export const USER_OBSERVATION_PHRASE = 'what you told me'
  * Session Evidence Observation becomes a link to its first reference —
  * titled, else by host — or {@link USER_OBSERVATION_PHRASE} for a User
  * Observation; an id the store cannot resolve, a Run Observation id among
- * them, is deleted and its hole tidied. The structured Answer Evidence
+ * them, is deleted and the punctuation it leaves tidied. The structured Answer Evidence
  * Summary, not a generated Sources list, presents the cited evidence
  * beside this text, and a substitution never enters it.
  */
@@ -121,7 +122,7 @@ function repairRendering(text: string, surface: IdentitySlipSurface, substitute:
   )
   if (!slips.some((slip) => slip.repair === 'deleted')) return { text: repaired, slips }
   return {
-    // Tidy the holes deleted tokens leave behind: collapsed runs of
+    // Tidy the punctuation deletions leave behind: collapsed runs of
     // spaces and commas, then a comma left against a paren or bracket,
     // which a substitution beside a deletion leaves.
     text: repaired
@@ -135,16 +136,7 @@ function repairRendering(text: string, surface: IdentitySlipSurface, substitute:
 
 /** A reference as a markdown link: its title, else its URL's host, escaped so the link stays one link. */
 function markdownLink(reference: MemoryReference): string {
-  const label = (reference.title?.trim() || hostOf(reference.url)).replace(/[\\[\]]/g, (char) => `\\${char}`)
+  const label = (reference.title?.trim() || (hostFromUrl(reference.url) ?? reference.url)).replace(/[\\[\]]/g, (char) => `\\${char}`)
   const target = reference.url.replace(/[()\s]/g, (char) => `%${char.charCodeAt(0).toString(16).toUpperCase().padStart(2, '0')}`)
   return `[${label}](${target})`
-}
-
-function hostOf(url: string): string {
-  try {
-    return new URL(url).host || url
-  // eslint-disable-next-line no-restricted-syntax -- a reference that is not a parseable URL is shown as written
-  } catch {
-    return url
-  }
 }

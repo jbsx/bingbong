@@ -601,8 +601,6 @@ describe('Identity Slips (#246, ADR 0028)', () => {
         { surface: 'speak', id: 'memory-1', repair: 'deleted' },
       ],
     },
-    // A Subagent's record is not the Run's Answer; the boundary never writes one, and the audit never counts one.
-    { ...identity, at: T0 + 2_650, kind: 'identity_slip', agentId: 'a-1', slips: [{ surface: 'display', id: 'memory-9', repair: 'deleted' }] },
   ]
   const slipped = classifyAttempt(inputOf({ traceRecords: atVersion(traceOf(ROUNDS, [...EXTRA, ...SLIPPED]), 2) }))
   const clean = classifyAttempt(inputOf({ traceRecords: atVersion(traceOf(ROUNDS, EXTRA), 2) }))
@@ -629,17 +627,17 @@ describe('Identity Slips (#246, ADR 0028)', () => {
     expect(set.populations.followUp).toMatchObject({ identitySlipAnswers: 0, identitySlipIds: 0, identitySlipsNotRecorded: 1 })
 
     const markdown = formatAuditSet(set)
-    expect(markdown).toContain('- Identity Slips: 1 Answer(s), 3 id(s) slipped')
-    expect(markdown).toContain('- Identity Slips: 0 Answer(s), 0 id(s) slipped')
+    expect(markdown).toContain('- Identity Slips: 1 Answer(s) with an Identity Slip, 3 id(s) slipped')
+    expect(markdown).toContain('- Identity Slips: 0 Answer(s) with an Identity Slip, 0 id(s) slipped')
     expect(markdown).toContain('- Identity Slips: not recorded (a Run Trace below version 2)')
-    expect(markdown).toMatch(/- initial: .*Held Page round\(s\) without Progress, 1 Answer\(s\) with an Identity Slip \(3 id\(s\) slipped\), /)
+    expect(markdown).toMatch(/- initial: .*Held Page round\(s\) without Progress, 1 Answer\(s\) with an Identity Slip, 3 id\(s\) slipped, /)
     expect(markdown).toMatch(/- follow_up: .*Held Page round\(s\) without Progress, Identity Slips not recorded, /)
 
     const other = buildAuditSet(provenanceOf({ setId: 'set-2', createdAt: '2026-09-12T18:00:00.000Z' }), [initialOf(old)], [])
     const aggregate = buildAuditAggregate([set, other], '2026-09-14T11:00:00.000Z')
     if (!aggregate.ok) throw new Error(aggregate.errors.join('; '))
     expect(aggregate.value.populations.initial).toMatchObject({ identitySlipAnswers: 1, identitySlipIds: 3, identitySlipsNotRecorded: 1 })
-    expect(formatAuditAggregate(aggregate.value)).toContain('1 Answer(s) with an Identity Slip (3 id(s) slipped; 1 attempt(s) not recorded), ')
+    expect(formatAuditAggregate(aggregate.value)).toContain('1 Answer(s) with an Identity Slip, 3 id(s) slipped (1 attempt(s) not recorded), ')
   })
 })
 
