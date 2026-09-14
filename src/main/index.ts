@@ -461,6 +461,9 @@ async function createWindow(): Promise<BrowserWindow> {
     // The cards' Reopen control moves a subagent pane into the main
     // browsing area (#57) — it mirrors the main pane's rect from then on.
     mainPane: pane,
+    // The Held Page Notice (#240, ADR 0051): a browsing Subagent reads the
+    // same live Session Evidence store the orchestrator does, per call.
+    heldObservations: (url) => sessionRuntime?.evidenceStore()?.heldObservations(url) ?? [],
   })
   subagentRuntimes.set(win, subagentRuntime)
   win.on('closed', () => {

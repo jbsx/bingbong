@@ -14,6 +14,8 @@ import { hostFromUrl } from '../pipeline/blockerGate'
 import type { TracedReasoningRound } from '../trace/reasoningTrace'
 import type { TracedLlmRound } from '../trace/llmRoundTrace'
 import type { LlmRequest } from '../ports/llm'
+import { HELD_PAGE_INSTRUCTION } from '../pipeline/heldPage'
+import { createSessionEvidence } from '../session/sessionEvidence'
 
 // The workhorse loop behind every subagent (issue #13): a deepseek-chat LLM
 // with its own tool set, no confirmations (the policy wrapper already
@@ -897,6 +899,39 @@ describe('runSubagent', () => {
     expect(results[2]?.outcome).toMatchObject({
       ok: false,
       error: expect.stringContaining('Not executed — this action repeats an equivalent action'),
+    })
+  })
+
+  it('attaches the Held Page Notice to a landing on a page the Session holds, read from the Session store (#240)', async () => {
+    let url = 'about:blank'
+    const navigate: Tool = {
+      name: 'navigate',
+      async execute(call) {
+        url = String(call.args.url)
+        return 'navigated'
+      },
+    }
+    const store = createSessionEvidence({ sessionId: 'session-1' as never, now: () => 0, mintId: () => 'memory-1' as never })
+    store.checkpointObservation({ sourceKind: 'web', text: 'Standard fare: two cases.', references: [{ url: 'https://rail.example/luggage' }], runId: 'run-1' as never })
+    const llm = new ScriptedLlm([
+      { kind: 'tool_calls', calls: [{ id: 'n1', name: 'navigate', args: { url: 'https://rail.example/luggage' } }] },
+      { kind: 'answer', speak: 's', display: 'Done.' },
+    ])
+
+    await runSubagent(
+      {
+        llm,
+        tools: [navigate],
+        clock: new FakeClock(),
+        currentPageUrl: () => url,
+        heldObservations: (landed) => store.heldObservations(landed),
+      },
+      { task: 't', isCancelled: () => false },
+    )
+
+    expect(llm.requests[1]?.toolResults?.[0]?.outcome).toEqual({
+      ok: true,
+      result: ['navigated', '', 'Session Evidence already holds 1 Observation from this page:', 'memory-1: Standard fare: two cases.', HELD_PAGE_INSTRUCTION].join('\n'),
     })
   })
 

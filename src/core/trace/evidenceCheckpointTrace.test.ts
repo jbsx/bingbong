@@ -45,11 +45,29 @@ describe('evidenceCheckpointEvent', () => {
     expect(event.outcome).toBe('accepted')
     expect(event.matched).toBe(true)
     expect(event.entryId).toBe('memory-4')
+    expect(event.merged).toBe(false)
     expect(event.excerpt).toBe('costs $39')
     expect(event.graded.map((graded) => [graded.observationId, graded.producer, graded.matched])).toEqual([
       ['obs-1', 'page_read', true],
       ['obs-2', 'look', false],
     ])
+  })
+
+  it('records the store’s exact-duplicate verdict beside the Memory Entry, and none on a rejection (#240)', () => {
+    const args = { observation: 'the router costs $39', source_url: SOURCE, excerpt: 'costs $39' }
+    const merged = evidenceCheckpointEvent({
+      call: call(args),
+      outcome: { ok: true, entryId: 'memory-4' as MemoryEntryId, merged: true, sourceObservationId: PAGE_READ.id, sourceUrl: SOURCE, contradicts: [] },
+      records: [PAGE_READ],
+    })
+    expect(merged).toMatchObject({ outcome: 'accepted', entryId: 'memory-4', merged: true })
+
+    const rejected = evidenceCheckpointEvent({
+      call: call(args),
+      outcome: { ok: false, reason: 'excerpt_unsupported', error: 'not in the page' },
+      records: [PAGE_READ],
+    })
+    expect(rejected).not.toHaveProperty('merged')
   })
 
   it('keeps the raw arguments verbatim, however the model wrote them', () => {

@@ -1367,6 +1367,12 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
           },
           ...(deps.currentHost ? { currentHost: deps.currentHost } : {}),
           ...(deps.currentPageUrl ? { currentPageUrl: deps.currentPageUrl } : {}),
+          // The Held Page Notice (#240, ADR 0051): what the live Session
+          // holds from the page a call lands on, resolved per call so an
+          // Observation this Run checkpointed a few rounds ago counts too.
+          ...(evidenceSession
+            ? { heldObservations: (url: string) => evidenceSession()?.store.heldObservations(url) ?? [] }
+            : {}),
           ...(deps.describeRef ? { describeRef: deps.describeRef } : {}),
           ...(deps.settledPageState ? { settledPageState: deps.settledPageState } : {}),
           ...(deps.tracer !== undefined || deps.browserSubspans !== undefined

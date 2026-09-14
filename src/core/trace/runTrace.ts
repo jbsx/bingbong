@@ -116,6 +116,12 @@ export interface EvidenceCheckpointEvent {
   readonly excerpt?: string
   /** The Memory Entry the checkpoint became, on success. */
   readonly entryId?: string
+  /**
+   * On success, whether the store merged the checkpoint into an exact
+   * duplicate it already held (#240, ADR 0051). Absent on rejections and in
+   * traces written before the field existed.
+   */
+  readonly merged?: boolean
   /** The delegated worker whose observations graded a subagent citation (#123). */
   readonly agentId?: string
 }

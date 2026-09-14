@@ -830,6 +830,18 @@ Run Trace and never enters the reviewer's digest, so adding it re-keyed no
 cached judgement. It is the number a fix to how pages are read is measured by:
 the Baseline's scroll rounds were 104 of 340 tool rounds.
 
+Per attempt and per population, two more counts sit beside the rounds (#240,
+ADR 0051), code-counted and outside the digest in the same way. **Merged
+checkpoints** are accepted Evidence Checkpoints the store merged into an
+Observation the Session already held, read from the `merged` field the Run
+Trace records on an accepted checkpoint; a trace written before the field
+merged none, and the count is a floor, since the merge is exact-text and a
+paraphrased re-recording is not one. **Held Page rounds without Progress** are
+Acquisition rounds without Progress with a call — never a navigate — on a Held
+Page: a page the initial attempt checkpointed, or one this attempt checkpointed
+in an earlier round, canonical under the audit's rule. The `inherited` tag is
+unchanged and differs from both on purpose.
+
 They name check ids and URLs only, never key text: the reviewer is told to
 refer to checks by id, every output is checked for any key string or any run of
 eight consecutive words of one before it is written, and `audit.test.ts`

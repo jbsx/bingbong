@@ -546,6 +546,54 @@ describe('openAiLlmClient', () => {
     expect(messages[4]).toEqual({ role: 'user', content: 'the price again' })
   })
 
+  it('prefaces the Session Evidence JSON with the pages it holds, and leaves the JSON as it was (#240, ADR 0051)', async () => {
+    const fetch = new ScriptedFetch([
+      completionResponse({ content: '{"speak":"Done.","display":"Done."}' }),
+      completionResponse({ content: '{"speak":"Done.","display":"Done."}' }),
+    ])
+    const client = makeClient(fetch)
+    const web = (id: string, text: string, urls: readonly string[]) =>
+      Object.freeze({
+        id: id as never,
+        sessionId: 'session-1' as never,
+        sourceKind: 'web' as const,
+        text,
+        observedAt: 0,
+        references: Object.freeze(urls.map((url) => ({ url }))),
+        provenance: Object.freeze([{ runId: 'run-1' as never }]),
+      })
+    const user = Object.freeze({
+      id: 'memory-9' as never,
+      sessionId: 'session-1' as never,
+      sourceKind: 'user' as const,
+      text: 'Premier, please.',
+      observedAt: 0,
+      references: Object.freeze([]),
+      provenance: Object.freeze([{ runId: 'run-1' as never }]),
+    })
+    const evidence = {
+      observations: [
+        web('memory-1', 'Standard fare: two cases.', ['https://rail.example/luggage']),
+        web('memory-2', 'Bikes need a reservation.', ['https://rail.example/bikes', 'https://rail.example/luggage']),
+        user,
+      ],
+      candidates: [],
+      contradictions: [],
+    }
+
+    await client.complete({ command: 'premier luggage', toolResults: [], evidence })
+    await client.complete({ command: 'premier luggage', toolResults: [], evidence: { observations: [user], candidates: [], contradictions: [] } })
+
+    const [withPages, userOnly] = fetch.calls.map((call) => call.body.messages.find((message: { content?: string | null }) => message.content?.includes('<session_evidence>'))?.content ?? '')
+    const [, block] = withPages.split('<session_evidence>\n')
+    const [preface, ...json] = block!.replace('\n</session_evidence>', '').split('\n')
+    expect(preface).toBe('held pages: https://rail.example/luggage (memory-1, memory-2); https://rail.example/bikes (memory-2)')
+    expect(JSON.parse(json.join('\n'))).toEqual(JSON.parse(JSON.stringify(evidence)))
+    // A snapshot holding no page carries no preface at all.
+    expect(userOnly).not.toContain('held pages:')
+    expect(userOnly).toContain('<session_evidence>\n{')
+  })
+
   it('keeps an empty Session Evidence snapshot byte-identical to none (#121)', async () => {
     const answers = [
       completionResponse({ content: '{"speak":"Done.","display":"Done."}' }),

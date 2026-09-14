@@ -221,4 +221,10 @@ describe('shared policy evidence invariants (ADR 0028)', () => {
     expect(bullet('Ground every claim')).toMatch(/copied verbatim from the observed result/i)
     expect(bullet('Ground every claim')).toMatch(/never paraphrased from memory/i)
   })
+
+  it.each(ROLE_PROMPTS)('the %s prompt opens a Held Page for what its Observations do not state, never to re-record them (#240, ADR 0051)', (_role, prompt) => {
+    const sentence = 'A page Session Evidence holds Observations from is opened for what they do not state, never to re-record what they do.'
+    expect(bullet('Ground every claim')).toContain(sentence)
+    expect(prompt).toContain(sentence)
+  })
 })

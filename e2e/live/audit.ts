@@ -260,6 +260,20 @@ export interface AuditMechanical {
   readonly acceptedCheckpoints: number
   readonly rejectedCheckpoints: number
   readonly inheritedRounds: number
+  /**
+   * Accepted Evidence Checkpoints the store merged into an Observation the
+   * Session already held (#240, ADR 0051), read from the trace's own verdict:
+   * a trace written before the field merged none. A floor — the merge is
+   * exact-text, so a paraphrased re-recording is not one.
+   */
+  readonly mergedCheckpoints: number
+  /**
+   * Acquisition rounds without Progress with a call — never a navigate — on a
+   * Held Page (#240, ADR 0051): a page the initial attempt checkpointed, or
+   * one this attempt checkpointed in an earlier round. Beside the rounds,
+   * never in them, so it re-keys no cached judgement.
+   */
+  readonly heldPageRoundsWithoutProgress: number
   /** Search Loop rounds by the streak rule: the rounds whose search rewords the one before it, and the heads of those loops. */
   readonly mechanicalSearchRounds: number
   /**
@@ -361,6 +375,10 @@ export interface AuditPopulation {
   /** Attempts by where their search rounds came from (#243). */
   readonly searchSources: Readonly<Record<AuditSearchSource, number>>
   readonly inheritedRounds: number
+  /** Merged Evidence Checkpoints over the attempts (#240): a floor. */
+  readonly mergedCheckpoints: number
+  /** Held Page rounds without Progress over the attempts (#240). */
+  readonly heldPageRoundsWithoutProgress: number
   readonly rejectedCheckpoints: number
   readonly walledRounds: number
   readonly subagentRounds: number
@@ -827,8 +845,15 @@ function sharesOf(counts: Readonly<Record<RoundKind, number>>, budgeted: number,
   }
 }
 
+/** A call that sat on a Held Page without making Progress (#240): any Acquisition but a navigate. */
+function withoutProgressOnHeldPage(call: AuditCall, held: ReadonlySet<string>): boolean {
+  if (call.name === 'navigate' || call.progress === null || call.progress.made || call.url === null) return false
+  const canonical = canonicalUrl(call.url)
+  return canonical !== null && held.has(canonical)
+}
+
 /** The canonical URLs an attempt's accepted Evidence Checkpoints cite — what a follow-up would inherit. */
-export function checkpointedUrlsOf(traceRecords: readonly TraceRecord[]): Set<string> {
+export function checkpointedUrlsOf(traceRecords: readonly object[]): Set<string> {
   const urls = new Set<string>()
   for (const raw of traceRecords as unknown as readonly TraceLine[]) {
     if (raw.kind !== 'evidence_checkpoint' || raw.outcome !== 'accepted' || !isRecord(raw.args)) continue
@@ -1020,6 +1045,20 @@ export function classifyAttempt(input: AuditTraceInput): AuditMechanical {
       else if (call.search.streak === SEARCH_STREAK_WITHOUT_PROGRESS && streakHead !== null) heads.add(streakHead)
     }
   }
+  // Pass four, beside the rounds (#240, ADR 0051): the checkpoints the store
+  // merged, and the rounds spent without Progress on a Held Page. The held set
+  // at a round is the initial's checkpointed pages plus this attempt's own
+  // accepted checkpoints before it, under the same rule `checkpointedUrlsOf`
+  // gives the initial's.
+  const mergedCheckpoints = raw.reduce((total, round) => total + round.calls.filter((entry) => entry.checkpoint?.outcome === 'accepted' && entry.checkpoint.merged === true).length, 0)
+  const held = new Set(input.parentCheckpointedUrls ?? [])
+  let heldPageRoundsWithoutProgress = 0
+  rounds.forEach((round, index) => {
+    if (round.kind === 'acquisition_without_progress' && round.calls.some((call) => withoutProgressOnHeldPage(call, held))) heldPageRoundsWithoutProgress += 1
+    const checkpoints = raw[index]!.calls.flatMap((entry) => (entry.checkpoint === undefined ? [] : [entry.checkpoint]))
+    for (const url of checkpointedUrlsOf(checkpoints)) held.add(url)
+  })
+
   const rewordingRounds = rounds.filter((round) => round.kind === 'acquisition_without_progress' && round.reason.includes('rewords the one before it')).map((round) => round.round)
 
   const disposition: AuditDisposition =
@@ -1051,6 +1090,8 @@ export function classifyAttempt(input: AuditTraceInput): AuditMechanical {
     acceptedCheckpoints: rounds.reduce((total, round) => total + round.tags.acceptedCheckpoints, 0),
     rejectedCheckpoints: rounds.reduce((total, round) => total + round.tags.rejectedCheckpoints, 0),
     inheritedRounds: rounds.filter((round) => round.tags.inherited).length,
+    mergedCheckpoints,
+    heldPageRoundsWithoutProgress,
     mechanicalSearchRounds: new Set([...rewordingRounds, ...heads]).size,
     searchLoopHeads: [...heads].sort((left, right) => left - right),
     searchSource: railObservations !== null ? 'rail' : rounds.some((round) => round.tags.search) ? 'replay' : 'none',
@@ -1358,6 +1399,8 @@ export function populationOf(label: string, attempts: readonly AuditAttempt[]): 
   let searchLoop = 0
   let mechanicalSearch = 0
   let inherited = 0
+  let merged = 0
+  let heldPageRounds = 0
   let rejected = 0
   let walled = 0
   let subagentRounds = 0
@@ -1382,6 +1425,8 @@ export function populationOf(label: string, attempts: readonly AuditAttempt[]): 
     mechanicalSearch += mechanical.mechanicalSearchRounds
     sources[mechanical.searchSource] += 1
     inherited += mechanical.inheritedRounds
+    merged += mechanical.mergedCheckpoints
+    heldPageRounds += mechanical.heldPageRoundsWithoutProgress
     rejected += mechanical.rejectedCheckpoints
     walled += mechanical.walledRounds
     subagentRounds += mechanical.subagent.rounds
@@ -1416,6 +1461,8 @@ export function populationOf(label: string, attempts: readonly AuditAttempt[]): 
     mechanicalSearchRounds: mechanicalSearch,
     searchSources: sources,
     inheritedRounds: inherited,
+    mergedCheckpoints: merged,
+    heldPageRoundsWithoutProgress: heldPageRounds,
     rejectedCheckpoints: rejected,
     walledRounds: walled,
     subagentRounds,
@@ -1612,6 +1659,7 @@ function judgementLines(populations: readonly AuditPopulation[]): string[] {
     (population) =>
       `- ${population.label}: ${population.offKeyRounds} Off-key round(s), ${population.searchLoopRounds} Search Loop round(s) by the reviewer (${population.mechanicalSearchRounds} by the streak rule; attempts by search source ${SEARCH_SOURCES.map((source) => `${source} ${population.searchSources[source]}`).join(', ')}), ` +
       `${population.inheritedRounds} inherited, ${population.rejectedCheckpoints} rejected Evidence Checkpoint(s), ${population.walledRounds} walled round(s), ${population.subagentRounds} Subagent round(s), ` +
+      `${population.mergedCheckpoints} merged Evidence Checkpoint(s) (a floor), ${population.heldPageRoundsWithoutProgress} Held Page round(s) without Progress, ` +
       `${population.stoppedEarly} stopped early, ${population.overrules} overrule(s), ${population.flags} flag(s); Finalization Causes: ${Object.entries(population.finalizationCauses)
         .map(([cause, count]) => `${cause} ${count}`)
         .join(', ')}`,
@@ -1636,7 +1684,8 @@ function attemptSection(attempt: AuditAttempt): string[] {
   )
   lines.push(
     `- ${mechanical.subagent.rounds} Subagent round(s) over ${mechanical.subagent.agents} Subagent(s)${Object.keys(mechanical.subagent.byStop).length > 0 ? `, stopped by ${Object.entries(mechanical.subagent.byStop).map(([stop, count]) => `${stop} ${count}`).join(', ')}` : ''}; ` +
-      `${mechanical.acceptedCheckpoints} accepted and ${mechanical.rejectedCheckpoints} rejected Evidence Checkpoint(s); ${mechanical.inheritedRounds} inherited round(s); ${mechanical.walledRounds} walled round(s)`,
+      `${mechanical.acceptedCheckpoints} accepted (${mechanical.mergedCheckpoints} merged, a floor) and ${mechanical.rejectedCheckpoints} rejected Evidence Checkpoint(s); ${mechanical.inheritedRounds} inherited round(s); ` +
+      `${mechanical.heldPageRoundsWithoutProgress} Held Page round(s) without Progress; ${mechanical.walledRounds} walled round(s)`,
   )
   lines.push(`- kinds: ${ROUND_KINDS.map((kind) => `${KIND_LABELS[kind]} ${mechanical.counts[kind]} (${pct(mechanical.shares[kind])})`).join(' · ')}`)
   lines.push(`- search source ${mechanical.searchSource}: ${SEARCH_SOURCE_NOTES[mechanical.searchSource]}`)

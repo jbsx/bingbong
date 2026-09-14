@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { RunId, SessionId } from './sessionIdentity'
 import type { MemoryEntryId } from './workingMemory'
 import type { ObservationId } from './observationLedger'
-import { createSessionEvidence, MAX_CORRECTION_CHARS, MAX_UNCERTAINTY_CHARS } from './sessionEvidence'
+import { createSessionEvidence, heldPagesOf, MAX_CORRECTION_CHARS, MAX_UNCERTAINTY_CHARS } from './sessionEvidence'
 import type {
   CandidateDecisionOutcome,
   CandidateStatusChange,
@@ -1188,5 +1188,80 @@ describe('retaining the verification routes a Session watched fail (#212, ADR 00
     expect(
       evidence.retainVerificationFailure({ route: 'vision', failure: 'look timed out', runId: 'run-1' as RunId }),
     ).toBeNull()
+  })
+})
+
+// #240, ADR 0051: a Held Page is a page the Session holds an accepted web
+// Observation from, by the store's own canonical URL — whoever recorded it.
+describe('held pages', () => {
+  const page = 'https://rail.example/luggage?class=standard&lang=en'
+
+  function heldAt(url: string, text = 'Standard fare: two cases.', extra: Record<string, unknown> = {}) {
+    return { sourceKind: 'web' as const, text, references: [{ url }], runId: 'run-1' as RunId, ...extra }
+  }
+
+  it('finds a page by the store’s rule: fragment, trailing slash, default port, host case and query order fold (AC1)', () => {
+    const { evidence } = evidenceHarness()
+    const held = evidence.checkpointObservation(heldAt(page))!.observation
+
+    for (const landed of [
+      'https://rail.example/luggage?lang=en&class=standard',
+      'https://rail.example/luggage/?class=standard&lang=en',
+      'https://RAIL.example:443/luggage?class=standard&lang=en#premier',
+    ]) {
+      expect(evidence.heldObservations(landed).map((entry) => entry.id), landed).toEqual([held.id])
+    }
+    // www, scheme and tracker parameters are the store's to fold, and it does not.
+    for (const landed of [
+      'https://www.rail.example/luggage?class=standard&lang=en',
+      'http://rail.example/luggage?class=standard&lang=en',
+      'https://rail.example/luggage?class=standard&lang=en&utm_source=x',
+      'not a url',
+    ]) {
+      expect(evidence.heldObservations(landed), landed).toEqual([])
+    }
+  })
+
+  it('holds every web Observation from the page, whoever recorded it — volatile ones and both sides of a contradiction included (Decision 3)', () => {
+    const { evidence } = evidenceHarness()
+    const initial = evidence.checkpointObservation(heldAt(page, 'Standard fare: two cases.'))!.observation
+    const worker = evidence.checkpointObservation(heldAt(page, 'Bikes need a reservation.', { subagentId: 'a-1', volatile: true }))!.observation
+    const later = evidence.checkpointObservation(heldAt(page, 'Standard fare: three cases.', { runId: 'run-2' }))!
+    // An exact duplicate merges, and lists once.
+    evidence.checkpointObservation(heldAt(page, 'Standard fare: two cases.', { runId: 'run-2' }))
+
+    expect(later.contradicts).toContain(initial.id)
+    expect(evidence.heldObservations(page).map((entry) => [entry.id, entry.volatile === true])).toEqual([
+      [initial.id, false],
+      [worker.id, true],
+      [later.observation.id, false],
+    ])
+  })
+
+  it('never holds a page through a user or vision Observation', () => {
+    const { evidence } = evidenceHarness()
+    evidence.checkpointObservation({ sourceKind: 'user', text: 'Premier, please.', runId: 'run-1' as RunId })
+    evidence.checkpointObservation({ ...heldAt(page), sourceKind: 'vision' })
+    expect(evidence.heldObservations(page)).toEqual([])
+  })
+
+  it('holds nothing once the Session ends', () => {
+    const { evidence } = evidenceHarness()
+    evidence.checkpointObservation(heldAt(page))
+    evidence.clear()
+    expect(evidence.heldObservations(page)).toEqual([])
+  })
+
+  it('groups a snapshot’s web Observations by source URL, in the order they were first held', () => {
+    const { evidence } = evidenceHarness()
+    const first = evidence.checkpointObservation(heldAt(page))!.observation
+    const other = evidence.checkpointObservation({ ...heldAt('https://rail.example/bikes'), references: [{ url: 'https://rail.example/bikes' }, { url: page }] })!.observation
+    evidence.checkpointObservation({ sourceKind: 'user', text: 'Premier, please.', runId: 'run-1' as RunId })
+
+    expect(heldPagesOf(evidence.snapshot().observations)).toEqual([
+      { url: 'https://rail.example/luggage?class=standard&lang=en', observationIds: [first.id, other.id] },
+      { url: 'https://rail.example/bikes', observationIds: [other.id] },
+    ])
+    expect(heldPagesOf([])).toEqual([])
   })
 })

@@ -29,6 +29,7 @@ import { createNotices } from '../pipeline/notices'
 import type { RunDecisions } from '../pipeline/decisions'
 import type { RunInterrupts } from '../pipeline/interrupts'
 import { createToolRoundExecutor, unknownToolError, type FinalizationWording } from '../pipeline/toolRound'
+import type { HeldObservationsLookup } from '../session/sessionEvidence'
 import type { FinalizationCause } from '../session/runJournal'
 import { describeToolAction } from '../pipeline/toolCallDisplay'
 import { MAX_SUBAGENT_VISION_CALLS } from './subagentRails'
@@ -163,6 +164,13 @@ export interface RunSubagentDeps {
    * worker with no tab — the rails observe nothing and stay inert.
    */
   settledPageState?(): Promise<SettledPageState | null> | SettledPageState | null
+  /**
+   * The web Observations the Session holds from one page (#240, ADR 0051):
+   * the same Session Evidence store the orchestrator's Tool Round reads, so a
+   * Subagent landing on a Held Page is told what the Session already holds
+   * from it. Absent — a Subagent outside any Session — nothing is attached.
+   */
+  readonly heldObservations?: HeldObservationsLookup
   /**
    * Snapshot ref facts for this agent's own tab (#159): how the
    * search-loop rail recognizes text typed into a search input. Absent,
@@ -598,6 +606,7 @@ export async function runSubagent(deps: RunSubagentDeps, options: RunSubagentOpt
     ...(deps.currentPageUrl ? { currentPageUrl: deps.currentPageUrl } : {}),
     ...(deps.settledPageState ? { settledPageState: deps.settledPageState } : {}),
     ...(deps.describeRef ? { describeRef: deps.describeRef } : {}),
+    ...(deps.heldObservations ? { heldObservations: deps.heldObservations } : {}),
   })
 
   // The worker's reasoning collector (#183): one per worker, only when the

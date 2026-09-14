@@ -1,11 +1,12 @@
 import type { ToolResultOutcome } from '../ports/llm'
 import { reportFault } from '../trace/fault'
 
-// Issue #154, step 1: the Notices module. Seven model-facing advisory
-// lines ride tool results — the search-loop nudge, the no-progress nudge,
-// the Run Plan's corrective nudge, the Effort Epoch's budget warning,
-// (#216) its automatic Tier Escalation, its Finalize Instruction, and
-// (#158) the Browse Subagent's own Finalize Instruction. Their precedence
+// Issue #154, step 1: the Notices module. Eight model-facing advisory
+// lines ride tool results — the Search Loop rail's Notice, the no-progress
+// Notice, (#240) the Held Page Notice, the Run Plan's corrective Notice, the Effort
+// Epoch's budget warning, (#216) its automatic Tier Escalation, its
+// Finalize Instruction, and (#158) the Browse Subagent's own Finalize
+// Instruction. Their precedence
 // used to be the order of five `if` statements in the Run loop, and the
 // Run Plan nudge's "owed until it actually lands" rule was one boolean set
 // and cleared from five places. This module owns all of that as data: one
@@ -30,10 +31,11 @@ import { reportFault } from '../trace/fault'
 // clock, no tool names — "useful work" is the caller's judgement, passed
 // in per result.
 
-/** The seven Notice kinds, named by their source. */
+/** The eight Notice kinds, named by their source. */
 export type NoticeKind =
   | 'search_loop'
   | 'no_progress'
+  | 'held_page'
   | 'run_plan'
   | 'budget'
   | 'tier_escalation'
@@ -44,7 +46,9 @@ export type NoticeKind =
  * Delivery order when several Notices ride one result (#74/#126/#116/#117):
  * rail verdicts first, the plan correction next, the epoch's warning and
  * Finalize Instruction last — the model reads what this call did before what the
- * run as a whole owes it. An automatic Tier Escalation (#216) sits
+ * run as a whole owes it. The Held Page Notice (#240, ADR 0051) is about
+ * what this call did — the page it landed on — so it sits with the rail
+ * verdicts, right after them. An automatic Tier Escalation (#216) sits
  * between the warning and the Finalize Instruction: it answers the
  * warning's question — the deadline decided — and a round can carry both
  * only when the crossing happened before the warning could be delivered.
@@ -54,6 +58,7 @@ export type NoticeKind =
 export const NOTICE_PRECEDENCE: readonly NoticeKind[] = [
   'search_loop',
   'no_progress',
+  'held_page',
   'run_plan',
   'budget',
   'tier_escalation',
@@ -78,6 +83,7 @@ interface NoticeRule {
 const RULES: Readonly<Record<NoticeKind, NoticeRule>> = {
   search_loop: { persistence: 'immediate', rides: 'success' },
   no_progress: { persistence: 'immediate', rides: 'success' },
+  held_page: { persistence: 'immediate', rides: 'success' },
   run_plan: { persistence: 'owed', rides: 'useful_work' },
   budget: { persistence: 'owed', rides: 'useful_work' },
   tier_escalation: { persistence: 'owed', rides: 'useful_work' },

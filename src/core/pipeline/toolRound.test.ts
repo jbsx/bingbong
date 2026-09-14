@@ -11,6 +11,10 @@ import { createNotices } from './notices'
 import { createObservationLedger, type ObservationInput } from '../session/observationLedger'
 import { createToolRoundExecutor, type ToolRoundCapabilities, type ToolRoundConfig, type ToolRoundOutcome } from './toolRound'
 import type { ToolTraceEvent, VisionTraceIds, VisionTraceReporter } from '../trace/visionTrace'
+import { createSessionEvidence } from '../session/sessionEvidence'
+import type { RunId, SessionId } from '../session/sessionIdentity'
+import type { MemoryEntryId } from '../session/workingMemory'
+import { HELD_PAGE_INSTRUCTION } from './heldPage'
 
 // Issue #157: the Tool Round executor's own invariants — the order its
 // gated seams run in, and the four ways a round can end. Everything here is
@@ -76,6 +80,10 @@ function harness(
     currentHost?: () => string | null
     /** The verification rail's Session seams (#212). */
     verification?: ToolRoundConfig['verification']
+    /** The visible tab's URL (#111, #240). */
+    currentPageUrl?: () => string | null
+    /** The Session Evidence held from one page (#240). */
+    heldObservations?: ToolRoundConfig['heldObservations']
     /** The shared order log — pass the same array the scripted tools write to. */
     trace?: string[]
   } = {},
@@ -145,6 +153,8 @@ function harness(
     ...(options.settledPageState ? { settledPageState: options.settledPageState } : {}),
     ...(options.visionCalls !== undefined ? { visionCalls: options.visionCalls } : {}),
     ...(options.verification ? { verification: options.verification } : {}),
+    ...(options.currentPageUrl ? { currentPageUrl: options.currentPageUrl } : {}),
+    ...(options.heldObservations ? { heldObservations: options.heldObservations } : {}),
   })
   return {
     trace,
@@ -918,5 +928,134 @@ describe('an argument refusal is not a Vision Attempt (#236, ADR 0046)', () => {
 
     expect(errorOf(outcome.results[0]!.outcome)).toContain('already failed for this objective')
     expect(trace).not.toContain('admit:look')
+  })
+})
+
+describe('the Held Page Notice rides the landing on a page the Session holds, and nothing after it (#240, ADR 0051)', () => {
+  const HELD = 'https://rail.example/luggage'
+  const OTHER = 'https://rail.example/bikes'
+  const HELD_TEXT = 'Standard fare: two cases and one bag.'
+
+  /**
+   * A tab the scripted browser moves: a call lands where its `lands`, `url`
+   * or `to` argument says, and a call naming none stays on the page. The
+   * Session holds one web Observation from HELD unless told otherwise.
+   */
+  function browsing(options: { held?: readonly string[]; failing?: string; noProgress?: boolean } = {}) {
+    const tab = { url: 'https://search.example/?q=luggage' }
+    let minted = 0
+    const store = createSessionEvidence({ sessionId: 'session-1' as SessionId, now: () => 0, mintId: () => `memory-${++minted}` as MemoryEntryId })
+    for (const text of options.held ?? [HELD_TEXT]) {
+      store.checkpointObservation({ sourceKind: 'web', text, references: [{ url: HELD }], runId: 'run-0' as RunId })
+    }
+    const tools = ['navigate', 'click', 'back', 'go_forward', 'read_page', 'scroll', 'look'].map(
+      (name): Tool => ({
+        name,
+        async execute(callArg) {
+          const landed = callArg.args.lands ?? callArg.args.url ?? callArg.args.to
+          if (typeof landed === 'string') tab.url = landed
+          if (options.failing === name) throw new Error(`${name} failed`)
+          return `${name} done`
+        },
+      }),
+    )
+    const h = harness(tools, {
+      capabilities: { ...ALL_RAILS, noProgressRail: options.noProgress === true },
+      currentPageUrl: () => tab.url,
+      heldObservations: (url) => store.heldObservations(url),
+      ...(options.noProgress === true ? { settledPageState: () => STUCK } : {}),
+    })
+    return { h, store, tab }
+  }
+
+  const carries = (outcome: ToolResultOutcome): boolean =>
+    outcome.ok && typeof outcome.result === 'string' && outcome.result.includes(HELD_PAGE_INSTRUCTION)
+
+  it('rides navigate, click, back and go_forward landing on a Held Page, once per landing — not the read, scroll or Look after (AC2)', async () => {
+    const { h } = browsing()
+
+    const { outcome } = await h.round([
+      call('navigate', { url: HELD }),
+      call('read_page'),
+      call('scroll', { direction: 'down' }),
+      call('look', { question: 'where is Premier?' }),
+      call('click', { ref: 3 }),
+      call('navigate', { url: OTHER }),
+      call('back', { to: HELD }),
+      call('go_forward', { to: OTHER }),
+      call('click', { ref: 4, to: `${HELD}/#premier` }),
+    ])
+
+    expect(outcome.results.map((result) => carries(result.outcome))).toEqual([true, false, false, false, false, false, true, false, true])
+    expect(resultOf(outcome.results[0]!.outcome)).toBe(
+      ['navigate done', '', 'Session Evidence already holds 1 Observation from this page:', `memory-1: ${HELD_TEXT}`, HELD_PAGE_INSTRUCTION].join('\n'),
+    )
+    // The ledger keeps the raw outcome: a later checkpoint grounds in what the page said.
+    expect(h.observed[0]).toEqual({ producer: 'action_outcome', ok: true, payload: 'navigate done', sourceUrl: HELD })
+  })
+
+  it('judges the landed URL, not the requested one — a redirect onto a Held Page is a landing on it (AC1)', async () => {
+    const { h } = browsing()
+
+    const { outcome } = await h.round([
+      call('navigate', { url: 'https://rail.example/old-luggage', lands: HELD }),
+      call('navigate', { url: OTHER }),
+      call('navigate', { url: HELD, lands: 'https://rail.example/moved' }),
+    ])
+
+    expect(outcome.results.map((result) => carries(result.outcome))).toEqual([true, false, false])
+  })
+
+  it('tells a Run whose tab already sits on a Held Page on its first result there, and not again on a reload (Decision 2)', async () => {
+    const { h, tab } = browsing()
+    tab.url = HELD
+
+    const { outcome } = await h.round([call('navigate', { url: HELD }), call('read_page'), call('navigate', { url: `${HELD}#top` })])
+
+    expect(outcome.results.map((result) => carries(result.outcome))).toEqual([true, false, false])
+  })
+
+  it('never rides a failed result — the next success on the page carries it — and a page the Session holds nothing from carries nothing (AC2)', async () => {
+    const failing = browsing({ failing: 'navigate' })
+    const failed = await failing.h.round([call('navigate', { url: HELD }), call('read_page'), call('scroll', { direction: 'down' })])
+    expect(failed.outcome.results[0]!.outcome).toEqual({ ok: false, error: 'navigate failed' })
+    // The page did load: a failed result is no landing, so the Run is told
+    // on its first success there instead, and only then.
+    expect(failed.outcome.results.slice(1).map((result) => carries(result.outcome))).toEqual([true, false])
+
+    const empty = browsing({ held: [] })
+    const nothing = await empty.h.round([call('navigate', { url: HELD })])
+    expect(resultOf(nothing.outcome.results[0]!.outcome)).toBe('navigate done')
+  })
+
+  it('rides after a no-progress Notice when one result carries both (AC2)', async () => {
+    const { h } = browsing({ noProgress: true })
+
+    // The page state never moves, so the third distinct action exhausts an
+    // Approach — and it is the one that lands on the Held Page.
+    const { outcome } = await h.round([
+      call('navigate', { url: 'https://rail.example/a' }),
+      call('navigate', { url: 'https://rail.example/b' }),
+      call('navigate', { url: HELD }),
+    ])
+
+    const text = resultOf(outcome.results[2]!.outcome)
+    expect(text).toContain('Change your Approach')
+    expect(text.indexOf('Change your Approach')).toBeLessThan(text.indexOf('Session Evidence already holds'))
+    expect(text.endsWith(HELD_PAGE_INSTRUCTION)).toBe(true)
+  })
+
+  it('attaches nothing without the Session seam', async () => {
+    const tab = { url: 'https://search.example/' }
+    const navigate: Tool = {
+      name: 'navigate',
+      async execute(callArg) {
+        tab.url = String(callArg.args.url)
+        return 'navigate done'
+      },
+    }
+    const h = harness([navigate], { currentPageUrl: () => tab.url })
+    const { outcome } = await h.round([call('navigate', { url: HELD })])
+    expect(resultOf(outcome.results[0]!.outcome)).toBe('navigate done')
   })
 })

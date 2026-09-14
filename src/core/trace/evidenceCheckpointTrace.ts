@@ -66,7 +66,9 @@ export function evidenceCheckpointEvent(input: {
     // The excerpt as grading compared it (#179): a near-miss in the raw
     // args is easier to see beside the normalized form that was matched.
     ...(excerpt !== undefined ? { excerpt: normalizeMemoryText(excerpt) } : {}),
-    ...(outcome.ok ? { entryId: outcome.entryId } : {}),
+    // The store's exact-duplicate verdict beside the entry it merged into
+    // (#240, ADR 0051): what the Round Audit counts re-recordings by.
+    ...(outcome.ok ? { entryId: outcome.entryId, merged: outcome.merged } : {}),
     ...(agentId !== undefined ? { agentId } : {}),
   }
 }

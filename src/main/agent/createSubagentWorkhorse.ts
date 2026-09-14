@@ -7,6 +7,7 @@ import type { VisionDescriber } from '../../core/ports/vision'
 import type { UsageRecord } from '../../core/agent/usageTracking'
 import { withUsageTracking } from '../../core/agent/usageTracking'
 import type { PerfTracer } from '../../core/perf/perfTracer'
+import type { HeldObservationsLookup } from '../../core/session/sessionEvidence'
 import { withPerfTracing } from '../../core/perf/perfTracing'
 import {
   REASONING_EFFORT_ENV_KEY,
@@ -63,6 +64,12 @@ export interface SubagentWorkhorseDeps {
    * `subagent-llm` span keyed to that turn; without an id nothing logs.
    */
   tracer?: PerfTracer
+  /**
+   * The live Session's web Observations from one page (#240, ADR 0051): the
+   * one store the orchestrator's Held Page Notice reads, so a browsing
+   * Subagent landing on a Held Page is told the same thing.
+   */
+  heldObservations?: HeldObservationsLookup
 }
 
 /** The per-kind tool catalog, exported for the surface pin in the test. */
@@ -167,6 +174,9 @@ export function createSubagentTaskApi(deps: SubagentWorkhorseDeps): SubagentTask
           // A background worker has no tab, so its rails stay inert.
           ...(controller ? { settledPageState: () => controller.settledState() } : {}),
           ...(controller ? { describeRef: (ref: number) => controller.describeRef(ref) } : {}),
+          // What the Session holds from the page this Subagent lands on
+          // (#240): a tab-less Subagent lands nowhere, so it gets none.
+          ...(controller && deps.heldObservations ? { heldObservations: deps.heldObservations } : {}),
         },
         {
           task: spec.task,

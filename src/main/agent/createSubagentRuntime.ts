@@ -7,6 +7,7 @@ import type { Tool } from '../../core/pipeline/tool'
 import type { UsageRecord } from '../../core/agent/usageTracking'
 import type { PerfTracer } from '../../core/perf/perfTracer'
 import type { ObservationRecord } from '../../core/session/observationLedger'
+import type { HeldObservationsLookup } from '../../core/session/sessionEvidence'
 import type { CollectedSubagentReport, SubagentOwner } from '../../core/agent/subagentManager'
 import { SUBAGENT_LIMITS } from '../../core/agent/subagentRails'
 import { createSubagentManager } from '../../core/agent/subagentManager'
@@ -62,6 +63,11 @@ export interface SubagentRuntimeDeps {
   mainPane?: MainPaneRectSource
   /** Perf tracing for subagent LLM rounds (#29); absent keeps them unlogged. */
   tracer?: PerfTracer
+  /**
+   * The live Session's web Observations from one page (#240, ADR 0051): the
+   * store a browsing Subagent's Held Page Notice reads, resolved per call.
+   */
+  heldObservations?: HeldObservationsLookup
 }
 
 export interface SubagentRuntime {
@@ -143,6 +149,7 @@ export function createSubagentRuntime(deps: SubagentRuntimeDeps): SubagentRuntim
       vision,
       ...(deps.onUsage ? { onUsage: deps.onUsage } : {}),
       ...(deps.tracer ? { tracer: deps.tracer } : {}),
+      ...(deps.heldObservations ? { heldObservations: deps.heldObservations } : {}),
     }),
     tabs: {
       openFor: (agentId) => tabs.open(agentId, ''),

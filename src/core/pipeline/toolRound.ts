@@ -23,6 +23,8 @@ import { classifyToolObservation } from './toolObservations'
 import type { ObservationId, ObservationInput, ObservationRecord } from '../session/observationLedger'
 import { reportFault } from '../trace/fault'
 import type { FinalizationCause } from '../session/runJournal'
+import type { HeldObservationsLookup } from '../session/sessionEvidence'
+import { heldPageNotice, landedOnAnotherPage } from './heldPage'
 
 // Issue #154, step 2 (#157): the Tool Round executor.
 //
@@ -32,7 +34,7 @@ import type { FinalizationCause } from '../session/runJournal'
 // verification gate, the Vision Budget, the search-loop gate, execution,
 // then classify → Observation ledger → Blocker observe → the Blocker trip →
 // search-loop observe → verification observe → no-progress observe → the
-// no-Progress trip → Notices. That
+// no-Progress trip → the Held Page landing → Notices. That
 // order is an ADR 0010 / ADR 0027 / ADR 0037 / ADR 0041 requirement, and it used to
 // live as comments in a nine-parameter generator plus a loop body in the
 // Run pipeline, with the steering variable threaded through six exits.
@@ -196,6 +198,12 @@ export interface ToolRoundConfig {
   readonly finalizationWording?: FinalizationWording
   /** The visible tab's URL: the source recorded on page-facing Observations (#111). */
   currentPageUrl?(): string | null
+  /**
+   * The web Observations the Session holds from one page (#240, ADR 0051):
+   * a call that lands on a Held Page carries a Notice naming them. Absent —
+   * a caller with no Session — no landing carries one.
+   */
+  readonly heldObservations?: HeldObservationsLookup
   /** Snapshot ref facts: how the search-loop rail recognizes a typed GUI search (#82). */
   describeRef?(ref: number): Promise<SnapshotRef | undefined>
   /** The visible tab's settled page state: the no-progress rails' comparison input (#126). */
@@ -315,6 +323,12 @@ export function createToolRoundExecutor(config: ToolRoundConfig): ToolRoundExecu
    * the route reported.
    */
   const attempted = new WeakSet<ToolCall>()
+  /**
+   * The page the last successful page-facing call settled on (#240, ADR
+   * 0051): null until this executor has seen one, so a Run whose tab already
+   * sits on a Held Page is told on its first result there.
+   */
+  let lastLandedUrl: string | null = null
   const noProgressRail = capabilities.noProgressRail
     ? createNoProgressRail({
         ...(config.settledPageState ? { settledState: config.settledPageState } : {}),
@@ -339,6 +353,24 @@ export function createToolRoundExecutor(config: ToolRoundConfig): ToolRoundExecu
   const toolContext: ToolContext = { ...config.toolContext, acquireVision: () => visionBudget.tryAcquire() }
 
   const isInFinalization = (): boolean => effortEpoch.phase.kind !== 'working'
+
+  /**
+   * Records where a successful page-facing call settled and, when that moved
+   * the Run onto another page, what the Session holds from it (#240).
+   * Advisory like the verification seam: a Session store that throws loses
+   * the Notice, never the round.
+   */
+  function heldPageLanding(heldObservations: HeldObservationsLookup, landedUrl: string | null, turnId: string | undefined): string | null {
+    const previousUrl = lastLandedUrl
+    if (landedUrl !== null) lastLandedUrl = landedUrl
+    if (!landedOnAnotherPage(previousUrl, landedUrl)) return null
+    try {
+      return heldPageNotice(heldObservations(landedUrl))
+    } catch (error) {
+      reportFault('pipeline.toolRound.heldPage', error, { turnId })
+      return null
+    }
+  }
 
   async function assessCall(tool: Tool, call: ToolCall, turnId: string | undefined): Promise<RiskVerdict> {
     if (!tool.assessRisk) return { kind: 'allow' }
@@ -618,6 +650,15 @@ export function createToolRoundExecutor(config: ToolRoundConfig): ToolRoundExecu
       if (noProgressRail !== null) {
         notices.owe('no_progress', await noProgressRail.observe(call, outcome))
         if (noProgressRail.finalizationDue()) effortEpoch.tripNoProgress()
+      }
+      // The Held Page landing (#240, ADR 0051): a successful page-facing call
+      // that settled on a different page from the last successful one — or
+      // is this Run's first — names what the Session holds from it, once.
+      // The reads that follow stay on that page, so they land nowhere; a
+      // failed call is no landing, so the next success there carries it
+      // instead. Precedence puts it after the no-progress verdict above.
+      if (config.heldObservations !== undefined && classification.pageFacing && outcome.ok) {
+        notices.owe('held_page', heldPageLanding(config.heldObservations, sourceUrl ?? null, turnId))
       }
       // The one delivery site (#154): every Notice this result can carry
       // rides it in precedence order. Useful work is a successful string

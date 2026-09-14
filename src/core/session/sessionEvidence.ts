@@ -212,6 +212,50 @@ export function evidenceCountsOf(held: {
   }
 }
 
+/**
+ * One page the Session holds Observations from (#240, ADR 0051): its
+ * canonical URL and the Observations that cite it, in the order they were
+ * held.
+ */
+export interface HeldPage {
+  readonly url: string
+  readonly observationIds: readonly MemoryEntryId[]
+}
+
+/**
+ * Whether an Observation makes the pages it cites Held Pages (#240, ADR
+ * 0051): an accepted web Observation, whichever Run or Subagent recorded it.
+ * A User Observation names no page; a Look's Observation is not a page read.
+ */
+function holdsPage(observation: Pick<SessionObservation, 'sourceKind'>): boolean {
+  return observation.sourceKind === 'web'
+}
+
+/**
+ * The pages a snapshot's Observations hold, in the order each was first held
+ * (#240): what the Session Evidence block's `held pages:` preface lists.
+ * References are stored canonical, so a page is one key however it was cited.
+ */
+export function heldPagesOf(observations: readonly SessionObservation[]): readonly HeldPage[] {
+  const pages = new Map<string, MemoryEntryId[]>()
+  for (const observation of observations) {
+    if (!holdsPage(observation)) continue
+    for (const reference of observation.references) {
+      const ids = pages.get(reference.url) ?? []
+      if (!ids.includes(observation.id)) ids.push(observation.id)
+      pages.set(reference.url, ids)
+    }
+  }
+  return [...pages].map(([url, observationIds]) => ({ url, observationIds }))
+}
+
+/**
+ * The Session seam a Tool Round asks what the Session holds from the page a
+ * call landed on (#240, ADR 0051): the live store's `heldObservations`,
+ * resolved per call by whichever loop — Run or Browse Subagent — is asking.
+ */
+export type HeldObservationsLookup = (url: string) => readonly SessionObservation[]
+
 /** What a Session with no store yet — or a cleared one — holds. */
 export const EMPTY_EVIDENCE_COUNTS: SessionEvidenceCounts = Object.freeze({
   observations: 0,
@@ -349,6 +393,13 @@ export interface SessionEvidenceStore {
   candidate(id: MemoryEntryId): SessionCandidate | null
   /** Whether the cited identities are all live Observations — the bar an Assessment must clear. */
   hasObservationSupport(ids: readonly MemoryEntryId[]): boolean
+  /**
+   * The web Observations the Session holds from one page (#240, ADR 0051),
+   * oldest first: the URL canonicalised by the store's own rule and matched
+   * against the references written under it. Empty when the page is not
+   * held, the URL is not a web address, or the Session ended.
+   */
+  heldObservations(url: string): readonly SessionObservation[]
   /**
    * Retains the Candidate an Answer just presented for inspection (#210,
    * ADR 0039), replacing whatever the Session was holding. Null — the
@@ -930,6 +981,17 @@ export function createSessionEvidence(deps: {
     },
     hasObservationSupport(ids) {
       return supportIsValid(ids)
+    },
+    heldObservations(url) {
+      if (cleared) return []
+      const canonical = canonicalizeMemoryUrl(url)
+      if (canonical === null) return []
+      // References are written canonical, so a held page matches exactly.
+      return Object.freeze(
+        observations
+          .filter((observation) => holdsPage(observation) && observation.references.some((reference) => reference.url === canonical))
+          .map(freezeObservation),
+      )
     },
     presentInspection(input) {
       if (cleared) return null

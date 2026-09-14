@@ -75,6 +75,8 @@ interface RoundSpec {
     result?: string
     error?: string
     checkpoint?: string
+    /** The store's merge verdict on an accepted checkpoint (#240) — absent, as a trace written before the field existed. */
+    merged?: boolean
     /** The Search Observation the rail recorded for this call (#243) — a trace written after observations were kept. */
     observation?: SearchObservation
   }[]
@@ -110,7 +112,7 @@ function traceOf(rounds: readonly RoundSpec[], extra: readonly Record<string, un
       const callId = `call-${calls}`
       records.push({ ...identity, at: T0 + spec.at + 1, kind: 'pipeline_event', event: { type: 'tool_call', turnId: TURN, callId, name: call.name, args: call.args, at: T0 + spec.at + 1 } })
       if (call.checkpoint !== undefined) {
-        records.push({ ...identity, at: T0 + spec.at + 2, kind: 'evidence_checkpoint', tool: call.name, args: call.args, outcome: call.checkpoint, matched: call.checkpoint === 'accepted', graded: [] })
+        records.push({ ...identity, at: T0 + spec.at + 2, kind: 'evidence_checkpoint', tool: call.name, args: call.args, outcome: call.checkpoint, matched: call.checkpoint === 'accepted', graded: [], ...(call.merged !== undefined ? { merged: call.merged } : {}) })
       }
       if (call.observation !== undefined) {
         // The round records the rail's observation after the call settles and
@@ -482,6 +484,102 @@ const RAIL_ROUNDS: RoundSpec[] = [
 
 /** A Browse Subagent's observation on a call id the orchestrator also used: the audit reads the orchestrator's only. */
 const SUBAGENT_OBSERVATION: Record<string, unknown> = { v: 1, at: T0 + 2_550, turnId: TURN, kind: 'search_observation', agentId: 'a-1', callId: 'call-2', name: 'type', query: 'something else', signature: 'input', streak: 9 }
+
+describe('merged checkpoints and Held Page rounds without Progress (#240, ADR 0051)', () => {
+  const THIRD = 'https://spec.invalid/third'
+  const recorded = (id: string, url: string): string => `Session Evidence recorded: ${id}, grounded in obs-1 at ${url}. It survives this run's outcome.`
+  const alreadyHeld = (id: string): string => `Session Evidence already held this Observation: ${id} (provenance recorded).`
+  const endOfPage = `scrolled down: x=0 y=277\n${SCROLL_END_OF_PAGE}`
+
+  const HELD_ROUNDS: RoundSpec[] = [
+    // 1: the inherited navigate — a navigate, so never a Held Page round.
+    { round: 1, at: 1_000, calls: [{ name: 'navigate', args: { url: THIRD }, result: PAGE('Third', THIRD, 'eeee5555') }] },
+    // 2: the first read of the page makes Progress.
+    { round: 2, at: 2_000, calls: [{ name: 'read_page', args: {}, result: READ('Third', THIRD, 'eeee5555') }] },
+    // 3: reading it again does not, on a page the initial checkpointed.
+    { round: 3, at: 3_000, calls: [{ name: 'read_page', args: {}, result: READ('Third', THIRD, 'eeee5555') }] },
+    { round: 4, at: 4_000, calls: [{ name: 'navigate', args: { url: OTHER_URL }, result: PAGE('Other', OTHER_URL, 'dddd4444') }] },
+    // 5: no Progress, on a page nothing has checkpointed yet.
+    { round: 5, at: 5_000, calls: [{ name: 'scroll', args: { direction: 'down' }, result: endOfPage }] },
+    // 6: this attempt checkpoints the page, and re-records one the Session held.
+    {
+      round: 6,
+      at: 6_000,
+      calls: [
+        { name: 'record_evidence', args: { kind: 'web', observation: 'a claim', source_url: OTHER_URL }, result: recorded('memory-7', OTHER_URL), checkpoint: 'accepted', merged: false },
+        { name: 'record_evidence', args: { kind: 'web', observation: 'an older claim', source_url: THIRD }, result: alreadyHeld('memory-1'), checkpoint: 'accepted', merged: true },
+      ],
+    },
+    // 7: the same scroll, on a page this attempt's own checkpoint now holds.
+    { round: 7, at: 7_000, calls: [{ name: 'scroll', args: { direction: 'down' }, result: endOfPage }] },
+    // 8: a navigate without Progress onto a held page is still a navigate.
+    { round: 8, at: 8_000, calls: [{ name: 'navigate', args: { url: THIRD }, result: PAGE('Third', THIRD, 'eeee5555') }] },
+  ]
+
+  const followUpOf = (rounds: readonly RoundSpec[]) =>
+    classifyAttempt(
+      inputOf({
+        attempt: attemptCapture({ attemptId: 'hunt-x--follow_up', huntId: 'hunt-x', stepId: 'follow_up', relation: 'revised_objective', parentAttemptId: ATTEMPT, terminal: { at: 16_000, finalizationCause: 'objective_met' } }),
+        traceRecords: traceOf(rounds, [EXTRA[0]!]),
+        parentCheckpointedUrls: new Set([THIRD]),
+      }),
+    )
+
+  it('counts the checkpoints the store merged from the trace field, and an old trace without it as merging none (AC5)', () => {
+    const mechanical = followUpOf(HELD_ROUNDS)
+    expect(mechanical.acceptedCheckpoints).toBe(2)
+    expect(mechanical.mergedCheckpoints).toBe(1)
+
+    const withoutField = HELD_ROUNDS.map((spec) => ({ ...spec, calls: spec.calls?.map(({ merged: _merged, ...rest }) => rest) }))
+    const old = followUpOf(withoutField)
+    expect(old.mergedCheckpoints).toBe(0)
+    // Counted beside the digest: the hash a cached judgement is keyed on does not move.
+    expect(old.digestHash).toBe(mechanical.digestHash)
+  })
+
+  it('counts Held Page rounds without Progress over the initial’s checkpointed pages and this attempt’s own before the round, navigate excluded (AC5)', () => {
+    const mechanical = followUpOf(HELD_ROUNDS)
+    expect(mechanical.rounds.map((round) => round.kind)).toEqual([
+      'acquisition_without_progress',
+      'acquisition_with_progress',
+      'acquisition_without_progress',
+      'acquisition_with_progress',
+      'acquisition_without_progress',
+      'bookkeeping',
+      'acquisition_without_progress',
+      'acquisition_without_progress',
+    ])
+    // Rounds 3 and 7; not 1 or 8 (navigates), not 5 (nothing held the page yet).
+    expect(mechanical.heldPageRoundsWithoutProgress).toBe(2)
+    // The inherited predicate is left exactly as it was.
+    expect(mechanical.inheritedRounds).toBe(2)
+
+    // An initial inherits nothing: only its own checkpoints hold a page.
+    const initial = classifyAttempt(inputOf({ traceRecords: traceOf(HELD_ROUNDS, [EXTRA[0]!]) }))
+    expect(initial.heldPageRoundsWithoutProgress).toBe(1)
+    expect(initial.inheritedRounds).toBe(0)
+  })
+
+  it('sums both per population and prints them per attempt and per population', () => {
+    const followUp = followUpOf(HELD_ROUNDS)
+    const initial = classifyAttempt(inputOf({ traceRecords: traceOf(HELD_ROUNDS, [EXTRA[0]!]) }))
+    const set = buildAuditSet(
+      provenanceOf(),
+      [
+        { mechanical: initial, review: null, countsAfterOverrules: initial.counts },
+        { mechanical: followUp, review: null, countsAfterOverrules: followUp.counts },
+      ],
+      [],
+    )
+
+    expect([set.populations.initial.mergedCheckpoints, set.populations.initial.heldPageRoundsWithoutProgress]).toEqual([1, 1])
+    expect([set.populations.followUp.mergedCheckpoints, set.populations.followUp.heldPageRoundsWithoutProgress]).toEqual([1, 2])
+    const markdown = formatAuditSet(set)
+    expect(markdown).toContain('- follow_up: ')
+    expect(markdown).toMatch(/- follow_up: .*1 merged Evidence Checkpoint\(s\) \(a floor\), 2 Held Page round\(s\) without Progress/)
+    expect(markdown).toContain('2 accepted (1 merged, a floor) and 0 rejected Evidence Checkpoint(s); 2 inherited round(s); 2 Held Page round(s) without Progress;')
+  })
+})
 
 describe('the rail’s Search Observations (#243, ADR 0049)', () => {
   const searchesOf = (mechanical: ReturnType<typeof classifyAttempt>) => mechanical.rounds.map((round) => round.calls.map((call) => call.search))
