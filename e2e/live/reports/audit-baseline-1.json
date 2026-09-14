@@ -32,9 +32,9 @@
     "reviewerModel": "claude-opus-5",
     "reviewerEffort": "high",
     "reviewerPromptVersion": "audit-p2",
-    "auditCommit": "2299991a14132c345bfaca8851c4940d59e7d23e",
+    "auditCommit": "69bce35395107eb5af207e1ae93bd069109eedcd",
     "auditDirtyTree": false,
-    "generatedAt": "2026-09-14T13:24:38.303Z"
+    "generatedAt": "2026-09-14T13:23:11.428Z"
   },
   "attempts": [
     {
@@ -1369,7 +1369,8 @@
         "searchSource": "none",
         "walledRounds": 0,
         "notFoundNavigates": [],
-        "identitySlips": null,
+        "malformedAnswers": 0,
+        "answerRetries": 0,
         "latency": {
           "llmMs": 411453,
           "joined": 26,
@@ -2714,7 +2715,8 @@
         "searchSource": "none",
         "walledRounds": 0,
         "notFoundNavigates": [],
-        "identitySlips": null,
+        "malformedAnswers": 0,
+        "answerRetries": 0,
         "latency": {
           "llmMs": 385882,
           "joined": 23,
@@ -3564,7 +3566,8 @@
         "searchSource": "replay",
         "walledRounds": 0,
         "notFoundNavigates": [],
-        "identitySlips": null,
+        "malformedAnswers": 0,
+        "answerRetries": 0,
         "latency": {
           "llmMs": 141672,
           "joined": 14,
@@ -4171,7 +4174,8 @@
         "searchSource": "replay",
         "walledRounds": 0,
         "notFoundNavigates": [],
-        "identitySlips": null,
+        "malformedAnswers": 0,
+        "answerRetries": 0,
         "latency": {
           "llmMs": 224830,
           "joined": 7,
@@ -5257,7 +5261,8 @@
         "notFoundNavigates": [
           12
         ],
-        "identitySlips": null,
+        "malformedAnswers": 0,
+        "answerRetries": 0,
         "latency": {
           "llmMs": 278916,
           "joined": 19,
@@ -6721,7 +6726,8 @@
           22,
           24
         ],
-        "identitySlips": null,
+        "malformedAnswers": 0,
+        "answerRetries": 0,
         "latency": {
           "llmMs": 337974,
           "joined": 26,
@@ -6984,9 +6990,8 @@
       "walledRounds": 1,
       "notFoundNavigates": 6,
       "notFoundOffKey": 6,
-      "identitySlipAnswers": 0,
-      "identitySlipIds": 0,
-      "identitySlipsNotRecorded": 4,
+      "malformedAnswers": 0,
+      "answerRetries": 0,
       "subagentRounds": 13,
       "stoppedEarly": 0,
       "answerOmitted": 2,
@@ -7112,9 +7117,8 @@
       "walledRounds": 0,
       "notFoundNavigates": 1,
       "notFoundOffKey": 1,
-      "identitySlipAnswers": 0,
-      "identitySlipIds": 0,
-      "identitySlipsNotRecorded": 2,
+      "malformedAnswers": 0,
+      "answerRetries": 0,
       "subagentRounds": 0,
       "stoppedEarly": 0,
       "answerOmitted": 1,

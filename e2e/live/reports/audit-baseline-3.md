@@ -1,13 +1,13 @@
 # Round Audit — bingbong.live-web.information-hunts (baseline-3)
 
-Generated 2026-09-14T13:24:38.303Z from a capture set created 2026-09-12T18:57:29.347Z (state complete). This audit counts and does not judge: every verdict is the reviewer’s for one attempt, and the ranking is arithmetic over those verdicts.
+Generated 2026-09-14T13:23:11.428Z from a capture set created 2026-09-12T18:57:29.347Z (state complete). This audit counts and does not judge: every verdict is the reviewer’s for one attempt, and the ranking is arithmetic over those verdicts.
 
 ## Provenance
 
 - capture: commit(s) 59bdf48b (dirty tree); mode measured; protocol 1; prompt version(s) 1
 - routing: orchestrator=GLM-5.3; subagent=GLM-5.3-flash; vision=GLM-4.6V | reasoning override: none | effort overrides: none | adblock: production_default
 - key 2.2.2.2, manifest sha256:faa25d04…; grades by claude-opus-5 via live:grade (revision 1)
-- reviewer: claude-opus-5 at high, prompt audit-p2; audit run at commit 2299991a
+- reviewer: claude-opus-5 at high, prompt audit-p2; audit run at commit 69bce353
 
 ## Populations
 
@@ -27,8 +27,8 @@ Kinds are mechanical counts; a share is over the budgeted rounds (Finalization o
 | answer omitted | 2 | 1 | 1 | 0 |
 | failed rounds | 1 | 0 | 0 | 0 |
 
-- initial: 17 Off-key round(s), 5 Search Loop round(s) by the reviewer (3 by the streak rule; attempts by search source rail 0, replay 2, none 2), 0 inherited, 3 rejected Evidence Checkpoint(s), 0 walled round(s), 1 navigate(s) landed on a Not-found Page (1 judged Off-key), 13 Subagent round(s), 0 merged Evidence Checkpoint(s) (a floor), 0 Held Page round(s) without Progress, Identity Slips not recorded, 0 stopped early, 3 answer omitted, 7 overrule(s), 18 flag(s); Finalization Causes: budget_exhausted 2, deadline_reached 1, objective_met 1
-- follow_up: 1 Off-key round(s), 0 Search Loop round(s) by the reviewer (0 by the streak rule; attempts by search source rail 0, replay 0, none 2), 2 inherited, 3 rejected Evidence Checkpoint(s), 0 walled round(s), 0 navigate(s) landed on a Not-found Page (0 judged Off-key), 13 Subagent round(s), 0 merged Evidence Checkpoint(s) (a floor), 1 Held Page round(s) without Progress, Identity Slips not recorded, 0 stopped early, 1 answer omitted, 3 overrule(s), 10 flag(s); Finalization Causes: budget_exhausted 2
+- initial: 17 Off-key round(s), 5 Search Loop round(s) by the reviewer (3 by the streak rule; attempts by search source rail 0, replay 2, none 2), 0 inherited, 3 rejected Evidence Checkpoint(s), 0 walled round(s), 1 navigate(s) landed on a Not-found Page (1 judged Off-key), 13 Subagent round(s), 0 merged Evidence Checkpoint(s) (a floor), 0 Held Page round(s) without Progress, 0 Malformed Answer(s) (0 retried), 0 stopped early, 3 answer omitted, 7 overrule(s), 18 flag(s); Finalization Causes: budget_exhausted 2, deadline_reached 1, objective_met 1
+- follow_up: 1 Off-key round(s), 0 Search Loop round(s) by the reviewer (0 by the streak rule; attempts by search source rail 0, replay 0, none 2), 2 inherited, 3 rejected Evidence Checkpoint(s), 0 walled round(s), 0 navigate(s) landed on a Not-found Page (0 judged Off-key), 13 Subagent round(s), 0 merged Evidence Checkpoint(s) (a floor), 1 Held Page round(s) without Progress, 0 Malformed Answer(s) (0 retried), 0 stopped early, 1 answer omitted, 3 overrule(s), 10 flag(s); Finalization Causes: budget_exhausted 2
 
 ## Tool rounds
 
@@ -56,9 +56,9 @@ The rounds outside Finalization that called each tool — a round counts once pe
 - answered; ended done / completed (budget_exhausted); tier investigation; 24 of 24 Tool Rounds used; 26 orchestrator rounds, 2 in Finalization; Run duration 266324 ms; LLM stage 196187 ms over 26 joined round(s)
 - grade useful_partial; checks unsatisfied: fact-05, fact-06 (2 of 10)
 - 13 Subagent round(s) over 1 Subagent(s), stopped by budget_exhausted 1; 4 accepted (0 merged, a floor) and 3 rejected Evidence Checkpoint(s); 0 inherited round(s); 0 Held Page round(s) without Progress; 0 walled round(s)
+- Malformed Answers: 0 (0 retried)
 - navigates that landed on a Not-found Page: 1 (round 1)
 - of those, judged Off-key by the reviewer: 1
-- Identity Slips: not recorded (a Run Trace below version 2)
 - kinds: Acquisition with Progress 15 (63%) · Acquisition without Progress 3 (13%) · Collection 1 (4%) · Bookkeeping 5 (21%) · Failed round 0 (0%) · Finalization 2 (8%)
 - search source none: no Search Observation in the trace, and no navigate search for the replay to find
 - **verdict: answer omitted** — fact-05 and fact-06 both rest on camera_software.html. The Run read that page in rounds 4-11 and 16-18 and recorded Evidence from it in rounds 13, 14 and 19, yet the Answer (round 26) did not state either check. Eight of ten checks were satisfied, so what was lost was on material the Run already held.
@@ -111,9 +111,9 @@ The rounds outside Finalization that called each tool — a round counts once pe
 - answered; ended done / completed (budget_exhausted); tier investigation (1 Tier Escalation(s) at the deadline); 24 of 24 Tool Rounds used; 26 orchestrator rounds, 2 in Finalization; Run duration 443819 ms; LLM stage 426768 ms over 26 joined round(s)
 - grade useful_partial; checks unsatisfied: fact-02 (1 of 6)
 - 13 Subagent round(s) over 1 Subagent(s), stopped by budget_exhausted 1; 5 accepted (0 merged, a floor) and 3 rejected Evidence Checkpoint(s); 1 inherited round(s); 1 Held Page round(s) without Progress; 0 walled round(s)
+- Malformed Answers: 0 (0 retried)
 - navigates that landed on a Not-found Page: 0
 - of those, judged Off-key by the reviewer: 0
-- Identity Slips: not recorded (a Run Trace below version 2)
 - kinds: Acquisition with Progress 14 (58%) · Acquisition without Progress 3 (13%) · Collection 1 (4%) · Bookkeeping 5 (21%) · Failed round 1 (4%) · Finalization 2 (8%)
 - search source none: no Search Observation in the trace, and no navigate search for the replay to find
 - **verdict: rounds wasted** — Of the 24 budgeted rounds, rounds 2–11 (10 rounds) went to the Camera Module 3 product page and two news posts. Rounds 3, 6 and 10 made no progress, and round 7 landed on an off-key photo showcase. The verified mechanical source was not reached until round 12, and rounds 13 (illegible Look) and 14 (refused call) produced nothing there. Two more rounds (21–22) were malformed record_candidate calls, and rounds 21–24 (4 rounds) all went to candidate bookkeeping. Without that spend, the scrolls of camera.html that stopped at round 18 could have reached the section that carries fact-02.
@@ -164,9 +164,9 @@ The rounds outside Finalization that called each tool — a round counts once pe
 - answered; ended done / partial (budget_exhausted); tier investigation; 24 of 24 Tool Rounds used; 26 orchestrator rounds, 2 in Finalization; Run duration 186557 ms; LLM stage 157331 ms over 26 joined round(s)
 - grade useful_partial; checks unsatisfied: fact-03, fact-05, fact-08, fact-10, fact-11 (5 of 17)
 - 0 Subagent round(s) over 0 Subagent(s); 0 accepted (0 merged, a floor) and 0 rejected Evidence Checkpoint(s); 0 inherited round(s); 0 Held Page round(s) without Progress; 0 walled round(s)
+- Malformed Answers: 0 (0 retried)
 - navigates that landed on a Not-found Page: 0
 - of those, judged Off-key by the reviewer: 0
-- Identity Slips: not recorded (a Run Trace below version 2)
 - kinds: Acquisition with Progress 12 (50%) · Acquisition without Progress 6 (25%) · Collection 0 (0%) · Bookkeeping 0 (0%) · Failed round 6 (25%) · Finalization 2 (8%)
 - search source replay: the streak rule re-run over navigate searches
 - **verdict: rounds wasted** — Of the 24 budgeted rounds, 6 were failed rounds (2, 5, 7, 12, 20, 22), mostly misfired refusals and repeated look calls. Another 6 were without progress (3, 6, 9, 10, 19, 21), and my overrules add 13, 14 and 24. Rounds 1 to 16 went to generic listings, search pages and a search loop (8, 9, 10, 13, 15) before the record was reached in round 17. Only rounds 17 and 23 did productive on-key work. The case record was never reached because the budget was spent on this waste, not on on-key work.
@@ -231,9 +231,9 @@ The rounds outside Finalization that called each tool — a round counts once pe
 - answered; ended done / completed (objective_met); tier investigation (1 Tier Escalation(s) at the deadline); 15 of 24 Tool Rounds used; 16 orchestrator rounds, 1 in Finalization; Run duration 310484 ms; LLM stage 294145 ms over 16 joined round(s)
 - grade useful_partial; checks unsatisfied: fact-07 (1 of 14)
 - 0 Subagent round(s) over 0 Subagent(s); 4 accepted (0 merged, a floor) and 0 rejected Evidence Checkpoint(s); 0 inherited round(s); 0 Held Page round(s) without Progress; 0 walled round(s)
+- Malformed Answers: 0 (0 retried)
 - navigates that landed on a Not-found Page: 0
 - of those, judged Off-key by the reviewer: 0
-- Identity Slips: not recorded (a Run Trace below version 2)
 - kinds: Acquisition with Progress 11 (73%) · Acquisition without Progress 1 (7%) · Collection 0 (0%) · Bookkeeping 3 (20%) · Failed round 0 (0%) · Finalization 1 (6%)
 - search source replay: the streak rule re-run over navigate searches
 - **verdict: answer omitted** — 13 of 14 checks passed. The one miss, fact-07, could have been worked out from the S1 and S2 pages the Run read in rounds 2 and 4 and recorded in rounds 6 and 7. Acquisition work was mostly on-key: 11 rounds with Progress against 1 without, and 4 off-key rounds (1, 11, 13, 14). The Run finished with 9 Tool Rounds left, so neither budget nor wasted rounds explains the gap. It came from what the Answer left out.
@@ -274,9 +274,9 @@ The rounds outside Finalization that called each tool — a round counts once pe
 - answered; ended done / partial (budget_exhausted); tier lookup; 12 of 12 Tool Rounds used; 14 orchestrator rounds, 2 in Finalization; Run duration 119619 ms; LLM stage 116385 ms over 14 joined round(s)
 - grade useful_partial; checks unsatisfied: fact-01, fact-02, fact-03 (3 of 6)
 - 0 Subagent round(s) over 0 Subagent(s); 1 accepted (0 merged, a floor) and 0 rejected Evidence Checkpoint(s); 1 inherited round(s); 0 Held Page round(s) without Progress; 0 walled round(s)
+- Malformed Answers: 0 (0 retried)
 - navigates that landed on a Not-found Page: 0
 - of those, judged Off-key by the reviewer: 0
-- Identity Slips: not recorded (a Run Trace below version 2)
 - kinds: Acquisition with Progress 9 (75%) · Acquisition without Progress 1 (8%) · Collection 0 (0%) · Bookkeeping 0 (0%) · Failed round 2 (17%) · Finalization 2 (14%)
 - search source none: no Search Observation in the trace, and no navigate search for the replay to find
 - **verdict: answer omitted** — The material for fact-01, fact-02 and fact-03 was on a page the Run had read: the S1 luggage page, read fully in round 12 and checkpointed in round 13. Even so, the Answer left all three unsatisfied (3 of 6 checks). This was not a problem of reaching the source: 12 of 12 rounds stayed on-key on that single page.
@@ -313,9 +313,9 @@ The rounds outside Finalization that called each tool — a round counts once pe
 - answered; ended done / partial (deadline_reached); tier investigation (1 Tier Escalation(s) at the deadline); 0 of 24 Tool Rounds used; 3 orchestrator rounds, 2 in Finalization; Run duration 368440 ms; LLM stage 368430 ms over 3 joined round(s)
 - grade useful_partial; checks unsatisfied: fact-06, pitfall-01 (2 of 15)
 - 0 Subagent round(s) over 0 Subagent(s); 0 accepted (0 merged, a floor) and 0 rejected Evidence Checkpoint(s); 0 inherited round(s); 0 Held Page round(s) without Progress; 0 walled round(s)
+- Malformed Answers: 0 (0 retried)
 - navigates that landed on a Not-found Page: 0
 - of those, judged Off-key by the reviewer: 0
-- Identity Slips: not recorded (a Run Trace below version 2)
 - kinds: Acquisition with Progress 0 (0%) · Acquisition without Progress 0 (0%) · Collection 0 (0%) · Bookkeeping 0 (0%) · Failed round 1 (100%) · Finalization 2 (67%)
 - search source none: no Search Observation in the trace, and no navigate search for the replay to find
 - **verdict: failed rounds** — The only budgeted round, round 1, timed out: 1 of 1 budgeted rounds (100%) failed. It took 330002 ms, about 90% of the Run's time, before any tool call returned. The deadline then forced Finalization: round 2 was cut by the allowance and round 3 was the reserved Answer. No page was acquired, so the Answer could not rest on the two official accounts. That lost fact-06 and pitfall-01.

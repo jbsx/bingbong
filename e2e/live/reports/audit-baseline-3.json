@@ -32,9 +32,9 @@
     "reviewerModel": "claude-opus-5",
     "reviewerEffort": "high",
     "reviewerPromptVersion": "audit-p2",
-    "auditCommit": "2299991a14132c345bfaca8851c4940d59e7d23e",
+    "auditCommit": "69bce35395107eb5af207e1ae93bd069109eedcd",
     "auditDirtyTree": false,
-    "generatedAt": "2026-09-14T13:24:38.303Z"
+    "generatedAt": "2026-09-14T13:23:11.428Z"
   },
   "attempts": [
     {
@@ -1366,7 +1366,8 @@
         "notFoundNavigates": [
           1
         ],
-        "identitySlips": null,
+        "malformedAnswers": 0,
+        "answerRetries": 0,
         "latency": {
           "llmMs": 196187,
           "joined": 26,
@@ -2864,7 +2865,8 @@
         "searchSource": "none",
         "walledRounds": 0,
         "notFoundNavigates": [],
-        "identitySlips": null,
+        "malformedAnswers": 0,
+        "answerRetries": 0,
         "latency": {
           "llmMs": 426768,
           "joined": 26,
@@ -4254,7 +4256,8 @@
         "searchSource": "replay",
         "walledRounds": 0,
         "notFoundNavigates": [],
-        "identitySlips": null,
+        "malformedAnswers": 0,
+        "answerRetries": 0,
         "latency": {
           "llmMs": 157331,
           "joined": 26,
@@ -5301,7 +5304,8 @@
         "searchSource": "replay",
         "walledRounds": 0,
         "notFoundNavigates": [],
-        "identitySlips": null,
+        "malformedAnswers": 0,
+        "answerRetries": 0,
         "latency": {
           "llmMs": 294145,
           "joined": 16,
@@ -6146,7 +6150,8 @@
         "searchSource": "none",
         "walledRounds": 0,
         "notFoundNavigates": [],
-        "identitySlips": null,
+        "malformedAnswers": 0,
+        "answerRetries": 0,
         "latency": {
           "llmMs": 116385,
           "joined": 14,
@@ -6392,7 +6397,8 @@
         "searchSource": "none",
         "walledRounds": 0,
         "notFoundNavigates": [],
-        "identitySlips": null,
+        "malformedAnswers": 0,
+        "answerRetries": 0,
         "latency": {
           "llmMs": 368430,
           "joined": 3,
@@ -6537,9 +6543,8 @@
       "walledRounds": 0,
       "notFoundNavigates": 1,
       "notFoundOffKey": 1,
-      "identitySlipAnswers": 0,
-      "identitySlipIds": 0,
-      "identitySlipsNotRecorded": 4,
+      "malformedAnswers": 0,
+      "answerRetries": 0,
       "subagentRounds": 13,
       "stoppedEarly": 0,
       "answerOmitted": 3,
@@ -6666,9 +6671,8 @@
       "walledRounds": 0,
       "notFoundNavigates": 0,
       "notFoundOffKey": 0,
-      "identitySlipAnswers": 0,
-      "identitySlipIds": 0,
-      "identitySlipsNotRecorded": 2,
+      "malformedAnswers": 0,
+      "answerRetries": 0,
       "subagentRounds": 13,
       "stoppedEarly": 0,
       "answerOmitted": 1,
