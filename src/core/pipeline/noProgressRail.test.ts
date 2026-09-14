@@ -300,6 +300,25 @@ describe('no-progress rail — a Not-found Landing is neutral (#239, ADR 0050)',
     expect(await step(read)).toBeNull()
     expect(await step(read)).toMatch(/Change your Approach/)
   })
+
+  it('never makes the dead page the baseline: a guess and a step back cost one no-progress action', async () => {
+    let current = BASE
+    const rail = createNoProgressRail({ settledState: () => current })
+    const step = async (action: ToolCall, outcome: ToolResultOutcome = ok()): Promise<string | null> => {
+      expect(await rail.gate(action)).toEqual({ ok: true })
+      return rail.observe(action, outcome)
+    }
+
+    expect(await step(call('navigate', { url: 'https://example.com/article' }))).toBeNull() // the baseline
+    expect(await step(call('read_page'))).toBeNull() // first read: new material
+    expect(await step(call('read_page'))).toMatch(/repeats an equivalent action/) // one no-progress action
+
+    current = LANDING
+    expect(await step(call('navigate', { url: 'https://www.nasa.gov/voyager-2013' }), landed('https://www.nasa.gov/voyager-2013'))).toBeNull()
+    // Back where the Run stood: nothing moved, so the second no-progress action.
+    current = BASE
+    expect(await step(call('back'), ok('went back: url=https://example.com/article title="The article"'))).toMatch(/Change your Approach/)
+  })
 })
 
 describe('no-progress rail — resets (#126/AC3)', () => {

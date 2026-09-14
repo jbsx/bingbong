@@ -580,6 +580,14 @@ export async function runSubagent(deps: RunSubagentDeps, options: RunSubagentOpt
       if (options.isCancelled()) throw new SubagentCancelledError()
     },
   }
+  // The Composed Address rail's Offered Addresses beyond what the Subagent's
+  // own results show (#239, ADR 0050): the sources cited by the Session's
+  // shared Working Memory it was handed, and the URLs its task names — the
+  // orchestrator showed it those, so opening one is not a guess.
+  const offeredByParent: readonly string[] = [
+    ...(options.memory ?? []).flatMap((entry) => entry.references.map((reference) => reference.url)),
+    ...(options.task.match(/https?:\/\/[^\s"'<>)\]]+/g) ?? []),
+  ]
   // The Tool Round executor in Subagent configuration (#158/#159): the
   // gate order, the Blocker gate with the ASK_USER relay escalation, the
   // Subagent vision budget, the Observation ledger sink, and the Notices
@@ -607,6 +615,7 @@ export async function runSubagent(deps: RunSubagentDeps, options: RunSubagentOpt
     ...(deps.settledPageState ? { settledPageState: deps.settledPageState } : {}),
     ...(deps.describeRef ? { describeRef: deps.describeRef } : {}),
     ...(deps.heldObservations ? { heldObservations: deps.heldObservations } : {}),
+    evidenceSourceUrls: () => offeredByParent,
   })
 
   // The worker's reasoning collector (#183): one per worker, only when the

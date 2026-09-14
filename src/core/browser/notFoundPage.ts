@@ -4,12 +4,13 @@
 // behind a page that names nothing, and no Escalation clears it.
 //
 // Recognition is the status the site asserted first (404 or 410 on the
-// top-level response) and the title second, which catches a soft 404 served
-// with 200. A detected page yields a machine-readable marker line
+// top-level response) and the title second, which catches a Not-found Page
+// served with 200. A detected page yields a machine-readable marker line
 // (`NOT-FOUND:<status|title> <host>`) the model reads and the Composed
 // Address rail, the no-progress rail, the Search Loop rail and the Run Trace
 // consume. Pure and import-light, so the Round Audit's replay loads it too.
 
+import type { ToolResultOutcome } from '../ports/llm'
 import { reportFault } from '../trace/fault.ts'
 
 /** What said the page names nothing: the response status, or the title. */
@@ -77,6 +78,9 @@ function isSearchResults(url: URL): boolean {
   return q !== null && q.trim() !== ''
 }
 
+/** Every basis a marker names — the one set the app's parser and the Round Audit's reader share. */
+export const NOT_FOUND_BASES: ReadonlySet<string> = new Set<NotFoundBasis>(['404', '410', 'title'])
+
 const MARKER_LINE_RE = /^NOT-FOUND:(404|410|title) (\S+)$/gm
 
 /** The last `NOT-FOUND:<basis> <host>` line riding a result text, or null. */
@@ -88,8 +92,13 @@ export function parseNotFoundMarker(text: string): NotFoundLanding | null {
   return last
 }
 
+/** Whether a successful call settled on a Not-found Page: its outcome carries the marker. */
+export function landedOnNotFoundPage(outcome: ToolResultOutcome): boolean {
+  return outcome.ok && typeof outcome.result === 'string' && parseNotFoundMarker(outcome.result) !== null
+}
+
 /**
- * The advice sentence riding the marker (ADR 0050, Decision 12), copied as
+ * The advice sentence riding the marker (#239, Decision 12), copied as
  * decided: the site in prose, the host in the marker above it.
  */
 export function notFoundAdvice(site: string): string {

@@ -1,7 +1,7 @@
 import type { ToolCall, ToolResultOutcome } from '../ports/llm'
 import type { ObservationProducer } from '../session/observationLedger'
 import { SCROLL_END_OF_PAGE } from '../browser/scrollDelta'
-import { parseNotFoundMarker } from '../browser/notFoundPage'
+import { landedOnNotFoundPage } from '../browser/notFoundPage'
 import { actionFingerprint, pageFingerprint, pageReadPartOf, type SettledPageState } from './progressFingerprints'
 import { classifyToolObservation } from './toolObservations'
 import { reportFault } from '../trace/fault'
@@ -196,6 +196,9 @@ export function createNoProgressRail(deps: NoProgressRailDeps = {}): NoProgressR
   // past its first part observes as its own reader (ADR 0047), so the set
   // holds observer keys rather than bare Producers.
   const observedBy = new Map<string, Set<string>>()
+  // The settled states a Not-found Landing put the tab on (#239): the page
+  // is where it is whatever the Run now plans, so a replan keeps them.
+  const notFoundStates = new Set<string>()
   // The gate's nudge rides the observed result of the call it nudged —
   // single-slot between one call's gate and observe, like the search-loop
   // rail's type memo.
@@ -351,20 +354,24 @@ export function createNoProgressRail(deps: NoProgressRailDeps = {}): NoProgressR
         attempts.delete(key)
       }
       const firstByThisProducer = markObserved(fingerprint, observerOf(call)) && !endOfPage
+      if (landedOnNotFoundPage(outcome)) notFoundStates.add(fingerprint)
+      if (notFoundStates.has(fingerprint)) {
+        // A Not-found Landing (#239, ADR 0050) is the third neutral case:
+        // not Progress — the page carries nothing — and not a no-progress
+        // action, which would have ended the Voyager Run before its
+        // round-15 success. It resets no accounting, so it never becomes the
+        // baseline either: the next action is measured from where the Run
+        // stood before the guess, and stepping back there is no Progress.
+        // The first look at the dead page by each Producer is neutral too;
+        // inspecting it again is the ordinary repeat.
+        if (landedOnNotFoundPage(outcome) || firstByThisProducer) return nudge
+        const escalatedOnDeadPage = escalate()
+        return escalatedOnDeadPage === null ? nudge : nudge === null ? escalatedOnDeadPage : `${nudge}\n\n${escalatedOnDeadPage}`
+      }
       if (lastState === null) {
         // The baseline read: the state Progress is measured from, not
         // itself an action that failed to make it (#126/AC1 — the first
         // attempt is never redundant or no-progress).
-        lastState = fingerprint
-        return nudge
-      }
-      if (typeof outcome.result === 'string' && parseNotFoundMarker(outcome.result) !== null) {
-        // A Not-found Landing (#239, ADR 0050) is the third neutral case:
-        // not Progress — the page carries nothing — and not a no-progress
-        // action, which would have ended the Voyager Run before its
-        // round-15 success. The accounting neither advances nor resets; the
-        // baseline follows the tab, so the page after it is measured from
-        // where the Run actually stood.
         lastState = fingerprint
         return nudge
       }

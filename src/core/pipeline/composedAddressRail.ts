@@ -48,7 +48,7 @@ export interface ComposedAddressRail {
   observe(call: ToolCall, outcome: ToolResultOutcome, landedUrl?: string | null): void
 }
 
-/** The refusal (ADR 0050, Decision 12), copied as decided: the site in prose. */
+/** The refusal (#239, Decision 12), copied as decided: the site in prose. */
 export function composedAddressRefusal(site: string): string {
   return (
     `Not executed — ${site} already answered not found for a composed address this run, and one is the allowance. ` +

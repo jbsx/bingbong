@@ -706,6 +706,17 @@ describe('the Composed Address rail runs per call (#239, ADR 0050)', () => {
     expect(h.epoch.phase.kind).toBe('working')
   })
 
+  it('starts a new executor — a new Run — at zero', async () => {
+    const trace: string[] = []
+    const spent = harness([navigateTool(trace)], { trace })
+    await spent.round([call('navigate', { url: 'https://www.jpl.nasa.gov/dead/a' }, 'n1')])
+    expect(errorOf((await spent.round([call('navigate', { url: 'https://www.jpl.nasa.gov/dead/b' }, 'n2')])).outcome.results[0]!.outcome)).toBe(composedAddressRefusal('nasa.gov'))
+
+    const fresh = harness([navigateTool(trace)], { trace })
+    const outcome = await fresh.round([call('navigate', { url: 'https://www.jpl.nasa.gov/dead/b' }, 'n3')])
+    expect(outcome.outcome.results[0]!.outcome.ok).toBe(true)
+  })
+
   it('is off without the capability', async () => {
     const trace: string[] = []
     const h = harness([navigateTool(trace)], { trace, capabilities: { ...ALL_RAILS, composedAddressRail: false } })

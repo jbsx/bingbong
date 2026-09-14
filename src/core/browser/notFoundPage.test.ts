@@ -14,7 +14,7 @@ describe('classifyNotFoundPage (#239, ADR 0050)', () => {
     expect(classifyNotFoundPage({ url: 'https://example.com/gone', title: 'Example', status: 410 })?.marker).toBe('NOT-FOUND:410 example.com')
   })
 
-  it('catches a soft 404 served with 200 by its title', () => {
+  it('catches a Not-found Page served with 200 by its title', () => {
     expect(
       classifyNotFoundPage({ url: 'https://www.raspberrypi.com/documentation/computers/camera.html', title: 'Page not found – Raspberry Pi', status: 200 }),
     ).toEqual({ basis: 'title', host: 'www.raspberrypi.com', marker: 'NOT-FOUND:title www.raspberrypi.com' })

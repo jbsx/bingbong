@@ -32,10 +32,11 @@ import { heldPageNotice, landedOnAnotherPage } from './heldPage'
 // Vocabulary (CONTEXT.md, Tool Round): one model response's tool calls,
 // executed in order. Every round crosses the same seams in a fixed order —
 // Blocker gate, no-progress gate, risk assessment and Confirmation, the
-// verification gate, the Vision Budget, the search-loop gate, execution,
-// then classify → Observation ledger → Blocker observe → the Blocker trip →
-// search-loop observe → verification observe → no-progress observe → the
-// no-Progress trip → the Held Page landing → Notices. That
+// verification gate, the Vision Budget, the search-loop gate, the Composed
+// Address gate, execution, then classify → Observation ledger → Blocker
+// observe → the Blocker trip → search-loop observe → Composed Address observe
+// → verification observe → no-progress observe → the no-Progress trip → the
+// Held Page landing → Notices. That
 // order is an ADR 0010 / ADR 0027 / ADR 0037 / ADR 0041 requirement, and it used to
 // live as comments in a nine-parameter generator plus a loop body in the
 // Run pipeline, with the steering variable threaded through six exits.
@@ -229,7 +230,7 @@ export interface ToolRoundConfig {
    * Addresses for the Composed Address rail. Absent — a caller with no
    * Session — offers only what this Run was shown.
    */
-  evidenceSourceUrls?(): readonly string[]
+  readonly evidenceSourceUrls?: () => readonly string[]
   /** Advisory bookkeeping only — a throwing tracer never fails a round. */
   readonly diagnostics?: {
     readonly tracer?: PerfTracer
@@ -323,7 +324,7 @@ export function createToolRoundExecutor(config: ToolRoundConfig): ToolRoundExecu
     : null
   const verificationRail = capabilities.verificationRail ? createVerificationRail(config.verification ?? {}) : null
   const composedAddressRail = capabilities.composedAddressRail
-    ? createComposedAddressRail(config.evidenceSourceUrls ? { evidenceSourceUrls: () => config.evidenceSourceUrls!() } : {})
+    ? createComposedAddressRail(config.evidenceSourceUrls ? { evidenceSourceUrls: config.evidenceSourceUrls } : {})
     : null
   /** Which route this call spends, read from the catalog's own flag rather than a name (#212). */
   const routeOf = (call: ToolCall): VerificationRoute | null =>

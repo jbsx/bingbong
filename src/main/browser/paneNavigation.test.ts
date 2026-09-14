@@ -11,11 +11,11 @@ import { HISTORY_STEP_TIMEOUT_MS, LOAD_TIMEOUT_MS, createPaneNavigation, type Pa
 function fakeWebContents(overrides: Partial<PaneNavigationTarget> = {}) {
   let settleLoad: ((outcome: { ok: true } | { ok: false; error: Error }) => void) | null = null
   let navigated: (() => void) | null = null
-  const didNavigate: Parameters<PaneNavigationTarget['on']>[1][] = []
+  const listeners: { event: string; listener: (event: unknown, url: string, detail: number | boolean) => void }[] = []
   const target: PaneNavigationTarget = {
-    on: (_event, listener) => {
-      didNavigate.push(listener)
-    },
+    on: ((event: string, listener: (event: unknown, url: string, detail: number | boolean) => void) => {
+      listeners.push({ event, listener })
+    }) as unknown as PaneNavigationTarget['on'],
     loadURL: () =>
       new Promise<void>((resolve, reject) => {
         settleLoad = (outcome) => (outcome.ok ? resolve() : reject(outcome.error))
@@ -43,7 +43,11 @@ function fakeWebContents(overrides: Partial<PaneNavigationTarget> = {}) {
     fireDidNavigate: () => navigated?.(),
     /** A main-frame navigation commits with this top-level response code. */
     commit: (url: string, httpResponseCode: number) => {
-      for (const listener of didNavigate) listener({}, url, httpResponseCode)
+      for (const entry of listeners) if (entry.event === 'did-navigate') entry.listener({}, url, httpResponseCode)
+    },
+    /** An in-page navigation — a pushState route change or an anchor — in the main frame or a subframe. */
+    inPage: (url: string, isMainFrame: boolean) => {
+      for (const entry of listeners) if (entry.event === 'did-navigate-in-page') entry.listener({}, url, isMainFrame)
     },
   }
 }
@@ -60,6 +64,18 @@ describe('the top-level response status (#239, ADR 0050)', () => {
     wc.commit('https://www.nasa.gov/', 200)
     expect(page.status?.()).toBe(200)
     wc.commit('file:///tmp/x.html', 0)
+    expect(page.status?.()).toBeNull()
+  })
+
+  it('forgets the status on a main-frame in-page navigation, and keeps it through a subframe’s', () => {
+    const wc = fakeWebContents()
+    const page = createPaneNavigation(wc.target, new FakeClock())
+
+    wc.commit('https://app.example/unknown-route', 404)
+    wc.inPage('https://app.example/unknown-route#details', false)
+    expect(page.status?.()).toBe(404)
+    // The app routed itself to a page no response was served for.
+    wc.inPage('https://app.example/docs', true)
     expect(page.status?.()).toBeNull()
   })
 })

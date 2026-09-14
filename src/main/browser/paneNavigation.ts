@@ -20,6 +20,8 @@ export const HISTORY_STEP_TIMEOUT_MS = 15_000
 
 /** Electron's `did-navigate` listener, narrowed to the arguments read here. */
 export type DidNavigateListener = (event: unknown, url: string, httpResponseCode: number) => void
+/** Electron's `did-navigate-in-page` listener, narrowed to the arguments read here. */
+export type DidNavigateInPageListener = (event: unknown, url: string, isMainFrame: boolean) => void
 
 /** The webContents members the navigation surface uses. */
 export interface PaneNavigationTarget {
@@ -31,6 +33,7 @@ export interface PaneNavigationTarget {
     goForward(): void
   }
   on(event: 'did-navigate', listener: DidNavigateListener): void
+  on(event: 'did-navigate-in-page', listener: DidNavigateInPageListener): void
   once(event: 'did-navigate', listener: () => void): void
   getURL(): string
   getTitle(): string
@@ -42,10 +45,15 @@ export function createPaneNavigation(wc: PaneNavigationTarget, clock: Clock = sy
   // The top-level response code of the document the tab is on (#239, ADR
   // 0050). Every main-frame navigation fires `did-navigate` — a load, a
   // history step, a click that leaves the page — so one listener keeps it
-  // current; an in-page navigation keeps the document, and so the status.
+  // current. A main-frame in-page navigation (a pushState route change)
+  // shows a page no response was served for, so the status is unknown then,
+  // and the Not-found classification falls back to the title.
   let status: number | null = null
   wc.on('did-navigate', (_event, _url, httpResponseCode) => {
     status = typeof httpResponseCode === 'number' && httpResponseCode > 0 ? httpResponseCode : null
+  })
+  wc.on('did-navigate-in-page', (_event, _url, isMainFrame) => {
+    if (isMainFrame) status = null
   })
 
   /** One step in history ('back'/'forward'): guarded, awaited, bounded. */

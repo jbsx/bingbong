@@ -37,7 +37,7 @@
 
 import { createHash } from 'node:crypto'
 import { parseBlockerMarker } from '../../src/core/browser/blockerNudge.ts'
-import { classifyNotFoundPage, type NotFoundBasis, type NotFoundLanding } from '../../src/core/browser/notFoundPage.ts'
+import { classifyNotFoundPage, NOT_FOUND_BASES, type NotFoundBasis, type NotFoundLanding } from '../../src/core/browser/notFoundPage.ts'
 import type { PerfSpanRecord } from '../../src/core/perf/perfTracer'
 import type { PipelineEvent } from '../../src/core/pipeline/events'
 import type { EffortTier } from '../../src/core/pipeline/runPlan'
@@ -590,8 +590,6 @@ interface RawRound {
   readonly attempt: number
   readonly calls: { call: ToolCallEvent; result: ToolResultEvent | undefined; landing: NotFoundLanding | null; checkpoint: TraceLine | undefined }[]
 }
-
-const NOT_FOUND_BASES: ReadonlySet<string> = new Set<NotFoundBasis>(['404', '410', 'title'])
 
 /** The Not-found Landing a `tool_result` record carries as a field (#239), or null. */
 function landingFieldOf(record: TraceLine): NotFoundLanding | null {

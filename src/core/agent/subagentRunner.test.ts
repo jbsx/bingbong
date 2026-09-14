@@ -890,10 +890,48 @@ describe('runSubagent', () => {
 
     await runSubagent({ llm, tools: [navigate], clock: new FakeClock() }, { task: 't', isCancelled: () => false })
 
-    // The worker's round runs the rail: the sibling composed address to the
+    // The Subagent's round runs the rail: the sibling composed address to the
     // same site is refused inside the round, before it executes.
     expect(executed).toEqual(['https://www.jpl.nasa.gov/news/voyager-2013-09'])
     expect(llm.requests[1]?.toolResults?.[1]?.outcome).toMatchObject({ ok: false, error: composedAddressRefusal('nasa.gov') })
+  })
+
+  it('offers the URLs its task names and its shared memory cites, even on a site whose allowance is spent (#239)', async () => {
+    const executed: string[] = []
+    const navigate: Tool = {
+      name: 'navigate',
+      acquisition: true,
+      async execute(callArg) {
+        const url = String(callArg.args.url)
+        executed.push(url)
+        return url.includes('/guess')
+          ? `navigated: url=${url} title="Page Not Found - NASA"\nNOT-FOUND:404 www.nasa.gov\nThis address names nothing on nasa.gov.`
+          : `navigated: url=${url} title="NASA"`
+      },
+    }
+    const llm = new ScriptedLlm([
+      {
+        kind: 'tool_calls',
+        calls: [
+          { id: 'n1', name: 'navigate', args: { url: 'https://www.nasa.gov/guess-2013' } },
+          { id: 'n2', name: 'navigate', args: { url: 'https://science.nasa.gov/mission/voyager/' } },
+          { id: 'n3', name: 'navigate', args: { url: 'https://www.jpl.nasa.gov/news/voyager-release' } },
+          { id: 'n4', name: 'navigate', args: { url: 'https://www.nasa.gov/guess-2014' } },
+        ],
+      },
+      { kind: 'answer', speak: 's', display: 'Reported.' },
+    ])
+    const memory = [
+      { subject: 'Voyager release', detail: 'cited', references: [{ url: 'https://www.jpl.nasa.gov/news/voyager-release' }] },
+    ] as unknown as NonNullable<Parameters<typeof runSubagent>[1]['memory']>
+
+    await runSubagent(
+      { llm, tools: [navigate], clock: new FakeClock() },
+      { task: 'Open https://science.nasa.gov/mission/voyager/ and report the release date.', memory, isCancelled: () => false },
+    )
+
+    expect(executed).toEqual(['https://www.nasa.gov/guess-2013', 'https://science.nasa.gov/mission/voyager/', 'https://www.jpl.nasa.gov/news/voyager-release'])
+    expect(llm.requests[1]?.toolResults?.[3]?.outcome).toMatchObject({ ok: false, error: composedAddressRefusal('nasa.gov') })
   })
 
   it('nudges then refuses an objectively redundant action (#159)', async () => {
