@@ -32,9 +32,9 @@
     "reviewerModel": "claude-opus-5",
     "reviewerEffort": "high",
     "reviewerPromptVersion": "audit-p2",
-    "auditCommit": "69bce35395107eb5af207e1ae93bd069109eedcd",
+    "auditCommit": "555854d66dc37f36233da17ebe39317e104b79b3",
     "auditDirtyTree": false,
-    "generatedAt": "2026-09-14T13:23:11.428Z"
+    "generatedAt": "2026-09-14T13:37:46.097Z"
   },
   "attempts": [
     {
@@ -1372,6 +1372,7 @@
         "notFoundNavigates": [
           1
         ],
+        "identitySlips": null,
         "malformedAnswers": 0,
         "answerRetries": 0,
         "latency": {
@@ -2814,6 +2815,7 @@
         "searchSource": "replay",
         "walledRounds": 0,
         "notFoundNavigates": [],
+        "identitySlips": null,
         "malformedAnswers": 0,
         "answerRetries": 0,
         "latency": {
@@ -4185,6 +4187,7 @@
         "searchSource": "replay",
         "walledRounds": 0,
         "notFoundNavigates": [],
+        "identitySlips": null,
         "malformedAnswers": 0,
         "answerRetries": 0,
         "latency": {
@@ -5645,6 +5648,7 @@
         "searchSource": "replay",
         "walledRounds": 0,
         "notFoundNavigates": [],
+        "identitySlips": null,
         "malformedAnswers": 0,
         "answerRetries": 0,
         "latency": {
@@ -6720,6 +6724,7 @@
         "searchSource": "replay",
         "walledRounds": 0,
         "notFoundNavigates": [],
+        "identitySlips": null,
         "malformedAnswers": 0,
         "answerRetries": 0,
         "latency": {
@@ -8118,6 +8123,7 @@
         "notFoundNavigates": [
           16
         ],
+        "identitySlips": null,
         "malformedAnswers": 0,
         "answerRetries": 0,
         "latency": {
@@ -8300,6 +8306,9 @@
       "walledRounds": 1,
       "notFoundNavigates": 2,
       "notFoundOffKey": 1,
+      "identitySlipAnswers": 0,
+      "identitySlipIds": 0,
+      "identitySlipsNotRecorded": 4,
       "malformedAnswers": 0,
       "answerRetries": 0,
       "subagentRounds": 0,
@@ -8422,6 +8431,9 @@
       "walledRounds": 0,
       "notFoundNavigates": 0,
       "notFoundOffKey": 0,
+      "identitySlipAnswers": 0,
+      "identitySlipIds": 0,
+      "identitySlipsNotRecorded": 2,
       "malformedAnswers": 0,
       "answerRetries": 0,
       "subagentRounds": 0,

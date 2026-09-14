@@ -1,13 +1,13 @@
 # Round Audit — bingbong.live-web.information-hunts (baseline-2)
 
-Generated 2026-09-14T13:23:11.428Z from a capture set created 2026-09-12T18:10:26.845Z (state complete). This audit counts and does not judge: every verdict is the reviewer’s for one attempt, and the ranking is arithmetic over those verdicts.
+Generated 2026-09-14T13:37:46.097Z from a capture set created 2026-09-12T18:10:26.845Z (state complete). This audit counts and does not judge: every verdict is the reviewer’s for one attempt, and the ranking is arithmetic over those verdicts.
 
 ## Provenance
 
 - capture: commit(s) 6152d8dc (dirty tree); mode measured; protocol 1; prompt version(s) 1
 - routing: orchestrator=GLM-5.3; subagent=GLM-5.3-flash; vision=GLM-4.6V | reasoning override: none | effort overrides: none | adblock: production_default
 - key 2.2.2.2, manifest sha256:faa25d04…; grades by claude-opus-5 via live:grade (revision 1)
-- reviewer: claude-opus-5 at high, prompt audit-p2; audit run at commit 69bce353
+- reviewer: claude-opus-5 at high, prompt audit-p2; audit run at commit 555854d6
 
 ## Populations
 
@@ -27,8 +27,8 @@ Kinds are mechanical counts; a share is over the budgeted rounds (Finalization o
 | answer omitted | 2 | 1 | 0 | 1 |
 | failed rounds | 0 | 0 | 0 | 0 |
 
-- initial: 12 Off-key round(s), 0 Search Loop round(s) by the reviewer (0 by the streak rule; attempts by search source rail 0, replay 3, none 1), 0 inherited, 5 rejected Evidence Checkpoint(s), 1 walled round(s), 2 navigate(s) landed on a Not-found Page (1 judged Off-key), 0 Subagent round(s), 0 merged Evidence Checkpoint(s) (a floor), 0 Held Page round(s) without Progress, 0 Malformed Answer(s) (0 retried), 0 stopped early, 3 answer omitted, 5 overrule(s), 19 flag(s); Finalization Causes: budget_exhausted 3, objective_met 1
-- follow_up: 6 Off-key round(s), 0 Search Loop round(s) by the reviewer (0 by the streak rule; attempts by search source rail 0, replay 2, none 0), 2 inherited, 4 rejected Evidence Checkpoint(s), 0 walled round(s), 0 navigate(s) landed on a Not-found Page (0 judged Off-key), 0 Subagent round(s), 0 merged Evidence Checkpoint(s) (a floor), 1 Held Page round(s) without Progress, 0 Malformed Answer(s) (0 retried), 0 stopped early, 1 answer omitted, 1 overrule(s), 9 flag(s); Finalization Causes: budget_exhausted 1, objective_met 1
+- initial: 12 Off-key round(s), 0 Search Loop round(s) by the reviewer (0 by the streak rule; attempts by search source rail 0, replay 3, none 1), 0 inherited, 5 rejected Evidence Checkpoint(s), 1 walled round(s), 2 navigate(s) landed on a Not-found Page (1 judged Off-key), 0 Subagent round(s), 0 merged Evidence Checkpoint(s) (a floor), 0 Held Page round(s) without Progress, Identity Slips not recorded, 0 Malformed Answer(s) (0 retried), 0 stopped early, 3 answer omitted, 5 overrule(s), 19 flag(s); Finalization Causes: budget_exhausted 3, objective_met 1
+- follow_up: 6 Off-key round(s), 0 Search Loop round(s) by the reviewer (0 by the streak rule; attempts by search source rail 0, replay 2, none 0), 2 inherited, 4 rejected Evidence Checkpoint(s), 0 walled round(s), 0 navigate(s) landed on a Not-found Page (0 judged Off-key), 0 Subagent round(s), 0 merged Evidence Checkpoint(s) (a floor), 1 Held Page round(s) without Progress, Identity Slips not recorded, 0 Malformed Answer(s) (0 retried), 0 stopped early, 1 answer omitted, 1 overrule(s), 9 flag(s); Finalization Causes: budget_exhausted 1, objective_met 1
 
 ## Tool rounds
 
@@ -57,6 +57,7 @@ The rounds outside Finalization that called each tool — a round counts once pe
 - Malformed Answers: 0 (0 retried)
 - navigates that landed on a Not-found Page: 1 (round 1)
 - of those, judged Off-key by the reviewer: 1
+- Identity Slips: not recorded (a Run Trace below version 2)
 - kinds: Acquisition with Progress 15 (63%) · Acquisition without Progress 5 (21%) · Collection 0 (0%) · Bookkeeping 1 (4%) · Failed round 3 (13%) · Finalization 2 (8%)
 - search source none: no Search Observation in the trace, and no navigate search for the replay to find
 - **verdict: rounds wasted** — About 10 of the 24 budgeted rounds brought nothing new: the 404 in round 1; the End of Page scrolls in rounds 5, 12 and 18; the illegible look in round 7; the refused looks in rounds 8, 13 and 16; and the empty raw-page reads in rounds 11 and 17 (overruled). The detour through raw.githubusercontent.com (rounds 10–18) then had to be repeated through GitHub blob pages (rounds 14 and 19). That left too few rounds to reach the legacy-stack material behind fact-05 before the budget ran out.
@@ -110,6 +111,7 @@ The rounds outside Finalization that called each tool — a round counts once pe
 - Malformed Answers: 0 (0 retried)
 - navigates that landed on a Not-found Page: 0
 - of those, judged Off-key by the reviewer: 0
+- Identity Slips: not recorded (a Run Trace below version 2)
 - kinds: Acquisition with Progress 18 (75%) · Acquisition without Progress 3 (13%) · Collection 0 (0%) · Bookkeeping 3 (13%) · Failed round 0 (0%) · Finalization 2 (8%)
 - search source replay: the streak rule re-run over navigate searches
 - **verdict: rounds wasted** — About 14 of the 24 budgeted rounds went to the Camera Module 3 product page (https://www.raspberrypi.com/products/camera-module-3/). Round 1 opened it, round 2 clicked on it, and rounds 3–14 were scrolls to End of Page. That page is context from the initial step and adds nothing for fact-01 or fact-02. Rounds 16–17 went to a search page and a challenge wall, and round 18 re-opened an inherited page. As a result the key mechanical source was not reached until round 19, with only a few rounds left, and it got just one targeted Look (round 21) before the bookkeeping rounds 22–24 used up the budget.
@@ -163,6 +165,7 @@ The rounds outside Finalization that called each tool — a round counts once pe
 - Malformed Answers: 0 (0 retried)
 - navigates that landed on a Not-found Page: 0
 - of those, judged Off-key by the reviewer: 0
+- Identity Slips: not recorded (a Run Trace below version 2)
 - kinds: Acquisition with Progress 14 (58%) · Acquisition without Progress 4 (17%) · Collection 0 (0%) · Bookkeeping 0 (0%) · Failed round 6 (25%) · Finalization 2 (8%)
 - search source replay: the streak rule re-run over navigate searches
 - **verdict: rounds wasted** — About 15 of the 24 budgeted rounds went without on-key progress. Six were failed rounds (5, 10, 15, 19, 20, 23), mostly refused repeat looks and a repeat scroll. Rounds 4, 13 and 17 made no progress, and rounds 16 and 18 were scroll repeats (overruled). Rounds 1–3 and 6–9 were off-key: a walled page, landing pages and search results. Only rounds 11, 12, 14, 21, 22 and 24 worked on the watch record. The budget ran out before the Run reached the case record, leaving fact-08 to fact-11 unsatisfied.
@@ -223,6 +226,7 @@ The rounds outside Finalization that called each tool — a round counts once pe
 - Malformed Answers: 0 (0 retried)
 - navigates that landed on a Not-found Page: 0
 - of those, judged Off-key by the reviewer: 0
+- Identity Slips: not recorded (a Run Trace below version 2)
 - kinds: Acquisition with Progress 18 (78%) · Acquisition without Progress 0 (0%) · Collection 0 (0%) · Bookkeeping 5 (22%) · Failed round 0 (0%) · Finalization 1 (4%)
 - search source replay: the streak rule re-run over navigate searches
 - **verdict: answer omitted** — 18 of 23 budgeted rounds were Acquisition with Progress, and 17 of those were on the two verified official pages (rounds 2-18). Only round 1 was Off-key. The Run read everything needed for fact-03, fact-07 and fact-08, but the Answer (round 24) left all three unstated.
@@ -270,6 +274,7 @@ The rounds outside Finalization that called each tool — a round counts once pe
 - Malformed Answers: 0 (0 retried)
 - navigates that landed on a Not-found Page: 0
 - of those, judged Off-key by the reviewer: 0
+- Identity Slips: not recorded (a Run Trace below version 2)
 - kinds: Acquisition with Progress 10 (56%) · Acquisition without Progress 2 (11%) · Collection 0 (0%) · Bookkeeping 4 (22%) · Failed round 2 (11%) · Finalization 1 (5%)
 - search source replay: the streak rule re-run over navigate searches
 - **verdict: rounds wasted** — The attempt passed using 18 of 24 Tool Rounds, so the only real finding is inefficiency. Of the 18 budgeted rounds, 2 made no progress (round 1, which re-opened the inherited page, and round 4, whose Look returned nothing legible). Another 2 failed because their Looks were refused (rounds 6 and 8). Rounds 10–13 (4 rounds) went to off-key pages, and rounds 16–17 were rejected Evidence Checkpoints. That is about 10 of 18 rounds (~55%) that added nothing. The deciding reads were round 9 (read_page on S1) and round 14 (the equivalent US-English official page).
@@ -315,6 +320,7 @@ The rounds outside Finalization that called each tool — a round counts once pe
 - Malformed Answers: 0 (0 retried)
 - navigates that landed on a Not-found Page: 1 (round 16)
 - of those, judged Off-key by the reviewer: 0
+- Identity Slips: not recorded (a Run Trace below version 2)
 - kinds: Acquisition with Progress 19 (79%) · Acquisition without Progress 2 (8%) · Collection 0 (0%) · Bookkeeping 0 (0%) · Failed round 3 (13%) · Finalization 2 (8%)
 - search source replay: the streak rule re-run over navigate searches
 - **verdict: answer omitted** — All 3 unsatisfied checks (fact-06, fact-07, fact-08) were on the September announcement page. The Run had that page's text through scrolls in rounds 17-21 and read_page in round 23, and 12 of 15 checks passed. The missing facts were within reach; they were left out of the Answer, not missed by the search.

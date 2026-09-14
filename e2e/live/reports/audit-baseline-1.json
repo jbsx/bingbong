@@ -32,9 +32,9 @@
     "reviewerModel": "claude-opus-5",
     "reviewerEffort": "high",
     "reviewerPromptVersion": "audit-p2",
-    "auditCommit": "69bce35395107eb5af207e1ae93bd069109eedcd",
+    "auditCommit": "555854d66dc37f36233da17ebe39317e104b79b3",
     "auditDirtyTree": false,
-    "generatedAt": "2026-09-14T13:23:11.428Z"
+    "generatedAt": "2026-09-14T13:37:46.097Z"
   },
   "attempts": [
     {
@@ -1369,6 +1369,7 @@
         "searchSource": "none",
         "walledRounds": 0,
         "notFoundNavigates": [],
+        "identitySlips": null,
         "malformedAnswers": 0,
         "answerRetries": 0,
         "latency": {
@@ -2715,6 +2716,7 @@
         "searchSource": "none",
         "walledRounds": 0,
         "notFoundNavigates": [],
+        "identitySlips": null,
         "malformedAnswers": 0,
         "answerRetries": 0,
         "latency": {
@@ -3566,6 +3568,7 @@
         "searchSource": "replay",
         "walledRounds": 0,
         "notFoundNavigates": [],
+        "identitySlips": null,
         "malformedAnswers": 0,
         "answerRetries": 0,
         "latency": {
@@ -4174,6 +4177,7 @@
         "searchSource": "replay",
         "walledRounds": 0,
         "notFoundNavigates": [],
+        "identitySlips": null,
         "malformedAnswers": 0,
         "answerRetries": 0,
         "latency": {
@@ -5261,6 +5265,7 @@
         "notFoundNavigates": [
           12
         ],
+        "identitySlips": null,
         "malformedAnswers": 0,
         "answerRetries": 0,
         "latency": {
@@ -6726,6 +6731,7 @@
           22,
           24
         ],
+        "identitySlips": null,
         "malformedAnswers": 0,
         "answerRetries": 0,
         "latency": {
@@ -6990,6 +6996,9 @@
       "walledRounds": 1,
       "notFoundNavigates": 6,
       "notFoundOffKey": 6,
+      "identitySlipAnswers": 0,
+      "identitySlipIds": 0,
+      "identitySlipsNotRecorded": 4,
       "malformedAnswers": 0,
       "answerRetries": 0,
       "subagentRounds": 13,
@@ -7117,6 +7126,9 @@
       "walledRounds": 0,
       "notFoundNavigates": 1,
       "notFoundOffKey": 1,
+      "identitySlipAnswers": 0,
+      "identitySlipIds": 0,
+      "identitySlipsNotRecorded": 2,
       "malformedAnswers": 0,
       "answerRetries": 0,
       "subagentRounds": 0,
@@ -7178,6 +7190,8 @@
       ]
     }
   },
-  "caveats": [],
+  "caveats": [
+    "rule-eurostar-luggage--initial replied with a Malformed Answer in round 7, before the malformed_answer record existed (#245): its count reads 0, and the audit does not re-parse Answer text to find it"
+  ],
   "note": "This audit counts and does not judge: every verdict is the reviewer’s for one attempt, and the ranking is arithmetic over those verdicts."
 }

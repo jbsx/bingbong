@@ -36,9 +36,9 @@
         ],
         "dirtyTree": true,
         "gradesRevision": 1,
-        "auditCommit": "69bce35395107eb5af207e1ae93bd069109eedcd",
+        "auditCommit": "555854d66dc37f36233da17ebe39317e104b79b3",
         "auditDirtyTree": false,
-        "generatedAt": "2026-09-14T13:23:11.428Z"
+        "generatedAt": "2026-09-14T13:37:46.097Z"
       },
       {
         "setId": "baseline-2",
@@ -49,9 +49,9 @@
         ],
         "dirtyTree": true,
         "gradesRevision": 1,
-        "auditCommit": "69bce35395107eb5af207e1ae93bd069109eedcd",
+        "auditCommit": "555854d66dc37f36233da17ebe39317e104b79b3",
         "auditDirtyTree": false,
-        "generatedAt": "2026-09-14T13:23:11.428Z"
+        "generatedAt": "2026-09-14T13:37:46.097Z"
       },
       {
         "setId": "baseline-3",
@@ -62,12 +62,12 @@
         ],
         "dirtyTree": true,
         "gradesRevision": 1,
-        "auditCommit": "69bce35395107eb5af207e1ae93bd069109eedcd",
+        "auditCommit": "555854d66dc37f36233da17ebe39317e104b79b3",
         "auditDirtyTree": false,
-        "generatedAt": "2026-09-14T13:23:11.428Z"
+        "generatedAt": "2026-09-14T13:37:46.097Z"
       }
     ],
-    "generatedAt": "2026-09-14T13:23:11.428Z"
+    "generatedAt": "2026-09-14T13:37:46.097Z"
   },
   "populations": {
     "initial": {
@@ -132,6 +132,9 @@
       "walledRounds": 2,
       "notFoundNavigates": 9,
       "notFoundOffKey": 8,
+      "identitySlipAnswers": 0,
+      "identitySlipIds": 0,
+      "identitySlipsNotRecorded": 12,
       "malformedAnswers": 0,
       "answerRetries": 0,
       "subagentRounds": 26,
@@ -268,6 +271,9 @@
             "walledRounds": 1,
             "notFoundNavigates": 6,
             "notFoundOffKey": 6,
+            "identitySlipAnswers": 0,
+            "identitySlipIds": 0,
+            "identitySlipsNotRecorded": 4,
             "malformedAnswers": 0,
             "answerRetries": 0,
             "subagentRounds": 13,
@@ -398,6 +404,9 @@
             "walledRounds": 1,
             "notFoundNavigates": 2,
             "notFoundOffKey": 1,
+            "identitySlipAnswers": 0,
+            "identitySlipIds": 0,
+            "identitySlipsNotRecorded": 4,
             "malformedAnswers": 0,
             "answerRetries": 0,
             "subagentRounds": 0,
@@ -523,6 +532,9 @@
             "walledRounds": 0,
             "notFoundNavigates": 1,
             "notFoundOffKey": 1,
+            "identitySlipAnswers": 0,
+            "identitySlipIds": 0,
+            "identitySlipsNotRecorded": 4,
             "malformedAnswers": 0,
             "answerRetries": 0,
             "subagentRounds": 13,
@@ -654,6 +666,9 @@
       "walledRounds": 0,
       "notFoundNavigates": 1,
       "notFoundOffKey": 1,
+      "identitySlipAnswers": 0,
+      "identitySlipIds": 0,
+      "identitySlipsNotRecorded": 6,
       "malformedAnswers": 0,
       "answerRetries": 0,
       "subagentRounds": 13,
@@ -794,6 +809,9 @@
             "walledRounds": 0,
             "notFoundNavigates": 1,
             "notFoundOffKey": 1,
+            "identitySlipAnswers": 0,
+            "identitySlipIds": 0,
+            "identitySlipsNotRecorded": 2,
             "malformedAnswers": 0,
             "answerRetries": 0,
             "subagentRounds": 0,
@@ -919,6 +937,9 @@
             "walledRounds": 0,
             "notFoundNavigates": 0,
             "notFoundOffKey": 0,
+            "identitySlipAnswers": 0,
+            "identitySlipIds": 0,
+            "identitySlipsNotRecorded": 2,
             "malformedAnswers": 0,
             "answerRetries": 0,
             "subagentRounds": 0,
@@ -1039,6 +1060,9 @@
             "walledRounds": 0,
             "notFoundNavigates": 0,
             "notFoundOffKey": 0,
+            "identitySlipAnswers": 0,
+            "identitySlipIds": 0,
+            "identitySlipsNotRecorded": 2,
             "malformedAnswers": 0,
             "answerRetries": 0,
             "subagentRounds": 13,
@@ -1145,6 +1169,8 @@
       "followUp": 0
     }
   ],
-  "caveats": [],
+  "caveats": [
+    "baseline-1: rule-eurostar-luggage--initial replied with a Malformed Answer in round 7, before the malformed_answer record existed (#245): its count reads 0, and the audit does not re-parse Answer text to find it"
+  ],
   "note": "This audit counts and does not judge: every verdict is the reviewer’s for one attempt, and the ranking is arithmetic over those verdicts."
 }
