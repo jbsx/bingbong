@@ -763,7 +763,8 @@ kilobytes; raw traces never enter a prompt.
 
 **A model that is not the measured one judges** what needs judgement, from the
 digest plus the same key bundle `live:grade` shows, with no tools: Search Loop
-membership, Off-key, "stopped early", and the per-attempt verdict. It may
+membership, Off-key, the Early Stop and the Answer Omission, and the
+per-attempt verdict. It may
 overrule a mechanical label with a stated reason, shown in the report, and it
 flags every call a careful human might make the other way; flags ship as
 caveats and never gate the report. The invocation is `live:grade`'s
@@ -792,12 +793,37 @@ what the reviewer judged: the calls, pages, results and Notices, which is what
 the mechanical labels are read from too. The Run Trace keeps the reasoning for
 anyone diagnosing an attempt by hand.
 
+**The Early Stop and the Answer Omission** (#244) are two per-attempt
+judgements, each `{ value, reason, checks }`, over the checks the Grade left
+unsatisfied (`checksUnsatisfied`; for an ungraded attempt every check, labelled
+"ungraded: every check" rather than unsatisfied). For each such check the
+reviewer decides one thing only: did it need a page the Run had not read, or
+does it follow from material on a page the Run had read, recorded as Evidence
+or not? The Grade decides what the Answer established and the reviewer never
+re-judges a check.
+
+- `stoppedEarly` — the Run ended with Tool Rounds and time left, and an
+  unsatisfied check needed a page the Run had not read. Whether that page was
+  findable does not enter: with budget left, not finding it is the stop. An
+  attempt that ran to its budget never stopped early.
+- `answerOmitted` — an unsatisfied check follows from material on a page the
+  Run had read, and the Answer left it unstated, however the attempt ended.
+
+The validator refuses a check id outside `checksUnsatisfied`, an id in both
+lists, a list that is empty when its value is true or non-empty when false,
+and an empty reason on either.
+
 **The verdict** is from a closed set, primary plus at most one secondary, each
 with a stated reason: `rounds_wasted`, `tier_too_small_or_never_escalated`,
-`budget_too_small_for_the_hunt`, `stopped_early`, `failed_rounds`. No numeric
-threshold is baked in: the script reports the shares, the reviewer chooses and
-cites them. "Budget too small for the Hunt" is an admissible finding — an audit
-that can only find waste is not one.
+`budget_too_small_for_the_hunt`, `stopped_early`, `answer_omitted`,
+`failed_rounds`. A `stopped_early` or `answer_omitted` verdict, primary or
+secondary, is refused unless its judgement's value is true; the reverse is
+legal, since a judgement may be true while the reviewer finds another cause
+more decisive. An attempt with one check of each kind takes whichever the
+reviewer finds decisive as its primary verdict. No numeric threshold is baked
+in: the script reports the shares, the reviewer chooses and cites them. "Budget
+too small for the Hunt" is an admissible finding — an audit that can only find
+waste is not one.
 
 **Aggregation is arithmetic.** The script counts kinds and verdicts across
 attempts and sets, reported as two populations — the initials and the
@@ -809,18 +835,39 @@ versions) plus the audit's own reviewer model, effort and prompt version, and
 refuses sets that differ. Every output says in one line that it counts and
 does not judge.
 
+**Outputs judged before #244** carry reviewer prompt `audit-p1`: the old
+verdict set, a single `stoppedEarly { value, reason }` with no checks, and the
+unsatisfied checks under the name `checksNotReached` ("checks not reached").
+Under `audit-p1` a fact the Answer left unstated from a page already read was
+judged stopped early by construction. The three Baseline sets and their
+aggregate are re-judged under `audit-p2`; the fix-235 through fix-239 audits are
+not, and since the aggregate refuses a differing audit prompt version they
+aggregate only among themselves.
+
+**Regenerating an audit.** Outputs are written once, and the prompt version is
+bumped by hand (`AUDIT_PROMPT_VERSION` in `scripts/live-audit.ts`) — nothing
+re-keys on its own, though the version is part of every cache key, so a bump
+asks the reviewer again. To regenerate a set, remove its four files first —
+`audit-<setId>.json` and `.md`, and the aggregate's `.json` and `.md` it was
+counted in — then run `pnpm live:audit` over the same sets. Over many attempts,
+judge one attempt per call with `--only=<attemptId>` to fill the cache, then run
+over the whole sets, which reads every judgement from it. Outputs record HEAD as
+`auditCommit`, so run the final pass after committing the code it reflects.
+
 ### What the outputs hold
 
 Per attempt: a kind per orchestrator round with its reason, the counts and
 shares per kind (over the budgeted rounds; Finalization over all rounds), the
 Tool Rounds used against the tier's budget, the Finalization Cause, the grade
-and the check ids the Answer never reached (every check when ungraded), the
-Subagent round count with how each Subagent stopped, the inherited and walled
-rounds, the reviewer's verdict with reasons, its Search Loops, Off-key rounds,
-overrules and flags, and the provenance of the judgement (model served, effort,
-prompt version, digest hash, cost). Per set: the two populations' tables and the
-capture's provenance. The aggregate: the ranked causes, the populations per set
-and summed, and the shared provenance.
+and the checks unsatisfied (`checksUnsatisfied`; "ungraded: every check" when
+the attempt has no grade), the Subagent round count with how each Subagent
+stopped, the inherited and walled rounds, the reviewer's verdict with reasons,
+its Early Stop and Answer Omission with the checks each names, its Search
+Loops, Off-key rounds, overrules and flags, and the provenance of the judgement
+(model served, effort, prompt version, digest hash, cost). Per set: the two
+populations' tables, whose judgement line counts both `N stopped early` and
+`N answer omitted`, and the capture's provenance. The aggregate: the ranked
+causes, the populations per set and summed, and the shared provenance.
 
 Each population also counts tool rounds per tool (#235, ADR 0047): for every
 tool, the rounds outside Finalization that called it — a round counts once

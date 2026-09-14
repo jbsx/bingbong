@@ -11,7 +11,9 @@ import type { PerfSpanRecord } from '../../src/core/perf/perfTracer'
 import type { TraceRecord } from '../../src/core/trace/runTrace'
 import {
   AUDIT_COUNTS_NOTE,
+  AUDIT_VERDICTS,
   BUDGET_WARNING_RE,
+  JUDGEMENT_SCHEMA,
   END_OF_PAGE_MARK,
   FINALIZATION_REASONING_EFFORT,
   FINALIZE_INSTRUCTION_MARK,
@@ -316,7 +318,7 @@ describe('the mechanical classification', () => {
     expect(mechanical.mechanicalSearchRounds).toBe(2)
     expect(mechanical.lastBudgetNotice).toEqual({ remaining: 4, budget: 24 })
     expect(mechanical.subagent).toEqual({ rounds: 2, agents: 1, byStop: { budget_exhausted: 1 } })
-    expect(mechanical.checksNotReached).toEqual(['fact-02'])
+    expect(mechanical.checksUnsatisfied).toEqual(['fact-02'])
     expect(mechanical.checksTotal).toBe(3)
     expect(mechanical.terminal).toEqual({ outcome: 'done', resolution: 'partial', finalizationCause: 'budget_exhausted' })
   })
@@ -336,8 +338,8 @@ describe('the mechanical classification', () => {
     expect(second.digestHash).toBe(first.digestHash)
     expect(first.digestHash).toMatch(/^sha256:[0-9a-f]{64}$/)
     // The hash covers the digest, not who reviewed it — a different grade
-    // moves `checksNotReached` and therefore the hash; a different perf log
-    // moves the latencies and therefore the hash.
+    // moves the grade status and `checksUnsatisfied` and therefore the hash; a
+    // different perf log moves the latencies and therefore the hash.
     expect(classifyAttempt(inputOf({ grade: null })).digestHash).not.toBe(first.digestHash)
     expect(classifyAttempt(inputOf({ perfRecords: [] })).digestHash).not.toBe(first.digestHash)
   })
@@ -448,8 +450,9 @@ describe('the mechanical classification', () => {
 
   it('counts a loop’s head by the streak rule without touching its kind, its reason or the digest (Decision 8)', () => {
     const mechanical = classifyAttempt(inputOf())
-    // The hash the fixture had before the head was counted: no cache re-key.
-    expect(mechanical.digestHash).toBe('sha256:dca3c3c8e737a484c75e1c6fd7565b4eadbf1d8f208f1bf03f7d113b96021a6f')
+    // Counting the head re-keys no cached judgement. The pin moved once since,
+    // on purpose: #244 renamed `checksUnsatisfied` and hashed the grade status.
+    expect(mechanical.digestHash).toBe('sha256:ab85fed806eb15cbf49cb047cd7401081f8033507e32e94ee7e9fbabd7d9a147')
     // Round 2's search starts the streak round 3's continues.
     expect(mechanical.searchLoopHeads).toEqual([2])
     expect(mechanical.mechanicalSearchRounds).toBe(2)
@@ -659,7 +662,7 @@ describe('the rail’s Search Observations (#243, ADR 0049)', () => {
     const replayed = classifyAttempt(inputOf())
     expect(railed).toHaveProperty('searchSource', 'rail')
     // The source is not the reviewer's business: the replayed digest is the pinned one.
-    expect(replayed.digestHash).toBe('sha256:dca3c3c8e737a484c75e1c6fd7565b4eadbf1d8f208f1bf03f7d113b96021a6f')
+    expect(replayed.digestHash).toBe('sha256:ab85fed806eb15cbf49cb047cd7401081f8033507e32e94ee7e9fbabd7d9a147')
     const set = buildAuditSet(
       provenanceOf(),
       [railed, replayed].map((mechanical) => ({ mechanical, review: null, countsAfterOverrules: countsAfterOverrulesOf(mechanical, null) })),
@@ -713,7 +716,8 @@ describe('Not-found Landings (#239, ADR 0050)', () => {
       searchLoops: [],
       offKey: [{ round: 2, url: DEAD_B, reason: 'a composed slug for a release that is not there' }],
       overrules: [],
-      stoppedEarly: { value: false, reason: 'it answered' },
+      stoppedEarly: { value: false, reason: 'it answered', checks: [] },
+      answerOmitted: { value: false, reason: 'fact-02 was on no page it read', checks: [] },
       verdict: { primary: 'rounds_wasted', primaryReason: 'two guessed addresses', secondary: null, secondaryReason: null },
       flags: [],
     }
@@ -739,10 +743,99 @@ const judgement: AuditJudgement = {
   searchLoops: [{ rounds: [2, 3], reason: 'two rewordings of one query' }],
   offKey: [{ round: 4, url: OTHER_URL, reason: 'the page is about something else' }],
   overrules: [{ round: 5, kind: 'acquisition_without_progress', reason: 'the first read repeated what the navigate showed' }],
-  stoppedEarly: { value: false, reason: 'it ran to its budget' },
+  stoppedEarly: { value: false, reason: 'it ran to its budget', checks: [] },
+  answerOmitted: { value: false, reason: 'fact-02 needed a page the Run never read', checks: [] },
   verdict: { primary: 'rounds_wasted', primaryReason: '4 of 13 budgeted rounds without Progress, plus an Off-key page', secondary: 'failed_rounds', secondaryReason: 'two failed rounds' },
   flags: [{ round: 5, question: 'a first read after a navigate is neutral by the glossary; is it a repeat here?' }],
 }
+
+/** The fixture judged an Answer Omission (#244): fact-02 follows from a page the Run had read. */
+const omitted: AuditJudgement = {
+  ...judgement,
+  answerOmitted: { value: true, reason: 'fact-02 follows from https://spec.invalid/third, read in round 13', checks: ['fact-02'] },
+  verdict: { primary: 'answer_omitted', primaryReason: 'fact-02 was on a page already read', secondary: 'rounds_wasted', secondaryReason: '4 of 13 budgeted rounds without Progress' },
+}
+
+describe('the Early Stop and the Answer Omission (#244)', () => {
+  const mechanical = classifyAttempt(inputOf())
+  const errorsOf = (raw: unknown): readonly string[] => {
+    const validated = validateJudgement(raw, mechanical)
+    return validated.ok ? [] : validated.errors
+  }
+
+  it('hands on the checks the Grade left unsatisfied under that name, and every check of an ungraded attempt', () => {
+    expect(mechanical.checksUnsatisfied).toEqual(['fact-02'])
+    expect(mechanical).not.toHaveProperty('checksNotReached')
+    expect(classifyAttempt(inputOf({ grade: null })).checksUnsatisfied).toEqual(['fact-01', 'fact-02', 'pitfall-01'])
+  })
+
+  it('closes the verdict set over answer_omitted and requires both judgements, each naming its checks', () => {
+    expect(AUDIT_VERDICTS).toContain('answer_omitted')
+    expect(JUDGEMENT_SCHEMA.required).toEqual(expect.arrayContaining(['stoppedEarly', 'answerOmitted']))
+    expect(JUDGEMENT_SCHEMA.properties.stoppedEarly.required).toEqual(['value', 'reason', 'checks'])
+    expect(JUDGEMENT_SCHEMA.properties.answerOmitted.required).toEqual(['value', 'reason', 'checks'])
+    const without: Record<string, unknown> = { ...judgement }
+    delete without.answerOmitted
+    expect(errorsOf(without)).toEqual(['answerOmitted must carry a boolean value, a reason and a list of checks'])
+    // The audit-p1 shape, with no checks, is refused too.
+    expect(errorsOf({ ...judgement, stoppedEarly: { value: false, reason: 'it ran to its budget' } })).toEqual(['stoppedEarly must carry a boolean value, a reason and a list of checks'])
+  })
+
+  it('refuses a check the Grade did not leave unsatisfied, a check in both lists, a value its checks contradict, and an empty reason', () => {
+    expect(
+      errorsOf({
+        ...judgement,
+        stoppedEarly: { value: true, reason: '', checks: ['fact-01', 'fact-02'] },
+        answerOmitted: { value: false, reason: 'x', checks: ['fact-02'] },
+      }),
+    ).toEqual([
+      'stoppedEarly.reason is missing',
+      'stoppedEarly.checks names fact-01, which is not a check the Grade left unsatisfied',
+      'answerOmitted is false and still names fact-02',
+      'fact-02 is named by both stoppedEarly and answerOmitted — a check needed an unread page or follows from a read one, not both',
+    ])
+    expect(errorsOf({ ...judgement, answerOmitted: { value: true, reason: 'x', checks: [] } })).toEqual(['answerOmitted is true and names no check'])
+    expect(errorsOf({ ...judgement, answerOmitted: { value: false, reason: ' ', checks: [] } })).toEqual(['answerOmitted.reason is missing'])
+  })
+
+  it('refuses a verdict its judgement contradicts, primary or secondary, and allows a true judgement under another verdict', () => {
+    expect(errorsOf({ ...judgement, verdict: { ...judgement.verdict, primary: 'stopped_early' } })).toEqual(['verdict.primary is stopped_early, but stoppedEarly.value is false'])
+    expect(errorsOf({ ...omitted, answerOmitted: judgement.answerOmitted })).toEqual(['verdict.primary is answer_omitted, but answerOmitted.value is false'])
+    expect(errorsOf({ ...judgement, verdict: { ...judgement.verdict, secondary: 'answer_omitted' } })).toEqual(['verdict.secondary is answer_omitted, but answerOmitted.value is false'])
+    // The reverse is legal: the reviewer found the wasted rounds more decisive.
+    expect(validateJudgement({ ...judgement, answerOmitted: omitted.answerOmitted }, mechanical).ok).toBe(true)
+    expect(validateJudgement(omitted, mechanical)).toEqual({ ok: true, value: omitted })
+  })
+
+  it('renders and tallies an Answer Omission beside the Early Stop, per attempt, per population and in the ranked causes', () => {
+    const set = buildAuditSet(provenanceOf(), [attemptOf('initial', omitted), attemptOf('revised_objective', judgement)], [])
+    expect(set.populations.initial).toMatchObject({ answerOmitted: 1, stoppedEarly: 0 })
+    expect(set.populations.initial.verdictsPrimary.answer_omitted).toBe(1)
+    expect(set.populations.followUp.answerOmitted).toBe(0)
+    const markdown = formatAuditSet(set)
+    expect(markdown).toContain('- **verdict: answer omitted** — fact-02 was on a page already read')
+    expect(markdown).toContain('- stopped early: no — it ran to its budget')
+    expect(markdown).toContain('- answer omitted: yes (fact-02) — fact-02 follows from https://spec.invalid/third')
+    expect(markdown).toContain('0 stopped early, 1 answer omitted, ')
+    expect(markdown).toMatch(/\n\| answer omitted \| 1 \| 0 \| 0 \| 0 \|\n/)
+
+    const other = buildAuditSet(provenanceOf({ setId: 'set-2', createdAt: '2026-09-12T18:00:00.000Z' }), [attemptOf('initial', omitted)], [])
+    const aggregate = buildAuditAggregate([set, other], '2026-09-14T11:00:00.000Z')
+    if (!aggregate.ok) throw new Error(aggregate.errors.join('; '))
+    expect(aggregate.value.rankedCauses[0]).toEqual({ verdict: 'answer_omitted', count: 2, initial: 2, followUp: 0 })
+    expect(formatAuditAggregate(aggregate.value)).toContain('| 1 | answer omitted | 2 | 2 | 0 |')
+    expect(formatAuditAggregate(aggregate.value)).toContain('0 stopped early, 2 answer omitted, ')
+  })
+
+  it('reports the checks unsatisfied, and an ungraded attempt’s as ungraded rather than unsatisfied', () => {
+    const graded = formatAuditSet(buildAuditSet(provenanceOf(), [attemptOf('initial', judgement)], []))
+    expect(graded).toContain('checks unsatisfied: fact-02 (1 of 3)')
+    const ungradedMechanical = classifyAttempt(inputOf({ grade: null }))
+    const ungraded = formatAuditSet(buildAuditSet(provenanceOf(), [{ mechanical: ungradedMechanical, review: null, countsAfterOverrules: ungradedMechanical.counts }], []))
+    expect(ungraded).toContain('checks unsatisfied: ungraded: every check (3 of 3)')
+    expect(`${graded}${ungraded}`).not.toContain('not reached')
+  })
+})
 
 describe('the reviewer’s output', () => {
   const mechanical = classifyAttempt(inputOf())
@@ -941,7 +1034,7 @@ describe('a set and the aggregate', () => {
   it('formats every attempt with its kinds, verdict, unreached checks, Subagent rounds, overrules and flags', () => {
     const markdown = formatAuditSet(setOne)
     expect(markdown).toContain('# Round Audit — fixture-study (set-1)')
-    expect(markdown).toContain('checks not reached: fact-02 (1 of 3)')
+    expect(markdown).toContain('checks unsatisfied: fact-02 (1 of 3)')
     expect(markdown).toContain('2 Subagent round(s) over 1 Subagent(s), stopped by budget_exhausted 1')
     expect(markdown).toContain('**verdict: rounds wasted**')
     expect(markdown).toContain('overrule round 5 → Acquisition without Progress')
@@ -979,6 +1072,23 @@ describe('the committed audit outputs', () => {
       expect(text, name).not.toMatch(/\/home\/[a-z]/)
     }
   })
+
+  it.skipIf(files.length === 0)('say checks unsatisfied wherever the reviewer prompt is audit-p2, and leave earlier outputs as they were (#244)', () => {
+    const promptVersionOf = (name: string): string | null => {
+      const json = JSON.parse(readFileSync(join(REPORTS_DIR, name.replace(/\.md$/, '.json')), 'utf8')) as { provenance: { reviewerPromptVersion?: string; shared?: { reviewerPromptVersion?: string } } }
+      return json.provenance.reviewerPromptVersion ?? json.provenance.shared?.reviewerPromptVersion ?? null
+    }
+    const current = files.filter((name) => promptVersionOf(name) === 'audit-p2')
+    expect(current.length).toBeGreaterThan(0)
+    for (const name of current) {
+      const text = readFileSync(join(REPORTS_DIR, name), 'utf8')
+      expect(text, name).not.toMatch(/checks not reached|checksNotReached/)
+      if (name.endsWith('.json') && !name.startsWith('audit-aggregate')) {
+        const audit = JSON.parse(text) as { attempts: { mechanical: Record<string, unknown> }[] }
+        for (const attempt of audit.attempts) expect(attempt.mechanical, name).toHaveProperty('checksUnsatisfied')
+      }
+    }
+  })
 })
 
 describe('the CLI', () => {
@@ -994,5 +1104,9 @@ describe('the CLI', () => {
     }
     expect(status).toBe(1)
     expect(stderr).toContain('live:audit: unknown option --nope')
+  })
+
+  it('never tells the reviewer a check was not reached (#244)', () => {
+    expect(readFileSync(SCRIPT, 'utf8')).not.toMatch(/not reached/)
   })
 })

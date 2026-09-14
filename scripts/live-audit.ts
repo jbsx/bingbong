@@ -36,6 +36,7 @@ import {
   countsAfterOverrulesOf,
   formatAuditAggregate,
   formatAuditSet,
+  isUngraded,
   keyLeaks,
   validateJudgement,
   withholdKeyText,
@@ -60,8 +61,13 @@ const DEFAULT_EFFORT = 'high'
 const DEFAULT_MAX_USD = '3'
 const DEFAULT_OUT_DIR = 'e2e/live/reports'
 const DEFAULT_AGGREGATE = 'audit-aggregate'
-/** Bumped whenever the system prompt or the digest's presentation changes; recorded in every output. */
-const AUDIT_PROMPT_VERSION = 'audit-p1'
+/**
+ * Bumped by hand whenever the system prompt or the digest's presentation
+ * changes; recorded in every output and in every cache key. `audit-p2` (#244)
+ * splits the Answer Omission from the Early Stop; the aggregate refuses to
+ * count it with `audit-p1` sets.
+ */
+const AUDIT_PROMPT_VERSION = 'audit-p2'
 const CACHE_DIR = join(LIVE_ARTIFACTS_ROOT, 'audit-cache')
 
 class UsageError extends Error {}
@@ -189,7 +195,7 @@ function readSet(capturePath: string, explicitGrades: ExplicitGrades[]): SetCont
   }
   if (candidates.length > 1) fail(`${candidates.length} grades files are bound to ${set.setId}; pass --grades=<file> to name the one to read`)
   let grades: LiveGrades | null = null
-  if (candidates.length === 0) notes.push(`no grades file is bound to ${set.setId}: every check is reported as not reached`)
+  if (candidates.length === 0) notes.push(`no grades file is bound to ${set.setId}: every check is reported as ungraded`)
   else {
     const parsed = parseLiveGrades(candidates[0]!.raw, inputs)
     if (!parsed.ok) failWith(`the grades file ${candidates[0]!.label} for ${set.setId} does not validate`, parsed.errors)
@@ -307,19 +313,23 @@ What you judge, in this order:
 1. Search Loop membership: rounds whose search rewords one intent, consecutively, with reads between them not breaking the loop. The digest marks a search's query and the streak the app's own rule counted; you may extend a loop to rewordings that share no tokens, and you may say a marked streak is not one loop.
 2. Off-key: for each Acquisition round, could the page it landed on carry any required fact of this task? Judge from the URL, title and result head against the key's facts and verified sources. A search results page, a 404, a walled page, a page on the right site but the wrong subject: say which and why.
 3. Overrules: where a mechanical label is wrong on the evidence in the digest, give the round its right kind with a reason. Do not overrule to match a verdict.
-4. Stopped early: did the Run end with budget and time left while the checks it never reached were reachable from pages it already had or had found? An attempt that ran to its budget did not stop early.
+4. Early Stop and Answer Omission: for each check listed as unsatisfied, decide one thing: did it need a page the Run had not read, or does it follow from material on a page the Run had read, whether or not that material was recorded as Evidence?
+   - stoppedEarly: value is true when the Run ended with Tool Rounds and time left and at least one unsatisfied check needed a page the Run had not read; its checks are those. Whether that page was findable does not enter: with budget left, not finding it is the stop. An attempt that ran to its budget did not stop early, and its value is false.
+   - answerOmitted: value is true when at least one unsatisfied check follows from material on a page the Run had read, and the Answer left it unstated; its checks are those. It does not depend on how the attempt ended.
+   Each carries a reason. A check id goes in at most one of the two lists and only from the checks listed as unsatisfied; a list is empty when its value is false and names at least one check when true.
 5. The verdict, from the closed set, primary and at most one secondary, each with a reason that cites the shares and rounds it rests on:
    - rounds_wasted: the budget went to rounds without Progress, Off-key pages, loops, or repeats.
    - tier_too_small_or_never_escalated: the work was on-key and productive and the tier's budget ended it, with no Tier Escalation.
    - budget_too_small_for_the_hunt: on-key productive work at the highest tier still needed more rounds than the budget holds. An admissible finding.
-   - stopped_early: the Run ended with budget left and the unreached checks within reach.
+   - stopped_early: the Run ended with budget and time left, and an unsatisfied check needed a page the Run had not read. Only when stoppedEarly.value is true.
+   - answer_omitted: an unsatisfied check follows from material on a page the Run had read, and the Answer left it unstated, however the attempt ended. Only when answerOmitted.value is true.
    - failed_rounds: failed rounds (timeouts, cut rounds, refusals) cost the attempt its result.
-   No numeric threshold is given: you choose and you cite the shares.
+   No numeric threshold is given: you choose and you cite the shares. When an attempt has checks of both kinds, the primary verdict is whichever you find decisive; the two judgements carry the detail. A judgement may be true while the verdict names something you found more decisive.
 6. Flags: every call a careful human might make the other way — an Off-key call on a borderline page, a loop boundary, an overrule, a verdict on the line — as a question naming the round where one applies. Flags ship as caveats; they never gate the report.
 
 Rules of the output:
 - Name rounds by their number and pages by their URL. Refer to the key's checks by id (fact-01, pitfall-02) and never quote, paraphrase or summarize the key's text: the output is committed to a public repository and the key is private. A reason that repeats a fact from the key is discarded.
-- Judge the rounds, not the Answer: the Answer was graded elsewhere and its grade is given to you as context.
+- The Grade decides what the Answer established: you never re-judge a check. You judge the rounds, and for each unsatisfied check only whether the Run had read a page that carries it.
 - Return only the JSON object the schema describes.`
 
 interface SlotView {
@@ -351,7 +361,8 @@ function digestBlock(mechanical: AuditMechanical): string {
   lines.push(`Ended: ${terminal === null ? 'no terminal' : `${terminal.outcome ?? '?'}${terminal.resolution ? ` / ${terminal.resolution}` : ''}${terminal.finalizationCause ? ` (${terminal.finalizationCause})` : ''}`}; stop reason ${mechanical.stopReason}; Run duration ${mechanical.runDurationMs.status === 'observed' ? `${mechanical.runDurationMs.value} ms` : mechanical.runDurationMs.status}.`)
   lines.push(`Mechanical kinds over ${mechanical.budgetedRounds} budgeted rounds: ${ROUND_KINDS.map((kind) => `${kind} ${mechanical.counts[kind]}`).join(', ')}.`)
   lines.push(`${mechanical.subagent.rounds} Subagent round(s) over ${mechanical.subagent.agents} Subagent(s); ${mechanical.acceptedCheckpoints} accepted and ${mechanical.rejectedCheckpoints} rejected Evidence Checkpoint(s); ${mechanical.inheritedRounds} inherited round(s).`)
-  lines.push(`Grade: ${mechanical.grade?.status ?? 'ungraded'}; checks not reached: ${mechanical.checksNotReached === null ? 'unknown' : mechanical.checksNotReached.join(', ') || 'none'}.`)
+  const checks = mechanical.checksUnsatisfied
+  lines.push(`Grade: ${mechanical.grade?.status ?? 'ungraded'}; checks unsatisfied: ${checks === null ? 'unknown' : isUngraded(mechanical) ? `ungraded: every check (${checks.join(', ')})` : checks.join(', ') || 'none'}.`)
   lines.push('The assistant’s own reasoning is not shown; each round lists its calls, the page each put in front of the assistant, the result head and the app’s Notices.')
   lines.push('')
   for (const round of mechanical.rounds) {

@@ -20,10 +20,11 @@
 //     collides with the key's wording wherever both restate the hunt's
 //     question — so the digest holds exactly what the reviewer judged.
 //   * The JUDGED half is a reviewer's output — Search Loop membership,
-//     Off-key Acquisitions, an early stop, the verdict, overrules of
-//     mechanical labels and flags for a human — validated here against the
-//     digest it was given (a round it names must exist, an overrule must
-//     change something, a secondary verdict must differ from the primary)
+//     Off-key Acquisitions, an Early Stop, an Answer Omission, the verdict,
+//     overrules of mechanical labels and flags for a human — validated here
+//     against the digest it was given (a round it names must exist, an
+//     overrule must change something, a secondary verdict must differ from
+//     the primary, a check it names must be one the Grade left unsatisfied)
 //     and checked for key text, which must never reach a committed output.
 //
 // The aggregate is arithmetic over verdicts and kinds; it refuses sets whose
@@ -66,7 +67,7 @@ export const ROUND_KINDS = [
 ] as const
 export type RoundKind = (typeof ROUND_KINDS)[number]
 
-export const AUDIT_VERDICTS = ['rounds_wasted', 'tier_too_small_or_never_escalated', 'budget_too_small_for_the_hunt', 'stopped_early', 'failed_rounds'] as const
+export const AUDIT_VERDICTS = ['rounds_wasted', 'tier_too_small_or_never_escalated', 'budget_too_small_for_the_hunt', 'stopped_early', 'answer_omitted', 'failed_rounds'] as const
 export type AuditVerdict = (typeof AUDIT_VERDICTS)[number]
 
 /**
@@ -305,17 +306,34 @@ export interface AuditMechanical {
   readonly usage: { readonly promptTokens: number; readonly completionTokens: number; readonly roundsWithUsage: number }
   readonly subagent: { readonly rounds: number; readonly agents: number; readonly byStop: Readonly<Record<string, number>> }
   readonly grade: { readonly status: string; readonly reviewer: string } | null
-  /** Check ids the Answer never reached: judged unsatisfied, or every check when ungraded. Null when the key has no task for the slot. */
-  readonly checksNotReached: readonly string[] | null
+  /**
+   * Check ids the Grade judged unsatisfied (#244), or every check when the
+   * attempt is ungraded — `isUngraded` says which, and the report labels
+   * those "ungraded: every check". Null when the key has no task for the slot.
+   */
+  readonly checksUnsatisfied: readonly string[] | null
   readonly checksTotal: number | null
   readonly digestHash: string
+}
+
+/**
+ * One of the two judgements over the checks unsatisfied (#244): whether it
+ * holds, why, and the check ids it covers — none when it does not hold.
+ */
+export interface AuditCheckJudgement {
+  readonly value: boolean
+  readonly reason: string
+  readonly checks: readonly string[]
 }
 
 export interface AuditJudgement {
   readonly searchLoops: readonly { readonly rounds: readonly number[]; readonly reason: string }[]
   readonly offKey: readonly { readonly round: number; readonly url: string | null; readonly reason: string }[]
   readonly overrules: readonly { readonly round: number; readonly kind: RoundKind; readonly reason: string }[]
-  readonly stoppedEarly: { readonly value: boolean; readonly reason: string }
+  /** An Early Stop: budget and time left, and an unsatisfied check needed a page the Run had not read. */
+  readonly stoppedEarly: AuditCheckJudgement
+  /** An Answer Omission: an unsatisfied check follows from a page the Run had read, however the attempt ended. */
+  readonly answerOmitted: AuditCheckJudgement
   readonly verdict: {
     readonly primary: AuditVerdict
     readonly primaryReason: string
@@ -402,6 +420,8 @@ export interface AuditPopulation {
   readonly notFoundOffKey: number
   readonly subagentRounds: number
   readonly stoppedEarly: number
+  /** Judged attempts whose Answer Omission holds (#244), whatever their verdict. */
+  readonly answerOmitted: number
   readonly overrules: number
   readonly flags: number
   readonly finalizationCauses: Readonly<Record<string, number>>
@@ -884,7 +904,7 @@ function emptyCounts(): Record<RoundKind, number> {
 }
 
 function emptyVerdictCounts(): Record<AuditVerdict, number> {
-  return { rounds_wasted: 0, tier_too_small_or_never_escalated: 0, budget_too_small_for_the_hunt: 0, stopped_early: 0, failed_rounds: 0 }
+  return { rounds_wasted: 0, tier_too_small_or_never_escalated: 0, budget_too_small_for_the_hunt: 0, stopped_early: 0, answer_omitted: 0, failed_rounds: 0 }
 }
 
 function sharesOf(counts: Readonly<Record<RoundKind, number>>, budgeted: number, all: number): Record<RoundKind, number | null> {
@@ -1080,7 +1100,7 @@ export function classifyAttempt(input: AuditTraceInput): AuditMechanical {
   const agents = new Set([...subagentRounds.map((record) => String(record.agentId)), ...stops.keys()])
 
   const checksTotal = input.task === null ? null : input.task.checks.length
-  const checksNotReached =
+  const checksUnsatisfied =
     input.task === null
       ? null
       : input.grade === null || input.grade.status === 'pending'
@@ -1163,13 +1183,18 @@ export function classifyAttempt(input: AuditTraceInput): AuditMechanical {
     },
     subagent: { rounds: subagentRounds.length, agents: agents.size, byStop },
     grade: input.grade === null ? null : { status: input.grade.status, reviewer: input.grade.reviewer },
-    checksNotReached,
+    checksUnsatisfied,
     checksTotal,
   }
   return { ...withoutHash, digestHash: sha256(JSON.stringify(digestPayloadOf(withoutHash))) }
 }
 
-/** What the hash covers: the digest the reviewer is shown, and nothing about who reviewed it. */
+/**
+ * What the hash covers: the digest the reviewer is shown, and nothing about
+ * who reviewed it. The grade's status is the reviewer's to read too (#244): an
+ * ungraded attempt and one graded with every check unsatisfied hand on the
+ * same ids under different labels, so they must not share a cached judgement.
+ */
 function digestPayloadOf(mechanical: Omit<AuditMechanical, 'digestHash'>): unknown {
   return {
     attemptId: mechanical.attemptId,
@@ -1180,19 +1205,32 @@ function digestPayloadOf(mechanical: Omit<AuditMechanical, 'digestHash'>): unkno
     rounds: mechanical.rounds,
     counts: mechanical.counts,
     shares: mechanical.shares,
-    checksNotReached: mechanical.checksNotReached,
+    gradeStatus: mechanical.grade?.status ?? null,
+    checksUnsatisfied: mechanical.checksUnsatisfied,
     subagent: mechanical.subagent,
   }
+}
+
+/** An attempt with no grade, or a pending one: its `checksUnsatisfied` is every check, and says so as "ungraded". */
+export function isUngraded(mechanical: Pick<AuditMechanical, 'grade'>): boolean {
+  return mechanical.grade === null || mechanical.grade.status === 'pending'
 }
 
 // ---------------------------------------------------------------------------
 // The reviewer's output
 
+const CHECK_JUDGEMENT_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['value', 'reason', 'checks'],
+  properties: { value: { type: 'boolean' }, reason: { type: 'string' }, checks: { type: 'array', items: { type: 'string' } } },
+} as const
+
 /** The JSON schema the reviewer's structured output must satisfy (`claude -p --json-schema`). */
 export const JUDGEMENT_SCHEMA = {
   type: 'object',
   additionalProperties: false,
-  required: ['searchLoops', 'offKey', 'overrules', 'stoppedEarly', 'verdict', 'flags'],
+  required: ['searchLoops', 'offKey', 'overrules', 'stoppedEarly', 'answerOmitted', 'verdict', 'flags'],
   properties: {
     searchLoops: {
       type: 'array',
@@ -1216,7 +1254,8 @@ export const JUDGEMENT_SCHEMA = {
         properties: { round: { type: 'integer' }, kind: { type: 'string', enum: [...ROUND_KINDS] }, reason: { type: 'string' } },
       },
     },
-    stoppedEarly: { type: 'object', additionalProperties: false, required: ['value', 'reason'], properties: { value: { type: 'boolean' }, reason: { type: 'string' } } },
+    stoppedEarly: CHECK_JUDGEMENT_SCHEMA,
+    answerOmitted: CHECK_JUDGEMENT_SCHEMA,
     verdict: {
       type: 'object',
       additionalProperties: false,
@@ -1305,8 +1344,29 @@ export function validateJudgement(raw: unknown, mechanical: AuditMechanical): Va
     offKey.push({ round: item.round, url: isString(item.url) ? item.url : null, reason: isString(item.reason) ? item.reason : '' })
   }
 
-  const stopped = isRecord(raw.stoppedEarly) ? raw.stoppedEarly : null
-  if (stopped === null || typeof stopped.value !== 'boolean' || !isString(stopped.reason)) errors.push('stoppedEarly must carry a boolean value and a reason')
+  // The Early Stop and the Answer Omission (#244): each names checks the Grade
+  // left unsatisfied, and no check is named by both.
+  const unsatisfied = new Set(mechanical.checksUnsatisfied ?? [])
+  const checkJudgement = (field: 'stoppedEarly' | 'answerOmitted'): AuditCheckJudgement | null => {
+    const item = isRecord(raw[field]) ? raw[field] : null
+    const { value, reason, checks } = item ?? {}
+    if (typeof value !== 'boolean' || !isString(reason) || !Array.isArray(checks) || !checks.every(isString)) {
+      errors.push(`${field} must carry a boolean value, a reason and a list of checks`)
+      return null
+    }
+    if (reason.trim() === '') errors.push(`${field}.reason is missing`)
+    for (const check of checks) if (!unsatisfied.has(check)) errors.push(`${field}.checks names ${check}, which is not a check the Grade left unsatisfied`)
+    if (value && checks.length === 0) errors.push(`${field} is true and names no check`)
+    if (!value && checks.length > 0) errors.push(`${field} is false and still names ${checks.join(', ')}`)
+    return { value, reason, checks: [...checks] }
+  }
+  const stopped = checkJudgement('stoppedEarly')
+  const omitted = checkJudgement('answerOmitted')
+  if (stopped !== null && omitted !== null) {
+    for (const check of stopped.checks.filter((id) => omitted.checks.includes(id))) {
+      errors.push(`${check} is named by both stoppedEarly and answerOmitted — a check needed an unread page or follows from a read one, not both`)
+    }
+  }
 
   const verdict = isRecord(raw.verdict) ? raw.verdict : null
   if (verdict === null) errors.push('verdict is missing')
@@ -1316,6 +1376,11 @@ export function validateJudgement(raw: unknown, mechanical: AuditMechanical): Va
     if (verdict.secondary !== null && (!isString(verdict.secondary) || !(AUDIT_VERDICTS as readonly string[]).includes(verdict.secondary))) errors.push('verdict.secondary is outside the closed set')
     if (verdict.secondary !== null && verdict.secondary === verdict.primary) errors.push('verdict.secondary repeats the primary — a secondary verdict must differ')
     if (verdict.secondary !== null && (!isString(verdict.secondaryReason) || verdict.secondaryReason.trim() === '')) errors.push('verdict.secondaryReason is missing for the secondary verdict')
+    // A verdict needs its judgement; a judgement never needs its verdict.
+    for (const slot of ['primary', 'secondary'] as const) {
+      if (verdict[slot] === 'stopped_early' && stopped !== null && !stopped.value) errors.push(`verdict.${slot} is stopped_early, but stoppedEarly.value is false`)
+      if (verdict[slot] === 'answer_omitted' && omitted !== null && !omitted.value) errors.push(`verdict.${slot} is answer_omitted, but answerOmitted.value is false`)
+    }
   }
 
   const flags: { round: number | null; question: string }[] = []
@@ -1335,7 +1400,8 @@ export function validateJudgement(raw: unknown, mechanical: AuditMechanical): Va
       searchLoops,
       offKey,
       overrules,
-      stoppedEarly: { value: stopped!.value as boolean, reason: stopped!.reason as string },
+      stoppedEarly: stopped!,
+      answerOmitted: omitted!,
       verdict: {
         primary: verdict!.primary as AuditVerdict,
         primaryReason: verdict!.primaryReason as string,
@@ -1467,6 +1533,7 @@ export function populationOf(label: string, attempts: readonly AuditAttempt[]): 
   let notFoundOffKey = 0
   let subagentRounds = 0
   let stoppedEarly = 0
+  let answerOmitted = 0
   let overrules = 0
   let flags = 0
   let atBudget = 0
@@ -1505,6 +1572,7 @@ export function populationOf(label: string, attempts: readonly AuditAttempt[]): 
     notFoundOffKey += notFoundOffKeyOf(mechanical, judgement)
     searchLoop += new Set(judgement.searchLoops.flatMap((loop) => loop.rounds)).size
     if (judgement.stoppedEarly.value) stoppedEarly += 1
+    if (judgement.answerOmitted.value) answerOmitted += 1
     overrules += judgement.overrules.length
     flags += judgement.flags.length
   }
@@ -1533,6 +1601,7 @@ export function populationOf(label: string, attempts: readonly AuditAttempt[]): 
     notFoundOffKey,
     subagentRounds,
     stoppedEarly,
+    answerOmitted,
     overrules,
     flags,
     finalizationCauses: Object.fromEntries(Object.entries(causes).sort(([left], [right]) => left.localeCompare(right))),
@@ -1664,6 +1733,7 @@ const VERDICT_LABELS: Readonly<Record<AuditVerdict, string>> = {
   tier_too_small_or_never_escalated: 'tier too small or never escalated',
   budget_too_small_for_the_hunt: 'budget too small for the Hunt',
   stopped_early: 'stopped early',
+  answer_omitted: 'answer omitted',
   failed_rounds: 'failed rounds',
 }
 
@@ -1726,7 +1796,7 @@ function judgementLines(populations: readonly AuditPopulation[]): string[] {
       `- ${population.label}: ${population.offKeyRounds} Off-key round(s), ${population.searchLoopRounds} Search Loop round(s) by the reviewer (${population.mechanicalSearchRounds} by the streak rule; attempts by search source ${SEARCH_SOURCES.map((source) => `${source} ${population.searchSources[source]}`).join(', ')}), ` +
       `${population.inheritedRounds} inherited, ${population.rejectedCheckpoints} rejected Evidence Checkpoint(s), ${population.walledRounds} walled round(s), ${population.notFoundNavigates} navigate(s) landed on a Not-found Page (${population.notFoundOffKey} judged Off-key), ${population.subagentRounds} Subagent round(s), ` +
       `${population.mergedCheckpoints} merged Evidence Checkpoint(s) (a floor), ${population.heldPageRoundsWithoutProgress} Held Page round(s) without Progress, ` +
-      `${population.stoppedEarly} stopped early, ${population.overrules} overrule(s), ${population.flags} flag(s); Finalization Causes: ${Object.entries(population.finalizationCauses)
+      `${population.stoppedEarly} stopped early, ${population.answerOmitted} answer omitted, ${population.overrules} overrule(s), ${population.flags} flag(s); Finalization Causes: ${Object.entries(population.finalizationCauses)
         .map(([cause, count]) => `${cause} ${count}`)
         .join(', ')}`,
   )
@@ -1735,6 +1805,7 @@ function judgementLines(populations: readonly AuditPopulation[]): string[] {
 function attemptSection(attempt: AuditAttempt): string[] {
   const { mechanical, review } = attempt
   const judgement = review?.judgement ?? null
+  const checks = mechanical.checksUnsatisfied
   const lines: string[] = []
   lines.push(`### ${mechanical.attemptId} (${mechanical.relation})`)
   lines.push('')
@@ -1746,7 +1817,7 @@ function attemptSection(attempt: AuditAttempt): string[] {
       `Run duration ${msOf(mechanical.runDurationMs)}; LLM stage ${mechanical.latency.llmMs === null ? 'unjoined' : `${mechanical.latency.llmMs} ms over ${mechanical.latency.joined} joined round(s)`}${mechanical.latency.unjoined > 0 ? ` (${mechanical.latency.unjoined} unjoined)` : ''}`,
   )
   lines.push(
-    `- grade ${mechanical.grade?.status ?? 'none'}; checks not reached: ${mechanical.checksNotReached === null ? 'no task in the key' : mechanical.checksNotReached.length === 0 ? 'none' : `${mechanical.checksNotReached.join(', ')} (${mechanical.checksNotReached.length} of ${mechanical.checksTotal})`}`,
+    `- grade ${mechanical.grade?.status ?? 'none'}; checks unsatisfied: ${checks === null ? 'no task in the key' : isUngraded(mechanical) ? `ungraded: every check (${checks.length} of ${mechanical.checksTotal})` : checks.length === 0 ? 'none' : `${checks.join(', ')} (${checks.length} of ${mechanical.checksTotal})`}`,
   )
   lines.push(
     `- ${mechanical.subagent.rounds} Subagent round(s) over ${mechanical.subagent.agents} Subagent(s)${Object.keys(mechanical.subagent.byStop).length > 0 ? `, stopped by ${Object.entries(mechanical.subagent.byStop).map(([stop, count]) => `${stop} ${count}`).join(', ')}` : ''}; ` +
@@ -1764,7 +1835,9 @@ function attemptSection(attempt: AuditAttempt): string[] {
     const { verdict } = judgement
     lines.push(`- **verdict: ${VERDICT_LABELS[verdict.primary]}** — ${verdict.primaryReason}`)
     if (verdict.secondary !== null) lines.push(`- secondary: ${VERDICT_LABELS[verdict.secondary]} — ${verdict.secondaryReason}`)
-    lines.push(`- stopped early: ${judgement.stoppedEarly.value ? 'yes' : 'no'} — ${judgement.stoppedEarly.reason}`)
+    for (const [label, item] of [['stopped early', judgement.stoppedEarly], ['answer omitted', judgement.answerOmitted]] as const) {
+      lines.push(`- ${label}: ${item.value ? `yes (${item.checks.join(', ')})` : 'no'} — ${item.reason}`)
+    }
     for (const loop of judgement.searchLoops) lines.push(`- Search Loop over rounds ${loop.rounds.join(', ')}: ${loop.reason}`)
     for (const item of judgement.offKey) lines.push(`- Off-key round ${item.round}${item.url ? ` (${item.url})` : ''}: ${item.reason}`)
     for (const item of judgement.overrules) lines.push(`- overrule round ${item.round} → ${KIND_LABELS[item.kind]}: ${item.reason}`)
