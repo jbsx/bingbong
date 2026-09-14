@@ -301,6 +301,21 @@ describe('orchestrator prompt verification policy (#212)', () => {
     expect(ranking).toMatch(/never call a candidate a match or a strong match on where it appeared/)
   })
 
+  // #242: the Itemized Verdict. The Eurostar Answers gave the chosen
+  // reduction and left the other named items' standing to the reader, so
+  // the rule sits directly after the constraints line it extends.
+  it('states the standing of every item the command names, directly after the constraints line', () => {
+    const lines = ORCHESTRATOR_SYSTEM_PROMPT.split('\n')
+    const ranking = lines.findIndex((candidate) => candidate.includes('ranking highly in a search'))
+    const itemized = lines[ranking + 1]
+    expect(itemized).toBe(
+      '- When the command itself names the items or options it asks about, "display" states each one\'s standing — ' +
+        'allowed or not, fits or not, which wins and which would also work — not only the one you chose. ' +
+        'A named item you could not establish is stated as unverified, and an unverified named item makes ' +
+        '"resolution" "partial", never "completed". "speak" carries the chosen answer.',
+    )
+  })
+
   it('describes a failed check as the attempt, not the route', () => {
     const failed = line('that attempt failed')
     expect(failed).toMatch(/the route is not gone for the rest of the run/)
