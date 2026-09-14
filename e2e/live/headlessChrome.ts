@@ -90,7 +90,19 @@ export async function launchHeadlessChrome(profilePrefix: string): Promise<Headl
       chrome.kill()
       await exited
     }
-    rmSync(profile, { recursive: true, force: true })
+    // Chrome's helper processes can still be writing into the profile after
+    // the main process has exited, so a removal can land on ENOTEMPTY; it is
+    // retried with a pause, and a profile that will not go is left in the
+    // temp dir rather than failing a suite whose tests have all passed.
+    for (let attempt = 0; attempt < 25; attempt += 1) {
+      try {
+        rmSync(profile, { recursive: true, force: true })
+        return
+      } catch (error) {
+        if (attempt === 24) console.warn(`headless Chrome profile ${profile} was left behind: ${String(error)}`)
+        else await sleep(200)
+      }
+    }
   }
 
   return { cdp, evaluate, close }
