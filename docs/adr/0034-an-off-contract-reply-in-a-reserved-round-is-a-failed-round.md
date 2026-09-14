@@ -5,6 +5,23 @@
 Accepted. Supersedes the sentence in ADR 0027 that reads a failed reserved
 Answer as a thrown or tool-requesting one; that list now has a third member.
 
+Note of 2026-09-14 (#245): the no-retry stance is the reserved round's,
+because it has no round to spend; outside one there is. Baseline-1's Eurostar
+initial replied in an ordinary round with prose followed by an Answer whose
+"display" was over-escaped. The parser fell back to prose, the whole text was
+displayed and spoken with the JSON inside it, and the reply's `objective_met`
+claim, its resolution and its run note were lost with the parse; the journal
+recorded `model_answered` and the audit and grade read the raw text. A reply
+outside a reserved round that carries the contract's keys but not its shape is
+a Malformed Answer, a third shape the parser marks and a reserved round still
+treats as off-contract. The next request, whichever round the loop makes it,
+carries what could not be read and asks for the Answer alone, once per Run or
+Subagent, and that round's own rule judges the reply. Nothing is repaired: a
+guessed repair changes what the user is told, and this reply also carried
+`\\n` throughout its "display", legal JSON that a repair of the quotes would
+have rendered as literal text. The retry is not a Tool Round and spends none
+of that budget.
+
 ## Context
 
 The Answer contract is JSON with `speak` and `display`. The parser tries the

@@ -392,6 +392,23 @@ Report's findings: the Run's deterministic Answer or the bounded Subagent
 Report stands in. Outside a reserved round a prose reply is still an Answer.
 _Avoid_: malformed answer, hallucinated answer, narration
 
+**Malformed Answer**:
+A reply outside a reserved round that carries the Answer contract's keys but
+not its shape: JSON that cannot be read, or reads as the wrong shape. It is
+what the model meant as an Answer and the runtime cannot take, unlike a prose
+reply, which is an Answer, and an Off-contract Reply, which belongs to a
+reserved round. It is met with one Answer Retry, and the reply to that stands
+whatever its shape.
+_Avoid_: broken answer, invalid answer, off-contract answer, narration
+
+**Answer Retry**:
+The one model round spent after a Malformed Answer: the next request carries
+what could not be read and asks for the Answer alone, once per Run or
+Subagent. It is not a Tool Round and spends no Tool Round budget, only time.
+Whatever round the Run is in judges the reply by its own rule. The runtime
+never repairs a reply it could not read.
+_Avoid_: repair, fix-up, re-prompt, JSON retry
+
 **Run Resolution**:
 The semantic result delivered to the user: `completed`, `partial`, `blocked`,
 `needs_user`, or `unsuccessful`. It is distinct from both the Run's mechanical
