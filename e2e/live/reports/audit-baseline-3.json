@@ -32,9 +32,9 @@
     "reviewerModel": "claude-opus-5",
     "reviewerEffort": "high",
     "reviewerPromptVersion": "audit-p2",
-    "auditCommit": "be1e592a808e636b81b10e2a377de8308183d91e",
+    "auditCommit": "2299991a14132c345bfaca8851c4940d59e7d23e",
     "auditDirtyTree": false,
-    "generatedAt": "2026-09-14T13:00:07.665Z"
+    "generatedAt": "2026-09-14T13:24:38.303Z"
   },
   "attempts": [
     {
@@ -1366,6 +1366,7 @@
         "notFoundNavigates": [
           1
         ],
+        "identitySlips": null,
         "latency": {
           "llmMs": 196187,
           "joined": 26,
@@ -2863,6 +2864,7 @@
         "searchSource": "none",
         "walledRounds": 0,
         "notFoundNavigates": [],
+        "identitySlips": null,
         "latency": {
           "llmMs": 426768,
           "joined": 26,
@@ -4252,6 +4254,7 @@
         "searchSource": "replay",
         "walledRounds": 0,
         "notFoundNavigates": [],
+        "identitySlips": null,
         "latency": {
           "llmMs": 157331,
           "joined": 26,
@@ -5298,6 +5301,7 @@
         "searchSource": "replay",
         "walledRounds": 0,
         "notFoundNavigates": [],
+        "identitySlips": null,
         "latency": {
           "llmMs": 294145,
           "joined": 16,
@@ -6142,6 +6146,7 @@
         "searchSource": "none",
         "walledRounds": 0,
         "notFoundNavigates": [],
+        "identitySlips": null,
         "latency": {
           "llmMs": 116385,
           "joined": 14,
@@ -6387,6 +6392,7 @@
         "searchSource": "none",
         "walledRounds": 0,
         "notFoundNavigates": [],
+        "identitySlips": null,
         "latency": {
           "llmMs": 368430,
           "joined": 3,
@@ -6531,6 +6537,9 @@
       "walledRounds": 0,
       "notFoundNavigates": 1,
       "notFoundOffKey": 1,
+      "identitySlipAnswers": 0,
+      "identitySlipIds": 0,
+      "identitySlipsNotRecorded": 4,
       "subagentRounds": 13,
       "stoppedEarly": 0,
       "answerOmitted": 3,
@@ -6657,6 +6666,9 @@
       "walledRounds": 0,
       "notFoundNavigates": 0,
       "notFoundOffKey": 0,
+      "identitySlipAnswers": 0,
+      "identitySlipIds": 0,
+      "identitySlipsNotRecorded": 2,
       "subagentRounds": 13,
       "stoppedEarly": 0,
       "answerOmitted": 1,
